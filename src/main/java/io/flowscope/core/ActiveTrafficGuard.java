@@ -8,4 +8,9 @@ public final class ActiveTrafficGuard {
         if (source != Source.SCANNER && source != Source.LLM) return true;
         return scope != null && scope.allows(target);
     }
+
+    /** 브라우저 사용은 막지 않되 모든 source의 저장 Evidence는 현재 exact scope로 제한한다. */
+    public static boolean allowsCapture(ScopePolicy scope, String target) {
+        return scope != null && scope.allows(target);
+    }
 }

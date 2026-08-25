@@ -10,6 +10,7 @@ identity ──access──▶ resource ──calls──▶ operation
 ## What is included
 
 - Live Burp capture with independent source, sub-source, orchestrator, tool, phase, and run metadata.
+- Exact-scope Evidence capture for every source. HUMAN may browse other sites through Burp, but out-of-scope responses are not stored or graphed by FlowScope.
 - HUMAN / SCANNER / LLM filters and an IDA-style hierarchical graph with orthogonal edges and bounded expandable groups.
 - Identity × operation × resource coverage matrix, uncrossed combinations, partial discovery, and source conflicts.
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
@@ -146,7 +147,7 @@ The ZAP API endpoint is accepted only on a loopback address. ZAP itself must be 
 - **Burp tab** — exact scope, port mapping, live counts, MCP connection copy, Proxy-history import, project save/load, sample, reset, and a button that opens the canonical local Web workspace.
 - **Web top modes** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
 - **Left rail** — captured/analysis/hidden/review counts without a fabricated percentage, HUMAN/SCANNER/LLM source filters, Evidence display classes, pseudonymous sessions and roles, three-way gaps, and graph verdict controls.
-- **Flow Graph** — fixed identity → resource → operation lanes, with direct identity → operation edges when no object identifier was observed; parallel source overlays, authorization-verdict view, focus+context selection, zoom-to-fit, and 18-at-a-time expandable resource/API groups.
+- **Flow Graph** — fixed identity → resource → operation lanes, with direct identity → operation edges when no object identifier was observed; parallel source overlays using HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L; a separate authorization-verdict view; focus+context selection; zoom-to-fit; and 18-at-a-time expandable resource/API groups.
 - **판정 매트릭스** — observed identity/role × operation × resource cells, per-source verdicts, uncrossed combinations, partial discovery, and conflicts.
 - **흐름 순서** — response-to-request ID/token dependencies recovered from timestamped observations.
 - **시나리오** — deterministic BOLA/BFLA candidates and gaps alongside non-final Judge assessments and server-validated final verdicts.

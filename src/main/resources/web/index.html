@@ -11,7 +11,7 @@
     --bg:#F4F7FA; --panel:#FFFFFF; --panel2:#EEF2F7; --line:#DDE4EC; --line2:#C2CCD8;
     --text:#1E2A38; --muted:#5A6875; --faint:#93A1AF;
     --allow:#2E9E74; --deny:#3E6DA6; --untested:#98A6B4; --suspicious:#C8811C; --undecided:#7E5CB6;
-    --human:#3D79C4; --scanner:#1897AE; --llm:#A857BF; --resend:#D26A1E;
+    --accent:#0F766E; --human:#2563EB; --scanner:#DC2626; --llm:#111827; --resend:#D26A1E;
   }
   *{box-sizing:border-box}
   @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
@@ -22,18 +22,18 @@
   button{font-family:'Space Grotesk','Segoe UI',Arial,sans-serif}
   header{display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); flex:0 0 auto; flex-wrap:wrap}
   .brand{display:flex; align-items:baseline; gap:9px}.brand h1{font-size:16px}
-  .brand .tag{font-size:10.5px; color:var(--llm); font-family:'JetBrains Mono',monospace; border:1px solid var(--line2); padding:1px 6px; border-radius:5px}
+  .brand .tag{font-size:10.5px; color:var(--accent); font-family:'JetBrains Mono',monospace; border:1px solid var(--line2); padding:1px 6px; border-radius:5px}
   .imp{display:flex; align-items:center; gap:7px; flex-wrap:wrap;flex:0 0 auto}
   .filebtn{position:relative; overflow:hidden; display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line2); background:var(--panel2); color:var(--text); border-radius:7px; padding:6px 10px; font-size:12px; cursor:pointer; font-weight:600;white-space:nowrap;flex:0 0 auto}
   .filebtn input{position:absolute; inset:0; opacity:0; cursor:pointer}
   .filebtn .dot{width:8px;height:8px;border-radius:50%}
   .go{border:1px solid var(--line2); background:transparent; color:var(--muted); border-radius:7px; padding:6px 11px; font-size:12px; cursor:pointer; font-weight:600;white-space:nowrap;flex:0 0 auto}
-  .go.primary{background:var(--llm); color:#1a1020; border-color:var(--llm)}
+  .go.primary{background:var(--accent); color:#FFFFFF; border-color:var(--accent)}
   header .spacer{flex:1}
   .modeswitch{display:flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden;flex:0 0 auto}
   .modeswitch button{background:transparent; color:var(--muted); border:0; padding:6px 13px; cursor:pointer; font-size:12.5px; font-weight:600;white-space:nowrap}
   .modeswitch button.on{background:var(--panel2); color:var(--text)}
-  button:focus-visible,.filebtn:focus-within,.cell:focus-visible{outline:2px solid var(--scanner); outline-offset:1px}
+  button:focus-visible,.filebtn:focus-within,.cell:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
   .statusbar{flex:0 0 auto; padding:6px 16px; border-bottom:1px solid var(--line); background:var(--bg); font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap}
   .statusbar b{color:var(--text); font-weight:500}.statusbar .warn{color:var(--suspicious)}
   .setupbackdrop{position:fixed;inset:0;z-index:20;background:rgba(30,42,56,.32);display:none;align-items:center;justify-content:center;padding:18px}
@@ -53,11 +53,11 @@
   .covdef{font-size:11px; color:var(--muted); line-height:1.5}.covdef b{color:var(--text)}
   .axisrow{display:flex; gap:6px; margin:9px 0 7px}
   .axisrow button{flex:1; border:1px solid var(--line2); background:transparent; color:var(--muted); border-radius:6px; padding:5px; font-size:10.5px; cursor:pointer; font-weight:600; line-height:1.3}
-  .axisrow button.on{background:var(--bg); color:var(--text); border-color:var(--scanner)}
-  .covnum{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:var(--scanner); line-height:1}
+  .axisrow button.on{background:var(--bg); color:var(--text); border-color:var(--accent)}
+  .covnum{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:var(--accent); line-height:1}
   .covnum small{font-size:11px; color:var(--muted); font-weight:500}
   .covbar{height:6px; border-radius:4px; background:var(--bg); overflow:hidden; margin:7px 0 4px}
-  .covbar i{display:block; height:100%; background:linear-gradient(90deg,var(--scanner),var(--suspicious))}
+  .covbar i{display:block; height:100%; background:linear-gradient(90deg,var(--accent),var(--suspicious))}
   .covfrac{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--faint)}
   .gapline{display:flex; align-items:center; justify-content:space-between; font-size:11.5px; padding:5px 0; border-top:1px solid var(--line)}
   .gapline:first-of-type{border-top:0}
@@ -66,13 +66,13 @@
   .gapline.gf{cursor:pointer; border-radius:6px; padding:6px 5px; margin:0 -3px}
   .gapline.gf:hover{background:var(--panel)}
   .gapline.gf.on{background:rgba(230,163,67,.12); box-shadow:inset 0 0 0 1px rgba(230,163,67,.4)}
-  .gapline.gf:focus-visible{outline:2px solid var(--scanner); outline-offset:1px}
+  .gapline.gf:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
   .cell.match{box-shadow:0 0 0 2px var(--suspicious), 0 0 16px rgba(230,163,67,.3)}
   .srcfilter label{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); padding:5px 3px; cursor:pointer}
-  .srcfilter input{accent-color:var(--scanner)}
+  .srcfilter input{accent-color:var(--accent)}
   .srcfilter .sw{width:22px; height:0; border-top-width:2px; border-top-style:solid}
   .classfilter label{display:flex;align-items:center;gap:7px;font-size:11px;padding:4px 2px;cursor:pointer}
-  .classfilter input{accent-color:var(--blue)}
+  .classfilter input{accent-color:var(--accent)}
   .trafficstats{margin-top:8px;padding-top:7px;border-top:1px solid var(--line2);font-size:10.5px;color:var(--muted);line-height:1.5}
   .views{display:flex; flex-direction:column; gap:5px}
   .views button{text-align:left; background:transparent; border:1px solid transparent; color:var(--muted); padding:7px 9px; border-radius:7px; cursor:pointer; font-size:12.5px; font-family:Inter,sans-serif}
@@ -80,18 +80,18 @@
   .rolerow{display:flex; align-items:center; justify-content:space-between; font-size:11.5px; padding:5px 2px; border-top:1px solid var(--line); color:var(--muted)}
   .rolerow:first-child{border-top:0}
   .rolechip{font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; padding:2px 9px; border-radius:6px; border:1px solid var(--line2); cursor:pointer; color:var(--text); background:var(--panel)}
-  .rolechip:hover{border-color:var(--scanner)}
+  .rolechip:hover{border-color:var(--accent)}
   .rolechip.admin{color:var(--resend); border-color:var(--resend)}
   .rolechip.unknown{color:var(--faint)}
   .identityselect{width:100%; border:1px solid var(--line2); border-radius:7px; background:var(--panel); color:var(--text); padding:7px 9px; font-family:'JetBrains Mono',monospace; font-size:11px}
   .mergebox{border-top:1px solid var(--line); margin-top:9px; padding-top:8px; display:grid; gap:5px}.mergebox label{font-size:9.5px;color:var(--faint)}
-  .mergebox button{border:1px solid var(--scanner); background:var(--panel); color:var(--scanner); border-radius:6px; padding:6px; cursor:pointer; font-size:10.5px;font-weight:700}.mergebox button:disabled{opacity:.35;cursor:not-allowed}
+  .mergebox button{border:1px solid var(--accent); background:var(--panel); color:var(--accent); border-radius:6px; padding:6px; cursor:pointer; font-size:10.5px;font-weight:700}.mergebox button:disabled{opacity:.35;cursor:not-allowed}
   .graphcontrols{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px}
   .graphcontrols button{flex:1; min-width:84px; border:1px solid var(--line2); background:var(--panel); color:var(--muted); border-radius:6px; padding:6px; cursor:pointer; font-size:10.5px}
   .graphcontrols button:disabled{opacity:.38;cursor:not-allowed}
   .graphstat{margin-top:7px;color:var(--faint);font:9.5px 'JetBrains Mono',monospace;line-height:1.45}
-  .layoutlock{display:flex; align-items:center; gap:7px; margin-top:8px; color:var(--muted); font-size:11px; cursor:pointer}.layoutlock input{accent-color:var(--scanner)}
-  .stage{flex:1; position:relative; min-width:0; background:radial-gradient(1000px 500px at 40% -10%, rgba(200,139,214,.05), transparent 60%), var(--bg)}
+  .layoutlock{display:flex; align-items:center; gap:7px; margin-top:8px; color:var(--muted); font-size:11px; cursor:pointer}.layoutlock input{accent-color:var(--accent)}
+  .stage{flex:1; position:relative; min-width:0; background:radial-gradient(1000px 500px at 40% -10%, rgba(15,118,110,.05), transparent 60%), var(--bg)}
   #cy{position:absolute; inset:0}
   .stagehint{position:absolute; left:14px; bottom:10px; font-size:11px; color:var(--faint); font-family:'JetBrains Mono',monospace; pointer-events:none; max-width:70%}
   .pane{position:absolute; inset:0; overflow:auto; padding:16px 18px; display:none}
@@ -129,14 +129,14 @@
   .accountpanel h3{font-size:13px;margin-bottom:11px}.accountnote{font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:12px}
   .accountform{display:grid;grid-template-columns:1fr 1fr;gap:9px}.accountform label{font-size:10px;color:var(--faint);display:grid;gap:4px}.accountform .wide{grid-column:1/-1}
   .accountform input,.accountform select{width:100%;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace}
-  .accountactions{grid-column:1/-1;display:flex;gap:7px;margin-top:3px}.accountactions button,.sessionaction{border:1px solid var(--line2);border-radius:6px;background:var(--panel2);color:var(--text);padding:6px 9px;cursor:pointer;font-size:10.5px;font-weight:700;white-space:nowrap}.accountactions .primary{border-color:var(--scanner);color:var(--scanner)}
-  .accountcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px;margin-bottom:15px}.accountitem{border:1px solid var(--line);border-left:4px solid var(--human);border-radius:8px;background:var(--panel2);padding:10px}.accountitem .name{font-weight:700;font-size:12px}.accountitem .meta{font:10px 'JetBrains Mono',monospace;color:var(--muted);line-height:1.55;margin-top:5px}.accountitem .edit{float:right;border:0;background:transparent;color:var(--scanner);cursor:pointer;font-size:10px}
+  .accountactions{grid-column:1/-1;display:flex;gap:7px;margin-top:3px}.accountactions button,.sessionaction{border:1px solid var(--line2);border-radius:6px;background:var(--panel2);color:var(--text);padding:6px 9px;cursor:pointer;font-size:10.5px;font-weight:700;white-space:nowrap}.accountactions .primary{border-color:var(--accent);color:var(--accent)}
+  .accountcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px;margin-bottom:15px}.accountitem{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--panel2);padding:10px}.accountitem .name{font-weight:700;font-size:12px}.accountitem .meta{font:10px 'JetBrains Mono',monospace;color:var(--muted);line-height:1.55;margin-top:5px}.accountitem .edit{float:right;border:0;background:transparent;color:var(--accent);cursor:pointer;font-size:10px}
   .bindselect{border:1px solid var(--line2);border-radius:5px;background:var(--panel);color:var(--text);padding:4px;font:10px 'JetBrains Mono',monospace;max-width:145px}.confidence{font-size:9px;padding:2px 5px;border-radius:4px;border:1px solid var(--line2)}.confidence.verified{color:var(--allow);border-color:var(--allow)}.confidence.unknown{color:var(--suspicious);border-color:var(--suspicious)}
   @media (max-width:1050px){.accountgrid{grid-template-columns:1fr}}
   body.accounts-mode .rail,body.accounts-mode .detail{display:none}body.accounts-mode .stage{min-width:0}
   .seqcol{margin-bottom:18px}
   .seqcol .sid{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px; color:var(--text); margin-bottom:8px; display:flex; align-items:center; gap:7px}
-  .seqcol .sid i{width:9px;height:9px;border-radius:50%;background:var(--human)}
+  .seqcol .sid i{width:9px;height:9px;border-radius:50%;background:var(--accent)}
   .seqchain{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
   .seqstep{display:flex; align-items:center; gap:6px}
   .seqnode{font-family:'JetBrains Mono',monospace; font-size:11px; border:1px solid var(--line2); border-radius:6px; padding:5px 9px; background:var(--panel); display:flex; gap:7px; align-items:center}
@@ -244,9 +244,9 @@
     </div>
     <div class="card srcfilter">
       <h3>소스 필터 <span class="badge">3종</span></h3>
-      <label><input type="checkbox" class="sf" value="human" checked><span class="sw" style="border-top-color:var(--human); border-top-style:solid"></span>사람 (실선)</label>
-      <label><input type="checkbox" class="sf" value="scanner" checked><span class="sw" style="border-top-color:var(--scanner); border-top-style:dashed"></span>스캐너 (파선)</label>
-      <label><input type="checkbox" class="sf" value="llm" checked><span class="sw" style="border-top-color:var(--llm); border-top-style:dotted"></span>LLM (점선)</label>
+      <label><input type="checkbox" class="sf" value="human" checked><span class="sw" style="border-top-color:var(--human); border-top-style:solid"></span>사람 H (파랑·실선)</label>
+      <label><input type="checkbox" class="sf" value="scanner" checked><span class="sw" style="border-top-color:var(--scanner); border-top-style:dashed"></span>스캐너 S (빨강·파선)</label>
+      <label><input type="checkbox" class="sf" value="llm" checked><span class="sw" style="border-top-color:var(--llm); border-top-style:dotted"></span>LLM L (검정·점선)</label>
     </div>
     <div class="card classfilter">
       <h3>Evidence 표시 <span class="badge">분석 제외도 보존</span></h3>
@@ -361,9 +361,9 @@
   <span class="li"><span class="sw" style="background:var(--suspicious)"></span>의심/불일치</span>
   <span class="li"><span class="sw" style="background:var(--undecided)"></span>판단불가</span>
   <span style="color:var(--faint)">|</span>
-  <span class="li"><span class="swl" style="border-top:2px solid var(--human)"></span>사람</span>
-  <span class="li"><span class="swl" style="border-top:2px dashed var(--scanner)"></span>스캐너</span>
-  <span class="li"><span class="swl" style="border-top:2px dotted var(--llm)"></span>LLM</span>
+  <span class="li"><span class="swl" style="border-top:2px solid var(--human)"></span>H 사람</span>
+  <span class="li"><span class="swl" style="border-top:2px dashed var(--scanner)"></span>S 스캐너</span>
+  <span class="li"><span class="swl" style="border-top:2px dotted var(--llm)"></span>L LLM</span>
 </footer>
 
 <script>
@@ -378,7 +378,7 @@ window.fetch=(input,init={})=>{
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const V={allow:'정상 허용',deny:'정상 차단',untested:'미검증',suspicious:'의심 허용',undecided:'판단 불가'};
 const VC={allow:'--allow',deny:'--deny',untested:'--untested',suspicious:'--suspicious',undecided:'--undecided'};
-const SRC={human:{n:'사람',c:'--human',ab:'B'},scanner:{n:'스캐너',c:'--scanner',ab:'Z'},llm:{n:'LLM',c:'--llm',ab:'L'},unknown:{n:'분류불명',c:'--faint',ab:'?'}};
+const SRC={human:{n:'사람',c:'--human',ab:'H'},scanner:{n:'스캐너',c:'--scanner',ab:'S'},llm:{n:'LLM',c:'--llm',ab:'L'},unknown:{n:'분류불명',c:'--faint',ab:'?'}};
 let EVENTS=[], SERVER_EVENTS=[], MODEL=null, cy=null, currentView='source';
 let SCENARIO_ITEMS={};
 let SERVER_REVISION=-1, SERVER_IDENTITY_REVISION=-1, SERVER_OWNERS={}, SERVER_ROLES={}, SERVER_REQUIRED_ROLES={}, SERVER_FLOW_LINKS=[], SERVER_ACCOUNTS=[], SERVER_SESSIONS=[], SERVER_MANAGED_SESSIONS=[], SERVER_CELLS=[], SERVER_GAPS=[], SERVER_ACTIVE_SOURCES=[], SERVER_TRAFFIC_STATS={captured:0,coverage:0,excluded:0,review:0}, LIVE_MODE=true;
@@ -576,15 +576,15 @@ function renderGraph(){
   cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},
     style:[
       {selector:'node',style:{'label':'data(label)','color':css('--text'),'font-family':'JetBrains Mono, Consolas, monospace','font-size':'12px','font-weight':500,'text-wrap':'wrap','text-valign':'center','text-halign':'center','text-max-width':'208px','width':'188px','height':'54px','border-width':1.4,'border-color':css('--line2'),'background-color':css('--panel2')}},
-      {selector:'node[ntype="identity"]',style:{'shape':'round-rectangle','background-color':'#E7F0FB','border-color':css('--human'),'width':'118px','height':'48px'}},
+      {selector:'node[ntype="identity"]',style:{'shape':'round-rectangle','background-color':'#E7F0FB','border-color':css('--accent'),'width':'118px','height':'48px'}},
       {selector:'node[ntype="operation"]',style:{'shape':'hexagon','background-color':'#F3E9F9','width':'248px','height':'64px','border-color':'#DFC9EC'}},
       {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'54px'}},
-      {selector:'node[ntype="group"]',style:{'shape':'round-rectangle','background-color':'#FFFFFF','border-color':css('--scanner'),'border-style':'dashed','border-width':2,'color':css('--scanner'),'width':'164px','height':'48px'}},
+      {selector:'node[ntype="group"]',style:{'shape':'round-rectangle','background-color':'#FFFFFF','border-color':css('--accent'),'border-style':'dashed','border-width':2,'color':css('--accent'),'width':'164px','height':'48px'}},
       {selector:'node[sourceMask="human"]',style:{'border-color':css('--human'),'border-style':'solid','border-width':2}},
       {selector:'node[sourceMask="scanner"]',style:{'border-color':css('--scanner'),'border-style':'dashed','border-width':2}},
       {selector:'node[sourceMask="llm"]',style:{'border-color':css('--llm'),'border-style':'dotted','border-width':2}},
       {selector:'node[sourceCount > 1]',style:{'border-color':css('--text'),'border-width':2.5}},
-      {selector:'node.sel',style:{'border-width':2.6,'border-color':css('--scanner')}},
+      {selector:'node.sel',style:{'border-width':2.6,'border-color':css('--accent')}},
       {selector:'edge',style:{'curve-style':'taxi','taxi-direction':'horizontal','taxi-turn':'48px','taxi-turn-min-distance':'14px','width':1.6,'target-arrow-shape':'triangle','arrow-scale':.8,'opacity':.92}},
       {selector:'edge[etype="calls"]',style:{'curve-style':'straight','width':1,'line-color':css('--line'),'target-arrow-color':css('--line')}},
       {selector:'edge[etype="owns"]',style:{'line-color':'#2d6e63','target-arrow-color':'#2d6e63','line-style':'dashed','width':1.1,'opacity':.5}},
@@ -596,7 +596,7 @@ function renderGraph(){
       {selector:'edge.gdim',style:{'opacity':.07}},
       {selector:'.pathsel',style:{'opacity':1,'z-index':30}},
       {selector:'edge.pathsel',style:{'width':4}},
-      {selector:'node.pathsel',style:{'border-width':3.5,'border-color':css('--scanner')}},
+      {selector:'node.pathsel',style:{'border-width':3.5,'border-color':css('--accent')}},
       {selector:'.pathdim',style:{'opacity':.08}},
       /* 소스별 선 스타일 */
       {selector:'edge[src="human"]',style:{'line-style':'solid','taxi-turn':'38px'}},
@@ -671,7 +671,7 @@ function applyView(view){
   });
   const hidden=GRAPH_HIDDEN?` · 가독성을 위해 ${GRAPH_HIDDEN}개 노드는 생략됨(전체는 매트릭스/파싱 결과에서 확인)`:' ';
   setHint((view==='source'
-    ? '실선=사람, 파선=스캐너, 점선=LLM. 같은 대상에 여러 선이 겹치면 여러 소스가 발견한 것. 한 줄만 있으면 나머지는 놓친 것.'
+    ? '파랑·실선·H=사람, 빨강·파선·S=스캐너, 검정·점선·L=LLM. 같은 대상의 평행선은 여러 소스가 발견한 것. 한 줄만 있으면 나머지는 놓친 것.'
     : '판정 색으로 표시. 앰버=의심(BOLA 후보). 같은 대상에 색이 다른 선이 겹치면 소스 간 판정 불일치.')+hidden);
 }
 function applyFilter(){
@@ -767,7 +767,7 @@ function showEntityNode(node){
     ownerEditor+
     `<div class="field"><div class="lbl">소스별 실제 관측</div>${sourceRows}</div>`+
     `<div class="field"><div class="lbl">연결된 API</div><div class="val">${operations.slice(0,20).map(esc).join('<br>')||'없음'}${operations.length>20?'<br>… '+(operations.length-20)+'개 더 있음':''}</div></div>`+
-    `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--scanner);width:9px;height:9px;border-radius:50%"></span>선택 경로 강조</div><p>현재 노드와 직접 연결된 요청자·객체·API 경로만 강조했습니다. 배경을 누르면 전체 그래프로 돌아갑니다.</p></div>`;
+    `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--accent);width:9px;height:9px;border-radius:50%"></span>선택 경로 강조</div><p>현재 노드와 직접 연결된 요청자·객체·API 경로만 강조했습니다. 배경을 누르면 전체 그래프로 돌아갑니다.</p></div>`;
   if(type==='resource')document.getElementById('ownerSave').onclick=async()=>{
     const button=document.getElementById('ownerSave'),identity=document.getElementById('ownerIdentity').value;button.disabled=true;
     try{const response=await fetch('/api/owner',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({resource:id,identity})});const data=await response.json();if(!response.ok)throw new Error(data.message||'소유자 저장 실패');SERVER_REVISION=-1;await syncExtension();const refreshed=cy&&cy.getElementById('R:'+id);if(refreshed&&refreshed.length)showEntityNode(refreshed);const message=document.getElementById('ownerMessage');if(message)message.textContent=identity?'확정했습니다.':'미확정으로 변경했습니다.';}

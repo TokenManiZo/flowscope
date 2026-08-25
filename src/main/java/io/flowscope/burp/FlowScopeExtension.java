@@ -322,6 +322,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void capture(HttpRequest req, int status, PortProfile profile,
                          String respBody, String respText, String location, String responseContentType) {
+        if (!ActiveTrafficGuard.allowsCapture(scope, req.url())) return;
         RequestRecord rec = recordFrom(req, status, profile, respBody, respText, location, responseContentType,
                 System.currentTimeMillis(), true, null);
 

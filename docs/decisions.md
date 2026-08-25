@@ -560,6 +560,20 @@
 - **한계:** Fetch Metadata와 MIME은 누락·오표기될 수 있고 business API와 navigation/asset의 형태가 겹칠 수 있다. 따라서 오탐·미탐 0을 보장하지 않으며, 애매한 관측은 `REVIEW`로 남기는 것이 의도된 결과다.
 - **상태:** 베타 구현·자동 회귀·standalone UI 검증 완료. 실제 다양한 대상의 분류 품질은 blind benchmark와 운영 표본으로 측정해야 함.
 
+## D-060 · HUMAN 브라우징과 Evidence 범위 = 이동 허용, 저장은 exact scope
+- **문제:** SCANNER/LLM만 active send gate를 거치고 HUMAN response capture에는 scope 검사가 없어서, 진단 scope 입력이 실패하거나 비어 있을 때 사용자가 잠깐 방문한 네이버 같은 외부 사이트가 FlowScope 신원·그래프에 섞였다.
+- **결정:** HUMAN의 일반 브라우저 이동은 Burp에서 차단하지 않는다. 대신 공통 `capture()` 진입에서 source와 무관하게 현재 exact scope를 다시 검사하고 범위 밖 응답은 RequestRecord로 만들기 전에 무시한다. 비프록시 Burp tool capture도 같은 경로를 사용한다. Proxy history/XML import는 기존 scope retention을 유지한다.
+- **기각:** HUMAN 범위 밖 요청을 프록시에서 drop하면 진단 중 문서·로그인 보조 이동까지 브라우저가 망가진다. 범위 밖 데이터를 저장한 뒤 UI에서만 숨기면 신원·후보·프로젝트와 Judge 입력이 이미 오염될 수 있다. scope 적용 시 기존 Evidence를 자동 삭제하면 사용자의 수집물이 예고 없이 사라지므로 수행하지 않는다.
+- **운영:** 수정 전 또는 scope 적용 실패 중 이미 들어온 범위 밖 Evidence는 사용자가 `수집 초기화`로 한 번 지운다. 이후 `http://127.0.0.1:8888/`처럼 유효한 scope를 먼저 적용한다.
+- **상태:** 구현·회귀 완료, 현재 JAR의 Burp 실수집 재확인 필요.
+
+## D-061 · source 시각 문법 = 파랑/빨강/검정 + 선형 + H/S/L
+- **문제:** source palette가 HUMAN 파랑, SCANNER 청록, LLM 보라였고 SCANNER/LLM 색 변수가 일반 버튼·포커스·선택 상태에도 재사용됐다. 색만 바꾸면 스캐너와 무관한 UI까지 빨개지며, 기존 `B/Z/L` 약어는 일반 HUMAN/SCANNER source 축을 Browser/ZAP으로 축소해 `OTHER_SCANNER`와 맞지 않았다.
+- **결정:** source view를 HUMAN=`#2563EB` 파랑·실선·H, SCANNER=`#DC2626` 빨강·파선·S, LLM=`#111827` 검정·점선·L로 고정한다. 동일 관계의 source edge는 기존의 서로 다른 taxi turn으로 평행 분리하고, 색을 보지 못해도 선형과 H/S/L로 식별할 수 있게 한다. 일반 조작은 별도 `--accent`를 사용하고 authorization verdict palette는 별도 축으로 유지한다.
+- **기각:** 세 source를 색만 다른 겹친 실선으로 그리면 위쪽 edge가 아래 edge를 가리고 색각·흑백 환경에서 출처가 사라진다. 반대로 source마다 완전히 별도 그래프만 제공하면 3-way 중복·누락을 한 좌표에서 비교하는 제품 목적이 약해지므로 필터와 평행 overlay를 유지한다.
+- **검증:** Web 응답 계약에서 세 CSS token과 H/S/L 약어를 고정하고, 정적 검색으로 source 변수가 일반 UI accent에 남지 않는지 확인한 뒤 전체 Maven 검증과 브라우저 렌더를 수행한다.
+- **상태:** 구현·자동 회귀·1280×720 standalone 렌더 검증 완료. 실제 Burp Web UI 재로드 확인은 수동 gate.
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

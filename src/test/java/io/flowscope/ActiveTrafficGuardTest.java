@@ -33,4 +33,13 @@ final class ActiveTrafficGuardTest {
         assertFalse(ActiveTrafficGuard.allows(Source.SCANNER, empty, "https://api.example.test/v1"));
         assertFalse(ActiveTrafficGuard.allows(Source.LLM, empty, "https://api.example.test/v1"));
     }
+
+    @Test
+    void human_브라우징은_막지_않지만_저장은_exact_scope만_허용한다() {
+        assertTrue(ActiveTrafficGuard.allows(Source.HUMAN, scope, "https://outside.example/"));
+        assertFalse(ActiveTrafficGuard.allowsCapture(scope, "https://outside.example/"));
+        assertTrue(ActiveTrafficGuard.allowsCapture(scope, "https://api.example.test/v1/orders"));
+        assertFalse(ActiveTrafficGuard.allowsCapture(ScopePolicy.parse(""),
+                "https://api.example.test/v1/orders"));
+    }
 }

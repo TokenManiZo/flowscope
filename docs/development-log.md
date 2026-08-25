@@ -6,6 +6,34 @@
 
 현재 작업 디렉터리는 사용자 승인으로 로컬 Git `main` 저장소가 됐고 remote는 연결하지 않았다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-25 · source 색상과 일반 UI accent 분리
+
+**개발·수정**
+
+- source palette를 HUMAN 파랑, SCANNER 빨강, LLM 검정으로 변경하고 실선/파선/점선과 H/S/L 약어를 함께 유지했다.
+- source 색을 재사용하던 일반 버튼, 포커스, 선택, 계정 카드, 그룹 노드를 별도 중립 accent로 분리했다.
+- 정의되지 않은 `--blue`를 사용하던 Evidence class filter의 accent를 동일한 일반 accent로 바로잡았다.
+
+**왜**
+
+색만 바꾸면 SCANNER와 무관한 일반 UI까지 빨강으로 변하고, 완전히 겹친 색 선은 아래 source를 가린다. source 의미는 색·선형·문자로 중복 표현하고 일반 조작과 authorization verdict는 별도 시각 축으로 유지해야 한다.
+
+**주요 파일**
+
+- `src/main/resources/web/index.html`
+- `src/test/java/io/flowscope/FlowScopeWebServerTest.java`
+- `README.md`, `CHANGELOG.md`
+- `docs/architecture.md`, `docs/decisions.md`, `docs/ui-product-rationale.md`
+
+**검증 및 남은 gate**
+
+- Web 응답에 정확한 palette와 H/S/L 계약이 포함되는지 자동 회귀를 추가했다.
+- `mvn clean verify`: 124 tests, 실패·오류·skip 0.
+- 정적 검사에서 source 변수는 업로드·필터·범례·단일-source 노드·source edge에만 남고 일반 조작은 `--accent`를 사용함을 확인했다. 계정별 서버 palette는 source가 아닌 identity 표시 데이터이므로 변경하지 않았다.
+- 1280×720 standalone 렌더에서 범례와 그래프의 파랑/빨강/검정 및 실선/파선/점선, H/S/L 노드 표기가 일치했다. body scroll 크기는 viewport와 같았고 클라이언트 오류는 0건이었다.
+- fat JAR: 2,814,714 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `e760799758e73188888f1944ae08ab17c6d535e82fd6eec9cc41dd7e365b13ba`.
+- 실제 Burp에서 현재 JAR을 다시 로드해 Web UI를 여는 수동 gate는 남아 있다.
+
 ## 2026-08-25 · 1.2.0-beta.3 · 벤치마크 전 제품화
 
 ### 목표와 성공 조건
@@ -368,13 +396,13 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 ### 검증
 
 - 첫 `mvn clean verify`는 UI 제목을 `트래픽 분류`에서 `Evidence 표시`로 바꾼 뒤 Web 회귀가 이전 문자열을 기대해 실패했다. 제품 계약에 맞춰 assertion을 수정했다. 이어 사용자 INCLUDE가 non-discovery phase를 우회하지 못하는 회귀를 추가했고 최종 전체 결과는 아래에 기록했다.
-- 최종 `mvn clean verify`: 123 tests, 실패·오류·skip 0.
+- 이 변경 직후 `mvn clean verify`: 123 tests, 실패·오류·skip 0. 이후 D-060 회귀가 추가됐으며 현재 전체 결과는 아래 후속 기록과 `beta-validation.md`를 따른다.
 - classifier 회귀: misleading extension, private image API, true preflight/normal OPTIONS, telemetry 명칭, 보안 신호 우선, user override, no-response/non-discovery 보존을 확인했다.
 - identity 회귀: 1,000 rotating cookies가 한 서비스의 `UNRESOLVED` graph identity로 안정화되고 명시 binding은 계정으로 분리됨을 확인했다.
 - persistence/MCP/Web 회귀: classification/auth/override/version round trip과 captured/coverage/excluded/review 통계를 확인했다.
 - Explorer 격리 회귀: independent mode에서 HUMAN의 raw·coverage source count가 모두 없고 전체 통계도 현재 LLM run 1건만 반환하는 것을 확인했다.
 - standalone local browser: 1024×768에서 가로 overflow와 ellipsis 잘림 0, 여섯 mode 전환, quick-start, 파싱 행→Evidence 상세, 분류 override 조작 노출, console error 0을 확인했다.
-- 최종 fat JAR: 2,814,516 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `64d9079759af25bc4df09ec0856fc3b5d61cee620b69d4053f37f0d965d8d354`.
+- 이 변경 직후 fat JAR: 2,814,516 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `64d9079759af25bc4df09ec0856fc3b5d61cee620b69d4053f37f0d965d8d354`. 현재 산출물은 후속 D-060 기록을 따른다.
 
 ### 남은 한계·다음 gate
 
@@ -382,6 +410,29 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 - broker의 raw credential exact match는 false merge보다 miss를 택한다. MFA/WebAuthn/device binding과 application-specific refresh는 수동 재로그인이 필요하다.
 - 현재 standalone QA는 Burp Community 실제 capture/session/ZAP/MCP workflow를 대신하지 않는다. blind crAPI 전에 기존 수동 beta gate를 완료해야 한다.
 - D-058의 `original-*` JAR 노출과 D-057의 empty-state progressive disclosure는 이번 변경 범위 밖의 열린 제품 부채다.
+
+## 2026-08-25 · HUMAN 범위 밖 Evidence 혼입 수정
+
+### 목표와 성공 조건
+
+- HUMAN은 Burp 브라우저로 범위 밖 사이트를 방문할 수 있지만 FlowScope에는 현재 exact scope 왕복만 저장한다.
+- scope가 비어 있거나 잘못된 경우 HUMAN/SCANNER/LLM 어느 source도 Evidence를 만들지 않는다.
+
+### 개발·수정과 이유
+
+사용자 crAPI 점검 중 scope 입력이 실패한 상태에서 네이버를 한 번 방문하자 네이버 요청이 FlowScope 그래프에 들어오는 실제 결함을 확인했다. `ActiveTrafficGuard`의 송신 gate는 의도적으로 SCANNER/LLM에만 적용됐지만, 공통 `capture()`에는 별도 scope 검사가 없었다. HUMAN 브라우저 이동 자체를 막지 않으면서 `capture()`가 RequestRecord를 만들기 전에 모든 source의 URL을 exact scope로 검사하도록 수정했다.
+
+### 영향 파일
+
+- `core/ActiveTrafficGuard`, `burp/FlowScopeExtension`, `ActiveTrafficGuardTest`
+- README, architecture, decisions(D-060), changelog, beta validation, 이 개발 기록
+
+### 검증과 남은 gate
+
+- 회귀는 HUMAN active navigation이 범위 밖에서도 허용되는 기존 계약과, 같은 URL의 Evidence capture가 거부되는 새 계약을 동시에 검사한다. 빈 scope capture도 거부한다.
+- 이 작업 직후 `mvn clean verify`: 124 tests, 실패·오류·skip 0. 당시 fat JAR은 2,814,634 bytes, 1,295 entries, ZIP 무결성 통과, SHA-256 `1a910883f07c38b2605f343c7fc2209740ebc41479961df8291f3ae6c4c074d8`였다. 현재 산출물은 위 source palette 작업 기록과 `beta-validation.md`를 따른다.
+- 수정 전 이미 저장된 범위 밖 Evidence를 자동 삭제하지 않는다. 사용자는 새 JAR 로드 뒤 `수집 초기화`를 한 번 수행해야 한다.
+- 전체 자동 회귀와 산출물 정보는 `beta-validation.md`에 기록한다. 실제 Burp 내장 브라우저에서 crAPI와 외부 사이트를 오가며 재확인하는 수동 gate는 남아 있다.
 
 ## 이후 작업 기록 형식
 

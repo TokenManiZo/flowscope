@@ -51,6 +51,13 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("<h1>FlowScope</h1>"));
         assertTrue(index.body().contains("HUMAN pass 시작"));
         assertTrue(index.body().contains("Evidence 표시"));
+        assertTrue(index.body().contains("--human:#2563EB; --scanner:#DC2626; --llm:#111827;"));
+        assertTrue(index.body().contains("human:{n:'사람',c:'--human',ab:'H'}"));
+        assertTrue(index.body().contains("scanner:{n:'스캐너',c:'--scanner',ab:'S'}"));
+        assertTrue(index.body().contains("llm:{n:'LLM',c:'--llm',ab:'L'}"));
+        assertTrue(index.body().contains("사람 H (파랑·실선)"));
+        assertTrue(index.body().contains("스캐너 S (빨강·파선)"));
+        assertTrue(index.body().contains("LLM L (검정·점선)"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());
