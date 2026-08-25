@@ -8,6 +8,7 @@ The repository root [`README.md`](../README.md) is the canonical installation an
 - [`product-overview.md`](product-overview.md) — current product objective and research scope.
 - [`research.md`](research.md) — related work, evidence strength, and explicit limitations.
 - [`graph-ux.md`](graph-ux.md) — graph interaction research and the rationale behind the current visual model.
+- [`ui-product-rationale.md`](ui-product-rationale.md) — current screen-by-screen product rationale, presentation narrative, claims, and known UX debts.
 - [`product-development-plan.md`](product-development-plan.md) — reviewed 1.2 implementation and verification plan.
 - [`proposal.md`](proposal.md) — historical research proposal; it does not override the current product overview.
 - [`specification/functional-spec.md`](specification/functional-spec.md) — original F-01–F-24 requirements and reference images; current behavior is defined by the architecture and code.
@@ -20,6 +21,7 @@ Office/PDF review packages, obsolete prototype copies, build outputs, and machin
 - Update `architecture.md` when the current module/data flow or invariant changes.
 - Append to `decisions.md` when choosing among material alternatives or changing a security boundary.
 - Append to `development-log.md` for every code or behavior change, including the reason, affected files, verification, and remaining limitation.
+- Update `ui-product-rationale.md` when screen purpose, onboarding order, presentation narrative, or permitted product claims change.
 - Update `CHANGELOG.md` for release-facing changes and `beta-validation.md` only with checks actually performed on the named artifact.
 - Update `product-development-plan.md` when a phase or gate changes state.
 

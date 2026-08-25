@@ -74,6 +74,6 @@
 
 - P0~P3: 코드 구현 완료. Web UI 정본화, exact-scope 수집 차단, 구조적 마스킹, memory-only session broker, 통제 LLM 실행, Explorer 서버 격리, dataset lock, 시스템 ZAP baseline, 서버 검증 LLM verdict를 구현했다.
 - P4 브라우저 QA: beta.3 standalone UI에서 완료. 1500×900, 900×700, 600×800에서 quick-start, 계정·세션, Matrix의 페이지형 Request/Response 지연 로드와 반응형 레이아웃을 확인했고 콘솔 오류는 없었다. Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
-- P4 Burp Community QA: beta.3 산출물 기준 미완료. 이전 산출물에서 load/unload, listener 분류, MCP/Web, Repeater 초안, project round trip smoke를 수행한 기록은 있으나 memory-only broker, controlled executor, dataset lock/Judge, 시스템 ZAP baseline이 추가된 beta.3의 통과로 소급하지 않는다.
-- beta.3 수동 gate: 실제 Burp Community load/unload·브라우저 로그인 캡처·세션 주입·통제 LLM 요청·ZAP 2.17 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
+- P4 Burp Community QA: beta.3의 올바른 fat JAR 신규 load만 Community 2026.7.3 사용자 환경에서 통과했다. 같은 target 폴더의 `original-*.jar` 선택 실패로 배포 산출물 혼동을 발견했다. unload, suite tab/Web UI, listener 분류, session broker, controlled executor, Repeater, project round trip, 시스템 ZAP/Judge는 아직 통과 처리하지 않는다.
+- beta.3 수동 gate: 실제 Burp Community unload·suite tab/Web UI·브라우저 로그인 캡처·세션 주입·통제 LLM 요청·ZAP 2.17 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. packaging 단일화, 빈 상태 onboarding, 파싱 Evidence 진입도 벤치마크 전 수정·재검증한다. Codex project-scoped MCP discovery는 신뢰 프로젝트 조건에서 확인했지만 실제 FlowScope 연결은 전체 workflow gate에 남는다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
 - P5 crAPI 블라인드 벤치마크: 사용자 검토 전까지 보류한다. 정답·공격 절차·라벨을 코드, 프롬프트, 실행 컨텍스트에 넣지 않는다.

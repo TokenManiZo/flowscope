@@ -1,6 +1,6 @@
-# FlowScope 그래프 UX — 조사 결과 & 적용 계획
+# FlowScope 초기 그래프 UX 조사 기록 — Swing/JGraphX
 
-> **상태:** 아래 문서는 초기 Swing/JGraphX 조사 기록이다. 제품 UI 구현 선택은 D-048에 의해 번들 Cytoscape.js localhost Web 작업면으로 대체되었다. 계층 방향, source/verdict 채널 분리, focus+context, 필터, 단계적 펼치기 원칙은 계속 유효하다.
+> **상태:** 아래 문서는 초기 Swing/JGraphX 조사 기록이다. 제품 UI 구현 선택은 D-048에 의해 번들 Cytoscape.js localhost Web 작업면으로 대체되었다. 계층 방향, source/verdict 채널 분리, focus+context, 필터, 단계적 펼치기 원칙만 계속 유효하다. 현재 화면별 근거와 발표 설명은 `ui-product-rationale.md`를 따른다.
 
 > OSS·정보시각화 문헌 5갈래 조사 종합. 우리 제약(단일 Java Burp 확장 + JGraphX)을 최우선 현실 기준으로.
 

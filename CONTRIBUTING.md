@@ -2,7 +2,7 @@
 
 FlowScope accepts focused bug fixes and features that preserve its evidence and provenance model.
 
-1. Read `AGENTS.md`, `docs/architecture.md`, and `docs/decisions.md`.
+1. Read `AGENTS.md`, `docs/architecture.md`, and `docs/decisions.md`. For UI, onboarding, copy, or presentation changes, also read `docs/ui-product-rationale.md`.
 2. Create a small change with a regression test. Do not refactor unrelated code.
 3. Append the work to `docs/development-log.md`: what changed, why, affected files, verification, and remaining limits.
 4. Update only the documentation whose contract is affected: README for users, architecture for current structure, decisions for material choices, changelog for release-visible changes, validation for checks actually performed, and the product plan for gate status.

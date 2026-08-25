@@ -29,11 +29,26 @@
 
 Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Community의 실제 suite tab 동작을 대신하지 않는다.
 
+## 실제 사용자 확인
+
+- Burp Community 2026.7.3에서 올바른 fat JAR `target/flowscope-1.2.0-beta.3.jar`가 신규 load되는 것을 사용자가 확인했다.
+- 같은 `target/`에 생성된 thin intermediate `original-flowscope-1.2.0-beta.3.jar`를 먼저 선택했을 때 `Extension class is not a recognized type`으로 실패했다. 이는 확장 진입 코드 실패가 아니라 빠진 runtime dependency를 가진 중간 산출물 선택이었지만, 배포 폴더가 사용자를 오도한 실제 packaging UX 결함이다.
+- 올바른 JAR의 unload, FlowScope 탭 기능, Web UI 연결, 실제 트래픽 수집은 이 확인만으로 통과 처리하지 않는다.
+
+## 독립 clean-room 사전 감사와 후속 재검증
+
+사전 감사 전체는 완료 전에 중단됐으므로 최종 clean-room 통과로 부르지 않는다. 다만 아래 개별 항목은 중단 전 결과와 이후 직접 재검증 결과를 구분해 기록한다.
+
+- clean clone의 `mvn clean verify` 112 tests와 재생성 JAR SHA-256 동일성은 통과했다.
+- 중단 시점의 예비 보고에는 Codex MCP 자동 발견 실패가 포함됐으나, 공식 문서와 로컬 Codex CLI 0.147.0으로 다시 확인한 결과 신뢰된 `agent-workspace`에서 번들 `.codex/config.toml`의 `flowscope` 항목이 정상 발견됐다. 사용법에 신뢰 프로젝트 전제와 `codex mcp get flowscope` 확인 단계를 추가했다. 실제 서버 연결과 Explorer/Judge 완료는 아직 검증하지 않았다.
+- 파싱 결과 표에서 문서가 약속하던 stable Evidence ID와 상세 진입을 찾을 수 없었고 코드 대조에서도 현재 열이 source/identity/method/operation/resource/status로 제한됨을 확인했다.
+- Standalone 빈 상태가 분석 패널과 0 수치를 먼저 보여 신규 사용자에게 다음 행동을 충분히 안내하지 못했다.
+
 ## 아직 실환경에서 검증하지 않은 것
 
 다음은 구현과 자동 회귀는 끝났지만 beta.3 JAR로 실제 외부 프로그램을 연결해 확인하지 않았다.
 
-- Burp Community에서 beta.3 JAR의 신규 load/unload와 실제 브라우저 트래픽 수집
+- Burp Community에서 올바른 beta.3 JAR의 unload, suite tab/Web UI 연결과 실제 브라우저 트래픽 수집
 - 실제 사이트 로그인으로 얻은 세션을 ZAP·LLM controlled request에 주입하고 회전·만료·재인증하는 전체 과정
 - ZAP 2.17 환경에서 deterministic baseline 전체 체인의 실제 수행과 native alert 수집
 - 구독형 Codex 또는 Claude가 MCP로 독립 Explorer pass와 lock 이후 Judge pass를 끝까지 수행하는 과정

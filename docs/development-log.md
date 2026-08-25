@@ -274,6 +274,64 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 
 자세한 실행 검증 경계는 `beta-validation.md`, 설계 결정은 `decisions.md`의 D-052~D-055를 따른다.
 
+## 2026-08-25 · 실제 사용자 인수검사와 발표 근거 문서화
+
+### 목표와 성공 조건
+
+- 구현자가 아는 정상 경로가 아니라 처음 설치하는 사용자의 실제 행동으로 beta.3의 설치·온보딩 실패를 찾는다.
+- 각 UI 요소를 `사용자 질문 → 설계 이유 → 기각 방식 → 오탐·미탐 영향 → 발표 문장`으로 설명할 정본을 만든다.
+- 실제 확인한 항목과 아직 실행하지 않은 항목을 문서에서 분리한다.
+
+### 관측·수정
+
+- 사용자가 Burp Community 2026.7.3에 `original-flowscope-1.2.0-beta.3.jar`를 추가했을 때 `Extension class is not a recognized type` 오류를 실제 관측했다.
+- JAR 내부 진입점, Java 21 class version, 설치된 Burp와 Maven Montoya API 2026.7 class digest, 실제 Burp loader의 `BurpExtension` 판별 조건을 대조했다. 진입 클래스는 올바른 구현체였고, 사용자가 `target/flowscope-1.2.0-beta.3.jar`를 선택하자 신규 load가 통과했다.
+- 원인은 runtime dependency가 없는 Maven Shade의 `original-*` intermediate를 사용자가 배포물로 오인한 것이었다. 사용자의 잘못으로 닫지 않고, 같은 폴더에 선택 불가능해야 할 유사 JAR을 노출한 packaging UX 결함으로 D-058에 기록했다.
+- 실제 빈 Web 화면의 관측 범위·source filter·권한·사용자 그래프·3-way gap·그래프 조작이 각각 답하는 질문과 안전 이유를 `ui-product-rationale.md`에 통합했다.
+- README/architecture가 파싱 결과에서 stable Evidence ID를 볼 수 있다고 했지만 실제 beta.3 raw table에는 해당 열과 상세 동작이 없음을 확인해 문서를 현재 동작으로 수정하고 UI 부채로 올렸다.
+- 독립 clean-room 사전 감사에서 Codex MCP 설정 자동 발견 실패가 예비 보고됐으나 감사 자체는 사용자 요청으로 중단됐다. 후속으로 공식 Codex 문서와 로컬 CLI 0.147.0을 대조했고, 신뢰된 `agent-workspace`에서 프로젝트 설정의 `flowscope` 항목이 실제 발견되는 것을 확인했다. 따라서 제품 결함으로 확정하지 않고 신뢰 전제와 확인 명령이 빠진 onboarding 문서 문제로 교정했다. 빈 상태 onboarding 혼란은 열린 UX 결함으로 유지한다.
+
+### 왜
+
+112개 자동 테스트와 구현자 중심 standalone 확인은 실제 설치 파일 선택, 처음 보는 용어, 문서와 화면 불일치를 잡지 못했다. 제품 성공 기준을 “코드가 존재한다”가 아니라 “처음 받은 사용자가 올바른 다음 행동을 알고 전체 흐름을 완료한다”로 교정해야 했다. 발표에서도 기능 나열보다 각 선택이 막는 오탐·미탐·신뢰 문제를 설명해야 한다.
+
+### 영향 파일
+
+- `docs/ui-product-rationale.md`
+- `docs/README.md`
+- `docs/architecture.md`
+- `docs/graph-ux.md`
+- `docs/product-overview.md`
+- `docs/decisions.md`
+- `docs/beta-validation.md`
+- `docs/product-development-plan.md`
+- `docs/development-log.md`
+- `README.md`
+- `agent-workspace/README.md`
+- `CHANGELOG.md`
+- `AGENTS.md`
+- `CLAUDE.md`
+- `CONTRIBUTING.md`
+
+### 검증
+
+- 실제 사용자 Burp load: 올바른 fat JAR만 통과.
+- entry class: Java 21, 설치된 Burp 2026.7.3의 `BurpExtension`과 assignable 및 public constructor 생성 확인.
+- Maven/Burp `BurpExtension`과 `RequestOptions` class digest 일치 확인.
+- 실제 Web raw table 코드의 7개 열을 대조해 Evidence ID 미노출 확인.
+- 공식 Codex 문서의 trusted-project 조건을 대조하고 `agent-workspace`에서 `codex mcp get flowscope`로 project-scoped MCP discovery 확인.
+- 저장소 Markdown 24개 전수 로컬 링크 검사: 누락 0.
+- `git diff --check`: 통과.
+- Java·Web 제품 코드는 변경하지 않았으므로 기존 beta.3 자동 테스트 결과를 새로 수행한 것처럼 기록하지 않는다. 배포 JAR과 SHA-256도 변경되지 않았다.
+
+### 남은 한계·다음 gate
+
+- Maven 공개 install surface에서 `original-*` JAR을 제거하거나 내부 경로로 격리해야 한다.
+- 빈 상태 progressive disclosure와 ADMIN 선택성 문구를 UI에 구현해야 한다.
+- 파싱 결과에 Evidence ID/상세 진입을 구현하거나 해당 화면의 역할을 다시 결정해야 한다.
+- Codex project-scoped MCP discovery는 확인했지만 실행 중인 FlowScope MCP 연결과 Explorer/Judge 전체 과정은 검증해야 한다.
+- 올바른 beta.3 JAR의 Web UI, HUMAN, broker, ZAP, Explorer/Judge, save/load, unload는 계속 미검증이다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

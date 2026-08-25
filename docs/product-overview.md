@@ -35,4 +35,4 @@
 - **O3. 타깃 범위:** 일반 API 외 "AI 서비스" 취약점 분석의 구체 대상·방법.
 
 ---
-*이 개요는 목표(what/why)를 고정한다. 구현 방식(how)은 `architecture.md`, 결정 근거는 `decisions.md`, 문헌·한계는 `research.md` 참조.*
+*이 개요는 목표(what/why)를 고정한다. 구현 방식(how)은 `architecture.md`, 결정 근거는 `decisions.md`, 화면·발표 논리는 `ui-product-rationale.md`, 문헌·한계는 `research.md`를 참조한다.*

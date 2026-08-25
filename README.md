@@ -41,19 +41,19 @@ FlowScope does not know the complete black-box attack surface, so it never repor
 mvn clean verify
 ```
 
-Load `target/flowscope-1.2.0-beta.3.jar` in **Burp → Extensions → Installed → Add → Java**.
+Load **only** `target/flowscope-1.2.0-beta.3.jar` in **Burp → Extensions → Installed → Add → Java**. Maven Shade also creates `target/original-flowscope-1.2.0-beta.3.jar`; that is an unbundled intermediate JAR and is not a Burp distribution. Loading it produces a generic `Extension class is not a recognized type` error. This confusing intermediate artifact is a recorded beta packaging issue and will be removed from the public install surface.
 
 ## Repository layout
 
 - [`src/main`](src/main) — Burp extension, analysis core, local Web workspace, MCP/ZAP integration, and bundled notices.
 - [`src/test`](src/test) — deterministic security, parser, analysis, persistence, MCP, and local-Web regression tests.
 - [`agent-workspace`](agent-workspace) — ready-to-copy Codex/Claude MCP configuration and Explorer/Judge instructions.
-- [`docs`](docs) — current architecture, decisions, detailed development log, verification boundary, product scope, research, and the original functional specification.
+- [`docs`](docs) — current architecture, decisions, detailed development log, UI/product presentation rationale, verification boundary, product scope, research, and the original functional specification.
 - [`.github`](.github) — root-level Maven CI and dependency updates.
 
 Generated files live only under `target/`. Local review packages and machine-specific configuration belong under the ignored `.local/` directory and are not part of the public repository.
 
-The exact beta test boundary and remaining target-phase gates are recorded in [`docs/beta-validation.md`](docs/beta-validation.md). A work-by-work account of what was developed, changed, why it changed, affected files, and verification is maintained in [`docs/development-log.md`](docs/development-log.md).
+The exact beta test boundary and remaining target-phase gates are recorded in [`docs/beta-validation.md`](docs/beta-validation.md). A work-by-work account of what was developed, changed, why it changed, affected files, and verification is maintained in [`docs/development-log.md`](docs/development-log.md). Screen-by-screen design and presentation rationale is in [`docs/ui-product-rationale.md`](docs/ui-product-rationale.md).
 
 Create the HUMAN and SCANNER Burp proxy listeners. Montoya cannot create them for the extension. The LLM listener is an optional compatibility fallback; the product workflow uses the controlled MCP executor.
 
@@ -93,8 +93,11 @@ For unattended local setup, FlowScope reads `~/.flowscope/mcp-token` when that o
 ```bash
 cd agent-workspace
 export FLOWSCOPE_MCP_TOKEN='copy-the-value-shown-in-burp'
+codex mcp get flowscope
 codex     # or: claude
 ```
+
+Trust the repository when Codex asks before using the project-scoped configuration; Codex ignores `.codex/config.toml` for untrusted projects. `codex mcp get flowscope` must show the local URL and `FLOWSCOPE_MCP_TOKEN` before the run. This check verifies configuration discovery, not that the Burp-hosted MCP server is running or that Explorer/Judge has completed.
 
 The directory contains:
 
@@ -103,7 +106,7 @@ The directory contains:
 - `AGENTS.md` and `CLAUDE.md` safety/provenance rules.
 - `prompts/explorer.md` and `prompts/judge.md` repeatable workflows (`coach.md` is a compatibility pointer).
 
-Codex clients share MCP configuration through `config.toml` and support Streamable HTTP Bearer authentication; see the [official Codex MCP guide](https://learn.chatgpt.com/docs/extend/mcp). Claude Code supports an HTTP MCP server with an Authorization header; see the [official Claude Code MCP guide](https://docs.anthropic.com/en/docs/claude-code/mcp).
+Codex clients share MCP configuration through `config.toml` and support Streamable HTTP Bearer authentication; see the [official Codex MCP guide](https://developers.openai.com/codex/mcp). Claude Code supports an HTTP MCP server with an Authorization header; see the [official Claude Code MCP guide](https://docs.anthropic.com/en/docs/claude-code/mcp).
 
 Do not export a global `HTTP_PROXY` or `HTTPS_PROXY`: that can capture model-provider authentication/control traffic. The supplied agent instructions prohibit direct target networking and use the local controlled MCP tool instead.
 
@@ -146,7 +149,7 @@ The ZAP API endpoint is accepted only on a loopback address. ZAP itself must be 
 - **흐름 순서** — response-to-request ID/token dependencies recovered from timestamped observations.
 - **시나리오** — deterministic BOLA/BFLA candidates and gaps alongside non-final Judge assessments and server-validated final verdicts.
 - **시나리오 감사·오버라이드** — a human audit surface with Evidence-bound status and masked notes; it does not bypass validation checks.
-- **파싱 결과** — masked record metadata with stable Evidence IDs.
+- **파싱 결과** — masked source, identity, method, normalized operation, resource, and status rows. The beta.3 table does not yet expose the stable Evidence ID or a direct detail action; that mismatch is an open UI issue.
 - **계정·세션** — a full-width workspace with secret-free account registration, explicit HUMAN login capture, safe broker status, discovered-session comparison, binding/unbinding, reauthentication, memory revocation, and account removal.
 - **Right detail** — per-source verdicts and on-demand masked Request/Response for the selected API, plus a safe Burp Repeater draft handoff. The polling snapshot never transfers every stored message body.
 

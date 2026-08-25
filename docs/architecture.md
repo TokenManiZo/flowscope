@@ -2,7 +2,7 @@
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
-사람·스캐너·LLM이 만든 실제 API 점검 트래픽을 하나의 신원 인지 그래프와 매트릭스에 정렬하고, BOLA/IDOR·BFLA 후보를 Evidence로 검증하는 Burp Suite 확장이다. `docs/specification/functional-spec.md`가 WHAT, 이 문서가 HOW, `decisions.md`가 WHY의 정본이다.
+사람·스캐너·LLM이 만든 실제 API 점검 트래픽을 하나의 신원 인지 그래프와 매트릭스에 정렬하고, BOLA/IDOR·BFLA 후보를 Evidence로 검증하는 Burp Suite 확장이다. `docs/specification/functional-spec.md`가 WHAT, 이 문서가 HOW, `decisions.md`가 WHY의 정본이다. 화면별 사용자 질문과 발표 논리는 `ui-product-rationale.md`가 정본이다.
 
 ## 1. 제품 목표와 신뢰 경계
 
@@ -126,11 +126,13 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 | 판정 매트릭스 | identity/role × operation × resource의 소스별 판정과 3종 갭 |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용된 실제 데이터 의존성 |
 | 시나리오 | BOLA/BFLA 규칙 후보·갭·LLM assessment·서버 검증 최종 verdict와 사람 감사 |
-| 파싱 결과 | 마스킹된 관측·실행 provenance·안정 Evidence ID |
+| 파싱 결과 | 마스킹된 source/identity/method/operation/resource/status 관측 행. beta.3 표에는 stable Evidence ID와 직접 상세 진입이 아직 노출되지 않음 |
 | 계정·세션 | 전체 폭 계정 등록, HUMAN 로그인 캡처, broker 상태/재인증/폐기, 발견 지문 비교와 명시 연결·해제 |
 | 빠른 시작 | HUMAN run, 결정론적 ZAP 대상·계정·단계·수집/Alert 상태, 독립 Explorer와 잠금 후 Judge 순서 |
 | 공통 우측 | 선택 API의 지연 로드된 마스킹 Request/Response와 Repeater 미전송 초안 |
 | Burp 제어판 | exact scope, 세 레인 포트, Web UI 열기, MCP 연결 복사, Proxy history, project I/O, sample/reset |
+
+빈 데이터에서도 beta.3는 위 분석 패널 대부분을 그대로 노출한다. 실제 사용자 확인에서 첫 행동보다 전문 용어와 0 상태가 먼저 보여 혼란을 주는 것이 확인됐다. 이는 분석 모델의 이유가 아니라 미완료 UX 부채이며, 데이터가 없을 때는 `scope → 계정 로그인/HUMAN → ZAP → Explorer/Judge`를 우선하는 progressive disclosure로 수정해야 한다(D-057).
 
 ## 6. 모듈 매핑
 

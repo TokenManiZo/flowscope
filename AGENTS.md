@@ -76,7 +76,7 @@ These guidelines are working when diffs contain fewer unnecessary changes, imple
 - Active traffic must be exact-scope guarded. ZAP Active Scan requires an explicit Burp confirmation.
 - Black-box coverage has no knowable denominator; never display a completion percentage.
 
-Read `docs/architecture.md`, `docs/decisions.md`, and `README.md` before changing architecture. Append architecture decisions to `docs/decisions.md`.
+Read `docs/architecture.md`, `docs/decisions.md`, and `README.md` before changing architecture. Read `docs/ui-product-rationale.md` before changing UI labels, onboarding, graph/matrix behavior, or presentation claims. Append architecture decisions to `docs/decisions.md`.
 
 Build and test from the repository root with `mvn clean verify`.
 
@@ -98,5 +98,6 @@ Also update the document that owns the changed contract:
 - `CHANGELOG.md` for release-facing changes;
 - `docs/beta-validation.md` only for checks actually performed on the named artifact;
 - `docs/product-development-plan.md` for phase/gate state.
+- `docs/ui-product-rationale.md` for screen purpose, presentation narrative, and known UX debts.
 
 Do not mechanically edit historical research, proposals, or the original specification when they are unaffected. Do not claim inherited, planned, or assumed validation as completed. If Git is available, keep the implementation, regression test, and matching documentation in one focused commit.
