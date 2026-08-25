@@ -1,6 +1,6 @@
 # **AI-API 플로우 취약점 기능명세서**
 
-> 이 문서는 F-01~F-24의 원본 기능 요구와 참조 화면을 보존한다. 현재 제품 행동과 신뢰 경계의 정본은 루트 `README.md`, `docs/architecture.md`, `docs/decisions.md`다.
+> 이 문서는 F-01~F-24의 원본 기능 요구와 참조 화면을 보존한다. 현재 제품 행동과 신뢰 경계의 정본은 루트 `README.md`, `docs/ko/architecture.md`, `docs/ko/decisions.md`다.
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -857,4 +857,3 @@
 <p align="center">
   <img src="images/f24.png" style="width:5.23872in; max-width:100%; height:auto;" />
 </p>
-

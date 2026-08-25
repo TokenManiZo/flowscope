@@ -75,10 +75,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 런타임 보안 진단용 Claude 지침은 `agent-workspace/CLAUDE.md`에 별도로 둔다. 이 파일은 제품 개발 지침이며 진단 프롬프트가 아니다.
 
 ## 먼저 읽을 것
-- `docs/architecture.md` — 데이터 모델·파이프라인·모듈 계약 (어떻게)
-- `docs/decisions.md` — 모든 설계 결정 + 검토한 대안 + 기각 이유 (D-000~). **새 결정은 반드시 여기 append**
-- `docs/specification/functional-spec.md` — 기능명세서 F-01~F-24
-- `docs/ui-product-rationale.md` — 화면별 사용자 질문·설계 이유·발표 논리·현재 UX 부채
+- `docs/ko/architecture.md` — 데이터 모델·파이프라인·모듈 계약 (어떻게)
+- `docs/ko/decisions.md` — 모든 설계 결정 + 검토한 대안 + 기각 이유 (D-000~). **새 결정은 반드시 여기 append**
+- `docs/ko/specification/functional-spec.md` — 기능명세서 F-01~F-24
+- `docs/ko/ui-product-rationale.md` — 화면별 사용자 질문·설계 이유·발표 논리·현재 UX 부채
 - `README.md` — 사용자 설치·운영·신뢰 경계
 
 ## 핵심 용어 — 두 축은 직교한다 (D-001)
@@ -109,4 +109,4 @@ L0 그래프(수집+정규화+시각화, 오라클 불필요) → L1 IDOR 최소
 
 ## 변경 기록과 문서 동기화
 
-모든 코드·동작 변경은 같은 작업 단위에서 `docs/development-log.md`에 개발/수정 내용, 이유, 영향 파일, 회귀·최종 검증, 남은 한계를 기록한다. 사용자 동작은 `README.md`, 현재 구조는 `docs/architecture.md`, 설계 선택·기각 이유는 `docs/decisions.md`, 화면·발표 논리는 `docs/ui-product-rationale.md`, 릴리스 변경은 `CHANGELOG.md`, 실제 수행한 검증만 `docs/beta-validation.md`, 단계 변화는 `docs/product-development-plan.md`에 함께 반영한다. 관련 없는 역사 문서를 형식적으로 고치지 말고, 계획·추정·이전 산출물의 결과를 현재 검증처럼 기록하지 않는다. Git을 사용할 수 있으면 구현·회귀 테스트·관련 문서를 하나의 기능 단위 커밋에 포함한다.
+모든 코드·동작 변경은 같은 작업 단위에서 `docs/ko/development-log.md`에 개발/수정 내용, 이유, 영향 파일, 회귀·최종 검증, 남은 한계를 기록한다. 사용자 동작은 `README.md`, 현재 구조는 `docs/ko/architecture.md`, 설계 선택·기각 이유는 `docs/ko/decisions.md`, 화면·발표 논리는 `docs/ko/ui-product-rationale.md`, 릴리스 변경은 `CHANGELOG.md`, 실제 수행한 검증만 `docs/ko/beta-validation.md`, 단계 변화는 `docs/ko/product-development-plan.md`에 함께 반영한다. 관련 없는 역사 문서를 형식적으로 고치지 말고, 계획·추정·이전 산출물의 결과를 현재 검증처럼 기록하지 않는다. Git을 사용할 수 있으면 구현·회귀 테스트·관련 문서를 하나의 기능 단위 커밋에 포함한다.

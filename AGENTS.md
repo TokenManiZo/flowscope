@@ -76,13 +76,13 @@ These guidelines are working when diffs contain fewer unnecessary changes, imple
 - Active traffic must be exact-scope guarded. ZAP Active Scan requires an explicit Burp confirmation.
 - Black-box coverage has no knowable denominator; never display a completion percentage.
 
-Read `docs/architecture.md`, `docs/decisions.md`, and `README.md` before changing architecture. Read `docs/ui-product-rationale.md` before changing UI labels, onboarding, graph/matrix behavior, or presentation claims. Append architecture decisions to `docs/decisions.md`.
+Read `docs/ko/architecture.md`, `docs/ko/decisions.md`, and `README.md` before changing architecture. Read `docs/ko/ui-product-rationale.md` before changing UI labels, onboarding, graph/matrix behavior, or presentation claims. Append architecture decisions to `docs/ko/decisions.md`.
 
 Build and test from the repository root with `mvn clean verify`.
 
 ## Change records and documentation
 
-Every code or behavior change must update `docs/development-log.md` in the same work unit with:
+Every code or behavior change must update `docs/ko/development-log.md` in the same work unit with:
 
 - what was developed or fixed;
 - why it was necessary and which alternative was rejected;
@@ -93,11 +93,11 @@ Every code or behavior change must update `docs/development-log.md` in the same 
 Also update the document that owns the changed contract:
 
 - `README.md` for installation, operation, and user-visible behavior;
-- `docs/architecture.md` for the current data flow, modules, or invariants;
-- `docs/decisions.md` for material design/security choices and rejected alternatives;
+- `docs/ko/architecture.md` for the current data flow, modules, or invariants;
+- `docs/ko/decisions.md` for material design/security choices and rejected alternatives;
 - `CHANGELOG.md` for release-facing changes;
-- `docs/beta-validation.md` only for checks actually performed on the named artifact;
-- `docs/product-development-plan.md` for phase/gate state.
-- `docs/ui-product-rationale.md` for screen purpose, presentation narrative, and known UX debts.
+- `docs/ko/beta-validation.md` only for checks actually performed on the named artifact;
+- `docs/ko/product-development-plan.md` for phase/gate state.
+- `docs/ko/ui-product-rationale.md` for screen purpose, presentation narrative, and known UX debts.
 
 Do not mechanically edit historical research, proposals, or the original specification when they are unaffected. Do not claim inherited, planned, or assumed validation as completed. If Git is available, keep the implementation, regression test, and matching documentation in one focused commit.

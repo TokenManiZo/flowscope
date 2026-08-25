@@ -4,7 +4,33 @@
 
 릴리스 사용자 변경점은 루트 `CHANGELOG.md`, 현재 동작은 `architecture.md`, 설계 선택과 기각 이유는 `decisions.md`, 실제 수행한 검증과 미검증 범위는 `beta-validation.md`가 각각 정본이다. 같은 내용을 모든 문서에 복사하지 않고 이 문서에서 관련 정본을 연결한다.
 
-현재 작업 디렉터리는 사용자 승인으로 로컬 Git `main` 저장소가 됐고 remote는 연결하지 않았다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
+현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
+
+## 2026-08-25 · 한국어·영어 문서 경계 정리
+
+**개발·수정**
+
+- 저장소 루트의 README, 변경 이력, 기여 가이드, 보안 정책을 한국어 정본으로 바꿨다.
+- 상세 설계·결정·검증·연구·기능명세는 `docs/ko`로 이동하고 한국어 문서 색인을 추가했다.
+- 기존 영어 README, 변경 이력, 기여 가이드, 보안 정책을 `docs/en`에 보존하고 영어 문서 색인을 추가했다.
+- 이동된 문서를 참조하는 저장소 지침과 내부 링크를 새 경로에 맞췄다.
+
+**왜**
+
+한국어 사용자가 저장소 첫 화면에서 바로 설치·운영 경계를 읽을 수 있어야 하고, 한 디렉터리에서 두 언어를 섞어 문서의 정본을 모호하게 만들면 안 된다. 검토하지 않은 기계 번역을 상세 영어 문서처럼 제공하지 않고, 실제로 존재하는 영어 공개 가이드만 별도 보존했다.
+
+**주요 파일**
+
+- `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`
+- `docs/ko/**`, `docs/en/**`
+- `AGENTS.md`, `CLAUDE.md`
+
+**검증 및 남은 한계**
+
+- 저장소의 Markdown 파일을 대상으로 로컬 상대 링크가 실제 파일·디렉터리를 가리키는지 검사해 누락 0건을 확인했다.
+- 이전 `docs/*.md`·`docs/specification` 경로를 참조하는 현재 링크와 지침이 남지 않았음을 확인했다.
+- `mvn clean verify`: 124 tests, 실패·오류·skip 0.
+- 상세 아키텍처·결정 문서는 현재 한국어만 제공한다. 검토된 영어 번역이 생기기 전에는 영어 문서라고 표시하지 않는다.
 
 ## 2026-08-25 · source 색상과 일반 UI accent 분리
 
@@ -23,7 +49,7 @@
 - `src/main/resources/web/index.html`
 - `src/test/java/io/flowscope/FlowScopeWebServerTest.java`
 - `README.md`, `CHANGELOG.md`
-- `docs/architecture.md`, `docs/decisions.md`, `docs/ui-product-rationale.md`
+- `docs/ko/architecture.md`, `docs/ko/decisions.md`, `docs/ko/ui-product-rationale.md`
 
 **검증 및 남은 gate**
 
@@ -219,11 +245,11 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 - `agent-workspace/AGENTS.md`
 - `agent-workspace/CLAUDE.md`
 - `README.md`
-- `docs/architecture.md`
-- `docs/decisions.md`
-- `docs/product-overview.md`
-- `docs/product-development-plan.md`
-- `docs/beta-validation.md`
+- `docs/ko/architecture.md`
+- `docs/ko/decisions.md`
+- `docs/ko/product-overview.md`
+- `docs/ko/product-development-plan.md`
+- `docs/ko/beta-validation.md`
 - `CHANGELOG.md`
 - `pom.xml`
 
@@ -235,7 +261,7 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 
 **개발·수정**
 
-- 이 개발 기록을 작업 단위 정본으로 추가하고 문서별 소유 계약을 `docs/README.md`에 명시했다.
+- 이 개발 기록을 작업 단위 정본으로 추가하고 문서별 소유 계약을 `docs/ko/README.md`에 명시했다.
 - `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`에 코드 변경과 같은 단위로 이유·영향 파일·검증·한계를 기록하도록 강제했다.
 - 사용자 변경은 Changelog, 현재 구조는 Architecture, 선택 이유는 Decisions, 실제 수행 검증은 Beta Validation, 단계 상태는 Product Plan에만 기록하도록 역할을 분리했다.
 - 현재 구현과 충돌하던 “LLM은 제안만”, “raw 인증정보는 전혀 보유하지 않음”, “QA는 범위 밖” 지침을 서버 검증 Judge, 명시적 메모리 전용 broker, beta.3 수동 gate에 맞게 수정했다.
@@ -247,10 +273,10 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 
 **영향 파일**
 
-- `docs/development-log.md`
-- `docs/README.md`
-- `docs/decisions.md`
-- `docs/product-development-plan.md`
+- `docs/ko/development-log.md`
+- `docs/ko/README.md`
+- `docs/ko/decisions.md`
+- `docs/ko/product-development-plan.md`
 - `README.md`
 - `CHANGELOG.md`
 - `CONTRIBUTING.md`
@@ -325,15 +351,15 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 
 ### 영향 파일
 
-- `docs/ui-product-rationale.md`
-- `docs/README.md`
-- `docs/architecture.md`
-- `docs/graph-ux.md`
-- `docs/product-overview.md`
-- `docs/decisions.md`
-- `docs/beta-validation.md`
-- `docs/product-development-plan.md`
-- `docs/development-log.md`
+- `docs/ko/ui-product-rationale.md`
+- `docs/ko/README.md`
+- `docs/ko/architecture.md`
+- `docs/ko/graph-ux.md`
+- `docs/ko/product-overview.md`
+- `docs/ko/decisions.md`
+- `docs/ko/beta-validation.md`
+- `docs/ko/product-development-plan.md`
+- `docs/ko/development-log.md`
 - `README.md`
 - `agent-workspace/README.md`
 - `CHANGELOG.md`
