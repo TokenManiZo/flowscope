@@ -13,6 +13,7 @@
 7. crAPI 정답을 코드나 프롬프트에 넣지 않는다. 제품 완료 뒤 독립 HUMAN/ZAP/LLM pass와 블라인드 채점으로 검증한다.
 8. LLM에게 ZAP 기능 선택을 맡기지 않는다. 기본 scanner lane은 Traditional Spider, strict Client Spider, AJAX fallback, passive queue, native alert 순서의 시스템 workflow다.
 9. Explorer의 독립성은 프롬프트 약속이 아니라 서버 가시성 제한과 세 레인 dataset lock으로 강제한다.
+10. 트래픽 노이즈는 수집 단계에서 삭제하지 않는다. 모든 Evidence를 보존하고 결정론 분류로 coverage 입력만 나누며, 애매한 것은 포함·검토하고 사용자가 operation 단위로 되돌릴 수 있게 한다.
 
 ## 2. 구현 단계와 성공 기준
 
@@ -37,6 +38,7 @@
 - 등록 계정, 서비스 경계 세션 연결/해제, identity role, endpoint requirement, resource owner를 UI에서 수정한다.
 - rule finding, MCP assessment, 서버 검증 최종 판정을 같은 시나리오 화면에 두고 사람 감사·오버라이드를 저장한다.
 - Repeater는 첫 Evidence의 마스킹된 미전송 초안만 연다.
+- HTTP 문맥 기반 비파괴 traffic classification, captured/coverage 통계, operation별 override, 반복 Evidence 표시 접기를 제공한다. cookie 회전은 검증된 account binding 전까지 서비스별 `UNRESOLVED` graph identity로 안정화한다.
 - 사용자가 명시적으로 시작한 HUMAN 로그인 캡처만 memory-only broker에 넣고, service+scope+ACTIVE 상태가 맞는 계정에 한해 ZAP/LLM에 주입한다. raw 값은 project/Web/MCP에 저장·노출하지 않는다.
 - 성공 기준: 비밀번호·raw token을 저장/표시하지 않고, 다른 service의 세션 연결은 실패하며, Evidence 집합이 바뀐 과거 판정은 승계되지 않는다.
 
@@ -73,7 +75,7 @@
 ## 4. 2026-08-25 beta.3 구현 상태
 
 - P0~P3: 코드 구현 완료. Web UI 정본화, exact-scope 수집 차단, 구조적 마스킹, memory-only session broker, 통제 LLM 실행, Explorer 서버 격리, dataset lock, 시스템 ZAP baseline, 서버 검증 LLM verdict를 구현했다.
-- P4 브라우저 QA: beta.3 standalone UI에서 완료. 1500×900, 900×700, 600×800에서 quick-start, 계정·세션, Matrix의 페이지형 Request/Response 지연 로드와 반응형 레이아웃을 확인했고 콘솔 오류는 없었다. Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
+- P4 브라우저 QA: beta.3 standalone UI에서 완료. 기존 1500×900, 900×700, 600×800 검증에 더해 현재 분류 UI를 1024×768에서 다시 확인했다. 여섯 화면 전환, quick-start, 파싱 행→Evidence 상세, 분류 override 조작 노출, 가로 overflow/ellipsis 잘림 0, 콘솔 오류 0을 확인했다. Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
 - P4 Burp Community QA: beta.3의 올바른 fat JAR 신규 load만 Community 2026.7.3 사용자 환경에서 통과했다. 같은 target 폴더의 `original-*.jar` 선택 실패로 배포 산출물 혼동을 발견했다. unload, suite tab/Web UI, listener 분류, session broker, controlled executor, Repeater, project round trip, 시스템 ZAP/Judge는 아직 통과 처리하지 않는다.
-- beta.3 수동 gate: 실제 Burp Community unload·suite tab/Web UI·브라우저 로그인 캡처·세션 주입·통제 LLM 요청·ZAP 2.17 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. packaging 단일화, 빈 상태 onboarding, 파싱 Evidence 진입도 벤치마크 전 수정·재검증한다. Codex project-scoped MCP discovery는 신뢰 프로젝트 조건에서 확인했지만 실제 FlowScope 연결은 전체 workflow gate에 남는다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
+- beta.3 수동 gate: 실제 Burp Community unload·suite tab/Web UI·브라우저 로그인 캡처·세션 주입·통제 LLM 요청·ZAP 2.17 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. 비파괴 분류·불확실 신원 안정화와 파싱 Evidence 진입은 구현·자동 회귀·standalone QA를 통과했다. packaging 단일화와 빈 상태 onboarding은 계속 벤치마크 전 수정 대상이다. Codex project-scoped MCP discovery는 신뢰 프로젝트 조건에서 확인했지만 실제 FlowScope 연결은 전체 workflow gate에 남는다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
 - P5 crAPI 블라인드 벤치마크: 사용자 검토 전까지 보류한다. 정답·공격 절차·라벨을 코드, 프롬프트, 실행 컨텍스트에 넣지 않는다.

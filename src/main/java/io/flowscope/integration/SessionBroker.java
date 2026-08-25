@@ -190,6 +190,32 @@ public final class SessionBroker implements AutoCloseable {
         return session == null ? Optional.empty() : Optional.of(session.account.id());
     }
 
+    /**
+     * 현재 요청 자격증명이 어느 관리 세션과 일치하는지 raw 값을 외부에 노출하지 않고 판별한다.
+     * Authorization은 정확히 일치해야 하고, Cookie는 해당 target에 적용되는 저장 쿠키가 모두
+     * 요청에 존재해야 한다. 둘 이상의 계정이 일치하면 오병합을 피하기 위해 미확정으로 남긴다.
+     */
+    public synchronized Optional<String> accountForRequest(URI target, Map<String, String> requestHeaders,
+                                                           Instant now) {
+        Instant time = now == null ? Instant.now() : now;
+        String authorization = header(requestHeaders, "Authorization");
+        Map<String, String> suppliedCookies = parseCookieHeader(header(requestHeaders, "Cookie"));
+        List<String> matches = new ArrayList<>();
+        for (ManagedSession session : byHandle.values()) {
+            if (!sameService(session, target)) continue;
+            pruneExpired(session, time);
+            boolean authorizationMatch = authorization != null
+                    && session.headers.containsKey("Authorization")
+                    && authorization.equals(session.headers.get("Authorization").reveal());
+            List<StoredCookie> expected = session.cookies.values().stream()
+                    .filter(cookie -> matches(cookie, target, time)).toList();
+            boolean cookieMatch = !expected.isEmpty() && expected.stream().allMatch(cookie ->
+                    cookie.value.reveal().equals(suppliedCookies.get(cookie.key.name())));
+            if (authorizationMatch || cookieMatch) matches.add(session.account.id());
+        }
+        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
+    }
+
     public synchronized Optional<SessionView> viewForAccount(String accountId) {
         String handle = handleByAccount.get(accountId);
         return handle == null ? Optional.empty() : Optional.ofNullable(byHandle.get(handle)).map(this::view);
@@ -219,13 +245,17 @@ public final class SessionBroker implements AutoCloseable {
 
     private ManagedSession requiredForTarget(String handle, URI target) {
         ManagedSession session = required(handle);
-        URI service = URI.create(session.account.service());
-        int port = target.getPort() >= 0 ? target.getPort() : "https".equalsIgnoreCase(target.getScheme()) ? 443 : 80;
-        if (target.getHost() == null || !service.getScheme().equalsIgnoreCase(target.getScheme())
-                || !service.getHost().equalsIgnoreCase(target.getHost()) || service.getPort() != port) {
+        if (!sameService(session, target)) {
             throw new IllegalArgumentException("session account and target services differ");
         }
         return session;
+    }
+
+    private static boolean sameService(ManagedSession session, URI target) {
+        URI service = URI.create(session.account.service());
+        int port = target.getPort() >= 0 ? target.getPort() : "https".equalsIgnoreCase(target.getScheme()) ? 443 : 80;
+        return target.getHost() != null && service.getScheme().equalsIgnoreCase(target.getScheme())
+                && service.getHost().equalsIgnoreCase(target.getHost()) && service.getPort() == port;
     }
 
     private SessionView view(ManagedSession session) {
@@ -326,6 +356,18 @@ public final class SessionBroker implements AutoCloseable {
         if (headers == null) return null;
         return headers.entrySet().stream().filter(entry -> entry.getKey().equalsIgnoreCase(name))
                 .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
+    private static Map<String, String> parseCookieHeader(String value) {
+        if (value == null || value.isBlank()) return Map.of();
+        Map<String, String> out = new LinkedHashMap<>();
+        for (String part : value.split(";")) {
+            int equals = part.indexOf('=');
+            if (equals <= 0) continue;
+            String name = part.substring(0, equals).trim();
+            if (!name.isBlank()) out.put(name, part.substring(equals + 1).trim());
+        }
+        return out;
     }
 
     private static boolean isLoginRedirect(int status, String location) {

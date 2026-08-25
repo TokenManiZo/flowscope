@@ -18,7 +18,7 @@ class AccuracyRegressionTest {
         return new RequestRecord(Source.HUMAN, "https://t:443", "GET", path, 200, "X");
     }
 
-    // ---- #8 노이즈 필터가 정상 API 를 지우면 잘못된 '미관측' 이 된다 ----
+    // ---- #8 경로 이름만으로 정상 API 를 지우면 잘못된 '미관측' 이 된다 ----
     @Test
     void 정상_API는_노이즈로_지우지_않는다() {
         String[] realApis = {
@@ -26,17 +26,21 @@ class AccuracyRegressionTest {
                 "/api/pixel-art/1", "/api/report.txt", "/api/beacon-config", "/api/collect-points/3"
         };
         for (String p : realApis) {
-            assertFalse(TrafficFilter.isNoise(rec(p)), "정상 API 를 노이즈로 판정하면 안 됨: " + p);
+            RequestRecord record = rec(p);
+            record.hasResponse = true;
+            record.responseContentType = "application/json";
+            assertTrue(Pipeline.run(List.of(record)).records.getFirst().trafficClassification.coverageEligible(),
+                    "정상 API 를 커버리지에서 제외하면 안 됨: " + p);
         }
     }
 
     @Test
-    void 진짜_노이즈는_계속_걸러진다() {
-        String[] noise = {"/static/app.4f3a.js", "/assets/main.css", "/favicon.ico",
-                "/images/thumb/12.png", "/collect", "/gtag/js", "/robots.txt"};
-        for (String p : noise) {
-            assertTrue(TrafficFilter.isNoise(rec(p)), "노이즈여야 함: " + p);
-        }
+    void 근거가_일치하는_정적자산만_커버리지에서_제외된다() {
+        RequestRecord record = rec("/static/app.4f3a.js");
+        record.hasResponse = true;
+        record.secFetchDest = "script";
+        record.responseContentType = "application/javascript";
+        assertFalse(Pipeline.run(List.of(record)).records.getFirst().trafficClassification.coverageEligible());
     }
 
     // ---- #13 날짜·API 버전을 자원 ID 로 오인하면 커버리지가 왜곡된다 ----
@@ -106,8 +110,15 @@ class AccuracyRegressionTest {
         try {
             java.util.Locale.setDefault(new java.util.Locale("tr", "TR"));
             // "I".toLowerCase() 가 로케일에 따라 'ı' 가 되는 환경
-            assertTrue(TrafficFilter.isNoise(rec("/static/APP.JS")), "대문자 확장자도 노이즈");
-            assertFalse(TrafficFilter.isNoise(rec("/api/ITEMS/1")));
+            RequestRecord asset = rec("/static/APP.JS");
+            asset.hasResponse = true;
+            asset.secFetchDest = "SCRIPT";
+            asset.responseContentType = "APPLICATION/JAVASCRIPT";
+            assertFalse(Pipeline.run(List.of(asset)).records.getFirst().trafficClassification.coverageEligible());
+            RequestRecord api = rec("/api/ITEMS/1");
+            api.hasResponse = true;
+            api.responseContentType = "application/json";
+            assertTrue(Pipeline.run(List.of(api)).records.getFirst().trafficClassification.coverageEligible());
             RequestRecord r = new RequestRecord(Source.HUMAN, "https://t:443", "get", "/api/x", 200, "X");
             assertEquals("GET", r.method, "메서드 대문자화가 로케일에 흔들리면 안 됨");
         } finally {

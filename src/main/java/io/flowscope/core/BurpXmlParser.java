@@ -29,6 +29,10 @@ public final class BurpXmlParser {
     private static final Pattern HOST = Pattern.compile("(?im)^Host:\\s*(.+)$");
     private static final Pattern LOCATION = Pattern.compile("(?im)^Location:\\s*(.+)$");
     private static final Pattern CONTENT_TYPE = Pattern.compile("(?im)^Content-Type:\\s*(.+)$");
+    private static final Pattern SEC_FETCH_DEST = Pattern.compile("(?im)^Sec-Fetch-Dest:\\s*(.+)$");
+    private static final Pattern SEC_FETCH_MODE = Pattern.compile("(?im)^Sec-Fetch-Mode:\\s*(.+)$");
+    private static final Pattern ACCESS_CONTROL_REQUEST_METHOD = Pattern.compile(
+            "(?im)^Access-Control-Request-Method:\\s*(.+)$");
 
     private BurpXmlParser() {}
 
@@ -111,6 +115,11 @@ public final class BurpXmlParser {
                 rec.reqBody = Masking.truncate(Masking.maskBody(requestBody(reqText),
                         headerValue(CONTENT_TYPE, reqText)), MAX_BODY);
                 rec.reqText = Masking.truncate(Masking.maskHeaders(reqText), MAX_BODY);
+                rec.requestContentType = headerValue(CONTENT_TYPE, reqText);
+                rec.responseContentType = headerValue(CONTENT_TYPE, respText);
+                rec.secFetchDest = headerValue(SEC_FETCH_DEST, reqText);
+                rec.secFetchMode = headerValue(SEC_FETCH_MODE, reqText);
+                rec.accessControlRequestMethod = headerValue(ACCESS_CONTROL_REQUEST_METHOD, reqText);
                 rec.timestamp = parseTime(text(it, "time"));
                 rec.sourceDetail = SourceDetail.XML_IMPORT;
                 rec.phase = RunPhase.IMPORT;

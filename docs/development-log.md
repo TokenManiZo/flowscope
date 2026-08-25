@@ -4,7 +4,7 @@
 
 릴리스 사용자 변경점은 루트 `CHANGELOG.md`, 현재 동작은 `architecture.md`, 설계 선택과 기각 이유는 `decisions.md`, 실제 수행한 검증과 미검증 범위는 `beta-validation.md`가 각각 정본이다. 같은 내용을 모든 문서에 복사하지 않고 이 문서에서 관련 정본을 연결한다.
 
-현재 작업 디렉터리에는 Git metadata가 없다. 따라서 1.2.0-beta.3 이전의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
+현재 작업 디렉터리는 사용자 승인으로 로컬 Git `main` 저장소가 됐고 remote는 연결하지 않았다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
 ## 2026-08-25 · 1.2.0-beta.3 · 벤치마크 전 제품화
 
@@ -331,6 +331,57 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 - 파싱 결과에 Evidence ID/상세 진입을 구현하거나 해당 화면의 역할을 다시 결정해야 한다.
 - Codex project-scoped MCP discovery는 확인했지만 실행 중인 FlowScope MCP 연결과 Explorer/Judge 전체 과정은 검증해야 한다.
 - 올바른 beta.3 JAR의 Web UI, HUMAN, broker, ZAP, Explorer/Judge, save/load, unload는 계속 미검증이다.
+
+## 2026-08-25 · Evidence 보존형 트래픽 분류와 신원 안정화
+
+### 목표와 성공 조건
+
+- 브라우저·LLM의 보조 traffic이 graph를 압도하지 않되 캡처된 Evidence를 삭제하지 않는다.
+- 경로명이나 cookie 존재 하나로 API/로그인 여부를 단정하지 않는다.
+- 수집 전체와 coverage 입력의 차이, 분류 근거, 반복 횟수, stable Evidence ID를 사용자가 확인하고 되돌릴 수 있다.
+- cookie가 1,000번 회전해도 검증되지 않은 1,000명의 graph identity를 만들지 않고, 명시 account binding은 계속 정확히 적용된다.
+
+### 개발·수정
+
+- 기존 boolean `TrafficFilter`를 `TrafficClassifier`의 class/disposition/reasons/override 계약으로 교체했다. real CORS preflight, Fetch Metadata와 MIME가 합치하는 navigation/static, no-response, non-discovery phase만 high-confidence 제외하고 telemetry·애매한 관측은 `REVIEW`로 보존했다.
+- Pipeline을 `전체 정규화·Evidence ID → auth state 안정화 → traffic classification → coverage subset → analyzer/graph`로 분리했다. `records`는 전체 Evidence, `coverageRecords`는 분석 입력이다.
+- request/response Content-Type, `Sec-Fetch-Dest`, `Sec-Fetch-Mode`, `Access-Control-Request-Method`, auth state와 분류 결과를 live/Burp XML/project/Web/MCP에 연결했다.
+- operation별 `AUTO/INCLUDE/EXCLUDE`를 설정·프로젝트·Web API에 추가했다. classifier version을 project에 기록하고 로드 후 현재 규칙으로 다시 계산한다.
+- unbound cookie/session fingerprint를 서비스별 `UNRESOLVED` graph identity로 안정화했다. 원 fingerprint는 Evidence와 수동 binding 후보에 남기고, broker가 raw credential을 exact match하거나 사용자가 binding한 경우만 `ACCOUNT_BOUND`로 바꾼다. 명시 HUMAN anonymous pass도 Authorization과 Cookie가 모두 없을 때만 `ANONYMOUS`다.
+- 동일 의미 관측은 `ObservationCollapser`로 화면에서만 접고 모든 Evidence ID, repeat count, first/last timestamp를 유지했다.
+- Web 좌측에 수집/분석/기본 숨김/검토 통계와 Evidence 표시 filter를, 파싱 결과에 분류/처리/반복/Evidence 열과 행→operation 상세 동선을, 상세에 reversible coverage override를 추가했다.
+- MCP status/list/detail과 dataset lock gate가 전체 수집량이 아니라 discovery-eligible coverage를 명시적으로 사용하도록 수정했다.
+- 신규 coverage 통계가 independent Explorer에서 HUMAN/SCANNER 수량을 노출할 수 있던 격리 우회를 코드 검토에서 발견했다. 독립 모드의 captured/coverage/excluded/review/source count를 현재 LLM run으로 제한하고 회귀 assertion을 추가했다.
+
+### 이유와 기각한 대안
+
+확장자 blacklist, `/analytics` 정규식, 모든 OPTIONS 제거는 사설 이미지 API·business telemetry·일반 OPTIONS를 버릴 수 있다. cookie마다 identity를 만드는 방식은 익명 추적 cookie 회전만으로 graph를 폭증시킨다. 반대로 검증되지 않은 cookie를 한 계정으로 확정 병합하면 서로 다른 사용자를 섞는다. LLM per-request 분류는 비결정적이고 비용이 크며 독립 비교를 오염시킨다. 따라서 deterministic high-confidence exclusion + ambiguous review + user override + raw Evidence retention을 선택했다(D-059).
+
+### 영향 파일
+
+- 핵심: `core/TrafficClassifier`, `TrafficClassification`, `TrafficOverride`, `AuthState`, `ObservationCollapser`, `Pipeline`, `RequestRecord`, `AnalysisConfig`.
+- 수집·통합: `burp/FlowScopeExtension`, `core/BurpXmlParser`, `integration/SessionBroker`, `ProjectStore`, `McpServer`, `web/FlowScopeWebServer`, `SnapshotJsonWriter`.
+- UI: `ui/FlowScopeControlTab`, `resources/web/index.html`.
+- 테스트: `TrafficClassifierTest`, `PipelineClassificationTest`, `ObservationCollapserTest`와 session/project/MCP/Web/accuracy 회귀.
+- 문서: README, architecture, decisions, research, UI rationale, product plan, beta validation, changelog, 이 개발 기록.
+
+### 검증
+
+- 첫 `mvn clean verify`는 UI 제목을 `트래픽 분류`에서 `Evidence 표시`로 바꾼 뒤 Web 회귀가 이전 문자열을 기대해 실패했다. 제품 계약에 맞춰 assertion을 수정했다. 이어 사용자 INCLUDE가 non-discovery phase를 우회하지 못하는 회귀를 추가했고 최종 전체 결과는 아래에 기록했다.
+- 최종 `mvn clean verify`: 123 tests, 실패·오류·skip 0.
+- classifier 회귀: misleading extension, private image API, true preflight/normal OPTIONS, telemetry 명칭, 보안 신호 우선, user override, no-response/non-discovery 보존을 확인했다.
+- identity 회귀: 1,000 rotating cookies가 한 서비스의 `UNRESOLVED` graph identity로 안정화되고 명시 binding은 계정으로 분리됨을 확인했다.
+- persistence/MCP/Web 회귀: classification/auth/override/version round trip과 captured/coverage/excluded/review 통계를 확인했다.
+- Explorer 격리 회귀: independent mode에서 HUMAN의 raw·coverage source count가 모두 없고 전체 통계도 현재 LLM run 1건만 반환하는 것을 확인했다.
+- standalone local browser: 1024×768에서 가로 overflow와 ellipsis 잘림 0, 여섯 mode 전환, quick-start, 파싱 행→Evidence 상세, 분류 override 조작 노출, console error 0을 확인했다.
+- 최종 fat JAR: 2,814,516 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `64d9079759af25bc4df09ec0856fc3b5d61cee620b69d4053f37f0d965d8d354`.
+
+### 남은 한계·다음 gate
+
+- Fetch Metadata/MIME가 없거나 잘못된 대상과 business-specific API는 완벽히 분류할 수 없다. 애매한 `REVIEW`와 사용자 override는 정상 동작이며 오탐·미탐 0을 주장하지 않는다.
+- broker의 raw credential exact match는 false merge보다 miss를 택한다. MFA/WebAuthn/device binding과 application-specific refresh는 수동 재로그인이 필요하다.
+- 현재 standalone QA는 Burp Community 실제 capture/session/ZAP/MCP workflow를 대신하지 않는다. blind crAPI 전에 기존 수동 beta gate를 완료해야 한다.
+- D-058의 `original-*` JAR 노출과 D-057의 empty-state progressive disclosure는 이번 변경 범위 밖의 열린 제품 부채다.
 
 ## 이후 작업 기록 형식
 

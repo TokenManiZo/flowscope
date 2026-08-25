@@ -56,6 +56,8 @@ final class McpServerTest {
         assertFalse(evidence.at("/result/isError").asBoolean());
         assertEquals(record.evidenceId,
                 evidence.at("/result/structuredContent/evidence_id").asText());
+        assertEquals("API", evidence.at("/result/structuredContent/traffic_class").asText());
+        assertTrue(evidence.at("/result/structuredContent/coverage_eligible").asBoolean());
         String request = evidence.at("/result/structuredContent/request").asText();
         String response = evidence.at("/result/structuredContent/response").asText();
         assertFalse(request.contains("secret-cookie"));
@@ -186,6 +188,9 @@ final class McpServerTest {
         JsonNode status = tool("flowscope_get_status", "{}");
         assertTrue(status.at("/result/structuredContent/independent_explorer_view").asBoolean());
         assertTrue(status.at("/result/structuredContent/source_counts/HUMAN").isMissingNode());
+        assertTrue(status.at("/result/structuredContent/coverage_source_counts/HUMAN").isMissingNode());
+        assertEquals(1, status.at("/result/structuredContent/captured_records").asInt());
+        assertEquals(1, status.at("/result/structuredContent/coverage_records").asInt());
         assertTrue(tool("flowscope_list_candidates", "{}").at("/result/isError").asBoolean());
         assertTrue(tool("flowscope_get_evidence", "{\"evidence_id\":\"" + human.evidenceId + "\"}")
                 .at("/result/isError").asBoolean());

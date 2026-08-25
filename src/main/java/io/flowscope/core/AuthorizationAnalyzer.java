@@ -45,6 +45,8 @@ public final class AuthorizationAnalyzer {
 
         List<RequestRecord> analyzable = records.stream()
                 .filter(r -> r.source != Source.UNKNOWN)
+                .filter(r -> r.hasResponse)
+                .filter(r -> r.phase != RunPhase.VALIDATION && r.phase != RunPhase.COACH_PROBE)
                 .toList();
         if (analyzable.isEmpty()) return AuthorizationAnalysis.empty();
 

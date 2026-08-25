@@ -1,5 +1,6 @@
 package io.flowscope;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.flowscope.core.*;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.ProjectStore;
@@ -34,12 +35,17 @@ final class ProjectStoreTest {
         record.location = "/next?token=REDIRECTSECRET";
         record.hasResponse = true;
         record.timestamp = 1234;
+        record.requestContentType = "application/json";
+        record.responseContentType = "application/json";
+        record.secFetchDest = "empty";
+        record.secFetchMode = "cors";
         Pipeline.run(List.of(record));
 
         AnalysisConfig config = new AnalysisConfig()
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withEndpointRequirement(record.op, AccessRole.LV1)
-                .withResourceOwner(record.resource, "user-a");
+                .withResourceOwner(record.resource, "user-a")
+                .withTrafficOverride(record.op, TrafficOverride.INCLUDE);
         AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
         config.upsertAccount(account).bindSession(record.service, record.fp, account.id());
         McpServer.Assessment assessment = new McpServer.Assessment("a-1", "BOLA", "LIKELY",
@@ -56,6 +62,8 @@ final class ProjectStoreTest {
         store.save(file, List.of(record), config, List.of(assessment), List.of(validation),
                 Set.of(Source.HUMAN, Source.SCANNER, Source.LLM));
         String raw = Files.readString(file);
+        assertEquals(TrafficClassifier.VERSION,
+                new ObjectMapper().readTree(raw).path("traffic_classifier_version").asInt());
         for (String secret : List.of("QUERYSECRET", "BODYSECRET", "HEADERSECRET", "COOKIESECRET",
                 "REDIRECTSECRET", "REVIEWSECRET", "raw-session-value")) assertFalse(raw.contains(secret), secret);
 
@@ -67,6 +75,11 @@ final class ProjectStoreTest {
         assertEquals(record.evidenceId, restored.evidenceId);
         assertEquals(record.contentDigest, restored.contentDigest);
         assertTrue(restored.hasResponse);
+        assertEquals("application/json", restored.responseContentType);
+        assertEquals("empty", restored.secFetchDest);
+        assertEquals(record.authState, restored.authState);
+        assertEquals(record.trafficClassification, restored.trafficClassification);
+        assertEquals(TrafficOverride.INCLUDE, loaded.config().trafficOverride(record.op));
         assertEquals(AccessRole.USER, loaded.config().identityRole("user-a"));
         assertEquals("user-a", loaded.config().resourceOwner(record.resource));
         assertEquals("USER A", loaded.config().account("acct-a").orElseThrow().label());

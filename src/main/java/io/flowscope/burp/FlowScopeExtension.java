@@ -342,9 +342,26 @@ public final class FlowScopeExtension implements BurpExtension {
     private RequestRecord recordFrom(HttpRequest req, int status, PortProfile profile,
                                      String respBody, String respText, String location, String responseContentType,
                                      long timestamp, boolean applyRunContext, String runId) {
-        String fp = Fingerprints.of(req.headerValue("Authorization"), req.headerValue("Cookie"));
+        String service = serviceOf(req);
+        RunContextRegistry.Context context = applyRunContext ? runContexts.current(profile.source()) : null;
+        String accountId = context == null ? null : context.accountId();
+        if (accountId == null && profile.source() == Source.HUMAN) {
+            accountId = sessionBroker.activeCaptureForService(service)
+                    .flatMap(sessionBroker::accountForHandle).orElse(null);
+        }
+        if (accountId == null) {
+            accountId = sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
+                    java.time.Instant.now()).orElse(null);
+        }
+        boolean explicitAnonymousPass = profile.source() == Source.HUMAN
+                && context != null
+                && accountId == null
+                && emptyToNull(req.headerValue("Authorization")) == null
+                && emptyToNull(req.headerValue("Cookie")) == null;
+        String fp = explicitAnonymousPass ? "anon"
+                : Fingerprints.of(req.headerValue("Authorization"), req.headerValue("Cookie"));
         RequestRecord rec = new RequestRecord(
-                profile.source(), serviceOf(req), req.method(), req.pathWithoutQuery(), status, fp);
+                profile.source(), service, req.method(), req.pathWithoutQuery(), status, fp);
         rec.sourceDetail = profile.detail();
         rec.orchestrator = profile.source() == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
         rec.tool = profile.source() == Source.SCANNER ? ToolKind.ZAP
@@ -361,18 +378,12 @@ public final class FlowScopeExtension implements BurpExtension {
         };
         rec.runId = runId == null
                 ? "live-" + profile.source().name().toLowerCase(Locale.ROOT) : runId;
-        RunContextRegistry.Context context = applyRunContext ? runContexts.current(profile.source()) : null;
         if (context != null) {
             rec.sourceDetail = context.detail();
             rec.orchestrator = context.orchestrator();
             rec.tool = context.tool();
             rec.phase = context.phase();
             rec.runId = context.runId();
-        }
-        String accountId = context == null ? null : context.accountId();
-        if (accountId == null && profile.source() == Source.HUMAN) {
-            accountId = sessionBroker.activeCaptureForService(rec.service)
-                    .flatMap(sessionBroker::accountForHandle).orElse(null);
         }
         if (accountId != null && !"anon".equals(fp)) {
             try { analysisConfig.bindSession(rec.service, fp, accountId); }
@@ -384,6 +395,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 "application/x-www-form-urlencoded"), MAX_BODY);
         rec.reqBody = Masking.truncate(Masking.maskBody(req.bodyToString(), req.headerValue("Content-Type")), MAX_BODY);
         rec.reqText = Masking.truncate(Masking.maskHeaders(req.toString()), MAX_BODY);
+        rec.requestContentType = emptyToNull(req.headerValue("Content-Type"));
+        rec.responseContentType = emptyToNull(responseContentType);
+        rec.secFetchDest = emptyToNull(req.headerValue("Sec-Fetch-Dest"));
+        rec.secFetchMode = emptyToNull(req.headerValue("Sec-Fetch-Mode"));
+        rec.accessControlRequestMethod = emptyToNull(req.headerValue("Access-Control-Request-Method"));
         rec.timestamp = timestamp;
         rec.body = Masking.truncate(Masking.maskBody(respBody, responseContentType), MAX_BODY);
         rec.respText = Masking.truncate(Masking.maskHeaders(respText), MAX_BODY);
@@ -429,6 +445,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 handle = sessionBroker.handleForAccount(context.accountId());
             } else if (profile.source() == Source.HUMAN) {
                 handle = sessionBroker.activeCaptureForService(service).orElse(null);
+                if (handle == null) {
+                    String accountId = sessionBroker.accountForRequest(URI.create(request.url()),
+                            headersOf(request.headers()), java.time.Instant.now()).orElse(null);
+                    if (accountId != null) handle = sessionBroker.handleForAccount(accountId);
+                }
             }
             if (handle == null) return;
             List<String> setCookies = headers == null ? List.of() : headers.stream()

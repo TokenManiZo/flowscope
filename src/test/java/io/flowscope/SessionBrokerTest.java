@@ -99,4 +99,19 @@ final class SessionBrokerTest {
         assertTrue(broker.views().isEmpty());
         assertThrows(IllegalArgumentException.class, () -> broker.handleForAccount("acct-a"));
     }
+
+    @Test
+    void resolvesOnlyOneExactManagedCredentialSet() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        String handle = broker.beginCapture(account, Instant.EPOCH);
+        broker.observeRequest(handle, URI.create("https://api.test/login"),
+                Map.of("Cookie", "session=secret; consent=yes"), Instant.EPOCH);
+        broker.endCapture(handle);
+
+        assertEquals("acct-a", broker.accountForRequest(URI.create("https://api.test/orders"),
+                Map.of("Cookie", "theme=dark; consent=yes; session=secret"), Instant.ofEpochSecond(1)).orElseThrow());
+        assertTrue(broker.accountForRequest(URI.create("https://api.test/orders"),
+                Map.of("Cookie", "consent=yes; session=other"), Instant.ofEpochSecond(1)).isEmpty());
+    }
 }

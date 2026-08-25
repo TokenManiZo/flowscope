@@ -8,6 +8,7 @@ import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AuthorizationAnalysis;
 import io.flowscope.core.DataFlowAnalyzer;
 import io.flowscope.core.Masking;
+import io.flowscope.core.ObservationCollapser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.Source;
@@ -38,8 +39,13 @@ public final class SnapshotJsonWriter {
         root.put("revision", revision);
         root.put("identityRevision", revision);
         root.set("events", events(result));
+        ObjectNode traffic = root.putObject("trafficStats");
+        traffic.put("captured", result.records.size());
+        traffic.put("coverage", result.coverageRecords.size());
+        traffic.put("excluded", result.excludedCount);
+        traffic.put("review", result.reviewCount);
         root.putArray("replays");
-        root.set("flowLinks", flowLinks(result.records));
+        root.set("flowLinks", flowLinks(result.coverageRecords));
         root.set("roles", roles(result, config));
         root.set("owners", owners(result));
         root.set("requiredRoles", requiredRoles(config));
@@ -87,6 +93,7 @@ public final class SnapshotJsonWriter {
     }
 
     private ArrayNode events(Pipeline.Result result) {
+        Map<String, ObservationCollapser.Group> clusters = ObservationCollapser.byEvidence(result.records);
         Map<String, Verdict> verdicts = new LinkedHashMap<>();
         for (AuthorizationAnalysis.CoverageCell cell : result.analysis.cells()) {
             for (Map.Entry<Source, AuthorizationAnalysis.Decision> decision : cell.perSource().entrySet()) {
@@ -113,6 +120,18 @@ public final class SnapshotJsonWriter {
             event.put("phase", record.phase.name());
             event.put("executionTrust", record.executionTrust.name());
             event.put("runId", record.runId);
+            event.put("authState", record.authState.name());
+            event.put("trafficClass", record.trafficClassification.trafficClass().name());
+            event.put("trafficDisposition", record.trafficClassification.disposition().name());
+            event.put("coverageEligible", record.trafficClassification.coverageEligible());
+            event.put("classificationOverride", record.trafficClassification.userOverride());
+            event.set("classificationReasons", json.valueToTree(record.trafficClassification.reasons()));
+            ObservationCollapser.Group cluster = clusters.get(record.evidenceId);
+            event.put("clusterId", cluster.id());
+            event.put("repeatCount", cluster.count());
+            event.put("firstSeen", cluster.firstSeen());
+            event.put("lastSeen", cluster.lastSeen());
+            event.set("clusterEvidenceIds", json.valueToTree(cluster.evidenceIds()));
             ArrayNode objects = event.putArray("objects");
             if (record.resource != null) {
                 ObjectNode object = objects.addObject();
@@ -140,6 +159,9 @@ public final class SnapshotJsonWriter {
             value.put("responseBody", masked(record.body));
             value.put("response", Masking.maskHeaders(masked(record.respText)));
             value.put("location", masked(record.location));
+            value.put("trafficClass", record.trafficClassification.trafficClass().name());
+            value.put("trafficDisposition", record.trafficClassification.disposition().name());
+            value.set("classificationReasons", json.valueToTree(record.trafficClassification.reasons()));
         });
         ObjectNode out = json.createObjectNode();
         out.set("records", records);

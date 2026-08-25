@@ -50,7 +50,15 @@
 - **action-level(BFLA)/상태변경 커버리지** — 오라클 확장 근거는 있으나 **상태변경 연산의 owner 확정은 미해결**(설계 주장 단계).
 - **LLM 제안 단계의 비결정성** — 검증게이트가 하류에서 걸러낼 뿐, 제안 자체의 편중·불안정은 잔존.
 
-## 6. 참고문헌 (재검증 완료 · URL·근거강도)
+## 6. 트래픽 노이즈 분류의 표준 근거와 경계
+
+- [Fetch Metadata](https://www.w3.org/TR/fetch-metadata/)의 `Sec-Fetch-Dest/Mode`는 요청 문맥을 설명하지만 모든 client가 보내는 인증 신호가 아니다. 누락을 API 아님으로 해석하지 않는다.
+- [WHATWG Fetch](https://fetch.spec.whatwg.org/)의 CORS preflight에는 `OPTIONS`뿐 아니라 `Access-Control-Request-Method`가 동반된다. 따라서 OPTIONS 전체 제외는 잘못이다.
+- [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html)의 method safety와 Content-Type representation metadata를 경로 확장자보다 강한 신호로 사용하되, 서버 오표기 가능성 때문에 객체·인가 실패·redirect 신호가 있으면 보안 분석을 우선한다.
+- [Beacon](https://www.w3.org/TR/beacon/)은 background 전송도 application data를 담을 수 있음을 보여 준다. `/analytics`, `/telemetry` 같은 이름은 삭제 근거가 아니라 검토 후보일 뿐이다.
+- 결론은 정확한 이진 noise oracle이 아니라 비파괴 triage다. high-confidence 보조 traffic만 coverage에서 기본 제외하고, 애매한 traffic은 `REVIEW`로 분석에 포함하며 사용자가 되돌릴 수 있어야 한다(D-059).
+
+## 7. 참고문헌 (재검증 완료 · URL·근거강도)
 - AuthProbe — Jay Barach, arXiv:2607.20574 `[프리프린트·단독·합성API]` https://arxiv.org/abs/2607.20574
 - BOLA in the Wild (Taxonomy) — Bandana Kaur, arXiv:2605.25865 `[프리프린트·LLM분류]` action-level **41.7%**(≠78.6%) https://arxiv.org/abs/2605.25865
 - Rethinking BOLA under Zero Trust (BOLAZ) — Wu et al, arXiv:2507.02309 `[탄탄·다저자]` https://arxiv.org/abs/2507.02309

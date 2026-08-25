@@ -15,6 +15,8 @@ identity ──access──▶ resource ──calls──▶ operation
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
 - Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and account-bound ZAP/LLM requests.
 - Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture.
+- Evidence-preserving traffic classification: every captured observation remains inspectable while only high-confidence navigation, static assets, real CORS preflights, no-response records, and non-discovery phases stay out of coverage analysis by default.
+- Explicit `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` authentication state. Unbound cookie rotation no longer explodes graph identities, and verified account bindings remain service-scoped.
 - Localhost-only authenticated MCP server for Codex and Claude Code subscription clients.
 - System-owned ZAP baseline: Traditional Spider, strict Client Spider with AJAX fallback, passive queue completion, and native alerts. Active Scan remains separate and approval-gated.
 - Closed-world LLM execution through an exact-scope FlowScope request tool; direct external traffic is never trusted for decisive verdicts.
@@ -143,13 +145,13 @@ The ZAP API endpoint is accepted only on a loopback address. ZAP itself must be 
 
 - **Burp tab** — exact scope, port mapping, live counts, MCP connection copy, Proxy-history import, project save/load, sample, reset, and a button that opens the canonical local Web workspace.
 - **Web top modes** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
-- **Left rail** — observed counts without a fabricated percentage, HUMAN/SCANNER/LLM source filters, pseudonymous sessions and roles, three-way gaps, and graph verdict controls.
+- **Left rail** — captured/analysis/hidden/review counts without a fabricated percentage, HUMAN/SCANNER/LLM source filters, Evidence display classes, pseudonymous sessions and roles, three-way gaps, and graph verdict controls.
 - **Flow Graph** — fixed identity → resource → operation lanes, with direct identity → operation edges when no object identifier was observed; parallel source overlays, authorization-verdict view, focus+context selection, zoom-to-fit, and 18-at-a-time expandable resource/API groups.
 - **판정 매트릭스** — observed identity/role × operation × resource cells, per-source verdicts, uncrossed combinations, partial discovery, and conflicts.
 - **흐름 순서** — response-to-request ID/token dependencies recovered from timestamped observations.
 - **시나리오** — deterministic BOLA/BFLA candidates and gaps alongside non-final Judge assessments and server-validated final verdicts.
 - **시나리오 감사·오버라이드** — a human audit surface with Evidence-bound status and masked notes; it does not bypass validation checks.
-- **파싱 결과** — masked source, identity, method, normalized operation, resource, and status rows. The beta.3 table does not yet expose the stable Evidence ID or a direct detail action; that mismatch is an open UI issue.
+- **파싱 결과** — masked source, identity, method, normalized operation, resource, status, traffic class/disposition, repeat count, and stable Evidence ID. Selecting a row opens the operation detail and its paginated masked Evidence.
 - **계정·세션** — a full-width workspace with secret-free account registration, explicit HUMAN login capture, safe broker status, discovered-session comparison, binding/unbinding, reauthentication, memory revocation, and account removal.
 - **Right detail** — per-source verdicts and on-demand masked Request/Response for the selected API, plus a safe Burp Repeater draft handoff. The polling snapshot never transfers every stored message body.
 
@@ -177,7 +179,8 @@ The MCP and Web servers bind only to `127.0.0.1`, validate host/origin, require 
 
 - Raw Authorization/Cookie/CSRF values selected by explicit login capture exist only in the in-memory broker, are never exposed by Web/MCP views, and are wiped from broker buffers on replacement/revocation/unload. They are not written to project files. Java and HTTP libraries may still create short-lived immutable string copies, so this is process-memory containment rather than a hardware secret vault.
 - Authorization, Cookie, Set-Cookie, password, token, secret, and API-key values are masked before Evidence storage.
-- Authentication grouping uses a subject or a short one-way fingerprint; raw opaque tokens are not retained.
+- Authentication grouping uses a subject or a short one-way fingerprint; raw opaque tokens are not retained. Cookie presence alone is not login proof: an unbound cookie fingerprint is retained for audit/binding but shown as one service-scoped `UNRESOLVED` graph identity until a controlled broker match or explicit account binding proves the account.
+- Traffic classification never deletes stored Evidence. User `include/exclude/auto` overrides are operation-scoped but cannot turn no-response, unknown-source, or non-discovery validation traffic into discovery coverage; repeated observations are collapsed only in the display and retain every Evidence ID, count, and first/last timestamp.
 - Bodies and message detail are truncated to 8 KiB per field; live capture is capped at 20,000 records.
 - Project files contain masked traffic but may still contain sensitive application data. POSIX files are written owner-read/write only; protect them under the engagement's data policy.
 - Project writes use a temporary file and atomic replacement when the filesystem supports it.
@@ -188,6 +191,7 @@ The MCP and Web servers bind only to `127.0.0.1`, validate host/origin, require 
 - Owner extraction recognizes common scalar owner/user/account fields and explicit nested owner/user/author/account/customer principal objects. Domain-specific ownership should still be confirmed by the operator.
 - Session automation covers ordinary cookies, bearer/CSRF headers, rotation, expiry hints, and suspect responses. CAPTCHA, MFA, WebAuthn, device binding, and application-specific refresh/login protocols can require manual recapture.
 - Opaque rotating tokens cannot be correlated automatically without a stable signal; the operator can explicitly bind verified fingerprints to one registered account.
+- Fetch Metadata and MIME signals can be absent or misleading, and business APIs can resemble documents, assets, or telemetry. The classifier therefore excludes only converging high-confidence signals, keeps ambiguous traffic in `REVIEW`, exposes reasons, and permits a reversible operation-level override; it cannot make traffic noise classification perfect.
 - Data-flow links use bounded exact-value matching, not full semantic taint analysis.
 - Repeater handoff uses the stored masked request and never auto-sends it. Automated decisive validation uses only FlowScope-controlled MCP requests, not Repeater or direct 8082 traffic.
 - Closed-world execution prevents the supplied agent from using external discovery by instruction and tool choice, but FlowScope cannot control a separately modified agent installation or other local processes. Server-side scope, evidence visibility, and verdict gates remain authoritative.

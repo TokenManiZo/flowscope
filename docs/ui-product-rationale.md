@@ -30,7 +30,9 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identi
 | 화면 요소 | 사용자가 묻는 질문 | 이렇게 설계한 이유 | 하지 않는 것 |
 |---|---|---|---|
 | 관측 범위 | 현재 실제로 본 것은 얼마나 되는가? | 관측된 `신원 × 메서드·엔드포인트 × 객체` 조합과 endpoint/method/object 수만 표시한다. | 알 수 없는 전체 API 수를 분모로 삼은 완료 퍼센트를 만들지 않는다. |
+| 수집·분석·기본 숨김·검토 | 분류 때문에 무엇이 분석에서 빠졌는가? | 전체 Evidence 수와 coverage 입력을 나란히 표시해 필터의 영향을 숨기지 않는다. | `기본 숨김`을 삭제나 취약점 없음으로 표현하지 않는다. |
 | 소스 필터 | 사람·ZAP·LLM 중 누가 이 경로를 밟았는가? | source를 서로 켜고 끄며 동일 좌표의 중복·고유 발견을 비교한다. 색뿐 아니라 실선·파선·점선을 병행한다. | source를 사용자 역할이나 실행 지시자와 섞지 않는다. |
+| Evidence 표시 | API·정적·navigation·preflight·애매한 관측 중 무엇을 파싱 표에서 볼 것인가? | 서버의 결정론 분류와 이유를 그대로 보여 주고 기본 숨김 class도 다시 펼칠 수 있게 한다. 체크박스는 파싱 결과 표시만 바꾸고, operation 상세의 포함/숨김/자동 판단만 서버 coverage를 재계산하는 reversible override다. | 경로명 하나로 Evidence를 삭제하거나 표시 체크박스가 이미 계산된 graph를 임의로 재판정한다고 주장하지 않는다. |
 | 권한 레벨 | 이 신원은 어떤 역할로 테스트됐는가? | 사용자가 확인한 역할을 클릭으로 지정한다. 역할이 있어야 BFLA 정책 비교가 가능하다. | URL/JWT 문자열만 보고 USER/ADMIN을 자동 추정하지 않는다. |
 | 사용자 그래프 | 계정별 접근 경로가 어떻게 다른가? | 로그인 세션별 그래프와 전체 overlay를 모두 제공한다. 두 저권한 계정 비교가 BOLA의 기본이다. | ADMIN 계정을 필수로 요구하지 않는다. 역할 비교가 필요한 engagement에서만 선택적으로 쓴다. |
 | 동일 사용자로 병합 | 재로그인으로 바뀐 세션이 같은 계정인가? | 서비스 경계 안에서 사용자가 확인한 경우에만 새 fingerprint를 기존 계정과 연결한다. | 회전 토큰을 비슷하다는 이유로 자동 병합하지 않는다. 다른 사용자를 합치면 IDOR 판정이 뒤집힌다. |
@@ -44,7 +46,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identi
 | 판정 매트릭스 | 같은 조합을 표로 빠르게 비교할 수 있는가? | identity/role × operation × resource cell에 source별 verdict와 갭을 정렬한다. | 그래프만 보고 놓치기 쉬운 조합 차이를 숨기지 않는다. |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용됐는가? | 실제로 재사용된 ID/token 값의 시간순 의존성만 연결한다. | 단순히 시간상 앞뒤라는 이유로 관계를 만들지 않는다. |
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 규칙 후보, LLM 의견, 서버 검증 verdict, 사람 감사 기록을 같은 Evidence ID에 연결한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |
-| 파싱 결과 | 어떤 요청이 어떤 좌표로 정규화됐는가? | beta.3에서는 마스킹된 source/identity/method/operation/resource/status 행을 빠르게 확인한다. | raw 인증정보를 표시하거나, 아직 없는 Evidence ID·상세 진입을 제공한다고 주장하지 않는다. |
+| 파싱 결과 | 어떤 요청이 어떤 좌표와 분류로 정규화됐는가? | source/identity/method/operation/resource/status에 class/disposition/repeat/Evidence ID를 함께 두고 행 선택을 operation 상세로 연결한다. 반복 접기는 표시만 줄이며 모든 Evidence ID는 상세에서 유지한다. | raw 인증정보를 표시하거나 숨긴 행을 저장소에서 삭제하지 않는다. |
 | Request/Response 상세 | 판정의 실제 근거가 무엇인가? | 선택 API에서만 마스킹 전문을 지연 로드해 Burp 메시지와 판정을 연결한다. | 2만 건 전문을 polling snapshot마다 보내지 않는다. |
 | 계정·세션 | ZAP과 LLM이 어느 테스트 계정으로 실행되는가? | secret-free 계정과 메모리 전용 broker 상태를 분리해 보여 준다. | 비밀번호·raw cookie/token을 프로젝트나 LLM에 전달하지 않는다. |
 
@@ -86,6 +88,7 @@ orchestrator = SYSTEM 또는 HUMAN
 
 - JWT payload는 서명·issuer·audience가 검증되지 않은 그룹핑 힌트다.
 - opaque cookie가 회전했을 때 두 값만 보고 같은 사용자라고 증명할 수 없다.
+- cookie 존재만으로 로그인 사용자라고 증명할 수 없다. 계정에 연결되지 않은 fingerprint는 서비스별 `불확실한 신원`으로 표시하고 원 fingerprint는 Evidence와 binding 후보에 남긴다.
 - `/admin` 경로나 `role=admin` 문자열은 실제 서버 권한의 증거가 아니다.
 - 잘못된 사용자 병합이나 역할 추정은 BOLA/BFLA의 공격자·소유자·정상 대조를 바꾼다.
 
@@ -176,7 +179,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 1. **빈 데이터 화면의 정보 과다:** 관측 0건인데 권한·세션 병합·갭·그래프 고급 조작을 모두 노출해 무엇부터 해야 하는지 알기 어렵다. 빈 상태에서는 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 행동을 우선하고 분석 패널은 데이터가 생긴 뒤 단계적으로 보여 주는 수정이 필요하다.
 2. **ADMIN 예시의 오해:** USER A·USER B·ADMIN 문구가 ADMIN 로그인이 기본 요구처럼 보인다. 두 저권한 계정을 기본 예시로 하고 ADMIN은 선택적 역할 비교임을 UI에서 명시해야 한다.
 3. **Maven 중간 JAR 혼동:** `target/original-flowscope-1.2.0-beta.3.jar`를 Burp에 추가하면 의존성이 없어 일반적인 `Extension class is not a recognized type` 오류가 난다. 올바른 배포물은 `target/flowscope-1.2.0-beta.3.jar`이며, 공개 빌드는 사용자가 중간 JAR을 선택할 수 없게 산출물 구조를 정리해야 한다.
-4. **파싱 결과의 Evidence 진입 부재:** 코드와 화면을 대조한 결과 beta.3 표는 source/identity/method/operation/resource/status만 표시한다. 문서는 현재 동작으로 바로잡았지만, 제품 UI에는 stable Evidence ID와 상세 진입을 추가하거나 이 표의 역할을 명시적으로 축소해야 한다.
+4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
 5. **Codex 신뢰 상태 안내:** 공식 Codex 동작상 project-scoped `.codex/config.toml`은 신뢰된 프로젝트에서만 적용된다. 로컬 Codex CLI 0.147.0에서 `agent-workspace`의 `flowscope` 항목이 실제 발견되는 것을 확인했으며, 사용법에는 프로젝트 신뢰 전제와 `codex mcp get flowscope` 확인 단계를 명시했다. MCP 서버 연결과 Explorer/Judge 전체 실행은 별도 실환경 gate다.
 
 이 부채는 숨기지 않고 개발 기록과 beta gate에 남긴다. 수정 전 발표에서는 “현재 발견되어 보완 중인 beta UX/통합 항목”으로 명시한다.

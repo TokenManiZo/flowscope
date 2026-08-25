@@ -31,6 +31,11 @@ public final class ResponseEvidence {
                 && LOGIN_REDIRECT.matcher(record.location).find();
     }
 
+    public static boolean loginRedirect(RequestRecord record) {
+        return record != null && record.hasResponse && record.status >= 300 && record.status < 400
+                && record.location != null && LOGIN_REDIRECT.matcher(record.location).find();
+    }
+
     public static boolean showsObject(String body, String resource, String owner) {
         if (body == null || body.isBlank() || body.equals("{}") || body.equals("[]")
                 || resource == null || owner == null) return false;

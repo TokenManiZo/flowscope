@@ -34,7 +34,7 @@ public final class StressDiagnostic {
 
         p("=== 입력 ===");
         p("총 요청 레코드            : " + recs.size());
-        p("노이즈 제외(정적·애널)    : " + res.noiseFiltered + "  -> 분석 대상 " + res.kept() + "건");
+        p("커버리지 제외(원본 보존)  : " + res.excludedCount + "  -> 분석 대상 " + res.kept() + "건");
         p("");
         p("=== 그래프 규모 (털뭉치 여부) ===");
         p("노드 총합                 : " + g.nodeCount());

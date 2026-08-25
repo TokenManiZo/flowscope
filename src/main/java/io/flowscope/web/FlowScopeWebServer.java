@@ -16,6 +16,7 @@ import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
 import io.flowscope.core.Orchestrator;
 import io.flowscope.core.ToolKind;
+import io.flowscope.core.TrafficOverride;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.integration.McpServer;
@@ -112,6 +113,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/role" -> role(request);
             case "/api/requirement" -> requirement(request);
             case "/api/review" -> review(request);
+            case "/api/traffic-override" -> trafficOverride(request);
             case "/api/identity-merge" -> identityMerge(request);
             case "/api/account-save" -> accountSave(request);
             case "/api/account-delete" -> accountDelete(request);
@@ -231,8 +233,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String action = required(form, "action").toLowerCase(Locale.ROOT);
             if (action.equals("begin")) {
                 String runId = validatedRunId(form.getOrDefault("runId", "human-" + System.currentTimeMillis()));
+                String accountId = form.getOrDefault("account", "").trim();
+                if (!accountId.isBlank() && state.config().account(accountId).isEmpty()) {
+                    throw new IllegalArgumentException("존재하지 않는 HUMAN 계정입니다.");
+                }
                 state.contexts().activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
-                        Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, runId));
+                        Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, runId,
+                        accountId.isBlank() ? null : accountId));
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
                 if (!state.contexts().clear(Source.HUMAN, runId)) {
@@ -252,6 +259,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         ObjectNode body = json.createObjectNode();
         body.put("active", context != null);
         body.put("runId", context == null ? "" : context.runId());
+        body.put("accountId", context == null || context.accountId() == null ? "" : context.accountId());
         body.put("proxy", "http://127.0.0.1:8080");
         return json(200, body);
     }
@@ -485,6 +493,21 @@ public final class FlowScopeWebServer implements AutoCloseable {
             state.config().withResourceOwner(required(form, "resource"), form.getOrDefault("identity", ""));
             state.rebuild();
             return success("소유자를 저장했습니다.");
+        } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    private LoopbackHttpServer.Response trafficOverride(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String operation = required(form, "operation");
+            TrafficOverride value = TrafficOverride.valueOf(required(form, "value").toUpperCase(Locale.ROOT));
+            state.config().withTrafficOverride(operation, value);
+            state.rebuild();
+            return success(value == TrafficOverride.AUTO ? "자동 분류로 복귀했습니다."
+                    : value == TrafficOverride.INCLUDE
+                    ? "자동 보조 트래픽을 분석에 포함했습니다. discovery 신뢰 경계는 유지됩니다."
+                    : "기본 분석에서 숨겼습니다. Evidence는 보존됩니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 

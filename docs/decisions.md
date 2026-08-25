@@ -550,6 +550,16 @@
 - **현재 상태:** 올바른 `target/flowscope-1.2.0-beta.3.jar`의 Burp 2026.7.3 load는 사용자 환경에서 통과했다. 산출물 단일화는 아직 구현하지 않았다.
 - **상태:** 확정·구현 대기
 
+## D-059 · 트래픽 노이즈 = 삭제 규칙이 아닌 Evidence 보존형 분류
+- **문제:** 경로 확장자, `OPTIONS`, cookie 존재, telemetry라는 이름만으로 관측을 버리면 API처럼 보이지 않는 보안 관련 요청을 영구 미탐으로 만들고 과거 관측에 규칙을 소급할 수 없다. 반대로 모든 브라우저 보조 요청을 그래프에 넣으면 세션 cookie 회전과 정적·navigation 반복이 identity/operation을 폭증시킨다.
+- **결정:** 저장과 분석 입력을 분리한다. 모든 관측은 마스킹 후 Evidence로 남기고, 결정론 `TrafficClassifier`가 class, `INCLUDE/EXCLUDE/REVIEW`, 근거, override 여부를 파생한다. coverage/graph에는 `EXCLUDE`만 빼며 `REVIEW`는 포함한다. operation별 `INCLUDE/EXCLUDE/AUTO`를 프로젝트에 저장하고 언제든 되돌릴 수 있지만 no-response, unknown source, non-discovery phase는 override할 수 없다. 반복 접기는 화면 표현에만 적용하며 모든 Evidence ID와 시간·횟수를 보존한다.
+- **고신뢰 제외:** 진짜 CORS preflight는 `OPTIONS + Access-Control-Request-Method`, 정적 자원은 안전 메서드와 Fetch destination/MIME 또는 확장자/MIME의 합치, navigation은 document/iframe과 HTML 응답의 합치가 있어야 한다. 객체 신호, 401/403, login redirect, unsafe method, API media type은 제외보다 우선한다. no-response와 `VALIDATION/COACH_PROBE`는 discovery coverage에서만 제외한다. telemetry 이름은 단독 근거가 아니므로 `REVIEW`다.
+- **신원 안정화:** cookie 존재는 인증 증명이 아니다. 원 cookie/session 단방향 fingerprint는 account binding 후보로 보존하되, broker exact credential match나 명시 binding이 없는 것은 서비스별 `UNRESOLVED` graph identity 하나로 표시한다. 명시 HUMAN anonymous pass도 Authorization과 Cookie가 모두 없을 때만 `ANONYMOUS`다. 이 방식은 회전 cookie 1,000개를 1,000명의 사용자로 오인하지 않으면서 서로 다른 미확인 계정을 확정 병합하지 않는다.
+- **근거:** [W3C Fetch Metadata](https://www.w3.org/TR/fetch-metadata/)는 요청 문맥 신호의 의미를, [WHATWG Fetch](https://fetch.spec.whatwg.org/)는 CORS preflight 헤더를, [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html)는 method safety와 representation metadata를 정의한다. [W3C Beacon](https://www.w3.org/TR/beacon/)처럼 background/telemetry 요청도 application data를 보낼 수 있으므로 명칭 기반 삭제는 정당화되지 않는다. Burp와 mitmproxy의 filter도 원 history/flow를 삭제하지 않는 표시 계층이라는 점을 참고했다.
+- **기각:** 확장자 blacklist, `/analytics` 정규식, 모든 OPTIONS 제거, cookie 값마다 graph identity 생성, LLM이 매 요청을 분류하는 방식은 각각 미탐·identity 폭증·비결정성·비용 문제 때문에 채택하지 않았다. 학습형 classifier도 ground-truth dataset과 설명 가능한 안정 gate가 없어 현재 제품 경계 밖이다.
+- **한계:** Fetch Metadata와 MIME은 누락·오표기될 수 있고 business API와 navigation/asset의 형태가 겹칠 수 있다. 따라서 오탐·미탐 0을 보장하지 않으며, 애매한 관측은 `REVIEW`로 남기는 것이 의도된 결과다.
+- **상태:** 베타 구현·자동 회귀·standalone UI 검증 완료. 실제 다양한 대상의 분류 품질은 blind benchmark와 운영 표본으로 측정해야 함.
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

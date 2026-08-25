@@ -70,7 +70,9 @@ public final class FlowScopeControlTab extends JPanel {
         long human = result.records.stream().filter(record -> record.source == Source.HUMAN).count();
         long scanner = result.records.stream().filter(record -> record.source == Source.SCANNER).count();
         long llm = result.records.stream().filter(record -> record.source == Source.LLM).count();
-        SwingUtilities.invokeLater(() -> collection.setText("관측 " + result.records.size() + "건 · HUMAN "
+        SwingUtilities.invokeLater(() -> collection.setText("수집 " + result.records.size() + "건 · 분석 "
+                + result.coverageRecords.size() + " · 기본 숨김 " + result.excludedCount + " · 검토 "
+                + result.reviewCount + " · HUMAN "
                 + human + " · SCANNER " + scanner + " · LLM " + llm + " · 후보 "
                 + result.analysis.findings().size() + " · 갭 " + result.analysis.gaps().size()));
     }

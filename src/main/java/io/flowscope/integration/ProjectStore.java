@@ -49,6 +49,7 @@ public final class ProjectStore {
         EvidenceIds.assign(records);
         ObjectNode root = json.createObjectNode();
         root.put("schema_version", SCHEMA_VERSION);
+        root.put("traffic_classifier_version", TrafficClassifier.VERSION);
         root.put("saved_at", Instant.now().toString());
         ArrayNode savedLanes = root.putArray("completed_lanes");
         (completedLanes == null ? Set.<Source>of() : completedLanes).stream()
@@ -137,11 +138,21 @@ public final class ProjectStore {
         out.put("tool", r.tool.name());
         out.put("phase", r.phase.name());
         out.put("execution_trust", r.executionTrust.name());
+        out.put("auth_state", r.authState.name());
+        out.put("traffic_class", r.trafficClassification.trafficClass().name());
+        out.put("traffic_disposition", r.trafficClassification.disposition().name());
+        out.put("traffic_user_override", r.trafficClassification.userOverride());
+        out.set("classification_reasons", json.valueToTree(r.trafficClassification.reasons()));
         put(out, "run_id", r.runId);
         put(out, "evidence_id", r.evidenceId);
         put(out, "content_digest", r.contentDigest);
         put(out, "query", r.query);
         put(out, "request_body", r.reqBody);
+        put(out, "request_content_type", r.requestContentType);
+        put(out, "response_content_type", r.responseContentType);
+        put(out, "sec_fetch_dest", r.secFetchDest);
+        put(out, "sec_fetch_mode", r.secFetchMode);
+        put(out, "access_control_request_method", r.accessControlRequestMethod);
         putHeaders(out, "request", r.reqText);
         out.put("timestamp", r.timestamp);
         put(out, "response_body", r.body);
@@ -160,11 +171,26 @@ public final class ProjectStore {
         r.tool = enumValue(ToolKind.class, required(value, "tool"));
         r.phase = enumValue(RunPhase.class, required(value, "phase"));
         r.executionTrust = enumValue(ExecutionTrust.class, optional(value, "execution_trust", "UNKNOWN"));
+        r.authState = enumValue(AuthState.class, optional(value, "auth_state", "UNRESOLVED"));
+        List<String> reasons = new ArrayList<>();
+        JsonNode reasonNodes = value.path("classification_reasons");
+        if (reasonNodes.isArray()) reasonNodes.forEach(reason -> reasons.add(Masking.maskSecrets(reason.asText())));
+        r.trafficClassification = new TrafficClassification(
+                enumValue(TrafficClassification.TrafficClass.class,
+                        optional(value, "traffic_class", "UNKNOWN")),
+                enumValue(TrafficClassification.Disposition.class,
+                        optional(value, "traffic_disposition", "REVIEW")),
+                reasons, value.path("traffic_user_override").asBoolean(false));
         r.runId = optional(value, "run_id", "project-import");
         r.evidenceId = nullable(value, "evidence_id");
         r.contentDigest = nullable(value, "content_digest");
         r.query = masked(value, "query");
         r.reqBody = masked(value, "request_body");
+        r.requestContentType = masked(value, "request_content_type");
+        r.responseContentType = masked(value, "response_content_type");
+        r.secFetchDest = masked(value, "sec_fetch_dest");
+        r.secFetchMode = masked(value, "sec_fetch_mode");
+        r.accessControlRequestMethod = masked(value, "access_control_request_method");
         r.reqText = maskedHeaders(value, "request");
         r.timestamp = value.path("timestamp").asLong();
         r.body = masked(value, "response_body");
@@ -179,6 +205,7 @@ public final class ProjectStore {
         policy.set("identity_roles", json.valueToTree(config.identityRoles()));
         policy.set("endpoint_requirements", json.valueToTree(config.endpointRequirements()));
         policy.set("resource_owners", json.valueToTree(config.resourceOwners()));
+        policy.set("traffic_overrides", json.valueToTree(config.trafficOverrides()));
         ArrayNode accounts = policy.putArray("accounts");
         config.accounts().values().stream().sorted(java.util.Comparator.comparing(AccountProfile::id)).forEach(account -> {
             ObjectNode value = accounts.addObject();
@@ -207,6 +234,8 @@ public final class ProjectStore {
                 config.withEndpointRequirement(e.getKey(), enumValue(AccessRole.class, e.getValue().asText())));
         value.path("resource_owners").properties().forEach(e ->
                 config.withResourceOwner(e.getKey(), e.getValue().asText()));
+        value.path("traffic_overrides").properties().forEach(e ->
+                config.withTrafficOverride(e.getKey(), enumValue(TrafficOverride.class, e.getValue().asText())));
         JsonNode accounts = value.path("accounts");
         if (accounts.isArray()) {
             for (JsonNode account : accounts) {

@@ -16,7 +16,7 @@
 
 ```text
 Browser :8080 ─┐
-               ├─▶ Burp capture ─▶ mask/normalize ─▶ graph + rules ─▶ Web UI
+               ├─▶ Burp capture ─▶ mask/normalize ─▶ classify ─▶ graph + rules ─▶ Web UI
 ZAP     :8081 ─┘        ▲                                  │
                         │ session broker                    │ locked snapshot
 Codex/Claude ─▶ MCP ─▶ controlled target executor          ▼
@@ -40,10 +40,13 @@ LLM :8082 = optional observed fallback; decisive validation에는 사용하지 �
 ```text
 RequestRecord {
   source, sourceDetail, orchestrator, tool, phase, runId,
-  executionTrust,
+  executionTrust, authState,
   service, method, path, query, reqBody, reqText,
   status, body, respText, location, hasResponse, timestamp,
-  fp, idn, role, op, resource, evidenceId, contentDigest
+  requestContentType, responseContentType, secFetchDest, secFetchMode,
+  accessControlRequestMethod,
+  fp, idn, role, op, resource, evidenceId, contentDigest,
+  trafficClassification
 }
 ```
 
@@ -51,14 +54,16 @@ RequestRecord {
 - `orchestrator`: HUMAN/LLM/SYSTEM. source와 직교한다(D-036).
 - `executionTrust`: `CONTROLLED/OBSERVED/UNVERIFIED_RUNTIME/IMPORTED/UNKNOWN`. 최종 결정적 validation은 FlowScope가 exact scope와 전송 경로를 통제한 `CONTROLLED` 요청만 허용한다.
 - `service`: scheme://host:port. op/resource/identity 경계를 서비스별로 분리한다.
-- `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다.
+- `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다. 쿠키 fingerprint는 계정 연결·감사를 위한 안전한 식별자이지 로그인 증명이 아니다.
+- `authState`: `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`. 명시적 계정 연결이나 memory-only broker의 exact credential match만 `ACCOUNT_BOUND`가 된다. 계정에 연결되지 않은 cookie/session fingerprint는 서비스별 하나의 `UNRESOLVED` 그래프 신원으로 안정화하되 원 fingerprint는 Evidence에 남긴다.
+- `trafficClassification`: `API/NAVIGATION/STATIC_ASSET/PREFLIGHT/TELEMETRY_CANDIDATE/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `EXCLUDE`는 Evidence 삭제가 아니라 coverage/graph 입력 제외다.
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
 - `SessionBroker`: 사용자가 Web UI에서 명시적으로 시작한 HUMAN 로그인 구간의 Cookie/Authorization/CSRF만 프로세스 메모리에 보관한다. account service와 exact scope가 모두 맞고 상태가 `ACTIVE`일 때만 ZAP/LLM 요청에 주입한다. 401·로그인 redirect·invalid token은 `SUSPECT`, 비밀 삭제/만료는 `REAUTH_REQUIRED`이며 자동 재사용하지 않는다. raw 값은 UI/MCP/project에 나오지 않는다.
 - `evidenceId`: 전체 의미 내용 digest 기반 ID. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
-프로젝트 파일 schema v1은 마스킹된 RequestRecord, 계정·세션 지문 연결, role/requirement/owner 정책, 완료가 확인된 레인, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록을 저장한다. raw broker 세션은 저장하지 않는다. 탐색 레코드가 존재한다는 이유만으로 완료 레인을 추론하지 않으며, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증한다. 새 필드는 선택값으로 추가해 기존 schema v1 파일을 계속 읽는다. 임시파일과 atomic replace를 사용하고 POSIX에서는 0600으로 제한한다(D-049/D-050/D-052/D-054).
+프로젝트 파일 schema v1은 마스킹된 RequestRecord, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 완료가 확인된 레인, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록을 저장한다. raw broker 세션은 저장하지 않는다. 탐색 레코드가 존재한다는 이유만으로 완료 레인을 추론하지 않으며, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증한다. 분류는 저장하되 로드 후 현재 결정론 classifier로 재계산하고 적용 버전을 프로젝트 root에 기록한다. 새 필드는 선택값으로 추가해 기존 schema v1 파일을 계속 읽는다. 임시파일과 atomic replace를 사용하고 POSIX에서는 0600으로 제한한다(D-049/D-050/D-052/D-054/D-059).
 
 ## 4. 파이프라인
 
@@ -71,10 +76,22 @@ Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범
 - 경로 숫자/UUID/장문 hex를 `{id}`로 만들고 전체 부모 체인을 resource에 보존한다.
 - 명시적 query/body `id`, `*Id`, `*_id`만 보조 resource로 쓴다. page/limit 등 제어값은 제외한다.
 - GraphQL은 `POST /graphql#operationName`으로 분리한다.
-- identity는 service + fingerprint로 결정한다. JWT iss/aud/sub는 서명 미검증 그룹핑 힌트일 뿐 인증 증거가 아니다(D-034).
+- identity는 service + fingerprint로 시작한다. JWT iss/aud/sub는 서명 미검증 그룹핑 힌트일 뿐 인증 증거가 아니다(D-034). 계정 연결 없는 쿠키 fingerprint는 모두 같은 계정으로 합치는 대신 서비스별 `UNRESOLVED` 그래프 신원으로만 접어 세션 회전 노이즈를 막고, 원 fingerprint는 연결 후보로 보존한다.
 - 정규화 뒤 사용자가 확인한 session binding을 적용한다. 다른 service의 계정과 세션은 연결할 수 없다.
 
-### 4.3 소유자·판정 F-10~11
+### 4.3 비파괴 분류·관측 접기
+
+분류기는 경로 이름 하나로 삭제하지 않는다. HTTP 메서드, 실제 응답 유무, Fetch Metadata, request/response Content-Type, CORS preflight 헤더, 객체 신호, 상태·redirect, source와 phase가 함께 맞는 경우에만 coverage에서 제외한다.
+
+- 실제 preflight는 `OPTIONS`와 `Access-Control-Request-Method`가 함께 있을 때만 `PREFLIGHT/EXCLUDE`다. 일반 OPTIONS API는 유지한다.
+- 안전 메서드의 Fetch destination/MIME 또는 확장자/MIME가 함께 맞을 때만 `STATIC_ASSET/EXCLUDE`다. 객체·401/403·login redirect 등 보안 신호가 있으면 API 분석이 우선한다.
+- document/iframe + HTML navigation은 `NAVIGATION/EXCLUDE`지만 보안 신호가 있으면 유지한다.
+- telemetry 명칭은 단독 제외 근거가 아니며 `TELEMETRY_CANDIDATE/REVIEW`로 남긴다.
+- response 없는 관측, source `UNKNOWN`, `VALIDATION/COACH_PROBE`는 discovery coverage에서 제외하지만 Evidence는 보존한다.
+- 같은 신원/run/phase/method/operation/resource/query/body/status-class/response/location의 반복만 표시 cluster로 접는다. 분석 입력과 Evidence ID는 삭제하거나 합치지 않는다.
+- 애매한 것은 `UNKNOWN/REVIEW`로 분석에 포함한다. 사용자는 operation 단위로 `INCLUDE/EXCLUDE/AUTO`를 되돌릴 수 있지만 no-response, unknown source, `VALIDATION/COACH_PROBE`라는 discovery 신뢰 경계는 override할 수 없다.
+
+### 4.4 소유자·판정 F-10~11
 
 소유자 우선순위는 사용자 확정 → **응답 본문**의 명시적 owner/user/account 필드 또는 같은 이름의 중첩 principal 객체 → 저신뢰 first-success다. 공격자가 조작 가능한 요청 본문과 문맥 없는 임의 email/id 필드는 소유권 근거로 쓰지 않는다. 저신뢰나 충돌은 미확정이므로 취약 판정에서 제외한다.
 
@@ -90,7 +107,7 @@ Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범
 
 role/requirement는 자동추정하지 않고 사용자가 지정한다(D-018).
 
-### 4.4 비교·그래프 F-07~15/F-20~24
+### 4.5 비교·그래프 F-07~15/F-20~24
 
 CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict를 보존하고 다음 갭을 계산한다.
 
@@ -100,12 +117,13 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 
 데이터 Flow 엣지는 같은 identity에서 이전 응답의 ID/token이 30분 안의 뒤 요청 path/query/body에 실제 소비될 때만 만든다. 단순 시간순 엣지는 만들지 않는다(D-019).
 
-### 4.5 세션·LLM·ZAP F-16~19
+### 4.6 세션·LLM·ZAP F-16~19
 
 외부 Codex/Claude 클라이언트가 구독 계정으로 모델을 실행한다. FlowScope는 model OAuth/API key를 받지 않는다.
 
 - 기본은 closed-world다. 공급된 agent-workspace는 web search, Wayback, 외부 API 문서·소스 저장소, curl·브라우저 네트워킹을 금지한다. 대상 내부 문서는 exact-scope 통제 응답으로 실제 관측된 경우만 사용할 수 있다.
 - Explorer는 `flowscope_target_request`만 사용한다. 서버는 탐색 중 HUMAN/SCANNER count·cell·gap·finding·Evidence를 숨기고 Explorer 자신의 run Evidence만 보여 준다.
+- captured/coverage/excluded/review와 source별 coverage count도 같은 가시성 경계를 적용해 Explorer에게는 현재 LLM run 값만 보인다.
 - HUMAN, 시스템 ZAP, 독립 LLM이 정확한 run 종료를 완료해야 `flowscope_lock_dataset`이 성공한다. 레코드가 있다는 사실만으로 완료 처리하지 않는다.
 - Judge는 잠긴 후보/소유자/역할 기준과 ZAP native alert를 종합한다. 잠금 뒤 새 검증 트래픽은 현재 Evidence 저장소에서 읽되 후보 오라클은 잠긴 snapshot을 유지한다.
 - MCP exact-scope 교체는 로컬 capability를 가진 클라이언트가 사용자가 명시한 범위를 자동 설정할 때만 허용하며, SCANNER/LLM run 중에는 거부한다.
@@ -126,7 +144,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 | 판정 매트릭스 | identity/role × operation × resource의 소스별 판정과 3종 갭 |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용된 실제 데이터 의존성 |
 | 시나리오 | BOLA/BFLA 규칙 후보·갭·LLM assessment·서버 검증 최종 verdict와 사람 감사 |
-| 파싱 결과 | 마스킹된 source/identity/method/operation/resource/status 관측 행. beta.3 표에는 stable Evidence ID와 직접 상세 진입이 아직 노출되지 않음 |
+| 파싱 결과 | 마스킹된 source/identity/method/operation/resource/status, traffic class/disposition/reason, 반복 수, stable Evidence ID. 행 선택은 operation 상세와 페이지형 Evidence로 연결 |
 | 계정·세션 | 전체 폭 계정 등록, HUMAN 로그인 캡처, broker 상태/재인증/폐기, 발견 지문 비교와 명시 연결·해제 |
 | 빠른 시작 | HUMAN run, 결정론적 ZAP 대상·계정·단계·수집/Alert 상태, 독립 Explorer와 잠금 후 Judge 순서 |
 | 공통 우측 | 선택 API의 지연 로드된 마스킹 Request/Response와 Repeater 미전송 초안 |
@@ -139,7 +157,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 | 모듈 | 구현 |
 |---|---|
 | Capture | `burp/FlowScopeExtension` |
-| Normalize/mask | `core/Normalizer`, `Fingerprints`, `Masking`, `BurpXmlParser` |
+| Normalize/mask/classify | `core/Normalizer`, `Fingerprints`, `Masking`, `BurpXmlParser`, `TrafficClassifier`, `ObservationCollapser` |
 | Identity/review state | `AccountProfile`, `AnalysisConfig`, `ReviewDecision`, `ValidationDecision` |
 | Rules | `AuthorizationAnalyzer`, `DataFlowAnalyzer`, `EvidenceIds` |
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |
@@ -152,6 +170,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 - 후보는 exploitability/business impact의 증명이 아니다.
 - domain-specific 또는 일반 principal 문맥이 아닌 중첩 ownership은 사용자 확정이 필요하다.
 - 안정 신호 없는 opaque rotating token은 자동으로 같은 identity로 합칠 수 없으며 사용자 확인 binding이 필요하다.
+- 쿠키 존재만으로 익명/로그인 여부를 완전히 알 수 없고 Fetch Metadata/MIME도 모든 클라이언트가 제공하지 않는다. 따라서 `UNRESOLVED`와 `REVIEW`가 정상 상태이며 분류의 오탐·미탐 0을 주장하지 않는다.
 - data flow는 exact-value 보조분석이며 semantic taint가 아니다.
 - source별 active run context는 하나이며 겹치는 LLM/ZAP run 시작은 거부한다. 종료도 정확한 run ID가 일치해야 한다.
 - 세션 브로커는 일반 Cookie/Bearer/CSRF와 서버가 돌려주는 회전을 처리하지만 CAPTCHA/MFA/WebAuthn/device binding/application-specific refresh를 일반화하지 않는다. 이 경우 수동 재로그인이 필요하다.

@@ -307,18 +307,39 @@ public final class McpServer implements AutoCloseable {
         ObjectNode out = json.createObjectNode();
         RunContextRegistry.Context llm = state.contexts().current(Source.LLM);
         boolean independentView = lockedSnapshot == null && llm != null && llm.phase() == RunPhase.EXPLORATION;
+        List<RequestRecord> visibleRecords = independentView
+                ? snapshot.records.stream().filter(record -> record.source == Source.LLM
+                && llm.runId().equals(record.runId)).toList()
+                : snapshot.records;
+        List<RequestRecord> visibleCoverage = independentView
+                ? snapshot.coverageRecords.stream().filter(record -> record.source == Source.LLM
+                && llm.runId().equals(record.runId)).toList()
+                : snapshot.coverageRecords;
         out.put("independent_explorer_view", independentView);
         out.put("workflow_stage", lockedSnapshot == null ? "COLLECTING" : "LOCKED");
         if (!lockId.isBlank()) out.put("lock_id", lockId);
         ObjectNode sourceCounts = out.putObject("source_counts");
         if (independentView) {
-            sourceCounts.put(Source.LLM.name(), snapshot.records.stream()
-                    .filter(record -> record.source == Source.LLM && llm.runId().equals(record.runId)).count());
+            sourceCounts.put(Source.LLM.name(), visibleRecords.size());
         } else {
             for (Source source : Source.values()) {
                 sourceCounts.put(source.name(), snapshot.records.stream().filter(r -> r.source == source).count());
             }
         }
+        ObjectNode coverageSourceCounts = out.putObject("coverage_source_counts");
+        if (independentView) {
+            coverageSourceCounts.put(Source.LLM.name(), visibleCoverage.size());
+        } else {
+            for (Source source : Source.values()) {
+                coverageSourceCounts.put(source.name(), visibleCoverage.stream()
+                        .filter(record -> record.source == source).count());
+            }
+        }
+        out.put("captured_records", visibleRecords.size());
+        out.put("coverage_records", visibleCoverage.size());
+        out.put("excluded_records", visibleRecords.size() - visibleCoverage.size());
+        out.put("review_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
+                == TrafficClassification.Disposition.REVIEW).count());
         out.putPOJO("scope", state.scope().entries());
         if (!independentView) {
             Pipeline.Result visible = analysisSnapshot();
@@ -349,7 +370,7 @@ public final class McpServer implements AutoCloseable {
         }
         Pipeline.Result snapshot = state.snapshot();
         List<String> emptyLanes = java.util.stream.Stream.of(Source.HUMAN, Source.SCANNER, Source.LLM)
-                .filter(source -> snapshot.records.stream().noneMatch(record -> record.source == source
+                .filter(source -> snapshot.coverageRecords.stream().noneMatch(record -> record.source == source
                         && record.phase == RunPhase.EXPLORATION && record.hasResponse
                         && record.runId != null && !record.runId.isBlank() && !"default".equals(record.runId)))
                 .map(Enum::name).toList();
@@ -454,6 +475,11 @@ public final class McpServer implements AutoCloseable {
         out.put("phase", record.phase.name());
         out.put("execution_trust", record.executionTrust.name());
         out.put("run_id", record.runId);
+        out.put("auth_state", record.authState.name());
+        out.put("traffic_class", record.trafficClassification.trafficClass().name());
+        out.put("traffic_disposition", record.trafficClassification.disposition().name());
+        out.put("coverage_eligible", record.trafficClassification.coverageEligible());
+        out.set("classification_reasons", json.valueToTree(record.trafficClassification.reasons()));
         out.put("identity", record.idn);
         out.put("operation", record.op);
         out.put("resource", record.resource);
@@ -509,6 +535,11 @@ public final class McpServer implements AutoCloseable {
             value.put("status", record.status);
             value.put("timestamp", record.timestamp);
             value.put("has_response", record.hasResponse);
+            value.put("auth_state", record.authState.name());
+            value.put("traffic_class", record.trafficClassification.trafficClass().name());
+            value.put("traffic_disposition", record.trafficClassification.disposition().name());
+            value.put("coverage_eligible", record.trafficClassification.coverageEligible());
+            value.set("classification_reasons", json.valueToTree(record.trafficClassification.reasons()));
         }
         return out;
     }

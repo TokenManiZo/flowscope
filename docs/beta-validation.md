@@ -6,9 +6,9 @@
 
 | 구분 | 결과 |
 |---|---|
-| 자동 회귀 | JDK 21 `mvn clean verify`, 112 tests, 실패·오류·skip 0 |
-| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,792,782 bytes, SHA-256 `faef5fcf38fd1e3d37ac7aaa883738e5cbe58c42147655b4f0574bba33ceee82` |
-| JAR 무결성 | ZIP 무결성 통과, 1,287 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
+| 자동 회귀 | JDK 21 `mvn clean verify`, 123 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,814,516 bytes, SHA-256 `64d9079759af25bc4df09ec0856fc3b5d61cee620b69d4053f37f0d965d8d354` |
+| JAR 무결성 | ZIP 무결성 통과, 1,295 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
 | 배포 계약 | Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
 | Session Broker | 계정별 명시적 로그인 캡처, Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
 | 실행 신뢰도 | `CONTROLLED`, `OBSERVED`, `UNVERIFIED_RUNTIME`, `IMPORTED`, `UNKNOWN` 구분과 최종 판정 gate 검증 |
@@ -17,6 +17,8 @@
 | LLM Judge | lock 이후 후보/오라클 고정, 실제 validation Evidence 추가, 저장 후 복원 시 pre-Judge snapshot 재구성, 서버 권위 verdict 검증 |
 | ZAP baseline | Traditional Spider → Client Spider → AJAX fallback → passive queue drain → native alerts 순서와 실패/상태/alert 마스킹 검증 |
 | 프로젝트 | raw session 미저장, 명시적 완료 lane 저장, 중단된 기록으로 완료 상태를 추론하지 않음 |
+| Traffic classification | captured/coverage 분리, high-confidence exclude, ambiguous review, operation override, no Evidence deletion, classifier version persistence |
+| Identity 안정화 | `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`, 1,000 rotating cookies의 graph identity 폭증 방지, 명시 binding 보존 |
 
 ## UI 검증 통과
 
@@ -26,12 +28,13 @@
 - 작은 화면에서는 modal이 세로 스크롤되고 계정 카드와 표가 화면 폭에 맞게 재배치된다.
 - matrix cell에서 해당 API의 Evidence 목록과 마스킹된 Request/Response를 필요할 때 펼칠 수 있다.
 - 브라우저 콘솔 오류는 0건이었다.
+- 현재 분류 UI를 1024×768에서 추가 검증했다. page horizontal overflow와 ellipsis 잘림은 0건이었고, 여섯 mode 전환, quick-start, 파싱 행의 stable Evidence ID→operation 상세, classification/repeat 표시와 override 조작이 동작했다.
 
 Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Community의 실제 suite tab 동작을 대신하지 않는다.
 
 ## 실제 사용자 확인
 
-- Burp Community 2026.7.3에서 올바른 fat JAR `target/flowscope-1.2.0-beta.3.jar`가 신규 load되는 것을 사용자가 확인했다.
+- Burp Community 2026.7.3에서 변경 전 beta.3의 올바른 fat JAR `target/flowscope-1.2.0-beta.3.jar`가 신규 load되는 것을 사용자가 확인했다. 이번 분류·신원 변경 뒤 재생성한 JAR에는 이 결과를 소급하지 않는다.
 - 같은 `target/`에 생성된 thin intermediate `original-flowscope-1.2.0-beta.3.jar`를 먼저 선택했을 때 `Extension class is not a recognized type`으로 실패했다. 이는 확장 진입 코드 실패가 아니라 빠진 runtime dependency를 가진 중간 산출물 선택이었지만, 배포 폴더가 사용자를 오도한 실제 packaging UX 결함이다.
 - 올바른 JAR의 unload, FlowScope 탭 기능, Web UI 연결, 실제 트래픽 수집은 이 확인만으로 통과 처리하지 않는다.
 
@@ -41,14 +44,14 @@ Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Commu
 
 - clean clone의 `mvn clean verify` 112 tests와 재생성 JAR SHA-256 동일성은 통과했다.
 - 중단 시점의 예비 보고에는 Codex MCP 자동 발견 실패가 포함됐으나, 공식 문서와 로컬 Codex CLI 0.147.0으로 다시 확인한 결과 신뢰된 `agent-workspace`에서 번들 `.codex/config.toml`의 `flowscope` 항목이 정상 발견됐다. 사용법에 신뢰 프로젝트 전제와 `codex mcp get flowscope` 확인 단계를 추가했다. 실제 서버 연결과 Explorer/Judge 완료는 아직 검증하지 않았다.
-- 파싱 결과 표에서 문서가 약속하던 stable Evidence ID와 상세 진입을 찾을 수 없었고 코드 대조에서도 현재 열이 source/identity/method/operation/resource/status로 제한됨을 확인했다.
+- 파싱 결과 표에서 stable Evidence ID와 상세 진입이 없던 결함은 이번 변경에서 class/disposition/repeat/Evidence 열과 행→operation 상세 동선으로 수정했고 자동·standalone 검증을 통과했다.
 - Standalone 빈 상태가 분석 패널과 0 수치를 먼저 보여 신규 사용자에게 다음 행동을 충분히 안내하지 못했다.
 
 ## 아직 실환경에서 검증하지 않은 것
 
 다음은 구현과 자동 회귀는 끝났지만 beta.3 JAR로 실제 외부 프로그램을 연결해 확인하지 않았다.
 
-- Burp Community에서 올바른 beta.3 JAR의 unload, suite tab/Web UI 연결과 실제 브라우저 트래픽 수집
+- Burp Community에서 현재 재생성 beta.3 JAR의 load/unload, suite tab/Web UI 연결과 실제 브라우저 트래픽 수집
 - 실제 사이트 로그인으로 얻은 세션을 ZAP·LLM controlled request에 주입하고 회전·만료·재인증하는 전체 과정
 - ZAP 2.17 환경에서 deterministic baseline 전체 체인의 실제 수행과 native alert 수집
 - 구독형 Codex 또는 Claude가 MCP로 독립 Explorer pass와 lock 이후 Judge pass를 끝까지 수행하는 과정

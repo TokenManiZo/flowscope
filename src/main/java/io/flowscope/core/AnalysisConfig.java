@@ -14,6 +14,7 @@ public final class AnalysisConfig {
     private final Map<String, AccountProfile> accounts = new ConcurrentHashMap<>();
     private final Map<String, String> sessionBindings = new ConcurrentHashMap<>();
     private final Map<String, ReviewDecision> reviews = new ConcurrentHashMap<>();
+    private final Map<String, TrafficOverride> trafficOverrides = new ConcurrentHashMap<>();
 
     public AnalysisConfig withIdentityRole(String identity, AccessRole role) {
         if (identity != null && role != null) {
@@ -101,6 +102,18 @@ public final class AnalysisConfig {
         reviews.clear();
     }
 
+    public AnalysisConfig withTrafficOverride(String operation, TrafficOverride override) {
+        if (operation == null || operation.isBlank()) throw new IllegalArgumentException("operation is required");
+        if (override == null || override == TrafficOverride.AUTO) trafficOverrides.remove(operation);
+        else trafficOverrides.put(operation, override);
+        return this;
+    }
+
+    public TrafficOverride trafficOverride(String operation) {
+        return operation == null ? TrafficOverride.AUTO
+                : trafficOverrides.getOrDefault(operation, TrafficOverride.AUTO);
+    }
+
     public String identityLabel(String identity) {
         AccountProfile account = accounts.get(identity);
         return account == null ? identity : account.label();
@@ -147,6 +160,7 @@ public final class AnalysisConfig {
     public Map<String, AccountProfile> accounts() { return Map.copyOf(accounts); }
     public Map<String, String> sessionBindings() { return Map.copyOf(sessionBindings); }
     public Map<String, ReviewDecision> reviews() { return Map.copyOf(reviews); }
+    public Map<String, TrafficOverride> trafficOverrides() { return Map.copyOf(trafficOverrides); }
 
     public void replaceWith(AnalysisConfig other) {
         identityRoles.clear();
@@ -155,6 +169,7 @@ public final class AnalysisConfig {
         accounts.clear();
         sessionBindings.clear();
         reviews.clear();
+        trafficOverrides.clear();
         if (other == null) return;
         identityRoles.putAll(other.identityRoles());
         endpointRequirements.putAll(other.endpointRequirements());
@@ -162,6 +177,7 @@ public final class AnalysisConfig {
         accounts.putAll(other.accounts());
         sessionBindings.putAll(other.sessionBindings());
         reviews.putAll(other.reviews());
+        trafficOverrides.putAll(other.trafficOverrides());
     }
 
     private static String sessionKey(String service, String fingerprint) {

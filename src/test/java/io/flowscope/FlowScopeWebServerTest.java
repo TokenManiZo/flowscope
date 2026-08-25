@@ -50,6 +50,7 @@ final class FlowScopeWebServerTest {
         assertEquals(200, index.statusCode());
         assertTrue(index.body().contains("<h1>FlowScope</h1>"));
         assertTrue(index.body().contains("HUMAN pass 시작"));
+        assertTrue(index.body().contains("Evidence 표시"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());
@@ -64,6 +65,11 @@ final class FlowScopeWebServerTest {
         assertEquals("untested", body.at("/cells/0/overall").asText());
         assertEquals("untested", body.at("/cells/0/perSource/human").asText());
         assertEquals("human", body.at("/activeSources/0").asText());
+        assertEquals(1, body.at("/trafficStats/captured").asInt());
+        assertTrue(body.at("/events/0/coverageEligible").asBoolean());
+        assertEquals("API", body.at("/events/0/trafficClass").asText());
+        assertFalse(body.at("/events/0/classificationReasons").isEmpty());
+        assertEquals(1, body.at("/events/0/repeatCount").asInt());
     }
 
     @Test
@@ -84,6 +90,20 @@ final class FlowScopeWebServerTest {
         JsonNode ended = json(post("/api/human-run", "action=end&runId=human-p5-1", token));
         assertFalse(ended.path("active").asBoolean());
         assertNull(state.contexts.current(Source.HUMAN));
+    }
+
+    @Test
+    void startsHumanRunWithAnExplicitRegisteredAccount() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+
+        JsonNode began = json(post("/api/human-run", "action=begin&runId=human-a&account=user-a", token));
+
+        assertEquals("user-a", began.path("accountId").asText());
+        assertEquals("user-a", state.contexts.current(Source.HUMAN).accountId());
+        assertEquals(200, post("/api/human-run", "action=end&runId=human-a", token).statusCode());
+        assertEquals(400, post("/api/human-run", "action=begin&runId=human-b&account=missing", token).statusCode());
     }
 
     @Test
@@ -145,6 +165,13 @@ final class FlowScopeWebServerTest {
         String operation = state.snapshot().records.getFirst().op;
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());
         assertEquals("Admin", state.config.endpointRequirement(operation).label());
+        assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
+                + "&value=EXCLUDE", token).statusCode());
+        assertEquals(io.flowscope.core.TrafficOverride.EXCLUDE, state.config.trafficOverride(operation));
+        assertEquals(0, state.snapshot().coverageRecords.size());
+        assertEquals(1, state.snapshot().records.size());
+        assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
+                + "&value=AUTO", token).statusCode());
 
         state.config.upsertAccount(new AccountProfile("owner", "OWNER", state.record.service, AccessRole.USER));
         state.config.withResourceOwner(state.snapshot().records.getFirst().resource, "owner");

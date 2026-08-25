@@ -24,6 +24,15 @@ public final class RequestRecord {
     public String runId = "default";
     public String evidenceId;     // 관측을 역참조하는 안정 ID(Pipeline 이 부여하고 프로젝트 파일에 보존)
     public String contentDigest;  // 응답·출처까지 포함한 관측 내용 SHA-256. 변경 감지용
+    public AuthState authState = AuthState.UNRESOLVED;
+    public TrafficClassification trafficClassification = TrafficClassification.unresolved("NOT_CLASSIFIED");
+
+    // 비밀이 아닌 HTTP 문맥 메타데이터. 문자열 전문을 재파싱하지 않고 분류 근거로 쓴다.
+    public String requestContentType;
+    public String responseContentType;
+    public String secFetchDest;
+    public String secFetchMode;
+    public String accessControlRequestMethod;
 
     // 요청 상세 — 명세가 입력으로 요구하는 것들
     //  F-06(객체 분석): 경로 + Query + 요청 Body
