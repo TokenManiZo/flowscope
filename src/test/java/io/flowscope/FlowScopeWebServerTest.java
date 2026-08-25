@@ -1,0 +1,311 @@
+package io.flowscope;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.AccessRole;
+import io.flowscope.core.AccountProfile;
+import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.Pipeline;
+import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RunContextRegistry;
+import io.flowscope.core.Source;
+import io.flowscope.core.ValidationDecision;
+import io.flowscope.integration.McpServer;
+import io.flowscope.integration.SessionBroker;
+import io.flowscope.web.FlowScopeWebServer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+final class FlowScopeWebServerTest {
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private final TestState state = new TestState();
+    private FlowScopeWebServer server;
+    private String token;
+
+    @AfterEach void stop() {
+        if (server != null) server.close();
+        state.sessions.close();
+    }
+
+    @Test
+    void servesBrandedUiAndProtectsApiWithCapabilityAndOrigin() throws Exception {
+        start();
+        HttpResponse<String> index = get("/", null, null);
+        assertEquals(200, index.statusCode());
+        assertTrue(index.body().contains("<h1>FlowScope</h1>"));
+        assertTrue(index.body().contains("HUMAN pass 시작"));
+        assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
+
+        assertEquals(403, get("/api/snapshot", null, null).statusCode());
+        assertEquals(403, get("/api/snapshot", token, "https://evil.example").statusCode());
+
+        HttpResponse<String> snapshot = get("/api/snapshot", token, origin());
+        assertEquals(200, snapshot.statusCode(), snapshot.body());
+        assertEquals("no-store", snapshot.headers().firstValue("Cache-Control").orElse(""));
+        JsonNode body = JSON.readTree(snapshot.body());
+        assertEquals(1, body.path("events").size());
+        assertEquals(1, body.path("cells").size());
+        assertEquals("untested", body.at("/cells/0/overall").asText());
+        assertEquals("untested", body.at("/cells/0/perSource/human").asText());
+        assertEquals("human", body.at("/activeSources/0").asText());
+    }
+
+    @Test
+    void startsAndEndsExactHumanRunWithoutOverlap() throws Exception {
+        start();
+        JsonNode idle = json(get("/api/human-run", token, origin()));
+        assertFalse(idle.path("active").asBoolean());
+
+        JsonNode began = json(post("/api/human-run", "action=begin&runId=human-p5-1", token));
+        assertTrue(began.path("active").asBoolean());
+        assertEquals("human-p5-1", began.path("runId").asText());
+        assertEquals("human-p5-1", state.contexts.current(Source.HUMAN).runId());
+
+        assertEquals(400, post("/api/human-run", "action=begin&runId=human-p5-2", token).statusCode());
+        assertEquals(400, post("/api/human-run", "action=end&runId=wrong", token).statusCode());
+        assertEquals("human-p5-1", state.contexts.current(Source.HUMAN).runId());
+
+        JsonNode ended = json(post("/api/human-run", "action=end&runId=human-p5-1", token));
+        assertFalse(ended.path("active").asBoolean());
+        assertNull(state.contexts.current(Source.HUMAN));
+    }
+
+    @Test
+    void capturesManagedSessionWithoutReturningRawCredentials() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+
+        assertEquals(200, post("/api/session-capture", "action=begin&account=user-a", token).statusCode());
+        String handle = state.sessions.handleForAccount("user-a");
+        state.sessions.observeRequest(handle, URI.create(state.record.service + "/login"),
+                Map.of("Authorization", "Bearer raw-access-token", "Cookie", "sid=raw-cookie"),
+                java.time.Instant.now());
+        assertEquals(200, post("/api/session-capture", "action=end&account=user-a", token).statusCode());
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals("ACTIVE", snapshot.at("/managedSessions/0/status").asText());
+        assertEquals("user-a", snapshot.at("/managedSessions/0/accountId").asText());
+        assertFalse(snapshot.toString().contains("raw-access-token"));
+        assertFalse(snapshot.toString().contains("raw-cookie"));
+        JsonNode broker = json(get("/api/session-capture", token, origin()));
+        assertFalse(broker.toString().contains("raw-access-token"));
+        assertFalse(broker.toString().contains("raw-cookie"));
+    }
+
+    @Test
+    void startsOnlyTheServerOwnedScannerWorkflowFromConfiguredScope() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+
+        JsonNode initial = json(get("/api/scanner-run", token, origin()));
+        assertEquals("NOT_STARTED", initial.at("/run/status").asText());
+        assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
+
+        HttpResponse<String> started = post("/api/scanner-run", "target=" + encode(state.record.service + "/")
+                + "&account=user-a", token);
+        assertEquals(202, started.statusCode(), started.body());
+        JsonNode body = JSON.readTree(started.body());
+        assertEquals("RUNNING", body.at("/run/status").asText());
+        assertEquals(state.record.service + "/", state.scannerTarget);
+        assertEquals("user-a", state.scannerAccount);
+    }
+
+    @Test
+    void editsServiceBoundAccountPolicyAndHumanReview() throws Exception {
+        start();
+        JsonNode account = json(post("/api/account-save", "label=USER+A&role=User&target=https%3A%2F%2Fapi.example.test", token));
+        String accountId = account.path("id").asText();
+        assertFalse(accountId.isBlank());
+
+        assertEquals(400, post("/api/session-bind", "fingerprint=" + encode(state.record.fp)
+                + "&account=" + encode(accountId), token).statusCode());
+        JsonNode bound = json(post("/api/session-bind", "service=" + encode(state.record.service)
+                + "&fingerprint=" + encode(state.record.fp) + "&account=" + encode(accountId), token));
+        assertTrue(bound.path("success").asBoolean());
+        assertEquals(accountId, state.config.boundAccount(state.record.service, state.record.fp).orElseThrow().id());
+
+        String operation = state.snapshot().records.getFirst().op;
+        assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());
+        assertEquals("Admin", state.config.endpointRequirement(operation).label());
+
+        state.config.upsertAccount(new AccountProfile("owner", "OWNER", state.record.service, AccessRole.USER));
+        state.config.withResourceOwner(state.snapshot().records.getFirst().resource, "owner");
+        state.rebuild();
+        String findingId = state.snapshot().analysis.findings().getFirst().id();
+        assertEquals(200, post("/api/review", "itemId=" + encode(findingId)
+                + "&status=CONFIRMED&note=manual+reproduction", token).statusCode());
+        assertEquals("CONFIRMED", state.config.reviews().get(findingId).status().name());
+    }
+
+    @Test
+    void opensOnlyStoredEvidenceAsAnUnsentRepeaterDraft() throws Exception {
+        start();
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+        JsonNode response = json(post("/api/replay", "eventId=" + encode(evidenceId), token));
+        assertTrue(response.path("openedDraft").asBoolean());
+        assertTrue(state.opened.get());
+        assertEquals("", response.path("replayId").asText());
+    }
+
+    @Test
+    void snapshotIsLightweightAndObjectlessEvidenceLoadsMaskedOnDemand() throws Exception {
+        RequestRecord health = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/health", 200, "sess:health");
+        health.reqText = "GET /health HTTP/1.1\r\nHost: api.example.test\r\nCookie: session=raw-secret";
+        health.respText = "HTTP/1.1 200 OK\r\nSet-Cookie: session=response-secret\r\n\r\n{\"token\":\"body-secret\"}";
+        health.body = "{\"token\":\"body-secret\"}";
+        health.hasResponse = true;
+        state.records.add(health);
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        JsonNode event = snapshot.path("events").findValuesAsText("path").contains("/health")
+                ? java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                        .filter(value -> value.path("path").asText().equals("/health")).findFirst().orElseThrow()
+                : fail("objectless event missing");
+        assertTrue(event.path("resource").isNull());
+        assertFalse(event.has("reqText"));
+        assertFalse(event.has("respText"));
+        assertFalse(snapshot.toString().contains("raw-secret"));
+
+        JsonNode evidence = json(get("/api/evidence?operation=" + encode(event.path("op").asText()), token, origin()));
+        assertEquals(1, evidence.path("total").asInt());
+        assertFalse(evidence.path("hasMore").asBoolean());
+        assertTrue(evidence.at("/records/0/request").asText().contains("session=***"));
+        assertTrue(evidence.at("/records/0/response").asText().contains("session=***"));
+        assertFalse(evidence.toString().contains("body-secret"));
+    }
+
+    @Test
+    void boundsEvidenceDetailAndReportsPaginationHonestly() throws Exception {
+        for (int i = 0; i < 205; i++) {
+            RequestRecord copy = new RequestRecord(Source.HUMAN, state.record.service,
+                    "GET", "/v1/orders/7", 200, "sess:page-" + i);
+            copy.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test";
+            copy.respText = "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}";
+            copy.body = "{\"id\":7}";
+            copy.hasResponse = true;
+            copy.timestamp = i + 2L;
+            state.records.add(copy);
+        }
+        state.rebuild();
+        start();
+
+        JsonNode first = json(get("/api/evidence?operation=" + encode(state.record.op), token, origin()));
+        assertEquals(206, first.path("total").asInt());
+        assertEquals(200, first.path("records").size());
+        assertTrue(first.path("hasMore").asBoolean());
+
+        JsonNode second = json(get("/api/evidence?operation=" + encode(state.record.op)
+                + "&offset=200&limit=200", token, origin()));
+        assertEquals(6, second.path("records").size());
+        assertFalse(second.path("hasMore").asBoolean());
+    }
+
+    private void start() throws Exception {
+        server = new FlowScopeWebServer(state, 0);
+        server.start();
+        String html = get("/", null, null).body();
+        var matcher = Pattern.compile("name=\"flowscope-capability\" content=\"([0-9a-f]{64})\"").matcher(html);
+        assertTrue(matcher.find());
+        token = matcher.group(1);
+    }
+
+    private HttpResponse<String> get(String path, String capability, String origin) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path)).GET();
+        if (capability != null) request.header("X-FlowScope-Token", capability);
+        if (origin != null) request.header("Origin", origin);
+        return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> post(String path, String body, String capability) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path))
+                .header("X-FlowScope-Token", capability)
+                .header("Origin", origin())
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String origin() { return server.url().substring(0, server.url().length() - 1); }
+    private static JsonNode json(HttpResponse<String> response) throws Exception {
+        assertEquals(200, response.statusCode(), response.body());
+        return JSON.readTree(response.body());
+    }
+    private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
+
+    private static final class TestState implements FlowScopeWebServer.State {
+        private final AnalysisConfig config = new AnalysisConfig();
+        private final List<RequestRecord> records = new ArrayList<>();
+        private final AtomicLong revision = new AtomicLong();
+        private final AtomicBoolean opened = new AtomicBoolean();
+        private final RunContextRegistry contexts = new RunContextRegistry();
+        private final SessionBroker sessions = new SessionBroker();
+        private final RequestRecord record;
+        private volatile String scannerTarget = "";
+        private volatile String scannerAccount = "";
+        private volatile Pipeline.Result result;
+
+        TestState() {
+            record = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
+                    "GET", "/v1/orders/7", 200, "sess:abcdef123456");
+            record.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: [masked]";
+            record.respText = "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}";
+            record.body = "{\"id\":7}";
+            record.hasResponse = true;
+            record.timestamp = 1;
+            records.add(record);
+            rebuild();
+        }
+
+        @Override public Pipeline.Result snapshot() { return result; }
+        @Override public long revision() { return revision.get(); }
+        @Override public AnalysisConfig config() { return config; }
+        @Override public List<McpServer.Assessment> assessments() { return List.of(); }
+        @Override public List<ValidationDecision> validations() { return List.of(); }
+        @Override public RunContextRegistry contexts() { return contexts; }
+        @Override public SessionBroker sessions() { return sessions; }
+        @Override public List<String> scopeEntries() { return List.of(record.service + "/"); }
+        @Override public JsonNode startScanner(String target, String accountId) {
+            scannerTarget = target;
+            scannerAccount = accountId;
+            return JSON.createObjectNode().put("status", "RUNNING").put("stage", "TRADITIONAL_SPIDER");
+        }
+        @Override public JsonNode scannerStatus() {
+            return JSON.createObjectNode().put("status", "NOT_STARTED");
+        }
+        @Override public void rebuild() { result = Pipeline.run(new ArrayList<>(records), config); revision.incrementAndGet(); }
+        @Override public void clearTraffic() { records.clear(); rebuild(); }
+        @Override public void loadSample() { }
+        @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
+            BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
+            records.addAll(parsed.records);
+            rebuild();
+            return parsed;
+        }
+        @Override public RequestRecord openInRepeater(String evidenceId) {
+            RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId)).findFirst().orElseThrow();
+            opened.set(true);
+            return value;
+        }
+    }
+}

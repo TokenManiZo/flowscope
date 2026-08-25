@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="flowscope-capability" content="__FLOWSCOPE_CAPABILITY__" />
+<title>FlowScope — 사람·스캐너·LLM 인가 분석</title>
+<script src="/vendor/cytoscape-3.26.0.min.js"></script>
+<style>
+  :root{
+    --bg:#F4F7FA; --panel:#FFFFFF; --panel2:#EEF2F7; --line:#DDE4EC; --line2:#C2CCD8;
+    --text:#1E2A38; --muted:#5A6875; --faint:#93A1AF;
+    --allow:#2E9E74; --deny:#3E6DA6; --untested:#98A6B4; --suspicious:#C8811C; --undecided:#7E5CB6;
+    --human:#3D79C4; --scanner:#1897AE; --llm:#A857BF; --resend:#D26A1E;
+  }
+  *{box-sizing:border-box}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg); color:var(--text); font-family:Inter,'Segoe UI',Arial,sans-serif; font-size:14px; display:flex; flex-direction:column; height:100vh; overflow:hidden}
+  .mono{font-family:'JetBrains Mono',Consolas,'Courier New',monospace}
+  h1,h2,h3{font-family:'Space Grotesk','Segoe UI',Arial,sans-serif; margin:0; font-weight:600}
+  button{font-family:'Space Grotesk','Segoe UI',Arial,sans-serif}
+  header{display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); flex:0 0 auto; flex-wrap:wrap}
+  .brand{display:flex; align-items:baseline; gap:9px}.brand h1{font-size:16px}
+  .brand .tag{font-size:10.5px; color:var(--llm); font-family:'JetBrains Mono',monospace; border:1px solid var(--line2); padding:1px 6px; border-radius:5px}
+  .imp{display:flex; align-items:center; gap:7px; flex-wrap:wrap;flex:0 0 auto}
+  .filebtn{position:relative; overflow:hidden; display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line2); background:var(--panel2); color:var(--text); border-radius:7px; padding:6px 10px; font-size:12px; cursor:pointer; font-weight:600;white-space:nowrap;flex:0 0 auto}
+  .filebtn input{position:absolute; inset:0; opacity:0; cursor:pointer}
+  .filebtn .dot{width:8px;height:8px;border-radius:50%}
+  .go{border:1px solid var(--line2); background:transparent; color:var(--muted); border-radius:7px; padding:6px 11px; font-size:12px; cursor:pointer; font-weight:600;white-space:nowrap;flex:0 0 auto}
+  .go.primary{background:var(--llm); color:#1a1020; border-color:var(--llm)}
+  header .spacer{flex:1}
+  .modeswitch{display:flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden;flex:0 0 auto}
+  .modeswitch button{background:transparent; color:var(--muted); border:0; padding:6px 13px; cursor:pointer; font-size:12.5px; font-weight:600;white-space:nowrap}
+  .modeswitch button.on{background:var(--panel2); color:var(--text)}
+  button:focus-visible,.filebtn:focus-within,.cell:focus-visible{outline:2px solid var(--scanner); outline-offset:1px}
+  .statusbar{flex:0 0 auto; padding:6px 16px; border-bottom:1px solid var(--line); background:var(--bg); font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap}
+  .statusbar b{color:var(--text); font-weight:500}.statusbar .warn{color:var(--suspicious)}
+  .setupbackdrop{position:fixed;inset:0;z-index:20;background:rgba(30,42,56,.32);display:none;align-items:center;justify-content:center;padding:18px}
+  .setupdialog{width:min(720px,100%);max-height:min(760px,calc(100vh - 36px));overflow:auto;background:var(--panel);border:1px solid var(--line2);border-radius:14px;box-shadow:0 22px 70px rgba(30,42,56,.24);padding:18px}
+  .setuphead{display:flex;align-items:flex-start;gap:12px;margin-bottom:13px}.setuphead h2{font-size:18px}.setuphead p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.5}.setuphead .spacer{flex:1}
+  .setupsteps{display:grid;gap:8px}.setupstep{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start;border:1px solid var(--line);border-radius:9px;padding:10px;background:var(--panel2)}
+  .setupstep .num{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line2);font:700 11px 'JetBrains Mono',monospace}.setupstep b{font-size:12px}.setupstep p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5;overflow-wrap:anywhere}.setupstate{white-space:nowrap;border:1px solid var(--line2);border-radius:5px;padding:2px 6px;color:var(--faint);font:10px 'JetBrains Mono',monospace}.setupstate.ready{color:var(--allow);border-color:var(--allow)}
+  .setupstates{display:grid;gap:4px;justify-items:end}
+  .setupactions{display:flex;gap:7px;justify-content:flex-end;flex-wrap:wrap;margin-top:13px}
+  .scannersetup{display:grid;grid-template-columns:minmax(240px,2fr) minmax(180px,1fr) auto;gap:8px;align-items:end;margin-top:13px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
+  .scannersetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.scannersetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.scannerstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;overflow-wrap:anywhere}.scannerstatus.ok{color:var(--allow)}.scannerstatus.fail{color:var(--suspicious)}
+  main{flex:1; display:flex; min-height:0}
+  .rail{flex:0 0 244px; border-right:1px solid var(--line); background:var(--panel); padding:13px 12px; overflow:auto; display:flex; flex-direction:column; gap:13px}
+  .card{border:1px solid var(--line); border-radius:10px; background:var(--panel2); padding:11px}
+  .card h3{font-size:12px; letter-spacing:.02em; margin-bottom:8px; display:flex; align-items:center; gap:7px}
+  .card h3 .badge{font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--faint); border:1px solid var(--line2); border-radius:4px; padding:1px 5px; font-weight:400}
+  .covdef{font-size:11px; color:var(--muted); line-height:1.5}.covdef b{color:var(--text)}
+  .axisrow{display:flex; gap:6px; margin:9px 0 7px}
+  .axisrow button{flex:1; border:1px solid var(--line2); background:transparent; color:var(--muted); border-radius:6px; padding:5px; font-size:10.5px; cursor:pointer; font-weight:600; line-height:1.3}
+  .axisrow button.on{background:var(--bg); color:var(--text); border-color:var(--scanner)}
+  .covnum{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:var(--scanner); line-height:1}
+  .covnum small{font-size:11px; color:var(--muted); font-weight:500}
+  .covbar{height:6px; border-radius:4px; background:var(--bg); overflow:hidden; margin:7px 0 4px}
+  .covbar i{display:block; height:100%; background:linear-gradient(90deg,var(--scanner),var(--suspicious))}
+  .covfrac{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--faint)}
+  .gapline{display:flex; align-items:center; justify-content:space-between; font-size:11.5px; padding:5px 0; border-top:1px solid var(--line)}
+  .gapline:first-of-type{border-top:0}
+  .gapline .lab{display:flex; align-items:center; gap:7px; color:var(--muted)}.gapline .lab i{width:8px;height:8px;border-radius:2px}
+  .gapline .cnt{font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--text)}
+  .gapline.gf{cursor:pointer; border-radius:6px; padding:6px 5px; margin:0 -3px}
+  .gapline.gf:hover{background:var(--panel)}
+  .gapline.gf.on{background:rgba(230,163,67,.12); box-shadow:inset 0 0 0 1px rgba(230,163,67,.4)}
+  .gapline.gf:focus-visible{outline:2px solid var(--scanner); outline-offset:1px}
+  .cell.match{box-shadow:0 0 0 2px var(--suspicious), 0 0 16px rgba(230,163,67,.3)}
+  .srcfilter label{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); padding:5px 3px; cursor:pointer}
+  .srcfilter input{accent-color:var(--scanner)}
+  .srcfilter .sw{width:22px; height:0; border-top-width:2px; border-top-style:solid}
+  .views{display:flex; flex-direction:column; gap:5px}
+  .views button{text-align:left; background:transparent; border:1px solid transparent; color:var(--muted); padding:7px 9px; border-radius:7px; cursor:pointer; font-size:12.5px; font-family:Inter,sans-serif}
+  .views button.on{background:var(--panel); border-color:var(--line2); color:var(--text)}
+  .rolerow{display:flex; align-items:center; justify-content:space-between; font-size:11.5px; padding:5px 2px; border-top:1px solid var(--line); color:var(--muted)}
+  .rolerow:first-child{border-top:0}
+  .rolechip{font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; padding:2px 9px; border-radius:6px; border:1px solid var(--line2); cursor:pointer; color:var(--text); background:var(--panel)}
+  .rolechip:hover{border-color:var(--scanner)}
+  .rolechip.admin{color:var(--resend); border-color:var(--resend)}
+  .rolechip.unknown{color:var(--faint)}
+  .identityselect{width:100%; border:1px solid var(--line2); border-radius:7px; background:var(--panel); color:var(--text); padding:7px 9px; font-family:'JetBrains Mono',monospace; font-size:11px}
+  .mergebox{border-top:1px solid var(--line); margin-top:9px; padding-top:8px; display:grid; gap:5px}.mergebox label{font-size:9.5px;color:var(--faint)}
+  .mergebox button{border:1px solid var(--scanner); background:var(--panel); color:var(--scanner); border-radius:6px; padding:6px; cursor:pointer; font-size:10.5px;font-weight:700}.mergebox button:disabled{opacity:.35;cursor:not-allowed}
+  .graphcontrols{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px}
+  .graphcontrols button{flex:1; min-width:84px; border:1px solid var(--line2); background:var(--panel); color:var(--muted); border-radius:6px; padding:6px; cursor:pointer; font-size:10.5px}
+  .graphcontrols button:disabled{opacity:.38;cursor:not-allowed}
+  .graphstat{margin-top:7px;color:var(--faint);font:9.5px 'JetBrains Mono',monospace;line-height:1.45}
+  .layoutlock{display:flex; align-items:center; gap:7px; margin-top:8px; color:var(--muted); font-size:11px; cursor:pointer}.layoutlock input{accent-color:var(--scanner)}
+  .stage{flex:1; position:relative; min-width:0; background:radial-gradient(1000px 500px at 40% -10%, rgba(200,139,214,.05), transparent 60%), var(--bg)}
+  #cy{position:absolute; inset:0}
+  .stagehint{position:absolute; left:14px; bottom:10px; font-size:11px; color:var(--faint); font-family:'JetBrains Mono',monospace; pointer-events:none; max-width:70%}
+  .pane{position:absolute; inset:0; overflow:auto; padding:16px 18px; display:none}
+  .matrixhead{display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap}
+  .matrixhead h2{font-size:14px}.matrixhead .note{color:var(--faint); font-size:11px; font-family:'JetBrains Mono',monospace}
+  .toggle{margin-left:auto; display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; cursor:pointer}.toggle input{accent-color:var(--suspicious)}
+  table.matrix{border-collapse:separate; border-spacing:6px; font-size:12px}
+  table.matrix th{font-weight:600; color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:11px; text-align:left; padding:3px 6px; vertical-align:bottom}
+  table.matrix th.col{text-align:center; min-width:150px}
+  table.matrix th.row{max-width:240px; white-space:normal; line-height:1.35}.matrix th .own{color:var(--faint); font-weight:400}
+  .cell{border-radius:8px; border:1px solid var(--line); background:var(--panel); padding:8px 9px; min-height:56px; cursor:pointer; display:flex; flex-direction:column; gap:5px; position:relative}
+  .cell:hover{border-color:var(--line2)}
+  .cell .verdict{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:12px; display:flex; align-items:center; gap:6px}
+  .cell .dot{width:8px;height:8px;border-radius:50%}
+  .chips{display:flex; gap:4px; flex-wrap:wrap}
+  .chip{font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:1px 5px; border-radius:4px; border:1px solid var(--line2); color:var(--muted); display:flex; gap:4px; align-items:center}
+  .chip i{width:6px;height:6px;border-radius:50%}
+  .chip.miss{opacity:.4; text-decoration:line-through}
+  .gaptag{position:absolute; top:-7px; right:-6px; font-family:'JetBrains Mono',monospace; font-size:9px; padding:1px 5px; border-radius:5px; font-weight:700}
+  .v-allow{background:rgba(70,185,138,.10); border-color:rgba(70,185,138,.35)}
+  .v-deny{background:rgba(92,130,176,.10); border-color:rgba(92,130,176,.35)}
+  .v-untested{border-style:dashed; border-color:var(--line2); background:transparent; color:var(--faint)}
+  .v-undecided{background:rgba(158,123,214,.10); border-color:rgba(158,123,214,.4)}
+  .v-gap{border-style:dotted; border-color:var(--suspicious); background:rgba(230,163,67,.05)}
+  .v-conflict{border-color:var(--suspicious); background:linear-gradient(135deg,rgba(70,185,138,.16) 0 46%,rgba(230,163,67,.02) 46% 54%,rgba(230,163,67,.2) 54% 100%),var(--panel); box-shadow:0 0 0 1px rgba(230,163,67,.5),0 0 14px rgba(230,163,67,.12)}
+  .dimmed{opacity:.22}
+  table.raw{border-collapse:collapse; width:100%; font-family:'JetBrains Mono',monospace; font-size:11.5px}
+  table.raw th,table.raw td{text-align:left; padding:6px 9px; border-bottom:1px solid var(--line)}
+  table.raw th{color:var(--faint); font-weight:500; position:sticky; top:0; background:var(--bg)}
+  table.raw td .src{padding:0 5px; border-radius:4px; font-size:10px; border:1px solid var(--line2)}
+  .st2{color:var(--allow)} .st4{color:var(--deny)} .st5{color:var(--suspicious)}
+  .rawh{font-size:13px; color:var(--muted); margin:18px 0 8px; font-family:'Space Grotesk',sans-serif; font-weight:600}
+  .accountgrid{display:grid;grid-template-columns:minmax(280px,360px) minmax(520px,1fr);gap:16px;align-items:start}
+  .accountpanel{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:14px}
+  .accountpanel h3{font-size:13px;margin-bottom:11px}.accountnote{font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:12px}
+  .accountform{display:grid;grid-template-columns:1fr 1fr;gap:9px}.accountform label{font-size:10px;color:var(--faint);display:grid;gap:4px}.accountform .wide{grid-column:1/-1}
+  .accountform input,.accountform select{width:100%;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace}
+  .accountactions{grid-column:1/-1;display:flex;gap:7px;margin-top:3px}.accountactions button,.sessionaction{border:1px solid var(--line2);border-radius:6px;background:var(--panel2);color:var(--text);padding:6px 9px;cursor:pointer;font-size:10.5px;font-weight:700;white-space:nowrap}.accountactions .primary{border-color:var(--scanner);color:var(--scanner)}
+  .accountcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px;margin-bottom:15px}.accountitem{border:1px solid var(--line);border-left:4px solid var(--human);border-radius:8px;background:var(--panel2);padding:10px}.accountitem .name{font-weight:700;font-size:12px}.accountitem .meta{font:10px 'JetBrains Mono',monospace;color:var(--muted);line-height:1.55;margin-top:5px}.accountitem .edit{float:right;border:0;background:transparent;color:var(--scanner);cursor:pointer;font-size:10px}
+  .bindselect{border:1px solid var(--line2);border-radius:5px;background:var(--panel);color:var(--text);padding:4px;font:10px 'JetBrains Mono',monospace;max-width:145px}.confidence{font-size:9px;padding:2px 5px;border-radius:4px;border:1px solid var(--line2)}.confidence.verified{color:var(--allow);border-color:var(--allow)}.confidence.unknown{color:var(--suspicious);border-color:var(--suspicious)}
+  @media (max-width:1050px){.accountgrid{grid-template-columns:1fr}}
+  body.accounts-mode .rail,body.accounts-mode .detail{display:none}body.accounts-mode .stage{min-width:0}
+  .seqcol{margin-bottom:18px}
+  .seqcol .sid{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px; color:var(--text); margin-bottom:8px; display:flex; align-items:center; gap:7px}
+  .seqcol .sid i{width:9px;height:9px;border-radius:50%;background:var(--human)}
+  .seqchain{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
+  .seqstep{display:flex; align-items:center; gap:6px}
+  .seqnode{font-family:'JetBrains Mono',monospace; font-size:11px; border:1px solid var(--line2); border-radius:6px; padding:5px 9px; background:var(--panel); display:flex; gap:7px; align-items:center}
+  .seqnode .n{color:var(--faint)} .seqnode .st{font-weight:700}
+  .seqnode .sb{font-size:9px; padding:0 4px; border-radius:3px; border:1px solid var(--line2)}
+  .seqarrow{color:var(--line2)}
+  .scenctl{display:flex; gap:9px; margin-bottom:14px; flex-wrap:wrap}
+  .sumbox{border:1px solid var(--line2); border-radius:9px; padding:13px 15px; background:var(--panel); margin-bottom:14px; font-size:12.5px; line-height:1.6}
+  .sumbox h4{font-family:'Space Grotesk',sans-serif; font-size:13px; margin:0 0 8px}
+  .sumbox .kv{font-family:'JetBrains Mono',monospace; color:var(--muted)}
+  .sumbox .mask{color:var(--faint); font-size:11px; margin-top:8px}
+  .scen{border:1px solid var(--line); border-left:3px solid var(--suspicious); border-radius:8px; padding:12px 14px; margin-bottom:10px; background:var(--panel)}
+  .scen .st{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13.5px; display:flex; align-items:center; gap:8px}
+  .scen .tag{font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:1px 6px; border-radius:4px; border:1px solid var(--line2); color:var(--suspicious)}
+  .scen p{margin:7px 0 0; color:var(--muted); font-size:12.5px; line-height:1.55}
+  .scen .basis{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--faint); margin-top:7px}
+  .clist .ci{display:flex; justify-content:space-between; align-items:center; padding:8px 11px; border:1px solid var(--line); border-radius:7px; margin-bottom:6px; background:var(--panel); cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:12px}
+  .clist .ci:hover{border-color:var(--suspicious)}
+  .clist .ci .go2{font-size:10px; color:var(--suspicious)}
+  .detail{flex:0 0 316px; border-left:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0}
+  .detail .dhead{padding:12px 15px 10px; border-bottom:1px solid var(--line)}
+  .detail .dhead .k{font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint)}
+  .detail .dhead h3{font-size:13.5px; margin-top:3px; font-family:'JetBrains Mono',monospace; font-weight:500; word-break:break-all}
+  .detail .dbody{padding:12px 15px; overflow:auto; display:flex; flex-direction:column; gap:12px}
+  .empty{color:var(--faint); font-size:12.5px; padding:22px 15px; text-align:center; line-height:1.6}
+  .field .lbl{font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-bottom:4px}
+  .field .val{font-family:'JetBrains Mono',monospace; font-size:12px}
+  .vr{display:flex; align-items:center; justify-content:space-between; padding:6px 9px; border:1px solid var(--line); border-radius:7px; background:var(--panel2); margin-bottom:6px}
+  .vr .src{font-family:'JetBrains Mono',monospace; font-size:11.5px; display:flex; align-items:center; gap:6px}.vr .src i{width:8px;height:8px;border-radius:50%}
+  .vr .vv{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:12px}
+  .gapbox{border:1px solid var(--line2); border-radius:8px; padding:9px 11px; background:var(--panel2)}
+  .gapbox .name{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px; display:flex; align-items:center; gap:7px}
+  .gapbox p{margin:6px 0 0; color:var(--muted); font-size:12px; line-height:1.5}
+  .reqblk{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); background:var(--bg); border:1px solid var(--line); border-radius:7px; padding:8px; white-space:pre-wrap; line-height:1.5}
+  .reqblk .m{color:var(--allow)}
+  .resend{border:1px solid var(--resend); border-radius:8px; padding:10px; background:rgba(224,133,74,.05)}
+  .resend h4{font-family:'Space Grotesk',sans-serif; font-size:12px; color:var(--resend); margin:0 0 7px; display:flex; align-items:center; gap:6px}
+  .resend textarea{width:100%; background:var(--bg); border:1px solid var(--line2); border-radius:6px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:11px; padding:7px; resize:vertical; min-height:62px}
+  .resend .row{display:flex; gap:7px; margin-top:7px; align-items:center}
+  .resend button{background:var(--resend); color:#1a1008; border:0; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:700; cursor:pointer}
+  .resend .warn{font-size:10px; color:var(--faint)}
+  .resendlog{margin-top:8px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); border-top:1px dashed var(--line2); padding-top:7px}
+  footer{flex:0 0 auto; border-top:1px solid var(--line); background:var(--panel); padding:8px 16px; display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--muted)}
+  .li{display:flex; align-items:center; gap:5px}.li .sw{width:10px;height:10px;border-radius:3px}.li .swl{width:20px;height:0;border-top-width:2px}
+  @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
+  @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
+  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup{grid-template-columns:1fr}.scannerstatus{grid-column:1}}
+  @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2 beta · 3소스</span></div>
+  <div class="imp">
+    <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
+    <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
+    <label class="filebtn" title="전용 포트 실시간 수집이 기본, XML 업로드는 폴백"><span class="dot" style="background:var(--llm)"></span>LLM<input type="file" id="fLlm" accept=".xml" multiple></label>
+    <button class="go primary" id="sample">샘플 데이터로 보기</button>
+    <button class="go" id="clear">초기화</button>
+  </div>
+  <button class="go" id="openSetup">빠른 시작</button>
+  <span class="spacer"></span>
+  <div class="modeswitch">
+    <button id="m-graph" class="on">그래프</button>
+    <button id="m-matrix">판정 매트릭스</button>
+    <button id="m-seq">흐름 순서</button>
+    <button id="m-scenario">시나리오</button>
+    <button id="m-raw">파싱 결과</button>
+    <button id="m-accounts">계정·세션</button>
+  </div>
+</header>
+
+<div class="statusbar" id="status"><span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요. 사람·스캐너는 전용 프록시로, LLM은 MCP 통제 실행기로 구분 수집합니다. XML 업로드는 실시간 수집이 불가능할 때의 폴백입니다.</span></div>
+
+<div class="setupbackdrop" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+  <div class="setupdialog">
+    <div class="setuphead"><div><h2 id="setupTitle">FlowScope 베타 빠른 시작</h2><p>사용자가 해야 하는 것은 범위·계정 확인과 능동 요청 승인뿐입니다. 수집·비교·후보화·검증 판정은 FlowScope와 구독 LLM이 이어서 처리합니다.</p></div><span class="spacer"></span><button class="go" id="setupClose" aria-label="닫기">닫기</button></div>
+    <div class="setupsteps">
+      <div class="setupstep"><span class="num">1</span><div><b>진단 범위 고정</b><p>Burp의 FlowScope 탭에서 정확한 http(s) 서비스와 경로 prefix를 입력하고 범위 적용을 누릅니다. 빈 범위에서는 ZAP·LLM 능동 요청이 차단됩니다.</p></div><span class="setupstate">사용자 확인</span></div>
+      <div class="setupstep"><span class="num">2</span><div><b>수집 경로 분리</b><p>Burp Proxy listener를 사람 8080, ZAP 8081로 둡니다. LLM은 MCP 통제 실행기를 사용하며 8082는 외부 클라이언트 수동 폴백뿐입니다. 공급자 로그인/OAuth/MCP 트래픽은 절대 프록시하지 않습니다.</p></div><span class="setupstate" id="setupTraffic">대기</span></div>
+      <div class="setupstep"><span class="num">3</span><div><b>계정 로그인과 사람 기준선</b><p>계정·세션에서 테스트 계정을 등록하고 로그인 캡처를 누른 뒤 HUMAN 8080 브라우저로 직접 로그인합니다. 캡처 종료 후 <b>HUMAN pass 시작</b>을 눌러 허용된 일반 사용자 워크플로를 둘러보고 같은 run을 종료합니다.</p></div><div class="setupstates"><span class="setupstate" id="setupHumanRun">pass 대기</span><span class="setupstate" id="setupAccounts">계정 선택</span></div></div>
+      <div class="setupstep"><span class="num">4</span><div><b>결정론적 ZAP 기준선</b><p>아래에서 허용 범위와 필요 시 캡처한 계정을 고른 뒤 실행합니다. FlowScope가 Traditional Spider → Client Spider(AJAX 폴백) → Passive Scan → 네이티브 Alert 순서를 고정 실행합니다. 능동 스캔은 별도 승인 없이는 실행하지 않습니다.</p></div><span class="setupstate" id="setupScanner">미실행</span></div>
+      <div class="setupstep"><span class="num">5</span><div><b>독립 LLM Explorer</b><p>Burp 탭의 MCP 연결 문자열을 구독 Codex/Claude에 등록하고 agent-workspace의 Explorer 지침을 실행합니다. Explorer는 서버가 제공한 통제 요청만 사용하며 사람·ZAP 결과를 보지 못합니다.</p></div><span class="setupstate" id="setupThreeWay">대기</span></div>
+      <div class="setupstep"><span class="num">6</span><div><b>잠금 후 Judge 최종 판정</b><p>세 소스를 잠근 다음 Judge가 갭과 ZAP Alert를 읽고 후보별 재현·정상 계정 대조를 수집합니다. 통제 Evidence가 서버 검증을 통과해야 CONFIRMED/REJECTED가 되며, 부족하면 INCONCLUSIVE입니다.</p></div><span class="setupstate" id="setupFindings">대기</span></div>
+    </div>
+    <div class="scannersetup">
+      <label>ZAP 기준선 대상<select id="scannerTarget" aria-label="ZAP 기준선 대상"><option value="">Burp 탭에서 범위를 먼저 적용하세요</option></select></label>
+      <label>사용 계정(선택)<select id="scannerAccount" aria-label="ZAP 사용 계정"><option value="">비로그인</option></select></label>
+      <button class="go" id="scannerRunStart" disabled>안전 기준선 실행</button>
+      <div class="scannerstatus" id="scannerRunStatus">ZAP 연결과 허용 범위를 확인하는 중입니다.</div>
+    </div>
+    <div class="setupactions"><button class="go primary" id="humanRunStart">HUMAN pass 시작</button><button class="go" id="humanRunEnd" disabled>HUMAN pass 종료</button><button class="go" id="setupAccountsOpen">계정·세션 열기</button><button class="go" id="setupSample">샘플로 UI 확인</button></div>
+  </div>
+</div>
+
+<main>
+  <nav class="rail">
+    <div class="card">
+      <h3>관측 범위 <span class="badge">객체 단위</span></h3>
+      <div class="covdef">블랙박스라 전체(분모)를 알 수 없으므로 <b>퍼센트를 쓰지 않습니다</b>. 관측된 <b>신원 × 메서드·엔드포인트 × 객체</b> 조합만 셉니다.</div>
+      <div class="covnum" id="covObs">0<small>조합</small></div>
+      <div class="covfrac" id="covFrac">엔드포인트 0 · 메서드 0 · 객체 0</div>
+    </div>
+    <div class="card srcfilter">
+      <h3>소스 필터 <span class="badge">3종</span></h3>
+      <label><input type="checkbox" class="sf" value="human" checked><span class="sw" style="border-top-color:var(--human); border-top-style:solid"></span>사람 (실선)</label>
+      <label><input type="checkbox" class="sf" value="scanner" checked><span class="sw" style="border-top-color:var(--scanner); border-top-style:dashed"></span>스캐너 (파선)</label>
+      <label><input type="checkbox" class="sf" value="llm" checked><span class="sw" style="border-top-color:var(--llm); border-top-style:dotted"></span>LLM (점선)</label>
+    </div>
+    <div class="card">
+      <h3>권한 레벨 <span class="badge">클릭 = 등급 변경</span></h3>
+      <div id="roleList"><div style="color:var(--faint); font-size:11px">데이터 없음</div></div>
+    </div>
+    <div class="card">
+      <h3>사용자 그래프 <span class="badge">세션별 분리</span></h3>
+      <select id="identityFilter" class="identityselect" aria-label="표시할 사용자"><option value="all">전체 사용자 오버레이</option></select>
+      <div class="covdef" style="margin-top:7px">로그인 세션별 <b>USER A · USER B · ADMIN</b> 그래프를 따로 보거나 전체로 겹쳐 봅니다.</div>
+      <div class="mergebox">
+        <label for="mergeFrom">재로그인으로 새로 분리된 신원</label><select id="mergeFrom" class="identityselect" aria-label="병합할 신원"></select>
+        <label for="mergeInto">유지할 기존 계정</label><select id="mergeInto" class="identityselect" aria-label="병합 대상 계정"></select>
+        <button id="mergeIdentity" disabled>동일 사용자로 병합</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>3-way 갭 <span class="badge">클릭 = 위치 보기</span></h3>
+      <div class="gapline gf" data-gk="crossgap" tabindex="0" role="button"><span class="lab"><i style="background:var(--suspicious)"></i>미교차 (관측한 것들 중 안 엮음)</span><span class="cnt" id="gUn">0</span></div>
+      <div class="gapline gf" data-gk="partial" tabindex="0" role="button"><span class="lab"><i style="background:var(--suspicious)"></i>일부만 발견 (누가 놓침)</span><span class="cnt" id="gFound">0</span></div>
+      <div class="gapline gf" data-gk="conflict" tabindex="0" role="button"><span class="lab"><i style="background:var(--suspicious)"></i>불일치 (판정 갈림)</span><span class="cnt" id="gCo">0</span></div>
+      <div class="gapline gf" data-gk="clean" tabindex="0" role="button" style="border-top:1px solid var(--line2); margin-top:3px"><span class="lab"><i style="background:var(--allow)"></i>정상만 (셋 다 정상)</span><span class="cnt" id="gClean">0</span></div>
+    </div>
+    <div class="card">
+      <h3>그래프 뷰</h3>
+      <div class="views">
+        <button class="vbtn on" data-view="source">소스 뷰 (누가 밟았나)</button>
+        <button class="vbtn" data-view="authz">인가 뷰 (판정 색)</button>
+      </div>
+      <label class="layoutlock"><input type="checkbox" id="layoutLock"> 노드 위치 잠금</label>
+      <div class="graphcontrols"><button id="fitGraph">화면 맞춤</button><button id="collapseGraph" disabled>노드 접기</button><button id="resetLayout">배치 초기화</button></div>
+      <div class="graphstat" id="graphStat">노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.</div>
+    </div>
+  </nav>
+
+  <section class="stage">
+    <div id="cy"></div>
+    <div class="stagehint" id="stagehint"></div>
+    <div class="pane" id="paneMatrix">
+      <div class="matrixhead">
+        <h2>판정 매트릭스</h2>
+        <span class="note">셀 안 배지 = 소스별 발견 여부 · 취소선 = 놓친 소스</span>
+        <div class="modeswitch" style="margin-left:auto"><button id="mx-identity" class="on">신원별</button><button id="mx-role">권한별</button></div>
+        <label class="toggle"><input type="checkbox" id="onlygaps"> 갭·불일치만</label>
+      </div>
+      <table class="matrix" id="matrix"></table>
+    </div>
+    <div class="pane" id="paneSeq">
+      <div class="matrixhead"><h2>흐름 순서 (신원별 요청 시퀀스)</h2><span class="note">앞 응답의 ID·토큰을 뒤 요청이 쓸 때 연결(데이터 의존성). 순서선은 보조 표시로 커버리지·IDOR 판정에는 영향 없음</span></div>
+      <div id="seqBody"></div>
+    </div>
+    <div class="pane" id="paneScenario">
+      <div class="matrixhead"><h2>공격 시나리오 제안</h2><span class="note">세 소스 전체 그림을 종합 → 선택형 LLM 분석, 실패 시 근거 기반 규칙 폴백</span></div>
+      <div class="scenctl">
+        <button class="go" id="btnSummary">① 전체 그림 요약 생성</button>
+        <button class="go primary" id="btnScenario" disabled>② 후보·LLM 평가 모아보기</button>
+      </div>
+      <div id="scenSummary"></div>
+      <div id="scenList"></div>
+    </div>
+    <div class="pane" id="paneRaw">
+      <table class="raw" id="raw"><thead><tr><th>#</th><th>소스</th><th>Identity</th><th>Method</th><th>정규화 Operation</th><th>Resource</th><th>Status</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="pane" id="paneAccounts">
+      <div class="matrixhead"><h2>계정·세션 관리</h2><span class="note">등록 계정(Identity)은 유지하고 로그인 세션만 새로 연결합니다. raw 인증값은 Evidence·프로젝트에 저장하지 않고 broker 메모리에만 둡니다.</span><button type="button" class="go" id="identityReset" style="margin-left:auto">매핑·트래픽 초기화</button></div>
+      <div class="accountgrid">
+        <div class="accountpanel">
+          <h3>테스트 계정 등록</h3>
+          <div class="accountnote">표시 이름·역할·대상 서비스만 등록합니다. 로그인 캡처 중 받은 쿠키·토큰은 Burp 프로세스 메모리에만 유지되고 프로젝트 파일에는 저장되지 않습니다.</div>
+          <form id="accountForm" class="accountform">
+            <input type="hidden" id="accountId">
+            <label>표시 이름<input id="accountLabel" placeholder="USER A" required></label>
+            <label>역할<select id="accountRole"><option>User</option><option>LV1</option><option>LV2</option><option>Admin</option><option>Unknown</option></select></label>
+            <label class="wide">대상 서비스<input id="accountTarget" placeholder="https://api.example.com:443" required></label>
+            <div class="accountactions"><button type="submit" class="primary">계정 저장</button><button type="button" id="accountCancel">입력 초기화</button></div>
+          </form>
+          <div id="accountNotice" class="accountnote" style="margin-top:10px"></div>
+        </div>
+        <div class="accountpanel">
+          <h3>등록 계정</h3><div id="accountCards" class="accountcards"><span class="accountnote">등록된 계정이 없습니다.</span></div>
+          <h3>발견된 세션</h3>
+          <div class="accountnote">인증 세션은 대상 서비스별로 분리됩니다. 각 비가역 지문을 확인한 테스트 계정에 직접 연결하세요.</div>
+          <table class="raw" id="sessionTable"><thead><tr><th>세션 지문</th><th>현재 신원</th><th>대상 서비스</th><th>상태</th><th>계정 연결</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="detail">
+    <div class="empty" id="detailEmpty">노드(API)를 클릭하면 마스킹된 요청·응답과<br>Repeater 초안 기능이 표시됩니다.<br>셀·엣지 선택 시 소스별 판정이 표시됩니다.</div>
+    <div id="detailFull" style="display:none; flex-direction:column; min-height:0; flex:1">
+      <div class="dhead"><div class="k" id="dKind"></div><h3 id="dTitle"></h3></div>
+      <div class="dbody" id="dBody"></div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <span class="li"><span class="sw" style="background:var(--allow)"></span>허용</span>
+  <span class="li"><span class="sw" style="background:var(--deny)"></span>차단</span>
+  <span class="li"><span class="sw" style="background:var(--suspicious)"></span>의심/불일치</span>
+  <span class="li"><span class="sw" style="background:var(--undecided)"></span>판단불가</span>
+  <span style="color:var(--faint)">|</span>
+  <span class="li"><span class="swl" style="border-top:2px solid var(--human)"></span>사람</span>
+  <span class="li"><span class="swl" style="border-top:2px dashed var(--scanner)"></span>스캐너</span>
+  <span class="li"><span class="swl" style="border-top:2px dotted var(--llm)"></span>LLM</span>
+</footer>
+
+<script>
+const FLOWSCOPE_CAPABILITY=document.querySelector('meta[name="flowscope-capability"]')?.content||'';
+const FLOWSCOPE_NATIVE_FETCH=window.fetch.bind(window);
+window.fetch=(input,init={})=>{
+  const url=typeof input==='string'?input:(input&&input.url)||'';
+  if(!url.startsWith('/api/'))return FLOWSCOPE_NATIVE_FETCH(input,init);
+  const headers=new Headers(init.headers||{});headers.set('X-FlowScope-Token',FLOWSCOPE_CAPABILITY);
+  return FLOWSCOPE_NATIVE_FETCH(input,{...init,headers});
+};
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const V={allow:'정상 허용',deny:'정상 차단',untested:'미검증',suspicious:'의심 허용',undecided:'판단 불가'};
+const VC={allow:'--allow',deny:'--deny',untested:'--untested',suspicious:'--suspicious',undecided:'--undecided'};
+const SRC={human:{n:'사람',c:'--human',ab:'B'},scanner:{n:'스캐너',c:'--scanner',ab:'Z'},llm:{n:'LLM',c:'--llm',ab:'L'},unknown:{n:'분류불명',c:'--faint',ab:'?'}};
+let EVENTS=[], SERVER_EVENTS=[], MODEL=null, cy=null, currentView='source';
+let SCENARIO_ITEMS={};
+let SERVER_REVISION=-1, SERVER_IDENTITY_REVISION=-1, SERVER_OWNERS={}, SERVER_ROLES={}, SERVER_REQUIRED_ROLES={}, SERVER_FLOW_LINKS=[], SERVER_ACCOUNTS=[], SERVER_SESSIONS=[], SERVER_MANAGED_SESSIONS=[], SERVER_CELLS=[], SERVER_GAPS=[], SERVER_ACTIVE_SOURCES=[], LIVE_MODE=true;
+let GRAPH_HIDDEN=0; const GRAPH_PAGE_SIZE=18;
+let GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};
+let matrixMode='identity', ROLEOVERRIDE={}; const ROLE_LEVELS=['User','LV1','LV2','Admin','Unknown'];
+let activeSources={human:true,scanner:true,llm:true};
+let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0;
+let SETUP_AUTO_CHECKED=false;
+let HUMAN_RUN={active:false,runId:''};
+let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
+// v2 resets fixed-column positions after responsive graph lanes were introduced.
+const GRAPH_STATE_KEY='flowscope.graph-state.v2';
+let GRAPH_STATE=loadGraphState();
+
+function loadGraphState(){
+  try{const value=JSON.parse(localStorage.getItem(GRAPH_STATE_KEY)||'{}');return {positions:value.positions||{},viewport:value.viewport||null,locked:!!value.locked};}
+  catch(_){return {positions:{},viewport:null,locked:false};}
+}
+function saveGraphState(){
+  clearTimeout(GRAPH_SAVE_TIMER); GRAPH_SAVE_TIMER=setTimeout(()=>{try{localStorage.setItem(GRAPH_STATE_KEY,JSON.stringify(GRAPH_STATE));}catch(_){}},80);
+}
+function captureGraphState(){
+  if(!cy)return; cy.nodes().forEach(n=>{const p=n.position();GRAPH_STATE.positions[n.id()]={x:p.x,y:p.y};});
+  GRAPH_STATE.viewport={zoom:cy.zoom(),pan:cy.pan()}; saveGraphState();
+}
+function savedPosition(id,fallback){const p=GRAPH_STATE.positions[id];return p&&Number.isFinite(p.x)&&Number.isFinite(p.y)?p:fallback;}
+function esc(value){return String(value==null?'':value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function cellKey(idn,op,resource){return JSON.stringify([idn,op,resource==null?null:resource]);}
+function parseCellKey(key){const value=JSON.parse(key);return [value[0],value[1],value[2]];}
+function resourceLabel(value){return value==null||value===''?'(객체 없음)':String(value);}
+function withoutService(value){return String(value||'').replace(/^https?:\/\/\S+\s+/i,'');}
+function accountById(id){return SERVER_ACCOUNTS.find(account=>account.id===id);}
+function managedSession(id){return SERVER_MANAGED_SESSIONS.find(session=>session.accountId===id);}
+function displayIdentity(idn){
+  const account=accountById(idn);if(account)return account.label;
+  if(String(idn||'').toLowerCase()==='anonymous')return 'ANONYMOUS';
+  if(MODEL&&MODEL.displayNames&&MODEL.displayNames[idn])return MODEL.displayNames[idn];
+  if(MODEL&&MODEL.roles[idn]==='Admin')return 'ADMIN';
+  const pending=String(idn||'').match(/^unassigned-(\d+)$/i);if(pending)return 'UNASSIGNED '+pending[1];
+  const match=String(idn||'').match(/^user-([a-z]+)$/i); return match?'USER '+match[1].toUpperCase():String(idn||'UNKNOWN');
+}
+function userSequenceLabel(index){let n=index,out='';do{out=String.fromCharCode(65+n%26)+out;n=Math.floor(n/26)-1;}while(n>=0);return 'USER '+out;}
+
+function build(){
+  const analyticEvents=EVENTS.filter(e=>e.source==='human'||e.source==='scanner'||e.source==='llm');
+  const eventById=Object.fromEntries(analyticEvents.map(event=>[event.eventId,event]));
+  const identities=[...new Set(SERVER_CELLS.map(cell=>cell.idn))];
+  const operations=[...new Set(SERVER_CELLS.map(cell=>cell.op))];
+  const resources=[...new Set(SERVER_CELLS.map(cell=>cell.resource).filter(Boolean))];
+  const roles={};identities.forEach(idn=>{const registered=accountById(idn);roles[idn]=ROLEOVERRIDE[idn]||(registered&&registered.role)||SERVER_ROLES[idn]||'Unknown';});
+  const owner={...SERVER_OWNERS};
+  const cells={};
+  SERVER_CELLS.forEach(raw=>{const key=cellKey(raw.idn,raw.op,raw.resource);const evs=(raw.evidenceIds||[]).map(id=>eventById[id]).filter(Boolean),bySrc={};
+    evs.forEach(event=>(bySrc[event.source]=bySrc[event.source]||[]).push(event));
+    const observed=Object.keys(raw.perSource||{}),missedBy=raw.missedSources||[],vals=Object.values(raw.perSource||{});
+    const related=SERVER_GAPS.filter(g=>g.idn===raw.idn&&g.op===raw.op&&g.resource===raw.resource);
+    const partial=related.some(g=>g.type==='PARTIAL_DISCOVERY');
+    cells[key]={idn:raw.idn,op:raw.op,resource:raw.resource,evs,bySrc,perSrc:{...(raw.perSource||{})},reasons:{...(raw.reasons||{})},verdict:raw.overall,
+      observed,conflict:!!raw.conflict,foundBy:[...observed],missedBy:[...missedBy],partial,
+      clean:SERVER_ACTIVE_SOURCES.length>0&&missedBy.length===0&&!raw.conflict&&vals.every(v=>v==='allow'||v==='deny')};
+  });
+  const candidates=SERVER_GAPS.filter(g=>g.type==='UNCROSSED').map(g=>({idn:g.idn,op:g.op,resource:g.resource,owner:owner[g.resource],risk:g.risk>=100?'CRITICAL':g.risk>=70?'HIGH':'MEDIUM',riskScore:g.risk}));
+  candidates.sort((a,b)=>b.riskScore-a.riskScore||a.op.localeCompare(b.op)||a.idn.localeCompare(b.idn));
+  const displayNames={};let userIndex=0;identities.forEach(idn=>{const registered=accountById(idn);displayNames[idn]=registered?registered.label:roles[idn]==='Admin'?'ADMIN':(String(idn).toLowerCase()==='anonymous'?'ANONYMOUS':(/^unassigned-/i.test(idn)?'UNASSIGNED '+idn.split('-').pop():(/^user-[a-z]+$/i.test(idn)?userSequenceLabel(userIndex++):idn)));});
+  MODEL={identities,operations,resources,owner,cells,candidates,roles,displayNames,requiredRoles:{...SERVER_REQUIRED_ROLES}};
+  if(ACTIVE_IDENTITY!=='all'&&!identities.includes(ACTIVE_IDENTITY))ACTIVE_IDENTITY='all';
+  updateStatus(); computeCoverage(); renderIdentityFilter(); renderGraph(); renderRoles(); renderMatrix(); renderRaw(); renderSeq(); renderAccounts();
+}
+
+function computeCoverage(){
+  if(!MODEL)return; const {identities,operations,resources,cells}=MODEL; const arr=Object.values(cells);
+  // 관측 범위(객체 단위): 실제로 관측된 (신원 × 메서드·엔드포인트 × 객체) 조합 수. 블랙박스라 분모(전체)는 세지 않는다.
+  const methods=new Set(arr.map(c=>withoutService(c.op).split(/\s+/,1)[0]));
+  const endpoints=new Set(operations.map(o=>o.replace(/^[A-Z]+\s/,''))); // 메서드 뗀 경로 패턴
+  covObs.innerHTML=arr.length+'<small>조합</small>';
+  covFrac.textContent='엔드포인트 '+endpoints.size+' · 메서드 '+methods.size+' · 객체 '+resources.length;
+  // 갭 3종 — 관측된 신원·엔드포인트·객체 안에서만 계산(블랙박스 정당)
+  let conflict=0,partial=0,clean=0;
+  arr.forEach(c=>{ if(c.conflict)conflict++; if(c.partial)partial++; if(c.clean)clean++; });
+  gUn.textContent=MODEL.candidates.length; gFound.textContent=partial; gCo.textContent=conflict; gClean.textContent=clean;
+}
+function cellGKs(c){ const g=[]; if(!c)return g; if(c.conflict)g.push('conflict'); if(c.partial)g.push('partial'); if(c.clean)g.push('clean'); return g; }
+function shortLabel(value,max=34){ const s=String(value||''); if(s.length<=max)return s; const left=Math.ceil((max-1)*.7),right=(max-1)-left; return s.slice(0,left)+'…'+s.slice(-right); }
+function operationLabel(op){const value=withoutService(op),p=value.indexOf(' ');return p>0?value.slice(0,p)+'\n'+shortLabel(value.slice(p+1),36):shortLabel(value,36);}
+function sourceMark(sources){return ['human','scanner','llm'].filter(s=>sources.includes(s)).map(s=>SRC[s].ab).join('·')||'-';}
+function sourceSetFor(cells,predicate){const found=new Set();cells.filter(predicate).forEach(c=>c.observed.forEach(s=>found.add(s)));return [...found];}
+function renderIdentityFilter(){
+  const select=document.getElementById('identityFilter'); if(!select)return;
+  const options=['<option value="all">전체 사용자 오버레이</option>'].concat((MODEL?MODEL.identities:[]).map(idn=>'<option value="'+esc(idn)+'">'+esc(displayIdentity(idn))+' · '+esc(MODEL.roles[idn])+'</option>'));
+  select.innerHTML=options.join(''); select.value=ACTIVE_IDENTITY;
+  const from=document.getElementById('mergeFrom'),into=document.getElementById('mergeInto'),button=document.getElementById('mergeIdentity');
+  if(!from||!into||!button)return;const previousFrom=from.value,previousInto=into.value;
+  const ids=MODEL?MODEL.identities:[];
+  const mergeOptions=ids.map(idn=>'<option value="'+esc(idn)+'">'+esc(displayIdentity(idn))+'</option>').join('');
+  const accountOptions=SERVER_ACCOUNTS.map(account=>'<option value="'+esc(account.id)+'">'+esc(account.label)+'</option>').join('');
+  from.innerHTML=mergeOptions;into.innerHTML=accountOptions||'<option value="">등록 계정 없음</option>';
+  from.value=ids.includes(previousFrom)?previousFrom:(ids[ids.length-1]||'');
+  into.value=SERVER_ACCOUNTS.some(account=>account.id===previousInto)?previousInto:(SERVER_ACCOUNTS[0]?.id||'');
+  button.disabled=!from.value||!into.value||from.value===into.value;
+}
+// 갭 필터: 현재 보고 있는 화면(그래프/매트릭스)에서 해당 갭을 강조
+let activeGap=null;
+function highlightGap(gk){
+  activeGap = activeGap===gk ? null : gk;
+  document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.toggle('on', el.dataset.gk===activeGap));
+  // 매트릭스
+  document.querySelectorAll('#matrix .cell').forEach(el=>{
+    const match = activeGap && ((el.dataset.gks||'').split(',').includes(activeGap));
+    el.classList.toggle('match', !!match); el.classList.toggle('dimmed', !!activeGap && !match);
+  });
+  // 그래프
+  if(cy) cy.batch(()=>{
+    cy.elements().removeClass('ghl gdim pathsel pathdim sel');
+    cy.edges('[etype="candidate"]').addClass('hide');
+    if(!activeGap) return;
+    if(activeGap==='crossgap'){
+      cy.edges('[etype="candidate"]').removeClass('hide').addClass('ghl');
+      cy.edges('[etype="access"],[etype="owns"],[etype="calls"]').addClass('gdim');
+    } else {      cy.edges('[etype="access"]').forEach(e=>{ const gks=cellGKs(MODEL.cells[e.data('key')]);
+        if(gks.includes(activeGap)) e.addClass('ghl'); else e.addClass('gdim'); });
+      cy.edges('[etype="owns"],[etype="calls"]').addClass('gdim');
+    }
+  });
+  // 미교차 필터: 후보 목록을 우측 패널에 표시(클릭 → 해당 경로 강조)
+  if(activeGap==='crossgap' && MODEL){
+    detailEmpty.style.display='none'; detailFull.style.display='flex';
+    dKind.textContent='미교차 후보 목록'; dTitle.textContent=MODEL.candidates.length+'건 (IDOR 교차 후보)';
+    const filteredCandidates=MODEL.candidates.filter(cn=>ACTIVE_IDENTITY==='all'||cn.idn===ACTIVE_IDENTITY);
+    dTitle.textContent=filteredCandidates.length+'건 (IDOR 교차 후보)';
+    const items=filteredCandidates.slice(0,60).map(cn=>{
+      const owner=MODEL.owner[cn.resource]; const cross=owner&&owner!==cn.idn;
+      const key=cellKey(cn.idn,cn.op,cn.resource);
+      return `<div class="ci" data-key="${esc(key)}"><span><b style="color:var(--suspicious)">${esc(cn.risk)}</b> · ${esc(displayIdentity(cn.idn))} → ${esc(resourceLabel(cn.resource))}${cross?' <span style="color:var(--suspicious)">✗소유</span>':''}<br><span style="color:var(--faint)">${esc(cn.op)}</span></span><span class="go2">그래프 ▸</span></div>`;
+    }).join('');
+    dBody.innerHTML=`<div class="field"><div class="lbl">아직 안 엮은 조합 (관측 범위 내)</div><div class="clist">${items||'<span style="color:var(--faint)">없음</span>'}</div></div>`+
+      `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--suspicious);width:9px;height:9px;border-radius:50%"></span>미교차 = IDOR 1순위 후보</div><p>이미 관측한 신원·객체인데 아직 안 엮어본 조합입니다. 항목을 클릭하면 해당 그래프 경로를 강조합니다.</p></div>`;
+    dBody.querySelectorAll('.ci').forEach(el=>el.addEventListener('click',()=>{
+      setMode('graph'); const candidate=(MODEL.candidates||[]).find(item=>cellKey(item.idn,item.op,item.resource)===el.dataset.key); if(!candidate)return;
+      showEmpty(el.dataset.key);
+      let edge=cy&&cy.edges('[etype="candidate"]').filter(item=>item.data('key')===el.dataset.key).first();
+      if(edge&&edge.length){edge.removeClass('hide');highlightGraphPath(edge);cy.animate({center:{eles:edge.connectedNodes()}},{duration:300});return;}
+      // 후보의 API/객체가 접힌 경우 해당 구간을 먼저 펼친 뒤 정확한 후보 선을 선택한다.
+      GRAPH_LIMITS.operations=Math.max(GRAPH_LIMITS.operations,(MODEL.operations||[]).length);
+      GRAPH_LIMITS.resources=Math.max(GRAPH_LIMITS.resources,(MODEL.resources||[]).length);renderGraph();
+      edge=cy.edges('[etype="candidate"]').filter(item=>item.data('key')===el.dataset.key).first();
+      showEmpty(el.dataset.key);
+      if(edge&&edge.length){edge.removeClass('hide');highlightGraphPath(edge);cy.animate({center:{eles:edge.connectedNodes()}},{duration:300});}
+    }));
+  } else { clearDetail(); }
+}
+function renderGraph(){
+  if(!MODEL)return; const {identities,operations,resources,owner,cells}=MODEL;
+  const graphIdentities=ACTIVE_IDENTITY==='all'?identities:identities.filter(id=>id===ACTIVE_IDENTITY);
+  const cellValues=Object.values(cells).filter(c=>ACTIVE_IDENTITY==='all'||c.idn===ACTIVE_IDENTITY); const opScore={};
+  cellValues.forEach(c=>opScore[c.op]=(opScore[c.op]||0)+(c.verdict==='suspicious'?100:c.conflict?60:c.partial?20:1)+c.evs.length);
+  const graphOperations=[...new Set(cellValues.map(c=>c.op))], graphResources=[...new Set(cellValues.map(c=>c.resource).filter(Boolean))];
+  const visibleOperations=[...graphOperations].sort((a,b)=>(opScore[b]||0)-(opScore[a]||0)||a.localeCompare(b)).slice(0,GRAPH_LIMITS.operations);
+  const resourceScore={}; cellValues.forEach(c=>resourceScore[c.resource]=(resourceScore[c.resource]||0)+(c.verdict==='suspicious'?100:c.conflict?60:1));
+  const visibleResources=[...graphResources].sort((a,b)=>(resourceScore[b]||0)-(resourceScore[a]||0)||a.localeCompare(b)).slice(0,GRAPH_LIMITS.resources);
+  const hiddenOperations=Math.max(0,graphOperations.length-visibleOperations.length);
+  const hiddenResources=Math.max(0,graphResources.length-visibleResources.length);
+  GRAPH_HIDDEN=hiddenOperations+hiddenResources;
+  graphStat.textContent=`표시: 사용자 ${graphIdentities.length} · 객체 ${visibleResources.length}/${graphResources.length} · API ${visibleOperations.length}/${graphOperations.length}`+(GRAPH_HIDDEN?' · +그룹 노드를 눌러 펼치기':'');
+  collapseGraph.disabled=GRAPH_LIMITS.operations===GRAPH_PAGE_SIZE&&GRAPH_LIMITS.resources===GRAPH_PAGE_SIZE;
+  const nodes=[],edges=[]; const y=(n,i)=>84+i*72;
+  const stageWidth=Math.max(560,document.getElementById('cy').clientWidth||560);
+  const identityX=70,operationX=Math.max(410,stageWidth-150),resourceX=Math.round((identityX+operationX)/2);
+  // 배치: 요청자(왼) → 객체(가운데) → 엔드포인트(오른쪽). 소유자는 별도 노드로 표시하지 않고 판정·근거에서만 사용.
+  graphIdentities.forEach((id,i)=>{const sources=sourceSetFor(cellValues,c=>c.idn===id),mark=sourceMark(sources);nodes.push({data:{id:'I:'+id,label:displayIdentity(id)+'\n['+mark+']',fullLabel:displayIdentity(id)+' · '+id+' · '+MODEL.roles[id]+' · 소스 '+mark,ntype:'identity',idn:id,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('I:'+id,{x:identityX,y:y(graphIdentities.length,i)})});});
+  visibleResources.forEach((r,i)=>{const sources=sourceSetFor(cellValues,c=>c.resource===r),mark=sourceMark(sources);nodes.push({data:{id:'R:'+r,label:shortLabel(withoutService(r),24)+'\n['+mark+']',fullLabel:r+' · 소스 '+mark,ntype:'resource',resource:r,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('R:'+r,{x:resourceX,y:y(visibleResources.length,i)})});});
+  visibleOperations.forEach((op,i)=>{const sources=sourceSetFor(cellValues,c=>c.op===op),mark=sourceMark(sources);nodes.push({data:{id:'O:'+op,label:operationLabel(op)+'\n['+mark+']',fullLabel:op+' · 소스 '+mark,ntype:'operation',op:op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('O:'+op,{x:operationX,y:y(visibleOperations.length,i)})});});
+  if(hiddenResources)nodes.push({data:{id:'G:resources',label:'+'+hiddenResources+'개 객체\n클릭하여 펼치기',fullLabel:'숨긴 객체 '+hiddenResources+'개',ntype:'group',groupType:'resources'},position:savedPosition('G:resources',{x:resourceX,y:y(visibleResources.length+1,visibleResources.length)})});
+  if(hiddenOperations)nodes.push({data:{id:'G:operations',label:'+'+hiddenOperations+'개 API\n클릭하여 펼치기',fullLabel:'숨긴 API '+hiddenOperations+'개',ntype:'group',groupType:'operations'},position:savedPosition('G:operations',{x:operationX,y:y(visibleOperations.length+1,visibleOperations.length)})});
+  const calls=new Set();
+  cellValues.forEach(c=>{
+    if(c.resource&&!visibleResources.includes(c.resource))return;
+    if(!c.resource&&!visibleOperations.includes(c.op))return;
+    c.observed.forEach(s=>{
+      const count=(c.bySrc[s]||[]).length;
+      // 객체가 있으면 요청자→객체, 없으면 요청자→엔드포인트로 직접 연결한다.
+      const accessTarget=c.resource?'R:'+c.resource:'O:'+c.op;
+      edges.push({data:{id:'A:'+cellKey(c.idn,c.op,c.resource)+':'+s,source:'I:'+c.idn,target:accessTarget,etype:'access',
+        src:s,idn:c.idn,op:c.op,resource:c.resource,verdict:c.perSrc[s],count,label:SRC[s].ab+(count>1?'×'+count:''),key:cellKey(c.idn,c.op,c.resource)}});
+      if(c.resource){const ek=c.idn+'|'+c.resource+'|'+c.op+'|'+s;if(visibleOperations.includes(c.op)&&!calls.has(ek)){calls.add(ek);edges.push({data:{id:'C:'+ek,source:'R:'+c.resource,target:'O:'+c.op,etype:'calls',src:s,idn:c.idn,op:c.op,resource:c.resource,count}});}}
+    });
+  });
+  (MODEL.candidates||[]).filter(cn=>(ACTIVE_IDENTITY==='all'||cn.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(cn.op)&&visibleResources.includes(cn.resource)).slice(0,40).forEach((cn,i)=>{ edges.push({data:{id:'X:'+i,source:'I:'+cn.idn,target:'R:'+cn.resource,etype:'candidate',idn:cn.idn,op:cn.op,resource:cn.resource,key:cellKey(cn.idn,cn.op,cn.resource),risk:cn.risk,label:'미교차'}}); });
+  (SERVER_FLOW_LINKS||[]).forEach((fl,i)=>{if((ACTIVE_IDENTITY==='all'||fl.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(fl.fromOp)&&visibleOperations.includes(fl.toOp)&&fl.fromOp!==fl.toOp)edges.push({data:{id:'F:'+i,source:'O:'+fl.fromOp,target:'O:'+fl.toOp,etype:'flow',src:fl.source,label:'DATA'}});});
+
+  if(cy){captureGraphState();cy.destroy();}
+  cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},
+    style:[
+      {selector:'node',style:{'label':'data(label)','color':css('--text'),'font-family':'JetBrains Mono, Consolas, monospace','font-size':'12px','font-weight':500,'text-wrap':'wrap','text-valign':'center','text-halign':'center','text-max-width':'208px','width':'188px','height':'54px','border-width':1.4,'border-color':css('--line2'),'background-color':css('--panel2')}},
+      {selector:'node[ntype="identity"]',style:{'shape':'round-rectangle','background-color':'#E7F0FB','border-color':css('--human'),'width':'118px','height':'48px'}},
+      {selector:'node[ntype="operation"]',style:{'shape':'hexagon','background-color':'#F3E9F9','width':'248px','height':'64px','border-color':'#DFC9EC'}},
+      {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'54px'}},
+      {selector:'node[ntype="group"]',style:{'shape':'round-rectangle','background-color':'#FFFFFF','border-color':css('--scanner'),'border-style':'dashed','border-width':2,'color':css('--scanner'),'width':'164px','height':'48px'}},
+      {selector:'node[sourceMask="human"]',style:{'border-color':css('--human'),'border-style':'solid','border-width':2}},
+      {selector:'node[sourceMask="scanner"]',style:{'border-color':css('--scanner'),'border-style':'dashed','border-width':2}},
+      {selector:'node[sourceMask="llm"]',style:{'border-color':css('--llm'),'border-style':'dotted','border-width':2}},
+      {selector:'node[sourceCount > 1]',style:{'border-color':css('--text'),'border-width':2.5}},
+      {selector:'node.sel',style:{'border-width':2.6,'border-color':css('--scanner')}},
+      {selector:'edge',style:{'curve-style':'taxi','taxi-direction':'horizontal','taxi-turn':'48px','taxi-turn-min-distance':'14px','width':1.6,'target-arrow-shape':'triangle','arrow-scale':.8,'opacity':.92}},
+      {selector:'edge[etype="calls"]',style:{'curve-style':'straight','width':1,'line-color':css('--line'),'target-arrow-color':css('--line')}},
+      {selector:'edge[etype="owns"]',style:{'line-color':'#2d6e63','target-arrow-color':'#2d6e63','line-style':'dashed','width':1.1,'opacity':.5}},
+      {selector:'edge[etype="access"]',style:{'width':2,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--muted'),'text-background-color':css('--bg'),'text-background-opacity':.92,'text-background-padding':'2px'}},
+      {selector:'edge[etype="candidate"]',style:{'taxi-turn':'86px','line-style':'dotted','line-color':css('--suspicious'),'target-arrow-color':css('--suspicious'),'width':1.6,'opacity':.7,'target-arrow-shape':'triangle','arrow-scale':.7,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--suspicious')}},
+      {selector:'edge[etype="flow"]',style:{'curve-style':'taxi','taxi-direction':'vertical','taxi-turn':'34px','line-style':'dashed','line-color':css('--undecided'),'target-arrow-color':css('--undecided'),'width':1.4,'opacity':.7,'label':'','font-size':'10px','color':css('--faint')}},
+      {selector:'edge.hide',style:{'display':'none'}},
+      {selector:'edge.ghl',style:{'opacity':1,'width':3.6,'z-index':20}},
+      {selector:'edge.gdim',style:{'opacity':.07}},
+      {selector:'.pathsel',style:{'opacity':1,'z-index':30}},
+      {selector:'edge.pathsel',style:{'width':4}},
+      {selector:'node.pathsel',style:{'border-width':3.5,'border-color':css('--scanner')}},
+      {selector:'.pathdim',style:{'opacity':.08}},
+      /* 소스별 선 스타일 */
+      {selector:'edge[src="human"]',style:{'line-style':'solid','taxi-turn':'38px'}},
+      {selector:'edge[src="scanner"]',style:{'line-style':'dashed','taxi-turn':'54px'}},
+      {selector:'edge[src="llm"]',style:{'line-style':'dotted','taxi-turn':'70px'}},
+      {selector:'edge.sel,edge.hover,edge.ghl',style:{'width':3.4,'label':'data(label)'}},
+      {selector:'edge.hide',style:{'display':'none'}},
+      /* 소스 뷰: 소스 색 */
+      {selector:'edge.col-human',style:{'line-color':css('--human'),'target-arrow-color':css('--human')}},
+      {selector:'edge.col-scanner',style:{'line-color':css('--scanner'),'target-arrow-color':css('--scanner')}},
+      {selector:'edge.col-llm',style:{'line-color':css('--llm'),'target-arrow-color':css('--llm')}},
+      /* 인가 뷰: 판정 색 */
+      {selector:'edge.v-allow',style:{'line-color':css('--allow'),'target-arrow-color':css('--allow')}},
+      {selector:'edge.v-deny',style:{'line-color':css('--deny'),'target-arrow-color':css('--deny')}},
+      {selector:'edge.v-suspicious',style:{'line-color':css('--suspicious'),'target-arrow-color':css('--suspicious'),'width':3}},
+      {selector:'edge.v-undecided',style:{'line-color':css('--undecided'),'target-arrow-color':css('--undecided')}}
+    ],
+    // Do not auto-fit on every rebuild: fitting 18 rows shrinks labels below readability.
+    // Users can request an overview explicitly with the separate "화면 맞춤" control.
+    layout:{name:'preset',fit:false}});
+  cy.on('tap','node[ntype="group"]',e=>{captureGraphState();const type=e.target.data('groupType');GRAPH_LIMITS[type]+=GRAPH_PAGE_SIZE;renderGraph();setHint(type==='operations'?'API 노드를 더 펼쳤습니다.':'객체 노드를 더 펼쳤습니다.');});
+  cy.on('tap','node[ntype="operation"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
+  cy.on('tap','node[ntype="identity"],node[ntype="resource"]',e=>{highlightGraphPath(e.target);showEntityNode(e.target);});
+  cy.on('tap','edge[etype="access"]',e=>{highlightGraphPath(e.target);showCell(e.target.data('key'));});
+  cy.on('tap','edge[etype="candidate"]',e=>{highlightGraphPath(e.target);showEmpty(e.target.data('key'));});
+  cy.on('tap','edge[etype="calls"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
+  cy.on('tap','edge[etype="flow"]',e=>{highlightGraphPath(e.target);setHint('DATA 흐름: 앞 응답의 ID·토큰이 다음 요청으로 전달된 관계입니다.');});
+  cy.on('tap',e=>{if(e.target===cy)clearDetail();});
+  cy.on('mouseover','node',e=>setHint(e.target.data('fullLabel')||e.target.data('label')));
+  cy.on('mouseout','node',()=>applyView(currentView));
+  cy.on('mouseover','edge',e=>{e.target.addClass('hover');const parts=[e.target.data('src'),e.target.data('op'),e.target.data('resource')].filter(Boolean);if(parts.length)setHint(parts.join(' · '));});
+  cy.on('mouseout','edge',e=>{e.target.removeClass('hover');applyView(currentView);});
+  cy.on('dragfree','node',captureGraphState);
+  cy.on('zoom pan',saveViewportSoon);
+  if(GRAPH_STATE.locked)cy.nodes().ungrabify();
+  if(GRAPH_STATE.viewport&&Number.isFinite(GRAPH_STATE.viewport.zoom)){cy.zoom(GRAPH_STATE.viewport.zoom);cy.pan(GRAPH_STATE.viewport.pan||{x:0,y:0});}
+  applyView(currentView);
+  if(activeGap){ const g=activeGap; activeGap=null; highlightGap(g); } else { cy.edges('[etype="candidate"]').addClass('hide'); }
+}
+function highlightGraphPath(element){
+  if(!cy||!element)return;const selected=new Set();const add=collection=>collection.forEach(item=>selected.add(item.id()));add(cy.collection(element));
+  const type=element.data('etype')||element.data('ntype');
+  if(type==='access'||type==='candidate'){
+    add(element.connectedNodes());const resource=element.target(),op=element.data('op'),src=element.data('src'),idn=element.data('idn');
+    const calls=resource.connectedEdges('[etype="calls"]').filter(edge=>(!op||edge.data('op')===op)&&(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(calls);add(calls.connectedNodes());
+  }else if(type==='calls'){
+    add(element.connectedNodes());const resource=element.source(),src=element.data('src'),idn=element.data('idn');const access=resource.connectedEdges('[etype="access"]').filter(edge=>(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(access);add(access.connectedNodes());
+  }else if(type==='flow')add(element.connectedNodes());
+  else if(type==='operation'){
+    const calls=element.connectedEdges('[etype="calls"]');add(calls);add(calls.connectedNodes());calls.sources().forEach(resource=>{const access=resource.connectedEdges('[etype="access"]');add(access);add(access.connectedNodes());});
+  }else if(type==='resource'){
+    const linked=element.connectedEdges('[etype="access"],[etype="calls"],[etype="candidate"]');add(linked);add(linked.connectedNodes());
+  }else if(type==='identity'){
+    const access=element.connectedEdges('[etype="access"],[etype="candidate"]');add(access);add(access.connectedNodes());access.targets().forEach(resource=>{const calls=resource.connectedEdges('[etype="calls"]');add(calls);add(calls.connectedNodes());});
+  }
+  cy.elements().forEach(item=>{const on=selected.has(item.id());item.toggleClass('pathsel',on);item.toggleClass('pathdim',!on);item.toggleClass('sel',item.id()===element.id());});
+}
+function saveViewportSoon(){if(!cy)return;GRAPH_STATE.viewport={zoom:cy.zoom(),pan:cy.pan()};saveGraphState();}
+function fitGraph(){if(!cy)return;cy.resize();cy.fit(cy.elements(),36);captureGraphState();}
+function resetGraphLayout(){
+  if(cy){cy.destroy();cy=null;} GRAPH_STATE.positions={};GRAPH_STATE.viewport=null;saveGraphState();renderGraph();setTimeout(fitGraph,0);
+}
+function collapseGraphNodes(){
+  if(!MODEL)return;captureGraphState();GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};renderGraph();setTimeout(fitGraph,0);
+}
+function applyView(view){
+  currentView=view; if(!cy)return;
+  cy.batch(()=>{
+    cy.edges().removeClass('col-human col-scanner col-llm v-allow v-deny v-suspicious v-undecided');
+    cy.edges('[etype="access"]').forEach(e=>{ e.addClass(view==='source'?('col-'+e.data('src')):('v-'+e.data('verdict'))); });
+    applyFilter();
+  });
+  const hidden=GRAPH_HIDDEN?` · 가독성을 위해 ${GRAPH_HIDDEN}개 노드는 생략됨(전체는 매트릭스/파싱 결과에서 확인)`:' ';
+  setHint((view==='source'
+    ? '실선=사람, 파선=스캐너, 점선=LLM. 같은 대상에 여러 선이 겹치면 여러 소스가 발견한 것. 한 줄만 있으면 나머지는 놓친 것.'
+    : '판정 색으로 표시. 앰버=의심(BOLA 후보). 같은 대상에 색이 다른 선이 겹치면 소스 간 판정 불일치.')+hidden);
+}
+function applyFilter(){
+  if(!cy)return;
+  cy.edges('[etype="access"],[etype="calls"],[etype="flow"]').forEach(e=>{ e.toggleClass('hide', !activeSources[e.data('src')]); });
+}
+function setHint(t){stagehint.textContent=t;}
+
+/* ── 디테일: Operation 노드 = 마스킹 Request/Response + Repeater 초안 ── */
+function inputLoc(method){
+  const m=(method||'GET').toUpperCase();
+  if(['POST','PUT','PATCH'].includes(m)) return {parts:['body','path'], main:'body', desc:'요청 본문(body)'};
+  if(m==='DELETE') return {parts:['path'], main:'path', desc:'경로(path)'};
+  if(m==='OPTIONS'||m==='HEAD') return {parts:['path'], main:'path', desc:'경로(path) — 메타 요청'};
+  return {parts:['query','path'], main:'query', desc:'쿼리스트링·경로(query/path)'};
+}
+async function showOperation(op,offset=0){
+  const evs=EVENTS.filter(e=>e.op===op); if(!evs.length)return;
+  const detailRequest=++DETAIL_REQUEST;
+  detailEmpty.style.display='none'; detailFull.style.display='flex';
+  dKind.textContent='API 노드 · 요청/응답'; dTitle.textContent=op;
+  dBody.textContent='마스킹된 Evidence를 불러오는 중…';
+  let detailById={},detailError='',detailMeta={total:evs.length,offset,limit:200,hasMore:false};
+  try{const response=await fetch('/api/evidence?operation='+encodeURIComponent(op)+'&offset='+offset+'&limit=200',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'Evidence 상세 조회 실패');const rows=Array.isArray(data)?data:(data.records||[]);detailById=Object.fromEntries(rows.map(value=>[value.eventId,value]));if(!Array.isArray(data))detailMeta=data;}
+  catch(error){detailError=error.message;}
+  if(detailRequest!==DETAIL_REQUEST)return;
+  const visibleEvents=detailError?evs.slice(offset,offset+200):evs.filter(e=>detailById[e.eventId]);
+  const first=visibleEvents[0]||evs[0]; const loc=inputLoc(first.method);
+  const requiredRole=(MODEL.requiredRoles&&MODEL.requiredRoles[op])||'Unknown';
+  const objectCandidates=[];const seenObjects=new Set();evs.forEach(event=>(event.objects||[]).forEach(candidate=>{const key=candidate.resource+'@'+candidate.location;if(!seenObjects.has(key)){seenObjects.add(key);objectCandidates.push(candidate);}}));
+  let obs=visibleEvents.map(e=>{ const l=inputLoc(e.method),detail=detailById[e.eventId]||{};
+    return `<details class="reqblk"><summary><span style="color:var(--${e.source})">[${SRC[e.source].ab}]</span> <span class="m">${esc(e.method)}</span> ${esc(e.path)} → HTTP ${e.status} · ${esc(e.eventId||'Evidence 없음')}</summary>`+
+      `<div class="lbl" style="margin-top:8px">REQUEST · ${esc(l.desc)}</div><pre class="reqblk">${esc(detail.request||'(요청 전문 없음)')}</pre>`+
+      `<div class="lbl">RESPONSE</div><pre class="reqblk">${esc(detail.response||'(응답 전문 없음)')}</pre></details>`;
+  }).join('');
+  dBody.innerHTML=
+    (detailError?`<div class="gapbox"><div class="name">상세 조회 실패</div><p>${esc(detailError)}</p></div>`:'')+
+    `<div class="field"><div class="lbl">관측 (${detailMeta.total}건 · ${detailMeta.offset+1}-${Math.min(detailMeta.offset+visibleEvents.length,detailMeta.total)} 표시)</div>${obs}<div class="row" style="margin-top:8px"><button id="evPrev" ${detailMeta.offset<=0?'disabled':''}>이전</button><button id="evNext" ${detailMeta.hasMore?'':'disabled'}>다음</button></div></div>`+
+    `<div class="field"><div class="lbl">입력 위치 (메서드 기준)</div><div class="val"><b>${esc(first.method)}</b> → ${esc(loc.desc)}</div></div>`+
+    `<div class="field"><div class="lbl">객체 후보 · 추출 근거</div><div class="val">${objectCandidates.length?objectCandidates.map(candidate=>`${esc(candidate.resource)} · ${esc(candidate.location)} · 신뢰도 ${Math.round(Number(candidate.confidence||0)*100)}%`).join('<br>'):'객체 식별자 미관측'}</div></div>`+
+    `<div class="field"><div class="lbl">엔드포인트 요구 권한 · 사용자 정책</div><select id="requiredRole" class="identityselect">${ROLE_LEVELS.map(role=>`<option ${role===requiredRole?'selected':''}>${esc(role)}</option>`).join('')}</select><button id="requiredRoleSave" class="go" style="margin-top:6px">요구 권한 저장</button><span id="requiredRoleMessage" class="warn" style="margin-left:6px"></span></div>`+
+    `<div class="resend"><h4>⟳ Burp Repeater 초안</h4>`+
+    `<div class="val" style="font-size:10.5px; color:var(--faint); margin-bottom:6px">현재 첫 Evidence의 마스킹된 요청을 Repeater에 미전송 초안으로 엽니다. 인증정보 복원·값 변경·송신은 Burp에서 사용자가 수행합니다.</div>`+
+    `<div class="row"><button id="rsSend">Repeater 초안 열기</button><span class="warn">자동 전송하지 않음</span></div>`+
+    `<div class="resendlog" id="rsLog"></div></div>`+
+    `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--resend);width:9px;height:9px;border-radius:50%"></span>검증 경계</div><p>FlowScope는 이 화면에서 응답을 만들거나 상태코드만으로 취약점을 확정하지 않습니다. LLM 최종 판정은 별도 VALIDATION 실행의 반복 재현·정상 대조 Evidence가 서버 검증을 통과해야 합니다.</p></div>`;
+  document.getElementById('evPrev').onclick=()=>showOperation(op,Math.max(0,detailMeta.offset-detailMeta.limit));
+  document.getElementById('evNext').onclick=()=>showOperation(op,detailMeta.offset+detailMeta.limit);
+  document.getElementById('requiredRoleSave').onclick=async()=>{const button=document.getElementById('requiredRoleSave');button.disabled=true;try{const role=document.getElementById('requiredRole').value;const response=await fetch('/api/requirement',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({operation:op,role})});const data=await response.json();if(!response.ok)throw new Error(data.message||'요구 권한 저장 실패');document.getElementById('requiredRoleMessage').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}catch(error){document.getElementById('requiredRoleMessage').textContent=error.message;button.disabled=false;}};
+  document.getElementById('rsSend').onclick=async()=>{
+    if(!first.eventId){document.getElementById('rsLog').textContent='서버 Evidence ID가 없어 Repeater 초안을 열 수 없습니다.';return;}
+    document.getElementById('rsSend').disabled=true;
+    try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId:first.eventId})});const result=await response.json();
+      if(!response.ok||!result.success)throw new Error(result.message||'Repeater 초안 생성 실패');
+      const log=document.getElementById('rsLog');log.textContent=result.message;log.style.color=css('--allow');
+    }catch(error){const log=document.getElementById('rsLog');log.textContent=error.message;log.style.color=css('--deny');}finally{document.getElementById('rsSend').disabled=false;}
+  };
+}
+function showCell(key){
+  const c=MODEL.cells[key]; if(!c)return;
+  detailEmpty.style.display='none'; detailFull.style.display='flex';
+  dKind.textContent='접근 조합'; dTitle.textContent=c.op;
+  const owner=MODEL.owner[c.resource]; const cross=owner&&owner!==c.idn;
+  let rows=['human','scanner','llm'].map(s=>{
+    if(c.perSrc[s]) return `<div class="vr"><span class="src"><i style="background:${css(SRC[s].c)}"></i>${SRC[s].n}</span><span class="vv" style="color:${css(VC[c.perSrc[s]])}">${V[c.perSrc[s]]}</span></div>`;
+    return `<div class="vr" style="opacity:.5"><span class="src"><i style="background:${css(SRC[s].c)}"></i>${SRC[s].n}</span><span class="vv" style="color:var(--faint)">미관측 (놓침)</span></div>`;
+  }).join('');
+  let gap = c.conflict?['불일치 갭','소스별 판정이 갈립니다. 어떤 소스는 문제로, 어떤 소스는 정상으로 봤습니다.']
+         : c.partial?['일부만 발견', c.foundBy.map(s=>SRC[s].n).join('·')+'는 찾았고 '+c.missedBy.map(s=>SRC[s].n).join('·')+'는 놓쳤습니다.']
+         : c.verdict==='suspicious'?['의심 허용','소유자가 아닌 신원이 2xx로 접근.']:null;
+  dBody.innerHTML=
+    `<div class="field"><div class="lbl">주체 · 대상</div><div class="val">${esc(displayIdentity(c.idn))} → ${esc(resourceLabel(c.resource))}${owner?` <span style="color:var(--faint)">(소유: ${esc(displayIdentity(owner))})</span>`:''}</div></div>`+
+    (cross?`<div class="field"><div class="lbl">OWNS 교차</div><div class="val" style="color:var(--suspicious)">${esc(displayIdentity(c.idn))} ≠ 소유자 ${esc(displayIdentity(owner))}</div></div>`:'')+
+    `<div class="field"><div class="lbl">소스별 판정 (3-way)</div>${rows}</div>`+
+    (gap?`<div class="gapbox"><div class="name"><span class="dot" style="background:var(--suspicious);width:9px;height:9px;border-radius:50%"></span>${gap[0]}</div><p>${gap[1]}</p></div>`:'')+
+    `<button id="cellEvidence" class="go">이 API의 요청·응답 보기</button>`;
+  document.getElementById('cellEvidence').onclick=()=>showOperation(c.op);
+}
+function showEntityNode(node){
+  if(!MODEL||!node)return;const type=node.data('ntype'),id=type==='identity'?node.data('idn'):node.data('resource');
+  const related=Object.values(MODEL.cells).filter(c=>type==='identity'?c.idn===id:c.resource===id);
+  const counts={human:0,scanner:0,llm:0};related.forEach(c=>Object.entries(c.bySrc).forEach(([source,events])=>{if(source in counts)counts[source]+=events.length;}));
+  const operations=[...new Set(related.map(c=>c.op))];const identities=[...new Set(related.map(c=>c.idn))];
+  detailEmpty.style.display='none';detailFull.style.display='flex';
+  dKind.textContent=type==='identity'?'요청자 노드':'객체 노드';dTitle.textContent=type==='identity'?displayIdentity(id):resourceLabel(id);
+  const sourceRows=['human','scanner','llm'].map(source=>`<div class="vr"><span class="src"><i style="background:${css(SRC[source].c)}"></i>${SRC[source].n}</span><span class="vv">${counts[source]}건</span></div>`).join('');
+  const ownerEditor=type==='resource'?`<div class="field"><div class="lbl">객체 소유자 확인</div><div class="val" style="margin-bottom:6px">자동 추정이 틀리거나 불명확하면 사람이 확정할 수 있습니다. 비우면 미확정으로 처리합니다.</div><select id="ownerIdentity" class="identityselect"><option value="">미확정</option>${MODEL.identities.map(identity=>`<option value="${esc(identity)}" ${MODEL.owner[id]===identity?'selected':''}>${esc(displayIdentity(identity))} (${esc(identity)})</option>`).join('')}</select><button id="ownerSave" class="go" style="margin-top:6px">소유자 저장</button><span id="ownerMessage" class="warn" style="margin-left:6px"></span></div>`:'';
+  dBody.innerHTML=`<div class="field"><div class="lbl">그래프 요약</div><div class="val">${type==='identity'?`권한 ${esc(MODEL.roles[id]||'Unknown')} · 객체 ${new Set(related.map(c=>c.resource).filter(Boolean)).size}개 · API ${operations.length}개`:`소유자 ${esc(displayIdentity(MODEL.owner[id]||'미확정'))} · 요청자 ${identities.length}명 · API ${operations.length}개`}</div></div>`+
+    ownerEditor+
+    `<div class="field"><div class="lbl">소스별 실제 관측</div>${sourceRows}</div>`+
+    `<div class="field"><div class="lbl">연결된 API</div><div class="val">${operations.slice(0,20).map(esc).join('<br>')||'없음'}${operations.length>20?'<br>… '+(operations.length-20)+'개 더 있음':''}</div></div>`+
+    `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--scanner);width:9px;height:9px;border-radius:50%"></span>선택 경로 강조</div><p>현재 노드와 직접 연결된 요청자·객체·API 경로만 강조했습니다. 배경을 누르면 전체 그래프로 돌아갑니다.</p></div>`;
+  if(type==='resource')document.getElementById('ownerSave').onclick=async()=>{
+    const button=document.getElementById('ownerSave'),identity=document.getElementById('ownerIdentity').value;button.disabled=true;
+    try{const response=await fetch('/api/owner',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({resource:id,identity})});const data=await response.json();if(!response.ok)throw new Error(data.message||'소유자 저장 실패');SERVER_REVISION=-1;await syncExtension();const refreshed=cy&&cy.getElementById('R:'+id);if(refreshed&&refreshed.length)showEntityNode(refreshed);const message=document.getElementById('ownerMessage');if(message)message.textContent=identity?'확정했습니다.':'미확정으로 변경했습니다.';}
+    catch(error){document.getElementById('ownerMessage').textContent=error.message;button.disabled=false;}
+  };
+}
+function clearDetail(){DETAIL_REQUEST++;detailFull.style.display='none';detailEmpty.style.display='block';if(cy)cy.elements().removeClass('sel pathsel pathdim');}
+
+/* ── 매트릭스 ── */
+function srcBadges(c){
+  return ['human','scanner','llm'].map(s=>{
+    if(!c.perSrc[s]) return `<span class="chip miss"><i style="background:${css(SRC[s].c)}"></i>${SRC[s].ab}</span>`;
+    const v=c.perSrc[s]; return `<span class="chip" style="border-color:${css(VC[v])}55"><i style="background:${css(SRC[s].c)}"></i>${SRC[s].ab} ${V[v].slice(0,2)}</span>`;
+  }).join('');
+}
+// 매트릭스 열 그룹: 신원별(user-a/b/c) 또는 권한별(User/LV1/LV2/Admin)
+function matrixGroups(){
+  if(matrixMode==='role'){
+    const order=['User','LV1','LV2','Admin','Unknown'];
+    const present=[...new Set(MODEL.identities.map(i=>MODEL.roles[i]))].sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+    return present.map(role=>({key:role,label:role,idns:MODEL.identities.filter(i=>MODEL.roles[i]===role)}));
+  }
+  return MODEL.identities.map(idn=>({key:idn,label:idn,idns:[idn]}));
+}
+// 권한 그룹의 (op,res) 조합 판정을 소속 신원들로부터 집계
+function aggCell(group,op,res){
+  const cs=group.idns.map(idn=>MODEL.cells[cellKey(idn,op,res)]).filter(Boolean);
+  if(!cs.length) return null;
+  if(group.idns.length===1) return cs[0];
+  const order2=['suspicious','undecided','deny','allow']; const perSrc={};
+  ['human','scanner','llm'].forEach(s=>{ const vs=cs.map(c=>c.perSrc[s]).filter(Boolean); if(vs.length) perSrc[s]=order2.find(v=>vs.includes(v))||vs[0]; });
+  const observed=Object.keys(perSrc), vals=Object.values(perSrc);
+  const conflict=new Set(vals).size>1,missedBy=['human','scanner','llm'].filter(s=>!observed.includes(s));
+  return {idn:group.key,op,resource:res,perSrc,observed,verdict:(order2.find(v=>vals.includes(v))||'allow'),
+    conflict,missedBy,foundBy:[...observed],partial:observed.length>0&&missedBy.length>0,
+    clean:observed.length===3&&!conflict&&vals.every(v=>v==='allow'||v==='deny')};
+}
+function cellHtml(c,dk){
+  if(!c) return '<td><div class="cell v-untested" tabindex="0" data-empty="1" data-gap="true" data-gks="crossgap" data-key="'+esc(dk)+'"><div class="verdict"><span class="dot" style="background:'+css('--untested')+'"></span>미검증</div></div></td>';
+  let cls='cell ',tag='',gap=false,head='';
+  if(c.conflict){cls+='v-conflict';tag='<span class="gaptag" style="background:var(--suspicious);color:#1a130a">불일치</span>';gap=true;head='결론 갈림';}
+  else if(c.partial){cls+='v-gap';gap=true;head='일부만 발견';tag='<span class="gaptag" style="background:rgba(230,163,67,.18);color:var(--suspicious)">'+c.missedBy.map(s=>SRC[s].ab).join('')+' 놓침</span>';}
+  else if(c.verdict==='suspicious'){cls+='v-gap';gap=true;head='의심 허용';}
+  else{cls+='v-'+c.verdict; head=V[c.verdict]; if(c.verdict==='undecided')gap=true;}
+  const dotc = c.conflict||c.verdict==='suspicious'?'--suspicious':VC[c.verdict];
+  const gks=cellGKs(c);
+  return '<td><div class="'+cls+'" tabindex="0" data-key="'+esc(dk)+'" data-gap="'+gap+'" data-gks="'+gks.join(',')+'">'+tag+'<div class="verdict"><span class="dot" style="background:'+css(dotc)+'"></span>'+head+'</div><div class="chips">'+srcBadges(c)+'</div></div></td>';
+}
+function renderMatrix(){
+  if(!MODEL)return; const owner=MODEL.owner;
+  const groups=matrixGroups();
+  const rowMap=new Map();Object.values(MODEL.cells).forEach(c=>rowMap.set(cellKey('',c.op,c.resource),[c.op,c.resource]));const rows=[...rowMap.values()];
+  const colHdr=(op,res)=>esc(withoutService(op))+'<br><span class="own">→ '+esc(withoutService(resourceLabel(res)))+(owner[res]?' (소유: '+esc(displayIdentity(owner[res]))+')':'')+'</span>';
+  let html='';
+  if(matrixMode==='role'){
+    // F-23: 세로축 = 권한(Role), 가로축 = 조합(Endpoint+객체)
+    html='<thead><tr><th class="row">권한 레벨</th>'+rows.map(([op,res])=>'<th class="col">'+colHdr(op,res)+'</th>').join('')+'</tr></thead><tbody>';
+    groups.forEach(g=>{ html+='<tr><th class="row">'+esc(g.label)+' <span class="own">('+g.idns.length+'명)</span></th>';
+      rows.forEach(([op,res])=>{ html+=cellHtml(aggCell(g,op,res),'role:'+cellKey(g.key,op,res)); });
+      html+='</tr>'; });
+    html+='</tbody>';
+  } else {
+    html='<thead><tr><th class="row">조합</th>'+groups.map(g=>'<th class="col">'+esc(displayIdentity(g.label))+'</th>').join('')+'</tr></thead><tbody>';
+    rows.forEach(([op,res])=>{ html+='<tr><th class="row">'+colHdr(op,res)+'</th>';
+      groups.forEach(g=>{ html+=cellHtml(aggCell(g,op,res),cellKey(g.key,op,res)); });
+      html+='</tr>'; });
+    html+='</tbody>';
+  }
+  matrix.innerHTML=html;
+  document.querySelectorAll('#matrix .cell').forEach(el=>{ const act=()=>{ const k=el.dataset.key;
+      if(k.slice(0,5)==='role:'){ const pt=parseCellKey(k.slice(5)); showGroupCell(pt[0],pt[1],pt[2]); }
+      else if(el.dataset.empty) showEmpty(k); else showCell(k); };
+    el.addEventListener('click',act); el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();act();}}); });
+  applyOnlyGaps();
+}
+// 권한 레벨 카드
+function renderRoles(){
+  const el=document.getElementById('roleList'); if(!el)return;
+  if(!MODEL||!MODEL.identities.length){ el.innerHTML='<div style="color:var(--faint); font-size:11px">데이터 없음</div>'; return; }
+  el.innerHTML=MODEL.identities.map(idn=>{const sessions=new Set(EVENTS.filter(e=>e.idn===idn&&e.fp&&e.fp!=='anonymous').map(e=>e.fp)).size;
+    return '<div class="rolerow"><span>'+esc(displayIdentity(idn))+'<small style="display:block;color:var(--faint);font-size:8.5px">세션 '+sessions+'개</small></span><button class="rolechip'+(MODEL.roles[idn]==='Admin'?' admin':MODEL.roles[idn]==='Unknown'?' unknown':'')+'" data-idn="'+esc(idn)+'">'+esc(MODEL.roles[idn])+' ▾</button></div>';}).join('');
+  el.querySelectorAll('.rolechip').forEach(b=>b.addEventListener('click',()=>cycleRole(b.dataset.idn)));
+}
+async function cycleRole(idn){
+  const i=ROLE_LEVELS.indexOf(MODEL.roles[idn]); const next=ROLE_LEVELS[(i+1)%ROLE_LEVELS.length];
+  ROLEOVERRIDE[idn]=next; MODEL.roles[idn]=next; renderIdentityFilter(); renderRoles(); renderGraph(); renderMatrix();
+  if(LIVE_MODE)try{await fetch('/api/role',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({identity:idn,role:next})});}catch(_){}
+}
+async function mergeIdentities(){
+  const from=document.getElementById('mergeFrom').value,into=document.getElementById('mergeInto').value;if(!from||!into||from===into)return;
+  if(!confirm(displayIdentity(from)+'의 같은 서비스 세션을 '+displayIdentity(into)+' 계정에 연결할까요? 저장된 Evidence 원본은 바뀌지 않습니다.'))return;
+  if(!LIVE_MODE){EVENTS.forEach(e=>{if(e.idn===from)e.idn=into;});build();return;}
+  try{const response=await fetch('/api/identity-merge',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({from,into})});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||'병합 실패');delete ROLEOVERRIDE[from];ACTIVE_IDENTITY=into;SERVER_REVISION=-1;await syncExtension();}
+  catch(error){alert('신원 병합 실패: '+error.message);}
+}
+function resetAccountForm(){accountForm.reset();accountId.value='';accountRole.value='User';}
+function editAccount(id){const account=accountById(id);if(!account)return;accountId.value=account.id;accountLabel.value=account.label;accountRole.value=account.role;accountTarget.value=account.target;setMode('accounts');accountLabel.focus();}
+async function saveAccount(event){event.preventDefault();if(!LIVE_MODE)return;
+  const form={id:accountId.value,label:accountLabel.value,role:accountRole.value,target:accountTarget.value};
+  try{const response=await fetch('/api/account-save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams(form)});const data=await response.json();if(!response.ok)throw new Error(data.message||'계정 저장 실패');resetAccountForm();document.getElementById('accountNotice').textContent=data.message||'계정을 저장했습니다.';SERVER_IDENTITY_REVISION=-1;SERVER_REVISION=-1;await syncExtension();}
+  catch(error){alert('계정 저장 실패: '+error.message);}
+}
+async function deleteAccount(id){const account=accountById(id);if(!account||!confirm(account.label+' 계정을 삭제할까요? 연결된 세션이 있으면 삭제되지 않습니다.'))return;
+  try{const response=await fetch('/api/account-delete',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({id})});const data=await response.json();if(!response.ok)throw new Error(data.message||'삭제 실패');SERVER_IDENTITY_REVISION=-1;SERVER_REVISION=-1;await syncExtension();}
+  catch(error){alert('계정 삭제 실패: '+error.message);}
+}
+async function captureSession(accountId,action){const account=accountById(accountId);if(!account)return;
+  const message=action==='begin'?account.label+' 로그인 캡처를 시작할까요? 이후 HUMAN 8080 브라우저에서 직접 로그인하세요.':action==='end'?'로그인 리다이렉트가 끝났다면 캡처를 종료할까요?':account.label+' 메모리 세션을 즉시 폐기할까요?';if(!confirm(message))return;
+  try{const response=await fetch('/api/session-capture',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({account:accountId,action})});const data=await response.json();if(!response.ok)throw new Error(data.message||'세션 작업 실패');document.getElementById('accountNotice').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}
+  catch(error){alert('세션 작업 실패: '+error.message);}
+}
+async function bindSession(fingerprint,service){const select=[...document.querySelectorAll('.bindselect')].find(element=>element.dataset.fp===fingerprint&&element.dataset.service===service);if(!select||!select.value){alert('연결할 등록 계정을 선택하세요.');return;}
+  const account=accountById(select.value);if(!confirm((account?account.label:select.value)+'에 선택한 세션을 연결할까요?'))return;
+  try{const response=await fetch('/api/session-bind',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({service,fingerprint,account:select.value})});const data=await response.json();if(!response.ok)throw new Error(data.message||'연결 실패');document.getElementById('accountNotice').textContent=data.message||'세션을 연결했습니다.';SERVER_IDENTITY_REVISION=-1;SERVER_REVISION=-1;await syncExtension();}
+  catch(error){alert('세션 연결 실패: '+error.message);}
+}
+async function unbindSession(fingerprint,service){if(!confirm('이 세션을 현재 계정에서 분리해 UNASSIGNED로 변경할까요?'))return;
+  try{const response=await fetch('/api/session-unbind',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({service,fingerprint})});const data=await response.json();if(!response.ok)throw new Error(data.message||'연결 해제 실패');SERVER_IDENTITY_REVISION=-1;SERVER_REVISION=-1;await syncExtension();}
+  catch(error){alert('세션 연결 해제 실패: '+error.message);}
+}
+async function resetIdentityMappings(){
+  if(!LIVE_MODE)return;
+  if(!confirm('등록한 계정 카드는 유지하고 세션 연결과 현재 수집 트래픽을 모두 초기화할까요?'))return;
+  try{const response=await fetch('/api/identity-reset',{method:'POST'});const data=await response.json();if(!response.ok)throw new Error(data.message||'초기화 실패');EVENTS=[];SERVER_EVENTS=[];MODEL=null;ACTIVE_IDENTITY='all';SERVER_REVISION=-1;SERVER_IDENTITY_REVISION=-1;if(cy){cy.destroy();cy=null;}matrix.innerHTML='';document.querySelector('#raw tbody').innerHTML='';seqBody.innerHTML='';resetScenario();clearDetail();await syncExtension();renderIdentityFilter();renderRoles();updateStatus();alert(data.message);}
+  catch(error){alert('식별 매핑 초기화 실패: '+error.message);}
+}
+function renderAccounts(){
+  const cards=document.getElementById('accountCards'),body=document.querySelector('#sessionTable tbody');if(!cards||!body)return;
+  cards.innerHTML=SERVER_ACCOUNTS.length?SERVER_ACCOUNTS.map(account=>{const managed=managedSession(account.id);const state=managed?(managed.status+(managed.capturing?' · 로그인 캡처 중':'')):'미캡처';const action=managed&&managed.capturing?'end':'begin';const label=managed&&managed.capturing?'캡처 종료':managed?'다시 캡처':'로그인 캡처';return `<div class="accountitem" style="border-left-color:${esc(account.color)}"><button class="edit" data-edit="${esc(account.id)}">수정</button><div class="name">${esc(account.label)}</div><div class="meta">${esc(account.role)} · ${esc(account.target)}<br>연결 지문 ${account.boundSessions}개 · 브로커 ${esc(state)}</div><button class="sessionaction" data-session-action="${action}" data-account="${esc(account.id)}" style="margin-top:6px">${label}</button>${managed?` <button class="sessionaction" data-session-action="revoke" data-account="${esc(account.id)}">메모리 폐기</button>`:''}<br><button class="sessionaction" data-delete="${esc(account.id)}" style="margin-top:6px">삭제</button></div>`;}).join(''):'<span class="accountnote">등록된 계정이 없습니다. 왼쪽에서 테스트 계정을 먼저 등록하세요.</span>';
+  cards.querySelectorAll('[data-edit]').forEach(button=>button.addEventListener('click',()=>editAccount(button.dataset.edit)));
+  cards.querySelectorAll('[data-delete]').forEach(button=>button.addEventListener('click',()=>deleteAccount(button.dataset.delete)));
+  cards.querySelectorAll('[data-session-action]').forEach(button=>button.addEventListener('click',()=>captureSession(button.dataset.account,button.dataset.sessionAction)));
+  const options='<option value="">계정 선택</option>'+SERVER_ACCOUNTS.map(account=>`<option value="${esc(account.id)}">${esc(account.label)}</option>`).join('');
+  body.innerHTML=SERVER_SESSIONS.length?SERVER_SESSIONS.map(session=>{const account=accountById(session.idn);const confidence=session.registered?'verified':'unknown';
+    const action=session.registered?`<button class="sessionaction" data-unbind="${esc(session.fingerprint)}" data-service="${esc(session.service)}">연결 해제</button>`:`<select class="bindselect" data-fp="${esc(session.fingerprint)}" data-service="${esc(session.service)}">${options}</select> <button class="sessionaction" data-bind="${esc(session.fingerprint)}" data-service="${esc(session.service)}">연결</button>`;
+    return `<tr><td>${esc(session.fingerprint)}</td><td>${esc(account?account.label:displayIdentity(session.idn))}</td><td>${esc(session.service||'-')}</td><td><span class="confidence ${confidence}">${esc(session.confidence)}</span></td><td>${action}</td></tr>`;}).join(''):'<tr><td colspan="5" style="color:var(--faint)">아직 발견된 인증 세션이 없습니다.</td></tr>';
+  body.querySelectorAll('[data-bind]').forEach(button=>button.addEventListener('click',()=>bindSession(button.dataset.bind,button.dataset.service)));
+  body.querySelectorAll('[data-unbind]').forEach(button=>button.addEventListener('click',()=>unbindSession(button.dataset.unbind,button.dataset.service)));
+}
+// 권한별 셀 상세: 같은 권한 신원들의 소스별 판정 나열
+function showGroupCell(role,op,res){
+  const idns=MODEL.identities.filter(i=>MODEL.roles[i]===role); const owner=MODEL.owner[res];
+  detailEmpty.style.display='none'; detailFull.style.display='flex';
+  dKind.textContent='권한별 판정 · '+role; dTitle.textContent=op;
+  const rows=idns.map(idn=>{ const c=MODEL.cells[cellKey(idn,op,res)]; const cross=owner&&owner!==idn;
+    const per=['human','scanner','llm'].map(s=>{ if(c&&c.perSrc[s]) return '<span class="chip" style="border-color:'+css(VC[c.perSrc[s]])+'55"><i style="background:'+css(SRC[s].c)+'"></i>'+SRC[s].ab+' '+V[c.perSrc[s]].slice(0,2)+'</span>';
+      return '<span class="chip miss"><i style="background:'+css(SRC[s].c)+'"></i>'+SRC[s].ab+'</span>'; }).join('');
+    return '<div class="vr"><span class="src">'+esc(displayIdentity(idn))+(cross?' <span style="color:var(--suspicious)">✗소유</span>':'')+'</span><span class="chips">'+per+'</span></div>';
+  }).join('');
+  dBody.innerHTML='<div class="field"><div class="lbl">대상</div><div class="val">'+esc(op)+'<br>→ '+esc(resourceLabel(res))+(owner?' (소유: '+esc(displayIdentity(owner))+')':'')+'</div></div>'+
+    '<div class="field"><div class="lbl">'+esc(role)+' 권한 사용자 '+idns.length+'명 · 소스별 판정</div>'+(rows||'<span style="color:var(--faint)">해당 없음</span>')+'</div>'+
+    '<div class="gapbox"><div class="name"><span class="dot" style="background:var(--undecided);width:9px;height:9px;border-radius:50%"></span>권한 레벨별 접근 판정 (F-11)</div><p>같은 권한('+esc(role)+') 사용자들이 이 조합을 소스별로 어떻게 판정했는지 모았습니다. ✗소유는 타인 객체 접근(IDOR) 후보입니다.</p></div>';
+}
+function showEmpty(key){ const [idn,op,res]=parseCellKey(key); const candidate=(MODEL.candidates||[]).find(item=>item.idn===idn&&item.op===op&&item.resource===res);detailEmpty.style.display='none'; detailFull.style.display='flex';
+  dKind.textContent='미검증'; dTitle.textContent=op;
+  dBody.innerHTML='<div class="field"><div class="lbl">주체 · 대상</div><div class="val">'+esc(displayIdentity(idn))+' → '+esc(resourceLabel(res))+(candidate?' (소유: '+esc(displayIdentity(candidate.owner))+')':'')+'</div></div>'+ 
+    '<div class="field"><div class="lbl">후보 우선순위</div><div class="val">'+esc(candidate?candidate.risk:'미확정')+' · 쓰기 계열을 읽기보다 우선 표시</div></div>'+
+    '<div class="gapbox"><div class="name"><span class="dot" style="background:'+css('--untested')+';width:9px;height:9px;border-radius:50%"></span>미교차 (IDOR 교차 후보)</div><p>소유자가 확인된 객체를 다른 비관리자 신원으로 아직 시도하지 않은 조합입니다. 실제 접근 불가가 아니라 미검증 상태입니다.</p></div>'; }
+function applyOnlyGaps(){ const on=document.getElementById('onlygaps').checked; document.querySelectorAll('#matrix .cell').forEach(el=>el.classList.toggle('dimmed', on && el.dataset.gap!=='true')); }
+
+function renderRaw(){
+  const tb=document.querySelector('#raw tbody'); tb.innerHTML='';
+  EVENTS.forEach((e,i)=>{ const stc=e.status>=200&&e.status<300?'st2':e.status>=400&&e.status<500?'st4':'st5',source=SRC[e.source]||SRC.unknown;
+    tb.insertAdjacentHTML('beforeend','<tr><td>'+(i+1)+'</td><td><span class="src" style="color:'+css(source.c)+'">'+source.ab+'</span></td><td>'+esc(displayIdentity(e.idn))+'</td><td>'+esc(e.method)+'</td><td>'+esc(e.op)+'</td><td>'+esc(resourceLabel(e.resource))+'</td><td class="'+stc+'">'+Number(e.status||0)+'</td></tr>'); });
+}
+
+/* ── F-10 흐름 순서: 신원별 요청 시퀀스(NEXT) ── */
+function renderSeq(){
+  if(!MODEL){seqBody.innerHTML='';return;}
+  let html='';
+  MODEL.identities.filter(idn=>ACTIVE_IDENTITY==='all'||idn===ACTIVE_IDENTITY).forEach(idn=>{
+    const links=(SERVER_FLOW_LINKS||[]).filter(fl=>fl.idn===idn); if(!links.length)return; const byId=Object.fromEntries(EVENTS.map(e=>[e.eventId,e]));
+    html+=`<div class="seqcol"><div class="sid"><i></i>${esc(displayIdentity(idn))} <span style="color:var(--faint);font-weight:400">· 데이터 전달 ${links.length}건</span></div><div class="seqchain">`;
+    links.forEach((fl,i)=>{ const a=byId[fl.fromEventId],b=byId[fl.toEventId];if(!a||!b)return; const stc=b.status<300?'--allow':b.status<500?'--deny':'--suspicious';
+      html+=`<div class="seqstep"><div class="seqnode"><span class="n">${i+1}</span><span class="sb" style="color:${css(SRC[b.source].c)}">${SRC[b.source].ab}</span>${esc(withoutService(a.op))} <span class="seqarrow">→</span> ${esc(withoutService(b.op))} <span class="st" style="color:${css(stc)}">${esc(fl.values)}</span></div></div>`;
+    });
+    html+='</div></div>';
+  });
+  seqBody.innerHTML=html||'<span style="color:var(--faint)">데이터가 없습니다.</span>';
+}
+
+/* ── F-17/F-18 시나리오 제안: 선택형 LLM + 규칙 폴백 ── */
+function resetScenario(){ if(typeof scenSummary!=='undefined'){scenSummary.innerHTML='';scenList.innerHTML='';btnScenario.disabled=true;} }
+function buildSummary(){
+  if(!MODEL)return null; const arr=Object.values(MODEL.cells);
+  const conflict=arr.filter(c=>c.conflict), partial=arr.filter(c=>c.partial), cross=MODEL.candidates;
+  return {conflict,partial,cross,
+    counts:{신원:MODEL.identities.length,엔드포인트:new Set(MODEL.operations.map(o=>o.replace(/^[A-Z]+\s/,''))).size,객체:MODEL.resources.length}};
+}
+async function renderSummary(){
+  const s=buildSummary(); if(!s){scenSummary.innerHTML='<div class="sumbox">데이터를 먼저 불러오세요.</div>';return;}
+  scenSummary.innerHTML=`<div class="sumbox"><h4>전체 그림 요약 (LLM 입력용)</h4>`+
+    `<div class="kv">관측: 신원 ${s.counts.신원} · 엔드포인트 ${s.counts.엔드포인트} · 객체 ${s.counts.객체}</div>`+
+    `<div class="kv">불일치 ${s.conflict.length} · 일부만 발견 ${s.partial.length} · 미교차 후보 ${s.cross.length}</div>`+
+    `<div class="mask">※ 세션 토큰·개인정보는 요약에서 마스킹됨 (원문 미포함)</div></div>`;
+  if(LIVE_MODE)try{const response=await fetch('/api/ai-preview',{cache:'no-store'});if(response.ok){const payload=await response.json();scenSummary.insertAdjacentHTML('beforeend',`<div class="sumbox"><h4>MCP Judge 입력 미리보기</h4><pre class="reqblk" style="max-height:240px;overflow:auto;white-space:pre-wrap">${esc(JSON.stringify(payload,null,2))}</pre><div class="mask">FlowScope가 외부 모델 API를 호출하지 않습니다. 구독 LLM이 잠긴 마스킹 Evidence를 로컬 MCP로 읽습니다.</div></div>`);}}catch(error){scenSummary.insertAdjacentHTML('beforeend',`<div class="sumbox">MCP 미리보기를 불러오지 못했습니다: ${esc(error.message)}</div>`);}
+  btnScenario.disabled=false;
+}
+async function renderScenarios(){
+  const s=buildSummary(); if(!s)return;
+  if(LIVE_MODE){
+    try{btnScenario.disabled=true;const response=await fetch('/api/ai-scenarios',{method:'POST'});const data=await response.json();const out=(data.result&&data.result.scenarios)||[];
+      SCENARIO_ITEMS=Object.fromEntries(out.filter(item=>item.id).map(item=>[item.id,item]));
+      scenList.innerHTML=`<div class="sumbox"><div class="kv">${esc(data.message||'시나리오 분석')}</div><div class="mask">※ 최종 판정은 MCP로 수집된 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 확정/폐기됩니다. 사람 기록은 감사·오버라이드입니다.</div></div>`+
+        (out.length?out.map(o=>`<div class="scen"><div class="st"><span class="tag">${esc(o.finalVerdict||o.tag||o.category||'INCONCLUSIVE')}</span>${esc(o.title||'')}</div><p>${esc(o.proposal||'')}</p><div class="basis">${esc(o.evidence||'')}</div>${o.finalVerdict?`<div class="gapbox" style="margin-top:9px"><div class="name">LLM 최종 판정 · ${esc(o.finalVerdict)}</div><p>${esc(o.validationReason||'')} ${o.validationRunId?'· run '+esc(o.validationRunId):''}</p></div>`:''}`+
+          (o.id?`<div class="accountform" style="margin-top:9px"><label>사람 감사·오버라이드<select data-review-status="${esc(o.id)}"><option value="UNRESOLVED" ${o.reviewStatus==='UNRESOLVED'?'selected':''}>기록 없음</option><option value="CONFIRMED" ${o.reviewStatus==='CONFIRMED'?'selected':''}>동의/승인</option><option value="DISMISSED" ${o.reviewStatus==='DISMISSED'?'selected':''}>이의/기각</option></select></label><label>감사 메모<input data-review-note="${esc(o.id)}" maxlength="2000" value="${esc(o.reviewNote||'')}"></label><div class="accountactions"><button type="button" class="primary" data-review-save="${esc(o.id)}">감사 기록 저장</button><span data-review-message="${esc(o.id)}" class="accountnote"></span></div></div>`:'')+`</div>`).join(''):'<div class="sumbox">근거가 있는 시나리오 후보가 없습니다.</div>');
+      scenList.querySelectorAll('[data-review-save]').forEach(button=>button.addEventListener('click',()=>saveScenarioReview(button.dataset.reviewSave,button)));
+      return;
+    }catch(error){scenList.innerHTML=`<div class="sumbox">LLM 평가 조회 실패: ${esc(error.message)} · 화면 규칙 기반 폴백을 사용합니다.</div>`;}finally{btnScenario.disabled=false;}
+  }
+  const out=[];
+  s.conflict.forEach(c=>out.push({tag:'BFLA/우회',t:`${c.op} — 소스 간 판정 불일치 검증`,
+    p:`${c.idn}의 이 요청을 사람과 LLM이 다르게 처리했습니다. 어떤 조건(헤더·파라미터·순서)에서 차단이 우회되는지 재전송으로 확인하세요.`,
+    basis:`근거: 불일치 셀 ${c.idn} · ${c.resource}`}));
+  s.partial.forEach(c=>out.push({tag:'IDOR/BOLA',t:`${c.op} — 놓친 소스로 재현`,
+    p:`${c.foundBy.map(x=>SRC[x].n).join('·')}는 찾았고 ${c.missedBy.map(x=>SRC[x].n).join('·')}는 놓쳤습니다. 소유자가 아닌 ${c.idn}이 ${c.resource}에 접근했는지 교차 재전송으로 확인하세요.`,
+    basis:`근거: 일부만 발견 ${c.idn} · ${c.resource}`}));
+  s.cross.slice(0,5).forEach(cn=>{ const owner=MODEL.owner[cn.resource]; if(owner&&owner!==cn.idn)
+    out.push({tag:'IDOR/미교차',t:`${cn.op} — 미교차 조합 시도`,
+    p:`${cn.idn}이 타인(${owner}) 소유 객체 ${cn.resource}를 아직 시도하지 않았습니다. 소유권 위반 여부를 재전송으로 검증하세요.`,
+    basis:`근거: 미교차 후보 ${cn.idn} · ${cn.resource}`}); });
+  scenList.innerHTML = out.length ? out.map(o=>`<div class="scen"><div class="st"><span class="tag">${esc(o.tag)}</span>${esc(o.t)}</div><p>${esc(o.p)}</p><div class="basis">${esc(o.basis)}</div></div>`).join('')
+    : '<div class="sumbox">제안할 시나리오가 없습니다(갭·불일치 없음).</div>';
+}
+
+async function saveScenarioReview(itemId,button){
+  const item=SCENARIO_ITEMS[itemId];if(!item)return;button.disabled=true;
+  const status=scenList.querySelector(`[data-review-status="${CSS.escape(itemId)}"]`).value;
+  const note=scenList.querySelector(`[data-review-note="${CSS.escape(itemId)}"]`).value;
+  const message=scenList.querySelector(`[data-review-message="${CSS.escape(itemId)}"]`);
+  try{const response=await fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({itemId,status,note})});const data=await response.json();if(!response.ok)throw new Error(data.message||'판정 저장 실패');message.textContent=data.message;SERVER_REVISION=-1;}
+  catch(error){message.textContent=error.message;}finally{button.disabled=false;}
+}
+
+function updateStatus(){
+  const el=document.getElementById('status'); if(!EVENTS.length){el.innerHTML='<span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요.</span>';updateSetup();return;}
+  const cnt=s=>EVENTS.filter(e=>e.source===s).length; const conf=Object.values(MODEL.cells).filter(c=>c.conflict).length;
+  const part=Object.values(MODEL.cells).filter(c=>c.partial).length;
+  const unknown=cnt('unknown');el.innerHTML='<span>사람 <b>'+cnt('human')+'</b> · 스캐너 <b>'+cnt('scanner')+'</b> · LLM <b>'+cnt('llm')+'</b>'+(unknown?' · 분류불명 <b>'+unknown+'</b>':'')+'</span><span>신원 <b>'+MODEL.identities.length+'</b> · Op <b>'+MODEL.operations.length+'</b> · Res <b>'+MODEL.resources.length+'</b></span>'+(part?'<span class="warn">일부만 발견 <b>'+part+'</b> · 불일치 <b>'+conf+'</b></span>':'');
+  updateSetup();
+}
+
+function updateSetup(){
+  const counts={human:EVENTS.filter(e=>e.source==='human').length,scanner:EVENTS.filter(e=>e.source==='scanner').length,llm:EVENTS.filter(e=>e.source==='llm').length};
+  const setState=(id,ready,text)=>{const element=document.getElementById(id);if(!element)return;element.textContent=text;element.classList.toggle('ready',ready);};
+  setState('setupTraffic',EVENTS.length>0,EVENTS.length?EVENTS.length+'건 수집':'대기');
+  const activeSessions=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing).length;
+  setState('setupAccounts',activeSessions>0,activeSessions?activeSessions+'개 세션 활성':SERVER_ACCOUNTS.length?'로그인 캡처 필요':'계정 등록 필요');
+  setState('setupHumanRun',HUMAN_RUN.active||counts.human>0,HUMAN_RUN.active?'진행 중':(counts.human?counts.human+'건 완료':'pass 대기'));
+  document.getElementById('humanRunStart').disabled=HUMAN_RUN.active;
+  document.getElementById('humanRunEnd').disabled=!HUMAN_RUN.active;
+  const scannerReady=SCANNER_RUN.status==='COMPLETED';setState('setupScanner',scannerReady,scannerReady?'기준선 완료':(SCANNER_RUN.status==='RUNNING'?'진행 중':SCANNER_RUN.status==='FAILED'?'실패':'미실행'));
+  const three=counts.human>0&&counts.scanner>0&&counts.llm>0;setState('setupThreeWay',three,three?'3소스 준비':'H '+counts.human+' · S '+counts.scanner+' · L '+counts.llm);
+  const candidates=MODEL?Object.values(MODEL.cells).filter(cell=>cell.verdict==='suspicious').length:0;
+  setState('setupFindings',candidates>0,candidates?candidates+'개 후보':'후보 대기');
+}
+
+async function syncHumanRun(){
+  if(!LIVE_MODE)return;
+  try{const response=await fetch('/api/human-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'HUMAN run 조회 실패');HUMAN_RUN={active:!!data.active,runId:data.runId||''};updateSetup();}
+  catch(error){document.getElementById('setupHumanRun').textContent=error.message;}
+}
+async function changeHumanRun(action){
+  const button=document.getElementById(action==='begin'?'humanRunStart':'humanRunEnd');button.disabled=true;
+  try{const body=new URLSearchParams({action});if(action==='end')body.set('runId',HUMAN_RUN.runId);const response=await fetch('/api/human-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body});const data=await response.json();if(!response.ok)throw new Error(data.message||'HUMAN run 변경 실패');HUMAN_RUN={active:!!data.active,runId:data.runId||''};updateSetup();}
+  catch(error){alert(error.message);await syncHumanRun();}
+}
+function renderScannerControls(){
+  const target=document.getElementById('scannerTarget'),account=document.getElementById('scannerAccount'),button=document.getElementById('scannerRunStart'),status=document.getElementById('scannerRunStatus');
+  const selectedTarget=target.value,selectedAccount=account.value;
+  target.innerHTML=SCANNER_SCOPE.length?SCANNER_SCOPE.map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join(''):'<option value="">Burp 탭에서 범위를 먼저 적용하세요</option>';
+  if(SCANNER_SCOPE.includes(selectedTarget))target.value=selectedTarget;
+  let selectedService='';try{const url=new URL(target.value);selectedService=url.protocol+'//'+url.hostname.toLowerCase()+':'+(url.port||(url.protocol==='https:'?'443':'80'));}catch(_){}
+  const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===selectedService);
+  account.innerHTML='<option value="">비로그인</option>'+usable.map(session=>{const registered=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(registered?registered.label:session.accountId)}</option>`;}).join('');
+  if(usable.some(session=>session.accountId===selectedAccount))account.value=selectedAccount;
+  const running=SCANNER_RUN.status==='RUNNING';button.disabled=running||!target.value;button.textContent=running?'실행 중…':'안전 기준선 실행';
+  const parts=[SCANNER_RUN.status||'NOT_STARTED'];if(SCANNER_RUN.stage)parts.push(SCANNER_RUN.stage);if(Number.isFinite(SCANNER_RUN.captured_records))parts.push('수집 '+SCANNER_RUN.captured_records+'건');if(Number.isFinite(SCANNER_RUN.alert_count))parts.push('Alert '+SCANNER_RUN.alert_count+'건');
+  if(SCANNER_RUN.warning)parts.push('주의: '+SCANNER_RUN.warning);if(SCANNER_RUN.error)parts.push('오류: '+SCANNER_RUN.error);
+  status.textContent=parts.join(' · ');status.classList.toggle('ok',SCANNER_RUN.status==='COMPLETED');status.classList.toggle('fail',SCANNER_RUN.status==='FAILED');updateSetup();
+}
+async function syncScannerRun(){
+  if(!LIVE_MODE)return;try{const response=await fetch('/api/scanner-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'ZAP 기준선 조회 실패');SCANNER_RUN=data.run||{status:'NOT_STARTED'};SCANNER_SCOPE=data.scope||[];renderScannerControls();}
+  catch(error){SCANNER_RUN={status:'FAILED',error:error.message};renderScannerControls();}
+}
+async function startScannerRun(){
+  const target=document.getElementById('scannerTarget').value,account=document.getElementById('scannerAccount').value;if(!target)return;
+  if(!confirm(target+'에 안전 ZAP 기준선을 실행할까요?\n\n능동 스캔은 포함되지 않으며 허용 범위 밖 요청은 FlowScope가 수집·인증 주입하지 않습니다.'))return;
+  const button=document.getElementById('scannerRunStart');button.disabled=true;
+  try{const response=await fetch('/api/scanner-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({target,account})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'ZAP 기준선 시작 실패');SCANNER_RUN=data.run;renderScannerControls();}
+  catch(error){SCANNER_RUN={status:'FAILED',error:error.message};renderScannerControls();}
+}
+function openSetup(){updateSetup();syncHumanRun();syncScannerRun();setupModal.style.display='flex';setupClose.focus();}
+function closeSetup(){setupModal.style.display='none';try{localStorage.setItem('flowscope.setup.seen','1');}catch(_){}}
+
+async function loadFiles(input,source){
+  const fs=[...input.files];if(!fs.length)return;let imported=0,candidates=0,failed=0;
+  for(const f of fs){const xml=await f.text();
+    try{const url='/api/import-xml?source='+encodeURIComponent(source)+'&name='+encodeURIComponent(f.name);const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/xml;charset=UTF-8'},body:xml});const data=await response.json();if(!response.ok)throw new Error(data.message||'XML 가져오기 실패');imported+=data.imported||0;candidates+=data.candidates||0;failed+=data.failed||0;}
+    catch(error){document.getElementById('status').textContent=f.name+' 가져오기 실패: '+error.message;input.value='';return;}
+  }
+  input.value='';
+  SERVER_REVISION=-1;await syncExtension();EVENTS=[...SERVER_EVENTS];if(EVENTS.length)build();
+  document.getElementById('status').insertAdjacentHTML('beforeend','<span>XML 누적 <b>'+imported+'</b> · 응답 없음 '+candidates+' · 실패 '+failed+'</span>');
+}
+fHuman.addEventListener('change',e=>loadFiles(e.target,'human'));
+fScanner.addEventListener('change',e=>loadFiles(e.target,'scanner'));
+fLlm.addEventListener('change',e=>loadFiles(e.target,'llm'));
+sample.addEventListener('click',async()=>{if(!LIVE_MODE)return;const response=await fetch('/api/sample',{method:'POST'});const data=await response.json();if(!response.ok){alert(data.message||'샘플 프로젝트를 열 수 없습니다.');return;}SERVER_REVISION=-1;await syncExtension();setMode('graph');});
+clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽만 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';ROLEOVERRIDE={};SERVER_ROLES={};GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();renderAccounts(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 객체 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean'].forEach(i=>document.getElementById(i).textContent='0'); });
+
+document.querySelectorAll('.gapline.gf').forEach(el=>{
+  el.addEventListener('click',()=>highlightGap(el.dataset.gk));
+  el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();highlightGap(el.dataset.gk);}});
+});
+document.querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.vbtn').forEach(x=>x.classList.remove('on'));b.classList.add('on');applyView(b.dataset.view);}));
+document.querySelectorAll('.sf').forEach(cb=>cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;applyFilter();}));
+document.getElementById('identityFilter').addEventListener('change',e=>{ACTIVE_IDENTITY=e.target.value;renderGraph();renderSeq();});
+document.getElementById('mergeIdentity').addEventListener('click',mergeIdentities);
+document.getElementById('accountForm').addEventListener('submit',saveAccount);
+document.getElementById('accountCancel').addEventListener('click',resetAccountForm);
+document.getElementById('identityReset').addEventListener('click',resetIdentityMappings);
+document.getElementById('layoutLock').checked=GRAPH_STATE.locked;
+document.getElementById('layoutLock').addEventListener('change',e=>{GRAPH_STATE.locked=e.target.checked;if(cy){if(GRAPH_STATE.locked)cy.nodes().ungrabify();else cy.nodes().grabify();}saveGraphState();});
+document.getElementById('fitGraph').addEventListener('click',fitGraph);
+document.getElementById('collapseGraph').addEventListener('click',collapseGraphNodes);
+document.getElementById('resetLayout').addEventListener('click',resetGraphLayout);
+document.getElementById('onlygaps').addEventListener('change',applyOnlyGaps);
+document.getElementById('mx-identity').addEventListener('click',()=>{matrixMode='identity';document.getElementById('mx-identity').classList.add('on');document.getElementById('mx-role').classList.remove('on');if(MODEL)renderMatrix();});
+document.getElementById('mx-role').addEventListener('click',()=>{matrixMode='role';document.getElementById('mx-role').classList.add('on');document.getElementById('mx-identity').classList.remove('on');if(MODEL)renderMatrix();});
+function setMode(m){ const map={graph:'m-graph',matrix:'m-matrix',seq:'m-seq',scenario:'m-scenario',raw:'m-raw',accounts:'m-accounts'};
+  document.body.classList.toggle('accounts-mode',m==='accounts');
+  ['m-graph','m-matrix','m-seq','m-scenario','m-raw','m-accounts'].forEach(id=>document.getElementById(id).classList.toggle('on',id===map[m]));
+  document.getElementById('cy').style.display=m==='graph'?'block':'none'; stagehint.style.display=m==='graph'?'block':'none';
+  paneMatrix.style.display=m==='matrix'?'block':'none'; paneRaw.style.display=m==='raw'?'block':'none';
+  paneSeq.style.display=m==='seq'?'block':'none'; paneScenario.style.display=m==='scenario'?'block':'none';paneAccounts.style.display=m==='accounts'?'block':'none';
+  if(m==='graph'&&cy)setTimeout(()=>{cy.resize();if(GRAPH_STATE.viewport){cy.zoom(GRAPH_STATE.viewport.zoom);cy.pan(GRAPH_STATE.viewport.pan||{x:0,y:0});}},0); }
+document.getElementById('m-graph').addEventListener('click',()=>setMode('graph'));
+document.getElementById('m-matrix').addEventListener('click',()=>setMode('matrix'));
+document.getElementById('m-seq').addEventListener('click',()=>setMode('seq'));
+document.getElementById('m-scenario').addEventListener('click',()=>setMode('scenario'));
+document.getElementById('m-raw').addEventListener('click',()=>setMode('raw'));
+document.getElementById('m-accounts').addEventListener('click',()=>setMode('accounts'));
+document.getElementById('btnSummary').addEventListener('click',renderSummary);
+document.getElementById('btnScenario').addEventListener('click',renderScenarios);
+document.getElementById('openSetup').addEventListener('click',openSetup);
+document.getElementById('setupClose').addEventListener('click',closeSetup);
+document.getElementById('setupAccountsOpen').addEventListener('click',()=>{closeSetup();setMode('accounts');});
+document.getElementById('setupSample').addEventListener('click',()=>{closeSetup();sample.click();});
+document.getElementById('humanRunStart').addEventListener('click',()=>changeHumanRun('begin'));
+document.getElementById('humanRunEnd').addEventListener('click',()=>changeHumanRun('end'));
+document.getElementById('scannerRunStart').addEventListener('click',startScannerRun);
+document.getElementById('scannerTarget').addEventListener('change',renderScannerControls);
+document.getElementById('setupModal').addEventListener('click',event=>{if(event.target===setupModal)closeSetup();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&setupModal.style.display==='flex')closeSetup();});
+
+async function syncExtension(){
+  try{const response=await fetch('/api/snapshot',{cache:'no-store'});if(!response.ok){LIVE_MODE=false;return;}LIVE_MODE=true;const data=await response.json();if(data.revision===SERVER_REVISION&&data.identityRevision===SERVER_IDENTITY_REVISION)return;
+    SERVER_REVISION=data.revision;SERVER_IDENTITY_REVISION=data.identityRevision||0;SERVER_OWNERS=data.owners||{};SERVER_ROLES=data.roles||{};SERVER_REQUIRED_ROLES=data.requiredRoles||{};SERVER_FLOW_LINKS=data.flowLinks||[];SERVER_ACCOUNTS=data.accounts||[];SERVER_SESSIONS=data.sessions||[];SERVER_MANAGED_SESSIONS=data.managedSessions||[];SERVER_CELLS=data.cells||[];SERVER_GAPS=data.gaps||[];SERVER_ACTIVE_SOURCES=data.activeSources||[];SERVER_EVENTS=(data.events||[]);EVENTS=[...SERVER_EVENTS];
+    if(EVENTS.length)build();else{renderAccounts();renderIdentityFilter();renderRoles();updateStatus();}
+    if(!SETUP_AUTO_CHECKED){SETUP_AUTO_CHECKED=true;try{if(!localStorage.getItem('flowscope.setup.seen'))openSetup();}catch(_){openSetup();}}
+  }catch(error){LIVE_MODE=false;}
+}
+syncHumanRun();syncExtension();syncScannerRun();setInterval(()=>{syncExtension();syncScannerRun();},1000);
+</script>
+</body>
+</html>

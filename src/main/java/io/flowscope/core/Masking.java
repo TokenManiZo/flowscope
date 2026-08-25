@@ -1,0 +1,190 @@
+package io.flowscope.core;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
+
+/**
+ * 인증정보 마스킹 (기능명세서 F-05 "원문 토큰은 저장하지 않는다", F-22 "인증 정보는 가린 상태로 표시").
+ * 요청 전문·본문을 보관하기 전에 반드시 통과시킨다.
+ */
+public final class Masking {
+
+    private static final String MASK = "***MASKED***";
+    private static final String REDACTED = "[BODY REDACTED: secret-bearing content could not be parsed]";
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private static final Pattern AUTH_HEADER =
+            Pattern.compile("(?im)^(Authorization:\\s*)(.+)$");
+    private static final Pattern COOKIE_HEADER =
+            Pattern.compile("(?im)^(Cookie:\\s*)(.+)$");
+    private static final Pattern SET_COOKIE =
+            Pattern.compile("(?im)^(Set-Cookie:\\s*)(.+)$");
+    private static final Pattern CONTENT_TYPE =
+            Pattern.compile("(?im)^Content-Type:\\s*([^\\r\\n]+)$");
+    private static final Pattern BOUNDARY =
+            Pattern.compile("(?i)(?:^|;)\\s*boundary=(?:\"([^\"]+)\"|([^;\\s]+))");
+    private static final Pattern PART_NAME =
+            Pattern.compile("(?i)\\bname=\"([^\"]+)\"");
+    /** 일반 텍스트/쿼리의 비밀 값. 구조화 본문은 maskBody가 우선 처리한다. */
+    private static final Pattern SECRET_FIELD = Pattern.compile(
+            "(?i)([\"']?(?:pass(?:word|wd)?|pwd|token|secret|client[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|authorization)[\"']?\\s*[:=]\\s*[\"']?)([^\"'&,}\\s]+)");
+    private static final Pattern XML_SECRET = Pattern.compile(
+            "(?is)(<\\s*(password|passwd|pwd|token|secret|client_secret|api_key|access_token|refresh_token|id_token|session_token|authorization)\\b[^>]*>)(.*?)(</\\s*\\2\\s*>)");
+
+    private Masking() {}
+
+    /** 요청 전문에서 인증 헤더 값을 가린다. 헤더 이름·구조는 남겨 상세 보기(F-22)에 쓸 수 있게. */
+    public static String maskHeaders(String reqText) {
+        if (reqText == null) return null;
+        int separator = headerSeparator(reqText);
+        int separatorLength = separator < 0 ? 0 : (reqText.startsWith("\r\n\r\n", separator) ? 4 : 2);
+        String headers = separator < 0 ? reqText : reqText.substring(0, separator);
+        String body = separator < 0 ? null : reqText.substring(separator + separatorLength);
+        String contentType = headerValue(CONTENT_TYPE, headers);
+
+        String s = AUTH_HEADER.matcher(headers).replaceAll(m -> m.group(1) + MASK);
+        s = COOKIE_HEADER.matcher(s).replaceAll(m -> m.group(1) + maskCookieValues(m.group(2)));
+        s = SET_COOKIE.matcher(s).replaceAll(m -> m.group(1) + maskCookieValues(m.group(2)));
+        s = maskSecrets(s);
+        return body == null ? s : s + reqText.substring(separator, separator + separatorLength)
+                + maskBody(body, contentType);
+    }
+
+    /** 본문·쿼리의 비밀 필드 값을 가린다. */
+    public static String maskSecrets(String s) {
+        if (s == null) return null;
+        String trimmed = s.stripLeading();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) return maskJson(s);
+        String xml = XML_SECRET.matcher(s).replaceAll(m -> m.group(1) + MASK + m.group(4));
+        return SECRET_FIELD.matcher(xml).replaceAll(m -> m.group(1) + MASK);
+    }
+
+    /** Content-Type에 따라 구조화된 본문 전체 값을 가린다. 파싱 실패 시 비밀 표식이 있는 본문은 보존하지 않는다. */
+    public static String maskBody(String body, String contentType) {
+        if (body == null) return null;
+        String type = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        String trimmed = body.stripLeading();
+        if (type.contains("json") || trimmed.startsWith("{") || trimmed.startsWith("[")) return maskJson(body);
+        if (type.contains("application/x-www-form-urlencoded")) return maskForm(body);
+        if (type.contains("multipart/form-data")) return maskMultipart(body, contentType);
+        if (type.contains("xml") || trimmed.startsWith("<")) return maskSecrets(body);
+        return maskSecrets(body);
+    }
+
+    /** 쿠키는 이름만 남기고 값을 가린다(세션 식별은 fp 해시가 담당). */
+    private static String maskCookieValues(String cookieLine) {
+        StringBuilder sb = new StringBuilder();
+        for (String part : cookieLine.split(";")) {
+            String p = part.trim();
+            if (p.isEmpty()) continue;
+            int eq = p.indexOf('=');
+            if (sb.length() > 0) sb.append("; ");
+            sb.append(eq > 0 ? p.substring(0, eq) + "=***" : p);
+        }
+        return sb.toString();
+    }
+
+    private static String maskJson(String value) {
+        try {
+            JsonNode root = JSON.readTree(value);
+            if (root == null) return value;
+            maskJsonNode(root);
+            return JSON.writeValueAsString(root);
+        } catch (Exception ignored) {
+            return containsSecretLabel(value) ? REDACTED : SECRET_FIELD.matcher(value)
+                    .replaceAll(m -> m.group(1) + MASK);
+        }
+    }
+
+    private static void maskJsonNode(JsonNode node) {
+        if (node instanceof ObjectNode object) {
+            List<String> names = new ArrayList<>();
+            object.fieldNames().forEachRemaining(names::add);
+            for (String name : names) {
+                if (isSecretKey(name)) object.put(name, MASK);
+                else maskJsonNode(object.get(name));
+            }
+        } else if (node != null && node.isArray()) {
+            node.forEach(Masking::maskJsonNode);
+        }
+    }
+
+    private static String maskForm(String body) {
+        String[] fields = body.split("&", -1);
+        for (int i = 0; i < fields.length; i++) {
+            int equals = fields[i].indexOf('=');
+            if (equals <= 0) continue;
+            String key = decode(fields[i].substring(0, equals));
+            if (isSecretKey(key)) fields[i] = fields[i].substring(0, equals + 1) + MASK;
+        }
+        return String.join("&", fields);
+    }
+
+    private static String maskMultipart(String body, String contentType) {
+        var matcher = BOUNDARY.matcher(contentType == null ? "" : contentType);
+        if (!matcher.find()) return containsSecretLabel(body) ? REDACTED : maskSecrets(body);
+        String boundary = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+        String delimiter = "--" + boundary;
+        String[] parts = body.split(Pattern.quote(delimiter), -1);
+        StringBuilder out = new StringBuilder(parts[0]);
+        for (int i = 1; i < parts.length; i++) {
+            String part = parts[i];
+            int separator = headerSeparator(part);
+            if (separator >= 0) {
+                String headers = part.substring(0, separator);
+                var name = PART_NAME.matcher(headers);
+                if (name.find() && isSecretKey(name.group(1))) {
+                    int separatorLength = part.startsWith("\r\n\r\n", separator) ? 4 : 2;
+                    String ending = part.endsWith("\r\n") ? "\r\n" : part.endsWith("\n") ? "\n" : "";
+                    part = headers + part.substring(separator, separator + separatorLength) + MASK + ending;
+                }
+            }
+            out.append(delimiter).append(part);
+        }
+        return out.toString();
+    }
+
+    private static boolean containsSecretLabel(String value) {
+        String lower = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        return lower.matches("(?s).*(password|passwd|pwd|token|secret|api[_-]?key|authorization).*[:=\"].*");
+    }
+
+    private static boolean isSecretKey(String value) {
+        if (value == null) return false;
+        String key = value.toLowerCase(Locale.ROOT).replace("-", "_");
+        return key.equals("password") || key.equals("passwd") || key.equals("pass") || key.equals("pwd")
+                || key.equals("token") || key.equals("secret") || key.equals("client_secret")
+                || key.equals("api_key") || key.equals("access_token") || key.equals("refresh_token")
+                || key.equals("id_token") || key.equals("session_token") || key.equals("authorization");
+    }
+
+    private static String decode(String value) {
+        try { return URLDecoder.decode(value, StandardCharsets.UTF_8); }
+        catch (IllegalArgumentException ignored) { return value; }
+    }
+
+    private static int headerSeparator(String value) {
+        int windows = value.indexOf("\r\n\r\n");
+        if (windows >= 0) return windows;
+        return value.indexOf("\n\n");
+    }
+
+    private static String headerValue(Pattern pattern, String headers) {
+        var matcher = pattern.matcher(headers == null ? "" : headers);
+        return matcher.find() ? matcher.group(1).trim() : "";
+    }
+
+    /** 필요 이상으로 큰 본문은 잘라 메모리 폭증을 막는다. */
+    public static String truncate(String s, int max) {
+        if (s == null) return null;
+        return s.length() <= max ? s : s.substring(0, max) + "…(truncated)";
+    }
+}

@@ -1,0 +1,54 @@
+# FlowScope 1.2.0-beta.3 사전 벤치마크 검증 기록
+
+검증일은 2026-08-25이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 자동 검증 통과
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 21 `mvn clean verify`, 112 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,792,782 bytes, SHA-256 `faef5fcf38fd1e3d37ac7aaa883738e5cbe58c42147655b4f0574bba33ceee82` |
+| JAR 무결성 | ZIP 무결성 통과, 1,287 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
+| 배포 계약 | Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
+| Session Broker | 계정별 명시적 로그인 캡처, Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
+| 실행 신뢰도 | `CONTROLLED`, `OBSERVED`, `UNVERIFIED_RUNTIME`, `IMPORTED`, `UNKNOWN` 구분과 최종 판정 gate 검증 |
+| LLM Explorer | 실행 중 다른 lane·후보·gap·finding 격리, exact-scope controlled request, 쓰기 확인, broker 소유 헤더와 CR/LF 거부 |
+| Dataset lock | HUMAN·SCANNER·LLM의 성공한 response-bearing exploration을 요구하고 빈 lane·active run·scope 변경 거부 |
+| LLM Judge | lock 이후 후보/오라클 고정, 실제 validation Evidence 추가, 저장 후 복원 시 pre-Judge snapshot 재구성, 서버 권위 verdict 검증 |
+| ZAP baseline | Traditional Spider → Client Spider → AJAX fallback → passive queue drain → native alerts 순서와 실패/상태/alert 마스킹 검증 |
+| 프로젝트 | raw session 미저장, 명시적 완료 lane 저장, 중단된 기록으로 완료 상태를 추론하지 않음 |
+
+## UI 검증 통과
+
+새 beta.3 산출물의 standalone Web UI로 다음을 확인했다.
+
+- 1500×900, 900×700, 600×800 viewport에서 quick-start, 계정 관리, matrix가 수평으로 잘리거나 주요 조작을 숨기지 않았다.
+- 작은 화면에서는 modal이 세로 스크롤되고 계정 카드와 표가 화면 폭에 맞게 재배치된다.
+- matrix cell에서 해당 API의 Evidence 목록과 마스킹된 Request/Response를 필요할 때 펼칠 수 있다.
+- 브라우저 콘솔 오류는 0건이었다.
+
+Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Community의 실제 suite tab 동작을 대신하지 않는다.
+
+## 아직 실환경에서 검증하지 않은 것
+
+다음은 구현과 자동 회귀는 끝났지만 beta.3 JAR로 실제 외부 프로그램을 연결해 확인하지 않았다.
+
+- Burp Community에서 beta.3 JAR의 신규 load/unload와 실제 브라우저 트래픽 수집
+- 실제 사이트 로그인으로 얻은 세션을 ZAP·LLM controlled request에 주입하고 회전·만료·재인증하는 전체 과정
+- ZAP 2.17 환경에서 deterministic baseline 전체 체인의 실제 수행과 native alert 수집
+- 구독형 Codex 또는 Claude가 MCP로 독립 Explorer pass와 lock 이후 Judge pass를 끝까지 수행하는 과정
+- 실제 Burp 프로젝트 save/load 뒤 broker 비밀값은 사라지고 Evidence·lock·판정만 복구되는 과정
+
+따라서 현재 산출물을 “실환경까지 완벽히 검증된 제품”이라고 부르지 않는다. 위 항목은 벤치마크 정답을 보지 않고 수행할 다음 수동 beta gate다.
+
+## 알려진 한계
+
+- CAPTCHA, MFA, WebAuthn, device binding과 서비스 고유 refresh 절차는 범용 자동화할 수 없다. 세션이 `SUSPECT` 또는 `REAUTH_REQUIRED`가 되면 사용자가 HUMAN lane에서 다시 로그인해야 한다.
+- 폐쇄형 탐색은 제공된 agent workspace의 계약이다. 변조된 agent나 운영체제 수준의 외부 네트워크 접근까지 방화벽처럼 막지는 않는다.
+- ZAP native alert는 참고 정보다. FlowScope Evidence와 controlled 재현이 없는 alert만으로 취약점을 확정하지 않는다.
+- beta.3의 자동 decisive validation은 안전한 읽기 요청 중심이다. 상태 변경 요청은 별도 확인이 있어도 일반화된 자동 확정을 하지 않는다.
+- 오탐과 미탐을 0으로 보장하지 않는다. 최종 상태는 LLM의 설명만이 아니라 서버가 확인한 Evidence와 gate로 제한한다.
+
+## 다음 gate
+
+사용자 검토 후 위 실환경 beta gate를 먼저 수행한다. 모두 통과한 뒤에만 blind crAPI 벤치마크를 시작하고, 종료 전까지 알려진 정답과 풀이를 보지 않는다.

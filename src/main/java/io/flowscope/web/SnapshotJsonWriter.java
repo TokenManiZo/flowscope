@@ -1,0 +1,351 @@
+package io.flowscope.web;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.AuthorizationAnalysis;
+import io.flowscope.core.DataFlowAnalyzer;
+import io.flowscope.core.Masking;
+import io.flowscope.core.Pipeline;
+import io.flowscope.core.RequestRecord;
+import io.flowscope.core.Source;
+import io.flowscope.core.Verdict;
+import io.flowscope.core.ValidationDecision;
+import io.flowscope.integration.McpServer;
+import io.flowscope.integration.SessionBroker;
+
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/** Serializes the masked analysis state consumed by the bundled localhost UI. */
+public final class SnapshotJsonWriter {
+    private final ObjectMapper json = new ObjectMapper();
+
+    public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
+                        List<McpServer.Assessment> assessments,
+                        List<ValidationDecision> validations) throws JsonProcessingException {
+        return write(revision, result, config, assessments, validations, List.of());
+    }
+
+    public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
+                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions) throws JsonProcessingException {
+        ObjectNode root = json.createObjectNode();
+        root.put("revision", revision);
+        root.put("identityRevision", revision);
+        root.set("events", events(result));
+        root.putArray("replays");
+        root.set("flowLinks", flowLinks(result.records));
+        root.set("roles", roles(result, config));
+        root.set("owners", owners(result));
+        root.set("requiredRoles", requiredRoles(config));
+        root.set("activeSources", json.valueToTree(result.analysis.activeSources().stream()
+                .map(SnapshotJsonWriter::wire).sorted().toList()));
+        root.set("cells", cells(result.analysis.cells()));
+        root.putArray("verifications");
+        root.set("gaps", gaps(result.analysis.gaps()));
+        root.set("scenarios", scenarios(result, assessments, validations, config));
+        root.set("accounts", accounts(config, result.records));
+        root.set("sessions", sessions(config, result.records));
+        root.set("managedSessions", managedSessions(managedSessions));
+        return json.writeValueAsBytes(root);
+    }
+
+    ArrayNode managedSessions(List<SessionBroker.SessionView> values) {
+        ArrayNode out = json.createArrayNode();
+        for (SessionBroker.SessionView value : values) {
+            ObjectNode session = out.addObject();
+            session.put("handle", value.handle());
+            session.put("accountId", value.accountId());
+            session.put("accountLabel", value.accountLabel());
+            session.put("service", value.service());
+            session.put("status", value.status().name());
+            session.put("createdAt", value.createdAt().toString());
+            if (value.lastUsedAt() == null) session.putNull("lastUsedAt");
+            else session.put("lastUsedAt", value.lastUsedAt().toString());
+            if (value.expiresAtHint() == null) session.putNull("expiresAtHint");
+            else session.put("expiresAtHint", value.expiresAtHint().toString());
+            session.put("hasAuthorization", value.hasAuthorization());
+            session.put("cookieCount", value.cookieCount());
+            session.put("capturing", value.capturing());
+        }
+        return out;
+    }
+
+    public byte[] preview(Pipeline.Result result) throws JsonProcessingException {
+        ObjectNode root = json.createObjectNode();
+        root.put("notice", "Masked metadata only. Connect a subscription LLM through FlowScope MCP for analysis.");
+        root.put("records", result.records.size());
+        root.put("coverageCells", result.analysis.cells().size());
+        root.set("findings", json.valueToTree(result.analysis.findings()));
+        root.set("gaps", json.valueToTree(result.analysis.gaps()));
+        return json.writeValueAsBytes(root);
+    }
+
+    private ArrayNode events(Pipeline.Result result) {
+        Map<String, Verdict> verdicts = new LinkedHashMap<>();
+        for (AuthorizationAnalysis.CoverageCell cell : result.analysis.cells()) {
+            for (Map.Entry<Source, AuthorizationAnalysis.Decision> decision : cell.perSource().entrySet()) {
+                verdicts.put(cell.key().stableKey() + "\u0000" + decision.getKey(), decision.getValue().verdict());
+            }
+        }
+        ArrayNode out = json.createArrayNode();
+        for (RequestRecord record : result.records) {
+            ObjectNode event = out.addObject();
+            event.put("eventId", record.evidenceId);
+            event.put("method", record.method);
+            event.put("path", record.path + (record.query == null ? "" : "?" + record.query));
+            event.put("status", record.status);
+            event.put("fp", record.fp);
+            event.put("idn", record.idn);
+            event.put("role", record.role.label());
+            event.put("source", wire(record.source));
+            event.put("op", record.op);
+            if (record.resource == null) event.putNull("resource"); else event.put("resource", record.resource);
+            event.put("timestamp", record.timestamp);
+            event.put("sourceDetail", record.sourceDetail.name());
+            event.put("orchestrator", record.orchestrator.name());
+            event.put("tool", record.tool.name());
+            event.put("phase", record.phase.name());
+            event.put("executionTrust", record.executionTrust.name());
+            event.put("runId", record.runId);
+            ArrayNode objects = event.putArray("objects");
+            if (record.resource != null) {
+                ObjectNode object = objects.addObject();
+                object.put("resource", record.resource);
+                object.put("location", resourceLocation(record));
+                object.put("confidence", 1.0);
+            }
+            String key = record.idn + "|" + record.op + "|"
+                    + (record.resource == null ? "<none>" : record.resource) + "\u0000" + record.source;
+            event.put("verdict", wire(verdicts.getOrDefault(key, Verdict.UNTESTED)));
+        }
+        return out;
+    }
+
+    public byte[] evidence(Pipeline.Result result, String operation, int offset, int limit) throws JsonProcessingException {
+        List<RequestRecord> matching = result.records.stream()
+                .filter(record -> operation.equals(record.op)).toList();
+        ArrayNode records = json.createArrayNode();
+        matching.stream().skip(offset).limit(limit).forEach(record -> {
+            ObjectNode value = records.addObject();
+            value.put("eventId", record.evidenceId);
+            value.put("query", masked(record.query));
+            value.put("requestBody", masked(record.reqBody));
+            value.put("request", Masking.maskHeaders(masked(record.reqText)));
+            value.put("responseBody", masked(record.body));
+            value.put("response", Masking.maskHeaders(masked(record.respText)));
+            value.put("location", masked(record.location));
+        });
+        ObjectNode out = json.createObjectNode();
+        out.set("records", records);
+        out.put("total", matching.size());
+        out.put("offset", offset);
+        out.put("limit", limit);
+        out.put("hasMore", (long) offset + records.size() < matching.size());
+        return json.writeValueAsBytes(out);
+    }
+
+    private ArrayNode flowLinks(List<RequestRecord> records) {
+        ArrayNode out = json.createArrayNode();
+        List<RequestRecord> analyzable = records.stream().filter(record -> record.source != Source.UNKNOWN).toList();
+        for (DataFlowAnalyzer.Link link : DataFlowAnalyzer.analyze(analyzable)) {
+            ObjectNode value = out.addObject();
+            value.put("fromEventId", link.producer().evidenceId);
+            value.put("toEventId", link.consumer().evidenceId);
+            value.put("fromOp", link.producer().op);
+            value.put("toOp", link.consumer().op);
+            value.put("idn", link.consumer().idn);
+            value.put("source", wire(link.consumer().source));
+            value.put("values", link.value());
+        }
+        return out;
+    }
+
+    private ObjectNode roles(Pipeline.Result result, AnalysisConfig config) {
+        ObjectNode out = json.createObjectNode();
+        result.records.stream().filter(r -> r.source != Source.UNKNOWN).map(r -> r.idn).distinct().sorted()
+                .forEach(identity -> out.put(identity, config.identityRole(identity).label()));
+        return out;
+    }
+
+    private ArrayNode cells(List<AuthorizationAnalysis.CoverageCell> values) {
+        ArrayNode out = json.createArrayNode();
+        for (AuthorizationAnalysis.CoverageCell cell : values) {
+            ObjectNode value = out.addObject();
+            value.put("idn", cell.key().identity());
+            value.put("op", cell.key().operation());
+            if (cell.key().resource() == null) value.putNull("resource");
+            else value.put("resource", cell.key().resource());
+            ObjectNode perSource = value.putObject("perSource");
+            ObjectNode reasons = value.putObject("reasons");
+            cell.perSource().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+                perSource.put(wire(entry.getKey()), wire(entry.getValue().verdict()));
+                reasons.put(wire(entry.getKey()), entry.getValue().reason());
+            });
+            value.put("overall", wire(cell.overall()));
+            value.put("conflict", cell.conflict());
+            value.set("missedSources", json.valueToTree(cell.missedBy().stream()
+                    .map(SnapshotJsonWriter::wire).sorted().toList()));
+            value.set("evidenceIds", json.valueToTree(cell.evidenceIds()));
+        }
+        return out;
+    }
+
+    private ObjectNode owners(Pipeline.Result result) {
+        ObjectNode out = json.createObjectNode();
+        result.analysis.owners().values().stream().filter(value -> value.confirmed() && value.identity() != null)
+                .sorted(Comparator.comparing(AuthorizationAnalysis.OwnerInfo::resource))
+                .forEach(value -> out.put(value.resource(), value.identity()));
+        return out;
+    }
+
+    private ObjectNode requiredRoles(AnalysisConfig config) {
+        ObjectNode out = json.createObjectNode();
+        config.endpointRequirements().entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> out.put(entry.getKey(), entry.getValue().label()));
+        return out;
+    }
+
+    private ArrayNode gaps(List<AuthorizationAnalysis.Gap> values) {
+        ArrayNode out = json.createArrayNode();
+        for (AuthorizationAnalysis.Gap gap : values) {
+            ObjectNode value = out.addObject();
+            value.put("id", gap.id());
+            value.put("type", gap.type().name());
+            value.put("risk", gap.risk());
+            value.put("idn", gap.identity());
+            value.put("op", gap.operation());
+            if (gap.resource() == null) value.putNull("resource"); else value.put("resource", gap.resource());
+            value.set("missedSources", json.valueToTree(gap.missedBy().stream()
+                    .map(SnapshotJsonWriter::wire).sorted().toList()));
+            value.put("summary", gap.reason());
+        }
+        return out;
+    }
+
+    private ArrayNode scenarios(Pipeline.Result result, List<McpServer.Assessment> assessments,
+                                List<ValidationDecision> validations,
+                                AnalysisConfig config) {
+        ArrayNode out = json.createArrayNode();
+        Map<String, ValidationDecision> finalByCandidate = new LinkedHashMap<>();
+        for (ValidationDecision validation : validations) finalByCandidate.put(validation.candidateId(), validation);
+        for (AuthorizationAnalysis.Finding finding : result.analysis.findings()) {
+            ObjectNode value = out.addObject();
+            value.put("id", finding.id());
+            value.put("tag", finding.type().name());
+            value.put("title", finding.title());
+            value.put("proposal", finding.reason());
+            value.put("evidence", String.join(", ", finding.evidenceIds()));
+            value.put("risk", finding.severity().name());
+            value.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
+            ValidationDecision validation = finalByCandidate.get(finding.id());
+            value.put("finalVerdict", validation == null ? "INCONCLUSIVE" : validation.verdict().name());
+            value.put("validationReason", validation == null ? "LLM 검증 번들이 아직 제출되지 않음" : validation.reason());
+            value.put("validationRunId", validation == null ? "" : validation.runId());
+            value.set("validationEvidenceIds", json.valueToTree(
+                    validation == null ? List.of() : validation.validationEvidenceIds()));
+            value.set("controlEvidenceIds", json.valueToTree(
+                    validation == null ? List.of() : validation.controlEvidenceIds()));
+            appendReview(value, config, finding.id(), finding.evidenceIds());
+        }
+        for (McpServer.Assessment assessment : assessments) {
+            ObjectNode value = out.addObject();
+            value.put("id", assessment.id());
+            value.put("tag", "LLM " + assessment.verdict());
+            value.put("title", assessment.title());
+            value.put("proposal", assessment.reason());
+            value.put("evidence", String.join(", ", assessment.evidenceIds()));
+            value.put("risk", assessment.type());
+            value.set("evidenceIds", json.valueToTree(assessment.evidenceIds()));
+            appendReview(value, config, assessment.id(), assessment.evidenceIds());
+        }
+        return out;
+    }
+
+    private void appendReview(ObjectNode value, AnalysisConfig config, String id, List<String> evidenceIds) {
+        config.review(id, evidenceIds).ifPresentOrElse(review -> {
+            value.put("reviewStatus", review.status().name());
+            value.put("reviewNote", review.note());
+        }, () -> {
+            value.put("reviewStatus", "UNRESOLVED");
+            value.put("reviewNote", "");
+        });
+    }
+
+    private ArrayNode accounts(AnalysisConfig config, List<RequestRecord> records) {
+        Map<String, Long> bound = records.stream().filter(r -> config.account(r.idn).isPresent())
+                .collect(java.util.stream.Collectors.groupingBy(r -> r.idn,
+                        LinkedHashMap::new, java.util.stream.Collectors.mapping(r -> r.fp,
+                                java.util.stream.Collectors.collectingAndThen(java.util.stream.Collectors.toSet(), set -> (long) set.size()))));
+        ArrayNode out = json.createArrayNode();
+        config.accounts().values().stream().sorted(Comparator.comparing(io.flowscope.core.AccountProfile::id))
+                .forEach(account -> {
+                    ObjectNode value = out.addObject();
+                    value.put("id", account.id());
+                    value.put("label", account.label());
+                    value.put("role", account.role().label());
+                    value.put("target", account.service());
+                    value.put("color", color(account.id()));
+                    value.put("boundSessions", bound.getOrDefault(account.id(), 0L));
+                });
+        return out;
+    }
+
+    private ArrayNode sessions(AnalysisConfig config, List<RequestRecord> records) {
+        record Session(String service, String fingerprint, String identity, long first, long last) {}
+        Map<String, Session> sessions = new LinkedHashMap<>();
+        records.stream().filter(record -> !"anon".equals(record.fp)).forEach(record -> {
+            String key = record.service + "\u0000" + record.fp;
+            Session previous = sessions.get(key);
+            long time = record.timestamp;
+            long first = previous == null ? time : minKnown(previous.first(), time);
+            long last = previous == null ? time : Math.max(previous.last(), time);
+            sessions.put(key, new Session(record.service, record.fp, record.idn, first, last));
+        });
+        ArrayNode out = json.createArrayNode();
+        sessions.values().forEach(session -> {
+            boolean registered = config.boundAccount(session.service(), session.fingerprint()).isPresent();
+            ObjectNode value = out.addObject();
+            value.put("fingerprint", session.fingerprint());
+            value.put("idn", session.identity());
+            value.put("evidence", "Authorization/Cookie one-way fingerprint");
+            value.put("confidence", registered ? "MANUAL" : "UNASSIGNED");
+            value.put("firstSeen", session.first());
+            value.put("lastSeen", session.last());
+            value.put("registered", registered);
+            value.put("service", session.service());
+        });
+        return out;
+    }
+
+    private static long minKnown(long left, long right) {
+        if (left == 0) return right;
+        if (right == 0) return left;
+        return Math.min(left, right);
+    }
+
+    private static String resourceLocation(RequestRecord record) {
+        if (record.path != null && record.resource != null
+                && record.path.contains(record.resource.substring(record.resource.lastIndexOf(':') + 1))) return "path";
+        if (record.query != null) return "query";
+        if (record.reqBody != null) return "body";
+        return "derived";
+    }
+
+    private static String color(String id) {
+        String[] palette = {"#3D79C4", "#8B5CF6", "#0EA5A4", "#D97706", "#DC4C64", "#4F7C2B"};
+        return palette[Math.floorMod(id.hashCode(), palette.length)];
+    }
+
+    private static String masked(String value) {
+        return value == null ? "" : Masking.maskSecrets(value);
+    }
+
+    private static String wire(Source source) { return source.name().toLowerCase(java.util.Locale.ROOT); }
+    private static String wire(Verdict verdict) { return verdict.name().toLowerCase(java.util.Locale.ROOT); }
+}

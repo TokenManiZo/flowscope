@@ -1,0 +1,21 @@
+FlowScope
+Copyright (c) 2026 FlowScope (화이트햇스쿨 토큰많이조)
+Licensed under the MIT License (see LICENSE in the source repository).
+
+This distribution bundles third-party software:
+
+--------------------------------------------------------------------
+Cytoscape.js 3.26.0
+  Resource : web/vendor/cytoscape-3.26.0.min.js
+  Source   : https://github.com/cytoscape/cytoscape.js
+  License  : MIT — full text in META-INF/LICENSE-cytoscape.txt
+  Copyright (c) 2016-2023, The Cytoscape Consortium
+--------------------------------------------------------------------
+Jackson JSON processor
+  Artifacts: com.fasterxml.jackson.core:jackson-databind:2.22.2
+             com.fasterxml.jackson.core:jackson-core:2.22.2
+             com.fasterxml.jackson.core:jackson-annotations:2.22
+  Source   : https://github.com/FasterXML/jackson
+  License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
+  Copyright (c) FasterXML, LLC and contributors
+--------------------------------------------------------------------

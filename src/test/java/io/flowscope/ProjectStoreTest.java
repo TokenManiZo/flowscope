@@ -1,0 +1,127 @@
+package io.flowscope;
+
+import io.flowscope.core.*;
+import io.flowscope.integration.McpServer;
+import io.flowscope.integration.ProjectStore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+final class ProjectStoreTest {
+    @TempDir Path temp;
+
+    @Test
+    void maskedSessionRoundTripsWithPolicyAndAssessment() throws Exception {
+        RequestRecord record = new RequestRecord(Source.LLM, "https://api.test:443",
+                "POST", "/orders/7", 200, "raw-session-value");
+        record.sourceDetail = SourceDetail.LLM_VALIDATION;
+        record.orchestrator = Orchestrator.LLM;
+        record.tool = ToolKind.CODEX;
+        record.phase = RunPhase.VALIDATION;
+        record.runId = "validation-1";
+        record.query = "token=QUERYSECRET&id=7";
+        record.reqBody = "{\"password\":\"BODYSECRET\",\"orderId\":7}";
+        record.reqText = "POST /orders/7 HTTP/1.1\r\nAuthorization: Bearer HEADERSECRET\r\n\r\n" + record.reqBody;
+        record.body = "{\"ownerId\":\"user-a\"}";
+        record.respText = "HTTP/1.1 200 OK\r\nSet-Cookie: sid=COOKIESECRET\r\n\r\n" + record.body;
+        record.location = "/next?token=REDIRECTSECRET";
+        record.hasResponse = true;
+        record.timestamp = 1234;
+        Pipeline.run(List.of(record));
+
+        AnalysisConfig config = new AnalysisConfig()
+                .withIdentityRole("user-a", AccessRole.USER)
+                .withEndpointRequirement(record.op, AccessRole.LV1)
+                .withResourceOwner(record.resource, "user-a");
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        config.upsertAccount(account).bindSession(record.service, record.fp, account.id());
+        McpServer.Assessment assessment = new McpServer.Assessment("a-1", "BOLA", "LIKELY",
+                "candidate", "evidence based", List.of(record.evidenceId), Instant.parse("2026-08-24T00:00:00Z"));
+        ValidationDecision validation = new ValidationDecision("finding-1",
+                ValidationDecision.FinalVerdict.INCONCLUSIVE, "needs a second account",
+                List.of(record.evidenceId), List.of(), List.of(), "",
+                Instant.parse("2026-08-24T00:01:00Z"));
+        config.reviewItem(assessment.id(), ReviewDecision.Status.CONFIRMED,
+                "token=REVIEWSECRET 재현 완료", assessment.evidenceIds());
+        Path file = temp.resolve("session.flowscope.json");
+
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(record), config, List.of(assessment), List.of(validation),
+                Set.of(Source.HUMAN, Source.SCANNER, Source.LLM));
+        String raw = Files.readString(file);
+        for (String secret : List.of("QUERYSECRET", "BODYSECRET", "HEADERSECRET", "COOKIESECRET",
+                "REDIRECTSECRET", "REVIEWSECRET", "raw-session-value")) assertFalse(raw.contains(secret), secret);
+
+        ProjectStore.ProjectData loaded = store.load(file);
+        assertEquals(1, loaded.records().size());
+        RequestRecord restored = loaded.records().get(0);
+        assertEquals(SourceDetail.LLM_VALIDATION, restored.sourceDetail);
+        assertEquals("validation-1", restored.runId);
+        assertEquals(record.evidenceId, restored.evidenceId);
+        assertEquals(record.contentDigest, restored.contentDigest);
+        assertTrue(restored.hasResponse);
+        assertEquals(AccessRole.USER, loaded.config().identityRole("user-a"));
+        assertEquals("user-a", loaded.config().resourceOwner(record.resource));
+        assertEquals("USER A", loaded.config().account("acct-a").orElseThrow().label());
+        assertEquals("acct-a", loaded.config().boundAccount(record.service, restored.fp).orElseThrow().id());
+        assertEquals("LIKELY", loaded.assessments().get(0).verdict());
+        assertEquals(ValidationDecision.FinalVerdict.INCONCLUSIVE, loaded.validations().get(0).verdict());
+        assertEquals(Set.of(Source.HUMAN, Source.SCANNER, Source.LLM), loaded.completedLanes());
+        assertEquals(ReviewDecision.Status.CONFIRMED,
+                loaded.config().review(assessment.id(), assessment.evidenceIds()).orElseThrow().status());
+    }
+
+    @Test
+    void rejectsUnknownSchema() throws Exception {
+        Path file = temp.resolve("bad.json");
+        Files.writeString(file, "{\"schema_version\":99,\"records\":[]}");
+        assertThrows(IllegalArgumentException.class, () -> new ProjectStore().load(file));
+    }
+
+    @Test
+    void doesNotInferCompletedLaneFromPartialExplorationRecords() throws Exception {
+        RequestRecord partial = new RequestRecord(Source.LLM, "https://api.test:443",
+                "GET", "/partial", 200, "session");
+        partial.sourceDetail = SourceDetail.LLM_EXPLORER;
+        partial.phase = RunPhase.EXPLORATION;
+        partial.runId = "interrupted-run";
+        partial.hasResponse = true;
+        Path file = temp.resolve("partial.flowscope.json");
+
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(partial), new AnalysisConfig(), List.of(), List.of());
+
+        assertTrue(store.load(file).completedLanes().isEmpty());
+    }
+
+    @Test
+    void evidenceIdentityCoversResponseAndProvenanceAndSurvivesReassignment() {
+        RequestRecord allowed = new RequestRecord(Source.LLM, "https://api.test:443",
+                "GET", "/orders/7", 200, "session");
+        allowed.hasResponse = true;
+        allowed.body = "{\"id\":7}";
+        allowed.location = "/orders/7";
+        allowed.sourceDetail = SourceDetail.LLM_EXPLORER;
+        RequestRecord denied = new RequestRecord(Source.LLM, "https://api.test:443",
+                "GET", "/orders/7", 403, "session");
+        denied.hasResponse = true;
+        denied.body = "{\"error\":\"forbidden\"}";
+        denied.location = "/login";
+        denied.sourceDetail = SourceDetail.LLM_VALIDATION;
+
+        EvidenceIds.assign(List.of(allowed, denied));
+        String stableId = allowed.evidenceId;
+
+        assertNotEquals(allowed.contentDigest, denied.contentDigest);
+        assertNotEquals(allowed.evidenceId, denied.evidenceId);
+        EvidenceIds.assign(List.of(allowed));
+        assertEquals(stableId, allowed.evidenceId);
+    }
+}
