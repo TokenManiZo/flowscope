@@ -559,6 +559,35 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21.
 - 현재 재생성 JAR을 Burp Community에서 신규 load/unload하는 확인은 수동 release gate에 남는다.
 
+## 2026-08-26 · 0-Evidence 행동 우선 onboarding
+
+### 목표와 성공 조건
+
+- 관측 0건에서는 분석 용어와 0 수치 대신 첫 실행 순서와 시작 조작만 보여 준다.
+- Evidence가 생기면 기존 분석 작업면을 그대로 사용해 기능이나 분석 모델을 중복 구현하지 않는다.
+- ADMIN이 기본 요구라는 오해를 없애고, 실제 브라우저에서 전환·overflow·console 상태를 확인한다.
+
+### 재현·개발
+
+- 실제 빈 standalone 프로젝트에서 좌측 필터, 권한·세션, 3-way gap, 그래프 조작과 0 상태가 처음부터 노출되는 D-057을 재현했다.
+- 0건이면 `exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge` 네 단계, `빠른 시작 열기`, `샘플로 화면 익히기`만 노출하는 empty workspace를 추가했다.
+- BOLA에는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 같은 화면에 명시했다.
+- 샘플 또는 실제 Evidence가 생기면 기존 graph/matrix/detail 작업면으로 전환한다. 계정 설정은 빈 상태에서도 기존 화면을 재사용한다.
+
+### 영향 파일
+
+- Web UI: `src/main/resources/web/index.html`
+- Web 계약 테스트: `src/test/java/io/flowscope/FlowScopeWebServerTest.java`
+- 문서: 한국어/영어 README·changelog, architecture, decisions(D-057), UI rationale, product plan, beta validation, 이 개발 기록
+
+### 검증과 남은 gate
+
+- `FlowScopeWebServerTest`: 10 tests 통과.
+- `mvn clean verify`: 131 tests, 실패·오류·skip 0, BUILD SUCCESS.
+- 1280×720 standalone 실제 0-Evidence 화면에서 분석 rail/stage/detail 비노출, quick-start 모달, 샘플 뒤 분석 화면 전환, body overflow 0, console error 0을 확인했다.
+- fat JAR: 2,816,191 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `37bd1de531f0a837311b6830192b214fd6709e695280cab0fcc3594ef42b6232`.
+- 현재 재생성 JAR의 Burp Community load/unload와 Burp에서 연 Web UI의 실제 0건→수집 전환은 수동 release gate에 남는다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

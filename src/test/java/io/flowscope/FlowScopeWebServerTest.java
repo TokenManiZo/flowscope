@@ -60,6 +60,9 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("LLM L (검정·점선)"));
         assertTrue(index.body().contains("검토 대기"));
         assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
+        assertTrue(index.body().contains("첫 점검을 시작하세요"));
+        assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
+        assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length)"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());

@@ -176,10 +176,10 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 다음은 설계 의도가 아니라 실제 사용자 검증으로 발견된 미완료 항목이다.
 
-1. **빈 데이터 화면의 정보 과다:** 관측 0건인데 권한·세션 병합·갭·그래프 고급 조작을 모두 노출해 무엇부터 해야 하는지 알기 어렵다. 빈 상태에서는 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 행동을 우선하고 분석 패널은 데이터가 생긴 뒤 단계적으로 보여 주는 수정이 필요하다.
-2. **ADMIN 예시의 오해:** USER A·USER B·ADMIN 문구가 ADMIN 로그인이 기본 요구처럼 보인다. 두 저권한 계정을 기본 예시로 하고 ADMIN은 선택적 역할 비교임을 UI에서 명시해야 한다.
+1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
+2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
 3. **Maven 중간 JAR 혼동 — 해결:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 이 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 사용자가 선택할 파일은 `target/flowscope-1.2.0-beta.3.jar` 하나다. 현재 재생성 JAR의 실제 Burp load는 release gate로 남는다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
 5. **Codex 신뢰 상태 안내:** 공식 Codex 동작상 project-scoped `.codex/config.toml`은 신뢰된 프로젝트에서만 적용된다. 로컬 Codex CLI 0.147.0에서 `agent-workspace`의 `flowscope` 항목이 실제 발견되는 것을 확인했으며, 사용법에는 프로젝트 신뢰 전제와 `codex mcp get flowscope` 확인 단계를 명시했다. MCP 서버 연결과 Explorer/Judge 전체 실행은 별도 실환경 gate다.
 
-이 부채는 숨기지 않고 개발 기록과 beta gate에 남긴다. 수정 전 발표에서는 “현재 발견되어 보완 중인 beta UX/통합 항목”으로 명시한다.
+해결 표시는 자동 회귀와 standalone Web 검증까지의 상태다. 현재 재생성 JAR의 Burp load와 실제 MCP Explorer/Judge 전체 실행은 계속 beta gate로 남긴다.

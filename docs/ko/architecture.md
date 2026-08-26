@@ -154,7 +154,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 | 공통 우측 | 선택 API의 지연 로드된 마스킹 Request/Response와 Repeater 미전송 초안 |
 | Burp 제어판 | exact scope, 세 레인 포트, Web UI 열기, MCP 연결 복사, Proxy history, project I/O, sample/reset |
 
-빈 데이터에서도 beta.3는 위 분석 패널 대부분을 그대로 노출한다. 실제 사용자 확인에서 첫 행동보다 전문 용어와 0 상태가 먼저 보여 혼란을 주는 것이 확인됐다. 이는 분석 모델의 이유가 아니라 미완료 UX 부채이며, 데이터가 없을 때는 `scope → 계정 로그인/HUMAN → ZAP → Explorer/Judge`를 우선하는 progressive disclosure로 수정해야 한다(D-057).
+관측 Evidence가 0건이면 분석 패널을 숨기고 `scope → 계정 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작만 먼저 노출한다. Evidence가 생기면 위 분석 작업면으로 전환한다. 이 progressive disclosure는 분석 모델을 줄이지 않고 첫 행동만 분리하며, ADMIN은 BFLA 역할 비교가 필요할 때만 선택적으로 추가한다(D-057).
 
 ## 6. 모듈 매핑
 

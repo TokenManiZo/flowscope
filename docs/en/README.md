@@ -80,6 +80,8 @@ http://127.0.0.1:3000/
 
 An empty scope blocks MCP-triggered ZAP execution.
 
+With zero observed Evidence, the Web UI shows only the exact-scope → login/HUMAN pass → ZAP baseline → independent LLM Explorer/Judge sequence and setup/sample actions. It reveals the existing analysis workspace automatically after Evidence arrives.
+
 ## Typical assessment flow
 
 1. Configure the exact scope and use ordinary anonymous or least-privileged test accounts. The Burp tab is the normal control; an MCP client may call `flowscope_set_scope` only with the exact target explicitly authorized by the operator and only before an active SCANNER/LLM run. An admin account is optional and only useful when the engagement requires an explicit role comparison.

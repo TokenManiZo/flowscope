@@ -46,6 +46,8 @@
   .scannersetup{display:grid;grid-template-columns:minmax(240px,2fr) minmax(180px,1fr) auto;gap:8px;align-items:end;margin-top:13px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
   .scannersetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.scannersetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.scannerstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;overflow-wrap:anywhere}.scannerstatus.ok{color:var(--allow)}.scannerstatus.fail{color:var(--suspicious)}
   main{flex:1; display:flex; min-height:0}
+  .emptyworkspace{display:none;flex:1;align-items:center;justify-content:center;padding:24px;overflow:auto}.emptycard{width:min(760px,100%);border:1px solid var(--line2);border-radius:14px;background:var(--panel);padding:22px;box-shadow:0 14px 40px rgba(30,42,56,.08)}.emptycard h2{font-size:20px}.emptylead{margin:7px 0 17px;color:var(--muted);font-size:12.5px;line-height:1.6}.emptysteps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.emptystep{border:1px solid var(--line);border-radius:9px;background:var(--panel2);padding:12px;display:grid;grid-template-columns:26px minmax(0,1fr);gap:9px}.emptystep .num{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line2);font:700 11px 'JetBrains Mono',monospace}.emptystep b{font-size:12px}.emptystep p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}.emptyactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.emptytruth{margin-top:11px;color:var(--faint);font:10.5px 'JetBrains Mono',monospace;line-height:1.5}
+  body.empty-state main>.rail,body.empty-state main>.stage,body.empty-state main>.detail,body.empty-state footer,body.empty-state header>.modeswitch{display:none}body.empty-state .emptyworkspace{display:flex}body.empty-state.accounts-mode .emptyworkspace{display:none}body.empty-state.accounts-mode main>.stage{display:block}body.empty-state.accounts-mode header>.modeswitch{display:flex}
   .rail{flex:0 0 244px; border-right:1px solid var(--line); background:var(--panel); padding:13px 12px; overflow:auto; display:flex; flex-direction:column; gap:13px}
   .card{border:1px solid var(--line); border-radius:10px; background:var(--panel2); padding:11px}
   .card h3{font-size:12px; letter-spacing:.02em; margin-bottom:8px; display:flex; align-items:center; gap:7px}
@@ -183,7 +185,7 @@
   .li{display:flex; align-items:center; gap:5px}.li .sw{width:10px;height:10px;border-radius:3px}.li .swl{width:20px;height:0;border-top-width:2px}
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
   @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
-  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup{grid-template-columns:1fr}.scannerstatus{grid-column:1}}
+  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup{grid-template-columns:1fr}.scannerstatus{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}}
   @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -234,6 +236,20 @@
 </div>
 
 <main>
+  <section class="emptyworkspace" id="emptyWorkspace" aria-labelledby="emptyTitle">
+    <div class="emptycard">
+      <h2 id="emptyTitle">첫 점검을 시작하세요</h2>
+      <p class="emptylead">아직 FlowScope Evidence가 없습니다. 분석 그래프보다 아래 수집 순서를 먼저 완료하면 같은 대상에서 사람·ZAP·LLM의 발견 차이를 비교할 수 있습니다.</p>
+      <div class="emptysteps">
+        <div class="emptystep"><span class="num">1</span><div><b>Burp에서 exact scope 적용</b><p>FlowScope 탭에 허가된 scheme·host·port·path prefix를 입력합니다.</p></div></div>
+        <div class="emptystep"><span class="num">2</span><div><b>로그인 후 HUMAN pass</b><p>필요한 테스트 계정을 캡처하고 명시적 HUMAN pass 동안 기능을 탐색합니다.</p></div></div>
+        <div class="emptystep"><span class="num">3</span><div><b>안전 ZAP 기준선</b><p>Traditional·Client Spider와 passive 결과를 시스템 순서로 수집합니다.</p></div></div>
+        <div class="emptystep"><span class="num">4</span><div><b>독립 LLM Explorer와 Judge</b><p>MCP Explorer를 끝낸 뒤 세 레인을 잠그고 Evidence 기반 검증을 수행합니다.</p></div></div>
+      </div>
+      <div class="emptyactions"><button class="go primary" id="emptySetup">빠른 시작 열기</button><button class="go" id="emptySample">샘플로 화면 익히기</button></div>
+      <div class="emptytruth">ADMIN 계정은 필수가 아닙니다. 기본 BOLA 비교에는 서로 다른 최소 권한 테스트 계정 2개를 권장하며, BFLA 역할 비교가 필요할 때만 관리자 역할을 추가합니다.</div>
+    </div>
+  </section>
   <nav class="rail">
     <div class="card">
       <h3>관측 범위 <span class="badge">객체 단위</span></h3>
@@ -1013,7 +1029,8 @@ async function saveScenarioReview(itemId,button){
 }
 
 function updateStatus(){
-  const el=document.getElementById('status');trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 메인 비교 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 대기 '+SERVER_TRAFFIC_STATS.review;if(!EVENTS.length){el.innerHTML='<span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요.</span>';updateSetup();return;}
+  document.body.classList.toggle('empty-state',!EVENTS.length);
+  const el=document.getElementById('status');trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 메인 비교 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 대기 '+SERVER_TRAFFIC_STATS.review;if(!EVENTS.length){el.innerHTML='<span>시작 순서 · Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge</span>';updateSetup();return;}
   const coverageEvents=EVENTS.filter(e=>e.coverageEligible);const cnt=s=>coverageEvents.filter(e=>e.source===s).length; const conf=Object.values(MODEL.cells).filter(c=>c.conflict).length;
   const part=Object.values(MODEL.cells).filter(c=>c.partial).length;
   const unknown=cnt('unknown');el.innerHTML='<span>메인 비교 기준 · 사람 <b>'+cnt('human')+'</b> · 스캐너 <b>'+cnt('scanner')+'</b> · LLM <b>'+cnt('llm')+'</b>'+(unknown?' · 분류불명 <b>'+unknown+'</b>':'')+'</span><span>수집 <b>'+SERVER_TRAFFIC_STATS.captured+'</b> · 기본 숨김 <b>'+SERVER_TRAFFIC_STATS.excluded+'</b> · 검토 대기 <b>'+SERVER_TRAFFIC_STATS.review+'</b> · 신원 <b>'+MODEL.identities.length+'</b> · Op <b>'+MODEL.operations.length+'</b> · Res <b>'+MODEL.resources.length+'</b></span>'+(part?'<span class="warn">일부만 발견 <b>'+part+'</b> · 불일치 <b>'+conf+'</b></span>':'');
@@ -1128,6 +1145,8 @@ document.getElementById('m-accounts').addEventListener('click',()=>setMode('acco
 document.getElementById('btnSummary').addEventListener('click',renderSummary);
 document.getElementById('btnScenario').addEventListener('click',renderScenarios);
 document.getElementById('openSetup').addEventListener('click',openSetup);
+document.getElementById('emptySetup').addEventListener('click',openSetup);
+document.getElementById('emptySample').addEventListener('click',()=>sample.click());
 document.getElementById('setupClose').addEventListener('click',closeSetup);
 document.getElementById('setupAccountsOpen').addEventListener('click',()=>{closeSetup();setMode('accounts');});
 document.getElementById('setupSample').addEventListener('click',()=>{closeSetup();sample.click();});
