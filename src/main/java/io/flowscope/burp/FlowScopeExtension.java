@@ -30,6 +30,8 @@ import io.flowscope.core.Masking;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RecordMerge;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RouteCandidateExtractor;
 import io.flowscope.core.SampleProject;
 import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
@@ -141,6 +143,9 @@ public final class FlowScopeExtension implements BurpExtension {
     private final SessionBroker sessionBroker = new SessionBroker();
     private final ProjectStore projectStore = new ProjectStore();
     private volatile Pipeline.Result latest = Pipeline.run(List.of(), analysisConfig);
+    private volatile List<RouteCandidate> routeCandidates = List.of();
+    private final List<RouteCandidateExtractor.Seed> siteMapSeeds = new ArrayList<>();
+    private final List<RouteCandidate> restoredRouteCandidates = new ArrayList<>();
     private volatile ScopePolicy scope = ScopePolicy.parse("");
     private volatile String scopeText = "";
     private final AtomicLong revision = new AtomicLong();
@@ -442,6 +447,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 synchronized (records) { snapshot = new ArrayList<>(records); }
                 Pipeline.Result result = Pipeline.run(snapshot, analysisConfig);
                 latest = result;
+                rebuildRouteCandidates(result.records);
                 revision.incrementAndGet();
                 if (controlTab != null) controlTab.render(result);
             } catch (Exception e) {
@@ -593,6 +599,17 @@ public final class FlowScopeExtension implements BurpExtension {
                             response.headerValue("Content-Type"), timestamp, false, runId, null));
                 }
 
+                List<RouteCandidateExtractor.Seed> importedSiteMapSeeds = new ArrayList<>();
+                for (var item : api.siteMap().requestResponses()) {
+                    if (item == null || item.hasResponse() || item.request() == null) continue;
+                    String url = item.request().url();
+                    if (!scope.allows(url)) continue;
+                    String method = item.request().method();
+                    importedSiteMapSeeds.add(new RouteCandidateExtractor.Seed(url, method,
+                            RouteCandidate.ProvenanceType.BURP_UNREQUESTED,
+                            "sitemap:" + shortDigest(url + "\0" + method)));
+                }
+
                 List<RequestRecord> added;
                 synchronized (records) {
                     int room = Math.max(0, MAX_RECORDS - records.size());
@@ -600,12 +617,17 @@ public final class FlowScopeExtension implements BurpExtension {
                     records.addAll(added);
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
+                synchronized (siteMapSeeds) {
+                    siteMapSeeds.clear();
+                    siteMapSeeds.addAll(importedSiteMapSeeds);
+                }
+                rebuildRouteCandidates(latest.records);
                 int duplicateCount = incoming.size() - added.size();
                 String message = "Proxy history " + history.size() + "건 중 " + added.size()
                         + "건 가져옴 · 기존 관측/상한 " + duplicateCount + "건 건너뜀 · 응답 없음 "
-                        + withoutResponse + "건";
+                        + withoutResponse + "건 · Site Map 미응답 후보 " + importedSiteMapSeeds.size() + "건";
                 api.logging().logToOutput("FlowScope " + message);
-                if (!added.isEmpty()) scheduleRebuild();
+                if (!added.isEmpty() || !importedSiteMapSeeds.isEmpty()) scheduleRebuild();
                 SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(controlTab, message,
                         "FlowScope", JOptionPane.INFORMATION_MESSAGE));
             } catch (Exception e) {
@@ -619,6 +641,8 @@ public final class FlowScopeExtension implements BurpExtension {
             try {
                 clearRunContexts();
                 sessionBroker.close();
+                synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
+                synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
                 SampleProject.Data sample = SampleProject.create();
                 analysisConfig.replaceWith(sample.config());
                 List<RequestRecord> loaded = new ArrayList<>(sample.records());
@@ -629,6 +653,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     capacityWarned = false;
                 }
                 latest = result;
+                rebuildRouteCandidates(result.records);
                 revision.incrementAndGet();
                 if (mcpServer != null) mcpServer.clearAssessments();
                 if (mcpServer != null) mcpServer.clearValidations();
@@ -648,6 +673,9 @@ public final class FlowScopeExtension implements BurpExtension {
             records.clear();
             capacityWarned = false;
         }
+        synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
+        synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
+        routeCandidates = List.of();
         analysisConfig.clearReviews();
         latest = Pipeline.run(List.of(), analysisConfig);
         revision.incrementAndGet();
@@ -666,7 +694,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 List<McpServer.Assessment> assessments = mcpServer == null ? List.of() : mcpServer.assessments();
                 List<ValidationDecision> validations = mcpServer == null ? List.of() : mcpServer.validations();
                 projectStore.save(file.toPath(), snapshot, analysisConfig, assessments, validations,
-                        runContexts.completedExplorations());
+                        runContexts.completedExplorations(), routeCandidates);
                 api.logging().logToOutput("FlowScope 프로젝트 저장: " + file);
             } catch (Exception e) {
                 projectError("프로젝트 저장 실패", e);
@@ -679,10 +707,16 @@ public final class FlowScopeExtension implements BurpExtension {
             try {
                 clearRunContexts();
                 sessionBroker.close();
+                synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
+                synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
                 ProjectStore.ProjectData data = projectStore.load(file.toPath());
                 analysisConfig.replaceWith(data.config());
                 List<RequestRecord> loaded = new ArrayList<>(data.records());
                 Pipeline.Result result = Pipeline.run(loaded, analysisConfig);
+                synchronized (restoredRouteCandidates) {
+                    restoredRouteCandidates.addAll(data.routeCandidates().stream()
+                            .filter(candidate -> !candidate.observed()).toList());
+                }
                 Set<String> evidenceIds = result.records.stream().map(r -> r.evidenceId)
                         .collect(java.util.stream.Collectors.toSet());
                 List<McpServer.Assessment> assessments = data.assessments().stream()
@@ -698,6 +732,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
                 latest = result;
+                rebuildRouteCandidates(result.records);
                 revision.incrementAndGet();
                 if (mcpServer != null) mcpServer.resetWorkflow();
                 if (mcpServer != null) mcpServer.replaceAssessments(assessments);
@@ -742,6 +777,9 @@ public final class FlowScopeExtension implements BurpExtension {
         ScopePolicy parsed = ScopePolicy.parse(value);
         scope = parsed;
         scopeText = value == null ? "" : value;
+        synchronized (siteMapSeeds) { siteMapSeeds.removeIf(seed -> !parsed.allows(seed.url())); }
+        synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
+        rebuildRouteCandidates(latest.records);
         if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
         api.logging().logToOutput("FlowScope 허용 범위 갱신: " + parsed.entries());
     }
@@ -761,6 +799,7 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public RunContextRegistry contexts() { return runContexts; }
             @Override public SessionBroker sessions() { return sessionBroker; }
             @Override public List<String> scopeEntries() { return scope.entries(); }
+            @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
             @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
                                                                                    List<String> accountIds,
                                                                                    boolean includeAnonymous) {
@@ -953,7 +992,34 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (records) { snapshot = new ArrayList<>(records); }
         Pipeline.Result result = Pipeline.run(snapshot, analysisConfig);
         latest = result;
+        rebuildRouteCandidates(result.records);
         revision.incrementAndGet();
         if (controlTab != null) controlTab.render(result);
+    }
+
+    private void rebuildRouteCandidates(List<RequestRecord> sourceRecords) {
+        List<RouteCandidateExtractor.Seed> seeds;
+        synchronized (siteMapSeeds) { seeds = List.copyOf(siteMapSeeds); }
+        List<RouteCandidate> extracted = RouteCandidateExtractor.extract(sourceRecords, scope, seeds);
+        List<RouteCandidate> restored;
+        synchronized (restoredRouteCandidates) { restored = List.copyOf(restoredRouteCandidates); }
+        Map<String, RouteCandidate> merged = new LinkedHashMap<>();
+        for (RouteCandidate candidate : restored) merged.put(routeCandidateKey(candidate), candidate);
+        for (RouteCandidate candidate : extracted) merged.put(routeCandidateKey(candidate), candidate);
+        routeCandidates = RouteCandidateExtractor.prioritized(merged.values());
+    }
+
+    private static String routeCandidateKey(RouteCandidate candidate) {
+        return candidate.service() + "\0" + candidate.method() + "\0" + candidate.pathTemplate();
+    }
+
+    private static String shortDigest(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest, 0, 8);
+        } catch (java.security.NoSuchAlgorithmException error) {
+            throw new IllegalStateException(error);
+        }
     }
 }

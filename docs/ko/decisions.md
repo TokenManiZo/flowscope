@@ -626,11 +626,13 @@
 
 ## D-068 · HUMAN 공격면 = 관측 graph와 provenance-backed route candidate를 분리
 - **문제:** 현재 graph와 `UNCROSSED`는 실제 `INCLUDE` request/response만 사용한다. 이 경계는 정직하지만 응답에서 참조된 아직 미요청 endpoint를 보여 주지 못한다. 반대로 후보를 관측 edge처럼 합치면 사람이 실제로 밟지 않은 경로가 HUMAN coverage와 finding을 오염시킨다.
-- **계획 결정:** 기존 `UNCROSSED`는 관측 identity × 관측 operation/resource의 미실행 cell로 유지한다. 별도 `RouteCandidate`는 exact-scope Burp Site Map 미응답 항목과 관측 HTML/redirect/sitemap/robots/manifest/보수적 JS URL literal에서만 만들며 provenance Evidence ID를 필수로 한다. candidate는 중립 시각 문법과 `UNOBSERVED_ROUTE` 상태로 표시하고 실제 request-response가 생기기 전에는 coverage, owner, verdict, finding, lane 완료에 사용하지 않는다.
+- **결정:** 기존 `UNCROSSED`는 관측 identity × 관측 operation/resource의 미실행 cell로 유지한다. 별도 `RouteCandidate`는 exact-scope Burp Site Map 미응답 항목과 저장된 HTML/form, redirect, sitemap/robots, manifest, 보수적 JS URL literal, 대상에서 관측한 OpenAPI에서만 만들며 provenance ID를 필수로 한다. candidate는 중립 시각 문법으로 표시하고 실제 request-response가 생기기 전에는 coverage, owner, verdict, finding, lane 완료에 사용하지 않는다.
 - **노이즈:** web manifest와 navigation/static metadata는 business graph에서 제외하되 route discovery 입력으로 재사용한다. `REVIEW`는 요청은 있었으나 API 여부가 애매한 상태이고 route candidate는 요청 자체가 없다는 점을 UI와 수량에서 분리한다.
-- **가중치:** 근거 없는 confidence 퍼센트는 넣지 않는다. 현재 모든 object candidate에 고정 `1.0`을 내려 UI가 `신뢰도 100%`로 표시하는 값도 측정치가 아니므로 추출 근거 enum으로 교체한다. 우선은 명시 method/object/security signal/provenance 수/state-changing 여부의 범주형 사전식 정렬로 이유를 노출한다. 수치 가중치는 고정 corpus와 blind benchmark에서 feature별 성능·검토 비용을 측정한 뒤 별도 결정한다.
+- **가중치:** 근거 없는 confidence 퍼센트는 넣지 않는다. beta.3이 모든 object candidate에 고정 `1.0`을 내려 UI가 `신뢰도 100%`로 표시하던 값은 추출 근거 enum으로 교체한다. beta.4 route candidate는 적용 가능성·명시 method·object template·state-changing·복수 provenance의 범주형 사전식 정렬과 이유를 노출한다. 미요청 후보에 연결되지 않은 authorization 신호는 있는 것처럼 쓰지 않는다. 수치 가중치는 고정 corpus와 blind benchmark에서 feature별 성능·검토 비용을 측정한 뒤 별도 결정한다.
 - **근거:** W3C Fetch Metadata와 Web App Manifest, PortSwigger Site Map의 requested/unrequested 구분, Montoya SiteMap API, OWASP IDOR/BOLA testing guidance. 세부 링크와 gate는 `product-development-plan.md` P4-H가 정본이다.
-- **상태:** 열림 · 구현 전 사용자 검토
+- **구현:** classifier v3가 manifest/source map/service worker를 `DISCOVERY_METADATA`로 분리하고 같은 service·operation의 강한 API Evidence만 immutable discovery gate 안에서 교차 보강한다. RouteCandidate는 project에 왕복되고 Web의 별도 수량·필터·중립 노드·상세에서 provenance와 범주형 정렬 이유를 노출한다. object의 고정 100% confidence는 path/query/body/GraphQL/derived 근거 enum으로 교체했다.
+- **검증·한계:** 자동 회귀와 standalone 1280×720·600×800 화면 검증은 완료했다. 후보 추출은 저장된 8KiB 응답 안의 정적 literal에 제한되며 동적 JavaScript·런타임 생성 경로를 추측하지 않는다. 실제 Burp Community에서 새 JAR의 응답 없는 Site Map item, 실제 Burp Browser HUMAN pass, candidate가 있는 그래프를 확인하는 수동 gate와 공개 confusion matrix는 남아 있다.
+- **상태:** beta.4 구현·자동 회귀 완료, Burp 실환경 gate 대기
 
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.

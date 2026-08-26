@@ -57,10 +57,13 @@ final class ProjectStoreTest {
         config.reviewItem(assessment.id(), ReviewDecision.Status.CONFIRMED,
                 "token=REVIEWSECRET 재현 완료", assessment.evidenceIds());
         Path file = temp.resolve("session.flowscope.json");
+        RouteCandidate routeCandidate = new RouteCandidate(record.service, "UNKNOWN", "/undocumented/{id}",
+                false, Set.of(RouteCandidate.ProvenanceType.BURP_UNREQUESTED), List.of("sitemap:abc"),
+                RouteCandidate.Applicability.REVIEW, "응답 없는 Site Map 항목");
 
         ProjectStore store = new ProjectStore();
         store.save(file, List.of(record), config, List.of(assessment), List.of(validation),
-                Set.of(Source.HUMAN, Source.SCANNER, Source.LLM));
+                Set.of(Source.HUMAN, Source.SCANNER, Source.LLM), List.of(routeCandidate));
         String raw = Files.readString(file);
         assertEquals(TrafficClassifier.VERSION,
                 new ObjectMapper().readTree(raw).path("traffic_classifier_version").asInt());
@@ -87,6 +90,7 @@ final class ProjectStoreTest {
         assertEquals("LIKELY", loaded.assessments().get(0).verdict());
         assertEquals(ValidationDecision.FinalVerdict.INCONCLUSIVE, loaded.validations().get(0).verdict());
         assertEquals(Set.of(Source.HUMAN, Source.SCANNER, Source.LLM), loaded.completedLanes());
+        assertEquals(List.of(routeCandidate), loaded.routeCandidates());
         assertEquals(ReviewDecision.Status.CONFIRMED,
                 loaded.config().review(assessment.id(), assessment.evidenceIds()).orElseThrow().status());
     }

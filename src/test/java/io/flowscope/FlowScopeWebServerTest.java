@@ -9,6 +9,7 @@ import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RunContextRegistry;
+import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
@@ -26,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
@@ -62,8 +64,8 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
         assertTrue(index.body().contains("첫 점검을 시작하세요"));
         assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
-        assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.3 · 3소스"));
+        assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
+        assertTrue(index.body().contains("v1.2.0-beta.4 · 3소스"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
@@ -84,6 +86,12 @@ final class FlowScopeWebServerTest {
         assertEquals("API", body.at("/events/0/trafficClass").asText());
         assertFalse(body.at("/events/0/classificationReasons").isEmpty());
         assertEquals(1, body.at("/events/0/repeatCount").asInt());
+        assertEquals("PATH_ID", body.at("/events/0/objects/0/evidence").asText());
+        assertEquals(1, body.path("routeCandidates").size());
+        assertFalse(body.at("/routeCandidates/0/observed").asBoolean());
+        assertEquals(List.of("REVIEW"), JSON.convertValue(
+                body.at("/routeCandidates/0/priorityReasons"),
+                new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
     }
 
     @Test
@@ -366,6 +374,10 @@ final class FlowScopeWebServerTest {
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
         private volatile Pipeline.Result result;
+        private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
+                "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
+                Set.of(RouteCandidate.ProvenanceType.HTML_LINK), List.of("ev-route"),
+                RouteCandidate.Applicability.REVIEW, "HTML 링크는 method를 증명하지 않음"));
 
         TestState() {
             record = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
@@ -388,6 +400,7 @@ final class FlowScopeWebServerTest {
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public SessionBroker sessions() { return sessions; }
         @Override public List<String> scopeEntries() { return scannerScope; }
+        @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
         @Override public JsonNode startScanner(String target, List<String> accountIds, boolean includeAnonymous) {
             scannerTarget = target;
             scannerAccounts = List.copyOf(accountIds);

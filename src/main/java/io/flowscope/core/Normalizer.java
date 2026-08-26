@@ -33,6 +33,8 @@ public final class Normalizer {
             "(?i)\\b(?:query|mutation|subscription)\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern BODY_FIELD = Pattern.compile(
             "(?i)[\\\"']?([A-Za-z][A-Za-z0-9_-]*id)[\\\"']?\\s*[:=]\\s*[\\\"']?([A-Za-z0-9._:-]+)");
+    private static final Pattern MULTIPART_FIELD = Pattern.compile(
+            "(?is)name=\\\"([A-Za-z][A-Za-z0-9_-]*id)\\\"[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?\\r?\\n([A-Za-z0-9._:-]+)");
     private static final Set<String> CONTROL_FIELDS = Set.of(
             "page", "limit", "offset", "sort", "size", "cursor", "start", "end",
             "from", "to", "timestamp", "time", "debug", "enabled", "active");
@@ -159,22 +161,46 @@ public final class Normalizer {
 
     /** 명시적인 id 필드만 사용한다. page/limit 같은 제어값과 일반 숫자는 객체로 승격하지 않는다. */
     private static String auxiliaryResource(String path, String query, String body) {
-        if (query != null) {
-            for (String pair : query.split("&")) {
-                String[] kv = pair.split("=", 2);
-                if (kv.length != 2) continue;
-                String key = decode(kv[0]);
-                String value = decode(kv[1]);
-                String resource = resourceFromField(path, key, value);
-                if (resource != null) return resource;
-            }
+        String queryResource = queryResource(path, query);
+        if (queryResource != null) return queryResource;
+        String bodyResource = bodyResource(path, body);
+        if (bodyResource != null) return bodyResource;
+        return null;
+    }
+
+    /** UI와 후보 정렬이 임의 confidence 대신 표시하는 재현 가능한 객체 추출 근거. */
+    public static String resourceEvidence(RequestRecord record) {
+        if (record == null || record.resource == null) return "NONE";
+        if (normalize(record.method, record.path).resource != null) return "PATH_ID";
+        if (queryResource(record.path, record.query) != null) return "QUERY_ID";
+        if (bodyResource(record.path, record.reqBody) != null) {
+            return "/graphql".equalsIgnoreCase(record.path) ? "GRAPHQL_VARIABLE" : "BODY_ID";
         }
-        if (body != null) {
-            Matcher m = BODY_FIELD.matcher(body);
-            while (m.find()) {
-                String resource = resourceFromField(path, m.group(1), m.group(2));
-                if (resource != null) return resource;
-            }
+        return "DERIVED";
+    }
+
+    private static String queryResource(String path, String query) {
+        if (query == null) return null;
+        for (String pair : query.split("&")) {
+            String[] kv = pair.split("=", 2);
+            if (kv.length != 2) continue;
+            String resource = resourceFromField(path, decode(kv[0]), decode(kv[1]));
+            if (resource != null) return resource;
+        }
+        return null;
+    }
+
+    private static String bodyResource(String path, String body) {
+        if (body == null) return null;
+        Matcher matcher = BODY_FIELD.matcher(body);
+        while (matcher.find()) {
+            String resource = resourceFromField(path, matcher.group(1), matcher.group(2));
+            if (resource != null) return resource;
+        }
+        Matcher multipart = MULTIPART_FIELD.matcher(body);
+        while (multipart.find()) {
+            String resource = resourceFromField(path, multipart.group(1), multipart.group(2));
+            if (resource != null) return resource;
         }
         return null;
     }

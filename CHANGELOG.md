@@ -2,6 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.4 — 2026-08-26
+
+- classifier v3에서 web manifest·source map·service worker를 `DISCOVERY_METADATA`로 분리하고 같은 service·operation의 명시적 API Evidence만 immutable discovery gate 안에서 교차 보강
+- exact-scope HTML/form, `Location`, robots/sitemap, manifest, 정적 JavaScript URL literal, 관측 OpenAPI와 응답 없는 Burp Site Map item에서 provenance-backed route candidate 생성
+- 미요청 route를 관측 source·coverage·3-way gap·인가 verdict·finding과 분리해 중립 그래프 노드, 전용 수량·필터·상세로 표시
+- RouteCandidate를 프로젝트에 저장·복구하고 각 후보의 provenance ID, 적용 가능성, review 이유와 점수 없는 범주형 우선순위 근거를 보존
+- object의 근거 없는 고정 `신뢰도 100%`를 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/DERIVED/NONE` 추출 근거로 교체하고 nested/array JSON 및 multipart ID 회귀 추가
+- standalone 1280×720·600×800에서 가로 overflow와 console warning/error 0을 확인. beta.4 JAR의 실제 Burp Community 재로드·Site Map candidate·Burp Browser pass는 별도 수동 gate로 유지
+
 ## 1.2.0-beta.3 — 2026-08-25
 
 - Proxy 응답을 요청 시점 `messageId` 문맥에 귀속해 ZAP 계정 lane 전환·HUMAN pass 종료와 늦은 응답 간 provenance 경합을 차단

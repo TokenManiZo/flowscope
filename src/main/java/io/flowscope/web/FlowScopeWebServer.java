@@ -9,6 +9,7 @@ import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.Masking;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.ReviewDecision;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RunPhase;
@@ -50,6 +51,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         RequestRecord openInRepeater(String evidenceId);
         default SessionBroker sessions() { return null; }
         default List<String> scopeEntries() { return List.of(); }
+        default List<RouteCandidate> routeCandidates() { return List.of(); }
         default com.fasterxml.jackson.databind.JsonNode startScanner(String target, List<String> accountIds,
                                                                      boolean includeAnonymous) {
             throw new UnsupportedOperationException("scanner workflow is unavailable");
@@ -154,7 +156,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (!request.method().equals("GET")) return method("GET");
         return response(200, "application/json; charset=utf-8",
                 snapshots.write(state.revision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
-                        state.sessions() == null ? List.of() : state.sessions().views()));
+                        state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates()));
     }
 
     private LoopbackHttpServer.Response evidence(LoopbackHttpServer.Request request, URI target) throws IOException {
@@ -193,7 +195,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         ObjectNode result = json.createObjectNode();
         result.set("scenarios", json.readTree(snapshots.write(state.revision(), state.snapshot(),
                 state.config(), state.assessments(), state.validations(),
-                state.sessions() == null ? List.of() : state.sessions().views())).path("scenarios"));
+                state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates())).path("scenarios"));
         ObjectNode body = json.createObjectNode();
         body.put("usedLlm", !state.assessments().isEmpty() || !state.validations().isEmpty());
         body.put("message", state.assessments().isEmpty() && state.validations().isEmpty()

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.4 — 2026-08-26
+
+- Added classifier v3, separating web manifests, source maps, and service workers as discovery metadata and corroborating eligible ambiguous records only with strong API evidence for the same service and operation.
+- Added provenance-backed exact-scope route candidates from stored HTML/forms, Location, robots/sitemaps, manifests, conservative JavaScript literals, observed OpenAPI, and response-less Burp Site Map items.
+- Kept unrequested routes outside source coverage, three-way gaps, authorization verdicts, findings, and lane completion; exposed them as neutral graph nodes with dedicated count, filter, and detail.
+- Persisted route candidates and exposed categorical priority reasons instead of an invented confidence score.
+- Replaced the fixed object confidence with extraction evidence and added nested/array JSON and multipart object-ID regressions.
+- Verified the standalone UI at 1280×720 and 600×800 with no horizontal overflow or console warnings/errors. Loading the beta.4 JAR in Burp Community, response-less Site Map behavior, and a real Burp Browser pass remain manual gates.
+
 ## 1.2.0-beta.3 — 2026-08-25
 
 - Correlated Proxy responses with request-time `messageId` context so late responses cannot cross ZAP account lanes or a HUMAN pass boundary.

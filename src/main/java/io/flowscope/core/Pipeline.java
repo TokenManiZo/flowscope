@@ -47,6 +47,20 @@ public final class Pipeline {
         for (RequestRecord record : records) {
             record.trafficClassification = TrafficClassifier.classify(record, config);
         }
+        var corroboratedOperations = records.stream()
+                .filter(Pipeline::strongCorroboratingEvidence)
+                .map(Pipeline::serviceOperationKey)
+                .collect(java.util.stream.Collectors.toSet());
+        for (RequestRecord record : records) {
+            if (record.trafficClassification.disposition() == TrafficClassification.Disposition.REVIEW
+                    && immutableDiscoveryGateAllows(record)
+                    && corroboratedOperations.contains(serviceOperationKey(record))) {
+                record.trafficClassification = new TrafficClassification(
+                        TrafficClassification.TrafficClass.API,
+                        TrafficClassification.Disposition.INCLUDE,
+                        List.of("OPERATION_CORROBORATED_BY_API_EVIDENCE"), false);
+            }
+        }
         var clusters = ObservationCollapser.byEvidence(records);
         for (RequestRecord record : records) {
             if (record.trafficClassification.trafficClass() == TrafficClassification.TrafficClass.UNKNOWN
@@ -69,6 +83,26 @@ public final class Pipeline {
         AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(coverage, config);
         FlowGraph graph = FlowGraphBuilder.build(coverage, analysis, config);
         return new Result(graph, analysis, records, coverage, excluded, review);
+    }
+
+    private static boolean strongCorroboratingEvidence(RequestRecord record) {
+        return immutableDiscoveryGateAllows(record)
+                && record.trafficClassification.trafficClass() == TrafficClassification.TrafficClass.API
+                && record.trafficClassification.disposition() == TrafficClassification.Disposition.INCLUDE
+                && !record.trafficClassification.userOverride();
+    }
+
+    private static boolean immutableDiscoveryGateAllows(RequestRecord record) {
+        return record.hasResponse
+                && record.source != Source.UNKNOWN
+                && record.phase != RunPhase.VALIDATION
+                && record.phase != RunPhase.COACH_PROBE
+                && (record.source != Source.HUMAN
+                || (record.phase != RunPhase.SESSION_SETUP && record.phase != RunPhase.BASELINE));
+    }
+
+    private static String serviceOperationKey(RequestRecord record) {
+        return record.service + "\0" + record.op;
     }
 
     private static void applyIdentityState(List<RequestRecord> records, AnalysisConfig config) {

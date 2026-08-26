@@ -2,7 +2,22 @@
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-26이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
 
-## 자동 검증 통과
+## 1.2.0-beta.4 자동 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 157 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.4.jar`, 2,848,251 bytes, SHA-256 `89f1744cc5702611c474c7eb6baba2f7a79797c184c5c915f635ee5f21eb7f5a` |
+| JAR 무결성 | ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개, 연속 non-clean package 크기·SHA-256 동일 |
+| 분류기 v3 | manifest·source map·service worker 분리, 같은 service·operation API Evidence 교차 보강, 응답 없음·다른 service gate와 원 Evidence 보존 회귀 통과 |
+| route candidate | exact-scope HTML/form/Location/robots/sitemap/manifest/정적 JS/OpenAPI/Site Map seed 추출, 범위 밖·동적 조합 배제, coverage·finding 비오염 회귀 통과 |
+| 객체 근거 | 고정 confidence 제거, path/query/body/GraphQL/derived 근거와 nested/array JSON·multipart 회귀 통과 |
+| 저장·Web 계약 | candidate project 왕복, snapshot provenance·범주형 정렬 이유, 전용 수량·필터·상세 계약 통과 |
+| 실제 standalone UI | 1280×720과 600×800에서 가로 overflow 0, 잘린 핵심 조작 0, console warning/error 0 |
+
+이 결과는 Java/Web 자동 회귀와 standalone 브라우저 화면을 검증한 것이다. beta.4 JAR을 Burp Community에 제거·재로드한 결과, 응답 없는 실제 Site Map 항목의 Montoya 반환, 실제 Burp Browser HUMAN pass, candidate가 존재하는 Burp 데이터 화면은 아직 확인하지 않았다. 아래 beta.3 실환경 결과를 beta.4에 소급하지 않는다.
+
+## beta.3 자동 검증 통과
 
 | 구분 | 결과 |
 |---|---|

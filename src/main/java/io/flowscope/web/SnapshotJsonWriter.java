@@ -11,6 +11,9 @@ import io.flowscope.core.Masking;
 import io.flowscope.core.ObservationCollapser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RouteCandidateExtractor;
+import io.flowscope.core.Normalizer;
 import io.flowscope.core.Source;
 import io.flowscope.core.Verdict;
 import io.flowscope.core.ValidationDecision;
@@ -29,12 +32,19 @@ public final class SnapshotJsonWriter {
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
                         List<McpServer.Assessment> assessments,
                         List<ValidationDecision> validations) throws JsonProcessingException {
-        return write(revision, result, config, assessments, validations, List.of());
+        return write(revision, result, config, assessments, validations, List.of(), List.of());
     }
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
                         List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions) throws JsonProcessingException {
+        return write(revision, result, config, assessments, validations, managedSessions, List.of());
+    }
+
+    public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
+                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions,
+                        List<RouteCandidate> routeCandidates) throws JsonProcessingException {
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
         root.put("identityRevision", revision);
@@ -58,6 +68,7 @@ public final class SnapshotJsonWriter {
         root.set("accounts", accounts(config, result.records));
         root.set("sessions", sessions(config, result.records));
         root.set("managedSessions", managedSessions(managedSessions));
+        root.set("routeCandidates", routeCandidates(routeCandidates));
         return json.writeValueAsBytes(root);
     }
 
@@ -136,12 +147,29 @@ public final class SnapshotJsonWriter {
             if (record.resource != null) {
                 ObjectNode object = objects.addObject();
                 object.put("resource", record.resource);
-                object.put("location", resourceLocation(record));
-                object.put("confidence", 1.0);
+                object.put("evidence", Normalizer.resourceEvidence(record));
             }
             String key = record.idn + "|" + record.op + "|"
                     + (record.resource == null ? "<none>" : record.resource) + "\u0000" + record.source;
             event.put("verdict", wire(verdicts.getOrDefault(key, Verdict.UNTESTED)));
+        }
+        return out;
+    }
+
+    private ArrayNode routeCandidates(List<RouteCandidate> candidates) {
+        ArrayNode out = json.createArrayNode();
+        for (RouteCandidate candidate : candidates) {
+            ObjectNode value = out.addObject();
+            value.put("service", candidate.service());
+            value.put("method", candidate.method());
+            value.put("pathTemplate", candidate.pathTemplate());
+            value.put("observed", candidate.observed());
+            value.set("provenanceTypes", json.valueToTree(candidate.provenanceTypes().stream()
+                    .map(Enum::name).sorted().toList()));
+            value.set("provenanceEvidenceIds", json.valueToTree(candidate.provenanceEvidenceIds()));
+            value.put("applicability", candidate.applicability().name());
+            value.put("reviewReason", candidate.reviewReason());
+            value.set("priorityReasons", json.valueToTree(RouteCandidateExtractor.priorityReasons(candidate)));
         }
         return out;
     }
@@ -349,14 +377,6 @@ public final class SnapshotJsonWriter {
         if (left == 0) return right;
         if (right == 0) return left;
         return Math.min(left, right);
-    }
-
-    private static String resourceLocation(RequestRecord record) {
-        if (record.path != null && record.resource != null
-                && record.path.contains(record.resource.substring(record.resource.lastIndexOf(':') + 1))) return "path";
-        if (record.query != null) return "query";
-        if (record.reqBody != null) return "body";
-        return "derived";
     }
 
     private static String color(String id) {

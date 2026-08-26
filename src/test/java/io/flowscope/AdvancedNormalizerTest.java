@@ -27,5 +27,33 @@ class AdvancedNormalizerTest {
 
         assertEquals("https://t:443 POST /graphql#GetOrder", r.op);
         assertEquals("https://t:443 orders:202", r.resource);
+        assertEquals("GRAPHQL_VARIABLE", Normalizer.resourceEvidence(r));
+    }
+
+    @Test
+    void 객체_추출_근거를_고정_신뢰도_대신_위치별로_표시한다() {
+        RequestRecord path = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/orders/101", 200, "A");
+        RequestRecord query = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/orders", 200, "A");
+        query.query = "orderId=102";
+        RequestRecord body = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders", 200, "A");
+        body.reqBody = "{\"orderId\":103}";
+        Normalizer.normalizeAll(List.of(path, query, body));
+
+        assertEquals("PATH_ID", Normalizer.resourceEvidence(path));
+        assertEquals("QUERY_ID", Normalizer.resourceEvidence(query));
+        assertEquals("BODY_ID", Normalizer.resourceEvidence(body));
+    }
+
+    @Test
+    void 중첩배열_JSON과_multipart의_명시적_ID를_추출한다() {
+        RequestRecord nested = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders", 200, "A");
+        nested.reqBody = "{\"items\":[{\"orderId\":104}]}";
+        RequestRecord multipart = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders", 200, "A");
+        multipart.reqBody = "--x\r\nContent-Disposition: form-data; name=\"orderId\"\r\n\r\n105\r\n--x--";
+        Normalizer.normalizeAll(List.of(nested, multipart));
+
+        assertEquals("https://t:443 orders:104", nested.resource);
+        assertEquals("https://t:443 orders:105", multipart.resource);
+        assertEquals("BODY_ID", Normalizer.resourceEvidence(multipart));
     }
 }

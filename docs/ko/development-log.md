@@ -745,6 +745,56 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 다음 구현은 P4-H H1의 manifest 실패 fixture부터 시작해야 한다. classifier v3, RouteCandidate 저장 모델, graph 표현, 실제 Burp Browser pass가 끝나기 전에는 JAR을 업데이트된 HUMAN 분석 제품으로 부르지 않는다.
 - 수치 가중치는 고정 corpus와 블라인드 결과 전에는 정하지 않는다. 현재 D-068은 `열림 · 구현 전 사용자 검토` 상태다.
 
+## 2026-08-26 · 1.2.0-beta.4 · HUMAN 공격면과 미요청 route 분리
+
+### 목표와 성공 조건
+
+- target별 예외나 crAPI 정답을 넣지 않고 사람이 남긴 exact-scope traffic의 business graph 노이즈를 줄인다.
+- 실제 request/response와 응답·Site Map에서만 발견된 미요청 route를 별도 모델·수량·시각 문법으로 분리한다.
+- 후보가 coverage, 3-way gap, owner, verdict, finding, lane 완료를 오염시키지 않으며 모든 후보에 provenance가 있어야 한다.
+- 고정 100% confidence와 임의 수치 가중치를 제거하고 추출·정렬 이유를 노출한다.
+- 버전·한국어/영어 사용자 문서·설계·결정·계획·검증 기록을 실제 코드와 맞춘 뒤 전체 회귀, 단일 JAR, 브라우저 QA를 통과한다.
+
+### 개발·수정
+
+- `TrafficClassifier.VERSION`을 3으로 올리고 web manifest, source map, service worker를 `DISCOVERY_METADATA/EXCLUDE`로 분류했다. 한 record의 약한 신호만으로 API를 확정하지 않고 같은 service·정규화 operation에 강한 비사용자-override `API/INCLUDE` Evidence가 있을 때만 immutable discovery gate를 통과한 `REVIEW` 형제를 보강한다.
+- `RouteCandidate`와 `RouteCandidateExtractor`를 추가했다. 저장된 exact-scope HTML link/form, `Location`, robots/sitemap, manifest, 정적 fetch/axios/XHR literal, 관측 OpenAPI와 응답 없는 Burp Site Map item을 service·method/unknown·normalized path로 합치고 모든 provenance ID를 보존한다.
+- HTML manifest link는 `rel`·`href` 속성 순서와 복수 rel token을 허용한다. `fetch(url)`은 default GET, 정적인 options method는 해당 verb, 동적 options는 `UNKNOWN`으로 보존해 POST를 GET으로 꾸미지 않는다.
+- Proxy history 가져오기 때 Site Map을 함께 조회하되 response가 있는 item은 기존 관측 경로에 맡기고, response가 없는 exact-scope item만 `BURP_UNREQUESTED` seed로 보존한다. scope 변경·초기화·sample에서는 stale candidate를 제거하고 project save/load에서 candidate를 왕복한다.
+- candidate는 Web snapshot의 별도 root에만 기록하고 관측 `Pipeline.Result`에 주입하지 않았다. Web에는 별도 수량·목록·필터와 중립색·점선 테두리 operation 노드, provenance·적용 가능성·범주형 정렬 근거 상세를 추가했다. source edge와 authorization verdict는 만들지 않는다.
+- candidate 정렬은 수치 score가 아니라 적용 가능성, 명시 method, 객체 template, state-changing, 복수 provenance의 사전식 category 순서다. 현재 모델에 없는 authorization 신호는 꾸며 넣지 않았다.
+- object detail의 고정 `confidence=1.0`을 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/DERIVED/NONE` 근거로 교체하고 nested/array JSON과 multipart ID 추출을 회귀로 고정했다.
+- Maven/MCP/Web/README 버전을 `1.2.0-beta.4`로 맞추고 새 산출물 이름을 `flowscope-1.2.0-beta.4.jar`로 올렸다.
+
+### 이유와 기각한 대안
+
+- Burp Site Map은 requested/unrequested를 구분하고 HTTP history filter는 항목을 삭제하지 않는다. 이 제품도 Evidence 보존과 분석 처분, observed와 candidate를 나눠야 사용자가 “밟은 경로”와 “참조만 본 경로”를 혼동하지 않는다.
+- candidate를 HUMAN source edge나 `UNCROSSED`에 넣는 안은 사람이 하지 않은 요청을 coverage로 꾸미므로 기각했다. 모든 link를 GET으로 만드는 안도 method 근거가 없어 `UNKNOWN`으로 남겼다.
+- JavaScript AST 전체 해석이나 headless browser 실행을 이번 변경에 넣는 안은 동적 실행 의미와 네트워크 부작용을 일반화할 수 없어 기각했다. 정적 literal만 보수적으로 추출한다.
+- 수치 confidence/가중치는 고정 corpus와 blind benchmark 결과 없이 성능처럼 보이므로 기각했다. 화면의 이유 enum과 deterministic category order만 사용한다.
+
+### 영향 파일
+
+- core: `TrafficClassification`, `TrafficClassifier`, `Pipeline`, `Normalizer`, `RouteCandidate`, `RouteCandidateExtractor`
+- Burp·저장·Web: `FlowScopeExtension`, `ProjectStore`, `FlowScopeWebServer`, `SnapshotJsonWriter`, `web/index.html`, `McpServer`
+- 회귀: `TrafficClassifierTest`, `RouteCandidateExtractorTest`, `AdvancedNormalizerTest`, `ProjectStoreTest`, `FlowScopeWebServerTest`
+- 공개 정본: root/영문 README·CHANGELOG, 한국어 architecture·decisions·product plan·UI rationale·beta validation·development log
+
+### 검증
+
+- 변경 전 clean 기준선은 147 tests였다. 새 enum/model/API를 테스트부터 연결한 최초 compile에서는 존재하지 않는 `RouteCandidate`, `DISCOVERY_METADATA`, `resourceEvidence` 참조가 실패했고, manifest fixture는 기존 `API/INCLUDE` 결과 때문에 실패했다. 해당 실패를 구현 후 회귀로 유지했다.
+- 최종 `mvn clean verify`: 157 tests, 실패 0, 오류 0, skip 0, BUILD SUCCESS.
+- 배포물은 `target/flowscope-1.2.0-beta.4.jar` 하나이며 ZIP 무결성, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 bytecode 계약을 확인했다. 크기와 digest는 `beta-validation.md`에 기록했다.
+- 실제 standalone Web UI를 1280×720과 600×800에서 열어 가로 overflow 0, 잘린 핵심 조작 0, console warning/error 0을 확인했다. 이 검증은 Burp suite tab이나 실제 Site Map item을 대신하지 않는다.
+
+### 남은 한계·다음 gate
+
+- 새 beta.4 JAR을 Burp Community에서 제거·재로드하고 suite tab/Web/MCP/listener 기동을 다시 확인해야 한다.
+- 응답 없는 실제 Burp Site Map item이 `BURP_UNREQUESTED`로 나타나고 project 왕복 뒤 provenance가 유지되는지, candidate가 있는 실제 그래프를 확인해야 한다.
+- 실제 Burp Browser HUMAN pass로 document/static/API 분류와 REVIEW 작업량을 측정하고 일반 MPA·SPA·GraphQL fixture confusion matrix를 공개해야 한다.
+- 저장 응답은 필드별 8KiB이며 route candidate는 관측 operation을 먼저 보존한 뒤 최대 20,000개로 제한한다. 동적 JavaScript·클라이언트 런타임 생성 route는 추측하지 않는다. 모든 endpoint 또는 오탐·미탐 0을 주장하지 않는다.
+- 위 gate 전에 crAPI 정답을 보거나 target 전용 규칙을 넣지 않는다. blind benchmark는 사용자 검토 뒤 시작한다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

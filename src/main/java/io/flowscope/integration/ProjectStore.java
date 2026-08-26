@@ -22,7 +22,8 @@ public final class ProjectStore {
     public record ProjectData(List<RequestRecord> records, AnalysisConfig config,
                               List<McpServer.Assessment> assessments,
                               List<ValidationDecision> validations,
-                              Set<Source> completedLanes) {}
+                              Set<Source> completedLanes,
+                              List<RouteCandidate> routeCandidates) {}
 
     private static final int SCHEMA_VERSION = 1;
     private static final int MAX_RECORDS = 20_000;
@@ -45,6 +46,14 @@ public final class ProjectStore {
                      List<McpServer.Assessment> assessments,
                      List<ValidationDecision> validations,
                      Set<Source> completedLanes) throws IOException {
+        save(target, records, config, assessments, validations, completedLanes, List.of());
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<McpServer.Assessment> assessments,
+                     List<ValidationDecision> validations,
+                     Set<Source> completedLanes,
+                     List<RouteCandidate> routeCandidates) throws IOException {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         EvidenceIds.assign(records);
         ObjectNode root = json.createObjectNode();
@@ -57,6 +66,10 @@ public final class ProjectStore {
                 .map(Enum::name).sorted().forEach(savedLanes::add);
         ArrayNode savedRecords = root.putArray("records");
         for (RequestRecord record : records) savedRecords.add(writeRecord(record));
+        ArrayNode savedRouteCandidates = root.putArray("route_candidates");
+        for (RouteCandidate candidate : routeCandidates == null ? List.<RouteCandidate>of() : routeCandidates) {
+            savedRouteCandidates.add(writeRouteCandidate(candidate));
+        }
         root.set("policy", writePolicy(config));
         ArrayNode savedReviews = root.putArray("reviews");
         config.reviews().values().stream().sorted(java.util.Comparator.comparing(ReviewDecision::itemId))
@@ -121,8 +134,39 @@ public final class ProjectStore {
             Source lane = enumValue(Source.class, value.asText());
             if (lane == Source.HUMAN || lane == Source.SCANNER || lane == Source.LLM) completedLanes.add(lane);
         }
+        List<RouteCandidate> routeCandidates = new ArrayList<>();
+        JsonNode candidateNodes = root.path("route_candidates");
+        if (candidateNodes.isArray()) {
+            if (candidateNodes.size() > MAX_RECORDS) throw new IllegalArgumentException("route candidate limit exceeded");
+            for (JsonNode value : candidateNodes) routeCandidates.add(readRouteCandidate(value));
+        }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
-                Set.copyOf(completedLanes));
+                Set.copyOf(completedLanes), List.copyOf(routeCandidates));
+    }
+
+    private ObjectNode writeRouteCandidate(RouteCandidate candidate) {
+        ObjectNode out = json.createObjectNode();
+        out.put("service", candidate.service());
+        out.put("method", candidate.method());
+        out.put("path_template", candidate.pathTemplate());
+        out.put("observed", candidate.observed());
+        out.set("provenance_types", json.valueToTree(candidate.provenanceTypes().stream()
+                .map(Enum::name).sorted().toList()));
+        out.set("provenance_evidence_ids", json.valueToTree(candidate.provenanceEvidenceIds()));
+        out.put("applicability", candidate.applicability().name());
+        out.put("review_reason", Masking.maskSecrets(candidate.reviewReason()));
+        return out;
+    }
+
+    private RouteCandidate readRouteCandidate(JsonNode value) {
+        Set<RouteCandidate.ProvenanceType> types = java.util.EnumSet.noneOf(RouteCandidate.ProvenanceType.class);
+        value.path("provenance_types").forEach(type ->
+                types.add(enumValue(RouteCandidate.ProvenanceType.class, type.asText())));
+        return new RouteCandidate(required(value, "service"), required(value, "method"),
+                required(value, "path_template"), value.path("observed").asBoolean(false), types,
+                stringList(value, "provenance_evidence_ids"),
+                enumValue(RouteCandidate.Applicability.class, required(value, "applicability")),
+                masked(value, "review_reason"));
     }
 
     private ObjectNode writeRecord(RequestRecord r) {

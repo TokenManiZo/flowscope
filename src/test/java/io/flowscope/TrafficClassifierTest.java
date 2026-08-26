@@ -131,4 +131,64 @@ class TrafficClassifierTest {
         assertTrue(result.coverageRecords.isEmpty());
         assertEquals(List.of("SESSION_SETUP"), result.records.getFirst().trafficClassification.reasons());
     }
+
+    @Test
+    void web_manifest는_JSON이어도_business_API로_포함하지_않는다() {
+        RequestRecord manifest = record("GET", "/manifest.json", null, "application/manifest+json");
+
+        RequestRecord result = classified(manifest);
+
+        assertEquals(TrafficClassification.TrafficClass.DISCOVERY_METADATA,
+                result.trafficClassification.trafficClass());
+        assertEquals(TrafficClassification.Disposition.EXCLUDE,
+                result.trafficClassification.disposition());
+        assertEquals(List.of("WEB_APP_MANIFEST"), result.trafficClassification.reasons());
+    }
+
+    @Test
+    void source_map과_service_worker는_Evidence로_남지만_business_graph에서는_제외한다() {
+        RequestRecord sourceMap = record("GET", "/assets/app.js.map", null, "application/json");
+        RequestRecord worker = record("GET", "/service-worker.js", null, "application/javascript");
+        worker.secFetchDest = "serviceworker";
+
+        Pipeline.Result result = Pipeline.run(List.of(sourceMap, worker));
+
+        assertEquals(2, result.records.size());
+        assertTrue(result.coverageRecords.isEmpty());
+        assertTrue(result.records.stream().allMatch(record -> record.trafficClassification.trafficClass()
+                == TrafficClassification.TrafficClass.DISCOVERY_METADATA));
+    }
+
+    @Test
+    void 같은_operation의_강한_API관측은_애매한_교차관측을_보조한다() {
+        RequestRecord strong = record("GET", "/api/profile", null, "application/json");
+        strong.secFetchDest = "empty";
+        strong.secFetchMode = "cors";
+        RequestRecord ambiguous = record("GET", "/api/profile", null, "text/plain");
+
+        Pipeline.Result result = Pipeline.run(List.of(strong, ambiguous));
+
+        assertEquals(2, result.coverageRecords.size());
+        assertEquals(List.of("OPERATION_CORROBORATED_BY_API_EVIDENCE"),
+                result.records.get(1).trafficClassification.reasons());
+    }
+
+    @Test
+    void 교차보강은_서비스경계와_응답존재_gate를_우회하지_않는다() {
+        RequestRecord strong = record("GET", "/api/profile", null, "application/json");
+        strong.secFetchDest = "empty";
+        RequestRecord otherService = new RequestRecord(Source.HUMAN, "https://other.test:443",
+                "GET", "/api/profile", 200, "anon");
+        otherService.hasResponse = true;
+        otherService.responseContentType = "text/plain";
+        RequestRecord noResponse = record("GET", "/api/profile", null, null);
+        noResponse.hasResponse = false;
+
+        Pipeline.Result result = Pipeline.run(List.of(strong, otherService, noResponse));
+
+        assertEquals(1, result.coverageRecords.size());
+        assertEquals(TrafficClassification.Disposition.REVIEW,
+                result.records.get(1).trafficClassification.disposition());
+        assertEquals(List.of("NO_RESPONSE"), result.records.get(2).trafficClassification.reasons());
+    }
 }

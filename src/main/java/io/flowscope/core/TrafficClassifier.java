@@ -10,7 +10,7 @@ import static io.flowscope.core.TrafficClassification.TrafficClass;
 
 /** 표준 요청 문맥과 저장된 Evidence만 사용하는 보수적 비파괴 분류기. */
 public final class TrafficClassifier {
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
 
     private static final Set<String> ASSET_DESTINATIONS = Set.of(
             "audio", "font", "image", "manifest", "script", "style", "track", "video");
@@ -52,6 +52,11 @@ public final class TrafficClassifier {
         }
 
         boolean securityRelevant = securityRelevant(record);
+        String discoveryMetadataReason = discoveryMetadataReason(record);
+        if (discoveryMetadataReason != null && !securityRelevant) {
+            return result(TrafficClass.DISCOVERY_METADATA, Disposition.EXCLUDE, false,
+                    discoveryMetadataReason);
+        }
         if (isStaticAsset(record) && !securityRelevant) {
             return result(TrafficClass.STATIC_ASSET, Disposition.EXCLUDE, false, "ASSET_CONTEXT_AND_TYPE");
         }
@@ -78,6 +83,7 @@ public final class TrafficClassifier {
 
     private static TrafficClass inferredClass(RequestRecord record) {
         if (isPreflight(record)) return TrafficClass.PREFLIGHT;
+        if (discoveryMetadataReason(record) != null) return TrafficClass.DISCOVERY_METADATA;
         if (isStaticAsset(record)) return TrafficClass.STATIC_ASSET;
         if (isNavigation(record)) return TrafficClass.NAVIGATION;
         if (isTelemetryCandidate(record)) return TrafficClass.TELEMETRY_CANDIDATE;
@@ -92,6 +98,19 @@ public final class TrafficClassifier {
 
     private static boolean isPreflight(RequestRecord record) {
         return "OPTIONS".equals(record.method) && notBlank(record.accessControlRequestMethod);
+    }
+
+    private static String discoveryMetadataReason(RequestRecord record) {
+        if (!isSafe(record.method)) return null;
+        String path = lower(record.path);
+        String dest = lower(record.secFetchDest);
+        String mime = mediaType(record.responseContentType);
+        if (dest.equals("manifest") || path.endsWith(".webmanifest")
+                || mime.equals("application/manifest+json")) return "WEB_APP_MANIFEST";
+        if (path.endsWith(".map") && mime.equals("application/json")) return "SOURCE_MAP";
+        if ((dest.equals("serviceworker") || dest.equals("worker"))
+                && (mime.contains("javascript") || path.endsWith(".js"))) return "SERVICE_WORKER";
+        return null;
     }
 
     private static boolean isStaticAsset(RequestRecord record) {

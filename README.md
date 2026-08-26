@@ -1,6 +1,6 @@
-# FlowScope 1.2.0-beta.3
+# FlowScope 1.2.0-beta.4
 
-FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 현재는 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답에서 참조됐지만 아직 요청하지 않은 경로를 별도 후보로 제시하는 기능은 구현 전 계획 단계입니다.
+FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
 ```text
 신원 ──접근──▶ 객체 ──호출──▶ 작업
@@ -17,12 +17,14 @@ USER B        orders:101      GET /api/orders/{id}
 - 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 성공 응답 확인 전 `UNVERIFIED`, 쿠키 회전, 만료·의심 상태, 계정별 ZAP/LLM 요청을 지원
 - query, 요청 본문, 마스킹된 요청·응답, timestamp, redirect, GraphQL operation, 응답→요청 데이터 흐름 수집
 - Evidence 보존형 트래픽 분류. `INCLUDE`만 메인 3-way 비교에 사용하고, 애매한 `REVIEW`는 별도 검토 대기로 보존하며, 고신뢰 보조 트래픽은 `EXCLUDE`로 기본 숨김
+- classifier v3가 web manifest·source map·service worker를 탐색 메타데이터로 분리하고, 같은 service·정규화 operation의 명시적 API Evidence로 애매한 형제 관측을 교차 보강
+- exact-scope HTML link/form, redirect `Location`, robots/sitemap, web manifest, 보수적 JavaScript URL literal, 대상에서 관측한 OpenAPI와 응답 없는 Burp Site Map 항목으로 미요청 route 후보 생성. 후보는 실제 요청·응답 전까지 coverage·gap·verdict·finding을 바꾸지 않음
 - `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` 인증 상태. 연결되지 않은 회전 쿠키가 그래프 신원을 폭증시키지 않으며, 확인된 계정 연결은 서비스 경계를 유지
 - Codex·Claude Code 구독형 클라이언트용 localhost 전용 인증 MCP 서버
 - 시스템 소유 신원 격리 ZAP 캠페인: 비로그인과 선택한 ACTIVE 계정마다 fresh ZAP session → Traditional Spider → strict Client Spider(AJAX fallback) → passive queue 완료 → native alert. Active Scan은 별도 승인 필요
 - exact scope FlowScope 요청 도구를 통한 closed-world LLM 실행. 직접 외부 트래픽은 최종 판정의 결정적 Evidence로 신뢰하지 않음
 - 서버가 강제하는 독립 Explorer 시야, 불변 3-lane dataset lock, 최종 LLM Judge 종합
-- 기존 Burp Proxy history 원클릭 가져오기, 실제 반복 횟수를 보존하는 중복 억제, 네트워크를 사용하지 않는 온보딩 샘플
+- 기존 Burp Proxy history 원클릭 가져오기. 같은 동작에서 응답 없는 exact-scope Site Map 항목은 미요청 route 후보로 가져오고, 실제 반복 횟수를 보존해 중복을 억제. 네트워크를 사용하지 않는 온보딩 샘플 포함
 - 계정·세션 연결, 정책, LLM assessment, 서버 검증 최종 verdict, 사람 감사 판정을 보존하는 마스킹된 버전형 `.flowscope.json` 저장·불러오기
 - 명시적 사람 검증을 위해 마스킹된 미전송 Repeater 초안을 여는 Evidence handoff
 - 반복 재현·허가된 정상 대조 관측을 요구하는 Evidence-bound LLM 검증과 사람 감사·오버라이드
@@ -44,7 +46,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 mvn clean verify
 ```
 
-빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.3.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
+빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.4.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
 
 ## 저장소 구조
 
@@ -152,7 +154,7 @@ ZAP API endpoint는 loopback 주소만 허용합니다. ZAP의 대상 트래픽�
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, MCP 연결 복사, Proxy history 가져오기, 프로젝트 저장·불러오기, 샘플, 초기화, 정본 로컬 Web 작업면 열기
 - **Web 상단 모드** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
 - **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 가명 세션·역할, 3-way gap, 그래프 판정 제어
-- **Flow Graph** — 고정된 `identity → resource → operation` 열, 객체 식별자가 없는 경우 `identity → operation` 직접 edge, HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L 평행 overlay, 별도 인가 판정 view, focus+context 선택, 화면 맞춤, 18개 단위 객체·API 그룹 펼치기
+- **Flow Graph** — 고정된 `identity → resource → operation` 열, 객체 식별자가 없는 경우 `identity → operation` 직접 edge, HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L 평행 overlay, 관측과 분리된 중립색·점선 테두리의 미요청 route 후보, 별도 인가 판정 view, focus+context 선택, 화면 맞춤, 18개 단위 객체·API 그룹 펼치기
 - **판정 매트릭스** — 관측된 `identity/role × operation × resource` cell, source별 verdict, 미교차 조합, 일부만 발견, 불일치
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
 - **시나리오** — 결정론적 BOLA/BFLA 후보·gap, 비최종 Judge assessment, 서버 검증 최종 verdict
@@ -199,6 +201,7 @@ MCP와 Web 서버는 `127.0.0.1`에만 bind하고 Host·Origin을 검증하며, 
 - `ACTIVE`는 자격증명이 포함된 캡처에서 401·로그인 redirect·invalid-token이 아닌 HTTP 응답을 관측했다는 범용 transport 증거입니다. 서비스 고유 `/me` 의미나 계정 소유를 자동 증명하지 않으므로 실제 역할·계정 연결은 운영자가 확인해야 합니다.
 - 안정 신호가 없는 opaque 회전 token은 자동 상관할 수 없습니다. 운영자가 확인된 fingerprint를 등록 계정에 명시적으로 연결할 수 있습니다.
 - Fetch Metadata와 MIME은 없거나 잘못될 수 있고 business API가 document·asset·telemetry와 비슷할 수 있습니다. 분류기는 여러 고신뢰 신호가 합치할 때만 제외하고 애매한 요청을 메인 그래프 밖 `REVIEW`로 보존하며 이유와 reversible override를 제공합니다. `REVIEW`를 확인하지 않으면 실제 API가 메인 비교에서 빠질 수 있으므로 트래픽 노이즈를 완벽하게 분류한다고 주장하지 않습니다.
+- 미요청 route는 저장된 8KiB 이내 응답과 응답 없는 Burp Site Map 항목에서 최대 20,000개까지 추출합니다. 동적으로 조합된 JavaScript URL, 클라이언트 실행으로만 생기는 경로, 대상 밖 문서는 추측하지 않으므로 후보 목록도 전체 공격면이 아닙니다. 후보 우선순위는 공개된 범주형 근거이며 확률이나 취약성 점수가 아닙니다.
 - 데이터 흐름은 제한된 exact-value matching이며 완전한 semantic taint analysis가 아닙니다.
 - Repeater handoff는 저장된 마스킹 요청을 사용하며 자동 전송하지 않습니다. 결정적 자동 validation은 Repeater나 직접 8082 트래픽이 아니라 FlowScope 통제 MCP 요청만 사용합니다.
 - closed-world 실행은 제공된 agent workspace의 instruction·tool 계약입니다. 별도로 개조한 에이전트 설치나 다른 로컬 process를 통제하지는 못합니다. 서버의 scope·Evidence 시야·verdict gate가 최종 권위입니다.

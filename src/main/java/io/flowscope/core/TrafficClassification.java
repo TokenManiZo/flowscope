@@ -9,6 +9,7 @@ public record TrafficClassification(TrafficClass trafficClass, Disposition dispo
         API,
         NAVIGATION,
         STATIC_ASSET,
+        DISCOVERY_METADATA,
         PREFLIGHT,
         TELEMETRY_CANDIDATE,
         BACKGROUND,
