@@ -4,6 +4,9 @@
 
 ## 1.2.0-beta.3 — 2026-08-25
 
+- 비로그인과 복수 ACTIVE 계정을 fresh ZAP session으로 순차 격리하고 신원별 수집·Alert 상태를 표시하는 SYSTEM scanner campaign 추가. 계정 레인은 기존 인증값을 제거한 뒤 broker 세션만 주입하고 신원 하나라도 실패하면 SCANNER 완료 gate를 열지 않음
+- 로그인 캡처가 성공 응답을 확인하기 전에는 `UNVERIFIED`로 유지하고 같은 서비스의 계정 두 개를 동시에 캡처하지 못하게 함. Web 계정 카드와 종료 메시지에 재캡처 이유 표시
+- LLM run의 `account_id`를 통제 executor까지 전달하는 회귀를 고정하고, FlowScope Web loopback 제어면을 ZAP target 목록과 시작 API에서 제외
 - 거부·HEAD 응답의 owner 필드가 소유자 oracle을 오염시키는 경로를 차단하고, 로그인 redirect를 정확한 경로 세그먼트로 제한하며, 대상 객체 ID 없는 owner 문자열만으로 BOLA Evidence를 확정하지 않도록 판정 gate 강화
 - 관측 0건에서는 분석 패널 대신 exact scope → HUMAN pass → ZAP 기준선 → LLM Explorer/Judge 순서와 시작 조작만 보여 주고, Evidence가 생기면 기존 분석 작업면으로 전환
 - 공개 `target/`에서 Shade 중간 `original-*` JAR을 제거하고, 연속 package에서도 동일한 Burp fat JAR 하나만 남도록 빌드 검증 추가
@@ -22,7 +25,7 @@
 - MCP 서버에서 독립 Explorer 시야를 강제하고 불변 Judge dataset lock 전에 HUMAN/SCANNER/LLM의 정확한 완료를 요구
 - lock 이후 통제 probe/control Evidence는 현재 저장소에서 읽고 후보·인가 oracle은 고정 snapshot에서 읽도록 실제 validation 순서 수정
 - Traditional Spider, strict Client Spider(AJAX fallback), passive queue 완료, native alert, zero-capture 실패 gate를 사용하는 결정론적 SYSTEM ZAP 기준선 추가
-- Web 빠른 시작에 HUMAN session 제어와 ZAP target/account/progress 제어를 추가하고 긴 문자열 대응 개선
+- Web 빠른 시작에 HUMAN session 제어와 ZAP target/복수 account/신원별 progress 제어를 추가하고 긴 문자열 대응 개선
 - 중단된 exploration record로 완료를 추론하지 않고 명시적 완료 lane metadata를 저장. raw broker session은 저장하지 않음
 - 직접 curl/proxy 안내를 제거하고 외부 검색·직접 대상 네트워킹을 금지하는 closed-world Explorer/Judge prompt로 교체
 - 모든 동작 변경에 이유·영향 파일·검증·한계·release gate를 기록하는 상세 개발 로그와 저장소 문서 계약 추가

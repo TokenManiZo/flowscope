@@ -57,6 +57,26 @@ class ZapClientTest {
         }
     }
 
+    @Test
+    void createsAFreshZapSessionForEachIsolatedIdentityRun() throws Exception {
+        AtomicReference<String> query = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/JSON/core/action/newSession/", exchange -> {
+            query.set(exchange.getRequestURI().getRawQuery());
+            reply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.start();
+        try {
+            ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
+
+            assertEquals("{\"Result\":\"OK\"}", client.newSession("flowscope-campaign-user-a"));
+            assertTrue(query.get().contains("name=flowscope-campaign-user-a"));
+            assertTrue(query.get().contains("overwrite=true"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private static void reply(com.sun.net.httpserver.HttpExchange exchange, String value) throws java.io.IOException {
         byte[] body = value.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(200, body.length);

@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -21,7 +22,11 @@ import java.util.UUID;
  * and are discarded when a session is replaced, revoked, or the extension unloads.
  */
 public final class SessionBroker implements AutoCloseable {
-    public enum Status { CAPTURING, ACTIVE, SUSPECT, REAUTH_REQUIRED, REVOKED }
+    public enum Status { CAPTURING, ACTIVE, UNVERIFIED, SUSPECT, REAUTH_REQUIRED, REVOKED }
+
+    private static final Set<String> MANAGED_HEADER_NAMES = Set.of(
+            "Authorization", "Cookie", "Proxy-Authorization",
+            "X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken");
 
     public record SessionView(String handle, String accountId, String accountLabel, String service,
                               Status status, Instant createdAt, Instant lastUsedAt, Instant expiresAtHint,
@@ -66,6 +71,7 @@ public final class SessionBroker implements AutoCloseable {
         final Map<CookieKey, StoredCookie> cookies = new LinkedHashMap<>();
         final Map<String, Secret> headers = new LinkedHashMap<>();
         Instant lastUsedAt;
+        boolean responseConfirmed;
         Status status = Status.CAPTURING;
         boolean capturing = true;
 
@@ -92,6 +98,15 @@ public final class SessionBroker implements AutoCloseable {
     public synchronized String beginCapture(AccountProfile account, Instant now) {
         if (account == null) throw new IllegalArgumentException("account is required");
         Instant time = now == null ? Instant.now() : now;
+        byHandle.values().stream()
+                .filter(session -> session.capturing
+                        && session.account.service().equals(account.service())
+                        && !session.account.id().equals(account.id()))
+                .findFirst()
+                .ifPresent(session -> {
+                    throw new IllegalStateException("같은 서비스에서 이미 로그인 캡처 중인 계정이 있습니다: "
+                            + session.account.id());
+                });
         String existing = handleByAccount.remove(account.id());
         if (existing != null) revoke(existing);
         String handle = "session-" + UUID.randomUUID();
@@ -104,7 +119,8 @@ public final class SessionBroker implements AutoCloseable {
     public synchronized void endCapture(String handle) {
         ManagedSession session = required(handle);
         session.capturing = false;
-        session.status = hasMaterial(session, Instant.now()) ? Status.ACTIVE : Status.REAUTH_REQUIRED;
+        if (!hasMaterial(session, Instant.now())) session.status = Status.REAUTH_REQUIRED;
+        else session.status = session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
     }
 
     public synchronized Optional<String> activeCaptureForService(String service) {
@@ -126,7 +142,10 @@ public final class SessionBroker implements AutoCloseable {
         String cookieHeader = header(requestHeaders, "Cookie");
         if (cookieHeader != null) captureRequestCookies(session, target, cookieHeader, time);
         session.lastUsedAt = time;
-        if (hasMaterial(session, time)) session.status = session.capturing ? Status.CAPTURING : Status.ACTIVE;
+        if (hasMaterial(session, time)) {
+            session.status = session.capturing ? Status.CAPTURING
+                    : session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
+        }
     }
 
     public synchronized void observeResponse(String handle, URI target, int status, String location, String body,
@@ -141,7 +160,10 @@ public final class SessionBroker implements AutoCloseable {
         if (!hasMaterial(session, time)) session.status = Status.REAUTH_REQUIRED;
         else if (status == 401 || isLoginRedirect(status, location)
                 || containsInvalidToken(body)) session.status = Status.SUSPECT;
-        else if (!session.capturing) session.status = Status.ACTIVE;
+        else {
+            if (status >= 200 && status < 500) session.responseConfirmed = true;
+            if (!session.capturing) session.status = session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
+        }
     }
 
     public synchronized Map<String, String> headersForAccount(String accountId, URI target,
@@ -184,6 +206,9 @@ public final class SessionBroker implements AutoCloseable {
         }
         return handle;
     }
+
+    /** Managed SCANNER requests remove these values before optional account injection. */
+    public static Set<String> managedHeaderNames() { return MANAGED_HEADER_NAMES; }
 
     public synchronized Optional<String> accountForHandle(String handle) {
         ManagedSession session = byHandle.get(handle);

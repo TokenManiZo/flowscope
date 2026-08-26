@@ -2,6 +2,9 @@
 
 ## 1.2.0-beta.3 — 2026-08-25
 
+- Added a SYSTEM scanner campaign that isolates anonymous and multiple ACTIVE accounts with a fresh ZAP session per identity, reports per-identity capture/alert state, replaces account-lane authentication from the broker, and keeps the SCANNER completion gate closed if any identity fails.
+- Kept login captures `UNVERIFIED` until a non-suspicious response is observed, prevented simultaneous same-service account capture, and surfaced recapture guidance in the Web account workflow.
+- Locked LLM `account_id` propagation to the controlled executor with regression coverage and excluded the FlowScope Web loopback control plane from ZAP targets.
 - Hardened the authorization oracle so denied or HEAD response owner fields cannot establish ownership, login redirects require exact path segments, and an owner string without the target object ID cannot satisfy BOLA object Evidence.
 - Replaced the zero-Evidence analysis dashboard with an action-first exact-scope → HUMAN pass → ZAP baseline → LLM Explorer/Judge onboarding state, then reveals the existing analysis workspace once Evidence exists.
 - Removed the Shade `original-*` intermediate from the public `target/` surface and made repeated package runs leave one identical Burp fat JAR.
@@ -20,7 +23,7 @@
 - Enforced independent Explorer visibility on the MCP server and required exact HUMAN/SCANNER/LLM completion before an immutable Judge dataset lock.
 - Fixed the real post-lock validation order so new controlled probe/control Evidence is read from current storage while candidates and authorization oracles remain locked.
 - Added a deterministic SYSTEM ZAP baseline using Traditional Spider, strict Client Spider with AJAX fallback, passive queue completion, native alerts, and a zero-capture failure gate.
-- Added Web quick-start session controls and ZAP target/account/progress controls with responsive long-text handling.
+- Added Web quick-start session controls and ZAP target/multiple-account/per-identity progress controls with responsive long-text handling.
 - Persisted explicit completed-lane metadata without inferring completion from interrupted exploration records; raw broker sessions remain non-persistent.
 - Replaced direct curl/proxy agent guidance with closed-world Explorer/Judge prompts that prohibit external search and direct target networking.
 - Added a detailed development log and repository-wide documentation contract so each behavior change records its reason, affected files, verification, limitations, and release/gate impact.

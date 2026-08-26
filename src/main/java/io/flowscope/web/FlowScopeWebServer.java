@@ -50,7 +50,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         RequestRecord openInRepeater(String evidenceId);
         default SessionBroker sessions() { return null; }
         default List<String> scopeEntries() { return List.of(); }
-        default com.fasterxml.jackson.databind.JsonNode startScanner(String target, String accountId) {
+        default com.fasterxml.jackson.databind.JsonNode startScanner(String target, List<String> accountIds,
+                                                                     boolean includeAnonymous) {
             throw new UnsupportedOperationException("scanner workflow is unavailable");
         }
         default com.fasterxml.jackson.databind.JsonNode scannerStatus() {
@@ -429,7 +430,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (action.equals("end")) {
                 broker.endCapture(handle);
                 state.rebuild();
-                return success(account.label() + " 로그인 캡처를 종료했습니다.");
+                SessionBroker.Status status = broker.viewForAccount(accountId).orElseThrow().status();
+                String message = status == SessionBroker.Status.ACTIVE
+                        ? account.label() + " 세션을 ACTIVE로 확인했습니다."
+                        : account.label() + " 세션은 " + status
+                        + "입니다. 인증된 페이지의 성공 응답까지 HUMAN 8080에서 관측한 뒤 다시 캡처하세요.";
+                return success(message);
             }
             if (action.equals("revoke")) {
                 broker.revoke(handle);
@@ -444,18 +450,42 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (request.method().equals("GET")) {
             ObjectNode body = json.createObjectNode();
             body.set("run", state.scannerStatus());
-            body.set("scope", json.valueToTree(state.scopeEntries()));
+            body.set("scope", json.valueToTree(state.scopeEntries().stream()
+                    .filter(entry -> !isOwnControlPlane(entry)).toList()));
             return json(200, body);
         }
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
             String target = required(form, "target");
-            String account = form.getOrDefault("account", "").trim();
+            if (isOwnControlPlane(target)) {
+                throw new IllegalArgumentException("FlowScope Web 제어면은 스캐너 대상이 될 수 없습니다.");
+            }
+            String rawAccounts = form.getOrDefault("accounts", form.getOrDefault("account", ""));
+            List<String> accounts = java.util.Arrays.stream(rawAccounts.split(","))
+                    .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
+            boolean anonymous = form.containsKey("anonymous")
+                    ? Boolean.parseBoolean(form.get("anonymous")) : accounts.isEmpty();
+            if (!anonymous && accounts.isEmpty()) {
+                throw new IllegalArgumentException("비로그인 또는 하나 이상의 활성 계정을 선택하세요.");
+            }
             ObjectNode body = json.createObjectNode();
-            body.set("run", state.startScanner(target, account.isBlank() ? null : account));
+            body.set("run", state.startScanner(target, accounts, anonymous));
             return json(202, body);
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    private boolean isOwnControlPlane(String value) {
+        try {
+            URI uri = URI.create(value);
+            String host = uri.getHost();
+            int targetPort = uri.getPort() >= 0 ? uri.getPort()
+                    : "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+            return targetPort == port() && host != null && (host.equalsIgnoreCase("localhost")
+                    || host.equals("127.0.0.1") || host.equals("::1"));
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private LoopbackHttpServer.Response identityReset(LoopbackHttpServer.Request request) throws IOException {

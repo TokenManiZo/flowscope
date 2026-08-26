@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import io.flowscope.core.*;
 import io.flowscope.integration.McpServer;
+import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.ZapClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -233,13 +235,24 @@ final class McpServerTest {
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<McpServer.TargetRequest> captured = new AtomicReference<>();
         AtomicReference<ScopePolicy> scope = new AtomicReference<>(ScopePolicy.parse("https://api.example.test/v1"));
+        AnalysisConfig config = new AnalysisConfig();
+        AccountProfile account = new AccountProfile("user-a", "USER A", "https://api.example.test", AccessRole.USER);
+        config.upsertAccount(account);
+        SessionBroker sessions = new SessionBroker();
+        String handle = sessions.beginCapture(account, java.time.Instant.now());
+        sessions.observeRequest(handle, URI.create("https://api.example.test/login"),
+                java.util.Map.of("Authorization", "Bearer raw-user-a"), java.time.Instant.now());
+        sessions.observeResponse(handle, URI.create("https://api.example.test/v1/account"), 200,
+                null, "{}", List.of(), java.time.Instant.now());
+        sessions.endCapture(handle);
         server = new McpServer(new McpServer.State() {
             @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
             @Override public ScopePolicy scope() { return scope.get(); }
             @Override public void updateScope(String value) { scope.set(ScopePolicy.parse(value)); }
             @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
             @Override public RunContextRegistry contexts() { return contexts; }
-            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public AnalysisConfig config() { return config; }
+            @Override public SessionBroker sessions() { return sessions; }
             @Override public boolean approve(String action, String target) { return false; }
             @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
                 captured.set(request);
@@ -250,7 +263,8 @@ final class McpServerTest {
         }, 0, "test-token");
         server.start();
         assertFalse(tool("flowscope_begin_llm_run",
-                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"explore-1\"}")
+                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"explore-1\","
+                        + "\"account_id\":\"user-a\"}")
                 .at("/result/isError").asBoolean());
 
         JsonNode accepted = tool("flowscope_target_request",
@@ -258,6 +272,7 @@ final class McpServerTest {
                         "\"headers\":{\"Accept\":\"application/json\"}}");
         assertFalse(accepted.at("/result/isError").asBoolean(), accepted.toString());
         assertEquals("https://api.example.test/v1/orders", captured.get().target());
+        assertEquals("user-a", captured.get().accountId());
         assertFalse(accepted.toString().contains("raw-secret"));
         assertFalse(accepted.toString().contains("raw-token"));
         assertEquals("CONTROLLED", accepted.at("/result/structuredContent/execution_trust").asText());
@@ -323,8 +338,21 @@ final class McpServerTest {
 
     @Test
     void deterministicZapBaselineRunsBothSpidersWaitsForPassiveAndPublishesAlerts() throws Exception {
+        RunContextRegistry contexts = new RunContextRegistry();
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human");
+        complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm");
+        AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
+                laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"1\"}"));
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            List<RequestRecord> copy = new ArrayList<>(records.get());
+            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
+                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
+            records.set(copy);
+            zapReply(exchange, "{\"scan\":\"1\"}");
+        });
         zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
@@ -335,16 +363,9 @@ final class McpServerTest {
                 "{\"alerts\":[{\"name\":\"test alert\",\"evidence\":\"token=raw-alert-secret\"}]}"));
         zapServer.start();
         try {
-            RunContextRegistry contexts = new RunContextRegistry();
-            complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human");
-            complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm");
-            RequestRecord scannerRecord = observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, "zap-baseline-1");
-            AtomicReference<Pipeline.Result> result = new AtomicReference<>(Pipeline.run(List.of(
-                    scannerRecord, laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
             ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
             server = new McpServer(new McpServer.State() {
-                @Override public Pipeline.Result snapshot() { return result.get(); }
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(records.get()); }
                 @Override public ScopePolicy scope() { return ScopePolicy.parse("http://127.0.0.1:8888/"); }
                 @Override public void updateScope(String value) {}
                 @Override public ZapClient zap() { return zap; }
@@ -375,6 +396,115 @@ final class McpServerTest {
             assertFalse(alerts.toString().contains("raw-alert-secret"));
         } finally {
             zapServer.stop(0);
+        }
+    }
+
+    @Test
+    void scannerCampaignResetsZapAndRunsAnonymousThenEachActiveAccount() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>());
+        AtomicReference<List<String>> seenAccounts = new AtomicReference<>(new ArrayList<>());
+        AtomicReference<List<String>> zapSessions = new AtomicReference<>(new ArrayList<>());
+        AtomicBoolean omitUserBTraffic = new AtomicBoolean(true);
+        SessionBroker sessions = new SessionBroker();
+        AnalysisConfig config = new AnalysisConfig();
+        for (String accountId : List.of("user-a", "user-b")) {
+            AccountProfile account = new AccountProfile(accountId, accountId.toUpperCase(), target, AccessRole.USER);
+            config.upsertAccount(account);
+            String handle = sessions.beginCapture(account, java.time.Instant.now());
+            sessions.observeRequest(handle, URI.create(target + "login"),
+                    java.util.Map.of("Authorization", "Bearer " + accountId), java.time.Instant.now());
+            sessions.observeResponse(handle, URI.create(target + "account"), 200, null, "{}", List.of(),
+                    java.time.Instant.now());
+            sessions.endCapture(handle);
+        }
+
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> {
+            List<String> copy = new ArrayList<>(zapSessions.get());
+            copy.add(exchange.getRequestURI().getRawQuery());
+            zapSessions.set(copy);
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            String account = context.accountId() == null ? "anonymous" : context.accountId();
+            List<String> seen = new ArrayList<>(seenAccounts.get());
+            seen.add(account);
+            seenAccounts.set(seen);
+            if (!(omitUserBTraffic.get() && account.equals("user-b"))) {
+                List<RequestRecord> copy = new ArrayList<>(records.get());
+                copy.add(observation(Source.SCANNER, account, 200, "{}",
+                        SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
+                records.set(copy);
+            }
+            zapReply(exchange, "{\"scan\":\"1\"}");
+        });
+        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
+        zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
+                "{\"status\":{\"state\":\"COMPLETED\"}}"));
+        zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
+                "{\"recordsToScan\":\"0\"}"));
+        zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange, "{\"alerts\":[]}"));
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new McpServer(new McpServer.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(records.get()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public void updateScope(String value) {}
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public AnalysisConfig config() { return config; }
+                @Override public SessionBroker sessions() { return sessions; }
+                @Override public boolean approve(String action, String value) { return false; }
+            }, 0, "test-token");
+            server.start();
+
+            JsonNode failedStart = tool("flowscope_zap_baseline", "{\"target\":\"" + target
+                    + "\",\"run_id\":\"campaign-1\",\"include_anonymous\":true,"
+                    + "\"account_ids\":[\"user-a\",\"user-b\"]}");
+            assertFalse(failedStart.at("/result/isError").asBoolean(), failedStart.toString());
+            JsonNode failedStatus = null;
+            for (int i = 0; i < 200; i++) {
+                failedStatus = tool("flowscope_zap_baseline_status", "{}");
+                if (!"RUNNING".equals(failedStatus.at("/result/structuredContent/status").asText())) break;
+                Thread.sleep(10);
+            }
+            assertNotNull(failedStatus);
+            assertEquals("FAILED", failedStatus.at("/result/structuredContent/status").asText(),
+                    failedStatus.toString());
+            assertEquals("FAILED", failedStatus.at("/result/structuredContent/lanes/2/status").asText());
+            assertEquals(List.of("anonymous", "user-a", "user-b"), seenAccounts.get());
+            assertEquals(3, zapSessions.get().size());
+            assertFalse(contexts.completedExplorations().contains(Source.SCANNER));
+            assertNull(contexts.current(Source.SCANNER));
+
+            omitUserBTraffic.set(false);
+            seenAccounts.set(new ArrayList<>());
+            JsonNode started = tool("flowscope_zap_baseline", "{\"target\":\"" + target
+                    + "\",\"run_id\":\"campaign-2\",\"include_anonymous\":true,"
+                    + "\"account_ids\":[\"user-a\",\"user-b\"]}");
+            assertFalse(started.at("/result/isError").asBoolean(), started.toString());
+            JsonNode status = null;
+            for (int i = 0; i < 200; i++) {
+                status = tool("flowscope_zap_baseline_status", "{}");
+                if (!"RUNNING".equals(status.at("/result/structuredContent/status").asText())) break;
+                Thread.sleep(10);
+            }
+            assertNotNull(status);
+            assertEquals("COMPLETED", status.at("/result/structuredContent/status").asText(), status.toString());
+            assertEquals(List.of("anonymous", "user-a", "user-b"), seenAccounts.get());
+            assertEquals(6, zapSessions.get().size());
+            assertEquals(3, status.at("/result/structuredContent/lanes").size());
+            assertEquals("user-b", status.at("/result/structuredContent/lanes/2/account_id").asText());
+            assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
+            assertNull(contexts.current(Source.SCANNER));
+        } finally {
+            zapServer.stop(0);
+            sessions.close();
         }
     }
 

@@ -240,10 +240,17 @@ public final class FlowScopeExtension implements BurpExtension {
                 return request;
             }
             RunContextRegistry.Context context = runContexts.current(profile.source());
-            if (context == null || context.accountId() == null) return request;
+            if (context == null) return request;
             HttpRequest prepared = request;
-            for (Map.Entry<String, String> header : sessionBroker.headersForAccount(context.accountId(), target,
-                    scope, java.time.Instant.now()).entrySet()) {
+            for (String header : SessionBroker.managedHeaderNames()) {
+                if (profile.source() == Source.SCANNER && context.accountId() == null
+                        && !header.equalsIgnoreCase("Authorization")
+                        && !header.equalsIgnoreCase("Proxy-Authorization")) continue;
+                prepared = prepared.withRemovedHeader(header);
+            }
+            Map<String, String> sessionHeaders = context.accountId() == null ? Map.of()
+                    : sessionBroker.headersForAccount(context.accountId(), target, scope, java.time.Instant.now());
+            for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
                 prepared = prepared.withUpdatedHeader(header.getKey(), header.getValue());
             }
             return prepared;
@@ -701,9 +708,11 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public RunContextRegistry contexts() { return runContexts; }
             @Override public SessionBroker sessions() { return sessionBroker; }
             @Override public List<String> scopeEntries() { return scope.entries(); }
-            @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target, String accountId) {
+            @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
+                                                                                   List<String> accountIds,
+                                                                                   boolean includeAnonymous) {
                 if (mcpServer == null) throw new IllegalStateException("MCP/스캐너 제어면이 아직 준비되지 않았습니다.");
-                return mcpServer.startDeterministicZapBaseline(target, accountId);
+                return mcpServer.startDeterministicZapCampaign(target, accountIds, includeAnonymous);
             }
             @Override public com.fasterxml.jackson.databind.JsonNode scannerStatus() {
                 return mcpServer == null

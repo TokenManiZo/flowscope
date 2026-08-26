@@ -157,6 +157,8 @@ final class FlowScopeWebServerTest {
         state.sessions.observeRequest(handle, URI.create(state.record.service + "/login"),
                 Map.of("Authorization", "Bearer raw-access-token", "Cookie", "sid=raw-cookie"),
                 java.time.Instant.now());
+        state.sessions.observeResponse(handle, URI.create(state.record.service + "/account"), 200,
+                null, "{\"id\":\"user-a\"}", List.of(), java.time.Instant.now());
         assertEquals(200, post("/api/session-capture", "action=end&account=user-a", token).statusCode());
 
         JsonNode snapshot = json(get("/api/snapshot", token, origin()));
@@ -170,8 +172,11 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void startsOnlyTheServerOwnedScannerWorkflowFromConfiguredScope() throws Exception {
+    void startsOneServerOwnedScannerCampaignForAnonymousAndSelectedAccounts() throws Exception {
         state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("user-b", "USER B", state.record.service, AccessRole.USER));
+        activateSession("user-a", "token-a");
+        activateSession("user-b", "token-b");
         state.rebuild();
         start();
 
@@ -180,12 +185,26 @@ final class FlowScopeWebServerTest {
         assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
 
         HttpResponse<String> started = post("/api/scanner-run", "target=" + encode(state.record.service + "/")
-                + "&account=user-a", token);
+                + "&anonymous=true&accounts=user-a%2Cuser-b", token);
         assertEquals(202, started.statusCode(), started.body());
         JsonNode body = JSON.readTree(started.body());
         assertEquals("RUNNING", body.at("/run/status").asText());
         assertEquals(state.record.service + "/", state.scannerTarget);
-        assertEquals("user-a", state.scannerAccount);
+        assertEquals(List.of("user-a", "user-b"), state.scannerAccounts);
+        assertTrue(state.scannerAnonymous);
+    }
+
+    @Test
+    void excludesItsOwnLoopbackControlPlaneFromScannerTargets() throws Exception {
+        start();
+        state.scannerScope = List.of(server.url());
+
+        JsonNode listed = json(get("/api/scanner-run", token, origin()));
+        assertEquals(0, listed.path("scope").size());
+        HttpResponse<String> rejected = post("/api/scanner-run",
+                "target=" + encode(server.url()) + "&anonymous=true", token);
+        assertEquals(400, rejected.statusCode());
+        assertTrue(rejected.body().contains("Web 제어면"));
     }
 
     @Test
@@ -297,6 +316,16 @@ final class FlowScopeWebServerTest {
         token = matcher.group(1);
     }
 
+    private void activateSession(String accountId, String token) {
+        AccountProfile account = state.config.account(accountId).orElseThrow();
+        String handle = state.sessions.beginCapture(account, java.time.Instant.EPOCH);
+        state.sessions.observeRequest(handle, URI.create(state.record.service + "/login"),
+                Map.of("Authorization", "Bearer " + token), java.time.Instant.EPOCH);
+        state.sessions.observeResponse(handle, URI.create(state.record.service + "/me"), 200, null,
+                "{\"id\":\"" + accountId + "\"}", List.of(), java.time.Instant.EPOCH);
+        state.sessions.endCapture(handle);
+    }
+
     private HttpResponse<String> get(String path, String capability, String origin) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path)).GET();
         if (capability != null) request.header("X-FlowScope-Token", capability);
@@ -329,7 +358,9 @@ final class FlowScopeWebServerTest {
         private final SessionBroker sessions = new SessionBroker();
         private final RequestRecord record;
         private volatile String scannerTarget = "";
-        private volatile String scannerAccount = "";
+        private volatile List<String> scannerScope;
+        private volatile List<String> scannerAccounts = List.of();
+        private volatile boolean scannerAnonymous;
         private volatile Pipeline.Result result;
 
         TestState() {
@@ -341,6 +372,7 @@ final class FlowScopeWebServerTest {
             record.hasResponse = true;
             record.timestamp = 1;
             records.add(record);
+            scannerScope = List.of(record.service + "/");
             rebuild();
         }
 
@@ -351,10 +383,11 @@ final class FlowScopeWebServerTest {
         @Override public List<ValidationDecision> validations() { return List.of(); }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public SessionBroker sessions() { return sessions; }
-        @Override public List<String> scopeEntries() { return List.of(record.service + "/"); }
-        @Override public JsonNode startScanner(String target, String accountId) {
+        @Override public List<String> scopeEntries() { return scannerScope; }
+        @Override public JsonNode startScanner(String target, List<String> accountIds, boolean includeAnonymous) {
             scannerTarget = target;
-            scannerAccount = accountId;
+            scannerAccounts = List.copyOf(accountIds);
+            scannerAnonymous = includeAnonymous;
             return JSON.createObjectNode().put("status", "RUNNING").put("stage", "TRADITIONAL_SPIDER");
         }
         @Override public JsonNode scannerStatus() {

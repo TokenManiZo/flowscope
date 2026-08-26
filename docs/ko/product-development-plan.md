@@ -54,6 +54,7 @@
 - standalone Web UI를 데스크톱 브라우저에서 1500×900과 좁은 폭으로 확인한다.
 - 그래프 필터, 노드 펼치기, Matrix, 시나리오, 계정/세션, Request/Response, sample/reset을 클릭 검증한다.
 - Burp Community에서 JAR load/unload, 3개 listener 수집, Proxy history, Repeater handoff, project round trip, MCP 연결을 검증한다.
+- 실제 로그인으로 USER A/B를 ACTIVE로 만든 뒤 비로그인→USER A→USER B ZAP fresh-session campaign, 신원별 수집/Alert, LLM account 주입을 검증한다.
 - 성공 기준: 브라우저 콘솔 오류 0, 잘린 핵심 조작 0, unload 후 포트 해제, 세 source가 실제 포트대로 분리된다.
 
 ### P5 — crAPI 블라인드 벤치마크
@@ -74,10 +75,10 @@
 
 ## 4. 2026-08-25 beta.3 구현 상태
 
-- P0~P3: 코드 구현 완료. Web UI 정본화, exact-scope 수집 차단, 구조적 마스킹, memory-only session broker, 통제 LLM 실행, Explorer 서버 격리, dataset lock, 시스템 ZAP baseline, 서버 검증 LLM verdict를 구현했다.
-- P4 브라우저 QA: beta.3 standalone UI에서 완료. 기존 1500×900, 900×700, 600×800 검증과 현재 분류 UI의 1024×768 검증에 더해, 1280×720 실제 0-Evidence 화면에서 행동 우선 onboarding, quick-start 모달, 샘플 뒤 분석 화면 전환, overflow 0, 콘솔 오류 0을 확인했다. 여섯 화면 전환, 파싱 행→Evidence 상세, 분류 override 조작 노출도 통과했다. Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
+- P0~P3: 코드 구현 완료. Web UI 정본화, exact-scope 수집 차단, 구조적 마스킹, memory-only session broker, 통제 LLM 실행, Explorer 서버 격리, dataset lock, 신원별 fresh-session 시스템 ZAP campaign, 서버 검증 LLM verdict를 구현했다.
+- P4 브라우저 QA: 기존 beta.3 standalone UI의 1500×900, 900×700, 600×800, 1024×768, 1280×720 검증은 통과했다. 이번 scanner control도 1280×720·600×800에서 비로그인 선택, 가로 overflow 0, 좁은 폭 modal scroll, 신원/target 미선택 버튼 비활성, warning/error 0을 확인했다. Standalone fixture에는 ACTIVE broker 계정이 없어 USER A/B 복수 chip 렌더는 HTML/API 계약까지만 통과했으며, Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
 - P4 Burp Community QA: beta.3의 올바른 이전 fat JAR 신규 load만 Community 2026.7.3 사용자 환경에서 통과했다. `original-*.jar` 선택 실패로 발견한 패키징 결함은 공개 JAR 단일화와 반복 package 동일성 검증으로 수정했다. 현재 재생성 JAR의 load/unload, suite tab/Web UI, listener 분류, session broker, controlled executor, Repeater, project round trip, 시스템 ZAP/Judge는 아직 통과 처리하지 않는다.
-- beta.3 수동 gate: 실제 Burp Community unload·suite tab/Web UI·브라우저 로그인 캡처·세션 주입·통제 LLM 요청·ZAP 2.17 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. 비파괴 분류·불확실 신원 안정화, 파싱 Evidence 진입, packaging 단일화, 빈 상태 onboarding은 구현·자동 회귀를 통과했다. Codex project-scoped MCP discovery는 신뢰 프로젝트 조건에서 확인했지만 실제 FlowScope 연결은 전체 workflow gate에 남는다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
+- beta.3 수동 gate: 실제 Burp Community unload·suite tab/Web UI·브라우저 `UNVERIFIED→ACTIVE` 로그인 캡처·비로그인/USER A/USER B 세션 주입·통제 LLM 요청·ZAP 2.17 fresh-session 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. 비파괴 분류·불확실 신원 안정화, 파싱 Evidence 진입, packaging 단일화, 빈 상태 onboarding은 구현·자동 회귀를 통과했다. Codex project-scoped MCP discovery는 신뢰 프로젝트 조건에서 확인했지만 실제 FlowScope 연결은 전체 workflow gate에 남는다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
 - HUMAN 탐색 경계: 로그인 캡처는 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖 scope 내 관측은 `BASELINE`으로 보존하되 `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 3-way coverage에 넣지 않는 수정을 구현했다. 자동 회귀 후 실제 Burp에서 로그인·pass 경계를 재확인해야 한다.
 - 분류 경계: `REVIEW`를 Evidence·검토 대기에 보존하면서 메인 graph·3-way gap 입력에서는 보류하고, UI 처분 필터와 수량을 `INCLUDE/REVIEW/EXCLUDE`로 분리했다. 1280×720 standalone의 필터·상세·overflow·console 검증은 통과했고, 실제 Burp 대상에서 REVIEW 승격·숨김 작업량은 beta gate와 blind benchmark에서 측정해야 한다.
 - 판정 경계: 거부/HEAD owner 오염, auth 부분문자열 redirect 오탐, owner-only 객체 Evidence를 차단했다. 불충분한 BOLA read 응답은 안전으로 폐기하지 않고 `UNDECIDED/INCONCLUSIVE`에 남긴다. 자동 회귀는 통과했으며 실제 Judge workflow는 beta gate다.

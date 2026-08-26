@@ -60,6 +60,8 @@ final class SessionBrokerTest {
         String handle = broker.beginCapture(account, Instant.EPOCH);
         broker.observeRequest(handle, URI.create("https://api.test/login"),
                 Map.of("Cookie", "session=first"), Instant.EPOCH);
+        broker.observeResponse(handle, URI.create("https://api.test/me"), 200, null,
+                "{\"id\":\"acct-a\"}", List.of(), Instant.EPOCH);
         broker.endCapture(handle);
 
         broker.observeResponse(handle, URI.create("https://api.test/admin"), 403, null,
@@ -88,6 +90,8 @@ final class SessionBrokerTest {
         broker.observeRequest(handle, URI.create("https://api.test/login"), Map.of(
                 "Authorization", "Bearer raw-secret-token",
                 "Cookie", "session=raw-secret-cookie"), Instant.EPOCH);
+        broker.observeResponse(handle, URI.create("https://api.test/me"), 200, null,
+                "{\"id\":\"acct-a\"}", List.of(), Instant.EPOCH);
         broker.endCapture(handle);
 
         String safe = broker.views().toString();
@@ -107,11 +111,53 @@ final class SessionBrokerTest {
         String handle = broker.beginCapture(account, Instant.EPOCH);
         broker.observeRequest(handle, URI.create("https://api.test/login"),
                 Map.of("Cookie", "session=secret; consent=yes"), Instant.EPOCH);
+        broker.observeResponse(handle, URI.create("https://api.test/me"), 200, null,
+                "{\"id\":\"acct-a\"}", List.of(), Instant.EPOCH);
         broker.endCapture(handle);
 
         assertEquals("acct-a", broker.accountForRequest(URI.create("https://api.test/orders"),
                 Map.of("Cookie", "theme=dark; consent=yes; session=secret"), Instant.ofEpochSecond(1)).orElseThrow());
         assertTrue(broker.accountForRequest(URI.create("https://api.test/orders"),
                 Map.of("Cookie", "consent=yes; session=other"), Instant.ofEpochSecond(1)).isEmpty());
+    }
+
+    @Test
+    void requiresANonSuspiciousResponseBeforeAClaimedLoginSessionBecomesActive() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile account = new AccountProfile("acct-a", "USER A",
+                "https://api.test:443", AccessRole.USER);
+        String handle = broker.beginCapture(account, Instant.EPOCH);
+        broker.observeRequest(handle, URI.create("https://api.test/login"),
+                Map.of("Authorization", "Bearer token-a"), Instant.EPOCH);
+
+        broker.endCapture(handle);
+
+        assertEquals(SessionBroker.Status.UNVERIFIED,
+                broker.viewForAccount("acct-a").orElseThrow().status());
+        assertThrows(IllegalStateException.class, () -> broker.headersForAccount("acct-a",
+                URI.create("https://api.test/me"), ScopePolicy.parse("https://api.test/"), Instant.EPOCH));
+    }
+
+    @Test
+    void preventsTwoAccountsFromCapturingTheSameServiceAtTheSameTime() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile accountA = new AccountProfile("acct-a", "USER A",
+                "https://api.test:443", AccessRole.USER);
+        AccountProfile accountB = new AccountProfile("acct-b", "USER B",
+                "https://api.test:443", AccessRole.USER);
+        broker.beginCapture(accountA, Instant.EPOCH);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> broker.beginCapture(accountB, Instant.EPOCH));
+
+        assertTrue(error.getMessage().contains("acct-a"));
+        assertTrue(broker.viewForAccount("acct-b").isEmpty());
+    }
+
+    @Test
+    void declaresEveryHeaderThatManagedRunsMustRemoveBeforeInjection() {
+        assertEquals(java.util.Set.of("Authorization", "Cookie", "Proxy-Authorization",
+                        "X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken"),
+                SessionBroker.managedHeaderNames());
     }
 }

@@ -94,6 +94,8 @@ orchestrator = SYSTEM 또는 HUMAN
 
 따라서 사용자는 비밀값을 직접 입력하는 대신, 자신이 만든 테스트 계정의 표시 이름·역할과 로그인 구간만 확인한다. FlowScope는 그 최소 입력을 ZAP/LLM 실행에 재사용한다.
 
+캡처 종료 시 자격증명은 있으나 성공 응답이 없으면 계정 카드를 `UNVERIFIED`로 표시한다. 이 상태를 ACTIVE처럼 숨겨 자동 실행하면 로그인 폼·실패 응답에서 우연히 본 Cookie를 실제 계정 세션으로 오인할 수 있다. 반대로 ACTIVE도 서비스 고유 인증 의미를 보편적으로 증명하는 값은 아니므로 역할과 계정 연결은 사용자가 확인한다.
+
 ## 7. 왜 LLM을 두 번 사용하는가
 
 ### Explorer: 독립적인 세 번째 선수
@@ -119,6 +121,10 @@ Traditional Spider
 ```
 
 Active Scan은 상태를 바꿀 수 있고 트래픽이 크므로 기본 baseline에서 분리하며 exact scope와 별도 Burp 승인을 요구한다. “ZAP 기능을 적게 쓴다”가 아니라 안전한 자동 기준선과 고위험 능동 스캔의 승인 경계를 분리한 것이다.
+
+비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 fresh ZAP session을 만든다. 화면은 각 신원의 상태·수집 수·Alert 수를 따로 보여 준다. 계정 레인은 broker 자격증명으로 완전 교체하고, 비로그인 레인은 fresh session 안에서 새로 생긴 익명 Cookie/CSRF를 유지해 상태형 공개 흐름을 끊지 않는다.
+
+FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 숨기고 시작 요청을 거부한다. 모든 localhost를 막으면 crAPI 같은 로컬 허가 대상을 점검할 수 없으므로 현재 Web port만 제어면으로 판별한다.
 
 ## 9. 발표 시연 순서
 

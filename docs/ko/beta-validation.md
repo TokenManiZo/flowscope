@@ -6,16 +6,17 @@
 
 | 구분 | 결과 |
 |---|---|
-| 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 137 tests, 실패·오류·skip 0 |
-| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,815,952 bytes, SHA-256 `72afef648e657ae36a2dcac75f298e69c43a475f0af666870a4fdcd2fb8eb51b` |
-| JAR 무결성 | ZIP 무결성 통과, 1,295 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
+| 자동 회귀 | JDK 21.0.12, Java `--release 21`로 `mvn clean verify`, 144 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,823,288 bytes, SHA-256 `58d5f982270ca5c868e147f5de420ef82a8a1eaf2d32509730353d4c367a41c7` |
+| JAR 무결성 | ZIP 무결성 통과, 1,297 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
 | 배포 계약 | 공개 `target/*.jar` 정확히 1개, 반복 package 크기·SHA-256 동일, Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
-| Session Broker | 계정별 명시적 로그인 캡처, Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
+| Session Broker | successful response 전 `UNVERIFIED`, 같은-service 동시 캡처 거부, 계정별 Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
 | 실행 신뢰도 | `CONTROLLED`, `OBSERVED`, `UNVERIFIED_RUNTIME`, `IMPORTED`, `UNKNOWN` 구분과 최종 판정 gate 검증 |
-| LLM Explorer | 실행 중 다른 lane·후보·gap·finding 격리, exact-scope controlled request, 쓰기 확인, broker 소유 헤더와 CR/LF 거부 |
+| LLM Explorer | 실행 중 다른 lane·후보·gap·finding 격리, exact-scope controlled request, run `account_id`의 executor 전달, 쓰기 확인, broker 소유 헤더와 CR/LF 거부 |
 | Dataset lock | HUMAN·SCANNER·LLM의 성공한 response-bearing exploration을 요구하고 빈 lane·active run·scope 변경 거부 |
 | LLM Judge | lock 이후 후보/오라클 고정, 실제 validation Evidence 추가, 저장 후 복원 시 pre-Judge snapshot 재구성, 서버 권위 verdict 검증 |
-| ZAP baseline | Traditional Spider → Client Spider → AJAX fallback → passive queue drain → native alerts 순서와 실패/상태/alert 마스킹 검증 |
+| ZAP campaign | 비로그인 → USER A → USER B 순서, 신원별 `core/newSession`, account context 전환, Traditional Spider → Client Spider → AJAX fallback → passive queue drain → native alerts, zero-capture/실패 gate와 alert 마스킹 검증 |
+| Web scanner guard | 비로그인·복수 ACTIVE 계정 form contract, 신원별 상태 JSON, 현재 FlowScope Web loopback port의 target 목록 제외와 시작 거부 검증 |
 | 프로젝트 | raw session 미저장, 명시적 완료 lane 저장, 중단된 기록으로 완료 상태를 추론하지 않음 |
 | Traffic classification | `INCLUDE`만 main coverage, `REVIEW` 검토 대기, `EXCLUDE` 기본 숨김으로 상호 배타 집계, operation override, no Evidence deletion, classifier version persistence |
 | Identity 안정화 | `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`, 1,000 rotating cookies의 graph identity 폭증 방지, 명시 binding 보존 |
@@ -37,6 +38,8 @@
 - 실제 0-Evidence 입력으로 1280×720 standalone 빈 상태를 확인했다. 분석 rail·stage·detail은 숨겨지고 네 단계와 빠른 시작·샘플 조작만 보였으며, quick-start 모달이 열리고 샘플 뒤 기존 분석 화면으로 전환됐다. body overflow와 console error는 0이었다.
 
 Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Community의 실제 suite tab 동작을 대신하지 않는다.
+
+신원별 scanner control은 1280×720과 600×800 standalone에서 비로그인 선택 상태를 실제 렌더했다. 두 폭에서 page horizontal overflow 0, modal horizontal overflow 0, 좁은 폭 modal vertical scroll 가능, 신원 미선택·대상 미선택 실행 버튼 비활성, 브라우저 warning/error 0을 확인했다. Standalone fixture에는 ACTIVE broker 계정이 없어 USER A/B 복수 chip 렌더는 HTML/API 계약 테스트 통과로만 기록하며 Burp 결과로 소급하지 않는다.
 
 ## 실제 사용자 확인
 
@@ -61,8 +64,8 @@ Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Commu
 - Burp Community에서 현재 재생성 beta.3 JAR의 load/unload, suite tab/Web UI 연결과 실제 브라우저 트래픽 수집
 - 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지
 - 실제 Burp 대상 트래픽의 `REVIEW`가 메인 그래프에서는 빠지고 파싱 결과의 검토 대기에서 다시 포함·숨김 처리되는지
-- 실제 사이트 로그인으로 얻은 세션을 ZAP·LLM controlled request에 주입하고 회전·만료·재인증하는 전체 과정
-- ZAP 2.17 환경에서 deterministic baseline 전체 체인의 실제 수행과 native alert 수집
+- 실제 사이트 로그인으로 `UNVERIFIED → ACTIVE`가 전환되고 그 세션을 ZAP·LLM controlled request에 주입해 회전·만료·재인증하는 전체 과정
+- ZAP 2.17 환경에서 비로그인·USER A·USER B fresh-session campaign 전체 체인과 신원별 native alert 수집
 - 구독형 Codex 또는 Claude가 MCP로 독립 Explorer pass와 lock 이후 Judge pass를 끝까지 수행하는 과정
 - 실제 Burp 프로젝트 save/load 뒤 broker 비밀값은 사라지고 Evidence·lock·판정만 복구되는 과정
 
@@ -71,6 +74,7 @@ Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Commu
 ## 알려진 한계
 
 - CAPTCHA, MFA, WebAuthn, device binding과 서비스 고유 refresh 절차는 범용 자동화할 수 없다. 세션이 `SUSPECT` 또는 `REAUTH_REQUIRED`가 되면 사용자가 HUMAN lane에서 다시 로그인해야 한다.
+- `ACTIVE`는 자격증명 material 뒤 명시적 실패가 아닌 HTTP 응답을 관측했다는 transport-level 확인이며 서비스 고유 인증 endpoint, 계정 소유, role을 자동 증명하지 않는다.
 - 폐쇄형 탐색은 제공된 agent workspace의 계약이다. 변조된 agent나 운영체제 수준의 외부 네트워크 접근까지 방화벽처럼 막지는 않는다.
 - ZAP native alert는 참고 정보다. FlowScope Evidence와 controlled 재현이 없는 alert만으로 취약점을 확정하지 않는다.
 - beta.3의 자동 decisive validation은 안전한 읽기 요청 중심이다. 상태 변경 요청은 별도 확인이 있어도 일반화된 자동 확정을 하지 않는다.

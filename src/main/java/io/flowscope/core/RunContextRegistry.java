@@ -41,12 +41,21 @@ public final class RunContextRegistry {
     }
 
     public synchronized void transition(Source source, String runId, SourceDetail detail) {
+        transition(source, runId, detail, null, false);
+    }
+
+    public synchronized void transition(Source source, String runId, SourceDetail detail, String accountId) {
+        transition(source, runId, detail, accountId, true);
+    }
+
+    private void transition(Source source, String runId, SourceDetail detail,
+                            String accountId, boolean replaceAccount) {
         Context active = contexts.get(source);
         if (active == null || runId == null || !runId.equals(active.runId())) {
             throw new IllegalArgumentException("run_id does not match the active " + source + " run");
         }
         contexts.put(source, new Context(detail, active.orchestrator(), active.tool(), active.phase(),
-                active.runId(), active.accountId()));
+                active.runId(), replaceAccount ? accountId : active.accountId()));
     }
 
     /** Failed/cancelled runs do not satisfy an independent-lane completion gate. */

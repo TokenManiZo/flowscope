@@ -14,12 +14,12 @@ USER B        orders:101      GET /api/orders/{id}
 - HUMAN/SCANNER/LLM 필터와 직교 edge·제한적 그룹 펼치기를 지원하는 IDA식 계층 그래프
 - `신원 × 작업 × 객체` 커버리지 매트릭스, 미교차 조합, 일부만 발견, source 간 판정 불일치
 - 응답 분류, 명시적 소유자 Evidence, 사용자가 입력한 역할 정책을 이용하는 결정론적 BOLA/IDOR·BFLA 후보 엔진
-- 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 쿠키 회전, 만료·의심 상태, 계정별 ZAP/LLM 요청을 지원
+- 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 성공 응답 확인 전 `UNVERIFIED`, 쿠키 회전, 만료·의심 상태, 계정별 ZAP/LLM 요청을 지원
 - query, 요청 본문, 마스킹된 요청·응답, timestamp, redirect, GraphQL operation, 응답→요청 데이터 흐름 수집
 - Evidence 보존형 트래픽 분류. `INCLUDE`만 메인 3-way 비교에 사용하고, 애매한 `REVIEW`는 별도 검토 대기로 보존하며, 고신뢰 보조 트래픽은 `EXCLUDE`로 기본 숨김
 - `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` 인증 상태. 연결되지 않은 회전 쿠키가 그래프 신원을 폭증시키지 않으며, 확인된 계정 연결은 서비스 경계를 유지
 - Codex·Claude Code 구독형 클라이언트용 localhost 전용 인증 MCP 서버
-- 시스템 소유 ZAP 기준선: Traditional Spider → strict Client Spider(AJAX fallback) → passive queue 완료 → native alert. Active Scan은 별도 승인 필요
+- 시스템 소유 신원 격리 ZAP 캠페인: 비로그인과 선택한 ACTIVE 계정마다 fresh ZAP session → Traditional Spider → strict Client Spider(AJAX fallback) → passive queue 완료 → native alert. Active Scan은 별도 승인 필요
 - exact scope FlowScope 요청 도구를 통한 closed-world LLM 실행. 직접 외부 트래픽은 최종 판정의 결정적 Evidence로 신뢰하지 않음
 - 서버가 강제하는 독립 Explorer 시야, 불변 3-lane dataset lock, 최종 LLM Judge 종합
 - 기존 Burp Proxy history 원클릭 가져오기, 실제 반복 횟수를 보존하는 중복 억제, 네트워크를 사용하지 않는 온보딩 샘플
@@ -85,8 +85,8 @@ scope가 비어 있으면 MCP가 시작하는 ZAP 실행은 차단됩니다.
 ## 일반적인 점검 흐름
 
 1. exact scope를 설정하고 익명 또는 최소 권한 테스트 계정을 사용합니다. 기본 제어면은 Burp 탭입니다. MCP 클라이언트의 `flowscope_set_scope`는 운영자가 명시적으로 허가한 exact target만, SCANNER/LLM run 시작 전에 설정할 수 있습니다. ADMIN 계정은 필수가 아니며 명시적 역할 비교가 필요한 경우에만 사용합니다.
-2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 표시 이름을 등록합니다. 계정마다 로그인 캡처를 시작하고 HUMAN 8080을 통해 로그인한 뒤 캡처를 종료합니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다.
-3. ZAP의 outgoing proxy를 `127.0.0.1:8081`로 설정합니다. Web 빠른 시작에서 exact-scope target과 선택적 active account를 고른 뒤 **안전 기준선 실행**을 누릅니다. FlowScope는 Traditional Spider → Client Spider(AJAX fallback) → passive 완료 → native alert 순서를 고정하며, 범위 안 scanner 트래픽이 0건이면 lane을 실패 처리합니다. Active Scan은 기준선에 포함되지 않으며 항상 별도 Burp 승인이 필요합니다.
+2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 표시 이름을 등록합니다. 계정마다 로그인 캡처를 시작하고 HUMAN 8080을 통해 로그인한 뒤 인증된 페이지의 성공 응답까지 확인하고 캡처를 종료합니다. 자격증명만 있고 성공 응답이 관측되지 않은 세션은 `UNVERIFIED`로 남아 ZAP/LLM에 주입되지 않습니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다.
+3. ZAP의 outgoing proxy를 `127.0.0.1:8081`로 설정합니다. Web 빠른 시작에서 exact-scope target, 비로그인, 하나 이상의 ACTIVE 계정을 복수 선택하고 **신원별 격리 검사 시작**을 누릅니다. FlowScope는 각 신원 전환 전에 ZAP session을 새로 만들고 Traditional Spider → Client Spider(AJAX fallback) → passive 완료 → native alert 순서를 실행합니다. 계정 레인은 기존 Authorization/Cookie/CSRF를 제거한 뒤 해당 broker 값만 주입하며, 비로그인 레인은 fresh session 안에서 새로 발급된 익명 Cookie/CSRF를 유지합니다. 신원별 범위 안 scanner 트래픽이 0건이면 전체 SCANNER 완료 gate를 열지 않습니다. FlowScope Web 자체 loopback URL은 대상 목록과 실행에서 제외합니다. Active Scan은 이 캠페인에 포함되지 않으며 항상 별도 Burp 승인이 필요합니다.
 4. `agent-workspace/prompts/explorer.md`를 실행합니다. 서버는 HUMAN/SCANNER 결과를 숨기며 Explorer는 `flowscope_target_request`만 사용합니다. exact-scope routing, 세션 주입, Evidence 수집은 FlowScope가 수행합니다. 제공된 workspace는 웹 검색, Wayback, 외부 API 문서·소스 저장소, curl, 브라우저 네트워킹을 금지합니다.
 5. 파싱 결과의 **검토 대기**를 확인해 실제 API면 operation을 **분석에 포함**, 보조 트래픽이면 **기본 숨김**으로 확정할 수 있습니다. 그 뒤 `agent-workspace/prompts/judge.md`를 실행합니다. Judge는 완료된 HUMAN/SCANNER/LLM dataset을 잠그고 메인 후보·잠긴 REVIEW Evidence·ZAP native alert를 읽은 뒤, 비최종 assessment를 제출하고 같은 통제 executor로 좁은 safe-GET 재현·정상 대조 Evidence를 수집합니다.
 6. FlowScope는 bundle이 현재 후보와 일치하고 서버 검사를 통과할 때만 `CONFIRMED` 또는 `REJECTED`를 허용합니다. 같은 run의 LLM 재현 2건 이상, 허가된 정상 대조 1건 이상, 일치하는 신원·작업·객체 의미와 응답 Evidence가 필요합니다. BOLA 읽기 응답은 대상 객체 ID를 구조적으로 포함해야 하며 owner 문자열만으로는 충분하지 않습니다. 나머지는 `INCONCLUSIVE`입니다. **시나리오**와 Request/Response를 검토하십시오. 사람 기록은 감사 가능한 오버라이드이며 검증되지 않은 자동 finding이 아닙니다.
@@ -158,7 +158,7 @@ ZAP API endpoint는 loopback 주소만 허용합니다. ZAP의 대상 트래픽�
 - **시나리오** — 결정론적 BOLA/BFLA 후보·gap, 비최종 Judge assessment, 서버 검증 최종 verdict
 - **시나리오 감사·오버라이드** — Evidence-bound 상태와 마스킹 note를 갖는 사람 감사면. validation 검사를 우회하지 않음
 - **파싱 결과** — 마스킹된 source, identity, method, 정규화 operation, resource, status, traffic class/disposition, repeat count, stable Evidence ID. 행을 선택하면 operation 상세와 페이지형 Evidence를 표시
-- **계정·세션** — 비밀값 없는 계정 등록, 명시적 HUMAN 로그인 캡처, 안전한 broker 상태, 발견 세션 비교, 연결·해제, 재인증, 메모리 폐기, 계정 삭제
+- **계정·세션** — 비밀값 없는 계정 등록, 명시적 HUMAN 로그인 캡처, `ACTIVE/UNVERIFIED/SUSPECT/REAUTH_REQUIRED` broker 상태, 발견 세션 비교, 연결·해제, 재인증, 메모리 폐기, 계정 삭제
 - **오른쪽 상세** — 선택 API의 source별 verdict, 필요할 때만 가져오는 마스킹 Request/Response, 안전한 Burp Repeater 초안. polling snapshot은 저장된 모든 message body를 전송하지 않음
 
 ## 판정 규칙과 신뢰 경계
@@ -196,6 +196,7 @@ MCP와 Web 서버는 `127.0.0.1`에만 bind하고 Host·Origin을 검증하며, 
 - FlowScope의 최종 verdict는 수집된 인가 동작이 베타 Evidence oracle을 충족했다는 뜻입니다. business impact를 자동으로 증명하거나 engagement 보고서 검토를 없애지 않습니다.
 - owner 추출은 일반적인 scalar owner/user/account 필드와 명시적 nested owner/user/author/account/customer principal object를 인식합니다. 도메인 고유 소유권은 운영자가 확인해야 합니다.
 - 세션 자동화는 일반 cookie, bearer/CSRF header, 회전, 만료 hint, 의심 응답을 다룹니다. CAPTCHA, MFA, WebAuthn, device binding, 애플리케이션 고유 refresh/login protocol은 수동 재캡처가 필요할 수 있습니다.
+- `ACTIVE`는 자격증명이 포함된 캡처에서 401·로그인 redirect·invalid-token이 아닌 HTTP 응답을 관측했다는 범용 transport 증거입니다. 서비스 고유 `/me` 의미나 계정 소유를 자동 증명하지 않으므로 실제 역할·계정 연결은 운영자가 확인해야 합니다.
 - 안정 신호가 없는 opaque 회전 token은 자동 상관할 수 없습니다. 운영자가 확인된 fingerprint를 등록 계정에 명시적으로 연결할 수 있습니다.
 - Fetch Metadata와 MIME은 없거나 잘못될 수 있고 business API가 document·asset·telemetry와 비슷할 수 있습니다. 분류기는 여러 고신뢰 신호가 합치할 때만 제외하고 애매한 요청을 메인 그래프 밖 `REVIEW`로 보존하며 이유와 reversible override를 제공합니다. `REVIEW`를 확인하지 않으면 실제 API가 메인 비교에서 빠질 수 있으므로 트래픽 노이즈를 완벽하게 분류한다고 주장하지 않습니다.
 - 데이터 흐름은 제한된 exact-value matching이며 완전한 semantic taint analysis가 아닙니다.

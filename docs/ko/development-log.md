@@ -618,6 +618,47 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - fat JAR: 2,815,952 bytes, 1,295 entries, ZIP 무결성 통과, SHA-256 `72afef648e657ae36a2dcac75f298e69c43a475f0af666870a4fdcd2fb8eb51b`.
 - 대상 응답이 객체 ID를 반환하지 않으면 자동 BOLA read 확정은 `UNDECIDED/INCONCLUSIVE`에 남는다. 실제 Burp 로그인·ZAP·Explorer/Judge 전체 workflow와 blind benchmark는 아직 통과 처리하지 않는다.
 
+## 2026-08-26 · 신원 격리 Session Broker·ZAP·LLM 실행
+
+### 목표와 성공 조건
+
+- USER A/B 세션이 같은 서비스에서 섞이지 않고 성공 응답 확인 전 자동 배포되지 않는다.
+- 비로그인과 선택 계정을 한 번의 사용자 조작으로 실행하되 ZAP 상태는 신원별로 초기화한다.
+- 계정 레인의 기존 인증값을 제거하고 broker가 선택한 계정만 주입하며, LLM run 계정도 통제 executor까지 전달한다.
+- 신원 하나라도 수집 0건 또는 단계 실패면 SCANNER 완료 gate를 열지 않는다.
+- Web 자기 제어면은 scanner target이 되지 않는다.
+
+### 실패 재현과 개발·수정
+
+- 먼저 `UNVERIFIED`, 관리 헤더 목록, run 중 account 전환, `ZapClient.newSession`, Web 복수 계정 API를 요구하는 테스트를 추가했다. 기존 production API가 없어 test compile이 실패하는 것을 확인했다.
+- 세션 material만 있고 성공 응답이 없으면 `UNVERIFIED`, 다른 계정이 같은 service에서 캡처 중이면 시작 거부, 명시 실패가 아닌 성공 응답 뒤에만 `ACTIVE`가 되도록 Session Broker를 강화했다.
+- 관리형 계정 SCANNER 요청은 Authorization/Cookie/Proxy-Authorization/CSRF를 제거하고 broker 값만 주입한다. 관리형 anonymous ZAP은 fresh session을 전제로 고정 Authorization 계열만 제거하고 해당 레인에서 새로 발급된 Cookie/CSRF는 유지한다. run context가 없는 수동 scanner 요청은 변경하지 않는다.
+- ZAP campaign은 비로그인 뒤 선택된 ACTIVE 계정을 순차 실행하고 각 신원 앞에서 `core/action/newSession`을 호출한다. 신원별 stage·수집·Alert·warning/error를 기록하고 Alert에 account/run provenance를 붙인다. 모든 lane 성공 뒤에만 SCANNER exploration을 완료한다.
+- Web quick-start를 단일 계정 select에서 비로그인·복수 ACTIVE 계정 checkbox로 바꾸고 신원별 상태를 표시한다. 현재 Web loopback port는 target 목록과 시작 API에서 제외한다.
+- LLM `account_id`가 run context 기본값으로 통제 요청에 전달되는 회귀를 추가했다.
+
+### 이유와 기각한 대안
+
+- 한 ZAP session에서 계정만 바꾸면 cookie jar와 crawler 상태가 교차 오염된다. 사용자가 ZAP context를 계정마다 수동 구성하는 방식은 자동화·재현성을 잃어 기각했다.
+- anonymous에서 Cookie를 매 요청 삭제하면 서버가 해당 레인에 발급한 익명 session/CSRF까지 끊기므로 fresh-session 경계와 함께 lane-local 상태를 유지한다.
+- 모든 localhost를 막으면 crAPI 같은 허가된 로컬 대상을 점검하지 못하므로 FlowScope Web의 실제 port만 차단한다. 결정과 한계는 D-066에 기록했다.
+
+### 영향 파일
+
+- 실행: `SessionBroker.java`, `RunContextRegistry.java`, `ZapClient.java`, `McpServer.java`, `FlowScopeExtension.java`, `FlowScopeWebServer.java`
+- UI: `src/main/resources/web/index.html`
+- 회귀: `SessionBrokerTest.java`, 신규 `RunContextRegistryTest.java`, `ZapClientTest.java`, `McpServerTest.java`, `FlowScopeWebServerTest.java`
+- 문서: 한국어/영어 README·changelog, architecture, decisions(D-066), UI rationale, beta validation, 이 개발 기록
+
+### 검증과 남은 gate
+
+- 첫 집중 실행은 기존 Web 테스트가 material만으로 `ACTIVE`를 기대해 35 tests 중 1건 실패했다. 구현을 약화하지 않고 성공 응답을 포함한 실제 캡처 왕복으로 테스트를 수정했다.
+- 수정 후 집중 Session/MCP/ZAP/Web 회귀가 통과했다.
+- 1280×720·600×800 standalone에서 비로그인 scanner control, page/modal 가로 overflow 0, 좁은 폭 modal scroll, 신원/target 미선택 버튼 비활성, browser warning/error 0을 확인했다. ACTIVE USER A/B chip은 standalone fixture에 없어 자동 HTML/API 계약까지만 검증했다.
+- `JAVA_HOME=/opt/homebrew/opt/openjdk@21 mvn clean verify`: 144 tests, 실패·오류·skip 0, BUILD SUCCESS.
+- fat JAR: 2,823,288 bytes, 1,297 entries, ZIP 무결성 통과, 공개 JAR 1개, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `58d5f982270ca5c868e147f5de420ef82a8a1eaf2d32509730353d4c367a41c7`.
+- `ACTIVE`는 범용 transport 확인이지 application-specific `/me`, 계정 소유, role 증명이 아니다. ZAP 2.17·현재 Burp JAR·실제 로그인으로 비로그인→USER A→USER B 캠페인과 새 Web control을 확인하는 수동 gate가 남는다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

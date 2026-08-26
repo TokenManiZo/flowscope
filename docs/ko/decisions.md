@@ -607,6 +607,15 @@
 - **검증:** 기존 코드에서 거부/HEAD owner 오염 1건, `/authority` redirect 오탐 1건, owner-only 객체 오탐 1건을 실패 테스트로 재현했다. 수정 후 인가·객체 Evidence·MCP 최종 gate 집중 30 tests와 전체 `mvn clean verify` 137 tests가 통과했다.
 - **상태:** 구현·자동 회귀 완료, 실제 Burp/Judge 전체 workflow 확인 대기
 
+## D-066 · 스캐너 신원 격리 = fresh ZAP session + broker credential replacement
+- **문제:** 한 ZAP 상태에서 비로그인과 여러 계정을 순차 실행하면 cookie jar·crawler state·Alert의 신원 provenance가 섞인다. 계정 전환 때 새 broker 헤더만 덧붙이면 ZAP이 이미 가진 Authorization/Cookie와 충돌할 수 있고, 자격증명 material만 본 캡처를 ACTIVE로 사용하면 로그인 실패 세션을 다른 실행기에 배포할 수 있다. 반대로 비로그인 레인의 Cookie를 매 요청 제거하면 그 레인에서 새로 생긴 익명 세션·CSRF까지 끊어 탐색 성능이 낮아진다.
+- **결정:** 사용자는 Web/MCP에서 비로그인과 ACTIVE 계정을 복수 선택한다. SYSTEM scanner campaign은 비로그인 뒤 선택 계정을 순차 실행하며 각 신원 앞에서 ZAP `core/newSession`을 성공시켜야 한다. 계정 레인은 broker 소유 헤더를 전부 제거한 뒤 해당 ACTIVE 계정 값만 주입한다. 비로그인 레인은 Authorization/Proxy-Authorization을 제거하되 fresh session 안에서 새로 발급된 Cookie/CSRF는 유지한다. 신원별 zero-capture 또는 단계 실패가 하나라도 있으면 SCANNER 완료 gate를 열지 않는다. Alert와 상태에는 account/run provenance를 붙인다.
+- **세션 확인:** 같은 service의 동시 로그인 캡처는 한 계정만 허용한다. material 뒤 401·로그인 redirect·invalid-token이 아닌 2xx~4xx 응답이 관측되어야 `ACTIVE`이며, 없으면 `UNVERIFIED`다. 403은 역할 거부일 수 있어 일반 세션 만료 신호로 쓰지 않는다.
+- **기각:** 계정마다 사용자가 ZAP context·script를 수동 구성하는 방식은 제품 자동화와 비교 재현성을 훼손한다. 한 session에서 헤더만 교체하는 방식은 cookie/crawler state를 격리하지 못한다. 비로그인 매 요청의 모든 Cookie 제거는 상태형 공개 흐름을 파괴한다. 모든 localhost 차단은 허가된 로컬 benchmark를 막으므로 Web 제어면의 실제 port만 target에서 제외한다.
+- **한계:** `ACTIVE`는 범용 transport 확인이지 서비스 고유 `/me`, 계정 소유, role 증명이 아니다. ZAP 전역 replacer/script처럼 fresh session 밖에서 강제되는 사용자 설정은 자동 제거하지 않는다. ZAP 2.17 실제 cookie jar·browser와 Burp listener를 연결한 전체 실행은 아직 수동 gate다.
+- **검증:** 기존 API가 없어서 컴파일 실패하는 회귀를 먼저 만들고, successful response 전 `UNVERIFIED`, 같은-service 동시 캡처 거부, 관리 헤더 목록, run 중 account 전환, ZAP newSession, 비로그인→USER A→USER B 순서·3회 reset·lane 상태, Web 복수 선택 contract, LLM context account 전달, Web 자기 제어면 거부를 자동 테스트로 고정했다. 전체 `mvn clean verify` 144 tests가 통과했다.
+- **상태:** 구현·자동 회귀 완료, 실제 Burp/ZAP/로그인 전체 캠페인 확인 대기
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

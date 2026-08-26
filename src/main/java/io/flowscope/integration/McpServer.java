@@ -66,10 +66,14 @@ public final class McpServer implements AutoCloseable {
     });
     private volatile ZapBaselineRun zapBaseline;
     private volatile ArrayNode zapBaselineAlerts = json.createArrayNode();
+    private volatile List<ZapLaneResult> zapBaselineLanes = List.of();
 
     private record ZapBaselineRun(String runId, String target, String status, String stage,
                                   String scanId, String warning, long capturedRecords,
                                   int alertCount, String error) {}
+    private record ZapLaneResult(String accountId, String accountLabel, String status, String stage,
+                                 long capturedRecords, int alertCount, String warning, String error) {}
+    private record ZapLane(String accountId, String accountLabel) {}
 
     public McpServer(State state, int port, String configuredToken) throws IOException {
         this.state = state;
@@ -83,8 +87,17 @@ public final class McpServer implements AutoCloseable {
     public List<Assessment> assessments() { return snapshotAssessments(); }
     public List<ValidationDecision> validations() { return snapshotValidations(); }
     public JsonNode startDeterministicZapBaseline(String target, String accountId) {
+        return startDeterministicZapCampaign(target,
+                accountId == null || accountId.isBlank() ? List.of() : List.of(accountId),
+                accountId == null || accountId.isBlank());
+    }
+    public JsonNode startDeterministicZapCampaign(String target, List<String> accountIds,
+                                                  boolean includeAnonymous) {
         ObjectNode args = json.createObjectNode().put("target", target);
-        if (accountId != null && !accountId.isBlank()) args.put("account_id", accountId);
+        args.put("include_anonymous", includeAnonymous);
+        ArrayNode accounts = args.putArray("account_ids");
+        if (accountIds != null) accountIds.stream().filter(value -> value != null && !value.isBlank())
+                .distinct().forEach(accounts::add);
         return startZapBaseline(args);
     }
     public JsonNode deterministicZapBaselineStatus() { return zapBaselineStatus(); }
@@ -109,6 +122,7 @@ public final class McpServer implements AutoCloseable {
         if (zapBaseline == null || !"RUNNING".equals(zapBaseline.status())) {
             zapBaseline = null;
             zapBaselineAlerts = json.createArrayNode();
+            zapBaselineLanes = List.of();
         }
     }
     public void replaceValidations(List<ValidationDecision> values) {
@@ -253,7 +267,7 @@ public final class McpServer implements AutoCloseable {
         tools.add(tool("flowscope_end_run", "End the active LLM or scanner run context.", endRunSchema(), false, false));
         tools.add(tool("flowscope_zap_status", "Check local ZAP connectivity or scan progress.", zapStatusSchema(), true, false));
         tools.add(tool("flowscope_zap_environment", "Read the local ZAP version and installed add-ons before a scanner pass.", schema(), true, false));
-        tools.add(tool("flowscope_zap_baseline", "Run the deterministic scanner lane: Traditional Spider, Client Spider (AJAX fallback), passive queue, then native alerts.", targetSchema(false), false, false));
+        tools.add(tool("flowscope_zap_baseline", "Run the deterministic isolated scanner campaign for anonymous and selected account IDs: Traditional Spider, Client Spider (AJAX fallback), passive queue, then native alerts.", zapBaselineSchema(), false, false));
         tools.add(tool("flowscope_zap_baseline_status", "Read deterministic scanner-lane progress and captured-output counts.", schema(), true, false));
         tools.add(tool("flowscope_zap_passive_status", "Read ZAP passive-scan queue and current tasks.", schema(), true, false));
         tools.add(tool("flowscope_zap_alerts", "Read paginated native ZAP alerts after the three-lane dataset is locked.", zapAlertsSchema(), true, false));
@@ -853,14 +867,33 @@ public final class McpServer implements AutoCloseable {
         }
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
-        String accountId = validatedAccountForTarget(args.path("account_id").asText(), target);
+        LinkedHashSet<String> requestedAccounts = new LinkedHashSet<>();
+        if (args.path("account_ids").isArray()) {
+            args.path("account_ids").forEach(value -> {
+                if (!value.asText().isBlank()) requestedAccounts.add(value.asText());
+            });
+        }
+        String legacyAccount = args.path("account_id").asText();
+        if (!legacyAccount.isBlank()) requestedAccounts.add(legacyAccount);
+        boolean includeAnonymous = args.has("include_anonymous")
+                ? args.path("include_anonymous").asBoolean(false) : requestedAccounts.isEmpty();
+        List<ZapLane> lanes = new ArrayList<>();
+        if (includeAnonymous) lanes.add(new ZapLane(null, "비로그인"));
+        for (String accountId : requestedAccounts) {
+            String validated = validatedAccountForTarget(accountId, target);
+            SessionBroker.SessionView session = state.sessions().viewForAccount(validated).orElseThrow();
+            lanes.add(new ZapLane(validated, session.accountLabel()));
+        }
+        if (lanes.isEmpty()) throw new IllegalArgumentException("select anonymous or at least one active account");
         String runId = validatedRunId(args.path("run_id").asText("zap-baseline-" + System.currentTimeMillis()));
         state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
-                Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, accountId));
+                Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, lanes.get(0).accountId()));
         zapBaselineAlerts = json.createArrayNode();
+        zapBaselineLanes = lanes.stream().map(lane -> new ZapLaneResult(lane.accountId(), lane.accountLabel(),
+                "PENDING", "PENDING", 0, 0, "", "")).toList();
         zapBaseline = new ZapBaselineRun(runId, target, "RUNNING", "TRADITIONAL_SPIDER",
                 "", "", 0, 0, "");
-        zapWorkflow.submit(() -> runZapBaseline(runId, target));
+        zapWorkflow.submit(() -> runZapCampaign(runId, target, lanes));
         return zapBaselineNode(zapBaseline);
     }
 
@@ -869,55 +902,104 @@ public final class McpServer implements AutoCloseable {
         return value == null ? json.createObjectNode().put("status", "NOT_STARTED") : zapBaselineNode(value);
     }
 
-    private void runZapBaseline(String runId, String target) {
+    private void runZapCampaign(String runId, String target, List<ZapLane> lanes) {
+        ArrayNode collectedAlerts = json.createArrayNode();
+        boolean failed = false;
+        String campaignError = "";
+        for (int index = 0; index < lanes.size(); index++) {
+            ZapLane lane = lanes.get(index);
+            try {
+                runZapLane(runId, target, lane, index, collectedAlerts);
+            } catch (RuntimeException error) {
+                failed = true;
+                String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+                if (campaignError.isBlank()) campaignError = lane.accountLabel() + ": " + message;
+            }
+        }
+        long captured = capturedForRun(runId);
+        zapBaselineAlerts = collectedAlerts;
+        if (failed) {
+            state.contexts().abort(Source.SCANNER, runId);
+            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                    captured, collectedAlerts.size(), campaignError);
+        } else if (!state.contexts().clear(Source.SCANNER, runId)) {
+            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                    captured, collectedAlerts.size(), "scanner run lease disappeared before completion");
+        } else {
+            zapBaseline = new ZapBaselineRun(runId, target, "COMPLETED", "ALERTS_READY", "", "",
+                    captured, collectedAlerts.size(), "");
+        }
+    }
+
+    private void runZapLane(String runId, String target, ZapLane lane, int index, ArrayNode collectedAlerts) {
         String warning = "";
+        long capturedBefore = capturedForRun(runId);
         try {
+            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_SPIDER, lane.accountId());
+            JsonNode reset = parseZap(state.zap().newSession("flowscope-" + runId + "-" + index));
+            if (!"OK".equalsIgnoreCase(reset.path("Result").asText())) {
+                throw new IllegalStateException("ZAP did not create an isolated session");
+            }
+            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                    "TRADITIONAL_SPIDER", 0, 0, "", ""));
             JsonNode traditional = parseZap(state.zap().spider(target));
             String scanId = traditional.path("scan").asText();
             if (scanId.isBlank()) throw new IllegalStateException("ZAP Traditional Spider did not return a scan id");
-            updateZapBaseline(runId, "RUNNING", "TRADITIONAL_SPIDER", scanId, warning, "");
+            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · TRADITIONAL_SPIDER", scanId, warning, "");
             waitForZap(() -> state.zap().spiderStatus(scanId), 15 * 60_000L, "Traditional Spider");
 
-            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER);
+            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             try {
                 JsonNode client = parseZap(state.zap().clientSpider(target));
                 String clientId = client.path("scan").asText();
                 if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
-                updateZapBaseline(runId, "RUNNING", "CLIENT_SPIDER", clientId, warning, "");
+                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · CLIENT_SPIDER", clientId, warning, "");
                 waitForZap(() -> state.zap().clientSpiderStatus(clientId), 20 * 60_000L, "Client Spider");
             } catch (RuntimeException clientError) {
                 warning = "Client Spider unavailable; AJAX Spider fallback used: " + clientError.getMessage();
-                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER);
+                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER, lane.accountId());
                 JsonNode ajax = parseZap(state.zap().ajaxSpider(target));
                 if (!"OK".equalsIgnoreCase(ajax.path("Result").asText())) {
                     throw new IllegalStateException("ZAP AJAX Spider fallback did not start");
                 }
-                updateZapBaseline(runId, "RUNNING", "AJAX_SPIDER_FALLBACK", "", warning, "");
+                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SPIDER_FALLBACK", "", warning, "");
                 waitForZap(() -> state.zap().ajaxSpiderStatus(), 20 * 60_000L, "AJAX Spider");
             }
 
-            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN);
-            updateZapBaseline(runId, "RUNNING", "PASSIVE_SCAN_QUEUE", "", warning, "");
+            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, lane.accountId());
+            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · PASSIVE_SCAN_QUEUE", "", warning, "");
             waitForPassive(5 * 60_000L);
-            long captured = state.snapshot().records.stream()
-                    .filter(record -> record.source == Source.SCANNER && runId.equals(record.runId)).count();
+            long captured = capturedForRun(runId) - capturedBefore;
             if (captured == 0) throw new IllegalStateException("scanner workflow completed without captured in-scope traffic");
             JsonNode alerts = maskTextValues(parseZap(state.zap().alerts(target, 0, 500)));
             int alertCount = alerts.path("alerts").isArray() ? alerts.path("alerts").size() : 0;
-            zapBaselineAlerts = alerts.path("alerts").isArray()
-                    ? (ArrayNode) alerts.path("alerts").deepCopy() : json.createArrayNode();
-            if (!state.contexts().clear(Source.SCANNER, runId)) {
-                throw new IllegalStateException("scanner run lease disappeared before completion");
+            if (alerts.path("alerts").isArray()) {
+                for (JsonNode alert : alerts.path("alerts")) {
+                    ObjectNode copy = alert.isObject() ? (ObjectNode) alert.deepCopy() : json.createObjectNode().set("alert", alert);
+                    copy.put("flowscope_account_id", lane.accountId() == null ? "anonymous" : lane.accountId());
+                    copy.put("flowscope_run_id", runId);
+                    collectedAlerts.add(copy);
+                }
             }
-            zapBaseline = new ZapBaselineRun(runId, target, "COMPLETED", "ALERTS_READY", "",
-                    warning, captured, alertCount, "");
+            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "COMPLETED",
+                    "ALERTS_READY", captured, alertCount, warning, ""));
         } catch (RuntimeException error) {
-            state.contexts().abort(Source.SCANNER, runId);
-            long captured = state.snapshot().records.stream()
-                    .filter(record -> record.source == Source.SCANNER && runId.equals(record.runId)).count();
-            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", warning,
-                    captured, 0, error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
+            String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
+                    Math.max(0, capturedForRun(runId) - capturedBefore), 0, warning, message));
+            throw error;
         }
+    }
+
+    private long capturedForRun(String runId) {
+        return state.snapshot().records.stream()
+                .filter(record -> record.source == Source.SCANNER && runId.equals(record.runId)).count();
+    }
+
+    private synchronized void replaceZapLane(int index, ZapLaneResult value) {
+        List<ZapLaneResult> copy = new ArrayList<>(zapBaselineLanes);
+        copy.set(index, value);
+        zapBaselineLanes = List.copyOf(copy);
     }
 
     @FunctionalInterface private interface ZapStatusCall { String get(); }
@@ -986,6 +1068,18 @@ public final class McpServer implements AutoCloseable {
         out.put("captured_records", value.capturedRecords());
         out.put("alert_count", value.alertCount());
         out.put("error", value.error());
+        ArrayNode lanes = out.putArray("lanes");
+        for (ZapLaneResult lane : zapBaselineLanes) {
+            ObjectNode node = lanes.addObject();
+            if (lane.accountId() == null) node.putNull("account_id"); else node.put("account_id", lane.accountId());
+            node.put("account_label", lane.accountLabel());
+            node.put("status", lane.status());
+            node.put("stage", lane.stage());
+            node.put("captured_records", lane.capturedRecords());
+            node.put("alert_count", lane.alertCount());
+            node.put("warning", lane.warning());
+            node.put("error", lane.error());
+        }
         return out;
     }
 
@@ -1206,6 +1300,15 @@ public final class McpServer implements AutoCloseable {
         properties.putObject("account_id").put("type", "string");
         if (confirmed) properties.putObject("confirmed").put("type", "boolean");
         schema.putArray("required").add("target");
+        return schema;
+    }
+
+    private ObjectNode zapBaselineSchema() {
+        ObjectNode schema = targetSchema(false);
+        ObjectNode properties = (ObjectNode) schema.get("properties");
+        properties.putObject("include_anonymous").put("type", "boolean");
+        properties.putObject("account_ids").put("type", "array")
+                .putObject("items").put("type", "string");
         return schema;
     }
 

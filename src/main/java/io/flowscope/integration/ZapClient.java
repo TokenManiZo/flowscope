@@ -23,6 +23,10 @@ public final class ZapClient {
     }
 
     public String version() { return get("/JSON/core/view/version/", ""); }
+    public String newSession(String name) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("ZAP session name is required");
+        return get("/JSON/core/action/newSession/", "name=" + enc(name) + "&overwrite=true");
+    }
     public String spider(String target) {
         return get("/JSON/spider/action/scan/", "url=" + enc(target) + "&recurse=true&subtreeOnly=true");
     }
