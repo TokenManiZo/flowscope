@@ -599,6 +599,14 @@
 - **검증:** 반복 polling 3건이 기존 코드에서 모두 coverage에 들어가는 실패를 먼저 재현했다. 이후 Evidence 3·REVIEW 3·coverage 0·EXCLUDE 0 경계와 Web snapshot의 세 처분 수를 회귀로 고정한다.
 - **상태:** 구현·자동 회귀·1280×720 standalone 상호작용 확인 완료, 실제 Burp UI와 blind benchmark 확인 대기
 
+## D-065 · 인가 oracle 오염 방지 = 성공 응답 owner + 대상 객체 ID
+- **문제:** D-015·D-016은 owner 배정을 성공한 2xx 비메타데이터 응답으로 제한했지만 구현은 401/403과 HEAD 본문의 owner 필드도 확정 근거로 모았다. 또한 로그인 redirect 정규식 `/auth`가 `/authority`를 거부로 오인했고, 객체 포함 검사가 대상 ID와 owner 중 하나만 보여도 참이라서 owner 문자열만으로 BOLA 후보와 최종 `CONFIRMED` gate를 통과할 수 있었다.
+- **결정:** 자동 owner 후보는 `ResponseEvidence.successful`인 OPTIONS/HEAD 이외 응답에서만 수집한다. 로그인 redirect는 `login/signin/auth/authorize/error/forbidden/unauthorized`의 완전한 경로 세그먼트만 인정한다. BOLA 읽기 Evidence는 응답의 구조화된 `id`가 대상 resource의 최종 ID와 일치해야 하며 owner 문자열만으로는 객체 포함을 인정하지 않는다. 소유권 identity 매핑과 객체 포함 검사는 서로 다른 oracle로 유지한다.
+- **기각:** owner 문자열만으로 대상 객체를 인정하면 unrelated metadata가 최종 확정까지 오염된다. 반대로 응답 owner 문자열을 내부 `user-a`와 직접 비교하면 이메일·JWT subject·계정 ID처럼 표현이 다른 정상 증거를 미탐하므로 객체 ID 판독기에 섞지 않는다.
+- **한계:** 응답이 대상 객체 ID를 반환하지 않는 API는 자동 BOLA 읽기 확정이 `UNDECIDED/INCONCLUSIVE`에 남을 수 있다. 이는 후보를 삭제하거나 안전하다고 판정하는 것이 아니며, 향후 검증된 target-specific oracle 없이는 자동 승격하지 않는다.
+- **검증:** 기존 코드에서 거부/HEAD owner 오염 1건, `/authority` redirect 오탐 1건, owner-only 객체 오탐 1건을 실패 테스트로 재현했다. 수정 후 인가·객체 Evidence·MCP 최종 gate 집중 30 tests와 전체 `mvn clean verify` 137 tests가 통과했다.
+- **상태:** 구현·자동 회귀 완료, 실제 Burp/Judge 전체 workflow 확인 대기
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

@@ -588,6 +588,36 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - fat JAR: 2,816,191 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `37bd1de531f0a837311b6830192b214fd6709e695280cab0fcc3594ef42b6232`.
 - 현재 재생성 JAR의 Burp Community load/unload와 Burp에서 연 Web UI의 실제 0건→수집 전환은 수동 release gate에 남는다.
 
+## 2026-08-26 · 인가 oracle 오탐 경계 강화
+
+### 목표와 성공 조건
+
+- 거부·메타데이터 응답이 소유자 확정값을 만들지 못하게 한다.
+- 로그인과 비슷한 정상 redirect 경로를 deny로 오인하지 않는다.
+- owner 문자열만으로 BOLA 객체 포함 및 최종 `CONFIRMED` gate가 통과하지 못하게 한다.
+- 근거가 부족한 응답은 삭제하거나 정상 판정하지 않고 미확정으로 보존한다.
+
+### 실패 재현과 수정
+
+- 403 응답과 HEAD 200 응답의 owner 필드가 기존 코드에서 확정 owner로 등록되는 실패를 재현했다. owner 수집을 성공한 2xx OPTIONS/HEAD 이외 응답으로 제한했다.
+- `/authority/profile`이 `/auth` 부분문자열 때문에 login redirect `DENY`가 되는 실패를 재현했다. 로그인·인가·오류 목적지는 완전한 경로 세그먼트만 일치시킨다.
+- 응답에 대상 객체 ID가 없고 owner 문자열만 있어도 `showsObject`가 참이 되는 실패를 재현했다. 구조화 JSON의 `id` 또는 비JSON의 명시적 `id` 필드가 대상 resource ID와 일치해야 객체 Evidence로 인정한다.
+- owner 값은 이메일·subject·내부 계정 ID 등 표현이 다르므로 객체 판독기에서 내부 identity 문자열과 직접 비교하지 않는다. 소유자 oracle은 별도로 확정하고, 객체 판독기는 대상 ID만 담당한다(D-065).
+
+### 영향 파일
+
+- 판정: `AuthorizationAnalyzer.java`, `ResponseEvidence.java`
+- 회귀: `AuthorizationAnalyzerTest.java`, 신규 `ResponseEvidenceTest.java`
+- 문서: 한국어/영어 README·changelog, architecture, decisions(D-065), product plan, beta validation, 이 개발 기록
+
+### 검증과 남은 gate
+
+- 수정 전 집중 테스트는 owner/HEAD와 redirect 2건, 객체 Evidence 2건에서 의도대로 실패했다.
+- 수정 후 인가·객체 Evidence·MCP 최종 gate 집중 30 tests 통과.
+- `mvn clean verify`: 137 tests, 실패·오류·skip 0, BUILD SUCCESS.
+- fat JAR: 2,815,952 bytes, 1,295 entries, ZIP 무결성 통과, SHA-256 `72afef648e657ae36a2dcac75f298e69c43a475f0af666870a4fdcd2fb8eb51b`.
+- 대상 응답이 객체 ID를 반환하지 않으면 자동 BOLA read 확정은 `UNDECIDED/INCONCLUSIVE`에 남는다. 실제 Burp 로그인·ZAP·Explorer/Judge 전체 workflow와 blind benchmark는 아직 통과 처리하지 않는다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

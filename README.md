@@ -89,7 +89,7 @@ scope가 비어 있으면 MCP가 시작하는 ZAP 실행은 차단됩니다.
 3. ZAP의 outgoing proxy를 `127.0.0.1:8081`로 설정합니다. Web 빠른 시작에서 exact-scope target과 선택적 active account를 고른 뒤 **안전 기준선 실행**을 누릅니다. FlowScope는 Traditional Spider → Client Spider(AJAX fallback) → passive 완료 → native alert 순서를 고정하며, 범위 안 scanner 트래픽이 0건이면 lane을 실패 처리합니다. Active Scan은 기준선에 포함되지 않으며 항상 별도 Burp 승인이 필요합니다.
 4. `agent-workspace/prompts/explorer.md`를 실행합니다. 서버는 HUMAN/SCANNER 결과를 숨기며 Explorer는 `flowscope_target_request`만 사용합니다. exact-scope routing, 세션 주입, Evidence 수집은 FlowScope가 수행합니다. 제공된 workspace는 웹 검색, Wayback, 외부 API 문서·소스 저장소, curl, 브라우저 네트워킹을 금지합니다.
 5. 파싱 결과의 **검토 대기**를 확인해 실제 API면 operation을 **분석에 포함**, 보조 트래픽이면 **기본 숨김**으로 확정할 수 있습니다. 그 뒤 `agent-workspace/prompts/judge.md`를 실행합니다. Judge는 완료된 HUMAN/SCANNER/LLM dataset을 잠그고 메인 후보·잠긴 REVIEW Evidence·ZAP native alert를 읽은 뒤, 비최종 assessment를 제출하고 같은 통제 executor로 좁은 safe-GET 재현·정상 대조 Evidence를 수집합니다.
-6. FlowScope는 bundle이 현재 후보와 일치하고 서버 검사를 통과할 때만 `CONFIRMED` 또는 `REJECTED`를 허용합니다. 같은 run의 LLM 재현 2건 이상, 허가된 정상 대조 1건 이상, 일치하는 신원·작업·객체 의미와 응답 Evidence가 필요합니다. 나머지는 `INCONCLUSIVE`입니다. **시나리오**와 Request/Response를 검토하십시오. 사람 기록은 감사 가능한 오버라이드이며 검증되지 않은 자동 finding이 아닙니다.
+6. FlowScope는 bundle이 현재 후보와 일치하고 서버 검사를 통과할 때만 `CONFIRMED` 또는 `REJECTED`를 허용합니다. 같은 run의 LLM 재현 2건 이상, 허가된 정상 대조 1건 이상, 일치하는 신원·작업·객체 의미와 응답 Evidence가 필요합니다. BOLA 읽기 응답은 대상 객체 ID를 구조적으로 포함해야 하며 owner 문자열만으로는 충분하지 않습니다. 나머지는 `INCONCLUSIVE`입니다. **시나리오**와 Request/Response를 검토하십시오. 사람 기록은 감사 가능한 오버라이드이며 검증되지 않은 자동 finding이 아닙니다.
 7. Burp를 내리기 전에 작업을 재개해야 한다면 `.flowscope.json`으로 저장합니다.
 
 ## 모델 API 키 없이 Codex·Claude 구독 사용

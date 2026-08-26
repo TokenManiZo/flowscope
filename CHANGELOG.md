@@ -4,6 +4,7 @@
 
 ## 1.2.0-beta.3 — 2026-08-25
 
+- 거부·HEAD 응답의 owner 필드가 소유자 oracle을 오염시키는 경로를 차단하고, 로그인 redirect를 정확한 경로 세그먼트로 제한하며, 대상 객체 ID 없는 owner 문자열만으로 BOLA Evidence를 확정하지 않도록 판정 gate 강화
 - 관측 0건에서는 분석 패널 대신 exact scope → HUMAN pass → ZAP 기준선 → LLM Explorer/Judge 순서와 시작 조작만 보여 주고, Evidence가 생기면 기존 분석 작업면으로 전환
 - 공개 `target/`에서 Shade 중간 `original-*` JAR을 제거하고, 연속 package에서도 동일한 Burp fat JAR 하나만 남도록 빌드 검증 추가
 - `REVIEW` Evidence를 메인 graph·3-way gap 밖의 검토 대기로 분리하고, UI 수량과 처분 필터를 `INCLUDE/REVIEW/EXCLUDE` 상호 배타 상태로 정리

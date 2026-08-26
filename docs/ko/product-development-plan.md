@@ -80,4 +80,5 @@
 - beta.3 수동 gate: 실제 Burp Community unload·suite tab/Web UI·브라우저 로그인 캡처·세션 주입·통제 LLM 요청·ZAP 2.17 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. 비파괴 분류·불확실 신원 안정화, 파싱 Evidence 진입, packaging 단일화, 빈 상태 onboarding은 구현·자동 회귀를 통과했다. Codex project-scoped MCP discovery는 신뢰 프로젝트 조건에서 확인했지만 실제 FlowScope 연결은 전체 workflow gate에 남는다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
 - HUMAN 탐색 경계: 로그인 캡처는 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖 scope 내 관측은 `BASELINE`으로 보존하되 `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 3-way coverage에 넣지 않는 수정을 구현했다. 자동 회귀 후 실제 Burp에서 로그인·pass 경계를 재확인해야 한다.
 - 분류 경계: `REVIEW`를 Evidence·검토 대기에 보존하면서 메인 graph·3-way gap 입력에서는 보류하고, UI 처분 필터와 수량을 `INCLUDE/REVIEW/EXCLUDE`로 분리했다. 1280×720 standalone의 필터·상세·overflow·console 검증은 통과했고, 실제 Burp 대상에서 REVIEW 승격·숨김 작업량은 beta gate와 blind benchmark에서 측정해야 한다.
+- 판정 경계: 거부/HEAD owner 오염, auth 부분문자열 redirect 오탐, owner-only 객체 Evidence를 차단했다. 불충분한 BOLA read 응답은 안전으로 폐기하지 않고 `UNDECIDED/INCONCLUSIVE`에 남긴다. 자동 회귀는 통과했으며 실제 Judge workflow는 beta gate다.
 - P5 crAPI 블라인드 벤치마크: 사용자 검토 전까지 보류한다. 정답·공격 절차·라벨을 코드, 프롬프트, 실행 컨텍스트에 넣지 않는다.

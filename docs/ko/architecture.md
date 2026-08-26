@@ -97,7 +97,7 @@ HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLO
 
 ### 4.4 소유자·판정 F-10~11
 
-소유자 우선순위는 사용자 확정 → **응답 본문**의 명시적 owner/user/account 필드 또는 같은 이름의 중첩 principal 객체 → 저신뢰 first-success다. 공격자가 조작 가능한 요청 본문과 문맥 없는 임의 email/id 필드는 소유권 근거로 쓰지 않는다. 저신뢰나 충돌은 미확정이므로 취약 판정에서 제외한다.
+소유자 우선순위는 사용자 확정 → **성공한 2xx 비메타데이터 응답 본문**의 명시적 owner/user/account 필드 또는 같은 이름의 중첩 principal 객체 → 저신뢰 first-success다. 401/403·redirect·soft deny와 OPTIONS/HEAD의 owner 필드는 소유권 근거로 쓰지 않는다. 공격자가 조작 가능한 요청 본문과 문맥 없는 임의 email/id 필드도 제외한다. 저신뢰나 충돌은 미확정이므로 취약 판정에서 제외한다.
 
 판정은 status 단독이 아니라 status taxonomy + redirect + soft deny + owner + response content + role policy를 결합한다.
 
@@ -105,7 +105,7 @@ HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLO
 - 401/403, 로그인 redirect, soft deny: deny.
 - 404/429/5xx 또는 해석 불가: undecided.
 - 비소유 write 2xx: body가 비어도 suspicious.
-- 비소유 read 2xx: 응답이 외부 객체를 실제 포함할 때 suspicious, 아니면 undecided.
+- 비소유 read 2xx: 응답이 대상 객체 ID를 구조적으로 포함할 때 suspicious, owner 문자열만 있거나 객체 ID가 없으면 undecided.
 - role이 endpoint requirement보다 낮은데 성공: BFLA suspicious.
 - OPTIONS/HEAD: owner 성공 증거에서 제외.
 

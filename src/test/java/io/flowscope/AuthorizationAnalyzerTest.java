@@ -167,6 +167,37 @@ class AuthorizationAnalyzerTest {
                         && finding.cell().identity().equals(attacker.idn)));
     }
 
+    @Test
+    void 거부응답과_HEAD의_owner필드는_소유자확정에_쓰지_않는다() {
+        RequestRecord denied = rec(Source.HUMAN, "A", "GET", "/api/orders/7", 403,
+                "{\"owner\":\"user-a\"}");
+        RequestRecord metadata = rec(Source.HUMAN, "A", "HEAD", "/api/orders/8", 200,
+                "{\"owner\":\"user-a\"}");
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(denied, metadata)).analysis;
+
+        assertFalse(analysis.owners().containsKey(denied.resource));
+        assertFalse(analysis.owners().containsKey(metadata.resource));
+        assertTrue(analysis.findings().isEmpty());
+    }
+
+    @Test
+    void auth와_비슷한_정상_리다이렉트_경로를_로그인거부로_오인하지_않는다() {
+        RequestRecord normalRedirect = rec(Source.HUMAN, "A", "GET", "/api/orders/7", 302, "");
+        normalRedirect.location = "/authority/profile";
+        RequestRecord loginRedirect = rec(Source.HUMAN, "A", "GET", "/api/orders/8", 302, "");
+        loginRedirect.location = "/auth/login?next=/api/orders/8";
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(normalRedirect, loginRedirect)).analysis;
+
+        AuthorizationAnalysis.CoverageCell normal = analysis.cells().stream()
+                .filter(cell -> cell.key().resource().equals(normalRedirect.resource)).findFirst().orElseThrow();
+        AuthorizationAnalysis.CoverageCell login = analysis.cells().stream()
+                .filter(cell -> cell.key().resource().equals(loginRedirect.resource)).findFirst().orElseThrow();
+        assertEquals(Verdict.UNDECIDED, normal.overall());
+        assertEquals(Verdict.DENY, login.overall());
+    }
+
     private static RequestRecord rec(Source source, String fp, String method, String path, int status, String body) {
         RequestRecord r = new RequestRecord(source, "https://t:443", method, path, status, fp);
         r.body = body;

@@ -6,8 +6,8 @@
 
 | 구분 | 결과 |
 |---|---|
-| 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 131 tests, 실패·오류·skip 0 |
-| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,816,191 bytes, SHA-256 `37bd1de531f0a837311b6830192b214fd6709e695280cab0fcc3594ef42b6232` |
+| 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 137 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,815,952 bytes, SHA-256 `72afef648e657ae36a2dcac75f298e69c43a475f0af666870a4fdcd2fb8eb51b` |
 | JAR 무결성 | ZIP 무결성 통과, 1,295 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
 | 배포 계약 | 공개 `target/*.jar` 정확히 1개, 반복 package 크기·SHA-256 동일, Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
 | Session Broker | 계정별 명시적 로그인 캡처, Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
@@ -21,6 +21,7 @@
 | Identity 안정화 | `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`, 1,000 rotating cookies의 graph identity 폭증 방지, 명시 binding 보존 |
 | Capture scope | HUMAN 브라우저의 범위 밖 이동은 허용하되 모든 source의 저장 Evidence는 현재 exact scope로 제한 |
 | HUMAN run 경계 | 로그인 캡처 `SESSION_SETUP`·pass 밖 `BASELINE`은 Evidence로 보존하되 coverage에서 제외하고, 명시적 `EXPLORATION` pass만 HUMAN 3-way 비교에 포함 |
+| Authorization oracle | owner는 성공한 2xx 비메타데이터 응답에서만 확정, login redirect는 완전한 경로 세그먼트, BOLA read는 대상 객체 ID가 있는 응답만 객체 Evidence로 인정 |
 
 ## UI 검증 통과
 

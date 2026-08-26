@@ -127,11 +127,15 @@ public final class AuthorizationAnalyzer {
         Map<String, RequestRecord> firstSuccess = new LinkedHashMap<>();
         for (RequestRecord r : records) {
             if (r.resource == null) continue;
-            if (isSuccessful(r)) firstSuccess.putIfAbsent(r.resource, r);
-            for (String ownerValue : ownerValues(r.body)) {
-                String identity = aliasesByService.getOrDefault(r.service, Map.of())
-                        .get(ownerValue.toLowerCase(Locale.ROOT));
-                if (identity != null) explicit.computeIfAbsent(r.resource, ignored -> new LinkedHashSet<>()).add(identity);
+            if (isSuccessful(r) && !isMetadataMethod(r.method)) {
+                firstSuccess.putIfAbsent(r.resource, r);
+                for (String ownerValue : ownerValues(r.body)) {
+                    String identity = aliasesByService.getOrDefault(r.service, Map.of())
+                            .get(ownerValue.toLowerCase(Locale.ROOT));
+                    if (identity != null) {
+                        explicit.computeIfAbsent(r.resource, ignored -> new LinkedHashSet<>()).add(identity);
+                    }
+                }
             }
         }
 
