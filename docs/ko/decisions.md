@@ -621,8 +621,16 @@
 - **결정:** Proxy 요청 수신 시 `messageId`를 키로 source run context와 HUMAN login-capture account를 임시 고정하고 응답에서 한 번 소비한다. HUMAN 선택 계정은 해당 broker 세션이 `ACTIVE`여야 pass를 시작할 수 있고, 실제 요청 자격증명이 선택 계정과 exact match할 때만 계정 신원으로 귀속한다. 명시적 로그인 캡처 중인 계정은 그 캡처 문맥을 우선한다. SYSTEM 소유 fresh anonymous ZAP lane은 lane-local Cookie/CSRF가 생겨도 `ANONYMOUS`로 유지한다.
 - **상한·비밀 경계:** in-flight 문맥은 20,000건과 10분 TTL로 제한하고 unload 시 폐기한다. 이 표에는 raw Cookie·Authorization을 복사하지 않는다. 응답 상관 항목이 없으면 기존 현재 문맥 fallback을 사용하되 결정적 SYSTEM 실행은 정상 request/response 쌍을 회귀·실환경에서 확인한다.
 - **기각:** dropdown을 신원 authority로 사용하는 방식은 실제 요청 증거와 어긋난다. 응답마다 현재 전역 context를 읽는 방식은 비동기 응답과 lane 전환에 안전하지 않다. anonymous lane의 모든 Cookie를 제거하면 상태형 공개 흐름을 끊고, 반대로 Cookie fingerprint를 계정처럼 쓰면 신원 노이즈를 만든다.
-- **검증:** HUMAN 선택 계정의 exact match/mismatch, 로그인 캡처 우선, SYSTEM anonymous Cookie의 `anon` 유지, request-time scanner context를 자동 회귀로 고정했다. Burp Community 2026.7.3에서 현재 JAR을 로드하고 crAPI anonymous HUMAN 3건, ZAP 2.17 SYSTEM 기준선 8건, MCP Codex Explorer 통제 요청 1건을 실제 수집했다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 MCP 범위 밖 요청은 차단됐다. 세 lane 12건의 dataset lock, 후보·gap 0건, 잠금 뒤 Explorer 재시작 거부도 확인했다. 실제 USER A/B 로그인과 늦은 응답 lane 전환은 계속 별도 수동 gate다.
-- **상태:** 구현·자동 회귀·anonymous 실환경 검증 완료, 복수 로그인 계정 실환경 gate 대기
+- **검증:** HUMAN 선택 계정의 exact match/mismatch, 로그인 캡처 우선, SYSTEM anonymous Cookie의 `anon` 유지, request-time scanner context를 자동 회귀로 고정했다. Burp Community 2026.7.3에서 현재 JAR을 로드하고 HUMAN listener 8080을 통한 `curl` 3건, ZAP 2.17 SYSTEM 기준선 8건, MCP 통제 Explorer 요청 1건을 실제 수집했다. `BROWSER` detail은 listener profile에서 붙었으므로 실제 Burp Browser 검증으로 소급하지 않는다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 MCP 범위 밖 요청은 차단됐다. 세 lane 12건의 dataset lock, 후보·gap 0건, 잠금 뒤 Explorer 재시작 거부도 확인했다. 사후 재검토에서 세 source의 유일한 `INCLUDE`였던 `/manifest.json`은 classifier v2의 `+json` 오분류로 확인됐으므로 이 잠금은 wiring 검증일 뿐 business API 탐색 품질 검증이 아니다. 실제 USER A/B 로그인과 늦은 응답 lane 전환은 계속 별도 수동 gate다.
+- **상태:** 구현·자동 회귀·anonymous wiring 검증 완료, 실제 Burp Browser와 복수 로그인 계정 실환경 gate 대기
+
+## D-068 · HUMAN 공격면 = 관측 graph와 provenance-backed route candidate를 분리
+- **문제:** 현재 graph와 `UNCROSSED`는 실제 `INCLUDE` request/response만 사용한다. 이 경계는 정직하지만 응답에서 참조된 아직 미요청 endpoint를 보여 주지 못한다. 반대로 후보를 관측 edge처럼 합치면 사람이 실제로 밟지 않은 경로가 HUMAN coverage와 finding을 오염시킨다.
+- **계획 결정:** 기존 `UNCROSSED`는 관측 identity × 관측 operation/resource의 미실행 cell로 유지한다. 별도 `RouteCandidate`는 exact-scope Burp Site Map 미응답 항목과 관측 HTML/redirect/sitemap/robots/manifest/보수적 JS URL literal에서만 만들며 provenance Evidence ID를 필수로 한다. candidate는 중립 시각 문법과 `UNOBSERVED_ROUTE` 상태로 표시하고 실제 request-response가 생기기 전에는 coverage, owner, verdict, finding, lane 완료에 사용하지 않는다.
+- **노이즈:** web manifest와 navigation/static metadata는 business graph에서 제외하되 route discovery 입력으로 재사용한다. `REVIEW`는 요청은 있었으나 API 여부가 애매한 상태이고 route candidate는 요청 자체가 없다는 점을 UI와 수량에서 분리한다.
+- **가중치:** 근거 없는 confidence 퍼센트는 넣지 않는다. 현재 모든 object candidate에 고정 `1.0`을 내려 UI가 `신뢰도 100%`로 표시하는 값도 측정치가 아니므로 추출 근거 enum으로 교체한다. 우선은 명시 method/object/security signal/provenance 수/state-changing 여부의 범주형 사전식 정렬로 이유를 노출한다. 수치 가중치는 고정 corpus와 blind benchmark에서 feature별 성능·검토 비용을 측정한 뒤 별도 결정한다.
+- **근거:** W3C Fetch Metadata와 Web App Manifest, PortSwigger Site Map의 requested/unrequested 구분, Montoya SiteMap API, OWASP IDOR/BOLA testing guidance. 세부 링크와 gate는 `product-development-plan.md` P4-H가 정본이다.
+- **상태:** 열림 · 구현 전 사용자 검토
 
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.

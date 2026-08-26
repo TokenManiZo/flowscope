@@ -699,7 +699,7 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 ### 실제 crAPI 연동 검증
 
 - 환경: Burp Community 2026.7.3, ZAP 2.17.0, crAPI `http://127.0.0.1:8888/`, exact scope 동일, HUMAN 8080·SCANNER 8081·ZAP API 8089·MCP 8787·Web 17777.
-- anonymous HUMAN `qa-human-anon-1`: `/` 200과 `/favicon.ico` 404 두 건이 `HUMAN/BROWSER/EXPLORATION`으로 수집됐다. 둘은 `REVIEW`라 메인 coverage에는 자동 포함되지 않았고 첫 dataset lock은 HUMAN 탐색 응답 부족으로 거부됐다. `qa-human-api-2`에서 `API/INCLUDE`인 `/manifest.json` 200 한 건을 추가했다.
+- HUMAN listener 8080에 `curl`을 프록시로 연결한 `qa-human-anon-1`: `/` 200과 `/favicon.ico` 404 두 건이 listener profile에 따라 `HUMAN/BROWSER/EXPLORATION`으로 수집됐다. 이는 실제 Burp Browser 검증이 아니다. 둘은 `REVIEW`라 메인 coverage에는 자동 포함되지 않았고 첫 dataset lock은 HUMAN 탐색 응답 부족으로 거부됐다. `qa-human-api-2`에서 당시 `API/INCLUDE`로 분류된 `/manifest.json` 200 한 건을 추가했다.
 - SYSTEM ZAP `zap-baseline-1787717447157`: `COMPLETED/ALERTS_READY`, 수집 8건, native alert 22건. 8건 모두 `SCANNER/CONTROLLED/ANONYMOUS`; 정적 4건 `EXCLUDE`, `/manifest.json` 1건 `API/INCLUDE`, 나머지 3건 `REVIEW`였다. Alert 22건은 ZAP 출력 수이며 취약점 확정 수가 아니다.
 - MCP initialize `2025-06-18`, 도구 24개, status를 확인했다. Codex Explorer context `qa-llm-anon-1`에서 `/manifest.json` 통제 GET 1건을 `LLM/CONTROLLED` Evidence로 만들었고 Explorer status는 자기 LLM 1건만 보였다. 범위 밖 `http://127.0.0.1:17777/` 요청은 거부됐다. run 종료 뒤 HUMAN 3·SCANNER 8·LLM 1, 총 12건을 잠갔고 finding·gap은 각각 0건이었다. 잠긴 ZAP snapshot을 읽을 수 있었고 잠금 뒤 새 Explorer는 거부됐다.
 - 최종 JDK 21 JAR SHA-256 `e8d41fbd...6b4cae`를 Burp에서 제거·재로드한 뒤 Web/MCP/8080/8081 재기동과 UI `v1.2.0-beta.3` 표기를 확인했다. 재로드된 정확한 산출물에서도 HUMAN 1·SCANNER 8·LLM 1의 10건 lock, finding·gap 0, ZAP Alert 22건, Explorer 자기 Evidence 1건 시야, 범위 밖 요청 거부가 동일했다.
@@ -709,6 +709,41 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 실제 USER A/B의 `UNVERIFIED→ACTIVE`, 선택 계정 exact match/mismatch, 복수 계정 ZAP lane과 LLM account injection은 로그인 계정이 필요해 아직 실측하지 않았다.
 - 구독형 Codex/Claude가 제공 prompt 전체와 lock 이후 Judge/validation을 끝까지 수행한 것은 아니다. 이번 검증은 동일 MCP protocol을 사용한 실제 통제 요청과 가시성·scope gate까지다.
 - Repeater handoff, project save/load, extension unload/재로드는 다음 P4 gate다. crAPI 알려진 정답과 공격 절차는 보지 않았다.
+
+## 2026-08-26 · HUMAN 분류·미요청 경로 계획 재감사
+
+### 목표와 성공 조건
+
+- scanner와 LLM 구현은 동결하고 HUMAN/Burp 트래픽의 business operation 분류, 노이즈, 미요청 경로 표현만 공식 근거와 현재 코드로 재검토한다.
+- 현재 JAR이 검증하지 않은 성능을 문서가 완료로 주장하지 않게 한다.
+- 임의 가중치나 crAPI 전용 path 없이 테스트 우선 구현 계획을 고정한다.
+
+### 조사·교정
+
+- `TrafficClassifier.isApiMediaType()`가 모든 `+json`을 API로 인정해 표준 `application/manifest+json`도 `INCLUDE`하는 것을 코드에서 확인했다. 현재 테스트에는 manifest 회귀가 없다.
+- 실제 스모크 기록과 최종 10건을 대조해 세 source의 유일한 `INCLUDE`가 `/manifest.json`이었음을 확인했다. 따라서 dataset lock은 wiring 검증이지 business API 탐색 품질 검증이 아니다.
+- HUMAN 8080 스모크는 실제 Burp Browser가 아니라 `curl` 프록시 전송이었다. listener mapping의 `BROWSER` detail을 실행 도구 증명으로 사용한 문구를 정정했다.
+- `AuthorizationAnalyzer.addUncrossed()`가 관측 identity와 관측 operation/resource만 교차하며 미관측 endpoint inventory를 만들지 않는 것을 확인했다.
+- `SnapshotJsonWriter`가 추출된 모든 object candidate에 근거 계산 없이 `confidence=1.0`을 넣고 Web UI가 `신뢰도 100%`로 표시하는 것을 확인했다. 측정값으로 오해될 수 있어 P4-H에서 추출 근거 enum으로 교체하도록 계획했다.
+- 로컬 Montoya 2026.7 API JAR을 직접 검사해 `MontoyaApi.siteMap()`, `SiteMap.requestResponses(filter)`, `HttpRequestResponse.hasResponse()`가 있음을 확인했다. Community 실제 반환 동작은 구현 전 수동 gate로 남겼다.
+- W3C Fetch Metadata·Web App Manifest, PortSwigger Site Map/HTTP history/Montoya 문서, OWASP IDOR/BOLA 지침을 근거로 observed graph와 provenance-backed route candidate를 분리하는 P4-H 계획을 추가했다.
+
+### 영향 파일
+
+- `README.md`
+- `CHANGELOG.md`, `docs/en/README.md`, `docs/en/CHANGELOG.md`
+- `docs/ko/architecture.md`
+- `docs/ko/product-development-plan.md`
+- `docs/ko/beta-validation.md`
+- `docs/ko/decisions.md` D-067 정정 및 D-068 계획 결정
+- 이 개발 기록
+
+### 검증과 남은 gate
+
+- 이번 작업은 조사·계획·기록 정정이며 Java 코드나 JAR을 변경하지 않았다. 기존 147-test/JAR 해시는 새 기능 검증으로 재사용하지 않는다.
+- 문서 정정 뒤 `JAVA_HOME=/opt/homebrew/opt/openjdk@21 mvn clean verify`를 다시 실행해 147 tests, 실패·오류·skip 0, BUILD SUCCESS를 확인했다. 결정론적 JAR은 2,826,076 bytes, SHA-256 `e8d41fbdea56101063d59ec27b378de5ee9a06d001c516122eeac8c0446b4cae`로 코드 변경 전과 동일했다.
+- 다음 구현은 P4-H H1의 manifest 실패 fixture부터 시작해야 한다. classifier v3, RouteCandidate 저장 모델, graph 표현, 실제 Burp Browser pass가 끝나기 전에는 JAR을 업데이트된 HUMAN 분석 제품으로 부르지 않는다.
+- 수치 가중치는 고정 corpus와 블라인드 결과 전에는 정하지 않는다. 현재 D-068은 `열림 · 구현 전 사용자 검토` 상태다.
 
 ## 이후 작업 기록 형식
 

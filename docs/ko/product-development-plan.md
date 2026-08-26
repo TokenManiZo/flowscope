@@ -14,6 +14,8 @@
 8. LLM에게 ZAP 기능 선택을 맡기지 않는다. 기본 scanner lane은 Traditional Spider, strict Client Spider, AJAX fallback, passive queue, native alert 순서의 시스템 workflow다.
 9. Explorer의 독립성은 프롬프트 약속이 아니라 서버 가시성 제한과 세 레인 dataset lock으로 강제한다.
 10. 트래픽 노이즈는 수집 단계에서 삭제하지 않는다. 모든 Evidence를 보존하고 결정론 분류로 `INCLUDE/REVIEW/EXCLUDE`를 나누며, 메인 coverage에는 `INCLUDE`만 넣고 사용자가 operation 단위로 되돌릴 수 있게 한다.
+11. 관측된 조합의 `UNCROSSED`와 아직 요청하지 않은 route candidate를 섞지 않는다. 전자는 현재 Evidence에서 계산하는 사실이고, 후자는 in-scope 응답이나 Burp Site Map에 정확한 provenance가 있는 탐색 후보다.
+12. 후보 우선순위에 임의 숫자 가중치를 먼저 넣지 않는다. 검증된 규격 신호와 provenance를 범주형으로 보존하고, 고정된 라벨 corpus와 블라인드 결과가 생긴 뒤에만 수치 점수의 필요성과 calibration을 판단한다.
 
 ## 2. 구현 단계와 성공 기준
 
@@ -57,6 +59,90 @@
 - 실제 로그인으로 USER A/B를 ACTIVE로 만든 뒤 비로그인→USER A→USER B ZAP fresh-session campaign, 신원별 수집/Alert, LLM account 주입을 검증한다.
 - 성공 기준: 브라우저 콘솔 오류 0, 잘린 핵심 조작 0, unload 후 포트 해제, 세 source가 실제 포트대로 분리된다.
 
+### P4-H — HUMAN/Burp 그래프 핵심 교정 (SCANNER·LLM 동결)
+
+이 단계는 P5 전에 먼저 끝낸다. 목표는 “요청을 많이 저장함”이 아니라, 실제 사람이 밟은 business operation과 응답에서 발견한 미요청 후보를 섞지 않고 IDA식 그래프에서 추적 가능하게 만드는 것이다.
+
+#### H0. 현재 기준선과 검증 기록 교정
+
+- `TrafficClassifier.VERSION=2`는 `application/manifest+json`을 일반 `+json` API로 포함한다. 현재 crAPI 익명 스모크의 HUMAN/SCANNER/LLM `INCLUDE`는 모두 `/manifest.json`이므로 business API 탐색 성공으로 인정하지 않는다.
+- 8080 HUMAN 스모크는 Burp Browser가 아니라 `curl`을 HUMAN listener에 연결한 전송 확인이었다. `sourceDetail=BROWSER`는 listener profile에서 붙은 provenance이지 실제 브라우저 사용 증명이 아니다.
+- 현재 `UNCROSSED`는 관측 identity × 관측 operation/resource 중 확정 owner가 있는 미실행 cell만 계산한다. 미관측 endpoint inventory는 아직 없다.
+- 현재 Web snapshot은 추출된 모든 object candidate에 근거 계산 없이 `confidence=1.0`을 넣고 UI는 이를 `신뢰도 100%`로 표시한다. 이는 측정값이 아니므로 H4에서 추출 근거 표시로 교체한다.
+- 성공 기준: README, 결정 로그, 검증 기록과 개발 계획이 이 경계를 동일하게 말하고, 기존 JAR의 성능을 소급 과장하지 않는다.
+
+#### H1. 분류기 v3 — 규격 신호 기반 결정론 cascade
+
+먼저 일반 목적 라벨 fixture를 작성하고 실패를 재현한 뒤 최소 규칙으로 수정한다. target 이름이나 crAPI path는 규칙에 넣지 않는다.
+
+1. scope, response 존재, source, HUMAN phase 같은 변경 불가능한 discovery gate를 먼저 적용한다.
+2. CORS preflight, document/navigation, script/style/image/font, web app manifest, source map, service worker 같은 브라우저 보조 관측은 Evidence를 삭제하지 않고 `DISCOVERY_METADATA` 또는 기존 비분석 class로 분리한다. 이 데이터는 business graph에는 들어가지 않지만 route candidate 추출에는 사용할 수 있다.
+3. 명시적 GraphQL/gRPC/protobuf, unsafe business request, Fetch destination `empty`와 API representation의 합치처럼 강한 API 신호만 `INCLUDE`한다.
+4. 같은 정규화 operation의 다른 관측에 강한 API Evidence가 있으면 그 교차 관측을 보조 신호로 사용한다. 충돌하거나 보안 관련성이 있으나 용도가 불명확하면 삭제하지 않고 `REVIEW`에 둔다.
+5. operation 단위 사용자 override는 유지하되, override 전후 reason과 영향 record 수를 표시한다.
+
+필수 fixture는 실제 browser document, JSON fetch API, `text/plain` API, GraphQL variables, nested/array object ID, multipart, authenticated image API, 일반 image, CSS/JS/font, source map, web manifest, service worker, CORS preflight, 일반 OPTIONS, redirect, 401/403, 응답 없는 요청을 포함한다.
+
+성공 기준:
+
+- web manifest·명확한 정적 자원·진짜 preflight가 business `INCLUDE`가 되는 알려진 회귀가 0이다.
+- JSON이 아닌 API와 객체를 다루는 정적 경로가 단순 확장자 때문에 사라지는 알려진 회귀가 0이다.
+- 모든 분류 결과에 machine-readable reason이 있고 원 Evidence는 그대로 남는다.
+- fixture confusion matrix와 `REVIEW` 작업량을 공개한다. 오탐·미탐 0이나 근거 없는 정밀도 목표값은 주장하지 않는다.
+
+#### H2. Route Candidate Inventory — 관측과 후보를 분리
+
+새 모델은 최소한 다음을 보존한다.
+
+```text
+RouteCandidate {
+  service, methodOrUnknown, pathTemplate,
+  provenanceType, provenanceEvidenceIds,
+  observed, applicability, reviewReason
+}
+```
+
+후보 입력은 사용자가 허가한 exact scope 안에서 실제로 받은 데이터만 사용한다.
+
+- Burp Montoya `siteMap().requestResponses(filter)`의 in-scope 항목. `hasResponse=false`인 항목은 관측 요청으로 승격하지 않고 `BURP_UNREQUESTED` 후보로만 저장한다.
+- 관측 HTML의 `a[href]`, `form[action/method]`, manifest link와 같은 명시적 URL 참조.
+- 관측 응답의 same-scope `Location`과 표준 sitemap/robots/web manifest 항목.
+- 관측 JavaScript의 `fetch`/XHR/axios 등 명시적 URL literal. 문자열 조합·동적 계산은 추측하지 않고 `REVIEW` 또는 미지원으로 남긴다.
+- 대상 내부에서 실제로 관측된 OpenAPI 문서만 사용한다. 외부 검색, Wayback, 저장소, 사전 정답은 사용하지 않는다.
+
+URL만 있고 method 근거가 없으면 `GET`으로 꾸미지 않고 `UNKNOWN`으로 둔다. 후보 dedup key는 service + method/unknown + normalized path이고, 각 후보는 원문 Evidence ID를 모두 유지한다.
+
+성공 기준: 모든 후보를 클릭해 “어느 응답/어느 Site Map 항목에서 나왔는지” 확인할 수 있고, provenance 없는 후보는 0이며, 후보가 coverage·finding·dataset lane 완료를 증가시키지 않는다.
+
+#### H3. 그래프·갭 표현
+
+- 실제 HUMAN 요청은 기존 파랑·실선으로 유지한다.
+- 아직 요청하지 않은 후보는 source edge로 위장하지 않고 중립색 빈 노드·점선 테두리로 표시한다. `미요청 후보` 필터에서만 켜고 끌 수 있게 한다.
+- `REVIEW`는 분류 보류, `미요청 후보`는 아직 request/response가 없는 공격면 후보이므로 서로 다른 상태와 개수로 표시한다.
+- 기존 `UNCROSSED`는 이름과 계산을 유지한다. 별도 `UNOBSERVED_ROUTE`는 candidate inventory 중 observed operation으로 매칭되지 않은 항목만 표시한다.
+- candidate를 눌러 Burp Browser로 열거나 Repeater 초안을 만드는 동작은 자동 전송하지 않으며, 사용자가 요청해 실제 response가 들어온 뒤에만 observed로 전환한다.
+
+성공 기준: 한 화면에서 observed/candidate/review를 혼동하지 않고, 빈 후보를 취약점·미탐 확정으로 표현하지 않으며, Request/Response 없는 노드가 인가 verdict를 갖지 않는다.
+
+#### H4. 객체 적용 가능성·가중치 경계
+
+- 전체 identity × 전체 resource의 단순 곱을 만들지 않는다. operation마다 실제 path/query/body/schema Evidence로 접근 가능한 `R(o)`만 연결한다.
+- `C_total = Σ |I|·|R(o)|`는 `R(o)`가 Evidence로 확인된 경우에만 연구용 후보 공간으로 계산한다. route 후보만 있고 객체 적용 가능성이 불명확하면 객체 조합을 생성하지 않는다.
+- 우선순위 1차판은 임의 숫자 합산이 아니라 설명 가능한 사전식 정렬이다: 명시적 method·object reference·authorization 관련 응답·복수 독립 provenance·state-changing 여부. 각 항목은 원 Evidence를 가리킨다.
+- 숫자 가중치는 고정 corpus와 블라인드 benchmark에서 feature별 precision/recall 및 review 비용을 측정하고, 동일 데이터로 규칙을 만들고 성능을 주장하는 누수를 막은 뒤에만 별도 결정한다.
+
+성공 기준: 후보 정렬 이유를 사람이 읽을 수 있고, 검증되지 않은 object cross-product와 임의 confidence 퍼센트가 없다. 현재 object candidate의 고정 `신뢰도 100%`도 제거하고 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/USER_CONFIRMED` 같은 추출 근거로 대체한다.
+
+#### H5. 검증 순서
+
+1. protocol fixture 회귀 → 분류 결과와 candidate truth set 대조.
+2. 실제 Burp Browser HUMAN pass → Fetch Metadata가 있는 요청과 없는 요청을 모두 저장해 listener label과 실제 browser 동작을 구분.
+3. 일반 local MPA, SPA, GraphQL fixture → route candidate precision/recall, API 분류 confusion matrix, REVIEW 건수·승격률, graph node 감소량을 기록.
+4. fresh project save/load → candidate provenance와 override 왕복, raw credential 부재 확인.
+5. 위 gate가 끝난 뒤에만 P5 crAPI 블라인드 benchmark를 시작하며 정답은 lock 이후 확인.
+
+중단 조건은 provenance 없는 candidate 생성, protocol fixture 회귀, 후보의 coverage/finding 오염, 실제 Burp Browser에서 재현되지 않는 자동 테스트 통과다. 이 경우 임의 예외를 더하지 않고 원인을 고친다.
+
 ### P5 — crAPI 블라인드 벤치마크
 
 - 정답 목록을 보지 않은 상태에서 새 프로젝트로 시작한다.
@@ -77,9 +163,21 @@
 
 - P0~P3: 코드 구현 완료. Web UI 정본화, exact-scope 수집 차단, 구조적 마스킹, memory-only session broker, 통제 LLM 실행, Explorer 서버 격리, dataset lock, 신원별 fresh-session 시스템 ZAP campaign, 서버 검증 LLM verdict를 구현했다.
 - P4 브라우저 QA: 기존 beta.3 standalone UI의 1500×900, 900×700, 600×800, 1024×768, 1280×720 검증은 통과했다. 이번 scanner control도 1280×720·600×800에서 비로그인 선택, 가로 overflow 0, 좁은 폭 modal scroll, 신원/target 미선택 버튼 비활성, warning/error 0을 확인했다. Standalone fixture에는 ACTIVE broker 계정이 없어 USER A/B 복수 chip 렌더는 HTML/API 계약까지만 통과했으며, Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
-- P4 Burp Community QA: 현재 beta.3 fat JAR을 Community 2026.7.3에 로드해 suite tab, Web UI 17777, MCP 8787, HUMAN 8080, SCANNER 8081을 실제 기동했다. exact scope `http://127.0.0.1:8888/`에서 anonymous HUMAN 3건, ZAP 2.17 SYSTEM baseline 8건, MCP LLM Explorer 통제 요청 1건이 각각 HUMAN/SCANNER/LLM으로 분리됐다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 LLM의 범위 밖 FlowScope Web 요청은 거부됐다. `REVIEW`뿐인 HUMAN lane에서는 lock이 거부됐고 API `INCLUDE` Evidence 추가 뒤 12건을 잠갔으며 후보·gap은 꾸미지 않고 0건으로 남았다. 잠금 뒤 Explorer 재시작도 거부됐다.
+- P4 Burp Community QA: 현재 beta.3 fat JAR을 Community 2026.7.3에 로드해 suite tab, Web UI 17777, MCP 8787, HUMAN 8080, SCANNER 8081을 실제 기동했다. exact scope `http://127.0.0.1:8888/`에서 HUMAN listener 8080 전송 3건, ZAP 2.17 SYSTEM baseline 8건, MCP LLM Explorer 통제 요청 1건이 각각 HUMAN/SCANNER/LLM으로 분리됐다. 이 HUMAN 전송은 실제 Burp Browser가 아니라 8080을 프록시로 사용한 `curl` 스모크였다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 LLM의 범위 밖 FlowScope Web 요청은 거부됐다. `REVIEW`뿐인 HUMAN lane에서는 lock이 거부됐고 classifier v2가 web manifest를 `API/INCLUDE`로 오분류한 `/manifest.json`을 추가한 뒤 12건을 잠갔다. 따라서 이 결과는 포트 분리·lock·scope guard의 wiring 검증이지 HUMAN business API 탐색이나 분류 품질 검증이 아니다. finding·gap 0과 잠금 뒤 Explorer 재시작 거부는 관측 사실 그대로 유지한다.
 - beta.3 잔여 수동 gate: 브라우저 `UNVERIFIED→ACTIVE` 실제 로그인, USER A/B broker 주입과 복수 ZAP lane, 구독형 Codex/Claude prompt 전체와 Judge, Repeater handoff, project save/load, extension unload 후 포트 해제를 확인해야 한다. packaging 단일화, 익명 3-source 연결, MCP protocol·가시성 격리·범위 차단은 통과했다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
-- HUMAN 탐색 경계: anonymous HUMAN pass의 시작·종료와 `EXPLORATION` run ID는 실제 Burp에서 확인했다. 로그인 캡처 `SESSION_SETUP`, pass 밖 `BASELINE`, 선택 ACTIVE 계정의 exact credential match는 자동 회귀를 통과했으며 실제 로그인 계정으로 재확인해야 한다.
+- HUMAN 탐색 경계: HUMAN pass의 시작·종료와 `EXPLORATION` run ID 상태 전이는 8080 `curl` 스모크로 확인했다. 실제 Burp Browser 탐색은 미검증이다. 로그인 캡처 `SESSION_SETUP`, pass 밖 `BASELINE`, 선택 ACTIVE 계정의 exact credential match는 자동 회귀를 통과했으며 실제 로그인 계정으로 재확인해야 한다.
 - 분류 경계: `REVIEW`를 Evidence·검토 대기에 보존하면서 메인 graph·3-way gap 입력에서는 보류하고, UI 처분 필터와 수량을 `INCLUDE/REVIEW/EXCLUDE`로 분리했다. 1280×720 standalone의 필터·상세·overflow·console 검증은 통과했고, 실제 Burp 대상에서 REVIEW 승격·숨김 작업량은 beta gate와 blind benchmark에서 측정해야 한다.
 - 판정 경계: 거부/HEAD owner 오염, auth 부분문자열 redirect 오탐, owner-only 객체 Evidence를 차단했다. 불충분한 BOLA read 응답은 안전으로 폐기하지 않고 `UNDECIDED/INCONCLUSIVE`에 남긴다. 자동 회귀는 통과했으며 실제 Judge workflow는 beta gate다.
 - P5 crAPI 블라인드 벤치마크: 사용자 검토 전까지 보류한다. 정답·공격 절차·라벨을 코드, 프롬프트, 실행 컨텍스트에 넣지 않는다.
+
+## 5. 근거와 계획 해석
+
+- [W3C Fetch Metadata](https://www.w3.org/TR/fetch-metadata/)는 `Sec-Fetch-Dest`가 `empty`, `image`, `document`, `iframe` 등 요청 목적을 전달한다고 정의한다. 분류 신호로 쓰되 헤더 누락 가능성 때문에 단독 절대판정으로 쓰지 않는다.
+- [W3C Web App Manifest](https://www.w3.org/TR/appmanifest/)는 `application/manifest+json`과 `.webmanifest`를 웹 앱 manifest로 정의하고 `.json` 확장도 허용한다. 따라서 모든 `+json`을 business API로 보는 현재 규칙은 잘못이다.
+- [PortSwigger Site Map 문서](https://portswigger.net/burp/documentation/desktop/tools/target/site-map/getting-started)는 응답에서 URL이 참조됐지만 request-response가 완료되지 않은 항목을 별도 회색 후보로 표시한다. 이는 FlowScope도 observed와 candidate를 분리해야 한다는 직접적인 제품 근거다.
+- [Montoya SiteMap API](https://portswigger.github.io/burp-extensions-montoya-api/javadoc/burp/api/montoya/sitemap/SiteMap.html)는 extension이 Site Map item을 조회할 수 있고, `HttpRequestResponse.hasResponse()`로 응답 유무를 구분할 수 있다. 실제 Community 동작 여부는 H2 수동 gate에서 확인한다.
+- [Burp HTTP history filtering](https://portswigger.net/burp/documentation/desktop/tools/proxy/http-history/filter-settings)은 filter가 표시만 바꾸고 항목을 삭제하지 않는다고 명시한다. FlowScope의 Evidence 보존과 분석 처분 분리 원칙을 유지한다.
+- [OWASP WSTG IDOR](https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/04-Testing_for_Insecure_Direct_Object_References)는 object reference 위치를 먼저 매핑하고 서로 다른 사용자 소유 객체로 권한을 검증하도록 한다. 그래서 route 후보와 object applicability를 증거 없이 Cartesian product로 만들지 않는다.
+- [OWASP API1:2023 BOLA](https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/)는 object ID가 path/query/header/body 어디에도 있을 수 있음을 명시한다. 정규화 corpus가 path 숫자만 다뤄서는 안 되는 근거다.
+
+위 문서가 정하는 것은 프로토콜 의미와 Burp가 제공하는 관측면이다. 어떤 feature에 몇 점을 줄지는 표준이 정하지 않으므로, 가중치 보류와 범주형 정렬은 이 근거들에서 내린 설계 판단이다.

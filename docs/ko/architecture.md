@@ -173,6 +173,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 ## 7. 명시적 한계
 
 - 후보는 exploitability/business impact의 증명이 아니다.
+- 현재 `UNCROSSED`는 관측된 identity와 관측된 operation/resource 안의 미실행 cell만 계산한다. 응답이나 Burp Site Map에서 참조된 미요청 endpoint를 별도 inventory로 만드는 기능은 D-068/P4-H 계획 단계이며 현재 graph가 미관측 공격면을 안다고 주장하지 않는다.
 - domain-specific 또는 일반 principal 문맥이 아닌 중첩 ownership은 사용자 확정이 필요하다.
 - 안정 신호 없는 opaque rotating token은 자동으로 같은 identity로 합칠 수 없으며 사용자 확인 binding이 필요하다.
 - 쿠키 존재만으로 익명/로그인 여부를 완전히 알 수 없고 Fetch Metadata/MIME도 모든 클라이언트가 제공하지 않는다. 따라서 `UNRESOLVED`와 `REVIEW`가 정상 상태이며 분류의 오탐·미탐 0을 주장하지 않는다.

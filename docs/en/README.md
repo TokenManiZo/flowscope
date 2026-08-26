@@ -2,7 +2,7 @@
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
-FlowScope is a Burp Suite Community-compatible extension that aligns real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into one identity-aware authorization graph and coverage matrix. It highlights missed endpoint/object combinations and evidence-grounded BOLA/IDOR and BFLA candidates without treating an LLM guess as a confirmed vulnerability.
+FlowScope is a Burp Suite Community-compatible extension that aligns real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into one identity-aware authorization graph and coverage matrix. It currently highlights uncrossed object combinations inside the observed set and evidence-grounded BOLA/IDOR and BFLA candidates without treating an LLM guess as a confirmed vulnerability. Provenance-backed routes that are referenced but have not yet been requested are planned, not implemented.
 
 ```
 identity ──access──▶ resource ──calls──▶ operation

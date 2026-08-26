@@ -1,6 +1,6 @@
 # FlowScope 1.2.0-beta.3
 
-FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 누락된 엔드포인트·객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다.
+FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 현재는 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답에서 참조됐지만 아직 요청하지 않은 경로를 별도 후보로 제시하는 기능은 구현 전 계획 단계입니다.
 
 ```text
 신원 ──접근──▶ 객체 ──호출──▶ 작업

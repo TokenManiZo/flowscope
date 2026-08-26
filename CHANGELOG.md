@@ -7,7 +7,7 @@
 - Proxy 응답을 요청 시점 `messageId` 문맥에 귀속해 ZAP 계정 lane 전환·HUMAN pass 종료와 늦은 응답 간 provenance 경합을 차단
 - HUMAN 계정 pass는 `ACTIVE` 세션만 선택할 수 있고 실제 요청 자격증명이 선택 계정과 exact match할 때만 그 계정으로 기록하도록 강화
 - SYSTEM anonymous ZAP lane은 서버가 발급한 lane-local Cookie/CSRF를 유지하면서도 FlowScope 신원은 `ANONYMOUS`로 고정
-- 현재 beta.3 JAR을 Burp Community 2026.7.3·ZAP 2.17·crAPI·로컬 MCP에 연결해 anonymous HUMAN/SCANNER/LLM 경로와 범위 밖 LLM 차단을 실측
+- 현재 beta.3 JAR을 Burp Community 2026.7.3·ZAP 2.17·crAPI·로컬 MCP에 연결해 HUMAN listener/SCANNER/LLM 전송 경로와 범위 밖 LLM 차단을 실측. HUMAN은 8080 `curl` wiring이며 실제 Burp Browser 검증은 아님
 - 비로그인과 복수 ACTIVE 계정을 fresh ZAP session으로 순차 격리하고 신원별 수집·Alert 상태를 표시하는 SYSTEM scanner campaign 추가. 계정 레인은 기존 인증값을 제거한 뒤 broker 세션만 주입하고 신원 하나라도 실패하면 SCANNER 완료 gate를 열지 않음
 - 로그인 캡처가 성공 응답을 확인하기 전에는 `UNVERIFIED`로 유지하고 같은 서비스의 계정 두 개를 동시에 캡처하지 못하게 함. Web 계정 카드와 종료 메시지에 재캡처 이유 표시
 - LLM run의 `account_id`를 통제 executor까지 전달하는 회귀를 고정하고, FlowScope Web loopback 제어면을 ZAP target 목록과 시작 API에서 제외
