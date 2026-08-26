@@ -27,7 +27,11 @@ public record RouteCandidate(String service, String method, String pathTemplate,
     public enum Applicability { APPLICABLE, REVIEW }
 
     public record Provenance(ProvenanceType type, String evidenceId, Source source,
-                             String runId, String adapter) {
+                             String runId, String adapter, Applicability applicability, String reason) {
+        public Provenance(ProvenanceType type, String evidenceId, Source source, String runId, String adapter) {
+            this(type, evidenceId, source, runId, adapter, Applicability.REVIEW, "");
+        }
+
         public Provenance {
             if (type == null || evidenceId == null || evidenceId.isBlank()) {
                 throw new IllegalArgumentException("route provenance requires type and evidence");
@@ -35,6 +39,8 @@ public record RouteCandidate(String service, String method, String pathTemplate,
             source = source == null ? Source.UNKNOWN : source;
             runId = runId == null || runId.isBlank() ? "unknown-run" : runId;
             adapter = adapter == null || adapter.isBlank() ? "unknown-adapter" : adapter;
+            applicability = applicability == null ? Applicability.REVIEW : applicability;
+            reason = reason == null ? "" : reason;
         }
     }
 

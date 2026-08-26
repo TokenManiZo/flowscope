@@ -7,8 +7,8 @@ This directory contains the repeatable FlowScope Explorer and final Judge workfl
 3. Trust this project in Codex, then start `codex` or `claude` from this directory so its project instructions and MCP configuration apply. Codex intentionally ignores project-scoped `.codex/` configuration in an untrusted project.
 4. Before a run, verify discovery with `codex mcp get flowscope` (Codex) or the client's MCP server list. It must show `http://127.0.0.1:8787/mcp` and bearer-token environment variable `FLOWSCOPE_MCP_TOKEN`. Do not add a duplicate global server when the project entry is already present.
 5. In the FlowScope Web UI, capture each test-account session through HUMAN port 8080. Give the agent only the exact authorized target, safe account IDs, and safety constraints; never paste raw cookies or tokens.
-6. After the HUMAN and deterministic ZAP lanes complete, ask the agent to execute `prompts/explorer.md`. It may configure only the exact operator-supplied target before a run and uses `flowscope_target_request` exclusively.
-7. After Explorer ends, ask it to execute `prompts/judge.md`. Judge locks the three-lane dataset, correlates gaps and ZAP alerts, captures controlled validation Evidence, and submits final bundles itself.
+6. After the HUMAN and deterministic ZAP lanes complete, ask the agent to execute `prompts/explorer.md`. It may configure only the exact operator-supplied target before a run, sends target traffic only through `flowscope_target_request`, and follows route candidates derived only from its own run.
+7. After Explorer ends, ask it to execute `prompts/judge.md`. Judge locks the three-lane dataset and route inventory, correlates gaps, unrequested routes, and ZAP alerts, captures controlled validation Evidence, and submits final bundles itself.
 
 Example: `codex "Read AGENTS.md, then execute prompts/explorer.md against the authorized target I provide."`
 

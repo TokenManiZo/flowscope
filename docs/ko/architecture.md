@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.5
+# FlowScope 설계서 v1.2.0-beta.6
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -52,7 +52,7 @@ RequestRecord {
 
 RouteCandidate {
   service, method, pathTemplate, observed,
-  provenance[{type, evidenceId, source, runId, adapter}],
+  provenance[{type, evidenceId, source, runId, adapter, applicability, reason}],
   applicability, reviewReason
 }
 ```
@@ -64,7 +64,7 @@ RouteCandidate {
 - `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다. 쿠키 fingerprint는 계정 연결·감사를 위한 안전한 식별자이지 로그인 증명이 아니다.
 - `authState`: `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`. 명시적 계정 연결이나 memory-only broker의 exact credential match만 `ACCOUNT_BOUND`가 된다. 계정에 연결되지 않은 cookie/session fingerprint는 서비스별 하나의 `UNRESOLVED` 그래프 신원으로 안정화하되 원 fingerprint는 Evidence에 남긴다.
 - `trafficClassification`: `API/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
-- `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
+- `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
 - `SessionBroker`: 사용자가 Web UI에서 명시적으로 시작한 HUMAN 로그인 구간의 Cookie/Authorization/CSRF만 프로세스 메모리에 보관한다. 자격증명 material만 관측하고 성공 응답을 확인하지 못하면 `UNVERIFIED`, 401·로그인 redirect·invalid token이면 `SUSPECT`, 비밀 삭제/만료면 `REAUTH_REQUIRED`다. account service와 exact scope가 모두 맞고 상태가 `ACTIVE`일 때만 ZAP/LLM 요청에 주입한다. HUMAN pass의 계정 선택은 표시 힌트가 아니라 검증 조건이며, 실제 요청 자격증명이 그 broker 계정과 exact match할 때만 계정 신원으로 귀속한다. 다른 계정이 같은 service에서 동시에 캡처되는 것을 거부하며 raw 값은 UI/MCP/project에 나오지 않는다.
@@ -149,8 +149,11 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 
 - 기본은 closed-world다. 공급된 agent-workspace는 web search, Wayback, 외부 API 문서·소스 저장소, curl·브라우저 네트워킹을 금지한다. 대상 내부 문서는 exact-scope 통제 응답으로 실제 관측된 경우만 사용할 수 있다.
 - Explorer는 `flowscope_target_request`만 사용한다. 서버는 탐색 중 HUMAN/SCANNER count·cell·gap·finding·Evidence를 숨기고 Explorer 자신의 run Evidence만 보여 준다.
+- `flowscope_list_route_candidates`는 탐색 중 provenance를 현재 `LLM + runId`로 잘라 observed/applicability/reason을 다시 계산한다. 같은 route에 HUMAN 근거가 병합돼 있어도 그 근거와 상태는 반환하지 않는다.
 - captured/coverage/excluded/review와 source별 coverage count도 같은 가시성 경계를 적용해 Explorer에게는 현재 LLM run 값만 보인다.
+- lock 전 active Explorer가 없을 때도 MCP status는 다른 lane의 수량·active run·gap/finding을 공개하지 않는다. Explorer 중에는 ZAP 상태/실행과 기존 assessment/validation 조회를 거부한다.
 - HUMAN, 시스템 ZAP, 독립 LLM이 정확한 run 종료를 완료해야 `flowscope_lock_dataset`이 성공한다. 레코드가 있다는 사실만으로 완료 처리하지 않는다.
+- dataset lock은 Pipeline 결과와 route candidate inventory를 함께 snapshot한다. lock 이후 validation/coach traffic이나 background candidate rebuild는 Judge가 보는 route 목록을 바꾸지 않는다.
 - Judge는 잠긴 후보/소유자/역할 기준과 ZAP native alert를 종합한다. 잠금 뒤 새 검증 트래픽은 현재 Evidence 저장소에서 읽되 후보 오라클은 잠긴 snapshot을 유지한다.
 - MCP exact-scope 교체는 로컬 capability를 가진 클라이언트가 사용자가 명시한 범위를 자동 설정할 때만 허용하며, SCANNER/LLM run 중에는 거부한다.
 - HUMAN pass는 Web quick-start에서 exact run lease로 시작·종료해 임의 브라우저 트래픽과 기준선 수행 구간을 구분한다. 계정 pass 시작은 해당 broker 세션이 `ACTIVE`일 때만 허용하고, 관측 요청의 자격증명이 선택 계정과 다르면 그 계정으로 기록하지 않는다.

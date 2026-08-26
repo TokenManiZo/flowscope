@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.6 — 2026-08-26
+
+- Attached applicability and reason to each provenance item so a source/run-filtered view can recompute state without inheriting another lane's conclusion.
+- Added `flowscope_list_route_candidates`: an independent Explorer sees only its own run provenance, while a Judge sees the route inventory frozen at dataset lock.
+- Removed pre-lock MCP leakage of cross-source counts, coverage, gaps, findings, and active runs; an Explorer receives only its own run metrics.
+- Rejected ZAP state/execution and prior assessment/validation reads during independent exploration.
+- Included route candidates in the immutable dataset lock so validation traffic or later rebuilds cannot change Judge route input.
+
 ## 1.2.0-beta.5 — 2026-08-26
 
 - Split route discovery into document inputs, stateless format adapters, and one common exact-scope/method/normalization/deduplication gate.

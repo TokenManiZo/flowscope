@@ -31,6 +31,7 @@ public final class McpServer implements AutoCloseable {
         ZapClient zap();
         RunContextRegistry contexts();
         AnalysisConfig config();
+        default List<RouteCandidate> routeCandidates() { return List.of(); }
         boolean approve(String action, String target);
         default SessionBroker sessions() { return null; }
         default TargetResult targetRequest(TargetRequest request) {
@@ -58,6 +59,7 @@ public final class McpServer implements AutoCloseable {
     private final List<Assessment> assessments = new ArrayList<>();
     private final List<ValidationDecision> validations = new ArrayList<>();
     private volatile Pipeline.Result lockedSnapshot;
+    private volatile List<RouteCandidate> lockedRouteCandidates = List.of();
     private volatile String lockId = "";
     private final ExecutorService zapWorkflow = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "flowscope-zap-baseline");
@@ -118,6 +120,7 @@ public final class McpServer implements AutoCloseable {
     }
     public void resetWorkflow() {
         lockedSnapshot = null;
+        lockedRouteCandidates = List.of();
         lockId = "";
         if (zapBaseline == null || !"RUNNING".equals(zapBaseline.status())) {
             zapBaseline = null;
@@ -228,7 +231,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.5");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.6");
         result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "
@@ -242,12 +245,13 @@ public final class McpServer implements AutoCloseable {
 
     private ObjectNode toolsList() {
         ArrayNode tools = json.createArrayNode();
-        tools.add(tool("flowscope_get_status", "Get source counts, active scope, coverage and finding counts.", schema(), true, false));
+        tools.add(tool("flowscope_get_status", "Get active scope, workflow stage, and only the counts visible at the current isolation stage.", schema(), true, false));
         tools.add(tool("flowscope_set_scope", "Replace the allowlist with user-authorized exact HTTP(S) scope entries before active runs.",
                 scopeSchema(), false, false));
         tools.add(tool("flowscope_lock_dataset", "Lock completed HUMAN, SCANNER, and independent LLM lanes before Judge access.",
                 schema(), false, false));
         tools.add(tool("flowscope_list_candidates", "List evidence-grounded BOLA/BFLA and coverage-gap candidates.", paginationSchema(), true, false));
+        tools.add(tool("flowscope_list_route_candidates", "List provenance-backed observed and unrequested routes visible in the current Explorer run or locked dataset.", paginationSchema(), true, false));
         tools.add(tool("flowscope_get_evidence", "Read one masked request/response by evidence_id.",
                 evidenceSchema(), true, false));
         tools.add(tool("flowscope_list_evidence", "List captured Evidence metadata with run/source/phase filters.",
@@ -287,6 +291,7 @@ public final class McpServer implements AutoCloseable {
                 case "flowscope_set_scope" -> setScope(args);
                 case "flowscope_lock_dataset" -> lockDataset();
                 case "flowscope_list_candidates" -> candidates(args);
+                case "flowscope_list_route_candidates" -> routeCandidates(args);
                 case "flowscope_get_evidence" -> evidence(args.path("evidence_id").asText());
                 case "flowscope_list_evidence" -> listEvidence(args);
                 case "flowscope_list_sessions" -> listSessions();
@@ -321,6 +326,7 @@ public final class McpServer implements AutoCloseable {
         ObjectNode out = json.createObjectNode();
         RunContextRegistry.Context llm = state.contexts().current(Source.LLM);
         boolean independentView = lockedSnapshot == null && llm != null && llm.phase() == RunPhase.EXPLORATION;
+        boolean lockedView = lockedSnapshot != null;
         List<RequestRecord> visibleRecords = independentView
                 ? snapshot.records.stream().filter(record -> record.source == Source.LLM
                 && llm.runId().equals(record.runId)).toList()
@@ -335,7 +341,7 @@ public final class McpServer implements AutoCloseable {
         ObjectNode sourceCounts = out.putObject("source_counts");
         if (independentView) {
             sourceCounts.put(Source.LLM.name(), visibleRecords.size());
-        } else {
+        } else if (lockedView) {
             for (Source source : Source.values()) {
                 sourceCounts.put(source.name(), snapshot.records.stream().filter(r -> r.source == source).count());
             }
@@ -343,20 +349,26 @@ public final class McpServer implements AutoCloseable {
         ObjectNode coverageSourceCounts = out.putObject("coverage_source_counts");
         if (independentView) {
             coverageSourceCounts.put(Source.LLM.name(), visibleCoverage.size());
-        } else {
+        } else if (lockedView) {
             for (Source source : Source.values()) {
                 coverageSourceCounts.put(source.name(), visibleCoverage.stream()
                         .filter(record -> record.source == source).count());
             }
         }
-        out.put("captured_records", visibleRecords.size());
-        out.put("coverage_records", visibleCoverage.size());
-        out.put("excluded_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
-                == TrafficClassification.Disposition.EXCLUDE).count());
-        out.put("review_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
-                == TrafficClassification.Disposition.REVIEW).count());
+        if (independentView || lockedView) {
+            out.put("captured_records", visibleRecords.size());
+            out.put("coverage_records", visibleCoverage.size());
+            out.put("excluded_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
+                    == TrafficClassification.Disposition.EXCLUDE).count());
+            out.put("review_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
+                    == TrafficClassification.Disposition.REVIEW).count());
+            List<RouteCandidate> visibleRoutes = independentView
+                    ? RouteCandidateViews.forRun(state.routeCandidates(), Source.LLM, llm.runId())
+                    : lockedRouteCandidates;
+            out.put("route_candidates", visibleRoutes.size());
+        }
         out.putPOJO("scope", state.scope().entries());
-        if (!independentView) {
+        if (lockedView) {
             Pipeline.Result visible = analysisSnapshot();
             out.put("coverage_cells", visible.analysis.cells().size());
             out.put("gaps", visible.analysis.gaps().size());
@@ -369,7 +381,9 @@ public final class McpServer implements AutoCloseable {
         out.put("llm_target_proxy", "http://127.0.0.1:8082");
         out.put("scanner_target_proxy", "http://127.0.0.1:8081");
         ObjectNode activeRuns = out.putObject("active_runs");
-        for (Source source : List.of(Source.HUMAN, Source.SCANNER, Source.LLM)) {
+        List<Source> visibleRunSources = lockedView ? List.of(Source.HUMAN, Source.SCANNER, Source.LLM)
+                : List.of(Source.LLM);
+        for (Source source : visibleRunSources) {
             RunContextRegistry.Context context = state.contexts().current(source);
             if (context != null) activeRuns.put(source.name(), context.runId());
         }
@@ -393,10 +407,12 @@ public final class McpServer implements AutoCloseable {
             throw new IllegalStateException("completed lanes need captured exploration responses before lock: " + emptyLanes);
         }
         lockedSnapshot = snapshot;
+        lockedRouteCandidates = List.copyOf(state.routeCandidates());
         lockId = "lock-" + System.currentTimeMillis();
         return json.createObjectNode().put("lock_id", lockId).put("records", lockedSnapshot.records.size())
                 .put("findings", lockedSnapshot.analysis.findings().size())
-                .put("gaps", lockedSnapshot.analysis.gaps().size());
+                .put("gaps", lockedSnapshot.analysis.gaps().size())
+                .put("route_candidates", lockedRouteCandidates.size());
     }
 
     private JsonNode setScope(JsonNode args) {
@@ -473,6 +489,48 @@ public final class McpServer implements AutoCloseable {
         out.set("gaps", json.valueToTree(page(snapshot.analysis.gaps(), args)));
         out.put("total_findings", snapshot.analysis.findings().size());
         out.put("total_gaps", snapshot.analysis.gaps().size());
+        return out;
+    }
+
+    private JsonNode routeCandidates(JsonNode args) {
+        RunContextRegistry.Context explorer = independentExplorer();
+        List<RouteCandidate> visible;
+        if (explorer != null) {
+            visible = RouteCandidateViews.forRun(state.routeCandidates(), Source.LLM, explorer.runId());
+        } else {
+            requireLocked();
+            visible = lockedRouteCandidates;
+        }
+        int offset = Math.max(0, args.path("offset").asInt(0));
+        int limit = Math.max(1, Math.min(200, args.path("limit").asInt(100)));
+        int end = Math.min(visible.size(), offset + limit);
+        ObjectNode out = json.createObjectNode();
+        out.put("total", visible.size());
+        out.put("offset", offset);
+        out.put("limit", limit);
+        out.put("has_more", end < visible.size());
+        ArrayNode routes = out.putArray("routes");
+        if (offset < visible.size()) for (RouteCandidate candidate : visible.subList(offset, end)) {
+            ObjectNode route = routes.addObject();
+            route.put("service", candidate.service());
+            route.put("method", candidate.method());
+            route.put("path_template", candidate.pathTemplate());
+            route.put("observed", candidate.observed());
+            route.put("applicability", candidate.applicability().name());
+            route.put("review_reason", candidate.reviewReason());
+            route.set("priority_reasons", json.valueToTree(RouteCandidateExtractor.priorityReasons(candidate)));
+            ArrayNode provenance = route.putArray("provenance");
+            for (RouteCandidate.Provenance item : candidate.provenance()) {
+                ObjectNode entry = provenance.addObject();
+                entry.put("type", item.type().name());
+                entry.put("evidence_id", item.evidenceId());
+                entry.put("source", item.source().name());
+                entry.put("run_id", item.runId());
+                entry.put("adapter", item.adapter());
+                entry.put("applicability", item.applicability().name());
+                entry.put("reason", item.reason());
+            }
+        }
         return out;
     }
 
@@ -815,6 +873,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode zapStatus(JsonNode args) {
+        rejectIndependentExplorer("ZAP state");
         String scanType = args.path("scan_type").asText();
         String scanId = args.path("scan_id").asText();
         String raw;
@@ -854,6 +913,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode zapEnvironment() {
+        rejectIndependentExplorer("ZAP environment");
         ObjectNode out = json.createObjectNode();
         out.set("version", parseZap(state.zap().version()));
         out.set("installed_addons", parseZap(state.zap().installedAddons()));
@@ -861,6 +921,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private synchronized JsonNode startZapBaseline(JsonNode args) {
+        rejectIndependentExplorer("ZAP baseline");
         if (lockedSnapshot != null) throw new IllegalStateException("scanner runs must finish before dataset lock");
         if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) {
             throw new IllegalStateException("ZAP baseline is already running: " + zapBaseline.runId());
@@ -898,6 +959,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode zapBaselineStatus() {
+        rejectIndependentExplorer("ZAP baseline state");
         ZapBaselineRun value = zapBaseline;
         return value == null ? json.createObjectNode().put("status", "NOT_STARTED") : zapBaselineNode(value);
     }
@@ -1084,6 +1146,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode zapPassiveStatus() {
+        rejectIndependentExplorer("ZAP passive state");
         ObjectNode out = json.createObjectNode();
         out.set("queue", parseZap(state.zap().passiveRecordsToScan()));
         out.set("tasks", parseZap(state.zap().passiveTasks()));
@@ -1139,6 +1202,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode startZap(JsonNode args, boolean active) {
+        rejectIndependentExplorer("ZAP execution");
         if (lockedSnapshot != null) throw new IllegalStateException("scanner runs must finish before dataset lock");
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
@@ -1165,6 +1229,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode startZapAjax(JsonNode args) {
+        rejectIndependentExplorer("ZAP execution");
         if (lockedSnapshot != null) throw new IllegalStateException("scanner runs must finish before dataset lock");
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
@@ -1186,6 +1251,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode startZapClient(JsonNode args) {
+        rejectIndependentExplorer("ZAP execution");
         if (lockedSnapshot != null) throw new IllegalStateException("scanner runs must finish before dataset lock");
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
@@ -1216,6 +1282,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private ArrayNode assessmentPage(JsonNode args) {
+        requireLocked();
         ArrayNode out = json.createArrayNode();
         for (Assessment value : page(snapshotAssessments(), args)) out.add(assessmentNode(value));
         return out;
@@ -1238,6 +1305,7 @@ public final class McpServer implements AutoCloseable {
     }
 
     private ArrayNode validationPage(JsonNode args) {
+        requireLocked();
         ArrayNode out = json.createArrayNode();
         for (ValidationDecision value : page(snapshotValidations(), args)) out.add(validationNode(value));
         return out;
@@ -1431,6 +1499,12 @@ public final class McpServer implements AutoCloseable {
     private void requireLocked() {
         if (lockedSnapshot == null) {
             throw new IllegalStateException("dataset must be locked after HUMAN, SCANNER, and independent LLM passes");
+        }
+    }
+
+    private void rejectIndependentExplorer(String capability) {
+        if (independentExplorer() != null) {
+            throw new IllegalStateException("independent Explorer cannot access " + capability);
         }
     }
 

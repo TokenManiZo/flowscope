@@ -644,6 +644,16 @@
 - **의존성:** jsoup은 로컬 HTML 파싱에만 사용하고, Jackson YAML/SnakeYAML은 관측 OpenAPI YAML 파싱에만 사용한다. Shade는 Jackson service metadata를 병합하며 번들 라이선스·NOTICE를 포함한다.
 - **상태:** 공통 코어 구현 및 자동/fat-JAR smoke 검증 완료. 실제 Burp Site Map·Burp Browser와 blind target gate는 열림.
 
+## D-070 · 독립 Explorer route 시야와 dataset lock = provenance 단위 재계산
+
+- **문제:** D-054는 Explorer의 record/cell/gap/finding 시야를 격리했지만, lock 전 active LLM run이 없을 때 `flowscope_get_status`가 전체 source count와 active run을 반환했다. route candidate는 MCP 도구가 없었고, 전역 후보의 top-level observed/applicability를 그대로 필터하면 HUMAN 근거가 LLM 시야에 남는다. 또한 Pipeline만 잠그고 route inventory를 잠그지 않으면 validation traffic 뒤 Judge 입력이 변할 수 있다.
+- **결정:** provenance에 applicability와 reason을 포함하고 `RouteCandidateViews.forRun`이 `(source, runId)`에 맞는 provenance만 남긴 뒤 observed/applicability/reason을 재계산한다. Explorer용 `flowscope_list_route_candidates`는 이 view만 반환한다. active Explorer가 없는 pre-lock status도 다른 lane 통계를 숨긴다.
+- **도구 경계:** 독립 Explorer 중에는 ZAP environment/status/baseline/passive/execution과 기존 assessment/validation 목록을 거부한다. session broker의 비밀 없는 상태는 계정 선택에 필요하므로 유지하되 cookie/token 원문은 기존처럼 반환하지 않는다.
+- **잠금:** `flowscope_lock_dataset`은 Pipeline 결과와 현재 route candidate list를 함께 불변 snapshot으로 보관한다. 잠금 뒤 도구는 snapshot만 반환하고 이후 state 변경을 따라가지 않는다.
+- **검증:** HUMAN 관측+LLM 참조가 병합된 후보에서 Explorer view가 LLM provenance 하나, `observed=false`, `REVIEW`로 재계산되는지 확인한다. pre-lock cross-lane status와 ZAP/assessment/validation 접근 차단, lock 뒤 원본 route list를 바꿔도 반환 목록이 고정되는 회귀를 둔다.
+- **한계:** Pipeline과 candidate publication은 현재 extension worker의 연속 갱신이며 하나의 transaction object는 아니다. lock은 호출 시점에 공개된 두 immutable snapshot을 잡는다. 실제 지연 응답과 rebuild 경합은 Burp runtime stress gate로 남긴다.
+- **상태:** beta.6 구현·자동 회귀 완료, Burp/MCP 실환경 gate 대기.
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

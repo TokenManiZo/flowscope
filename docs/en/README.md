@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.5
+# FlowScope 1.2.0-beta.6
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -26,6 +26,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - System-owned ZAP baseline: Traditional Spider, strict Client Spider with AJAX fallback, passive queue completion, and native alerts. Active Scan remains separate and approval-gated.
 - Closed-world LLM execution through an exact-scope FlowScope request tool; direct external traffic is never trusted for decisive verdicts.
 - Server-enforced independent Explorer view, immutable three-lane dataset lock, and final LLM Judge synthesis.
+- MCP route-candidate visibility limited to the active Explorer's own source/run provenance; pre-lock status hides cross-lane counts, runs, assessments, and validations, ZAP state/execution is blocked during exploration, and the route inventory is frozen with the dataset lock.
 - One-click import of existing Burp Proxy history and response-less exact-scope Site Map candidates, with multiplicity-preserving duplicate suppression, plus a no-network onboarding sample.
 - Masked, versioned `.flowscope.json` project save/load with account/session bindings, policies, LLM assessments, server-validated final verdicts, and human audit decisions.
 - Evidence-to-Repeater handoff that opens a masked, unsent draft for explicit human validation.
@@ -48,7 +49,7 @@ FlowScope does not know the complete black-box attack surface, so it never repor
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.5.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.6.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 

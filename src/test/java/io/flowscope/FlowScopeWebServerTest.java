@@ -65,8 +65,8 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("첫 점검을 시작하세요"));
         assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.5 · 3소스"));
-        assertTrue(index.body().contains("[item.source,item.runId,item.adapter,item.type,item.evidenceId].map(esc)"));
+        assertTrue(index.body().contains("v1.2.0-beta.6 · 3소스"));
+        assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 

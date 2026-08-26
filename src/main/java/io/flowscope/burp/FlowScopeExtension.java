@@ -878,6 +878,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public ZapClient zap() { return zapClient; }
                 @Override public RunContextRegistry contexts() { return runContexts; }
                 @Override public AnalysisConfig config() { return analysisConfig; }
+                @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
                 @Override public SessionBroker sessions() { return sessionBroker; }
                 @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
                     return executeControlledRequest(request);

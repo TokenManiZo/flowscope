@@ -61,7 +61,8 @@ public final class RouteCandidateExtractor {
             if (record.trafficClassification.coverageEligible()) {
                 add(candidates, scope, record.service + record.path, record.method,
                         provenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST, record.evidenceId,
-                                record.source, record.runId, "observed-request"), true,
+                                record.source, record.runId, "observed-request",
+                                RouteCandidate.Applicability.APPLICABLE, "실제 request/response 관측"), true,
                         RouteCandidate.Applicability.APPLICABLE, "실제 request/response 관측");
             }
             RouteDiscoveryDocument document = RouteDiscoveryDocument.from(record);
@@ -73,13 +74,15 @@ public final class RouteCandidateExtractor {
                 for (DiscoveredRoute route : discovered) {
                     add(candidates, scope, resolve(document.baseUrl(), route.reference()), route.method(),
                             provenance(route.provenanceType(), document.evidenceId(), document.source(),
-                                    document.runId(), route.adapter()), false, route.applicability(), route.reason());
+                                    document.runId(), route.adapter(), route.applicability(), route.reason()),
+                            false, route.applicability(), route.reason());
                 }
             }
         }
         for (Seed seed : seeds == null ? List.<Seed>of() : seeds) {
             add(candidates, scope, seed.url(), seed.method(),
-                    provenance(seed.provenanceType(), seed.evidenceId(), seed.source(), seed.runId(), seed.adapter()),
+                    provenance(seed.provenanceType(), seed.evidenceId(), seed.source(), seed.runId(), seed.adapter(),
+                            RouteCandidate.Applicability.REVIEW, "Burp Site Map에서 응답 없는 항목"),
                     false, RouteCandidate.Applicability.REVIEW, "Burp Site Map에서 응답 없는 항목");
         }
         return prioritized(candidates.values().stream().map(RouteCandidateExtractor::freeze).toList());
@@ -180,9 +183,10 @@ public final class RouteCandidateExtractor {
     }
 
     private static RouteCandidate.Provenance provenance(RouteCandidate.ProvenanceType type, String evidenceId,
-                                                        Source source, String runId, String adapter) {
+                                                        Source source, String runId, String adapter,
+                                                        RouteCandidate.Applicability applicability, String reason) {
         if (type == null || evidenceId == null || evidenceId.isBlank()) return null;
-        return new RouteCandidate.Provenance(type, evidenceId, source, runId, adapter);
+        return new RouteCandidate.Provenance(type, evidenceId, source, runId, adapter, applicability, reason);
     }
 
     private static String resolve(String base, String reference) {

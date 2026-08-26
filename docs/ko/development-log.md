@@ -845,6 +845,54 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 고정 corpus는 실제 사이트 분포, minified/bundled JavaScript, runtime route, GraphQL schema, framework 전용 descriptor를 대표하지 않는다. blind target 전에 발견률을 주장하지 않는다.
 - 다음 챕터는 공통 provenance를 이용한 source/run별 독립 Explorer 후보 가시성과 dataset lock 정합성이다. 그 뒤에만 framework-specific adapter 또는 세부 탐색을 추가한다.
 
+## 2026-08-26 · 1.2.0-beta.6 · source/run 후보 격리와 candidate lock
+
+### 목표와 성공 조건
+
+- 독립 Explorer가 자기 run에서 발견한 route만 보고 HUMAN/SCANNER의 후보·상태·통계를 추론할 수 없게 한다.
+- 병합된 top-level 후보 상태를 단순 재사용하지 않고 provenance 단위로 observed/applicability/reason을 다시 계산한다.
+- Judge가 보는 route inventory를 Pipeline dataset과 같은 lock 시점에 고정한다.
+- 변경된 MCP·저장·Web 계약과 배포 버전을 문서·테스트·JAR에 일치시킨다.
+
+### 개발·수정
+
+- provenance에 `applicability`와 `reason`을 추가하고 project/snapshot/Web 상세까지 대응 관계를 보존했다. 기존 새-format project에 이 필드가 없으면 보수적으로 `REVIEW`로 읽는다.
+- `RouteCandidateViews.forRun`을 추가했다. 지정 source/run의 provenance만 남기고 `OBSERVED_REQUEST` 존재 여부와 provenance applicability/reason으로 후보 상태를 다시 만든다.
+- MCP `State`에 route candidate read view를 추가하고 Burp extension의 현재 inventory를 연결했다.
+- `flowscope_list_route_candidates`를 추가했다. Explorer 중에는 현재 LLM run view, lock 뒤에는 잠긴 전체 route inventory를 최대 200개씩 반환한다. 각 항목은 정렬 근거와 provenance 대응을 포함한다.
+- pre-lock `flowscope_get_status`는 active Explorer가 없어도 cross-source count·coverage·gap·finding·active run을 숨긴다. Explorer 중에는 자기 captured/coverage/classification/route candidate 수와 LLM run만 표시한다.
+- 독립 Explorer가 ZAP environment/status/baseline/passive/execution과 기존 assessment/validation 목록을 읽지 못하도록 서버 gate를 추가했다.
+- dataset lock에 `lockedRouteCandidates`를 추가하고 reset 시 함께 지운다. lock 결과에 잠긴 route 수를 반환한다.
+- Maven/MCP/Web/README 버전을 `1.2.0-beta.6`으로 맞췄다.
+
+### 이유와 기각한 대안
+
+- 전역 candidate에서 provenance만 지우고 top-level `observed/applicability`를 유지하면 다른 lane의 결론이 남으므로 기각했다. 상태도 현재 provenance로 재계산해야 독립 view다.
+- Explorer 시작 전에는 전체 status를 보여 주는 기존 동작도 MCP caller가 답을 먼저 볼 수 있어 서버 격리가 아니므로 제거했다.
+- route list를 live state에서 계속 읽게 하면 validation traffic이나 background rebuild가 lock 뒤 Judge 입력을 바꾸므로 immutable snapshot을 선택했다.
+- session 목록은 비밀 없는 계정 선택 정보이며 raw Cookie/token을 반환하지 않아 유지했다. 이 경계는 실제 구독 클라이언트 사용성 검증 뒤 재검토할 수 있다.
+
+### 영향 파일
+
+- core: `RouteCandidate`, `RouteCandidateViews`, `RouteCandidateExtractor`
+- MCP/Burp: `McpServer`, `FlowScopeExtension`
+- persistence/Web: `ProjectStore`, `SnapshotJsonWriter`, `web/index.html`
+- tests: `RouteCandidateViewsTest`, `McpServerTest`, `FlowScopeWebServerTest`
+- agent workflow/public docs/version: Explorer/Judge prompt와 agent-workspace README, root/영문 README·CHANGELOG, 한국어 architecture·decisions·product plan·UI rationale·beta validation·development log, `pom.xml`
+
+### 검증
+
+- 집중 회귀 `RouteCandidateViewsTest,McpServerTest,ProjectStoreTest,FlowScopeWebServerTest`: 33 tests, 실패·오류·skip 0.
+- `mvn clean verify`: 165 tests, 실패 0, 오류 0, skip 0, BUILD SUCCESS.
+- 배포물은 `target/flowscope-1.2.0-beta.6.jar` 하나, 3,791,977 bytes, 1,941 entries, SHA-256 `db8aa738accdb70991d9015b17029775774a5aa01f026403014715fbe5290ab9`다. ZIP 무결성, Main-Class, Java 21, 반복 package digest 동일성을 확인했다.
+- 완성 fat JAR만 classpath에 둔 HTML/OpenAPI YAML/XML runtime smoke는 `FAT_JAR_DISCOVERY_SMOKE_OK`였다.
+
+### 남은 한계·다음 gate
+
+- 실제 Codex/Claude가 beta.6 MCP로 Explorer를 시작하기 전/중/lock 뒤 호출했을 때 같은 격리가 유지되는지 end-to-end 검증하지 않았다.
+- extension worker가 Pipeline과 route inventory를 연속 publish한다. lock 호출과 지연 응답/rebuild가 경합하는 Burp runtime stress는 아직 자동화하지 않았다.
+- beta.6 JAR의 Burp Community 재로드와 실제 candidate UI/Site Map gate는 beta.5에서 이어진다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

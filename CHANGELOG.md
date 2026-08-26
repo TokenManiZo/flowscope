@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.6 — 2026-08-26
+
+- provenance에 applicability/reason을 귀속해 source/run 필터 후 다른 lane의 판정 상태가 남지 않도록 재계산
+- `flowscope_list_route_candidates` 추가: 독립 Explorer 중에는 자기 run provenance만, dataset lock 뒤에는 잠긴 전체 inventory만 페이지 단위 제공
+- pre-lock MCP status에서 다른 source 수량·coverage·gap·finding·active run을 숨기고 Explorer의 자기 run 수치만 허용
+- 독립 Explorer 중 ZAP 상태/실행과 기존 assessment/validation 조회를 서버에서 거부
+- dataset lock에 route candidate snapshot을 포함해 이후 validation traffic이나 background rebuild가 Judge 입력 후보를 바꾸지 않도록 고정
+
 ## 1.2.0-beta.5 — 2026-08-26
 
 - route discovery를 문서 입력 → 포맷 어댑터 → 공통 exact-scope/method/정규화/dedup gate 구조로 분리

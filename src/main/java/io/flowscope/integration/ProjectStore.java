@@ -161,6 +161,8 @@ public final class ProjectStore {
             entry.put("source", item.source().name());
             entry.put("run_id", item.runId());
             entry.put("adapter", item.adapter());
+            entry.put("applicability", item.applicability().name());
+            entry.put("reason", Masking.maskSecrets(item.reason()));
         });
         out.put("applicability", candidate.applicability().name());
         out.put("review_reason", Masking.maskSecrets(candidate.reviewReason()));
@@ -173,11 +175,14 @@ public final class ProjectStore {
         if (stored.isArray()) stored.forEach(item -> provenance.add(new RouteCandidate.Provenance(
                 enumValue(RouteCandidate.ProvenanceType.class, required(item, "type")),
                 required(item, "evidence_id"), enumValue(Source.class, optional(item, "source", "UNKNOWN")),
-                optional(item, "run_id", "legacy-project"), optional(item, "adapter", "legacy-project"))));
+                optional(item, "run_id", "legacy-project"), optional(item, "adapter", "legacy-project"),
+                enumValue(RouteCandidate.Applicability.class, optional(item, "applicability", "REVIEW")),
+                masked(item, "reason"))));
         if (provenance.isEmpty()) {
             for (String evidence : stringList(value, "provenance_evidence_ids")) {
                 provenance.add(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.LEGACY_UNMAPPED,
-                        evidence, Source.UNKNOWN, "legacy-project", "legacy-project-unmapped"));
+                        evidence, Source.UNKNOWN, "legacy-project", "legacy-project-unmapped",
+                        RouteCandidate.Applicability.REVIEW, "구버전 project의 provenance 대응 관계 미확정"));
             }
         }
         return new RouteCandidate(required(value, "service"), required(value, "method"),

@@ -1,6 +1,20 @@
-# FlowScope 1.2.0-beta.5 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.6 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-26이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.6 자동 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 165 tests, 실패·오류·skip 0 |
+| run별 후보 view | HUMAN observed와 LLM literal이 병합된 후보를 LLM run으로 자르면 LLM provenance 1개·`observed=false`·`REVIEW`로 재계산되고 HUMAN-only 후보는 0건 노출되는 회귀 통과 |
+| pre-lock 격리 | active Explorer 전 다른 source count·record count·active run을 status에서 숨김. Explorer 중 ZAP baseline 상태와 assessment/validation 목록 접근 거부 회귀 통과 |
+| candidate lock | lock 응답에 route candidate 수 포함, lock 뒤 live state 후보를 교체해도 `flowscope_list_route_candidates`가 잠긴 목록을 반환하는 회귀 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.6.jar`, 3,791,977 bytes, SHA-256 `db8aa738accdb70991d9015b17029775774a5aa01f026403014715fbe5290ab9` |
+| JAR 무결성 | ZIP 무결성 통과, 1,941 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개, 연속 non-clean package 크기·SHA-256 동일 |
+| fat JAR runtime | JDK 21에서 완성 JAR만 classpath에 두고 HTML5 DOM·OpenAPI YAML·generic XML adapter를 직접 실행, `FAT_JAR_DISCOVERY_SMOKE_OK` 확인 |
+
+이 결과는 서버 가시성 규칙과 candidate snapshot의 결정론적 회귀다. 실제 구독형 Codex/Claude가 beta.6 MCP에 연결된 end-to-end Explorer/Judge 실행과 지연 응답/rebuild 경합은 아직 확인하지 않았다. 자동 회귀를 실환경 격리 완료로 소급하지 않는다.
 
 ## 1.2.0-beta.5 자동 사전검증
 

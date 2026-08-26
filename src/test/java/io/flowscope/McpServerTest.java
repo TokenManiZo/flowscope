@@ -143,7 +143,8 @@ final class McpServerTest {
         server.start();
 
         JsonNode status = tool("flowscope_get_status", "{}");
-        assertEquals("human-1", status.at("/result/structuredContent/active_runs/HUMAN").asText());
+        assertTrue(status.at("/result/structuredContent/active_runs/HUMAN").isMissingNode(),
+                "pre-lock MCP view must not reveal another lane's active run");
         JsonNode listed = json(post("test-token", request(4, "tools/list", "{}")));
         assertTrue(listed.at("/result/tools").findValuesAsText("name")
                 .contains("flowscope_zap_ajax_spider"));
@@ -151,6 +152,8 @@ final class McpServerTest {
                 .contains("flowscope_set_scope"));
         assertTrue(listed.at("/result/tools").findValuesAsText("name")
                 .contains("flowscope_lock_dataset"));
+        assertTrue(listed.at("/result/tools").findValuesAsText("name")
+                .contains("flowscope_list_route_candidates"));
     }
 
     @Test
@@ -173,12 +176,30 @@ final class McpServerTest {
         RequestRecord llm = observation(Source.LLM, "B", 200, "{\"id\":8,\"owner\":\"user-b\"}",
                 SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, "explore-1");
         Pipeline.Result result = Pipeline.run(List.of(human, llm, laneMarker(Source.SCANNER)));
+        RouteCandidate shared = new RouteCandidate("https://api.example.test:443", "GET", "/v1/shared", true,
+                List.of(
+                        routeProvenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST, human.evidenceId,
+                                Source.HUMAN, "human-1", RouteCandidate.Applicability.APPLICABLE, "human observed"),
+                        routeProvenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL, llm.evidenceId,
+                                Source.LLM, "explore-1", RouteCandidate.Applicability.REVIEW, "llm literal")),
+                RouteCandidate.Applicability.APPLICABLE, "human observed");
+        RouteCandidate humanOnly = new RouteCandidate("https://api.example.test:443", "POST", "/v1/admin", false,
+                List.of(routeProvenance(RouteCandidate.ProvenanceType.OPENAPI, human.evidenceId,
+                        Source.HUMAN, "human-1", RouteCandidate.Applicability.APPLICABLE, "human OpenAPI")),
+                RouteCandidate.Applicability.APPLICABLE, "human OpenAPI");
+        AtomicReference<List<RouteCandidate>> routeCandidates = new AtomicReference<>(List.of(shared, humanOnly));
         RunContextRegistry contexts = new RunContextRegistry();
         complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "human-1");
         complete(contexts, Source.SCANNER, SourceDetail.ZAP_SPIDER, "scanner-1");
-        server = new McpServer(state(result, contexts,
-                ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
+        server = new McpServer(state(new AtomicReference<>(result), contexts,
+                ScopePolicy.parse("https://api.example.test/v1"), new AnalysisConfig(), routeCandidates),
+                0, "test-token");
         server.start();
+
+        JsonNode preRun = tool("flowscope_get_status", "{}");
+        assertTrue(preRun.at("/result/structuredContent/source_counts").isEmpty());
+        assertTrue(preRun.at("/result/structuredContent/captured_records").isMissingNode());
+        assertTrue(preRun.at("/result/structuredContent/active_runs/HUMAN").isMissingNode());
 
         JsonNode prematureJudge = tool("flowscope_begin_llm_run",
                 "{\"phase\":\"COACH_PROBE\",\"tool\":\"CODEX\",\"run_id\":\"judge-early\"}");
@@ -193,7 +214,17 @@ final class McpServerTest {
         assertTrue(status.at("/result/structuredContent/coverage_source_counts/HUMAN").isMissingNode());
         assertEquals(1, status.at("/result/structuredContent/captured_records").asInt());
         assertEquals(1, status.at("/result/structuredContent/coverage_records").asInt());
+        assertEquals(1, status.at("/result/structuredContent/route_candidates").asInt());
+        JsonNode explorerRoutes = tool("flowscope_list_route_candidates", "{}");
+        assertFalse(explorerRoutes.at("/result/isError").asBoolean(), explorerRoutes.toString());
+        assertEquals(1, explorerRoutes.at("/result/structuredContent/total").asInt());
+        assertEquals("LLM", explorerRoutes.at("/result/structuredContent/routes/0/provenance/0/source").asText());
+        assertFalse(explorerRoutes.at("/result/structuredContent/routes/0/observed").asBoolean());
+        assertEquals("REVIEW", explorerRoutes.at("/result/structuredContent/routes/0/applicability").asText());
         assertTrue(tool("flowscope_list_candidates", "{}").at("/result/isError").asBoolean());
+        assertTrue(tool("flowscope_list_assessments", "{}").at("/result/isError").asBoolean());
+        assertTrue(tool("flowscope_list_validations", "{}").at("/result/isError").asBoolean());
+        assertTrue(tool("flowscope_zap_baseline_status", "{}").at("/result/isError").asBoolean());
         assertTrue(tool("flowscope_get_evidence", "{\"evidence_id\":\"" + human.evidenceId + "\"}")
                 .at("/result/isError").asBoolean());
         assertFalse(tool("flowscope_get_evidence", "{\"evidence_id\":\"" + llm.evidenceId + "\"}")
@@ -203,6 +234,14 @@ final class McpServerTest {
         JsonNode locked = tool("flowscope_lock_dataset", "{}");
         assertFalse(locked.at("/result/isError").asBoolean(), locked.toString());
         assertEquals(3, locked.at("/result/structuredContent/records").asInt());
+        assertEquals(2, locked.at("/result/structuredContent/route_candidates").asInt());
+        routeCandidates.set(List.of(new RouteCandidate("https://api.example.test:443", "GET", "/v1/late", false,
+                List.of(routeProvenance(RouteCandidate.ProvenanceType.HTML_LINK, "late", Source.LLM,
+                        "validation-late", RouteCandidate.Applicability.REVIEW, "late")),
+                RouteCandidate.Applicability.REVIEW, "late")));
+        JsonNode lockedRoutes = tool("flowscope_list_route_candidates", "{}");
+        assertEquals(2, lockedRoutes.at("/result/structuredContent/total").asInt(),
+                "dataset lock 이후 route candidate도 고정돼야 함");
         assertFalse(tool("flowscope_list_candidates", "{}").at("/result/isError").asBoolean());
         assertFalse(tool("flowscope_begin_llm_run",
                 "{\"phase\":\"COACH_PROBE\",\"tool\":\"CODEX\",\"run_id\":\"judge-1\"}")
@@ -674,6 +713,12 @@ final class McpServerTest {
 
     private static McpServer.State state(AtomicReference<Pipeline.Result> result, RunContextRegistry contexts,
                                          ScopePolicy scope, AnalysisConfig config) {
+        return state(result, contexts, scope, config, new AtomicReference<>(List.of()));
+    }
+
+    private static McpServer.State state(AtomicReference<Pipeline.Result> result, RunContextRegistry contexts,
+                                         ScopePolicy scope, AnalysisConfig config,
+                                         AtomicReference<List<RouteCandidate>> routeCandidates) {
         AtomicReference<ScopePolicy> currentScope = new AtomicReference<>(scope);
         return new McpServer.State() {
             @Override public Pipeline.Result snapshot() { return result.get(); }
@@ -682,8 +727,16 @@ final class McpServerTest {
             @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
             @Override public RunContextRegistry contexts() { return contexts; }
             @Override public AnalysisConfig config() { return config; }
+            @Override public List<RouteCandidate> routeCandidates() { return routeCandidates.get(); }
             @Override public boolean approve(String action, String target) { return false; }
         };
+    }
+
+    private static RouteCandidate.Provenance routeProvenance(RouteCandidate.ProvenanceType type, String evidence,
+                                                              Source source, String runId,
+                                                              RouteCandidate.Applicability applicability,
+                                                              String reason) {
+        return new RouteCandidate.Provenance(type, evidence, source, runId, "fixture", applicability, reason);
     }
 
     private static List<RequestRecord> validationRecords(boolean denied) {

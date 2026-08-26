@@ -169,7 +169,8 @@ public final class SnapshotJsonWriter {
             value.set("provenanceEvidenceIds", json.valueToTree(candidate.provenanceEvidenceIds()));
             value.set("provenance", json.valueToTree(candidate.provenance().stream().map(item -> Map.of(
                     "type", item.type().name(), "evidenceId", item.evidenceId(),
-                    "source", item.source().name(), "runId", item.runId(), "adapter", item.adapter())).toList()));
+                    "source", item.source().name(), "runId", item.runId(), "adapter", item.adapter(),
+                    "applicability", item.applicability().name(), "reason", item.reason())).toList()));
             value.put("applicability", candidate.applicability().name());
             value.put("reviewReason", candidate.reviewReason());
             value.set("priorityReasons", json.valueToTree(RouteCandidateExtractor.priorityReasons(candidate)));
