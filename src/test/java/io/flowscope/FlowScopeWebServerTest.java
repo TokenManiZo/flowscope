@@ -58,6 +58,8 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("사람 H (파랑·실선)"));
         assertTrue(index.body().contains("스캐너 S (빨강·파선)"));
         assertTrue(index.body().contains("LLM L (검정·점선)"));
+        assertTrue(index.body().contains("검토 대기"));
+        assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());
@@ -77,6 +79,34 @@ final class FlowScopeWebServerTest {
         assertEquals("API", body.at("/events/0/trafficClass").asText());
         assertFalse(body.at("/events/0/classificationReasons").isEmpty());
         assertEquals(1, body.at("/events/0/repeatCount").asInt());
+    }
+
+    @Test
+    void snapshotSeparatesMainComparisonReviewAndExcludedEvidence() throws Exception {
+        RequestRecord review = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/status", 200, "anon");
+        review.body = "ok";
+        review.hasResponse = true;
+        RequestRecord excluded = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/static/app.js", 200, "anon");
+        excluded.hasResponse = true;
+        excluded.secFetchDest = "script";
+        excluded.responseContentType = "application/javascript";
+        state.records.add(review);
+        state.records.add(excluded);
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+
+        assertEquals(3, snapshot.at("/trafficStats/captured").asInt());
+        assertEquals(1, snapshot.at("/trafficStats/coverage").asInt());
+        assertEquals(1, snapshot.at("/trafficStats/review").asInt());
+        assertEquals(1, snapshot.at("/trafficStats/excluded").asInt());
+        JsonNode reviewEvent = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                .filter(value -> value.path("path").asText().equals("/status")).findFirst().orElseThrow();
+        assertEquals("REVIEW", reviewEvent.path("trafficDisposition").asText());
+        assertFalse(reviewEvent.path("coverageEligible").asBoolean());
     }
 
     @Test

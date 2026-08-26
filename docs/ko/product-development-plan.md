@@ -13,7 +13,7 @@
 7. crAPI 정답을 코드나 프롬프트에 넣지 않는다. 제품 완료 뒤 독립 HUMAN/ZAP/LLM pass와 블라인드 채점으로 검증한다.
 8. LLM에게 ZAP 기능 선택을 맡기지 않는다. 기본 scanner lane은 Traditional Spider, strict Client Spider, AJAX fallback, passive queue, native alert 순서의 시스템 workflow다.
 9. Explorer의 독립성은 프롬프트 약속이 아니라 서버 가시성 제한과 세 레인 dataset lock으로 강제한다.
-10. 트래픽 노이즈는 수집 단계에서 삭제하지 않는다. 모든 Evidence를 보존하고 결정론 분류로 coverage 입력만 나누며, 애매한 것은 포함·검토하고 사용자가 operation 단위로 되돌릴 수 있게 한다.
+10. 트래픽 노이즈는 수집 단계에서 삭제하지 않는다. 모든 Evidence를 보존하고 결정론 분류로 `INCLUDE/REVIEW/EXCLUDE`를 나누며, 메인 coverage에는 `INCLUDE`만 넣고 사용자가 operation 단위로 되돌릴 수 있게 한다.
 
 ## 2. 구현 단계와 성공 기준
 
@@ -79,4 +79,5 @@
 - P4 Burp Community QA: beta.3의 올바른 fat JAR 신규 load만 Community 2026.7.3 사용자 환경에서 통과했다. 같은 target 폴더의 `original-*.jar` 선택 실패로 배포 산출물 혼동을 발견했다. unload, suite tab/Web UI, listener 분류, session broker, controlled executor, Repeater, project round trip, 시스템 ZAP/Judge는 아직 통과 처리하지 않는다.
 - beta.3 수동 gate: 실제 Burp Community unload·suite tab/Web UI·브라우저 로그인 캡처·세션 주입·통제 LLM 요청·ZAP 2.17 연쇄 workflow·구독형 Codex/Claude Explorer/Judge·프로젝트 save/load를 새 JAR로 확인해야 한다. 비파괴 분류·불확실 신원 안정화와 파싱 Evidence 진입은 구현·자동 회귀·standalone QA를 통과했다. packaging 단일화와 빈 상태 onboarding은 계속 벤치마크 전 수정 대상이다. Codex project-scoped MCP discovery는 신뢰 프로젝트 조건에서 확인했지만 실제 FlowScope 연결은 전체 workflow gate에 남는다. 정확한 완료/미완료 경계는 `beta-validation.md`에 기록한다.
 - HUMAN 탐색 경계: 로그인 캡처는 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖 scope 내 관측은 `BASELINE`으로 보존하되 `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 3-way coverage에 넣지 않는 수정을 구현했다. 자동 회귀 후 실제 Burp에서 로그인·pass 경계를 재확인해야 한다.
+- 분류 경계: `REVIEW`를 Evidence·검토 대기에 보존하면서 메인 graph·3-way gap 입력에서는 보류하고, UI 처분 필터와 수량을 `INCLUDE/REVIEW/EXCLUDE`로 분리했다. 1280×720 standalone의 필터·상세·overflow·console 검증은 통과했고, 실제 Burp 대상에서 REVIEW 승격·숨김 작업량은 beta gate와 blind benchmark에서 측정해야 한다.
 - P5 crAPI 블라인드 벤치마크: 사용자 검토 전까지 보류한다. 정답·공격 절차·라벨을 코드, 프롬프트, 실행 컨텍스트에 넣지 않는다.

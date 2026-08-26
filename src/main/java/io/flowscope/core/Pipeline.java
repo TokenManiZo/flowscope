@@ -63,7 +63,7 @@ public final class Pipeline {
         int review = 0;
         for (RequestRecord record : records) {
             if (record.trafficClassification.coverageEligible()) coverage.add(record);
-            else excluded++;
+            if (record.trafficClassification.disposition() == TrafficClassification.Disposition.EXCLUDE) excluded++;
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.REVIEW) review++;
         }
         AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(coverage, config);

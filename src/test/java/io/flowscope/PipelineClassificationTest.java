@@ -58,7 +58,7 @@ class PipelineClassificationTest {
     }
 
     @Test
-    void 같은_응답의_반복_폴링은_background_후보지만_계속_분석한다() {
+    void 같은_응답의_반복_폴링은_Evidence와_검토함에_남지만_메인_비교에서는_보류한다() {
         List<RequestRecord> records = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             RequestRecord record = new RequestRecord(Source.HUMAN, "https://t:443",
@@ -73,6 +73,8 @@ class PipelineClassificationTest {
 
         assertTrue(result.records.stream().allMatch(record -> record.trafficClassification.trafficClass()
                 == TrafficClassification.TrafficClass.BACKGROUND));
-        assertEquals(3, result.coverageRecords.size());
+        assertTrue(result.coverageRecords.isEmpty());
+        assertEquals(0, result.excludedCount);
+        assertEquals(3, result.reviewCount);
     }
 }

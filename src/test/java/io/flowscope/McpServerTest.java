@@ -593,6 +593,7 @@ final class McpServerTest {
                 "GET", "/v1/orders/7", status, fingerprint);
         record.body = body;
         record.hasResponse = true;
+        record.responseContentType = "application/json";
         record.sourceDetail = detail;
         record.phase = phase;
         record.runId = runId;
@@ -614,6 +615,7 @@ final class McpServerTest {
                 "GET", "/health-" + source.name().toLowerCase(), 200, "marker-" + source.name());
         record.body = "{\"ok\":true}";
         record.hasResponse = true;
+        record.responseContentType = "application/json";
         record.sourceDetail = detail;
         record.phase = RunPhase.EXPLORATION;
         record.runId = "completed-" + source.name().toLowerCase();
@@ -650,6 +652,7 @@ final class McpServerTest {
                 + "{\"access_token\":\"secret-access-token\"}";
         record.body = "{\"access_token\":\"secret-access-token\"}";
         record.hasResponse = true;
+        record.responseContentType = "application/json";
         return record;
     }
 

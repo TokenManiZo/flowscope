@@ -558,6 +558,7 @@
 - **근거:** [W3C Fetch Metadata](https://www.w3.org/TR/fetch-metadata/)는 요청 문맥 신호의 의미를, [WHATWG Fetch](https://fetch.spec.whatwg.org/)는 CORS preflight 헤더를, [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html)는 method safety와 representation metadata를 정의한다. [W3C Beacon](https://www.w3.org/TR/beacon/)처럼 background/telemetry 요청도 application data를 보낼 수 있으므로 명칭 기반 삭제는 정당화되지 않는다. Burp와 mitmproxy의 filter도 원 history/flow를 삭제하지 않는 표시 계층이라는 점을 참고했다.
 - **기각:** 확장자 blacklist, `/analytics` 정규식, 모든 OPTIONS 제거, cookie 값마다 graph identity 생성, LLM이 매 요청을 분류하는 방식은 각각 미탐·identity 폭증·비결정성·비용 문제 때문에 채택하지 않았다. 학습형 classifier도 ground-truth dataset과 설명 가능한 안정 gate가 없어 현재 제품 경계 밖이다.
 - **한계:** Fetch Metadata와 MIME은 누락·오표기될 수 있고 business API와 navigation/asset의 형태가 겹칠 수 있다. 따라서 오탐·미탐 0을 보장하지 않으며, 애매한 관측은 `REVIEW`로 남기는 것이 의도된 결과다.
+- **후속 변경:** `REVIEW`를 coverage/graph에 포함한 부분만 D-064가 대체한다. Evidence 보존, 고신뢰 제외 기준, operation override, 신원 안정화 원칙은 유지한다.
 - **상태:** 베타 구현·자동 회귀·standalone UI 검증 완료. 실제 다양한 대상의 분류 품질은 blind benchmark와 운영 표본으로 측정해야 함.
 
 ## D-060 · HUMAN 브라우징과 Evidence 범위 = 이동 허용, 저장은 exact scope
@@ -587,6 +588,14 @@
 - **기각:** 로그인 요청을 모두 폐기하는 방식은 endpoint inventory·감사 Evidence를 잃어 기각했다. 로그인 path 정규식으로 분리하는 방식은 사이트별 path와 API를 오분류해 기각했다. scope 내 HUMAN 요청을 모두 탐색으로 계속 계산하는 방식은 사용자가 통제하지 않은 시간대를 HUMAN 성과로 위장해 기각했다.
 - **검증:** 먼저 HUMAN `BASELINE` JSON API가 coverage에 들어가는 실패 회귀를 재현한 뒤, `SESSION_SETUP`/`BASELINE` 제외·`EXPLORATION` 포함과 capture phase 매핑을 테스트로 고정했다. 실제 Burp 로그인 캡처와 HUMAN pass 전체는 수동 beta gate에 남긴다.
 - **상태:** 구현·자동 회귀 완료, Burp 수동 확인 대기
+
+## D-064 · REVIEW = 메인 비교가 아닌 명시적 검토 대기
+- **문제:** D-059는 애매한 요청을 잃지 않기 위해 `REVIEW`도 coverage/graph에 넣었다. 그 결과 반복 polling처럼 분류기가 이미 애매하다고 표시한 관측까지 확정 `INCLUDE`와 같은 3-way cell·gap을 만들었고, UI의 `분석` 수와 `검토` 수가 겹쳐 사용자가 메인 비교의 경계를 알기 어려웠다.
+- **결정:** `INCLUDE`만 coverage·graph·인가 분석·3-way gap 입력으로 사용한다. `REVIEW`는 전체 Evidence, 파싱 결과, 상세 Request/Response, MCP Evidence 목록에 그대로 남기고 별도 검토 대기 수로 센다. `EXCLUDE`도 Evidence로 보존하되 기본 표시에서 숨긴다. UI 처분 필터 기본값은 `INCLUDE+REVIEW`이며 사용자는 operation 단위 `INCLUDE/EXCLUDE/AUTO`로 재분류할 수 있다. Judge는 잠긴 Evidence의 `REVIEW`도 별도로 triage하지만 gap이나 REVIEW 자체를 취약점 증거로 승격하지 않는다.
+- **기각:** `REVIEW` 삭제는 미탐을 복구할 수 없어 기각했다. `REVIEW`를 계속 메인 graph에 넣는 방식은 노이즈 감소와 상호 배타 통계를 달성하지 못해 기각했다. 정적 점수 임계값으로 자동 승격하는 방식은 검증된 ground truth와 calibration이 없어 벤치마크 전에는 넣지 않는다.
+- **한계:** MIME·Fetch Metadata가 빠진 실제 API가 `REVIEW`에 남아 메인 비교에서 보류될 수 있다. 따라서 사용자는 lock 전 검토 대기를 확인해야 하고, blind benchmark에서는 REVIEW 작업량과 승격률을 별도 측정한다. 오탐·미탐 0을 주장하지 않는다.
+- **검증:** 반복 polling 3건이 기존 코드에서 모두 coverage에 들어가는 실패를 먼저 재현했다. 이후 Evidence 3·REVIEW 3·coverage 0·EXCLUDE 0 경계와 Web snapshot의 세 처분 수를 회귀로 고정한다.
+- **상태:** 구현·자동 회귀·1280×720 standalone 상호작용 확인 완료, 실제 Burp UI와 blind benchmark 확인 대기
 
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.

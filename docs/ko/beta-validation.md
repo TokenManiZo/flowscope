@@ -6,8 +6,8 @@
 
 | 구분 | 결과 |
 |---|---|
-| 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 130 tests, 실패·오류·skip 0 |
-| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,814,915 bytes, SHA-256 `18460fa70e575ed04d8dfe3500c7c450a5ae413f9480a0af844a45019d4ec3fa` |
+| 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 131 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,815,071 bytes, SHA-256 `5f0d60e74ae9778619c668bbc0e53797712e52ca5da7d1dbd1e6ee3cd87f95c8` |
 | JAR 무결성 | ZIP 무결성 통과, 1,295 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
 | 배포 계약 | Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
 | Session Broker | 계정별 명시적 로그인 캡처, Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
@@ -17,7 +17,7 @@
 | LLM Judge | lock 이후 후보/오라클 고정, 실제 validation Evidence 추가, 저장 후 복원 시 pre-Judge snapshot 재구성, 서버 권위 verdict 검증 |
 | ZAP baseline | Traditional Spider → Client Spider → AJAX fallback → passive queue drain → native alerts 순서와 실패/상태/alert 마스킹 검증 |
 | 프로젝트 | raw session 미저장, 명시적 완료 lane 저장, 중단된 기록으로 완료 상태를 추론하지 않음 |
-| Traffic classification | captured/coverage 분리, high-confidence exclude, ambiguous review, operation override, no Evidence deletion, classifier version persistence |
+| Traffic classification | `INCLUDE`만 main coverage, `REVIEW` 검토 대기, `EXCLUDE` 기본 숨김으로 상호 배타 집계, operation override, no Evidence deletion, classifier version persistence |
 | Identity 안정화 | `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`, 1,000 rotating cookies의 graph identity 폭증 방지, 명시 binding 보존 |
 | Capture scope | HUMAN 브라우저의 범위 밖 이동은 허용하되 모든 source의 저장 Evidence는 현재 exact scope로 제한 |
 | HUMAN run 경계 | 로그인 캡처 `SESSION_SETUP`·pass 밖 `BASELINE`은 Evidence로 보존하되 coverage에서 제외하고, 명시적 `EXPLORATION` pass만 HUMAN 3-way 비교에 포함 |
@@ -32,6 +32,7 @@
 - 브라우저 콘솔 오류는 0건이었다.
 - 현재 분류 UI를 1024×768에서 추가 검증했다. page horizontal overflow와 ellipsis 잘림은 0건이었고, 여섯 mode 전환, quick-start, 파싱 행의 stable Evidence ID→operation 상세, classification/repeat 표시와 override 조작이 동작했다.
 - 현재 source palette를 1280×720에서 추가 검증했다. HUMAN 파랑·실선, SCANNER 빨강·파선, LLM 검정·점선과 H/S/L 노드 표기가 범례·그래프에 일치했고, body 가로·세로 overflow와 클라이언트 오류는 0건이었다.
+- `INCLUDE/REVIEW/EXCLUDE` 처분 필터를 1280×720 standalone에서 확인했다. 파싱 결과 10행에서 REVIEW 해제 시 9행, INCLUDE까지 해제 시 0행, REVIEW만 선택 시 1행이었고 해당 상세에 검토 상태와 `분석에 포함` override가 표시됐다. page overflow와 console error는 0이었다.
 
 Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Community의 실제 suite tab 동작을 대신하지 않는다.
 
@@ -56,6 +57,7 @@ Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Commu
 
 - Burp Community에서 현재 재생성 beta.3 JAR의 load/unload, suite tab/Web UI 연결과 실제 브라우저 트래픽 수집
 - 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지
+- 실제 Burp 대상 트래픽의 `REVIEW`가 메인 그래프에서는 빠지고 파싱 결과의 검토 대기에서 다시 포함·숨김 처리되는지
 - 실제 사이트 로그인으로 얻은 세션을 ZAP·LLM controlled request에 주입하고 회전·만료·재인증하는 전체 과정
 - ZAP 2.17 환경에서 deterministic baseline 전체 체인의 실제 수행과 native alert 수집
 - 구독형 Codex 또는 Claude가 MCP로 독립 Explorer pass와 lock 이후 Judge pass를 끝까지 수행하는 과정

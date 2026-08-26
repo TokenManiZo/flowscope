@@ -57,7 +57,7 @@ RequestRecord {
 - `service`: scheme://host:port. op/resource/identity 경계를 서비스별로 분리한다.
 - `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다. 쿠키 fingerprint는 계정 연결·감사를 위한 안전한 식별자이지 로그인 증명이 아니다.
 - `authState`: `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`. 명시적 계정 연결이나 memory-only broker의 exact credential match만 `ACCOUNT_BOUND`가 된다. 계정에 연결되지 않은 cookie/session fingerprint는 서비스별 하나의 `UNRESOLVED` 그래프 신원으로 안정화하되 원 fingerprint는 Evidence에 남긴다.
-- `trafficClassification`: `API/NAVIGATION/STATIC_ASSET/PREFLIGHT/TELEMETRY_CANDIDATE/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `EXCLUDE`는 Evidence 삭제가 아니라 coverage/graph 입력 제외다.
+- `trafficClassification`: `API/NAVIGATION/STATIC_ASSET/PREFLIGHT/TELEMETRY_CANDIDATE/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
 - `SessionBroker`: 사용자가 Web UI에서 명시적으로 시작한 HUMAN 로그인 구간의 Cookie/Authorization/CSRF만 프로세스 메모리에 보관한다. account service와 exact scope가 모두 맞고 상태가 `ACTIVE`일 때만 ZAP/LLM 요청에 주입한다. 401·로그인 redirect·invalid token은 `SUSPECT`, 비밀 삭제/만료는 `REAUTH_REQUIRED`이며 자동 재사용하지 않는다. raw 값은 UI/MCP/project에 나오지 않는다.
@@ -93,7 +93,7 @@ HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLO
 - response 없는 관측, source `UNKNOWN`, `VALIDATION/COACH_PROBE`는 discovery coverage에서 제외하지만 Evidence는 보존한다.
 - HUMAN `SESSION_SETUP` 및 `BASELINE`은 로그인 준비·pass 밖 관측이므로 discovery coverage에서 제외하지만 Evidence는 보존한다.
 - 같은 신원/run/phase/method/operation/resource/query/body/status-class/response/location의 반복만 표시 cluster로 접는다. 분석 입력과 Evidence ID는 삭제하거나 합치지 않는다.
-- 애매한 것은 `UNKNOWN/REVIEW`로 분석에 포함한다. 사용자는 operation 단위로 `INCLUDE/EXCLUDE/AUTO`를 되돌릴 수 있지만 no-response, unknown source, `VALIDATION/COACH_PROBE`라는 discovery 신뢰 경계는 override할 수 없다.
+- 애매한 것은 `UNKNOWN/REVIEW`로 Evidence와 검토 대기에 남기되 메인 coverage·graph·3-way gap에는 넣지 않는다. 사용자는 operation 단위로 `INCLUDE/EXCLUDE/AUTO`를 되돌릴 수 있지만 no-response, unknown source, HUMAN 비탐색 구간, `VALIDATION/COACH_PROBE`라는 discovery 신뢰 경계는 override할 수 없다.
 
 ### 4.4 소유자·판정 F-10~11
 

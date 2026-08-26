@@ -4,6 +4,7 @@
 
 ## 1.2.0-beta.3 — 2026-08-25
 
+- `REVIEW` Evidence를 메인 graph·3-way gap 밖의 검토 대기로 분리하고, UI 수량과 처분 필터를 `INCLUDE/REVIEW/EXCLUDE` 상호 배타 상태로 정리
 - HUMAN 로그인 캡처를 `SESSION_SETUP`으로 분리하고, 명시적 HUMAN exploration pass 밖의 scope 내 트래픽은 Evidence로는 보존하되 3-way coverage·gap에서 제외
 - 프로젝트 기본 README·변경 이력·기여·보안 문서를 한국어로 전환하고, 상세 한국어 문서는 `docs/ko`, 영어 공개 가이드는 `docs/en`으로 분리
 - source 표현을 HUMAN 파랑·실선·H, SCANNER 빨강·파선·S, LLM 검정·점선·L로 통일하고 일반 조작 accent를 source 의미색과 분리

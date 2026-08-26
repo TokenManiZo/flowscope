@@ -16,7 +16,7 @@ USER B        orders:101      GET /api/orders/{id}
 - 응답 분류, 명시적 소유자 Evidence, 사용자가 입력한 역할 정책을 이용하는 결정론적 BOLA/IDOR·BFLA 후보 엔진
 - 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 쿠키 회전, 만료·의심 상태, 계정별 ZAP/LLM 요청을 지원
 - query, 요청 본문, 마스킹된 요청·응답, timestamp, redirect, GraphQL operation, 응답→요청 데이터 흐름 수집
-- Evidence 보존형 트래픽 분류. 모든 수집 관측은 확인할 수 있으며, 고신뢰 navigation·정적 자원·실제 CORS preflight·응답 없는 기록·비탐색 phase만 기본 coverage 분석에서 제외
+- Evidence 보존형 트래픽 분류. `INCLUDE`만 메인 3-way 비교에 사용하고, 애매한 `REVIEW`는 별도 검토 대기로 보존하며, 고신뢰 보조 트래픽은 `EXCLUDE`로 기본 숨김
 - `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` 인증 상태. 연결되지 않은 회전 쿠키가 그래프 신원을 폭증시키지 않으며, 확인된 계정 연결은 서비스 경계를 유지
 - Codex·Claude Code 구독형 클라이언트용 localhost 전용 인증 MCP 서버
 - 시스템 소유 ZAP 기준선: Traditional Spider → strict Client Spider(AJAX fallback) → passive queue 완료 → native alert. Active Scan은 별도 승인 필요
@@ -86,7 +86,7 @@ scope가 비어 있으면 MCP가 시작하는 ZAP 실행은 차단됩니다.
 2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 표시 이름을 등록합니다. 계정마다 로그인 캡처를 시작하고 HUMAN 8080을 통해 로그인한 뒤 캡처를 종료합니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다.
 3. ZAP의 outgoing proxy를 `127.0.0.1:8081`로 설정합니다. Web 빠른 시작에서 exact-scope target과 선택적 active account를 고른 뒤 **안전 기준선 실행**을 누릅니다. FlowScope는 Traditional Spider → Client Spider(AJAX fallback) → passive 완료 → native alert 순서를 고정하며, 범위 안 scanner 트래픽이 0건이면 lane을 실패 처리합니다. Active Scan은 기준선에 포함되지 않으며 항상 별도 Burp 승인이 필요합니다.
 4. `agent-workspace/prompts/explorer.md`를 실행합니다. 서버는 HUMAN/SCANNER 결과를 숨기며 Explorer는 `flowscope_target_request`만 사용합니다. exact-scope routing, 세션 주입, Evidence 수집은 FlowScope가 수행합니다. 제공된 workspace는 웹 검색, Wayback, 외부 API 문서·소스 저장소, curl, 브라우저 네트워킹을 금지합니다.
-5. `agent-workspace/prompts/judge.md`를 실행합니다. Judge는 완료된 HUMAN/SCANNER/LLM dataset을 잠그고 후보와 ZAP native alert를 읽은 뒤, 비최종 assessment를 제출하고 같은 통제 executor로 좁은 safe-GET 재현·정상 대조 Evidence를 수집합니다.
+5. 파싱 결과의 **검토 대기**를 확인해 실제 API면 operation을 **분석에 포함**, 보조 트래픽이면 **기본 숨김**으로 확정할 수 있습니다. 그 뒤 `agent-workspace/prompts/judge.md`를 실행합니다. Judge는 완료된 HUMAN/SCANNER/LLM dataset을 잠그고 메인 후보·잠긴 REVIEW Evidence·ZAP native alert를 읽은 뒤, 비최종 assessment를 제출하고 같은 통제 executor로 좁은 safe-GET 재현·정상 대조 Evidence를 수집합니다.
 6. FlowScope는 bundle이 현재 후보와 일치하고 서버 검사를 통과할 때만 `CONFIRMED` 또는 `REJECTED`를 허용합니다. 같은 run의 LLM 재현 2건 이상, 허가된 정상 대조 1건 이상, 일치하는 신원·작업·객체 의미와 응답 Evidence가 필요합니다. 나머지는 `INCONCLUSIVE`입니다. **시나리오**와 Request/Response를 검토하십시오. 사람 기록은 감사 가능한 오버라이드이며 검증되지 않은 자동 finding이 아닙니다.
 7. Burp를 내리기 전에 작업을 재개해야 한다면 `.flowscope.json`으로 저장합니다.
 
@@ -149,7 +149,7 @@ ZAP API endpoint는 loopback 주소만 허용합니다. ZAP의 대상 트래픽�
 
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, MCP 연결 복사, Proxy history 가져오기, 프로젝트 저장·불러오기, 샘플, 초기화, 정본 로컬 Web 작업면 열기
 - **Web 상단 모드** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
-- **왼쪽 레일** — 허위 퍼센트 없는 수집·분석·숨김·검토 수량, HUMAN/SCANNER/LLM 필터, Evidence 표시 class, 가명 세션·역할, 3-way gap, 그래프 판정 제어
+- **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 가명 세션·역할, 3-way gap, 그래프 판정 제어
 - **Flow Graph** — 고정된 `identity → resource → operation` 열, 객체 식별자가 없는 경우 `identity → operation` 직접 edge, HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L 평행 overlay, 별도 인가 판정 view, focus+context 선택, 화면 맞춤, 18개 단위 객체·API 그룹 펼치기
 - **판정 매트릭스** — 관측된 `identity/role × operation × resource` cell, source별 verdict, 미교차 조합, 일부만 발견, 불일치
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
@@ -195,7 +195,7 @@ MCP와 Web 서버는 `127.0.0.1`에만 bind하고 Host·Origin을 검증하며, 
 - owner 추출은 일반적인 scalar owner/user/account 필드와 명시적 nested owner/user/author/account/customer principal object를 인식합니다. 도메인 고유 소유권은 운영자가 확인해야 합니다.
 - 세션 자동화는 일반 cookie, bearer/CSRF header, 회전, 만료 hint, 의심 응답을 다룹니다. CAPTCHA, MFA, WebAuthn, device binding, 애플리케이션 고유 refresh/login protocol은 수동 재캡처가 필요할 수 있습니다.
 - 안정 신호가 없는 opaque 회전 token은 자동 상관할 수 없습니다. 운영자가 확인된 fingerprint를 등록 계정에 명시적으로 연결할 수 있습니다.
-- Fetch Metadata와 MIME은 없거나 잘못될 수 있고 business API가 document·asset·telemetry와 비슷할 수 있습니다. 분류기는 여러 고신뢰 신호가 합치할 때만 제외하고 애매한 요청을 `REVIEW`로 보존하며 이유와 reversible override를 제공합니다. 트래픽 노이즈를 완벽하게 분류한다고 주장하지 않습니다.
+- Fetch Metadata와 MIME은 없거나 잘못될 수 있고 business API가 document·asset·telemetry와 비슷할 수 있습니다. 분류기는 여러 고신뢰 신호가 합치할 때만 제외하고 애매한 요청을 메인 그래프 밖 `REVIEW`로 보존하며 이유와 reversible override를 제공합니다. `REVIEW`를 확인하지 않으면 실제 API가 메인 비교에서 빠질 수 있으므로 트래픽 노이즈를 완벽하게 분류한다고 주장하지 않습니다.
 - 데이터 흐름은 제한된 exact-value matching이며 완전한 semantic taint analysis가 아닙니다.
 - Repeater handoff는 저장된 마스킹 요청을 사용하며 자동 전송하지 않습니다. 결정적 자동 validation은 Repeater나 직접 8082 트래픽이 아니라 FlowScope 통제 MCP 요청만 사용합니다.
 - closed-world 실행은 제공된 agent workspace의 instruction·tool 계약입니다. 별도로 개조한 에이전트 설치나 다른 로컬 process를 통제하지는 못합니다. 서버의 scope·Evidence 시야·verdict gate가 최종 권위입니다.

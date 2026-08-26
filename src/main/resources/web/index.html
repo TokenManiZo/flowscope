@@ -240,7 +240,7 @@
       <div class="covdef">블랙박스라 전체(분모)를 알 수 없으므로 <b>퍼센트를 쓰지 않습니다</b>. 관측된 <b>신원 × 메서드·엔드포인트 × 객체</b> 조합만 셉니다.</div>
       <div class="covnum" id="covObs">0<small>조합</small></div>
       <div class="covfrac" id="covFrac">엔드포인트 0 · 메서드 0 · 객체 0</div>
-      <div class="trafficstats" id="trafficStats">수집 0 · 분석 0 · 기본 숨김 0 · 검토 0</div>
+      <div class="trafficstats" id="trafficStats">수집 0 · 메인 비교 0 · 기본 숨김 0 · 검토 대기 0</div>
     </div>
     <div class="card srcfilter">
       <h3>소스 필터 <span class="badge">3종</span></h3>
@@ -250,6 +250,9 @@
     </div>
     <div class="card classfilter">
       <h3>Evidence 표시 <span class="badge">분석 제외도 보존</span></h3>
+      <label><input type="checkbox" class="df" value="INCLUDE" checked>메인 비교</label>
+      <label><input type="checkbox" class="df" value="REVIEW" checked>검토 대기</label>
+      <label><input type="checkbox" class="df" value="EXCLUDE">기본 숨김</label>
       <label><input type="checkbox" class="tf" value="API" checked>API</label>
       <label><input type="checkbox" class="tf" value="UNKNOWN" checked>판단 보류</label>
       <label><input type="checkbox" class="tf" value="TELEMETRY_CANDIDATE" checked>텔레메트리 후보</label>
@@ -386,6 +389,7 @@ let GRAPH_HIDDEN=0; const GRAPH_PAGE_SIZE=18;
 let GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};
 let matrixMode='identity', ROLEOVERRIDE={}; const ROLE_LEVELS=['User','LV1','LV2','Admin','Unknown'];
 let activeSources={human:true,scanner:true,llm:true};
+let activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false};
 let activeTraffic={API:true,UNKNOWN:true,TELEMETRY_CANDIDATE:true,NAVIGATION:false,STATIC_ASSET:false,PREFLIGHT:false,BACKGROUND:true};
 let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0;
 let SETUP_AUTO_CHECKED=false;
@@ -462,7 +466,7 @@ function computeCoverage(){
   let conflict=0,partial=0,clean=0;
   arr.forEach(c=>{ if(c.conflict)conflict++; if(c.partial)partial++; if(c.clean)clean++; });
   gUn.textContent=MODEL.candidates.length; gFound.textContent=partial; gCo.textContent=conflict; gClean.textContent=clean;
-  trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 분석 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 '+SERVER_TRAFFIC_STATS.review;
+  trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 메인 비교 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 대기 '+SERVER_TRAFFIC_STATS.review;
 }
 function cellGKs(c){ const g=[]; if(!c)return g; if(c.conflict)g.push('conflict'); if(c.partial)g.push('partial'); if(c.clean)g.push('clean'); return g; }
 function shortLabel(value,max=34){ const s=String(value||''); if(s.length<=max)return s; const left=Math.ceil((max-1)*.7),right=(max-1)-left; return s.slice(0,left)+'…'+s.slice(-right); }
@@ -703,7 +707,7 @@ async function showOperation(op,offset=0){
   const requiredRole=(MODEL.requiredRoles&&MODEL.requiredRoles[op])||'Unknown';
   const objectCandidates=[];const seenObjects=new Set();evs.forEach(event=>(event.objects||[]).forEach(candidate=>{const key=candidate.resource+'@'+candidate.location;if(!seenObjects.has(key)){seenObjects.add(key);objectCandidates.push(candidate);}}));
   let obs=visibleEvents.map(e=>{ const l=inputLoc(e.method),detail=detailById[e.eventId]||{};
-    const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토':'분석';
+    const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토 대기':'메인 비교';
     return `<details class="reqblk"><summary><span style="color:var(--${e.source})">[${SRC[e.source].ab}]</span> <span class="m">${esc(e.method)}</span> ${esc(e.path)} → HTTP ${e.status} · ${esc(e.eventId||'Evidence 없음')} · ${esc(e.trafficClass)} / ${esc(disposition)} · 반복 ${Number(e.repeatCount||1)}</summary>`+
       `<div class="lbl" style="margin-top:8px">분류 근거</div><div class="val">${esc((e.classificationReasons||[]).join(' · ')||'근거 없음')} · 인증 ${esc(e.authState||'UNRESOLVED')}</div>`+
       `<div class="lbl" style="margin-top:8px">REQUEST · ${esc(l.desc)}</div><pre class="reqblk">${esc(detail.request||'(요청 전문 없음)')}</pre>`+
@@ -933,9 +937,9 @@ function applyOnlyGaps(){ const on=document.getElementById('onlygaps').checked; 
 function renderRaw(){
   const tb=document.querySelector('#raw tbody'); tb.innerHTML='';
   const showAll=document.getElementById('showRepeats')?.checked,seen=new Set();
-  const rows=EVENTS.filter(e=>activeTraffic[e.trafficClass]!==false).filter(e=>{if(showAll)return true;if(seen.has(e.clusterId))return false;seen.add(e.clusterId);return true;});
+  const rows=EVENTS.filter(e=>activeDispositions[e.trafficDisposition]!==false).filter(e=>activeTraffic[e.trafficClass]!==false).filter(e=>{if(showAll)return true;if(seen.has(e.clusterId))return false;seen.add(e.clusterId);return true;});
   rows.forEach((e,i)=>{ const stc=e.status>=200&&e.status<300?'st2':e.status>=400&&e.status<500?'st4':'st5',source=SRC[e.source]||SRC.unknown;
-    const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토':'분석';
+    const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토 대기':'메인 비교';
     tb.insertAdjacentHTML('beforeend','<tr data-event="'+esc(e.eventId)+'"><td>'+(i+1)+'</td><td><span class="src" style="color:'+css(source.c)+'">'+source.ab+'</span></td><td>'+esc(displayIdentity(e.idn))+'</td><td>'+esc(e.method)+'</td><td>'+esc(e.op)+'</td><td>'+esc(resourceLabel(e.resource))+'</td><td class="'+stc+'">'+Number(e.status||0)+'</td><td title="'+esc((e.classificationReasons||[]).join(', '))+'">'+esc(e.trafficClass||'UNKNOWN')+'</td><td>'+esc(disposition)+'</td><td>'+Number(e.repeatCount||1)+'</td><td>'+esc(e.eventId||'-')+'</td></tr>'); });
   tb.querySelectorAll('tr[data-event]').forEach(row=>row.addEventListener('click',()=>{const event=EVENTS.find(item=>item.eventId===row.dataset.event);if(event)showOperation(event.op);}));
 }
@@ -1009,10 +1013,10 @@ async function saveScenarioReview(itemId,button){
 }
 
 function updateStatus(){
-  const el=document.getElementById('status');trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 분석 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 '+SERVER_TRAFFIC_STATS.review;if(!EVENTS.length){el.innerHTML='<span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요.</span>';updateSetup();return;}
+  const el=document.getElementById('status');trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 메인 비교 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 대기 '+SERVER_TRAFFIC_STATS.review;if(!EVENTS.length){el.innerHTML='<span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요.</span>';updateSetup();return;}
   const coverageEvents=EVENTS.filter(e=>e.coverageEligible);const cnt=s=>coverageEvents.filter(e=>e.source===s).length; const conf=Object.values(MODEL.cells).filter(c=>c.conflict).length;
   const part=Object.values(MODEL.cells).filter(c=>c.partial).length;
-  const unknown=cnt('unknown');el.innerHTML='<span>분석 기준 · 사람 <b>'+cnt('human')+'</b> · 스캐너 <b>'+cnt('scanner')+'</b> · LLM <b>'+cnt('llm')+'</b>'+(unknown?' · 분류불명 <b>'+unknown+'</b>':'')+'</span><span>수집 <b>'+SERVER_TRAFFIC_STATS.captured+'</b> · 기본 숨김 <b>'+SERVER_TRAFFIC_STATS.excluded+'</b> · 신원 <b>'+MODEL.identities.length+'</b> · Op <b>'+MODEL.operations.length+'</b> · Res <b>'+MODEL.resources.length+'</b></span>'+(part?'<span class="warn">일부만 발견 <b>'+part+'</b> · 불일치 <b>'+conf+'</b></span>':'');
+  const unknown=cnt('unknown');el.innerHTML='<span>메인 비교 기준 · 사람 <b>'+cnt('human')+'</b> · 스캐너 <b>'+cnt('scanner')+'</b> · LLM <b>'+cnt('llm')+'</b>'+(unknown?' · 분류불명 <b>'+unknown+'</b>':'')+'</span><span>수집 <b>'+SERVER_TRAFFIC_STATS.captured+'</b> · 기본 숨김 <b>'+SERVER_TRAFFIC_STATS.excluded+'</b> · 검토 대기 <b>'+SERVER_TRAFFIC_STATS.review+'</b> · 신원 <b>'+MODEL.identities.length+'</b> · Op <b>'+MODEL.operations.length+'</b> · Res <b>'+MODEL.resources.length+'</b></span>'+(part?'<span class="warn">일부만 발견 <b>'+part+'</b> · 불일치 <b>'+conf+'</b></span>':'');
   updateSetup();
 }
 
@@ -1093,6 +1097,7 @@ document.querySelectorAll('.gapline.gf').forEach(el=>{
 document.querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.vbtn').forEach(x=>x.classList.remove('on'));b.classList.add('on');applyView(b.dataset.view);}));
 document.querySelectorAll('.sf').forEach(cb=>cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;applyFilter();}));
 document.querySelectorAll('.tf').forEach(cb=>cb.addEventListener('change',()=>{activeTraffic[cb.value]=cb.checked;renderRaw();}));
+document.querySelectorAll('.df').forEach(cb=>cb.addEventListener('change',()=>{activeDispositions[cb.value]=cb.checked;renderRaw();}));
 document.getElementById('showRepeats').addEventListener('change',renderRaw);
 document.getElementById('identityFilter').addEventListener('change',e=>{ACTIVE_IDENTITY=e.target.value;renderGraph();renderSeq();});
 document.getElementById('mergeIdentity').addEventListener('click',mergeIdentities);

@@ -56,7 +56,7 @@
 - [WHATWG Fetch](https://fetch.spec.whatwg.org/)의 CORS preflight에는 `OPTIONS`뿐 아니라 `Access-Control-Request-Method`가 동반된다. 따라서 OPTIONS 전체 제외는 잘못이다.
 - [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html)의 method safety와 Content-Type representation metadata를 경로 확장자보다 강한 신호로 사용하되, 서버 오표기 가능성 때문에 객체·인가 실패·redirect 신호가 있으면 보안 분석을 우선한다.
 - [Beacon](https://www.w3.org/TR/beacon/)은 background 전송도 application data를 담을 수 있음을 보여 준다. `/analytics`, `/telemetry` 같은 이름은 삭제 근거가 아니라 검토 후보일 뿐이다.
-- 결론은 정확한 이진 noise oracle이 아니라 비파괴 triage다. high-confidence 보조 traffic만 coverage에서 기본 제외하고, 애매한 traffic은 `REVIEW`로 분석에 포함하며 사용자가 되돌릴 수 있어야 한다(D-059).
+- 결론은 정확한 이진 noise oracle이 아니라 비파괴 triage다. high-confidence 보조 traffic은 `EXCLUDE`, 보안 관련 신호가 충분한 traffic은 `INCLUDE`, 애매한 traffic은 메인 비교 밖 `REVIEW`로 나누되 모두 Evidence로 보존하고 사용자가 operation 단위로 되돌릴 수 있어야 한다(D-059/D-064).
 
 ## 7. 참고문헌 (재검증 완료 · URL·근거강도)
 - AuthProbe — Jay Barach, arXiv:2607.20574 `[프리프린트·단독·합성API]` https://arxiv.org/abs/2607.20574

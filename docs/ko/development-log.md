@@ -493,6 +493,42 @@ scope는 대상 혼입을 막지만 같은 대상 안의 로그인·배경 이�
 - fat JAR: 2,814,915 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `18460fa70e575ed04d8dfe3500c7c450a5ae413f9480a0af844a45019d4ec3fa`.
 - 실제 Burp에서 로그인 캡처 중 요청이 `SESSION_SETUP`, pass 밖 요청이 기본 숨김, HUMAN pass 요청이 분석으로 표시되는지는 수동 beta gate에 남는다.
 
+## 2026-08-26 · REVIEW를 메인 비교와 분리
+
+### 목표와 성공 조건
+
+- 애매한 요청과 반복 polling을 삭제하지 않으면서 확정 `INCLUDE`와 같은 graph·3-way gap 입력으로 취급하지 않는다.
+- `INCLUDE/REVIEW/EXCLUDE` 수량이 서로 겹치지 않아 사용자가 분류 영향을 바로 확인할 수 있게 한다.
+- UI와 Judge 모두 REVIEW Evidence에 다시 접근할 수 있어야 한다.
+
+### 재현·개발
+
+- 변경 전 동일 `/status` 응답 3건이 `BACKGROUND/REVIEW`로 표시되면서도 `coverageRecords` 3건에 모두 들어가는 실패 회귀를 먼저 재현했다.
+- `TrafficClassification.coverageEligible()`을 `INCLUDE` 전용으로 좁히고 Pipeline의 excluded/review 집계를 처분별로 분리했다. MCP status의 excluded 수도 `captured - coverage` 계산 대신 실제 `EXCLUDE`만 센다.
+- Web Evidence 표에 처분 필터를 추가했다. 기본은 `INCLUDE+REVIEW`이고 `EXCLUDE`는 사용자가 펼칠 수 있다. 메인 graph·matrix·gap은 기존 server coverage 입력을 사용하므로 `REVIEW`가 섞이지 않는다.
+- MCP Judge 지침은 잠긴 후보뿐 아니라 paginated Evidence의 `REVIEW`를 별도 triage하도록 수정했다. REVIEW나 gap 자체는 취약점 증거로 승격하지 않는다.
+- MCP 회귀 fixture가 API 응답임을 JSON body만으로 암묵 가정하던 부분은 실제 분류 입력인 `responseContentType=application/json`을 명시했다.
+
+### 이유와 기각한 대안
+
+REVIEW를 삭제하면 미탐을 복구할 수 없고, 계속 메인 graph에 넣으면 노이즈와 확정 coverage가 섞인다. 검증되지 않은 가중치 임계값은 ground truth와 calibration이 없으므로 추가하지 않았다. 따라서 Evidence 보존과 메인 비교 정확도를 분리하는 세 상태를 유지했다(D-064).
+
+### 영향 파일
+
+- 코드: `TrafficClassification`, `Pipeline`, `McpServer`, Web `index.html`
+- 테스트: `PipelineClassificationTest`, `McpServerTest`, `FlowScopeWebServerTest`
+- 실행 지침: `agent-workspace/prompts/judge.md`
+- 문서: 한국어/영어 README·changelog, architecture, decisions(D-064), research, product plan, UI rationale, beta validation, 이 개발 기록
+
+### 검증과 남은 gate
+
+- 최초 실패: `mvn -Dtest=PipelineClassificationTest test`, REVIEW 3건이 coverage 3건이라 assertion 실패.
+- 타겟 회귀: `mvn -Dtest=PipelineClassificationTest,TrafficClassifierTest,McpServerTest,FlowScopeWebServerTest test`, 38 tests, 실패·오류·skip 0.
+- 전체 `mvn clean verify`: 131 tests, 실패·오류·skip 0, BUILD SUCCESS.
+- fat JAR: 2,815,071 bytes, 1,295 entries, ZIP 무결성 통과, SHA-256 `5f0d60e74ae9778619c668bbc0e53797712e52ca5da7d1dbd1e6ee3cd87f95c8`.
+- 1280×720 standalone: 파싱 결과 10행 → REVIEW 해제 9행 → INCLUDE도 해제 0행 → REVIEW만 선택 1행. REVIEW 상세의 `분석에 포함` 조작 노출, page overflow 0, console error 0.
+- 실제 Burp Web UI에서 실제 대상 REVIEW operation 승격을 확인하는 수동 gate와 blind benchmark의 REVIEW 수·승격률 측정은 남아 있다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

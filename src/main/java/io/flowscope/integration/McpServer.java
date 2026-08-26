@@ -337,7 +337,8 @@ public final class McpServer implements AutoCloseable {
         }
         out.put("captured_records", visibleRecords.size());
         out.put("coverage_records", visibleCoverage.size());
-        out.put("excluded_records", visibleRecords.size() - visibleCoverage.size());
+        out.put("excluded_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
+                == TrafficClassification.Disposition.EXCLUDE).count());
         out.put("review_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
                 == TrafficClassification.Disposition.REVIEW).count());
         out.putPOJO("scope", state.scope().entries());

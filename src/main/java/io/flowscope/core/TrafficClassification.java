@@ -28,7 +28,7 @@ public record TrafficClassification(TrafficClass trafficClass, Disposition dispo
     }
 
     public boolean coverageEligible() {
-        return disposition != Disposition.EXCLUDE;
+        return disposition == Disposition.INCLUDE;
     }
 
     public static TrafficClassification unresolved(String reason) {

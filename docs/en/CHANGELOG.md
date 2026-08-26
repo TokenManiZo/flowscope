@@ -2,6 +2,8 @@
 
 ## 1.2.0-beta.3 — 2026-08-25
 
+- Moved ambiguous `REVIEW` Evidence out of the main graph and 3-way gaps into a review queue, with mutually exclusive `INCLUDE/REVIEW/EXCLUDE` counts and display filters.
+- Separated HUMAN login capture as `SESSION_SETUP`; same-scope traffic outside an explicit HUMAN exploration pass remains Evidence but no longer contributes to 3-way coverage or gaps.
 - Made the project-root README, changelog, contribution guide, and security policy Korean; separated detailed Korean documents under `docs/ko` and maintained English public guides under `docs/en`.
 - Standardized source visualization as HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L, while separating generic interaction accents from source semantics.
 - Restricted stored HUMAN and Burp-tool Evidence to the configured exact scope without blocking ordinary out-of-scope browser navigation.
