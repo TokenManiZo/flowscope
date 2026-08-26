@@ -7,9 +7,9 @@
 | 구분 | 결과 |
 |---|---|
 | 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 131 tests, 실패·오류·skip 0 |
-| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,815,071 bytes, SHA-256 `5f0d60e74ae9778619c668bbc0e53797712e52ca5da7d1dbd1e6ee3cd87f95c8` |
+| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,815,427 bytes, SHA-256 `32d7f4d4cd9651e1df4f9ca714e7deab6895f10a2080dc09b12ea3a8dd2362d3` |
 | JAR 무결성 | ZIP 무결성 통과, 1,295 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
-| 배포 계약 | Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
+| 배포 계약 | 공개 `target/*.jar` 정확히 1개, 반복 package 크기·SHA-256 동일, Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
 | Session Broker | 계정별 명시적 로그인 캡처, Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
 | 실행 신뢰도 | `CONTROLLED`, `OBSERVED`, `UNVERIFIED_RUNTIME`, `IMPORTED`, `UNKNOWN` 구분과 최종 판정 gate 검증 |
 | LLM Explorer | 실행 중 다른 lane·후보·gap·finding 격리, exact-scope controlled request, 쓰기 확인, broker 소유 헤더와 CR/LF 거부 |
@@ -40,6 +40,7 @@ Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Commu
 
 - Burp Community 2026.7.3에서 변경 전 beta.3의 올바른 fat JAR `target/flowscope-1.2.0-beta.3.jar`가 신규 load되는 것을 사용자가 확인했다. 이번 분류·신원 변경 뒤 재생성한 JAR에는 이 결과를 소급하지 않는다.
 - 같은 `target/`에 생성된 thin intermediate `original-flowscope-1.2.0-beta.3.jar`를 먼저 선택했을 때 `Extension class is not a recognized type`으로 실패했다. 이는 확장 진입 코드 실패가 아니라 빠진 runtime dependency를 가진 중간 산출물 선택이었지만, 배포 폴더가 사용자를 오도한 실제 packaging UX 결함이다.
+- 현재 빌드는 위 결함을 수정해 `original-*`를 package 끝에 제거하고 공개 JAR 수가 하나가 아니면 실패한다. `mvn clean verify` 직후와 이어진 non-clean `mvn -DskipTests package`의 유일한 JAR은 크기·SHA-256이 동일했다.
 - 올바른 JAR의 unload, FlowScope 탭 기능, Web UI 연결, 실제 트래픽 수집은 이 확인만으로 통과 처리하지 않는다.
 
 ## 독립 clean-room 사전 감사와 후속 재검증

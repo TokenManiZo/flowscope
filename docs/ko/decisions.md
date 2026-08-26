@@ -547,8 +547,9 @@
 - **문제:** Maven Shade가 배포 fat JAR과 함께 `target/original-flowscope-1.2.0-beta.3.jar`를 만든다. 사용자가 중간 JAR을 선택했을 때 Burp는 빠진 runtime dependency의 실제 원인 대신 `Extension class is not a recognized type`이라는 일반 오류를 표시했다. README가 올바른 이름을 적어도 같은 폴더의 유사 파일은 정상적인 사용자 혼동을 만든다.
 - **결정:** 공개 install surface에는 Burp에 로드 가능한 fat JAR 하나만 둔다. thin/intermediate JAR이 빌드에 필요하면 사용자가 선택하는 배포 경로 밖의 내부 디렉터리로 이동하거나 package 종료 시 제거한다. 자동 배포 검증은 파일명·단일성뿐 아니라 실제 Burp Community 신규 load를 별도 수동 gate로 요구한다.
 - **기각:** README 경고만 추가하는 방식은 현재 beta의 즉시 완화로는 사용하지만 최종 해결이 아니다. 사용자가 파일명을 정확히 구분해야 하는 구조를 제품 계약으로 유지하지 않는다.
-- **현재 상태:** 올바른 `target/flowscope-1.2.0-beta.3.jar`의 Burp 2026.7.3 load는 사용자 환경에서 통과했다. 산출물 단일화는 아직 구현하지 않았다.
-- **상태:** 확정·구현 대기
+- **구현:** Jar 플러그인은 Shade 후처리 입력을 매 package마다 다시 만들도록 `forceCreation=true`로 고정한다. Shade가 주 fat JAR으로 교체한 뒤 package 마지막에 정확한 `original-${project.build.finalName}.jar`만 삭제하고, `target/*.jar` 수가 1이 아니면 빌드를 실패시킨다.
+- **검증:** `mvn clean verify` 131 tests 통과 뒤 `clean` 없이 `mvn -DskipTests package`를 다시 실행했다. 두 번 모두 공개 JAR은 한 개였고 크기·SHA-256이 동일했으며 ZIP/manifest 검증을 통과했다. 올바른 이전 JAR의 Burp 2026.7.3 load는 사용자 환경에서 통과했지만 현재 재생성 JAR load는 수동 gate다.
+- **상태:** 패키징 구현·자동 검증 완료, 현재 JAR Burp 재로드 대기
 
 ## D-059 · 트래픽 노이즈 = 삭제 규칙이 아닌 Evidence 보존형 분류
 - **문제:** 경로 확장자, `OPTIONS`, cookie 존재, telemetry라는 이름만으로 관측을 버리면 API처럼 보이지 않는 보안 관련 요청을 영구 미탐으로 만들고 과거 관측에 규칙을 소급할 수 없다. 반대로 모든 브라우저 보조 요청을 그래프에 넣으면 세션 cookie 회전과 정적·navigation 반복이 identity/operation을 폭증시킨다.

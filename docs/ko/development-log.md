@@ -529,6 +529,36 @@ REVIEW를 삭제하면 미탐을 복구할 수 없고, 계속 메인 graph에 �
 - 1280×720 standalone: 파싱 결과 10행 → REVIEW 해제 9행 → INCLUDE도 해제 0행 → REVIEW만 선택 1행. REVIEW 상세의 `분석에 포함` 조작 노출, page overflow 0, console error 0.
 - 실제 Burp Web UI에서 실제 대상 REVIEW operation 승격을 확인하는 수동 gate와 blind benchmark의 REVIEW 수·승격률 측정은 남아 있다.
 
+## 2026-08-26 · 공개 Burp JAR 단일화
+
+### 목표와 성공 조건
+
+- `mvn clean verify` 뒤 사용자가 선택할 `target/*.jar`는 Burp용 fat JAR 한 개뿐이어야 한다.
+- `clean` 없이 package를 반복해도 기존 fat JAR을 다시 shade하지 않고 동일 산출물을 만들어야 한다.
+- 자동 테스트, manifest, ZIP 무결성과 Maven 주 artifact 계약을 유지한다.
+
+### 재현·개발
+
+- 변경 전 clean build의 `target/`에 fat JAR과 `original-flowscope-1.2.0-beta.3.jar` 두 개가 남는 것을 재확인했다.
+- Shade 공식 parameter에는 교체 전 `original-*` 보관 파일을 삭제하는 옵션이 없음을 확인했다. 공식 AntRun 3.2.0을 Shade 뒤 같은 package phase에 배치해 정확한 intermediate 이름만 삭제하고 `target/*.jar`가 1개가 아니면 빌드를 실패시켰다.
+- 첫 수정 뒤 non-clean package에서 Jar 플러그인이 기존 fat JAR을 입력으로 재사용해 중복 resource warning과 다른 크기를 만드는 결함을 추가 발견했다. Maven Jar 공식 문서가 Shade 같은 후처리 플러그인에는 `forceCreation=true`를 요구하므로 이를 명시했다.
+
+### 이유와 기각한 대안
+
+README에서 파일명을 구분하라는 안내만으로는 실제 오선택을 막지 못했다. Shade의 attached classifier는 thin·fat 두 JAR을 계속 노출하고, `outputFile`은 프로젝트 주 artifact를 교체·attach하지 않아 install/deploy 계약을 바꾼다. 기존 주 artifact 교체 방식을 유지하면서 공개 intermediate만 제거하는 최소 변경을 선택했다(D-058).
+
+### 영향 파일
+
+- 빌드: `pom.xml`
+- 문서: 한국어/영어 README·changelog, decisions(D-058), product plan, UI rationale, beta validation, 이 개발 기록
+
+### 검증과 남은 gate
+
+- `mvn clean verify`: 131 tests, 실패·오류·skip 0, BUILD SUCCESS.
+- 이어서 `clean` 없이 `mvn -DskipTests package` 재실행: 두 실행 모두 `target/*.jar` 1개, 크기 2,815,427 bytes, SHA-256 `32d7f4d4cd9651e1df4f9ca714e7deab6895f10a2080dc09b12ea3a8dd2362d3`로 동일.
+- 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21.
+- 현재 재생성 JAR을 Burp Community에서 신규 load/unload하는 확인은 수동 release gate에 남는다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

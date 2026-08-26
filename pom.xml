@@ -48,6 +48,16 @@
   <build>
     <finalName>flowscope-${project.version}</finalName>
     <plugins>
+      <!-- Shade post-processes this JAR; always recreate the thin input on repeated package runs. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.0</version>
+        <configuration>
+          <forceCreation>true</forceCreation>
+        </configuration>
+      </plugin>
+
       <!-- Fat JAR: bundle runtime dependencies and web assets (Montoya is provided by Burp). -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -88,6 +98,33 @@
                   <mainClass>io.flowscope.burp.FlowScopeExtension</mainClass>
                 </transformer>
               </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Keep the public install surface unambiguous: only the Burp-loadable fat JAR remains. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <id>remove-thin-jar</id>
+            <phase>package</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <delete file="${project.build.directory}/original-${project.build.finalName}.jar"/>
+                <resourcecount property="flowscope.public.jar.count">
+                  <fileset dir="${project.build.directory}" includes="*.jar"/>
+                </resourcecount>
+                <fail message="FlowScope public build must contain exactly one Burp-loadable JAR">
+                  <condition>
+                    <not><equals arg1="${flowscope.public.jar.count}" arg2="1"/></not>
+                  </condition>
+                </fail>
+              </target>
             </configuration>
           </execution>
         </executions>

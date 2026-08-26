@@ -46,7 +46,7 @@ FlowScope does not know the complete black-box attack surface, so it never repor
 mvn clean verify
 ```
 
-Load **only** `target/flowscope-1.2.0-beta.3.jar` in **Burp → Extensions → Installed → Add → Java**. Maven Shade also creates `target/original-flowscope-1.2.0-beta.3.jar`; that is an unbundled intermediate JAR and is not a Burp distribution. Loading it produces a generic `Extension class is not a recognized type` error. This confusing intermediate artifact is a recorded beta packaging issue and will be removed from the public install surface.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.3.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 

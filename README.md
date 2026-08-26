@@ -44,7 +44,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 mvn clean verify
 ```
 
-Burp의 **Extensions → Installed → Add → Java**에서 `target/flowscope-1.2.0-beta.3.jar`만 불러오십시오. Maven Shade가 함께 만드는 `target/original-flowscope-1.2.0-beta.3.jar`는 의존성이 빠진 중간 JAR이며 Burp 배포물이 아닙니다. 이 파일을 불러오면 `Extension class is not a recognized type` 오류가 발생합니다. 공개 배포면에서 중간 JAR을 제거하는 작업은 현재 기록된 베타 패키징 과제입니다.
+빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.3.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
 
 ## 저장소 구조
 
