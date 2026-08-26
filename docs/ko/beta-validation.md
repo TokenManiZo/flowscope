@@ -1,6 +1,21 @@
-# FlowScope 1.2.0-beta.3 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.5 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-26이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.5 자동 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 164 tests, 실패·오류·skip 0 |
+| 공통 discovery corpus | target 비종속 protocol fixture 7종, truth route 18개에서 TP 18·FP 0·FN 0. 이는 구현 회귀 수치이며 blind target 성능 수치가 아님 |
+| 공통 경계 회귀 | exact scope, unsupported scheme, 동적 JS 문자열, XML XXE, method 없는 `UNKNOWN`, 같은 path의 관측 `GET`/미관측 `UNKNOWN` 분리, provenance source/run/adapter 병합 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.5.jar`, 3,787,475 bytes, SHA-256 `e5cf26d00aa3446ec9983114d7d8c35eb850d16f815387c14becbb787b087c50` |
+| JAR 무결성 | ZIP 무결성 통과, 1,940 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개, 연속 non-clean package 크기·SHA-256 동일 |
+| fat JAR runtime | JDK 21에서 완성 JAR만 classpath에 두고 HTML5 DOM·OpenAPI YAML·generic XML adapter를 직접 실행, `FAT_JAR_DISCOVERY_SMOKE_OK` 확인 |
+| 의존성 패키징 | jsoup 1.23.1, Jackson YAML 2.22.2, SnakeYAML 2.5 class와 고지 포함; relocated Jackson service metadata 병합 확인 |
+| 저장·Web 계약 | provenance `(type, evidenceId, source, runId, adapter)` project 왕복, legacy migration, snapshot/Web 상세 대응 관계 회귀 통과 |
+
+이 결과는 공통 route discovery의 코드·고정 fixture·패키징을 검증한 것이다. 실제 Burp Community에서 beta.5 JAR 재로드, 응답 없는 Site Map 항목, 실제 Burp Browser corpus, blind target endpoint 발견률은 아직 검증하지 않았다. 고정 corpus의 TP/FP/FN을 실제 대상 성능으로 소급하지 않는다.
 
 ## 1.2.0-beta.4 자동 사전검증
 

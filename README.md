@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.4
+# FlowScope 1.2.0-beta.5
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -18,7 +18,7 @@ USER B        orders:101      GET /api/orders/{id}
 - query, 요청 본문, 마스킹된 요청·응답, timestamp, redirect, GraphQL operation, 응답→요청 데이터 흐름 수집
 - Evidence 보존형 트래픽 분류. `INCLUDE`만 메인 3-way 비교에 사용하고, 애매한 `REVIEW`는 별도 검토 대기로 보존하며, 고신뢰 보조 트래픽은 `EXCLUDE`로 기본 숨김
 - classifier v3가 web manifest·source map·service worker를 탐색 메타데이터로 분리하고, 같은 service·정규화 operation의 명시적 API Evidence로 애매한 형제 관측을 교차 보강
-- exact-scope HTML link/form, redirect `Location`, robots/sitemap, web manifest, 보수적 JavaScript URL literal, 대상에서 관측한 OpenAPI와 응답 없는 Burp Site Map 항목으로 미요청 route 후보 생성. 후보는 실제 요청·응답 전까지 coverage·gap·verdict·finding을 바꾸지 않음
+- 공통 route discovery 파이프라인이 exact-scope HTML, 정적 JavaScript 호출, OpenAPI JSON/YAML, 표준 metadata, generic XML과 응답 없는 Burp Site Map 항목을 동일한 검증·정규화·dedup gate로 처리. method 근거가 없으면 `UNKNOWN`이며 후보는 실제 요청·응답 전까지 coverage·gap·verdict·finding을 바꾸지 않음
 - `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` 인증 상태. 연결되지 않은 회전 쿠키가 그래프 신원을 폭증시키지 않으며, 확인된 계정 연결은 서비스 경계를 유지
 - Codex·Claude Code 구독형 클라이언트용 localhost 전용 인증 MCP 서버
 - 시스템 소유 신원 격리 ZAP 캠페인: 비로그인과 선택한 ACTIVE 계정마다 fresh ZAP session → Traditional Spider → strict Client Spider(AJAX fallback) → passive queue 완료 → native alert. Active Scan은 별도 승인 필요
@@ -46,7 +46,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 mvn clean verify
 ```
 
-빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.4.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
+빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.5.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
 
 ## 저장소 구조
 

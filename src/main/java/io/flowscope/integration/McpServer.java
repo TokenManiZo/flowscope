@@ -228,7 +228,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.4");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.5");
         result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "

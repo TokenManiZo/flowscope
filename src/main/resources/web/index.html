@@ -192,7 +192,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.4 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.5 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -712,8 +712,9 @@ function setHint(t){stagehint.textContent=t;}
 function showRouteCandidate(candidate){
   if(!candidate)return;detailEmpty.style.display='none';detailFull.style.display='flex';
   dKind.textContent='미요청 route · 관측과 분리';dTitle.textContent=(candidate.method==='UNKNOWN'?'method 미확정':candidate.method)+' '+candidate.pathTemplate;
+  const mapped=(candidate.provenance||[]).map(item=>[item.source,item.runId,item.adapter,item.type,item.evidenceId].map(esc).join(' · ')).join('<br>');
   dBody.innerHTML=`<div class="field"><div class="lbl">대상</div><div class="val">${esc(candidate.service)}${esc(candidate.pathTemplate)}</div></div>`+
-    `<div class="field"><div class="lbl">provenance</div><div class="val">${esc((candidate.provenanceTypes||[]).join(' · '))}<br>${esc((candidate.provenanceEvidenceIds||[]).join(' · '))}</div></div>`+
+    `<div class="field"><div class="lbl">provenance</div><div class="val">${mapped||esc((candidate.provenanceTypes||[]).join(' · '))}</div></div>`+
     `<div class="field"><div class="lbl">적용 가능성</div><div class="val">${esc(candidate.applicability)} · ${esc(candidate.reviewReason||'')}</div></div>`+
     `<div class="field"><div class="lbl">정렬 근거(수치 점수 아님)</div><div class="val">${esc((candidate.priorityReasons||[]).join(' · '))}</div></div>`+
     `<div class="gapbox"><div class="name">아직 request/response가 없는 탐색 후보</div><p>이 노드는 HUMAN·SCANNER·LLM이 밟은 트래픽이 아니며 커버리지, 3-way 갭, 인가 판정, 취약점 후보 수를 올리지 않습니다. 실제 요청과 응답이 수집된 뒤에만 관측 operation으로 전환됩니다.</p></div>`;

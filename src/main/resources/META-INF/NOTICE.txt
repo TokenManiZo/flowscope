@@ -15,7 +15,15 @@ Jackson JSON processor
   Artifacts: com.fasterxml.jackson.core:jackson-databind:2.22.2
              com.fasterxml.jackson.core:jackson-core:2.22.2
              com.fasterxml.jackson.core:jackson-annotations:2.22
+             com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2
+             org.yaml:snakeyaml:2.5
   Source   : https://github.com/FasterXML/jackson
   License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
   Copyright (c) FasterXML, LLC and contributors
+--------------------------------------------------------------------
+jsoup 1.23.1
+  Artifact : org.jsoup:jsoup:1.23.1
+  Source   : https://github.com/jhy/jsoup
+  License  : MIT — full text in META-INF/LICENSE-jsoup.txt
+  Copyright © 2009-2026 Jonathan Hedley and contributors
 --------------------------------------------------------------------

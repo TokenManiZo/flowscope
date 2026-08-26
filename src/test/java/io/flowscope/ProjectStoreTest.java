@@ -58,7 +58,8 @@ final class ProjectStoreTest {
                 "token=REVIEWSECRET 재현 완료", assessment.evidenceIds());
         Path file = temp.resolve("session.flowscope.json");
         RouteCandidate routeCandidate = new RouteCandidate(record.service, "UNKNOWN", "/undocumented/{id}",
-                false, Set.of(RouteCandidate.ProvenanceType.BURP_UNREQUESTED), List.of("sitemap:abc"),
+                false, List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.BURP_UNREQUESTED,
+                "sitemap:abc", Source.UNKNOWN, "burp-site-map", "burp-site-map")),
                 RouteCandidate.Applicability.REVIEW, "응답 없는 Site Map 항목");
 
         ProjectStore store = new ProjectStore();
@@ -100,6 +101,31 @@ final class ProjectStoreTest {
         Path file = temp.resolve("bad.json");
         Files.writeString(file, "{\"schema_version\":99,\"records\":[]}");
         assertThrows(IllegalArgumentException.class, () -> new ProjectStore().load(file));
+    }
+
+    @Test
+    void legacyRouteProvenanceDoesNotInventTypeToEvidenceMappings() throws Exception {
+        RouteCandidate candidate = new RouteCandidate("https://api.test:443", "UNKNOWN", "/legacy", false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_LINK,
+                        "legacy-a", Source.HUMAN, "old-run", "old-adapter")),
+                RouteCandidate.Applicability.REVIEW, "legacy");
+        Path file = temp.resolve("legacy-route.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Set.of(), List.of(candidate));
+
+        ObjectMapper json = new ObjectMapper();
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(Files.readString(file));
+        var stored = (com.fasterxml.jackson.databind.node.ObjectNode) root.path("route_candidates").get(0);
+        stored.remove("provenance");
+        stored.set("provenance_types", json.valueToTree(List.of("HTML_LINK", "OPENAPI")));
+        stored.set("provenance_evidence_ids", json.valueToTree(List.of("legacy-a", "legacy-b")));
+        Files.writeString(file, json.writeValueAsString(root));
+
+        RouteCandidate restored = store.load(file).routeCandidates().getFirst();
+        assertEquals(List.of("legacy-a", "legacy-b"), restored.provenanceEvidenceIds());
+        assertEquals(Set.of(RouteCandidate.ProvenanceType.LEGACY_UNMAPPED), restored.provenanceTypes());
+        assertTrue(restored.provenance().stream().allMatch(item -> item.source() == Source.UNKNOWN
+                && item.adapter().equals("legacy-project-unmapped")));
     }
 
     @Test

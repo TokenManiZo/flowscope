@@ -1003,14 +1003,9 @@ public final class FlowScopeExtension implements BurpExtension {
         List<RouteCandidate> extracted = RouteCandidateExtractor.extract(sourceRecords, scope, seeds);
         List<RouteCandidate> restored;
         synchronized (restoredRouteCandidates) { restored = List.copyOf(restoredRouteCandidates); }
-        Map<String, RouteCandidate> merged = new LinkedHashMap<>();
-        for (RouteCandidate candidate : restored) merged.put(routeCandidateKey(candidate), candidate);
-        for (RouteCandidate candidate : extracted) merged.put(routeCandidateKey(candidate), candidate);
-        routeCandidates = RouteCandidateExtractor.prioritized(merged.values());
-    }
-
-    private static String routeCandidateKey(RouteCandidate candidate) {
-        return candidate.service() + "\0" + candidate.method() + "\0" + candidate.pathTemplate();
+        List<RouteCandidate> combined = new ArrayList<>(restored);
+        combined.addAll(extracted);
+        routeCandidates = RouteCandidateExtractor.prioritized(combined);
     }
 
     private static String shortDigest(String value) {

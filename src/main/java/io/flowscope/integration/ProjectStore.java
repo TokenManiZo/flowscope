@@ -153,18 +153,35 @@ public final class ProjectStore {
         out.set("provenance_types", json.valueToTree(candidate.provenanceTypes().stream()
                 .map(Enum::name).sorted().toList()));
         out.set("provenance_evidence_ids", json.valueToTree(candidate.provenanceEvidenceIds()));
+        ArrayNode provenance = out.putArray("provenance");
+        candidate.provenance().forEach(item -> {
+            ObjectNode entry = provenance.addObject();
+            entry.put("type", item.type().name());
+            entry.put("evidence_id", item.evidenceId());
+            entry.put("source", item.source().name());
+            entry.put("run_id", item.runId());
+            entry.put("adapter", item.adapter());
+        });
         out.put("applicability", candidate.applicability().name());
         out.put("review_reason", Masking.maskSecrets(candidate.reviewReason()));
         return out;
     }
 
     private RouteCandidate readRouteCandidate(JsonNode value) {
-        Set<RouteCandidate.ProvenanceType> types = java.util.EnumSet.noneOf(RouteCandidate.ProvenanceType.class);
-        value.path("provenance_types").forEach(type ->
-                types.add(enumValue(RouteCandidate.ProvenanceType.class, type.asText())));
+        List<RouteCandidate.Provenance> provenance = new ArrayList<>();
+        JsonNode stored = value.path("provenance");
+        if (stored.isArray()) stored.forEach(item -> provenance.add(new RouteCandidate.Provenance(
+                enumValue(RouteCandidate.ProvenanceType.class, required(item, "type")),
+                required(item, "evidence_id"), enumValue(Source.class, optional(item, "source", "UNKNOWN")),
+                optional(item, "run_id", "legacy-project"), optional(item, "adapter", "legacy-project"))));
+        if (provenance.isEmpty()) {
+            for (String evidence : stringList(value, "provenance_evidence_ids")) {
+                provenance.add(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.LEGACY_UNMAPPED,
+                        evidence, Source.UNKNOWN, "legacy-project", "legacy-project-unmapped"));
+            }
+        }
         return new RouteCandidate(required(value, "service"), required(value, "method"),
-                required(value, "path_template"), value.path("observed").asBoolean(false), types,
-                stringList(value, "provenance_evidence_ids"),
+                required(value, "path_template"), value.path("observed").asBoolean(false), provenance,
                 enumValue(RouteCandidate.Applicability.class, required(value, "applicability")),
                 masked(value, "review_reason"));
     }

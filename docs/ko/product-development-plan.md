@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.4 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.5 제품 개발·검증 계획
 
 이 계획은 `whs_flow` 화면을 실제 제품 작업면으로 채택한다는 결정과 FlowScope의 기존 수집·분석·MCP 신뢰 경계를 함께 만족시키도록 다시 검토한 실행 기준이다. 성공 기준은 “화면이 보임”이 아니라 실제 Evidence가 끝까지 보존되고, 거짓 자동화 없이 재현 가능하며, 공개 JAR 하나로 설치되는 것이다.
 
@@ -92,12 +92,14 @@
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
+**현재 상태: beta.5 공통 코어 구현·고정 corpus 회귀 완료, 실제 Burp/블라인드 target 검증 대기.**
+
 새 모델은 최소한 다음을 보존한다.
 
 ```text
 RouteCandidate {
   service, methodOrUnknown, pathTemplate,
-  provenanceType, provenanceEvidenceIds,
+  provenance[{type, evidenceId, source, runId, adapter}],
   observed, applicability, reviewReason
 }
 ```
@@ -105,12 +107,13 @@ RouteCandidate {
 후보 입력은 사용자가 허가한 exact scope 안에서 실제로 받은 데이터만 사용한다.
 
 - Burp Montoya `siteMap().requestResponses(filter)`의 in-scope 항목. `hasResponse=false`인 항목은 관측 요청으로 승격하지 않고 `BURP_UNREQUESTED` 후보로만 저장한다.
-- 관측 HTML의 `a[href]`, `form[action/method]`, manifest link와 같은 명시적 URL 참조.
+- 관측 HTML의 `a[href]`, `form[action/method]`, script/embed/manifest link와 같은 명시적 URL 참조. 깨진 HTML과 `<base>`는 HTML5 DOM 규칙으로 처리한다.
 - 관측 응답의 same-scope `Location`과 표준 sitemap/robots/web manifest 항목.
-- 관측 JavaScript의 `fetch`/XHR/axios 등 명시적 URL literal. 문자열 조합·동적 계산은 추측하지 않고 `REVIEW` 또는 미지원으로 남긴다.
-- 대상 내부에서 실제로 관측된 OpenAPI 문서만 사용한다. 외부 검색, Wayback, 저장소, 사전 정답은 사용하지 않는다.
+- 관측 JavaScript의 `fetch`/XHR/axios/jQuery/sendBeacon 명시적 URL literal. 문자열 조합·동적 계산은 추측하지 않는다.
+- 대상 내부에서 실제로 관측된 OpenAPI/Swagger JSON·YAML 문서만 사용한다. 외부 검색, Wayback, 저장소, 사전 정답은 사용하지 않는다.
+- 제품명에 종속되지 않은 XML의 명시 URL/method attribute·element만 읽는다. DOCTYPE·외부 entity·외부 DTD/schema는 차단한다.
 
-URL만 있고 method 근거가 없으면 `GET`으로 꾸미지 않고 `UNKNOWN`으로 둔다. 후보 dedup key는 service + method/unknown + normalized path이고, 각 후보는 원문 Evidence ID를 모두 유지한다.
+포맷별 어댑터는 발견만 하고, 공통 코어가 exact scope·지원 scheme·method token·정규화·dedup을 단독 집행한다. URL만 있고 method 근거가 없으면 `GET`으로 꾸미지 않고 `UNKNOWN`으로 둔다. 후보 dedup key는 service + method/unknown + normalized path이고, 각 provenance는 Evidence ID뿐 아니라 source·run·adapter 대응을 유지한다.
 
 성공 기준: 모든 후보를 클릭해 “어느 응답/어느 Site Map 항목에서 나왔는지” 확인할 수 있고, provenance 없는 후보는 0이며, 후보가 coverage·finding·dataset lane 완료를 증가시키지 않는다.
 
@@ -159,18 +162,18 @@ URL만 있고 method 근거가 없으면 `GET`으로 꾸미지 않고 `UNKNOWN`�
 - Request/Response와 판정 근거를 Evidence ID로 추적할 수 있다.
 - 도구가 하지 않은 요청, 응답, 신원, 소유자, 취약점 확정을 UI나 문서가 했다고 주장하지 않는다.
 
-## 4. 2026-08-26 beta.4 구현 상태
+## 4. 2026-08-26 beta.5 구현 상태
 
 - P4-H H1: classifier v3가 web manifest·source map·service worker를 `DISCOVERY_METADATA/EXCLUDE`로 분리하고, 같은 service·정규화 operation의 강한 API Evidence로만 immutable discovery gate를 통과한 `REVIEW` 형제 관측을 보강한다. manifest·다른 service·응답 없음 회귀와 보조 metadata fixture를 자동 테스트로 고정했다. 공개 confusion matrix와 실제 Burp Browser corpus 평가는 남아 있다.
-- P4-H H2: `RouteCandidate`와 추출기를 추가했다. exact-scope HTML link/form, `Location`, robots/sitemap, manifest, 정적 fetch/axios/XHR literal, 대상에서 관측한 OpenAPI, 응답 없는 Burp Site Map item을 provenance와 함께 저장·복구한다. 문자열 조합과 범위 밖 참조는 후보로 만들지 않는다. Community의 실제 Site Map 미응답 item 가져오기는 새 JAR 수동 gate다.
+- P4-H H2: `RouteCandidate`와 공통 discovery pipeline을 추가했다. exact-scope HTML5 DOM, 표준 metadata, 정적 JS call site, OpenAPI/Swagger JSON·YAML, generic XML, 응답 없는 Burp Site Map item을 같은 core gate로 정규화·병합하며 provenance의 source/run/adapter 대응을 저장·복구한다. 문자열 조합과 범위 밖 참조는 후보로 만들지 않는다. 일반 protocol fixture 7종·truth route 18개 회귀는 TP 18/FP 0/FN 0이지만 이는 대상 성능 수치가 아니다. Community의 실제 Site Map 미응답 item과 blind target 결과는 수동 gate다.
 - P4-H H3: Web graph에 source edge 없는 중립색·점선 테두리 후보와 전용 수량·필터·상세를 추가했다. `REVIEW`, `UNCROSSED`, 미요청 route를 서로 다른 상태로 설명하며 candidate는 coverage·gap·verdict·finding·lane 완료를 바꾸지 않는다. standalone 1280×720·600×800에서 overflow와 console 오류 0을 확인했지만 실제 candidate가 있는 Burp 화면은 수동 확인이 남았다.
 - P4-H H4: object의 고정 `신뢰도 100%`를 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/DERIVED/NONE` 근거로 교체했다. route 후보는 적용 가능성 → 명시 method → 객체 template → 상태 변경 → 복수 provenance의 범주형 사전식 순서를 쓰고 이유를 화면에 노출한다. authorization 관련 응답 신호는 미요청 candidate에 아직 연결하지 않으며, 수치 가중치는 benchmark 전까지 도입하지 않는다.
-- beta.4 자동 검증: 최종 `mvn clean verify` 수치와 JAR digest는 `beta-validation.md`와 `development-log.md`에 기록한다. standalone 실제 브라우저 QA와 Java/Web 계약 테스트는 자동·로컬 검증 범위이며 Burp Community 재로드를 대신하지 않는다.
+- beta.5 자동 검증: 최종 `mvn clean verify` 수치와 JAR digest는 `beta-validation.md`와 `development-log.md`에 기록한다. 고정 corpus와 fat-JAR parser smoke는 공통 파이프라인 회귀·패키징 검증이며 Burp Community 재로드나 blind target 성능을 대신하지 않는다.
 
 - P0~P3: 코드 구현 완료. Web UI 정본화, exact-scope 수집 차단, 구조적 마스킹, memory-only session broker, 통제 LLM 실행, Explorer 서버 격리, dataset lock, 신원별 fresh-session 시스템 ZAP campaign, 서버 검증 LLM verdict를 구현했다.
 - P4 브라우저 QA: 기존 beta.3 standalone UI의 1500×900, 900×700, 600×800, 1024×768, 1280×720 검증은 통과했다. 이번 scanner control도 1280×720·600×800에서 비로그인 선택, 가로 overflow 0, 좁은 폭 modal scroll, 신원/target 미선택 버튼 비활성, warning/error 0을 확인했다. Standalone fixture에는 ACTIVE broker 계정이 없어 USER A/B 복수 chip 렌더는 HTML/API 계약까지만 통과했으며, Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
 - P4 Burp Community QA: 현재 beta.3 fat JAR을 Community 2026.7.3에 로드해 suite tab, Web UI 17777, MCP 8787, HUMAN 8080, SCANNER 8081을 실제 기동했다. exact scope `http://127.0.0.1:8888/`에서 HUMAN listener 8080 전송 3건, ZAP 2.17 SYSTEM baseline 8건, MCP LLM Explorer 통제 요청 1건이 각각 HUMAN/SCANNER/LLM으로 분리됐다. 이 HUMAN 전송은 실제 Burp Browser가 아니라 8080을 프록시로 사용한 `curl` 스모크였다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 LLM의 범위 밖 FlowScope Web 요청은 거부됐다. `REVIEW`뿐인 HUMAN lane에서는 lock이 거부됐고 classifier v2가 web manifest를 `API/INCLUDE`로 오분류한 `/manifest.json`을 추가한 뒤 12건을 잠갔다. 따라서 이 결과는 포트 분리·lock·scope guard의 wiring 검증이지 HUMAN business API 탐색이나 분류 품질 검증이 아니다. finding·gap 0과 잠금 뒤 Explorer 재시작 거부는 관측 사실 그대로 유지한다.
-- beta.4 잔여 수동 gate: 새 JAR의 Burp Community 재로드와 Site Map candidate, 실제 Burp Browser HUMAN pass, 브라우저 `UNVERIFIED→ACTIVE` 실제 로그인, USER A/B broker 주입과 복수 ZAP lane, 구독형 Codex/Claude prompt 전체와 Judge, Repeater handoff, project save/load, extension unload 후 포트 해제를 확인해야 한다. beta.3에서 통과한 packaging·익명 3-source 연결·MCP protocol·가시성 격리·범위 차단을 새 JAR의 실검증으로 소급하지 않는다.
+- beta.5 잔여 수동 gate: 새 JAR의 Burp Community 재로드와 Site Map candidate, 실제 Burp Browser HUMAN pass, 브라우저 `UNVERIFIED→ACTIVE` 실제 로그인, USER A/B broker 주입과 복수 ZAP lane, 구독형 Codex/Claude prompt 전체와 Judge, Repeater handoff, project save/load, extension unload 후 포트 해제를 확인해야 한다. beta.3에서 통과한 packaging·익명 3-source 연결·MCP protocol·가시성 격리·범위 차단을 새 JAR의 실검증으로 소급하지 않는다.
 - HUMAN 탐색 경계: HUMAN pass의 시작·종료와 `EXPLORATION` run ID 상태 전이는 8080 `curl` 스모크로 확인했다. 실제 Burp Browser 탐색은 미검증이다. 로그인 캡처 `SESSION_SETUP`, pass 밖 `BASELINE`, 선택 ACTIVE 계정의 exact credential match는 자동 회귀를 통과했으며 실제 로그인 계정으로 재확인해야 한다.
 - 분류 경계: `REVIEW`를 Evidence·검토 대기에 보존하면서 메인 graph·3-way gap 입력에서는 보류하고, UI 처분 필터와 수량을 `INCLUDE/REVIEW/EXCLUDE`로 분리했다. 1280×720 standalone의 필터·상세·overflow·console 검증은 통과했고, 실제 Burp 대상에서 REVIEW 승격·숨김 작업량은 beta gate와 blind benchmark에서 측정해야 한다.
 - 판정 경계: 거부/HEAD owner 오염, auth 부분문자열 redirect 오탐, owner-only 객체 Evidence를 차단했다. 불충분한 BOLA read 응답은 안전으로 폐기하지 않고 `UNDECIDED/INCONCLUSIVE`에 남긴다. 자동 회귀는 통과했으며 실제 Judge workflow는 beta gate다.

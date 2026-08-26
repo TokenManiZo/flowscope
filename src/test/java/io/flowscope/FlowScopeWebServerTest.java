@@ -65,7 +65,8 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("첫 점검을 시작하세요"));
         assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.4 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.5 · 3소스"));
+        assertTrue(index.body().contains("[item.source,item.runId,item.adapter,item.type,item.evidenceId].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
@@ -376,7 +377,8 @@ final class FlowScopeWebServerTest {
         private volatile Pipeline.Result result;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
-                Set.of(RouteCandidate.ProvenanceType.HTML_LINK), List.of("ev-route"),
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_LINK,
+                        "ev-route", Source.HUMAN, "human-run", "html-dom")),
                 RouteCandidate.Applicability.REVIEW, "HTML 링크는 method를 증명하지 않음"));
 
         TestState() {

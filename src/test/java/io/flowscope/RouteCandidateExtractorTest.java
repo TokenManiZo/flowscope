@@ -9,6 +9,7 @@ import io.flowscope.core.Source;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -111,5 +112,114 @@ class RouteCandidateExtractorTest {
                 RouteCandidateExtractor.priorityReasons(candidates.getFirst()));
         assertFalse(RouteCandidateExtractor.priorityReasons(candidates.getFirst()).stream()
                 .anyMatch(reason -> reason.contains("CONFIDENCE")));
+    }
+
+    @Test
+    void 비정형_HTML_base_form_inline_script를_공통_core로_추출한다() {
+        RequestRecord page = html("""
+                <!doctype html><base href="/app/v2/"><a href=orders/7>order
+                <form action=search method=post><button formaction=export formmethod=get>export</button>
+                <script>fetch('api/profile'); $.post('api/audit')</script>
+                """);
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(page),
+                ScopePolicy.parse("https://app.test/app/"), List.of());
+
+        assertCandidate(candidates, "UNKNOWN", "/app/v2/orders/{id}", "html-dom");
+        assertCandidate(candidates, "POST", "/app/v2/search", "html-dom");
+        assertCandidate(candidates, "GET", "/app/v2/export", "html-dom");
+        assertCandidate(candidates, "GET", "/app/v2/api/profile", "html-dom");
+        assertCandidate(candidates, "POST", "/app/v2/api/audit", "html-dom");
+    }
+
+    @Test
+    void OpenAPI_YAML_server_base와_JSON을_같은_계약으로_추출한다() {
+        RequestRecord yaml = document("/app/openapi.yaml", "application/yaml", """
+                openapi: 3.1.0
+                servers:
+                  - url: /app/api/v2
+                paths:
+                  /orders/{orderId}:
+                    get: {}
+                    post: {}
+                """, Source.SCANNER, "scanner-run");
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(yaml),
+                ScopePolicy.parse("https://app.test/app/"), List.of());
+
+        assertCandidate(candidates, "GET", "/app/api/v2/orders/{id}", "openapi-json-yaml");
+        RouteCandidate post = find(candidates, "POST", "/app/api/v2/orders/{id}");
+        assertEquals(Set.of(Source.SCANNER), post.discoveredSources());
+        assertEquals(Set.of("scanner-run"), post.discoveredRunIds());
+    }
+
+    @Test
+    void 일반_XML의_명시_route_method만_추출하고_XXE는_거부한다() {
+        RequestRecord xml = document("/app/screen.xml", "application/xml", """
+                <screen><request action="/app/api/orders" method="POST"/>
+                <endpoint>/app/api/profile</endpoint><label>api/not-a-route value</label></screen>
+                """, Source.HUMAN, "human-run");
+        RequestRecord xxe = document("/app/unsafe.xml", "application/xml", """
+                <!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><screen><endpoint>&e;</endpoint></screen>
+                """, Source.HUMAN, "human-run");
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(xml, xxe),
+                ScopePolicy.parse("https://app.test/app/"), List.of());
+
+        assertCandidate(candidates, "POST", "/app/api/orders", "xml-explicit-route");
+        assertCandidate(candidates, "UNKNOWN", "/app/api/profile", "xml-explicit-route");
+        assertFalse(candidates.stream().anyMatch(value -> value.pathTemplate().contains("etc/passwd")));
+    }
+
+    @Test
+    void method_미상_후보는_같은_path의_GET_관측으로_거짓_승격하지_않는다() {
+        RequestRecord observed = document("/app/orders/7", "application/json", "{}", Source.HUMAN, "human-run");
+        RequestRecord page = html("<a href='/app/orders/7'>order</a>");
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(observed, page),
+                ScopePolicy.parse("https://app.test/app/"), List.of());
+
+        assertTrue(find(candidates, "GET", "/app/orders/{id}").observed());
+        assertFalse(find(candidates, "UNKNOWN", "/app/orders/{id}").observed());
+    }
+
+    @Test
+    void 동일_후보의_source_run_adapter_provenance를_매핑해_결합한다() {
+        RequestRecord human = document("/app/h.html", "text/html",
+                "<a href='/app/shared'>shared</a>", Source.HUMAN, "human-run");
+        RequestRecord llm = document("/app/l.js", "application/javascript",
+                "fetch('/app/shared', options)", Source.LLM, "llm-run");
+
+        RouteCandidate candidate = find(RouteCandidateExtractor.extract(List.of(human, llm),
+                ScopePolicy.parse("https://app.test/app/"), List.of()), "UNKNOWN", "/app/shared");
+
+        assertEquals(Set.of(Source.HUMAN, Source.LLM), candidate.discoveredSources());
+        assertEquals(Set.of("human-run", "llm-run"), candidate.discoveredRunIds());
+        assertEquals(2, candidate.provenance().size());
+        assertTrue(candidate.provenance().stream().anyMatch(value -> value.source() == Source.HUMAN
+                && value.adapter().equals("html-dom") && value.evidenceId().equals(human.evidenceId)));
+        assertTrue(candidate.provenance().stream().anyMatch(value -> value.source() == Source.LLM
+                && value.adapter().equals("javascript-static-literal") && value.evidenceId().equals(llm.evidenceId)));
+    }
+
+    private RequestRecord document(String path, String mediaType, String body, Source source, String runId) {
+        RequestRecord record = new RequestRecord(source, "https://app.test:443", "GET", path, 200, "anon");
+        record.hasResponse = true;
+        record.responseContentType = mediaType;
+        record.body = body;
+        record.runId = runId;
+        return Pipeline.run(List.of(record)).records.getFirst();
+    }
+
+    private static void assertCandidate(List<RouteCandidate> candidates, String method, String path, String adapter) {
+        RouteCandidate candidate = find(candidates, method, path);
+        assertTrue(candidate.provenance().stream().anyMatch(value -> value.adapter().equals(adapter)),
+                () -> "adapter provenance 없음: " + adapter + " in " + candidate);
+    }
+
+    private static RouteCandidate find(List<RouteCandidate> candidates, String method, String path) {
+        return candidates.stream().filter(value -> value.method().equals(method) && value.pathTemplate().equals(path))
+                .findFirst().orElseThrow(() -> new AssertionError("candidate 없음: " + method + " " + path
+                        + "\n" + candidates));
     }
 }

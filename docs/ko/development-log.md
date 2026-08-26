@@ -795,6 +795,56 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 저장 응답은 필드별 8KiB이며 route candidate는 관측 operation을 먼저 보존한 뒤 최대 20,000개로 제한한다. 동적 JavaScript·클라이언트 런타임 생성 route는 추측하지 않는다. 모든 endpoint 또는 오탐·미탐 0을 주장하지 않는다.
 - 위 gate 전에 crAPI 정답을 보거나 target 전용 규칙을 넣지 않는다. blind benchmark는 사용자 검토 뒤 시작한다.
 
+## 2026-08-26 · 1.2.0-beta.5 · 공통 route discovery 기반
+
+### 목표와 성공 조건
+
+- framework·제품·benchmark target에 종속되지 않은 공통 endpoint 발견 계약을 먼저 고정한다.
+- 포맷별 발견과 공통 scope/method/정규화/dedup 판단을 분리한다.
+- method·관측 여부·provenance를 추측으로 승격하지 않고 프로젝트 왕복과 Web 상세에서도 대응 관계를 잃지 않는다.
+- 일반 protocol fixture, 전체 회귀, 완성 fat JAR runtime, 재현 가능한 단일 배포물 검증을 통과한다.
+
+### 개발·수정
+
+- `RouteDiscoveryDocument`, `DiscoveredRoute`, `RouteDiscoveryAdapter` 계약을 추가하고 `RouteCandidateExtractor`를 공통 gate로 재구성했다. adapter는 네트워크·scope·저장·관측 판정을 수행하지 않는다.
+- HTML은 jsoup의 로컬 HTML5 DOM으로 깨진 markup, `<base>`, link/form/formaction/script/embed/meta refresh와 inline static call site를 처리한다. jsoup의 네트워크 API는 사용하지 않는다.
+- JavaScript는 fetch, axios verb, XHR.open, jQuery get/post/ajax, sendBeacon의 정적 string literal만 읽고 문자열 결합은 후보로 만들지 않는다.
+- OpenAPI/Swagger는 대상 응답에서 관측한 JSON·YAML의 명시 operation과 server/base를 읽는다. 해소할 default가 없는 server variable은 임의 base로 대체하지 않는다.
+- metadata는 Location, robots Allow/Disallow/Sitemap, Web App Manifest start_url/scope/id/shortcut을 처리한다. generic XML은 제품명 없이 명시 URL/method field만 읽고 DOCTYPE·외부 entity·외부 DTD/schema를 차단한다.
+- 공통 코어가 http(s), exact scope, method token, schema parameter/path 정규화, candidate 상한과 `service + method + normalized path` dedup을 단독 집행한다. 같은 path의 관측 `GET`은 미관측 `UNKNOWN`을 관측으로 승격하지 않는다.
+- `RouteCandidate` provenance를 `(type, evidenceId, source, runId, adapter)`로 바꿨다. 저장·복구·snapshot·Web 상세가 이 대응을 유지하며 legacy 분리 배열은 type×Evidence 조합을 꾸며내지 않고 `LEGACY_UNMAPPED/UNKNOWN/legacy-project`로 이관한다. restored/new candidate도 같은 병합 함수로 합친다.
+- Jackson YAML 2.22.2, SnakeYAML 2.5, jsoup 1.23.1을 fat JAR에 포함하고 고지 파일을 추가했다. Shade service transformer로 relocated Jackson service metadata를 병합했다.
+- Maven/MCP/Web/README 버전을 `1.2.0-beta.5`로 맞췄다.
+
+### 이유와 기각한 대안
+
+- 포맷마다 scope·method·dedup 로직을 복제하면 새 parser를 추가할 때 관측 의미가 달라진다. 그래서 세부 adapter보다 공통 불변조건을 먼저 코드로 고정했다.
+- HTML 정규식은 깨진 markup과 `<base>` 해석이 브라우저 DOM과 달라 기각했다. HTML parser는 로컬 입력만 처리한다.
+- target 전용 XML element명, crAPI 경로, 기존 취약점 정답은 넣지 않았다. 그런 규칙은 일반 제품 성능을 증명하지 못하고 blind 평가를 오염시킨다.
+- 동적 JS 실행·전체 AST·headless browser는 네트워크 부작용과 실행 문맥을 이번 공통 계약에서 일반화할 수 없어 후속 adapter gate로 남겼다.
+- 고정 fixture의 0 FP/FN을 제품 성능으로 쓰지 않는다. 같은 fixture는 구현 회귀만 검출하며 blind target 평가는 별도다.
+
+### 영향 파일
+
+- common core/model: `RouteCandidate`, `RouteCandidateExtractor`, `core/discovery/*`
+- integration/persistence/Web: `FlowScopeExtension`, `ProjectStore`, `SnapshotJsonWriter`, `web/index.html`, `McpServer`
+- build/notices: `pom.xml`, `META-INF/LICENSE-jsoup.txt`, `META-INF/NOTICE.txt`
+- regression corpus/tests: `RouteCandidateExtractorTest`, `EndpointDiscoveryCorpusTest`, `endpoint-corpus.json`, `ProjectStoreTest`, `FlowScopeWebServerTest`
+- 공개 정본: root/영문 README·CHANGELOG, 한국어 architecture·decisions·product plan·UI rationale·beta validation·development log
+
+### 검증
+
+- `mvn clean verify`: 164 tests, 실패 0, 오류 0, skip 0, BUILD SUCCESS.
+- 일반 protocol fixture 7종·truth route 18개: TP 18, FP 0, FN 0. negative CSS, 범위 밖 URL, 동적 JS 결합, XXE, `GET`/`UNKNOWN` 관측 분리를 회귀로 고정했다.
+- JDK 21에서 완성 fat JAR만 classpath에 두고 HTML/OpenAPI YAML/XML adapter를 직접 실행해 `FAT_JAR_DISCOVERY_SMOKE_OK`를 확인했다.
+- 배포물은 `target/flowscope-1.2.0-beta.5.jar` 하나, 3,787,475 bytes, 1,940 entries, SHA-256 `e5cf26d00aa3446ec9983114d7d8c35eb850d16f815387c14becbb787b087c50`다. ZIP 무결성, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21, dependency class/notice/service entry를 확인했고 연속 non-clean package digest가 동일했다.
+
+### 남은 한계·다음 gate
+
+- beta.5 JAR의 Burp Community 제거·재로드, 실제 응답 없는 Site Map item, 실제 Burp Browser route candidate UI는 아직 수동 검증하지 않았다.
+- 고정 corpus는 실제 사이트 분포, minified/bundled JavaScript, runtime route, GraphQL schema, framework 전용 descriptor를 대표하지 않는다. blind target 전에 발견률을 주장하지 않는다.
+- 다음 챕터는 공통 provenance를 이용한 source/run별 독립 Explorer 후보 가시성과 dataset lock 정합성이다. 그 뒤에만 framework-specific adapter 또는 세부 탐색을 추가한다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.5 — 2026-08-26
+
+- Split route discovery into document inputs, stateless format adapters, and one common exact-scope/method/normalization/deduplication gate.
+- Added local HTML5 DOM parsing for malformed markup and `<base>`, conservative JavaScript call sites, OpenAPI/Swagger JSON and YAML, standard metadata, and product-neutral generic XML adapters.
+- Kept an observed `GET` distinct from an unproven `UNKNOWN` method for the same path, preventing an untried combination from being promoted to observed.
+- Persisted route provenance as `(type, Evidence ID, source, run, adapter)` mappings, exposed the mapping in Web details, and conservatively migrated legacy projects.
+- Added a seven-case generic protocol corpus with 18 truth routes, XML external-entity regressions, and fat-JAR HTML/YAML/XML runtime smoke. These fixtures are not a blind-target performance claim.
+- Added bundled notices for jsoup, Jackson YAML, and SnakeYAML and merged service metadata in the shaded artifact.
+
 ## 1.2.0-beta.4 — 2026-08-26
 
 - Added classifier v3, separating web manifests, source maps, and service workers as discovery metadata and corroborating eligible ambiguous records only with strong API evidence for the same service and operation.

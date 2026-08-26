@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.4
+# FlowScope 1.2.0-beta.5
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -20,7 +20,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture.
 - Evidence-preserving traffic classification: every captured observation remains inspectable while only high-confidence navigation, static assets, real CORS preflights, no-response records, and non-discovery phases stay out of coverage analysis by default.
 - Classifier v3 separates manifests, source maps, and service workers as discovery metadata and can corroborate an ambiguous record only with strong API evidence for the same service and normalized operation.
-- Provenance-backed route candidates from same-scope HTML links/forms, Location, robots/sitemaps, manifests, conservative JavaScript URL literals, observed OpenAPI, and response-less Burp Site Map items. Candidates never affect coverage, gaps, verdicts, or findings before a request/response is observed.
+- A common route-discovery pipeline applies one scope, method, normalization, deduplication, and provenance gate to same-scope HTML, static JavaScript call sites, OpenAPI JSON/YAML, standard metadata, generic XML, and response-less Burp Site Map items. A method without evidence remains `UNKNOWN`; candidates never affect coverage, gaps, verdicts, or findings before a request/response is observed.
 - Explicit `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` authentication state. Unbound cookie rotation no longer explodes graph identities, and verified account bindings remain service-scoped.
 - Localhost-only authenticated MCP server for Codex and Claude Code subscription clients.
 - System-owned ZAP baseline: Traditional Spider, strict Client Spider with AJAX fallback, passive queue completion, and native alerts. Active Scan remains separate and approval-gated.
@@ -48,7 +48,7 @@ FlowScope does not know the complete black-box attack surface, so it never repor
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.4.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.5.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 

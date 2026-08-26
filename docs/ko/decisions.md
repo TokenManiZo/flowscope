@@ -634,6 +634,16 @@
 - **검증·한계:** 자동 회귀와 standalone 1280×720·600×800 화면 검증은 완료했다. 후보 추출은 저장된 8KiB 응답 안의 정적 literal에 제한되며 동적 JavaScript·런타임 생성 경로를 추측하지 않는다. 실제 Burp Community에서 새 JAR의 응답 없는 Site Map item, 실제 Burp Browser HUMAN pass, candidate가 있는 그래프를 확인하는 수동 gate와 공개 confusion matrix는 남아 있다.
 - **상태:** beta.4 구현·자동 회귀 완료, Burp 실환경 gate 대기
 
+## D-069 · route discovery = 공통 코어 + 무상태 포맷 어댑터
+
+- **문제:** HTML 정규식, JSON 전용 OpenAPI, 제품별 XML 규칙을 추출기 하나에 계속 추가하면 scope·method·정규화·dedup 규칙이 포맷마다 달라진다. 특히 같은 path의 관측 `GET` 때문에 method 근거 없는 `UNKNOWN`까지 관측으로 간주하면 실제로 시도하지 않은 조합이 coverage처럼 보인다.
+- **결정:** 모든 입력을 `RouteDiscoveryDocument`로 만들고 HTML, 정적 JavaScript, OpenAPI/Swagger JSON·YAML, 표준 metadata, generic XML 어댑터는 원시 참조와 method 근거만 반환한다. exact scope, http(s) scheme, method token, URI/path 정규화, `service + method + path` dedup, provenance 병합, observed 승격은 `RouteCandidateExtractor` 공통 코어만 수행한다.
+- **provenance 계약:** type과 Evidence ID를 분리된 set으로 저장하지 않고 `(type, evidenceId, source, runId, adapter)` 튜플로 보존한다. 프로젝트 schema v1은 새 배열을 읽고 쓰며, 구버전의 분리된 배열은 대응을 꾸며내지 않고 `LEGACY_UNMAPPED/UNKNOWN/legacy-project` provenance로 보수적으로 이관한다.
+- **포맷 경계:** HTML은 네트워크를 사용하지 않는 HTML5 DOM 파싱, JavaScript는 정적 literal call site만, OpenAPI는 관측된 JSON/YAML만, XML은 제품명 없는 명시 URL/method 문법만 처리한다. XML DOCTYPE·외부 entity·외부 DTD/schema는 차단한다. 동적 JavaScript 실행·전체 AST·framework 전용 의미 해석은 후속 어댑터이며 공통 코어를 바꾸지 않는다.
+- **검증 경계:** 일반 protocol fixture 7종의 truth route 18개에서 TP 18/FP 0/FN 0을 회귀로 고정하고 negative CSS·범위 밖·동적 문자열·XXE·`UNKNOWN` 오승격을 검사한다. 이 corpus는 구현과 함께 만든 기능 회귀 자료이지 blind benchmark나 실제 공격면 성능 주장이 아니다.
+- **의존성:** jsoup은 로컬 HTML 파싱에만 사용하고, Jackson YAML/SnakeYAML은 관측 OpenAPI YAML 파싱에만 사용한다. Shade는 Jackson service metadata를 병합하며 번들 라이선스·NOTICE를 포함한다.
+- **상태:** 공통 코어 구현 및 자동/fat-JAR smoke 검증 완료. 실제 Burp Site Map·Burp Browser와 blind target gate는 열림.
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

@@ -2,6 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.5 — 2026-08-26
+
+- route discovery를 문서 입력 → 포맷 어댑터 → 공통 exact-scope/method/정규화/dedup gate 구조로 분리
+- 깨진 HTML과 `<base>`를 처리하는 로컬 HTML5 DOM, 보수적 JavaScript call site, OpenAPI/Swagger JSON·YAML, 표준 metadata, 제품 비종속 generic XML 어댑터 추가
+- 관측 `GET`과 method 미확정 `UNKNOWN`을 분리해 같은 경로라는 이유만으로 미시도 조합을 관측으로 승격하던 오류 차단
+- route provenance를 `(type, Evidence ID, source, run, adapter)` 대응 관계로 저장·Web 상세에 노출하고 구버전 프로젝트를 보수적으로 이관
+- 일반 protocol fixture 7종·truth route 18개의 TP/FP/FN 회귀, XML 외부 entity 차단, fat JAR HTML/YAML/XML 런타임 smoke 추가. 이 수치는 blind target 성능 주장이 아님
+- jsoup·Jackson YAML·SnakeYAML 번들 고지와 Shade service metadata 병합 추가
+
 ## 1.2.0-beta.4 — 2026-08-26
 
 - classifier v3에서 web manifest·source map·service worker를 `DISCOVERY_METADATA`로 분리하고 같은 service·operation의 명시적 API Evidence만 immutable discovery gate 안에서 교차 보강

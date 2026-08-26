@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.4
+# FlowScope 설계서 v1.2.0-beta.5
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -52,7 +52,7 @@ RequestRecord {
 
 RouteCandidate {
   service, method, pathTemplate, observed,
-  provenanceTypes, provenanceEvidenceIds,
+  provenance[{type, evidenceId, source, runId, adapter}],
   applicability, reviewReason
 }
 ```
@@ -64,7 +64,7 @@ RouteCandidate {
 - `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다. 쿠키 fingerprint는 계정 연결·감사를 위한 안전한 식별자이지 로그인 증명이 아니다.
 - `authState`: `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`. 명시적 계정 연결이나 memory-only broker의 exact credential match만 `ACCOUNT_BOUND`가 된다. 계정에 연결되지 않은 cookie/session fingerprint는 서비스별 하나의 `UNRESOLVED` 그래프 신원으로 안정화하되 원 fingerprint는 Evidence에 남긴다.
 - `trafficClassification`: `API/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
-- `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance와 적용 가능성을 보존하지만 실제 request/response 전에는 source, identity, coverage, verdict, finding을 갖지 않는다.
+- `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
 - `SessionBroker`: 사용자가 Web UI에서 명시적으로 시작한 HUMAN 로그인 구간의 Cookie/Authorization/CSRF만 프로세스 메모리에 보관한다. 자격증명 material만 관측하고 성공 응답을 확인하지 못하면 `UNVERIFIED`, 401·로그인 redirect·invalid token이면 `SUSPECT`, 비밀 삭제/만료면 `REAUTH_REQUIRED`다. account service와 exact scope가 모두 맞고 상태가 `ACTIVE`일 때만 ZAP/LLM 요청에 주입한다. HUMAN pass의 계정 선택은 표시 힌트가 아니라 검증 조건이며, 실제 요청 자격증명이 그 broker 계정과 exact match할 때만 계정 신원으로 귀속한다. 다른 계정이 같은 service에서 동시에 캡처되는 것을 거부하며 raw 값은 UI/MCP/project에 나오지 않는다.
@@ -102,7 +102,20 @@ HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLO
 - 같은 신원/run/phase/method/operation/resource/query/body/status-class/response/location의 반복만 표시 cluster로 접는다. 분석 입력과 Evidence ID는 삭제하거나 합치지 않는다.
 - 애매한 것은 `UNKNOWN/REVIEW`로 Evidence와 검토 대기에 남기되 메인 coverage·graph·3-way gap에는 넣지 않는다. 사용자는 operation 단위로 `INCLUDE/EXCLUDE/AUTO`를 되돌릴 수 있지만 no-response, unknown source, HUMAN 비탐색 구간, `VALIDATION/COACH_PROBE`라는 discovery 신뢰 경계는 override할 수 없다.
 
-classifier v3는 web manifest·source map·service worker를 `DISCOVERY_METADATA/EXCLUDE`로 분리한다. 같은 service·정규화 operation에 강한 비사용자-override `API/INCLUDE` Evidence가 있고 immutable discovery gate를 통과할 때만 애매한 형제 record를 API로 교차 보강한다. 별도 route inventory는 저장된 HTML link/form, `Location`, robots/sitemap, manifest, 정적 JavaScript URL literal, 대상에서 관측한 OpenAPI와 응답 없는 Burp Site Map 항목을 exact scope 안에서 합친다. method 근거가 없으면 `UNKNOWN`으로 유지하고, 추출된 후보는 관측 분석 파이프라인에 다시 넣지 않는다.
+classifier v3는 web manifest·source map·service worker를 `DISCOVERY_METADATA/EXCLUDE`로 분리한다. 같은 service·정규화 operation에 강한 비사용자-override `API/INCLUDE` Evidence가 있고 immutable discovery gate를 통과할 때만 애매한 형제 record를 API로 교차 보강한다.
+
+route inventory는 다음 공통 파이프라인을 사용한다(D-069).
+
+```text
+저장 Evidence / Burp seed
+  → RouteDiscoveryDocument(service, path, media, body, location, evidence, source, run)
+  → format adapter(HTML / static JS / OpenAPI JSON·YAML / metadata / generic XML)
+  → DiscoveredRoute(raw reference, method proof, provenance, reason)
+  → common core(exact scope → method validation → URI/path normalization → dedup/provenance merge)
+  → RouteCandidate
+```
+
+어댑터는 네트워크를 사용하거나 scope·관측 여부를 결정하지 않는다. 공통 코어만 unsupported scheme과 범위 밖 참조를 버리고, 명시적 method 근거가 없으면 `UNKNOWN`으로 유지하며, `service + method/UNKNOWN + normalized path`로 병합한다. 관측된 `GET`과 같은 path의 미관측 `UNKNOWN`은 서로 다른 후보이고, `UNKNOWN`을 관측으로 승격하지 않는다. HTML은 로컬 HTML5 DOM 파서로 깨진 markup과 `<base>`를 처리하고, OpenAPI는 대상 응답에서 관측한 JSON/YAML만 읽으며, XML은 제품명 없는 명시 URL/method 필드만 XXE 차단 DOM으로 읽는다. 추출된 후보는 관측 분석 파이프라인에 다시 넣지 않는다.
 
 ### 4.4 소유자·판정 F-10~11
 
