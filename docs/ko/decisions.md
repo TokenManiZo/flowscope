@@ -581,6 +581,13 @@
 - **한계:** 상세 기술 문서의 영어 번역은 아직 없다. 영어 색인에서 이 사실을 명시하며, 검토된 번역이 생기기 전에는 완전한 영어 문서 세트를 제공한다고 주장하지 않는다.
 - **상태:** 문서 구조 적용, Markdown 로컬 링크 누락 0건, `mvn clean verify` 124 tests 통과
 
+## D-063 · HUMAN 비교 구간 = 명시적 exploration pass만
+- **문제:** exact scope는 네이버 같은 다른 대상의 혼입은 막지만, 같은 scope의 로그인 준비·배경 이동·HUMAN pass 밖 요청까지 `BASELINE` coverage에 넣어 HUMAN 발견량과 3-way gap을 부풀렸다. Session Broker 로그인 캡처도 세션 준비인지 탐색인지 데이터에서 구분되지 않았다.
+- **결정:** HUMAN 로그인 캡처는 `SESSION_SETUP`, Web quick-start가 시작한 HUMAN pass는 `EXPLORATION`, 그 밖의 HUMAN 관측은 `BASELINE`으로 기록한다. 세 phase 모두 마스킹된 Evidence로 보존하지만 HUMAN 3-way coverage·gap·graph에는 `EXPLORATION`만 넣는다. 샘플 HUMAN 레코드도 실제 탐색을 표현하도록 `EXPLORATION`으로 정정한다.
+- **기각:** 로그인 요청을 모두 폐기하는 방식은 endpoint inventory·감사 Evidence를 잃어 기각했다. 로그인 path 정규식으로 분리하는 방식은 사이트별 path와 API를 오분류해 기각했다. scope 내 HUMAN 요청을 모두 탐색으로 계속 계산하는 방식은 사용자가 통제하지 않은 시간대를 HUMAN 성과로 위장해 기각했다.
+- **검증:** 먼저 HUMAN `BASELINE` JSON API가 coverage에 들어가는 실패 회귀를 재현한 뒤, `SESSION_SETUP`/`BASELINE` 제외·`EXPLORATION` 포함과 capture phase 매핑을 테스트로 고정했다. 실제 Burp 로그인 캡처와 HUMAN pass 전체는 수동 beta gate에 남긴다.
+- **상태:** 구현·자동 회귀 완료, Burp 수동 확인 대기
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

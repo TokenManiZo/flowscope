@@ -460,6 +460,39 @@ LLM에게 ZAP 기능 선택을 맡기면 passive queue를 기다리지 않거나
 - 수정 전 이미 저장된 범위 밖 Evidence를 자동 삭제하지 않는다. 사용자는 새 JAR 로드 뒤 `수집 초기화`를 한 번 수행해야 한다.
 - 전체 자동 회귀와 산출물 정보는 `beta-validation.md`에 기록한다. 실제 Burp 내장 브라우저에서 crAPI와 외부 사이트를 오가며 재확인하는 수동 gate는 남아 있다.
 
+## 2026-08-26 · HUMAN exploration 경계 분리
+
+### 목표와 성공 조건
+
+- 로그인 세션 준비와 HUMAN pass 밖의 scope 내 요청을 삭제하지 않으면서 3-way coverage·gap에서 제외한다.
+- Web quick-start에서 명시적으로 시작한 HUMAN `EXPLORATION` pass만 HUMAN 발견 성과로 계산한다.
+- 로그인 캡처는 독립 phase로 남겨 향후 세션 감사와 discovery를 구분할 수 있게 한다.
+
+### 재현·개발
+
+- 변경 전 `TrafficClassifierTest`에 HUMAN `BASELINE` JSON API가 Evidence로는 남지만 coverage에서는 빠져야 한다는 회귀를 먼저 추가했다. 기존 코드에서 `coverageRecords` 1건이 남아 예상대로 실패했다.
+- `RunPhase.SESSION_SETUP`을 추가하고, 명시적 Session Broker 로그인 캡처 중인 HUMAN 요청에만 해당 phase를 부여했다. 활성 HUMAN run context가 있으면 기존처럼 그 context의 `EXPLORATION`이 우선한다.
+- `TrafficClassifier`가 HUMAN `SESSION_SETUP`/`BASELINE`을 `EXCLUDE` 하되 `RequestRecord`는 보존하도록 했다. operation override로도 이 run 경계를 우회할 수 없다.
+- 저장된 프로젝트가 새 phase 규칙으로 재분류되도록 classifier version을 2로 올렸다.
+- 무네트워크 온보딩 샘플의 HUMAN 레코드는 실제 탐색 산출물이므로 `EXPLORATION`으로 정정했다.
+
+### 이유와 기각한 대안
+
+scope는 대상 혼입을 막지만 같은 대상 안의 로그인·배경 이동·진단 구간을 구분하지는 못한다. path 정규식은 사이트별 로그인 구현을 일반화할 수 없고 business endpoint를 오분류할 수 있어 기각했다. 그래서 사용자가 이미 조작하는 로그인 캡처와 HUMAN run lease를 재사용했다.
+
+### 영향 파일
+
+- 코드: `RunPhase`, `TrafficClassifier`, `SampleProject`, `FlowScopeExtension`
+- 테스트: `TrafficClassifierTest`, `FlowScopeExtensionPhaseTest`, `ProjectStoreTest`
+- 문서: README, architecture, decisions(D-063), product plan, beta validation, changelog, 이 개발 기록
+
+### 검증과 남은 gate
+
+- 타겟 회귀: `mvn -Dtest=TrafficClassifierTest,FlowScopeExtensionPhaseTest,SampleProjectTest,ProjectStoreTest test`, 18 tests, 실패·오류·skip 0.
+- 전체 `mvn clean verify`: 130 tests, 실패·오류·skip 0, BUILD SUCCESS.
+- fat JAR: 2,814,915 bytes, 1,295 entries, ZIP 무결성 통과, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `18460fa70e575ed04d8dfe3500c7c450a5ae413f9480a0af844a45019d4ec3fa`.
+- 실제 Burp에서 로그인 캡처 중 요청이 `SESSION_SETUP`, pass 밖 요청이 기본 숨김, HUMAN pass 요청이 분석으로 표시되는지는 수동 beta gate에 남는다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

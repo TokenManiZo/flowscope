@@ -1,13 +1,13 @@
 # FlowScope 1.2.0-beta.3 사전 벤치마크 검증 기록
 
-검증일은 2026-08-25이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-26이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
 
 ## 자동 검증 통과
 
 | 구분 | 결과 |
 |---|---|
-| 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 124 tests, 실패·오류·skip 0 |
-| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,814,714 bytes, SHA-256 `e760799758e73188888f1944ae08ab17c6d535e82fd6eec9cc41dd7e365b13ba` |
+| 자동 회귀 | JDK 26.0.2에서 Java `--release 21`로 `mvn clean verify`, 130 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.3.jar`, 2,814,915 bytes, SHA-256 `18460fa70e575ed04d8dfe3500c7c450a5ae413f9480a0af844a45019d4ec3fa` |
 | JAR 무결성 | ZIP 무결성 통과, 1,295 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, Java 21 |
 | 배포 계약 | Montoya 미포함, FlowScope/Jackson/Cytoscape 고지와 Web 자산 포함, 개발 머신 절대경로·제품 코드의 리터럴 비밀값 없음 |
 | Session Broker | 계정별 명시적 로그인 캡처, Cookie·Authorization·CSRF 주입, 회전·삭제·scope·expiry, `SUSPECT` 차단, revoke/clear 메모리 제거 |
@@ -20,6 +20,7 @@
 | Traffic classification | captured/coverage 분리, high-confidence exclude, ambiguous review, operation override, no Evidence deletion, classifier version persistence |
 | Identity 안정화 | `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`, 1,000 rotating cookies의 graph identity 폭증 방지, 명시 binding 보존 |
 | Capture scope | HUMAN 브라우저의 범위 밖 이동은 허용하되 모든 source의 저장 Evidence는 현재 exact scope로 제한 |
+| HUMAN run 경계 | 로그인 캡처 `SESSION_SETUP`·pass 밖 `BASELINE`은 Evidence로 보존하되 coverage에서 제외하고, 명시적 `EXPLORATION` pass만 HUMAN 3-way 비교에 포함 |
 
 ## UI 검증 통과
 
@@ -54,6 +55,7 @@ Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Commu
 다음은 구현과 자동 회귀는 끝났지만 beta.3 JAR로 실제 외부 프로그램을 연결해 확인하지 않았다.
 
 - Burp Community에서 현재 재생성 beta.3 JAR의 load/unload, suite tab/Web UI 연결과 실제 브라우저 트래픽 수집
+- 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지
 - 실제 사이트 로그인으로 얻은 세션을 ZAP·LLM controlled request에 주입하고 회전·만료·재인증하는 전체 과정
 - ZAP 2.17 환경에서 deterministic baseline 전체 체인의 실제 수행과 native alert 수집
 - 구독형 Codex 또는 Claude가 MCP로 독립 Explorer pass와 lock 이후 Judge pass를 끝까지 수행하는 과정

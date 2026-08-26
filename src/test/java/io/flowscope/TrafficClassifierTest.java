@@ -89,4 +89,46 @@ class TrafficClassifierTest {
         assertEquals(List.of("NON_DISCOVERY_PHASE"),
                 result.records.getFirst().trafficClassification.reasons());
     }
+
+    @Test
+    void HUMAN_pass_밖의_API는_Evidence만_보존하고_3way_비교에서_제외한다() {
+        RequestRecord outsidePass = record("GET", "/api/me", null, "application/json");
+        outsidePass.sourceDetail = SourceDetail.BROWSER;
+        outsidePass.phase = RunPhase.BASELINE;
+
+        Pipeline.Result result = Pipeline.run(List.of(outsidePass));
+
+        assertEquals(1, result.records.size());
+        assertTrue(result.coverageRecords.isEmpty());
+        assertEquals(TrafficClassification.Disposition.EXCLUDE,
+                result.records.getFirst().trafficClassification.disposition());
+        assertEquals(List.of("HUMAN_OUTSIDE_EXPLORATION_RUN"),
+                result.records.getFirst().trafficClassification.reasons());
+    }
+
+    @Test
+    void 명시적_HUMAN_EXPLORATION_pass의_API는_3way_비교에_포함한다() {
+        RequestRecord exploration = record("GET", "/api/me", null, "application/json");
+        exploration.sourceDetail = SourceDetail.BROWSER;
+        exploration.phase = RunPhase.EXPLORATION;
+
+        Pipeline.Result result = Pipeline.run(List.of(exploration));
+
+        assertEquals(1, result.coverageRecords.size());
+        assertEquals(TrafficClassification.Disposition.INCLUDE,
+                result.records.getFirst().trafficClassification.disposition());
+    }
+
+    @Test
+    void 로그인_세션_준비_트래픽은_Evidence만_보존하고_3way_비교에서_제외한다() {
+        RequestRecord login = record("POST", "/login", "application/json", "application/json");
+        login.sourceDetail = SourceDetail.BROWSER;
+        login.phase = RunPhase.SESSION_SETUP;
+
+        Pipeline.Result result = Pipeline.run(List.of(login));
+
+        assertEquals(1, result.records.size());
+        assertTrue(result.coverageRecords.isEmpty());
+        assertEquals(List.of("SESSION_SETUP"), result.records.getFirst().trafficClassification.reasons());
+    }
 }

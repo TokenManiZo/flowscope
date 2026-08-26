@@ -346,9 +346,10 @@ public final class FlowScopeExtension implements BurpExtension {
         String service = serviceOf(req);
         RunContextRegistry.Context context = applyRunContext ? runContexts.current(profile.source()) : null;
         String accountId = context == null ? null : context.accountId();
-        if (accountId == null && profile.source() == Source.HUMAN) {
-            accountId = sessionBroker.activeCaptureForService(service)
-                    .flatMap(sessionBroker::accountForHandle).orElse(null);
+        String activeHumanCapture = profile.source() == Source.HUMAN
+                ? sessionBroker.activeCaptureForService(service).orElse(null) : null;
+        if (accountId == null && activeHumanCapture != null) {
+            accountId = sessionBroker.accountForHandle(activeHumanCapture).orElse(null);
         }
         if (accountId == null) {
             accountId = sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
@@ -368,7 +369,7 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.tool = profile.source() == Source.SCANNER ? ToolKind.ZAP
                 : profile.source() == Source.LLM ? ToolKind.OTHER
                 : profile.source() == Source.HUMAN ? ToolKind.BROWSER : ToolKind.UNKNOWN;
-        rec.phase = phaseOf(profile.detail());
+        rec.phase = capturePhase(profile.source(), profile.detail(), activeHumanCapture != null);
         rec.executionTrust = switch (profile.source()) {
             case HUMAN -> io.flowscope.core.ExecutionTrust.OBSERVED;
             case SCANNER -> runContexts.current(Source.SCANNER) == null
@@ -504,6 +505,10 @@ public final class FlowScopeExtension implements BurpExtension {
             case XML_IMPORT -> RunPhase.IMPORT;
             default -> RunPhase.BASELINE;
         };
+    }
+
+    static RunPhase capturePhase(Source source, SourceDetail detail, boolean humanSessionCapture) {
+        return source == Source.HUMAN && humanSessionCapture ? RunPhase.SESSION_SETUP : phaseOf(detail);
     }
 
     private void importProxyHistory() {

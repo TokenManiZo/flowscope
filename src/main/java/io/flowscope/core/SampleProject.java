@@ -72,7 +72,7 @@ public final class SampleProject {
         record.orchestrator = source == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
         record.tool = source == Source.HUMAN ? ToolKind.BROWSER
                 : source == Source.SCANNER ? ToolKind.ZAP : ToolKind.CODEX;
-        record.phase = source == Source.HUMAN ? RunPhase.BASELINE : RunPhase.EXPLORATION;
+        record.phase = RunPhase.EXPLORATION;
         return record;
     }
 }

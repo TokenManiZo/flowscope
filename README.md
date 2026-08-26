@@ -83,7 +83,7 @@ scope가 비어 있으면 MCP가 시작하는 ZAP 실행은 차단됩니다.
 ## 일반적인 점검 흐름
 
 1. exact scope를 설정하고 익명 또는 최소 권한 테스트 계정을 사용합니다. 기본 제어면은 Burp 탭입니다. MCP 클라이언트의 `flowscope_set_scope`는 운영자가 명시적으로 허가한 exact target만, SCANNER/LLM run 시작 전에 설정할 수 있습니다. ADMIN 계정은 필수가 아니며 명시적 역할 비교가 필요한 경우에만 사용합니다.
-2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 표시 이름을 등록합니다. 계정마다 로그인 캡처를 시작하고 HUMAN 8080을 통해 로그인한 뒤 캡처를 종료합니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. HUMAN pass를 시작하고 허가된 기능을 탐색한 뒤 같은 run을 종료합니다. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다.
+2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 표시 이름을 등록합니다. 계정마다 로그인 캡처를 시작하고 HUMAN 8080을 통해 로그인한 뒤 캡처를 종료합니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다.
 3. ZAP의 outgoing proxy를 `127.0.0.1:8081`로 설정합니다. Web 빠른 시작에서 exact-scope target과 선택적 active account를 고른 뒤 **안전 기준선 실행**을 누릅니다. FlowScope는 Traditional Spider → Client Spider(AJAX fallback) → passive 완료 → native alert 순서를 고정하며, 범위 안 scanner 트래픽이 0건이면 lane을 실패 처리합니다. Active Scan은 기준선에 포함되지 않으며 항상 별도 Burp 승인이 필요합니다.
 4. `agent-workspace/prompts/explorer.md`를 실행합니다. 서버는 HUMAN/SCANNER 결과를 숨기며 Explorer는 `flowscope_target_request`만 사용합니다. exact-scope routing, 세션 주입, Evidence 수집은 FlowScope가 수행합니다. 제공된 workspace는 웹 검색, Wayback, 외부 API 문서·소스 저장소, curl, 브라우저 네트워킹을 금지합니다.
 5. `agent-workspace/prompts/judge.md`를 실행합니다. Judge는 완료된 HUMAN/SCANNER/LLM dataset을 잠그고 후보와 ZAP native alert를 읽은 뒤, 비최종 assessment를 제출하고 같은 통제 executor로 좁은 safe-GET 재현·정상 대조 Evidence를 수집합니다.

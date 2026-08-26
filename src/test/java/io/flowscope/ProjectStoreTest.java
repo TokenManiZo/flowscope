@@ -115,6 +115,30 @@ final class ProjectStoreTest {
     }
 
     @Test
+    void humanSessionSetupPhaseRoundTripsWithoutBecomingCoverage() throws Exception {
+        RequestRecord login = new RequestRecord(Source.HUMAN, "https://api.test:443",
+                "POST", "/login", 200, "sess:login");
+        login.sourceDetail = SourceDetail.BROWSER;
+        login.phase = RunPhase.SESSION_SETUP;
+        login.hasResponse = true;
+        login.requestContentType = "application/json";
+        login.responseContentType = "application/json";
+        Pipeline.Result beforeSave = Pipeline.run(List.of(login));
+        Path file = temp.resolve("session-setup.flowscope.json");
+
+        ProjectStore store = new ProjectStore();
+        store.save(file, beforeSave.records, new AnalysisConfig(), List.of(), List.of());
+        RequestRecord restored = store.load(file).records().getFirst();
+        Pipeline.Result afterLoad = Pipeline.run(List.of(restored));
+
+        assertEquals(RunPhase.SESSION_SETUP, restored.phase);
+        assertEquals(1, afterLoad.records.size());
+        assertTrue(afterLoad.coverageRecords.isEmpty());
+        assertEquals(List.of("SESSION_SETUP"),
+                afterLoad.records.getFirst().trafficClassification.reasons());
+    }
+
+    @Test
     void evidenceIdentityCoversResponseAndProvenanceAndSurvivesReassignment() {
         RequestRecord allowed = new RequestRecord(Source.LLM, "https://api.test:443",
                 "GET", "/orders/7", 200, "session");
