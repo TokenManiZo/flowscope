@@ -659,6 +659,57 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - fat JAR: 2,823,288 bytes, 1,297 entries, ZIP 무결성 통과, 공개 JAR 1개, `Main-Class=io.flowscope.burp.FlowScopeExtension`, SHA-256 `58d5f982270ca5c868e147f5de420ef82a8a1eaf2d32509730353d4c367a41c7`.
 - `ACTIVE`는 범용 transport 확인이지 application-specific `/me`, 계정 소유, role 증명이 아니다. ZAP 2.17·현재 Burp JAR·실제 로그인으로 비로그인→USER A→USER B 캠페인과 새 Web control을 확인하는 수동 gate가 남는다.
 
+## 2026-08-26 · 요청 시점 신원 고정과 익명 3-source 실환경 검증
+
+### 목표와 성공 조건
+
+- USER A를 선택했지만 실제 브라우저가 USER B 또는 비로그인인 경우 USER A Evidence로 오기록하지 않는다.
+- ZAP 계정 lane 전환 뒤 늦게 도착한 응답도 요청을 시작한 run/account에 남긴다.
+- fresh anonymous ZAP lane은 서버 Cookie/CSRF를 유지해도 `ANONYMOUS` 신원을 유지한다.
+- 현재 JAR을 Burp Community·ZAP·crAPI·MCP에 실제 연결해 HUMAN/SCANNER/LLM 분리와 exact-scope 차단을 확인한다.
+
+### 실패 가능성 검토와 개발·수정
+
+- 기존 Proxy 응답 경로가 응답 시점의 전역 `RunContextRegistry`를 읽어 ZAP lane 전환과 늦은 응답 사이에 경합이 있음을 확인했다. Proxy 요청의 Montoya `messageId`에 요청 시점 context와 HUMAN login-capture account를 임시 저장하고 응답에서 소비하도록 바꿨다. 테이블은 20,000건·10분 TTL이며 unload에서 비운다.
+- 기존 HUMAN pass는 dropdown의 account ID를 그대로 신원으로 사용할 수 있었다. Web 시작 API에서 선택 계정의 broker 상태가 `ACTIVE`인지 검사하고, 캡처에서는 실제 요청 자격증명이 선택 계정과 exact match할 때만 해당 account ID를 사용하도록 바꿨다. 명시적 로그인 캡처 account는 우선한다.
+- SYSTEM anonymous ZAP context는 lane 안에서 서버 Cookie가 발급돼도 fingerprint를 `anon`으로 고정했다. 일반 HUMAN·수동 scanner의 미연결 Cookie는 기존 `UNRESOLVED` 경계를 유지한다.
+- Web UI 버전 표기를 `v1.2.0-beta.3`으로 맞추고 HUMAN 계정 선택에는 `ACTIVE` 계정만 활성화하며 나머지는 `로그인 필요`로 표시했다.
+
+### 이유와 기각한 대안
+
+- 화면 선택값을 실제 신원 authority로 쓰면 사용자의 단순 선택 실수가 BOLA/BFLA 비교 데이터 전체를 오염시킨다. actual broker credential match를 요구했다.
+- 응답 시점 전역 context만 읽는 단순 구현은 비동기 HTTP와 순차 lane 실행에서 안전하지 않다. scanner를 매 요청마다 직렬 대기시키는 방식은 성능을 떨어뜨리고 브라우저형 crawler 동작과 맞지 않아 request-time correlation을 선택했다.
+- anonymous Cookie를 모두 제거하면 상태형 공개 흐름을 끊고, Cookie fingerprint를 계정처럼 쓰면 비로그인 lane이 미확정 신원으로 바뀌므로 lane-local 상태와 FlowScope 신원을 분리했다(D-067).
+
+### 영향 파일
+
+- Burp 수집·신원: `src/main/java/io/flowscope/burp/FlowScopeExtension.java`
+- Web 실행 gate: `src/main/java/io/flowscope/web/FlowScopeWebServer.java`
+- Web UI: `src/main/resources/web/index.html`
+- 회귀: `FlowScopeExtensionPhaseTest.java`, `FlowScopeWebServerTest.java`
+- 문서: 한국어/영어 README·changelog, architecture, decisions(D-067), UI rationale, product plan, beta validation, 이 개발 기록
+
+### 자동 검증
+
+- 선택 HUMAN account exact match/mismatch, login-capture 우선, source별 account 해석, SYSTEM anonymous Cookie의 `anon` 유지 회귀를 추가했다.
+- Web account HUMAN pass는 broker session이 없거나 `ACTIVE`가 아니면 거부하고 활성화 뒤에만 시작되는 회귀를 추가했다.
+- `mvn clean verify`: 147 tests, 실패·오류·skip 0, BUILD SUCCESS.
+- JDK 21을 명시한 fat JAR: 2,826,076 bytes, 1,298 entries, ZIP 무결성 통과, 공개 JAR 1개, `Build-Jdk-Spec=21`, SHA-256 `e8d41fbdea56101063d59ec27b378de5ee9a06d001c516122eeac8c0446b4cae`.
+
+### 실제 crAPI 연동 검증
+
+- 환경: Burp Community 2026.7.3, ZAP 2.17.0, crAPI `http://127.0.0.1:8888/`, exact scope 동일, HUMAN 8080·SCANNER 8081·ZAP API 8089·MCP 8787·Web 17777.
+- anonymous HUMAN `qa-human-anon-1`: `/` 200과 `/favicon.ico` 404 두 건이 `HUMAN/BROWSER/EXPLORATION`으로 수집됐다. 둘은 `REVIEW`라 메인 coverage에는 자동 포함되지 않았고 첫 dataset lock은 HUMAN 탐색 응답 부족으로 거부됐다. `qa-human-api-2`에서 `API/INCLUDE`인 `/manifest.json` 200 한 건을 추가했다.
+- SYSTEM ZAP `zap-baseline-1787717447157`: `COMPLETED/ALERTS_READY`, 수집 8건, native alert 22건. 8건 모두 `SCANNER/CONTROLLED/ANONYMOUS`; 정적 4건 `EXCLUDE`, `/manifest.json` 1건 `API/INCLUDE`, 나머지 3건 `REVIEW`였다. Alert 22건은 ZAP 출력 수이며 취약점 확정 수가 아니다.
+- MCP initialize `2025-06-18`, 도구 24개, status를 확인했다. Codex Explorer context `qa-llm-anon-1`에서 `/manifest.json` 통제 GET 1건을 `LLM/CONTROLLED` Evidence로 만들었고 Explorer status는 자기 LLM 1건만 보였다. 범위 밖 `http://127.0.0.1:17777/` 요청은 거부됐다. run 종료 뒤 HUMAN 3·SCANNER 8·LLM 1, 총 12건을 잠갔고 finding·gap은 각각 0건이었다. 잠긴 ZAP snapshot을 읽을 수 있었고 잠금 뒤 새 Explorer는 거부됐다.
+- 최종 JDK 21 JAR SHA-256 `e8d41fbd...6b4cae`를 Burp에서 제거·재로드한 뒤 Web/MCP/8080/8081 재기동과 UI `v1.2.0-beta.3` 표기를 확인했다. 재로드된 정확한 산출물에서도 HUMAN 1·SCANNER 8·LLM 1의 10건 lock, finding·gap 0, ZAP Alert 22건, Explorer 자기 Evidence 1건 시야, 범위 밖 요청 거부가 동일했다.
+
+### 남은 한계·다음 gate
+
+- 실제 USER A/B의 `UNVERIFIED→ACTIVE`, 선택 계정 exact match/mismatch, 복수 계정 ZAP lane과 LLM account injection은 로그인 계정이 필요해 아직 실측하지 않았다.
+- 구독형 Codex/Claude가 제공 prompt 전체와 lock 이후 Judge/validation을 끝까지 수행한 것은 아니다. 이번 검증은 동일 MCP protocol을 사용한 실제 통제 요청과 가시성·scope gate까지다.
+- Repeater handoff, project save/load, extension unload/재로드는 다음 P4 gate다. crAPI 알려진 정답과 공격 절차는 보지 않았다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

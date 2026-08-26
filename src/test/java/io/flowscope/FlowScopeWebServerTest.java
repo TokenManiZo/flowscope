@@ -63,6 +63,8 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("첫 점검을 시작하세요"));
         assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length)"));
+        assertTrue(index.body().contains("v1.2.0-beta.3 · 3소스"));
+        assertTrue(index.body().contains("· 로그인 필요"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());
@@ -138,6 +140,8 @@ final class FlowScopeWebServerTest {
         state.rebuild();
         start();
 
+        assertEquals(400, post("/api/human-run", "action=begin&runId=human-before-login&account=user-a", token).statusCode());
+        activateSession("user-a", "token-a");
         JsonNode began = json(post("/api/human-run", "action=begin&runId=human-a&account=user-a", token));
 
         assertEquals("user-a", began.path("accountId").asText());

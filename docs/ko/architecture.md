@@ -60,7 +60,7 @@ RequestRecord {
 - `trafficClassification`: `API/NAVIGATION/STATIC_ASSET/PREFLIGHT/TELEMETRY_CANDIDATE/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
-- `SessionBroker`: 사용자가 Web UI에서 명시적으로 시작한 HUMAN 로그인 구간의 Cookie/Authorization/CSRF만 프로세스 메모리에 보관한다. 자격증명 material만 관측하고 성공 응답을 확인하지 못하면 `UNVERIFIED`, 401·로그인 redirect·invalid token이면 `SUSPECT`, 비밀 삭제/만료면 `REAUTH_REQUIRED`다. account service와 exact scope가 모두 맞고 상태가 `ACTIVE`일 때만 ZAP/LLM 요청에 주입한다. 다른 계정이 같은 service에서 동시에 캡처되는 것을 거부하며 raw 값은 UI/MCP/project에 나오지 않는다.
+- `SessionBroker`: 사용자가 Web UI에서 명시적으로 시작한 HUMAN 로그인 구간의 Cookie/Authorization/CSRF만 프로세스 메모리에 보관한다. 자격증명 material만 관측하고 성공 응답을 확인하지 못하면 `UNVERIFIED`, 401·로그인 redirect·invalid token이면 `SUSPECT`, 비밀 삭제/만료면 `REAUTH_REQUIRED`다. account service와 exact scope가 모두 맞고 상태가 `ACTIVE`일 때만 ZAP/LLM 요청에 주입한다. HUMAN pass의 계정 선택은 표시 힌트가 아니라 검증 조건이며, 실제 요청 자격증명이 그 broker 계정과 exact match할 때만 계정 신원으로 귀속한다. 다른 계정이 같은 service에서 동시에 캡처되는 것을 거부하며 raw 값은 UI/MCP/project에 나오지 않는다.
 - `evidenceId`: 전체 의미 내용 digest 기반 ID. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
@@ -70,7 +70,7 @@ RequestRecord {
 
 ### 4.1 수집·마스킹 F-01~03/F-22
 
-Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. `Http.registerHttpHandler`는 Repeater/Intruder 등 비프록시 Burp 도구를 보완하며 같은 capture gate를 지난다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 요청·응답 상세는 필드별 8KiB로 제한한다. Burp XML은 XXE를 차단하고 불완전 item을 이유와 함께 skip한다.
+Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. 각 Proxy 요청의 `messageId`에 요청 수신 시점의 run/account/login-capture 문맥을 임시 보관하고 응답에서 한 번 소비하므로, ZAP lane 전환이나 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속한다. in-flight 문맥은 20,000건·10분 상한을 두며, 원 인증값은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. `Http.registerHttpHandler`는 Repeater/Intruder 등 비프록시 Burp 도구를 보완하며 같은 capture gate를 지난다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 요청·응답 상세는 필드별 8KiB로 제한한다. Burp XML은 XXE를 차단하고 불완전 item을 이유와 함께 skip한다.
 
 HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖의 일반 HUMAN 관측은 `BASELINE`으로 보존한다. `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 저장과 감사 대상이지만 discovery coverage·3-way gap·그래프 입력은 아니다. 로그인 준비와 우연한 scope 내 이동이 HUMAN 탐색 성과로 계산되지 않게 하려면 사용자가 HUMAN pass를 시작·종료해야 한다.
 
@@ -131,13 +131,13 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 - HUMAN, 시스템 ZAP, 독립 LLM이 정확한 run 종료를 완료해야 `flowscope_lock_dataset`이 성공한다. 레코드가 있다는 사실만으로 완료 처리하지 않는다.
 - Judge는 잠긴 후보/소유자/역할 기준과 ZAP native alert를 종합한다. 잠금 뒤 새 검증 트래픽은 현재 Evidence 저장소에서 읽되 후보 오라클은 잠긴 snapshot을 유지한다.
 - MCP exact-scope 교체는 로컬 capability를 가진 클라이언트가 사용자가 명시한 범위를 자동 설정할 때만 허용하며, SCANNER/LLM run 중에는 거부한다.
-- HUMAN pass는 Web quick-start에서 exact run lease로 시작·종료해 임의 브라우저 트래픽과 기준선 수행 구간을 구분한다.
+- HUMAN pass는 Web quick-start에서 exact run lease로 시작·종료해 임의 브라우저 트래픽과 기준선 수행 구간을 구분한다. 계정 pass 시작은 해당 broker 세션이 `ACTIVE`일 때만 허용하고, 관측 요청의 자격증명이 선택 계정과 다르면 그 계정으로 기록하지 않는다.
 - 일반 assessment는 기존 Evidence ID와 `LIKELY/INCONCLUSIVE/REJECTED`만 허용하며 최종 판정이 아니다.
 - 최종 validation은 현재 결정론 finding을 대상으로 원본 Evidence, 동일한 비기본 LLM VALIDATION run의 `CONTROLLED` 반복 재현 2건 이상, 정상 대조 1건 이상을 서로 겹치지 않게 요구한다. 신원·operation·resource·응답 의미가 맞지 않거나 write method이면 베타에서 `INCONCLUSIVE`다.
 - 최종 verdict는 `CONFIRMED/INCONCLUSIVE/REJECTED`다. `CONFIRMED`는 반복 성공, `REJECTED`는 반복 명시 거부일 때만 허용하며 BOLA의 정상 대조는 확인된 소유자, BFLA의 정상 대조는 사용자 역할 정책과 일치해야 한다.
 - 사람의 확정/미확정/폐기 기록은 Evidence-bound 감사·오버라이드다. 원본 Evidence 집합이 달라지면 과거 기록을 자동 승계하지 않는다.
 - 기본 ZAP 캠페인은 `orchestrator=SYSTEM`이다. Web/MCP에서 비로그인과 복수 ACTIVE 계정을 선택하면 비로그인 → 선택 계정 순으로 실행하며, 각 신원 앞에서 ZAP `core/newSession`을 호출해 crawler/cookie 상태를 분리한다. 각 신원은 Traditional Spider → strict Client Spider → Client 실패 시 AJAX Spider → passive queue 0 → native alert 수집 순서를 고정하고, 신원별 캡처된 in-scope SCANNER 요청이 0이면 전체 캠페인을 실패시켜 완료 gate를 열지 않는다. Alert에는 `flowscope_account_id`와 `flowscope_run_id`를 붙인다. LLM이 단계를 고르지 않는다.
-- 관리형 계정 ZAP/LLM 요청은 기존 Authorization/Cookie/Proxy-Authorization/CSRF를 제거하고 broker의 현재 `ACTIVE` 세션만 주입한다. fresh ZAP anonymous lane은 Authorization과 Proxy-Authorization을 제거하되 그 lane 안에서 서버가 새로 발급한 익명 Cookie/CSRF는 상태형 탐색을 위해 유지한다. 수동으로 직접 실행해 FlowScope run context가 없는 scanner 트래픽은 관측만 하고 헤더를 바꾸지 않는다. 쿠키 회전은 응답의 Set-Cookie로 broker에 갱신하며, UNVERIFIED/SUSPECT/만료 세션은 사용자가 HUMAN 로그인 캡처를 다시 해야 한다.
+- 관리형 계정 ZAP/LLM 요청은 기존 Authorization/Cookie/Proxy-Authorization/CSRF를 제거하고 broker의 현재 `ACTIVE` 세션만 주입한다. fresh ZAP anonymous lane은 Authorization과 Proxy-Authorization을 제거하되 그 lane 안에서 서버가 새로 발급한 익명 Cookie/CSRF는 상태형 탐색을 위해 유지한다. 이 lane-local 쿠키는 계정 증명이 아니므로 신원 fingerprint는 계속 `anon`으로 고정한다. 수동으로 직접 실행해 FlowScope run context가 없는 scanner 트래픽은 관측만 하고 헤더를 바꾸지 않는다. 쿠키 회전은 응답의 Set-Cookie로 broker에 갱신하며, UNVERIFIED/SUSPECT/만료 세션은 사용자가 HUMAN 로그인 캡처를 다시 해야 한다.
 - Web scanner target 목록과 시작 API는 자기 자신의 `127.0.0.1:<web-port>` 제어면을 제외한다. localhost의 실제 점검 대상까지 포괄 차단하지 않고 현재 Web port만 차단한다.
 - Active Scan은 scope + MCP confirmed + Burp dialog의 세 조건을 모두 요구한다.
 
@@ -180,7 +180,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 - source별 active run context는 하나이며 겹치는 LLM/ZAP run 시작은 거부한다. 종료도 정확한 run ID가 일치해야 한다.
 - 세션 브로커는 일반 Cookie/Bearer/CSRF와 서버가 돌려주는 회전을 처리하지만 CAPTCHA/MFA/WebAuthn/device binding/application-specific refresh를 일반화하지 않는다. 이 경우 수동 재로그인이 필요하다.
 - `ACTIVE` 전이는 자격증명 material 뒤 401·로그인 redirect·invalid-token이 아닌 2xx~4xx 응답을 관측한 transport-level 확인이다. 403은 역할 거부일 수 있어 세션 만료로 단정하지 않는다. 이는 서비스 고유 `/me` 의미, 실제 계정 소유, role을 자동 증명하지 않는다.
-- ZAP `newSession` 호출과 신원별 헤더 교체는 자동 회귀로 검증했지만 ZAP 2.17 실제 브라우저·쿠키 jar 동작은 수동 beta gate다. 전역 ZAP replacer/script가 임의 Cookie를 강제하는 비표준 설정까지 정리하지 않는다.
+- ZAP 2.17의 실제 anonymous fresh-session 기준선은 Burp 8081을 통해 crAPI에서 완료됐고, 수집 8건이 모두 `SCANNER/CONTROLLED/ANONYMOUS`로 귀속됐다. USER A/B broker 주입과 전역 ZAP replacer/script가 임의 Cookie를 강제하는 비표준 설정은 별도 실환경 gate다.
 - closed-world는 제공 agent 지침과 MCP 도구 경로에는 강제되지만 사용자가 개조한 에이전트나 별도 로컬 프로세스의 외부 통신까지 차단하는 OS sandbox는 아니다. exact scope, 가시성, Evidence trust, verdict gate는 서버에서 별도로 강제한다.
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
 - Repeater handoff는 마스킹된 미전송 초안만 연다. 사용자가 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다.

@@ -2,6 +2,10 @@
 
 ## 1.2.0-beta.3 — 2026-08-25
 
+- Correlated Proxy responses with request-time `messageId` context so late responses cannot cross ZAP account lanes or a HUMAN pass boundary.
+- Restricted account-bound HUMAN passes to `ACTIVE` sessions and record the selected account only when the observed request credentials exactly match it.
+- Kept SYSTEM anonymous ZAP lanes `ANONYMOUS` while preserving lane-local server cookies/CSRF needed for stateful public flows.
+- Exercised the current beta.3 JAR against Burp Community 2026.7.3, ZAP 2.17, crAPI, and the local MCP server for anonymous HUMAN/SCANNER/LLM paths and out-of-scope LLM blocking.
 - Added a SYSTEM scanner campaign that isolates anonymous and multiple ACTIVE accounts with a fresh ZAP session per identity, reports per-identity capture/alert state, replaces account-lane authentication from the broker, and keeps the SCANNER completion gate closed if any identity fails.
 - Kept login captures `UNVERIFIED` until a non-suspicious response is observed, prevented simultaneous same-service account capture, and surfaced recapture guidance in the Web account workflow.
 - Locked LLM `account_id` propagation to the controlled executor with regression coverage and excluded the FlowScope Web loopback control plane from ZAP targets.

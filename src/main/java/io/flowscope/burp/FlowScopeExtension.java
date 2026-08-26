@@ -55,6 +55,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -157,6 +158,13 @@ public final class FlowScopeExtension implements BurpExtension {
     private boolean capacityWarned;
     private MontoyaApi api;
     private final ThreadLocal<Boolean> controlledRequest = ThreadLocal.withInitial(() -> false);
+    private final Map<Integer, ProxyObservation> proxyObservations = new ConcurrentHashMap<>();
+
+    /** 요청 시점의 run/account 문맥. ZAP lane 전환 뒤 늦게 도착한 응답도 원래 신원에 귀속한다. */
+    private record ProxyObservation(RunContextRegistry.Context context, String humanCaptureAccountId,
+                                    long startedAt) {}
+    private static final int MAX_IN_FLIGHT_PROXY_OBSERVATIONS = 20_000;
+    private static final long IN_FLIGHT_CONTEXT_TTL_MS = 10 * 60_000L;
 
     @Override
     public void initialize(MontoyaApi api) {
@@ -208,7 +216,14 @@ public final class FlowScopeExtension implements BurpExtension {
             PortProfile profile = profileOf(request.listenerInterface());
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
             try {
-                return ProxyRequestReceivedAction.continueWith(prepareSession(request, profile));
+                RunContextRegistry.Context context = runContexts.current(profile.source());
+                String captureHandle = profile.source() == Source.HUMAN
+                        ? sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null) : null;
+                String captureAccountId = captureHandle == null ? null
+                        : sessionBroker.accountForHandle(captureHandle).orElse(null);
+                HttpRequest prepared = prepareSession(request, profile, captureHandle, context);
+                rememberProxyObservation(request.messageId(), context, captureAccountId);
+                return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
                 return ProxyRequestReceivedAction.drop();
@@ -230,16 +245,14 @@ public final class FlowScopeExtension implements BurpExtension {
             return allowed;
         }
 
-        private HttpRequest prepareSession(InterceptedRequest request, PortProfile profile) {
-            String service = serviceOf(request);
+        private HttpRequest prepareSession(InterceptedRequest request, PortProfile profile,
+                                           String humanCaptureHandle, RunContextRegistry.Context context) {
             URI target = URI.create(request.url());
             if (profile.source() == Source.HUMAN) {
-                sessionBroker.activeCaptureForService(service).ifPresent(handle ->
-                        sessionBroker.observeRequest(handle, target, headersOf(request.headers()),
-                                java.time.Instant.now()));
+                if (humanCaptureHandle != null) sessionBroker.observeRequest(humanCaptureHandle, target,
+                        headersOf(request.headers()), java.time.Instant.now());
                 return request;
             }
-            RunContextRegistry.Context context = runContexts.current(profile.source());
             if (context == null) return request;
             HttpRequest prepared = request;
             for (String header : SessionBroker.managedHeaderNames()) {
@@ -263,11 +276,12 @@ public final class FlowScopeExtension implements BurpExtension {
         public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse response) {
             try {
                 PortProfile profile = profileOf(response.listenerInterface());
+                ProxyObservation observation = proxyObservations.remove(response.messageId());
                 capture(response.initiatingRequest(), response.statusCode(), profile,
                         response.bodyToString(), response.toString(), response.headerValue("Location"),
-                        response.headerValue("Content-Type"));
+                        response.headerValue("Content-Type"), observation);
                 observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
-                        response.headerValue("Location"), response.bodyToString(), response.headers());
+                        response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
             } catch (Exception e) {
                 api.logging().logToError("FlowScope capture 실패", e);
             }
@@ -329,9 +343,15 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void capture(HttpRequest req, int status, PortProfile profile,
                          String respBody, String respText, String location, String responseContentType) {
+        capture(req, status, profile, respBody, respText, location, responseContentType, null);
+    }
+
+    private void capture(HttpRequest req, int status, PortProfile profile,
+                         String respBody, String respText, String location, String responseContentType,
+                         ProxyObservation observation) {
         if (!ActiveTrafficGuard.allowsCapture(scope, req.url())) return;
         RequestRecord rec = recordFrom(req, status, profile, respBody, respText, location, responseContentType,
-                System.currentTimeMillis(), true, null);
+                System.currentTimeMillis(), true, null, observation);
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
         synchronized (records) {
@@ -349,26 +369,20 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private RequestRecord recordFrom(HttpRequest req, int status, PortProfile profile,
                                      String respBody, String respText, String location, String responseContentType,
-                                     long timestamp, boolean applyRunContext, String runId) {
+                                     long timestamp, boolean applyRunContext, String runId,
+                                     ProxyObservation observation) {
         String service = serviceOf(req);
-        RunContextRegistry.Context context = applyRunContext ? runContexts.current(profile.source()) : null;
-        String accountId = context == null ? null : context.accountId();
-        String activeHumanCapture = profile.source() == Source.HUMAN
-                ? sessionBroker.activeCaptureForService(service).orElse(null) : null;
-        if (accountId == null && activeHumanCapture != null) {
-            accountId = sessionBroker.accountForHandle(activeHumanCapture).orElse(null);
-        }
-        if (accountId == null) {
-            accountId = sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
-                    java.time.Instant.now()).orElse(null);
-        }
-        boolean explicitAnonymousPass = profile.source() == Source.HUMAN
-                && context != null
-                && accountId == null
-                && emptyToNull(req.headerValue("Authorization")) == null
-                && emptyToNull(req.headerValue("Cookie")) == null;
-        String fp = explicitAnonymousPass ? "anon"
-                : Fingerprints.of(req.headerValue("Authorization"), req.headerValue("Cookie"));
+        RunContextRegistry.Context context = !applyRunContext ? null : observation == null
+                ? runContexts.current(profile.source()) : observation.context();
+        String humanCaptureAccountId = profile.source() != Source.HUMAN ? null : observation == null
+                ? sessionBroker.activeCaptureForService(service).flatMap(sessionBroker::accountForHandle).orElse(null)
+                : observation.humanCaptureAccountId();
+        String detectedAccountId = sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
+                java.time.Instant.now()).orElse(null);
+        String accountId = resolveObservedAccount(profile.source(), context == null ? null : context.accountId(),
+                humanCaptureAccountId, detectedAccountId);
+        String fp = captureFingerprint(profile.source(), context, accountId,
+                req.headerValue("Authorization"), req.headerValue("Cookie"));
         RequestRecord rec = new RequestRecord(
                 profile.source(), service, req.method(), req.pathWithoutQuery(), status, fp);
         rec.sourceDetail = profile.detail();
@@ -376,10 +390,10 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.tool = profile.source() == Source.SCANNER ? ToolKind.ZAP
                 : profile.source() == Source.LLM ? ToolKind.OTHER
                 : profile.source() == Source.HUMAN ? ToolKind.BROWSER : ToolKind.UNKNOWN;
-        rec.phase = capturePhase(profile.source(), profile.detail(), activeHumanCapture != null);
+        rec.phase = capturePhase(profile.source(), profile.detail(), humanCaptureAccountId != null);
         rec.executionTrust = switch (profile.source()) {
             case HUMAN -> io.flowscope.core.ExecutionTrust.OBSERVED;
-            case SCANNER -> runContexts.current(Source.SCANNER) == null
+            case SCANNER -> context == null
                     ? io.flowscope.core.ExecutionTrust.UNVERIFIED_RUNTIME
                     : io.flowscope.core.ExecutionTrust.CONTROLLED;
             case LLM -> io.flowscope.core.ExecutionTrust.UNVERIFIED_RUNTIME;
@@ -444,21 +458,60 @@ public final class FlowScopeExtension implements BurpExtension {
         return values;
     }
 
+    static String resolveObservedAccount(Source source, String contextAccountId,
+                                         String humanCaptureAccountId, String detectedAccountId) {
+        if (source == Source.HUMAN) {
+            if (humanCaptureAccountId != null) return humanCaptureAccountId;
+            if (contextAccountId != null) {
+                return contextAccountId.equals(detectedAccountId) ? contextAccountId : null;
+            }
+        }
+        return contextAccountId != null ? contextAccountId : detectedAccountId;
+    }
+
+    static String captureFingerprint(Source source, RunContextRegistry.Context context, String accountId,
+                                     String authorization, String cookie) {
+        boolean explicitAnonymousHumanPass = source == Source.HUMAN && context != null && accountId == null
+                && emptyToNull(authorization) == null && emptyToNull(cookie) == null;
+        boolean isolatedAnonymousScanner = source == Source.SCANNER && context != null
+                && context.orchestrator() == Orchestrator.SYSTEM && context.accountId() == null;
+        return explicitAnonymousHumanPass || isolatedAnonymousScanner
+                ? "anon" : Fingerprints.of(authorization, cookie);
+    }
+
+    private void rememberProxyObservation(int messageId, RunContextRegistry.Context context,
+                                          String humanCaptureAccountId) {
+        long now = System.currentTimeMillis();
+        if (proxyObservations.size() >= MAX_IN_FLIGHT_PROXY_OBSERVATIONS) {
+            proxyObservations.entrySet().removeIf(entry ->
+                    now - entry.getValue().startedAt() > IN_FLIGHT_CONTEXT_TTL_MS);
+        }
+        if (proxyObservations.size() >= MAX_IN_FLIGHT_PROXY_OBSERVATIONS) {
+            api.logging().logToOutput("FlowScope: in-flight 프록시 문맥 상한 도달 — 해당 요청은 응답 시 현재 문맥으로 처리합니다.");
+            return;
+        }
+        proxyObservations.put(messageId, new ProxyObservation(context, humanCaptureAccountId, now));
+    }
+
     private void observeSessionResponse(PortProfile profile, HttpRequest request, int status,
-                                        String location, String body, List<HttpHeader> headers) {
+                                        String location, String body, List<HttpHeader> headers,
+                                        ProxyObservation observation) {
         try {
             String service = serviceOf(request);
             String handle = null;
-            RunContextRegistry.Context context = runContexts.current(profile.source());
-            if (context != null && context.accountId() != null) {
+            RunContextRegistry.Context context = observation == null ? runContexts.current(profile.source())
+                    : observation.context();
+            if (profile.source() == Source.HUMAN) {
+                String captureAccountId = observation == null
+                        ? sessionBroker.activeCaptureForService(service).flatMap(sessionBroker::accountForHandle).orElse(null)
+                        : observation.humanCaptureAccountId();
+                String detectedAccountId = sessionBroker.accountForRequest(URI.create(request.url()),
+                        headersOf(request.headers()), java.time.Instant.now()).orElse(null);
+                String accountId = resolveObservedAccount(Source.HUMAN,
+                        context == null ? null : context.accountId(), captureAccountId, detectedAccountId);
+                if (accountId != null) handle = sessionBroker.handleForAccount(accountId);
+            } else if (context != null && context.accountId() != null) {
                 handle = sessionBroker.handleForAccount(context.accountId());
-            } else if (profile.source() == Source.HUMAN) {
-                handle = sessionBroker.activeCaptureForService(service).orElse(null);
-                if (handle == null) {
-                    String accountId = sessionBroker.accountForRequest(URI.create(request.url()),
-                            headersOf(request.headers()), java.time.Instant.now()).orElse(null);
-                    if (accountId != null) handle = sessionBroker.handleForAccount(accountId);
-                }
             }
             if (handle == null) return;
             List<String> setCookies = headers == null ? List.of() : headers.stream()
@@ -537,7 +590,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     String runId = "proxy-history-" + profile.source().name().toLowerCase(Locale.ROOT);
                     incoming.add(recordFrom(request, response.statusCode(), profile,
                             response.bodyToString(), response.toString(), response.headerValue("Location"),
-                            response.headerValue("Content-Type"), timestamp, false, runId));
+                            response.headerValue("Content-Type"), timestamp, false, runId, null));
                 }
 
                 List<RequestRecord> added;
@@ -832,6 +885,7 @@ public final class FlowScopeExtension implements BurpExtension {
         if (webServer != null) webServer.close();
         if (mcpServer != null) mcpServer.close();
         worker.shutdownNow();
+        proxyObservations.clear();
         sessionBroker.close();
         clearRunContexts();
     }
@@ -871,7 +925,8 @@ public final class FlowScopeExtension implements BurpExtension {
         RequestRecord record = recordFrom(exchange.request(), response.statusCode(),
                 new PortProfile(Source.LLM, context.detail()), response.bodyToString(), response.toString(),
                 response.headerValue("Location"), response.headerValue("Content-Type"),
-                System.currentTimeMillis(), true, context.runId());
+                System.currentTimeMillis(), true, context.runId(),
+                new ProxyObservation(context, null, System.currentTimeMillis()));
         record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
         if (input.accountId() != null && !"anon".equals(record.fp)) {
             analysisConfig.bindSession(record.service, record.fp, input.accountId());

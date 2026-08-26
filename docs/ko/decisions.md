@@ -616,6 +616,14 @@
 - **검증:** 기존 API가 없어서 컴파일 실패하는 회귀를 먼저 만들고, successful response 전 `UNVERIFIED`, 같은-service 동시 캡처 거부, 관리 헤더 목록, run 중 account 전환, ZAP newSession, 비로그인→USER A→USER B 순서·3회 reset·lane 상태, Web 복수 선택 contract, LLM context account 전달, Web 자기 제어면 거부를 자동 테스트로 고정했다. 전체 `mvn clean verify` 144 tests가 통과했다.
 - **상태:** 구현·자동 회귀 완료, 실제 Burp/ZAP/로그인 전체 캠페인 확인 대기
 
+## D-067 · 응답 provenance = 요청 시점 문맥 고정 + 선택 계정 exact match
+- **문제:** Proxy 응답을 받을 때의 전역 run context를 사용하면 ZAP이 다음 계정 lane으로 전환하거나 HUMAN pass가 끝난 뒤 도착한 늦은 응답이 다른 run·계정으로 기록될 수 있다. 또한 HUMAN pass dropdown의 선택값을 그대로 신원으로 믿으면 USER A를 선택한 상태에서 USER B 또는 비로그인 브라우저를 사용해도 USER A Evidence로 오염된다. fresh anonymous ZAP lane에서 서버가 발급한 쿠키를 일반 미연결 쿠키처럼 해석하면 하나의 비로그인 lane이 `UNRESOLVED` 신원으로 바뀐다.
+- **결정:** Proxy 요청 수신 시 `messageId`를 키로 source run context와 HUMAN login-capture account를 임시 고정하고 응답에서 한 번 소비한다. HUMAN 선택 계정은 해당 broker 세션이 `ACTIVE`여야 pass를 시작할 수 있고, 실제 요청 자격증명이 선택 계정과 exact match할 때만 계정 신원으로 귀속한다. 명시적 로그인 캡처 중인 계정은 그 캡처 문맥을 우선한다. SYSTEM 소유 fresh anonymous ZAP lane은 lane-local Cookie/CSRF가 생겨도 `ANONYMOUS`로 유지한다.
+- **상한·비밀 경계:** in-flight 문맥은 20,000건과 10분 TTL로 제한하고 unload 시 폐기한다. 이 표에는 raw Cookie·Authorization을 복사하지 않는다. 응답 상관 항목이 없으면 기존 현재 문맥 fallback을 사용하되 결정적 SYSTEM 실행은 정상 request/response 쌍을 회귀·실환경에서 확인한다.
+- **기각:** dropdown을 신원 authority로 사용하는 방식은 실제 요청 증거와 어긋난다. 응답마다 현재 전역 context를 읽는 방식은 비동기 응답과 lane 전환에 안전하지 않다. anonymous lane의 모든 Cookie를 제거하면 상태형 공개 흐름을 끊고, 반대로 Cookie fingerprint를 계정처럼 쓰면 신원 노이즈를 만든다.
+- **검증:** HUMAN 선택 계정의 exact match/mismatch, 로그인 캡처 우선, SYSTEM anonymous Cookie의 `anon` 유지, request-time scanner context를 자동 회귀로 고정했다. Burp Community 2026.7.3에서 현재 JAR을 로드하고 crAPI anonymous HUMAN 3건, ZAP 2.17 SYSTEM 기준선 8건, MCP Codex Explorer 통제 요청 1건을 실제 수집했다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 MCP 범위 밖 요청은 차단됐다. 세 lane 12건의 dataset lock, 후보·gap 0건, 잠금 뒤 Explorer 재시작 거부도 확인했다. 실제 USER A/B 로그인과 늦은 응답 lane 전환은 계속 별도 수동 gate다.
+- **상태:** 구현·자동 회귀·anonymous 실환경 검증 완료, 복수 로그인 계정 실환경 gate 대기
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

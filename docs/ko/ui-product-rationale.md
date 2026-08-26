@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.3, 2026-08-25 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.3, 2026-08-26 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -96,6 +96,8 @@ orchestrator = SYSTEM 또는 HUMAN
 
 캡처 종료 시 자격증명은 있으나 성공 응답이 없으면 계정 카드를 `UNVERIFIED`로 표시한다. 이 상태를 ACTIVE처럼 숨겨 자동 실행하면 로그인 폼·실패 응답에서 우연히 본 Cookie를 실제 계정 세션으로 오인할 수 있다. 반대로 ACTIVE도 서비스 고유 인증 의미를 보편적으로 증명하는 값은 아니므로 역할과 계정 연결은 사용자가 확인한다.
 
+빠른 시작의 HUMAN 계정 선택에는 `ACTIVE` 계정만 표시한다. 이 선택은 브라우저 신원을 덮어쓰는 라벨이 아니다. 실제 요청의 자격증명이 선택한 broker 계정과 exact match할 때만 해당 계정으로 기록하고, 불일치는 미확정 상태로 남긴다. 사용자가 dropdown 하나를 잘못 선택해 USER A/B 비교 Evidence 전체를 오염시키는 것보다 재로그인 안내가 드러나는 편이 안전하다.
+
 ## 7. 왜 LLM을 두 번 사용하는가
 
 ### Explorer: 독립적인 세 번째 선수
@@ -178,14 +180,14 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 - beta.3의 Burp/ZAP/Codex/Claude 전체 실행이 통과했다.
 - 화면의 0 또는 관측 조합 수가 전체 공격면 대비 완료율이다.
 
-## 12. 2026-08-25 현재 확인된 UI·배포 부채
+## 12. 2026-08-26 현재 확인된 UI·배포 부채
 
 다음은 설계 의도가 아니라 실제 사용자 검증으로 발견된 미완료 항목이다.
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — 해결:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 이 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 사용자가 선택할 파일은 `target/flowscope-1.2.0-beta.3.jar` 하나다. 현재 재생성 JAR의 실제 Burp load는 release gate로 남는다.
+3. **Maven 중간 JAR 혼동 — 해결·실로드 확인:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 이 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 사용자가 선택할 파일은 `target/flowscope-1.2.0-beta.3.jar` 하나다. 현재 JAR은 Burp Community 2026.7.3에서 suite tab, Web 17777, MCP 8787 기동까지 확인했다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
-5. **Codex 신뢰 상태 안내:** 공식 Codex 동작상 project-scoped `.codex/config.toml`은 신뢰된 프로젝트에서만 적용된다. 로컬 Codex CLI 0.147.0에서 `agent-workspace`의 `flowscope` 항목이 실제 발견되는 것을 확인했으며, 사용법에는 프로젝트 신뢰 전제와 `codex mcp get flowscope` 확인 단계를 명시했다. MCP 서버 연결과 Explorer/Judge 전체 실행은 별도 실환경 gate다.
+5. **Codex 신뢰 상태 안내:** 공식 Codex 동작상 project-scoped `.codex/config.toml`은 신뢰된 프로젝트에서만 적용된다. 로컬 Codex CLI 0.147.0에서 `agent-workspace`의 `flowscope` 항목이 실제 발견되는 것을 확인했으며, 사용법에는 프로젝트 신뢰 전제와 `codex mcp get flowscope` 확인 단계를 명시했다. 현재 MCP initialize/tool 목록/status, 독립 Explorer 통제 요청과 범위 밖 차단은 실제 서버에서 통과했다. 구독형 Codex/Claude가 prompt 전체와 Judge를 끝까지 수행하는 과정은 별도 실환경 gate다.
 
-해결 표시는 자동 회귀와 standalone Web 검증까지의 상태다. 현재 재생성 JAR의 Burp load와 실제 MCP Explorer/Judge 전체 실행은 계속 beta gate로 남긴다.
+해결 표시는 항목별 자동 회귀와 명시된 실측 범위까지의 상태다. 복수 로그인 계정, 실제 구독 클라이언트의 Explorer/Judge 전체 실행, 저장·복구·unload는 계속 beta gate로 남긴다.

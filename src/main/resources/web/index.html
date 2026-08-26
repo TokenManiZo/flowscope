@@ -192,7 +192,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2 beta · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.3 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -927,7 +927,7 @@ function renderAccounts(){
     return `<tr><td>${esc(session.fingerprint)}</td><td>${esc(account?account.label:displayIdentity(session.idn))}</td><td>${esc(session.service||'-')}</td><td><span class="confidence ${confidence}">${esc(session.confidence)}</span></td><td>${action}</td></tr>`;}).join(''):'<tr><td colspan="5" style="color:var(--faint)">아직 발견된 인증 세션이 없습니다.</td></tr>';
   body.querySelectorAll('[data-bind]').forEach(button=>button.addEventListener('click',()=>bindSession(button.dataset.bind,button.dataset.service)));
   body.querySelectorAll('[data-unbind]').forEach(button=>button.addEventListener('click',()=>unbindSession(button.dataset.unbind,button.dataset.service)));
-  const human=document.getElementById('humanAccount');if(human){const selected=human.value;human.innerHTML='<option value="">비로그인 pass</option>'+SERVER_ACCOUNTS.map(account=>`<option value="${esc(account.id)}">${esc(account.label)} · ${esc(account.role)}</option>`).join('');if(SERVER_ACCOUNTS.some(account=>account.id===selected))human.value=selected;human.disabled=!!HUMAN_RUN.active;}
+  const human=document.getElementById('humanAccount');if(human){const selected=human.value;const activeIds=new Set(SERVER_SESSIONS.filter(session=>session.status==='ACTIVE'&&session.accountId).map(session=>session.accountId));human.innerHTML='<option value="">비로그인 pass</option>'+SERVER_ACCOUNTS.map(account=>`<option value="${esc(account.id)}" ${activeIds.has(account.id)?'':'disabled'}>${esc(account.label)} · ${esc(account.role)}${activeIds.has(account.id)?'':' · 로그인 필요'}</option>`).join('');if(SERVER_ACCOUNTS.some(account=>account.id===selected&&activeIds.has(account.id)))human.value=selected;human.disabled=!!HUMAN_RUN.active;}
 }
 // 권한별 셀 상세: 같은 권한 신원들의 소스별 판정 나열
 function showGroupCell(role,op,res){

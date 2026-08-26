@@ -235,8 +235,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (action.equals("begin")) {
                 String runId = validatedRunId(form.getOrDefault("runId", "human-" + System.currentTimeMillis()));
                 String accountId = form.getOrDefault("account", "").trim();
-                if (!accountId.isBlank() && state.config().account(accountId).isEmpty()) {
-                    throw new IllegalArgumentException("존재하지 않는 HUMAN 계정입니다.");
+                if (!accountId.isBlank()) {
+                    state.config().account(accountId)
+                            .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 HUMAN 계정입니다."));
+                    SessionBroker broker = state.sessions();
+                    if (broker == null) throw new IllegalStateException("세션 브로커를 사용할 수 없습니다.");
+                    SessionBroker.SessionView session = broker.viewForAccount(accountId)
+                            .orElseThrow(() -> new IllegalArgumentException("HUMAN 계정의 로그인 세션을 먼저 캡처하세요."));
+                    if (session.status() != SessionBroker.Status.ACTIVE) {
+                        throw new IllegalStateException("HUMAN 계정 세션이 ACTIVE가 아닙니다: " + session.status());
+                    }
                 }
                 state.contexts().activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
                         Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, runId,
