@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.11 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.12 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-27이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.12 자동·standalone 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 198 tests, 실패·오류·skip 0 |
+| 세션 귀속 | 같은 service/fingerprint의 다른 account 재연결 거부, broker 충돌 `SUSPECT` 고정, 종료·추가 응답 뒤 비재활성, 충돌 세션 신원 매칭 제외 회귀 통과 |
+| Web 계약 | 동일 identity/resource/source 접근선 집계와 원 CoverageCell 키 보존, 집계 상세 이동, 전체 경로 줄바꿈·동적 높이, graph-state v4, 충돌 행동 문구 회귀 통과 |
+| standalone graph | 번들 합성 샘플에서 USER A→orders:101 HUMAN 접근선이 `H×2` 한 선으로 보이고 클릭 시 원 operation 2개(GET/PATCH), 총 2건, 각 판정·갭 및 원 cell 이동 항목을 표시. 화면 전체 수평 overflow 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.12.jar`, 15,829,896 bytes, SHA-256 `b684549f0468964a6d2193fa64979448eab3950b768e7c39a61864bd3b49980c` |
+| JAR 무결성 | ZIP 무결성 통과, 2,158 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 확장 진입점·SQLite JDBC class/service·번들 고지 포함, 공개 `target/*.jar` 1개 |
+
+이 검증은 계정 귀속 fail-closed와 그래프 표시 중복·라벨·상세 이동을 확인한 것이다. 집계 전후 Java coverage cell과 Evidence는 그대로이고, endpoint 발견률·인가 판정 정확도·오탐·미탐 0을 입증하지 않는다. 실제 Burp Community에서 beta.12 JAR 재로드, 서로 다른 등록 계정에 동일 로그인 정보가 들어오는 충돌 절차, 실제 HUMAN 장경로·대규모 그래프는 수동 gate로 남아 있다.
 
 ## 1.2.0-beta.11 자동·standalone 사전검증
 

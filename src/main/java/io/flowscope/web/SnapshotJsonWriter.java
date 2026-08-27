@@ -103,6 +103,7 @@ public final class SnapshotJsonWriter {
             session.put("hasAuthorization", value.hasAuthorization());
             session.put("cookieCount", value.cookieCount());
             session.put("capturing", value.capturing());
+            session.put("credentialConflict", value.credentialConflict());
         }
         return out;
     }

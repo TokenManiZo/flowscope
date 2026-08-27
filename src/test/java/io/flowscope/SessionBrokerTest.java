@@ -155,6 +155,51 @@ final class SessionBrokerTest {
     }
 
     @Test
+    void credentialBindingConflictCannotReturnToActiveWithoutAReplacementCapture() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile account = new AccountProfile("acct-b", "USER B",
+                "https://api.test:443", AccessRole.USER);
+        String handle = broker.beginCapture(account, Instant.EPOCH);
+        broker.observeRequest(handle, URI.create("https://api.test/login"),
+                Map.of("Cookie", "session=shared"), Instant.EPOCH);
+        broker.markCredentialConflict("acct-b");
+
+        broker.observeResponse(handle, URI.create("https://api.test/me"), 200, null,
+                "{\"id\":\"acct-b\"}", List.of(), Instant.ofEpochSecond(1));
+        broker.endCapture(handle);
+
+        SessionBroker.SessionView view = broker.viewForAccount("acct-b").orElseThrow();
+        assertEquals(SessionBroker.Status.SUSPECT, view.status());
+        assertTrue(view.credentialConflict());
+        assertThrows(IllegalStateException.class, () -> broker.headersForAccount("acct-b",
+                URI.create("https://api.test/me"), ScopePolicy.parse("https://api.test/"),
+                Instant.ofEpochSecond(2)));
+    }
+
+    @Test
+    void conflictedSessionCannotMakeTheOriginalAccountAmbiguous() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile original = new AccountProfile("acct-a", "USER A",
+                "https://api.test:443", AccessRole.USER);
+        String originalHandle = broker.beginCapture(original, Instant.EPOCH);
+        broker.observeRequest(originalHandle, URI.create("https://api.test/login"),
+                Map.of("Cookie", "session=shared"), Instant.EPOCH);
+        broker.observeResponse(originalHandle, URI.create("https://api.test/me"), 200, null,
+                "{\"id\":\"acct-a\"}", List.of(), Instant.ofEpochSecond(1));
+        broker.endCapture(originalHandle);
+
+        AccountProfile conflicting = new AccountProfile("acct-b", "USER B",
+                "https://api.test:443", AccessRole.USER);
+        String conflictingHandle = broker.beginCapture(conflicting, Instant.ofEpochSecond(2));
+        broker.observeRequest(conflictingHandle, URI.create("https://api.test/login"),
+                Map.of("Cookie", "session=shared"), Instant.ofEpochSecond(2));
+        broker.markCredentialConflict("acct-b");
+
+        assertEquals("acct-a", broker.accountForRequest(URI.create("https://api.test/me"),
+                Map.of("Cookie", "session=shared"), Instant.ofEpochSecond(3)).orElseThrow());
+    }
+
+    @Test
     void declaresEveryHeaderThatManagedRunsMustRemoveBeforeInjection() {
         assertEquals(java.util.Set.of("Authorization", "Cookie", "Proxy-Authorization",
                         "X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken"),

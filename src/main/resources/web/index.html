@@ -201,7 +201,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.11 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.12 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -446,7 +446,7 @@ let HUMAN_RUN={active:false,runId:''};
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v3 discards positions saved before source-consistent graph lanes were introduced.
-const GRAPH_STATE_KEY='flowscope.graph-state.v3';
+const GRAPH_STATE_KEY='flowscope.graph-state.v4';
 let GRAPH_STATE=loadGraphState();
 
 function loadGraphState(){
@@ -525,7 +525,9 @@ function renderTrafficStats(routeCount){
 function renderSampleMode(){document.getElementById('sampleBanner').classList.toggle('on',SERVER_SAMPLE_MODE);}
 function cellGKs(c){ const g=[]; if(!c)return g; if(c.conflict)g.push('conflict'); if(c.partial)g.push('partial'); if(c.clean)g.push('clean'); return g; }
 function shortLabel(value,max=34){ const s=String(value||''); if(s.length<=max)return s; const left=Math.ceil((max-1)*.7),right=(max-1)-left; return s.slice(0,left)+'…'+s.slice(-right); }
-function operationLabel(op){const value=withoutService(op),p=value.indexOf(' ');return p>0?value.slice(0,p)+'\n'+shortLabel(value.slice(p+1),36):shortLabel(value,36);}
+function wrapGraphLabel(value,max=36){const chars=Array.from(String(value||'')),lines=[];for(let i=0;i<chars.length;i+=max)lines.push(chars.slice(i,i+max).join(''));return lines.join('\n');}
+function operationLabel(op,max=36){const value=withoutService(op),p=value.indexOf(' ');return p>0?value.slice(0,p)+'\n'+wrapGraphLabel(value.slice(p+1),max):wrapGraphLabel(value,max);}
+function nodeHeight(label,min=64){return Math.max(min,24+String(label||'').split('\n').length*15);}
 function sourceMark(sources){return ['human','scanner','llm'].filter(s=>sources.includes(s)).map(s=>SRC[s].ab).join('·')||'-';}
 function sourceSetFor(cells,predicate){const found=new Set();cells.filter(predicate).forEach(c=>c.observed.filter(s=>activeSources[s]).forEach(s=>found.add(s)));return [...found];}
 function refreshSourceFilters(){
@@ -565,7 +567,7 @@ function highlightGap(gk){
     if(activeGap==='crossgap'){
       cy.edges('[etype="candidate"]').removeClass('hide').addClass('ghl');
       cy.edges('[etype="access"],[etype="owns"],[etype="calls"]').addClass('gdim');
-    } else {      cy.edges('[etype="access"]').forEach(e=>{ const gks=cellGKs(MODEL.cells[e.data('key')]);
+    } else {      cy.edges('[etype="access"]').forEach(e=>{ const gks=String(e.data('gapKeys')||'').split(',').filter(Boolean);
         if(gks.includes(activeGap)) e.addClass('ghl'); else e.addClass('gdim'); });
       cy.edges('[etype="owns"],[etype="calls"]').addClass('gdim');
     }
@@ -618,42 +620,50 @@ function renderGraph(){
   graphStat.textContent=`표시: 사용자 ${graphIdentities.length} · 객체 ${visibleResources.length}/${graphResources.length} · 관측 API ${visibleOperations.length}/${graphOperations.length} · 보조 흐름 ${supportEvents.length} · 미요청 route ${routeCandidates.length}/${(MODEL.routeCandidates||[]).length}`+(GRAPH_HIDDEN?' · +그룹 노드를 눌러 펼치기':'');
   collapseGraph.disabled=GRAPH_LIMITS.operations===GRAPH_PAGE_SIZE&&GRAPH_LIMITS.resources===GRAPH_PAGE_SIZE;
   const nodes=[],edges=[]; const y=(n,i)=>84+i*72;
-  const stageWidth=Math.max(560,document.getElementById('cy').clientWidth||560);
-  const identityX=70,operationX=Math.max(410,stageWidth-150),resourceX=Math.round((identityX+operationX)/2);
+  const stageWidth=Math.max(760,document.getElementById('cy').clientWidth||760);
+  const operationWidth=stageWidth<1000?280:320,operationTextWidth=operationWidth-64;
+  const operationChars=Math.max(22,Math.floor(operationTextWidth/7));
+  const identityX=70,operationX=stageWidth-operationWidth/2-18,resourceX=Math.round((identityX+operationX)/2);
+  const operationPositions=new Map();let operationCursor=24;
+  const placeOperation=(id,label)=>{const height=nodeHeight(label);const position={x:operationX,y:operationCursor+height/2};operationCursor+=height+14;operationPositions.set(id,position);return position;};
+  let resourceCursor=24;
+  const placeResource=label=>{const height=nodeHeight(label,54),position={x:resourceX,y:resourceCursor+height/2};resourceCursor+=height+14;return position;};
   // 배치: 요청자(왼) → 객체(가운데) → 엔드포인트(오른쪽). 소유자는 별도 노드로 표시하지 않고 판정·근거에서만 사용.
   graphIdentities.forEach((id,i)=>{const sources=sourceSetFor(cellValues,c=>c.idn===id),mark=sourceMark(sources);nodes.push({data:{id:'I:'+id,label:displayIdentity(id)+'\n['+mark+']',fullLabel:displayIdentity(id)+' · '+id+' · '+MODEL.roles[id]+' · 소스 '+mark,ntype:'identity',idn:id,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('I:'+id,{x:identityX,y:y(graphIdentities.length,i)})});});
-  visibleResources.forEach((r,i)=>{const sources=sourceSetFor(cellValues,c=>c.resource===r),mark=sourceMark(sources);nodes.push({data:{id:'R:'+r,label:shortLabel(withoutService(r),24)+'\n['+mark+']',fullLabel:r+' · 소스 '+mark,ntype:'resource',resource:r,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('R:'+r,{x:resourceX,y:y(visibleResources.length,i)})});});
-  const operationRows=visibleOperations.length+routeCandidates.length;
-  visibleOperations.forEach((op,i)=>{const sources=sourceSetFor(cellValues,c=>c.op===op),mark=sourceMark(sources);nodes.push({data:{id:'O:'+op,label:operationLabel(op)+'\n['+mark+']',fullLabel:op+' · 소스 '+mark,ntype:'operation',op:op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('O:'+op,{x:operationX,y:y(operationRows,i)})});});
-  routeCandidates.forEach((candidate,i)=>{const id='U:'+candidate.service+' '+candidate.method+' '+candidate.pathTemplate;const label=(candidate.method==='UNKNOWN'?'?':candidate.method)+'\n'+shortLabel(candidate.pathTemplate,36)+'\n[미요청]';nodes.push({data:{id,label,fullLabel:candidate.service+' · '+candidate.method+' '+candidate.pathTemplate+' · '+(candidate.provenanceTypes||[]).join(', '),ntype:'routeCandidate',candidate},position:savedPosition(id,{x:operationX,y:y(operationRows,visibleOperations.length+i)})});});
+  visibleResources.forEach(r=>{const sources=sourceSetFor(cellValues,c=>c.resource===r),mark=sourceMark(sources),label=wrapGraphLabel(withoutService(r),22)+'\n['+mark+']';nodes.push({data:{id:'R:'+r,label,textWidth:150,nodeHeight:nodeHeight(label,54),fullLabel:r+' · 소스 '+mark,ntype:'resource',resource:r,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('R:'+r,placeResource(label))});});
+  visibleOperations.forEach(op=>{const sources=sourceSetFor(cellValues,c=>c.op===op),mark=sourceMark(sources),id='O:'+op,label=operationLabel(op,operationChars)+'\n['+mark+']';nodes.push({data:{id,label,nodeWidth:operationWidth,textWidth:operationTextWidth,nodeHeight:nodeHeight(label),fullLabel:op+' · 소스 '+mark,ntype:'operation',op:op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition(id,placeOperation(id,label))});});
+  routeCandidates.forEach(candidate=>{const id='U:'+candidate.service+' '+candidate.method+' '+candidate.pathTemplate;const label=(candidate.method==='UNKNOWN'?'?':candidate.method)+'\n'+wrapGraphLabel(candidate.pathTemplate,operationChars)+'\n[미요청]';nodes.push({data:{id,label,nodeWidth:operationWidth,textWidth:operationTextWidth,nodeHeight:nodeHeight(label),fullLabel:candidate.service+' · '+candidate.method+' '+candidate.pathTemplate+' · '+(candidate.provenanceTypes||[]).join(', '),ntype:'routeCandidate',candidate},position:savedPosition(id,placeOperation(id,label))});});
   const nodeIds=new Set(nodes.map(node=>node.data.id));
-  supportOps.forEach((op,i)=>{const id='O:'+op;if(nodeIds.has(id))return;nodeIds.add(id);const related=supportEvents.filter(event=>event.op===op);const sources=[...new Set(related.map(event=>event.source))];nodes.push({data:{id,label:operationLabel(op)+'\n[보조]',fullLabel:op+' · 메인 비교 제외 보조 흐름',ntype:'supportOperation',op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition(id,{x:operationX,y:y(operationRows+supportOps.length,operationRows+i)})});});
-  supportEvents.forEach((event,i)=>{const identityId='I:'+event.idn,operationId='O:'+event.op;if(!nodeIds.has(identityId)){nodeIds.add(identityId);nodes.push({data:{id:identityId,label:displayIdentity(event.idn)+'\n['+SRC[event.source].ab+']',fullLabel:displayIdentity(event.idn)+' · 보조 흐름',ntype:'identity',idn:event.idn,sourceMask:event.source,sourceCount:1},position:savedPosition(identityId,{x:identityX,y:y(operationRows+supportOps.length,operationRows+supportOps.indexOf(event.op))})});}if(nodeIds.has(operationId))edges.push({data:{id:'SUP:'+event.eventId,source:identityId,target:operationId,etype:'support',src:event.source,op:event.op,idn:event.idn,label:'보조'}});});
-  if(hiddenResources)nodes.push({data:{id:'G:resources',label:'+'+hiddenResources+'개 객체\n클릭하여 펼치기',fullLabel:'숨긴 객체 '+hiddenResources+'개',ntype:'group',groupType:'resources'},position:savedPosition('G:resources',{x:resourceX,y:y(visibleResources.length+1,visibleResources.length)})});
-  if(hiddenOperations)nodes.push({data:{id:'G:operations',label:'+'+hiddenOperations+'개 API\n클릭하여 펼치기',fullLabel:'숨긴 API '+hiddenOperations+'개',ntype:'group',groupType:'operations'},position:savedPosition('G:operations',{x:operationX,y:y(visibleOperations.length+1,visibleOperations.length)})});
-  const calls=new Set();
+  supportOps.forEach(op=>{const id='O:'+op;if(nodeIds.has(id))return;nodeIds.add(id);const related=supportEvents.filter(event=>event.op===op),sources=[...new Set(related.map(event=>event.source))],label=operationLabel(op,operationChars)+'\n[보조]';nodes.push({data:{id,label,nodeWidth:operationWidth,textWidth:operationTextWidth,nodeHeight:nodeHeight(label),fullLabel:op+' · 메인 비교 제외 보조 흐름',ntype:'supportOperation',op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition(id,placeOperation(id,label))});});
+  supportEvents.forEach(event=>{const identityId='I:'+event.idn,operationId='O:'+event.op;if(!nodeIds.has(identityId)){nodeIds.add(identityId);nodes.push({data:{id:identityId,label:displayIdentity(event.idn)+'\n['+SRC[event.source].ab+']',fullLabel:displayIdentity(event.idn)+' · 보조 흐름',ntype:'identity',idn:event.idn,sourceMask:event.source,sourceCount:1},position:savedPosition(identityId,{x:identityX,y:(operationPositions.get(operationId)||{y:84}).y})});}if(nodeIds.has(operationId))edges.push({data:{id:'SUP:'+event.eventId,source:identityId,target:operationId,etype:'support',src:event.source,op:event.op,idn:event.idn,label:'보조'}});});
+  if(hiddenResources)nodes.push({data:{id:'G:resources',label:'+'+hiddenResources+'개 객체\n클릭하여 펼치기',fullLabel:'숨긴 객체 '+hiddenResources+'개',ntype:'group',groupType:'resources'},position:savedPosition('G:resources',{x:resourceX,y:resourceCursor+24})});
+  if(hiddenOperations)nodes.push({data:{id:'G:operations',label:'+'+hiddenOperations+'개 API\n클릭하여 펼치기',fullLabel:'숨긴 API '+hiddenOperations+'개',ntype:'group',groupType:'operations'},position:savedPosition('G:operations',{x:operationX,y:operationCursor+36})});
+  const calls=new Set(),accessByRelation=new Map();
+  const mergeVerdict=(left,right)=>left==='suspicious'||right==='suspicious'?'suspicious':left===right?left:'undecided';
+  const accessTurn=(idn,source)=>30+Math.max(0,graphIdentities.indexOf(idn))*24+Math.max(0,['human','scanner','llm'].indexOf(source))*7;
   cellValues.forEach(c=>{
     if(c.resource&&!visibleResources.includes(c.resource))return;
     if(!c.resource&&!visibleOperations.includes(c.op))return;
     c.observed.filter(s=>activeSources[s]).forEach(s=>{
       const count=(c.bySrc[s]||[]).length;
       // 객체가 있으면 요청자→객체, 없으면 요청자→엔드포인트로 직접 연결한다.
-      const accessTarget=c.resource?'R:'+c.resource:'O:'+c.op;
-      edges.push({data:{id:'A:'+cellKey(c.idn,c.op,c.resource)+':'+s,source:'I:'+c.idn,target:accessTarget,etype:'access',
-        src:s,idn:c.idn,op:c.op,resource:c.resource,verdict:c.perSrc[s],count,label:SRC[s].ab+(count>1?'×'+count:''),key:cellKey(c.idn,c.op,c.resource)}});
+      const accessTarget=c.resource?'R:'+c.resource:'O:'+c.op,cell=cellKey(c.idn,c.op,c.resource);
+      if(c.resource){const relation=c.idn+'|'+c.resource+'|'+s,existing=accessByRelation.get(relation);if(existing){existing.count+=count;existing.keys.push(cell);existing.gapKeys.push(...cellGKs(c));existing.verdict=mergeVerdict(existing.verdict,c.perSrc[s]);}else accessByRelation.set(relation,{id:'A:'+relation,source:'I:'+c.idn,target:accessTarget,etype:'access',src:s,idn:c.idn,resource:c.resource,verdict:c.perSrc[s],count,keys:[cell],gapKeys:cellGKs(c),taxiTurn:accessTurn(c.idn,s)});}
+      else edges.push({data:{id:'A:'+cell+':'+s,source:'I:'+c.idn,target:accessTarget,etype:'access',src:s,idn:c.idn,op:c.op,resource:null,verdict:c.perSrc[s],count,label:SRC[s].ab+(count>1?'×'+count:''),key:cell,keys:JSON.stringify([cell]),gapKeys:cellGKs(c).join(','),taxiTurn:accessTurn(c.idn,s)}});
       if(c.resource){const ek=c.idn+'|'+c.resource+'|'+c.op+'|'+s;if(visibleOperations.includes(c.op)&&!calls.has(ek)){calls.add(ek);edges.push({data:{id:'C:'+ek,source:'R:'+c.resource,target:'O:'+c.op,etype:'calls',src:s,idn:c.idn,op:c.op,resource:c.resource,count}});}}
     });
   });
+  accessByRelation.forEach(value=>edges.push({data:{...value,key:value.keys[0],keys:JSON.stringify(value.keys),gapKeys:[...new Set(value.gapKeys)].join(','),label:SRC[value.src].ab+(value.count>1?'×'+value.count:'')}}));
   (MODEL.candidates||[]).filter(cn=>(ACTIVE_IDENTITY==='all'||cn.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(cn.op)&&visibleResources.includes(cn.resource)).slice(0,40).forEach((cn,i)=>{ edges.push({data:{id:'X:'+i,source:'I:'+cn.idn,target:'R:'+cn.resource,etype:'candidate',idn:cn.idn,op:cn.op,resource:cn.resource,key:cellKey(cn.idn,cn.op,cn.resource),risk:cn.risk,label:'미교차'}}); });
   if(cy){captureGraphState();cy.destroy();}
   cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},
     style:[
       {selector:'node',style:{'label':'data(label)','color':css('--text'),'font-family':'JetBrains Mono, Consolas, monospace','font-size':'12px','font-weight':500,'text-wrap':'wrap','text-valign':'center','text-halign':'center','text-max-width':'208px','width':'188px','height':'54px','border-width':1.4,'border-color':css('--line2'),'background-color':css('--panel2')}},
       {selector:'node[ntype="identity"]',style:{'shape':'round-rectangle','background-color':'#E7F0FB','border-color':css('--accent'),'width':'118px','height':'48px'}},
-      {selector:'node[ntype="operation"]',style:{'shape':'hexagon','background-color':'#F3E9F9','width':'248px','height':'64px','border-color':'#DFC9EC'}},
-      {selector:'node[ntype="supportOperation"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'248px','height':'64px','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
-      {selector:'node[ntype="routeCandidate"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'248px','height':'64px','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
-      {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'54px'}},
+      {selector:'node[ntype="operation"]',style:{'shape':'hexagon','background-color':'#F3E9F9','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere','border-color':'#DFC9EC'}},
+      {selector:'node[ntype="supportOperation"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
+      {selector:'node[ntype="routeCandidate"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
+      {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere'}},
       {selector:'node[ntype="group"]',style:{'shape':'round-rectangle','background-color':'#FFFFFF','border-color':css('--accent'),'border-style':'dashed','border-width':2,'color':css('--accent'),'width':'164px','height':'48px'}},
       {selector:'node[sourceMask="human"]',style:{'border-color':css('--human'),'border-style':'solid','border-width':2}},
       {selector:'node[sourceMask="scanner"]',style:{'border-color':css('--scanner'),'border-style':'dashed','border-width':2}},
@@ -663,7 +673,7 @@ function renderGraph(){
       {selector:'edge',style:{'curve-style':'taxi','taxi-direction':'horizontal','taxi-turn':'48px','taxi-turn-min-distance':'14px','width':1.6,'target-arrow-shape':'triangle','arrow-scale':.8,'opacity':.92}},
       {selector:'edge[etype="calls"]',style:{'curve-style':'straight','width':1,'line-color':css('--line'),'target-arrow-color':css('--line')}},
       {selector:'edge[etype="owns"]',style:{'line-color':'#2d6e63','target-arrow-color':'#2d6e63','line-style':'dashed','width':1.1,'opacity':.5}},
-      {selector:'edge[etype="access"]',style:{'width':2,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--muted'),'text-background-color':css('--bg'),'text-background-opacity':.92,'text-background-padding':'2px'}},
+      {selector:'edge[etype="access"]',style:{'width':2,'taxi-turn':'data(taxiTurn)','label':'data(label)','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--muted'),'text-background-color':css('--bg'),'text-background-opacity':.92,'text-background-padding':'2px'}},
       {selector:'edge[etype="candidate"]',style:{'taxi-turn':'86px','line-style':'dotted','line-color':css('--suspicious'),'target-arrow-color':css('--suspicious'),'width':1.6,'opacity':.7,'target-arrow-shape':'triangle','arrow-scale':.7,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--suspicious')}},
       {selector:'edge[etype="support"]',style:{'line-color':css('--faint'),'target-arrow-color':css('--faint'),'width':1.2,'opacity':.65,'label':'','font-size':'9px','color':css('--faint')}},
       {selector:'edge.hide',style:{'display':'none'}},
@@ -675,9 +685,9 @@ function renderGraph(){
       {selector:'node.pathsel',style:{'border-width':3.5,'border-color':css('--accent')}},
       {selector:'.pathdim',style:{'opacity':.08}},
       /* 소스별 선 스타일 */
-      {selector:'edge[src="human"]',style:{'line-style':'solid','taxi-turn':'38px'}},
-      {selector:'edge[src="scanner"]',style:{'line-style':'dashed','taxi-turn':'54px'}},
-      {selector:'edge[src="llm"]',style:{'line-style':'dotted','taxi-turn':'70px'}},
+      {selector:'edge[src="human"]',style:{'line-style':'solid'}},
+      {selector:'edge[src="scanner"]',style:{'line-style':'dashed'}},
+      {selector:'edge[src="llm"]',style:{'line-style':'dotted'}},
       {selector:'edge.sel,edge.hover,edge.ghl',style:{'width':3.4,'label':'data(label)'}},
       {selector:'edge.hide',style:{'display':'none'}},
       /* 소스 뷰: 소스 색 */
@@ -698,7 +708,7 @@ function renderGraph(){
   cy.on('tap','node[ntype="supportOperation"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
   cy.on('tap','node[ntype="routeCandidate"]',e=>{highlightGraphPath(e.target);showRouteCandidate(e.target.data('candidate'));});
   cy.on('tap','node[ntype="identity"],node[ntype="resource"]',e=>{highlightGraphPath(e.target);showEntityNode(e.target);});
-  cy.on('tap','edge[etype="access"]',e=>{highlightGraphPath(e.target);showCell(e.target.data('key'));});
+  cy.on('tap','edge[etype="access"]',e=>{highlightGraphPath(e.target);showAccessEdge(e.target);});
   cy.on('tap','edge[etype="candidate"]',e=>{highlightGraphPath(e.target);showEmpty(e.target.data('key'));});
   cy.on('tap','edge[etype="calls"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
   cy.on('tap','edge[etype="support"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
@@ -864,6 +874,31 @@ function showCell(key){
     `<button id="cellEvidence" class="go">이 API의 요청·응답 보기</button>`;
   document.getElementById('cellEvidence').onclick=()=>showOperation(c.op);
 }
+function accessCellKeys(edge){
+  if(!edge)return [];
+  try{
+    const parsed=JSON.parse(String(edge.data('keys')||'[]'));
+    if(Array.isArray(parsed))return [...new Set(parsed.filter(key=>typeof key==='string'&&key))];
+  }catch(_){}
+  const key=edge.data('key');return key?[key]:[];
+}
+function showAccessEdge(edge){
+  if(!MODEL||!edge)return;
+  const keys=accessCellKeys(edge),cells=keys.map(key=>({key,cell:MODEL.cells[key]})).filter(item=>item.cell);
+  if(cells.length<=1){if(cells.length)showCell(cells[0].key);return;}
+  cells.sort((left,right)=>left.cell.op.localeCompare(right.cell.op));
+  const source=edge.data('src'),sourceInfo=SRC[source]||{n:source||'미상',ab:'?'},requestCount=Number(edge.data('count')||0);
+  detailEmpty.style.display='none';detailFull.style.display='flex';
+  dKind.textContent='통합 접근 관계 · 원본 조합 '+cells.length+'개';
+  dTitle.textContent=displayIdentity(edge.data('idn'))+' → '+resourceLabel(edge.data('resource'));
+  const items=cells.map((item,index)=>{const c=item.cell,verdict=c.perSrc[source]||c.verdict||'undecided',count=(c.bySrc[source]||[]).length,gaps=cellGKs(c).map(key=>key==='conflict'?'판정 불일치':key==='partial'?'일부만 발견':'정상만').join(' · ');
+    return `<div class="ci" data-access-index="${index}"><span><b>${esc(c.op)}</b><br><span style="color:var(--faint)">${esc(sourceInfo.n)} ${count}건${gaps?' · '+esc(gaps):''}</span></span><span class="vv" style="color:${css(VC[verdict]||'--faint')}">${esc(V[verdict]||verdict)} ▸</span></div>`;
+  }).join('');
+  dBody.innerHTML=`<div class="field"><div class="lbl">표시 통합 기준</div><div class="val">같은 요청자·객체·소스의 접근선 ${cells.length}개를 한 선으로 표시했습니다. 원본 Evidence와 operation별 판정은 삭제하거나 합치지 않았습니다.</div></div>`+
+    `<div class="field"><div class="lbl">${esc(sourceInfo.n)} 관측</div><div class="val">총 ${requestCount}건 · operation ${cells.length}개</div></div>`+
+    `<div class="field"><div class="lbl">포함된 API · 클릭하여 접근 조합 보기</div><div class="clist">${items}</div></div>`;
+  dBody.querySelectorAll('[data-access-index]').forEach(item=>item.addEventListener('click',()=>showCell(cells[Number(item.dataset.accessIndex)].key)));
+}
 function showEntityNode(node){
   if(!MODEL||!node)return;const type=node.data('ntype'),id=type==='identity'?node.data('idn'):node.data('resource');
   const related=Object.values(MODEL.cells).filter(c=>type==='identity'?c.idn===id:c.resource===id);
@@ -1002,6 +1037,7 @@ async function resetIdentityMappings(){
 }
 function sessionStatusView(managed){
   if(!managed)return {label:'로그인 필요',tone:'warn',help:'로그인 연결을 눌러 HUMAN 8080 브라우저에서 이 계정으로 로그인하세요.'};
+  if(managed.credentialConflict)return {label:'동일 인증정보 충돌',tone:'warn',help:'이 로그인 정보가 이미 다른 등록 계정에 연결되어 자동 연결을 차단했습니다. 세션을 폐기한 뒤 올바른 계정으로 다시 로그인하세요.'};
   if(managed.status==='CAPTURING')return {label:'로그인 확인 중',tone:'wait',help:'HUMAN 8080 브라우저에서 로그인하고 인증된 페이지가 열린 뒤 캡처 종료를 누르세요.'};
   if(managed.status==='ACTIVE')return {label:'사용 가능',tone:'ok',help:'현재 세션을 HUMAN pass, ZAP, LLM 탐색에 사용할 수 있습니다.'};
   if(managed.status==='UNVERIFIED')return {label:'로그인 확인 필요',tone:'warn',help:'인증 성공 응답이 확인되지 않았습니다. 다시 캡처해 로그인 후 인증된 페이지까지 여세요.'};

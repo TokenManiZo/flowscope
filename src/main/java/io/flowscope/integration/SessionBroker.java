@@ -30,7 +30,8 @@ public final class SessionBroker implements AutoCloseable {
 
     public record SessionView(String handle, String accountId, String accountLabel, String service,
                               Status status, Instant createdAt, Instant lastUsedAt, Instant expiresAtHint,
-                              boolean hasAuthorization, int cookieCount, boolean capturing) {}
+                              boolean hasAuthorization, int cookieCount, boolean capturing,
+                              boolean credentialConflict) {}
 
     private record CookieKey(String domain, String path, String name) {}
 
@@ -72,6 +73,7 @@ public final class SessionBroker implements AutoCloseable {
         final Map<String, Secret> headers = new LinkedHashMap<>();
         Instant lastUsedAt;
         boolean responseConfirmed;
+        boolean credentialConflict;
         Status status = Status.CAPTURING;
         boolean capturing = true;
 
@@ -119,8 +121,22 @@ public final class SessionBroker implements AutoCloseable {
     public synchronized void endCapture(String handle) {
         ManagedSession session = required(handle);
         session.capturing = false;
+        if (session.credentialConflict) {
+            session.status = Status.SUSPECT;
+            return;
+        }
         if (!hasMaterial(session, Instant.now())) session.status = Status.REAUTH_REQUIRED;
         else session.status = session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
+    }
+
+    /** 같은 인증 지문이 다른 등록 계정에 이미 묶인 경우 현재 세션을 자동 병합하지 않고 사용 중지한다. */
+    public synchronized void markCredentialConflict(String accountId) {
+        String handle = handleByAccount.get(accountId);
+        ManagedSession session = handle == null ? null : byHandle.get(handle);
+        if (session == null) return;
+        session.credentialConflict = true;
+        session.capturing = false;
+        session.status = Status.SUSPECT;
     }
 
     public synchronized Optional<String> activeCaptureForService(String service) {
@@ -133,6 +149,11 @@ public final class SessionBroker implements AutoCloseable {
                                             Instant now) {
         ManagedSession session = requiredForTarget(handle, target);
         Instant time = now == null ? Instant.now() : now;
+        session.lastUsedAt = time;
+        if (session.credentialConflict) {
+            session.status = Status.SUSPECT;
+            return;
+        }
         String authorization = header(requestHeaders, "Authorization");
         if (authorization != null && !authorization.isBlank()) replaceHeader(session, "Authorization", authorization);
         for (String csrf : List.of("X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken")) {
@@ -141,7 +162,6 @@ public final class SessionBroker implements AutoCloseable {
         }
         String cookieHeader = header(requestHeaders, "Cookie");
         if (cookieHeader != null) captureRequestCookies(session, target, cookieHeader, time);
-        session.lastUsedAt = time;
         if (hasMaterial(session, time)) {
             session.status = session.capturing ? Status.CAPTURING
                     : session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
@@ -152,11 +172,15 @@ public final class SessionBroker implements AutoCloseable {
                                              List<String> setCookieHeaders, Instant now) {
         ManagedSession session = requiredForTarget(handle, target);
         Instant time = now == null ? Instant.now() : now;
+        session.lastUsedAt = time;
+        if (session.credentialConflict) {
+            session.status = Status.SUSPECT;
+            return;
+        }
         for (String value : setCookieHeaders == null ? List.<String>of() : setCookieHeaders) {
             captureSetCookie(session, target, value, time);
         }
         pruneExpired(session, time);
-        session.lastUsedAt = time;
         if (!hasMaterial(session, time)) session.status = Status.REAUTH_REQUIRED;
         else if (status == 401 || isLoginRedirect(status, location)
                 || containsInvalidToken(body)) session.status = Status.SUSPECT;
@@ -227,6 +251,7 @@ public final class SessionBroker implements AutoCloseable {
         Map<String, String> suppliedCookies = parseCookieHeader(header(requestHeaders, "Cookie"));
         List<String> matches = new ArrayList<>();
         for (ManagedSession session : byHandle.values()) {
+            if (session.credentialConflict) continue;
             if (!sameService(session, target)) continue;
             pruneExpired(session, time);
             boolean authorizationMatch = authorization != null
@@ -288,7 +313,8 @@ public final class SessionBroker implements AutoCloseable {
                 .filter(java.util.Objects::nonNull).min(Instant::compareTo).orElse(null);
         return new SessionView(session.handle, session.account.id(), session.account.label(),
                 session.account.service(), session.status, session.createdAt, session.lastUsedAt, expires,
-                session.headers.containsKey("Authorization"), session.cookies.size(), session.capturing);
+                session.headers.containsKey("Authorization"), session.cookies.size(), session.capturing,
+                session.credentialConflict);
     }
 
     private static void replaceHeader(ManagedSession session, String name, String value) {

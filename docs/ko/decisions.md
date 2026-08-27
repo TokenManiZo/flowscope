@@ -723,3 +723,13 @@
 - **기각:** 객체→API 구간만 source 색으로 칠하면 경로 시작점의 출처가 다시 중립으로 남는다. 데이터 의존선을 범례만 추가해 메인 graph에 유지하면 접근 관계와 값 전달 관계라는 서로 다른 edge 의미가 한 화면에 계속 섞인다. 그래프 문맥 없는 역할 순환은 입력이 빠르지만 오조작과 정책 출처 불명을 만든다.
 - **호환:** 분석·coverage·gap·verdict 계산은 바꾸지 않는다. 이전 수동 node 위치가 제거된 edge 의미를 전제로 하므로 local graph-state key를 v3으로 올려 새 배치를 사용한다.
 - **검증·한계:** Web 정적 계약은 source 수량·0건 비활성·필터 재구축·전체 경로 source 문법·flow edge 부재·role cycle 부재를 검사한다. standalone 렌더와 실제 Burp beta.11 재로드는 각각 완료 결과를 `beta-validation.md`에 기록하며, 이 UI 수정은 탐지율 개선이나 오탐·미탐 0의 근거가 아니다.
+
+## D-077 · 계정 귀속과 그래프 중복 = 엔진은 유일성, 화면은 비파괴 집계
+
+- **문제:** `(service, fingerprint)` binding을 단순 덮어쓰면 USER A의 동일 인증정보를 USER B에 다시 등록하는 순간 과거 신원 귀속이 조용히 바뀐다. 그래프에서는 같은 요청자·객체·source가 여러 operation을 호출할 때 접근선이 같은 좌표에 중첩되고, 긴 operation을 중간 생략해 사용자가 선과 경로를 구분하기 어려웠다.
+- **세션 결정:** service-scoped fingerprint는 한 account에만 연결한다. 다른 account로의 두 번째 binding은 예외로 거부하고, 해당 로그인 캡처 broker session을 `SUSPECT` 충돌 상태로 고정해 이후 응답이 와도 `ACTIVE`로 돌아가지 않게 한다. 충돌 세션은 요청 자격증명 신원 매칭과 세션 주입에서 제외한다. 명시적으로 기존 연결을 해제한 뒤 재연결하는 절차만 허용한다.
+- **그래프 결정:** 동일 `(identity, resource, source)`의 `identity → resource` 접근선만 표시 집계한다. 총 관측 수와 원 CoverageCell 키 전체를 edge data에 보존하고, 클릭하면 operation별 관측 수·verdict·gap을 나열해 기존 cell/Evidence 상세로 이동한다. `resource → operation` 선과 Java의 coverage/gap/verdict 모델은 변경하지 않는다. 객체 없는 `identity → operation`은 이미 cell당 하나이므로 기존 반복 count만 유지한다.
+- **라벨 결정:** operation/resource 원문은 중간 생략하지 않고 문자 단위 줄바꿈과 내용 기반 node 높이를 사용한다. Cytoscape canvas의 최소 논리 폭과 identity/source 기반 taxi turn을 적용해 같은 좌표의 선을 구분하되, force layout·새 그래프 라이브러리·전체 UI 재설계는 이번 범위에서 도입하지 않는다.
+- **기각:** 화면에서 중복 계정 카드만 숨기면 저장 binding과 broker 귀속 오염이 남는다. 동일 객체의 모든 operation을 하나의 coverage cell로 합치면 판정과 Evidence 단위가 손실된다. 긴 경로를 tooltip에만 남기고 계속 생략하면 screenshot·발표·비교 시 경로가 보이지 않는다. Dagre/ELK로 전체 배치를 교체하는 안은 현재 결함보다 변경 범위와 회귀 위험이 커 후속 대규모 그래프 성능 측정 전에는 채택하지 않는다.
+- **검증·한계:** 두 번째 binding 거부, 충돌 상태 비활성·비재활성, 기존 account 신원 매칭 유지, Web 집계·원키·상세·줄바꿈 계약을 자동 회귀로 고정한다. standalone 샘플에서 렌더와 console을 확인한다. 집계는 표시 중복을 줄일 뿐 endpoint 발견률이나 판정 정확도를 높이지 않으며, 전체 edge crossing 최소화 문제를 해결했다고 주장하지 않는다. 실제 beta.12 Burp 재로드와 복수 계정 충돌 흐름은 수동 gate다.
+- **상태:** beta.12 코드·자동 회귀·standalone 검증 완료, Burp 수동 gate 대기.

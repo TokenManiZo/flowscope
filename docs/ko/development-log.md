@@ -1125,6 +1125,45 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 이 변경은 관측 데이터의 시각적 출처와 조작 정합성을 고친 것이며 endpoint 발견률·인가 판정 정확도를 높였다고 주장하지 않는다.
 - 실제 Burp에서 실행 중인 beta.10은 beta.11 JAR을 재로드해야 변경이 보인다.
 
+## 2026-08-27 · 1.2.0-beta.12 · 세션 귀속 충돌 차단과 그래프 비파괴 집계
+
+### 목표와 성공 조건
+- 같은 service의 인증 지문 하나가 두 등록 계정으로 조용히 이동하지 않아야 한다.
+- 충돌 캡처는 이후 응답이나 캡처 종료로 `ACTIVE`가 되지 않고 신원 귀속·세션 주입에서 제외돼야 한다.
+- 같은 요청자·객체·source의 중복 접근선을 한 선으로 보여 주되 원 operation·CoverageCell·Evidence·판정은 잃지 않아야 한다.
+- 긴 API·객체 경로를 노드에서 생략하지 않고, 집계선을 클릭해 원 접근 조합으로 이동할 수 있어야 한다.
+- 전체 회귀, standalone 상호작용, 공개 JAR 하나, 문서·버전 일치를 확인한다.
+
+### 개발·수정
+- `AnalysisConfig.bindSession`을 `putIfAbsent` 유일성 계약으로 바꾸고 기존/요청 account ID를 가진 전용 충돌 예외를 추가했다.
+- Burp 캡처 연결에서 충돌을 별도로 처리해 현재 broker 세션을 `SUSPECT`로 고정했다. 충돌 상태는 캡처 종료·요청·응답 뒤에도 유지하고 자격증명 신원 매칭에서 제외한다.
+- broker Web view와 snapshot JSON에 `credentialConflict`를 추가하고 계정 카드에 `동일 인증정보 충돌`과 폐기·재로그인 안내를 표시했다.
+- graph의 동일 `(identity, resource, source)` 접근선을 표시 단계에서 집계했다. 총 관측 수, 원 cell 키, gap 키, 보수적으로 병합한 표시 verdict를 edge에 보존하며 Java 분석 모델은 바꾸지 않았다.
+- 집계선 상세에 원 operation별 source 관측 수·판정·갭을 나열하고 각 원 CoverageCell 상세로 이동하게 했다.
+- operation/resource 라벨의 중간 생략을 제거하고 전체 문자열 줄바꿈·동적 높이·최소 논리 폭을 적용했다. identity/source 기반 taxi turn과 graph-state v4로 이전 수동 배치 오염을 피했다.
+
+### 이유
+- binding 덮어쓰기는 계정 카드 중복보다 심각한 데이터 무결성 결함이다. 과거 USER A Evidence가 USER B로 재해석될 수 있어 UI에서 숨기는 대신 엔진에서 fail-closed해야 한다.
+- 동일 접근선을 그대로 겹치면 몇 개의 관계인지 알 수 없지만, coverage cell 자체를 합치면 operation별 인가 판정과 Evidence가 손실된다. 따라서 화면 edge만 집계하고 원키를 역참조하는 방식으로 제한했다.
+- 긴 경로를 tooltip에만 남기는 방식은 한눈에 경로를 비교한다는 그래프 목적을 충족하지 못한다. 전체 Dagre/ELK 교체는 이번 결함 수정에 비해 범위와 회귀 위험이 커 기각하고 현재 고정 열 배치 안에서 라벨과 lane만 수정했다.
+
+### 영향 파일
+- 세션 귀속·Burp 연결: `AnalysisConfig`, `SessionBroker`, `FlowScopeExtension`, `SnapshotJsonWriter`
+- Web: `src/main/resources/web/index.html`
+- 회귀: `AccountSessionTest`, `SessionBrokerTest`, `FlowScopeWebServerTest`
+- 버전·공개 문서: `pom.xml`, 루트/영문 README·CHANGELOG, 한국어 설계·결정·계획·화면 근거·검증, 이 로그
+
+### 검증
+- 집중 회귀 `mvn -Dtest=AccountSessionTest,SessionBrokerTest,FlowScopeWebServerTest test` 통과.
+- 최종 `mvn clean verify`: JDK 26, Java `--release 21`, 198 tests, 실패·오류·skip 0.
+- standalone beta.12 합성 샘플에서 `H×2` 집계선을 클릭해 USER A→orders:101 원 operation 2개(GET/PATCH), 총 2건, operation별 판정·갭과 원 cell 이동 항목을 확인했다. 화면 수평 overflow는 0이었다.
+- 배포물: `target/flowscope-1.2.0-beta.12.jar` 하나, 15,829,896 bytes, 2,158 entries, SHA-256 `b684549f0468964a6d2193fa64979448eab3950b768e7c39a61864bd3b49980c`. ZIP 무결성·Main-Class·Java 21·확장 진입점·SQLite JDBC service·NOTICE 포함을 확인했다.
+
+### 남은 한계·다음 gate
+- 접근선 집계는 표시 중복을 줄일 뿐 endpoint 발견률·인가 판정 정확도를 바꾸지 않으며 전체 edge crossing 최소화를 보장하지 않는다.
+- 실제 Burp Community에서 beta.12 JAR 재로드, 같은 로그인 정보를 다른 계정으로 캡처하는 충돌 UI, 실제 HUMAN 장경로·대규모 graph는 아직 확인하지 않았다.
+- `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않았다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

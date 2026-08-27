@@ -448,6 +448,10 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         if (accountId != null && !"anon".equals(fp)) {
             try { analysisConfig.bindSession(rec.service, fp, accountId); }
+            catch (AnalysisConfig.SessionBindingConflictException error) {
+                sessionBroker.markCredentialConflict(accountId);
+                api.logging().logToError("FlowScope 중복 인증 세션 차단: " + error.getMessage());
+            }
             catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).

@@ -37,6 +37,21 @@ final class AccountSessionTest {
     }
 
     @Test
+    void rejectsSilentlyMovingTheSameCredentialFingerprintToAnotherAccount() {
+        AnalysisConfig config = new AnalysisConfig()
+                .upsertAccount(new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER))
+                .upsertAccount(new AccountProfile("acct-b", "USER B", "https://api.test:443", AccessRole.USER))
+                .bindSession("https://api.test:443", "sess:same", "acct-a");
+
+        AnalysisConfig.SessionBindingConflictException conflict = assertThrows(
+                AnalysisConfig.SessionBindingConflictException.class,
+                () -> config.bindSession("https://api.test:443", "sess:same", "acct-b"));
+        assertEquals("acct-a", conflict.existingAccountId());
+        assertEquals("acct-b", conflict.requestedAccountId());
+        assertEquals("acct-a", config.boundAccount("https://api.test:443", "sess:same").orElseThrow().id());
+    }
+
+    @Test
     void removingAccountUnbindsSessionsAndOwnerPolicy() {
         AnalysisConfig config = new AnalysisConfig().upsertAccount(
                 new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER));

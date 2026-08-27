@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.11
+# FlowScope 1.2.0-beta.12
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -13,11 +13,11 @@ identity ──access──▶ resource ──calls──▶ operation
 
 - Live Burp capture with independent source, sub-source, orchestrator, tool, phase, and run metadata.
 - Exact-scope Evidence capture for every source. HUMAN may browse other sites through Burp, but out-of-scope responses are not stored or graphed by FlowScope.
-- HUMAN / SCANNER / LLM filters and an IDA-style hierarchical graph with orthogonal edges and bounded expandable groups.
+- HUMAN / SCANNER / LLM filters and an IDA-style hierarchical graph with orthogonal edges and bounded expandable groups. Repeated access edges for the same identity, resource, and source are folded into one labelled edge while retaining every original operation, Evidence item, and verdict in the detail view.
 - Raw paths are retained while operation templates are grouped only from categorical evidence: UUID/long-hex form, an exact matching ID in a successful JSON response, multiple values in the same position, or independent observations. Details expose `LITERAL / INFERRED / CORROBORATED` and the reason without a made-up confidence score.
 - Identity × operation × resource coverage matrix, uncrossed combinations, partial discovery, and source conflicts.
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
-- Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and account-bound ZAP/LLM requests.
+- Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and account-bound ZAP/LLM requests. Rebinding one service-scoped credential fingerprint to a different account fails closed instead of silently moving it.
 - Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture. Text messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate, separate from 8 KiB UI previews.
 - Evidence-preserving traffic classification: every captured observation remains inspectable while only high-confidence navigation, static assets, real CORS preflights, no-response records, and non-discovery phases stay out of coverage analysis by default.
 - Classifier v4 separates authentication setup and stable repeated polling as `AUTH_SESSION` and `POLLING`, separates manifests/source maps/service workers as discovery metadata, and can corroborate an ambiguous record only with strong API evidence for the same service and normalized operation.
@@ -53,7 +53,7 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.11.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.12.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 

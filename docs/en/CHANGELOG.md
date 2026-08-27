@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.12 — 2026-08-27
+
+- Rejected silent reassignment of one service-scoped credential fingerprint to a different account and held the conflicting broker session in `SUSPECT`, excluding it from identity attribution and credential injection.
+- Exposed a specific credential-conflict state and recovery guidance in the account UI and session JSON contract.
+- Folded duplicate access edges for the same identity, resource, and source into one `H/S/L×count` edge while retaining all original operations, coverage cells, Evidence, and verdicts.
+- Added aggregated-edge details with per-operation counts, verdicts, gaps, and navigation back to each original access cell.
+- Wrapped complete operation/resource labels with dynamic node height instead of clipping or middle ellipsis, and separated access lanes deterministically by identity and source.
+- Added regressions for binding conflicts, non-reactivating broker conflicts, aggregation, long labels, and detail navigation.
+
 ## 1.2.0-beta.11 — 2026-08-27
 
 - Paired each HUMAN/SCANNER/LLM filter with its main-comparison Evidence count and disabled zero-count sources.

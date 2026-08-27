@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.11, 2026-08-27 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.12, 2026-08-27 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -41,6 +41,8 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identi
 | 3-way 갭 | 세 주체가 무엇을 놓쳤거나 다르게 판단했는가? | 미교차·일부만 발견·불일치를 분리하고 클릭하면 해당 위치로 이동한다. | 갭 자체를 취약점으로 확정하지 않는다. |
 | 미요청 route | 응답이나 Site Map에는 있지만 아직 실제 요청하지 않은 경로가 있는가? | source edge 없는 중립색·점선 테두리 노드와 별도 수량·필터로 관측 그래프 옆에 표시하고 provenance의 type·Evidence·source·run·adapter 대응과 범주형 정렬 이유를 연다. | HUMAN/ZAP/LLM의 관측 요청, `UNCROSSED`, coverage, verdict, finding으로 계산하지 않는다. |
 | 소스 뷰 | 발견 주체의 차이를 보고 싶은가? | 색·선형·H/S/L이 다른 평행 source overlay를 우선한다. 일반 버튼·포커스·선택 상태는 별도 중립 accent를 사용해 source 색으로 오인되지 않게 한다. | 인가 결과와 발견 주체를 한 색에 겹쳐 읽기 어렵게 만들지 않는다. |
+| 중복 접근선 | 같은 사용자가 같은 객체에서 여러 API를 호출했을 때 왜 선이 겹치는가? | 같은 `요청자·객체·source` 접근선은 하나로 접고 `H/S/L×관측 수`를 표시한다. 선을 누르면 원 operation 목록과 각 판정·갭을 열어 Evidence로 이동한다. | 원 CoverageCell이나 Evidence를 합치거나 삭제하지 않고, 서로 다른 source를 한 선으로 합치지 않는다. |
+| 긴 경로 라벨 | API가 중간 생략돼 서로 다른 경로를 구분할 수 없는가? | 원 operation 문자열을 모두 유지하고 노드 안에서 여러 줄로 나누며 내용에 맞춰 높이를 늘린다. | 그래프 공간을 아끼기 위해 경로 중간을 `…`로 지워 핵심 세그먼트를 숨기지 않는다. |
 | 경로 묶음 | `/orders/101`과 `/orders/202`는 같은 API인가? | raw path를 유지하면서 operation은 Evidence가 있는 위치만 `{id}`로 묶는다. 상세에 `LITERAL/INFERRED/CORROBORATED`와 이유를 표시한다. | 모든 숫자를 ID로 단정하거나 route declaration 없이 “확정”이라 표시하지 않는다. |
 | 인가 뷰 | 허용·거부·의심 결과를 보고 싶은가? | 동일 구조에서 verdict 중심으로 표현을 바꾼다. | status code 하나만으로 suspicious를 만들지 않는다. |
 | 화면 맞춤 | 현재 그래프를 잃지 않고 전체를 볼 수 있는가? | 현재 표시 노드를 viewport에 맞춘다. | 데이터나 필터 상태를 변경하지 않는다. |
@@ -107,6 +109,8 @@ orchestrator = SYSTEM 또는 HUMAN
 캡처 종료 시 자격증명은 있으나 성공 응답이 없으면 계정 카드를 `UNVERIFIED`로 표시한다. 이 상태를 ACTIVE처럼 숨겨 자동 실행하면 로그인 폼·실패 응답에서 우연히 본 Cookie를 실제 계정 세션으로 오인할 수 있다. 반대로 ACTIVE도 서비스 고유 인증 의미를 보편적으로 증명하는 값은 아니므로 역할과 계정 연결은 사용자가 확인한다.
 
 빠른 시작의 HUMAN 계정 선택에는 `ACTIVE` 계정만 표시한다. 이 선택은 브라우저 신원을 덮어쓰는 라벨이 아니다. 실제 요청의 자격증명이 선택한 broker 계정과 exact match할 때만 해당 계정으로 기록하고, 불일치는 미확정 상태로 남긴다. 사용자가 dropdown 하나를 잘못 선택해 USER A/B 비교 Evidence 전체를 오염시키는 것보다 재로그인 안내가 드러나는 편이 안전하다.
+
+같은 서비스의 동일 인증 지문이 이미 다른 등록 계정에 연결돼 있으면 새 계정으로 자동 이동하지 않는다. 현재 캡처는 `동일 인증정보 충돌`로 표시하고 신원 귀속과 ZAP/LLM 주입에서 제외한다. 사용자가 기존 연결을 해제하거나 잘못 만든 세션을 폐기하고 올바른 계정으로 다시 로그인해야 한다. 계정 카드 중복을 화면에서만 숨기면 실제 binding 오염이 남기 때문에 엔진과 UI를 함께 fail-closed로 처리한다.
 
 ## 7. 왜 LLM을 두 번 사용하는가
 
@@ -202,7 +206,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.11 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 beta.11에서 선택할 파일은 `target/flowscope-1.2.0-beta.11.jar` 하나다. beta.10의 실제 계정 projection은 확인됐지만 source 필터·접근선 문법이 바뀐 beta.11 JAR 재로드는 별도 수동 gate다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.12 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 beta.12에서 선택할 파일은 `target/flowscope-1.2.0-beta.12.jar` 하나다. beta.10의 실제 계정 projection은 확인됐지만 세션 충돌 차단과 접근선 집계·긴 라벨이 바뀐 beta.12 JAR 재로드는 별도 수동 gate다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
 5. **구독 CLI 자동 실행 — 코드·UI 완료, Burp 실환경 gate:** 빠른 시작이 Burp 시작 환경의 Codex/Claude 실행 파일을 찾아 새 Explorer와 별도 Judge 프로세스를 만들고, provider session ID로 Judge 후속 질문을 재개한다. 수동 `agent-workspace`는 폴백으로 유지한다. 로컬 CLI help와 자동 회귀를 통과했고 Codex 무대상 모델 smoke는 성공했지만, Claude smoke는 구독 주간 한도 429로 실패했다. 실제 Burp에서 사용자의 MCP·대상 요청·run 종료·Judge lock·후속 resume가 끝까지 성공하는지는 beta.7 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
 

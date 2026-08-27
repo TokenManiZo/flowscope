@@ -1,6 +1,14 @@
-# FlowScope 1.2.0-beta.11 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.12 제품 개발·검증 계획
 
-## 0. beta.11 우선순위: HUMAN 그래프의 source·edge 의미 정합성
+## 0. beta.12 우선순위: 세션 귀속과 HUMAN 그래프 표시 정합성
+
+1. 같은 서비스의 인증 지문 하나를 두 등록 계정에 동시에 귀속하지 않는다. → 검증: 두 번째 binding 거부, 충돌 세션 `SUSPECT`, 신원 조회·주입 제외.
+2. 같은 요청자·객체·source의 접근선은 표시에서만 집계한다. → 검증: 한 집계선에 원 CoverageCell 키와 총 관측 수를 유지하고 분석 cell 수는 불변.
+3. 집계선을 클릭해 원 operation별 관측·판정·갭·Evidence로 돌아갈 수 있어야 한다. → 검증: Web 계약과 standalone 상호작용.
+4. 긴 operation/resource 라벨은 생략하지 않고 줄바꿈·동적 높이로 표시한다. → 검증: 전체 경로 표시와 브라우저 렌더에서 글자 잘림 없음.
+5. graph-state 키를 v4로 올려 이전 수동 위치가 새 노드 크기와 접근 lane을 왜곡하지 않게 한다.
+
+beta.11의 source 전체 접근 경로 필터와 아래 원칙은 그대로 유지한다.
 
 1. source 필터가 단순 스타일 토글이 아니라 해당 source의 node와 전체 접근 경로를 함께 재계산한다. → 검증: HUMAN-only 선택에서 SCANNER/LLM 전용 node·edge 0.
 2. 실제 메인 비교 Evidence가 0건인 source는 0건과 비활성 상태를 함께 표시한다. → 검증: 빈 SCANNER/LLM 데이터에서 조작 가능한 것처럼 보이지 않음.
@@ -122,7 +130,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.11 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터 구현과 자동/standalone 회귀 완료, 실제 beta.11 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.12 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계 구현과 자동/standalone 회귀 완료, 실제 beta.12 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

@@ -8,6 +8,21 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 사용자 확정 정책값. 권한은 추정값보다 사용자의 명시값을 우선한다. */
 public final class AnalysisConfig {
+    public static final class SessionBindingConflictException extends IllegalStateException {
+        private final String existingAccountId;
+        private final String requestedAccountId;
+
+        public SessionBindingConflictException(String existingAccountId, String requestedAccountId) {
+            super("인증 지문이 이미 다른 계정에 연결되어 있습니다: " + existingAccountId
+                    + " (먼저 기존 연결을 해제하세요.)");
+            this.existingAccountId = existingAccountId;
+            this.requestedAccountId = requestedAccountId;
+        }
+
+        public String existingAccountId() { return existingAccountId; }
+        public String requestedAccountId() { return requestedAccountId; }
+    }
+
     private final Map<String, AccessRole> identityRoles = new ConcurrentHashMap<>();
     private final Map<String, AccessRole> endpointRequirements = new ConcurrentHashMap<>();
     private final Map<String, String> resourceOwners = new ConcurrentHashMap<>();
@@ -53,7 +68,10 @@ public final class AnalysisConfig {
         if (!account.service().equals(service)) {
             throw new IllegalArgumentException("session and account services differ");
         }
-        sessionBindings.put(key, accountId);
+        String existing = sessionBindings.putIfAbsent(key, accountId);
+        if (existing != null && !existing.equals(accountId)) {
+            throw new SessionBindingConflictException(existing, accountId);
+        }
         return this;
     }
 
