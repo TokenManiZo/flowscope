@@ -25,8 +25,9 @@ public final class DataFlowAnalyzer {
         Set<String> dedup = new LinkedHashSet<>();
         for (int i = 0; i < ordered.size(); i++) {
             RequestRecord producer = ordered.get(i);
-            if (!producer.hasResponse || producer.body == null) continue;
-            for (String value : producedValues(producer.body)) {
+            String producerBody = producer.responseBodyForAnalysis();
+            if (!producer.hasResponse || producerBody == null) continue;
+            for (String value : producedValues(producerBody)) {
                 for (int j = i + 1; j < ordered.size(); j++) {
                     RequestRecord consumer = ordered.get(j);
                     if (!producer.idn.equals(consumer.idn)) continue;
@@ -52,7 +53,8 @@ public final class DataFlowAnalyzer {
 
     private static boolean consumes(RequestRecord record, String value) {
         return contains(record.path, value) || contains(record.query, value)
-                || contains(record.reqBody, value) || contains(record.reqText, value);
+                || contains(record.requestBodyForAnalysis(), value)
+                || contains(record.requestTextForEvidence(), value);
     }
 
     private static boolean contains(String text, String value) {

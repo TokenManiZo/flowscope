@@ -25,7 +25,8 @@ public final class ProjectStore {
                               Set<Source> completedLanes,
                               List<RouteCandidate> routeCandidates) {}
 
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
+    private static final int LEGACY_SCHEMA_VERSION = 1;
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -65,7 +66,8 @@ public final class ProjectStore {
                 .filter(source -> source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM)
                 .map(Enum::name).sorted().forEach(savedLanes::add);
         ArrayNode savedRecords = root.putArray("records");
-        for (RequestRecord record : records) savedRecords.add(writeRecord(record));
+        ObjectNode payloads = root.putObject("payloads");
+        for (RequestRecord record : records) savedRecords.add(writeRecord(record, payloads));
         ArrayNode savedRouteCandidates = root.putArray("route_candidates");
         for (RouteCandidate candidate : routeCandidates == null ? List.<RouteCandidate>of() : routeCandidates) {
             savedRouteCandidates.add(writeRouteCandidate(candidate));
@@ -86,6 +88,9 @@ public final class ProjectStore {
         Path temporary = Files.createTempFile(parent, ".flowscope-", ".tmp");
         try {
             json.writerWithDefaultPrettyPrinter().writeValue(temporary.toFile(), root);
+            if (Files.size(temporary) > MAX_FILE_BYTES) {
+                throw new IllegalArgumentException("project file exceeds 100 MiB");
+            }
             try {
                 Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException e) {
@@ -101,7 +106,8 @@ public final class ProjectStore {
         long size = Files.size(source);
         if (size > MAX_FILE_BYTES) throw new IllegalArgumentException("project file exceeds 100 MiB");
         JsonNode root = json.readTree(Files.readAllBytes(source));
-        if (root.path("schema_version").asInt(-1) != SCHEMA_VERSION) {
+        int schemaVersion = root.path("schema_version").asInt(-1);
+        if (schemaVersion != SCHEMA_VERSION && schemaVersion != LEGACY_SCHEMA_VERSION) {
             throw new IllegalArgumentException("unsupported FlowScope schema version");
         }
         JsonNode recordNodes = root.path("records");
@@ -109,7 +115,8 @@ public final class ProjectStore {
             throw new IllegalArgumentException("invalid records array");
         }
         List<RequestRecord> records = new ArrayList<>();
-        for (JsonNode value : recordNodes) records.add(readRecord(value));
+        JsonNode payloads = root.path("payloads");
+        for (JsonNode value : recordNodes) records.add(readRecord(value, payloads));
         AnalysisConfig config = readPolicy(root.path("policy"));
         JsonNode reviewNodes = root.path("reviews");
         if (reviewNodes.isArray()) {
@@ -191,7 +198,7 @@ public final class ProjectStore {
                 masked(value, "review_reason"));
     }
 
-    private ObjectNode writeRecord(RequestRecord r) {
+    private ObjectNode writeRecord(RequestRecord r, ObjectNode payloads) {
         ObjectNode out = json.createObjectNode();
         out.put("source", r.source.name());
         out.put("service", r.service);
@@ -220,15 +227,17 @@ public final class ProjectStore {
         put(out, "sec_fetch_mode", r.secFetchMode);
         put(out, "access_control_request_method", r.accessControlRequestMethod);
         putHeaders(out, "request", r.reqText);
+        writePayload(out, "request_payload", r.requestPayload, payloads);
         out.put("timestamp", r.timestamp);
         put(out, "response_body", r.body);
         putHeaders(out, "response", r.respText);
+        writePayload(out, "response_payload", r.responsePayload, payloads);
         put(out, "location", r.location);
         out.put("has_response", r.hasResponse);
         return out;
     }
 
-    private RequestRecord readRecord(JsonNode value) {
+    private RequestRecord readRecord(JsonNode value, JsonNode payloads) {
         Source source = enumValue(Source.class, required(value, "source"));
         RequestRecord r = new RequestRecord(source, required(value, "service"), required(value, "method"),
                 required(value, "path"), value.path("status").asInt(), required(value, "fingerprint"));
@@ -258,12 +267,43 @@ public final class ProjectStore {
         r.secFetchMode = masked(value, "sec_fetch_mode");
         r.accessControlRequestMethod = masked(value, "access_control_request_method");
         r.reqText = maskedHeaders(value, "request");
+        r.requestPayload = readPayload(value.path("request_payload"), payloads);
         r.timestamp = value.path("timestamp").asLong();
         r.body = masked(value, "response_body");
         r.respText = maskedHeaders(value, "response");
+        r.responsePayload = readPayload(value.path("response_payload"), payloads);
         r.location = masked(value, "location");
         r.hasResponse = value.path("has_response").asBoolean(false);
         return r;
+    }
+
+    private void writePayload(ObjectNode record, String field, StoredPayload payload, ObjectNode payloads) {
+        if (payload == null) { record.putNull(field); return; }
+        if (payload.retained()) {
+            String masked = Masking.maskHeaders(payload.text());
+            if (!masked.equals(payload.text())) {
+                throw new IllegalArgumentException("unmasked stored payload rejected");
+            }
+        }
+        ObjectNode reference = record.putObject(field);
+        reference.put("digest", payload.digest());
+        reference.put("original_bytes", payload.originalBytes());
+        reference.put("retention", payload.retention().name());
+        if (payload.retained() && !payloads.has(payload.digest())) {
+            payloads.put(payload.digest(), payload.gzipBase64());
+        }
+    }
+
+    private StoredPayload readPayload(JsonNode reference, JsonNode payloads) {
+        if (reference == null || !reference.isObject()) return null;
+        String digest = required(reference, "digest");
+        int originalBytes = reference.path("original_bytes").asInt(-1);
+        if (originalBytes < 0) throw new IllegalArgumentException("payload original_bytes is invalid");
+        StoredPayload.Retention retention = enumValue(StoredPayload.Retention.class,
+                required(reference, "retention"));
+        JsonNode blob = payloads == null ? null : payloads.get(digest);
+        return StoredPayload.restore(digest, originalBytes, retention,
+                blob == null || blob.isNull() ? null : blob.asText());
     }
 
     private ObjectNode writePolicy(AnalysisConfig config) {

@@ -184,6 +184,8 @@
   .resend button{background:var(--resend); color:#1a1008; border:0; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:700; cursor:pointer}
   .resend .warn{font-size:10px; color:var(--faint)}
   .resendlog{margin-top:8px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); border-top:1px dashed var(--line2); padding-top:7px}
+  .samplebanner{display:none;flex:0 0 auto;padding:9px 16px;background:#FFF4CE;border-bottom:1px solid #E8C55A;color:#5B4300;font-size:12px;font-weight:700;text-align:center}
+  .samplebanner.on{display:block}
   footer{flex:0 0 auto; border-top:1px solid var(--line); background:var(--panel); padding:8px 16px; display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--muted)}
   .li{display:flex; align-items:center; gap:5px}.li .sw{width:10px;height:10px;border-radius:3px}.li .swl{width:20px;height:0;border-top-width:2px}
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
@@ -195,7 +197,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.7 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.8 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -216,6 +218,7 @@
 </header>
 
 <div class="statusbar" id="status"><span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요. 사람·스캐너는 전용 프록시로, LLM은 MCP 통제 실행기로 구분 수집합니다. XML 업로드는 실시간 수집이 불가능할 때의 폴백입니다.</span></div>
+<div class="samplebanner" id="sampleBanner" role="status">샘플 데이터 · 실제 HUMAN/ZAP/LLM 점검 결과가 아님 · 대상 네트워크 요청 0건</div>
 
 <div class="setupbackdrop" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
   <div class="setupdialog">
@@ -284,9 +287,11 @@
       <label><input type="checkbox" class="df" value="REVIEW" checked>검토 대기</label>
       <label><input type="checkbox" class="df" value="EXCLUDE">기본 숨김</label>
       <label><input type="checkbox" class="tf" value="API" checked>API</label>
+      <label><input type="checkbox" class="tf" value="AUTH_SESSION">인증·세션 준비</label>
       <label><input type="checkbox" class="tf" value="UNKNOWN" checked>판단 보류</label>
       <label><input type="checkbox" class="tf" value="TELEMETRY_CANDIDATE" checked>텔레메트리 후보</label>
       <label><input type="checkbox" class="tf" value="BACKGROUND" checked>반복 백그라운드 후보</label>
+      <label><input type="checkbox" class="tf" value="POLLING" checked>반복 polling 후보</label>
       <label><input type="checkbox" class="tf" value="NAVIGATION">화면 이동</label>
       <label><input type="checkbox" class="tf" value="STATIC_ASSET">정적 자원</label>
       <label><input type="checkbox" class="tf" value="DISCOVERY_METADATA">탐색 메타데이터</label>
@@ -324,6 +329,7 @@
       </div>
       <label class="layoutlock"><input type="checkbox" id="layoutLock"> 노드 위치 잠금</label>
       <label class="layoutlock"><input type="checkbox" id="showRouteCandidates"> 미요청 route 표시</label>
+      <label class="layoutlock"><input type="checkbox" id="showSupportTraffic"> 인증·화면·반복 보조 흐름 표시</label>
       <div class="graphcontrols"><button id="fitGraph">화면 맞춤</button><button id="collapseGraph" disabled>노드 접기</button><button id="resetLayout">배치 초기화</button></div>
       <div class="graphstat" id="graphStat">노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.</div>
     </div>
@@ -417,13 +423,13 @@ const VC={allow:'--allow',deny:'--deny',untested:'--untested',suspicious:'--susp
 const SRC={human:{n:'사람',c:'--human',ab:'H'},scanner:{n:'스캐너',c:'--scanner',ab:'S'},llm:{n:'LLM',c:'--llm',ab:'L'},unknown:{n:'분류불명',c:'--faint',ab:'?'}};
 let EVENTS=[], SERVER_EVENTS=[], MODEL=null, cy=null, currentView='source';
 let SCENARIO_ITEMS={};
-let SERVER_REVISION=-1, SERVER_IDENTITY_REVISION=-1, SERVER_OWNERS={}, SERVER_ROLES={}, SERVER_REQUIRED_ROLES={}, SERVER_FLOW_LINKS=[], SERVER_ACCOUNTS=[], SERVER_SESSIONS=[], SERVER_MANAGED_SESSIONS=[], SERVER_CELLS=[], SERVER_GAPS=[], SERVER_ROUTE_CANDIDATES=[], SERVER_ACTIVE_SOURCES=[], SERVER_TRAFFIC_STATS={captured:0,coverage:0,excluded:0,review:0}, LIVE_MODE=true;
+let SERVER_REVISION=-1, SERVER_IDENTITY_REVISION=-1, SERVER_OWNERS={}, SERVER_ROLES={}, SERVER_REQUIRED_ROLES={}, SERVER_FLOW_LINKS=[], SERVER_ACCOUNTS=[], SERVER_SESSIONS=[], SERVER_MANAGED_SESSIONS=[], SERVER_CELLS=[], SERVER_GAPS=[], SERVER_ROUTE_CANDIDATES=[], SERVER_ACTIVE_SOURCES=[], SERVER_TRAFFIC_STATS={captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0}, SERVER_SAMPLE_MODE=false, LIVE_MODE=true;
 let GRAPH_HIDDEN=0; const GRAPH_PAGE_SIZE=18;
 let GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};
 let matrixMode='identity', ROLEOVERRIDE={}; const ROLE_LEVELS=['User','LV1','LV2','Admin','Unknown'];
 let activeSources={human:true,scanner:true,llm:true};
 let activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false};
-let activeTraffic={API:true,UNKNOWN:true,TELEMETRY_CANDIDATE:true,NAVIGATION:false,STATIC_ASSET:false,DISCOVERY_METADATA:false,PREFLIGHT:false,BACKGROUND:true};
+let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:true,POLLING:true,BACKGROUND:true,NAVIGATION:false,STATIC_ASSET:false,DISCOVERY_METADATA:false,PREFLIGHT:false};
 let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0;
 let SETUP_AUTO_CHECKED=false;
 let HUMAN_RUN={active:false,runId:''};
@@ -501,8 +507,12 @@ function computeCoverage(){
   arr.forEach(c=>{ if(c.conflict)conflict++; if(c.partial)partial++; if(c.clean)clean++; });
   gUn.textContent=MODEL.candidates.length; gFound.textContent=partial; gCo.textContent=conflict; gClean.textContent=clean;
   gRoute.textContent=MODEL.routeCandidates.length;
-  trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 메인 비교 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 대기 '+SERVER_TRAFFIC_STATS.review+' · 미요청 route '+MODEL.routeCandidates.length;
+  renderTrafficStats(MODEL.routeCandidates.length);
 }
+function renderTrafficStats(routeCount){
+  trafficStats.innerHTML='수집 '+SERVER_TRAFFIC_STATS.captured+' · 메인 비교 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 대기 '+SERVER_TRAFFIC_STATS.review+' · 미요청 route '+routeCount+(SERVER_TRAFFIC_STATS.dropped?'<br><span class="warn">저장 상한으로 유실 '+SERVER_TRAFFIC_STATS.dropped+'건 — 현재 분석은 불완전</span>':'')+(SERVER_TRAFFIC_STATS.payloadMetadataOnly?'<br><span class="warn">전문 미보존 '+SERVER_TRAFFIC_STATS.payloadMetadataOnly+'개 메시지 — 크기·SHA-256만 보존</span>':'');
+}
+function renderSampleMode(){document.getElementById('sampleBanner').classList.toggle('on',SERVER_SAMPLE_MODE);}
 function cellGKs(c){ const g=[]; if(!c)return g; if(c.conflict)g.push('conflict'); if(c.partial)g.push('partial'); if(c.clean)g.push('clean'); return g; }
 function shortLabel(value,max=34){ const s=String(value||''); if(s.length<=max)return s; const left=Math.ceil((max-1)*.7),right=(max-1)-left; return s.slice(0,left)+'…'+s.slice(-right); }
 function operationLabel(op){const value=withoutService(op),p=value.indexOf(' ');return p>0?value.slice(0,p)+'\n'+shortLabel(value.slice(p+1),36):shortLabel(value,36);}
@@ -584,8 +594,13 @@ function renderGraph(){
   const hiddenOperations=Math.max(0,graphOperations.length-visibleOperations.length);
   const hiddenResources=Math.max(0,graphResources.length-visibleResources.length);
   const routeCandidates=document.getElementById('showRouteCandidates').checked?(MODEL.routeCandidates||[]).slice(0,GRAPH_LIMITS.operations):[];
+  const supportEvents=document.getElementById('showSupportTraffic').checked?EVENTS.filter(event=>
+    activeSources[event.source]&&(ACTIVE_IDENTITY==='all'||event.idn===ACTIVE_IDENTITY)
+    &&event.trafficDisposition!=='INCLUDE'
+    &&['AUTH_SESSION','NAVIGATION','POLLING','BACKGROUND'].includes(event.trafficClass)):[];
+  const supportOps=[...new Set(supportEvents.map(event=>event.op).filter(op=>!graphOperations.includes(op)))].slice(0,GRAPH_LIMITS.operations);
   GRAPH_HIDDEN=hiddenOperations+hiddenResources;
-  graphStat.textContent=`표시: 사용자 ${graphIdentities.length} · 객체 ${visibleResources.length}/${graphResources.length} · 관측 API ${visibleOperations.length}/${graphOperations.length} · 미요청 route ${routeCandidates.length}/${(MODEL.routeCandidates||[]).length}`+(GRAPH_HIDDEN?' · +그룹 노드를 눌러 펼치기':'');
+  graphStat.textContent=`표시: 사용자 ${graphIdentities.length} · 객체 ${visibleResources.length}/${graphResources.length} · 관측 API ${visibleOperations.length}/${graphOperations.length} · 보조 흐름 ${supportEvents.length} · 미요청 route ${routeCandidates.length}/${(MODEL.routeCandidates||[]).length}`+(GRAPH_HIDDEN?' · +그룹 노드를 눌러 펼치기':'');
   collapseGraph.disabled=GRAPH_LIMITS.operations===GRAPH_PAGE_SIZE&&GRAPH_LIMITS.resources===GRAPH_PAGE_SIZE;
   const nodes=[],edges=[]; const y=(n,i)=>84+i*72;
   const stageWidth=Math.max(560,document.getElementById('cy').clientWidth||560);
@@ -596,6 +611,9 @@ function renderGraph(){
   const operationRows=visibleOperations.length+routeCandidates.length;
   visibleOperations.forEach((op,i)=>{const sources=sourceSetFor(cellValues,c=>c.op===op),mark=sourceMark(sources);nodes.push({data:{id:'O:'+op,label:operationLabel(op)+'\n['+mark+']',fullLabel:op+' · 소스 '+mark,ntype:'operation',op:op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('O:'+op,{x:operationX,y:y(operationRows,i)})});});
   routeCandidates.forEach((candidate,i)=>{const id='U:'+candidate.service+' '+candidate.method+' '+candidate.pathTemplate;const label=(candidate.method==='UNKNOWN'?'?':candidate.method)+'\n'+shortLabel(candidate.pathTemplate,36)+'\n[미요청]';nodes.push({data:{id,label,fullLabel:candidate.service+' · '+candidate.method+' '+candidate.pathTemplate+' · '+(candidate.provenanceTypes||[]).join(', '),ntype:'routeCandidate',candidate},position:savedPosition(id,{x:operationX,y:y(operationRows,visibleOperations.length+i)})});});
+  const nodeIds=new Set(nodes.map(node=>node.data.id));
+  supportOps.forEach((op,i)=>{const id='O:'+op;if(nodeIds.has(id))return;nodeIds.add(id);const related=supportEvents.filter(event=>event.op===op);const sources=[...new Set(related.map(event=>event.source))];nodes.push({data:{id,label:operationLabel(op)+'\n[보조]',fullLabel:op+' · 메인 비교 제외 보조 흐름',ntype:'supportOperation',op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition(id,{x:operationX,y:y(operationRows+supportOps.length,operationRows+i)})});});
+  supportEvents.forEach((event,i)=>{const identityId='I:'+event.idn,operationId='O:'+event.op;if(!nodeIds.has(identityId)){nodeIds.add(identityId);nodes.push({data:{id:identityId,label:displayIdentity(event.idn)+'\n['+SRC[event.source].ab+']',fullLabel:displayIdentity(event.idn)+' · 보조 흐름',ntype:'identity',idn:event.idn,sourceMask:event.source,sourceCount:1},position:savedPosition(identityId,{x:identityX,y:y(operationRows+supportOps.length,operationRows+supportOps.indexOf(event.op))})});}if(nodeIds.has(operationId))edges.push({data:{id:'SUP:'+event.eventId,source:identityId,target:operationId,etype:'support',src:event.source,op:event.op,idn:event.idn,label:'보조'}});});
   if(hiddenResources)nodes.push({data:{id:'G:resources',label:'+'+hiddenResources+'개 객체\n클릭하여 펼치기',fullLabel:'숨긴 객체 '+hiddenResources+'개',ntype:'group',groupType:'resources'},position:savedPosition('G:resources',{x:resourceX,y:y(visibleResources.length+1,visibleResources.length)})});
   if(hiddenOperations)nodes.push({data:{id:'G:operations',label:'+'+hiddenOperations+'개 API\n클릭하여 펼치기',fullLabel:'숨긴 API '+hiddenOperations+'개',ntype:'group',groupType:'operations'},position:savedPosition('G:operations',{x:operationX,y:y(visibleOperations.length+1,visibleOperations.length)})});
   const calls=new Set();
@@ -620,6 +638,7 @@ function renderGraph(){
       {selector:'node',style:{'label':'data(label)','color':css('--text'),'font-family':'JetBrains Mono, Consolas, monospace','font-size':'12px','font-weight':500,'text-wrap':'wrap','text-valign':'center','text-halign':'center','text-max-width':'208px','width':'188px','height':'54px','border-width':1.4,'border-color':css('--line2'),'background-color':css('--panel2')}},
       {selector:'node[ntype="identity"]',style:{'shape':'round-rectangle','background-color':'#E7F0FB','border-color':css('--accent'),'width':'118px','height':'48px'}},
       {selector:'node[ntype="operation"]',style:{'shape':'hexagon','background-color':'#F3E9F9','width':'248px','height':'64px','border-color':'#DFC9EC'}},
+      {selector:'node[ntype="supportOperation"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'248px','height':'64px','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
       {selector:'node[ntype="routeCandidate"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'248px','height':'64px','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
       {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'54px'}},
       {selector:'node[ntype="group"]',style:{'shape':'round-rectangle','background-color':'#FFFFFF','border-color':css('--accent'),'border-style':'dashed','border-width':2,'color':css('--accent'),'width':'164px','height':'48px'}},
@@ -634,7 +653,9 @@ function renderGraph(){
       {selector:'edge[etype="access"]',style:{'width':2,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--muted'),'text-background-color':css('--bg'),'text-background-opacity':.92,'text-background-padding':'2px'}},
       {selector:'edge[etype="candidate"]',style:{'taxi-turn':'86px','line-style':'dotted','line-color':css('--suspicious'),'target-arrow-color':css('--suspicious'),'width':1.6,'opacity':.7,'target-arrow-shape':'triangle','arrow-scale':.7,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--suspicious')}},
       {selector:'edge[etype="flow"]',style:{'curve-style':'taxi','taxi-direction':'vertical','taxi-turn':'34px','line-style':'dashed','line-color':css('--undecided'),'target-arrow-color':css('--undecided'),'width':1.4,'opacity':.7,'label':'','font-size':'10px','color':css('--faint')}},
+      {selector:'edge[etype="support"]',style:{'line-color':css('--faint'),'target-arrow-color':css('--faint'),'width':1.2,'opacity':.65,'label':'','font-size':'9px','color':css('--faint')}},
       {selector:'edge.hide',style:{'display':'none'}},
+      {selector:'node.sourcehide',style:{'display':'none'}},
       {selector:'edge.ghl',style:{'opacity':1,'width':3.6,'z-index':20}},
       {selector:'edge.gdim',style:{'opacity':.07}},
       {selector:'.pathsel',style:{'opacity':1,'z-index':30}},
@@ -662,12 +683,14 @@ function renderGraph(){
     layout:{name:'preset',fit:false}});
   cy.on('tap','node[ntype="group"]',e=>{captureGraphState();const type=e.target.data('groupType');GRAPH_LIMITS[type]+=GRAPH_PAGE_SIZE;renderGraph();setHint(type==='operations'?'API 노드를 더 펼쳤습니다.':'객체 노드를 더 펼쳤습니다.');});
   cy.on('tap','node[ntype="operation"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
+  cy.on('tap','node[ntype="supportOperation"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
   cy.on('tap','node[ntype="routeCandidate"]',e=>{highlightGraphPath(e.target);showRouteCandidate(e.target.data('candidate'));});
   cy.on('tap','node[ntype="identity"],node[ntype="resource"]',e=>{highlightGraphPath(e.target);showEntityNode(e.target);});
   cy.on('tap','edge[etype="access"]',e=>{highlightGraphPath(e.target);showCell(e.target.data('key'));});
   cy.on('tap','edge[etype="candidate"]',e=>{highlightGraphPath(e.target);showEmpty(e.target.data('key'));});
   cy.on('tap','edge[etype="calls"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
   cy.on('tap','edge[etype="flow"]',e=>{highlightGraphPath(e.target);setHint('DATA 흐름: 앞 응답의 ID·토큰이 다음 요청으로 전달된 관계입니다.');});
+  cy.on('tap','edge[etype="support"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
   cy.on('tap',e=>{if(e.target===cy)clearDetail();});
   cy.on('mouseover','node',e=>setHint(e.target.data('fullLabel')||e.target.data('label')));
   cy.on('mouseout','node',()=>applyView(currentView));
@@ -688,9 +711,9 @@ function highlightGraphPath(element){
     const calls=resource.connectedEdges('[etype="calls"]').filter(edge=>(!op||edge.data('op')===op)&&(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(calls);add(calls.connectedNodes());
   }else if(type==='calls'){
     add(element.connectedNodes());const resource=element.source(),src=element.data('src'),idn=element.data('idn');const access=resource.connectedEdges('[etype="access"]').filter(edge=>(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(access);add(access.connectedNodes());
-  }else if(type==='flow')add(element.connectedNodes());
-  else if(type==='operation'){
-    const calls=element.connectedEdges('[etype="calls"]');add(calls);add(calls.connectedNodes());calls.sources().forEach(resource=>{const access=resource.connectedEdges('[etype="access"]');add(access);add(access.connectedNodes());});
+  }else if(type==='flow'||type==='support')add(element.connectedNodes());
+  else if(type==='operation'||type==='supportOperation'){
+    const calls=element.connectedEdges('[etype="calls"],[etype="support"]');add(calls);add(calls.connectedNodes());calls.sources().forEach(resource=>{const access=resource.connectedEdges('[etype="access"]');add(access);add(access.connectedNodes());});
   }else if(type==='resource'){
     const linked=element.connectedEdges('[etype="access"],[etype="calls"],[etype="candidate"]');add(linked);add(linked.connectedNodes());
   }else if(type==='identity'){
@@ -711,6 +734,7 @@ function applyView(view){
   cy.batch(()=>{
     cy.edges().removeClass('col-human col-scanner col-llm v-allow v-deny v-suspicious v-undecided');
     cy.edges('[etype="access"]').forEach(e=>{ e.addClass(view==='source'?('col-'+e.data('src')):('v-'+e.data('verdict'))); });
+    if(view==='source')cy.edges('[etype="support"]').forEach(e=>e.addClass('col-'+e.data('src')));
     applyFilter();
   });
   const hidden=GRAPH_HIDDEN?` · 가독성을 위해 ${GRAPH_HIDDEN}개 노드는 생략됨(전체는 매트릭스/파싱 결과에서 확인)`:' ';
@@ -720,7 +744,11 @@ function applyView(view){
 }
 function applyFilter(){
   if(!cy)return;
-  cy.edges('[etype="access"],[etype="calls"],[etype="flow"]').forEach(e=>{ e.toggleClass('hide', !activeSources[e.data('src')]); });
+  cy.edges('[etype="access"],[etype="calls"],[etype="flow"],[etype="support"]').forEach(e=>{ e.toggleClass('hide', !activeSources[e.data('src')]); });
+  cy.nodes('[ntype="identity"],[ntype="resource"],[ntype="operation"],[ntype="supportOperation"]').forEach(node=>{
+    const related=node.connectedEdges('[etype="access"],[etype="calls"],[etype="flow"],[etype="support"]');
+    node.toggleClass('sourcehide',related.length>0&&related.filter(edge=>!edge.hasClass('hide')).length===0);
+  });
 }
 function setHint(t){stagehint.textContent=t;}
 
@@ -751,6 +779,12 @@ function inputLoc(method){
   if(m==='OPTIONS'||m==='HEAD') return {parts:['path'], main:'path', desc:'경로(path) — 메타 요청'};
   return {parts:['query','path'], main:'query', desc:'쿼리스트링·경로(query/path)'};
 }
+function payloadStatus(label,payload){
+  if(!payload)return '';
+  if(payload.retained)return `${label} ${Number(payload.bytes||0).toLocaleString()} bytes · 압축 원문 보존 · SHA-256 ${esc(String(payload.digest||'').slice(0,12))}…`;
+  const reason=payload.retention==='BINARY_METADATA_ONLY'?'바이너리 본문 미보존':payload.retention==='CAPACITY_METADATA_ONLY'?'압축 전문 총량 상한 초과':'메시지별 보존 상한 초과';
+  return `<span class="warn">${label} ${Number(payload.bytes||0).toLocaleString()} bytes · ${reason} · 해시만 보존</span>`;
+}
 async function showOperation(op,offset=0){
   const evs=EVENTS.filter(e=>e.op===op); if(!evs.length)return;
   const detailRequest=++DETAIL_REQUEST;
@@ -769,6 +803,7 @@ async function showOperation(op,offset=0){
     const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토 대기':'메인 비교';
     return `<details class="reqblk"><summary><span style="color:var(--${e.source})">[${SRC[e.source].ab}]</span> <span class="m">${esc(e.method)}</span> ${esc(e.path)} → HTTP ${e.status} · ${esc(e.eventId||'Evidence 없음')} · ${esc(e.trafficClass)} / ${esc(disposition)} · 반복 ${Number(e.repeatCount||1)}</summary>`+
       `<div class="lbl" style="margin-top:8px">분류 근거</div><div class="val">${esc((e.classificationReasons||[]).join(' · ')||'근거 없음')} · 인증 ${esc(e.authState||'UNRESOLVED')}</div>`+
+      `<div class="lbl" style="margin-top:8px">보존 상태</div><div class="val">${payloadStatus('Request',detail.requestPayload)||'Request preview만 보존'}<br>${payloadStatus('Response',detail.responsePayload)||'Response preview만 보존'}</div>`+
       `<div class="lbl" style="margin-top:8px">REQUEST · ${esc(l.desc)}</div><pre class="reqblk">${esc(detail.request||'(요청 전문 없음)')}</pre>`+
       `<div class="lbl">RESPONSE</div><pre class="reqblk">${esc(detail.response||'(응답 전문 없음)')}</pre></details>`;
   }).join('');
@@ -1073,7 +1108,7 @@ async function saveScenarioReview(itemId,button){
 
 function updateStatus(){
   document.body.classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length);
-  const el=document.getElementById('status');trafficStats.textContent='수집 '+SERVER_TRAFFIC_STATS.captured+' · 메인 비교 '+SERVER_TRAFFIC_STATS.coverage+' · 기본 숨김 '+SERVER_TRAFFIC_STATS.excluded+' · 검토 대기 '+SERVER_TRAFFIC_STATS.review+' · 미요청 route '+SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed).length;if(!EVENTS.length){el.innerHTML='<span>시작 순서 · Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge</span>';updateSetup();return;}
+  const el=document.getElementById('status');renderTrafficStats(SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed).length);if(!EVENTS.length){el.innerHTML='<span>시작 순서 · Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge</span>';updateSetup();return;}
   const coverageEvents=EVENTS.filter(e=>e.coverageEligible);const cnt=s=>coverageEvents.filter(e=>e.source===s).length; const conf=Object.values(MODEL.cells).filter(c=>c.conflict).length;
   const part=Object.values(MODEL.cells).filter(c=>c.partial).length;
   const unknown=cnt('unknown');el.innerHTML='<span>메인 비교 기준 · 사람 <b>'+cnt('human')+'</b> · 스캐너 <b>'+cnt('scanner')+'</b> · LLM <b>'+cnt('llm')+'</b>'+(unknown?' · 분류불명 <b>'+unknown+'</b>':'')+'</span><span>수집 <b>'+SERVER_TRAFFIC_STATS.captured+'</b> · 기본 숨김 <b>'+SERVER_TRAFFIC_STATS.excluded+'</b> · 검토 대기 <b>'+SERVER_TRAFFIC_STATS.review+'</b> · 신원 <b>'+MODEL.identities.length+'</b> · Op <b>'+MODEL.operations.length+'</b> · Res <b>'+MODEL.resources.length+'</b></span>'+(part?'<span class="warn">일부만 발견 <b>'+part+'</b> · 불일치 <b>'+conf+'</b></span>':'');
@@ -1213,6 +1248,7 @@ document.getElementById('identityReset').addEventListener('click',resetIdentityM
 document.getElementById('layoutLock').checked=GRAPH_STATE.locked;
 document.getElementById('layoutLock').addEventListener('change',e=>{GRAPH_STATE.locked=e.target.checked;if(cy){if(GRAPH_STATE.locked)cy.nodes().ungrabify();else cy.nodes().grabify();}saveGraphState();});
 document.getElementById('showRouteCandidates').addEventListener('change',renderGraph);
+document.getElementById('showSupportTraffic').addEventListener('change',renderGraph);
 document.getElementById('routeCandidatesOpen').addEventListener('click',showRouteCandidates);
 document.getElementById('routeCandidatesOpen').addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showRouteCandidates();}});
 document.getElementById('fitGraph').addEventListener('click',fitGraph);
@@ -1258,7 +1294,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&setupModal.
 
 async function syncExtension(){
   try{const response=await fetch('/api/snapshot',{cache:'no-store'});if(!response.ok){LIVE_MODE=false;return;}LIVE_MODE=true;const data=await response.json();if(data.revision===SERVER_REVISION&&data.identityRevision===SERVER_IDENTITY_REVISION)return;
-    SERVER_REVISION=data.revision;SERVER_IDENTITY_REVISION=data.identityRevision||0;SERVER_OWNERS=data.owners||{};SERVER_ROLES=data.roles||{};SERVER_REQUIRED_ROLES=data.requiredRoles||{};SERVER_FLOW_LINKS=data.flowLinks||[];SERVER_ACCOUNTS=data.accounts||[];SERVER_SESSIONS=data.sessions||[];SERVER_MANAGED_SESSIONS=data.managedSessions||[];SERVER_CELLS=data.cells||[];SERVER_GAPS=data.gaps||[];SERVER_ROUTE_CANDIDATES=data.routeCandidates||[];SERVER_ACTIVE_SOURCES=data.activeSources||[];SERVER_TRAFFIC_STATS=data.trafficStats||{captured:0,coverage:0,excluded:0,review:0};SERVER_EVENTS=(data.events||[]);EVENTS=[...SERVER_EVENTS];
+    SERVER_REVISION=data.revision;SERVER_IDENTITY_REVISION=data.identityRevision||0;SERVER_OWNERS=data.owners||{};SERVER_ROLES=data.roles||{};SERVER_REQUIRED_ROLES=data.requiredRoles||{};SERVER_FLOW_LINKS=data.flowLinks||[];SERVER_ACCOUNTS=data.accounts||[];SERVER_SESSIONS=data.sessions||[];SERVER_MANAGED_SESSIONS=data.managedSessions||[];SERVER_CELLS=data.cells||[];SERVER_GAPS=data.gaps||[];SERVER_ROUTE_CANDIDATES=data.routeCandidates||[];SERVER_ACTIVE_SOURCES=data.activeSources||[];SERVER_TRAFFIC_STATS=data.trafficStats||{captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0};SERVER_SAMPLE_MODE=!!data.sampleMode;SERVER_EVENTS=(data.events||[]);EVENTS=[...SERVER_EVENTS];renderSampleMode();
     if(EVENTS.length||SERVER_ROUTE_CANDIDATES.length)build();else{renderAccounts();renderIdentityFilter();renderRoles();updateStatus();}renderLlmControls();
     if(!SETUP_AUTO_CHECKED){SETUP_AUTO_CHECKED=true;try{if(!localStorage.getItem('flowscope.setup.seen'))openSetup();}catch(_){openSetup();}}
   }catch(error){LIVE_MODE=false;}

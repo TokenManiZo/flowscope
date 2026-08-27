@@ -631,7 +631,7 @@
 - **가중치:** 근거 없는 confidence 퍼센트는 넣지 않는다. beta.3이 모든 object candidate에 고정 `1.0`을 내려 UI가 `신뢰도 100%`로 표시하던 값은 추출 근거 enum으로 교체한다. beta.4 route candidate는 적용 가능성·명시 method·object template·state-changing·복수 provenance의 범주형 사전식 정렬과 이유를 노출한다. 미요청 후보에 연결되지 않은 authorization 신호는 있는 것처럼 쓰지 않는다. 수치 가중치는 고정 corpus와 blind benchmark에서 feature별 성능·검토 비용을 측정한 뒤 별도 결정한다.
 - **근거:** W3C Fetch Metadata와 Web App Manifest, PortSwigger Site Map의 requested/unrequested 구분, Montoya SiteMap API, OWASP IDOR/BOLA testing guidance. 세부 링크와 gate는 `product-development-plan.md` P4-H가 정본이다.
 - **구현:** classifier v3가 manifest/source map/service worker를 `DISCOVERY_METADATA`로 분리하고 같은 service·operation의 강한 API Evidence만 immutable discovery gate 안에서 교차 보강한다. RouteCandidate는 project에 왕복되고 Web의 별도 수량·필터·중립 노드·상세에서 provenance와 범주형 정렬 이유를 노출한다. object의 고정 100% confidence는 path/query/body/GraphQL/derived 근거 enum으로 교체했다.
-- **검증·한계:** 자동 회귀와 standalone 1280×720·600×800 화면 검증은 완료했다. 후보 추출은 저장된 8KiB 응답 안의 정적 literal에 제한되며 동적 JavaScript·런타임 생성 경로를 추측하지 않는다. 실제 Burp Community에서 새 JAR의 응답 없는 Site Map item, 실제 Burp Browser HUMAN pass, candidate가 있는 그래프를 확인하는 수동 gate와 공개 confusion matrix는 남아 있다.
+- **검증·한계:** beta.4 당시 자동 회귀와 standalone 1280×720·600×800 화면 검증을 완료했다. 당시 후보 추출은 저장된 8KiB 응답 안의 정적 literal에 제한됐고, beta.8의 D-073에서 보존 전문 우선·metadata-only 시 preview fallback으로 확장됐다. 동적 JavaScript·런타임 생성 경로는 여전히 추측하지 않는다. 실제 Burp Community에서 새 JAR의 응답 없는 Site Map item, 실제 Burp Browser HUMAN pass, candidate가 있는 그래프를 확인하는 수동 gate와 공개 confusion matrix는 남아 있다.
 - **상태:** beta.4 구현·자동 회귀 완료, Burp 실환경 gate 대기
 
 ## D-069 · route discovery = 공통 코어 + 무상태 포맷 어댑터
@@ -674,6 +674,17 @@
 - **경계:** 로컬 CLI 바이너리, provider 기본 system prompt, 관리자 강제 policy와 provider 측 metadata 저장까지 FlowScope가 제거한다고 주장하지 않는다. 따라서 독립성은 이전 FlowScope 대화·일반 사용자 설정·FlowScope cross-lane state를 재사용하지 않는 통제 경계이며, 모델의 수학적 완전 독립성 주장이 아니다.
 - **검증:** 명령 인자·환경 필터·취소/unload-before-registration을 자동 회귀로 고정했다. 설치된 Codex CLI 0.147.0은 같은 격리 계열 옵션으로 무대상 `Reply exactly OK` 호출이 exit 0·정확한 `OK`를 반환했다. Claude Code 2.1.231은 옵션 파싱과 로그인 요청 단계까지 진입했으나 provider HTTP 429 주간 한도로 모델 응답을 받지 못했으므로 성공으로 기록하지 않는다. 둘 다 beta.7 Burp MCP/대상 E2E 검증을 대신하지 않는다.
 - **상태:** 코드·자동 회귀·Codex 무대상 CLI smoke 완료. Claude 모델 호출과 beta.7 Burp-hosted MCP E2E 대기.
+
+## D-073 · HUMAN Evidence 보존 = 전문·preview 분리 + 보조 흐름 비오염 표시
+
+- **문제:** 기존 8KiB 단일 문자열은 query/body 뒤쪽 객체 ID, 긴 응답의 route 참조, 재현 근거를 조용히 잘랐다. 반대로 모든 전문을 무제한 평문으로 메모리에 두면 Burp 안정성과 비밀 경계가 깨진다. 또한 로그인·화면 이동·polling을 메인 인가 graph에서 빼기만 하면 사용자는 실제로 관측됐는지 확인할 수 없고, 다시 포함하면 coverage와 gap이 오염된다.
+- **저장 결정:** header와 구조화 body를 먼저 마스킹한 textual 요청·응답 전문을 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존한다. record는 SHA-256·원 byte 수·retention을 들고, project schema v2는 같은 digest blob을 한 번만 저장한다. 8KiB 필드는 UI preview로만 유지한다. binary와 메시지별/총량 상한 초과 전문은 내용 없이 size+digest+사유만 남기며 UI가 metadata-only임을 표시한다. schema v1은 계속 읽지만 과거에 저장되지 않은 전문을 복원한 것처럼 꾸미지 않는다.
+- **자원 결정:** path와 모든 명시 query/중첩 JSON·배열/XML/multipart/GraphQL ID 참조를 `ResourceReference`로 보존한다. 현재 인가 cell은 Evidence 순서의 첫 참조만 primary로 사용한다. operation별 객체 적용 가능성 없이 모든 참조를 Cartesian product로 펼치는 방식은 오탐을 만들므로 기각한다.
+- **노이즈 결정:** `SESSION_SETUP`은 `AUTH_SESSION/EXCLUDE`, 반복 안정 unknown은 `POLLING/REVIEW`로 구분한다. 메인 graph·coverage·gap은 계속 `INCLUDE`만 사용한다. 사용자가 켠 경우에만 인증·navigation·polling·background를 중립 보조 레이어로 그리며 이 edge는 cell/verdict/finding을 만들지 않는다. source 필터는 edge뿐 아니라 해당 source만 가진 node도 숨긴다.
+- **샘플 경계:** 고정 `demo.flowscope.test`와 `demo-*` run만 있는 합성 dataset은 snapshot에서 명시적으로 식별하고 Web에 “실제 점검 결과 아님·네트워크 요청 0건”을 지속 표시한다. H/S/L 모양만으로 실제 Burp Browser·ZAP·Codex 실행을 암시하는 표시는 기각한다.
+- **용량 경계:** live record 20,000건과 digest 중복 제거 후 압축 전문 총량 48MiB 상한을 beta에서 유지한다. record 초과분은 dropped count와 “현재 분석은 불완전” 경고로, 전문 총량 초과분은 metadata-only 메시지 수와 개별 사유로 snapshot/Web에 노출한다. project 저장 결과가 100MiB를 넘으면 교체 전에 거부한다. 무제한 RAM, silent truncation, raw secret 저장, 검증되지 않은 임의 가중치는 기각한다. 장시간·대용량 engagement용 disk-backed event store는 별도 성능 gate 뒤 후속 단계다.
+- **검증·한계:** 압축 round-trip·digest 손상·binary/over-limit·schema v1/v2·blob dedup·중첩/복수 객체·인증/polling 분류 회귀를 추가한다. 자동 회귀와 standalone 브라우저 검증은 실제 Burp Browser의 장시간 메모리·20,000건 초과·저장/복구 gate를 대신하지 않는다.
+- **상태:** beta.8 코드·183개 자동 회귀·standalone UI 완료, 실제 Burp Community 장시간 수집은 수동 gate.
 
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.

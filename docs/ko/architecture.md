@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.7
+# FlowScope 설계서 v1.2.0-beta.8
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -31,7 +31,7 @@ LLM :8082 = optional observed fallback; decisive validation에는 사용하지 �
 - Web UI는 번들 Cytoscape.js를 사용하며 외부 CDN이나 원격 자원을 요청하지 않는다. JCEF·JavaFX는 배포물에 포함하지 않는다.
 - source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시한다. 일반 UI 조작의 accent와 authorization verdict 색은 source palette와 별도 축으로 유지한다(D-061).
 - 프록시 리스너는 Montoya가 생성하지 못하므로 사용자가 HUMAN 8080과 ZAP 8081을 만든다. 8082는 외부 LLM 클라이언트 호환 폴백이며 해당 관측은 `UNVERIFIED_RUNTIME`이라 결정적 판정에 쓸 수 없다.
-- 캡처 콜백은 append만 하고 400ms worker coalescing으로 분석한다. 20,000건에서 정지한다.
+- 캡처 콜백은 append만 하고 400ms worker coalescing으로 분석한다. live record는 20,000건에서 정지하며 초과 건수를 snapshot과 Web 경고로 노출한다.
 - MCP는 `127.0.0.1`에만 bind하고 random Bearer, Origin 검사, 1MiB 요청 상한을 적용한다.
 - Web 서버도 `127.0.0.1`에만 bind한다. Host/Origin과 UI에 주입된 세션 capability를 검증하고 `no-store`, CSP, frame 차단 헤더를 보낸다. Burp 축소 JRE 호환을 위해 MCP와 같은 자체 `LoopbackHttpServer`를 재사용한다.
 - 1초 snapshot은 그래프 메타데이터와 서버 판정만 전송하고 마스킹 Request/Response 전문은 선택한 operation에서만 `/api/evidence`로 200건씩 지연 로드한다.
@@ -42,11 +42,11 @@ LLM :8082 = optional observed fallback; decisive validation에는 사용하지 �
 RequestRecord {
   source, sourceDetail, orchestrator, tool, phase, runId,
   executionTrust, authState,
-  service, method, path, query, reqBody, reqText,
-  status, body, respText, location, hasResponse, timestamp,
+  service, method, path, query, reqBody, reqText, requestPayload,
+  status, body, respText, responsePayload, location, hasResponse, timestamp,
   requestContentType, responseContentType, secFetchDest, secFetchMode,
   accessControlRequestMethod,
-  fp, idn, role, op, resource, evidenceId, contentDigest,
+  fp, idn, role, op, resource, resourceReferences[], evidenceId, contentDigest,
   trafficClassification
 }
 
@@ -63,7 +63,9 @@ RouteCandidate {
 - `service`: scheme://host:port. op/resource/identity 경계를 서비스별로 분리한다.
 - `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다. 쿠키 fingerprint는 계정 연결·감사를 위한 안전한 식별자이지 로그인 증명이 아니다.
 - `authState`: `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`. 명시적 계정 연결이나 memory-only broker의 exact credential match만 `ACCOUNT_BOUND`가 된다. 계정에 연결되지 않은 cookie/session fingerprint는 서비스별 하나의 `UNRESOLVED` 그래프 신원으로 안정화하되 원 fingerprint는 Evidence에 남긴다.
-- `trafficClassification`: `API/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
+- `requestPayload/responsePayload`: 저장 전 구조 마스킹된 전문의 SHA-256, 원래 UTF-8 byte 수, 보존 상태와 선택적 GZIP이다. 메시지당 기본 1MiB 이하 textual이며 digest 중복 제거 후 압축 전문 총량 48MiB 안에 있을 때만 `FULL`이다. binary, 메시지별 상한 초과, 압축 총량 상한 초과는 서로 다른 metadata-only 사유를 남긴다. 8KiB `reqText/respText/body`는 UI preview이며 전문과 같은 필드가 아니다.
+- `resourceReferences`: path/query/body/GraphQL에서 실제 값으로 관측된 모든 객체 참조와 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE` 근거다. `resource`는 기존 인가 cell의 보수적 primary 하나다.
+- `trafficClassification`: `API/AUTH_SESSION/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/POLLING/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
 - `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
@@ -71,20 +73,20 @@ RouteCandidate {
 - `evidenceId`: 전체 의미 내용 digest 기반 ID. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
-프로젝트 파일 schema v1은 마스킹된 RequestRecord, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 완료가 확인된 레인, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록을 저장한다. raw broker 세션은 저장하지 않는다. 탐색 레코드가 존재한다는 이유만으로 완료 레인을 추론하지 않으며, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증한다. 분류는 저장하되 로드 후 현재 결정론 classifier로 재계산하고 적용 버전을 프로젝트 root에 기록한다. 새 필드는 선택값으로 추가해 기존 schema v1 파일을 계속 읽는다. 임시파일과 atomic replace를 사용하고 POSIX에서는 0600으로 제한한다(D-049/D-050/D-052/D-054/D-059).
+프로젝트 파일 schema v2는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 완료가 확인된 레인, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록을 저장한다. raw broker 세션은 저장하지 않는다. 전문은 record가 digest/size/retention을 참조하고 load 때 digest와 byte 수를 검증한다. schema v1 preview-only 파일도 계속 읽되 존재하지 않은 전문을 복원한 것처럼 만들지 않는다. 탐색 레코드가 있다는 이유만으로 완료 레인을 추론하지 않으며, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증한다. 분류는 저장하되 로드 후 현재 결정론 classifier로 재계산하고 적용 버전을 root에 기록한다. 임시파일과 atomic replace를 사용하고 POSIX에서는 0600으로 제한한다(D-049/D-050/D-052/D-054/D-059/D-073).
 
 ## 4. 파이프라인
 
 ### 4.1 수집·마스킹 F-01~03/F-22
 
-Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. 각 Proxy 요청의 `messageId`에 요청 수신 시점의 run/account/login-capture 문맥을 임시 보관하고 응답에서 한 번 소비하므로, ZAP lane 전환이나 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속한다. in-flight 문맥은 20,000건·10분 상한을 두며, 원 인증값은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. `Http.registerHttpHandler`는 Repeater/Intruder 등 비프록시 Burp 도구를 보완하며 같은 capture gate를 지난다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 요청·응답 상세는 필드별 8KiB로 제한한다. Burp XML은 XXE를 차단하고 불완전 item을 이유와 함께 skip한다.
+Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. 각 Proxy 요청의 `messageId`에 요청 수신 시점의 run/account/login-capture 문맥을 임시 보관하고 응답에서 한 번 소비하므로, ZAP lane 전환이나 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속한다. in-flight 문맥은 20,000건·10분 상한을 두며, 원 인증값은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. `Http.registerHttpHandler`는 Repeater/Intruder 등 비프록시 Burp 도구를 보완하며 같은 capture gate를 지난다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·SHA-256·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다.
 
 HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖의 일반 HUMAN 관측은 `BASELINE`으로 보존한다. `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 저장과 감사 대상이지만 discovery coverage·3-way gap·그래프 입력은 아니다. 로그인 준비와 우연한 scope 내 이동이 HUMAN 탐색 성과로 계산되지 않게 하려면 사용자가 HUMAN pass를 시작·종료해야 한다.
 
 ### 4.2 정규화 F-04~06
 
 - 경로 숫자/UUID/장문 hex를 `{id}`로 만들고 전체 부모 체인을 resource에 보존한다.
-- 명시적 query/body `id`, `*Id`, `*_id`만 보조 resource로 쓴다. page/limit 등 제어값은 제외한다.
+- 명시적 query/body `id`, `*Id`, `*_id`, `*Ids`, `*_ids`를 JSON 중첩 객체·배열, XML, multipart에서 모두 수집한다. page/limit 등 제어값은 제외한다. 여러 참조는 모두 Evidence로 노출하지만 기존 인가 분석은 첫 근거 참조 하나만 primary로 사용해 적용 가능성이 증명되지 않은 객체 조합을 만들지 않는다.
 - GraphQL은 `POST /graphql#operationName`으로 분리한다.
 - identity는 service + fingerprint로 시작한다. JWT iss/aud/sub는 서명 미검증 그룹핑 힌트일 뿐 인증 증거가 아니다(D-034). 계정 연결 없는 쿠키 fingerprint는 모두 같은 계정으로 합치는 대신 서비스별 `UNRESOLVED` 그래프 신원으로만 접어 세션 회전 노이즈를 막고, 원 fingerprint는 연결 후보로 보존한다.
 - 정규화 뒤 사용자가 확인한 session binding을 적용한다. 다른 service의 계정과 세션은 연결할 수 없다.
@@ -190,6 +192,8 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 
 관측 Evidence가 0건이면 분석 패널을 숨기고 `scope → 계정 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작만 먼저 노출한다. Evidence가 생기면 위 분석 작업면으로 전환한다. 이 progressive disclosure는 분석 모델을 줄이지 않고 첫 행동만 분리하며, ADMIN은 BFLA 역할 비교가 필요할 때만 선택적으로 추가한다(D-057).
 
+번들 `SampleProject`는 `demo.flowscope.test`의 합성 H/S/L record만 만들며 대상 네트워크를 호출하지 않는다. snapshot은 모든 record가 이 고정 demo service·run provenance일 때만 `sampleMode=true`를 보내고 Web 상단에 “실제 HUMAN/ZAP/LLM 점검 결과 아님·네트워크 요청 0건”을 표시한다. 실제 traffic이 하나라도 섞이면 sample mode로 표시하지 않는다.
+
 ## 6. 모듈 매핑
 
 | 모듈 | 구현 |
@@ -206,7 +210,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 ## 7. 명시적 한계
 
 - 후보는 exploitability/business impact의 증명이 아니다.
-- `UNCROSSED`는 관측된 identity와 관측된 operation/resource 안의 미실행 cell만 계산한다. 별도 route inventory는 구현됐지만 저장된 8KiB 응답과 응답 없는 Burp Site Map 항목에서 최대 20,000개만 만들며, 동적 JavaScript·런타임 생성 경로·전체 블랙박스 공격면을 안다고 주장하지 않는다.
+- `UNCROSSED`는 관측된 identity와 관측된 operation/resource 안의 미실행 cell만 계산한다. 별도 route inventory는 구현됐지만 기본 1MiB 이하로 보존된 textual 응답(초과/metadata-only면 8KiB preview)과 응답 없는 Burp Site Map 항목에서 최대 20,000개만 만들며, 동적 JavaScript·런타임 생성 경로·전체 블랙박스 공격면을 안다고 주장하지 않는다.
 - domain-specific 또는 일반 principal 문맥이 아닌 중첩 ownership은 사용자 확정이 필요하다.
 - 안정 신호 없는 opaque rotating token은 자동으로 같은 identity로 합칠 수 없으며 사용자 확인 binding이 필요하다.
 - 쿠키 존재만으로 익명/로그인 여부를 완전히 알 수 없고 Fetch Metadata/MIME도 모든 클라이언트가 제공하지 않는다. 따라서 `UNRESOLVED`와 `REVIEW`가 정상 상태이며 분류의 오탐·미탐 0을 주장하지 않는다.

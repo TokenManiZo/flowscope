@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.7
+# FlowScope 1.2.0-beta.8
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -17,9 +17,9 @@ identity ──access──▶ resource ──calls──▶ operation
 - Identity × operation × resource coverage matrix, uncrossed combinations, partial discovery, and source conflicts.
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
 - Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and account-bound ZAP/LLM requests.
-- Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture.
+- Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture. Text messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate, separate from 8 KiB UI previews.
 - Evidence-preserving traffic classification: every captured observation remains inspectable while only high-confidence navigation, static assets, real CORS preflights, no-response records, and non-discovery phases stay out of coverage analysis by default.
-- Classifier v3 separates manifests, source maps, and service workers as discovery metadata and can corroborate an ambiguous record only with strong API evidence for the same service and normalized operation.
+- Classifier v4 separates authentication setup and stable repeated polling as `AUTH_SESSION` and `POLLING`, separates manifests/source maps/service workers as discovery metadata, and can corroborate an ambiguous record only with strong API evidence for the same service and normalized operation.
 - A common route-discovery pipeline applies one scope, method, normalization, deduplication, and provenance gate to same-scope HTML, static JavaScript call sites, OpenAPI JSON/YAML, standard metadata, generic XML, and response-less Burp Site Map items. A method without evidence remains `UNKNOWN`; candidates never affect coverage, gaps, verdicts, or findings before a request/response is observed.
 - Explicit `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` authentication state. Unbound cookie rotation no longer explodes graph identities, and verified account bindings remain service-scoped.
 - Localhost-only authenticated MCP server for Codex and Claude Code subscription clients.
@@ -28,13 +28,15 @@ identity ──access──▶ resource ──calls──▶ operation
 - Server-enforced independent Explorer view, immutable three-lane dataset lock, and final LLM Judge synthesis.
 - Web quick-start buttons that launch a fresh locally authenticated Codex or Claude CLI process for Explorer and a separate persistent Judge session that can be resumed explicitly.
 - MCP route-candidate visibility limited to the active Explorer's own source/run provenance; pre-lock status hides cross-lane counts, runs, assessments, and validations, ZAP state/execution is blocked during exploration, and the route inventory is frozen with the dataset lock.
-- One-click import of existing Burp Proxy history and response-less exact-scope Site Map candidates, with multiplicity-preserving duplicate suppression, plus a no-network onboarding sample.
+- One-click import of existing Burp Proxy history and response-less exact-scope Site Map candidates, with multiplicity-preserving duplicate suppression. The no-network onboarding sample is explicitly bannered as not being a real HUMAN/ZAP/LLM run.
 - Masked, versioned `.flowscope.json` project save/load with account/session bindings, policies, LLM assessments, server-validated final verdicts, and human audit decisions.
 - Evidence-to-Repeater handoff that opens a masked, unsent draft for explicit human validation.
 - Evidence-bound LLM validation using repeated reproduction and authorized-control observations, with human audit/override.
 - Strict Burp XML import with XXE protection and item-level error skipping.
 
 FlowScope does not know the complete black-box attack surface, so it never reports a misleading coverage percentage.
+
+Binary messages, messages over the 1 MiB per-message limit, and messages beyond the 48 MiB deduplicated compressed-payload budget retain only their original size, SHA-256 digest, and retention reason. Live capture stops at 20,000 records to protect Burp and reports dropped records and metadata-only messages; this beta does not promise unbounded capture.
 
 ## Requirements
 
@@ -50,7 +52,7 @@ FlowScope does not know the complete black-box attack surface, so it never repor
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.7.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.8.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 
@@ -144,6 +146,8 @@ Port defaults can be changed before Burp starts:
 -Dflowscope.ports=8080:human:browser,8081:scanner:other_scanner,8082:llm:llm_explorer
 -Dflowscope.mcp.port=8787
 -Dflowscope.web.port=17777
+-Dflowscope.payload.maxBytes=1048576
+-Dflowscope.payload.memoryBytes=50331648
 -Dflowscope.mcp.token=<stable-local-token-if-required>
 -Dflowscope.mcp.tokenFile=/absolute/path/to/owner-only-token
 -Dflowscope.scope=https://api.example.test/v1
@@ -195,7 +199,7 @@ The MCP and Web servers bind only to `127.0.0.1`, validate host/origin, require 
 - Authorization, Cookie, Set-Cookie, password, token, secret, and API-key values are masked before Evidence storage.
 - Authentication grouping uses a subject or a short one-way fingerprint; raw opaque tokens are not retained. Cookie presence alone is not login proof: an unbound cookie fingerprint is retained for audit/binding but shown as one service-scoped `UNRESOLVED` graph identity until a controlled broker match or explicit account binding proves the account.
 - Traffic classification never deletes stored Evidence. User `include/exclude/auto` overrides are operation-scoped but cannot turn no-response, unknown-source, or non-discovery validation traffic into discovery coverage; repeated observations are collapsed only in the display and retain every Evidence ID, count, and first/last timestamp.
-- Bodies and message detail are truncated to 8 KiB per field; live capture is capped at 20,000 records.
+- UI previews are truncated to 8 KiB per field. Masked textual messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate by default; binary and over-limit messages keep only size, digest, and retention metadata. Live capture is capped at 20,000 records and exposes dropped-record and metadata-only-message counts.
 - Project files contain masked traffic but may still contain sensitive application data. POSIX files are written owner-read/write only; protect them under the engagement's data policy.
 - Project writes use a temporary file and atomic replacement when the filesystem supports it.
 
@@ -207,7 +211,7 @@ The MCP and Web servers bind only to `127.0.0.1`, validate host/origin, require 
 - `ACTIVE` is transport-level evidence that a credential-bearing capture observed an HTTP response that was not a 401, login redirect, or invalid-token response. It is not a generic proof of application-specific `/me` semantics, account ownership, or role; the operator must verify those mappings.
 - Opaque rotating tokens cannot be correlated automatically without a stable signal; the operator can explicitly bind verified fingerprints to one registered account.
 - Fetch Metadata and MIME signals can be absent or misleading, and business APIs can resemble documents, assets, or telemetry. The classifier therefore excludes only converging high-confidence signals, keeps ambiguous traffic in `REVIEW` outside the main graph, exposes reasons, and permits a reversible operation-level override. An unreviewed real API can therefore remain outside the main comparison; traffic-noise classification is not perfect.
-- Up to 20,000 unrequested routes are extracted only from the stored, 8 KiB-bounded response fields and response-less Burp Site Map items. Dynamically composed JavaScript URLs and client-runtime-only routes are not guessed. Candidate priority is an inspectable categorical order, not a probability or vulnerability score.
+- Up to 20,000 unrequested routes are extracted only from retained masked textual responses (falling back to the 8 KiB preview when the full message is metadata-only) and response-less Burp Site Map items. Dynamically composed JavaScript URLs and client-runtime-only routes are not guessed. Candidate priority is an inspectable categorical order, not a probability or vulnerability score.
 - Data-flow links use bounded exact-value matching, not full semantic taint analysis.
 - Repeater handoff uses the stored masked request and never auto-sends it. Automated decisive validation uses only FlowScope-controlled MCP requests, not Repeater or direct 8082 traffic.
 - Closed-world execution prevents the supplied agent from using external discovery by instruction and tool choice, but FlowScope cannot control a separately modified agent installation or other local processes. Server-side scope, evidence visibility, and verdict gates remain authoritative.

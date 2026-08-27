@@ -72,7 +72,7 @@ class PipelineClassificationTest {
         Pipeline.Result result = Pipeline.run(records);
 
         assertTrue(result.records.stream().allMatch(record -> record.trafficClassification.trafficClass()
-                == TrafficClassification.TrafficClass.BACKGROUND));
+                == TrafficClassification.TrafficClass.POLLING));
         assertTrue(result.coverageRecords.isEmpty());
         assertEquals(0, result.excludedCount);
         assertEquals(3, result.reviewCount);

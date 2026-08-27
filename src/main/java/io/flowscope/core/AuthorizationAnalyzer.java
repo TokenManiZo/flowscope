@@ -129,7 +129,7 @@ public final class AuthorizationAnalyzer {
             if (r.resource == null) continue;
             if (isSuccessful(r) && !isMetadataMethod(r.method)) {
                 firstSuccess.putIfAbsent(r.resource, r);
-                for (String ownerValue : ownerValues(r.body)) {
+                for (String ownerValue : ownerValues(r.responseBodyForAnalysis())) {
                     String identity = aliasesByService.getOrDefault(r.service, Map.of())
                             .get(ownerValue.toLowerCase(Locale.ROOT));
                     if (identity != null) {
@@ -204,7 +204,8 @@ public final class AuthorizationAnalyzer {
         if (isWrite(successful.get(0).method)) {
             return new Decision(Verdict.SUSPICIOUS, "비소유자의 상태변경 요청이 성공", false);
         }
-        if (successful.stream().anyMatch(r -> ResponseEvidence.showsObject(r.body, key.resource(), owner.identity()))) {
+        if (successful.stream().anyMatch(r -> ResponseEvidence.showsObject(
+                r.responseBodyForAnalysis(), key.resource(), owner.identity()))) {
             return new Decision(Verdict.SUSPICIOUS, "비소유자의 응답에 타 소유 객체가 포함됨", false);
         }
         return new Decision(Verdict.UNDECIDED, "성공 응답이지만 타 소유 객체 포함 여부를 확인할 수 없음", false);

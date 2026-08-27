@@ -7,11 +7,13 @@ public record TrafficClassification(TrafficClass trafficClass, Disposition dispo
                                     List<String> reasons, boolean userOverride) {
     public enum TrafficClass {
         API,
+        AUTH_SESSION,
         NAVIGATION,
         STATIC_ASSET,
         DISCOVERY_METADATA,
         PREFLIGHT,
         TELEMETRY_CANDIDATE,
+        POLLING,
         BACKGROUND,
         UNKNOWN
     }

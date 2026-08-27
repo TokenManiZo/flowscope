@@ -18,12 +18,13 @@ public final class ResponseEvidence {
 
     public static boolean successful(RequestRecord record) {
         return record != null && record.hasResponse && record.status >= 200 && record.status < 300
-                && !softDenied(record.body);
+                && !softDenied(record.responseBodyForAnalysis());
     }
 
     public static boolean denied(RequestRecord record) {
         if (record == null || !record.hasResponse) return false;
-        if (record.status == 401 || record.status == 403 || softDenied(record.body)) return true;
+        if (record.status == 401 || record.status == 403
+                || softDenied(record.responseBodyForAnalysis())) return true;
         return record.status >= 300 && record.status < 400 && record.location != null
                 && LOGIN_REDIRECT.matcher(record.location).find();
     }

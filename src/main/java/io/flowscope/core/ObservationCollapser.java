@@ -31,8 +31,13 @@ public final class ObservationCollapser {
     private static String key(RequestRecord record) {
         return String.join("\u0000", record.source.name(), String.valueOf(record.idn), String.valueOf(record.runId),
                 record.phase.name(), record.method, String.valueOf(record.op), String.valueOf(record.resource),
-                String.valueOf(record.query), String.valueOf(record.reqBody), Integer.toString(record.status / 100),
-                String.valueOf(record.body), String.valueOf(record.location));
+                String.valueOf(record.query), payloadKey(record.requestPayload, record.reqBody),
+                Integer.toString(record.status / 100), payloadKey(record.responsePayload, record.body),
+                String.valueOf(record.location));
+    }
+
+    private static String payloadKey(StoredPayload payload, String preview) {
+        return payload == null ? String.valueOf(preview) : payload.digest();
     }
 
     private static final class MutableGroup {

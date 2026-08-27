@@ -953,6 +953,57 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.
 
 ```text
+## 2026-08-27 · 1.2.0-beta.8 · HUMAN Evidence 보존·노이즈·그래프 1~5단계
+
+### 목표와 성공 조건
+
+- 8KiB preview 뒤의 query/body/route/object Evidence를 조용히 잃지 않는다.
+- 로그인·화면·polling 노이즈를 메인 coverage에서 분리하되 원 Evidence와 사용자 확인 경로는 보존한다.
+- path뿐 아니라 관측된 구조화 ID를 모두 추적하고, 근거 없는 객체 조합은 만들지 않는다.
+- source 필터·보조 그래프·Request/Response 상세이 실제 Web UI에서 일관되게 동작한다.
+- 샘플 H/S/L을 실제 HUMAN/ZAP/Codex 실행 결과로 오인하지 않게 한다.
+
+### 개발·수정
+
+- `StoredPayload`를 추가해 저장 전 마스킹된 textual 전문을 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP·SHA-256으로 보존했다. binary와 메시지별/총량 초과 전문은 size+digest+reason metadata-only로 남겼다.
+- `RequestRecord`에 request/response payload와 복수 `ResourceReference`를 추가하고 정규화·data flow·route discovery·인가 Evidence·MCP·Repeater draft가 보존 전문을 우선 사용하게 했다.
+- project schema를 v2로 올려 digest별 압축 blob을 한 번 저장하고 load 때 digest·byte 수를 검증했다. schema v1은 계속 읽는다.
+- classifier v4에서 HUMAN 로그인 준비를 `AUTH_SESSION/EXCLUDE`, 반복 안정 unknown을 `POLLING/REVIEW`로 분리했다. live 20,000건 초과는 dropped count로 공개한다.
+- query와 중첩 JSON·배열·XML·multipart·GraphQL의 모든 명시 ID를 추출했다. 기존 인가 cell은 첫 근거 참조 하나만 primary로 사용한다.
+- Web에 보조 흐름 toggle, retention/bytes/digest/reason 상세, record 누락·metadata-only 메시지 경고를 추가하고 source가 꺼지면 그 source만 가진 node도 숨기게 했다.
+- 온보딩 샘플에 인증·polling Evidence를 추가해 보조 흐름을 실제로 확인할 수 있게 했다. snapshot의 엄격한 demo provenance로 sample mode를 식별하고 상단에 “실제 점검 결과 아님·대상 네트워크 요청 0건”을 표시했다.
+- Maven/MCP/Web/README를 `1.2.0-beta.8`로 맞췄다.
+
+### 이유
+
+- 단일 8KiB 문자열은 긴 본문 뒤쪽 ID와 route 근거를 소급 복구할 수 없었고, 무제한 평문 보존은 Burp 메모리와 비밀 경계를 훼손한다.
+- 보조 트래픽을 삭제하면 미탐 감사 경로가 사라지고, 메인 graph에 넣으면 coverage와 gap이 부풀기 때문에 저장·메인 분석·선택 표시를 분리했다.
+- 모든 객체 참조의 단순 Cartesian product는 operation 적용 가능성을 증명하지 못하므로 primary 인가 모델은 보수적으로 유지했다.
+- standalone 샘플의 H/S/L 표기가 실제 세 레인 수행으로 오해된다는 사용자 재현을 받아, 설명 문구가 아니라 지속 배너로 구분했다.
+
+### 영향 파일
+
+- 코어·수집: `StoredPayload`, `ResourceReference`, `RequestRecord`, `FlowScopeExtension`, `BurpXmlParser`, `Normalizer`, `TrafficClassifier`, `Pipeline`, Evidence/분석 consumer와 `SampleProject`
+- 저장·통합·Web: `ProjectStore`, `McpServer`, `FlowScopeWebServer`, `SnapshotJsonWriter`, `web/index.html`
+- 회귀: `StoredPayloadTest`, `ProjectStoreTest`, `TrafficClassifierTest`, `PipelineClassificationTest`, `AdvancedNormalizerTest`, `FlowScopeWebServerTest`, `SampleProjectTest`
+- 문서: 루트·영문 README/CHANGELOG, `architecture.md`, `decisions.md`, `product-development-plan.md`, `ui-product-rationale.md`, `beta-validation.md`, 이 로그
+
+### 검증
+
+- `mvn clean verify`: JDK 26, Java `--release 21`, 183 tests, 실패·오류·skip 0.
+- JS 추출본 `node --check`: 성공.
+- standalone beta.8: 보조 흐름 4건을 켜도 7조합·미교차 1·일부 7·불일치 2 유지, 첫 Evidence의 88/106 bytes·SHA-256·마스킹 전문 확인, 샘플 경고 배너 표시, console warning/error 0.
+- 배포물: `target/flowscope-1.2.0-beta.8.jar` 하나, 3,840,945 bytes, 1,957 entries, SHA-256 `63adff71dabdfadd686ff0c408043be14fb5a63f86c784fdb3d2a65e9394ff7e`. ZIP 무결성·Main-Class·Java 21·Montoya class 0을 확인했다.
+- QA 중 첫 standalone이 stale `target/classes`의 beta.7 tag를 보여 실패로 처리했고, compile 후 reload한 beta.8만 검증 기록에 사용했다.
+
+### 남은 한계·다음 gate
+
+- 실제 Burp Browser HUMAN pass, 장시간 메모리, 20,000건 초과, 대용량 project save/load는 아직 수동 검증하지 않았다.
+- binary·메시지당 기본 1MiB 초과·압축 전문 총량 48MiB 초과 메시지는 내용 없이 metadata-only다. 이 경우 분석은 8KiB preview 범위로 제한된다.
+- 복수 object 참조를 모두 보존하지만 operation별 적용 가능성 모델이 없어 인가 cell은 primary 하나만 사용한다.
+- MPA/SPA/GraphQL blind corpus의 분류 confusion matrix와 실제 미탐·오탐은 다음 gate다. 오탐·미탐 0이나 성능 우위를 주장하지 않는다.
+- 이번 H/S/L은 합성 샘플 UI QA다. 실제 ZAP과 Codex Explorer를 실행한 것으로 기록하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

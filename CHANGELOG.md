@@ -2,6 +2,18 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.8 — 2026-08-27
+
+- 마스킹된 textual 요청·응답 전문을 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB UI preview와 분리
+- project schema v2에서 SHA-256 digest별 전문 blob을 한 번만 저장하고 load 때 digest·원 byte 수를 검증; schema v1 읽기 호환 유지
+- binary·메시지별 상한·압축 총량 상한 초과 전문은 내용 대신 크기·digest·사유만 보존하고 Evidence 및 수집 통계에 retention 상태 표시
+- path/query/중첩 JSON·배열/XML/multipart/GraphQL에서 명시 ID 참조를 모두 추출해 근거와 함께 노출하되, 인가 cell은 보수적 primary 하나만 사용
+- 인증 준비와 반복 polling을 각각 `AUTH_SESSION`, `POLLING`으로 분리하고 원 Evidence는 유지
+- 인증·navigation·polling·background를 선택적 중립 보조 그래프로 표시하되 coverage·gap·verdict에는 포함하지 않음
+- source 필터가 edge뿐 아니라 해당 source만 가진 node도 숨기도록 수정
+- live 20,000건 상한 초과 누락 건수와 “현재 분석은 불완전” 경고를 Web UI에 노출
+- 번들 H/S/L 샘플을 실제 실행 결과로 오인하지 않도록 “실제 점검 결과 아님·네트워크 요청 0건” 상단 배너 추가
+
 ## 1.2.0-beta.7 — 2026-08-27
 
 - Web 빠른 시작에서 사용자의 로컬 로그인 Codex/Claude CLI를 새 프로세스로 실행하는 LLM Explorer·별도 Judge·취소·Judge 후속 재개 제어 추가

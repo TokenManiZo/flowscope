@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.7 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.8 제품 개발·검증 계획
 
 이 계획은 `whs_flow` 화면을 실제 제품 작업면으로 채택한다는 결정과 FlowScope의 기존 수집·분석·MCP 신뢰 경계를 함께 만족시키도록 다시 검토한 실행 기준이다. 성공 기준은 “화면이 보임”이 아니라 실제 Evidence가 끝까지 보존되고, 거짓 자동화 없이 재현 가능하며, 공개 JAR 하나로 설치되는 것이다.
 
@@ -73,7 +73,7 @@
 - beta.3 Web snapshot은 추출된 모든 object candidate에 근거 계산 없이 `confidence=1.0`을 넣고 UI는 이를 `신뢰도 100%`로 표시했다. beta.4에서는 H4의 추출 근거 표시로 교체한다.
 - 성공 기준: README, 결정 로그, 검증 기록과 개발 계획이 이 경계를 동일하게 말하고, 기존 JAR의 성능을 소급 과장하지 않는다.
 
-#### H1. 분류기 v3 — 규격 신호 기반 결정론 cascade
+#### H1. 분류기 v4 — 규격 신호 기반 결정론 cascade
 
 먼저 일반 목적 라벨 fixture를 작성하고 실패를 재현한 뒤 최소 규칙으로 수정한다. target 이름이나 crAPI path는 규칙에 넣지 않는다.
 
@@ -94,7 +94,7 @@
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.7 공통 코어·source/run 격리·candidate lock·구독 CLI 실행 경계 구현과 고정 corpus 회귀 완료, 실제 beta.7 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.8 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계 구현과 고정 corpus 회귀 완료, 실제 beta.8 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 
@@ -192,7 +192,17 @@ RouteCandidate {
 - Claude의 `--no-session-persistence`가 일부 버전에서 metadata를 남길 수 있는 한계는 삭제로 위장하지 않는다. Explorer는 그 ID를 저장·resume하지 않고 UI에서 잔존 가능성을 경고한다.
 - 자동 검증은 실행 인자, fresh/no-resume, exact run 종료 실패, 3-lane/lock gate, inactive account 차단, Claude Judge resume, 긴 Codex 출력의 session ID, Web API와 scope 변경 차단을 다룬다. 실제 구독 로그인 상태의 Codex/Claude, Burp MCP 왕복, 대상 요청, Judge 후속 resume는 beta.7 JAR 재로드 후 수동 gate다.
 
-## 6. 근거와 계획 해석
+## 6. 2026-08-27 beta.8 HUMAN 핵심 1~5단계 상태
+
+1. **수집 계약:** 마스킹된 textual 요청·응답 전문을 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 보존하고 8KiB preview와 분리했다. binary·메시지별/총량 상한 초과 전문은 size+digest+사유만 남긴다. live 20,000건 초과는 dropped count와 불완전 경고로 노출한다.
+2. **저장 계약:** project schema v2가 digest별 압축 blob을 한 번 저장하고 record reference를 검증해 복구한다. legacy schema v1은 preview-only 상태 그대로 읽는다. raw session과 provider credential은 계속 저장하지 않는다.
+3. **결정론 노이즈 분류:** 로그인 준비는 `AUTH_SESSION/EXCLUDE`, 반복 안정 unknown은 `POLLING/REVIEW`다. Evidence는 삭제하지 않으며 `INCLUDE`만 coverage·gap·인가 판정에 사용한다.
+4. **endpoint/object 정규화:** path 외에 query와 중첩 JSON·배열·XML·multipart·GraphQL의 명시 ID를 모두 추출해 근거와 함께 보존한다. 기존 인가 모델은 primary 하나만 사용하고 Evidence 없는 객체 곱을 만들지 않는다.
+5. **HUMAN 그래프:** 메인 business graph와 별도로 인증·navigation·polling·background 보조 흐름을 사용자가 켜서 볼 수 있다. 보조 edge는 cell·gap·verdict를 만들지 않고, source 필터는 해당 source 전용 node까지 숨긴다. Evidence 상세는 전문 보존/metadata-only 상태와 누락 경고를 표시한다. 번들 H/S/L 샘플은 실제 실행으로 오인하지 않게 지속 배너를 표시한다.
+
+자동 회귀와 standalone UI까지 통과해야 이 다섯 단계를 완료로 기록한다. 실제 Burp Browser 장시간 수집, 20,000건 부하, project 저장/복구, 다양한 MPA/SPA/GraphQL의 confusion matrix는 다음 수동·블라인드 gate다. 이 gate 전에는 미탐·오탐 0이나 제품 성능 우위를 주장하지 않는다.
+
+## 7. 근거와 계획 해석
 
 - [W3C Fetch Metadata](https://www.w3.org/TR/fetch-metadata/)는 `Sec-Fetch-Dest`가 `empty`, `image`, `document`, `iframe` 등 요청 목적을 전달한다고 정의한다. 분류 신호로 쓰되 헤더 누락 가능성 때문에 단독 절대판정으로 쓰지 않는다.
 - [W3C Web App Manifest](https://www.w3.org/TR/appmanifest/)는 `application/manifest+json`과 `.webmanifest`를 웹 앱 manifest로 정의하고 `.json` 확장도 허용한다. 따라서 모든 `+json`을 business API로 보는 현재 규칙은 잘못이다.

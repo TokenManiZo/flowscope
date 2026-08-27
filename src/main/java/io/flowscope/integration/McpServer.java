@@ -232,7 +232,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.7");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.8");
         result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "
@@ -558,8 +558,9 @@ public final class McpServer implements AutoCloseable {
         out.put("operation", record.op);
         out.put("resource", record.resource);
         out.put("status", record.status);
-        out.put("request", Masking.maskHeaders(record.reqText));
-        String response = record.respText != null ? record.respText : record.body;
+        out.put("request", Masking.maskHeaders(record.requestTextForEvidence()));
+        String response = record.responseTextForEvidence() != null
+                ? record.responseTextForEvidence() : record.responseBodyForAnalysis();
         out.put("response", Masking.maskHeaders(Masking.maskSecrets(response)));
         return out;
     }
@@ -813,7 +814,8 @@ public final class McpServer implements AutoCloseable {
                     throw new IllegalArgumentException("BOLA control must use the confirmed owner identity");
                 }
                 if (!ResponseEvidence.successful(control)
-                        || !ResponseEvidence.showsObject(control.body, control.resource, owner.identity())) {
+                        || !ResponseEvidence.showsObject(control.responseBodyForAnalysis(),
+                        control.resource, owner.identity())) {
                     throw new IllegalArgumentException("BOLA control must successfully return the owned object");
                 }
             } else {
@@ -827,7 +829,8 @@ public final class McpServer implements AutoCloseable {
                 ? ValidationDecision.FinalVerdict.REJECTED : ValidationDecision.FinalVerdict.CONFIRMED;
         if (candidate.type() == AuthorizationAnalysis.FindingType.BOLA && requested == ValidationDecision.FinalVerdict.CONFIRMED
                 && probes.stream().anyMatch(record -> !ResponseEvidence.successful(record)
-                || !ResponseEvidence.showsObject(record.body, record.resource, owner.identity()))) {
+                || !ResponseEvidence.showsObject(record.responseBodyForAnalysis(),
+                record.resource, owner.identity()))) {
             throw new IllegalArgumentException("BOLA reproductions must successfully return the foreign object");
         }
         if (candidate.type() == AuthorizationAnalysis.FindingType.BFLA && requested == ValidationDecision.FinalVerdict.CONFIRMED

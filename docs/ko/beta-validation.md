@@ -1,6 +1,22 @@
-# FlowScope 1.2.0-beta.7 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.8 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-27이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.8 자동·standalone 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 183 tests, 실패·오류·skip 0 |
+| 전문 보존 | textual GZIP round-trip, 1MiB 초과·binary·압축 총량 초과 metadata-only, metadata 전환 시 digest/byte 유지, digest/byte 손상 거부, Evidence ID·반복 collapse의 payload digest 사용 회귀 통과 |
+| project schema v2 | 같은 digest blob 1회 저장, request/response reference round-trip, 8KiB를 넘는 masked 전문 복구, legacy schema v1 읽기, 저장 전 비밀 재검사 회귀 통과 |
+| 분류기 v4 | HUMAN `SESSION_SETUP → AUTH_SESSION/EXCLUDE`, 반복 안정 unknown 3건 → `POLLING/REVIEW`, 원 Evidence와 메인 coverage 분리 회귀 통과 |
+| 객체 추출 | path/query와 중첩 JSON·배열·XML·multipart·GraphQL의 복수 명시 ID를 근거별로 보존하고 보수적 primary 하나만 인가 cell에 사용 |
+| Web 계약 | snapshot dropped count와 metadata-only message count, 전문 retention/bytes/digest/reason, 복수 objects, AUTH_SESSION/POLLING filter, source-only node hide와 선택적 보조 흐름 정적 계약 회귀 통과 |
+| standalone UI | 새로 컴파일한 beta.8 샘플에서 보조 흐름 4건을 켜도 관측 7조합·미교차 1·일부 7·불일치 2가 유지됨. Evidence를 펼쳐 Request 88 bytes·Response 106 bytes, 압축 보존·SHA-256·마스킹 전문을 확인. “실제 HUMAN/ZAP/LLM 점검 결과가 아님·대상 네트워크 요청 0건” 배너가 지속 표시되고 console warning/error 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.8.jar`, 3,840,945 bytes, SHA-256 `63adff71dabdfadd686ff0c408043be14fb5a63f86c784fdb3d2a65e9394ff7e` |
+| JAR 무결성 | ZIP 무결성 통과, 1,957 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, Montoya class 0, 번들 AGENTS와 Web 자산·`StoredPayload` 포함, 공개 `target/*.jar` 1개 |
+
+standalone은 네트워크 대상 요청을 만들지 않는 샘플 UI 검증이다. beta.8 JAR의 Burp Community 재로드, 실제 Burp Browser 장시간 수집, 20,000건 초과 경고, 대용량 project 저장/복구, 다양한 blind MPA/SPA/GraphQL 분류·추출 성능은 아직 확인하지 않았다. 따라서 이 표는 오탐·미탐 0, 무제한 수집, 실제 대상 취약점 탐지 성능의 근거가 아니다.
 
 ## 1.2.0-beta.7 자동 사전검증
 

@@ -11,6 +11,7 @@ import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
+import io.flowscope.core.StoredPayload;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.LocalLlmRunner;
@@ -62,6 +63,9 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("스캐너 S (빨강·파선)"));
         assertTrue(index.body().contains("LLM L (검정·점선)"));
         assertTrue(index.body().contains("검토 대기"));
+        assertTrue(index.body().contains("인증·화면·반복 보조 흐름 표시"));
+        assertTrue(index.body().contains("저장 상한으로 유실"));
+        assertTrue(index.body().contains("샘플 데이터 · 실제 HUMAN/ZAP/LLM 점검 결과가 아님"));
         assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
         assertTrue(index.body().contains("첫 점검을 시작하세요"));
         assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
@@ -70,7 +74,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.7 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.8 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
@@ -88,6 +92,9 @@ final class FlowScopeWebServerTest {
         assertEquals("untested", body.at("/cells/0/perSource/human").asText());
         assertEquals("human", body.at("/activeSources/0").asText());
         assertEquals(1, body.at("/trafficStats/captured").asInt());
+        assertEquals(0, body.at("/trafficStats/dropped").asInt());
+        assertEquals(0, body.at("/trafficStats/payloadMetadataOnly").asInt());
+        assertFalse(body.path("sampleMode").asBoolean());
         assertTrue(body.at("/events/0/coverageEligible").asBoolean());
         assertEquals("API", body.at("/events/0/trafficClass").asText());
         assertFalse(body.at("/events/0/classificationReasons").isEmpty());
@@ -98,6 +105,13 @@ final class FlowScopeWebServerTest {
         assertEquals(List.of("REVIEW"), JSON.convertValue(
                 body.at("/routeCandidates/0/priorityReasons"),
                 new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
+
+        JsonNode evidence = json(get("/api/evidence?operation="
+                + encode(body.at("/events/0/op").asText()), token, origin()));
+        assertEquals("FULL", evidence.at("/records/0/requestPayload/retention").asText());
+        assertTrue(evidence.at("/records/0/requestPayload/bytes").asInt() > 0);
+        assertEquals(64, evidence.at("/records/0/requestPayload/digest").asText().length());
+        assertTrue(index.body().contains("압축 전문 총량 상한 초과"));
     }
 
     @Test
@@ -422,6 +436,8 @@ final class FlowScopeWebServerTest {
                     "GET", "/v1/orders/7", 200, "sess:abcdef123456");
             record.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: [masked]";
             record.respText = "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}";
+            record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
+            record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
             record.body = "{\"id\":7}";
             record.hasResponse = true;
             record.timestamp = 1;

@@ -21,8 +21,8 @@ public final class EvidenceIds {
                     r.source.name(), r.sourceDetail.name(), r.orchestrator.name(), r.tool.name(), r.phase.name(),
                     r.executionTrust.name(),
                     String.valueOf(r.runId), r.service, r.method, r.path, String.valueOf(r.query),
-                    String.valueOf(r.reqBody), String.valueOf(r.reqText), String.valueOf(r.status),
-                    String.valueOf(r.body), String.valueOf(r.respText), String.valueOf(r.location),
+                    payloadDigest(r.requestPayload, r.reqBody, r.reqText), String.valueOf(r.status),
+                    payloadDigest(r.responsePayload, r.body, r.respText), String.valueOf(r.location),
                     String.valueOf(r.hasResponse), String.valueOf(r.timestamp), r.fp);
             String digest = digest(material);
             String base = "ev-" + digest.substring(0, 16);
@@ -38,6 +38,10 @@ public final class EvidenceIds {
             }
             r.evidenceId = candidate;
         }
+    }
+
+    private static String payloadDigest(StoredPayload payload, String body, String message) {
+        return payload == null ? String.valueOf(body) + "\n" + String.valueOf(message) : payload.digest();
     }
 
     private static boolean validExisting(String evidenceId) {

@@ -129,7 +129,27 @@ class TrafficClassifierTest {
 
         assertEquals(1, result.records.size());
         assertTrue(result.coverageRecords.isEmpty());
+        assertEquals(TrafficClassification.TrafficClass.AUTH_SESSION,
+                result.records.getFirst().trafficClassification.trafficClass());
         assertEquals(List.of("SESSION_SETUP"), result.records.getFirst().trafficClassification.reasons());
+    }
+
+    @Test
+    void 동일한_애매한_안정요청_반복은_polling_검토후보로_표시한다() {
+        RequestRecord first = record("GET", "/events", null, "text/plain");
+        RequestRecord second = record("GET", "/events", null, "text/plain");
+        RequestRecord third = record("GET", "/events", null, "text/plain");
+        first.timestamp = 1;
+        second.timestamp = 2;
+        third.timestamp = 3;
+
+        Pipeline.Result result = Pipeline.run(List.of(first, second, third));
+
+        assertTrue(result.coverageRecords.isEmpty());
+        assertTrue(result.records.stream().allMatch(value -> value.trafficClassification.trafficClass()
+                == TrafficClassification.TrafficClass.POLLING));
+        assertTrue(result.records.stream().allMatch(value -> value.trafficClassification.reasons()
+                .equals(List.of("REPEATED_STABLE_OBSERVATION"))));
     }
 
     @Test

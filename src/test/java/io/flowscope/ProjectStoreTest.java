@@ -30,8 +30,12 @@ final class ProjectStoreTest {
         record.query = "token=QUERYSECRET&id=7";
         record.reqBody = "{\"password\":\"BODYSECRET\",\"orderId\":7}";
         record.reqText = "POST /orders/7 HTTP/1.1\r\nAuthorization: Bearer HEADERSECRET\r\n\r\n" + record.reqBody;
+        record.requestPayload = StoredPayload.capture(Masking.maskHeaders(record.reqText),
+                "application/json", 1024 * 1024);
         record.body = "{\"ownerId\":\"user-a\"}";
         record.respText = "HTTP/1.1 200 OK\r\nSet-Cookie: sid=COOKIESECRET\r\n\r\n" + record.body;
+        record.responsePayload = StoredPayload.capture(Masking.maskHeaders(record.respText),
+                "application/json", 1024 * 1024);
         record.location = "/next?token=REDIRECTSECRET";
         record.hasResponse = true;
         record.timestamp = 1234;
@@ -190,5 +194,34 @@ final class ProjectStoreTest {
         assertNotEquals(allowed.evidenceId, denied.evidenceId);
         EvidenceIds.assign(List.of(allowed));
         assertEquals(stableId, allowed.evidenceId);
+    }
+
+    @Test
+    void compressedPayloadsAreDeduplicatedAndRoundTripBeyondPreviewLimit() throws Exception {
+        String body = "{\"items\":[" + "{\"orderId\":101},".repeat(1_000) + "]}";
+        String request = "POST /orders HTTP/1.1\r\nContent-Type: application/json\r\n\r\n" + body;
+        RequestRecord first = new RequestRecord(Source.HUMAN, "https://api.test:443",
+                "POST", "/orders", 200, "anon");
+        first.requestPayload = StoredPayload.capture(request, "application/json", 1024 * 1024);
+        first.reqText = Masking.truncate(request, 8192);
+        first.reqBody = Masking.truncate(body, 8192);
+        first.hasResponse = true;
+        RequestRecord second = new RequestRecord(Source.HUMAN, "https://api.test:443",
+                "POST", "/orders", 201, "anon");
+        second.requestPayload = first.requestPayload;
+        second.reqText = first.reqText;
+        second.reqBody = first.reqBody;
+        second.hasResponse = true;
+        Path file = temp.resolve("payloads.flowscope.json");
+
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(first, second), new AnalysisConfig(), List.of());
+        var root = new ObjectMapper().readTree(Files.readString(file));
+        ProjectStore.ProjectData loaded = store.load(file);
+
+        assertEquals(2, root.path("schema_version").asInt());
+        assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
+        assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
+        assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());
     }
 }

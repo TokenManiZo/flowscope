@@ -21,7 +21,7 @@ public record RouteDiscoveryDocument(String service, String path, String mediaTy
 
     public static RouteDiscoveryDocument from(RequestRecord record) {
         return new RouteDiscoveryDocument(record.service, record.path, record.responseContentType,
-                record.body, record.location, record.evidenceId, record.source, record.runId);
+                record.responseBodyForAnalysis(), record.location, record.evidenceId, record.source, record.runId);
     }
 
     public String baseUrl() { return service + path; }

@@ -37,7 +37,12 @@ public final class RecordMerge {
                        String path, int status, String request, String response) {
         static Key of(RequestRecord record) {
             return new Key(record.source, record.sourceDetail, record.service, record.method,
-                    record.path, record.status, record.reqText, record.respText);
+                    record.path, record.status, payloadKey(record.requestPayload, record.reqText),
+                    payloadKey(record.responsePayload, record.respText));
+        }
+
+        private static String payloadKey(StoredPayload payload, String preview) {
+            return payload == null ? preview : payload.digest();
         }
     }
 }

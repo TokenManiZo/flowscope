@@ -42,6 +42,7 @@ import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.StoredPayload;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.LocalMcpToken;
 import io.flowscope.integration.LocalLlmRunner;
@@ -132,6 +133,12 @@ public final class FlowScopeExtension implements BurpExtension {
 
     /** 저장 본문 상한 — 메모리 폭증 방지. */
     private static final int MAX_BODY = 8192;
+    /** 마스킹된 텍스트 원문 압축 보존 상한. 초과·바이너리는 크기와 해시만 보존한다. */
+    private static final int MAX_PAYLOAD_BYTES = Integer.getInteger(
+            "flowscope.payload.maxBytes", 1024 * 1024);
+    /** digest 중복 제거 후 메모리에 유지할 압축 전문 총량. */
+    private static final long MAX_COMPRESSED_PAYLOAD_BYTES = Math.max(0L, Long.getLong(
+            "flowscope.payload.memoryBytes", 48L * 1024 * 1024));
 
     /** 메모리 상한 — 실제 프록시 트래픽에서 무제한 누적을 막는다. */
     private static final int MAX_RECORDS = 20_000;
@@ -150,6 +157,8 @@ public final class FlowScopeExtension implements BurpExtension {
     private volatile ScopePolicy scope = ScopePolicy.parse("");
     private volatile String scopeText = "";
     private final AtomicLong revision = new AtomicLong();
+    private final AtomicLong droppedRecords = new AtomicLong();
+    private final AtomicLong compressedPayloadBytes = new AtomicLong();
     private FlowScopeControlTab controlTab;
     private FlowScopeWebServer webServer;
     private McpServer mcpServer;
@@ -166,6 +175,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private MontoyaApi api;
     private final ThreadLocal<Boolean> controlledRequest = ThreadLocal.withInitial(() -> false);
     private final Map<Integer, ProxyObservation> proxyObservations = new ConcurrentHashMap<>();
+    private final Map<String, StoredPayload> payloadPool = new ConcurrentHashMap<>();
 
     /** 요청 시점의 run/account 문맥. ZAP lane 전환 뒤 늦게 도착한 응답도 원래 신원에 귀속한다. */
     private record ProxyObservation(RunContextRegistry.Context context, String humanCaptureAccountId,
@@ -357,21 +367,34 @@ public final class FlowScopeExtension implements BurpExtension {
                          String respBody, String respText, String location, String responseContentType,
                          ProxyObservation observation) {
         if (!ActiveTrafficGuard.allowsCapture(scope, req.url())) return;
+        synchronized (records) {
+            if (records.size() >= MAX_RECORDS) {
+                recordDroppedAtCapacity();
+                return;
+            }
+        }
         RequestRecord rec = recordFrom(req, status, profile, respBody, respText, location, responseContentType,
                 System.currentTimeMillis(), true, null, observation);
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
-                if (!capacityWarned) {
-                    api.logging().logToOutput("FlowScope: 레코드 상한 " + MAX_RECORDS + " 도달 — 이후 관측은 버립니다.");
-                    capacityWarned = true;
-                }
+                recordDroppedAtCapacity();
                 return;
             }
             records.add(rec);
         }
         scheduleRebuild();
+    }
+
+    /** records lock 안에서만 호출한다. 상한 뒤 payload 생성 비용과 pool 오염도 피한다. */
+    private void recordDroppedAtCapacity() {
+        if (!capacityWarned) {
+            api.logging().logToOutput("FlowScope: 레코드 상한 " + MAX_RECORDS + " 도달 — 이후 관측은 버립니다.");
+            capacityWarned = true;
+        }
+        droppedRecords.incrementAndGet();
+        revision.incrementAndGet();
     }
 
     private RequestRecord recordFrom(HttpRequest req, int status, PortProfile profile,
@@ -421,10 +444,16 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).
         // 저장 전 반드시 마스킹 (F-05 원문 토큰 저장 금지, F-22 인증정보 가림).
+        String maskedRequest = Masking.maskHeaders(req.toString());
+        String maskedResponse = Masking.maskHeaders(respText);
+        rec.requestPayload = internPayload(StoredPayload.capture(
+                maskedRequest, req.headerValue("Content-Type"), MAX_PAYLOAD_BYTES));
+        rec.responsePayload = internPayload(StoredPayload.capture(
+                maskedResponse, responseContentType, MAX_PAYLOAD_BYTES));
         rec.query = Masking.truncate(Masking.maskBody(emptyToNull(req.query()),
                 "application/x-www-form-urlencoded"), MAX_BODY);
         rec.reqBody = Masking.truncate(Masking.maskBody(req.bodyToString(), req.headerValue("Content-Type")), MAX_BODY);
-        rec.reqText = Masking.truncate(Masking.maskHeaders(req.toString()), MAX_BODY);
+        rec.reqText = Masking.truncate(maskedRequest, MAX_BODY);
         rec.requestContentType = emptyToNull(req.headerValue("Content-Type"));
         rec.responseContentType = emptyToNull(responseContentType);
         rec.secFetchDest = emptyToNull(req.headerValue("Sec-Fetch-Dest"));
@@ -432,7 +461,7 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.accessControlRequestMethod = emptyToNull(req.headerValue("Access-Control-Request-Method"));
         rec.timestamp = timestamp;
         rec.body = Masking.truncate(Masking.maskBody(respBody, responseContentType), MAX_BODY);
-        rec.respText = Masking.truncate(Masking.maskHeaders(respText), MAX_BODY);
+        rec.respText = Masking.truncate(maskedResponse, MAX_BODY);
         rec.location = Masking.truncate(Masking.maskSecrets(location), MAX_BODY);
         // 이 메서드는 응답 수신 콜백에서만 호출된다. 204/빈 본문도 실제 응답이다.
         rec.hasResponse = true;
@@ -459,6 +488,31 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private static String emptyToNull(String s) { return (s == null || s.isBlank()) ? null : s; }
+
+    private StoredPayload internPayload(StoredPayload payload) {
+        if (payload == null) return null;
+        synchronized (payloadPool) {
+            String key = payload.digest() + ":" + payload.retention().name();
+            StoredPayload existing = payloadPool.get(key);
+            if (existing != null) return existing;
+            if (payload.retained()
+                    && compressedPayloadBytes.get() + payload.compressedBytes() > MAX_COMPRESSED_PAYLOAD_BYTES) {
+                StoredPayload metadata = payload.metadataOnly(StoredPayload.Retention.CAPACITY_METADATA_ONLY);
+                return payloadPool.computeIfAbsent(
+                        metadata.digest() + ":" + metadata.retention().name(), ignored -> metadata);
+            }
+            payloadPool.put(key, payload);
+            compressedPayloadBytes.addAndGet(payload.compressedBytes());
+            return payload;
+        }
+    }
+
+    private void resetPayloadPool() {
+        synchronized (payloadPool) {
+            payloadPool.clear();
+            compressedPayloadBytes.set(0);
+        }
+    }
 
     private static Map<String, String> headersOf(List<HttpHeader> headers) {
         Map<String, String> values = new LinkedHashMap<>();
@@ -613,9 +667,13 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
 
                 List<RequestRecord> added;
+                int duplicateCount;
                 synchronized (records) {
                     int room = Math.max(0, MAX_RECORDS - records.size());
-                    added = RecordMerge.missing(records, incoming, room);
+                    List<RequestRecord> missing = RecordMerge.missing(records, incoming, incoming.size());
+                    added = missing.subList(0, Math.min(room, missing.size()));
+                    duplicateCount = incoming.size() - missing.size();
+                    droppedRecords.addAndGet(missing.size() - added.size());
                     records.addAll(added);
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
@@ -624,9 +682,9 @@ public final class FlowScopeExtension implements BurpExtension {
                     siteMapSeeds.addAll(importedSiteMapSeeds);
                 }
                 rebuildRouteCandidates(latest.records);
-                int duplicateCount = incoming.size() - added.size();
                 String message = "Proxy history " + history.size() + "건 중 " + added.size()
-                        + "건 가져옴 · 기존 관측/상한 " + duplicateCount + "건 건너뜀 · 응답 없음 "
+                        + "건 가져옴 · 기존 중복 " + duplicateCount + "건 · 저장 상한 유실 "
+                        + droppedRecords.get() + "건 · 응답 없음 "
                         + withoutResponse + "건 · Site Map 미응답 후보 " + importedSiteMapSeeds.size() + "건";
                 api.logging().logToOutput("FlowScope " + message);
                 if (!added.isEmpty() || !importedSiteMapSeeds.isEmpty()) scheduleRebuild();
@@ -649,12 +707,18 @@ public final class FlowScopeExtension implements BurpExtension {
                 SampleProject.Data sample = SampleProject.create();
                 analysisConfig.replaceWith(sample.config());
                 List<RequestRecord> loaded = new ArrayList<>(sample.records());
+                resetPayloadPool();
+                loaded.forEach(record -> {
+                    record.requestPayload = internPayload(record.requestPayload);
+                    record.responsePayload = internPayload(record.responsePayload);
+                });
                 Pipeline.Result result = Pipeline.run(loaded, analysisConfig);
                 synchronized (records) {
                     records.clear();
                     records.addAll(loaded);
                     capacityWarned = false;
                 }
+                droppedRecords.set(0);
                 latest = result;
                 rebuildRouteCandidates(result.records);
                 revision.incrementAndGet();
@@ -677,6 +741,8 @@ public final class FlowScopeExtension implements BurpExtension {
             records.clear();
             capacityWarned = false;
         }
+        droppedRecords.set(0);
+        resetPayloadPool();
         synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         routeCandidates = List.of();
@@ -717,6 +783,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 ProjectStore.ProjectData data = projectStore.load(file.toPath());
                 analysisConfig.replaceWith(data.config());
                 List<RequestRecord> loaded = new ArrayList<>(data.records());
+                resetPayloadPool();
+                loaded.forEach(record -> {
+                    record.requestPayload = internPayload(record.requestPayload);
+                    record.responsePayload = internPayload(record.responsePayload);
+                });
                 Pipeline.Result result = Pipeline.run(loaded, analysisConfig);
                 synchronized (restoredRouteCandidates) {
                     restoredRouteCandidates.addAll(data.routeCandidates().stream()
@@ -736,6 +807,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     records.addAll(loaded);
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
+                droppedRecords.set(0);
                 latest = result;
                 rebuildRouteCandidates(result.records);
                 revision.incrementAndGet();
@@ -813,6 +885,7 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public SessionBroker sessions() { return sessionBroker; }
             @Override public List<String> scopeEntries() { return scope.entries(); }
             @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
+            @Override public long droppedRecords() { return droppedRecords.get(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
                                                                                    List<String> accountIds,
                                                                                    boolean includeAnonymous) {
@@ -852,9 +925,14 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
                 BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
                 BurpXmlParser.retainInScope(parsed, scope);
+                parsed.records.forEach(record -> {
+                    record.requestPayload = internPayload(record.requestPayload);
+                    record.responsePayload = internPayload(record.responsePayload);
+                });
                 synchronized (records) {
                     int room = Math.max(0, MAX_RECORDS - records.size());
                     records.addAll(parsed.records.subList(0, Math.min(room, parsed.records.size())));
+                    droppedRecords.addAndGet(Math.max(0, parsed.records.size() - room));
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
                 scheduleRebuild();
@@ -878,7 +956,8 @@ public final class FlowScopeExtension implements BurpExtension {
      * 인증정보를 재삽입하고 전송하는 최종 행위는 사용자가 Burp에서 수행한다.
      */
     private void openMaskedDraftInRepeater(RequestRecord record) {
-        if (record == null || record.reqText == null || record.reqText.isBlank()) {
+        String requestText = record == null ? null : record.requestTextForEvidence();
+        if (requestText == null || requestText.isBlank()) {
             throw new IllegalArgumentException("저장된 Request 전문이 없습니다.");
         }
         URI service = URI.create(record.service);
@@ -886,7 +965,7 @@ public final class FlowScopeExtension implements BurpExtension {
         boolean secure = "https".equalsIgnoreCase(service.getScheme());
         int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
         HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
-        HttpRequest draft = HttpRequest.httpRequest(httpService, record.reqText);
+        HttpRequest draft = HttpRequest.httpRequest(httpService, requestText);
         api.repeater().sendToRepeater(draft, "FlowScope " + record.evidenceId);
         api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId
                 + " (인증정보 마스킹, 미전송)");

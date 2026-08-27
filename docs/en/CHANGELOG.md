@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0-beta.8 — 2026-08-27
+
+- Retained masked textual request and response messages as GZIP payloads up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate, separate from the 8 KiB UI previews.
+- Added project schema v2 with SHA-256-keyed payload deduplication and digest/byte-length verification while retaining schema v1 read compatibility.
+- Kept binary, per-message-over-limit, and aggregate-budget-over-limit messages as size/digest/reason metadata and exposed their count in the Web UI.
+- Extracted all explicit object identifiers from paths, queries, nested JSON/arrays, XML, multipart, and GraphQL while keeping one conservative primary resource for authorization cells.
+- Separated authentication setup and stable repeated polling as `AUTH_SESSION` and `POLLING` without deleting their Evidence.
+- Added an optional neutral support-flow layer for authentication, navigation, polling, and background traffic without affecting coverage, gaps, or verdicts.
+- Fixed source filtering so nodes backed only by a disabled source are hidden together with their edges.
+- Exposed dropped-record counts and an explicit incomplete-analysis warning when the 20,000 live-record safety limit is reached.
+- Added a prominent banner identifying bundled H/S/L sample records as synthetic, with zero target network requests.
+
 ## 1.2.0-beta.7 — 2026-08-27
 
 - Added Web quick-start controls that launch the user's locally authenticated Codex or Claude CLI as a new LLM Explorer, a separate Judge, cancellation, and explicit Judge follow-up.

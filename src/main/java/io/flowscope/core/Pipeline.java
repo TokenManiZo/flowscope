@@ -67,7 +67,7 @@ public final class Pipeline {
                     && record.trafficClassification.disposition() == TrafficClassification.Disposition.REVIEW
                     && clusters.get(record.evidenceId).count() >= 3) {
                 record.trafficClassification = new TrafficClassification(
-                        TrafficClassification.TrafficClass.BACKGROUND,
+                        TrafficClassification.TrafficClass.POLLING,
                         TrafficClassification.Disposition.REVIEW,
                         List.of("REPEATED_STABLE_OBSERVATION"), false);
             }

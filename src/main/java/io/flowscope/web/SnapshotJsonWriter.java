@@ -45,15 +45,29 @@ public final class SnapshotJsonWriter {
                         List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates) throws JsonProcessingException {
+        return write(revision, result, config, assessments, validations, managedSessions, routeCandidates, 0);
+    }
+
+    public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
+                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions,
+                        List<RouteCandidate> routeCandidates, long droppedRecords) throws JsonProcessingException {
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
         root.put("identityRevision", revision);
+        root.put("sampleMode", !result.records.isEmpty() && result.records.stream().allMatch(record ->
+                "https://demo.flowscope.test:443".equals(record.service)
+                        && record.runId != null && record.runId.startsWith("demo-")));
         root.set("events", events(result));
         ObjectNode traffic = root.putObject("trafficStats");
         traffic.put("captured", result.records.size());
         traffic.put("coverage", result.coverageRecords.size());
         traffic.put("excluded", result.excludedCount);
         traffic.put("review", result.reviewCount);
+        traffic.put("dropped", Math.max(0, droppedRecords));
+        traffic.put("payloadMetadataOnly", result.records.stream()
+                .flatMap(record -> java.util.stream.Stream.of(record.requestPayload, record.responsePayload))
+                .filter(payload -> payload != null && !payload.retained()).count());
         root.putArray("replays");
         root.set("flowLinks", flowLinks(result.coverageRecords));
         root.set("roles", roles(result, config));
@@ -144,7 +158,13 @@ public final class SnapshotJsonWriter {
             event.put("lastSeen", cluster.lastSeen());
             event.set("clusterEvidenceIds", json.valueToTree(cluster.evidenceIds()));
             ArrayNode objects = event.putArray("objects");
-            if (record.resource != null) {
+            if (!record.resourceReferences.isEmpty()) {
+                for (io.flowscope.core.ResourceReference reference : record.resourceReferences) {
+                    ObjectNode object = objects.addObject();
+                    object.put("resource", reference.resource());
+                    object.put("evidence", reference.evidence());
+                }
+            } else if (record.resource != null) {
                 ObjectNode object = objects.addObject();
                 object.put("resource", record.resource);
                 object.put("evidence", Normalizer.resourceEvidence(record));
@@ -186,11 +206,13 @@ public final class SnapshotJsonWriter {
             ObjectNode value = records.addObject();
             value.put("eventId", record.evidenceId);
             value.put("query", masked(record.query));
-            value.put("requestBody", masked(record.reqBody));
-            value.put("request", Masking.maskHeaders(masked(record.reqText)));
-            value.put("responseBody", masked(record.body));
-            value.put("response", Masking.maskHeaders(masked(record.respText)));
+            value.put("requestBody", masked(record.requestBodyForAnalysis()));
+            value.put("request", Masking.maskHeaders(masked(record.requestTextForEvidence())));
+            value.put("responseBody", masked(record.responseBodyForAnalysis()));
+            value.put("response", Masking.maskHeaders(masked(record.responseTextForEvidence())));
             value.put("location", masked(record.location));
+            payloadMetadata(value, "requestPayload", record.requestPayload);
+            payloadMetadata(value, "responsePayload", record.responsePayload);
             value.put("trafficClass", record.trafficClassification.trafficClass().name());
             value.put("trafficDisposition", record.trafficClassification.disposition().name());
             value.set("classificationReasons", json.valueToTree(record.trafficClassification.reasons()));
@@ -202,6 +224,15 @@ public final class SnapshotJsonWriter {
         out.put("limit", limit);
         out.put("hasMore", (long) offset + records.size() < matching.size());
         return json.writeValueAsBytes(out);
+    }
+
+    private void payloadMetadata(ObjectNode out, String field, io.flowscope.core.StoredPayload payload) {
+        if (payload == null) { out.putNull(field); return; }
+        ObjectNode value = out.putObject(field);
+        value.put("digest", payload.digest());
+        value.put("bytes", payload.originalBytes());
+        value.put("retention", payload.retention().name());
+        value.put("retained", payload.retained());
     }
 
     private ArrayNode flowLinks(List<RequestRecord> records) {

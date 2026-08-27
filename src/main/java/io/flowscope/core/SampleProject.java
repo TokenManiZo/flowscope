@@ -50,6 +50,17 @@ public final class SampleProject {
                 "{\"email\":\"masked@example.test\"}", "{\"created\":true}", 8));
         records.add(record(Source.LLM, "sess:demo-a", "GET", "/api/orders/202", 404, null,
                 "{\"error\":\"not found\"}", 9));
+
+        RequestRecord login = record(Source.HUMAN, "sess:demo-a", "POST", "/login", 302,
+                "{\"username\":\"demo\",\"password\":\"***MASKED***\"}", "", 10);
+        login.phase = RunPhase.SESSION_SETUP;
+        records.add(login);
+        for (int i = 0; i < 3; i++) {
+            RequestRecord polling = record(Source.HUMAN, "sess:demo-a", "GET", "/session/state", 200,
+                    null, "ready", 11 + i);
+            polling.responseContentType = "text/plain";
+            records.add(polling);
+        }
         return new Data(List.copyOf(records), config);
     }
 
@@ -63,6 +74,8 @@ public final class SampleProject {
         record.body = responseBody;
         record.respText = "HTTP/1.1 " + status + " Demo\r\nContent-Type: application/json\r\n\r\n"
                 + (responseBody == null ? "" : responseBody);
+        record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
+        record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
         record.hasResponse = true;
         record.timestamp = START + offset * 1_000L;
         record.runId = source == Source.HUMAN ? "demo-human"

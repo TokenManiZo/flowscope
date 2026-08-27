@@ -56,4 +56,25 @@ class AdvancedNormalizerTest {
         assertEquals("https://t:443 orders:105", multipart.resource);
         assertEquals("BODY_ID", Normalizer.resourceEvidence(multipart));
     }
+
+    @Test
+    void query_JSON배열_XML의_모든_명시적_ID후보를_근거와_함께_보존한다() {
+        RequestRecord query = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/transfer", 200, "A");
+        query.query = "fromAccountId=10&toAccountId=20&page=1";
+        RequestRecord json = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders", 200, "A");
+        json.reqBody = "{\"orderIds\":[101,102],\"items\":[{\"productId\":7}]}";
+        RequestRecord xml = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders", 200, "A");
+        xml.reqBody = "<request><orderId>103</orderId><userId>9</userId></request>";
+
+        Normalizer.normalizeAll(List.of(query, json, xml));
+
+        assertEquals(List.of("https://t:443 fromaccounts:10", "https://t:443 toaccounts:20"),
+                query.resourceReferences.stream().map(ResourceReference::resource).toList());
+        assertEquals(List.of("https://t:443 orders:101", "https://t:443 orders:102",
+                        "https://t:443 products:7"),
+                json.resourceReferences.stream().map(ResourceReference::resource).toList());
+        assertEquals(List.of("https://t:443 orders:103", "https://t:443 users:9"),
+                xml.resourceReferences.stream().map(ResourceReference::resource).toList());
+        assertTrue(json.resourceReferences.stream().allMatch(value -> value.evidence().equals("BODY_ID")));
+    }
 }

@@ -11,7 +11,9 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,6 +23,11 @@ import java.util.regex.Pattern;
  * fp(인증 지문)는 요청 헤더의 Authorization 또는 Cookie session= 에서 추출한다.
  */
 public final class BurpXmlParser {
+
+    private static final int MAX_PAYLOAD_BYTES = Integer.getInteger(
+            "flowscope.payload.maxBytes", 1024 * 1024);
+    private static final long MAX_COMPRESSED_PAYLOAD_BYTES = Math.max(0L, Long.getLong(
+            "flowscope.payload.memoryBytes", 48L * 1024 * 1024));
 
     private static final Pattern COOKIE = Pattern.compile("(?im)^Cookie:\\s*(.+)$");
     private static final Pattern AUTH = Pattern.compile("(?im)^Authorization:\\s*(.+)$");
@@ -85,6 +92,8 @@ public final class BurpXmlParser {
             throw new RuntimeException("Burp XML 파싱 실패(문서 단위): " + e.getMessage(), e);
         }
         NodeList items = doc.getElementsByTagName("item");
+        long retainedPayloadBytes = 0L;
+        Set<String> retainedPayloadDigests = new HashSet<>();
         for (int i = 0; i < items.getLength(); i++) {
             try {   // 항목 단위 skip (F-02)
                 Element it = (Element) items.item(i);
@@ -106,17 +115,43 @@ public final class BurpXmlParser {
                 RequestRecord rec = new RequestRecord(
                         source, serviceOf(it, reqText), method, path, status, fingerprint(reqText));
                 rec.hasResponse = respEl != null && respText != null && !respText.isBlank();
+                String requestContentType = headerValue(CONTENT_TYPE, reqText);
+                String responseContentType = headerValue(CONTENT_TYPE, respText);
+                String maskedRequest = Masking.maskHeaders(reqText);
+                String maskedResponse = rec.hasResponse ? Masking.maskHeaders(respText) : null;
+                rec.requestPayload = StoredPayload.capture(maskedRequest, requestContentType, MAX_PAYLOAD_BYTES);
+                rec.responsePayload = StoredPayload.capture(maskedResponse, responseContentType, MAX_PAYLOAD_BYTES);
+                if (rec.requestPayload != null && rec.requestPayload.retained()
+                        && !retainedPayloadDigests.contains(rec.requestPayload.digest())) {
+                    if (retainedPayloadBytes + rec.requestPayload.compressedBytes() > MAX_COMPRESSED_PAYLOAD_BYTES) {
+                        rec.requestPayload = rec.requestPayload.metadataOnly(
+                                StoredPayload.Retention.CAPACITY_METADATA_ONLY);
+                    } else {
+                        retainedPayloadBytes += rec.requestPayload.compressedBytes();
+                        retainedPayloadDigests.add(rec.requestPayload.digest());
+                    }
+                }
+                if (rec.responsePayload != null && rec.responsePayload.retained()
+                        && !retainedPayloadDigests.contains(rec.responsePayload.digest())) {
+                    if (retainedPayloadBytes + rec.responsePayload.compressedBytes() > MAX_COMPRESSED_PAYLOAD_BYTES) {
+                        rec.responsePayload = rec.responsePayload.metadataOnly(
+                                StoredPayload.Retention.CAPACITY_METADATA_ONLY);
+                    } else {
+                        retainedPayloadBytes += rec.responsePayload.compressedBytes();
+                        retainedPayloadDigests.add(rec.responsePayload.digest());
+                    }
+                }
                 rec.body = rec.hasResponse ? Masking.truncate(Masking.maskBody(responseBody(respText),
-                        headerValue(CONTENT_TYPE, respText)), MAX_BODY) : null;
-                rec.respText = rec.hasResponse ? Masking.truncate(Masking.maskHeaders(respText), MAX_BODY) : null;
+                        responseContentType), MAX_BODY) : null;
+                rec.respText = rec.hasResponse ? Masking.truncate(maskedResponse, MAX_BODY) : null;
                 rec.location = Masking.truncate(Masking.maskSecrets(headerValue(LOCATION, respText)), MAX_BODY);
                 // 명세가 입력으로 요구하는 것들 (F-06 쿼리·본문 / F-18·22 원요청) — 저장 전 마스킹(F-05)
                 rec.query = Masking.truncate(Masking.maskSecrets(query), MAX_BODY);
                 rec.reqBody = Masking.truncate(Masking.maskBody(requestBody(reqText),
-                        headerValue(CONTENT_TYPE, reqText)), MAX_BODY);
-                rec.reqText = Masking.truncate(Masking.maskHeaders(reqText), MAX_BODY);
-                rec.requestContentType = headerValue(CONTENT_TYPE, reqText);
-                rec.responseContentType = headerValue(CONTENT_TYPE, respText);
+                        requestContentType), MAX_BODY);
+                rec.reqText = Masking.truncate(maskedRequest, MAX_BODY);
+                rec.requestContentType = requestContentType;
+                rec.responseContentType = responseContentType;
                 rec.secFetchDest = headerValue(SEC_FETCH_DEST, reqText);
                 rec.secFetchMode = headerValue(SEC_FETCH_MODE, reqText);
                 rec.accessControlRequestMethod = headerValue(ACCESS_CONTROL_REQUEST_METHOD, reqText);

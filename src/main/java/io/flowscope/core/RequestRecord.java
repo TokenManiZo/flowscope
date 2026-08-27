@@ -1,6 +1,7 @@
 package io.flowscope.core;
 
 import java.util.Locale;
+import java.util.List;
 
 /**
  * 한 건의 요청/응답 관측 (설계서 §3). L0 에서는 그래프 구성에 필요한 필드만 채운다.
@@ -41,17 +42,20 @@ public final class RequestRecord {
     public String query;          // 쿼리스트링(? 뒤). 없으면 null
     public String reqBody;        // 요청 본문(마스킹). 없으면 null
     public String reqText;        // 원본 요청 전문(인증 헤더 마스킹). 재전송·상세용
+    public StoredPayload requestPayload; // 마스킹된 전체 요청. reqText는 UI용 preview다.
     public long timestamp;        // 관측 시각(epoch ms). 0 이면 미상 — F-09 순서 판단용
 
     // 응답 (수집단이 채움) — F-10 판정·F-22 상세·F-02 후보 분리용
     public String body;           // 응답 본문(마스킹). 없으면 null
     public String respText;       // 응답 전문(인증/비밀 필드 마스킹). 상세·리다이렉트 판정용
+    public StoredPayload responsePayload; // 마스킹된 전체 응답. respText는 UI용 preview다.
     public String location;       // 리다이렉트 Location. 없으면 null
     public boolean hasResponse;   // 실제 응답 관측 여부. false면 관측 아닌 '후보'(F-02)
 
     // 정규화 산출물 (Normalizer 가 채움)
     public String op;             // 예: "GET /api/orders/{id}"
     public String resource;       // 예: "orders:101" 또는 "orders:101/items:5" (객체 없으면 null)
+    public List<ResourceReference> resourceReferences = List.of();
     public String idn;            // 예: "user-a" 또는 "anon"(비인증)
     public AccessRole role = AccessRole.UNKNOWN; // 사용자 지정값. 자동 권한 추정 금지(D-018)
 
@@ -62,6 +66,34 @@ public final class RequestRecord {
         this.path = (path == null || path.isBlank()) ? "/" : path;
         this.status = status;
         this.fp = (fp == null || fp.isBlank()) ? "anon" : fp;
+    }
+
+    public String requestTextForEvidence() {
+        String retained = requestPayload == null ? null : requestPayload.text();
+        return retained == null ? reqText : retained;
+    }
+
+    public String responseTextForEvidence() {
+        String retained = responsePayload == null ? null : responsePayload.text();
+        return retained == null ? respText : retained;
+    }
+
+    public String requestBodyForAnalysis() {
+        String fromMessage = messageBody(requestTextForEvidence());
+        return fromMessage == null ? reqBody : fromMessage;
+    }
+
+    public String responseBodyForAnalysis() {
+        String fromMessage = messageBody(responseTextForEvidence());
+        return fromMessage == null ? body : fromMessage;
+    }
+
+    private static String messageBody(String message) {
+        if (message == null) return null;
+        int separator = message.indexOf("\r\n\r\n");
+        int length = 4;
+        if (separator < 0) { separator = message.indexOf("\n\n"); length = 2; }
+        return separator < 0 ? null : message.substring(separator + length);
     }
 
     @Override

@@ -1,5 +1,8 @@
 package io.flowscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -32,9 +35,12 @@ public final class Normalizer {
     private static final Pattern GRAPHQL_DECLARATION = Pattern.compile(
             "(?i)\\b(?:query|mutation|subscription)\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern BODY_FIELD = Pattern.compile(
-            "(?i)[\\\"']?([A-Za-z][A-Za-z0-9_-]*id)[\\\"']?\\s*[:=]\\s*[\\\"']?([A-Za-z0-9._:-]+)");
+            "(?i)[\\\"']?([A-Za-z][A-Za-z0-9_-]*ids?)[\\\"']?\\s*[:=]\\s*[\\\"']?([A-Za-z0-9._:-]+)");
     private static final Pattern MULTIPART_FIELD = Pattern.compile(
-            "(?is)name=\\\"([A-Za-z][A-Za-z0-9_-]*id)\\\"[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?\\r?\\n([A-Za-z0-9._:-]+)");
+            "(?is)name=\\\"([A-Za-z][A-Za-z0-9_-]*ids?)\\\"[^\\r\\n]*\\r?\\n(?:[^\\r\\n]*\\r?\\n)*?\\r?\\n([A-Za-z0-9._:-]+)");
+    private static final Pattern XML_FIELD = Pattern.compile(
+            "(?is)<([A-Za-z][A-Za-z0-9_-]*ids?)>\\s*([A-Za-z0-9._:-]+)\\s*</\\1>");
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> CONTROL_FIELDS = Set.of(
             "page", "limit", "offset", "sort", "size", "cursor", "start", "end",
             "from", "to", "timestamp", "time", "debug", "enabled", "active");
@@ -141,12 +147,18 @@ public final class Normalizer {
             Normalized n = normalize(r.method, r.path);
             String op = n.op;
             if ("/graphql".equalsIgnoreCase(r.path)) {
-                String operation = graphqlOperation(r.reqBody);
+                String operation = graphqlOperation(r.requestBodyForAnalysis());
                 if (operation != null) op += "#" + operation;
             }
-            String resource = n.resource != null ? n.resource : auxiliaryResource(r.path, r.query, r.reqBody);
+            List<ResourceReference> references = resourceReferences(r.path, r.query,
+                    r.requestBodyForAnalysis(), n.resource,
+                    "/graphql".equalsIgnoreCase(r.path));
+            String resource = references.isEmpty() ? null : references.getFirst().resource();
             r.op = r.service + " " + op;
             r.resource = resource == null ? null : r.service + " " + resource;
+            r.resourceReferences = references.stream()
+                    .map(value -> new ResourceReference(r.service + " " + value.resource(), value.evidence()))
+                    .toList();
         }
         assignIdentities(records);
     }
@@ -159,13 +171,18 @@ public final class Normalizer {
         return declared.find() ? declared.group(1) : null;
     }
 
-    /** 명시적인 id 필드만 사용한다. page/limit 같은 제어값과 일반 숫자는 객체로 승격하지 않는다. */
-    private static String auxiliaryResource(String path, String query, String body) {
-        String queryResource = queryResource(path, query);
-        if (queryResource != null) return queryResource;
-        String bodyResource = bodyResource(path, body);
-        if (bodyResource != null) return bodyResource;
-        return null;
+    private static List<ResourceReference> resourceReferences(String path, String query, String body,
+                                                               String pathResource, boolean graphql) {
+        Map<String, ResourceReference> values = new LinkedHashMap<>();
+        if (pathResource != null) addReference(values, pathResource, "PATH_ID");
+        queryResources(path, query).forEach(value -> addReference(values, value, "QUERY_ID"));
+        bodyResources(path, body).forEach(value -> addReference(values, value,
+                graphql ? "GRAPHQL_VARIABLE" : "BODY_ID"));
+        return List.copyOf(values.values());
+    }
+
+    private static void addReference(Map<String, ResourceReference> values, String resource, String evidence) {
+        if (resource != null) values.putIfAbsent(resource, new ResourceReference(resource, evidence));
     }
 
     /** UI와 후보 정렬이 임의 confidence 대신 표시하는 재현 가능한 객체 추출 근거. */
@@ -173,36 +190,82 @@ public final class Normalizer {
         if (record == null || record.resource == null) return "NONE";
         if (normalize(record.method, record.path).resource != null) return "PATH_ID";
         if (queryResource(record.path, record.query) != null) return "QUERY_ID";
-        if (bodyResource(record.path, record.reqBody) != null) {
+        if (bodyResource(record.path, record.requestBodyForAnalysis()) != null) {
             return "/graphql".equalsIgnoreCase(record.path) ? "GRAPHQL_VARIABLE" : "BODY_ID";
         }
         return "DERIVED";
     }
 
     private static String queryResource(String path, String query) {
-        if (query == null) return null;
+        return queryResources(path, query).stream().findFirst().orElse(null);
+    }
+
+    private static List<String> queryResources(String path, String query) {
+        List<String> values = new ArrayList<>();
+        if (query == null) return List.of();
         for (String pair : query.split("&")) {
             String[] kv = pair.split("=", 2);
             if (kv.length != 2) continue;
             String resource = resourceFromField(path, decode(kv[0]), decode(kv[1]));
-            if (resource != null) return resource;
+            if (resource != null && !values.contains(resource)) values.add(resource);
         }
-        return null;
+        return values;
     }
 
     private static String bodyResource(String path, String body) {
-        if (body == null) return null;
+        return bodyResources(path, body).stream().findFirst().orElse(null);
+    }
+
+    private static List<String> bodyResources(String path, String body) {
+        List<String> values = new ArrayList<>();
+        if (body == null) return List.of();
+        String trimmed = body.stripLeading();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            try { collectJsonResources(path, JSON.readTree(body), values); }
+            catch (Exception ignored) { /* malformed JSON falls back to the conservative text patterns below */ }
+        }
         Matcher matcher = BODY_FIELD.matcher(body);
         while (matcher.find()) {
             String resource = resourceFromField(path, matcher.group(1), matcher.group(2));
-            if (resource != null) return resource;
+            if (resource != null && !values.contains(resource)) values.add(resource);
         }
         Matcher multipart = MULTIPART_FIELD.matcher(body);
         while (multipart.find()) {
             String resource = resourceFromField(path, multipart.group(1), multipart.group(2));
-            if (resource != null) return resource;
+            if (resource != null && !values.contains(resource)) values.add(resource);
         }
-        return null;
+        Matcher xml = XML_FIELD.matcher(body);
+        while (xml.find()) {
+            String resource = resourceFromField(path, xml.group(1), xml.group(2));
+            if (resource != null && !values.contains(resource)) values.add(resource);
+        }
+        return values;
+    }
+
+    private static void collectJsonResources(String path, JsonNode node, List<String> values) {
+        if (node == null) return;
+        if (node.isObject()) {
+            node.properties().forEach(entry -> {
+                JsonNode value = entry.getValue();
+                if (isIdField(entry.getKey())) {
+                    if (value.isValueNode()) addJsonResource(path, entry.getKey(), value, values);
+                    else if (value.isArray()) value.forEach(item -> addJsonResource(path, entry.getKey(), item, values));
+                }
+                collectJsonResources(path, value, values);
+            });
+        } else if (node.isArray()) node.forEach(value -> collectJsonResources(path, value, values));
+    }
+
+    private static void addJsonResource(String path, String key, JsonNode value, List<String> values) {
+        if (!value.isValueNode() || value.isNull()) return;
+        String resource = resourceFromField(path, key, value.asText());
+        if (resource != null && !values.contains(resource)) values.add(resource);
+    }
+
+    private static boolean isIdField(String rawKey) {
+        String key = rawKey == null ? "" : rawKey.toLowerCase(Locale.ROOT).replace('-', '_');
+        return key.equals("id") || key.endsWith("_id") || key.endsWith("id")
+                || key.endsWith("_ids") || key.endsWith("ids");
     }
 
     private static String resourceFromField(String path, String rawKey, String value) {
@@ -212,6 +275,10 @@ public final class Normalizer {
         String type;
         if (key.equals("id")) {
             type = lastNamedSegment(path);
+        } else if (key.endsWith("_ids")) {
+            type = key.substring(0, key.length() - 4);
+        } else if (key.endsWith("ids")) {
+            type = key.substring(0, key.length() - 3);
         } else if (key.endsWith("_id")) {
             type = key.substring(0, key.length() - 3);
         } else if (key.endsWith("id")) {
