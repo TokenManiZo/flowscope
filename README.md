@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.10
+# FlowScope 1.2.0-beta.11
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -52,7 +52,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 mvn clean verify
 ```
 
-빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.10.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
+빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.11.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
 
 ## 저장소 구조
 
@@ -165,8 +165,8 @@ ZAP API endpoint는 loopback 주소만 허용합니다. ZAP의 대상 트래픽�
 
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, MCP 연결 복사, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 초기화, 정본 로컬 Web 작업면 열기
 - **Web 상단 모드** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
-- **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 가명 세션·역할, 3-way gap, 그래프 판정 제어
-- **Flow Graph** — 고정된 `identity → resource → operation` 열, 객체 식별자가 없는 경우 `identity → operation` 직접 edge, HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L 평행 overlay, 관측과 분리된 중립색·점선 테두리의 미요청 route 후보, 별도 인가 판정 view, focus+context 선택, 화면 맞춤, 18개 단위 객체·API 그룹 펼치기
+- **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, 실제 메인 Evidence 수와 함께 동작하는 HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 읽기 전용 역할 정책 상태, 3-way gap, 그래프 판정 제어
+- **Flow Graph** — 고정된 `identity → resource → operation` 열, 객체 식별자가 없는 경우 `identity → operation` 직접 edge, 접근 경로의 두 구간 모두에 적용되는 HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L 평행 overlay, 관측과 분리된 중립색·점선 테두리의 미요청 route 후보, 별도 인가 판정 view, focus+context 선택, 화면 맞춤, 18개 단위 객체·API 그룹 펼치기. 응답→요청 데이터 의존성은 메인 접근선과 섞지 않고 `흐름 순서`에서 표시
 - **판정 매트릭스** — 관측된 `identity/role × operation × resource` cell, source별 verdict, 미교차 조합, 일부만 발견, 불일치
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
 - **시나리오** — 결정론적 BOLA/BFLA 후보·gap, 비최종 Judge assessment, 서버 검증 최종 verdict

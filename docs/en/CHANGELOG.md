@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.11 — 2026-08-27
+
+- Paired each HUMAN/SCANNER/LLM filter with its main-comparison Evidence count and disabled zero-count sources.
+- Rebuilt the visible graph after source changes so source-only nodes and both segments of `identity → resource → operation` disappear together.
+- Applied the full HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L encoding to both access-path segments.
+- Removed response-to-request ID/token dependency edges from the main access graph; the existing sequence view remains their single presentation.
+- Replaced arbitrary role cycling in the graph rail with read-only account-role and API-requirement policy status.
+- Advanced the saved graph-layout key to v3 and added Web contract regressions for the corrected interaction model.
+
 ## 1.2.0-beta.10 — 2026-08-27
 
 - Added relational `.flowscope.db` project storage for records, payloads, accounts, bindings, policy, reviews, assessments, validations, and routes while retaining JSON v1/v2 import/export compatibility.

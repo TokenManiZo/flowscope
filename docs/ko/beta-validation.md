@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.10 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.11 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-27이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.11 자동·standalone 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 195 tests, 실패·오류·skip 0 |
+| Web 계약 | source별 메인 Evidence 수, 0건 source 비활성, 필터 변경 시 graph 재구축, 두 접근 구간의 source 문법, 메인 graph의 flow edge 부재, role cycle 부재 회귀 통과 |
+| standalone source 필터 | 합성 H4/S2/L3에서 SCANNER·LLM을 해제하자 checked 상태가 H만 남고 관측 API가 4→3으로 재구축됨. HUMAN 접근 경로 두 구간이 파랑·실선·H로 표시되고 응답→요청 데이터 의존선은 메인 graph에 나타나지 않음 |
+| standalone 정책·반응형 | 권한 정책은 계정 역할 2개와 API 요구 권한 2개를 읽기 전용으로 표시하고 조작 button 0. 600×800에서 page horizontal overflow 0, console warning/error 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.11.jar`, 15,826,900 bytes, SHA-256 `f81bd55ab92da93e05601e116556abe58507b4d3222d0be18ec517c532be2788` |
+| JAR 무결성 | ZIP 무결성 통과, 2,157 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, SQLite JDBC class/service와 macOS/Linux/Windows native 자원·번들 고지 포함, 공개 `target/*.jar` 1개 |
+
+이 검증은 그래프 표현과 필터 상호작용의 정합성을 확인한 것이다. coverage·gap·verdict 계산은 beta.10과 동일하며, 실제 Burp Community의 beta.11 재로드와 실제 HUMAN 데이터에서 0건 SCANNER/LLM 비활성 표시를 확인하는 수동 gate가 남아 있다. endpoint 발견률, 취약점 탐지율, 오탐·미탐 0을 주장하지 않는다.
 
 ## 1.2.0-beta.10 자동·standalone 사전검증
 

@@ -74,7 +74,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.10 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.11 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertTrue(index.body().contains("등록 계정과 로그인 상태"));
@@ -83,6 +83,14 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("사용 가능"));
         assertTrue(index.body().contains("다시 로그인 필요"));
         assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
+        assertTrue(index.body().contains("data-source-count=\"human\""));
+        assertTrue(index.body().contains("EVENTS.filter(event=>event.coverageEligible)"));
+        assertTrue(index.body().contains("cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;renderGraph();})"));
+        assertTrue(index.body().contains("if(view==='source')cy.edges('[src]').forEach"));
+        assertTrue(index.body().contains("API 요구 권한 0개 · BFLA 비교 비활성"));
+        assertTrue(index.body().contains("응답 ID가 다음 요청으로 전달된 관계는 메인 접근 그래프와 섞지 않고"));
+        assertFalse(index.body().contains("etype:'flow'"));
+        assertFalse(index.body().contains("cycleRole("));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());

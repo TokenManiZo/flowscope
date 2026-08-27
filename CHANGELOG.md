@@ -2,6 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.11 — 2026-08-27
+
+- HUMAN/SCANNER/LLM 필터에 메인 비교 Evidence 수를 표시하고 0건 source는 비활성화
+- source 필터 변경 시 edge만 숨기지 않고 해당 source 전용 node와 `identity → resource → operation` 전체 접근 경로를 다시 계산
+- source view의 접근 경로 두 구간에 HUMAN 파랑·실선·H, SCANNER 빨강·파선·S, LLM 검정·점선·L 문법을 일관 적용
+- 응답→요청 ID/token 데이터 의존선을 메인 접근 그래프에서 제거하고 기존 `흐름 순서` 화면으로 단일화
+- 그래프 레일의 임의 역할 순환을 제거하고 계정 역할·API 요구 권한의 읽기 전용 정책 상태로 교체
+- 이전 배치 저장값이 새 그래프 구조를 왜곡하지 않도록 그래프 상태 키를 v3으로 갱신하고 Web 계약 회귀 추가
+
 ## 1.2.0-beta.10 — 2026-08-27
 
 - 기본 프로젝트 저장을 관계형 `.flowscope.db`로 추가하고 record/payload/account/session binding/policy/review/assessment/validation/route를 분리

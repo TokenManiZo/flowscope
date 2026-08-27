@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.10
+# FlowScope 1.2.0-beta.11
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -53,7 +53,7 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.10.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.11.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 
@@ -164,8 +164,8 @@ The ZAP API endpoint is accepted only on a loopback address. ZAP itself must be 
 
 - **Burp tab** — exact scope, port mapping, live counts, MCP connection copy, Proxy-history import, project save/load, sample, reset, and a button that opens the canonical local Web workspace.
 - **Web top modes** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
-- **Left rail** — captured/analysis/hidden/review counts without a fabricated percentage, HUMAN/SCANNER/LLM source filters, Evidence display classes, pseudonymous sessions and roles, three-way gaps, and graph verdict controls.
-- **Flow Graph** — fixed identity → resource → operation lanes, with direct identity → operation edges when no object identifier was observed; parallel source overlays using HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L; neutral dashed unrequested-route candidates kept outside source coverage; a separate authorization-verdict view; focus+context selection; zoom-to-fit; and 18-at-a-time expandable resource/API groups.
+- **Left rail** — captured/analysis/hidden/review counts without a fabricated percentage, HUMAN/SCANNER/LLM filters paired with actual main-Evidence counts, Evidence display classes, read-only authorization-policy state, three-way gaps, and graph verdict controls.
+- **Flow Graph** — fixed identity → resource → operation lanes, with direct identity → operation edges when no object identifier was observed; both segments of each path use the HUMAN blue/solid/H, SCANNER red/dashed/S, or LLM black/dotted/L source encoding; neutral dashed unrequested-route candidates stay outside source coverage; response-to-request dependencies remain in the separate sequence view; plus authorization view, focus+context, zoom-to-fit, and 18-at-a-time expandable resource/API groups.
 - **판정 매트릭스** — observed identity/role × operation × resource cells, per-source verdicts, uncrossed combinations, partial discovery, and conflicts.
 - **흐름 순서** — response-to-request ID/token dependencies recovered from timestamped observations.
 - **시나리오** — deterministic BOLA/BFLA candidates and gaps alongside non-final Judge assessments and server-validated final verdicts.

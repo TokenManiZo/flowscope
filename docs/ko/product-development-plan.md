@@ -1,6 +1,16 @@
-# FlowScope 1.2.0-beta.10 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.11 제품 개발·검증 계획
 
-## 0. beta.10 우선순위: 계정 중심 세션 표현과 로컬 내구 저장
+## 0. beta.11 우선순위: HUMAN 그래프의 source·edge 의미 정합성
+
+1. source 필터가 단순 스타일 토글이 아니라 해당 source의 node와 전체 접근 경로를 함께 재계산한다. → 검증: HUMAN-only 선택에서 SCANNER/LLM 전용 node·edge 0.
+2. 실제 메인 비교 Evidence가 0건인 source는 0건과 비활성 상태를 함께 표시한다. → 검증: 빈 SCANNER/LLM 데이터에서 조작 가능한 것처럼 보이지 않음.
+3. `identity → resource`와 `resource → operation` 모두 같은 source 색·선형·문자를 사용한다. → 검증: 경로 중간에 출처 없는 중립 접근선이 남지 않음.
+4. 응답→요청 값 전달은 메인 접근 그래프에서 제거하고 `흐름 순서`에만 둔다. → 검증: 메인 graph의 flow edge 0, 기존 sequence 데이터 유지.
+5. 역할 정책은 그래프에서 임의 순환하지 않고 계정 역할·API 요구 권한의 현재 상태만 요약한다. → 검증: 역할 변경은 계정·세션/API 상세이라는 명시적 문맥에서만 가능.
+
+beta.10의 계정 중심 세션 표현과 로컬 SQLite 저장은 그대로 유지한다.
+
+## 0-A. beta.10 계정·저장 기준
 
 1. 한 테스트 계정을 Cookie·Authorization·subject별 별도 사용자처럼 표시하지 않는다. → 검증: 세 fingerprint가 한 account ID로 projection되고 기본 화면은 계정 카드 하나.
 2. broker 상태를 내부 enum이 아닌 `로그인 필요/확인 중/사용 가능/다시 로그인 필요`와 다음 행동으로 설명한다. → 검증: Web 정적 계약과 브라우저 상호작용.
@@ -112,7 +122,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.10 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·계정 중심 세션 projection·SQLite 내구 checkpoint 구현과 자동 회귀 완료, 실제 beta.10 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.11 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터 구현과 자동/standalone 회귀 완료, 실제 beta.11 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

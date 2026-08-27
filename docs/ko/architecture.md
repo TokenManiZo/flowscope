@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.10
+# FlowScope 설계서 v1.2.0-beta.11
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -29,7 +29,7 @@ LLM :8082 = optional observed fallback; decisive validation에는 사용하지 �
 - Java 21, Maven shade fat JAR. `montoya-api`는 Burp 제공 scope다.
 - Burp `registerSuiteTab`에는 범위·포트·프로젝트·MCP 상태를 다루는 작은 Swing 제어판만 둔다. 그래프·매트릭스·상세의 정본은 시스템 브라우저에서 여는 번들 Web UI다.
 - Web UI는 번들 Cytoscape.js를 사용하며 외부 CDN이나 원격 자원을 요청하지 않는다. JCEF·JavaFX는 배포물에 포함하지 않는다.
-- source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시한다. 일반 UI 조작의 accent와 authorization verdict 색은 source palette와 별도 축으로 유지한다(D-061).
+- source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시하며 `identity → resource`와 `resource → operation` 두 구간 모두 같은 source 문법을 유지한다. 0건 source는 비활성화하고 필터 변경 시 해당 source만 가진 node와 전체 경로 구간을 함께 다시 계산한다. 응답→요청 데이터 의존성은 메인 접근 그래프가 아니라 `흐름 순서`에서만 표시한다(D-043/D-061/D-076).
 - 프록시 리스너는 Montoya가 생성하지 못하므로 사용자가 HUMAN 8080과 ZAP 8081을 만든다. 8082는 외부 LLM 클라이언트 호환 폴백이며 해당 관측은 `UNVERIFIED_RUNTIME`이라 결정적 판정에 쓸 수 없다.
 - 캡처 콜백은 append만 하고 400ms worker coalescing으로 분석한다. live record는 20,000건에서 정지하며 초과 건수를 snapshot과 Web 경고로 노출한다.
 - MCP는 `127.0.0.1`에만 bind하고 random Bearer, Origin 검사, 1MiB 요청 상한을 적용한다.
@@ -228,6 +228,6 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
 - Repeater handoff는 마스킹된 미전송 초안만 연다. 사용자가 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다.
 - 포트 매핑은 확장 로드 시 시스템 속성으로 읽으므로 변경 후 Burp를 다시 시작한다.
-- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.10 fat JAR을 실제 Burp bundled JVM/macOS에서 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM 조합의 런타임 호환을 완료로 주장하지 않는다.
+- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.11 fat JAR을 실제 Burp bundled JVM/macOS에서 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM 조합의 런타임 호환을 완료로 주장하지 않는다.
 
 세부 결정과 기각 대안은 `decisions.md`를 참조한다.

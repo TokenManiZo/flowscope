@@ -1089,6 +1089,42 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 프로젝트에는 raw broker 자격증명이 없으므로 재열기 뒤 로그인 연결은 의도적으로 다시 해야 한다.
 - 실제 `test1` 로그인 화면에서 기존 beta.9 데이터가 account card 하나로 표시되는 것은 beta.10 JAR 재로드 뒤 사용자가 확인해야 한다. 자동 회귀와 합성 UI를 실환경 완료로 기록하지 않는다.
 
+## 2026-08-27 · 1.2.0-beta.11 · source 필터와 그래프 edge 의미 정합성
+
+### 목표와 성공 조건
+- HUMAN/SCANNER/LLM 필터가 실제 메인 Evidence 수와 일치하고, 선택한 source의 전체 접근 경로만 보인다.
+- 응답→요청 데이터 의존선이 접근 그래프를 흐리게 하지 않고 `흐름 순서`에서만 보인다.
+- 역할 정책 입력 위치가 명확하며 분석 계산·기존 계정 projection·저장 계약은 바뀌지 않는다.
+- 전체 회귀, standalone 화면, 공개 JAR 하나, 문서·버전 일치를 확인한다.
+
+### 개발·수정
+- source별 `coverageEligible` Evidence 수를 필터에 표시하고 0건 source를 비활성화했다.
+- 필터 변경 시 Cytoscape graph를 다시 만들어 source 전용 node와 `identity → resource → operation` 두 edge 구간을 함께 필터링했다.
+- source view가 두 접근 구간 모두에 HUMAN 파랑·실선·H, SCANNER 빨강·파선·S, LLM 검정·점선·L을 적용하도록 통일했다.
+- `SERVER_FLOW_LINKS`의 응답→요청 데이터 의존 edge를 메인 graph에서 제거했다. 데이터와 설명은 `흐름 순서`에 유지했다.
+- 그래프 레일의 역할 클릭 순환과 임시 override를 제거했다. 계정 역할과 API 요구 권한 수·BFLA 비교 활성 여부를 읽기 전용으로 표시한다.
+- 이전 node 위치가 새 edge 구조를 왜곡하지 않도록 graph-state 저장 키를 v3으로 올리고 Web 계약 테스트를 추가했다.
+
+### 이유
+- 0건 필터와 부분적으로만 source 문법이 적용된 선은 사용자가 “체크가 작동하지 않는다”, “끊긴 선이 무엇인지 모르겠다”고 판단하게 만든다.
+- 접근 관계와 응답 값 전달 관계는 의미가 다르므로 한 canvas에서 같은 계층처럼 겹치면 경로 판독성이 낮아진다.
+- 역할은 신원 속성이고 요구 권한은 API 정책이다. 그래프 레일 한 번 클릭으로 계정 역할만 바꾸는 방식은 BFLA 입력의 절반을 숨긴다.
+
+### 영향 파일
+- Web·회귀: `src/main/resources/web/index.html`, `src/test/java/io/flowscope/FlowScopeWebServerTest.java`
+- 버전·공개 문서: `pom.xml`, 루트/영문 README·CHANGELOG, 한국어 설계·결정·계획·화면 근거·검증, 이 로그
+
+### 검증
+- 집중 회귀 `mvn -Dtest=FlowScopeWebServerTest test`: 13 tests, 실패·오류 0.
+- 전체 회귀 `mvn clean verify`: JDK 26, Java `--release 21`, 195 tests, 실패·오류·skip 0.
+- standalone 합성 H4/S2/L3에서 SCANNER·LLM을 해제하자 source checked 상태가 HUMAN만 남고 관측 API가 4→3으로 재구축됐다. HUMAN 접근 경로 두 구간은 파랑·실선·H였고 메인 graph에 응답→요청 데이터 의존선이 남지 않았다.
+- 600×800에서 page horizontal overflow 0, console warning/error 0, 권한 정책 내부 조작 button 0을 확인했다.
+- 배포물: `target/flowscope-1.2.0-beta.11.jar` 하나, 15,826,900 bytes, 2,157 entries, SHA-256 `f81bd55ab92da93e05601e116556abe58507b4d3222d0be18ec517c532be2788`. ZIP·Main-Class·Java 21·SQLite JDBC service/native/license 포함을 확인했다.
+
+### 남은 한계·다음 gate
+- 이 변경은 관측 데이터의 시각적 출처와 조작 정합성을 고친 것이며 endpoint 발견률·인가 판정 정확도를 높였다고 주장하지 않는다.
+- 실제 Burp에서 실행 중인 beta.10은 beta.11 JAR을 재로드해야 변경이 보인다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

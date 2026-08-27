@@ -74,8 +74,10 @@
   .gapline.gf:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
   .cell.match{box-shadow:0 0 0 2px var(--suspicious), 0 0 16px rgba(230,163,67,.3)}
   .srcfilter label{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); padding:5px 3px; cursor:pointer}
+  .srcfilter label.unavailable{color:var(--faint);cursor:not-allowed}.srcfilter label.unavailable .sw{opacity:.3}
   .srcfilter input{accent-color:var(--accent)}
   .srcfilter .sw{width:22px; height:0; border-top-width:2px; border-top-style:solid}
+  .srcfilter .srcnum{margin-left:auto;font:9px 'JetBrains Mono',monospace;color:var(--faint)}
   .classfilter label{display:flex;align-items:center;gap:7px;font-size:11px;padding:4px 2px;cursor:pointer}
   .classfilter input{accent-color:var(--accent)}
   .trafficstats{margin-top:8px;padding-top:7px;border-top:1px solid var(--line2);font-size:10.5px;color:var(--muted);line-height:1.5}
@@ -84,10 +86,11 @@
   .views button.on{background:var(--panel); border-color:var(--line2); color:var(--text)}
   .rolerow{display:flex; align-items:center; justify-content:space-between; font-size:11.5px; padding:5px 2px; border-top:1px solid var(--line); color:var(--muted)}
   .rolerow:first-child{border-top:0}
-  .rolechip{font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; padding:2px 9px; border-radius:6px; border:1px solid var(--line2); cursor:pointer; color:var(--text); background:var(--panel)}
-  .rolechip:hover{border-color:var(--accent)}
+  .rolechip{font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; padding:2px 9px; border-radius:6px; border:1px solid var(--line2); color:var(--text); background:var(--panel)}
   .rolechip.admin{color:var(--resend); border-color:var(--resend)}
   .rolechip.unknown{color:var(--faint)}
+  .policystate{font-size:10px;color:var(--muted);line-height:1.45;padding:6px 7px;margin-bottom:5px;border:1px solid var(--line2);border-radius:6px;background:var(--panel)}
+  .policystate.inactive{color:var(--suspicious)}
   .identityselect{width:100%; border:1px solid var(--line2); border-radius:7px; background:var(--panel); color:var(--text); padding:7px 9px; font-family:'JetBrains Mono',monospace; font-size:11px}
   .mergebox{border-top:1px solid var(--line); margin-top:9px; padding-top:8px; display:grid; gap:5px}.mergebox label{font-size:9.5px;color:var(--faint)}
   .mergebox button{border:1px solid var(--accent); background:var(--panel); color:var(--accent); border-radius:6px; padding:6px; cursor:pointer; font-size:10.5px;font-weight:700}.mergebox button:disabled{opacity:.35;cursor:not-allowed}
@@ -198,7 +201,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.10 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.11 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -278,9 +281,9 @@
     </div>
     <div class="card srcfilter">
       <h3>소스 필터 <span class="badge">3종</span></h3>
-      <label><input type="checkbox" class="sf" value="human" checked><span class="sw" style="border-top-color:var(--human); border-top-style:solid"></span>사람 H (파랑·실선)</label>
-      <label><input type="checkbox" class="sf" value="scanner" checked><span class="sw" style="border-top-color:var(--scanner); border-top-style:dashed"></span>스캐너 S (빨강·파선)</label>
-      <label><input type="checkbox" class="sf" value="llm" checked><span class="sw" style="border-top-color:var(--llm); border-top-style:dotted"></span>LLM L (검정·점선)</label>
+      <label><input type="checkbox" class="sf" value="human" checked><span class="sw" style="border-top-color:var(--human); border-top-style:solid"></span>사람 H (파랑·실선)<span class="srcnum" data-source-count="human">0건</span></label>
+      <label><input type="checkbox" class="sf" value="scanner" checked><span class="sw" style="border-top-color:var(--scanner); border-top-style:dashed"></span>스캐너 S (빨강·파선)<span class="srcnum" data-source-count="scanner">0건</span></label>
+      <label><input type="checkbox" class="sf" value="llm" checked><span class="sw" style="border-top-color:var(--llm); border-top-style:dotted"></span>LLM L (검정·점선)<span class="srcnum" data-source-count="llm">0건</span></label>
     </div>
     <div class="card classfilter">
       <h3>Evidence 표시 <span class="badge">분석 제외도 보존</span></h3>
@@ -301,7 +304,8 @@
       <div class="covdef">이 선택은 파싱 결과 표의 표시만 바꿉니다. 숨김은 삭제가 아니며 근거와 모든 Evidence를 다시 확인할 수 있습니다.</div>
     </div>
     <div class="card">
-      <h3>권한 레벨 <span class="badge">클릭 = 등급 변경</span></h3>
+      <h3>권한 정책 <span class="badge">읽기 전용</span></h3>
+      <div class="covdef">계정 역할은 <b>계정·세션</b>에서, API 요구 권한은 해당 API 상세에서 설정합니다.</div>
       <div id="roleList"><div style="color:var(--faint); font-size:11px">데이터 없음</div></div>
     </div>
     <div class="card">
@@ -331,6 +335,7 @@
       <label class="layoutlock"><input type="checkbox" id="layoutLock"> 노드 위치 잠금</label>
       <label class="layoutlock"><input type="checkbox" id="showRouteCandidates"> 미요청 route 표시</label>
       <label class="layoutlock"><input type="checkbox" id="showSupportTraffic"> 인증·화면·반복 보조 흐름 표시</label>
+      <div class="covdef" style="margin-top:7px">응답 ID가 다음 요청으로 전달된 관계는 메인 접근 그래프와 섞지 않고 <b>흐름 순서</b>에서 확인합니다.</div>
       <div class="graphcontrols"><button id="fitGraph">화면 맞춤</button><button id="collapseGraph" disabled>노드 접기</button><button id="resetLayout">배치 초기화</button></div>
       <div class="graphstat" id="graphStat">노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.</div>
     </div>
@@ -431,7 +436,7 @@ let SCENARIO_ITEMS={};
 let SERVER_REVISION=-1, SERVER_IDENTITY_REVISION=-1, SERVER_OWNERS={}, SERVER_ROLES={}, SERVER_REQUIRED_ROLES={}, SERVER_FLOW_LINKS=[], SERVER_ACCOUNTS=[], SERVER_SESSIONS=[], SERVER_MANAGED_SESSIONS=[], SERVER_CELLS=[], SERVER_GAPS=[], SERVER_ROUTE_CANDIDATES=[], SERVER_ACTIVE_SOURCES=[], SERVER_TRAFFIC_STATS={captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0}, SERVER_SAMPLE_MODE=false, LIVE_MODE=true;
 let GRAPH_HIDDEN=0; const GRAPH_PAGE_SIZE=18;
 let GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};
-let matrixMode='identity', ROLEOVERRIDE={}; const ROLE_LEVELS=['User','LV1','LV2','Admin','Unknown'];
+let matrixMode='identity'; const ACCESS_ROLES=['User','LV1','LV2','Admin','Unknown'];
 let activeSources={human:true,scanner:true,llm:true};
 let activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false};
 let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:true,POLLING:true,BACKGROUND:true,NAVIGATION:false,STATIC_ASSET:false,DISCOVERY_METADATA:false,PREFLIGHT:false};
@@ -440,8 +445,8 @@ let SETUP_AUTO_CHECKED=false;
 let HUMAN_RUN={active:false,runId:''};
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
-// v2 resets fixed-column positions after responsive graph lanes were introduced.
-const GRAPH_STATE_KEY='flowscope.graph-state.v2';
+// v3 discards positions saved before source-consistent graph lanes were introduced.
+const GRAPH_STATE_KEY='flowscope.graph-state.v3';
 let GRAPH_STATE=loadGraphState();
 
 function loadGraphState(){
@@ -480,7 +485,7 @@ function build(){
   const identities=[...new Set(SERVER_CELLS.map(cell=>cell.idn))];
   const operations=[...new Set(SERVER_CELLS.map(cell=>cell.op))];
   const resources=[...new Set(SERVER_CELLS.map(cell=>cell.resource).filter(Boolean))];
-  const roles={};identities.forEach(idn=>{const registered=accountById(idn);roles[idn]=ROLEOVERRIDE[idn]||(registered&&registered.role)||SERVER_ROLES[idn]||'Unknown';});
+  const roles={};identities.forEach(idn=>{const registered=accountById(idn);roles[idn]=(registered&&registered.role)||SERVER_ROLES[idn]||'Unknown';});
   const owner={...SERVER_OWNERS};
   const cells={};
   SERVER_CELLS.forEach(raw=>{const key=cellKey(raw.idn,raw.op,raw.resource);const evs=(raw.evidenceIds||[]).map(id=>eventById[id]).filter(Boolean),bySrc={};
@@ -497,7 +502,7 @@ function build(){
   const displayNames={};let userIndex=0;identities.forEach(idn=>{const registered=accountById(idn);displayNames[idn]=registered?registered.label:roles[idn]==='Admin'?'ADMIN':(['anonymous','anon'].includes(String(idn).toLowerCase())?'ANONYMOUS':(String(idn).startsWith('unresolved-')?'미확정 세션':(/^unassigned-/i.test(idn)?'UNASSIGNED '+idn.split('-').pop():(/^user-[a-z]+$/i.test(idn)?userSequenceLabel(userIndex++):idn))));});
   MODEL={identities,operations,resources,owner,cells,candidates,routeCandidates:SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed),roles,displayNames,requiredRoles:{...SERVER_REQUIRED_ROLES}};
   if(ACTIVE_IDENTITY!=='all'&&!identities.includes(ACTIVE_IDENTITY))ACTIVE_IDENTITY='all';
-  updateStatus(); computeCoverage(); renderIdentityFilter(); renderGraph(); renderRoles(); renderMatrix(); renderRaw(); renderSeq(); renderAccounts();
+  refreshSourceFilters(); updateStatus(); computeCoverage(); renderIdentityFilter(); renderGraph(); renderRoles(); renderMatrix(); renderRaw(); renderSeq(); renderAccounts();
 }
 
 function computeCoverage(){
@@ -522,7 +527,12 @@ function cellGKs(c){ const g=[]; if(!c)return g; if(c.conflict)g.push('conflict'
 function shortLabel(value,max=34){ const s=String(value||''); if(s.length<=max)return s; const left=Math.ceil((max-1)*.7),right=(max-1)-left; return s.slice(0,left)+'…'+s.slice(-right); }
 function operationLabel(op){const value=withoutService(op),p=value.indexOf(' ');return p>0?value.slice(0,p)+'\n'+shortLabel(value.slice(p+1),36):shortLabel(value,36);}
 function sourceMark(sources){return ['human','scanner','llm'].filter(s=>sources.includes(s)).map(s=>SRC[s].ab).join('·')||'-';}
-function sourceSetFor(cells,predicate){const found=new Set();cells.filter(predicate).forEach(c=>c.observed.forEach(s=>found.add(s)));return [...found];}
+function sourceSetFor(cells,predicate){const found=new Set();cells.filter(predicate).forEach(c=>c.observed.filter(s=>activeSources[s]).forEach(s=>found.add(s)));return [...found];}
+function refreshSourceFilters(){
+  const counts={human:0,scanner:0,llm:0};
+  EVENTS.filter(event=>event.coverageEligible).forEach(event=>{if(counts[event.source]!=null)counts[event.source]++;});
+  document.querySelectorAll('.sf').forEach(cb=>{const count=counts[cb.value]||0,wasDisabled=cb.disabled;cb.disabled=count===0;cb.closest('label').classList.toggle('unavailable',cb.disabled);const label=document.querySelector('[data-source-count="'+cb.value+'"]');if(label)label.textContent=count+'건';if(cb.disabled){cb.checked=false;activeSources[cb.value]=false;}else if(wasDisabled){cb.checked=true;activeSources[cb.value]=true;}});
+}
 function renderIdentityFilter(){
   const select=document.getElementById('identityFilter'); if(!select)return;
   const options=['<option value="all">전체 사용자 오버레이</option>'].concat((MODEL?MODEL.identities:[]).map(idn=>'<option value="'+esc(idn)+'">'+esc(displayIdentity(idn))+' · '+esc(MODEL.roles[idn])+'</option>'));
@@ -589,8 +599,8 @@ function highlightGap(gk){
 }
 function renderGraph(){
   if(!MODEL)return; const {identities,operations,resources,owner,cells}=MODEL;
-  const graphIdentities=ACTIVE_IDENTITY==='all'?identities:identities.filter(id=>id===ACTIVE_IDENTITY);
-  const cellValues=Object.values(cells).filter(c=>ACTIVE_IDENTITY==='all'||c.idn===ACTIVE_IDENTITY); const opScore={};
+  const cellValues=Object.values(cells).filter(c=>(ACTIVE_IDENTITY==='all'||c.idn===ACTIVE_IDENTITY)&&c.observed.some(source=>activeSources[source]));
+  const graphIdentities=identities.filter(id=>cellValues.some(c=>c.idn===id)); const opScore={};
   cellValues.forEach(c=>opScore[c.op]=(opScore[c.op]||0)+(c.verdict==='suspicious'?100:c.conflict?60:c.partial?20:1)+c.evs.length);
   const graphOperations=[...new Set(cellValues.map(c=>c.op))], graphResources=[...new Set(cellValues.map(c=>c.resource).filter(Boolean))];
   const visibleOperations=[...graphOperations].sort((a,b)=>(opScore[b]||0)-(opScore[a]||0)||a.localeCompare(b)).slice(0,GRAPH_LIMITS.operations);
@@ -625,7 +635,7 @@ function renderGraph(){
   cellValues.forEach(c=>{
     if(c.resource&&!visibleResources.includes(c.resource))return;
     if(!c.resource&&!visibleOperations.includes(c.op))return;
-    c.observed.forEach(s=>{
+    c.observed.filter(s=>activeSources[s]).forEach(s=>{
       const count=(c.bySrc[s]||[]).length;
       // 객체가 있으면 요청자→객체, 없으면 요청자→엔드포인트로 직접 연결한다.
       const accessTarget=c.resource?'R:'+c.resource:'O:'+c.op;
@@ -635,8 +645,6 @@ function renderGraph(){
     });
   });
   (MODEL.candidates||[]).filter(cn=>(ACTIVE_IDENTITY==='all'||cn.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(cn.op)&&visibleResources.includes(cn.resource)).slice(0,40).forEach((cn,i)=>{ edges.push({data:{id:'X:'+i,source:'I:'+cn.idn,target:'R:'+cn.resource,etype:'candidate',idn:cn.idn,op:cn.op,resource:cn.resource,key:cellKey(cn.idn,cn.op,cn.resource),risk:cn.risk,label:'미교차'}}); });
-  (SERVER_FLOW_LINKS||[]).forEach((fl,i)=>{if((ACTIVE_IDENTITY==='all'||fl.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(fl.fromOp)&&visibleOperations.includes(fl.toOp)&&fl.fromOp!==fl.toOp)edges.push({data:{id:'F:'+i,source:'O:'+fl.fromOp,target:'O:'+fl.toOp,etype:'flow',src:fl.source,label:'DATA'}});});
-
   if(cy){captureGraphState();cy.destroy();}
   cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},
     style:[
@@ -657,7 +665,6 @@ function renderGraph(){
       {selector:'edge[etype="owns"]',style:{'line-color':'#2d6e63','target-arrow-color':'#2d6e63','line-style':'dashed','width':1.1,'opacity':.5}},
       {selector:'edge[etype="access"]',style:{'width':2,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--muted'),'text-background-color':css('--bg'),'text-background-opacity':.92,'text-background-padding':'2px'}},
       {selector:'edge[etype="candidate"]',style:{'taxi-turn':'86px','line-style':'dotted','line-color':css('--suspicious'),'target-arrow-color':css('--suspicious'),'width':1.6,'opacity':.7,'target-arrow-shape':'triangle','arrow-scale':.7,'label':'','font-family':'JetBrains Mono, Consolas, monospace','font-size':'10px','color':css('--suspicious')}},
-      {selector:'edge[etype="flow"]',style:{'curve-style':'taxi','taxi-direction':'vertical','taxi-turn':'34px','line-style':'dashed','line-color':css('--undecided'),'target-arrow-color':css('--undecided'),'width':1.4,'opacity':.7,'label':'','font-size':'10px','color':css('--faint')}},
       {selector:'edge[etype="support"]',style:{'line-color':css('--faint'),'target-arrow-color':css('--faint'),'width':1.2,'opacity':.65,'label':'','font-size':'9px','color':css('--faint')}},
       {selector:'edge.hide',style:{'display':'none'}},
       {selector:'node.sourcehide',style:{'display':'none'}},
@@ -694,7 +701,6 @@ function renderGraph(){
   cy.on('tap','edge[etype="access"]',e=>{highlightGraphPath(e.target);showCell(e.target.data('key'));});
   cy.on('tap','edge[etype="candidate"]',e=>{highlightGraphPath(e.target);showEmpty(e.target.data('key'));});
   cy.on('tap','edge[etype="calls"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
-  cy.on('tap','edge[etype="flow"]',e=>{highlightGraphPath(e.target);setHint('DATA 흐름: 앞 응답의 ID·토큰이 다음 요청으로 전달된 관계입니다.');});
   cy.on('tap','edge[etype="support"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
   cy.on('tap',e=>{if(e.target===cy)clearDetail();});
   cy.on('mouseover','node',e=>setHint(e.target.data('fullLabel')||e.target.data('label')));
@@ -716,7 +722,7 @@ function highlightGraphPath(element){
     const calls=resource.connectedEdges('[etype="calls"]').filter(edge=>(!op||edge.data('op')===op)&&(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(calls);add(calls.connectedNodes());
   }else if(type==='calls'){
     add(element.connectedNodes());const resource=element.source(),src=element.data('src'),idn=element.data('idn');const access=resource.connectedEdges('[etype="access"]').filter(edge=>(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(access);add(access.connectedNodes());
-  }else if(type==='flow'||type==='support')add(element.connectedNodes());
+  }else if(type==='support')add(element.connectedNodes());
   else if(type==='operation'||type==='supportOperation'){
     const calls=element.connectedEdges('[etype="calls"],[etype="support"]');add(calls);add(calls.connectedNodes());calls.sources().forEach(resource=>{const access=resource.connectedEdges('[etype="access"]');add(access);add(access.connectedNodes());});
   }else if(type==='resource'){
@@ -739,7 +745,7 @@ function applyView(view){
   cy.batch(()=>{
     cy.edges().removeClass('col-human col-scanner col-llm v-allow v-deny v-suspicious v-undecided');
     cy.edges('[etype="access"]').forEach(e=>{ e.addClass(view==='source'?('col-'+e.data('src')):('v-'+e.data('verdict'))); });
-    if(view==='source')cy.edges('[etype="support"]').forEach(e=>e.addClass('col-'+e.data('src')));
+    if(view==='source')cy.edges('[src]').forEach(e=>e.addClass('col-'+e.data('src')));
     applyFilter();
   });
   const hidden=GRAPH_HIDDEN?` · 가독성을 위해 ${GRAPH_HIDDEN}개 노드는 생략됨(전체는 매트릭스/파싱 결과에서 확인)`:' ';
@@ -749,9 +755,9 @@ function applyView(view){
 }
 function applyFilter(){
   if(!cy)return;
-  cy.edges('[etype="access"],[etype="calls"],[etype="flow"],[etype="support"]').forEach(e=>{ e.toggleClass('hide', !activeSources[e.data('src')]); });
+  cy.edges('[src]').forEach(e=>{ e.toggleClass('hide', !activeSources[e.data('src')]); });
   cy.nodes('[ntype="identity"],[ntype="resource"],[ntype="operation"],[ntype="supportOperation"]').forEach(node=>{
-    const related=node.connectedEdges('[etype="access"],[etype="calls"],[etype="flow"],[etype="support"]');
+    const related=node.connectedEdges('[etype="access"],[etype="calls"],[etype="support"]');
     node.toggleClass('sourcehide',related.length>0&&related.filter(edge=>!edge.hasClass('hide')).length===0);
   });
 }
@@ -819,7 +825,7 @@ async function showOperation(op,offset=0){
     `<div class="field"><div class="lbl">이 Operation의 커버리지 처리</div><div class="val">자동 분류가 기본입니다. 수동 제외해도 Evidence는 삭제되지 않으며, 응답 없음·미상 source·검증 단계는 포함 override로도 discovery가 되지 않습니다.</div><div class="row" style="margin-top:6px"><button class="trafficOverride" data-value="INCLUDE">분석에 포함</button><button class="trafficOverride" data-value="EXCLUDE">기본 숨김</button><button class="trafficOverride" data-value="AUTO">자동 판단</button><span id="trafficOverrideMessage" class="warn"></span></div></div>`+
     `<div class="field"><div class="lbl">입력 위치 (메서드 기준)</div><div class="val"><b>${esc(first.method)}</b> → ${esc(loc.desc)}</div></div>`+
     `<div class="field"><div class="lbl">객체 후보 · 추출 근거</div><div class="val">${objectCandidates.length?objectCandidates.map(candidate=>`${esc(candidate.resource)} · ${esc(candidate.evidence||'DERIVED')}`).join('<br>'):'객체 식별자 미관측'}</div></div>`+
-    `<div class="field"><div class="lbl">엔드포인트 요구 권한 · 사용자 정책</div><select id="requiredRole" class="identityselect">${ROLE_LEVELS.map(role=>`<option ${role===requiredRole?'selected':''}>${esc(role)}</option>`).join('')}</select><button id="requiredRoleSave" class="go" style="margin-top:6px">요구 권한 저장</button><span id="requiredRoleMessage" class="warn" style="margin-left:6px"></span></div>`+
+    `<div class="field"><div class="lbl">엔드포인트 요구 권한 · 사용자 정책</div><select id="requiredRole" class="identityselect">${ACCESS_ROLES.map(role=>`<option ${role===requiredRole?'selected':''}>${esc(role)}</option>`).join('')}</select><button id="requiredRoleSave" class="go" style="margin-top:6px">요구 권한 저장</button><span id="requiredRoleMessage" class="warn" style="margin-left:6px"></span></div>`+
     `<div class="resend"><h4>⟳ Burp Repeater 초안</h4>`+
     `<div class="val" style="font-size:10.5px; color:var(--faint); margin-bottom:6px">현재 첫 Evidence의 마스킹된 요청을 Repeater에 미전송 초안으로 엽니다. 인증정보 복원·값 변경·송신은 Burp에서 사용자가 수행합니다.</div>`+
     `<div class="row"><button id="rsSend">Repeater 초안 열기</button><span class="warn">자동 전송하지 않음</span></div>`+
@@ -951,21 +957,16 @@ function renderMatrix(){
 function renderRoles(){
   const el=document.getElementById('roleList'); if(!el)return;
   if(!MODEL||!MODEL.identities.length){ el.innerHTML='<div style="color:var(--faint); font-size:11px">데이터 없음</div>'; return; }
-  el.innerHTML=MODEL.identities.map(idn=>{const sessions=new Set(EVENTS.filter(e=>e.idn===idn&&e.fp&&e.fp!=='anonymous').map(e=>e.fp)).size;
-    return '<div class="rolerow"><span>'+esc(displayIdentity(idn))+'<small style="display:block;color:var(--faint);font-size:8.5px">세션 '+sessions+'개</small></span><button class="rolechip'+(MODEL.roles[idn]==='Admin'?' admin':MODEL.roles[idn]==='Unknown'?' unknown':'')+'" data-idn="'+esc(idn)+'">'+esc(MODEL.roles[idn])+' ▾</button></div>';}).join('');
-  el.querySelectorAll('.rolechip').forEach(b=>b.addEventListener('click',()=>cycleRole(b.dataset.idn)));
-}
-async function cycleRole(idn){
-  const i=ROLE_LEVELS.indexOf(MODEL.roles[idn]); const next=ROLE_LEVELS[(i+1)%ROLE_LEVELS.length];
-  ROLEOVERRIDE[idn]=next; MODEL.roles[idn]=next; renderIdentityFilter(); renderRoles(); renderGraph(); renderMatrix();
-  if(LIVE_MODE)try{await fetch('/api/role',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({identity:idn,role:next})});}catch(_){}
+  const requirementCount=Object.values(MODEL.requiredRoles||{}).filter(role=>role&&role!=='Unknown').length;
+  el.innerHTML='<div class="policystate'+(requirementCount?'':' inactive')+'">'+(requirementCount?'API 요구 권한 '+requirementCount+'개 · BFLA 비교 활성':'API 요구 권한 0개 · BFLA 비교 비활성')+'</div>'+MODEL.identities.map(idn=>{const sessions=new Set(EVENTS.filter(e=>e.idn===idn&&e.fp&&e.fp!=='anonymous').map(e=>e.fp)).size;
+    return '<div class="rolerow"><span>'+esc(displayIdentity(idn))+'<small style="display:block;color:var(--faint);font-size:8.5px">세션 '+sessions+'개</small></span><span class="rolechip'+(MODEL.roles[idn]==='Admin'?' admin':MODEL.roles[idn]==='Unknown'?' unknown':'')+'">'+esc(MODEL.roles[idn])+'</span></div>';}).join('');
 }
 async function mergeIdentities(){
   const from=document.getElementById('mergeFrom').value,into=document.getElementById('mergeInto').value;if(!from||!into||from===into)return;
   if(!confirm(displayIdentity(from)+'의 같은 서비스 세션을 '+displayIdentity(into)+' 계정에 연결할까요? 저장된 Evidence 원본은 바뀌지 않습니다.'))return;
   if(!LIVE_MODE){EVENTS.forEach(e=>{if(e.idn===from)e.idn=into;});build();return;}
   try{const response=await fetch('/api/identity-merge',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({from,into})});
-    const data=await response.json();if(!response.ok)throw new Error(data.message||'병합 실패');delete ROLEOVERRIDE[from];ACTIVE_IDENTITY=into;SERVER_REVISION=-1;await syncExtension();}
+    const data=await response.json();if(!response.ok)throw new Error(data.message||'병합 실패');ACTIVE_IDENTITY=into;SERVER_REVISION=-1;await syncExtension();}
   catch(error){alert('신원 병합 실패: '+error.message);}
 }
 function resetAccountForm(){accountForm.reset();accountId.value='';accountRole.value='User';}
@@ -1263,14 +1264,14 @@ fHuman.addEventListener('change',e=>loadFiles(e.target,'human'));
 fScanner.addEventListener('change',e=>loadFiles(e.target,'scanner'));
 fLlm.addEventListener('change',e=>loadFiles(e.target,'llm'));
 sample.addEventListener('click',async()=>{if(!LIVE_MODE)return;const response=await fetch('/api/sample',{method:'POST'});const data=await response.json();if(!response.ok){alert(data.message||'샘플 프로젝트를 열 수 없습니다.');return;}SERVER_REVISION=-1;await syncExtension();setMode('graph');});
-clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽과 미요청 route 후보를 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];SERVER_ROUTE_CANDIDATES=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';ROLEOVERRIDE={};SERVER_ROLES={};GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();renderAccounts(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 객체 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean','gRoute'].forEach(i=>document.getElementById(i).textContent='0'); });
+clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽과 미요청 route 후보를 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];SERVER_ROUTE_CANDIDATES=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';SERVER_ROLES={};GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();renderAccounts();refreshSourceFilters(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 객체 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean','gRoute'].forEach(i=>document.getElementById(i).textContent='0'); });
 
 document.querySelectorAll('.gapline.gf').forEach(el=>{
   el.addEventListener('click',()=>highlightGap(el.dataset.gk));
   el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();highlightGap(el.dataset.gk);}});
 });
 document.querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.vbtn').forEach(x=>x.classList.remove('on'));b.classList.add('on');applyView(b.dataset.view);}));
-document.querySelectorAll('.sf').forEach(cb=>cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;applyFilter();}));
+document.querySelectorAll('.sf').forEach(cb=>cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;renderGraph();}));
 document.querySelectorAll('.tf').forEach(cb=>cb.addEventListener('change',()=>{activeTraffic[cb.value]=cb.checked;renderRaw();}));
 document.querySelectorAll('.df').forEach(cb=>cb.addEventListener('change',()=>{activeDispositions[cb.value]=cb.checked;renderRaw();}));
 document.getElementById('showRepeats').addEventListener('change',renderRaw);

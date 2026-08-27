@@ -715,3 +715,11 @@
 - **화면 결정:** 기본 계정 화면은 `AccountProfile` 하나를 카드 하나로 표시하고 broker 상태를 `로그인 필요/확인 중/사용 가능/다시 로그인 필요`와 다음 행동으로 번역한다. 계정에 연결된 Cookie/token/subject 비가역 지문은 접힌 기술 정보에만 묶고, 미연결 지문만 고급 세션 진단에서 수동 연결한다. 수집 원시성은 유지하되 사용자에게 내부 artifact를 principal처럼 표시하지 않는다.
 - **기각:** fingerprint 행 자체를 삭제하면 회전·충돌·수동 복구 Evidence를 잃는다. 자동으로 비슷한 지문을 계정에 병합하면 다른 사용자를 합칠 수 있다. SQLite를 즉시 live source of truth나 원격 서버 backend로 만드는 것은 현재 single-worker pipeline과 검증되지 않은 성능 범위를 넘어 기각했다.
 - **검증·한계:** SQLite header, 관계형 row, payload dedup/round-trip, raw secret 부재, 미지원 storage schema 거부, 세 artifact가 한 account ID로 projection되는 회귀를 추가한다. xerial SQLite JDBC의 native load는 현재 자동 JDK에서 경고와 함께 성공했지만 beta.10 fat JAR의 Burp bundled JVM 실제 저장·재열기는 별도 수동 gate다.
+
+## D-076 · 메인 접근 그래프 = source 전체 경로, 데이터 의존성 = 별도 화면
+
+- **문제:** beta.10의 source 필터는 edge 표시만 바꿔 0건 SCANNER/LLM도 동작 가능한 필터처럼 보였고, 객체 경유 경로의 한 구간은 source 문법이 적용되지 않아 선의 출처가 불명확했다. 응답→요청 데이터 의존선까지 같은 canvas에 겹치면서 HUMAN만 선택한 화면에도 옅고 끊긴 듯한 선이 남았다. 그래프 레일의 역할 클릭은 API 요구 권한이 없는 상태에서도 계정 역할을 순환·저장해 BFLA 정책 입력 위치를 혼동시켰다.
+- **결정:** source별 `coverageEligible` Evidence 수를 필터 옆에 표시하고 0건 source는 비활성화한다. 필터 변경 시 graph를 다시 만들어 해당 source만 가진 node와 `identity → resource → operation` 두 접근 구간을 함께 제거한다. 두 구간 모두 D-061의 색·선형·문자 문법을 적용한다. 응답→요청 ID/token 의존성은 D-043의 `흐름 순서`에서만 표시한다. 그래프 레일은 계정 역할과 API 요구 권한 개수를 읽기 전용으로 요약하며, 역할은 `계정·세션`, 요구 권한은 API 상세에서만 수정한다.
+- **기각:** 객체→API 구간만 source 색으로 칠하면 경로 시작점의 출처가 다시 중립으로 남는다. 데이터 의존선을 범례만 추가해 메인 graph에 유지하면 접근 관계와 값 전달 관계라는 서로 다른 edge 의미가 한 화면에 계속 섞인다. 그래프 문맥 없는 역할 순환은 입력이 빠르지만 오조작과 정책 출처 불명을 만든다.
+- **호환:** 분석·coverage·gap·verdict 계산은 바꾸지 않는다. 이전 수동 node 위치가 제거된 edge 의미를 전제로 하므로 local graph-state key를 v3으로 올려 새 배치를 사용한다.
+- **검증·한계:** Web 정적 계약은 source 수량·0건 비활성·필터 재구축·전체 경로 source 문법·flow edge 부재·role cycle 부재를 검사한다. standalone 렌더와 실제 Burp beta.11 재로드는 각각 완료 결과를 `beta-validation.md`에 기록하며, 이 UI 수정은 탐지율 개선이나 오탐·미탐 0의 근거가 아니다.
