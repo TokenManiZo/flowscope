@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
@@ -80,38 +84,60 @@ public final class Normalizer {
         return i + 1 < segs.size() && segs.get(i + 1).matches("^\\d{1,2}$");
     }
 
+    private static boolean isStrongIdToken(String seg) {
+        return UUID.matcher(seg).matches() || LONGHEX.matcher(seg).matches();
+    }
+
+    private static List<String> pathSegments(String path) {
+        List<String> segments = new ArrayList<>();
+        for (String value : (path == null ? "/" : path).split("/")) {
+            if (!value.isEmpty()) segments.add(value);
+        }
+        return segments;
+    }
+
+    private static Set<Integer> candidatePositions(List<String> segs) {
+        Set<Integer> positions = new LinkedHashSet<>();
+        String previous = null;
+        boolean previousWasId = false;
+        for (int i = 0; i < segs.size(); i++) {
+            String segment = segs.get(i);
+            boolean candidate = isIdToken(segment)
+                    && previous != null && !previousWasId
+                    && isCollectionName(previous)
+                    && !YEARLIKE.matcher(segment).matches()
+                    && !looksLikeDateSequence(segs, i);
+            if (candidate) {
+                positions.add(i);
+                previousWasId = true;
+            } else {
+                previous = segment;
+                previousWasId = false;
+            }
+        }
+        return positions;
+    }
+
     /** (METHOD, path) -> op + resource. 쿼리는 호출 전에 이미 분리돼 있다고 가정. */
     public static Normalized normalize(String method, String path) {
-        String m = (method == null ? "GET" : method).toUpperCase(Locale.ROOT);
-        String[] raw = path.split("/");
-        List<String> segs = new ArrayList<>();
-        for (String s : raw) if (!s.isEmpty()) segs.add(s);
+        List<String> segments = pathSegments(path);
+        return normalize(method, segments, candidatePositions(segments));
+    }
 
+    private static Normalized normalize(String method, List<String> segs, Set<Integer> promotions) {
+        String m = (method == null ? "GET" : method).toUpperCase(Locale.ROOT);
         List<String> opSegs = new ArrayList<>();
         List<String> chain = new ArrayList<>();  // 부모 체인: "collection:value"
         String prev = null;
-        boolean prevWasId = false;
 
         for (int i = 0; i < segs.size(); i++) {
             String seg = segs.get(i);
-            // ID 승격 조건:
-            //  - ID 형태이고
-            //  - 직전 세그먼트가 '컬렉션 이름'이며(버전 v1·연도·숫자는 부모가 될 수 없음)
-            //  - 직전이 ID 가 아니고
-            //  - 날짜 시퀀스(2026/08/24)의 일부가 아닐 것
-            boolean promote = isIdToken(seg)
-                    && prev != null && !prevWasId
-                    && isCollectionName(prev)
-                    && !YEARLIKE.matcher(seg).matches()
-                    && !looksLikeDateSequence(segs, i);
-            if (promote) {
+            if (promotions.contains(i)) {
                 opSegs.add("{id}");
                 chain.add(prev + ":" + seg);
-                prevWasId = true;
             } else {
                 opSegs.add(seg);
                 prev = seg;
-                prevWasId = false;
             }
         }
 
@@ -143,15 +169,20 @@ public final class Normalizer {
     /** 레코드 리스트 전체에 op/resource/idn 을 채운다.
      *  op·resource 에 타깃 service 를 접두해, 서로 다른 시스템(prod/test)이 합쳐지지 않게 한다. */
     public static void normalizeAll(List<RequestRecord> records) {
+        TemplateCatalog catalog = TemplateCatalog.from(records);
         for (RequestRecord r : records) {
-            Normalized n = normalize(r.method, r.path);
+            TemplateResolution resolution = catalog.resolve(r);
+            Normalized n = normalize(r.method, pathSegments(r.path), resolution.positions());
+            // 객체 후보 보존과 operation 묶음은 다른 판단이다. 단일 관측이라 template 근거가
+            // 부족해도 /orders/101의 orders:101 객체 후보 자체를 잃으면 인가 분석이 퇴행한다.
+            Normalized lexical = normalize(r.method, r.path);
             String op = n.op;
             if ("/graphql".equalsIgnoreCase(r.path)) {
                 String operation = graphqlOperation(r.requestBodyForAnalysis());
                 if (operation != null) op += "#" + operation;
             }
             List<ResourceReference> references = resourceReferences(r.path, r.query,
-                    r.requestBodyForAnalysis(), n.resource,
+                    r.requestBodyForAnalysis(), lexical.resource,
                     "/graphql".equalsIgnoreCase(r.path));
             String resource = references.isEmpty() ? null : references.getFirst().resource();
             r.op = r.service + " " + op;
@@ -159,8 +190,132 @@ public final class Normalizer {
             r.resourceReferences = references.stream()
                     .map(value -> new ResourceReference(r.service + " " + value.resource(), value.evidence()))
                     .toList();
+            r.pathTemplateStatus = resolution.status();
+            r.pathTemplateReasons = resolution.reasons();
         }
         assignIdentities(records);
+    }
+
+    private record TemplateKey(String service, String shape, int position) {}
+
+    private static final class TemplateEvidence {
+        final Set<String> values = new HashSet<>();
+        final Set<String> observations = new HashSet<>();
+        boolean responseMatch;
+    }
+
+    private record TemplateResolution(Set<Integer> positions, PathTemplateStatus status, List<String> reasons) {}
+
+    private static final class TemplateCatalog {
+        private final Map<TemplateKey, TemplateEvidence> evidence;
+        private final Map<RequestRecord, Set<Integer>> responseMatches;
+
+        private TemplateCatalog(Map<TemplateKey, TemplateEvidence> evidence,
+                                Map<RequestRecord, Set<Integer>> responseMatches) {
+            this.evidence = evidence;
+            this.responseMatches = responseMatches;
+        }
+
+        static TemplateCatalog from(List<RequestRecord> records) {
+            Map<TemplateKey, TemplateEvidence> evidence = new HashMap<>();
+            Map<RequestRecord, Set<Integer>> responseMatches = new IdentityHashMap<>();
+            for (RequestRecord record : records) {
+                List<String> segments = pathSegments(record.path);
+                Set<Integer> candidates = candidatePositions(segments);
+                String shape = shape(segments, candidates);
+                int lastCandidate = candidates.stream().mapToInt(Integer::intValue).max().orElse(-1);
+                for (int position : candidates) {
+                    TemplateEvidence item = evidence.computeIfAbsent(
+                            new TemplateKey(record.service, shape, position), ignored -> new TemplateEvidence());
+                    item.values.add(segments.get(position));
+                    item.observations.add(record.source + "\0" + record.runId + "\0" + record.method);
+                    if (responseConfirms(record, segments.get(position), segments.get(position - 1),
+                            position == lastCandidate)) {
+                        item.responseMatch = true;
+                        responseMatches.computeIfAbsent(record, ignored -> new HashSet<>()).add(position);
+                    }
+                }
+            }
+            return new TemplateCatalog(evidence, responseMatches);
+        }
+
+        TemplateResolution resolve(RequestRecord record) {
+            List<String> segments = pathSegments(record.path);
+            Set<Integer> candidates = candidatePositions(segments);
+            String shape = shape(segments, candidates);
+            Set<Integer> promotions = new LinkedHashSet<>();
+            Set<String> reasons = new LinkedHashSet<>();
+            boolean inferred = false;
+            for (int position : candidates) {
+                String value = segments.get(position);
+                TemplateEvidence item = evidence.get(new TemplateKey(record.service, shape, position));
+                if (isStrongIdToken(value)) {
+                    promotions.add(position);
+                    reasons.add("UUID_OR_LONG_HEX_FORMAT");
+                    inferred = true;
+                } else if (item != null && item.responseMatch) {
+                    promotions.add(position);
+                    boolean ownMatch = responseMatches.getOrDefault(record, Set.of()).contains(position);
+                    reasons.add(ownMatch ? "RESPONSE_ID_MATCH" : "CORROBORATED_RESPONSE_ID_MATCH");
+                } else if (item != null && item.values.size() >= 2) {
+                    promotions.add(position);
+                    reasons.add("MULTIPLE_VALUES_SAME_POSITION");
+                    inferred = true;
+                } else if (item != null && item.observations.size() >= 2) {
+                    promotions.add(position);
+                    reasons.add("CORROBORATED_OBSERVATIONS");
+                    inferred = true;
+                }
+            }
+            PathTemplateStatus status = promotions.isEmpty() ? PathTemplateStatus.LITERAL
+                    : inferred ? PathTemplateStatus.INFERRED : PathTemplateStatus.CORROBORATED;
+            return new TemplateResolution(Set.copyOf(promotions), status, List.copyOf(reasons));
+        }
+
+        private static String shape(List<String> segments, Set<Integer> candidates) {
+            List<String> shaped = new ArrayList<>(segments);
+            candidates.forEach(position -> shaped.set(position, "{?}"));
+            return "/" + String.join("/", shaped);
+        }
+    }
+
+    private static boolean responseConfirms(RequestRecord record, String value, String parent,
+                                            boolean allowGenericId) {
+        if (!record.hasResponse || record.status < 200 || record.status >= 300) return false;
+        String body = record.responseBodyForAnalysis();
+        if (body == null || body.isBlank()) return false;
+        String singular = parent.toLowerCase(Locale.ROOT);
+        if (singular.endsWith("ies") && singular.length() > 3) singular = singular.substring(0, singular.length() - 3) + "y";
+        else if (singular.endsWith("s") && singular.length() > 1) singular = singular.substring(0, singular.length() - 1);
+        Set<String> keys = new HashSet<>();
+        keys.add(keyToken(singular + "Id"));
+        if (allowGenericId) keys.add("id");
+        try {
+            return jsonContainsId(JSON.readTree(body), keys, value);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static boolean jsonContainsId(JsonNode node, Set<String> keys, String value) {
+        if (node == null) return false;
+        if (node.isObject()) {
+            var fields = node.properties().iterator();
+            while (fields.hasNext()) {
+                var field = fields.next();
+                JsonNode child = field.getValue();
+                if (keys.contains(keyToken(field.getKey())) && child.isValueNode()
+                        && !child.isNull() && value.equals(child.asText())) return true;
+                if (jsonContainsId(child, keys, value)) return true;
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) if (jsonContainsId(child, keys, value)) return true;
+        }
+        return false;
+    }
+
+    private static String keyToken(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     private static String graphqlOperation(String body) {

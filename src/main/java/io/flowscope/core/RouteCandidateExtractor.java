@@ -59,11 +59,10 @@ public final class RouteCandidateExtractor {
         for (RequestRecord record : safeRecords) {
             if (!record.hasResponse || !scope.allows(record.service + record.path)) continue;
             if (record.trafficClassification.coverageEligible()) {
-                add(candidates, scope, record.service + record.path, record.method,
+                addObserved(candidates, scope, record,
                         provenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST, record.evidenceId,
                                 record.source, record.runId, "observed-request",
-                                RouteCandidate.Applicability.APPLICABLE, "실제 request/response 관측"), true,
-                        RouteCandidate.Applicability.APPLICABLE, "실제 request/response 관측");
+                                RouteCandidate.Applicability.APPLICABLE, "실제 request/response 관측"));
             }
             RouteDiscoveryDocument document = RouteDiscoveryDocument.from(record);
             for (RouteDiscoveryAdapter adapter : ADAPTERS) {
@@ -86,6 +85,20 @@ public final class RouteCandidateExtractor {
                     false, RouteCandidate.Applicability.REVIEW, "Burp Site Map에서 응답 없는 항목");
         }
         return prioritized(candidates.values().stream().map(RouteCandidateExtractor::freeze).toList());
+    }
+
+    private static String canonicalPath(RequestRecord record) {
+        String prefix = record.service + " " + record.method + " ";
+        if (record.op == null || !record.op.startsWith(prefix)) return record.path;
+        String path = record.op.substring(prefix.length());
+        int operationName = path.indexOf('#');
+        return operationName < 0 ? path : path.substring(0, operationName);
+    }
+
+    private static void addObserved(Map<String, Mutable> out, ScopePolicy scope, RequestRecord record,
+                                    RouteCandidate.Provenance provenance) {
+        add(out, scope, record.service + record.path, record.method, provenance, true,
+                RouteCandidate.Applicability.APPLICABLE, "실제 request/response 관측", canonicalPath(record));
     }
 
     public static List<RouteCandidate> prioritized(Collection<RouteCandidate> candidates) {
@@ -139,6 +152,12 @@ public final class RouteCandidateExtractor {
     private static void add(Map<String, Mutable> out, ScopePolicy scope, String rawUrl, String rawMethod,
                             RouteCandidate.Provenance provenance, boolean observed,
                             RouteCandidate.Applicability applicability, String reason) {
+        add(out, scope, rawUrl, rawMethod, provenance, observed, applicability, reason, null);
+    }
+
+    private static void add(Map<String, Mutable> out, ScopePolicy scope, String rawUrl, String rawMethod,
+                            RouteCandidate.Provenance provenance, boolean observed,
+                            RouteCandidate.Applicability applicability, String reason, String explicitTemplate) {
         String method = normalizeMethod(rawMethod);
         String scopeUrl = rawUrl == null ? null : SCHEMA_PARAMETER.matcher(rawUrl).replaceAll("1");
         if (rawUrl == null || method == null || provenance == null || !scope.allows(scopeUrl)) return;
@@ -147,7 +166,9 @@ public final class RouteCandidateExtractor {
             String service = service(uri);
             String path = uri.getPath() == null || uri.getPath().isBlank() ? "/" : uri.getPath();
             String template;
-            if (SCHEMA_PARAMETER.matcher(path).find()) {
+            if (explicitTemplate != null) {
+                template = explicitTemplate;
+            } else if (SCHEMA_PARAMETER.matcher(path).find()) {
                 template = SCHEMA_PARAMETER.matcher(path).replaceAll("{id}");
             } else {
                 String normalized = Normalizer.normalize(method.equals("UNKNOWN") ? "GET" : method, path).op;

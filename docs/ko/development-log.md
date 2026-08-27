@@ -1004,6 +1004,48 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - MPA/SPA/GraphQL blind corpus의 분류 confusion matrix와 실제 미탐·오탐은 다음 gate다. 오탐·미탐 0이나 성능 우위를 주장하지 않는다.
 - 이번 H/S/L은 합성 샘플 UI QA다. 실제 ZAP과 Codex Explorer를 실행한 것으로 기록하지 않는다.
 
+## 2026-08-27 · 1.2.0-beta.9 · 기존 UI 복원과 Evidence 단계형 경로 묶음
+
+### 목표와 성공 조건
+- beta.8의 사용자 검증된 `identity → resource → operation` UI를 유지한다.
+- raw URL을 보존하면서 근거가 있는 경우에만 concrete path를 같은 operation으로 자동 정렬한다.
+- 근거 없는 숫자 경로의 오병합을 줄이되 객체 후보와 기존 인가 분석을 잃지 않는다.
+- 코드·Web/MCP 계약·한영 문서·버전·JAR을 같은 상태로 만들고 커밋한다.
+
+### 개발·수정
+- 폐기한 operation-grid/관측 인접 Flow 실험 코드를 제거하고 기존 그래프 렌더러와 조작을 복원했다.
+- `Normalizer.normalizeAll`에 service·구조·세그먼트 위치별 catalog를 추가했다. 성공 JSON 응답의 정확한 `id/*Id`, UUID/긴 hex 형식, 복수 값, source/run/method가 다른 독립 관측을 구분한다.
+- path template 상태를 `LITERAL/INFERRED/CORROBORATED`로 만들고 확률이나 고정 confidence 없이 machine-readable 이유를 보존한다.
+- 객체 추출과 operation template을 분리했다. 단일 `/orders/101`이 template 근거 부족으로 literal이어도 `orders:101` 객체 후보와 PATH_ID Evidence는 유지한다.
+- Web operation 상세와 MCP record에 상태·이유를 추가했다. raw path와 마스킹 Request/Response는 기존대로 유지한다.
+- 관측 route inventory는 record의 canonical operation을 재사용해 graph가 literal인데 observed candidate만 `{id}`가 되는 불일치를 차단했다.
+- Maven/MCP/Web/README를 `1.2.0-beta.9`로 맞췄다.
+
+### 이유
+- 모든 숫자를 즉시 `{id}`로 바꾸면 `/status/200` 같은 literal route가 합쳐지고, 숫자를 전부 literal로 두면 실제 객체 operation 비교가 분열된다.
+- 블랙박스 관측만으로 서버 route declaration을 확정할 수 없으므로 UUID 형식조차 `INFERRED`이며, 응답 ID 일치는 `CONFIRMED`가 아니라 `CORROBORATED`로 표현했다.
+- 사용자 승인 큐를 기본 플로우에 넣으면 제품 개입이 커지므로 자동 정렬하되 원문·상태·이유를 상세에서 감사하는 구조로 정했다.
+- OpenAPI의 path templating/concrete path 우선 규칙, Burp Site Map 비교의 false-match 경고, concrete/template 후보를 함께 남기는 mitmproxy2swagger의 접근을 검토했다. 이것들은 설계 근거이지 FlowScope의 성능 우위 증거가 아니다(D-074).
+
+### 영향 파일
+- 코어: `Normalizer`, `RequestRecord`, `RouteCandidateExtractor`, 신규 `PathTemplateStatus`
+- 통합·Web: `SnapshotJsonWriter`, `McpServer`, `web/index.html`
+- 회귀: 신규 `RouteTemplateEvidenceTest`, `RouteCandidateExtractorTest`, `AdvancedNormalizerTest`, `FlowScopeWebServerTest`
+- 문서·배포: 루트/영문 README·CHANGELOG, `architecture.md`, `decisions.md`, `product-development-plan.md`, `ui-product-rationale.md`, `beta-validation.md`, 이 로그, `pom.xml`
+
+### 검증
+- 신규 테스트를 먼저 추가해 미구현 compile 실패를 확인한 뒤 구현했다.
+- `mvn clean verify`: JDK 26, Java `--release 21`, 192 tests, 실패·오류·skip 0.
+- standalone beta.9 합성 샘플: 이전 그래프/파싱 작업면 유지, `/api/orders/{id}` 상세에서 raw `/api/orders/101`, `CORROBORATED · RESPONSE_ID_MATCH`, 마스킹 전문 동시 확인.
+- 1280×720과 600×800에서 수평 overflow 0, console warning/error 0. 1280에서 우측 상세 패널 전체 폭이 viewport 안에 위치.
+- 배포물: `target/flowscope-1.2.0-beta.9.jar` 하나, 3,850,581 bytes, 1,962 entries, SHA-256 `b13313a3bcea198b9bdd19932aa65839a06f7a99728d8b6e98b2d2e0dc7471e6`. ZIP 무결성·Main-Class·Java 21을 확인했다.
+
+### 남은 한계·다음 gate
+- 복수 값/독립 관측은 route declaration의 증명이 아니므로 `INFERRED`이며 false merge 가능성이 0이라고 주장하지 않는다.
+- 현재 응답 보강은 2xx JSON의 `id` 또는 부모명 기반 `*Id` 정확 일치다. 서버 명세/OpenAPI route template을 강한 oracle로 결합하는 것은 후속 gate다.
+- beta.9 JAR의 Burp Community 재로드와 실제 HUMAN blind-target corpus confusion matrix는 아직 확인하지 않았다.
+- 이번 H/S/L은 합성 샘플 UI QA다. 실제 ZAP/Codex Explorer를 실행한 것으로 기록하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

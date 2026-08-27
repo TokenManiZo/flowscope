@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.9 — 2026-08-27
+
+- Kept the beta.8 `identity → resource → operation` graph UI and separated retained raw paths from canonical operations.
+- Added evidence-tiered path templating based on UUID/long-hex form, an exact ID in a successful JSON response, multiple values in one structural position, or independent observations.
+- Exposed categorical `LITERAL / INFERRED / CORROBORATED` status and reasons in Web and MCP records instead of claiming confirmation without a route declaration or showing a fabricated confidence score.
+- Kept an unsupported single `/status/200` literal while preserving the object candidate from a single `/orders/101`, so conservative operation grouping does not erase authorization analysis.
+- Reused the evidence-tiered canonical operation for observed route inventory entries, preventing a literal graph operation from being mislabeled as an observed `{id}` template.
+- Added regressions for grouping, service boundaries, date/version exclusions, cross-method corroboration, and raw-path retention.
+
 ## 1.2.0-beta.8 — 2026-08-27
 
 - Retained masked textual request and response messages as GZIP payloads up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate, separate from the 8 KiB UI previews.

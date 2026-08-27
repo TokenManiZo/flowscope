@@ -74,7 +74,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.8 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.9 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
@@ -98,6 +98,8 @@ final class FlowScopeWebServerTest {
         assertTrue(body.at("/events/0/coverageEligible").asBoolean());
         assertEquals("API", body.at("/events/0/trafficClass").asText());
         assertFalse(body.at("/events/0/classificationReasons").isEmpty());
+        assertEquals("CORROBORATED", body.at("/events/0/pathTemplateStatus").asText());
+        assertEquals("RESPONSE_ID_MATCH", body.at("/events/0/pathTemplateReasons/0").asText());
         assertEquals(1, body.at("/events/0/repeatCount").asInt());
         assertEquals("PATH_ID", body.at("/events/0/objects/0/evidence").asText());
         assertEquals(1, body.path("routeCandidates").size());

@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.8
+# FlowScope 1.2.0-beta.9
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -14,6 +14,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - Live Burp capture with independent source, sub-source, orchestrator, tool, phase, and run metadata.
 - Exact-scope Evidence capture for every source. HUMAN may browse other sites through Burp, but out-of-scope responses are not stored or graphed by FlowScope.
 - HUMAN / SCANNER / LLM filters and an IDA-style hierarchical graph with orthogonal edges and bounded expandable groups.
+- Raw paths are retained while operation templates are grouped only from categorical evidence: UUID/long-hex form, an exact matching ID in a successful JSON response, multiple values in the same position, or independent observations. Details expose `LITERAL / INFERRED / CORROBORATED` and the reason without a made-up confidence score.
 - Identity × operation × resource coverage matrix, uncrossed combinations, partial discovery, and source conflicts.
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
 - Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and account-bound ZAP/LLM requests.
@@ -52,7 +53,7 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.8.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.9.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 

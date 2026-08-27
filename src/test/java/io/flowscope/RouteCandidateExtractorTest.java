@@ -179,8 +179,20 @@ class RouteCandidateExtractorTest {
         List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(observed, page),
                 ScopePolicy.parse("https://app.test/app/"), List.of());
 
-        assertTrue(find(candidates, "GET", "/app/orders/{id}").observed());
+        assertTrue(find(candidates, "GET", "/app/orders/7").observed());
         assertFalse(find(candidates, "UNKNOWN", "/app/orders/{id}").observed());
+    }
+
+    @Test
+    void 근거없는_숫자_관측은_route_inventory에서도_literal이다() {
+        RequestRecord status = document("/app/status/200", "application/json", "{\"ok\":true}",
+                Source.HUMAN, "human-run");
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(status),
+                ScopePolicy.parse("https://app.test/app/"), List.of());
+
+        assertTrue(find(candidates, "GET", "/app/status/200").observed());
+        assertFalse(candidates.stream().anyMatch(value -> value.pathTemplate().equals("/app/status/{id}")));
     }
 
     @Test

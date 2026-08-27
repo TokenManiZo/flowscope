@@ -232,7 +232,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.8");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.9");
         result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "
@@ -615,6 +615,8 @@ public final class McpServer implements AutoCloseable {
             value.put("traffic_disposition", record.trafficClassification.disposition().name());
             value.put("coverage_eligible", record.trafficClassification.coverageEligible());
             value.set("classification_reasons", json.valueToTree(record.trafficClassification.reasons()));
+            value.put("path_template_status", record.pathTemplateStatus.name());
+            value.set("path_template_reasons", json.valueToTree(record.pathTemplateReasons));
         }
         return out;
     }

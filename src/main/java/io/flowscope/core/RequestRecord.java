@@ -56,6 +56,8 @@ public final class RequestRecord {
     public String op;             // 예: "GET /api/orders/{id}"
     public String resource;       // 예: "orders:101" 또는 "orders:101/items:5" (객체 없으면 null)
     public List<ResourceReference> resourceReferences = List.of();
+    public PathTemplateStatus pathTemplateStatus = PathTemplateStatus.LITERAL;
+    public List<String> pathTemplateReasons = List.of();
     public String idn;            // 예: "user-a" 또는 "anon"(비인증)
     public AccessRole role = AccessRole.UNKNOWN; // 사용자 지정값. 자동 권한 추정 금지(D-018)
 

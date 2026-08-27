@@ -698,3 +698,11 @@
 - 문헌 6갈래 조사 후 arXiv 원문 재검증. **인용 논문 5편 실존 확인**(ID 조작 없음).
 - **걸러낸 오류**: 종합이 "BOLA taxonomy action-level 78.6%"라 했으나 **원문은 41.7%**(78.5%는 '확인된 BOLA 비율'). "77.4%/22.6%"는 원문 초록에 없어 폐기.
 - **근거 강도 주의**: 우리가 가장 의존한 AuthProbe·BOLA타xonomy·BOLA-LLM이 하필 가장 약함(단독저자 프리프린트/LLM분류/학사논문). 탄탄한 근거는 BOLAZ·RESTler·Morest·AuthScope·검증게이트 문헌 → 여기에 앵커.
+## D-074 · raw URL 보존 + Evidence 단계형 operation template
+- **문제:** 모든 숫자 세그먼트를 즉시 `{id}`로 바꾸면 `/status/200`, `/top/10` 같은 literal 경로를 오병합한다. 반대로 전부 literal로 두면 `/orders/101`과 `/orders/202`가 같은 operation임을 비교할 수 없다. 블랙박스 트래픽만으로 서버의 실제 route declaration을 완전히 복원할 수는 없다.
+- **결정:** raw path는 항상 보존하고 operation 묶음만 별도로 계산한다. `CORROBORATED`는 2xx JSON 응답의 동일 ID 값, `INFERRED`는 UUID/16자 이상 hex 형식 또는 같은 service·구조·위치의 복수 값/독립 관측 반복, `LITERAL`은 승격 근거 없음이다. route declaration을 보지 않은 형식 추론을 “확정”이라 부르지 않는다. 확률이나 임의 가중치는 쓰지 않고 범주형 이유를 함께 노출한다.
+- **객체와 template 분리:** `/orders/101`의 객체 후보 `orders:101`은 단일 관측에서도 보존한다. operation을 literal로 두는 보수성이 인가 분석의 객체 축을 지우지 않게 하기 위해서다.
+- **자동화 경계:** 근거는 같은 service와 구조에만 전파하고 method는 공유한다. 사용자는 정상 흐름에서 승인 작업을 하지 않으며 상세 화면에서 원문·상태·이유를 감사한다. 서버 명세/OpenAPI가 관측된 경우 이를 별도 강한 route oracle로 쓰는 것은 후속 범위다.
+- **근거:** OpenAPI 3.0.4는 path templating과 concrete path 우선순위를 정의하지만 ambiguous matching은 tooling-defined라고 명시한다. Burp Compare Site Maps도 path/method/parameter 기준 비교가 false match를 만들 수 있다고 경고한다. mitmproxy2swagger 역시 concrete/template 후보를 검토 가능한 형태로 유지한다. 따라서 raw 보존 + 근거 노출이 자동 묶음만 신뢰하는 것보다 감사 가능하다.
+- **참고:** [OpenAPI 3.0.4 Paths](https://spec.openapis.org/oas/v3.0.4.html#paths-object), [Burp Compare site maps](https://portswigger.net/burp/documentation/desktop/tools/target/site-map/comparing), [mitmproxy2swagger](https://github.com/alufers/mitmproxy2swagger)
+- **한계:** 복수 값 반복은 route declaration의 증명이 아니므로 `INFERRED`다. 실제 blind-target 정확도는 독립 corpus/실대상 검증 전까지 주장하지 않는다.

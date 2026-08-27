@@ -151,6 +151,8 @@ public final class SnapshotJsonWriter {
             event.put("coverageEligible", record.trafficClassification.coverageEligible());
             event.put("classificationOverride", record.trafficClassification.userOverride());
             event.set("classificationReasons", json.valueToTree(record.trafficClassification.reasons()));
+            event.put("pathTemplateStatus", record.pathTemplateStatus.name());
+            event.set("pathTemplateReasons", json.valueToTree(record.pathTemplateReasons));
             ObservationCollapser.Group cluster = clusters.get(record.evidenceId);
             event.put("clusterId", cluster.id());
             event.put("repeatCount", cluster.count());

@@ -2,6 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.9 — 2026-08-27
+
+- beta.8의 `identity → resource → operation` 그래프 UI를 유지하면서 raw path와 canonical operation을 분리
+- UUID/긴 16진 형식, 성공 JSON 응답의 동일 ID, 같은 위치의 복수 값·독립 관측을 범주형 근거로 사용하는 Evidence 단계형 path template 추가
+- route declaration 없이 확정이라고 표현하지 않도록 `LITERAL/INFERRED/CORROBORATED` 상태와 이유를 Web 상세·MCP record에 노출
+- 근거 없는 단일 `/status/200`은 literal로 두되, 단일 `/orders/101`의 객체 후보는 보존해 보수적 묶음이 인가 분석을 지우지 않도록 분리
+- 관측 route inventory도 Evidence 단계형 canonical operation을 사용해 그래프는 literal인데 후보만 `{id}`로 오표시되는 불일치 차단
+- 경로 묶음·서비스 경계·날짜/버전 제외·원문 보존 회귀 테스트 추가
+
 ## 1.2.0-beta.8 — 2026-08-27
 
 - 마스킹된 textual 요청·응답 전문을 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB UI preview와 분리

@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.8
+# FlowScope 설계서 v1.2.0-beta.9
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -85,7 +85,12 @@ HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLO
 
 ### 4.2 정규화 F-04~06
 
-- 경로 숫자/UUID/장문 hex를 `{id}`로 만들고 전체 부모 체인을 resource에 보존한다.
+- 원본 `path/query/request/response`는 바꾸거나 삭제하지 않는다.
+- operation 경로 변수화는 관측 묶음 전체에서 수행한다. UUID·16자 이상 hex는 형식 근거, 2xx JSON 응답의 `id` 또는 부모명 기반 `*Id`가 경로 값과 정확히 같으면 응답 근거, 같은 service·구조·위치에서 서로 다른 값 또는 source/run/method가 다른 관측이 반복되면 추론 근거다.
+- 근거가 없는 단일 숫자 세그먼트는 operation에서 literal로 유지한다. 예: 단일 `/status/200`은 `/status/{id}`로 바꾸지 않는다. 근거가 모이면 `/orders/101`, `/orders/202`를 `/orders/{id}`로 자동 정렬한다.
+- 객체 후보와 operation template은 분리한다. 단일 `/orders/101`도 `orders:101` 객체 후보는 보존하되, template 근거가 없으면 operation label은 literal이다. 이 분리로 보수적 묶음이 인가 객체 탐지를 지우지 않게 한다.
+- 각 관측은 `LITERAL/INFERRED/CORROBORATED`와 범주형 이유를 가진다. UUID/긴 16진 형식은 추론일 뿐 확정이 아니며, 성공 응답의 정확한 ID 일치만 별도 Evidence로 보강한다. 확률·고정 confidence는 만들지 않는다. 같은 service/구조 안의 근거만 다른 method에 전파하며 서비스 경계를 넘지 않는다.
+- 전체 부모 체인을 resource에 보존한다.
 - 명시적 query/body `id`, `*Id`, `*_id`, `*Ids`, `*_ids`를 JSON 중첩 객체·배열, XML, multipart에서 모두 수집한다. page/limit 등 제어값은 제외한다. 여러 참조는 모두 Evidence로 노출하지만 기존 인가 분석은 첫 근거 참조 하나만 primary로 사용해 적용 가능성이 증명되지 않은 객체 조합을 만들지 않는다.
 - GraphQL은 `POST /graphql#operationName`으로 분리한다.
 - identity는 service + fingerprint로 시작한다. JWT iss/aud/sub는 서명 미검증 그룹핑 힌트일 뿐 인증 증거가 아니다(D-034). 계정 연결 없는 쿠키 fingerprint는 모두 같은 계정으로 합치는 대신 서비스별 `UNRESOLVED` 그래프 신원으로만 접어 세션 회전 노이즈를 막고, 원 fingerprint는 연결 후보로 보존한다.

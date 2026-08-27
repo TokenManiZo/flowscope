@@ -197,7 +197,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.8 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.9 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -803,6 +803,7 @@ async function showOperation(op,offset=0){
     const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토 대기':'메인 비교';
     return `<details class="reqblk"><summary><span style="color:var(--${e.source})">[${SRC[e.source].ab}]</span> <span class="m">${esc(e.method)}</span> ${esc(e.path)} → HTTP ${e.status} · ${esc(e.eventId||'Evidence 없음')} · ${esc(e.trafficClass)} / ${esc(disposition)} · 반복 ${Number(e.repeatCount||1)}</summary>`+
       `<div class="lbl" style="margin-top:8px">분류 근거</div><div class="val">${esc((e.classificationReasons||[]).join(' · ')||'근거 없음')} · 인증 ${esc(e.authState||'UNRESOLVED')}</div>`+
+      `<div class="lbl" style="margin-top:8px">경로 묶음</div><div class="val">${esc(e.pathTemplateStatus||'LITERAL')} · ${esc((e.pathTemplateReasons||[]).join(' · ')||'원문 경로 유지')}</div>`+
       `<div class="lbl" style="margin-top:8px">보존 상태</div><div class="val">${payloadStatus('Request',detail.requestPayload)||'Request preview만 보존'}<br>${payloadStatus('Response',detail.responsePayload)||'Response preview만 보존'}</div>`+
       `<div class="lbl" style="margin-top:8px">REQUEST · ${esc(l.desc)}</div><pre class="reqblk">${esc(detail.request||'(요청 전문 없음)')}</pre>`+
       `<div class="lbl">RESPONSE</div><pre class="reqblk">${esc(detail.response||'(응답 전문 없음)')}</pre></details>`;

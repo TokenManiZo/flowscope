@@ -1,6 +1,20 @@
-# FlowScope 1.2.0-beta.8 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.9 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-27이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.9 자동·standalone 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 192 tests, 실패·오류·skip 0 |
+| 경로 묶음 corpus | 서로 다른 `/orders/101`·`/orders/202`, 응답 ID 일치, 다른 method 전파, UUID/긴 hex, 근거 없는 단일 `/status/200`, 날짜·API version, service 경계, 중첩 generic ID, raw path 보존 8개 회귀와 route inventory 10개 회귀 통과 |
+| 기존 분석 회귀 | 단일 숫자 operation을 literal로 유지하더라도 path 객체 후보는 보존해 기존 BOLA/BFLA·owner·private object API·graph 회귀 전체 통과 |
+| Web/MCP 계약 | snapshot과 MCP record에 `pathTemplateStatus/path_template_status` 및 범주형 이유 노출, operation 상세에서 원문 요청과 `CORROBORATED · RESPONSE_ID_MATCH`를 함께 확인 |
+| standalone UI | beta.9 합성 샘플에서 beta.8의 `identity → resource → operation` 작업면과 7조합·미교차 1·일부 7·불일치 2 유지. 1280×720과 600×800에서 page horizontal overflow 0, console warning/error 0. 1280 화면에서 상세의 경로 근거와 Request/Response가 보이며 우측 패널이 viewport 안에 위치 |
+| 배포물 | `target/flowscope-1.2.0-beta.9.jar`, 3,850,581 bytes, SHA-256 `b13313a3bcea198b9bdd19932aa65839a06f7a99728d8b6e98b2d2e0dc7471e6` |
+| JAR 무결성 | ZIP 무결성 통과, 1,962 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개 |
+
+`CORROBORATED`는 서버 route declaration 확정이 아니라 성공 응답의 정확한 ID 값이 경로 변수 추론을 보강했다는 뜻이다. UUID/긴 hex와 복수 값 반복은 `INFERRED`로만 표시한다. 복수 값 반복 역시 실제 route의 증명은 아니므로 raw path와 이유를 유지한다. beta.9 JAR의 Burp Community 재로드, 실제 HUMAN 장시간 수집, 독립 blind-target path-template confusion matrix는 아직 수동 gate다. 따라서 오탐·미탐 0이나 실제 대상 취약점 탐지 성능을 주장하지 않는다.
 
 ## 1.2.0-beta.8 자동·standalone 사전검증
 
