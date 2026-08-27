@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0-beta.7 — 2026-08-27
+
+- Added Web quick-start controls that launch the user's locally authenticated Codex or Claude CLI as a new LLM Explorer, a separate Judge, cancellation, and explicit Judge follow-up.
+- Isolated Explorer in a dedicated temporary workspace with Codex ephemeral or Claude no-persistence execution and no prior-session resume.
+- Started Judge as a separate provider session and allowed exact-ID follow-up only after the MCP dataset lock actually succeeded.
+- Passed the FlowScope MCP token only through the child environment and added shell-free execution, regular-executable validation, temporary-workspace permissions/cleanup, and bounded masked output.
+- Removed inherited `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` values from subscription-CLI children, excluded the MCP token from Codex model-spawned shells, and explicitly disabled Codex web search.
+- Excluded Claude user/project/local settings and auto-memory from Explorer, and closed cancellation/unload races before child registration.
+- Added regressions for missing exact-run completion, incomplete three-lane gates, inactive accounts, locked datasets, and Codex session IDs at the beginning of oversized output.
+- Invalidated a source's previous completion when a new exploration starts, keeping both the Judge UI and server lock closed after a failed retry.
+- Rejected Burp-UI scope changes while any run is active or a Judge dataset is locked.
+- Disclosed possible Claude no-persistence metadata residue instead of deleting the user's provider home or claiming physical zero-persistence.
+
 ## 1.2.0-beta.6 — 2026-08-26
 
 - Attached applicability and reason to each provenance item so a source/run-filtered view can recompute state without inheriting another lane's conclusion.

@@ -1,6 +1,8 @@
 # Agent workspace
 
-This directory contains the repeatable FlowScope Explorer and final Judge workflow for Codex or Claude Code subscriptions. It does not contain model-provider credentials.
+This directory contains the repeatable manual fallback for FlowScope Explorer and final Judge with Codex or Claude Code subscriptions. The beta.7 primary flow is the Web quick-start `LLM Explorer 시작` and `Judge 시작` buttons, which bundle these rules into separate CLI sessions. This directory does not contain model-provider credentials.
+
+Use the steps below only when the Web launcher cannot find or start the local CLI. Do not run this manual workflow at the same time as a button-launched Explorer or Judge.
 
 1. Load FlowScope in Burp and use **연결 문자열 복사** in the **FlowScope** Burp tab.
 2. Export it only in the terminal that will start the agent: `export FLOWSCOPE_MCP_TOKEN='…'`. For unattended local startup, create `~/.flowscope/mcp-token` with mode `0600` before loading FlowScope, then export that same value.

@@ -20,4 +20,19 @@ final class RunContextRegistryTest {
         assertTrue(contexts.clear(Source.SCANNER, "campaign-1"));
         assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
     }
+
+    @Test
+    void newExplorationInvalidatesThePreviousCompletionUntilItEnds() {
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "llm-first"));
+        assertTrue(contexts.clear(Source.LLM, "llm-first"));
+        assertTrue(contexts.completedExplorations().contains(Source.LLM));
+
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "llm-retry"));
+        assertFalse(contexts.completedExplorations().contains(Source.LLM));
+        assertTrue(contexts.abort(Source.LLM, "llm-retry"));
+        assertFalse(contexts.completedExplorations().contains(Source.LLM));
+    }
 }

@@ -88,6 +88,7 @@ public final class McpServer implements AutoCloseable {
     public String token() { return token; }
     public List<Assessment> assessments() { return snapshotAssessments(); }
     public List<ValidationDecision> validations() { return snapshotValidations(); }
+    public boolean datasetLocked() { return lockedSnapshot != null; }
     public JsonNode startDeterministicZapBaseline(String target, String accountId) {
         return startDeterministicZapCampaign(target,
                 accountId == null || accountId.isBlank() ? List.of() : List.of(accountId),
@@ -231,7 +232,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.6");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.7");
         result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "

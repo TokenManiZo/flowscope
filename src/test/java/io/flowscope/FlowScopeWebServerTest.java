@@ -13,6 +13,7 @@ import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
+import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.web.FlowScopeWebServer;
 import org.junit.jupiter.api.AfterEach;
@@ -64,8 +65,12 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
         assertTrue(index.body().contains("첫 점검을 시작하세요"));
         assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
+        assertTrue(index.body().contains("LLM Explorer 시작"));
+        assertTrue(index.body().contains("Judge 시작"));
+        assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
+        assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.6 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.7 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
@@ -218,6 +223,32 @@ final class FlowScopeWebServerTest {
                 "target=" + encode(server.url()) + "&anonymous=true", token);
         assertEquals(400, rejected.statusCode());
         assertTrue(rejected.body().contains("Web 제어면"));
+    }
+
+    @Test
+    void startsSubscriptionLlmExplorerAndExposesOneUnifiedStatusEndpoint() throws Exception {
+        start();
+
+        JsonNode initial = json(get("/api/llm-run", token, origin()));
+        assertEquals("IDLE", initial.at("/run/status").asText());
+        assertTrue(initial.at("/run/providers/CODEX").asBoolean());
+        assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
+        assertEquals(0, initial.path("completed_lanes").size());
+
+        HttpResponse<String> started = post("/api/llm-run", "action=start&provider=CODEX&role=EXPLORER&target="
+                + encode(state.record.service + "/") + "&account=", token);
+        assertEquals(202, started.statusCode(), started.body());
+        assertEquals(LocalLlmRunner.Provider.CODEX, state.llmProvider);
+        assertEquals(LocalLlmRunner.Role.EXPLORER, state.llmRole);
+        assertEquals(state.record.service + "/", state.llmTarget);
+
+        HttpResponse<String> followup = post("/api/llm-run", "action=followup&message=explain+evidence", token);
+        assertEquals(202, followup.statusCode(), followup.body());
+        assertEquals("explain evidence", state.llmFollowup);
+
+        JsonNode cancelled = json(post("/api/llm-run", "action=cancel", token));
+        assertEquals("CANCELLED", cancelled.at("/run/status").asText());
+        assertTrue(state.llmCancelled);
     }
 
     @Test
@@ -374,6 +405,11 @@ final class FlowScopeWebServerTest {
         private volatile List<String> scannerScope;
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
+        private volatile LocalLlmRunner.Provider llmProvider;
+        private volatile LocalLlmRunner.Role llmRole;
+        private volatile String llmTarget = "";
+        private volatile boolean llmCancelled;
+        private volatile String llmFollowup = "";
         private volatile Pipeline.Result result;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
@@ -411,6 +447,29 @@ final class FlowScopeWebServerTest {
         }
         @Override public JsonNode scannerStatus() {
             return JSON.createObjectNode().put("status", "NOT_STARTED");
+        }
+        @Override public JsonNode startLlm(LocalLlmRunner.Provider provider, LocalLlmRunner.Role role,
+                                           String target, String accountId) {
+            llmProvider = provider;
+            llmRole = role;
+            llmTarget = target;
+            return JSON.createObjectNode().put("status", "RUNNING").put("provider", provider.name())
+                    .put("role", role.name()).set("providers", JSON.createObjectNode()
+                            .put("CODEX", true).put("CLAUDE", true));
+        }
+        @Override public JsonNode llmStatus() {
+            return JSON.createObjectNode().put("status", "IDLE").set("providers", JSON.createObjectNode()
+                    .put("CODEX", true).put("CLAUDE", true));
+        }
+        @Override public JsonNode cancelLlm() {
+            llmCancelled = true;
+            return JSON.createObjectNode().put("status", "CANCELLED").set("providers", JSON.createObjectNode()
+                    .put("CODEX", true).put("CLAUDE", true));
+        }
+        @Override public JsonNode followUpJudge(String message) {
+            llmFollowup = message;
+            return JSON.createObjectNode().put("status", "RUNNING").put("role", "JUDGE")
+                    .set("providers", JSON.createObjectNode().put("CODEX", true).put("CLAUDE", true));
         }
         @Override public void rebuild() { result = Pipeline.run(new ArrayList<>(records), config); revision.incrementAndGet(); }
         @Override public void clearTraffic() { records.clear(); rebuild(); }

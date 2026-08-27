@@ -893,6 +893,61 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - extension worker가 Pipeline과 route inventory를 연속 publish한다. lock 호출과 지연 응답/rebuild가 경합하는 Burp runtime stress는 아직 자동화하지 않았다.
 - beta.6 JAR의 Burp Community 재로드와 실제 candidate UI/Site Map gate는 beta.5에서 이어진다.
 
+## 2026-08-27 · 1.2.0-beta.7 · 구독 CLI Explorer/Judge 버튼 파이프라인
+
+### 목표와 성공 조건
+
+- 사용자가 Web 빠른 시작에서 공급자·대상·선택 계정을 고르고 독립 LLM Explorer와 별도 Judge를 시작할 수 있게 한다.
+- Explorer는 과거 대화를 재사용하지 않고 자기 run만 남기며, Judge는 세 레인 lock 뒤 별도 세션으로 시작하고 후속 질문만 같은 Judge 세션을 재개한다.
+- CLI 종료 코드나 모델 문장을 완료로 믿지 않고 exact run 종료·3-lane 완료·dataset lock·Evidence validation이라는 기존 서버 gate를 유지한다.
+- 토큰·provider 로그인 정보·임시파일·출력과 scope 변경이 새 subprocess 경계에서 기존 신뢰 모델을 깨지 않게 한다.
+
+### 개발·수정
+
+- `LocalLlmRunner`를 추가했다. Burp 시작 PATH 또는 명시적 시스템 속성의 regular executable을 찾아 shell 없이 Codex/Claude를 실행한다.
+- Explorer는 owner-only 임시 workspace에서 Codex `exec --ephemeral --ignore-user-config --strict-config`·read-only/no-approval·웹 검색 비활성화 또는 Claude strict MCP/no-persistence/빈 setting sources/auto-memory 비활성화/역할별 tool allowlist로 시작한다. FlowScope가 exact run을 먼저 만들고 prompt에 target·scope·account·run ID와 번들 AGENTS/Explorer 지침을 표준입력으로 전달한다.
+- Judge는 Explorer와 다른 새 provider session을 사용한다. Codex JSON의 `thread_id` 또는 Claude UUID를 보존하고 Web의 `Judge 계속`만 exact session ID로 resume한다. CLI 프로세스는 각 turn 종료 후 닫힌다.
+- Web `/api/llm-run`에 상태·scope·완료 레인, Explorer/Judge 시작, 취소, Judge 후속 요청을 추가했다. 빠른 시작에 provider, target, ACTIVE account, 시작/취소/후속 controls와 상태·metadata 경고를 배치했다.
+- MCP Bearer는 child environment에만 전달한다. prompt·command line·project에는 넣지 않고 Codex 모델 shell에는 전달하지 않는다. 상속된 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`를 제거하고, status에는 마스킹·64KiB 상한의 output tail만 반환한다. Codex session event는 긴 출력 tail에서 밀려나도 bounded prefix에서 복구한다.
+- locked dataset에는 Explorer를 추가하지 못하게 하고 active run 또는 lock 중 Burp UI scope 변경을 거부한다. 새 exploration이 시작되면 같은 source의 과거 완료 표식을 즉시 제거해 실패한 재실행의 부분 Evidence로 Judge가 열리지 않게 했다.
+- sample/reset/project load는 완료된 Judge resume handle을 무효화하며 실행 중이면 취소한다. 취소 또는 Burp unload 직후 child 생성이 완료되는 경합에서도 닫힘 상태를 재검사해 그 child를 종료하고, 종료된 runner의 새 실행을 거부한다. Claude no-persistence metadata 잔존 가능성은 삭제로 가장하지 않고 UI와 문서에 표시한다.
+- `agent-workspace`의 Explorer prompt는 launcher가 pre-start한 run과 수동 fallback의 run 시작을 구분한다. 세 지침 리소스를 fat JAR에 포함했다.
+- Maven/MCP/Web/README 버전을 `1.2.0-beta.7`로 맞췄다.
+
+### 이유와 기각한 대안
+
+- Explorer와 Judge를 한 CLI 대화에서 연속 수행하면 LLM lane이 HUMAN/ZAP 결과에 노출돼 3-way 비교가 독립 실험이 아니게 되므로 기각했다.
+- 사용자 provider OAuth/token을 FlowScope가 직접 받거나 API key를 저장하는 방식은 구독 CLI 요구와 비밀 경계를 깨므로 기각했다.
+- 장기 terminal 프로세스를 계속 켜 두는 대신 provider session ID로 Judge turn을 재개한다. 이는 Burp unload·오류 복구가 단순하고 사용자에게 실제 지속 의미를 정직하게 설명한다.
+- `--no-session-persistence` 뒤 provider 홈을 광역 삭제하면 다른 세션을 손상할 수 있어 기각했다. Explorer ID를 저장·resume하지 않는 논리 격리와 명시적 경고를 선택했다.
+- CLI 0 exit만 성공으로 쓰는 방식은 MCP run 미종료·dataset 미잠금을 놓치므로 서버 상태를 완료 조건으로 유지했다.
+- 후보 가중치나 최종 판정 규칙은 이 자동화와 무관하므로 변경하지 않았다. 기존 범주형 정렬과 Evidence gate가 계속 권위다.
+
+### 영향 파일
+
+- 실행기·상태: `LocalLlmRunner`, `RunContextRegistry`, `McpServer`, `FlowScopeExtension`
+- Web API/UI: `FlowScopeWebServer`, `web/index.html`
+- prompt/build: `agent-workspace/prompts/explorer.md`, `pom.xml`
+- tests: `LocalLlmRunnerTest`, `RunContextRegistryTest`, `FlowScopeExtensionPhaseTest`, `FlowScopeWebServerTest`
+- 공개 정본: root/영문 README·CHANGELOG, 한국어 architecture·decisions·product plan·UI rationale·beta validation·development log
+
+### 검증
+
+- 구현 도중 두 테스트 픽스처 결함을 즉시 노출·수정했다: 존재하지 않는 `Orchestrator.USER` 사용, Codex Judge test의 LLM 완료 레인 누락. 제품의 active/3-lane gate를 약화하지 않았다.
+- 코드 리뷰에서 긴 Codex 출력의 첫 thread ID 손실, lock 뒤 Burp UI scope 변경, 재탐색 실패 뒤 과거 완료 표식 잔존을 발견하고 각각 bounded prefix, scope mutation guard, completion invalidation 회귀로 고정했다.
+- 현재 로컬 Codex CLI 0.147.0과 Claude Code 2.1.231의 `--help`에서 사용하는 ephemeral/resume/session/MCP/tool/setting 옵션을 확인했다. 사용자 승인 뒤 exact target·MCP 없이 격리 옵션의 모델 호출만 실행했다. Codex는 exit 0과 정확한 `OK`를 반환했다. Claude는 옵션 파싱과 provider 요청까지 진행했지만 HTTP 429 주간 한도(2026-08-29 09:00 KST reset 안내)로 실패했으므로 Claude 모델 실행 성공으로 기록하지 않는다.
+- 최종 `mvn clean verify`: 176 tests, 실패 0, 오류 0, skip 0, BUILD SUCCESS.
+- 배포물은 `target/flowscope-1.2.0-beta.7.jar` 하나, 3,824,841 bytes, 1,954 entries, SHA-256 `c8fd3f8ae1b85c9708020fb4f933c253b04fcd4090eb19837c9eab74220a21c1`다. Main-Class/Java 21/번들 지침 3종/ZIP 무결성과 연속 non-clean package digest 동일성을 확인했다.
+- standalone Web UI에서 beta.7 tag와 모든 LLM controls를 DOM으로 확인했고, 423×799 viewport의 page horizontal overflow는 0이었다. modal은 세로 scroll을 유지했다.
+
+### 남은 한계·다음 gate
+
+- 현재 실행 중인 Burp Web UI는 beta.3로 확인됐으므로 beta.7 JAR을 제거·재로드한 뒤 Codex와 Claude 각각 Explorer MCP 요청, exact run 종료, Judge lock/validation, Judge 후속 resume를 확인해야 한다. Codex 무대상 smoke를 이 gate에 소급하지 않는다.
+- Explorer 한 번은 운영자가 선택한 익명 또는 ACTIVE 계정 하나로 독립 탐색한다. USER A/B 교차 재현은 lock 뒤 Judge가 `flowscope_list_sessions`의 안전한 account ID를 골라 수행한다. 이것은 현재 의도된 경계이며 다중 계정 Explorer campaign은 구현돼 있지 않다.
+- Claude no-persistence가 물리적 metadata 파일을 남기지 않는다고 보장하지 않는다. FlowScope가 보장하는 것은 Explorer session ID를 저장·resume하지 않는 논리 격리다.
+- Codex는 CLI의 read-only sandbox와 no-approval, Claude는 exact tool allowlist를 사용하지만 변조된 로컬 client 설치까지 통제하지 못한다. 서버 exact scope·visibility·Evidence gate가 최종 권위다.
+- 이 검증은 실행 파이프라인과 제품 상태를 검증한 것이며 endpoint 발견률·취약점 precision/recall·crAPI 성능을 검증하지 않았다. 블라인드 벤치마크는 사용자 검토 뒤 별도 수행한다.
+
 ## 이후 작업 기록 형식
 
 새 코드·동작 변경은 완료와 동시에 아래 형식으로 이 파일에 추가한다.

@@ -1,6 +1,23 @@
-# FlowScope 1.2.0-beta.6 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.7 사전 벤치마크 검증 기록
 
-최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-26이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-27이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.7 자동 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 176 tests, 실패·오류·skip 0 |
+| 로컬 CLI 계약 | 현재 설치 Codex CLI 0.147.0과 Claude Code 2.1.231 help에서 사용 인자 확인. Explorer fresh/no-resume, Judge 별도 session/exact resume, 사용자 설정·auto-memory 배제, 역할별 명령과 환경 token 전달 회귀 통과 |
+| 무대상 CLI smoke | 사용자 승인 뒤 exact target·MCP 없이 동일 격리 계열 인자로 Codex가 exit 0·정확한 `OK`를 반환. Claude는 provider 요청까지 진입했으나 HTTP 429 주간 한도로 실패했으므로 성공 아님 |
+| Explorer 완료 gate | 선발급 exact LLM run을 CLI가 종료하지 않으면 abort·FAILED, inactive account와 locked dataset 시작 거부, 새 exploration 시작 시 과거 완료 표식 무효화 회귀 통과 |
+| Judge gate | HUMAN·SCANNER·LLM 완료 전 시작 거부, 실제 dataset lock 미완료 시 실패, Claude exact session resume, 96KiB Codex 출력 시작부 thread ID 보존 회귀 통과 |
+| Web/Burp 상태 | `/api/llm-run` 시작·상태·취소·후속 계약, 완료 레인 목록, 세 레인 전 Judge UI 비활성, active run/lock 중 Burp UI scope 변경 차단 회귀 통과 |
+| 비밀·프로세스 경계 | MCP Bearer는 child environment에만 있고 prompt·Codex 모델 shell에 없음, OpenAI/Anthropic API key 비상속, shell 없는 executable 호출, 임시 workspace owner-only/정리, 취소·unload 경합 child 종료, 공개 output 마스킹·상한 적용 |
+| standalone UI | beta.7 tag와 빠른 시작의 공급자·target·account·Explorer/Judge·후속 controls를 확인. 423×799 viewport에서 page horizontal overflow 0, modal 세로 scroll과 상단 카드 가독성 확인 |
+| 배포물 | `target/flowscope-1.2.0-beta.7.jar`, 3,824,841 bytes, SHA-256 `c8fd3f8ae1b85c9708020fb4f933c253b04fcd4090eb19837c9eab74220a21c1` |
+| JAR 무결성 | ZIP 무결성 통과, 1,954 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 번들 AGENTS/Explorer/Judge 3개 리소스 포함, 공개 `target/*.jar` 1개, 연속 non-clean package SHA-256 동일 |
+
+이 결과는 실행 명령 생성, 상태 불변식, Web API/UI와 패키징의 자동·standalone 검증과 Codex 무대상 CLI smoke다. 현재 Burp는 beta.3 UI를 실행 중이므로 beta.7 JAR을 재로드해 사용자의 구독 로그인 Codex/Claude가 MCP에 연결되고, 허가 대상에 Explorer 요청을 남기고, exact run을 종료하고, 별도 Judge가 lock·validation·후속 resume까지 완료하는 end-to-end 실행은 아직 확인하지 않았다. Claude의 no-persistence metadata 파일 0개도 보장하지 않는다. 따라서 버튼 자동화의 실환경 성공이나 취약점 탐지 성능을 이 표로 주장하지 않는다.
 
 ## 1.2.0-beta.6 자동 사전검증
 

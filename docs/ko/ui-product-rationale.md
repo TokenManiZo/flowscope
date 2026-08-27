@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.6, 2026-08-26 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.7, 2026-08-27 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -109,6 +109,8 @@ orchestrator = SYSTEM 또는 HUMAN
 
 Explorer가 HUMAN/ZAP 후보를 먼저 보면 독립 비교가 아니라 답을 따라가는 재검사가 된다. 서버가 다른 source의 count, cell, gap, finding, Evidence를 숨기고 Explorer 자신의 통제 요청만 허용한다.
 
+빠른 시작의 `LLM Explorer 시작`은 편의를 위해 같은 대화를 재활용하지 않는다. 사용자가 공급자·target·계정을 고르면 FlowScope가 새 임시 작업공간과 비영속 CLI 실행을 만들고 exact scope와 선발급 run을 자동 주입한다. 종료 조건도 문장 출력이 아니라 그 exact run의 정상 종료다. 따라서 “버튼을 눌렀다”나 “CLI가 0으로 끝났다”만으로 LLM lane 완료를 표시하지 않는다.
+
 beta.6부터 미요청 route도 같은 경계를 따른다. Explorer는 자신의 run 응답에서 발견한 provenance만 보며, 병합 후보에 HUMAN 근거가 있어도 observed/applicability/reason을 자기 run 기준으로 다시 계산한다. pre-lock status는 다른 lane의 active run·수량·기존 판정 목록을 공개하지 않고, Explorer가 활성화된 동안에는 ZAP 상태·실행도 차단한다. lock 뒤에는 그 시점의 route inventory만 Judge에게 보여 준다.
 
 ### Judge: 잠긴 세 결과의 종합자
@@ -116,6 +118,8 @@ beta.6부터 미요청 route도 같은 경계를 따른다. Explorer는 자신�
 HUMAN/ZAP/LLM exploration이 모두 정상 종료된 뒤 후보와 owner/role oracle을 잠근다. Judge는 겹침·고유 발견·갭·ZAP alert를 읽고 좁은 재현과 정상 대조를 수행한다.
 
 모델은 최종 문장을 작성하지만 서버가 current candidate, 동일 run, `CONTROLLED` Evidence, 반복 재현, 정상 대조를 검사한다. 조건이 부족하면 모델이 확정을 요구해도 `INCONCLUSIVE`다.
+
+Judge는 Explorer와 다른 새 provider session으로 시작한다. 완료 뒤 `Judge 계속`은 같은 Judge session ID만 재개하므로 사용자는 판정 근거를 후속 질문할 수 있다. CLI 프로세스를 계속 켜 두지는 않는다. Explorer 세션과 Judge 세션을 섞지 않으며, Claude의 no-persistence metadata 잔존 가능성은 UI에 한계로 표시하고 사용자의 provider 저장소를 임의 삭제하지 않는다.
 
 ## 8. 왜 ZAP 실행 순서를 시스템이 정하는가
 
@@ -184,7 +188,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 - 모든 endpoint를 찾는다.
 - 오탐과 미탐이 없다.
 - 기존 도구보다 취약점을 더 잘 찾는 것이 입증됐다.
-- beta.6의 Burp/ZAP/Codex/Claude 전체 실행이 통과했다.
+- beta.7의 Burp/ZAP/Codex/Claude 전체 실행이 통과했다.
 - 화면의 0 또는 관측 조합 수가 전체 공격면 대비 완료율이다.
 
 ## 12. 2026-08-26 현재 확인된 UI·배포 부채
@@ -193,8 +197,8 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.6 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 beta.6에서 선택할 파일은 `target/flowscope-1.2.0-beta.6.jar` 하나다. beta.3 JAR의 Burp Community 기동 이력은 있지만 beta.6 JAR 재로드는 별도 수동 gate다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.7 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 beta.7에서 선택할 파일은 `target/flowscope-1.2.0-beta.7.jar` 하나다. beta.3 JAR의 Burp Community 기동 이력은 있지만 beta.7 JAR 재로드는 별도 수동 gate다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
-5. **Codex 신뢰 상태 안내:** 공식 Codex 동작상 project-scoped `.codex/config.toml`은 신뢰된 프로젝트에서만 적용된다. 로컬 Codex CLI 0.147.0에서 `agent-workspace`의 `flowscope` 항목이 실제 발견되는 것을 확인했으며, 사용법에는 프로젝트 신뢰 전제와 `codex mcp get flowscope` 확인 단계를 명시했다. 현재 MCP initialize/tool 목록/status, 독립 Explorer 통제 요청과 범위 밖 차단은 실제 서버에서 통과했다. 구독형 Codex/Claude가 prompt 전체와 Judge를 끝까지 수행하는 과정은 별도 실환경 gate다.
+5. **구독 CLI 자동 실행 — 코드·UI 완료, Burp 실환경 gate:** 빠른 시작이 Burp 시작 환경의 Codex/Claude 실행 파일을 찾아 새 Explorer와 별도 Judge 프로세스를 만들고, provider session ID로 Judge 후속 질문을 재개한다. 수동 `agent-workspace`는 폴백으로 유지한다. 로컬 CLI help와 자동 회귀를 통과했고 Codex 무대상 모델 smoke는 성공했지만, Claude smoke는 구독 주간 한도 429로 실패했다. 실제 Burp에서 사용자의 MCP·대상 요청·run 종료·Judge lock·후속 resume가 끝까지 성공하는지는 beta.7 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
 
 해결 표시는 항목별 자동 회귀와 명시된 실측 범위까지의 상태다. 복수 로그인 계정, 실제 구독 클라이언트의 Explorer/Judge 전체 실행, 저장·복구·unload는 계속 beta gate로 남긴다.

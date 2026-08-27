@@ -9,7 +9,9 @@ import io.flowscope.core.ToolKind;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlowScopeExtensionPhaseTest {
     @Test
@@ -53,5 +55,16 @@ class FlowScopeExtensionPhaseTest {
 
         assertEquals("anon", FlowScopeExtension.captureFingerprint(
                 Source.SCANNER, anonymousLane, null, null, "tracking=rotated-value"));
+    }
+
+    @Test
+    void 활성_run이나_Judge_lock이_있으면_범위_변경을_막는다() {
+        RunContextRegistry contexts = new RunContextRegistry();
+        assertFalse(FlowScopeExtension.scopeMutationBlocked(false, contexts));
+        assertTrue(FlowScopeExtension.scopeMutationBlocked(true, contexts));
+
+        contexts.activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.BASELINE, "human-active"));
+        assertTrue(FlowScopeExtension.scopeMutationBlocked(false, contexts));
     }
 }

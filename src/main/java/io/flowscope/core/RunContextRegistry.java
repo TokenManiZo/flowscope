@@ -26,6 +26,10 @@ public final class RunContextRegistry {
         if (active != null) {
             throw new IllegalStateException(source + " run already active: " + active.runId());
         }
+        if (context.phase() == RunPhase.EXPLORATION
+                && (source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM)) {
+            completedExplorations.remove(source);
+        }
         contexts.put(source, context);
     }
 

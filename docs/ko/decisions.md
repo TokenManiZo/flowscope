@@ -654,6 +654,27 @@
 - **한계:** Pipeline과 candidate publication은 현재 extension worker의 연속 갱신이며 하나의 transaction object는 아니다. lock은 호출 시점에 공개된 두 immutable snapshot을 잡는다. 실제 지연 응답과 rebuild 경합은 Burp runtime stress gate로 남긴다.
 - **상태:** beta.6 구현·자동 회귀 완료, Burp/MCP 실환경 gate 대기.
 
+## D-071 · 구독 LLM 버튼 실행 = 비영속 Explorer + 별도 지속 Judge
+
+- **문제:** 수동 workspace 실행만으로는 사용자 개입이 크고 실행 프롬프트·target·run ID가 어긋날 수 있다. 반대로 Explorer와 Judge가 같은 provider 대화를 재사용하면 세 번째 lane의 독립성이 깨지고, CLI 프로세스 종료만 성공으로 믿으면 MCP run 미종료나 dataset 미잠금을 완료로 오인한다.
+- **결정:** Web quick-start가 공급자·exact target·선택적 ACTIVE account를 받아 로컬 로그인 Codex/Claude CLI를 shell 없이 새 프로세스로 실행한다. Explorer는 전용 임시 작업공간에서 Codex ephemeral 또는 Claude no-persistence로 시작하며 이전 session ID를 입력·저장·resume하지 않는다. FlowScope가 exact LLM EXPLORATION run을 먼저 활성화하고 모델이 같은 run을 `flowscope_end_run`으로 끝낸 경우에만 LLM 완료 레인을 인정한다.
+- **Judge 세션:** Judge는 세 완료 레인이 있어야 Explorer와 별개의 새 provider session으로 시작한다. 실제 MCP dataset lock이 확인돼야 성공한다. Codex JSON의 `thread_id` 또는 FlowScope가 선발급한 Claude `session-id`를 보존하고, 명시적인 `Judge 계속`만 exact ID로 resume한다. 이는 provider 대화의 논리적 지속이며 terminal 프로세스를 계속 살려 두는 구조가 아니다.
+- **프로세스·비밀 경계:** 실행 파일은 시스템 속성 또는 Burp 시작 PATH의 regular executable만 허용하고 명령은 인자 배열로 전달한다. MCP Bearer는 자식 환경에만 두고 command line·prompt·project·공개 status에 넣지 않는다. 임시 workspace는 owner-only로 만들고 exact prefix를 확인한 뒤만 삭제한다. provider 출력은 secret masking과 64KiB 상한을 적용하며, 긴 Codex 출력에서도 첫 session event를 잃지 않도록 별도 8KiB prefix만 유지한다.
+- **도구 경계:** Codex는 no-approval/read-only/user-config 무시와 동적 loopback MCP 설정을 사용한다. Claude는 strict 임시 MCP config와 역할별 exact MCP tool allowlist를 사용한다. 이 client-side 제한은 서버의 exact scope·Explorer visibility·Evidence/validation gate를 대체하지 않는다.
+- **metadata 한계:** 일부 Claude Code 버전이 `--no-session-persistence`에도 ai-title/session metadata를 남길 수 있으므로 물리적 파일 0개를 주장하지 않는다. 고유 임시 cwd와 no-resume으로 논리적 오염을 막고 UI에 잔존 가능성을 표시한다. 다른 provider 작업을 손상할 수 있는 사용자 홈 광역 삭제는 기각한다.
+- **상태 불변식:** locked dataset에는 새 Explorer를 시작할 수 없고, active run 또는 lock 중에는 Burp UI에서도 scope를 바꿀 수 없다. 같은 source의 새 exploration을 시작하면 이전 완료 표식을 즉시 무효화해 실패한 재실행의 부분 Evidence로 Judge가 열리지 않게 한다. 취소·실패 시 활성 LLM run을 abort하며, Judge follow-up은 lock이 사라지면 거부한다. UI도 세 완료 레인 전에는 Judge 버튼을 비활성화하지만 서버 gate가 최종 권위다.
+- **가중치·판정:** 이 자동화는 탐색 실행과 Judge 전달을 줄이는 기능이지 새 confidence score나 판정 우회가 아니다. route 정렬은 기존 범주형 이유를 유지하고 최종 `CONFIRMED/REJECTED`는 기존 서버 Evidence gate만 결정한다.
+- **검증·한계:** 실행 인자, no-resume, exact run 종료 실패, 3-lane/lock/account gate, Claude Judge resume, 긴 Codex session ID, Web API와 scope lock을 자동 회귀로 고정한다. 실제 사용자 구독 로그인, Burp-hosted MCP 왕복, 대상 요청, provider별 Judge follow-up은 beta.7 JAR 실환경 gate이며 자동 테스트로 통과했다고 주장하지 않는다.
+- **상태:** beta.7 코드·자동 회귀 완료, Burp/Codex/Claude 실환경 gate 대기.
+
+## D-072 · 로컬 LLM 실행 하드닝 = 사용자 기억 배제 + API key 비상속
+
+- **문제:** 새 프로세스만 만든다고 독립성이 성립하지 않는다. Codex/Claude가 사용자 설정·프로젝트 지침·auto-memory를 읽거나, Burp 환경의 모델 API key를 상속하거나, Codex가 모델 shell에 MCP Bearer를 전달하면 구독 실행·closed-world·비밀 경계 주장이 깨진다. 취소와 child 등록 사이의 짧은 경합에서는 취소된 프로세스가 뒤늦게 계속 실행될 수도 있었다.
+- **결정:** Codex는 `--ignore-user-config --strict-config`, 명시적 웹 검색 비활성화, read-only/no-approval과 `shell_environment_policy`의 `FLOWSCOPE_MCP_TOKEN` 제외를 적용한다. Claude는 `--setting-sources ''`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, strict 임시 MCP와 exact 역할 도구만 사용한다. 공통 child 환경에서 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`를 제거하며 provider OAuth/token 자체는 FlowScope가 읽지 않는다. 취소 또는 Burp unload 뒤 launcher가 반환한 child는 닫힘 상태를 다시 확인하고 즉시 종료한다.
+- **경계:** 로컬 CLI 바이너리, provider 기본 system prompt, 관리자 강제 policy와 provider 측 metadata 저장까지 FlowScope가 제거한다고 주장하지 않는다. 따라서 독립성은 이전 FlowScope 대화·일반 사용자 설정·FlowScope cross-lane state를 재사용하지 않는 통제 경계이며, 모델의 수학적 완전 독립성 주장이 아니다.
+- **검증:** 명령 인자·환경 필터·취소/unload-before-registration을 자동 회귀로 고정했다. 설치된 Codex CLI 0.147.0은 같은 격리 계열 옵션으로 무대상 `Reply exactly OK` 호출이 exit 0·정확한 `OK`를 반환했다. Claude Code 2.1.231은 옵션 파싱과 로그인 요청 단계까지 진입했으나 provider HTTP 429 주간 한도로 모델 응답을 받지 못했으므로 성공으로 기록하지 않는다. 둘 다 beta.7 Burp MCP/대상 E2E 검증을 대신하지 않는다.
+- **상태:** 코드·자동 회귀·Codex 무대상 CLI smoke 완료. Claude 모델 호출과 beta.7 Burp-hosted MCP E2E 대기.
+
 ## 물려받는 한계 (문헌 검증 — 선행도 못 푸는 것, `research.md` §5)
 > 논문/발표에서 우리가 먼저 "이건 못 푼다"고 명시해야 방어된다. 넘으려 하지 말고 정직하게 흡수/완화.
 - L1. 동명이자원 혼동(`pet.status` vs `order.status`) — 스펙 없이 관측만으론 완전 제거 불가. 동적 피드백으로 완화만. `[탄탄: RESTler/Morest]`

@@ -20,6 +20,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.TrafficOverride;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
+import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.SessionBroker;
 
@@ -58,6 +59,20 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default com.fasterxml.jackson.databind.JsonNode scannerStatus() {
             return new ObjectMapper().createObjectNode().put("status", "NOT_STARTED");
+        }
+        default com.fasterxml.jackson.databind.JsonNode startLlm(LocalLlmRunner.Provider provider,
+                                                                  LocalLlmRunner.Role role,
+                                                                  String target, String accountId) {
+            throw new UnsupportedOperationException("LLM CLI workflow is unavailable");
+        }
+        default com.fasterxml.jackson.databind.JsonNode llmStatus() {
+            return new ObjectMapper().createObjectNode().put("status", "UNAVAILABLE");
+        }
+        default com.fasterxml.jackson.databind.JsonNode cancelLlm() {
+            throw new UnsupportedOperationException("LLM CLI workflow is unavailable");
+        }
+        default com.fasterxml.jackson.databind.JsonNode followUpJudge(String message) {
+            throw new UnsupportedOperationException("Judge continuation is unavailable");
         }
     }
 
@@ -124,6 +139,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/session-unbind" -> sessionUnbind(request);
             case "/api/session-capture" -> sessionCapture(request);
             case "/api/scanner-run" -> scannerRun(request);
+            case "/api/llm-run" -> llmRun(request);
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-xml" -> importXml(request, target);
             case "/api/owner" -> owner(request);
@@ -483,6 +499,47 @@ public final class FlowScopeWebServer implements AutoCloseable {
             body.set("run", state.startScanner(target, accounts, anonymous));
             return json(202, body);
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    private LoopbackHttpServer.Response llmRun(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            ObjectNode body = json.createObjectNode();
+            body.set("run", state.llmStatus());
+            body.set("scope", json.valueToTree(state.scopeEntries().stream()
+                    .filter(entry -> !isOwnControlPlane(entry)).toList()));
+            body.set("completed_lanes", json.valueToTree(state.contexts().completedExplorations().stream()
+                    .map(Source::name).sorted().toList()));
+            return json(200, body);
+        }
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String action = required(form, "action").toLowerCase(Locale.ROOT);
+            ObjectNode body = json.createObjectNode();
+            if (action.equals("cancel")) {
+                body.set("run", state.cancelLlm());
+                return json(200, body);
+            }
+            if (action.equals("followup")) {
+                body.set("run", state.followUpJudge(required(form, "message")));
+                return json(202, body);
+            }
+            if (!action.equals("start")) {
+                throw new IllegalArgumentException("action은 start, cancel 또는 followup이어야 합니다.");
+            }
+            LocalLlmRunner.Provider provider;
+            LocalLlmRunner.Role role;
+            try { provider = LocalLlmRunner.Provider.valueOf(required(form, "provider").toUpperCase(Locale.ROOT)); }
+            catch (IllegalArgumentException error) { throw new IllegalArgumentException("provider는 CODEX 또는 CLAUDE여야 합니다."); }
+            try { role = LocalLlmRunner.Role.valueOf(required(form, "role").toUpperCase(Locale.ROOT)); }
+            catch (IllegalArgumentException error) { throw new IllegalArgumentException("role은 EXPLORER 또는 JUDGE여야 합니다."); }
+            String target = required(form, "target");
+            if (isOwnControlPlane(target)) throw new IllegalArgumentException("FlowScope Web 제어면은 LLM 대상이 될 수 없습니다.");
+            body.set("run", state.startLlm(provider, role, target, form.getOrDefault("account", "")));
+            return json(202, body);
+        } catch (RuntimeException error) {
+            return error(400, error.getMessage());
+        }
     }
 
     private boolean isOwnControlPlane(String value) {

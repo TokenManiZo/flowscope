@@ -6,7 +6,7 @@
 
   <groupId>io.flowscope</groupId>
   <artifactId>flowscope</artifactId>
-  <version>1.2.0-beta.6</version>
+  <version>1.2.0-beta.7</version>
   <packaging>jar</packaging>
 
   <name>FlowScope</name>
@@ -61,6 +61,20 @@
 
   <build>
     <finalName>flowscope-${project.version}</finalName>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <directory>agent-workspace</directory>
+        <targetPath>agent-workspace</targetPath>
+        <includes>
+          <include>AGENTS.md</include>
+          <include>prompts/explorer.md</include>
+          <include>prompts/judge.md</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <!-- Shade post-processes this JAR; always recreate the thin input on repeated package runs. -->
       <plugin>

@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.6 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.7 제품 개발·검증 계획
 
 이 계획은 `whs_flow` 화면을 실제 제품 작업면으로 채택한다는 결정과 FlowScope의 기존 수집·분석·MCP 신뢰 경계를 함께 만족시키도록 다시 검토한 실행 기준이다. 성공 기준은 “화면이 보임”이 아니라 실제 Evidence가 끝까지 보존되고, 거짓 자동화 없이 재현 가능하며, 공개 JAR 하나로 설치되는 것이다.
 
@@ -16,6 +16,7 @@
 10. 트래픽 노이즈는 수집 단계에서 삭제하지 않는다. 모든 Evidence를 보존하고 결정론 분류로 `INCLUDE/REVIEW/EXCLUDE`를 나누며, 메인 coverage에는 `INCLUDE`만 넣고 사용자가 operation 단위로 되돌릴 수 있게 한다.
 11. 관측된 조합의 `UNCROSSED`와 아직 요청하지 않은 route candidate를 섞지 않는다. 전자는 현재 Evidence에서 계산하는 사실이고, 후자는 in-scope 응답이나 Burp Site Map에 정확한 provenance가 있는 탐색 후보다.
 12. 후보 우선순위에 임의 숫자 가중치를 먼저 넣지 않는다. 검증된 규격 신호와 provenance를 범주형으로 보존하고, 고정된 라벨 corpus와 블라인드 결과가 생긴 뒤에만 수치 점수의 필요성과 calibration을 판단한다.
+13. LLM 버튼 자동화는 공급자 API/OAuth를 내장하지 않는다. 사용자의 로컬 로그인 Codex/Claude CLI를 새 프로세스로 실행하되 Explorer는 비영속·no-resume, Judge는 별도 새 세션·명시적 resume로 분리한다. CLI 0 종료만 완료로 믿지 않고 MCP run 종료와 dataset lock을 서버 상태로 확인한다.
 
 ## 2. 구현 단계와 성공 기준
 
@@ -57,6 +58,7 @@
 - 그래프 필터, 노드 펼치기, Matrix, 시나리오, 계정/세션, Request/Response, sample/reset을 클릭 검증한다.
 - Burp Community에서 JAR load/unload, 3개 listener 수집, Proxy history, Repeater handoff, project round trip, MCP 연결을 검증한다.
 - 실제 로그인으로 USER A/B를 ACTIVE로 만든 뒤 비로그인→USER A→USER B ZAP fresh-session campaign, 신원별 수집/Alert, LLM account 주입을 검증한다.
+- Web 버튼으로 Codex와 Claude 각각 새 Explorer → exact run 종료 → 별도 Judge lock → 같은 Judge 후속 resume를 실행하고, Explorer 대화가 Judge에 재사용되지 않으며 MCP 밖 네트워크 도구가 제공되지 않는지 확인한다.
 - 성공 기준: 브라우저 콘솔 오류 0, 잘린 핵심 조작 0, unload 후 포트 해제, 세 source가 실제 포트대로 분리된다.
 
 ### P4-H — HUMAN/Burp 그래프 핵심 교정 (SCANNER·LLM 동결)
@@ -92,7 +94,7 @@
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.6 공통 코어·source/run 격리·candidate lock 구현과 고정 corpus 회귀 완료, 실제 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.7 공통 코어·source/run 격리·candidate lock·구독 CLI 실행 경계 구현과 고정 corpus 회귀 완료, 실제 beta.7 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 
@@ -180,7 +182,17 @@ RouteCandidate {
 - 판정 경계: 거부/HEAD owner 오염, auth 부분문자열 redirect 오탐, owner-only 객체 Evidence를 차단했다. 불충분한 BOLA read 응답은 안전으로 폐기하지 않고 `UNDECIDED/INCONCLUSIVE`에 남긴다. 자동 회귀는 통과했으며 실제 Judge workflow는 beta gate다.
 - P5 crAPI 블라인드 벤치마크: 사용자 검토 전까지 보류한다. 정답·공격 절차·라벨을 코드, 프롬프트, 실행 컨텍스트에 넣지 않는다.
 
-## 5. 근거와 계획 해석
+## 5. 2026-08-27 beta.7 구현 상태
+
+- Web 빠른 시작에 Codex/Claude 공급자, exact target, ACTIVE 계정, `LLM Explorer 시작`, `Judge 시작`, 취소, `Judge 계속`을 추가했다. LLM 사용자는 버튼만으로 실행할 수 있고 기존 `agent-workspace` 절차는 환경 호환 수동 폴백이다.
+- Explorer는 전용 owner-only 임시 작업공간과 새 비영속 프로세스를 사용한다. Codex는 ephemeral·read-only·no-approval·user-config 무시·웹 검색 비활성화·모델 shell MCP token 제외, Claude는 strict 임시 MCP 설정·빈 setting sources·auto-memory 비활성화·제한 도구·no-persistence를 적용한다. FlowScope가 exact LLM run을 먼저 발급하고 모델이 동일 run을 끝내지 않으면 완료 레인을 열지 않고 abort한다.
+- Judge는 Explorer와 분리된 새 provider session이다. 잠긴 3-lane dataset을 실제 MCP 상태로 확인해야 성공하며, 완료 뒤 저장한 Codex thread ID 또는 Claude session ID로만 후속 요청을 resume한다. 장기 실행 terminal을 유지하는 구조는 아니다.
+- MCP 토큰은 자식 환경에만 전달하고 command line·prompt·project에 포함하지 않는다. 상속된 OpenAI·Anthropic API key는 제거한다. CLI는 shell 없이 regular executable 경로로 실행하고, 임시 workspace와 출력은 각각 안전한 경로 삭제·마스킹/상한을 적용한다. 긴 Codex 출력에서도 시작부 session ID를 보존하고 취소·Burp unload 직후 늦게 생성된 child를 즉시 종료하는 회귀를 추가했다.
+- active run 또는 Judge lock 상태에서 Burp UI scope 변경을 거부한다. 같은 source 재탐색 시작 시 과거 완료 표식을 무효화하고 세 레인이 다시 완료될 때까지 Judge UI·서버 lock을 닫아 부분 재실행 오염을 차단했다.
+- Claude의 `--no-session-persistence`가 일부 버전에서 metadata를 남길 수 있는 한계는 삭제로 위장하지 않는다. Explorer는 그 ID를 저장·resume하지 않고 UI에서 잔존 가능성을 경고한다.
+- 자동 검증은 실행 인자, fresh/no-resume, exact run 종료 실패, 3-lane/lock gate, inactive account 차단, Claude Judge resume, 긴 Codex 출력의 session ID, Web API와 scope 변경 차단을 다룬다. 실제 구독 로그인 상태의 Codex/Claude, Burp MCP 왕복, 대상 요청, Judge 후속 resume는 beta.7 JAR 재로드 후 수동 gate다.
+
+## 6. 근거와 계획 해석
 
 - [W3C Fetch Metadata](https://www.w3.org/TR/fetch-metadata/)는 `Sec-Fetch-Dest`가 `empty`, `image`, `document`, `iframe` 등 요청 목적을 전달한다고 정의한다. 분류 신호로 쓰되 헤더 누락 가능성 때문에 단독 절대판정으로 쓰지 않는다.
 - [W3C Web App Manifest](https://www.w3.org/TR/appmanifest/)는 `application/manifest+json`과 `.webmanifest`를 웹 앱 manifest로 정의하고 `.json` 확장도 허용한다. 따라서 모든 `+json`을 business API로 보는 현재 규칙은 잘못이다.

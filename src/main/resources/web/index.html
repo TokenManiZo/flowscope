@@ -45,6 +45,9 @@
   .setupactions{display:flex;gap:7px;justify-content:flex-end;flex-wrap:wrap;margin-top:13px}
   .scannersetup{display:grid;grid-template-columns:minmax(240px,2fr) minmax(220px,1.4fr) auto;gap:8px;align-items:end;margin-top:13px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
   .scannersetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.scannersetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.scanneraccounts{min-width:0}.scanneraccounts>span{display:block;color:var(--faint);font-size:10px;margin-bottom:4px}.scannerchoices{display:flex;gap:5px;flex-wrap:wrap;min-height:34px;align-items:center}.scannerchoices label{display:flex;align-items:center;gap:5px;border:1px solid var(--line2);border-radius:7px;background:var(--bg);padding:7px 8px;color:var(--text);font:10.5px 'JetBrains Mono',monospace;cursor:pointer}.scannerchoices input{accent-color:var(--accent)}.scannerstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;overflow-wrap:anywhere}.scannerstatus.ok{color:var(--allow)}.scannerstatus.fail{color:var(--suspicious)}
+  .llmsetup{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(180px,1.5fr) minmax(130px,1fr);gap:8px;align-items:end;margin-top:9px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
+  .llmsetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.llmsetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.llmstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.llmstatus.ok{color:var(--allow)}.llmstatus.fail{color:var(--suspicious)}
+  .llmfollowup{grid-column:1/-2;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;min-width:0}
   main{flex:1; display:flex; min-height:0}
   .emptyworkspace{display:none;flex:1;align-items:center;justify-content:center;padding:24px;overflow:auto}.emptycard{width:min(760px,100%);border:1px solid var(--line2);border-radius:14px;background:var(--panel);padding:22px;box-shadow:0 14px 40px rgba(30,42,56,.08)}.emptycard h2{font-size:20px}.emptylead{margin:7px 0 17px;color:var(--muted);font-size:12.5px;line-height:1.6}.emptysteps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.emptystep{border:1px solid var(--line);border-radius:9px;background:var(--panel2);padding:12px;display:grid;grid-template-columns:26px minmax(0,1fr);gap:9px}.emptystep .num{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line2);font:700 11px 'JetBrains Mono',monospace}.emptystep b{font-size:12px}.emptystep p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}.emptyactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.emptytruth{margin-top:11px;color:var(--faint);font:10.5px 'JetBrains Mono',monospace;line-height:1.5}
   body.empty-state main>.rail,body.empty-state main>.stage,body.empty-state main>.detail,body.empty-state footer,body.empty-state header>.modeswitch{display:none}body.empty-state .emptyworkspace{display:flex}body.empty-state.accounts-mode .emptyworkspace{display:none}body.empty-state.accounts-mode main>.stage{display:block}body.empty-state.accounts-mode header>.modeswitch{display:flex}
@@ -185,14 +188,14 @@
   .li{display:flex; align-items:center; gap:5px}.li .sw{width:10px;height:10px;border-radius:3px}.li .swl{width:20px;height:0;border-top-width:2px}
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
   @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
-  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup{grid-template-columns:1fr}.scannerstatus{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}}
+  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}}
   @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.6 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.7 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -222,14 +225,25 @@
       <div class="setupstep"><span class="num">2</span><div><b>수집 경로 분리</b><p>Burp Proxy listener를 사람 8080, ZAP 8081로 둡니다. LLM은 MCP 통제 실행기를 사용하며 8082는 외부 클라이언트 수동 폴백뿐입니다. 공급자 로그인/OAuth/MCP 트래픽은 절대 프록시하지 않습니다.</p></div><span class="setupstate" id="setupTraffic">대기</span></div>
       <div class="setupstep"><span class="num">3</span><div><b>계정 로그인과 사람 기준선</b><p>계정·세션에서 테스트 계정을 등록하고 로그인 캡처를 누른 뒤 HUMAN 8080 브라우저로 직접 로그인합니다. 캡처 종료 후 <b>HUMAN pass 시작</b>을 눌러 허용된 일반 사용자 워크플로를 둘러보고 같은 run을 종료합니다.</p></div><div class="setupstates"><span class="setupstate" id="setupHumanRun">pass 대기</span><span class="setupstate" id="setupAccounts">계정 선택</span></div></div>
       <div class="setupstep"><span class="num">4</span><div><b>결정론적 ZAP 기준선</b><p>아래에서 비로그인과 ACTIVE 계정을 복수 선택합니다. FlowScope가 신원마다 ZAP 세션을 새로 만들고 Traditional Spider → Client Spider(AJAX 폴백) → Passive Scan → 네이티브 Alert를 순서대로 실행합니다. 능동 스캔은 별도 승인 없이는 실행하지 않습니다.</p></div><span class="setupstate" id="setupScanner">미실행</span></div>
-      <div class="setupstep"><span class="num">5</span><div><b>독립 LLM Explorer</b><p>Burp 탭의 MCP 연결 문자열을 구독 Codex/Claude에 등록하고 agent-workspace의 Explorer 지침을 실행합니다. Explorer는 서버가 제공한 통제 요청만 사용하며 사람·ZAP 결과를 보지 못합니다.</p></div><span class="setupstate" id="setupThreeWay">대기</span></div>
-      <div class="setupstep"><span class="num">6</span><div><b>잠금 후 Judge 최종 판정</b><p>세 소스를 잠근 다음 Judge가 갭과 ZAP Alert를 읽고 후보별 재현·정상 계정 대조를 수집합니다. 통제 Evidence가 서버 검증을 통과해야 CONFIRMED/REJECTED가 되며, 부족하면 INCONCLUSIVE입니다.</p></div><span class="setupstate" id="setupFindings">대기</span></div>
+      <div class="setupstep"><span class="num">5</span><div><b>독립 LLM Explorer</b><p>아래에서 구독 Codex/Claude를 선택해 시작합니다. FlowScope가 매번 새 비지속 Explorer와 고정 프롬프트를 실행하고, 대상 요청은 MCP 통제 실행기로만 수집합니다.</p></div><span class="setupstate" id="setupThreeWay">대기</span></div>
+      <div class="setupstep"><span class="num">6</span><div><b>잠금 후 Judge 최종 판정</b><p>세 레인이 정상 종료된 뒤 별도의 새 Judge 세션을 시작합니다. Judge는 잠긴 갭과 ZAP Alert를 읽고 후보별 재현·정상 계정 대조를 수집하며, 서버 Evidence gate를 통과한 결과만 최종 판정합니다.</p></div><span class="setupstate" id="setupFindings">대기</span></div>
     </div>
     <div class="scannersetup">
       <label>ZAP 기준선 대상<select id="scannerTarget" aria-label="ZAP 기준선 대상"><option value="">Burp 탭에서 범위를 먼저 적용하세요</option></select></label>
       <div class="scanneraccounts"><span>격리 실행할 신원</span><div class="scannerchoices" id="scannerAccounts" role="group" aria-label="ZAP 격리 실행 신원"><label><input type="checkbox" value="" checked>비로그인</label></div></div>
       <button class="go" id="scannerRunStart" disabled>안전 기준선 실행</button>
       <div class="scannerstatus" id="scannerRunStatus">ZAP 연결과 허용 범위를 확인하는 중입니다.</div>
+    </div>
+    <div class="llmsetup">
+      <label>구독 LLM<select id="llmProvider" aria-label="구독 LLM"><option value="CODEX">Codex</option><option value="CLAUDE">Claude Code</option></select></label>
+      <label>기본 진입 대상<select id="llmTarget" aria-label="LLM 기본 진입 대상"><option value="">Burp 탭에서 범위를 먼저 적용하세요</option></select></label>
+      <label>Explorer 신원<select id="llmAccount" aria-label="LLM Explorer 신원"><option value="">비로그인</option></select></label>
+      <button class="go primary" id="llmExplorerStart" disabled>LLM Explorer 시작</button>
+      <button class="go" id="llmJudgeStart" disabled>Judge 시작</button>
+      <button class="go" id="llmCancel" disabled>실행 중단</button>
+      <div class="llmstatus" id="llmRunStatus">설치된 구독 CLI와 MCP 상태를 확인하는 중입니다.</div>
+      <input class="llmfollowup" id="llmJudgeFollowup" maxlength="4000" placeholder="완료된 Judge 세션에 후속 질문 (새 Explorer로 사용되지 않음)" disabled>
+      <button class="go" id="llmJudgeFollowupSend" disabled>Judge 계속</button>
     </div>
     <div class="setupactions"><select id="humanAccount" class="identityselect" aria-label="HUMAN pass 계정"><option value="">비로그인 pass</option></select><button class="go primary" id="humanRunStart">HUMAN pass 시작</button><button class="go" id="humanRunEnd" disabled>HUMAN pass 종료</button><button class="go" id="setupAccountsOpen">계정·세션 열기</button><button class="go" id="setupSample">샘플로 UI 확인</button></div>
   </div>
@@ -414,6 +428,7 @@ let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0;
 let SETUP_AUTO_CHECKED=false;
 let HUMAN_RUN={active:false,runId:''};
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
+let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v2 resets fixed-column positions after responsive graph lanes were introduced.
 const GRAPH_STATE_KEY='flowscope.graph-state.v2';
 let GRAPH_STATE=loadGraphState();
@@ -1078,7 +1093,8 @@ function updateSetup(){
   const scannerReady=SCANNER_RUN.status==='COMPLETED';setState('setupScanner',scannerReady,scannerReady?'기준선 완료':(SCANNER_RUN.status==='RUNNING'?'진행 중':SCANNER_RUN.status==='FAILED'?'실패':'미실행'));
   const three=counts.human>0&&counts.scanner>0&&counts.llm>0;setState('setupThreeWay',three,three?'3소스 준비':'H '+counts.human+' · S '+counts.scanner+' · L '+counts.llm);
   const candidates=MODEL?Object.values(MODEL.cells).filter(cell=>cell.verdict==='suspicious').length:0;
-  setState('setupFindings',candidates>0,candidates?candidates+'개 후보':'후보 대기');
+  const judgeDone=LLM_RUN.role==='JUDGE'&&LLM_RUN.status==='SUCCEEDED',judgeRunning=LLM_RUN.role==='JUDGE'&&LLM_RUN.status==='RUNNING';
+  setState('setupFindings',judgeDone,judgeDone?'Judge 완료':judgeRunning?'Judge 진행 중':(candidates?candidates+'개 후보':'후보 대기'));
 }
 
 async function syncHumanRun(){
@@ -1118,7 +1134,50 @@ async function startScannerRun(){
   try{const response=await fetch('/api/scanner-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({target,anonymous:String(anonymous),accounts:accounts.join(',')})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'ZAP 기준선 시작 실패');SCANNER_RUN=data.run;renderScannerControls();}
   catch(error){SCANNER_RUN={status:'FAILED',error:error.message};renderScannerControls();}
 }
-function openSetup(){updateSetup();syncHumanRun();syncScannerRun();setupModal.style.display='flex';setupClose.focus();}
+function renderLlmControls(){
+  const provider=document.getElementById('llmProvider'),target=document.getElementById('llmTarget'),account=document.getElementById('llmAccount');
+  const explorer=document.getElementById('llmExplorerStart'),judge=document.getElementById('llmJudgeStart'),cancel=document.getElementById('llmCancel'),status=document.getElementById('llmRunStatus'),followup=document.getElementById('llmJudgeFollowup'),followupSend=document.getElementById('llmJudgeFollowupSend');
+  const selectedTarget=target.value,selectedAccount=account.value;
+  target.innerHTML=LLM_SCOPE.length?LLM_SCOPE.map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join(''):'<option value="">Burp 탭에서 범위를 먼저 적용하세요</option>';
+  if(LLM_SCOPE.includes(selectedTarget))target.value=selectedTarget;
+  let service='';try{const url=new URL(target.value);service=url.protocol+'//'+url.hostname.toLowerCase()+':'+(url.port||(url.protocol==='https:'?'443':'80'));}catch(_){}
+  const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===service);
+  account.innerHTML='<option value="">비로그인</option>'+usable.map(session=>{const registered=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(registered?registered.label:session.accountId)}</option>`;}).join('');
+  if(usable.some(session=>session.accountId===selectedAccount))account.value=selectedAccount;
+  const available=!!(LLM_RUN.providers&&LLM_RUN.providers[provider.value]),running=LLM_RUN.status==='RUNNING';
+  const lanesReady=['HUMAN','SCANNER','LLM'].every(lane=>LLM_COMPLETED.includes(lane));
+  explorer.disabled=running||!available||!target.value;judge.disabled=running||!available||!target.value||!lanesReady;cancel.disabled=!running;
+  provider.disabled=running;target.disabled=running;account.disabled=running;
+  const resumable=!running&&LLM_RUN.status==='SUCCEEDED'&&LLM_RUN.role==='JUDGE'&&!!LLM_RUN.provider_session_id;followup.disabled=!resumable;followupSend.disabled=!resumable||!followup.value.trim();
+  const parts=[LLM_RUN.status||'UNAVAILABLE'];if(LLM_RUN.provider)parts.push(LLM_RUN.provider);if(LLM_RUN.role)parts.push(LLM_RUN.role);if(LLM_RUN.message)parts.push(LLM_RUN.message);
+  if(LLM_RUN.provider_session_id)parts.push('세션 '+LLM_RUN.provider_session_id);
+  if(LLM_RUN.session_metadata_may_remain)parts.push('Claude 비지속 옵션에서도 공급자 메타데이터 파일이 남을 수 있으나 다음 실행에 재사용하지 않습니다.');
+  if(LLM_RUN.output_tail&&(LLM_RUN.status==='FAILED'||LLM_RUN.status==='CANCELLED'))parts.push(LLM_RUN.output_tail.slice(-1500));
+  if(!available)parts.push(provider.value+' CLI를 찾지 못했습니다. Burp 실행 PATH 또는 시스템 속성에서 경로를 지정하세요.');else if(!lanesReady&&!running)parts.push('Judge 대기: HUMAN·SCANNER·LLM 완료 레인이 모두 필요합니다.');
+  status.textContent=parts.join(' · ');status.classList.toggle('ok',LLM_RUN.status==='SUCCEEDED');status.classList.toggle('fail',LLM_RUN.status==='FAILED'||LLM_RUN.status==='CANCELLED');
+}
+async function syncLlmRun(){
+  if(!LIVE_MODE)return;try{const response=await fetch('/api/llm-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'LLM 실행 상태 조회 실패');LLM_RUN=data.run||{status:'UNAVAILABLE',providers:{}};LLM_SCOPE=data.scope||[];LLM_COMPLETED=data.completed_lanes||[];renderLlmControls();updateSetup();}
+  catch(error){LLM_RUN={status:'UNAVAILABLE',message:error.message,providers:{}};renderLlmControls();}
+}
+async function startLlmRun(role){
+  const provider=document.getElementById('llmProvider').value,target=document.getElementById('llmTarget').value,account=role==='EXPLORER'?document.getElementById('llmAccount').value:'';if(!target)return;
+  const roleLabel=role==='EXPLORER'?'독립 Explorer':'별도 Judge';
+  if(!confirm(provider+' '+roleLabel+'를 새 세션으로 시작할까요?\n\n대상: '+target+(account?'\n계정: '+account:'\n계정: 비로그인/필요 시 Judge가 안전한 계정 ID 선택')))return;
+  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'start',provider,role,target,account})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'LLM 실행 시작 실패');LLM_RUN=data.run;renderLlmControls();updateSetup();}
+  catch(error){alert(error.message);await syncLlmRun();}
+}
+async function cancelLlmRun(){
+  if(!confirm('현재 LLM 실행을 중단할까요? 중단된 Explorer는 완료 레인으로 인정되지 않습니다.'))return;
+  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'cancel'})});const data=await response.json();if(!response.ok)throw new Error(data.message||'LLM 실행 중단 실패');LLM_RUN=data.run;renderLlmControls();updateSetup();}
+  catch(error){alert(error.message);}
+}
+async function continueJudge(){
+  const input=document.getElementById('llmJudgeFollowup'),message=input.value.trim();if(!message)return;
+  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'followup',message})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'Judge 후속 실행 실패');input.value='';LLM_RUN=data.run;renderLlmControls();updateSetup();}
+  catch(error){alert(error.message);}
+}
+function openSetup(){updateSetup();syncHumanRun();syncScannerRun();syncLlmRun();setupModal.style.display='flex';setupClose.focus();}
 function closeSetup(){setupModal.style.display='none';try{localStorage.setItem('flowscope.setup.seen','1');}catch(_){}}
 
 async function loadFiles(input,source){
@@ -1187,17 +1246,24 @@ document.getElementById('humanRunStart').addEventListener('click',()=>changeHuma
 document.getElementById('humanRunEnd').addEventListener('click',()=>changeHumanRun('end'));
 document.getElementById('scannerRunStart').addEventListener('click',startScannerRun);
 document.getElementById('scannerTarget').addEventListener('change',renderScannerControls);
+document.getElementById('llmProvider').addEventListener('change',renderLlmControls);
+document.getElementById('llmTarget').addEventListener('change',renderLlmControls);
+document.getElementById('llmExplorerStart').addEventListener('click',()=>startLlmRun('EXPLORER'));
+document.getElementById('llmJudgeStart').addEventListener('click',()=>startLlmRun('JUDGE'));
+document.getElementById('llmCancel').addEventListener('click',cancelLlmRun);
+document.getElementById('llmJudgeFollowup').addEventListener('input',renderLlmControls);
+document.getElementById('llmJudgeFollowupSend').addEventListener('click',continueJudge);
 document.getElementById('setupModal').addEventListener('click',event=>{if(event.target===setupModal)closeSetup();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&setupModal.style.display==='flex')closeSetup();});
 
 async function syncExtension(){
   try{const response=await fetch('/api/snapshot',{cache:'no-store'});if(!response.ok){LIVE_MODE=false;return;}LIVE_MODE=true;const data=await response.json();if(data.revision===SERVER_REVISION&&data.identityRevision===SERVER_IDENTITY_REVISION)return;
     SERVER_REVISION=data.revision;SERVER_IDENTITY_REVISION=data.identityRevision||0;SERVER_OWNERS=data.owners||{};SERVER_ROLES=data.roles||{};SERVER_REQUIRED_ROLES=data.requiredRoles||{};SERVER_FLOW_LINKS=data.flowLinks||[];SERVER_ACCOUNTS=data.accounts||[];SERVER_SESSIONS=data.sessions||[];SERVER_MANAGED_SESSIONS=data.managedSessions||[];SERVER_CELLS=data.cells||[];SERVER_GAPS=data.gaps||[];SERVER_ROUTE_CANDIDATES=data.routeCandidates||[];SERVER_ACTIVE_SOURCES=data.activeSources||[];SERVER_TRAFFIC_STATS=data.trafficStats||{captured:0,coverage:0,excluded:0,review:0};SERVER_EVENTS=(data.events||[]);EVENTS=[...SERVER_EVENTS];
-    if(EVENTS.length||SERVER_ROUTE_CANDIDATES.length)build();else{renderAccounts();renderIdentityFilter();renderRoles();updateStatus();}
+    if(EVENTS.length||SERVER_ROUTE_CANDIDATES.length)build();else{renderAccounts();renderIdentityFilter();renderRoles();updateStatus();}renderLlmControls();
     if(!SETUP_AUTO_CHECKED){SETUP_AUTO_CHECKED=true;try{if(!localStorage.getItem('flowscope.setup.seen'))openSetup();}catch(_){openSetup();}}
   }catch(error){LIVE_MODE=false;}
 }
-syncHumanRun();syncExtension();syncScannerRun();setInterval(()=>{syncExtension();syncScannerRun();},1000);
+syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();setInterval(()=>{syncExtension();syncScannerRun();syncLlmRun();},1000);
 </script>
 </body>
 </html>

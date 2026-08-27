@@ -2,6 +2,19 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.7 — 2026-08-27
+
+- Web 빠른 시작에서 사용자의 로컬 로그인 Codex/Claude CLI를 새 프로세스로 실행하는 LLM Explorer·별도 Judge·취소·Judge 후속 재개 제어 추가
+- Explorer를 전용 임시 작업공간의 Codex ephemeral 또는 Claude no-persistence 세션으로 격리하고 이전 대화 resume 금지
+- Judge를 Explorer와 별도 provider session으로 시작하고 실제 dataset lock 성공 뒤 exact session ID로만 후속 질문 재개
+- FlowScope MCP 토큰을 자식 환경으로만 전달하고 shell 없는 실행·regular executable 제한·임시파일 권한/정리·출력 마스킹/상한 적용
+- 구독 CLI 실행에서 상속된 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`를 제거하고, Codex의 모델 shell에는 MCP 토큰을 넘기지 않으며 웹 검색을 명시적으로 비활성화
+- Claude user/project/local 설정과 auto-memory를 제외해 Explorer가 기존 로컬 지침·기억을 읽지 않도록 하고, 취소·Burp unload와 child 등록 사이 경합에서도 프로세스를 즉시 종료
+- exact run 미종료, 3-lane 미완료, 비활성 계정, 잠긴 dataset, 긴 Codex 출력의 session ID 손실을 회귀 테스트로 차단
+- 같은 source 재탐색 시 이전 완료 표식을 무효화하고 세 레인 완료 전 Judge 버튼과 서버 lock을 닫음
+- active run 또는 잠긴 Judge dataset 상태에서 Burp UI scope 변경을 차단
+- Claude no-persistence metadata 잔존 가능성을 UI·문서에 명시하고, 사용자의 provider 홈을 임의 삭제하지 않음
+
 ## 1.2.0-beta.6 — 2026-08-26
 
 - provenance에 applicability/reason을 귀속해 source/run 필터 후 다른 lane의 판정 상태가 남지 않도록 재계산

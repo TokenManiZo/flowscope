@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.6
+# FlowScope 설계서 v1.2.0-beta.7
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -19,7 +19,7 @@ Browser :8080 ─┐
                ├─▶ Burp capture ─▶ mask/normalize ─▶ classify ─▶ graph + rules ─▶ Web UI
 ZAP     :8081 ─┘        ▲                                  │
                         │ session broker                    │ locked snapshot
-Codex/Claude ─▶ MCP ─▶ controlled target executor          ▼
+Web 실행 버튼 ─▶ 새 Codex/Claude CLI ─▶ MCP ─▶ controlled target executor
                     ├─▶ independent LLM Explorer       final LLM Judge
                     └─▶ deterministic ZAP baseline     └─▶ validation gate
 
@@ -145,7 +145,15 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 
 ### 4.6 세션·LLM·ZAP F-16~19
 
-외부 Codex/Claude 클라이언트가 구독 계정으로 모델을 실행한다. FlowScope는 model OAuth/API key를 받지 않는다.
+로컬 Codex/Claude CLI가 사용자의 기존 구독 로그인으로 모델을 실행한다. FlowScope는 model OAuth/API key를 받지 않는다. Web quick-start는 공급자·exact target·선택적 ACTIVE 계정을 받아 새 자식 프로세스를 실행하며, 수동 `agent-workspace` 실행은 호환 폴백이다.
+
+- `LocalLlmRunner`는 shell을 거치지 않는 인자 배열로 실행 파일을 호출한다. 실행 파일은 시스템 속성 또는 Burp 시작 `PATH`의 regular executable만 허용한다. MCP Bearer는 자식 환경 `FLOWSCOPE_MCP_TOKEN`으로만 전달하며 command line·prompt·project·status output에 넣지 않는다. 구독 로그인 경계를 위해 상속된 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`는 제거한다.
+- Explorer는 owner-only 임시 작업공간에서 시작한다. Codex는 `exec --ephemeral --ignore-user-config --strict-config`, read-only/no-approval, 웹 검색 비활성화와 모델 shell의 MCP token 제외를 사용한다. Claude는 strict 임시 MCP 설정, 빈 setting sources, auto-memory 비활성화, 역할별 도구 allowlist와 `--no-session-persistence`를 사용한다. 기존 세션을 resume하지 않으며 서버가 exact LLM run을 먼저 발급하고 CLI가 그 run을 정상 종료하지 않으면 abort·실패 처리한다.
+- Judge는 Explorer와 별개의 새 provider session으로 시작한다. Codex JSON의 `thread_id` 또는 FlowScope가 만든 Claude `session-id`를 보존하고, 사용자의 `Judge 계속` 요청만 exact ID로 resume한다. 이는 논리적 대화 지속이며 CLI 프로세스를 계속 실행해 두는 구조가 아니다.
+- 일부 Claude Code 버전이 no-persistence 실행에서도 provider metadata를 남길 수 있다는 외부 상태는 삭제로 가장하지 않는다. 고유 임시 작업공간과 no-resume으로 논리적 오염을 막고 UI에 잔존 가능성을 표시한다.
+- CLI 출력은 마스킹·상한을 적용한 tail만 UI에 노출한다. Codex session ID는 긴 출력에서 tail이 밀려나도 잃지 않도록 별도 bounded prefix에서 읽는다.
+- 활성 run 또는 잠긴 dataset이 있으면 Burp UI의 scope 변경도 거부한다. MCP lock 뒤 대상 의미가 바뀐 채 같은 Judge 세션이 계속되는 경로를 허용하지 않는다.
+- 같은 source의 새 exploration이 시작되면 과거 완료 표식은 즉시 제거한다. 재실행이 실패·취소되면 그 source는 미완료로 남고 Judge 버튼과 서버 lock 모두 닫힌다.
 
 - 기본은 closed-world다. 공급된 agent-workspace는 web search, Wayback, 외부 API 문서·소스 저장소, curl·브라우저 네트워킹을 금지한다. 대상 내부 문서는 exact-scope 통제 응답으로 실제 관측된 경우만 사용할 수 있다.
 - Explorer는 `flowscope_target_request`만 사용한다. 서버는 탐색 중 HUMAN/SCANNER count·cell·gap·finding·Evidence를 숨기고 Explorer 자신의 run Evidence만 보여 준다.

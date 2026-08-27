@@ -44,6 +44,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.LocalMcpToken;
+import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.SessionBroker;
@@ -152,6 +153,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private FlowScopeControlTab controlTab;
     private FlowScopeWebServer webServer;
     private McpServer mcpServer;
+    private LocalLlmRunner llmRunner;
     private ZapClient zapClient;
     private final ScheduledExecutorService worker =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -639,6 +641,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private void loadSampleProject() {
         worker.execute(() -> {
             try {
+                invalidateLlmWorkflow();
                 clearRunContexts();
                 sessionBroker.close();
                 synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
@@ -668,6 +671,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void clearRecords() {
+        invalidateLlmWorkflow();
         clearRunContexts();
         synchronized (records) {
             records.clear();
@@ -705,6 +709,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private void loadProjectFile(File file) {
         worker.execute(() -> {
             try {
+                invalidateLlmWorkflow();
                 clearRunContexts();
                 sessionBroker.close();
                 synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
@@ -767,13 +772,17 @@ public final class FlowScopeExtension implements BurpExtension {
     private void updateScopeFromUi(String value) {
         try {
             applyScope(value);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(controlTab, e.getMessage(),
                     "FlowScope 범위 오류", JOptionPane.ERROR_MESSAGE));
         }
     }
 
     private void applyScope(String value) {
+        if (scopeMutationBlocked(mcpServer != null && mcpServer.datasetLocked(), runContexts)) {
+            throw new IllegalStateException("활성 탐색 또는 잠긴 Judge dataset이 있습니다. "
+                    + "실행을 종료하거나 수집을 초기화한 뒤 범위를 변경하세요.");
+        }
         ScopePolicy parsed = ScopePolicy.parse(value);
         scope = parsed;
         scopeText = value == null ? "" : value;
@@ -782,6 +791,10 @@ public final class FlowScopeExtension implements BurpExtension {
         rebuildRouteCandidates(latest.records);
         if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
         api.logging().logToOutput("FlowScope 허용 범위 갱신: " + parsed.entries());
+    }
+
+    static boolean scopeMutationBlocked(boolean datasetLocked, RunContextRegistry contexts) {
+        return datasetLocked || contexts.hasActiveRuns();
     }
 
     private void startWebUi() throws Exception {
@@ -810,6 +823,28 @@ public final class FlowScopeExtension implements BurpExtension {
                 return mcpServer == null
                         ? new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("status", "NOT_STARTED")
                         : mcpServer.deterministicZapBaselineStatus();
+            }
+            @Override public com.fasterxml.jackson.databind.JsonNode startLlm(LocalLlmRunner.Provider provider,
+                                                                               LocalLlmRunner.Role role,
+                                                                               String target,
+                                                                               String accountId) {
+                if (llmRunner == null) throw new IllegalStateException("구독 LLM CLI 실행기가 아직 준비되지 않았습니다.");
+                if (!scope.entries().contains(target)) {
+                    throw new IllegalArgumentException("선택한 대상이 현재 exact scope에 없습니다.");
+                }
+                llmRunner.start(new LocalLlmRunner.Request(provider, role, target, scope.entries(), accountId));
+                return llmRunnerStatus();
+            }
+            @Override public com.fasterxml.jackson.databind.JsonNode llmStatus() { return llmRunnerStatus(); }
+            @Override public com.fasterxml.jackson.databind.JsonNode cancelLlm() {
+                if (llmRunner == null) throw new IllegalStateException("구독 LLM CLI 실행기가 준비되지 않았습니다.");
+                llmRunner.cancel();
+                return llmRunnerStatus();
+            }
+            @Override public com.fasterxml.jackson.databind.JsonNode followUpJudge(String message) {
+                if (llmRunner == null) throw new IllegalStateException("구독 LLM CLI 실행기가 준비되지 않았습니다.");
+                llmRunner.followUp(message);
+                return llmRunnerStatus();
             }
             @Override public void rebuild() { scheduleRebuild(); }
             @Override public void clearTraffic() { clearRecords(); }
@@ -894,6 +929,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
             }, port, configuredToken);
             mcpServer.start();
+            llmRunner = new LocalLlmRunner("http://127.0.0.1:" + mcpServer.port() + "/mcp", mcpServer.token(),
+                    runContexts, sessionBroker, mcpServer::datasetLocked,
+                    message -> api.logging().logToError(message));
             String connection = "http://127.0.0.1:" + mcpServer.port() + "/mcp · Bearer " + mcpServer.token();
             if (controlTab != null) controlTab.setMcpStatus(connection);
             api.logging().logToOutput("FlowScope MCP ready: http://127.0.0.1:" + mcpServer.port()
@@ -922,12 +960,41 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void shutdown() {
+        if (llmRunner != null) llmRunner.close();
         if (webServer != null) webServer.close();
         if (mcpServer != null) mcpServer.close();
         worker.shutdownNow();
         proxyObservations.clear();
         sessionBroker.close();
         clearRunContexts();
+    }
+
+    private void invalidateLlmWorkflow() {
+        if (llmRunner != null) llmRunner.invalidate();
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode llmRunnerStatus() {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode body = mapper.createObjectNode();
+        if (llmRunner == null) {
+            body.put("status", "UNAVAILABLE");
+            body.put("message", "MCP와 구독 LLM CLI 실행기를 준비하는 중입니다.");
+            return body;
+        }
+        LocalLlmRunner.State current = llmRunner.state();
+        body.put("status", current.status().name());
+        body.put("provider", current.provider() == null ? "" : current.provider().name());
+        body.put("role", current.role() == null ? "" : current.role().name());
+        body.put("run_id", current.runId());
+        body.put("provider_session_id", current.providerSessionId());
+        body.put("started_at", current.startedAt() == null ? "" : current.startedAt().toString());
+        body.put("ended_at", current.endedAt() == null ? "" : current.endedAt().toString());
+        body.put("message", current.message());
+        body.put("output_tail", current.outputTail());
+        body.put("session_metadata_may_remain", current.sessionMetadataMayRemain());
+        com.fasterxml.jackson.databind.node.ObjectNode providers = body.putObject("providers");
+        llmRunner.availability().forEach((provider, available) -> providers.put(provider.name(), available));
+        return body;
     }
 
     private void clearRunContexts() {
