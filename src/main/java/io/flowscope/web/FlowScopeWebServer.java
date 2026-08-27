@@ -382,7 +382,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             body.put("success", true);
             body.put("id", id);
             body.put("rebound", 0);
-            body.put("message", "계정을 저장했습니다. 발견된 세션을 아래에서 직접 연결하세요.");
+            body.put("message", "계정을 저장했습니다. 로그인 연결을 눌러 HUMAN 8080 브라우저에서 로그인하세요.");
             return json(200, body);
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
@@ -418,7 +418,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             }
             state.config().bindSession(service, fingerprint, account.id());
             state.rebuild();
-            return success("선택한 세션을 " + account.label() + "에 연결했습니다.");
+            return success("선택한 인증 기록을 " + account.label() + " 계정에 연결했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
@@ -430,7 +430,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String fingerprint = required(form, "fingerprint");
             state.config().unbindSession(service, fingerprint);
             state.rebuild();
-            return success("세션 연결을 해제했습니다.");
+            return success("인증 기록의 계정 연결을 해제했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
@@ -460,9 +460,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 state.rebuild();
                 SessionBroker.Status status = broker.viewForAccount(accountId).orElseThrow().status();
                 String message = status == SessionBroker.Status.ACTIVE
-                        ? account.label() + " 세션을 ACTIVE로 확인했습니다."
-                        : account.label() + " 세션은 " + status
-                        + "입니다. 인증된 페이지의 성공 응답까지 HUMAN 8080에서 관측한 뒤 다시 캡처하세요.";
+                        ? account.label() + " 로그인이 연결됐습니다. HUMAN pass, ZAP, LLM에서 사용할 수 있습니다."
+                        : account.label() + " 로그인 확인이 끝나지 않았습니다. HUMAN 8080에서 다시 로그인하고 "
+                        + "인증된 페이지가 열린 뒤 캡처를 종료하세요.";
                 return success(message);
             }
             if (action.equals("revoke")) {

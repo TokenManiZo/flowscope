@@ -49,6 +49,7 @@ import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.SessionBroker;
+import io.flowscope.integration.SqliteProjectStore;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
 
@@ -70,6 +71,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.nio.file.Path;
 import java.io.File;
+import java.io.IOException;
 import java.net.URI;
 
 /**
@@ -144,12 +146,15 @@ public final class FlowScopeExtension implements BurpExtension {
     private static final int MAX_RECORDS = 20_000;
     /** 갱신 병합 지연: 이 시간 안의 연속 관측은 한 번만 재구성한다. */
     private static final long REBUILD_DELAY_MS = 400;
+    /** 전체 snapshot 재작성 비용을 제한하도록 연속 변경을 30초 checkpoint로 합친다. */
+    private static final long DATABASE_SAVE_DELAY_MS = 30_000;
 
     private final List<RequestRecord> records = new ArrayList<>();
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
     private final SessionBroker sessionBroker = new SessionBroker();
     private final ProjectStore projectStore = new ProjectStore();
+    private final SqliteProjectStore sqliteProjectStore = new SqliteProjectStore(projectStore);
     private volatile Pipeline.Result latest = Pipeline.run(List.of(), analysisConfig);
     private volatile List<RouteCandidate> routeCandidates = List.of();
     private final List<RouteCandidateExtractor.Seed> siteMapSeeds = new ArrayList<>();
@@ -157,6 +162,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private volatile ScopePolicy scope = ScopePolicy.parse("");
     private volatile String scopeText = "";
     private final AtomicLong revision = new AtomicLong();
+    private final AtomicLong databaseSavedRevision = new AtomicLong(-1);
     private final AtomicLong droppedRecords = new AtomicLong();
     private final AtomicLong compressedPayloadBytes = new AtomicLong();
     private FlowScopeControlTab controlTab;
@@ -171,6 +177,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 return t;
             });
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
+    private final AtomicBoolean databaseSavePending = new AtomicBoolean(false);
+    private volatile Path activeProjectDatabase;
     private boolean capacityWarned;
     private MontoyaApi api;
     private final ThreadLocal<Boolean> controlledRequest = ThreadLocal.withInitial(() -> false);
@@ -481,6 +489,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 rebuildRouteCandidates(result.records);
                 revision.incrementAndGet();
                 if (controlTab != null) controlTab.render(result);
+                scheduleDatabaseSave();
             } catch (Exception e) {
                 api.logging().logToError("FlowScope 그래프 갱신 실패", e);
             }
@@ -725,6 +734,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (mcpServer != null) mcpServer.clearAssessments();
                 if (mcpServer != null) mcpServer.clearValidations();
                 if (mcpServer != null) mcpServer.resetWorkflow();
+                activeProjectDatabase = null;
+                databaseSavedRevision.set(-1);
                 if (controlTab != null) controlTab.render(result);
                 api.logging().logToOutput("FlowScope 샘플 프로젝트 열기: " + loaded.size()
                         + "건 · 실제 네트워크 요청 없음");
@@ -753,6 +764,7 @@ public final class FlowScopeExtension implements BurpExtension {
         if (mcpServer != null) mcpServer.clearValidations();
         if (mcpServer != null) mcpServer.resetWorkflow();
         if (controlTab != null) controlTab.render(latest);
+        scheduleDatabaseSave();
         api.logging().logToOutput("FlowScope 수집 데이터가 삭제되었습니다.");
     }
 
@@ -763,8 +775,19 @@ public final class FlowScopeExtension implements BurpExtension {
                 synchronized (records) { snapshot = new ArrayList<>(records); }
                 List<McpServer.Assessment> assessments = mcpServer == null ? List.of() : mcpServer.assessments();
                 List<ValidationDecision> validations = mcpServer == null ? List.of() : mcpServer.validations();
-                projectStore.save(file.toPath(), snapshot, analysisConfig, assessments, validations,
-                        runContexts.completedExplorations(), routeCandidates);
+                boolean database = sqliteProject(file.toPath());
+                Path path = file.toPath().toAbsolutePath().normalize();
+                if (database) {
+                    sqliteProjectStore.save(path, snapshot, analysisConfig, assessments, validations,
+                            runContexts.completedExplorations(), routeCandidates);
+                } else {
+                    projectStore.save(path, snapshot, analysisConfig, assessments, validations,
+                            runContexts.completedExplorations(), routeCandidates);
+                }
+                if (database) {
+                    activeProjectDatabase = path;
+                    databaseSavedRevision.set(revision.get());
+                }
                 api.logging().logToOutput("FlowScope 프로젝트 저장: " + file);
             } catch (Exception e) {
                 projectError("프로젝트 저장 실패", e);
@@ -780,7 +803,10 @@ public final class FlowScopeExtension implements BurpExtension {
                 sessionBroker.close();
                 synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
                 synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
-                ProjectStore.ProjectData data = projectStore.load(file.toPath());
+                Path path = file.toPath().toAbsolutePath().normalize();
+                boolean database = sqliteProject(path);
+                ProjectStore.ProjectData data = database
+                        ? sqliteProjectStore.load(path) : projectStore.load(path);
                 analysisConfig.replaceWith(data.config());
                 List<RequestRecord> loaded = new ArrayList<>(data.records());
                 resetPayloadPool();
@@ -815,6 +841,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (mcpServer != null) mcpServer.replaceAssessments(assessments);
                 if (mcpServer != null) mcpServer.replaceValidations(validations);
                 runContexts.restoreCompleted(data.completedLanes());
+                activeProjectDatabase = database ? path : null;
+                databaseSavedRevision.set(database ? revision.get() : -1);
                 if (controlTab != null) controlTab.render(result);
                 api.logging().logToOutput("FlowScope 프로젝트 열기: " + result.records.size() + "건 — " + file);
             } catch (Exception e) {
@@ -827,6 +855,49 @@ public final class FlowScopeExtension implements BurpExtension {
         api.logging().logToError(title, error);
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(controlTab,
                 title + ": " + error.getMessage(), "FlowScope", JOptionPane.ERROR_MESSAGE));
+    }
+
+    private static boolean sqliteProject(java.nio.file.Path path) throws java.io.IOException {
+        if (java.nio.file.Files.isRegularFile(path)) {
+            try (var input = java.nio.file.Files.newInputStream(path)) {
+                byte[] header = input.readNBytes(16);
+                if (java.util.Arrays.equals(header,
+                        "SQLite format 3\000".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1))) return true;
+            }
+        }
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        return name.endsWith(".flowscope.db") || name.endsWith(".db");
+    }
+
+    /** DB를 한 번 저장하거나 열면 이후 변경은 같은 파일에 checkpoint 자동 저장한다. */
+    private void scheduleDatabaseSave() {
+        if (activeProjectDatabase == null || databaseSavedRevision.get() == revision.get()) return;
+        if (!databaseSavePending.compareAndSet(false, true)) return;
+        worker.schedule(() -> {
+            long savingRevision = revision.get();
+            try {
+                saveActiveDatabase();
+                databaseSavedRevision.set(savingRevision);
+            } catch (Exception error) {
+                api.logging().logToError("FlowScope 로컬 DB 자동 저장 실패", error);
+            } finally {
+                databaseSavePending.set(false);
+                if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {
+                    scheduleDatabaseSave();
+                }
+            }
+        }, DATABASE_SAVE_DELAY_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void saveActiveDatabase() throws IOException {
+        Path database = activeProjectDatabase;
+        if (database == null) return;
+        List<RequestRecord> snapshot;
+        synchronized (records) { snapshot = new ArrayList<>(records); }
+        List<McpServer.Assessment> assessments = mcpServer == null ? List.of() : mcpServer.assessments();
+        List<ValidationDecision> validations = mcpServer == null ? List.of() : mcpServer.validations();
+        sqliteProjectStore.save(database, snapshot, analysisConfig, assessments, validations,
+                runContexts.completedExplorations(), routeCandidates);
     }
 
     private void configureInitialScope() {
@@ -1002,9 +1073,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 @Override public void assessmentsChanged(List<McpServer.Assessment> values) {
                     revision.incrementAndGet();
+                    scheduleDatabaseSave();
                 }
                 @Override public void validationsChanged(List<ValidationDecision> values) {
                     revision.incrementAndGet();
+                    scheduleDatabaseSave();
                 }
             }, port, configuredToken);
             mcpServer.start();
@@ -1042,6 +1115,17 @@ public final class FlowScopeExtension implements BurpExtension {
         if (llmRunner != null) llmRunner.close();
         if (webServer != null) webServer.close();
         if (mcpServer != null) mcpServer.close();
+        if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {
+            try {
+                java.util.concurrent.Future<?> save = worker.submit(() -> {
+                    try { saveActiveDatabase(); }
+                    catch (IOException error) { throw new java.io.UncheckedIOException(error); }
+                });
+                save.get(10, TimeUnit.SECONDS);
+            } catch (Exception error) {
+                api.logging().logToError("FlowScope 종료 전 로컬 DB 저장 실패", error);
+            }
+        }
         worker.shutdownNow();
         proxyObservations.clear();
         sessionBroker.close();
@@ -1142,6 +1226,7 @@ public final class FlowScopeExtension implements BurpExtension {
         rebuildRouteCandidates(result.records);
         revision.incrementAndGet();
         if (controlTab != null) controlTab.render(result);
+        scheduleDatabaseSave();
     }
 
     private void rebuildRouteCandidates(List<RequestRecord> sourceRecords) {

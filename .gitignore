@@ -16,3 +16,6 @@ dependency-reduced-pom.xml
 *.pem
 *.key
 *.flowscope.json
+*.flowscope.db
+*.flowscope.db-*
+.flowscope-*.db.tmp

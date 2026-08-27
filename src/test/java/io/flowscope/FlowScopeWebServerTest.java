@@ -74,9 +74,15 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.9 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.10 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
+        assertTrue(index.body().contains("등록 계정과 로그인 상태"));
+        assertTrue(index.body().contains("쿠키·토큰·subject 단서는 같은 로그인 세션의 내부 근거로 묶"));
+        assertTrue(index.body().contains("고급 세션 진단"));
+        assertTrue(index.body().contains("사용 가능"));
+        assertTrue(index.body().contains("다시 로그인 필요"));
+        assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
         assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());
@@ -206,6 +212,36 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void projectsCookieTokenAndSubjectArtifactsAsOneRegisteredAccount() throws Exception {
+        state.records.clear();
+        AccountProfile account = new AccountProfile("test1", "test1", state.record.service, AccessRole.USER);
+        state.config.upsertAccount(account);
+        List<String> fingerprints = List.of("ck:d1acd57ee88d", "tok:710e0dbdd422", "sub:test1@example.test");
+        for (int i = 0; i < fingerprints.size(); i++) {
+            RequestRecord record = new RequestRecord(Source.HUMAN, state.record.service,
+                    "GET", "/account/" + i, 200, fingerprints.get(i));
+            record.hasResponse = true;
+            record.timestamp = i + 1L;
+            state.records.add(record);
+            state.config.bindSession(record.service, record.fp, account.id());
+        }
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals(1, snapshot.path("accounts").size());
+        assertEquals("test1", snapshot.at("/accounts/0/label").asText());
+        assertEquals(3, snapshot.path("sessions").size());
+        for (JsonNode session : snapshot.path("sessions")) {
+            assertEquals("test1", session.path("accountId").asText());
+            assertTrue(session.path("registered").asBoolean());
+        }
+        assertEquals(Set.of("COOKIE", "AUTHORIZATION", "SUBJECT_HINT"),
+                java.util.stream.StreamSupport.stream(snapshot.path("sessions").spliterator(), false)
+                        .map(value -> value.path("artifactKind").asText()).collect(java.util.stream.Collectors.toSet()));
+    }
+
+    @Test
     void startsOneServerOwnedScannerCampaignForAnonymousAndSelectedAccounts() throws Exception {
         state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
         state.config.upsertAccount(new AccountProfile("user-b", "USER B", state.record.service, AccessRole.USER));
@@ -280,6 +316,9 @@ final class FlowScopeWebServerTest {
                 + "&fingerprint=" + encode(state.record.fp) + "&account=" + encode(accountId), token));
         assertTrue(bound.path("success").asBoolean());
         assertEquals(accountId, state.config.boundAccount(state.record.service, state.record.fp).orElseThrow().id());
+        JsonNode accountSnapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals(accountId, accountSnapshot.at("/sessions/0/accountId").asText());
+        assertEquals("COOKIE", accountSnapshot.at("/sessions/0/artifactKind").asText());
 
         String operation = state.snapshot().records.getFirst().op;
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());

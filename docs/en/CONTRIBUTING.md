@@ -23,7 +23,7 @@ Architectural changes must preserve these invariants:
 ## Git and documentation discipline
 
 - Use one focused commit per coherent behavior change. Include its regression test and matching documentation in the same commit.
-- Do not mix formatting, unrelated cleanup, generated `target/` files, local `.flowscope.json` projects, credentials, or target traffic into a product commit.
+- Do not mix formatting, unrelated cleanup, generated `target/` files, local `.flowscope.db`/`.flowscope.json` projects, credentials, or target traffic into a product commit.
 - Commit messages should state the behavior, for example `fix: reject suspect broker sessions`, not a vague activity such as `update files`.
 - Never rewrite `../ko/beta-validation.md` to claim a check inherited from an older artifact. Record the exact version, command/environment, result, and anything not run.
 - When no documentation file is affected, state why in the change/PR record instead of silently omitting the review.

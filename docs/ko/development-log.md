@@ -1046,6 +1046,49 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - beta.9 JAR의 Burp Community 재로드와 실제 HUMAN blind-target corpus confusion matrix는 아직 확인하지 않았다.
 - 이번 H/S/L은 합성 샘플 UI QA다. 실제 ZAP/Codex Explorer를 실행한 것으로 기록하지 않는다.
 
+## 2026-08-27 · 1.2.0-beta.10 · SQLite 내구 저장과 계정 중심 세션 화면
+
+### 목표와 성공 조건
+- 기본 프로젝트를 로컬 SQLite로 저장하되 기존 마스킹·schema 검증·JSON 호환을 깨지 않는다.
+- `test1` 한 번의 로그인에서 Cookie·Authorization·subject가 관측돼도 기본 화면에는 계정 하나로 보인다.
+- 연결 여부·재로그인 필요 여부와 다음 행동을 내부 enum 없이 사용자가 이해할 수 있게 표시한다.
+- 전체 회귀, 반응형 Web QA, fat JAR SQLite smoke, 문서·버전·라이선스·JAR을 같은 상태로 만든다.
+
+### 개발·수정
+- `ProjectStore`의 JSON schema v2 codec을 파일 I/O와 분리해 SQLite와 JSON이 같은 유효성·마스킹 계약을 사용하게 했다.
+- `SqliteProjectStore` storage schema v1을 추가해 metadata/migration, records, payload BLOB, accounts, service-scoped bindings, policy, reviews, assessments, validations, completed lanes, route candidates를 관계형 table로 저장한다.
+- Burp 프로젝트 저장 기본 확장자를 `.flowscope.db`로 바꾸고 JSON은 별도 내보내기와 기존 가져오기 호환으로 유지했다. DB를 한 번 저장하거나 열면 변경 revision을 30초 checkpoint로 합쳐 transaction/임시 DB/atomic replace로 저장하고 unload 직전 마지막 저장을 시도한다.
+- Web snapshot session에 `accountId`와 `artifactKind`를 추가했다. 계정 화면은 account card를 기본 단위로 사용하고 연결된 Cookie/token/subject는 접힌 기술 정보, 미연결 기록은 닫힌 고급 진단에 둔다.
+- `ACTIVE/UNVERIFIED/SUSPECT/REAUTH_REQUIRED`를 일반 화면에서 `사용 가능/로그인 확인 필요/세션 이상 감지/다시 로그인 필요`와 행동 문구로 변환했다.
+- HUMAN pass 계정 활성 여부가 raw fingerprint 배열이 아니라 실제 `managedSessions` broker 상태를 읽도록 수정했다.
+- Xerial SQLite JDBC 3.53.1.0을 번들하고 Apache 2.0/Zentus BSD 고지를 추가했으며 DB 파일을 Git ignore에 포함했다.
+
+### 이유
+- raw 인증 지문은 principal이 아니라 한 계정을 뒷받침하는 내부 artifact다. 이를 평면 나열하면 계정 수와 로그인 상태를 사용자가 잘못 이해한다.
+- 장래 self-host를 고려해 관계형 경계를 먼저 만들되, 검증되지 않은 live event-store 전환까지 한 번에 수행하지 않았다. 현재 분석 pipeline·상한을 유지한 채 내구 snapshot만 추가하는 것이 변경 범위와 실패 모드를 통제한다.
+- 전체 100MiB snapshot을 매초 재작성하는 안은 Burp와 사용자 디스크 부하가 커질 수 있어 30초 checkpoint와 unload 저장으로 제한했다. 이 간격의 실제 최적값은 대용량 benchmark 전까지 성능 우위로 주장하지 않는다.
+- 계정 artifact를 삭제하거나 자동 병합하면 회전/충돌 감사 근거를 잃거나 다른 사용자를 합칠 수 있어, 수집은 유지하고 UI projection만 계정 중심으로 바꿨다.
+
+### 영향 파일
+- 저장·Burp UI: `ProjectStore`, 신규 `SqliteProjectStore`, `FlowScopeExtension`, `FlowScopeControlTab`, `.gitignore`, `pom.xml`
+- Web: `SnapshotJsonWriter`, `FlowScopeWebServer`, `web/index.html`
+- 회귀: 신규 `SqliteProjectStoreTest`, `FlowScopeWebServerTest`
+- 공개 경계: `META-INF/NOTICE.txt`, 신규 `LICENSE-sqlite-jdbc-zentus.txt`, 루트/영문 README·CHANGELOG, 한국어 설계·결정·계획·화면 근거·검증·제품 개요, 이 로그
+
+### 검증
+- `mvn clean verify`: JDK 26, Java `--release 21`, 195 tests, 실패·오류·skip 0.
+- SQLite 회귀: DB header, 관계형 row, payload BLOB/digest round-trip, account/binding/policy/lane/route/assessment/validation 복원, raw Cookie 문자열 부재, 미지원 storage schema 거부.
+- 계정 projection 회귀: Cookie·Authorization·subject 지문 3개가 `test1` account 하나에 연결되고 artifact kind 세 종류를 보존.
+- standalone beta.10 계정 화면: 1280×720·600×800 모두 수평 overflow 0, console warning/error 0, 계정별 행동 상태와 기본으로 닫힌 고급 진단 확인.
+- fat JAR 단독 JDBC smoke: macOS arm64/JDK 26에서 service discovery로 SQLite 3.53.1 in-memory 연결·query 성공.
+- 배포물: `target/flowscope-1.2.0-beta.10.jar` 하나, 15,826,751 bytes, 2,157 entries, SHA-256 `60709dfc90ec2fd4af539f2fd0453fe2b22b4da0e2382f8abc4a5a9793f62988`. ZIP·Main-Class·Java 21·JDBC service/native/license 포함을 확인했다.
+
+### 남은 한계·다음 gate
+- SQLite는 현재 full snapshot checkpoint이며 append-only event store나 다중 사용자 server DB가 아니다. 20,000 live record, 48MiB 압축 전문, 100MiB project 상한은 유지한다.
+- xerial native load가 자동 JDK 26에서 경고를 냈지만 fat JAR query는 성공했다. 실제 Burp Community bundled JVM에서 beta.10 로드, DB 저장→자동 checkpoint→unload→재열기 검증은 아직 하지 않았다.
+- 프로젝트에는 raw broker 자격증명이 없으므로 재열기 뒤 로그인 연결은 의도적으로 다시 해야 한다.
+- 실제 `test1` 로그인 화면에서 기존 beta.9 데이터가 account card 하나로 표시되는 것은 beta.10 JAR 재로드 뒤 사용자가 확인해야 한다. 자동 회귀와 합성 UI를 실환경 완료로 기록하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

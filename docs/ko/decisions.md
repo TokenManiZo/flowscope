@@ -706,3 +706,12 @@
 - **근거:** OpenAPI 3.0.4는 path templating과 concrete path 우선순위를 정의하지만 ambiguous matching은 tooling-defined라고 명시한다. Burp Compare Site Maps도 path/method/parameter 기준 비교가 false match를 만들 수 있다고 경고한다. mitmproxy2swagger 역시 concrete/template 후보를 검토 가능한 형태로 유지한다. 따라서 raw 보존 + 근거 노출이 자동 묶음만 신뢰하는 것보다 감사 가능하다.
 - **참고:** [OpenAPI 3.0.4 Paths](https://spec.openapis.org/oas/v3.0.4.html#paths-object), [Burp Compare site maps](https://portswigger.net/burp/documentation/desktop/tools/target/site-map/comparing), [mitmproxy2swagger](https://github.com/alufers/mitmproxy2swagger)
 - **한계:** 복수 값 반복은 route declaration의 증명이 아니므로 `INFERRED`다. 실제 blind-target 정확도는 독립 corpus/실대상 검증 전까지 주장하지 않는다.
+
+## D-075 · 로컬 내구 저장과 세션 표현 = SQLite snapshot + account projection
+
+- **문제:** `.flowscope.json` 수동 저장만으로는 Burp 종료·충돌 전에 최신 변경을 놓칠 수 있고, 장래 self-host 방향에서 record·payload·account·판정을 모두 한 JSON 문서로만 다루기 어렵다. 동시에 Web이 Cookie, Authorization, JWT subject 지문을 같은 수준의 행으로 나열해 한 `test1` 로그인이 세 계정처럼 보였다.
+- **저장 결정:** 기본 프로젝트는 로컬 `.flowscope.db`다. SQLite storage schema v1은 metadata/migration과 records, digest-deduplicated payload BLOB, accounts, service-scoped session bindings, policy, reviews, assessments, validations, completed lanes, route candidates를 관계형 테이블로 나눈다. 기존 JSON schema v2 codec을 공통 유효성·마스킹·round-trip 경계로 재사용하고 JSON v1/v2 읽기와 v2 내보내기를 유지한다. 사용자가 DB를 한 번 저장하거나 열면 revision 변경을 30초 checkpoint로 합쳐 transaction으로 임시 DB에 쓴 뒤 atomic replace하고, 정상 unload 직전 마지막 저장을 시도한다. 전체 snapshot을 매초 재작성하는 안은 디스크·CPU 비용 때문에 기각했다.
+- **비밀·자원 경계:** raw Cookie/Authorization/CSRF는 계속 `SessionBroker` 메모리에만 있고 SQLite/JSON 어느 쪽에도 저장하지 않는다. DB는 100MiB, live pipeline은 20,000 record·압축 전문 48MiB 상한을 그대로 적용한다. 현재 방식은 메모리 상태의 내구 snapshot이며 append-only event ingestion이나 다중 사용자 서버 DB가 아니다. 서버 확장은 실제 부하·마이그레이션·동시성 측정 뒤 별도 결정한다.
+- **화면 결정:** 기본 계정 화면은 `AccountProfile` 하나를 카드 하나로 표시하고 broker 상태를 `로그인 필요/확인 중/사용 가능/다시 로그인 필요`와 다음 행동으로 번역한다. 계정에 연결된 Cookie/token/subject 비가역 지문은 접힌 기술 정보에만 묶고, 미연결 지문만 고급 세션 진단에서 수동 연결한다. 수집 원시성은 유지하되 사용자에게 내부 artifact를 principal처럼 표시하지 않는다.
+- **기각:** fingerprint 행 자체를 삭제하면 회전·충돌·수동 복구 Evidence를 잃는다. 자동으로 비슷한 지문을 계정에 병합하면 다른 사용자를 합칠 수 있다. SQLite를 즉시 live source of truth나 원격 서버 backend로 만드는 것은 현재 single-worker pipeline과 검증되지 않은 성능 범위를 넘어 기각했다.
+- **검증·한계:** SQLite header, 관계형 row, payload dedup/round-trip, raw secret 부재, 미지원 storage schema 거부, 세 artifact가 한 account ID로 projection되는 회귀를 추가한다. xerial SQLite JDBC의 native load는 현재 자동 JDK에서 경고와 함께 성공했지만 beta.10 fat JAR의 Burp bundled JVM 실제 저장·재열기는 별도 수동 gate다.

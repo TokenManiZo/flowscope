@@ -55,6 +55,33 @@ public final class ProjectStore {
                      List<ValidationDecision> validations,
                      Set<Source> completedLanes,
                      List<RouteCandidate> routeCandidates) throws IOException {
+        ObjectNode root = toDocument(records, config, assessments, validations, completedLanes, routeCandidates);
+        Path absolute = target.toAbsolutePath().normalize();
+        Path parent = absolute.getParent();
+        if (parent == null) throw new IllegalArgumentException("project file needs a parent directory");
+        Files.createDirectories(parent);
+        Path temporary = Files.createTempFile(parent, ".flowscope-", ".tmp");
+        try {
+            json.writerWithDefaultPrettyPrinter().writeValue(temporary.toFile(), root);
+            if (Files.size(temporary) > MAX_FILE_BYTES) {
+                throw new IllegalArgumentException("project file exceeds 100 MiB");
+            }
+            try {
+                Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, absolute, StandardCopyOption.REPLACE_EXISTING);
+            }
+            restrictPermissions(absolute);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
+                          List<McpServer.Assessment> assessments,
+                          List<ValidationDecision> validations,
+                          Set<Source> completedLanes,
+                          List<RouteCandidate> routeCandidates) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         EvidenceIds.assign(records);
         ObjectNode root = json.createObjectNode();
@@ -80,32 +107,16 @@ public final class ProjectStore {
         for (McpServer.Assessment assessment : assessments) savedAssessments.add(writeAssessment(assessment));
         ArrayNode savedValidations = root.putArray("validations");
         for (ValidationDecision validation : validations) savedValidations.add(writeValidation(validation));
-
-        Path absolute = target.toAbsolutePath().normalize();
-        Path parent = absolute.getParent();
-        if (parent == null) throw new IllegalArgumentException("project file needs a parent directory");
-        Files.createDirectories(parent);
-        Path temporary = Files.createTempFile(parent, ".flowscope-", ".tmp");
-        try {
-            json.writerWithDefaultPrettyPrinter().writeValue(temporary.toFile(), root);
-            if (Files.size(temporary) > MAX_FILE_BYTES) {
-                throw new IllegalArgumentException("project file exceeds 100 MiB");
-            }
-            try {
-                Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(temporary, absolute, StandardCopyOption.REPLACE_EXISTING);
-            }
-            restrictPermissions(absolute);
-        } finally {
-            Files.deleteIfExists(temporary);
-        }
+        return root;
     }
 
     public ProjectData load(Path source) throws IOException {
         long size = Files.size(source);
         if (size > MAX_FILE_BYTES) throw new IllegalArgumentException("project file exceeds 100 MiB");
-        JsonNode root = json.readTree(Files.readAllBytes(source));
+        return fromDocument(json.readTree(Files.readAllBytes(source)));
+    }
+
+    ProjectData fromDocument(JsonNode root) {
         int schemaVersion = root.path("schema_version").asInt(-1);
         if (schemaVersion != SCHEMA_VERSION && schemaVersion != LEGACY_SCHEMA_VERSION) {
             throw new IllegalArgumentException("unsupported FlowScope schema version");
@@ -479,7 +490,7 @@ public final class ProjectStore {
         catch (IllegalArgumentException e) { throw new IllegalArgumentException("invalid " + type.getSimpleName() + ": " + value); }
     }
 
-    private static void restrictPermissions(Path path) {
+    static void restrictPermissions(Path path) {
         try {
             Files.setPosixFilePermissions(path, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
         } catch (UnsupportedOperationException | IOException ignored) {

@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.9
+# FlowScope 1.2.0-beta.10
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -30,7 +30,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - Web quick-start buttons that launch a fresh locally authenticated Codex or Claude CLI process for Explorer and a separate persistent Judge session that can be resumed explicitly.
 - MCP route-candidate visibility limited to the active Explorer's own source/run provenance; pre-lock status hides cross-lane counts, runs, assessments, and validations, ZAP state/execution is blocked during exploration, and the route inventory is frozen with the dataset lock.
 - One-click import of existing Burp Proxy history and response-less exact-scope Site Map candidates, with multiplicity-preserving duplicate suppression. The no-network onboarding sample is explicitly bannered as not being a real HUMAN/ZAP/LLM run.
-- Masked, versioned `.flowscope.json` project save/load with account/session bindings, policies, LLM assessments, server-validated final verdicts, and human audit decisions.
+- A local relational `.flowscope.db` for masked records, account/session bindings, policies, assessments, validated verdicts, and audit decisions. Once saved or opened it receives coalesced 30-second atomic checkpoints plus a final unload save; `.flowscope.json` remains the interchange import/export format.
 - Evidence-to-Repeater handoff that opens a masked, unsent draft for explicit human validation.
 - Evidence-bound LLM validation using repeated reproduction and authorized-control observations, with human audit/override.
 - Strict Burp XML import with XXE protection and item-level error skipping.
@@ -53,7 +53,7 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.9.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.10.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 
@@ -64,7 +64,7 @@ The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2
 - [`docs/en`](.) — English user, contribution, security, and changelog documents.
 - [`.github`](../../.github) — root-level Maven CI and dependency updates.
 
-Generated files live only under `target/`. Local review packages and machine-specific configuration belong under the ignored `.local/` directory and are not part of the public repository.
+Build artifacts live only under `target/`. User-selected local `.flowscope.db`/`.flowscope.json` projects, review packages, and machine-specific configuration are ignored and are not part of the public repository.
 
 The exact beta test boundary and remaining target-phase gates are recorded in the Korean [`docs/ko/beta-validation.md`](../ko/beta-validation.md). A work-by-work account of what was developed, changed, why it changed, affected files, and verification is maintained in [`docs/ko/development-log.md`](../ko/development-log.md). Screen-by-screen design and presentation rationale is in [`docs/ko/ui-product-rationale.md`](../ko/ui-product-rationale.md). Those detailed documents are not presented as English translations.
 
@@ -92,12 +92,12 @@ With zero observed Evidence, the Web UI shows only the exact-scope → login/HUM
 ## Typical assessment flow
 
 1. Configure the exact scope and use ordinary anonymous or least-privileged test accounts. The Burp tab is the normal control; an MCP client may call `flowscope_set_scope` only with the exact target explicitly authorized by the operator and only before an active SCANNER/LLM run. An admin account is optional and only useful when the engagement requires an explicit role comparison.
-2. In **계정·세션**, register secret-free labels such as USER A/USER B. For each account, start login capture, log in through HUMAN port 8080, observe a successful authenticated-page response, then end capture. A credential-bearing capture without such a response remains `UNVERIFIED` and cannot be injected into ZAP or LLM requests. Only `ACTIVE` accounts are selectable for a HUMAN pass, and the selected account is recorded only when the request credentials exactly match that broker account; a mismatched browser session is not relabeled as the selection. Raw session material remains only in extension memory and is never returned to the LLM or saved in a project. Start the HUMAN pass, browse the authorized workflows, and end the same run. Set identity roles, endpoint requirements, and confirmed resource owners where the target's behavior does not establish them. Two distinct least-privileged test accounts are recommended for BOLA comparison.
+2. In **계정·세션**, register secret-free labels such as USER A/USER B. Each account is one primary card; Cookie, Authorization, and subject fingerprints from that login are grouped as collapsed technical evidence rather than displayed as extra accounts. Start login capture, log in through HUMAN port 8080, observe a successful authenticated-page response, then end capture. A credential-bearing capture without such a response remains unavailable and cannot be injected into ZAP or LLM requests. Only broker-`ACTIVE` accounts are selectable for a HUMAN pass, and the selected account is recorded only when the request credentials exactly match it. Raw session material remains only in extension memory and is never returned to the LLM or saved in a project. Start the HUMAN pass, browse the authorized workflows, and end the same run. Two distinct least-privileged test accounts are recommended for BOLA comparison.
 3. Configure ZAP's outgoing proxy as `127.0.0.1:8081`. In Web quick-start, select an exact-scope target plus anonymous and/or multiple ACTIVE accounts, then run the identity-isolated scanner campaign. Before each identity, FlowScope creates a fresh ZAP session and runs Traditional Spider → Client Spider (AJAX fallback) → passive completion → native alerts. Account lanes replace existing auth state with that broker account. The anonymous lane keeps cookies/CSRF created inside its fresh session for stateful public flows, but its FlowScope identity remains `ANONYMOUS`. A zero-capture identity keeps the overall SCANNER completion gate closed. The FlowScope Web loopback control plane is excluded as a target. Active Scan is not part of this campaign and always requires a separate Burp approval.
 4. In Web quick-start, select a locally logged-in Codex or Claude client, the exact-scope target, and optionally an ACTIVE account, then click **LLM Explorer 시작**. FlowScope creates a dedicated temporary workspace and a new process that never resumes an earlier conversation. It supplies the bundled rules, target, scope, and server-issued run ID over standard input. Explorer sees only its own MCP run and must end that exact run successfully. Web search, Wayback, external API docs/source repositories, direct curl, and browser networking remain forbidden.
 5. Review ambiguous traffic, then click **Judge 시작** after all three exploration lanes completed. FlowScope starts a separate new Judge session, which locks the dataset, reads candidates and native ZAP alerts, submits non-final assessments, and captures narrow safe-GET validation/control Evidence. After completion, **Judge 계속** resumes that exact provider session ID; it does not keep a terminal process permanently open.
 6. FlowScope accepts `CONFIRMED` or `REJECTED` only when that bundle matches the current candidate and passes the server checks: at least two same-run LLM reproductions, at least one authorized control, matching identity/operation/resource semantics, and response evidence. A BOLA read response must structurally contain the target object ID; an owner string alone is insufficient. Everything else remains `INCONCLUSIVE`. Review **시나리오** and Request/Response details; human records are an auditable override, not an unverified automatic finding.
-7. Save the session as `.flowscope.json` before unloading Burp if it must be resumed later.
+7. Use **로컬 DB 저장·연결** once to select a `.flowscope.db`; later changes are coalesced into atomic snapshots. Use **JSON 내보내기** for interchange. Raw broker credentials are never persisted, so login capture must be repeated after a reload.
 
 ## Codex or Claude subscriptions—no model API key
 

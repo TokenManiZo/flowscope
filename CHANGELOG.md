@@ -2,6 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.10 — 2026-08-27
+
+- 기본 프로젝트 저장을 관계형 `.flowscope.db`로 추가하고 record/payload/account/session binding/policy/review/assessment/validation/route를 분리
+- SQLite와 기존 JSON이 동일한 schema v2 검증·마스킹 계약을 사용하며 JSON 읽기·내보내기 호환 유지
+- DB를 한 번 저장하거나 열면 revision 변경을 30초 checkpoint로 합쳐 transaction+atomic replace로 자동 저장하고 unload 전에 마지막 저장; raw broker 자격증명은 계속 메모리 전용
+- 한 로그인에서 얻은 Cookie·Authorization·subject 지문을 별도 계정처럼 나열하지 않고 계정 카드 하나의 접힌 기술 정보로 projection
+- broker 내부 enum 대신 로그인 상태와 사용자가 해야 할 다음 행동을 한국어로 표시하고, 미연결 기록만 고급 세션 진단에 유지
+- Xerial SQLite JDBC 3.53.1.0 번들 고지·라이선스와 DB round-trip/비밀 부재/계정 projection 회귀 추가
+
 ## 1.2.0-beta.9 — 2026-08-27
 
 - beta.8의 `identity → resource → operation` 그래프 UI를 유지하면서 raw path와 canonical operation을 분리

@@ -1,6 +1,20 @@
-# FlowScope 1.2.0-beta.9 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.10 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-27이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.10 자동·standalone 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | JDK 26에서 Java `--release 21`로 `mvn clean verify`, 195 tests, 실패·오류·skip 0 |
+| SQLite 프로젝트 | SQLite header와 storage schema v1 관계형 table, record/payload/account/session binding/policy/review/assessment/validation/completed lane/route round-trip, payload BLOB 분리, raw Cookie 문자열 부재, 미지원 schema 거부 회귀 통과 |
+| 계정 projection | Cookie·Authorization·subject 지문 3개가 같은 service의 `test1` account ID 하나로 반환되고, Web 기본 화면은 계정 카드·행동 상태를 우선하며 내부 지문은 접힌 기술 정보/고급 진단으로 분리하는 계약 통과 |
+| standalone UI | beta.10 합성 샘플의 계정 화면에서 등록 계정 카드, `로그인 필요` 행동 안내, 닫힌 `고급 세션 진단` 확인. 1280×720과 600×800 모두 page horizontal overflow 0, console warning/error 0 |
+| fat JAR SQLite smoke | JDK 26/macOS arm64에서 배포 JAR만 classpath에 두고 JDBC service discovery로 in-memory SQLite 3.53.1 연결·query 성공 |
+| 배포물 | `target/flowscope-1.2.0-beta.10.jar`, 15,826,751 bytes, SHA-256 `60709dfc90ec2fd4af539f2fd0453fe2b22b4da0e2382f8abc4a5a9793f62988` |
+| JAR 무결성 | ZIP 무결성 통과, 2,157 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, SQLite JDBC class/service 및 macOS/Linux/Windows native 자원·번들 고지 포함, 공개 `target/*.jar` 1개 |
+
+SQLite 자동 저장은 사용자가 DB를 처음 저장/연 뒤 30초 checkpoint와 정상 unload 직전 저장을 시도하는 전체 snapshot 방식이다. append-only event store나 다중 사용자 server backend가 아니며 live 20,000 record·project 100MiB 상한을 유지한다. 자동 JDK 26에서는 native access 경고가 있었지만 연결과 query는 성공했다. beta.10 fat JAR을 실제 Burp Community bundled JVM에서 로드해 DB 저장→변경→unload→재열기와 raw broker 재로그인을 확인하는 gate는 아직 남아 있다. 따라서 실환경 내구성, 무제한 수집, 오탐·미탐 0을 주장하지 않는다.
 
 ## 1.2.0-beta.9 자동·standalone 사전검증
 

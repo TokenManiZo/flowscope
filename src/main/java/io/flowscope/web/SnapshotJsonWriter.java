@@ -396,10 +396,14 @@ public final class SnapshotJsonWriter {
         });
         ArrayNode out = json.createArrayNode();
         sessions.values().forEach(session -> {
-            boolean registered = config.boundAccount(session.service(), session.fingerprint()).isPresent();
+            var account = config.boundAccount(session.service(), session.fingerprint());
+            boolean registered = account.isPresent();
             ObjectNode value = out.addObject();
             value.put("fingerprint", session.fingerprint());
             value.put("idn", session.identity());
+            if (registered) value.put("accountId", account.orElseThrow().id());
+            else value.putNull("accountId");
+            value.put("artifactKind", artifactKind(session.fingerprint()));
             value.put("evidence", "Authorization/Cookie one-way fingerprint");
             value.put("confidence", registered ? "MANUAL" : "UNASSIGNED");
             value.put("firstSeen", session.first());
@@ -408,6 +412,13 @@ public final class SnapshotJsonWriter {
             value.put("service", session.service());
         });
         return out;
+    }
+
+    private static String artifactKind(String fingerprint) {
+        if (fingerprint.startsWith("sub:") || fingerprint.contains(":sub:")) return "SUBJECT_HINT";
+        if (fingerprint.startsWith("tok:")) return "AUTHORIZATION";
+        if (fingerprint.startsWith("sess:") || fingerprint.startsWith("ck:")) return "COOKIE";
+        return "OTHER";
     }
 
     private static long minKnown(long left, long right) {

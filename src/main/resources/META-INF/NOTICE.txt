@@ -27,3 +27,12 @@ jsoup 1.23.1
   License  : MIT — full text in META-INF/LICENSE-jsoup.txt
   Copyright © 2009-2026 Jonathan Hedley and contributors
 --------------------------------------------------------------------
+Xerial SQLite JDBC 3.53.1.0
+  Artifact : org.xerial:sqlite-jdbc:3.53.1.0
+  Source   : https://github.com/xerial/sqlite-jdbc
+  License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
+             Bundled Zentus-derived code — BSD 2-Clause text in
+             META-INF/LICENSE-sqlite-jdbc-zentus.txt
+  Copyright (c) Xerial Project and contributors
+  Copyright (c) 2006, David Crawshaw
+--------------------------------------------------------------------

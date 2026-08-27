@@ -136,6 +136,7 @@
   .accountform input,.accountform select{width:100%;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace}
   .accountactions{grid-column:1/-1;display:flex;gap:7px;margin-top:3px}.accountactions button,.sessionaction{border:1px solid var(--line2);border-radius:6px;background:var(--panel2);color:var(--text);padding:6px 9px;cursor:pointer;font-size:10.5px;font-weight:700;white-space:nowrap}.accountactions .primary{border-color:var(--accent);color:var(--accent)}
   .accountcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px;margin-bottom:15px}.accountitem{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--panel2);padding:10px}.accountitem .name{font-weight:700;font-size:12px}.accountitem .meta{font:10px 'JetBrains Mono',monospace;color:var(--muted);line-height:1.55;margin-top:5px}.accountitem .edit{float:right;border:0;background:transparent;color:var(--accent);cursor:pointer;font-size:10px}
+  .sessionstate{display:inline-flex;align-items:center;gap:5px;margin-top:7px;padding:3px 7px;border:1px solid var(--line2);border-radius:999px;font-size:10px;font-weight:700}.sessionstate.ok{color:var(--allow);border-color:var(--allow)}.sessionstate.wait{color:var(--accent);border-color:var(--accent)}.sessionstate.warn{color:var(--suspicious);border-color:var(--suspicious)}.sessionhelp{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:7px}.artifactdetails,.sessiondiagnostics{margin-top:9px;border-top:1px solid var(--line);padding-top:7px}.artifactdetails summary,.sessiondiagnostics summary{cursor:pointer;color:var(--faint);font-size:10px}.artifactlist{display:grid;gap:4px;margin-top:7px}.artifactrow{font:9.5px 'JetBrains Mono',monospace;color:var(--muted);overflow-wrap:anywhere}.sessiondiagnostics{margin-top:14px}.sessiondiagnostics>summary{font-size:11px;color:var(--muted);font-weight:700}.diagnosticnote{font-size:10.5px;color:var(--muted);line-height:1.5;margin:9px 0}
   .bindselect{border:1px solid var(--line2);border-radius:5px;background:var(--panel);color:var(--text);padding:4px;font:10px 'JetBrains Mono',monospace;max-width:145px}.confidence{font-size:9px;padding:2px 5px;border-radius:4px;border:1px solid var(--line2)}.confidence.verified{color:var(--allow);border-color:var(--allow)}.confidence.unknown{color:var(--suspicious);border-color:var(--suspicious)}
   @media (max-width:1050px){.accountgrid{grid-template-columns:1fr}}
   body.accounts-mode .rail,body.accounts-mode .detail{display:none}body.accounts-mode .stage{min-width:0}
@@ -197,7 +198,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.9 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.10 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -379,10 +380,14 @@
           <div id="accountNotice" class="accountnote" style="margin-top:10px"></div>
         </div>
         <div class="accountpanel">
-          <h3>등록 계정</h3><div id="accountCards" class="accountcards"><span class="accountnote">등록된 계정이 없습니다.</span></div>
-          <h3>발견된 세션</h3>
-          <div class="accountnote">인증 세션은 대상 서비스별로 분리됩니다. 각 비가역 지문을 확인한 테스트 계정에 직접 연결하세요.</div>
-          <table class="raw" id="sessionTable"><thead><tr><th>세션 지문</th><th>현재 신원</th><th>대상 서비스</th><th>상태</th><th>계정 연결</th></tr></thead><tbody></tbody></table>
+          <h3>등록 계정과 로그인 상태</h3>
+          <div class="accountnote">일반 사용에서는 계정 하나만 확인하면 됩니다. 쿠키·토큰·subject 단서는 같은 로그인 세션의 내부 근거로 묶이며 기본 화면에는 따로 표시하지 않습니다.</div>
+          <div id="accountCards" class="accountcards"><span class="accountnote">등록된 계정이 없습니다.</span></div>
+          <details class="sessiondiagnostics" id="sessionDiagnostics">
+            <summary id="sessionDiagnosticsSummary">고급 세션 진단</summary>
+            <div class="diagnosticnote" id="sessionDiagnosticsNote">가져온 히스토리나 로그인 캡처 밖에서 발견된 인증 단서를 확인·연결할 때만 사용합니다.</div>
+            <table class="raw" id="sessionTable"><thead><tr><th>종류</th><th>비가역 지문</th><th>연결 계정</th><th>대상 서비스</th><th>처리</th></tr></thead><tbody></tbody></table>
+          </details>
         </div>
       </div>
     </div>
@@ -975,7 +980,7 @@ async function deleteAccount(id){const account=accountById(id);if(!account||!con
   catch(error){alert('계정 삭제 실패: '+error.message);}
 }
 async function captureSession(accountId,action){const account=accountById(accountId);if(!account)return;
-  const message=action==='begin'?account.label+' 로그인 캡처를 시작할까요? 이후 HUMAN 8080 브라우저에서 직접 로그인하세요.':action==='end'?'로그인 리다이렉트가 끝났다면 캡처를 종료할까요?':account.label+' 메모리 세션을 즉시 폐기할까요?';if(!confirm(message))return;
+  const message=action==='begin'?account.label+' 로그인 연결을 시작할까요? HUMAN 8080 브라우저에서 로그인하고 인증된 페이지까지 여세요.':action==='end'?'로그인이 완료되고 인증된 페이지가 열렸나요? 확인되었다면 캡처를 종료합니다.':account.label+' 로그인 세션을 메모리에서 폐기할까요? 이후 ZAP·LLM에서 사용할 수 없습니다.';if(!confirm(message))return;
   try{const response=await fetch('/api/session-capture',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({account:accountId,action})});const data=await response.json();if(!response.ok)throw new Error(data.message||'세션 작업 실패');document.getElementById('accountNotice').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}
   catch(error){alert('세션 작업 실패: '+error.message);}
 }
@@ -994,19 +999,47 @@ async function resetIdentityMappings(){
   try{const response=await fetch('/api/identity-reset',{method:'POST'});const data=await response.json();if(!response.ok)throw new Error(data.message||'초기화 실패');EVENTS=[];SERVER_EVENTS=[];MODEL=null;ACTIVE_IDENTITY='all';SERVER_REVISION=-1;SERVER_IDENTITY_REVISION=-1;if(cy){cy.destroy();cy=null;}matrix.innerHTML='';document.querySelector('#raw tbody').innerHTML='';seqBody.innerHTML='';resetScenario();clearDetail();await syncExtension();renderIdentityFilter();renderRoles();updateStatus();alert(data.message);}
   catch(error){alert('식별 매핑 초기화 실패: '+error.message);}
 }
+function sessionStatusView(managed){
+  if(!managed)return {label:'로그인 필요',tone:'warn',help:'로그인 연결을 눌러 HUMAN 8080 브라우저에서 이 계정으로 로그인하세요.'};
+  if(managed.status==='CAPTURING')return {label:'로그인 확인 중',tone:'wait',help:'HUMAN 8080 브라우저에서 로그인하고 인증된 페이지가 열린 뒤 캡처 종료를 누르세요.'};
+  if(managed.status==='ACTIVE')return {label:'사용 가능',tone:'ok',help:'현재 세션을 HUMAN pass, ZAP, LLM 탐색에 사용할 수 있습니다.'};
+  if(managed.status==='UNVERIFIED')return {label:'로그인 확인 필요',tone:'warn',help:'인증 성공 응답이 확인되지 않았습니다. 다시 캡처해 로그인 후 인증된 페이지까지 여세요.'};
+  if(managed.status==='SUSPECT')return {label:'세션 이상 감지',tone:'warn',help:'로그인 화면 이동 또는 인증 실패가 관측됐습니다. 다시 로그인하세요.'};
+  if(managed.status==='REAUTH_REQUIRED')return {label:'다시 로그인 필요',tone:'warn',help:'인증값이 없거나 만료됐습니다. 다시 로그인해야 합니다.'};
+  return {label:'로그인 필요',tone:'warn',help:'현재 세션을 사용할 수 없습니다. 다시 로그인하세요.'};
+}
+function artifactKindLabel(kind){return kind==='COOKIE'?'쿠키':kind==='AUTHORIZATION'?'Authorization 토큰':kind==='SUBJECT_HINT'?'사용자 subject 힌트':'기타 인증 단서';}
+function artifactSummary(values){
+  const counts={};values.forEach(value=>{const label=artifactKindLabel(value.artifactKind);counts[label]=(counts[label]||0)+1;});
+  return Object.entries(counts).map(([label,count])=>`<div class="artifactrow">${esc(label)} · ${count}개</div>`).join('');
+}
 function renderAccounts(){
   const cards=document.getElementById('accountCards'),body=document.querySelector('#sessionTable tbody');if(!cards||!body)return;
-  cards.innerHTML=SERVER_ACCOUNTS.length?SERVER_ACCOUNTS.map(account=>{const managed=managedSession(account.id);const state=managed?(managed.status+(managed.capturing?' · 로그인 캡처 중':'')):'미캡처';const hint=managed&&managed.status==='UNVERIFIED'?'<br>인증 성공 응답 미확인 · 다시 캡처 필요':'';const action=managed&&managed.capturing?'end':'begin';const label=managed&&managed.capturing?'캡처 종료':managed?'다시 캡처':'로그인 캡처';return `<div class="accountitem" style="border-left-color:${esc(account.color)}"><button class="edit" data-edit="${esc(account.id)}">수정</button><div class="name">${esc(account.label)}</div><div class="meta">${esc(account.role)} · ${esc(account.target)}<br>연결 지문 ${account.boundSessions}개 · 브로커 ${esc(state)}${hint}</div><button class="sessionaction" data-session-action="${action}" data-account="${esc(account.id)}" style="margin-top:6px">${label}</button>${managed?` <button class="sessionaction" data-session-action="revoke" data-account="${esc(account.id)}">메모리 폐기</button>`:''}<br><button class="sessionaction" data-delete="${esc(account.id)}" style="margin-top:6px">삭제</button></div>`;}).join(''):'<span class="accountnote">등록된 계정이 없습니다. 왼쪽에서 테스트 계정을 먼저 등록하세요.</span>';
+  cards.innerHTML=SERVER_ACCOUNTS.length?SERVER_ACCOUNTS.map(account=>{
+    const managed=managedSession(account.id),view=sessionStatusView(managed);
+    const artifacts=SERVER_SESSIONS.filter(session=>session.registered&&session.accountId===account.id);
+    const action=managed&&managed.capturing?'end':'begin';
+    const label=managed&&managed.capturing?'캡처 종료':managed?'다시 로그인':'로그인 연결';
+    const technical=artifacts.length?artifactSummary(artifacts):'<div class="artifactrow">아직 연결된 인증 단서가 없습니다.</div>';
+    return `<div class="accountitem" style="border-left-color:${esc(account.color)}"><button class="edit" data-edit="${esc(account.id)}">수정</button><div class="name">${esc(account.label)}</div><div class="meta">${esc(account.role)} · ${esc(account.target)}</div><div class="sessionstate ${view.tone}">${view.label}</div><div class="sessionhelp">${view.help}</div><button class="sessionaction" data-session-action="${action}" data-account="${esc(account.id)}" style="margin-top:8px">${label}</button>${managed?` <button class="sessionaction" data-session-action="revoke" data-account="${esc(account.id)}">세션 폐기</button>`:''} <button class="sessionaction" data-delete="${esc(account.id)}">계정 삭제</button><details class="artifactdetails"><summary>기술 정보 보기 · 인증 단서 ${artifacts.length}개</summary><div class="artifactlist">${technical}</div></details></div>`;
+  }).join(''):'<span class="accountnote">등록된 계정이 없습니다. 왼쪽에서 테스트 계정을 먼저 등록하세요.</span>';
   cards.querySelectorAll('[data-edit]').forEach(button=>button.addEventListener('click',()=>editAccount(button.dataset.edit)));
   cards.querySelectorAll('[data-delete]').forEach(button=>button.addEventListener('click',()=>deleteAccount(button.dataset.delete)));
   cards.querySelectorAll('[data-session-action]').forEach(button=>button.addEventListener('click',()=>captureSession(button.dataset.account,button.dataset.sessionAction)));
-  const options='<option value="">계정 선택</option>'+SERVER_ACCOUNTS.map(account=>`<option value="${esc(account.id)}">${esc(account.label)}</option>`).join('');
-  body.innerHTML=SERVER_SESSIONS.length?SERVER_SESSIONS.map(session=>{const account=accountById(session.idn);const confidence=session.registered?'verified':'unknown';
+  const pending=SERVER_SESSIONS.filter(session=>!session.registered).length;
+  const summary=document.getElementById('sessionDiagnosticsSummary'),note=document.getElementById('sessionDiagnosticsNote');
+  if(summary)summary.textContent=pending?`고급 세션 진단 · 연결 확인 필요 ${pending}건`:'고급 세션 진단 · 확인 필요 없음';
+  if(note)note.textContent=pending?'로그인 캡처 밖 또는 기존 히스토리에서 발견된 미연결 인증 기록입니다. 같은 테스트 계정이라는 사실을 확인한 경우에만 연결하세요.':'현재 연결 확인이 필요한 인증 기록이 없습니다. 연결된 내부 단서는 계정 카드의 기술 정보에서만 확인할 수 있습니다.';
+  body.innerHTML=SERVER_SESSIONS.length?SERVER_SESSIONS.map(session=>{
+    const account=accountById(session.accountId||session.idn),confidence=session.registered?'verified':'unknown';
+    const options='<option value="">계정 선택</option>'+SERVER_ACCOUNTS.filter(item=>item.target===session.service).map(item=>`<option value="${esc(item.id)}">${esc(item.label)}</option>`).join('');
     const action=session.registered?`<button class="sessionaction" data-unbind="${esc(session.fingerprint)}" data-service="${esc(session.service)}">연결 해제</button>`:`<select class="bindselect" data-fp="${esc(session.fingerprint)}" data-service="${esc(session.service)}">${options}</select> <button class="sessionaction" data-bind="${esc(session.fingerprint)}" data-service="${esc(session.service)}">연결</button>`;
-    return `<tr><td>${esc(session.fingerprint)}</td><td>${esc(account?account.label:displayIdentity(session.idn))}</td><td>${esc(session.service||'-')}</td><td><span class="confidence ${confidence}">${esc(session.confidence)}</span></td><td>${action}</td></tr>`;}).join(''):'<tr><td colspan="5" style="color:var(--faint)">아직 발견된 인증 세션이 없습니다.</td></tr>';
+    const state=session.registered?'계정에 연결됨':'연결 확인 필요';
+    return `<tr><td>${esc(artifactKindLabel(session.artifactKind))}</td><td>${esc(session.fingerprint)}</td><td><span class="confidence ${confidence}">${esc(account?account.label:state)}</span></td><td>${esc(session.service||'-')}</td><td>${action}</td></tr>`;
+  }).join(''):'<tr><td colspan="5" style="color:var(--faint)">아직 발견된 인증 단서가 없습니다.</td></tr>';
   body.querySelectorAll('[data-bind]').forEach(button=>button.addEventListener('click',()=>bindSession(button.dataset.bind,button.dataset.service)));
   body.querySelectorAll('[data-unbind]').forEach(button=>button.addEventListener('click',()=>unbindSession(button.dataset.unbind,button.dataset.service)));
-  const human=document.getElementById('humanAccount');if(human){const selected=human.value;const activeIds=new Set(SERVER_SESSIONS.filter(session=>session.status==='ACTIVE'&&session.accountId).map(session=>session.accountId));human.innerHTML='<option value="">비로그인 pass</option>'+SERVER_ACCOUNTS.map(account=>`<option value="${esc(account.id)}" ${activeIds.has(account.id)?'':'disabled'}>${esc(account.label)} · ${esc(account.role)}${activeIds.has(account.id)?'':' · 로그인 필요'}</option>`).join('');if(SERVER_ACCOUNTS.some(account=>account.id===selected&&activeIds.has(account.id)))human.value=selected;human.disabled=!!HUMAN_RUN.active;}
+  const human=document.getElementById('humanAccount');if(human){const selected=human.value;const activeIds=new Set(SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&session.accountId).map(session=>session.accountId));human.innerHTML='<option value="">비로그인 pass</option>'+SERVER_ACCOUNTS.map(account=>`<option value="${esc(account.id)}" ${activeIds.has(account.id)?'':'disabled'}>${esc(account.label)} · ${esc(account.role)}${activeIds.has(account.id)?'':' · 로그인 필요'}</option>`).join('');if(SERVER_ACCOUNTS.some(account=>account.id===selected&&activeIds.has(account.id)))human.value=selected;human.disabled=!!HUMAN_RUN.active;}
 }
 // 권한별 셀 상세: 같은 권한 신원들의 소스별 판정 나열
 function showGroupCell(role,op,res){

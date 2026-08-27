@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.9
+# FlowScope 설계서 v1.2.0-beta.10
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -73,7 +73,7 @@ RouteCandidate {
 - `evidenceId`: 전체 의미 내용 digest 기반 ID. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
-프로젝트 파일 schema v2는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 완료가 확인된 레인, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록을 저장한다. raw broker 세션은 저장하지 않는다. 전문은 record가 digest/size/retention을 참조하고 load 때 digest와 byte 수를 검증한다. schema v1 preview-only 파일도 계속 읽되 존재하지 않은 전문을 복원한 것처럼 만들지 않는다. 탐색 레코드가 있다는 이유만으로 완료 레인을 추론하지 않으며, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증한다. 분류는 저장하되 로드 후 현재 결정론 classifier로 재계산하고 적용 버전을 root에 기록한다. 임시파일과 atomic replace를 사용하고 POSIX에서는 0600으로 제한한다(D-049/D-050/D-052/D-054/D-059/D-073).
+논리 프로젝트 schema v2는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 완료가 확인된 레인, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록을 저장한다. 기본 내구 저장은 SQLite storage schema v1의 `records/payloads/accounts/session_bindings/policy_entries/reviews/assessments/validations/completed_lanes/route_candidates` 관계형 테이블이며, JSON schema v2 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2 읽기와 v2 내보내기는 호환 경로다. raw broker 세션은 어느 형식에도 저장하지 않는다. 전문은 digest/size/retention을 검증하고, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증하며, 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075).
 
 ## 4. 파이프라인
 
@@ -210,7 +210,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |
 | Product UI | `web/FlowScopeWebServer`, `resources/web/index.html`, `ui/FlowScopeControlTab` |
 | Session/LLM/ZAP | `integration/SessionBroker`, `McpServer`, `ZapClient`, `RunContextRegistry` |
-| Persistence | `integration/ProjectStore` |
+| Persistence | `integration/SqliteProjectStore`, JSON codec/import-export `integration/ProjectStore` |
 
 ## 7. 명시적 한계
 
@@ -228,5 +228,6 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
 - Repeater handoff는 마스킹된 미전송 초안만 연다. 사용자가 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다.
 - 포트 매핑은 확장 로드 시 시스템 속성으로 읽으므로 변경 후 Burp를 다시 시작한다.
+- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.10 fat JAR을 실제 Burp bundled JVM/macOS에서 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM 조합의 런타임 호환을 완료로 주장하지 않는다.
 
 세부 결정과 기각 대안은 `decisions.md`를 참조한다.

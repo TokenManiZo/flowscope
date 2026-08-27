@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.10 — 2026-08-27
+
+- Added relational `.flowscope.db` project storage for records, payloads, accounts, bindings, policy, reviews, assessments, validations, and routes while retaining JSON v1/v2 import/export compatibility.
+- Coalesced revisions into 30-second transactional atomic database checkpoints plus a final unload save; raw broker credentials remain memory-only.
+- Projected Cookie, Authorization, and subject fingerprints from one login into one account card, with collapsed technical evidence and a separate advanced unassigned-artifact diagnostic.
+- Replaced broker enum jargon with actionable login-state guidance and fixed HUMAN account availability to read the managed broker status.
+- Added Xerial SQLite JDBC notices and regressions for relational round-trip, secret absence, unsupported schema, and three-artifact/one-account projection.
+
 ## 1.2.0-beta.9 — 2026-08-27
 
 - Kept the beta.8 `identity → resource → operation` graph UI and separated retained raw paths from canonical operations.

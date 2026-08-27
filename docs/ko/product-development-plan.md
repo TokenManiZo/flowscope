@@ -1,6 +1,14 @@
-# FlowScope 1.2.0-beta.9 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.10 제품 개발·검증 계획
 
-## 0. beta.9 우선순위: HUMAN 경로 묶음 정확도
+## 0. beta.10 우선순위: 계정 중심 세션 표현과 로컬 내구 저장
+
+1. 한 테스트 계정을 Cookie·Authorization·subject별 별도 사용자처럼 표시하지 않는다. → 검증: 세 fingerprint가 한 account ID로 projection되고 기본 화면은 계정 카드 하나.
+2. broker 상태를 내부 enum이 아닌 `로그인 필요/확인 중/사용 가능/다시 로그인 필요`와 다음 행동으로 설명한다. → 검증: Web 정적 계약과 브라우저 상호작용.
+3. 기본 프로젝트 저장을 로컬 SQLite로 전환하되 raw 인증값 금지와 schema v2 검증을 유지한다. → 검증: DB header·관계형 row·round-trip·비밀 문자열 부재.
+4. DB를 한 번 저장/열면 변경 revision을 30초 checkpoint로 합쳐 자동 저장하고 JSON을 호환 형식으로 남긴다. → 검증: 저장/로드 회귀와 실제 Burp unload/reload gate.
+5. SQLite를 서버 event store로 과장하지 않는다. 현재 메모리 20,000건 상한과 100MiB project 상한은 유지하고, append/event migration은 실제 부하 측정 뒤 결정한다.
+
+beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한다.
 
 1. beta.8의 `identity → resource → operation` UI와 조작을 유지한다. → 검증: 기존 Web 계약과 실제 화면 회귀.
 2. raw path와 canonical operation을 분리한다. → 검증: `/orders/101` 원문이 상세에 남고 근거가 있을 때만 `/orders/{id}`로 정렬.
@@ -8,7 +16,7 @@
 4. 객체 후보와 operation template을 분리한다. → 검증: template 근거가 부족한 단일 객체 요청도 resource와 인가 분석에서 사라지지 않음.
 5. 기존 coverage/gap/BOLA/BFLA 산출의 회귀를 막는다. → 검증: 기존 전체 테스트와 신규 route corpus를 함께 통과.
 
-후속 route oracle(OpenAPI 등)과 인증 우회·순서 우회·상태 전이·중복 실행·method 변형·민감 기능·Mass Assignment·과도한 데이터·rate-limit 분석은 이 기본 좌표의 독립 모듈이다. beta.9의 상기 1~5가 검증되기 전에 근거 없는 가중치나 취약점 자동 확정 규칙을 추가하지 않는다.
+후속 route oracle(OpenAPI 등)과 인증 우회·순서 우회·상태 전이·중복 실행·method 변형·민감 기능·Mass Assignment·과도한 데이터·rate-limit 분석은 이 기본 좌표의 독립 모듈이다. beta.9의 경로 묶음 회귀와 beta.10의 계정 projection·저장 gate를 깨면서 근거 없는 가중치나 취약점 자동 확정 규칙을 추가하지 않는다.
 
 이 계획은 `whs_flow` 화면을 실제 제품 작업면으로 채택한다는 결정과 FlowScope의 기존 수집·분석·MCP 신뢰 경계를 함께 만족시키도록 다시 검토한 실행 기준이다. 성공 기준은 “화면이 보임”이 아니라 실제 Evidence가 끝까지 보존되고, 거짓 자동화 없이 재현 가능하며, 공개 JAR 하나로 설치되는 것이다.
 
@@ -104,7 +112,7 @@
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.9 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template 구현과 고정 corpus 회귀 완료, 실제 beta.9 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.10 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·계정 중심 세션 projection·SQLite 내구 checkpoint 구현과 자동 회귀 완료, 실제 beta.10 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

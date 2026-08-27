@@ -113,7 +113,8 @@ public final class FlowScopeControlTab extends JPanel {
         actionsPanel.add(button("Proxy History 가져오기", actions::importProxyHistory));
         actionsPanel.add(button("샘플 프로젝트", actions::loadSample));
         actionsPanel.add(button("프로젝트 열기", this::chooseLoad));
-        actionsPanel.add(button("프로젝트 저장", this::chooseSave));
+        actionsPanel.add(button("로컬 DB 저장·연결", this::chooseSave));
+        actionsPanel.add(button("JSON 내보내기", this::chooseJsonExport));
         actionsPanel.add(button("수집 초기화", this::confirmClear));
         JPanel connection = new JPanel(new BorderLayout(8, 0));
         connection.setBorder(BorderFactory.createTitledBorder("구독 LLM 로컬 MCP 연결"));
@@ -137,16 +138,36 @@ public final class FlowScopeControlTab extends JPanel {
     }
 
     private void chooseSave() {
-        JFileChooser chooser = projectChooser();
+        JFileChooser chooser = new JFileChooser();
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setFileFilter(new FileNameExtensionFilter("FlowScope local database (*.flowscope.db)", "db"));
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
         File selected = chooser.getSelectedFile();
-        if (!selected.getName().endsWith(".flowscope.json")) selected = new File(selected.getParentFile(), selected.getName() + ".flowscope.json");
+        if (!selected.getName().endsWith(".flowscope.db")) {
+            selected = new File(selected.getParentFile(), selected.getName() + ".flowscope.db");
+        }
+        actions.saveProject(selected);
+    }
+
+    private void chooseJsonExport() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setFileFilter(new FileNameExtensionFilter("FlowScope interchange JSON (*.flowscope.json)", "json"));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        File selected = chooser.getSelectedFile();
+        if (!selected.getName().endsWith(".flowscope.json")) {
+            selected = new File(selected.getParentFile(), selected.getName() + ".flowscope.json");
+        }
         actions.saveProject(selected);
     }
 
     private static JFileChooser projectChooser() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setFileFilter(new FileNameExtensionFilter("FlowScope project (*.flowscope.json)", "json"));
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter(
+                "FlowScope interchange JSON (*.flowscope.json)", "json"));
+        chooser.setFileFilter(new FileNameExtensionFilter(
+                "FlowScope local database (*.flowscope.db)", "db"));
         return chooser;
     }
 
