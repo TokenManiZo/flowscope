@@ -80,7 +80,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.19 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.20 · 3소스"));
         assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
         assertTrue(index.body().contains("<div class=\"graphcanvas\"><div id=\"cy\"></div></div>"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));

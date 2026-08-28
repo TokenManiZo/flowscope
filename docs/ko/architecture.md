@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.19
+# FlowScope 설계서 v1.2.0-beta.20
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -27,6 +27,22 @@ Web 실행 버튼 ─▶ 새 Codex/Claude CLI ─▶ MCP ─▶ controlled targe
 
 LLM :8082 = optional observed fallback; decisive validation에는 사용하지 않음
 ```
+
+배포 토폴로지는 단일 컨테이너가 아니다. Burp와 구독 LLM CLI는 사용자 데스크톱의 인증·GUI·Montoya 경계를 유지하므로 호스트에서 실행한다. ZAP만 공식 2.17.0 이미지를 선택적으로 사용한다.
+
+```text
+host
+├─ Burp + FlowScope JAR
+│  ├─ HUMAN 127.0.0.1:8080
+│  └─ SCANNER 127.0.0.1:8081 ◀──── ZAP upstream proxy
+├─ Codex CLI 또는 Claude Code ─────▶ FlowScope MCP 127.0.0.1:8787
+└─ FlowScope Web 127.0.0.1:17777
+
+optional Docker
+└─ ZAP 2.17.0 ── API 127.0.0.1:8089 only
+```
+
+`scripts/zap-up.sh`는 임의 ZAP API key를 owner-only `~/.flowscope/zap-api-key`에 만들고, digest 고정 이미지의 ZAP Network API를 통해 `host.docker.internal:8081` upstream을 설정한 뒤 다시 읽어 검증한다. Linux는 Compose `host-gateway`, Docker Desktop은 `host.docker.internal`을 사용한다. FlowScope는 시스템 속성 key, 환경 key, 지정 key 파일, 기본 key 파일 순으로 읽으며 파일은 심볼릭 링크와 POSIX group/others 권한을 거부한다. ZAP API URL 자체는 기존처럼 loopback만 허용한다. 이 편의 계층은 actual scanner capture·rendered crawl·대상 TLS를 완료로 대체하지 않는다(D-086).
 
 - Java 21, Maven shade fat JAR. `montoya-api`는 Burp 제공 scope다.
 - Burp `registerSuiteTab`에는 범위·포트·프로젝트·MCP 상태를 다루는 작은 Swing 제어판만 둔다. 그래프·매트릭스·상세의 정본은 시스템 브라우저에서 여는 번들 Web UI다.
@@ -217,6 +233,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |
 | Product UI | `web/FlowScopeWebServer`, `resources/web/index.html`, `ui/FlowScopeControlTab` |
 | Session/LLM/ZAP | `integration/SessionBroker`, `McpServer`, `ZapClient`, `RunContextRegistry` |
+| Local setup | `integration/LocalSecretFile`, `LocalZapApiKey`, `infra/zap`, `scripts` |
 | Persistence | `integration/SqliteProjectStore`, JSON codec/import-export `integration/ProjectStore` |
 
 ## 7. 명시적 한계

@@ -1,5 +1,7 @@
 .DS_Store
 /target/
+/output/
+/tmp/
 /.local/
 /.codex/
 

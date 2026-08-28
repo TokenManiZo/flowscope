@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.20 — 2026-08-28
+
+- 완전한 3-way 요구사항과 HUMAN-only 제한 모드를 구분하고 Release JAR 사용자에게 Maven을 요구하던 설치 문구 수정
+- 공식 ZAP 2.17.0 manifest digest, loopback API publish, Docker-host Burp `8081` upstream 설정·재검증을 포함한 선택형 Compose 추가
+- macOS/Linux 한 명령 ZAP 시작·중지와 listener/ZAP/add-on/provider/Web/MCP 환경 점검 스크립트 추가
+- owner-only 기본 ZAP key 파일 자동 탐색과 명시 key·환경·파일 우선순위, 링크·권한 검증 추가
+- 한국어·영어 상세 설치/첫 실행/Windows 수동/문제 해결 가이드와 아키텍처·결정·인계 문서 정합성 갱신
+
 ## 1.2.0-beta.19 — 2026-08-28
 
 - Cytoscape가 직접 조작하는 `#cy`의 inline style을 `!important`로 덮지 않고, 라이브러리 외부 `graphcanvas` 래퍼가 데스크톱/좁은 화면 전환을 소유하도록 수정

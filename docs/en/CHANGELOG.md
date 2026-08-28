@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.20 — 2026-08-28
+
+- Distinguished the complete three-way runtime from reduced HUMAN-only mode and stopped requiring Maven for release-JAR users.
+- Added an optional official ZAP 2.17.0 Compose setup pinned by manifest digest, loopback-only host publishing, and verified Docker-host Burp `8081` upstream configuration.
+- Added one-command macOS/Linux ZAP lifecycle helpers and a listener/ZAP/add-on/provider/Web/MCP preflight check.
+- Added owner-only default ZAP key-file discovery with explicit key, environment, and file precedence plus link and permission validation.
+- Added reviewed Korean and English installation, first-run, Windows-manual, and troubleshooting guides and synchronized architecture and handoff documents.
+
 ## 1.2.0-beta.19 — 2026-08-28
 
 - Replaced the `!important` override of Cytoscape-managed inline styles with a library-external `graphcanvas` wrapper that owns the desktop/narrow-screen visibility boundary.

@@ -46,6 +46,7 @@ import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.StoredPayload;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.LocalMcpToken;
+import io.flowscope.integration.LocalZapApiKey;
 import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.ZapClient;
@@ -1176,8 +1177,12 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void startMcp() {
         try {
+            String zapKey = LocalZapApiKey.resolve(System.getProperty("flowscope.zap.key", ""),
+                    System.getenv().getOrDefault("FLOWSCOPE_ZAP_API_KEY", ""),
+                    System.getProperty("flowscope.zap.keyFile", ""),
+                    Path.of(System.getProperty("user.home"), ".flowscope", "zap-api-key"));
             zapClient = new ZapClient(System.getProperty("flowscope.zap.url", "http://127.0.0.1:8089"),
-                    System.getProperty("flowscope.zap.key", ""));
+                    zapKey);
             int port = Integer.getInteger("flowscope.mcp.port", 8787);
             String configuredToken = System.getProperty("flowscope.mcp.token", "").trim();
             if (configuredToken.isBlank()) configuredToken = System.getenv().getOrDefault("FLOWSCOPE_MCP_TOKEN", "").trim();

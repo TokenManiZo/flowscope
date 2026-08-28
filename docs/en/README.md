@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.19
+# FlowScope 1.2.0-beta.20
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -49,25 +49,29 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 
 ## Requirements
 
-- JDK 21 or newer
-- Maven 3.9 or newer to build from source
-- Burp Suite Community or Professional with Montoya API support
-- Optional: OWASP ZAP for the scanner lane
-- Optional: a locally authenticated Codex or Claude Code client for the LLM lane and final Judge
+- HUMAN-only mode: current Burp Suite Community or Professional with Montoya API support
+- HUMAN + SCANNER: Burp plus OWASP ZAP 2.17.0
+- Complete HUMAN + SCANNER + LLM/Judge: the above plus either a signed-in Codex CLI or Claude Code client
+- Source builds only: JDK 21 or newer and Maven 3.9 or newer
+- Optional containerized ZAP: Docker Engine/Desktop with Docker Compose v2
+
+ZAP and a local model client are required for the complete three-way workflow. They are optional only when deliberately running a reduced HUMAN-only mode. The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, and JDK 21; this is not a compatibility claim for every older version or operating system.
 
 ## Build and install
 
-```bash
-mvn clean verify
-```
+Download `flowscope-1.2.0-beta.20.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.19.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.20.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+
+For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
 ## Repository layout
 
 - [`src/main`](../../src/main) — Burp extension, analysis core, local Web workspace, MCP/ZAP integration, and bundled notices.
 - [`src/test`](../../src/test) — deterministic security, parser, analysis, persistence, MCP, and local-Web regression tests.
 - [`agent-workspace`](../../agent-workspace) — ready-to-copy Codex/Claude MCP configuration and Explorer/Judge instructions.
+- [`infra/zap`](../../infra/zap) — optional official ZAP 2.17.0 Docker Compose setup.
+- [`scripts`](../../scripts) — macOS/Linux ZAP lifecycle and environment preflight helpers.
 - [`docs/ko`](../ko) — canonical Korean architecture, decisions, development log, validation, research, and functional specification.
 - [`docs/en`](.) — English user, contribution, security, and changelog documents.
 - [`.github`](../../.github) — root-level Maven CI and dependency updates.
@@ -165,11 +169,12 @@ Port defaults can be changed before Burp starts:
 -Dflowscope.scope=https://api.example.test/v1
 -Dflowscope.zap.url=http://127.0.0.1:8089
 -Dflowscope.zap.key=<zap-local-api-key>
+-Dflowscope.zap.keyFile=/absolute/path/to/owner-only-zap-api-key
 -Dflowscope.llm.codex.path=/absolute/path/to/codex
 -Dflowscope.llm.claude.path=/absolute/path/to/claude
 ```
 
-The ZAP API endpoint is accepted only on a loopback address. ZAP itself must be configured to proxy target traffic through the Burp SCANNER listener. Client status `100` and an AJAX API response of `OK` do not prove rendered traffic. FlowScope checks stage-specific raw captures: a zero-total-capture run fails, while a run with only Traditional captures completes with warnings.
+The ZAP API endpoint is accepted only on a loopback address. Key precedence is `flowscope.zap.key`, `FLOWSCOPE_ZAP_API_KEY`, `flowscope.zap.keyFile`, then `~/.flowscope/zap-api-key`. The default file rejects symbolic links and group/other POSIX access. ZAP itself must be configured to proxy target traffic through the Burp SCANNER listener. Client status `100` and an AJAX API response of `OK` do not prove rendered traffic. FlowScope checks stage-specific raw captures: a zero-total-capture run fails, while a run with only Traditional captures completes with warnings.
 
 ## Product workspace
 

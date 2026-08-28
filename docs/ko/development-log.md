@@ -1445,6 +1445,48 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 실제 Burp target 전송 gate는 beta.19 JAR 재로드 뒤 수행해야 한다.
 - `output/`, `tmp/`는 수정하지 않는다.
 
+## 2026-08-28 · 1.2.0-beta.20 · 공개 설치 재현성과 ZAP 원클릭 환경
+
+### 목표와 성공 조건
+
+- clone 또는 Release JAR 사용자에게 완전한 3-way 구성요소와 최소 설치 순서를 정확히 안내한다.
+- macOS/Linux 사용자는 한 명령으로 ZAP 2.17.0을 SCANNER `8081` Burp listener 뒤에 띄우고, API key를 화면에 복사하지 않아도 FlowScope가 읽는다.
+- 설치 상태는 추측이 아니라 doctor와 실제 컨테이너 API 재조회로 확인한다.
+
+### 개발·수정
+
+- 공식 ZAP 2.17.0 multi-arch 이미지 digest를 고정한 Compose와 컨테이너 시작 스크립트를 추가했다. API는 loopback host publish·random key로 제한하고 Network add-on API로 Docker host의 Burp `8081` upstream을 설정·재검증한다.
+- `scripts/zap-up.sh`, `zap-down.sh`, `doctor.sh`를 추가했다. key는 `~/.flowscope/zap-api-key`에 owner-only로 생성하며 출력하지 않고, Compose에는 값 대신 파일을 read-only mount한다.
+- 확장이 `flowscope.zap.key` → `FLOWSCOPE_ZAP_API_KEY` → `flowscope.zap.keyFile` → 기본 key file 순서로 ZAP key를 찾도록 했다. 파일은 symlink·비정규 파일·과도한 POSIX 권한·크기·문자 집합을 검증한다.
+- 한국어·영어 시작 문서를 추가하고 루트 README를 Release JAR 사용자와 소스 빌드 사용자, HUMAN-only와 완전한 3-way로 분리했다. `output/`, `tmp/`는 사용자 로컬 데이터가 실수로 공개 저장소에 들어가지 않게 ignore했다.
+
+### 이유
+
+- README가 ZAP과 LLM을 선택 구성처럼 보이게 했고 Docker/ZAP upstream/key 배포 방법이 없어 새 사용자가 동일한 3-way 환경을 재현하기 어려웠다.
+- key를 compose 파일이나 README에 고정하는 대안은 공개 저장소와 프로세스 출력에 비밀을 남기므로 기각했다. 모든 호스트 경로를 자동 추측하는 대안도 OS·Docker 구현별 오동작을 숨기므로 지원 프로필과 수동 대안을 명시했다(D-086).
+
+### 영향 파일
+
+- runtime/test: `FlowScopeExtension`, `LocalMcpToken`, `LocalSecretFile`, `LocalZapApiKey`, `LocalZapApiKeyTest`, Web version contract
+- setup: `infra/zap/*`, `scripts/zap-up.sh`, `scripts/zap-down.sh`, `scripts/doctor.sh`, `.gitignore`
+- 문서·배포: README, 한영 getting-started, architecture, decisions D-086, product plan, UI rationale, handoff, beta validation, changelog, Maven version
+
+### 검증
+
+- 첫 격리 실행에서 host 포트와 고정 container 포트가 달라 API가 Burp로 전달되는 결함을 발견해 동일 포트 매핑으로 수정했다.
+- macOS 기본 Bash 3.2가 정규식 반복 수량자를 처리하지 못해 wrapper가 유효 key를 거부하는 결함을 발견하고 문자 집합과 길이 검사를 분리했다.
+- macOS의 `/usr/bin/java`가 활성 JDK를 찾지 못해도 Homebrew Maven은 자체 JDK로 정상 빌드하는 경우 doctor가 거짓 실패하는 결함을 재현했다. source-build gate는 실제 빌드 주체인 `mvn -version`의 Java runtime을 검사하도록 수정했다.
+- `docker compose config`, `shellcheck`, 실제 ZAP 2.17.0 health/API/version/Network upstream/add-on 재조회와 wrapper up→`doctor.sh --build`(0 failure, 0 warning)→down을 통과했다. `docker inspect`의 container environment에 실제 key 값이 없음을 확인했다.
+- `mvn clean verify`: 222 tests, 실패·오류·skip 0.
+- 배포물: `target/flowscope-1.2.0-beta.20.jar` 하나, 15,868,036 bytes, 2,172 entries, SHA-256 `24da2c47d49833bd06feb453599cc93ca448a028368a55be14a31b040c509aee`. ZIP 무결성, `Main-Class`, Java 21 manifest를 확인했다.
+
+### 남은 한계·다음 gate
+
+- doctor의 listener port open은 그 프로세스가 Burp임을 증명하지 않는다. 사용자가 Burp listener 화면과 Proxy history에서 SCANNER 유입을 확인해야 한다.
+- 실제 target capture, HTTPS 인증서 경로, USER A/B session injection, Codex/Claude Explorer·Judge는 beta.20 setup 검증으로 대체하지 않는다.
+- Windows는 Docker wrapper 대신 상세 문서의 PowerShell/수동 ZAP Desktop 절차를 사용해야 하며 자동 wrapper는 아직 제공하지 않는다.
+- 다음 gate는 beta.20 JAR을 Burp Community에 재로드한 뒤 HUMAN raw byte와 SCANNER 실제 capture를 확인하는 것이다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

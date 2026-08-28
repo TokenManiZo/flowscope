@@ -1,6 +1,18 @@
-# FlowScope 1.2.0-beta.19 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.20 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.20 공개 설치·ZAP 환경 gate
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | `mvn clean verify`, 222 tests, 실패·오류·skip 0. ZAP API key의 system property→환경변수→지정 파일→기본 파일 우선순위와 파일 검증 회귀 포함 |
+| Compose 정적 검증 | `docker compose config`와 `shellcheck` 통과. ZAP 이미지는 `ghcr.io/zaproxy/zaproxy:2.17.0`의 확인한 multi-arch digest로 고정 |
+| 실제 컨테이너 | macOS arm64·Docker 29.5.3에서 ZAP 2.17.0을 별도 loopback 포트로 기동하고 health·API version·Network upstream `host.docker.internal:8081`·필수 add-on을 API로 재조회 |
+| 설치 진단 | wrapper가 owner-only 64자리 hex key를 생성하고 key 값을 출력하거나 container environment에 넣지 않음. `doctor.sh --build`에서 HUMAN/SCANNER listener, key 권한, ZAP/version/upstream/add-on, provider CLI, Web/MCP, Maven/JDK를 0 failure·0 warning으로 점검한 뒤 `zap-down.sh`로 컨테이너·네트워크 종료 확인 |
+| 배포물 | `target/flowscope-1.2.0-beta.20.jar`, 15,868,036 bytes, 2,172 entries, SHA-256 `24da2c47d49833bd06feb453599cc93ca448a028368a55be14a31b040c509aee`, ZIP·Main-Class·Java 21 manifest 검증 통과 |
+
+이 gate는 설치 재현성과 ZAP→Burp 프록시 설정을 확인한 것이다. 실제 target SCANNER capture, HTTPS 인증서 경로, USER A/B session injection, Codex/Claude Explorer, Judge 결과는 수행하지 않았으므로 성공으로 계산하지 않는다.
 
 ## 1.2.0-beta.19 반응형 소유 경계 gate
 

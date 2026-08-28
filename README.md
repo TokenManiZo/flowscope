@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.19
+# FlowScope 1.2.0-beta.20
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -48,25 +48,69 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ## 요구사항
 
-- JDK 21 이상
-- 소스 빌드용 Maven 3.9 이상
-- Montoya API를 지원하는 Burp Suite Community 또는 Professional
-- 선택: 스캐너 lane용 OWASP ZAP
-- 선택: LLM lane과 최종 Judge용 로컬 인증 Codex 또는 Claude Code 클라이언트
+완전한 3-way 흐름에는 아래 세 lane이 모두 필요합니다. ZAP과 로컬 LLM 클라이언트는 제품 전체에서 선택 기능이 아니라, HUMAN-only 제한 모드에서만 생략할 수 있습니다.
 
-## 빌드 및 설치
+| 목적 | 필수 환경 |
+|---|---|
+| Release JAR로 HUMAN-only 사용 | Montoya API를 지원하는 최신 Burp Suite Community 또는 Professional |
+| HUMAN + SCANNER | 위 환경 + OWASP ZAP 2.17.0 |
+| 완전한 HUMAN + SCANNER + LLM/Judge | 위 환경 + 로그인된 Codex CLI 또는 Claude Code 중 하나 |
+| 소스 빌드 | 위 실행 환경 + JDK 21 이상 + Maven 3.9 이상 |
+| 선택적 ZAP 컨테이너 | Docker Engine/Desktop + Docker Compose v2 |
+
+현재 실환경 기준선은 Burp Community `2026.7.3`, ZAP `2.17.0`, JDK `21`입니다. 이는 확인한 조합이지 모든 운영체제와 이전 버전에 대한 호환 보장이 아닙니다. PortSwigger도 최신 Montoya 변경과의 호환을 위해 최신 Burp 사용을 권고합니다.
+
+## 5분 설치
+
+### 1. Release JAR 사용
+
+[GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.20.jar`를 받습니다. Release JAR 사용자는 Maven이 필요하지 않습니다. Burp를 별도 JRE로 실행하는 경우에는 Java 21 이상이어야 합니다.
+
+소스에서 직접 빌드할 때만 다음을 실행합니다.
 
 ```bash
 mvn clean verify
 ```
 
-빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.19.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
+빌드가 끝나면 `target/flowscope-1.2.0-beta.20.jar` 하나만 남습니다.
+
+### 2. Burp listener 준비
+
+Burp **Settings → Tools → Proxy → Proxy listeners**에서 `127.0.0.1:8080`(HUMAN)과 `127.0.0.1:8081`(SCANNER)을 만듭니다. 그런 다음 **Extensions → Installed → Add → Java**에서 JAR을 불러옵니다.
+
+### 3. ZAP 준비
+
+macOS/Linux에서 가장 짧은 경로는 다음 한 줄입니다.
+
+```bash
+./scripts/zap-up.sh
+```
+
+이 스크립트는 digest로 고정된 공식 ZAP 2.17.0 이미지를 실행하고, 임의 API key를 `~/.flowscope/zap-api-key`에 소유자 전용으로 저장하며, ZAP의 upstream HTTP proxy를 Docker 호스트의 Burp SCANNER `8081`로 설정합니다. ZAP API는 호스트 `127.0.0.1:8089`에만 공개됩니다. Burp/구독 LLM은 컨테이너에 넣지 않습니다.
+
+ZAP Desktop을 직접 설치해도 됩니다. 이 경우 ZAP API를 `127.0.0.1:8089`에 열고 API key를 설정한 뒤, ZAP **Network → Connection → HTTP Proxy**를 `127.0.0.1:8081`로 설정하십시오.
+
+### 4. LLM 준비와 사전 점검
+
+Codex 또는 Claude Code 중 하나를 설치하고 터미널에서 한 번 실행해 구독 로그인을 완료합니다. FlowScope는 provider API key를 받지 않으며 Burp를 시작한 환경에서 실행 가능한 로컬 CLI를 사용합니다.
+
+JAR과 listener를 준비한 뒤 macOS/Linux에서는 다음으로 핵심 연결을 확인합니다.
+
+```bash
+./scripts/doctor.sh
+```
+
+소스 빌드 도구까지 확인하려면 `./scripts/doctor.sh --build`를 사용합니다. 포트가 열렸다는 결과는 해당 포트의 프로세스가 Burp임을 암호학적으로 증명하지 않으므로, 마지막으로 Burp listener 표와 FlowScope 탭의 포트 분류를 눈으로 확인하십시오.
+
+운영체제별 설치, Windows 수동 절차, 포트·Docker·CLI 문제 해결은 [한국어 상세 시작 가이드](docs/ko/getting-started.md)에 있습니다. 영어 가이드는 [docs/en/getting-started.md](docs/en/getting-started.md)입니다.
 
 ## 저장소 구조
 
 - [`src/main`](src/main) — Burp 확장, 분석 코어, 로컬 Web 작업면, MCP/ZAP 통합, 번들 고지
 - [`src/test`](src/test) — 보안·파서·분석·저장·MCP·로컬 Web 결정론적 회귀 테스트
 - [`agent-workspace`](agent-workspace) — Codex/Claude MCP 설정과 Explorer/Judge 실행 지침
+- [`infra/zap`](infra/zap) — 선택형 공식 ZAP 2.17.0 Docker Compose와 안전한 시작 스크립트
+- [`scripts`](scripts) — ZAP 시작·중지와 macOS/Linux 환경 점검 도구
 - [`docs/ko`](docs/ko) — 한국어 설계·결정·개발 기록·검증·연구·기능명세 정본
 - [`docs/en`](docs/en) — 영어 사용자·협업·보안·변경 이력 문서
 - [`.github`](.github) — Maven CI와 의존성 업데이트 설정
@@ -166,11 +210,12 @@ Burp 시작 전에 다음 시스템 속성으로 기본 포트를 바꿀 수 있
 -Dflowscope.scope=https://api.example.test/v1
 -Dflowscope.zap.url=http://127.0.0.1:8089
 -Dflowscope.zap.key=<zap-local-api-key>
+-Dflowscope.zap.keyFile=/소유자만-읽는/zap-api-key/절대경로
 -Dflowscope.llm.codex.path=/실행가능한/codex/절대경로
 -Dflowscope.llm.claude.path=/실행가능한/claude/절대경로
 ```
 
-ZAP API endpoint는 loopback 주소만 허용합니다. ZAP의 대상 트래픽은 Burp SCANNER listener를 통과하도록 설정해야 합니다. Client status `100`이나 AJAX API의 `OK`는 실제 rendered traffic을 증명하지 않습니다. FlowScope는 단계별 raw capture로 이를 확인하며, 전체 캡처 0건 run은 실패하고 rendered만 0건인 run은 경고 완료입니다.
+ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 `flowscope.zap.key` → `FLOWSCOPE_ZAP_API_KEY` → `flowscope.zap.keyFile` → 기본 `~/.flowscope/zap-api-key`입니다. 기본 파일은 심볼릭 링크와 group/others 권한을 거부합니다. ZAP의 대상 트래픽은 Burp SCANNER listener를 통과하도록 설정해야 합니다. Client status `100`이나 AJAX API의 `OK`는 실제 rendered traffic을 증명하지 않습니다. FlowScope는 단계별 raw capture로 이를 확인하며, 전체 캡처 0건 run은 실패하고 rendered만 0건인 run은 경고 완료입니다.
 
 ## 제품 작업면
 

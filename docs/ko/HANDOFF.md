@@ -7,11 +7,11 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-08-28 |
-| 제품 버전 | `1.2.0-beta.19` |
-| 인계 작성 시 HEAD | `ec6b4b0` |
+| 제품 버전 | `1.2.0-beta.20` |
+| 인계 작성 시 HEAD | 이 문서와 같은 beta.20 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
-| 자동 회귀 | 221 tests, 실패·오류·skip 0 |
+| 자동 회귀 | 222 tests, 실패·오류·skip 0 |
 | 현재 판정 | 기능이 연결된 베타. 오픈소스 정식 출시 및 블라인드 벤치마크 착수 전 P1 결함 수정과 실제 Burp 통합 검증이 필요함 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 `target/flowscope-1.2.0-beta.19.jar`를 Java 확장으로 로드한다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.20.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -261,7 +261,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-08-28 기준 `mvn clean verify`에서 221 tests가 실패·오류·skip 없이 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, Web API 문자열 계약을 포함한다.
+2026-08-28 기준 `mvn clean verify`에서 222 tests가 실패·오류·skip 없이 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다.
 
 ### 실제·standalone 검증
 
@@ -271,7 +271,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.19 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
+- beta.20 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
 - 실제 Burp에서 request-lab ORIGINAL/ANONYMOUS/ACCOUNT 수신 byte와 credential 비교
 - USER A/USER B 복수 세션과 ZAP/LLM 주입의 전체 흐름
 - 20,000건 근처의 메모리·응답 시간·UI polling 부하
@@ -538,7 +538,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.19.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. 현재 머신에 Java/Maven 경로 문제가 있으면 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.20.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

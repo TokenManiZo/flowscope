@@ -804,3 +804,13 @@
 - **근거:** 라이브러리가 쓰는 inline style과 제품 CSS가 같은 요소를 경쟁하면 버전·초기화 시점에 따라 cascade 결과가 달라진다. 외부 래퍼는 라이브러리 구현과 무관한 안정된 layout boundary다.
 - **기각:** `!important`로 라이브러리 inline style을 덮는 방식과 JavaScript에서 매 resize마다 `#cy.style.display`를 되쓰는 방식을 기각했다. 전자는 소유권 충돌을 숨기고 후자는 CSS media query와 중복 상태를 만든다.
 - **상태:** beta.19 코드·221개 회귀·standalone 1280px/600px·단일 JAR 검증 완료.
+
+## D-086 · 공개 실행 환경 = host Burp/구독 CLI + 선택형 Docker ZAP
+
+- **문제:** README가 Release JAR 사용과 소스 빌드 요구사항을 섞고, 완전한 3-way에서도 ZAP·LLM을 단순 선택 항목처럼 표현했다. 사용자가 ZAP API key, Docker-host 주소, Burp upstream proxy를 직접 조립하면 ZAP은 떠 있어도 대상 트래픽이 SCANNER `8081`을 통과하지 않는 조용한 실패가 생긴다.
+- **결정:** 완전한 3-way의 필수 구성은 Burp, ZAP 2.17.0, 로그인된 Codex CLI 또는 Claude Code 하나로 명시한다. Release JAR 사용자는 Maven이 필요 없고 소스 빌드에만 JDK 21/Maven 3.9를 요구한다. Burp와 provider CLI는 host-native로 유지하고, ZAP만 digest 고정 공식 이미지를 선택형 Compose로 제공한다. macOS/Linux helper는 random key를 owner-only 기본 파일에 만들고 공식 ZAP Network API로 `host.docker.internal:<SCANNER port>` upstream을 설정·재조회한다. API publish는 host loopback으로 제한한다.
+- **secret 경계:** FlowScope는 `flowscope.zap.key` → `FLOWSCOPE_ZAP_API_KEY` → `flowscope.zap.keyFile` → `~/.flowscope/zap-api-key` 순으로 해석한다. 파일은 링크 추적 없이 512 bytes 이하, URL-safe 32~256자, POSIX owner-only만 허용한다. Compose에는 key 값을 환경변수로 넘기지 않고 owner-only 파일을 컨테이너에 read-only mount한다. key는 저장소·프로젝트·MCP·Web snapshot에 넣지 않는다.
+- **기각:** Burp와 구독 CLI를 함께 컨테이너화하는 방식은 GUI/Montoya와 사용자 로그인·keychain·PATH 경계를 불필요하게 복잡하게 만들어 기각했다. ZAP API key를 끄거나 저장소에 공용 key를 커밋하는 방식도 로컬 웹페이지에 의한 API 호출 위험과 secret 재사용 때문에 기각했다. floating `stable` 이미지는 core와 add-on 재현성이 월별로 달라져 2.17.0 manifest digest를 사용한다.
+- **한계:** helper와 doctor는 macOS/Linux Bash에서만 검증했다. Windows는 동일 Compose의 수동 PowerShell 절차를 제공하지만 자동화 완료로 주장하지 않는다. container health/API/upstream/add-on 확인은 실제 target TLS, USER A/B 주입, Client/AJAX rendered capture, 취약점 탐지 성능을 증명하지 않는다.
+- **근거:** PortSwigger 공식 문서는 Montoya Java JAR을 Burp에서 직접 로드하고 최신 Burp 사용을 권고한다. ZAP 공식 문서는 Docker headless/xvfb, API key, 외부 API 접근 범위 주의를 설명하며 Network API는 upstream HTTP proxy 설정·활성화를 제공한다. OpenAI/Anthropic 공식 문서는 각 CLI 설치와 사용자 로그인을 별도 host client 흐름으로 제공한다.
+- **상태:** beta.20 코드·Compose·한영 설치 가이드·실행 환경 검증 추가. 실제 beta.20 Burp 3-way target gate는 별도다.

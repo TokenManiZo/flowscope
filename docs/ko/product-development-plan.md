@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.19 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.20 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -17,15 +17,25 @@
 
 **상태: 목표·비목표·측정 가능한 완료 기준을 README·설계·결정 문서에 동일하게 고정함. 후속 우선순위 작업은 별도 단계다.**
 
+## 0. beta.20 우선순위: 공개 설치 재현성과 기존 HUMAN 실환경 gate
+
+1. Release JAR·소스 빌드·완전한 3-way 요구사항을 분리하고 ZAP/LLM을 완전한 흐름의 필수 구성으로 고친다. → 검증: 한영 README와 상세 시작 문서 링크·버전·포트 정합성.
+2. macOS/Linux에서 공식 ZAP 2.17.0 digest 이미지, random owner-only API key, Docker-host Burp `8081` upstream을 한 명령으로 준비한다. → 검증: Compose config, ShellCheck, 실제 container health/API/version/upstream/add-on 재조회.
+3. FlowScope가 기본 `~/.flowscope/zap-api-key`를 링크·권한 검증 후 읽는다. → 검증: 명시 key/환경/key file 우선순위와 file validation 회귀.
+4. doctor로 listener, ZAP, add-on, provider CLI, Web/MCP를 점검하되 포트 open만으로 Burp 신원을 증명한다고 주장하지 않는다.
+5. 아래의 HUMAN 원문 byte·Evidence UI 실제 Burp gate를 이어서 수행한다.
+
+**현재 상태:** beta.20 설치 코드·문서, 공식 ZAP 2.17.0 digest 이미지의 실제 기동, loopback API/version, Docker→Burp SCANNER `8081` upstream, 필수 add-on, doctor, owner-only key file과 222개 자동 회귀를 확인했다. target SCANNER capture, HTTPS, USER A/B, LLM/Judge end-to-end는 이번 setup 검증으로 대체하지 않는다.
+
 ## 0. beta.19 우선순위: HUMAN 원문 byte·Evidence UI 실환경 gate
 
 1. live 요청·응답 원문을 프로젝트 모델과 분리된 bounded process-memory vault에만 둔다. → 검증: retain/상한/오래된 항목 제거/clear 회귀와 snapshot 비밀 부재.
 2. 사용자가 특정 Evidence를 선택하면 큰 Web 편집기에서 요청과 응답을 나란히 보고 `원문/비로그인/등록 계정`으로 명시 전송한다. → 검증: localhost capability API 계약, Web 문구·모드·전송 결과 회귀.
 3. 원 서비스와 exact scope를 고정하고 redirect 금지·TLS 검증·timeout·Content-Length 정합성을 적용한다. 결과는 HUMAN `VALIDATION/CONTROLLED`로 기록해 discovery coverage를 늘리지 않는다. → 검증: 자동 계약과 실제 Burp Community 수동 gate.
 4. 초기화·샘플 교체·프로젝트 열기·unload에서 raw vault를 폐기하고, imported/binary/상한 초과 Evidence는 마스킹 폴백을 정직하게 표시한다.
-5. beta.19 JAR을 재로드한 뒤 실제 HUMAN Evidence에서 비ASCII 원문 byte, ORIGINAL, ANONYMOUS, USER A, USER B 전송의 서버 수신 헤더·응답·Evidence phase·coverage 불변과 binary Repeater fallback을 확인한다.
+5. 현재 JAR을 재로드한 뒤 실제 HUMAN Evidence에서 비ASCII 원문 byte, ORIGINAL, ANONYMOUS, USER A, USER B 전송의 서버 수신 헤더·응답·Evidence phase·coverage 불변과 binary Repeater fallback을 확인한다.
 
-**현재 상태:** raw byte 정본·strict charset·Evidence ID 상세·라이브러리 외부 반응형 그래프 래퍼와 221개 자동 회귀, standalone 1280px/600px UI 검증 완료. 실제 beta.19 Burp ORIGINAL/ANONYMOUS/USER A/USER B byte 전송 gate는 남아 있으며, 통과 전에는 실환경 완료로 표시하지 않는다.
+**현재 상태:** raw byte 정본·strict charset·Evidence ID 상세·라이브러리 외부 반응형 그래프 래퍼와 beta.19의 221개 자동 회귀, standalone 1280px/600px UI 검증 완료. 실제 현재 JAR의 Burp ORIGINAL/ANONYMOUS/USER A/USER B byte 전송 gate는 남아 있으며, 통과 전에는 실환경 완료로 표시하지 않는다.
 
 ## 0. beta.16 우선순위: HUMAN 요청 시점 문맥과 principal 표현
 
@@ -194,7 +204,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.19 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화 구현과 221개 자동 회귀 완료, 실제 beta.19 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.20 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·재현 가능한 ZAP 실행 환경 구현과 222개 자동 회귀 완료, 실제 beta.20 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

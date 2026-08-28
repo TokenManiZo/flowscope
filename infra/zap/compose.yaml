@@ -1,0 +1,24 @@
+services:
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:2.17.0@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef
+    entrypoint: ["/bin/bash", "/opt/flowscope/start-zap.sh"]
+    environment:
+      ZAP_PORT: "${FLOWSCOPE_ZAP_PORT:-8089}"
+      ZAP_API_KEY_FILE: "/run/secrets/flowscope-zap-api-key"
+      BURP_PROXY_HOST: "host.docker.internal"
+      BURP_PROXY_PORT: "${FLOWSCOPE_BURP_SCANNER_PORT:-8081}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${FLOWSCOPE_ZAP_PORT:-8089}:${FLOWSCOPE_ZAP_PORT:-8089}"
+    volumes:
+      - ./start-zap.sh:/opt/flowscope/start-zap.sh:ro
+      - "${FLOWSCOPE_ZAP_KEY_FILE:-${HOME}/.flowscope/zap-api-key}:/run/secrets/flowscope-zap-api-key:ro"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/flowscope-zap-ready"]
+      interval: 5s
+      timeout: 2s
+      retries: 24
+      start_period: 15s
+    restart: unless-stopped
+    stop_grace_period: 30s
