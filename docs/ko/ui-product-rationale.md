@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.13, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.14, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -147,7 +147,7 @@ Traditional Spider
 
 Active Scan은 상태를 바꿀 수 있고 트래픽이 크므로 기본 baseline에서 분리하며 exact scope와 별도 Burp 승인을 요구한다. “ZAP 기능을 적게 쓴다”가 아니라 안전한 자동 기준선과 고위험 능동 스캔의 승인 경계를 분리한 것이다.
 
-비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 fresh ZAP session을 만든다. 화면은 각 신원의 상태·수집 수·Alert 수를 따로 보여 준다. 계정 레인은 broker 자격증명으로 완전 교체하고, 비로그인 레인은 fresh session 안에서 새로 생긴 익명 Cookie/CSRF를 유지해 상태형 공개 흐름을 끊지 않는다.
+비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 fresh ZAP session을 만든다. 화면은 whs_flow 작업면의 카드·간격 문법을 유지한 신원별 lane card로 현재 단계, 전체 수집, Traditional 수집, Client/AJAX rendered 수집, Alert, 주의·실패 원인을 분리한다. 한 문장 상태는 실패한 신원과 실패 단계를 찾기 어려워 기각했다. 계정 레인은 broker 자격증명으로 완전 교체하고, 비로그인 레인은 fresh session 안에서 새로 생긴 익명 Cookie/CSRF를 유지해 상태형 공개 흐름을 끊지 않는다.
 
 FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 숨기고 시작 요청을 거부한다. 모든 localhost를 막으면 crAPI 같은 로컬 허가 대상을 점검할 수 없으므로 현재 Web port만 제어면으로 판별한다.
 
@@ -209,7 +209,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.13 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 beta.13에서 선택할 파일은 `target/flowscope-1.2.0-beta.13.jar` 하나다. beta.10의 실제 계정 projection은 확인됐지만 HUMAN run 완료·Burp tool provenance·semantic object 보강이 바뀐 beta.13 JAR 재로드는 별도 수동 gate다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.14 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.14.jar` 하나다. beta.10의 실제 계정 projection은 확인됐지만 HUMAN run/provenance·semantic object와 raw ZAP completion gate가 바뀐 beta.14 JAR 재로드는 별도 수동 gate다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
 5. **구독 CLI 자동 실행 — 코드·UI 완료, Burp 실환경 gate:** 빠른 시작이 Burp 시작 환경의 Codex/Claude 실행 파일을 찾아 새 Explorer와 별도 Judge 프로세스를 만들고, provider session ID로 Judge 후속 질문을 재개한다. 수동 `agent-workspace`는 폴백으로 유지한다. 로컬 CLI help와 자동 회귀를 통과했고 Codex 무대상 모델 smoke는 성공했지만, Claude smoke는 구독 주간 한도 429로 실패했다. 실제 Burp에서 사용자의 MCP·대상 요청·run 종료·Judge lock·후속 resume가 끝까지 성공하는지는 beta.7 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
 

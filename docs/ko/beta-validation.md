@@ -1,6 +1,21 @@
-# FlowScope 1.2.0-beta.13 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.14 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.14 자동·standalone 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | Java `--release 21`로 `mvn clean verify`, 206 tests, 실패·오류·skip 0 |
+| raw completion gate | 분석 snapshot 0건/raw SCANNER count 1건 fixture에서 ZAP 캠페인 `COMPLETED`; raw `source + runId + sourceDetail` count 단위 테스트 통과 |
+| stage projection | Traditional 1건, Client rendered 1건을 lane JSON의 `traditional_captures/rendered_captures`로 분리하고 기존 3-lane zero-capture failure/completion 회귀 통과 |
+| Web scanner UI | whs_flow 기반 작업면의 lane card 계약, 상태·단계·전체/Traditional/Rendered/Alert·warning/error 이스케이프 렌더 회귀 통과 |
+| standalone Web | 1280×720 빠른 시작 modal에서 전체 page·modal·scanner 영역 수평 overflow 0, beta.14 tag와 scanner controls 렌더 확인. 실제 RUNNING lane card는 네트워크 실행 없이 조작하지 않음 |
+| 로컬 ZAP 환경 | loopback API에서 ZAP `2.17.0`, `spider 0.18.0`, `client 0.20.0`, `pscan 0.6.0` 설치 상태를 읽기 전용 확인. beta.14 대상 스캔은 실행하지 않음 |
+| 배포물 | `target/flowscope-1.2.0-beta.14.jar`, 15,838,496 bytes, SHA-256 `aad50e262a5ed70976da3dae21f070fd57e3354e52cc1681c00f482f814bb0aa` |
+| JAR 무결성 | ZIP 무결성 통과, 2,161 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개 |
+
+이 검증은 FlowScope 내부의 scanner 완료 판정이 분석 debounce에 의존하지 않고 단계별 수량을 보존하는지 확인한 것이다. ZAP 2.17과 Burp Community를 실제 연결한 beta.14 Client Spider/AJAX fallback, USER A/B 세션 주입, 늦은 응답 경계는 아직 실행하지 않았다. 따라서 endpoint 발견률, Alert 완전성, 취약점 탐지 성능 개선으로 해석하지 않는다.
 
 ## 1.2.0-beta.13 자동·standalone 사전검증
 

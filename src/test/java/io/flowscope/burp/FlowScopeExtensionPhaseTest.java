@@ -5,8 +5,11 @@ import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
 import io.flowscope.core.Orchestrator;
+import io.flowscope.core.RequestRecord;
 import io.flowscope.core.ToolKind;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -14,6 +17,27 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlowScopeExtensionPhaseTest {
+    @Test
+    void countsCapturedScannerRecordsFromTheRawStoreBeforePipelineRebuild() {
+        RequestRecord matching = new RequestRecord(Source.SCANNER, "https://api.example.test:443",
+                "GET", "/v1/orders", 200, "anon");
+        matching.runId = "zap-1";
+        matching.sourceDetail = SourceDetail.ZAP_SPIDER;
+        RequestRecord otherStage = new RequestRecord(Source.SCANNER, "https://api.example.test:443",
+                "GET", "/v1/profile", 200, "anon");
+        otherStage.runId = "zap-1";
+        otherStage.sourceDetail = SourceDetail.ZAP_CLIENT_SPIDER;
+        RequestRecord otherRun = new RequestRecord(Source.SCANNER, "https://api.example.test:443",
+                "GET", "/v1/admin", 200, "anon");
+        otherRun.runId = "zap-2";
+        otherRun.sourceDetail = SourceDetail.ZAP_SPIDER;
+
+        List<RequestRecord> raw = List.of(matching, otherStage, otherRun);
+        assertEquals(2, FlowScopeExtension.capturedCount(raw, Source.SCANNER, "zap-1", null));
+        assertEquals(1, FlowScopeExtension.capturedCount(raw, Source.SCANNER, "zap-1",
+                SourceDetail.ZAP_SPIDER));
+    }
+
     @Test
     void HUMAN_로그인_캡처만_SESSION_SETUP으로_분리한다() {
         assertEquals(RunPhase.SESSION_SETUP,

@@ -1235,6 +1235,44 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 일반 MPA/SPA/GraphQL 및 블라인드 대상에서 semantic field precision/recall, 객체 미탐, `REVIEW` 작업량을 측정하기 전 성능 우위를 주장하지 않는다.
 - `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
 
+## 2026-08-28 · 1.2.0-beta.14 · ZAP raw completion gate와 단계별 상태
+
+### 목표와 성공 조건
+- Burp raw record에는 응답이 있으나 400ms debounce 분석 snapshot에는 아직 없는 순간에도 정상 ZAP lane을 `0건 실패`로 오판하지 않는다.
+- 신원별 Traditional Spider와 Client/AJAX rendered-browser 수집량 및 현재 단계가 Web/MCP에서 구분된다.
+- 기존 exact scope, fresh ZAP session, broker 세션 교체, zero-capture failure, Active Scan 승인 경계를 바꾸지 않는다.
+
+### 개발·수정
+- `McpServer.State`에 `source + runId + sourceDetail` capture count 계약을 추가하고, Burp 구현은 synchronized raw `records`를 직접 센다. 일반 구현은 현재 snapshot 기반 default를 유지한다.
+- ZAP 캠페인의 global/lane 완료 count와 단계 count를 raw 계약으로 교체했다. 신원별 lane은 `PENDING → TRADITIONAL_SPIDER → CLIENT_SPIDER/AJAX_SPIDER_FALLBACK → PASSIVE_SCAN_QUEUE → ALERTS_READY/FAILED`를 갱신한다.
+- lane JSON에 `traditional_captures`, `rendered_captures`를 추가하고 기존 한 줄 문자열 대신 whs_flow 작업면 문법의 상태 card로 표시한다.
+- beta.14 버전, 한국어/영어 README·CHANGELOG, 설계·결정·계획·화면 근거·검증 기록을 코드와 동기화했다.
+
+### 이유
+- 임의 sleep으로 분석 snapshot을 기다리면 시스템 부하에 따라 다시 실패한다. raw append는 응답 callback에서 이미 완료됐으므로 완료 gate의 가장 가까운 사실 원천이다.
+- Pipeline debounce 제거는 매 응답마다 전체 분석을 실행해 Burp callback 부하를 키우므로 기각했다.
+- Traditional과 browser-rendered discovery를 합산만 하면 어떤 crawler가 실제 경로를 발견했는지와 Client/AJAX 실패 영향을 설명할 수 없다.
+
+### 영향 파일
+- scanner gate·상태: `McpServer`, `FlowScopeExtension`
+- Web projection: `src/main/resources/web/index.html`
+- 회귀: `McpServerTest`, `FlowScopeExtensionPhaseTest`, `FlowScopeWebServerTest`
+- 버전·문서: `pom.xml`, 루트/영문 README·CHANGELOG, 한국어 설계·결정·계획·화면 근거·검증, 이 로그
+
+### 검증
+- 구현 전 raw count API와 stage JSON을 요구하는 테스트가 컴파일 실패하는 것을 확인했다.
+- 집중 회귀 `mvn -Dtest=FlowScopeExtensionPhaseTest,McpServerTest,FlowScopeWebServerTest test`: 통과.
+- 최종 `mvn clean verify`: 206 tests, 실패·오류·skip 0.
+- standalone 1280×720 빠른 시작에서 page/modal/scanner 수평 overflow가 모두 0이고 beta.14 tag, ZAP target·identity controls, 비실행 상태가 렌더되는 것을 확인했다.
+- 로컬 loopback ZAP API에서 ZAP `2.17.0`, spider `0.18.0`, client `0.20.0`, pscan `0.6.0` 설치를 읽기 전용 확인했다. beta.14 JAR을 Burp에 다시 로드하지 않은 상태라 대상 scan은 실행하지 않았다.
+- 배포물: `target/flowscope-1.2.0-beta.14.jar` 하나, 15,838,496 bytes, 2,161 entries, SHA-256 `aad50e262a5ed70976da3dae21f070fd57e3354e52cc1681c00f482f814bb0aa`. ZIP 무결성·Main-Class·Java 21을 확인했다.
+
+### 남은 한계·다음 gate
+- 실제 ZAP 2.17 + Burp Community beta.14에서 Client Spider/AJAX fallback이 8081을 지나며 stage count에 귀속되는지 확인해야 한다.
+- USER A/B ACTIVE broker 세션의 교체 주입, 계정 간 late response, ZAP 전역 replacer/script 간섭은 실제 캠페인으로 검증해야 한다.
+- 이번 변경은 완료 판정 정확도 수정이며 endpoint 발견률·Alert recall·취약점 성능 향상을 증명하지 않는다.
+- `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

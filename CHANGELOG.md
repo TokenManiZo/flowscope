@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.14 — 2026-08-28
+
+- ZAP 완료 gate가 최대 400ms 늦을 수 있는 분석 snapshot 대신 응답 시점 raw Burp capture를 직접 세도록 수정해 정상 scanner lane의 거짓 `0건 실패` 제거
+- 비로그인·계정별 ZAP 상태에 Traditional Spider와 Client/AJAX rendered-browser 수집량을 분리하고 각 단계 전환을 실시간 상태로 노출
+- 기존 whs_flow 작업면의 카드·색·간격 문법을 유지한 scanner lane 카드로 계정별 단계·수집·Alert·주의·실패 원인을 한눈에 표시
+- stale snapshot, stage별 capture, 3-lane failure/completion, Web 상태 렌더 계약 회귀를 포함해 자동 테스트 206개 통과
+
 ## 1.2.0-beta.13 — 2026-08-28
 
 - HUMAN 상태를 1초 주기 실행 상태 동기화에 포함하고, 수집 건수가 아니라 exact run 종료 표식으로만 `pass 완료` 표시

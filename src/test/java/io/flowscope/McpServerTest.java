@@ -19,6 +19,7 @@ import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -393,7 +394,14 @@ final class McpServerTest {
             zapReply(exchange, "{\"scan\":\"1\"}");
         });
         zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
-        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            List<RequestRecord> copy = new ArrayList<>(records.get());
+            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
+                    SourceDetail.ZAP_CLIENT_SPIDER, RunPhase.EXPLORATION, context.runId()));
+            records.set(copy);
+            zapReply(exchange, "{\"scan\":\"2\"}");
+        });
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
                 "{\"status\":{\"state\":\"COMPLETED\"}}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
@@ -427,12 +435,66 @@ final class McpServerTest {
             assertEquals("COMPLETED", status.at("/result/structuredContent/status").asText(), status.toString());
             assertEquals("ALERTS_READY", status.at("/result/structuredContent/stage").asText());
             assertEquals(1, status.at("/result/structuredContent/alert_count").asInt());
+            assertEquals(1, status.at("/result/structuredContent/lanes/0/traditional_captures").asInt());
+            assertEquals(1, status.at("/result/structuredContent/lanes/0/rendered_captures").asInt());
             assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
             assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
             JsonNode alerts = tool("flowscope_zap_alerts",
                     "{\"target\":\"http://127.0.0.1:8888/\"}");
             assertEquals("BASELINE_SNAPSHOT", alerts.at("/result/structuredContent/source").asText());
             assertFalse(alerts.toString().contains("raw-alert-secret"));
+        } finally {
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
+    void scannerCompletionUsesRawCaptureCounterInsteadOfPossiblyStalePipelineSnapshot() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicLong rawCaptures = new AtomicLong();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+            rawCaptures.incrementAndGet();
+            zapReply(exchange, "{\"scan\":\"1\"}");
+        });
+        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
+        zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
+        zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
+                "{\"recordsToScan\":\"0\"}"));
+        zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange, "{\"alerts\":[]}"));
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new McpServer(new McpServer.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
+                    return source == Source.SCANNER && "raw-gate".equals(runId)
+                            && (detail == null || detail == SourceDetail.ZAP_SPIDER) ? rawCaptures.get() : 0;
+                }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public void updateScope(String value) {}
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+                @Override public boolean approve(String action, String value) { return false; }
+            }, 0, "test-token");
+            server.start();
+
+            JsonNode started = tool("flowscope_zap_baseline",
+                    "{\"target\":\"" + target + "\",\"run_id\":\"raw-gate\"}");
+            assertFalse(started.at("/result/isError").asBoolean(), started.toString());
+            JsonNode status = null;
+            for (int i = 0; i < 100; i++) {
+                status = tool("flowscope_zap_baseline_status", "{}");
+                if (!"RUNNING".equals(status.at("/result/structuredContent/status").asText())) break;
+                Thread.sleep(10);
+            }
+            assertNotNull(status);
+            assertEquals("COMPLETED", status.at("/result/structuredContent/status").asText(), status.toString());
+            assertEquals(1, status.at("/result/structuredContent/captured_records").asInt());
         } finally {
             zapServer.stop(0);
         }

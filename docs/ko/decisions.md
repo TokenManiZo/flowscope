@@ -751,3 +751,12 @@
 - **기각:** 대상별 crAPI/네이버/WebSquare 필드 사전은 일반 도구 목적과 블라인드 benchmark를 오염시켜 기각했다. LLM이 모든 필드를 즉시 판정하는 방식은 비결정적이고 원 Evidence 없이 결과가 바뀔 수 있어 핵심 수집기에 넣지 않는다. 이름 하나만으로 승격하거나 서로 다른 endpoint의 같은 필드명을 합치는 방식도 오탐 전파 때문에 기각했다.
 - **한계:** 이 규칙은 관측된 값의 식별자 가능성을 보강할 뿐 실제 route schema, 소유권, 인가 취약점을 증명하지 않는다. 동적 JavaScript에서 아직 전송되지 않은 값과 한 번만 관측된 도메인 식별자는 자동 확정할 수 없다. 다양한 blind target에서 field-level precision/recall과 REVIEW 비용을 측정하기 전 성능 우위를 주장하지 않는다.
 - **상태:** beta.13 구현·204개 자동 회귀·standalone HUMAN 상태 전이 검증 완료, 실제 Burp Browser/Repeater/Intruder와 블라인드 corpus gate 대기.
+
+## D-080 · ZAP 완료 gate = raw capture, 화면 상태 = 신원·단계별 projection
+
+- **문제:** Burp 응답 callback은 raw record를 즉시 저장하지만 분석 `Pipeline.Result` 재빌드는 400ms debounce된다. ZAP spider와 passive queue가 먼저 종료된 직후 분석 snapshot만 세면 실제 SCANNER 응답이 raw store에 있어도 신원별 capture가 0으로 보여 정상 캠페인을 실패 처리할 수 있다. 기존 Web 상태 한 줄은 어느 신원의 Traditional/Client/AJAX 단계가 실제 트래픽을 만들었는지 구분하지 못했다.
+- **결정:** 캠페인 완료, zero-capture, global/lane capture 수의 정본은 raw record 저장소의 `source + runId + sourceDetail` count다. 일반 MCP 테스트·standalone 구현은 현재 snapshot 기반 default를 쓰되 Burp 확장은 synchronized raw store 구현을 제공한다. 신원별 상태는 전체, Traditional, Client/AJAX rendered capture와 Alert, warning, error를 분리해 Web/MCP에 projection한다.
+- **기각:** 임의 500ms sleep 뒤 snapshot을 다시 읽는 방식은 부하·스케줄러에 따라 다시 실패하고 테스트를 느리게 만들어 기각했다. Pipeline debounce를 제거하는 방식은 Burp callback마다 전체 분석을 실행해 UI·메모리 보호 계약을 훼손한다. 화면 한 줄에 모든 lane을 이어 붙이는 방식은 실패 신원과 단계를 찾기 어려워 기각했다.
+- **근거:** FlowScope의 실제 수집 코드에서 raw append와 400ms scheduled rebuild의 시간차를 확인했고 stale snapshot/raw capture fixture로 회귀를 고정했다. ZAP 공식 문서는 Client Spider status 100을 crawl 완료로, passive scan은 별도 background queue로 설명하므로 crawl 종료·passive drain·FlowScope capture 존재를 서로 다른 gate로 유지한다.
+- **한계:** raw count는 FlowScope가 응답을 관측했다는 증거이지 endpoint 충분성이나 취약점 발견 성능의 증거가 아니다. 실제 ZAP/Burp 네트워크에서 아주 늦은 응답, Client Spider browser add-on, USER A/B 주입은 beta.14 JAR 수동 gate로 남는다.
+- **상태:** beta.14 구현·206개 자동 회귀 완료, 실제 Burp/ZAP 복수 신원 gate 대기.

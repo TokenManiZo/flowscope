@@ -973,6 +973,13 @@ public final class FlowScopeExtension implements BurpExtension {
         return datasetLocked || contexts.hasActiveRuns();
     }
 
+    static long capturedCount(List<RequestRecord> values, Source source, String runId, SourceDetail detail) {
+        return values.stream()
+                .filter(record -> record.source == source && runId.equals(record.runId))
+                .filter(record -> detail == null || record.sourceDetail == detail)
+                .count();
+    }
+
     private void startWebUi() throws Exception {
         int port = Integer.getInteger("flowscope.web.port", 17777);
         webServer = new FlowScopeWebServer(new FlowScopeWebServer.State() {
@@ -1091,6 +1098,9 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             mcpServer = new McpServer(new McpServer.State() {
                 @Override public Pipeline.Result snapshot() { return latest; }
+                @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
+                    synchronized (records) { return FlowScopeExtension.capturedCount(records, source, runId, detail); }
+                }
                 @Override public ScopePolicy scope() { return scope; }
                 @Override public void updateScope(String value) { applyScope(value); }
                 @Override public ZapClient zap() { return zapClient; }

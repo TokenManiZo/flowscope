@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0-beta.14 — 2026-08-28
+
+- Changed the ZAP completion gate to count response-time raw Burp captures rather than the analysis snapshot that can lag by up to 400 ms, eliminating false zero-capture failures.
+- Split per-identity scanner output into Traditional Spider and Client/AJAX rendered-browser capture counts and exposed live stage transitions.
+- Replaced the single scanner status sentence with lane cards that follow the existing whs_flow-derived workbench grammar and expose stage, captures, alerts, warnings, and failures.
+- Passed 206 automated regressions including stale-snapshot, stage attribution, three-lane failure/completion, and Web rendering contracts.
+
 ## 1.2.0-beta.13 — 2026-08-28
 
 - Added HUMAN run polling and made completion depend on an exact exploration-run close marker instead of record counts.
