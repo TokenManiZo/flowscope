@@ -832,3 +832,11 @@
 - **검증 경계:** 연결 성공은 ZAP API 접근과 key 일치만 뜻한다. Burp `8081` upstream, 필수 add-on, target TLS와 scanner capture는 doctor와 실제 캠페인 gate가 별도로 검증한다.
 - **근거:** ZAP 공식 Network API는 proxy 설정/상태를 배포 방식과 무관한 API로 제공하고, ZAP Docker 문서는 컨테이너를 별도 실행 선택지로 설명한다. 따라서 제품 코어가 배포 종류를 아는 것보다 동일 API 계약을 검증하는 편이 결합도가 낮다.
 - **상태:** beta.21 Web API/UI, Desktop key helper, 한영 설치 문서 구현. 실제 ZAP Desktop 수동 gate 대기.
+
+## D-089 · 빠른 시작 = 첫 미완료 단계 하나만 여는 진행 내비게이션
+
+- **문제:** beta.21 빠른 시작은 범위·listener·HUMAN·ZAP·Explorer·Judge 설명 여섯 개와 세 실행기의 제어를 한 모달에 모두 펼쳤다. 기능은 존재했지만 처음 쓰는 사용자가 현재 상태와 다음 버튼을 직접 대조해야 했다.
+- **결정:** 진행 단위를 `범위 → HUMAN → ZAP → LLM·Judge` 네 단계로 압축한다. 서버가 확인한 scope, 정확히 종료된 HUMAN pass, ZAP campaign status, LLM completed lane과 Judge status로 첫 미완료 단계를 선택하고 그 단계의 제어만 표시한다. 상단 네 단계는 항상 보여 사용자가 이전 설정을 직접 열 수 있으며, 수동 이동 뒤에는 `현재 단계로` 복귀할 수 있다. ZAP Desktop/Docker 설치 상세는 연결 실패 때 해당 단계 안에서만 접어 제공한다.
+- **기각:** 모든 제어를 한 화면에 계속 노출하는 방식은 다음 행동을 숨긴다. 반대로 완료 단계와 고급 설정을 제거하거나 자동으로 건너뛰면 진단자가 상태를 감사·수정할 수 없다. 단순 수집 건수로 진행도를 계산하는 방식도 run 완료 계약과 맞지 않아 사용하지 않는다.
+- **검증 경계:** Web 응답 계약, 단계별 단일 panel 노출, 390px 반응형 overflow를 자동·standalone으로 확인한다. 실제 Burp scope/HUMAN/ZAP/LLM 상태가 순서대로 전환되는 전체 실환경 검증은 별도 gate다.
+- **상태:** beta.22 구현·자동 회귀·standalone 상호작용 검증 완료, Burp 3-way 수동 gate 대기.

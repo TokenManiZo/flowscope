@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.21
+# FlowScope 1.2.0-beta.22
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -61,82 +61,46 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 현재 실환경 기준선은 Burp Community `2026.7.3`, ZAP `2.17.0`, JDK `21`입니다. 이는 확인한 조합이지 모든 운영체제와 이전 버전에 대한 호환 보장이 아닙니다. PortSwigger도 최신 Montoya 변경과의 호환을 위해 최신 Burp 사용을 권고합니다.
 
-## 5분 설치
+## 5분 시작 — 이 순서만 따라 하세요
 
-### 1. Release JAR 사용
+### 처음 한 번만 준비
 
-완전한 3-way에서 아래 ZAP helper와 상세 문서를 함께 쓰려면 먼저 저장소를 받습니다. HUMAN-only 사용자는 저장소 없이 Release JAR만 받아도 됩니다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.22.jar`를 받고, Burp **Extensions → Installed → Add → Java**에서 불러옵니다.
+2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
+3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
 ```bash
 git clone https://github.com/choewonwoo1817/testflowscope.git
 cd testflowscope
 ```
 
-[GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.21.jar`를 받습니다. Release JAR 사용자는 Maven이 필요하지 않습니다. Burp를 별도 JRE로 실행하는 경우에는 Java 21 이상이어야 합니다.
+| ZAP 방식 | 실행 |
+|---|---|
+| 기존 ZAP Desktop | `./scripts/zap-key.sh` 또는 PowerShell 7의 `.\scripts\zap-key.ps1` 실행 후, ZAP API `127.0.0.1:8089`, upstream proxy `127.0.0.1:8081`, 생성된 key를 설정 |
+| Docker Quick Start | macOS/Linux `./scripts/zap-up.sh` · Windows PowerShell 7 `.\scripts\zap-up.ps1` |
 
-소스에서 직접 빌드할 때만 다음을 실행합니다.
+두 ZAP 방식은 동시에 실행하지 않습니다. Docker는 선택 사항이며, 중지했다면 다음 점검 전에 `zap-up`만 다시 실행하면 됩니다. Burp와 구독 LLM은 호스트에서 실행합니다.
 
-```bash
-mvn clean verify
-```
-
-빌드가 끝나면 `target/flowscope-1.2.0-beta.21.jar` 하나만 남습니다.
-
-### 2. Burp listener 준비
-
-Burp **Settings → Tools → Proxy → Proxy listeners**에서 `127.0.0.1:8080`(HUMAN)과 `127.0.0.1:8081`(SCANNER)을 만듭니다. 그런 다음 **Extensions → Installed → Add → Java**에서 JAR을 불러옵니다.
-
-### 3. ZAP 준비
-
-FlowScope는 `127.0.0.1:8089`의 호환 ZAP API를 확인하므로 ZAP Desktop과 Docker ZAP 중 하나만 선택하면 됩니다. API 응답만으로 배포 방식을 추측하지 않으며, Web **빠른 시작 → 로컬 ZAP 연결**에서 연결 여부와 버전을 먼저 보여 줍니다.
-
-ZAP Desktop을 사용하는 경우 저장소 루트에서 API key를 먼저 준비합니다.
+4. Codex 또는 Claude Code 중 하나를 터미널에서 실행해 구독 로그인을 마친 뒤 환경을 확인합니다.
 
 ```bash
-./scripts/zap-key.sh
+./scripts/doctor.sh        # macOS/Linux
 ```
-
-Windows PowerShell 7에서는 다음을 사용합니다.
 
 ```powershell
-.\scripts\zap-key.ps1
+.\scripts\doctor.ps1      # Windows PowerShell 7
 ```
 
-그 뒤 ZAP main proxy/API를 `127.0.0.1:8089`, API key를 생성된 `~/.flowscope/zap-api-key` 값, ZAP **Network → Connection → HTTP Proxy**를 `127.0.0.1:8081`로 설정합니다. 이미 FlowScope를 로드한 뒤 key를 만들었다면 확장을 한 번 재로드합니다.
+### 점검할 때마다
 
-설치·add-on까지 고정된 재현 환경이 필요하면 선택형 Docker Quick Start를 사용합니다. macOS/Linux:
+1. Burp의 **FlowScope** 탭에서 허가된 exact scope를 입력하고 **범위 적용**을 누릅니다.
+2. `http://127.0.0.1:17777/`에서 **빠른 시작**을 엽니다.
+3. 화면이 자동으로 여는 첫 미완료 단계만 수행합니다: **범위 → HUMAN → ZAP → LLM·Judge**.
+4. 완료 뒤 그래프·판정 매트릭스·시나리오에서 갭과 Evidence를 검토합니다.
 
-```bash
-./scripts/zap-up.sh
-```
+빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-Windows PowerShell 7에서는 관리자 셸이 아닌 일반 사용자 셸에서 다음을 실행합니다.
-
-```powershell
-.\scripts\zap-up.ps1
-```
-
-이 스크립트는 digest로 고정된 공식 ZAP 2.17.0 이미지를 실행하고, 임의 API key를 `~/.flowscope/zap-api-key`에 소유자 전용으로 저장하며, ZAP의 upstream HTTP proxy를 Docker 호스트의 Burp SCANNER `8081`로 설정합니다. ZAP API는 호스트 `127.0.0.1:8089`에만 공개됩니다. Burp/구독 LLM은 컨테이너에 넣지 않습니다.
-
-### 4. LLM 준비와 사전 점검
-
-Codex 또는 Claude Code 중 하나를 설치하고 터미널에서 한 번 실행해 구독 로그인을 완료합니다. FlowScope는 provider API key를 받지 않으며 Burp를 시작한 환경에서 실행 가능한 로컬 CLI를 사용합니다.
-
-JAR과 listener를 준비한 뒤 핵심 연결을 확인합니다.
-
-```bash
-./scripts/doctor.sh
-```
-
-Windows는 다음을 사용합니다.
-
-```powershell
-.\scripts\doctor.ps1
-```
-
-소스 빌드 도구까지 확인하려면 `./scripts/doctor.sh --build`를 사용합니다. 포트가 열렸다는 결과는 해당 포트의 프로세스가 Burp임을 암호학적으로 증명하지 않으므로, 마지막으로 Burp listener 표와 FlowScope 탭의 포트 분류를 눈으로 확인하십시오.
-
-운영체제별 설치, Windows ACL·Docker Desktop, 포트·CLI 문제 해결은 [한국어 상세 시작 가이드](docs/ko/getting-started.md)에 있습니다. 영어 가이드는 [docs/en/getting-started.md](docs/en/getting-started.md)입니다.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.22.jar` 하나입니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
@@ -153,7 +117,9 @@ Windows는 다음을 사용합니다.
 
 팀 인계용 현재 구현·코드 지도·알려진 결함·다음 작업 순서는 [`docs/ko/HANDOFF.md`](docs/ko/HANDOFF.md), 정확한 베타 검증 범위와 남은 실환경 gate는 [`docs/ko/beta-validation.md`](docs/ko/beta-validation.md), 작업별 변경·이유·검증은 [`docs/ko/development-log.md`](docs/ko/development-log.md), 화면별 설계와 발표 근거는 [`docs/ko/ui-product-rationale.md`](docs/ko/ui-product-rationale.md)에 기록합니다.
 
-## 초기 설정
+## 상세 동작과 정확성 경계
+
+처음 실행하는 사용자는 위 **5분 시작**만 따르면 됩니다. 아래 내용은 세션·수집·판정이 어떤 조건에서 유효한지 확인할 때 사용하는 상세 참조입니다.
 
 HUMAN과 SCANNER용 Burp proxy listener를 만드십시오. Montoya는 확장 프로그램에서 listener를 생성할 수 없습니다. LLM listener는 선택적 호환 fallback이며, 기본 제품 흐름은 통제된 MCP executor를 사용합니다.
 

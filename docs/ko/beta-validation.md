@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.21 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.22 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.22 첫 실행 경로 압축 gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 확인 | 빠른 시작 한 화면에 범위·HUMAN·ZAP·LLM/Judge 설명과 제어가 모두 펼쳐져, 처음 쓰는 사용자가 현재 상태와 다음 행동을 직접 대조해야 했음 |
+| 구현 | `범위 → HUMAN → ZAP → LLM/Judge` 네 단계 탭과 단계별 단일 패널로 재구성. 저장된 실행 상태에서 첫 미완료 단계를 자동 선택하고, 사용자가 다른 단계를 본 뒤에는 `현재 단계로`로 복귀 가능 |
+| 문서 | README 시작 절차를 `처음 한 번만 준비`와 `점검할 때마다`로 분리하고, Docker가 선택 사항이며 ZAP Desktop/Docker 중 하나만 사용한다는 경계를 앞에 배치 |
+| 자동 회귀 | `mvn clean verify`, 223 tests, 실패·오류·skip 0. 단계 마커, 패널 격리, HUMAN 완료 기준, 첫 미완료 단계 선택 계약 포함 |
+| 브라우저 gate | standalone asset을 1280px와 390×844에서 확인. 단계 탭 전환 시 선택한 패널 하나만 표시되고, 390px에서 대화상자와 단계 탭의 수평 overflow가 없음을 DOM 측정 |
+| 배포물 | `target/flowscope-1.2.0-beta.22.jar`, 15,871,087 bytes, 2,172 entries, SHA-256 `721055eb49d196342145615dde93c24162391b07dcfdbb98df46dbd42c691c38`, ZIP·Main-Class·Java 21 manifest 검증 통과 |
+
+standalone gate는 정적 화면의 배치·탭 동작만 검증한다. 실제 Burp 상태에서 scope 저장, HUMAN 완료, ZAP 캠페인, Explorer와 Judge가 차례로 다음 단계에 반영되는 end-to-end 흐름은 별도 수동 gate이며 완료로 기록하지 않는다.
 
 ## 1.2.0-beta.21 ZAP 온보딩·Windows 설치 경로 gate
 

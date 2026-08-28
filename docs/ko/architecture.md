@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.21
+# FlowScope 설계서 v1.2.0-beta.22
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -43,7 +43,7 @@ optional Docker
 └─ ZAP 2.17.0 ── API 127.0.0.1:8089 only  (택1)
 ```
 
-ZAP 배포 방식은 캠페인 엔진과 분리한다. FlowScope는 loopback의 호환 ZAP API/version과 key 성공 여부만 확인하며 API 응답만으로 Desktop/컨테이너를 추측하지 않는다. Web 빠른 시작은 연결 전 캠페인을 비활성화하고 Desktop 설정과 Docker Quick Start를 같은 수준의 선택지로 제공한다. `zap-key.sh`/`zap-key.ps1`은 Desktop 사용자도 owner-only key를 값 출력 없이 준비하게 한다.
+ZAP 배포 방식은 캠페인 엔진과 분리한다. FlowScope는 loopback의 호환 ZAP API/version과 key 성공 여부만 확인하며 API 응답만으로 Desktop/컨테이너를 추측하지 않는다. Web 빠른 시작은 `범위 → HUMAN → ZAP → LLM·Judge` 네 단계 중 첫 미완료 단계 하나만 열고, 사용자가 상단 단계 버튼을 누른 경우에만 다른 제어면으로 이동한다. ZAP 단계는 연결 전 캠페인을 비활성화하고 Desktop 설정과 Docker Quick Start를 같은 수준의 접힌 선택지로 제공한다. `zap-key.sh`/`zap-key.ps1`은 Desktop 사용자도 owner-only key를 값 출력 없이 준비하게 한다.
 
 선택형 `zap-up.sh` 또는 Windows `zap-up.ps1`은 같은 key helper를 사용하고, digest 고정 이미지의 ZAP Network API를 통해 `host.docker.internal:8081` upstream을 설정한 뒤 다시 읽어 검증한다. Linux는 Compose `host-gateway`, Docker Desktop은 공식 `host.docker.internal`을 사용한다. key 값은 container environment가 아니라 Compose file-backed secret으로 read-only mount한다. POSIX는 mode, Windows는 상속 차단·현재 SID 전용 ACL을 helper/doctor가 관리한다. FlowScope는 시스템 속성 key, 환경 key, 지정 key 파일, 기본 key 파일 순으로 읽으며 ZAP API URL 자체는 기존처럼 loopback만 허용한다. 이 편의 계층은 actual scanner capture·rendered crawl·대상 TLS를 완료로 대체하지 않는다(D-086, D-087, D-088).
 

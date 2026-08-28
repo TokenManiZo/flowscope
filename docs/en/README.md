@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.21
+# FlowScope 1.2.0-beta.22
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -33,6 +33,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - Localhost-only authenticated MCP server for Codex and Claude Code subscription clients.
 - System-owned ZAP baseline: Traditional Spider, strict Client Spider with AJAX fallback, passive queue completion, and native alerts. The completion gate reads the raw Burp capture store rather than a delayed analysis snapshot. A completed Client stage with zero rendered captures triggers AJAX; zero captures from both rendered stages is exposed as `COMPLETED_WITH_WARNINGS`. Active Scan remains separate and approval-gated.
 - Deployment-neutral ZAP onboarding: Quick Start checks the loopback API/version/key before enabling a campaign and offers ZAP Desktop or optional Docker without pretending the API can identify its deployment type.
+- A compact four-stage Quick Start that displays only the first incomplete Scope, HUMAN, ZAP, or LLM/Judge panel while keeping every stage directly inspectable.
 - Closed-world LLM execution through an exact-scope FlowScope request tool; direct external traffic is never trusted for decisive verdicts.
 - Server-enforced independent Explorer view, immutable three-lane dataset lock, and final LLM Judge synthesis.
 - Web quick-start buttons that launch a fresh locally authenticated Codex or Claude CLI process for Explorer and a separate persistent Judge session that can be resumed explicitly.
@@ -60,9 +61,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.21.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.22.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.21.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.22.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

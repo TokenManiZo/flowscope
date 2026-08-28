@@ -29,12 +29,14 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. Download `flowscope-1.2.0-beta.21.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
+1. Download `flowscope-1.2.0-beta.22.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
 
 Release users do not need Maven. A custom Java runtime used to launch Burp must support Java 21 class files.
+
+Open **Quick Start** at Web `127.0.0.1:17777`. It shows Scope, HUMAN, ZAP, and LLM/Judge status but opens only the first incomplete panel. Complete the visible panel, use a stage tab to inspect another setting, or select **Current stage** to return to the required step.
 
 ## Choose ZAP Desktop or Docker
 

@@ -1488,6 +1488,44 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - Windows는 Docker wrapper 대신 상세 문서의 PowerShell/수동 ZAP Desktop 절차를 사용해야 하며 자동 wrapper는 아직 제공하지 않는다.
 - 다음 gate는 beta.20 JAR을 Burp Community에 재로드한 뒤 HUMAN raw byte와 SCANNER 실제 capture를 확인하는 것이다.
 
+## 2026-08-28 · 1.2.0-beta.22 · 첫 실행 경로 압축
+
+### 목표와 성공 조건
+
+- 처음 쓰는 사용자가 한 화면의 모든 설명을 해석하지 않고 현재 단계와 다음 행동 하나를 확인한다.
+- 기존 범위·HUMAN·ZAP·LLM/Judge 기능과 안전 경계를 삭제하거나 약화하지 않는다.
+- 넓은 화면과 모바일 폭에서 단계 전환과 레이아웃을 실제 DOM으로 확인한다.
+
+### 개발·수정
+
+- Web 빠른 시작을 `범위 → HUMAN → ZAP → LLM/Judge` 네 단계 내비게이션과 단계별 단일 패널로 바꿨다.
+- 현재 프로젝트 상태로 첫 미완료 단계를 계산하고 자동 선택한다. 사용자가 다른 단계를 점검할 수 있으며 `현재 단계로`로 자동 추천 위치에 돌아간다.
+- README 설치 절차를 `처음 한 번만 준비`와 `점검할 때마다`로 분리하고, ZAP Desktop/Docker 중 하나만 선택한다는 내용을 앞에 배치했다.
+- 버전, 한영 시작 문서, 변경 기록, 설계·결정·UI 근거·제품 계획·인계·검증 문서를 beta.22로 맞췄다.
+
+### 이유
+
+- beta.21은 필요한 제어를 제공했지만 여섯 설명 카드와 세 실행기 제어를 동시에 노출해, 기능 발견성보다 초기 판단 부담이 컸다.
+- 기능을 없애는 단순화는 3-way 제품 목표를 훼손한다. 단계별 progressive disclosure는 같은 기능을 유지하면서 현재 행동만 전면에 놓는다(D-089).
+
+### 영향 파일
+
+- Web UI와 회귀: `src/main/resources/web/index.html`, `FlowScopeWebServerTest`
+- 버전·사용자 문서: `pom.xml`, README, 한영 getting-started/README/changelog
+- 설계 기록: architecture, decisions D-089, product plan, UI rationale, handoff, beta validation, development log
+
+### 검증
+
+- `mvn clean verify`: 223 tests, 실패·오류·skip 0.
+- standalone Web asset에서 1280px 단계 전환과 390×844 반응형 표시를 확인했다. 선택 패널 하나만 표시되고 390px에서 대화상자·단계 탭 수평 overflow가 없었다.
+- 배포물: `target/flowscope-1.2.0-beta.22.jar` 하나, 15,871,087 bytes, 2,172 entries, SHA-256 `721055eb49d196342145615dde93c24162391b07dcfdbb98df46dbd42c691c38`. ZIP 무결성, `Main-Class`, Java 21 manifest를 확인했다.
+
+### 남은 한계·다음 gate
+
+- standalone 화면 검증은 실제 Burp API 상태 전이를 대신하지 않는다.
+- beta.22 JAR을 Burp Community에서 로드한 뒤 scope→HUMAN→ZAP→Explorer→Judge 완료 상태가 첫 미완료 단계 계산에 순서대로 반영되는지 수동 확인해야 한다.
+- 실제 Windows Docker Desktop, ZAP Desktop, HTTPS, USER A/B와 3-way target 실행 gate는 여전히 별도다.
+
 ## 2026-08-28 · 1.2.0-beta.21 · ZAP 배포 중립 온보딩과 Windows 설치 경로
 
 ### 목표와 성공 조건

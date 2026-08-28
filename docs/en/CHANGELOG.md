@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.22 — 2026-08-28
+
+- Compressed Quick Start into four stages: Scope, HUMAN, ZAP, and LLM/Judge.
+- Automatically selects the first incomplete stage from server-backed state and renders only that stage's controls.
+- Preserved direct navigation to completed or advanced settings with a return to the current required stage.
+- Split the README path into one-time setup and the four actions repeated for each assessment.
+- Verified the single-panel stage navigator without horizontal overflow at a 390 px viewport.
+
 ## 1.2.0-beta.21 — 2026-08-28
 
 - Treated ZAP Desktop and Docker as equal deployments behind the same loopback API contract, with pre-run connection/version/key status in Quick Start.

@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.21 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.22 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -16,6 +16,15 @@
 - 자동화 단계 종료 또는 HTTP 상태만으로 점검 충분성 판정
 
 **상태: 목표·비목표·측정 가능한 완료 기준을 README·설계·결정 문서에 동일하게 고정함. 후속 우선순위 작업은 별도 단계다.**
+
+## 0. beta.22 우선순위: 첫 실행 경로 압축
+
+1. 빠른 시작의 여섯 설명과 세 실행기 제어를 네 단계 진행 내비게이션으로 줄인다. → 검증: 기본 노출 panel 1개, 네 단계 직접 이동.
+2. scope·HUMAN exact run·ZAP campaign·LLM completed lane/Judge 상태로 첫 미완료 단계를 선택한다. → 검증: 수집 건수만으로 완료하지 않는 Web 계약 회귀.
+3. README를 처음 한 번 준비와 점검할 때마다 수행할 네 단계로 분리한다. → 검증: JAR/listener/ZAP/CLI 명령과 상세 가이드 링크 정합성.
+4. 데스크톱과 390px 화면에서 단계 라벨·버튼·panel의 가로 잘림이 없는지 확인한다.
+
+**현재 상태:** beta.22 단계형 Web UI와 한영 사용자 문서를 구현했다. 자동 회귀·standalone 반응형 검증 범위까지만 완료로 기록하며, 실제 Burp의 scope/HUMAN/ZAP/LLM 상태 전환은 수동 gate다.
 
 ## 0. beta.21 우선순위: ZAP 배포 중립 온보딩·Windows 재현성과 기존 HUMAN 실환경 gate
 
@@ -205,7 +214,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.21 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결과 macOS/Linux/Windows용 재현 가능한 선택형 Docker 환경 구현 및 223개 자동 회귀 완료, 실제 beta.21 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.22 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션을 구현하고 223개 자동 회귀를 완료했다. 실제 beta.22 Burp/블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

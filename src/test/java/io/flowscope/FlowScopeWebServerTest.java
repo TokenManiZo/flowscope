@@ -69,6 +69,12 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
         assertTrue(index.body().contains("첫 점검을 시작하세요"));
         assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge"));
+        assertTrue(index.body().contains("완료되지 않은 단계 하나만 엽니다"));
+        assertTrue(index.body().contains("data-setup-stage=\"scope\""));
+        assertTrue(index.body().contains("data-setup-pane=\"scanner\""));
+        assertTrue(index.body().contains("function selectSetupStage(stage,pinned=true)"));
+        assertTrue(index.body().contains("const autoStage=!scopeReady?'scope':!humanReady?'human':!scannerReady?'scanner':'llm'"));
+        assertTrue(index.body().contains("pane.hidden=pane.dataset.setupPane!==stage"));
         assertTrue(index.body().contains("LLM Explorer 시작"));
         assertTrue(index.body().contains("Judge 시작"));
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
@@ -84,7 +90,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.21 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.22 · 3소스"));
         assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
         assertTrue(index.body().contains("<div class=\"graphcanvas\"><div id=\"cy\"></div></div>"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
@@ -109,7 +115,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("관측 신원과 재사용 가능한 등록 계정 세션은 별도 상태"));
         assertTrue(index.body().contains("ACTIVE 등록 계정 없음"));
         assertTrue(index.body().contains("let HUMAN_RUN={active:false,completed:false,runId:''}"));
-        assertTrue(index.body().contains("HUMAN_RUN.active||HUMAN_RUN.completed"));
+        assertTrue(index.body().contains("const humanReady=HUMAN_RUN.completed"));
         assertTrue(index.body().contains("syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();"));
         assertTrue(index.body().contains("setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();},1000)"));
         assertFalse(index.body().contains("counts.human+'건 완료'"));
