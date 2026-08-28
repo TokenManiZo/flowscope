@@ -75,9 +75,12 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("scannerlane"));
         assertTrue(index.body().contains("Traditional "));
         assertTrue(index.body().contains("Rendered "));
+        assertTrue(index.body().contains("scannerstate.completed_with_warnings"));
+        assertTrue(index.body().contains("SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS'"));
+        assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.14 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.15 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertTrue(index.body().contains("등록 계정과 로그인 상태"));

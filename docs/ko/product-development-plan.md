@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.14 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.15 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -17,6 +17,15 @@
 
 **상태: 목표·비목표·측정 가능한 완료 기준을 README·설계·결정 문서에 동일하게 고정함. 후속 우선순위 작업은 별도 단계다.**
 
+## 0. beta.15 우선순위: rendered scanner 거짓 정상 완료 차단
+
+1. Client Spider status가 완료여도 해당 신원·run의 실제 Client capture가 0이면 AJAX fallback을 실행한다. → 검증: Client status 100/Client capture 0 fixture에서 AJAX 호출과 rendered capture 1.
+2. AJAX까지 0이면 Traditional Evidence와 Alert는 보존하되 `COMPLETED_WITH_WARNINGS`로 깨끗한 browser-rendered 기준선과 구분한다. → 검증: raw Traditional 1/Client 0/AJAX 0 fixture와 Web warning 상태 계약.
+3. 전체 capture 0 failure, exact scope, fresh session, account credential replacement, Active Scan 별도 승인은 바꾸지 않는다.
+4. beta.15 JAR을 Burp Community에 재로드한 뒤 실제 crAPI에서 Client→AJAX 전환·stage count·경고를 확인한다. 이후에만 LLM Explorer 실제 세션 검증으로 넘어간다.
+
+**현재 상태:** 코드·207개 자동 회귀·배포 JAR 무결성 완료. 실제 beta.15 재로드 gate는 남아 있다.
+
 ## 0. beta.14 우선순위: ZAP 완료 판정과 단계 관측 정합성
 
 1. ZAP 완료 gate는 비동기 분석 snapshot이 아니라 응답 callback 직후 raw capture를 센다. → 검증: snapshot 0건/raw counter 1건 fixture가 `COMPLETED`.
@@ -24,7 +33,7 @@
 3. 레인 진행 상태가 `PENDING → TRADITIONAL → CLIENT/AJAX → PASSIVE → ALERTS_READY/FAILED`로 보인다. → 검증: Web 카드 계약과 기존 캠페인 failure/completion 회귀.
 4. zero-capture, exact scope, fresh session, account credential replacement, Active Scan 별도 승인은 그대로 유지한다.
 
-**현재 상태:** 구현, 206개 자동 회귀 완료. 실제 ZAP 2.17 + Burp Community beta.14에서 Client Spider가 만든 rendered capture, USER A/B 세션 주입, late-response 경계를 확인하는 수동 gate는 남아 있다.
+**현재 상태:** 구현, 206개 자동 회귀 완료. 실제 ZAP 2.17 + Burp Community beta.14에서 raw Traditional count는 확인했지만 Client 내부 browser 실패가 status 100으로 숨고 rendered capture가 0인 결함을 발견해 beta.15가 완료 gate를 보강했다. USER A/B 세션 주입과 late-response 경계는 남아 있다.
 
 ## 0. beta.13 우선순위: HUMAN 실행 정합성과 범용 구조 프로파일링
 
@@ -166,7 +175,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.14 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion gate 구현과 자동/standalone 회귀 완료, 실제 beta.14 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.15 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate 구현과 207개 자동 회귀 완료, 실제 beta.15 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

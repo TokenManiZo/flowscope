@@ -1273,6 +1273,43 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 이번 변경은 완료 판정 정확도 수정이며 endpoint 발견률·Alert recall·취약점 성능 향상을 증명하지 않는다.
 - `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
 
+## 2026-08-28 · 1.2.0-beta.15 · rendered crawler 거짓 정상 완료 차단
+
+### 목표와 성공 조건
+- Client Spider가 API status `100/COMPLETED`를 반환해도 실제 Client 단계 capture가 0이면 browser-rendered 기준선을 정상 완료로 표시하지 않는다.
+- AJAX fallback을 자동 실행하고, AJAX도 0이면 기존 Traditional Evidence·Alert를 보존하면서 경고 완료를 명시한다.
+
+### 개발·수정
+- 실제 beta.14 crAPI 실행에서 ZAP 전체 8건·Traditional 8건·Rendered 0건·Alert 22건의 깨끗한 `COMPLETED` 오표시를 확인했다.
+- ZAP task 로그에서 Client Spider가 Firefox binary 부재로 시작 실패했지만 status API는 100을 반환한 원인을 확인했다.
+- Client 종료 후 같은 run의 raw `ZAP_CLIENT_SPIDER` count 증가가 0이면 AJAX Spider로 전환한다.
+- AJAX도 raw count 증가가 0이면 lane·campaign status를 `COMPLETED_WITH_WARNINGS`로 내리고 원인을 Web/MCP에 표시한다. 전체 capture 0 failure는 그대로다.
+- 경고 완료도 dataset lock 뒤 `flowscope_zap_alerts`가 baseline의 마스킹 Alert snapshot을 반환하도록 정상 완료와 같은 lock 계약을 적용했다.
+- Web에 warning status·lane 시각 상태를 추가하고 beta.15 버전·문서를 동기화했다.
+
+### 이유
+- ZAP API status만으로 browser process와 실제 네트워크 관측 성공을 증명할 수 없다는 결함이 실환경에서 재현됐다.
+- OS별 ZAP 로그·Firefox 경로를 제품이 추측하거나 강제하는 대신 FlowScope가 직접 관측한 stage capture를 실행 결과 gate로 사용한다.
+- Traditional Evidence까지 폐기하면 사실로 수집된 결과를 잃으므로 저하 완료와 완전 실패를 분리한다.
+
+### 영향 파일
+- scanner workflow·status: `McpServer`
+- Web warning projection: `src/main/resources/web/index.html`
+- 회귀: `McpServerTest`, `FlowScopeWebServerTest`
+- 버전·문서: `pom.xml`, README·CHANGELOG, 설계·결정·계획·화면 근거·검증 기록, 이 로그
+
+### 검증
+- 구현 전 Client status 100/Client capture 0 fixture가 AJAX 미호출·`COMPLETED`로 실패하는 것을 확인했다.
+- 구현 후 `mvn -Dtest=McpServerTest,FlowScopeWebServerTest test`: 통과.
+- 최종 `mvn clean verify`: 207 tests, 실패·오류·skip 0.
+- 배포물: `target/flowscope-1.2.0-beta.15.jar` 하나, 15,839,086 bytes, 2,161 entries, SHA-256 `40c9d12fc1a550abc77bac9de57feb588fba5587eeb37aef5d6e6ed4d36467ff`. ZIP 무결성과 공개 JAR 단일성을 확인했다.
+- 실제 beta.15 Burp/ZAP 재검증은 진행 전이다.
+
+### 남은 한계·다음 gate
+- beta.15 JAR 재로드 뒤 실제 crAPI에서 Client→AJAX 전환과 `COMPLETED_WITH_WARNINGS` 또는 실제 rendered capture를 확인해야 한다.
+- USER A/B 복수 세션 주입·late response, ZAP browser provider 설정의 교차 플랫폼 동작은 아직 수동 gate다.
+- `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

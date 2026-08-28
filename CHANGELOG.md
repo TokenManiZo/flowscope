@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.15 — 2026-08-28
+
+- ZAP Client Spider가 API상 완료됐더라도 실제 Client rendered capture가 0이면 성공으로 간주하지 않고 AJAX Spider를 자동 실행
+- Client/AJAX가 모두 rendered traffic 0건이면 Traditional 결과와 Alert는 보존하되 캠페인·신원 lane을 `COMPLETED_WITH_WARNINGS`로 표시
+- 경고 완료 캠페인도 dataset lock 뒤에는 live ZAP 상태가 아니라 실행 시점의 마스킹 Alert snapshot만 Judge에 제공
+- 실제 crAPI beta.14 점검에서 Client Spider의 Firefox binary 부재와 거짓 정상 완료를 재현하고, 동일 조건 회귀와 Web 경고 상태 계약 추가
+- 전체 자동 회귀 207개 통과, 공개 beta.15 fat JAR 단일성·ZIP 무결성 확인
+
 ## 1.2.0-beta.14 — 2026-08-28
 
 - ZAP 완료 gate가 최대 400ms 늦을 수 있는 분석 snapshot 대신 응답 시점 raw Burp capture를 직접 세도록 수정해 정상 scanner lane의 거짓 `0건 실패` 제거

@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.14, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.15, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -140,10 +140,12 @@ LLM이 그때그때 ZAP 기능을 선택하면 같은 입력에서도 결과가 
 ```text
 Traditional Spider
 → strict-scope Client Spider
-→ Client 실패 시 AJAX Spider
+→ Client 실패 또는 실제 rendered capture 0건이면 AJAX Spider
 → passive queue가 0이 될 때까지 대기
 → native alerts 수집
 ```
+
+ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 트래픽을 만들었다는 충분조건이 아니다. 실제 crAPI 실행에서 Firefox binary 부재로 Client task가 내부 실패했지만 status는 완료가 됐고 FlowScope rendered count는 0이었다. 따라서 FlowScope는 raw Client capture 증가가 없으면 AJAX를 실행하고, AJAX도 0이면 수집된 Traditional Evidence와 Alert를 버리지 않으면서 `COMPLETED_WITH_WARNINGS`와 원인을 표시한다. 이 상태는 깨끗한 rendered-browser 기준선 완료가 아니다.
 
 Active Scan은 상태를 바꿀 수 있고 트래픽이 크므로 기본 baseline에서 분리하며 exact scope와 별도 Burp 승인을 요구한다. “ZAP 기능을 적게 쓴다”가 아니라 안전한 자동 기준선과 고위험 능동 스캔의 승인 경계를 분리한 것이다.
 
@@ -209,7 +211,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.14 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.14.jar` 하나다. beta.10의 실제 계정 projection은 확인됐지만 HUMAN run/provenance·semantic object와 raw ZAP completion gate가 바뀐 beta.14 JAR 재로드는 별도 수동 gate다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.15 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.15.jar` 하나다. beta.14 실제 HUMAN·anonymous ZAP 실행으로 raw stage count는 확인했지만 Client zero-capture fallback이 바뀐 beta.15 JAR 재로드는 별도 수동 gate다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
 5. **구독 CLI 자동 실행 — 코드·UI 완료, Burp 실환경 gate:** 빠른 시작이 Burp 시작 환경의 Codex/Claude 실행 파일을 찾아 새 Explorer와 별도 Judge 프로세스를 만들고, provider session ID로 Judge 후속 질문을 재개한다. 수동 `agent-workspace`는 폴백으로 유지한다. 로컬 CLI help와 자동 회귀를 통과했고 Codex 무대상 모델 smoke는 성공했지만, Claude smoke는 구독 주간 한도 429로 실패했다. 실제 Burp에서 사용자의 MCP·대상 요청·run 종료·Judge lock·후속 resume가 끝까지 성공하는지는 beta.7 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
 

@@ -1,6 +1,21 @@
-# FlowScope 1.2.0-beta.14 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.15 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.15 rendered crawler 완료 gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 재현 | 실제 beta.14 crAPI anonymous ZAP 실행에서 전체 8건·Traditional 8건·Rendered 0건·native Alert 22건인데 UI가 `COMPLETED`로 표시됨 |
+| 원인 확인 | ZAP 2.17 task 로그에 Client Spider가 Firefox browser binary를 찾지 못해 시작 실패한 사실이 남았지만 Client status API는 `100`을 반환함 |
+| 실패 우선 회귀 | Client status 100과 Client capture 0을 만든 fixture에서 기존 구현이 AJAX를 호출하지 않고 `COMPLETED`가 되는 것을 재현함 |
+| 수정 집중 회귀 | 동일 fixture에서 AJAX 호출·rendered capture 1·`COMPLETED_WITH_WARNINGS`, Traditional 1/Client 0/AJAX 0 fixture의 Evidence 보존·경고 완료, Web 경고 상태 계약 통과 |
+| 전체 자동 회귀 | Java `--release 21`로 `mvn clean verify`, 207 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.15.jar`, 15,839,086 bytes, SHA-256 `40c9d12fc1a550abc77bac9de57feb588fba5587eeb37aef5d6e6ed4d36467ff` |
+| JAR 무결성 | ZIP 무결성 통과, 2,161 entries, 공개 `target/*.jar` 1개 |
+| 실제 beta.15 | JAR 재로드 뒤 같은 crAPI 대상의 Client→AJAX 전환·Rendered count·경고 상태를 다시 확인해야 함 |
+
+`COMPLETED_WITH_WARNINGS`는 scanner exploration 데이터가 존재해 비교에는 사용할 수 있지만 browser-rendered discovery가 정상 완료됐다는 뜻은 아니다. Firefox 부재는 이번 로컬 환경의 확인된 원인이고, 일반 제품 판정은 OS·브라우저 이름을 추측하지 않고 단계별 raw capture 0만 사실로 표시한다.
 
 ## 1.2.0-beta.14 자동·standalone 사전검증
 
@@ -15,7 +30,7 @@
 | 배포물 | `target/flowscope-1.2.0-beta.14.jar`, 15,838,496 bytes, SHA-256 `aad50e262a5ed70976da3dae21f070fd57e3354e52cc1681c00f482f814bb0aa` |
 | JAR 무결성 | ZIP 무결성 통과, 2,161 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개 |
 
-이 검증은 FlowScope 내부의 scanner 완료 판정이 분석 debounce에 의존하지 않고 단계별 수량을 보존하는지 확인한 것이다. ZAP 2.17과 Burp Community를 실제 연결한 beta.14 Client Spider/AJAX fallback, USER A/B 세션 주입, 늦은 응답 경계는 아직 실행하지 않았다. 따라서 endpoint 발견률, Alert 완전성, 취약점 탐지 성능 개선으로 해석하지 않는다.
+이 자동 검증 뒤 beta.14 JAR을 실제 Burp Community와 ZAP 2.17에 연결했다. crAPI에서 등록 계정 `test1`의 로그인 캡처가 `ACTIVE`가 됐고 HUMAN pass로 정상 UI route를 이동한 결과 HUMAN 17건이 exact exploration run에 귀속됐다. anonymous ZAP은 전체 8건·Traditional 8건·Rendered 0건·native Alert 22건으로 끝났다. ZAP Client task는 Firefox binary 부재로 실패했지만 status API가 100을 반환해 beta.14가 이를 깨끗한 완료로 오표시했고, 이 사실이 beta.15 수정의 재현 근거가 됐다. USER A/B 복수 세션 주입과 late-response 경계는 아직 실행하지 않았으며 endpoint 발견률, Alert 완전성, 취약점 탐지 성능 개선으로 해석하지 않는다.
 
 ## 1.2.0-beta.13 자동·standalone 사전검증
 

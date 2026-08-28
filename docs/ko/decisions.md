@@ -760,3 +760,11 @@
 - **근거:** FlowScope의 실제 수집 코드에서 raw append와 400ms scheduled rebuild의 시간차를 확인했고 stale snapshot/raw capture fixture로 회귀를 고정했다. ZAP 공식 문서는 Client Spider status 100을 crawl 완료로, passive scan은 별도 background queue로 설명하므로 crawl 종료·passive drain·FlowScope capture 존재를 서로 다른 gate로 유지한다.
 - **한계:** raw count는 FlowScope가 응답을 관측했다는 증거이지 endpoint 충분성이나 취약점 발견 성능의 증거가 아니다. 실제 ZAP/Burp 네트워크에서 아주 늦은 응답, Client Spider browser add-on, USER A/B 주입은 beta.14 JAR 수동 gate로 남는다.
 - **상태:** beta.14 구현·206개 자동 회귀 완료, 실제 Burp/ZAP 복수 신원 gate 대기.
+
+## D-081 · rendered crawler 완료 gate = ZAP 상태가 아니라 실제 단계 capture
+
+- **문제:** 실제 ZAP 2.17 + crAPI 실행에서 Client Spider의 Firefox browser binary가 없어 task가 내부 실패했지만 Client API status는 `100`을 반환했다. beta.14는 API 호출 예외만 AJAX fallback 조건으로 사용해 `rendered_captures=0`인 lane도 전체 Traditional capture가 있으면 깨끗한 `COMPLETED`로 표시했다.
+- **결정:** Client status 종료 뒤 같은 run·lane의 raw `ZAP_CLIENT_SPIDER` capture 증가가 0이면 Client 실행을 rendered discovery 불가로 간주하고 AJAX Spider를 자동 실행한다. AJAX도 raw capture 증가가 0이면 Traditional Evidence와 native Alert는 보존하고 scanner exploration 완료 표식도 유지하되, lane과 캠페인 status를 `COMPLETED_WITH_WARNINGS`로 표시하며 두 단계의 zero-capture 원인을 노출한다. 전체 scanner capture가 0인 기존 failure gate는 유지한다. 경고 완료도 dataset lock 뒤에는 실행 시점의 마스킹 Alert snapshot만 제공해 Judge 입력을 고정한다.
+- **기각:** ZAP status `100`만 믿는 방식은 재현된 거짓 정상 완료를 숨겨 기각했다. ZAP 로그 문자열이나 OS별 Firefox 경로를 FlowScope가 파싱·강제하는 방식은 add-on·브라우저 provider·운영체제 결합도가 높아 기각했다. rendered 0일 때 Traditional 결과까지 실패·폐기하는 방식은 실제 수집 Evidence를 잃어 기각했다.
+- **한계:** raw capture 0은 browser task가 유효한 rendered 요청을 만들지 못했다는 관측이지 정확한 원인 진단은 아니다. 동일 URL 캐시, 대상 동작, ZAP provider 설정 등도 원인이 될 수 있으므로 UI는 Firefox 부재를 일반화하지 않고 실제 로컬 검증 기록에서만 그 원인을 적는다. beta.15 JAR의 실제 Client→AJAX 전환과 rendered capture는 재로드 후 수동 gate다.
+- **상태:** beta.15 코드·207개 자동 회귀·JAR 무결성 완료, 실제 JAR 재검증 대기.

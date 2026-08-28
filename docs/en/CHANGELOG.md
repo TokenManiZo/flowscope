@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.15 — 2026-08-28
+
+- Treat a Client Spider completion with zero observed rendered captures as degraded execution and automatically run the AJAX Spider fallback.
+- Preserve Traditional Spider evidence and native alerts when both rendered stages produce no traffic, while exposing `COMPLETED_WITH_WARNINGS` at campaign and identity-lane level.
+- Keep warning-completed campaigns on the same frozen, masked post-lock alert snapshot contract instead of reading live ZAP alerts.
+- Add a regression for the failure reproduced against local crAPI, where the Client Spider reported completion after its browser provider failed to start.
+- Pass all 207 automated regressions and verify the single public beta.15 fat JAR as a valid ZIP archive.
+
 ## 1.2.0-beta.14 — 2026-08-28
 
 - Changed the ZAP completion gate to count response-time raw Burp captures rather than the analysis snapshot that can lag by up to 400 ms, eliminating false zero-capture failures.

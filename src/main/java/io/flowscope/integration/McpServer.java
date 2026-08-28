@@ -1001,7 +1001,11 @@ public final class McpServer implements AutoCloseable {
             zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
                     captured, collectedAlerts.size(), "scanner run lease disappeared before completion");
         } else {
-            zapBaseline = new ZapBaselineRun(runId, target, "COMPLETED", "ALERTS_READY", "", "",
+            String warning = zapBaselineLanes.stream().map(ZapLaneResult::warning)
+                    .filter(value -> value != null && !value.isBlank()).distinct()
+                    .collect(java.util.stream.Collectors.joining("; "));
+            String status = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
+            zapBaseline = new ZapBaselineRun(runId, target, status, "ALERTS_READY", "", warning,
                     captured, collectedAlerts.size(), "");
         }
     }
@@ -1029,6 +1033,8 @@ public final class McpServer implements AutoCloseable {
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "CLIENT_SPIDER", traditionalCaptured, traditionalCaptured, 0, 0, "", ""));
+            long clientBefore = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER);
+            RuntimeException clientFailure = null;
             try {
                 JsonNode client = parseZap(state.zap().clientSpider(target));
                 String clientId = client.path("scan").asText();
@@ -1036,16 +1042,26 @@ public final class McpServer implements AutoCloseable {
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · CLIENT_SPIDER", clientId, warning, "");
                 waitForZap(() -> state.zap().clientSpiderStatus(clientId), 20 * 60_000L, "Client Spider");
             } catch (RuntimeException clientError) {
-                warning = "Client Spider unavailable; AJAX Spider fallback used: " + clientError.getMessage();
+                clientFailure = clientError;
+            }
+            long clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
+            if (clientFailure != null || clientCaptured == 0) {
+                warning = clientFailure == null
+                        ? "Client Spider completed without captured rendered traffic; AJAX Spider fallback used"
+                        : "Client Spider unavailable; AJAX Spider fallback used: " + clientFailure.getMessage();
                 state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER, lane.accountId());
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                         "AJAX_SPIDER_FALLBACK", traditionalCaptured, traditionalCaptured, 0, 0, warning, ""));
+                long ajaxBefore = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
                 JsonNode ajax = parseZap(state.zap().ajaxSpider(target));
                 if (!"OK".equalsIgnoreCase(ajax.path("Result").asText())) {
                     throw new IllegalStateException("ZAP AJAX Spider fallback did not start");
                 }
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SPIDER_FALLBACK", "", warning, "");
                 waitForZap(() -> state.zap().ajaxSpiderStatus(), 20 * 60_000L, "AJAX Spider");
+                if (capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER) - ajaxBefore == 0) {
+                    warning += "; AJAX Spider also completed without captured rendered traffic";
+                }
             }
 
             long renderedCaptured = capturedForRenderedStages(runId) - renderedBefore;
@@ -1067,7 +1083,8 @@ public final class McpServer implements AutoCloseable {
                     collectedAlerts.add(copy);
                 }
             }
-            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "COMPLETED",
+            String laneStatus = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
+            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), laneStatus,
                     "ALERTS_READY", captured, traditionalCaptured, renderedCaptured,
                     alertCount, warning, ""));
         } catch (RuntimeException error) {
@@ -1197,7 +1214,8 @@ public final class McpServer implements AutoCloseable {
         int count = Math.max(1, Math.min(500, args.path("count").asInt(100)));
         ZapBaselineRun baseline = zapBaseline;
         ArrayNode stored = zapBaselineAlerts;
-        if (baseline != null && "COMPLETED".equals(baseline.status()) && target.equals(baseline.target())
+        if (baseline != null && ("COMPLETED".equals(baseline.status())
+                || "COMPLETED_WITH_WARNINGS".equals(baseline.status())) && target.equals(baseline.target())
                 && stored != null) {
             ObjectNode out = json.createObjectNode();
             ArrayNode page = out.putArray("alerts");
