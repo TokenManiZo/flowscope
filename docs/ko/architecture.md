@@ -6,11 +6,13 @@
 
 ## 1. 제품 목표와 신뢰 경계
 
+- 정본 목표는 “허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러내는 것”이다.
 - 플로우 그래프가 중심이다. 요청 목록을 `identity → resource → operation`으로 재구성한다.
 - 비교 축 `source={HUMAN,SCANNER,LLM}`와 판정 축 `identity/role/owner`를 섞지 않는다(D-001).
 - LLM은 독립적인 세 번째 트래픽 소스이자 최종 Judge다. Explorer는 서버가 HUMAN/SCANNER 상태를 가린 상태에서 동작하고, Judge는 세 레인을 잠근 뒤에만 종합한다. 일반 assessment는 후보일 뿐이며, 최종 verdict는 별도 VALIDATION run의 통제 Evidence 묶음을 서버가 검증할 때만 허용한다(D-049/D-053/D-054).
 - 블랙박스 전체 분모는 알 수 없으므로 커버리지 퍼센트를 만들지 않는다(D-002).
 - 모든 액티브 도구는 명시적 exact scope 안에서만 동작한다. ZAP Active Scan은 Burp에서 다시 승인한다.
+- 모든 endpoint 발견, 오탐·미탐 0, LLM 서술만으로 최종 확정은 보장하지 않는다. 완료 여부는 공개 fixture와 정답 격리 블라인드 benchmark에서 endpoint·객체·분류·finding 측정값, `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고 모든 후보·판정을 원본/재현/정상 대조 Evidence로 역추적할 수 있는지로 판단한다.
 
 ## 2. 단일 확장 아키텍처
 

@@ -2,6 +2,12 @@
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
+## 제품 목표와 완료 판단
+
+> 허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러낸다.
+
+FlowScope는 블랙박스 대상의 모든 endpoint·객체·상태를 발견하거나 오탐·미탐을 0으로 만든다고 보장하지 않습니다. LLM의 설명만으로 취약점을 확정하지도 않습니다. 제품의 완성도는 공개 fixture와 정답을 격리한 블라인드 benchmark에서 endpoint·객체·분류·finding의 측정값, 사람의 `REVIEW` 작업량, false positive·false negative·unresolved 결과를 숨기지 않고 공개하는 방식으로 판단합니다. 모든 후보와 최종 verdict는 원 Request/Response Evidence 및 재현·정상 대조 Evidence로 역추적할 수 있어야 합니다.
+
 ```text
 신원 ──접근──▶ 객체 ──호출──▶ 작업
 USER B        orders:101      GET /api/orders/{id}

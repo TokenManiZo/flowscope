@@ -4,6 +4,12 @@ This is the English user guide. The repository root [README](../../README.md) is
 
 FlowScope is a Burp Suite Community-compatible extension that aligns real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into one identity-aware authorization graph and coverage matrix. It highlights uncrossed object combinations inside the observed set and evidence-grounded BOLA/IDOR and BFLA candidates without treating an LLM guess as a confirmed vulnerability. Exact-scope routes referenced by stored responses or present as response-less Burp Site Map items are shown as neutral candidates, separate from observed coverage.
 
+## Product objective and completion criteria
+
+> Within an authorized exact scope, structure as much of the observable authorization attack surface as possible and use reproducible Evidence to expose missed paths and authorization candidates across identities, operations, objects, and state flows.
+
+FlowScope does not promise discovery of every endpoint, object, or state in a black-box target, zero false positives or false negatives, or confirmation from LLM prose alone. Product maturity is judged on published fixtures and answer-isolated blind benchmarks that disclose endpoint, object, classification, and finding measurements together with human `REVIEW` workload, false positives, false negatives, and unresolved cases. Every candidate and final verdict must remain traceable to original Request/Response Evidence and to reproduction and authorized-control Evidence.
+
 ```
 identity ──access──▶ resource ──calls──▶ operation
  user-b              orders:101          GET /api/orders/{id}
