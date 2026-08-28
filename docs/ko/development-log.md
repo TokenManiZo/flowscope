@@ -1307,6 +1307,40 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 
 ### 남은 한계·다음 gate
 - beta.15 JAR 재로드 뒤 실제 crAPI에서 Client→AJAX 전환과 `COMPLETED_WITH_WARNINGS` 또는 실제 rendered capture를 확인해야 한다.
+
+## 2026-08-28 · 1.2.0-beta.16 · HUMAN 요청 시점 문맥과 계정 표현 정합성
+
+### 왜 수정했는가
+
+- Proxy는 요청 시점 run/account를 보존했지만 Repeater·Intruder·Target 응답은 응답 시점 context를 읽어 HUMAN pass 경계의 늦은 응답을 오귀속할 수 있었다.
+- 초기화·샘플 교체·프로젝트 열기 전에 전송된 요청의 응답이 이후 도착하면 교체된 데이터셋에 다시 추가될 수 있었다.
+- 권한 카드가 하나의 등록 계정에 연결된 Cookie·Authorization·subject fingerprint 수를 `세션 N개`로 표시해, 내부 인증 단서를 서로 다른 로그인 세션처럼 보이게 했다.
+
+### 무엇을 변경했는가
+
+- `InFlightRequestTracker`를 추가해 Proxy와 비-Proxy Burp 도구의 `messageId`별 요청 시점 context·로그인 캡처 account·dataset epoch를 bounded metadata로 보존했다.
+- Repeater·Intruder·Target 요청도 요청 콜백에서 context를 기록하고 응답 콜백에서 동일 ID로 소비한다. 문맥이 없거나 epoch가 바뀐 응답은 현재 pass로 추측하지 않고 제외한다.
+- 초기화, 샘플 교체, 프로젝트 열기에서 records lock 안의 dataset epoch를 증가시키고 저장 직전에 다시 확인해 reset 뒤 늦은 응답 재등장을 차단했다.
+- 정상 수집된 비-Proxy HUMAN 응답을 `SessionBroker`에 전달해 Repeater 등에서 발생한 Set-Cookie 회전을 동일 계정의 메모리 세션에 반영했다.
+- 권한 정책 카드의 보조 문구를 `등록 계정/비로그인/미확정 신원/관측 신원`으로 바꾸고, 인증 단서 개수는 계정 화면의 기술 정보에만 유지했다.
+
+### 변경 파일
+
+- `src/main/java/io/flowscope/burp/InFlightRequestTracker.java`
+- `src/main/java/io/flowscope/burp/FlowScopeExtension.java`
+- `src/main/resources/web/index.html`
+- `src/test/java/io/flowscope/burp/InFlightRequestTrackerTest.java`
+- `src/test/java/io/flowscope/FlowScopeWebServerTest.java`
+- 버전·사용법·결정·검증 문서와 배포 JAR
+
+### 검증
+
+- 실패 테스트를 먼저 추가해 구현 전 compile failure와 Web 계약 failure를 확인했다.
+- Montoya API 2026.7 로컬 공식 인터페이스에서 request/response 양쪽의 `messageId()` 제공을 확인했다.
+- 최종 `mvn clean verify`: 211 tests, 실패·오류·skip 0. 동시 callback 80개에서도 tracker가 metadata 상한 8개만 수락하는 회귀를 포함한다.
+- 배포물: `target/flowscope-1.2.0-beta.16.jar` 하나, 15,842,551 bytes, 2,162 entries, SHA-256 `979bee7198a09d56e44dc5bd0c07125e6c9117762529097e1a2cf381e5adb35f`. ZIP 무결성, 확장 진입점, 새 tracker class와 공개 JAR 단일성을 확인했다.
+- 새 JAR standalone 합성 샘플에서 beta.16 tag, 1280×720 수평 overflow 0, role의 `등록 계정` 표시, 계정별 접힌 인증 단서, source 필터 해제에 따른 관측 API 4→3 재구축을 확인했다. 대상 네트워크 요청은 만들지 않았다.
+- 실제 열린 Web 탭은 beta.9였으므로 beta.16 UI/late-response를 검증한 것으로 기록하지 않는다. 새 JAR 재로드 뒤 실제 Burp Browser·Repeater·초기화·SQLite 재열기 gate가 남아 있다.
 - USER A/B 복수 세션 주입·late response, ZAP browser provider 설정의 교차 플랫폼 동작은 아직 수동 gate다.
 - `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
 

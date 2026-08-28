@@ -201,7 +201,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.15 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.16 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -476,6 +476,12 @@ function displayIdentity(idn){
   if(MODEL&&MODEL.roles[idn]==='Admin')return 'ADMIN';
   const pending=String(idn||'').match(/^unassigned-(\d+)$/i);if(pending)return 'UNASSIGNED '+pending[1];
   const match=String(idn||'').match(/^user-([a-z]+)$/i); return match?'USER '+match[1].toUpperCase():String(idn||'UNKNOWN');
+}
+function identityKindLabel(idn){
+  if(accountById(idn))return '등록 계정';
+  if(['anonymous','anon'].includes(String(idn||'').toLowerCase()))return '비로그인';
+  if(String(idn||'').startsWith('unresolved-'))return '미확정 신원';
+  return '관측 신원';
 }
 function userSequenceLabel(index){let n=index,out='';do{out=String.fromCharCode(65+n%26)+out;n=Math.floor(n/26)-1;}while(n>=0);return 'USER '+out;}
 
@@ -993,8 +999,8 @@ function renderRoles(){
   const el=document.getElementById('roleList'); if(!el)return;
   if(!MODEL||!MODEL.identities.length){ el.innerHTML='<div style="color:var(--faint); font-size:11px">데이터 없음</div>'; return; }
   const requirementCount=Object.values(MODEL.requiredRoles||{}).filter(role=>role&&role!=='Unknown').length;
-  el.innerHTML='<div class="policystate'+(requirementCount?'':' inactive')+'">'+(requirementCount?'API 요구 권한 '+requirementCount+'개 · BFLA 비교 활성':'API 요구 권한 0개 · BFLA 비교 비활성')+'</div>'+MODEL.identities.map(idn=>{const sessions=new Set(EVENTS.filter(e=>e.idn===idn&&e.fp&&e.fp!=='anonymous').map(e=>e.fp)).size;
-    return '<div class="rolerow"><span>'+esc(displayIdentity(idn))+'<small style="display:block;color:var(--faint);font-size:8.5px">세션 '+sessions+'개</small></span><span class="rolechip'+(MODEL.roles[idn]==='Admin'?' admin':MODEL.roles[idn]==='Unknown'?' unknown':'')+'">'+esc(MODEL.roles[idn])+'</span></div>';}).join('');
+  el.innerHTML='<div class="policystate'+(requirementCount?'':' inactive')+'">'+(requirementCount?'API 요구 권한 '+requirementCount+'개 · BFLA 비교 활성':'API 요구 권한 0개 · BFLA 비교 비활성')+'</div>'+MODEL.identities.map(idn=>
+    '<div class="rolerow"><span>'+esc(displayIdentity(idn))+'<small style="display:block;color:var(--faint);font-size:8.5px">'+esc(identityKindLabel(idn))+'</small></span><span class="rolechip'+(MODEL.roles[idn]==='Admin'?' admin':MODEL.roles[idn]==='Unknown'?' unknown':'')+'">'+esc(MODEL.roles[idn])+'</span></div>').join('');
 }
 async function mergeIdentities(){
   const from=document.getElementById('mergeFrom').value,into=document.getElementById('mergeInto').value;if(!from||!into||from===into)return;

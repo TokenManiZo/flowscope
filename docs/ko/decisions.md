@@ -768,3 +768,13 @@
 - **기각:** ZAP status `100`만 믿는 방식은 재현된 거짓 정상 완료를 숨겨 기각했다. ZAP 로그 문자열이나 OS별 Firefox 경로를 FlowScope가 파싱·강제하는 방식은 add-on·브라우저 provider·운영체제 결합도가 높아 기각했다. rendered 0일 때 Traditional 결과까지 실패·폐기하는 방식은 실제 수집 Evidence를 잃어 기각했다.
 - **한계:** raw capture 0은 browser task가 유효한 rendered 요청을 만들지 못했다는 관측이지 정확한 원인 진단은 아니다. 동일 URL 캐시, 대상 동작, ZAP provider 설정 등도 원인이 될 수 있으므로 UI는 Firefox 부재를 일반화하지 않고 실제 로컬 검증 기록에서만 그 원인을 적는다. beta.15 JAR의 실제 Client→AJAX 전환과 rendered capture는 재로드 후 수동 gate다.
 - **상태:** beta.15 코드·207개 자동 회귀·JAR 무결성 완료, 실제 JAR 재검증 대기.
+
+## D-082 · HUMAN 요청 문맥 = response 시점 추정 금지 + 데이터셋 세대 격리
+
+- **문제:** Proxy 응답은 이미 Montoya `messageId`로 요청 시점의 run/account를 보존했지만, Repeater·Intruder·Target 등 비-Proxy 응답은 응답이 도착한 순간의 활성 HUMAN context를 읽었다. pass 중 보낸 요청이 종료 뒤 도착하면 BASELINE으로 빠지고, pass 전에 보낸 요청이 시작 뒤 도착하면 해당 pass로 잘못 들어갈 수 있었다. 초기화·샘플 교체·프로젝트 열기 직전의 in-flight 응답도 새 데이터셋을 다시 채울 수 있었다.
+- **결정:** Proxy와 비-Proxy Burp 도구에 각각 bounded in-flight tracker를 두고, 공식 Montoya 요청·응답의 동일 `messageId()`로 요청 시점 context, 로그인 캡처 account, 데이터셋 epoch를 연결한다. 응답은 저장 직전 epoch를 다시 확인하며, 초기화·샘플 교체·프로젝트 열기는 records lock 안에서 epoch를 증가시킨다. 대응 요청 문맥이 없거나 epoch가 다르면 현재 context로 추측하지 않고 응답을 수집에서 제외한다. 비-Proxy HUMAN 응답도 성공적으로 수집됐을 때만 broker에 전달해 Repeater에서 생긴 쿠키 회전을 같은 메모리 세션에 반영한다.
+- **표현 결정:** 권한 정책 카드의 신원 한 줄은 `등록 계정/비로그인/미확정 신원/관측 신원`만 표시한다. Cookie·Authorization·subject fingerprint 개수는 로그인 세션 수가 아니므로 `세션 N개`로 표시하지 않고 계정 화면의 접힌 기술 정보에만 남긴다.
+- **기각:** 응답 시점의 활성 pass로 fallback하면 조용한 오귀속이 생긴다. 데이터셋 교체 때 tracker를 단순 삭제하면 이미 전송된 응답이 문맥 없음 fallback으로 다시 들어온다. 반대로 모든 in-flight payload를 복제하면 메모리 비용이 커진다. 따라서 작은 context metadata만 최대 20,000건·10분 TTL로 보존하고 상한 초과는 fail-closed한다.
+- **근거:** 로컬 의존성의 Montoya API 2026.7 `HttpRequestToBeSent`와 `HttpResponseReceived`가 모두 `int messageId()`를 제공함을 확인했다. tracker correlation·epoch·capacity·TTL과 Web 표현 계약을 자동 회귀로 고정했다.
+- **한계:** 확장 로드 전에 이미 전송됐거나 tracker 상한을 넘은 요청의 응답은 정확한 요청 시점 문맥을 복원할 수 없어 버린다. beta.16 실제 Burp Browser/Repeater late-response와 초기화 직후 응답 gate는 JAR 재로드 뒤 수동 검증해야 한다.
+- **상태:** beta.16 코드·211개 자동 회귀·단일 JAR 무결성 완료, 실제 Burp 수동 gate 대기.

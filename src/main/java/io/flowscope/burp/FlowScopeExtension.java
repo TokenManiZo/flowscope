@@ -213,13 +213,14 @@ public final class FlowScopeExtension implements BurpExtension {
     private boolean capacityWarned;
     private MontoyaApi api;
     private final ThreadLocal<Boolean> controlledRequest = ThreadLocal.withInitial(() -> false);
-    private final Map<Integer, ProxyObservation> proxyObservations = new ConcurrentHashMap<>();
+    private final InFlightRequestTracker proxyObservations =
+            new InFlightRequestTracker(MAX_IN_FLIGHT_REQUEST_OBSERVATIONS, IN_FLIGHT_CONTEXT_TTL_MS);
+    private final InFlightRequestTracker toolObservations =
+            new InFlightRequestTracker(MAX_IN_FLIGHT_REQUEST_OBSERVATIONS, IN_FLIGHT_CONTEXT_TTL_MS);
+    private final AtomicLong datasetEpoch = new AtomicLong();
     private final Map<String, StoredPayload> payloadPool = new ConcurrentHashMap<>();
 
-    /** 요청 시점의 run/account 문맥. ZAP lane 전환 뒤 늦게 도착한 응답도 원래 신원에 귀속한다. */
-    private record ProxyObservation(RunContextRegistry.Context context, String humanCaptureAccountId,
-                                    long startedAt) {}
-    private static final int MAX_IN_FLIGHT_PROXY_OBSERVATIONS = 20_000;
+    private static final int MAX_IN_FLIGHT_REQUEST_OBSERVATIONS = 20_000;
     private static final long IN_FLIGHT_CONTEXT_TTL_MS = 10 * 60_000L;
 
     @Override
@@ -278,7 +279,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 HttpRequest prepared = prepareSession(request, profile, captureHandle, context);
-                rememberProxyObservation(request.messageId(), context, captureAccountId);
+                rememberObservation(proxyObservations, request.messageId(), context, captureAccountId, "프록시");
                 return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
@@ -332,12 +333,20 @@ public final class FlowScopeExtension implements BurpExtension {
         public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse response) {
             try {
                 PortProfile profile = profileOf(response.listenerInterface());
-                ProxyObservation observation = proxyObservations.remove(response.messageId());
-                capture(response.initiatingRequest(), response.statusCode(), profile,
+                InFlightRequestTracker.Observation observation = proxyObservations.remove(response.messageId());
+                if (observation == null) {
+                    api.logging().logToOutput("FlowScope: 요청 시점 프록시 문맥이 없는 응답 제외 — messageId="
+                            + response.messageId());
+                    return ProxyResponseReceivedAction.continueWith(response);
+                }
+                if (staleObservation(observation)) return ProxyResponseReceivedAction.continueWith(response);
+                boolean captured = capture(response.initiatingRequest(), response.statusCode(), profile,
                         response.bodyToString(), response.toString(), response.headerValue("Location"),
                         response.headerValue("Content-Type"), observation);
-                observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
-                        response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
+                if (captured) {
+                    observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
+                            response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
+                }
             } catch (Exception e) {
                 api.logging().logToError("FlowScope capture 실패", e);
             }
@@ -357,6 +366,16 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ToolHandler implements HttpHandler {
         @Override
         public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent req) {
+            ToolType tool = req.toolSource().toolType();
+            if (tool != ToolType.PROXY && !controlledRequest.get()) {
+                Source source = sourceOfTool(tool);
+                RunContextRegistry.Context context = runContexts.current(source);
+                String captureHandle = source == Source.HUMAN
+                        ? sessionBroker.activeCaptureForService(serviceOf(req)).orElse(null) : null;
+                String captureAccountId = captureHandle == null ? null
+                        : sessionBroker.accountForHandle(captureHandle).orElse(null);
+                rememberObservation(toolObservations, req.messageId(), context, captureAccountId, "Burp 도구");
+            }
             return RequestToBeSentAction.continueWith(req);
         }
 
@@ -366,10 +385,22 @@ public final class FlowScopeExtension implements BurpExtension {
                 ToolType tool = response.toolSource().toolType();
                 if (tool != ToolType.PROXY && !controlledRequest.get()) {   // 프록시/통제 실행은 별도 담당
                     Source source = sourceOfTool(tool);
-                    capture(response.initiatingRequest(), response.statusCode(),
-                            new PortProfile(source, detailOfTool(tool)), response.bodyToString(),
+                    InFlightRequestTracker.Observation observation = toolObservations.remove(response.messageId());
+                    if (observation == null) {
+                        api.logging().logToOutput("FlowScope: 요청 시점 Burp 도구 문맥이 없는 응답 제외 — messageId="
+                                + response.messageId());
+                        return ResponseReceivedAction.continueWith(response);
+                    }
+                    if (staleObservation(observation)) return ResponseReceivedAction.continueWith(response);
+                    PortProfile profile = new PortProfile(source, detailOfTool(tool));
+                    boolean captured = capture(response.initiatingRequest(), response.statusCode(),
+                            profile, response.bodyToString(),
                             response.toString(), response.headerValue("Location"),
-                            response.headerValue("Content-Type"));
+                            response.headerValue("Content-Type"), observation);
+                    if (captured) {
+                        observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
+                                response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
+                    }
                 }
             } catch (Exception e) {
                 api.logging().logToError("FlowScope tool capture 실패", e);
@@ -397,19 +428,14 @@ public final class FlowScopeExtension implements BurpExtension {
         };
     }
 
-    private void capture(HttpRequest req, int status, PortProfile profile,
-                         String respBody, String respText, String location, String responseContentType) {
-        capture(req, status, profile, respBody, respText, location, responseContentType, null);
-    }
-
-    private void capture(HttpRequest req, int status, PortProfile profile,
-                         String respBody, String respText, String location, String responseContentType,
-                         ProxyObservation observation) {
-        if (!ActiveTrafficGuard.allowsCapture(scope, req.url())) return;
+    private boolean capture(HttpRequest req, int status, PortProfile profile,
+                            String respBody, String respText, String location, String responseContentType,
+                            InFlightRequestTracker.Observation observation) {
+        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) || staleObservation(observation)) return false;
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
                 recordDroppedAtCapacity();
-                return;
+                return false;
             }
         }
         RequestRecord rec = recordFrom(req, status, profile, respBody, respText, location, responseContentType,
@@ -417,13 +443,16 @@ public final class FlowScopeExtension implements BurpExtension {
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
         synchronized (records) {
+            // 초기화/프로젝트 교체가 record 변환 도중 일어났다면 이전 데이터셋의 늦은 응답을 버린다.
+            if (staleObservation(observation)) return false;
             if (records.size() >= MAX_RECORDS) {
                 recordDroppedAtCapacity();
-                return;
+                return false;
             }
             records.add(rec);
         }
         scheduleRebuild();
+        return true;
     }
 
     /** records lock 안에서만 호출한다. 상한 뒤 payload 생성 비용과 pool 오염도 피한다. */
@@ -439,7 +468,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private RequestRecord recordFrom(HttpRequest req, int status, PortProfile profile,
                                      String respBody, String respText, String location, String responseContentType,
                                      long timestamp, boolean applyRunContext, String runId,
-                                     ProxyObservation observation) {
+                                     InFlightRequestTracker.Observation observation) {
         String service = serviceOf(req);
         RunContextRegistry.Context context = !applyRunContext ? null : observation == null
                 ? runContexts.current(profile.source()) : observation.context();
@@ -583,23 +612,23 @@ public final class FlowScopeExtension implements BurpExtension {
                 ? "anon" : Fingerprints.of(authorization, cookie);
     }
 
-    private void rememberProxyObservation(int messageId, RunContextRegistry.Context context,
-                                          String humanCaptureAccountId) {
+    private void rememberObservation(InFlightRequestTracker tracker, int messageId,
+                                     RunContextRegistry.Context context, String humanCaptureAccountId,
+                                     String channel) {
         long now = System.currentTimeMillis();
-        if (proxyObservations.size() >= MAX_IN_FLIGHT_PROXY_OBSERVATIONS) {
-            proxyObservations.entrySet().removeIf(entry ->
-                    now - entry.getValue().startedAt() > IN_FLIGHT_CONTEXT_TTL_MS);
+        if (!tracker.remember(messageId, context, humanCaptureAccountId, datasetEpoch.get(), now)) {
+            api.logging().logToOutput("FlowScope: in-flight " + channel
+                    + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
-        if (proxyObservations.size() >= MAX_IN_FLIGHT_PROXY_OBSERVATIONS) {
-            api.logging().logToOutput("FlowScope: in-flight 프록시 문맥 상한 도달 — 해당 요청은 응답 시 현재 문맥으로 처리합니다.");
-            return;
-        }
-        proxyObservations.put(messageId, new ProxyObservation(context, humanCaptureAccountId, now));
+    }
+
+    private boolean staleObservation(InFlightRequestTracker.Observation observation) {
+        return observation != null && !observation.belongsTo(datasetEpoch.get());
     }
 
     private void observeSessionResponse(PortProfile profile, HttpRequest request, int status,
                                         String location, String body, List<HttpHeader> headers,
-                                        ProxyObservation observation) {
+                                        InFlightRequestTracker.Observation observation) {
         try {
             String service = serviceOf(request);
             String handle = null;
@@ -756,6 +785,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 });
                 Pipeline.Result result = Pipeline.run(loaded, analysisConfig);
                 synchronized (records) {
+                    datasetEpoch.incrementAndGet();
                     records.clear();
                     records.addAll(loaded);
                     capacityWarned = false;
@@ -782,6 +812,7 @@ public final class FlowScopeExtension implements BurpExtension {
         invalidateLlmWorkflow();
         clearRunContexts();
         synchronized (records) {
+            datasetEpoch.incrementAndGet();
             records.clear();
             capacityWarned = false;
         }
@@ -862,6 +893,7 @@ public final class FlowScopeExtension implements BurpExtension {
                         .filter(value -> candidateIds.contains(value.candidateId()))
                         .filter(value -> evidenceIds.containsAll(value.allEvidenceIds())).toList();
                 synchronized (records) {
+                    datasetEpoch.incrementAndGet();
                     records.clear();
                     records.addAll(loaded);
                     capacityWarned = records.size() >= MAX_RECORDS;
@@ -1171,6 +1203,7 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         worker.shutdownNow();
         proxyObservations.clear();
+        toolObservations.clear();
         sessionBroker.close();
         clearRunContexts();
     }
@@ -1239,7 +1272,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 new PortProfile(Source.LLM, context.detail()), response.bodyToString(), response.toString(),
                 response.headerValue("Location"), response.headerValue("Content-Type"),
                 System.currentTimeMillis(), true, context.runId(),
-                new ProxyObservation(context, null, System.currentTimeMillis()));
+                new InFlightRequestTracker.Observation(context, null, datasetEpoch.get(),
+                        System.currentTimeMillis()));
         record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
         if (input.accountId() != null && !"anon".equals(record.fp)) {
             analysisConfig.bindSession(record.service, record.fp, input.accountId());

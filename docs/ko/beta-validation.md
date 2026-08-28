@@ -1,6 +1,22 @@
-# FlowScope 1.2.0-beta.15 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.16 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.16 HUMAN 요청 문맥·표현 gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 확인 | 비-Proxy Burp 도구가 응답 시점 HUMAN context를 읽어 pass 경계의 늦은 응답을 오귀속할 수 있었고, 권한 카드가 인증 artifact 수를 `세션 N개`로 표시함 |
+| API 근거 | 로컬 Montoya API 2026.7의 `HttpRequestToBeSent`·`HttpResponseReceived` 양쪽에서 동일 상관키 `messageId()` 제공 확인 |
+| 실패 우선 회귀 | tracker 구현 전 compile failure, principal-kind 표현 구현 전 Web 계약 failure 확인 |
+| 집중 회귀 | 요청 시점 context/account/epoch 보존, capacity·TTL, 초기화 세대 거부, account 단일 표현 계약 통과 |
+| 전체 자동 회귀 | Java `--release 21`로 `mvn clean verify`, 211 tests, 실패·오류·skip 0. 동시 Burp callback에서도 in-flight metadata 상한을 넘지 않는 회귀 포함 |
+| 배포물 | `target/flowscope-1.2.0-beta.16.jar`, 15,842,551 bytes, SHA-256 `979bee7198a09d56e44dc5bd0c07125e6c9117762529097e1a2cf381e5adb35f` |
+| JAR 무결성 | ZIP 무결성 통과, 2,162 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, 공개 `target/*.jar` 1개 |
+| standalone UI | 새 beta.16 JAR을 별도 loopback 포트에서 실행해 1280×720 수평 overflow 0, role 카드의 `등록 계정` 단일 표시, 계정 카드 1개당 접힌 인증 단서, SCANNER·LLM 해제 시 관측 API 4→3 재구축을 확인. 합성 샘플이며 대상 요청 0건 |
+| 실제 beta.16 | 아직 수행하지 않음. Burp Browser HUMAN pass, pass 중 Repeater, pass 종료 뒤 늦은 응답, 초기화 직후 응답, SQLite 저장·재열기 확인 필요 |
+
+현재 열린 사용자 Web 탭은 beta.9였으므로 그 화면을 beta.16 렌더 검증으로 계산하지 않는다. 자동 회귀는 코드 계약을 확인하지만 실제 Burp callback 순서와 사용자 작업면을 대신하지 않는다.
 
 ## 1.2.0-beta.15 rendered crawler 완료 gate
 
@@ -13,7 +29,7 @@
 | 전체 자동 회귀 | Java `--release 21`로 `mvn clean verify`, 207 tests, 실패·오류·skip 0 |
 | 배포물 | `target/flowscope-1.2.0-beta.15.jar`, 15,839,086 bytes, SHA-256 `40c9d12fc1a550abc77bac9de57feb588fba5587eeb37aef5d6e6ed4d36467ff` |
 | JAR 무결성 | ZIP 무결성 통과, 2,161 entries, 공개 `target/*.jar` 1개 |
-| 실제 beta.15 | JAR 재로드 뒤 같은 crAPI 대상의 Client→AJAX 전환·Rendered count·경고 상태를 다시 확인해야 함 |
+| 실제 beta.15 | 같은 crAPI anonymous 실행에서 Client→AJAX fallback, 전체 226건·Traditional 8건·Rendered 218건·native Alert 30건과 warning-completed UI를 관측함 |
 
 `COMPLETED_WITH_WARNINGS`는 scanner exploration 데이터가 존재해 비교에는 사용할 수 있지만 browser-rendered discovery가 정상 완료됐다는 뜻은 아니다. Firefox 부재는 이번 로컬 환경의 확인된 원인이고, 일반 제품 판정은 OS·브라우저 이름을 추측하지 않고 단계별 raw capture 0만 사실로 표시한다.
 

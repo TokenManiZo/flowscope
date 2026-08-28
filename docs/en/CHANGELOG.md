@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.16 — 2026-08-28
+
+- Correlate Repeater, Intruder, Target, and other non-Proxy Burp responses with their request-time run and account context by Montoya `messageId`, matching the existing Proxy guarantee.
+- Fail closed when request-time correlation is unavailable instead of assigning a late response to whichever HUMAN pass happens to be active at response time.
+- Reject responses from the previous dataset epoch after clear, sample replacement, or project load so late traffic cannot repopulate a reset workspace.
+- Feed non-Proxy HUMAN responses back into the memory-only session broker, preserving cookie rotation during a pass without persisting raw credentials.
+- Stop presenting Cookie, Authorization, and subject fingerprints as a count of login sessions in the role card; show one principal classification per graph identity and retain artifact counts only in advanced account diagnostics.
+- Pass all 211 automated regressions, including concurrent in-flight capacity enforcement; actual beta.16 Burp Browser, Repeater late-response, and save/reopen gates remain explicitly pending.
+
 ## 1.2.0-beta.15 — 2026-08-28
 
 - Treat a Client Spider completion with zero observed rendered captures as degraded execution and automatically run the AJAX Spider fallback.
