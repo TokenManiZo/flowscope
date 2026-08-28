@@ -1,6 +1,18 @@
-# FlowScope 1.2.0-beta.18 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.19 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.19 반응형 소유 경계 gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 확인 | Cytoscape가 `#cy`에 쓰는 inline `display:block`을 좁은 화면 CSS가 덮어야 했고, beta.18의 `!important`는 라이브러리 내부 표현과 제품 반응형 정책을 같은 요소에서 충돌시켰음 |
+| 수정 | Cytoscape는 `#cy`만 소유하고, FlowScope는 외부 `graphcanvas` 래퍼의 표시 상태만 소유하도록 DOM 책임을 분리. `!important` 제거 |
+| 자동 회귀 | `mvn clean verify`, 221 tests, 실패·오류·skip 0. 반응형 CSS가 `graphcanvas`를 숨기고 래퍼 안에 `#cy`가 존재하는 Web 계약 포함 |
+| 브라우저 gate | beta.19 standalone에서 1280px는 wrapper/Cytoscape 표시·목록 숨김, 600px는 wrapper 숨김·API 목록 4개 표시·page overflow 0 확인. Cytoscape 내부 inline `display:block`은 유지되지만 숨겨진 부모 밖으로 렌더되지 않음 |
+| 배포물 | `target/flowscope-1.2.0-beta.19.jar`, 15,866,605 bytes, 2,170 entries, SHA-256 `066f237a26c59359a36c5ec59c5186ca8cbc6012c0a36904129074fdf4a3c420`, ZIP·Main-Class·Java 21 검증 통과 |
+
+이 변경은 분석 데이터나 그래프 모델을 바꾸지 않고 렌더링 소유권만 정리한다.
 
 ## 1.2.0-beta.18 HTTP byte·Evidence UI gate
 

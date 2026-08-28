@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.18
+# FlowScope 설계서 v1.2.0-beta.19
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 

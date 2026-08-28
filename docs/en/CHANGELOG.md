@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0-beta.19 — 2026-08-28
+
+- Replaced the `!important` override of Cytoscape-managed inline styles with a library-external `graphcanvas` wrapper that owns the desktop/narrow-screen visibility boundary.
+- Locked the responsive contract so the canvas is actually absent and only the equivalent filtered API list remains at 600 px.
+
 ## 1.2.0-beta.18 — 2026-08-28
 
 - Retained live HTTP requests and responses as bounded raw bytes plus body offsets instead of using Java String conversion as the canonical representation.

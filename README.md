@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.18
+# FlowScope 1.2.0-beta.19
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -60,7 +60,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 mvn clean verify
 ```
 
-빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.18.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
+빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.19.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
 
 ## 저장소 구조
 

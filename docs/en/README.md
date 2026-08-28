@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.18
+# FlowScope 1.2.0-beta.19
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -61,7 +61,7 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.18.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.19.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 

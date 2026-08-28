@@ -797,3 +797,10 @@
 - **기각:** 모든 메시지를 `toString()` 후 UTF-8로 다시 저장, 디코딩 실패를 replacement character로 숨김, binary를 textarea에서 편집, 좁은 화면에서 최소 폭 캔버스를 화면 밖으로 넘김, 행 어디든 클릭하면 임의의 같은-operation Evidence를 여는 방식, 관측된 신원이 곧 재사용 가능한 ACTIVE 세션이라고 표현하는 방식을 기각했다.
 - **한계:** beta.17까지 이미 손실된 String Evidence는 원래 byte로 복원할 수 없어 beta.18 재로드 뒤 재수집해야 한다. 프로젝트/XML에서 가져온 항목, raw 상한 초과 항목, binary/해독 불가 body는 Web 편집 전송 대상이 아니다. 자동 회귀는 byte·codec·Web 계약을 검증했고 standalone UI는 1280px/600px에서 확인했지만, 실제 Burp target에 대한 ORIGINAL/ANONYMOUS/ACCOUNT 수신 byte 비교는 beta.18 JAR 재로드 뒤 수동 gate다.
 - **상태:** beta.18 코드·221개 자동 회귀·standalone 반응형/선택 UI 검증 완료. 실제 Burp byte replay와 등록 계정 전송 gate 대기.
+
+### D-085. 서드파티 렌더러와 제품 레이아웃은 서로 다른 DOM 경계를 소유한다
+
+- **결정:** Cytoscape는 내부 렌더 대상 `#cy`를 전적으로 소유한다. FlowScope의 반응형 정책은 그 밖의 `graphcanvas` 래퍼만 보이거나 숨기며, 좁은 화면 API 목록은 형제 요소로 유지한다.
+- **근거:** 라이브러리가 쓰는 inline style과 제품 CSS가 같은 요소를 경쟁하면 버전·초기화 시점에 따라 cascade 결과가 달라진다. 외부 래퍼는 라이브러리 구현과 무관한 안정된 layout boundary다.
+- **기각:** `!important`로 라이브러리 inline style을 덮는 방식과 JavaScript에서 매 resize마다 `#cy.style.display`를 되쓰는 방식을 기각했다. 전자는 소유권 충돌을 숨기고 후자는 CSS media query와 중복 상태를 만든다.
+- **상태:** beta.19 코드·221개 회귀·standalone 1280px/600px·단일 JAR 검증 완료.

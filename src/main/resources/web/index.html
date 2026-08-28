@@ -100,6 +100,7 @@
   .graphstat{margin-top:7px;color:var(--faint);font:9.5px 'JetBrains Mono',monospace;line-height:1.45}
   .layoutlock{display:flex; align-items:center; gap:7px; margin-top:8px; color:var(--muted); font-size:11px; cursor:pointer}.layoutlock input{accent-color:var(--accent)}
   .stage{flex:1; position:relative; min-width:0; background:radial-gradient(1000px 500px at 40% -10%, rgba(15,118,110,.05), transparent 60%), var(--bg)}
+  .graphcanvas{position:absolute;inset:0}
   #cy{position:absolute; inset:0}
   .graphlist{display:none;position:absolute;inset:0;overflow:auto;padding:12px;background:var(--bg)}
   .graphlisthead{margin-bottom:9px;color:var(--muted);font-size:11px;line-height:1.5}
@@ -209,13 +210,13 @@
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
   @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
   @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}.requestlabgrid{grid-template-columns:1fr}.requestlabdialog{height:calc(100vh - 20px)}.requestlabpane textarea{min-height:210px}}
-  @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} #cy{display:none!important}.graphlist{display:block}.stagehint{display:none} }
+  @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} .graphcanvas{display:none}.graphlist{display:block}.stagehint{display:none} }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.18 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.19 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -375,7 +376,7 @@
   </nav>
 
   <section class="stage">
-    <div id="cy"></div>
+    <div class="graphcanvas"><div id="cy"></div></div>
     <div id="graphList" class="graphlist" aria-label="좁은 화면용 API 목록"></div>
     <div class="stagehint" id="stagehint"></div>
     <div class="pane" id="paneMatrix">

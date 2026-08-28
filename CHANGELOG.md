@@ -2,6 +2,11 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.19 — 2026-08-28
+
+- Cytoscape가 직접 조작하는 `#cy`의 inline style을 `!important`로 덮지 않고, 라이브러리 외부 `graphcanvas` 래퍼가 데스크톱/좁은 화면 전환을 소유하도록 수정
+- 600px에서 캔버스가 실제로 숨고 동일 필터 API 목록만 남는 반응형 계약을 자동·브라우저 회귀로 고정
+
 ## 1.2.0-beta.18 — 2026-08-28
 
 - live HTTP 원문을 Java `String`이 아닌 요청·응답 바이트와 body offset으로 bounded vault에 보존
