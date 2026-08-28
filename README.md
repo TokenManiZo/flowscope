@@ -64,6 +64,13 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 1. Release JAR 사용
 
+완전한 3-way에서 아래 ZAP helper와 상세 문서를 함께 쓰려면 먼저 저장소를 받습니다. HUMAN-only 사용자는 저장소 없이 Release JAR만 받아도 됩니다.
+
+```bash
+git clone https://github.com/choewonwoo1817/testflowscope.git
+cd testflowscope
+```
+
 [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.20.jar`를 받습니다. Release JAR 사용자는 Maven이 필요하지 않습니다. Burp를 별도 JRE로 실행하는 경우에는 Java 21 이상이어야 합니다.
 
 소스에서 직접 빌드할 때만 다음을 실행합니다.

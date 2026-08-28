@@ -1459,6 +1459,7 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - `scripts/zap-up.sh`, `zap-down.sh`, `doctor.sh`를 추가했다. key는 `~/.flowscope/zap-api-key`에 owner-only로 생성하며 출력하지 않고, Compose에는 값 대신 파일을 read-only mount한다.
 - 확장이 `flowscope.zap.key` → `FLOWSCOPE_ZAP_API_KEY` → `flowscope.zap.keyFile` → 기본 key file 순서로 ZAP key를 찾도록 했다. 파일은 symlink·비정규 파일·과도한 POSIX 권한·크기·문자 집합을 검증한다.
 - 한국어·영어 시작 문서를 추가하고 루트 README를 Release JAR 사용자와 소스 빌드 사용자, HUMAN-only와 완전한 3-way로 분리했다. `output/`, `tmp/`는 사용자 로컬 데이터가 실수로 공개 저장소에 들어가지 않게 ignore했다.
+- 완전한 3-way의 Docker helper는 저장소 clone이 필요하고 HUMAN-only는 Release JAR만으로 시작할 수 있음을 첫 단계에 명시했다.
 
 ### 이유
 

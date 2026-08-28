@@ -59,7 +59,7 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Download `flowscope-1.2.0-beta.20.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the Docker helper for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.20.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
 
 The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.20.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 

@@ -27,6 +27,8 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 ## Release installation
 
+Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the Docker helper and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
+
 1. Download `flowscope-1.2.0-beta.20.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
