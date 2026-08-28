@@ -73,7 +73,7 @@ mvn clean verify
 
 빌드 산출물은 `target/`에만 만들어집니다. 사용자가 선택한 로컬 `.flowscope.db`/`.flowscope.json` 프로젝트, 로컬 검토 패키지와 머신별 설정은 Git에서 제외되며 공개 저장소의 일부가 아닙니다.
 
-정확한 베타 검증 범위와 남은 실환경 gate는 [`docs/ko/beta-validation.md`](docs/ko/beta-validation.md), 작업별 변경·이유·검증은 [`docs/ko/development-log.md`](docs/ko/development-log.md), 화면별 설계와 발표 근거는 [`docs/ko/ui-product-rationale.md`](docs/ko/ui-product-rationale.md)에 기록합니다.
+팀 인계용 현재 구현·코드 지도·알려진 결함·다음 작업 순서는 [`docs/ko/HANDOFF.md`](docs/ko/HANDOFF.md), 정확한 베타 검증 범위와 남은 실환경 gate는 [`docs/ko/beta-validation.md`](docs/ko/beta-validation.md), 작업별 변경·이유·검증은 [`docs/ko/development-log.md`](docs/ko/development-log.md), 화면별 설계와 발표 근거는 [`docs/ko/ui-product-rationale.md`](docs/ko/ui-product-rationale.md)에 기록합니다.
 
 ## 초기 설정
 
