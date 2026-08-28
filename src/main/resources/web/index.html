@@ -188,20 +188,26 @@
   .resend button{background:var(--resend); color:#1a1008; border:0; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:700; cursor:pointer}
   .resend .warn{font-size:10px; color:var(--faint)}
   .resendlog{margin-top:8px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); border-top:1px dashed var(--line2); padding-top:7px}
+  .requestlabdialog{width:min(1500px,100%);height:min(900px,calc(100vh - 36px));display:flex;flex-direction:column;overflow:hidden}
+  .requestlabmeta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;color:var(--muted);font:11px 'JetBrains Mono',monospace}.requestlabmeta .service{color:var(--text);overflow-wrap:anywhere}
+  .requestlabgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0;flex:1}.requestlabpane{display:flex;flex-direction:column;min-width:0;min-height:0}.requestlabpane label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+  .requestlabpane textarea{width:100%;min-height:260px;flex:1;resize:none;border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--text);padding:11px;font:11.5px/1.5 'JetBrains Mono',monospace;white-space:pre;overflow:auto;tab-size:2}
+  .requestlabcontrols{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px}.requestlabcontrols label{display:grid;gap:4px;color:var(--faint);font-size:10px}.requestlabcontrols select{min-width:190px;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace}.requestlabstatus{min-height:18px;margin-top:8px;color:var(--muted);font:10.5px/1.5 'JetBrains Mono',monospace;overflow-wrap:anywhere}.requestlabstatus.ok{color:var(--allow)}.requestlabstatus.fail{color:var(--deny)}
+  .requestlabhistory{margin-top:10px;border-top:1px solid var(--line);padding-top:8px;max-height:120px;overflow:auto}.requestlabhistory h3{font-size:11px;margin-bottom:5px}.requestlabhistory .entry{display:flex;gap:9px;padding:4px 0;color:var(--muted);font:10px 'JetBrains Mono',monospace;border-bottom:1px solid var(--line)}
   .samplebanner{display:none;flex:0 0 auto;padding:9px 16px;background:#FFF4CE;border-bottom:1px solid #E8C55A;color:#5B4300;font-size:12px;font-weight:700;text-align:center}
   .samplebanner.on{display:block}
   footer{flex:0 0 auto; border-top:1px solid var(--line); background:var(--panel); padding:8px 16px; display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--muted)}
   .li{display:flex; align-items:center; gap:5px}.li .sw{width:10px;height:10px;border-radius:3px}.li .swl{width:20px;height:0;border-top-width:2px}
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
   @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
-  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}}
+  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}.requestlabgrid{grid-template-columns:1fr}.requestlabdialog{height:calc(100vh - 20px)}.requestlabpane textarea{min-height:210px}}
   @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.16 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.17 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -253,6 +259,25 @@
       <button class="go" id="llmJudgeFollowupSend" disabled>Judge 계속</button>
     </div>
     <div class="setupactions"><select id="humanAccount" class="identityselect" aria-label="HUMAN pass 계정"><option value="">비로그인 pass</option></select><button class="go primary" id="humanRunStart">HUMAN pass 시작</button><button class="go" id="humanRunEnd" disabled>HUMAN pass 종료</button><button class="go" id="setupAccountsOpen">계정·세션 열기</button><button class="go" id="setupSample">샘플로 UI 확인</button></div>
+  </div>
+</div>
+
+<div class="setupbackdrop" id="requestLabModal" role="dialog" aria-modal="true" aria-labelledby="requestLabTitle">
+  <div class="setupdialog requestlabdialog">
+    <div class="setuphead"><div><h2 id="requestLabTitle">요청 실험실</h2><p>선택한 Evidence를 편집해 원래 서비스에 전송하고 응답을 비교합니다. 전송 결과는 탐색 커버리지와 분리된 HUMAN 검증 Evidence로 기록됩니다.</p></div><span class="spacer"></span><button class="go" id="requestLabClose" aria-label="닫기">닫기</button></div>
+    <div class="requestlabmeta"><span>고정 대상</span><span class="service" id="requestLabService">-</span><span id="requestLabRetention"></span></div>
+    <div class="requestlabgrid">
+      <div class="requestlabpane"><label for="requestLabRequest">편집 가능한 HTTP 요청</label><textarea id="requestLabRequest" spellcheck="false" aria-label="편집 가능한 HTTP 요청"></textarea></div>
+      <div class="requestlabpane"><label for="requestLabResponse">HTTP 응답</label><textarea id="requestLabResponse" spellcheck="false" readonly aria-label="HTTP 응답"></textarea></div>
+    </div>
+    <div class="requestlabcontrols">
+      <label>인증값 처리<select id="requestLabCredential"><option value="ORIGINAL">원문 그대로</option><option value="ANONYMOUS">비로그인으로 전송</option><option value="ACCOUNT">등록 계정으로 전송</option></select></label>
+      <label>등록 계정<select id="requestLabAccount" disabled><option value="">ACTIVE 계정 없음</option></select></label>
+      <button class="go primary" id="requestLabSend">명시적으로 전송</button>
+      <button class="go" id="requestLabBurp">Burp Repeater에서 열기</button>
+    </div>
+    <div class="requestlabstatus" id="requestLabStatus">원문 인증값은 이 Burp 프로세스와 현재 브라우저 탭의 메모리에만 표시되며 프로젝트·JSON·로그로 저장하지 않습니다. 리다이렉트는 따라가지 않고 대상 서비스는 변경할 수 없습니다.</div>
+    <div class="requestlabhistory"><h3>이 화면의 전송 기록 · 최대 10건 · 새로고침 시 삭제</h3><div id="requestLabHistory"><span class="requestlabstatus">아직 전송하지 않았습니다.</span></div></div>
   </div>
 </div>
 
@@ -399,7 +424,7 @@
   </section>
 
   <aside class="detail">
-    <div class="empty" id="detailEmpty">노드(API)를 클릭하면 마스킹된 요청·응답과<br>Repeater 초안 기능이 표시됩니다.<br>셀·엣지 선택 시 소스별 판정이 표시됩니다.</div>
+    <div class="empty" id="detailEmpty">노드(API)를 클릭하면 마스킹된 요청·응답과<br>요청 실험실·Repeater 기능이 표시됩니다.<br>셀·엣지 선택 시 소스별 판정이 표시됩니다.</div>
     <div id="detailFull" style="display:none; flex-direction:column; min-height:0; flex:1">
       <div class="dhead"><div class="k" id="dKind"></div><h3 id="dTitle"></h3></div>
       <div class="dbody" id="dBody"></div>
@@ -443,6 +468,7 @@ let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:
 let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0;
 let SETUP_AUTO_CHECKED=false;
 let HUMAN_RUN={active:false,completed:false,runId:''};
+let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[];
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v3 discards positions saved before source-consistent graph lanes were introduced.
@@ -812,6 +838,43 @@ function payloadStatus(label,payload){
   const reason=payload.retention==='BINARY_METADATA_ONLY'?'바이너리 본문 미보존':payload.retention==='CAPACITY_METADATA_ONLY'?'압축 전문 총량 상한 초과':'메시지별 보존 상한 초과';
   return `<span class="warn">${label} ${Number(payload.bytes||0).toLocaleString()} bytes · ${reason} · 해시만 보존</span>`;
 }
+function renderRequestLabAccounts(){
+  const select=document.getElementById('requestLabAccount');
+  const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===REQUEST_LAB_SERVICE);
+  select.innerHTML=usable.length?usable.map(session=>{const account=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(account?account.label:session.accountId)}</option>`;}).join(''):'<option value="">ACTIVE 계정 없음</option>';
+  const accountMode=document.getElementById('requestLabCredential').value==='ACCOUNT';
+  select.disabled=!accountMode||!usable.length;
+  document.getElementById('requestLabSend').disabled=accountMode&&!usable.length;
+}
+function renderRequestLabHistory(){
+  const target=document.getElementById('requestLabHistory');
+  target.innerHTML=REQUEST_LAB_HISTORY.length?REQUEST_LAB_HISTORY.map(item=>`<div class="entry"><b>HTTP ${Number(item.status||0)}</b><span>${Number(item.durationMs||0)}ms</span><span>${Number(item.requestBytes||0).toLocaleString()}B → ${Number(item.responseBytes||0).toLocaleString()}B</span><span>${esc(item.eventId||'-')}</span></div>`).join(''):'<span class="requestlabstatus">아직 전송하지 않았습니다.</span>';
+}
+async function openRequestLab(eventId){
+  if(!eventId){alert('서버 Evidence ID가 없어 요청 실험실을 열 수 없습니다.');return;}
+  const modal=document.getElementById('requestLabModal'),status=document.getElementById('requestLabStatus');
+  modal.style.display='flex';REQUEST_LAB_EVENT_ID=eventId;status.className='requestlabstatus';status.textContent='메모리 원문을 불러오는 중…';
+  document.getElementById('requestLabRequest').value='';document.getElementById('requestLabResponse').value='';
+  try{const response=await fetch('/api/request-lab?eventId='+encodeURIComponent(eventId),{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'요청 실험실 열기 실패');
+    REQUEST_LAB_SERVICE=data.service||'';document.getElementById('requestLabService').textContent=REQUEST_LAB_SERVICE||'-';document.getElementById('requestLabRequest').value=data.request||'';document.getElementById('requestLabResponse').value=data.response||'';
+    document.getElementById('requestLabRetention').textContent=data.rawRequestRetained&&data.rawResponseRetained?'· 메모리 원문':'· 일부 마스킹 전문';status.textContent=data.message||'';renderRequestLabAccounts();renderRequestLabHistory();document.getElementById('requestLabRequest').focus();
+  }catch(error){status.className='requestlabstatus fail';status.textContent=error.message;document.getElementById('requestLabSend').disabled=true;}
+}
+function closeRequestLab(){document.getElementById('requestLabModal').style.display='none';REQUEST_LAB_EVENT_ID='';REQUEST_LAB_SERVICE='';}
+async function sendRequestLab(){
+  const button=document.getElementById('requestLabSend'),status=document.getElementById('requestLabStatus'),mode=document.getElementById('requestLabCredential').value;
+  const request=document.getElementById('requestLabRequest').value,accountId=mode==='ACCOUNT'?document.getElementById('requestLabAccount').value:'';
+  if(!request.trim()){status.className='requestlabstatus fail';status.textContent='전송할 HTTP 요청 전문이 없습니다.';return;}
+  button.disabled=true;status.className='requestlabstatus';status.textContent='리다이렉트 없이 원래 서비스로 전송하는 중…';
+  try{const response=await fetch('/api/request-lab',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'send',eventId:REQUEST_LAB_EVENT_ID,credentialMode:mode,accountId,request})});const data=await response.json();if(!response.ok)throw new Error(data.message||'요청 전송 실패');
+    document.getElementById('requestLabResponse').value=data.response||'';REQUEST_LAB_HISTORY.unshift(data);REQUEST_LAB_HISTORY=REQUEST_LAB_HISTORY.slice(0,10);renderRequestLabHistory();status.className='requestlabstatus ok';status.textContent=`HTTP ${data.status} · ${data.durationMs}ms · ${data.message}`;SERVER_REVISION=-1;await syncExtension();
+  }catch(error){status.className='requestlabstatus fail';status.textContent=error.message;}finally{renderRequestLabAccounts();}
+}
+async function openRequestLabInBurp(){
+  const button=document.getElementById('requestLabBurp'),status=document.getElementById('requestLabStatus');button.disabled=true;
+  try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId:REQUEST_LAB_EVENT_ID})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Repeater 초안 생성 실패');status.className='requestlabstatus ok';status.textContent=data.message;}
+  catch(error){status.className='requestlabstatus fail';status.textContent=error.message;}finally{button.disabled=false;}
+}
 async function showOperation(op,offset=0){
   const evs=EVENTS.filter(e=>e.op===op); if(!evs.length)return;
   const detailRequest=++DETAIL_REQUEST;
@@ -833,7 +896,8 @@ async function showOperation(op,offset=0){
       `<div class="lbl" style="margin-top:8px">경로 묶음</div><div class="val">${esc(e.pathTemplateStatus||'LITERAL')} · ${esc((e.pathTemplateReasons||[]).join(' · ')||'원문 경로 유지')}</div>`+
       `<div class="lbl" style="margin-top:8px">보존 상태</div><div class="val">${payloadStatus('Request',detail.requestPayload)||'Request preview만 보존'}<br>${payloadStatus('Response',detail.responsePayload)||'Response preview만 보존'}</div>`+
       `<div class="lbl" style="margin-top:8px">REQUEST · ${esc(l.desc)}</div><pre class="reqblk">${esc(detail.request||'(요청 전문 없음)')}</pre>`+
-      `<div class="lbl">RESPONSE</div><pre class="reqblk">${esc(detail.response||'(응답 전문 없음)')}</pre></details>`;
+      `<div class="lbl">RESPONSE</div><pre class="reqblk">${esc(detail.response||'(응답 전문 없음)')}</pre>`+
+      (e.eventId?`<div class="row" style="margin-top:8px"><button class="go requestLabEvidence" data-evidence="${esc(e.eventId)}">이 Evidence 요청 실험실</button></div>`:'')+`</details>`;
   }).join('');
   dBody.innerHTML=
     (detailError?`<div class="gapbox"><div class="name">상세 조회 실패</div><p>${esc(detailError)}</p></div>`:'')+
@@ -842,15 +906,17 @@ async function showOperation(op,offset=0){
     `<div class="field"><div class="lbl">입력 위치 (메서드 기준)</div><div class="val"><b>${esc(first.method)}</b> → ${esc(loc.desc)}</div></div>`+
     `<div class="field"><div class="lbl">객체 후보 · 추출 근거</div><div class="val">${objectCandidates.length?objectCandidates.map(candidate=>`${esc(candidate.resource)} · ${esc(candidate.evidence||'DERIVED')}`).join('<br>'):'객체 식별자 미관측'}</div></div>`+
     `<div class="field"><div class="lbl">엔드포인트 요구 권한 · 사용자 정책</div><select id="requiredRole" class="identityselect">${ACCESS_ROLES.map(role=>`<option ${role===requiredRole?'selected':''}>${esc(role)}</option>`).join('')}</select><button id="requiredRoleSave" class="go" style="margin-top:6px">요구 권한 저장</button><span id="requiredRoleMessage" class="warn" style="margin-left:6px"></span></div>`+
-    `<div class="resend"><h4>⟳ Burp Repeater 초안</h4>`+
-    `<div class="val" style="font-size:10.5px; color:var(--faint); margin-bottom:6px">현재 첫 Evidence의 마스킹된 요청을 Repeater에 미전송 초안으로 엽니다. 인증정보 복원·값 변경·송신은 Burp에서 사용자가 수행합니다.</div>`+
-    `<div class="row"><button id="rsSend">Repeater 초안 열기</button><span class="warn">자동 전송하지 않음</span></div>`+
+    `<div class="resend"><h4>⟳ 요청 실험실</h4>`+
+    `<div class="val" style="font-size:10.5px; color:var(--faint); margin-bottom:6px">현재 첫 Evidence의 메모리 원문을 큰 편집 화면에서 수정·전송하고 응답을 확인합니다. 결과는 탐색과 분리된 HUMAN 검증 Evidence입니다.</div>`+
+    `<div class="row"><button id="requestLabOpen">요청 실험실 열기</button><button id="rsSend">Burp Repeater 열기</button></div>`+
     `<div class="resendlog" id="rsLog"></div></div>`+
     `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--resend);width:9px;height:9px;border-radius:50%"></span>검증 경계</div><p>FlowScope는 이 화면에서 응답을 만들거나 상태코드만으로 취약점을 확정하지 않습니다. LLM 최종 판정은 별도 VALIDATION 실행의 반복 재현·정상 대조 Evidence가 서버 검증을 통과해야 합니다.</p></div>`;
   document.getElementById('evPrev').onclick=()=>showOperation(op,Math.max(0,detailMeta.offset-detailMeta.limit));
   document.getElementById('evNext').onclick=()=>showOperation(op,detailMeta.offset+detailMeta.limit);
   document.querySelectorAll('.trafficOverride').forEach(button=>button.onclick=async()=>{document.querySelectorAll('.trafficOverride').forEach(item=>item.disabled=true);try{const response=await fetch('/api/traffic-override',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({operation:op,value:button.dataset.value})});const data=await response.json();if(!response.ok)throw new Error(data.message||'분류 정책 저장 실패');document.getElementById('trafficOverrideMessage').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}catch(error){document.getElementById('trafficOverrideMessage').textContent=error.message;document.querySelectorAll('.trafficOverride').forEach(item=>item.disabled=false);}});
   document.getElementById('requiredRoleSave').onclick=async()=>{const button=document.getElementById('requiredRoleSave');button.disabled=true;try{const role=document.getElementById('requiredRole').value;const response=await fetch('/api/requirement',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({operation:op,role})});const data=await response.json();if(!response.ok)throw new Error(data.message||'요구 권한 저장 실패');document.getElementById('requiredRoleMessage').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}catch(error){document.getElementById('requiredRoleMessage').textContent=error.message;button.disabled=false;}};
+  document.querySelectorAll('.requestLabEvidence').forEach(button=>button.onclick=event=>{event.preventDefault();openRequestLab(button.dataset.evidence);});
+  document.getElementById('requestLabOpen').onclick=()=>openRequestLab(first.eventId);
   document.getElementById('rsSend').onclick=async()=>{
     if(!first.eventId){document.getElementById('rsLog').textContent='서버 Evidence ID가 없어 Repeater 초안을 열 수 없습니다.';return;}
     document.getElementById('rsSend').disabled=true;
@@ -1366,7 +1432,12 @@ document.getElementById('llmCancel').addEventListener('click',cancelLlmRun);
 document.getElementById('llmJudgeFollowup').addEventListener('input',renderLlmControls);
 document.getElementById('llmJudgeFollowupSend').addEventListener('click',continueJudge);
 document.getElementById('setupModal').addEventListener('click',event=>{if(event.target===setupModal)closeSetup();});
-document.addEventListener('keydown',event=>{if(event.key==='Escape'&&setupModal.style.display==='flex')closeSetup();});
+document.getElementById('requestLabClose').addEventListener('click',closeRequestLab);
+document.getElementById('requestLabSend').addEventListener('click',sendRequestLab);
+document.getElementById('requestLabBurp').addEventListener('click',openRequestLabInBurp);
+document.getElementById('requestLabCredential').addEventListener('change',renderRequestLabAccounts);
+document.getElementById('requestLabModal').addEventListener('click',event=>{if(event.target===requestLabModal)closeRequestLab();});
+document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(requestLabModal.style.display==='flex')closeRequestLab();else if(setupModal.style.display==='flex')closeSetup();});
 
 async function syncExtension(){
   try{const response=await fetch('/api/snapshot',{cache:'no-store'});if(!response.ok){LIVE_MODE=false;return;}LIVE_MODE=true;const data=await response.json();if(data.revision===SERVER_REVISION&&data.identityRevision===SERVER_IDENTITY_REVISION)return;

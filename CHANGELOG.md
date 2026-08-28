@@ -2,6 +2,23 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.17 — 2026-08-28
+
+- live HTTP 원문을 RequestRecord·프로젝트·snapshot과 분리된 bounded Burp 프로세스 메모리 vault에 보관하고 데이터셋 교체·확장 종료 때 폐기
+- 특정 Evidence의 요청·응답을 큰 Web 편집기에서 열어 `원문 그대로/비로그인/등록 계정` 모드로 명시 전송하는 요청 실험실 추가
+- 편집 요청의 원 서비스·exact scope, redirect 금지, TLS 검증, timeout을 서버에서 강제하고 등록 계정은 ACTIVE broker 세션만 주입
+- 요청 실험실 결과를 HUMAN `MANUAL_HTTP/VALIDATION/CONTROLLED` Evidence로 분리해 탐색 coverage·3-way gap을 부풀리지 않음
+- Burp Repeater 미전송 handoff는 live 원문 우선, imported/상한 초과 Evidence는 마스킹 폴백으로 유지
+- 저장 경계·상한·eviction·Web API/UI 계약 자동 회귀와 공식 Burp/ZAP/mitmproxy/OWASP 근거 문서화
+
+## 1.2.0-beta.16 — 2026-08-28
+
+- Proxy 외 Repeater·Intruder·Target 응답도 Montoya `messageId`로 요청 시점 HUMAN run/account/dataset epoch와 연결
+- 상관 문맥이 없거나 초기화·샘플·프로젝트 교체 이전 요청이면 현재 pass로 추측하지 않고 제외
+- 비-Proxy HUMAN 응답의 Set-Cookie 회전을 memory-only broker에 반영
+- 하나의 계정에 연결된 Cookie·Authorization·subject 단서 수를 로그인 세션 수처럼 표시하지 않도록 계정 중심 화면 정리
+- 전체 자동 회귀 211개 통과, 실제 beta.16 Burp 수동 gate는 별도 기록
+
 ## 1.2.0-beta.15 — 2026-08-28
 
 - ZAP Client Spider가 API상 완료됐더라도 실제 Client rendered capture가 0이면 성공으로 간주하지 않고 AJAX Spider를 자동 실행

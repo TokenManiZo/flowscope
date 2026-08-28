@@ -50,6 +50,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
         void loadSample();
         BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception;
         RequestRecord openInRepeater(String evidenceId);
+        default RequestLabDraft requestLabDraft(String evidenceId) {
+            throw new UnsupportedOperationException("request lab is unavailable");
+        }
+        default RequestLabResult sendRequestLab(String evidenceId, String request,
+                                                CredentialMode credentialMode, String accountId) {
+            throw new UnsupportedOperationException("request lab is unavailable");
+        }
         default SessionBroker sessions() { return null; }
         default List<String> scopeEntries() { return List.of(); }
         default List<RouteCandidate> routeCandidates() { return List.of(); }
@@ -77,7 +84,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
     }
 
-    private static final int FORM_LIMIT = 1024 * 1024;
+    public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT }
+
+    public record RequestLabDraft(String eventId, String service, String request, String response,
+                                  boolean rawRequestRetained, boolean rawResponseRetained, String message) {}
+
+    public record RequestLabResult(String eventId, int status, String response, long durationMs,
+                                   int requestBytes, int responseBytes) {}
+
+    private static final int FORM_LIMIT = 4 * 1024 * 1024;
+    private static final int REQUEST_LAB_REQUEST_LIMIT = 1024 * 1024;
     private static final int WEB_BODY_LIMIT = 25 * 1024 * 1024;
     private static final int EVIDENCE_PAGE_LIMIT = 200;
     private final State state;
@@ -126,6 +142,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/ai-preview" -> preview(request);
             case "/api/ai-scenarios" -> scenarios(request);
             case "/api/replay" -> replay(request);
+            case "/api/request-lab" -> requestLab(request, target);
             case "/api/clear" -> clear(request);
             case "/api/human-run" -> humanRun(request);
             case "/api/sample" -> sample(request);
@@ -231,13 +248,63 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("status", record.status);
-            body.put("message", "마스킹된 요청을 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.");
+            body.put("message", "선택한 요청을 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.");
             body.put("replayId", "");
             body.put("openedDraft", true);
             return json(200, body);
         } catch (RuntimeException error) {
             return error(400, error.getMessage());
         }
+    }
+
+    private LoopbackHttpServer.Response requestLab(LoopbackHttpServer.Request request, URI target) throws IOException {
+        try {
+            if (request.method().equals("GET")) {
+                RequestLabDraft draft = state.requestLabDraft(required(form(target.getRawQuery()), "eventId"));
+                ObjectNode body = json.createObjectNode();
+                body.put("eventId", draft.eventId());
+                body.put("service", draft.service());
+                putNullable(body, "request", draft.request());
+                putNullable(body, "response", draft.response());
+                body.put("rawRequestRetained", draft.rawRequestRetained());
+                body.put("rawResponseRetained", draft.rawResponseRetained());
+                body.put("message", draft.message());
+                return json(200, body);
+            }
+            Map<String, String> values = postForm(request);
+            if (values == null) return invalidForm(request);
+            if (!"send".equalsIgnoreCase(required(values, "action"))) {
+                throw new IllegalArgumentException("action은 send여야 합니다.");
+            }
+            String rawRequest = requiredRaw(values, "request");
+            if (rawRequest.getBytes(StandardCharsets.UTF_8).length > REQUEST_LAB_REQUEST_LIMIT) {
+                throw new IllegalArgumentException("편집 요청은 1MB 이하만 전송할 수 있습니다.");
+            }
+            CredentialMode mode = CredentialMode.valueOf(required(values, "credentialMode")
+                    .toUpperCase(Locale.ROOT));
+            String accountId = values.getOrDefault("accountId", "").trim();
+            if (mode == CredentialMode.ACCOUNT && accountId.isBlank()) {
+                throw new IllegalArgumentException("등록 계정 모드에는 계정 선택이 필요합니다.");
+            }
+            RequestLabResult result = state.sendRequestLab(required(values, "eventId"), rawRequest, mode, accountId);
+            ObjectNode body = json.createObjectNode();
+            body.put("success", true);
+            body.put("eventId", result.eventId());
+            body.put("status", result.status());
+            body.put("response", result.response());
+            body.put("durationMs", result.durationMs());
+            body.put("requestBytes", result.requestBytes());
+            body.put("responseBytes", result.responseBytes());
+            body.put("message", "응답을 받았으며 HUMAN 검증 Evidence로 분리 기록했습니다.");
+            return json(200, body);
+        } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
+            return error(400, error.getMessage());
+        }
+    }
+
+    private static void putNullable(ObjectNode node, String name, String value) {
+        if (value == null) node.putNull(name);
+        else node.put(name, value);
     }
 
     private LoopbackHttpServer.Response clear(LoopbackHttpServer.Request request) throws IOException {
@@ -617,7 +684,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private LoopbackHttpServer.Response invalidForm(LoopbackHttpServer.Request request) throws IOException {
-        return !request.method().equals("POST") ? method("POST") : error(413, "요청 본문은 1MB 이하만 허용됩니다.");
+        return !request.method().equals("POST") ? method("POST") : error(413, "요청 본문은 4MB 이하만 허용됩니다.");
     }
 
     private boolean authorized(LoopbackHttpServer.Request request) {
@@ -677,6 +744,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         String value = form.getOrDefault(key, "").trim();
         if (value.isBlank()) throw new IllegalArgumentException(key + " is required");
         return Masking.truncate(Masking.maskSecrets(value), 2_000);
+    }
+
+    private static String requiredRaw(Map<String, String> form, String key) {
+        String value = form.getOrDefault(key, "");
+        if (value.isBlank()) throw new IllegalArgumentException(key + " is required");
+        return value;
     }
 
     private static Map<String, String> form(String value) {

@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.16, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.17, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -57,6 +57,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identi
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 규칙 후보, LLM 의견, 서버 검증 verdict, 사람 감사 기록을 같은 Evidence ID에 연결한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |
 | 파싱 결과 | 어떤 요청이 어떤 좌표와 분류로 정규화됐는가? | source/identity/method/operation/resource/status에 class/disposition/repeat/Evidence ID를 함께 두고 행 선택을 operation 상세로 연결한다. 반복 접기는 표시만 줄이며 모든 Evidence ID는 상세에서 유지한다. | raw 인증정보를 표시하거나 숨긴 행을 저장소에서 삭제하지 않는다. |
 | Request/Response 상세 | 판정의 실제 근거가 무엇인가? | 선택 API에서만 마스킹 전문을 지연 로드해 Burp 메시지와 판정을 연결하고, 전문 보존 여부·원 byte 수·SHA-256 또는 binary/메시지별/압축 총량 metadata-only 이유를 표시한다. 수집 통계에는 전문 미보존 메시지 수도 공개한다. | preview 8KiB를 완전한 전문이라고 부르거나 2만 건 전문을 polling snapshot마다 보내지 않는다. |
+| 요청 실험실 | 진단자가 값·세션을 바꾸고 응답을 바로 비교할 수 있는가? | 특정 Evidence에서만 전체 화면 편집기를 열고 `원문 그대로/비로그인/등록 계정`을 명시적으로 선택한다. 대상 서비스·exact scope·TLS·redirect 경계는 서버가 강제하고 결과는 HUMAN `VALIDATION`으로 분리한다. 원문은 bounded Burp 메모리와 현재 탭에만 존재하며 10건 화면 이력은 새로고침 시 사라진다. | raw를 프로젝트·MCP·로그·localStorage에 저장하거나, 반복 검증 요청을 discovery coverage로 부풀리거나, status 하나로 취약점을 확정하지 않는다. |
 | 계정·세션 | ZAP과 LLM이 어느 테스트 계정으로 실행되는가? | secret-free 계정과 메모리 전용 broker 상태를 분리해 보여 준다. | 비밀번호·raw cookie/token을 프로젝트나 LLM에 전달하지 않는다. |
 
 ## 4. 3-way 갭의 정확한 의미
@@ -211,7 +212,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.16 HUMAN 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.16.jar` 하나다. beta.15의 실제 anonymous ZAP fallback·capture는 확인했지만 요청 시점 문맥과 principal 표시가 바뀐 beta.16의 Browser·Repeater·초기화·저장/재열기는 별도 수동 gate다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.17 HUMAN 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.17.jar` 하나다. beta.15의 실제 anonymous ZAP fallback·capture는 확인했지만 요청 시점 문맥, 원문 요청 실험실, 비로그인/계정 전송이 포함된 beta.17의 Browser·Repeater·초기화·저장/재열기는 별도 수동 gate다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
 5. **구독 CLI 자동 실행 — 코드·UI 완료, Burp 실환경 gate:** 빠른 시작이 Burp 시작 환경의 Codex/Claude 실행 파일을 찾아 새 Explorer와 별도 Judge 프로세스를 만들고, provider session ID로 Judge 후속 질문을 재개한다. 수동 `agent-workspace`는 폴백으로 유지한다. 로컬 CLI help와 자동 회귀를 통과했고 Codex 무대상 모델 smoke는 성공했지만, Claude smoke는 구독 주간 한도 429로 실패했다. 실제 Burp에서 사용자의 MCP·대상 요청·run 종료·Judge lock·후속 resume가 끝까지 성공하는지는 beta.7 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
 

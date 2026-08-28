@@ -1344,6 +1344,49 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - USER A/B 복수 세션 주입·late response, ZAP browser provider 설정의 교차 플랫폼 동작은 아직 수동 gate다.
 - `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
 
+## 2026-08-28 · 1.2.0-beta.17 · HUMAN 원문 요청 실험실
+
+### 왜 수정했는가
+
+- 기존 Web은 마스킹된 Request/Response와 Burp Repeater 미전송 초안만 제공해, 보안 진단자가 Web에서 세션·객체·본문을 편집하고 응답을 비교할 수 없었다.
+- raw 인증값을 기존 `RequestRecord`/SQLite/JSON에 넣으면 비밀 비영속 계약을 깨고, 반복 검증 요청을 HUMAN 탐색으로 세면 coverage와 3-way gap이 왜곡된다.
+
+### 무엇을 변경했는가
+
+- `TransientExchangeVault`를 추가해 live 요청 1MiB·응답 4MiB·총 32MiB 기본 상한의 UTF-8 byte 원문만 Burp 프로세스 메모리에 보존했다. oldest eviction과 byte overwrite를 적용하고 초기화·샘플 교체·프로젝트 열기·unload에서 clear한다.
+- `/api/request-lab`은 특정 Evidence의 원문 또는 정직한 마스킹 폴백을 반환하고, 명시적 send에서 `ORIGINAL/ANONYMOUS/ACCOUNT`를 구분한다. snapshot·프로젝트·MCP·로그에는 raw를 추가하지 않았다.
+- HUMAN 전송은 원 Evidence `HttpService`, 현재 exact scope, redirect `NEVER`, upstream TLS 검증, 30초 timeout을 강제한다. `ANONYMOUS`는 broker 관리 인증 헤더를 제거하고 `ACCOUNT`는 제거 뒤 선택 ACTIVE 계정을 주입하며 기존 Content-Length를 body byte 길이로 갱신한다.
+- 전송 결과는 `HUMAN/MANUAL_HTTP/VALIDATION/CONTROLLED` Evidence로 저장해 immutable discovery gate에서 coverage·gap 제외를 유지한다.
+- whs_flow 기반 화면 문법을 유지한 전체 화면 요청 실험실에 request/response 2열 편집기, 인증 모드, account 선택, 응답 시간·byte 수, 탭 메모리 10건 이력과 native Repeater fallback을 추가했다.
+- 계정 JSON의 내부 인증 단서 수 필드를 `authArtifactCount`로 바로잡아 계정 1개를 여러 세션처럼 표현하지 않는 beta.16 계약과 일치시켰다.
+
+### 근거와 기각 대안
+
+- 공식 PortSwigger Repeater/message editor/history, ZAP Requester, mitmproxy client replay에서 편집·재전송·응답/시간 비교가 수동 검증의 공통 흐름임을 확인했다. OWASP WSTG session fixation은 별도 계정·쿠키 대조를 요구한다.
+- 브라우저가 대상에 직접 fetch하는 방식은 CORS·Burp proxy·TLS·Evidence correlation을 잃어 기각했다. raw를 프로젝트/localStorage에 두는 방식과 모든 수동 요청을 discovery로 계산하는 방식도 각각 비밀 수명과 coverage 왜곡 때문에 기각했다.
+
+### 영향 파일
+
+- runtime: `FlowScopeExtension`, `TransientExchangeVault`, `FlowScopeWebServer`
+- Web: `src/main/resources/web/index.html`
+- 회귀: `TransientExchangeVaultTest`, `FlowScopeWebServerTest`
+- 계정 표현: `SnapshotJsonWriter`
+- 버전·사용법·설계·결정·검증·화면 근거·계획·CHANGELOG와 `AGENTS.md` 비영속 경계
+
+### 검증
+
+- 구현 전 `/api/request-lab`, 세 인증 모드와 UI 계약을 추가해 Web 회귀 실패를 확인한 뒤 구현했다.
+- `mvn clean verify`: 215 tests, 실패·오류·skip 0.
+- JavaScript `node --check` 통과.
+- standalone 합성 샘플에서 1280×720 request/response 2열·page overflow 0·console 오류 0, 600×800 단일 열·page/dialog overflow 0을 확인했다. DemoState는 네트워크 전송을 구현하지 않으므로 기능 성공으로 계산하지 않았다.
+- 배포물: `target/flowscope-1.2.0-beta.17.jar` 하나, 15,856,555 bytes, 2,168 entries, SHA-256 `5da5a0801c3a4f4d8cef31b7cceed6a958ead0233b159a2b5d91400d5cc5aaf1`. ZIP 무결성, `Main-Class`, Java 21, 새 vault class와 Web asset 포함을 확인했다.
+
+### 남은 한계·다음 gate
+
+- 새 JAR을 Burp Community에 재로드하고 허가된 로컬 대상에서 ORIGINAL, ANONYMOUS, USER A, USER B 요청의 실제 수신 헤더·응답·세션 회전·VALIDATION provenance·coverage 불변을 확인해야 한다.
+- Java `String`, Montoya 내부 복사, browser textarea, crash dump/swap의 완전 소거는 보장하지 않는다. raw vault는 영구 secret store가 아니다.
+- `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

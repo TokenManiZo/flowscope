@@ -80,7 +80,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.16 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.17 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertTrue(index.body().contains("등록 계정과 로그인 상태"));
@@ -89,6 +89,10 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("사용 가능"));
         assertTrue(index.body().contains("다시 로그인 필요"));
         assertTrue(index.body().contains("동일 인증정보 충돌"));
+        assertTrue(index.body().contains("요청 실험실"));
+        assertTrue(index.body().contains("원문 그대로"));
+        assertTrue(index.body().contains("비로그인으로 전송"));
+        assertTrue(index.body().contains("/api/request-lab"));
         assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
         assertTrue(index.body().contains("let HUMAN_RUN={active:false,completed:false,runId:''}"));
         assertTrue(index.body().contains("HUMAN_RUN.active||HUMAN_RUN.completed"));
@@ -267,6 +271,8 @@ final class FlowScopeWebServerTest {
         JsonNode snapshot = json(get("/api/snapshot", token, origin()));
         assertEquals(1, snapshot.path("accounts").size());
         assertEquals("test1", snapshot.at("/accounts/0/label").asText());
+        assertEquals(3, snapshot.at("/accounts/0/authArtifactCount").asInt());
+        assertFalse(snapshot.at("/accounts/0").has("boundSessions"));
         assertEquals(3, snapshot.path("sessions").size());
         for (JsonNode session : snapshot.path("sessions")) {
             assertEquals("test1", session.path("accountId").asText());
@@ -387,6 +393,33 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void opensAndSendsAnExplicitRawRequestLabDraftWithoutPuttingItInSnapshot() throws Exception {
+        start();
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+
+        JsonNode draft = json(get("/api/request-lab?eventId=" + encode(evidenceId), token, origin()));
+        assertEquals(evidenceId, draft.path("eventId").asText());
+        assertEquals(state.record.service, draft.path("service").asText());
+        assertTrue(draft.path("request").asText().contains("raw-session-secret"));
+        assertTrue(draft.path("rawRequestRetained").asBoolean());
+        assertFalse(json(get("/api/snapshot", token, origin())).toString().contains("raw-session-secret"));
+
+        String editedRequest = "POST /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n"
+                + "Cookie: edited-secret\r\nContent-Type: text/plain\r\n\r\n" + "x".repeat(3_000);
+        HttpResponse<String> sent = post("/api/request-lab", "action=send&eventId=" + encode(evidenceId)
+                + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode(editedRequest), token);
+        assertEquals(200, sent.statusCode(), sent.body());
+        JsonNode result = JSON.readTree(sent.body());
+        assertEquals(204, result.path("status").asInt());
+        assertEquals("ev-manual", result.path("eventId").asText());
+        assertEquals("ANONYMOUS", state.manualCredentialMode.name());
+        assertTrue(state.manualRequest.contains("edited-secret"));
+        assertEquals(editedRequest, state.manualRequest);
+        assertTrue(result.path("response").asText().contains("204 No Content"));
+    }
+
+    @Test
     void snapshotIsLightweightAndObjectlessEvidenceLoadsMaskedOnDemand() throws Exception {
         RequestRecord health = new RequestRecord(Source.HUMAN, state.record.service,
                 "GET", "/health", 200, "sess:health");
@@ -501,6 +534,8 @@ final class FlowScopeWebServerTest {
         private volatile String llmTarget = "";
         private volatile boolean llmCancelled;
         private volatile String llmFollowup = "";
+        private volatile String manualRequest = "";
+        private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
         private volatile Pipeline.Result result;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
@@ -577,6 +612,21 @@ final class FlowScopeWebServerTest {
             RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId)).findFirst().orElseThrow();
             opened.set(true);
             return value;
+        }
+        @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
+            RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId))
+                    .findFirst().orElseThrow();
+            return new FlowScopeWebServer.RequestLabDraft(value.evidenceId, value.service,
+                    "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, "메모리 원문");
+        }
+        @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(String evidenceId, String request,
+                                                                            FlowScopeWebServer.CredentialMode mode,
+                                                                            String accountId) {
+            manualRequest = request;
+            manualCredentialMode = mode;
+            return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
+                    "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
         }
     }
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.17 — 2026-08-28
+
+- Added a bounded in-process raw HTTP vault that is separate from RequestRecord, snapshots, projects, logs, and MCP output and is cleared on dataset replacement or unload.
+- Added a full-screen Web request lab for a selected Evidence item with editable request, response viewer, and explicit original, anonymous, or active-account credential modes.
+- Locked sends to the original service and exact scope, disabled redirects, retained upstream TLS verification and a 30-second timeout, and refreshed an existing Content-Length header after edits.
+- Recorded request-lab results as HUMAN `MANUAL_HTTP / VALIDATION / CONTROLLED` Evidence so repeated manual probes cannot inflate discovery coverage or three-way gaps.
+- Kept the unsent Burp Repeater handoff, preferring the in-memory original and honestly falling back to masked text for imported or over-limit Evidence.
+- Added vault retention/eviction/clear and local Web API/UI regressions and documented the design against official Burp, ZAP, mitmproxy, and OWASP workflows.
+
 ## 1.2.0-beta.16 — 2026-08-28
 
 - Correlate Repeater, Intruder, Target, and other non-Proxy Burp responses with their request-time run and account context by Montoya `messageId`, matching the existing Proxy guarantee.

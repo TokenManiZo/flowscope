@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.16
+# FlowScope 1.2.0-beta.17
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -38,7 +38,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - MCP route-candidate visibility limited to the active Explorer's own source/run provenance; pre-lock status hides cross-lane counts, runs, assessments, and validations, ZAP state/execution is blocked during exploration, and the route inventory is frozen with the dataset lock.
 - One-click import of existing Burp Proxy history and response-less exact-scope Site Map candidates, with multiplicity-preserving duplicate suppression. The no-network onboarding sample is explicitly bannered as not being a real HUMAN/ZAP/LLM run.
 - A local relational `.flowscope.db` for masked records, account/session bindings, policies, assessments, validated verdicts, and audit decisions. Once saved or opened it receives coalesced 30-second atomic checkpoints plus a final unload save; `.flowscope.json` remains the interchange import/export format.
-- Evidence-to-Repeater handoff that opens a masked, unsent draft for explicit human validation.
+- A Web request lab for explicit human validation. Raw live Evidence stays only in a bounded in-process vault; operators can edit and send it with original, anonymous, or selected active-account credentials, inspect the response, and retain the result as HUMAN `VALIDATION` Evidence rather than discovery coverage. The unsent Burp Repeater handoff remains available.
 - Evidence-bound LLM validation using repeated reproduction and authorized-control observations, with human audit/override.
 - Strict Burp XML import with XXE protection and item-level error skipping.
 
@@ -60,7 +60,7 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 mvn clean verify
 ```
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.16.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.17.jar`. Load that file in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 ## Repository layout
 
@@ -100,6 +100,9 @@ With zero observed Evidence, the Web UI shows only the exact-scope → login/HUM
 
 1. Configure the exact scope and use ordinary anonymous or least-privileged test accounts. The Burp tab is the normal control; an MCP client may call `flowscope_set_scope` only with the exact target explicitly authorized by the operator and only before an active SCANNER/LLM run. An admin account is optional and only useful when the engagement requires an explicit role comparison.
 2. In **계정·세션**, register secret-free labels such as USER A/USER B. Each account is one primary card; Cookie, Authorization, and subject fingerprints from that login are grouped as collapsed technical evidence rather than displayed as extra accounts. Start login capture, log in through HUMAN port 8080, observe a successful authenticated-page response, then end capture. A credential-bearing capture without such a response remains unavailable and cannot be injected into ZAP or LLM requests. Only broker-`ACTIVE` accounts are selectable for a HUMAN pass, and the selected account is recorded only when the request credentials exactly match it. Raw session material remains only in extension memory and is never returned to the LLM or saved in a project. Start the HUMAN pass, browse the authorized workflows, and end the same run. `Pass complete` reflects that exact run close, not a non-zero record count; Repeater and Intruder observations keep their actual Burp-tool provenance while sharing the pass context. Proxy, Repeater, and Intruder responses are correlated to their request-time pass/account by Montoya `messageId`; late responses from a reset or replaced dataset, and responses with no correlation, are excluded instead of guessed into the current pass. Two distinct least-privileged test accounts are recommended for BOLA comparison.
+
+- Optional manual validation: select an API and open a specific Evidence item in **요청 실험실**. Choose original headers, anonymous stripping, or one active registered account; edit the path, query, headers, or body; then send explicitly. The network destination remains locked to the Evidence service, redirects are disabled, and the response, duration, and byte counts are displayed. The result is HUMAN `VALIDATION` Evidence and never inflates exploration coverage. Live raw text is bounded to 1 MiB per request, 4 MiB per response, and 32 MiB total in Burp process memory; reset, project replacement, and unload discard it. Imported or over-limit Evidence falls back to masked text.
+
 3. Configure ZAP's outgoing proxy as `127.0.0.1:8081`. In Web quick-start, select an exact-scope target plus anonymous and/or multiple ACTIVE accounts, then run the identity-isolated scanner campaign. Before each identity, FlowScope creates a fresh ZAP session and runs Traditional Spider → Client Spider (AJAX fallback) → passive completion → native alerts. A completed Client stage with zero observed rendered traffic triggers AJAX, and zero rendered traffic from both stages is shown as `COMPLETED_WITH_WARNINGS`. Account lanes replace existing auth state with that broker account. The anonymous lane keeps cookies/CSRF created inside its fresh session for stateful public flows, but its FlowScope identity remains `ANONYMOUS`. A zero-capture identity keeps the overall SCANNER completion gate closed. The FlowScope Web loopback control plane is excluded as a target. Active Scan is not part of this campaign and always requires a separate Burp approval.
 4. In Web quick-start, select a locally logged-in Codex or Claude client, the exact-scope target, and optionally an ACTIVE account, then click **LLM Explorer 시작**. FlowScope creates a dedicated temporary workspace and a new process that never resumes an earlier conversation. It supplies the bundled rules, target, scope, and server-issued run ID over standard input. Explorer sees only its own MCP run and must end that exact run successfully. Web search, Wayback, external API docs/source repositories, direct curl, and browser networking remain forbidden.
 5. Review ambiguous traffic, then click **Judge 시작** after all three exploration lanes completed. FlowScope starts a separate new Judge session, which locks the dataset, reads candidates and native ZAP alerts, submits non-final assessments, and captures narrow safe-GET validation/control Evidence. After completion, **Judge 계속** resumes that exact provider session ID; it does not keep a terminal process permanently open.
@@ -179,7 +182,7 @@ The ZAP API endpoint is accepted only on a loopback address. ZAP itself must be 
 - **시나리오 감사·오버라이드** — a human audit surface with Evidence-bound status and masked notes; it does not bypass validation checks.
 - **파싱 결과** — masked source, identity, method, normalized operation, resource, status, traffic class/disposition, repeat count, and stable Evidence ID. Selecting a row opens the operation detail and its paginated masked Evidence.
 - **계정·세션** — a full-width workspace with secret-free account registration, explicit HUMAN login capture, safe broker status, discovered-session comparison, binding/unbinding, reauthentication, memory revocation, and account removal.
-- **Right detail** — per-source verdicts and on-demand masked Request/Response for the selected API, plus a safe Burp Repeater draft handoff. The polling snapshot never transfers every stored message body.
+- **Right detail** — per-source verdicts and on-demand masked Request/Response for the selected API, plus the full-screen request lab and Burp Repeater handoff. The polling snapshot never transfers every stored message body or raw credential.
 
 ## Decision rules and trust boundary
 
@@ -221,7 +224,7 @@ The MCP and Web servers bind only to `127.0.0.1`, validate host/origin, require 
 - Fetch Metadata and MIME signals can be absent or misleading, and business APIs can resemble documents, assets, or telemetry. The classifier therefore excludes only converging high-confidence signals, keeps ambiguous traffic in `REVIEW` outside the main graph, exposes reasons, and permits a reversible operation-level override. An unreviewed real API can therefore remain outside the main comparison; traffic-noise classification is not perfect.
 - Up to 20,000 unrequested routes are extracted only from retained masked textual responses (falling back to the 8 KiB preview when the full message is metadata-only) and response-less Burp Site Map items. Dynamically composed JavaScript URLs and client-runtime-only routes are not guessed. Candidate priority is an inspectable categorical order, not a probability or vulnerability score.
 - Data-flow links use bounded exact-value matching, not full semantic taint analysis.
-- Repeater handoff uses the stored masked request and never auto-sends it. Automated decisive validation uses only FlowScope-controlled MCP requests, not Repeater or direct 8082 traffic.
+- Repeater handoff uses the live in-memory original when available and otherwise falls back to the stored masked request; it never auto-sends. Explicit Web request-lab sends become HUMAN `VALIDATION` Evidence but cannot bypass the LLM verdict gate. Automated decisive validation uses FlowScope-controlled MCP requests plus a server-checked bundle.
 - Closed-world execution prevents the supplied agent from using external discovery by instruction and tool choice, but FlowScope cannot control a separately modified agent installation or other local processes. Server-side scope, evidence visibility, and verdict gates remain authoritative.
 - Only one active metadata context per source is allowed; overlapping LLM or ZAP runs are rejected.
 - Graph folding is presentation pagination, not semantic clustering: each click exposes 18 more eligible resource/API nodes, while the 20,000-record capture bound still protects Burp.

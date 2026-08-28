@@ -366,7 +366,7 @@ public final class SnapshotJsonWriter {
     }
 
     private ArrayNode accounts(AnalysisConfig config, List<RequestRecord> records) {
-        Map<String, Long> bound = records.stream().filter(r -> config.account(r.idn).isPresent())
+        Map<String, Long> artifactCounts = records.stream().filter(r -> config.account(r.idn).isPresent())
                 .collect(java.util.stream.Collectors.groupingBy(r -> r.idn,
                         LinkedHashMap::new, java.util.stream.Collectors.mapping(r -> r.fp,
                                 java.util.stream.Collectors.collectingAndThen(java.util.stream.Collectors.toSet(), set -> (long) set.size()))));
@@ -379,7 +379,7 @@ public final class SnapshotJsonWriter {
                     value.put("role", account.role().label());
                     value.put("target", account.service());
                     value.put("color", color(account.id()));
-                    value.put("boundSessions", bound.getOrDefault(account.id(), 0L));
+                    value.put("authArtifactCount", artifactCounts.getOrDefault(account.id(), 0L));
                 });
         return out;
     }

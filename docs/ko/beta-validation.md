@@ -1,6 +1,22 @@
-# FlowScope 1.2.0-beta.16 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.17 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.17 HUMAN 요청 실험실 gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 확인 | 기존 Web은 마스킹 Evidence와 Repeater handoff만 제공해 진단자가 Web에서 세션·객체 값을 편집하고 응답을 비교할 수 없었음 |
+| 공식 근거 | Burp Repeater/message editor/history, ZAP Requester, mitmproxy client replay의 편집·재전송·응답/시간 비교 흐름과 OWASP WSTG의 별도 계정·쿠키 대조 절차 확인 |
+| 실패 우선 회귀 | `/api/request-lab`, UI 모드, raw snapshot 비노출 계약을 먼저 추가해 구현 전 Web 회귀 실패 확인 |
+| 집중 회귀 | raw request/response retain, 메시지 상한, 총량 eviction, clear, capability API draft/send, snapshot raw 비밀 부재, Web 모드·문구 계약 통과 |
+| 전체 자동 회귀 | Java `--release 21`로 `mvn clean verify`, 215 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.17.jar`, 15,856,555 bytes, SHA-256 `5da5a0801c3a4f4d8cef31b7cceed6a958ead0233b159a2b5d91400d5cc5aaf1` |
+| JAR 무결성 | ZIP 무결성 통과, 2,168 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개, `TransientExchangeVault`·새 Web asset 포함 |
+| standalone UI | 합성 샘플·대상 요청 0건. 1280×720에서 요청 실험실 1,244×684, request/response 양쪽 표시, page overflow 0; 600×800에서 단일 열 526px, 양쪽 편집기 높이 210px, page/dialog overflow 0; console warning/error 0 |
+| 실제 beta.17 | 아직 수행하지 않음. Burp Community에서 live 원문, ORIGINAL/ANONYMOUS/USER A/USER B 수신 헤더, response, HUMAN VALIDATION provenance, discovery coverage 불변, reset/unload 폐기를 확인해야 함 |
+
+standalone의 `request lab is unavailable`은 DemoState가 대상 네트워크 전송을 의도적으로 구현하지 않은 정상 경계다. 위 렌더 검증은 layout과 JS 오류 부재만 증명하며 실제 Burp/Montoya 전송 성공을 대신하지 않는다.
 
 ## 1.2.0-beta.16 HUMAN 요청 문맥·표현 gate
 

@@ -73,6 +73,7 @@ import java.nio.file.Path;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 /**
  * FlowScope Burp 확장 진입점 (Montoya). 프록시 트래픽을 포트별 소스로 수집하고
@@ -172,6 +173,13 @@ public final class FlowScopeExtension implements BurpExtension {
     /** digest 중복 제거 후 메모리에 유지할 압축 전문 총량. */
     private static final long MAX_COMPRESSED_PAYLOAD_BYTES = Math.max(0L, Long.getLong(
             "flowscope.payload.memoryBytes", 48L * 1024 * 1024));
+    /** 웹 요청 실험실 원문은 프로젝트가 아니라 현재 Burp 프로세스의 제한된 메모리에만 둔다. */
+    private static final int RAW_REQUEST_LIMIT_BYTES = Integer.getInteger(
+            "flowscope.requestLab.requestBytes", 1024 * 1024);
+    private static final int RAW_RESPONSE_LIMIT_BYTES = Integer.getInteger(
+            "flowscope.requestLab.responseBytes", 4 * 1024 * 1024);
+    private static final long RAW_EXCHANGE_MEMORY_BYTES = Math.max(0L, Long.getLong(
+            "flowscope.requestLab.memoryBytes", 32L * 1024 * 1024));
 
     /** 메모리 상한 — 실제 프록시 트래픽에서 무제한 누적을 막는다. */
     private static final int MAX_RECORDS = 20_000;
@@ -184,6 +192,8 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
     private final SessionBroker sessionBroker = new SessionBroker();
+    private final TransientExchangeVault rawExchanges = new TransientExchangeVault(
+            RAW_REQUEST_LIMIT_BYTES, RAW_RESPONSE_LIMIT_BYTES, RAW_EXCHANGE_MEMORY_BYTES);
     private final ProjectStore projectStore = new ProjectStore();
     private final SqliteProjectStore sqliteProjectStore = new SqliteProjectStore(projectStore);
     private volatile Pipeline.Result latest = Pipeline.run(List.of(), analysisConfig);
@@ -450,6 +460,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 return false;
             }
             records.add(rec);
+            rawExchanges.put(rec, req.toString(), respText);
         }
         scheduleRebuild();
         return true;
@@ -790,6 +801,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     records.addAll(loaded);
                     capacityWarned = false;
                 }
+                rawExchanges.clear();
                 droppedRecords.set(0);
                 latest = result;
                 rebuildRouteCandidates(result.records);
@@ -816,6 +828,7 @@ public final class FlowScopeExtension implements BurpExtension {
             records.clear();
             capacityWarned = false;
         }
+        rawExchanges.clear();
         droppedRecords.set(0);
         resetPayloadPool();
         synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
@@ -898,6 +911,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     records.addAll(loaded);
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
+                rawExchanges.clear();
                 droppedRecords.set(0);
                 latest = result;
                 rebuildRouteCandidates(result.records);
@@ -1084,10 +1098,34 @@ public final class FlowScopeExtension implements BurpExtension {
                 return parsed;
             }
             @Override public RequestRecord openInRepeater(String evidenceId) {
-                RequestRecord record = latest.records.stream().filter(value -> value.evidenceId.equals(evidenceId))
-                        .findFirst().orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Evidence ID입니다."));
-                openMaskedDraftInRepeater(record);
+                RequestRecord record = evidenceRecord(evidenceId);
+                TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
+                boolean rawRequest = raw != null && raw.requestRetained();
+                String request = rawRequest ? raw.request() : record.requestTextForEvidence();
+                openDraftInRepeater(record, request, rawRequest);
                 return record;
+            }
+            @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
+                RequestRecord record = evidenceRecord(evidenceId);
+                TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
+                boolean rawRequest = raw != null && raw.requestRetained();
+                boolean rawResponse = raw != null && raw.responseRetained();
+                String request = rawRequest ? raw.request() : record.requestTextForEvidence();
+                String response = rawResponse ? raw.response() : record.responseTextForEvidence();
+                String message = raw == null
+                        ? "이 Evidence의 메모리 원문이 없습니다(가져오기·메모리 상한/eviction 가능). 마스킹된 전문을 표시합니다."
+                        : !rawRequest
+                        ? "요청 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
+                        : !rawResponse
+                        ? "응답 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
+                        : "원문은 현재 Burp 프로세스 메모리에서만 불러왔으며 저장·내보내기하지 않습니다.";
+                return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
+                        request, response, rawRequest, rawResponse, message);
+            }
+            @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
+                    String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
+                    String accountId) {
+                return executeHumanRequestLab(evidenceId, request, credentialMode, accountId);
             }
         }, port);
         webServer.start();
@@ -1098,8 +1136,15 @@ public final class FlowScopeExtension implements BurpExtension {
      * 저장된 마스킹 Request를 자동 전송하지 않고 Repeater 초안으로만 연다.
      * 인증정보를 재삽입하고 전송하는 최종 행위는 사용자가 Burp에서 수행한다.
      */
-    private void openMaskedDraftInRepeater(RequestRecord record) {
-        String requestText = record == null ? null : record.requestTextForEvidence();
+    private RequestRecord evidenceRecord(String evidenceId) {
+        if (evidenceId == null || evidenceId.isBlank()) {
+            throw new IllegalArgumentException("Evidence ID가 필요합니다.");
+        }
+        return latest.records.stream().filter(value -> value.evidenceId.equals(evidenceId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Evidence ID입니다."));
+    }
+
+    private void openDraftInRepeater(RequestRecord record, String requestText, boolean raw) {
         if (requestText == null || requestText.isBlank()) {
             throw new IllegalArgumentException("저장된 Request 전문이 없습니다.");
         }
@@ -1111,7 +1156,7 @@ public final class FlowScopeExtension implements BurpExtension {
         HttpRequest draft = HttpRequest.httpRequest(httpService, requestText);
         api.repeater().sendToRepeater(draft, "FlowScope " + record.evidenceId);
         api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId
-                + " (인증정보 마스킹, 미전송)");
+                + (raw ? " (메모리 원문, 미전송)" : " (마스킹 전문, 미전송)"));
     }
 
     private void startMcp() {
@@ -1205,6 +1250,7 @@ public final class FlowScopeExtension implements BurpExtension {
         proxyObservations.clear();
         toolObservations.clear();
         sessionBroker.close();
+        rawExchanges.clear();
         clearRunContexts();
     }
 
@@ -1289,10 +1335,95 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("record limit reached");
             records.add(record);
+            rawExchanges.put(record, exchange.request().toString(), response.toString());
         }
         rebuildImmediately();
         return new McpServer.TargetResult(record.evidenceId, record.status, record.location,
                 record.respText, record.body);
+    }
+
+    private FlowScopeWebServer.RequestLabResult executeHumanRequestLab(
+            String evidenceId, String requestText, FlowScopeWebServer.CredentialMode credentialMode,
+            String accountId) {
+        RequestRecord seed = evidenceRecord(evidenceId);
+        if (requestText == null || requestText.isBlank()) {
+            throw new IllegalArgumentException("전송할 HTTP 요청 전문이 필요합니다.");
+        }
+        if (requestText.getBytes(StandardCharsets.UTF_8).length > RAW_REQUEST_LIMIT_BYTES) {
+            throw new IllegalArgumentException("편집 요청은 " + RAW_REQUEST_LIMIT_BYTES + "바이트 이하만 허용됩니다.");
+        }
+        URI service = URI.create(seed.service);
+        if (service.getHost() == null) throw new IllegalArgumentException("원본 대상 서비스를 확정할 수 없습니다.");
+        boolean secure = "https".equalsIgnoreCase(service.getScheme());
+        int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
+        HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
+        HttpRequest request = HttpRequest.httpRequest(httpService, requestText);
+        if (!scope.allows(request.url())) {
+            throw new IllegalArgumentException("편집 요청 경로가 현재 exact scope 밖입니다.");
+        }
+
+        if (credentialMode != FlowScopeWebServer.CredentialMode.ORIGINAL) {
+            for (String header : SessionBroker.managedHeaderNames()) {
+                request = request.withRemovedHeader(header);
+            }
+        }
+        if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT) {
+            if (accountId == null || accountId.isBlank()) {
+                throw new IllegalArgumentException("등록 계정을 선택하세요.");
+            }
+            Map<String, String> sessionHeaders = sessionBroker.headersForAccount(
+                    accountId, URI.create(request.url()), scope, java.time.Instant.now());
+            for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
+                request = request.withUpdatedHeader(header.getKey(), header.getValue());
+            }
+        }
+        if (request.hasHeader("Content-Length")) {
+            request = request.withUpdatedHeader("Content-Length", String.valueOf(request.body().length()));
+        }
+
+        var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
+                .withUpstreamTLSVerification().withResponseTimeout(30_000);
+        burp.api.montoya.http.message.HttpRequestResponse exchange;
+        long started = System.nanoTime();
+        controlledRequest.set(true);
+        try { exchange = api.http().sendRequest(request, options); }
+        finally { controlledRequest.remove(); }
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
+            throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
+        }
+
+        var response = exchange.response();
+        String responseText = response.toString();
+        RequestRecord record = recordFrom(exchange.request(), response.statusCode(),
+                new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP), response.bodyToString(), responseText,
+                response.headerValue("Location"), response.headerValue("Content-Type"),
+                System.currentTimeMillis(), false, "human-request-lab-" + System.currentTimeMillis(), null);
+        record.phase = RunPhase.VALIDATION;
+        record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
+        record.orchestrator = Orchestrator.HUMAN;
+        record.tool = ToolKind.BURP;
+        if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT && !"anon".equals(record.fp)) {
+            analysisConfig.bindSession(record.service, record.fp, accountId);
+            List<String> setCookies = response.headers().stream()
+                    .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
+                    .map(HttpHeader::value).toList();
+            sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
+                    response.statusCode(), response.headerValue("Location"), response.bodyToString(), setCookies,
+                    java.time.Instant.now());
+        }
+        synchronized (records) {
+            if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
+            records.add(record);
+            rawExchanges.put(record, exchange.request().toString(), responseText);
+        }
+        rebuildImmediately();
+        int requestBytes = exchange.request().toByteArray().length();
+        int responseBytes = response.toByteArray().length();
+        String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
+                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+        return new FlowScopeWebServer.RequestLabResult(record.evidenceId, record.status, displayResponse,
+                durationMs, requestBytes, responseBytes);
     }
 
     private void rebuildImmediately() {

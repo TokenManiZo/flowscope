@@ -72,7 +72,7 @@ These guidelines are working when diffs contain fewer unnecessary changes, imple
 - Do not claim a vulnerability from status alone. BOLA/BFLA need stored Evidence plus owner/role policy.
 - Ordinary LLM assessments may be `LIKELY`, `INCONCLUSIVE`, or `REJECTED`; they are never final.
 - A final LLM verdict may be `CONFIRMED`, `INCONCLUSIVE`, or `REJECTED` only when the server accepts a current, Evidence-bound reproduction and authorized-control bundle. Human records remain audit/override inputs.
-- Never store raw authorization headers, cookies, passwords, API keys, or provider tokens.
+- Never persist, export, log, or expose through snapshots/MCP raw authorization headers, cookies, passwords, API keys, or provider tokens. Operator-requested live HTTP editing may retain bounded raw text only in current-process memory and must clear it on dataset replacement and unload.
 - Active traffic must be exact-scope guarded. ZAP Active Scan requires an explicit Burp confirmation.
 - Black-box coverage has no knowable denominator; never display a completion percentage.
 

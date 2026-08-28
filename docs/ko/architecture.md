@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.16
+# FlowScope 설계서 v1.2.0-beta.17
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -84,7 +84,11 @@ RouteCandidate {
 
 Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·SHA-256·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다.
 
+live HTTP 원문은 별도의 `TransientExchangeVault`에만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그, MCP로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API로 현재 브라우저 탭에 전달한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML, binary, 상한 초과 Evidence는 원문이 없음을 표시하고 마스킹 전문으로 폴백한다.
+
 HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖의 일반 HUMAN 관측은 `BASELINE`으로 보존한다. `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 저장과 감사 대상이지만 discovery coverage·3-way gap·그래프 입력은 아니다. 로그인 준비와 우연한 scope 내 이동이 HUMAN 탐색 성과로 계산되지 않게 하려면 사용자가 HUMAN pass를 시작·종료해야 한다. Web은 `/api/human-run`을 다른 실행 상태와 함께 주기적으로 동기화하며, `pass 완료`는 record 수가 아니라 exact exploration run의 조건부 종료 표식으로만 표시한다. pass 중 Repeater·Intruder·Target에서 발생한 HUMAN 요청은 run/phase/account 문맥을 공유하지만 `BURP_REPEATER/BURP_INTRUDER/MANUAL_HTTP` detail과 `BURP` tool을 브라우저로 덮어쓰지 않는다.
+
+Web 요청 실험실은 관측 Evidence의 HTTP 전문을 큰 편집기에서 열고 원래 `HttpService`에만 보낸다. 요청 path가 현재 exact scope 밖이면 전송 전에 거부하고 redirect는 `NEVER`, upstream TLS 검증과 30초 응답 상한을 유지한다. `ORIGINAL`은 편집된 헤더를 그대로 사용하고, `ANONYMOUS`는 broker 관리 인증 헤더를 제거하며, `ACCOUNT`는 먼저 동일 헤더를 제거한 뒤 선택한 ACTIVE 계정의 현재 값을 주입한다. 기존 `Content-Length`는 body 길이에 맞춘다. 결과는 `source=HUMAN`, `detail=MANUAL_HTTP`, `tool=BURP`, `phase=VALIDATION`, `executionTrust=CONTROLLED`로 새 Evidence가 되며 immutable discovery gate가 coverage·gap 성과로 계산하지 않는다. 화면 전송 이력은 탭 메모리 10건뿐이고 저장하지 않는다.
 
 ### 4.2 정규화 F-04~06
 
@@ -195,7 +199,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 | 파싱 결과 | 마스킹된 source/identity/method/operation/resource/status, traffic class/disposition/reason, 반복 수, stable Evidence ID. 행 선택은 operation 상세와 페이지형 Evidence로 연결 |
 | 계정·세션 | 전체 폭 계정 등록, HUMAN 로그인 캡처, broker 상태/재인증/폐기, 발견 지문 비교와 명시 연결·해제 |
 | 빠른 시작 | HUMAN run, 결정론적 ZAP 대상·비로그인/복수 계정 선택·신원별 단계/수집/Alert 상태, 독립 Explorer와 잠금 후 Judge 순서 |
-| 공통 우측 | 선택 API의 지연 로드된 마스킹 Request/Response와 Repeater 미전송 초안 |
+| 공통 우측 | 선택 API의 지연 로드된 마스킹 Request/Response, Web 요청 실험실, Repeater 미전송 초안 |
 | Burp 제어판 | exact scope, 세 레인 포트, Web UI 열기, MCP 연결 복사, Proxy history, project I/O, sample/reset |
 
 관측 Evidence가 0건이면 분석 패널을 숨기고 `scope → 계정 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작만 먼저 노출한다. Evidence가 생기면 위 분석 작업면으로 전환한다. 이 progressive disclosure는 분석 모델을 줄이지 않고 첫 행동만 분리하며, ADMIN은 BFLA 역할 비교가 필요할 때만 선택적으로 추가한다(D-057).
@@ -229,7 +233,7 @@ CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict�
 - ZAP 2.17의 실제 anonymous fresh-session 기준선은 Burp 8081을 통해 crAPI에서 완료됐고, 수집 8건이 모두 `SCANNER/CONTROLLED/ANONYMOUS`로 귀속됐다. USER A/B broker 주입과 전역 ZAP replacer/script가 임의 Cookie를 강제하는 비표준 설정은 별도 실환경 gate다.
 - closed-world는 제공 agent 지침과 MCP 도구 경로에는 강제되지만 사용자가 개조한 에이전트나 별도 로컬 프로세스의 외부 통신까지 차단하는 OS sandbox는 아니다. exact scope, 가시성, Evidence trust, verdict gate는 서버에서 별도로 강제한다.
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
-- Repeater handoff는 마스킹된 미전송 초안만 연다. 사용자가 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다.
+- Repeater handoff는 live 원문이 메모리에 있으면 그 원문, 아니면 마스킹 전문을 미전송 초안으로 연다. Repeater에서 사용자가 별도로 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다. Web 요청 실험실 전송만 서버가 직접 새 HUMAN `VALIDATION` Evidence로 기록한다.
 - 포트 매핑은 확장 로드 시 시스템 속성으로 읽으므로 변경 후 Burp를 다시 시작한다.
 - SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.12 fat JAR을 실제 Burp bundled JVM/macOS에서 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM 조합의 런타임 호환을 완료로 주장하지 않는다.
 
