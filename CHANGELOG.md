@@ -2,6 +2,17 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.21 — 2026-08-28
+
+- ZAP Desktop과 Docker를 동일한 loopback API 계약으로 지원하고 Web 빠른 시작에 연결 상태·버전·key 오류·재확인 UI 추가
+- 연결되지 않은 ZAP 캠페인을 실행 전에 차단하고 Desktop 설정과 선택형 Docker Quick Start를 같은 화면에 제공
+- Desktop용 owner-only key를 값 출력 없이 준비하는 `zap-key.sh`, `zap-key.ps1` 추가
+- Windows 10/11 + Docker Desktop Linux container + PowerShell 7용 `zap-up.ps1`, `zap-down.ps1`, `doctor.ps1` 추가
+- .NET 암호학적 난수 key 생성, Windows ACL 상속 차단·현재 사용자 전용 권한, 변경 포트 진단 구현
+- Docker key 전달을 OS 독립적인 Compose file-backed secret으로 전환
+- GitHub `windows-latest` PowerShell parser CI와 한국어·영어 Windows 설치·문제 해결 문서 추가
+- Windows 실기기 Docker/ZAP/Burp target capture는 완료로 과장하지 않고 후속 gate로 명시
+
 ## 1.2.0-beta.20 — 2026-08-28
 
 - 완전한 3-way 요구사항과 HUMAN-only 제한 모드를 구분하고 Release JAR 사용자에게 Maven을 요구하던 설치 문구 수정

@@ -44,6 +44,7 @@
   .setupstates{display:grid;gap:4px;justify-items:end}
   .setupactions{display:flex;gap:7px;justify-content:flex-end;flex-wrap:wrap;margin-top:13px}
   .scannersetup{display:grid;grid-template-columns:minmax(240px,2fr) minmax(220px,1.4fr) auto;gap:8px;align-items:end;margin-top:13px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
+  .zapconnection{grid-column:1/-1;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:9px}.zapconnectionhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.zapconnectionhead b{font-size:11.5px}.zapconnectionhead .go{margin-left:auto}.zapconnectionstate{border:1px solid var(--line2);border-radius:5px;padding:2px 6px;color:var(--faint);font:700 10px 'JetBrains Mono',monospace}.zapconnectionstate.connected{border-color:var(--allow);color:var(--allow)}.zapconnectionstate.auth_failed,.zapconnectionstate.key_missing,.zapconnectionstate.unreachable{border-color:var(--suspicious);color:var(--suspicious)}.zapconnectionmessage{margin-top:5px;color:var(--muted);font-size:10.5px;line-height:1.5}.zapsetupchoices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:8px}.zapsetupchoices details{border:1px solid var(--line);border-radius:7px;background:var(--panel2);padding:7px}.zapsetupchoices summary{cursor:pointer;color:var(--text);font-size:10.5px;font-weight:700}.zapsetupchoices ol{margin:7px 0 0;padding-left:18px;color:var(--muted);font-size:10px;line-height:1.55}.zapsetupchoices pre{margin:7px 0 0;padding:7px;border-radius:6px;background:var(--bg);overflow:auto;color:var(--text);font:9.5px 'JetBrains Mono',monospace;white-space:pre-wrap}
   .scannersetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.scannersetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.scanneraccounts{min-width:0}.scanneraccounts>span{display:block;color:var(--faint);font-size:10px;margin-bottom:4px}.scannerchoices{display:flex;gap:5px;flex-wrap:wrap;min-height:34px;align-items:center}.scannerchoices label{display:flex;align-items:center;gap:5px;border:1px solid var(--line2);border-radius:7px;background:var(--bg);padding:7px 8px;color:var(--text);font:10.5px 'JetBrains Mono',monospace;cursor:pointer}.scannerchoices input{accent-color:var(--accent)}.scannerstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;overflow-wrap:anywhere}.scannerstatus.ok{color:var(--allow)}.scannerstatus.warn{color:var(--suspicious)}.scannerstatus.fail{color:var(--suspicious)}.scannerhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.scannerstate{border:1px solid var(--line2);border-radius:5px;background:var(--panel);padding:2px 6px;color:var(--text);font-weight:700}.scannerstate.running{border-color:var(--scanner);color:var(--scanner)}.scannerstate.completed{border-color:var(--allow);color:var(--allow)}.scannerstate.completed_with_warnings{border-color:var(--suspicious);color:var(--suspicious)}.scannerstate.failed{border-color:var(--suspicious);color:var(--suspicious)}.scannerlanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:7px}.scannerlane{border:1px solid var(--line);border-left:3px solid var(--scanner);border-radius:7px;background:var(--panel);padding:8px;color:var(--muted)}.scannerlane.failed{border-left-color:var(--suspicious)}.scannerlane.completed{border-left-color:var(--allow)}.scannerlane.completed_with_warnings{border-left-color:var(--suspicious)}.scannerlane .lanehead{display:flex;justify-content:space-between;gap:7px;color:var(--text);font-weight:700}.scannerlane .lanemeta{margin-top:4px;color:var(--faint)}.scannerlane .laneerr{margin-top:5px;color:var(--suspicious)}
   .llmsetup{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(180px,1.5fr) minmax(130px,1fr);gap:8px;align-items:end;margin-top:9px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
   .llmsetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.llmsetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.llmstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.llmstatus.ok{color:var(--allow)}.llmstatus.fail{color:var(--suspicious)}
@@ -209,14 +210,14 @@
   .li{display:flex; align-items:center; gap:5px}.li .sw{width:10px;height:10px;border-radius:3px}.li .swl{width:20px;height:0;border-top-width:2px}
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
   @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
-  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}.requestlabgrid{grid-template-columns:1fr}.requestlabdialog{height:calc(100vh - 20px)}.requestlabpane textarea{min-height:210px}}
+  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.zapsetupchoices{grid-template-columns:1fr}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}.requestlabgrid{grid-template-columns:1fr}.requestlabdialog{height:calc(100vh - 20px)}.requestlabpane textarea{min-height:210px}}
   @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} .graphcanvas{display:none}.graphlist{display:block}.stagehint{display:none} }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.20 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.21 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -251,6 +252,15 @@
       <div class="setupstep"><span class="num">6</span><div><b>잠금 후 Judge 최종 판정</b><p>세 레인이 정상 종료된 뒤 별도의 새 Judge 세션을 시작합니다. Judge는 잠긴 갭과 ZAP Alert를 읽고 후보별 재현·정상 계정 대조를 수집하며, 서버 Evidence gate를 통과한 결과만 최종 판정합니다.</p></div><span class="setupstate" id="setupFindings">대기</span></div>
     </div>
     <div class="scannersetup">
+      <div class="zapconnection" id="zapConnection">
+        <div class="zapconnectionhead"><span class="zapconnectionstate" id="zapConnectionState">확인 중</span><b>로컬 ZAP 연결</b><button class="go" id="zapStatusRefresh">다시 확인</button></div>
+        <div class="zapconnectionmessage" id="zapConnectionMessage">실행 중인 ZAP Desktop 또는 Docker ZAP을 확인합니다.</div>
+        <div class="zapsetupchoices" id="zapSetupChoices">
+          <details><summary>ZAP Desktop 설정</summary><ol><li>main proxy/API를 127.0.0.1:8089로 설정</li><li>API key를 ~/.flowscope/zap-api-key와 동일하게 설정</li><li>Network → Connection → HTTP Proxy를 127.0.0.1:8081로 설정</li><li>키를 새로 만들었다면 FlowScope 확장 재로드</li></ol></details>
+          <details><summary>Docker Quick Start</summary><pre>macOS/Linux: ./scripts/zap-up.sh
+Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
+        </div>
+      </div>
       <label>ZAP 기준선 대상<select id="scannerTarget" aria-label="ZAP 기준선 대상"><option value="">Burp 탭에서 범위를 먼저 적용하세요</option></select></label>
       <div class="scanneraccounts"><span>격리 실행할 신원</span><div class="scannerchoices" id="scannerAccounts" role="group" aria-label="ZAP 격리 실행 신원"><label><input type="checkbox" value="" checked>비로그인</label></div></div>
       <button class="go" id="scannerRunStart" disabled>안전 기준선 실행</button>
@@ -479,7 +489,7 @@ let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0, SELECTED_OPE
 let SETUP_AUTO_CHECKED=false;
 let HUMAN_RUN={active:false,completed:false,runId:''};
 let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[],REQUEST_LAB_EDITABLE=false;
-let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
+let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[], ZAP_STATUS={connected:false,state:'CHECKING',message:'ZAP 연결을 확인하는 중입니다.'}, ZAP_STATUS_TIMER=null;
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v3 discards positions saved before source-consistent graph lanes were introduced.
 const GRAPH_STATE_KEY='flowscope.graph-state.v4';
@@ -1318,11 +1328,22 @@ function renderScannerControls(){
   let selectedService='';try{const url=new URL(target.value);selectedService=url.protocol+'//'+url.hostname.toLowerCase()+':'+(url.port||(url.protocol==='https:'?'443':'80'));}catch(_){}
   const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===selectedService);
   accounts.innerHTML=`<label><input type="checkbox" value="" ${!hadChoices||selectedAccounts.has('')?'checked':''}>비로그인</label>`+usable.map(session=>{const registered=accountById(session.accountId);return `<label><input type="checkbox" value="${esc(session.accountId)}" ${selectedAccounts.has(session.accountId)?'checked':''}>${esc(registered?registered.label:session.accountId)}</label>`;}).join('');
-  const chosen=accounts.querySelectorAll('input:checked').length,running=SCANNER_RUN.status==='RUNNING';button.disabled=running||!target.value||!chosen;button.textContent=running?'실행 중…':'신원별 격리 검사 시작';
-  accounts.querySelectorAll('input').forEach(input=>input.addEventListener('change',()=>{button.disabled=SCANNER_RUN.status==='RUNNING'||!target.value||!accounts.querySelector('input:checked');}));
+  const chosen=accounts.querySelectorAll('input:checked').length,running=SCANNER_RUN.status==='RUNNING';button.disabled=running||!ZAP_STATUS.connected||!target.value||!chosen;button.textContent=running?'실행 중…':'신원별 격리 검사 시작';
+  accounts.querySelectorAll('input').forEach(input=>input.addEventListener('change',()=>{button.disabled=SCANNER_RUN.status==='RUNNING'||!ZAP_STATUS.connected||!target.value||!accounts.querySelector('input:checked');}));
   const state=(SCANNER_RUN.status||'NOT_STARTED').toLowerCase(),head=['<div class="scannerhead"><span class="scannerstate '+esc(state)+'">'+esc(SCANNER_RUN.status||'NOT_STARTED')+'</span>'];if(SCANNER_RUN.stage)head.push('<b>'+esc(SCANNER_RUN.stage)+'</b>');if(Number.isFinite(SCANNER_RUN.captured_records))head.push('<span>수집 '+SCANNER_RUN.captured_records+'건</span>');if(Number.isFinite(SCANNER_RUN.alert_count))head.push('<span>Alert '+SCANNER_RUN.alert_count+'건</span>');head.push('</div>');
   const lanes=Array.isArray(SCANNER_RUN.lanes)?SCANNER_RUN.lanes.map(lane=>'<div class="scannerlane '+esc((lane.status||'').toLowerCase())+'"><div class="lanehead"><span>'+esc(lane.account_label||lane.account_id||'비로그인')+'</span><span>'+esc(lane.status||'PENDING')+'</span></div><div class="lanemeta">'+esc(lane.stage||'PENDING')+' · 전체 '+Number(lane.captured_records||0)+' · Traditional '+Number(lane.traditional_captures||0)+' · Rendered '+Number(lane.rendered_captures||0)+' · Alert '+Number(lane.alert_count||0)+'</div>'+(lane.warning?'<div class="laneerr">주의 · '+esc(lane.warning)+'</div>':'')+(lane.error?'<div class="laneerr">오류 · '+esc(lane.error)+'</div>':'')+'</div>').join(''):'';
   const notes=(SCANNER_RUN.warning?'<div class="laneerr">주의 · '+esc(SCANNER_RUN.warning)+'</div>':'')+(SCANNER_RUN.error?'<div class="laneerr">오류 · '+esc(SCANNER_RUN.error)+'</div>':'');status.innerHTML=head.join('')+(lanes?'<div class="scannerlanes">'+lanes+'</div>':'')+notes;status.classList.toggle('ok',SCANNER_RUN.status==='COMPLETED');status.classList.toggle('warn',SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS');status.classList.toggle('fail',SCANNER_RUN.status==='FAILED');updateSetup();
+}
+function renderZapStatus(){
+  const badge=document.getElementById('zapConnectionState'),message=document.getElementById('zapConnectionMessage'),choices=document.getElementById('zapSetupChoices');
+  const state=(ZAP_STATUS.state||'UNREACHABLE').toLowerCase();badge.className='zapconnectionstate '+state;badge.textContent=ZAP_STATUS.connected?'연결됨':state==='auth_failed'?'키 불일치':state==='key_missing'?'키 없음':state==='checking'?'확인 중':'연결 안 됨';
+  message.textContent=(ZAP_STATUS.message||'ZAP 연결 상태를 확인할 수 없습니다.')+(ZAP_STATUS.endpoint?' · '+ZAP_STATUS.endpoint:'');choices.style.display=ZAP_STATUS.connected?'none':'grid';renderScannerControls();
+}
+async function syncZapStatus(){
+  const button=document.getElementById('zapStatusRefresh');button.disabled=true;ZAP_STATUS={connected:false,state:'CHECKING',message:'실행 중인 로컬 ZAP API를 확인하는 중입니다.'};renderZapStatus();
+  try{const response=await fetch('/api/zap-status',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'ZAP 연결 확인 실패');ZAP_STATUS=data;}
+  catch(error){ZAP_STATUS={connected:false,state:'UNREACHABLE',message:error.message};}
+  button.disabled=false;renderZapStatus();clearTimeout(ZAP_STATUS_TIMER);if(!ZAP_STATUS.connected)ZAP_STATUS_TIMER=setTimeout(syncZapStatus,5000);
 }
 async function syncScannerRun(){
   if(!LIVE_MODE)return;try{const response=await fetch('/api/scanner-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'ZAP 기준선 조회 실패');SCANNER_RUN=data.run||{status:'NOT_STARTED'};SCANNER_SCOPE=data.scope||[];renderScannerControls();}
@@ -1379,7 +1400,7 @@ async function continueJudge(){
   try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'followup',message})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'Judge 후속 실행 실패');input.value='';LLM_RUN=data.run;renderLlmControls();updateSetup();}
   catch(error){alert(error.message);}
 }
-function openSetup(){updateSetup();syncHumanRun();syncScannerRun();syncLlmRun();setupModal.style.display='flex';setupClose.focus();}
+function openSetup(){updateSetup();syncHumanRun();syncZapStatus();syncScannerRun();syncLlmRun();setupModal.style.display='flex';setupClose.focus();}
 function closeSetup(){setupModal.style.display='none';try{localStorage.setItem('flowscope.setup.seen','1');}catch(_){}}
 
 async function loadFiles(input,source){
@@ -1461,6 +1482,7 @@ document.getElementById('requestLabClose').addEventListener('click',closeRequest
 document.getElementById('requestLabSend').addEventListener('click',sendRequestLab);
 document.getElementById('requestLabBurp').addEventListener('click',openRequestLabInBurp);
 document.getElementById('requestLabCredential').addEventListener('change',renderRequestLabAccounts);
+document.getElementById('zapStatusRefresh').addEventListener('click',syncZapStatus);
 document.getElementById('requestLabModal').addEventListener('click',event=>{if(event.target===requestLabModal)closeRequestLab();});
 document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(requestLabModal.style.display==='flex')closeRequestLab();else if(setupModal.style.display==='flex')closeSetup();});
 
@@ -1471,7 +1493,7 @@ async function syncExtension(){
     if(!SETUP_AUTO_CHECKED){SETUP_AUTO_CHECKED=true;try{if(!localStorage.getItem('flowscope.setup.seen'))openSetup();}catch(_){openSetup();}}
   }catch(error){LIVE_MODE=false;}
 }
-syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();},1000);
+syncHumanRun();syncExtension();syncZapStatus();syncScannerRun();syncLlmRun();setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();},1000);
 </script>
 </body>
 </html>

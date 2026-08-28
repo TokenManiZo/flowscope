@@ -13,6 +13,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ZapClientTest {
     @Test
+    void probeUsesTheSameLoopbackApiForDesktopOrDockerWithoutGuessingDeployment() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/JSON/core/view/version/", exchange -> reply(exchange, "{\"version\":\"2.17.0\"}"));
+        server.start();
+        try {
+            String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
+            ZapClient client = new ZapClient(endpoint, "local-test-key-local-test-key-1234");
+
+            assertEquals(endpoint, client.endpoint());
+            assertTrue(client.apiKeyConfigured());
+            assertEquals("{\"version\":\"2.17.0\"}", client.probeVersion());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void ajaxSpiderUsesOnlyParametersSupportedByZap217() throws Exception {
         AtomicReference<String> query = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

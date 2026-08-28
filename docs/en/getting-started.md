@@ -6,13 +6,13 @@ This guide covers a reproducible HUMAN, SCANNER, and LLM/Judge setup. FlowScope 
 
 | Path | Requirements |
 |---|---|
-| Release JAR + Docker ZAP | Burp, Docker Compose v2, and either Codex CLI or Claude Code |
 | Release JAR + ZAP Desktop | Burp, ZAP 2.17.0, and either model client |
+| Release JAR + Docker ZAP | Burp, Docker Compose v2, and either Codex CLI or Claude Code |
 | Source build | The runtime above, JDK 21+, and Maven 3.9+ |
 
-The measured baseline is Burp Community 2026.7.3, ZAP 2.17.0, JDK 21, and macOS arm64 with Docker Engine/Desktop 29.5.3. This is not a claim that every older release or OS has been validated.
+The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, JDK 21, and macOS arm64 with Docker Engine/Desktop 29.5.3. Windows 10/11 with Docker Desktop Linux containers and PowerShell 7 is the beta.21 support contract; GitHub `windows-latest` parses all PowerShell helpers, but a real Windows Docker Desktop target run remains an explicit validation gate.
 
-Official references: [PortSwigger extension loading](https://portswigger.net/burp/documentation/desktop/extend-burp/extensions/creating/loading-in-burp), [ZAP Docker](https://www.zaproxy.org/docs/docker/about/), [ZAP Network API](https://www.zaproxy.org/docs/desktop/addons/network/api/), [Codex CLI](https://developers.openai.com/codex/cli), and [Claude Code getting started](https://docs.anthropic.com/en/docs/claude-code/getting-started).
+Official references: [PortSwigger extension loading](https://portswigger.net/burp/documentation/desktop/extend-burp/extensions/creating/loading-in-burp), [ZAP Docker](https://www.zaproxy.org/docs/docker/about/), [ZAP Network API](https://www.zaproxy.org/docs/desktop/addons/network/api/), [Docker Desktop host networking](https://docs.docker.com/desktop/features/networking/networking-how-tos/), [Compose file-backed secrets](https://docs.docker.com/reference/compose-file/services/), [Microsoft Set-Acl](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-acl), [Microsoft cryptographic RNG](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.randomnumbergenerator.getbytes), [GitHub Actions PowerShell shell](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax), [Codex CLI](https://developers.openai.com/codex/cli), and [Claude Code getting started](https://docs.anthropic.com/en/docs/claude-code/getting-started).
 
 ## Ports
 
@@ -27,16 +27,22 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 ## Release installation
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the Docker helper and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. Download `flowscope-1.2.0-beta.20.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
+1. Download `flowscope-1.2.0-beta.21.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
 
 Release users do not need Maven. A custom Java runtime used to launch Burp must support Java 21 class files.
 
-## ZAP with Docker on macOS/Linux
+## Choose ZAP Desktop or Docker
+
+FlowScope checks a compatible ZAP API at `127.0.0.1:8089`. **Quick Start → Local ZAP connection** shows reachability, version, and key mismatch before a campaign can start. It intentionally does not guess whether the API belongs to Desktop or Docker. Run only one path because both use port `8089`.
+
+Use Desktop to preserve an existing GUI testing workflow. Use the optional Docker Quick Start when the team needs a pinned ZAP/add-on environment.
+
+### Docker Quick Start on macOS/Linux
 
 From the repository root:
 
@@ -52,15 +58,33 @@ docker compose -p flowscope-zap -f infra/zap/compose.yaml logs
 ./scripts/zap-down.sh
 ```
 
-The Bash helper is validated on macOS/Linux, not native Windows PowerShell. Windows users can create a 64-hex-character random key in `%USERPROFILE%\.flowscope\zap-api-key`, set its absolute path as `FLOWSCOPE_ZAP_KEY_FILE`, and run the same Compose file. Restrict the file with the local Windows ACL and reload FlowScope after creating it. Compose mounts the file read-only instead of putting the key value in the container environment.
+### Docker Quick Start on Windows
+
+From a non-administrator PowerShell 7 session in the repository root:
+
+```powershell
+.\scripts\zap-up.ps1
+.\scripts\doctor.ps1
+```
+
+The helper creates a 32-byte key with .NET's cryptographic RNG, disables ACL inheritance, grants the current Windows user FullControl, and passes the file through a Compose file-backed secret rather than a container environment value. Docker Desktop's documented `host.docker.internal` name connects ZAP to host Burp `8081`.
+
+```powershell
+docker compose -p flowscope-zap -f infra/zap/compose.yaml ps
+docker compose -p flowscope-zap -f infra/zap/compose.yaml logs
+.\scripts\zap-down.ps1
+```
+
+PowerShell 5.1, Windows container mode, and running the helper inside WSL are outside the beta.21 Windows support contract. The scripts are parsed on GitHub `windows-latest`; actual Windows Docker Desktop API, upstream, TLS, and target capture are not yet marked complete.
 
 ## ZAP Desktop
 
-1. Install ZAP 2.17.0 and set its main local proxy/API to `127.0.0.1:8089`.
-2. Keep the API key enabled.
-3. In **Options → Network → Connection → HTTP Proxy**, enable upstream host `127.0.0.1`, port `8081`.
-4. Confirm `spider`, `client`, `spiderAjax`, `pscan`, and `selenium` are installed.
-5. Put the key in owner-only `~/.flowscope/zap-api-key`, or use `flowscope.zap.keyFile`, `FLOWSCOPE_ZAP_API_KEY`, or `flowscope.zap.key`.
+1. Install ZAP 2.17.0.
+2. Create an owner-only key without printing its value: `./scripts/zap-key.sh` on macOS/Linux or `.\scripts\zap-key.ps1` in Windows PowerShell 7.
+3. Set the main local proxy/API to `127.0.0.1:8089` and set the ZAP API key to the value stored in `~/.flowscope/zap-api-key`. Keep key checks enabled.
+4. In **Options → Network → Connection → HTTP Proxy**, enable upstream host `127.0.0.1`, port `8081`.
+5. Confirm `spider`, `client`, `spiderAjax`, `pscan`, and `selenium` are installed.
+6. FlowScope reads owner-only `~/.flowscope/zap-api-key` by default; alternatives are `flowscope.zap.keyFile`, `FLOWSCOPE_ZAP_API_KEY`, and `flowscope.zap.key`. Reload the extension if the key was created after loading it.
 
 ## Codex or Claude Code
 
@@ -80,6 +104,8 @@ After loading the JAR and starting ZAP:
 ```bash
 ./scripts/doctor.sh
 ```
+
+Windows uses `.\scripts\doctor.ps1`; add `-Build` for source-build checks.
 
 The check covers Burp listener reachability, the loopback ZAP API and upstream proxy, required ZAP add-ons, one model executable, and FlowScope Web/MCP ports. An open port does not prove that the process is Burp, so verify the listener table manually. If you changed defaults, set `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT`, and `FLOWSCOPE_MCP_PORT` in the same shell so doctor checks the same contract.
 
@@ -106,7 +132,9 @@ mvn clean verify
 | Symptom | Action |
 |---|---|
 | Extension class is not recognized | Load the single release `flowscope-*.jar` as a Java extension |
-| ZAP API fails | Check `127.0.0.1:8089`, the key file, Compose logs, then reload FlowScope |
+| ZAP API fails | Run the OS-appropriate doctor, check `127.0.0.1:8089`, the key file and Compose logs, then reload FlowScope |
+| Windows key ACL fails | Rerun `zap-up.ps1` as the normal user and keep the key under the NTFS user profile, not a network/FAT path |
+| Windows ZAP cannot reach Burp | Confirm Docker Desktop Linux-container mode, Burp `127.0.0.1:8081`, Windows Firewall, and `host.docker.internal` |
 | ZAP completes with zero SCANNER captures | Verify ZAP upstream `8081`, the Burp listener, and exact scope together |
 | Rendered capture warning | Inspect ZAP Firefox/Selenium/Client/AJAX logs; do not mislabel Traditional-only output as rendered coverage |
 | Provider executable missing | Set the provider absolute-path system property and restart Burp |

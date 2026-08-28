@@ -6,8 +6,8 @@
 
 | 경로 | 용도 | 필요한 것 |
 |---|---|---|
-| Release JAR + Docker ZAP | 가장 짧은 3-way 시작 경로 | Burp, Docker Compose v2, Codex 또는 Claude Code |
-| Release JAR + ZAP Desktop | ZAP GUI를 직접 조정하려는 사용자 | Burp, ZAP 2.17.0, Codex 또는 Claude Code |
+| Release JAR + ZAP Desktop | 기존 GUI 점검 환경을 그대로 사용 | Burp, ZAP 2.17.0, Codex 또는 Claude Code |
+| Release JAR + Docker ZAP | 버전·add-on을 고정한 재현 환경 | Burp, Docker Compose v2, Codex 또는 Claude Code |
 | 소스 빌드 | 코드 수정·기여 | 위 환경, JDK 21+, Maven 3.9+ |
 
 실제 확인한 기준선은 다음과 같다.
@@ -15,15 +15,21 @@
 - Burp Suite Community 2026.7.3에서 Montoya 확장 로드
 - ZAP 2.17.0 API와 `spider`, `client`, `spiderAjax`, `pscan`, `selenium` add-on
 - macOS arm64, Docker Engine/Desktop 29.5.3에서 공식 ZAP 2.17.0 multi-architecture 이미지 기동, loopback API, Docker-host Burp upstream 설정
+- GitHub Actions `windows-latest` PowerShell 7에서 Windows helper 네 파일의 파서 검증
 - JDK 21 Maven 빌드
 
-이 목록은 최소 지원 버전이나 다른 운영체제의 완료 증명이 아니다. 특히 Docker ZAP의 HTTPS 대상, USER A/B 세션 주입, Client/AJAX rendered capture는 대상별 실환경 gate를 통과해야 하며 이미지 기동 성공만으로 완료라고 판단하지 않는다.
+Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backend, PowerShell 7을 지원 계약으로 삼는다. GitHub Windows runner의 파서 검증은 실제 Docker Desktop 기동을 증명하지 않는다. 특히 Windows 실기기의 ZAP API·Burp upstream, Docker ZAP의 HTTPS 대상, USER A/B 세션 주입, Client/AJAX rendered capture는 별도 실환경 gate를 통과해야 한다.
 
 공식 근거:
 
 - [PortSwigger: Java 확장 빌드·로드](https://portswigger.net/burp/documentation/desktop/extend-burp/extensions/creating/loading-in-burp)
 - [ZAP: 공식 Docker 이미지와 headless/xvfb 실행](https://www.zaproxy.org/docs/docker/about/)
 - [ZAP: Network API의 upstream HTTP proxy 설정](https://www.zaproxy.org/docs/desktop/addons/network/api/)
+- [Docker Desktop: 컨테이너에서 호스트로 연결하는 `host.docker.internal`](https://docs.docker.com/desktop/features/networking/networking-how-tos/)
+- [Docker Compose: file-backed secret과 읽기 전용 service mount](https://docs.docker.com/reference/compose-file/services/)
+- [Microsoft: `Set-Acl`과 ACL 상속 차단](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-acl)
+- [Microsoft: 암호학적 `RandomNumberGenerator.GetBytes`](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.randomnumbergenerator.getbytes)
+- [GitHub Actions: Windows 기본 `pwsh` shell](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)
 - [OpenAI Docs: Codex CLI 설치·로그인](https://developers.openai.com/codex/cli)
 - [Anthropic: Claude Code 시작](https://docs.anthropic.com/en/docs/claude-code/getting-started)
 
@@ -42,9 +48,9 @@
 
 ## 3. Release JAR 설치
 
-완전한 3-way에서 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
+완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.20.jar`를 받는다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.21.jar`를 받는다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`
@@ -55,9 +61,15 @@
 
 Release JAR 사용자는 Maven이 필요하지 않다. Burp를 custom Java로 실행하면 class file 호환을 위해 Java 21 이상을 사용한다.
 
-## 4. ZAP 준비 — Docker 권장 경로
+## 4. ZAP 준비 — Desktop 또는 Docker 중 택1
 
-macOS/Linux에서 저장소 루트에서 실행한다.
+FlowScope는 `127.0.0.1:8089`의 호환 ZAP API를 확인한다. Web **빠른 시작 → 로컬 ZAP 연결**은 연결 여부·버전·key 오류를 실행 전에 표시하고, 연결 전에는 캠페인 버튼을 비활성화한다. API만으로 Desktop과 Docker를 신뢰성 있게 구분할 수 없으므로 배포 방식을 추측하지 않는다.
+
+기존 ZAP GUI를 사용하려면 아래 **Desktop 경로**를, 팀·CI·벤치마크에서 버전과 add-on을 고정하려면 **Docker Quick Start**를 선택한다. 둘을 동시에 실행하면 `8089` 포트가 충돌하므로 하나만 실행한다.
+
+### Docker Quick Start — macOS/Linux
+
+저장소 루트에서 실행한다.
 
 ```bash
 ./scripts/zap-up.sh
@@ -88,35 +100,63 @@ FLOWSCOPE_ZAP_PORT=18089 FLOWSCOPE_BURP_SCANNER_PORT=18081 ./scripts/zap-up.sh
 
 이 경우 Burp SCANNER listener, `-Dflowscope.ports`, `-Dflowscope.zap.url`도 같은 값으로 바꿔야 한다. 일부 값만 바꾸면 SCANNER provenance가 생기지 않는다.
 
-### Windows Docker 수동 시작
+### Docker Quick Start — Windows 10/11
 
-현재 자동 스크립트는 Bash가 있는 macOS/Linux에서 검증했다. Windows PowerShell을 자동 지원한다고 주장하지 않는다. Docker Desktop과 PowerShell 7에서는 다음과 같이 동일한 secret 파일과 Compose를 준비할 수 있다.
+Docker Desktop을 Linux container 모드로 시작하고 일반 사용자 PowerShell 7에서 저장소 루트로 이동한 뒤 실행한다.
 
 ```powershell
-$dir = Join-Path $HOME ".flowscope"
-New-Item -ItemType Directory -Force $dir | Out-Null
-$key = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()
-[IO.File]::WriteAllText((Join-Path $dir "zap-api-key"), $key)
-$env:FLOWSCOPE_ZAP_KEY_FILE = Join-Path $dir "zap-api-key"
-docker compose -p flowscope-zap -f infra/zap/compose.yaml up -d
+.\scripts\zap-up.ps1
 ```
 
-Windows ACL은 사용자 환경마다 다르므로 `~/.flowscope/zap-api-key`를 현재 사용자만 읽도록 직접 확인한다. Compose는 이 파일을 컨테이너에 읽기 전용으로 마운트하며 key 값을 컨테이너 환경에 넣지 않는다. FlowScope가 key 파일을 처음 읽는 시점은 확장 로드 때다.
+스크립트는 .NET `RandomNumberGenerator`로 32-byte key를 만들고 `Set-Acl`로 상속을 제거한 뒤 현재 Windows 사용자에게만 FullControl을 준다. Compose는 값을 환경변수로 넘기지 않고 file-backed secret으로 `/run/secrets/flowscope-zap-api-key`에 읽기 전용 마운트한다. Docker Desktop가 공식 제공하는 `host.docker.internal`을 통해 컨테이너 ZAP이 호스트 Burp `8081`에 연결된다.
 
-## 5. ZAP 준비 — Desktop 경로
+상태 확인·중지는 다음과 같다.
+
+```powershell
+docker compose -p flowscope-zap -f infra/zap/compose.yaml ps
+docker compose -p flowscope-zap -f infra/zap/compose.yaml logs
+.\scripts\zap-down.ps1
+```
+
+포트를 바꾸려면 같은 PowerShell 세션에서 함께 지정한다.
+
+```powershell
+$env:FLOWSCOPE_ZAP_PORT = '18089'
+$env:FLOWSCOPE_BURP_SCANNER_PORT = '18081'
+.\scripts\zap-up.ps1
+```
+
+PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta.21 지원 계약이 아니다. WSL 사용자는 Linux Bash 경로를 쓰되 Burp가 Windows 호스트에 있으면 listener 도달성을 직접 확인한다. key를 처음 만든 뒤 이미 로드된 FlowScope 확장은 한 번 재로드한다.
+
+## 5. ZAP Desktop 경로
 
 1. ZAP 2.17.0을 설치한다.
-2. ZAP의 main local server/proxy를 `127.0.0.1:8089`로 설정한다.
-3. API options에서 local API key를 설정한다. key 비활성화는 하지 않는다.
-4. ZAP **Options → Network → Connection → HTTP Proxy**에서 host `127.0.0.1`, port `8081`, enabled를 설정한다.
-5. 설치 add-on에 `spider`, `client`, `spiderAjax`, `pscan`, `selenium`이 있는지 확인한다.
-6. API key는 다음 중 하나로 FlowScope에 제공한다.
+2. 저장소 루트에서 API key를 생성한다. 값은 화면에 출력되지 않는다.
+
+   macOS/Linux:
+
+   ```bash
+   ./scripts/zap-key.sh
+   ```
+
+   Windows PowerShell 7:
+
+   ```powershell
+   .\scripts\zap-key.ps1
+   ```
+
+3. ZAP의 main local server/proxy를 `127.0.0.1:8089`로 설정한다.
+4. ZAP API options에서 생성된 `~/.flowscope/zap-api-key` 값을 local API key로 설정한다. key 비활성화는 하지 않는다.
+5. ZAP **Options → Network → Connection → HTTP Proxy**에서 host `127.0.0.1`, port `8081`, enabled를 설정한다.
+6. 설치 add-on에 `spider`, `client`, `spiderAjax`, `pscan`, `selenium`이 있는지 확인한다.
+7. API key는 다음 중 하나로 FlowScope에 제공한다.
    - 기본 `~/.flowscope/zap-api-key`, owner-only 파일
    - `-Dflowscope.zap.keyFile=/absolute/path`
    - `FLOWSCOPE_ZAP_API_KEY`
    - `-Dflowscope.zap.key=...`
 
 우선순위는 JVM 속성 key → 환경 변수 → 지정 key 파일 → 기본 key 파일이다. secret을 Git, README, 실행 로그에 넣지 않는다.
+이미 FlowScope를 로드한 뒤 key를 만들었다면 확장을 한 번 재로드한다.
 
 ## 6. Codex 또는 Claude Code 준비
 
@@ -151,6 +191,12 @@ JAR을 로드하고 Docker ZAP을 시작한 뒤 실행한다.
 ./scripts/doctor.sh
 ```
 
+Windows PowerShell 7:
+
+```powershell
+.\scripts\doctor.ps1
+```
+
 검사 항목:
 
 - HUMAN `8080`, SCANNER `8081` 포트 연결 가능 여부
@@ -166,8 +212,10 @@ JAR을 로드하고 Docker ZAP을 시작한 뒤 실행한다.
 mvn clean verify
 ```
 
+Windows 소스 빌드는 `.\scripts\doctor.ps1 -Build` 후 `mvn clean verify`를 실행한다.
+
 doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명하지 않는다. `8080/8081`이 열렸더라도 Burp listener 표와 FlowScope 포트 분류를 눈으로 대조한다.
-기본 포트를 바꿨다면 `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT`, `FLOWSCOPE_MCP_PORT`를 같은 shell에 지정해 doctor 기준도 맞춘다.
+기본 포트를 바꿨다면 `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT`, `FLOWSCOPE_MCP_PORT`를 같은 shell/PowerShell 세션에 지정해 doctor 기준도 맞춘다. Windows doctor는 key ACL 상속과 다른 SID의 허용 규칙도 검사한다.
 
 ## 8. 첫 3-way 실행
 
@@ -185,7 +233,9 @@ doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명
 | 증상 | 확인할 사실 | 조치 |
 |---|---|---|
 | `Extension class is not a recognized type` | thin JAR 또는 잘못된 타입 선택 | Release의 `flowscope-*.jar` 하나를 Java 확장으로 다시 로드 |
-| ZAP API 연결 실패 | `127.0.0.1:8089`, key 불일치 | `scripts/doctor.sh`, Compose logs, key 파일 확인 후 FlowScope 재로드 |
+| ZAP API 연결 실패 | `127.0.0.1:8089`, key 불일치 | OS에 맞는 `doctor.sh`/`doctor.ps1`, Compose logs, key 파일 확인 후 FlowScope 재로드 |
+| Windows key ACL 실패 | 상속 또는 다른 SID의 허용 규칙 | 일반 사용자 PowerShell에서 `zap-up.ps1` 재실행. 네트워크/FAT 파일시스템 대신 사용자 프로필의 NTFS 경로 사용 |
+| Windows에서 컨테이너가 Burp에 연결되지 않음 | Docker Desktop Linux container 모드, Burp `127.0.0.1:8081` listener | Docker Desktop 상태와 `host.docker.internal` 도달성, Windows 방화벽을 확인 |
 | ZAP은 완료했는데 SCANNER 0건 | upstream이 Burp `8081`을 통과하지 않음 또는 scope 불일치 | ZAP HTTP proxy, Burp listener, exact scope를 함께 확인 |
 | Rendered 0건 경고 | Client/AJAX가 실제 요청을 만들지 않음 | ZAP logs, Firefox/Selenium add-on, 대상 CSP/login 상태 확인. Traditional 결과와 혼동하지 않음 |
 | CLI 실행 파일 없음 | Burp가 CLI PATH를 상속하지 않음 | 절대경로 시스템 속성 지정 후 Burp 재시작 |

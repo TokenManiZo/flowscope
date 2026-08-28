@@ -814,3 +814,21 @@
 - **한계:** helper와 doctor는 macOS/Linux Bash에서만 검증했다. Windows는 동일 Compose의 수동 PowerShell 절차를 제공하지만 자동화 완료로 주장하지 않는다. container health/API/upstream/add-on 확인은 실제 target TLS, USER A/B 주입, Client/AJAX rendered capture, 취약점 탐지 성능을 증명하지 않는다.
 - **근거:** PortSwigger 공식 문서는 Montoya Java JAR을 Burp에서 직접 로드하고 최신 Burp 사용을 권고한다. ZAP 공식 문서는 Docker headless/xvfb, API key, 외부 API 접근 범위 주의를 설명하며 Network API는 upstream HTTP proxy 설정·활성화를 제공한다. OpenAI/Anthropic 공식 문서는 각 CLI 설치와 사용자 로그인을 별도 host client 흐름으로 제공한다.
 - **상태:** beta.20 코드·Compose·한영 설치 가이드·실행 환경 검증 추가. 실제 beta.20 Burp 3-way target gate는 별도다.
+
+## D-087 · Windows 지원 = PowerShell 7 helper + Compose file-backed secret
+
+- **문제:** beta.20은 Windows 사용자가 key 생성·ACL·Compose 환경변수를 수동 조립해야 했다. 또한 Windows drive path의 colon을 포함한 bind short syntax와 POSIX 권한 설명을 그대로 적용할 수 없어 오설정 가능성이 컸다.
+- **공식 근거:** Docker Desktop은 Windows 컨테이너에서 호스트 서비스로 연결할 때 `host.docker.internal`을 제공한다. Compose service secret은 file source를 `/run/secrets`에 read-only mount한다. Microsoft는 `RandomNumberGenerator.GetBytes`를 암호학적으로 강한 byte 생성 API로, `Set-Acl`과 `SetAccessRuleProtection`을 Windows 보안 descriptor·상속 변경 경로로 문서화한다. GitHub Actions의 Windows 기본 shell은 PowerShell Core `pwsh`다.
+- **결정:** Windows 10/11, Docker Desktop Linux container mode, PowerShell 7을 beta 지원 계약으로 둔다. `zap-up.ps1`은 32-byte random key를 만들고 ACL 상속을 제거한 뒤 현재 SID만 FullControl로 허용한다. `doctor.ps1`은 key format·reparse point·ACL·listener·ZAP API/version/upstream/add-on·provider·Web/MCP와 선택적 Maven/JDK를 확인한다. 모든 OS에서 key 값 대신 Compose file-backed secret을 사용한다.
+- **기각:** PowerShell 5.1까지 동시에 지원하는 방식은 인코딩·런타임 차이를 추가하고 GitHub 기본 `pwsh`와 다른 경로를 만들므로 이번 계약에서 제외했다. Windows container image를 별도 제공하는 방식은 공식 ZAP Linux image·Firefox/Selenium 기준선과 달라 기각했다. WSL helper가 Windows host Burp 도달성을 자동 해결한다고 주장하는 방식도 네트워크 구성별 차이를 숨겨 기각했다.
+- **검증 경계:** macOS에서 같은 Compose secret을 실제 ZAP 2.17.0에 mount해 API/upstream/add-on을 재검증한다. GitHub `windows-latest`는 세 `.ps1` 파일을 실제 PowerShell parser로 검사한다. GitHub Windows runner의 parser 통과는 Windows Docker Desktop daemon, 방화벽, Burp listener, HTTPS, target capture를 증명하지 않으므로 실기기 gate 전에는 Windows runtime 완료로 표시하지 않는다.
+- **상태:** beta.21 구현·문서·정적/CI 검증 진행. Windows 실기기 3-way gate 대기.
+
+## D-088 · ZAP 배포 중립 연결 + Desktop/Docker 동등 선택
+
+- **문제:** Docker helper가 먼저 보이면 기존 ZAP Desktop 사용자는 제품 전체를 컨테이너로 실행해야 한다고 오해하고, 캠페인을 눌러 실패하기 전까지 API·key 문제를 알 수 없었다.
+- **결정:** 캠페인 엔진은 ZAP 배포 방식을 입력으로 받지 않는다. loopback ZAP version API 성공 여부만 `CONNECTED / AUTH_FAILED / UNREACHABLE`로 분류하고, API 응답으로 Desktop과 Docker를 추측하지 않는다. Web 빠른 시작은 연결 상태·버전을 선행 표시하고 연결 전 실행을 비활성화하며, Desktop 설정과 선택형 Docker Quick Start를 함께 제시한다. 독립 `zap-key.sh`/`zap-key.ps1`로 두 경로가 같은 owner-only key 계약을 사용한다.
+- **기각:** 프로세스명·User-Agent·컨테이너 metadata로 배포 방식을 자동 판별하는 방식은 ZAP API 호환성과 캠페인 결과에 필요 없고 오판 가능성이 있어 기각했다. Web/Burp가 임의로 로컬 Docker나 ZAP Desktop 프로세스를 시작하는 방식도 설치 위치·권한·Docker daemon 상태를 숨기므로 기각했다.
+- **검증 경계:** 연결 성공은 ZAP API 접근과 key 일치만 뜻한다. Burp `8081` upstream, 필수 add-on, target TLS와 scanner capture는 doctor와 실제 캠페인 gate가 별도로 검증한다.
+- **근거:** ZAP 공식 Network API는 proxy 설정/상태를 배포 방식과 무관한 API로 제공하고, ZAP Docker 문서는 컨테이너를 별도 실행 선택지로 설명한다. 따라서 제품 코어가 배포 종류를 아는 것보다 동일 API 계약을 검증하는 편이 결합도가 낮다.
+- **상태:** beta.21 Web API/UI, Desktop key helper, 한영 설치 문서 구현. 실제 ZAP Desktop 수동 gate 대기.

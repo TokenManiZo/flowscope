@@ -68,6 +68,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default com.fasterxml.jackson.databind.JsonNode scannerStatus() {
             return new ObjectMapper().createObjectNode().put("status", "NOT_STARTED");
         }
+        default ObjectNode zapStatus() {
+            return new ObjectMapper().createObjectNode()
+                    .put("connected", false)
+                    .put("state", "UNAVAILABLE")
+                    .put("message", "ZAP 연결 확인 기능을 사용할 수 없습니다.");
+        }
         default com.fasterxml.jackson.databind.JsonNode startLlm(LocalLlmRunner.Provider provider,
                                                                   LocalLlmRunner.Role role,
                                                                   String target, String accountId) {
@@ -158,6 +164,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/session-bind" -> sessionBind(request);
             case "/api/session-unbind" -> sessionUnbind(request);
             case "/api/session-capture" -> sessionCapture(request);
+            case "/api/zap-status" -> zapStatus(request);
             case "/api/scanner-run" -> scannerRun(request);
             case "/api/llm-run" -> llmRun(request);
             case "/api/identity-reset" -> identityReset(request);
@@ -576,6 +583,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
             body.set("run", state.startScanner(target, accounts, anonymous));
             return json(202, body);
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    private LoopbackHttpServer.Response zapStatus(LoopbackHttpServer.Request request) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        return json(200, state.zapStatus());
     }
 
     private LoopbackHttpServer.Response llmRun(LoopbackHttpServer.Request request) throws IOException {

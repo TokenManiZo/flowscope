@@ -1488,6 +1488,53 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - Windows는 Docker wrapper 대신 상세 문서의 PowerShell/수동 ZAP Desktop 절차를 사용해야 하며 자동 wrapper는 아직 제공하지 않는다.
 - 다음 gate는 beta.20 JAR을 Burp Community에 재로드한 뒤 HUMAN raw byte와 SCANNER 실제 capture를 확인하는 것이다.
 
+## 2026-08-28 · 1.2.0-beta.21 · ZAP 배포 중립 온보딩과 Windows 설치 경로
+
+### 목표와 성공 조건
+
+- Windows 사용자가 수동 key·ACL·Compose 명령을 조립하지 않고 macOS/Linux와 같은 up→doctor→down 흐름을 사용한다.
+- 기존 ZAP Desktop 사용자는 Docker를 설치하지 않고 같은 캠페인 엔진을 사용하며, 실행 전에 연결 문제를 확인한다.
+- Windows drive path를 안전하게 전달하고 key 값이 container environment·출력·저장소에 남지 않는다.
+- 실제로 검증하지 않은 Windows Docker runtime은 완료라고 쓰지 않는다.
+
+### 개발·수정
+
+- Windows 10/11 + Docker Desktop Linux container + PowerShell 7용 `zap-up.ps1`, `zap-down.ps1`, `doctor.ps1`을 추가했다.
+- Desktop과 Docker가 함께 쓰는 owner-only `zap-key.sh`/`zap-key.ps1`을 분리하고 key 값을 출력하지 않는다.
+- Web 빠른 시작에 배포 중립 ZAP 연결 상태·version·key 오류·재확인을 추가하고 연결 전 캠페인을 비활성화했다. 연결 실패 때 Desktop 설정과 Docker Quick Start를 동등하게 표시한다.
+- .NET cryptographic RNG로 32-byte key를 만들고 ACL 상속을 제거한 뒤 현재 Windows SID에만 FullControl을 부여한다. doctor는 reparse point, key format, ACL, 포트, ZAP API/version/upstream/add-on, provider, Web/MCP와 선택적 Maven/JDK를 점검한다.
+- OS별 bind path short syntax 대신 Compose file-backed secret을 사용해 key 파일을 `/run/secrets/flowscope-zap-api-key`에 read-only mount한다.
+- GitHub `windows-latest`가 네 PowerShell 파일을 실제 parser로 검사하는 CI job과 한영 설치·문제 해결 문서를 추가하고 버전을 beta.21로 올렸다.
+
+### 이유
+
+- beta.20의 Windows 수동 절차는 key ACL을 사용자 판단에 맡겼고 명령 복사 단계가 길어 macOS/Linux와 제품 경험이 달랐다.
+- Docker를 기본처럼 먼저 제시하면 ZAP Desktop 사용자가 불필요한 daemon을 설치하고, API 연결 실패도 캠페인 실행 뒤에야 알게 된다. 캠페인은 배포 방식이 아니라 동일 ZAP API 계약만 필요하므로 D-088처럼 분리했다.
+- PowerShell 5.1 동시 지원, Windows container image, WSL이 host Burp 경계를 자동 해결한다는 주장은 런타임·인코딩·네트워크 차이를 숨기므로 beta.21 계약에서 제외했다(D-087).
+
+### 영향 파일
+
+- setup/CI: `scripts/zap-key.*`, `scripts/*.ps1`, `infra/zap/compose.yaml`, `.github/workflows/ci.yml`
+- 코드/회귀: `ZapClient`, `FlowScopeExtension`, `FlowScopeWebServer`, Web 빠른 시작, `FlowScopeWebServerTest`
+- 문서: README, 한영 getting-started/README/changelog, architecture, decisions D-087·D-088, product plan, UI rationale, handoff, beta validation
+
+### 검증
+
+- Docker Compose config에서 file-backed secret source와 target을 확인했다.
+- 저장소 secret scan의 유일한 탐지는 MCP 마스킹 회귀의 고엔트로피 고정 fixture였으며, 실제 secret이 아닌 의미가 드러나는 저엔트로피 test token 조합으로 바꿔 scan을 깨끗하게 유지했다.
+- macOS 실제 ZAP 2.17.0에 새 secret topology를 적용해 key read, API/version, Docker→Burp `8081` upstream, 필수 add-on과 `doctor.sh --build` 0 failure·0 warning을 재검증했다. container environment에 key 값이 없었다.
+- 공통 `zap-key.sh`로 생성한 별도 owner-only key와 host `18093`을 사용해 refactor된 `zap-up.sh` → ZAP API `2.17.0` → `zap-down.sh` 실제 lifecycle을 다시 통과했다. 기본 `8089`와 사용자 대상 트래픽은 사용하지 않았다.
+- `mvn clean verify`: 223 tests, 실패·오류·skip 0.
+- 배포물: `target/flowscope-1.2.0-beta.21.jar` 하나, 15,870,395 bytes, 2,172 entries, SHA-256 `3b9d892115d549e3b46e7eae63d59924b3c661a65e274912c64bb922655a7d2d`. ZIP 무결성, `Main-Class`, Java 21 manifest를 확인했다.
+
+### 남은 한계·다음 gate
+
+- Windows PowerShell parser 결과는 원격 CI push 후 확인해 beta validation 상태를 갱신한다.
+- 실제 ZAP Desktop에서 key/API/upstream/add-on과 Web 연결 표시를 확인해야 한다.
+- Windows 10/11 실기기에서 Docker Desktop Linux container, ACL, ZAP API/upstream, Burp SCANNER capture와 stop을 실제 확인해야 한다.
+- PowerShell 5.1, Windows container mode, WSL helper는 beta.21 지원 범위가 아니다.
+- 실제 HUMAN/SCANNER/LLM/Judge와 HTTPS/USER A/B target gate는 별도다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

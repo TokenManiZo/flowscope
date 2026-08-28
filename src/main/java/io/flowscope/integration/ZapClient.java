@@ -22,7 +22,10 @@ public final class ZapClient {
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     }
 
+    public String endpoint() { return baseUri.toString(); }
+    public boolean apiKeyConfigured() { return !apiKey.isBlank(); }
     public String version() { return get("/JSON/core/view/version/", ""); }
+    public String probeVersion() { return get("/JSON/core/view/version/", "", Duration.ofSeconds(3)); }
     public String newSession(String name) {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("ZAP session name is required");
         return get("/JSON/core/action/newSession/", "name=" + enc(name) + "&overwrite=true");
@@ -60,13 +63,17 @@ public final class ZapClient {
     public String installedAddons() { return get("/JSON/autoupdate/view/installedAddons/", ""); }
 
     private String get(String path, String query) {
+        return get(path, query, Duration.ofSeconds(20));
+    }
+
+    private String get(String path, String query, Duration timeout) {
         StringBuilder q = new StringBuilder(query == null ? "" : query);
         if (!apiKey.isBlank()) {
             if (!q.isEmpty()) q.append('&');
             q.append("apikey=").append(enc(apiKey));
         }
         URI uri = baseUri.resolve(path + (q.isEmpty() ? "" : "?" + q));
-        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(uri).timeout(timeout).GET().build();
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {

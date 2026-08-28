@@ -1054,6 +1054,7 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("status", "NOT_STARTED")
                         : mcpServer.deterministicZapBaselineStatus();
             }
+            @Override public com.fasterxml.jackson.databind.node.ObjectNode zapStatus() { return zapConnectionStatus(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startLlm(LocalLlmRunner.Provider provider,
                                                                                LocalLlmRunner.Role role,
                                                                                String target,
@@ -1173,6 +1174,36 @@ public final class FlowScopeExtension implements BurpExtension {
         api.repeater().sendToRepeater(draft, "FlowScope " + record.evidenceId);
         api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId
                 + (raw ? " (메모리 원문, 미전송)" : " (마스킹 전문, 미전송)"));
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode zapConnectionStatus() {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode body = mapper.createObjectNode();
+        if (zapClient == null) {
+            return body.put("connected", false).put("state", "STARTING")
+                    .put("message", "FlowScope의 ZAP 제어면을 준비하는 중입니다.");
+        }
+        body.put("endpoint", zapClient.endpoint());
+        body.put("apiKeyConfigured", zapClient.apiKeyConfigured());
+        if (!zapClient.apiKeyConfigured()) {
+            return body.put("connected", false).put("state", "KEY_MISSING")
+                    .put("message", "FlowScope용 ZAP API key가 없습니다. key helper로 준비한 뒤 확장을 다시 로드하세요.");
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode response = mapper.readTree(zapClient.probeVersion());
+            String version = response.path("version").asText("");
+            body.put("connected", true).put("state", "CONNECTED").put("version", version)
+                    .put("message", version.isBlank() ? "실행 중인 로컬 ZAP API에 연결됐습니다."
+                            : "실행 중인 로컬 ZAP " + version + " API에 연결됐습니다.");
+        } catch (Exception error) {
+            String detail = error.getMessage() == null ? "" : error.getMessage();
+            boolean auth = detail.contains("HTTP 401") || detail.contains("HTTP 403");
+            body.put("connected", false).put("state", auth ? "AUTH_FAILED" : "UNREACHABLE")
+                    .put("message", auth
+                            ? "ZAP API는 응답했지만 API key가 일치하지 않습니다. FlowScope와 ZAP 설정을 맞춘 뒤 확장을 다시 로드하세요."
+                            : "127.0.0.1의 ZAP API에 연결할 수 없습니다. ZAP Desktop 또는 Docker Quick Start를 먼저 실행하세요.");
+        }
+        return body;
     }
 
     private void startMcp() {

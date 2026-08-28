@@ -78,9 +78,13 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("scannerstate.completed_with_warnings"));
         assertTrue(index.body().contains("SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS'"));
         assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
+        assertTrue(index.body().contains("ZAP Desktop 설정"));
+        assertTrue(index.body().contains("Docker Quick Start"));
+        assertTrue(index.body().contains("/api/zap-status"));
+        assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.20 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.21 · 3소스"));
         assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
         assertTrue(index.body().contains("<div class=\"graphcanvas\"><div id=\"cy\"></div></div>"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
@@ -130,6 +134,10 @@ final class FlowScopeWebServerTest {
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());
         assertEquals(403, get("/api/snapshot", token, "https://evil.example").statusCode());
+
+        JsonNode zapStatus = json(get("/api/zap-status", token, origin()));
+        assertFalse(zapStatus.path("connected").asBoolean());
+        assertEquals("UNAVAILABLE", zapStatus.path("state").asText());
 
         HttpResponse<String> snapshot = get("/api/snapshot", token, origin());
         assertEquals(200, snapshot.statusCode(), snapshot.body());

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0-beta.21 — 2026-08-28
+
+- Treated ZAP Desktop and Docker as equal deployments behind the same loopback API contract, with pre-run connection/version/key status in Quick Start.
+- Disabled ZAP campaigns until the API is connected and displayed both Desktop setup and optional Docker Quick Start in the same UI.
+- Added `zap-key.sh` and `zap-key.ps1` to prepare an owner-only Desktop key without printing its value.
+- Added `zap-up.ps1`, `zap-down.ps1`, and `doctor.ps1` for Windows 10/11, Docker Desktop Linux containers, and PowerShell 7.
+- Added cryptographic key generation, protected current-user Windows ACLs, and custom-port-aware diagnostics.
+- Replaced the OS-sensitive key bind syntax with a Compose file-backed secret.
+- Added GitHub `windows-latest` PowerShell parser CI and synchronized Korean/English Windows setup and troubleshooting guides.
+- Kept real Windows Docker/ZAP/Burp target capture as an explicit uncompleted validation gate.
+
 ## 1.2.0-beta.20 — 2026-08-28
 
 - Distinguished the complete three-way runtime from reduced HUMAN-only mode and stopped requiring Maven for release-JAR users.

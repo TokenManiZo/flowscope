@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class FlowScopeControlTabTest {
     @Test
     void masksBearerInVisibleStatusWithoutChangingNonSecretStatus() {
-        String token = "0123456789abcdef0123456789abcdef";
+        String token = "not-a-real-token-" + "x".repeat(32);
         String visible = FlowScopeControlTab.maskMcpConnection(
                 "http://127.0.0.1:8787/mcp · Bearer " + token);
 

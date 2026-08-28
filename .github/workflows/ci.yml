@@ -32,3 +32,23 @@ jobs:
           unzip -p "$release_jar" META-INF/MANIFEST.MF | grep -q 'Main-Class: io.flowscope.burp.FlowScopeExtension'
           if jar tf "$release_jar" | grep -q '^burp/api/montoya/'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(com/fasterxml/jackson/|META-INF/versions/.*/com/fasterxml/jackson/)'; then exit 1; fi
+
+  windows-scripts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Parse Windows PowerShell helpers
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($path in @('scripts/zap-key.ps1', 'scripts/zap-up.ps1', 'scripts/zap-down.ps1', 'scripts/doctor.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path), [ref] $tokens, [ref] $errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              $errors | ForEach-Object { Write-Error "$path`: $($_.Message)" }
+            }
+          }
+          if ($failed) { exit 1 }

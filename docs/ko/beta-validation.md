@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.20 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.21 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.21 ZAP 온보딩·Windows 설치 경로 gate
+
+| 구분 | 결과 |
+|---|---|
+| 공식 근거 | Docker Desktop `host.docker.internal`, Compose file-backed secret, Microsoft cryptographic RNG·Set-Acl, GitHub Actions Windows `pwsh` 계약 확인 |
+| 구현 | Desktop/Docker 공통 `zap-key.sh`·`zap-key.ps1`, Web ZAP 연결/version/key 상태와 연결 전 캠페인 차단, Windows PowerShell 7 `zap-up.ps1`·`zap-down.ps1`·`doctor.ps1`; 32-byte key, ACL 상속 제거·현재 SID 전용 FullControl, reparse point 거부, custom port, ZAP/API/upstream/add-on/provider/Web/MCP/build 진단 |
+| Compose 회귀 | key를 container environment가 아닌 file-backed secret으로 전환. macOS 실제 ZAP 2.17.0에서 `/run/secrets/flowscope-zap-api-key` read, loopback API/version, `host.docker.internal:8081` upstream, 필수 add-on, doctor 0 failure·0 warning 재확인 |
+| Windows CI | GitHub `windows-latest` PowerShell 7 parser gate 추가. 실제 원격 CI 결과는 beta.21 커밋 push 후 기록 |
+| 자동 회귀 | `mvn clean verify`, 223 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.21.jar`, 15,870,395 bytes, 2,172 entries, SHA-256 `3b9d892115d549e3b46e7eae63d59924b3c661a65e274912c64bb922655a7d2d`, ZIP·Main-Class·Java 21 manifest 검증 통과 |
+
+이 gate는 배포 중립 연결 상태, Desktop key 준비, Windows용 실행 파일과 OS 독립 secret topology를 구현한 것이다. 실제 ZAP Desktop 수동 설정과 Windows 10/11 실기기의 Docker Desktop daemon, 방화벽, Burp listener, ZAP API/upstream, HTTPS와 target SCANNER capture는 아직 실행하지 않았으므로 완료로 계산하지 않는다.
 
 ## 1.2.0-beta.20 공개 설치·ZAP 환경 gate
 

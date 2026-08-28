@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.20 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.21 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -17,15 +17,16 @@
 
 **상태: 목표·비목표·측정 가능한 완료 기준을 README·설계·결정 문서에 동일하게 고정함. 후속 우선순위 작업은 별도 단계다.**
 
-## 0. beta.20 우선순위: 공개 설치 재현성과 기존 HUMAN 실환경 gate
+## 0. beta.21 우선순위: ZAP 배포 중립 온보딩·Windows 재현성과 기존 HUMAN 실환경 gate
 
 1. Release JAR·소스 빌드·완전한 3-way 요구사항을 분리하고 ZAP/LLM을 완전한 흐름의 필수 구성으로 고친다. → 검증: 한영 README와 상세 시작 문서 링크·버전·포트 정합성.
-2. macOS/Linux에서 공식 ZAP 2.17.0 digest 이미지, random owner-only API key, Docker-host Burp `8081` upstream을 한 명령으로 준비한다. → 검증: Compose config, ShellCheck, 실제 container health/API/version/upstream/add-on 재조회.
-3. FlowScope가 기본 `~/.flowscope/zap-api-key`를 링크·권한 검증 후 읽는다. → 검증: 명시 key/환경/key file 우선순위와 file validation 회귀.
-4. doctor로 listener, ZAP, add-on, provider CLI, Web/MCP를 점검하되 포트 open만으로 Burp 신원을 증명한다고 주장하지 않는다.
-5. 아래의 HUMAN 원문 byte·Evidence UI 실제 Burp gate를 이어서 수행한다.
+2. ZAP Desktop과 선택형 Docker가 동일한 loopback API 계약을 사용하고 Web에서 실행 전 연결·버전·key 오류를 확인한다. → 검증: 연결 상태 API/UI 계약, 연결 전 캠페인 비활성화, 배포 방식 미추측.
+3. macOS/Linux Bash와 Windows PowerShell 7에서 owner-only API key를 독립 생성하고, 선택한 Docker 경로에서는 공식 ZAP 2.17.0 digest 이미지와 Docker-host Burp `8081` upstream을 한 명령으로 준비한다. → 검증: key script, Compose config, ShellCheck, Windows CI parser, macOS 실제 container health/API/version/upstream/add-on 재조회.
+4. FlowScope가 기본 `~/.flowscope/zap-api-key`를 링크·권한 검증 후 읽는다. → 검증: 명시 key/환경/key file 우선순위와 file validation 회귀.
+5. doctor로 listener, ZAP, add-on, provider CLI, Web/MCP를 점검하되 포트 open만으로 Burp 신원을 증명한다고 주장하지 않는다.
+6. 아래의 HUMAN 원문 byte·Evidence UI 실제 Burp gate를 이어서 수행한다.
 
-**현재 상태:** beta.20 설치 코드·문서, 공식 ZAP 2.17.0 digest 이미지의 실제 기동, loopback API/version, Docker→Burp SCANNER `8081` upstream, 필수 add-on, doctor, owner-only key file과 222개 자동 회귀를 확인했다. target SCANNER capture, HTTPS, USER A/B, LLM/Judge end-to-end는 이번 setup 검증으로 대체하지 않는다.
+**현재 상태:** beta.21에 Desktop/Docker 공통 연결 확인 UI와 독립 key helper, 한영 설치 코드·문서, macOS의 공식 ZAP 2.17.0 실제 기동·loopback API/version·Docker→Burp SCANNER `8081` upstream·필수 add-on·doctor, Windows PowerShell helper와 CI parser gate를 구현했다. 실제 ZAP Desktop 수동 설정, Windows 실기기 Docker Desktop target capture, HTTPS, USER A/B, LLM/Judge end-to-end는 이번 setup 검증으로 대체하지 않는다.
 
 ## 0. beta.19 우선순위: HUMAN 원문 byte·Evidence UI 실환경 gate
 
@@ -204,7 +205,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.20 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·재현 가능한 ZAP 실행 환경 구현과 222개 자동 회귀 완료, 실제 beta.20 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.21 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결과 macOS/Linux/Windows용 재현 가능한 선택형 Docker 환경 구현 및 223개 자동 회귀 완료, 실제 beta.21 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

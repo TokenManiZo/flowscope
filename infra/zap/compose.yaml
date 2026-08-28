@@ -13,7 +13,9 @@ services:
       - "127.0.0.1:${FLOWSCOPE_ZAP_PORT:-8089}:${FLOWSCOPE_ZAP_PORT:-8089}"
     volumes:
       - ./start-zap.sh:/opt/flowscope/start-zap.sh:ro
-      - "${FLOWSCOPE_ZAP_KEY_FILE:-${HOME}/.flowscope/zap-api-key}:/run/secrets/flowscope-zap-api-key:ro"
+    secrets:
+      - source: zap_api_key
+        target: flowscope-zap-api-key
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/flowscope-zap-ready"]
       interval: 5s
@@ -22,3 +24,7 @@ services:
       start_period: 15s
     restart: unless-stopped
     stop_grace_period: 30s
+
+secrets:
+  zap_api_key:
+    file: "${FLOWSCOPE_ZAP_KEY_FILE:-${HOME}/.flowscope/zap-api-key}"

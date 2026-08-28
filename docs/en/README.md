@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.20
+# FlowScope 1.2.0-beta.21
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -32,6 +32,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - Explicit `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` authentication state. Unbound cookie rotation no longer explodes graph identities, and verified account bindings remain service-scoped.
 - Localhost-only authenticated MCP server for Codex and Claude Code subscription clients.
 - System-owned ZAP baseline: Traditional Spider, strict Client Spider with AJAX fallback, passive queue completion, and native alerts. The completion gate reads the raw Burp capture store rather than a delayed analysis snapshot. A completed Client stage with zero rendered captures triggers AJAX; zero captures from both rendered stages is exposed as `COMPLETED_WITH_WARNINGS`. Active Scan remains separate and approval-gated.
+- Deployment-neutral ZAP onboarding: Quick Start checks the loopback API/version/key before enabling a campaign and offers ZAP Desktop or optional Docker without pretending the API can identify its deployment type.
 - Closed-world LLM execution through an exact-scope FlowScope request tool; direct external traffic is never trusted for decisive verdicts.
 - Server-enforced independent Explorer view, immutable three-lane dataset lock, and final LLM Judge synthesis.
 - Web quick-start buttons that launch a fresh locally authenticated Codex or Claude CLI process for Explorer and a separate persistent Judge session that can be resumed explicitly.
@@ -53,15 +54,15 @@ Binary messages, messages over the 1 MiB per-message limit, and messages beyond 
 - HUMAN + SCANNER: Burp plus OWASP ZAP 2.17.0
 - Complete HUMAN + SCANNER + LLM/Judge: the above plus either a signed-in Codex CLI or Claude Code client
 - Source builds only: JDK 21 or newer and Maven 3.9 or newer
-- Optional containerized ZAP: Docker Engine/Desktop with Docker Compose v2
+- Optional containerized ZAP: Docker Engine/Desktop with Docker Compose v2; Windows helper contract requires Windows 10/11, Docker Desktop Linux containers, and PowerShell 7
 
 ZAP and a local model client are required for the complete three-way workflow. They are optional only when deliberately running a reduced HUMAN-only mode. The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, and JDK 21; this is not a compatibility claim for every older version or operating system.
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the Docker helper for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.20.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.21.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.20.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.21.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
@@ -71,7 +72,7 @@ For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-i
 - [`src/test`](../../src/test) — deterministic security, parser, analysis, persistence, MCP, and local-Web regression tests.
 - [`agent-workspace`](../../agent-workspace) — ready-to-copy Codex/Claude MCP configuration and Explorer/Judge instructions.
 - [`infra/zap`](../../infra/zap) — optional official ZAP 2.17.0 Docker Compose setup.
-- [`scripts`](../../scripts) — macOS/Linux ZAP lifecycle and environment preflight helpers.
+- [`scripts`](../../scripts) — macOS/Linux Bash and Windows PowerShell ZAP key, optional Docker lifecycle, and environment preflight helpers.
 - [`docs/ko`](../ko) — canonical Korean architecture, decisions, development log, validation, research, and functional specification.
 - [`docs/en`](.) — English user, contribution, security, and changelog documents.
 - [`.github`](../../.github) — root-level Maven CI and dependency updates.

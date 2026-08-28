@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.20
+# FlowScope 설계서 v1.2.0-beta.21
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -35,14 +35,17 @@ host
 ├─ Burp + FlowScope JAR
 │  ├─ HUMAN 127.0.0.1:8080
 │  └─ SCANNER 127.0.0.1:8081 ◀──── ZAP upstream proxy
+├─ ZAP Desktop 2.17.0 ───────────── API 127.0.0.1:8089  (택1)
 ├─ Codex CLI 또는 Claude Code ─────▶ FlowScope MCP 127.0.0.1:8787
 └─ FlowScope Web 127.0.0.1:17777
 
 optional Docker
-└─ ZAP 2.17.0 ── API 127.0.0.1:8089 only
+└─ ZAP 2.17.0 ── API 127.0.0.1:8089 only  (택1)
 ```
 
-`scripts/zap-up.sh`는 임의 ZAP API key를 owner-only `~/.flowscope/zap-api-key`에 만들고, digest 고정 이미지의 ZAP Network API를 통해 `host.docker.internal:8081` upstream을 설정한 뒤 다시 읽어 검증한다. Linux는 Compose `host-gateway`, Docker Desktop은 `host.docker.internal`을 사용한다. FlowScope는 시스템 속성 key, 환경 key, 지정 key 파일, 기본 key 파일 순으로 읽으며 파일은 심볼릭 링크와 POSIX group/others 권한을 거부한다. ZAP API URL 자체는 기존처럼 loopback만 허용한다. 이 편의 계층은 actual scanner capture·rendered crawl·대상 TLS를 완료로 대체하지 않는다(D-086).
+ZAP 배포 방식은 캠페인 엔진과 분리한다. FlowScope는 loopback의 호환 ZAP API/version과 key 성공 여부만 확인하며 API 응답만으로 Desktop/컨테이너를 추측하지 않는다. Web 빠른 시작은 연결 전 캠페인을 비활성화하고 Desktop 설정과 Docker Quick Start를 같은 수준의 선택지로 제공한다. `zap-key.sh`/`zap-key.ps1`은 Desktop 사용자도 owner-only key를 값 출력 없이 준비하게 한다.
+
+선택형 `zap-up.sh` 또는 Windows `zap-up.ps1`은 같은 key helper를 사용하고, digest 고정 이미지의 ZAP Network API를 통해 `host.docker.internal:8081` upstream을 설정한 뒤 다시 읽어 검증한다. Linux는 Compose `host-gateway`, Docker Desktop은 공식 `host.docker.internal`을 사용한다. key 값은 container environment가 아니라 Compose file-backed secret으로 read-only mount한다. POSIX는 mode, Windows는 상속 차단·현재 SID 전용 ACL을 helper/doctor가 관리한다. FlowScope는 시스템 속성 key, 환경 key, 지정 key 파일, 기본 key 파일 순으로 읽으며 ZAP API URL 자체는 기존처럼 loopback만 허용한다. 이 편의 계층은 actual scanner capture·rendered crawl·대상 TLS를 완료로 대체하지 않는다(D-086, D-087, D-088).
 
 - Java 21, Maven shade fat JAR. `montoya-api`는 Burp 제공 scope다.
 - Burp `registerSuiteTab`에는 범위·포트·프로젝트·MCP 상태를 다루는 작은 Swing 제어판만 둔다. 그래프·매트릭스·상세의 정본은 시스템 브라우저에서 여는 번들 Web UI다.
