@@ -1387,6 +1387,43 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - Java `String`, Montoya 내부 복사, browser textarea, crash dump/swap의 완전 소거는 보장하지 않는다. raw vault는 영구 secret store가 아니다.
 - `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
 
+## 2026-08-28 · 1.2.0-beta.18 · HTTP byte 정본과 Evidence UI 안정화
+
+### 왜 수정했는가
+
+- beta.17은 Montoya 메시지를 `toString()`으로 바꾼 값을 raw vault에 UTF-8로 저장해, 원래 body charset과 무관한 재인코딩으로 한글·비ASCII가 깨질 수 있었다. 깨진 문자열을 다시 Repeater나 target으로 보내면 원 Evidence 재현이 아니다.
+- 긴 endpoint와 접근선 횟수 라벨이 겹쳤고, 900px 이하 화면은 최소 폭 캔버스 때문에 오른쪽 API가 보이지 않았다.
+- 파싱 표에서 operation은 같지만 Evidence가 여러 개인 경우 사용자가 고른 행 대신 첫 Evidence를 볼 여지가 있었고, 관측된 그래프 신원과 재사용 가능한 ACTIVE 계정 세션의 관계가 화면상 불명확했다.
+
+### 무엇을 변경했는가
+
+- `TransientExchangeVault`를 요청·응답 raw `byte[]`와 body offset 저장소로 바꾸고 방어 복사·상한·폐기 계약을 유지했다.
+- `HttpMessageTextCodec`을 추가해 헤더 ISO-8859-1, textual body의 Content-Type charset/기본 UTF-8을 strict decode/encode한다. binary·invalid byte는 replacement character로 숨기지 않고 Web 편집 전송을 차단한다.
+- 수정하지 않은 요청과 Repeater handoff는 원래 byte를 사용한다. 사용자가 편집한 요청만 선언 charset으로 재인코딩하며 Content-Length는 실제 Montoya body byte 길이로 갱신한다.
+- operation 라벨을 slash-aware 줄바꿈으로 바꾸고 단일 접근선의 `×1` 라벨을 숨겼다. 좁은 화면은 같은 filter 결과의 API 목록으로 전환한다.
+- 파싱 표에 Evidence ID별 `상세 보기` 버튼과 선택 상태를 추가해 정확한 요청·응답을 연다.
+- `관측 신원`과 `재사용할 등록 계정`을 문구·Request Lab 메타데이터에서 분리했다.
+
+### 영향 파일
+
+- runtime: `FlowScopeExtension`, `TransientExchangeVault`, `HttpMessageTextCodec`, `FlowScopeWebServer`
+- Web: `src/main/resources/web/index.html`
+- 회귀: `HttpMessageTextCodecTest`, `TransientExchangeVaultTest`, `FlowScopeWebServerTest`
+- 문서·배포: README, architecture, decisions D-084, UI rationale, beta validation, product plan, changelog, Maven version
+
+### 검증
+
+- UTF-8 한글·emoji, EUC-KR, invalid UTF-8, binary, edited JSON, raw byte defensive copy/round-trip 회귀를 추가했다.
+- `mvn clean verify`: 221 tests, 실패·오류·skip 0.
+- standalone 합성 샘플에서 1280px page overflow 0, 600px filtered API list·page overflow 0, 목록→상세 연결, 파싱 표 선택 Evidence ID와 열린 상세 ID 일치를 확인했다. 합성 샘플은 대상 네트워크 전송 성공을 증명하지 않는다.
+- 배포물: `target/flowscope-1.2.0-beta.18.jar` 하나, 15,866,589 bytes, 2,170 entries, SHA-256 `c3915f7fbb2451f00e8b858639fc5a1fa2d00ab72d397ac61c61e33b8612ac1c`. ZIP 무결성, `Main-Class`, Java 21, 새 codec·byte vault·Web asset 포함을 확인했다.
+
+### 남은 한계·다음 gate
+
+- beta.17에 이미 깨져 저장된 텍스트는 원래 byte를 복원할 수 없으므로 beta.18 재로드 뒤 다시 수집해야 한다.
+- 실제 Burp Community에서 비ASCII ORIGINAL byte 동일성, 편집 charset, ANONYMOUS/ACCOUNT credential 처리, binary Repeater fallback, clear/unload 폐기를 수동 검증해야 한다.
+- `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

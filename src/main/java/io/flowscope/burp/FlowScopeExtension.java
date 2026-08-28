@@ -12,6 +12,7 @@ import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.RedirectionMode;
 import burp.api.montoya.http.RequestOptions;
 import burp.api.montoya.http.message.requests.HttpRequest;
+import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.http.message.HttpHeader;
 import burp.api.montoya.proxy.ProxyHttpRequestResponse;
 import burp.api.montoya.proxy.http.InterceptedRequest;
@@ -73,7 +74,6 @@ import java.nio.file.Path;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 
 /**
  * FlowScope Burp 확장 진입점 (Montoya). 프록시 트래픽을 포트별 소스로 수집하고
@@ -350,9 +350,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     return ProxyResponseReceivedAction.continueWith(response);
                 }
                 if (staleObservation(observation)) return ProxyResponseReceivedAction.continueWith(response);
-                boolean captured = capture(response.initiatingRequest(), response.statusCode(), profile,
-                        response.bodyToString(), response.toString(), response.headerValue("Location"),
-                        response.headerValue("Content-Type"), observation);
+                boolean captured = capture(response.initiatingRequest(), response, profile, observation);
                 if (captured) {
                     observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
                             response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
@@ -403,10 +401,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     }
                     if (staleObservation(observation)) return ResponseReceivedAction.continueWith(response);
                     PortProfile profile = new PortProfile(source, detailOfTool(tool));
-                    boolean captured = capture(response.initiatingRequest(), response.statusCode(),
-                            profile, response.bodyToString(),
-                            response.toString(), response.headerValue("Location"),
-                            response.headerValue("Content-Type"), observation);
+                    boolean captured = capture(response.initiatingRequest(), response, profile, observation);
                     if (captured) {
                         observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
                                 response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
@@ -438,8 +433,7 @@ public final class FlowScopeExtension implements BurpExtension {
         };
     }
 
-    private boolean capture(HttpRequest req, int status, PortProfile profile,
-                            String respBody, String respText, String location, String responseContentType,
+    private boolean capture(HttpRequest req, HttpResponse response, PortProfile profile,
                             InFlightRequestTracker.Observation observation) {
         if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) || staleObservation(observation)) return false;
         synchronized (records) {
@@ -448,8 +442,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 return false;
             }
         }
-        RequestRecord rec = recordFrom(req, status, profile, respBody, respText, location, responseContentType,
-                System.currentTimeMillis(), true, null, observation);
+        RequestRecord rec = recordFrom(req, response, profile, System.currentTimeMillis(), true, null, observation);
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
         synchronized (records) {
@@ -460,7 +453,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 return false;
             }
             records.add(rec);
-            rawExchanges.put(rec, req.toString(), respText);
+            retainRawExchange(rec, req, response);
         }
         scheduleRebuild();
         return true;
@@ -476,10 +469,18 @@ public final class FlowScopeExtension implements BurpExtension {
         revision.incrementAndGet();
     }
 
-    private RequestRecord recordFrom(HttpRequest req, int status, PortProfile profile,
-                                     String respBody, String respText, String location, String responseContentType,
+    private RequestRecord recordFrom(HttpRequest req, HttpResponse response, PortProfile profile,
                                      long timestamp, boolean applyRunContext, String runId,
                                      InFlightRequestTracker.Observation observation) {
+        int status = response.statusCode();
+        String location = response.headerValue("Location");
+        String responseContentType = response.headerValue("Content-Type");
+        HttpMessageTextCodec.Decoded decodedRequest = decode(req);
+        HttpMessageTextCodec.Decoded decodedResponse = decode(response);
+        String requestText = decodedRequest.text();
+        String responseText = decodedResponse.text();
+        String requestBody = decodedRequest.editable() ? bodyText(requestText, req.bodyOffset()) : null;
+        String responseBody = decodedResponse.editable() ? bodyText(responseText, response.bodyOffset()) : null;
         String service = serviceOf(req);
         RunContextRegistry.Context context = !applyRunContext ? null : observation == null
                 ? runContexts.current(profile.source()) : observation.context();
@@ -525,15 +526,15 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).
         // 저장 전 반드시 마스킹 (F-05 원문 토큰 저장 금지, F-22 인증정보 가림).
-        String maskedRequest = Masking.maskHeaders(req.toString());
-        String maskedResponse = Masking.maskHeaders(respText);
+        String maskedRequest = Masking.maskHeaders(requestText);
+        String maskedResponse = Masking.maskHeaders(responseText);
         rec.requestPayload = internPayload(StoredPayload.capture(
                 maskedRequest, req.headerValue("Content-Type"), MAX_PAYLOAD_BYTES));
         rec.responsePayload = internPayload(StoredPayload.capture(
                 maskedResponse, responseContentType, MAX_PAYLOAD_BYTES));
         rec.query = Masking.truncate(Masking.maskBody(emptyToNull(req.query()),
                 "application/x-www-form-urlencoded"), MAX_BODY);
-        rec.reqBody = Masking.truncate(Masking.maskBody(req.bodyToString(), req.headerValue("Content-Type")), MAX_BODY);
+        rec.reqBody = Masking.truncate(Masking.maskBody(requestBody, req.headerValue("Content-Type")), MAX_BODY);
         rec.reqText = Masking.truncate(maskedRequest, MAX_BODY);
         rec.requestContentType = emptyToNull(req.headerValue("Content-Type"));
         rec.responseContentType = emptyToNull(responseContentType);
@@ -541,7 +542,7 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.secFetchMode = emptyToNull(req.headerValue("Sec-Fetch-Mode"));
         rec.accessControlRequestMethod = emptyToNull(req.headerValue("Access-Control-Request-Method"));
         rec.timestamp = timestamp;
-        rec.body = Masking.truncate(Masking.maskBody(respBody, responseContentType), MAX_BODY);
+        rec.body = Masking.truncate(Masking.maskBody(responseBody, responseContentType), MAX_BODY);
         rec.respText = Masking.truncate(maskedResponse, MAX_BODY);
         rec.location = Masking.truncate(Masking.maskSecrets(location), MAX_BODY);
         // 이 메서드는 응답 수신 콜백에서만 호출된다. 204/빈 본문도 실제 응답이다.
@@ -732,9 +733,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     long timestamp = item.time() == null ? 0L : item.time().toInstant().toEpochMilli();
                     PortProfile profile = profileOf(item.listenerPort());
                     String runId = "proxy-history-" + profile.source().name().toLowerCase(Locale.ROOT);
-                    incoming.add(recordFrom(request, response.statusCode(), profile,
-                            response.bodyToString(), response.toString(), response.headerValue("Location"),
-                            response.headerValue("Content-Type"), timestamp, false, runId, null));
+                    incoming.add(recordFrom(request, response, profile, timestamp, false, runId, null));
                 }
 
                 List<RouteCandidateExtractor.Seed> importedSiteMapSeeds = new ArrayList<>();
@@ -1101,7 +1100,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 RequestRecord record = evidenceRecord(evidenceId);
                 TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
                 boolean rawRequest = raw != null && raw.requestRetained();
-                String request = rawRequest ? raw.request() : record.requestTextForEvidence();
+                byte[] request = rawRequest ? raw.request()
+                        : HttpMessageTextCodec.encodeEditedRequest(record.requestTextForEvidence());
                 openDraftInRepeater(record, request, rawRequest);
                 return record;
             }
@@ -1110,8 +1110,14 @@ public final class FlowScopeExtension implements BurpExtension {
                 TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
                 boolean rawRequest = raw != null && raw.requestRetained();
                 boolean rawResponse = raw != null && raw.responseRetained();
-                String request = rawRequest ? raw.request() : record.requestTextForEvidence();
-                String response = rawResponse ? raw.response() : record.responseTextForEvidence();
+                HttpMessageTextCodec.Decoded decodedRequest = rawRequest ? decodeRequest(raw, record.requestContentType)
+                        : new HttpMessageTextCodec.Decoded(record.requestTextForEvidence(), false, null,
+                        "마스킹된 저장 전문입니다.");
+                HttpMessageTextCodec.Decoded decodedResponse = rawResponse ? decodeResponse(raw, record.responseContentType)
+                        : new HttpMessageTextCodec.Decoded(record.responseTextForEvidence(), false, null,
+                        "마스킹된 저장 전문입니다.");
+                String request = decodedRequest.text();
+                String response = decodedResponse.text();
                 String message = raw == null
                         ? "이 Evidence의 메모리 원문이 없습니다(가져오기·메모리 상한/eviction 가능). 마스킹된 전문을 표시합니다."
                         : !rawRequest
@@ -1119,8 +1125,16 @@ public final class FlowScopeExtension implements BurpExtension {
                         : !rawResponse
                         ? "응답 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
                         : "원문은 현재 Burp 프로세스 메모리에서만 불러왔으며 저장·내보내기하지 않습니다.";
+                if (rawRequest && !decodedRequest.editable()) message += " " + decodedRequest.note();
+                String observedIdentity = analysisConfig.boundAccount(record.service, record.fp)
+                        .map(io.flowscope.core.AccountProfile::label).orElse(record.idn == null ? "미확정" : record.idn);
+                String reusableSession = analysisConfig.boundAccount(record.service, record.fp)
+                        .flatMap(account -> sessionBroker.viewForAccount(account.id()))
+                        .filter(view -> view.status() == SessionBroker.Status.ACTIVE)
+                        .map(view -> view.accountLabel() + " · ACTIVE").orElse("없음");
                 return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
-                        request, response, rawRequest, rawResponse, message);
+                        request, response, rawRequest, rawResponse, decodedRequest.editable(),
+                        decodedRequest.charset(), decodedResponse.charset(), observedIdentity, reusableSession, message);
             }
             @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
                     String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
@@ -1144,8 +1158,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Evidence ID입니다."));
     }
 
-    private void openDraftInRepeater(RequestRecord record, String requestText, boolean raw) {
-        if (requestText == null || requestText.isBlank()) {
+    private void openDraftInRepeater(RequestRecord record, byte[] requestBytes, boolean raw) {
+        if (requestBytes == null || requestBytes.length == 0) {
             throw new IllegalArgumentException("저장된 Request 전문이 없습니다.");
         }
         URI service = URI.create(record.service);
@@ -1153,7 +1167,8 @@ public final class FlowScopeExtension implements BurpExtension {
         boolean secure = "https".equalsIgnoreCase(service.getScheme());
         int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
         HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
-        HttpRequest draft = HttpRequest.httpRequest(httpService, requestText);
+        HttpRequest draft = HttpRequest.httpRequest(httpService,
+                burp.api.montoya.core.ByteArray.byteArray(requestBytes));
         api.repeater().sendToRepeater(draft, "FlowScope " + record.evidenceId);
         api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId
                 + (raw ? " (메모리 원문, 미전송)" : " (마스킹 전문, 미전송)"));
@@ -1314,9 +1329,8 @@ public final class FlowScopeExtension implements BurpExtension {
             throw new IllegalStateException("target did not return an HTTP response");
         }
         var response = exchange.response();
-        RequestRecord record = recordFrom(exchange.request(), response.statusCode(),
-                new PortProfile(Source.LLM, context.detail()), response.bodyToString(), response.toString(),
-                response.headerValue("Location"), response.headerValue("Content-Type"),
+        RequestRecord record = recordFrom(exchange.request(), response,
+                new PortProfile(Source.LLM, context.detail()),
                 System.currentTimeMillis(), true, context.runId(),
                 new InFlightRequestTracker.Observation(context, null, datasetEpoch.get(),
                         System.currentTimeMillis()));
@@ -1335,7 +1349,7 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("record limit reached");
             records.add(record);
-            rawExchanges.put(record, exchange.request().toString(), response.toString());
+            retainRawExchange(record, exchange.request(), response);
         }
         rebuildImmediately();
         return new McpServer.TargetResult(record.evidenceId, record.status, record.location,
@@ -1349,15 +1363,22 @@ public final class FlowScopeExtension implements BurpExtension {
         if (requestText == null || requestText.isBlank()) {
             throw new IllegalArgumentException("전송할 HTTP 요청 전문이 필요합니다.");
         }
-        if (requestText.getBytes(StandardCharsets.UTF_8).length > RAW_REQUEST_LIMIT_BYTES) {
-            throw new IllegalArgumentException("편집 요청은 " + RAW_REQUEST_LIMIT_BYTES + "바이트 이하만 허용됩니다.");
-        }
         URI service = URI.create(seed.service);
         if (service.getHost() == null) throw new IllegalArgumentException("원본 대상 서비스를 확정할 수 없습니다.");
         boolean secure = "https".equalsIgnoreCase(service.getScheme());
         int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
         HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
-        HttpRequest request = HttpRequest.httpRequest(httpService, requestText);
+        TransientExchangeVault.Exchange rawSeed = rawExchanges.get(seed).orElse(null);
+        HttpMessageTextCodec.Decoded decodedSeed = rawSeed != null && rawSeed.requestRetained()
+                ? decodeRequest(rawSeed, seed.requestContentType) : null;
+        boolean originalBytesUsed = decodedSeed != null && requestText.equals(decodedSeed.text());
+        byte[] encodedRequestBytes = originalBytesUsed
+                ? rawSeed.request() : HttpMessageTextCodec.encodeEditedRequest(requestText);
+        if (encodedRequestBytes.length > RAW_REQUEST_LIMIT_BYTES) {
+            throw new IllegalArgumentException("편집 요청은 " + RAW_REQUEST_LIMIT_BYTES + "바이트 이하만 허용됩니다.");
+        }
+        HttpRequest request = HttpRequest.httpRequest(httpService,
+                burp.api.montoya.core.ByteArray.byteArray(encodedRequestBytes));
         if (!scope.allows(request.url())) {
             throw new IllegalArgumentException("편집 요청 경로가 현재 exact scope 밖입니다.");
         }
@@ -1377,8 +1398,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 request = request.withUpdatedHeader(header.getKey(), header.getValue());
             }
         }
-        if (request.hasHeader("Content-Length")) {
-            request = request.withUpdatedHeader("Content-Length", String.valueOf(request.body().length()));
+        if (!originalBytesUsed && request.hasHeader("Content-Length")) {
+            String actualLength = String.valueOf(request.body().length());
+            if (!actualLength.equals(request.headerValue("Content-Length"))) {
+                request = request.withUpdatedHeader("Content-Length", actualLength);
+            }
         }
 
         var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
@@ -1394,10 +1418,10 @@ public final class FlowScopeExtension implements BurpExtension {
         }
 
         var response = exchange.response();
-        String responseText = response.toString();
-        RequestRecord record = recordFrom(exchange.request(), response.statusCode(),
-                new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP), response.bodyToString(), responseText,
-                response.headerValue("Location"), response.headerValue("Content-Type"),
+        HttpMessageTextCodec.Decoded decodedResponse = decode(response);
+        String responseText = decodedResponse.text();
+        RequestRecord record = recordFrom(exchange.request(), response,
+                new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP),
                 System.currentTimeMillis(), false, "human-request-lab-" + System.currentTimeMillis(), null);
         record.phase = RunPhase.VALIDATION;
         record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
@@ -1415,7 +1439,7 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
             records.add(record);
-            rawExchanges.put(record, exchange.request().toString(), responseText);
+            retainRawExchange(record, exchange.request(), response);
         }
         rebuildImmediately();
         int requestBytes = exchange.request().toByteArray().length();
@@ -1424,6 +1448,40 @@ public final class FlowScopeExtension implements BurpExtension {
                 : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
         return new FlowScopeWebServer.RequestLabResult(record.evidenceId, record.status, displayResponse,
                 durationMs, requestBytes, responseBytes);
+    }
+
+    private void retainRawExchange(RequestRecord record, HttpRequest request, HttpResponse response) {
+        rawExchanges.put(record, request.toByteArray().getBytes(), request.bodyOffset(),
+                response.toByteArray().getBytes(), response.bodyOffset());
+    }
+
+    private static HttpMessageTextCodec.Decoded decode(HttpRequest request) {
+        return HttpMessageTextCodec.decode(request.toByteArray().getBytes(), request.bodyOffset(),
+                request.headerValue("Content-Type"));
+    }
+
+    private static HttpMessageTextCodec.Decoded decode(HttpResponse response) {
+        return HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
+                response.headerValue("Content-Type"));
+    }
+
+    private static HttpMessageTextCodec.Decoded decodeRequest(TransientExchangeVault.Exchange exchange,
+                                                               String contentType) {
+        return HttpMessageTextCodec.decode(exchange.request(), exchange.requestBodyOffset(), contentType);
+    }
+
+    private static HttpMessageTextCodec.Decoded decodeResponse(TransientExchangeVault.Exchange exchange,
+                                                                String contentType) {
+        return HttpMessageTextCodec.decode(exchange.response(), exchange.responseBodyOffset(), contentType);
+    }
+
+    private static String bodyText(String message, int bodyOffset) {
+        if (message == null || message.isEmpty()) return null;
+        int crlf = message.indexOf("\r\n\r\n");
+        if (crlf >= 0) return message.substring(crlf + 4);
+        int lf = message.indexOf("\n\n");
+        if (lf >= 0) return message.substring(lf + 2);
+        return bodyOffset >= 0 && bodyOffset <= message.length() ? message.substring(bodyOffset) : null;
     }
 
     private void rebuildImmediately() {

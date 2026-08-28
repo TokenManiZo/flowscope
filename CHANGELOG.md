@@ -2,6 +2,16 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.18 — 2026-08-28
+
+- live HTTP 원문을 Java `String`이 아닌 요청·응답 바이트와 body offset으로 bounded vault에 보존
+- Content-Type의 명시적 charset 또는 UTF-8 기본값으로 텍스트 본문을 엄격히 디코딩하고, 손실 디코딩·바이너리 본문의 Web 편집 전송 차단
+- 수정하지 않은 요청과 Burp Repeater 초안을 원래 바이트 그대로 구성하고, 편집한 텍스트 요청만 선언 문자셋으로 엄격히 재인코딩
+- 긴 operation을 slash 경계로 줄바꿈하고 단일 접근선 라벨을 숨기며, 900px 이하에서 동일 필터의 API 목록 제공
+- 파싱 결과에 Evidence별 `상세 보기`를 추가하고 선택 ID와 열린 요청·응답을 일치시킴
+- 그래프의 관측 신원과 Session Broker의 재사용 등록 계정을 다른 개념으로 명시
+- 전체 자동 회귀 221개와 1280px/600px 브라우저 UI 계약 검증
+
 ## 1.2.0-beta.17 — 2026-08-28
 
 - live HTTP 원문을 RequestRecord·프로젝트·snapshot과 분리된 bounded Burp 프로세스 메모리 vault에 보관하고 데이터셋 교체·확장 종료 때 폐기

@@ -8,14 +8,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class TransientExchangeVaultTest {
     @Test
-    void retainsRawTextOnlyInBoundedMemoryAndClearsIt() {
+    void retainsRawBytesOnlyInBoundedMemoryAndClearsIt() {
         TransientExchangeVault vault = new TransientExchangeVault(64, 64, 128);
         RequestRecord record = record("/one");
+        byte[] request = "GET /one HTTP/1.1\r\nAuthorization: Bearer raw-token".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] response = "HTTP/1.1 200 OK".getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-        vault.put(record, "GET /one HTTP/1.1\r\nAuthorization: Bearer raw-token", "HTTP/1.1 200 OK");
+        vault.put(record, request, request.length, response, response.length);
 
         TransientExchangeVault.Exchange exchange = vault.get(record).orElseThrow();
-        assertTrue(exchange.request().contains("raw-token"));
+        assertArrayEquals(request, exchange.request());
         assertTrue(exchange.requestRetained());
         assertTrue(exchange.responseRetained());
         vault.clear();
@@ -28,7 +30,9 @@ final class TransientExchangeVaultTest {
         TransientExchangeVault vault = new TransientExchangeVault(8, 8, 32);
         RequestRecord record = record("/large");
 
-        vault.put(record, "GET /large HTTP/1.1", "HTTP/1.1 200 OK");
+        byte[] request = "GET /large HTTP/1.1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] response = "HTTP/1.1 200 OK".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        vault.put(record, request, request.length, response, response.length);
 
         TransientExchangeVault.Exchange exchange = vault.get(record).orElseThrow();
         assertFalse(exchange.requestRetained());
@@ -42,12 +46,25 @@ final class TransientExchangeVaultTest {
         TransientExchangeVault vault = new TransientExchangeVault(64, 64, 24);
         RequestRecord first = record("/first");
         RequestRecord second = record("/second");
-        vault.put(first, "123456789012", null);
-        vault.put(second, "abcdefghijklm", null);
+        byte[] firstBytes = "123456789012".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] secondBytes = "abcdefghijklm".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        vault.put(first, firstBytes, firstBytes.length, null, 0);
+        vault.put(second, secondBytes, secondBytes.length, null, 0);
 
         assertTrue(vault.get(first).isEmpty());
-        assertEquals("abcdefghijklm", vault.get(second).orElseThrow().request());
+        assertArrayEquals(secondBytes, vault.get(second).orElseThrow().request());
         assertTrue(vault.retainedBytes() <= 24);
+    }
+
+    @Test
+    void preservesNonAsciiBytesExactly() {
+        TransientExchangeVault vault = new TransientExchangeVault(128, 128, 256);
+        RequestRecord record = record("/unicode");
+        byte[] request = "POST /unicode HTTP/1.1\r\n\r\n한글 🧪".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        vault.put(record, request, "POST /unicode HTTP/1.1\r\n\r\n".length(), null, 0);
+
+        assertArrayEquals(request, vault.get(record).orElseThrow().request());
     }
 
     private static RequestRecord record(String path) {

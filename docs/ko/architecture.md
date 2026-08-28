@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.17
+# FlowScope 설계서 v1.2.0-beta.18
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -31,7 +31,7 @@ LLM :8082 = optional observed fallback; decisive validation에는 사용하지 �
 - Java 21, Maven shade fat JAR. `montoya-api`는 Burp 제공 scope다.
 - Burp `registerSuiteTab`에는 범위·포트·프로젝트·MCP 상태를 다루는 작은 Swing 제어판만 둔다. 그래프·매트릭스·상세의 정본은 시스템 브라우저에서 여는 번들 Web UI다.
 - Web UI는 번들 Cytoscape.js를 사용하며 외부 CDN이나 원격 자원을 요청하지 않는다. JCEF·JavaFX는 배포물에 포함하지 않는다.
-- source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시하며 `identity → resource`와 `resource → operation` 두 구간 모두 같은 source 문법을 유지한다. 0건 source는 비활성화하고 필터 변경 시 해당 source만 가진 node와 전체 경로 구간을 함께 다시 계산한다. 같은 `(identity, resource, source)`의 접근선은 표시에서만 하나로 접고 횟수와 원본 CoverageCell 키를 보존해 상세에서 operation별 Evidence·판정을 다시 연다. 응답→요청 데이터 의존성은 메인 접근 그래프가 아니라 `흐름 순서`에서만 표시한다(D-043/D-061/D-076/D-077).
+- source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시하며 `identity → resource`와 `resource → operation` 두 구간 모두 같은 source 문법을 유지한다. 0건 source는 비활성화하고 필터 변경 시 해당 source만 가진 node와 전체 경로 구간을 함께 다시 계산한다. 같은 `(identity, resource, source)`의 접근선은 표시에서만 하나로 접고 횟수와 원본 CoverageCell 키를 보존해 상세에서 operation별 Evidence·판정을 다시 연다. 단일 접근의 `H/S/L×1` 라벨은 표시하지 않고 반복일 때만 횟수를 붙인다. operation 라벨은 `/` 경계를 우선해 줄바꿈하고, 900px 이하에서는 좌표를 축소한 캔버스 대신 같은 source·identity 필터 결과의 API 목록을 표시한다. 응답→요청 데이터 의존성은 메인 접근 그래프가 아니라 `흐름 순서`에서만 표시한다(D-043/D-061/D-076/D-077/D-084).
 - 프록시 리스너는 Montoya가 생성하지 못하므로 사용자가 HUMAN 8080과 ZAP 8081을 만든다. 8082는 외부 LLM 클라이언트 호환 폴백이며 해당 관측은 `UNVERIFIED_RUNTIME`이라 결정적 판정에 쓸 수 없다.
 - 캡처 콜백은 append만 하고 400ms worker coalescing으로 분석한다. live record는 20,000건에서 정지하며 초과 건수를 snapshot과 Web 경고로 노출한다.
 - MCP는 `127.0.0.1`에만 bind하고 random Bearer, Origin 검사, 1MiB 요청 상한을 적용한다.
@@ -84,11 +84,11 @@ RouteCandidate {
 
 Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·SHA-256·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다.
 
-live HTTP 원문은 별도의 `TransientExchangeVault`에만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그, MCP로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API로 현재 브라우저 탭에 전달한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML, binary, 상한 초과 Evidence는 원문이 없음을 표시하고 마스킹 전문으로 폴백한다.
+live HTTP 원문은 별도의 `TransientExchangeVault`에 요청·응답 `byte[]`와 각각의 body offset으로만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그, MCP로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API가 표시용 텍스트를 만든다. 헤더는 ISO-8859-1, textual 본문은 명시된 Content-Type charset 또는 기본 UTF-8로 replacement 없이 엄격히 디코딩한다. 바이너리, 알 수 없는 비텍스트, 잘못된 byte sequence는 원문 바이트는 유지하되 Web 텍스트 편집·전송을 차단한다. 수정하지 않은 요청과 Repeater 초안은 원래 바이트를 그대로 사용하며, 실제 편집한 본문만 선언 charset으로 엄격히 재인코딩한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML, 상한 초과 Evidence에는 raw가 없어 마스킹 전문만 표시하고 Web 전송은 허용하지 않는다(D-084).
 
 HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖의 일반 HUMAN 관측은 `BASELINE`으로 보존한다. `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 저장과 감사 대상이지만 discovery coverage·3-way gap·그래프 입력은 아니다. 로그인 준비와 우연한 scope 내 이동이 HUMAN 탐색 성과로 계산되지 않게 하려면 사용자가 HUMAN pass를 시작·종료해야 한다. Web은 `/api/human-run`을 다른 실행 상태와 함께 주기적으로 동기화하며, `pass 완료`는 record 수가 아니라 exact exploration run의 조건부 종료 표식으로만 표시한다. pass 중 Repeater·Intruder·Target에서 발생한 HUMAN 요청은 run/phase/account 문맥을 공유하지만 `BURP_REPEATER/BURP_INTRUDER/MANUAL_HTTP` detail과 `BURP` tool을 브라우저로 덮어쓰지 않는다.
 
-Web 요청 실험실은 관측 Evidence의 HTTP 전문을 큰 편집기에서 열고 원래 `HttpService`에만 보낸다. 요청 path가 현재 exact scope 밖이면 전송 전에 거부하고 redirect는 `NEVER`, upstream TLS 검증과 30초 응답 상한을 유지한다. `ORIGINAL`은 편집된 헤더를 그대로 사용하고, `ANONYMOUS`는 broker 관리 인증 헤더를 제거하며, `ACCOUNT`는 먼저 동일 헤더를 제거한 뒤 선택한 ACTIVE 계정의 현재 값을 주입한다. 기존 `Content-Length`는 body 길이에 맞춘다. 결과는 `source=HUMAN`, `detail=MANUAL_HTTP`, `tool=BURP`, `phase=VALIDATION`, `executionTrust=CONTROLLED`로 새 Evidence가 되며 immutable discovery gate가 coverage·gap 성과로 계산하지 않는다. 화면 전송 이력은 탭 메모리 10건뿐이고 저장하지 않는다.
+Web 요청 실험실은 관측 Evidence의 HTTP 전문을 큰 편집기에서 열고 원래 `HttpService`에만 보낸다. 화면에는 관측 신원과 현재 재사용 가능한 등록 계정 세션을 별도 필드로 표시한다. 요청 path가 현재 exact scope 밖이면 전송 전에 거부하고 redirect는 `NEVER`, upstream TLS 검증과 30초 응답 상한을 유지한다. `ORIGINAL`은 사용자가 편집하지 않았다면 원문 바이트를 그대로 사용하고, 편집했다면 선언 문자셋으로 재구성한다. `ANONYMOUS`는 broker 관리 인증 헤더를 제거하며, `ACCOUNT`는 먼저 동일 헤더를 제거한 뒤 선택한 ACTIVE 계정의 현재 값을 주입한다. 기존 `Content-Length`는 Montoya가 계산한 실제 body byte 길이에 맞춘다. 결과는 `source=HUMAN`, `detail=MANUAL_HTTP`, `tool=BURP`, `phase=VALIDATION`, `executionTrust=CONTROLLED`로 새 Evidence가 되며 immutable discovery gate가 coverage·gap 성과로 계산하지 않는다. 화면 전송 이력은 탭 메모리 10건뿐이고 저장하지 않는다.
 
 ### 4.2 정규화 F-04~06
 

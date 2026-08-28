@@ -87,7 +87,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT }
 
     public record RequestLabDraft(String eventId, String service, String request, String response,
-                                  boolean rawRequestRetained, boolean rawResponseRetained, String message) {}
+                                  boolean rawRequestRetained, boolean rawResponseRetained, boolean requestEditable,
+                                  String requestCharset, String responseCharset, String observedIdentity,
+                                  String reusableSession, String message) {}
 
     public record RequestLabResult(String eventId, int status, String response, long durationMs,
                                    int requestBytes, int responseBytes) {}
@@ -268,6 +270,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 putNullable(body, "response", draft.response());
                 body.put("rawRequestRetained", draft.rawRequestRetained());
                 body.put("rawResponseRetained", draft.rawResponseRetained());
+                body.put("requestEditable", draft.requestEditable());
+                putNullable(body, "requestCharset", draft.requestCharset());
+                putNullable(body, "responseCharset", draft.responseCharset());
+                body.put("observedIdentity", draft.observedIdentity());
+                body.put("reusableSession", draft.reusableSession());
                 body.put("message", draft.message());
                 return json(200, body);
             }

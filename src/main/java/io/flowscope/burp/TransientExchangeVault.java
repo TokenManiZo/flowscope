@@ -2,29 +2,41 @@ package io.flowscope.burp;
 
 import io.flowscope.core.RequestRecord;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * Bounded process-memory copy of raw HTTP text for an operator-opened request lab.
+ * Bounded process-memory copy of raw HTTP bytes for an operator-opened request lab.
  * Values never enter RequestRecord or project persistence and are overwritten on eviction/clear.
  */
 final class TransientExchangeVault {
-    record Exchange(String request, String response, int requestBytes, int responseBytes,
-                    boolean requestRetained, boolean responseRetained) {}
+    record Exchange(byte[] request, int requestBodyOffset, byte[] response, int responseBodyOffset,
+                    int requestBytes, int responseBytes, boolean requestRetained, boolean responseRetained) {
+        Exchange {
+            request = request == null ? null : request.clone();
+            response = response == null ? null : response.clone();
+        }
+
+        @Override public byte[] request() { return request == null ? null : request.clone(); }
+        @Override public byte[] response() { return response == null ? null : response.clone(); }
+    }
 
     private static final class Entry {
         private final byte[] request;
         private final byte[] response;
+        private final int requestBodyOffset;
+        private final int responseBodyOffset;
         private final int requestBytes;
         private final int responseBytes;
 
-        private Entry(byte[] request, byte[] response, int requestBytes, int responseBytes) {
+        private Entry(byte[] request, int requestBodyOffset, byte[] response, int responseBodyOffset,
+                      int requestBytes, int responseBytes) {
             this.request = request;
             this.response = response;
+            this.requestBodyOffset = requestBodyOffset;
+            this.responseBodyOffset = responseBodyOffset;
             this.requestBytes = requestBytes;
             this.responseBytes = responseBytes;
         }
@@ -34,9 +46,8 @@ final class TransientExchangeVault {
         }
 
         private Exchange view() {
-            return new Exchange(request == null ? null : new String(request, StandardCharsets.UTF_8),
-                    response == null ? null : new String(response, StandardCharsets.UTF_8), requestBytes, responseBytes,
-                    request != null, response != null);
+            return new Exchange(request, requestBodyOffset, response, responseBodyOffset,
+                    requestBytes, responseBytes, request != null, response != null);
         }
 
         private void destroy() {
@@ -60,16 +71,16 @@ final class TransientExchangeVault {
         this.totalLimitBytes = totalLimitBytes;
     }
 
-    synchronized void put(RequestRecord record, String request, String response) {
+    synchronized void put(RequestRecord record, byte[] request, int requestBodyOffset,
+                          byte[] response, int responseBodyOffset) {
         if (record == null) return;
         remove(record);
-        int requestBytes = bytes(request);
-        int responseBytes = bytes(response);
-        byte[] retainedRequest = request != null && requestBytes <= requestLimitBytes
-                ? request.getBytes(StandardCharsets.UTF_8) : null;
-        byte[] retainedResponse = response != null && responseBytes <= responseLimitBytes
-                ? response.getBytes(StandardCharsets.UTF_8) : null;
-        Entry entry = new Entry(retainedRequest, retainedResponse, requestBytes, responseBytes);
+        int requestBytes = request == null ? 0 : request.length;
+        int responseBytes = response == null ? 0 : response.length;
+        byte[] retainedRequest = request != null && requestBytes <= requestLimitBytes ? request.clone() : null;
+        byte[] retainedResponse = response != null && responseBytes <= responseLimitBytes ? response.clone() : null;
+        Entry entry = new Entry(retainedRequest, clampOffset(requestBodyOffset, requestBytes), retainedResponse,
+                clampOffset(responseBodyOffset, responseBytes), requestBytes, responseBytes);
         while (!entries.isEmpty() && retainedBytes + entry.retainedBytes() > totalLimitBytes) {
             Map.Entry<RequestRecord, Entry> oldest = entries.entrySet().iterator().next();
             entries.remove(oldest.getKey());
@@ -78,7 +89,8 @@ final class TransientExchangeVault {
         }
         if (entry.retainedBytes() > totalLimitBytes) {
             entry.destroy();
-            entry = new Entry(null, null, requestBytes, responseBytes);
+            entry = new Entry(null, clampOffset(requestBodyOffset, requestBytes), null,
+                    clampOffset(responseBodyOffset, responseBytes), requestBytes, responseBytes);
         }
         entries.put(record, entry);
         retainedBytes += entry.retainedBytes();
@@ -106,7 +118,7 @@ final class TransientExchangeVault {
         previous.destroy();
     }
 
-    private static int bytes(String value) {
-        return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
+    private static int clampOffset(int offset, int length) {
+        return Math.max(0, Math.min(offset, length));
     }
 }

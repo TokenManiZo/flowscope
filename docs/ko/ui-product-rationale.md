@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.17, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.18, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -212,8 +212,16 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.17 HUMAN 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.17.jar` 하나다. beta.15의 실제 anonymous ZAP fallback·capture는 확인했지만 요청 시점 문맥, 원문 요청 실험실, 비로그인/계정 전송이 포함된 beta.17의 Browser·Repeater·초기화·저장/재열기는 별도 수동 gate다.
-4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.18 HUMAN 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.18.jar` 하나다. beta.15의 실제 anonymous ZAP fallback·capture는 확인했지만 raw byte 요청 실험실과 비로그인/계정 전송이 포함된 beta.18의 Browser·Repeater·초기화·저장/재열기는 별도 수동 gate다.
+4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수와 명시적 `상세 보기` 버튼을 제공한다. 버튼은 operation 첫 항목이 아니라 선택한 Evidence ID를 상세의 첫 열린 블록으로 고정하며, Web 재동기화 뒤에도 같은 선택을 유지한다.
 5. **구독 CLI 자동 실행 — 코드·UI 완료, Burp 실환경 gate:** 빠른 시작이 Burp 시작 환경의 Codex/Claude 실행 파일을 찾아 새 Explorer와 별도 Judge 프로세스를 만들고, provider session ID로 Judge 후속 질문을 재개한다. 수동 `agent-workspace`는 폴백으로 유지한다. 로컬 CLI help와 자동 회귀를 통과했고 Codex 무대상 모델 smoke는 성공했지만, Claude smoke는 구독 주간 한도 429로 실패했다. 실제 Burp에서 사용자의 MCP·대상 요청·run 종료·Judge lock·후속 resume가 끝까지 성공하는지는 beta.7 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
+
+### beta.18의 가독성·정확성 보정
+
+- **긴 경로:** 글자 수 기준 임의 절단은 서로 다른 endpoint를 같은 라벨처럼 보이게 하므로 전체 operation을 유지하고 `/` 경계에서 줄바꿈한다. 한 segment만 매우 길 때만 그 segment 내부를 제한적으로 나눈다.
+- **접근선:** source 색·선형 자체가 1회 관측을 표현하므로 `H×1` 같은 라벨은 숨기고 반복 관측에만 `×N`을 붙인다. 이는 선 교차 지점의 불필요한 텍스트 겹침을 줄이되 Evidence 수를 삭제하지 않는다.
+- **좁은 화면:** 900px 이하에서 데스크톱 그래프를 축소·가로 스크롤시키지 않고 동일한 source·identity 필터 결과를 API 목록으로 바꾼다. 목록 항목은 source, 관측 신원, 객체, Evidence 수를 보존하고 같은 상세 패널을 연다.
+- **신원 문구:** `관측 신원`은 트래픽 분류 결과이고 `재사용할 등록 계정`은 Session Broker가 ACTIVE로 확인한 자격증명이다. 하나가 보인다고 다른 하나가 존재한다고 추론하지 않으며 요청 실험실에 두 상태를 함께 표시한다.
+- **문자 깨짐:** raw byte를 먼저 보존하고 문자셋 디코딩이 손실 없이 성공한 텍스트만 Web 편집한다. 이미 beta.17 String 경로에서 깨진 Evidence는 화면 보정으로 복원할 수 없어 재수집을 요구한다.
 
 해결 표시는 항목별 자동 회귀와 명시된 실측 범위까지의 상태다. 복수 로그인 계정, 실제 구독 클라이언트의 Explorer/Judge 전체 실행, 저장·복구·unload는 계속 beta gate로 남긴다.

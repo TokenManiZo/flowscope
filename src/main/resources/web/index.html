@@ -101,6 +101,13 @@
   .layoutlock{display:flex; align-items:center; gap:7px; margin-top:8px; color:var(--muted); font-size:11px; cursor:pointer}.layoutlock input{accent-color:var(--accent)}
   .stage{flex:1; position:relative; min-width:0; background:radial-gradient(1000px 500px at 40% -10%, rgba(15,118,110,.05), transparent 60%), var(--bg)}
   #cy{position:absolute; inset:0}
+  .graphlist{display:none;position:absolute;inset:0;overflow:auto;padding:12px;background:var(--bg)}
+  .graphlisthead{margin-bottom:9px;color:var(--muted);font-size:11px;line-height:1.5}
+  .graphlistitem{display:block;width:100%;text-align:left;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:9px;background:var(--panel);padding:10px;margin-bottom:8px;color:var(--text);cursor:pointer}
+  .graphlistitem .method{font:700 10px 'JetBrains Mono',monospace;color:var(--accent);margin-bottom:4px}
+  .graphlistitem .path{font:11.5px/1.45 'JetBrains Mono',monospace;overflow-wrap:anywhere}
+  .graphlistitem .meta{margin-top:6px;color:var(--muted);font-size:10px;line-height:1.45}
+  .graphlistitem .sources{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}.graphlistitem .sourcebadge{border:1px solid currentColor;border-radius:4px;padding:1px 5px;font:700 9px 'JetBrains Mono',monospace}
   .stagehint{position:absolute; left:14px; bottom:10px; font-size:11px; color:var(--faint); font-family:'JetBrains Mono',monospace; pointer-events:none; max-width:70%}
   .pane{position:absolute; inset:0; overflow:auto; padding:16px 18px; display:none}
   .matrixhead{display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap}
@@ -130,6 +137,7 @@
   table.raw th,table.raw td{text-align:left; padding:6px 9px; border-bottom:1px solid var(--line)}
   table.raw th{color:var(--faint); font-weight:500; position:sticky; top:0; background:var(--bg)}
   table.raw td .src{padding:0 5px; border-radius:4px; font-size:10px; border:1px solid var(--line2)}
+  table.raw tr.selected{background:rgba(15,118,110,.08)}.rawdetail{border:1px solid var(--line2);border-radius:5px;background:var(--panel);color:var(--accent);padding:4px 7px;cursor:pointer;font-size:10px;font-weight:700;white-space:nowrap}
   .st2{color:var(--allow)} .st4{color:var(--deny)} .st5{color:var(--suspicious)}
   .rawh{font-size:13px; color:var(--muted); margin:18px 0 8px; font-family:'Space Grotesk',sans-serif; font-weight:600}
   .accountgrid{display:grid;grid-template-columns:minmax(280px,360px) minmax(520px,1fr);gap:16px;align-items:start}
@@ -201,13 +209,13 @@
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
   @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
   @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}.requestlabgrid{grid-template-columns:1fr}.requestlabdialog{height:calc(100vh - 20px)}.requestlabpane textarea{min-height:210px}}
-  @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} }
+  @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} #cy{display:none!important}.graphlist{display:block}.stagehint{display:none} }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.17 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.18 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -265,14 +273,14 @@
 <div class="setupbackdrop" id="requestLabModal" role="dialog" aria-modal="true" aria-labelledby="requestLabTitle">
   <div class="setupdialog requestlabdialog">
     <div class="setuphead"><div><h2 id="requestLabTitle">요청 실험실</h2><p>선택한 Evidence를 편집해 원래 서비스에 전송하고 응답을 비교합니다. 전송 결과는 탐색 커버리지와 분리된 HUMAN 검증 Evidence로 기록됩니다.</p></div><span class="spacer"></span><button class="go" id="requestLabClose" aria-label="닫기">닫기</button></div>
-    <div class="requestlabmeta"><span>고정 대상</span><span class="service" id="requestLabService">-</span><span id="requestLabRetention"></span></div>
+    <div class="requestlabmeta"><span>고정 대상</span><span class="service" id="requestLabService">-</span><span id="requestLabRetention"></span><span id="requestLabIdentity"></span><span id="requestLabCharset"></span></div>
     <div class="requestlabgrid">
       <div class="requestlabpane"><label for="requestLabRequest">편집 가능한 HTTP 요청</label><textarea id="requestLabRequest" spellcheck="false" aria-label="편집 가능한 HTTP 요청"></textarea></div>
       <div class="requestlabpane"><label for="requestLabResponse">HTTP 응답</label><textarea id="requestLabResponse" spellcheck="false" readonly aria-label="HTTP 응답"></textarea></div>
     </div>
     <div class="requestlabcontrols">
       <label>인증값 처리<select id="requestLabCredential"><option value="ORIGINAL">원문 그대로</option><option value="ANONYMOUS">비로그인으로 전송</option><option value="ACCOUNT">등록 계정으로 전송</option></select></label>
-      <label>등록 계정<select id="requestLabAccount" disabled><option value="">ACTIVE 계정 없음</option></select></label>
+      <label>재사용할 등록 계정<select id="requestLabAccount" disabled><option value="">ACTIVE 등록 계정 없음</option></select></label>
       <button class="go primary" id="requestLabSend">명시적으로 전송</button>
       <button class="go" id="requestLabBurp">Burp Repeater에서 열기</button>
     </div>
@@ -334,9 +342,9 @@
       <div id="roleList"><div style="color:var(--faint); font-size:11px">데이터 없음</div></div>
     </div>
     <div class="card">
-      <h3>사용자 그래프 <span class="badge">세션별 분리</span></h3>
+      <h3>사용자 그래프 <span class="badge">관측 신원별 분리</span></h3>
       <select id="identityFilter" class="identityselect" aria-label="표시할 사용자"><option value="all">전체 사용자 오버레이</option></select>
-      <div class="covdef" style="margin-top:7px">로그인 세션별 <b>USER A · USER B · ADMIN</b> 그래프를 따로 보거나 전체로 겹쳐 봅니다.</div>
+      <div class="covdef" style="margin-top:7px">관측된 <b>USER A · USER B · ADMIN</b> 경로를 따로 보거나 겹쳐 봅니다. 관측 신원과 재사용 가능한 등록 계정 세션은 별도 상태입니다.</div>
       <div class="mergebox">
         <label for="mergeFrom">재로그인으로 새로 분리된 신원</label><select id="mergeFrom" class="identityselect" aria-label="병합할 신원"></select>
         <label for="mergeInto">유지할 기존 계정</label><select id="mergeInto" class="identityselect" aria-label="병합 대상 계정"></select>
@@ -368,6 +376,7 @@
 
   <section class="stage">
     <div id="cy"></div>
+    <div id="graphList" class="graphlist" aria-label="좁은 화면용 API 목록"></div>
     <div class="stagehint" id="stagehint"></div>
     <div class="pane" id="paneMatrix">
       <div class="matrixhead">
@@ -392,7 +401,7 @@
       <div id="scenList"></div>
     </div>
     <div class="pane" id="paneRaw">
-      <table class="raw" id="raw"><thead><tr><th>#</th><th>소스</th><th>Identity</th><th>Method</th><th>정규화 Operation</th><th>Resource</th><th>Status</th><th>분류</th><th>처리</th><th>반복</th><th>Evidence</th></tr></thead><tbody></tbody></table>
+      <table class="raw" id="raw"><thead><tr><th>#</th><th>소스</th><th>Identity</th><th>Method</th><th>정규화 Operation</th><th>Resource</th><th>Status</th><th>분류</th><th>처리</th><th>반복</th><th>Evidence</th><th>상세</th></tr></thead><tbody></tbody></table>
     </div>
     <div class="pane" id="paneAccounts">
       <div class="matrixhead"><h2>계정·세션 관리</h2><span class="note">등록 계정(Identity)은 유지하고 로그인 세션만 새로 연결합니다. raw 인증값은 Evidence·프로젝트에 저장하지 않고 broker 메모리에만 둡니다.</span><button type="button" class="go" id="identityReset" style="margin-left:auto">매핑·트래픽 초기화</button></div>
@@ -465,10 +474,10 @@ let matrixMode='identity'; const ACCESS_ROLES=['User','LV1','LV2','Admin','Unkno
 let activeSources={human:true,scanner:true,llm:true};
 let activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false};
 let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:true,POLLING:true,BACKGROUND:true,NAVIGATION:false,STATIC_ASSET:false,DISCOVERY_METADATA:false,PREFLIGHT:false};
-let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0;
+let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0, SELECTED_OPERATION='', SELECTED_EVENT_ID='';
 let SETUP_AUTO_CHECKED=false;
 let HUMAN_RUN={active:false,completed:false,runId:''};
-let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[];
+let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[],REQUEST_LAB_EDITABLE=false;
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v3 discards positions saved before source-consistent graph lanes were introduced.
@@ -535,6 +544,7 @@ function build(){
   MODEL={identities,operations,resources,owner,cells,candidates,routeCandidates:SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed),roles,displayNames,requiredRoles:{...SERVER_REQUIRED_ROLES}};
   if(ACTIVE_IDENTITY!=='all'&&!identities.includes(ACTIVE_IDENTITY))ACTIVE_IDENTITY='all';
   refreshSourceFilters(); updateStatus(); computeCoverage(); renderIdentityFilter(); renderGraph(); renderRoles(); renderMatrix(); renderRaw(); renderSeq(); renderAccounts();
+  if(SELECTED_OPERATION&&detailFull.style.display!=='none')showOperation(SELECTED_OPERATION,0,SELECTED_EVENT_ID);
 }
 
 function computeCoverage(){
@@ -557,7 +567,7 @@ function renderTrafficStats(routeCount){
 function renderSampleMode(){document.getElementById('sampleBanner').classList.toggle('on',SERVER_SAMPLE_MODE);}
 function cellGKs(c){ const g=[]; if(!c)return g; if(c.conflict)g.push('conflict'); if(c.partial)g.push('partial'); if(c.clean)g.push('clean'); return g; }
 function shortLabel(value,max=34){ const s=String(value||''); if(s.length<=max)return s; const left=Math.ceil((max-1)*.7),right=(max-1)-left; return s.slice(0,left)+'…'+s.slice(-right); }
-function wrapGraphLabel(value,max=36){const chars=Array.from(String(value||'')),lines=[];for(let i=0;i<chars.length;i+=max)lines.push(chars.slice(i,i+max).join(''));return lines.join('\n');}
+function wrapGraphLabel(value,max=36){const text=String(value||''),parts=text.split(/(?=\/)/).filter(Boolean),lines=[];let line='';parts.forEach(part=>{let rest=part;while(rest.length>max){if(line){lines.push(line);line='';}lines.push(rest.slice(0,max));rest=rest.slice(max);}if(line&&line.length+rest.length>max){lines.push(line);line=rest;}else line+=rest;});if(line)lines.push(line);return lines.join('\n');}
 function operationLabel(op,max=36){const value=withoutService(op),p=value.indexOf(' ');return p>0?value.slice(0,p)+'\n'+wrapGraphLabel(value.slice(p+1),max):wrapGraphLabel(value,max);}
 function nodeHeight(label,min=64){return Math.max(min,24+String(label||'').split('\n').length*15);}
 function sourceMark(sources){return ['human','scanner','llm'].filter(s=>sources.includes(s)).map(s=>SRC[s].ab).join('·')||'-';}
@@ -631,6 +641,15 @@ function highlightGap(gk){
     }));
   } else { clearDetail(); }
 }
+function renderGraphList(cellValues,operations){
+  const target=document.getElementById('graphList');if(!target)return;
+  const cards=operations.map(op=>{const related=cellValues.filter(cell=>cell.op===op),sources=sourceSetFor(related,()=>true),identities=[...new Set(related.map(cell=>displayIdentity(cell.idn)))],resources=[...new Set(related.map(cell=>cell.resource).filter(Boolean).map(resourceLabel))];const plain=withoutService(op),space=plain.indexOf(' '),method=space>0?plain.slice(0,space):'',path=space>0?plain.slice(space+1):plain;
+    const badges=sources.map(source=>`<span class="sourcebadge" style="color:${css(SRC[source].c)}">${SRC[source].ab} ${SRC[source].n}</span>`).join('');
+    return `<button type="button" class="graphlistitem" data-operation="${esc(op)}"><span class="method">${esc(method||'API')}</span><span class="path">${esc(path)}</span><span class="sources">${badges}</span><span class="meta">관측 신원 ${esc(identities.join(' · ')||'없음')}${resources.length?' · 객체 '+esc(resources.join(' · ')):''} · Evidence ${related.reduce((sum,cell)=>sum+cell.evs.length,0)}건</span></button>`;
+  }).join('');
+  target.innerHTML=`<div class="graphlisthead"><b>좁은 화면용 API 목록</b><br>그래프 좌표를 축소해 숨기지 않고, 같은 필터 결과를 읽을 수 있는 목록으로 표시합니다. API를 누르면 동일 Evidence 상세이 열립니다.</div>${cards||'<div class="graphlisthead">현재 필터에 표시할 API가 없습니다.</div>'}`;
+  target.querySelectorAll('[data-operation]').forEach(button=>button.addEventListener('click',()=>showOperation(button.dataset.operation,0)));
+}
 function renderGraph(){
   if(!MODEL)return; const {identities,operations,resources,owner,cells}=MODEL;
   const cellValues=Object.values(cells).filter(c=>(ACTIVE_IDENTITY==='all'||c.idn===ACTIVE_IDENTITY)&&c.observed.some(source=>activeSources[source]));
@@ -648,6 +667,7 @@ function renderGraph(){
     &&event.trafficDisposition!=='INCLUDE'
     &&['AUTH_SESSION','NAVIGATION','POLLING','BACKGROUND'].includes(event.trafficClass)):[];
   const supportOps=[...new Set(supportEvents.map(event=>event.op).filter(op=>!graphOperations.includes(op)))].slice(0,GRAPH_LIMITS.operations);
+  renderGraphList(cellValues,visibleOperations);
   GRAPH_HIDDEN=hiddenOperations+hiddenResources;
   graphStat.textContent=`표시: 사용자 ${graphIdentities.length} · 객체 ${visibleResources.length}/${graphResources.length} · 관측 API ${visibleOperations.length}/${graphOperations.length} · 보조 흐름 ${supportEvents.length} · 미요청 route ${routeCandidates.length}/${(MODEL.routeCandidates||[]).length}`+(GRAPH_HIDDEN?' · +그룹 노드를 눌러 펼치기':'');
   collapseGraph.disabled=GRAPH_LIMITS.operations===GRAPH_PAGE_SIZE&&GRAPH_LIMITS.resources===GRAPH_PAGE_SIZE;
@@ -681,21 +701,21 @@ function renderGraph(){
       // 객체가 있으면 요청자→객체, 없으면 요청자→엔드포인트로 직접 연결한다.
       const accessTarget=c.resource?'R:'+c.resource:'O:'+c.op,cell=cellKey(c.idn,c.op,c.resource);
       if(c.resource){const relation=c.idn+'|'+c.resource+'|'+s,existing=accessByRelation.get(relation);if(existing){existing.count+=count;existing.keys.push(cell);existing.gapKeys.push(...cellGKs(c));existing.verdict=mergeVerdict(existing.verdict,c.perSrc[s]);}else accessByRelation.set(relation,{id:'A:'+relation,source:'I:'+c.idn,target:accessTarget,etype:'access',src:s,idn:c.idn,resource:c.resource,verdict:c.perSrc[s],count,keys:[cell],gapKeys:cellGKs(c),taxiTurn:accessTurn(c.idn,s)});}
-      else edges.push({data:{id:'A:'+cell+':'+s,source:'I:'+c.idn,target:accessTarget,etype:'access',src:s,idn:c.idn,op:c.op,resource:null,verdict:c.perSrc[s],count,label:SRC[s].ab+(count>1?'×'+count:''),key:cell,keys:JSON.stringify([cell]),gapKeys:cellGKs(c).join(','),taxiTurn:accessTurn(c.idn,s)}});
+      else edges.push({data:{id:'A:'+cell+':'+s,source:'I:'+c.idn,target:accessTarget,etype:'access',src:s,idn:c.idn,op:c.op,resource:null,verdict:c.perSrc[s],count,label:count>1?SRC[s].ab+'×'+count:'',key:cell,keys:JSON.stringify([cell]),gapKeys:cellGKs(c).join(','),taxiTurn:accessTurn(c.idn,s)}});
       if(c.resource){const ek=c.idn+'|'+c.resource+'|'+c.op+'|'+s;if(visibleOperations.includes(c.op)&&!calls.has(ek)){calls.add(ek);edges.push({data:{id:'C:'+ek,source:'R:'+c.resource,target:'O:'+c.op,etype:'calls',src:s,idn:c.idn,op:c.op,resource:c.resource,count}});}}
     });
   });
-  accessByRelation.forEach(value=>edges.push({data:{...value,key:value.keys[0],keys:JSON.stringify(value.keys),gapKeys:[...new Set(value.gapKeys)].join(','),label:SRC[value.src].ab+(value.count>1?'×'+value.count:'')}}));
+  accessByRelation.forEach(value=>edges.push({data:{...value,key:value.keys[0],keys:JSON.stringify(value.keys),gapKeys:[...new Set(value.gapKeys)].join(','),label:value.count>1?SRC[value.src].ab+'×'+value.count:''}}));
   (MODEL.candidates||[]).filter(cn=>(ACTIVE_IDENTITY==='all'||cn.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(cn.op)&&visibleResources.includes(cn.resource)).slice(0,40).forEach((cn,i)=>{ edges.push({data:{id:'X:'+i,source:'I:'+cn.idn,target:'R:'+cn.resource,etype:'candidate',idn:cn.idn,op:cn.op,resource:cn.resource,key:cellKey(cn.idn,cn.op,cn.resource),risk:cn.risk,label:'미교차'}}); });
   if(cy){captureGraphState();cy.destroy();}
   cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},
     style:[
       {selector:'node',style:{'label':'data(label)','color':css('--text'),'font-family':'JetBrains Mono, Consolas, monospace','font-size':'12px','font-weight':500,'text-wrap':'wrap','text-valign':'center','text-halign':'center','text-max-width':'208px','width':'188px','height':'54px','border-width':1.4,'border-color':css('--line2'),'background-color':css('--panel2')}},
       {selector:'node[ntype="identity"]',style:{'shape':'round-rectangle','background-color':'#E7F0FB','border-color':css('--accent'),'width':'118px','height':'48px'}},
-      {selector:'node[ntype="operation"]',style:{'shape':'hexagon','background-color':'#F3E9F9','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere','border-color':'#DFC9EC'}},
-      {selector:'node[ntype="supportOperation"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
-      {selector:'node[ntype="routeCandidate"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
-      {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'anywhere'}},
+      {selector:'node[ntype="operation"]',style:{'shape':'hexagon','background-color':'#F3E9F9','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'whitespace','border-color':'#DFC9EC'}},
+      {selector:'node[ntype="supportOperation"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'whitespace','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
+      {selector:'node[ntype="routeCandidate"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'whitespace','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
+      {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'whitespace'}},
       {selector:'node[ntype="group"]',style:{'shape':'round-rectangle','background-color':'#FFFFFF','border-color':css('--accent'),'border-style':'dashed','border-width':2,'color':css('--accent'),'width':'164px','height':'48px'}},
       {selector:'node[sourceMask="human"]',style:{'border-color':css('--human'),'border-style':'solid','border-width':2}},
       {selector:'node[sourceMask="scanner"]',style:{'border-color':css('--scanner'),'border-style':'dashed','border-width':2}},
@@ -841,10 +861,10 @@ function payloadStatus(label,payload){
 function renderRequestLabAccounts(){
   const select=document.getElementById('requestLabAccount');
   const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===REQUEST_LAB_SERVICE);
-  select.innerHTML=usable.length?usable.map(session=>{const account=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(account?account.label:session.accountId)}</option>`;}).join(''):'<option value="">ACTIVE 계정 없음</option>';
+  select.innerHTML=usable.length?usable.map(session=>{const account=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(account?account.label:session.accountId)} · ACTIVE</option>`;}).join(''):'<option value="">ACTIVE 등록 계정 없음</option>';
   const accountMode=document.getElementById('requestLabCredential').value==='ACCOUNT';
   select.disabled=!accountMode||!usable.length;
-  document.getElementById('requestLabSend').disabled=accountMode&&!usable.length;
+  document.getElementById('requestLabSend').disabled=!REQUEST_LAB_EDITABLE||(accountMode&&!usable.length);
 }
 function renderRequestLabHistory(){
   const target=document.getElementById('requestLabHistory');
@@ -856,11 +876,11 @@ async function openRequestLab(eventId){
   modal.style.display='flex';REQUEST_LAB_EVENT_ID=eventId;status.className='requestlabstatus';status.textContent='메모리 원문을 불러오는 중…';
   document.getElementById('requestLabRequest').value='';document.getElementById('requestLabResponse').value='';
   try{const response=await fetch('/api/request-lab?eventId='+encodeURIComponent(eventId),{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'요청 실험실 열기 실패');
-    REQUEST_LAB_SERVICE=data.service||'';document.getElementById('requestLabService').textContent=REQUEST_LAB_SERVICE||'-';document.getElementById('requestLabRequest').value=data.request||'';document.getElementById('requestLabResponse').value=data.response||'';
-    document.getElementById('requestLabRetention').textContent=data.rawRequestRetained&&data.rawResponseRetained?'· 메모리 원문':'· 일부 마스킹 전문';status.textContent=data.message||'';renderRequestLabAccounts();renderRequestLabHistory();document.getElementById('requestLabRequest').focus();
+    REQUEST_LAB_SERVICE=data.service||'';REQUEST_LAB_EDITABLE=!!data.requestEditable;document.getElementById('requestLabService').textContent=REQUEST_LAB_SERVICE||'-';document.getElementById('requestLabRequest').value=data.request||'';document.getElementById('requestLabRequest').readOnly=!REQUEST_LAB_EDITABLE;document.getElementById('requestLabResponse').value=data.response||'';
+    document.getElementById('requestLabRetention').textContent=data.rawRequestRetained&&data.rawResponseRetained?'· 메모리 원문':'· 일부 마스킹 전문';document.getElementById('requestLabIdentity').textContent='· 관측 신원 '+(data.observedIdentity||'미확정')+' · 재사용 세션 '+(data.reusableSession||'없음');document.getElementById('requestLabCharset').textContent='· 요청 '+(data.requestCharset||'본문 없음/미확정')+' · 응답 '+(data.responseCharset||'본문 없음/미확정');status.textContent=data.message||'';renderRequestLabAccounts();renderRequestLabHistory();if(REQUEST_LAB_EDITABLE)document.getElementById('requestLabRequest').focus();
   }catch(error){status.className='requestlabstatus fail';status.textContent=error.message;document.getElementById('requestLabSend').disabled=true;}
 }
-function closeRequestLab(){document.getElementById('requestLabModal').style.display='none';REQUEST_LAB_EVENT_ID='';REQUEST_LAB_SERVICE='';}
+function closeRequestLab(){document.getElementById('requestLabModal').style.display='none';REQUEST_LAB_EVENT_ID='';REQUEST_LAB_SERVICE='';REQUEST_LAB_EDITABLE=false;}
 async function sendRequestLab(){
   const button=document.getElementById('requestLabSend'),status=document.getElementById('requestLabStatus'),mode=document.getElementById('requestLabCredential').value;
   const request=document.getElementById('requestLabRequest').value,accountId=mode==='ACCOUNT'?document.getElementById('requestLabAccount').value:'';
@@ -875,8 +895,11 @@ async function openRequestLabInBurp(){
   try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId:REQUEST_LAB_EVENT_ID})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Repeater 초안 생성 실패');status.className='requestlabstatus ok';status.textContent=data.message;}
   catch(error){status.className='requestlabstatus fail';status.textContent=error.message;}finally{button.disabled=false;}
 }
-async function showOperation(op,offset=0){
+async function showOperation(op,offset=0,preferredEventId=''){
   const evs=EVENTS.filter(e=>e.op===op); if(!evs.length)return;
+  SELECTED_OPERATION=op;if(preferredEventId)SELECTED_EVENT_ID=preferredEventId;else if(!evs.some(event=>event.eventId===SELECTED_EVENT_ID))SELECTED_EVENT_ID='';
+  const preferredIndex=SELECTED_EVENT_ID?evs.findIndex(event=>event.eventId===SELECTED_EVENT_ID):-1;
+  if(preferredIndex>=0&&offset===0)offset=Math.floor(preferredIndex/200)*200;
   const detailRequest=++DETAIL_REQUEST;
   detailEmpty.style.display='none'; detailFull.style.display='flex';
   dKind.textContent='API 노드 · 요청/응답'; dTitle.textContent=op;
@@ -885,13 +908,14 @@ async function showOperation(op,offset=0){
   try{const response=await fetch('/api/evidence?operation='+encodeURIComponent(op)+'&offset='+offset+'&limit=200',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'Evidence 상세 조회 실패');const rows=Array.isArray(data)?data:(data.records||[]);detailById=Object.fromEntries(rows.map(value=>[value.eventId,value]));if(!Array.isArray(data))detailMeta=data;}
   catch(error){detailError=error.message;}
   if(detailRequest!==DETAIL_REQUEST)return;
-  const visibleEvents=detailError?evs.slice(offset,offset+200):evs.filter(e=>detailById[e.eventId]);
+  let visibleEvents=detailError?evs.slice(offset,offset+200):evs.filter(e=>detailById[e.eventId]);
+  if(SELECTED_EVENT_ID){const selected=visibleEvents.find(event=>event.eventId===SELECTED_EVENT_ID);if(selected)visibleEvents=[selected,...visibleEvents.filter(event=>event!==selected)];}
   const first=visibleEvents[0]||evs[0]; const loc=inputLoc(first.method);
   const requiredRole=(MODEL.requiredRoles&&MODEL.requiredRoles[op])||'Unknown';
   const objectCandidates=[];const seenObjects=new Set();evs.forEach(event=>(event.objects||[]).forEach(candidate=>{const key=candidate.resource+'@'+candidate.evidence;if(!seenObjects.has(key)){seenObjects.add(key);objectCandidates.push(candidate);}}));
   let obs=visibleEvents.map(e=>{ const l=inputLoc(e.method),detail=detailById[e.eventId]||{};
     const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토 대기':'메인 비교';
-    return `<details class="reqblk"><summary><span style="color:var(--${e.source})">[${SRC[e.source].ab}]</span> <span class="m">${esc(e.method)}</span> ${esc(e.path)} → HTTP ${e.status} · ${esc(e.eventId||'Evidence 없음')} · ${esc(e.trafficClass)} / ${esc(disposition)} · 반복 ${Number(e.repeatCount||1)}</summary>`+
+    return `<details class="reqblk" ${e.eventId===SELECTED_EVENT_ID?'open':''}><summary><span style="color:var(--${e.source})">[${SRC[e.source].ab}]</span> <span class="m">${esc(e.method)}</span> ${esc(e.path)} → HTTP ${e.status} · ${esc(e.eventId||'Evidence 없음')} · ${esc(e.trafficClass)} / ${esc(disposition)} · 반복 ${Number(e.repeatCount||1)}</summary>`+
       `<div class="lbl" style="margin-top:8px">분류 근거</div><div class="val">${esc((e.classificationReasons||[]).join(' · ')||'근거 없음')} · 인증 ${esc(e.authState||'UNRESOLVED')}</div>`+
       `<div class="lbl" style="margin-top:8px">경로 묶음</div><div class="val">${esc(e.pathTemplateStatus||'LITERAL')} · ${esc((e.pathTemplateReasons||[]).join(' · ')||'원문 경로 유지')}</div>`+
       `<div class="lbl" style="margin-top:8px">보존 상태</div><div class="val">${payloadStatus('Request',detail.requestPayload)||'Request preview만 보존'}<br>${payloadStatus('Response',detail.responsePayload)||'Response preview만 보존'}</div>`+
@@ -991,7 +1015,7 @@ function showEntityNode(node){
     catch(error){document.getElementById('ownerMessage').textContent=error.message;button.disabled=false;}
   };
 }
-function clearDetail(){DETAIL_REQUEST++;detailFull.style.display='none';detailEmpty.style.display='block';if(cy)cy.elements().removeClass('sel pathsel pathdim');}
+function clearDetail(){DETAIL_REQUEST++;SELECTED_OPERATION='';SELECTED_EVENT_ID='';detailFull.style.display='none';detailEmpty.style.display='block';if(cy)cy.elements().removeClass('sel pathsel pathdim');}
 
 /* ── 매트릭스 ── */
 function srcBadges(c){
@@ -1177,8 +1201,8 @@ function renderRaw(){
   const rows=EVENTS.filter(e=>activeDispositions[e.trafficDisposition]!==false).filter(e=>activeTraffic[e.trafficClass]!==false).filter(e=>{if(showAll)return true;if(seen.has(e.clusterId))return false;seen.add(e.clusterId);return true;});
   rows.forEach((e,i)=>{ const stc=e.status>=200&&e.status<300?'st2':e.status>=400&&e.status<500?'st4':'st5',source=SRC[e.source]||SRC.unknown;
     const disposition=e.trafficDisposition==='EXCLUDE'?'기본 숨김':e.trafficDisposition==='REVIEW'?'검토 대기':'메인 비교';
-    tb.insertAdjacentHTML('beforeend','<tr data-event="'+esc(e.eventId)+'"><td>'+(i+1)+'</td><td><span class="src" style="color:'+css(source.c)+'">'+source.ab+'</span></td><td>'+esc(displayIdentity(e.idn))+'</td><td>'+esc(e.method)+'</td><td>'+esc(e.op)+'</td><td>'+esc(resourceLabel(e.resource))+'</td><td class="'+stc+'">'+Number(e.status||0)+'</td><td title="'+esc((e.classificationReasons||[]).join(', '))+'">'+esc(e.trafficClass||'UNKNOWN')+'</td><td>'+esc(disposition)+'</td><td>'+Number(e.repeatCount||1)+'</td><td>'+esc(e.eventId||'-')+'</td></tr>'); });
-  tb.querySelectorAll('tr[data-event]').forEach(row=>row.addEventListener('click',()=>{const event=EVENTS.find(item=>item.eventId===row.dataset.event);if(event)showOperation(event.op);}));
+    tb.insertAdjacentHTML('beforeend','<tr data-event="'+esc(e.eventId)+'" class="'+(e.eventId===SELECTED_EVENT_ID?'selected':'')+'"><td>'+(i+1)+'</td><td><span class="src" style="color:'+css(source.c)+'">'+source.ab+'</span></td><td>'+esc(displayIdentity(e.idn))+'</td><td>'+esc(e.method)+'</td><td>'+esc(e.op)+'</td><td>'+esc(resourceLabel(e.resource))+'</td><td class="'+stc+'">'+Number(e.status||0)+'</td><td title="'+esc((e.classificationReasons||[]).join(', '))+'">'+esc(e.trafficClass||'UNKNOWN')+'</td><td>'+esc(disposition)+'</td><td>'+Number(e.repeatCount||1)+'</td><td>'+esc(e.eventId||'-')+'</td><td><button type="button" class="rawdetail" data-detail="'+esc(e.eventId)+'">상세 보기</button></td></tr>'); });
+  tb.querySelectorAll('[data-detail]').forEach(button=>button.addEventListener('click',event=>{event.stopPropagation();const item=EVENTS.find(value=>value.eventId===button.dataset.detail);if(item){showOperation(item.op,0,item.eventId);renderRaw();}}));
 }
 
 /* ── F-10 흐름 순서: 신원별 요청 시퀀스(NEXT) ── */

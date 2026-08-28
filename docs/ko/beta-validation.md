@@ -1,6 +1,21 @@
-# FlowScope 1.2.0-beta.17 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.18 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.18 HTTP byte·Evidence UI gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 확인 | beta.17 vault가 Montoya 메시지를 `String`으로 바꾼 뒤 UTF-8로 다시 저장해 한글 같은 비ASCII byte가 손실될 수 있었음. 긴 operation 라벨·접근선 텍스트가 겹치고, 좁은 화면의 고정 최소 폭 그래프가 잘렸으며, 파싱 행 선택과 관측 신원/ACTIVE 세션 문구가 불명확했음 |
+| 구현 | raw request/response byte+body offset 보존, strict charset codec, 수정 없는 byte replay, binary/해독 실패 Web 편집 차단, slash-aware label, 반복일 때만 edge count, 900px 이하 필터 동등 API 목록, Evidence ID별 상세 버튼, 관측 신원/재사용 세션 분리 |
+| 집중 회귀 | UTF-8 한글·emoji, 명시 EUC-KR, invalid UTF-8, binary 차단, 편집 재인코딩, vault 방어 복사·원 byte 일치, Request Lab API charset/identity/session, 반응형 목록·명시 상세 UI 계약 통과 |
+| 전체 자동 회귀 | Java `--release 21`로 `mvn clean verify`, 221 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.18.jar`, 15,866,589 bytes, SHA-256 `c3915f7fbb2451f00e8b858639fc5a1fa2d00ab72d397ac61c61e33b8612ac1c` |
+| JAR 무결성 | ZIP 무결성 통과, 2,170 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개, 새 codec·byte vault·Web asset 포함 |
+| standalone UI | 합성 샘플·대상 요청 0건. 1280×720에서 page 수평 overflow 0과 새 신원 문구 확인. 600×800에서 Cytoscape를 숨기고 동일 필터 API 목록 4개 표시·page overflow 0. 목록 클릭으로 상세 열림. 파싱 표의 scanner Evidence를 눌러 선택 행 ID와 자동으로 펼친 상세 ID가 동일함을 확인 |
+| 실제 beta.18 | 아직 수행하지 않음. Burp Community에서 새로 수집한 비ASCII live 요청/응답, 수정 없는 ORIGINAL byte 동일성, 편집 UTF-8/명시 charset, ANONYMOUS/ACCOUNT 헤더, binary Repeater fallback, 초기화/unload 폐기를 확인해야 함 |
+
+beta.17에서 이미 깨진 문자열에는 원래 byte 정보가 없으므로 beta.18 UI가 이를 복원하지 않는다. JAR 재로드 후 해당 Evidence를 재수집해야 한다. standalone 검증은 레이아웃·선택 계약이며 실제 target 전송 성공을 대신하지 않는다.
 
 ## 1.2.0-beta.17 HUMAN 요청 실험실 gate
 

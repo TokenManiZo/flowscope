@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.17
+# FlowScope 1.2.0-beta.18
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -37,7 +37,8 @@ USER B        orders:101      GET /api/orders/{id}
 - 계정·세션 연결, 정책, LLM assessment, 서버 검증 최종 verdict, 사람 감사 판정을 관계형으로 보존하는 로컬 `.flowscope.db`. 한 번 저장하거나 열면 변경을 30초 checkpoint로 합쳐 자동 저장하며, `.flowscope.json`은 호환 내보내기·가져오기로 유지
 - path/query/JSON·XML·multipart·GraphQL에서 명시적으로 관측된 객체 참조를 모두 보존. 기존 인가 cell은 첫 번째 근거 있는 참조만 primary로 사용해 검증되지 않은 객체 Cartesian product를 만들지 않음
 - `*Id`가 아닌 `customerNo`, `documentSeq`, `accountRef` 같은 도메인 식별자는 이름 하나로 확정하지 않고, 동일 서비스·메서드·경로·필드 위치에서 서로 다른 값이 반복 관측될 때만 `*_SEMANTIC_FIELD_CORROBORATED` 객체 근거로 보강. `pageNo`, `sortKey`, API key류는 제외
-- 명시적 사람 검증을 위한 Web 요청 실험실. live Evidence의 원문은 Burp 프로세스의 상한 있는 메모리에만 보관하며 `원문 그대로/비로그인/등록 계정`으로 편집·전송하고 응답을 확인합니다. 전송 결과는 discovery가 아닌 HUMAN `VALIDATION` Evidence로 기록하고, Burp Repeater 미전송 초안도 유지합니다.
+- 명시적 사람 검증을 위한 Web 요청 실험실. live Evidence의 HTTP 원문 바이트는 Burp 프로세스의 상한 있는 메모리에만 보관합니다. Content-Type 문자셋으로 엄격히 디코딩하고, 수정하지 않은 요청은 원래 바이트 그대로 재전송하며, 텍스트로 안전하게 해석할 수 없는 본문은 Web 편집 전송을 차단하고 Burp Repeater로 넘깁니다. `원문 그대로/비로그인/등록 계정` 전송 결과는 discovery가 아닌 HUMAN `VALIDATION` Evidence입니다.
+- 긴 API 경로는 `/` 경계를 우선해 줄바꿈하고 단일 접근선의 의미 없는 `H×1` 라벨은 숨깁니다. 900px 이하 화면은 잘린 그래프 대신 같은 필터의 API 목록을 제공하며, 파싱 결과의 명시적 `상세 보기`는 선택한 Evidence ID를 그대로 엽니다. 관측 신원과 재사용 가능한 등록 계정 세션은 별도 개념으로 표시합니다.
 - 반복 재현·허가된 정상 대조 관측을 요구하는 Evidence-bound LLM 검증과 사람 감사·오버라이드
 - XXE 차단과 item 단위 오류 건너뛰기를 적용한 엄격한 Burp XML 가져오기
 
@@ -59,7 +60,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 mvn clean verify
 ```
 
-빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.17.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
+빌드가 끝나면 `target/`에 Burp가 로드할 수 있는 `flowscope-1.2.0-beta.18.jar` 하나만 남습니다. Burp의 **Extensions → Installed → Add → Java**에서 이 파일을 불러오십시오. 빌드는 중간 thin JAR을 공개 경로에서 제거하고 JAR 수가 하나가 아니면 실패합니다.
 
 ## 저장소 구조
 

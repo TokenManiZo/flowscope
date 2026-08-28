@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.17 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.18 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -17,15 +17,15 @@
 
 **상태: 목표·비목표·측정 가능한 완료 기준을 README·설계·결정 문서에 동일하게 고정함. 후속 우선순위 작업은 별도 단계다.**
 
-## 0. beta.17 우선순위: HUMAN 원문 요청 실험실
+## 0. beta.18 우선순위: HUMAN 원문 byte·Evidence UI 실환경 gate
 
 1. live 요청·응답 원문을 프로젝트 모델과 분리된 bounded process-memory vault에만 둔다. → 검증: retain/상한/오래된 항목 제거/clear 회귀와 snapshot 비밀 부재.
 2. 사용자가 특정 Evidence를 선택하면 큰 Web 편집기에서 요청과 응답을 나란히 보고 `원문/비로그인/등록 계정`으로 명시 전송한다. → 검증: localhost capability API 계약, Web 문구·모드·전송 결과 회귀.
 3. 원 서비스와 exact scope를 고정하고 redirect 금지·TLS 검증·timeout·Content-Length 정합성을 적용한다. 결과는 HUMAN `VALIDATION/CONTROLLED`로 기록해 discovery coverage를 늘리지 않는다. → 검증: 자동 계약과 실제 Burp Community 수동 gate.
 4. 초기화·샘플 교체·프로젝트 열기·unload에서 raw vault를 폐기하고, imported/binary/상한 초과 Evidence는 마스킹 폴백을 정직하게 표시한다.
-5. beta.17 JAR을 재로드한 뒤 실제 HUMAN Evidence에서 ORIGINAL, ANONYMOUS, USER A, USER B 전송의 서버 수신 헤더·응답·Evidence phase·coverage 불변을 확인한다.
+5. beta.18 JAR을 재로드한 뒤 실제 HUMAN Evidence에서 비ASCII 원문 byte, ORIGINAL, ANONYMOUS, USER A, USER B 전송의 서버 수신 헤더·응답·Evidence phase·coverage 불변과 binary Repeater fallback을 확인한다.
 
-**현재 상태:** 코드·215개 자동 회귀·standalone 반응형 UI·단일 beta.17 JAR 무결성 완료. 실제 beta.17 Burp ORIGINAL/ANONYMOUS/USER A/USER B 전송 gate는 남아 있으며, 통과 전에는 실환경 완료로 표시하지 않는다.
+**현재 상태:** raw byte 정본·strict charset·Evidence ID 상세·좁은 화면 목록 코드와 221개 자동 회귀, standalone 1280px/600px UI 검증 완료. 실제 beta.18 Burp ORIGINAL/ANONYMOUS/USER A/USER B byte 전송 gate는 남아 있으며, 통과 전에는 실환경 완료로 표시하지 않는다.
 
 ## 0. beta.16 우선순위: HUMAN 요청 시점 문맥과 principal 표현
 
@@ -194,7 +194,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.17 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded 원문 요청 실험실 구현과 215개 자동 회귀 완료, 실제 beta.17 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.18 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화 구현과 221개 자동 회귀 완료, 실제 beta.18 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

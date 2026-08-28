@@ -80,7 +80,8 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.17 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.18 · 3소스"));
+        assertTrue(index.body().contains("#cy{display:none!important}.graphlist{display:block}"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertTrue(index.body().contains("등록 계정과 로그인 상태"));
@@ -94,6 +95,14 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("비로그인으로 전송"));
         assertTrue(index.body().contains("/api/request-lab"));
         assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
+        assertTrue(index.body().contains("좁은 화면용 API 목록"));
+        assertTrue(index.body().contains("renderGraphList(cellValues,visibleOperations)"));
+        assertTrue(index.body().contains("data-detail="));
+        assertTrue(index.body().contains("상세 보기"));
+        assertTrue(index.body().contains("showOperation(item.op,0,item.eventId)"));
+        assertTrue(index.body().contains("text-overflow-wrap':'whitespace'"));
+        assertTrue(index.body().contains("관측 신원과 재사용 가능한 등록 계정 세션은 별도 상태"));
+        assertTrue(index.body().contains("ACTIVE 등록 계정 없음"));
         assertTrue(index.body().contains("let HUMAN_RUN={active:false,completed:false,runId:''}"));
         assertTrue(index.body().contains("HUMAN_RUN.active||HUMAN_RUN.completed"));
         assertTrue(index.body().contains("syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();"));
@@ -402,6 +411,10 @@ final class FlowScopeWebServerTest {
         assertEquals(state.record.service, draft.path("service").asText());
         assertTrue(draft.path("request").asText().contains("raw-session-secret"));
         assertTrue(draft.path("rawRequestRetained").asBoolean());
+        assertTrue(draft.path("requestEditable").asBoolean());
+        assertEquals("UTF-8", draft.path("requestCharset").asText());
+        assertEquals("USER A", draft.path("observedIdentity").asText());
+        assertEquals("없음", draft.path("reusableSession").asText());
         assertFalse(json(get("/api/snapshot", token, origin())).toString().contains("raw-session-secret"));
 
         String editedRequest = "POST /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n"
@@ -618,7 +631,8 @@ final class FlowScopeWebServerTest {
                     .findFirst().orElseThrow();
             return new FlowScopeWebServer.RequestLabDraft(value.evidenceId, value.service,
                     "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
-                    "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, "메모리 원문");
+                    "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
+                    "UTF-8", "UTF-8", "USER A", "없음", "메모리 원문");
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(String evidenceId, String request,
                                                                             FlowScopeWebServer.CredentialMode mode,

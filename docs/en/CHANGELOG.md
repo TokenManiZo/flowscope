@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0-beta.18 — 2026-08-28
+
+- Retained live HTTP requests and responses as bounded raw bytes plus body offsets instead of using Java String conversion as the canonical representation.
+- Strictly decoded textual bodies from an explicit Content-Type charset or UTF-8, blocking Web edits for binary or undecodable bodies rather than inserting replacement characters.
+- Replayed unchanged requests and Burp Repeater drafts from the original bytes; edited textual requests are strictly re-encoded with the declared charset.
+- Wrapped operation labels at slash boundaries, removed meaningless single-count access labels, and replaced the off-screen graph with an equivalent filtered API list below 900 px.
+- Added an explicit Evidence detail action that opens the exact selected Evidence item.
+- Separated the wording and state of observed graph identities from reusable registered-account sessions.
+- Passed 221 automated regressions and responsive browser checks at 1280 px and 600 px.
+
 ## 1.2.0-beta.17 — 2026-08-28
 
 - Added a bounded in-process raw HTTP vault that is separate from RequestRecord, snapshots, projects, logs, and MCP output and is cleared on dataset replacement or unload.
