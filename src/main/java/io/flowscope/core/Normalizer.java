@@ -48,6 +48,12 @@ public final class Normalizer {
     private static final Set<String> CONTROL_FIELDS = Set.of(
             "page", "limit", "offset", "sort", "size", "cursor", "start", "end",
             "from", "to", "timestamp", "time", "debug", "enabled", "active");
+    private static final List<String> SEMANTIC_ID_SUFFIXES = List.of(
+            "number", "uuid", "guid", "seq", "key", "ref", "vin", "no");
+    private static final Set<String> NON_OBJECT_TYPES = Set.of(
+            "api", "auth", "authorization", "csrf", "secret", "token", "password", "session",
+            "sort", "page", "status", "error", "locale", "language", "trace", "request",
+            "correlation", "retry", "version");
 
     private Normalizer() {}
 
@@ -170,6 +176,7 @@ public final class Normalizer {
      *  op·resource 에 타깃 service 를 접두해, 서로 다른 시스템(prod/test)이 합쳐지지 않게 한다. */
     public static void normalizeAll(List<RequestRecord> records) {
         TemplateCatalog catalog = TemplateCatalog.from(records);
+        SemanticFieldCatalog semanticFields = SemanticFieldCatalog.from(records);
         for (RequestRecord r : records) {
             TemplateResolution resolution = catalog.resolve(r);
             Normalized n = normalize(r.method, pathSegments(r.path), resolution.positions());
@@ -184,6 +191,13 @@ public final class Normalizer {
             List<ResourceReference> references = resourceReferences(r.path, r.query,
                     r.requestBodyForAnalysis(), lexical.resource,
                     "/graphql".equalsIgnoreCase(r.path));
+            List<ResourceReference> semanticReferences = semanticFields.references(r);
+            if (!semanticReferences.isEmpty()) {
+                Map<String, ResourceReference> combined = new LinkedHashMap<>();
+                references.forEach(value -> combined.putIfAbsent(value.resource(), value));
+                semanticReferences.forEach(value -> combined.putIfAbsent(value.resource(), value));
+                references = List.copyOf(combined.values());
+            }
             String resource = references.isEmpty() ? null : references.getFirst().resource();
             r.op = r.service + " " + op;
             r.resource = resource == null ? null : r.service + " " + resource;
@@ -197,6 +211,45 @@ public final class Normalizer {
     }
 
     private record TemplateKey(String service, String shape, int position) {}
+
+    private record SemanticFieldKey(String service, String method, String path,
+                                    String channel, String location) {}
+
+    private record SemanticFieldCandidate(SemanticFieldKey key, String resource, String value,
+                                          String evidence) {}
+
+    /**
+     * `*Id` 이외의 도메인 식별자는 이름만으로 확정하지 않는다. 동일 service·method·path·field
+     * 위치에서 서로 다른 값이 둘 이상 관측된 경우에만 객체 참조로 보강한다.
+     */
+    private static final class SemanticFieldCatalog {
+        private final Map<SemanticFieldKey, Set<String>> values;
+
+        private SemanticFieldCatalog(Map<SemanticFieldKey, Set<String>> values) {
+            this.values = values;
+        }
+
+        static SemanticFieldCatalog from(List<RequestRecord> records) {
+            Map<SemanticFieldKey, Set<String>> values = new LinkedHashMap<>();
+            for (RequestRecord record : records) {
+                for (SemanticFieldCandidate candidate : semanticCandidates(record)) {
+                    values.computeIfAbsent(candidate.key(), ignored -> new LinkedHashSet<>())
+                            .add(candidate.value());
+                }
+            }
+            return new SemanticFieldCatalog(values);
+        }
+
+        List<ResourceReference> references(RequestRecord record) {
+            Map<String, ResourceReference> result = new LinkedHashMap<>();
+            for (SemanticFieldCandidate candidate : semanticCandidates(record)) {
+                if (values.getOrDefault(candidate.key(), Set.of()).size() < 2) continue;
+                result.putIfAbsent(candidate.resource(),
+                        new ResourceReference(candidate.resource(), candidate.evidence()));
+            }
+            return List.copyOf(result.values());
+        }
+    }
 
     private static final class TemplateEvidence {
         final Set<String> values = new HashSet<>();
@@ -343,12 +396,92 @@ public final class Normalizer {
     /** UI와 후보 정렬이 임의 confidence 대신 표시하는 재현 가능한 객체 추출 근거. */
     public static String resourceEvidence(RequestRecord record) {
         if (record == null || record.resource == null) return "NONE";
+        if (record.resourceReferences != null && !record.resourceReferences.isEmpty()) {
+            return record.resourceReferences.getFirst().evidence();
+        }
         if (normalize(record.method, record.path).resource != null) return "PATH_ID";
         if (queryResource(record.path, record.query) != null) return "QUERY_ID";
         if (bodyResource(record.path, record.requestBodyForAnalysis()) != null) {
             return "/graphql".equalsIgnoreCase(record.path) ? "GRAPHQL_VARIABLE" : "BODY_ID";
         }
         return "DERIVED";
+    }
+
+    private static List<SemanticFieldCandidate> semanticCandidates(RequestRecord record) {
+        List<SemanticFieldCandidate> values = new ArrayList<>();
+        if (record.query != null) {
+            for (String pair : record.query.split("&")) {
+                String[] kv = pair.split("=", 2);
+                if (kv.length == 2) addSemanticCandidate(values, record, "QUERY", keyToken(decode(kv[0])),
+                        decode(kv[0]), decode(kv[1]));
+            }
+        }
+        String body = record.requestBodyForAnalysis();
+        if (body == null || body.isBlank()) return values;
+        String trimmed = body.stripLeading();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            try { collectSemanticJson(values, record, JSON.readTree(body), "$"); }
+            catch (Exception ignored) { /* malformed JSON is not guessed as a structured identifier source */ }
+        } else if (body.contains("=")) {
+            for (String pair : body.split("&")) {
+                String[] kv = pair.split("=", 2);
+                if (kv.length == 2) addSemanticCandidate(values, record, "BODY", keyToken(decode(kv[0])),
+                        decode(kv[0]), decode(kv[1]));
+            }
+        }
+        return values;
+    }
+
+    private static void collectSemanticJson(List<SemanticFieldCandidate> values, RequestRecord record,
+                                            JsonNode node, String location) {
+        if (node == null) return;
+        if (node.isObject()) {
+            node.properties().forEach(entry -> {
+                JsonNode value = entry.getValue();
+                String childLocation = location + "." + keyToken(entry.getKey());
+                if (value.isValueNode()) {
+                    addSemanticCandidate(values, record, "BODY", childLocation,
+                            entry.getKey(), value.isNull() ? null : value.asText());
+                } else if (value.isArray()) {
+                    for (JsonNode item : value) {
+                        if (item.isValueNode()) addSemanticCandidate(values, record, "BODY", childLocation,
+                                entry.getKey(), item.isNull() ? null : item.asText());
+                    }
+                }
+                collectSemanticJson(values, record, value, childLocation);
+            });
+        } else if (node.isArray()) {
+            for (JsonNode item : node) collectSemanticJson(values, record, item, location + "[]");
+        }
+    }
+
+    private static void addSemanticCandidate(List<SemanticFieldCandidate> values, RequestRecord record,
+                                             String channel, String location, String rawKey, String value) {
+        String type = semanticType(record.path, rawKey);
+        if (type == null || value == null || value.isBlank() || value.contains("***") || value.length() > 256) return;
+        SemanticFieldKey key = new SemanticFieldKey(record.service, record.method, record.path,
+                channel, location);
+        values.add(new SemanticFieldCandidate(key, pluralize(type) + ":" + value, value,
+                channel + "_SEMANTIC_FIELD_CORROBORATED"));
+    }
+
+    private static String semanticType(String path, String rawKey) {
+        if (rawKey == null || isIdField(rawKey)) return null;
+        String key = keyToken(rawKey);
+        String type = null;
+        for (String suffix : SEMANTIC_ID_SUFFIXES) {
+            if (!key.endsWith(suffix)) continue;
+            String prefix = key.substring(0, key.length() - suffix.length());
+            if (prefix.length() >= 2) type = prefix;
+            else if ((suffix.equals("uuid") || suffix.equals("guid") || suffix.equals("vin")) && prefix.isEmpty()) {
+                type = lastNamedSegment(path);
+            }
+            break;
+        }
+        if (type == null || type.isBlank() || CONTROL_FIELDS.contains(type) || NON_OBJECT_TYPES.contains(type)) {
+            return null;
+        }
+        return type;
     }
 
     private static String queryResource(String path, String query) {
@@ -418,9 +551,12 @@ public final class Normalizer {
     }
 
     private static boolean isIdField(String rawKey) {
-        String key = rawKey == null ? "" : rawKey.toLowerCase(Locale.ROOT).replace('-', '_');
-        return key.equals("id") || key.endsWith("_id") || key.endsWith("id")
-                || key.endsWith("_ids") || key.endsWith("ids");
+        if (rawKey == null) return false;
+        String key = rawKey.toLowerCase(Locale.ROOT).replace('-', '_');
+        if (key.equals("id") || key.equals("ids") || key.endsWith("_id") || key.endsWith("_ids")) {
+            return true;
+        }
+        return camelIdPrefix(rawKey) != null;
     }
 
     private static String resourceFromField(String path, String rawKey, String value) {
@@ -428,21 +564,30 @@ public final class Normalizer {
         String key = rawKey.toLowerCase(Locale.ROOT).replace('-', '_');
         if (CONTROL_FIELDS.contains(key)) return null;
         String type;
-        if (key.equals("id")) {
+        if (key.equals("id") || key.equals("ids")) {
             type = lastNamedSegment(path);
         } else if (key.endsWith("_ids")) {
             type = key.substring(0, key.length() - 4);
-        } else if (key.endsWith("ids")) {
-            type = key.substring(0, key.length() - 3);
         } else if (key.endsWith("_id")) {
             type = key.substring(0, key.length() - 3);
-        } else if (key.endsWith("id")) {
-            type = key.substring(0, key.length() - 2);
         } else {
-            return null;
+            type = camelIdPrefix(rawKey);
         }
         if (type == null || type.isBlank() || CONTROL_FIELDS.contains(type)) return null;
         return pluralize(type) + ":" + value;
+    }
+
+    /** `valid`, `fluid`, `guid`처럼 우연히 소문자 id로 끝나는 단어는 ID 필드가 아니다. */
+    private static String camelIdPrefix(String rawKey) {
+        if (rawKey == null || rawKey.isBlank()) return null;
+        String suffix = rawKey.endsWith("Ids") ? "Ids" : rawKey.endsWith("Id") ? "Id"
+                : rawKey.endsWith("IDs") ? "IDs" : rawKey.endsWith("ID") ? "ID" : null;
+        if (suffix == null || rawKey.length() <= suffix.length()) return null;
+        String prefix = rawKey.substring(0, rawKey.length() - suffix.length());
+        if ((suffix.equals("ID") || suffix.equals("IDs"))
+                && prefix.chars().noneMatch(Character::isLowerCase)) return null;
+        String type = keyToken(prefix);
+        return type.isBlank() ? null : type;
     }
 
     private static String lastNamedSegment(String path) {

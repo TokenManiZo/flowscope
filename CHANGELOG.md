@@ -2,6 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.13 — 2026-08-28
+
+- HUMAN 상태를 1초 주기 실행 상태 동기화에 포함하고, 수집 건수가 아니라 exact run 종료 표식으로만 `pass 완료` 표시
+- HUMAN pass 중 Repeater·Intruder·Target 요청이 run/phase/account를 공유하면서 실제 Burp source detail과 tool provenance를 유지하도록 수정
+- `customerNo`, `documentSeq`, `accountRef` 같은 비-`*Id` 식별자를 동일 서비스·메서드·경로·필드 위치의 복수 값 관측으로만 보강하는 범용 semantic object profiler 추가
+- `pageNo`, `sortKey`, API/auth/token/session류와 단일 관측은 객체로 자동 승격하지 않는 회귀 추가
+- `guid`, `valid`, `fluid`처럼 소문자 `id` 문자열로 끝나는 일반 단어를 명시적 `*Id`로 오인하던 기존 경계 판정 수정
+- Human run 상태·provenance·semantic object 추출 회귀 및 로컬 Web 실제 상태 전이 검증 추가
+
 ## 1.2.0-beta.12 — 2026-08-27
 
 - 같은 서비스의 동일 인증 지문을 다른 등록 계정으로 조용히 이동하지 않고 충돌로 차단하며, 충돌 세션을 `SUSPECT`로 고정해 신원 귀속·세션 주입에서 제외

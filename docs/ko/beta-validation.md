@@ -1,6 +1,20 @@
-# FlowScope 1.2.0-beta.12 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.13 사전 벤치마크 검증 기록
 
-최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-27이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.13 자동·standalone 사전검증
+
+| 구분 | 결과 |
+|---|---|
+| 자동 회귀 | Java `--release 21`로 `mvn clean verify`, 204 tests, 실패·오류·skip 0 |
+| HUMAN run | idle/begin/end/rebegin의 완료 상태 `false/false/true/false`, Web 1초 동기화, record count 기반 완료 문구 부재 회귀 통과 |
+| HUMAN provenance | pass 중 Repeater·Intruder detail과 `BURP` tool 유지, 브라우저 및 통제 LLM context tool 유지 회귀 통과 |
+| 범용 구조 프로파일 | 동일 service·method·path·field 위치의 `customerNo/documentSeq/accountRef/guid` 복수 값은 semantic object로 보강하고 단일 관측·다른 path·`pageNo/sortKey/apiKey/statusCode/valid/fluid`는 제외하는 회귀 통과 |
+| standalone Human UI | 빠른 시작에서 `HUMAN pass 시작` 뒤 1.3초 내 `진행 중`, exact 종료 뒤 1.3초 내 `pass 완료` 표시 확인 |
+| 배포물 | `target/flowscope-1.2.0-beta.13.jar`, 15,836,587 bytes, SHA-256 `d306eb9dd7be5d9fe761074b1697d1ddf04718a5fcaf342a704a2ad1eeaa62d7` |
+| JAR 무결성 | ZIP 무결성 통과, 2,161 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 공개 `target/*.jar` 1개 |
+
+이 검증은 Human 실행 상태와 provenance, 제한된 semantic identifier 보강의 결정론을 확인한 것이다. `*_SEMANTIC_FIELD_CORROBORATED`는 도메인 schema·소유권·인가 취약점 증명이 아니며, 동적 JavaScript에서 아직 전송되지 않은 경로나 단일 관측 식별자를 찾는다는 뜻도 아니다. 실제 Burp Community beta.13 재로드, Browser/Repeater/Intruder 캡처, 다양한 블라인드 대상의 field-level precision/recall·REVIEW 비용은 수동·벤치마크 gate로 남아 있다.
 
 ## 1.2.0-beta.12 자동·standalone 사전검증
 

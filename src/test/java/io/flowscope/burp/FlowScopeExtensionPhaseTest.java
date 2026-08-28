@@ -67,4 +67,38 @@ class FlowScopeExtensionPhaseTest {
                 Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.BASELINE, "human-active"));
         assertTrue(FlowScopeExtension.scopeMutationBlocked(false, contexts));
     }
+
+    @Test
+    void HUMAN_pass_안의_Repeater와_Intruder는_브라우저로_덮어쓰지_않는다() {
+        RunContextRegistry.Context humanPass = new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "human-pass");
+
+        assertEquals(SourceDetail.BURP_REPEATER, FlowScopeExtension.effectiveDetail(
+                Source.HUMAN, SourceDetail.BURP_REPEATER, humanPass));
+        assertEquals(SourceDetail.BURP_INTRUDER, FlowScopeExtension.effectiveDetail(
+                Source.HUMAN, SourceDetail.BURP_INTRUDER, humanPass));
+        assertEquals(ToolKind.BURP, FlowScopeExtension.effectiveTool(
+                Source.HUMAN, SourceDetail.BURP_REPEATER, humanPass));
+        assertEquals(ToolKind.BURP, FlowScopeExtension.effectiveTool(
+                Source.HUMAN, SourceDetail.BURP_INTRUDER, humanPass));
+        assertEquals(ToolKind.BURP, FlowScopeExtension.effectiveTool(
+                Source.HUMAN, SourceDetail.BURP_REPEATER, null));
+    }
+
+    @Test
+    void HUMAN_pass의_브라우저와_통제_lane은_run_context_도구를_유지한다() {
+        RunContextRegistry.Context humanPass = new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "human-pass");
+        RunContextRegistry.Context controlledLlm = new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "llm-pass");
+
+        assertEquals(SourceDetail.BROWSER, FlowScopeExtension.effectiveDetail(
+                Source.HUMAN, SourceDetail.BROWSER, humanPass));
+        assertEquals(ToolKind.BROWSER, FlowScopeExtension.effectiveTool(
+                Source.HUMAN, SourceDetail.BROWSER, humanPass));
+        assertEquals(SourceDetail.LLM_EXPLORER, FlowScopeExtension.effectiveDetail(
+                Source.LLM, SourceDetail.UNKNOWN, controlledLlm));
+        assertEquals(ToolKind.CODEX, FlowScopeExtension.effectiveTool(
+                Source.LLM, SourceDetail.UNKNOWN, controlledLlm));
+    }
 }

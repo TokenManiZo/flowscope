@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0-beta.13 — 2026-08-28
+
+- Added HUMAN run polling and made completion depend on an exact exploration-run close marker instead of record counts.
+- Preserved Repeater, Intruder, and Target provenance while inheriting the active HUMAN run, phase, and account context.
+- Added a target-neutral semantic object profiler for corroborated `*No`, `*Number`, `*Seq`, `*Key`, `*Ref`, `*Uuid`, `*Guid`, and `*Vin` fields.
+- Kept single observations, pagination/sort controls, and API/auth/token/session fields out of automatic object promotion.
+- Stopped treating ordinary lowercase words such as `guid`, `valid`, and `fluid` as explicit `*Id` fields merely because they end in the characters `id`.
+- Added Human-run, provenance, semantic-object, and local Web state-transition regression coverage.
+
 ## 1.2.0-beta.12 — 2026-08-27
 
 - Rejected silent reassignment of one service-scoped credential fingerprint to a different account and held the conflicting broker session in `SUSPECT`, excluding it from identity attribution and credential injection.

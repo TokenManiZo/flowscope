@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.12 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.13 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -16,6 +16,16 @@
 - 자동화 단계 종료 또는 HTTP 상태만으로 점검 충분성 판정
 
 **상태: 목표·비목표·측정 가능한 완료 기준을 README·설계·결정 문서에 동일하게 고정함. 후속 우선순위 작업은 별도 단계다.**
+
+## 0. beta.13 우선순위: HUMAN 실행 정합성과 범용 구조 프로파일링
+
+1. HUMAN `pass 완료`는 record 수가 아니라 exact exploration run 종료로만 판정한다. → 검증: idle/begin/end/rebegin의 `completed=false/false/true/false`.
+2. HUMAN 실행 상태를 scanner/LLM과 같은 주기로 갱신한다. → 검증: Web timer 계약과 실제 로컬 화면의 `진행 중 → pass 완료` 전이.
+3. pass 안의 Repeater·Intruder·Target은 run/phase/account를 상속하되 실제 Burp provenance를 유지한다. → 검증: detail/tool 회귀.
+4. target별 사전 없이 `*Id` 외 도메인 식별자를 찾되 동일 service·method·path·field 위치의 복수 값으로만 보강한다. → 검증: `customerNo/documentSeq/accountRef` 양성 fixture와 단일 관측·`pageNo/sortKey/apiKey/statusCode` 음성 fixture.
+5. 이 구조 파악을 소유권·취약점 확정으로 확대하지 않는다. → 검증: 기존 primary 하나·Cartesian product 금지·전체 인가/분류 회귀 유지.
+
+**현재 상태:** 구현, 204개 자동 회귀, standalone HUMAN 시작·종료 상태 전이 확인 완료. 실제 Burp Browser/Repeater/Intruder provenance와 다양한 블라인드 대상의 semantic field precision/recall 측정은 남아 있다.
 
 ## 0. beta.12 우선순위: 세션 귀속과 HUMAN 그래프 표시 정합성
 
@@ -147,7 +157,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.12 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계 구현과 자동/standalone 회귀 완료, 실제 beta.12 Burp/블라인드 target 검증 대기.**
+**현재 상태: beta.13 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계 구현과 자동/standalone 회귀 완료, 실제 beta.13 Burp/블라인드 target 검증 대기.**
 
 새 모델은 최소한 다음을 보존한다.
 

@@ -201,7 +201,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.12 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.13 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
@@ -442,7 +442,7 @@ let activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false};
 let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:true,POLLING:true,BACKGROUND:true,NAVIGATION:false,STATIC_ASSET:false,DISCOVERY_METADATA:false,PREFLIGHT:false};
 let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0;
 let SETUP_AUTO_CHECKED=false;
-let HUMAN_RUN={active:false,runId:''};
+let HUMAN_RUN={active:false,completed:false,runId:''};
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[];
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v3 discards positions saved before source-consistent graph lanes were introduced.
@@ -1192,7 +1192,7 @@ function updateSetup(){
   setState('setupTraffic',EVENTS.length>0,EVENTS.length?SERVER_TRAFFIC_STATS.captured+'건 수집 · '+SERVER_TRAFFIC_STATS.coverage+'건 분석':'대기');
   const activeSessions=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing).length;
   setState('setupAccounts',activeSessions>0,activeSessions?activeSessions+'개 세션 활성':SERVER_ACCOUNTS.length?'로그인 캡처 필요':'계정 등록 필요');
-  setState('setupHumanRun',HUMAN_RUN.active||counts.human>0,HUMAN_RUN.active?'진행 중':(counts.human?counts.human+'건 완료':'pass 대기'));
+  setState('setupHumanRun',HUMAN_RUN.active||HUMAN_RUN.completed,HUMAN_RUN.active?'진행 중':(HUMAN_RUN.completed?'pass 완료':'pass 대기'));
   document.getElementById('humanRunStart').disabled=HUMAN_RUN.active;
   document.getElementById('humanRunEnd').disabled=!HUMAN_RUN.active;
   document.getElementById('humanAccount').disabled=HUMAN_RUN.active;
@@ -1205,12 +1205,12 @@ function updateSetup(){
 
 async function syncHumanRun(){
   if(!LIVE_MODE)return;
-  try{const response=await fetch('/api/human-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'HUMAN run 조회 실패');HUMAN_RUN={active:!!data.active,runId:data.runId||'',accountId:data.accountId||''};const select=document.getElementById('humanAccount');if(select&&data.active)select.value=data.accountId||'';updateSetup();}
+  try{const response=await fetch('/api/human-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'HUMAN run 조회 실패');HUMAN_RUN={active:!!data.active,completed:!!data.completed,runId:data.runId||'',accountId:data.accountId||''};const select=document.getElementById('humanAccount');if(select&&data.active)select.value=data.accountId||'';updateSetup();}
   catch(error){document.getElementById('setupHumanRun').textContent=error.message;}
 }
 async function changeHumanRun(action){
   const button=document.getElementById(action==='begin'?'humanRunStart':'humanRunEnd');button.disabled=true;
-  try{const body=new URLSearchParams({action});if(action==='begin')body.set('account',document.getElementById('humanAccount').value);if(action==='end')body.set('runId',HUMAN_RUN.runId);const response=await fetch('/api/human-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body});const data=await response.json();if(!response.ok)throw new Error(data.message||'HUMAN run 변경 실패');HUMAN_RUN={active:!!data.active,runId:data.runId||'',accountId:data.accountId||''};updateSetup();}
+  try{const body=new URLSearchParams({action});if(action==='begin')body.set('account',document.getElementById('humanAccount').value);if(action==='end')body.set('runId',HUMAN_RUN.runId);const response=await fetch('/api/human-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body});const data=await response.json();if(!response.ok)throw new Error(data.message||'HUMAN run 변경 실패');HUMAN_RUN={active:!!data.active,completed:!!data.completed,runId:data.runId||'',accountId:data.accountId||''};updateSetup();}
   catch(error){alert(error.message);await syncHumanRun();}
 }
 function renderScannerControls(){
@@ -1370,7 +1370,7 @@ async function syncExtension(){
     if(!SETUP_AUTO_CHECKED){SETUP_AUTO_CHECKED=true;try{if(!localStorage.getItem('flowscope.setup.seen'))openSetup();}catch(_){openSetup();}}
   }catch(error){LIVE_MODE=false;}
 }
-syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();setInterval(()=>{syncExtension();syncScannerRun();syncLlmRun();},1000);
+syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();},1000);
 </script>
 </body>
 </html>

@@ -131,6 +131,37 @@ public final class FlowScopeExtension implements BurpExtension {
         };
     }
 
+    /**
+     * Run context는 run/phase/account를 제공하지만, 사람이 실제로 사용한 Burp 도구까지
+     * 브라우저로 바꾸면 안 된다. Repeater·Intruder·Target 관측은 해당 도구 provenance를 유지한다.
+     */
+    static SourceDetail effectiveDetail(Source source, SourceDetail observed,
+                                        RunContextRegistry.Context context) {
+        if (context == null) return observed == null ? SourceDetail.UNKNOWN : observed;
+        if (source == Source.HUMAN && isHumanBurpDetail(observed)) return observed;
+        return context.detail();
+    }
+
+    static ToolKind effectiveTool(Source source, SourceDetail observed,
+                                  RunContextRegistry.Context context) {
+        if (source == Source.HUMAN && isHumanBurpDetail(observed)) return ToolKind.BURP;
+        if (context != null) return context.tool();
+        if (source == null) return ToolKind.UNKNOWN;
+        return switch (source) {
+            case HUMAN -> observed == SourceDetail.BROWSER ? ToolKind.BROWSER
+                    : isHumanBurpDetail(observed) ? ToolKind.BURP : ToolKind.UNKNOWN;
+            case SCANNER -> ToolKind.ZAP;
+            case LLM -> ToolKind.OTHER;
+            case UNKNOWN -> ToolKind.UNKNOWN;
+        };
+    }
+
+    private static boolean isHumanBurpDetail(SourceDetail detail) {
+        return detail == SourceDetail.BURP_REPEATER
+                || detail == SourceDetail.BURP_INTRUDER
+                || detail == SourceDetail.MANUAL_HTTP;
+    }
+
     private static final Pattern PORT = Pattern.compile(":(\\d+)$");
 
     /** 저장 본문 상한 — 메모리 폭증 방지. */
@@ -425,9 +456,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 profile.source(), service, req.method(), req.pathWithoutQuery(), status, fp);
         rec.sourceDetail = profile.detail();
         rec.orchestrator = profile.source() == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
-        rec.tool = profile.source() == Source.SCANNER ? ToolKind.ZAP
-                : profile.source() == Source.LLM ? ToolKind.OTHER
-                : profile.source() == Source.HUMAN ? ToolKind.BROWSER : ToolKind.UNKNOWN;
+        rec.tool = effectiveTool(profile.source(), profile.detail(), null);
         rec.phase = capturePhase(profile.source(), profile.detail(), humanCaptureAccountId != null);
         rec.executionTrust = switch (profile.source()) {
             case HUMAN -> io.flowscope.core.ExecutionTrust.OBSERVED;
@@ -440,9 +469,9 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.runId = runId == null
                 ? "live-" + profile.source().name().toLowerCase(Locale.ROOT) : runId;
         if (context != null) {
-            rec.sourceDetail = context.detail();
+            rec.sourceDetail = effectiveDetail(profile.source(), profile.detail(), context);
             rec.orchestrator = context.orchestrator();
-            rec.tool = context.tool();
+            rec.tool = effectiveTool(profile.source(), profile.detail(), context);
             rec.phase = context.phase();
             rec.runId = context.runId();
         }

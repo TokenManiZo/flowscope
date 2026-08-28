@@ -79,4 +79,64 @@ class AdvancedNormalizerTest {
                 xml.resourceReferences.stream().map(ResourceReference::resource).toList());
         assertTrue(json.resourceReferences.stream().allMatch(value -> value.evidence().equals("BODY_ID")));
     }
+
+    @Test
+    void 같은_위치에서_복수값이_관측된_도메인_식별자_필드를_객체로_보강한다() {
+        RequestRecord first = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/lookup", 200, "A");
+        first.reqBody = "{\"customerNo\":\"C-100\",\"documentSeq\":\"D-1\"}";
+        RequestRecord second = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/lookup", 200, "A");
+        second.reqBody = "{\"customerNo\":\"C-200\",\"documentSeq\":\"D-2\"}";
+
+        Normalizer.normalizeAll(List.of(first, second));
+
+        assertEquals(List.of("https://t:443 customers:C-100", "https://t:443 documents:D-1"),
+                first.resourceReferences.stream().map(ResourceReference::resource).toList());
+        assertTrue(first.resourceReferences.stream()
+                .allMatch(value -> value.evidence().equals("BODY_SEMANTIC_FIELD_CORROBORATED")));
+        assertEquals("BODY_SEMANTIC_FIELD_CORROBORATED", Normalizer.resourceEvidence(first));
+    }
+
+    @Test
+    void 단일_관측이나_제어_보안_필드는_객체로_추측하지_않는다() {
+        RequestRecord first = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/search", 200, "A");
+        first.query = "pageNo=1&sortKey=name&apiKey=***&customerNo=C-100";
+        RequestRecord secondPath = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/other", 200, "A");
+        secondPath.query = "customerNo=C-200";
+
+        Normalizer.normalizeAll(List.of(first, secondPath));
+
+        assertNull(first.resource);
+        assertTrue(first.resourceReferences.isEmpty());
+        assertNull(secondPath.resource);
+        assertTrue(secondPath.resourceReferences.isEmpty());
+    }
+
+    @Test
+    void 같은_query_위치의_복수값은_객체로_보강하지만_일반_code는_제외한다() {
+        RequestRecord first = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/lookup", 200, "A");
+        first.query = "accountRef=A-1&statusCode=200";
+        RequestRecord second = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/lookup", 200, "A");
+        second.query = "accountRef=A-2&statusCode=201";
+
+        Normalizer.normalizeAll(List.of(first, second));
+
+        assertEquals("https://t:443 accounts:A-1", first.resource);
+        assertEquals(List.of("QUERY_SEMANTIC_FIELD_CORROBORATED"),
+                first.resourceReferences.stream().map(ResourceReference::evidence).toList());
+    }
+
+    @Test
+    void id_문자열_경계가_없는_일반_단어를_명시적_ID로_오인하지_않는다() {
+        RequestRecord first = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/devices", 200, "A");
+        first.reqBody = "{\"guid\":\"g-1\",\"valid\":true,\"fluid\":\"oil\"}";
+        RequestRecord second = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/devices", 200, "A");
+        second.reqBody = "{\"guid\":\"g-2\",\"valid\":false,\"fluid\":\"water\"}";
+
+        Normalizer.normalizeAll(List.of(first, second));
+
+        assertEquals(List.of("https://t:443 devices:g-1"),
+                first.resourceReferences.stream().map(ResourceReference::resource).toList());
+        assertEquals("BODY_SEMANTIC_FIELD_CORROBORATED",
+                first.resourceReferences.getFirst().evidence());
+    }
 }

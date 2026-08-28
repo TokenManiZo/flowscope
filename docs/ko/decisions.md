@@ -742,3 +742,12 @@
 - **비목표:** 모든 endpoint·객체·상태 발견, 오탐·미탐 0, LLM 서술만으로 최종 확정, 자동화 단계 종료나 HTTP 상태만으로 점검 충분성을 판정하는 주장은 기각한다.
 - **호환:** 기존 exact-scope, source/identity 분리, 후보/관측 분리, 서버 Evidence gate, 커버리지 퍼센트 금지 계약을 바꾸지 않는다. 제품 코드와 저장 schema 변경은 없다.
 - **상태:** 마스터 계획 1단계 문서 계약 완료. 우선순위 원칙은 다음 단계에서 별도로 검토한다.
+
+## D-079 · HUMAN 범용 구조 파악 = exact run + 보수적 semantic field 보강
+
+- **문제:** 수집 건수가 있다는 사실을 HUMAN pass 완료로 표시하면 pass 밖 과거 Evidence도 완료처럼 보이고, 활성 pass 안의 Repeater·Intruder 요청을 run context의 `BROWSER`로 덮으면 실제 수행 도구 provenance가 사라진다. 또한 `id/*Id`만 객체로 읽으면 `customerNo`, `documentSeq`, `accountRef`처럼 서비스마다 다른 식별자 명명법을 놓치지만, `*No/*Key` 이름만 보고 모두 객체화하면 `pageNo`, `sortKey`, API key 같은 제어·보안 필드가 graph를 오염시킨다.
+- **결정:** HUMAN Web 상태는 다른 실행 상태와 함께 주기적으로 조회하고, 완료는 `RunContextRegistry`가 exact `EXPLORATION` run을 같은 run ID로 종료했을 때만 표시한다. run context는 orchestrator/phase/run/account를 제공하되, Burp Repeater·Intruder·Target 관측의 source detail과 `BURP` tool은 유지한다. 비-`*Id` 객체 후보는 target 이름이나 path 사전 없이 query·JSON/form body의 도메인 중립 suffix를 읽고, 같은 service·method·raw path·field 위치에서 서로 다른 값이 둘 이상 관측된 경우에만 `*_SEMANTIC_FIELD_CORROBORATED`로 승격한다.
+- **제외:** `page/sort/status/error/request/trace/correlation`과 API/auth/token/session/secret류, 마스킹 값, 256자를 넘는 값, 단일 관측은 자동 객체로 만들지 않는다. 일반 `*Code`는 상태·enum과 충돌이 많아 이 단계에서 후보 suffix로 채택하지 않는다. 명시 ID도 `id`, camel-case `*Id/*Ids`, snake/kebab `*_id/*_ids` 경계만 강하게 인정하고 `guid/valid/fluid` 같은 일반 소문자 단어의 끝 두 글자를 ID로 보지 않는다. semantic reference도 기존 복수 참조와 같이 첫 근거 하나만 primary이며 객체 Cartesian product를 만들지 않는다.
+- **기각:** 대상별 crAPI/네이버/WebSquare 필드 사전은 일반 도구 목적과 블라인드 benchmark를 오염시켜 기각했다. LLM이 모든 필드를 즉시 판정하는 방식은 비결정적이고 원 Evidence 없이 결과가 바뀔 수 있어 핵심 수집기에 넣지 않는다. 이름 하나만으로 승격하거나 서로 다른 endpoint의 같은 필드명을 합치는 방식도 오탐 전파 때문에 기각했다.
+- **한계:** 이 규칙은 관측된 값의 식별자 가능성을 보강할 뿐 실제 route schema, 소유권, 인가 취약점을 증명하지 않는다. 동적 JavaScript에서 아직 전송되지 않은 값과 한 번만 관측된 도메인 식별자는 자동 확정할 수 없다. 다양한 blind target에서 field-level precision/recall과 REVIEW 비용을 측정하기 전 성능 우위를 주장하지 않는다.
+- **상태:** beta.13 구현·204개 자동 회귀·standalone HUMAN 상태 전이 검증 완료, 실제 Burp Browser/Repeater/Intruder와 블라인드 corpus gate 대기.

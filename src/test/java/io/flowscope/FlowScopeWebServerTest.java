@@ -74,7 +74,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.12 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.13 · 3소스"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
         assertTrue(index.body().contains("· 로그인 필요"));
         assertTrue(index.body().contains("등록 계정과 로그인 상태"));
@@ -84,6 +84,11 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("다시 로그인 필요"));
         assertTrue(index.body().contains("동일 인증정보 충돌"));
         assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
+        assertTrue(index.body().contains("let HUMAN_RUN={active:false,completed:false,runId:''}"));
+        assertTrue(index.body().contains("HUMAN_RUN.active||HUMAN_RUN.completed"));
+        assertTrue(index.body().contains("syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();"));
+        assertTrue(index.body().contains("setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();},1000)"));
+        assertFalse(index.body().contains("counts.human+'건 완료'"));
         assertTrue(index.body().contains("data-source-count=\"human\""));
         assertTrue(index.body().contains("EVENTS.filter(event=>event.coverageEligible)"));
         assertTrue(index.body().contains("cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;renderGraph();})"));
@@ -171,9 +176,11 @@ final class FlowScopeWebServerTest {
         start();
         JsonNode idle = json(get("/api/human-run", token, origin()));
         assertFalse(idle.path("active").asBoolean());
+        assertFalse(idle.path("completed").asBoolean());
 
         JsonNode began = json(post("/api/human-run", "action=begin&runId=human-p5-1", token));
         assertTrue(began.path("active").asBoolean());
+        assertFalse(began.path("completed").asBoolean());
         assertEquals("human-p5-1", began.path("runId").asText());
         assertEquals("human-p5-1", state.contexts.current(Source.HUMAN).runId());
 
@@ -183,7 +190,12 @@ final class FlowScopeWebServerTest {
 
         JsonNode ended = json(post("/api/human-run", "action=end&runId=human-p5-1", token));
         assertFalse(ended.path("active").asBoolean());
+        assertTrue(ended.path("completed").asBoolean());
         assertNull(state.contexts.current(Source.HUMAN));
+
+        JsonNode restarted = json(post("/api/human-run", "action=begin&runId=human-p5-3", token));
+        assertTrue(restarted.path("active").asBoolean());
+        assertFalse(restarted.path("completed").asBoolean());
     }
 
     @Test

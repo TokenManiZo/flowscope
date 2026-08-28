@@ -1193,6 +1193,48 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - 이 단계는 목표 계약만 고정했으며 endpoint 발견률이나 판정 정확도를 개선한 것이 아니다.
 - 마스터 계획 2단계인 우선순위 원칙은 사용자가 `다음`이라고 지시하기 전까지 시작하지 않는다.
 
+## 2026-08-28 · 1.2.0-beta.13 · HUMAN 실행 정합성과 범용 구조 프로파일러
+
+### 목표와 성공 조건
+- HUMAN pass의 진행·완료가 실제 exact run 상태와 일치하고 Web에서 자동 갱신돼야 한다.
+- pass 안에서 사용한 Repeater·Intruder가 브라우저로 오기록되지 않아야 한다.
+- 특정 대상 이름이나 path를 하드코딩하지 않고 `*Id` 밖의 반복 관측 식별자를 보강하되 제어·보안 필드와 단일 관측을 객체로 만들지 않아야 한다.
+- 기존 coverage·인가·분류·저장 계약, 문서, 버전, 공개 JAR 하나를 유지해야 한다.
+
+### 개발·수정
+- `/api/human-run`에 exact exploration 완료 상태를 추가하고 Web의 1초 실행 상태 동기화에 HUMAN을 포함했다. 빠른 시작은 수집 건수 대신 서버 완료 표식으로만 `pass 완료`를 표시한다.
+- run context 병합에서 HUMAN Repeater·Intruder·Target의 실제 source detail과 `BURP` tool을 유지하면서 orchestrator·phase·run ID·account는 현재 pass 문맥을 상속하게 했다.
+- `SemanticFieldCatalog`를 추가했다. query·JSON/form body의 `*No/*Number/*Seq/*Key/*Ref/*Uuid/*Guid/*Vin`을 동일 service·method·raw path·field 위치별로 학습하고 서로 다른 값이 둘 이상일 때만 객체 참조로 보강한다.
+- 기존의 단순 소문자 `endsWith("id")`를 제거하고 `id`, camel-case `*Id/*Ids`, snake/kebab `*_id/*_ids` 경계만 강한 ID로 인정해 `guid/valid/fluid` 오탐을 막았다. `guid`는 복수 값 semantic 근거가 있을 때만 경로 collection 객체로 보강한다.
+- semantic object는 `QUERY_SEMANTIC_FIELD_CORROBORATED` 또는 `BODY_SEMANTIC_FIELD_CORROBORATED` 근거를 보존한다. 제어·상태·trace/request·API/auth/token/session/secret류, 마스킹·과대 값, 단일 관측, 다른 path의 같은 필드는 승격하지 않는다.
+- beta.13으로 버전과 한국어/영어 공개 문서, 설계·결정·계획·화면 근거·검증 기록을 동기화했다.
+
+### 이유
+- record가 있다는 사실은 HUMAN pass가 정상 종료됐다는 증거가 아니다. 이 둘을 섞으면 과거 Evidence나 진행 중 수집이 완료 gate처럼 보인다.
+- run context는 실행 구간을 붙이기 위한 것이지 실제 HTTP 생성 도구를 지우기 위한 것이 아니다. Repeater provenance 손실은 재현·감사 설명을 틀리게 만든다.
+- 어떤 URL이든 자동 구조화하려면 target별 사전보다 관측에서 반복되는 구조를 학습해야 한다. 다만 필드명 하나만으로 객체화하면 page/sort/API key까지 resource가 되므로 같은 위치의 복수 값이라는 최소 보강 근거를 요구했다.
+- LLM 즉시 판정, target별 필드 목록, 일반 `*Code`, 서로 다른 endpoint의 같은 이름 합치기는 각각 비결정성·benchmark 오염·상태 enum 오탐·전파 오탐 때문에 채택하지 않았다.
+
+### 영향 파일
+- Human 수집·상태: `FlowScopeExtension`, `FlowScopeWebServer`, `web/index.html`
+- 범용 객체 정규화: `Normalizer`
+- 회귀: `FlowScopeExtensionPhaseTest`, `FlowScopeWebServerTest`, `AdvancedNormalizerTest`
+- 버전·문서: `pom.xml`, 루트/영문 README·CHANGELOG, 한국어 설계·결정·계획·화면 근거·검증, 이 로그
+
+### 검증
+- 신규 테스트를 먼저 추가해 누락된 provenance helper와 Human 완료/동기화 계약이 컴파일·정적 계약에서 실패하는 것을 확인한 뒤 구현했다.
+- 집중 회귀 `mvn -Dtest=AdvancedNormalizerTest,NormalizerTest,FlowScopeExtensionPhaseTest,FlowScopeWebServerTest test`: 통과.
+- 중간 전체 회귀 `mvn clean verify`: 203 tests, 실패·오류·skip 0. 이후 ID 문자열 경계 회귀를 추가했다.
+- standalone 로컬 Web 빠른 시작에서 HUMAN begin 뒤 `진행 중`, exact end 뒤 `pass 완료`로 바뀌는 것을 각각 1.3초 대기 뒤 확인했다.
+- 최종 `mvn clean verify`: 204 tests, 실패·오류·skip 0.
+- 배포물: `target/flowscope-1.2.0-beta.13.jar` 하나, 15,836,587 bytes, 2,161 entries, SHA-256 `d306eb9dd7be5d9fe761074b1697d1ddf04718a5fcaf342a704a2ad1eeaa62d7`. ZIP 무결성·Main-Class·Java 21과 공개 JAR 단일성을 확인했다.
+
+### 남은 한계·다음 gate
+- semantic field 보강은 route schema·소유권·취약점 확정이 아니다. 단일 관측, 아직 전송되지 않은 동적 경로, 응답 의미만으로 알 수 있는 도메인 관계는 자동 확정하지 않는다.
+- 실제 Burp Community beta.13에서 Browser, Repeater, Intruder를 같은 HUMAN pass 안에 실행해 Web Evidence의 detail/run/account를 확인해야 한다.
+- 일반 MPA/SPA/GraphQL 및 블라인드 대상에서 semantic field precision/recall, 객체 미탐, `REVIEW` 작업량을 측정하기 전 성능 우위를 주장하지 않는다.
+- `output/`, `tmp/`는 기존 사용자 비추적 파일이라 수정하거나 커밋하지 않는다.
+
 ## YYYY-MM-DD · 버전 또는 작업명
 
 ### 목표와 성공 조건

@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.12, 2026-08-27 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.13, 2026-08-28 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -37,6 +37,9 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identi
 | 보조 흐름 표시 | 로그인을 포함한 실제 브라우저 흐름은 어디로 갔는가? | `인증·화면·반복 보조 흐름 표시`를 켜면 `AUTH_SESSION/NAVIGATION/POLLING/BACKGROUND`를 중립 보조 edge로 표시한다. 메인 graph 위치 맥락은 보이되 cell·gap·verdict는 바꾸지 않는다. | 보조 요청을 삭제하거나 HUMAN 탐색 성과로 계산하지 않는다. |
 | 권한 정책 | BFLA 역할 비교가 현재 가능한가? | 그래프 레일은 계정 역할과 API 요구 권한 개수를 읽기 전용으로 요약한다. 계정 역할은 `계정·세션`, API 요구 권한은 해당 API 상세라는 맥락 있는 위치에서만 수정한다. 요구 권한이 0개면 BFLA 비교 비활성을 명시한다. | 그래프를 보다가 한 번 클릭한 것만으로 역할을 순환 변경하거나 URL/JWT 문자열로 USER/ADMIN을 자동 추정하지 않는다. |
 | 사용자 그래프 | 계정별 접근 경로가 어떻게 다른가? | 로그인 세션별 그래프와 전체 overlay를 모두 제공한다. 두 저권한 계정 비교가 BOLA의 기본이다. | ADMIN 계정을 필수로 요구하지 않는다. 역할 비교가 필요한 engagement에서만 선택적으로 쓴다. |
+| HUMAN pass 상태 | 지금 사람 기준선이 실제 진행·완료됐는가? | 1초마다 서버 run 상태를 다시 읽고, exact exploration run이 같은 ID로 종료된 경우에만 `pass 완료`를 표시한다. | 과거·현재 수집 건수가 있다는 이유로 완료 처리하지 않는다. |
+| HUMAN 도구 provenance | 브라우저 외 Repeater·Intruder 요청도 사람이 한 것으로 보이는가? | source는 HUMAN으로 유지하고 같은 pass의 run·phase·account를 공유하되 detail/tool은 실제 Burp 도구로 보존한다. | 모든 HUMAN 요청을 `BROWSER`로 덮어 실행 경로를 숨기지 않는다. |
+| 자동 구조 프로파일 | 서비스마다 다른 객체 필드명을 어떻게 다루는가? | 명시 `*Id`는 기존처럼 보존하고, `*No/*Number/*Seq/*Key/*Ref/*Uuid/*Guid/*Vin`은 같은 위치에서 복수 값이 관측될 때만 범주형 근거로 보강한다. | target별 사전, 이름 하나만의 확정, `pageNo/sortKey/apiKey` 객체화를 하지 않는다. |
 | 동일 사용자로 병합 | 재로그인으로 바뀐 세션이 같은 계정인가? | 서비스 경계 안에서 사용자가 확인한 경우에만 새 fingerprint를 기존 계정과 연결한다. | 회전 토큰을 비슷하다는 이유로 자동 병합하지 않는다. 다른 사용자를 합치면 IDOR 판정이 뒤집힌다. |
 | 3-way 갭 | 세 주체가 무엇을 놓쳤거나 다르게 판단했는가? | 미교차·일부만 발견·불일치를 분리하고 클릭하면 해당 위치로 이동한다. | 갭 자체를 취약점으로 확정하지 않는다. |
 | 미요청 route | 응답이나 Site Map에는 있지만 아직 실제 요청하지 않은 경로가 있는가? | source edge 없는 중립색·점선 테두리 노드와 별도 수량·필터로 관측 그래프 옆에 표시하고 provenance의 type·Evidence·source·run·adapter 대응과 범주형 정렬 이유를 연다. | HUMAN/ZAP/LLM의 관측 요청, `UNCROSSED`, coverage, verdict, finding으로 계산하지 않는다. |
@@ -206,7 +209,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.12 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 beta.12에서 선택할 파일은 `target/flowscope-1.2.0-beta.12.jar` 하나다. beta.10의 실제 계정 projection은 확인됐지만 세션 충돌 차단과 접근선 집계·긴 라벨이 바뀐 beta.12 JAR 재로드는 별도 수동 gate다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.13 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 beta.13에서 선택할 파일은 `target/flowscope-1.2.0-beta.13.jar` 하나다. beta.10의 실제 계정 projection은 확인됐지만 HUMAN run 완료·Burp tool provenance·semantic object 보강이 바뀐 beta.13 JAR 재로드는 별도 수동 gate다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수를 추가했고 행 선택을 operation의 페이지형 Evidence 상세로 연결했다. 직접 단일 Evidence만 여는 별도 아이콘은 없지만 감사 추적은 끊기지 않는다.
 5. **구독 CLI 자동 실행 — 코드·UI 완료, Burp 실환경 gate:** 빠른 시작이 Burp 시작 환경의 Codex/Claude 실행 파일을 찾아 새 Explorer와 별도 Judge 프로세스를 만들고, provider session ID로 Judge 후속 질문을 재개한다. 수동 `agent-workspace`는 폴백으로 유지한다. 로컬 CLI help와 자동 회귀를 통과했고 Codex 무대상 모델 smoke는 성공했지만, Claude smoke는 구독 주간 한도 429로 실패했다. 실제 Burp에서 사용자의 MCP·대상 요청·run 종료·Judge lock·후속 resume가 끝까지 성공하는지는 beta.7 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
 

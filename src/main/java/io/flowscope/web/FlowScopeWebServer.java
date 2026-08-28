@@ -287,6 +287,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         RunContextRegistry.Context context = state.contexts().current(Source.HUMAN);
         ObjectNode body = json.createObjectNode();
         body.put("active", context != null);
+        body.put("completed", state.contexts().completedExplorations().contains(Source.HUMAN));
         body.put("runId", context == null ? "" : context.runId());
         body.put("accountId", context == null || context.accountId() == null ? "" : context.accountId());
         body.put("proxy", "http://127.0.0.1:8080");
