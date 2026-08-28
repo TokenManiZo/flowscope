@@ -9,7 +9,7 @@
 | 공식 근거 | Docker Desktop `host.docker.internal`, Compose file-backed secret, Microsoft cryptographic RNG·Set-Acl, GitHub Actions Windows `pwsh` 계약 확인 |
 | 구현 | Desktop/Docker 공통 `zap-key.sh`·`zap-key.ps1`, Web ZAP 연결/version/key 상태와 연결 전 캠페인 차단, Windows PowerShell 7 `zap-up.ps1`·`zap-down.ps1`·`doctor.ps1`; 32-byte key, ACL 상속 제거·현재 SID 전용 FullControl, reparse point 거부, custom port, ZAP/API/upstream/add-on/provider/Web/MCP/build 진단 |
 | Compose 회귀 | key를 container environment가 아닌 file-backed secret으로 전환. macOS 실제 ZAP 2.17.0에서 `/run/secrets/flowscope-zap-api-key` read, loopback API/version, `host.docker.internal:8081` upstream, 필수 add-on, doctor 0 failure·0 warning 재확인 |
-| Windows CI | GitHub `windows-latest` PowerShell 7 parser gate 추가. 실제 원격 CI 결과는 beta.21 커밋 push 후 기록 |
+| 원격 CI | [GitHub Actions run 33166311107](https://github.com/choewonwoo1817/testflowscope/actions/runs/33166311107)에서 Ubuntu `verify`와 `windows-latest` PowerShell 7 parser gate 모두 통과 |
 | 자동 회귀 | `mvn clean verify`, 223 tests, 실패·오류·skip 0 |
 | 배포물 | `target/flowscope-1.2.0-beta.21.jar`, 15,870,395 bytes, 2,172 entries, SHA-256 `3b9d892115d549e3b46e7eae63d59924b3c661a65e274912c64bb922655a7d2d`, ZIP·Main-Class·Java 21 manifest 검증 통과 |
 

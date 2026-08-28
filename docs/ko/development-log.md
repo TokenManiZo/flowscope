@@ -1525,11 +1525,11 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - macOS 실제 ZAP 2.17.0에 새 secret topology를 적용해 key read, API/version, Docker→Burp `8081` upstream, 필수 add-on과 `doctor.sh --build` 0 failure·0 warning을 재검증했다. container environment에 key 값이 없었다.
 - 공통 `zap-key.sh`로 생성한 별도 owner-only key와 host `18093`을 사용해 refactor된 `zap-up.sh` → ZAP API `2.17.0` → `zap-down.sh` 실제 lifecycle을 다시 통과했다. 기본 `8089`와 사용자 대상 트래픽은 사용하지 않았다.
 - `mvn clean verify`: 223 tests, 실패·오류·skip 0.
+- [GitHub Actions run 33166311107](https://github.com/choewonwoo1817/testflowscope/actions/runs/33166311107): Ubuntu `verify`와 `windows-latest` PowerShell 7 parser job 모두 통과.
 - 배포물: `target/flowscope-1.2.0-beta.21.jar` 하나, 15,870,395 bytes, 2,172 entries, SHA-256 `3b9d892115d549e3b46e7eae63d59924b3c661a65e274912c64bb922655a7d2d`. ZIP 무결성, `Main-Class`, Java 21 manifest를 확인했다.
 
 ### 남은 한계·다음 gate
 
-- Windows PowerShell parser 결과는 원격 CI push 후 확인해 beta validation 상태를 갱신한다.
 - 실제 ZAP Desktop에서 key/API/upstream/add-on과 Web 연결 표시를 확인해야 한다.
 - Windows 10/11 실기기에서 Docker Desktop Linux container, ACL, ZAP API/upstream, Burp SCANNER capture와 stop을 실제 확인해야 한다.
 - PowerShell 5.1, Windows container mode, WSL helper는 beta.21 지원 범위가 아니다.
