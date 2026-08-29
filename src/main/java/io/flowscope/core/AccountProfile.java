@@ -14,7 +14,7 @@ public record AccountProfile(String id, String label, String service, AccessRole
         role = role == null ? AccessRole.UNKNOWN : role;
     }
 
-    private static String normalizeService(String value) {
+    static String normalizeService(String value) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("account service is required");
         URI uri = URI.create(value.trim());
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);

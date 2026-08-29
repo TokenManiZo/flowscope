@@ -6,6 +6,33 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-29 · 1.2.0-beta.24 · 판정 오라클·신원·게시 스냅샷 하드닝
+
+**개발·수정**
+
+- `ResponseEvidence`가 generic `id`뿐 아니라 최종 자원 타입과 결합된 `orderId/order_uuid/orderNo/orderSeq` 및 generic `uuid/guid/pk`를 구조화 값으로 비교하도록 수정했다. 부모 자원 ID만 보인 응답은 최종 자원 노출 근거로 승격하지 않는다.
+- soft-deny는 JSON 전체 문자열이 아니라 최상위 `error/errors/message/detail/title/reason` 오류 봉투만 검사한다. 비 JSON 오류는 앞 2,048자만 검사하고, 1,000,000자·깊이 128·token 100,000·순회 node 100,000 상한을 넘는 구조화 응답은 근거 없음으로 종료한다.
+- 빈 지문은 `unresolved`로 보존해 실제 `anon`과 분리했다. 세션 service를 계정과 같은 canonical `scheme://host:port`로 정규화하고, 바인딩 해제 뒤 같은 레코드를 다시 분석해도 옛 계정 ID가 남지 않는 회귀를 추가했다.
+- `UNKNOWN` 역할은 요구 권한을 충족한 정상 대조 계정으로 인정하지 않도록 Judge gate를 수정했다.
+- `AnalysisConfig`의 일곱 정책 맵을 하나의 monitor로 보호하고 `replaceWith`, account check/put, snapshot copy를 원자화했다. Burp/Web/MCP/Standalone 게시 분석은 수집 레코드의 `analysisCopy`와 정책 복사본에서 실행하고, raw byte vault는 process-local runtime ID로 원 레코드와 분석 복사본을 연결한다.
+- `CellKey`의 구분자 위험 입력과 Evidence digest 입력은 delimiter join 대신 길이 접두 framing으로 바꿨다. 일반 cell stable key는 유지하고 beta.23 이하 newline digest는 감지·이행해 기존 finding/review/Evidence ID를 보존한다. LF 헤더 본문에 CRLF 빈 줄이 있어도 가장 이른 헤더 구분자를 사용한다.
+- `ExecutionTrust`, `ResourceReference`, `ReviewDecision`의 공개 주석 언어를 한국어로 통일했다.
+- 소유자 판독도 같은 bounded JSON·반복 순회를 사용하게 했다. 대형 응답 회귀가 후단 `DataFlowAnalyzer`의 무제한 정규식 CPU 점유를 실제로 드러내 구조화 JSON 반복 순회, 1,000,000자 입력 상한, 비구조화 fallback 64KiB, 값 1,000개 상한을 추가했다.
+
+**리뷰 판별**
+
+- 중첩 자원의 부모 ID까지 성공 증거로 인정하라는 제안은 최종 객체가 없는 응답을 BOLA 증거로 오인하므로 채택하지 않았다.
+- 세션 unbind 뒤 옛 `idn`이 남는다는 제안은 기존 `Normalizer.normalizeAll` 재실행 경로에서는 재현되지 않았다. 불필요한 상태 필드를 추가하지 않고 재분석 회귀만 고정했다.
+- 비어 있지 않은 미지원 Authorization은 기존에도 `Fingerprints.of`에서 opaque hash가 되므로 “파서 실패가 모두 blank”라는 원인 설명은 기각했다. 다만 blank 생성자/import 경계는 실제 `anon`과 충돌해 `unresolved`로 분리했다.
+- `AccessRole.isBelow`가 `UNKNOWN`에서 false인 것은 미확정 권한을 자동 위반으로 만들지 않는 의도다. 대신 Judge의 BFLA 정상 대조 호출부가 이를 권한 충분으로 역해석한 결함을 `isKnownAndAtLeast`로 수정했다.
+- `Gap.risk(int)`와 finding `Severity`는 각각 후보 우선순위와 취약점 심각도라는 다른 의미이므로 하나의 enum으로 합치지 않았다.
+
+**검증 및 남은 gate**
+
+- 전체 `mvn clean verify`: 243 tests, 실패·오류·skip 0.
+- 배포물: `target/flowscope-1.2.0-beta.24.jar`, 15,924,691 bytes, 2,031 entries, SHA-256 `e7ccd253d08399b675feced3908ba76873ef2680124cc2e1281102cbb441f5f5`. ZIP·Main-Class·Java 21·Multi-Release manifest 검증 통과.
+- beta.24 JAR의 실제 Burp load/unload·프로젝트 저장/재열기는 아직 수행하지 않았다.
+
 ## 2026-08-29 · 1.2.0-beta.23 · 배포물 라이선스·격리·CI 하드닝
 
 ### 목표와 성공 조건

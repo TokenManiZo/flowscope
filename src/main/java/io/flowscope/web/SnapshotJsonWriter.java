@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AuthorizationAnalysis;
 import io.flowscope.core.DataFlowAnalyzer;
+import io.flowscope.core.Fingerprints;
 import io.flowscope.core.Masking;
 import io.flowscope.core.ObservationCollapser;
 import io.flowscope.core.Pipeline;
@@ -52,6 +53,7 @@ public final class SnapshotJsonWriter {
                         List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates, long droppedRecords) throws JsonProcessingException {
+        config = config.snapshotCopy();
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
         root.put("identityRevision", revision);
@@ -172,8 +174,8 @@ public final class SnapshotJsonWriter {
                 object.put("resource", record.resource);
                 object.put("evidence", Normalizer.resourceEvidence(record));
             }
-            String key = record.idn + "|" + record.op + "|"
-                    + (record.resource == null ? "<none>" : record.resource) + "\u0000" + record.source;
+            String key = new AuthorizationAnalysis.CellKey(
+                    record.idn, record.op, record.resource).stableKey() + "\u0000" + record.source;
             event.put("verdict", wire(verdicts.getOrDefault(key, Verdict.UNTESTED)));
         }
         return out;
@@ -387,7 +389,8 @@ public final class SnapshotJsonWriter {
     private ArrayNode sessions(AnalysisConfig config, List<RequestRecord> records) {
         record Session(String service, String fingerprint, String identity, long first, long last) {}
         Map<String, Session> sessions = new LinkedHashMap<>();
-        records.stream().filter(record -> !"anon".equals(record.fp)).forEach(record -> {
+        records.stream().filter(record -> !Fingerprints.ANONYMOUS.equals(record.fp)
+                && !Fingerprints.UNRESOLVED.equals(record.fp)).forEach(record -> {
             String key = record.service + "\u0000" + record.fp;
             Session previous = sessions.get(key);
             long time = record.timestamp;

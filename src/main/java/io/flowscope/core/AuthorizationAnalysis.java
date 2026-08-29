@@ -1,5 +1,6 @@
 package io.flowscope.core;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,7 +15,23 @@ public record AuthorizationAnalysis(
 
     public record CellKey(String identity, String operation, String resource) {
         public String stableKey() {
-            return identity + "|" + operation + "|" + (resource == null ? "<none>" : resource);
+            if (!requiresFraming(identity) && !requiresFraming(operation)
+                    && !requiresFraming(resource) && !"<none>".equals(resource)) {
+                return identity + "|" + operation + "|" + (resource == null ? "<none>" : resource);
+            }
+            return "v2:" + frame(identity) + frame(operation) + frame(resource);
+        }
+
+        private static String frame(String value) {
+            if (value == null) return "-1:";
+            byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+            StringBuilder encoded = new StringBuilder(bytes.length * 2);
+            for (byte valueByte : bytes) encoded.append(String.format("%02x", valueByte));
+            return bytes.length + ":" + encoded;
+        }
+
+        private static boolean requiresFraming(String value) {
+            return value != null && value.contains("|");
         }
     }
 

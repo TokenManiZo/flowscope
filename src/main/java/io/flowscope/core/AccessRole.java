@@ -23,4 +23,9 @@ public enum AccessRole {
     public boolean isBelow(AccessRole required) {
         return this != UNKNOWN && required != null && required != UNKNOWN && rank < required.rank;
     }
+
+    /** 판정용: 양쪽 권한이 명시돼 있고 현재 권한이 요구 권한 이상일 때만 true. */
+    public boolean isKnownAndAtLeast(AccessRole required) {
+        return this != UNKNOWN && required != null && required != UNKNOWN && rank >= required.rank;
+    }
 }

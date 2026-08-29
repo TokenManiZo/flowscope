@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Human disposition of a deterministic finding or an LLM assessment. */
+/** 결정론적 후보 또는 LLM 평가에 대한 사람의 검토 상태. */
 public record ReviewDecision(String itemId, Status status, String note,
                              List<String> evidenceIds, Instant decidedAt) {
     public enum Status {

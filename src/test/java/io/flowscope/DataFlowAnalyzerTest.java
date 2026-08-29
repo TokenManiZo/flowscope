@@ -4,6 +4,7 @@ import io.flowscope.core.*;
 import io.flowscope.core.graph.FlowGraph;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,6 +37,16 @@ class DataFlowAnalyzerTest {
         b.body = "{}";
         Pipeline.Result result = Pipeline.run(List.of(a, b));
         assertTrue(result.graph.edges().stream().noneMatch(e -> e.type == FlowGraph.EdgeType.FLOW));
+    }
+
+    @Test
+    void 비구조화_장문은_정규식_역추적없이_제한시간안에_종료한다() {
+        RequestRecord producer = rec("GET", "/api/blob", 1_000, "x".repeat(64 * 1024));
+        RequestRecord consumer = rec("GET", "/api/next", 2_000, "{}");
+
+        assertTimeoutPreemptively(Duration.ofSeconds(2),
+                () -> assertTrue(Pipeline.run(List.of(producer, consumer)).graph.edges().stream()
+                        .noneMatch(edge -> edge.type == FlowGraph.EdgeType.FLOW)));
     }
 
     private static RequestRecord rec(String method, String path, long timestamp, String body) {

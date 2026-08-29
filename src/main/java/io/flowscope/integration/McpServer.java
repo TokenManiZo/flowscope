@@ -829,7 +829,8 @@ public final class McpServer implements AutoCloseable {
                 }
             } else {
                 AccessRole required = state.config().endpointRequirement(candidate.cell().operation());
-                if (state.config().identityRole(control.idn).isBelow(required) || !ResponseEvidence.successful(control)) {
+                if (!state.config().identityRole(control.idn).isKnownAndAtLeast(required)
+                        || !ResponseEvidence.successful(control)) {
                     throw new IllegalArgumentException("BFLA control must use an authorized identity and succeed");
                 }
             }
@@ -1547,7 +1548,7 @@ public final class McpServer implements AutoCloseable {
         List<RequestRecord> preJudge = current.records.stream()
                 .filter(record -> record.phase != RunPhase.COACH_PROBE && record.phase != RunPhase.VALIDATION)
                 .toList();
-        return Pipeline.run(new ArrayList<>(preJudge), state.config());
+        return Pipeline.runIsolated(new ArrayList<>(preJudge), state.config());
     }
 
     private void requireLocked() {

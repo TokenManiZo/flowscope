@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.23
+# FlowScope 설계서 v1.2.0-beta.24
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -89,10 +89,10 @@ RouteCandidate {
 - `trafficClassification`: `API/AUTH_SESSION/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/POLLING/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
 - `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
-- `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 키 하나는 계정 하나에만 귀속되며, 이미 연결된 지문을 다른 계정으로 옮기려면 먼저 기존 연결을 해제해야 한다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
+- `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 키 하나는 계정 하나에만 귀속되며, 이미 연결된 지문을 다른 계정으로 옮기려면 먼저 기존 연결을 해제해야 한다. 실제 비인증 `anon`과 추출 실패 `unresolved`는 계정에 연결할 수 없다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
 - Cookie·Authorization·subject fingerprint는 한 principal 안의 기술 단서이지 로그인 세션 개수가 아니다. 기본 권한 카드는 principal을 한 줄로 표시하고 단서 종류·개수는 계정 화면의 접힌 진단에서만 보여 준다.
 - `SessionBroker`: 사용자가 Web UI에서 명시적으로 시작한 HUMAN 로그인 구간의 Cookie/Authorization/CSRF만 프로세스 메모리에 보관한다. 자격증명 material만 관측하고 성공 응답을 확인하지 못하면 `UNVERIFIED`, 401·로그인 redirect·invalid token이면 `SUSPECT`, 비밀 삭제/만료면 `REAUTH_REQUIRED`다. account service와 exact scope가 모두 맞고 상태가 `ACTIVE`일 때만 ZAP/LLM 요청에 주입한다. HUMAN pass의 계정 선택은 표시 힌트가 아니라 검증 조건이며, 실제 요청 자격증명이 그 broker 계정과 exact match할 때만 계정 신원으로 귀속한다. 다른 계정이 같은 service에서 동시에 캡처되는 것을 거부한다. 캡처 중 동일 지문이 다른 계정에 이미 연결된 사실을 확인하면 현재 세션을 `SUSPECT` 충돌 상태로 고정하고 신원 귀속·주입에서 제외한다. raw 값은 UI/MCP/project에 나오지 않는다.
-- `evidenceId`: 전체 의미 내용 digest 기반 ID. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
+- `evidenceId`: 전체 의미 내용 digest 기반 ID. digest 입력은 외부 값의 개행과 필드 경계가 충돌하지 않도록 null 표식과 UTF-8 byte 길이 접두 framing을 사용한다. beta.23 이하 newline digest가 일치하면 기존 Evidence ID를 유지한 채 새 digest로 이행한다. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
 논리 프로젝트 schema v2는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 완료가 확인된 레인, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록을 저장한다. 기본 내구 저장은 SQLite storage schema v1의 `records/payloads/accounts/session_bindings/policy_entries/reviews/assessments/validations/completed_lanes/route_candidates` 관계형 테이블이며, JSON schema v2 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2 읽기와 v2 내보내기는 호환 경로다. raw broker 세션은 어느 형식에도 저장하지 않는다. 전문은 digest/size/retention을 검증하고, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증하며, 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075).
@@ -164,17 +164,21 @@ route inventory는 다음 공통 파이프라인을 사용한다(D-069).
 - role이 endpoint requirement보다 낮은데 성공: BFLA suspicious.
 - OPTIONS/HEAD: owner 성공 증거에서 제외.
 
+응답 객체 오라클은 generic `id/uuid/guid/pk` 또는 **최종 자원 타입에 한정된** `orderId/order_uuid/orderNo/orderSeq` 같은 필드의 scalar 값이 대상 ID와 정확히 같을 때만 노출 근거로 쓴다. `orders:101/items:5`에서는 item 5만 대상이며 부모 order 101만 보인 응답은 근거가 아니다. JSON soft deny는 최상위 `error/errors/message/detail/title/reason` 오류 봉투만 읽으므로 정상 도메인 데이터 안의 `not allowed` 문자열을 거부로 뒤집지 않는다. 비 JSON 오류는 앞 2,048자만 검사한다.
+
+객체·소유자·DataFlow 응답 판독은 1,000,000자, JSON 깊이 128, token/node 100,000의 공통 상한에서 반복 순회한다. DataFlow의 malformed/non-JSON fallback은 앞 64KiB와 응답당 1,000개 값으로 제한한다. 상한 초과는 취약 또는 정상으로 확정하지 않고 근거 없음/보류로 남긴다.
+
 role/requirement는 자동추정하지 않고 사용자가 지정한다(D-018).
 
 ### 4.5 비교·그래프 F-07~15/F-20~24
 
-CoverageCell 키는 `identity|operation|resource`다. 소스별 5-state verdict를 보존하고 다음 갭을 계산한다.
+CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존 셀은 finding/review ID 호환을 위해 기존 stable key를 유지하고, 외부 입력에 `|` 또는 실제 `<none>` 값이 있는 셀만 `v2` byte 길이+hex framing을 써 충돌을 막는다. 소스별 5-state verdict를 보존하고 다음 갭을 계산한다.
 
 - UNCROSSED: 확정 소유자가 있는 관측 operation/resource를 다른 관측 identity가 시도하지 않음.
 - PARTIAL_DISCOVERY: 활성 소스 중 일부만 같은 cell을 실행.
 - CONFLICT: 같은 cell의 소스 verdict가 다름.
 
-데이터 Flow 엣지는 같은 identity에서 이전 응답의 ID/token이 30분 안의 뒤 요청 path/query/body에 실제 소비될 때만 만든다. 단순 시간순 엣지는 만들지 않는다(D-019).
+데이터 Flow 엣지는 같은 identity에서 이전 응답의 ID/token이 30분 안의 뒤 요청 path/query/body에 실제 소비될 때만 만든다. 단순 시간순 엣지는 만들지 않는다(D-019). 현재 소비 판정은 exact substring 보조분석이며 semantic taint가 아니므로 동일 부분문자열 오연결과 전체 조합 O(N²)은 별도 성능·정확성 부채다.
 
 ### 4.6 세션·LLM·ZAP F-16~19
 

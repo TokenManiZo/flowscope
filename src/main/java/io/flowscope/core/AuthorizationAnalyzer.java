@@ -1,8 +1,9 @@
 package io.flowscope.core;
 
+import com.fasterxml.jackson.core.exc.StreamConstraintsException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -24,7 +25,6 @@ import static io.flowscope.core.AuthorizationAnalysis.*;
  */
 public final class AuthorizationAnalyzer {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> OWNER_FIELDS = Set.of(
             "owner", "ownerid", "userid", "authorid", "accountid");
     private static final Set<String> PRINCIPAL_OBJECT_FIELDS = Set.of(
@@ -111,7 +111,7 @@ public final class AuthorizationAnalyzer {
     private static void applyRoles(List<RequestRecord> records, AnalysisConfig config) {
         for (RequestRecord r : records) {
             AccessRole configured = config.identityRole(r.idn);
-            r.role = "anon".equals(r.idn) ? AccessRole.ANONYMOUS : configured;
+            r.role = Fingerprints.ANONYMOUS.equals(r.idn) ? AccessRole.ANONYMOUS : configured;
         }
     }
 
@@ -273,11 +273,13 @@ public final class AuthorizationAnalyzer {
     }
 
     private static Set<String> ownerValues(String body) {
-        if (body == null || body.isBlank()) return Set.of();
+        if (body == null || body.isBlank() || body.length() > ResponseEvidence.MAX_ANALYSIS_CHARS) return Set.of();
         Set<String> values = new LinkedHashSet<>();
         try {
-            collectOwnerValues(JSON.readTree(body), values);
+            collectOwnerValues(ResponseEvidence.parseBoundedJson(body), values);
             return values;
+        } catch (StreamConstraintsException rejected) {
+            return Set.of();
         } catch (Exception ignored) {
             Matcher matcher = OWNER_FIELD.matcher(body);
             while (matcher.find()) values.add(matcher.group(2));
@@ -285,9 +287,17 @@ public final class AuthorizationAnalyzer {
         }
     }
 
-    private static void collectOwnerValues(JsonNode node, Set<String> values) {
-        if (node == null) return;
-        if (node.isObject()) {
+    private static void collectOwnerValues(JsonNode root, Set<String> values) {
+        if (root == null) return;
+        ArrayDeque<JsonNode> pending = new ArrayDeque<>();
+        pending.add(root);
+        int visited = 0;
+        while (!pending.isEmpty() && visited++ < ResponseEvidence.MAX_VISITED_NODES) {
+            JsonNode node = pending.removeFirst();
+            if (!node.isObject()) {
+                if (node.isArray()) node.elements().forEachRemaining(pending::addLast);
+                continue;
+            }
             var fields = node.fields();
             while (fields.hasNext()) {
                 var field = fields.next();
@@ -299,10 +309,8 @@ public final class AuthorizationAnalyzer {
                 if (value.isObject() && PRINCIPAL_OBJECT_FIELDS.contains(normalizedField(field.getKey()))) {
                     collectPrincipalValues(value, values);
                 }
-                if (value.isContainerNode()) collectOwnerValues(value, values);
+                if (value.isContainerNode()) pending.addLast(value);
             }
-        } else if (node.isArray()) {
-            for (JsonNode value : node) collectOwnerValues(value, values);
         }
     }
 

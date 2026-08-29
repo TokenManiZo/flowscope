@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0-beta.24 — 2026-08-29
+
+- Expanded the response-object oracle to resource-qualified `orderId`, `order_uuid`, and `pk` forms while keeping nested-resource matching on the final target ID.
+- Restricted soft-deny matching to top-level error envelopes or a bounded non-JSON error prefix so normal payload data cannot silently invert a successful authorization result.
+- Added response JSON size, depth, token, and traversal bounds with iterative object lookup.
+- Applied the same bounded parsing and traversal contract to owner and data-flow readers, including a bounded malformed-text fallback.
+- Separated fingerprint extraction failure from actual anonymous traffic and rejected account binding for either state; normalized session services and rejected unknown roles as BFLA control identities.
+- Made policy replacement and account updates atomic and isolated Burp/Web/MCP/Standalone publication from mutable capture records and live policy updates.
+- Replaced delimiter-based cell and Evidence digest inputs with length framing and fixed mixed LF/CRLF message-body splitting.
+
 ## 1.2.0-beta.23 — 2026-08-29
 
 - Restored merged upstream Apache NOTICE content and corrected the bundled Jackson, FastDoubleParser, Schubfach, and SnakeYAML attribution inventory.

@@ -16,6 +16,9 @@ import java.util.regex.Pattern;
  */
 public final class Fingerprints {
 
+    public static final String ANONYMOUS = "anon";
+    public static final String UNRESOLVED = "unresolved";
+
     private static final Pattern SESSION = Pattern.compile("(?i)session=([^;\\s]+)");
     private static final Pattern SUB = Pattern.compile("\"sub\"\\s*:\\s*\"([^\"]+)\"");
     private static final Pattern ISS = Pattern.compile("\"iss\"\\s*:\\s*\"([^\"]+)\"");
@@ -35,7 +38,7 @@ public final class Fingerprints {
             if (s.find()) return "sess:" + hash(s.group(1).trim());  // 세션ID → 해시
             return "ck:" + hash(cookieHeader.trim());                // 쿠키 전체 → 해시
         }
-        return "anon";
+        return ANONYMOUS;
     }
 
     /** 일방 해시(원문 토큰 미저장). 같은 값 → 같은 fp 라 신원 묶임은 보존된다. */
@@ -52,7 +55,8 @@ public final class Fingerprints {
 
     /** 프로젝트 파일에는 알려진 비가역/subject 형식만 기록한다. 임의 값은 다시 해시한다. */
     public static String safeForStorage(String value) {
-        if (value == null || value.isBlank() || "anon".equals(value)) return "anon";
+        if (value == null || value.isBlank() || UNRESOLVED.equals(value)) return UNRESOLVED;
+        if (ANONYMOUS.equals(value)) return ANONYMOUS;
         if (value.startsWith("sub:") || value.startsWith("jwt:") || value.startsWith("tok:")
                 || value.startsWith("sess:") || value.startsWith("ck:") || value.startsWith("fp:")) {
             return value;

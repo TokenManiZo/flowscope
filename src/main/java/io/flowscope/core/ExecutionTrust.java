@@ -1,6 +1,6 @@
 package io.flowscope.core;
 
-/** Whether FlowScope controlled the target request path or only observed an external client. */
+/** FlowScope가 대상 요청 경로를 통제했는지 외부 클라이언트를 관측만 했는지 나타낸다. */
 public enum ExecutionTrust {
     CONTROLLED,
     OBSERVED,

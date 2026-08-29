@@ -198,6 +198,35 @@ class AuthorizationAnalyzerTest {
         assertEquals(Verdict.DENY, login.overall());
     }
 
+    @Test
+    void stableKey는_구분자가_포함돼도_서로_다른_셀을_구분한다() {
+        AuthorizationAnalysis.CellKey left = new AuthorizationAnalysis.CellKey("a|b", "c", null);
+        AuthorizationAnalysis.CellKey right = new AuthorizationAnalysis.CellKey("a", "b|c", null);
+
+        assertNotEquals(left.stableKey(), right.stableKey());
+        assertEquals("a|b|<none>", new AuthorizationAnalysis.CellKey("a", "b", null).stableKey(),
+                "구분자가 없는 기존 셀의 finding/review ID는 유지한다");
+    }
+
+    @Test
+    void 미확정권한은_요구권한을_충족한_제어계정이_아니다() {
+        assertFalse(AccessRole.UNKNOWN.isKnownAndAtLeast(AccessRole.ADMIN));
+        assertFalse(AccessRole.USER.isKnownAndAtLeast(AccessRole.UNKNOWN));
+        assertTrue(AccessRole.ADMIN.isKnownAndAtLeast(AccessRole.USER));
+    }
+
+    @Test
+    void 과도하게_중첩되거나_큰_응답은_소유자분석도_중단하고_파이프라인을_유지한다() {
+        String deep = "{\"order\":".repeat(200) + "{\"owner\":\"user-a\"}" + "}".repeat(200);
+        String huge = "{\"owner\":\"user-a\",\"padding\":\"" + "x".repeat(1_100_000) + "\"}";
+        RequestRecord deepRecord = rec(Source.HUMAN, "A", "GET", "/api/orders/7", 200, deep);
+        RequestRecord hugeRecord = rec(Source.HUMAN, "A", "GET", "/api/orders/8", 200, huge);
+
+        Pipeline.Result result = assertDoesNotThrow(() -> Pipeline.run(List.of(deepRecord, hugeRecord)));
+
+        assertTrue(result.analysis.owners().values().stream().noneMatch(AuthorizationAnalysis.OwnerInfo::confirmed));
+    }
+
     private static RequestRecord rec(Source source, String fp, String method, String path, int status, String body) {
         RequestRecord r = new RequestRecord(source, "https://t:443", method, path, status, fp);
         r.body = body;

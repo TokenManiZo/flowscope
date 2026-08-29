@@ -58,7 +58,7 @@ public final class Standalone {
         @Override public List<ValidationDecision> validations() { return List.of(); }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public void rebuild() {
-            result = Pipeline.run(new ArrayList<>(records), config);
+            result = Pipeline.runIsolated(new ArrayList<>(records), config);
             revision.incrementAndGet();
         }
         @Override public void clearTraffic() { records.clear(); rebuild(); }

@@ -59,7 +59,7 @@ final class TransientExchangeVault {
     private final int requestLimitBytes;
     private final int responseLimitBytes;
     private final long totalLimitBytes;
-    private final LinkedHashMap<RequestRecord, Entry> entries = new LinkedHashMap<>();
+    private final LinkedHashMap<Long, Entry> entries = new LinkedHashMap<>();
     private long retainedBytes;
 
     TransientExchangeVault(int requestLimitBytes, int responseLimitBytes, long totalLimitBytes) {
@@ -82,7 +82,7 @@ final class TransientExchangeVault {
         Entry entry = new Entry(retainedRequest, clampOffset(requestBodyOffset, requestBytes), retainedResponse,
                 clampOffset(responseBodyOffset, responseBytes), requestBytes, responseBytes);
         while (!entries.isEmpty() && retainedBytes + entry.retainedBytes() > totalLimitBytes) {
-            Map.Entry<RequestRecord, Entry> oldest = entries.entrySet().iterator().next();
+            Map.Entry<Long, Entry> oldest = entries.entrySet().iterator().next();
             entries.remove(oldest.getKey());
             retainedBytes -= oldest.getValue().retainedBytes();
             oldest.getValue().destroy();
@@ -92,12 +92,12 @@ final class TransientExchangeVault {
             entry = new Entry(null, clampOffset(requestBodyOffset, requestBytes), null,
                     clampOffset(responseBodyOffset, responseBytes), requestBytes, responseBytes);
         }
-        entries.put(record, entry);
+        entries.put(record.runtimeId(), entry);
         retainedBytes += entry.retainedBytes();
     }
 
     synchronized Optional<Exchange> get(RequestRecord record) {
-        Entry entry = entries.get(record);
+        Entry entry = record == null ? null : entries.get(record.runtimeId());
         return entry == null ? Optional.empty() : Optional.of(entry.view());
     }
 
@@ -112,7 +112,7 @@ final class TransientExchangeVault {
     }
 
     private void remove(RequestRecord record) {
-        Entry previous = entries.remove(record);
+        Entry previous = entries.remove(record.runtimeId());
         if (previous == null) return;
         retainedBytes -= previous.retainedBytes();
         previous.destroy();

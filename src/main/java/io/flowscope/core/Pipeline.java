@@ -40,12 +40,26 @@ public final class Pipeline {
     }
 
     public static Result run(List<RequestRecord> all, AnalysisConfig config) {
-        List<RequestRecord> records = new ArrayList<>(all == null ? List.of() : all);
+        return runInternal(all, config, false);
+    }
+
+    /** 동시 조회되는 UI/MCP 게시본을 수집 DTO와 분리해 재분석 중 데이터 레이스를 막는다. */
+    public static Result runIsolated(List<RequestRecord> all, AnalysisConfig config) {
+        return runInternal(all, config, true);
+    }
+
+    private static Result runInternal(List<RequestRecord> all, AnalysisConfig config, boolean isolate) {
+        AnalysisConfig effectiveConfig = isolate ? config.snapshotCopy() : config;
+        List<RequestRecord> input = all == null ? List.of() : all;
+        List<RequestRecord> records = isolate
+                ? input.stream().map(RequestRecord::analysisCopy)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new))
+                : new ArrayList<>(input);
         Normalizer.normalizeAll(records);
-        applyIdentityState(records, config);
+        applyIdentityState(records, effectiveConfig);
         EvidenceIds.assign(records);
         for (RequestRecord record : records) {
-            record.trafficClassification = TrafficClassifier.classify(record, config);
+            record.trafficClassification = TrafficClassifier.classify(record, effectiveConfig);
         }
         var corroboratedOperations = records.stream()
                 .filter(Pipeline::strongCorroboratingEvidence)
@@ -80,8 +94,8 @@ public final class Pipeline {
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.EXCLUDE) excluded++;
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.REVIEW) review++;
         }
-        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(coverage, config);
-        FlowGraph graph = FlowGraphBuilder.build(coverage, analysis, config);
+        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(coverage, effectiveConfig);
+        FlowGraph graph = FlowGraphBuilder.build(coverage, analysis, effectiveConfig);
         return new Result(graph, analysis, records, coverage, excluded, review);
     }
 
@@ -110,12 +124,13 @@ public final class Pipeline {
         for (RequestRecord record : records) {
             if (config.boundAccount(record.service, record.fp).isPresent()) {
                 record.authState = AuthState.ACCOUNT_BOUND;
-            } else if ("anon".equals(record.fp)) {
+            } else if (Fingerprints.ANONYMOUS.equals(record.fp)) {
                 record.authState = AuthState.ANONYMOUS;
-                record.idn = "anon";
+                record.idn = Fingerprints.ANONYMOUS;
             } else {
                 record.authState = AuthState.UNRESOLVED;
-                if (record.fp.startsWith("ck:") || record.fp.startsWith("sess:")) {
+                if (Fingerprints.UNRESOLVED.equals(record.fp)
+                        || record.fp.startsWith("ck:") || record.fp.startsWith("sess:")) {
                     record.idn = "unresolved-" + Fingerprints.hash(record.service);
                 }
             }

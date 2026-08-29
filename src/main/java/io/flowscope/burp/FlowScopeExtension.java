@@ -197,7 +197,7 @@ public final class FlowScopeExtension implements BurpExtension {
             RAW_REQUEST_LIMIT_BYTES, RAW_RESPONSE_LIMIT_BYTES, RAW_EXCHANGE_MEMORY_BYTES);
     private final ProjectStore projectStore = new ProjectStore();
     private final SqliteProjectStore sqliteProjectStore = new SqliteProjectStore(projectStore);
-    private volatile Pipeline.Result latest = Pipeline.run(List.of(), analysisConfig);
+    private volatile Pipeline.Result latest = Pipeline.runIsolated(List.of(), analysisConfig);
     private volatile List<RouteCandidate> routeCandidates = List.of();
     private final List<RouteCandidateExtractor.Seed> siteMapSeeds = new ArrayList<>();
     private final List<RouteCandidate> restoredRouteCandidates = new ArrayList<>();
@@ -559,7 +559,7 @@ public final class FlowScopeExtension implements BurpExtension {
             try {
                 List<RequestRecord> snapshot;
                 synchronized (records) { snapshot = new ArrayList<>(records); }
-                Pipeline.Result result = Pipeline.run(snapshot, analysisConfig);
+                Pipeline.Result result = Pipeline.runIsolated(snapshot, analysisConfig);
                 latest = result;
                 rebuildRouteCandidates(result.records);
                 revision.incrementAndGet();
@@ -794,7 +794,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     record.requestPayload = internPayload(record.requestPayload);
                     record.responsePayload = internPayload(record.responsePayload);
                 });
-                Pipeline.Result result = Pipeline.run(loaded, analysisConfig);
+                Pipeline.Result result = Pipeline.runIsolated(loaded, analysisConfig);
                 synchronized (records) {
                     datasetEpoch.incrementAndGet();
                     records.clear();
@@ -835,7 +835,7 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         routeCandidates = List.of();
         analysisConfig.clearReviews();
-        latest = Pipeline.run(List.of(), analysisConfig);
+        latest = Pipeline.runIsolated(List.of(), analysisConfig);
         revision.incrementAndGet();
         if (mcpServer != null) mcpServer.clearAssessments();
         if (mcpServer != null) mcpServer.clearValidations();
@@ -891,7 +891,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     record.requestPayload = internPayload(record.requestPayload);
                     record.responsePayload = internPayload(record.responsePayload);
                 });
-                Pipeline.Result result = Pipeline.run(loaded, analysisConfig);
+                Pipeline.Result result = Pipeline.runIsolated(loaded, analysisConfig);
                 synchronized (restoredRouteCandidates) {
                     restoredRouteCandidates.addAll(data.routeCandidates().stream()
                             .filter(candidate -> !candidate.observed()).toList());
@@ -1523,7 +1523,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private void rebuildImmediately() {
         List<RequestRecord> snapshot;
         synchronized (records) { snapshot = new ArrayList<>(records); }
-        Pipeline.Result result = Pipeline.run(snapshot, analysisConfig);
+        Pipeline.Result result = Pipeline.runIsolated(snapshot, analysisConfig);
         latest = result;
         rebuildRouteCandidates(result.records);
         revision.incrementAndGet();

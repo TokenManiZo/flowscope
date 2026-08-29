@@ -9,6 +9,20 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PipelineClassificationTest {
+
+    @Test
+    void 게시된_분석스냅샷은_수집레코드의_후속변경과_분리된다() {
+        RequestRecord input = api(Source.HUMAN, "/api/orders/1", "sess:a");
+        input.body = "{\"id\":1}";
+
+        Pipeline.Result published = Pipeline.runIsolated(List.of(input), new AnalysisConfig());
+        input.body = "{\"id\":2}";
+        Pipeline.runIsolated(List.of(input), new AnalysisConfig());
+
+        assertNull(input.op, "수집 DTO에는 분석 산출물을 in-place로 쓰지 않는다");
+        assertNotNull(published.records.getFirst().op);
+        assertEquals("{\"id\":1}", published.records.getFirst().body);
+    }
     private RequestRecord api(Source source, String path, String fp) {
         RequestRecord record = new RequestRecord(source, "https://t:443", "GET", path, 200, fp);
         record.hasResponse = true;

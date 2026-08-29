@@ -2,6 +2,16 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.24 — 2026-08-29
+
+- 응답 객체 오라클이 자원 타입에 맞는 `orderId`·`order_uuid`·`pk` 계열을 인식하고 중첩 자원의 최종 대상 ID만 증거로 사용하도록 보강
+- soft-deny 문자열 검사를 최상위 오류 봉투 또는 제한된 비 JSON 오류 앞부분으로 좁혀 정상 데이터의 `not allowed` 문구 오탐 방지
+- 응답 JSON 크기·깊이·token·순회 상한과 반복 순회를 적용해 과도한 응답이 판정기를 중단시키지 않도록 강화
+- 같은 응답을 읽는 소유자·DataFlow 경로에도 크기·깊이·순회·fallback 상한을 적용해 후단의 재귀·정규식 병목 차단
+- 지문 추출 실패를 실제 비인증과 분리하고 계정 연결을 거부하며 service 정규화, 미확정 권한의 Judge 제어계정 사용 거부, 바인딩 해제 재분석을 회귀로 고정
+- 정책 맵의 교체·계정 갱신을 단일 잠금으로 원자화하고 Burp/Web/MCP/Standalone 게시 분석을 수집 DTO 및 정책 스냅샷과 격리
+- cell/Evidence digest를 길이 접두 인코딩으로 바꾸고 LF/CRLF 본문 경계의 가장 이른 구분자를 사용
+
 ## 1.2.0-beta.23 — 2026-08-29
 
 - Jackson 원 Apache NOTICE를 fat JAR에 병합하고 FastDoubleParser·Schubfach 포함 라이선스와 SnakeYAML 귀속을 정확히 고지

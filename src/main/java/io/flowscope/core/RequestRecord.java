@@ -2,12 +2,15 @@ package io.flowscope.core;
 
 import java.util.Locale;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 한 건의 요청/응답 관측 (설계서 §3). L0 에서는 그래프 구성에 필요한 필드만 채운다.
  * op/resource/idn 은 정규화(Normalizer) 후 채워진다.
  */
 public final class RequestRecord {
+    private static final AtomicLong NEXT_RUNTIME_ID = new AtomicLong();
+    private final long runtimeId;
     public final Source source;
     /** 타깃 서비스: scheme://host:port. 서로 다른 시스템이 합쳐지지 않게 모델에 보존한다(스코프 정의와 동일 축). */
     public final String service;
@@ -58,17 +61,63 @@ public final class RequestRecord {
     public List<ResourceReference> resourceReferences = List.of();
     public PathTemplateStatus pathTemplateStatus = PathTemplateStatus.LITERAL;
     public List<String> pathTemplateReasons = List.of();
-    public String idn;            // 예: "user-a" 또는 "anon"(비인증)
+    public String idn;            // 예: "user-a", "anon"(비인증), "unresolved-*"(지문 추출 실패)
     public AccessRole role = AccessRole.UNKNOWN; // 사용자 지정값. 자동 권한 추정 금지(D-018)
 
     public RequestRecord(Source source, String service, String method, String path, int status, String fp) {
+        this(source, service, method, path, status, fp, NEXT_RUNTIME_ID.incrementAndGet());
+    }
+
+    private RequestRecord(Source source, String service, String method, String path,
+                          int status, String fp, long runtimeId) {
         this.source = source;
         this.service = (service == null || service.isBlank()) ? "unknown-service" : service;
         this.method = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
         this.path = (path == null || path.isBlank()) ? "/" : path;
         this.status = status;
-        this.fp = (fp == null || fp.isBlank()) ? "anon" : fp;
+        this.fp = (fp == null || fp.isBlank()) ? Fingerprints.UNRESOLVED : fp;
+        this.runtimeId = runtimeId;
     }
+
+    /** 분석기는 수집 레코드를 직접 변형하지 않고 이 얕은 불변값 복사본에 산출물을 기록한다. */
+    public RequestRecord analysisCopy() {
+        RequestRecord copy = new RequestRecord(source, service, method, path, status, fp, runtimeId);
+        copy.sourceDetail = sourceDetail;
+        copy.orchestrator = orchestrator;
+        copy.tool = tool;
+        copy.phase = phase;
+        copy.executionTrust = executionTrust;
+        copy.runId = runId;
+        copy.evidenceId = evidenceId;
+        copy.contentDigest = contentDigest;
+        copy.authState = authState;
+        copy.trafficClassification = trafficClassification;
+        copy.requestContentType = requestContentType;
+        copy.responseContentType = responseContentType;
+        copy.secFetchDest = secFetchDest;
+        copy.secFetchMode = secFetchMode;
+        copy.accessControlRequestMethod = accessControlRequestMethod;
+        copy.query = query;
+        copy.reqBody = reqBody;
+        copy.reqText = reqText;
+        copy.requestPayload = requestPayload;
+        copy.timestamp = timestamp;
+        copy.body = body;
+        copy.respText = respText;
+        copy.responsePayload = responsePayload;
+        copy.location = location;
+        copy.hasResponse = hasResponse;
+        copy.op = op;
+        copy.resource = resource;
+        copy.resourceReferences = List.copyOf(resourceReferences);
+        copy.pathTemplateStatus = pathTemplateStatus;
+        copy.pathTemplateReasons = List.copyOf(pathTemplateReasons);
+        copy.idn = idn;
+        copy.role = role;
+        return copy;
+    }
+
+    public long runtimeId() { return runtimeId; }
 
     public String requestTextForEvidence() {
         String retained = requestPayload == null ? null : requestPayload.text();
@@ -92,9 +141,12 @@ public final class RequestRecord {
 
     private static String messageBody(String message) {
         if (message == null) return null;
-        int separator = message.indexOf("\r\n\r\n");
-        int length = 4;
-        if (separator < 0) { separator = message.indexOf("\n\n"); length = 2; }
+        int crlf = message.indexOf("\r\n\r\n");
+        int lf = message.indexOf("\n\n");
+        int separator;
+        int length;
+        if (crlf < 0 || (lf >= 0 && lf < crlf)) { separator = lf; length = 2; }
+        else { separator = crlf; length = 4; }
         return separator < 0 ? null : message.substring(separator + length);
     }
 

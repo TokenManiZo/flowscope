@@ -83,6 +83,7 @@ public final class ProjectStore {
                           Set<Source> completedLanes,
                           List<RouteCandidate> routeCandidates) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
+        config = config.snapshotCopy();
         EvidenceIds.assign(records);
         ObjectNode root = json.createObjectNode();
         root.put("schema_version", SCHEMA_VERSION);

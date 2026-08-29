@@ -7,6 +7,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 final class TransientExchangeVaultTest {
+
+    @Test
+    void 분석복사본으로도_같은_메모리원문을_찾는다() {
+        TransientExchangeVault vault = new TransientExchangeVault(100, 100, 200);
+        RequestRecord record = record("/copy");
+        vault.put(record, "request".getBytes(), 0, "response".getBytes(), 0);
+
+        assertTrue(vault.get(record.analysisCopy()).isPresent());
+    }
     @Test
     void retainsRawBytesOnlyInBoundedMemoryAndClearsIt() {
         TransientExchangeVault vault = new TransientExchangeVault(64, 64, 128);

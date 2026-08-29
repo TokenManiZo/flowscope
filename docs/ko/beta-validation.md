@@ -1,6 +1,20 @@
-# FlowScope 1.2.0-beta.23 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.24 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-29이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.24 판정 오라클·게시 격리 gate
+
+| 구분 | 결과 |
+|---|---|
+| 리뷰 독립 판별 | C-01/02/03/08/09/10/12/13/14의 재현 경로를 수정. C-06은 `isBelow` 자체가 아니라 이를 권한 충분으로 역해석한 Judge 호출부만 결함으로 확정. C-07 생산 Pipeline stale 재현 실패, C-15 척도 통합 기각. C-04 부모 ID 확대 기각. C-05의 “비어 있지 않은 미지원 Authorization이 blank” 설명은 코드와 불일치 |
+| 객체·거부 오라클 | `orderId/order_uuid/orderNo`와 generic `id/uuid/guid/pk`의 자원 한정 exact scalar match, 중첩 최종 자원 ID, 정상 데이터 내부 deny 문구 음성, 최상위 오류 봉투 양성 회귀 통과 |
+| 입력 경계 | 1,000,000자·깊이 128·token/node 100,000 bounded JSON과 반복 순회. 소유자 판독과 DataFlow 후단도 같은 경계 사용. malformed/non-JSON DataFlow fallback 64KiB·값 1,000개 |
+| 신원·정책 | `anon`과 `unresolved` 분리 및 둘의 계정 바인딩 거부, service canonicalization, unbind 재분석, UNKNOWN BFLA control 거부, 단일 monitor 정책 snapshot 회귀 통과 |
+| 게시·키 무결성 | Burp/Web/MCP/Standalone isolated analysis copy, raw vault runtime ID 연결, 정책 snapshot, 위험 cell의 versioned framing, 기존 cell/review ID 및 legacy Evidence ID 보존 이행, LF/CRLF earliest delimiter 회귀 통과 |
+| 전체 자동 회귀 | `mvn clean verify`, 243 tests, 실패·오류·skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.24.jar`, 15,924,691 bytes, 2,031 entries, SHA-256 `e7ccd253d08399b675feced3908ba76873ef2680124cc2e1281102cbb441f5f5`, ZIP·Main-Class·Java 21·Multi-Release manifest 검증 통과 |
+
+이 gate는 결정론 오라클과 동시 게시 경계를 합성/자동 회귀로 확인한 것이다. `RequestRecord` 내부 DTO의 공개 가변 필드, DataFlow substring 소비 판정과 전체 조합 O(N²)은 남아 있다. beta.24 JAR의 실제 Burp load/unload, SQLite 저장·재열기, USER A/B·ZAP·LLM·Judge 전체 실행과 블라인드 탐지율은 아직 수행하지 않았다.
 
 ## 1.2.0-beta.23 배포물·CI 하드닝 gate
 

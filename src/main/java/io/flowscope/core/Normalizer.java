@@ -155,16 +155,19 @@ public final class Normalizer {
     }
 
     /** 서로 다른 fp 를 최초 관측 순서대로 user-a, user-b ... 로 라벨링(결정적).
-     *  비인증(fp=anon)은 user-X 가 아니라 'anon' 으로 분류한다(F-05). */
+     *  비인증과 지문 추출 실패는 user-X 가 아니라 각각 별도 신원으로 분류한다(F-05). */
     public static void assignIdentities(List<RequestRecord> records) {
         Map<String, String> labels = new LinkedHashMap<>();
         for (RequestRecord r : records) {
-            if ("anon".equals(r.fp)) continue;
+            if (Fingerprints.ANONYMOUS.equals(r.fp) || Fingerprints.UNRESOLVED.equals(r.fp)) continue;
             String identityKey = r.service + "\u0000" + r.fp;
             labels.computeIfAbsent(identityKey, k -> "user-" + labelFor(labels.size()));
         }
         for (RequestRecord r : records) {
-            r.idn = "anon".equals(r.fp) ? "anon" : labels.get(r.service + "\u0000" + r.fp);
+            if (Fingerprints.ANONYMOUS.equals(r.fp)) r.idn = Fingerprints.ANONYMOUS;
+            else if (Fingerprints.UNRESOLVED.equals(r.fp)) {
+                r.idn = "unresolved-" + Fingerprints.hash(r.service);
+            } else r.idn = labels.get(r.service + "\u0000" + r.fp);
         }
     }
 

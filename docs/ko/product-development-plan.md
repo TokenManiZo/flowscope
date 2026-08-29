@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.23 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.24 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -7,6 +7,16 @@
 > 허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러낸다.
 
 완성 기준은 기능 개수나 화면 존재 여부가 아니다. 공개 fixture와 정답 격리 블라인드 benchmark에서 endpoint·객체·분류·finding 측정값, 사용자 `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고, 후보와 verdict를 원 Request/Response·재현·정상 대조 Evidence까지 역추적할 수 있어야 한다.
+
+## 0. beta.24 우선순위: 판정 오라클·게시 경계 하드닝
+
+1. 자원 타입에 맞는 실무형 ID 필드를 인식하되 중첩 자원의 최종 대상만 객체 노출 증거로 쓴다.
+2. soft-deny를 오류 봉투로 제한하고 객체·소유자·DataFlow 응답 판독에 공통 크기·깊이·순회 상한을 둔다.
+3. 실제 비인증과 지문 추출 실패를 분리하고 미확정 권한을 Judge 정상 대조로 사용하지 않는다.
+4. 정책 전체 교체와 계정 갱신을 원자화하고 Burp/Web/MCP 게시 분석을 수집 DTO와 분리한다.
+5. 리뷰 주장을 호출 경로와 회귀로 독립 판별해 미재현·의미가 다른 제안은 기각 사유를 기록한다.
+
+**현재 상태:** 1~5와 `mvn clean verify` 243개 회귀는 완료했다. 실제 beta.24 Burp load/unload·SQLite 저장/재열기·3-way/Judge 실행과 블라인드 정확도는 아직 수행하지 않았다.
 
 ## 0. beta.23 우선순위: 배포물·CI 하드닝
 
@@ -223,7 +233,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.23 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI 하드닝을 구현하고 224개 자동 회귀를 완료했다. 실제 beta.23 Burp/블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.24 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI 하드닝·판정 오라클/게시 격리를 구현하고 243개 자동 회귀를 완료했다. 실제 beta.24 Burp/블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

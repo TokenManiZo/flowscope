@@ -90,7 +90,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.23 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.24 · 3소스"));
         assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
         assertTrue(index.body().contains("<div class=\"graphcanvas\"><div id=\"cy\"></div></div>"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
@@ -289,6 +289,10 @@ final class FlowScopeWebServerTest {
             state.records.add(record);
             state.config.bindSession(record.service, record.fp, account.id());
         }
+        RequestRecord unresolved = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/account/unresolved", 200, "");
+        unresolved.hasResponse = true;
+        state.records.add(unresolved);
         state.rebuild();
         start();
 
