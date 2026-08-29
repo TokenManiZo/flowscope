@@ -1,13 +1,17 @@
 package io.flowscope;
 
+import java.io.FileInputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.util.Properties;
+import java.util.jar.Attributes;
+import java.util.jar.JarInputStream;
+import java.util.jar.Manifest;
 
-/** Package-phase smoke executed by CI against the completed shaded JAR. */
+/** Verify-phase smoke executed against the completed shaded JAR. */
 public final class FatJarIsolationSmoke {
     private FatJarIsolationSmoke() {
     }
@@ -16,7 +20,9 @@ public final class FatJarIsolationSmoke {
         if (args.length != 1) {
             throw new IllegalArgumentException("Expected the release JAR path");
         }
-        URL releaseJar = Path.of(args[0]).toAbsolutePath().toUri().toURL();
+        Path releaseJarPath = Path.of(args[0]).toAbsolutePath();
+        assertStreamingManifest(releaseJarPath);
+        URL releaseJar = releaseJarPath.toUri().toURL();
         try (URLClassLoader firstLoader = isolatedLoader(releaseJar);
              URLClassLoader secondLoader = isolatedLoader(releaseJar)) {
             assertVersionedClass(firstLoader,
@@ -52,6 +58,29 @@ public final class FatJarIsolationSmoke {
                 first.createStatement().execute("SELECT 1");
                 second.createStatement().execute("SELECT 1");
             }
+        }
+    }
+
+    private static void assertStreamingManifest(Path releaseJar) throws Exception {
+        try (JarInputStream input = new JarInputStream(new FileInputStream(releaseJar.toFile()))) {
+            Manifest manifest = input.getManifest();
+            if (manifest == null) {
+                throw new IllegalStateException("Release JAR manifest is not stream-readable");
+            }
+            Attributes attributes = manifest.getMainAttributes();
+            assertManifestValue(attributes, Attributes.Name.MAIN_CLASS,
+                    "io.flowscope.burp.FlowScopeExtension");
+            assertManifestValue(attributes, new Attributes.Name("Created-By"),
+                    "FlowScope reproducible build");
+            assertManifestValue(attributes, new Attributes.Name("Java-Version"), "21");
+            assertManifestValue(attributes, new Attributes.Name("Multi-Release"), "true");
+        }
+    }
+
+    private static void assertManifestValue(Attributes attributes, Attributes.Name name, String expected) {
+        String actual = attributes.getValue(name);
+        if (!expected.equals(actual)) {
+            throw new IllegalStateException("Unexpected manifest " + name + ": " + actual);
         }
     }
 

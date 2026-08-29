@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.24 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.25 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-29이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.25 JAR streaming·MR relocation gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 재현 | beta.24 완성 JAR은 `JarFile.isMultiRelease()==true`였지만 manifest가 선두에 없어 `JarInputStream.getManifest()==null` |
+| manifest | Ant `<jar>`의 명시 manifest와 고정 `Created-By`로 재구성. 첫 엔트리 `META-INF/MANIFEST.MF`; streaming reader에서 Main-Class=`io.flowscope.burp.FlowScopeExtension`, Java-Version=`21`, Multi-Release=`true` 확인 |
+| MR relocation | version 숫자 하드코딩 제거. `META-INF/versions/*` wildcard+mapper로 Jackson 7개, jsoup 3개, SnakeYAML 2개 versioned class 이동; 원 versioned package 누출 0 |
+| 전체 자동 회귀 | `mvn clean verify`, 243 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 반복 빌드 | 동일 소스·로컬 Maven/JDK의 clean package 2회 SHA-256 일치 |
+| 배포물 | `target/flowscope-1.2.0-beta.25.jar`, 15,884,423 bytes, 2,031 entries, SHA-256 `6d422a88e78961ca50b92e2d78aa4ccf93af0026020a6a40badb2d447f74a34c` |
+
+이 gate는 packaging 구조와 현재 dependency class의 실행을 검증한다. 실제 Burp load/unload, 외부 SBOM·서명 도구 전체와의 호환성, 원격 GitHub Actions는 아직 수행하지 않았다.
 
 ## 1.2.0-beta.24 판정 오라클·게시 격리 gate
 

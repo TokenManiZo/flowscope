@@ -6,6 +6,22 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-29 · 1.2.0-beta.25 · streaming manifest·버전 독립 MR-JAR 패키징
+
+**개발·수정**
+
+- beta.24 JAR을 실제 `JarInputStream`으로 읽어 manifest가 `null`인 결함을 재현했다. 원인은 MR-JAR 경로 후처리 뒤 일반 Ant `<zip>`이 manifest를 선두에 배치하지 않은 것이었다.
+- 재압축을 manifest-aware Ant `<jar>`로 바꾸고 staging manifest의 중복 입력을 제외했다. 완성 JAR 첫 엔트리는 `META-INF/MANIFEST.MF`가 되며 `JarInputStream`에서 Main-Class·Java-Version·Multi-Release를 읽는다.
+- Jackson·jsoup·SnakeYAML의 Java 9/11/17/21별 `<move>`를 `META-INF/versions/*` fileset과 정규식 mapper 세 개로 교체했다. 새 Java version 디렉터리가 같은 package prefix로 추가돼도 POM의 숫자 목록을 수정하지 않는다.
+- `FatJarIsolationSmoke`를 Maven `verify` phase에 연결했다. 로컬과 CI의 `mvn clean verify`가 완성 JAR의 streaming manifest, relocated MR class 실제 선택, Jackson 파싱, SQLite 격리 classloader 동시 연결까지 검사한다.
+
+**검증 및 남은 gate**
+
+- 전체 `mvn clean verify`: 243 tests, 실패·오류·skip 0 + 완성 JAR smoke 통과.
+- 배포물: `target/flowscope-1.2.0-beta.25.jar`, 15,884,423 bytes, 2,031 entries, SHA-256 `6d422a88e78961ca50b92e2d78aa4ccf93af0026020a6a40badb2d447f74a34c`.
+- JAR 첫 엔트리 `META-INF/MANIFEST.MF`, `JarInputStream` manifest 값 4개, 고정 `Created-By`, 원 versioned package 누출 0, 동일 소스 clean package 2회 SHA-256 일치를 확인했다.
+- 실제 Burp load/unload와 외부 SBOM·서명 도구 호환성, 원격 GitHub Actions는 아직 수행하지 않았다.
+
 ## 2026-08-29 · 1.2.0-beta.24 · 판정 오라클·신원·게시 스냅샷 하드닝
 
 **개발·수정**

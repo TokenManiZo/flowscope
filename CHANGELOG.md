@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.25 — 2026-08-29
+
+- fat JAR 재구성을 일반 ZIP이 아닌 manifest-aware JAR 작업으로 바꿔 `JarInputStream`에서도 manifest를 즉시 읽도록 수정
+- Jackson·jsoup·SnakeYAML의 MR-JAR relocation을 Java 버전 디렉터리별 하드코딩에서 임의 버전 경로 매핑으로 변경
+- 완성 JAR의 streaming manifest, Main-Class, Java-Version, Multi-Release와 격리 class loading을 `mvn clean verify`의 필수 gate로 승격
+
 ## 1.2.0-beta.24 — 2026-08-29
 
 - 응답 객체 오라클이 자원 타입에 맞는 `orderId`·`order_uuid`·`pk` 계열을 인식하고 중첩 자원의 최종 대상 ID만 증거로 사용하도록 보강

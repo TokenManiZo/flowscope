@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.24 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.25 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -7,6 +7,15 @@
 > 허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러낸다.
 
 완성 기준은 기능 개수나 화면 존재 여부가 아니다. 공개 fixture와 정답 격리 블라인드 benchmark에서 endpoint·객체·분류·finding 측정값, 사용자 `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고, 후보와 verdict를 원 Request/Response·재현·정상 대조 Evidence까지 역추적할 수 있어야 한다.
+
+## 0. beta.25 우선순위: 배포 JAR streaming·MR 경로 완결
+
+1. 완성 JAR의 manifest를 `JarFile`뿐 아니라 순차 `JarInputStream`에서도 읽을 수 있게 한다.
+2. MR-JAR relocation에서 Java version 숫자 하드코딩을 제거하되 원 package 누출과 실제 versioned class 선택을 자동 검증한다.
+3. 완성 artifact 검증을 CI 전용 명령이 아니라 로컬 `mvn clean verify`에도 연결한다.
+4. 실제 Burp load/unload와 외부 배포 도구 호환성은 자동 gate와 구분해 수행한다.
+
+**현재 상태:** 1~3과 243개 자동 회귀, 완성 JAR smoke, 반복 SHA-256은 완료했다. 4와 원격 CI는 대기 중이다.
 
 ## 0. beta.24 우선순위: 판정 오라클·게시 경계 하드닝
 
@@ -233,7 +242,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.24 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI 하드닝·판정 오라클/게시 격리를 구현하고 243개 자동 회귀를 완료했다. 실제 beta.24 Burp/블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.25 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현하고 243개 자동 회귀와 완성 JAR smoke를 완료했다. 실제 beta.25 Burp/블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

@@ -7,8 +7,8 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-08-29 |
-| 제품 버전 | `1.2.0-beta.24` |
-| 인계 작성 시 HEAD | 이 문서와 같은 beta.24 커밋 |
+| 제품 버전 | `1.2.0-beta.25` |
+| 인계 작성 시 HEAD | 이 문서와 같은 beta.25 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
 | 자동 회귀 | 243 tests, 실패·오류·skip 0 |
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.24.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.25.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -261,7 +261,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-08-29 기준 `mvn clean verify`에서 243 tests가 실패·오류·skip 없이 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 자원 한정 응답 객체 판독, 오류 봉투 soft-deny, 대형/중첩 응답 상한, `anon/unresolved` 분리, 정책·게시 snapshot, cell/Evidence framing과 기존 ID 호환 회귀를 추가했다.
+2026-08-29 기준 `mvn clean verify`에서 243 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 자원 한정 응답 객체 판독, 오류 봉투 soft-deny, 대형/중첩 응답 상한, `anon/unresolved` 분리, 정책·게시 snapshot, cell/Evidence framing과 기존 ID 호환 회귀를 추가했다. beta.25는 streaming manifest와 version-independent MR-JAR relocation을 `verify` gate에 추가했다.
 
 ### 실제·standalone 검증
 
@@ -271,7 +271,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.24 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
+- beta.25 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
 - Windows 10/11 + Docker Desktop + PowerShell 7 실기기의 ZAP API/upstream/target capture
 - 실제 Burp에서 request-lab ORIGINAL/ANONYMOUS/ACCOUNT 수신 byte와 credential 비교
@@ -541,7 +541,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.24.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.25.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

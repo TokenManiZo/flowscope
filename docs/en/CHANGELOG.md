@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0-beta.25 — 2026-08-29
+
+- Replaced generic ZIP repacking with a manifest-aware JAR task so `JarInputStream` can discover the release manifest immediately.
+- Replaced Java-version-specific Jackson, jsoup, and SnakeYAML MR-JAR moves with version-independent path mappings.
+- Promoted streaming manifest metadata and isolated class loading to mandatory `mvn clean verify` release gates.
+
 ## 1.2.0-beta.24 — 2026-08-29
 
 - Expanded the response-object oracle to resource-qualified `orderId`, `order_uuid`, and `pk` forms while keeping nested-resource matching on the final target ID.

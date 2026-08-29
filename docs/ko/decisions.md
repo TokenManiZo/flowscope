@@ -862,3 +862,11 @@
 - **기각:** 중첩 자원의 모든 부모 ID를 대상 노출로 인정하면 자식 객체가 없는 응답도 BOLA 성공이 된다. `Gap.risk`와 finding `Severity` 통합은 후보 정렬값과 취약점 심각도를 혼동한다. 모든 `RequestRecord` 필드를 즉시 immutable record로 바꾸는 전면 API 파괴 대신, 실제 동시 게시 경계를 복사해 기존 parser/test 호출 계약을 유지한다.
 - **한계:** 자원명이 필드명과 전혀 다르고 generic ID도 없는 응답은 계속 `UNDECIDED/INCONCLUSIVE`다. 오류 봉투가 아닌 서비스 고유 soft-deny는 자동 거부로 잡지 못할 수 있다. DataFlow의 substring 소비 판정과 전체 조합 O(N²), 내부 `RequestRecord`의 공개 가변 필드는 남아 있다. 다만 Burp/Web/MCP 게시본은 복사되어 실제 게시 경합에는 쓰이지 않는다. 이 한계는 false allow로 확정하지 않고 blind benchmark와 stress gate에서 측정한다.
 - **상태:** beta.24 `mvn clean verify`에서 243개 자동 회귀, 실패·오류·skip 0. 실제 Burp/Judge 수동 gate는 별도 기록.
+
+## D-092 · fat JAR 재구성 = streaming manifest + 버전 독립 MR 경로
+
+- **문제:** D-090의 Ant 후처리는 일반 `<zip>`으로 staging 디렉터리를 다시 압축해 `META-INF/MANIFEST.MF`가 첫 엔트리에서 밀렸다. `JarFile`과 Burp 로딩 경로에서는 manifest와 Multi-Release가 보였지만 순차 입력인 `JarInputStream.getManifest()`는 `null`이었다. 또한 versioned relocation 대상이 Java 9/11/17/21 경로별로 고정돼, dependency가 새 version 디렉터리를 추가할 때 POM 수정이 필요했다.
+- **결정:** 재구성은 원 manifest를 명시적으로 받는 Ant `<jar>`로 수행하고 staging의 manifest 중복 입력은 제외한다. JDK patch 문자열이 artifact를 바꾸지 않도록 `Created-By`도 고정한다. Jackson·jsoup·SnakeYAML versioned class는 `META-INF/versions/*/...` fileset과 정규식 mapper로 이동해 version 숫자를 빌드 로직에서 제거한다. `FatJarIsolationSmoke`를 Maven `verify` phase에 연결해 `JarInputStream`에서 manifest가 존재하고 Main-Class·Java-Version·Multi-Release 값이 정확한지, 실제 JDK가 relocated MR class를 선택하는지, SQLite 격리 연결이 성공하는지를 완성 JAR에 대해 검사한다.
+- **검증:** beta.25 `mvn clean verify`에서 243개 자동 회귀와 완성 JAR smoke가 통과했다. JAR 첫 엔트리는 `META-INF/MANIFEST.MF`, 2회 clean package SHA-256은 일치했다. 기존 9/11/17/21 class가 wildcard mapper를 통해 이동하고 원 versioned package 누출이 없음을 확인했다.
+- **한계:** 이 gate는 현재와 미래의 동일 package prefix 아래 version 디렉터리를 처리한다. dependency가 package 자체를 바꾸거나 새로운 relocate dependency를 추가하면 별도 설계 변경이 필요하다. 실제 Burp load/unload와 외부 SBOM·서명 도구 호환성은 자동 gate가 대신하지 않는다.
+- **상태:** beta.25 코드·로컬 자동/패키징 검증 완료. 원격 GitHub Actions와 실제 Burp load/unload는 대기.

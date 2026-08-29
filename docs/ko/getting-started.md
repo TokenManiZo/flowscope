@@ -50,7 +50,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.24.jar`를 받는다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.25.jar`를 받는다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`

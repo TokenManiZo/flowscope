@@ -6,7 +6,7 @@
 
   <groupId>io.flowscope</groupId>
   <artifactId>flowscope</artifactId>
-  <version>1.2.0-beta.24</version>
+  <version>1.2.0-beta.25</version>
   <packaging>jar</packaging>
 
   <name>FlowScope</name>
@@ -206,26 +206,38 @@
                 <mkdir dir="${project.build.directory}/mrjar-relocation"/>
                 <unzip src="${project.build.directory}/${project.build.finalName}.jar"
                        dest="${project.build.directory}/mrjar-relocation"/>
-                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/io/flowscope/shaded/jackson">
-                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/com/fasterxml/jackson"/>
+                <move todir="${project.build.directory}/mrjar-relocation"
+                      includeemptydirs="false">
+                  <fileset dir="${project.build.directory}/mrjar-relocation"
+                           includes="META-INF/versions/*/com/fasterxml/jackson/**"/>
+                  <regexpmapper from="^META-INF/versions/([^/]+)/com/fasterxml/jackson/(.*)$"
+                                to="META-INF/versions/\1/io/flowscope/shaded/jackson/\2"/>
                 </move>
-                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/17/io/flowscope/shaded/jackson">
-                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/17/com/fasterxml/jackson"/>
+                <move todir="${project.build.directory}/mrjar-relocation"
+                      includeemptydirs="false">
+                  <fileset dir="${project.build.directory}/mrjar-relocation"
+                           includes="META-INF/versions/*/org/jsoup/**"/>
+                  <regexpmapper from="^META-INF/versions/([^/]+)/org/jsoup/(.*)$"
+                                to="META-INF/versions/\1/io/flowscope/shaded/jsoup/\2"/>
                 </move>
-                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/21/io/flowscope/shaded/jackson">
-                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/21/com/fasterxml/jackson"/>
-                </move>
-                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/io/flowscope/shaded/jsoup">
-                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/org/jsoup"/>
-                </move>
-                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/9/io/flowscope/shaded/snakeyaml">
-                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/9/org/yaml/snakeyaml"/>
+                <move todir="${project.build.directory}/mrjar-relocation"
+                      includeemptydirs="false">
+                  <fileset dir="${project.build.directory}/mrjar-relocation"
+                           includes="META-INF/versions/*/org/yaml/snakeyaml/**"/>
+                  <regexpmapper from="^META-INF/versions/([^/]+)/org/yaml/snakeyaml/(.*)$"
+                                to="META-INF/versions/\1/io/flowscope/shaded/snakeyaml/\2"/>
                 </move>
                 <delete file="${project.build.directory}/${project.build.finalName}.jar"/>
-                <zip destfile="${project.build.directory}/${project.build.finalName}.jar"
+                <jar destfile="${project.build.directory}/${project.build.finalName}.jar"
                      basedir="${project.build.directory}/mrjar-relocation"
+                     manifest="${project.build.directory}/mrjar-relocation/META-INF/MANIFEST.MF"
+                     excludes="META-INF/MANIFEST.MF"
                      filesonly="true"
-                     modificationtime="${project.build.outputTimestamp}"/>
+                     modificationtime="${project.build.outputTimestamp}">
+                  <manifest>
+                    <attribute name="Created-By" value="FlowScope reproducible build"/>
+                  </manifest>
+                </jar>
                 <delete dir="${project.build.directory}/mrjar-relocation"/>
                 <resourcecount property="flowscope.public.jar.count">
                   <fileset dir="${project.build.directory}" includes="*.jar"/>
@@ -246,6 +258,20 @@
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>verify-release-jar</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>io.flowscope.FatJarIsolationSmoke</mainClass>
+              <classpathScope>test</classpathScope>
+              <arguments>
+                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
         <configuration>
           <mainClass>io.flowscope.Standalone</mainClass>
         </configuration>
