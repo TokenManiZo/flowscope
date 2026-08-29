@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.23 — 2026-08-29
+
+- Restored merged upstream Apache NOTICE content and corrected the bundled Jackson, FastDoubleParser, Schubfach, and SnakeYAML attribution inventory.
+- Relocated Jackson, jsoup, and SnakeYAML base and Java 9/11/17/21 MR-JAR classes while preserving sqlite-jdbc versioned classes.
+- Added a regression that opens SQLite connections concurrently from two isolated class loaders.
+- Pinned Maven lifecycle plugins and GitHub Actions to explicit versions or commit SHAs.
+- Added CI checks for exact single-JAR output, NOTICE/licenses, MR-JAR paths, relocation leaks, reproducible SHA-256, and all Bash helpers.
+
 ## 1.2.0-beta.22 — 2026-08-28
 
 - Compressed Quick Start into four stages: Scope, HUMAN, ZAP, and LLM/Judge.

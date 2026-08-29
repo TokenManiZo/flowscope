@@ -6,6 +6,50 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-29 · 1.2.0-beta.23 · 배포물 라이선스·격리·CI 하드닝
+
+### 목표와 성공 조건
+
+- fat JAR이 실제 포함한 모든 Apache NOTICE와 제3자 라이선스 텍스트를 보존하고 고지의 저작물 귀속을 정확히 맞춘다.
+- relocate 가능한 Java dependency는 base/MR-JAR 전체를 격리하고 sqlite-jdbc JNI는 깨뜨리지 않으면서 실제 classloader 동시 사용을 검증한다.
+- 플러그인·Action·셸·JAR 단일성·반복 digest를 CI의 실행 가능한 gate로 만든다.
+
+### 개발·수정
+
+- Shade가 제거하던 Jackson 원 NOTICE를 Apache NOTICE transformer로 병합하고 FastDoubleParser·ThirdParty·Schubfach 라이선스 파일의 보존을 CI에서 검사한다. 프로젝트 NOTICE에서 SnakeYAML을 Jackson/FasterXML 항목과 분리했다.
+- Jackson·jsoup·SnakeYAML을 `io.flowscope.shaded`로 relocate했다. 전체 `META-INF/versions/**` 제외를 제거하고 Java 9/11/17/21 class를 보존했다.
+- Shade 3.6.0의 MSHADE-406 때문에 versioned class bytecode와 ZIP entry path가 어긋나는 것을 빌드에서 재현했다. package 마지막에 알려진 versioned package path를 결정론적으로 이동하고 고정 timestamp로 JAR을 다시 구성한다.
+- sqlite-jdbc는 JNI package 계약 때문에 relocate하지 않았다. 같은 sqlite-jdbc JAR을 parent가 분리된 두 classloader에서 동시에 로드해 두 in-memory connection과 query를 수행하는 회귀를 추가했다.
+- clean/resources/compiler/surefire plugin 버전을 POM에 고정하고 JAR manifest의 build-JDK 가변값을 제거했다. GitHub Actions는 commit SHA로 pin했다.
+- CI의 glob 기반 단일 JAR 검사를 `find+mapfile`로 교체했다. NOTICE·라이선스·MR-JAR·relocation 누출·manifest, clean package 2회 SHA-256, Bash 5개 `bash -n`·ShellCheck를 검사한다. push는 main, PR은 별도로 유지하고 Dependabot update를 그룹화했다.
+
+### 이유와 기각한 대안
+
+- 원 NOTICE 제거는 Apache-2.0 §4(d) 재배포 조건과 맞지 않고, MR-JAR 전체 제거는 정상 최적화·native-image 구현을 버린다.
+- SQLite를 Java package처럼 relocate하면 JNI symbol을 깨뜨릴 수 있어 기각했다. 실제 충돌 재현 없이 저장소를 sidecar로 분리하는 것도 설치·장애 표면을 크게 늘려 기각했다. 현재 의존성의 두 classloader 검증을 먼저 고정하고 실제 충돌이 재현될 때 아키텍처를 재검토한다(D-090).
+- mutable action tag와 상속 plugin version은 같은 source의 빌드 입력을 외부 상태에 맡기므로 유지하지 않았다.
+
+### 영향 파일
+
+- 빌드·CI: `pom.xml`, `.github/workflows/ci.yml`, `.github/dependabot.yml`
+- 라이선스·회귀: `src/main/resources/META-INF/NOTICE.txt`, `SqliteClassLoaderIsolationTest`
+- 버전·사용자 계약: Web version label/test, README와 한영 시작/변경 문서
+- 정본 문서: architecture, decisions D-090, product plan, beta validation, handoff, development log
+
+### 검증
+
+- 최초 배포물에서 Jackson NOTICE 부재, 원 패키지 jsoup/SnakeYAML 노출, MR-JAR 0개, glob zero-match 검사 결함을 파일/JAR 기준으로 재현했다.
+- `mvn clean verify`: 224 tests, 실패·오류·skip 0. SQLite 독립 classloader 두 개의 동시 연결 회귀 포함.
+- 완성 fat JAR을 두 독립 classloader로 직접 로드해 JDK 21의 Jackson 21/jsoup 11/SnakeYAML 9 versioned resource 선택, relocated Jackson JSON 파싱과 SQLite 동시 query smoke를 통과했다.
+- Bash 5개가 `bash -n`과 로컬 ShellCheck를 통과했다. 같은 입력의 clean package 2회 SHA-256이 일치했다.
+- 최종 artifact 크기·entry·SHA-256은 `beta-validation.md`에 기록한다.
+
+### 남은 한계·다음 gate
+
+- 원격 GitHub Actions는 push 전이라 아직 실행하지 않았다. macOS 로컬에서는 PowerShell parser를 실행하지 않았고 기존 Windows CI gate만 유지했다.
+- 두 classloader 검증은 현재 sqlite-jdbc/JVM 조합의 실제 동시 로드를 확인하지만 임의의 미래 Burp 확장 조합에서 충돌 확률 0을 증명하지 않는다.
+- beta.23 JAR을 실제 Burp Community에서 load/unload하고 SQLite 프로젝트 저장·재열기를 확인해야 한다.
+
 ## 2026-08-25 · 한국어·영어 문서 경계 정리
 
 **개발·수정**

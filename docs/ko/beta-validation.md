@@ -1,6 +1,21 @@
-# FlowScope 1.2.0-beta.22 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.23 사전 벤치마크 검증 기록
 
-최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-28이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-29이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.23 배포물·CI 하드닝 gate
+
+| 구분 | 결과 |
+|---|---|
+| 결함 확인 | 기존 fat JAR이 Jackson 원 NOTICE와 모든 MR-JAR class를 제거했고 SnakeYAML 귀속이 Jackson 항목에 섞였음. zero-match JAR shell 검사는 리터럴 glob을 한 파일로 셌고, Bash helper·반복 package SHA·action/plugin 고정 검사가 없었음 |
+| 라이선스 | Apache NOTICE transformer로 Jackson 원 NOTICE를 `META-INF/NOTICE`에 병합. FastDoubleParser·ThirdParty·Schubfach 라이선스 3개 보존과 프로젝트 NOTICE의 별도 SnakeYAML 항목을 확인 |
+| 패키징 | Jackson·jsoup·SnakeYAML base/MR-JAR 경로를 `io/flowscope/shaded`로 격리. Java 9/11/17/21 versioned class와 sqlite-jdbc Java 9 native-image class 보존, 원 Java package 누출 0. 완성 fat JAR smoke에서 JDK 21의 실제 versioned resource 선택과 relocated Jackson JSON 파싱 성공 |
+| SQLite 격리 | sqlite-jdbc 3.53.1.0을 parent가 분리된 두 `URLClassLoader`에서 동시에 로드하고 두 in-memory connection의 `SELECT 1` 성공 |
+| 자동 회귀 | `mvn clean verify`, 224 tests, 실패·오류·skip 0 |
+| 스크립트 | Bash 5개가 로컬 `bash -n`과 ShellCheck 통과. PowerShell 4개는 기존 parser CI를 유지하며 이번 로컬 macOS에서는 실행하지 않음 |
+| 반복 빌드 | 동일 소스·로컬 Maven/JDK에서 clean package 2회의 SHA-256 일치 |
+| 배포물 | `target/flowscope-1.2.0-beta.23.jar`, 15,914,146 bytes, 2,029 entries, SHA-256 `832cec2068163a7dcfab23ea375cc6f61c8b2327a02d4035bbb7acd5c8d8dcc8`, ZIP·Main-Class·Java 21·Multi-Release manifest 검증 통과 |
+
+이 gate는 배포물 구성과 현재 sqlite-jdbc의 classloader 동시 로드를 검증한 것이다. 임의의 미래 Burp 확장 조합에서 네이티브 충돌 확률 0을 증명하지 않으며, beta.23 JAR의 실제 Burp load/unload·프로젝트 저장/재열기와 원격 GitHub Actions는 아직 수행하지 않았다.
 
 ## 1.2.0-beta.22 첫 실행 경로 압축 gate
 

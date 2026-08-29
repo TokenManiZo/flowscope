@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.22 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.23 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -7,6 +7,15 @@
 > 허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러낸다.
 
 완성 기준은 기능 개수나 화면 존재 여부가 아니다. 공개 fixture와 정답 격리 블라인드 benchmark에서 endpoint·객체·분류·finding 측정값, 사용자 `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고, 후보와 verdict를 원 Request/Response·재현·정상 대조 Evidence까지 역추적할 수 있어야 한다.
+
+## 0. beta.23 우선순위: 배포물·CI 하드닝
+
+1. Apache-2.0 의존성의 원 NOTICE와 포함된 제3자 라이선스 텍스트를 fat JAR에 보존하고 프로젝트 고지의 실제 저작물 귀속을 바로잡는다.
+2. Jackson·jsoup·SnakeYAML의 base/MR-JAR 클래스를 함께 격리하되 sqlite-jdbc JNI 패키지는 변경하지 않고 다중 classloader 동시 연결을 회귀로 고정한다.
+3. `clean verify`가 쓰는 Maven 플러그인과 GitHub Actions를 고정하고, 단일 JAR·MR-JAR·NOTICE·비누출 패키지·Bash/PowerShell·반복 SHA-256을 CI에서 검사한다.
+4. 실제 Burp Community에서 beta.23 JAR load/unload와 SQLite 프로젝트 저장·재열기를 확인한다.
+
+**현재 상태:** 1~3은 로컬 코드·패키징·자동 회귀에서 완료했다. 원격 CI와 실제 Burp load/unload·프로젝트 저장/재열기는 아직 실행하지 않았으므로 beta.23 실환경 완료로 계산하지 않는다.
 
 다음은 완료 주장이 아니다.
 
@@ -168,7 +177,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 ### P3 — 공개 배포 정리
 
 - JGraphX 코드·의존·고지를 공개 정본에서 제거하고 이전 구현은 `.local/archive/`에만 보존한다.
-- Cytoscape.js/Jackson/FlowScope 라이선스를 JAR에 동봉한다.
+- Cytoscape.js/Jackson/SnakeYAML/jsoup/sqlite-jdbc/FlowScope 라이선스와 Apache NOTICE를 JAR에 동봉한다.
 - README, architecture, decisions, changelog, agent workspace의 실제 UI 경로와 버전을 맞춘다.
 - 성공 기준: fresh `mvn clean verify`, fat JAR manifest/의존/라이선스 검사, 절대경로·비밀·불필요 산출물 검사를 통과한다.
 
@@ -214,7 +223,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.22 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션을 구현하고 223개 자동 회귀를 완료했다. 실제 beta.22 Burp/블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.23 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion/rendered fallback gate·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI 하드닝을 구현하고 224개 자동 회귀를 완료했다. 실제 beta.23 Burp/블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

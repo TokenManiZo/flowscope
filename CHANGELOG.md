@@ -2,6 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.23 — 2026-08-29
+
+- Jackson 원 Apache NOTICE를 fat JAR에 병합하고 FastDoubleParser·Schubfach 포함 라이선스와 SnakeYAML 귀속을 정확히 고지
+- Jackson·jsoup·SnakeYAML의 base 및 Java 9/11/17/21 MR-JAR 구현을 FlowScope 전용 패키지로 격리하고 sqlite-jdbc MR-JAR 구현 보존
+- sqlite-jdbc를 독립 classloader 두 개에서 동시에 로드해 in-memory 연결·query가 함께 성공하는 회귀 추가
+- `clean verify` 기본 lifecycle plugin 버전과 GitHub Actions를 고정 commit SHA로 pin
+- CI의 단일 JAR 검사를 zero-match에 안전하게 바꾸고 NOTICE·라이선스·MR-JAR·패키지 누출·manifest·반복 SHA-256 검사 추가
+- Bash helper 5개에 `bash -n`·ShellCheck CI를 추가하고 main push와 PR 검증을 분리, Dependabot update를 용도별 그룹화
+
 ## 1.2.0-beta.22 — 2026-08-28
 
 - 빠른 시작을 `범위 → HUMAN → ZAP → LLM·Judge` 네 단계 진행 내비게이션으로 압축

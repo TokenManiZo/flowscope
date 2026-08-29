@@ -11,15 +11,26 @@ Cytoscape.js 3.26.0
   License  : MIT — full text in META-INF/LICENSE-cytoscape.txt
   Copyright (c) 2016-2023, The Cytoscape Consortium
 --------------------------------------------------------------------
-Jackson JSON processor
+Jackson JSON processor 2.22.2
   Artifacts: com.fasterxml.jackson.core:jackson-databind:2.22.2
              com.fasterxml.jackson.core:jackson-core:2.22.2
              com.fasterxml.jackson.core:jackson-annotations:2.22
              com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2
-             org.yaml:snakeyaml:2.5
   Source   : https://github.com/FasterXML/jackson
   License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
-  Copyright (c) FasterXML, LLC and contributors
+  Copyright 2007-, Tatu Saloranta and Jackson contributors
+  Original Apache NOTICE content is merged into META-INF/NOTICE.
+  jackson-core includes FastDoubleParser and Schubfach code. Their complete
+  license and third-party notice texts are preserved in:
+    META-INF/FastDoubleParser-LICENSE
+    META-INF/FastDoubleParser-ThirdParty-LICENSE
+    META-INF/Schubfach-LICENSE
+--------------------------------------------------------------------
+SnakeYAML 2.5
+  Artifact : org.yaml:snakeyaml:2.5
+  Source   : https://bitbucket.org/snakeyaml/snakeyaml
+  License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
+  Project developers include Andrey Somov and Alexander Maslov.
 --------------------------------------------------------------------
 jsoup 1.23.1
   Artifact : org.jsoup:jsoup:1.23.1

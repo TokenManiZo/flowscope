@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.22
+# FlowScope 설계서 v1.2.0-beta.23
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -47,7 +47,7 @@ ZAP 배포 방식은 캠페인 엔진과 분리한다. FlowScope는 loopback의 
 
 선택형 `zap-up.sh` 또는 Windows `zap-up.ps1`은 같은 key helper를 사용하고, digest 고정 이미지의 ZAP Network API를 통해 `host.docker.internal:8081` upstream을 설정한 뒤 다시 읽어 검증한다. Linux는 Compose `host-gateway`, Docker Desktop은 공식 `host.docker.internal`을 사용한다. key 값은 container environment가 아니라 Compose file-backed secret으로 read-only mount한다. POSIX는 mode, Windows는 상속 차단·현재 SID 전용 ACL을 helper/doctor가 관리한다. FlowScope는 시스템 속성 key, 환경 key, 지정 key 파일, 기본 key 파일 순으로 읽으며 ZAP API URL 자체는 기존처럼 loopback만 허용한다. 이 편의 계층은 actual scanner capture·rendered crawl·대상 TLS를 완료로 대체하지 않는다(D-086, D-087, D-088).
 
-- Java 21, Maven shade fat JAR. `montoya-api`는 Burp 제공 scope다.
+- Java 21, Maven shade fat JAR. `montoya-api`는 Burp 제공 scope다. Jackson·jsoup·SnakeYAML은 base class와 MR-JAR 구현을 함께 `io.flowscope.shaded` 아래로 격리한다. sqlite-jdbc는 JNI 이름을 깨뜨리는 relocate를 하지 않고 원 패키지를 유지하며, 서로 다른 두 extension classloader의 동시 in-memory 연결을 회귀로 검사한다. package는 의존성 NOTICE·라이선스와 Java 9/11/17/21 versioned class를 보존하고 같은 입력의 반복 SHA-256 일치를 CI에서 검사한다(D-090).
 - Burp `registerSuiteTab`에는 범위·포트·프로젝트·MCP 상태를 다루는 작은 Swing 제어판만 둔다. 그래프·매트릭스·상세의 정본은 시스템 브라우저에서 여는 번들 Web UI다.
 - Web UI는 번들 Cytoscape.js를 사용하며 외부 CDN이나 원격 자원을 요청하지 않는다. JCEF·JavaFX는 배포물에 포함하지 않는다.
 - source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시하며 `identity → resource`와 `resource → operation` 두 구간 모두 같은 source 문법을 유지한다. 0건 source는 비활성화하고 필터 변경 시 해당 source만 가진 node와 전체 경로 구간을 함께 다시 계산한다. 같은 `(identity, resource, source)`의 접근선은 표시에서만 하나로 접고 횟수와 원본 CoverageCell 키를 보존해 상세에서 operation별 Evidence·판정을 다시 연다. 단일 접근의 `H/S/L×1` 라벨은 표시하지 않고 반복일 때만 횟수를 붙인다. operation 라벨은 `/` 경계를 우선해 줄바꿈하고, 900px 이하에서는 좌표를 축소한 캔버스 대신 같은 source·identity 필터 결과의 API 목록을 표시한다. 응답→요청 데이터 의존성은 메인 접근 그래프가 아니라 `흐름 순서`에서만 표시한다(D-043/D-061/D-076/D-077/D-084).

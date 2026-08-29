@@ -6,7 +6,7 @@
 
   <groupId>io.flowscope</groupId>
   <artifactId>flowscope</artifactId>
-  <version>1.2.0-beta.22</version>
+  <version>1.2.0-beta.23</version>
   <packaging>jar</packaging>
 
   <name>FlowScope</name>
@@ -20,6 +20,10 @@
     <jackson.version>2.22.2</jackson.version>
     <jsoup.version>1.23.1</jsoup.version>
     <sqlite.jdbc.version>3.53.1.0</sqlite.jdbc.version>
+    <maven.clean.version>3.5.0</maven.clean.version>
+    <maven.compiler.version>3.15.0</maven.compiler.version>
+    <maven.resources.version>3.4.0</maven.resources.version>
+    <maven.surefire.version>3.5.4</maven.surefire.version>
     <project.build.outputTimestamp>2026-08-24T00:00:00Z</project.build.outputTimestamp>
   </properties>
 
@@ -84,6 +88,28 @@
       </resource>
     </resources>
     <plugins>
+      <!-- Pin every default-lifecycle plugin used by `clean verify` for reproducible builds. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>${maven.clean.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>${maven.resources.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven.compiler.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.version}</version>
+      </plugin>
+
       <!-- Shade post-processes this JAR; always recreate the thin input on repeated package runs. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -91,6 +117,14 @@
         <version>3.5.0</version>
         <configuration>
           <forceCreation>true</forceCreation>
+          <archive>
+            <manifest>
+              <addDefaultEntries>false</addDefaultEntries>
+            </manifest>
+            <manifestEntries>
+              <Java-Version>21</Java-Version>
+            </manifestEntries>
+          </archive>
         </configuration>
       </plugin>
 
@@ -115,10 +149,7 @@
                     <exclude>module-info.class</exclude>
                     <exclude>META-INF/versions/*/module-info.class</exclude>
                     <exclude>META-INF/LICENSE</exclude>
-                    <exclude>META-INF/NOTICE</exclude>
                     <exclude>META-INF/MANIFEST.MF</exclude>
-                    <!-- The shaded JAR is not multi-release; keep only the relocated base classes. -->
-                    <exclude>META-INF/versions/**</exclude>
                   </excludes>
                 </filter>
               </filters>
@@ -127,12 +158,29 @@
                   <pattern>com.fasterxml.jackson</pattern>
                   <shadedPattern>io.flowscope.shaded.jackson</shadedPattern>
                 </relocation>
+                <relocation>
+                  <pattern>org.jsoup</pattern>
+                  <shadedPattern>io.flowscope.shaded.jsoup</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.yaml.snakeyaml</pattern>
+                  <shadedPattern>io.flowscope.shaded.snakeyaml</shadedPattern>
+                </relocation>
               </relocations>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                  <projectName>FlowScope</projectName>
+                  <organizationName>FlowScope</organizationName>
+                  <organizationURL>https://github.com/choewonwoo1817/testflowscope</organizationURL>
+                  <inceptionYear>2026</inceptionYear>
+                </transformer>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <!-- Burp discovers and instantiates the Montoya extension through the JAR entry point. -->
                   <mainClass>io.flowscope.burp.FlowScopeExtension</mainClass>
+                  <manifestEntries>
+                    <Multi-Release>true</Multi-Release>
+                  </manifestEntries>
                 </transformer>
               </transformers>
             </configuration>
@@ -153,6 +201,32 @@
             <configuration>
               <target>
                 <delete file="${project.build.directory}/original-${project.build.finalName}.jar"/>
+                <!-- MSHADE-406 rewrites MR-JAR bytecode but leaves versioned entry paths unrelocated. -->
+                <delete dir="${project.build.directory}/mrjar-relocation"/>
+                <mkdir dir="${project.build.directory}/mrjar-relocation"/>
+                <unzip src="${project.build.directory}/${project.build.finalName}.jar"
+                       dest="${project.build.directory}/mrjar-relocation"/>
+                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/io/flowscope/shaded/jackson">
+                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/com/fasterxml/jackson"/>
+                </move>
+                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/17/io/flowscope/shaded/jackson">
+                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/17/com/fasterxml/jackson"/>
+                </move>
+                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/21/io/flowscope/shaded/jackson">
+                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/21/com/fasterxml/jackson"/>
+                </move>
+                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/io/flowscope/shaded/jsoup">
+                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/11/org/jsoup"/>
+                </move>
+                <move todir="${project.build.directory}/mrjar-relocation/META-INF/versions/9/io/flowscope/shaded/snakeyaml">
+                  <fileset dir="${project.build.directory}/mrjar-relocation/META-INF/versions/9/org/yaml/snakeyaml"/>
+                </move>
+                <delete file="${project.build.directory}/${project.build.finalName}.jar"/>
+                <zip destfile="${project.build.directory}/${project.build.finalName}.jar"
+                     basedir="${project.build.directory}/mrjar-relocation"
+                     filesonly="true"
+                     modificationtime="${project.build.outputTimestamp}"/>
+                <delete dir="${project.build.directory}/mrjar-relocation"/>
                 <resourcecount property="flowscope.public.jar.count">
                   <fileset dir="${project.build.directory}" includes="*.jar"/>
                 </resourcecount>

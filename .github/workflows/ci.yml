@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
@@ -11,8 +13,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: "21"
@@ -21,22 +23,60 @@ jobs:
       - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress clean verify
       - name: Inspect release JAR
+        shell: bash
         run: |
-          set -- target/flowscope-*.jar
-          test "$#" -eq 1
-          release_jar="$1"
+          mapfile -t release_jars < <(find target -maxdepth 1 -type f -name 'flowscope-*.jar' -print | sort)
+          test "${#release_jars[@]}" -eq 1
+          release_jar="${release_jars[0]}"
           test -s "$release_jar"
           jar tf "$release_jar" | grep -q 'io/flowscope/burp/FlowScopeExtension.class'
           jar tf "$release_jar" | grep -q '^io/flowscope/shaded/jackson/'
+          jar tf "$release_jar" | grep -q '^io/flowscope/shaded/jsoup/'
+          jar tf "$release_jar" | grep -q '^io/flowscope/shaded/snakeyaml/'
           jar tf "$release_jar" | grep -q 'META-INF/LICENSE-apache-2.0.txt'
+          jar tf "$release_jar" | grep -q 'META-INF/NOTICE'
+          jar tf "$release_jar" | grep -q 'META-INF/FastDoubleParser-LICENSE'
+          jar tf "$release_jar" | grep -q 'META-INF/FastDoubleParser-ThirdParty-LICENSE'
+          jar tf "$release_jar" | grep -q 'META-INF/Schubfach-LICENSE'
+          jar tf "$release_jar" | grep -q '^META-INF/versions/21/io/flowscope/shaded/jackson/'
+          jar tf "$release_jar" | grep -q '^META-INF/versions/11/io/flowscope/shaded/jsoup/'
+          jar tf "$release_jar" | grep -q '^META-INF/versions/9/io/flowscope/shaded/snakeyaml/'
+          jar tf "$release_jar" | grep -q '^META-INF/versions/9/org/sqlite/nativeimage/'
           unzip -p "$release_jar" META-INF/MANIFEST.MF | grep -q 'Main-Class: io.flowscope.burp.FlowScopeExtension'
+          unzip -p "$release_jar" META-INF/MANIFEST.MF | grep -q 'Java-Version: 21'
+          unzip -p "$release_jar" META-INF/MANIFEST.MF | grep -q 'Multi-Release: true'
+          if unzip -p "$release_jar" META-INF/MANIFEST.MF | grep -q 'Build-Jdk'; then exit 1; fi
           if jar tf "$release_jar" | grep -q '^burp/api/montoya/'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(com/fasterxml/jackson/|META-INF/versions/.*/com/fasterxml/jackson/)'; then exit 1; fi
+          if jar tf "$release_jar" | grep -Eq '^(org/jsoup/|META-INF/versions/.*/org/jsoup/)'; then exit 1; fi
+          if jar tf "$release_jar" | grep -Eq '^(org/yaml/snakeyaml/|META-INF/versions/.*/org/yaml/snakeyaml/)'; then exit 1; fi
+          java -cp target/test-classes io.flowscope.FatJarIsolationSmoke "$release_jar"
+      - name: Verify reproducible package
+        shell: bash
+        run: |
+          release_jar=$(find target -maxdepth 1 -type f -name 'flowscope-*.jar' -print -quit)
+          first_sha=$(sha256sum "$release_jar" | cut -d' ' -f1)
+          mvn --batch-mode --no-transfer-progress clean package -DskipTests
+          mapfile -t rebuilt_jars < <(find target -maxdepth 1 -type f -name 'flowscope-*.jar' -print | sort)
+          test "${#rebuilt_jars[@]}" -eq 1
+          second_sha=$(sha256sum "${rebuilt_jars[0]}" | cut -d' ' -f1)
+          test "$first_sha" = "$second_sha"
+
+  shell-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Validate Bash helpers
+        shell: bash
+        run: |
+          scripts=(scripts/doctor.sh scripts/zap-down.sh scripts/zap-key.sh scripts/zap-up.sh infra/zap/start-zap.sh)
+          bash -n "${scripts[@]}"
+          shellcheck "${scripts[@]}"
 
   windows-scripts:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Parse Windows PowerShell helpers
         shell: pwsh
         run: |
