@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.27
+# FlowScope 설계서 v1.2.0-beta.28
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -193,7 +193,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - 같은 source의 새 exploration이 시작되면 과거 완료 표식은 즉시 제거한다. 재실행이 실패·취소되면 그 source는 미완료로 남고 Judge 버튼과 서버 lock 모두 닫힌다.
 
 - 기본은 closed-world다. 공급된 agent-workspace는 web search, Wayback, 외부 API 문서·소스 저장소, curl·브라우저 네트워킹을 금지한다. 대상 내부 문서는 exact-scope 통제 응답으로 실제 관측된 경우만 사용할 수 있다.
-- Explorer는 `flowscope_target_request`만 사용한다. 서버는 탐색 중 HUMAN/SCANNER count·cell·gap·finding·Evidence를 숨기고 Explorer 자신의 run Evidence만 보여 준다.
+- Explorer는 읽기용 `flowscope_target_read`와 승인형 쓰기용 `flowscope_target_request`만 사용한다. 서버는 탐색 중 HUMAN/SCANNER count·cell·gap·finding·Evidence를 숨기고 Explorer 자신의 run Evidence만 보여 준다.
 - `flowscope_list_route_candidates`는 탐색 중 provenance를 현재 `LLM + runId`로 잘라 observed/applicability/reason을 다시 계산한다. 같은 route에 HUMAN 근거가 병합돼 있어도 그 근거와 상태는 반환하지 않는다.
 - captured/coverage/excluded/review와 source별 coverage count도 같은 가시성 경계를 적용해 Explorer에게는 현재 LLM run 값만 보인다.
 - lock 전 active Explorer가 없을 때도 MCP status는 다른 lane의 수량·active run·gap/finding을 공개하지 않는다. Explorer 중에는 ZAP 상태/실행과 기존 assessment/validation 조회를 거부한다.
@@ -206,11 +206,13 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - 최종 validation은 현재 결정론 finding을 대상으로 원본 Evidence, 동일한 비기본 LLM VALIDATION run의 `CONTROLLED` 반복 재현 2건 이상, 정상 대조 1건 이상을 서로 겹치지 않게 요구한다. 신원·operation·resource·응답 의미가 맞지 않거나 write method이면 베타에서 `INCONCLUSIVE`다.
 - 최종 verdict는 `CONFIRMED/INCONCLUSIVE/REJECTED`다. `CONFIRMED`는 반복 성공, `REJECTED`는 반복 명시 거부일 때만 허용하며 BOLA의 정상 대조는 확인된 소유자, BFLA의 정상 대조는 사용자 역할 정책과 일치해야 한다.
 - 사람의 확정/미확정/폐기 기록은 Evidence-bound 감사·오버라이드다. 원본 Evidence 집합이 달라지면 과거 기록을 자동 승계하지 않는다.
-- 로컬 구독 CLI 실행은 사용자가 로그인한 Codex/Claude 실행 파일의 절대 경로를 해석하고, 그 실행 파일의 부모 디렉터리를 자식 `PATH` 앞에 보존한다. Burp GUI가 축소된 환경으로 시작돼도 `#!/usr/bin/env node` 기반 CLI가 같은 설치 디렉터리의 Node를 찾도록 하되 `OPENAI_API_KEY`와 `ANTHROPIC_API_KEY`는 제거하고 FlowScope MCP token만 프로세스 환경에 전달한다.
-- 기본 ZAP 캠페인은 `orchestrator=SYSTEM`이다. 시작 전에 ZAP version API와 `spider/client/spiderAjax/pscan/pscanrules/selenium/openapi/websocket` add-on을 검사하고, 누락 시 대상 트래픽 전에 실패한다. Web/MCP에서 비로그인과 복수 ACTIVE 계정을 선택하면 비로그인 → 선택 계정 순으로 실행하며, 각 신원 앞에서 ZAP `core/newSession`을 호출해 crawler/cookie 상태를 분리한다. 각 신원은 passive scanner 활성화 → 전체 passive rule 활성화 → scope-only 설정 → Traditional Spider → strict Client Spider → AJAX Spider → passive queue 0 → native Alert 전 페이지 수집 순서를 고정한다. 두 rendered crawler는 fallback 관계가 아니라 서로 다른 DOM 실행기를 보완하는 독립 단계다. 완료 gate와 stage count는 400ms debounce가 있는 분석 `Pipeline.Result`가 아니라 응답 callback이 추가한 raw record 저장소를 `source + runId + sourceDetail`로 센다. 신원별 전체 capture가 0이면 캠페인을 실패시키고, Client/AJAX 중 실패 또는 capture 0은 Evidence를 보존한 `COMPLETED_WITH_WARNINGS`로 노출한다. Alert API는 500개씩 반복 호출해 신원별 최대 20,000개 상세를 메모리 snapshot에 보존하고 초과는 명시적으로 경고한다. Alert에는 `flowscope_account_id`와 `flowscope_run_id`를 붙인다. LLM이 단계를 고르지 않는다.
+- 로컬 구독 CLI 실행은 사용자가 로그인한 Codex/Claude 실행 파일의 절대 경로를 해석하고, 그 실행 파일의 부모 디렉터리를 자식 `PATH` 앞에 보존한다. Burp GUI가 축소된 환경으로 시작돼도 `#!/usr/bin/env node` 기반 CLI가 같은 설치 디렉터리의 Node를 찾도록 하되 `OPENAI_API_KEY`와 `ANTHROPIC_API_KEY`는 제거하고 FlowScope MCP token만 프로세스 환경에 전달한다. Codex 실행에는 user/plugin `SKILL.md`를 실행별 `skills.config.enabled=false`로 열거하고 plugin/app/browser/computer-use/multi-agent 계열 feature를 끈다. 이는 사용자 파일을 삭제하거나 수정하지 않는 폐쇄 실행 설정이며, 로컬 `prompt-input` smoke에서 전역 `ctf-goal` 지침이 빠진 것을 확인한다.
+- Explorer의 대상 읽기와 쓰기는 MCP 계약부터 분리한다. `flowscope_target_read`는 GET/HEAD/OPTIONS만 받고 destructive hint가 false이며, `flowscope_target_request`는 POST/PUT/PATCH/DELETE와 `confirmed=true`·Burp 승인을 요구한다. EXPLORATION run의 `flowscope_end_run`은 같은 source/run/phase의 응답 Evidence가 한 건 이상 존재할 때만 context를 닫는다. 따라서 CLI가 도구 호출을 취소하거나 모두 실패한 뒤 exit 0을 반환해도 lane 완료가 되지 않는다.
+- 기본 ZAP 캠페인은 `orchestrator=SYSTEM`이다. 시작 전에 ZAP version API, `network`를 포함한 안전 add-on, outgoing proxy enabled와 Desktop `127.0.0.1:8081` 또는 Docker `host.docker.internal:8081`을 확인하고, 누락·불일치 시 대상 트래픽 전에 실패한다. Web/MCP에서 비로그인과 복수 ACTIVE 계정을 선택하면 비로그인 → 선택 계정 순으로 실행하며, 각 신원 앞에서 ZAP `core/newSession`을 호출해 crawler/cookie 상태를 분리한다. 운영자가 이미 알고 있는 OpenAPI·GraphQL·Postman·SOAP 정의를 최대 20개 명시하면 URL·GraphQL endpoint를 exact scope로 검증하고 fresh Context 안에서 정의별 최대 1,000 message의 동기 import를 먼저 실행한다. 이름 기반 URL 추측은 하지 않는다. 이어 passive scanner 활성화 → 전체 passive rule 활성화 → scope-only 설정 → Traditional Spider → strict Client Spider → AJAX Spider → passive queue 0 → native Alert 전 페이지 수집 순서를 고정한다. 정의 import와 rendered crawler 실패는 다른 Evidence를 버리지 않고 lane warning으로 보존한다. 완료 gate와 stage count는 400ms debounce가 있는 분석 `Pipeline.Result`가 아니라 응답 callback이 추가한 raw record 저장소를 `source + runId + sourceDetail`로 센다. 신원별 전체 capture가 0이면 캠페인을 실패시키고, Alert API는 500개씩 반복 호출해 신원별 최대 20,000개 상세를 메모리 snapshot에 보존한다. LLM이 scanner 단계를 고르지 않는다.
 - 관리형 계정 ZAP/LLM 요청은 기존 Authorization/Cookie/Proxy-Authorization/CSRF를 제거하고 broker의 현재 `ACTIVE` 세션만 주입한다. fresh ZAP anonymous lane은 Authorization과 Proxy-Authorization을 제거하되 그 lane 안에서 서버가 새로 발급한 익명 Cookie/CSRF는 상태형 탐색을 위해 유지한다. 이 lane-local 쿠키는 계정 증명이 아니므로 신원 fingerprint는 계속 `anon`으로 고정한다. 수동으로 직접 실행해 FlowScope run context가 없는 scanner 트래픽은 관측만 하고 헤더를 바꾸지 않는다. 쿠키 회전은 응답의 Set-Cookie로 broker에 갱신하며, UNVERIFIED/SUSPECT/만료 세션은 사용자가 HUMAN 로그인 캡처를 다시 해야 한다.
 - Web scanner target 목록과 시작 API는 자기 자신의 `127.0.0.1:<web-port>` 제어면을 제외한다. localhost의 실제 점검 대상까지 포괄 차단하지 않고 현재 Web port만 차단한다.
 - Active Scan은 scope + MCP confirmed + Burp dialog의 세 조건을 모두 요구한다.
+- API 정의 import도 생성된 명세 method가 상태를 바꿀 수 있으므로 정의가 하나 이상이면 별도 Burp dialog 승인을 요구한다. 거부되면 fresh session이나 대상 요청 전에 캠페인 시작을 중단한다.
 
 - ZAP `scanOnlyInScope`는 FlowScope 허용목록이 아니라 ZAP Context를 읽는다. 따라서 각 fresh session에 선택 target의 origin·path subtree만 매치하는 Context를 만들고 in-scope로 표시한 뒤 passive rule을 활성화·재확인한다. regex 회귀는 sibling path, subdomain, 다른 scheme/port를 거부한다.
 

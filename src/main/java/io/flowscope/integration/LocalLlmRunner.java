@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -61,14 +62,15 @@ public final class LocalLlmRunner implements AutoCloseable {
     private static final int OUTPUT_LIMIT = 64 * 1024;
     private static final Pattern CODEX_SESSION = Pattern.compile("\\\"thread_id\\\"\\s*:\\s*\\\"([0-9a-fA-F-]{16,64})\\\"");
     private static final List<String> EXPLORER_TOOLS = List.of(
-            "flowscope_get_status", "flowscope_list_sessions", "flowscope_target_request",
+            "flowscope_get_status", "flowscope_list_sessions", "flowscope_target_read",
+            "flowscope_target_request",
             "flowscope_list_route_candidates", "flowscope_list_evidence", "flowscope_get_evidence",
             "flowscope_end_run");
     private static final List<String> JUDGE_TOOLS = List.of(
             "flowscope_get_status", "flowscope_lock_dataset", "flowscope_list_candidates",
             "flowscope_list_route_candidates", "flowscope_list_evidence", "flowscope_get_evidence",
             "flowscope_list_sessions", "flowscope_zap_alerts", "flowscope_submit_assessment",
-            "flowscope_begin_llm_run", "flowscope_target_request", "flowscope_end_run",
+            "flowscope_begin_llm_run", "flowscope_target_read", "flowscope_target_request", "flowscope_end_run",
             "flowscope_submit_validation", "flowscope_list_validations");
 
     private final String mcpUrl;
@@ -319,7 +321,9 @@ public final class LocalLlmRunner implements AutoCloseable {
                     "-c", "mcp_servers.flowscope.bearer_token_env_var=\"FLOWSCOPE_MCP_TOKEN\"",
                     "-c", "mcp_servers.flowscope.required=true",
                     "-c", "shell_environment_policy.filters.FLOWSCOPE_MCP_TOKEN=\"exclude\"",
-                    "-c", "tools.web_search=false", "exec", "--strict-config", "--skip-git-repo-check",
+                    "-c", "tools.web_search=false"));
+            addCodexIsolation(command);
+            command.addAll(List.of("exec", "--strict-config", "--skip-git-repo-check",
                     "--ignore-user-config", "--json"));
             if (role == Role.EXPLORER) command.add("--ephemeral");
             command.add("-");
@@ -341,14 +345,18 @@ public final class LocalLlmRunner implements AutoCloseable {
     private List<String> resumeCommand(Provider provider, String executable, Path workspace,
                                        String providerSessionId) {
         if (provider == Provider.CODEX) {
-            return List.of(executable, "-a", "never", "-s", "read-only", "-C", workspace.toString(),
+            List<String> command = new ArrayList<>(List.of(executable, "-a", "never", "-s", "read-only",
+                    "-C", workspace.toString(),
                     "-c", "mcp_servers.flowscope.url=\"" + mcpUrl + "\"",
                     "-c", "mcp_servers.flowscope.bearer_token_env_var=\"FLOWSCOPE_MCP_TOKEN\"",
                     "-c", "mcp_servers.flowscope.required=true",
                     "-c", "shell_environment_policy.filters.FLOWSCOPE_MCP_TOKEN=\"exclude\"",
-                    "-c", "tools.web_search=false", "exec", "resume",
+                    "-c", "tools.web_search=false"));
+            addCodexIsolation(command);
+            command.addAll(List.of("exec", "resume",
                     "--strict-config", "--skip-git-repo-check", "--ignore-user-config", "--json",
-                    providerSessionId, "-");
+                    providerSessionId, "-"));
+            return List.copyOf(command);
         }
         String toolNames = JUDGE_TOOLS.stream().map(name -> "mcp__flowscope__" + name)
                 .reduce((left, right) -> left + "," + right).orElse("");
@@ -493,6 +501,52 @@ public final class LocalLlmRunner implements AutoCloseable {
             }
         }
         environment.put(pathKey, String.join(java.io.File.pathSeparator, entries));
+    }
+
+    private static void addCodexIsolation(List<String> command) {
+        for (String feature : List.of("plugins", "apps", "in_app_browser", "browser_use",
+                "browser_use_external", "computer_use", "multi_agent", "goals", "memories")) {
+            command.addAll(List.of("-c", "features." + feature + "=false"));
+        }
+        String disabledSkills = disabledCodexSkills(codexHome());
+        if (!disabledSkills.isBlank()) command.addAll(List.of("-c", "skills.config=" + disabledSkills));
+    }
+
+    static String disabledCodexSkills(Path home) {
+        if (home == null) return "";
+        LinkedHashSet<String> skills = new LinkedHashSet<>();
+        for (Path root : List.of(home.resolve("skills"), home.resolve("plugins"))) {
+            if (!Files.isDirectory(root)) continue;
+            try (var paths = Files.walk(root, 8)) {
+                paths.filter(path -> Files.isRegularFile(path)
+                                && "SKILL.md".equals(path.getFileName().toString()))
+                        .map(path -> path.toAbsolutePath().normalize().toString())
+                        .sorted()
+                        .forEach(skills::add);
+            } catch (IOException | RuntimeException ignored) {
+                // Discovery is best-effort; built-in feature gates still disable plugin surfaces.
+            }
+        }
+        if (skills.isEmpty()) return "";
+        return skills.stream()
+                .map(path -> "{path=\"" + tomlString(path) + "\",enabled=false}")
+                .reduce((left, right) -> left + "," + right)
+                .map(value -> "[" + value + "]")
+                .orElse("");
+    }
+
+    private static Path codexHome() {
+        String configured = System.getenv("CODEX_HOME");
+        if (configured != null && !configured.isBlank()) {
+            try { return Path.of(configured).toAbsolutePath().normalize(); }
+            catch (RuntimeException ignored) { }
+        }
+        String userHome = System.getProperty("user.home", "");
+        return userHome.isBlank() ? null : Path.of(userHome, ".codex").toAbsolutePath().normalize();
+    }
+
+    private static String tomlString(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static String requireLoopbackMcp(String value) {

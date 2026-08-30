@@ -29,7 +29,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. Download `flowscope-1.2.0-beta.27.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
+1. Download `flowscope-1.2.0-beta.28.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
@@ -85,7 +85,7 @@ PowerShell 5.1, Windows container mode, and running the helper inside WSL are ou
 2. Create an owner-only key without printing its value: `./scripts/zap-key.sh` on macOS/Linux or `.\scripts\zap-key.ps1` in Windows PowerShell 7.
 3. Set the main local proxy/API to `127.0.0.1:8089` and set the ZAP API key to the value stored in `~/.flowscope/zap-api-key`. Keep key checks enabled.
 4. In **Options → Network → Connection → HTTP Proxy**, enable upstream host `127.0.0.1`, port `8081`.
-5. Confirm `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, and `websocket` are installed.
+5. Confirm `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, and `network` are installed. Explicit GraphQL, Postman, or SOAP imports also require the matching add-on.
 6. FlowScope reads owner-only `~/.flowscope/zap-api-key` by default; alternatives are `flowscope.zap.keyFile`, `FLOWSCOPE_ZAP_API_KEY`, and `flowscope.zap.key`. Reload the extension if the key was created after loading it.
 
 ## Codex or Claude Code
@@ -125,8 +125,8 @@ mvn clean verify
 1. Set an authorized exact scope in the FlowScope Burp tab.
 2. Register test accounts and capture any required login through HUMAN `8080` until the broker reports the account usable.
 3. Start a HUMAN pass, explore with the Burp browser, and end the pass.
-4. Select the target and anonymous/ACTIVE identities, then start the isolated ZAP campaign. Active Scan is not part of this automatic baseline.
-5. Select the local provider and start the independent LLM Explorer.
+4. Select the target and anonymous/ACTIVE identities. If you already have an API definition, optionally add one line per definition as `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`, then start the isolated ZAP campaign. Every URL must remain in exact scope. Because an import can generate write-method example requests, a non-empty list requires a separate Burp approval. Active Scan is not part of this automatic baseline.
+5. Select the local provider and start the independent LLM Explorer. It completes only after at least one exact-scope response Evidence is captured and the server accepts that run's end request.
 6. Review `REVIEW` observations. After all three lanes complete, start Judge.
 7. Treat only server-gated reproduction and authorized-control bundles as final; a ZAP alert or LLM statement alone is not confirmation.
 8. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.
@@ -144,7 +144,10 @@ Use **Scanner XML/HAR** in the Web header and select a `.har` created by ZAP's *
 | Windows key ACL fails | Rerun `zap-up.ps1` as the normal user and keep the key under the NTFS user profile, not a network/FAT path |
 | Windows ZAP cannot reach Burp | Confirm Docker Desktop Linux-container mode, Burp `127.0.0.1:8081`, Windows Firewall, and `host.docker.internal` |
 | ZAP completes with zero SCANNER captures | Verify ZAP upstream `8081`, the Burp listener, and exact scope together |
+| Campaign rejects ZAP outgoing proxy | Enable the Network HTTP proxy and use `127.0.0.1:8081` for Desktop or `host.docker.internal:8081` for Docker |
+| API definition import warning | Check exact-scope URLs and the matching `openapi`, `graphql`, `postman`, or `soap` add-on; other crawler Evidence remains available |
 | Rendered capture warning | Inspect ZAP Firefox/Selenium/Client/AJAX logs; do not mislabel Traditional-only output as rendered coverage |
+| Explorer exits but the LLM lane fails | Inspect the output tail for a cancelled target read or zero response Evidence, fix scope/session/approval state, then start a new Explorer |
 | Provider executable missing | Set the provider absolute-path system property and restart Burp |
 | Account absent from ZAP/LLM choices | Recapture login until the memory-only broker reports `ACTIVE` |
 

@@ -58,11 +58,11 @@ if command -v curl >/dev/null 2>&1 && [[ -n "$zap_key" ]]; then
   addons="$(curl --silent --show-error --fail --get --data-urlencode "apikey=$zap_key" \
     "http://127.0.0.1:${zap_port}/JSON/autoupdate/view/installedAddons/" 2>/dev/null || true)"
   missing_addons=""
-  for addon in spider client spiderAjax pscan pscanrules selenium openapi websocket; do
+  for addon in spider client spiderAjax pscan pscanrules selenium openapi websocket network; do
     [[ "$addons" == *"\"id\":\"$addon\""* ]] || missing_addons="$missing_addons $addon"
   done
   if [[ -z "$missing_addons" ]]; then
-    ok "required ZAP crawler/passive/API/WebSocket add-ons are installed"
+    ok "required ZAP crawler/passive/API/WebSocket/Network add-ons are installed"
   else
     fail "missing required ZAP add-on(s):$missing_addons"
   fi

@@ -705,7 +705,8 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private static RunPhase phaseOf(SourceDetail detail) {
         return switch (detail) {
-            case LLM_EXPLORER, ZAP_SPIDER, ZAP_AJAX_SPIDER, ZAP_CLIENT_SPIDER, ZAP_PASSIVE_SCAN, ZAP_ACTIVE_SCAN,
+            case LLM_EXPLORER, ZAP_SPIDER, ZAP_API_IMPORT, ZAP_AJAX_SPIDER, ZAP_CLIENT_SPIDER,
+                    ZAP_PASSIVE_SCAN, ZAP_ACTIVE_SCAN,
                     OTHER_SCANNER -> RunPhase.EXPLORATION;
             case LLM_COACH_PROBE -> RunPhase.COACH_PROBE;
             case LLM_VALIDATION -> RunPhase.VALIDATION;
@@ -1046,9 +1047,10 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public long droppedRecords() { return droppedRecords.get(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
                                                                                    List<String> accountIds,
-                                                                                   boolean includeAnonymous) {
+                                                                                   boolean includeAnonymous,
+                                                                                   List<McpServer.ZapDefinition> definitions) {
                 if (mcpServer == null) throw new IllegalStateException("MCP/스캐너 제어면이 아직 준비되지 않았습니다.");
-                return mcpServer.startDeterministicZapCampaign(target, accountIds, includeAnonymous);
+                return mcpServer.startDeterministicZapCampaign(target, accountIds, includeAnonymous, definitions);
             }
             @Override public com.fasterxml.jackson.databind.JsonNode scannerStatus() {
                 return mcpServer == null

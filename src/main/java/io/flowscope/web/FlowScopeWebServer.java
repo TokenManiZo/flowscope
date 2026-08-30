@@ -66,6 +66,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
                                                                      boolean includeAnonymous) {
             throw new UnsupportedOperationException("scanner workflow is unavailable");
         }
+        default com.fasterxml.jackson.databind.JsonNode startScanner(String target, List<String> accountIds,
+                                                                     boolean includeAnonymous,
+                                                                     List<McpServer.ZapDefinition> definitions) {
+            return startScanner(target, accountIds, includeAnonymous);
+        }
         default com.fasterxml.jackson.databind.JsonNode scannerStatus() {
             return new ObjectMapper().createObjectNode().put("status", "NOT_STARTED");
         }
@@ -582,9 +587,34 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 throw new IllegalArgumentException("비로그인 또는 하나 이상의 활성 계정을 선택하세요.");
             }
             ObjectNode body = json.createObjectNode();
-            body.set("run", state.startScanner(target, accounts, anonymous));
+            body.set("run", state.startScanner(target, accounts, anonymous,
+                    parseZapDefinitions(form.getOrDefault("definitions", ""))));
             return json(202, body);
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    static List<McpServer.ZapDefinition> parseZapDefinitions(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        List<McpServer.ZapDefinition> definitions = new java.util.ArrayList<>();
+        for (String rawLine : value.lines().toList()) {
+            String line = rawLine.trim();
+            if (line.isBlank()) continue;
+            if (definitions.size() >= 20) throw new IllegalArgumentException("API 정의는 최대 20개까지 입력할 수 있습니다.");
+            String[] parts = line.split("\\s+", 3);
+            McpServer.ZapDefinitionType type;
+            try { type = McpServer.ZapDefinitionType.valueOf(parts[0].toUpperCase(Locale.ROOT)); }
+            catch (RuntimeException error) {
+                throw new IllegalArgumentException("API 정의 형식: OPENAPI|GRAPHQL|POSTMAN|SOAP URL [GraphQL schema URL]");
+            }
+            if (parts.length < 2) throw new IllegalArgumentException(type + " URL이 필요합니다.");
+            if (type == McpServer.ZapDefinitionType.GRAPHQL) {
+                definitions.add(new McpServer.ZapDefinition(type, parts.length == 3 ? parts[2] : "", parts[1]));
+            } else {
+                if (parts.length != 2) throw new IllegalArgumentException(type + "은 URL 하나만 입력합니다.");
+                definitions.add(new McpServer.ZapDefinition(type, parts[1], ""));
+            }
+        }
+        return List.copyOf(new java.util.LinkedHashSet<>(definitions));
     }
 
     private LoopbackHttpServer.Response zapStatus(LoopbackHttpServer.Request request) throws IOException {

@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.27 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.28 제품 개발·검증 계획
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -7,6 +7,16 @@
 > 허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러낸다.
 
 완성 기준은 기능 개수나 화면 존재 여부가 아니다. 공개 fixture와 정답 격리 블라인드 benchmark에서 endpoint·객체·분류·finding 측정값, 사용자 `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고, 후보와 verdict를 원 Request/Response·재현·정상 대조 Evidence까지 역추적할 수 있어야 한다.
+
+## 0. beta.28 우선순위: Explorer 무성과 성공 차단과 명시 API 정의 탐색
+
+1. Codex/Claude Explorer의 안전 read와 승인형 write를 MCP 계약부터 분리하고, 실제 응답 Evidence가 없는 run은 완료시키지 않는다.
+2. Codex 실행별로 사용자 skill·plugin·외부 browser surface를 격리하고 로컬 prompt-input smoke와 회귀로 확인한다.
+3. ZAP outgoing proxy를 대상 전송 전에 fail-closed 검사하고, 운영자가 제공한 exact-scope OpenAPI·GraphQL·Postman·SOAP 정의를 신원별 Context에서 bounded import한다.
+4. 정의 import 실패는 기존 crawler/passive Evidence를 버리지 않고 단계·형식·원인을 사용자에게 표시한다.
+5. 자동 회귀와 JAR smoke 뒤 실제 Burp에서 Codex target read/0건 실패, ZAP 네 형식 import, 복수 계정 campaign, 3-lane lock과 Judge를 확인한다.
+
+**현재 상태:** 1~4의 코드, 258개 전체 자동 회귀, 완성 JAR smoke와 동일 소스 2회 SHA-256 일치를 완료했다. 5의 실제 Burp 재로드 통합 gate와 블라인드 benchmark는 대기 중이며, 완료 전에는 탐지 성능 향상이나 3-way 실환경 완주를 주장하지 않는다.
 
 ## 0. beta.27 우선순위: 안전 ZAP 기준선 완결과 구독 CLI 실행 복구
 
@@ -261,7 +271,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.27 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현하고 253개 자동 회귀와 완성 JAR smoke를 완료했다. 실제 beta.27 Burp/블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.28 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Codex 실행별 skill/plugin 격리·읽기/쓰기 MCP 분리·0-Evidence 종료 거부·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현하고 258개 자동 회귀와 완성 JAR smoke를 완료했다. 실제 beta.28 Burp/블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

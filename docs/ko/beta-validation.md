@@ -1,6 +1,22 @@
-# FlowScope 1.2.0-beta.27 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.28 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-30이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.28 Explorer 성과 gate·ZAP 정의 탐색 gate
+
+| 구분 | 결과 |
+|---|---|
+| LLM 도구 경계 | GET·HEAD·OPTIONS 전용 `flowscope_target_read`와 POST·PUT·PATCH·DELETE 전용 승인형 `flowscope_target_request`의 schema·annotation·method 거부 회귀 통과 |
+| Explorer 완료 조건 | 같은 LLM run·EXPLORATION phase의 응답 Evidence가 0건이면 `flowscope_end_run`을 거부하고 context를 유지하는 회귀 통과 |
+| Codex 실행 격리 | 실행별 feature disable과 발견된 user/plugin `SKILL.md` disable 인자, 사용자 파일 불변 회귀 통과. 로컬 Codex 0.147.0 `prompt-input` smoke에서 전역 `ctf-goal` 지침이 빠진 것을 확인 |
+| ZAP 전송 사전 검사 | 로컬 ZAP 2.17.0의 outgoing proxy enabled와 `host.docker.internal:8081`, `network` 포함 필수 add-on을 확인. mock에서 proxy off·host/port 불일치·선택 형식 add-on 누락을 대상 전송 전에 거부 |
+| 명시 API 정의 | OpenAPI·GraphQL·Postman·SOAP의 installed 2.17 add-on API parameter, 최대 20개 입력, exact-scope URL/endpoint, 정의별 최대 1,000 message, 중복 제거, 성공 수·경고 표시 회귀 통과. 정의가 있으면 대상 전송 전 Burp 승인 거부 회귀 통과 |
+| 전체 자동 회귀 | `mvn clean verify`, 258 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 반복 빌드 | 같은 소스의 `mvn clean verify` 2회에서 beta.28 JAR SHA-256 일치 |
+| helper·환경 | Bash helper 전체 `bash -n`, `git diff --check`, `scripts/doctor.sh` 통과. doctor 결과 HUMAN·SCANNER·Web·MCP port, ZAP API/upstream/add-on, Codex·Claude 실행기 모두 실패·경고 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.28.jar`, 15,909,724 bytes, 2,037 entries, SHA-256 `87aace2eb47d97b721196714a21fbc5faff2e37f178c8b037c8be447d1fdd1f4` |
+
+이 gate는 코드 계약, localhost mock, 로컬 실행 환경의 read-only 상태와 Codex prompt 조립을 확인했다. beta.28 JAR을 실제 Burp에 재로드한 Codex target read·0건 실패 표시, 네 정의 형식의 실제 ZAP 요청, 복수 계정 인증 주입, 3-lane lock과 Judge 재현·대조는 아직 수행하지 않았다. PowerShell helper의 로컬 실행과 원격 GitHub Actions도 이번 작업에서 실행하지 않았다. 자동 회귀를 취약점 탐지율 또는 3-way 실환경 완주로 표현하지 않는다.
 
 ## 1.2.0-beta.27 안전 ZAP·구독 CLI 실행 gate
 

@@ -91,6 +91,26 @@ public final class ZapClient {
         return get("/JSON/alert/view/numberOfAlerts/", query);
     }
     public String installedAddons() { return get("/JSON/autoupdate/view/installedAddons/", ""); }
+    public String httpProxyEnabled() { return get("/JSON/network/view/isHttpProxyEnabled/", ""); }
+    public String httpProxy() { return get("/JSON/network/view/getHttpProxy/", ""); }
+    public String importOpenApi(String definitionUrl, String hostOverride, String contextId, int maxMessages) {
+        return get("/JSON/openapi/action/importUrl/", "url=" + enc(definitionUrl)
+                + "&hostOverride=" + enc(hostOverride) + "&contextId=" + enc(contextId)
+                + "&maxMessages=" + boundedMessages(maxMessages), Duration.ofMinutes(2));
+    }
+    public String importPostman(String definitionUrl, int maxMessages) {
+        return get("/JSON/postman/action/importUrl/", "url=" + enc(definitionUrl)
+                + "&maxMessages=" + boundedMessages(maxMessages), Duration.ofMinutes(2));
+    }
+    public String importSoap(String definitionUrl, int maxMessages) {
+        return get("/JSON/soap/action/importUrl/", "url=" + enc(definitionUrl)
+                + "&maxMessages=" + boundedMessages(maxMessages), Duration.ofMinutes(2));
+    }
+    public String importGraphQl(String endpointUrl, String schemaUrl, int maxMessages) {
+        String query = "endurl=" + enc(endpointUrl) + "&url=" + enc(schemaUrl == null ? "" : schemaUrl)
+                + "&maxMessages=" + boundedMessages(maxMessages);
+        return get("/JSON/graphql/action/importUrl/", query, Duration.ofMinutes(2));
+    }
 
     public static String exactSubtreeRegex(String target) {
         URI uri = URI.create(target);
@@ -153,4 +173,5 @@ public final class ZapClient {
     }
 
     private static String enc(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
+    private static int boundedMessages(int value) { return Math.max(1, Math.min(1_000, value)); }
 }

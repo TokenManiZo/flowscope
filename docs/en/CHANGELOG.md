@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.28 — 2026-08-30
+
+- Split GET/HEAD/OPTIONS into a non-destructive MCP target-read tool while retaining confirmation and Burp approval for POST/PUT/PATCH/DELETE.
+- Refused Explorer completion without captured response Evidence, preventing cancelled or failed tool calls followed by CLI exit zero from completing the LLM lane.
+- Disabled Codex user skills, plugins, and external browser surfaces per run without changing user configuration files.
+- Added a fail-closed ZAP outgoing-proxy preflight and required the Network add-on before target traffic.
+- Added bounded, exact-scope OpenAPI, GraphQL, Postman, and SOAP definition imports per fresh identity Context with visible import counts and warnings.
+
 ## 1.2.0-beta.27 — 2026-08-30
 
 - Added a preflight for the safe crawler, passive, OpenAPI, and WebSocket add-ons, then created a fresh Context containing only the selected target subtree and explicitly enabled the passive engine, all passive rules, and scope-only scanning for every identity lane.

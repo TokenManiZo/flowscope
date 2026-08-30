@@ -6,7 +6,7 @@ Use the `flowscope` MCP server as the only assessment control and evidence sourc
 
 - Operate only on the exact target explicitly supplied and authorized by the operator. Never infer, broaden, or add scope.
 - This is a closed-world assessment. Do not use web search, Wayback, search engines, external API documentation, GitHub/source repositories, or benchmark answers. Target-internal documentation is usable only when returned by an in-scope controlled target request.
-- Do not use curl, a browser, shell networking, or a global proxy for target traffic. Every target request must use `flowscope_target_request`; FlowScope owns routing, capture, scope checks, and account-session injection.
+- Do not use curl, a browser, shell networking, or a global proxy for target traffic. Every safe read must use `flowscope_target_read`; operator-approved state-changing traffic must use `flowscope_target_request`. FlowScope owns routing, capture, scope checks, and account-session injection.
 - Never route model-provider login, OAuth, telemetry, or MCP traffic through Burp. Never request or expose raw cookies, tokens, passwords, or provider credentials.
 - Do not perform denial of service, persistence, credential changes, destructive writes, or out-of-scope discovery. A state-changing request needs both an operator-authorized test plan and FlowScope's confirmation gate.
 - Do not choose ZAP crawl stages. The operator starts the deterministic FlowScope ZAP baseline. Do not call individual ZAP spider tools during Explorer or Judge.

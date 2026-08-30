@@ -6,6 +6,31 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-30 · 1.2.0-beta.28 · Explorer 성과 gate·ZAP 명시 정의 탐색
+
+**개발·수정**
+
+- Codex Explorer에서 안전한 GET도 destructive tool로 표시돼 취소되고, 응답 Evidence 없이 CLI exit 0만으로 LLM lane이 완료되는 실제 실패를 확인했다. MCP를 GET·HEAD·OPTIONS 전용 read와 승인형 write로 분리하고, EXPLORATION 종료에 같은 run의 응답 Evidence를 필수화했다.
+- `--ignore-user-config`만으로 전역 `ctf-goal` skill이 제거되지 않는 로컬 Codex 0.147.0 동작을 확인했다. `LocalLlmRunner`가 실행별로 발견한 user/plugin skill과 plugin/app/browser/computer-use/multi-agent feature를 비활성화하며 사용자 설정 파일은 수정하지 않는다.
+- ZAP이 FlowScope SCANNER listener를 우회하면 스캔은 성공처럼 보여도 Evidence가 0건이 되는 경로를 막기 위해, 대상 전송 전에 Network API로 outgoing proxy enabled와 허용 host·8081을 검사한다.
+- 운영자가 이미 가진 OpenAPI·GraphQL·Postman·SOAP 정의를 Web/MCP에서 최대 20개 입력할 수 있게 했다. URL과 GraphQL endpoint는 exact scope로 제한하고, 신원별 fresh Context에서 정의별 최대 1,000 message로 import한다. 정의가 상태 변경 요청을 만들 수 있어 별도 Burp 승인을 요구한다.
+- 정의 import는 `ZAP_API_IMPORT` 단계로 분리하고 성공 수와 형식별 실패 원인을 lane에 표시한다. 일부 정의 실패가 Traditional·Client·AJAX·passive Evidence를 폐기하지 않도록 경고 완료로 보존한다.
+- README, 한국어·영어 설치/변경 이력, 아키텍처, 결정 기록, 기능 명세, UI 근거, 개발 계획, 검증 기록과 인계 정본을 beta.28 동작에 맞췄다.
+
+**근거와 기각한 대안**
+
+- ZAP 공식 탐색 가이드는 modern app에서 Traditional Spider와 Client Spider, API 정의 import를 함께 사용하도록 안내한다. 정의 import는 실제 operation 요청을 만들 수 있으므로 passive scan과 같은 무승인 단계로 분류하지 않았다.
+- FlowScope가 사용자의 ZAP 전역 proxy를 자동 변경하면 다른 점검 세션에 영향을 주므로 기각했다. 현재는 요구 상태를 읽고 불일치 시 대상 트래픽 전에 실패한다.
+- LLM 프롬프트에 “기존 결과를 보지 말라”고만 쓰는 방식은 실제 user skill/plugin surface를 제거하지 못해 기각했다. 프로세스별 feature/skill disable과 서버 가시성 격리를 함께 사용한다.
+
+**검증 및 남은 gate**
+
+- `mvn clean verify`: 258 tests, 실패·오류·skip 0, 완성 JAR manifest/classloader smoke 통과.
+- 같은 소스의 clean verify 2회에서 beta.28 JAR SHA-256 `87aace2e…d1f4` 일치.
+- `bash -n scripts/*.sh infra/zap/start-zap.sh`, `git diff --check`, `scripts/doctor.sh` 통과. doctor는 로컬 port, ZAP 2.17.0 API/upstream/add-on, Codex 0.147.0, Claude 2.1.236을 실패·경고 0으로 확인했다.
+- 배포물: `target/flowscope-1.2.0-beta.28.jar`, 15,909,724 bytes, 2,037 entries, SHA-256 `87aace2eb47d97b721196714a21fbc5faff2e37f178c8b037c8be447d1fdd1f4`.
+- 실제 beta.28 Burp 재로드 뒤 Explorer target read와 0-Evidence 실패 UI, 실제 ZAP 네 형식 정의·복수 계정 campaign, 3-lane lock, Judge 재현·대조는 아직 수행하지 않았다. 로컬 PowerShell과 원격 GitHub Actions도 미검증이다.
+
 ## 2026-08-30 · 1.2.0-beta.27 · 안전 ZAP 기준선·구독 CLI PATH 복구
 
 **개발·수정**

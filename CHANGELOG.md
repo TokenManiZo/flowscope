@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.28 — 2026-08-30
+
+- LLM 대상 GET·HEAD·OPTIONS를 비파괴 MCP 도구로 분리하고 POST·PUT·PATCH·DELETE는 기존 확인·Burp 승인 경계를 유지
+- 응답 Evidence 0건인 Explorer 종료를 서버에서 거부해 취소·도구 실패 후 CLI exit 0이 LLM 완료로 기록되던 경로 차단
+- Codex 실행별로 사용자 skill·plugin·외부 browser surface를 비활성화하되 사용자 설정 파일은 수정하지 않도록 격리 보강
+- ZAP outgoing proxy가 FlowScope scanner listener를 가리키는지 대상 전송 전에 확인하고 `network` add-on을 필수화
+- 명시적 exact-scope OpenAPI·GraphQL·Postman·SOAP 정의를 신원별 fresh Context에서 bounded import하고 단계별 성공 수·경고 표시
+
 ## 1.2.0-beta.27 — 2026-08-30
 
 - 신원별 ZAP 기준선 시작 전에 안전 탐색·passive·OpenAPI·WebSocket add-on을 검사하고, 선택 target subtree 전용 Context와 passive engine·전체 규칙·scope-only 설정을 명시 적용

@@ -53,11 +53,14 @@ public final class McpServer implements AutoCloseable {
                                 String body, String accountId) {}
     public record TargetResult(String evidenceId, int status, String location,
                                String response, String responseBody) {}
+    public enum ZapDefinitionType { OPENAPI, GRAPHQL, POSTMAN, SOAP }
+    public record ZapDefinition(ZapDefinitionType type, String url, String endpoint) {}
 
     private static final int MAX_BODY = 1024 * 1024;
     private static final int MAX_ZAP_ALERT_SNAPSHOT = 20_000;
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
-            "spider", "client", "spiderAjax", "pscan", "pscanrules", "selenium", "openapi", "websocket");
+            "spider", "client", "spiderAjax", "pscan", "pscanrules", "selenium", "openapi", "websocket",
+            "network");
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> SUPPORTED_PROTOCOLS = Set.of(
             LATEST_PROTOCOL, "2025-06-18", "2025-03-26");
@@ -81,10 +84,10 @@ public final class McpServer implements AutoCloseable {
 
     private record ZapBaselineRun(String runId, String target, String status, String stage,
                                   String scanId, String warning, long capturedRecords,
-                                  int alertCount, String error) {}
+                                  int definitionCount, int alertCount, String error) {}
     private record ZapLaneResult(String accountId, String accountLabel, String status, String stage,
                                  long capturedRecords, long traditionalCaptures, long renderedCaptures,
-                                 int alertCount, String warning, String error) {}
+                                 int definitionImports, int alertCount, String warning, String error) {}
     private record ZapLane(String accountId, String accountLabel) {}
     private record ZapAlertCollection(int count, boolean truncated) {}
 
@@ -107,11 +110,23 @@ public final class McpServer implements AutoCloseable {
     }
     public JsonNode startDeterministicZapCampaign(String target, List<String> accountIds,
                                                   boolean includeAnonymous) {
+        return startDeterministicZapCampaign(target, accountIds, includeAnonymous, List.of());
+    }
+    public JsonNode startDeterministicZapCampaign(String target, List<String> accountIds,
+                                                  boolean includeAnonymous,
+                                                  List<ZapDefinition> definitions) {
         ObjectNode args = json.createObjectNode().put("target", target);
         args.put("include_anonymous", includeAnonymous);
         ArrayNode accounts = args.putArray("account_ids");
         if (accountIds != null) accountIds.stream().filter(value -> value != null && !value.isBlank())
                 .distinct().forEach(accounts::add);
+        ArrayNode definitionNodes = args.putArray("definitions");
+        if (definitions != null) definitions.forEach(definition -> {
+            if (definition == null || definition.type() == null) return;
+            ObjectNode node = definitionNodes.addObject().put("type", definition.type().name());
+            if (definition.url() != null) node.put("url", definition.url());
+            if (definition.endpoint() != null) node.put("endpoint", definition.endpoint());
+        });
         return startZapBaseline(args);
     }
     public JsonNode deterministicZapBaselineStatus() { return zapBaselineStatus(); }
@@ -243,9 +258,9 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.10");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.28");
         result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
-                + "flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
+                + "flowscope_target_read/flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "
                 + "by the operator before any run; never infer or broaden scope. The system-owned ZAP baseline, not the "
                 + "LLM, chooses scanner stages. Begin and end every LLM run. Explorer is server-isolated from HUMAN and "
@@ -270,8 +285,10 @@ public final class McpServer implements AutoCloseable {
                 evidenceListSchema(), true, false));
         tools.add(tool("flowscope_list_sessions", "List safe test-account session status; never returns cookies or tokens.",
                 schema(), true, false));
-        tools.add(tool("flowscope_target_request", "Send one exact-scope target request through FlowScope's controlled executor. No external web access.",
-                targetRequestSchema(), false, true));
+        tools.add(tool("flowscope_target_read", "Send one exact-scope GET, HEAD, or OPTIONS request through FlowScope's controlled executor. No external web access.",
+                targetReadSchema(), false, false));
+        tools.add(tool("flowscope_target_request", "Send one operator-approved exact-scope POST, PUT, PATCH, or DELETE request through FlowScope's controlled executor.",
+                targetWriteSchema(), false, true));
         tools.add(tool("flowscope_submit_assessment", "Submit a non-confirming LLM assessment tied to existing evidence IDs.",
                 assessmentSchema(), false, false));
         tools.add(tool("flowscope_list_assessments", "List LLM assessments submitted during this Burp session.", paginationSchema(), true, false));
@@ -283,7 +300,7 @@ public final class McpServer implements AutoCloseable {
         tools.add(tool("flowscope_end_run", "End the active LLM or scanner run context.", endRunSchema(), false, false));
         tools.add(tool("flowscope_zap_status", "Check local ZAP connectivity or scan progress.", zapStatusSchema(), true, false));
         tools.add(tool("flowscope_zap_environment", "Read the local ZAP version and installed add-ons before a scanner pass.", schema(), true, false));
-        tools.add(tool("flowscope_zap_baseline", "Run the deterministic isolated scanner campaign for anonymous and selected account IDs: Traditional Spider, Client Spider (AJAX fallback), passive queue, then native alerts.", zapBaselineSchema(), false, false));
+        tools.add(tool("flowscope_zap_baseline", "Run the deterministic isolated scanner campaign for anonymous and selected account IDs: optional explicit API definitions, Traditional Spider, Client Spider, AJAX Spider, passive queue, then native alerts.", zapBaselineSchema(), false, false));
         tools.add(tool("flowscope_zap_baseline_status", "Read deterministic scanner-lane progress and captured-output counts.", schema(), true, false));
         tools.add(tool("flowscope_zap_passive_status", "Read ZAP passive-scan queue and current tasks.", schema(), true, false));
         tools.add(tool("flowscope_zap_alerts", "Read paginated native ZAP alerts after the three-lane dataset is locked.", zapAlertsSchema(), true, false));
@@ -307,7 +324,8 @@ public final class McpServer implements AutoCloseable {
                 case "flowscope_get_evidence" -> evidence(args.path("evidence_id").asText());
                 case "flowscope_list_evidence" -> listEvidence(args);
                 case "flowscope_list_sessions" -> listSessions();
-                case "flowscope_target_request" -> targetRequest(args);
+                case "flowscope_target_read" -> targetRequest(args, true);
+                case "flowscope_target_request" -> targetRequest(args, false);
                 case "flowscope_submit_assessment" -> submitAssessment(args);
                 case "flowscope_list_assessments" -> assessmentPage(args);
                 case "flowscope_submit_validation" -> submitValidation(args);
@@ -487,10 +505,22 @@ public final class McpServer implements AutoCloseable {
             case "SCANNER" -> Source.SCANNER;
             default -> throw new IllegalArgumentException("source must be LLM or SCANNER");
         };
-        if (!state.contexts().clear(source, runId)) {
+        RunContextRegistry.Context active = state.contexts().current(source);
+        if (active == null || !runId.equals(active.runId())) {
             throw new IllegalArgumentException("run_id does not match the active " + source.name() + " run");
         }
+        if (active.phase() == RunPhase.EXPLORATION && !hasExplorationResponse(source, runId)) {
+            throw new IllegalStateException("exploration run needs at least one captured in-scope response Evidence before completion");
+        }
+        if (!state.contexts().clear(source, runId)) {
+            throw new IllegalStateException("run lease disappeared before completion");
+        }
         return json.createObjectNode().put("ended", source.name()).put("run_id", runId);
+    }
+
+    private boolean hasExplorationResponse(Source source, String runId) {
+        return state.snapshot().records.stream().anyMatch(record -> record.source == source
+                && runId.equals(record.runId) && record.phase == RunPhase.EXPLORATION && record.hasResponse);
     }
 
     private JsonNode candidates(JsonNode args) {
@@ -632,17 +662,19 @@ public final class McpServer implements AutoCloseable {
         return out;
     }
 
-    private JsonNode targetRequest(JsonNode args) {
+    private JsonNode targetRequest(JsonNode args, boolean safeRead) {
         RunContextRegistry.Context context = state.contexts().current(Source.LLM);
         if (context == null) throw new IllegalStateException("begin an LLM run before target requests");
         String method = required(args, "method").toUpperCase(java.util.Locale.ROOT);
-        if (!Set.of("GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE").contains(method)) {
-            throw new IllegalArgumentException("unsupported HTTP method");
-        }
+        Set<String> allowedMethods = safeRead ? Set.of("GET", "HEAD", "OPTIONS")
+                : Set.of("POST", "PUT", "PATCH", "DELETE");
+        if (!allowedMethods.contains(method)) throw new IllegalArgumentException(safeRead
+                ? "flowscope_target_read allows only GET, HEAD, or OPTIONS"
+                : "flowscope_target_request allows only POST, PUT, PATCH, or DELETE");
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
-        if (!Set.of("GET", "HEAD", "OPTIONS").contains(method)
-                && (!args.path("confirmed").asBoolean(false) || !state.approve("LLM state-changing request", target))) {
+        if (!safeRead && (!args.path("confirmed").asBoolean(false)
+                || !state.approve("LLM state-changing request", target))) {
             throw new IllegalArgumentException("state-changing request approval denied");
         }
         Map<String, String> headers = new java.util.LinkedHashMap<>();
@@ -956,7 +988,11 @@ public final class McpServer implements AutoCloseable {
         if (!legacyAccount.isBlank()) requestedAccounts.add(legacyAccount);
         boolean includeAnonymous = args.has("include_anonymous")
                 ? args.path("include_anonymous").asBoolean(false) : requestedAccounts.isEmpty();
-        verifySafeZapEnvironment();
+        List<ZapDefinition> definitions = validatedZapDefinitions(args.path("definitions"));
+        verifySafeZapEnvironment(definitions);
+        if (!definitions.isEmpty() && !state.approve("ZAP API 정의가 만든 요청 전송", target)) {
+            throw new IllegalStateException("API definition import requires explicit Burp approval");
+        }
         List<ZapLane> lanes = new ArrayList<>();
         if (includeAnonymous) lanes.add(new ZapLane(null, "비로그인"));
         for (String accountId : requestedAccounts) {
@@ -970,10 +1006,10 @@ public final class McpServer implements AutoCloseable {
                 Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, lanes.get(0).accountId()));
         zapBaselineAlerts = json.createArrayNode();
         zapBaselineLanes = lanes.stream().map(lane -> new ZapLaneResult(lane.accountId(), lane.accountLabel(),
-                "PENDING", "PENDING", 0, 0, 0, 0, "", "")).toList();
+                "PENDING", "PENDING", 0, 0, 0, 0, 0, "", "")).toList();
         zapBaseline = new ZapBaselineRun(runId, target, "RUNNING", "TRADITIONAL_SPIDER",
-                "", "", 0, 0, "");
-        zapWorkflow.submit(() -> runZapCampaign(runId, target, lanes));
+                "", "", 0, definitions.size(), 0, "");
+        zapWorkflow.submit(() -> runZapCampaign(runId, target, lanes, definitions));
         return zapBaselineNode(zapBaseline);
     }
 
@@ -983,14 +1019,15 @@ public final class McpServer implements AutoCloseable {
         return value == null ? json.createObjectNode().put("status", "NOT_STARTED") : zapBaselineNode(value);
     }
 
-    private void runZapCampaign(String runId, String target, List<ZapLane> lanes) {
+    private void runZapCampaign(String runId, String target, List<ZapLane> lanes,
+                                List<ZapDefinition> definitions) {
         ArrayNode collectedAlerts = json.createArrayNode();
         boolean failed = false;
         String campaignError = "";
         for (int index = 0; index < lanes.size(); index++) {
             ZapLane lane = lanes.get(index);
             try {
-                runZapLane(runId, target, lane, index, collectedAlerts);
+                runZapLane(runId, target, lane, index, definitions, collectedAlerts);
             } catch (RuntimeException error) {
                 failed = true;
                 String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
@@ -1002,22 +1039,24 @@ public final class McpServer implements AutoCloseable {
         if (failed) {
             state.contexts().abort(Source.SCANNER, runId);
             zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
-                    captured, collectedAlerts.size(), campaignError);
+                    captured, definitions.size(), collectedAlerts.size(), campaignError);
         } else if (!state.contexts().clear(Source.SCANNER, runId)) {
             zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
-                    captured, collectedAlerts.size(), "scanner run lease disappeared before completion");
+                    captured, definitions.size(), collectedAlerts.size(), "scanner run lease disappeared before completion");
         } else {
             String warning = zapBaselineLanes.stream().map(ZapLaneResult::warning)
                     .filter(value -> value != null && !value.isBlank()).distinct()
                     .collect(java.util.stream.Collectors.joining("; "));
             String status = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
             zapBaseline = new ZapBaselineRun(runId, target, status, "ALERTS_READY", "", warning,
-                    captured, collectedAlerts.size(), "");
+                    captured, definitions.size(), collectedAlerts.size(), "");
         }
     }
 
-    private void runZapLane(String runId, String target, ZapLane lane, int index, ArrayNode collectedAlerts) {
+    private void runZapLane(String runId, String target, ZapLane lane, int index,
+                            List<ZapDefinition> definitions, ArrayNode collectedAlerts) {
         String warning = "";
+        int definitionImports = 0;
         long capturedBefore = capturedForRun(runId);
         long traditionalBefore = capturedForRun(runId, SourceDetail.ZAP_SPIDER);
         long renderedBefore = capturedForRenderedStages(runId);
@@ -1039,8 +1078,24 @@ public final class McpServer implements AutoCloseable {
             requireZapOk(state.zap().enableAllPassiveScanners(), "enable all passive scan rules");
             requireZapOk(state.zap().restrictPassiveScanToScope(), "restrict passive scanning to scope");
             verifyPassiveScannersEnabled();
+            if (!definitions.isEmpty()) {
+                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_API_IMPORT, lane.accountId());
+                replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                        "API_DEFINITION_IMPORT", 0, 0, 0, 0, 0, "", ""));
+                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · API_DEFINITION_IMPORT", "", warning, "");
+                for (ZapDefinition definition : definitions) {
+                    try {
+                        importZapDefinition(definition, target, context.path("contextId").asText());
+                        definitionImports++;
+                    } catch (RuntimeException importError) {
+                        warning = appendWarning(warning, definition.type() + " definition import failed: "
+                                + importError.getMessage());
+                    }
+                }
+            }
+            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "TRADITIONAL_SPIDER", 0, 0, 0, 0, "", ""));
+                    "TRADITIONAL_SPIDER", 0, 0, 0, definitionImports, 0, warning, ""));
             JsonNode traditional = parseZap(state.zap().spider(target));
             String scanId = traditional.path("scan").asText();
             if (scanId.isBlank()) throw new IllegalStateException("ZAP Traditional Spider did not return a scan id");
@@ -1050,7 +1105,8 @@ public final class McpServer implements AutoCloseable {
 
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "CLIENT_SPIDER", traditionalCaptured, traditionalCaptured, 0, 0, "", ""));
+                    "CLIENT_SPIDER", traditionalCaptured, traditionalCaptured, 0,
+                    definitionImports, 0, warning, ""));
             long clientBefore = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER);
             RuntimeException clientFailure = null;
             try {
@@ -1072,7 +1128,7 @@ public final class McpServer implements AutoCloseable {
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "AJAX_SPIDER", traditionalCaptured + clientCaptured,
-                    traditionalCaptured, clientCaptured, 0, warning, ""));
+                    traditionalCaptured, clientCaptured, definitionImports, 0, warning, ""));
             long ajaxBefore = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
             RuntimeException ajaxFailure = null;
             try {
@@ -1096,7 +1152,7 @@ public final class McpServer implements AutoCloseable {
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "PASSIVE_SCAN_QUEUE", traditionalCaptured + renderedCaptured,
-                    traditionalCaptured, renderedCaptured, 0, warning, ""));
+                    traditionalCaptured, renderedCaptured, definitionImports, 0, warning, ""));
             updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · PASSIVE_SCAN_QUEUE", "", warning, "");
             waitForPassive(5 * 60_000L);
             long captured = capturedForRun(runId) - capturedBefore;
@@ -1109,13 +1165,14 @@ public final class McpServer implements AutoCloseable {
             String laneStatus = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), laneStatus,
                     "ALERTS_READY", captured, traditionalCaptured, renderedCaptured,
-                    alerts.count(), warning, ""));
+                    definitionImports, alerts.count(), warning, ""));
         } catch (RuntimeException error) {
             String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
                     Math.max(0, capturedForRun(runId) - capturedBefore),
                     Math.max(0, capturedForRun(runId, SourceDetail.ZAP_SPIDER) - traditionalBefore),
-                    Math.max(0, capturedForRenderedStages(runId) - renderedBefore), 0, warning, message));
+                    Math.max(0, capturedForRenderedStages(runId) - renderedBefore), definitionImports,
+                    0, warning, message));
             throw error;
         }
     }
@@ -1133,7 +1190,7 @@ public final class McpServer implements AutoCloseable {
                 + capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
     }
 
-    private void verifySafeZapEnvironment() {
+    private void verifySafeZapEnvironment(List<ZapDefinition> definitions) {
         JsonNode version = parseZap(state.zap().version());
         if (version.path("version").asText().isBlank()) {
             throw new IllegalStateException("ZAP version API did not return a version");
@@ -1142,9 +1199,75 @@ public final class McpServer implements AutoCloseable {
         Set<String> ids = new LinkedHashSet<>();
         if (installed.isArray()) installed.forEach(addon -> ids.add(addon.path("id").asText()));
         Set<String> missing = new LinkedHashSet<>(SAFE_ZAP_ADDONS);
+        for (ZapDefinition definition : definitions) {
+            missing.add(switch (definition.type()) {
+                case OPENAPI -> "openapi";
+                case GRAPHQL -> "graphql";
+                case POSTMAN -> "postman";
+                case SOAP -> "soap";
+            });
+        }
         missing.removeAll(ids);
         if (!missing.isEmpty()) {
             throw new IllegalStateException("missing required safe ZAP add-on(s): " + String.join(", ", missing));
+        }
+        JsonNode proxyEnabled = parseZap(state.zap().httpProxyEnabled());
+        if (!"true".equalsIgnoreCase(proxyEnabled.path("isHttpProxyEnabled").asText())) {
+            throw new IllegalStateException("ZAP outgoing HTTP proxy must be enabled for FlowScope capture");
+        }
+        JsonNode proxy = parseZap(state.zap().httpProxy()).path("getHttpProxy");
+        String host = proxy.path("host").asText().toLowerCase(java.util.Locale.ROOT);
+        int port = proxy.path("port").asInt(-1);
+        if (!(host.equals("127.0.0.1") || host.equals("localhost") || host.equals("::1")
+                || host.equals("host.docker.internal")) || port != 8081) {
+            throw new IllegalStateException("ZAP outgoing HTTP proxy must point to FlowScope 127.0.0.1:8081 "
+                    + "(Docker: host.docker.internal:8081)");
+        }
+    }
+
+    private List<ZapDefinition> validatedZapDefinitions(JsonNode definitions) {
+        if (definitions == null || definitions.isMissingNode() || definitions.isNull()) return List.of();
+        if (!definitions.isArray()) throw new IllegalArgumentException("definitions must be an array");
+        if (definitions.size() > 20) throw new IllegalArgumentException("at most 20 API definitions are allowed");
+        LinkedHashSet<ZapDefinition> accepted = new LinkedHashSet<>();
+        for (JsonNode node : definitions) {
+            ZapDefinitionType type;
+            try { type = ZapDefinitionType.valueOf(node.path("type").asText().trim().toUpperCase()); }
+            catch (RuntimeException error) {
+                throw new IllegalArgumentException("definition type must be OPENAPI, GRAPHQL, POSTMAN, or SOAP");
+            }
+            String url = node.path("url").asText().trim();
+            String endpoint = node.path("endpoint").asText().trim();
+            if (type == ZapDefinitionType.GRAPHQL) {
+                if (endpoint.isBlank()) throw new IllegalArgumentException("GRAPHQL definition requires endpoint");
+                requireDefinitionInScope(endpoint, "GraphQL endpoint");
+                if (!url.isBlank()) requireDefinitionInScope(url, "GraphQL schema URL");
+            } else {
+                if (url.isBlank()) throw new IllegalArgumentException(type + " definition requires URL");
+                requireDefinitionInScope(url, type + " definition URL");
+                endpoint = "";
+            }
+            accepted.add(new ZapDefinition(type, url, endpoint));
+        }
+        return List.copyOf(accepted);
+    }
+
+    private void requireDefinitionInScope(String value, String label) {
+        try { URI.create(value); }
+        catch (RuntimeException error) { throw new IllegalArgumentException(label + " is not a valid URL"); }
+        if (!state.scope().allows(value)) throw new IllegalArgumentException(label + " is outside configured scope");
+    }
+
+    private void importZapDefinition(ZapDefinition definition, String target, String contextId) {
+        String raw = switch (definition.type()) {
+            case OPENAPI -> state.zap().importOpenApi(definition.url(), target, contextId, 1_000);
+            case GRAPHQL -> state.zap().importGraphQl(definition.endpoint(), definition.url(), 1_000);
+            case POSTMAN -> state.zap().importPostman(definition.url(), 1_000);
+            case SOAP -> state.zap().importSoap(definition.url(), 1_000);
+        };
+        JsonNode result = parseZap(raw);
+        if (result.hasNonNull("code") || "FAIL".equalsIgnoreCase(result.path("Result").asText())) {
+            throw new IllegalStateException(result.path("message").asText("ZAP rejected the definition"));
         }
     }
 
@@ -1258,7 +1381,7 @@ public final class McpServer implements AutoCloseable {
         long captured = capturedForRun(runId);
         int alerts = previous == null ? 0 : previous.alertCount();
         zapBaseline = new ZapBaselineRun(runId, previous == null ? "" : previous.target(), status, stage,
-                scanId, warning, captured, alerts, error);
+                scanId, warning, captured, previous == null ? 0 : previous.definitionCount(), alerts, error);
     }
 
     private ObjectNode zapBaselineNode(ZapBaselineRun value) {
@@ -1270,6 +1393,7 @@ public final class McpServer implements AutoCloseable {
         out.put("scan_id", value.scanId());
         out.put("warning", value.warning());
         out.put("captured_records", value.capturedRecords());
+        out.put("definition_count", value.definitionCount());
         out.put("alert_count", value.alertCount());
         out.put("error", value.error());
         ArrayNode lanes = out.putArray("lanes");
@@ -1282,6 +1406,7 @@ public final class McpServer implements AutoCloseable {
             node.put("captured_records", lane.capturedRecords());
             node.put("traditional_captures", lane.traditionalCaptures());
             node.put("rendered_captures", lane.renderedCaptures());
+            node.put("definition_imports", lane.definitionImports());
             node.put("alert_count", lane.alertCount());
             node.put("warning", lane.warning());
             node.put("error", lane.error());
@@ -1522,6 +1647,14 @@ public final class McpServer implements AutoCloseable {
         properties.putObject("include_anonymous").put("type", "boolean");
         properties.putObject("account_ids").put("type", "array")
                 .putObject("items").put("type", "string");
+        ObjectNode definition = properties.putObject("definitions").put("type", "array")
+                .put("maxItems", 20).putObject("items").put("type", "object");
+        ObjectNode definitionProperties = definition.putObject("properties");
+        definitionProperties.putObject("type").put("type", "string").putArray("enum")
+                .add("OPENAPI").add("GRAPHQL").add("POSTMAN").add("SOAP");
+        definitionProperties.putObject("url").put("type", "string");
+        definitionProperties.putObject("endpoint").put("type", "string");
+        definition.putArray("required").add("type");
         return schema;
     }
 
@@ -1544,16 +1677,28 @@ public final class McpServer implements AutoCloseable {
         return schema;
     }
 
-    private ObjectNode targetRequestSchema() {
+    private ObjectNode targetReadSchema() {
+        ObjectNode schema = targetRequestSchema(List.of("GET", "HEAD", "OPTIONS"), false);
+        ((ObjectNode) schema.get("properties")).remove("body");
+        return schema;
+    }
+
+    private ObjectNode targetWriteSchema() {
+        return targetRequestSchema(List.of("POST", "PUT", "PATCH", "DELETE"), true);
+    }
+
+    private ObjectNode targetRequestSchema(List<String> methods, boolean confirmed) {
         ObjectNode schema = schema();
         ObjectNode properties = (ObjectNode) schema.get("properties");
-        properties.putObject("method").put("type", "string");
+        ObjectNode method = properties.putObject("method").put("type", "string");
+        ArrayNode methodValues = method.putArray("enum");
+        methods.forEach(methodValues::add);
         properties.putObject("target").put("type", "string");
         properties.putObject("account_id").put("type", "string");
         properties.putObject("headers").put("type", "object")
                 .putObject("additionalProperties").put("type", "string");
         properties.putObject("body").put("type", "string").put("maxLength", 65_536);
-        properties.putObject("confirmed").put("type", "boolean");
+        if (confirmed) properties.putObject("confirmed").put("type", "boolean");
         schema.putArray("required").add("method").add("target");
         return schema;
     }

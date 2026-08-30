@@ -13,7 +13,7 @@
 실제 확인한 기준선은 다음과 같다.
 
 - Burp Suite Community 2026.7.3에서 Montoya 확장 로드
-- ZAP 2.17.0 API와 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket` add-on
+- ZAP 2.17.0 API와 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network` add-on
 - macOS arm64, Docker Engine/Desktop 29.5.3에서 공식 ZAP 2.17.0 multi-architecture 이미지 기동, loopback API, Docker-host Burp upstream 설정
 - GitHub Actions `windows-latest` PowerShell 7에서 Windows helper 네 파일의 파서 검증
 - JDK 21 Maven 빌드
@@ -50,7 +50,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.27.jar`를 받는다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.28.jar`를 받는다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`
@@ -149,8 +149,8 @@ PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta
 
 3. ZAP의 main local server/proxy를 `127.0.0.1:8089`로 설정한다.
 4. ZAP API options에서 생성된 `~/.flowscope/zap-api-key` 값을 local API key로 설정한다. key 비활성화는 하지 않는다.
-5. ZAP **Options → Network → Connection → HTTP Proxy**에서 host `127.0.0.1`, port `8081`, enabled를 설정한다.
-6. 설치 add-on에 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`이 있는지 확인한다.
+5. ZAP **Options → Network → Connection → HTTP Proxy**에서 Desktop은 host `127.0.0.1`, Docker는 `host.docker.internal`, port `8081`, enabled를 설정한다. FlowScope는 캠페인 전에 이 값을 읽어 확인하며 자동으로 사용자의 ZAP 전역 프록시 설정을 덮어쓰지 않는다.
+6. 설치 add-on에 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network`가 있는지 확인한다. 명시적 정의 import를 쓰면 해당 형식의 `graphql`, `postman`, `soap`도 필요하다.
 7. API key는 다음 중 하나로 FlowScope에 제공한다.
    - 기본 `~/.flowscope/zap-api-key`, owner-only 파일
    - `-Dflowscope.zap.keyFile=/absolute/path`
@@ -226,8 +226,8 @@ doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명
 1. FlowScope 탭에 허가받은 `scheme://host[:port]/path-prefix` exact scope를 한 줄씩 입력하고 **범위 적용**을 누른다.
 2. Web **계정·세션**에서 테스트 계정을 등록한다. 계정 로그인이 필요하면 **로그인 연결**을 시작하고 HUMAN `8080` 경로로 로그인한 뒤 성공한 인증 페이지까지 확인하고 캡처를 종료한다.
 3. **HUMAN pass 시작**을 누르고 Burp 브라우저로 허가된 기능을 탐색한 다음 pass를 종료한다.
-4. 빠른 시작의 ZAP 카드에서 대상과 비로그인/ACTIVE 계정을 고르고 **신원별 격리 검사 시작**을 누른다. Active Scan은 자동 baseline에 포함되지 않는다.
-5. 로컬 provider와 계정을 고르고 **LLM Explorer 시작**을 누른다. Explorer가 정상 종료돼야 LLM lane이 완료된다.
+4. 빠른 시작의 ZAP 카드에서 대상과 비로그인/ACTIVE 계정을 고른다. 이미 보유한 API 정의가 있으면 한 줄에 하나씩 `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, `GRAPHQL ENDPOINT [SCHEMA_URL]`로 입력하고 **신원별 격리 검사 시작**을 누른다. 모든 URL은 현재 exact scope 안이어야 한다. 정의 import는 명세의 write method 요청도 만들 수 있으므로 이어지는 Burp 승인창에서 한 번 더 확인한다. 비워 두면 정의를 추측하지 않고 Spider 기준선만 실행한다. Active Scan은 자동 baseline에 포함되지 않는다.
+5. 로컬 provider와 계정을 고르고 **LLM Explorer 시작**을 누른다. Explorer가 실제 응답 Evidence를 한 건 이상 남기고 서버가 같은 run 종료를 승인해야 LLM lane이 완료된다. 취소·도구 거부·0건 실행은 실패로 남는다.
 6. `REVIEW` 항목을 확인한 뒤 세 lane이 완료되면 **Judge 시작**을 누른다.
 7. finding은 원 Evidence, 같은 run의 반복 재현, 정상 대조가 서버 gate를 통과했는지 확인한다. ZAP Alert나 LLM 문장만으로 확정하지 않는다.
 8. `.flowscope.db`를 연결해 자동 checkpoint를 활성화한다. raw broker credential은 DB에 저장되지 않으므로 Burp 재시작 뒤에는 다시 로그인 연결한다.
@@ -245,7 +245,10 @@ Web 상단의 **스캐너 XML/HAR**에서 ZAP **Save Selected Entries as HAR**�
 | Windows key ACL 실패 | 상속 또는 다른 SID의 허용 규칙 | 일반 사용자 PowerShell에서 `zap-up.ps1` 재실행. 네트워크/FAT 파일시스템 대신 사용자 프로필의 NTFS 경로 사용 |
 | Windows에서 컨테이너가 Burp에 연결되지 않음 | Docker Desktop Linux container 모드, Burp `127.0.0.1:8081` listener | Docker Desktop 상태와 `host.docker.internal` 도달성, Windows 방화벽을 확인 |
 | ZAP은 완료했는데 SCANNER 0건 | upstream이 Burp `8081`을 통과하지 않음 또는 scope 불일치 | ZAP HTTP proxy, Burp listener, exact scope를 함께 확인 |
+| 캠페인 전 ZAP outgoing proxy 오류 | Network API에서 HTTP proxy disabled 또는 host/port 불일치 | Desktop은 `127.0.0.1:8081`, Docker는 `host.docker.internal:8081`로 설정 후 다시 실행 |
+| API 정의 import 경고 | URL/GraphQL endpoint가 exact scope 밖이거나 형식 add-on 누락·정의 파싱 실패 | 정의 URL과 `graphql/postman/soap/openapi` 설치를 확인. Spider Evidence는 별도로 유지됨 |
 | Rendered 0건 경고 | Client/AJAX가 실제 요청을 만들지 않음 | ZAP logs, Firefox/Selenium add-on, 대상 CSP/login 상태 확인. Traditional 결과와 혼동하지 않음 |
+| Explorer가 종료했는데 LLM lane 실패 | target read 취소·거부 또는 응답 Evidence 0건 | output tail의 MCP 오류를 확인하고 범위·세션·승인 상태를 수정한 뒤 새 Explorer 실행 |
 | CLI 실행 파일 없음 | Burp가 CLI PATH를 상속하지 않음 | 절대경로 시스템 속성 지정 후 Burp 재시작 |
 | 로그인 계정이 ZAP/LLM 선택지에 없음 | broker가 `ACTIVE`가 아님 | 로그인 연결을 다시 시작해 인증 성공 응답까지 관측 |
 | `17777` 또는 `8787` 충돌 | 다른 로컬 프로세스가 포트 사용 | 충돌 프로세스를 확인하거나 JVM 속성으로 포트를 일관되게 변경 |

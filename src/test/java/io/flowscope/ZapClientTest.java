@@ -76,6 +76,10 @@ class ZapClientTest {
             alertCountQuery.set(exchange.getRequestURI().getRawQuery());
             reply(exchange, "{\"numberOfAlerts\":\"0\"}");
         });
+        server.createContext("/JSON/network/view/isHttpProxyEnabled/", exchange ->
+                reply(exchange, "{\"isHttpProxyEnabled\":\"true\"}"));
+        server.createContext("/JSON/network/view/getHttpProxy/", exchange ->
+                reply(exchange, "{\"getHttpProxy\":{\"host\":\"127.0.0.1\",\"port\":8081}}"));
         server.start();
         try {
             ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
@@ -92,6 +96,8 @@ class ZapClientTest {
             assertEquals("{\"numberOfAlerts\":\"0\"}",
                     client.numberOfAlerts("http://127.0.0.1:8888/"));
             assertTrue(alertCountQuery.get().contains("baseurl=http%3A%2F%2F127.0.0.1%3A8888%2F"));
+            assertEquals("{\"isHttpProxyEnabled\":\"true\"}", client.httpProxyEnabled());
+            assertTrue(client.httpProxy().contains("127.0.0.1"));
         } finally {
             server.stop(0);
         }
@@ -124,6 +130,48 @@ class ZapClientTest {
             assertEquals("{\"Result\":\"OK\"}", client.newSession("flowscope-campaign-user-a"));
             assertTrue(query.get().contains("name=flowscope-campaign-user-a"));
             assertTrue(query.get().contains("overwrite=true"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void importsOnlyExplicitDefinitionsWithBoundedMessageCounts() throws Exception {
+        AtomicReference<String> openApi = new AtomicReference<>();
+        AtomicReference<String> graphQl = new AtomicReference<>();
+        AtomicReference<String> postman = new AtomicReference<>();
+        AtomicReference<String> soap = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/JSON/openapi/action/importUrl/", exchange -> {
+            openApi.set(exchange.getRequestURI().getRawQuery()); reply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.createContext("/JSON/graphql/action/importUrl/", exchange -> {
+            graphQl.set(exchange.getRequestURI().getRawQuery()); reply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.createContext("/JSON/postman/action/importUrl/", exchange -> {
+            postman.set(exchange.getRequestURI().getRawQuery()); reply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.createContext("/JSON/soap/action/importUrl/", exchange -> {
+            soap.set(exchange.getRequestURI().getRawQuery()); reply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.start();
+        try {
+            ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
+
+            client.importOpenApi("http://127.0.0.1:8888/openapi.json",
+                    "http://127.0.0.1:8888/", "7", 10_000);
+            client.importGraphQl("http://127.0.0.1:8888/graphql", "", 250);
+            client.importPostman("http://127.0.0.1:8888/collection.json", 0);
+            client.importSoap("http://127.0.0.1:8888/service.wsdl", 500);
+
+            assertTrue(openApi.get().contains("contextId=7"));
+            assertTrue(openApi.get().contains("hostOverride=http%3A%2F%2F127.0.0.1%3A8888%2F"));
+            assertTrue(openApi.get().contains("maxMessages=1000"));
+            assertTrue(graphQl.get().contains("endurl=http%3A%2F%2F127.0.0.1%3A8888%2Fgraphql"));
+            assertTrue(graphQl.get().contains("url="));
+            assertTrue(graphQl.get().contains("maxMessages=250"));
+            assertTrue(postman.get().contains("maxMessages=1"));
+            assertTrue(soap.get().contains("maxMessages=500"));
         } finally {
             server.stop(0);
         }

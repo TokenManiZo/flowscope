@@ -9,6 +9,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
@@ -91,6 +93,8 @@ final class LocalLlmRunnerTest {
         assertFalse(command.get().contains("resume"));
         assertTrue(command.get().contains("shell_environment_policy.filters.FLOWSCOPE_MCP_TOKEN=\"exclude\""));
         assertTrue(command.get().contains("tools.web_search=false"));
+        assertTrue(command.get().contains("features.plugins=false"));
+        assertTrue(command.get().contains("features.browser_use=false"));
         assertTrue(command.get().contains("--strict-config"));
         assertFalse(command.get().contains("--search"));
         assertEquals("local-mcp-token", environment.get().get("FLOWSCOPE_MCP_TOKEN"));
@@ -104,6 +108,32 @@ final class LocalLlmRunnerTest {
 
         assertEquals(LocalLlmRunner.Status.SUCCEEDED, completed.status(), completed.message());
         assertTrue(contexts.completedExplorations().contains(Source.LLM));
+    }
+
+    @Test
+    void disablesDiscoveredCodexSkillsWithoutChangingUserFiles() throws Exception {
+        Path home = Files.createTempDirectory("flowscope-codex-home-");
+        Path first = Files.createDirectories(home.resolve("skills/first")).resolve("SKILL.md");
+        Path second = Files.createDirectories(home.resolve("plugins/cache/example/skills/second"))
+                .resolve("SKILL.md");
+        Files.writeString(first, "first");
+        Files.writeString(second, "second");
+        try {
+            String config = LocalLlmRunner.disabledCodexSkills(home);
+
+            assertTrue(config.contains(first.toAbsolutePath().normalize().toString()));
+            assertTrue(config.contains(second.toAbsolutePath().normalize().toString()));
+            assertTrue(config.contains("enabled=false"));
+            assertTrue(Files.exists(first));
+            assertTrue(Files.exists(second));
+        } finally {
+            try (var paths = Files.walk(home)) {
+                paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                    try { Files.deleteIfExists(path); }
+                    catch (java.io.IOException ignored) { }
+                });
+            }
+        }
     }
 
     @Test

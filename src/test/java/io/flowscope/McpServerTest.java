@@ -155,6 +155,10 @@ final class McpServerTest {
                 .contains("flowscope_lock_dataset"));
         assertTrue(listed.at("/result/tools").findValuesAsText("name")
                 .contains("flowscope_list_route_candidates"));
+        JsonNode safeRead = findTool(listed.at("/result/tools"), "flowscope_target_read");
+        JsonNode approvedWrite = findTool(listed.at("/result/tools"), "flowscope_target_request");
+        assertFalse(safeRead.at("/annotations/destructiveHint").asBoolean());
+        assertTrue(approvedWrite.at("/annotations/destructiveHint").asBoolean());
     }
 
     @Test
@@ -168,6 +172,24 @@ final class McpServerTest {
         JsonNode lock = tool("flowscope_lock_dataset", "{}");
         assertTrue(lock.at("/result/isError").asBoolean());
         assertTrue(lock.at("/result/structuredContent/error").asText().contains("captured exploration responses"));
+    }
+
+    @Test
+    void refusesToCompleteExplorerWithoutCapturedResponseEvidence() throws Exception {
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "empty-explorer"));
+        server = new McpServer(state(Pipeline.run(List.of()), contexts,
+                ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
+        server.start();
+
+        JsonNode ended = tool("flowscope_end_run",
+                "{\"source\":\"LLM\",\"run_id\":\"empty-explorer\"}");
+
+        assertTrue(ended.at("/result/isError").asBoolean());
+        assertTrue(ended.at("/result/structuredContent/error").asText().contains("response Evidence"));
+        assertNotNull(contexts.current(Source.LLM));
+        assertFalse(contexts.completedExplorations().contains(Source.LLM));
     }
 
     @Test
@@ -307,7 +329,7 @@ final class McpServerTest {
                         + "\"account_id\":\"user-a\"}")
                 .at("/result/isError").asBoolean());
 
-        JsonNode accepted = tool("flowscope_target_request",
+        JsonNode accepted = tool("flowscope_target_read",
                 "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"," +
                         "\"headers\":{\"Accept\":\"application/json\"}}");
         assertFalse(accepted.at("/result/isError").asBoolean(), accepted.toString());
@@ -317,23 +339,26 @@ final class McpServerTest {
         assertFalse(accepted.toString().contains("raw-token"));
         assertEquals("CONTROLLED", accepted.at("/result/structuredContent/execution_trust").asText());
 
-        assertTrue(tool("flowscope_target_request",
+        assertTrue(tool("flowscope_target_read",
                 "{\"method\":\"GET\",\"target\":\"https://outside.example/v1\"}")
                 .at("/result/isError").asBoolean());
-        assertTrue(tool("flowscope_target_request",
+        assertTrue(tool("flowscope_target_read",
                 "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"," +
                         "\"headers\":{\"Authorization\":\"Bearer injected\"}}")
                 .at("/result/isError").asBoolean());
-        assertTrue(tool("flowscope_target_request",
+        assertTrue(tool("flowscope_target_read",
                 "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"," +
                         "\"headers\":{\"X-Test\":\"ok\\r\\nInjected: value\"}}")
                 .at("/result/isError").asBoolean());
-        assertTrue(tool("flowscope_target_request",
+        assertTrue(tool("flowscope_target_read",
                 "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"," +
                         "\"account_id\":\"missing\"}").at("/result/isError").asBoolean());
         assertTrue(tool("flowscope_target_request",
                 "{\"method\":\"DELETE\",\"target\":\"https://api.example.test/v1/orders/7\"," +
                         "\"confirmed\":true}").at("/result/isError").asBoolean());
+        assertTrue(tool("flowscope_target_request",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"}")
+                .at("/result/isError").asBoolean());
     }
 
     @Test
@@ -377,7 +402,7 @@ final class McpServerTest {
     }
 
     @Test
-    void deterministicZapBaselineRunsBothSpidersWaitsForPassiveAndPublishesAlerts() throws Exception {
+    void deterministicZapBaselineImportsExplicitDefinitionRunsSpidersWaitsForPassiveAndPublishesAlerts() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
         complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human");
         complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm");
@@ -386,6 +411,11 @@ final class McpServerTest {
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 501);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
+        AtomicReference<String> definitionQuery = new AtomicReference<>();
+        zapServer.createContext("/JSON/openapi/action/importUrl/", exchange -> {
+            definitionQuery.set(exchange.getRequestURI().getRawQuery());
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
         zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
             List<RequestRecord> copy = new ArrayList<>(records.get());
@@ -432,12 +462,16 @@ final class McpServerTest {
                 @Override public ZapClient zap() { return zap; }
                 @Override public RunContextRegistry contexts() { return contexts; }
                 @Override public AnalysisConfig config() { return new AnalysisConfig(); }
-                @Override public boolean approve(String action, String target) { return false; }
+                @Override public boolean approve(String action, String target) {
+                    return action.contains("API 정의");
+                }
             }, 0, "test-token");
             server.start();
 
             JsonNode started = tool("flowscope_zap_baseline",
-                    "{\"target\":\"http://127.0.0.1:8888/\",\"run_id\":\"zap-baseline-1\"}");
+                    "{\"target\":\"http://127.0.0.1:8888/\",\"run_id\":\"zap-baseline-1\","
+                            + "\"definitions\":[{\"type\":\"OPENAPI\","
+                            + "\"url\":\"http://127.0.0.1:8888/openapi.json\"}]}");
             assertFalse(started.at("/result/isError").asBoolean(), started.toString());
             JsonNode status = null;
             for (int i = 0; i < 100; i++) {
@@ -448,6 +482,9 @@ final class McpServerTest {
             assertNotNull(status);
             assertEquals("COMPLETED", status.at("/result/structuredContent/status").asText(), status.toString());
             assertEquals("ALERTS_READY", status.at("/result/structuredContent/stage").asText());
+            assertEquals(1, status.at("/result/structuredContent/definition_count").asInt());
+            assertEquals(1, status.at("/result/structuredContent/lanes/0/definition_imports").asInt());
+            assertTrue(definitionQuery.get().contains("contextId="));
             assertEquals(501, status.at("/result/structuredContent/alert_count").asInt());
             assertEquals(1, status.at("/result/structuredContent/lanes/0/traditional_captures").asInt());
             assertEquals(2, status.at("/result/structuredContent/lanes/0/rendered_captures").asInt());
@@ -763,6 +800,38 @@ final class McpServerTest {
     }
 
     @Test
+    void explicitApiDefinitionsNeedBurpApprovalBeforeScannerActivation() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new McpServer(new McpServer.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public void updateScope(String value) {}
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+                @Override public boolean approve(String action, String value) { return false; }
+            }, 0, "test-token");
+            server.start();
+
+            JsonNode result = tool("flowscope_zap_baseline", "{\"target\":\"" + target
+                    + "\",\"definitions\":[{\"type\":\"OPENAPI\","
+                    + "\"url\":\"http://127.0.0.1:8888/openapi.json\"}]}");
+
+            assertTrue(result.at("/result/isError").asBoolean(), result.toString());
+            assertTrue(result.at("/result/content/0/text").asText().contains("explicit Burp approval"));
+            assertNull(contexts.current(Source.SCANNER));
+        } finally {
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
     void refusesRemoteZapApi() {
         assertThrows(IllegalArgumentException.class,
                 () -> new ZapClient("https://example.com:8089", ""));
@@ -1054,6 +1123,11 @@ final class McpServerTest {
         return record;
     }
 
+    private static JsonNode findTool(JsonNode tools, String name) {
+        for (JsonNode tool : tools) if (name.equals(tool.path("name").asText())) return tool;
+        throw new AssertionError("missing MCP tool: " + name);
+    }
+
     private static void zapReply(com.sun.net.httpserver.HttpExchange exchange, String value) throws java.io.IOException {
         byte[] body = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(200, body.length);
@@ -1068,7 +1142,11 @@ final class McpServerTest {
                 "{\"installedAddons\":["
                         + "{\"id\":\"spider\"},{\"id\":\"client\"},{\"id\":\"spiderAjax\"},"
                         + "{\"id\":\"pscan\"},{\"id\":\"pscanrules\"},{\"id\":\"selenium\"},"
-                        + "{\"id\":\"openapi\"},{\"id\":\"websocket\"}]}"));
+                        + "{\"id\":\"openapi\"},{\"id\":\"websocket\"},{\"id\":\"network\"}]}"));
+        server.createContext("/JSON/network/view/isHttpProxyEnabled/", exchange -> zapReply(exchange,
+                "{\"isHttpProxyEnabled\":\"true\"}"));
+        server.createContext("/JSON/network/view/getHttpProxy/", exchange -> zapReply(exchange,
+                "{\"getHttpProxy\":{\"host\":\"127.0.0.1\",\"port\":8081}}"));
         server.createContext("/JSON/pscan/action/setEnabled/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/context/action/newContext/", exchange -> zapReply(exchange,
