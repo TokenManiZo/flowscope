@@ -462,6 +462,7 @@ public final class LocalLlmRunner implements AutoCloseable {
                                         Map<String, String> environment) throws IOException {
         ProcessBuilder builder = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true);
         configureSubscriptionEnvironment(builder.environment(), environment);
+        configureExecutablePath(builder.environment(), command.getFirst());
         return builder.start();
     }
 
@@ -470,6 +471,28 @@ public final class LocalLlmRunner implements AutoCloseable {
         inherited.remove("OPENAI_API_KEY");
         inherited.remove("ANTHROPIC_API_KEY");
         inherited.putAll(required);
+    }
+
+    static void configureExecutablePath(Map<String, String> environment, String executable) {
+        if (environment == null || executable == null || executable.isBlank()) return;
+        Path path;
+        try { path = Path.of(executable).toAbsolutePath().normalize(); }
+        catch (RuntimeException ignored) { return; }
+        Path parent = path.getParent();
+        if (parent == null) return;
+        String pathKey = environment.keySet().stream()
+                .filter(key -> "PATH".equalsIgnoreCase(key))
+                .findFirst()
+                .orElse("PATH");
+        String current = environment.getOrDefault(pathKey, "");
+        List<String> entries = new ArrayList<>();
+        entries.add(parent.toString());
+        if (!current.isBlank()) {
+            for (String entry : current.split(java.util.regex.Pattern.quote(java.io.File.pathSeparator))) {
+                if (!entry.isBlank() && !entries.contains(entry)) entries.add(entry);
+            }
+        }
+        environment.put(pathKey, String.join(java.io.File.pathSeparator, entries));
     }
 
     private static String requireLoopbackMcp(String value) {

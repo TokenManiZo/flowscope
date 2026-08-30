@@ -30,6 +30,22 @@ public final class ZapClient {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("ZAP session name is required");
         return get("/JSON/core/action/newSession/", "name=" + enc(name) + "&overwrite=true");
     }
+    public String newContext(String name) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("ZAP context name is required");
+        return get("/JSON/context/action/newContext/", "contextName=" + enc(name));
+    }
+    public String includeInContext(String name, String regex) {
+        if (name == null || name.isBlank() || regex == null || regex.isBlank()) {
+            throw new IllegalArgumentException("ZAP context name and include regex are required");
+        }
+        return get("/JSON/context/action/includeInContext/",
+                "contextName=" + enc(name) + "&regex=" + enc(regex));
+    }
+    public String setContextInScope(String name) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("ZAP context name is required");
+        return get("/JSON/context/action/setContextInScope/",
+                "contextName=" + enc(name) + "&booleanInScope=true");
+    }
     public String spider(String target) {
         return get("/JSON/spider/action/scan/", "url=" + enc(target) + "&recurse=true&subtreeOnly=true");
     }
@@ -55,12 +71,47 @@ public final class ZapClient {
     }
     public String passiveRecordsToScan() { return get("/JSON/pscan/view/recordsToScan/", ""); }
     public String passiveTasks() { return get("/JSON/pscan/view/currentTasks/", ""); }
+    public String passiveScanners() { return get("/JSON/pscan/view/scanners/", ""); }
+    public String enablePassiveScan() {
+        return get("/JSON/pscan/action/setEnabled/", "enabled=true");
+    }
+    public String enableAllPassiveScanners() {
+        return get("/JSON/pscan/action/enableAllScanners/", "");
+    }
+    public String restrictPassiveScanToScope() {
+        return get("/JSON/pscan/action/setScanOnlyInScope/", "onlyInScope=true");
+    }
     public String alerts(String baseUrl, int start, int count) {
         String query = "start=" + Math.max(0, start) + "&count=" + Math.max(1, Math.min(500, count));
         if (baseUrl != null && !baseUrl.isBlank()) query = "baseurl=" + enc(baseUrl) + "&" + query;
         return get("/JSON/alert/view/alerts/", query);
     }
+    public String numberOfAlerts(String baseUrl) {
+        String query = baseUrl == null || baseUrl.isBlank() ? "" : "baseurl=" + enc(baseUrl);
+        return get("/JSON/alert/view/numberOfAlerts/", query);
+    }
     public String installedAddons() { return get("/JSON/autoupdate/view/installedAddons/", ""); }
+
+    public static String exactSubtreeRegex(String target) {
+        URI uri = URI.create(target);
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
+        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.ROOT);
+        if ((!"http".equals(scheme) && !"https".equals(scheme)) || host.isBlank()) {
+            throw new IllegalArgumentException("ZAP context target must be an HTTP(S) URL");
+        }
+        String displayHost = host.indexOf(':') >= 0 ? "[" + host + "]" : host;
+        StringBuilder regex = new StringBuilder("^")
+                .append("(?i:").append(java.util.regex.Pattern.quote(scheme + "://" + displayHost)).append(')');
+        if (uri.getPort() >= 0) regex.append(java.util.regex.Pattern.quote(":" + uri.getPort()));
+        else regex.append("(?::").append("https".equals(scheme) ? 443 : 80).append(")?");
+        String path = uri.getRawPath();
+        if (path == null || path.isBlank() || "/".equals(path)) regex.append("(?:/.*)?");
+        else {
+            String prefix = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+            regex.append(java.util.regex.Pattern.quote(prefix)).append("(?:/.*)?");
+        }
+        return regex.append("(?:\\?.*)?$").toString();
+    }
 
     private String get(String path, String query) {
         return get(path, query, Duration.ofSeconds(20));

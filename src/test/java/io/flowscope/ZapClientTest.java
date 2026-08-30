@@ -7,8 +7,10 @@ import org.junit.jupiter.api.Test;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ZapClientTest {
@@ -54,13 +56,26 @@ class ZapClientTest {
     @Test
     void clientSpiderUsesStrictSubtreeAndPassiveAndAlertApisAreAvailable() throws Exception {
         AtomicReference<String> clientQuery = new AtomicReference<>();
+        AtomicReference<String> scopeQuery = new AtomicReference<>();
+        AtomicReference<String> alertCountQuery = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
             clientQuery.set(exchange.getRequestURI().getRawQuery());
             reply(exchange, "{\"scan\":\"3\"}");
         });
         server.createContext("/JSON/pscan/view/recordsToScan/", exchange -> reply(exchange, "{\"recordsToScan\":\"0\"}"));
+        server.createContext("/JSON/pscan/view/scanners/", exchange -> reply(exchange, "{\"scanners\":[]}"));
+        server.createContext("/JSON/pscan/action/setEnabled/", exchange -> reply(exchange, "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/pscan/action/enableAllScanners/", exchange -> reply(exchange, "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/pscan/action/setScanOnlyInScope/", exchange -> {
+            scopeQuery.set(exchange.getRequestURI().getRawQuery());
+            reply(exchange, "{\"Result\":\"OK\"}");
+        });
         server.createContext("/JSON/alert/view/alerts/", exchange -> reply(exchange, "{\"alerts\":[]}"));
+        server.createContext("/JSON/alert/view/numberOfAlerts/", exchange -> {
+            alertCountQuery.set(exchange.getRequestURI().getRawQuery());
+            reply(exchange, "{\"numberOfAlerts\":\"0\"}");
+        });
         server.start();
         try {
             ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
@@ -68,10 +83,30 @@ class ZapClientTest {
             assertTrue(clientQuery.get().contains("subtreeOnly=true"));
             assertTrue(clientQuery.get().contains("scopeCheck=STRICT"));
             assertEquals("{\"recordsToScan\":\"0\"}", client.passiveRecordsToScan());
+            assertEquals("{\"scanners\":[]}", client.passiveScanners());
+            assertEquals("{\"Result\":\"OK\"}", client.enablePassiveScan());
+            assertEquals("{\"Result\":\"OK\"}", client.enableAllPassiveScanners());
+            assertEquals("{\"Result\":\"OK\"}", client.restrictPassiveScanToScope());
+            assertEquals("onlyInScope=true", scopeQuery.get());
             assertEquals("{\"alerts\":[]}", client.alerts("http://127.0.0.1:8888/", 0, 100));
+            assertEquals("{\"numberOfAlerts\":\"0\"}",
+                    client.numberOfAlerts("http://127.0.0.1:8888/"));
+            assertTrue(alertCountQuery.get().contains("baseurl=http%3A%2F%2F127.0.0.1%3A8888%2F"));
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void exactContextRegexMatchesOnlyTheSelectedOriginAndPathSubtree() {
+        Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex("https://Api.Example.test/v1"));
+
+        assertTrue(pattern.matcher("https://api.example.test/v1").matches());
+        assertTrue(pattern.matcher("https://API.EXAMPLE.TEST:443/v1/users?id=1").matches());
+        assertFalse(pattern.matcher("https://api.example.test/v10").matches());
+        assertFalse(pattern.matcher("https://sub.api.example.test/v1").matches());
+        assertFalse(pattern.matcher("http://api.example.test/v1").matches());
+        assertFalse(pattern.matcher("https://api.example.test:444/v1").matches());
     }
 
     @Test

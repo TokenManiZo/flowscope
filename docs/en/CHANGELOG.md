@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.27 — 2026-08-30
+
+- Added a preflight for the safe crawler, passive, OpenAPI, and WebSocket add-ons, then created a fresh Context containing only the selected target subtree and explicitly enabled the passive engine, all passive rules, and scope-only scanning for every identity lane.
+- Changed rendered discovery from Client-or-AJAX fallback to independent Traditional, Client, and AJAX stages, preserving failures and zero-capture stages as visible warnings.
+- Paginated native alerts in 500-item pages into an identity-tagged in-memory snapshot capped at 20,000 alerts per lane with an explicit truncation warning.
+- Prepended the resolved subscription CLI directory to the child `PATH`, fixing GUI-launched Burp environments where a Codex or Claude launcher could not find its runtime.
+- Reverified the existing Session Broker account injection and separate Judge reproduction/control Evidence gate instead of duplicating those trust boundaries.
+
 ## 1.2.0-beta.26 — 2026-08-30
 
 - Added scanner upload support for both Burp XML and ZAP-exported HAR 1.2 traffic, mapping HAR request/response entries to SCANNER Evidence.

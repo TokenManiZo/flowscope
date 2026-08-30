@@ -1,6 +1,23 @@
-# FlowScope 1.2.0-beta.26 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.27 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-30이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.27 안전 ZAP·구독 CLI 실행 gate
+
+| 구분 | 결과 |
+|---|---|
+| ZAP 사전 검사 | version 응답과 `spider/client/spiderAjax/pscan/pscanrules/selenium/openapi/websocket` 설치를 target traffic 전에 검사하는 회귀 통과. 누락 시 SCANNER context가 활성화되지 않음 |
+| 신원별 안전 단계 | fresh session 뒤 선택 target subtree Context 생성·include·in-scope → passive engine·전체 rule 활성 확인·scope-only → Traditional → Client → AJAX → passive queue 0 순서, rendered 단계 경고 보존 회귀 통과 |
+| Alert snapshot | `numberOfAlerts`와 500개 페이지로 501개 Alert를 모두 수집하고 account/run 태그, 마스킹, Web/MCP pagination을 확인. 신원별 상한 20,000과 truncation warning 적용 |
+| Session Broker·Judge | account/service별 ACTIVE credential 주입, Explorer exact-scope 요청, H/S/L 완료 전 lock 거부, 별도 Judge 반복 재현·정상 대조 Evidence final verdict gate의 기존 회귀 재통과 |
+| CLI 오류 재현 | `PATH=/usr/bin:/bin`의 `/usr/bin/env node`는 status 127·`No such file or directory`; `/opt/homebrew/bin` 선두 추가 뒤 status 0. 실행 파일 부모 prepend와 `Path` 키 보존 회귀 통과 |
+| 로컬 ZAP read-only | API version `2.17.0`, 필수 add-on 8개, passive scanner 61개 확인. 대상 캠페인과 전역 passive 설정 변경은 실행하지 않음 |
+| 전체 자동 회귀 | `mvn clean verify`, 253 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 반복 빌드 | 같은 소스의 `mvn clean verify` 2회에서 beta.27 JAR SHA-256 일치 |
+| helper 정적 검사 | Bash helper 전체 `bash -n`과 `git diff --check` 통과. 로컬 `pwsh` 부재로 수정된 `doctor.ps1` parser와 원격 Windows CI는 미실행 |
+| 배포물 | `target/flowscope-1.2.0-beta.27.jar`, 15,900,678 bytes, 2,035 entries, SHA-256 `8c0235d47aa61055984cdd4902f721f482072393d4644a8321512fb18a5ffd62` |
+
+이 gate는 코드 경계, mock ZAP API, 로컬 read-only preflight와 CLI runtime lookup 조건을 확인했다. beta.27 JAR을 실제 Burp에 재로드한 신원별 ZAP target campaign, Alert 500개 초과 실데이터, Codex Explorer target 요청·정상 종료, Judge 재현·대조는 아직 수행하지 않았다. 자동 회귀를 취약점 탐지율 또는 3-way 실환경 완주로 표현하지 않는다.
 
 ## 1.2.0-beta.26 ZAP HAR import gate
 

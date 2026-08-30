@@ -29,7 +29,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. Download `flowscope-1.2.0-beta.26.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
+1. Download `flowscope-1.2.0-beta.27.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
@@ -85,7 +85,7 @@ PowerShell 5.1, Windows container mode, and running the helper inside WSL are ou
 2. Create an owner-only key without printing its value: `./scripts/zap-key.sh` on macOS/Linux or `.\scripts\zap-key.ps1` in Windows PowerShell 7.
 3. Set the main local proxy/API to `127.0.0.1:8089` and set the ZAP API key to the value stored in `~/.flowscope/zap-api-key`. Keep key checks enabled.
 4. In **Options → Network → Connection → HTTP Proxy**, enable upstream host `127.0.0.1`, port `8081`.
-5. Confirm `spider`, `client`, `spiderAjax`, `pscan`, and `selenium` are installed.
+5. Confirm `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, and `websocket` are installed.
 6. FlowScope reads owner-only `~/.flowscope/zap-api-key` by default; alternatives are `flowscope.zap.keyFile`, `FLOWSCOPE_ZAP_API_KEY`, and `flowscope.zap.key`. Reload the extension if the key was created after loading it.
 
 ## Codex or Claude Code
@@ -98,6 +98,8 @@ Install and sign in to one provider client using its official guide. Confirm `co
 ```
 
 Do not set a global `HTTP_PROXY` or `HTTPS_PROXY` for the model client.
+
+After resolving the executable, FlowScope prepends its parent directory to the child process `PATH`. This fixes GUI-launched Burp environments where an `#!/usr/bin/env node` launcher and its runtime share the installation directory. Provider API keys are still removed. If the launcher and runtime are installed in different directories, configure the absolute launcher path above and make the runtime directory visible to the Burp process as well.
 
 ## Preflight and source build
 

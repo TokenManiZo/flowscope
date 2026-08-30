@@ -7,11 +7,11 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-08-30 |
-| 제품 버전 | `1.2.0-beta.26` |
-| 인계 작성 시 HEAD | 이 문서와 같은 beta.26 커밋 |
+| 제품 버전 | `1.2.0-beta.27` |
+| 인계 작성 시 HEAD | 이 문서와 같은 beta.27 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
-| 자동 회귀 | 249 tests, 실패·오류·skip 0 |
+| 자동 회귀 | 253 tests, 실패·오류·skip 0 + 완성 JAR smoke 통과 |
 | 현재 판정 | 기능이 연결된 베타. 오픈소스 정식 출시 및 블라인드 벤치마크 착수 전 P1 결함 수정과 실제 Burp 통합 검증이 필요함 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.26.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.27.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -90,12 +90,14 @@ Web 빠른 시작에서 비로그인과 하나 이상의 ACTIVE 계정을 골라
 ```text
 Traditional Spider
   → Client Spider
-  → rendered capture 0이면 AJAX Spider fallback
+  → AJAX Spider
   → passive queue 완료
-  → native Alert 수집
+  → native Alert 전 페이지 수집
 ```
 
-기본 캠페인에는 Active Scan이 포함되지 않는다. Active Scan은 별도 사용자 승인이 필요하다. 각 신원 lane에서 실제 범위 내 SCANNER 응답이 수집되어야 완료 gate가 열린다.
+`scope-only`는 ZAP Context 기준이므로 각 lane은 선택 target의 origin·path subtree만 포함하는 fresh Context를 만든다. sibling path·subdomain·다른 port/scheme은 regex 회귀로 제외한다.
+
+시작 전 `spider/client/spiderAjax/pscan/pscanrules/selenium/openapi/websocket` add-on을 검사하고 신원별 fresh session에서 passive engine·전체 passive rule·scope-only를 명시 적용한다. Client/AJAX 실패나 0 capture는 숨기지 않고 경고 완료로 남기며 Alert 상세는 신원별 최대 20,000개까지 snapshot으로 보존한다. 기본 캠페인에는 Active Scan·Fuzzer·Forced Browse가 포함되지 않는다. Active Scan은 별도 사용자 승인이 필요하다. 각 신원 lane에서 실제 범위 내 SCANNER 응답이 수집되어야 완료 gate가 열린다.
 
 ### 3.5 독립 LLM Explorer와 Judge
 
@@ -245,7 +247,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 ### 6.4 자동화·LLM
 
 - 신원별 fresh ZAP session 캠페인
-- Traditional → Client/AJAX fallback → passive → Alert 단계
+- Traditional → Client → AJAX → passive → paginated Alert 단계
 - localhost Bearer MCP와 exact-scope target executor
 - 독립 Explorer 시야와 3-lane 완료 gate
 - 잠긴 Judge 분석과 Evidence-bound validation
@@ -263,7 +265,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-08-30 기준 `mvn clean verify`에서 249 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 자원 한정 응답 객체 판독, 오류 봉투 soft-deny, 대형/중첩 응답 상한, `anon/unresolved` 분리, 정책·게시 snapshot, cell/Evidence framing과 기존 ID 호환 회귀를 추가했다. beta.25는 streaming manifest와 version-independent MR-JAR relocation을 `verify` gate에 추가했고, beta.26은 ZAP HAR textual/base64/binary·response-less·scope·scanner-only Web 계약을 추가했다.
+2026-08-30 기준 `mvn clean verify`에서 253 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH` 회귀를 추가했다.
 
 ### 실제·standalone 검증
 
@@ -273,8 +275,8 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.26 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
-- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.26 scanner import와 Evidence 상세 확인
+- beta.27 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
+- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.27 scanner import와 Evidence 상세 확인
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
 - Windows 10/11 + Docker Desktop + PowerShell 7 실기기의 ZAP API/upstream/target capture
 - 실제 Burp에서 request-lab ORIGINAL/ANONYMOUS/ACCOUNT 수신 byte와 credential 비교
@@ -544,7 +546,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.26.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.27.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

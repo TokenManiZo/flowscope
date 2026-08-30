@@ -106,6 +106,8 @@
 
 - 스코프 검사를 통과한 요청과 응답만 LLM 관측으로 수집하고, 프록시를 태울 수 없으면 F-02(XML)로 폴백
 
+- 시스템 ZAP 기준선은 신원별 fresh session에서 선택 target subtree 전용 Context, passive engine·전체 passive rule·scope-only를 적용하고 Traditional, Client, AJAX Spider를 모두 실행한 뒤 passive queue와 native Alert를 수집한다. 필수 안전 add-on 누락, Context 생성 실패, passive rule 비활성 잔존은 spider 전에 실패하고 Active Scan·Fuzzer·Forced Browse는 기본 기준선에 포함하지 않는다.
+
 **관련 화면**
 
 <p align="center">

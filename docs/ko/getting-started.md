@@ -13,7 +13,7 @@
 실제 확인한 기준선은 다음과 같다.
 
 - Burp Suite Community 2026.7.3에서 Montoya 확장 로드
-- ZAP 2.17.0 API와 `spider`, `client`, `spiderAjax`, `pscan`, `selenium` add-on
+- ZAP 2.17.0 API와 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket` add-on
 - macOS arm64, Docker Engine/Desktop 29.5.3에서 공식 ZAP 2.17.0 multi-architecture 이미지 기동, loopback API, Docker-host Burp upstream 설정
 - GitHub Actions `windows-latest` PowerShell 7에서 Windows helper 네 파일의 파서 검증
 - JDK 21 Maven 빌드
@@ -50,7 +50,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.26.jar`를 받는다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.27.jar`를 받는다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`
@@ -150,7 +150,7 @@ PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta
 3. ZAP의 main local server/proxy를 `127.0.0.1:8089`로 설정한다.
 4. ZAP API options에서 생성된 `~/.flowscope/zap-api-key` 값을 local API key로 설정한다. key 비활성화는 하지 않는다.
 5. ZAP **Options → Network → Connection → HTTP Proxy**에서 host `127.0.0.1`, port `8081`, enabled를 설정한다.
-6. 설치 add-on에 `spider`, `client`, `spiderAjax`, `pscan`, `selenium`이 있는지 확인한다.
+6. 설치 add-on에 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`이 있는지 확인한다.
 7. API key는 다음 중 하나로 FlowScope에 제공한다.
    - 기본 `~/.flowscope/zap-api-key`, owner-only 파일
    - `-Dflowscope.zap.keyFile=/absolute/path`
@@ -163,6 +163,8 @@ PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta
 ## 6. Codex 또는 Claude Code 준비
 
 완전한 3-way에는 둘 중 하나가 필요하다.
+
+CLI가 보이면 FlowScope는 해석된 실행 파일의 부모 디렉터리를 자식 프로세스 `PATH` 앞에 추가한다. 이는 터미널보다 축소된 환경으로 시작한 Burp에서 `#!/usr/bin/env node` 형식의 launcher가 같은 설치 디렉터리의 `node`를 찾지 못하는 실패를 막는다. provider API key는 자식 환경에서 계속 제거한다. CLI와 런타임이 서로 다른 디렉터리에 설치된 환경은 아래 절대 경로 설정과 운영체제 `PATH`를 함께 맞춰야 한다.
 
 ### Codex
 

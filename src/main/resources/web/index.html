@@ -216,7 +216,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.26 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.27 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
@@ -317,7 +317,7 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
       <div class="emptysteps">
         <div class="emptystep"><span class="num">1</span><div><b>Burp에서 exact scope 적용</b><p>FlowScope 탭에 허가된 scheme·host·port·path prefix를 입력합니다.</p></div></div>
         <div class="emptystep"><span class="num">2</span><div><b>로그인 후 HUMAN pass</b><p>필요한 테스트 계정을 캡처하고 명시적 HUMAN pass 동안 기능을 탐색합니다.</p></div></div>
-        <div class="emptystep"><span class="num">3</span><div><b>안전 ZAP 기준선</b><p>Traditional·Client Spider와 passive 결과를 시스템 순서로 수집합니다.</p></div></div>
+        <div class="emptystep"><span class="num">3</span><div><b>안전 ZAP 기준선</b><p>Traditional·Client·AJAX Spider와 scope 제한 passive 결과를 시스템 순서로 수집합니다.</p></div></div>
         <div class="emptystep"><span class="num">4</span><div><b>독립 LLM Explorer와 Judge</b><p>MCP Explorer를 끝낸 뒤 세 레인을 잠그고 Evidence 기반 검증을 수행합니다.</p></div></div>
       </div>
       <div class="emptyactions"><button class="go primary" id="emptySetup">빠른 시작 열기</button><button class="go" id="emptySample">샘플로 화면 익히기</button></div>

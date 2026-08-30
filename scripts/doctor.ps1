@@ -117,9 +117,9 @@ if (-not [string]::IsNullOrWhiteSpace($key)) {
 
         $addOns = Invoke-ZapApi '/JSON/autoupdate/view/installedAddons/' $key $zapPort
         $installedIds = @($addOns.installedAddons | ForEach-Object { $_.id })
-        $missing = @(@('spider', 'client', 'spiderAjax', 'pscan', 'selenium') |
+        $missing = @(@('spider', 'client', 'spiderAjax', 'pscan', 'pscanrules', 'selenium', 'openapi', 'websocket') |
             Where-Object { $_ -notin $installedIds })
-        if ($missing.Count -eq 0) { Write-Ok 'required ZAP crawler/passive/browser add-ons are installed' }
+        if ($missing.Count -eq 0) { Write-Ok 'required ZAP crawler/passive/API/WebSocket add-ons are installed' }
         else { Write-Failure "missing required ZAP add-on(s): $($missing -join ', ')" }
     } catch {
         Write-Failure "ZAP API is not reachable at 127.0.0.1:$zapPort"

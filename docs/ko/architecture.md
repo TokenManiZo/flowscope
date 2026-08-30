@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.26
+# FlowScope 설계서 v1.2.0-beta.27
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -206,10 +206,13 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - 최종 validation은 현재 결정론 finding을 대상으로 원본 Evidence, 동일한 비기본 LLM VALIDATION run의 `CONTROLLED` 반복 재현 2건 이상, 정상 대조 1건 이상을 서로 겹치지 않게 요구한다. 신원·operation·resource·응답 의미가 맞지 않거나 write method이면 베타에서 `INCONCLUSIVE`다.
 - 최종 verdict는 `CONFIRMED/INCONCLUSIVE/REJECTED`다. `CONFIRMED`는 반복 성공, `REJECTED`는 반복 명시 거부일 때만 허용하며 BOLA의 정상 대조는 확인된 소유자, BFLA의 정상 대조는 사용자 역할 정책과 일치해야 한다.
 - 사람의 확정/미확정/폐기 기록은 Evidence-bound 감사·오버라이드다. 원본 Evidence 집합이 달라지면 과거 기록을 자동 승계하지 않는다.
-- 기본 ZAP 캠페인은 `orchestrator=SYSTEM`이다. Web/MCP에서 비로그인과 복수 ACTIVE 계정을 선택하면 비로그인 → 선택 계정 순으로 실행하며, 각 신원 앞에서 ZAP `core/newSession`을 호출해 crawler/cookie 상태를 분리한다. 각 신원은 Traditional Spider → strict Client Spider → Client 예외 또는 raw Client capture 0이면 AJAX Spider → passive queue 0 → native alert 수집 순서를 고정한다. 완료 gate와 stage count는 400ms debounce가 있는 분석 `Pipeline.Result`가 아니라 응답 callback이 추가한 raw record 저장소를 `source + runId + sourceDetail`로 센다. 신원별 전체 capture가 0이면 캠페인을 실패시킨다. Traditional은 수집됐지만 Client/AJAX가 모두 0이면 Evidence를 보존하고 `COMPLETED_WITH_WARNINGS`로 완료해 깨끗한 rendered-browser 기준선과 구분한다. Web/MCP에는 Traditional과 Client/AJAX rendered capture를 분리한다. Alert에는 `flowscope_account_id`와 `flowscope_run_id`를 붙인다. LLM이 단계를 고르지 않는다.
+- 로컬 구독 CLI 실행은 사용자가 로그인한 Codex/Claude 실행 파일의 절대 경로를 해석하고, 그 실행 파일의 부모 디렉터리를 자식 `PATH` 앞에 보존한다. Burp GUI가 축소된 환경으로 시작돼도 `#!/usr/bin/env node` 기반 CLI가 같은 설치 디렉터리의 Node를 찾도록 하되 `OPENAI_API_KEY`와 `ANTHROPIC_API_KEY`는 제거하고 FlowScope MCP token만 프로세스 환경에 전달한다.
+- 기본 ZAP 캠페인은 `orchestrator=SYSTEM`이다. 시작 전에 ZAP version API와 `spider/client/spiderAjax/pscan/pscanrules/selenium/openapi/websocket` add-on을 검사하고, 누락 시 대상 트래픽 전에 실패한다. Web/MCP에서 비로그인과 복수 ACTIVE 계정을 선택하면 비로그인 → 선택 계정 순으로 실행하며, 각 신원 앞에서 ZAP `core/newSession`을 호출해 crawler/cookie 상태를 분리한다. 각 신원은 passive scanner 활성화 → 전체 passive rule 활성화 → scope-only 설정 → Traditional Spider → strict Client Spider → AJAX Spider → passive queue 0 → native Alert 전 페이지 수집 순서를 고정한다. 두 rendered crawler는 fallback 관계가 아니라 서로 다른 DOM 실행기를 보완하는 독립 단계다. 완료 gate와 stage count는 400ms debounce가 있는 분석 `Pipeline.Result`가 아니라 응답 callback이 추가한 raw record 저장소를 `source + runId + sourceDetail`로 센다. 신원별 전체 capture가 0이면 캠페인을 실패시키고, Client/AJAX 중 실패 또는 capture 0은 Evidence를 보존한 `COMPLETED_WITH_WARNINGS`로 노출한다. Alert API는 500개씩 반복 호출해 신원별 최대 20,000개 상세를 메모리 snapshot에 보존하고 초과는 명시적으로 경고한다. Alert에는 `flowscope_account_id`와 `flowscope_run_id`를 붙인다. LLM이 단계를 고르지 않는다.
 - 관리형 계정 ZAP/LLM 요청은 기존 Authorization/Cookie/Proxy-Authorization/CSRF를 제거하고 broker의 현재 `ACTIVE` 세션만 주입한다. fresh ZAP anonymous lane은 Authorization과 Proxy-Authorization을 제거하되 그 lane 안에서 서버가 새로 발급한 익명 Cookie/CSRF는 상태형 탐색을 위해 유지한다. 이 lane-local 쿠키는 계정 증명이 아니므로 신원 fingerprint는 계속 `anon`으로 고정한다. 수동으로 직접 실행해 FlowScope run context가 없는 scanner 트래픽은 관측만 하고 헤더를 바꾸지 않는다. 쿠키 회전은 응답의 Set-Cookie로 broker에 갱신하며, UNVERIFIED/SUSPECT/만료 세션은 사용자가 HUMAN 로그인 캡처를 다시 해야 한다.
 - Web scanner target 목록과 시작 API는 자기 자신의 `127.0.0.1:<web-port>` 제어면을 제외한다. localhost의 실제 점검 대상까지 포괄 차단하지 않고 현재 Web port만 차단한다.
 - Active Scan은 scope + MCP confirmed + Burp dialog의 세 조건을 모두 요구한다.
+
+- ZAP `scanOnlyInScope`는 FlowScope 허용목록이 아니라 ZAP Context를 읽는다. 따라서 각 fresh session에 선택 target의 origin·path subtree만 매치하는 Context를 만들고 in-scope로 표시한 뒤 passive rule을 활성화·재확인한다. regex 회귀는 sibling path, subdomain, 다른 scheme/port를 거부한다.
 
 ## 5. UI
 

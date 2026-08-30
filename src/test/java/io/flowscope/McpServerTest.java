@@ -384,6 +384,7 @@ final class McpServerTest {
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
                 laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 501);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
         zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
@@ -404,10 +405,23 @@ final class McpServerTest {
         });
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
                 "{\"status\":{\"state\":\"COMPLETED\"}}"));
+        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            List<RequestRecord> copy = new ArrayList<>(records.get());
+            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
+                    SourceDetail.ZAP_AJAX_SPIDER, RunPhase.EXPLORATION, context.runId()));
+            records.set(copy);
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange,
+                "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"0\"}"));
-        zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange,
-                "{\"alerts\":[{\"name\":\"test alert\",\"evidence\":\"token=raw-alert-secret\"}]}"));
+        zapServer.createContext("/JSON/alert/view/alerts/", exchange -> {
+            String query = exchange.getRequestURI().getRawQuery();
+            zapReply(exchange, query != null && query.contains("start=500")
+                    ? zapAlertsPage(500, 1) : zapAlertsPage(0, 500));
+        });
         zapServer.start();
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
@@ -434,14 +448,16 @@ final class McpServerTest {
             assertNotNull(status);
             assertEquals("COMPLETED", status.at("/result/structuredContent/status").asText(), status.toString());
             assertEquals("ALERTS_READY", status.at("/result/structuredContent/stage").asText());
-            assertEquals(1, status.at("/result/structuredContent/alert_count").asInt());
+            assertEquals(501, status.at("/result/structuredContent/alert_count").asInt());
             assertEquals(1, status.at("/result/structuredContent/lanes/0/traditional_captures").asInt());
-            assertEquals(1, status.at("/result/structuredContent/lanes/0/rendered_captures").asInt());
+            assertEquals(2, status.at("/result/structuredContent/lanes/0/rendered_captures").asInt());
             assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
             assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
             JsonNode alerts = tool("flowscope_zap_alerts",
                     "{\"target\":\"http://127.0.0.1:8888/\"}");
             assertEquals("BASELINE_SNAPSHOT", alerts.at("/result/structuredContent/source").asText());
+            assertEquals(100, alerts.at("/result/structuredContent/returned").asInt());
+            assertTrue(alerts.at("/result/structuredContent/has_more").asBoolean());
             assertFalse(alerts.toString().contains("raw-alert-secret"));
         } finally {
             zapServer.stop(0);
@@ -458,6 +474,7 @@ final class McpServerTest {
                 laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
         AtomicBoolean ajaxStarted = new AtomicBoolean();
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 1);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
         zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
@@ -529,6 +546,7 @@ final class McpServerTest {
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicLong rawCaptures = new AtomicLong();
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
         zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
             rawCaptures.incrementAndGet();
@@ -537,7 +555,8 @@ final class McpServerTest {
         zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
-        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
         zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"0\"}"));
@@ -600,6 +619,7 @@ final class McpServerTest {
         }
 
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> {
             List<String> copy = new ArrayList<>(zapSessions.get());
             copy.add(exchange.getRequestURI().getRawQuery());
@@ -634,7 +654,17 @@ final class McpServerTest {
         });
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
                 "{\"status\":{\"state\":\"COMPLETED\"}}"));
-        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            String account = context.accountId() == null ? "anonymous" : context.accountId();
+            if (!(omitUserBTraffic.get() && account.equals("user-b"))) {
+                List<RequestRecord> copy = new ArrayList<>(records.get());
+                copy.add(observation(Source.SCANNER, account, 200, "{}",
+                        SourceDetail.ZAP_AJAX_SPIDER, RunPhase.EXPLORATION, context.runId()));
+                records.set(copy);
+            }
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
         zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"0\"}"));
@@ -696,6 +726,39 @@ final class McpServerTest {
         } finally {
             zapServer.stop(0);
             sessions.close();
+        }
+    }
+
+    @Test
+    void safeZapCampaignFailsBeforeActivationWhenRequiredPassiveOrDiscoveryAddonIsMissing() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        zapServer.createContext("/JSON/core/view/version/", exchange -> zapReply(exchange,
+                "{\"version\":\"2.17.0\"}"));
+        zapServer.createContext("/JSON/autoupdate/view/installedAddons/", exchange -> zapReply(exchange,
+                "{\"installedAddons\":[{\"id\":\"spider\"}]}"));
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new McpServer(new McpServer.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public void updateScope(String value) {}
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+                @Override public boolean approve(String action, String value) { return false; }
+            }, 0, "test-token");
+            server.start();
+
+            JsonNode result = tool("flowscope_zap_baseline",
+                    "{\"target\":\"" + target + "\",\"run_id\":\"missing-addons\"}");
+            assertTrue(result.at("/result/isError").asBoolean(), result.toString());
+            assertTrue(result.at("/result/content/0/text").asText().contains("missing required safe ZAP add-on"));
+            assertNull(contexts.current(Source.SCANNER));
+        } finally {
+            zapServer.stop(0);
         }
     }
 
@@ -996,5 +1059,41 @@ final class McpServerTest {
         exchange.sendResponseHeaders(200, body.length);
         exchange.getResponseBody().write(body);
         exchange.close();
+    }
+
+    private static void registerSafeZapEnvironment(HttpServer server, int alertCount) {
+        server.createContext("/JSON/core/view/version/", exchange -> zapReply(exchange,
+                "{\"version\":\"2.17.0\"}"));
+        server.createContext("/JSON/autoupdate/view/installedAddons/", exchange -> zapReply(exchange,
+                "{\"installedAddons\":["
+                        + "{\"id\":\"spider\"},{\"id\":\"client\"},{\"id\":\"spiderAjax\"},"
+                        + "{\"id\":\"pscan\"},{\"id\":\"pscanrules\"},{\"id\":\"selenium\"},"
+                        + "{\"id\":\"openapi\"},{\"id\":\"websocket\"}]}"));
+        server.createContext("/JSON/pscan/action/setEnabled/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/context/action/newContext/", exchange -> zapReply(exchange,
+                "{\"contextId\":\"1\"}"));
+        server.createContext("/JSON/context/action/includeInContext/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/context/action/setContextInScope/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/pscan/action/enableAllScanners/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/pscan/action/setScanOnlyInScope/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/pscan/view/scanners/", exchange -> zapReply(exchange,
+                "{\"scanners\":[{\"id\":\"10020\",\"enabled\":\"true\"}]}"));
+        server.createContext("/JSON/alert/view/numberOfAlerts/", exchange -> zapReply(exchange,
+                "{\"numberOfAlerts\":\"" + alertCount + "\"}"));
+    }
+
+    private static String zapAlertsPage(int start, int count) {
+        StringBuilder value = new StringBuilder("{\"alerts\":[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) value.append(',');
+            value.append("{\"name\":\"alert-").append(start + i)
+                    .append("\",\"evidence\":\"token=raw-alert-secret\"}");
+        }
+        return value.append("]}").toString();
     }
 }

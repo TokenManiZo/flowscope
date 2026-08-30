@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.27 — 2026-08-30
+
+- 신원별 ZAP 기준선 시작 전에 안전 탐색·passive·OpenAPI·WebSocket add-on을 검사하고, 선택 target subtree 전용 Context와 passive engine·전체 규칙·scope-only 설정을 명시 적용
+- Traditional·Client·AJAX Spider를 모두 독립 실행하고 rendered 단계 실패·0건을 조용한 fallback 대신 경고 완료로 표시
+- native Alert를 500개 페이지로 전부 읽어 신원별 최대 20,000개 snapshot으로 보존하고 초과를 명시적으로 경고
+- GUI로 실행한 Burp의 축소된 `PATH`에서도 구독 Codex/Claude 실행기의 런타임을 찾도록 해석된 CLI 디렉터리를 자식 프로세스 `PATH` 앞에 추가
+- 기존 Session Broker의 계정별 메모리 인증 주입과 별도 Judge의 반복 재현·정상 대조 Evidence gate를 회귀로 재검증
+
 ## 1.2.0-beta.26 — 2026-08-30
 
 - Web 스캐너 업로드가 Burp XML과 ZAP HAR 1.2를 구분해 받고 HAR 요청·응답을 SCANNER Evidence로 변환

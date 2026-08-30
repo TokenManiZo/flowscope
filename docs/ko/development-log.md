@@ -6,6 +6,34 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-30 · 1.2.0-beta.27 · 안전 ZAP 기준선·구독 CLI PATH 복구
+
+**개발·수정**
+
+- beta.26 live 캠페인이 ZAP의 passive 설정을 사용자 상태에 맡기고 Client 실패/0건일 때만 AJAX를 실행하며 Alert 상세를 첫 500개만 저장하는 코드를 확인했다. `ZapClient`에 passive engine, 전체 passive rule, scope-only, Alert count API를 추가했다.
+- `McpServer`가 target traffic 전에 ZAP version과 `spider/client/spiderAjax/pscan/pscanrules/selenium/openapi/websocket` add-on을 검사한다. 신원별 fresh session에서 선택 target origin·path subtree만 포함하는 Context를 만들고 passive 설정을 명시 적용한 뒤 Traditional → Client → AJAX → passive queue → paginated native Alert 순서를 고정했다.
+- Client/AJAX 단계의 실패·0 capture를 다른 Evidence와 함께 `COMPLETED_WITH_WARNINGS`로 보존한다. Alert는 500개씩 읽어 신원별 최대 20,000개를 account/run 태그와 함께 메모리 snapshot에 저장하고 초과를 경고한다.
+- `LocalLlmRunner`가 해석한 Codex/Claude 실행 파일 부모를 자식 `PATH` 앞에 한 번만 추가한다. provider API key 제거와 loopback MCP 경계는 유지했다. 운영체제별 `PATH` 키 대소문자도 보존한다.
+- `scanOnlyInScope`가 ZAP Context를 읽는 계약을 확인해 Context 없이 scope-only만 켜 생길 수 있는 passive 미탐을 수정했다. context regex는 sibling path·subdomain·다른 scheme/port를 거부하는 회귀로 고정했다.
+- Session Broker의 ACTIVE 계정별 메모리 인증 주입, Explorer exact-scope executor, 별도 Judge dataset lock, 반복 재현·정상 대조 Evidence gate는 이미 구현돼 있어 중복 코드를 만들지 않고 기존 회귀와 전체 회귀로 재검증했다.
+- 영향을 받은 사용자·구조·결정·명세·설치·검증·인계 문서와 버전/JAR 이름을 beta.27로 동기화했다.
+
+**근거와 기각한 대안**
+
+- ZAP 공식 문서상 passive scanner는 메시지를 변조하지 않고 HTTP/WebSocket traffic을 분석하며 전체 rule 활성화와 scope-only API를 제공한다. OpenAPI add-on은 spider가 발견한 in-scope 정의를 자동 import한다.
+- Forced Browse는 wordlist 항목을 실제 요청하고 thread 수에 따라 대상 부하를 높이며 ZAP 2.17 local API에 자동화 component가 없어 기본 버튼에서 제외했다. Active Scan·Fuzzer·mutation은 별도 승인 경계를 유지한다.
+- Alpha/Beta add-on을 강제 설치하지 않고 현재 설치된 passive scanner는 `enableAllScanners`로 모두 활성화한다. 공개 기본 계약은 ZAP 2.17 release add-on 기준으로 유지한다.
+
+**검증 및 남은 gate**
+
+- 축소 `PATH=/usr/bin:/bin`에서 `/usr/bin/env node --version`이 `env: node: No such file or directory`, status 127로 실패하고 `/opt/homebrew/bin` 추가 후 status 0으로 성공하는 조건을 로컬 재현했다.
+- 로컬 ZAP read-only API에서 version `2.17.0`, 필수 add-on 8개 설치, passive scanner 61개를 확인했다. 실제 캠페인과 ZAP 전역 설정 변경은 beta.27 JAR 재로드 전 실행하지 않았다.
+- `mvn clean verify`: 253 tests, 실패·오류·skip 0, 완성 JAR manifest/classloader smoke 통과.
+- 같은 소스에서 `mvn clean verify`를 다시 실행해 beta.27 JAR SHA-256이 `8c0235…fd62`로 동일함을 확인했다.
+- `bash -n scripts/*.sh infra/zap/*.sh`와 `git diff --check` 통과. 현재 macOS에 `pwsh`가 없어 수정된 `doctor.ps1`의 로컬 parser gate와 원격 CI는 아직 실행하지 않았다.
+- 배포물: `target/flowscope-1.2.0-beta.27.jar`, 15,900,678 bytes, 2,035 entries, SHA-256 `8c0235d47aa61055984cdd4902f721f482072393d4644a8321512fb18a5ffd62`.
+- 실제 Burp에서 beta.27 JAR을 재로드한 뒤 ZAP 계정별 capture·Alert pagination, Codex Explorer 정상 종료, 3-lane lock, Judge 재현·대조까지 확인하는 통합 gate는 아직 수행하지 않았다.
+
 ## 2026-08-30 · 1.2.0-beta.26 · ZAP HAR SCANNER Evidence 가져오기
 
 **개발·수정**

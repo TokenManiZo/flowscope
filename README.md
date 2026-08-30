@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.26
+# FlowScope 1.2.0-beta.27
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -28,7 +28,7 @@ USER B        orders:101      GET /api/orders/{id}
 - 공통 route discovery 파이프라인이 exact-scope HTML, 정적 JavaScript 호출, OpenAPI JSON/YAML, 표준 metadata, generic XML과 응답 없는 Burp Site Map 항목을 동일한 검증·정규화·dedup gate로 처리. method 근거가 없으면 `UNKNOWN`이며 후보는 실제 요청·응답 전까지 coverage·gap·verdict·finding을 바꾸지 않음
 - `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` 인증 상태. 연결되지 않은 회전 쿠키가 그래프 신원을 폭증시키지 않으며, 확인된 계정 연결은 서비스 경계를 유지
 - Codex·Claude Code 구독형 클라이언트용 localhost 전용 인증 MCP 서버
-- 시스템 소유 신원 격리 ZAP 캠페인: 비로그인과 선택한 ACTIVE 계정마다 fresh ZAP session → Traditional Spider → strict Client Spider(AJAX fallback) → passive queue 완료 → native alert. 완료 gate는 지연 재빌드된 화면 snapshot이 아니라 raw Burp capture를 세며, Client API가 완료돼도 rendered capture가 0이면 AJAX로 전환하고 둘 다 0이면 `COMPLETED_WITH_WARNINGS`로 표시합니다. Active Scan은 별도 승인 필요
+- 시스템 소유 신원 격리 ZAP 안전 캠페인: 비로그인과 선택한 ACTIVE 계정마다 fresh ZAP session → 모든 passive rule 활성화·scope 제한 → Traditional Spider → strict Client Spider → AJAX Spider → passive queue 완료 → 전체 native alert 페이지 수집. OpenAPI와 WebSocket passive add-on을 시작 전에 확인하며, 최대 20,000개 Alert 상세를 메모리 snapshot으로 보존하고 초과는 경고합니다. Active Scan·Fuzzer·변조 요청은 기본 캠페인에 포함하지 않습니다.
 - 배포 중립 ZAP 온보딩. 빠른 시작이 loopback API/version/key를 먼저 확인해 연결 전 캠페인을 막고, ZAP Desktop과 선택형 Docker Quick Start를 같은 화면에서 안내하되 API만으로 배포 종류를 추측하지 않음
 - exact scope FlowScope 요청 도구를 통한 closed-world LLM 실행. 직접 외부 트래픽은 최종 판정의 결정적 Evidence로 신뢰하지 않음
 - 서버가 강제하는 독립 Explorer 시야, 불변 3-lane dataset lock, 최종 LLM Judge 종합
@@ -66,7 +66,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.26.jar`를 받고, Burp **Extensions → Installed → Add → Java**에서 불러옵니다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.27.jar`를 받고, Burp **Extensions → Installed → Add → Java**에서 불러옵니다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
 3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
@@ -101,7 +101,7 @@ cd testflowscope
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.26.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.27.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
@@ -143,6 +143,8 @@ scope가 비어 있으면 MCP가 시작하는 ZAP 실행은 차단됩니다.
 
 관측 Evidence가 0건인 Web UI는 분석 수치와 고급 조작을 먼저 펼치지 않습니다. exact scope 설정, 로그인/HUMAN pass, ZAP 기준선, 독립 LLM Explorer/Judge 순서와 빠른 시작·샘플 조작만 보여 주며, Evidence가 생기면 기존 분석 작업면으로 자동 전환합니다.
 
+ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 합니다. 따라서 캠페인은 각 신원마다 선택 target의 origin·path subtree만 포함하는 fresh Context를 만들며 sibling path·subdomain·다른 port/scheme은 포함하지 않습니다. Context 생성이나 passive rule 활성 확인에 실패하면 spider를 시작하지 않습니다.
+
 ## 일반적인 점검 흐름
 
 1. exact scope를 설정하고 익명 또는 최소 권한 테스트 계정을 사용합니다. 기본 제어면은 Burp 탭입니다. MCP 클라이언트의 `flowscope_set_scope`는 운영자가 명시적으로 허가한 exact target만, SCANNER/LLM run 시작 전에 설정할 수 있습니다. ADMIN 계정은 필수가 아니며 명시적 역할 비교가 필요한 경우에만 사용합니다.
@@ -150,7 +152,7 @@ scope가 비어 있으면 MCP가 시작하는 ZAP 실행은 차단됩니다.
 
 - 선택적 수동 검증: 그래프에서 API를 누르고 Evidence의 **요청 실험실**을 엽니다. `원문 그대로`, `비로그인으로 전송`, `등록 계정으로 전송` 중 의도한 모드를 고르고 path/query/header/body를 편집한 뒤 명시적으로 전송합니다. 네트워크 목적지는 원 Evidence 서비스로 고정되고 redirect는 따라가지 않습니다. 응답과 시간·크기를 확인할 수 있으며 전송 결과는 HUMAN `VALIDATION` Evidence가 되어 탐색 커버리지를 늘리지 않습니다. live 원문은 기본 요청 1MiB·응답 4MiB·총 32MiB의 Burp 프로세스 메모리에서만 유지되고 프로젝트 교체·초기화·unload 때 폐기됩니다. 프로젝트/XML/HAR에서 가져온 항목이나 상한 초과 항목은 마스킹 전문만 사용할 수 있습니다.
 
-3. ZAP의 outgoing proxy를 `127.0.0.1:8081`로 설정합니다. Web 빠른 시작의 **로컬 ZAP 연결**이 `연결됨`인지 확인합니다. 연결되지 않으면 같은 카드에서 Desktop 설정 또는 Docker Quick Start를 선택할 수 있고 캠페인 버튼은 연결 전 비활성화됩니다. exact-scope target, 비로그인, 하나 이상의 ACTIVE 계정을 복수 선택하고 **신원별 격리 검사 시작**을 누릅니다. FlowScope는 각 신원 전환 전에 ZAP session을 새로 만들고 Traditional Spider → Client Spider(AJAX fallback) → passive 완료 → native alert 순서를 실행합니다. Client status가 완료여도 실제 rendered capture가 0이면 AJAX를 실행하며 AJAX도 0이면 `COMPLETED_WITH_WARNINGS`와 원인을 표시합니다. 계정 레인은 기존 Authorization/Cookie/CSRF를 제거한 뒤 해당 broker 값만 주입합니다. 비로그인 레인은 fresh session 안에서 새로 발급된 익명 Cookie/CSRF를 유지하되 이 lane의 신원은 계속 `ANONYMOUS`로 고정합니다. 신원별 범위 안 scanner 트래픽이 0건이면 전체 SCANNER 완료 gate를 열지 않습니다. FlowScope Web 자체 loopback URL은 대상 목록과 실행에서 제외합니다. Active Scan은 이 캠페인에 포함되지 않으며 항상 별도 Burp 승인이 필요합니다.
+3. ZAP의 outgoing proxy를 `127.0.0.1:8081`로 설정합니다. Web 빠른 시작의 **로컬 ZAP 연결**이 `연결됨`인지 확인합니다. 연결되지 않으면 같은 카드에서 Desktop 설정 또는 Docker Quick Start를 선택할 수 있고 캠페인 버튼은 연결 전 비활성화됩니다. exact-scope target, 비로그인, 하나 이상의 ACTIVE 계정을 복수 선택하고 **신원별 격리 검사 시작**을 누릅니다. FlowScope는 각 신원 전환 전에 ZAP session을 새로 만들고 passive scan을 활성화·scope 제한한 뒤 Traditional Spider → Client Spider → AJAX Spider → passive 완료 → 전체 native alert 페이지 순서를 실행합니다. `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket` add-on이 빠졌으면 트래픽을 보내기 전에 실패합니다. Client/AJAX 중 한 단계가 실패하거나 실제 rendered capture가 0이면 `COMPLETED_WITH_WARNINGS`와 원인을 표시합니다. 계정 레인은 기존 Authorization/Cookie/CSRF를 제거한 뒤 해당 broker 값만 주입합니다. 비로그인 레인은 fresh session 안에서 새로 발급된 익명 Cookie/CSRF를 유지하되 이 lane의 신원은 계속 `ANONYMOUS`로 고정합니다. 신원별 범위 안 scanner 트래픽이 0건이면 전체 SCANNER 완료 gate를 열지 않습니다. FlowScope Web 자체 loopback URL은 대상 목록과 실행에서 제외합니다. Active Scan·Fuzzer·Forced Browse는 안전 기본 캠페인에 포함되지 않습니다. Active Scan은 항상 별도 Burp 승인이 필요하고, ZAP 2.17 Forced Browse는 자동화 API가 없으며 대상 부하가 커 ZAP UI에서 진단자가 별도로 실행합니다.
 4. Web 빠른 시작에서 로컬 로그인 상태인 Codex 또는 Claude, exact-scope target과 선택적 ACTIVE 계정을 고른 뒤 **LLM Explorer 시작**을 누릅니다. FlowScope는 이전 대화를 재개하지 않는 전용 임시 작업공간과 새 CLI 프로세스를 만들고, 번들 지침·대상·scope·서버가 선발급한 run ID를 표준입력으로 전달합니다. Explorer는 MCP의 자기 run만 보고 `flowscope_target_request`로 탐색한 뒤 같은 run을 정상 종료해야 완료됩니다. 서버는 HUMAN/SCANNER 결과를 숨기며, 웹 검색·Wayback·외부 API 문서·소스 저장소·직접 curl/브라우저 네트워킹은 허용하지 않습니다.
 5. 파싱 결과의 **검토 대기**를 확인해 실제 API면 operation을 **분석에 포함**, 보조 트래픽이면 **기본 숨김**으로 확정할 수 있습니다. 세 레인을 모두 정상 종료한 뒤 **Judge 시작**을 누릅니다. FlowScope는 Explorer 대화와 분리된 새 Judge 세션을 시작합니다. Judge는 dataset을 잠그고 메인 후보·잠긴 REVIEW Evidence·ZAP native alert를 읽은 뒤, 비최종 assessment와 좁은 safe-GET 재현·정상 대조 Evidence를 제출합니다. 완료 뒤 **Judge 계속**은 새 Judge를 만들지 않고 저장된 provider session ID로 같은 Judge 대화를 재개합니다. CLI 프로세스 자체를 계속 켜 두는 구조는 아닙니다.
 6. FlowScope는 bundle이 현재 후보와 일치하고 서버 검사를 통과할 때만 `CONFIRMED` 또는 `REJECTED`를 허용합니다. 같은 run의 LLM 재현 2건 이상, 허가된 정상 대조 1건 이상, 일치하는 신원·작업·객체 의미와 응답 Evidence가 필요합니다. BOLA 읽기 응답은 대상 객체 ID를 구조적으로 포함해야 하며 owner 문자열만으로는 충분하지 않습니다. 나머지는 `INCONCLUSIVE`입니다. **시나리오**와 Request/Response를 검토하십시오. 사람 기록은 감사 가능한 오버라이드이며 검증되지 않은 자동 finding이 아닙니다.

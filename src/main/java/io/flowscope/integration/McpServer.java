@@ -55,6 +55,9 @@ public final class McpServer implements AutoCloseable {
                                String response, String responseBody) {}
 
     private static final int MAX_BODY = 1024 * 1024;
+    private static final int MAX_ZAP_ALERT_SNAPSHOT = 20_000;
+    private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
+            "spider", "client", "spiderAjax", "pscan", "pscanrules", "selenium", "openapi", "websocket");
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> SUPPORTED_PROTOCOLS = Set.of(
             LATEST_PROTOCOL, "2025-06-18", "2025-03-26");
@@ -83,6 +86,7 @@ public final class McpServer implements AutoCloseable {
                                  long capturedRecords, long traditionalCaptures, long renderedCaptures,
                                  int alertCount, String warning, String error) {}
     private record ZapLane(String accountId, String accountLabel) {}
+    private record ZapAlertCollection(int count, boolean truncated) {}
 
     public McpServer(State state, int port, String configuredToken) throws IOException {
         this.state = state;
@@ -952,6 +956,7 @@ public final class McpServer implements AutoCloseable {
         if (!legacyAccount.isBlank()) requestedAccounts.add(legacyAccount);
         boolean includeAnonymous = args.has("include_anonymous")
                 ? args.path("include_anonymous").asBoolean(false) : requestedAccounts.isEmpty();
+        verifySafeZapEnvironment();
         List<ZapLane> lanes = new ArrayList<>();
         if (includeAnonymous) lanes.add(new ZapLane(null, "비로그인"));
         for (String accountId : requestedAccounts) {
@@ -1022,6 +1027,18 @@ public final class McpServer implements AutoCloseable {
             if (!"OK".equalsIgnoreCase(reset.path("Result").asText())) {
                 throw new IllegalStateException("ZAP did not create an isolated session");
             }
+            String contextName = "flowscope-" + runId + "-" + index;
+            JsonNode context = parseZap(state.zap().newContext(contextName));
+            if (context.path("contextId").asText().isBlank()) {
+                throw new IllegalStateException("ZAP did not create an isolated target context");
+            }
+            requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+                    "include the exact target subtree in context");
+            requireZapOk(state.zap().setContextInScope(contextName), "mark the target context in scope");
+            requireZapOk(state.zap().enablePassiveScan(), "enable passive scanning");
+            requireZapOk(state.zap().enableAllPassiveScanners(), "enable all passive scan rules");
+            requireZapOk(state.zap().restrictPassiveScanToScope(), "restrict passive scanning to scope");
+            verifyPassiveScannersEnabled();
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "TRADITIONAL_SPIDER", 0, 0, 0, 0, "", ""));
             JsonNode traditional = parseZap(state.zap().spider(target));
@@ -1046,23 +1063,33 @@ public final class McpServer implements AutoCloseable {
                 clientFailure = clientError;
             }
             long clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
-            if (clientFailure != null || clientCaptured == 0) {
-                warning = clientFailure == null
-                        ? "Client Spider completed without captured rendered traffic; AJAX Spider fallback used"
-                        : "Client Spider unavailable; AJAX Spider fallback used: " + clientFailure.getMessage();
-                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER, lane.accountId());
-                replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                        "AJAX_SPIDER_FALLBACK", traditionalCaptured, traditionalCaptured, 0, 0, warning, ""));
-                long ajaxBefore = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
+            if (clientFailure != null) {
+                warning = appendWarning(warning, "Client Spider unavailable: " + clientFailure.getMessage());
+            } else if (clientCaptured == 0) {
+                warning = appendWarning(warning, "Client Spider completed without captured rendered traffic");
+            }
+
+            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER, lane.accountId());
+            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                    "AJAX_SPIDER", traditionalCaptured + clientCaptured,
+                    traditionalCaptured, clientCaptured, 0, warning, ""));
+            long ajaxBefore = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
+            RuntimeException ajaxFailure = null;
+            try {
                 JsonNode ajax = parseZap(state.zap().ajaxSpider(target));
                 if (!"OK".equalsIgnoreCase(ajax.path("Result").asText())) {
-                    throw new IllegalStateException("ZAP AJAX Spider fallback did not start");
+                    throw new IllegalStateException("ZAP AJAX Spider did not start");
                 }
-                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SPIDER_FALLBACK", "", warning, "");
+                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SPIDER", "", warning, "");
                 waitForZap(() -> state.zap().ajaxSpiderStatus(), 20 * 60_000L, "AJAX Spider");
-                if (capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER) - ajaxBefore == 0) {
-                    warning += "; AJAX Spider also completed without captured rendered traffic";
-                }
+            } catch (RuntimeException ajaxError) {
+                ajaxFailure = ajaxError;
+            }
+            long ajaxCaptured = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER) - ajaxBefore;
+            if (ajaxFailure != null) {
+                warning = appendWarning(warning, "AJAX Spider unavailable: " + ajaxFailure.getMessage());
+            } else if (ajaxCaptured == 0) {
+                warning = appendWarning(warning, "AJAX Spider completed without captured rendered traffic");
             }
 
             long renderedCaptured = capturedForRenderedStages(runId) - renderedBefore;
@@ -1074,20 +1101,15 @@ public final class McpServer implements AutoCloseable {
             waitForPassive(5 * 60_000L);
             long captured = capturedForRun(runId) - capturedBefore;
             if (captured == 0) throw new IllegalStateException("scanner workflow completed without captured in-scope traffic");
-            JsonNode alerts = maskTextValues(parseZap(state.zap().alerts(target, 0, 500)));
-            int alertCount = alerts.path("alerts").isArray() ? alerts.path("alerts").size() : 0;
-            if (alerts.path("alerts").isArray()) {
-                for (JsonNode alert : alerts.path("alerts")) {
-                    ObjectNode copy = alert.isObject() ? (ObjectNode) alert.deepCopy() : json.createObjectNode().set("alert", alert);
-                    copy.put("flowscope_account_id", lane.accountId() == null ? "anonymous" : lane.accountId());
-                    copy.put("flowscope_run_id", runId);
-                    collectedAlerts.add(copy);
-                }
+            ZapAlertCollection alerts = collectZapAlerts(target, lane, runId, collectedAlerts);
+            if (alerts.truncated()) {
+                warning = appendWarning(warning, "ZAP Alert detail snapshot reached the "
+                        + MAX_ZAP_ALERT_SNAPSHOT + " item memory bound");
             }
             String laneStatus = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), laneStatus,
                     "ALERTS_READY", captured, traditionalCaptured, renderedCaptured,
-                    alertCount, warning, ""));
+                    alerts.count(), warning, ""));
         } catch (RuntimeException error) {
             String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
@@ -1109,6 +1131,74 @@ public final class McpServer implements AutoCloseable {
     private long capturedForRenderedStages(String runId) {
         return capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER)
                 + capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
+    }
+
+    private void verifySafeZapEnvironment() {
+        JsonNode version = parseZap(state.zap().version());
+        if (version.path("version").asText().isBlank()) {
+            throw new IllegalStateException("ZAP version API did not return a version");
+        }
+        JsonNode installed = parseZap(state.zap().installedAddons()).path("installedAddons");
+        Set<String> ids = new LinkedHashSet<>();
+        if (installed.isArray()) installed.forEach(addon -> ids.add(addon.path("id").asText()));
+        Set<String> missing = new LinkedHashSet<>(SAFE_ZAP_ADDONS);
+        missing.removeAll(ids);
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("missing required safe ZAP add-on(s): " + String.join(", ", missing));
+        }
+    }
+
+    private void requireZapOk(String raw, String action) {
+        JsonNode result = parseZap(raw);
+        if (!"OK".equalsIgnoreCase(result.path("Result").asText())) {
+            throw new IllegalStateException("ZAP failed to " + action);
+        }
+    }
+
+    private void verifyPassiveScannersEnabled() {
+        JsonNode scanners = parseZap(state.zap().passiveScanners()).path("scanners");
+        if (!scanners.isArray() || scanners.isEmpty()) {
+            throw new IllegalStateException("ZAP passive scanner API returned no rules");
+        }
+        List<String> disabled = new ArrayList<>();
+        for (JsonNode scanner : scanners) {
+            if (!"true".equalsIgnoreCase(scanner.path("enabled").asText())) {
+                disabled.add(scanner.path("id").asText("unknown"));
+                if (disabled.size() >= 10) break;
+            }
+        }
+        if (!disabled.isEmpty()) {
+            throw new IllegalStateException("ZAP passive rule(s) remained disabled: "
+                    + String.join(", ", disabled));
+        }
+    }
+
+    private ZapAlertCollection collectZapAlerts(String target, ZapLane lane, String runId,
+                                                 ArrayNode collectedAlerts) {
+        int reported = parseZap(state.zap().numberOfAlerts(target)).path("numberOfAlerts").asInt(-1);
+        int laneCount = 0;
+        int start = 0;
+        while (start < MAX_ZAP_ALERT_SNAPSHOT && (reported < 0 || start < reported)) {
+            JsonNode page = maskTextValues(parseZap(state.zap().alerts(target, start, 500))).path("alerts");
+            if (!page.isArray() || page.isEmpty()) break;
+            for (JsonNode alert : page) {
+                ObjectNode copy = alert.isObject() ? (ObjectNode) alert.deepCopy()
+                        : json.createObjectNode().set("alert", alert);
+                copy.put("flowscope_account_id", lane.accountId() == null ? "anonymous" : lane.accountId());
+                copy.put("flowscope_run_id", runId);
+                collectedAlerts.add(copy);
+                laneCount++;
+                if (laneCount >= MAX_ZAP_ALERT_SNAPSHOT) break;
+            }
+            start += page.size();
+            if (page.size() < 500 || laneCount >= MAX_ZAP_ALERT_SNAPSHOT) break;
+        }
+        return new ZapAlertCollection(laneCount, reported > laneCount);
+    }
+
+    private static String appendWarning(String current, String value) {
+        if (value == null || value.isBlank()) return current == null ? "" : current;
+        return current == null || current.isBlank() ? value : current + "; " + value;
     }
 
     private synchronized void replaceZapLane(int index, ZapLaneResult value) {
@@ -1225,7 +1315,7 @@ public final class McpServer implements AutoCloseable {
             out.put("source", "BASELINE_SNAPSHOT");
             out.put("returned", page.size());
             out.put("has_more", end < stored.size());
-            out.put("snapshot_limit", 500);
+            out.put("snapshot_limit", MAX_ZAP_ALERT_SNAPSHOT);
             return out;
         }
         return maskTextValues(parseZap(state.zap().alerts(target, start, count)));

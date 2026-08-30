@@ -47,6 +47,30 @@ final class LocalLlmRunnerTest {
     }
 
     @Test
+    void prependsResolvedCliDirectorySoEnvShebangCanFindNodeFromBurp() {
+        Map<String, String> environment = new HashMap<>(Map.of("PATH", "/usr/bin"));
+
+        LocalLlmRunner.configureExecutablePath(environment, "/opt/homebrew/bin/codex");
+
+        assertEquals("/opt/homebrew/bin" + java.io.File.pathSeparator + "/usr/bin",
+                environment.get("PATH"));
+        LocalLlmRunner.configureExecutablePath(environment, "/opt/homebrew/bin/codex");
+        assertEquals("/opt/homebrew/bin" + java.io.File.pathSeparator + "/usr/bin",
+                environment.get("PATH"));
+    }
+
+    @Test
+    void preservesExistingPathKeyCasing() {
+        Map<String, String> environment = new HashMap<>(Map.of("Path", "/usr/bin"));
+
+        LocalLlmRunner.configureExecutablePath(environment, "/opt/homebrew/bin/codex");
+
+        assertFalse(environment.containsKey("PATH"));
+        assertEquals("/opt/homebrew/bin" + java.io.File.pathSeparator + "/usr/bin",
+                environment.get("Path"));
+    }
+
+    @Test
     void startsCodexExplorerAsEphemeralFreshSessionAndRequiresExactRunEnd() throws Exception {
         FakeProcess process = new FakeProcess(0, "{\"type\":\"done\"}\n");
         AtomicReference<List<String>> command = new AtomicReference<>();

@@ -28,7 +28,7 @@
   - **Judge**: 서버가 잠근 3자 결과를 보고 시나리오를 제안하고 통제 요청으로 재현·대조.
   - **순환 방지:** Explorer가 활성화되면 서버가 HUMAN/SCANNER 상태와 후보를 숨긴다. 세 레인의 정확한 완료 뒤 snapshot을 잠가야 Judge가 읽는다.
   - **판정 경계:** 일반 assessment는 CONFIRMED가 될 수 없고, 최종 verdict는 현재 결정론 후보에 묶인 별도 VALIDATION run의 `CONTROLLED` 반복 재현·정상 대조 Evidence만 사용한다.
-  - **ZAP 분리:** 기본 scanner lane은 SYSTEM이 Traditional/Client/AJAX fallback/passive/alert 순서를 결정하며 LLM이 임의로 기능을 선택하지 않는다.
+  - **ZAP 분리:** 기본 scanner lane은 SYSTEM이 passive 전체 rule·scope-only와 Traditional → Client → AJAX → passive queue → paginated Alert 순서를 결정하며 LLM이 임의로 기능을 선택하지 않는다.
 - **O2. 연계 인터페이스 — ✅ 확정:** 로컬 MCP(상태/통제 target request/Evidence/ZAP/assessment/validation) + 관계형 `.flowscope.db` 내구 checkpoint + 호환 `.flowscope.json` import/export + 메모리 전용 account session broker.
 
 ## 계속 열린 연구 범위
