@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.26 — 2026-08-30
+
+- Web 스캐너 업로드가 Burp XML과 ZAP HAR 1.2를 구분해 받고 HAR 요청·응답을 SCANNER Evidence로 변환
+- HAR의 URL·query·header·body·status·timestamp·base64 textual 응답을 보존하고 인증값 마스킹, exact scope, 문서·payload 상한, 항목 단위 오류 격리를 적용
+- binary HAR 응답은 손실 문자열로 바꾸지 않고 metadata-only로 보존하며, HAR만으로 ZAP Alert나 캠페인 완료를 생성하지 않도록 신뢰 경계 고정
+- HAR parser와 scanner-only Web API/UI 계약 회귀를 추가하고 beta.26 단일 JAR을 생성
+
 ## 1.2.0-beta.25 — 2026-08-29
 
 - fat JAR 재구성을 일반 ZIP이 아닌 manifest-aware JAR 작업으로 바꿔 `JarInputStream`에서도 manifest를 즉시 읽도록 수정

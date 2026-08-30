@@ -216,10 +216,10 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.25 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.26 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
-    <label class="filebtn"><span class="dot" style="background:var(--scanner)"></span>스캐너<input type="file" id="fScanner" accept=".xml" multiple></label>
+    <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
     <label class="filebtn" title="전용 포트 실시간 수집이 기본, XML 업로드는 폴백"><span class="dot" style="background:var(--llm)"></span>LLM<input type="file" id="fLlm" accept=".xml" multiple></label>
     <button class="go primary" id="sample">샘플 데이터로 보기</button>
     <button class="go" id="clear">초기화</button>
@@ -236,7 +236,7 @@
   </div>
 </header>
 
-<div class="statusbar" id="status"><span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요. 사람·스캐너는 전용 프록시로, LLM은 MCP 통제 실행기로 구분 수집합니다. XML 업로드는 실시간 수집이 불가능할 때의 폴백입니다.</span></div>
+<div class="statusbar" id="status"><span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요. 사람·스캐너는 전용 프록시로, LLM은 MCP 통제 실행기로 구분 수집합니다. Burp XML과 스캐너용 ZAP HAR 업로드는 실시간 수집이 불가능할 때의 폴백입니다.</span></div>
 <div class="samplebanner" id="sampleBanner" role="status">샘플 데이터 · 실제 HUMAN/ZAP/LLM 점검 결과가 아님 · 대상 네트워크 요청 0건</div>
 
 <div class="setupbackdrop" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
@@ -1434,13 +1434,14 @@ function closeSetup(){setupModal.style.display='none';try{localStorage.setItem('
 
 async function loadFiles(input,source){
   const fs=[...input.files];if(!fs.length)return;let imported=0,candidates=0,failed=0;
-  for(const f of fs){const xml=await f.text();
-    try{const url='/api/import-xml?source='+encodeURIComponent(source)+'&name='+encodeURIComponent(f.name);const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/xml;charset=UTF-8'},body:xml});const data=await response.json();if(!response.ok)throw new Error(data.message||'XML 가져오기 실패');imported+=data.imported||0;candidates+=data.candidates||0;failed+=data.failed||0;}
+  for(const f of fs){const text=await f.text(),har=f.name.toLowerCase().endsWith('.har');
+    if(har&&source!=='scanner'){document.getElementById('status').textContent='HAR는 스캐너 업로드에서만 가져올 수 있습니다.';input.value='';return;}
+    try{const endpoint=har?'/api/import-har':'/api/import-xml',url=endpoint+'?source='+encodeURIComponent(source)+'&name='+encodeURIComponent(f.name);const response=await fetch(url,{method:'POST',headers:{'Content-Type':har?'application/json':'application/xml;charset=UTF-8'},body:text});const data=await response.json();if(!response.ok)throw new Error(data.message||(har?'HAR':'XML')+' 가져오기 실패');imported+=data.imported||0;candidates+=data.candidates||0;failed+=data.failed||0;}
     catch(error){document.getElementById('status').textContent=f.name+' 가져오기 실패: '+error.message;input.value='';return;}
   }
   input.value='';
   SERVER_REVISION=-1;await syncExtension();EVENTS=[...SERVER_EVENTS];if(EVENTS.length)build();
-  document.getElementById('status').insertAdjacentHTML('beforeend','<span>XML 누적 <b>'+imported+'</b> · 응답 없음 '+candidates+' · 실패 '+failed+'</span>');
+  document.getElementById('status').insertAdjacentHTML('beforeend','<span>가져오기 누적 <b>'+imported+'</b> · 응답 없음 '+candidates+' · 실패 '+failed+'</span>');
 }
 fHuman.addEventListener('change',e=>loadFiles(e.target,'human'));
 fScanner.addEventListener('change',e=>loadFiles(e.target,'scanner'));

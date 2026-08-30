@@ -2,6 +2,7 @@ package io.flowscope;
 
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.HarParser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RunContextRegistry;
@@ -65,6 +66,12 @@ public final class Standalone {
         @Override public void loadSample() { replaceWithSample(); rebuild(); }
         @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
             BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
+            records.addAll(parsed.records);
+            rebuild();
+            return parsed;
+        }
+        @Override public BurpXmlParser.ParseResult importHar(byte[] har) {
+            BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
             records.addAll(parsed.records);
             rebuild();
             return parsed;

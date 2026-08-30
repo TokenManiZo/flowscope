@@ -67,6 +67,18 @@ public final class StoredPayload {
         return value;
     }
 
+    /** 문자열로 안전하게 표현할 수 없는 가져오기 payload의 byte 크기와 digest만 보존한다. */
+    public static StoredPayload metadataOnly(byte[] bytes, Retention reason) {
+        return metadataOnly(bytes, bytes == null ? 0 : bytes.length, reason);
+    }
+
+    static StoredPayload metadataOnly(byte[] maskedBytes, int originalBytes, Retention reason) {
+        if (reason == Retention.FULL || maskedBytes == null || originalBytes < 0) {
+            throw new IllegalArgumentException("metadata-only bytes and reason required");
+        }
+        return new StoredPayload(sha256(maskedBytes), originalBytes, reason, null);
+    }
+
     public String digest() { return digest; }
     public int originalBytes() { return originalBytes; }
     public Retention retention() { return retention; }

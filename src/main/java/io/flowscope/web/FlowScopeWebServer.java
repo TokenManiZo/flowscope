@@ -49,6 +49,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         void clearTraffic();
         void loadSample();
         BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception;
+        BurpXmlParser.ParseResult importHar(byte[] har) throws Exception;
         RequestRecord openInRepeater(String evidenceId);
         default RequestLabDraft requestLabDraft(String evidenceId) {
             throw new UnsupportedOperationException("request lab is unavailable");
@@ -169,6 +170,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/llm-run" -> llmRun(request);
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-xml" -> importXml(request, target);
+            case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
             case "/api/verdict", "/api/replay-verdict" -> error(409,
                     "Repeater 결과는 자동 확정하지 않습니다. 새 Evidence를 확인한 뒤 후보 검토에서 판정하세요.");
@@ -663,6 +665,23 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 default -> throw new IllegalArgumentException("Human, Scanner, LLM 소스 중 하나를 선택하세요.");
             };
             BurpXmlParser.ParseResult result = state.importXml(request.body(), source);
+            ObjectNode body = json.createObjectNode();
+            body.put("success", true);
+            body.put("imported", result.records.size());
+            body.put("candidates", result.records.stream().filter(record -> !record.hasResponse).count());
+            body.put("failed", result.skipped.size());
+            return json(200, body);
+        } catch (Exception error) { return error(400, error.getMessage()); }
+    }
+
+    private LoopbackHttpServer.Response importHar(LoopbackHttpServer.Request request, URI target) throws IOException {
+        if (!request.method().equals("POST")) return method("POST");
+        try {
+            Map<String, String> query = form(target.getRawQuery());
+            if (!"scanner".equalsIgnoreCase(query.getOrDefault("source", ""))) {
+                throw new IllegalArgumentException("HAR 가져오기는 SCANNER 소스에서만 사용할 수 있습니다.");
+            }
+            BurpXmlParser.ParseResult result = state.importHar(request.body());
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("imported", result.records.size());

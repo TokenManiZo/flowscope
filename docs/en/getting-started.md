@@ -29,7 +29,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. Download `flowscope-1.2.0-beta.25.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
+1. Download `flowscope-1.2.0-beta.26.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
@@ -128,6 +128,10 @@ mvn clean verify
 6. Review `REVIEW` observations. After all three lanes complete, start Judge.
 7. Treat only server-gated reproduction and authorized-control bundles as final; a ZAP alert or LLM statement alone is not confirmation.
 8. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.
+
+### Importing an existing ZAP traffic export
+
+Use **Scanner XML/HAR** in the Web header and select a `.har` created by ZAP's **Save Selected Entries as HAR** action. FlowScope imports only the HAR HTTP request/response entries as `SCANNER / HAR_IMPORT / IMPORT` Evidence and removes entries outside the current exact scope. This fallback does not reconstruct identity-isolated fresh sessions, rendered-crawl completion, the passive queue, or native alerts, so importing a file never marks the ZAP baseline complete. Use the normal campaign path when ZAP alerts are required for comparison.
 
 ## Troubleshooting
 

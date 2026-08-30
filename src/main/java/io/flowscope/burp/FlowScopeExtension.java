@@ -43,6 +43,7 @@ import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.HarParser;
 import io.flowscope.core.StoredPayload;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.LocalMcpToken;
@@ -708,7 +709,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     OTHER_SCANNER -> RunPhase.EXPLORATION;
             case LLM_COACH_PROBE -> RunPhase.COACH_PROBE;
             case LLM_VALIDATION -> RunPhase.VALIDATION;
-            case XML_IMPORT -> RunPhase.IMPORT;
+            case XML_IMPORT, HAR_IMPORT -> RunPhase.IMPORT;
             default -> RunPhase.BASELINE;
         };
     }
@@ -1095,6 +1096,24 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 scheduleRebuild();
                 api.logging().logToOutput("FlowScope Web XML 가져오기: " + parsed.records.size()
+                        + "건 · 건너뜀 " + parsed.skipped.size() + "건");
+                return parsed;
+            }
+            @Override public BurpXmlParser.ParseResult importHar(byte[] har) throws Exception {
+                BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
+                BurpXmlParser.retainInScope(parsed, scope);
+                parsed.records.forEach(record -> {
+                    record.requestPayload = internPayload(record.requestPayload);
+                    record.responsePayload = internPayload(record.responsePayload);
+                });
+                synchronized (records) {
+                    int room = Math.max(0, MAX_RECORDS - records.size());
+                    records.addAll(parsed.records.subList(0, Math.min(room, parsed.records.size())));
+                    droppedRecords.addAndGet(Math.max(0, parsed.records.size() - room));
+                    capacityWarned = records.size() >= MAX_RECORDS;
+                }
+                scheduleRebuild();
+                api.logging().logToOutput("FlowScope ZAP HAR 가져오기: " + parsed.records.size()
                         + "건 · 건너뜀 " + parsed.skipped.size() + "건");
                 return parsed;
             }

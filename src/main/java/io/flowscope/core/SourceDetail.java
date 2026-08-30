@@ -16,6 +16,7 @@ public enum SourceDetail {
     LLM_COACH_PROBE(Source.LLM, "LLM Judge Probe"),
     LLM_VALIDATION(Source.LLM, "LLM Validation"),
     XML_IMPORT(null, "XML 가져오기"),
+    HAR_IMPORT(Source.SCANNER, "ZAP HAR 가져오기"),
     UNKNOWN(null, "미상");
 
     private final Source source;

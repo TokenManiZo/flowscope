@@ -50,7 +50,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.25.jar`를 받는다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.26.jar`를 받는다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`
@@ -229,6 +229,10 @@ doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명
 6. `REVIEW` 항목을 확인한 뒤 세 lane이 완료되면 **Judge 시작**을 누른다.
 7. finding은 원 Evidence, 같은 run의 반복 재현, 정상 대조가 서버 gate를 통과했는지 확인한다. ZAP Alert나 LLM 문장만으로 확정하지 않는다.
 8. `.flowscope.db`를 연결해 자동 checkpoint를 활성화한다. raw broker credential은 DB에 저장되지 않으므로 Burp 재시작 뒤에는 다시 로그인 연결한다.
+
+### 이미 내보낸 ZAP 트래픽을 가져올 때
+
+Web 상단의 **스캐너 XML/HAR**에서 ZAP **Save Selected Entries as HAR**로 만든 `.har` 파일을 고른다. FlowScope는 HAR의 HTTP 요청·응답만 `SCANNER / HAR_IMPORT / IMPORT` Evidence로 가져오고 현재 exact scope 밖 entry는 제외한다. 이 폴백은 live campaign의 신원별 fresh session, rendered crawl 완료, passive queue, native Alert를 복원하지 않으므로 파일 가져오기를 “ZAP 기준선 완료”로 표시하지 않는다. ZAP의 Alert까지 비교하려면 정상 캠페인 경로를 사용한다.
 
 ## 9. 문제 해결
 

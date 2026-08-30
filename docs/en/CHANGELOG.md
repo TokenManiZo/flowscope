@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0-beta.26 — 2026-08-30
+
+- Added scanner upload support for both Burp XML and ZAP-exported HAR 1.2 traffic, mapping HAR request/response entries to SCANNER Evidence.
+- Preserved URL, query, headers, bodies, status, timestamps, and base64 textual responses under masking, exact-scope, document/payload bounds, and entry-level error isolation.
+- Kept binary HAR responses as metadata-only instead of lossy text and explicitly prevented a HAR import from fabricating native ZAP alerts or campaign completion.
+- Added parser and scanner-only Web API/UI regressions and produced the beta.26 single release JAR.
+
 ## 1.2.0-beta.25 — 2026-08-29
 
 - Replaced generic ZIP repacking with a manifest-aware JAR task so `JarInputStream` can discover the release manifest immediately.

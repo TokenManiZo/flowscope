@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.25 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.26 사전 벤치마크 검증 기록
 
-최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-29이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-30이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.26 ZAP HAR import gate
+
+| 구분 | 결과 |
+|---|---|
+| 형식 계약 | HAR 1.2 `log.entries`에서 request method/URL/query/header/postData와 response status/header/content, startedDateTime을 SCANNER Evidence로 변환 |
+| 신뢰 경계 | `source=SCANNER`, `sourceDetail=HAR_IMPORT`, `tool=ZAP`, `phase=IMPORT`, `executionTrust=IMPORTED` 고정. HAR import로 native Alert·ZAP campaign completion을 생성하지 않음 |
+| 데이터 경계 | 25MiB 문서, JSON 깊이 128, token 1,000,000, 기존 payload 1MiB/압축 총량 48MiB, 인증 마스킹, current exact scope 적용. status 0은 response-less, binary base64는 metadata-only |
+| 회귀 | `HarParserTest` 5개와 `FlowScopeWebServerTest` scanner-only API/UI 계약 통과 |
+| 전체 자동 회귀 | `mvn clean verify`, 249 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.26.jar`, 15,896,042 bytes, 2,034 entries, SHA-256 `ca5d969fb4d056e35b9dd6c420d211131f3a806c4105a5ec69ce7a45d762f232` |
+
+이 gate는 합성 HAR와 localhost Web API로 import 계약을 확인했다. 실제 ZAP 2.17 UI가 내보낸 HAR의 beta.26 Burp 업로드, imported Evidence 상세 수동 확인, 원격 GitHub Actions는 아직 수행하지 않았다. HAR는 Alert 파일이 아니므로 live scanner 캠페인과 취약점 성능 gate를 대체하지 않는다.
 
 ## 1.2.0-beta.25 JAR streaming·MR relocation gate
 

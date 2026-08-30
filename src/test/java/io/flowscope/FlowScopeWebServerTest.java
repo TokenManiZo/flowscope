@@ -6,10 +6,12 @@ import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.HarParser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.core.StoredPayload;
 import io.flowscope.core.ValidationDecision;
@@ -90,7 +92,10 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.25 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.26 · 3소스"));
+        assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
+        assertTrue(index.body().contains("ZAP HAR"));
+        assertTrue(index.body().contains("/api/import-har"));
         assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
         assertTrue(index.body().contains("<div class=\"graphcanvas\"><div id=\"cy\"></div></div>"));
         assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
@@ -177,6 +182,34 @@ final class FlowScopeWebServerTest {
         assertTrue(evidence.at("/records/0/requestPayload/bytes").asInt() > 0);
         assertEquals(64, evidence.at("/records/0/requestPayload/digest").asText().length());
         assertTrue(index.body().contains("압축 전문 총량 상한 초과"));
+    }
+
+    @Test
+    void importsZapHarOnlyAsScannerTraffic() throws Exception {
+        start();
+        String har = """
+                {"log":{"version":"1.2","entries":[{
+                  "startedDateTime":"2026-08-30T00:00:00Z",
+                  "request":{"method":"GET","url":"https://api.example.test/v1/har-orders/9","headers":[]},
+                  "response":{"status":200,"statusText":"OK","headers":[{"name":"Content-Type","value":"application/json"}],"content":{"mimeType":"application/json","text":"{\\\"id\\\":9}"}}
+                }]}}
+                """;
+
+        HttpResponse<String> imported = postRaw("/api/import-har?source=scanner&name=zap.har",
+                har, "application/json", token);
+
+        assertEquals(200, imported.statusCode(), imported.body());
+        JsonNode result = JSON.readTree(imported.body());
+        assertEquals(1, result.path("imported").asInt());
+        assertEquals(0, result.path("failed").asInt());
+        JsonNode event = java.util.stream.StreamSupport.stream(
+                        json(get("/api/snapshot", token, origin())).path("events").spliterator(), false)
+                .filter(item -> item.path("path").asText().equals("/v1/har-orders/9"))
+                .findFirst().orElseThrow();
+        assertEquals("scanner", event.path("source").asText());
+
+        assertEquals(400, postRaw("/api/import-har?source=human&name=wrong.har",
+                har, "application/json", token).statusCode());
     }
 
     @Test
@@ -542,6 +575,15 @@ final class FlowScopeWebServerTest {
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> postRaw(String path, String body, String contentType, String capability) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path))
+                .header("X-FlowScope-Token", capability)
+                .header("Origin", origin())
+                .header("Content-Type", contentType)
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     private String origin() { return server.url().substring(0, server.url().length() - 1); }
     private static JsonNode json(HttpResponse<String> response) throws Exception {
         assertEquals(200, response.statusCode(), response.body());
@@ -636,6 +678,13 @@ final class FlowScopeWebServerTest {
         @Override public void loadSample() { }
         @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
             BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
+            records.addAll(parsed.records);
+            rebuild();
+            return parsed;
+        }
+        @Override public BurpXmlParser.ParseResult importHar(byte[] har) {
+            BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
+            BurpXmlParser.retainInScope(parsed, ScopePolicy.parse(String.join("\n", scannerScope)));
             records.addAll(parsed.records);
             rebuild();
             return parsed;

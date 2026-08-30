@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.25
+# FlowScope 설계서 v1.2.0-beta.26
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -101,9 +101,9 @@ RouteCandidate {
 
 ### 4.1 수집·마스킹 F-01~03/F-22
 
-Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·SHA-256·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다.
+Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·SHA-256·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다. ZAP HAR 1.2 폴백은 `log.entries`의 request/response를 `SCANNER/HAR_IMPORT/ZAP/IMPORT/IMPORTED`로 변환하고 동일 scope·마스킹·payload 상한을 적용한다. `status=0`은 응답 없는 후보로 보존하고 binary base64 응답은 문자열로 왜곡하지 않고 metadata-only로 둔다. HAR에는 ZAP Alert와 campaign completion 계약이 없으므로 둘을 생성하지 않는다(D-093).
 
-live HTTP 원문은 별도의 `TransientExchangeVault`에 요청·응답 `byte[]`와 각각의 body offset으로만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그, MCP로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API가 표시용 텍스트를 만든다. 헤더는 ISO-8859-1, textual 본문은 명시된 Content-Type charset 또는 기본 UTF-8로 replacement 없이 엄격히 디코딩한다. 바이너리, 알 수 없는 비텍스트, 잘못된 byte sequence는 원문 바이트는 유지하되 Web 텍스트 편집·전송을 차단한다. 수정하지 않은 요청과 Repeater 초안은 원래 바이트를 그대로 사용하며, 실제 편집한 본문만 선언 charset으로 엄격히 재인코딩한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML, 상한 초과 Evidence에는 raw가 없어 마스킹 전문만 표시하고 Web 전송은 허용하지 않는다(D-084).
+live HTTP 원문은 별도의 `TransientExchangeVault`에 요청·응답 `byte[]`와 각각의 body offset으로만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그, MCP로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API가 표시용 텍스트를 만든다. 헤더는 ISO-8859-1, textual 본문은 명시된 Content-Type charset 또는 기본 UTF-8로 replacement 없이 엄격히 디코딩한다. 바이너리, 알 수 없는 비텍스트, 잘못된 byte sequence는 원문 바이트는 유지하되 Web 텍스트 편집·전송을 차단한다. 수정하지 않은 요청과 Repeater 초안은 원래 바이트를 그대로 사용하며, 실제 편집한 본문만 선언 charset으로 엄격히 재인코딩한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML/HAR, 상한 초과 Evidence에는 raw가 없어 마스킹 전문만 표시하고 Web 전송은 허용하지 않는다(D-084/D-093).
 
 HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖의 일반 HUMAN 관측은 `BASELINE`으로 보존한다. `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 저장과 감사 대상이지만 discovery coverage·3-way gap·그래프 입력은 아니다. 로그인 준비와 우연한 scope 내 이동이 HUMAN 탐색 성과로 계산되지 않게 하려면 사용자가 HUMAN pass를 시작·종료해야 한다. Web은 `/api/human-run`을 다른 실행 상태와 함께 주기적으로 동기화하며, `pass 완료`는 record 수가 아니라 exact exploration run의 조건부 종료 표식으로만 표시한다. pass 중 Repeater·Intruder·Target에서 발생한 HUMAN 요청은 run/phase/account 문맥을 공유하지만 `BURP_REPEATER/BURP_INTRUDER/MANUAL_HTTP` detail과 `BURP` tool을 브라우저로 덮어쓰지 않는다.
 
@@ -234,7 +234,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 | 모듈 | 구현 |
 |---|---|
 | Capture | `burp/FlowScopeExtension` |
-| Normalize/mask/classify | `core/Normalizer`, `Fingerprints`, `Masking`, `BurpXmlParser`, `TrafficClassifier`, `ObservationCollapser` |
+| Normalize/mask/classify | `core/Normalizer`, `Fingerprints`, `Masking`, `BurpXmlParser`, `HarParser`, `TrafficClassifier`, `ObservationCollapser` |
 | Identity/review state | `AccountProfile`, `AnalysisConfig`, `ReviewDecision`, `ValidationDecision` |
 | Rules | `AuthorizationAnalyzer`, `DataFlowAnalyzer`, `EvidenceIds` |
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |

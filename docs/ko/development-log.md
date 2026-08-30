@@ -6,6 +6,30 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-30 · 1.2.0-beta.26 · ZAP HAR SCANNER Evidence 가져오기
+
+**개발·수정**
+
+- beta.20과 beta.22 이력을 포함해 현재 Web 업로드 경로를 코드로 확인한 결과, 스캐너 버튼도 `.xml`과 `/api/import-xml`만 사용하고 ZAP HAR 어댑터는 없었다. 기존 기능으로 잘못 보고하지 않고 신규 기능으로 구현했다.
+- `HarParser`가 HAR 1.2 `log.entries`의 method, URL/path/query, headers, postData, status, response content, startedDateTime을 `SCANNER/HAR_IMPORT/ZAP/IMPORT/IMPORTED` record로 변환한다. 인증 원문은 fingerprint 뒤 Masking을 거치고 현재 exact scope 밖 entry는 저장하지 않는다.
+- 파일 25MiB, JSON 깊이 128, token 1,000,000과 기존 payload 1MiB/압축 총량 48MiB 경계를 적용했다. 오류 entry는 나머지 파일과 분리해 skip하고, status 0은 response-less candidate로 유지한다. base64 textual body는 엄격 UTF-8, binary/손상 textual body는 metadata-only로 처리한다.
+- Web 스캐너 입력을 `스캐너 XML/HAR`와 `.xml,.har`로 바꾸고 확장자에 따라 전용 localhost API를 호출한다. 서버는 HAR source를 SCANNER로 고정한다. HAR가 담지 않는 native Alert·scanner completion을 생성하지 않는다.
+- 영향을 받은 코드는 `HarParser`, `StoredPayload`, `SourceDetail`, `FlowScopeWebServer`, `FlowScopeExtension`, `Standalone`, `index.html`이고 회귀는 `HarParserTest`, `FlowScopeWebServerTest`다. 사용자·구조·결정·UI·검증·인계 문서를 같은 작업 단위로 갱신했다.
+
+**검토한 대안**
+
+- HAR creator metadata를 믿어 source를 자동 결정하는 방식은 입력 파일이 조작 가능해 기각했다. 이번 계약은 ZAP export를 명시적으로 고른 스캐너 입력에 한정한다.
+- HAR에서 native Alert나 캠페인 완료를 추론하는 방식은 HAR HTTP message 형식에 없는 정보를 창작하므로 기각했다. Alert가 필요한 비교는 live ZAP 캠페인의 별도 API 수집을 유지한다.
+- binary base64를 replacement character가 든 String으로 저장하는 방식은 원 Evidence를 왜곡하므로 metadata-only로 남긴다.
+
+**검증 및 남은 gate**
+
+- `HarParserTest`: 5 tests. textual/base64/binary, response-less, malformed entry, exact-scope, 잘못된 문서 경계 통과.
+- `FlowScopeWebServerTest`: scanner-only HAR API, `.xml,.har` UI, snapshot source 계약 통과.
+- 전체 `mvn clean verify`: 249 tests, 실패·오류·skip 0 + 완성 JAR smoke 통과.
+- 배포물: `target/flowscope-1.2.0-beta.26.jar`, 15,896,042 bytes, 2,034 entries, SHA-256 `ca5d969fb4d056e35b9dd6c420d211131f3a806c4105a5ec69ce7a45d762f232`.
+- 실제 ZAP 2.17 UI가 내보낸 HAR를 beta.26 Burp에서 업로드하는 수동 gate와 원격 CI는 아직 수행하지 않았다. HAR import는 live campaign 완료나 취약점 탐지 성능 검증을 대체하지 않는다.
+
 ## 2026-08-29 · 1.2.0-beta.25 · streaming manifest·버전 독립 MR-JAR 패키징
 
 **개발·수정**

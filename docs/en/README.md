@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.25
+# FlowScope 1.2.0-beta.26
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -39,11 +39,12 @@ identity ──access──▶ resource ──calls──▶ operation
 - Web quick-start buttons that launch a fresh locally authenticated Codex or Claude CLI process for Explorer and a separate persistent Judge session that can be resumed explicitly.
 - MCP route-candidate visibility limited to the active Explorer's own source/run provenance; pre-lock status hides cross-lane counts, runs, assessments, and validations, ZAP state/execution is blocked during exploration, and the route inventory is frozen with the dataset lock.
 - One-click import of existing Burp Proxy history and response-less exact-scope Site Map candidates, with multiplicity-preserving duplicate suppression. The no-network onboarding sample is explicitly bannered as not being a real HUMAN/ZAP/LLM run.
+- Scanner upload import for ZAP-exported HAR 1.2 request/response traffic. Method, URL, query, headers, body, status, and timestamp become SCANNER Evidence, but a HAR file never fabricates native ZAP alerts or campaign completion.
 - A local relational `.flowscope.db` for masked records, account/session bindings, policies, assessments, validated verdicts, and audit decisions. Once saved or opened it receives coalesced 30-second atomic checkpoints plus a final unload save; `.flowscope.json` remains the interchange import/export format.
 - A Web request lab for explicit human validation. Raw live HTTP bytes stay only in a bounded in-process vault. The UI decodes textual bodies strictly from the Content-Type charset, replays an unchanged request byte-for-byte, and blocks Web editing of binary or undecodable bodies while retaining the Burp Repeater handoff. Results remain HUMAN `VALIDATION` Evidence rather than discovery coverage.
 - Slash-aware operation labels, suppressed single-count edge labels, a readable filtered API list below 900 px, explicit Evidence-detail buttons, and separate wording for observed identities versus reusable registered-account sessions.
 - Evidence-bound LLM validation using repeated reproduction and authorized-control observations, with human audit/override.
-- Strict Burp XML import with XXE protection and item-level error skipping.
+- Strict Burp XML import with XXE protection and item-level error skipping, plus bounded ZAP HAR import with entry-level error isolation.
 
 FlowScope does not know the complete black-box attack surface, so it never reports a misleading coverage percentage.
 
@@ -61,9 +62,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.25.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.26.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.25.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.26.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

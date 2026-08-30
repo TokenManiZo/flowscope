@@ -870,3 +870,13 @@
 - **검증:** beta.25 `mvn clean verify`에서 243개 자동 회귀와 완성 JAR smoke가 통과했다. JAR 첫 엔트리는 `META-INF/MANIFEST.MF`, 2회 clean package SHA-256은 일치했다. 기존 9/11/17/21 class가 wildcard mapper를 통해 이동하고 원 versioned package 누출이 없음을 확인했다.
 - **한계:** 이 gate는 현재와 미래의 동일 package prefix 아래 version 디렉터리를 처리한다. dependency가 package 자체를 바꾸거나 새로운 relocate dependency를 추가하면 별도 설계 변경이 필요하다. 실제 Burp load/unload와 외부 SBOM·서명 도구 호환성은 자동 gate가 대신하지 않는다.
 - **상태:** beta.25 코드·로컬 자동/패키징 검증 완료. 원격 GitHub Actions와 실제 Burp load/unload는 대기.
+
+## D-093 · ZAP HAR 가져오기 = SCANNER HTTP Evidence 전용 폴백
+
+- **문제:** beta.20~25 Web의 스캐너 파일 버튼은 이름과 달리 Burp XML만 받았다. ZAP에서 이미 수집·선택한 HTTP 메시지를 HAR로 내보낼 수 있지만 FlowScope에는 이를 SCANNER 레인으로 가져오는 어댑터가 없어, 사용자가 ZAP 결과를 다시 프록시하거나 XML로 변환해야 했다.
+- **결정:** Web의 스캐너 입력만 `.xml,.har`를 허용한다. `.har`는 HAR 1.2 `log.entries[].request/response`의 method, absolute URL, query, headers, postData, status, response content, startedDateTime을 `SCANNER/HAR_IMPORT/ZAP/IMPORT/IMPORTED` RequestRecord로 변환한다. 인증값은 지문 계산 뒤 기존 Masking을 거치고, 파일 25MiB·JSON 깊이 128·token 1,000,000·전문 1MiB/압축 총량 48MiB 경계와 현재 exact scope를 적용한다. 잘못된 entry는 항목 단위로 건너뛰고 `status=0`은 응답 없는 후보로 둔다. base64 textual content는 엄격 UTF-8로 해석하며 binary/비정상 textual byte는 문자열로 치환하지 않고 metadata-only로 보존한다.
+- **신뢰 경계:** HAR는 HTTP message archive다. FlowScope는 파일만으로 ZAP native Alert, Traditional/Client/AJAX 단계, passive queue 완료, 신원별 fresh session, controlled execution을 만들지 않는다. 따라서 HAR import는 SCANNER Evidence를 보충하지만 `COMPLETED` scanner lane이나 Judge의 ZAP Alert 입력을 충족하지 않는다.
+- **기각:** HAR 안의 `creator.name`만 보고 임의 source를 바꾸는 방식은 조작 가능한 metadata를 provenance로 신뢰하므로 기각했다. HUMAN/LLM 업로드에도 HAR를 허용하는 방식은 현재 사용자 요구와 실제 export 경로보다 범위를 넓히고 source 오지정을 쉽게 만들어 기각했다. ZAP Alert JSON을 HAR에서 추론하는 방식은 형식에 없는 정보를 창작하므로 기각했다.
+- **근거:** ZAP 공식 Import/Export 문서는 **Save Selected Entries as HAR**가 선택 HTTP message를 저장하고 `exportHar` API가 ZAP이 보낸 HTTP messages를 HAR로 반환한다고 설명한다. Alert는 별도의 ZAP core/ascan API 산출물이다. [ZAP Import/Export](https://www.zaproxy.org/docs/desktop/addons/import-export/), [ZAP API](https://www.zaproxy.org/docs/desktop/start/features/api/).
+- **검증:** `HarParserTest`가 textual/base64/binary, response-less, malformed entry, exact-scope 경계를 확인하고 `FlowScopeWebServerTest`가 `.xml,.har` UI 계약, scanner-only API와 snapshot source를 확인한다. beta.26 `mvn clean verify` 249 tests와 완성 JAR smoke가 통과했다.
+- **한계:** HAR request `postData.text`와 response `content.text`에 없는 원 byte는 복원할 수 없다. imported Evidence에는 Burp live raw-byte vault가 없으므로 Web 요청 실험실 원문 전송 대신 마스킹된 상세·Repeater 폴백 경계를 따른다. 실제 ZAP 2.17 UI에서 만든 HAR 파일의 Burp beta.26 수동 import는 별도 gate다.
