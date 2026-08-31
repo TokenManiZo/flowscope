@@ -38,11 +38,53 @@ final class McpServerTest {
     }
 
     @Test
+    void noCacheExplorerGateAcceptsControlledAndRejectsUnverifiedRuntime() throws Exception {
+        String controlledRun = "controlled-" + java.util.UUID.randomUUID();
+        RequestRecord controlled = observation(Source.LLM, "controlled", 200, "{\"ok\":true}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, controlledRun);
+        server = new McpServer(state(Pipeline.run(List.of(controlled)), new RunContextRegistry(),
+                ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
+        assertTrue(server.hasExplorationResponse(Source.LLM, controlledRun));
+        server.close();
+
+        String unverifiedRun = "unverified-" + java.util.UUID.randomUUID();
+        RequestRecord unverified = observation(Source.LLM, "unverified", 200, "{\"ok\":true}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, unverifiedRun);
+        unverified.executionTrust = ExecutionTrust.UNVERIFIED_RUNTIME;
+        server = new McpServer(state(Pipeline.run(List.of(unverified)), new RunContextRegistry(),
+                ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
+        assertFalse(server.hasExplorationResponse(Source.LLM, unverifiedRun));
+    }
+
+    @Test
+    void lockedStatusUsesFrozenRunsAndIgnoresLaterLiveRecords() throws Exception {
+        RequestRecord human = laneMarker(Source.HUMAN);
+        RequestRecord scanner = laneMarker(Source.SCANNER);
+        RequestRecord llm = laneMarker(Source.LLM);
+        AtomicReference<Pipeline.Result> result = new AtomicReference<>(Pipeline.run(List.of(human, scanner, llm)));
+        RunContextRegistry contexts = new RunContextRegistry();
+        completeAll(contexts, result.get());
+        server = new McpServer(state(result, contexts, ScopePolicy.parse("https://api.example.test/v1"),
+                new AnalysisConfig()), 0, "test-token");
+        server.start();
+
+        assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
+        RequestRecord later = observation(Source.LLM, "later", 200, "{\"ok\":true}",
+                SourceDetail.LLM_VALIDATION, RunPhase.VALIDATION, "later-validation");
+        result.set(Pipeline.run(List.of(human, scanner, llm, later)));
+
+        JsonNode status = tool("flowscope_get_status", "{}").at("/result/structuredContent");
+        assertEquals(1, status.at("/source_counts/LLM").asInt());
+        assertEquals("completed-llm", status.at("/completed_runs/LLM/run_id").asText());
+    }
+
+    @Test
     void authenticatesNegotiatesAndExposesEvidence() throws Exception {
         RequestRecord record = record();
         RunContextRegistry contexts = new RunContextRegistry();
-        completeAll(contexts);
-        server = new McpServer(state(Pipeline.run(List.of(record, laneMarker(Source.HUMAN), laneMarker(Source.SCANNER))), contexts,
+        Pipeline.Result result = Pipeline.run(List.of(record, laneMarker(Source.HUMAN), laneMarker(Source.SCANNER)));
+        completeAll(contexts, result);
+        server = new McpServer(state(result, contexts,
                 ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
         server.start();
 
@@ -73,8 +115,9 @@ final class McpServerTest {
     void tracksLlmContextAndRejectsUnsupportedAssessmentAndOutOfScopeScan() throws Exception {
         RequestRecord record = record();
         RunContextRegistry contexts = new RunContextRegistry();
-        completeAll(contexts);
-        server = new McpServer(state(Pipeline.run(List.of(record, laneMarker(Source.HUMAN), laneMarker(Source.SCANNER))), contexts,
+        Pipeline.Result result = Pipeline.run(List.of(record, laneMarker(Source.HUMAN), laneMarker(Source.SCANNER)));
+        completeAll(contexts, result);
+        server = new McpServer(state(result, contexts,
                 ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
         server.start();
 
@@ -162,6 +205,29 @@ final class McpServerTest {
     }
 
     @Test
+    void activeExplorerSeesOnlyItsClosedWorldToolSurface() throws Exception {
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "llm-tools"));
+        server = new McpServer(state(Pipeline.run(List.of()), contexts,
+                ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
+        server.start();
+
+        JsonNode listed = json(post("test-token", request(4, "tools/list", "{}")));
+        List<String> names = listed.at("/result/tools").findValuesAsText("name");
+
+        assertEquals(8, names.size());
+        assertTrue(names.contains("flowscope_target_read"));
+        assertTrue(names.contains("flowscope_list_route_candidates"));
+        assertTrue(names.contains("flowscope_end_run"));
+        assertFalse(names.contains("flowscope_set_scope"));
+        assertFalse(names.contains("flowscope_lock_dataset"));
+        assertFalse(names.contains("flowscope_list_candidates"));
+        assertFalse(names.contains("flowscope_zap_baseline"));
+        assertFalse(names.contains("flowscope_submit_validation"));
+    }
+
+    @Test
     void refusesToLockCompletedButEmptyExplorationLanes() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
         completeAll(contexts);
@@ -171,7 +237,7 @@ final class McpServerTest {
 
         JsonNode lock = tool("flowscope_lock_dataset", "{}");
         assertTrue(lock.at("/result/isError").asBoolean());
-        assertTrue(lock.at("/result/structuredContent/error").asText().contains("captured exploration responses"));
+        assertTrue(lock.at("/result/structuredContent/error").asText().contains("trusted coverage Evidence"));
     }
 
     @Test
@@ -198,7 +264,9 @@ final class McpServerTest {
                 SourceDetail.BROWSER, RunPhase.EXPLORATION, "human-1");
         RequestRecord llm = observation(Source.LLM, "B", 200, "{\"id\":8,\"owner\":\"user-b\"}",
                 SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, "explore-1");
-        Pipeline.Result result = Pipeline.run(List.of(human, llm, laneMarker(Source.SCANNER)));
+        RequestRecord scanner = laneMarker(Source.SCANNER);
+        scanner.runId = "scanner-1";
+        Pipeline.Result result = Pipeline.run(List.of(human, llm, scanner));
         RouteCandidate shared = new RouteCandidate("https://api.example.test:443", "GET", "/v1/shared", true,
                 List.of(
                         routeProvenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST, human.evidenceId,
@@ -212,8 +280,8 @@ final class McpServerTest {
                 RouteCandidate.Applicability.APPLICABLE, "human OpenAPI");
         AtomicReference<List<RouteCandidate>> routeCandidates = new AtomicReference<>(List.of(shared, humanOnly));
         RunContextRegistry contexts = new RunContextRegistry();
-        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "human-1");
-        complete(contexts, Source.SCANNER, SourceDetail.ZAP_SPIDER, "scanner-1");
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "human-1", result);
+        complete(contexts, Source.SCANNER, SourceDetail.ZAP_SPIDER, "scanner-1", result);
         server = new McpServer(state(new AtomicReference<>(result), contexts,
                 ScopePolicy.parse("https://api.example.test/v1"), new AnalysisConfig(), routeCandidates),
                 0, "test-token");
@@ -404,10 +472,11 @@ final class McpServerTest {
     @Test
     void deterministicZapBaselineImportsExplicitDefinitionRunsSpidersWaitsForPassiveAndPublishesAlerts() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
-        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human");
-        complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm");
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
                 laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
+        Pipeline.Result initial = Pipeline.run(records.get());
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human", initial);
+        complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm", initial);
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 501);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
@@ -505,10 +574,11 @@ final class McpServerTest {
     void deterministicZapBaselineFallsBackWhenClientCompletesWithoutRenderedTraffic() throws Exception {
         String target = "http://127.0.0.1:8888/";
         RunContextRegistry contexts = new RunContextRegistry();
-        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human");
-        complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm");
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
                 laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
+        Pipeline.Result initial = Pipeline.run(records.get());
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human", initial);
+        complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm", initial);
         AtomicBoolean ajaxStarted = new AtomicBoolean();
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 1);
@@ -582,11 +652,17 @@ final class McpServerTest {
         String target = "http://127.0.0.1:8888/";
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicLong rawCaptures = new AtomicLong();
+        AtomicReference<List<RequestRecord>> rawRecords = new AtomicReference<>(new ArrayList<>());
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 0);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
         zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
             rawCaptures.incrementAndGet();
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            List<RequestRecord> copy = new ArrayList<>(rawRecords.get());
+            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
+                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
+            rawRecords.set(copy);
             zapReply(exchange, "{\"scan\":\"1\"}");
         });
         zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
@@ -603,6 +679,7 @@ final class McpServerTest {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
             server = new McpServer(new McpServer.State() {
                 @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public Pipeline.Result completionSnapshot() { return Pipeline.run(rawRecords.get()); }
                 @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
                     return source == Source.SCANNER && "raw-gate".equals(runId)
                             && (detail == null || detail == SourceDetail.ZAP_SPIDER) ? rawCaptures.get() : 0;
@@ -884,7 +961,7 @@ final class McpServerTest {
         RequestRecord secondProbe = records.get(3);
         RequestRecord control = records.get(4);
         RunContextRegistry contexts = new RunContextRegistry();
-        completeAll(contexts);
+        completeAll(contexts, result.get());
         server = new McpServer(state(result, contexts,
                 ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
         server.start();
@@ -938,7 +1015,7 @@ final class McpServerTest {
                 .filter(finding -> finding.type() == AuthorizationAnalysis.FindingType.BOLA)
                 .findFirst().orElseThrow();
         RunContextRegistry contexts = new RunContextRegistry();
-        completeAll(contexts);
+        completeAll(contexts, result.get());
         server = new McpServer(state(result, contexts,
                 ScopePolicy.parse("https://api.example.test/v1")), 0, "test-token");
         server.start();
@@ -1026,9 +1103,9 @@ final class McpServerTest {
     private static List<RequestRecord> validationRecords(boolean denied) {
         List<RequestRecord> records = new ArrayList<>();
         records.add(observation(Source.HUMAN, "A", 200, "{\"id\":7,\"owner\":\"user-a\"}",
-                SourceDetail.BROWSER, RunPhase.EXPLORATION, "human-1"));
+                SourceDetail.BROWSER, RunPhase.EXPLORATION, "completed-human"));
         records.add(observation(Source.LLM, "B", 200, "{\"id\":7,\"owner\":\"user-a\"}",
-                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, "explore-1"));
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, "completed-llm"));
         int status = denied ? 403 : 200;
         String body = denied ? "{\"error\":\"forbidden\"}" : "{\"id\":7,\"owner\":\"user-a\"}";
         records.add(observation(Source.LLM, "B", status, body,
@@ -1045,13 +1122,31 @@ final class McpServerTest {
                 source == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN,
                 source == Source.SCANNER ? ToolKind.ZAP : source == Source.LLM ? ToolKind.CODEX : ToolKind.BROWSER,
                 RunPhase.EXPLORATION, runId));
-        assertTrue(contexts.clear(source, runId));
+        RequestRecord marker = laneMarker(source);
+        marker.runId = runId;
+        marker.sourceDetail = detail;
+        assertNotNull(LaneCompletionPolicy.complete(contexts, source, runId, Pipeline.run(List.of(marker))));
+    }
+
+    private static void complete(RunContextRegistry contexts, Source source, SourceDetail detail, String runId,
+                                 Pipeline.Result snapshot) {
+        contexts.activate(source, new RunContextRegistry.Context(detail,
+                source == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN,
+                source == Source.SCANNER ? ToolKind.ZAP : source == Source.LLM ? ToolKind.CODEX : ToolKind.BROWSER,
+                RunPhase.EXPLORATION, runId));
+        assertNotNull(LaneCompletionPolicy.complete(contexts, source, runId, snapshot));
     }
 
     private static void completeAll(RunContextRegistry contexts) {
         complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human");
         complete(contexts, Source.SCANNER, SourceDetail.ZAP_SPIDER, "completed-scanner");
         complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm");
+    }
+
+    private static void completeAll(RunContextRegistry contexts, Pipeline.Result snapshot) {
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human", snapshot);
+        complete(contexts, Source.SCANNER, SourceDetail.ZAP_SPIDER, "completed-scanner", snapshot);
+        complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm", snapshot);
     }
 
     private static RequestRecord observation(Source source, String fingerprint, int status, String body,
@@ -1066,8 +1161,8 @@ final class McpServerTest {
         record.runId = runId;
         record.orchestrator = source == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
         record.tool = source == Source.LLM ? ToolKind.CODEX : ToolKind.BROWSER;
-        record.executionTrust = detail == SourceDetail.LLM_VALIDATION
-                ? ExecutionTrust.CONTROLLED : ExecutionTrust.OBSERVED;
+        record.executionTrust = source == Source.HUMAN
+                ? ExecutionTrust.OBSERVED : ExecutionTrust.CONTROLLED;
         return record;
     }
 
@@ -1090,7 +1185,7 @@ final class McpServerTest {
                 : source == Source.SCANNER ? Orchestrator.SYSTEM : Orchestrator.HUMAN;
         record.tool = source == Source.LLM ? ToolKind.CODEX
                 : source == Source.SCANNER ? ToolKind.ZAP : ToolKind.BROWSER;
-        record.executionTrust = source == Source.LLM ? ExecutionTrust.CONTROLLED : ExecutionTrust.OBSERVED;
+        record.executionTrust = source == Source.HUMAN ? ExecutionTrust.OBSERVED : ExecutionTrust.CONTROLLED;
         return record;
     }
 
@@ -1113,7 +1208,8 @@ final class McpServerTest {
         record.orchestrator = Orchestrator.LLM;
         record.tool = ToolKind.CODEX;
         record.phase = RunPhase.EXPLORATION;
-        record.runId = "llm-1";
+        record.runId = "completed-llm";
+        record.executionTrust = ExecutionTrust.CONTROLLED;
         record.reqText = "GET /v1/orders/7 HTTP/1.1\r\nCookie: session=secret-cookie\r\n\r\npassword=secret-password";
         record.respText = "HTTP/1.1 200 OK\r\nSet-Cookie: session=secret-session\r\n\r\n"
                 + "{\"access_token\":\"secret-access-token\"}";

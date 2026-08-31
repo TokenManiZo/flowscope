@@ -1,7 +1,8 @@
 package io.flowscope.core;
 
+import java.time.Instant;
 import java.util.EnumMap;
-import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -15,8 +16,18 @@ public final class RunContextRegistry {
         }
     }
 
+    /** 정상 완료된 정확한 exploration run과 완료 당시 근거를 보존한다. */
+    public record CompletedRun(Source source, String runId, SourceDetail detail,
+                               Orchestrator orchestrator, ToolKind tool, RunPhase phase,
+                               String accountId, Instant completedAt, List<String> evidenceIds,
+                               long responseCount, long coverageCount) {
+        public CompletedRun {
+            evidenceIds = List.copyOf(evidenceIds == null ? List.of() : evidenceIds);
+        }
+    }
+
     private final Map<Source, Context> contexts = new EnumMap<>(Source.class);
-    private final Set<Source> completedExplorations = EnumSet.noneOf(Source.class);
+    private final Map<Source, CompletedRun> completedExplorations = new EnumMap<>(Source.class);
 
     public synchronized void activate(Source source, Context context) {
         if (source == null || context == null || context.runId() == null || context.runId().isBlank()) {
@@ -33,16 +44,20 @@ public final class RunContextRegistry {
         contexts.put(source, context);
     }
 
-    public synchronized boolean clear(Source source, String runId) {
+    /** LaneCompletionPolicy가 Evidence 자격을 확인한 뒤에만 호출한다. */
+    synchronized boolean complete(Source source, String runId, CompletedRun completed) {
         Context active = contexts.get(source);
-        if (active == null || runId == null || !active.runId().equals(runId)) return false;
+        if (active == null || completed == null || runId == null || !active.runId().equals(runId)
+                || completed.source() != source || !runId.equals(completed.runId())
+                || active.phase() != RunPhase.EXPLORATION) return false;
         contexts.remove(source);
-        if (active.phase() == RunPhase.EXPLORATION
-                && (source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM)) {
-            completedExplorations.add(source);
-        }
+        completedExplorations.put(source, completed);
         return true;
     }
+
+    /** 이전 내부 API 호환용. 검증 없는 clear는 완료를 만들지 않고 run을 중단한다. */
+    @Deprecated
+    public synchronized boolean clear(Source source, String runId) { return abort(source, runId); }
 
     public synchronized void transition(Source source, String runId, SourceDetail detail) {
         transition(source, runId, detail, null, false);
@@ -70,16 +85,29 @@ public final class RunContextRegistry {
         return true;
     }
 
-    /** 확장 종료·전체 초기화 전용. 정상 도구 종료에는 runId 조건부 clear를 사용한다. */
+    /** 확장 종료·전체 초기화 전용. 정상 도구 종료에는 LaneCompletionPolicy를 사용한다. */
     public synchronized void clear(Source source) { contexts.remove(source); }
     public synchronized Context current(Source source) { return contexts.get(source); }
-    public synchronized Set<Source> completedExplorations() { return Set.copyOf(completedExplorations); }
+    public synchronized Set<Source> completedExplorations() { return Set.copyOf(completedExplorations.keySet()); }
+    public synchronized Map<Source, CompletedRun> completedRuns() { return Map.copyOf(completedExplorations); }
+    public synchronized CompletedRun completedRun(Source source) { return completedExplorations.get(source); }
     public synchronized boolean hasActiveRuns() { return !contexts.isEmpty(); }
 
-    public synchronized void restoreCompleted(Set<Source> sources) {
-        if (sources == null) return;
-        sources.stream().filter(source -> source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM)
-                .forEach(completedExplorations::add);
+    /** A launcher-side evidence gate may revoke a completion recorded by a misbehaving client. */
+    public synchronized void invalidateCompleted(Source source) {
+        completedExplorations.remove(source);
+    }
+
+    public synchronized void restoreCompletedRuns(Map<Source, CompletedRun> values) {
+        completedExplorations.clear();
+        if (values == null) return;
+        values.forEach((source, completed) -> {
+            if (source != null && completed != null && completed.source() == source
+                    && completed.runId() != null && !completed.runId().isBlank()
+                    && completed.phase() == RunPhase.EXPLORATION) {
+                completedExplorations.put(source, completed);
+            }
+        });
     }
 
     public synchronized void reset() {

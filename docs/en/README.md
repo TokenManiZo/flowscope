@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.28
+# FlowScope 1.2.0-beta.32
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -36,6 +36,7 @@ identity ──access──▶ resource ──calls──▶ operation
 - A compact four-stage Quick Start that displays only the first incomplete Scope, HUMAN, ZAP, or LLM/Judge panel while keeping every stage directly inspectable.
 - Closed-world LLM execution through an exact-scope FlowScope request tool; direct external traffic is never trusted for decisive verdicts.
 - Server-enforced independent Explorer view, immutable three-lane dataset lock, and final LLM Judge synthesis.
+- Purpose-specific Evidence trust and exact-run completion. HUMAN requires observed or controlled responses; SCANNER and LLM require FlowScope-controlled responses. Completion freezes the Evidence IDs used by the lock, so later, imported, or direct-8082 records cannot enter the Judge dataset.
 - Web quick-start buttons that launch a fresh locally authenticated Codex or Claude CLI process for Explorer and a separate persistent Judge session that can be resumed explicitly.
 - MCP route-candidate visibility limited to the active Explorer's own source/run provenance; pre-lock status hides cross-lane counts, runs, assessments, and validations, ZAP state/execution is blocked during exploration, and the route inventory is frozen with the dataset lock.
 - One-click import of existing Burp Proxy history and response-less exact-scope Site Map candidates, with multiplicity-preserving duplicate suppression. The no-network onboarding sample is explicitly bannered as not being a real HUMAN/ZAP/LLM run.
@@ -62,9 +63,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.28.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. Download `flowscope-1.2.0-beta.32.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). Release users do not need Maven. Source contributors build with `mvn clean verify`.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.28.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.32.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
@@ -89,7 +90,7 @@ Create the HUMAN and SCANNER Burp proxy listeners. Montoya cannot create them fo
 |---|---|---|
 | `127.0.0.1:8080` | HUMAN | Browser or manual tester |
 | `127.0.0.1:8081` | SCANNER | ZAP outgoing target traffic |
-| `127.0.0.1:8082` | LLM | Optional direct-client fallback (`UNVERIFIED_RUNTIME`) |
+| `127.0.0.1:8082` | LLM | Optional direct-client observation fallback (`UNVERIFIED_RUNTIME`; retained Evidence only, never coverage/completion/lock) |
 
 Install Burp's CA certificate in each target client. Do not disable TLS validation as a permanent setup.
 
@@ -115,14 +116,14 @@ ZAP `scope-only` uses ZAP Context membership rather than FlowScope scope. Each i
 
 3. Configure ZAP's outgoing proxy as `127.0.0.1:8081` for Desktop or `host.docker.internal:8081` for Docker. FlowScope verifies this setting and the Network add-on before target traffic. In Web quick-start, select an exact-scope target plus anonymous and/or ACTIVE accounts. If definitions are already known, optionally enter `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`; FlowScope never guesses locations and rejects out-of-scope URLs. Each fresh identity Context imports the selected definitions with a 1,000-message soft bound, then runs Traditional Spider → Client Spider → AJAX Spider → passive completion → paginated alerts. Definition or rendered-crawler failures remain visible warnings without discarding other Evidence. Active Scan, fuzzing, and Forced Browse remain outside the default campaign.
    API definition imports may generate write-method example requests, so any non-empty definition list also requires a separate Burp approval dialog before the campaign starts.
-4. In Web quick-start, select a locally logged-in Codex or Claude client, the exact-scope target, and optionally an ACTIVE account, then click **LLM Explorer 시작**. FlowScope creates a temporary workspace and a new process that never resumes an earlier conversation. Codex user skills, plugins, and external browser surfaces are disabled per run without modifying user files. GET/HEAD/OPTIONS use the non-destructive `flowscope_target_read`; writes retain confirmation and Burp approval. The server refuses to complete an Explorer with zero captured response Evidence. Web search, Wayback, external API docs/source repositories, direct curl, and browser networking remain forbidden.
+4. In Web quick-start, select the exact-scope target and optionally an ACTIVE account, then click **LLM Explorer 시작**. FlowScope finds standard Codex/Claude installations, checks official subscription status in the background, auto-selects a READY provider, and rechecks immediately before launch. It creates a temporary workspace and a new process that never resumes an earlier conversation. For Codex, only the existing `auth.json` login is linked into an owner-only temporary `CODEX_HOME`; global skills, plugins, memories, and external tool settings are not inherited. FlowScope itself does not parse, log, or persist the credential in a project, while the provider CLI may update the linked file during normal authentication refresh. GET/HEAD/OPTIONS use the non-destructive `flowscope_target_read`; writes retain confirmation and Burp approval. Both the MCP server and launcher refuse to complete an Explorer with zero response Evidence for the exact run. Web search, Wayback, external API docs/source repositories, direct curl, and browser networking remain forbidden.
 5. Review ambiguous traffic, then click **Judge 시작** after all three exploration lanes completed. FlowScope starts a separate new Judge session, which locks the dataset, reads candidates and native ZAP alerts, submits non-final assessments, and captures narrow safe-GET validation/control Evidence. After completion, **Judge 계속** resumes that exact provider session ID; it does not keep a terminal process permanently open.
 6. FlowScope accepts `CONFIRMED` or `REJECTED` only when that bundle matches the current candidate and passes the server checks: at least two same-run LLM reproductions, at least one authorized control, matching identity/operation/resource semantics, and response evidence. A BOLA read response must structurally contain the target object ID; an owner string alone is insufficient. Everything else remains `INCONCLUSIVE`. Review **시나리오** and Request/Response details; human records are an auditable override, not an unverified automatic finding.
 7. Use **로컬 DB 저장·연결** once to select a `.flowscope.db`; later changes are coalesced into atomic snapshots. Use **JSON 내보내기** for interchange. Raw broker credentials are never persisted, so login capture must be repeated after a reload.
 
 ## Codex or Claude subscriptions—no model API key
 
-FlowScope does not call a model API and does not receive a provider OAuth token. Codex or Claude authenticates with the user's existing local CLI login/subscription; FlowScope supplies only the local MCP endpoint and process arguments. The Web buttons look for an executable `codex` or `claude` in Burp's launch environment and remove inherited `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` values from the child. The random Bearer value copied in the FlowScope Burp tab protects only that localhost server. It is passed to the child environment, not command arguments, prompts, or project files, and remains masked in the UI.
+FlowScope does not call a model API and does not receive a provider OAuth token. Codex or Claude authenticates with the user's existing local CLI login/subscription; FlowScope supplies only the local MCP endpoint and process arguments. The launcher searches inherited PATH and standard user/runtime install paths, runs `codex login status` or `claude auth status --json`, retains only sanitized readiness, and removes inherited `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` values from both preflight and execution children. The random Bearer value copied in the FlowScope Burp tab protects only that localhost server. It is passed to the child environment, not command arguments, prompts, or project files, and remains masked in the UI.
 
 The `agent-workspace` workflow below remains the manual fallback. Explorer uses Codex ephemeral execution or Claude no-persistence execution and is never resumed. Judge gets a separate provider session ID that is retained only for explicit follow-up. Some Claude Code versions may still leave provider metadata despite `--no-session-persistence`; FlowScope warns about that limitation, never logically reuses the Explorer session, and does not delete the user's provider home directory.
 

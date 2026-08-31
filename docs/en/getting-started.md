@@ -29,7 +29,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. Download `flowscope-1.2.0-beta.28.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
+1. Download `flowscope-1.2.0-beta.32.jar` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases).
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
@@ -90,7 +90,7 @@ PowerShell 5.1, Windows container mode, and running the helper inside WSL are ou
 
 ## Codex or Claude Code
 
-Install and sign in to one provider client using its official guide. Confirm `codex --version` or `claude --version` succeeds. FlowScope uses the executable visible to the Burp process and does not request a provider API key. If a GUI-launched Burp does not inherit the terminal PATH, set an absolute path before Burp starts:
+Install and sign in to one provider client using its official guide. FlowScope searches inherited PATH plus standard macOS/Linux user, Homebrew, version-manager, Windows WinGet, and npm launcher locations. It runs `codex login status` or `claude auth status --json` without provider API keys, caches only sanitized readiness, auto-selects a ready provider, and rechecks immediately before launch. A Codex button run still requires the normal login file at `$CODEX_HOME/auth.json` or `~/.codex/auth.json`; only that file is linked into an owner-only temporary home. Non-standard portable installs can set an absolute path before Burp starts:
 
 ```text
 -Dflowscope.llm.codex.path=/absolute/path/to/codex
@@ -126,7 +126,7 @@ mvn clean verify
 2. Register test accounts and capture any required login through HUMAN `8080` until the broker reports the account usable.
 3. Start a HUMAN pass, explore with the Burp browser, and end the pass.
 4. Select the target and anonymous/ACTIVE identities. If you already have an API definition, optionally add one line per definition as `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`, then start the isolated ZAP campaign. Every URL must remain in exact scope. Because an import can generate write-method example requests, a non-empty list requires a separate Burp approval. Active Scan is not part of this automatic baseline.
-5. Select the local provider and start the independent LLM Explorer. It completes only after at least one exact-scope response Evidence is captured and the server accepts that run's end request.
+5. Start the independent LLM Explorer; FlowScope auto-selects a locally READY provider. No model API key or manual MCP configuration is required after the official CLI is installed and signed in. Use readiness refresh only when login state has just changed. The live activity feed shows actual model messages, FlowScope tool states, the injected instructions, and the Evidence completion gate; it never claims to expose hidden reasoning or raw credential-bearing tool payloads. The lane completes only after at least one exact-scope response Evidence is captured and the server accepts that run's end request.
 6. Review `REVIEW` observations. After all three lanes complete, start Judge.
 7. Treat only server-gated reproduction and authorized-control bundles as final; a ZAP alert or LLM statement alone is not confirmation.
 8. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.

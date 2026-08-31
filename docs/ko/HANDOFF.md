@@ -6,12 +6,12 @@
 
 | 항목 | 기준 |
 |---|---|
-| 기준 날짜 | 2026-08-30 |
-| 제품 버전 | `1.2.0-beta.28` |
-| 인계 작성 시 HEAD | 이 문서와 같은 beta.28 커밋 |
+| 기준 날짜 | 2026-08-31 |
+| 제품 버전 | `1.2.0-beta.32` |
+| 인계 기준 | beta.32 코드·문서가 함께 포함된 동일 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
-| 자동 회귀 | 258 tests, 실패·오류·skip 0 + 완성 JAR smoke 통과 |
+| 자동 회귀 | 최신 수치와 JAR digest는 `beta-validation.md` 정본 참조 |
 | 현재 판정 | 기능이 연결된 베타. 오픈소스 정식 출시 및 블라인드 벤치마크 착수 전 P1 결함 수정과 실제 Burp 통합 검증이 필요함 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.28.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.32.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -102,9 +102,9 @@ Traditional Spider
 ### 3.5 독립 LLM Explorer와 Judge
 
 1. Codex 또는 Claude Code CLI에 사용자가 직접 로그인한다.
-2. Web에서 LLM Explorer를 시작한다.
+2. Web에서 공급자 상태가 준비됨인지 확인하고 LLM Explorer를 시작한다. API key 입력이나 MCP 설정 복사는 없다.
 3. FlowScope가 임시 workspace와 새 CLI 프로세스를 만들고 MCP 정보·격리 지침·run ID를 표준입력으로 준다.
-4. Explorer는 자기 LLM run Evidence만 보고 `flowscope_target_request`로 exact-scope 탐색한다.
+4. Explorer는 자기 LLM run Evidence만 보고 read/write가 분리된 MCP로 exact-scope를 탐색한다. Web 작업 피드는 실제 모델 메시지·도구 상태·Evidence gate를 표시하지만 reasoning과 raw tool payload는 표시하지 않는다.
 5. HUMAN, SCANNER, LLM 탐색이 모두 정상 종료되면 Judge를 시작한다.
 6. Judge는 Explorer와 다른 새 세션에서 잠긴 후보·갭·Evidence·ZAP Alert를 읽는다.
 7. 최종 판정은 동일 validation run의 반복 재현과 정상 대조 Evidence를 서버가 확인한 경우에만 허용된다.
@@ -200,7 +200,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 | [`ZapClient.java`](../../src/main/java/io/flowscope/integration/ZapClient.java) | localhost ZAP API, spider/passive/alert orchestration |
 | [`McpServer.java`](../../src/main/java/io/flowscope/integration/McpServer.java) | localhost 인증 MCP, Explorer 격리, dataset lock, target executor, assessment/validation gate |
 | [`LocalLlmRunner.java`](../../src/main/java/io/flowscope/integration/LocalLlmRunner.java) | Codex/Claude CLI 새 프로세스, 임시 workspace, Judge 재개 |
-| [`ProjectStore.java`](../../src/main/java/io/flowscope/integration/ProjectStore.java) | JSON schema v2 저장·로드 |
+| [`ProjectStore.java`](../../src/main/java/io/flowscope/integration/ProjectStore.java) | JSON schema v3 저장·로드, v1/v2 호환 읽기, exact completed run 보존 |
 | [`SqliteProjectStore.java`](../../src/main/java/io/flowscope/integration/SqliteProjectStore.java) | 관계형 로컬 DB와 atomic checkpoint |
 
 ### 5.5 Web 작업면
@@ -265,7 +265,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-08-30 기준 `mvn clean verify`에서 258 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·0-Evidence 종료 거부·Codex 실행 격리와 ZAP outgoing-proxy/명시 API 정의 import 회귀를 추가했다.
+2026-08-31 기준 JDK 21 `mvn clean verify` 275 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장을 추가했다. JAR digest는 `beta-validation.md` 정본을 따른다.
 
 ### 실제·standalone 검증
 
@@ -275,8 +275,8 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.28 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
-- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.28 scanner import와 Evidence 상세 확인
+- beta.29 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
+- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.29 scanner import와 Evidence 상세 확인
 - 실제 ZAP 2.17에서 OpenAPI·GraphQL·Postman·SOAP 정의별 요청 생성, exact-scope 차단, 신원별 인증 주입과 경고 표시 확인
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
 - Windows 10/11 + Docker Desktop + PowerShell 7 실기기의 ZAP API/upstream/target capture
@@ -547,7 +547,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.28.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.32.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

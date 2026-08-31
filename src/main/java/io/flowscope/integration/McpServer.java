@@ -24,8 +24,13 @@ import java.util.concurrent.Executors;
 
 /** Localhost 전용 MCP Streamable HTTP(JSON-RPC) 서버. 모델 제공자 토큰을 취급하지 않는다. */
 public final class McpServer implements AutoCloseable {
+    private static final Set<String> EXPLORER_VISIBLE_TOOLS = Set.of(
+            "flowscope_get_status", "flowscope_list_sessions", "flowscope_target_read",
+            "flowscope_target_request", "flowscope_list_route_candidates", "flowscope_list_evidence",
+            "flowscope_get_evidence", "flowscope_end_run");
     public interface State {
         Pipeline.Result snapshot();
+        default Pipeline.Result completionSnapshot() { return snapshot(); }
         default long capturedCount(Source source, String runId, SourceDetail detail) {
             return snapshot().records.stream()
                     .filter(record -> record.source == source && runId.equals(record.runId))
@@ -258,7 +263,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.28");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.29");
         result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_read/flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "
@@ -308,6 +313,15 @@ public final class McpServer implements AutoCloseable {
         tools.add(tool("flowscope_zap_client_spider", "Start the recommended strict-scope ZAP Client Spider for browser-rendered routes.", targetSchema(false), false, false));
         tools.add(tool("flowscope_zap_ajax_spider", "Start a scoped ZAP AJAX spider for browser-rendered routes; resulting HTTP remains source=SCANNER.", targetSchema(false), false, false));
         tools.add(tool("flowscope_zap_active_scan", "Start a scoped ZAP Active Scan after explicit Burp approval.", targetSchema(true), false, true));
+        RunContextRegistry.Context activeLlm = state.contexts().current(Source.LLM);
+        if (activeLlm != null && activeLlm.phase() == RunPhase.EXPLORATION
+                && activeLlm.detail() == SourceDetail.LLM_EXPLORER) {
+            ArrayNode visible = json.createArrayNode();
+            tools.forEach(candidate -> {
+                if (EXPLORER_VISIBLE_TOOLS.contains(candidate.path("name").asText())) visible.add(candidate);
+            });
+            return json.createObjectNode().set("tools", visible);
+        }
         return json.createObjectNode().set("tools", tools);
     }
 
@@ -352,18 +366,20 @@ public final class McpServer implements AutoCloseable {
     }
 
     private JsonNode status() {
-        Pipeline.Result snapshot = state.snapshot();
+        Pipeline.Result snapshot = lockedSnapshot == null ? state.snapshot() : lockedSnapshot;
         ObjectNode out = json.createObjectNode();
         RunContextRegistry.Context llm = state.contexts().current(Source.LLM);
         boolean independentView = lockedSnapshot == null && llm != null && llm.phase() == RunPhase.EXPLORATION;
         boolean lockedView = lockedSnapshot != null;
         List<RequestRecord> visibleRecords = independentView
                 ? snapshot.records.stream().filter(record -> record.source == Source.LLM
-                && llm.runId().equals(record.runId)).toList()
+                && llm.runId().equals(record.runId))
+                .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.EXPLORER_VISIBILITY)).toList()
                 : snapshot.records;
         List<RequestRecord> visibleCoverage = independentView
                 ? snapshot.coverageRecords.stream().filter(record -> record.source == Source.LLM
-                && llm.runId().equals(record.runId)).toList()
+                && llm.runId().equals(record.runId))
+                .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.EXPLORER_VISIBILITY)).toList()
                 : snapshot.coverageRecords;
         out.put("independent_explorer_view", independentView);
         out.put("workflow_stage", lockedSnapshot == null ? "COLLECTING" : "LOCKED");
@@ -393,7 +409,7 @@ public final class McpServer implements AutoCloseable {
             out.put("review_records", visibleRecords.stream().filter(record -> record.trafficClassification.disposition()
                     == TrafficClassification.Disposition.REVIEW).count());
             List<RouteCandidate> visibleRoutes = independentView
-                    ? RouteCandidateViews.forRun(state.routeCandidates(), Source.LLM, llm.runId())
+                    ? explorerRoutes(snapshot, llm)
                     : lockedRouteCandidates;
             out.put("route_candidates", visibleRoutes.size());
         }
@@ -407,8 +423,19 @@ public final class McpServer implements AutoCloseable {
             out.put("final_validations", snapshotValidations().size());
             out.putPOJO("completed_lanes", state.contexts().completedExplorations().stream()
                     .map(Enum::name).sorted().toList());
+            ObjectNode completedRuns = out.putObject("completed_runs");
+            state.contexts().completedRuns().entrySet().stream()
+                    .sorted(java.util.Map.Entry.comparingByKey())
+                    .forEach(entry -> {
+                        RunContextRegistry.CompletedRun run = entry.getValue();
+                        completedRuns.putObject(entry.getKey().name())
+                                .put("run_id", run.runId())
+                                .put("response_count", run.responseCount())
+                                .put("coverage_count", run.coverageCount());
+                    });
         }
         out.put("llm_target_proxy", "http://127.0.0.1:8082");
+        out.put("llm_target_proxy_trust", ExecutionTrust.UNVERIFIED_RUNTIME.name());
         out.put("scanner_target_proxy", "http://127.0.0.1:8081");
         ObjectNode activeRuns = out.putObject("active_runs");
         List<Source> visibleRunSources = lockedView ? List.of(Source.HUMAN, Source.SCANNER, Source.LLM)
@@ -423,21 +450,31 @@ public final class McpServer implements AutoCloseable {
     private JsonNode lockDataset() {
         if (lockedSnapshot != null) throw new IllegalStateException("dataset is already locked");
         if (state.contexts().hasActiveRuns()) throw new IllegalStateException("end all active runs before locking");
-        Set<Source> completed = state.contexts().completedExplorations();
-        if (!completed.containsAll(Set.of(Source.HUMAN, Source.SCANNER, Source.LLM))) {
+        Map<Source, RunContextRegistry.CompletedRun> completed = state.contexts().completedRuns();
+        if (!completed.keySet().containsAll(Set.of(Source.HUMAN, Source.SCANNER, Source.LLM))) {
             throw new IllegalStateException("HUMAN, SCANNER, and independent LLM exploration must all complete before lock");
         }
         Pipeline.Result snapshot = state.snapshot();
         List<String> emptyLanes = java.util.stream.Stream.of(Source.HUMAN, Source.SCANNER, Source.LLM)
-                .filter(source -> snapshot.coverageRecords.stream().noneMatch(record -> record.source == source
-                        && record.phase == RunPhase.EXPLORATION && record.hasResponse
-                        && record.runId != null && !record.runId.isBlank() && !"default".equals(record.runId)))
+                .filter(source -> !LaneCompletionPolicy.lockEligible(completed.get(source), snapshot))
                 .map(Enum::name).toList();
         if (!emptyLanes.isEmpty()) {
-            throw new IllegalStateException("completed lanes need captured exploration responses before lock: " + emptyLanes);
+            throw new IllegalStateException("completed lanes need trusted coverage Evidence from their exact completed run: "
+                    + emptyLanes);
         }
-        lockedSnapshot = snapshot;
-        lockedRouteCandidates = List.copyOf(state.routeCandidates());
+        List<RequestRecord> selected = snapshot.records.stream().filter(record -> {
+            RunContextRegistry.CompletedRun run = completed.get(record.source);
+            return run != null && run.evidenceIds().contains(record.evidenceId)
+                    && run.runId().equals(record.runId) && record.phase == RunPhase.EXPLORATION
+                    && SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.DATASET_LOCK);
+        }).toList();
+        lockedSnapshot = Pipeline.runIsolated(selected, state.config());
+        Set<String> selectedEvidence = lockedSnapshot.records.stream().map(record -> record.evidenceId)
+                .collect(java.util.stream.Collectors.toSet());
+        lockedRouteCandidates = state.routeCandidates().stream()
+                .filter(candidate -> candidate.provenance().stream()
+                        .anyMatch(item -> selectedEvidence.contains(item.evidenceId())))
+                .toList();
         lockId = "lock-" + System.currentTimeMillis();
         return json.createObjectNode().put("lock_id", lockId).put("records", lockedSnapshot.records.size())
                 .put("findings", lockedSnapshot.analysis.findings().size())
@@ -494,7 +531,9 @@ public final class McpServer implements AutoCloseable {
                 new RunContextRegistry.Context(detail, Orchestrator.LLM, tool, phase, runId,
                         accountId.isBlank() ? null : accountId));
         return json.createObjectNode().put("run_id", runId).put("source", Source.LLM.name())
-                .put("source_detail", detail.name()).put("proxy", "http://127.0.0.1:8082");
+                .put("source_detail", detail.name()).put("proxy", "http://127.0.0.1:8082")
+                .put("proxy_trust", ExecutionTrust.UNVERIFIED_RUNTIME.name())
+                .put("completion_requires_controlled_tools", phase == RunPhase.EXPLORATION);
     }
 
     private JsonNode endRun(JsonNode args) {
@@ -509,18 +548,16 @@ public final class McpServer implements AutoCloseable {
         if (active == null || !runId.equals(active.runId())) {
             throw new IllegalArgumentException("run_id does not match the active " + source.name() + " run");
         }
-        if (active.phase() == RunPhase.EXPLORATION && !hasExplorationResponse(source, runId)) {
-            throw new IllegalStateException("exploration run needs at least one captured in-scope response Evidence before completion");
-        }
-        if (!state.contexts().clear(source, runId)) {
+        if (active.phase() == RunPhase.EXPLORATION) {
+            LaneCompletionPolicy.complete(state.contexts(), source, runId, state.completionSnapshot());
+        } else if (!state.contexts().abort(source, runId)) {
             throw new IllegalStateException("run lease disappeared before completion");
         }
         return json.createObjectNode().put("ended", source.name()).put("run_id", runId);
     }
 
-    private boolean hasExplorationResponse(Source source, String runId) {
-        return state.snapshot().records.stream().anyMatch(record -> record.source == source
-                && runId.equals(record.runId) && record.phase == RunPhase.EXPLORATION && record.hasResponse);
+    public boolean hasExplorationResponse(Source source, String runId) {
+        return LaneCompletionPolicy.evaluate(source, runId, state.completionSnapshot()).eligible();
     }
 
     private JsonNode candidates(JsonNode args) {
@@ -538,7 +575,7 @@ public final class McpServer implements AutoCloseable {
         RunContextRegistry.Context explorer = independentExplorer();
         List<RouteCandidate> visible;
         if (explorer != null) {
-            visible = RouteCandidateViews.forRun(state.routeCandidates(), Source.LLM, explorer.runId());
+            visible = explorerRoutes(state.snapshot(), explorer);
         } else {
             requireLocked();
             visible = lockedRouteCandidates;
@@ -627,6 +664,8 @@ public final class McpServer implements AutoCloseable {
                 .filter(record -> selectedRunId.isBlank() || selectedRunId.equals(record.runId))
                 .filter(record -> selectedSource.isBlank() || selectedSource.equalsIgnoreCase(record.source.name()))
                 .filter(record -> phase.isBlank() || phase.equalsIgnoreCase(record.phase.name()))
+                .filter(record -> active == null
+                        || SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.EXPLORER_VISIBILITY))
                 .toList();
         int offset = Math.max(0, args.path("offset").asInt(0));
         int limit = Math.max(1, Math.min(200, args.path("limit").asInt(100)));
@@ -821,7 +860,8 @@ public final class McpServer implements AutoCloseable {
             List<RequestRecord> decisive = new ArrayList<>();
             probes.stream().map(byId::get).forEach(decisive::add);
             controls.stream().map(byId::get).forEach(decisive::add);
-            if (decisive.stream().anyMatch(record -> record.executionTrust != ExecutionTrust.CONTROLLED)) {
+            if (decisive.stream().anyMatch(record -> !SourceTrustPolicy.allows(
+                    record, SourceTrustPolicy.Use.DECISIVE_VERDICT))) {
                 throw new IllegalArgumentException("decisive verdict requires FlowScope-controlled target requests");
             }
             validateDecisiveBundle(candidate, verdict, probes.stream().map(byId::get).toList(),
@@ -957,7 +997,16 @@ public final class McpServer implements AutoCloseable {
         String status = findStatus(result);
         if (matchingContext && ("100".equals(status) || "stopped".equalsIgnoreCase(status)
                 || "finished".equalsIgnoreCase(status) || "complete".equalsIgnoreCase(status))) {
-            state.contexts().clear(Source.SCANNER, context.runId());
+            try {
+                LaneCompletionPolicy.complete(state.contexts(), Source.SCANNER, context.runId(),
+                        state.completionSnapshot());
+            } catch (RuntimeException error) {
+                state.contexts().abort(Source.SCANNER, context.runId());
+                if (result instanceof ObjectNode object && !object.has("warning_code")) {
+                    object.put("warning_code", "SCANNER_RUN_NOT_COMPLETABLE");
+                    object.put("warning", error.getMessage());
+                }
+            }
         }
         return result;
     }
@@ -1040,10 +1089,15 @@ public final class McpServer implements AutoCloseable {
             state.contexts().abort(Source.SCANNER, runId);
             zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
                     captured, definitions.size(), collectedAlerts.size(), campaignError);
-        } else if (!state.contexts().clear(Source.SCANNER, runId)) {
-            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
-                    captured, definitions.size(), collectedAlerts.size(), "scanner run lease disappeared before completion");
         } else {
+            try {
+                LaneCompletionPolicy.complete(state.contexts(), Source.SCANNER, runId, state.completionSnapshot());
+            } catch (RuntimeException error) {
+                state.contexts().abort(Source.SCANNER, runId);
+                zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                        captured, definitions.size(), collectedAlerts.size(), error.getMessage());
+                return;
+            }
             String warning = zapBaselineLanes.stream().map(ZapLaneResult::warning)
                     .filter(value -> value != null && !value.isBlank()).distinct()
                     .collect(java.util.stream.Collectors.joining("; "));
@@ -1493,7 +1547,7 @@ public final class McpServer implements AutoCloseable {
             if (response instanceof ObjectNode object) object.put("run_id", runId);
             return response;
         } catch (RuntimeException error) {
-            state.contexts().clear(Source.SCANNER, runId);
+            state.contexts().abort(Source.SCANNER, runId);
             throw error;
         }
     }
@@ -1515,7 +1569,7 @@ public final class McpServer implements AutoCloseable {
             if (response instanceof ObjectNode object) object.put("run_id", runId);
             return response;
         } catch (RuntimeException error) {
-            state.contexts().clear(Source.SCANNER, runId);
+            state.contexts().abort(Source.SCANNER, runId);
             throw error;
         }
     }
@@ -1537,7 +1591,7 @@ public final class McpServer implements AutoCloseable {
             if (response instanceof ObjectNode object) object.put("run_id", runId);
             return response;
         } catch (RuntimeException error) {
-            state.contexts().clear(Source.SCANNER, runId);
+            state.contexts().abort(Source.SCANNER, runId);
             throw error;
         }
     }
@@ -1809,7 +1863,22 @@ public final class McpServer implements AutoCloseable {
         if (explorer != null && (record.source != Source.LLM || !explorer.runId().equals(record.runId))) {
             throw new IllegalArgumentException("independent Explorer may read only its own run Evidence");
         }
+        if (explorer != null
+                && !SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.EXPLORER_VISIBILITY)) {
+            throw new IllegalArgumentException("independent Explorer may read only FlowScope-controlled Evidence");
+        }
         if (explorer == null) requireLocked();
+    }
+
+    private List<RouteCandidate> explorerRoutes(Pipeline.Result snapshot, RunContextRegistry.Context explorer) {
+        Set<String> controlledEvidence = snapshot.records.stream()
+                .filter(record -> record.source == Source.LLM && explorer.runId().equals(record.runId))
+                .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.EXPLORER_VISIBILITY))
+                .map(record -> record.evidenceId).collect(java.util.stream.Collectors.toSet());
+        return RouteCandidateViews.forRun(state.routeCandidates(), Source.LLM, explorer.runId()).stream()
+                .filter(candidate -> candidate.provenance().stream()
+                        .anyMatch(item -> controlledEvidence.contains(item.evidenceId())))
+                .toList();
     }
 
     private String validatedAccount(String accountId) {

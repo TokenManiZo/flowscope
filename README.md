@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.28
+# FlowScope 1.2.0-beta.32
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -32,6 +32,7 @@ USER B        orders:101      GET /api/orders/{id}
 - 배포 중립 ZAP 온보딩. 빠른 시작이 loopback API/version/key를 먼저 확인해 연결 전 캠페인을 막고, ZAP Desktop과 선택형 Docker Quick Start를 같은 화면에서 안내하되 API만으로 배포 종류를 추측하지 않음
 - exact scope FlowScope 요청 도구를 통한 closed-world LLM 실행. 직접 외부 트래픽은 최종 판정의 결정적 Evidence로 신뢰하지 않음
 - 서버가 강제하는 독립 Explorer 시야, 불변 3-lane dataset lock, 최종 LLM Judge 종합
+- 목적별 Evidence 신뢰 정책과 exact-run 완료 gate. HUMAN은 관측/통제 응답, SCANNER·LLM은 FlowScope 통제 응답만 레인 완료 근거가 되며 완료 시점 Evidence ID를 동결해 후발·가져오기·8082 직접 fallback 트래픽이 잠금 데이터셋에 섞이지 않음
 - Web 빠른 시작에서 로컬 구독 Codex/Claude CLI를 새 프로세스로 실행하는 `LLM Explorer 시작`·`Judge 시작` 버튼. Explorer는 비영속 새 세션, Judge는 별도 새 세션으로 시작하며 완료 뒤 같은 Judge 대화를 명시적으로 재개 가능
 - Explorer가 자신의 source/run provenance로 발견한 route만 읽는 MCP 후보 목록. pre-lock status는 다른 lane의 수량·run·판정을 숨기고, Explorer 중에는 ZAP 상태/실행도 차단하며, lock 시 route inventory를 함께 고정
 - 기존 Burp Proxy history 원클릭 가져오기. 같은 동작에서 응답 없는 exact-scope Site Map 항목은 미요청 route 후보로 가져오고, 실제 반복 횟수를 보존해 중복을 억제. 네트워크를 사용하지 않는 온보딩 샘플은 화면에 “실제 점검 결과 아님” 배너로 명시
@@ -66,7 +67,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.28.jar`를 받고, Burp **Extensions → Installed → Add → Java**에서 불러옵니다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.32.jar`를 받고, Burp **Extensions → Installed → Add → Java**에서 불러옵니다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
 3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
@@ -101,7 +102,7 @@ cd testflowscope
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.28.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.32.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
@@ -128,7 +129,7 @@ HUMAN과 SCANNER용 Burp proxy listener를 만드십시오. Montoya는 확장 �
 |---|---|---|
 | `127.0.0.1:8080` | HUMAN | 브라우저 또는 수동 점검자 |
 | `127.0.0.1:8081` | SCANNER | 대상 요청을 보내는 ZAP |
-| `127.0.0.1:8082` | LLM | 선택적 직접 클라이언트 fallback (`UNVERIFIED_RUNTIME`) |
+| `127.0.0.1:8082` | LLM | 선택적 직접 클라이언트 관측 fallback (`UNVERIFIED_RUNTIME`, Evidence 보존만; coverage·완료·잠금 불가) |
 
 각 대상 클라이언트에 Burp CA 인증서를 설치하십시오. TLS 검증을 영구적으로 끄지 마십시오.
 
@@ -153,14 +154,14 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 - 선택적 수동 검증: 그래프에서 API를 누르고 Evidence의 **요청 실험실**을 엽니다. `원문 그대로`, `비로그인으로 전송`, `등록 계정으로 전송` 중 의도한 모드를 고르고 path/query/header/body를 편집한 뒤 명시적으로 전송합니다. 네트워크 목적지는 원 Evidence 서비스로 고정되고 redirect는 따라가지 않습니다. 응답과 시간·크기를 확인할 수 있으며 전송 결과는 HUMAN `VALIDATION` Evidence가 되어 탐색 커버리지를 늘리지 않습니다. live 원문은 기본 요청 1MiB·응답 4MiB·총 32MiB의 Burp 프로세스 메모리에서만 유지되고 프로젝트 교체·초기화·unload 때 폐기됩니다. 프로젝트/XML/HAR에서 가져온 항목이나 상한 초과 항목은 마스킹 전문만 사용할 수 있습니다.
 
 3. ZAP의 outgoing proxy를 Desktop은 `127.0.0.1:8081`, Docker는 `host.docker.internal:8081`로 설정합니다. Web 빠른 시작의 **로컬 ZAP 연결**이 `연결됨`인지 확인합니다. 캠페인은 시작 전에 이 upstream과 `network` 포함 필수 add-on을 확인하고 틀리면 대상 트래픽 전에 실패합니다. exact-scope target, 비로그인, 하나 이상의 ACTIVE 계정을 복수 선택하고 **신원별 격리 검사 시작**을 누릅니다. 이미 알고 있는 OpenAPI·GraphQL·Postman·SOAP 정의가 있으면 선택 입력란에 형식과 URL을 명시할 수 있으며 FlowScope는 URL과 GraphQL endpoint가 현재 exact scope 안인지 검사하고 별도 Burp 승인 후 신원별 fresh Context에서 최대 1,000 messages로 가져옵니다. 정의는 write method 요청도 만들 수 있으므로 이름으로 추측하거나 무승인 실행하지 않습니다. 이후 Traditional Spider → Client Spider → AJAX Spider → passive 완료 → 전체 native alert 페이지 순서를 실행합니다. 정의 import 또는 Client/AJAX 단계 실패·0건은 다른 Evidence를 폐기하지 않고 `COMPLETED_WITH_WARNINGS`와 원인을 표시합니다. 계정 레인은 broker의 ACTIVE 인증만 주입하고 비로그인 레인은 fresh session의 익명 상태만 유지합니다. 신원별 범위 안 scanner 응답이 0건이면 SCANNER 완료 gate를 열지 않습니다. Active Scan·Fuzzer·Forced Browse는 안전 기본 캠페인에 포함되지 않습니다.
-4. Web 빠른 시작에서 로컬 로그인 상태인 Codex 또는 Claude, exact-scope target과 선택적 ACTIVE 계정을 고른 뒤 **LLM Explorer 시작**을 누릅니다. FlowScope는 이전 대화를 재개하지 않는 전용 임시 작업공간과 새 CLI 프로세스를 만들고, 번들 지침·대상·scope·서버가 선발급한 run ID를 표준입력으로 전달합니다. Codex에는 사용자 스킬·플러그인·외부 브라우저 계열 기능 비활성 설정을 실행별로 주입하고 사용자 파일은 수정하지 않습니다. Explorer의 GET·HEAD·OPTIONS는 비파괴 `flowscope_target_read`, 상태 변경 요청은 별도 승인형 `flowscope_target_request`만 사용합니다. 실제 범위 내 응답 Evidence가 한 건도 없으면 `flowscope_end_run`이 run을 닫지 않으므로 성공으로 표시되지 않습니다. 서버는 HUMAN/SCANNER 결과를 숨기며, 웹 검색·Wayback·외부 API 문서·소스 저장소·직접 curl/브라우저 네트워킹은 허용하지 않습니다.
+4. Web 빠른 시작에서 exact-scope target과 선택적 ACTIVE 계정을 고른 뒤 **LLM Explorer 시작**을 누릅니다. FlowScope가 표준 설치 경로의 Codex·Claude CLI를 찾고 공식 로그인 상태 명령을 백그라운드에서 확인해 준비된 provider를 자동 선택합니다. 별도 API key나 MCP 설정 복사는 필요 없습니다. 상태가 바뀌었는데 자동 확인을 기다리기 싫을 때만 **다시 확인**을 누릅니다. FlowScope는 시작 직전 로그인 상태를 다시 확인하고, 이전 대화를 재개하지 않는 전용 임시 작업공간과 새 CLI 프로세스를 만들며 번들 지침·대상·scope·서버가 선발급한 run ID를 표준입력으로 전달합니다. **LLM 작업 피드**에는 실제 모델 메시지, FlowScope 도구명·상태와 Evidence 완료 게이트가 약 1초 간격으로 표시되며 숨겨진 추론 원문, 도구 원문 인자·결과, 자격증명은 표시하지 않습니다. Codex는 사용자의 `auth.json` 로그인만 owner-only 임시 `CODEX_HOME`에 연결하고 전역 스킬·플러그인·기억·외부 도구 설정은 상속하지 않습니다. FlowScope 자체는 인증 내용을 파싱·로그·프로젝트 저장하지 않으며, provider CLI는 정상 인증 갱신 과정에서 연결된 로그인 파일을 갱신할 수 있습니다. Explorer의 첫 대상 호출과 모든 GET·HEAD·OPTIONS는 비파괴 `flowscope_target_read`, 상태 변경 요청은 별도 승인형 `flowscope_target_request`만 사용합니다. 같은 run의 실제 범위 내 응답 Evidence가 한 건도 없으면 서버와 launcher의 이중 gate가 성공 표시와 완료 lane을 모두 거부합니다. 서버는 HUMAN/SCANNER 결과를 숨기며, 웹 검색·Wayback·외부 API 문서·소스 저장소·직접 curl/브라우저 네트워킹은 허용하지 않습니다.
 5. 파싱 결과의 **검토 대기**를 확인해 실제 API면 operation을 **분석에 포함**, 보조 트래픽이면 **기본 숨김**으로 확정할 수 있습니다. 세 레인을 모두 정상 종료한 뒤 **Judge 시작**을 누릅니다. FlowScope는 Explorer 대화와 분리된 새 Judge 세션을 시작합니다. Judge는 dataset을 잠그고 메인 후보·잠긴 REVIEW Evidence·ZAP native alert를 읽은 뒤, 비최종 assessment와 좁은 safe-GET 재현·정상 대조 Evidence를 제출합니다. 완료 뒤 **Judge 계속**은 새 Judge를 만들지 않고 저장된 provider session ID로 같은 Judge 대화를 재개합니다. CLI 프로세스 자체를 계속 켜 두는 구조는 아닙니다.
 6. FlowScope는 bundle이 현재 후보와 일치하고 서버 검사를 통과할 때만 `CONFIRMED` 또는 `REJECTED`를 허용합니다. 같은 run의 LLM 재현 2건 이상, 허가된 정상 대조 1건 이상, 일치하는 신원·작업·객체 의미와 응답 Evidence가 필요합니다. BOLA 읽기 응답은 대상 객체 ID를 구조적으로 포함해야 하며 owner 문자열만으로는 충분하지 않습니다. 나머지는 `INCONCLUSIVE`입니다. **시나리오**와 Request/Response를 검토하십시오. 사람 기록은 감사 가능한 오버라이드이며 검증되지 않은 자동 finding이 아닙니다.
 7. Burp 탭의 **로컬 DB 저장·연결**로 `.flowscope.db`를 한 번 지정합니다. 이후 그래프·계정·검토·판정 변경은 30초 checkpoint로 합쳐 같은 DB에 원자적으로 자동 저장되고 정상 unload 직전 한 번 더 저장됩니다. 공유·검토용 단일 문서가 필요하면 **JSON 내보내기**를 사용합니다. DB에도 raw broker 자격증명은 저장되지 않으므로 Burp를 다시 열면 로그인 연결은 다시 해야 합니다.
 
 ## 모델 API 키 없이 Codex·Claude 구독 사용
 
-FlowScope는 모델 API를 직접 호출하거나 provider OAuth token을 받지 않습니다. Codex 또는 Claude는 사용자의 기존 CLI 로그인·구독으로 인증하고 FlowScope는 로컬 MCP 서버와 실행 인자만 제공합니다. Web 버튼은 Burp를 시작한 환경에서 실행 가능한 `codex` 또는 `claude`를 찾고, 상속된 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`는 자식 환경에서 제거합니다. FlowScope 탭의 **연결 문자열 복사**로 얻는 무작위 Bearer 값은 localhost MCP 서버를 보호하는 FlowScope 토큰이며 OpenAI·Anthropic credential이 아닙니다. 토큰은 자식 프로세스 환경에만 전달하고 명령행·프롬프트·프로젝트에는 넣지 않으며 화면에는 마스킹합니다.
+FlowScope는 모델 API를 직접 호출하거나 provider OAuth token을 받지 않습니다. Codex 또는 Claude는 사용자의 기존 CLI 로그인·구독으로 인증하고 FlowScope는 로컬 MCP 서버·실행 인자·역할 지침을 매번 자동 구성합니다. 사용자는 공식 CLI를 설치하고 한 번 로그인한 뒤 Web 버튼을 누르면 됩니다. FlowScope는 `PATH`와 macOS/Linux의 `~/.local/bin`, Homebrew 경로, `NVM_BIN`·`PNPM_HOME`·`BUN_INSTALL`, Windows의 WinGet/npm 사용자 경로를 확인하고 `codex login status` 또는 `claude auth status --json`으로 로그인 여부만 판정합니다. 계정 이메일과 명령 원출력은 보존하지 않으며 상속된 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`는 사전 확인과 실제 실행 양쪽에서 제거합니다. FlowScope 탭의 **연결 문자열 복사**로 얻는 무작위 Bearer 값은 localhost MCP 서버를 보호하는 FlowScope 토큰이며 OpenAI·Anthropic credential이 아닙니다. 토큰은 자식 프로세스 환경에만 전달하고 명령행·프롬프트·프로젝트에는 넣지 않으며 화면에는 마스킹합니다.
 
 버튼 자동화가 환경상 동작하지 않으면 아래 `agent-workspace` 방식이 수동 폴백입니다. Explorer는 Codex의 ephemeral 실행 또는 Claude의 no-persistence 실행을 사용하고 절대 resume하지 않습니다. Judge는 별도 provider session ID를 보존해 후속 질문만 같은 세션으로 재개합니다. 일부 Claude Code 버전은 `--no-session-persistence`에도 provider metadata 파일을 남길 수 있으므로 UI가 이를 경고합니다. FlowScope는 논리적으로 그 세션을 재사용하지 않으며, 사용자의 provider 홈을 임의 삭제하지 않습니다.
 

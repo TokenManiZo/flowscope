@@ -6,14 +6,19 @@ import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.ExecutionTrust;
 import io.flowscope.core.HarParser;
+import io.flowscope.core.Orchestrator;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RunPhase;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
+import io.flowscope.core.SourceDetail;
 import io.flowscope.core.StoredPayload;
+import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.LocalLlmRunner;
@@ -80,6 +85,13 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("pane.hidden=pane.dataset.setupPane!==stage"));
         assertTrue(index.body().contains("LLM Explorer 시작"));
         assertTrue(index.body().contains("Judge 시작"));
+        assertTrue(index.body().contains("LLM 작업 피드"));
+        assertTrue(index.body().contains("실제 공급자 메시지·도구 상태만 표시"));
+        assertTrue(index.body().contains("renderLlmActivity()"));
+        assertTrue(index.body().contains("LLM_RUN.provider_messages"));
+        assertTrue(index.body().contains("llmProviderReadiness"));
+        assertTrue(index.body().contains("refreshLlmReadiness()"));
+        assertTrue(index.body().contains("LLM_RUN.prompt_preview"));
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
         assertTrue(index.body().contains("scannerlane"));
         assertTrue(index.body().contains("Traditional "));
@@ -93,7 +105,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.28 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.32 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
@@ -258,6 +270,7 @@ final class FlowScopeWebServerTest {
         assertEquals(400, post("/api/human-run", "action=end&runId=wrong", token).statusCode());
         assertEquals("human-p5-1", state.contexts.current(Source.HUMAN).runId());
 
+        state.addHumanEvidence("human-p5-1", null);
         JsonNode ended = json(post("/api/human-run", "action=end&runId=human-p5-1", token));
         assertFalse(ended.path("active").asBoolean());
         assertTrue(ended.path("completed").asBoolean());
@@ -280,6 +293,7 @@ final class FlowScopeWebServerTest {
 
         assertEquals("user-a", began.path("accountId").asText());
         assertEquals("user-a", state.contexts.current(Source.HUMAN).accountId());
+        state.addHumanEvidence("human-a", "user-a");
         assertEquals(200, post("/api/human-run", "action=end&runId=human-a", token).statusCode());
         assertEquals(400, post("/api/human-run", "action=begin&runId=human-b&account=missing", token).statusCode());
     }
@@ -390,6 +404,10 @@ final class FlowScopeWebServerTest {
         assertTrue(initial.at("/run/providers/CODEX").asBoolean());
         assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
         assertEquals(0, initial.path("completed_lanes").size());
+
+        JsonNode refreshed = json(post("/api/llm-run", "action=refresh", token));
+        assertEquals("IDLE", refreshed.at("/run/status").asText());
+        assertTrue(state.llmRefreshed);
 
         HttpResponse<String> started = post("/api/llm-run", "action=start&provider=CODEX&role=EXPLORER&target="
                 + encode(state.record.service + "/") + "&account=", token);
@@ -605,6 +623,7 @@ final class FlowScopeWebServerTest {
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
         private volatile LocalLlmRunner.Provider llmProvider;
+        private volatile boolean llmRefreshed;
         private volatile LocalLlmRunner.Role llmRole;
         private volatile String llmTarget = "";
         private volatile boolean llmCancelled;
@@ -664,6 +683,10 @@ final class FlowScopeWebServerTest {
             return JSON.createObjectNode().put("status", "IDLE").set("providers", JSON.createObjectNode()
                     .put("CODEX", true).put("CLAUDE", true));
         }
+        @Override public JsonNode refreshLlm() {
+            llmRefreshed = true;
+            return llmStatus();
+        }
         @Override public JsonNode cancelLlm() {
             llmCancelled = true;
             return JSON.createObjectNode().put("status", "CANCELLED").set("providers", JSON.createObjectNode()
@@ -675,6 +698,7 @@ final class FlowScopeWebServerTest {
                     .set("providers", JSON.createObjectNode().put("CODEX", true).put("CLAUDE", true));
         }
         @Override public void rebuild() { result = Pipeline.run(new ArrayList<>(records), config); revision.incrementAndGet(); }
+        @Override public Pipeline.Result completionSnapshot() { rebuild(); return result; }
         @Override public void clearTraffic() { records.clear(); rebuild(); }
         @Override public void loadSample() { }
         @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
@@ -710,6 +734,21 @@ final class FlowScopeWebServerTest {
             manualCredentialMode = mode;
             return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
                     "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
+        }
+
+        private void addHumanEvidence(String runId, String accountId) {
+            RequestRecord evidence = new RequestRecord(Source.HUMAN, record.service,
+                    "GET", "/v1/human-pass", 200, accountId == null ? "anon" : accountId);
+            evidence.hasResponse = true;
+            evidence.body = "{\"ok\":true}";
+            evidence.sourceDetail = SourceDetail.BROWSER;
+            evidence.orchestrator = Orchestrator.HUMAN;
+            evidence.tool = ToolKind.BROWSER;
+            evidence.phase = RunPhase.EXPLORATION;
+            evidence.runId = runId;
+            evidence.executionTrust = ExecutionTrust.OBSERVED;
+            records.add(evidence);
+            rebuild();
         }
     }
 }

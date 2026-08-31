@@ -858,10 +858,10 @@ public final class FlowScopeExtension implements BurpExtension {
                 Path path = file.toPath().toAbsolutePath().normalize();
                 if (database) {
                     sqliteProjectStore.save(path, snapshot, analysisConfig, assessments, validations,
-                            runContexts.completedExplorations(), routeCandidates);
+                            runContexts.completedRuns(), routeCandidates);
                 } else {
                     projectStore.save(path, snapshot, analysisConfig, assessments, validations,
-                            runContexts.completedExplorations(), routeCandidates);
+                            runContexts.completedRuns(), routeCandidates);
                 }
                 if (database) {
                     activeProjectDatabase = path;
@@ -921,7 +921,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (mcpServer != null) mcpServer.resetWorkflow();
                 if (mcpServer != null) mcpServer.replaceAssessments(assessments);
                 if (mcpServer != null) mcpServer.replaceValidations(validations);
-                runContexts.restoreCompleted(data.completedLanes());
+                runContexts.restoreCompletedRuns(data.completedRuns());
                 activeProjectDatabase = database ? path : null;
                 databaseSavedRevision.set(database ? revision.get() : -1);
                 if (controlTab != null) controlTab.render(result);
@@ -978,7 +978,7 @@ public final class FlowScopeExtension implements BurpExtension {
         List<McpServer.Assessment> assessments = mcpServer == null ? List.of() : mcpServer.assessments();
         List<ValidationDecision> validations = mcpServer == null ? List.of() : mcpServer.validations();
         sqliteProjectStore.save(database, snapshot, analysisConfig, assessments, validations,
-                runContexts.completedExplorations(), routeCandidates);
+                runContexts.completedRuns(), routeCandidates);
     }
 
     private void configureInitialScope() {
@@ -1032,6 +1032,7 @@ public final class FlowScopeExtension implements BurpExtension {
         int port = Integer.getInteger("flowscope.web.port", 17777);
         webServer = new FlowScopeWebServer(new FlowScopeWebServer.State() {
             @Override public Pipeline.Result snapshot() { return latest; }
+            @Override public Pipeline.Result completionSnapshot() { rebuildImmediately(); return latest; }
             @Override public long revision() { return revision.get(); }
             @Override public AnalysisConfig config() { return analysisConfig; }
             @Override public List<McpServer.Assessment> assessments() {
@@ -1070,6 +1071,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 return llmRunnerStatus();
             }
             @Override public com.fasterxml.jackson.databind.JsonNode llmStatus() { return llmRunnerStatus(); }
+            @Override public com.fasterxml.jackson.databind.JsonNode refreshLlm() {
+                if (llmRunner == null) throw new IllegalStateException("구독 LLM CLI 실행기가 준비되지 않았습니다.");
+                llmRunner.refreshReadiness();
+                return llmRunnerStatus();
+            }
             @Override public com.fasterxml.jackson.databind.JsonNode cancelLlm() {
                 if (llmRunner == null) throw new IllegalStateException("구독 LLM CLI 실행기가 준비되지 않았습니다.");
                 llmRunner.cancel();
@@ -1247,6 +1253,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             mcpServer = new McpServer(new McpServer.State() {
                 @Override public Pipeline.Result snapshot() { return latest; }
+                @Override public Pipeline.Result completionSnapshot() { rebuildImmediately(); return latest; }
                 @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
                     synchronized (records) { return FlowScopeExtension.capturedCount(records, source, runId, detail); }
                 }
@@ -1275,6 +1282,7 @@ public final class FlowScopeExtension implements BurpExtension {
             mcpServer.start();
             llmRunner = new LocalLlmRunner("http://127.0.0.1:" + mcpServer.port() + "/mcp", mcpServer.token(),
                     runContexts, sessionBroker, mcpServer::datasetLocked,
+                    runId -> mcpServer.hasExplorationResponse(Source.LLM, runId),
                     message -> api.logging().logToError(message));
             String connection = "http://127.0.0.1:" + mcpServer.port() + "/mcp · Bearer " + mcpServer.token();
             if (controlTab != null) controlTab.setMcpStatus(connection);
@@ -1348,9 +1356,31 @@ public final class FlowScopeExtension implements BurpExtension {
         body.put("ended_at", current.endedAt() == null ? "" : current.endedAt().toString());
         body.put("message", current.message());
         body.put("output_tail", current.outputTail());
+        body.put("prompt_preview", llmRunner.promptPreview());
         body.put("session_metadata_may_remain", current.sessionMetadataMayRemain());
         com.fasterxml.jackson.databind.node.ObjectNode providers = body.putObject("providers");
         llmRunner.availability().forEach((provider, available) -> providers.put(provider.name(), available));
+        com.fasterxml.jackson.databind.node.ObjectNode providerMessages = body.putObject("provider_messages");
+        llmRunner.providerMessages().forEach((provider, message) -> providerMessages.put(provider.name(), message));
+        com.fasterxml.jackson.databind.node.ObjectNode readiness = body.putObject("provider_readiness");
+        llmRunner.readiness().forEach((provider, value) -> {
+            com.fasterxml.jackson.databind.node.ObjectNode item = readiness.putObject(provider.name());
+            item.put("state", value.state().name());
+            item.put("ready", value.ready());
+            item.put("message", value.message());
+            item.put("executable", value.executable());
+            item.put("checked_at", value.checkedAt() == null ? "" : value.checkedAt().toString());
+        });
+        com.fasterxml.jackson.databind.node.ArrayNode activities = body.putArray("activities");
+        llmRunner.activities().forEach(activity -> {
+            com.fasterxml.jackson.databind.node.ObjectNode item = activities.addObject();
+            item.put("sequence", activity.sequence());
+            item.put("at", activity.at().toString());
+            item.put("kind", activity.kind());
+            item.put("title", activity.title());
+            item.put("detail", activity.detail());
+            item.put("status", activity.status());
+        });
         return body;
     }
 

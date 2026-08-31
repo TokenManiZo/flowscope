@@ -1,5 +1,6 @@
 package io.flowscope.integration;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.Masking;
@@ -13,6 +14,7 @@ import io.flowscope.core.ToolKind;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,14 +27,19 @@ import java.util.EnumMap;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,6 +48,7 @@ public final class LocalLlmRunner implements AutoCloseable {
     public enum Provider { CODEX, CLAUDE }
     public enum Role { EXPLORER, JUDGE }
     public enum Status { IDLE, RUNNING, SUCCEEDED, FAILED, CANCELLED }
+    public enum ReadinessState { CHECKING, READY, LOGIN_REQUIRED, NOT_INSTALLED, ERROR }
 
     public record Request(Provider provider, Role role, String target, List<String> exactScope,
                           String accountId) {}
@@ -54,12 +62,27 @@ public final class LocalLlmRunner implements AutoCloseable {
         }
     }
 
+    /** Sanitized provider activity shown to the operator; hidden reasoning and raw tool payloads are excluded. */
+    public record Activity(long sequence, Instant at, String kind, String title, String detail,
+                           String status) {}
+
+    /** Sanitized local CLI readiness. Provider account identifiers and command output are never retained. */
+    public record ProviderReadiness(ReadinessState state, boolean ready, String message,
+                                    String executable, Instant checkedAt) {}
+
     @FunctionalInterface
     interface ProcessLauncher {
-        Process start(List<String> command, Path directory, Map<String, String> environment) throws IOException;
+        Process start(Provider provider, List<String> command, Path directory,
+                      Map<String, String> environment) throws IOException;
     }
 
     private static final int OUTPUT_LIMIT = 64 * 1024;
+    private static final int ACTIVITY_LIMIT = 200;
+    private static final int ACTIVITY_DETAIL_LIMIT = 4_000;
+    private static final int PROVIDER_LINE_LIMIT = 32 * 1024;
+    private static final int PREFLIGHT_OUTPUT_LIMIT = 16 * 1024;
+    private static final long PREFLIGHT_TTL_SECONDS = 30;
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern CODEX_SESSION = Pattern.compile("\\\"thread_id\\\"\\s*:\\s*\\\"([0-9a-fA-F-]{16,64})\\\"");
     private static final List<String> EXPLORER_TOOLS = List.of(
             "flowscope_get_status", "flowscope_list_sessions", "flowscope_target_read",
@@ -80,28 +103,57 @@ public final class LocalLlmRunner implements AutoCloseable {
     private final ProcessLauncher launcher;
     private final Consumer<String> logger;
     private final BooleanSupplier datasetLocked;
+    private final Predicate<String> explorerHasEvidence;
+    private final boolean enforceSubscriptionLogin;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "flowscope-llm-cli");
         thread.setDaemon(true);
         return thread;
     });
     private final AtomicReference<State> state = new AtomicReference<>(State.idle());
+    private final AtomicReference<List<Activity>> activities = new AtomicReference<>(List.of());
+    private final AtomicLong activitySequence = new AtomicLong();
+    private final AtomicBoolean readinessRefreshActive = new AtomicBoolean();
+    private final AtomicReference<Map<Provider, ProviderReadiness>> providerReadiness =
+            new AtomicReference<>(Map.of());
     private final Map<Provider, String> executableOverrides;
+    private final ExecutorService readinessWorker = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "flowscope-llm-readiness");
+        thread.setDaemon(true);
+        return thread;
+    });
     private volatile Process activeProcess;
     private volatile Path activeWorkspace;
     private volatile boolean taskActive;
     private volatile boolean closed;
     private volatile Request judgeRequest;
+    private volatile String promptPreview = "";
 
     public LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts,
-                          SessionBroker sessions, BooleanSupplier datasetLocked, Consumer<String> logger) {
+                          SessionBroker sessions, BooleanSupplier datasetLocked,
+                          Predicate<String> explorerHasEvidence, Consumer<String> logger) {
         this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, LocalLlmRunner::startProcess, logger,
-                configuredExecutables());
+                configuredExecutables(), explorerHasEvidence, true);
     }
 
     LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts, SessionBroker sessions,
                    BooleanSupplier datasetLocked, ProcessLauncher launcher, Consumer<String> logger,
                    Map<Provider, String> executableOverrides) {
+        this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, launcher, logger,
+                executableOverrides, ignored -> true, false);
+    }
+
+    LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts, SessionBroker sessions,
+                   BooleanSupplier datasetLocked, ProcessLauncher launcher, Consumer<String> logger,
+                   Map<Provider, String> executableOverrides, Predicate<String> explorerHasEvidence) {
+        this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, launcher, logger,
+                executableOverrides, explorerHasEvidence, false);
+    }
+
+    private LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts, SessionBroker sessions,
+                           BooleanSupplier datasetLocked, ProcessLauncher launcher, Consumer<String> logger,
+                           Map<Provider, String> executableOverrides, Predicate<String> explorerHasEvidence,
+                           boolean enforceSubscriptionLogin) {
         this.mcpUrl = requireLoopbackMcp(mcpUrl);
         this.mcpToken = mcpToken == null ? "" : mcpToken;
         this.contexts = contexts;
@@ -110,14 +162,52 @@ public final class LocalLlmRunner implements AutoCloseable {
         this.launcher = launcher;
         this.logger = logger == null ? ignored -> {} : logger;
         this.executableOverrides = Map.copyOf(executableOverrides == null ? Map.of() : executableOverrides);
+        this.explorerHasEvidence = explorerHasEvidence == null ? ignored -> false : explorerHasEvidence;
+        this.enforceSubscriptionLogin = enforceSubscriptionLogin;
+        providerReadiness.set(initialReadiness());
+        if (enforceSubscriptionLogin) refreshReadiness();
     }
 
     public State state() { return state.get(); }
 
+    public List<Activity> activities() { return activities.get(); }
+
+    public String promptPreview() { return promptPreview; }
+
     public Map<Provider, Boolean> availability() {
         Map<Provider, Boolean> result = new EnumMap<>(Provider.class);
-        for (Provider provider : Provider.values()) result.put(provider, resolveExecutable(provider) != null);
+        readiness().forEach((provider, value) -> result.put(provider, value.ready()));
         return Map.copyOf(result);
+    }
+
+    public Map<Provider, String> providerMessages() {
+        Map<Provider, String> result = new EnumMap<>(Provider.class);
+        readiness().forEach((provider, value) -> result.put(provider, value.message()));
+        return Map.copyOf(result);
+    }
+
+    public Map<Provider, ProviderReadiness> readiness() {
+        Map<Provider, ProviderReadiness> current = providerReadiness.get();
+        boolean stale = current.values().stream().map(ProviderReadiness::checkedAt)
+                .filter(java.util.Objects::nonNull)
+                .min(Comparator.naturalOrder())
+                .map(value -> value.plusSeconds(PREFLIGHT_TTL_SECONDS).isBefore(Instant.now()))
+                .orElse(true);
+        if (enforceSubscriptionLogin && stale) refreshReadiness();
+        return current;
+    }
+
+    public void refreshReadiness() {
+        if (!enforceSubscriptionLogin || closed || !readinessRefreshActive.compareAndSet(false, true)) return;
+        readinessWorker.execute(() -> {
+            try {
+                Map<Provider, ProviderReadiness> refreshed = new EnumMap<>(Provider.class);
+                for (Provider provider : Provider.values()) refreshed.put(provider, checkProvider(provider));
+                providerReadiness.set(Map.copyOf(refreshed));
+            } finally {
+                readinessRefreshActive.set(false);
+            }
+        });
     }
 
     public synchronized State start(Request request) {
@@ -130,11 +220,14 @@ public final class LocalLlmRunner implements AutoCloseable {
                 || request.exactScope().isEmpty() || !request.exactScope().contains(request.target())) {
             throw new IllegalArgumentException("대상은 현재 FlowScope exact scope 중 하나여야 합니다.");
         }
-        String executable = resolveExecutable(request.provider());
-        if (executable == null) {
-            throw new IllegalStateException(request.provider() + " CLI를 찾지 못했습니다. Burp 시작 PATH 또는 "
-                    + propertyName(request.provider()) + "를 설정하세요.");
+        ProviderReadiness readiness = enforceSubscriptionLogin ? checkProvider(request.provider())
+                : providerReadiness.get().get(request.provider());
+        updateReadiness(request.provider(), readiness);
+        if (readiness == null || !readiness.ready()) {
+            throw new IllegalStateException(readiness == null ? request.provider() + " CLI 준비 상태를 확인하지 못했습니다."
+                    : readiness.message());
         }
+        String executable = readiness.executable();
         if (contexts.hasActiveRuns()) throw new IllegalStateException("활성 HUMAN/SCANNER/LLM run을 먼저 종료하세요.");
         if (request.role() == Role.EXPLORER && datasetLocked.getAsBoolean()) {
             throw new IllegalStateException("잠긴 dataset에는 새 Explorer를 추가할 수 없습니다. 수집을 초기화해 새 점검을 시작하세요.");
@@ -172,6 +265,10 @@ public final class LocalLlmRunner implements AutoCloseable {
             throw new IllegalStateException("LLM 실행 준비 실패: " + error.getMessage(), error);
         }
 
+        resetActivities(prompt);
+        addActivity("SYSTEM", "실행 준비", request.provider() + " " + request.role()
+                + " · " + request.target() + " · " + (accountId.isBlank() ? "비로그인" : accountId), "READY");
+
         Instant startedAt = Instant.now();
         boolean metadataWarning = request.provider() == Provider.CLAUDE && request.role() == Role.EXPLORER;
         State running = new State(Status.RUNNING, request.provider(), request.role(), runId,
@@ -196,8 +293,14 @@ public final class LocalLlmRunner implements AutoCloseable {
         if (!datasetLocked.getAsBoolean()) throw new IllegalStateException("Judge dataset lock이 더 이상 유효하지 않습니다.");
         String safeMessage = Masking.truncate(Masking.maskSecrets(message == null ? "" : message.trim()), 4_000);
         if (safeMessage.isBlank()) throw new IllegalArgumentException("후속 질문을 입력하세요.");
-        String executable = resolveExecutable(previous.provider());
-        if (executable == null) throw new IllegalStateException(previous.provider() + " CLI를 찾지 못했습니다.");
+        ProviderReadiness readiness = enforceSubscriptionLogin ? checkProvider(previous.provider())
+                : providerReadiness.get().get(previous.provider());
+        updateReadiness(previous.provider(), readiness);
+        if (readiness == null || !readiness.ready()) {
+            throw new IllegalStateException(readiness == null ? previous.provider() + " CLI 준비 상태를 확인하지 못했습니다."
+                    : readiness.message());
+        }
+        String executable = readiness.executable();
         Path workspace;
         try {
             workspace = createWorkspace();
@@ -210,6 +313,8 @@ public final class LocalLlmRunner implements AutoCloseable {
         String prompt = "Continue only the existing FlowScope Judge analysis for the already locked dataset. "
                 + "Do not start Explorer, change scope, use external web/search, or invent Evidence. "
                 + "Use only FlowScope MCP and preserve the server Evidence gate.\n\nOperator follow-up:\n" + safeMessage;
+        resetActivities(prompt);
+        addActivity("SYSTEM", "Judge 후속 실행 준비", previous.provider() + " · 기존 공급자 세션 재개", "READY");
         State running = new State(Status.RUNNING, previous.provider(), Role.JUDGE, previous.runId(),
                 previous.providerSessionId(), Instant.now(), null, "기존 Judge 세션 후속 분석 중", "",
                 previous.sessionMetadataMayRemain());
@@ -226,6 +331,8 @@ public final class LocalLlmRunner implements AutoCloseable {
         Process process = activeProcess;
         if (process != null) process.destroy();
         abortActiveLlm();
+        if (current.role() == Role.EXPLORER) contexts.invalidateCompleted(Source.LLM);
+        addActivity("SYSTEM", "실행 중단", "사용자가 현재 LLM 실행을 중단했습니다.", "CANCELLED");
         State cancelled = new State(Status.CANCELLED, current.provider(), current.role(), current.runId(),
                 current.providerSessionId(), current.startedAt(), Instant.now(), "사용자가 LLM 실행을 중단했습니다.",
                 current.outputTail(), current.sessionMetadataMayRemain());
@@ -238,6 +345,9 @@ public final class LocalLlmRunner implements AutoCloseable {
         if (taskActive) return cancel();
         State idle = State.idle();
         state.set(idle);
+        activities.set(List.of());
+        activitySequence.set(0);
+        promptPreview = "";
         return idle;
     }
 
@@ -249,7 +359,7 @@ public final class LocalLlmRunner implements AutoCloseable {
             Map<String, String> environment = running.provider() == Provider.CLAUDE
                     ? Map.of("FLOWSCOPE_MCP_TOKEN", mcpToken, "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1")
                     : Map.of("FLOWSCOPE_MCP_TOKEN", mcpToken);
-            Process process = launcher.start(command, workspace, environment);
+            Process process = launcher.start(running.provider(), command, workspace, environment);
             synchronized (this) {
                 if (closed || state.get() != running) {
                     process.destroy();
@@ -257,10 +367,11 @@ public final class LocalLlmRunner implements AutoCloseable {
                 }
                 activeProcess = process;
             }
+            addActivity("SYSTEM", "CLI 실행", running.provider() + " 구독 CLI 프로세스를 시작했습니다.", "RUNNING");
             try (OutputStream stdin = process.getOutputStream()) {
                 stdin.write(prompt.getBytes(StandardCharsets.UTF_8));
             }
-            Thread reader = Thread.ofVirtual().start(() -> copy(process.getInputStream(), output));
+            Thread reader = Thread.ofVirtual().start(() -> copy(process.getInputStream(), output, running));
             int exit = process.waitFor();
             reader.join();
             if (state.get().status() == Status.CANCELLED) return;
@@ -276,8 +387,18 @@ public final class LocalLlmRunner implements AutoCloseable {
                 throw new IllegalStateException("LLM이 활성 run을 정상 종료하지 않았습니다: " + active.runId());
             }
             if (exit != 0) throw new IllegalStateException("CLI 종료 코드 " + exit);
-            if (running.role() == Role.EXPLORER && !contexts.completedExplorations().contains(Source.LLM)) {
+            RunContextRegistry.CompletedRun completedLlm = contexts.completedRun(Source.LLM);
+            if (running.role() == Role.EXPLORER && (completedLlm == null
+                    || !running.runId().equals(completedLlm.runId()))) {
                 throw new IllegalStateException("Explorer 완료 레인이 기록되지 않았습니다.");
+            }
+            if (running.role() == Role.EXPLORER && !explorerHasEvidence.test(running.runId())) {
+                contexts.invalidateCompleted(Source.LLM);
+                throw new IllegalStateException("Explorer가 이 run의 응답 Evidence를 한 건도 남기지 않았습니다.");
+            }
+            if (running.role() == Role.EXPLORER) {
+                addActivity("EVIDENCE", "응답 Evidence 확인", "현재 Explorer run에 귀속된 응답 Evidence가 확인됐습니다.",
+                        "COMPLETED");
             }
             if (running.role() == Role.JUDGE && !datasetLocked.getAsBoolean()) {
                 throw new IllegalStateException("Judge가 3-lane dataset lock을 완료하지 않았습니다.");
@@ -289,6 +410,7 @@ public final class LocalLlmRunner implements AutoCloseable {
                             : providerSessionId.isBlank() ? "Judge는 완료됐지만 공급자 세션 ID를 확인하지 못해 후속 재개는 사용할 수 없습니다."
                             : "Judge 실행이 완료됐고 후속 재개용 세션을 보존했습니다.",
                     tail, running.sessionMetadataMayRemain());
+            addActivity("SYSTEM", "실행 완료", terminal.message(), "SUCCEEDED");
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             abortActiveLlm();
@@ -306,8 +428,10 @@ public final class LocalLlmRunner implements AutoCloseable {
     }
 
     private State failedState(State running, String output, String message) {
+        if (running.role() == Role.EXPLORER) contexts.invalidateCompleted(Source.LLM);
         String safe = message == null || message.isBlank() ? "LLM 실행 실패" : message;
         logger.accept("FlowScope " + running.provider() + " " + running.role() + " 실패: " + safe);
+        addActivity("ERROR", "실행 실패", safe, "FAILED");
         return new State(Status.FAILED, running.provider(), running.role(), running.runId(),
                 running.providerSessionId(), running.startedAt(), Instant.now(), safe,
                 sanitizeOutput(output), running.sessionMetadataMayRemain());
@@ -324,7 +448,7 @@ public final class LocalLlmRunner implements AutoCloseable {
                     "-c", "tools.web_search=false"));
             addCodexIsolation(command);
             command.addAll(List.of("exec", "--strict-config", "--skip-git-repo-check",
-                    "--ignore-user-config", "--json"));
+                    "--ignore-user-config", "--ignore-rules", "--json"));
             if (role == Role.EXPLORER) command.add("--ephemeral");
             command.add("-");
             return List.copyOf(command);
@@ -354,7 +478,7 @@ public final class LocalLlmRunner implements AutoCloseable {
                     "-c", "tools.web_search=false"));
             addCodexIsolation(command);
             command.addAll(List.of("exec", "resume",
-                    "--strict-config", "--skip-git-repo-check", "--ignore-user-config", "--json",
+                    "--strict-config", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "--json",
                     providerSessionId, "-"));
             return List.copyOf(command);
         }
@@ -430,23 +554,189 @@ public final class LocalLlmRunner implements AutoCloseable {
     }
 
     private String resolveExecutable(Provider provider) {
-        String configured = executableOverrides.get(provider);
+        return resolveExecutable(provider, executableOverrides, System.getenv(),
+                System.getProperty("os.name", ""), Path.of(System.getProperty("user.home", ".")));
+    }
+
+    static String resolveExecutable(Provider provider, Map<Provider, String> overrides,
+                                    Map<String, String> environment, String osName, Path userHome) {
+        String configured = overrides == null ? null : overrides.get(provider);
         if (configured != null && !configured.isBlank()) return executable(configured);
         String name = provider == Provider.CODEX ? "codex" : "claude";
-        String path = System.getenv().getOrDefault("PATH", "");
-        List<String> directories = new ArrayList<>(List.of(path.split(java.io.File.pathSeparator)));
-        directories.addAll(List.of("/opt/homebrew/bin", "/usr/local/bin"));
-        for (String directory : directories) {
-            if (directory == null || directory.isBlank()) continue;
-            Path candidate = Path.of(directory, name);
-            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) return candidate.toString();
+        for (Path directory : candidateDirectories(environment, osName, userHome)) {
+            for (String executableName : executableNames(provider, osName)) {
+                Path candidate = directory.resolve(executableName);
+                if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) return candidate.toString();
+            }
         }
         return null;
     }
 
+    static List<String> executableNames(Provider provider, String osName) {
+        String name = provider == Provider.CODEX ? "codex" : "claude";
+        return osName != null && osName.toLowerCase(Locale.ROOT).contains("win")
+                ? List.of(name + ".exe", name + ".cmd", name + ".bat", name)
+                : List.of(name);
+    }
+
+    private static List<Path> candidateDirectories(Map<String, String> environment, String osName, Path userHome) {
+        Map<String, String> env = environment == null ? Map.of() : environment;
+        LinkedHashSet<Path> directories = new LinkedHashSet<>();
+        String path = env.entrySet().stream().filter(entry -> "PATH".equalsIgnoreCase(entry.getKey()))
+                .map(Map.Entry::getValue).findFirst().orElse("");
+        for (String entry : path.split(Pattern.quote(java.io.File.pathSeparator))) addDirectory(directories, entry);
+        for (String key : List.of("NVM_BIN", "PNPM_HOME")) addDirectory(directories, env.get(key));
+        String bun = env.get("BUN_INSTALL");
+        if (bun != null && !bun.isBlank()) addDirectory(directories, Path.of(bun).resolve("bin").toString());
+        if (userHome != null) addDirectory(directories, userHome.resolve(".local/bin").toString());
+        boolean windows = osName != null && osName.toLowerCase(Locale.ROOT).contains("win");
+        if (windows) {
+            addDirectory(directories, joinEnv(env.get("LOCALAPPDATA"), "Microsoft", "WinGet", "Links"));
+            addDirectory(directories, joinEnv(env.get("APPDATA"), "npm"));
+        } else {
+            addDirectory(directories, "/opt/homebrew/bin");
+            addDirectory(directories, "/usr/local/bin");
+            addDirectory(directories, "/usr/bin");
+        }
+        return List.copyOf(directories);
+    }
+
+    private static String joinEnv(String root, String... parts) {
+        if (root == null || root.isBlank()) return null;
+        Path path = Path.of(root);
+        for (String part : parts) path = path.resolve(part);
+        return path.toString();
+    }
+
+    private static void addDirectory(Set<Path> directories, String value) {
+        if (value == null || value.isBlank()) return;
+        try { directories.add(Path.of(value).toAbsolutePath().normalize()); }
+        catch (RuntimeException ignored) { }
+    }
+
+    private Map<Provider, ProviderReadiness> initialReadiness() {
+        Map<Provider, ProviderReadiness> initial = new EnumMap<>(Provider.class);
+        for (Provider provider : Provider.values()) {
+            String executable = resolveExecutable(provider);
+            if (executable == null) initial.put(provider, notInstalled(provider));
+            else if (!enforceSubscriptionLogin) initial.put(provider, new ProviderReadiness(ReadinessState.READY,
+                    true, provider + " 테스트 실행기를 사용할 수 있습니다.", executable, Instant.now()));
+            else initial.put(provider, new ProviderReadiness(ReadinessState.CHECKING, false,
+                    provider + " CLI 로그인 상태를 자동 확인하는 중입니다.", executable, Instant.now()));
+        }
+        return Map.copyOf(initial);
+    }
+
+    private ProviderReadiness checkProvider(Provider provider) {
+        String executable = resolveExecutable(provider);
+        if (executable == null) return notInstalled(provider);
+        List<String> command = provider == Provider.CODEX
+                ? List.of(executable, "login", "status")
+                : List.of(executable, "auth", "status", "--json");
+        Process process = null;
+        BoundedOutput output = new BoundedOutput(PREFLIGHT_OUTPUT_LIMIT);
+        try {
+            ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+            configureSubscriptionEnvironment(builder.environment(), Map.of());
+            configureExecutablePath(builder.environment(), executable);
+            process = builder.start();
+            Process launched = process;
+            Thread reader = Thread.ofVirtual().start(() -> copyBounded(launched.getInputStream(), output));
+            if (!process.waitFor(6, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                reader.join(1_000);
+                return new ProviderReadiness(ReadinessState.ERROR, false,
+                        provider + " 로그인 확인 시간이 초과됐습니다. 터미널에서 CLI 로그인을 확인하세요.",
+                        executable, Instant.now());
+            }
+            reader.join(1_000);
+            ProviderReadiness interpreted = interpretStatus(provider, executable, process.exitValue(), output.text());
+            if (provider == Provider.CODEX && interpreted.ready() && !codexLoginAvailable()) {
+                return new ProviderReadiness(ReadinessState.ERROR, false,
+                        "Codex 로그인은 확인됐지만 격리 실행에 필요한 auth.json을 찾지 못했습니다. "
+                                + "CODEX_HOME 또는 " + propertyName(provider) + " 설정을 확인하세요.",
+                        executable, Instant.now());
+            }
+            return interpreted;
+        } catch (IOException error) {
+            return new ProviderReadiness(ReadinessState.ERROR, false,
+                    provider + " 로그인 상태 명령을 실행하지 못했습니다: " + safeError(error), executable, Instant.now());
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            return new ProviderReadiness(ReadinessState.ERROR, false,
+                    provider + " 로그인 확인이 중단됐습니다.", executable, Instant.now());
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
+        }
+    }
+
+    static ProviderReadiness interpretStatus(Provider provider, String executable, int exitCode, String output) {
+        Instant checkedAt = Instant.now();
+        if (provider == Provider.CODEX) {
+            return exitCode == 0
+                    ? new ProviderReadiness(ReadinessState.READY, true,
+                    "Codex CLI와 ChatGPT 구독 로그인을 자동 확인했습니다.", executable, checkedAt)
+                    : new ProviderReadiness(ReadinessState.LOGIN_REQUIRED, false,
+                    "Codex CLI는 설치됐지만 로그인이 필요합니다. 터미널에서 codex login을 한 번 실행하세요.",
+                    executable, checkedAt);
+        }
+        try {
+            JsonNode status = JSON.readTree(output == null ? "" : output);
+            if (exitCode == 0 && status.path("loggedIn").asBoolean(false)) {
+                return new ProviderReadiness(ReadinessState.READY, true,
+                        "Claude Code CLI와 claude.ai 구독 로그인을 자동 확인했습니다.", executable, checkedAt);
+            }
+            return new ProviderReadiness(ReadinessState.LOGIN_REQUIRED, false,
+                    "Claude Code CLI는 설치됐지만 로그인이 필요합니다. 터미널에서 claude를 실행해 로그인하세요.",
+                    executable, checkedAt);
+        } catch (IOException ignored) {
+            return new ProviderReadiness(ReadinessState.ERROR, false,
+                    "Claude 로그인 상태 응답을 해석하지 못했습니다. CLI를 업데이트한 뒤 다시 확인하세요.",
+                    executable, checkedAt);
+        }
+    }
+
+    private static void copyBounded(InputStream input, BoundedOutput output) {
+        byte[] buffer = new byte[2_048];
+        try (input) {
+            int read;
+            while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+        } catch (IOException ignored) { }
+    }
+
+    private static String safeError(IOException error) {
+        String message = error.getMessage();
+        return Masking.truncate(Masking.maskSecrets(message == null ? error.getClass().getSimpleName() : message), 240);
+    }
+
+    private static ProviderReadiness notInstalled(Provider provider) {
+        return new ProviderReadiness(ReadinessState.NOT_INSTALLED, false,
+                provider + " CLI를 찾지 못했습니다. 공식 CLI를 설치한 뒤 다시 확인하세요.", "", Instant.now());
+    }
+
+    private void updateReadiness(Provider provider, ProviderReadiness value) {
+        if (provider == null || value == null) return;
+        providerReadiness.updateAndGet(previous -> {
+            Map<Provider, ProviderReadiness> next = new EnumMap<>(Provider.class);
+            next.putAll(previous);
+            next.put(provider, value);
+            return Map.copyOf(next);
+        });
+    }
+
+    private static boolean codexLoginAvailable() {
+        return codexLoginAvailable(codexHome());
+    }
+
+    static boolean codexLoginAvailable(Path home) {
+        return home != null && Files.isRegularFile(home.resolve("auth.json"));
+    }
+
     private static String executable(String value) {
-        Path path = Path.of(value);
-        return Files.isRegularFile(path) && Files.isExecutable(path) ? path.toString() : null;
+        try {
+            Path path = Path.of(value);
+            return Files.isRegularFile(path) && Files.isExecutable(path) ? path.toString() : null;
+        } catch (RuntimeException ignored) { return null; }
     }
 
     private static Map<Provider, String> configuredExecutables() {
@@ -466,11 +756,15 @@ public final class LocalLlmRunner implements AutoCloseable {
         return provider == Provider.CODEX ? ToolKind.CODEX : ToolKind.CLAUDE;
     }
 
-    private static Process startProcess(List<String> command, Path directory,
+    private static Process startProcess(Provider provider, List<String> command, Path directory,
                                         Map<String, String> environment) throws IOException {
         ProcessBuilder builder = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true);
         configureSubscriptionEnvironment(builder.environment(), environment);
         configureExecutablePath(builder.environment(), command.getFirst());
+        if (provider == Provider.CODEX) {
+            builder.environment().put("CODEX_HOME",
+                    prepareIsolatedCodexHome(directory, codexHome()).toString());
+        }
         return builder.start();
     }
 
@@ -505,34 +799,32 @@ public final class LocalLlmRunner implements AutoCloseable {
 
     private static void addCodexIsolation(List<String> command) {
         for (String feature : List.of("plugins", "apps", "in_app_browser", "browser_use",
-                "browser_use_external", "computer_use", "multi_agent", "goals", "memories")) {
+                "browser_use_external", "computer_use", "multi_agent", "goals", "memories",
+                "skill_search", "hooks", "unified_exec", "shell_tool", "code_mode", "view_image")) {
             command.addAll(List.of("-c", "features." + feature + "=false"));
         }
-        String disabledSkills = disabledCodexSkills(codexHome());
-        if (!disabledSkills.isBlank()) command.addAll(List.of("-c", "skills.config=" + disabledSkills));
     }
 
-    static String disabledCodexSkills(Path home) {
-        if (home == null) return "";
-        LinkedHashSet<String> skills = new LinkedHashSet<>();
-        for (Path root : List.of(home.resolve("skills"), home.resolve("plugins"))) {
-            if (!Files.isDirectory(root)) continue;
-            try (var paths = Files.walk(root, 8)) {
-                paths.filter(path -> Files.isRegularFile(path)
-                                && "SKILL.md".equals(path.getFileName().toString()))
-                        .map(path -> path.toAbsolutePath().normalize().toString())
-                        .sorted()
-                        .forEach(skills::add);
-            } catch (IOException | RuntimeException ignored) {
-                // Discovery is best-effort; built-in feature gates still disable plugin surfaces.
+    static Path prepareIsolatedCodexHome(Path workspace, Path sourceHome) throws IOException {
+        if (workspace == null) throw new IOException("Codex 격리 작업공간이 없습니다.");
+        Path sourceAuth = sourceHome == null ? null : sourceHome.resolve("auth.json");
+        if (sourceAuth == null || !Files.isRegularFile(sourceAuth)) {
+            throw new IOException("Codex 구독 로그인을 찾지 못했습니다. 터미널에서 codex login을 먼저 실행하세요.");
+        }
+        Path isolatedHome = Files.createDirectory(workspace.resolve("codex-home"));
+        setOwnerOnly(isolatedHome, true);
+        Path isolatedAuth = isolatedHome.resolve("auth.json");
+        try {
+            Files.createSymbolicLink(isolatedAuth, sourceAuth.toAbsolutePath().normalize());
+        } catch (IOException | UnsupportedOperationException | SecurityException symbolicFailure) {
+            try {
+                Files.createLink(isolatedAuth, sourceAuth);
+            } catch (IOException | UnsupportedOperationException | SecurityException hardLinkFailure) {
+                Files.copy(sourceAuth, isolatedAuth);
+                setOwnerOnly(isolatedAuth, false);
             }
         }
-        if (skills.isEmpty()) return "";
-        return skills.stream()
-                .map(path -> "{path=\"" + tomlString(path) + "\",enabled=false}")
-                .reduce((left, right) -> left + "," + right)
-                .map(value -> "[" + value + "]")
-                .orElse("");
+        return isolatedHome;
     }
 
     private static Path codexHome() {
@@ -545,8 +837,15 @@ public final class LocalLlmRunner implements AutoCloseable {
         return userHome.isBlank() ? null : Path.of(userHome, ".codex").toAbsolutePath().normalize();
     }
 
-    private static String tomlString(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    private static void setOwnerOnly(Path path, boolean directory) {
+        try {
+            Files.setPosixFilePermissions(path, directory
+                    ? Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.OWNER_EXECUTE)
+                    : Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        } catch (IOException | UnsupportedOperationException ignored) {
+            // Windows and non-POSIX filesystems do not expose POSIX permissions.
+        }
     }
 
     private static String requireLoopbackMcp(String value) {
@@ -559,14 +858,160 @@ public final class LocalLlmRunner implements AutoCloseable {
         return value;
     }
 
-    private static void copy(InputStream input, BoundedOutput output) {
-        byte[] buffer = new byte[4096];
-        try {
+    private void copy(InputStream input, BoundedOutput output, State running) {
+        char[] buffer = new char[2048];
+        StringBuilder line = new StringBuilder();
+        boolean truncated = false;
+        try (InputStreamReader reader = new InputStreamReader(input, StandardCharsets.UTF_8)) {
             int read;
-            while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+            while ((read = reader.read(buffer)) >= 0) {
+                byte[] bytes = new String(buffer, 0, read).getBytes(StandardCharsets.UTF_8);
+                output.write(bytes, 0, bytes.length);
+                for (int index = 0; index < read; index++) {
+                    char value = buffer[index];
+                    if (value == '\n') {
+                        publishProviderLine(running.provider(), line.toString(), truncated);
+                        line.setLength(0);
+                        truncated = false;
+                    } else if (line.length() < PROVIDER_LINE_LIMIT) {
+                        line.append(value);
+                    } else {
+                        truncated = true;
+                    }
+                }
+                publishLiveOutput(running, output.text());
+            }
+            if (!line.isEmpty() || truncated) publishProviderLine(running.provider(), line.toString(), truncated);
         } catch (IOException ignored) {
             // Process termination can close the stream while the reader is active.
         }
+    }
+
+    private void publishLiveOutput(State running, String value) {
+        state.updateAndGet(current -> current.status() == Status.RUNNING
+                && current.runId().equals(running.runId())
+                ? new State(current.status(), current.provider(), current.role(), current.runId(),
+                current.providerSessionId(), current.startedAt(), current.endedAt(), current.message(),
+                sanitizeOutput(value), current.sessionMetadataMayRemain()) : current);
+    }
+
+    private void publishProviderLine(Provider provider, String rawLine, boolean truncated) {
+        String line = rawLine == null ? "" : rawLine.strip();
+        if (line.isBlank()) return;
+        if (truncated) {
+            addActivity("SYSTEM", "공급자 출력 생략", "단일 출력 이벤트가 표시 상한을 넘어 잘랐습니다.", "TRUNCATED");
+            return;
+        }
+        try {
+            JsonNode root = JSON.readTree(line);
+            if (root == null || !root.isObject()) return;
+            if (provider == Provider.CODEX) publishCodexEvent(root);
+            else publishClaudeEvent(root);
+        } catch (IOException ignored) {
+            if (line.toLowerCase(java.util.Locale.ROOT).contains("error") || line.contains("실패")) {
+                addActivity("ERROR", "CLI 출력", line, "FAILED");
+            }
+        }
+    }
+
+    private void publishCodexEvent(JsonNode root) {
+        String type = root.path("type").asText("");
+        if ("thread.started".equals(type)) {
+            addActivity("SYSTEM", "새 Codex 세션", "이 실행 전용 공급자 세션을 시작했습니다.", "RUNNING");
+        } else if ("turn.started".equals(type)) {
+            addActivity("SYSTEM", "탐색 시작", "모델이 FlowScope 실행 지침과 허용 도구로 탐색을 시작했습니다.", "RUNNING");
+        } else if ("turn.completed".equals(type)) {
+            addActivity("SYSTEM", "모델 작업 완료", "모델 turn이 종료됐습니다. 서버 완료 게이트를 확인합니다.", "COMPLETED");
+        } else if (type.startsWith("item.")) {
+            JsonNode item = root.path("item");
+            String itemType = item.path("type").asText("");
+            if (itemType.contains("reasoning")) return;
+            if ("agent_message".equals(itemType)) {
+                addActivity("MODEL", "LLM 응답", item.path("text").asText(""), "item.completed".equals(type) ? "COMPLETED" : "RUNNING");
+            } else if (itemType.contains("tool") || itemType.contains("mcp")) {
+                String name = firstText(item, "name", "tool", "server");
+                addActivity("TOOL", name.isBlank() ? "FlowScope 도구 호출" : name,
+                        "원문 인자와 결과는 인증정보 보호를 위해 작업 피드에 표시하지 않습니다.",
+                        "item.completed".equals(type) ? "COMPLETED" : "RUNNING");
+            }
+        } else if (type.contains("error") || root.path("error").isObject() || root.path("error").isTextual()) {
+            addActivity("ERROR", "Codex 오류", firstText(root, "message", "error"), "FAILED");
+        }
+    }
+
+    private void publishClaudeEvent(JsonNode root) {
+        String type = root.path("type").asText("");
+        if ("system".equals(type)) {
+            addActivity("SYSTEM", "Claude 실행 준비", root.path("subtype").asText("공급자 초기화"), "RUNNING");
+            return;
+        }
+        if ("assistant".equals(type)) {
+            for (JsonNode content : root.path("message").path("content")) {
+                String contentType = content.path("type").asText("");
+                if ("thinking".equals(contentType)) continue;
+                if ("text".equals(contentType)) {
+                    addActivity("MODEL", "LLM 응답", content.path("text").asText(""), "RUNNING");
+                } else if ("tool_use".equals(contentType)) {
+                    addActivity("TOOL", content.path("name").asText("FlowScope 도구 호출"),
+                            "원문 인자는 인증정보 보호를 위해 작업 피드에 표시하지 않습니다.", "RUNNING");
+                }
+            }
+            return;
+        }
+        if ("user".equals(type)) {
+            for (JsonNode content : root.path("message").path("content")) {
+                if ("tool_result".equals(content.path("type").asText(""))) {
+                    addActivity("TOOL", "FlowScope 도구 결과", "도구 실행 결과를 모델에 전달했습니다.",
+                            content.path("is_error").asBoolean(false) ? "FAILED" : "COMPLETED");
+                }
+            }
+            return;
+        }
+        if ("result".equals(type)) {
+            boolean failed = root.path("is_error").asBoolean(false);
+            String result = root.path("result").asText("");
+            addActivity(failed ? "ERROR" : "MODEL", failed ? "Claude 오류" : "LLM 최종 응답", result,
+                    failed ? "FAILED" : "COMPLETED");
+        }
+    }
+
+    private void resetActivities(String prompt) {
+        activities.set(List.of());
+        activitySequence.set(0);
+        promptPreview = Masking.truncate(Masking.maskSecrets(prompt == null ? "" : prompt), 24_000);
+    }
+
+    private void addActivity(String kind, String title, String detail, String activityStatus) {
+        String safeTitle = Masking.truncate(Masking.maskSecrets(title == null ? "" : title), 160);
+        String safeDetail = Masking.truncate(Masking.maskSecrets(detail == null ? "" : detail), ACTIVITY_DETAIL_LIMIT);
+        if (safeTitle.isBlank() && safeDetail.isBlank()) return;
+        Activity activity = new Activity(activitySequence.incrementAndGet(), Instant.now(), kind,
+                safeTitle, safeDetail, activityStatus);
+        activities.updateAndGet(previous -> {
+            if (!previous.isEmpty()) {
+                Activity last = previous.getLast();
+                if (last.kind().equals(activity.kind()) && last.title().equals(activity.title())
+                        && last.detail().equals(activity.detail()) && last.status().equals(activity.status())) {
+                    return previous;
+                }
+            }
+            int from = Math.max(0, previous.size() - ACTIVITY_LIMIT + 1);
+            List<Activity> next = new ArrayList<>(previous.subList(from, previous.size()));
+            next.add(activity);
+            return List.copyOf(next);
+        });
+    }
+
+    private static String firstText(JsonNode node, String... fields) {
+        for (String field : fields) {
+            JsonNode value = node.path(field);
+            if (value.isTextual() && !value.asText().isBlank()) return value.asText();
+            if (value.isObject()) {
+                String message = value.path("message").asText("");
+                if (!message.isBlank()) return message;
+            }
+        }
+        return "";
     }
 
     private static String sanitizeOutput(String value) {
@@ -596,6 +1041,7 @@ public final class LocalLlmRunner implements AutoCloseable {
         if (process != null) process.destroy();
         abortActiveLlm();
         worker.shutdownNow();
+        readinessWorker.shutdownNow();
         deleteWorkspace(activeWorkspace);
     }
 

@@ -1,12 +1,12 @@
 # FlowScope 관련연구 · 한계 · 극복 전략 (v1)
 
 > 6갈래 문헌 서베이 후 **핵심 인용을 arXiv 원문에서 직접 재검증**한 결과. 근거 강도를 태그로 표기.
-> 태그: `[탄탄]` 동료검증/확립된 연구 · `[프리프린트]` 2025~26 단독저자 미검증 · `[학사논문]` · `[초록만]` 전문 미열람.
+> 태그: `[탄탄]` 동료검증/확립된 연구 · `[프리프린트]` 2025~26 단독저자 미검증 · `[학사논문]` · `[본문·아티팩트 확인]` 논문 본문과 공개 재현물을 직접 확인 · `[초록만]` 전문 미열람.
 > ⚠️ **검증에서 걸러낸 것**: 서베이 종합이 "BOLA taxonomy에서 action-level 78.6%"라 했으나 **원문은 41.7%**(78.5%는 '확인된 BOLA 비율'로 다른 값). "77.4% 의미이해/22.6% 순차정수"는 원문 초록에 없어 **폐기**.
 
 ## 1. 분야 지형 (6 계열)
 - (a) **스펙+능동 프로빙 블랙박스 스캐너** — AuthProbe`[프리프린트]`, BOLABuster(Unit42)`[탄탄/벤더]`, Akto`[도구]`
-- (b) **화이트박스(소스/DB)** — BOLAZ(arXiv:2507.02309)`[탄탄]`, BolaRay(CCS'24)`[초록만]`
+- (b) **화이트박스(소스/DB)** — BOLAZ(arXiv:2507.02309)`[탄탄]`, BolaRay(CCS'24)`[본문·아티팩트 확인]`
 - (c) **신원 스왑 차등 테스트** — Autorize·AuthMatrix`[도구]`, AuthScope(CCS'17)`[탄탄]`, CODASPY'14`[초록만]`
 - (d) **스펙/트래픽 기반 모델추론·커버리지** — RESTler`[탄탄]`, Morest`[탄탄]`, EvoMaster`[탄탄]`, APICarv(ICSE'23)`[탄탄]`, Log-Coverage(EASE'26)`[프리프린트/채택]`
 - (e) **LLM 펜테스트 에이전트** — PentestGPT`[탄탄]`, one-day exploit(Fang)`[탄탄]`, 400-run 재현성(2605.30096)`[프리프린트]`
@@ -66,7 +66,7 @@
 - 400-Run LLM Pentest Consistency — Erdem, arXiv:2605.30096 `[프리프린트·단독]` https://arxiv.org/abs/2605.30096
 - Detecting BOLA with LLMs — Johansens, U.Twente `[학사논문]` prec~0.3 https://essay.utwente.nl/fileshare/file/107423/Johansens_BA_BIT.pdf
 - AuthScope (CCS'17), RESTler(MSR), APICarv(ICSE'23), Self-Consistency/FActScore/RARR/Let's-Verify/SQuAD2.0/GCD — `[탄탄]` (URL은 journal 로그 참조)
-- BolaRay(CCS'24) `[초록만]`, CODASPY'14 `[초록만]`, BOLABuster(Unit42) `[벤더]`
+- BolaRay(CCS'24) `[본문·아티팩트 확인]` — [논문](https://leehaofeng.github.io/papers/2024-BolaRay.pdf), [공개 아티팩트](https://zenodo.org/records/13744942); CODASPY'14 `[초록만]`, BOLABuster(Unit42) `[벤더]`
 
 ---
-*v1 — 재검증에서 걸러낸 수치(78.6→41.7)와 약근거 태그를 반영. 이후 [초록만] 항목의 전문 확인, 그리고 §5 물려받는 한계를 설계로 얼마나 완화할지가 다음 과제.*
+*v2 — 재검증에서 걸러낸 수치(78.6→41.7)와 약근거 태그를 반영하고 BolaRay 본문·공개 아티팩트 확인 상태를 갱신했다. 남은 [초록만] 항목의 전문 확인, 그리고 §5 물려받는 한계를 설계로 얼마나 완화할지가 다음 과제다.*

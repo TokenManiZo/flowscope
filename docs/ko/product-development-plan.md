@@ -1,4 +1,32 @@
-# FlowScope 1.2.0-beta.28 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.32 제품 개발·검증 계획
+
+## 0. beta.32 우선순위: Evidence 신뢰·exact run 완료·재열기 무결성
+
+1. HUMAN/SCANNER/LLM 정상 완료를 `LaneCompletionPolicy` 한 경로로 통합하고 실패·취소를 abort로 분리한다.
+2. 8082 직접 fallback의 `UNVERIFIED_RUNTIME`을 원 Evidence로만 보존하고 coverage·Explorer 완료·dataset lock에서 제외한다.
+3. 완료 시점 Evidence ID를 exact run과 함께 동결하고 잠금 입력도 그 ID들로만 구성한다.
+4. JSON schema v3와 SQLite storage schema v2에 exact completed run을 저장하고 source-only legacy 표식은 완료로 복원하지 않는다.
+5. 무작위 run ID 대조, 전체 자동 회귀, 재현 JAR smoke를 통과한 뒤 실제 Burp 3-way 저장→재열기→재잠금을 수동 gate로 수행한다.
+
+**현재 상태:** 1~4 코드와 자동 회귀는 완료했다. 실제 beta.32 JAR 수동 통합 gate와 blind benchmark는 남아 있으며 `beta-validation.md`에서 수행 결과만 기록한다.
+
+## 이전 우선순위: beta.31 외부 사용자의 LLM 환경 자동 준비
+
+1. 사용자는 공식 Codex/Claude CLI 설치와 최초 구독 로그인만 수행한다.
+2. FlowScope가 운영체제 표준 경로·런타임 환경에서 실행 파일을 찾고 공식 auth status로 준비 상태를 자동 확인한다.
+3. Web polling은 캐시만 읽고 READY provider를 자동 선택한다. 실행 직전에는 다시 확인해 stale 상태로 시작하지 않는다.
+4. 전체 회귀, 두 로컬 로그인 CLI preflight, 재현 JAR을 통과한 뒤 beta.31 Burp MCP Explorer를 수동 통합 gate로 수행한다.
+
+**현재 상태:** 코드와 집중 회귀, 로컬 Codex·Claude auth status 확인은 완료했다. 전체 자동 회귀·재현 배포물 수치는 `beta-validation.md`를 따르며 실제 beta.31 Burp Explorer 완주는 남는다.
+
+## 0. beta.30 우선순위: 로그인 후 원클릭 실행과 관측 가능한 Explorer
+
+1. 공식 Codex/Claude CLI 설치와 로그인 이후에는 API key 입력·MCP 설정 복사 없이 Web 버튼으로 새 실행을 시작한다.
+2. 설치와 로그인 준비 상태를 구분하고 실패 원인을 대상 요청 전에 사용자에게 보여 준다.
+3. 실제 provider JSONL에서 모델 메시지·FlowScope tool 상태·Evidence 완료 gate만 bounded event로 노출한다. reasoning/thinking과 raw tool payload는 표시하지 않는다.
+4. 자동 회귀, 실제 구독 CLI smoke, 재현 JAR을 확인한 뒤 beta.30 JAR의 Burp MCP target run을 수동 통합 gate로 수행한다.
+
+**현재 상태:** 코드, 265개 전체 회귀, 실제 로그인 Codex CLI smoke와 재현 JAR은 완료했다. beta.30 JAR 재로드 뒤 실제 Burp MCP target run과 Claude 로그인 환경 gate는 대기 중이며 수치는 `beta-validation.md`를 따른다.
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -7,6 +35,16 @@
 > 허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러낸다.
 
 완성 기준은 기능 개수나 화면 존재 여부가 아니다. 공개 fixture와 정답 격리 블라인드 benchmark에서 endpoint·객체·분류·finding 측정값, 사용자 `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고, 후보와 verdict를 원 Request/Response·재현·정상 대조 Evidence까지 역추적할 수 있어야 한다.
+
+## 0. beta.29 우선순위: 실제 Codex Explorer 실행 격리와 성공 오라클 완결
+
+1. 사용자 home의 skill 목록을 끄는 설정 문자열에 의존하지 않고 로그인만 연결한 임시 `CODEX_HOME`으로 provider 실행 환경을 구조적으로 격리한다.
+2. 첫 target call을 exact entry GET read로 고정하고, 이후에는 같은 run 응답에서 파생된 route frontier만 순회시킨다.
+3. server-side `end_run` gate와 launcher-side exact Evidence gate를 함께 두고 0건 완료 표식은 취소한다.
+4. unit/integration 회귀와 실제 구독 Codex strict/ephemeral smoke를 통과한 뒤 단일 JAR을 만든다.
+5. 새 JAR 재로드 뒤 실제 Burp MCP에서 target read, route 재열거, Evidence 저장, 정상 종료를 확인한다. 이 gate 전에는 Explorer 실대상 완주를 주장하지 않는다.
+
+**현재 상태:** 1~4의 코드·자동 회귀와 로컬 Codex 0.147.0 구독 smoke를 완료했다. 5의 beta.29 Burp 재로드 통합 gate와 블라인드 benchmark는 대기 중이다.
 
 ## 0. beta.28 우선순위: Explorer 무성과 성공 차단과 명시 API 정의 탐색
 
@@ -271,7 +309,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.28 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Codex 실행별 skill/plugin 격리·읽기/쓰기 MCP 분리·0-Evidence 종료 거부·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현하고 258개 자동 회귀와 완성 JAR smoke를 완료했다. 실제 beta.28 Burp/블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.29 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Codex 임시 home 격리·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.29 Burp/블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

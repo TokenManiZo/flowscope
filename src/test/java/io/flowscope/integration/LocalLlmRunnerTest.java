@@ -1,12 +1,13 @@
 package io.flowscope.integration;
 
-import io.flowscope.core.RunContextRegistry;
-import io.flowscope.core.Source;
+import io.flowscope.core.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -18,10 +19,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 final class LocalLlmRunnerTest {
+    @TempDir Path tempDirectory;
     private final RunContextRegistry contexts = new RunContextRegistry();
     private final SessionBroker sessions = new SessionBroker();
     private final AtomicBoolean datasetLocked = new AtomicBoolean();
@@ -73,11 +76,51 @@ final class LocalLlmRunnerTest {
     }
 
     @Test
+    void resolvesCliFromStandardUserInstallDirectoriesOutsideBurpPath() throws Exception {
+        Path userHome = Files.createDirectories(tempDirectory.resolve("home"));
+        Path localBin = Files.createDirectories(userHome.resolve(".local/bin"));
+        Path codex = localBin.resolve("codex");
+        Files.writeString(codex, "test");
+        codex.toFile().setExecutable(true);
+
+        String resolved = LocalLlmRunner.resolveExecutable(LocalLlmRunner.Provider.CODEX, Map.of(),
+                Map.of("PATH", tempDirectory.resolve("empty").toString()), "Mac OS X", userHome);
+
+        assertEquals(codex.toString(), resolved);
+    }
+
+    @Test
+    void recognizesWindowsCliLauncherNames() {
+        assertEquals(List.of("claude.exe", "claude.cmd", "claude.bat", "claude"),
+                LocalLlmRunner.executableNames(LocalLlmRunner.Provider.CLAUDE, "Windows 11"));
+        assertEquals(List.of("codex"),
+                LocalLlmRunner.executableNames(LocalLlmRunner.Provider.CODEX, "Linux"));
+    }
+
+    @Test
+    void interpretsOfficialSubscriptionStatusWithoutRetainingProviderIdentity() {
+        LocalLlmRunner.ProviderReadiness codex = LocalLlmRunner.interpretStatus(
+                LocalLlmRunner.Provider.CODEX, "/usr/local/bin/codex", 0,
+                "Logged in using ChatGPT\nuser@example.test");
+        LocalLlmRunner.ProviderReadiness claude = LocalLlmRunner.interpretStatus(
+                LocalLlmRunner.Provider.CLAUDE, "/usr/local/bin/claude", 0,
+                "{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"email\":\"user@example.test\"}");
+        LocalLlmRunner.ProviderReadiness loggedOut = LocalLlmRunner.interpretStatus(
+                LocalLlmRunner.Provider.CLAUDE, "/usr/local/bin/claude", 1,
+                "{\"loggedIn\":false,\"email\":\"user@example.test\"}");
+
+        assertEquals(LocalLlmRunner.ReadinessState.READY, codex.state());
+        assertEquals(LocalLlmRunner.ReadinessState.READY, claude.state());
+        assertEquals(LocalLlmRunner.ReadinessState.LOGIN_REQUIRED, loggedOut.state());
+        assertFalse((codex.message() + claude.message() + loggedOut.message()).contains("user@example.test"));
+    }
+
+    @Test
     void startsCodexExplorerAsEphemeralFreshSessionAndRequiresExactRunEnd() throws Exception {
         FakeProcess process = new FakeProcess(0, "{\"type\":\"done\"}\n");
         AtomicReference<List<String>> command = new AtomicReference<>();
         AtomicReference<Map<String, String>> environment = new AtomicReference<>();
-        runner = runner((value, directory, env) -> {
+        runner = runner((provider, value, directory, env) -> {
             command.set(value);
             environment.set(env);
             return process;
@@ -95,14 +138,17 @@ final class LocalLlmRunnerTest {
         assertTrue(command.get().contains("tools.web_search=false"));
         assertTrue(command.get().contains("features.plugins=false"));
         assertTrue(command.get().contains("features.browser_use=false"));
+        assertTrue(command.get().contains("features.skill_search=false"));
+        assertTrue(command.get().contains("features.shell_tool=false"));
         assertTrue(command.get().contains("--strict-config"));
+        assertTrue(command.get().contains("--ignore-rules"));
         assertFalse(command.get().contains("--search"));
         assertEquals("local-mcp-token", environment.get().get("FLOWSCOPE_MCP_TOKEN"));
         assertFalse(process.prompt().contains("local-mcp-token"));
         assertTrue(process.prompt().contains("Primary entry target: https://api.example.test/v1"));
         assertTrue(process.prompt().contains("run_id=" + started.runId()));
 
-        assertTrue(contexts.clear(Source.LLM, started.runId()));
+        complete(Source.LLM, started.runId());
         process.release();
         LocalLlmRunner.State completed = awaitFinished();
 
@@ -111,35 +157,79 @@ final class LocalLlmRunnerTest {
     }
 
     @Test
-    void disablesDiscoveredCodexSkillsWithoutChangingUserFiles() throws Exception {
-        Path home = Files.createTempDirectory("flowscope-codex-home-");
-        Path first = Files.createDirectories(home.resolve("skills/first")).resolve("SKILL.md");
-        Path second = Files.createDirectories(home.resolve("plugins/cache/example/skills/second"))
-                .resolve("SKILL.md");
-        Files.writeString(first, "first");
-        Files.writeString(second, "second");
-        try {
-            String config = LocalLlmRunner.disabledCodexSkills(home);
+    void publishesSanitizedLiveCodexActivityWithoutReasoningOrToolPayloads() throws Exception {
+        String output = """
+                {"type":"thread.started","thread_id":"123e4567-e89b-12d3-a456-426614174000"}
+                {"type":"turn.started"}
+                {"type":"item.completed","item":{"type":"reasoning","text":"hidden chain of thought"}}
+                {"type":"item.started","item":{"type":"mcp_tool_call","name":"flowscope_target_read","arguments":{"authorization":"Bearer secret-token"}}}
+                {"type":"item.completed","item":{"type":"agent_message","text":"GET request completed and Evidence was recorded."}}
+                {"type":"turn.completed"}
+                """;
+        FakeProcess process = new FakeProcess(0, output);
+        runner = runner((provider, command, directory, environment) -> process);
 
-            assertTrue(config.contains(first.toAbsolutePath().normalize().toString()));
-            assertTrue(config.contains(second.toAbsolutePath().normalize().toString()));
-            assertTrue(config.contains("enabled=false"));
-            assertTrue(Files.exists(first));
-            assertTrue(Files.exists(second));
-        } finally {
-            try (var paths = Files.walk(home)) {
-                paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
-                    try { Files.deleteIfExists(path); }
-                    catch (java.io.IOException ignored) { }
-                });
-            }
-        }
+        LocalLlmRunner.State started = runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
+                LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
+                List.of("https://api.example.test/v1"), ""));
+
+        await(() -> runner.activities().stream().anyMatch(activity -> activity.kind().equals("MODEL")));
+        await(() -> !runner.state().outputTail().isBlank());
+        String activityText = runner.activities().toString();
+        assertTrue(activityText.contains("flowscope_target_read"));
+        assertTrue(activityText.contains("Evidence was recorded"));
+        assertFalse(activityText.contains("hidden chain of thought"));
+        assertFalse(activityText.contains("secret-token"));
+        assertFalse(runner.state().outputTail().contains("secret-token"));
+        assertTrue(runner.promptPreview().contains("Primary entry target: https://api.example.test/v1"));
+        assertFalse(runner.promptPreview().contains("local-mcp-token"));
+
+        complete(Source.LLM, started.runId());
+        process.release();
+        assertEquals(LocalLlmRunner.Status.SUCCEEDED, awaitFinished().status());
+        assertTrue(runner.activities().stream().anyMatch(activity -> activity.kind().equals("EVIDENCE")));
+    }
+
+    @Test
+    void isolatedCodexHomeExposesLoginButNotUserSkillsOrPlugins() throws Exception {
+        Path sourceHome = Files.createDirectories(tempDirectory.resolve("source-codex-home"));
+        Files.writeString(sourceHome.resolve("auth.json"), "test-login");
+        Files.createDirectories(sourceHome.resolve("skills/ctf-goal"));
+        Files.writeString(sourceHome.resolve("skills/ctf-goal/SKILL.md"), "must not be inherited");
+        Path workspace = Files.createDirectories(tempDirectory.resolve("workspace"));
+
+        Path isolated = LocalLlmRunner.prepareIsolatedCodexHome(workspace, sourceHome);
+
+        assertEquals("test-login", Files.readString(isolated.resolve("auth.json")));
+        assertFalse(Files.exists(isolated.resolve("skills")));
+        assertFalse(Files.exists(isolated.resolve("plugins")));
+        assertTrue(Files.exists(sourceHome.resolve("skills/ctf-goal/SKILL.md")));
+    }
+
+    @Test
+    void isolatedCodexHomeFailsClearlyWhenSubscriptionLoginIsMissing() throws Exception {
+        Path sourceHome = Files.createDirectories(tempDirectory.resolve("empty-codex-home"));
+        Path workspace = Files.createDirectories(tempDirectory.resolve("empty-workspace"));
+
+        IOException error = assertThrows(IOException.class,
+                () -> LocalLlmRunner.prepareIsolatedCodexHome(workspace, sourceHome));
+
+        assertTrue(error.getMessage().contains("codex login"));
+    }
+
+    @Test
+    void distinguishesInstalledCodexFromItsSubscriptionLoginFile() throws Exception {
+        Path home = Files.createDirectories(tempDirectory.resolve("codex-readiness"));
+
+        assertFalse(LocalLlmRunner.codexLoginAvailable(home));
+        Files.writeString(home.resolve("auth.json"), "test-login");
+        assertTrue(LocalLlmRunner.codexLoginAvailable(home));
     }
 
     @Test
     void failsAndAbortsExplorerWhenCliDoesNotEndItsRun() throws Exception {
         FakeProcess process = new FakeProcess(0, "finished without MCP end\n");
-        runner = runner((command, directory, environment) -> process);
+        runner = runner((provider, command, directory, environment) -> process);
 
         runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
                 LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
@@ -154,11 +244,28 @@ final class LocalLlmRunnerTest {
     }
 
     @Test
+    void failsClosedWhenRunWasMarkedCompleteWithoutExactResponseEvidence() throws Exception {
+        FakeProcess process = new FakeProcess(0, "client claimed completion\n");
+        runner = runner((provider, command, directory, environment) -> process, ignored -> false);
+
+        LocalLlmRunner.State started = runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
+                LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
+                List.of("https://api.example.test/v1"), ""));
+        complete(Source.LLM, started.runId());
+        process.release();
+
+        LocalLlmRunner.State completed = awaitFinished();
+        assertEquals(LocalLlmRunner.Status.FAILED, completed.status());
+        assertTrue(completed.message().contains("응답 Evidence"));
+        assertFalse(contexts.completedExplorations().contains(Source.LLM));
+    }
+
+    @Test
     void cancellationBeforeProcessRegistrationStillStopsTheChild() throws Exception {
         FakeProcess process = new FakeProcess(0, "must not continue\n");
         CountDownLatch launcherEntered = new CountDownLatch(1);
         CountDownLatch returnProcess = new CountDownLatch(1);
-        runner = runner((command, directory, environment) -> {
+        runner = runner((provider, command, directory, environment) -> {
             launcherEntered.countDown();
             try {
                 if (!returnProcess.await(3, TimeUnit.SECONDS)) throw new java.io.IOException("test launcher timeout");
@@ -183,11 +290,27 @@ final class LocalLlmRunnerTest {
     }
 
     @Test
+    void cancellationRevokesCompletionWhenClientEndedJustBeforeExit() throws Exception {
+        FakeProcess process = new FakeProcess(0, "client ended but process is still running\n");
+        runner = runner((provider, command, directory, environment) -> process);
+        LocalLlmRunner.State started = runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
+                LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
+                List.of("https://api.example.test/v1"), ""));
+        complete(Source.LLM, started.runId());
+        assertTrue(contexts.completedExplorations().contains(Source.LLM));
+
+        runner.cancel();
+
+        assertEquals(LocalLlmRunner.Status.CANCELLED, runner.state().status());
+        assertFalse(contexts.completedExplorations().contains(Source.LLM));
+    }
+
+    @Test
     void closeBeforeProcessRegistrationStopsTheChildAndRejectsNewRuns() throws Exception {
         FakeProcess process = new FakeProcess(0, "must not survive extension unload\n");
         CountDownLatch launcherEntered = new CountDownLatch(1);
         CountDownLatch returnProcess = new CountDownLatch(1);
-        runner = runner((command, directory, environment) -> {
+        runner = runner((provider, command, directory, environment) -> {
             launcherEntered.countDown();
             try {
                 if (!returnProcess.await(3, TimeUnit.SECONDS)) throw new java.io.IOException("test launcher timeout");
@@ -220,7 +343,7 @@ final class LocalLlmRunnerTest {
         FakeProcess explorer = new FakeProcess(0, "ok\n");
         AtomicReference<List<String>> explorerCommand = new AtomicReference<>();
         AtomicReference<Map<String, String>> explorerEnvironment = new AtomicReference<>();
-        runner = runner((command, directory, environment) -> {
+        runner = runner((provider, command, directory, environment) -> {
             explorerCommand.set(command);
             explorerEnvironment.set(environment);
             return explorer;
@@ -228,7 +351,7 @@ final class LocalLlmRunnerTest {
         LocalLlmRunner.State started = runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CLAUDE,
                 LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
                 List.of("https://api.example.test/v1"), ""));
-        assertTrue(contexts.clear(Source.LLM, started.runId()));
+        complete(Source.LLM, started.runId());
         explorer.release();
         assertEquals(LocalLlmRunner.Status.SUCCEEDED, awaitFinished().status());
         assertTrue(explorerCommand.get().contains("--no-session-persistence"));
@@ -243,7 +366,7 @@ final class LocalLlmRunnerTest {
         FakeProcess followup = new FakeProcess(0, "follow-up complete\n");
         AtomicReference<List<String>> judgeCommand = new AtomicReference<>();
         java.util.concurrent.atomic.AtomicInteger launches = new java.util.concurrent.atomic.AtomicInteger();
-        runner = runner((command, directory, environment) -> {
+        runner = runner((provider, command, directory, environment) -> {
             judgeCommand.set(command);
             return launches.getAndIncrement() == 0 ? judge : followup;
         });
@@ -272,7 +395,7 @@ final class LocalLlmRunnerTest {
 
     @Test
     void rejectsJudgeBeforeAllThreeCompletedLanesAndRejectsInactiveAccount() {
-        runner = runner((command, directory, environment) -> new FakeProcess(0, ""));
+        runner = runner((provider, command, directory, environment) -> new FakeProcess(0, ""));
 
         IllegalStateException judge = assertThrows(IllegalStateException.class, () -> runner.start(
                 new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX, LocalLlmRunner.Role.JUDGE,
@@ -296,7 +419,7 @@ final class LocalLlmRunnerTest {
         contexts.activate(Source.LLM, new RunContextRegistry.Context(
                 io.flowscope.core.SourceDetail.LLM_EXPLORER, io.flowscope.core.Orchestrator.LLM,
                 io.flowscope.core.ToolKind.CODEX, io.flowscope.core.RunPhase.EXPLORATION, "llm-run"));
-        assertTrue(contexts.clear(Source.LLM, "llm-run"));
+        complete(Source.LLM, "llm-run");
         String sessionId = "123e4567-e89b-12d3-a456-426614174000";
         String output = "{\"type\":\"thread.started\",\"thread_id\":\"" + sessionId + "\"}\n"
                 + "x".repeat(96 * 1024);
@@ -304,7 +427,7 @@ final class LocalLlmRunnerTest {
         FakeProcess followup = new FakeProcess(0, "follow-up complete\n");
         AtomicReference<List<String>> command = new AtomicReference<>();
         java.util.concurrent.atomic.AtomicInteger launches = new java.util.concurrent.atomic.AtomicInteger();
-        runner = runner((value, directory, environment) -> {
+        runner = runner((provider, value, directory, environment) -> {
             command.set(value);
             return launches.getAndIncrement() == 0 ? process : followup;
         });
@@ -332,9 +455,13 @@ final class LocalLlmRunnerTest {
     }
 
     private LocalLlmRunner runner(LocalLlmRunner.ProcessLauncher launcher) {
+        return runner(launcher, ignored -> true);
+    }
+
+    private LocalLlmRunner runner(LocalLlmRunner.ProcessLauncher launcher, Predicate<String> evidence) {
         return new LocalLlmRunner("http://127.0.0.1:8787/mcp", "local-mcp-token", contexts, sessions,
                 datasetLocked::get, launcher, ignored -> {}, Map.of(LocalLlmRunner.Provider.CODEX, "/bin/sh",
-                        LocalLlmRunner.Provider.CLAUDE, "/bin/sh"));
+                        LocalLlmRunner.Provider.CLAUDE, "/bin/sh"), evidence);
     }
 
     private void completeOtherLanes() {
@@ -346,8 +473,31 @@ final class LocalLlmRunnerTest {
                     io.flowscope.core.Orchestrator.SYSTEM,
                     source == Source.HUMAN ? io.flowscope.core.ToolKind.BROWSER : io.flowscope.core.ToolKind.ZAP,
                     io.flowscope.core.RunPhase.EXPLORATION, runId));
-            assertTrue(contexts.clear(source, runId));
+            complete(source, runId);
         }
+    }
+
+    private void complete(Source source, String runId) {
+        SourceDetail detail = switch (source) {
+            case HUMAN -> SourceDetail.BROWSER;
+            case SCANNER -> SourceDetail.ZAP_SPIDER;
+            case LLM -> SourceDetail.LLM_EXPLORER;
+            default -> SourceDetail.UNKNOWN;
+        };
+        RequestRecord evidence = new RequestRecord(source, "https://api.example.test:443",
+                "GET", "/health-" + source.name().toLowerCase(java.util.Locale.ROOT), 200, "test");
+        evidence.hasResponse = true;
+        evidence.body = "{\"ok\":true}";
+        evidence.sourceDetail = detail;
+        evidence.orchestrator = source == Source.LLM ? Orchestrator.LLM : Orchestrator.SYSTEM;
+        evidence.tool = source == Source.LLM ? ToolKind.CODEX
+                : source == Source.SCANNER ? ToolKind.ZAP : ToolKind.BROWSER;
+        evidence.phase = RunPhase.EXPLORATION;
+        evidence.runId = runId;
+        evidence.executionTrust = source == Source.HUMAN
+                ? ExecutionTrust.OBSERVED : ExecutionTrust.CONTROLLED;
+        assertNotNull(LaneCompletionPolicy.complete(contexts, source, runId,
+                Pipeline.run(List.of(evidence))));
     }
 
     private LocalLlmRunner.State awaitFinished() throws InterruptedException {

@@ -90,7 +90,10 @@ public final class Pipeline {
         int excluded = 0;
         int review = 0;
         for (RequestRecord record : records) {
-            if (record.trafficClassification.coverageEligible()) coverage.add(record);
+            if (record.trafficClassification.coverageEligible()
+                    && SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.ANALYSIS_COVERAGE)) {
+                coverage.add(record);
+            }
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.EXCLUDE) excluded++;
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.REVIEW) review++;
         }

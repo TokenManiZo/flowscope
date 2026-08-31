@@ -14,6 +14,7 @@
 - [그래프 UX](graph-ux.md): 그래프 표현과 상호작용 규칙
 - [UI·제품 근거](ui-product-rationale.md): 화면 설계 이유
 - [제품 개발 계획](product-development-plan.md): 단계별 개발 계획
+- [백엔드 Evidence·분석 재정비 계획](backend-evidence-architecture-plan.md): HUMAN 수집 정본부터 3-way 검증까지의 단계별 구현·삭제·검증 계획
 - [제안서](proposal.md): 프로젝트 제안 내용
 - [베타 검증](beta-validation.md): 현재 베타 검증 증거
 - [기능 명세](specification/functional-spec.md): 기능별 요구사항

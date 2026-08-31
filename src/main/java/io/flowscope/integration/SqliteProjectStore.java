@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.Source;
 import io.flowscope.core.ValidationDecision;
 
@@ -23,11 +24,12 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Local relational FlowScope project store. Raw broker credentials are never part of this schema. */
 public final class SqliteProjectStore {
-    private static final int STORAGE_SCHEMA_VERSION = 1;
+    private static final int STORAGE_SCHEMA_VERSION = 2;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
 
     private final ProjectStore codec;
@@ -44,6 +46,21 @@ public final class SqliteProjectStore {
                      List<RouteCandidate> routeCandidates) throws IOException {
         ObjectNode root = codec.toDocument(records, config, assessments, validations,
                 completedLanes, routeCandidates);
+        saveDocument(target, root);
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<McpServer.Assessment> assessments,
+                     List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates) throws IOException {
+        Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
+        ObjectNode root = codec.toDocument(records, config, assessments, validations,
+                runs.keySet(), runs, routeCandidates);
+        saveDocument(target, root);
+    }
+
+    private void saveDocument(Path target, ObjectNode root) throws IOException {
         Path absolute = target.toAbsolutePath().normalize();
         Path parent = absolute.getParent();
         if (parent == null) throw new IllegalArgumentException("project database needs a parent directory");
@@ -114,6 +131,7 @@ public final class SqliteProjectStore {
             statement.execute("CREATE TABLE assessments (seq INTEGER PRIMARY KEY, assessment_id TEXT NOT NULL, document TEXT NOT NULL)");
             statement.execute("CREATE TABLE validations (seq INTEGER PRIMARY KEY, candidate_id TEXT NOT NULL, document TEXT NOT NULL)");
             statement.execute("CREATE TABLE completed_lanes (source TEXT PRIMARY KEY)");
+            statement.execute("CREATE TABLE completed_runs (source TEXT PRIMARY KEY, run_id TEXT NOT NULL, document TEXT NOT NULL)");
             statement.execute("CREATE TABLE route_candidates (seq INTEGER PRIMARY KEY, service TEXT NOT NULL, method TEXT NOT NULL, path_template TEXT NOT NULL, observed INTEGER NOT NULL, document TEXT NOT NULL)");
         }
     }
@@ -141,6 +159,8 @@ public final class SqliteProjectStore {
                      "INSERT INTO validations(seq, candidate_id, document) VALUES(?, ?, ?)");
              PreparedStatement lane = connection.prepareStatement(
                      "INSERT INTO completed_lanes(source) VALUES(?)");
+             PreparedStatement completedRun = connection.prepareStatement(
+                     "INSERT INTO completed_runs(source, run_id, document) VALUES(?, ?, ?)");
              PreparedStatement candidate = connection.prepareStatement(
                      "INSERT INTO route_candidates(seq, service, method, path_template, observed, document) VALUES(?, ?, ?, ?, ?, ?)")) {
             migration.setInt(1, STORAGE_SCHEMA_VERSION);
@@ -208,6 +228,13 @@ public final class SqliteProjectStore {
                 lane.addBatch();
             }
             lane.executeBatch();
+            for (JsonNode value : root.path("completed_runs")) {
+                completedRun.setString(1, required(value, "source"));
+                completedRun.setString(2, required(value, "run_id"));
+                completedRun.setString(3, json.writeValueAsString(value));
+                completedRun.addBatch();
+            }
+            completedRun.executeBatch();
             index = 0;
             for (JsonNode value : root.path("route_candidates")) {
                 candidate.setInt(1, index++);
@@ -226,7 +253,7 @@ public final class SqliteProjectStore {
 
     private ObjectNode read(Connection connection) throws SQLException, IOException {
         int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
-        if (version != STORAGE_SCHEMA_VERSION) {
+        if (version != STORAGE_SCHEMA_VERSION && version != 1) {
             throw new IllegalArgumentException("unsupported FlowScope SQLite schema version: " + version);
         }
         try (Statement statement = connection.createStatement();
@@ -281,6 +308,10 @@ public final class SqliteProjectStore {
         try (Statement statement = connection.createStatement();
              ResultSet values = statement.executeQuery("SELECT source FROM completed_lanes ORDER BY source")) {
             while (values.next()) lanes.add(values.getString(1));
+        }
+        ArrayNode completedRuns = root.putArray("completed_runs");
+        if (version >= 2) {
+            readDocuments(connection, "SELECT document FROM completed_runs ORDER BY source", completedRuns);
         }
         readDocuments(connection, "SELECT document FROM route_candidates ORDER BY seq",
                 root.putArray("route_candidates"));

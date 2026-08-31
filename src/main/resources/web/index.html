@@ -47,8 +47,9 @@
   .scannersetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.scannersetup select,.scannersetup textarea{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace}.scannersetup select{text-overflow:ellipsis}.scannersetup textarea{resize:vertical;min-height:58px;line-height:1.45}.scannersetup small{line-height:1.45}.scanneraccounts{min-width:0}.scanneraccounts>span{display:block;color:var(--faint);font-size:10px;margin-bottom:4px}.scannerchoices{display:flex;gap:5px;flex-wrap:wrap;min-height:34px;align-items:center}.scannerchoices label{display:flex;align-items:center;gap:5px;border:1px solid var(--line2);border-radius:7px;background:var(--bg);padding:7px 8px;color:var(--text);font:10.5px 'JetBrains Mono',monospace;cursor:pointer}.scannerchoices input{accent-color:var(--accent)}.scannerstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;overflow-wrap:anywhere}.scannerstatus.ok{color:var(--allow)}.scannerstatus.warn{color:var(--suspicious)}.scannerstatus.fail{color:var(--suspicious)}.scannerhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.scannerstate{border:1px solid var(--line2);border-radius:5px;background:var(--panel);padding:2px 6px;color:var(--text);font-weight:700}.scannerstate.running{border-color:var(--scanner);color:var(--scanner)}.scannerstate.completed{border-color:var(--allow);color:var(--allow)}.scannerstate.completed_with_warnings{border-color:var(--suspicious);color:var(--suspicious)}.scannerstate.failed{border-color:var(--suspicious);color:var(--suspicious)}.scannerlanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:7px}.scannerlane{border:1px solid var(--line);border-left:3px solid var(--scanner);border-radius:7px;background:var(--panel);padding:8px;color:var(--muted)}.scannerlane.failed{border-left-color:var(--suspicious)}.scannerlane.completed{border-left-color:var(--allow)}.scannerlane.completed_with_warnings{border-left-color:var(--suspicious)}.scannerlane .lanehead{display:flex;justify-content:space-between;gap:7px;color:var(--text);font-weight:700}.scannerlane .lanemeta{margin-top:4px;color:var(--faint)}.scannerlane .laneerr{margin-top:5px;color:var(--suspicious)}
   .scannerdefinitions{grid-column:1/-1;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:7px 9px}.scannerdefinitions summary{cursor:pointer;color:var(--muted);font-size:10.5px}.scannerdefinitions label{margin-top:7px}
   .llmsetup{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(180px,1.5fr) minmax(130px,1fr);gap:8px;align-items:end;margin-top:9px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
-  .llmsetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.llmsetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.llmstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.llmstatus.ok{color:var(--allow)}.llmstatus.fail{color:var(--suspicious)}
+  .llmsetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.llmsetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.llmreadiness{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:10px}.llmproviderstate{border:1px solid var(--line2);border-radius:6px;padding:4px 7px;font:700 9.5px 'JetBrains Mono',monospace}.llmproviderstate.ready{border-color:var(--allow);color:var(--allow)}.llmproviderstate.login_required,.llmproviderstate.error{border-color:var(--suspicious);color:var(--suspicious)}.llmreadiness .go{margin-left:auto}.llmstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.llmstatus.ok{color:var(--allow)}.llmstatus.fail{color:var(--suspicious)}
   .llmfollowup{grid-column:1/-2;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;min-width:0}
+  .llmactivity{grid-column:1/-1;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}.llmactivityhead{display:flex;align-items:center;gap:7px;padding:8px 9px;border-bottom:1px solid var(--line);font-size:11px}.llmactivityhead b{color:var(--text)}.llmlive{border:1px solid var(--line2);border-radius:5px;padding:2px 6px;color:var(--faint);font:700 9px 'JetBrains Mono',monospace}.llmlive.running{border-color:var(--allow);color:var(--allow)}.llmactivityhead span:last-child{margin-left:auto;color:var(--faint);font-size:9.5px}.llmfeed{max-height:270px;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:7px;scrollbar-gutter:stable}.llmempty{padding:18px 10px;text-align:center;color:var(--faint);font-size:10.5px;line-height:1.55}.llmevent{max-width:86%;border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:7px 8px;overflow-wrap:anywhere}.llmevent.model{align-self:flex-end;border-color:rgba(17,24,39,.28);background:rgba(17,24,39,.04)}.llmevent.tool{border-left:3px solid var(--accent)}.llmevent.evidence{border-left:3px solid var(--allow)}.llmevent.error{border-left:3px solid var(--suspicious)}.llmeventhead{display:flex;align-items:center;gap:6px;color:var(--text);font-size:10.5px;font-weight:700}.llmeventkind{color:var(--faint);font:700 8.5px 'JetBrains Mono',monospace}.llmeventtime{margin-left:auto;color:var(--faint);font:9px 'JetBrains Mono',monospace}.llmevent p{margin:4px 0 0;color:var(--muted);font-size:10px;line-height:1.5;white-space:pre-wrap}.llmprompt{grid-column:1/-1;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:7px 9px}.llmprompt summary{cursor:pointer;color:var(--muted);font-size:10.5px;font-weight:700}.llmprompt pre{max-height:220px;margin:7px 0 0;padding:8px;border-radius:6px;background:var(--bg);overflow:auto;color:var(--text);font:9.5px/1.5 'JetBrains Mono',monospace;white-space:pre-wrap;overflow-wrap:anywhere}
   main{flex:1; display:flex; min-height:0}
   .emptyworkspace{display:none;flex:1;align-items:center;justify-content:center;padding:24px;overflow:auto}.emptycard{width:min(760px,100%);border:1px solid var(--line2);border-radius:14px;background:var(--panel);padding:22px;box-shadow:0 14px 40px rgba(30,42,56,.08)}.emptycard h2{font-size:20px}.emptylead{margin:7px 0 17px;color:var(--muted);font-size:12.5px;line-height:1.6}.emptysteps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.emptystep{border:1px solid var(--line);border-radius:9px;background:var(--panel2);padding:12px;display:grid;grid-template-columns:26px minmax(0,1fr);gap:9px}.emptystep .num{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line2);font:700 11px 'JetBrains Mono',monospace}.emptystep b{font-size:12px}.emptystep p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}.emptyactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.emptytruth{margin-top:11px;color:var(--faint);font:10.5px 'JetBrains Mono',monospace;line-height:1.5}
   body.empty-state main>.rail,body.empty-state main>.stage,body.empty-state main>.detail,body.empty-state footer,body.empty-state header>.modeswitch{display:none}body.empty-state .emptyworkspace{display:flex}body.empty-state.accounts-mode .emptyworkspace{display:none}body.empty-state.accounts-mode main>.stage{display:block}body.empty-state.accounts-mode header>.modeswitch{display:flex}
@@ -217,7 +218,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.28 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.32 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
@@ -283,7 +284,10 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
       <button class="go primary" id="llmExplorerStart" disabled>LLM Explorer 시작</button>
       <button class="go" id="llmJudgeStart" disabled>Judge 시작</button>
       <button class="go" id="llmCancel" disabled>실행 중단</button>
+      <div class="llmreadiness" id="llmProviderReadiness"><span>설치된 CLI와 구독 로그인을 자동 확인하는 중입니다.</span><button class="go" id="llmReadinessRefresh" type="button">다시 확인</button></div>
       <div class="llmstatus" id="llmRunStatus">설치된 구독 CLI와 MCP 상태를 확인하는 중입니다.</div>
+      <div class="llmactivity"><div class="llmactivityhead"><b>LLM 작업 피드</b><span class="llmlive" id="llmLiveState">대기</span><span>실제 공급자 메시지·도구 상태만 표시</span></div><div class="llmfeed" id="llmActivityFeed" role="log" aria-live="polite"><div class="llmempty">Explorer를 시작하면 진행 상황이 여기에 표시됩니다.</div></div></div>
+      <details class="llmprompt" id="llmPromptDetails"><summary>이번 실행에 주입한 지침 보기</summary><pre id="llmPromptPreview">실행 전입니다.</pre></details>
       <input class="llmfollowup" id="llmJudgeFollowup" maxlength="4000" placeholder="완료된 Judge 세션에 후속 질문 (새 Explorer로 사용되지 않음)" disabled>
       <button class="go" id="llmJudgeFollowupSend" disabled>Judge 계속</button>
     </div>
@@ -1399,7 +1403,11 @@ function renderLlmControls(){
   const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===service);
   account.innerHTML='<option value="">비로그인</option>'+usable.map(session=>{const registered=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(registered?registered.label:session.accountId)}</option>`;}).join('');
   if(usable.some(session=>session.accountId===selectedAccount))account.value=selectedAccount;
-  const available=!!(LLM_RUN.providers&&LLM_RUN.providers[provider.value]),running=LLM_RUN.status==='RUNNING';
+  const running=LLM_RUN.status==='RUNNING',readiness=LLM_RUN.provider_readiness||{};
+  if(!running&&!(readiness[provider.value]&&readiness[provider.value].ready)){
+    const automatic=['CODEX','CLAUDE'].find(value=>readiness[value]&&readiness[value].ready);if(automatic)provider.value=automatic;
+  }
+  const available=!!(LLM_RUN.providers&&LLM_RUN.providers[provider.value]);
   const lanesReady=['HUMAN','SCANNER','LLM'].every(lane=>LLM_COMPLETED.includes(lane));
   explorer.disabled=running||!available||!target.value;judge.disabled=running||!available||!target.value||!lanesReady;cancel.disabled=!running;
   provider.disabled=running;target.disabled=running;account.disabled=running;
@@ -1408,12 +1416,32 @@ function renderLlmControls(){
   if(LLM_RUN.provider_session_id)parts.push('세션 '+LLM_RUN.provider_session_id);
   if(LLM_RUN.session_metadata_may_remain)parts.push('Claude 비지속 옵션에서도 공급자 메타데이터 파일이 남을 수 있으나 다음 실행에 재사용하지 않습니다.');
   if(LLM_RUN.output_tail&&(LLM_RUN.status==='FAILED'||LLM_RUN.status==='CANCELLED'))parts.push(LLM_RUN.output_tail.slice(-1500));
-  if(!available)parts.push(provider.value+' CLI를 찾지 못했습니다. Burp 실행 PATH 또는 시스템 속성에서 경로를 지정하세요.');else if(!lanesReady&&!running)parts.push('Judge 대기: HUMAN·SCANNER·LLM 완료 레인이 모두 필요합니다.');
+  const providerMessage=LLM_RUN.provider_messages&&LLM_RUN.provider_messages[provider.value];
+  if(providerMessage)parts.push(providerMessage);else if(!available)parts.push(provider.value+' CLI 또는 구독 로그인을 확인하지 못했습니다.');
+  if(available&&!lanesReady&&!running)parts.push('Judge 대기: HUMAN·SCANNER·LLM 완료 레인이 모두 필요합니다.');
   status.textContent=parts.join(' · ');status.classList.toggle('ok',LLM_RUN.status==='SUCCEEDED');status.classList.toggle('fail',LLM_RUN.status==='FAILED'||LLM_RUN.status==='CANCELLED');
+  const readinessBox=document.getElementById('llmProviderReadiness');
+  readinessBox.innerHTML=['CODEX','CLAUDE'].map(value=>{const item=readiness[value]||{state:'CHECKING',message:'확인 중'};return `<span class="llmproviderstate ${esc(String(item.state||'checking').toLowerCase())}" title="${esc(item.message||'')}">${value} · ${esc(item.state||'CHECKING')}</span>`;}).join('')+'<button class="go" id="llmReadinessRefresh" type="button">다시 확인</button>';
+  document.getElementById('llmReadinessRefresh').addEventListener('click',refreshLlmReadiness);
+  renderLlmActivity();
+}
+function renderLlmActivity(){
+  const feed=document.getElementById('llmActivityFeed'),live=document.getElementById('llmLiveState'),prompt=document.getElementById('llmPromptPreview');if(!feed||!live||!prompt)return;
+  const nearBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<48,items=Array.isArray(LLM_RUN.activities)?LLM_RUN.activities:[];
+  live.textContent=LLM_RUN.status==='RUNNING'?'실행 중':LLM_RUN.status==='SUCCEEDED'?'완료':LLM_RUN.status==='FAILED'?'실패':LLM_RUN.status==='CANCELLED'?'중단':'대기';live.classList.toggle('running',LLM_RUN.status==='RUNNING');
+  prompt.textContent=LLM_RUN.prompt_preview||'실행 전입니다.';
+  if(!items.length){feed.innerHTML='<div class="llmempty">Explorer를 시작하면 실제 모델 메시지, FlowScope 도구 호출 상태, Evidence 완료 게이트가 여기에 표시됩니다. 숨겨진 추론 원문은 제공하지 않습니다.</div>';return;}
+  feed.innerHTML=items.map(item=>{const kind=String(item.kind||'SYSTEM').toLowerCase(),time=item.at?new Date(item.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';return `<article class="llmevent ${esc(kind)}"><div class="llmeventhead"><span class="llmeventkind">${esc(item.kind||'SYSTEM')}</span><span>${esc(item.title||'진행 상태')}</span><time class="llmeventtime">${esc(time)}</time></div>${item.detail?`<p>${esc(item.detail)}</p>`:''}</article>`;}).join('');
+  if(nearBottom||LLM_RUN.status==='RUNNING'&&items.length<=2)feed.scrollTop=feed.scrollHeight;
 }
 async function syncLlmRun(){
   if(!LIVE_MODE)return;try{const response=await fetch('/api/llm-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'LLM 실행 상태 조회 실패');LLM_RUN=data.run||{status:'UNAVAILABLE',providers:{}};LLM_SCOPE=data.scope||[];LLM_COMPLETED=data.completed_lanes||[];renderLlmControls();updateSetup();}
   catch(error){LLM_RUN={status:'UNAVAILABLE',message:error.message,providers:{}};renderLlmControls();}
+}
+async function refreshLlmReadiness(){
+  const button=document.getElementById('llmReadinessRefresh');if(button)button.disabled=true;
+  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'refresh'})});const data=await response.json();if(!response.ok)throw new Error(data.message||'LLM 준비 상태 확인 실패');LLM_RUN=data.run;renderLlmControls();setTimeout(syncLlmRun,500);}
+  catch(error){alert(error.message);await syncLlmRun();}
 }
 async function startLlmRun(role){
   const provider=document.getElementById('llmProvider').value,target=document.getElementById('llmTarget').value,account=role==='EXPLORER'?document.getElementById('llmAccount').value:'';if(!target)return;

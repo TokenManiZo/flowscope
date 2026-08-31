@@ -42,7 +42,18 @@ class TrafficMetadataTest {
                         ToolKind.CODEX, RunPhase.VALIDATION, "llm-2")));
         assertFalse(registry.clear(Source.LLM, "llm-other"));
         assertEquals("llm-1", registry.current(Source.LLM).runId());
-        assertTrue(registry.clear(Source.LLM, "llm-1"));
+        RequestRecord evidence = new RequestRecord(Source.LLM, "https://api.example.test:443",
+                "GET", "/health", 200, "test");
+        evidence.hasResponse = true;
+        evidence.body = "{\"ok\":true}";
+        evidence.sourceDetail = SourceDetail.LLM_EXPLORER;
+        evidence.orchestrator = Orchestrator.LLM;
+        evidence.tool = ToolKind.CODEX;
+        evidence.phase = RunPhase.EXPLORATION;
+        evidence.runId = "llm-1";
+        evidence.executionTrust = ExecutionTrust.CONTROLLED;
+        assertNotNull(LaneCompletionPolicy.complete(registry, Source.LLM, "llm-1",
+                Pipeline.run(java.util.List.of(evidence))));
         assertNull(registry.current(Source.LLM));
         assertTrue(registry.completedExplorations().contains(Source.LLM));
     }

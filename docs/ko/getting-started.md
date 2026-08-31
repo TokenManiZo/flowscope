@@ -50,7 +50,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.28.jar`를 받는다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.32.jar`를 받는다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`
@@ -164,13 +164,15 @@ PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta
 
 완전한 3-way에는 둘 중 하나가 필요하다.
 
-CLI가 보이면 FlowScope는 해석된 실행 파일의 부모 디렉터리를 자식 프로세스 `PATH` 앞에 추가한다. 이는 터미널보다 축소된 환경으로 시작한 Burp에서 `#!/usr/bin/env node` 형식의 launcher가 같은 설치 디렉터리의 `node`를 찾지 못하는 실패를 막는다. provider API key는 자식 환경에서 계속 제거한다. CLI와 런타임이 서로 다른 디렉터리에 설치된 환경은 아래 절대 경로 설정과 운영체제 `PATH`를 함께 맞춰야 한다.
+FlowScope는 상속 `PATH` 외에 macOS/Linux의 `~/.local/bin`, Homebrew, `NVM_BIN`·`PNPM_HOME`·`BUN_INSTALL`와 Windows의 WinGet/npm 사용자 경로에서 CLI를 자동 탐지한다. 공식 로그인 상태 명령은 백그라운드에서 확인하고 READY provider를 자동 선택하며, 실행 직전에 다시 확인한다. 해석된 실행 파일 부모는 자식 `PATH` 앞에 추가해 축소된 Burp 환경의 `#!/usr/bin/env node` launcher도 같은 설치 디렉터리의 런타임을 찾게 한다. provider API key는 상태 확인과 실제 실행 양쪽에서 제거한다. 표준 밖 portable 설치만 아래 절대 경로 설정이 필요하다.
 
 ### Codex
 
 1. [공식 Codex CLI 가이드](https://developers.openai.com/codex/cli)에 따라 설치한다.
 2. 터미널에서 `codex`를 실행하고 **Sign in with ChatGPT** 등 제공되는 로그인 방법으로 인증한다.
 3. `codex --version`이 성공하는지 확인한다.
+
+버튼 실행에는 일반 Codex 로그인 파일인 `$CODEX_HOME/auth.json` 또는 `~/.codex/auth.json`이 필요하다. FlowScope는 매 실행마다 owner-only 임시 `CODEX_HOME`을 만들고 이 로그인 파일만 연결한다. 전역 `config.toml`, 사용자 skill/plugin, memory와 이전 session은 복사하거나 상속하지 않는다. 로그인 파일이 없으면 대상 요청 전에 `codex login` 안내와 함께 실패한다.
 
 ### Claude Code
 
@@ -227,7 +229,7 @@ doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명
 2. Web **계정·세션**에서 테스트 계정을 등록한다. 계정 로그인이 필요하면 **로그인 연결**을 시작하고 HUMAN `8080` 경로로 로그인한 뒤 성공한 인증 페이지까지 확인하고 캡처를 종료한다.
 3. **HUMAN pass 시작**을 누르고 Burp 브라우저로 허가된 기능을 탐색한 다음 pass를 종료한다.
 4. 빠른 시작의 ZAP 카드에서 대상과 비로그인/ACTIVE 계정을 고른다. 이미 보유한 API 정의가 있으면 한 줄에 하나씩 `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, `GRAPHQL ENDPOINT [SCHEMA_URL]`로 입력하고 **신원별 격리 검사 시작**을 누른다. 모든 URL은 현재 exact scope 안이어야 한다. 정의 import는 명세의 write method 요청도 만들 수 있으므로 이어지는 Burp 승인창에서 한 번 더 확인한다. 비워 두면 정의를 추측하지 않고 Spider 기준선만 실행한다. Active Scan은 자동 baseline에 포함되지 않는다.
-5. 로컬 provider와 계정을 고르고 **LLM Explorer 시작**을 누른다. Explorer가 실제 응답 Evidence를 한 건 이상 남기고 서버가 같은 run 종료를 승인해야 LLM lane이 완료된다. 취소·도구 거부·0건 실행은 실패로 남는다.
+5. 계정을 고르고 **LLM Explorer 시작**을 누른다. FlowScope가 공식 상태 명령으로 확인한 READY provider를 자동 선택하므로 API key 입력이나 MCP 설정 복사는 없다. provider 상태가 방금 바뀌었을 때만 **다시 확인**을 누른다. **LLM 작업 피드**에서 실제 모델 메시지·FlowScope 도구 상태·Evidence 완료 게이트와 주입 지침을 확인한다. 숨겨진 추론과 raw tool payload는 표시하지 않는다. Explorer가 실제 응답 Evidence를 한 건 이상 남기고 서버가 같은 run 종료를 승인해야 LLM lane이 완료된다. 취소·도구 거부·0건 실행은 실패로 남는다.
 6. `REVIEW` 항목을 확인한 뒤 세 lane이 완료되면 **Judge 시작**을 누른다.
 7. finding은 원 Evidence, 같은 run의 반복 재현, 정상 대조가 서버 gate를 통과했는지 확인한다. ZAP Alert나 LLM 문장만으로 확정하지 않는다.
 8. `.flowscope.db`를 연결해 자동 checkpoint를 활성화한다. raw broker credential은 DB에 저장되지 않으므로 Burp 재시작 뒤에는 다시 로그인 연결한다.

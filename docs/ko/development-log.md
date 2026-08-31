@@ -6,12 +6,84 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-31 · 1.2.0-beta.32 · exact-run 완료·신뢰 정책·고정 Judge 데이터셋
+
+**개발·수정**
+
+- 원 HTTP 관측의 `executionTrust`를 소비 목적별로 해석하는 `SourceTrustPolicy`를 추가했다. 8082 직접 proxy 관측은 `UNVERIFIED_RUNTIME` 원 Evidence로 보존하지만 coverage, Explorer 시야, lane 완료, dataset lock, 결정적 verdict에는 쓰지 않는다.
+- HUMAN·SCANNER·LLM의 정상 종료 조건을 `LaneCompletionPolicy` 하나로 통합했다. 활성 source와 exact run ID, `EXPLORATION`, 응답 Evidence, source별 신뢰 조건을 모두 통과해야 완료된다. ZAP/LLM 실패·취소와 구형 `clear` 경로는 완료가 아니라 abort다.
+- 완료 시점의 Evidence ID, 응답 수, coverage 수를 `CompletedRun`으로 동결했다. Judge dataset lock은 세 lane의 동결 ID만 다시 분석하고, lock 후의 live record나 같은 run ID로 늦게 들어온 record가 잠긴 snapshot을 바꾸지 못한다.
+- JSON project schema를 v3, SQLite storage schema를 v2로 올려 exact completed run을 저장한다. JSON v1/v2와 SQLite v1은 계속 읽지만 source 이름뿐인 과거 완료 표식은 현재 완료로 승격하지 않아 재실행이 필요하다.
+- 저장 시 `completed_lanes`와 `completed_runs`를 동일한 검증된 run 집합에서 생성한다. key/source가 다르거나 Evidence가 없는 완료 객체는 저장 전에 거부하고, 현재 스키마에서 두 목록이 다르면 load를 거부한다.
+- beta.29~32 구현 이력에 맞춰 개발 지침의 현재 단계, 인계 기준선, 백엔드 재정비 계획의 교차 구현 상태, 멘토 보고서의 현재 버전·검증 수치·문서 링크를 동기화했다. BolaRay는 본문과 공개 아티팩트를 확인한 근거 수준으로 연구 문서 태그를 교정했다.
+
+**근거와 기각한 대안**
+
+- 기존 source-only `Set<Source>`는 어느 run의 어떤 Evidence가 완료를 만들었는지 증명하지 못했다. 포트 8082에 들어온 외부 요청도 활성 LLM run ID를 물려받았고, 실패한 ZAP 경로가 `clear`만 호출해 완료로 보이는 경로도 있었다. 프롬프트 문구나 UI badge만 고치는 방식은 이 백엔드 무결성 문제를 해결하지 못해 기각했다.
+- 원 관측을 삭제하면 포렌식과 분류 개선 재현성을 잃는다. 반대로 모든 관측을 동등하게 분석하면 통제되지 않은 8082 traffic이 독립 Explorer 성과나 Judge 근거를 오염시킨다. 따라서 저장과 소비 자격을 분리했다.
+- 전체 event store 재작성은 현재 문제에 비해 변경 폭이 크고 기존 분석 계약까지 흔든다. 이번 단계는 exact completion manifest와 immutable lock snapshot이라는 최소 경계를 도입하고 UI는 동결했다.
+
+**영향 파일·검증·남은 gate**
+
+- 핵심 코드: `SourceTrustPolicy`, `LaneCompletionPolicy`, `RunContextRegistry`, `Pipeline`, `McpServer`, `FlowScopeWebServer`, `FlowScopeExtension`, `ProjectStore`, `SqliteProjectStore`, `LocalLlmRunner`.
+- 무작위 run ID의 CONTROLLED/UNVERIFIED 대조, HUMAN·SCANNER·LLM 완료와 abort, 동결 Evidence membership, lock 불변성, JSON/SQLite 왕복과 legacy 비승격·현재 스키마 불일치 거부 회귀를 추가했다. 최종 전체 수치와 JAR digest는 `beta-validation.md`를 정본으로 한다.
+- JDK 21 `mvn clean verify` 275 tests가 실패·오류·skip 없이 통과했다. 연속 clean verify의 완성 JAR은 byte-for-byte 동일했고, 단일 배포물은 15,940,500 bytes, 2,046 entries, SHA-256 `a105c9539eddedecc212a66782958165ea890bd0ed5c528dac249f7a22fc2b27`이다.
+- 포트 번호만으로 실제 OS 프로세스 신원을 암호학적으로 증명할 수는 없다. 8081은 활성 ZAP run과 outgoing-proxy preflight에 묶지만 장기적으로는 run별 capability가 더 강한 경계다. dataset lock 자체, ZAP native Alert와 주입 prompt digest의 프로젝트 재개는 아직 별도 설계 항목이다.
+- beta.32 JAR의 실제 Burp 재로드, 로그인 Codex Explorer의 controlled MCP Evidence 완주, ZAP 실캠페인, 3-lane lock과 Judge 재현은 자동 테스트로 대체하지 않는다.
+
+## 2026-08-31 · 1.2.0-beta.31 · 구독 CLI 자동 탐지·로그인 preflight
+
+**개발·수정**
+
+- Codex/Claude 실행 파일을 축소된 Burp `PATH`뿐 아니라 macOS/Linux/Windows의 표준 사용자 설치 및 런타임 경로에서 자동 탐지하도록 확장했다.
+- 로그인 파일이나 실행 후 오류에 의존하지 않고 공급자 CLI가 제공하는 `codex login status`, `claude auth status --json`을 사용해 설치·로그인 상태를 구분한다. 검사 자식에서도 API key를 제거하고 계정 이메일·원출력은 저장하지 않는다.
+- 1초 Web polling마다 프로세스를 만들지 않도록 준비 상태를 30초 캐시의 daemon worker에서 갱신한다. Explorer/Judge 시작과 Judge 후속 실행은 직전에 동기 preflight를 다시 통과해야 한다.
+- 준비된 provider 자동 선택, provider별 상태 badge, 수동 **다시 확인** fallback을 Web에 추가했다. MCP URL/token, 역할별 allowlist, prompt, 임시 workspace와 Codex home 격리는 기존 launcher가 계속 자동 구성한다.
+
+**영향 파일·검증·남은 gate**
+
+- 코드: `LocalLlmRunner`, `FlowScopeExtension`, `FlowScopeWebServer`, Web UI. 회귀: `LocalLlmRunnerTest`, `FlowScopeWebServerTest`.
+- 공식 상태 명령의 로컬 실제 출력은 account 식별자를 제거한 뒤 READY만 확인했다. 전체 회귀·재현 JAR·배포물 수치는 `beta-validation.md`에 기록한다.
+- beta.31 JAR을 Burp에 재로드한 실제 Web 자동 선택→MCP target Evidence→Explorer 종료는 수동 통합 gate로 남는다. 비표준 portable 설치는 JVM 절대 경로 override가 fallback이다.
+
+## 2026-08-31 · 1.2.0-beta.30 · 로그인 준비 상태·LLM 작업 피드
+
+**개발·수정**
+
+- 외부 사용자가 공식 Codex/Claude CLI를 설치하고 로그인한 뒤 API key·MCP 수동 설정 없이 Web 버튼으로 실행한다는 계약을 UI와 문서에 명시했다.
+- Codex는 실행 파일과 `$CODEX_HOME/auth.json` 또는 `~/.codex/auth.json`을 분리해 사전 확인한다. Claude는 CLI 발견 상태를 표시하고 실제 로그인 유효성은 공급자 CLI가 실행 시 확인하게 해 provider 내부 인증 저장소를 추측하지 않는다.
+- 실행 중 provider JSONL을 32 KiB/line, 200 event로 제한해 `SYSTEM/MODEL/TOOL/EVIDENCE/ERROR` 활동으로 변환했다. 64 KiB 마스킹 output tail과 별도로 Web이 1초마다 동기화하므로 종료 전에도 진행 상황을 확인할 수 있다.
+- reasoning/thinking event와 raw tool argument/result는 저장·표시하지 않는다. MCP token과 API key는 기존처럼 prompt·status·project에 넣지 않으며 주입 prompt preview도 secret masking과 24 KiB 상한을 거친다.
+
+**검증 및 남은 gate**
+
+- 구조화 event·실시간 tail·reasoning/credential 비노출과 Web 정적 계약 회귀를 추가했다.
+- 자동 회귀·재현 JAR·실제 로그인 Codex CLI smoke 결과는 `beta-validation.md`를 정본으로 유지한다. beta.30 JAR을 Burp에 재로드한 실제 MCP 대상 완주는 별도 통합 gate다.
+
+## 2026-08-31 · 1.2.0-beta.29 · Codex Explorer 실행 격리·Evidence 이중 gate
+
+**개발·수정**
+
+- beta.28을 실제 실행한 output tail에서 전역 `ctf-goal` skill 로드, 첫 GET의 write tool 오선택·client 취소, 응답 Evidence 0건인데도 성공 게시된 경로를 확인했다.
+- Codex마다 owner-only 임시 `CODEX_HOME`을 만들고 원 home의 `auth.json`만 link해 구독 로그인은 유지하면서 config·skill·plugin·memory·이전 session 상속을 차단했다. 링크가 불가능하면 hard link, 최종 fallback은 owner-only 임시 copy다.
+- Explorer의 첫 target operation을 exact entry target의 `flowscope_target_read(method=GET)`로 고정하고, 이후 own-run 응답에서 나온 route candidate를 frontier로 순회하도록 번들 prompt를 수정했다.
+- 활성 Explorer의 MCP `tools/list`를 역할에 필요한 8개로 제한해 ZAP·Judge·scope 도구가 선택 후보로 노출되지 않게 하고, 호출 단계 권한 검사도 유지했다.
+- MCP의 0-Evidence `end_run` 거부에 launcher-side exact run Evidence 검사를 추가했다. 두 번째 gate 실패 시 잘못 기록된 LLM 완료 lane을 취소하고 실행을 `FAILED`로 게시한다.
+- beta.28의 skill-disable 문자열이 실제 격리를 증명했다는 문서 주장을 철회하고 설계·결정·기능 명세·설치·검증·인계 문서를 beta.29 계약으로 동기화했다.
+
+**검증 및 남은 gate**
+
+- `LocalLlmRunnerTest`, `RunContextRegistryTest`, `McpServerTest` 집중 회귀와 `mvn clean verify` 263 tests, 실패·오류·skip 0, 완성 JAR smoke 통과.
+- 로컬 로그인 Codex 0.147.0에 임시 home, 동일 feature disable, `--strict-config --ignore-user-config --ignore-rules --ephemeral`을 실제 적용해 `FLOWSCOPE_CODEX_OK` 응답과 exit 0을 확인했다. API key는 사용하지 않았다.
+- 같은 소스의 clean verify 2회에서 beta.29 JAR SHA-256 `348c6504…55d89`가 일치했다. 배포물은 15,910,427 bytes, 2,037 entries다.
+- 이 smoke는 CLI 로그인·격리 option 호환만 확인한다. beta.29 JAR 재로드 뒤 실제 Burp MCP target read, route frontier, Evidence 저장, 정상 run 종료는 아직 수행하지 않았다.
+
 ## 2026-08-30 · 1.2.0-beta.28 · Explorer 성과 gate·ZAP 명시 정의 탐색
 
 **개발·수정**
 
 - Codex Explorer에서 안전한 GET도 destructive tool로 표시돼 취소되고, 응답 Evidence 없이 CLI exit 0만으로 LLM lane이 완료되는 실제 실패를 확인했다. MCP를 GET·HEAD·OPTIONS 전용 read와 승인형 write로 분리하고, EXPLORATION 종료에 같은 run의 응답 Evidence를 필수화했다.
-- `--ignore-user-config`만으로 전역 `ctf-goal` skill이 제거되지 않는 로컬 Codex 0.147.0 동작을 확인했다. `LocalLlmRunner`가 실행별로 발견한 user/plugin skill과 plugin/app/browser/computer-use/multi-agent feature를 비활성화하며 사용자 설정 파일은 수정하지 않는다.
+- `--ignore-user-config`만으로 전역 `ctf-goal` skill이 제거되지 않는 로컬 Codex 0.147.0 동작을 확인했다. beta.28은 발견한 user/plugin skill과 관련 feature를 비활성화하는 인자를 추가했지만, beta.29 실실행에서 이 방식도 전역 skill을 제거하지 못한 사실이 확인돼 임시 home 격리로 대체됐다.
 - ZAP이 FlowScope SCANNER listener를 우회하면 스캔은 성공처럼 보여도 Evidence가 0건이 되는 경로를 막기 위해, 대상 전송 전에 Network API로 outgoing proxy enabled와 허용 host·8081을 검사한다.
 - 운영자가 이미 가진 OpenAPI·GraphQL·Postman·SOAP 정의를 Web/MCP에서 최대 20개 입력할 수 있게 했다. URL과 GraphQL endpoint는 exact scope로 제한하고, 신원별 fresh Context에서 정의별 최대 1,000 message로 import한다. 정의가 상태 변경 요청을 만들 수 있어 별도 Burp 승인을 요구한다.
 - 정의 import는 `ZAP_API_IMPORT` 단계로 분리하고 성공 수와 형식별 실패 원인을 lane에 표시한다. 일부 정의 실패가 Traditional·Client·AJAX·passive Evidence를 폐기하지 않도록 경고 완료로 보존한다.

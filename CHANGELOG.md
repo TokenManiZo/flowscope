@@ -2,11 +2,40 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.32 — 2026-08-31
+
+- HUMAN·SCANNER·LLM 탐색 완료를 `LaneCompletionPolicy` 하나로 통합했습니다. 정상 완료는 활성 source·exact run ID·EXPLORATION·응답 Evidence·목적별 trust를 모두 요구하며 실패·취소는 완료가 아닌 abort로 처리합니다.
+- `SourceTrustPolicy`를 추가해 8082 직접 fallback의 `UNVERIFIED_RUNTIME`을 원 Evidence로만 보존하고 coverage·Explorer 가시성·레인 완료·dataset lock·최종 판정에서 제외했습니다.
+- 완료 시점 Evidence ID·응답 수·coverage 수를 exact `CompletedRun`으로 동결하고 dataset lock도 이 ID들로만 재구성합니다. 같은 run ID의 후발 record와 lock 뒤 live record가 Judge snapshot을 바꾸지 않습니다.
+- JSON project schema v3와 SQLite storage schema v2에 exact completed run을 저장합니다. JSON v1/v2와 SQLite v1은 읽되 source-only legacy 완료 표식은 신뢰하지 않아 레인 재실행이 필요합니다.
+- 무작위 run ID trust 대조, HUMAN/SCANNER/LLM 완료, 실패 abort, Evidence 동결, lock 불변성, JSON/SQLite 왕복·legacy 비승격 회귀를 추가했습니다.
+
+## 1.2.0-beta.31 — 2026-08-31
+
+- macOS/Linux/Windows의 표준 사용자 설치 경로와 `PATH`, `NVM_BIN`, `PNPM_HOME`, `BUN_INSTALL`, WinGet/npm 경로에서 Codex·Claude CLI를 자동 탐지
+- `codex login status`와 `claude auth status --json`을 API key 없이 실행해 설치와 구독 로그인 상태를 분리하고, provider 계정 식별자나 원출력은 저장하지 않도록 변경
+- 로그인 확인을 30초 캐시의 백그라운드 preflight로 실행하고 실제 Explorer/Judge 시작 직전에 다시 검증해 1초 Web polling과 실패 원인을 분리
+- 준비된 provider 자동 선택, provider별 상태 badge와 수동 재확인 fallback을 추가하고 기존 MCP·격리 workspace·prompt 자동 구성을 유지
+
+## 1.2.0-beta.30 — 2026-08-31
+
+- Codex CLI 설치 여부와 구독 로그인 파일을 분리해 사전 확인하고, Claude 로그인은 실행 시 공급자 CLI가 판정한다는 상태를 Web에 명시
+- Explorer/Judge 실행 중 공급자 JSONL을 bounded runtime event로 변환해 모델 메시지·MCP 도구 상태·Evidence 완료 gate를 약 1초 간격의 읽기 전용 작업 피드에 표시
+- reasoning/thinking event, raw tool argument/result와 자격증명을 작업 피드에서 제외하고, 실제 주입 prompt는 secret masking·크기 상한 뒤 운영자가 확인하도록 추가
+- 기존 API-key-free 실행, 임시 Codex home, 역할별 MCP allowlist와 exact-run Evidence 이중 gate를 유지
+
+## 1.2.0-beta.29 — 2026-08-31
+
+- Codex 구독 로그인만 owner-only 임시 `CODEX_HOME`에 연결하고 전역 config·skill·plugin·memory·이전 session은 상속하지 않도록 Explorer 실행 환경을 격리
+- 첫 대상 호출을 exact entry target의 `flowscope_target_read(method=GET)`로 고정하고 응답에서 파생된 own-run route frontier만 순회하도록 하네스 보강
+- MCP server의 0-Evidence 종료 거부에 더해 launcher가 exact run Evidence를 다시 검사하고, 비어 있으면 잘못 기록된 LLM 완료 표식까지 취소하는 이중 gate 추가
+- 로컬 Codex 0.147.0 구독 실행에서 임시 home·strict config·ephemeral 조합 확인. 실제 Burp MCP 대상 탐색은 beta.29 JAR 재로드 뒤 별도 gate로 유지
+
 ## 1.2.0-beta.28 — 2026-08-30
 
 - LLM 대상 GET·HEAD·OPTIONS를 비파괴 MCP 도구로 분리하고 POST·PUT·PATCH·DELETE는 기존 확인·Burp 승인 경계를 유지
 - 응답 Evidence 0건인 Explorer 종료를 서버에서 거부해 취소·도구 실패 후 CLI exit 0이 LLM 완료로 기록되던 경로 차단
-- Codex 실행별로 사용자 skill·plugin·외부 browser surface를 비활성화하되 사용자 설정 파일은 수정하지 않도록 격리 보강
+- Codex 실행별 user skill·plugin·외부 browser surface 비활성화를 시도했으나 실제 전역 skill 잔존이 beta.29에서 확인돼 임시 home 격리로 대체
 - ZAP outgoing proxy가 FlowScope scanner listener를 가리키는지 대상 전송 전에 확인하고 `network` add-on을 필수화
 - 명시적 exact-scope OpenAPI·GraphQL·Postman·SOAP 정의를 신원별 fresh Context에서 bounded import하고 단계별 성공 수·경고 표시
 

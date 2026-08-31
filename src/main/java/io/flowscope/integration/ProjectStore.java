@@ -15,6 +15,7 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Versioned, masked FlowScope session file. Model-provider credentials are never part of this schema. */
@@ -23,10 +24,11 @@ public final class ProjectStore {
                               List<McpServer.Assessment> assessments,
                               List<ValidationDecision> validations,
                               Set<Source> completedLanes,
+                              Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                               List<RouteCandidate> routeCandidates) {}
 
-    private static final int SCHEMA_VERSION = 2;
-    private static final int LEGACY_SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 3;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -55,7 +57,23 @@ public final class ProjectStore {
                      List<ValidationDecision> validations,
                      Set<Source> completedLanes,
                      List<RouteCandidate> routeCandidates) throws IOException {
-        ObjectNode root = toDocument(records, config, assessments, validations, completedLanes, routeCandidates);
+        ObjectNode root = toDocument(records, config, assessments, validations,
+                completedLanes, Map.of(), routeCandidates);
+        saveDocument(target, root);
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<McpServer.Assessment> assessments,
+                     List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates) throws IOException {
+        Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
+        ObjectNode root = toDocument(records, config, assessments, validations,
+                runs.keySet(), runs, routeCandidates);
+        saveDocument(target, root);
+    }
+
+    private void saveDocument(Path target, ObjectNode root) throws IOException {
         Path absolute = target.toAbsolutePath().normalize();
         Path parent = absolute.getParent();
         if (parent == null) throw new IllegalArgumentException("project file needs a parent directory");
@@ -82,6 +100,15 @@ public final class ProjectStore {
                           List<ValidationDecision> validations,
                           Set<Source> completedLanes,
                           List<RouteCandidate> routeCandidates) {
+        return toDocument(records, config, assessments, validations, completedLanes, Map.of(), routeCandidates);
+    }
+
+    ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
+                          List<McpServer.Assessment> assessments,
+                          List<ValidationDecision> validations,
+                          Set<Source> completedLanes,
+                          Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                          List<RouteCandidate> routeCandidates) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         config = config.snapshotCopy();
         EvidenceIds.assign(records);
@@ -89,10 +116,21 @@ public final class ProjectStore {
         root.put("schema_version", SCHEMA_VERSION);
         root.put("traffic_classifier_version", TrafficClassifier.VERSION);
         root.put("saved_at", Instant.now().toString());
+        List<RunContextRegistry.CompletedRun> exactRuns =
+                (completedRuns == null ? Map.<Source, RunContextRegistry.CompletedRun>of() : completedRuns)
+                        .entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
+                        .map(entry -> {
+                            RunContextRegistry.CompletedRun run = entry.getValue();
+                            if (run == null || entry.getKey() != run.source() || !validCompletedRun(run)) {
+                                throw new IllegalArgumentException("invalid exact completed run: " + entry.getKey());
+                            }
+                            return run;
+                        }).toList();
         ArrayNode savedLanes = root.putArray("completed_lanes");
-        (completedLanes == null ? Set.<Source>of() : completedLanes).stream()
-                .filter(source -> source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM)
-                .map(Enum::name).sorted().forEach(savedLanes::add);
+        exactRuns.stream().map(RunContextRegistry.CompletedRun::source)
+                .map(Enum::name).forEach(savedLanes::add);
+        ArrayNode savedRuns = root.putArray("completed_runs");
+        exactRuns.forEach(run -> savedRuns.add(writeCompletedRun(run)));
         ArrayNode savedRecords = root.putArray("records");
         ObjectNode payloads = root.putObject("payloads");
         for (RequestRecord record : records) savedRecords.add(writeRecord(record, payloads));
@@ -119,7 +157,7 @@ public final class ProjectStore {
 
     ProjectData fromDocument(JsonNode root) {
         int schemaVersion = root.path("schema_version").asInt(-1);
-        if (schemaVersion != SCHEMA_VERSION && schemaVersion != LEGACY_SCHEMA_VERSION) {
+        if (schemaVersion != SCHEMA_VERSION && !LEGACY_SCHEMA_VERSIONS.contains(schemaVersion)) {
             throw new IllegalArgumentException("unsupported FlowScope schema version");
         }
         JsonNode recordNodes = root.path("records");
@@ -153,6 +191,22 @@ public final class ProjectStore {
             Source lane = enumValue(Source.class, value.asText());
             if (lane == Source.HUMAN || lane == Source.SCANNER || lane == Source.LLM) completedLanes.add(lane);
         }
+        Map<Source, RunContextRegistry.CompletedRun> completedRuns = new java.util.EnumMap<>(Source.class);
+        JsonNode runNodes = root.path("completed_runs");
+        // completed_runs is defined by v3. Legacy documents cannot acquire trusted completion by
+        // carrying an unknown future field or by changing only their schema_version value.
+        if (schemaVersion == SCHEMA_VERSION && runNodes.isArray()) {
+            if (runNodes.size() > 3) throw new IllegalArgumentException("completed run limit exceeded");
+            for (JsonNode value : runNodes) {
+                RunContextRegistry.CompletedRun run = readCompletedRun(value);
+                if (completedRuns.putIfAbsent(run.source(), run) != null) {
+                    throw new IllegalArgumentException("duplicate completed run source");
+                }
+            }
+        }
+        if (schemaVersion == SCHEMA_VERSION && !completedLanes.equals(completedRuns.keySet())) {
+            throw new IllegalArgumentException("completed lanes do not match exact completed runs");
+        }
         List<RouteCandidate> routeCandidates = new ArrayList<>();
         JsonNode candidateNodes = root.path("route_candidates");
         if (candidateNodes.isArray()) {
@@ -160,7 +214,45 @@ public final class ProjectStore {
             for (JsonNode value : candidateNodes) routeCandidates.add(readRouteCandidate(value));
         }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
-                Set.copyOf(completedLanes), List.copyOf(routeCandidates));
+                Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates));
+    }
+
+    private ObjectNode writeCompletedRun(RunContextRegistry.CompletedRun run) {
+        ObjectNode out = json.createObjectNode();
+        out.put("source", run.source().name());
+        out.put("run_id", run.runId());
+        out.put("source_detail", run.detail().name());
+        out.put("orchestrator", run.orchestrator().name());
+        out.put("tool", run.tool().name());
+        out.put("phase", run.phase().name());
+        put(out, "account_id", run.accountId());
+        out.put("completed_at", run.completedAt().toString());
+        out.set("evidence_ids", json.valueToTree(run.evidenceIds()));
+        out.put("response_count", run.responseCount());
+        out.put("coverage_count", run.coverageCount());
+        return out;
+    }
+
+    private RunContextRegistry.CompletedRun readCompletedRun(JsonNode value) {
+        Source source = enumValue(Source.class, required(value, "source"));
+        RunContextRegistry.CompletedRun run = new RunContextRegistry.CompletedRun(source,
+                required(value, "run_id"), enumValue(SourceDetail.class, required(value, "source_detail")),
+                enumValue(Orchestrator.class, required(value, "orchestrator")),
+                enumValue(ToolKind.class, required(value, "tool")),
+                enumValue(RunPhase.class, required(value, "phase")), nullable(value, "account_id"),
+                Instant.parse(required(value, "completed_at")), stringList(value, "evidence_ids"),
+                value.path("response_count").asLong(-1), value.path("coverage_count").asLong(-1));
+        if (!validCompletedRun(run)) throw new IllegalArgumentException("invalid completed run");
+        return run;
+    }
+
+    private static boolean validCompletedRun(RunContextRegistry.CompletedRun run) {
+        return run != null && (run.source() == Source.HUMAN || run.source() == Source.SCANNER
+                || run.source() == Source.LLM) && run.runId() != null && !run.runId().isBlank()
+                && run.detail() != null && run.orchestrator() != null && run.tool() != null
+                && run.phase() == RunPhase.EXPLORATION && run.completedAt() != null
+                && !run.evidenceIds().isEmpty() && run.responseCount() >= run.evidenceIds().size()
+                && run.coverageCount() >= 0 && run.coverageCount() <= run.responseCount();
     }
 
     private ObjectNode writeRouteCandidate(RouteCandidate candidate) {

@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -94,7 +95,8 @@ final class ProjectStoreTest {
         assertEquals("acct-a", loaded.config().boundAccount(record.service, restored.fp).orElseThrow().id());
         assertEquals("LIKELY", loaded.assessments().get(0).verdict());
         assertEquals(ValidationDecision.FinalVerdict.INCONCLUSIVE, loaded.validations().get(0).verdict());
-        assertEquals(Set.of(Source.HUMAN, Source.SCANNER, Source.LLM), loaded.completedLanes());
+        assertTrue(loaded.completedLanes().isEmpty(),
+                "source-only completion flags are not persisted by the current schema");
         assertEquals(List.of(routeCandidate), loaded.routeCandidates());
         assertEquals(ReviewDecision.Status.CONFIRMED,
                 loaded.config().review(assessment.id(), assessment.evidenceIds()).orElseThrow().status());
@@ -219,9 +221,62 @@ final class ProjectStoreTest {
         var root = new ObjectMapper().readTree(Files.readString(file));
         ProjectStore.ProjectData loaded = store.load(file);
 
-        assertEquals(2, root.path("schema_version").asInt());
+        assertEquals(3, root.path("schema_version").asInt());
         assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
         assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
         assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());
+    }
+
+    @Test
+    void exactCompletedRunsRoundTripAndLegacyLaneFlagsRemainUntrusted() throws Exception {
+        RequestRecord evidence = new RequestRecord(Source.LLM, "https://api.test:443",
+                "GET", "/health", 200, "test");
+        evidence.hasResponse = true;
+        evidence.body = "{\"ok\":true}";
+        evidence.sourceDetail = SourceDetail.LLM_EXPLORER;
+        evidence.orchestrator = Orchestrator.LLM;
+        evidence.tool = ToolKind.CODEX;
+        evidence.phase = RunPhase.EXPLORATION;
+        evidence.runId = "llm-exact-1";
+        evidence.executionTrust = ExecutionTrust.CONTROLLED;
+        Pipeline.Result result = Pipeline.run(List.of(evidence));
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, evidence.runId));
+        assertNotNull(LaneCompletionPolicy.complete(contexts, Source.LLM, evidence.runId, result));
+
+        ProjectStore store = new ProjectStore();
+        Path current = temp.resolve("exact-run.flowscope.json");
+        store.save(current, List.of(evidence), new AnalysisConfig(), List.of(), List.of(),
+                contexts.completedRuns(), List.of());
+        ProjectStore.ProjectData loaded = store.load(current);
+
+        assertEquals(evidence.runId, loaded.completedRuns().get(Source.LLM).runId());
+        assertEquals(List.of(evidence.evidenceId), loaded.completedRuns().get(Source.LLM).evidenceIds());
+        assertEquals(Set.of(Source.LLM), loaded.completedLanes());
+
+        ObjectMapper json = new ObjectMapper();
+        var legacy = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(Files.readString(current));
+        legacy.put("schema_version", 2);
+        Path old = temp.resolve("legacy-lanes.flowscope.json");
+        Files.writeString(old, json.writeValueAsString(legacy));
+        ProjectStore.ProjectData restoredLegacy = store.load(old);
+        assertEquals(Set.of(Source.LLM), restoredLegacy.completedLanes());
+        assertTrue(restoredLegacy.completedRuns().isEmpty(),
+                "source-only lane flags must not become exact run completion after migration");
+    }
+
+    @Test
+    void currentSchemaRejectsLaneAndExactRunMismatch() throws Exception {
+        Path file = temp.resolve("mismatched-completion.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of());
+
+        ObjectMapper json = new ObjectMapper();
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(Files.readString(file));
+        ((com.fasterxml.jackson.databind.node.ArrayNode) root.path("completed_lanes")).add("HUMAN");
+        Files.writeString(file, json.writeValueAsString(root));
+
+        assertThrows(IllegalArgumentException.class, () -> store.load(file));
     }
 }

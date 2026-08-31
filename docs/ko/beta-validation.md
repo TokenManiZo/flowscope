@@ -1,6 +1,65 @@
-# FlowScope 1.2.0-beta.28 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.32 사전 벤치마크 검증 기록
 
-최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-30이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-31이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.32 exact-run 완료·신뢰·고정 dataset gate
+
+| 구분 | 결과 |
+|---|---|
+| 신뢰 정책 | 목적별 `SourceTrustPolicy` 회귀에서 8082 `UNVERIFIED_RUNTIME`은 raw record에 남고 coverage·Explorer 시야·완료·lock·결정적 verdict에는 사용되지 않음 |
+| 완료 정책 | HUMAN OBSERVED/CONTROLLED, SCANNER·LLM CONTROLLED의 exact source/run/EXPLORATION/응답 Evidence만 완료. 실패·취소·구형 clear는 완료를 생성하지 않음 |
+| dataset lock | 완료 시점 Evidence ID를 동결하고 lock은 세 lane의 동결 ID만 선택. 같은 run의 후발 record와 lock 뒤 live record가 snapshot을 바꾸지 않는 회귀 통과 |
+| 프로젝트 호환 | JSON v3·SQLite v2 exact completed run 왕복, JSON v1/v2·SQLite v1 읽기, source-only legacy 완료 비승격, 현재 스키마 lane/run 불일치 거부 회귀 통과 |
+| 전체 자동 회귀 | JDK 21에서 `mvn clean verify`, 275 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 반복 빌드 | 같은 source·JDK 21의 연속 clean verify 2회에서 byte-for-byte 동일, SHA-256 일치 |
+| 배포물 | `target/flowscope-1.2.0-beta.32.jar` 하나, 15,940,500 bytes, 2,046 entries, SHA-256 `a105c9539eddedecc212a66782958165ea890bd0ed5c528dac249f7a22fc2b27`; 첫 entry `META-INF/MANIFEST.MF` |
+
+이 gate는 완료와 Judge 입력 데이터의 무결성을 자동 회귀로 확인한다. 실제 Burp에서 beta.32를 재로드한 Codex/Claude Explorer, ZAP 대상 캠페인, 세 lane 잠금과 Judge 재현 성공을 뜻하지 않는다. 포트 기반 traffic attribution은 실제 프로세스 신원 증명이 아니며, 8082 직접 traffic은 이 한계 때문에 보존 전용으로 격리한다.
+
+## 1.2.0-beta.31 구독 CLI 자동 탐지·로그인 preflight
+
+| 구분 | 결과 |
+|---|---|
+| 실제 Codex 상태 | 로컬 Codex CLI 0.147.0의 `codex login status`가 exit 0과 ChatGPT 로그인 상태를 반환. account 식별자는 저장하지 않음 |
+| 실제 Claude 상태 | 로컬 Claude Code 2.1.236의 `claude auth status --json`이 exit 0, `loggedIn=true`, `authMethod=claude.ai`를 반환. 이메일 등 원문은 저장하지 않음 |
+| 자동 탐지 회귀 | 표준 `~/.local/bin`, Windows `.exe/.cmd/.bat`, 축소 PATH와 기존 실행 부모 PATH 보정 통과 |
+| 준비 상태 회귀 | Codex/Claude READY·로그아웃 parser, provider account 문자열 비보존, Web refresh API와 READY 자동 선택 계약 통과 |
+| 전체 자동 회귀 | `mvn clean verify`, 268 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 환경 진단 | `scripts/doctor.sh`, Codex·Claude·Web·MCP·ZAP 포함 실패 0, 경고 0 |
+| 반복 빌드 | 같은 소스의 clean verify 2회에서 크기·엔트리 수·SHA-256 일치, manifest 첫 엔트리 확인 |
+| 배포물 | `target/flowscope-1.2.0-beta.31.jar`, 15,926,130 bytes, 2,040 entries, SHA-256 `824fe15277d06b89ad976870b47694935674f7b7926e07cdd5b9eed1af3140e4` |
+
+아직 확인하지 않은 것은 beta.31 JAR을 실제 Burp에 재로드한 Web readiness badge·READY provider 자동 선택, Codex/Claude→FlowScope MCP target read, route frontier, 응답 Evidence 저장과 정상 `end_run`이다. 공식 auth status와 자동 회귀를 실제 대상 Explorer 완주나 취약점 탐지 성능으로 표현하지 않는다. macOS의 로그인된 두 CLI에서 preflight는 확인했지만 Windows/Linux 실기기 설치 경로는 코드 회귀만 수행했다.
+
+## 1.2.0-beta.30 로그인 준비 상태·LLM 작업 피드
+
+| 구분 | 결과 |
+|---|---|
+| 로그인 기반 실행 | 로컬 로그인 Codex CLI를 API key 없이 owner-only 임시 home에서 실행해 `FLOWSCOPE_BETA30_LOGIN_OK`, exit 0 확인 |
+| 활동 event | Codex JSONL의 system/model/tool/completion을 실행 중 게시하고 reasoning event와 raw tool credential이 활동 목록에 남지 않는 회귀 통과 |
+| 상태·prompt 보호 | live output은 64 KiB secret-masked tail, provider line은 32 KiB, 활동 200건, prompt preview 24 KiB 상한 회귀 통과 |
+| Web UI | provider별 준비 메시지, 읽기 전용 `LLM 작업 피드`, 주입 지침, 약 1초 상태 동기화 정적 계약과 465px 폭 브라우저 렌더 확인. 글자 가로 잘림 없음 |
+| 전체 자동 회귀 | `mvn clean verify`, 265 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 반복 빌드 | 같은 소스의 clean verify 2회에서 크기·엔트리 수·SHA-256 일치 |
+| 배포물 | `target/flowscope-1.2.0-beta.30.jar`, 15,918,273 bytes, 2,038 entries, SHA-256 `bc6924767024d82000fb7c8b71140c01f88784ab2613dcb2b58a7734f5088f6f` |
+
+아직 확인하지 않은 것은 beta.30 JAR을 Burp에 재로드한 실제 `/api/llm-run` readiness, Codex→FlowScope MCP target read, route frontier, 응답 Evidence 저장, 작업 피드 전환과 정상 `end_run`이다. 로컬 CLI smoke와 parser 회귀를 실제 대상 Explorer 완주로 표현하지 않는다. Claude는 사용 가능한 로그인 환경에서 별도 확인해야 하며 Codex 성공으로 대체하지 않는다.
+
+## 1.2.0-beta.29 Codex Explorer 격리·이중 완료 gate
+
+| 구분 | 결과 |
+|---|---|
+| 실제 실패 재현 | beta.28 output tail에서 전역 `ctf-goal` skill 로드, 첫 GET의 write tool 오선택·취소, 응답 Evidence 0건 성공 표시를 확인 |
+| Codex home 격리 | 임시 home이 login만 노출하고 원 skill/plugin을 상속하지 않는 회귀, login 부재 fail-fast 메시지 통과 |
+| 명령 경계 | `--ignore-user-config`, `--ignore-rules`, `--ephemeral`, strict config와 skill/plugin/browser/shell 계열 feature disable 인자 회귀 통과 |
+| MCP 도구 표면 | 활성 Explorer의 `tools/list`가 정확히 8개 역할 도구만 반환하고 scope·ZAP·Judge 도구를 숨기는 회귀 통과 |
+| 완료 이중 gate | MCP의 same source/run/phase response Evidence gate 유지. launcher exact-run Evidence가 false면 완료 lane 취소와 `FAILED` 게시 회귀 통과 |
+| 실제 구독 CLI smoke | 로컬 Codex 0.147.0에서 원 `auth.json`만 연결한 임시 `CODEX_HOME`과 제품 격리 옵션으로 `FLOWSCOPE_CODEX_OK`, exit 0 확인. API key 미사용 |
+| 전체 자동 회귀 | `mvn clean verify`, 263 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 반복 빌드 | 같은 소스의 clean verify 2회에서 SHA-256 일치 |
+| 배포물 | `target/flowscope-1.2.0-beta.29.jar`, 15,910,427 bytes, 2,037 entries, SHA-256 `348c6504ab782486d6baa82f72db5486df030dc72b684b386d2d7683a6c55d89` |
+
+아직 확인하지 않은 것은 beta.29 JAR을 Burp에 재로드한 실제 MCP target read, 응답 기반 route frontier 순회, Evidence 저장과 정상 `end_run`이다. Codex 단독 smoke나 자동 회귀를 실대상 탐색 완주·취약점 탐지 성능으로 표현하지 않는다.
 
 ## 1.2.0-beta.28 Explorer 성과 gate·ZAP 정의 탐색 gate
 

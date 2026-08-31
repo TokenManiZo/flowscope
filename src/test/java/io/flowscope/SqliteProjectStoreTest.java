@@ -3,15 +3,20 @@ package io.flowscope;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.ExecutionTrust;
+import io.flowscope.core.LaneCompletionPolicy;
 import io.flowscope.core.Masking;
+import io.flowscope.core.Orchestrator;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.ReviewDecision;
 import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
 import io.flowscope.core.StoredPayload;
+import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.ProjectStore;
@@ -40,8 +45,11 @@ final class SqliteProjectStoreTest {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443",
                 "GET", "/orders/7", 200, "sess:4e738ca5563c");
         record.sourceDetail = SourceDetail.BROWSER;
+        record.orchestrator = Orchestrator.HUMAN;
+        record.tool = ToolKind.BROWSER;
         record.phase = RunPhase.EXPLORATION;
         record.runId = "human-1";
+        record.executionTrust = ExecutionTrust.OBSERVED;
         record.reqText = Masking.maskHeaders("GET /orders/7 HTTP/1.1\r\nCookie: session=RAWCOOKIE");
         record.requestPayload = StoredPayload.capture(record.reqText, "text/plain", 1024 * 1024);
         record.body = "{\"id\":7,\"ownerId\":\"test1\"}";
@@ -49,7 +57,11 @@ final class SqliteProjectStoreTest {
         record.responsePayload = StoredPayload.capture(record.respText, "application/json", 1024 * 1024);
         record.hasResponse = true;
         record.timestamp = 1234;
-        Pipeline.run(List.of(record));
+        Pipeline.Result result = Pipeline.run(List.of(record));
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, record.runId));
+        assertTrue(LaneCompletionPolicy.complete(contexts, Source.HUMAN, record.runId, result) != null);
 
         AccountProfile account = new AccountProfile("acct-test1", "test1", record.service, AccessRole.USER);
         AnalysisConfig config = new AnalysisConfig().upsertAccount(account)
@@ -71,7 +83,7 @@ final class SqliteProjectStoreTest {
         Path database = temp.resolve("test.flowscope.db");
         SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
         store.save(database, List.of(record), config, List.of(assessment), List.of(validation),
-                Set.of(Source.HUMAN), List.of(route));
+                contexts.completedRuns(), List.of(route));
 
         byte[] bytes = Files.readAllBytes(database);
         assertEquals("SQLite format 3\000", new String(bytes, 0, 16, StandardCharsets.ISO_8859_1));
@@ -82,6 +94,7 @@ final class SqliteProjectStoreTest {
             assertEquals(1, scalar(statement.executeQuery("SELECT COUNT(*) FROM accounts")));
             assertEquals(1, scalar(statement.executeQuery("SELECT COUNT(*) FROM session_bindings")));
             assertEquals(2, scalar(statement.executeQuery("SELECT COUNT(*) FROM payloads")));
+            assertEquals(1, scalar(statement.executeQuery("SELECT COUNT(*) FROM completed_runs")));
         }
 
         ProjectStore.ProjectData loaded = store.load(database);
@@ -89,6 +102,7 @@ final class SqliteProjectStoreTest {
         assertEquals("test1", loaded.config().account(account.id()).orElseThrow().label());
         assertEquals(account.id(), loaded.config().boundAccount(record.service, record.fp).orElseThrow().id());
         assertEquals(Set.of(Source.HUMAN), loaded.completedLanes());
+        assertEquals("human-1", loaded.completedRuns().get(Source.HUMAN).runId());
         assertEquals(List.of(route), loaded.routeCandidates());
         assertEquals("INCONCLUSIVE", loaded.assessments().getFirst().verdict());
         assertEquals(ValidationDecision.FinalVerdict.INCONCLUSIVE, loaded.validations().getFirst().verdict());

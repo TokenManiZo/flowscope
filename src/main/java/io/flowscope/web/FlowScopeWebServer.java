@@ -6,6 +6,7 @@ import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.LaneCompletionPolicy;
 import io.flowscope.core.Masking;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
@@ -40,6 +41,7 @@ import java.util.Map;
 public final class FlowScopeWebServer implements AutoCloseable {
     public interface State {
         Pipeline.Result snapshot();
+        default Pipeline.Result completionSnapshot() { return snapshot(); }
         long revision();
         AnalysisConfig config();
         List<McpServer.Assessment> assessments();
@@ -88,6 +90,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default com.fasterxml.jackson.databind.JsonNode llmStatus() {
             return new ObjectMapper().createObjectNode().put("status", "UNAVAILABLE");
         }
+        default com.fasterxml.jackson.databind.JsonNode refreshLlm() { return llmStatus(); }
         default com.fasterxml.jackson.databind.JsonNode cancelLlm() {
             throw new UnsupportedOperationException("LLM CLI workflow is unavailable");
         }
@@ -359,9 +362,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         accountId.isBlank() ? null : accountId));
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
-                if (!state.contexts().clear(Source.HUMAN, runId)) {
-                    throw new IllegalArgumentException("현재 HUMAN run ID와 일치하지 않습니다.");
-                }
+                LaneCompletionPolicy.complete(state.contexts(), Source.HUMAN, runId,
+                        state.completionSnapshot());
             } else {
                 throw new IllegalArgumentException("action은 begin 또는 end여야 합니다.");
             }
@@ -645,8 +647,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 body.set("run", state.followUpJudge(required(form, "message")));
                 return json(202, body);
             }
+            if (action.equals("refresh")) {
+                body.set("run", state.refreshLlm());
+                return json(200, body);
+            }
             if (!action.equals("start")) {
-                throw new IllegalArgumentException("action은 start, cancel 또는 followup이어야 합니다.");
+                throw new IllegalArgumentException("action은 start, cancel, followup 또는 refresh여야 합니다.");
             }
             LocalLlmRunner.Provider provider;
             LocalLlmRunner.Role role;

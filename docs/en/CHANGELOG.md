@@ -1,10 +1,38 @@
 # Changelog
 
+## 1.2.0-beta.32 — 2026-08-31
+
+- Centralized HUMAN, SCANNER, and LLM exploration completion in one `LaneCompletionPolicy`. Successful completion now requires the active source, exact run ID, EXPLORATION phase, response Evidence, and purpose-specific trust; failures and cancellations abort instead of completing a lane.
+- Added `SourceTrustPolicy`. Direct 8082 `UNVERIFIED_RUNTIME` traffic remains retained Evidence but cannot affect coverage, Explorer visibility, lane completion, dataset lock, or final verdicts.
+- Completion freezes exact Evidence IDs and counts in `CompletedRun`; dataset lock is rebuilt only from those IDs, preventing later same-run or post-lock live records from changing the Judge snapshot.
+- Added JSON project schema v3 and SQLite storage schema v2 exact-run persistence. JSON v1/v2 and SQLite v1 remain readable, but source-only legacy completion flags are not trusted and require lane reruns.
+- Added randomized run-ID trust contrasts and regressions for completion, abort, frozen Evidence membership, lock immutability, JSON/SQLite round trips, and legacy non-promotion.
+
+## 1.2.0-beta.31 — 2026-08-31
+
+- Auto-detect Codex and Claude CLIs from standard macOS, Linux, and Windows user install locations plus common runtime environment paths.
+- Preflight subscription sign-in with `codex login status` and `claude auth status --json` without accepting provider API keys or retaining provider account output.
+- Cache readiness checks off the one-second Web polling path, revalidate immediately before launch, auto-select a ready provider, and expose an explicit refresh fallback.
+
+## 1.2.0-beta.30 — 2026-08-31
+
+- Distinguished Codex CLI installation from the required subscription login file and exposed the provider-specific readiness message in the Web setup.
+- Parsed bounded provider JSONL into a read-only live activity feed containing actual model messages, FlowScope tool states, and the exact-run Evidence completion gate.
+- Excluded reasoning/thinking events, raw tool arguments/results, and credentials from the feed while exposing the injected prompt only after secret masking and a size cap.
+- Retained the API-key-free launcher, isolated Codex home, role-specific MCP allowlists, and the server/launcher Evidence gates.
+
+## 1.2.0-beta.29 — 2026-08-31
+
+- Isolated each Codex Explorer in an owner-only temporary `CODEX_HOME` that links only the existing subscription login, excluding global config, skills, plugins, memories, and prior sessions.
+- Required the first target operation to be an exact-entry GET through `flowscope_target_read`, followed only by own-run route candidates derived from captured responses.
+- Added a launcher-side exact-run Evidence gate that revokes an incorrectly recorded LLM completion when the server-side zero-Evidence gate is bypassed or stale.
+- Verified the isolated-home and strict ephemeral options with the locally authenticated Codex 0.147.0 CLI; the Burp-to-target MCP run remains a post-reload integration gate.
+
 ## 1.2.0-beta.28 — 2026-08-30
 
 - Split GET/HEAD/OPTIONS into a non-destructive MCP target-read tool while retaining confirmation and Burp approval for POST/PUT/PATCH/DELETE.
 - Refused Explorer completion without captured response Evidence, preventing cancelled or failed tool calls followed by CLI exit zero from completing the LLM lane.
-- Disabled Codex user skills, plugins, and external browser surfaces per run without changing user configuration files.
+- Attempted per-run Codex skill and plugin disabling; beta.29 later replaced it with temporary-home isolation after a real run showed a global skill still present.
 - Added a fail-closed ZAP outgoing-proxy preflight and required the Network add-on before target traffic.
 - Added bounded, exact-scope OpenAPI, GraphQL, Postman, and SOAP definition imports per fresh identity Context with visible import counts and warnings.
 
