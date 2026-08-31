@@ -105,7 +105,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.33 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.34 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
@@ -189,6 +189,7 @@ final class FlowScopeWebServerTest {
         assertEquals("CORROBORATED", body.at("/events/0/pathTemplateStatus").asText());
         assertEquals("RESPONSE_ID_MATCH", body.at("/events/0/pathTemplateReasons/0").asText());
         assertEquals(1, body.at("/events/0/repeatCount").asInt());
+        assertFalse(body.at("/events/0").has("clusterEvidenceIds"));
         assertEquals("PATH_ID", body.at("/events/0/objects/0/evidence").asText());
         assertEquals(1, body.path("routeCandidates").size());
         assertFalse(body.at("/routeCandidates/0/observed").asBoolean());
@@ -592,6 +593,8 @@ final class FlowScopeWebServerTest {
                     "GET", "/v1/orders/7", 200, "sess:page-" + i);
             copy.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test";
             copy.respText = "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}";
+            copy.requestPayload = state.record.requestPayload;
+            copy.responsePayload = state.record.responsePayload;
             copy.body = "{\"id\":7}";
             copy.hasResponse = true;
             copy.timestamp = i + 2L;
@@ -609,6 +612,20 @@ final class FlowScopeWebServerTest {
                 + "&offset=200&limit=200", token, origin()));
         assertEquals(6, second.path("records").size());
         assertFalse(second.path("hasMore").asBoolean());
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        JsonNode clustered = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                .filter(value -> value.path("repeatCount").asInt() == 206).findFirst().orElseThrow();
+        assertFalse(clustered.has("clusterEvidenceIds"));
+        JsonNode clusterFirst = json(get("/api/cluster-evidence?clusterId="
+                + encode(clustered.path("clusterId").asText()), token, origin()));
+        assertEquals(206, clusterFirst.path("total").asInt());
+        assertEquals(200, clusterFirst.path("evidenceIds").size());
+        assertTrue(clusterFirst.path("hasMore").asBoolean());
+        JsonNode clusterSecond = json(get("/api/cluster-evidence?clusterId="
+                + encode(clustered.path("clusterId").asText()) + "&offset=200", token, origin()));
+        assertEquals(6, clusterSecond.path("evidenceIds").size());
+        assertFalse(clusterSecond.path("hasMore").asBoolean());
     }
 
     private void start() throws Exception {

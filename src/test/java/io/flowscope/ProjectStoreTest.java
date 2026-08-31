@@ -228,6 +228,25 @@ final class ProjectStoreTest {
     }
 
     @Test
+    void rejectsProjectsWhoseDistinctRestoredPayloadsExceedAggregateBudget() throws Exception {
+        List<RequestRecord> records = new java.util.ArrayList<>();
+        for (int index = 0; index < 49; index++) {
+            String prefix = "payload-" + index + ":";
+            String body = prefix + "x".repeat(1024 * 1024 - prefix.length());
+            RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443",
+                    "POST", "/payload/" + index, 200, "anon");
+            record.requestPayload = StoredPayload.capture(body, "text/plain", 1024 * 1024);
+            record.hasResponse = true;
+            records.add(record);
+        }
+        Path file = temp.resolve("aggregate-over-limit.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, records, new AnalysisConfig(), List.of());
+
+        assertThrows(IllegalArgumentException.class, () -> store.load(file));
+    }
+
+    @Test
     void exactCompletedRunsRoundTripAndLegacyLaneFlagsRemainUntrusted() throws Exception {
         RequestRecord evidence = new RequestRecord(Source.LLM, "https://api.test:443",
                 "GET", "/health", 200, "test");

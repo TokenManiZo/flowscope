@@ -73,10 +73,19 @@ final class TransientExchangeVault {
 
     synchronized void put(RequestRecord record, byte[] request, int requestBodyOffset,
                           byte[] response, int responseBodyOffset) {
+        put(record, request, requestBodyOffset, request == null ? 0 : request.length,
+                response, responseBodyOffset, response == null ? 0 : response.length);
+    }
+
+    synchronized void put(RequestRecord record, byte[] request, int requestBodyOffset, int requestBytes,
+                          byte[] response, int responseBodyOffset, int responseBytes) {
         if (record == null) return;
+        if (requestBytes < 0 || responseBytes < 0
+                || (request != null && request.length != requestBytes)
+                || (response != null && response.length != responseBytes)) {
+            throw new IllegalArgumentException("raw exchange metadata is inconsistent");
+        }
         remove(record);
-        int requestBytes = request == null ? 0 : request.length;
-        int responseBytes = response == null ? 0 : response.length;
         byte[] retainedRequest = request != null && requestBytes <= requestLimitBytes ? request.clone() : null;
         byte[] retainedResponse = response != null && responseBytes <= responseLimitBytes ? response.clone() : null;
         Entry entry = new Entry(retainedRequest, clampOffset(requestBodyOffset, requestBytes), retainedResponse,

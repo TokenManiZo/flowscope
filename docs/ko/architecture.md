@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.33
+# FlowScope 설계서 v1.2.0-beta.34
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -55,7 +55,7 @@ ZAP 배포 방식은 캠페인 엔진과 분리한다. FlowScope는 loopback의 
 - 캡처 콜백은 append만 하고 400ms worker coalescing으로 분석한다. live record는 20,000건에서 정지하며 초과 건수를 snapshot과 Web 경고로 노출한다.
 - MCP는 `127.0.0.1`에만 bind하고 random Bearer, Origin 검사, 1MiB 요청 상한을 적용한다.
 - Web 서버도 `127.0.0.1`에만 bind한다. Host/Origin과 UI에 주입된 세션 capability를 검증하고 `no-store`, CSP, frame 차단 헤더를 보낸다. Burp 축소 JRE 호환을 위해 MCP와 같은 자체 `LoopbackHttpServer`를 재사용한다.
-- 1초 snapshot은 그래프 메타데이터와 서버 판정만 전송하고 마스킹 Request/Response 전문은 선택한 operation에서만 `/api/evidence`로 200건씩 지연 로드한다.
+- 1초 snapshot은 그래프 메타데이터와 서버 판정만 전송하고 마스킹 Request/Response 전문은 선택한 operation에서만 `/api/evidence`로 200건씩 지연 로드한다. 반복 cluster의 ID 목록도 event마다 복제하지 않고 `/api/cluster-evidence`에서 200건씩 읽는다.
 
 ## 3. 데이터 모델
 
@@ -84,7 +84,7 @@ RouteCandidate {
 - `service`: scheme://host:port. op/resource/identity 경계를 서비스별로 분리한다.
 - `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다. 쿠키 fingerprint는 계정 연결·감사를 위한 안전한 식별자이지 로그인 증명이 아니다.
 - `authState`: `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`. 명시적 계정 연결이나 memory-only broker의 exact credential match만 `ACCOUNT_BOUND`가 된다. 계정에 연결되지 않은 cookie/session fingerprint는 서비스별 하나의 `UNRESOLVED` 그래프 신원으로 안정화하되 원 fingerprint는 Evidence에 남긴다.
-- `requestPayload/responsePayload`: 저장 전 구조 마스킹된 전문의 SHA-256, 원래 UTF-8 byte 수, 보존 상태와 선택적 GZIP이다. 메시지당 기본 1MiB 이하 textual이며 digest 중복 제거 후 압축 전문 총량 48MiB 안에 있을 때만 `FULL`이다. binary, 메시지별 상한 초과, 압축 총량 상한 초과는 서로 다른 metadata-only 사유를 남긴다. 8KiB `reqText/respText/body`는 UI preview이며 전문과 같은 필드가 아니다.
+- `requestPayload/responsePayload`: 저장 전 구조 마스킹된 전문의 SHA-256, byte 수, 보존 상태와 선택적 GZIP이다. 메시지당 기본 1MiB 이하 textual이며 digest 중복 제거 후 압축 전문 총량 48MiB 안에 있을 때만 `FULL`이다. binary, 메시지별 상한 초과, 압축 총량 상한 초과는 서로 다른 metadata-only 사유를 남긴다. 상한 초과 live 메시지 식별자는 최대 64KiB 마스킹 표현·실제 byte 수·보존 사유를 길이 구분해 digest하므로 같은 접두부의 다른 크기를 구분하지만 원문 전체 checksum은 아니다. 8KiB `reqText/respText/body`는 UI preview이며 전문과 같은 필드가 아니다.
 - `resourceReferences`: path/query/body/GraphQL에서 실제 값으로 관측된 모든 객체 참조와 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/*_SEMANTIC_FIELD_CORROBORATED` 근거다. `resource`는 기존 인가 cell의 보수적 primary 하나다.
 - `trafficClassification`: `API/AUTH_SESSION/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/POLLING/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
 - `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
@@ -95,13 +95,15 @@ RouteCandidate {
 - `evidenceId`: 전체 의미 내용 digest 기반 ID. digest 입력은 외부 값의 개행과 필드 경계가 충돌하지 않도록 null 표식과 UTF-8 byte 길이 접두 framing을 사용한다. beta.23 이하 newline digest가 일치하면 기존 Evidence ID를 유지한 채 새 digest로 이행한다. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
-논리 프로젝트 schema v3는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록과 **완료된 정확한 run**을 저장한다. 완료 run은 source만 저장하지 않고 `source/runId/detail/orchestrator/tool/phase/account/completedAt/evidenceIds/responseCount/coverageCount`를 묶는다. 기본 내구 저장은 SQLite storage schema v2의 기존 관계형 테이블과 `completed_runs`이며 JSON schema v3 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2는 읽을 수 있지만 source-only `completed_lanes`는 정확한 run과 Evidence를 증명하지 못하므로 완료 자격으로 복원하지 않고 세 레인을 다시 실행해야 한다. v3 내보내기는 exact completed run과 중복 표시용 `completed_lanes`의 일치를 검증한다. raw broker 세션은 어느 형식에도 저장하지 않는다. 전문은 digest/size/retention을 검증하고, 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증하며, 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075/D-099).
+논리 프로젝트 schema v3는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록과 **완료된 정확한 run**을 저장한다. 완료 run은 source만 저장하지 않고 `source/runId/detail/orchestrator/tool/phase/account/completedAt/evidenceIds/responseCount/coverageCount`를 묶는다. 기본 내구 저장은 SQLite storage schema v2의 기존 관계형 테이블과 `completed_runs`이며 JSON schema v3 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2는 읽을 수 있지만 source-only `completed_lanes`는 정확한 run과 Evidence를 증명하지 못하므로 완료 자격으로 복원하지 않고 세 레인을 다시 실행해야 한다. v3 내보내기는 exact completed run과 중복 표시용 `completed_lanes`의 일치를 검증한다. raw broker 세션은 어느 형식에도 저장하지 않는다. 전문은 메시지당 1MiB, 서로 다른 복원 전문 합계 48MiB 안에서 streaming GZIP 해제하며 digest/size/retention을 검증하고 동일 digest는 한 번만 복원한다. metadata-only 항목은 압축 blob을 허용하지 않는다. 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증하며, 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075/D-099/D-101).
 
 ## 4. 파이프라인
 
 ### 4.1 수집·마스킹 F-01~03/F-22
 
-Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·SHA-256·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다. ZAP HAR 1.2 폴백은 `log.entries`의 request/response를 `SCANNER/HAR_IMPORT/ZAP/IMPORT/IMPORTED`로 변환하고 동일 scope·마스킹·payload 상한을 적용한다. `status=0`은 응답 없는 후보로 보존하고 binary base64 응답은 문자열로 왜곡하지 않고 metadata-only로 둔다. HAR에는 ZAP Alert와 campaign completion 계약이 없으므로 둘을 생성하지 않는다(D-093).
+beta.34 live 경계는 Montoya byte 길이를 먼저 확인한다. 요청 1MiB·응답 4MiB를 넘으면 전체 Java 배열을 만들지 않고 크기만 raw vault에 전달하며, 저장 상한 1MiB를 넘는 메시지는 최대 64KiB만 복사해 decode·mask한다. 따라서 아래 `byte[]` 원문 보존은 각 raw 상한 이내 메시지에만 해당한다(D-101).
+
+Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8KiB preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·bounded 식별자·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다. ZAP HAR 1.2 폴백은 `log.entries`의 request/response를 `SCANNER/HAR_IMPORT/ZAP/IMPORT/IMPORTED`로 변환하고 동일 scope·마스킹·payload 상한을 적용한다. `status=0`은 응답 없는 후보로 보존하고 binary base64 응답은 문자열로 왜곡하지 않고 metadata-only로 둔다. HAR에는 ZAP Alert와 campaign completion 계약이 없으므로 둘을 생성하지 않는다(D-093).
 
 live HTTP 원문은 별도의 `TransientExchangeVault`에 요청·응답 `byte[]`와 각각의 body offset으로만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그, MCP로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API가 표시용 텍스트를 만든다. 헤더는 ISO-8859-1, textual 본문은 명시된 Content-Type charset 또는 기본 UTF-8로 replacement 없이 엄격히 디코딩한다. 바이너리, 알 수 없는 비텍스트, 잘못된 byte sequence는 원문 바이트는 유지하되 Web 텍스트 편집·전송을 차단한다. 수정하지 않은 요청과 Repeater 초안은 원래 바이트를 그대로 사용하며, 실제 편집한 본문만 선언 charset으로 엄격히 재인코딩한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML/HAR, 상한 초과 Evidence에는 raw가 없어 마스킹 전문만 표시하고 Web 전송은 허용하지 않는다(D-084/D-093).
 
@@ -168,7 +170,7 @@ route inventory는 다음 공통 파이프라인을 사용한다(D-069).
 
 응답 객체 오라클은 generic `id/uuid/guid/pk` 또는 **최종 자원 타입에 한정된** `orderId/order_uuid/orderNo/orderSeq` 같은 필드의 scalar 값이 대상 ID와 정확히 같을 때만 노출 근거로 쓴다. `orders:101/items:5`에서는 item 5만 대상이며 부모 order 101만 보인 응답은 근거가 아니다. JSON soft deny는 최상위 `error/errors/message/detail/title/reason` 오류 봉투만 읽으므로 정상 도메인 데이터 안의 `not allowed` 문자열을 거부로 뒤집지 않는다. 비 JSON 오류는 앞 2,048자만 검사한다.
 
-객체·소유자·DataFlow 응답 판독은 1,000,000자, JSON 깊이 128, token/node 100,000의 공통 상한에서 반복 순회한다. DataFlow의 malformed/non-JSON fallback은 앞 64KiB와 응답당 1,000개 값으로 제한한다. 상한 초과는 취약 또는 정상으로 확정하지 않고 근거 없음/보류로 남긴다.
+객체·소유자·DataFlow 응답 판독은 1,000,000자, JSON 깊이 128, token/node 100,000의 공통 상한에서 반복 순회한다. DataFlow의 malformed/non-JSON fallback은 앞 64KiB와 응답당 1,000개 값으로 제한한다. 생성 값은 신원+값 exact-token index에 넣고 path/query/request body의 동일 token이 뒤 요청에서 관측될 때 가장 가까운 이전 producer 하나와만 연결한다. index는 전체 최신 100,000 value까지만 유지해 오래된 항목부터 축출한다. 부분문자열·request 전문 전체 검색과 모든 producer/consumer 중첩 순회는 사용하지 않는다. 이 링크는 명시 토큰 재사용의 관측 근사치이며 축출된 오래된 값, 숨은 상태 전달이나 인과관계를 증명하지 않는다. 상한 초과는 취약 또는 정상으로 확정하지 않고 근거 없음/보류로 남긴다.
 
 role/requirement는 자동추정하지 않고 사용자가 지정한다(D-018).
 
@@ -204,7 +206,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - Judge는 잠긴 후보/소유자/역할 기준과 ZAP native alert를 종합한다. 잠금 뒤 새 검증 트래픽은 현재 Evidence 저장소에서 읽되 후보 오라클은 잠긴 snapshot을 유지한다.
 - MCP exact-scope 교체는 로컬 capability를 가진 클라이언트가 사용자가 명시한 범위를 자동 설정할 때만 허용하며, SCANNER/LLM run 중에는 거부한다.
 - HUMAN pass는 Web quick-start에서 exact run lease로 시작·종료해 임의 브라우저 트래픽과 기준선 수행 구간을 구분한다. 계정 pass 시작은 해당 broker 세션이 `ACTIVE`일 때만 허용하고, 관측 요청의 자격증명이 선택 계정과 다르면 그 계정으로 기록하지 않는다.
-- 일반 assessment는 기존 Evidence ID와 `LIKELY/INCONCLUSIVE/REJECTED`만 허용하며 최종 판정이 아니다.
+- 일반 assessment는 기존 Evidence ID와 `LIKELY/INCONCLUSIVE/REJECTED`만 허용하며 최종 판정이 아니다. type 64자, title 256자, reason 4,096자, Evidence ID 200개·각 256자, 전체 1,000건·4MiB 상한을 MCP와 프로젝트 저장·복원에 동일 적용한다.
 - 최종 validation은 현재 결정론 finding을 대상으로 원본 Evidence, 동일한 비기본 LLM VALIDATION run의 `CONTROLLED` 반복 재현 2건 이상, 정상 대조 1건 이상을 서로 겹치지 않게 요구한다. 신원·operation·resource·응답 의미가 맞지 않거나 write method이면 베타에서 `INCONCLUSIVE`다.
 - 최종 verdict는 `CONFIRMED/INCONCLUSIVE/REJECTED`다. `CONFIRMED`는 반복 성공, `REJECTED`는 반복 명시 거부일 때만 허용하며 BOLA의 정상 대조는 확인된 소유자, BFLA의 정상 대조는 사용자 역할 정책과 일치해야 한다.
 - 사람의 확정/미확정/폐기 기록은 Evidence-bound 감사·오버라이드다. 원본 Evidence 집합이 달라지면 과거 기록을 자동 승계하지 않는다.
@@ -266,6 +268,6 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
 - Repeater handoff는 live 원문이 메모리에 있으면 그 원문, 아니면 마스킹 전문을 미전송 초안으로 연다. Repeater에서 사용자가 별도로 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다. Web 요청 실험실 전송만 서버가 직접 새 HUMAN `VALIDATION` Evidence로 기록한다.
 - 포트 매핑은 확장 로드 시 시스템 속성으로 읽으므로 변경 후 Burp를 다시 시작한다.
-- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.33 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v3·SQLite v2 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
+- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.34 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v3·SQLite v2 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
 
 세부 결정과 기각 대안은 `decisions.md`를 참조한다.

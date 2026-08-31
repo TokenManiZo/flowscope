@@ -172,6 +172,8 @@ public final class FlowScopeExtension implements BurpExtension {
     /** 마스킹된 텍스트 원문 압축 보존 상한. 초과·바이너리는 크기와 해시만 보존한다. */
     private static final int MAX_PAYLOAD_BYTES = Integer.getInteger(
             "flowscope.payload.maxBytes", 1024 * 1024);
+    /** 상한 초과 메시지는 분석/UI에 필요한 앞부분만 복사한다. */
+    private static final int CAPTURE_PREVIEW_BYTES = 64 * 1024;
     /** digest 중복 제거 후 메모리에 유지할 압축 전문 총량. */
     private static final long MAX_COMPRESSED_PAYLOAD_BYTES = Math.max(0L, Long.getLong(
             "flowscope.payload.memoryBytes", 48L * 1024 * 1024));
@@ -356,7 +358,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 boolean captured = capture(response.initiatingRequest(), response, profile, observation);
                 if (captured) {
                     observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
-                            response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
+                            response.headerValue("Location"), boundedResponseBody(response), response.headers(), observation);
                 }
             } catch (Exception e) {
                 api.logging().logToError("FlowScope capture 실패", e);
@@ -407,7 +409,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     boolean captured = capture(response.initiatingRequest(), response, profile, observation);
                     if (captured) {
                         observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
-                                response.headerValue("Location"), response.bodyToString(), response.headers(), observation);
+                                response.headerValue("Location"), boundedResponseBody(response), response.headers(), observation);
                     }
                 }
             } catch (Exception e) {
@@ -478,8 +480,12 @@ public final class FlowScopeExtension implements BurpExtension {
         int status = response.statusCode();
         String location = response.headerValue("Location");
         String responseContentType = response.headerValue("Content-Type");
-        HttpMessageTextCodec.Decoded decodedRequest = decode(req);
-        HttpMessageTextCodec.Decoded decodedResponse = decode(response);
+        BoundedHttpCapture.Result capturedRequest = BoundedHttpCapture.capture(req.toByteArray(), req.bodyOffset(),
+                req.headerValue("Content-Type"), MAX_PAYLOAD_BYTES, CAPTURE_PREVIEW_BYTES);
+        BoundedHttpCapture.Result capturedResponse = BoundedHttpCapture.capture(response.toByteArray(),
+                response.bodyOffset(), responseContentType, MAX_PAYLOAD_BYTES, CAPTURE_PREVIEW_BYTES);
+        HttpMessageTextCodec.Decoded decodedRequest = capturedRequest.decoded();
+        HttpMessageTextCodec.Decoded decodedResponse = capturedResponse.decoded();
         String requestText = decodedRequest.text();
         String responseText = decodedResponse.text();
         String requestBody = decodedRequest.editable() ? bodyText(requestText, req.bodyOffset()) : null;
@@ -529,12 +535,10 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).
         // 저장 전 반드시 마스킹 (F-05 원문 토큰 저장 금지, F-22 인증정보 가림).
-        String maskedRequest = Masking.maskHeaders(requestText);
-        String maskedResponse = Masking.maskHeaders(responseText);
-        rec.requestPayload = internPayload(StoredPayload.capture(
-                maskedRequest, req.headerValue("Content-Type"), MAX_PAYLOAD_BYTES));
-        rec.responsePayload = internPayload(StoredPayload.capture(
-                maskedResponse, responseContentType, MAX_PAYLOAD_BYTES));
+        String maskedRequest = capturedRequest.maskedText();
+        String maskedResponse = capturedResponse.maskedText();
+        rec.requestPayload = internPayload(capturedRequest.payload());
+        rec.responsePayload = internPayload(capturedResponse.payload());
         rec.query = Masking.truncate(Masking.maskBody(emptyToNull(req.query()),
                 "application/x-www-form-urlencoded"), MAX_BODY);
         rec.reqBody = Masking.truncate(Masking.maskBody(requestBody, req.headerValue("Content-Type")), MAX_BODY);
@@ -1424,7 +1428,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
                     .map(HttpHeader::value).toList();
             sessionBroker.observeResponse(sessionBroker.handleForAccount(input.accountId()), target,
-                    response.statusCode(), response.headerValue("Location"), response.bodyToString(), setCookies,
+                    response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
                     java.time.Instant.now());
         }
         synchronized (records) {
@@ -1499,8 +1503,10 @@ public final class FlowScopeExtension implements BurpExtension {
         }
 
         var response = exchange.response();
-        HttpMessageTextCodec.Decoded decodedResponse = decode(response);
-        String responseText = decodedResponse.text();
+        int responseBytes = response.toByteArray().length();
+        String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
+                ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
+                response.headerValue("Content-Type")).text() : null;
         RequestRecord record = recordFrom(exchange.request(), response,
                 new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP),
                 System.currentTimeMillis(), false, "human-request-lab-" + System.currentTimeMillis(), null);
@@ -1514,7 +1520,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
                     .map(HttpHeader::value).toList();
             sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
-                    response.statusCode(), response.headerValue("Location"), response.bodyToString(), setCookies,
+                    response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
                     java.time.Instant.now());
         }
         synchronized (records) {
@@ -1524,7 +1530,6 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         rebuildImmediately();
         int requestBytes = exchange.request().toByteArray().length();
-        int responseBytes = response.toByteArray().length();
         String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
                 : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
         return new FlowScopeWebServer.RequestLabResult(record.evidenceId, record.status, displayResponse,
@@ -1532,18 +1537,22 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void retainRawExchange(RequestRecord record, HttpRequest request, HttpResponse response) {
-        rawExchanges.put(record, request.toByteArray().getBytes(), request.bodyOffset(),
-                response.toByteArray().getBytes(), response.bodyOffset());
+        burp.api.montoya.core.ByteArray requestMessage = request.toByteArray();
+        burp.api.montoya.core.ByteArray responseMessage = response.toByteArray();
+        int requestBytes = requestMessage.length();
+        int responseBytes = responseMessage.length();
+        rawExchanges.put(record,
+                requestBytes <= RAW_REQUEST_LIMIT_BYTES ? requestMessage.getBytes() : null,
+                request.bodyOffset(), requestBytes,
+                responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseMessage.getBytes() : null,
+                response.bodyOffset(), responseBytes);
     }
 
-    private static HttpMessageTextCodec.Decoded decode(HttpRequest request) {
-        return HttpMessageTextCodec.decode(request.toByteArray().getBytes(), request.bodyOffset(),
-                request.headerValue("Content-Type"));
-    }
-
-    private static HttpMessageTextCodec.Decoded decode(HttpResponse response) {
-        return HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
-                response.headerValue("Content-Type"));
+    private static String boundedResponseBody(HttpResponse response) {
+        burp.api.montoya.core.ByteArray body = response.body();
+        int copied = Math.min(body.length(), CAPTURE_PREVIEW_BYTES);
+        byte[] bytes = copied == body.length() ? body.getBytes() : body.subArray(0, copied).getBytes();
+        return HttpMessageTextCodec.decode(bytes, 0, response.headerValue("Content-Type")).text();
     }
 
     private static HttpMessageTextCodec.Decoded decodeRequest(TransientExchangeVault.Exchange exchange,

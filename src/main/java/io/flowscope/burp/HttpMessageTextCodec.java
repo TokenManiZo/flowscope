@@ -146,7 +146,7 @@ final class HttpMessageTextCodec {
                 || media.equals("application/javascript") || media.equals("application/problem+json");
     }
 
-    private static boolean isBinary(String contentType) {
+    static boolean isBinary(String contentType) {
         if (contentType == null || contentType.isBlank()) return false;
         String media = contentType.toLowerCase(Locale.ROOT).split(";", 2)[0].trim();
         return media.startsWith("image/") || media.startsWith("audio/") || media.startsWith("video/")

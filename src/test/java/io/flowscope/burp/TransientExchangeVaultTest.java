@@ -51,6 +51,20 @@ final class TransientExchangeVaultTest {
     }
 
     @Test
+    void acceptsOversizedMetadataWithoutReceivingTheOversizedArray() {
+        TransientExchangeVault vault = new TransientExchangeVault(8, 8, 32);
+        RequestRecord record = record("/large-metadata");
+
+        vault.put(record, null, 100, 1_000_000, null, 200, 2_000_000);
+
+        TransientExchangeVault.Exchange exchange = vault.get(record).orElseThrow();
+        assertFalse(exchange.requestRetained());
+        assertFalse(exchange.responseRetained());
+        assertEquals(1_000_000, exchange.requestBytes());
+        assertEquals(2_000_000, exchange.responseBytes());
+    }
+
+    @Test
     void evictsOldestExchangeBeforeExceedingTotalLimit() {
         TransientExchangeVault vault = new TransientExchangeVault(64, 64, 24);
         RequestRecord first = record("/first");

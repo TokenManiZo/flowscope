@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.33
+# FlowScope 1.2.0-beta.34
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -49,7 +49,7 @@ identity ──access──▶ resource ──calls──▶ operation
 
 FlowScope does not know the complete black-box attack surface, so it never reports a misleading coverage percentage.
 
-Binary messages, messages over the 1 MiB per-message limit, and messages beyond the 48 MiB deduplicated compressed-payload budget retain only their original size, SHA-256 digest, and retention reason. Live capture stops at 20,000 records to protect Burp and reports dropped records and metadata-only messages; this beta does not promise unbounded capture.
+Binary messages, messages over the 1 MiB per-message limit, and messages beyond the 48 MiB deduplicated compressed-payload budget retain only their original size, retention reason, and a length-framed SHA-256 identifier over the bounded masked representation, actual size, and reason. This is not claimed to be a checksum of the complete oversized original. Live capture stops at 20,000 records to protect Burp and reports dropped records and metadata-only messages; this beta does not promise unbounded capture.
 
 ## Requirements
 
@@ -63,9 +63,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.33.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.33 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.34.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.34 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.33.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.34.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
@@ -223,7 +223,7 @@ The MCP and Web servers bind only to `127.0.0.1`, validate host/origin, require 
 - Authorization, Cookie, Set-Cookie, password, token, secret, and API-key values are masked before Evidence storage.
 - Authentication grouping uses a subject or a short one-way fingerprint; raw opaque tokens are not retained. Cookie presence alone is not login proof: an unbound cookie fingerprint is retained for audit/binding but shown as one service-scoped `UNRESOLVED` graph identity until a controlled broker match or explicit account binding proves the account.
 - Traffic classification never deletes stored Evidence. User `include/exclude/auto` overrides are operation-scoped but cannot turn no-response, unknown-source, or non-discovery validation traffic into discovery coverage; repeated observations are collapsed only in the display and retain every Evidence ID, count, and first/last timestamp.
-- UI previews are truncated to 8 KiB per field. Masked textual messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate by default; binary and over-limit messages keep only size, digest, and retention metadata. Live capture is capped at 20,000 records and exposes dropped-record and metadata-only-message counts.
+- UI previews are truncated to 8 KiB per field. Masked textual messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate by default; binary and over-limit messages keep only size, retention reason, and a bounded-representation identifier rather than a full-original checksum. Live capture is capped at 20,000 records and exposes dropped-record and metadata-only-message counts.
 - Project files contain masked traffic but may still contain sensitive application data. POSIX files are written owner-read/write only; protect them under the engagement's data policy.
 - Project writes use a temporary file and atomic replacement when the filesystem supports it.
 

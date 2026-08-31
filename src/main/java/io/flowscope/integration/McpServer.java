@@ -53,7 +53,26 @@ public final class McpServer implements AutoCloseable {
     }
 
     public record Assessment(String id, String type, String verdict, String title, String reason,
-                             List<String> evidenceIds, Instant createdAt) {}
+                             List<String> evidenceIds, Instant createdAt) {
+        public Assessment {
+            id = boundedAssessmentText(id, "assessment id", 128);
+            type = boundedAssessmentText(type, "assessment type", 64);
+            if (!Set.of("LIKELY", "INCONCLUSIVE", "REJECTED").contains(verdict)) {
+                throw new IllegalArgumentException("invalid assessment verdict");
+            }
+            title = boundedAssessmentText(Masking.maskSecrets(title), "assessment title", 256);
+            reason = boundedAssessmentText(Masking.maskSecrets(reason), "assessment reason", 4_096);
+            if (evidenceIds == null || evidenceIds.isEmpty() || evidenceIds.size() > 200) {
+                throw new IllegalArgumentException("assessment evidence_ids must contain 1 to 200 values");
+            }
+            LinkedHashSet<String> normalized = new LinkedHashSet<>();
+            for (String evidenceId : evidenceIds) {
+                normalized.add(boundedAssessmentText(evidenceId, "assessment evidence id", 256));
+            }
+            evidenceIds = List.copyOf(normalized);
+            if (createdAt == null) throw new IllegalArgumentException("assessment createdAt is required");
+        }
+    }
     public record TargetRequest(String method, String target, Map<String, String> headers,
                                 String body, String accountId) {}
     public record TargetResult(String evidenceId, int status, String location,
@@ -63,6 +82,8 @@ public final class McpServer implements AutoCloseable {
 
     private static final int MAX_BODY = 1024 * 1024;
     private static final int MAX_ZAP_ALERT_SNAPSHOT = 20_000;
+    private static final int MAX_ASSESSMENTS = 1_000;
+    private static final long MAX_ASSESSMENT_RETAINED_BYTES = 4L * 1024 * 1024;
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
             "spider", "client", "spiderAjax", "pscan", "pscanrules", "selenium", "openapi", "websocket",
             "network");
@@ -140,9 +161,11 @@ public final class McpServer implements AutoCloseable {
         state.assessmentsChanged(List.of());
     }
     public void replaceAssessments(List<Assessment> values) {
+        List<Assessment> replacement = values == null ? List.of() : List.copyOf(values);
+        validateAssessmentSet(replacement);
         synchronized (assessments) {
             assessments.clear();
-            assessments.addAll(values == null ? List.of() : values.stream().limit(1_000).toList());
+            assessments.addAll(replacement);
         }
         state.assessmentsChanged(snapshotAssessments());
     }
@@ -783,7 +806,11 @@ public final class McpServer implements AutoCloseable {
                 required(args, "title"), required(args, "reason"), List.copyOf(ids), Instant.now());
         List<Assessment> updated;
         synchronized (assessments) {
-            if (assessments.size() >= 1_000) throw new IllegalStateException("assessment limit reached");
+            if (assessments.size() >= MAX_ASSESSMENTS) throw new IllegalStateException("assessment limit reached");
+            if (assessmentRetainedBytes(assessments) + assessmentRetainedBytes(assessment)
+                    > MAX_ASSESSMENT_RETAINED_BYTES) {
+                throw new IllegalStateException("assessment retained-byte limit reached");
+            }
             assessments.add(assessment);
             updated = List.copyOf(assessments);
         }
@@ -1778,11 +1805,50 @@ public final class McpServer implements AutoCloseable {
     private ObjectNode assessmentSchema() {
         ObjectNode schema = schema();
         ObjectNode properties = (ObjectNode) schema.get("properties");
-        for (String value : List.of("type", "verdict", "title", "reason")) properties.putObject(value).put("type", "string");
-        properties.putObject("evidence_ids").put("type", "array").putObject("items").put("type", "string");
+        properties.putObject("type").put("type", "string").put("maxLength", 64);
+        properties.putObject("verdict").put("type", "string")
+                .putArray("enum").add("LIKELY").add("INCONCLUSIVE").add("REJECTED");
+        properties.putObject("title").put("type", "string").put("maxLength", 256);
+        properties.putObject("reason").put("type", "string").put("maxLength", 4_096);
+        ObjectNode evidence = properties.putObject("evidence_ids").put("type", "array")
+                .put("minItems", 1).put("maxItems", 200);
+        evidence.putObject("items").put("type", "string").put("maxLength", 256);
         ArrayNode required = schema.putArray("required");
         List.of("type", "verdict", "title", "reason", "evidence_ids").forEach(required::add);
         return schema;
+    }
+
+    public static void validateAssessmentSet(List<Assessment> values) {
+        if (values == null || values.size() > MAX_ASSESSMENTS) {
+            throw new IllegalArgumentException("assessment limit exceeded");
+        }
+        if (assessmentRetainedBytes(values) > MAX_ASSESSMENT_RETAINED_BYTES) {
+            throw new IllegalArgumentException("assessment retained-byte limit exceeded");
+        }
+    }
+
+    private static long assessmentRetainedBytes(List<Assessment> values) {
+        long total = 0;
+        for (Assessment value : values) total += assessmentRetainedBytes(value);
+        return total;
+    }
+
+    private static long assessmentRetainedBytes(Assessment value) {
+        long total = utf8Bytes(value.id()) + utf8Bytes(value.type()) + utf8Bytes(value.verdict())
+                + utf8Bytes(value.title()) + utf8Bytes(value.reason()) + 32;
+        for (String evidenceId : value.evidenceIds()) total += utf8Bytes(evidenceId) + 8;
+        return total;
+    }
+
+    private static int utf8Bytes(String value) {
+        return value.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static String boundedAssessmentText(String value, String field, int maxChars) {
+        if (value == null || value.isBlank() || value.length() > maxChars) {
+            throw new IllegalArgumentException(field + " is required and must be at most " + maxChars + " characters");
+        }
+        return value;
     }
 
     private ObjectNode validationSchema() {

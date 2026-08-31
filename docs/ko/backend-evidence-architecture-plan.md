@@ -1,8 +1,8 @@
 # FlowScope 백엔드 Evidence·분석 아키텍처 재정비 계획
 
-> 문서 상태: **단계 실행 계획 — beta.33 교차 구현 반영**
+> 문서 상태: **단계 실행 계획 — beta.34 교차 구현 반영**
 >
-> 적용 대상: FlowScope `1.2.0-beta.33` 이후
+> 적용 대상: FlowScope `1.2.0-beta.34` 이후
 >
 > 범위: HUMAN 관측 백엔드부터 SCANNER·LLM·Judge까지 이어지는 공통 Evidence 파이프라인
 >
@@ -10,7 +10,7 @@
 >
 > 정본 관계: 제품 전체 계획은 `product-development-plan.md`, 현재 구조는 `architecture.md`, 확정 결정은 `decisions.md`가 담당한다. 이 문서는 아래 후속 변경을 실제로 구현하기 위한 세부 작업 계획이며 완료 기록이 아니다.
 
-**현재 교차 구현:** beta.32에서 `SourceTrustPolicy`, `LaneCompletionPolicy`, exact completed-run manifest, 완료 시점 Evidence ID 동결, 고정 Judge dataset, JSON v3·SQLite v2 저장을 구현했다. beta.33은 Phase -1의 Request Lab generation·단일 실행 멱등성, stale 분석 게시 epoch, exact `UNCROSSED` 표시를 추가했다. 이는 아래 전체 ledger·incremental projection·typed state·safe experiment 계획의 완료를 뜻하지 않는다. 이미 끝난 항목은 재구현하지 않고 현재 계약을 후속 단계의 기준선으로 사용한다.
+**현재 교차 구현:** beta.32에서 `SourceTrustPolicy`, `LaneCompletionPolicy`, exact completed-run manifest, 완료 시점 Evidence ID 동결, 고정 Judge dataset, JSON v3·SQLite v2 저장을 구현했다. beta.33은 Phase -1의 Request Lab generation·단일 실행 멱등성, stale 분석 게시 epoch, exact `UNCROSSED` 표시를 추가했다. beta.34는 남은 Phase -1의 cluster/DataFlow 선형화와 live decode·프로젝트 복원·assessment byte 경계를 닫았다. 이는 아래 전체 ledger·incremental projection·typed state·safe experiment 계획의 완료를 뜻하지 않는다. 이미 끝난 항목은 재구현하지 않고 현재 계약을 후속 단계의 기준선으로 사용한다.
 
 ## 1. 한 문장 목표
 
@@ -1106,9 +1106,9 @@ build: 버전·JAR·artifact 검증
 
 ### 22.1 검증 방법과 해석 제한
 
-- 첨부 문서는 `1.2.0-beta.25`, 198 tracked files를 대상으로 작성된 리뷰다. 이 장부를 처음 작성한 대상은 `1.2.0-beta.29`, 201 tracked files이었다. 해당 파일 수·버전·테스트 수는 역사적 재검증 기준선이지 beta.33의 현재 수치가 아니다.
-- beta.29 장부 작성 당시 macOS `mvn -q clean verify` 결과는 **258 tests, failure 0, error 0, skipped 0**이었다. beta.33의 현재 정본은 **278 tests, failure 0, error 0, skipped 0**이며 정확한 JAR 수치는 `beta-validation.md`를 따른다. 두 결과 모두 suite 통과 사실이지 아래 입력 결함의 부재를 뜻하지 않는다.
-- 코드 정적 확인만으로 충분하지 않은 항목은 beta.29 코드와 beta.28 실실행 실패 로그로 재현했다. beta.33 교차 구현은 현재 회귀로 다시 확인했으며, 외부 API 계약은 공식 ZAP 문서와 로컬 ZAP 2.17 API form으로 대조했다.
+- 첨부 문서는 `1.2.0-beta.25`, 198 tracked files를 대상으로 작성된 리뷰다. 이 장부를 처음 작성한 대상은 `1.2.0-beta.29`, 201 tracked files이었다. 해당 파일 수·버전·테스트 수는 역사적 재검증 기준선이지 beta.34의 현재 수치가 아니다.
+- beta.29 장부 작성 당시 macOS `mvn -q clean verify` 결과는 **258 tests, failure 0, error 0, skipped 0**이었다. beta.33 시점 정본은 **278 tests**, beta.34 현재 정본은 **293 tests**이며 모두 failure/error/skipped 0이다. 정확한 JAR 수치는 `beta-validation.md`를 따른다. 이 결과는 suite 통과 사실이지 아래 입력 결함의 부재를 뜻하지 않는다.
+- 코드 정적 확인만으로 충분하지 않은 항목은 beta.29 코드와 beta.28 실실행 실패 로그로 재현했다. beta.34 교차 구현은 현재 회귀로 다시 확인했으며, 외부 API 계약은 공식 ZAP 문서와 로컬 ZAP 2.17 API form으로 대조했다.
 - 리뷰의 “전 파일 100% 정독”, 심각도 개수, 과거 Windows “정확히 7개 실패”는 리뷰 작성자의 메타 주장이다. 제품 동작 사실이나 새 acceptance criterion으로 사용하지 않는다.
 - 아래 18개 finding을 하나도 삭제하지 않았다. 이미 해결됐거나 조건부인 항목도 상태와 미채택 이유를 남겨 추적 가능하게 한다.
 
@@ -1182,4 +1182,4 @@ Phase 10 protocol 확장
 Phase 11 blind benchmark·release
 ```
 
-beta.33 이후의 다음 실제 개발은 `HANDOFF.md`에 남은 P1 5~9를 Phase -1 실패 fixture와 수치 예산으로 다시 확인하는 것부터 시작한다. beta.32의 목적별 trust·exact completed run·Evidence ID 동결·JSON v3/SQLite v2 저장과 beta.33의 Request Lab 멱등성·publication epoch·exact 미교차 표시는 되돌리거나 중복 구현하지 않고 후속 단계의 기준선으로 사용한다. 남은 P1을 닫은 뒤 Phase 0의 post-hotfix 기준선을 다시 측정한다. 저장 구조, 분석 모델, UI를 동시에 뜯지 않으며 lifecycle과 정본을 먼저 바꾼 뒤에만 route·entity·state와 취약점 실험 계층을 확장한다.
+beta.34에서 `HANDOFF.md`의 P1 1~9는 실패 fixture와 수치 예산을 포함해 자동 회귀로 닫았다. 다음 실제 개발은 P2의 세션·신원·프로세스 수명·가져오기 무결성을 순서대로 해결하고 Phase 0 post-hotfix 기준선을 실제 Burp에서 측정하는 것이다. beta.32의 목적별 trust·exact completed run·Evidence ID 동결·JSON v3/SQLite v2 저장, beta.33의 Request Lab 멱등성·publication epoch·exact 미교차 표시, beta.34의 선형 projection·bounded input은 되돌리거나 중복 구현하지 않는다. 저장 구조, 분석 모델, UI를 동시에 뜯지 않으며 lifecycle과 정본을 먼저 바꾼 뒤에만 route·entity·state와 취약점 실험 계층을 확장한다.

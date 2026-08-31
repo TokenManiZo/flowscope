@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0-beta.34 — 2026-08-31
+
+- Removed quadratic snapshot growth by moving repeated-cluster Evidence IDs out of every event and into a paginated `/api/cluster-evidence` endpoint.
+- Replaced nested DataFlow scans and substring matching with an identity-scoped exact-token index that links to the nearest prior producer and retains at most the latest 100,000 values globally.
+- Applied byte-size checks before live HTTP decoding and masking; messages over 1 MiB now use at most a 64 KiB preview, while the raw vault avoids materializing oversized request or response arrays.
+- Bound oversized-message identifiers to the masked preview, actual byte size, and retention reason so messages with the same prefix cannot collapse into one record.
+- Bounded project payload restoration to 1 MiB per message and 48 MiB of distinct restored plaintext, with streaming GZIP limits and digest-level reuse.
+- Rejected compressed blobs on metadata-only project payloads so uncounted compressed data cannot remain resident.
+- Bounded LLM assessments by field, Evidence-array, count, and a 4 MiB retained-byte budget across MCP and project persistence.
+- Added 20,000-record snapshot/DataFlow stress tests and oversized HTTP, GZIP, and assessment regressions. These gates do not claim improved vulnerability-detection efficacy; that remains a blind-benchmark requirement.
+
 ## 1.2.0-beta.33 — 2026-08-31
 
 - Isolated Request Lab drafts with a generation token and immutable Evidence ID so a late response cannot overwrite the current editor.

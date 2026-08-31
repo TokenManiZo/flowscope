@@ -7,12 +7,12 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-08-31 |
-| 제품 버전 | `1.2.0-beta.33` |
-| 인계 기준 | beta.33 코드·문서가 함께 포함된 동일 커밋 |
+| 제품 버전 | `1.2.0-beta.34` |
+| 인계 기준 | beta.34 코드·문서가 함께 포함된 동일 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
 | 자동 회귀 | 최신 수치와 JAR digest는 `beta-validation.md` 정본 참조 |
-| 현재 판정 | 기능이 연결된 베타. 오픈소스 정식 출시 및 블라인드 벤치마크 착수 전 P1 결함 수정과 실제 Burp 통합 검증이 필요함 |
+| 현재 판정 | 기능이 연결된 베타. clean-room P1 1~9는 자동 회귀로 닫았고, 오픈소스 정식 출시 전 P2 정확성·운영 결함, 실제 Burp 통합 검증과 블라인드 효능 평가가 남음 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
 
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.33.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.34.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -265,7 +265,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-08-31 기준 JDK 21 `mvn clean verify` 278 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장, beta.33은 Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시를 추가했다. JAR digest는 `beta-validation.md` 정본을 따른다.
+2026-08-31 기준 JDK 21 `mvn clean verify`를 연속 두 번 실행해 매회 293 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke와 byte-for-byte 동일성도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장, beta.33은 Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시, beta.34는 선형 snapshot/DataFlow와 live/persistence/assessment byte 경계를 추가했다. JAR digest는 `beta-validation.md` 정본을 따른다.
 
 ### 실제·standalone 검증
 
@@ -275,15 +275,15 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.33 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
-- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.33 scanner import와 Evidence 상세 확인
+- beta.34 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
+- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.34 scanner import와 Evidence 상세 확인
 - 실제 Burp Request Lab의 고지연 A→B 선택, 상태 변경 이중 전송, clear/rebuild callback 경합
 - 실제 ZAP 2.17에서 OpenAPI·GraphQL·Postman·SOAP 정의별 요청 생성, exact-scope 차단, 신원별 인증 주입과 경고 표시 확인
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
 - Windows 10/11 + Docker Desktop + PowerShell 7 실기기의 ZAP API/upstream/target capture
 - 실제 Burp에서 request-lab ORIGINAL/ANONYMOUS/ACCOUNT 수신 byte와 credential 비교
 - USER A/USER B 복수 세션과 ZAP/LLM 주입의 전체 흐름
-- 20,000건 근처의 메모리·응답 시간·UI polling 부하
+- 실제 Burp 프로세스에서 20,000건 근처의 상주 메모리·1초 UI polling 부하. 합성 snapshot/DataFlow 자동 stress는 beta.34에서 통과했지만 이를 대체하지 않음
 - 불특정 일반 대상 corpus의 endpoint/object/classifier precision·recall
 - 정답을 격리한 crAPI 블라인드 benchmark
 - 실제 취약점 탐지율과 사람 REVIEW 비용
@@ -292,7 +292,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ## 8. 알려진 결함 — 다음 개발의 실제 시작점
 
-아래는 2026-08-28 clean-room 코드 리뷰에서 코드 경로로 확인한 항목이다. beta.33에서 닫은 항목과 아직 남은 항목을 분리하며, 자동 회귀와 실제 Burp 수동 gate도 구분한다.
+아래는 2026-08-28 clean-room 코드 리뷰에서 코드 경로로 확인한 항목이다. beta.33·34에서 닫은 항목과 아직 남은 항목을 분리하며, 자동 회귀와 실제 Burp 수동 gate도 구분한다.
 
 ### beta.33에서 닫은 P1
 
@@ -301,35 +301,17 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 3. **stale pipeline 결과 게시:** `AnalysisPublicationGate`의 publication epoch가 같은 결과만 `latest`·route candidate·revision에 원자 게시한다.
 4. **일반 빈 셀의 IDOR 오표시:** exact server `UNCROSSED` key만 gap으로 표시하고 나머지는 중립 `미검증`으로 분리한다.
 
-집중 회귀는 완료했지만 실제 Burp UI의 고지연 A→B 선택, 상태 변경 중복 클릭, clear/rebuild 동시 실행은 beta.33 JAR 수동 gate가 남아 있다. 자동 회귀를 실환경 완료로 표현하지 않는다.
+집중 회귀는 완료했지만 실제 Burp UI의 고지연 A→B 선택, 상태 변경 중복 클릭, clear/rebuild 동시 실행은 최신 beta.34 JAR 수동 gate가 남아 있다. 자동 회귀를 실환경 완료로 표현하지 않는다.
 
-### P1 — 아직 남은 출시·벤치마크 차단
+### beta.34에서 닫은 P1
 
-5. **Snapshot 중복 cluster의 O(N²) 출력**
-   - 위치: `SnapshotJsonWriter.events`
-   - 영향: N개 이벤트마다 같은 cluster의 N개 Evidence ID를 반복하여 20,000건에서 메모리와 응답 크기가 폭증한다. Web은 이를 1초마다 요청한다.
-   - 완료 조건: event에는 cluster ID/count만 두고 ID 목록은 페이지 API로 분리한다. 20,000건 stress에서 정한 heap·latency 예산을 측정해야 한다.
+5. **Snapshot 중복 cluster O(N²):** event에는 cluster ID/count/time만 남기고 ID 목록을 `/api/cluster-evidence` 200건 페이지로 분리했다. 20,000건 snapshot 자동 stress를 고정했다.
+6. **DataFlow O(N²)·substring:** 신원별 exact-token index와 가장 가까운 이전 producer로 바꾸고 `123`/`1234` 음성 대조와 20,000건 stress를 추가했다.
+7. **상한 전 live 전체 decode/mask:** Montoya byte 길이를 먼저 확인하고 1MiB 초과 메시지는 최대 64KiB만 decode·mask한다. raw vault도 요청 1MiB·응답 4MiB 초과 전체 배열을 받지 않는다.
+8. **프로젝트 GZIP 무제한 해제:** payload당 1MiB·서로 다른 복원 평문 합계 48MiB, streaming 선언 크기 검증과 digest cache를 적용했다.
+9. **LLM assessment 총량 무제한:** 필드·Evidence 배열·1,000건·4MiB 제한을 MCP runtime과 프로젝트 저장·복원에 공통 적용했다.
 
-6. **DataFlow 분석 O(N²)와 substring 오연결**
-   - 위치: `DataFlowAnalyzer.analyze`, `consumes`
-   - 현재 완화: beta.24에서 구조화 응답을 bounded JSON으로 읽고 malformed/non-JSON 정규식 fallback을 64KiB·값 1,000개로 제한해 단일 대형 응답의 CPU 점유는 막았다.
-   - 남은 영향: 전체 record/value 조합은 O(N²)이며 소비 판정이 substring이라 `123`과 `/1234`를 실제 전달 관계로 오인할 수 있다.
-   - 완료 조건: producer value index와 구조적 소비 위치를 사용하고 token-boundary 음성 회귀와 대량 성능 테스트를 통과해야 한다.
-
-7. **대용량 HTTP 응답을 상한 적용 전에 전체 decode/mask**
-   - 위치: `FlowScopeExtension.recordFrom`, `HttpMessageTextCodec.decode`
-   - 영향: 저장하지 않을 대형 JSON/text도 전체 문자열·Jackson tree·복사본을 먼저 만들어 Burp JVM을 멈출 수 있다.
-   - 완료 조건: byte 크기 선검사, bounded preview/digest 경로, oversized live response 회귀가 필요하다.
-
-8. **프로젝트 payload 무제한 GZIP 해제**
-   - 위치: `StoredPayload.restore/text`, `ProjectStore.readPayload`
-   - 영향: 작은 악성 프로젝트의 gzip bomb 또는 반복 blob 참조가 Burp JVM을 소진할 수 있다.
-   - 완료 조건: bounded streaming decompression, 원 저장 상한 재검증, digest별 복원 cache, aggregate budget과 공격 fixture가 필요하다.
-
-9. **LLM assessment 총량 무제한**
-   - 위치: `McpServer.submitAssessment`, `SnapshotJsonWriter.scenarios`
-   - 영향: 1,000개 count 제한만 있고 문자열·Evidence 배열·총 byte 제한이 없어 모델 루프가 heap을 소진할 수 있다.
-   - 완료 조건: 필드·배열·총 retained byte 제한과 저장 복원 경계 테스트가 필요하다.
+자동 stress는 출시 차단 코드 결함의 회귀를 닫지만 실제 Burp 20,000건 상주 RSS·1초 polling과 탐지 효능을 증명하지 않는다. 정확한 측정과 의미 경계는 D-101과 `beta-validation.md`를 따른다.
 
 ### P2 — 정확성·운영 안정성
 
@@ -390,7 +372,9 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ## 9. 다음 개발 순서
 
-### 단계 A — 기준선과 재현 고정
+현재 출발점은 P1 1~9 자동 회귀 완료 뒤의 **P2 세션·신원·프로세스 수명·가져오기 무결성**이다. 아래 단계 A와 C는 beta.34에서 완료했으며 실제 Burp stress와 블라인드 효능은 별도 검증 단계에 남는다.
+
+### 단계 A — 기준선과 재현 고정 (beta.34 완료)
 
 1. 현재 인계 HEAD에서 새 작업 branch를 만든다.
 2. 위 P1마다 먼저 실패하는 최소 회귀를 추가한다.
@@ -403,7 +387,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 - 테스트가 수정 전 실패하는 이유가 결함 설명과 일치한다.
 - crAPI 정답이나 실타깃 전용 예외를 사용하지 않는다.
 
-### 단계 B — HUMAN 정확성·안전성
+### 단계 B — HUMAN 정확성·안전성 (1~4 완료, 5~6 P2 잔여)
 
 순서:
 
@@ -422,7 +406,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 - owner 없는 빈 셀은 IDOR 후보 문구·수량에 포함되지 않는다.
 - USER A/B 동일 API 관측이 각각 보존된다.
 
-### 단계 C — 메모리·성능 경계
+### 단계 C — 메모리·성능 경계 (beta.34 자동 gate 완료)
 
 순서:
 
@@ -537,7 +521,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.33.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.34.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

@@ -1,6 +1,22 @@
-# FlowScope 1.2.0-beta.33 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.34 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-31이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.34 복잡도·메모리 경계 gate
+
+| 구분 | 결과 |
+|---|---|
+| Snapshot cluster | 20,000건 동일 cluster event에 전체 ID 목록을 복제하지 않고 ID를 200건 페이지 API로 분리. `SnapshotJsonWriterScaleTest` 통과, 최종 연속 두 full verify의 test time 0.912초·0.804초, serialized snapshot 32MiB 미만 |
+| DataFlow | 신원별 exact-token index, 가장 가까운 이전 producer, 전역 최신 100,000 value 상한, `123`/`1234` 음성 대조와 20,000건·10,000 link 5초 예산·오래된 값 축출 회귀 통과 |
+| 별도 stress 실행 | 최종 코드의 Snapshot+DataFlow Maven 실행 3.91초, 최대 RSS 378,273,792 bytes·peak memory footprint 176,901,248 bytes. Maven/JUnit JVM 포함 개발 머신 측정이며 Burp 상주 RSS가 아님 |
+| live HTTP | 2MiB text/binary fixture에서 1MiB 저장 상한 전에 최대 64KiB만 decode·mask하고 metadata-only size/reason 보존. 같은 미리보기라도 실제 크기가 다르면 digest가 다르고, raw vault는 초과 배열 없이 요청·응답 크기만 수용 |
+| 프로젝트 복원 | GZIP이 선언 크기보다 많이 풀리거나 payload 1MiB·서로 다른 복원 평문 합계 48MiB를 넘으면 거부. metadata-only 항목의 압축 blob도 거부하고 동일 digest 복원 cache 회귀 통과 |
+| LLM assessment | verdict enum, 필드 길이, Evidence 1~200개, 1,000건·총 4MiB 경계를 runtime과 프로젝트 codec에 공통 적용하는 회귀 통과 |
+| 전체 자동 회귀 | JDK 21 `mvn clean verify` 연속 2회, 매회 293 tests, failure/error/skip 0 |
+| 현재 환경 진단 | `scripts/doctor.sh` 실패 0·경고 0. HUMAN/SCANNER 포트, ZAP 2.17 API·upstream·필수 add-on, Codex 0.147.0, Claude Code 2.1.236, Web 17777, MCP 8787 확인. 이는 실제 3-way 완주나 탐지 효능을 뜻하지 않음 |
+| 배포물 | `target/flowscope-1.2.0-beta.34.jar` 하나, 15,953,677 bytes, 2,051 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `16835b7d5707279615b8d757ad3086e4bdcdc37d95c3d8c26fd5854c79d34a8a`; 연속 두 clean verify에서 byte-for-byte 동일 |
+
+이 gate는 특정 제곱 경로, 대용량 입력과 일부 DataFlow 오연결을 자동 재현해 닫는다. 실제 Burp callback/polling의 20,000건 상주 RSS, 운영체제별 JAR load, endpoint·객체·취약점 발견률을 측정한 것은 아니다. 효능은 정답 격리 benchmark에서 H, H+ZAP, H+ZAP+LLM, Judge 증분을 따로 측정하고, 고유 유효 발견이나 검토시간 개선이 없는 레이어는 기본 경로에서 낮추거나 제거한다.
 
 ## 1.2.0-beta.33 Request Lab·분석 게시·후보 표시 무결성 gate
 
@@ -511,7 +527,7 @@ W3C Web App Manifest 규격상 `application/manifest+json`은 웹 앱 manifest m
 
 ## 아직 실환경에서 검증하지 않은 것
 
-다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.33의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
+다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.34의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
 
 - Burp Community에서 extension unload 뒤 Web/MCP 포트 해제와 재로드, Repeater handoff, project save/load 왕복
 - 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지, 선택 ACTIVE 계정과 다른 브라우저 자격증명이 계정으로 오기록되지 않는지

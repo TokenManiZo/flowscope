@@ -72,4 +72,4 @@
 - BolaRay(CCS'24) `[본문·아티팩트 확인]` — [논문](https://leehaofeng.github.io/papers/2024-BolaRay.pdf), [공개 아티팩트](https://zenodo.org/records/13744942); CODASPY'14 `[초록만]`, BOLABuster(Unit42) `[벤더]`
 
 ---
-*v4 — beta.33에서 AuthProbe/BOLAZ의 근거 강도를 절대 ground truth로 과장한 문장, action-level BOLA=BFLA 오분류, AuthScope 역할 서열 설명, BOLAZ response-owner-field 인용, APICarv/Log-Coverage의 일반화 범위를 원문 수준으로 교정했다. 신규성·우월성은 계속 블라인드 평가와 체계적 선행연구 검토 전까지 가설이다.*
+*v4 — beta.34 현재 AuthProbe/BOLAZ의 근거 강도를 절대 ground truth로 과장한 문장, action-level BOLA=BFLA 오분류, AuthScope 역할 서열 설명, BOLAZ response-owner-field 인용, APICarv/Log-Coverage의 일반화 범위를 원문 수준으로 교정한 상태다. beta.34의 성능 경계 변경은 이 선행연구 판정을 바꾸지 않으며, 신규성·우월성은 계속 블라인드 평가와 체계적 선행연구 검토 전까지 가설이다.*

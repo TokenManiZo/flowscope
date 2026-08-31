@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.33, 2026-08-31 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.33은 화면 외형을 다시 만들지 않고 Request Lab 비동기 무결성·분석 게시 경합·빈 셀 의미를 수정했다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.34, 2026-08-31 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.33은 Request Lab 비동기 무결성·분석 게시 경합·빈 셀 의미를 수정했고, beta.34는 화면 외형을 바꾸지 않은 채 반복 cluster의 Evidence 상세를 페이지 조회로 분리해 기본 snapshot 폭증을 막았다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -216,9 +216,9 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
-3. **Maven 중간 JAR 혼동 — build 해결·beta.33 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.33.jar` 하나다. beta.33도 manifest-first와 streaming manifest 자동 검증을 유지하지만, 현재 Browser·Repeater·초기화·저장/재열기와 신원별 ZAP 안전 캠페인, LLM Explorer/Judge는 별도 Burp 수동 gate다.
+3. **Maven 중간 JAR 혼동 — build 해결·beta.34 실로드 대기:** 과거 `target/original-flowscope-1.2.0-beta.3.jar` 오선택으로 `Extension class is not a recognized type` 오류가 발생했다. 현재 package는 중간 파일을 제거하고 공개 JAR 수가 하나가 아니면 실패하므로 선택할 파일은 `target/flowscope-1.2.0-beta.34.jar` 하나다. beta.34도 manifest-first와 streaming manifest 자동 검증을 유지하지만, 현재 Browser·Repeater·초기화·저장/재열기와 신원별 ZAP 안전 캠페인, LLM Explorer/Judge는 별도 Burp 수동 gate다.
 4. **파싱 결과 Evidence 진입 — 해결:** stable Evidence ID, traffic class/disposition, 반복 수와 명시적 `상세 보기` 버튼을 제공한다. 버튼은 operation 첫 항목이 아니라 선택한 Evidence ID를 상세의 첫 열린 블록으로 고정하며, Web 재동기화 뒤에도 같은 선택을 유지한다.
-5. **구독 CLI 자동 실행 — beta.31 준비 자동화 구현, beta.33 Burp 실환경 gate:** 빠른 시작은 표준 설치 경로의 Codex/Claude 실행 파일과 공식 로그인 상태를 비동기 확인하고 READY provider를 자동 선택한다. 상태는 30초 캐시하되 시작 직전에 재검증하며 수동 경로 입력과 **다시 확인**은 비표준 설치·상태 변경용 fallback이다. 새 Explorer와 별도 Judge, Judge 후속 provider session ID, Codex login-only 임시 home, read/write 도구와 exact-run Evidence gate는 유지한다. 실제 Burp에서 자동 선택→MCP 대상 요청→route frontier→run 종료→동결 dataset 저장·재열기가 끝까지 성공하는지는 beta.33 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
+5. **구독 CLI 자동 실행 — beta.31 준비 자동화 구현, beta.34 Burp 실환경 gate:** 빠른 시작은 표준 설치 경로의 Codex/Claude 실행 파일과 공식 로그인 상태를 비동기 확인하고 READY provider를 자동 선택한다. 상태는 30초 캐시하되 시작 직전에 재검증하며 수동 경로 입력과 **다시 확인**은 비표준 설치·상태 변경용 fallback이다. 새 Explorer와 별도 Judge, Judge 후속 provider session ID, Codex login-only 임시 home, read/write 도구와 exact-run Evidence gate는 유지한다. 실제 Burp에서 자동 선택→MCP 대상 요청→route frontier→run 종료→동결 dataset 저장·재열기가 끝까지 성공하는지는 beta.34 JAR 재로드 뒤 확인해야 한다. Claude Explorer는 no-persistence flag에도 provider metadata가 남을 가능성이 있어 UI에 경고한다.
 6. **ZAP API 정의 입력 — 선택 고급 설정:** 기본 사용자는 대상·신원만 고르면 된다. OpenAPI·GraphQL·Postman·SOAP 정의를 이미 가진 진단자만 `형식 URL` 한 줄 입력을 펼쳐 쓴다. FlowScope는 파일명을 추측하거나 외부 문서를 검색하지 않고 exact-scope URL만 허용하며, import 성공 수와 실패 경고를 lane 카드에 함께 표시한다. 이 입력은 endpoint 발견률을 높일 수 있지만 Active Scan 승인이 아니며 정의가 생성하는 모든 업무 요청의 무해성을 보증하지 않는다.
 
 ### beta.18의 가독성·정확성 보정

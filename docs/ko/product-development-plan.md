@@ -1,6 +1,16 @@
-# FlowScope 1.2.0-beta.33 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.34 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.33 절만 현재 우선순위다. 아래 beta.32 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.33 절을 따른다.
+> **읽는 법:** 맨 위 beta.34 절만 현재 우선순위다. 아래 beta.33 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.34 절을 따른다.
+
+## 0. beta.34 우선순위: P1 복잡도·메모리 경계 완료와 효능 gate
+
+1. Snapshot 반복 cluster를 선형 projection으로 바꾸고 Evidence ID를 페이지 조회한다.
+2. DataFlow 중첩 순회·substring을 신원별 exact-token index로 바꾼다.
+3. live HTTP decode 전 byte 상한, 프로젝트 streaming GZIP 복원 상한, assessment retained-byte 상한을 공통 gate로 고정한다.
+4. 20,000건 stress와 공격 입력 회귀를 통과하되 자동 테스트를 탐지 효능으로 표현하지 않는다.
+5. 다음 개발은 P2 세션·신원 무결성을 먼저 닫고, 이후 정답 격리 benchmark에서 H → H+ZAP → H+ZAP+LLM → Judge의 고유 유효 발견, FP/FN/INCONCLUSIVE, 검토시간과 자원을 증분 측정한다. 유의미한 증가가 없는 레이어는 기본 경로에서 낮추거나 제거한다.
+
+**현재 상태:** 1~4 코드와 293개 전체 자동 회귀·연속 두 재현 빌드는 완료했다. 실제 Burp 20,000건 RSS·polling, end-to-end 3-way와 블라인드 효능은 아직 완료하지 않았다. 다음 코드 우선순위는 `HANDOFF.md`의 P2이며, UI 재설계나 새로운 탐색 휴리스틱을 먼저 추가하지 않는다.
 
 ## 0. beta.33 우선순위: 비동기 게시·요청 실험·후보 표시 무결성
 
@@ -321,7 +331,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.33 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 표준 경로/공식 auth preflight·Codex 임시 home 격리·bounded 작업 피드·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·목적별 `SourceTrustPolicy`·exact `LaneCompletionPolicy`·완료 시점 Evidence ID 동결·고정 Judge dataset·JSON v3/SQLite v2 저장·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.33 Burp 3-way 저장·재열기와 블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.34 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 표준 경로/공식 auth preflight·Codex 임시 home 격리·bounded 작업 피드·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·목적별 `SourceTrustPolicy`·exact `LaneCompletionPolicy`·완료 시점 Evidence ID 동결·고정 Judge dataset·JSON v3/SQLite v2 저장·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시·선형 cluster/DataFlow projection·bounded live decode/GZIP restore/assessment·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.34 Burp 3-way 저장·재열기, 20,000건 polling/RSS와 블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

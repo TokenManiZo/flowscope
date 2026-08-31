@@ -163,6 +163,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return switch (path) {
             case "/api/snapshot" -> snapshot(request);
             case "/api/evidence" -> evidence(request, target);
+            case "/api/cluster-evidence" -> clusterEvidence(request, target);
             case "/api/ai-preview" -> preview(request);
             case "/api/ai-scenarios" -> scenarios(request);
             case "/api/replay" -> replay(request);
@@ -230,6 +231,22 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     1, EVIDENCE_PAGE_LIMIT, "limit");
             return response(200, "application/json; charset=utf-8",
                     snapshots.evidence(state.snapshot(), operation, offset, limit));
+        } catch (RuntimeException error) {
+            return error(400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response clusterEvidence(LoopbackHttpServer.Request request, URI target)
+            throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        try {
+            Map<String, String> query = form(target.getRawQuery());
+            String clusterId = required(query, "clusterId");
+            int offset = boundedInteger(query.get("offset"), 0, 0, 20_000, "offset");
+            int limit = boundedInteger(query.get("limit"), EVIDENCE_PAGE_LIMIT,
+                    1, EVIDENCE_PAGE_LIMIT, "limit");
+            return response(200, "application/json; charset=utf-8",
+                    snapshots.clusterEvidence(state.snapshot(), clusterId, offset, limit));
         } catch (RuntimeException error) {
             return error(400, error.getMessage());
         }

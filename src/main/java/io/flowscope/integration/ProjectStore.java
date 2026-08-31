@@ -32,6 +32,8 @@ public final class ProjectStore {
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
+    private static final int MAX_PAYLOAD_BYTES = 1024 * 1024;
+    private static final long MAX_RESTORED_PAYLOAD_BYTES = 48L * 1024 * 1024;
     private final ObjectMapper json = new ObjectMapper();
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
@@ -110,6 +112,8 @@ public final class ProjectStore {
                           Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                           List<RouteCandidate> routeCandidates) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
+        assessments = assessments == null ? List.of() : List.copyOf(assessments);
+        McpServer.validateAssessmentSet(assessments);
         config = config.snapshotCopy();
         EvidenceIds.assign(records);
         ObjectNode root = json.createObjectNode();
@@ -166,7 +170,11 @@ public final class ProjectStore {
         }
         List<RequestRecord> records = new ArrayList<>();
         JsonNode payloads = root.path("payloads");
-        for (JsonNode value : recordNodes) records.add(readRecord(value, payloads));
+        Map<String, StoredPayload> restoredPayloads = new java.util.HashMap<>();
+        long[] restoredPayloadBytes = {0};
+        for (JsonNode value : recordNodes) {
+            records.add(readRecord(value, payloads, restoredPayloads, restoredPayloadBytes));
+        }
         AnalysisConfig config = readPolicy(root.path("policy"));
         JsonNode reviewNodes = root.path("reviews");
         if (reviewNodes.isArray()) {
@@ -179,6 +187,7 @@ public final class ProjectStore {
             if (assessmentNodes.size() > 1_000) throw new IllegalArgumentException("assessment limit exceeded");
             for (JsonNode value : assessmentNodes) assessments.add(readAssessment(value));
         }
+        McpServer.validateAssessmentSet(assessments);
         List<ValidationDecision> validations = new ArrayList<>();
         JsonNode validationNodes = root.path("validations");
         if (validationNodes.isArray()) {
@@ -341,7 +350,9 @@ public final class ProjectStore {
         return out;
     }
 
-    private RequestRecord readRecord(JsonNode value, JsonNode payloads) {
+    private RequestRecord readRecord(JsonNode value, JsonNode payloads,
+                                     Map<String, StoredPayload> restoredPayloads,
+                                     long[] restoredPayloadBytes) {
         Source source = enumValue(Source.class, required(value, "source"));
         RequestRecord r = new RequestRecord(source, required(value, "service"), required(value, "method"),
                 required(value, "path"), value.path("status").asInt(), required(value, "fingerprint"));
@@ -371,11 +382,13 @@ public final class ProjectStore {
         r.secFetchMode = masked(value, "sec_fetch_mode");
         r.accessControlRequestMethod = masked(value, "access_control_request_method");
         r.reqText = maskedHeaders(value, "request");
-        r.requestPayload = readPayload(value.path("request_payload"), payloads);
+        r.requestPayload = readPayload(value.path("request_payload"), payloads,
+                restoredPayloads, restoredPayloadBytes);
         r.timestamp = value.path("timestamp").asLong();
         r.body = masked(value, "response_body");
         r.respText = maskedHeaders(value, "response");
-        r.responsePayload = readPayload(value.path("response_payload"), payloads);
+        r.responsePayload = readPayload(value.path("response_payload"), payloads,
+                restoredPayloads, restoredPayloadBytes);
         r.location = masked(value, "location");
         r.hasResponse = value.path("has_response").asBoolean(false);
         return r;
@@ -398,16 +411,32 @@ public final class ProjectStore {
         }
     }
 
-    private StoredPayload readPayload(JsonNode reference, JsonNode payloads) {
+    private StoredPayload readPayload(JsonNode reference, JsonNode payloads,
+                                      Map<String, StoredPayload> restoredPayloads,
+                                      long[] restoredPayloadBytes) {
         if (reference == null || !reference.isObject()) return null;
         String digest = required(reference, "digest");
         int originalBytes = reference.path("original_bytes").asInt(-1);
         if (originalBytes < 0) throw new IllegalArgumentException("payload original_bytes is invalid");
         StoredPayload.Retention retention = enumValue(StoredPayload.Retention.class,
                 required(reference, "retention"));
+        StoredPayload cached = restoredPayloads.get(digest);
+        if (cached != null) {
+            if (cached.originalBytes() != originalBytes || cached.retention() != retention) {
+                throw new IllegalArgumentException("conflicting payload metadata for digest");
+            }
+            return cached;
+        }
         JsonNode blob = payloads == null ? null : payloads.get(digest);
-        return StoredPayload.restore(digest, originalBytes, retention,
-                blob == null || blob.isNull() ? null : blob.asText());
+        StoredPayload restored = StoredPayload.restore(digest, originalBytes, retention,
+                blob == null || blob.isNull() ? null : blob.asText(), MAX_PAYLOAD_BYTES);
+        long next = restoredPayloadBytes[0] + (restored.retained() ? restored.originalBytes() : 0L);
+        if (next > MAX_RESTORED_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("restored payload aggregate limit exceeded");
+        }
+        restoredPayloadBytes[0] = next;
+        restoredPayloads.put(digest, restored);
+        return restored;
     }
 
     private ObjectNode writePolicy(AnalysisConfig config) {

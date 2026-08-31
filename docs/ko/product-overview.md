@@ -2,7 +2,7 @@
 
 > 사용자 확정 스코프("예상 아웃풋", 2026-08-24). 이 문서가 목표의 정본이며, `proposal.md`(초기 추정본)를 대체한다.
 
-> **구현 상태(1.2.0-beta.33):** exact-run 완료 정책, source trust 분리, 완료 시점 Evidence ID 동결, 고정 Judge dataset과 JSON v3/SQLite v2 왕복에 더해 Request Lab 단일 실행·비동기 초안 격리와 stale pipeline 게시 거부를 자동 회귀로 확인했다. 실제 Burp에서 HUMAN·ZAP·로그인 LLM Explorer를 모두 완주한 뒤 저장·재열기·Judge 재현까지 잇는 통합 gate와 블라인드 정확도 평가는 아직 완료하지 않았다.
+> **구현 상태(1.2.0-beta.34):** exact-run 완료 정책, source trust 분리, 완료 시점 Evidence ID 동결, 고정 Judge dataset과 JSON v3/SQLite v2 왕복, Request Lab 단일 실행·비동기 초안 격리·stale pipeline 게시 거부에 더해 20,000건 cluster/DataFlow 자동 stress와 live/persistence/assessment byte 경계를 회귀로 확인했다. 실제 Burp에서 HUMAN·ZAP·로그인 LLM Explorer를 모두 완주한 뒤 저장·재열기·Judge 재현까지 잇는 통합 gate, 실제 20,000건 RSS/polling과 블라인드 정확도 평가는 아직 완료하지 않았다.
 
 ## 문제의식 (Premise)
 웹/API 모의해킹의 병목은 **요청 나열이 아니라, 권한·상태·객체 흐름을 사람이 머릿속으로 재구성하는 것**이다. 그래서 Burp 트래픽을 IDA의 CFG처럼 **플로우 그래프**로 시각화한다. → 플로우 그래프가 도구의 심장(뼈대).

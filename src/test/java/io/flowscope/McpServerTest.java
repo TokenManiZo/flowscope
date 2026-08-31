@@ -146,6 +146,11 @@ final class McpServerTest {
                 + "\"type\":\"BOLA\",\"verdict\":\"CONFIRMED\",\"title\":\"x\","
                 + "\"reason\":\"x\",\"evidence_ids\":[\"" + record.evidenceId + "\"]}");
         assertTrue(assessment.at("/result/isError").asBoolean());
+        JsonNode oversizedAssessment = tool("flowscope_submit_assessment", "{"
+                + "\"type\":\"BOLA\",\"verdict\":\"LIKELY\",\"title\":\"x\","
+                + "\"reason\":\"" + "x".repeat(4_097) + "\",\"evidence_ids\":[\""
+                + record.evidenceId + "\"]}");
+        assertTrue(oversizedAssessment.at("/result/isError").asBoolean());
         JsonNode advisory = tool("flowscope_submit_assessment", "{"
                 + "\"type\":\"BOLA\",\"verdict\":\"LIKELY\",\"title\":\"x\","
                 + "\"reason\":\"x\",\"evidence_ids\":[\"" + record.evidenceId + "\"]}");
@@ -175,6 +180,18 @@ final class McpServerTest {
                 "{\"target\":\"https://api.example.test/v1\",\"run_id\":\"zap-ajax-failed\"}");
         assertTrue(failedAjax.at("/result/isError").asBoolean());
         assertNull(contexts.current(Source.SCANNER), "AJAX Spider 시작 실패가 스캐너 컨텍스트를 남기면 안 됨");
+    }
+
+    @Test
+    void rejectsAssessmentCollectionsBeyondRetainedByteBudget() {
+        List<String> evidenceIds = java.util.stream.IntStream.range(0, 200)
+                .mapToObj(index -> "evidence-" + index + "-" + "x".repeat(230)).toList();
+        List<McpServer.Assessment> values = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(index -> new McpServer.Assessment("assessment-" + index, "BOLA", "LIKELY",
+                        "candidate", "r".repeat(4_096), evidenceIds, java.time.Instant.EPOCH))
+                .toList();
+
+        assertThrows(IllegalArgumentException.class, () -> McpServer.validateAssessmentSet(values));
     }
 
     @Test

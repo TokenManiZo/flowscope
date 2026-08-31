@@ -2,7 +2,7 @@
 
 > 이 문서는 F-01~F-24의 원본 기능 요구와 참조 화면을 보존한다. 현재 제품 행동과 신뢰 경계의 정본은 루트 `README.md`, `docs/ko/architecture.md`, `docs/ko/decisions.md`다.
 
-> **beta.33 구현 주석:** LLM의 권위 있는 탐색 경로는 전용 Proxy 포트가 아니라 FlowScope MCP의 통제 read/write executor다. 직접 8082 트래픽과 XML import는 원 Evidence 보존용 호환 입력이며 `UNVERIFIED_RUNTIME` 또는 import provenance로 남아 coverage·lane 완료·Judge dataset lock을 만들지 않는다. 아래 원 요구의 “포트 기반 LLM 수집” 문구는 이 구현 주석과 함께 읽는다.
+> **beta.34 구현 주석:** LLM의 권위 있는 탐색 경로는 전용 Proxy 포트가 아니라 FlowScope MCP의 통제 read/write executor다. 직접 8082 트래픽과 XML import는 원 Evidence 보존용 호환 입력이며 `UNVERIFIED_RUNTIME` 또는 import provenance로 남아 coverage·lane 완료·Judge dataset lock을 만들지 않는다. 아래 원 요구의 “포트 기반 LLM 수집” 문구는 이 구현 주석과 함께 읽는다. 반복 cluster ID는 기본 snapshot에 복제하지 않고 페이지 조회하며 live/project/assessment 입력에는 beta.34 byte 경계를 적용한다.
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -612,7 +612,7 @@ MCP 통제 실행이 어려운 환경의 과거 기록을 보존하기 위한 �
 
 시나리오 제안용 입력을 바탕으로 아직 시도되지 않은 새로운 공격 시나리오를 LLM에게 제안받는다.
 
-> **beta.33 구현:** 독립 Explorer와 최종 Judge를 분리한다. Explorer는 다른 레인의 결과를 보지 않고 자신의 exact run에서 실제 LLM 트래픽을 남긴다. Judge는 HUMAN·SCANNER·LLM exact completed run의 Evidence ID를 동결한 뒤 assessment 후보를 만들고, 허가된 안전한 읽기 후보만 별도 VALIDATION run으로 반복 재현·정상 대조한다. assessment나 모델 문장 자체는 최종 판정이 아니며 `flowscope_submit_validation`의 서버 gate가 권위다.
+> **beta.34 현재 구현:** 독립 Explorer와 최종 Judge를 분리한다. Explorer는 다른 레인의 결과를 보지 않고 자신의 exact run에서 실제 LLM 트래픽을 남긴다. Judge는 HUMAN·SCANNER·LLM exact completed run의 Evidence ID를 동결한 뒤 assessment 후보를 만들고, 허가된 안전한 읽기 후보만 별도 VALIDATION run으로 반복 재현·정상 대조한다. assessment나 모델 문장 자체는 최종 판정이 아니며 `flowscope_submit_validation`의 서버 gate가 권위다.
 
 **사용자 흐름**
 
@@ -647,7 +647,7 @@ MCP 통제 실행이 어려운 환경의 과거 기록을 보존하기 위한 �
 
 그래프 노드를 클릭해 해당 API의 요청을 파라미터와 값 변조 후 다시 보낸다. Burp Extension을 통해 실시간으로 request와 response를 주고받는다.
 
-> **beta.33 구현:** 사람이 Web 요청 실험실에서 보내는 결과와 Judge가 MCP로 보내는 결과는 모두 discovery coverage와 분리된 `VALIDATION/CONTROLLED` Evidence다. Web은 live raw vault가 있는 요청만 원문·비로그인·등록 계정 모드로 전송하며, import/binary/해독 불가/상한 초과 메시지는 원문 재생이 불가능하다고 표시하고 Burp Repeater 초안으로만 넘긴다. Evidence 선택 generation으로 늦은 응답을 폐기하고 전송 중 draft를 잠그며, 클라이언트가 만든 무작위 operation ID와 서버의 길이 구분 SHA-256 입력 digest로 동일 요청을 한 번만 실행한다. 서버 응답을 받지 못한 동일 draft의 재시도만 같은 ID를 재사용한다. 같은 operation ID를 다른 입력에 재사용하면 거부하고, 완료 cache에는 raw 요청·응답을 남기지 않는다.
+> **beta.34 현재 구현:** 사람이 Web 요청 실험실에서 보내는 결과와 Judge가 MCP로 보내는 결과는 모두 discovery coverage와 분리된 `VALIDATION/CONTROLLED` Evidence다. Web은 live raw vault가 있는 요청만 원문·비로그인·등록 계정 모드로 전송하며, import/binary/해독 불가/상한 초과 메시지는 원문 재생이 불가능하다고 표시하고 Burp Repeater 초안으로만 넘긴다. Evidence 선택 generation으로 늦은 응답을 폐기하고 전송 중 draft를 잠그며, 클라이언트가 만든 무작위 operation ID와 서버의 길이 구분 SHA-256 입력 digest로 동일 요청을 한 번만 실행한다. 서버 응답을 받지 못한 동일 draft의 재시도만 같은 ID를 재사용한다. 같은 operation ID를 다른 입력에 재사용하면 거부하고, 완료 cache에는 raw 요청·응답을 남기지 않는다.
 
 **사용자 흐름**
 
@@ -685,7 +685,7 @@ MCP 통제 실행이 어려운 환경의 과거 기록을 보존하기 위한 �
 
 재전송으로 주고받은 요청과 응답을 사람, 스캐너, LLM관측 소스와 분리된 재전송 영역에서 확인한다.
 
-> **beta.33 구현:** 일반 사람 재전송은 Evidence를 제공하지만 자동 final verdict를 만들지 않는다. LLM final verdict는 같은 finding에 묶인 별도 VALIDATION run에서 후보 요청 반복, 허가된 정상 대조, 상호 겹치지 않는 Evidence ID와 `CONTROLLED` trust를 서버가 검증한 경우에만 `CONFIRMED/REJECTED`가 될 수 있고, 조건이 부족하면 `INCONCLUSIVE`다.
+> **beta.34 현재 구현:** 일반 사람 재전송은 Evidence를 제공하지만 자동 final verdict를 만들지 않는다. LLM final verdict는 같은 finding에 묶인 별도 VALIDATION run에서 후보 요청 반복, 허가된 정상 대조, 상호 겹치지 않는 Evidence ID와 `CONTROLLED` trust를 서버가 검증한 경우에만 `CONFIRMED/REJECTED`가 될 수 있고, 조건이 부족하면 `INCONCLUSIVE`다.
 
 **사용자 흐름**
 

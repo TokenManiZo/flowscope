@@ -6,6 +6,29 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-31 · 1.2.0-beta.34 · P1 복잡도·메모리 경계
+
+**왜 먼저 고쳤는가**
+
+- 20,000건 live 상한이 있어도 snapshot이 cluster Evidence 목록을 event마다 복제하면 단일 반복 묶음에서 출력이 제곱으로 증가했다. DataFlow도 producer 값마다 뒤 record 전체를 훑어 같은 규모에서 분석 시간이 제곱으로 증가했다.
+- 저장하지 않을 대형 live 메시지를 먼저 전체 decode·mask하거나, 프로젝트 GZIP과 LLM assessment를 입력 크기만 믿고 복원하면 Burp JVM의 메모리 상한이 실질적으로 작동하지 않았다. 탐색 기능을 늘리기 전에 이 경계를 닫아야 성능·정확도 benchmark 자체가 유효하다.
+
+**코드와 선택 이유**
+
+- snapshot event에는 `clusterId/count/firstSeen/lastSeen`만 두고 Evidence ID는 `/api/cluster-evidence`에서 200건씩 읽는다. 원 Evidence는 삭제하지 않으면서 기본 1초 snapshot만 선형 크기로 유지하는 최소 변경이다.
+- DataFlow는 `identity+value → 가장 가까운 이전 producer` index를 만들고 path/query/request body의 exact token만 대조한다. 모든 과거 producer를 연결하면 그림과 결과가 다시 폭증하고, substring은 `123`과 `1234`를 오연결하므로 둘 다 기각했다. index는 전체 최신 100,000 value에서 오래된 항목부터 축출한다. 이 흐름은 관측된 명시 토큰 전달의 근사치이며 축출된 오래된 값·숨은 서버 상태·의미적 동등성을 증명하지 않는다.
+- live 메시지는 Montoya `ByteArray.length()`를 먼저 확인한다. 1MiB 이하는 기존 전문 정책을 유지하고, 초과 메시지는 최대 64KiB만 복사·디코딩·마스킹한 뒤 실제 byte 수와 metadata-only 사유를 남긴다. raw vault도 요청 1MiB·응답 4MiB 초과 배열을 받지 않는다. 초과 payload digest는 제한된 마스킹 표현·실제 byte 수·보존 사유를 길이 구분해 만든 식별자이며 원문 전체 checksum이라고 주장하지 않는다.
+- 프로젝트 복원은 메시지당 1MiB와 서로 다른 `FULL` payload 총 48MiB를 적용하고, GZIP을 8KiB chunk로 풀면서 선언 크기나 예산을 넘는 즉시 거부한다. 동일 digest는 한 번만 복원해 반복 참조가 복원 비용을 증폭하지 않게 했고 metadata-only 항목에 압축 blob이 있으면 거부한다.
+- assessment는 type 64자, title 256자, reason 4,096자, Evidence ID 200개·각 256자, 총 1,000건·4MiB로 제한한다. MCP schema, runtime append, 프로젝트 저장·복원이 같은 검증을 공유한다.
+
+**검증과 아직 주장하지 않는 것**
+
+- `mvn clean verify`를 연속 두 번 실행해 매회 293 tests, failure/error/skip 0을 확인했다. 20,000건 snapshot 직렬화 테스트는 0.912초·0.804초였고 최종 코드의 별도 Snapshot+DataFlow 측정 실행은 3.91초, Maven/JUnit JVM 최대 RSS 378,273,792 bytes·peak memory footprint 176,901,248 bytes였다. 측정 머신·JVM을 포함한 개발 gate이며 Burp 프로세스 상주 메모리 수치가 아니다.
+- 2MiB live text/binary, 같은 미리보기·다른 실제 크기, metadata-only 압축 blob, 선언보다 크게 풀리는 GZIP, 48MiB aggregate 복원, 4MiB assessment, token 부분문자열과 가장 가까운 producer 회귀를 고정했다.
+- 연속 두 clean verify의 배포물은 byte-for-byte 동일했다. `target/flowscope-1.2.0-beta.34.jar`, 15,953,677 bytes, 2,051 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `16835b7d5707279615b8d757ad3086e4bdcdc37d95c3d8c26fd5854c79d34a8a`다.
+- 현재 로컬 `scripts/doctor.sh`는 HUMAN/SCANNER 포트, ZAP 2.17 API·upstream·필수 add-on, Codex 0.147.0, Claude Code 2.1.236, Web 17777, MCP 8787을 확인해 실패 0·경고 0으로 끝났다. 준비 상태 확인이며 실제 Explorer/Judge/ZAP 캠페인 완주나 발견 성능을 대신하지 않는다.
+- 이 작업은 처리 안정성과 특정 오연결을 개선했지만 endpoint 발견률·취약점 TP/FP/FN 향상을 증명하지 않는다. H, H+ZAP, H+ZAP+LLM, Judge 증분을 정답 격리 블라인드 benchmark로 측정해 고유 유효 발견이나 검토시간 개선이 없는 레이어는 기본 경로에서 낮추거나 제거한다.
+
 ## 2026-08-31 · 1.2.0-beta.33 · 실행·게시 무결성 P1
 
 **왜 먼저 고쳤는가**

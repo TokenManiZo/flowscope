@@ -2,6 +2,17 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.34 — 2026-08-31
+
+- 반복 cluster의 Evidence ID 전체 목록을 매 event에 복제하지 않고 `/api/cluster-evidence` 200건 페이지로 분리해 snapshot의 제곱 크기 증가를 제거했습니다.
+- 응답 값→후속 요청 DataFlow를 신원별 exact token index와 가장 가까운 이전 producer로 계산해 전체 producer/consumer 중첩 순회와 `123`→`1234` 부분문자열 오연결을 제거했습니다. index는 전역 최신 100,000개 값으로 제한합니다.
+- live HTTP 메시지는 byte 크기를 먼저 확인하고, 1MiB 초과 시 최대 64KiB만 디코딩·마스킹합니다. raw vault도 요청 1MiB·응답 4MiB를 넘는 메시지의 전체 배열을 만들지 않고 크기 메타데이터만 받습니다.
+- 상한 초과 메시지의 식별자는 마스킹된 제한 미리보기뿐 아니라 실제 byte 수와 보존 사유를 함께 해시해 같은 접두부의 서로 다른 대형 메시지가 하나로 합쳐지지 않게 했습니다.
+- 프로젝트 payload 복원을 메시지당 1MiB·서로 다른 복원 전문 합계 48MiB로 제한하고, GZIP을 streaming 해제하면서 선언 크기 초과를 즉시 거부하며 digest별 복원 결과를 재사용합니다.
+- metadata-only 프로젝트 payload에 압축 blob을 동봉하는 입력은 거부해 미집계 압축 데이터가 메모리에 남지 않게 했습니다.
+- LLM assessment에 필드·Evidence 배열·1,000건·총 4MiB 제한을 적용하고 MCP 입력뿐 아니라 프로젝트 저장·복원에도 같은 검증을 적용했습니다.
+- 20,000건 snapshot/DataFlow stress와 대용량 HTTP·GZIP·assessment 회귀를 추가했습니다. 자동 테스트 통과는 탐지 성능 향상을 뜻하지 않으며, 블라인드 benchmark는 계속 별도 gate입니다.
+
 ## 1.2.0-beta.33 — 2026-08-31
 
 - Request Lab 초안에 generation과 immutable Evidence ID를 적용해 늦은 이전 응답이 현재 편집기를 덮지 않게 했습니다.
