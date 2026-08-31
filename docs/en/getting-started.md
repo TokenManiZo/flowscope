@@ -29,7 +29,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. If `flowscope-1.2.0-beta.32.jar` is published on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. Otherwise clone the repository and use the source-build section to create the same JAR locally.
+1. If `flowscope-1.2.0-beta.33.jar` is published on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. Otherwise clone the repository and use the source-build section to create the same JAR locally.
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.

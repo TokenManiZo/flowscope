@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.33 — 2026-08-31
+
+- Isolated Request Lab drafts with a generation token and immutable Evidence ID so a late response cannot overwrite the current editor.
+- Locked all Request Lab controls while a validation request is in flight, reused the same operation ID when an identical draft received no response, and added server-side idempotency to prevent duplicate state-changing sends.
+- Added an analysis publication epoch so a stale pipeline result cannot overwrite a reset, newer policy, or validation snapshot.
+- Marked only exact server-produced `UNCROSSED` cells as IDOR cross-test candidates; generic empty cells remain neutral and untested.
+- Corrected overbroad research claims to the scope supported by the primary AuthProbe, BOLAZ, AuthScope, APICarv, RESTler, and BOLA taxonomy sources.
+
 ## 1.2.0-beta.32 — 2026-08-31
 
 - Centralized HUMAN, SCANNER, and LLM exploration completion in one `LaneCompletionPolicy`. Successful completion now requires the active source, exact run ID, EXPLORATION phase, response Evidence, and purpose-specific trust; failures and cancellations abort instead of completing a lane.

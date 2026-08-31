@@ -1,8 +1,18 @@
-# FlowScope 1.2.0-beta.32 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.33 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.32 절만 현재 우선순위다. 아래 beta.31 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.32 절을 따른다.
+> **읽는 법:** 맨 위 beta.33 절만 현재 우선순위다. 아래 beta.32 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.33 절을 따른다.
 
-## 0. beta.32 우선순위: Evidence 신뢰·exact run 완료·재열기 무결성
+## 0. beta.33 우선순위: 비동기 게시·요청 실험·후보 표시 무결성
+
+1. Request Lab은 Evidence 선택 generation과 전송 중 불변 draft를 사용해 늦은 응답이 현재 선택을 덮지 못하게 한다.
+2. UI 잠금뿐 아니라 서버 operation ID 멱등성으로 동일 요청의 중복 상태 변경을 한 번만 실행한다. ID 재사용 시 입력 digest가 다르면 거부한다.
+3. 분석 결과는 dataset/config publication epoch가 같은 경우에만 게시해 clear·즉시 rebuild·background rebuild 경합에서 이전 결과가 부활하지 않게 한다.
+4. 빈 authorization cell은 서버가 만든 exact `UNCROSSED` candidate key가 있을 때만 미교차 후보로 표시하고, 그 외에는 일반 미검증으로 남긴다.
+5. P1의 남은 대용량·복잡도 결함은 Snapshot cluster 출력, DataFlow index, bounded decode/decompression, LLM retained-byte 순으로 실패 fixture와 수치 예산을 먼저 만든 뒤 수정한다.
+
+**현재 상태:** 1~4의 코드와 집중 회귀는 완료했다. 전체 `clean verify`·재현 JAR 수치는 `beta-validation.md`에 실제 실행 결과만 기록하며, 실제 Burp Request Lab 지연 응답·상태 변경과 clear/rebuild 동시성 수동 gate는 아직 완료로 주장하지 않는다.
+
+## 이전 우선순위: beta.32 Evidence 신뢰·exact run 완료·재열기 무결성
 
 1. HUMAN/SCANNER/LLM 정상 완료를 `LaneCompletionPolicy` 한 경로로 통합하고 실패·취소를 abort로 분리한다.
 2. 8082 직접 fallback의 `UNVERIFIED_RUNTIME`을 원 Evidence로만 보존하고 coverage·Explorer 완료·dataset lock에서 제외한다.
@@ -311,7 +321,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.32 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 표준 경로/공식 auth preflight·Codex 임시 home 격리·bounded 작업 피드·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·목적별 `SourceTrustPolicy`·exact `LaneCompletionPolicy`·완료 시점 Evidence ID 동결·고정 Judge dataset·JSON v3/SQLite v2 저장·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.32 Burp 3-way 저장·재열기와 블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.33 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 표준 경로/공식 auth preflight·Codex 임시 home 격리·bounded 작업 피드·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·목적별 `SourceTrustPolicy`·exact `LaneCompletionPolicy`·완료 시점 Evidence ID 동결·고정 Judge dataset·JSON v3/SQLite v2 저장·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.33 Burp 3-way 저장·재열기와 블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

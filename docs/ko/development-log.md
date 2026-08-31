@@ -6,6 +6,37 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-08-31 · 1.2.0-beta.33 · 실행·게시 무결성 P1
+
+**왜 먼저 고쳤는가**
+
+- 기능을 더 추가해도 Request Lab이 다른 Evidence의 초안을 보내거나 동일 POST를 두 번 실행하고, 오래된 분석이 최신 snapshot을 덮으면 benchmark 입력과 사용자 판단 자체가 오염된다. 따라서 `HANDOFF.md`의 P1 1~4를 새 탐색 기능보다 우선했다.
+- 프론트 버튼 비활성화만으로는 브라우저 중복 POST를 막지 못하고, pipeline 전체 전역 lock은 Burp callback을 막는다. generation+in-flight+server idempotency와 계산 후 publication epoch를 각각의 권위 경계로 선택했다(D-100).
+
+**코드**
+
+- Request Lab GET/POST는 generation과 immutable Evidence ID를 확인한다. 전송 중 관련 control을 잠그고 Web Crypto 난수 operation ID를 서버에 보낸다. 서버 응답을 전혀 받지 못한 동일 draft의 명시 재시도는 같은 ID를 재사용한다.
+- localhost 서버는 길이 프레이밍 SHA-256으로 operation 입력을 비교해 같은 ID·같은 입력을 한 번만 실행하고, 다른 입력 충돌은 거부한다. 완료 cache는 원문 대신 compact 결과만 256건 보존한다.
+- `AnalysisPublicationGate`가 입력 epoch와 게시 epoch를 원자 비교한다. delayed·immediate pipeline 모두 current result만 `latest/routeCandidates/revision`에 게시한다.
+- 매트릭스 빈 셀은 서버 `UNCROSSED` exact key와 일치할 때만 crossgap/IDOR 후보이며 나머지는 중립 미검증이다.
+
+**근거 재검증**
+
+- AuthProbe의 owner-response 대조, BOLAZ의 source taint, AuthScope의 Alice/Bob 차등, RESTler producer-consumer, APICarv 7-app 98% precision/56% recall, BOLA taxonomy의 action-level 41.7%를 원문으로 다시 대조했다.
+- action-level BOLA를 BFLA로 부른 문장, 이 도구들이 보편적 absolute ground truth를 만든다는 문장, BOLAZ가 response owner-field 우선순위를 제안한다는 문장을 폐기했다. 제품 고유 선택은 benchmark 전 가설로 낮췄다.
+
+**아직 주장하지 않는 것**
+
+- 자동 회귀는 실제 Burp 브라우저의 지연 A→B 선택, 상태변경 endpoint 수신 횟수, clear/rebuild 실경합을 대신하지 않는다. beta.33 JAR 재로드 뒤 수동 gate가 필요하다.
+- Snapshot cluster/DataFlow/대용량 decode/GZIP/assessment 상한 P1은 이번 correctness 커밋과 섞지 않고 다음 작업으로 남긴다.
+
+**검증 산출물**
+
+- 집중 회귀에서 동일 operation ID의 순차·동시 HTTP 요청이 서버 실행 1회로 합쳐지고, 다른 입력 재사용은 400으로 거부됨을 확인했다.
+- beta.33 standalone Web에서 매트릭스 빈 셀 두 개가 gap이 아닌 `일반 미검증 조합`으로 표시되고 브라우저 console error/warning이 없음을 확인했다. 샘플 렌더 검증이며 실제 Burp 트래픽 gate는 아니다.
+- JDK 21 `mvn clean verify` 278 tests가 실패·오류·skip 없이 통과했다. 연속 두 번의 clean verify에서 단일 JAR은 byte-for-byte 동일했다.
+- 배포물은 `target/flowscope-1.2.0-beta.33.jar`, 15,944,891 bytes, 2,048 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `2d8588fa78abf713005f738a3a7c990e1d2b9838bdb937dfd012b87a223b082b`이다.
+
 ## 2026-08-31 · 1.2.0-beta.32 · exact-run 완료·신뢰 정책·고정 Judge 데이터셋
 
 **개발·수정**

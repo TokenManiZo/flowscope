@@ -1,6 +1,6 @@
-# FlowScope — 리서치 제안서 (v2, beta.32 정합성 갱신)
+# FlowScope — 리서치 제안서 (v2, beta.33 정합성 갱신)
 
-> **문서 지위(2026-08-31):** 이 문서는 연구 가설과 평가 설계를 보존하는 제안서이며 제품 동작 정본이 아니다. 현재 제품 계약은 `README.md`, `architecture.md`, `decisions.md`, 실제 검증은 `beta-validation.md`가 담당한다. beta.32는 블랙박스 전체 분모나 “셋 다 놓친 전체 여집합”을 안다고 주장하지 않으며, 관측된 적용 가능 cell과 근거 있는 미요청 route 후보만 다룬다. 최종 verdict는 별도 VALIDATION run의 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 허용한다.
+> **문서 지위(2026-08-31):** 이 문서는 연구 가설과 평가 설계를 보존하는 제안서이며 제품 동작 정본이 아니다. 현재 제품 계약은 `README.md`, `architecture.md`, `decisions.md`, 실제 검증은 `beta-validation.md`가 담당한다. beta.33은 블랙박스 전체 분모나 “셋 다 놓친 전체 여집합”을 안다고 주장하지 않으며, 관측된 적용 가능 cell과 근거 있는 미요청 route 후보만 다룬다. 최종 verdict는 별도 VALIDATION run의 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 허용한다.
 
 **English title (working):** *FlowScope: Differential Traffic Coverage for LLM-Assisted Discovery of API Authorization Vulnerabilities*
 
@@ -163,9 +163,9 @@ LLM이 소스이자 분석가이면 "내가 커버한 걸 내가 발견"하는 �
 - 공격 그래프 / 트래픽 시각화
 
 ## 11. 로드맵 (Milestones)
-1. **M1 — 정규화 코어:** beta.32 구현, 범용 corpus 정밀도 측정은 미완료.
+1. **M1 — 정규화 코어:** beta.33 구현, 범용 corpus 정밀도 측정은 미완료.
 2. **M2 — 관측 표현:** 매트릭스 + 데이터플로우 그래프 구현, 대규모 실제 데이터 UX·성능 gate는 미완료.
-3. **M3 — LLM 실행·분석:** 독립 Explorer, 별도 Judge, exact-run Evidence lock 구현, beta.32 실제 Burp E2E는 미완료.
+3. **M3 — LLM 실행·분석:** 독립 Explorer, 별도 Judge, exact-run Evidence lock 구현, beta.33 실제 Burp E2E는 미완료.
 4. **M4 — 검증 작업면:** Evidence 상세·Request Lab·서버 verdict gate 구현, P1과 실제 전체 재현 gate는 미완료.
 5. **M5 — 평가:** 정답 격리 벤치마크 + 2×2 ablation + REVIEW 비용 측정 예정.
 6. **M6 — 논문화:** 서베이·threats·재현성 패키지와 실증 결과 반영 예정.
@@ -177,4 +177,4 @@ LLM이 소스이자 분석가이면 "내가 커버한 걸 내가 발견"하는 �
 - **오라클(oracle).** 어떤 시도가 취약을 드러냈는지 판정하는 기준(여기선 "금지 요청이 성공했는가").
 
 ---
-*문서 버전 v2 — beta.32의 관측 가능 범위, exact-run Evidence, Explorer/Judge 분리와 미검증 gate를 반영했다. 성능 우위는 블라인드 평가 전까지 주장하지 않는다.*
+*문서 버전 v2 — beta.33의 관측 가능 범위, exact-run Evidence, Explorer/Judge 분리와 미검증 gate를 반영했다. 성능 우위는 블라인드 평가 전까지 주장하지 않는다.*

@@ -1,6 +1,22 @@
-# FlowScope 1.2.0-beta.32 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.33 사전 벤치마크 검증 기록
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-31이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.33 Request Lab·분석 게시·후보 표시 무결성 gate
+
+| 구분 | 결과 |
+|---|---|
+| Request Lab 비동기 | Evidence generation·immutable event ID·in-flight control의 정적 계약 회귀 통과. 늦은 GET/POST/Repeater 응답은 현재 generation과 다르면 화면에 적용하지 않고, 서버 응답을 받지 못한 동일 draft의 재시도는 같은 operation ID를 재사용 |
+| 서버 단일 실행 | 동일 operation ID·동일 입력의 순차 및 동시 HTTP 요청이 실제 `sendRequestLab` 1회로 합쳐지는 회귀 통과. 같은 ID의 다른 입력은 HTTP 400 |
+| raw 보존 경계 | 멱등 입력은 길이 구분 SHA-256으로 비교하고 완료 cache는 compact 결과만 최대 256건 보존. raw 요청·전체 응답을 cache하지 않음 |
+| 분석 게시 | `AnalysisPublicationGateTest`에서 입력 invalidation 뒤 오래된 결과 게시 거부, 현재 epoch 결과 게시 허용 통과 |
+| 빈 셀 의미 | exact server `UNCROSSED` candidate key만 `미교차`; 후보 없는 빈 셀은 `일반 미검증`이고 gap 필터에서 제외되는 정적 계약 통과 |
+| standalone Web | beta.33 standalone 샘플의 판정 매트릭스 10개 셀 중 후보 없는 빈 셀 2개가 `data-gap=false`·`일반 미검증 조합`으로 렌더되고 브라우저 console error/warning 0건 확인 |
+| 전체 자동 회귀 | JDK 21에서 `mvn clean verify`, 278 tests, 실패·오류·skip 0 + 완성 JAR manifest/classloader smoke 통과 |
+| 반복 빌드 | 같은 source·JDK 21의 연속 clean verify 2회에서 byte-for-byte 동일, SHA-256 일치 |
+| 배포물 | `target/flowscope-1.2.0-beta.33.jar` 하나, 15,944,891 bytes, 2,048 entries, SHA-256 `2d8588fa78abf713005f738a3a7c990e1d2b9838bdb937dfd012b87a223b082b`; 첫 entry `META-INF/MANIFEST.MF` |
+
+이 gate는 localhost HTTP 동시 요청, 게시 epoch와 화면 문자열 계약을 자동 검증한다. 실제 Burp에서 고지연 A→B Evidence 선택, 상태 변경 endpoint 수신 횟수, clear/rebuild callback 경합을 관측한 것은 아니며 beta.33 JAR 재로드 수동 gate가 남아 있다. 전체 회귀 중 XXE 거부 fixture의 XML parser fatal log와 SQLite native-access 경고가 출력됐지만 실패·오류는 0이었다. 이를 실제 Burp bundled JVM 호환 완료로 해석하지 않는다.
 
 ## 1.2.0-beta.32 exact-run 완료·신뢰·고정 dataset gate
 
@@ -495,7 +511,7 @@ W3C Web App Manifest 규격상 `application/manifest+json`은 웹 앱 manifest m
 
 ## 아직 실환경에서 검증하지 않은 것
 
-다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.32의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
+다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.33의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
 
 - Burp Community에서 extension unload 뒤 Web/MCP 포트 해제와 재로드, Repeater handoff, project save/load 왕복
 - 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지, 선택 ACTIVE 계정과 다른 브라우저 자격증명이 계정으로 오기록되지 않는지

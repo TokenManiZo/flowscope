@@ -7,8 +7,8 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-08-31 |
-| 제품 버전 | `1.2.0-beta.32` |
-| 인계 기준 | beta.32 코드·문서가 함께 포함된 동일 커밋 |
+| 제품 버전 | `1.2.0-beta.33` |
+| 인계 기준 | beta.33 코드·문서가 함께 포함된 동일 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
 | 자동 회귀 | 최신 수치와 JAR digest는 `beta-validation.md` 정본 참조 |
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.32.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.33.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -265,7 +265,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-08-31 기준 JDK 21 `mvn clean verify` 275 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장을 추가했다. JAR digest는 `beta-validation.md` 정본을 따른다.
+2026-08-31 기준 JDK 21 `mvn clean verify` 278 tests가 실패·오류·skip 없이 통과했고 완성 JAR smoke도 통과했다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장, beta.33은 Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시를 추가했다. JAR digest는 `beta-validation.md` 정본을 따른다.
 
 ### 실제·standalone 검증
 
@@ -275,8 +275,9 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.32 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
-- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.32 scanner import와 Evidence 상세 확인
+- beta.33 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
+- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.33 scanner import와 Evidence 상세 확인
+- 실제 Burp Request Lab의 고지연 A→B 선택, 상태 변경 이중 전송, clear/rebuild callback 경합
 - 실제 ZAP 2.17에서 OpenAPI·GraphQL·Postman·SOAP 정의별 요청 생성, exact-scope 차단, 신원별 인증 주입과 경고 표시 확인
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
 - Windows 10/11 + Docker Desktop + PowerShell 7 실기기의 ZAP API/upstream/target capture
@@ -291,29 +292,18 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ## 8. 알려진 결함 — 다음 개발의 실제 시작점
 
-아래는 2026-08-28 clean-room 코드 리뷰에서 코드 경로로 확인한 항목이다. 아직 수정되지 않았다.
+아래는 2026-08-28 clean-room 코드 리뷰에서 코드 경로로 확인한 항목이다. beta.33에서 닫은 항목과 아직 남은 항목을 분리하며, 자동 회귀와 실제 Burp 수동 gate도 구분한다.
 
-### P1 — 출시·벤치마크 차단
+### beta.33에서 닫은 P1
 
-1. **Request Lab Evidence 비동기 역전**
-   - 위치: `index.html`의 `openRequestLab`, `sendRequestLab`; `FlowScopeExtension.executeHumanRequestLab`
-   - 영향: A/B Evidence를 빠르게 열면 A 요청 내용과 B Evidence ID/서비스가 결합될 수 있다.
-   - 완료 조건: generation/abort 또는 immutable draft ID를 사용하고, out-of-order fetch 회귀에서 잘못된 Evidence 전송이 0이어야 한다.
+1. **Request Lab Evidence 비동기 역전:** Evidence generation과 immutable event ID를 비교해 늦은 GET·POST·Repeater 응답을 폐기한다.
+2. **Request Lab 중복 상태 변경 전송:** 전송 동안 편집·계정·인증·닫기를 잠그고, 서버 응답을 받지 못한 동일 draft는 같은 operation ID를 재사용하며, 서버의 ID+입력 digest 멱등성으로 같은 작업을 한 번만 실행한다. 완료 cache는 raw 요청·응답 대신 compact 결과만 최대 256건 보존한다.
+3. **stale pipeline 결과 게시:** `AnalysisPublicationGate`의 publication epoch가 같은 결과만 `latest`·route candidate·revision에 원자 게시한다.
+4. **일반 빈 셀의 IDOR 오표시:** exact server `UNCROSSED` key만 gap으로 표시하고 나머지는 중립 `미검증`으로 분리한다.
 
-2. **Request Lab 중복 상태 변경 전송**
-   - 위치: `sendRequestLab`, `renderRequestLabAccounts`
-   - 영향: 전송 중 인증 selector 변경으로 버튼이 다시 활성화되어 POST/PUT/PATCH가 중복 실행될 수 있다.
-   - 완료 조건: 명시적 in-flight 상태 동안 전송·인증·계정·Evidence 선택을 잠그는 지연 응답 회귀가 필요하다.
+집중 회귀는 완료했지만 실제 Burp UI의 고지연 A→B 선택, 상태 변경 중복 클릭, clear/rebuild 동시 실행은 beta.33 JAR 수동 gate가 남아 있다. 자동 회귀를 실환경 완료로 표현하지 않는다.
 
-3. **stale pipeline 결과의 데이터 부활·덮어쓰기**
-   - 위치: `FlowScopeExtension.scheduleRebuild`, `clearRecords`, `rebuildImmediately`
-   - 영향: 초기화한 데이터가 다시 나타나거나 새 validation Evidence가 이전 rebuild 결과에 가려질 수 있다.
-   - 완료 조건: dataset/config epoch가 달라진 결과는 게시하지 않고 clear/rebuild 및 validation/rebuild 경합 테스트를 통과해야 한다.
-
-4. **서버가 기각한 빈 셀을 UI가 IDOR 후보로 표시**
-   - 위치: `index.html`의 `cellHtml`, `showEmpty`
-   - 영향: owner가 없는 일반 미검증 셀도 “미교차 IDOR 후보”로 설명된다.
-   - 완료 조건: exact server candidate key만 crossgap으로 표시하고 일반 빈 셀은 중립 미검증으로 남기는 UI 행동 테스트가 필요하다.
+### P1 — 아직 남은 출시·벤치마크 차단
 
 5. **Snapshot 중복 cluster의 O(N²) 출력**
    - 위치: `SnapshotJsonWriter.events`
@@ -547,7 +537,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.32.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.33.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

@@ -105,7 +105,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.32 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.33 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
@@ -123,6 +123,13 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("원문 그대로"));
         assertTrue(index.body().contains("비로그인으로 전송"));
         assertTrue(index.body().contains("/api/request-lab"));
+        assertTrue(index.body().contains("REQUEST_LAB_GENERATION"));
+        assertTrue(index.body().contains("REQUEST_LAB_IN_FLIGHT"));
+        assertTrue(index.body().contains("REQUEST_LAB_RETRY"));
+        assertTrue(index.body().contains("sameRetry?REQUEST_LAB_RETRY.operationId:requestLabOperationId()"));
+        assertTrue(index.body().contains("eventId!==REQUEST_LAB_EVENT_ID"));
+        assertTrue(index.body().contains("data-gap=\"'+candidate+'\""));
+        assertTrue(index.body().contains("일반 미검증 조합"));
         assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
         assertTrue(index.body().contains("좁은 화면용 API 목록"));
         assertTrue(index.body().contains("renderGraphList(cellValues,visibleOperations)"));
@@ -490,7 +497,9 @@ final class FlowScopeWebServerTest {
 
         String editedRequest = "POST /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n"
                 + "Cookie: edited-secret\r\nContent-Type: text/plain\r\n\r\n" + "x".repeat(3_000);
-        HttpResponse<String> sent = post("/api/request-lab", "action=send&eventId=" + encode(evidenceId)
+        String operationId = "request-lab-operation-0001";
+        HttpResponse<String> sent = post("/api/request-lab", "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId)
                 + "&credentialMode=ANONYMOUS&accountId=&request="
                 + encode(editedRequest), token);
         assertEquals(200, sent.statusCode(), sent.body());
@@ -501,6 +510,49 @@ final class FlowScopeWebServerTest {
         assertTrue(state.manualRequest.contains("edited-secret"));
         assertEquals(editedRequest, state.manualRequest);
         assertTrue(result.path("response").asText().contains("204 No Content"));
+
+        HttpResponse<String> duplicate = post("/api/request-lab", "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId) + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode(editedRequest), token);
+        assertEquals(200, duplicate.statusCode());
+        assertEquals(1, state.manualRequestCount.get());
+
+        HttpResponse<String> collision = post("/api/request-lab", "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId) + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode(editedRequest + "changed"), token);
+        assertEquals(400, collision.statusCode());
+        assertEquals(1, state.manualRequestCount.get());
+    }
+
+    @Test
+    void concurrentRequestLabRetriesJoinOneServerExecution() throws Exception {
+        start();
+        state.blockManualRequest = true;
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+        String operationId = "request-lab-concurrent-0001";
+        String body = "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId)
+                + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode("POST /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n\r\nx");
+        HttpRequest request = HttpRequest.newBuilder(URI.create(
+                        server.url().substring(0, server.url().length() - 1) + "/api/request-lab"))
+                .header("X-FlowScope-Token", token)
+                .header("Origin", origin())
+                .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+
+        HttpClient client = HttpClient.newHttpClient();
+        java.util.concurrent.CompletableFuture<HttpResponse<String>> first =
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        assertTrue(state.manualRequestEntered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+        java.util.concurrent.CompletableFuture<HttpResponse<String>> duplicate =
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        state.manualRequestRelease.countDown();
+
+        assertEquals(200, first.get(2, java.util.concurrent.TimeUnit.SECONDS).statusCode());
+        assertEquals(200, duplicate.get(2, java.util.concurrent.TimeUnit.SECONDS).statusCode());
+        assertEquals(1, state.manualRequestCount.get());
     }
 
     @Test
@@ -630,6 +682,13 @@ final class FlowScopeWebServerTest {
         private volatile String llmFollowup = "";
         private volatile String manualRequest = "";
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
+        private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
+                new java.util.concurrent.atomic.AtomicInteger();
+        private volatile boolean blockManualRequest;
+        private final java.util.concurrent.CountDownLatch manualRequestEntered =
+                new java.util.concurrent.CountDownLatch(1);
+        private final java.util.concurrent.CountDownLatch manualRequestRelease =
+                new java.util.concurrent.CountDownLatch(1);
         private volatile Pipeline.Result result;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
@@ -732,6 +791,18 @@ final class FlowScopeWebServerTest {
                                                                             String accountId) {
             manualRequest = request;
             manualCredentialMode = mode;
+            manualRequestCount.incrementAndGet();
+            if (blockManualRequest) {
+                manualRequestEntered.countDown();
+                try {
+                    if (!manualRequestRelease.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("manual request release timeout");
+                    }
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("manual request interrupted", error);
+                }
+            }
             return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
                     "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
         }

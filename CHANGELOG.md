@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.33 — 2026-08-31
+
+- Request Lab 초안에 generation과 immutable Evidence ID를 적용해 늦은 이전 응답이 현재 편집기를 덮지 않게 했습니다.
+- 검증 전송 동안 편집·인증·계정·닫기·Repeater·재전송을 잠그고, 응답을 받지 못한 동일 draft는 같은 operation ID를 재사용하며, 서버 idempotency로 동일 상태변경 요청의 중복 실행을 차단했습니다.
+- 분석 publication epoch를 추가해 초기화·정책 변경·새 validation 뒤 끝난 오래된 pipeline 결과가 최신 snapshot을 덮지 않게 했습니다.
+- 서버가 실제 `UNCROSSED`로 산출한 exact 셀만 IDOR 교차 후보로 표시하고 일반 빈 셀은 중립 미검증으로 남깁니다.
+- AuthProbe·BOLAZ·AuthScope·APICarv·RESTler·BOLA taxonomy 인용을 원문이 지지하는 범위로 교정했습니다. 성능 우월성은 계속 블라인드 평가 전 가설입니다.
+
 ## 1.2.0-beta.32 — 2026-08-31
 
 - HUMAN·SCANNER·LLM 탐색 완료를 `LaneCompletionPolicy` 하나로 통합했습니다. 정상 완료는 활성 source·exact run ID·EXPLORATION·응답 Evidence·목적별 trust를 모두 요구하며 실패·취소는 완료가 아닌 abort로 처리합니다.

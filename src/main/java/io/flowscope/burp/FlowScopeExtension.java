@@ -221,6 +221,7 @@ public final class FlowScopeExtension implements BurpExtension {
             });
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
     private final AtomicBoolean databaseSavePending = new AtomicBoolean(false);
+    private final AnalysisPublicationGate analysisPublication = new AnalysisPublicationGate();
     private volatile Path activeProjectDatabase;
     private boolean capacityWarned;
     private MontoyaApi api;
@@ -554,18 +555,16 @@ public final class FlowScopeExtension implements BurpExtension {
 
     /** 재구성을 워커 스레드에서 수행하고, 대기 중 갱신은 하나로 합친다(EDT·콜백 부하 방지). */
     private void scheduleRebuild() {
+        analysisPublication.invalidate();
         if (!rebuildPending.compareAndSet(false, true)) return;  // 이미 예약됨 → 합치기
         worker.schedule(() -> {
             rebuildPending.set(false);
             try {
+                long analysisEpoch = analysisPublication.current();
                 List<RequestRecord> snapshot;
                 synchronized (records) { snapshot = new ArrayList<>(records); }
                 Pipeline.Result result = Pipeline.runIsolated(snapshot, analysisConfig);
-                latest = result;
-                rebuildRouteCandidates(result.records);
-                revision.incrementAndGet();
-                if (controlTab != null) controlTab.render(result);
-                scheduleDatabaseSave();
+                publishAnalysis(analysisEpoch, result);
             } catch (Exception e) {
                 api.logging().logToError("FlowScope 그래프 갱신 실패", e);
             }
@@ -783,6 +782,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private void loadSampleProject() {
         worker.execute(() -> {
             try {
+                long analysisEpoch = analysisPublication.invalidate();
                 invalidateLlmWorkflow();
                 clearRunContexts();
                 sessionBroker.close();
@@ -805,15 +805,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 rawExchanges.clear();
                 droppedRecords.set(0);
-                latest = result;
-                rebuildRouteCandidates(result.records);
-                revision.incrementAndGet();
+                publishAnalysis(analysisEpoch, result);
                 if (mcpServer != null) mcpServer.clearAssessments();
                 if (mcpServer != null) mcpServer.clearValidations();
                 if (mcpServer != null) mcpServer.resetWorkflow();
                 activeProjectDatabase = null;
                 databaseSavedRevision.set(-1);
-                if (controlTab != null) controlTab.render(result);
                 api.logging().logToOutput("FlowScope 샘플 프로젝트 열기: " + loaded.size()
                         + "건 · 실제 네트워크 요청 없음");
             } catch (Exception e) {
@@ -823,6 +820,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void clearRecords() {
+        long analysisEpoch = analysisPublication.invalidate();
         invalidateLlmWorkflow();
         clearRunContexts();
         synchronized (records) {
@@ -837,13 +835,11 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         routeCandidates = List.of();
         analysisConfig.clearReviews();
-        latest = Pipeline.runIsolated(List.of(), analysisConfig);
-        revision.incrementAndGet();
+        Pipeline.Result empty = Pipeline.runIsolated(List.of(), analysisConfig);
         if (mcpServer != null) mcpServer.clearAssessments();
         if (mcpServer != null) mcpServer.clearValidations();
         if (mcpServer != null) mcpServer.resetWorkflow();
-        if (controlTab != null) controlTab.render(latest);
-        scheduleDatabaseSave();
+        publishAnalysis(analysisEpoch, empty);
         api.logging().logToOutput("FlowScope 수집 데이터가 삭제되었습니다.");
     }
 
@@ -877,6 +873,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private void loadProjectFile(File file) {
         worker.execute(() -> {
             try {
+                long analysisEpoch = analysisPublication.invalidate();
                 invalidateLlmWorkflow();
                 clearRunContexts();
                 sessionBroker.close();
@@ -915,16 +912,13 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 rawExchanges.clear();
                 droppedRecords.set(0);
-                latest = result;
-                rebuildRouteCandidates(result.records);
-                revision.incrementAndGet();
+                publishAnalysis(analysisEpoch, result);
                 if (mcpServer != null) mcpServer.resetWorkflow();
                 if (mcpServer != null) mcpServer.replaceAssessments(assessments);
                 if (mcpServer != null) mcpServer.replaceValidations(validations);
                 runContexts.restoreCompletedRuns(data.completedRuns());
                 activeProjectDatabase = database ? path : null;
                 databaseSavedRevision.set(database ? revision.get() : -1);
-                if (controlTab != null) controlTab.render(result);
                 api.logging().logToOutput("FlowScope 프로젝트 열기: " + result.records.size() + "건 — " + file);
             } catch (Exception e) {
                 projectError("프로젝트 열기 실패", e);
@@ -1572,17 +1566,32 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void rebuildImmediately() {
+        long analysisEpoch = analysisPublication.invalidate();
         List<RequestRecord> snapshot;
         synchronized (records) { snapshot = new ArrayList<>(records); }
         Pipeline.Result result = Pipeline.runIsolated(snapshot, analysisConfig);
-        latest = result;
-        rebuildRouteCandidates(result.records);
-        revision.incrementAndGet();
-        if (controlTab != null) controlTab.render(result);
-        scheduleDatabaseSave();
+        publishAnalysis(analysisEpoch, result);
+    }
+
+    private boolean publishAnalysis(long analysisEpoch, Pipeline.Result result) {
+        List<RouteCandidate> candidates = routeCandidatesFor(result.records);
+        boolean published = analysisPublication.publishIfCurrent(analysisEpoch, () -> {
+            latest = result;
+            routeCandidates = candidates;
+            revision.incrementAndGet();
+        });
+        if (published) {
+            if (controlTab != null) controlTab.render(result);
+            scheduleDatabaseSave();
+        }
+        return published;
     }
 
     private void rebuildRouteCandidates(List<RequestRecord> sourceRecords) {
+        routeCandidates = routeCandidatesFor(sourceRecords);
+    }
+
+    private List<RouteCandidate> routeCandidatesFor(List<RequestRecord> sourceRecords) {
         List<RouteCandidateExtractor.Seed> seeds;
         synchronized (siteMapSeeds) { seeds = List.copyOf(siteMapSeeds); }
         List<RouteCandidate> extracted = RouteCandidateExtractor.extract(sourceRecords, scope, seeds);
@@ -1590,7 +1599,7 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (restoredRouteCandidates) { restored = List.copyOf(restoredRouteCandidates); }
         List<RouteCandidate> combined = new ArrayList<>(restored);
         combined.addAll(extracted);
-        routeCandidates = RouteCandidateExtractor.prioritized(combined);
+        return RouteCandidateExtractor.prioritized(combined);
     }
 
     private static String shortDigest(String value) {

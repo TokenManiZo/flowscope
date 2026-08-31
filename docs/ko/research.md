@@ -1,4 +1,4 @@
-# FlowScope 관련연구 · 한계 · 극복 전략 (v3)
+# FlowScope 관련연구 · 한계 · 극복 전략 (v4)
 
 > 6갈래 문헌 서베이에서 확인한 근거를 정리한 기록이다. 전문을 확인한 항목과 초록·도구 문서만 확인한 항목을 구분하며, 체계적 문헌고찰 완료나 신규성 확정을 주장하지 않는다.
 > 태그: `[탄탄]` 동료검증/확립된 연구 · `[프리프린트]` 2025~26 단독저자 미검증 · `[학사논문]` · `[본문·아티팩트 확인]` 논문 본문과 공개 재현물을 직접 확인 · `[초록만]` 전문 미열람.
@@ -12,13 +12,13 @@
 - (e) **LLM 펜테스트 에이전트** — PentestGPT`[탄탄]`, one-day exploit(Fang)`[탄탄]`, 400-run 재현성(2605.30096)`[프리프린트]`
 - (f) **할루 완화·검증게이트** — SQuAD2.0(기권)`[탄탄]`, Grammar-Constrained Decoding`[탄탄]`, Self-Consistency`[탄탄]`, FActScore·RARR·Let's-Verify`[탄탄]`
 
-관통 축 둘: **① 소유권 ground truth를 어떻게 확정하나 · ② 오라클을 결정론으로 둘까 근사(퍼센트/휴리스틱/LLM)로 둘까.** 능동 스캐너·화이트박스는 프로빙/소스로 소유권을 확정, 순수 블랙박스·LLM 계열은 응답 유사도·퍼센트로 근사하며 FP/FN을 떠안는다.
+관통 축 둘: **① 소유권에 대한 운영상 근거를 어떻게 강화하나 · ② 오라클을 결정론으로 둘까 근사(퍼센트/휴리스틱/LLM)로 둘까.** AuthProbe는 두 운영자 통제 신원의 정상 소유자 응답을 대조 기준으로 쓰고, BOLAZ는 소스의 resource-ID taint와 인가 구간을 분석한다. 둘 다 해당 입력·가정 안에서 강한 근거를 만들지만 모든 서비스의 실제 업무 소유권을 보편적으로 증명하는 절대 ground truth는 아니다. 순수 관측·LLM 계열은 응답 차이와 휴리스틱에 더 의존해 FP/FN을 떠안는다.
 
 ## 2. 프론티어 한계 (검증된 것만)
-1. **관측 트래픽만으로 소유권 ground truth를 결정론적으로 확정** — 능동 프로빙(AuthProbe) 또는 소스(BOLAZ) 없이는 외부 근거가 없음. `[탄탄: BOLAZ가 taint로 해결한 걸 순수 관측은 못 함]`
-2. **블랙박스 분모 문제** — 진짜 상태공간·객체 전체집합 미지 → 절대 커버리지 % 정의 불가. `[탄탄: Log-Coverage/APICarv]`
-3. **탐지 커버리지의 읽기 편향** — 표준 BOLA 테스트가 "B가 A를 읽는가"에 치우쳐 **action-level(=행위/상태변경, BFLA)** 을 놓침. BOLA-in-the-wild가 action-level을 **41.7%**(확인된 BOLA 중 최대 패밀리)로 보고, "기존 가이드에서 과소대표"라 지적. `[프리프린트+LLM분류 타xonomy — 방향은 신뢰, 정밀수치는 참고]`
-4. **같은 이름·스키마 ≠ 같은 자원·소유** — `pet.status` vs `order.status`, `addPet`/`getPetById` 둘 다 Pet 스키마. 정적으로 안전히 못 거름. `[탄탄: RESTler/Morest]`
+1. **관측 트래픽만으로 소유권을 결정론적으로 확정하기 어려움** — AuthProbe는 운영자가 통제하는 복수 신원의 정상 소유 객체와 응답 대조가 필요하고, BOLAZ는 서버 소스의 resource-ID data flow를 요구한다. FlowScope처럼 HTTP 관측만 있는 경우 이 추가 오라클이 없으므로 소유자는 명시 입력·응답 필드·교차 재현으로 단계적으로 강화해야 한다. `[근거 범위: AuthProbe/BOLAZ 원문]`
+2. **관측 기반 endpoint 분모의 불완전성** — APICarv는 7개 오픈소스 앱에서 endpoint 추론 정밀도 98%, 재현율 56%를 보고했다. 이는 관측·프로빙 기반 route inventory가 유용하지만 완전하지 않다는 실증이며, 모든 블랙박스 시스템에서 절대 분모가 수학적으로 불가능하다는 정리는 아니다. FlowScope는 검증된 route oracle이 없을 때 관측 수를 전체 퍼센트로 표현하지 않는 보수적 제품 정책을 택한다.
+3. **탐지 커버리지의 읽기 편향** — BOLA-in-the-wild는 타 사용자 객체에 대한 무단 변경·삭제·트리거를 **Action-Level Object BOLA**로 정의하고 확인 사례의 **41.7%**로 보고했다. 이는 Direct Object Reference BOLA와 함께 두 지배적 패밀리 중 하나이며 BFLA와 동의어가 아니다. vertical user-to-admin 실패는 별도 11.9%로 보고됐다. `[프리프린트·단독저자·100+ 공개신고 taxonomy — 수치는 외부 corpus 재현 전 참고]`
+4. **producer-consumer 일치 ≠ 소유권 일치** — RESTler는 OpenAPI의 producer-consumer 관계로 상태 있는 요청 순서를 만든다. 이 기능은 값 전달 근거이지 동일 이름·스키마가 같은 업무 자원·소유자라는 증명은 아니다. FlowScope의 동명이자원 분리는 이 선행의 직접 결론이 아니라 별도 benchmark로 검증해야 할 자체 한계다.
 5. **LLM 판정의 비결정성·저정밀** — 같은 타깃에도 실행마다 결과 갈림. `[탄탄: Fang(설명 없으면 87%→7%), 프리프린트: 400-run]`
 6. **할루 '완화'는 되나 '제거'는 불가** — 검증은 외부 오라클 품질에 종속. `[탄탄: FActScore/RARR/GCD는 형식만 보장]`
 7. **리스팅 없는/미관측 식별자 객체는 원천 테스트 불가** — 공통 FN. `[탄탄]`
@@ -26,10 +26,10 @@
 ## 3. FlowScope positioning (결정별 · 검증 반영)
 | 우리 결정 | 선행 | 판정 | 근거 |
 |---|---|---|---|
-| **D-001** source ⊥ idn/role | Autorize/AuthMatrix/AuthScope/CODASPY | **차별화 가설** | 조사한 선행은 주로 고권한·저권한 신원 쌍을 비교한다. 사람/스캐너/LLM 탐지수단을 별도 축으로 겹치는 기여의 신규성은 체계적 검색과 peer review 전까지 미확정 |
+| **D-001** source ⊥ idn/role | Autorize/AuthMatrix/AuthScope/CODASPY | **차별화 가설** | AuthScope는 두 합법 사용자 Alice/Bob의 post-authentication 요청·응답 차이를 이용해 필드를 바꾸고 대조한다. 역할 서열 비교가 핵심이라는 이전 설명은 부정확하다. 사람/스캐너/LLM 탐지수단을 별도 축으로 겹치는 기여의 신규성은 체계적 검색과 peer review 전까지 미확정 |
 | **D-004/012** 오라클=status+owner+본문 | AuthProbe(유사·능동)`[약근거]`, Autorize(응답 비교) | **부분 대응** | 규칙 실행은 결정론적이지만 추정 owner·role의 진실성을 보장하지 않는다. 최종 verdict는 별도 통제 재현·정상 대조 Evidence와 서버 gate가 필요 |
-| **D-005/012** owner=본문 소유필드 우선 | BOLAZ(taint), RestTestGen(id-completion) | **partial** | 소유필드가 인가 실축인 건 지지. 그러나 동명이자원 혼동·id가 본문에 없으면 놓침은 **물려받음** |
-| **D-003** 미교차=관측 내, 퍼센트 없음 | Log-Coverage, Akto(퍼센트) | **partial** | 분모 문제는 물려받되, **퍼센트로 뭉개지 않고 범위 선언**한 건 차별 |
+| **D-005/012** owner=본문 소유필드 우선 | FlowScope 자체 휴리스틱; AuthProbe의 정상 소유자 응답 대조는 보조 선행 | **검증 전 가설** | BOLAZ는 소스 taint·인가 구간 분석이며 response owner-field 우선순위를 제안하지 않는다. 본문 소유 필드는 유용한 후보지만 실제 업무 소유권과 일치하는지는 corpus별 precision/recall로 측정해야 한다 |
+| **D-003** 미교차=관측 내, 퍼센트 없음 | APICarv endpoint 추론; Log-Coverage의 SUT-log coverage | **제품 경계** | APICarv의 98% precision/56% recall은 관측 기반 inventory의 불완전성을 실증한다. Log-Coverage는 SUT log가 있는 특정 실험의 coverage proxy다. 둘을 블랙박스 분모 불가능의 일반 정리로 인용하지 않고, FlowScope는 검증된 전체 route oracle이 없을 때 퍼센트를 만들지 않는다 |
 | **D-009/D-049** 규칙·서버 gate 권위, LLM Explorer/Judge | BOLABuster(추론/실행 분리), BOLA-LLM(학사논문) | **부분 대응** | LLM이 후보와 verdict 요청을 만들 수 있지만 모델 문장만으로 확정하지 않는다. 서버가 Evidence 묶음과 반복 재현·정상 대조 조건을 검사한다 |
 | **D-022** 자원/소유 식별 규칙 우선, LLM은 Evidence 하 | FActScore/RARR/Let's-Verify/SQuAD2.0(기권) | **부분 대응** | 실제 트래픽을 근거로 연결해 감사 가능성을 높이지만, 관측 자체가 불완전하거나 owner·role이 틀리면 gate도 진실을 만들 수 없다 |
 | **D-011** 그래프 레이어링 | Morest RPG, RestTestGen ODG | **partial** | producer-consumer 그래프를 '신원 교차 비교'로 재목적화(용도 신규). 본문 내부/암묵 의존 못 잡음은 물려받음 |
@@ -47,7 +47,7 @@
 - **리스팅 없는/미관측 식별자 객체** — 제공된 응답·정의·Site Map·통제 탐색 어느 쪽에서도 식별자가 드러나지 않으면 테스트할 수 없다. FN 크기는 블라인드 평가 전까지 수치화하지 않는다.
 - **요청 id가 본문에 안 실려오는 유출** — 본문 소유필드 오라클이 놓침(AuthProbe도 자인).
 - **블랙박스 분모** — '무엇을 놓쳤는지' 정량화 원천 불가. 범위 선언으로 흡수하나 근본 한계는 잔존.
-- **action-level(BFLA)/상태변경 커버리지** — 오라클 확장 근거는 있으나 **상태변경 연산의 owner 확정은 미해결**(설계 주장 단계).
+- **action-level BOLA/상태변경 커버리지** — 오라클 확장 근거는 있으나 **상태변경 연산의 owner 확정은 미해결**(설계 주장 단계). BFLA는 기능·역할 인가 실패이므로 별도 축으로 평가한다.
 - **LLM 제안 단계의 비결정성** — 검증게이트가 하류에서 걸러낼 뿐, 제안 자체의 편중·불안정은 잔존.
 
 ## 6. 트래픽 노이즈 분류의 표준 근거와 경계
@@ -65,8 +65,11 @@
 - Assessing REST API Test Gen with Log Coverage — Reinikainen et al, arXiv:2604.07073, EASE'26 `[채택]` https://arxiv.org/abs/2604.07073
 - 400-Run LLM Pentest Consistency — Erdem, arXiv:2605.30096 `[프리프린트·단독]` https://arxiv.org/abs/2605.30096
 - Detecting BOLA with LLMs — Johansens, U.Twente `[학사논문]` prec~0.3 https://essay.utwente.nl/fileshare/file/107423/Johansens_BA_BIT.pdf
-- AuthScope (CCS'17), RESTler(MSR), APICarv(ICSE'23), Self-Consistency/FActScore/RARR/Let's-Verify/SQuAD2.0/GCD — `[탄탄]` (URL은 journal 로그 참조)
+- [AuthScope (CCS'17)](https://acmccs.github.io/papers/p799-zuoA.pdf) — 두 합법 사용자 차등·필드 치환·응답 대조 `[동료검증]`
+- [RESTler (ICSE'19)](https://www.microsoft.com/en-us/research/wp-content/uploads/2021/03/RESTler.pdf) — OpenAPI producer-consumer dependency와 상태 있는 요청 순서 `[동료검증]`
+- [APICarv (ICSE'23)](https://conf.researchr.org/details/icse-2023/icse-2023-technical-track/40/Carving-UI-Tests-to-Generate-API-Tests-and-API-Specification) — 7개 앱 endpoint 추론 98% precision·56% recall `[동료검증]`
+- Self-Consistency/FActScore/RARR/Let's-Verify/SQuAD2.0/GCD — `[탄탄]` (URL은 journal 로그 참조)
 - BolaRay(CCS'24) `[본문·아티팩트 확인]` — [논문](https://leehaofeng.github.io/papers/2024-BolaRay.pdf), [공개 아티팩트](https://zenodo.org/records/13744942); CODASPY'14 `[초록만]`, BOLABuster(Unit42) `[벤더]`
 
 ---
-*v3 — beta.32 통제 탐색·서버 Evidence gate와 맞지 않던 순수 패시브/LLM 판정 거부 문구를 교정하고, 신규성·우월성은 블라인드 평가와 체계적 선행연구 검토 전까지 가설로 낮췄다. 남은 [초록만] 항목의 전문 확인과 §5 한계의 실증이 다음 과제다.*
+*v4 — beta.33에서 AuthProbe/BOLAZ의 근거 강도를 절대 ground truth로 과장한 문장, action-level BOLA=BFLA 오분류, AuthScope 역할 서열 설명, BOLAZ response-owner-field 인용, APICarv/Log-Coverage의 일반화 범위를 원문 수준으로 교정했다. 신규성·우월성은 계속 블라인드 평가와 체계적 선행연구 검토 전까지 가설이다.*

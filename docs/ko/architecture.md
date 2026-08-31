@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.32
+# FlowScope 설계서 v1.2.0-beta.33
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -108,6 +108,8 @@ live HTTP 원문은 별도의 `TransientExchangeVault`에 요청·응답 `byte[]
 HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖의 일반 HUMAN 관측은 `BASELINE`으로 보존한다. `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 저장과 감사 대상이지만 discovery coverage·3-way gap·그래프 입력은 아니다. 로그인 준비와 우연한 scope 내 이동이 HUMAN 탐색 성과로 계산되지 않게 하려면 사용자가 HUMAN pass를 시작·종료해야 한다. Web은 `/api/human-run`을 다른 실행 상태와 함께 주기적으로 동기화하며, `pass 완료`는 record 수가 아니라 exact exploration run의 조건부 종료 표식으로만 표시한다. pass 중 Repeater·Intruder·Target에서 발생한 HUMAN 요청은 run/phase/account 문맥을 공유하지만 `BURP_REPEATER/BURP_INTRUDER/MANUAL_HTTP` detail과 `BURP` tool을 브라우저로 덮어쓰지 않는다.
 
 Web 요청 실험실은 관측 Evidence의 HTTP 전문을 큰 편집기에서 열고 원래 `HttpService`에만 보낸다. 화면에는 관측 신원과 현재 재사용 가능한 등록 계정 세션을 별도 필드로 표시한다. 요청 path가 현재 exact scope 밖이면 전송 전에 거부하고 redirect는 `NEVER`, upstream TLS 검증과 30초 응답 상한을 유지한다. `ORIGINAL`은 사용자가 편집하지 않았다면 원문 바이트를 그대로 사용하고, 편집했다면 선언 문자셋으로 재구성한다. `ANONYMOUS`는 broker 관리 인증 헤더를 제거하며, `ACCOUNT`는 먼저 동일 헤더를 제거한 뒤 선택한 ACTIVE 계정의 현재 값을 주입한다. 기존 `Content-Length`는 Montoya가 계산한 실제 body byte 길이에 맞춘다. 결과는 `source=HUMAN`, `detail=MANUAL_HTTP`, `tool=BURP`, `phase=VALIDATION`, `executionTrust=CONTROLLED`로 새 Evidence가 되며 immutable discovery gate가 coverage·gap 성과로 계산하지 않는다. 화면 전송 이력은 탭 메모리 10건뿐이고 저장하지 않는다.
+
+beta.33부터 요청 실험실은 Evidence를 열 때마다 generation을 올려 늦게 도착한 이전 초안을 폐기하고, 전송 중에는 Evidence 변경·요청 편집·인증 모드·계정·닫기·재전송을 잠근다. 각 전송은 난수 operation ID를 가지며 localhost 서버는 `Evidence ID + 요청 전문 + 인증 모드 + 계정`의 길이 프레이밍 SHA-256이 같은 중복만 최초 결과로 합치고, 같은 ID의 다른 요청은 거부한다. 서버 응답을 받지 못한 경우 같은 탭의 동일 draft에 한해 operation ID를 재사용하고, 입력 또는 Evidence가 바뀌면 새 작업으로 취급한다. 캐시에는 요청 원문이나 전체 응답을 남기지 않고 compact 결과만 최대 256건 유지한다. 분석 publish는 별도 epoch를 사용해 입력 변경 뒤 끝난 오래된 pipeline 결과가 초기화·검증 Evidence·최신 정책 snapshot을 덮지 못하게 한다(D-100).
 
 ### 4.2 정규화 F-04~06
 
@@ -264,6 +266,6 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
 - Repeater handoff는 live 원문이 메모리에 있으면 그 원문, 아니면 마스킹 전문을 미전송 초안으로 연다. Repeater에서 사용자가 별도로 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다. Web 요청 실험실 전송만 서버가 직접 새 HUMAN `VALIDATION` Evidence로 기록한다.
 - 포트 매핑은 확장 로드 시 시스템 속성으로 읽으므로 변경 후 Burp를 다시 시작한다.
-- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.32 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v3·SQLite v2 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
+- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.33 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v3·SQLite v2 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
 
 세부 결정과 기각 대안은 `decisions.md`를 참조한다.

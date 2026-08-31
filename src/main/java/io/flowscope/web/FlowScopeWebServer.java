@@ -36,6 +36,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 /** Burp의 축소 JRE에서도 동작하는 localhost 전용 Web 작업면 서버. */
 public final class FlowScopeWebServer implements AutoCloseable {
@@ -113,10 +117,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private static final int REQUEST_LAB_REQUEST_LIMIT = 1024 * 1024;
     private static final int WEB_BODY_LIMIT = 25 * 1024 * 1024;
     private static final int EVIDENCE_PAGE_LIMIT = 200;
+    private static final int REQUEST_LAB_OPERATION_LIMIT = 256;
     private final State state;
     private final String capabilityToken = randomCapabilityToken();
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
+    private final Map<String, RequestLabOperation> requestLabOperations = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedDeque<String> requestLabOperationOrder = new ConcurrentLinkedDeque<>();
     private final LoopbackHttpServer server;
 
     public FlowScopeWebServer(State state, int requestedPort) throws IOException {
@@ -310,7 +317,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (mode == CredentialMode.ACCOUNT && accountId.isBlank()) {
                 throw new IllegalArgumentException("등록 계정 모드에는 계정 선택이 필요합니다.");
             }
-            RequestLabResult result = state.sendRequestLab(required(values, "eventId"), rawRequest, mode, accountId);
+            String eventId = required(values, "eventId");
+            String operationId = required(values, "operationId");
+            if (!operationId.matches("[A-Za-z0-9_-]{16,120}")) {
+                throw new IllegalArgumentException("operationId 형식이 올바르지 않습니다.");
+            }
+            RequestLabResult result = executeRequestLabOnce(operationId, eventId, rawRequest, mode, accountId);
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("eventId", result.eventId());
@@ -325,6 +337,68 @@ public final class FlowScopeWebServer implements AutoCloseable {
             return error(400, error.getMessage());
         }
     }
+
+    private RequestLabResult executeRequestLabOnce(String operationId, String eventId, String request,
+                                                   CredentialMode mode, String accountId) {
+        String signature = requestLabSignature(eventId, request, mode.name(), accountId);
+        RequestLabOperation proposed = new RequestLabOperation(signature, new CompletableFuture<>());
+        RequestLabOperation operation = requestLabOperations.putIfAbsent(operationId, proposed);
+        if (operation == null) {
+            try {
+                RequestLabResult result = state.sendRequestLab(eventId, request, mode, accountId);
+                proposed.result().complete(result);
+                RequestLabResult compact = new RequestLabResult(result.eventId(), result.status(),
+                        "동일 operationId의 중복 전송을 차단하고 최초 실행 결과를 재사용했습니다.",
+                        result.durationMs(), result.requestBytes(), result.responseBytes());
+                requestLabOperations.replace(operationId, proposed,
+                        new RequestLabOperation(signature, CompletableFuture.completedFuture(compact)));
+                requestLabOperationOrder.addLast(operationId);
+                trimRequestLabOperations();
+                return result;
+            } catch (RuntimeException error) {
+                proposed.result().completeExceptionally(error);
+                requestLabOperations.remove(operationId, proposed);
+                throw error;
+            }
+        }
+        if (!operation.signature().equals(signature)) {
+            throw new IllegalArgumentException("같은 operationId에 다른 요청을 사용할 수 없습니다.");
+        }
+        try {
+            return operation.result().join();
+        } catch (CompletionException error) {
+            if (error.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw error;
+        }
+    }
+
+    private void trimRequestLabOperations() {
+        while (requestLabOperations.size() > REQUEST_LAB_OPERATION_LIMIT) {
+            String oldest = requestLabOperationOrder.pollFirst();
+            if (oldest == null) return;
+            RequestLabOperation operation = requestLabOperations.get(oldest);
+            if (operation != null && operation.result().isDone()) requestLabOperations.remove(oldest, operation);
+        }
+    }
+
+    private static String requestLabSignature(String... values) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (String value : values) {
+                byte[] bytes = (value == null ? "" : value).getBytes(StandardCharsets.UTF_8);
+                digest.update((byte) (bytes.length >>> 24));
+                digest.update((byte) (bytes.length >>> 16));
+                digest.update((byte) (bytes.length >>> 8));
+                digest.update((byte) bytes.length);
+                digest.update(bytes);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
+    private record RequestLabOperation(String signature, CompletableFuture<RequestLabResult> result) {}
 
     private static void putNullable(ObjectNode node, String name, String value) {
         if (value == null) node.putNull(name);

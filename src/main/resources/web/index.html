@@ -218,7 +218,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.32 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.33 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
@@ -503,7 +503,7 @@ let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:
 let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0, SELECTED_OPERATION='', SELECTED_EVENT_ID='';
 let SETUP_AUTO_CHECKED=false, SETUP_STAGE='scope', SETUP_STAGE_PINNED=false;
 let HUMAN_RUN={active:false,completed:false,runId:''};
-let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[],REQUEST_LAB_EDITABLE=false;
+let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[],REQUEST_LAB_EDITABLE=false,REQUEST_LAB_GENERATION=0,REQUEST_LAB_IN_FLIGHT=false,REQUEST_LAB_RETRY=null;
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[], ZAP_STATUS={connected:false,state:'CHECKING',message:'ZAP 연결을 확인하는 중입니다.'}, ZAP_STATUS_TIMER=null;
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v3 discards positions saved before source-consistent graph lanes were introduced.
@@ -889,37 +889,52 @@ function renderRequestLabAccounts(){
   const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===REQUEST_LAB_SERVICE);
   select.innerHTML=usable.length?usable.map(session=>{const account=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(account?account.label:session.accountId)} · ACTIVE</option>`;}).join(''):'<option value="">ACTIVE 등록 계정 없음</option>';
   const accountMode=document.getElementById('requestLabCredential').value==='ACCOUNT';
-  select.disabled=!accountMode||!usable.length;
-  document.getElementById('requestLabSend').disabled=!REQUEST_LAB_EDITABLE||(accountMode&&!usable.length);
+  select.disabled=REQUEST_LAB_IN_FLIGHT||!accountMode||!usable.length;
+  document.getElementById('requestLabCredential').disabled=REQUEST_LAB_IN_FLIGHT;
+  document.getElementById('requestLabRequest').readOnly=REQUEST_LAB_IN_FLIGHT||!REQUEST_LAB_EDITABLE;
+  document.getElementById('requestLabSend').disabled=REQUEST_LAB_IN_FLIGHT||!REQUEST_LAB_EDITABLE||(accountMode&&!usable.length);
+  document.getElementById('requestLabBurp').disabled=REQUEST_LAB_IN_FLIGHT;
+  document.getElementById('requestLabClose').disabled=REQUEST_LAB_IN_FLIGHT;
 }
 function renderRequestLabHistory(){
   const target=document.getElementById('requestLabHistory');
   target.innerHTML=REQUEST_LAB_HISTORY.length?REQUEST_LAB_HISTORY.map(item=>`<div class="entry"><b>HTTP ${Number(item.status||0)}</b><span>${Number(item.durationMs||0)}ms</span><span>${Number(item.requestBytes||0).toLocaleString()}B → ${Number(item.responseBytes||0).toLocaleString()}B</span><span>${esc(item.eventId||'-')}</span></div>`).join(''):'<span class="requestlabstatus">아직 전송하지 않았습니다.</span>';
 }
+function requestLabOperationId(){const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');}
 async function openRequestLab(eventId){
   if(!eventId){alert('서버 Evidence ID가 없어 요청 실험실을 열 수 없습니다.');return;}
+  if(REQUEST_LAB_IN_FLIGHT){alert('현재 검증 요청이 끝난 뒤 다른 Evidence를 여세요.');return;}
   const modal=document.getElementById('requestLabModal'),status=document.getElementById('requestLabStatus');
-  modal.style.display='flex';REQUEST_LAB_EVENT_ID=eventId;status.className='requestlabstatus';status.textContent='메모리 원문을 불러오는 중…';
+  const generation=++REQUEST_LAB_GENERATION;
+  modal.style.display='flex';REQUEST_LAB_EVENT_ID=eventId;REQUEST_LAB_SERVICE='';REQUEST_LAB_EDITABLE=false;REQUEST_LAB_RETRY=null;status.className='requestlabstatus';status.textContent='메모리 원문을 불러오는 중…';
   document.getElementById('requestLabRequest').value='';document.getElementById('requestLabResponse').value='';
   try{const response=await fetch('/api/request-lab?eventId='+encodeURIComponent(eventId),{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'요청 실험실 열기 실패');
+    if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;
     REQUEST_LAB_SERVICE=data.service||'';REQUEST_LAB_EDITABLE=!!data.requestEditable;document.getElementById('requestLabService').textContent=REQUEST_LAB_SERVICE||'-';document.getElementById('requestLabRequest').value=data.request||'';document.getElementById('requestLabRequest').readOnly=!REQUEST_LAB_EDITABLE;document.getElementById('requestLabResponse').value=data.response||'';
     document.getElementById('requestLabRetention').textContent=data.rawRequestRetained&&data.rawResponseRetained?'· 메모리 원문':'· 일부 마스킹 전문';document.getElementById('requestLabIdentity').textContent='· 관측 신원 '+(data.observedIdentity||'미확정')+' · 재사용 세션 '+(data.reusableSession||'없음');document.getElementById('requestLabCharset').textContent='· 요청 '+(data.requestCharset||'본문 없음/미확정')+' · 응답 '+(data.responseCharset||'본문 없음/미확정');status.textContent=data.message||'';renderRequestLabAccounts();renderRequestLabHistory();if(REQUEST_LAB_EDITABLE)document.getElementById('requestLabRequest').focus();
-  }catch(error){status.className='requestlabstatus fail';status.textContent=error.message;document.getElementById('requestLabSend').disabled=true;}
+  }catch(error){if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;status.className='requestlabstatus fail';status.textContent=error.message;document.getElementById('requestLabSend').disabled=true;}
 }
-function closeRequestLab(){document.getElementById('requestLabModal').style.display='none';REQUEST_LAB_EVENT_ID='';REQUEST_LAB_SERVICE='';REQUEST_LAB_EDITABLE=false;}
+function closeRequestLab(){if(REQUEST_LAB_IN_FLIGHT)return;REQUEST_LAB_GENERATION++;document.getElementById('requestLabModal').style.display='none';REQUEST_LAB_EVENT_ID='';REQUEST_LAB_SERVICE='';REQUEST_LAB_EDITABLE=false;REQUEST_LAB_RETRY=null;}
 async function sendRequestLab(){
-  const button=document.getElementById('requestLabSend'),status=document.getElementById('requestLabStatus'),mode=document.getElementById('requestLabCredential').value;
+  if(REQUEST_LAB_IN_FLIGHT)return;
+  const status=document.getElementById('requestLabStatus'),mode=document.getElementById('requestLabCredential').value;
+  const eventId=REQUEST_LAB_EVENT_ID,generation=REQUEST_LAB_GENERATION;
   const request=document.getElementById('requestLabRequest').value,accountId=mode==='ACCOUNT'?document.getElementById('requestLabAccount').value:'';
   if(!request.trim()){status.className='requestlabstatus fail';status.textContent='전송할 HTTP 요청 전문이 없습니다.';return;}
-  button.disabled=true;status.className='requestlabstatus';status.textContent='리다이렉트 없이 원래 서비스로 전송하는 중…';
-  try{const response=await fetch('/api/request-lab',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'send',eventId:REQUEST_LAB_EVENT_ID,credentialMode:mode,accountId,request})});const data=await response.json();if(!response.ok)throw new Error(data.message||'요청 전송 실패');
-    document.getElementById('requestLabResponse').value=data.response||'';REQUEST_LAB_HISTORY.unshift(data);REQUEST_LAB_HISTORY=REQUEST_LAB_HISTORY.slice(0,10);renderRequestLabHistory();status.className='requestlabstatus ok';status.textContent=`HTTP ${data.status} · ${data.durationMs}ms · ${data.message}`;SERVER_REVISION=-1;await syncExtension();
-  }catch(error){status.className='requestlabstatus fail';status.textContent=error.message;}finally{renderRequestLabAccounts();}
+  const sameRetry=REQUEST_LAB_RETRY&&REQUEST_LAB_RETRY.eventId===eventId&&REQUEST_LAB_RETRY.mode===mode&&REQUEST_LAB_RETRY.accountId===accountId&&REQUEST_LAB_RETRY.request===request;
+  const operationId=sameRetry?REQUEST_LAB_RETRY.operationId:requestLabOperationId();
+  let serverResponded=false;
+  REQUEST_LAB_IN_FLIGHT=true;renderRequestLabAccounts();status.className='requestlabstatus';status.textContent='리다이렉트 없이 원래 서비스로 전송하는 중…';
+  try{const response=await fetch('/api/request-lab',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'send',operationId,eventId,credentialMode:mode,accountId,request})});serverResponded=true;const data=await response.json();if(!response.ok)throw new Error(data.message||'요청 전송 실패');
+    if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;
+    REQUEST_LAB_RETRY=null;document.getElementById('requestLabResponse').value=data.response||'';REQUEST_LAB_HISTORY.unshift(data);REQUEST_LAB_HISTORY=REQUEST_LAB_HISTORY.slice(0,10);renderRequestLabHistory();status.className='requestlabstatus ok';status.textContent=`HTTP ${data.status} · ${data.durationMs}ms · ${data.message}`;SERVER_REVISION=-1;try{await syncExtension();}catch(ignored){SERVER_REVISION=-1;}
+  }catch(error){if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID){REQUEST_LAB_RETRY=serverResponded?null:{eventId,mode,accountId,request,operationId};status.className='requestlabstatus fail';status.textContent=serverResponded?error.message:error.message+' · 같은 입력으로 다시 누르면 동일 작업 ID로 결과를 확인합니다.';}}finally{if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID){REQUEST_LAB_IN_FLIGHT=false;renderRequestLabAccounts();}}
 }
 async function openRequestLabInBurp(){
-  const button=document.getElementById('requestLabBurp'),status=document.getElementById('requestLabStatus');button.disabled=true;
-  try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId:REQUEST_LAB_EVENT_ID})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Repeater 초안 생성 실패');status.className='requestlabstatus ok';status.textContent=data.message;}
-  catch(error){status.className='requestlabstatus fail';status.textContent=error.message;}finally{button.disabled=false;}
+  if(REQUEST_LAB_IN_FLIGHT)return;
+  const button=document.getElementById('requestLabBurp'),status=document.getElementById('requestLabStatus'),eventId=REQUEST_LAB_EVENT_ID,generation=REQUEST_LAB_GENERATION;button.disabled=true;
+  try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Repeater 초안 생성 실패');if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;status.className='requestlabstatus ok';status.textContent=data.message;}
+  catch(error){if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID){status.className='requestlabstatus fail';status.textContent=error.message;}}finally{if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID)button.disabled=false;}
 }
 async function showOperation(op,offset=0,preferredEventId=''){
   const evs=EVENTS.filter(e=>e.op===op); if(!evs.length)return;
@@ -1073,7 +1088,7 @@ function aggCell(group,op,res){
     clean:observed.length===3&&!conflict&&vals.every(v=>v==='allow'||v==='deny')};
 }
 function cellHtml(c,dk){
-  if(!c) return '<td><div class="cell v-untested" tabindex="0" data-empty="1" data-gap="true" data-gks="crossgap" data-key="'+esc(dk)+'"><div class="verdict"><span class="dot" style="background:'+css('--untested')+'"></span>미검증</div></div></td>';
+  if(!c){const exactKey=dk.startsWith('role:')?dk.slice(5):dk,candidate=(MODEL.candidates||[]).some(item=>cellKey(item.idn,item.op,item.resource)===exactKey);return '<td><div class="cell v-untested" tabindex="0" data-empty="1" data-gap="'+candidate+'" data-gks="'+(candidate?'crossgap':'')+'" data-key="'+esc(dk)+'"><div class="verdict"><span class="dot" style="background:'+css('--untested')+'"></span>'+(candidate?'미교차':'미검증')+'</div></div></td>';}
   let cls='cell ',tag='',gap=false,head='';
   if(c.conflict){cls+='v-conflict';tag='<span class="gaptag" style="background:var(--suspicious);color:#1a130a">불일치</span>';gap=true;head='결론 갈림';}
   else if(c.partial){cls+='v-gap';gap=true;head='일부만 발견';tag='<span class="gaptag" style="background:rgba(230,163,67,.18);color:var(--suspicious)">'+c.missedBy.map(s=>SRC[s].ab).join('')+' 놓침</span>';}
@@ -1217,8 +1232,8 @@ function showGroupCell(role,op,res){
 function showEmpty(key){ const [idn,op,res]=parseCellKey(key); const candidate=(MODEL.candidates||[]).find(item=>item.idn===idn&&item.op===op&&item.resource===res);detailEmpty.style.display='none'; detailFull.style.display='flex';
   dKind.textContent='미검증'; dTitle.textContent=op;
   dBody.innerHTML='<div class="field"><div class="lbl">주체 · 대상</div><div class="val">'+esc(displayIdentity(idn))+' → '+esc(resourceLabel(res))+(candidate?' (소유: '+esc(displayIdentity(candidate.owner))+')':'')+'</div></div>'+ 
-    '<div class="field"><div class="lbl">후보 우선순위</div><div class="val">'+esc(candidate?candidate.risk:'미확정')+' · 쓰기 계열을 읽기보다 우선 표시</div></div>'+
-    '<div class="gapbox"><div class="name"><span class="dot" style="background:'+css('--untested')+';width:9px;height:9px;border-radius:50%"></span>미교차 (IDOR 교차 후보)</div><p>소유자가 확인된 객체를 다른 비관리자 신원으로 아직 시도하지 않은 조합입니다. 실제 접근 불가가 아니라 미검증 상태입니다.</p></div>'; }
+    (candidate?'<div class="field"><div class="lbl">후보 우선순위</div><div class="val">'+esc(candidate.risk)+' · 쓰기 계열을 읽기보다 우선 표시</div></div>':'')+
+    '<div class="gapbox"><div class="name"><span class="dot" style="background:'+css('--untested')+';width:9px;height:9px;border-radius:50%"></span>'+(candidate?'미교차 (IDOR 교차 후보)':'일반 미검증 조합')+'</div><p>'+(candidate?'서버가 확정 소유자와 다른 관측 신원의 미시도 조합으로 계산했습니다. 실제 접근 불가가 아니라 미검증 상태입니다.':'이 조합은 아직 관측되지 않았지만 서버가 IDOR 교차 후보로 채택한 근거는 없습니다. 소유자 확인 전에는 중립 미검증으로 유지합니다.')+'</p></div>'; }
 function applyOnlyGaps(){ const on=document.getElementById('onlygaps').checked; document.querySelectorAll('#matrix .cell').forEach(el=>el.classList.toggle('dimmed', on && el.dataset.gap!=='true')); }
 
 function renderRaw(){

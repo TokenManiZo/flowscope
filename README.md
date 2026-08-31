@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.32
+# FlowScope 1.2.0-beta.33
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -40,7 +40,7 @@ USER B        orders:101      GET /api/orders/{id}
 - 계정·세션 연결, 정책, LLM assessment, 서버 검증 최종 verdict, 사람 감사 판정을 관계형으로 보존하는 로컬 `.flowscope.db`. 한 번 저장하거나 열면 변경을 30초 checkpoint로 합쳐 자동 저장하며, `.flowscope.json`은 호환 내보내기·가져오기로 유지
 - path/query/JSON·XML·multipart·GraphQL에서 명시적으로 관측된 객체 참조를 모두 보존. 기존 인가 cell은 첫 번째 근거 있는 참조만 primary로 사용해 검증되지 않은 객체 Cartesian product를 만들지 않음
 - `*Id`가 아닌 `customerNo`, `documentSeq`, `accountRef` 같은 도메인 식별자는 이름 하나로 확정하지 않고, 동일 서비스·메서드·경로·필드 위치에서 서로 다른 값이 반복 관측될 때만 `*_SEMANTIC_FIELD_CORROBORATED` 객체 근거로 보강. `pageNo`, `sortKey`, API key류는 제외
-- 명시적 사람 검증을 위한 Web 요청 실험실. live Evidence의 HTTP 원문 바이트는 Burp 프로세스의 상한 있는 메모리에만 보관합니다. Content-Type 문자셋으로 엄격히 디코딩하고, 수정하지 않은 요청은 원래 바이트 그대로 재전송하며, 텍스트로 안전하게 해석할 수 없는 본문은 Web 편집 전송을 차단하고 Burp Repeater로 넘깁니다. `원문 그대로/비로그인/등록 계정` 전송 결과는 discovery가 아닌 HUMAN `VALIDATION` Evidence입니다.
+- 명시적 사람 검증을 위한 Web 요청 실험실. live Evidence의 HTTP 원문 바이트는 Burp 프로세스의 상한 있는 메모리에만 보관합니다. Content-Type 문자셋으로 엄격히 디코딩하고, 수정하지 않은 요청은 원래 바이트 그대로 재전송하며, 텍스트로 안전하게 해석할 수 없는 본문은 Web 편집 전송을 차단하고 Burp Repeater로 넘깁니다. Evidence generation과 전송 중 draft 잠금, 서버 operation ID 멱등성으로 늦은 응답·중복 상태 변경을 막으며, `원문 그대로/비로그인/등록 계정` 전송 결과는 discovery가 아닌 HUMAN `VALIDATION` Evidence입니다.
 - 긴 API 경로는 `/` 경계를 우선해 줄바꿈하고 단일 접근선의 의미 없는 `H×1` 라벨은 숨깁니다. 900px 이하 화면은 잘린 그래프 대신 같은 필터의 API 목록을 제공하며, 파싱 결과의 명시적 `상세 보기`는 선택한 Evidence ID를 그대로 엽니다. 관측 신원과 재사용 가능한 등록 계정 세션은 별도 개념으로 표시합니다.
 - 반복 재현·허가된 정상 대조 관측을 요구하는 Evidence-bound LLM 검증과 사람 감사·오버라이드
 - XXE 차단과 item 단위 오류 건너뛰기를 적용한 엄격한 Burp XML 가져오기, 크기·깊이·항목 단위 오류 경계를 둔 ZAP HAR 가져오기
@@ -67,7 +67,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.32.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.32 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.33.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.33 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
 3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
@@ -102,7 +102,7 @@ cd testflowscope
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.32.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.33.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
