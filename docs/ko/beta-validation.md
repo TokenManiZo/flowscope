@@ -375,7 +375,7 @@ standalone은 네트워크 대상 요청을 만들지 않는 샘플 UI 검증이
 | 배포물 | `target/flowscope-1.2.0-beta.7.jar`, 3,824,841 bytes, SHA-256 `c8fd3f8ae1b85c9708020fb4f933c253b04fcd4090eb19837c9eab74220a21c1` |
 | JAR 무결성 | ZIP 무결성 통과, 1,954 entries, `Main-Class=io.flowscope.burp.FlowScopeExtension`, `Java-Version=21`, 번들 AGENTS/Explorer/Judge 3개 리소스 포함, 공개 `target/*.jar` 1개, 연속 non-clean package SHA-256 동일 |
 
-이 결과는 실행 명령 생성, 상태 불변식, Web API/UI와 패키징의 자동·standalone 검증과 Codex 무대상 CLI smoke다. 현재 Burp는 beta.3 UI를 실행 중이므로 beta.7 JAR을 재로드해 사용자의 구독 로그인 Codex/Claude가 MCP에 연결되고, 허가 대상에 Explorer 요청을 남기고, exact run을 종료하고, 별도 Judge가 lock·validation·후속 resume까지 완료하는 end-to-end 실행은 아직 확인하지 않았다. Claude의 no-persistence metadata 파일 0개도 보장하지 않는다. 따라서 버튼 자동화의 실환경 성공이나 취약점 탐지 성능을 이 표로 주장하지 않는다.
+이 결과는 beta.7 당시 실행 명령 생성, 상태 불변식, Web API/UI와 패키징의 자동·standalone 검증과 Codex 무대상 CLI smoke다. 당시 Burp가 beta.3 UI를 실행 중이었으므로 beta.7 JAR의 구독 로그인 Codex/Claude→MCP 대상 요청→exact run 종료→별도 Judge lock·validation·후속 resume end-to-end는 확인하지 못했다. Claude의 no-persistence metadata 파일 0개도 보장하지 않았다. 이후 버전의 현재 검증 상태는 이 문서 맨 위 최신 절을 따르며, 이 역사 기록을 버튼 자동화의 실환경 성공이나 취약점 탐지 성능 근거로 사용하지 않는다.
 
 ## 1.2.0-beta.6 자동 사전검증
 
@@ -463,7 +463,7 @@ Standalone UI는 레이아웃과 클라이언트 동작 검증이다. Burp Commu
 
 ## 실제 사용자 확인
 
-- Burp Community 2026.7.3에서 현재 beta.3 fat JAR을 로드했다. FlowScope suite tab과 Web `127.0.0.1:17777`, MCP `127.0.0.1:8787`, HUMAN `8080`, SCANNER `8081` listener가 동시에 기동했고 Web·crAPI root가 HTTP 200을 반환했다.
+- Burp Community 2026.7.3에서 당시 beta.3 fat JAR을 로드했다. FlowScope suite tab과 Web `127.0.0.1:17777`, MCP `127.0.0.1:8787`, HUMAN `8080`, SCANNER `8081` listener가 동시에 기동했고 Web·crAPI root가 HTTP 200을 반환했다.
 - exact scope `http://127.0.0.1:8888/`에서 HUMAN listener 8080을 프록시로 사용한 `curl`로 `/`와 `/favicon.ico` 2건을 먼저 수집했다. 두 건은 listener profile에 따라 `HUMAN/BROWSER/qa-human-anon-1`로 기록됐지만 실제 Burp Browser 사용 검증은 아니다. 둘은 `REVIEW`라 메인 coverage에는 들어가지 않았고 dataset lock은 `completed lanes need captured exploration responses before lock: [HUMAN]`으로 거부됐다. 두 번째 HUMAN run에서 당시 `API/INCLUDE`로 분류된 `/manifest.json` 1건을 추가한 뒤에만 잠금 조건을 충족했다.
 - ZAP 2.17 SYSTEM anonymous baseline은 5초 내 `COMPLETED/ALERTS_READY`, FlowScope 수집 8건, native alert 22건으로 끝났다. 8건 모두 같은 run의 `SCANNER/CONTROLLED/ANONYMOUS`였고, 정적 자산 4건은 `EXCLUDE`, `/manifest.json` 1건은 `API/INCLUDE`, 나머지 3건은 `REVIEW`였다. 이는 취약점 22개를 확정했다는 뜻이 아니라 ZAP 원시 Alert 수집을 확인한 결과다. 8건의 `sourceDetail`은 모두 `ZAP_SPIDER`였으며 Client/AJAX 단계의 실제 캡처는 확인되지 않았다.
 - 로컬 MCP는 `2025-06-18` initialize, tools/list 24개, status를 실제 응답했다. `qa-llm-anon-1` Explorer는 다른 source를 숨긴 상태에서 `/manifest.json` 통제 요청 1건을 `LLM/CONTROLLED` Evidence로 만들었고, scope 밖 FlowScope Web 요청은 `target is outside configured scope`로 거부됐다. HUMAN 3·SCANNER 8·LLM 1의 총 12건을 잠근 결과 finding 0·gap 0이었고, 잠긴 ZAP alert snapshot 조회와 잠금 뒤 Explorer 재시작 거부를 확인했다. 이 확인은 구독형 Codex/Claude prompt 전체 완료를 의미하지 않는다.
@@ -495,7 +495,7 @@ W3C Web App Manifest 규격상 `application/manifest+json`은 웹 앱 manifest m
 
 ## 아직 실환경에서 검증하지 않은 것
 
-다음은 구현과 자동 회귀는 끝났지만 현재 beta.3 JAR의 실환경에서 끝까지 확인하지 않았다.
+다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.32의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
 
 - Burp Community에서 extension unload 뒤 Web/MCP 포트 해제와 재로드, Repeater handoff, project save/load 왕복
 - 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지, 선택 ACTIVE 계정과 다른 브라우저 자격증명이 계정으로 오기록되지 않는지

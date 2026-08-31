@@ -2,6 +2,8 @@
 
 > 이 문서는 F-01~F-24의 원본 기능 요구와 참조 화면을 보존한다. 현재 제품 행동과 신뢰 경계의 정본은 루트 `README.md`, `docs/ko/architecture.md`, `docs/ko/decisions.md`다.
 
+> **beta.32 구현 주석:** LLM의 권위 있는 탐색 경로는 전용 Proxy 포트가 아니라 FlowScope MCP의 통제 read/write executor다. 직접 8082 트래픽과 XML import는 원 Evidence 보존용 호환 입력이며 `UNVERIFIED_RUNTIME` 또는 import provenance로 남아 coverage·lane 완료·Judge dataset lock을 만들지 않는다. 아래 원 요구의 “포트 기반 LLM 수집” 문구는 이 구현 주석과 함께 읽는다.
+
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
 사람, 스캐너, LLM 세 관측 소스의 API 점검 플로우를 한 그래프에 겹쳐, 어떤 소스는 찾고 어떤 소스는 놓쳤는지 비교하여 IDOR 등 로지컬 취약점을 더 쉽게 찾는 도구입니다. 일정, 담당, 진척은 WBS에서 관리합니다.
@@ -24,7 +26,7 @@
 
 **동작 흐름 개요**
 
-**1. 트래픽 수집** : 사람,스캐너,LLM(포트), XML 폴백
+**1. 트래픽 수집** : 사람, 스캐너, LLM 통제 실행, 파일 import 폴백
 **2. 정규화** : 엔드포인트,요청자,객체
 **3. 그래프 구성** : 관계망 + 소스별 디자인
 **4. 판정** : 소스별 5단계
@@ -41,14 +43,14 @@
 |--------------|------------------------------------|--------------------------------------------------------|
 | **사람**     | 실제 요청과 응답 관측              | 포트번호로 구분                                        |
 | **스캐너**   | 실제 요청과 응답 관측              | 포트번호로 구분                                        |
-| **LLM**      | 실제 요청과 응답 관측              | 전용 Burp Proxy 포트로 실시간 캡처 (XML 업로드는 폴백) |
+| **LLM**      | 실제 요청과 응답 관측              | FlowScope MCP 통제 executor가 Burp를 통해 캡처. 직접 8082/XML은 보존 전용 폴백 |
 | 재전송(검증) | 사후 검증용 (관측 주체(소스) 아님) | 노드에서 변조 재전송, 별도 기록                        |
 
 ## 단계별 정의
 
 | **단계** | **이름**               | **무엇을 하는가**                                                                                                                                                                                                                  | **선행 조건**                | **산출물**                                       |
 |----------|------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------|--------------------------------------------------|
-| 1        | **트래픽 수집**        | 사람, 스캐너, LLM세 관측 소스의 점검 트래픽을 포트번호로 구분해 실시간 수집한다. LLM은 로컬 에이전트를 전용 Burp Proxy 포트로 연결해 스코프 검사를 통과한 요청과 응답만 관측하며, 실시간 수집이 어려운 경우 XML 업로드로 대체한다. | 점검 대상 트래픽 확보        | 출처(사람/스캐너/LLM)가 태깅된 요청 기록         |
+| 1        | **트래픽 수집**        | 사람과 스캐너는 지정 Burp listener, LLM은 exact-run MCP 통제 executor를 기본으로 실제 요청·응답을 수집한다. 직접 LLM 포트와 XML은 호환 Evidence로 보존하되 통제 탐색 성과로 승격하지 않는다. | 점검 대상 트래픽 확보        | 출처·run·phase·trust가 태깅된 요청 기록         |
 | 2        | **정규화**             | 요청을 분석 가능한 형태로 변환한다. 엔드포인트를 합치고, 요청자를 식별하고, 접근 대상 객체를 추출하며, 소유자는 판정용 속성으로 추정한다.                                                                                          | 1단계 완료                   | Identity, Operation, Resource가 부착된 요청 기록 |
 | 3        | **그래프 구성**        | 정규화된 기록을 노드와 엣지로 연결해 관계망을 만든다. 세 소스를 한 그래프에 겹치되 소스별로 다른 디자인을 적용해 구별한다.                                                                                                         | 2단계 완료                   | 소스가 구별된 플로우 그래프                      |
 | 4        | **판정**               | 각 접근 조합을 소스별로 5단계 판정한다. 소유권과 응답을 함께 본다.                                                                                                                                                                 | 3단계 완료, 소유자 추정 존재 | 소스별 조합 판정 결과                            |
@@ -71,7 +73,7 @@
 
 - 추정으로 얻은 값과 검증으로 확인한 값은 항상 구분해 표시합니다.
 
-- LLM 관측은 전용 Burp Proxy 경로에서 Protocol, Host, Port, Path로 스코프를 강제 검사하며, 정상 허용 범위를 벗어난 요청은 LLM의 판단과 무관하게 차단합니다.
+- LLM의 권위 있는 탐색 요청은 MCP 통제 executor가 Protocol, Host, Port, Path를 강제 검사하고 Burp를 통해 전송하며, 정상 허용 범위를 벗어난 요청은 LLM의 판단과 무관하게 차단합니다. 직접 8082 관측은 원 Evidence만 남고 분석 성과로 사용하지 않습니다.
 
 - 트래픽 수집, 정규화, 판정, 커버리지 갭은 규칙 기반으로 동작하고, AI는 그 결과를 종합하여 시나리오를 제안합니다.
 
@@ -81,30 +83,30 @@
 
 ### F-01 : 트래픽 수집
 
-수동 점검(사람), 자동 점검(스캐너), LLM 점검 트래픽을 포트번호로 구분하여 실시간 수집한다. LLM은 Claude Code, Codex CLI 같은 기존 로컬 에이전트를 실행 기반으로 삼고, 그 위에 점검 프롬프트, 스코프 검증, 요청 실행, 결과 수집 규칙을 얹은 하네스로 구성한다(에이전트 지침은 CLAUDE.md, AGENTS.md 등으로 관리). 모델 추론은 제공사 서버에서 돌지만 실제 HTTP 요청은 사용자 PC에서 나가므로, 전용 Burp Proxy 포트로 사람, 스캐너와 동일하게 실측 관측한다.
+수동 점검(사람), 자동 점검(스캐너), LLM 점검 트래픽을 source·run·phase·execution trust와 함께 실시간 수집한다. LLM은 Claude Code, Codex CLI 같은 기존 로컬 에이전트를 실행 기반으로 삼고, 그 위에 점검 프롬프트, 스코프 검증, 요청 실행, 결과 수집 규칙을 얹은 하네스로 구성한다(에이전트 지침은 CLAUDE.md, AGENTS.md 등으로 관리). 모델 추론은 제공사 서버에서 돌지만 대상 HTTP 요청은 사용자 PC의 FlowScope MCP 통제 executor가 Burp를 통해 전송하고 실측 관측한다. 전용 8082 Proxy는 호환 관측 경로일 뿐 독립 Explorer 완료의 근거가 아니다.
 
 **사용자 흐름**
 
-1. 사람, 스캐너, LLM 포트 설정 확인
+1. 사람·스캐너 listener와 LLM MCP 통제 executor 준비 상태 확인
 2. 트래픽 인입 (LLM은 로컬 에이전트로 점검 실행)
-3. 포트 기준으로 출처 자동 분류
+3. listener·MCP 도구·import adapter와 활성 run 문맥으로 출처·trust 자동 분류
 4. 탐색 주체 별 스캔 건수 확인
 
 | **입력값**                             | **출력값**                               |
 |----------------------------------------|------------------------------------------|
-| 요청 트래픽, 사람/스캐너/LLM 포트 매핑 | 출처(사람/스캐너/LLM)가 태깅된 요청 기록 |
+| 요청 트래픽, 수집 채널, 활성 run 문맥 | source·run·phase·trust가 태깅된 요청 기록 |
 
 **조건 및 예외 처리**
 
-- 매핑되지 않은 포트의 트래픽은 출처 미상으로 분류하고 사용자에게 확인 요청
+- 매핑되지 않은 포트나 활성 통제 run과 연결되지 않은 트래픽은 미상 또는 비검증 관측으로 보존하고 coverage·완료·lock에서 제외
 
 - 같은 요청이 여러 소스에서 관측되면 각각 기록하고 겹침으로 처리
 
 - 포트 매핑은 사용자가 수정할 수 있어야 함
 
-- LLM 전용 경로는 실제 요청이 나갈 때마다 Protocol, Host, Port, Path로 목적지를 검사하고, 스코프를 벗어난 요청은 LLM 판단과 무관하게 강제 차단(리다이렉트 시 변경된 목적지의 스코프 포함 여부도 확인)
+- LLM MCP 통제 경로는 실제 요청이 나갈 때마다 Protocol, Host, Port, Path로 목적지를 검사하고, 스코프를 벗어난 요청은 LLM 판단과 무관하게 강제 차단한다. 리다이렉트는 자동 추적하지 않으며 후속 위치를 별도 exact-scope 요청으로 검증한다.
 
-- 스코프 검사를 통과한 요청과 응답만 LLM 관측으로 수집하고, 프록시를 태울 수 없으면 F-02(XML)로 폴백
+- 직접 8082/XML 폴백은 F-02 호환 Evidence로 수집할 수 있지만, 스코프 안이라는 이유만으로 통제 Explorer 성과나 exact-run 완료로 승격하지 않음
 
 - 시스템 ZAP 기준선은 outgoing proxy가 FlowScope scanner listener인지 먼저 확인하고 신원별 fresh session에서 선택 target subtree 전용 Context, passive engine·전체 passive rule·scope-only를 적용한다. 운영자가 명시한 exact-scope OpenAPI·GraphQL·Postman·SOAP 정의는 bounded import한 뒤 Traditional, Client, AJAX Spider를 모두 실행하고 passive queue와 native Alert를 수집한다. 정의 위치를 추측하지 않으며 필수 add-on·upstream·Context·passive rule 검사가 실패하면 대상 전송 전에 차단한다. Active Scan·Fuzzer·Forced Browse는 기본 기준선에 포함하지 않는다.
 - 독립 LLM Explorer의 GET·HEAD·OPTIONS와 상태 변경 요청은 별도 MCP 도구로 분리한다. 활성 Explorer의 MCP 목록은 status/session, target read/write, own-run route/Evidence, end-run 8개로 제한한다. 첫 대상 요청은 launcher가 지정한 exact entry target의 GET read여야 한다. write method는 확인·Burp 승인을 요구하고, 같은 EXPLORATION run의 범위 내 응답 Evidence가 한 건 이상 없으면 MCP 종료와 launcher 완료 판정을 모두 허용하지 않는다. Codex 실행은 구독 로그인 파일만 owner-only 임시 `CODEX_HOME`에 연결하고 사용자 config·skill·plugin·memory·이전 session을 상속하지 않으며 사용자 파일을 변경하지 않는다. 공급자 CLI 설치·로그인 뒤 FlowScope가 표준 경로 자동 탐지, 공식 auth status, READY provider 자동 선택, 시작 직전 재검증, MCP·prompt·격리 workspace 구성을 수행하며 API key나 MCP 수동 설정 없이 Web 버튼으로 실행한다. 작업 피드는 실제 모델 메시지·도구 상태·Evidence gate만 bounded memory에서 실시간 표시한다. reasoning/thinking과 raw tool payload는 표시하지 않는다.
@@ -119,7 +121,7 @@
 
 ### F-02 : LLM 트래픽 수집
 
-전용 Burp Proxy 포트로 실시간 수집이 어려운 환경(클라우드 에이전트, 오프라인 배치 실행 등)을 위한 보조 수집 방식. LLM이 만든 요청과 응답 기록을 XML 파일로 받아 업로드한다.
+MCP 통제 실행이 어려운 환경의 과거 기록을 보존하기 위한 보조 수집 방식. LLM이 만든 요청과 응답 기록을 XML 파일로 받아 업로드하되, 현재 통제 Explorer와 같은 신뢰 수준이나 lane 완료를 추론하지 않는다.
 
 **사용자 흐름**
 
@@ -141,6 +143,8 @@
 - LLM 요청도 점검 범위(스코프) 내인지 확인
 
 - 실제 요청과 응답 없이 LLM이 제안만 한 항목은 관측과 분리해 후보로 관리하고, 필요 시 재전송과 검증(F-18~F-19)에서 사용자가 확인
+
+- XML import만으로 LLM exact run 완료, 독립 Explorer 성과, Judge dataset 포함을 만들지 않음
 
 **관련 화면**
 
@@ -608,6 +612,8 @@
 
 시나리오 제안용 입력을 바탕으로 아직 시도되지 않은 새로운 공격 시나리오를 LLM에게 제안받는다.
 
+> **beta.32 구현:** 독립 Explorer와 최종 Judge를 분리한다. Explorer는 다른 레인의 결과를 보지 않고 자신의 exact run에서 실제 LLM 트래픽을 남긴다. Judge는 HUMAN·SCANNER·LLM exact completed run의 Evidence ID를 동결한 뒤 assessment 후보를 만들고, 허가된 안전한 읽기 후보만 별도 VALIDATION run으로 반복 재현·정상 대조한다. assessment나 모델 문장 자체는 최종 판정이 아니며 `flowscope_submit_validation`의 서버 gate가 권위다.
+
 **사용자 흐름**
 
 1. 요약 전송
@@ -621,7 +627,7 @@
 
 **조건 및 예외 처리**
 
-- 제안은 후보이며 자동 실행하지 않고, 사용자가 승인한 경우에만 재전송과 검증(F-18~F-19)으로 넘어감
+- 제안은 후보다. 안전한 GET 계열은 설정된 허가 범위와 서버 validation gate 안에서 Judge가 통제 실행할 수 있고, 상태 변경 요청은 사용자의 명시 승인 없이는 실행하지 않음
 
 - 근거 갭이 없는 제안은 채택 대상에서 제외
 
@@ -640,6 +646,8 @@
 ### F-18 : 요청 검증
 
 그래프 노드를 클릭해 해당 API의 요청을 파라미터와 값 변조 후 다시 보낸다. Burp Extension을 통해 실시간으로 request와 response를 주고받는다.
+
+> **beta.32 구현:** 사람이 Web 요청 실험실에서 보내는 결과와 Judge가 MCP로 보내는 결과는 모두 discovery coverage와 분리된 `VALIDATION/CONTROLLED` Evidence다. Web은 live raw vault가 있는 요청만 원문·비로그인·등록 계정 모드로 전송하며, import/binary/해독 불가/상한 초과 메시지는 원문 재생이 불가능하다고 표시하고 Burp Repeater 초안으로만 넘긴다.
 
 **사용자 흐름**
 
@@ -676,6 +684,8 @@
 ### F-19 : 결과 검증
 
 재전송으로 주고받은 요청과 응답을 사람, 스캐너, LLM관측 소스와 분리된 재전송 영역에서 확인한다.
+
+> **beta.32 구현:** 일반 사람 재전송은 Evidence를 제공하지만 자동 final verdict를 만들지 않는다. LLM final verdict는 같은 finding에 묶인 별도 VALIDATION run에서 후보 요청 반복, 허가된 정상 대조, 상호 겹치지 않는 Evidence ID와 `CONTROLLED` trust를 서버가 검증한 경우에만 `CONFIRMED/REJECTED`가 될 수 있고, 조건이 부족하면 `INCONCLUSIVE`다.
 
 **사용자 흐름**
 

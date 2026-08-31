@@ -75,7 +75,7 @@
 
 ### 5.1 이번 계획에 포함
 
-- 첨부 beta.25 리뷰를 현재 beta.29 코드와 실행 결과로 재검증한 선행 안전·정확성 hotfix
+- 첨부 beta.25 리뷰를 beta.29 작성 당시 코드와 실행 결과로 재검증한 선행 안전·정확성 hotfix. beta.32에서 해결된 교차 항목은 상단의 현재 교차 구현과 §22 상태를 기준으로 재구현하지 않는다.
 - Montoya HTTP 수집 생명주기
 - Evidence ledger와 payload 저장 경계
 - incremental projection
@@ -575,7 +575,7 @@ live SQLite 전환은 다음을 모두 통과할 때만 채택한다.
 
 ### Phase -1 — 검증된 안전·정확성 결함 선행 수정
 
-**목적:** 새 Evidence 아키텍처를 만들기 전에 현재 제품에서 exact scope, credential 비노출, 계정·run 귀속, 세션 상태, Request Lab 단일 실행을 깨는 확정 결함을 실패 fixture로 고정하고 최소 수정한다. 첨부 리뷰의 수치나 평가를 그대로 믿지 않고, beta.29 코드·실행 재현·공식 외부 계약으로 확인된 항목만 이 단계의 blocker로 취급한다.
+**목적:** 새 Evidence 아키텍처를 만들기 전에 현재 제품에서 exact scope, credential 비노출, 계정·run 귀속, 세션 상태, Request Lab 단일 실행을 깨는 확정 결함을 실패 fixture로 고정하고 최소 수정한다. 첨부 리뷰의 수치나 평가를 그대로 믿지 않고, beta.29 작성 기준의 코드·실행 재현·공식 외부 계약에서 출발하되 beta.32 코드에 여전히 존재하는지 다시 확인한 항목만 blocker로 취급한다.
 
 **Phase -1A — 안전 불변식**
 
@@ -1106,15 +1106,15 @@ build: 버전·JAR·artifact 검증
 
 ### 22.1 검증 방법과 해석 제한
 
-- 첨부 문서는 `1.2.0-beta.25`, 198 tracked files를 대상으로 작성된 리뷰다. 현재 대상은 `1.2.0-beta.29`, 201 tracked files이므로 과거의 파일 수·버전·테스트 수를 현재 사실로 복사하지 않았다.
-- 현재 macOS에서 `mvn -q clean verify`를 다시 실행한 결과는 **258 tests, failure 0, error 0, skipped 0**이다. 이는 기존 suite 통과 사실이지 아래 입력 결함의 부재를 뜻하지 않는다.
-- 코드 정적 확인만으로 충분하지 않은 항목은 현재 beta.29 코드와 beta.28 실실행 실패 로그로 재현했다. 외부 API 계약은 공식 ZAP 문서와 로컬 ZAP 2.17 API form으로 대조했다.
+- 첨부 문서는 `1.2.0-beta.25`, 198 tracked files를 대상으로 작성된 리뷰다. 이 장부를 처음 작성한 대상은 `1.2.0-beta.29`, 201 tracked files이었다. 해당 파일 수·버전·테스트 수는 역사적 재검증 기준선이지 beta.32의 현재 수치가 아니다.
+- beta.29 장부 작성 당시 macOS `mvn -q clean verify` 결과는 **258 tests, failure 0, error 0, skipped 0**이었다. beta.32의 현재 정본은 **275 tests, failure 0, error 0, skipped 0**이며 정확한 JAR 수치는 `beta-validation.md`를 따른다. 두 결과 모두 suite 통과 사실이지 아래 입력 결함의 부재를 뜻하지 않는다.
+- 코드 정적 확인만으로 충분하지 않은 항목은 beta.29 코드와 beta.28 실실행 실패 로그로 재현했다. beta.32 교차 구현은 현재 회귀로 다시 확인했으며, 외부 API 계약은 공식 ZAP 문서와 로컬 ZAP 2.17 API form으로 대조했다.
 - 리뷰의 “전 파일 100% 정독”, 심각도 개수, 과거 Windows “정확히 7개 실패”는 리뷰 작성자의 메타 주장이다. 제품 동작 사실이나 새 acceptance criterion으로 사용하지 않는다.
 - 아래 18개 finding을 하나도 삭제하지 않았다. 이미 해결됐거나 조건부인 항목도 상태와 미채택 이유를 남겨 추적 가능하게 한다.
 
 ### 22.2 finding별 현재 판정
 
-| ID | beta.29 현재 판정 | 확인 근거 | 계획 반영 |
+| ID | beta.29 재검증 판정 | 확인 근거 | beta.32 이후 계획 반영 |
 |---|---|---|---|
 | C1 | **확정** | live capture와 달리 Proxy History import loop가 canonical scope 검사 없이 `recordFrom`을 호출한다. | Phase -1A exact-scope hotfix와 adapter 공통 회귀 |
 | C2 | **확정·실행 재현** | `Proxy-Authorization: Basic dXNlcjpwYXNz`가 `Proxy-Authorization: ***MASKED*** dXNlcjpwYXNz`로 남는다. | Phase -1A credential header 전체 값 마스킹·출력 경로 secret scan |
@@ -1139,7 +1139,7 @@ build: 버전·JAR·artifact 검증
 
 | 첨부 리뷰 주장 | 현재 판정 | 처리 |
 |---|---|---|
-| MCP `serverInfo`가 beta.10 | **beta.28에서 해결됨** | 현재 `1.2.0-beta.29`; hotfix 작업에는 넣지 않고 regression 확인만 유지 |
+| MCP `serverInfo`가 beta.10 | **beta.28에서 해결됨** | beta.32에서도 회귀만 유지하며 hotfix 작업에는 넣지 않음 |
 | 기능명세 이미지 24장이 모두 FlowGap UI | **사실 아님** | F01~F24용 PNG 25개는 구형 FlowGap과 FlowScope 화면이 혼재한다. 자산 노후화 문제는 맞으므로 backend/UI contract 안정화 후 전량 재촬영 |
 | F06 숫자 confidence·threshold와 현재 categorical 원칙 충돌 | **확정** | 명세에 superseded 표시 후 categorical evidence/review 계약으로 정리 |
 | F10 최저 성공 role 자동 추론과 현재 evidence-backed/manual 원칙 충돌 | **확정** | silent required-role 확정을 금지하고 candidate+근거+사용자 확정 계약으로 정리 |
@@ -1182,4 +1182,4 @@ Phase 10 protocol 확장
 Phase 11 blind benchmark·release
 ```
 
-첫 실제 개발은 Phase -1이다. 각 결함을 먼저 실패 fixture로 고정하고 안전 불변식부터 최소 수정한다. 그 뒤 Phase 0에서 post-hotfix 기준선을 측정한다. 저장 구조, 분석 모델, UI를 동시에 뜯지 않으며 lifecycle과 정본을 먼저 바꾼 뒤에만 route·entity·state와 취약점 실험 계층을 확장한다.
+beta.32 이후의 다음 실제 개발은 `HANDOFF.md`에 남은 P1을 Phase -1 실패 fixture로 다시 확인하는 것부터 시작한다. beta.32에서 이미 구현한 목적별 trust, exact completed run, Evidence ID 동결, JSON v3·SQLite v2 저장은 되돌리거나 중복 구현하지 않고 Phase 6의 기준선으로 사용한다. 남은 P1을 닫은 뒤 Phase 0의 post-hotfix 기준선을 다시 측정한다. 저장 구조, 분석 모델, UI를 동시에 뜯지 않으며 lifecycle과 정본을 먼저 바꾼 뒤에만 route·entity·state와 취약점 실험 계층을 확장한다.

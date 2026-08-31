@@ -1,11 +1,11 @@
 # FlowScope 초기 그래프 UX 조사 기록 — Swing/JGraphX
 
-> **상태:** 아래 문서는 초기 Swing/JGraphX 조사 기록이다. 제품 UI 구현 선택은 D-048에 의해 번들 Cytoscape.js localhost Web 작업면으로 대체되었다. 계층 방향, source/verdict 채널 분리, focus+context, 필터, 단계적 펼치기 원칙만 계속 유효하다. 현재 화면별 근거와 발표 설명은 `ui-product-rationale.md`를 따른다.
+> **상태:** 아래 문서는 초기 Swing/JGraphX 조사 기록이며 현재 구현 계획이 아니다. 제품 UI 구현 선택은 D-048에 의해 번들 Cytoscape.js localhost Web 작업면으로 대체되었다. 계층 방향, source/verdict 채널 분리, focus+context, 필터, 단계적 펼치기 원칙만 계속 유효하다. 현재 화면별 근거와 발표 설명은 `ui-product-rationale.md`, 현재 백엔드 계약은 `architecture.md`를 따른다.
 
 > OSS·정보시각화 문헌 5갈래 조사 종합. 우리 제약(단일 Java Burp 확장 + JGraphX)을 최우선 현실 기준으로.
 
 ## 0. 결론 한 줄
-**레이아웃은 지금이 맞다(계층+직각 유지). 문제는 "정적 그래프"라는 것 — 클러터 방어의 본체는 레이아웃이 아니라 인터랙션(필터·초점+문맥·접기)이다.** 그리고 그걸 얹으려면 **현재 `render()`의 전량 재생성 구조부터 고쳐야 한다.**
+**당시 조사 결론은 계층+직각 레이아웃을 유지하고 필터·초점+문맥·접기로 클러터를 제어한다는 것이었다.** `render()` 전량 재생성 개선안은 폐기된 Swing/JGraphX 구현을 전제로 한 역사 기록이며 현재 Cytoscape.js 코드에 적용하지 않는다.
 
 ## 1. 레이아웃 — 현행 유지 (검증됨)
 - **Sugiyama 계층(`mxHierarchicalLayout` WEST) + 직각 엣지 유지.** 신원→자원→엔드포인트는 자연스러운 3층 DAG라 force 레이아웃은 열 구조를 깨고 오히려 털뭉치화. IDA/Ghidra가 같은 선택.
@@ -47,7 +47,7 @@
 - **단서:** DOI·증분·top-N·클릭 하이라이트는 내장이 아니라 **직접 구현**해야 함("JGraphX이되 커스텀 인터랙션 코드 필요"). JGraphX EOL(2020 archived) → vlsi 포크로 감수(결정로그 명시).
 - **2단계 에스컬레이션(열린 질문):** L2에서 folding/필터로도 안 풀리는 수백~수천이 **실측**되면 재평가 — (a)순수 Java 유지: JUNGRAPHT-VISUALIZATION, (b)웹 필수: JCEF+cytoscape.js.
 
-## 6. 현재 FlowGraphView에 적용할 변경 (effort별)
+## 6. 당시 FlowGraphView에 제안한 변경 (현재 구현 계획 아님)
 | # | 변경 | 왜 | effort |
 |---|---|---|---|
 | **1** | **`render()` 전량 재생성 → mxGraph/mxGraphComponent 필드 1회 생성·보존으로 리팩터** | 현행 `removeAll()+new`가 하이라이트·접기·필터·증분을 **전부 불가능하게 막는 구조적 병목.** 모든 후속의 전제 | medium |
@@ -56,7 +56,7 @@
 | 4 | 필터 툴바(source, 'suspicious만') → `setVisible` | 클러터 방어 본체 | medium |
 | 5 | 노드 클릭 → 경로 강조 + 무관 디밍 | focus+context 판독 | medium |
 | 6 | 우측 접이식 상세 패널(JSplitPane) | 판정 근거는 패널로, 본체는 최소 | medium |
-| 7 | verdict를 모델에 실어 노드 색+배지 인코딩 | 취약축에 시각 채널 부여(현재 없음) — **L1 대기** | high |
+| 7 | verdict를 모델에 실어 노드 색+배지 인코딩 | 당시 모델에 없던 취약축 시각 채널 제안 | high |
 | 8 | op prefix trie 그룹핑 + folding | 최우선 스케일 무기 | high |
 | 9 | 팬아웃 top-N + '+N more' | 신원별 자원 폭발 방지 | medium |
 

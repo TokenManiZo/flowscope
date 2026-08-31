@@ -275,8 +275,8 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.29 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행
-- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.29 scanner import와 Evidence 상세 확인
+- beta.32 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
+- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.32 scanner import와 Evidence 상세 확인
 - 실제 ZAP 2.17에서 OpenAPI·GraphQL·Postman·SOAP 정의별 요청 생성, exact-scope 차단, 신원별 인증 주입과 경고 표시 확인
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
 - Windows 10/11 + Docker Desktop + PowerShell 7 실기기의 ZAP API/upstream/target capture

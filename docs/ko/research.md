@@ -1,12 +1,12 @@
-# FlowScope 관련연구 · 한계 · 극복 전략 (v1)
+# FlowScope 관련연구 · 한계 · 극복 전략 (v3)
 
-> 6갈래 문헌 서베이 후 **핵심 인용을 arXiv 원문에서 직접 재검증**한 결과. 근거 강도를 태그로 표기.
+> 6갈래 문헌 서베이에서 확인한 근거를 정리한 기록이다. 전문을 확인한 항목과 초록·도구 문서만 확인한 항목을 구분하며, 체계적 문헌고찰 완료나 신규성 확정을 주장하지 않는다.
 > 태그: `[탄탄]` 동료검증/확립된 연구 · `[프리프린트]` 2025~26 단독저자 미검증 · `[학사논문]` · `[본문·아티팩트 확인]` 논문 본문과 공개 재현물을 직접 확인 · `[초록만]` 전문 미열람.
 > ⚠️ **검증에서 걸러낸 것**: 서베이 종합이 "BOLA taxonomy에서 action-level 78.6%"라 했으나 **원문은 41.7%**(78.5%는 '확인된 BOLA 비율'로 다른 값). "77.4% 의미이해/22.6% 순차정수"는 원문 초록에 없어 **폐기**.
 
 ## 1. 분야 지형 (6 계열)
 - (a) **스펙+능동 프로빙 블랙박스 스캐너** — AuthProbe`[프리프린트]`, BOLABuster(Unit42)`[탄탄/벤더]`, Akto`[도구]`
-- (b) **화이트박스(소스/DB)** — BOLAZ(arXiv:2507.02309)`[탄탄]`, BolaRay(CCS'24)`[본문·아티팩트 확인]`
+- (b) **화이트박스(소스/DB)** — BOLAZ(arXiv:2507.02309)`[프리프린트·다저자]`, BolaRay(CCS'24)`[본문·아티팩트 확인]`
 - (c) **신원 스왑 차등 테스트** — Autorize·AuthMatrix`[도구]`, AuthScope(CCS'17)`[탄탄]`, CODASPY'14`[초록만]`
 - (d) **스펙/트래픽 기반 모델추론·커버리지** — RESTler`[탄탄]`, Morest`[탄탄]`, EvoMaster`[탄탄]`, APICarv(ICSE'23)`[탄탄]`, Log-Coverage(EASE'26)`[프리프린트/채택]`
 - (e) **LLM 펜테스트 에이전트** — PentestGPT`[탄탄]`, one-day exploit(Fang)`[탄탄]`, 400-run 재현성(2605.30096)`[프리프린트]`
@@ -26,25 +26,25 @@
 ## 3. FlowScope positioning (결정별 · 검증 반영)
 | 우리 결정 | 선행 | 판정 | 근거 |
 |---|---|---|---|
-| **D-001** source ⊥ idn/role | Autorize/AuthMatrix/AuthScope/CODASPY | **novel** | 선행은 전부 '고권한 vs 저권한 신원 쌍' 비교. **탐지수단(사람/스캐너/LLM)을 겹치는 직교축이 부재** → 고유 기여 |
-| **D-004/012** 오라클=status+owner+본문 | AuthProbe(유사·능동)`[약근거]`, Akto(90% 근사), Autorize(색휴리스틱) | **overcome(약근거 위)** | 근사/수작업 오라클을 결정론 규칙으로. 단 AuthProbe 정렬 근거는 단독저자·합성API라 **강하게 기대지 말 것** |
+| **D-001** source ⊥ idn/role | Autorize/AuthMatrix/AuthScope/CODASPY | **차별화 가설** | 조사한 선행은 주로 고권한·저권한 신원 쌍을 비교한다. 사람/스캐너/LLM 탐지수단을 별도 축으로 겹치는 기여의 신규성은 체계적 검색과 peer review 전까지 미확정 |
+| **D-004/012** 오라클=status+owner+본문 | AuthProbe(유사·능동)`[약근거]`, Autorize(응답 비교) | **부분 대응** | 규칙 실행은 결정론적이지만 추정 owner·role의 진실성을 보장하지 않는다. 최종 verdict는 별도 통제 재현·정상 대조 Evidence와 서버 gate가 필요 |
 | **D-005/012** owner=본문 소유필드 우선 | BOLAZ(taint), RestTestGen(id-completion) | **partial** | 소유필드가 인가 실축인 건 지지. 그러나 동명이자원 혼동·id가 본문에 없으면 놓침은 **물려받음** |
 | **D-003** 미교차=관측 내, 퍼센트 없음 | Log-Coverage, Akto(퍼센트) | **partial** | 분모 문제는 물려받되, **퍼센트로 뭉개지 않고 범위 선언**한 건 차별 |
-| **D-009** 규칙엔진 본체·LLM 제안만 | BOLABuster(추론/실행 분리), BOLA-LLM(prec~0.3`[학사논문]`) | **overcome** | 판정을 규칙에 고정해 LLM 저정밀·불투명 회피. LLM은 검증가능한 제안자로 격리 |
-| **D-022** 자원/소유 식별 규칙 우선, LLM은 검증게이트 하 | FActScore/RARR/Let's-Verify/SQuAD2.0(기권) | **overcome** | 검증게이트 문헌이 D-022의 학술 원형. **근거원을 외부 KB가 아닌 실재 트래픽으로** 삼아 '검증이 외부오라클에 종속' 한계를 완화 |
+| **D-009/D-049** 규칙·서버 gate 권위, LLM Explorer/Judge | BOLABuster(추론/실행 분리), BOLA-LLM(학사논문) | **부분 대응** | LLM이 후보와 verdict 요청을 만들 수 있지만 모델 문장만으로 확정하지 않는다. 서버가 Evidence 묶음과 반복 재현·정상 대조 조건을 검사한다 |
+| **D-022** 자원/소유 식별 규칙 우선, LLM은 Evidence 하 | FActScore/RARR/Let's-Verify/SQuAD2.0(기권) | **부분 대응** | 실제 트래픽을 근거로 연결해 감사 가능성을 높이지만, 관측 자체가 불완전하거나 owner·role이 틀리면 gate도 진실을 만들 수 없다 |
 | **D-011** 그래프 레이어링 | Morest RPG, RestTestGen ODG | **partial** | producer-consumer 그래프를 '신원 교차 비교'로 재목적화(용도 신규). 본문 내부/암묵 의존 못 잡음은 물려받음 |
 
-## 4. 방어 가능한 신규 주장
-1. **source ⊥ identity 직교 모델** — 신원 스왑 갈래 어디에도 없는 축.
-2. **순수 패시브 관측 + 결정론적 인가 오라클** — 능동 프로빙 없이 status+owner+본문으로. (AuthProbe는 스펙+능동, Akto는 퍼센트)
-3. **탐지수단으로서의 LLM은 수용, 판정자로서의 LLM은 거부**하는 분리.
-4. **'미교차=관측 내·퍼센트 없음'의 정직한 범위 선언** — 분모 문제를 결함이 아닌 원칙으로 흡수.
-5. **검증게이트를 인가탐지에 이식하되 근거원=실재 트래픽**.
+## 4. 평가할 차별화 가설
+1. **source ⊥ identity 직교 모델**이 신원 쌍 비교만 할 때보다 세 탐지수단의 중복·누락을 더 감사 가능하게 만드는가.
+2. **수동 관측 + 결정론 ZAP 기준선 + 통제 LLM 탐색**을 같은 Evidence 모델에 정렬하면 HUMAN+ZAP만 쓸 때보다 근거 있는 route/cell 후보가 늘어나는가.
+3. **LLM 서술 단독 판정을 거부하고 Evidence-bound 서버 gate를 적용**하면 raw LLM 대비 후보 정밀도와 재현 가능성이 개선되는가.
+4. **미교차를 관측된 적용 가능 집합으로 제한하고 퍼센트를 쓰지 않는 방식**이 검토 workload를 늘리지 않으면서 거짓 정밀도를 피하는가.
+5. 위 항목은 구현 의도이지 검증 결과가 아니다. 정답 격리 benchmark와 ablation 전에는 신규성·우월성·성능 향상을 확정하지 않는다.
 
 ## 5. 우리가 물려받는 한계 (정직하게 — 넘지 못함)
 > 이걸 논문/발표에서 "우리도 못 푼다"고 먼저 말해야 방어된다.
 - **동명이자원 혼동** — 스펙 없이 관측만으로 완전 제거 불가. 관측 응답으로 소유후보 확증하는 동적 피드백으로 **완화만**.
-- **리스팅 없는/미관측 식별자 객체** — 순수 패시브·무프로빙의 필연적 대가로 **능동 스캐너보다 FN이 큼**.
+- **리스팅 없는/미관측 식별자 객체** — 제공된 응답·정의·Site Map·통제 탐색 어느 쪽에서도 식별자가 드러나지 않으면 테스트할 수 없다. FN 크기는 블라인드 평가 전까지 수치화하지 않는다.
 - **요청 id가 본문에 안 실려오는 유출** — 본문 소유필드 오라클이 놓침(AuthProbe도 자인).
 - **블랙박스 분모** — '무엇을 놓쳤는지' 정량화 원천 불가. 범위 선언으로 흡수하나 근본 한계는 잔존.
 - **action-level(BFLA)/상태변경 커버리지** — 오라클 확장 근거는 있으나 **상태변경 연산의 owner 확정은 미해결**(설계 주장 단계).
@@ -61,7 +61,7 @@
 ## 7. 참고문헌 (재검증 완료 · URL·근거강도)
 - AuthProbe — Jay Barach, arXiv:2607.20574 `[프리프린트·단독·합성API]` https://arxiv.org/abs/2607.20574
 - BOLA in the Wild (Taxonomy) — Bandana Kaur, arXiv:2605.25865 `[프리프린트·LLM분류]` action-level **41.7%**(≠78.6%) https://arxiv.org/abs/2605.25865
-- Rethinking BOLA under Zero Trust (BOLAZ) — Wu et al, arXiv:2507.02309 `[탄탄·다저자]` https://arxiv.org/abs/2507.02309
+- Rethinking BOLA under Zero Trust (BOLAZ) — Wu et al, arXiv:2507.02309 `[프리프린트·다저자]` https://arxiv.org/abs/2507.02309
 - Assessing REST API Test Gen with Log Coverage — Reinikainen et al, arXiv:2604.07073, EASE'26 `[채택]` https://arxiv.org/abs/2604.07073
 - 400-Run LLM Pentest Consistency — Erdem, arXiv:2605.30096 `[프리프린트·단독]` https://arxiv.org/abs/2605.30096
 - Detecting BOLA with LLMs — Johansens, U.Twente `[학사논문]` prec~0.3 https://essay.utwente.nl/fileshare/file/107423/Johansens_BA_BIT.pdf
@@ -69,4 +69,4 @@
 - BolaRay(CCS'24) `[본문·아티팩트 확인]` — [논문](https://leehaofeng.github.io/papers/2024-BolaRay.pdf), [공개 아티팩트](https://zenodo.org/records/13744942); CODASPY'14 `[초록만]`, BOLABuster(Unit42) `[벤더]`
 
 ---
-*v2 — 재검증에서 걸러낸 수치(78.6→41.7)와 약근거 태그를 반영하고 BolaRay 본문·공개 아티팩트 확인 상태를 갱신했다. 남은 [초록만] 항목의 전문 확인, 그리고 §5 물려받는 한계를 설계로 얼마나 완화할지가 다음 과제다.*
+*v3 — beta.32 통제 탐색·서버 Evidence gate와 맞지 않던 순수 패시브/LLM 판정 거부 문구를 교정하고, 신규성·우월성은 블라인드 평가와 체계적 선행연구 검토 전까지 가설로 낮췄다. 남은 [초록만] 항목의 전문 확인과 §5 한계의 실증이 다음 과제다.*

@@ -16,6 +16,7 @@
 - JSON project schema를 v3, SQLite storage schema를 v2로 올려 exact completed run을 저장한다. JSON v1/v2와 SQLite v1은 계속 읽지만 source 이름뿐인 과거 완료 표식은 현재 완료로 승격하지 않아 재실행이 필요하다.
 - 저장 시 `completed_lanes`와 `completed_runs`를 동일한 검증된 run 집합에서 생성한다. key/source가 다르거나 Evidence가 없는 완료 객체는 저장 전에 거부하고, 현재 스키마에서 두 목록이 다르면 load를 거부한다.
 - beta.29~32 구현 이력에 맞춰 개발 지침의 현재 단계, 인계 기준선, 백엔드 재정비 계획의 교차 구현 상태, 멘토 보고서의 현재 버전·검증 수치·문서 링크를 동기화했다. BolaRay는 본문과 공개 아티팩트를 확인한 근거 수준으로 연구 문서 태그를 교정했다.
+- 활성 Markdown 전부의 역할과 최신 상태를 재감사했다. Release 자산은 실제 게시 여부를 확인하지 않은 채 존재한다고 쓰지 않도록 조건부 안내로 바꾸고, 원 기능명세의 포트/XML 요구와 beta.32 MCP 통제 경계를 분리했다. 제품 계획·검증·초기 JGraphX 문서의 과거 상태는 역사 시점으로 표시하고, 제안서·연구 문서의 미검증 성능·신규성 문장은 평가 가설로 낮췄다. `.local/archive`와 버전별 changelog 본문은 현재 동작 정본이 아니므로 역사 사실을 바꾸지 않았다.
 
 **근거와 기각한 대안**
 
@@ -1178,7 +1179,7 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 
 ### 남은 한계·다음 gate
 
-- 현재 실행 중인 Burp Web UI는 beta.3로 확인됐으므로 beta.7 JAR을 제거·재로드한 뒤 Codex와 Claude 각각 Explorer MCP 요청, exact run 종료, Judge lock/validation, Judge 후속 resume를 확인해야 한다. Codex 무대상 smoke를 이 gate에 소급하지 않는다.
+- beta.7 검증 당시 실행 중인 Burp Web UI는 beta.3로 확인됐으므로 beta.7 JAR을 제거·재로드한 뒤 Codex와 Claude 각각 Explorer MCP 요청, exact run 종료, Judge lock/validation, Judge 후속 resume를 확인해야 했다. Codex 무대상 smoke를 이 gate에 소급하지 않았다. 최신 미검증 gate는 맨 위 beta.32 기록과 `beta-validation.md`를 따른다.
 - Explorer 한 번은 운영자가 선택한 익명 또는 ACTIVE 계정 하나로 독립 탐색한다. USER A/B 교차 재현은 lock 뒤 Judge가 `flowscope_list_sessions`의 안전한 account ID를 골라 수행한다. 이것은 현재 의도된 경계이며 다중 계정 Explorer campaign은 구현돼 있지 않다.
 - Claude no-persistence가 물리적 metadata 파일을 남기지 않는다고 보장하지 않는다. FlowScope가 보장하는 것은 Explorer session ID를 저장·resume하지 않는 논리 격리다.
 - Codex는 CLI의 read-only sandbox와 no-approval, Claude는 exact tool allowlist를 사용하지만 변조된 로컬 client 설치까지 통제하지 못한다. 서버 exact scope·visibility·Evidence gate가 최종 권위다.

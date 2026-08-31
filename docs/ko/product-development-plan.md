@@ -1,5 +1,7 @@
 # FlowScope 1.2.0-beta.32 제품 개발·검증 계획
 
+> **읽는 법:** 맨 위 beta.32 절만 현재 우선순위다. 아래 beta.31 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.32 절을 따른다.
+
 ## 0. beta.32 우선순위: Evidence 신뢰·exact run 완료·재열기 무결성
 
 1. HUMAN/SCANNER/LLM 정상 완료를 `LaneCompletionPolicy` 한 경로로 통합하고 실패·취소를 abort로 분리한다.
@@ -17,7 +19,7 @@
 3. Web polling은 캐시만 읽고 READY provider를 자동 선택한다. 실행 직전에는 다시 확인해 stale 상태로 시작하지 않는다.
 4. 전체 회귀, 두 로컬 로그인 CLI preflight, 재현 JAR을 통과한 뒤 beta.31 Burp MCP Explorer를 수동 통합 gate로 수행한다.
 
-**현재 상태:** 코드와 집중 회귀, 로컬 Codex·Claude auth status 확인은 완료했다. 전체 자동 회귀·재현 배포물 수치는 `beta-validation.md`를 따르며 실제 beta.31 Burp Explorer 완주는 남는다.
+**해당 버전 종료 당시 상태:** 코드와 집중 회귀, 로컬 Codex·Claude auth status 확인은 완료했다. 전체 자동 회귀·재현 배포물 수치는 `beta-validation.md`를 따르며 실제 beta.31 Burp Explorer 완주는 남았다.
 
 ## 0. beta.30 우선순위: 로그인 후 원클릭 실행과 관측 가능한 Explorer
 
@@ -26,7 +28,7 @@
 3. 실제 provider JSONL에서 모델 메시지·FlowScope tool 상태·Evidence 완료 gate만 bounded event로 노출한다. reasoning/thinking과 raw tool payload는 표시하지 않는다.
 4. 자동 회귀, 실제 구독 CLI smoke, 재현 JAR을 확인한 뒤 beta.30 JAR의 Burp MCP target run을 수동 통합 gate로 수행한다.
 
-**현재 상태:** 코드, 265개 전체 회귀, 실제 로그인 Codex CLI smoke와 재현 JAR은 완료했다. beta.30 JAR 재로드 뒤 실제 Burp MCP target run과 Claude 로그인 환경 gate는 대기 중이며 수치는 `beta-validation.md`를 따른다.
+**해당 버전 종료 당시 상태:** 코드, 265개 전체 회귀, 실제 로그인 Codex CLI smoke와 재현 JAR은 완료했다. beta.30 JAR 재로드 뒤 실제 Burp MCP target run과 Claude 로그인 환경 gate는 대기 중이었으며 수치는 `beta-validation.md`를 따른다.
 
 ## 마스터 계획 1단계 — 완성 목표 재정의
 
@@ -44,7 +46,7 @@
 4. unit/integration 회귀와 실제 구독 Codex strict/ephemeral smoke를 통과한 뒤 단일 JAR을 만든다.
 5. 새 JAR 재로드 뒤 실제 Burp MCP에서 target read, route 재열거, Evidence 저장, 정상 종료를 확인한다. 이 gate 전에는 Explorer 실대상 완주를 주장하지 않는다.
 
-**현재 상태:** 1~4의 코드·자동 회귀와 로컬 Codex 0.147.0 구독 smoke를 완료했다. 5의 beta.29 Burp 재로드 통합 gate와 블라인드 benchmark는 대기 중이다.
+**해당 버전 종료 당시 상태:** 1~4의 코드·자동 회귀와 로컬 Codex 0.147.0 구독 smoke를 완료했다. 5의 beta.29 Burp 재로드 통합 gate와 블라인드 benchmark는 대기 중이었다.
 
 ## 0. beta.28 우선순위: Explorer 무성과 성공 차단과 명시 API 정의 탐색
 
@@ -54,7 +56,7 @@
 4. 정의 import 실패는 기존 crawler/passive Evidence를 버리지 않고 단계·형식·원인을 사용자에게 표시한다.
 5. 자동 회귀와 JAR smoke 뒤 실제 Burp에서 Codex target read/0건 실패, ZAP 네 형식 import, 복수 계정 campaign, 3-lane lock과 Judge를 확인한다.
 
-**현재 상태:** 1~4의 코드, 258개 전체 자동 회귀, 완성 JAR smoke와 동일 소스 2회 SHA-256 일치를 완료했다. 5의 실제 Burp 재로드 통합 gate와 블라인드 benchmark는 대기 중이며, 완료 전에는 탐지 성능 향상이나 3-way 실환경 완주를 주장하지 않는다.
+**해당 버전 종료 당시 상태:** 1~4의 코드, 258개 전체 자동 회귀, 완성 JAR smoke와 동일 소스 2회 SHA-256 일치를 완료했다. 5의 실제 Burp 재로드 통합 gate와 블라인드 benchmark는 대기 중이었으며, 완료 전에는 탐지 성능 향상이나 3-way 실환경 완주를 주장하지 않는다.
 
 ## 0. beta.27 우선순위: 안전 ZAP 기준선 완결과 구독 CLI 실행 복구
 
@@ -64,7 +66,7 @@
 4. GUI Burp의 축소된 환경에서도 로그인된 Codex/Claude CLI 런타임을 찾도록 실행 파일 경로 전달을 보강하고, 기존 Session Broker·Judge Evidence gate를 전체 회귀로 재검증한다.
 5. 자동 회귀와 JAR smoke 뒤 실제 beta.27 Burp에서 ZAP key/upstream/add-on, 계정별 capture, Explorer 종료, dataset lock, Judge 재현·대조를 순서대로 확인한다.
 
-**현재 상태:** 1~4의 코드, 253개 전체 자동 회귀와 beta.27 JAR 산출물 검증을 완료했다. 5의 실제 Burp 통합 gate는 대기 중이며 완료 전에는 성능 향상이나 3-way 완주를 주장하지 않는다.
+**해당 버전 종료 당시 상태:** 1~4의 코드, 253개 전체 자동 회귀와 beta.27 JAR 산출물 검증을 완료했다. 5의 실제 Burp 통합 gate는 대기 중이었으며 완료 전에는 성능 향상이나 3-way 완주를 주장하지 않는다.
 
 ## 0. beta.26 우선순위: 기존 ZAP HAR를 SCANNER Evidence로 재사용
 
@@ -73,7 +75,7 @@
 3. HAR 파일에는 없는 native Alert, fresh session, campaign completion을 추론하지 않는다.
 4. 합성 회귀 뒤 실제 ZAP 2.17 HAR를 beta.26 Burp에서 업로드해 Evidence 상세·source·candidate를 수동 확인한다.
 
-**현재 상태:** 1~3과 249개 자동 회귀, 완성 JAR smoke는 완료했다. 4와 원격 CI는 대기 중이며 HAR import를 live ZAP 기준선 완료로 계산하지 않는다.
+**해당 버전 종료 당시 상태:** 1~3과 249개 자동 회귀, 완성 JAR smoke는 완료했다. 4와 원격 CI는 대기 중이었으며 HAR import를 live ZAP 기준선 완료로 계산하지 않는다.
 
 ## 0. beta.25 우선순위: 배포 JAR streaming·MR 경로 완결
 
@@ -82,7 +84,7 @@
 3. 완성 artifact 검증을 CI 전용 명령이 아니라 로컬 `mvn clean verify`에도 연결한다.
 4. 실제 Burp load/unload와 외부 배포 도구 호환성은 자동 gate와 구분해 수행한다.
 
-**현재 상태:** 1~3과 243개 자동 회귀, 완성 JAR smoke, 반복 SHA-256은 완료했다. 4와 원격 CI는 대기 중이다.
+**해당 버전 종료 당시 상태:** 1~3과 243개 자동 회귀, 완성 JAR smoke, 반복 SHA-256은 완료했다. 4와 원격 CI는 대기 중이었다.
 
 ## 0. beta.24 우선순위: 판정 오라클·게시 경계 하드닝
 
@@ -92,7 +94,7 @@
 4. 정책 전체 교체와 계정 갱신을 원자화하고 Burp/Web/MCP 게시 분석을 수집 DTO와 분리한다.
 5. 리뷰 주장을 호출 경로와 회귀로 독립 판별해 미재현·의미가 다른 제안은 기각 사유를 기록한다.
 
-**현재 상태:** 1~5와 `mvn clean verify` 243개 회귀는 완료했다. 실제 beta.24 Burp load/unload·SQLite 저장/재열기·3-way/Judge 실행과 블라인드 정확도는 아직 수행하지 않았다.
+**해당 버전 종료 당시 상태:** 1~5와 `mvn clean verify` 243개 회귀는 완료했다. 실제 beta.24 Burp load/unload·SQLite 저장/재열기·3-way/Judge 실행과 블라인드 정확도는 수행하지 않았다.
 
 ## 0. beta.23 우선순위: 배포물·CI 하드닝
 
@@ -101,7 +103,7 @@
 3. `clean verify`가 쓰는 Maven 플러그인과 GitHub Actions를 고정하고, 단일 JAR·MR-JAR·NOTICE·비누출 패키지·Bash/PowerShell·반복 SHA-256을 CI에서 검사한다.
 4. 실제 Burp Community에서 beta.23 JAR load/unload와 SQLite 프로젝트 저장·재열기를 확인한다.
 
-**현재 상태:** 1~3은 로컬 코드·패키징·자동 회귀에서 완료했다. 원격 CI와 실제 Burp load/unload·프로젝트 저장/재열기는 아직 실행하지 않았으므로 beta.23 실환경 완료로 계산하지 않는다.
+**해당 버전 종료 당시 상태:** 1~3은 로컬 코드·패키징·자동 회귀에서 완료했다. 원격 CI와 실제 Burp load/unload·프로젝트 저장/재열기는 실행하지 않았으므로 beta.23 실환경 완료로 계산하지 않는다.
 
 다음은 완료 주장이 아니다.
 
@@ -119,7 +121,7 @@
 3. README를 처음 한 번 준비와 점검할 때마다 수행할 네 단계로 분리한다. → 검증: JAR/listener/ZAP/CLI 명령과 상세 가이드 링크 정합성.
 4. 데스크톱과 390px 화면에서 단계 라벨·버튼·panel의 가로 잘림이 없는지 확인한다.
 
-**현재 상태:** beta.22 단계형 Web UI와 한영 사용자 문서를 구현했다. 자동 회귀·standalone 반응형 검증 범위까지만 완료로 기록하며, 실제 Burp의 scope/HUMAN/ZAP/LLM 상태 전환은 수동 gate다.
+**해당 버전 종료 당시 상태:** beta.22 단계형 Web UI와 한영 사용자 문서를 구현했다. 자동 회귀·standalone 반응형 검증 범위까지만 완료로 기록하며, 실제 Burp의 scope/HUMAN/ZAP/LLM 상태 전환은 수동 gate로 남았다.
 
 ## 0. beta.21 우선순위: ZAP 배포 중립 온보딩·Windows 재현성과 기존 HUMAN 실환경 gate
 
@@ -130,7 +132,7 @@
 5. doctor로 listener, ZAP, add-on, provider CLI, Web/MCP를 점검하되 포트 open만으로 Burp 신원을 증명한다고 주장하지 않는다.
 6. 아래의 HUMAN 원문 byte·Evidence UI 실제 Burp gate를 이어서 수행한다.
 
-**현재 상태:** beta.21에 Desktop/Docker 공통 연결 확인 UI와 독립 key helper, 한영 설치 코드·문서, macOS의 공식 ZAP 2.17.0 실제 기동·loopback API/version·Docker→Burp SCANNER `8081` upstream·필수 add-on·doctor, Windows PowerShell helper와 CI parser gate를 구현했다. 실제 ZAP Desktop 수동 설정, Windows 실기기 Docker Desktop target capture, HTTPS, USER A/B, LLM/Judge end-to-end는 이번 setup 검증으로 대체하지 않는다.
+**해당 버전 종료 당시 상태:** beta.21에 Desktop/Docker 공통 연결 확인 UI와 독립 key helper, 한영 설치 코드·문서, macOS의 공식 ZAP 2.17.0 실제 기동·loopback API/version·Docker→Burp SCANNER `8081` upstream·필수 add-on·doctor, Windows PowerShell helper와 CI parser gate를 구현했다. 실제 ZAP Desktop 수동 설정, Windows 실기기 Docker Desktop target capture, HTTPS, USER A/B, LLM/Judge end-to-end는 이번 setup 검증으로 대체하지 않는다.
 
 ## 0. beta.19 우선순위: HUMAN 원문 byte·Evidence UI 실환경 gate
 
@@ -140,7 +142,7 @@
 4. 초기화·샘플 교체·프로젝트 열기·unload에서 raw vault를 폐기하고, imported/binary/상한 초과 Evidence는 마스킹 폴백을 정직하게 표시한다.
 5. 현재 JAR을 재로드한 뒤 실제 HUMAN Evidence에서 비ASCII 원문 byte, ORIGINAL, ANONYMOUS, USER A, USER B 전송의 서버 수신 헤더·응답·Evidence phase·coverage 불변과 binary Repeater fallback을 확인한다.
 
-**현재 상태:** raw byte 정본·strict charset·Evidence ID 상세·라이브러리 외부 반응형 그래프 래퍼와 beta.19의 221개 자동 회귀, standalone 1280px/600px UI 검증 완료. 실제 현재 JAR의 Burp ORIGINAL/ANONYMOUS/USER A/USER B byte 전송 gate는 남아 있으며, 통과 전에는 실환경 완료로 표시하지 않는다.
+**해당 버전 종료 당시 상태:** raw byte 정본·strict charset·Evidence ID 상세·라이브러리 외부 반응형 그래프 래퍼와 beta.19의 221개 자동 회귀, standalone 1280px/600px UI 검증 완료. beta.19 JAR의 Burp ORIGINAL/ANONYMOUS/USER A/USER B byte 전송 gate는 남았으며, 통과 전에는 실환경 완료로 표시하지 않는다.
 
 ## 0. beta.16 우선순위: HUMAN 요청 시점 문맥과 principal 표현
 
@@ -149,7 +151,7 @@
 3. 하나의 등록 계정에 연결된 Cookie·Authorization·subject를 여러 세션처럼 표시하지 않는다. → 검증: 권한 카드 principal-kind Web 계약과 계정 화면 artifact projection 회귀.
 4. beta.16 JAR을 Burp Community에 재로드해 실제 Browser pass, pass 중 Repeater, pass 종료 뒤 늦은 응답, 초기화 직후 응답, SQLite 저장·재열기를 확인한다.
 
-**현재 상태:** 코드·211개 자동 회귀·단일 배포 JAR 무결성 완료. 실제 beta.16 Burp 수동 gate와 독립 HUMAN fixture confusion matrix는 남아 있다.
+**해당 버전 종료 당시 상태:** 코드·211개 자동 회귀·단일 배포 JAR 무결성 완료. 실제 beta.16 Burp 수동 gate와 독립 HUMAN fixture confusion matrix는 남아 있었다.
 
 ## 0. beta.15 우선순위: rendered scanner 거짓 정상 완료 차단
 
@@ -158,7 +160,7 @@
 3. 전체 capture 0 failure, exact scope, fresh session, account credential replacement, Active Scan 별도 승인은 바꾸지 않는다.
 4. beta.15 JAR을 Burp Community에 재로드한 뒤 실제 crAPI에서 Client→AJAX 전환·stage count·경고를 확인한다. 이후에만 LLM Explorer 실제 세션 검증으로 넘어간다.
 
-**현재 상태:** 코드·207개 자동 회귀·배포 JAR 무결성 완료. 실제 beta.15 anonymous crAPI 실행에서 Client→AJAX fallback 뒤 전체 226건(Traditional 8, Rendered 218)과 native Alert 30건, warning-completed 상태를 관측했다. 이 수치는 endpoint 충분성이나 취약점 탐지 성능으로 해석하지 않는다.
+**해당 버전 종료 당시 상태:** 코드·207개 자동 회귀·배포 JAR 무결성 완료. 실제 beta.15 anonymous crAPI 실행에서 Client→AJAX fallback 뒤 전체 226건(Traditional 8, Rendered 218)과 native Alert 30건, warning-completed 상태를 관측했다. 이 수치는 endpoint 충분성이나 취약점 탐지 성능으로 해석하지 않는다.
 
 ## 0. beta.14 우선순위: ZAP 완료 판정과 단계 관측 정합성
 
@@ -167,7 +169,7 @@
 3. 레인 진행 상태가 `PENDING → TRADITIONAL → CLIENT/AJAX → PASSIVE → ALERTS_READY/FAILED`로 보인다. → 검증: Web 카드 계약과 기존 캠페인 failure/completion 회귀.
 4. zero-capture, exact scope, fresh session, account credential replacement, Active Scan 별도 승인은 그대로 유지한다.
 
-**현재 상태:** 구현, 206개 자동 회귀 완료. 실제 ZAP 2.17 + Burp Community beta.14에서 raw Traditional count는 확인했지만 Client 내부 browser 실패가 status 100으로 숨고 rendered capture가 0인 결함을 발견해 beta.15가 완료 gate를 보강했다. USER A/B 세션 주입과 late-response 경계는 남아 있다.
+**해당 버전 종료 당시 상태:** 구현, 206개 자동 회귀 완료. 실제 ZAP 2.17 + Burp Community beta.14에서 raw Traditional count는 확인했지만 Client 내부 browser 실패가 status 100으로 숨고 rendered capture가 0인 결함을 발견해 beta.15가 완료 gate를 보강했다. USER A/B 세션 주입과 late-response 경계는 남아 있었다.
 
 ## 0. beta.13 우선순위: HUMAN 실행 정합성과 범용 구조 프로파일링
 
@@ -177,7 +179,7 @@
 4. target별 사전 없이 `*Id` 외 도메인 식별자를 찾되 동일 service·method·path·field 위치의 복수 값으로만 보강한다. → 검증: `customerNo/documentSeq/accountRef` 양성 fixture와 단일 관측·`pageNo/sortKey/apiKey/statusCode` 음성 fixture.
 5. 이 구조 파악을 소유권·취약점 확정으로 확대하지 않는다. → 검증: 기존 primary 하나·Cartesian product 금지·전체 인가/분류 회귀 유지.
 
-**현재 상태:** 구현, 204개 자동 회귀, standalone HUMAN 시작·종료 상태 전이 확인 완료. 실제 Burp Browser/Repeater/Intruder provenance와 다양한 블라인드 대상의 semantic field precision/recall 측정은 남아 있다.
+**해당 버전 종료 당시 상태:** 구현, 204개 자동 회귀, standalone HUMAN 시작·종료 상태 전이 확인 완료. 실제 Burp Browser/Repeater/Intruder provenance와 다양한 블라인드 대상의 semantic field precision/recall 측정은 남아 있었다.
 
 ## 0. beta.12 우선순위: 세션 귀속과 HUMAN 그래프 표시 정합성
 
@@ -309,7 +311,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.29 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 실행 경계·Codex 임시 home 격리·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·SQLite 내구 checkpoint·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.29 Burp/블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.32 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 표준 경로/공식 auth preflight·Codex 임시 home 격리·bounded 작업 피드·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·목적별 `SourceTrustPolicy`·exact `LaneCompletionPolicy`·완료 시점 Evidence ID 동결·고정 Judge dataset·JSON v3/SQLite v2 저장·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.32 Burp 3-way 저장·재열기와 블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 
@@ -390,7 +392,7 @@ RouteCandidate {
 
 - P0~P3: 코드 구현 완료. Web UI 정본화, exact-scope 수집 차단, 구조적 마스킹, memory-only session broker, 통제 LLM 실행, Explorer 서버 격리, dataset lock, 신원별 fresh-session 시스템 ZAP campaign, 서버 검증 LLM verdict를 구현했다.
 - P4 브라우저 QA: 기존 beta.3 standalone UI의 1500×900, 900×700, 600×800, 1024×768, 1280×720 검증은 통과했다. 이번 scanner control도 1280×720·600×800에서 비로그인 선택, 가로 overflow 0, 좁은 폭 modal scroll, 신원/target 미선택 버튼 비활성, warning/error 0을 확인했다. Standalone fixture에는 ACTIVE broker 계정이 없어 USER A/B 복수 chip 렌더는 HTML/API 계약까지만 통과했으며, Standalone 검증은 Burp suite tab 검증을 대신하지 않는다.
-- P4 Burp Community QA: 현재 beta.3 fat JAR을 Community 2026.7.3에 로드해 suite tab, Web UI 17777, MCP 8787, HUMAN 8080, SCANNER 8081을 실제 기동했다. exact scope `http://127.0.0.1:8888/`에서 HUMAN listener 8080 전송 3건, ZAP 2.17 SYSTEM baseline 8건, MCP LLM Explorer 통제 요청 1건이 각각 HUMAN/SCANNER/LLM으로 분리됐다. 이 HUMAN 전송은 실제 Burp Browser가 아니라 8080을 프록시로 사용한 `curl` 스모크였다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 LLM의 범위 밖 FlowScope Web 요청은 거부됐다. `REVIEW`뿐인 HUMAN lane에서는 lock이 거부됐고 classifier v2가 web manifest를 `API/INCLUDE`로 오분류한 `/manifest.json`을 추가한 뒤 12건을 잠갔다. 따라서 이 결과는 포트 분리·lock·scope guard의 wiring 검증이지 HUMAN business API 탐색이나 분류 품질 검증이 아니다. finding·gap 0과 잠금 뒤 Explorer 재시작 거부는 관측 사실 그대로 유지한다.
+- P4 Burp Community QA: 당시 beta.3 fat JAR을 Community 2026.7.3에 로드해 suite tab, Web UI 17777, MCP 8787, HUMAN 8080, SCANNER 8081을 실제 기동했다. exact scope `http://127.0.0.1:8888/`에서 HUMAN listener 8080 전송 3건, ZAP 2.17 SYSTEM baseline 8건, MCP LLM Explorer 통제 요청 1건이 각각 HUMAN/SCANNER/LLM으로 분리됐다. 이 HUMAN 전송은 실제 Burp Browser가 아니라 8080을 프록시로 사용한 `curl` 스모크였다. ZAP 8건은 모두 `CONTROLLED/ANONYMOUS`였고 LLM의 범위 밖 FlowScope Web 요청은 거부됐다. `REVIEW`뿐인 HUMAN lane에서는 lock이 거부됐고 classifier v2가 web manifest를 `API/INCLUDE`로 오분류한 `/manifest.json`을 추가한 뒤 12건을 잠갔다. 따라서 이 결과는 포트 분리·lock·scope guard의 wiring 검증이지 HUMAN business API 탐색이나 분류 품질 검증이 아니다. finding·gap 0과 잠금 뒤 Explorer 재시작 거부는 관측 사실 그대로 유지한다.
 - beta.6 잔여 수동 gate: 새 JAR의 Burp Community 재로드와 Site Map candidate, 실제 Burp Browser HUMAN pass, 브라우저 `UNVERIFIED→ACTIVE` 실제 로그인, USER A/B broker 주입과 복수 ZAP lane, 구독형 Codex/Claude prompt 전체와 Judge, Repeater handoff, project save/load, extension unload 후 포트 해제를 확인해야 한다. beta.3에서 통과한 packaging·익명 3-source 연결·MCP protocol·가시성 격리·범위 차단을 새 JAR의 실검증으로 소급하지 않는다.
 - HUMAN 탐색 경계: HUMAN pass의 시작·종료와 `EXPLORATION` run ID 상태 전이는 8080 `curl` 스모크로 확인했다. 실제 Burp Browser 탐색은 미검증이다. 로그인 캡처 `SESSION_SETUP`, pass 밖 `BASELINE`, 선택 ACTIVE 계정의 exact credential match는 자동 회귀를 통과했으며 실제 로그인 계정으로 재확인해야 한다.
 - 분류 경계: `REVIEW`를 Evidence·검토 대기에 보존하면서 메인 graph·3-way gap 입력에서는 보류하고, UI 처분 필터와 수량을 `INCLUDE/REVIEW/EXCLUDE`로 분리했다. 1280×720 standalone의 필터·상세·overflow·console 검증은 통과했고, 실제 Burp 대상에서 REVIEW 승격·숨김 작업량은 beta gate와 blind benchmark에서 측정해야 한다.

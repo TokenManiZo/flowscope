@@ -1,17 +1,17 @@
-# FlowScope — 리서치 제안서 (v1)
+# FlowScope — 리서치 제안서 (v2, beta.32 정합성 갱신)
 
-> **구현 정합성 메모(2026-08-25):** 이 문서는 연구 가설과 평가 설계를 보존한다. 제품의 현재 최종 판정 계약은 D-049가 정본이며, 일반 LLM assessment와 달리 별도 VALIDATION run의 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 최종 verdict를 허용한다. 사람은 독립 벤치마크 채점과 감사·오버라이드를 담당한다.
+> **문서 지위(2026-08-31):** 이 문서는 연구 가설과 평가 설계를 보존하는 제안서이며 제품 동작 정본이 아니다. 현재 제품 계약은 `README.md`, `architecture.md`, `decisions.md`, 실제 검증은 `beta-validation.md`가 담당한다. beta.32는 블랙박스 전체 분모나 “셋 다 놓친 전체 여집합”을 안다고 주장하지 않으며, 관측된 적용 가능 cell과 근거 있는 미요청 route 후보만 다룬다. 최종 verdict는 별도 VALIDATION run의 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 허용한다.
 
 **English title (working):** *FlowScope: Differential Traffic Coverage for LLM-Assisted Discovery of API Authorization Vulnerabilities*
 
 > **한 줄 주장 (Thesis).**
 > 사람·스캐너·LLM은 모두 HTTP 트래픽을 남기며, 각자 **체계적으로 편향된** API 커버리지를 만든다.
 > 이 세 트래픽을 **하나의 신원-인지(identity-aware) 커버리지 좌표계**에 정렬해 그 **차등(differential)**을 LLM에게 컨텍스트로 주면,
-> LLM은 raw-LLM이나 스캐너가 구조적으로 놓치는 **BOLA / BFLA / broken-access** 후보를 더 정확하게 지목하며,
+> 이 차등이 raw-LLM 또는 스캐너 단독보다 **BOLA / BFLA / broken-access** 후보 품질을 높이는지 검증하며,
 > 그 후보는 두 개의 시각화 뷰와 캡처된 재현·대조 Evidence를 통해 빠르게 검증된다.
 
 **English abstract (paper seed).**
-Automated scanners are structurally blind to authorization flaws (BOLA/BFLA) because those bugs are semantic, not signature-based. Human testers and scanners each exercise only a biased slice of an API's identity×endpoint×object space, and raw request logs (e.g., Burp history) are too voluminous to reason over by hand. FlowScope ingests traffic from three heterogeneous actors — human testers, automated scanners, and an LLM agent — normalizes them into a single identity-aware coverage representation, and lets an LLM reason over the *three-way differential* to rank candidate authorization vulnerabilities. Two visualizations (a coverage matrix and a data-flow graph) turn the ranked candidates into a human-verifiable surface. We evaluate on labeled API benchmarks with a 2×2 ablation isolating the value of (a) adding the LLM as a traffic source and (b) providing the differential as analysis context, and report candidate precision/recall, time-to-verify, and the number of real vulnerabilities found in the region **none of the three actors covered**.
+General-purpose scanners have limited authorization semantics unless identity, ownership, and workflow context are supplied. Human testers, scanners, and LLM agents each exercise a biased slice of the observed API identity×operation×resource space, while raw request logs are costly to reconstruct by hand. FlowScope normalizes controlled traffic from these three actors into one identity-aware representation and lets a separate LLM Judge reason over a frozen three-way differential to rank authorization candidates. A matrix, graph, and Evidence drill-down make those candidates auditable. We evaluate on labeled API benchmarks with a 2×2 ablation isolating the value of (a) adding the LLM as a traffic source and (b) providing the differential as analysis context. Metrics include candidate precision/recall, review cost, time-to-verify, and findings linked to evidence-backed route candidates that no actor executed before validation; they do not treat the unknown black-box complement as measurable product coverage.
 
 ---
 
@@ -19,7 +19,7 @@ Automated scanners are structurally blind to authorization flaws (BOLA/BFLA) bec
 
 세 가지 관찰이 이 연구의 출발점이다.
 
-1. **스캐너는 인가 취약점에 구조적으로 눈이 멀어 있다.** BOLA(객체 인가)·BFLA(기능 인가)는 "이 객체가 누구의 것인가", "이 기능이 어떤 role 전용인가"라는 **의미(semantic)** 문제다. 시그니처/패턴 기반 스캐너에는 이 개념 자체가 없어 근본적으로 탐지가 어렵다. 그럼에도 이 둘은 OWASP API Security Top 10의 #1(BOLA)·#3(BFLA)이다.
+1. **일반 목적 스캐너만으로는 인가 의미가 부족하다.** BOLA(객체 인가)·BFLA(기능 인가)는 "이 객체가 누구의 것인가", "이 기능이 어떤 role 전용인가"라는 **의미(semantic)** 문제다. 일부 도구와 연구는 신원 스왑·정책·코드 분석을 사용하지만, 일반적인 크롤링·시그니처만으로는 소유권과 역할 문맥을 완결하기 어렵다. FlowScope는 이 한계를 절대적 불가능으로 표현하지 않고 HUMAN·ZAP·LLM의 실제 차이를 측정 대상으로 둔다.
 2. **사람은 UI가 이끄는 경로만 밟는다.** 수동 테스터는 화면에서 도달 가능한 흐름을 따라가며, 백오피스·레거시·문서화 안 된 엔드포인트, 그리고 "밟긴 했지만 **다른 신원으로는 안 밟은**" 조합을 체계적으로 놓친다.
 3. **Burp 트래픽은 한눈에 안 들어온다.** 프록시 히스토리가 수천~수만 건이면 사람이 커버리지 갭을 눈으로 파악하는 것은 불가능하다. 놓침의 상당수가 "안 보여서" 발생한다.
 
@@ -35,19 +35,19 @@ Automated scanners are structurally blind to authorization flaws (BOLA/BFLA) bec
 
 각 트래픽 소스 S ∈ {human, scanner, llm} 는 이 공간의 부분집합 `Cov(S)` 를 채운다. 우리가 찾는 것은:
 
-- **인가 갭 셀:** 정책상 **금지여야 하는데 아무도 시도하지 않은** 셀 (예: `userB`가 `userA`의 객체에 접근 — 전형적 BOLA).
+- **미교차 후보 셀:** 관측된 identity·operation·resource 중 적용 근거는 있으나 아직 해당 신원으로 실행하지 않은 셀. 정책상 금지인지와 취약한지는 후속 Evidence 검증 전에는 미확정이다.
 - **단일-신원 열:** 특정 엔드포인트를 오직 `admin`만 밟은 열 (BFLA 후보 열).
-- **셋 다 놓친 여집합:** `Cov(human) ∪ Cov(scanner) ∪ Cov(llm)` 의 바깥 — 진짜 블라인드스팟.
+- **미실행 route 후보:** 응답·정적 메타데이터·API 정의 등 scope 내부 Evidence에서 발견됐지만 세 source가 아직 요청하지 않은 route. 블랙박스 전체 여집합이 아니라 근거 있는 후보 inventory다.
 
 > **범위 명시:** FlowScope의 분석 코어는 자체 페이로드를 생성하는 액티브 스캐너가 아니다. 확장 기능은 명시적 범위와 사용자 승인 아래 외부 ZAP 실행을 오케스트레이션할 수 있으며, 그 실제 트래픽도 출처를 보존해 수집한다. 세 트래픽을 **비교·정렬·시각화**하고 LLM이 차등 근거로 후보를 **지목**한다. 제품 최종 verdict는 D-049의 서버 검증 Evidence 오라클로, 연구 성능은 모든 pass가 잠긴 뒤 라벨 정답으로 독립 채점한다.
 
 ## 3. 접근 (Approach) — 파이프라인
 
 ```
-① 수집    사람(Burp export) · 스캐너(ZAP/Burp 출력) · LLM(에이전트 크롤 트래픽)
+① 수집    HUMAN listener · ZAP→Burp listener/HAR · LLM MCP 통제 executor
 ② 정규화  경로 템플릿화(/order/1234 → /order/{id}) · GraphQL→op명 · 각 요청에 신원 태깅
 ③ 정렬    (신원 × 엔드포인트 × 객체) 커버리지 매트릭스 + 데이터플로우 그래프 구축
-④ 분석    LLM이 3자 차등을 읽고 BOLA/BFLA/broken-access 후보를 근거와 함께 랭킹
+④ 분석    별도 Judge가 동결된 3자 차등을 읽고 BOLA/BFLA/broken-access 후보를 Evidence와 함께 랭킹
 ⑤ 검증    별도 LLM VALIDATION run의 반복 재현 + 정상 대조 + 서버 오라클
 ⑥ 시각화  매트릭스 히트맵(갭) + 플로우 그래프(체인) = 사람 감사·오버라이드
 ⑦ 평가    라벨된 벤치마크에서 후보 precision/recall + 2×2 ablation
@@ -59,7 +59,7 @@ Automated scanners are structurally blind to authorization flaws (BOLA/BFLA) bec
 - **신원 태깅:** 각 요청을 세션 쿠키/토큰/헤더로 role에 귀속. 이 태깅이 없으면 "차등 커버리지"의 신원 축이 성립하지 않는다.
 
 ### 3.2 커버리지 표현 (두 개, 목적이 다름)
-- **커버리지 매트릭스(히트맵):** "아무도 안 밟은 칸"을 보는 용도. BOLA/BFLA 갭 탐색엔 node-link보다 압도적으로 낫다.
+- **판정 매트릭스:** 관측된 적용 가능 집합 안에서 “누가 밟았고 누가 아직 안 밟았는가”를 보는 용도다. 블랙박스 전체 분모나 전역 커버리지 퍼센트는 만들지 않는다.
   ```
                    GET /order/{id}   DELETE /order/{id}   POST /admin/refund
     anon              ✗                  ✗                   ✗
@@ -71,7 +71,7 @@ Automated scanners are structurally blind to authorization flaws (BOLA/BFLA) bec
 - **데이터플로우 그래프(node-link):** 값(id/token)이 엔드포인트 사이를 흐르는 체인. IDA의 xref에 대응하며 **BOLA 체인 추적**에 제격. 노드=엔드포인트, 선=데이터 의존(네비게이션 아님).
 
 ### 3.3 LLM 분석 (Option B — LLM이 분석까지)
-LLM의 역할은 "새 스캐너"가 아니라 **가설 수립 + 표적 후보 생성 + 우선순위**다.
+LLM은 두 역할을 분리한다. Explorer는 독립된 세 번째 실제 트래픽 source이고, 별도 Judge는 동결된 세 결과의 **가설 수립 + 표적 후보 생성 + 우선순위 + 통제 검증**을 담당한다.
 ```
 3자 차등 → 유망 셀 목록 → 셀마다 취약 클래스 가설("여긴 BFLA")
         → 근거(왜 위험한지) + 재현 힌트 → 랭킹된 후보 리스트
@@ -105,7 +105,7 @@ LLM의 역할은 "새 스캐너"가 아니라 **가설 수립 + 표적 후보 �
 - **C1.** 세 이질적 액터(사람/스캐너/LLM)의 트래픽을 **단일 신원-인지 커버리지 표현**으로 통합하는 정규화·정렬 방법.
 - **C2.** 그 3자 차등을 컨텍스트로 사용해 LLM이 BOLA/BFLA 후보를 랭킹하는 분석 방법, 그리고 그것이 raw-LLM 대비 우월함을 보이는 **2×2 ablation**.
 - **C3.** 후보를 사람이 초고속 검증하는 **두 시각화 뷰**(커버리지 매트릭스 + 데이터플로우 그래프)와 검증 시간 단축 효과 평가.
-- **C4.** 라벨된 벤치마크에서 **"셋 다 놓친 여집합"에서 실제 취약점을 발견**함을 보이는 실증.
+- **C4.** 라벨된 벤치마크에서 세 source가 검증 전 실행하지 않았지만 scope 내부 Evidence로 발견된 route/cell 후보에서 실제 취약점을 추가로 찾는지 실증.
 
 ## 7. 평가 설계 (Evaluation)
 
@@ -139,7 +139,7 @@ LLM이 소스이자 분석가이면 "내가 커버한 걸 내가 발견"하는 �
 - **time-to-verify** — 서버 검증 verdict와 사람이 Evidence를 감사하는 데 걸리는 시간 (Burp raw 대비 단축).
 - **차등 lift** — treatment vs control 후보 품질 차이 (가로축).
 - **커버리지 gain** — LLM-소스 추가로 인한 커버리지 증가 (세로축).
-- **여집합 발견 수** — 셋 다 놓친 영역에서 나온 진짜 취약점 개수 ← *제목에 들어갈 숫자*.
+- **미실행 후보 발견 수** — 검증 전 세 source가 실행하지 않았지만 근거 있는 route/cell 후보에서 확인된 진짜 취약점 개수. 전체 블랙박스 여집합으로 해석하지 않는다.
 
 ## 8. 예상 반론 & 대응 (Anticipated Objections)
 
@@ -155,20 +155,20 @@ LLM이 소스이자 분석가이면 "내가 커버한 걸 내가 발견"하는 �
 - **External — 의도적 취약 앱 편향:** deliberately-vulnerable 앱은 실서비스와 다름 → 인가된 실앱/공개 리포트 재현으로 보강.
 - **Circularity:** §7.1의 2×2로 격리.
 
-## 10. 관련 연구 (서베이 예정 — 다음 단계)
-아래 영역과의 중첩을 확인해야 신규성이 방어된다. *(현재 미검증, WebSearch 서베이 대상)*
+## 10. 관련 연구
+현재 확인한 문헌과 근거 강도는 `research.md`가 정본이다. 아래 영역과의 중첩·차별성은 계속 갱신해야 하며, 초록만 확인한 항목을 확정 근거로 사용하지 않는다.
 - LLM 기반 펜테스팅/웹 취약점 에이전트
 - API 보안 테스팅 · 자동 BOLA/IDOR 탐지 도구 및 연구
 - 커버리지-가이드 웹 크롤링/스캐닝, differential testing
 - 공격 그래프 / 트래픽 시각화
 
 ## 11. 로드맵 (Milestones)
-1. **M1 — 정규화 코어:** 경로 템플릿화 + 신원 태깅 + Burp/ZAP 인제스트. (파이프라인 ①②)
-2. **M2 — 커버리지 표현:** 매트릭스 + 데이터플로우 그래프 생성 (③).
-3. **M3 — LLM 분석:** 차등 → 랭킹 후보 (④), 프롬프트/스키마 확정.
-4. **M4 — 시각화 뷰:** 매트릭스 히트맵 + 플로우 그래프 인터랙션 (⑤).
-5. **M5 — 평가:** 벤치마크 세팅 + 2×2 ablation + 지표 (⑥).
-6. **M6 — 논문화:** 서베이 반영, threats, 재현성 패키지.
+1. **M1 — 정규화 코어:** beta.32 구현, 범용 corpus 정밀도 측정은 미완료.
+2. **M2 — 관측 표현:** 매트릭스 + 데이터플로우 그래프 구현, 대규모 실제 데이터 UX·성능 gate는 미완료.
+3. **M3 — LLM 실행·분석:** 독립 Explorer, 별도 Judge, exact-run Evidence lock 구현, beta.32 실제 Burp E2E는 미완료.
+4. **M4 — 검증 작업면:** Evidence 상세·Request Lab·서버 verdict gate 구현, P1과 실제 전체 재현 gate는 미완료.
+5. **M5 — 평가:** 정답 격리 벤치마크 + 2×2 ablation + REVIEW 비용 측정 예정.
+6. **M6 — 논문화:** 서베이·threats·재현성 패키지와 실증 결과 반영 예정.
 
 ## 부록 A. 용어
 - **BOLA (Broken Object Level Authorization)** = **IDOR**. 객체 인가 우회. OWASP API #1.
@@ -177,4 +177,4 @@ LLM이 소스이자 분석가이면 "내가 커버한 걸 내가 발견"하는 �
 - **오라클(oracle).** 어떤 시도가 취약을 드러냈는지 판정하는 기준(여기선 "금지 요청이 성공했는가").
 
 ---
-*문서 버전 v1 — 이후 신규성 서베이(§10) 결과와 적대적 리뷰를 반영해 v2로 갱신 예정.*
+*문서 버전 v2 — beta.32의 관측 가능 범위, exact-run Evidence, Explorer/Judge 분리와 미검증 gate를 반영했다. 성능 우위는 블라인드 평가 전까지 주장하지 않는다.*

@@ -1,6 +1,6 @@
 # Agent workspace
 
-This directory contains the repeatable manual fallback for FlowScope Explorer and final Judge with Codex or Claude Code subscriptions. The beta.7 primary flow is the Web quick-start `LLM Explorer 시작` and `Judge 시작` buttons, which bundle these rules into separate CLI sessions. This directory does not contain model-provider credentials.
+This directory contains the repeatable manual fallback for FlowScope Explorer and final Judge with Codex or Claude Code subscriptions. The beta.32 primary flow is the Web quick-start `LLM Explorer 시작` and `Judge 시작` buttons. FlowScope discovers standard CLI installations, checks the provider's official sign-in status, creates isolated role-specific workspaces, injects the MCP contract, and starts Explorer and Judge as separate CLI sessions. This directory does not contain model-provider credentials.
 
 Use the steps below only when the Web launcher cannot find or start the local CLI. Do not run this manual workflow at the same time as a button-launched Explorer or Judge.
 
@@ -9,8 +9,8 @@ Use the steps below only when the Web launcher cannot find or start the local CL
 3. Trust this project in Codex, then start `codex` or `claude` from this directory so its project instructions and MCP configuration apply. Codex intentionally ignores project-scoped `.codex/` configuration in an untrusted project.
 4. Before a run, verify discovery with `codex mcp get flowscope` (Codex) or the client's MCP server list. It must show `http://127.0.0.1:8787/mcp` and bearer-token environment variable `FLOWSCOPE_MCP_TOKEN`. Do not add a duplicate global server when the project entry is already present.
 5. In the FlowScope Web UI, capture each test-account session through HUMAN port 8080. Give the agent only the exact authorized target, safe account IDs, and safety constraints; never paste raw cookies or tokens.
-6. After the HUMAN and deterministic ZAP lanes complete, ask the agent to execute `prompts/explorer.md`. It may configure only the exact operator-supplied target before a run, sends target traffic only through `flowscope_target_request`, and follows route candidates derived only from its own run.
-7. After Explorer ends, ask it to execute `prompts/judge.md`. Judge locks the three-lane dataset and route inventory, correlates gaps, unrequested routes, and ZAP alerts, captures controlled validation Evidence, and submits final bundles itself.
+6. Run `prompts/explorer.md` as an independent lane. It may configure only the exact operator-supplied target before a run, sends safe reads through `flowscope_target_read` and approved writes through `flowscope_target_request`, and follows route candidates derived only from its own run. It cannot complete without controlled response Evidence for that exact run.
+7. After HUMAN, deterministic ZAP, and Explorer have each completed, run `prompts/judge.md` in a separate fresh session. Judge locks only the frozen Evidence IDs from the three exact completed runs, correlates gaps, unrequested routes, and ZAP alerts, captures controlled validation Evidence, and submits final bundles itself.
 
 Example: `codex "Read AGENTS.md, then execute prompts/explorer.md against the authorized target I provide."`
 
