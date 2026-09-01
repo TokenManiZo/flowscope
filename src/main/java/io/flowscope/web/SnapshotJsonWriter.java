@@ -8,6 +8,7 @@ import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AuthorizationAnalysis;
 import io.flowscope.core.DataFlowAnalyzer;
 import io.flowscope.core.Fingerprints;
+import io.flowscope.core.GraphObservationFact;
 import io.flowscope.core.Masking;
 import io.flowscope.core.ObservationCollapser;
 import io.flowscope.core.Pipeline;
@@ -61,6 +62,8 @@ public final class SnapshotJsonWriter {
                 "https://demo.flowscope.test:443".equals(record.service)
                         && record.runId != null && record.runId.startsWith("demo-")));
         root.set("events", events(result));
+        root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()
+                .map(GraphObservationFact::from).toList()));
         ObjectNode traffic = root.putObject("trafficStats");
         traffic.put("captured", result.records.size());
         traffic.put("coverage", result.coverageRecords.size());

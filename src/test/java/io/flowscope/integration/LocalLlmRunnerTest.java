@@ -147,6 +147,8 @@ final class LocalLlmRunnerTest {
         assertFalse(process.prompt().contains("local-mcp-token"));
         assertTrue(process.prompt().contains("Primary entry target: https://api.example.test/v1"));
         assertTrue(process.prompt().contains("run_id=" + started.runId()));
+        assertTrue(process.prompt().contains("first target operation MUST be `flowscope_target_read method=GET`"));
+        assertTrue(process.prompt().contains("use `flowscope_browser_navigate` as a fallback"));
 
         complete(Source.LLM, started.runId());
         process.release();
@@ -229,9 +231,11 @@ final class LocalLlmRunnerTest {
     @Test
     void failsAndAbortsExplorerWhenCliDoesNotEndItsRun() throws Exception {
         FakeProcess process = new FakeProcess(0, "finished without MCP end\n");
-        runner = runner((provider, command, directory, environment) -> process);
+        AtomicReference<String> cleanedRun = new AtomicReference<>();
+        runner = runner((provider, command, directory, environment) -> process, ignored -> true,
+                cleanedRun::set);
 
-        runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
+        LocalLlmRunner.State started = runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
                 LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
                 List.of("https://api.example.test/v1"), ""));
         process.release();
@@ -241,6 +245,7 @@ final class LocalLlmRunnerTest {
         assertTrue(completed.message().contains("정상 종료하지 않았습니다"));
         assertNull(contexts.current(Source.LLM));
         assertFalse(contexts.completedExplorations().contains(Source.LLM));
+        assertEquals(started.runId(), cleanedRun.get());
     }
 
     @Test
@@ -459,9 +464,14 @@ final class LocalLlmRunnerTest {
     }
 
     private LocalLlmRunner runner(LocalLlmRunner.ProcessLauncher launcher, Predicate<String> evidence) {
+        return runner(launcher, evidence, ignored -> {});
+    }
+
+    private LocalLlmRunner runner(LocalLlmRunner.ProcessLauncher launcher, Predicate<String> evidence,
+                                  java.util.function.Consumer<String> explorerCleanup) {
         return new LocalLlmRunner("http://127.0.0.1:8787/mcp", "local-mcp-token", contexts, sessions,
                 datasetLocked::get, launcher, ignored -> {}, Map.of(LocalLlmRunner.Provider.CODEX, "/bin/sh",
-                        LocalLlmRunner.Provider.CLAUDE, "/bin/sh"), evidence);
+                        LocalLlmRunner.Provider.CLAUDE, "/bin/sh"), evidence, explorerCleanup);
     }
 
     private void completeOtherLanes() {

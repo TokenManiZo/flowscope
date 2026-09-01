@@ -1,6 +1,26 @@
-# FlowScope 1.2.0-beta.35 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.37 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.35 절만 현재 우선순위다. 아래 beta.34 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.35 절을 따른다.
+> **읽는 법:** 맨 위 beta.37 절만 현재 우선순위다. 아래 beta.36 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.37 절을 따른다.
+
+## 0. beta.37 우선순위: Explorer 입력 무결성과 그래프 Fact Core
+
+1. Explorer run에서 선택한 account를 고정하고 target tool의 account override를 서버에서 거부한다.
+2. rendered discovery는 선택형 8082 listener에 의존하지 않게 CDP direct worker로 유지하되 exact scope와 service별 broker header 경계를 강제한다.
+3. CLICK/FILL selector가 아니라 실제 비안전 HTTP request 단위로 Burp 승인을 받고, browser runtime route를 discovery-only frontier에 등록해 controlled replay를 완료 조건으로 만든다.
+4. coverage 관측을 `GraphObservationFact`로 투영해 Evidence·identity·API·object·source·run·HTTP outcome을 보존하고, 화면은 Site→API Group→Identity→API→Object family/instance 순으로 단계적으로 연다.
+5. 전체 `mvn clean verify`, JavaScript parse, 단일 JAR smoke를 통과한 뒤 beta.37을 실제 Burp에 재로드해 현재 beta.34 화면과 구분한다. crAPI 고카디널리티 객체에서 선 교차·라벨 가독성·클릭 drill-down을 확인하고, beta.36 대비 route replay·노이즈·시간·메모리와 blind endpoint/finding 성능을 별도 측정한다.
+
+**현재 상태:** 1~4 코드, inline JavaScript parse, 전체 `mvn clean verify` 299 tests 연속 2회와 동일 SHA-256 JAR은 통과했다. 5의 실제 Burp beta.37 재로드·고카디널리티 화면·블라인드 효능은 아직 완료로 기록하지 않는다.
+
+## 0. beta.36 우선순위: SPA browser discovery와 Evidence replay 분리
+
+1. 설치된 Chrome/Chromium/Edge를 임시 profile·CDP로 실행하되 Playwright/Chrome MCP/ChromeDriver를 새 사용자 의존성으로 만들지 않는다.
+2. CDP에서 exact scope 밖 request를 차단하고 run 시작 시 선택한 broker account를 고정 주입한다. 기본 Chrome profile과 provider 브라우저를 재사용하지 않는다.
+3. DOM·링크·폼·버튼·SPA runtime network는 discovery hint로만 반환하고, controlled executor 재현만 Evidence·완료·Judge lock 자격을 갖는다.
+4. direct navigation/snapshot은 자동 허용하되 CLICK/FILL은 Burp 승인, password/file block, arbitrary JavaScript 비노출을 강제한다.
+5. 로컬 Chrome smoke와 자동 계약을 통과한 뒤 beta.36 JAR을 실제 Burp에 재로드해 HTTPS, 8082 proxy, ACTIVE account session, SPA API 발견→replay→Evidence→run 종료를 확인한다. 이어 동일 target에서 beta.35 HTTP-only 대비 새 route 수, 유효 API 수, 중복/노이즈, 소요시간·메모리를 측정한다.
+
+**현재 상태:** 1~4 코드와 run 실패·취소 cleanup, 로컬 설치 Chrome의 임시-profile/CDP/exact-scope/DOM/network/click smoke, MCP discovery-only 계약 회귀를 완료했다. 전체 `mvn clean verify` 296 tests와 beta.36 JAR smoke도 통과했으며 정확한 산출물은 `beta-validation.md`에 기록했다. 실제 Burp HTTPS·broker account·8082 통합과 블라인드 성능 비교는 아직 완료로 주장하지 않는다.
 
 ## 0. beta.35 우선순위: Explorer 안전 개방과 실증 가능한 완료 gate
 
@@ -341,7 +361,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 
 #### H2. Route Candidate Inventory — 관측과 후보를 분리
 
-**현재 상태: beta.35 공통 코어·source/run 격리·candidate lock·전문 보존·구독 CLI 표준 경로/공식 auth preflight·Codex 임시 home 격리·bounded 작업 피드·읽기/쓰기 MCP 분리·server/launcher 0-Evidence 이중 gate·독립 safe frontier 뒤 provenance-free assisted frontier·종료 시 safe concrete frontier 재검사·목적별 `SourceTrustPolicy`·exact `LaneCompletionPolicy`·완료 시점 Evidence ID 동결·고정 Judge dataset·JSON v3/SQLite v2 저장·Evidence 단계형 path template·보수적 semantic field 보강·계정 중심 세션 projection·source 전체 접근 경로 필터·세션 충돌 차단·접근선 표시 집계·raw ZAP completion·안전 add-on/Context/passive/scope/outgoing-proxy preflight·명시 API 정의 import·Traditional/Client/AJAX 독립 실행·Alert pagination·ZAP HAR SCANNER import·HUMAN request-time context/epoch·bounded raw-byte 요청 실험실·Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시·선형 cluster/DataFlow projection·bounded live decode/GZIP restore/assessment·Evidence UI 안정화·ZAP Desktop/Docker 배포 중립 연결·단계형 첫 실행 내비게이션·배포물/CI·streaming manifest/MR relocation 하드닝·판정 오라클/게시 격리를 구현했다. 실제 beta.35 Burp 3-way 저장·재열기, 20,000건 polling/RSS, SPA browser worker와 블라인드 target 검증은 대기 중이다.**
+**현재 상태: beta.37은 기존 공통 코어·source/run 격리·Session Broker·ZAP 안전 기준선·독립 Explorer/Judge·Evidence 판정 경계를 유지하면서 Explorer account 고정, browser 실제 request 단위 write 승인, runtime route replay gate, `GraphObservationFact`, 사이트/API/객체 계층 투영과 객체 family 접기를 추가했다. 실제 beta.37 Burp 3-way 저장·재열기, HTTPS/broker browser 통합, 고카디널리티 그래프 가독성, 20,000건 polling/RSS와 블라인드 target 검증은 대기 중이다.**
 
 새 모델은 최소한 다음을 보존한다.
 

@@ -52,6 +52,7 @@ import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.SessionBroker;
+import io.flowscope.integration.ControlledBrowserExplorer;
 import io.flowscope.integration.SqliteProjectStore;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
@@ -214,6 +215,12 @@ public final class FlowScopeExtension implements BurpExtension {
     private FlowScopeWebServer webServer;
     private McpServer mcpServer;
     private LocalLlmRunner llmRunner;
+    private final ControlledBrowserExplorer browserExplorer = new ControlledBrowserExplorer(
+            () -> scope,
+            0,
+            request -> approveInBurp("LLM browser state-changing request",
+                    request.method() + " " + request.url()
+                            + (request.bodyPreview().isBlank() ? "" : "\n\nBody preview:\n" + request.bodyPreview())));
     private ZapClient zapClient;
     private final ScheduledExecutorService worker =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -1265,6 +1272,24 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
                     return executeControlledRequest(request);
                 }
+                @Override public ControlledBrowserExplorer.Snapshot browserNavigate(
+                        String runId, String target, String accountId) throws Exception {
+                    Map<String, String> headers = accountId == null ? Map.of()
+                            : sessionBroker.headersForAccount(accountId, URI.create(target), scope,
+                            java.time.Instant.now());
+                    return browserExplorer.navigate(runId, target, headers);
+                }
+                @Override public ControlledBrowserExplorer.Snapshot browserSnapshot(String runId) throws Exception {
+                    return browserExplorer.snapshot(runId);
+                }
+                @Override public ControlledBrowserExplorer.Snapshot browserInteract(
+                        String runId, String action, String selector, String value) throws Exception {
+                    return browserExplorer.interact(runId, action, selector, value);
+                }
+                @Override public void browserClose(String runId) { browserExplorer.closeRun(runId); }
+                @Override public boolean browserAvailable() {
+                    return ControlledBrowserExplorer.locateBrowser().isPresent();
+                }
                 @Override public boolean approve(String action, String target) {
                     return approveInBurp(action, target);
                 }
@@ -1281,6 +1306,7 @@ public final class FlowScopeExtension implements BurpExtension {
             llmRunner = new LocalLlmRunner("http://127.0.0.1:" + mcpServer.port() + "/mcp", mcpServer.token(),
                     runContexts, sessionBroker, mcpServer::datasetLocked,
                     runId -> mcpServer.hasExplorationResponse(Source.LLM, runId),
+                    browserExplorer::closeRun,
                     message -> api.logging().logToError(message));
             String connection = "http://127.0.0.1:" + mcpServer.port() + "/mcp · Bearer " + mcpServer.token();
             if (controlTab != null) controlTab.setMcpStatus(connection);
@@ -1296,7 +1322,7 @@ public final class FlowScopeExtension implements BurpExtension {
         AtomicBoolean approved = new AtomicBoolean(false);
         Runnable prompt = () -> approved.set(JOptionPane.showConfirmDialog(controlTab,
                 action + "을 실행할까요?\n\n대상: " + target
-                        + "\n\n활성 스캔은 대상 상태를 변경하거나 부하를 줄 수 있습니다.",
+                        + "\n\n이 동작은 대상 상태를 변경하거나 부하를 줄 수 있습니다.",
                 "FlowScope 명시적 승인", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)
                 == JOptionPane.YES_OPTION);
         try {
@@ -1311,6 +1337,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void shutdown() {
         if (llmRunner != null) llmRunner.close();
+        browserExplorer.close();
         if (webServer != null) webServer.close();
         if (mcpServer != null) mcpServer.close();
         if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {

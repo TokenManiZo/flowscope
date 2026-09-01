@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0-beta.37 — 2026-09-01
+
+- Fixed the Explorer account for the lifetime of a run and rejected target-tool account overrides.
+- Decoupled the installed-Chrome worker from the optional 8082 listener while retaining CDP exact-scope enforcement and same-service broker injection.
+- Moved browser mutation approval from selectors to the concrete POST/PUT/PATCH/DELETE request, and added a real-Chrome regression proving denied writes do not reach the target.
+- Registered runtime network discoveries as `BROWSER_RUNTIME` non-Evidence frontier entries that must be replayed through the controlled executor.
+- Added Evidence-linked graph observation facts and hierarchical Site → API group → Identity → API → Object-family/instance projections. Path groups remain presentation hints, not authorization facts.
+- Inline JavaScript parsing and all 299 Maven tests passed in two consecutive clean builds; both beta.37 JARs had the same SHA-256. Burp reload and blind effectiveness measurements remain separate gates.
+
+## 1.2.0-beta.36 — 2026-09-01
+
+- Added an Explorer browser worker that controls an installed Chrome/Chromium/Edge through JDK 21 and CDP, without Playwright, Chrome MCP, or ChromeDriver.
+- Each run uses an isolated temporary profile, blocks out-of-scope CDP requests, injects the selected broker session only into its target service, and returns bounded DOM/link/form/SPA-network discovery.
+- Browser observations remain `DISCOVERY_ONLY`; only controlled-executor replay can create Evidence or satisfy LLM completion and Judge-lock gates.
+- Browser click/fill requires Burp approval, password/file inputs are blocked, and no arbitrary-JavaScript tool is exposed.
+- Explorer success, failure, cancellation, and reset now share run-scoped browser cleanup, so failed CLI runs do not leave the isolated browser behind.
+- Secret-bearing query values in the current URL, DOM targets, and network URLs remain usable inside the browser but are masked from MCP discovery output.
+- Added a real local-Chrome smoke and MCP non-Evidence regressions. Burp HTTPS/broker integration and blind performance measurement remain separate gates.
+
 ## 1.2.0-beta.35 — 2026-09-01
 
 - Explorer must exhaust its own-run `INDEPENDENT` concrete safe route frontier before FlowScope exposes cross-lane route strings as `ASSISTED` blind hints.

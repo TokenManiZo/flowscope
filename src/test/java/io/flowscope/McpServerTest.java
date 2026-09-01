@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import io.flowscope.core.*;
 import io.flowscope.integration.McpServer;
+import io.flowscope.integration.ControlledBrowserExplorer;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.ZapClient;
 import org.junit.jupiter.api.AfterEach;
@@ -17,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Map;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -94,6 +96,7 @@ final class McpServerTest {
         JsonNode initialized = json(post("test-token", request(2, "initialize",
                 "{\"protocolVersion\":\"future-version\"}")));
         assertEquals("2025-11-25", initialized.at("/result/protocolVersion").asText());
+        assertEquals("1.2.0-beta.37", initialized.at("/result/serverInfo/version").asText());
         assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
 
         JsonNode evidence = tool("flowscope_get_evidence",
@@ -233,8 +236,12 @@ final class McpServerTest {
         JsonNode listed = json(post("test-token", request(4, "tools/list", "{}")));
         List<String> names = listed.at("/result/tools").findValuesAsText("name");
 
-        assertEquals(8, names.size());
+        assertEquals(12, names.size());
         assertTrue(names.contains("flowscope_target_read"));
+        assertTrue(names.contains("flowscope_browser_navigate"));
+        assertTrue(names.contains("flowscope_browser_snapshot"));
+        assertTrue(names.contains("flowscope_browser_interact"));
+        assertTrue(names.contains("flowscope_browser_close"));
         assertTrue(names.contains("flowscope_list_route_candidates"));
         assertTrue(names.contains("flowscope_end_run"));
         assertFalse(names.contains("flowscope_set_scope"));
@@ -242,6 +249,61 @@ final class McpServerTest {
         assertFalse(names.contains("flowscope_list_candidates"));
         assertFalse(names.contains("flowscope_zap_baseline"));
         assertFalse(names.contains("flowscope_submit_validation"));
+    }
+
+    @Test
+    void controlledBrowserIsExplorerOnlyAndReturnsDiscoveryNotEvidence() throws Exception {
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "browser-run"));
+        AtomicReference<String> target = new AtomicReference<>();
+        AtomicReference<String> account = new AtomicReference<>();
+        AtomicBoolean closed = new AtomicBoolean();
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+            @Override public ScopePolicy scope() { return ScopePolicy.parse("https://api.example.test/v1"); }
+            @Override public void updateScope(String value) { throw new UnsupportedOperationException(); }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String value) { return false; }
+            @Override public ControlledBrowserExplorer.Snapshot browserNavigate(
+                    String runId, String value, String accountId) {
+                target.set(value);
+                account.set(accountId);
+                return browserSnapshotValue(runId, value);
+            }
+            @Override public ControlledBrowserExplorer.Snapshot browserSnapshot(String runId) {
+                return browserSnapshotValue(runId, target.get());
+            }
+            @Override public void browserClose(String runId) { closed.set(true); }
+            @Override public boolean browserAvailable() { return true; }
+        }, 0, "test-token");
+        server.start();
+
+        JsonNode navigated = tool("flowscope_browser_navigate",
+                "{\"target\":\"https://api.example.test/v1/dashboard\"}");
+        assertFalse(navigated.at("/result/isError").asBoolean(), navigated.toString());
+        assertEquals("https://api.example.test/v1/dashboard", target.get());
+        assertNull(account.get());
+        assertEquals("DISCOVERY_ONLY", navigated.at("/result/structuredContent/evidence_status").asText());
+        assertTrue(navigated.at("/result/structuredContent/evidence_id").isMissingNode());
+        assertEquals("https://api.example.test/v1/orders",
+                navigated.at("/result/structuredContent/network/0/url").asText());
+        JsonNode browserFrontier = tool("flowscope_list_route_candidates",
+                "{\"view\":\"INDEPENDENT\"}");
+        assertFalse(browserFrontier.at("/result/isError").asBoolean(), browserFrontier.toString());
+        assertEquals(1, browserFrontier.at("/result/structuredContent/total").asInt());
+        assertEquals("/v1/orders",
+                browserFrontier.at("/result/structuredContent/routes/0/path_template").asText());
+        assertFalse(browserFrontier.at("/result/structuredContent/routes/0/evidence_backed").asBoolean());
+        assertEquals("BROWSER_RUNTIME",
+                browserFrontier.at("/result/structuredContent/routes/0/provenance/0/type").asText());
+
+        assertFalse(tool("flowscope_browser_close", "{}").at("/result/isError").asBoolean());
+        assertTrue(closed.get());
+        assertTrue(tool("flowscope_browser_navigate",
+                "{\"target\":\"https://outside.example/\"}").at("/result/isError").asBoolean());
     }
 
     @Test
@@ -515,6 +577,11 @@ final class McpServerTest {
         assertTrue(tool("flowscope_target_read",
                 "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"," +
                         "\"account_id\":\"missing\"}").at("/result/isError").asBoolean());
+        JsonNode accountOverride = tool("flowscope_target_read",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"," +
+                        "\"account_id\":\"user-b\"}");
+        assertTrue(accountOverride.at("/result/isError").asBoolean());
+        assertTrue(accountOverride.at("/result/content/0/text").asText().contains("fixed by the active run"));
         assertTrue(tool("flowscope_target_request",
                 "{\"method\":\"DELETE\",\"target\":\"https://api.example.test/v1/orders/7\"," +
                         "\"confirmed\":true}").at("/result/isError").asBoolean());
@@ -1327,6 +1394,14 @@ final class McpServerTest {
         record.hasResponse = true;
         record.responseContentType = "application/json";
         return record;
+    }
+
+    private static ControlledBrowserExplorer.Snapshot browserSnapshotValue(String runId, String currentUrl) {
+        return new ControlledBrowserExplorer.Snapshot(runId, currentUrl, "Dashboard", "Orders",
+                List.of(new ControlledBrowserExplorer.Element("link", "Orders",
+                        "https://api.example.test/v1/orders", "GET")),
+                List.of(new ControlledBrowserExplorer.Route("GET",
+                        "https://api.example.test/v1/orders", "Fetch", 200)), true);
     }
 
     private static JsonNode findTool(JsonNode tools, String name) {

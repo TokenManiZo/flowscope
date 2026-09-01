@@ -28,7 +28,8 @@ public final class McpServer implements AutoCloseable {
     private static final Set<String> EXPLORER_VISIBLE_TOOLS = Set.of(
             "flowscope_get_status", "flowscope_list_sessions", "flowscope_target_read",
             "flowscope_target_request", "flowscope_list_route_candidates", "flowscope_list_evidence",
-            "flowscope_get_evidence", "flowscope_end_run");
+            "flowscope_get_evidence", "flowscope_browser_navigate", "flowscope_browser_snapshot",
+            "flowscope_browser_interact", "flowscope_browser_close", "flowscope_end_run");
     private static final Set<String> SAFE_DISCOVERY_METHODS = Set.of("GET", "HEAD", "OPTIONS", "UNKNOWN");
     public interface State {
         Pipeline.Result snapshot();
@@ -50,6 +51,19 @@ public final class McpServer implements AutoCloseable {
         default TargetResult targetRequest(TargetRequest request) {
             throw new UnsupportedOperationException("controlled target executor is unavailable");
         }
+        default ControlledBrowserExplorer.Snapshot browserNavigate(String runId, String target, String accountId)
+                throws Exception {
+            throw new UnsupportedOperationException("controlled browser is unavailable");
+        }
+        default ControlledBrowserExplorer.Snapshot browserSnapshot(String runId) throws Exception {
+            throw new UnsupportedOperationException("controlled browser is unavailable");
+        }
+        default ControlledBrowserExplorer.Snapshot browserInteract(String runId, String action,
+                                                                    String selector, String value) throws Exception {
+            throw new UnsupportedOperationException("controlled browser is unavailable");
+        }
+        default void browserClose(String runId) { }
+        default boolean browserAvailable() { return ControlledBrowserExplorer.locateBrowser().isPresent(); }
         default void assessmentsChanged(List<Assessment> values) {}
         default void validationsChanged(List<ValidationDecision> values) {}
     }
@@ -102,6 +116,7 @@ public final class McpServer implements AutoCloseable {
     private volatile List<RouteCandidate> lockedRouteCandidates = List.of();
     private volatile String lockId = "";
     private final Map<String, ExplorerProgress> explorerProgress = new ConcurrentHashMap<>();
+    private final Map<String, List<RouteCandidate>> browserDiscoveredRoutes = new ConcurrentHashMap<>();
     private final ExecutorService zapWorkflow = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "flowscope-zap-baseline");
         thread.setDaemon(true);
@@ -185,6 +200,7 @@ public final class McpServer implements AutoCloseable {
         lockedRouteCandidates = List.of();
         lockId = "";
         explorerProgress.clear();
+        browserDiscoveredRoutes.clear();
         if (zapBaseline == null || !"RUNNING".equals(zapBaseline.status())) {
             zapBaseline = null;
             zapBaselineAlerts = json.createArrayNode();
@@ -209,6 +225,7 @@ public final class McpServer implements AutoCloseable {
         state.validationsChanged(snapshotValidations());
     }
     @Override public void close() {
+        browserDiscoveredRoutes.clear();
         zapWorkflow.shutdownNow();
         server.close();
     }
@@ -294,11 +311,13 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.35");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.37");
         result.put("instructions", "Authorized exact-scope assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_read/flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
-                + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "
-                + "by the operator before any run; never infer or broaden scope. The system-owned ZAP baseline, not the "
+                + "source repositories, direct curl, or provider-controlled browser networking. If needed, set only the exact target supplied "
+                + "by the operator before any run; never infer or broaden scope. Explorer may use only FlowScope's "
+                + "isolated browser for rendered discovery and must replay relevant requests through the controlled executor for Evidence. "
+                + "The system-owned ZAP baseline, not the "
                 + "LLM, chooses scanner stages. Begin and end every LLM run. Explorer first exhausts its independent safe "
                 + "route frontier, then may consume provenance-free cross-lane route hints. After all three lanes finish, "
                 + "lock the dataset before Judge synthesis. CONFIRMED or "
@@ -326,6 +345,14 @@ public final class McpServer implements AutoCloseable {
                 targetReadSchema(), false, false));
         tools.add(tool("flowscope_target_request", "Send one operator-approved exact-scope POST, PUT, PATCH, or DELETE request through FlowScope's controlled executor.",
                 targetWriteSchema(), false, true));
+        tools.add(tool("flowscope_browser_navigate", "Open or navigate FlowScope's isolated installed-Chrome Explorer. Exact scope and broker session are enforced; returned browser observations are discovery hints and must be replayed with flowscope_target_read/request to become Evidence.",
+                browserNavigateSchema(), false, false));
+        tools.add(tool("flowscope_browser_snapshot", "Read a bounded, secret-masked DOM and network summary from the active isolated Explorer browser.",
+                schema(), true, false));
+        tools.add(tool("flowscope_browser_interact", "Click or fill one selector in the active exact-scope Explorer browser. Password/file inputs are blocked, resulting state-changing HTTP requests require separate concrete-request Burp approval, and browser output remains discovery-only.",
+                browserInteractSchema(), false, true));
+        tools.add(tool("flowscope_browser_close", "Close the isolated Explorer browser and delete its temporary profile.",
+                schema(), false, false));
         tools.add(tool("flowscope_submit_assessment", "Submit a non-confirming LLM assessment tied to existing evidence IDs.",
                 assessmentSchema(), false, false));
         tools.add(tool("flowscope_list_assessments", "List LLM assessments submitted during this Burp session.", paginationSchema(), true, false));
@@ -372,6 +399,10 @@ public final class McpServer implements AutoCloseable {
                 case "flowscope_list_sessions" -> listSessions();
                 case "flowscope_target_read" -> targetRequest(args, true);
                 case "flowscope_target_request" -> targetRequest(args, false);
+                case "flowscope_browser_navigate" -> browserNavigate(args);
+                case "flowscope_browser_snapshot" -> browserSnapshot();
+                case "flowscope_browser_interact" -> browserInteract(args);
+                case "flowscope_browser_close" -> browserClose();
                 case "flowscope_submit_assessment" -> submitAssessment(args);
                 case "flowscope_list_assessments" -> assessmentPage(args);
                 case "flowscope_submit_validation" -> submitValidation(args);
@@ -468,6 +499,8 @@ public final class McpServer implements AutoCloseable {
         }
         out.put("llm_target_proxy", "http://127.0.0.1:8082");
         out.put("llm_target_proxy_trust", ExecutionTrust.UNVERIFIED_RUNTIME.name());
+        out.put("controlled_browser_available", state.browserAvailable());
+        out.put("controlled_browser_evidence_policy", "DISCOVERY_THEN_REPLAY");
         out.put("scanner_target_proxy", "http://127.0.0.1:8081");
         ObjectNode activeRuns = out.putObject("active_runs");
         List<Source> visibleRunSources = lockedView ? List.of(Source.HUMAN, Source.SCANNER, Source.LLM)
@@ -586,6 +619,8 @@ public final class McpServer implements AutoCloseable {
             }
             LaneCompletionPolicy.complete(state.contexts(), source, runId, state.completionSnapshot());
             explorerProgress.remove(runId);
+            browserDiscoveredRoutes.remove(runId);
+            if (source == Source.LLM) state.browserClose(runId);
         } else if (!state.contexts().abort(source, runId)) {
             throw new IllegalStateException("run lease disappeared before completion");
         }
@@ -689,6 +724,8 @@ public final class McpServer implements AutoCloseable {
             route.put("observed", candidate.observed());
             route.put("applicability", candidate.applicability().name());
             route.put("review_reason", candidate.reviewReason());
+            route.put("evidence_backed", candidate.provenance().stream().anyMatch(item ->
+                    item.type() != RouteCandidate.ProvenanceType.BROWSER_RUNTIME));
             route.set("priority_reasons", json.valueToTree(RouteCandidateExtractor.priorityReasons(candidate)));
             ArrayNode provenance = route.putArray("provenance");
             for (RouteCandidate.Provenance item : assisted ? List.<RouteCandidate.Provenance>of()
@@ -696,6 +733,7 @@ public final class McpServer implements AutoCloseable {
                 ObjectNode entry = provenance.addObject();
                 entry.put("type", item.type().name());
                 entry.put("evidence_id", item.evidenceId());
+                entry.put("evidence_backed", item.type() != RouteCandidate.ProvenanceType.BROWSER_RUNTIME);
                 entry.put("source", item.source().name());
                 entry.put("run_id", item.runId());
                 entry.put("adapter", item.adapter());
@@ -827,7 +865,14 @@ public final class McpServer implements AutoCloseable {
                 ? null : args.path("body").asText();
         if (body != null && body.length() > 64 * 1024) throw new IllegalArgumentException("request body exceeds 64 KiB");
         String accountId = args.path("account_id").asText();
-        if (accountId.isBlank()) accountId = context.accountId();
+        if (context.phase() == RunPhase.EXPLORATION && context.detail() == SourceDetail.LLM_EXPLORER) {
+            if (!accountId.isBlank() && !java.util.Objects.equals(accountId, context.accountId())) {
+                throw new IllegalArgumentException("Explorer account is fixed by the active run");
+            }
+            accountId = context.accountId();
+        } else if (accountId.isBlank()) {
+            accountId = context.accountId();
+        }
         accountId = validatedAccountForTarget(accountId, target);
         TargetResult result = state.targetRequest(new TargetRequest(method, target, Map.copyOf(headers), body,
                 accountId == null || accountId.isBlank() ? null : accountId));
@@ -839,6 +884,100 @@ public final class McpServer implements AutoCloseable {
         out.put("response_body", Masking.maskSecrets(result.responseBody()));
         out.put("execution_trust", ExecutionTrust.CONTROLLED.name());
         return out;
+    }
+
+    private JsonNode browserNavigate(JsonNode args) throws Exception {
+        RunContextRegistry.Context context = requireExplorerContext();
+        String target = required(args, "target");
+        if (!state.scope().allows(target)) {
+            throw new IllegalArgumentException("browser target is outside configured exact scope");
+        }
+        String accountId = context.accountId();
+        accountId = validatedAccountForTarget(accountId, target);
+        return browserNode(state.browserNavigate(context.runId(), target, accountId));
+    }
+
+    private JsonNode browserSnapshot() throws Exception {
+        RunContextRegistry.Context context = requireExplorerContext();
+        return browserNode(state.browserSnapshot(context.runId()));
+    }
+
+    private JsonNode browserInteract(JsonNode args) throws Exception {
+        RunContextRegistry.Context context = requireExplorerContext();
+        String action = required(args, "action").toUpperCase(java.util.Locale.ROOT);
+        String selector = required(args, "selector");
+        if (!args.path("confirmed").asBoolean(false)) {
+            throw new IllegalArgumentException("browser interaction requires confirmed=true");
+        }
+        String value = args.path("value").isMissingNode() || args.path("value").isNull()
+                ? null : args.path("value").asText();
+        return browserNode(state.browserInteract(context.runId(), action, selector, value));
+    }
+
+    private JsonNode browserClose() {
+        RunContextRegistry.Context context = requireExplorerContext();
+        state.browserClose(context.runId());
+        return json.createObjectNode().put("closed", true).put("run_id", context.runId());
+    }
+
+    private RunContextRegistry.Context requireExplorerContext() {
+        RunContextRegistry.Context context = state.contexts().current(Source.LLM);
+        if (context == null || context.phase() != RunPhase.EXPLORATION
+                || context.detail() != SourceDetail.LLM_EXPLORER) {
+            throw new IllegalStateException("an LLM Explorer run must be active");
+        }
+        return context;
+    }
+
+    private ObjectNode browserNode(ControlledBrowserExplorer.Snapshot snapshot) {
+        registerBrowserRoutes(snapshot);
+        ObjectNode out = json.valueToTree(snapshot);
+        out.put("evidence_status", "DISCOVERY_ONLY");
+        out.put("evidence_instruction", "Replay relevant exact-scope requests with flowscope_target_read/request");
+        return out;
+    }
+
+    private void registerBrowserRoutes(ControlledBrowserExplorer.Snapshot snapshot) {
+        if (snapshot == null || snapshot.runId() == null || snapshot.runId().isBlank()) return;
+        List<RouteCandidate> discovered = new ArrayList<>();
+        for (ControlledBrowserExplorer.Route route : snapshot.network()) {
+            try {
+                URI uri = URI.create(route.url());
+                if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null) continue;
+                int port = uri.getPort() >= 0 ? uri.getPort()
+                        : "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+                String service = uri.getScheme().toLowerCase(java.util.Locale.ROOT) + "://"
+                        + uri.getHost().toLowerCase(java.util.Locale.ROOT) + ":" + port;
+                String path = uri.getRawPath();
+                if (path == null || path.isBlank()) path = "/";
+                String method = route.method() == null || route.method().isBlank()
+                        ? "UNKNOWN" : route.method().toUpperCase(java.util.Locale.ROOT);
+                String material = snapshot.runId() + "\n" + method + "\n" + service + "\n" + path;
+                String artifactId = "browser-discovery-" + shortDigest(material);
+                RouteCandidate.Provenance provenance = new RouteCandidate.Provenance(
+                        RouteCandidate.ProvenanceType.BROWSER_RUNTIME, artifactId, Source.LLM,
+                        snapshot.runId(), "CHROME_CDP", RouteCandidate.Applicability.APPLICABLE,
+                        "브라우저 런타임에서 관측; controlled HTTP 재현 전에는 Evidence가 아님");
+                discovered.add(new RouteCandidate(service, method, path, false, List.of(provenance),
+                        RouteCandidate.Applicability.APPLICABLE,
+                        "브라우저 런타임 경로 — flowscope_target_read/request 재현 필요"));
+            } catch (IllegalArgumentException ignored) {
+                // 마스킹 또는 손상된 URL은 실행 frontier에 넣지 않는다.
+            }
+        }
+        browserDiscoveredRoutes.merge(snapshot.runId(), RouteCandidateExtractor.prioritized(discovered),
+                (left, right) -> RouteCandidateExtractor.prioritized(
+                        java.util.stream.Stream.concat(left.stream(), right.stream()).toList()));
+    }
+
+    private static String shortDigest(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest, 0, 12);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
     }
 
     private JsonNode listSessions() {
@@ -1846,6 +1985,25 @@ public final class McpServer implements AutoCloseable {
         return targetRequestSchema(List.of("POST", "PUT", "PATCH", "DELETE"), true);
     }
 
+    private ObjectNode browserNavigateSchema() {
+        ObjectNode schema = schema();
+        ObjectNode properties = (ObjectNode) schema.get("properties");
+        properties.putObject("target").put("type", "string");
+        schema.putArray("required").add("target");
+        return schema;
+    }
+
+    private ObjectNode browserInteractSchema() {
+        ObjectNode schema = schema();
+        ObjectNode properties = (ObjectNode) schema.get("properties");
+        properties.putObject("action").put("type", "string").putArray("enum").add("CLICK").add("FILL");
+        properties.putObject("selector").put("type", "string").put("maxLength", 500);
+        properties.putObject("value").put("type", "string").put("maxLength", 2_000);
+        properties.putObject("confirmed").put("type", "boolean");
+        schema.putArray("required").add("action").add("selector").add("confirmed");
+        return schema;
+    }
+
     private ObjectNode targetRequestSchema(List<String> methods, boolean confirmed) {
         ObjectNode schema = schema();
         ObjectNode properties = (ObjectNode) schema.get("properties");
@@ -2019,10 +2177,13 @@ public final class McpServer implements AutoCloseable {
                 .filter(record -> record.source == Source.LLM && explorer.runId().equals(record.runId))
                 .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.EXPLORER_VISIBILITY))
                 .map(record -> record.evidenceId).collect(java.util.stream.Collectors.toSet());
-        return RouteCandidateViews.forRun(state.routeCandidates(), Source.LLM, explorer.runId()).stream()
+        List<RouteCandidate> evidenceBacked = RouteCandidateViews.forRun(
+                        state.routeCandidates(), Source.LLM, explorer.runId()).stream()
                 .filter(candidate -> candidate.provenance().stream()
                         .anyMatch(item -> controlledEvidence.contains(item.evidenceId())))
                 .toList();
+        return RouteCandidateExtractor.prioritized(java.util.stream.Stream.concat(evidenceBacked.stream(),
+                browserDiscoveredRoutes.getOrDefault(explorer.runId(), List.of()).stream()).toList());
     }
 
     private List<RouteCandidate> assistedExplorerRoutes(Pipeline.Result snapshot,

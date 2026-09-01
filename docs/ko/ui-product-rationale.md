@@ -4,7 +4,7 @@
 
 ## 1. 한 문장으로 설명하기
 
-FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청을 동일한 신원–객체–API 좌표에 정렬**해, 누가 무엇을 발견하거나 놓쳤는지와 BOLA/IDOR·BFLA 의심 근거를 그래프·매트릭스·원본 Evidence로 함께 보여 주는 Burp Community 확장이다.
+FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청을 동일한 신원–API–객체 좌표에 정렬**해, 누가 무엇을 발견하거나 놓쳤는지와 BOLA/IDOR·BFLA 의심 근거를 그래프·매트릭스·원본 Evidence로 함께 보여 주는 Burp Community 확장이다.
 
 화면 전체는 다음 세 질문에 답하도록 설계했다.
 
@@ -23,7 +23,7 @@ Burp Proxy history는 요청을 시간순으로 잘 보여 주지만, 다음 관
 - 응답에서 얻은 식별자가 뒤 요청에 사용된 흐름;
 - 후보 판정과 그 근거 Request/Response.
 
-FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identity → resource → operation` 관계로 재구성하고, 세 탐지 주체의 결과를 같은 좌표에서 비교하는 보조 분석면이다.
+FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identity → API → Object` 관계로 재구성하고, 세 탐지 주체의 결과를 같은 좌표에서 비교하는 보조 분석면이다.
 
 ## 3. 화면별 설계 근거
 
@@ -33,7 +33,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identi
 | 관측 범위 | 현재 실제로 본 것은 얼마나 되는가? | 관측된 `신원 × 메서드·엔드포인트 × 객체` 조합과 endpoint/method/object 수만 표시한다. | 알 수 없는 전체 API 수를 분모로 삼은 완료 퍼센트를 만들지 않는다. |
 | 수집·메인 비교·기본 숨김·검토 대기 | 분류 때문에 무엇이 메인 비교에서 빠졌는가? | 전체 Evidence와 서로 겹치지 않는 `INCLUDE/EXCLUDE/REVIEW` 수를 나란히 표시해 분류 영향을 숨기지 않는다. | `기본 숨김`이나 `검토 대기`를 삭제·정상·취약점 없음으로 표현하지 않는다. |
 | 샘플 데이터 배너 | 지금 보이는 H/S/L이 실제 실행 결과인가? | 고정 `demo.flowscope.test` 합성 record만 있을 때 상단에 “실제 점검 결과 아님·네트워크 요청 0건”을 계속 표시한다. | 샘플 source 수를 HUMAN/ZAP/Codex 실행 또는 성능 검증으로 표현하지 않는다. |
-| 소스 필터 | 사람·ZAP·LLM 중 누가 이 경로를 밟았는가? | source마다 메인 Evidence 수를 표시하고 0건 source는 비활성화한다. 체크 변경 시 해당 source만 가진 node와 `identity → resource → operation` 전체 구간을 다시 계산한다. HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L로 색·선형·문자를 중복 부호화한다. | 0건 필터가 동작하는 것처럼 보이게 하거나, 객체 경유선만 중립색으로 남겨 다른 source처럼 보이게 하지 않는다. |
+| 소스 필터 | 사람·ZAP·LLM 중 누가 이 경로를 밟았는가? | source마다 메인 Evidence 수를 표시하고 0건 source는 비활성화한다. 체크 변경 시 해당 source의 `identity → API → object` 전체 구간을 다시 계산한다. HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L로 색·선형·문자를 중복 부호화한다. | 0건 필터가 동작하는 것처럼 보이게 하거나, 일부 구간만 중립색으로 남겨 다른 source처럼 보이게 하지 않는다. |
 | Evidence 표시 | 메인 비교·검토 대기·기본 숨김과 API·인증·navigation·polling 중 무엇을 파싱 표에서 볼 것인가? | 처분과 class를 직교 필터로 제공하고 기본값은 `INCLUDE+REVIEW`다. 체크박스는 표시만 바꾸며, operation 상세의 포함/숨김/자동 판단만 서버 coverage를 재계산하는 reversible override다. | 경로명 하나로 Evidence를 삭제하거나 표시 체크박스가 이미 계산된 graph를 임의로 재판정한다고 주장하지 않는다. |
 | 보조 흐름 표시 | 로그인을 포함한 실제 브라우저 흐름은 어디로 갔는가? | `인증·화면·반복 보조 흐름 표시`를 켜면 `AUTH_SESSION/NAVIGATION/POLLING/BACKGROUND`를 중립 보조 edge로 표시한다. 메인 graph 위치 맥락은 보이되 cell·gap·verdict는 바꾸지 않는다. | 보조 요청을 삭제하거나 HUMAN 탐색 성과로 계산하지 않는다. |
 | 권한 정책 | BFLA 역할 비교가 현재 가능한가? | 그래프 레일은 계정 역할과 API 요구 권한 개수를 읽기 전용으로 요약한다. 계정 역할은 `계정·세션`, API 요구 권한은 해당 API 상세라는 맥락 있는 위치에서만 수정한다. 요구 권한이 0개면 BFLA 비교 비활성을 명시한다. | 그래프를 보다가 한 번 클릭한 것만으로 역할을 순환 변경하거나 URL/JWT 문자열로 USER/ADMIN을 자동 추정하지 않는다. |
@@ -46,14 +46,14 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `identi
 | 3-way 갭 | 세 주체가 무엇을 놓쳤거나 다르게 판단했는가? | 미교차·일부만 발견·불일치를 분리하고 클릭하면 해당 위치로 이동한다. | 갭 자체를 취약점으로 확정하지 않는다. |
 | 미요청 route | 응답이나 Site Map에는 있지만 아직 실제 요청하지 않은 경로가 있는가? | source edge 없는 중립색·점선 테두리 노드와 별도 수량·필터로 관측 그래프 옆에 표시하고 provenance의 type·Evidence·source·run·adapter 대응과 범주형 정렬 이유를 연다. | HUMAN/ZAP/LLM의 관측 요청, `UNCROSSED`, coverage, verdict, finding으로 계산하지 않는다. |
 | 소스 뷰 | 발견 주체의 차이를 보고 싶은가? | 색·선형·H/S/L이 다른 평행 source overlay를 우선한다. 일반 버튼·포커스·선택 상태는 별도 중립 accent를 사용해 source 색으로 오인되지 않게 한다. | 인가 결과와 발견 주체를 한 색에 겹쳐 읽기 어렵게 만들지 않는다. |
-| 중복 접근선 | 같은 사용자가 같은 객체에서 여러 API를 호출했을 때 왜 선이 겹치는가? | 같은 `요청자·객체·source` 접근선은 하나로 접고 `H/S/L×관측 수`를 표시한다. 선을 누르면 원 operation 목록과 각 판정·갭을 열어 Evidence로 이동한다. | 원 CoverageCell이나 Evidence를 합치거나 삭제하지 않고, 서로 다른 source를 한 선으로 합치지 않는다. |
+| 계층 그래프 | 사이트 전체와 한 객체의 Evidence를 한 화면에 모두 그려야 하는가? | 사이트에서는 Target→API Group, 그룹에서는 Identity→API, API 선택 뒤에만 Identity→API→Object를 표시한다. Object는 family로 먼저 접고 눌렀을 때 인스턴스를 펼친다. | 접기 때문에 원 CoverageCell이나 Evidence를 합치거나 삭제하지 않고, path group을 업무 의미나 취약점으로 해석하지 않는다. |
 | 긴 경로 라벨 | API가 중간 생략돼 서로 다른 경로를 구분할 수 없는가? | 원 operation 문자열을 모두 유지하고 노드 안에서 여러 줄로 나누며 내용에 맞춰 높이를 늘린다. | 그래프 공간을 아끼기 위해 경로 중간을 `…`로 지워 핵심 세그먼트를 숨기지 않는다. |
 | 경로 묶음 | `/orders/101`과 `/orders/202`는 같은 API인가? | raw path를 유지하면서 operation은 Evidence가 있는 위치만 `{id}`로 묶는다. 상세에 `LITERAL/INFERRED/CORROBORATED`와 이유를 표시한다. | 모든 숫자를 ID로 단정하거나 route declaration 없이 “확정”이라 표시하지 않는다. |
 | 인가 뷰 | 허용·거부·의심 결과를 보고 싶은가? | 동일 구조에서 verdict 중심으로 표현을 바꾼다. | status code 하나만으로 suspicious를 만들지 않는다. |
 | 화면 맞춤 | 현재 그래프를 잃지 않고 전체를 볼 수 있는가? | 현재 표시 노드를 viewport에 맞춘다. | 데이터나 필터 상태를 변경하지 않는다. |
 | 노드 위치 잠금 | 사용자가 정리한 위치를 유지할 수 있는가? | 자동 재배치로 비교 맥락이 흔들리지 않게 한다. | 서버 분석 결과를 고정하거나 dataset을 lock하지 않는다. UI 위치 잠금과 Judge dataset lock은 별개다. |
-| 노드 접기·그룹 펼치기 | 대규모 그래프가 털뭉치가 되지 않는가? | 필터 후 객체/API를 각각 18개부터 보여 주고 그룹 노드를 눌러 단계적으로 늘린다. | 의미 기반 공격면 클러스터링이나 전체 API 추정을 주장하지 않는다. |
-| 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | `identity → resource → operation` 열 배치로 복구한다. | Evidence와 사용자 정책을 초기화하지 않는다. |
+| 노드 접기·그룹 펼치기 | 대규모 그래프가 털뭉치가 되지 않는가? | API는 18개 단위로 늘리고, 객체는 패밀리 노드를 기본으로 두어 선택한 패밀리의 인스턴스만 펼친다. | 의미 기반 공격면 클러스터링이나 전체 API 추정을 주장하지 않는다. |
+| 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | 현재 `Site → API Group → Identity → API → Object` 단계의 기본 배치로 복구한다. | Evidence와 사용자 정책을 초기화하지 않는다. |
 | 판정 매트릭스 | 같은 조합을 표로 빠르게 비교할 수 있는가? | identity/role × operation × resource cell에 source별 verdict와 갭을 정렬한다. | 그래프만 보고 놓치기 쉬운 조합 차이를 숨기지 않는다. |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용됐는가? | 실제로 재사용된 ID/token 값의 시간순 의존성만 연결하고 메인 접근 그래프와 분리한다. | 단순히 시간상 앞뒤라는 이유로 관계를 만들거나 접근선 위에 보조 의존선을 겹쳐 출처를 혼동시키지 않는다. |
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 규칙 후보, LLM 의견, 서버 검증 verdict, 사람 감사 기록을 같은 Evidence ID에 연결한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |
@@ -128,6 +128,8 @@ Explorer가 HUMAN/ZAP 후보를 먼저 보면 독립 비교가 아니라 답을 
 
 미요청 route도 같은 경계를 따른다. Explorer의 INDEPENDENT view는 자신의 run 응답에서 발견한 provenance만 보며, 병합 후보에 HUMAN 근거가 있어도 observed/applicability/reason을 자기 run 기준으로 다시 계산한다. 해당 safe concrete frontier가 소진된 뒤 ASSISTED view는 다른 lane의 route 문자열만 source/run/Evidence/provenance/응답 없이 표시한다. pre-lock status는 다른 lane의 active run·수량·기존 판정 목록을 공개하지 않고, Explorer가 활성화된 동안에는 ZAP 상태·실행도 차단한다. lock 뒤에는 그 시점의 route inventory만 Judge에게 보여 준다. 현재 Web은 이 두 내부 단계를 별도 패널로 시각화하지 않으며 LLM 작업 피드의 도구 호출로만 확인되는 UX debt가 남아 있다.
 
+beta.37 Explorer는 통제 HTTP executor로 먼저 시작하고, SPA shell·JavaScript state·UI-only 전이로 API frontier가 막힐 때만 설치된 Chrome/Chromium/Edge를 별도 임시 profile로 연다. 사용자가 Playwright·Chrome MCP·driver나 8082 listener를 별도로 준비하지 않아도 browser worker는 동작한다. 브라우저 DOM/network 결과는 discovery-only이며 runtime route가 Explorer frontier에 등록되어 controlled replay 전에는 완료되지 않는다. 버튼·폼의 selector를 승인하는 대신 그 결과 실제로 발생한 POST/PUT/PATCH/DELETE마다 메서드·URL·마스킹 body preview를 보여 주고 해당 요청 하나를 승인한다. 자유로운 arbitrary JavaScript나 비밀번호·파일 입력은 제공하지 않는다. 현재 Web에는 browser 실행 상태·현재 URL·발견 route를 전용 카드로 정리하지 않았으므로 이는 다음 UX debt다.
+
 ### Judge: 잠긴 세 결과의 종합자
 
 HUMAN/ZAP/LLM exploration이 모두 정상 종료된 뒤 후보와 owner/role oracle을 잠근다. Judge는 겹침·고유 발견·갭·ZAP alert를 읽고 좁은 재현과 정상 대조를 수행한다.
@@ -186,7 +188,7 @@ FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 
 
 ### “Burp나 ZAP과 무엇이 다른가요?”
 
-Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 차별점은 HUMAN/ZAP/LLM의 실제 트래픽을 같은 identity/resource/operation 좌표에 정렬하고, 고유·중복·미교차·판정 충돌과 Evidence를 한 화면에서 비교한다는 점이다.
+Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 차별점은 HUMAN/ZAP/LLM의 실제 트래픽을 같은 Identity/API/Object 좌표에 정렬하고, 고유·중복·미교차·판정 충돌과 Evidence를 한 화면에서 비교한다는 점이다.
 
 ### “왜 외부 검색과 Wayback을 막나요?”
 

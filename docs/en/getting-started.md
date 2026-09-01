@@ -29,7 +29,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. If `flowscope-1.2.0-beta.35.jar` is published on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. Otherwise clone the repository and use the source-build section to create the same JAR locally.
+1. If `flowscope-1.2.0-beta.37.jar` is published on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. Otherwise clone the repository and use the source-build section to create the same JAR locally.
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
@@ -126,7 +126,7 @@ mvn clean verify
 2. Register test accounts and capture any required login through HUMAN `8080` until the broker reports the account usable.
 3. Start a HUMAN pass, explore with the Burp browser, and end the pass.
 4. Select the target and anonymous/ACTIVE identities. If you already have an API definition, optionally add one line per definition as `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`, then start the isolated ZAP campaign. Every URL must remain in exact scope. Because an import can generate write-method example requests, a non-empty list requires a separate Burp approval. Active Scan is not part of this automatic baseline.
-5. Start the independent LLM Explorer; FlowScope auto-selects a locally READY provider. No model API key or manual MCP configuration is required after the official CLI is installed and signed in. Use readiness refresh only when login state has just changed. The live activity feed shows actual model messages, FlowScope tool states, the injected instructions, and the Evidence completion gate; it never claims to expose hidden reasoning or raw credential-bearing tool payloads. The lane completes only after at least one exact-scope response Evidence is captured and the server accepts that run's end request.
+5. Start the independent LLM Explorer; FlowScope auto-selects a locally READY provider. No model API key or manual MCP configuration is required after the official CLI is installed and signed in. Explorer starts with the controlled HTTP executor. An installed Chrome/Chromium/Edge browser is needed only for the SPA/JavaScript/UI fallback; Playwright, Chrome MCP, and a separate driver are not. When required, Explorer opens an isolated temporary profile, observes exact-scope DOM, links, forms, and SPA network routes, and replays relevant requests through the controlled executor to create Evidence. Click/fill actions require Burp approval, and password/file inputs are blocked. Use readiness refresh only when login state has just changed. The live activity feed shows actual model messages, FlowScope tool states, the injected instructions, and the Evidence completion gate; it never claims to expose hidden reasoning or raw credential-bearing tool payloads. The lane completes only after at least one exact-scope response Evidence is captured and the server accepts that run's end request.
 6. Review `REVIEW` observations. After all three lanes complete, start Judge.
 7. Treat only server-gated reproduction and authorized-control bundles as final; a ZAP alert or LLM statement alone is not confirmation.
 8. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.
@@ -148,6 +148,7 @@ Use **Scanner XML/HAR** in the Web header and select a `.har` created by ZAP's *
 | API definition import warning | Check exact-scope URLs and the matching `openapi`, `graphql`, `postman`, or `soap` add-on; other crawler Evidence remains available |
 | Rendered capture warning | Inspect ZAP Firefox/Selenium/Client/AJAX logs; do not mislabel Traditional-only output as rendered coverage |
 | Explorer exits but the LLM lane fails | Inspect the output tail for a cancelled target read or zero response Evidence, fix scope/session/approval state, then start a new Explorer |
+| Supported Chrome/Chromium/Edge executable was not found | Install one supported browser, or set the absolute executable with Burp JVM option `-Dflowscope.browser.path=...`, then reload the extension |
 | Provider executable missing | Set the provider absolute-path system property and restart Burp |
 | Account absent from ZAP/LLM choices | Recapture login until the memory-only broker reports `ACTIVE` |
 

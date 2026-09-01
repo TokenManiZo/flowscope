@@ -7,8 +7,8 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-09-01 |
-| 제품 버전 | `1.2.0-beta.35` |
-| 인계 기준 | beta.35 코드·문서가 함께 포함된 동일 커밋 |
+| 제품 버전 | `1.2.0-beta.37` |
+| 인계 기준 | beta.37 코드·문서가 함께 포함된 동일 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
 | 자동 회귀 | 최신 수치와 JAR digest는 `beta-validation.md` 정본 참조 |
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.35.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.37.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -109,7 +109,7 @@ Traditional Spider
 6. Judge는 Explorer와 다른 새 세션에서 잠긴 후보·갭·Evidence·ZAP Alert를 읽는다.
 7. 최종 판정은 동일 validation run의 반복 재현과 정상 대조 Evidence를 서버가 확인한 경우에만 허용된다.
 
-Explorer는 외부 검색, Wayback, 대상 소스 저장소, 직접 curl/browser 요청을 사용하지 않는 exact-scope 역할이다. 현재 route 추출은 HTTP 응답 기반이며 JavaScript 실행·DOM 조작·SPA runtime network browser worker는 아직 없다. 일반 assessment는 `LIKELY/INCONCLUSIVE/REJECTED`이며 `CONFIRMED`가 아니다.
+Explorer는 외부 검색, Wayback, 대상 소스 저장소, 직접 curl/provider-browser 요청을 사용하지 않는 exact-scope 역할이다. 기본은 Session Broker가 연결된 통제 HTTP executor이고, SPA/JavaScript/UI-only 흐름에서 frontier가 막힐 때만 설치된 Chrome/Chromium/Edge를 임시 profile과 CDP로 실행하는 FlowScope browser worker가 DOM·링크·폼·SPA runtime network를 discovery-only로 반환한다. browser worker는 8082 listener에 의존하지 않으며 관련 route는 `BROWSER_RUNTIME/evidence_backed=false`로 frontier에 들어가 통제 executor 재현 전 완료되지 않는다. run 계정은 시작 시 고정한다. CLICK/FILL selector가 아니라 그 결과 실제 발생한 POST/PUT/PATCH/DELETE 요청 하나를 Burp에서 승인하고 password/file 입력은 차단한다. 일반 assessment는 `LIKELY/INCONCLUSIVE/REJECTED`이며 `CONFIRMED`가 아니다.
 
 ### 3.6 저장
 
@@ -180,7 +180,8 @@ Burp Proxy/도구 callback
 | [`StoredPayload.java`](../../src/main/java/io/flowscope/core/StoredPayload.java) | 마스킹 textual 전문의 GZIP/digest/retention 모델 |
 | [`BurpXmlParser.java`](../../src/main/java/io/flowscope/core/BurpXmlParser.java) | XXE 차단 Burp XML traffic import |
 | [`HarParser.java`](../../src/main/java/io/flowscope/core/HarParser.java) | bounded ZAP HAR 1.2 SCANNER traffic import |
-| [`FlowGraphBuilder.java`](../../src/main/java/io/flowscope/core/graph/FlowGraphBuilder.java) | identity-resource-operation graph 생성 |
+| [`FlowGraphBuilder.java`](../../src/main/java/io/flowscope/core/graph/FlowGraphBuilder.java) | 관측 Evidence에서 graph 기초 관계 생성 |
+| [`GraphObservationFact.java`](../../src/main/java/io/flowscope/core/GraphObservationFact.java) | 원 Evidence ID에 연결된 Identity×API×Object×Source와 HTTP outcome을 UI용 fact로 투영 |
 
 ### 5.3 Route discovery
 
@@ -521,7 +522,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.35.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.37.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

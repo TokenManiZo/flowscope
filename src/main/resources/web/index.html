@@ -218,7 +218,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.35 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.37 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
@@ -391,6 +391,11 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
         <button class="vbtn on" data-view="source">소스 뷰 (누가 밟았나)</button>
         <button class="vbtn" data-view="authz">인가 뷰 (판정 색)</button>
       </div>
+      <div class="views" style="margin-top:6px">
+        <button class="vbtn on" data-graph-level="site">사이트</button>
+        <button class="vbtn" data-graph-level="api">API</button>
+        <button class="vbtn" data-graph-level="object">객체</button>
+      </div>
       <label class="layoutlock"><input type="checkbox" id="layoutLock"> 노드 위치 잠금</label>
       <label class="layoutlock"><input type="checkbox" id="showRouteCandidates"> 미요청 route 표시</label>
       <label class="layoutlock"><input type="checkbox" id="showSupportTraffic"> 인증·화면·반복 보조 흐름 표시</label>
@@ -493,7 +498,7 @@ const VC={allow:'--allow',deny:'--deny',untested:'--untested',suspicious:'--susp
 const SRC={human:{n:'사람',c:'--human',ab:'H'},scanner:{n:'스캐너',c:'--scanner',ab:'S'},llm:{n:'LLM',c:'--llm',ab:'L'},unknown:{n:'분류불명',c:'--faint',ab:'?'}};
 let EVENTS=[], SERVER_EVENTS=[], MODEL=null, cy=null, currentView='source';
 let SCENARIO_ITEMS={};
-let SERVER_REVISION=-1, SERVER_IDENTITY_REVISION=-1, SERVER_OWNERS={}, SERVER_ROLES={}, SERVER_REQUIRED_ROLES={}, SERVER_FLOW_LINKS=[], SERVER_ACCOUNTS=[], SERVER_SESSIONS=[], SERVER_MANAGED_SESSIONS=[], SERVER_CELLS=[], SERVER_GAPS=[], SERVER_ROUTE_CANDIDATES=[], SERVER_ACTIVE_SOURCES=[], SERVER_TRAFFIC_STATS={captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0}, SERVER_SAMPLE_MODE=false, LIVE_MODE=true;
+let SERVER_REVISION=-1, SERVER_IDENTITY_REVISION=-1, SERVER_OWNERS={}, SERVER_ROLES={}, SERVER_REQUIRED_ROLES={}, SERVER_FLOW_LINKS=[], SERVER_ACCOUNTS=[], SERVER_SESSIONS=[], SERVER_MANAGED_SESSIONS=[], SERVER_CELLS=[], SERVER_GRAPH_FACTS=[], SERVER_GAPS=[], SERVER_ROUTE_CANDIDATES=[], SERVER_ACTIVE_SOURCES=[], SERVER_TRAFFIC_STATS={captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0}, SERVER_SAMPLE_MODE=false, LIVE_MODE=true;
 let GRAPH_HIDDEN=0; const GRAPH_PAGE_SIZE=18;
 let GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};
 let matrixMode='identity'; const ACCESS_ROLES=['User','LV1','LV2','Admin','Unknown'];
@@ -501,6 +506,8 @@ let activeSources={human:true,scanner:true,llm:true};
 let activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false};
 let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:true,POLLING:true,BACKGROUND:true,NAVIGATION:false,STATIC_ASSET:false,DISCOVERY_METADATA:false,PREFLIGHT:false};
 let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0, SELECTED_OPERATION='', SELECTED_EVENT_ID='';
+let GRAPH_LEVEL='site', GRAPH_SELECTED_GROUP='';
+const EXPANDED_OBJECT_FAMILIES=new Set();
 let SETUP_AUTO_CHECKED=false, SETUP_STAGE='scope', SETUP_STAGE_PINNED=false;
 let HUMAN_RUN={active:false,completed:false,runId:''};
 let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[],REQUEST_LAB_EDITABLE=false,REQUEST_LAB_GENERATION=0,REQUEST_LAB_IN_FLIGHT=false,REQUEST_LAB_RETRY=null;
@@ -526,6 +533,7 @@ function esc(value){return String(value==null?'':value).replace(/[&<>"']/g,ch=>(
 function cellKey(idn,op,resource){return JSON.stringify([idn,op,resource==null?null:resource]);}
 function parseCellKey(key){const value=JSON.parse(key);return [value[0],value[1],value[2]];}
 function resourceLabel(value){return value==null||value===''?'(객체 없음)':String(value);}
+function objectFamily(value){const text=String(value||''),colon=text.indexOf(':'),slash=text.indexOf('/'),end=colon<0?slash:slash<0?colon:Math.min(colon,slash);return end<0?text:text.slice(0,end);}
 function withoutService(value){return String(value||'').replace(/^https?:\/\/\S+\s+/i,'');}
 function accountById(id){return SERVER_ACCOUNTS.find(account=>account.id===id);}
 function managedSession(id){return SERVER_MANAGED_SESSIONS.find(session=>session.accountId===id);}
@@ -567,7 +575,8 @@ function build(){
   const candidates=SERVER_GAPS.filter(g=>g.type==='UNCROSSED').map(g=>({idn:g.idn,op:g.op,resource:g.resource,owner:owner[g.resource],risk:g.risk>=100?'CRITICAL':g.risk>=70?'HIGH':'MEDIUM',riskScore:g.risk}));
   candidates.sort((a,b)=>b.riskScore-a.riskScore||a.op.localeCompare(b.op)||a.idn.localeCompare(b.idn));
   const displayNames={};let userIndex=0;identities.forEach(idn=>{const registered=accountById(idn);displayNames[idn]=registered?registered.label:roles[idn]==='Admin'?'ADMIN':(['anonymous','anon'].includes(String(idn).toLowerCase())?'ANONYMOUS':(String(idn).startsWith('unresolved-')?'미확정 세션':(/^unassigned-/i.test(idn)?'UNASSIGNED '+idn.split('-').pop():(/^user-[a-z]+$/i.test(idn)?userSequenceLabel(userIndex++):idn))));});
-  MODEL={identities,operations,resources,owner,cells,candidates,routeCandidates:SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed),roles,displayNames,requiredRoles:{...SERVER_REQUIRED_ROLES}};
+  const operationGroups={};SERVER_GRAPH_FACTS.forEach(fact=>{if(fact.operation&&fact.apiGroup)operationGroups[fact.operation]=fact.apiGroup;});operations.forEach(op=>operationGroups[op]=operationGroups[op]||apiGroupForOperation(op));
+  MODEL={identities,operations,resources,owner,cells,graphFacts:SERVER_GRAPH_FACTS,operationGroups,candidates,routeCandidates:SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed),roles,displayNames,requiredRoles:{...SERVER_REQUIRED_ROLES}};
   if(ACTIVE_IDENTITY!=='all'&&!identities.includes(ACTIVE_IDENTITY))ACTIVE_IDENTITY='all';
   refreshSourceFilters(); updateStatus(); computeCoverage(); renderIdentityFilter(); renderGraph(); renderRoles(); renderMatrix(); renderRaw(); renderSeq(); renderAccounts();
   if(SELECTED_OPERATION&&detailFull.style.display!=='none')showOperation(SELECTED_OPERATION,0,SELECTED_EVENT_ID);
@@ -595,6 +604,7 @@ function cellGKs(c){ const g=[]; if(!c)return g; if(c.conflict)g.push('conflict'
 function shortLabel(value,max=34){ const s=String(value||''); if(s.length<=max)return s; const left=Math.ceil((max-1)*.7),right=(max-1)-left; return s.slice(0,left)+'…'+s.slice(-right); }
 function wrapGraphLabel(value,max=36){const text=String(value||''),parts=text.split(/(?=\/)/).filter(Boolean),lines=[];let line='';parts.forEach(part=>{let rest=part;while(rest.length>max){if(line){lines.push(line);line='';}lines.push(rest.slice(0,max));rest=rest.slice(max);}if(line&&line.length+rest.length>max){lines.push(line);line=rest;}else line+=rest;});if(line)lines.push(line);return lines.join('\n');}
 function operationLabel(op,max=36){const value=withoutService(op),p=value.indexOf(' ');return p>0?value.slice(0,p)+'\n'+wrapGraphLabel(value.slice(p+1),max):wrapGraphLabel(value,max);}
+function apiGroupForOperation(op){const path=withoutService(op).replace(/^[A-Z]+\s+/,''),structural=new Set(['api','rest','graphql']);for(const raw of path.split('/')){const segment=raw.trim(),lower=segment.toLowerCase();if(!segment||structural.has(lower)||/^v\d+(?:\.\d+)?$/.test(lower)||(/^\{/.test(segment)&&/\}$/.test(segment)))continue;return segment.toUpperCase()+' APIs';}return 'ROOT APIs';}
 function nodeHeight(label,min=64){return Math.max(min,24+String(label||'').split('\n').length*15);}
 function sourceMark(sources){return ['human','scanner','llm'].filter(s=>sources.includes(s)).map(s=>SRC[s].ab).join('·')||'-';}
 function sourceSetFor(cells,predicate){const found=new Set();cells.filter(predicate).forEach(c=>c.observed.filter(s=>activeSources[s]).forEach(s=>found.add(s)));return [...found];}
@@ -660,7 +670,8 @@ function highlightGap(gk){
       if(edge&&edge.length){edge.removeClass('hide');highlightGraphPath(edge);cy.animate({center:{eles:edge.connectedNodes()}},{duration:300});return;}
       // 후보의 API/객체가 접힌 경우 해당 구간을 먼저 펼친 뒤 정확한 후보 선을 선택한다.
       GRAPH_LIMITS.operations=Math.max(GRAPH_LIMITS.operations,(MODEL.operations||[]).length);
-      GRAPH_LIMITS.resources=Math.max(GRAPH_LIMITS.resources,(MODEL.resources||[]).length);renderGraph();
+      GRAPH_LIMITS.resources=Math.max(GRAPH_LIMITS.resources,(MODEL.resources||[]).length);
+      EXPANDED_OBJECT_FAMILIES.add(objectFamily(candidate.resource));renderGraph();
       edge=cy.edges('[etype="candidate"]').filter(item=>item.data('key')===el.dataset.key).first();
       showEmpty(el.dataset.key);
       if(edge&&edge.length){edge.removeClass('hide');highlightGraphPath(edge);cy.animate({center:{eles:edge.connectedNodes()}},{duration:300});}
@@ -676,17 +687,40 @@ function renderGraphList(cellValues,operations){
   target.innerHTML=`<div class="graphlisthead"><b>좁은 화면용 API 목록</b><br>그래프 좌표를 축소해 숨기지 않고, 같은 필터 결과를 읽을 수 있는 목록으로 표시합니다. API를 누르면 동일 Evidence 상세이 열립니다.</div>${cards||'<div class="graphlisthead">현재 필터에 표시할 API가 없습니다.</div>'}`;
   target.querySelectorAll('[data-operation]').forEach(button=>button.addEventListener('click',()=>showOperation(button.dataset.operation,0)));
 }
+function updateGraphLevelButtons(){document.querySelectorAll('[data-graph-level]').forEach(button=>button.classList.toggle('on',button.dataset.graphLevel===GRAPH_LEVEL));}
+function renderSiteOverview(){
+  const facts=(MODEL.graphFacts||[]).filter(fact=>activeSources[String(fact.source||'').toLowerCase()]&&(ACTIVE_IDENTITY==='all'||fact.identity===ACTIVE_IDENTITY));
+  const grouped=new Map();facts.forEach(fact=>{const group=fact.apiGroup||apiGroupForOperation(fact.operation),key=fact.service+'\u0000'+group,current=grouped.get(key)||{service:fact.service,group,operations:new Set(),counts:{human:0,scanner:0,llm:0}};current.operations.add(fact.operation);const source=String(fact.source||'').toLowerCase();if(current.counts[source]!=null)current.counts[source]++;grouped.set(key,current);});
+  const services=[...new Set([...grouped.values()].map(value=>value.service))].sort(),nodes=[],edges=[];let cursor=50;
+  services.forEach((service,index)=>{const targetId='T:'+service,groups=[...grouped.values()].filter(value=>value.service===service).sort((a,b)=>a.group.localeCompare(b.group));const center=cursor+Math.max(0,groups.length-1)*44;nodes.push({data:{id:targetId,label:service,fullLabel:service,ntype:'target'},position:savedPosition(targetId,{x:100,y:center})});groups.forEach((value,groupIndex)=>{const id='AG:'+service+'\u0000'+value.group,mark=['human','scanner','llm'].filter(source=>value.counts[source]).map(source=>SRC[source].ab+' '+value.counts[source]).join(' · ');nodes.push({data:{id,label:value.group+'\n'+value.operations.size+' APIs\n'+(mark||'-'),fullLabel:value.group+' · 관측 API '+value.operations.size+' · '+mark,ntype:'apiGroup',apiGroup:value.group,service},position:savedPosition(id,{x:430,y:cursor+groupIndex*88})});edges.push({data:{id:'HG:'+id,source:targetId,target:id,etype:'hierarchy'}});});cursor+=Math.max(1,groups.length)*88+40;});
+  graphStat.textContent=`사이트 ${services.length} · API 그룹 ${grouped.size} · Evidence 관계 ${facts.length}`;
+  renderGraphList([],[]);GRAPH_HIDDEN=0;collapseGraph.disabled=true;if(cy){captureGraphState();cy.destroy();}
+  cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},layout:{name:'preset',fit:false},style:[
+    {selector:'node',style:{'label':'data(label)','color':css('--text'),'font-family':'JetBrains Mono, Consolas, monospace','font-size':'12px','text-wrap':'wrap','text-valign':'center','text-halign':'center','text-max-width':'260px','width':'260px','height':'64px','border-width':1.6,'border-color':css('--line2'),'background-color':css('--panel2')}},
+    {selector:'node[ntype="target"]',style:{'shape':'round-rectangle','background-color':'#E7F0FB','border-color':css('--accent'),'width':'250px'}},
+    {selector:'node[ntype="apiGroup"]',style:{'shape':'round-rectangle','background-color':'#F3E9F9','border-color':'#DFC9EC','width':'230px','height':'72px'}},
+    {selector:'edge',style:{'curve-style':'taxi','taxi-direction':'horizontal','taxi-turn':'50%','width':1.4,'line-color':css('--line'),'target-arrow-color':css('--line'),'target-arrow-shape':'triangle','arrow-scale':.8}},
+    {selector:'.pathsel',style:{'opacity':1,'z-index':30}}, {selector:'.pathdim',style:{'opacity':.08}}, {selector:'node.pathsel',style:{'border-width':3,'border-color':css('--accent')}}
+  ]});
+  cy.on('tap','node[ntype="apiGroup"]',event=>{GRAPH_SELECTED_GROUP=event.target.data('apiGroup');GRAPH_LEVEL='api';updateGraphLevelButtons();renderGraph();setHint(GRAPH_SELECTED_GROUP+'만 표시합니다.');});
+  cy.on('tap','node',event=>highlightGraphPath(event.target));cy.on('tap',event=>{if(event.target===cy)clearDetail();});cy.on('dragfree','node',captureGraphState);cy.on('zoom pan',saveViewportSoon);
+  if(GRAPH_STATE.locked)cy.nodes().ungrabify();if(GRAPH_STATE.viewport&&Number.isFinite(GRAPH_STATE.viewport.zoom)){cy.zoom(GRAPH_STATE.viewport.zoom);cy.pan(GRAPH_STATE.viewport.pan||{x:0,y:0});}
+}
 function renderGraph(){
-  if(!MODEL)return; const {identities,operations,resources,owner,cells}=MODEL;
-  const cellValues=Object.values(cells).filter(c=>(ACTIVE_IDENTITY==='all'||c.idn===ACTIVE_IDENTITY)&&c.observed.some(source=>activeSources[source]));
+  if(!MODEL)return;updateGraphLevelButtons();if(GRAPH_LEVEL==='site'){renderSiteOverview();return;} const {identities,operations,resources,owner,cells}=MODEL;
+  let cellValues=Object.values(cells).filter(c=>(ACTIVE_IDENTITY==='all'||c.idn===ACTIVE_IDENTITY)&&c.observed.some(source=>activeSources[source]));
+  if(GRAPH_SELECTED_GROUP)cellValues=cellValues.filter(cell=>MODEL.operationGroups[cell.op]===GRAPH_SELECTED_GROUP);
+  if(GRAPH_LEVEL==='object'&&SELECTED_OPERATION)cellValues=cellValues.filter(cell=>cell.op===SELECTED_OPERATION);
   const graphIdentities=identities.filter(id=>cellValues.some(c=>c.idn===id)); const opScore={};
   cellValues.forEach(c=>opScore[c.op]=(opScore[c.op]||0)+(c.verdict==='suspicious'?100:c.conflict?60:c.partial?20:1)+c.evs.length);
   const graphOperations=[...new Set(cellValues.map(c=>c.op))], graphResources=[...new Set(cellValues.map(c=>c.resource).filter(Boolean))];
   const visibleOperations=[...graphOperations].sort((a,b)=>(opScore[b]||0)-(opScore[a]||0)||a.localeCompare(b)).slice(0,GRAPH_LIMITS.operations);
   const resourceScore={}; cellValues.forEach(c=>resourceScore[c.resource]=(resourceScore[c.resource]||0)+(c.verdict==='suspicious'?100:c.conflict?60:1));
-  const visibleResources=[...graphResources].sort((a,b)=>(resourceScore[b]||0)-(resourceScore[a]||0)||a.localeCompare(b)).slice(0,GRAPH_LIMITS.resources);
+  const visibleResources=GRAPH_LEVEL==='object'?[...graphResources].sort((a,b)=>(resourceScore[b]||0)-(resourceScore[a]||0)||a.localeCompare(b)).slice(0,GRAPH_LIMITS.resources):[];
+  const visibleFamilies=[...new Set(visibleResources.map(objectFamily))];
+  const resourceNodeId=resource=>EXPANDED_OBJECT_FAMILIES.has(objectFamily(resource))?'R:'+resource:'F:'+objectFamily(resource);
   const hiddenOperations=Math.max(0,graphOperations.length-visibleOperations.length);
-  const hiddenResources=Math.max(0,graphResources.length-visibleResources.length);
+  const hiddenResources=GRAPH_LEVEL==='object'?Math.max(0,graphResources.length-visibleResources.length):0;
   const routeCandidates=document.getElementById('showRouteCandidates').checked?(MODEL.routeCandidates||[]).slice(0,GRAPH_LIMITS.operations):[];
   const supportEvents=document.getElementById('showSupportTraffic').checked?EVENTS.filter(event=>
     activeSources[event.source]&&(ACTIVE_IDENTITY==='all'||event.idn===ACTIVE_IDENTITY)
@@ -694,21 +728,22 @@ function renderGraph(){
     &&['AUTH_SESSION','NAVIGATION','POLLING','BACKGROUND'].includes(event.trafficClass)):[];
   const supportOps=[...new Set(supportEvents.map(event=>event.op).filter(op=>!graphOperations.includes(op)))].slice(0,GRAPH_LIMITS.operations);
   renderGraphList(cellValues,visibleOperations);
-  GRAPH_HIDDEN=hiddenOperations+hiddenResources;
-  graphStat.textContent=`표시: 사용자 ${graphIdentities.length} · 객체 ${visibleResources.length}/${graphResources.length} · 관측 API ${visibleOperations.length}/${graphOperations.length} · 보조 흐름 ${supportEvents.length} · 미요청 route ${routeCandidates.length}/${(MODEL.routeCandidates||[]).length}`+(GRAPH_HIDDEN?' · +그룹 노드를 눌러 펼치기':'');
+  const foldedInstances=visibleResources.filter(resource=>!EXPANDED_OBJECT_FAMILIES.has(objectFamily(resource))).length-visibleFamilies.filter(family=>!EXPANDED_OBJECT_FAMILIES.has(family)).length;
+  GRAPH_HIDDEN=hiddenOperations+hiddenResources+Math.max(0,foldedInstances);
+  graphStat.textContent=`표시: 사용자 ${graphIdentities.length} → 관측 API ${visibleOperations.length}/${graphOperations.length} → 객체 패밀리 ${visibleFamilies.length} · 인스턴스 ${visibleResources.length}/${graphResources.length} · 보조 흐름 ${supportEvents.length} · 미요청 route ${routeCandidates.length}/${(MODEL.routeCandidates||[]).length}`+(GRAPH_HIDDEN?' · 묶음 노드를 눌러 펼치기':'');
   collapseGraph.disabled=GRAPH_LIMITS.operations===GRAPH_PAGE_SIZE&&GRAPH_LIMITS.resources===GRAPH_PAGE_SIZE;
   const nodes=[],edges=[]; const y=(n,i)=>84+i*72;
   const stageWidth=Math.max(760,document.getElementById('cy').clientWidth||760);
   const operationWidth=stageWidth<1000?280:320,operationTextWidth=operationWidth-64;
   const operationChars=Math.max(22,Math.floor(operationTextWidth/7));
-  const identityX=70,operationX=stageWidth-operationWidth/2-18,resourceX=Math.round((identityX+operationX)/2);
+  const identityX=70,resourceX=stageWidth-108,operationX=Math.round((identityX+resourceX)/2);
   const operationPositions=new Map();let operationCursor=24;
   const placeOperation=(id,label)=>{const height=nodeHeight(label);const position={x:operationX,y:operationCursor+height/2};operationCursor+=height+14;operationPositions.set(id,position);return position;};
   let resourceCursor=24;
   const placeResource=label=>{const height=nodeHeight(label,54),position={x:resourceX,y:resourceCursor+height/2};resourceCursor+=height+14;return position;};
-  // 배치: 요청자(왼) → 객체(가운데) → 엔드포인트(오른쪽). 소유자는 별도 노드로 표시하지 않고 판정·근거에서만 사용.
+  // 배치: 요청자(왼쪽) → API(가운데) → 객체(오른쪽). 화면 집계와 무관하게 Evidence 관계는 graphFacts에 보존한다.
   graphIdentities.forEach((id,i)=>{const sources=sourceSetFor(cellValues,c=>c.idn===id),mark=sourceMark(sources);nodes.push({data:{id:'I:'+id,label:displayIdentity(id)+'\n['+mark+']',fullLabel:displayIdentity(id)+' · '+id+' · '+MODEL.roles[id]+' · 소스 '+mark,ntype:'identity',idn:id,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('I:'+id,{x:identityX,y:y(graphIdentities.length,i)})});});
-  visibleResources.forEach(r=>{const sources=sourceSetFor(cellValues,c=>c.resource===r),mark=sourceMark(sources),label=wrapGraphLabel(withoutService(r),22)+'\n['+mark+']';nodes.push({data:{id:'R:'+r,label,textWidth:150,nodeHeight:nodeHeight(label,54),fullLabel:r+' · 소스 '+mark,ntype:'resource',resource:r,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('R:'+r,placeResource(label))});});
+  visibleFamilies.forEach(family=>{const members=visibleResources.filter(resource=>objectFamily(resource)===family);if(EXPANDED_OBJECT_FAMILIES.has(family)){members.forEach(r=>{const sources=sourceSetFor(cellValues,c=>c.resource===r),mark=sourceMark(sources),label=wrapGraphLabel(withoutService(r),22)+'\n['+mark+']';nodes.push({data:{id:'R:'+r,label,textWidth:150,nodeHeight:nodeHeight(label,54),fullLabel:r+' · 소스 '+mark,ntype:'resource',resource:r,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition('R:'+r,placeResource(label))});});}else{const sources=sourceSetFor(cellValues,c=>c.resource&&objectFamily(c.resource)===family),mark=sourceMark(sources),label=wrapGraphLabel(family,22)+'\n'+members.length+'개 객체\n['+mark+']',id='F:'+family;nodes.push({data:{id,label,textWidth:150,nodeHeight:nodeHeight(label,64),fullLabel:family+' 패밀리 · '+members.length+'개 객체 · 클릭하여 펼치기',ntype:'objectFamily',family,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition(id,placeResource(label))});}});
   visibleOperations.forEach(op=>{const sources=sourceSetFor(cellValues,c=>c.op===op),mark=sourceMark(sources),id='O:'+op,label=operationLabel(op,operationChars)+'\n['+mark+']';nodes.push({data:{id,label,nodeWidth:operationWidth,textWidth:operationTextWidth,nodeHeight:nodeHeight(label),fullLabel:op+' · 소스 '+mark,ntype:'operation',op:op,sourceMask:sources.join(','),sourceCount:sources.length},position:savedPosition(id,placeOperation(id,label))});});
   routeCandidates.forEach(candidate=>{const id='U:'+candidate.service+' '+candidate.method+' '+candidate.pathTemplate;const label=(candidate.method==='UNKNOWN'?'?':candidate.method)+'\n'+wrapGraphLabel(candidate.pathTemplate,operationChars)+'\n[미요청]';nodes.push({data:{id,label,nodeWidth:operationWidth,textWidth:operationTextWidth,nodeHeight:nodeHeight(label),fullLabel:candidate.service+' · '+candidate.method+' '+candidate.pathTemplate+' · '+(candidate.provenanceTypes||[]).join(', '),ntype:'routeCandidate',candidate},position:savedPosition(id,placeOperation(id,label))});});
   const nodeIds=new Set(nodes.map(node=>node.data.id));
@@ -724,15 +759,14 @@ function renderGraph(){
     if(!c.resource&&!visibleOperations.includes(c.op))return;
     c.observed.filter(s=>activeSources[s]).forEach(s=>{
       const count=(c.bySrc[s]||[]).length;
-      // 객체가 있으면 요청자→객체, 없으면 요청자→엔드포인트로 직접 연결한다.
-      const accessTarget=c.resource?'R:'+c.resource:'O:'+c.op,cell=cellKey(c.idn,c.op,c.resource);
-      if(c.resource){const relation=c.idn+'|'+c.resource+'|'+s,existing=accessByRelation.get(relation);if(existing){existing.count+=count;existing.keys.push(cell);existing.gapKeys.push(...cellGKs(c));existing.verdict=mergeVerdict(existing.verdict,c.perSrc[s]);}else accessByRelation.set(relation,{id:'A:'+relation,source:'I:'+c.idn,target:accessTarget,etype:'access',src:s,idn:c.idn,resource:c.resource,verdict:c.perSrc[s],count,keys:[cell],gapKeys:cellGKs(c),taxiTurn:accessTurn(c.idn,s)});}
-      else edges.push({data:{id:'A:'+cell+':'+s,source:'I:'+c.idn,target:accessTarget,etype:'access',src:s,idn:c.idn,op:c.op,resource:null,verdict:c.perSrc[s],count,label:count>1?SRC[s].ab+'×'+count:'',key:cell,keys:JSON.stringify([cell]),gapKeys:cellGKs(c).join(','),taxiTurn:accessTurn(c.idn,s)}});
-      if(c.resource){const ek=c.idn+'|'+c.resource+'|'+c.op+'|'+s;if(visibleOperations.includes(c.op)&&!calls.has(ek)){calls.add(ek);edges.push({data:{id:'C:'+ek,source:'R:'+c.resource,target:'O:'+c.op,etype:'calls',src:s,idn:c.idn,op:c.op,resource:c.resource,count}});}}
+      const cell=cellKey(c.idn,c.op,c.resource),relation=c.idn+'|'+c.op+'|'+s,existing=accessByRelation.get(relation);
+      if(existing){existing.count+=count;existing.keys.push(cell);existing.gapKeys.push(...cellGKs(c));existing.verdict=mergeVerdict(existing.verdict,c.perSrc[s]);}
+      else accessByRelation.set(relation,{id:'A:'+relation,source:'I:'+c.idn,target:'O:'+c.op,etype:'access',src:s,idn:c.idn,op:c.op,resource:c.resource,verdict:c.perSrc[s],count,keys:[cell],gapKeys:cellGKs(c),taxiTurn:accessTurn(c.idn,s)});
+      if(c.resource){const target=resourceNodeId(c.resource),ek=c.idn+'|'+target+'|'+c.op+'|'+s;if(visibleOperations.includes(c.op)&&!calls.has(ek)){calls.add(ek);edges.push({data:{id:'C:'+ek,source:'O:'+c.op,target,etype:'calls',src:s,idn:c.idn,op:c.op,resource:c.resource,count}});}}
     });
   });
   accessByRelation.forEach(value=>edges.push({data:{...value,key:value.keys[0],keys:JSON.stringify(value.keys),gapKeys:[...new Set(value.gapKeys)].join(','),label:value.count>1?SRC[value.src].ab+'×'+value.count:''}}));
-  (MODEL.candidates||[]).filter(cn=>(ACTIVE_IDENTITY==='all'||cn.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(cn.op)&&visibleResources.includes(cn.resource)).slice(0,40).forEach((cn,i)=>{ edges.push({data:{id:'X:'+i,source:'I:'+cn.idn,target:'R:'+cn.resource,etype:'candidate',idn:cn.idn,op:cn.op,resource:cn.resource,key:cellKey(cn.idn,cn.op,cn.resource),risk:cn.risk,label:'미교차'}}); });
+  (MODEL.candidates||[]).filter(cn=>(ACTIVE_IDENTITY==='all'||cn.idn===ACTIVE_IDENTITY)&&visibleOperations.includes(cn.op)&&visibleResources.includes(cn.resource)&&EXPANDED_OBJECT_FAMILIES.has(objectFamily(cn.resource))).slice(0,40).forEach((cn,i)=>{ edges.push({data:{id:'X:'+i,source:'I:'+cn.idn,target:resourceNodeId(cn.resource),etype:'candidate',idn:cn.idn,op:cn.op,resource:cn.resource,key:cellKey(cn.idn,cn.op,cn.resource),risk:cn.risk,label:'미교차'}}); });
   if(cy){captureGraphState();cy.destroy();}
   cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},
     style:[
@@ -742,6 +776,7 @@ function renderGraph(){
       {selector:'node[ntype="supportOperation"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'whitespace','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
       {selector:'node[ntype="routeCandidate"]',style:{'shape':'hexagon','background-color':'#FFFFFF','width':'data(nodeWidth)','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'whitespace','border-color':css('--faint'),'border-style':'dashed','color':css('--muted')}},
       {selector:'node[ntype="resource"]',style:{'shape':'round-rectangle','background-color':'#EFE9F8','border-color':'#DCD0EA','width':'180px','height':'data(nodeHeight)','text-max-width':'data(textWidth)','text-overflow-wrap':'whitespace'}},
+      {selector:'node[ntype="objectFamily"]',style:{'shape':'round-rectangle','background-color':'#E8F4F1','border-color':css('--accent'),'border-style':'dashed','width':'180px','height':'data(nodeHeight)','text-max-width':'data(textWidth)'}},
       {selector:'node[ntype="group"]',style:{'shape':'round-rectangle','background-color':'#FFFFFF','border-color':css('--accent'),'border-style':'dashed','border-width':2,'color':css('--accent'),'width':'164px','height':'48px'}},
       {selector:'node[sourceMask="human"]',style:{'border-color':css('--human'),'border-style':'solid','border-width':2}},
       {selector:'node[sourceMask="scanner"]',style:{'border-color':css('--scanner'),'border-style':'dashed','border-width':2}},
@@ -782,7 +817,8 @@ function renderGraph(){
     // Users can request an overview explicitly with the separate "화면 맞춤" control.
     layout:{name:'preset',fit:false}});
   cy.on('tap','node[ntype="group"]',e=>{captureGraphState();const type=e.target.data('groupType');GRAPH_LIMITS[type]+=GRAPH_PAGE_SIZE;renderGraph();setHint(type==='operations'?'API 노드를 더 펼쳤습니다.':'객체 노드를 더 펼쳤습니다.');});
-  cy.on('tap','node[ntype="operation"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
+  cy.on('tap','node[ntype="objectFamily"]',e=>{EXPANDED_OBJECT_FAMILIES.add(e.target.data('family'));renderGraph();setHint(e.target.data('family')+' 객체 인스턴스를 펼쳤습니다.');});
+  cy.on('tap','node[ntype="operation"]',e=>{const op=e.target.data('op');highlightGraphPath(e.target);showOperation(op);if(GRAPH_LEVEL==='api'){SELECTED_OPERATION=op;GRAPH_LEVEL='object';updateGraphLevelButtons();renderGraph();}});
   cy.on('tap','node[ntype="supportOperation"]',e=>{highlightGraphPath(e.target);showOperation(e.target.data('op'));});
   cy.on('tap','node[ntype="routeCandidate"]',e=>{highlightGraphPath(e.target);showRouteCandidate(e.target.data('candidate'));});
   cy.on('tap','node[ntype="identity"],node[ntype="resource"]',e=>{highlightGraphPath(e.target);showEntityNode(e.target);});
@@ -805,18 +841,22 @@ function renderGraph(){
 function highlightGraphPath(element){
   if(!cy||!element)return;const selected=new Set();const add=collection=>collection.forEach(item=>selected.add(item.id()));add(cy.collection(element));
   const type=element.data('etype')||element.data('ntype');
-  if(type==='access'||type==='candidate'){
-    add(element.connectedNodes());const resource=element.target(),op=element.data('op'),src=element.data('src'),idn=element.data('idn');
-    const calls=resource.connectedEdges('[etype="calls"]').filter(edge=>(!op||edge.data('op')===op)&&(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(calls);add(calls.connectedNodes());
+  if(type==='access'){
+    add(element.connectedNodes());const operation=element.target(),src=element.data('src'),idn=element.data('idn');
+    const calls=operation.connectedEdges('[etype="calls"]').filter(edge=>(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(calls);add(calls.connectedNodes());
+  }else if(type==='candidate'){
+    add(element.connectedNodes());const resource=element.target(),op=element.data('op'),idn=element.data('idn');
+    const calls=resource.connectedEdges('[etype="calls"]').filter(edge=>(!op||edge.data('op')===op)&&(!idn||edge.data('idn')===idn));add(calls);add(calls.connectedNodes());
   }else if(type==='calls'){
-    add(element.connectedNodes());const resource=element.source(),src=element.data('src'),idn=element.data('idn');const access=resource.connectedEdges('[etype="access"]').filter(edge=>(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(access);add(access.connectedNodes());
+    add(element.connectedNodes());const operation=element.source(),src=element.data('src'),idn=element.data('idn');const access=operation.connectedEdges('[etype="access"]').filter(edge=>(!src||edge.data('src')===src)&&(!idn||edge.data('idn')===idn));add(access);add(access.connectedNodes());
   }else if(type==='support')add(element.connectedNodes());
   else if(type==='operation'||type==='supportOperation'){
-    const calls=element.connectedEdges('[etype="calls"],[etype="support"]');add(calls);add(calls.connectedNodes());calls.sources().forEach(resource=>{const access=resource.connectedEdges('[etype="access"]');add(access);add(access.connectedNodes());});
+    const linked=element.connectedEdges('[etype="access"],[etype="calls"],[etype="support"]');add(linked);add(linked.connectedNodes());
   }else if(type==='resource'){
     const linked=element.connectedEdges('[etype="access"],[etype="calls"],[etype="candidate"]');add(linked);add(linked.connectedNodes());
+    linked.sources().forEach(operation=>{const access=operation.connectedEdges('[etype="access"]');add(access);add(access.connectedNodes());});
   }else if(type==='identity'){
-    const access=element.connectedEdges('[etype="access"],[etype="candidate"]');add(access);add(access.connectedNodes());access.targets().forEach(resource=>{const calls=resource.connectedEdges('[etype="calls"]');add(calls);add(calls.connectedNodes());});
+    const access=element.connectedEdges('[etype="access"],[etype="candidate"]');add(access);add(access.connectedNodes());access.targets().forEach(operation=>{const calls=operation.connectedEdges('[etype="calls"]');add(calls);add(calls.connectedNodes());});
   }
   cy.elements().forEach(item=>{const on=selected.has(item.id());item.toggleClass('pathsel',on);item.toggleClass('pathdim',!on);item.toggleClass('sel',item.id()===element.id());});
 }
@@ -826,7 +866,7 @@ function resetGraphLayout(){
   if(cy){cy.destroy();cy=null;} GRAPH_STATE.positions={};GRAPH_STATE.viewport=null;saveGraphState();renderGraph();setTimeout(fitGraph,0);
 }
 function collapseGraphNodes(){
-  if(!MODEL)return;captureGraphState();GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};renderGraph();setTimeout(fitGraph,0);
+  if(!MODEL)return;captureGraphState();EXPANDED_OBJECT_FAMILIES.clear();GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE};renderGraph();setTimeout(fitGraph,0);
 }
 function applyView(view){
   currentView=view; if(!cy)return;
@@ -1493,13 +1533,14 @@ fHuman.addEventListener('change',e=>loadFiles(e.target,'human'));
 fScanner.addEventListener('change',e=>loadFiles(e.target,'scanner'));
 fLlm.addEventListener('change',e=>loadFiles(e.target,'llm'));
 sample.addEventListener('click',async()=>{if(!LIVE_MODE)return;const response=await fetch('/api/sample',{method:'POST'});const data=await response.json();if(!response.ok){alert(data.message||'샘플 프로젝트를 열 수 없습니다.');return;}SERVER_REVISION=-1;await syncExtension();setMode('graph');});
-clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽과 미요청 route 후보를 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];SERVER_ROUTE_CANDIDATES=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';SERVER_ROLES={};GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();renderAccounts();refreshSourceFilters(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 객체 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean','gRoute'].forEach(i=>document.getElementById(i).textContent='0'); });
+clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽과 미요청 route 후보를 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];SERVER_GRAPH_FACTS=[];SERVER_ROUTE_CANDIDATES=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';SERVER_ROLES={};GRAPH_SELECTED_GROUP='';SELECTED_OPERATION='';EXPANDED_OBJECT_FAMILIES.clear();GRAPH_LEVEL='site';GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();refreshSourceFilters();renderAccounts(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 객체 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean','gRoute'].forEach(i=>document.getElementById(i).textContent='0'); });
 
 document.querySelectorAll('.gapline.gf').forEach(el=>{
   el.addEventListener('click',()=>highlightGap(el.dataset.gk));
   el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();highlightGap(el.dataset.gk);}});
 });
-document.querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.vbtn').forEach(x=>x.classList.remove('on'));b.classList.add('on');applyView(b.dataset.view);}));
+document.querySelectorAll('.vbtn[data-view]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.vbtn[data-view]').forEach(x=>x.classList.remove('on'));b.classList.add('on');applyView(b.dataset.view);}));
+document.querySelectorAll('[data-graph-level]').forEach(button=>button.addEventListener('click',()=>{const level=button.dataset.graphLevel;if(level==='object'&&!SELECTED_OPERATION){setHint('API 화면에서 확인할 API를 먼저 선택하세요.');return;}GRAPH_LEVEL=level;if(level==='site')GRAPH_SELECTED_GROUP='';updateGraphLevelButtons();renderGraph();}));
 document.querySelectorAll('.sf').forEach(cb=>cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;renderGraph();}));
 document.querySelectorAll('.tf').forEach(cb=>cb.addEventListener('change',()=>{activeTraffic[cb.value]=cb.checked;renderRaw();}));
 document.querySelectorAll('.df').forEach(cb=>cb.addEventListener('change',()=>{activeDispositions[cb.value]=cb.checked;renderRaw();}));
@@ -1566,7 +1607,7 @@ document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(re
 
 async function syncExtension(){
   try{const response=await fetch('/api/snapshot',{cache:'no-store'});if(!response.ok){LIVE_MODE=false;return;}LIVE_MODE=true;const data=await response.json();if(data.revision===SERVER_REVISION&&data.identityRevision===SERVER_IDENTITY_REVISION)return;
-    SERVER_REVISION=data.revision;SERVER_IDENTITY_REVISION=data.identityRevision||0;SERVER_OWNERS=data.owners||{};SERVER_ROLES=data.roles||{};SERVER_REQUIRED_ROLES=data.requiredRoles||{};SERVER_FLOW_LINKS=data.flowLinks||[];SERVER_ACCOUNTS=data.accounts||[];SERVER_SESSIONS=data.sessions||[];SERVER_MANAGED_SESSIONS=data.managedSessions||[];SERVER_CELLS=data.cells||[];SERVER_GAPS=data.gaps||[];SERVER_ROUTE_CANDIDATES=data.routeCandidates||[];SERVER_ACTIVE_SOURCES=data.activeSources||[];SERVER_TRAFFIC_STATS=data.trafficStats||{captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0};SERVER_SAMPLE_MODE=!!data.sampleMode;SERVER_EVENTS=(data.events||[]);EVENTS=[...SERVER_EVENTS];renderSampleMode();
+    SERVER_REVISION=data.revision;SERVER_IDENTITY_REVISION=data.identityRevision||0;SERVER_OWNERS=data.owners||{};SERVER_ROLES=data.roles||{};SERVER_REQUIRED_ROLES=data.requiredRoles||{};SERVER_FLOW_LINKS=data.flowLinks||[];SERVER_ACCOUNTS=data.accounts||[];SERVER_SESSIONS=data.sessions||[];SERVER_MANAGED_SESSIONS=data.managedSessions||[];SERVER_CELLS=data.cells||[];SERVER_GRAPH_FACTS=data.graphFacts||[];SERVER_GAPS=data.gaps||[];SERVER_ROUTE_CANDIDATES=data.routeCandidates||[];SERVER_ACTIVE_SOURCES=data.activeSources||[];SERVER_TRAFFIC_STATS=data.trafficStats||{captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0};SERVER_SAMPLE_MODE=!!data.sampleMode;SERVER_EVENTS=(data.events||[]);EVENTS=[...SERVER_EVENTS];renderSampleMode();
     if(EVENTS.length||SERVER_ROUTE_CANDIDATES.length)build();else{renderAccounts();renderIdentityFilter();renderRoles();updateStatus();}renderLlmControls();
     if(!SETUP_AUTO_CHECKED){SETUP_AUTO_CHECKED=true;try{if(!localStorage.getItem('flowscope.setup.seen'))openSetup();}catch(_){openSetup();}}
   }catch(error){LIVE_MODE=false;}

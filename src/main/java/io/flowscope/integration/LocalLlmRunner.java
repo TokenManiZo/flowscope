@@ -88,6 +88,8 @@ public final class LocalLlmRunner implements AutoCloseable {
             "flowscope_get_status", "flowscope_list_sessions", "flowscope_target_read",
             "flowscope_target_request",
             "flowscope_list_route_candidates", "flowscope_list_evidence", "flowscope_get_evidence",
+            "flowscope_browser_navigate", "flowscope_browser_snapshot", "flowscope_browser_interact",
+            "flowscope_browser_close",
             "flowscope_end_run");
     private static final List<String> JUDGE_TOOLS = List.of(
             "flowscope_get_status", "flowscope_lock_dataset", "flowscope_list_candidates",
@@ -104,6 +106,7 @@ public final class LocalLlmRunner implements AutoCloseable {
     private final Consumer<String> logger;
     private final BooleanSupplier datasetLocked;
     private final Predicate<String> explorerHasEvidence;
+    private final Consumer<String> explorerCleanup;
     private final boolean enforceSubscriptionLogin;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "flowscope-llm-cli");
@@ -133,26 +136,43 @@ public final class LocalLlmRunner implements AutoCloseable {
                           SessionBroker sessions, BooleanSupplier datasetLocked,
                           Predicate<String> explorerHasEvidence, Consumer<String> logger) {
         this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, LocalLlmRunner::startProcess, logger,
-                configuredExecutables(), explorerHasEvidence, true);
+                configuredExecutables(), explorerHasEvidence, ignored -> {}, true);
+    }
+
+    public LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts,
+                          SessionBroker sessions, BooleanSupplier datasetLocked,
+                          Predicate<String> explorerHasEvidence, Consumer<String> explorerCleanup,
+                          Consumer<String> logger) {
+        this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, LocalLlmRunner::startProcess, logger,
+                configuredExecutables(), explorerHasEvidence, explorerCleanup, true);
     }
 
     LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts, SessionBroker sessions,
                    BooleanSupplier datasetLocked, ProcessLauncher launcher, Consumer<String> logger,
                    Map<Provider, String> executableOverrides) {
         this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, launcher, logger,
-                executableOverrides, ignored -> true, false);
+                executableOverrides, ignored -> true, ignored -> {}, false);
     }
 
     LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts, SessionBroker sessions,
                    BooleanSupplier datasetLocked, ProcessLauncher launcher, Consumer<String> logger,
                    Map<Provider, String> executableOverrides, Predicate<String> explorerHasEvidence) {
         this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, launcher, logger,
-                executableOverrides, explorerHasEvidence, false);
+                executableOverrides, explorerHasEvidence, ignored -> {}, false);
+    }
+
+    LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts, SessionBroker sessions,
+                   BooleanSupplier datasetLocked, ProcessLauncher launcher, Consumer<String> logger,
+                   Map<Provider, String> executableOverrides, Predicate<String> explorerHasEvidence,
+                   Consumer<String> explorerCleanup) {
+        this(mcpUrl, mcpToken, contexts, sessions, datasetLocked, launcher, logger,
+                executableOverrides, explorerHasEvidence, explorerCleanup, false);
     }
 
     private LocalLlmRunner(String mcpUrl, String mcpToken, RunContextRegistry contexts, SessionBroker sessions,
                            BooleanSupplier datasetLocked, ProcessLauncher launcher, Consumer<String> logger,
                            Map<Provider, String> executableOverrides, Predicate<String> explorerHasEvidence,
+                           Consumer<String> explorerCleanup,
                            boolean enforceSubscriptionLogin) {
         this.mcpUrl = requireLoopbackMcp(mcpUrl);
         this.mcpToken = mcpToken == null ? "" : mcpToken;
@@ -163,6 +183,7 @@ public final class LocalLlmRunner implements AutoCloseable {
         this.logger = logger == null ? ignored -> {} : logger;
         this.executableOverrides = Map.copyOf(executableOverrides == null ? Map.of() : executableOverrides);
         this.explorerHasEvidence = explorerHasEvidence == null ? ignored -> false : explorerHasEvidence;
+        this.explorerCleanup = explorerCleanup == null ? ignored -> {} : explorerCleanup;
         this.enforceSubscriptionLogin = enforceSubscriptionLogin;
         providerReadiness.set(initialReadiness());
         if (enforceSubscriptionLogin) refreshReadiness();
@@ -343,6 +364,8 @@ public final class LocalLlmRunner implements AutoCloseable {
     public synchronized State invalidate() {
         judgeRequest = null;
         if (taskActive) return cancel();
+        State previous = state.get();
+        if (previous.role() == Role.EXPLORER) cleanupExplorer(previous.runId());
         State idle = State.idle();
         state.set(idle);
         activities.set(List.of());
@@ -419,6 +442,7 @@ public final class LocalLlmRunner implements AutoCloseable {
             abortActiveLlm();
             terminal = failedState(running, output.text(), error.getMessage());
         } finally {
+            if (running.role() == Role.EXPLORER) cleanupExplorer(running.runId());
             activeProcess = null;
             activeWorkspace = null;
             deleteWorkspace(workspace);
@@ -435,6 +459,14 @@ public final class LocalLlmRunner implements AutoCloseable {
         return new State(Status.FAILED, running.provider(), running.role(), running.runId(),
                 running.providerSessionId(), running.startedAt(), Instant.now(), safe,
                 sanitizeOutput(output), running.sessionMetadataMayRemain());
+    }
+
+    private void cleanupExplorer(String runId) {
+        if (runId == null || runId.isBlank()) return;
+        try { explorerCleanup.accept(runId); }
+        catch (RuntimeException error) {
+            logger.accept("FlowScope Explorer browser cleanup failed: " + error.getMessage());
+        }
     }
 
     private List<String> command(Provider provider, Role role, String executable, Path workspace,

@@ -1,6 +1,35 @@
-# FlowScope 1.2.0-beta.35 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.37 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.37 Explorer 입력 무결성·Graph Fact gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| Explorer account | 활성 run의 계정과 다른 `account_id` override를 서버가 거부하는 MCP 회귀 통과 |
+| browser 실행 경계 | browser worker는 8082 listener 없이 CDP로 실행하고, exact scope 밖 request는 전송 전에 차단 |
+| 상태 변경 승인 | 실제 headless Chrome이 만든 POST를 Burp 승인 callback이 거부했을 때 대상 서버 수신 0건, URL·body preview 마스킹 회귀 통과 |
+| runtime route | SPA network route가 `BROWSER_RUNTIME/evidence_backed=false` frontier에 등록되고 controlled replay 전 완료 대상에서 빠지지 않는 MCP 회귀 통과 |
+| graph fact | Evidence·identity·service·method/operation·API group 근거·object family·source/run/phase·response outcome 투영 회귀 통과 |
+| graph 표시 | Site→API Group→Identity→API→Object 계층, object family 기본 접기, 접힌 family의 중복 API→Object 선 제거, 후보 선택 시 해당 family 펼치기 구현. inline JavaScript parse 통과 |
+| 전체 자동 회귀 | `mvn clean verify` 연속 2회, 매회 299 tests, failure/error/skip 0. 완성 JAR manifest/classloader smoke 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.37.jar`, 15,991,612 bytes, 2,062 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `58458a6a9eea2ea3b452a79fc307e054d5984fd3b1d8ccaa175b23b6a88c52ef`. 두 clean build가 byte-for-byte 동일 |
+
+현재 자동 검증은 입력 무결성, discovery/Evidence 분리, fact 투영, Web 계약과 재현 빌드를 확인한다. 실제 beta.37 JAR을 Burp에 재로드한 화면·HTTPS/broker browser 통합과 허가 대상의 endpoint recall·BOLA/BFLA/IDOR TP/FP/FN, 고카디널리티 가독성·검토시간·Burp 상주 메모리는 측정하지 않았다. HTTP 2xx나 그래프 edge만으로 취약점 또는 인가 허용을 주장하지 않는다.
 
 최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-09-01이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.36 격리 Chrome discovery·controlled replay gate
+
+| 구분 | 결과 |
+|---|---|
+| 실제 브라우저 smoke | 로컬 설치 Chrome을 headless·incognito 임시 profile로 실행해 CDP 연결, DOM title/text, same-scope link, runtime network, broker header 전달, click 이동과 query secret 출력 마스킹을 확인 |
+| exact scope | DOM의 범위 밖 link를 반환하지 않고 범위 밖 직접 navigate를 거부. `Fetch.requestPaused`가 실제 browser request를 전송 전에 scope 검사하는 코드 계약 포함 |
+| 신뢰 분리 | browser tool 결과는 `DISCOVERY_ONLY`, Evidence ID 부재. 관련 request는 controlled target executor로 재현해야 Evidence·LLM 완료·Judge lock 자격을 얻는 MCP 회귀 통과 |
+| 상호작용 경계 | CLICK/FILL만 노출하고 `confirmed=true`와 Burp 승인을 요구. password/file selector와 arbitrary JavaScript tool은 차단 |
+| 생명주기 | MCP 정상 종료뿐 아니라 Explorer CLI 실패·취소·초기화에서도 exact run browser cleanup을 실행하는 launcher 계약과 실패 회귀 통과 |
+| 전체 자동 회귀 | JDK 21 `mvn clean verify` 1회, 296 tests, failure/error/skip 0, 완성 JAR manifest/classloader smoke 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.36.jar`, 15,981,411 bytes, 2,058 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `46846d19f49dd93b20704f7762c425b15d83d7a37951367736f6d20bde07a548` |
+
+이 검증은 로컬 HTTP와 proxy 없는 browser worker 핵심, MCP 신뢰 경계, 기존 전체 회귀를 확인한다. beta.36 JAR을 실제 Burp에 재로드한 HTTPS·8082 proxy·ACTIVE broker account·SPA 탐색→controlled replay→Evidence→정상 종료와 beta.35 대비 blind route recall·노이즈·시간·메모리는 아직 측정하지 않았다. 따라서 실제 대상의 endpoint 발견률이나 취약점 탐지 성능 향상을 주장하지 않는다. 이번 작업에서 두 번째 clean build를 실행하지 않았으므로 beta.36 byte-for-byte 재현성도 새로 주장하지 않는다.
 
 ## 1.2.0-beta.35 Explorer 독립-first/보조 frontier gate
 

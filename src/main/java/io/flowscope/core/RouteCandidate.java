@@ -21,6 +21,7 @@ public record RouteCandidate(String service, String method, String pathTemplate,
         HTML_SCRIPT,
         HTML_EMBED,
         XML_ROUTE,
+        BROWSER_RUNTIME,
         LEGACY_UNMAPPED
     }
 

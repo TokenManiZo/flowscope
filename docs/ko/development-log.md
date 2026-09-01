@@ -6,6 +6,55 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-01 · 1.2.0-beta.37 · Explorer 실제 요청 승인과 Graph Observation Fact
+
+**개발·수정**
+
+- `ControlledBrowserExplorer`의 CDP `Fetch.requestPaused`를 권위 있는 상태 변경 경계로 삼았다. GET/HEAD/OPTIONS는 exact scope 안에서 계속 허용하지만 POST/PUT/PATCH/DELETE는 실제 전송 직전에 메서드·마스킹 URL·마스킹 body preview로 Burp 승인 callback을 거친다. 거부된 request는 `Fetch.failRequest`로 중단한다. 동시에 CDP WebSocket command/event 경쟁으로 발생한 `Send pending`을 단일 send lock으로 직렬화했다.
+- Explorer run의 account를 시작 시 고정했다. MCP `account_id`가 다른 계정을 지정하면 거부하고, browser session header도 같은 target service에만 주입한다. browser worker는 8082 listener에 의존하지 않는다.
+- browser network에서 발견한 same-scope route를 `BROWSER_RUNTIME/evidence_backed=false` Explorer frontier로 등록한다. 이는 discovery hint이며 통제 HTTP executor가 실제 응답을 캡처하기 전에는 Evidence·coverage·완료 근거가 아니다.
+- `GraphObservationFact`를 추가해 coverage record에서 Evidence ID, Identity, service, method/operation, 표시용 API group과 그 근거, Object/family, source/run/phase, response 유무와 HTTP outcome을 투영한다. HTTP outcome은 관측 사실이며 인가 verdict가 아니다.
+- Web graph를 `Site → API Group → Identity → API → Object` 단계로 분리했다. 분석 key는 `Identity × API × Object × Source`로 유지하고 URL path group은 표시 전용이다. Object는 family로 먼저 접고 선택할 때 인스턴스를 펼치며, 같은 family로 접힌 API→Object 선은 관계 단위로 중복 제거한다. 미교차 후보는 정확한 Object family를 펼친 뒤 표시한다.
+
+**왜 필요했고 무엇을 기각했는가**
+
+- selector 승인만으로는 실제 network side effect와 승인 대상이 일치하지 않는다. 반대로 browser가 본 runtime route를 즉시 Evidence로 올리면 응답 캡처와 재현 경계를 우회한다. 따라서 실제 outgoing request 승인과 discovery→controlled replay를 분리했다.
+- 모든 Object 인스턴스를 첫 화면에 그리면 주문·게시물처럼 고카디널리티 데이터에서 선과 라벨이 폭증한다. Object를 삭제하면 BOLA 비교 근거를 잃으므로 family 접기와 원 Fact 보존을 선택했다.
+- URL 이름을 LLM이 업무 의미로 확정하면 비결정적 오분류가 생긴다. 첫 안정 path segment 기반 group만 사용하고 이를 분석 key나 취약점 판정에 쓰지 않는다.
+- status code, route 존재, source gap만으로 취약점을 확정하는 방식을 기각했다. 최종 판정은 현재 Evidence에 결합된 재현과 정상·타계정 대조가 서버 검증을 통과해야 한다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드: `ControlledBrowserExplorer.java`, `McpServer.java`, `FlowScopeExtension.java`, `RouteCandidate.java`, `GraphObservationFact.java`, `SnapshotJsonWriter.java`, `web/index.html`; 회귀: `ControlledBrowserExplorerTest.java`, `McpServerTest.java`, `GraphObservationFactTest.java`, 기존 Web/LLM runner 테스트; 실행 계약: `agent-workspace`; 현재 계약 문서와 changelog를 같은 작업에서 갱신했다.
+- 집중 회귀는 실제 설치 Chrome의 거부된 POST 수신 0건, account override 거부, runtime route의 non-Evidence frontier, graph fact 정규화/outcome, Web snapshot 계약과 inline JavaScript parse를 확인했다.
+- inline JavaScript parse와 전체 `mvn clean verify`를 연속 두 번 실행해 매회 299 tests, failure/error/skip 0을 확인했다. `target/flowscope-1.2.0-beta.37.jar`는 15,991,612 bytes, 2,062 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `58458a6a9eea2ea3b452a79fc307e054d5984fd3b1d8ccaa175b23b6a88c52ef`이며 두 clean build가 byte-for-byte 동일했다.
+- 실제 beta.37 Burp 재로드, HTTPS·broker account browser 통합, HUMAN·ZAP·LLM→잠금→Judge 완주, crAPI 고카디널리티 가독성 및 블라인드 endpoint/finding 효능은 아직 완료하지 않았다. 이 gate 전에는 출시 성능이나 미탐·오탐 개선을 주장하지 않는다.
+
+## 2026-09-01 · 1.2.0-beta.36 · 격리 Chrome Explorer와 Evidence replay
+
+**개발·수정**
+
+- `ControlledBrowserExplorer`를 추가해 JDK 21 `HttpClient/WebSocket`으로 설치된 Chrome/Chromium/Edge의 CDP page target을 제어한다. run마다 임시 user-data-dir·임의 debug port를 만들고 종료 시 browser와 profile을 폐기한다.
+- CDP `Fetch`가 exact scope 밖 request를 전송 전에 중단한다. `Page/Runtime/Network`로 현재 URL, title, bounded visible text, same-scope link/form/button, request method/URL/type/status를 반환한다. browser는 incognito로 실행하고 broker session은 persistent cookie DB가 아닌 CDP request header와 8082 proxy에 선택 Explorer account로 고정 주입한다. header는 선택 target과 scheme·host·effective port가 같은 request에만 붙고, 다른 in-scope service에는 전달하지 않는다. UI/MCP 출력에는 raw credential을 포함하지 않는다.
+- MCP Explorer 표면에 browser navigate/snapshot/interact/close를 추가했다. navigate/snapshot은 discovery-only이고 CLICK/FILL은 `confirmed=true`와 Burp 승인을 모두 요구하며 password/file input과 arbitrary JavaScript를 차단한다.
+- 브라우저와 8082 관측은 Evidence·coverage·run 완료·Judge lock을 만들지 않는다. 모델이 관련 요청을 기존 controlled target executor로 재현한 응답만 `CONTROLLED` Evidence가 된다. 최종 Explorer prompt는 BOLA/BFLA/IDOR의 HTTP 대조 목적에 맞춰 `entry GET → independent API frontier → 필요한 경우 browser fallback과 replay → assisted frontier → end` 순서로 고정했다.
+- CLI 성공 여부와 무관하게 Explorer run 종료·실패·취소·초기화가 같은 run의 browser worker를 닫도록 launcher cleanup 계약을 연결했다. 정상 MCP 종료에만 의존해 실패한 CLI가 격리 Chrome을 남기는 경로를 제거했다.
+- 브라우저 내부에는 실제 URL을 유지하되 MCP로 반환하는 current URL·DOM target·network URL에는 기존 secret-field 마스킹을 적용해 query token/API key가 모델 출력으로 넘어가지 않게 했다.
+
+**왜 필요했고 무엇을 기각했는가**
+
+- beta.35는 HTML/JS literal/XML/OpenAPI 문자열 route에는 강하지만 JavaScript가 실행된 뒤 생성되는 SPA DOM과 runtime fetch/XHR을 직접 볼 수 없었다.
+- Playwright/Chrome MCP/ChromeDriver 추가는 Node/npm 또는 별도 driver를 외부 사용자에게 요구하므로 기각했다. 기본 Chrome profile 연결은 개인 세션 혼합과 Chrome 136 remote-debugging 계약 때문에 기각했다.
+- 일반 8082 traffic 또는 CDP event를 즉시 `CONTROLLED` Evidence로 승격하면 송신 프로세스 귀속과 Burp executor 재현 경계를 증명할 수 없어 기각했다. 비밀 marker header도 CORS/preflight와 대상 동작을 바꾸므로 사용하지 않았다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드: `ControlledBrowserExplorer.java`, `McpServer.java`, `LocalLlmRunner.java`, `FlowScopeExtension.java`; 테스트: `ControlledBrowserExplorerTest.java`, `McpServerTest.java`, `FlowScopeWebServerTest.java`; 실행 계약: `agent-workspace`; 사용자·설계·결정·계획·인계·변경 문서를 같은 작업에서 갱신했다.
+- 실제 설치 Chrome을 headless 임시 profile로 띄운 두 local HTTP service smoke에서 CDP 연결, DOM/network 요약, same-scope click, 범위 밖 link 제거와 navigate 거부, 선택 service의 session header 수신과 다른 in-scope service 비누출, close를 확인했다. MCP 회귀는 Explorer-only 12-tool 표면, discovery-only·Evidence ID 부재, exact-scope와 account 고정을 확인한다.
+- 전체 `mvn clean verify` 296 tests가 failure/error/skip 0으로 통과했다. 이 안에는 실제 로컬 Chrome smoke와 CLI 실패 시 browser cleanup 회귀가 포함되고 완성 JAR manifest/classloader smoke도 통과했다.
+- 생성 배포물은 `target/flowscope-1.2.0-beta.36.jar`, 15,981,411 bytes, 2,058 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `46846d19f49dd93b20704f7762c425b15d83d7a37951367736f6d20bde07a548`다. 두 번째 clean build는 실행하지 않아 이번 gate에서 byte-for-byte 재현성을 새로 주장하지 않는다.
+- 남은 gate는 beta.36 JAR의 실제 Burp HTTPS/8082 proxy/broker account/SPA run, 독립·보조 frontier 종료, H+ZAP+LLM dataset lock/Judge, beta.35 HTTP-only 대비 endpoint recall·노이즈·시간·메모리 블라인드 비교다. local Chrome smoke만으로 취약점 탐지 성능 향상을 주장하지 않는다.
+
 ## 2026-09-01 · 1.2.0-beta.35 · Explorer 독립-first/보조 frontier
 
 **개발·수정**

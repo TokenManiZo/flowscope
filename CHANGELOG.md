@@ -2,6 +2,26 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.37 — 2026-09-01
+
+- Explorer run에서 선택한 계정을 통제 target tool의 `account_id`로 바꾸지 못하도록 서버에서 고정했습니다.
+- 설치 Chrome browser worker를 선택형 8082 listener와 분리하고 CDP exact-scope·동일 service Session Broker 주입을 유지했습니다.
+- CLICK/FILL selector 사전 승인을 실제 POST/PUT/PATCH/DELETE request 단위 Burp 승인으로 교체하고, 거부된 요청이 대상 서버에 도달하지 않는 실제 Chrome 회귀를 추가했습니다.
+- SPA runtime network route를 `BROWSER_RUNTIME/evidence_backed=false` Explorer frontier로 등록해 controlled HTTP replay 전에는 완료할 수 없게 했습니다.
+- coverage 관측을 Evidence ID에 연결된 `GraphObservationFact`로 투영해 identity·service·API·object·source·run·phase·HTTP outcome을 명시적으로 보존합니다.
+- 그래프를 `사이트 → API 그룹`, `Identity → API`, 선택 API의 `Identity → API → Object`로 단계화하고 객체 패밀리를 기본으로 접어 인스턴스 폭증을 줄였습니다. path 기반 API 그룹은 표시용 근거일 뿐 판정 key가 아닙니다.
+- inline JavaScript parse와 전체 `mvn clean verify` 299 tests를 연속 두 번 통과했습니다. 두 clean build의 beta.37 JAR SHA-256은 동일했습니다. 실제 Burp 재로드와 블라인드 endpoint/finding 효능은 별도 gate입니다.
+
+## 1.2.0-beta.36 — 2026-09-01
+
+- 별도 Playwright·Chrome MCP·ChromeDriver 없이 설치된 Chrome/Chromium/Edge를 JDK 21 CDP client로 실행하는 Explorer browser worker를 추가했습니다.
+- run별 임시 profile, exact-scope CDP request 차단, 선택 account session의 대상 service 한정 주입, bounded DOM·링크·폼·SPA network 요약과 종료 시 profile 삭제를 구현했습니다.
+- 브라우저 관측은 `DISCOVERY_ONLY`로 유지하고, 통제 HTTP executor로 재현된 응답만 Evidence·LLM lane 완료·Judge lock에 사용할 수 있게 신뢰 경계를 분리했습니다.
+- SPA CLICK/FILL은 매번 Burp 승인을 요구하며 password/file input과 arbitrary JavaScript tool을 제공하지 않습니다.
+- Explorer CLI의 성공·실패·취소·초기화 경로를 browser run cleanup과 묶어 실패한 실행이 격리 Chrome과 임시 profile을 남기지 않게 했습니다.
+- 현재 URL·DOM target·network URL의 secret-bearing query는 browser 내부 이동에는 유지하되 MCP discovery 출력에서는 마스킹합니다.
+- 로컬 설치 Chrome을 실제 실행하는 smoke와 MCP tool-surface/비Evidence 회귀를 추가했습니다. 실제 Burp HTTPS·broker session 통합과 블라인드 endpoint/취약점 성능 비교는 아직 별도 gate입니다.
+
 ## 1.2.0-beta.35 — 2026-09-01
 
 - LLM Explorer가 own-run `INDEPENDENT` safe concrete route를 모두 요청한 뒤에만 다른 수집 레인의 route 문자열을 `ASSISTED` blind hint로 받을 수 있게 했습니다.
