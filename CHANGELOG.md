@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.39 — 2026-09-01
+
+- API 문맥 없이 401/403만 반환한 ZAP 디렉터리 probe를 메인 API로 올리던 회귀를 수정했습니다. 해당 Evidence는 삭제하지 않고 `UNKNOWN/REVIEW`로 보존하며, JSON/API 문맥·객체·비안전 메서드 등 독립 근거가 있으면 기존처럼 API에 포함합니다.
+- `/manifest.json`을 Content-Type이 부정확해도 web app manifest 경로 근거로 탐색 메타데이터에서 분리합니다.
+- Explorer가 실제로 통제 응답을 받은 탐색·정적 route를 메인 coverage에서 제외했다는 이유로 미방문 처리하던 완료 gate 회귀를 수정했습니다. 방문 사실과 분석 자격을 별도로 판정합니다.
+- 그래프 기본 화면을 사이트 집계에서 `신원 → API`로 복구하고, 사이트 개요는 선택형으로 유지했습니다. 사이트 소스 수는 요청 반복 수가 아닌 고유 API 수로 세며, 계층별 viewport를 분리했습니다.
+- 새 분류·Explorer·Web 회귀를 포함한 전체 `mvn clean verify` 303 tests와 독립 Web 실행의 API↔사이트 전환·브라우저 오류 로그를 확인했습니다. 실제 Burp의 beta.39 재로드는 별도 gate입니다.
+
 ## 1.2.0-beta.38 — 2026-09-01
 
 - 신원별 ZAP 캠페인 상태에 전체·lane·현재 단계 경과시간, 단계 제한시간, 마지막 ZAP heartbeat, 마지막 트래픽 변화와 상태 원문을 추가했습니다.

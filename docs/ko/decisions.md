@@ -993,3 +993,10 @@
 - **기각:** 계정 lane을 병렬화하면 ZAP 자원 경합뿐 아니라 proxy run context와 fresh session 전환이 겹쳐 source/identity 귀속을 오염시킨다. 새 트래픽 30초 부재를 자동 실패로 처리하면 SPA 안정화·passive queue·긴 client crawl의 정상 정지를 오판한다. 따라서 직렬 격리는 유지하고 관측 상태만 명시한다.
 - **검증·한계:** MCP 회귀는 campaign timestamp, queue 순번·이유, lane timing/heartbeat 필드를 확인하고 Web 회귀는 elapsed/heartbeat/wait/activity 계약을 고정한다. heartbeat는 ZAP API 응답 생존성이고 crawler 내부 thread의 완전한 건강 증명은 아니다. 실제 장시간 AJAX Spider에서 시간 표시와 timeout 전환은 beta.38 Burp 재로드 gate다.
 - **상태:** 코드, inline JavaScript parse, 전체 verify 299 tests 연속 2회와 재현 beta.38 JAR 완료. 실제 Burp 재로드·장시간 AJAX→후속 계정 전환·timeout 표시는 대기.
+
+## D-106 · 방문 사실·분석 자격·화면 요약을 하나의 신호로 합치지 않음
+
+- **문제:** beta.37~38 통합 후 `coverageEligible`이 Explorer route 방문 완료까지 대표하고, 401/403 상태 하나가 API 분류를 확정하며, 사이트 요약이 기본 그래프를 대체했다. 그 결과 Explorer가 실제로 방문한 navigation/static route를 미방문으로 판정했고, ZAP probe와 manifest가 메인 API에 올라왔으며, 사용자가 원하는 `identity → API` 관계가 첫 화면에서 사라졌다.
+- **결정:** 방문 사실은 exact source/run의 `CONTROLLED` 응답으로, 메인 분석 자격은 classifier disposition으로, 화면 요약은 graph level로 각각 판정한다. API 문맥 없는 401/403은 `REVIEW`로 보존하고 `/manifest.json`은 탐색 메타데이터로 분리한다. 기본 그래프는 `identity → API`, 사이트 개요는 선택형으로 두고 계층별 viewport를 분리한다.
+- **기각:** 401/403 일괄 제외은 실제 protected API 미탐 위험으로, 상태 코드만으로 API를 확정하는 방식은 scanner directory probe 오염 때문에 기각했다. 사이트 개요 코드와 Fact Core를 삭제하는 대안은 전체 구조 탐색 가치를 잃어 기각했다.
+- **검증·한계:** 분류·Explorer·Web 최소 회귀와 전체 303 tests, 독립 Web의 API↔사이트 전환·browser error 0건을 확인했다. 해당 검증은 실제 Burp/ZAP/crAPI 재실행 또는 탐지 효능 측정을 대체하지 않는다.

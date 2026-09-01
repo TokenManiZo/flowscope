@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.38
+# FlowScope 1.2.0-beta.39
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -17,14 +17,14 @@ USER B         GET /api/orders/{id}  orders:101
 
 - source, source detail, orchestrator, tool, phase, run 정보를 독립적으로 보존하는 Burp 실시간 수집
 - 모든 source에 대한 exact scope Evidence 수집. HUMAN은 Burp로 다른 사이트를 방문할 수 있지만 범위 밖 응답은 FlowScope에 저장하거나 그래프로 만들지 않음
-- HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 IDA식 계층 그래프. `사이트 → API 그룹 → 신원 → API → 객체 패밀리/인스턴스`로 단계적으로 내려가며, 화면에서 접더라도 `Evidence × Identity × API × Object × Source × Run × HTTP outcome` 관계는 Fact Core에 그대로 유지
+- HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 IDA식 계층 그래프. 기본은 `신원 → API`, API 선택 시 `신원 → API → 객체`, 사이트 개요는 선택형 `사이트 → API 그룹`으로 분리한다. 화면에서 접거나 전환해도 `Evidence × Identity × API × Object × Source × Run × HTTP outcome` 관계는 Fact Core에 그대로 유지
 - 원본 URL은 보존하고, UUID/긴 16진 형식·성공 응답 ID 일치·같은 위치의 복수 값/독립 관측을 근거로 operation 경로를 자동 묶음. `LITERAL/INFERRED/CORROBORATED`와 이유를 상세에 표시
 - `신원 × 작업 × 객체` 커버리지 매트릭스, 미교차 조합, 일부만 발견, source 간 판정 불일치
 - 응답 분류, 명시적 소유자 Evidence, 사용자가 입력한 역할 정책을 이용하는 결정론적 BOLA/IDOR·BFLA 후보 엔진
 - 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 성공 응답 확인 전 `UNVERIFIED`, 쿠키 회전, 만료·의심 상태, 계정별 ZAP/LLM 요청을 지원. 같은 서비스의 동일 인증 지문을 다른 계정으로 다시 연결하려 하면 자동 이동하지 않고 충돌 상태로 차단
 - query, 요청 본문, 마스킹된 요청·응답, timestamp, redirect, GraphQL operation, 응답→요청 데이터 흐름 수집. 텍스트 전문은 메시지당 기본 1MiB, 중복 제거 후 압축 총량 48MiB까지 GZIP·SHA-256으로 보존하고 UI preview는 8KiB로 분리. 상한 초과 live 메시지는 전체 문자열로 복제하지 않고 64KiB 제한 미리보기와 실제 byte 수·미보존 사유만 남김
 - Evidence 보존형 트래픽 분류. `INCLUDE`만 메인 3-way 비교에 사용하고, 애매한 `REVIEW`는 별도 검토 대기로 보존하며, 고신뢰 보조 트래픽은 `EXCLUDE`로 기본 숨김
-- classifier v4가 인증 준비와 반복 polling을 각각 `AUTH_SESSION`, `POLLING`으로 분리하고, web manifest·source map·service worker를 탐색 메타데이터로 분리하며 같은 service·정규화 operation의 명시적 API Evidence로 애매한 형제 관측을 교차 보강
+- classifier v5가 인증 준비와 반복 polling을 각각 `AUTH_SESSION`, `POLLING`으로 분리하고, web manifest·source map·service worker를 탐색 메타데이터로 분리한다. API 문맥 없는 401/403 디렉터리 probe는 `REVIEW`로 보존하고, JSON/API 문맥·객체·비안전 메서드 등 독립 근거가 있을 때만 메인 API로 포함한다.
 - 공통 route discovery 파이프라인이 exact-scope HTML, 정적 JavaScript 호출, OpenAPI JSON/YAML, 표준 metadata, generic XML과 응답 없는 Burp Site Map 항목을 동일한 검증·정규화·dedup gate로 처리. method 근거가 없으면 `UNKNOWN`이며 후보는 실제 요청·응답 전까지 coverage·gap·verdict·finding을 바꾸지 않음
 - `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` 인증 상태. 연결되지 않은 회전 쿠키가 그래프 신원을 폭증시키지 않으며, 확인된 계정 연결은 서비스 경계를 유지
 - Codex·Claude Code 구독형 클라이언트용 localhost 전용 인증 MCP 서버
@@ -68,7 +68,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.38.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.38 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.39.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.39 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
 3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
@@ -103,7 +103,7 @@ cd testflowscope
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.38.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.39.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
@@ -227,7 +227,7 @@ ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, MCP 연결 복사, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 초기화, 정본 로컬 Web 작업면 열기
 - **Web 상단 모드** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
 - **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, 실제 메인 Evidence 수와 함께 동작하는 HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 읽기 전용 역할 정책 상태, 3-way gap, 그래프 판정 제어
-- **Flow Graph** — `사이트 → API 그룹 → Identity → API → Object` drill-down. 실제 분석 관계는 `Identity × API × Object × Source`로 보존하고, 고카디널리티 Object는 family로 먼저 접은 뒤 선택적으로 인스턴스를 펼칩니다. HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, focus+context, 화면 맞춤을 제공합니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.
+- **Flow Graph** — 기본 `Identity → API`, API 선택 시 `Identity → API → Object`, 선택형 `사이트 → API 그룹` 개요를 제공합니다. 실제 분석 관계는 `Identity × API × Object × Source`로 보존하고, 고카디널리티 Object는 family로 먼저 접은 뒤 선택적으로 인스턴스를 펼칩니다. HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, focus+context, 화면 맞춤을 제공합니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.
 - **판정 매트릭스** — 관측된 `identity/role × operation × resource` cell, source별 verdict, 미교차 조합, 일부만 발견, 불일치
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
 - **시나리오** — 결정론적 BOLA/BFLA 후보·gap, 비최종 Judge assessment, 서버 검증 최종 verdict

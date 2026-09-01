@@ -1,4 +1,18 @@
-# FlowScope 1.2.0-beta.38 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.39 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.39 통합 회귀 복구 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 분류 재현 | API 문맥 없는 403 static directory는 `UNKNOWN/REVIEW`, JSON API 403은 `API/INCLUDE`, 일반 JSON `/manifest.json`은 `DISCOVERY_METADATA/EXCLUDE` 회귀 통과 |
+| Explorer 재현 | coverage 제외된 navigation route라도 exact LLM run의 controlled response가 있으면 방문 완료로 인정하고 INDEPENDENT→ASSISTED→run 종료 회귀 통과 |
+| Web 계약 | API 기본 선택, Site 선택형 유지, source별 고유 operation 집계, graph level별 viewport v5 문자열 회귀 통과 |
+| 전체 회귀 | `mvn clean verify` 303 tests, failure/error/skip 0 |
+| 독립 Web 수동 확인 | `127.0.0.1:17779` 샘플에서 API 기본 그래프, Site→API 전환·복귀, 화면 배치, browser error/warning 0건 확인 |
+| 배포물 | `target/flowscope-1.2.0-beta.39.jar`, 15,997,675 bytes, 2,063 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `8ece99ca6d833781a888852da50a687b0ac4ae31fbdd7efe7228a97c4f43549f`; manifest의 `Multi-Release: true` 확인 |
+| 실제 Burp 재로드 | **대기** — beta.39 JAR의 crAPI HUMAN/ZAP/LLM 재실행은 아직 수행하지 않음 |
+
+이 gate는 확인된 회귀 세 가지를 닫는다. 실제 Burp/ZAP 장시간 운영, crAPI의 endpoint recall 또는 BOLA/BFLA/IDOR 효능을 증명하지는 않는다.
 
 ## 1.2.0-beta.38 ZAP 실행 관측 가능성 gate
 

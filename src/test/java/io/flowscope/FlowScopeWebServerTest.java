@@ -110,7 +110,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.38 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.39 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
@@ -138,6 +138,11 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
         assertTrue(index.body().contains("좁은 화면용 API 목록"));
         assertTrue(index.body().contains("renderGraphList(cellValues,visibleOperations)"));
+        assertTrue(index.body().contains("let GRAPH_LEVEL='api', GRAPH_SELECTED_GROUP=''"));
+        assertTrue(index.body().contains("<button class=\"vbtn on\" data-graph-level=\"api\">API</button>"));
+        assertTrue(index.body().contains("counts:{human:new Set(),scanner:new Set(),llm:new Set()}"));
+        assertTrue(index.body().contains("flowscope.graph-state.v5"));
+        assertTrue(index.body().contains("GRAPH_STATE.viewports[CY_GRAPH_LEVEL||GRAPH_LEVEL]"));
         assertTrue(index.body().contains("data-detail="));
         assertTrue(index.body().contains("상세 보기"));
         assertTrue(index.body().contains("showOperation(item.op,0,item.eventId)"));

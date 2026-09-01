@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.38
+# FlowScope 1.2.0-beta.39
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -26,8 +26,8 @@ identity ──access──▶ operation ──targets──▶ object
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
 - Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and account-bound ZAP/LLM requests. Rebinding one service-scoped credential fingerprint to a different account fails closed instead of silently moving it.
 - Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture. Text messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate, separate from 8 KiB UI previews.
-- Evidence-preserving traffic classification: every captured observation remains inspectable while only high-confidence navigation, static assets, real CORS preflights, no-response records, and non-discovery phases stay out of coverage analysis by default.
-- Classifier v4 separates authentication setup and stable repeated polling as `AUTH_SESSION` and `POLLING`, separates manifests/source maps/service workers as discovery metadata, and can corroborate an ambiguous record only with strong API evidence for the same service and normalized operation.
+- Evidence-preserving traffic classification: every captured observation remains inspectable while only eligible API traffic enters the main graph. A bare 401/403 directory probe without independent API context stays `UNKNOWN/REVIEW`; JSON/API context, object evidence, or an unsafe method still promotes the record through the existing rules.
+- Classifier v5 separates authentication setup and stable repeated polling as `AUTH_SESSION` and `POLLING`, separates manifests/source maps/service workers as discovery metadata, and recognizes the exact `/manifest.json` path even when its media type is generic JSON.
 - A common route-discovery pipeline applies one scope, method, normalization, deduplication, and provenance gate to same-scope HTML, static JavaScript call sites, OpenAPI JSON/YAML, standard metadata, generic XML, and response-less Burp Site Map items. A method without evidence remains `UNKNOWN`; candidates never affect coverage, gaps, verdicts, or findings before a request/response is observed.
 - Explicit `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` authentication state. Unbound cookie rotation no longer explodes graph identities, and verified account bindings remain service-scoped.
 - Localhost-only authenticated MCP server for Codex and Claude Code subscription clients.
@@ -64,9 +64,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.38.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.38 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.39.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.39 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.38.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.39.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
@@ -189,7 +189,7 @@ The ZAP API endpoint is accepted only on a loopback address. Key precedence is `
 - **Burp tab** — exact scope, port mapping, live counts, MCP connection copy, Proxy-history import, project save/load, sample, reset, and a button that opens the canonical local Web workspace.
 - **Web top modes** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
 - **Left rail** — captured/analysis/hidden/review counts without a fabricated percentage, HUMAN/SCANNER/LLM filters paired with actual main-Evidence counts, Evidence display classes, read-only authorization-policy state, three-way gaps, and graph verdict controls.
-- **Flow Graph** — Site → API Group → Identity → API → Object drill-down. The retained analytical relation is Identity × API × Object × Source; high-cardinality objects are folded into families and expanded on demand. HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L remain provenance encodings. Unrequested-route candidates stay outside observed coverage, HTTP status remains an outcome rather than an authorization verdict, and response-to-request dependencies stay in the separate sequence view.
+- **Flow Graph** — The default is Identity → API, selecting an API opens Identity → API → Object, and Site → API Group is an optional overview. The retained analytical relation is Identity × API × Object × Source; high-cardinality objects are folded into families and expanded on demand. HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L remain provenance encodings. Unrequested-route candidates stay outside observed coverage, HTTP status remains an outcome rather than an authorization verdict, and response-to-request dependencies stay in the separate sequence view.
 - **판정 매트릭스** — observed identity/role × operation × resource cells, per-source verdicts, uncrossed combinations, partial discovery, and conflicts.
 - **흐름 순서** — response-to-request ID/token dependencies recovered from timestamped observations.
 - **시나리오** — deterministic BOLA/BFLA candidates and gaps alongside non-final Judge assessments and server-validated final verdicts.

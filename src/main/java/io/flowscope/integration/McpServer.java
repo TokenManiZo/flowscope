@@ -317,7 +317,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.38");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.39");
         result.put("instructions", "Authorized exact-scope assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_read/flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or provider-controlled browser networking. If needed, set only the exact target supplied "
@@ -2335,14 +2335,13 @@ public final class McpServer implements AutoCloseable {
     private List<RouteCandidate> assistedExplorerRoutes(Pipeline.Result snapshot,
                                                         RunContextRegistry.Context explorer) {
         List<RouteCandidate> blindHints = new ArrayList<>();
-        List<RouteCandidate> ownObserved = explorerRoutes(snapshot, explorer).stream()
-                .filter(RouteCandidate::observed).toList();
+        List<RequestRecord> ownVisited = explorerVisits(snapshot, explorer);
         for (RouteCandidate candidate : state.routeCandidates()) {
             boolean hasCrossLane = candidate.provenance().stream()
                     .filter(item -> item.source() == Source.HUMAN || item.source() == Source.SCANNER
                             || item.source() == Source.UNKNOWN)
                     .findAny().isPresent();
-            if (!hasCrossLane || routeCovered(candidate, ownObserved)) continue;
+            if (!hasCrossLane || routeVisited(candidate, ownVisited)) continue;
             RouteCandidate.Provenance blind = new RouteCandidate.Provenance(
                     RouteCandidate.ProvenanceType.LEGACY_UNMAPPED, "blind-assisted", Source.UNKNOWN,
                     "blind-assisted", "blind-assisted", RouteCandidate.Applicability.REVIEW,
@@ -2356,21 +2355,28 @@ public final class McpServer implements AutoCloseable {
 
     private List<RouteCandidate> actionableRoutes(List<RouteCandidate> candidates, Pipeline.Result snapshot,
                                                   RunContextRegistry.Context explorer) {
-        List<RouteCandidate> ownObserved = explorerRoutes(snapshot, explorer).stream()
-                .filter(RouteCandidate::observed).toList();
+        List<RequestRecord> ownVisited = explorerVisits(snapshot, explorer);
         return candidates.stream()
                 .filter(candidate -> SAFE_DISCOVERY_METHODS.contains(candidate.method()))
                 .filter(candidate -> !candidate.pathTemplate().contains("{")
                         && !candidate.pathTemplate().contains("}"))
-                .filter(candidate -> !routeCovered(candidate, ownObserved))
+                .filter(candidate -> !routeVisited(candidate, ownVisited))
                 .toList();
     }
 
-    private boolean routeCovered(RouteCandidate candidate, List<RouteCandidate> ownObserved) {
-        return ownObserved.stream().anyMatch(observed -> observed.service().equals(candidate.service())
-                        && observed.pathTemplate().equals(candidate.pathTemplate())
-                        && (candidate.method().equals("UNKNOWN") || observed.method().equals("UNKNOWN")
-                        || observed.method().equals(candidate.method())));
+    private List<RequestRecord> explorerVisits(Pipeline.Result snapshot,
+                                               RunContextRegistry.Context explorer) {
+        return snapshot.records.stream()
+                .filter(record -> record.source == Source.LLM && explorer.runId().equals(record.runId))
+                .filter(record -> record.hasResponse)
+                .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.EXPLORER_VISIBILITY))
+                .toList();
+    }
+
+    private boolean routeVisited(RouteCandidate candidate, List<RequestRecord> ownVisited) {
+        return ownVisited.stream().anyMatch(record -> record.service.equals(candidate.service())
+                && record.path.equals(candidate.pathTemplate())
+                && (candidate.method().equals("UNKNOWN") || record.method.equals(candidate.method())));
     }
 
     private String validatedAccount(String accountId) {

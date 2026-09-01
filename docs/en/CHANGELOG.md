@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.39 — 2026-09-01
+
+- A bare 401/403 directory probe without independent API context is retained as `UNKNOWN/REVIEW` instead of polluting the main API graph. JSON/API context, an object signal, or an unsafe method still promotes the observation through the existing rules.
+- The exact `/manifest.json` path is classified as discovery metadata even when a server returns a generic JSON media type.
+- Explorer completion now distinguishes an actually controlled visit from analysis eligibility, so visited navigation/static routes cannot remain falsely pending merely because they are excluded from business coverage.
+- The default graph is restored to `identity → API`; Site Overview remains optional, counts unique operations per source, and stores a separate viewport for each hierarchy level.
+- All 303 Maven tests passed and the standalone Web UI was checked for API/Site switching and browser console errors. A real Burp reload of beta.39 remains a separate gate.
+
 ## 1.2.0-beta.38 — 2026-09-01
 
 - Added campaign, lane, and current-stage elapsed time, stage deadlines, last ZAP heartbeat, last traffic change, and raw ZAP status to isolated scanner runs.

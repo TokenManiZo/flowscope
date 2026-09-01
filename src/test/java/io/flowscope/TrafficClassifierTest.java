@@ -166,6 +166,51 @@ class TrafficClassifierTest {
     }
 
     @Test
+    void 루트_manifest_json은_일반_JSON으로_응답해도_discovery_metadata다() {
+        RequestRecord manifest = record("GET", "/manifest.json", null, "application/json");
+
+        RequestRecord result = classified(manifest);
+
+        assertEquals(TrafficClassification.TrafficClass.DISCOVERY_METADATA,
+                result.trafficClassification.trafficClass());
+        assertEquals(TrafficClassification.Disposition.EXCLUDE,
+                result.trafficClassification.disposition());
+        assertEquals(List.of("WEB_APP_MANIFEST_PATH"), result.trafficClassification.reasons());
+    }
+
+    @Test
+    void 권한응답_하나만으로_경로를_business_API로_확정하지_않는다() {
+        RequestRecord directoryProbe = new RequestRecord(Source.HUMAN, "https://t:443",
+                "GET", "/static/js/", 403, "anon");
+        directoryProbe.hasResponse = true;
+
+        RequestRecord result = classified(directoryProbe);
+
+        assertEquals(TrafficClassification.TrafficClass.UNKNOWN,
+                result.trafficClassification.trafficClass());
+        assertEquals(TrafficClassification.Disposition.REVIEW,
+                result.trafficClassification.disposition());
+        assertEquals(List.of("AUTHORIZATION_RESPONSE_ONLY"), result.trafficClassification.reasons());
+    }
+
+    @Test
+    void JSON_API의_권한응답은_계속_business_API로_포함한다() {
+        RequestRecord api = new RequestRecord(Source.HUMAN, "https://t:443",
+                "GET", "/api/admin", 403, "anon");
+        api.hasResponse = true;
+        api.responseContentType = "application/json";
+
+        RequestRecord result = classified(api);
+
+        assertEquals(TrafficClassification.TrafficClass.API,
+                result.trafficClassification.trafficClass());
+        assertEquals(TrafficClassification.Disposition.INCLUDE,
+                result.trafficClassification.disposition());
+        assertTrue(result.trafficClassification.reasons().contains("AUTHORIZATION_RESPONSE"));
+        assertTrue(result.trafficClassification.reasons().contains("API_MEDIA_TYPE"));
+    }
+
+    @Test
     void source_map과_service_worker는_Evidence로_남지만_business_graph에서는_제외한다() {
         RequestRecord sourceMap = record("GET", "/assets/app.js.map", null, "application/json");
         RequestRecord worker = record("GET", "/service-worker.js", null, "application/javascript");

@@ -1,6 +1,15 @@
-# FlowScope 1.2.0-beta.38 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.39 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.38 절만 현재 우선순위다. 아래 beta.37 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.38 절을 따른다.
+> **읽는 법:** 맨 위 beta.39 절만 현재 우선순위다. 아래 beta.38 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.39 절을 따른다.
+
+## 0. beta.39 우선순위: 통합 회귀 복구와 실제 Burp gate
+
+1. API 문맥 없는 401/403 scanner probe와 `/manifest.json`을 메인 API 그래프에서 분리하되 Evidence는 보존한다.
+2. Explorer의 실제 방문 사실과 BOLA/BFLA coverage 자격을 분리해 제외된 navigation/static route가 완료를 영구 차단하지 않게 한다.
+3. 기본 `identity → API`, 선택형 사이트 개요, 계층별 viewport와 고유 API 집계를 회귀로 고정한다.
+4. 전체 verify·독립 Web 검증 후 beta.39 JAR을 실제 Burp에 재로드하고 crAPI HUMAN/ZAP/LLM을 새 run으로 실행한다.
+
+**현재 상태:** 1~3은 코드·최소 회귀·전체 303 tests·독립 Web API↔사이트 전환을 통과했다. 4의 실제 Burp beta.39 재로드·crAPI 재실행·장시간 ZAP 계정 전환은 대기한다.
 
 ## 0. beta.38 우선순위: ZAP 장시간 실행 관측 가능성
 

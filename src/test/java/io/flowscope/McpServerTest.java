@@ -96,7 +96,7 @@ final class McpServerTest {
         JsonNode initialized = json(post("test-token", request(2, "initialize",
                 "{\"protocolVersion\":\"future-version\"}")));
         assertEquals("2025-11-25", initialized.at("/result/protocolVersion").asText());
-        assertEquals("1.2.0-beta.38", initialized.at("/result/serverInfo/version").asText());
+        assertEquals("1.2.0-beta.39", initialized.at("/result/serverInfo/version").asText());
         assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
 
         JsonNode evidence = tool("flowscope_get_evidence",
@@ -492,6 +492,40 @@ final class McpServerTest {
                 .at("/result/structuredContent/remaining_safe_concrete").asInt());
         JsonNode ended = tool("flowscope_end_run",
                 "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}");
+        assertFalse(ended.at("/result/isError").asBoolean(), ended.toString());
+    }
+
+    @Test
+    void explorerCompletionCountsControlledVisitedRoutesEvenWhenTheyAreExcludedFromCoverage() throws Exception {
+        String runId = "explore-navigation";
+        RequestRecord entry = observationAt(Source.LLM, "A", 200, "{\"ok\":true}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1");
+        AtomicReference<Pipeline.Result> result = new AtomicReference<>(Pipeline.run(List.of(entry)));
+        AtomicReference<List<RouteCandidate>> routes = new AtomicReference<>(List.of(
+                candidate("GET", "/login", false, entry.evidenceId, Source.LLM, runId,
+                        RouteCandidate.ProvenanceType.HTML_LINK)));
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
+        server = new McpServer(state(result, contexts, ScopePolicy.parse("https://api.example.test/"),
+                new AnalysisConfig(), routes), 0, "test-token");
+        server.start();
+
+        assertEquals(1, tool("flowscope_list_route_candidates", "{\"view\":\"INDEPENDENT\"}")
+                .at("/result/structuredContent/remaining_safe_concrete").asInt());
+
+        RequestRecord visited = observationAt(Source.LLM, "A", 200, "<html>login</html>",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/login");
+        visited.responseContentType = "text/html";
+        visited.secFetchDest = "document";
+        result.set(Pipeline.run(List.of(entry, visited)));
+        assertTrue(result.get().coverageRecords.stream().noneMatch(record -> record.path.equals("/login")),
+                "navigation Evidence는 분석 그래프에는 들어가지 않아야 한다");
+
+        JsonNode assisted = tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}");
+        assertFalse(assisted.at("/result/isError").asBoolean(), assisted.toString());
+        assertEquals(0, assisted.at("/result/structuredContent/remaining_safe_concrete").asInt());
+        JsonNode ended = tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}");
         assertFalse(ended.at("/result/isError").asBoolean(), ended.toString());
     }
 

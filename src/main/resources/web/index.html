@@ -218,7 +218,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.38 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.39 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
@@ -392,8 +392,8 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
         <button class="vbtn" data-view="authz">인가 뷰 (판정 색)</button>
       </div>
       <div class="views" style="margin-top:6px">
-        <button class="vbtn on" data-graph-level="site">사이트</button>
-        <button class="vbtn" data-graph-level="api">API</button>
+        <button class="vbtn" data-graph-level="site">사이트</button>
+        <button class="vbtn on" data-graph-level="api">API</button>
         <button class="vbtn" data-graph-level="object">객체</button>
       </div>
       <label class="layoutlock"><input type="checkbox" id="layoutLock"> 노드 위치 잠금</label>
@@ -506,27 +506,28 @@ let activeSources={human:true,scanner:true,llm:true};
 let activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false};
 let activeTraffic={API:true,AUTH_SESSION:false,UNKNOWN:true,TELEMETRY_CANDIDATE:true,POLLING:true,BACKGROUND:true,NAVIGATION:false,STATIC_ASSET:false,DISCOVERY_METADATA:false,PREFLIGHT:false};
 let ACTIVE_IDENTITY='all', GRAPH_SAVE_TIMER=null, DETAIL_REQUEST=0, SELECTED_OPERATION='', SELECTED_EVENT_ID='';
-let GRAPH_LEVEL='site', GRAPH_SELECTED_GROUP='';
+let GRAPH_LEVEL='api', GRAPH_SELECTED_GROUP='';
 const EXPANDED_OBJECT_FAMILIES=new Set();
 let SETUP_AUTO_CHECKED=false, SETUP_STAGE='scope', SETUP_STAGE_PINNED=false;
 let HUMAN_RUN={active:false,completed:false,runId:''};
 let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[],REQUEST_LAB_EDITABLE=false,REQUEST_LAB_GENERATION=0,REQUEST_LAB_IN_FLIGHT=false,REQUEST_LAB_RETRY=null;
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[], ZAP_STATUS={connected:false,state:'CHECKING',message:'ZAP 연결을 확인하는 중입니다.'}, ZAP_STATUS_TIMER=null;
 let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
-// v3 discards positions saved before source-consistent graph lanes were introduced.
-const GRAPH_STATE_KEY='flowscope.graph-state.v4';
+// v5 separates viewport state by hierarchy level so switching views cannot move the next graph off-screen.
+const GRAPH_STATE_KEY='flowscope.graph-state.v5';
 let GRAPH_STATE=loadGraphState();
+let CY_GRAPH_LEVEL='';
 
 function loadGraphState(){
-  try{const value=JSON.parse(localStorage.getItem(GRAPH_STATE_KEY)||'{}');return {positions:value.positions||{},viewport:value.viewport||null,locked:!!value.locked};}
-  catch(_){return {positions:{},viewport:null,locked:false};}
+  try{const value=JSON.parse(localStorage.getItem(GRAPH_STATE_KEY)||'{}');return {positions:value.positions||{},viewports:value.viewports||{},locked:!!value.locked};}
+  catch(_){return {positions:{},viewports:{},locked:false};}
 }
 function saveGraphState(){
   clearTimeout(GRAPH_SAVE_TIMER); GRAPH_SAVE_TIMER=setTimeout(()=>{try{localStorage.setItem(GRAPH_STATE_KEY,JSON.stringify(GRAPH_STATE));}catch(_){}},80);
 }
 function captureGraphState(){
   if(!cy)return; cy.nodes().forEach(n=>{const p=n.position();GRAPH_STATE.positions[n.id()]={x:p.x,y:p.y};});
-  GRAPH_STATE.viewport={zoom:cy.zoom(),pan:cy.pan()}; saveGraphState();
+  GRAPH_STATE.viewports[CY_GRAPH_LEVEL||GRAPH_LEVEL]={zoom:cy.zoom(),pan:cy.pan()}; saveGraphState();
 }
 function savedPosition(id,fallback){const p=GRAPH_STATE.positions[id];return p&&Number.isFinite(p.x)&&Number.isFinite(p.y)?p:fallback;}
 function esc(value){return String(value==null?'':value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
@@ -690,9 +691,9 @@ function renderGraphList(cellValues,operations){
 function updateGraphLevelButtons(){document.querySelectorAll('[data-graph-level]').forEach(button=>button.classList.toggle('on',button.dataset.graphLevel===GRAPH_LEVEL));}
 function renderSiteOverview(){
   const facts=(MODEL.graphFacts||[]).filter(fact=>activeSources[String(fact.source||'').toLowerCase()]&&(ACTIVE_IDENTITY==='all'||fact.identity===ACTIVE_IDENTITY));
-  const grouped=new Map();facts.forEach(fact=>{const group=fact.apiGroup||apiGroupForOperation(fact.operation),key=fact.service+'\u0000'+group,current=grouped.get(key)||{service:fact.service,group,operations:new Set(),counts:{human:0,scanner:0,llm:0}};current.operations.add(fact.operation);const source=String(fact.source||'').toLowerCase();if(current.counts[source]!=null)current.counts[source]++;grouped.set(key,current);});
+  const grouped=new Map();facts.forEach(fact=>{const group=fact.apiGroup||apiGroupForOperation(fact.operation),key=fact.service+'\u0000'+group,current=grouped.get(key)||{service:fact.service,group,operations:new Set(),counts:{human:new Set(),scanner:new Set(),llm:new Set()},requests:{human:0,scanner:0,llm:0}};current.operations.add(fact.operation);const source=String(fact.source||'').toLowerCase();if(current.counts[source]){current.counts[source].add(fact.operation);current.requests[source]++;}grouped.set(key,current);});
   const services=[...new Set([...grouped.values()].map(value=>value.service))].sort(),nodes=[],edges=[];let cursor=50;
-  services.forEach((service,index)=>{const targetId='T:'+service,groups=[...grouped.values()].filter(value=>value.service===service).sort((a,b)=>a.group.localeCompare(b.group));const center=cursor+Math.max(0,groups.length-1)*44;nodes.push({data:{id:targetId,label:service,fullLabel:service,ntype:'target'},position:savedPosition(targetId,{x:100,y:center})});groups.forEach((value,groupIndex)=>{const id='AG:'+service+'\u0000'+value.group,mark=['human','scanner','llm'].filter(source=>value.counts[source]).map(source=>SRC[source].ab+' '+value.counts[source]).join(' · ');nodes.push({data:{id,label:value.group+'\n'+value.operations.size+' APIs\n'+(mark||'-'),fullLabel:value.group+' · 관측 API '+value.operations.size+' · '+mark,ntype:'apiGroup',apiGroup:value.group,service},position:savedPosition(id,{x:430,y:cursor+groupIndex*88})});edges.push({data:{id:'HG:'+id,source:targetId,target:id,etype:'hierarchy'}});});cursor+=Math.max(1,groups.length)*88+40;});
+  services.forEach((service,index)=>{const targetId='T:'+service,groups=[...grouped.values()].filter(value=>value.service===service).sort((a,b)=>a.group.localeCompare(b.group));const center=cursor+Math.max(0,groups.length-1)*44;nodes.push({data:{id:targetId,label:service,fullLabel:service,ntype:'target'},position:savedPosition(targetId,{x:100,y:center})});groups.forEach((value,groupIndex)=>{const id='AG:'+service+'\u0000'+value.group,mark=['human','scanner','llm'].filter(source=>value.counts[source].size).map(source=>SRC[source].ab+' '+value.counts[source].size).join(' · '),requests=Object.values(value.requests).reduce((sum,count)=>sum+count,0);nodes.push({data:{id,label:value.group+'\n'+value.operations.size+' APIs\n'+(mark||'-'),fullLabel:value.group+' · 고유 API '+value.operations.size+' · '+mark+' · 요청 '+requests+'건',ntype:'apiGroup',apiGroup:value.group,service},position:savedPosition(id,{x:430,y:cursor+groupIndex*88})});edges.push({data:{id:'HG:'+id,source:targetId,target:id,etype:'hierarchy'}});});cursor+=Math.max(1,groups.length)*88+40;});
   graphStat.textContent=`사이트 ${services.length} · API 그룹 ${grouped.size} · Evidence 관계 ${facts.length}`;
   renderGraphList([],[]);GRAPH_HIDDEN=0;collapseGraph.disabled=true;if(cy){captureGraphState();cy.destroy();}
   cy=cytoscape({container:document.getElementById('cy'),elements:[...nodes,...edges],minZoom:.4,maxZoom:2,zoom:1,pan:{x:0,y:0},layout:{name:'preset',fit:false},style:[
@@ -702,9 +703,10 @@ function renderSiteOverview(){
     {selector:'edge',style:{'curve-style':'taxi','taxi-direction':'horizontal','taxi-turn':'50%','width':1.4,'line-color':css('--line'),'target-arrow-color':css('--line'),'target-arrow-shape':'triangle','arrow-scale':.8}},
     {selector:'.pathsel',style:{'opacity':1,'z-index':30}}, {selector:'.pathdim',style:{'opacity':.08}}, {selector:'node.pathsel',style:{'border-width':3,'border-color':css('--accent')}}
   ]});
+  CY_GRAPH_LEVEL=GRAPH_LEVEL;
   cy.on('tap','node[ntype="apiGroup"]',event=>{GRAPH_SELECTED_GROUP=event.target.data('apiGroup');GRAPH_LEVEL='api';updateGraphLevelButtons();renderGraph();setHint(GRAPH_SELECTED_GROUP+'만 표시합니다.');});
   cy.on('tap','node',event=>highlightGraphPath(event.target));cy.on('tap',event=>{if(event.target===cy)clearDetail();});cy.on('dragfree','node',captureGraphState);cy.on('zoom pan',saveViewportSoon);
-  if(GRAPH_STATE.locked)cy.nodes().ungrabify();if(GRAPH_STATE.viewport&&Number.isFinite(GRAPH_STATE.viewport.zoom)){cy.zoom(GRAPH_STATE.viewport.zoom);cy.pan(GRAPH_STATE.viewport.pan||{x:0,y:0});}
+  if(GRAPH_STATE.locked)cy.nodes().ungrabify();const viewport=GRAPH_STATE.viewports[GRAPH_LEVEL];if(viewport&&Number.isFinite(viewport.zoom)){cy.zoom(viewport.zoom);cy.pan(viewport.pan||{x:0,y:0});}
 }
 function renderGraph(){
   if(!MODEL)return;updateGraphLevelButtons();if(GRAPH_LEVEL==='site'){renderSiteOverview();return;} const {identities,operations,resources,owner,cells}=MODEL;
@@ -816,6 +818,7 @@ function renderGraph(){
     // Do not auto-fit on every rebuild: fitting 18 rows shrinks labels below readability.
     // Users can request an overview explicitly with the separate "화면 맞춤" control.
     layout:{name:'preset',fit:false}});
+  CY_GRAPH_LEVEL=GRAPH_LEVEL;
   cy.on('tap','node[ntype="group"]',e=>{captureGraphState();const type=e.target.data('groupType');GRAPH_LIMITS[type]+=GRAPH_PAGE_SIZE;renderGraph();setHint(type==='operations'?'API 노드를 더 펼쳤습니다.':'객체 노드를 더 펼쳤습니다.');});
   cy.on('tap','node[ntype="objectFamily"]',e=>{EXPANDED_OBJECT_FAMILIES.add(e.target.data('family'));renderGraph();setHint(e.target.data('family')+' 객체 인스턴스를 펼쳤습니다.');});
   cy.on('tap','node[ntype="operation"]',e=>{const op=e.target.data('op');highlightGraphPath(e.target);showOperation(op);if(GRAPH_LEVEL==='api'){SELECTED_OPERATION=op;GRAPH_LEVEL='object';updateGraphLevelButtons();renderGraph();}});
@@ -834,7 +837,7 @@ function renderGraph(){
   cy.on('dragfree','node',captureGraphState);
   cy.on('zoom pan',saveViewportSoon);
   if(GRAPH_STATE.locked)cy.nodes().ungrabify();
-  if(GRAPH_STATE.viewport&&Number.isFinite(GRAPH_STATE.viewport.zoom)){cy.zoom(GRAPH_STATE.viewport.zoom);cy.pan(GRAPH_STATE.viewport.pan||{x:0,y:0});}
+  const viewport=GRAPH_STATE.viewports[GRAPH_LEVEL];if(viewport&&Number.isFinite(viewport.zoom)){cy.zoom(viewport.zoom);cy.pan(viewport.pan||{x:0,y:0});}
   applyView(currentView);
   if(activeGap){ const g=activeGap; activeGap=null; highlightGap(g); } else { cy.edges('[etype="candidate"]').addClass('hide'); }
 }
@@ -1536,7 +1539,7 @@ fHuman.addEventListener('change',e=>loadFiles(e.target,'human'));
 fScanner.addEventListener('change',e=>loadFiles(e.target,'scanner'));
 fLlm.addEventListener('change',e=>loadFiles(e.target,'llm'));
 sample.addEventListener('click',async()=>{if(!LIVE_MODE)return;const response=await fetch('/api/sample',{method:'POST'});const data=await response.json();if(!response.ok){alert(data.message||'샘플 프로젝트를 열 수 없습니다.');return;}SERVER_REVISION=-1;await syncExtension();setMode('graph');});
-clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽과 미요청 route 후보를 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];SERVER_GRAPH_FACTS=[];SERVER_ROUTE_CANDIDATES=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';SERVER_ROLES={};GRAPH_SELECTED_GROUP='';SELECTED_OPERATION='';EXPANDED_OBJECT_FAMILIES.clear();GRAPH_LEVEL='site';GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();refreshSourceFilters();renderAccounts(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 객체 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean','gRoute'].forEach(i=>document.getElementById(i).textContent='0'); });
+clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽과 미요청 route 후보를 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];SERVER_GRAPH_FACTS=[];SERVER_ROUTE_CANDIDATES=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';SERVER_ROLES={};GRAPH_SELECTED_GROUP='';SELECTED_OPERATION='';EXPANDED_OBJECT_FAMILIES.clear();GRAPH_LEVEL='api';GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();refreshSourceFilters();renderAccounts(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 객체 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean','gRoute'].forEach(i=>document.getElementById(i).textContent='0'); });
 
 document.querySelectorAll('.gapline.gf').forEach(el=>{
   el.addEventListener('click',()=>highlightGap(el.dataset.gk));

@@ -6,6 +6,17 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-01 · 1.2.0-beta.39 · 그래프·분류·Explorer 완료 gate 회귀 복구
+
+**개발·수정**
+
+- **문제:** API 문맥 없는 401/403 ZAP 디렉터리 probe와 일반 JSON `/manifest.json`이 메인 API 그래프를 오염시켰다. Explorer는 실제로 통제 응답을 받은 login/static route를 coverage 제외라는 이유로 미방문으로 남겼다. 또한 선택형 전체 요약이어야 할 사이트 개요가 기본 그래프를 대체해 `identity → API`를 숨겼다.
+- **결정:** 응답·객체·fetch 문맥과 비안전 메서드가 모두 없는 401/403은 `AUTHORIZATION_RESPONSE_ONLY` 근거의 `UNKNOWN/REVIEW`로 보존한다. 실제 JSON API의 403은 API `INCLUDE`를 유지한다. `/manifest.json`은 `WEB_APP_MANIFEST_PATH`로 분리한다. Explorer 방문 사실은 `source=LLM + exact run + controlled response`로 판정하고 메인 분석 자격과 분리한다. Web은 `identity → API`를 기본으로 복구하고 사이트 집계를 선택형으로 유지한다.
+- **기각:** 401/403 전부 제외는 protected API 미탐, 전부 포함은 scanner probe 오염을 만든다. `coverageEligible`을 방문 여부로 계속 재사용하는 방식도 서로 다른 질문을 하나의 boolean으로 합치므로 기각했다. 사이트 개요 자체를 삭제하는 대안은 전체 구조 탐색 가치를 잃어 기각했다.
+- **코드·회귀·문서:** `TrafficClassifier.java`, `McpServer.java`, `web/index.html`; `TrafficClassifierTest.java`, `McpServerTest.java`, `FlowScopeWebServerTest.java`; `README.md`, `architecture.md`, `decisions.md`, `ui-product-rationale.md`, `product-development-plan.md`, `beta-validation.md`, `HANDOFF.md`, 한·영 사용/변경 문서와 `CHANGELOG.md`.
+- **재현·검증:** 최초 회귀에서 `/manifest.json` API 오분류, 403 static directory API 오분류, 제외된 navigation/static route의 Explorer 미방문 종료 거부가 실패하는 것을 확인한 뒤 수정했다. 전체 `mvn clean verify` 303 tests의 failure/error/skip 0을 확인했고, 독립 Web 실행에서 API 기본 선택, 사이트→API 복귀, browser error/warning 0건을 확인했다.
+- **남은 한계·다음 gate:** `beta.39` JAR을 실제 Burp에 재로드한 crAPI HUMAN/ZAP/LLM 재실행과 장시간 ZAP 계정 전환은 아직 수행하지 않았다. 실제 탐지 재현성·정확도는 블라인드 benchmark 전까지 주장하지 않는다.
+
 ## 2026-09-01 · 1.2.0-beta.38 · ZAP 경과시간·heartbeat·대기 원인
 
 **개발·수정**

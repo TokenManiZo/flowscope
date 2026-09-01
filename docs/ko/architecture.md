@@ -7,7 +7,7 @@
 ## 1. 제품 목표와 신뢰 경계
 
 - 정본 목표는 “허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러내는 것”이다.
-- 플로우 그래프가 중심이다. 메인 관측을 `identity → API(operation) → object`로 재구성하고, 사이트→API 그룹→API→객체 패밀리/인스턴스의 계층으로 단계적으로 투영한다. 접기·그룹화는 화면 표현일 뿐 원 Evidence 관계를 합치거나 삭제하지 않는다.
+- 플로우 그래프가 중심이다. 메인 관측을 `identity → API(operation) → object`로 재구성한다. 기본 화면은 `identity → API`, API 선택 후에만 object를 펼친다. `site → API group`은 선택형 전체 개요이며 메인 관계를 대체하지 않는다. 접기·그룹화·화면 전환은 표현일 뿐 원 Evidence 관계를 합치거나 삭제하지 않는다.
 - 비교 축 `source={HUMAN,SCANNER,LLM}`와 판정 축 `identity/role/owner`를 섞지 않는다(D-001).
 - LLM은 독립적인 세 번째 트래픽 소스이자 최종 Judge다. Explorer는 서버가 HUMAN/SCANNER 상태를 가린 상태에서 동작하고, Judge는 세 레인을 잠근 뒤에만 종합한다. 일반 assessment는 후보일 뿐이며, 최종 verdict는 별도 VALIDATION run의 통제 Evidence 묶음을 서버가 검증할 때만 허용한다(D-049/D-053/D-054).
 - 블랙박스 전체 분모는 알 수 없으므로 커버리지 퍼센트를 만들지 않는다(D-002).
@@ -51,7 +51,7 @@ ZAP 배포 방식은 캠페인 엔진과 분리한다. FlowScope는 loopback의 
 - Java 21, Maven shade fat JAR. `montoya-api`는 Burp 제공 scope다. Jackson·jsoup·SnakeYAML은 base class와 MR-JAR 구현을 함께 `io.flowscope.shaded` 아래로 격리한다. sqlite-jdbc는 JNI 이름을 깨뜨리는 relocate를 하지 않고 원 패키지를 유지하며, 서로 다른 두 extension classloader의 동시 in-memory 연결을 회귀로 검사한다. package는 의존성 NOTICE·라이선스를 보존하고 version 숫자와 무관하게 MR-JAR 경로를 relocation한다. manifest-aware JAR 재구성과 `JarInputStream` gate로 streaming consumer에서도 Main-Class·Java-Version·Multi-Release를 읽을 수 있게 하며, 같은 입력의 반복 SHA-256 일치를 검사한다(D-090/D-092).
 - Burp `registerSuiteTab`에는 범위·포트·프로젝트·MCP 상태를 다루는 작은 Swing 제어판만 둔다. 그래프·매트릭스·상세의 정본은 시스템 브라우저에서 여는 번들 Web UI다.
 - Web UI는 번들 Cytoscape.js를 사용하며 외부 CDN이나 원격 자원을 요청하지 않는다. JCEF·JavaFX는 배포물에 포함하지 않는다.
-- source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시하며 `identity → API`와 `API → object` 두 구간 모두 같은 source 문법을 유지한다. 0건 source는 비활성화하고 필터 변경 시 전체 경로를 다시 계산한다. `GraphObservationFact`는 coverage 대상마다 `Evidence, identity, service, operation, object, source, run, phase, status, hasResponse, HTTP outcome`을 보존한다. 사이트의 API group은 `api/rest/vN` 구조 segment를 제외한 첫 안정 경로 segment로 만든 표시용 `PATH_SEGMENT` 분류이며 판정이나 정규화 key로 사용하지 않는다. object는 family로 먼저 접고 사용자가 눌렀을 때 인스턴스를 펼친다. operation 라벨은 `/` 경계를 우선해 줄바꿈하고, 900px 이하에서는 같은 필터 결과의 API 목록을 표시한다. 응답→요청 데이터 의존성은 메인 접근 그래프가 아니라 `흐름 순서`에서만 표시한다(D-043/D-061/D-076/D-077/D-084/D-104).
+- source view는 HUMAN=파랑·실선·H, SCANNER=빨강·파선·S, LLM=검정·점선·L의 평행 Evidence로 표시하며 `identity → API`와 `API → object` 두 구간 모두 같은 source 문법을 유지한다. 0건 source는 비활성화하고 필터 변경 시 전체 경로를 다시 계산한다. `GraphObservationFact`는 coverage 대상마다 `Evidence, identity, service, operation, object, source, run, phase, status, hasResponse, HTTP outcome`을 보존한다. 사이트의 API group은 `api/rest/vN` 구조 segment를 제외한 첫 안정 경로 segment로 만든 표시용 `PATH_SEGMENT` 분류이며 판정이나 정규화 key로 사용하지 않는다. 사이트 개요의 source 수는 반복 요청 횟수가 아닌 고유 operation 수이며 전체 request 수는 상세에 별도 보존한다. graph level별 viewport를 분리해 사이트·API·객체 전환이 다른 화면의 pan/zoom을 오염시키지 않는다. object는 family로 먼저 접고 사용자가 눌렀을 때 인스턴스를 펼친다. operation 라벨은 `/` 경계를 우선해 줄바꿈하고, 900px 이하에서는 같은 필터 결과의 API 목록을 표시한다. 응답→요청 데이터 의존성은 메인 접근 그래프가 아니라 `흐름 순서`에서만 표시한다(D-043/D-061/D-076/D-077/D-084/D-104/D-106).
 - 프록시 리스너는 Montoya가 생성하지 못하므로 사용자가 HUMAN 8080과 ZAP 8081을 만든다. 8082는 외부 LLM 클라이언트 호환 폴백이며 해당 관측은 `UNVERIFIED_RUNTIME`이라 결정적 판정에 쓸 수 없다.
 - 캡처 콜백은 append만 하고 400ms worker coalescing으로 분석한다. live record는 20,000건에서 정지하며 초과 건수를 snapshot과 Web 경고로 노출한다.
 - MCP는 `127.0.0.1`에만 bind하고 random Bearer, Origin 검사, 1MiB 요청 상한을 적용한다.
@@ -132,7 +132,7 @@ beta.33부터 요청 실험실은 Evidence를 열 때마다 generation을 올려
 분류기는 경로 이름 하나로 삭제하지 않는다. HTTP 메서드, 실제 응답 유무, Fetch Metadata, request/response Content-Type, CORS preflight 헤더, 객체 신호, 상태·redirect, source와 phase가 함께 맞는 경우에만 coverage에서 제외한다.
 
 - 실제 preflight는 `OPTIONS`와 `Access-Control-Request-Method`가 함께 있을 때만 `PREFLIGHT/EXCLUDE`다. 일반 OPTIONS API는 유지한다.
-- 안전 메서드의 Fetch destination/MIME 또는 확장자/MIME가 함께 맞을 때만 `STATIC_ASSET/EXCLUDE`다. 객체·401/403·login redirect 등 보안 신호가 있으면 API 분석이 우선한다.
+- 안전 메서드의 Fetch destination/MIME 또는 확장자/MIME가 함께 맞을 때만 `STATIC_ASSET/EXCLUDE`다. 객체·login redirect·JSON/API 문맥 등 독립 보안 신호가 있으면 API 분석이 우선한다. 다른 API 근거 없이 401/403만 있는 경우는 `UNKNOWN/REVIEW`로 보존한다.
 - document/iframe + HTML navigation은 `NAVIGATION/EXCLUDE`지만 보안 신호가 있으면 유지한다.
 - telemetry 명칭은 단독 제외 근거가 아니며 `TELEMETRY_CANDIDATE/REVIEW`로 남긴다.
 - response 없는 관측, source `UNKNOWN`, `VALIDATION/COACH_PROBE`는 discovery coverage에서 제외하지만 Evidence는 보존한다.
@@ -140,7 +140,7 @@ beta.33부터 요청 실험실은 Evidence를 열 때마다 generation을 올려
 - 같은 신원/run/phase/method/operation/resource/query/body/status-class/response/location의 반복만 표시 cluster로 접는다. 분석 입력과 Evidence ID는 삭제하거나 합치지 않는다.
 - 애매한 것은 `UNKNOWN/REVIEW`로 Evidence와 검토 대기에 남기되 메인 coverage·graph·3-way gap에는 넣지 않는다. 사용자는 operation 단위로 `INCLUDE/EXCLUDE/AUTO`를 되돌릴 수 있지만 no-response, unknown source, HUMAN 비탐색 구간, `VALIDATION/COACH_PROBE`라는 discovery 신뢰 경계는 override할 수 없다.
 
-classifier v3는 web manifest·source map·service worker를 `DISCOVERY_METADATA/EXCLUDE`로 분리한다. 같은 service·정규화 operation에 강한 비사용자-override `API/INCLUDE` Evidence가 있고 immutable discovery gate를 통과할 때만 애매한 형제 record를 API로 교차 보강한다.
+classifier v5는 web manifest·source map·service worker를 `DISCOVERY_METADATA/EXCLUDE`로 분리하고 exact `/manifest.json` 경로를 보조 근거로 추가한다. 같은 service·정규화 operation에 강한 비사용자-override `API/INCLUDE` Evidence가 있고 immutable discovery gate를 통과할 때만 애매한 형제 record를 API로 교차 보강한다. API 문맥 없는 401/403 상태는 `AUTHORIZATION_RESPONSE_ONLY` 근거의 `REVIEW`로 남겨 scanner probe를 메인 그래프와 결함시키지 않는다(D-106).
 
 route inventory는 다음 공통 파이프라인을 사용한다(D-069).
 
@@ -199,7 +199,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 
 - 기본은 closed-world다. 공급된 agent-workspace는 web search, Wayback, 외부 API 문서·소스 저장소, curl·브라우저 네트워킹을 금지한다. 대상 내부 문서는 exact-scope 통제 응답으로 실제 관측된 경우만 사용할 수 있다.
 - Explorer의 target surface는 API-first 네 층이다. 기본 전송은 `flowscope_target_read/request`이며 BOLA/BFLA/IDOR의 Evidence를 만드는 유일한 경로다. HTTP frontier가 SPA shell·JavaScript 상태·UI 전이 때문에 막힐 때만 `flowscope_browser_navigate/snapshot`이 설치된 Chrome/Chromium/Edge를 incognito 임시 user-data-dir로 실행해 렌더링 DOM·링크·폼·SPA network를 bounded discovery hint로 돌려준다. browser worker는 8082 listener를 거치지 않고 CDP `Fetch`에서 exact scope 밖을 송신 전에 차단한다. broker는 run 시작 시 고정한 계정의 세션만 같은 scheme·host·effective port 요청에 주입하며 Explorer tool argument로 다른 account를 선택할 수 없다. CLICK/FILL은 행위 자체가 아니라 결과로 발생한 실제 비안전 메서드 요청마다 메서드·URL·마스킹 body preview를 Burp dialog로 승인받고, 거부 시 해당 request만 `BlockedByClient`로 중단한다. password/file input은 계속 거부한다. runtime network route는 `BROWSER_RUNTIME/evidence_backed=false` frontier로 등록되며 controlled executor 재현 전에는 Evidence가 아니다. 8082 직접 프록시 사본도 `UNVERIFIED_RUNTIME`이고, controlled executor의 `CONTROLLED` 응답만 완료 gate에 들어간다.
-- `flowscope_list_route_candidates(view=INDEPENDENT)`는 provenance를 현재 `LLM + runId`로 잘라 observed/applicability/reason을 다시 계산한다. concrete GET/HEAD/OPTIONS/UNKNOWN 경로가 남아 있으면 `ASSISTED` 전환을 거부한다. 독립 safe frontier가 소진된 뒤 `view=ASSISTED`는 HUMAN·SCANNER 등 다른 레인이 발견한 exact-scope route 문자열만 blind hint로 반환하고 source, run ID, Evidence ID, provenance, 응답과 성공 여부를 제거한다. 따라서 독립 탐색 측정은 선행 단계로 고정하면서 후속 미탐 보완은 허용한다.
+- `flowscope_list_route_candidates(view=INDEPENDENT)`는 provenance를 현재 `LLM + runId`로 잘라 applicability/reason을 다시 계산한다. route 방문 여부는 classifier의 coverage 자격을 재사용하지 않고, 해당 run의 `CONTROLLED` 응답이 같은 service·concrete path·method에 있는지로 판정한다. 따라서 navigation/static route를 실제로 방문하면 메인 BOLA/BFLA coverage에서는 제외하더라도 frontier는 소진된다. concrete GET/HEAD/OPTIONS/UNKNOWN 경로가 남아 있으면 `ASSISTED` 전환을 거부한다. 독립 safe frontier가 소진된 뒤 `view=ASSISTED`는 HUMAN·SCANNER 등 다른 레인이 발견한 exact-scope route 문자열만 blind hint로 반환하고 source, run ID, Evidence ID, provenance, 응답과 성공 여부를 제거한다. 따라서 독립 탐색 측정은 선행 단계로 고정하면서 후속 미탐 보완은 허용한다(D-106).
 - captured/coverage/excluded/review와 source별 coverage count도 같은 가시성 경계를 적용해 Explorer에게는 현재 LLM run 값만 보인다.
 - lock 전 active Explorer가 없을 때도 MCP status는 다른 lane의 수량·active run·gap/finding을 공개하지 않는다. Explorer 중에는 ZAP 상태/실행과 기존 assessment/validation 조회를 거부한다.
 - HUMAN, 시스템 ZAP, 독립 LLM이 정확한 run 종료를 완료하고 각 완료 묶음에 coverage 가능한 Evidence가 있어야 `flowscope_lock_dataset`이 성공한다. 레코드 존재, CLI exit 0, ZAP 실패/종료 상태, source-only 프로젝트 표식은 완료가 아니다.
