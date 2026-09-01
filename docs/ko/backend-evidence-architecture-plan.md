@@ -803,7 +803,7 @@ live SQLite 전환은 다음을 모두 통과할 때만 채택한다.
 1. run/stage/alert/llm execution/dataset lock을 저장 정본으로 만든다.
 2. source별 완료 조건을 코드와 UI에 같은 상태 machine으로 표현한다.
 3. lane 재시작 시 과거 완료와 lock을 무효화한다.
-4. Explorer pre-lock view는 자기 run Evidence만 projection한다.
+4. Explorer pre-lock Evidence view는 자기 run만 projection한다. route view는 자기 run safe frontier를 먼저 소진한 뒤 source/run/Evidence/provenance/응답을 제거한 cross-lane blind hint만 후속 projection한다.
 5. lock member에는 exact Evidence revision과 analysis policy version을 기록한다.
 
 **Exit gate**

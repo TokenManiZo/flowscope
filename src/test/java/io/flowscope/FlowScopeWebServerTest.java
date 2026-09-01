@@ -105,7 +105,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.34 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.35 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));

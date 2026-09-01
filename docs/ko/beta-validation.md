@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.34 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.35 사전 벤치마크 검증 기록
 
-최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-08-31이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+최초 검증일은 2026-08-25, 최신 자동 재검증일은 2026-09-01이다. 이 문서는 벤치마크에 들어가기 전까지 구현한 범위와 실제 확인한 범위를 분리해 기록한다. crAPI의 알려진 취약점 목록·정답·공격 절차는 열거나 코드와 프롬프트에 주입하지 않았다.
+
+## 1.2.0-beta.35 Explorer 독립-first/보조 frontier gate
+
+| 구분 | 결과 |
+|---|---|
+| 독립 frontier | own-run concrete GET/HEAD/OPTIONS/UNKNOWN route가 남아 있으면 ASSISTED 전환과 종료를 거부하는 MCP 회귀 통과 |
+| 보조 frontier | 독립 frontier 소진 뒤 cross-lane route 문자열은 반환하되 source, run ID, Evidence ID, adapter, provenance, 응답과 기존 관측 성공 여부가 JSON 결과에 없음을 확인 |
+| 종료 재검사 | ASSISTED concrete safe route가 남아 있으면 종료 거부, own-run 관측으로 모두 소진되면 exact LLM run 완료 회귀 통과 |
+| 기존 경계 | Session Broker 인증 원문 비노출, exact scope, GET/HEAD/OPTIONS read와 승인형 write 분리, 0-Evidence 거부 회귀 포함 |
+| 전체 자동 회귀 | JDK 21 `mvn clean verify` 1회, 294 tests, failure/error/skip 0, 완성 JAR manifest/classloader smoke 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.35.jar`, 15,957,571 bytes, 2,052 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `6377fdfbbf7160871e33cdb72f5558e0cd5e9f20361dd84cb91ed12f19e0b978` |
+
+이 검증은 서버 상태 기계와 정보 비노출을 확인한다. JavaScript 실행, DOM 상호작용, SPA runtime network browser worker와 실제 Burp+허가 target의 route recall 증가는 검증하지 않았다. beta.35 JAR의 byte-for-byte 재현성은 이번 작업에서 두 번째 clean build를 아직 수행하지 않았으므로 완료로 기록하지 않는다.
 
 ## 1.2.0-beta.34 복잡도·메모리 경계 gate
 

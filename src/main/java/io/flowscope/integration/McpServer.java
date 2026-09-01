@@ -19,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,6 +29,7 @@ public final class McpServer implements AutoCloseable {
             "flowscope_get_status", "flowscope_list_sessions", "flowscope_target_read",
             "flowscope_target_request", "flowscope_list_route_candidates", "flowscope_list_evidence",
             "flowscope_get_evidence", "flowscope_end_run");
+    private static final Set<String> SAFE_DISCOVERY_METHODS = Set.of("GET", "HEAD", "OPTIONS", "UNKNOWN");
     public interface State {
         Pipeline.Result snapshot();
         default Pipeline.Result completionSnapshot() { return snapshot(); }
@@ -99,6 +101,7 @@ public final class McpServer implements AutoCloseable {
     private volatile Pipeline.Result lockedSnapshot;
     private volatile List<RouteCandidate> lockedRouteCandidates = List.of();
     private volatile String lockId = "";
+    private final Map<String, ExplorerProgress> explorerProgress = new ConcurrentHashMap<>();
     private final ExecutorService zapWorkflow = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "flowscope-zap-baseline");
         thread.setDaemon(true);
@@ -116,6 +119,10 @@ public final class McpServer implements AutoCloseable {
                                  int definitionImports, int alertCount, String warning, String error) {}
     private record ZapLane(String accountId, String accountLabel) {}
     private record ZapAlertCollection(int count, boolean truncated) {}
+    private record ExplorerProgress(boolean independentListed, boolean assistedListed) {
+        ExplorerProgress markIndependent() { return new ExplorerProgress(true, assistedListed); }
+        ExplorerProgress markAssisted() { return new ExplorerProgress(independentListed, true); }
+    }
 
     public McpServer(State state, int port, String configuredToken) throws IOException {
         this.state = state;
@@ -177,6 +184,7 @@ public final class McpServer implements AutoCloseable {
         lockedSnapshot = null;
         lockedRouteCandidates = List.of();
         lockId = "";
+        explorerProgress.clear();
         if (zapBaseline == null || !"RUNNING".equals(zapBaseline.status())) {
             zapBaseline = null;
             zapBaselineAlerts = json.createArrayNode();
@@ -286,13 +294,14 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.29");
-        result.put("instructions", "Closed-world authorized assessment only. Use FlowScope MCP state and controlled "
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.35");
+        result.put("instructions", "Authorized exact-scope assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_read/flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or browser networking. If needed, set only the exact target supplied "
                 + "by the operator before any run; never infer or broaden scope. The system-owned ZAP baseline, not the "
-                + "LLM, chooses scanner stages. Begin and end every LLM run. Explorer is server-isolated from HUMAN and "
-                + "SCANNER state. After all three lanes finish, lock the dataset before Judge synthesis. CONFIRMED or "
+                + "LLM, chooses scanner stages. Begin and end every LLM run. Explorer first exhausts its independent safe "
+                + "route frontier, then may consume provenance-free cross-lane route hints. After all three lanes finish, "
+                + "lock the dataset before Judge synthesis. CONFIRMED or "
                 + "REJECTED is accepted only through FlowScope-controlled reproduction and control Evidence; otherwise "
                 + "use INCONCLUSIVE.");
         return result;
@@ -306,7 +315,7 @@ public final class McpServer implements AutoCloseable {
         tools.add(tool("flowscope_lock_dataset", "Lock completed HUMAN, SCANNER, and independent LLM lanes before Judge access.",
                 schema(), false, false));
         tools.add(tool("flowscope_list_candidates", "List evidence-grounded BOLA/BFLA and coverage-gap candidates.", paginationSchema(), true, false));
-        tools.add(tool("flowscope_list_route_candidates", "List provenance-backed observed and unrequested routes visible in the current Explorer run or locked dataset.", paginationSchema(), true, false));
+        tools.add(tool("flowscope_list_route_candidates", "List the Explorer INDEPENDENT route frontier, then provenance-free ASSISTED cross-lane hints after the independent safe frontier is exhausted; locked Judge datasets return the frozen inventory.", routeCandidateSchema(), true, false));
         tools.add(tool("flowscope_get_evidence", "Read one masked request/response by evidence_id.",
                 evidenceSchema(), true, false));
         tools.add(tool("flowscope_list_evidence", "List captured Evidence metadata with run/source/phase filters.",
@@ -572,11 +581,39 @@ public final class McpServer implements AutoCloseable {
             throw new IllegalArgumentException("run_id does not match the active " + source.name() + " run");
         }
         if (active.phase() == RunPhase.EXPLORATION) {
+            if (source == Source.LLM && active.detail() == SourceDetail.LLM_EXPLORER) {
+                assertExplorerHarnessComplete(active);
+            }
             LaneCompletionPolicy.complete(state.contexts(), source, runId, state.completionSnapshot());
+            explorerProgress.remove(runId);
         } else if (!state.contexts().abort(source, runId)) {
             throw new IllegalStateException("run lease disappeared before completion");
         }
         return json.createObjectNode().put("ended", source.name()).put("run_id", runId);
+    }
+
+    private void assertExplorerHarnessComplete(RunContextRegistry.Context explorer) {
+        LaneCompletionPolicy.Decision evidence = LaneCompletionPolicy.evaluate(Source.LLM, explorer.runId(),
+                state.completionSnapshot());
+        if (!evidence.eligible()) throw new IllegalStateException(evidence.reason());
+        ExplorerProgress progress = explorerProgress.getOrDefault(explorer.runId(),
+                new ExplorerProgress(false, false));
+        if (!progress.independentListed()) {
+            throw new IllegalStateException("Explorer must list the INDEPENDENT route frontier before completion");
+        }
+        if (!progress.assistedListed()) {
+            throw new IllegalStateException("Explorer must exhaust INDEPENDENT routes and review ASSISTED hints before completion");
+        }
+        Pipeline.Result snapshot = state.completionSnapshot();
+        List<RouteCandidate> independentRemaining = actionableRoutes(explorerRoutes(snapshot, explorer),
+                snapshot, explorer);
+        List<RouteCandidate> assistedRemaining = actionableRoutes(assistedExplorerRoutes(snapshot, explorer),
+                snapshot, explorer);
+        int remaining = independentRemaining.size() + assistedRemaining.size();
+        if (remaining > 0) {
+            throw new IllegalStateException("Explorer safe concrete frontier changed and still has " + remaining
+                    + " route(s); re-list and request them before completion");
+        }
     }
 
     public boolean hasExplorationResponse(Source source, String runId) {
@@ -597,8 +634,35 @@ public final class McpServer implements AutoCloseable {
     private JsonNode routeCandidates(JsonNode args) {
         RunContextRegistry.Context explorer = independentExplorer();
         List<RouteCandidate> visible;
+        boolean assisted = false;
         if (explorer != null) {
-            visible = explorerRoutes(state.snapshot(), explorer);
+            String view = args.path("view").asText("INDEPENDENT").toUpperCase(java.util.Locale.ROOT);
+            if (!Set.of("INDEPENDENT", "ASSISTED").contains(view)) {
+                throw new IllegalArgumentException("view must be INDEPENDENT or ASSISTED");
+            }
+            Pipeline.Result snapshot = state.snapshot();
+            explorerProgress.keySet().removeIf(runId -> !runId.equals(explorer.runId()));
+            ExplorerProgress progress = explorerProgress.getOrDefault(explorer.runId(),
+                    new ExplorerProgress(false, false));
+            if ("ASSISTED".equals(view)) {
+                if (!progress.independentListed()) {
+                    throw new IllegalStateException("list and exhaust the INDEPENDENT frontier before ASSISTED hints");
+                }
+                List<RouteCandidate> remaining = actionableRoutes(explorerRoutes(snapshot, explorer), snapshot, explorer);
+                if (!remaining.isEmpty()) {
+                    throw new IllegalStateException("independent safe frontier still has " + remaining.size()
+                            + " concrete route(s); request them before ASSISTED hints");
+                }
+                if (!LaneCompletionPolicy.evaluate(Source.LLM, explorer.runId(), state.completionSnapshot()).eligible()) {
+                    throw new IllegalStateException("capture at least one controlled Explorer response before ASSISTED hints");
+                }
+                visible = assistedExplorerRoutes(snapshot, explorer);
+                assisted = true;
+                explorerProgress.put(explorer.runId(), progress.markAssisted());
+            } else {
+                visible = explorerRoutes(snapshot, explorer);
+                explorerProgress.put(explorer.runId(), progress.markIndependent());
+            }
         } else {
             requireLocked();
             visible = lockedRouteCandidates;
@@ -611,6 +675,11 @@ public final class McpServer implements AutoCloseable {
         out.put("offset", offset);
         out.put("limit", limit);
         out.put("has_more", end < visible.size());
+        out.put("view", assisted ? "ASSISTED" : explorer == null ? "LOCKED" : "INDEPENDENT");
+        if (explorer != null) {
+            out.put("remaining_safe_concrete", actionableRoutes(visible, state.snapshot(), explorer).size());
+            out.put("provenance_redacted", assisted);
+        }
         ArrayNode routes = out.putArray("routes");
         if (offset < visible.size()) for (RouteCandidate candidate : visible.subList(offset, end)) {
             ObjectNode route = routes.addObject();
@@ -622,7 +691,8 @@ public final class McpServer implements AutoCloseable {
             route.put("review_reason", candidate.reviewReason());
             route.set("priority_reasons", json.valueToTree(RouteCandidateExtractor.priorityReasons(candidate)));
             ArrayNode provenance = route.putArray("provenance");
-            for (RouteCandidate.Provenance item : candidate.provenance()) {
+            for (RouteCandidate.Provenance item : assisted ? List.<RouteCandidate.Provenance>of()
+                    : candidate.provenance()) {
                 ObjectNode entry = provenance.addObject();
                 entry.put("type", item.type().name());
                 entry.put("evidence_id", item.evidenceId());
@@ -632,6 +702,7 @@ public final class McpServer implements AutoCloseable {
                 entry.put("applicability", item.applicability().name());
                 entry.put("reason", item.reason());
             }
+            if (assisted) route.put("hint_origin", "BLIND_CROSS_LANE");
         }
         return out;
     }
@@ -1758,6 +1829,13 @@ public final class McpServer implements AutoCloseable {
         return schema;
     }
 
+    private ObjectNode routeCandidateSchema() {
+        ObjectNode schema = paginationSchema();
+        ((ObjectNode) schema.get("properties")).putObject("view").put("type", "string")
+                .putArray("enum").add("INDEPENDENT").add("ASSISTED");
+        return schema;
+    }
+
     private ObjectNode targetReadSchema() {
         ObjectNode schema = targetRequestSchema(List.of("GET", "HEAD", "OPTIONS"), false);
         ((ObjectNode) schema.get("properties")).remove("body");
@@ -1945,6 +2023,47 @@ public final class McpServer implements AutoCloseable {
                 .filter(candidate -> candidate.provenance().stream()
                         .anyMatch(item -> controlledEvidence.contains(item.evidenceId())))
                 .toList();
+    }
+
+    private List<RouteCandidate> assistedExplorerRoutes(Pipeline.Result snapshot,
+                                                        RunContextRegistry.Context explorer) {
+        List<RouteCandidate> blindHints = new ArrayList<>();
+        List<RouteCandidate> ownObserved = explorerRoutes(snapshot, explorer).stream()
+                .filter(RouteCandidate::observed).toList();
+        for (RouteCandidate candidate : state.routeCandidates()) {
+            boolean hasCrossLane = candidate.provenance().stream()
+                    .filter(item -> item.source() == Source.HUMAN || item.source() == Source.SCANNER
+                            || item.source() == Source.UNKNOWN)
+                    .findAny().isPresent();
+            if (!hasCrossLane || routeCovered(candidate, ownObserved)) continue;
+            RouteCandidate.Provenance blind = new RouteCandidate.Provenance(
+                    RouteCandidate.ProvenanceType.LEGACY_UNMAPPED, "blind-assisted", Source.UNKNOWN,
+                    "blind-assisted", "blind-assisted", RouteCandidate.Applicability.REVIEW,
+                    "cross-lane provenance redacted");
+            blindHints.add(new RouteCandidate(candidate.service(), candidate.method(), candidate.pathTemplate(),
+                    false, List.of(blind), RouteCandidate.Applicability.REVIEW,
+                    "다른 수집 레인에서 발견된 exact-scope 경로 힌트"));
+        }
+        return RouteCandidateExtractor.prioritized(blindHints);
+    }
+
+    private List<RouteCandidate> actionableRoutes(List<RouteCandidate> candidates, Pipeline.Result snapshot,
+                                                  RunContextRegistry.Context explorer) {
+        List<RouteCandidate> ownObserved = explorerRoutes(snapshot, explorer).stream()
+                .filter(RouteCandidate::observed).toList();
+        return candidates.stream()
+                .filter(candidate -> SAFE_DISCOVERY_METHODS.contains(candidate.method()))
+                .filter(candidate -> !candidate.pathTemplate().contains("{")
+                        && !candidate.pathTemplate().contains("}"))
+                .filter(candidate -> !routeCovered(candidate, ownObserved))
+                .toList();
+    }
+
+    private boolean routeCovered(RouteCandidate candidate, List<RouteCandidate> ownObserved) {
+        return ownObserved.stream().anyMatch(observed -> observed.service().equals(candidate.service())
+                        && observed.pathTemplate().equals(candidate.pathTemplate())
+                        && (candidate.method().equals("UNKNOWN") || observed.method().equals("UNKNOWN")
+                        || observed.method().equals(candidate.method())));
     }
 
     private String validatedAccount(String accountId) {

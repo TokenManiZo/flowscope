@@ -284,10 +284,12 @@ final class McpServerTest {
         RequestRecord scanner = laneMarker(Source.SCANNER);
         scanner.runId = "scanner-1";
         Pipeline.Result result = Pipeline.run(List.of(human, llm, scanner));
-        RouteCandidate shared = new RouteCandidate("https://api.example.test:443", "GET", "/v1/shared", true,
+        RouteCandidate shared = new RouteCandidate("https://api.example.test:443", "GET", "/v1/shared/{id}", true,
                 List.of(
                         routeProvenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST, human.evidenceId,
                                 Source.HUMAN, "human-1", RouteCandidate.Applicability.APPLICABLE, "human observed"),
+                        routeProvenance(RouteCandidate.ProvenanceType.OPENAPI, scanner.evidenceId,
+                                Source.SCANNER, "scanner-1", RouteCandidate.Applicability.APPLICABLE, "scanner schema"),
                         routeProvenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL, llm.evidenceId,
                                 Source.LLM, "explore-1", RouteCandidate.Applicability.REVIEW, "llm literal")),
                 RouteCandidate.Applicability.APPLICABLE, "human observed");
@@ -295,7 +297,12 @@ final class McpServerTest {
                 List.of(routeProvenance(RouteCandidate.ProvenanceType.OPENAPI, human.evidenceId,
                         Source.HUMAN, "human-1", RouteCandidate.Applicability.APPLICABLE, "human OpenAPI")),
                 RouteCandidate.Applicability.APPLICABLE, "human OpenAPI");
-        AtomicReference<List<RouteCandidate>> routeCandidates = new AtomicReference<>(List.of(shared, humanOnly));
+        RouteCandidate oldLlmOnly = new RouteCandidate("https://api.example.test:443", "GET", "/v1/old-llm", false,
+                List.of(routeProvenance(RouteCandidate.ProvenanceType.HTML_LINK, "old-llm-evidence",
+                        Source.LLM, "old-llm-run", RouteCandidate.Applicability.REVIEW, "old LLM")),
+                RouteCandidate.Applicability.REVIEW, "old LLM");
+        AtomicReference<List<RouteCandidate>> routeCandidates = new AtomicReference<>(
+                List.of(shared, humanOnly, oldLlmOnly));
         RunContextRegistry contexts = new RunContextRegistry();
         complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "human-1", result);
         complete(contexts, Source.SCANNER, SourceDetail.ZAP_SPIDER, "scanner-1", result);
@@ -329,6 +336,16 @@ final class McpServerTest {
         assertEquals("LLM", explorerRoutes.at("/result/structuredContent/routes/0/provenance/0/source").asText());
         assertFalse(explorerRoutes.at("/result/structuredContent/routes/0/observed").asBoolean());
         assertEquals("REVIEW", explorerRoutes.at("/result/structuredContent/routes/0/applicability").asText());
+        JsonNode assistedRoutes = tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}");
+        assertFalse(assistedRoutes.at("/result/isError").asBoolean(), assistedRoutes.toString());
+        assertTrue(assistedRoutes.at("/result/structuredContent/provenance_redacted").asBoolean());
+        assertEquals(0, assistedRoutes.at("/result/structuredContent/routes/0/provenance").size());
+        assertEquals("BLIND_CROSS_LANE",
+                assistedRoutes.at("/result/structuredContent/routes/0/hint_origin").asText());
+        assertFalse(assistedRoutes.toString().contains("human-1"));
+        assertFalse(assistedRoutes.toString().contains(human.evidenceId));
+        assertFalse(assistedRoutes.toString().contains("MULTIPLE_PROVENANCE"));
+        assertFalse(assistedRoutes.toString().contains("/v1/old-llm"));
         assertTrue(tool("flowscope_list_candidates", "{}").at("/result/isError").asBoolean());
         assertTrue(tool("flowscope_list_assessments", "{}").at("/result/isError").asBoolean());
         assertTrue(tool("flowscope_list_validations", "{}").at("/result/isError").asBoolean());
@@ -338,7 +355,8 @@ final class McpServerTest {
         assertFalse(tool("flowscope_get_evidence", "{\"evidence_id\":\"" + llm.evidenceId + "\"}")
                 .at("/result/isError").asBoolean());
 
-        tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"explore-1\"}");
+        JsonNode ended = tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"explore-1\"}");
+        assertFalse(ended.at("/result/isError").asBoolean(), ended.toString());
         JsonNode locked = tool("flowscope_lock_dataset", "{}");
         assertFalse(locked.at("/result/isError").asBoolean(), locked.toString());
         assertEquals(3, locked.at("/result/structuredContent/records").asInt());
@@ -354,6 +372,65 @@ final class McpServerTest {
         assertFalse(tool("flowscope_begin_llm_run",
                 "{\"phase\":\"COACH_PROBE\",\"tool\":\"CODEX\",\"run_id\":\"judge-1\"}")
                 .at("/result/isError").asBoolean());
+    }
+
+    @Test
+    void explorerMustExhaustIndependentThenBlindAssistedSafeFrontiers() throws Exception {
+        String runId = "explore-frontier";
+        RequestRecord entry = observationAt(Source.LLM, "A", 200, "{\"ok\":true}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1");
+        RequestRecord human = observation(Source.HUMAN, "A", 200, "{\"ok\":true}",
+                SourceDetail.BROWSER, RunPhase.EXPLORATION, "human-frontier");
+        AtomicReference<Pipeline.Result> result = new AtomicReference<>(Pipeline.run(List.of(entry, human)));
+        AtomicReference<List<RouteCandidate>> routes = new AtomicReference<>(List.of(
+                candidate("GET", "/v1/next", false, entry.evidenceId, Source.LLM, runId,
+                        RouteCandidate.ProvenanceType.HTML_LINK),
+                candidate("GET", "/v1/admin-info", true, human.evidenceId, Source.HUMAN,
+                        "human-frontier", RouteCandidate.ProvenanceType.OBSERVED_REQUEST)));
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
+        server = new McpServer(state(result, contexts, ScopePolicy.parse("https://api.example.test/v1"),
+                new AnalysisConfig(), routes), 0, "test-token");
+        server.start();
+
+        JsonNode independent = tool("flowscope_list_route_candidates", "{\"view\":\"INDEPENDENT\"}");
+        assertEquals(1, independent.at("/result/structuredContent/remaining_safe_concrete").asInt());
+        assertTrue(tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}")
+                .at("/result/isError").asBoolean());
+        assertTrue(tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}")
+                .at("/result/isError").asBoolean());
+
+        RequestRecord ownNext = observationAt(Source.LLM, "A", 200, "{\"ok\":true}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1/next");
+        result.set(Pipeline.run(List.of(entry, human, ownNext)));
+        routes.set(List.of(
+                candidate("GET", "/v1/next", true, ownNext.evidenceId, Source.LLM, runId,
+                        RouteCandidate.ProvenanceType.OBSERVED_REQUEST),
+                candidate("GET", "/v1/admin-info", true, human.evidenceId, Source.HUMAN,
+                        "human-frontier", RouteCandidate.ProvenanceType.OBSERVED_REQUEST)));
+
+        JsonNode assisted = tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}");
+        assertFalse(assisted.at("/result/isError").asBoolean(), assisted.toString());
+        assertEquals(1, assisted.at("/result/structuredContent/remaining_safe_concrete").asInt());
+        assertTrue(tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}")
+                .at("/result/isError").asBoolean());
+
+        RequestRecord ownAdmin = observationAt(Source.LLM, "A", 200, "{\"ok\":true}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1/admin-info");
+        result.set(Pipeline.run(List.of(entry, human, ownNext, ownAdmin)));
+        routes.set(List.of(
+                candidate("GET", "/v1/next", true, ownNext.evidenceId, Source.LLM, runId,
+                        RouteCandidate.ProvenanceType.OBSERVED_REQUEST),
+                candidate("GET", "/v1/admin-info", true, human.evidenceId, Source.HUMAN,
+                        "human-frontier", RouteCandidate.ProvenanceType.OBSERVED_REQUEST),
+                candidate("GET", "/v1/admin-info", true, ownAdmin.evidenceId, Source.LLM, runId,
+                        RouteCandidate.ProvenanceType.OBSERVED_REQUEST)));
+        assertEquals(0, tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}")
+                .at("/result/structuredContent/remaining_safe_concrete").asInt());
+        JsonNode ended = tool("flowscope_end_run",
+                "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}");
+        assertFalse(ended.at("/result/isError").asBoolean(), ended.toString());
     }
 
     @Test
@@ -1117,6 +1194,17 @@ final class McpServerTest {
         return new RouteCandidate.Provenance(type, evidence, source, runId, "fixture", applicability, reason);
     }
 
+    private static RouteCandidate candidate(String method, String path, boolean observed, String evidence,
+                                            Source source, String runId,
+                                            RouteCandidate.ProvenanceType provenanceType) {
+        return new RouteCandidate("https://api.example.test:443", method, path, observed,
+                List.of(routeProvenance(provenanceType, evidence, source, runId,
+                        observed ? RouteCandidate.Applicability.APPLICABLE : RouteCandidate.Applicability.REVIEW,
+                        observed ? "observed" : "discovered")),
+                observed ? RouteCandidate.Applicability.APPLICABLE : RouteCandidate.Applicability.REVIEW,
+                observed ? "observed" : "discovered");
+    }
+
     private static List<RequestRecord> validationRecords(boolean denied) {
         List<RequestRecord> records = new ArrayList<>();
         records.add(observation(Source.HUMAN, "A", 200, "{\"id\":7,\"owner\":\"user-a\"}",
@@ -1168,8 +1256,13 @@ final class McpServerTest {
 
     private static RequestRecord observation(Source source, String fingerprint, int status, String body,
                                              SourceDetail detail, RunPhase phase, String runId) {
+        return observationAt(source, fingerprint, status, body, detail, phase, runId, "/v1/orders/7");
+    }
+
+    private static RequestRecord observationAt(Source source, String fingerprint, int status, String body,
+                                               SourceDetail detail, RunPhase phase, String runId, String path) {
         RequestRecord record = new RequestRecord(source, "https://api.example.test:443",
-                "GET", "/v1/orders/7", status, fingerprint);
+                "GET", path, status, fingerprint);
         record.body = body;
         record.hasResponse = true;
         record.responseContentType = "application/json";

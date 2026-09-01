@@ -6,6 +6,28 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-01 · 1.2.0-beta.35 · Explorer 독립-first/보조 frontier
+
+**개발·수정**
+
+- `flowscope_list_route_candidates`에 `INDEPENDENT/ASSISTED` view를 추가했다. INDEPENDENT는 기존처럼 현재 LLM run provenance만 반환한다. concrete GET/HEAD/OPTIONS/UNKNOWN 후보가 남아 있으면 ASSISTED 전환을 서버가 거부한다.
+- 독립 safe frontier가 소진되고 controlled response Evidence가 존재할 때만 다른 레인의 exact-scope route를 blind hint로 제공한다. source, run ID, Evidence ID, adapter, provenance, 응답과 관측 성공 여부는 반환하지 않는다.
+- `flowscope_end_run`은 응답 한 건만 보던 기존 조건에 더해 두 frontier 조회와 종료 시점 safe concrete route 0건을 재검사한다. frontier가 새 응답으로 늘었으면 다시 순회하기 전 종료할 수 없다.
+- 번들 Explorer prompt, MCP server 지침과 버전을 같은 계약으로 갱신했다. 첫 exact target GET, safe read 자동 순회, 동적 route의 실제 관측값 요구, write 승인 경계는 유지했다.
+
+**왜 필요했고 무엇을 기각했는가**
+
+- beta.34에서는 entry 응답이 route를 거의 노출하지 않으면 Explorer가 한 건의 Evidence만 남기고 정상 종료할 수 있었다. 이는 세션·scope 안전성은 지키지만 사람이 놓친 경로를 찾는 제품 목적에 부족했다.
+- 처음부터 HUMAN·SCANNER Evidence 전체를 공개하면 독립 3-way 비교가 오염되므로 기각했다. 대신 독립 단계를 먼저 서버로 강제하고, 후속 보완 단계에는 route 문자열만 공개한다.
+- 동적 `{id}`를 임의 숫자로 치환하거나 POST/PUT/PATCH/DELETE를 frontier 소진 대상으로 자동 실행하는 방식은 근거 없는 요청·업무 상태 변경을 만들므로 기각했다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드: `McpServer.java`; 테스트: `McpServerTest.java`; 실행 계약: `agent-workspace/AGENTS.md`, `CLAUDE.md`, `README.md`, `prompts/explorer.md`; 정본 문서: `README.md`, `architecture.md`, `decisions.md`, `functional-spec.md`, `product-development-plan.md`, `CHANGELOG.md` 및 설치·영문 문서.
+- 집중 회귀는 independent route 잔존 시 assisted/종료 거부, blind hint의 provenance·Evidence 비노출, assisted route 잔존 시 종료 거부, 모두 소진 후 완료를 확인했다. 이어 `mvn clean verify` 294 tests가 failure/error/skip 0으로 통과했고 완성 JAR smoke도 통과했다.
+- 생성 배포물은 `target/flowscope-1.2.0-beta.35.jar`, 15,957,571 bytes, 2,052 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `6377fdfbbf7160871e33cdb72f5558e0cd5e9f20361dd84cb91ed12f19e0b978`다. 두 번째 clean build는 실행하지 않아 byte-for-byte 재현성은 이번 gate에서 주장하지 않는다.
+- HTTP 응답 기반 route 추출만 구현됐으며 JavaScript 실행·DOM 상호작용·SPA runtime network를 수집하는 browser worker는 아직 없다. 실제 Burp 허가 target 효과 검증도 미완료이며 결과 정본은 `beta-validation.md`다.
+
 ## 2026-08-31 · 1.2.0-beta.34 · P1 복잡도·메모리 경계
 
 **왜 먼저 고쳤는가**

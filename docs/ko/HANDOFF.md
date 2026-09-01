@@ -6,9 +6,9 @@
 
 | 항목 | 기준 |
 |---|---|
-| 기준 날짜 | 2026-08-31 |
-| 제품 버전 | `1.2.0-beta.34` |
-| 인계 기준 | beta.34 코드·문서가 함께 포함된 동일 커밋 |
+| 기준 날짜 | 2026-09-01 |
+| 제품 버전 | `1.2.0-beta.35` |
+| 인계 기준 | beta.35 코드·문서가 함께 포함된 동일 커밋 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
 | 자동 회귀 | 최신 수치와 JAR digest는 `beta-validation.md` 정본 참조 |
@@ -55,7 +55,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.34.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.35.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -104,12 +104,12 @@ Traditional Spider
 1. Codex 또는 Claude Code CLI에 사용자가 직접 로그인한다.
 2. Web에서 공급자 상태가 준비됨인지 확인하고 LLM Explorer를 시작한다. API key 입력이나 MCP 설정 복사는 없다.
 3. FlowScope가 임시 workspace와 새 CLI 프로세스를 만들고 MCP 정보·격리 지침·run ID를 표준입력으로 준다.
-4. Explorer는 자기 LLM run Evidence만 보고 read/write가 분리된 MCP로 exact-scope를 탐색한다. Web 작업 피드는 실제 모델 메시지·도구 상태·Evidence gate를 표시하지만 reasoning과 raw tool payload는 표시하지 않는다.
+4. Explorer는 먼저 자기 LLM run Evidence와 route만 보고 read/write가 분리된 MCP로 exact-scope를 탐색한다. safe concrete frontier 소진 뒤에는 다른 lane의 source/run/Evidence/provenance/응답을 제거한 blind route hint로 미탐을 보완한다. Web 작업 피드는 실제 모델 메시지·도구 상태·Evidence gate를 표시하지만 reasoning과 raw tool payload는 표시하지 않는다.
 5. HUMAN, SCANNER, LLM 탐색이 모두 정상 종료되면 Judge를 시작한다.
 6. Judge는 Explorer와 다른 새 세션에서 잠긴 후보·갭·Evidence·ZAP Alert를 읽는다.
 7. 최종 판정은 동일 validation run의 반복 재현과 정상 대조 Evidence를 서버가 확인한 경우에만 허용된다.
 
-Explorer는 외부 검색, Wayback, 대상 소스 저장소, 직접 curl/browser 요청을 사용하지 않는 closed-world 역할이다. 일반 assessment는 `LIKELY/INCONCLUSIVE/REJECTED`이며 `CONFIRMED`가 아니다.
+Explorer는 외부 검색, Wayback, 대상 소스 저장소, 직접 curl/browser 요청을 사용하지 않는 exact-scope 역할이다. 현재 route 추출은 HTTP 응답 기반이며 JavaScript 실행·DOM 조작·SPA runtime network browser worker는 아직 없다. 일반 assessment는 `LIKELY/INCONCLUSIVE/REJECTED`이며 `CONFIRMED`가 아니다.
 
 ### 3.6 저장
 
@@ -521,7 +521,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.34.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.35.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 

@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.35 — 2026-09-01
+
+- LLM Explorer가 own-run `INDEPENDENT` safe concrete route를 모두 요청한 뒤에만 다른 수집 레인의 route 문자열을 `ASSISTED` blind hint로 받을 수 있게 했습니다.
+- ASSISTED hint에서 source, run ID, Evidence ID, adapter, provenance, 응답과 기존 관측 성공 여부를 제거해 독립 단계 결과를 오염시키지 않습니다.
+- controlled response Evidence, 두 frontier 조회, 종료 시점 concrete GET/HEAD/OPTIONS/UNKNOWN route 0건을 Explorer 완료 gate로 강제했습니다.
+- 동적 객체 route는 실제 관측값 없이는 자동 치환하지 않고, POST/PUT/PATCH/DELETE는 기존 명시 확인과 Burp 승인을 유지합니다.
+- 자동 회귀 통과는 endpoint recall이나 취약점 탐지 성능 향상을 뜻하지 않습니다. SPA browser worker와 실제 허가 target 블라인드 비교는 아직 대기 중입니다.
+
 ## 1.2.0-beta.34 — 2026-08-31
 
 - 반복 cluster의 Evidence ID 전체 목록을 매 event에 복제하지 않고 `/api/cluster-evidence` 200건 페이지로 분리해 snapshot의 제곱 크기 증가를 제거했습니다.

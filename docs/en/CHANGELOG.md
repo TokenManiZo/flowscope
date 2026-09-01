@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.35 — 2026-09-01
+
+- Explorer must exhaust its own-run `INDEPENDENT` concrete safe route frontier before FlowScope exposes cross-lane route strings as `ASSISTED` blind hints.
+- ASSISTED hints omit source, run ID, Evidence ID, adapter, provenance, responses, and prior observation success so the independent stage remains measurable.
+- Explorer completion now requires controlled response Evidence, both frontier views, and zero remaining concrete GET/HEAD/OPTIONS/UNKNOWN routes at the completion snapshot.
+- Dynamic object routes are not invented, and POST/PUT/PATCH/DELETE retain explicit confirmation and Burp approval.
+- These regressions do not establish endpoint recall or vulnerability-detection gains; a browser worker and authorized blind-target comparison remain pending.
+
 ## 1.2.0-beta.34 — 2026-08-31
 
 - Removed quadratic snapshot growth by moving repeated-cluster Evidence IDs out of every event and into a paginated `/api/cluster-evidence` endpoint.

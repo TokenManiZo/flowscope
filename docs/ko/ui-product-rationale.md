@@ -126,7 +126,7 @@ Explorer가 HUMAN/ZAP 후보를 먼저 보면 독립 비교가 아니라 답을 
 
 빠른 시작의 `LLM Explorer 시작`은 편의를 위해 같은 대화를 재활용하지 않는다. 사용자가 공급자·target·계정을 고르면 FlowScope가 새 임시 작업공간과 비영속 CLI 실행을 만들고 exact scope와 선발급 run을 자동 주입한다. 종료 조건도 문장 출력이 아니라 그 exact run의 정상 종료다. 따라서 “버튼을 눌렀다”나 “CLI가 0으로 끝났다”만으로 LLM lane 완료를 표시하지 않는다.
 
-beta.6부터 미요청 route도 같은 경계를 따른다. Explorer는 자신의 run 응답에서 발견한 provenance만 보며, 병합 후보에 HUMAN 근거가 있어도 observed/applicability/reason을 자기 run 기준으로 다시 계산한다. pre-lock status는 다른 lane의 active run·수량·기존 판정 목록을 공개하지 않고, Explorer가 활성화된 동안에는 ZAP 상태·실행도 차단한다. lock 뒤에는 그 시점의 route inventory만 Judge에게 보여 준다.
+미요청 route도 같은 경계를 따른다. Explorer의 INDEPENDENT view는 자신의 run 응답에서 발견한 provenance만 보며, 병합 후보에 HUMAN 근거가 있어도 observed/applicability/reason을 자기 run 기준으로 다시 계산한다. 해당 safe concrete frontier가 소진된 뒤 ASSISTED view는 다른 lane의 route 문자열만 source/run/Evidence/provenance/응답 없이 표시한다. pre-lock status는 다른 lane의 active run·수량·기존 판정 목록을 공개하지 않고, Explorer가 활성화된 동안에는 ZAP 상태·실행도 차단한다. lock 뒤에는 그 시점의 route inventory만 Judge에게 보여 준다. 현재 Web은 이 두 내부 단계를 별도 패널로 시각화하지 않으며 LLM 작업 피드의 도구 호출로만 확인되는 UX debt가 남아 있다.
 
 ### Judge: 잠긴 세 결과의 종합자
 
