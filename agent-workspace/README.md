@@ -1,6 +1,6 @@
 # Agent workspace
 
-This directory contains the repeatable manual fallback for FlowScope Explorer and final Judge with Codex or Claude Code subscriptions. The beta.37 primary flow is the Web quick-start `LLM Explorer 시작` and `Judge 시작` buttons. FlowScope discovers standard CLI installations, checks the provider's official sign-in status, creates isolated role-specific workspaces, injects the MCP contract, and starts Explorer and Judge as separate CLI sessions. Explorer may open FlowScope's isolated installed-Chrome worker for rendered discovery; browser output must be replayed through the controlled executor to become Evidence. This directory does not contain model-provider credentials.
+This directory contains the repeatable manual fallback for FlowScope Explorer and final Judge with Codex or Claude Code subscriptions. The beta.38 primary flow is the Web quick-start `LLM Explorer 시작` and `Judge 시작` buttons. FlowScope discovers standard CLI installations, checks the provider's official sign-in status, creates isolated role-specific workspaces, injects the MCP contract, and starts Explorer and Judge as separate CLI sessions. Explorer may open FlowScope's isolated installed-Chrome worker for rendered discovery; browser output must be replayed through the controlled executor to become Evidence. This directory does not contain model-provider credentials.
 
 Use the steps below only when the Web launcher cannot find or start the local CLI. Do not run this manual workflow at the same time as a button-launched Explorer or Judge.
 

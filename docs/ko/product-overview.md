@@ -2,7 +2,7 @@
 
 > 사용자 확정 스코프("예상 아웃풋", 2026-08-24). 이 문서가 목표의 정본이며, `proposal.md`(초기 추정본)를 대체한다.
 
-> **구현 상태(1.2.0-beta.37):** exact-run 완료 정책, source trust 분리, 완료 시점 Evidence ID 동결, 고정 Judge dataset과 JSON v3/SQLite v2 왕복, Request Lab 실행 무결성, 독립 safe frontier→provenance-free assisted frontier, 설치 Chrome CDP discovery와 controlled Evidence replay 분리를 구현했다. Explorer 계정은 run 동안 고정되고 browser runtime route는 `BROWSER_RUNTIME/evidence_backed=false` frontier로 남아 통제 재현 전 완료할 수 없다. coverage는 `GraphObservationFact`로 투영되며 화면은 Site→API Group→Identity→API→Object family/instance로 연다. 전체 clean build 299 tests를 연속 두 번 통과하고 동일 SHA-256 JAR을 확인했다. 실제 Burp 재로드, HUMAN·ZAP·LLM→저장·재열기→Judge 완주, 고카디널리티 가독성·블라인드 정확도 평가는 아직 완료하지 않았다.
+> **구현 상태(1.2.0-beta.38):** beta.37의 exact-run·Evidence·Explorer·Graph Fact 계약을 유지하면서 신원별 ZAP campaign/lane/stage 경과시간, 단계 제한, 마지막 heartbeat·capture/status 변화와 pending queue 이유를 추가했다. inline JavaScript parse, 전체 299 tests 연속 2회와 재현 JAR은 통과했다. 실제 Burp beta.38 재로드, HUMAN·ZAP·LLM→저장·재열기→Judge 완주, 고카디널리티 가독성·블라인드 정확도 평가는 아직 완료하지 않았다.
 
 ## 문제의식 (Premise)
 웹/API 모의해킹의 병목은 **요청 나열이 아니라, 권한·상태·객체 흐름을 사람이 머릿속으로 재구성하는 것**이다. 그래서 Burp 트래픽을 IDA의 CFG처럼 **플로우 그래프**로 시각화한다. → 플로우 그래프가 도구의 심장(뼈대).

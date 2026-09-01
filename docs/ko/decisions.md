@@ -985,3 +985,11 @@
 - **기각:** 객체를 영구 제거하면 BOLA 비교 근거가 사라지고, 모든 인스턴스를 기본 표시하면 고카디널리티 객체에서 다시 털뭉치가 된다. URL 명칭을 LLM 의미 분류로 확정하면 도메인별 오탐과 비결정성이 생기므로 첫 단계는 근거가 명시된 path group만 쓴다. 클릭 전에 selector만 승인하는 방식은 실제 network side effect와 승인이 결합되지 않아 기각했다. browser route를 곧바로 Evidence로 승격하는 방식도 응답 저장·재현 계약을 우회하므로 기각했다.
 - **검증·한계:** `GraphObservationFactTest`가 정규화 operation·object family·API group 근거·request-only/HTTP outcome을 고정한다. `ControlledBrowserExplorerTest`는 실제 headless Chrome이 만든 POST를 요청 단위 승인 거부 시 대상 서버에 보내지 않음을 확인한다. `McpServerTest`는 Explorer account override 거부와 browser-discovered frontier의 `evidence_backed=false`를 확인한다. UI JavaScript parse와 Web 계약 자동 회귀는 수행하지만 beta.37 JAR의 실제 Burp 화면·고카디널리티 데이터 가독성 및 endpoint/finding 효능은 별도 수동·블라인드 gate다. Path group은 업무 의미를 증명하지 않으며 향후 OpenAPI tag·GraphQL operation·사용자 주석 등 명시 근거가 있을 때만 보강한다.
 - **상태:** beta.37 코드, inline JavaScript parse, 전체 verify 299 tests 연속 2회와 재현 JAR 완료. 실제 Burp 재로드·고카디널리티 화면·블라인드 효능 gate 대기.
+
+## D-105 · 신원별 ZAP 직렬 실행은 유지하고 실행 관측 가능성을 계약으로 제공
+
+- **문제:** 비로그인과 계정 lane은 세션·cookie jar 오염을 막기 위해 직렬 실행하지만, 먼저 실행되는 AJAX Spider가 수분 동안 `running`이면 후속 계정은 수집 0건 `PENDING`만 보여 정지·오류·정상 대기를 구분할 수 없었다. 서버는 Traditional 15분, Client/AJAX 각 20분, passive queue 5분 timeout을 이미 적용했지만 UI와 상태 API가 이를 숨겼다.
+- **결정:** campaign, lane, stage 시작·종료 시각과 단계 timeout, 마지막 ZAP status heartbeat, 마지막 raw capture 또는 status 변화, ZAP 상태 원문을 current-process memory에서 추적한다. Web/API는 전체·lane·stage 경과초, 제한초, heartbeat/progress age, queue position/total과 현재 lane 완료 후 시작한다는 이유를 반환한다. 첫 lane이 ZAP session/context를 준비하는 동안은 `STARTING`, status heartbeat 10초 초과는 `NO_HEARTBEAT`, heartbeat는 정상이나 capture/status 변화가 30초 넘으면 `RESPONDING_NO_NEW_TRAFFIC`, deadline 초과는 `DEADLINE_EXCEEDED`로 분리한다. API 정의 단계 제한은 실제 HTTP timeout에 맞춰 정의 한 건당 2분으로 계산한다.
+- **기각:** 계정 lane을 병렬화하면 ZAP 자원 경합뿐 아니라 proxy run context와 fresh session 전환이 겹쳐 source/identity 귀속을 오염시킨다. 새 트래픽 30초 부재를 자동 실패로 처리하면 SPA 안정화·passive queue·긴 client crawl의 정상 정지를 오판한다. 따라서 직렬 격리는 유지하고 관측 상태만 명시한다.
+- **검증·한계:** MCP 회귀는 campaign timestamp, queue 순번·이유, lane timing/heartbeat 필드를 확인하고 Web 회귀는 elapsed/heartbeat/wait/activity 계약을 고정한다. heartbeat는 ZAP API 응답 생존성이고 crawler 내부 thread의 완전한 건강 증명은 아니다. 실제 장시간 AJAX Spider에서 시간 표시와 timeout 전환은 beta.38 Burp 재로드 gate다.
+- **상태:** 코드, inline JavaScript parse, 전체 verify 299 tests 연속 2회와 재현 beta.38 JAR 완료. 실제 Burp 재로드·장시간 AJAX→후속 계정 전환·timeout 표시는 대기.

@@ -96,7 +96,7 @@ final class McpServerTest {
         JsonNode initialized = json(post("test-token", request(2, "initialize",
                 "{\"protocolVersion\":\"future-version\"}")));
         assertEquals("2025-11-25", initialized.at("/result/protocolVersion").asText());
-        assertEquals("1.2.0-beta.37", initialized.at("/result/serverInfo/version").asText());
+        assertEquals("1.2.0-beta.38", initialized.at("/result/serverInfo/version").asText());
         assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
 
         JsonNode evidence = tool("flowscope_get_evidence",
@@ -963,6 +963,12 @@ final class McpServerTest {
                     + "\",\"run_id\":\"campaign-1\",\"include_anonymous\":true,"
                     + "\"account_ids\":[\"user-a\",\"user-b\"]}");
             assertFalse(failedStart.at("/result/isError").asBoolean(), failedStart.toString());
+            assertTrue(failedStart.at("/result/structuredContent/campaign_started_at").asLong() > 0);
+            assertTrue(failedStart.at("/result/structuredContent/elapsed_seconds").asLong() >= 0);
+            assertEquals(2, failedStart.at("/result/structuredContent/lanes/1/queue_position").asInt());
+            assertEquals(3, failedStart.at("/result/structuredContent/lanes/1/queue_total").asInt());
+            assertTrue(failedStart.at("/result/structuredContent/lanes/1/wait_reason").asText()
+                    .contains("lane 완료 후 시작"));
             JsonNode failedStatus = null;
             for (int i = 0; i < 200; i++) {
                 failedStatus = tool("flowscope_zap_baseline_status", "{}");
@@ -996,6 +1002,9 @@ final class McpServerTest {
             assertEquals(6, zapSessions.get().size());
             assertEquals(3, status.at("/result/structuredContent/lanes").size());
             assertEquals("user-b", status.at("/result/structuredContent/lanes/2/account_id").asText());
+            assertTrue(status.at("/result/structuredContent/lanes/0/elapsed_seconds").asLong() >= 0);
+            assertTrue(status.at("/result/structuredContent/lanes/0/stage_timeout_seconds").asLong() >= 0);
+            assertFalse(status.at("/result/structuredContent/lanes/0/heartbeat_status").asText().isBlank());
             assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
             assertNull(contexts.current(Source.SCANNER));
         } finally {

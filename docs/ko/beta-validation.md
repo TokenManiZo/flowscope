@@ -1,4 +1,17 @@
-# FlowScope 1.2.0-beta.37 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.38 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.38 ZAP 실행 관측 가능성 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 실측 원인 분리 | beta.37 실행 중 ZAP API에서 AJAX `running`, Traditional `100/FINISHED`, passive queue 7을 확인. 후속 `test1`은 직렬 lane 대기였음 |
+| 상태 계약 | campaign/lane/stage elapsed·timeout, heartbeat/progress age, ZAP status, activity state, queue position/total·wait reason 회귀 통과 |
+| Web 계약 | 전체·단계 시간, 최대시간, 마지막 응답·트래픽 변화, pending 대기 이유와 상태 분류 문자열 회귀 및 inline JavaScript parse 통과 |
+| 전체 회귀 | `mvn clean verify` 연속 2회, 매회 299 tests, failure/error/skip 0; inline JavaScript parse 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.38.jar`, 15,997,237 bytes, 2,063 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `ce799b0f34dc749fee202a1532f501d9421c9c08794a171af57d0c5e20cba987`; 두 clean build가 byte-for-byte 동일 |
+| 실제 Burp 재로드 | **대기** — beta.38 화면의 장시간 AJAX→후속 계정 전환, heartbeat 단절·timeout 표시는 아직 수동 확인하지 않음 |
+
+실측은 현재 로컬 crAPI/ZAP 프로세스가 그 시점에 살아 있었음을 확인한 것이며 AJAX crawler 내부의 완전한 건강이나 탐색 효능을 증명하지 않는다. `RESPONDING_NO_NEW_TRAFFIC`도 실패가 아니라 status API는 응답하지만 capture/status 변화가 30초 넘게 없다는 관측이다.
 
 ## 1.2.0-beta.37 Explorer 입력 무결성·Graph Fact gate
 

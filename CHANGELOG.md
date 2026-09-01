@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.38 — 2026-09-01
+
+- 신원별 ZAP 캠페인 상태에 전체·lane·현재 단계 경과시간, 단계 제한시간, 마지막 ZAP heartbeat, 마지막 트래픽 변화와 상태 원문을 추가했습니다.
+- 직렬 실행으로 아직 시작하지 않은 계정은 `PENDING`만 표시하지 않고 대기 순번과 현재 실행 lane 완료 후 시작한다는 이유를 표시합니다.
+- ZAP API가 응답하지만 새 트래픽이 없는 상태, 10초 넘게 heartbeat가 없는 상태, 단계 제한시간 초과를 구분합니다. 이 표시는 관측 상태이며 취약점 판정이나 스캔 성공을 대신하지 않습니다.
+- 현재 수집 건수는 단계 전환 시점의 고정값이 아니라 ZAP heartbeat가 갱신한 raw capture count로 표시하며, Web polling이 전체 Evidence를 중복 순회하지 않습니다.
+- inline JavaScript parse와 전체 `mvn clean verify` 299 tests를 연속 두 번 통과했고 두 beta.38 JAR의 SHA-256이 일치했습니다. 실제 Burp 재로드와 장시간 AJAX→후속 계정 전환은 별도 gate입니다.
+
 ## 1.2.0-beta.37 — 2026-09-01
 
 - Explorer run에서 선택한 계정을 통제 target tool의 `account_id`로 바꾸지 못하도록 서버에서 고정했습니다.

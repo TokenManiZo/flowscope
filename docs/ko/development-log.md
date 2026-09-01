@@ -6,6 +6,25 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-01 · 1.2.0-beta.38 · ZAP 경과시간·heartbeat·대기 원인
+
+**개발·수정**
+
+- 실제 beta.37 Burp 실행에서 비로그인 AJAX Spider가 약 5분 37초 동안 실행되고 후속 `test1`이 0건 `PENDING`으로 보인 상태를 조사했다. ZAP API 실측은 AJAX `running`, Traditional `100/FINISHED`, passive queue 7이었으므로 프로세스 중단이 아니라 신원별 직렬 실행의 정상 대기였다. 문제는 서버와 UI가 경과시간·deadline·heartbeat·대기 이유를 내보내지 않은 관측 가능성 결함이었다.
+- ZAP lane별 queued/started/ended/stage 시작 시각, stage timeout, 마지막 status heartbeat, 마지막 raw capture/status 변화와 현재 status 원문을 메모리에 저장한다. 실행 중 capture count는 heartbeat가 raw store에서 갱신하고 Web 상태 조회는 그 스냅샷을 재사용해 1초 polling마다 전체 Evidence를 중복 순회하지 않는다.
+- 상태 API는 campaign/lane/stage elapsed seconds, timeout seconds, heartbeat/progress age, `STARTING`, `RESPONDING`, `RESPONDING_NO_NEW_TRAFFIC`, `NO_HEARTBEAT`, `DEADLINE_EXCEEDED`, queue position/total과 wait reason을 반환한다. API 정의 단계의 제한은 실제 호출 timeout과 맞게 정의 한 건당 2분으로 계산한다.
+- Web은 1초 polling마다 전체·단계 경과/최대시간, ZAP 상태·응답 age·트래픽 변화 age를 표시한다. 각 pending 계정에는 대기 순번, 현재 lane 완료 후 시작한다는 이유와 대기시간을 표시한다.
+
+**왜 필요했고 무엇을 기각했는가**
+
+- fresh ZAP session과 scanner run context를 신원별로 교체하는 현재 무결성 계약 때문에 병렬 계정 실행은 기각했다. 계정 병렬화는 cookie/crawler state와 source attribution을 섞을 수 있다.
+- heartbeat는 정상이지만 새 traffic이 없는 상태를 자동 실패로 바꾸지 않았다. status API 생존과 탐색 성과는 다른 사실이며, AJAX/Client/Passive가 정상적으로 기다리는 구간도 있기 때문이다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드: `McpServer.java`, `web/index.html`; 회귀: `McpServerTest.java`, `FlowScopeWebServerTest.java`; 버전과 사용자·아키텍처·결정·검증·계획·인계 문서를 beta.38로 갱신했다.
+- inline JavaScript parse와 전체 `mvn clean verify` 299 tests를 연속 두 번 통과했고 failure/error/skip은 모두 0이었다. 두 빌드의 `target/flowscope-1.2.0-beta.38.jar`는 15,997,237 bytes·2,063 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `ce799b0f34dc749fee202a1532f501d9421c9c08794a171af57d0c5e20cba987`로 동일했다. 실제 Burp에서 beta.38을 재로드한 장시간 AJAX → 후속 계정 전환과 timeout 표시는 아직 완료하지 않았다.
+
 ## 2026-09-01 · 1.2.0-beta.37 · Explorer 실제 요청 승인과 Graph Observation Fact
 
 **개발·수정**

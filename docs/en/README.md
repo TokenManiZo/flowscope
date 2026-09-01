@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.37
+# FlowScope 1.2.0-beta.38
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -31,7 +31,7 @@ identity ──access──▶ operation ──targets──▶ object
 - A common route-discovery pipeline applies one scope, method, normalization, deduplication, and provenance gate to same-scope HTML, static JavaScript call sites, OpenAPI JSON/YAML, standard metadata, generic XML, and response-less Burp Site Map items. A method without evidence remains `UNKNOWN`; candidates never affect coverage, gaps, verdicts, or findings before a request/response is observed.
 - Explicit `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` authentication state. Unbound cookie rotation no longer explodes graph identities, and verified account bindings remain service-scoped.
 - Localhost-only authenticated MCP server for Codex and Claude Code subscription clients.
-- System-owned bounded ZAP baseline: FlowScope first verifies that ZAP's outgoing proxy points to the Burp scanner listener. For every isolated identity it may import operator-supplied, exact-scope OpenAPI, GraphQL, Postman, or SOAP definitions after a separate approval, then enables every passive rule and runs Traditional Spider, strict Client Spider, AJAX Spider, passive queue completion, and paginated native alerts. Up to 20,000 alert details are held in memory with an explicit truncation warning. Active Scan, fuzzing, and Forced Browse are not part of the default campaign.
+- System-owned bounded ZAP baseline: FlowScope first verifies that ZAP's outgoing proxy points to the Burp scanner listener. For every isolated identity it may import operator-supplied, exact-scope OpenAPI, GraphQL, Postman, or SOAP definitions after a separate approval, then enables every passive rule and runs Traditional Spider, strict Client Spider, AJAX Spider, passive queue completion, and paginated native alerts. The serial identity run reports campaign/stage elapsed time and deadline, last ZAP heartbeat and capture/status change, plus each pending lane's queue position and wait reason. Up to 20,000 alert details are held in memory with an explicit truncation warning. Active Scan, fuzzing, and Forced Browse are not part of the default campaign.
 - Deployment-neutral ZAP onboarding: Quick Start checks the loopback API/version/key before enabling a campaign and offers ZAP Desktop or optional Docker without pretending the API can identify its deployment type.
 - A compact four-stage Quick Start that displays only the first incomplete Scope, HUMAN, ZAP, or LLM/Judge panel while keeping every stage directly inspectable.
 - Closed-world LLM execution through an exact-scope FlowScope request tool; direct external traffic is never trusted for decisive verdicts.
@@ -64,9 +64,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.37.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.37 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.38.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.38 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.37.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.38.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

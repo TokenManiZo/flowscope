@@ -1,6 +1,15 @@
-# FlowScope 1.2.0-beta.37 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.38 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.37 절만 현재 우선순위다. 아래 beta.36 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.37 절을 따른다.
+> **읽는 법:** 맨 위 beta.38 절만 현재 우선순위다. 아래 beta.37 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.38 절을 따른다.
+
+## 0. beta.38 우선순위: ZAP 장시간 실행 관측 가능성
+
+1. campaign/lane/stage 시간, 단계 제한, ZAP heartbeat와 raw capture/status 변화를 상태 API의 명시 계약으로 만든다.
+2. 후속 신원이 직렬 대기 중인 이유와 queue 위치를 표시해 정지·오류와 구분한다.
+3. heartbeat 부재, 응답 정상 무변화, deadline 초과를 서로 다른 운영 상태로 보여 주되 자동 취약점·성공 판정으로 쓰지 않는다.
+4. 전체 verify와 재현 JAR을 통과한 뒤 실제 Burp에서 장시간 AJAX → test1 전환을 확인한다.
+
+**현재 상태:** 1~3 코드, inline JavaScript parse, 전체 verify 299 tests 연속 2회와 byte-for-byte 동일한 beta.38 JAR을 완료했다. 4의 실제 Burp beta.38 재로드·장시간 AJAX→test1 전환·heartbeat 단절/timeout 표시는 대기한다.
 
 ## 0. beta.37 우선순위: Explorer 입력 무결성과 그래프 Fact Core
 

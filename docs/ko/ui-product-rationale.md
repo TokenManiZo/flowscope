@@ -158,6 +158,8 @@ Active Scan은 상태를 바꿀 수 있고 트래픽이 크므로 기본 baselin
 
 비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 fresh ZAP session을 만든다. 화면은 whs_flow 작업면의 카드·간격 문법을 유지한 신원별 lane card로 현재 단계, 전체 수집, Traditional 수집, Client/AJAX rendered 수집, Alert, 주의·실패 원인을 분리한다. 한 문장 상태는 실패한 신원과 실패 단계를 찾기 어려워 기각했다. 계정 레인은 broker 자격증명으로 완전 교체하고, 비로그인 레인은 fresh session 안에서 새로 생긴 익명 Cookie/CSRF를 유지해 상태형 공개 흐름을 끊지 않는다.
 
+beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 보이면서 정지로 오인되는 실제 수동 회귀를 계기로 관측 가능성을 보강했다. 캠페인·lane·stage 경과시간과 단계 최대시간, 마지막 ZAP status heartbeat, 마지막 raw capture/status 변화, queue 위치와 “현재 lane 완료 후 시작” 이유를 1초 polling 화면에 표시한다. heartbeat가 정상이어도 새 트래픽이 없을 수 있으므로 이를 실패로 바꾸지 않고 `응답 정상·새 트래픽 없음`으로 구분한다. 반대로 10초 넘게 status 응답이 없거나 deadline을 넘으면 별도 경고 상태를 표시한다.
+
 FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 숨기고 시작 요청을 거부한다. 모든 localhost를 막으면 crAPI 같은 로컬 허가 대상을 점검할 수 없으므로 현재 Web port만 제어면으로 판별한다.
 
 ## 9. 발표 시연 순서

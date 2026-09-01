@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0-beta.38 — 2026-09-01
+
+- Added campaign, lane, and current-stage elapsed time, stage deadlines, last ZAP heartbeat, last traffic change, and raw ZAP status to isolated scanner runs.
+- Pending identities now show their queue position and the currently running lane they are waiting for instead of an unexplained zero-count `PENDING` card.
+- Distinguished a responsive ZAP with no new traffic from a missing heartbeat and a stage deadline overrun. These are operational observations, not vulnerability or scan-success verdicts.
+- Running capture counts now use the raw-store count refreshed by the ZAP heartbeat instead of rescanning all Evidence on each Web poll.
+- Inline JavaScript parsing and all 299 Maven tests passed in two consecutive clean builds, and both beta.38 JARs had the same SHA-256. Burp reload and a long AJAX-to-next-identity transition remain separate gates.
+
 ## 1.2.0-beta.37 — 2026-09-01
 
 - Fixed the Explorer account for the lifetime of a run and rejected target-tool account overrides.
