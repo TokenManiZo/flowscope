@@ -69,8 +69,16 @@ public final class ZapClient {
     public String clientSpiderStatus(String scanId) {
         return get("/JSON/clientSpider/view/status/", "scanId=" + enc(scanId));
     }
+    public String stopSpider(String scanId) {
+        return get("/JSON/spider/action/stop/", "scanId=" + enc(scanId));
+    }
+    public String stopClientSpider(String scanId) {
+        return get("/JSON/clientSpider/action/stop/", "scanId=" + enc(scanId));
+    }
+    public String stopAjaxSpider() { return get("/JSON/ajaxSpider/action/stop/", ""); }
     public String passiveRecordsToScan() { return get("/JSON/pscan/view/recordsToScan/", ""); }
     public String passiveTasks() { return get("/JSON/pscan/view/currentTasks/", ""); }
+    public String clearPassiveQueue() { return get("/JSON/pscan/action/clearQueue/", ""); }
     public String passiveScanners() { return get("/JSON/pscan/view/scanners/", ""); }
     public String enablePassiveScan() {
         return get("/JSON/pscan/action/setEnabled/", "enabled=true");

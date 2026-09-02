@@ -56,6 +56,8 @@ class ZapClientTest {
     @Test
     void clientSpiderUsesStrictSubtreeAndPassiveAndAlertApisAreAvailable() throws Exception {
         AtomicReference<String> clientQuery = new AtomicReference<>();
+        AtomicReference<String> stoppedSpider = new AtomicReference<>();
+        AtomicReference<String> stoppedClient = new AtomicReference<>();
         AtomicReference<String> scopeQuery = new AtomicReference<>();
         AtomicReference<String> alertCountQuery = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -63,7 +65,17 @@ class ZapClientTest {
             clientQuery.set(exchange.getRequestURI().getRawQuery());
             reply(exchange, "{\"scan\":\"3\"}");
         });
+        server.createContext("/JSON/spider/action/stop/", exchange -> {
+            stoppedSpider.set(exchange.getRequestURI().getRawQuery());
+            reply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.createContext("/JSON/clientSpider/action/stop/", exchange -> {
+            stoppedClient.set(exchange.getRequestURI().getRawQuery());
+            reply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.createContext("/JSON/ajaxSpider/action/stop/", exchange -> reply(exchange, "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/pscan/view/recordsToScan/", exchange -> reply(exchange, "{\"recordsToScan\":\"0\"}"));
+        server.createContext("/JSON/pscan/action/clearQueue/", exchange -> reply(exchange, "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/pscan/view/scanners/", exchange -> reply(exchange, "{\"scanners\":[]}"));
         server.createContext("/JSON/pscan/action/setEnabled/", exchange -> reply(exchange, "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/pscan/action/enableAllScanners/", exchange -> reply(exchange, "{\"Result\":\"OK\"}"));
@@ -91,6 +103,12 @@ class ZapClientTest {
             assertEquals("{\"Result\":\"OK\"}", client.enablePassiveScan());
             assertEquals("{\"Result\":\"OK\"}", client.enableAllPassiveScanners());
             assertEquals("{\"Result\":\"OK\"}", client.restrictPassiveScanToScope());
+            assertEquals("{\"Result\":\"OK\"}", client.stopSpider("11"));
+            assertEquals("scanId=11", stoppedSpider.get());
+            assertEquals("{\"Result\":\"OK\"}", client.stopClientSpider("12"));
+            assertEquals("scanId=12", stoppedClient.get());
+            assertEquals("{\"Result\":\"OK\"}", client.stopAjaxSpider());
+            assertEquals("{\"Result\":\"OK\"}", client.clearPassiveQueue());
             assertEquals("onlyInScope=true", scopeQuery.get());
             assertEquals("{\"alerts\":[]}", client.alerts("http://127.0.0.1:8888/", 0, 100));
             assertEquals("{\"numberOfAlerts\":\"0\"}",

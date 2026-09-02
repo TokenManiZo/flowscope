@@ -104,6 +104,15 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("lane.wait_reason"));
         assertTrue(index.body().contains("RESPONDING_NO_NEW_TRAFFIC"));
         assertTrue(index.body().contains("STARTING:'실행 준비 중'"));
+        assertTrue(index.body().contains("AJAX 보완"));
+        assertTrue(index.body().contains("lane.passive_remaining"));
+        assertTrue(index.body().contains("lane.passive_task"));
+        assertTrue(index.body().contains("Alert 집계 전"));
+        assertTrue(index.body().contains("lane.ajax_executed"));
+        assertTrue(index.body().contains("Client·AJAX 둘 다 실행"));
+        assertTrue(index.body().contains("실시간 실행 기록"));
+        assertTrue(index.body().contains("SCANNER_RUN.events"));
+        assertTrue(index.body().contains("1초마다 갱신"));
         assertTrue(index.body().contains("ZAP Desktop 설정"));
         assertTrue(index.body().contains("Docker Quick Start"));
         assertTrue(index.body().contains("/api/zap-status"));

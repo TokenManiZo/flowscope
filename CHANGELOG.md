@@ -4,11 +4,15 @@
 
 ## 1.2.0-beta.39 — 2026-09-01
 
+- ZAP 기준선은 신원마다 Traditional·Client·AJAX를 모두 실행하고, 제한시간·실패 시 FlowScope가 시작한 crawler를 stop API로 정리합니다.
+- Passive 분석을 고정 5분 실패에서 queue·현재 task 진행 기반의 최대 30분/무진행 10분 경계로 교체했습니다. 정체 시 이미 수집한 Evidence와 현재 Alert를 보존하고 부분 완료·남은 건수·Alert 집계 미완료를 명시합니다.
+- 미처리 Passive queue와 current task를 정리하지 못하면 다음 로그인 신원을 실행하지 않아 비로그인·계정별 결과 혼합을 막습니다.
+- Web에 `세션 / Traditional / Client / AJAX 보완 / Passive / Alert` 진행선, 실시간 단계 수집량, Passive 남은 건수·현재 task와 Alert snapshot 완결성을 추가했습니다. 단계 전환·queue 감소·Alert 집계·격리 정리 결과는 1초 갱신 실행 기록으로 표시합니다.
 - API 문맥 없이 401/403만 반환한 ZAP 디렉터리 probe를 메인 API로 올리던 회귀를 수정했습니다. 해당 Evidence는 삭제하지 않고 `UNKNOWN/REVIEW`로 보존하며, JSON/API 문맥·객체·비안전 메서드 등 독립 근거가 있으면 기존처럼 API에 포함합니다.
 - `/manifest.json`을 Content-Type이 부정확해도 web app manifest 경로 근거로 탐색 메타데이터에서 분리합니다.
 - Explorer가 실제로 통제 응답을 받은 탐색·정적 route를 메인 coverage에서 제외했다는 이유로 미방문 처리하던 완료 gate 회귀를 수정했습니다. 방문 사실과 분석 자격을 별도로 판정합니다.
 - 그래프 기본 화면을 사이트 집계에서 `신원 → API`로 복구하고, 사이트 개요는 선택형으로 유지했습니다. 사이트 소스 수는 요청 반복 수가 아닌 고유 API 수로 세며, 계층별 viewport를 분리했습니다.
-- 새 분류·Explorer·Web 회귀를 포함한 전체 `mvn clean verify` 303 tests와 독립 Web 실행의 API↔사이트 전환·브라우저 오류 로그를 확인했습니다. 실제 Burp의 beta.39 재로드는 별도 gate입니다.
+- 새 분류·Explorer·Web·ZAP 격리 회귀를 포함한 전체 `mvn clean verify` 306 tests를 연속 두 번 통과했고 JAR SHA-256이 일치했습니다. 독립 Web 실행의 API↔사이트 전환·브라우저 오류 로그도 확인했습니다. 실제 Burp의 beta.39 재로드는 별도 gate입니다.
 
 ## 1.2.0-beta.38 — 2026-09-01
 

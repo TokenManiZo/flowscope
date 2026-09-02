@@ -147,18 +147,18 @@ LLM이 그때그때 ZAP 기능을 선택하면 같은 입력에서도 결과가 
 ```text
 Traditional Spider
 → strict-scope Client Spider
-→ Client 실패 또는 실제 rendered capture 0건이면 AJAX Spider
-→ passive queue가 0이 될 때까지 대기
+→ AJAX Spider 보완 탐색
+→ Passive queue·현재 task 진행 추적
 → native alerts 수집
 ```
 
-ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 트래픽을 만들었다는 충분조건이 아니다. 실제 crAPI 실행에서 Firefox binary 부재로 Client task가 내부 실패했지만 status는 완료가 됐고 FlowScope rendered count는 0이었다. 따라서 FlowScope는 raw Client capture 증가가 없으면 AJAX를 실행하고, AJAX도 0이면 수집된 Traditional Evidence와 Alert를 버리지 않으면서 `COMPLETED_WITH_WARNINGS`와 원인을 표시한다. 이 상태는 깨끗한 rendered-browser 기준선 완료가 아니다.
+ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 트래픽을 만들었다는 충분조건이 아니다. 실제 crAPI 실행에서 Firefox binary 부재로 Client task가 내부 실패했지만 status는 완료가 됐고 FlowScope rendered count는 0이었다. 또한 Client와 AJAX가 모든 앱에서 같은 route 집합을 만든다는 근거가 없으므로 기본 기준선은 둘 다 실행한다. 둘 중 하나가 실패하거나 0건이면 수집된 Traditional·다른 rendered Evidence와 Alert를 버리지 않으면서 `COMPLETED_WITH_WARNINGS`와 원인을 표시한다. 이 상태는 깨끗한 rendered-browser 기준선 완료가 아니다.
 
 Active Scan은 상태를 바꿀 수 있고 트래픽이 크므로 기본 baseline에서 분리하며 exact scope와 별도 Burp 승인을 요구한다. “ZAP 기능을 적게 쓴다”가 아니라 안전한 자동 기준선과 고위험 능동 스캔의 승인 경계를 분리한 것이다.
 
 비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 fresh ZAP session을 만든다. 화면은 whs_flow 작업면의 카드·간격 문법을 유지한 신원별 lane card로 현재 단계, 전체 수집, Traditional 수집, Client/AJAX rendered 수집, Alert, 주의·실패 원인을 분리한다. 한 문장 상태는 실패한 신원과 실패 단계를 찾기 어려워 기각했다. 계정 레인은 broker 자격증명으로 완전 교체하고, 비로그인 레인은 fresh session 안에서 새로 생긴 익명 Cookie/CSRF를 유지해 상태형 공개 흐름을 끊지 않는다.
 
-beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 보이면서 정지로 오인되는 실제 수동 회귀를 계기로 관측 가능성을 보강했다. 캠페인·lane·stage 경과시간과 단계 최대시간, 마지막 ZAP status heartbeat, 마지막 raw capture/status 변화, queue 위치와 “현재 lane 완료 후 시작” 이유를 1초 polling 화면에 표시한다. heartbeat가 정상이어도 새 트래픽이 없을 수 있으므로 이를 실패로 바꾸지 않고 `응답 정상·새 트래픽 없음`으로 구분한다. 반대로 10초 넘게 status 응답이 없거나 deadline을 넘으면 별도 경고 상태를 표시한다.
+beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 보이면서 정지로 오인되는 실제 수동 회귀를 계기로 관측 가능성을 보강했다. 캠페인·lane·stage 경과시간과 단계 최대시간, 마지막 ZAP status heartbeat, 마지막 raw capture/status 변화, queue 위치와 “현재 lane 완료 후 시작” 이유를 1초 polling 화면에 표시한다. heartbeat가 정상이어도 새 트래픽이 없을 수 있으므로 이를 실패로 바꾸지 않고 `응답 정상·새 트래픽 없음`으로 구분한다. 반대로 10초 넘게 status 응답이 없거나 deadline을 넘으면 별도 경고 상태를 표시한다. 후속 보정에서는 각 lane에 `세션 / Traditional / Client / AJAX 보완 / Passive / Alert` 진행선을 추가하고, Passive 남은 건수·현재 task·Alert 집계 완결성을 함께 표시한다. 별도 실시간 실행 기록에는 서버가 실제로 수행한 단계 시작·queue 감소·Alert 집계·격리 정리만 최신순으로 보여 준다. 이를 LLM식 설명문이나 추정 상태로 만들면 사실과 화면이 어긋날 수 있어 기각했고, 반복 poll 전체를 기록하면 노이즈가 커지므로 실제 변화가 있을 때만 최대 120건을 메모리에 남긴다. Passive가 절대 30분 또는 10분 무진행 경계에 도달하면 현재 결과를 숨기거나 전부 실패로 바꾸지 않고 부분 완료로 표시한다. 다만 미처리 queue를 비운 뒤 current task까지 0임을 확인하지 못하면 후속 신원을 시작하지 않는다.
 
 beta.39에서는 사이트 집계가 기본 그래프를 대체한 회귀를 복구했다. 사용자의 첫 질문은 “누가 어떤 API를 밟았는가”이므로 `identity → API`를 기본으로 두고, “사이트에 어떤 API 영역이 있는가”에 답하는 사이트 개요는 선택형으로 두었다. 개요의 H/S/L 숫자는 반복 request 횟수가 아닌 소스별 고유 API 수를 표시하고, 상세 tooltip에 전체 request 수를 남긴다. 사이트·API·객체의 pan/zoom은 별도로 저장해 전환 후 노드가 범위 밖으로 사라지지 않게 한다. 이 변경은 Fact Core나 판정을 바꾸지 않고 표현 계층만 수정한다(D-106).
 

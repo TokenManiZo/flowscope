@@ -7,12 +7,15 @@
 | 분류 재현 | API 문맥 없는 403 static directory는 `UNKNOWN/REVIEW`, JSON API 403은 `API/INCLUDE`, 일반 JSON `/manifest.json`은 `DISCOVERY_METADATA/EXCLUDE` 회귀 통과 |
 | Explorer 재현 | coverage 제외된 navigation route라도 exact LLM run의 controlled response가 있으면 방문 완료로 인정하고 INDEPENDENT→ASSISTED→run 종료 회귀 통과 |
 | Web 계약 | API 기본 선택, Site 선택형 유지, source별 고유 operation 집계, graph level별 viewport v5 문자열 회귀 통과 |
-| 전체 회귀 | `mvn clean verify` 303 tests, failure/error/skip 0 |
+| ZAP 넓은 기준선 | Client 성공 뒤에도 AJAX 실행, Client 실패 시 소유 scan stop 뒤 AJAX 실행, 비로그인·ACTIVE 계정 fresh-session 직렬 실행 회귀 통과 |
+| Passive 정체·격리 | queue/current task 무진행에서 기존 Evidence·현재 Alert 보존, 부분 완료·미완결 snapshot 표시, cleanup 성공 경로와 Passive 전 조기 실패 cleanup 실패 시 후속 계정 `NOT_RUN/BLOCKED_BY_ISOLATION` 회귀 통과 |
+| ZAP 진행 표시 | 여섯 단계 진행선, live Traditional/rendered count, Passive 남은 수·현재 task, Alert snapshot 완결성, bounded 실행 이벤트와 1초 Web 표시 계약 통과 |
+| 전체 회귀 | `mvn clean verify` 연속 2회, 매회 306 tests, failure/error/skip 0 |
 | 독립 Web 수동 확인 | `127.0.0.1:17779` 샘플에서 API 기본 그래프, Site→API 전환·복귀, 화면 배치, browser error/warning 0건 확인 |
-| 배포물 | `target/flowscope-1.2.0-beta.39.jar`, 15,997,675 bytes, 2,063 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `8ece99ca6d833781a888852da50a687b0ac4ae31fbdd7efe7228a97c4f43549f`; manifest의 `Multi-Release: true` 확인 |
+| 배포물 | `target/flowscope-1.2.0-beta.39.jar`, 16,008,341 bytes, 2,066 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `816397bb74c962fc25a690023cd574f73374ad28d9ac40e882a9a65f3fe27a24`; manifest의 `Multi-Release: true` 확인, 두 clean build가 byte-for-byte 동일 |
 | 실제 Burp 재로드 | **대기** — beta.39 JAR의 crAPI HUMAN/ZAP/LLM 재실행은 아직 수행하지 않음 |
 
-이 gate는 확인된 회귀 세 가지를 닫는다. 실제 Burp/ZAP 장시간 운영, crAPI의 endpoint recall 또는 BOLA/BFLA/IDOR 효능을 증명하지는 않는다.
+이 gate는 확인된 분류·Explorer·그래프 회귀와 mock ZAP의 Passive 정체·신원 격리 경로를 닫는다. 실제 Burp/ZAP 장시간 운영, 10분/30분 운영 경계의 대상별 최적성, crAPI의 endpoint recall 또는 BOLA/BFLA/IDOR 효능을 증명하지는 않는다.
 
 ## 1.2.0-beta.38 ZAP 실행 관측 가능성 gate
 

@@ -7,9 +7,10 @@
 1. API 문맥 없는 401/403 scanner probe와 `/manifest.json`을 메인 API 그래프에서 분리하되 Evidence는 보존한다.
 2. Explorer의 실제 방문 사실과 BOLA/BFLA coverage 자격을 분리해 제외된 navigation/static route가 완료를 영구 차단하지 않게 한다.
 3. 기본 `identity → API`, 선택형 사이트 개요, 계층별 viewport와 고유 API 집계를 회귀로 고정한다.
-4. 전체 verify·독립 Web 검증 후 beta.39 JAR을 실제 Burp에 재로드하고 crAPI HUMAN/ZAP/LLM을 새 run으로 실행한다.
+4. ZAP 비로그인·로그인 lane의 두 rendered crawler, Passive 진행·부분 완료, 모든 실패 경로의 crawler/queue cleanup과 다음 신원 격리, bounded 실시간 실행 기록을 회귀로 고정한다.
+5. 전체 verify·독립 Web 검증 후 beta.39 JAR을 실제 Burp에 재로드하고 crAPI HUMAN/ZAP/LLM을 새 run으로 실행한다.
 
-**현재 상태:** 1~3은 코드·최소 회귀·전체 303 tests·독립 Web API↔사이트 전환을 통과했다. 4의 실제 Burp beta.39 재로드·crAPI 재실행·장시간 ZAP 계정 전환은 대기한다.
+**현재 상태:** 1~4는 코드·집중 회귀·전체 306 tests 연속 2회와 byte-for-byte 동일한 JAR, 독립 Web API↔사이트 전환을 통과했다. 5의 실제 Burp beta.39 재로드·crAPI 재실행·장시간 ZAP 비로그인→로그인 전환은 대기한다.
 
 ## 0. beta.38 우선순위: ZAP 장시간 실행 관측 가능성
 
@@ -296,7 +297,7 @@ beta.9의 HUMAN 경로 묶음 정확도와 아래 원칙은 그대로 유지한�
 5. 일반 LLM assessment는 `LIKELY / INCONCLUSIVE / REJECTED`만 제출한다. 최종 `CONFIRMED / INCONCLUSIVE / REJECTED`는 서버가 현재 후보와 원본/반복 재현/정상 대조 Evidence 집합을 검증한 경우에만 저장한다. 사람 판정은 감사·오버라이드 기록이다.
 6. 2만 건 전체의 Request/Response를 매초 전송하지 않는다. snapshot은 메타데이터만, 전문은 선택 시 지연 로드한다.
 7. crAPI 정답을 코드나 프롬프트에 넣지 않는다. 제품 완료 뒤 독립 HUMAN/ZAP/LLM pass와 블라인드 채점으로 검증한다.
-8. LLM에게 ZAP 기능 선택을 맡기지 않는다. 기본 scanner lane은 Traditional Spider, strict Client Spider, AJAX fallback, passive queue, native alert 순서의 시스템 workflow다.
+8. LLM에게 ZAP 기능 선택을 맡기지 않는다. 기본 scanner lane은 Traditional Spider, strict Client Spider, AJAX 보완, 진행 기반 Passive drain, native Alert 순서의 시스템 workflow다.
 9. Explorer의 독립성은 프롬프트 약속이 아니라 서버 가시성 제한과 세 레인 dataset lock으로 강제한다.
 10. 트래픽 노이즈는 수집 단계에서 삭제하지 않는다. 모든 Evidence를 보존하고 결정론 분류로 `INCLUDE/REVIEW/EXCLUDE`를 나누며, 메인 coverage에는 `INCLUDE`만 넣고 사용자가 operation 단위로 되돌릴 수 있게 한다.
 11. 관측된 조합의 `UNCROSSED`와 아직 요청하지 않은 route candidate를 섞지 않는다. 전자는 현재 Evidence에서 계산하는 사실이고, 후자는 in-scope 응답이나 Burp Site Map에 정확한 provenance가 있는 탐색 후보다.

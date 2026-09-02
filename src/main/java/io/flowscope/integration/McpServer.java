@@ -98,6 +98,7 @@ public final class McpServer implements AutoCloseable {
 
     private static final int MAX_BODY = 1024 * 1024;
     private static final int MAX_ZAP_ALERT_SNAPSHOT = 20_000;
+    private static final int MAX_ZAP_PROGRESS_EVENTS = 120;
     private static final int MAX_ASSESSMENTS = 1_000;
     private static final long MAX_ASSESSMENT_RETAINED_BYTES = 4L * 1024 * 1024;
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
@@ -126,18 +127,29 @@ public final class McpServer implements AutoCloseable {
     private volatile ArrayNode zapBaselineAlerts = json.createArrayNode();
     private volatile List<ZapLaneResult> zapBaselineLanes = List.of();
     private volatile List<ZapLaneRuntime> zapLaneRuntime = List.of();
+    private volatile List<ZapProgressEvent> zapProgressEvents = List.of();
 
     private record ZapBaselineRun(String runId, String target, String status, String stage,
                                   String scanId, String warning, long capturedRecords,
                                   int definitionCount, int alertCount, String error) {}
     private record ZapLaneResult(String accountId, String accountLabel, String status, String stage,
                                  long capturedRecords, long traditionalCaptures, long renderedCaptures,
-                                 int definitionImports, int alertCount, String warning, String error) {}
+                                 int definitionImports, int alertCount, boolean alertSnapshotComplete,
+                                 boolean passiveComplete, int passiveRemaining, boolean ajaxExecuted,
+                                 String warning, String error) {}
     private record ZapLaneRuntime(long queuedAt, long startedAt, long endedAt, long stageStartedAt,
                                   long lastHeartbeatAt, long lastProgressAt, long stageTimeoutMillis,
-                                  long capturedAtStart, long lastCaptured, String heartbeatStatus) {}
+                                  long capturedAtStart, long traditionalAtStart, long renderedAtStart,
+                                  long lastCaptured, int passiveRemaining, String passiveTask,
+                                  String heartbeatStatus) {}
     private record ZapLane(String accountId, String accountLabel) {}
     private record ZapAlertCollection(int count, boolean truncated) {}
+    private record PassiveDrainResult(boolean complete, int remaining, String task) {}
+    private record ZapProgressEvent(long at, String accountLabel, String stage,
+                                    String level, String message) {}
+    private static final class ZapIsolationException extends IllegalStateException {
+        ZapIsolationException(String message) { super(message); }
+    }
     private record ExplorerProgress(boolean independentListed, boolean assistedListed) {
         ExplorerProgress markIndependent() { return new ExplorerProgress(true, assistedListed); }
         ExplorerProgress markAssisted() { return new ExplorerProgress(independentListed, true); }
@@ -210,6 +222,7 @@ public final class McpServer implements AutoCloseable {
             zapBaselineAlerts = json.createArrayNode();
             zapBaselineLanes = List.of();
             zapLaneRuntime = List.of();
+            zapProgressEvents = List.of();
         }
     }
     public void replaceValidations(List<ValidationDecision> values) {
@@ -1297,13 +1310,18 @@ public final class McpServer implements AutoCloseable {
         state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
                 Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, lanes.get(0).accountId()));
         zapBaselineAlerts = json.createArrayNode();
+        zapProgressEvents = List.of();
         long queuedAt = System.currentTimeMillis();
         zapBaselineLanes = lanes.stream().map(lane -> new ZapLaneResult(lane.accountId(), lane.accountLabel(),
-                "PENDING", "PENDING", 0, 0, 0, 0, 0, "", "")).toList();
+                "PENDING", "PENDING", 0, 0, 0, 0, 0,
+                false, false, -1, false, "", "")).toList();
         zapLaneRuntime = lanes.stream().map(lane -> new ZapLaneRuntime(queuedAt, 0, 0, 0,
-                0, queuedAt, 0, 0, 0, "대기 중")).toList();
+                0, queuedAt, 0, 0, 0, 0, 0,
+                -1, "", "대기 중")).toList();
         zapBaseline = new ZapBaselineRun(runId, target, "RUNNING", "INITIALIZING",
                 "", "", 0, definitions.size(), 0, "");
+        recordZapProgress("전체", "INITIALIZING", "INFO",
+                lanes.size() + "개 신원 격리 검사 대기열 생성");
         zapWorkflow.submit(() -> runZapCampaign(runId, target, lanes, definitions));
         return zapBaselineNode(zapBaseline);
     }
@@ -1327,6 +1345,22 @@ public final class McpServer implements AutoCloseable {
                 failed = true;
                 String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
                 if (campaignError.isBlank()) campaignError = lane.accountLabel() + ": " + message;
+                boolean isolationBlocked = error instanceof ZapIsolationException;
+                if (!isolationBlocked && index + 1 < lanes.size()) {
+                    try {
+                        isolationBlocked = !resetPassiveQueueForNextIdentity(runId, index);
+                    } catch (RuntimeException cleanupError) {
+                        isolationBlocked = true;
+                        String cleanupMessage = cleanupError.getMessage() == null
+                                ? cleanupError.getClass().getSimpleName() : cleanupError.getMessage();
+                        campaignError = appendWarning(campaignError,
+                                lane.accountLabel() + " cleanup: " + cleanupMessage);
+                    }
+                }
+                if (isolationBlocked) {
+                    blockRemainingZapLanes(lanes, index + 1);
+                    break;
+                }
             }
         }
         long captured = capturedForRun(runId);
@@ -1335,6 +1369,7 @@ public final class McpServer implements AutoCloseable {
             state.contexts().abort(Source.SCANNER, runId);
             zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
                     captured, definitions.size(), collectedAlerts.size(), campaignError);
+            recordZapProgress("전체", "FAILED", "ERROR", "ZAP 캠페인 실패");
         } else {
             try {
                 LaneCompletionPolicy.complete(state.contexts(), Source.SCANNER, runId, state.completionSnapshot());
@@ -1342,6 +1377,7 @@ public final class McpServer implements AutoCloseable {
                 state.contexts().abort(Source.SCANNER, runId);
                 zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
                         captured, definitions.size(), collectedAlerts.size(), error.getMessage());
+                recordZapProgress("전체", "FAILED", "ERROR", "완료 조건 검증 실패");
                 return;
             }
             String warning = zapBaselineLanes.stream().map(ZapLaneResult::warning)
@@ -1350,6 +1386,19 @@ public final class McpServer implements AutoCloseable {
             String status = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
             zapBaseline = new ZapBaselineRun(runId, target, status, "ALERTS_READY", "", warning,
                     captured, definitions.size(), collectedAlerts.size(), "");
+            recordZapProgress("전체", "ALERTS_READY",
+                    warning.isBlank() ? "DONE" : "WARN",
+                    "캠페인 종료 · 수집 " + captured + "건 · Alert " + collectedAlerts.size() + "건");
+        }
+    }
+
+    private void blockRemainingZapLanes(List<ZapLane> lanes, int fromIndex) {
+        for (int blocked = fromIndex; blocked < lanes.size(); blocked++) {
+            ZapLane pending = lanes.get(blocked);
+            replaceZapLane(blocked, new ZapLaneResult(pending.accountId(), pending.accountLabel(),
+                    "NOT_RUN", "BLOCKED_BY_ISOLATION", 0, 0, 0, 0, 0,
+                    false, false, -1, false, "",
+                    "이전 신원의 ZAP background 작업을 격리 종료하지 못해 시작하지 않음"));
         }
     }
 
@@ -1357,10 +1406,19 @@ public final class McpServer implements AutoCloseable {
                             List<ZapDefinition> definitions, ArrayNode collectedAlerts) {
         String warning = "";
         int definitionImports = 0;
+        boolean passiveComplete = false;
+        int passiveRemaining = -1;
+        boolean alertSnapshotComplete = false;
+        int alertCount = 0;
+        boolean ajaxExecuted = false;
         long capturedBefore = capturedForRun(runId);
         long traditionalBefore = capturedForRun(runId, SourceDetail.ZAP_SPIDER);
         long renderedBefore = capturedForRenderedStages(runId);
         try {
+            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                    "SESSION_SETUP", 0, 0, 0, 0, 0,
+                    false, false, -1, false, "", ""));
+            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · SESSION_SETUP", "", "", "");
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_SPIDER, lane.accountId());
             JsonNode reset = parseZap(state.zap().newSession("flowscope-" + runId + "-" + index));
             if (!"OK".equalsIgnoreCase(reset.path("Result").asText())) {
@@ -1381,7 +1439,8 @@ public final class McpServer implements AutoCloseable {
             if (!definitions.isEmpty()) {
                 state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_API_IMPORT, lane.accountId());
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                        "API_DEFINITION_IMPORT", 0, 0, 0, 0, 0, "", ""));
+                        "API_DEFINITION_IMPORT", 0, 0, 0, 0, 0,
+                        false, false, -1, false, "", ""));
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · API_DEFINITION_IMPORT", "", warning, "");
                 for (ZapDefinition definition : definitions) {
                     try {
@@ -1395,30 +1454,48 @@ public final class McpServer implements AutoCloseable {
             }
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "TRADITIONAL_SPIDER", 0, 0, 0, definitionImports, 0, warning, ""));
+                    "TRADITIONAL_SPIDER", 0, 0, 0, definitionImports, 0,
+                    false, false, -1, false, warning, ""));
             JsonNode traditional = parseZap(state.zap().spider(target));
             String scanId = traditional.path("scan").asText();
             if (scanId.isBlank()) throw new IllegalStateException("ZAP Traditional Spider did not return a scan id");
             updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · TRADITIONAL_SPIDER", scanId, warning, "");
-            waitForZap(() -> state.zap().spiderStatus(scanId), 15 * 60_000L,
-                    "Traditional Spider", runId, index);
+            boolean traditionalFinished = false;
+            try {
+                waitForZap(() -> state.zap().spiderStatus(scanId), 15 * 60_000L,
+                        "Traditional Spider", runId, index);
+                traditionalFinished = true;
+            } finally {
+                if (!traditionalFinished) stopOwnedSpider(scanId, false);
+            }
             long traditionalCaptured = capturedForRun(runId, SourceDetail.ZAP_SPIDER) - traditionalBefore;
 
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "CLIENT_SPIDER", traditionalCaptured, traditionalCaptured, 0,
-                    definitionImports, 0, warning, ""));
+                    definitionImports, 0, false, false, -1, false, warning, ""));
             long clientBefore = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER);
             RuntimeException clientFailure = null;
+            String clientId = "";
+            boolean clientFinished = false;
             try {
                 JsonNode client = parseZap(state.zap().clientSpider(target));
-                String clientId = client.path("scan").asText();
+                clientId = client.path("scan").asText();
                 if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · CLIENT_SPIDER", clientId, warning, "");
-                waitForZap(() -> state.zap().clientSpiderStatus(clientId), 20 * 60_000L,
+                String finalClientId = clientId;
+                waitForZap(() -> state.zap().clientSpiderStatus(finalClientId), 20 * 60_000L,
                         "Client Spider", runId, index);
+                clientFinished = true;
             } catch (RuntimeException clientError) {
                 clientFailure = clientError;
+            } finally {
+                if (!clientFinished && !clientId.isBlank()) {
+                    try { stopOwnedSpider(clientId, true); }
+                    catch (RuntimeException cleanupError) {
+                        clientFailure = mergeFailure(clientFailure, "Client Spider cleanup failed", cleanupError);
+                    }
+                }
             }
             long clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
             if (clientFailure != null) {
@@ -1427,22 +1504,35 @@ public final class McpServer implements AutoCloseable {
                 warning = appendWarning(warning, "Client Spider completed without captured rendered traffic");
             }
 
+            ajaxExecuted = true;
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "AJAX_SPIDER", traditionalCaptured + clientCaptured,
-                    traditionalCaptured, clientCaptured, definitionImports, 0, warning, ""));
+                    "AJAX_SUPPLEMENT", traditionalCaptured + clientCaptured,
+                    traditionalCaptured, clientCaptured, definitionImports, 0,
+                    false, false, -1, true, warning, ""));
             long ajaxBefore = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
             RuntimeException ajaxFailure = null;
+            boolean ajaxStarted = false;
+            boolean ajaxFinished = false;
             try {
                 JsonNode ajax = parseZap(state.zap().ajaxSpider(target));
                 if (!"OK".equalsIgnoreCase(ajax.path("Result").asText())) {
                     throw new IllegalStateException("ZAP AJAX Spider did not start");
                 }
-                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SPIDER", "", warning, "");
+                ajaxStarted = true;
+                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SUPPLEMENT", "", warning, "");
                 waitForZap(() -> state.zap().ajaxSpiderStatus(), 20 * 60_000L,
                         "AJAX Spider", runId, index);
+                ajaxFinished = true;
             } catch (RuntimeException ajaxError) {
                 ajaxFailure = ajaxError;
+            } finally {
+                if (ajaxStarted && !ajaxFinished) {
+                    try { stopOwnedAjax(); }
+                    catch (RuntimeException cleanupError) {
+                        ajaxFailure = mergeFailure(ajaxFailure, "AJAX Spider cleanup failed", cleanupError);
+                    }
+                }
             }
             long ajaxCaptured = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER) - ajaxBefore;
             if (ajaxFailure != null) {
@@ -1455,27 +1545,55 @@ public final class McpServer implements AutoCloseable {
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "PASSIVE_SCAN_QUEUE", traditionalCaptured + renderedCaptured,
-                    traditionalCaptured, renderedCaptured, definitionImports, 0, warning, ""));
+                    traditionalCaptured, renderedCaptured, definitionImports, 0,
+                    false, false, -1, ajaxExecuted, warning, ""));
             updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · PASSIVE_SCAN_QUEUE", "", warning, "");
-            waitForPassive(5 * 60_000L, runId, index);
+            PassiveDrainResult passive = waitForPassive(runId, index);
+            passiveComplete = passive.complete();
+            passiveRemaining = passive.remaining();
+            if (!passiveComplete) {
+                warning = appendWarning(warning, "Passive Scan 부분 완료: 미처리 " + passiveRemaining
+                        + "건" + (passive.task().isBlank() ? "" : " · " + passive.task()));
+            }
             long captured = capturedForRun(runId) - capturedBefore;
             if (captured == 0) throw new IllegalStateException("scanner workflow completed without captured in-scope traffic");
-            ZapAlertCollection alerts = collectZapAlerts(target, lane, runId, collectedAlerts);
-            if (alerts.truncated()) {
-                warning = appendWarning(warning, "ZAP Alert detail snapshot reached the "
-                        + MAX_ZAP_ALERT_SNAPSHOT + " item memory bound");
+            ZapAlertCollection alerts = new ZapAlertCollection(0, false);
+            try {
+                alerts = collectZapAlerts(target, lane, runId, collectedAlerts);
+                alertCount = alerts.count();
+                alertSnapshotComplete = passiveComplete && !alerts.truncated();
+                recordZapProgress(lane.accountLabel(), "ALERTS_READY",
+                        alertSnapshotComplete ? "DONE" : "WARN",
+                        "Alert " + alertCount + "건 집계"
+                                + (alertSnapshotComplete ? " 완료" : " · 현재 스냅샷"));
+                if (alerts.truncated()) {
+                    warning = appendWarning(warning, "ZAP Alert detail snapshot reached the "
+                            + MAX_ZAP_ALERT_SNAPSHOT + " item memory bound");
+                }
+            } catch (RuntimeException alertError) {
+                warning = appendWarning(warning, "ZAP Alert snapshot incomplete: " + alertError.getMessage());
+            }
+            if (!passiveComplete && !resetPassiveQueueForNextIdentity(runId, index)) {
+                throw new ZapIsolationException("ZAP Passive Scan background 작업을 격리 종료하지 못했습니다; "
+                        + "다음 신원은 시작하지 않았습니다");
+            }
+            if (!passiveComplete) {
+                warning = appendWarning(warning,
+                        "다음 신원과 섞이지 않도록 미처리 Passive queue를 정리함");
             }
             String laneStatus = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), laneStatus,
                     "ALERTS_READY", captured, traditionalCaptured, renderedCaptured,
-                    definitionImports, alerts.count(), warning, ""));
+                    definitionImports, alertCount, alertSnapshotComplete,
+                    passiveComplete, passiveRemaining, ajaxExecuted, warning, ""));
         } catch (RuntimeException error) {
             String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
                     Math.max(0, capturedForRun(runId) - capturedBefore),
                     Math.max(0, capturedForRun(runId, SourceDetail.ZAP_SPIDER) - traditionalBefore),
                     Math.max(0, capturedForRenderedStages(runId) - renderedBefore), definitionImports,
-                    0, warning, message));
+                    alertCount, alertSnapshotComplete, passiveComplete, passiveRemaining,
+                    ajaxExecuted, warning, message));
             throw error;
         }
     }
@@ -1627,6 +1745,32 @@ public final class McpServer implements AutoCloseable {
         return current == null || current.isBlank() ? value : current + "; " + value;
     }
 
+    private static RuntimeException mergeFailure(RuntimeException current, String label, RuntimeException cleanup) {
+        String detail = cleanup.getMessage() == null ? cleanup.getClass().getSimpleName() : cleanup.getMessage();
+        if (current == null) return new IllegalStateException(label + ": " + detail, cleanup);
+        current.addSuppressed(cleanup);
+        return new IllegalStateException(current.getMessage() + "; " + label + ": " + detail, current);
+    }
+
+    private void stopOwnedSpider(String scanId, boolean clientSpider) {
+        boolean interrupted = Thread.interrupted();
+        try {
+            requireZapOk(clientSpider ? state.zap().stopClientSpider(scanId) : state.zap().stopSpider(scanId),
+                    "stop its unfinished " + (clientSpider ? "Client Spider" : "Traditional Spider"));
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    private void stopOwnedAjax() {
+        boolean interrupted = Thread.interrupted();
+        try {
+            requireZapOk(state.zap().stopAjaxSpider(), "stop its unfinished AJAX Spider");
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
     private synchronized void replaceZapLane(int index, ZapLaneResult value) {
         List<ZapLaneResult> copy = new ArrayList<>(zapBaselineLanes);
         ZapLaneResult previous = copy.get(index);
@@ -1637,19 +1781,44 @@ public final class McpServer implements AutoCloseable {
         List<ZapLaneRuntime> runtime = new ArrayList<>(zapLaneRuntime);
         ZapLaneRuntime current = runtime.get(index);
         boolean started = !"PENDING".equals(value.status());
-        boolean terminal = Set.of("COMPLETED", "COMPLETED_WITH_WARNINGS", "FAILED").contains(value.status());
+        boolean terminal = Set.of("COMPLETED", "COMPLETED_WITH_WARNINGS", "FAILED", "NOT_RUN")
+                .contains(value.status());
         boolean stageChanged = !java.util.Objects.equals(previous.stage(), value.stage());
         long startedAt = current.startedAt() == 0 && started ? now : current.startedAt();
         long endedAt = current.endedAt() == 0 && terminal ? now : current.endedAt();
         long captured = capturedForRun(zapBaseline == null ? "" : zapBaseline.runId());
         long lastProgressAt = captured != current.lastCaptured() ? now : current.lastProgressAt();
+        long runTraditional = zapBaseline == null ? 0
+                : capturedForRun(zapBaseline.runId(), SourceDetail.ZAP_SPIDER);
+        long runRendered = zapBaseline == null ? 0 : capturedForRenderedStages(zapBaseline.runId());
         runtime.set(index, new ZapLaneRuntime(current.queuedAt(), startedAt, endedAt,
                 stageChanged ? now : current.stageStartedAt(),
                 stageChanged ? now : current.lastHeartbeatAt(), lastProgressAt,
                 stageChanged ? zapStageTimeoutMillis(value.stage()) : current.stageTimeoutMillis(),
-                current.startedAt() == 0 && started ? captured : current.capturedAtStart(), captured,
+                current.startedAt() == 0 && started ? captured : current.capturedAtStart(),
+                current.startedAt() == 0 && started ? runTraditional : current.traditionalAtStart(),
+                current.startedAt() == 0 && started ? runRendered : current.renderedAtStart(),
+                captured, stageChanged ? value.passiveRemaining() : current.passiveRemaining(),
+                stageChanged ? "" : current.passiveTask(),
                 stageChanged ? "단계 시작" : current.heartbeatStatus()));
         zapLaneRuntime = List.copyOf(runtime);
+        if (stageChanged || !java.util.Objects.equals(previous.status(), value.status())) {
+            String level = switch (value.status()) {
+                case "FAILED", "NOT_RUN" -> "ERROR";
+                case "COMPLETED_WITH_WARNINGS" -> "WARN";
+                case "COMPLETED" -> "DONE";
+                default -> "INFO";
+            };
+            String message = switch (value.status()) {
+                case "FAILED" -> zapStageLabel(value.stage()) + " 실패"
+                        + (value.error().isBlank() ? "" : " · " + value.error());
+                case "NOT_RUN" -> "이전 신원 격리 실패로 실행하지 않음";
+                case "COMPLETED", "COMPLETED_WITH_WARNINGS" -> "신원 검사 종료 · 수집 "
+                        + value.capturedRecords() + "건 · Alert " + value.alertCount() + "건";
+                default -> zapStageLabel(value.stage()) + " 시작";
+            };
+            recordZapProgress(value.accountLabel(), value.stage(), level, message);
+        }
     }
 
     @FunctionalInterface private interface ZapStatusCall { String get(); }
@@ -1669,17 +1838,85 @@ public final class McpServer implements AutoCloseable {
         throw new IllegalStateException(label + " timed out");
     }
 
-    private void waitForPassive(long timeoutMillis, String runId, int laneIndex) {
-        long deadline = System.currentTimeMillis() + timeoutMillis;
-        while (System.currentTimeMillis() < deadline) {
+    private PassiveDrainResult waitForPassive(String runId, int laneIndex) {
+        long now = System.currentTimeMillis();
+        long deadline = now + passiveAbsoluteTimeoutMillis();
+        long lastProgressAt = now;
+        int previous = Integer.MAX_VALUE;
+        int remaining = -1;
+        String previousTask = "";
+        String task = "";
+        while ((now = System.currentTimeMillis()) < deadline) {
             JsonNode queue = parseZap(state.zap().passiveRecordsToScan());
-            int remaining = queue.path("recordsToScan").asInt(-1);
-            recordZapHeartbeat(runId, laneIndex, remaining < 0
-                    ? "passive 응답 수신" : "passive queue " + remaining);
-            if (remaining == 0) return;
+            remaining = queue.path("recordsToScan").asInt(-1);
+            if (remaining < 0) throw new IllegalStateException("ZAP passive queue returned no record count");
+            JsonNode tasks = parseZap(state.zap().passiveTasks());
+            task = passiveTaskSummary(tasks);
+            boolean progressed = remaining < previous || (!task.isBlank() && !task.equals(previousTask));
+            if (progressed) lastProgressAt = now;
+            previous = remaining;
+            previousTask = task;
+            recordZapPassiveHeartbeat(runId, laneIndex, remaining, task);
+            if (remaining == 0 && task.isBlank()) return new PassiveDrainResult(true, 0, "");
+            if (remaining > 0 && now - lastProgressAt >= passiveStallTimeoutMillis()) {
+                return new PassiveDrainResult(false, remaining, task);
+            }
             sleepZapPoll();
         }
-        throw new IllegalStateException("ZAP passive scan queue timed out");
+        return new PassiveDrainResult(false, Math.max(0, remaining), task);
+    }
+
+    private boolean resetPassiveQueueForNextIdentity(String runId, int laneIndex) {
+        String accountLabel = zapAccountLabel(laneIndex);
+        recordZapProgress(accountLabel, "ISOLATION_CLEANUP", "WARN",
+                "다음 신원 전환 전 Passive queue 정리 시작");
+        requireZapOk(state.zap().clearPassiveQueue(), "clear the abandoned passive scan queue");
+        long deadline = System.currentTimeMillis() + passiveCleanupTimeoutMillis();
+        while (System.currentTimeMillis() < deadline) {
+            int remaining = parseZap(state.zap().passiveRecordsToScan()).path("recordsToScan").asInt(-1);
+            String task = passiveTaskSummary(parseZap(state.zap().passiveTasks()));
+            recordZapPassiveHeartbeat(runId, laneIndex, remaining, task);
+            if (remaining == 0 && task.isBlank()) {
+                recordZapProgress(accountLabel, "ISOLATION_CLEANUP", "DONE",
+                        "Passive queue와 실행 작업 격리 정리 완료");
+                return true;
+            }
+            sleepZapPoll();
+        }
+        recordZapProgress(accountLabel, "ISOLATION_CLEANUP", "ERROR",
+                "Passive background 작업이 제한시간 안에 종료되지 않음");
+        return false;
+    }
+
+    private static String passiveTaskSummary(JsonNode raw) {
+        JsonNode tasks = raw.path("currentTasks");
+        if (!tasks.isArray() || tasks.isEmpty()) return "";
+        JsonNode task = tasks.get(0);
+        String rule = firstText(task, "name", "rule", "scannerName", "pluginId");
+        String url = firstText(task, "url", "uri", "message");
+        String summary = (rule.isBlank() ? "Passive rule 실행 중" : rule)
+                + (url.isBlank() ? "" : " · " + io.flowscope.core.Masking.maskSecrets(url));
+        return summary.length() <= 320 ? summary : summary.substring(0, 317) + "...";
+    }
+
+    private static String firstText(JsonNode node, String... fields) {
+        for (String field : fields) {
+            String value = node.path(field).asText();
+            if (!value.isBlank()) return value;
+        }
+        return "";
+    }
+
+    private static long passiveAbsoluteTimeoutMillis() {
+        return Math.max(100L, Long.getLong("flowscope.zap.passive.absolute.ms", 30 * 60_000L));
+    }
+
+    private static long passiveStallTimeoutMillis() {
+        return Math.max(100L, Long.getLong("flowscope.zap.passive.stall.ms", 10 * 60_000L));
+    }
+
+    private static long passiveCleanupTimeoutMillis() {
+        return Math.max(100L, Long.getLong("flowscope.zap.passive.cleanup.ms", 2 * 60_000L));
     }
 
     private synchronized void recordZapHeartbeat(String runId, int laneIndex, String status) {
@@ -1693,17 +1930,71 @@ public final class McpServer implements AutoCloseable {
                 || !java.util.Objects.equals(status, current.heartbeatStatus());
         runtime.set(laneIndex, new ZapLaneRuntime(current.queuedAt(), current.startedAt(), current.endedAt(),
                 current.stageStartedAt(), now, progressed ? now : current.lastProgressAt(),
-                current.stageTimeoutMillis(), current.capturedAtStart(), captured, status));
+                current.stageTimeoutMillis(), current.capturedAtStart(), current.traditionalAtStart(),
+                current.renderedAtStart(), captured, current.passiveRemaining(), current.passiveTask(), status));
         zapLaneRuntime = List.copyOf(runtime);
+    }
+
+    private synchronized void recordZapPassiveHeartbeat(String runId, int laneIndex, int remaining, String task) {
+        if (zapBaseline == null || !zapBaseline.runId().equals(runId)
+                || laneIndex < 0 || laneIndex >= zapLaneRuntime.size()) return;
+        long now = System.currentTimeMillis();
+        long captured = capturedForRun(runId);
+        List<ZapLaneRuntime> runtime = new ArrayList<>(zapLaneRuntime);
+        ZapLaneRuntime current = runtime.get(laneIndex);
+        boolean progressed = captured != current.lastCaptured()
+                || (remaining >= 0 && (current.passiveRemaining() < 0 || remaining < current.passiveRemaining()))
+                || (!task.isBlank() && !task.equals(current.passiveTask()));
+        runtime.set(laneIndex, new ZapLaneRuntime(current.queuedAt(), current.startedAt(), current.endedAt(),
+                current.stageStartedAt(), now, progressed ? now : current.lastProgressAt(),
+                current.stageTimeoutMillis(), current.capturedAtStart(), current.traditionalAtStart(),
+                current.renderedAtStart(), captured, remaining, task,
+                remaining < 0 ? "passive 응답 수신" : "passive queue " + remaining));
+        zapLaneRuntime = List.copyOf(runtime);
+        if (progressed && remaining >= 0) {
+            recordZapProgress(zapAccountLabel(laneIndex), "PASSIVE_SCAN_QUEUE", "INFO",
+                    remaining == 0 ? "Passive queue 처리 완료" : "Passive queue " + remaining + "건 남음");
+        }
+    }
+
+    private synchronized void recordZapProgress(String accountLabel, String stage,
+                                                String level, String message) {
+        List<ZapProgressEvent> copy = new ArrayList<>(zapProgressEvents);
+        copy.add(new ZapProgressEvent(System.currentTimeMillis(), accountLabel, stage, level,
+                Masking.maskSecrets(message)));
+        if (copy.size() > MAX_ZAP_PROGRESS_EVENTS) {
+            copy = new ArrayList<>(copy.subList(copy.size() - MAX_ZAP_PROGRESS_EVENTS, copy.size()));
+        }
+        zapProgressEvents = List.copyOf(copy);
+    }
+
+    private String zapAccountLabel(int laneIndex) {
+        return laneIndex >= 0 && laneIndex < zapBaselineLanes.size()
+                ? zapBaselineLanes.get(laneIndex).accountLabel() : "전체";
+    }
+
+    private static String zapStageLabel(String stage) {
+        return switch (stage == null ? "" : stage) {
+            case "API_DEFINITION_IMPORT" -> "API 정의 가져오기";
+            case "SESSION_SETUP" -> "격리 세션 설정";
+            case "TRADITIONAL_SPIDER" -> "Traditional Spider";
+            case "CLIENT_SPIDER" -> "Client Spider";
+            case "AJAX_SUPPLEMENT" -> "AJAX Spider 보완";
+            case "PASSIVE_SCAN_QUEUE" -> "Passive Scan";
+            case "ALERTS_READY" -> "Alert 집계";
+            case "FAILED" -> "현재 단계";
+            default -> stage == null || stage.isBlank() ? "검사" : stage;
+        };
     }
 
     private long zapStageTimeoutMillis(String stage) {
         return switch (stage == null ? "" : stage) {
+            case "SESSION_SETUP" -> 60_000L;
             case "API_DEFINITION_IMPORT" -> Math.max(1, zapBaseline == null
                     ? 1 : zapBaseline.definitionCount()) * 2 * 60_000L;
             case "TRADITIONAL_SPIDER" -> 15 * 60_000L;
-            case "CLIENT_SPIDER", "AJAX_SPIDER" -> 20 * 60_000L;
-            case "PASSIVE_SCAN_QUEUE" -> 5 * 60_000L;
+            case "CLIENT_SPIDER", "AJAX_SUPPLEMENT" -> 20 * 60_000L;
+            case "PASSIVE_SCAN_QUEUE" -> passiveAbsoluteTimeoutMillis();
             default -> 0L;
         };
     }
@@ -1760,6 +2051,10 @@ public final class McpServer implements AutoCloseable {
         out.put("captured_records", liveCaptured);
         out.put("definition_count", value.definitionCount());
         out.put("alert_count", value.alertCount());
+        out.put("alert_snapshot_complete", !zapBaselineLanes.isEmpty()
+                && zapBaselineLanes.stream().allMatch(ZapLaneResult::alertSnapshotComplete));
+        out.put("passive_complete", !zapBaselineLanes.isEmpty()
+                && zapBaselineLanes.stream().allMatch(ZapLaneResult::passiveComplete));
         out.put("error", value.error());
         out.put("campaign_started_at", campaignStartedAt);
         out.put("elapsed_seconds", elapsedSeconds(campaignStartedAt,
@@ -1788,14 +2083,27 @@ public final class McpServer implements AutoCloseable {
             node.put("status", lane.status());
             node.put("stage", lane.stage());
             long laneCaptured = lane.capturedRecords();
+            long traditionalCaptured = lane.traditionalCaptures();
+            long renderedCaptured = lane.renderedCaptures();
             if (timing != null && "RUNNING".equals(lane.status())) {
                 laneCaptured = Math.max(laneCaptured, timing.lastCaptured() - timing.capturedAtStart());
+                traditionalCaptured = Math.max(traditionalCaptured,
+                        capturedForRun(value.runId(), SourceDetail.ZAP_SPIDER) - timing.traditionalAtStart());
+                renderedCaptured = Math.max(renderedCaptured,
+                        capturedForRenderedStages(value.runId()) - timing.renderedAtStart());
             }
             node.put("captured_records", Math.max(0, laneCaptured));
-            node.put("traditional_captures", lane.traditionalCaptures());
-            node.put("rendered_captures", lane.renderedCaptures());
+            node.put("traditional_captures", Math.max(0, traditionalCaptured));
+            node.put("rendered_captures", Math.max(0, renderedCaptured));
             node.put("definition_imports", lane.definitionImports());
             node.put("alert_count", lane.alertCount());
+            node.put("alert_snapshot_complete", lane.alertSnapshotComplete());
+            node.put("passive_complete", lane.passiveComplete());
+            node.put("passive_remaining", timing != null && "RUNNING".equals(lane.status())
+                    ? timing.passiveRemaining() : lane.passiveRemaining());
+            node.put("passive_task", timing != null && "RUNNING".equals(lane.status())
+                    ? timing.passiveTask() : "");
+            node.put("ajax_executed", lane.ajaxExecuted());
             node.put("warning", lane.warning());
             node.put("error", lane.error());
             if (timing != null) {
@@ -1815,6 +2123,15 @@ public final class McpServer implements AutoCloseable {
             node.put("queue_total", zapBaselineLanes.size());
             node.put("wait_reason", "PENDING".equals(lane.status())
                     ? waitingReason(index, runningIndex) : "");
+        }
+        ArrayNode events = out.putArray("events");
+        for (ZapProgressEvent event : zapProgressEvents) {
+            events.addObject()
+                    .put("at", event.at())
+                    .put("account_label", event.accountLabel())
+                    .put("stage", event.stage())
+                    .put("level", event.level())
+                    .put("message", event.message());
         }
         return out;
     }

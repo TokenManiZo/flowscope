@@ -6,6 +6,25 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-02 · 1.2.0-beta.39 · ZAP Passive 정체 복구와 신원별 진행 정본화
+
+**개발·수정**
+
+- **재현:** 실제 화면에서 비로그인 lane은 289건·Alert 45건으로 끝났지만 로그인 `test1` lane은 180건을 수집한 뒤 고정 5분 `ZAP passive scan queue timed out`으로 실패했다. 기존 catch는 이미 수집한 Alert 수를 0으로 표시했고, Passive queue의 남은 수·현재 task와 rendered crawler 정리 여부를 사용자에게 보여 주지 않았다.
+- **결정:** 비로그인과 ACTIVE 계정을 fresh ZAP session으로 직렬 격리하는 계약은 유지한다. 각 신원에서 Traditional, Client, AJAX를 모두 실행하고 끝나지 않은 소유 crawler는 stop API로 정리한다. Passive는 queue 감소와 current task 변화를 추적해 절대 30분·무진행 10분까지 기다린다. 정체 시 현재 Alert를 먼저 snapshot하고 Evidence와 함께 `COMPLETED_WITH_WARNINGS`로 보존한 뒤 미처리 queue와 current task가 0인지 확인한다. 확인에 실패하면 후속 신원은 `NOT_RUN`으로 남긴다.
+- **사용자 표시:** 캠페인·lane·stage 시간/heartbeat 표시에 `세션 / Traditional / Client / AJAX 보완 / Passive / Alert` 진행선, live Traditional/rendered 수집량, Passive 남은 건수·현재 task, Alert snapshot 완결성을 추가했다. 실제 단계 시작·queue 감소·Alert 집계·격리 정리 결과는 비밀 마스킹된 최대 120건 실행 이벤트로 메모리에만 보존하고 Web에서 1초마다 최신순 표시한다. `Alert 현재 N건 · 집계 미완료`는 부분 snapshot임을 명시하며 취약점 수나 완전한 기준선으로 표현하지 않는다.
+
+**왜 필요했고 무엇을 기각했는가**
+
+- Client가 일부 트래픽을 만들었다는 이유로 AJAX를 생략하면 실행 시간은 줄지만 기존 넓은 기본 기준선을 축소하므로 기각했다. 반대로 rule 비활성화나 기본 response body cap은 장애를 줄여 보이게 하면서 분석 폭을 줄이므로 적용하지 않았다.
+- timeout만 늘리는 방식은 정상 진행과 정체를 구분하지 못한다. 수집 결과 전체를 실패로 폐기하는 방식은 이미 관측한 사실을 잃고, dirty Passive 작업을 둔 채 다음 계정을 시작하면 신원 귀속이 섞이므로 기각했다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드: `McpServer.java`, `ZapClient.java`, `web/index.html`; 회귀: `McpServerTest.java`, `ZapClientTest.java`, `FlowScopeWebServerTest.java`; 문서: `README.md`, `architecture.md`, `decisions.md`, `ui-product-rationale.md`, `product-development-plan.md`, `beta-validation.md`, `CHANGELOG.md`, 이 기록.
+- 집중 회귀는 Client 성공 뒤 AJAX 실행, Client 실패 시 stop 뒤 AJAX 전환, Passive 정체에서 Evidence·현재 Alert 보존과 queue cleanup, Passive 전 조기 실패의 cleanup 실패 시 후속 신원 미실행, 상태 API/Web 실행 이벤트 표시를 통과했다. 전체 `mvn clean verify`를 연속 두 번 실행해 매회 306 tests, failure/error/skip 0을 확인했다. 두 빌드의 `target/flowscope-1.2.0-beta.39.jar`는 16,008,341 bytes·2,066 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `816397bb74c962fc25a690023cd574f73374ad28d9ac40e882a9a65f3fe27a24`로 동일했다.
+- 실제 beta.39 JAR의 Burp 재로드, crAPI 비로그인→로그인 장시간 전환, 실제 Passive 부분 Alert 차이는 아직 수행하지 않았다. 10분/30분 경계의 대상별 최적성이나 endpoint·취약점 발견률 개선을 자동 회귀로 주장하지 않는다.
+
 ## 2026-09-01 · 1.2.0-beta.39 · 그래프·분류·Explorer 완료 gate 회귀 복구
 
 **개발·수정**
