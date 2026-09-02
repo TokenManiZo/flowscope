@@ -21,9 +21,12 @@ export FLOWSCOPE_ZAP_KEY_FILE
 docker compose --project-name flowscope-zap --file "$repo_dir/infra/zap/compose.yaml" up --detach
 
 zap_port="${FLOWSCOPE_ZAP_PORT:-8089}"
+curl_config="$(mktemp "${TMPDIR:-/tmp}/flowscope-zap-up.XXXXXX")"
+chmod 600 "$curl_config"
+printf 'header = "X-ZAP-API-Key: %s"\n' "$FLOWSCOPE_ZAP_API_KEY" > "$curl_config"
+trap 'rm -f "$curl_config"' EXIT
 for _ in $(seq 1 90); do
-  if curl --silent --show-error --fail --get \
-      --data-urlencode "apikey=$FLOWSCOPE_ZAP_API_KEY" \
+  if curl --config "$curl_config" --silent --show-error --fail --get \
       "http://127.0.0.1:${zap_port}/JSON/core/view/version/" >/dev/null 2>&1; then
     echo "FlowScope ZAP is ready at http://127.0.0.1:${zap_port}."
     echo "The API key is stored in $key_file and is read by FlowScope automatically."

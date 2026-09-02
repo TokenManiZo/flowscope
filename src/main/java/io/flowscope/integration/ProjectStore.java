@@ -330,6 +330,7 @@ public final class ProjectStore {
         out.put("traffic_user_override", r.trafficClassification.userOverride());
         out.set("classification_reasons", json.valueToTree(r.trafficClassification.reasons()));
         put(out, "run_id", r.runId);
+        put(out, "lane_account_id", r.laneAccountId);
         put(out, "evidence_id", r.evidenceId);
         put(out, "content_digest", r.contentDigest);
         put(out, "query", r.query);
@@ -372,6 +373,7 @@ public final class ProjectStore {
                         optional(value, "traffic_disposition", "REVIEW")),
                 reasons, value.path("traffic_user_override").asBoolean(false));
         r.runId = optional(value, "run_id", "project-import");
+        r.laneAccountId = nullable(value, "lane_account_id");
         r.evidenceId = nullable(value, "evidence_id");
         r.contentDigest = nullable(value, "content_digest");
         r.query = masked(value, "query");

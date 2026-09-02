@@ -665,6 +665,62 @@ final class McpServerTest {
     }
 
     @Test
+    void cancellingZapBaselineStopsOwnedCrawlerClearsCapabilityAndAbortsRun() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicBoolean spiderStarted = new AtomicBoolean();
+        AtomicBoolean spiderStopped = new AtomicBoolean();
+        AtomicReference<String> capabilityRun = new AtomicReference<>("");
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+            spiderStarted.set(true);
+            zapReply(exchange, "{\"scan\":\"1\"}");
+        });
+        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange,
+                spiderStopped.get() ? "{\"status\":\"100\"}" : "{\"status\":\"0\"}"));
+        zapServer.createContext("/JSON/spider/action/stop/", exchange -> {
+            spiderStopped.set(true);
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new McpServer(new McpServer.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public void updateScope(String value) {}
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+                @Override public boolean approve(String action, String value) { return false; }
+                @Override public void scannerCapability(String runId, String capability) {
+                    capabilityRun.set(runId);
+                }
+                @Override public void clearScannerCapability(String runId) {
+                    capabilityRun.compareAndSet(runId, "");
+                }
+            }, 0, "test-token");
+
+            JsonNode started = server.startDeterministicZapCampaign(target, List.of(), true);
+            assertEquals("RUNNING", started.path("status").asText());
+            for (int i = 0; i < 100 && !spiderStarted.get(); i++) Thread.sleep(10);
+            assertTrue(spiderStarted.get());
+
+            JsonNode cancelled = server.cancelDeterministicZapBaseline();
+
+            assertEquals("CANCELLED", cancelled.path("status").asText(), cancelled.toString());
+            assertTrue(spiderStopped.get());
+            assertEquals("", capabilityRun.get());
+            assertNull(contexts.current(Source.SCANNER));
+        } finally {
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
     void deterministicZapBaselineImportsExplicitDefinitionRunsSpidersWaitsForPassiveAndPublishesAlerts() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
@@ -972,14 +1028,20 @@ final class McpServerTest {
             records.set(copy);
             zapReply(exchange, "{\"scan\":\"1\"}");
         });
+        AtomicBoolean spiderStopped = new AtomicBoolean();
         zapServer.createContext("/JSON/spider/view/status/", exchange -> {
-            byte[] body = "spider status failed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(500, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.close();
+            if (spiderStopped.get()) zapReply(exchange, "{\"status\":\"100\"}");
+            else {
+                byte[] body = "spider status failed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(500, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            }
         });
-        zapServer.createContext("/JSON/spider/action/stop/", exchange -> zapReply(exchange,
-                "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/spider/action/stop/", exchange -> {
+            spiderStopped.set(true);
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
                 "{\"status\":{\"state\":\"COMPLETED\"}}"));
@@ -1067,10 +1129,13 @@ final class McpServerTest {
         zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> {
-            byte[] body = "client failed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(500, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.close();
+            if (clientStopped.get()) zapReply(exchange, "{\"status\":{\"state\":\"COMPLETED\"}}");
+            else {
+                byte[] body = "client failed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(500, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            }
         });
         zapServer.createContext("/JSON/clientSpider/action/stop/", exchange -> {
             clientStopped.set(true);
@@ -1091,7 +1156,9 @@ final class McpServerTest {
                 "{\"recordsToScan\":\"0\"}"));
         zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange, "{\"alerts\":[]}"));
         zapServer.start();
+        String previousPoll = System.getProperty("flowscope.zap.poll.ms");
         try {
+            System.setProperty("flowscope.zap.poll.ms", "10");
             ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
             server = new McpServer(new McpServer.State() {
                 @Override public Pipeline.Result snapshot() { return Pipeline.run(records.get()); }
@@ -1122,6 +1189,7 @@ final class McpServerTest {
                     "failed Client Spider must be stopped before AJAX fallback");
             assertTrue(status.at("/result/structuredContent/lanes/0/ajax_executed").asBoolean());
         } finally {
+            restoreProperty("flowscope.zap.poll.ms", previousPoll);
             zapServer.stop(0);
         }
     }
@@ -1755,7 +1823,8 @@ final class McpServerTest {
                 "{\"installedAddons\":["
                         + "{\"id\":\"spider\"},{\"id\":\"client\"},{\"id\":\"spiderAjax\"},"
                         + "{\"id\":\"pscan\"},{\"id\":\"pscanrules\"},{\"id\":\"selenium\"},"
-                        + "{\"id\":\"openapi\"},{\"id\":\"websocket\"},{\"id\":\"network\"}]}"));
+                        + "{\"id\":\"openapi\"},{\"id\":\"websocket\"},{\"id\":\"network\"},"
+                        + "{\"id\":\"replacer\"}]}"));
         server.createContext("/JSON/network/view/isHttpProxyEnabled/", exchange -> zapReply(exchange,
                 "{\"isHttpProxyEnabled\":\"true\"}"));
         server.createContext("/JSON/network/view/getHttpProxy/", exchange -> zapReply(exchange,
@@ -1767,6 +1836,10 @@ final class McpServerTest {
         server.createContext("/JSON/context/action/includeInContext/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/context/action/setContextInScope/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/replacer/action/addRule/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/replacer/action/removeRule/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/pscan/action/enableAllScanners/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));

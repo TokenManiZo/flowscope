@@ -26,6 +26,8 @@ public final class RequestRecord {
     public RunPhase phase = RunPhase.UNKNOWN;
     public ExecutionTrust executionTrust = ExecutionTrust.UNKNOWN;
     public String runId = "default";
+    /** 시스템 실행기가 확정한 lane 계정. 일반 관측·미해결 신원에는 null이다. */
+    public String laneAccountId;
     public String evidenceId;     // 관측을 역참조하는 안정 ID(Pipeline 이 부여하고 프로젝트 파일에 보존)
     public String contentDigest;  // 응답·출처까지 포함한 관측 내용 SHA-256. 변경 감지용
     public AuthState authState = AuthState.UNRESOLVED;
@@ -88,6 +90,7 @@ public final class RequestRecord {
         copy.phase = phase;
         copy.executionTrust = executionTrust;
         copy.runId = runId;
+        copy.laneAccountId = laneAccountId;
         copy.evidenceId = evidenceId;
         copy.contentDigest = contentDigest;
         copy.authState = authState;

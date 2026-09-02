@@ -151,6 +151,8 @@ public final class SnapshotJsonWriter {
             event.put("phase", record.phase.name());
             event.put("executionTrust", record.executionTrust.name());
             event.put("runId", record.runId);
+            if (record.laneAccountId == null) event.putNull("laneAccountId");
+            else event.put("laneAccountId", record.laneAccountId);
             event.put("authState", record.authState.name());
             event.put("trafficClass", record.trafficClassification.trafficClass().name());
             event.put("trafficDisposition", record.trafficClassification.disposition().name());

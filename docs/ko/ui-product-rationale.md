@@ -162,6 +162,8 @@ beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 �
 
 beta.39에서는 사이트 집계가 기본 그래프를 대체한 회귀를 복구했다. 사용자의 첫 질문은 “누가 어떤 API를 밟았는가”이므로 `identity → API`를 기본으로 두고, “사이트에 어떤 API 영역이 있는가”에 답하는 사이트 개요는 선택형으로 두었다. 개요의 H/S/L 숫자는 반복 request 횟수가 아닌 소스별 고유 API 수를 표시하고, 상세 tooltip에 전체 request 수를 남긴다. 사이트·API·객체의 pan/zoom은 별도로 저장해 전환 후 노드가 범위 밖으로 사라지지 않게 한다. 이 변경은 Fact Core나 판정을 바꾸지 않고 표현 계층만 수정한다(D-106).
 
+ZAP 캠페인의 실행 버튼은 시작 후 **검사 취소**로 바뀐다. 취소 클릭 즉시 화면만 종료된 것처럼 숨기지 않고, 서버가 소유 crawler·run capability·context 정리를 수행한 뒤 `CANCELLED` terminal 상태와 정리 실패 경고를 반환한다. 1초 상태 poll 한 번이 실패해도 전체 lane과 실행 이벤트를 `FAILED` 빈 화면으로 덮지 않고 마지막 정상 snapshot을 유지하며 별도 `상태 갱신 실패` 경고를 표시한다. 사용자는 실제 scanner 실패와 UI 통신 실패를 구분할 수 있다. lane 상세에는 `laneAccountId` 자체를 추가 노출하기보다 등록 계정 label을 유지하고, 저장된 provenance는 Evidence 상세·분석 결합에 사용한다.
+
 FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 숨기고 시작 요청을 거부한다. 모든 localhost를 막으면 crAPI 같은 로컬 허가 대상을 점검할 수 없으므로 현재 Web port만 제어면으로 판별한다.
 
 ## 9. 발표 시연 순서

@@ -32,7 +32,7 @@ class ZapClientTest {
     }
 
     @Test
-    void ajaxSpiderUsesOnlyParametersSupportedByZap217() throws Exception {
+    void ajaxSpiderIsRestrictedToTheSelectedContextAndSubtree() throws Exception {
         AtomicReference<String> query = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
@@ -46,8 +46,11 @@ class ZapClientTest {
         try {
             ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
 
-            assertEquals("{\"Result\":\"OK\"}", client.ajaxSpider("http://127.0.0.1:8888/"));
-            assertEquals("url=http%3A%2F%2F127.0.0.1%3A8888%2F", query.get());
+            assertEquals("{\"Result\":\"OK\"}", client.ajaxSpider("http://127.0.0.1:8888/", "flowscope-1"));
+            assertTrue(query.get().contains("url=http%3A%2F%2F127.0.0.1%3A8888%2F"));
+            assertTrue(query.get().contains("inScope=true"));
+            assertTrue(query.get().contains("subtreeOnly=true"));
+            assertTrue(query.get().contains("contextName=flowscope-1"));
         } finally {
             server.stop(0);
         }
@@ -131,6 +134,36 @@ class ZapClientTest {
         assertFalse(pattern.matcher("https://sub.api.example.test/v1").matches());
         assertFalse(pattern.matcher("http://api.example.test/v1").matches());
         assertFalse(pattern.matcher("https://api.example.test:444/v1").matches());
+    }
+
+    @Test
+    void exactContextRegexSupportsBracketedIpv6AndOptionalDefaultPort() {
+        Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex("http://[::1]:80/api"));
+
+        assertTrue(pattern.matcher("http://[::1]/api").matches());
+        assertTrue(pattern.matcher("http://[::1]:80/api/items").matches());
+        assertFalse(pattern.matcher("http://[::1]:8080/api").matches());
+    }
+
+    @Test
+    void apiKeyUsesAHeaderAndIsNotPlacedInTheRequestUri() throws Exception {
+        AtomicReference<String> query = new AtomicReference<>();
+        AtomicReference<String> header = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/JSON/core/view/version/", exchange -> {
+            query.set(exchange.getRequestURI().getRawQuery());
+            header.set(exchange.getRequestHeaders().getFirst("X-ZAP-API-Key"));
+            reply(exchange, "{\"version\":\"2.17.0\"}");
+        });
+        server.start();
+        try {
+            ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "secret-key");
+            client.version();
+            assertTrue(query.get() == null || !query.get().contains("secret-key"));
+            assertEquals("secret-key", header.get());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test

@@ -82,6 +82,28 @@ class FlowScopeExtensionPhaseTest {
     }
 
     @Test
+    void Burp_내장_Scanner는_활성_ZAP_run_context를_상속하지_않는다() {
+        RunContextRegistry.Context zapLane = new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
+                Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, "zap-run", "user-a");
+
+        assertNull(FlowScopeExtension.toolRunContext(SourceDetail.OTHER_SCANNER, zapLane));
+        assertEquals(zapLane, FlowScopeExtension.toolRunContext(SourceDetail.ZAP_SPIDER, zapLane));
+    }
+
+    @Test
+    void SYSTEM_ZAP_lane은_run별_capability가_맞는_요청만_허용한다() {
+        RunContextRegistry.Context zapLane = new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
+                Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, "zap-run", "user-a");
+
+        assertTrue(FlowScopeExtension.scannerCampaignRequestAllowed(
+                zapLane, "zap-run", "capability", "capability"));
+        assertFalse(FlowScopeExtension.scannerCampaignRequestAllowed(
+                zapLane, "zap-run", "capability", "wrong"));
+        assertFalse(FlowScopeExtension.scannerCampaignRequestAllowed(
+                zapLane, "other-run", "capability", "capability"));
+    }
+
+    @Test
     void 활성_run이나_Judge_lock이_있으면_범위_변경을_막는다() {
         RunContextRegistry contexts = new RunContextRegistry();
         assertFalse(FlowScopeExtension.scopeMutationBlocked(false, contexts));

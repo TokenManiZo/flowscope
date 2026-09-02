@@ -6,6 +6,28 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-02 · 1.2.0-beta.39 · ZAP 출처·신원 격리·종료 상태 hardening
+
+**개발·수정**
+
+- **재현된 위험:** crawler stop 실패·비동기 stop 직후 다음 계정 전환·마지막 lane cleanup 생략은 이전 신원의 작업이 다음 broker 세션으로 실행될 수 있었다. 캠페인 Future를 버려 바깥 예외나 executor 거부가 `RUNNING`을 고착시킬 수 있었고 사용자 취소가 없었다. 8081 포트만으로 SYSTEM ZAP context를 상속해 native Burp Scanner나 수동 요청도 현재 ZAP run/account/CONTROLLED로 오귀속될 수 있었다.
+- **격리·종료:** Traditional·Client·AJAX의 소유 scan ID를 추적하고 stop 뒤 terminal 상태까지 bounded poll한다. 마지막 lane을 포함해 cleanup 실패 시 terminal failure로 남기며, 캠페인 Future·cancel flag를 보존해 Web/MCP 취소가 crawler·Passive·run context를 정리한 뒤 `CANCELLED`를 반환한다. executor 거부와 예상 밖 예외도 terminal 상태를 기록한다.
+- **출처 증명:** 캠페인마다 무작위 capability를 만들고 exact target subtree의 ZAP Replacer rule로 request header에 붙인다. Burp 8081 handler는 활성 SYSTEM run과 capability가 일치하는 요청만 broker 주입·CONTROLLED ZAP Evidence로 받아들이고 내부 header를 대상 전송 전에 제거한다. native Burp Scanner는 ZAP context를 상속하지 않는다. Replacer 제거 실패는 원격 rule 식별자를 보존하고 다음 시작 전에 재시도해 stale/new rule 중첩을 막는다. 각 record에 `laneAccountId`를 추가해 JSON/SQLite/snapshot/digest에서 캠페인 run과 실제 계정 lane을 함께 보존한다.
+- **범위·상태·입력:** AJAX는 `contextName`, `inScope=true`, `subtreeOnly=true`를 항상 전달하고 standalone Active/Spider도 fresh exact Context를 먼저 만든다. Passive 정체 progress는 queue 감소로만 판정하며 status/API 일시 오류는 bounded retry하고 경계 직후 최종 poll한다. Alert total/page 오류를 완전 snapshot으로 표시하지 않고 캠페인 전체 20,000건 상한을 적용한다. Web status poll 한 번의 실패는 기존 run snapshot을 지우지 않고 별도 경고로 표시한다. HAR 재가져오기는 기존 Evidence와 병합해 동일 파일 반복 import가 record 수를 늘리지 않는다. Web 제어면과 ZAP subtree의 대괄호 IPv6 비교를 수정했지만 XML·계정 전체 IPv6 지원은 완료로 주장하지 않는다.
+- **API 운영 경계:** Java와 Bash/PowerShell helper는 API key를 query·프로세스 인자가 아닌 `X-ZAP-API-Key` header로 전송한다. Docker start는 owner-only 임시 config를 사용하고 API address 허용값을 `.*` 대신 loopback과 해석된 host gateway로 제한한다. doctor가 `replacer` add-on도 검사한다.
+
+**왜 필요했고 무엇을 기각했는가**
+
+- 포트·User-Agent·고정 header만으로 source를 판정하면 행위자와 run 수명을 증명하지 못해 기각했다. 고정 sleep 뒤 계정 전환은 실제 crawler quiescence를 확인하지 못한다. ZAP에 캠페인 전체를 위임하면 FlowScope Session Broker·Burp capture·lane 완료 gate와 현재 사용자 진행 계약을 잃는다. 따라서 orchestration은 유지하고 ZAP 공식 Context, crawler status/stop, Replacer, Passive/Alert API를 조합했다.
+- Passive `currentTasks` 문자열에는 URL이 포함될 수 있어 URL만 바뀌는 정체가 매초 진행으로 리셋될 수 있다. queue 감소를 progress로, current task를 진단·cleanup 확인으로 분리했다. 일시 통신 오류 한 번에 lane을 폐기하는 방식과 Alert count 실패를 0건 완전 snapshot으로 표시하는 방식도 기각했다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드·인프라: `FlowScopeExtension.java`, `McpServer.java`, `ZapClient.java`, `RequestRecord.java`, `EvidenceIds.java`, `ProjectStore.java`, `SnapshotJsonWriter.java`, `FlowScopeWebServer.java`, `web/index.html`, `infra/zap/*`, `scripts/doctor*`, `scripts/zap-up*`.
+- 회귀: `McpServerTest.java`, `ZapClientTest.java`, `FlowScopeExtensionPhaseTest.java`, `FlowScopeWebServerTest.java`, `ProjectStoreTest.java`, `SqliteProjectStoreTest.java`. 문서: `README.md`, `architecture.md`, `decisions.md`, `ui-product-rationale.md`, `product-development-plan.md`, `beta-validation.md`, `HANDOFF.md`, `CHANGELOG.md`, 이 기록.
+- `mvn clean verify`를 연속 두 번 실행해 매회 313 tests, failure/error/skip 0을 확인했다. 두 JAR은 16,016,248 bytes·2,066 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `048c29293dc3d61612bde2a86008d0f2ae11370e26eb604858a54ce17868d852`로 동일했다. `bash -n`은 변경한 shell scripts를 통과했고 API key query 문자열은 남지 않았다.
+- 실제 Burp+ZAP 2.17에서 capability가 Traditional/Client/AJAX/definition traffic에 붙는지, 취소·timeout 뒤 crawler quiescence, crAPI 비로그인→로그인 장시간 완료는 아직 수행하지 않았다. 나머지 P2 Session Broker/JWT/merge/project load/LLM child/비UTF-8 XML/IPv6 전체 계약도 이번 작업 범위가 아니며 `HANDOFF.md`에 남긴다.
+
 ## 2026-09-02 · 1.2.0-beta.39 · ZAP Passive 정체 복구와 신원별 진행 정본화
 
 **개발·수정**

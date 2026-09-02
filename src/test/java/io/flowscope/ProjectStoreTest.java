@@ -28,6 +28,7 @@ final class ProjectStoreTest {
         record.tool = ToolKind.CODEX;
         record.phase = RunPhase.VALIDATION;
         record.runId = "validation-1";
+        record.laneAccountId = "acct-a";
         record.query = "token=QUERYSECRET&id=7";
         record.reqBody = "{\"password\":\"BODYSECRET\",\"orderId\":7}";
         record.reqText = "POST /orders/7 HTTP/1.1\r\nAuthorization: Bearer HEADERSECRET\r\n\r\n" + record.reqBody;
@@ -81,6 +82,7 @@ final class ProjectStoreTest {
         RequestRecord restored = loaded.records().get(0);
         assertEquals(SourceDetail.LLM_VALIDATION, restored.sourceDetail);
         assertEquals("validation-1", restored.runId);
+        assertEquals("acct-a", restored.laneAccountId);
         assertEquals(record.evidenceId, restored.evidenceId);
         assertEquals(record.contentDigest, restored.contentDigest);
         assertTrue(restored.hasResponse);

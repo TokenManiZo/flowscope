@@ -14,25 +14,43 @@ burp_port="${BURP_PROXY_PORT:-8081}"
 [[ "$burp_host" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo "Invalid BURP_PROXY_HOST" >&2; exit 2; }
 [[ "$api_key" =~ ^[A-Za-z0-9._~-]+$ && ${#api_key} -ge 32 && ${#api_key} -le 256 ]] \
   || { echo "Invalid ZAP_API_KEY" >&2; exit 2; }
+api_allowed_regex="${ZAP_API_ALLOWED_ADDRESS_REGEX:-}"
+if [[ -z "$api_allowed_regex" ]]; then
+  host_gateway="$(getent ahostsv4 "$burp_host" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  [[ "$host_gateway" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] \
+    || { echo "Could not resolve the trusted Docker host gateway" >&2; exit 2; }
+  gateway_regex="${host_gateway//./\\.}"
+  api_allowed_regex="^(127\\.0\\.0\\.1|${gateway_regex})$"
+fi
+[[ "$api_allowed_regex" != *$'\n'* && ${#api_allowed_regex} -le 512 ]] \
+  || { echo "Invalid ZAP_API_ALLOWED_ADDRESS_REGEX" >&2; exit 2; }
+
+runtime_dir="$(mktemp -d /tmp/flowscope-zap.XXXXXX)"
+chmod 700 "$runtime_dir"
+config_file="$runtime_dir/zap.properties"
+curl_config="$runtime_dir/curl.conf"
+printf 'api.key=%s\napi.addrs.addr.name=%s\napi.addrs.addr.regex=true\n' \
+  "$api_key" "$api_allowed_regex" > "$config_file"
+printf 'header = "X-ZAP-API-Key: %s"\n' "$api_key" > "$curl_config"
+chmod 600 "$config_file" "$curl_config"
+trap 'rm -rf "$runtime_dir"' EXIT
 
 rm -f /tmp/flowscope-zap-ready
 zap-x.sh -daemon -host 0.0.0.0 -port "$zap_port" \
-  -config "api.key=$api_key" \
-  -config 'api.addrs.addr.name=.*' \
-  -config 'api.addrs.addr.regex=true' &
+  -configfile "$config_file" &
 zap_pid=$!
 
 stop_zap() {
   rm -f /tmp/flowscope-zap-ready
   kill -TERM "$zap_pid" 2>/dev/null || true
   wait "$zap_pid" 2>/dev/null || true
+  rm -rf "$runtime_dir"
 }
 trap stop_zap TERM INT
 
 api="http://127.0.0.1:${zap_port}"
 for _ in $(seq 1 90); do
-  if curl --silent --show-error --fail --get \
-      --data-urlencode "apikey=$api_key" \
+  if curl --config "$curl_config" --silent --show-error --fail --get \
       "$api/JSON/core/view/version/" >/dev/null; then
     break
   fi
@@ -43,21 +61,17 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 
-curl --silent --show-error --fail --get \
-  --data-urlencode "apikey=$api_key" \
+curl --config "$curl_config" --silent --show-error --fail --get \
   --data-urlencode "host=$burp_host" \
   --data-urlencode "port=$burp_port" \
   "$api/JSON/network/action/setHttpProxy/" >/dev/null
-curl --silent --show-error --fail --get \
-  --data-urlencode "apikey=$api_key" \
+curl --config "$curl_config" --silent --show-error --fail --get \
   --data-urlencode 'enabled=true' \
   "$api/JSON/network/action/setHttpProxyEnabled/" >/dev/null
 
-proxy_state="$(curl --silent --show-error --fail --get \
-  --data-urlencode "apikey=$api_key" \
+proxy_state="$(curl --config "$curl_config" --silent --show-error --fail --get \
   "$api/JSON/network/view/getHttpProxy/")"
-enabled_state="$(curl --silent --show-error --fail --get \
-  --data-urlencode "apikey=$api_key" \
+enabled_state="$(curl --config "$curl_config" --silent --show-error --fail --get \
   "$api/JSON/network/view/isHttpProxyEnabled/")"
 [[ "$proxy_state" == *"$burp_host"* && "$proxy_state" == *"$burp_port"* ]] || {
   echo "ZAP upstream proxy verification failed" >&2
@@ -72,3 +86,4 @@ enabled_state="$(curl --silent --show-error --fail --get \
 
 touch /tmp/flowscope-zap-ready
 wait "$zap_pid"
+rm -rf "$runtime_dir"

@@ -47,11 +47,10 @@ $env:FLOWSCOPE_BURP_SCANNER_PORT = $scannerPort.ToString()
 & docker compose --project-name flowscope-zap --file (Join-Path $repoDirectory 'infra/zap/compose.yaml') up --detach
 if ($LASTEXITCODE -ne 0) { throw 'Docker Compose could not start FlowScope ZAP.' }
 
-$encodedKey = [System.Uri]::EscapeDataString($key)
-$versionUri = "http://127.0.0.1:$zapPort/JSON/core/view/version/?apikey=$encodedKey"
+$versionUri = "http://127.0.0.1:$zapPort/JSON/core/view/version/"
 for ($attempt = 1; $attempt -le 90; $attempt++) {
     try {
-        $version = Invoke-RestMethod -Uri $versionUri -Method Get -TimeoutSec 2
+        $version = Invoke-RestMethod -Uri $versionUri -Headers @{ 'X-ZAP-API-Key' = $key } -Method Get -TimeoutSec 2
         if ($null -ne $version.version) {
             Write-Host "FlowScope ZAP is ready at http://127.0.0.1:$zapPort."
             Write-Host "The API key is stored in $keyFile and is read by FlowScope automatically."

@@ -214,6 +214,8 @@ public final class FlowScopeExtension implements BurpExtension {
     private FlowScopeControlTab controlTab;
     private FlowScopeWebServer webServer;
     private McpServer mcpServer;
+    private volatile String scannerCapabilityRunId = "";
+    private volatile String scannerCapability = "";
     private LocalLlmRunner llmRunner;
     private final ControlledBrowserExplorer browserExplorer = new ControlledBrowserExplorer(
             () -> scope,
@@ -334,6 +336,14 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             if (context == null) return request;
             HttpRequest prepared = request;
+            if (profile.source() == Source.SCANNER && context.orchestrator() == Orchestrator.SYSTEM) {
+                String expected = context.runId().equals(scannerCapabilityRunId) ? scannerCapability : "";
+                String supplied = request.headerValue("X-FlowScope-Scanner-Capability");
+                if (!scannerCampaignRequestAllowed(context, scannerCapabilityRunId, expected, supplied)) {
+                    throw new IllegalStateException("ZAP campaign provenance capability is missing or invalid");
+                }
+                prepared = prepared.withRemovedHeader("X-FlowScope-Scanner-Capability");
+            }
             for (String header : SessionBroker.managedHeaderNames()) {
                 if (profile.source() == Source.SCANNER && context.accountId() == null
                         && !header.equalsIgnoreCase("Authorization")
@@ -347,6 +357,15 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             return prepared;
         }
+    }
+
+    static boolean scannerCampaignRequestAllowed(RunContextRegistry.Context context, String capabilityRunId,
+                                                  String expected, String supplied) {
+        if (context == null || context.orchestrator() != Orchestrator.SYSTEM) return true;
+        if (!context.runId().equals(capabilityRunId) || expected == null || expected.isBlank()) return false;
+        return java.security.MessageDigest.isEqual(
+                expected.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                (supplied == null ? "" : supplied).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /** 프록시 트래픽: 리스너 포트로 소스를 구분한다 (F-01). */
@@ -389,7 +408,7 @@ public final class FlowScopeExtension implements BurpExtension {
             ToolType tool = req.toolSource().toolType();
             if (tool != ToolType.PROXY && !controlledRequest.get()) {
                 Source source = sourceOfTool(tool);
-                RunContextRegistry.Context context = runContexts.current(source);
+                RunContextRegistry.Context context = toolRunContext(detailOfTool(tool), runContexts.current(source));
                 String captureHandle = source == Source.HUMAN
                         ? sessionBroker.activeCaptureForService(serviceOf(req)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
@@ -443,6 +462,11 @@ public final class FlowScopeExtension implements BurpExtension {
             case TARGET -> SourceDetail.MANUAL_HTTP;
             default -> SourceDetail.UNKNOWN;
         };
+    }
+
+    /** Burp 내장 Scanner는 ZAP 소유 실행이 아니므로 활성 ZAP campaign 문맥을 상속하지 않는다. */
+    static RunContextRegistry.Context toolRunContext(SourceDetail detail, RunContextRegistry.Context current) {
+        return detail == SourceDetail.OTHER_SCANNER ? null : current;
     }
 
     private boolean capture(HttpRequest req, HttpResponse response, PortProfile profile,
@@ -531,6 +555,7 @@ public final class FlowScopeExtension implements BurpExtension {
             rec.tool = effectiveTool(profile.source(), profile.detail(), context);
             rec.phase = context.phase();
             rec.runId = context.runId();
+            rec.laneAccountId = context.accountId();
         }
         if (accountId != null && !"anon".equals(fp)) {
             try { analysisConfig.bindSession(rec.service, fp, accountId); }
@@ -711,6 +736,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 .map(entry -> entry.getKey() + "=" + entry.getValue().source().name()
                         + "/" + entry.getValue().detail().name())
                 .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private static int configuredScannerProxyPort() {
+        return PORT_SOURCE.entrySet().stream()
+                .filter(entry -> entry.getValue().source() == Source.SCANNER)
+                .map(Map.Entry::getKey).sorted().findFirst().orElse(8081);
     }
 
     private static RunPhase phaseOf(SourceDetail detail) {
@@ -1063,6 +1094,10 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("status", "NOT_STARTED")
                         : mcpServer.deterministicZapBaselineStatus();
             }
+            @Override public com.fasterxml.jackson.databind.JsonNode cancelScanner() {
+                if (mcpServer == null) throw new IllegalStateException("MCP/스캐너 제어면이 아직 준비되지 않았습니다.");
+                return mcpServer.cancelDeterministicZapBaseline();
+            }
             @Override public com.fasterxml.jackson.databind.node.ObjectNode zapStatus() { return zapConnectionStatus(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startLlm(LocalLlmRunner.Provider provider,
                                                                                LocalLlmRunner.Role role,
@@ -1119,14 +1154,22 @@ public final class FlowScopeExtension implements BurpExtension {
                     record.requestPayload = internPayload(record.requestPayload);
                     record.responsePayload = internPayload(record.responsePayload);
                 });
+                int parsedCount = parsed.records.size();
+                int duplicateCount;
                 synchronized (records) {
                     int room = Math.max(0, MAX_RECORDS - records.size());
-                    records.addAll(parsed.records.subList(0, Math.min(room, parsed.records.size())));
-                    droppedRecords.addAndGet(Math.max(0, parsed.records.size() - room));
+                    List<RequestRecord> missing = RecordMerge.missing(records, parsed.records, parsed.records.size());
+                    duplicateCount = parsed.records.size() - missing.size();
+                    List<RequestRecord> added = missing.subList(0, Math.min(room, missing.size()));
+                    records.addAll(added);
+                    droppedRecords.addAndGet(Math.max(0, missing.size() - room));
+                    parsed.records.clear();
+                    parsed.records.addAll(added);
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
                 scheduleRebuild();
                 api.logging().logToOutput("FlowScope ZAP HAR 가져오기: " + parsed.records.size()
+                        + "/" + parsedCount + "건 추가 · 기존 중복 " + duplicateCount
                         + "건 · 건너뜀 " + parsed.skipped.size() + "건");
                 return parsed;
             }
@@ -1265,6 +1308,17 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public ScopePolicy scope() { return scope; }
                 @Override public void updateScope(String value) { applyScope(value); }
                 @Override public ZapClient zap() { return zapClient; }
+                @Override public int scannerProxyPort() { return configuredScannerProxyPort(); }
+                @Override public void scannerCapability(String runId, String capability) {
+                    scannerCapabilityRunId = runId;
+                    scannerCapability = capability;
+                }
+                @Override public void clearScannerCapability(String runId) {
+                    if (runId.equals(scannerCapabilityRunId)) {
+                        scannerCapability = "";
+                        scannerCapabilityRunId = "";
+                    }
+                }
                 @Override public RunContextRegistry contexts() { return runContexts; }
                 @Override public AnalysisConfig config() { return analysisConfig; }
                 @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }

@@ -80,6 +80,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default com.fasterxml.jackson.databind.JsonNode scannerStatus() {
             return new ObjectMapper().createObjectNode().put("status", "NOT_STARTED");
         }
+        default com.fasterxml.jackson.databind.JsonNode cancelScanner() {
+            throw new UnsupportedOperationException("scanner workflow is unavailable");
+        }
         default ObjectNode zapStatus() {
             return new ObjectMapper().createObjectNode()
                     .put("connected", false)
@@ -667,6 +670,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
+            if ("cancel".equalsIgnoreCase(form.getOrDefault("action", ""))) {
+                ObjectNode body = json.createObjectNode();
+                body.set("run", state.cancelScanner());
+                return json(200, body);
+            }
             String target = required(form, "target");
             if (isOwnControlPlane(target)) {
                 throw new IllegalArgumentException("FlowScope Web 제어면은 스캐너 대상이 될 수 없습니다.");
@@ -764,6 +772,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         try {
             URI uri = URI.create(value);
             String host = uri.getHost();
+            if (host != null && host.startsWith("[") && host.endsWith("]")) {
+                host = host.substring(1, host.length() - 1);
+            }
             int targetPort = uri.getPort() >= 0 ? uri.getPort()
                     : "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
             return targetPort == port() && host != null && (host.equalsIgnoreCase("localhost")

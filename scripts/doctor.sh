@@ -39,15 +39,19 @@ else
 fi
 
 if command -v curl >/dev/null 2>&1 && [[ -n "$zap_key" ]]; then
-  zap_version="$(curl --silent --show-error --fail --get --data-urlencode "apikey=$zap_key" \
+  curl_config="$(mktemp "${TMPDIR:-/tmp}/flowscope-doctor.XXXXXX")"
+  chmod 600 "$curl_config"
+  printf 'header = "X-ZAP-API-Key: %s"\n' "$zap_key" > "$curl_config"
+  trap 'rm -f "$curl_config"' EXIT
+  zap_version="$(curl --config "$curl_config" --silent --show-error --fail --get \
     "http://127.0.0.1:${zap_port}/JSON/core/view/version/" 2>/dev/null || true)"
   if [[ "$zap_version" == *'2.17.0'* ]]; then ok "ZAP 2.17.0 API is reachable on loopback";
   elif [[ -n "$zap_version" ]]; then warn "ZAP API is reachable but not the tested 2.17.0 baseline: $zap_version";
   else fail "ZAP API is not reachable at 127.0.0.1:${zap_port}"; fi
 
-  proxy_enabled="$(curl --silent --show-error --fail --get --data-urlencode "apikey=$zap_key" \
+  proxy_enabled="$(curl --config "$curl_config" --silent --show-error --fail --get \
     "http://127.0.0.1:${zap_port}/JSON/network/view/isHttpProxyEnabled/" 2>/dev/null || true)"
-  proxy_value="$(curl --silent --show-error --fail --get --data-urlencode "apikey=$zap_key" \
+  proxy_value="$(curl --config "$curl_config" --silent --show-error --fail --get \
     "http://127.0.0.1:${zap_port}/JSON/network/view/getHttpProxy/" 2>/dev/null || true)"
   if [[ "$proxy_enabled" == *'true'* && "$proxy_value" == *"$scanner_port"* ]]; then
     ok "ZAP upstream proxy points to the Burp SCANNER listener"
@@ -55,10 +59,10 @@ if command -v curl >/dev/null 2>&1 && [[ -n "$zap_key" ]]; then
     fail "ZAP upstream proxy is not enabled for Burp SCANNER port ${scanner_port}"
   fi
 
-  addons="$(curl --silent --show-error --fail --get --data-urlencode "apikey=$zap_key" \
+  addons="$(curl --config "$curl_config" --silent --show-error --fail --get \
     "http://127.0.0.1:${zap_port}/JSON/autoupdate/view/installedAddons/" 2>/dev/null || true)"
   missing_addons=""
-  for addon in spider client spiderAjax pscan pscanrules selenium openapi websocket network; do
+  for addon in spider client spiderAjax pscan pscanrules selenium openapi websocket network replacer; do
     [[ "$addons" == *"\"id\":\"$addon\""* ]] || missing_addons="$missing_addons $addon"
   done
   if [[ -z "$missing_addons" ]]; then

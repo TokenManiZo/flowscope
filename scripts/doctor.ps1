@@ -50,8 +50,7 @@ function Test-OwnerOnlyAcl([string] $Path) {
     }
 }
 function Invoke-ZapApi([string] $Path, [string] $Key, [int] $Port) {
-    $encoded = [System.Uri]::EscapeDataString($Key)
-    return Invoke-RestMethod -Uri "http://127.0.0.1:$Port$Path`?apikey=$encoded" -Method Get -TimeoutSec 4
+    return Invoke-RestMethod -Uri "http://127.0.0.1:$Port$Path" -Headers @{ 'X-ZAP-API-Key' = $Key } -Method Get -TimeoutSec 4
 }
 
 if (-not $IsWindows) { throw 'doctor.ps1 is for Windows. Use scripts/doctor.sh on macOS/Linux.' }
@@ -117,7 +116,7 @@ if (-not [string]::IsNullOrWhiteSpace($key)) {
 
         $addOns = Invoke-ZapApi '/JSON/autoupdate/view/installedAddons/' $key $zapPort
         $installedIds = @($addOns.installedAddons | ForEach-Object { $_.id })
-        $missing = @(@('spider', 'client', 'spiderAjax', 'pscan', 'pscanrules', 'selenium', 'openapi', 'websocket', 'network') |
+        $missing = @(@('spider', 'client', 'spiderAjax', 'pscan', 'pscanrules', 'selenium', 'openapi', 'websocket', 'network', 'replacer') |
             Where-Object { $_ -notin $installedIds })
         if ($missing.Count -eq 0) { Write-Ok 'required ZAP crawler/passive/API/WebSocket/Network add-ons are installed' }
         else { Write-Failure "missing required ZAP add-on(s): $($missing -join ', ')" }

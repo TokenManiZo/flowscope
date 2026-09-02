@@ -6,6 +6,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
@@ -46,6 +47,22 @@ public final class ZapClient {
         return get("/JSON/context/action/setContextInScope/",
                 "contextName=" + enc(name) + "&booleanInScope=true");
     }
+    public String addRequestHeaderRule(String description, String urlRegex,
+                                       String headerName, String replacement) {
+        if (description == null || description.isBlank() || urlRegex == null || urlRegex.isBlank()
+                || headerName == null || headerName.isBlank() || replacement == null || replacement.isBlank()) {
+            throw new IllegalArgumentException("ZAP Replacer capability rule fields are required");
+        }
+        return get("/JSON/replacer/action/addRule/", "description=" + enc(description)
+                + "&enabled=true&matchType=REQ_HEADER&matchRegex=false&matchString=" + enc(headerName)
+                + "&replacement=" + enc(replacement) + "&url=" + enc(urlRegex));
+    }
+    public String removeReplacerRule(String description) {
+        if (description == null || description.isBlank()) {
+            throw new IllegalArgumentException("ZAP Replacer rule description is required");
+        }
+        return get("/JSON/replacer/action/removeRule/", "description=" + enc(description));
+    }
     public String spider(String target) {
         return get("/JSON/spider/action/scan/", "url=" + enc(target) + "&recurse=true&subtreeOnly=true");
     }
@@ -53,11 +70,20 @@ public final class ZapClient {
         return get("/JSON/ascan/action/scan/", "url=" + enc(target) + "&recurse=true&inScopeOnly=true");
     }
     public String ajaxSpider(String target) {
-        return get("/JSON/ajaxSpider/action/scan/", "url=" + enc(target));
+        return ajaxSpider(target, "");
+    }
+    public String ajaxSpider(String target, String contextName) {
+        String query = "url=" + enc(target) + "&inScope=true&subtreeOnly=true";
+        if (contextName != null && !contextName.isBlank()) query += "&contextName=" + enc(contextName);
+        return get("/JSON/ajaxSpider/action/scan/", query);
     }
     public String clientSpider(String target) {
-        return get("/JSON/clientSpider/action/scan/", "url=" + enc(target)
-                + "&subtreeOnly=true&scopeCheck=STRICT");
+        return clientSpider(target, "");
+    }
+    public String clientSpider(String target, String contextName) {
+        String query = "url=" + enc(target) + "&subtreeOnly=true&scopeCheck=STRICT";
+        if (contextName != null && !contextName.isBlank()) query += "&contextName=" + enc(contextName);
+        return get("/JSON/clientSpider/action/scan/", query);
     }
     public String spiderStatus(String scanId) {
         return get("/JSON/spider/view/status/", "scanId=" + enc(scanId));
@@ -127,11 +153,16 @@ public final class ZapClient {
         if ((!"http".equals(scheme) && !"https".equals(scheme)) || host.isBlank()) {
             throw new IllegalArgumentException("ZAP context target must be an HTTP(S) URL");
         }
+        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
         String displayHost = host.indexOf(':') >= 0 ? "[" + host + "]" : host;
         StringBuilder regex = new StringBuilder("^")
                 .append("(?i:").append(java.util.regex.Pattern.quote(scheme + "://" + displayHost)).append(')');
-        if (uri.getPort() >= 0) regex.append(java.util.regex.Pattern.quote(":" + uri.getPort()));
-        else regex.append("(?::").append("https".equals(scheme) ? 443 : 80).append(")?");
+        int defaultPort = "https".equals(scheme) ? 443 : 80;
+        if (uri.getPort() >= 0 && uri.getPort() != defaultPort) {
+            regex.append(java.util.regex.Pattern.quote(":" + uri.getPort()));
+        } else {
+            regex.append("(?::").append(defaultPort).append(")?");
+        }
         String path = uri.getRawPath();
         if (path == null || path.isBlank() || "/".equals(path)) regex.append("(?:/.*)?");
         else {
@@ -147,23 +178,24 @@ public final class ZapClient {
 
     private String get(String path, String query, Duration timeout) {
         StringBuilder q = new StringBuilder(query == null ? "" : query);
-        if (!apiKey.isBlank()) {
-            if (!q.isEmpty()) q.append('&');
-            q.append("apikey=").append(enc(apiKey));
-        }
         URI uri = baseUri.resolve(path + (q.isEmpty() ? "" : "?" + q));
-        HttpRequest request = HttpRequest.newBuilder(uri).timeout(timeout).GET().build();
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout).GET();
+        if (!apiKey.isBlank()) builder.header("X-ZAP-API-Key", apiKey);
+        HttpRequest request = builder.build();
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("ZAP API HTTP " + response.statusCode());
+                String detail = io.flowscope.core.Masking.truncate(
+                        io.flowscope.core.Masking.maskSecrets(response.body()), 512);
+                throw new IllegalStateException("ZAP API HTTP " + response.statusCode()
+                        + (detail == null || detail.isBlank() ? "" : ": " + detail));
             }
             return response.body();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("ZAP API 호출 중단", e);
-        } catch (Exception e) {
-            throw new IllegalStateException("ZAP API 연결 실패: " + e.getMessage(), e);
+        } catch (IOException e) {
+            throw new IllegalStateException("ZAP API 통신 실패: " + e.getMessage(), e);
         }
     }
 

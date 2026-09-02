@@ -112,6 +112,8 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("Client·AJAX 둘 다 실행"));
         assertTrue(index.body().contains("실시간 실행 기록"));
         assertTrue(index.body().contains("SCANNER_RUN.events"));
+        assertTrue(index.body().contains("id=\"scannerRunCancel\""));
+        assertTrue(index.body().contains("마지막 정상 상태를 유지합니다"));
         assertTrue(index.body().contains("1초마다 갱신"));
         assertTrue(index.body().contains("ZAP Desktop 설정"));
         assertTrue(index.body().contains("Docker Quick Start"));
@@ -423,6 +425,30 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void excludesItsBracketedIpv6LoopbackControlPlaneFromScannerTargets() throws Exception {
+        start();
+        state.scannerScope = List.of("http://[::1]:" + server.port() + "/");
+
+        JsonNode listed = json(get("/api/scanner-run", token, origin()));
+        assertEquals(0, listed.path("scope").size());
+        HttpResponse<String> rejected = post("/api/scanner-run",
+                "target=" + encode("http://[::1]:" + server.port() + "/") + "&anonymous=true", token);
+        assertEquals(400, rejected.statusCode());
+        assertTrue(rejected.body().contains("Web 제어면"));
+    }
+
+    @Test
+    void cancelsTheServerOwnedScannerCampaign() throws Exception {
+        start();
+
+        HttpResponse<String> cancelled = post("/api/scanner-run", "action=cancel", token);
+
+        assertEquals(200, cancelled.statusCode(), cancelled.body());
+        assertTrue(state.scannerCancelled);
+        assertEquals("CANCELLED", JSON.readTree(cancelled.body()).at("/run/status").asText());
+    }
+
+    @Test
     void startsSubscriptionLlmExplorerAndExposesOneUnifiedStatusEndpoint() throws Exception {
         start();
 
@@ -710,6 +736,7 @@ final class FlowScopeWebServerTest {
         private volatile List<String> scannerScope;
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
+        private volatile boolean scannerCancelled;
         private volatile LocalLlmRunner.Provider llmProvider;
         private volatile boolean llmRefreshed;
         private volatile LocalLlmRunner.Role llmRole;
@@ -764,6 +791,10 @@ final class FlowScopeWebServerTest {
         }
         @Override public JsonNode scannerStatus() {
             return JSON.createObjectNode().put("status", "NOT_STARTED");
+        }
+        @Override public JsonNode cancelScanner() {
+            scannerCancelled = true;
+            return JSON.createObjectNode().put("status", "CANCELLED");
         }
         @Override public JsonNode startLlm(LocalLlmRunner.Provider provider, LocalLlmRunner.Role role,
                                            String target, String accountId) {

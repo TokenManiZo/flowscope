@@ -274,7 +274,7 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
       <label>ZAP 기준선 대상<select id="scannerTarget" aria-label="ZAP 기준선 대상"><option value="">Burp 탭에서 범위를 먼저 적용하세요</option></select></label>
       <details class="scannerdefinitions"><summary>명세 기반 탐색 추가 (선택)</summary><label>exact-scope API 정의<textarea id="scannerDefinitions" rows="3" spellcheck="false" placeholder="OPENAPI https://target/openapi.json&#10;GRAPHQL https://target/graphql [schema URL]&#10;POSTMAN 또는 SOAP https://target/definition"></textarea><small>이미 알고 있는 정의만 입력합니다. 비워 두면 Spider 기준선만 실행하며 FlowScope가 경로를 추측하지 않습니다.</small></label></details>
       <div class="scanneraccounts"><span>격리 실행할 신원</span><div class="scannerchoices" id="scannerAccounts" role="group" aria-label="ZAP 격리 실행 신원"><label><input type="checkbox" value="" checked>비로그인</label></div></div>
-      <button class="go" id="scannerRunStart" disabled>안전 기준선 실행</button>
+      <div class="row"><button class="go" id="scannerRunStart" disabled>안전 기준선 실행</button><button id="scannerRunCancel" disabled>검사 취소</button></div>
       <div class="scannerstatus" id="scannerRunStatus">ZAP 연결과 허용 범위를 확인하는 중입니다.</div>
     </div>
     </section>
@@ -1424,18 +1424,18 @@ function scannerAlertText(lane){if(lane.alert_snapshot_complete)return 'Alert '+
 function scannerProgressDetail(lane){const details=[];if(lane.stage==='PASSIVE_SCAN_QUEUE'&&Number(lane.passive_remaining)>=0)details.push('<b>Passive 대기</b> '+Number(lane.passive_remaining)+'건');if(lane.passive_task)details.push('<b>현재 분석</b> '+esc(lane.passive_task));if(lane.ajax_executed&&(scannerStageIndex(lane.stage)>3||['COMPLETED','COMPLETED_WITH_WARNINGS'].includes(lane.status)))details.push('<b>Rendered 보완</b> Client·AJAX 둘 다 실행');return details.length?'<div class="scanprogressdetail">'+details.join('<br>')+'</div>':'';}
 function scannerEventFeed(){const events=Array.isArray(SCANNER_RUN.events)?SCANNER_RUN.events.slice(-40).reverse():[];if(!events.length)return '';return '<div class="scannerfeed"><div class="scannerfeedhead">실시간 실행 기록<span>최근 '+events.length+'건 · 1초마다 갱신</span></div><div class="scannerfeedlist">'+events.map(event=>{const at=Number(event.at),time=Number.isFinite(at)?new Date(at).toLocaleTimeString('ko-KR',{hour12:false}):'--:--:--',level=String(event.level||'INFO').toLowerCase();return '<div class="scannerevent '+esc(level)+'"><time>'+esc(time)+'</time><span class="scannereventaccount">'+esc(event.account_label||'전체')+'</span><span class="scannereventmessage">'+esc(event.message||event.stage||'상태 변경')+'</span></div>';}).join('')+'</div></div>';}
 function renderScannerControls(){
-  const target=document.getElementById('scannerTarget'),accounts=document.getElementById('scannerAccounts'),button=document.getElementById('scannerRunStart'),status=document.getElementById('scannerRunStatus');
+  const target=document.getElementById('scannerTarget'),accounts=document.getElementById('scannerAccounts'),button=document.getElementById('scannerRunStart'),cancel=document.getElementById('scannerRunCancel'),status=document.getElementById('scannerRunStatus');
   const selectedTarget=target.value,hadChoices=accounts.children.length>0,selectedAccounts=new Set([...accounts.querySelectorAll('input:checked')].map(input=>input.value));
   target.innerHTML=SCANNER_SCOPE.length?SCANNER_SCOPE.map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join(''):'<option value="">Burp 탭에서 범위를 먼저 적용하세요</option>';
   if(SCANNER_SCOPE.includes(selectedTarget))target.value=selectedTarget;
   let selectedService='';try{const url=new URL(target.value);selectedService=url.protocol+'//'+url.hostname.toLowerCase()+':'+(url.port||(url.protocol==='https:'?'443':'80'));}catch(_){}
   const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===selectedService);
   accounts.innerHTML=`<label><input type="checkbox" value="" ${!hadChoices||selectedAccounts.has('')?'checked':''}>비로그인</label>`+usable.map(session=>{const registered=accountById(session.accountId);return `<label><input type="checkbox" value="${esc(session.accountId)}" ${selectedAccounts.has(session.accountId)?'checked':''}>${esc(registered?registered.label:session.accountId)}</label>`;}).join('');
-  const chosen=accounts.querySelectorAll('input:checked').length,running=SCANNER_RUN.status==='RUNNING';button.disabled=running||!ZAP_STATUS.connected||!target.value||!chosen;button.textContent=running?'실행 중…':'신원별 격리 검사 시작';
+  const chosen=accounts.querySelectorAll('input:checked').length,running=SCANNER_RUN.status==='RUNNING';button.disabled=running||!ZAP_STATUS.connected||!target.value||!chosen;button.textContent=running?'실행 중…':'신원별 격리 검사 시작';cancel.disabled=!running;
   accounts.querySelectorAll('input').forEach(input=>input.addEventListener('change',()=>{button.disabled=SCANNER_RUN.status==='RUNNING'||!ZAP_STATUS.connected||!target.value||!accounts.querySelector('input:checked');}));
   const state=(SCANNER_RUN.status||'NOT_STARTED').toLowerCase(),head=['<div class="scannerhead"><span class="scannerstate '+esc(state)+'">'+esc(SCANNER_RUN.status||'NOT_STARTED')+'</span>'];if(SCANNER_RUN.stage)head.push('<b>'+esc(SCANNER_RUN.stage)+'</b>');if(SCANNER_RUN.status==='RUNNING')head.push('<span>전체 '+durationText(SCANNER_RUN.elapsed_seconds)+'</span>','<span>현재 단계 '+durationText(SCANNER_RUN.stage_elapsed_seconds)+(Number(SCANNER_RUN.stage_timeout_seconds)>0?' / 최대 '+durationText(SCANNER_RUN.stage_timeout_seconds):'')+'</span>','<span>ZAP 상태 '+esc(SCANNER_RUN.heartbeat_status||'확인 중')+'</span>','<span>ZAP 응답 '+ageText(SCANNER_RUN.last_heartbeat_age_seconds)+'</span>','<span>트래픽 변화 '+ageText(SCANNER_RUN.last_progress_age_seconds)+'</span>','<span class="scannerhealth '+esc((SCANNER_RUN.activity_state||'').toLowerCase())+'">'+esc(scannerActivityLabel(SCANNER_RUN.activity_state))+'</span>');if(Number.isFinite(SCANNER_RUN.captured_records))head.push('<span>수집 '+SCANNER_RUN.captured_records+'건</span>');if(SCANNER_RUN.alert_snapshot_complete)head.push('<span>Alert '+Number(SCANNER_RUN.alert_count||0)+'건 · 집계 완료</span>');else if(SCANNER_RUN.status!=='NOT_STARTED')head.push('<span>Alert 현재 '+Number(SCANNER_RUN.alert_count||0)+'건 · 집계 미완료</span>');head.push('</div>');
   const lanes=Array.isArray(SCANNER_RUN.lanes)?SCANNER_RUN.lanes.map(lane=>{const pending=lane.status==='PENDING',running=lane.status==='RUNNING',timing=pending?'대기 '+Number(lane.queue_position||0)+'/'+Number(lane.queue_total||0)+' · '+esc(lane.wait_reason||'순서 대기')+' · '+durationText(lane.elapsed_seconds):running?'경과 '+durationText(lane.elapsed_seconds)+' · 단계 '+durationText(lane.stage_elapsed_seconds)+(Number(lane.stage_timeout_seconds)>0?' / 최대 '+durationText(lane.stage_timeout_seconds):'')+' · ZAP 응답 '+ageText(lane.last_heartbeat_age_seconds)+' · 트래픽 변화 '+ageText(lane.last_progress_age_seconds):lane.status==='NOT_RUN'?'실행하지 않음':'소요 '+durationText(lane.elapsed_seconds);return '<div class="scannerlane '+esc((lane.status||'').toLowerCase())+'"><div class="lanehead"><span>'+esc(lane.account_label||lane.account_id||'비로그인')+'</span><span>'+esc(lane.status||'PENDING')+'</span></div><div class="lanetime">'+timing+'</div>'+scannerSteps(lane)+'<div class="lanemeta">'+esc(lane.stage||'PENDING')+' · 정의 '+Number(lane.definition_imports||0)+' · 전체 '+Number(lane.captured_records||0)+' · Traditional '+Number(lane.traditional_captures||0)+' · Rendered '+Number(lane.rendered_captures||0)+' · '+scannerAlertText(lane)+'</div>'+scannerProgressDetail(lane)+(lane.warning?'<div class="laneerr">주의 · '+esc(lane.warning)+'</div>':'')+(lane.error?'<div class="laneerr">오류 · '+esc(lane.error)+'</div>':'')+'</div>';}).join(''):'';
-  const notes=(SCANNER_RUN.warning?'<div class="laneerr">주의 · '+esc(SCANNER_RUN.warning)+'</div>':'')+(SCANNER_RUN.error?'<div class="laneerr">오류 · '+esc(SCANNER_RUN.error)+'</div>':'');status.innerHTML=head.join('')+(lanes?'<div class="scannerlanes">'+lanes+'</div>':'')+scannerEventFeed()+notes;status.classList.toggle('ok',SCANNER_RUN.status==='COMPLETED');status.classList.toggle('warn',SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS');status.classList.toggle('fail',SCANNER_RUN.status==='FAILED');updateSetup();
+  const notes=(SCANNER_RUN.poll_error?'<div class="laneerr">상태 조회 지연 · '+esc(SCANNER_RUN.poll_error)+' · 마지막 정상 상태를 유지합니다.</div>':'')+(SCANNER_RUN.warning?'<div class="laneerr">주의 · '+esc(SCANNER_RUN.warning)+'</div>':'')+(SCANNER_RUN.error?'<div class="laneerr">오류 · '+esc(SCANNER_RUN.error)+'</div>':'');status.innerHTML=head.join('')+(lanes?'<div class="scannerlanes">'+lanes+'</div>':'')+scannerEventFeed()+notes;status.classList.toggle('ok',SCANNER_RUN.status==='COMPLETED');status.classList.toggle('warn',SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS');status.classList.toggle('fail',SCANNER_RUN.status==='FAILED');updateSetup();
 }
 function renderZapStatus(){
   const badge=document.getElementById('zapConnectionState'),message=document.getElementById('zapConnectionMessage'),choices=document.getElementById('zapSetupChoices');
@@ -1450,7 +1450,7 @@ async function syncZapStatus(){
 }
 async function syncScannerRun(){
   if(!LIVE_MODE)return;try{const response=await fetch('/api/scanner-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'ZAP 기준선 조회 실패');SCANNER_RUN=data.run||{status:'NOT_STARTED'};SCANNER_SCOPE=data.scope||[];renderScannerControls();}
-  catch(error){SCANNER_RUN={status:'FAILED',error:error.message};renderScannerControls();}
+  catch(error){SCANNER_RUN={...SCANNER_RUN,poll_error:error.message};renderScannerControls();}
 }
 async function startScannerRun(){
   const target=document.getElementById('scannerTarget').value,selected=[...document.querySelectorAll('#scannerAccounts input:checked')].map(input=>input.value),definitions=document.getElementById('scannerDefinitions').value;if(!target||!selected.length)return;
@@ -1460,6 +1460,12 @@ async function startScannerRun(){
   const button=document.getElementById('scannerRunStart');button.disabled=true;
   try{const response=await fetch('/api/scanner-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({target,anonymous:String(anonymous),accounts:accounts.join(','),definitions})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'ZAP 기준선 시작 실패');SCANNER_RUN=data.run;renderScannerControls();}
   catch(error){SCANNER_RUN={status:'FAILED',error:error.message};renderScannerControls();}
+}
+async function cancelScannerRun(){
+  if(SCANNER_RUN.status!=='RUNNING'||!confirm('현재 ZAP 검사를 취소하고 실행 중인 크롤러의 정지를 확인할까요?'))return;
+  const button=document.getElementById('scannerRunCancel');button.disabled=true;
+  try{const response=await fetch('/api/scanner-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'cancel'})});const data=await response.json();if(!response.ok)throw new Error(data.message||'ZAP 기준선 취소 실패');SCANNER_RUN=data.run||SCANNER_RUN;renderScannerControls();}
+  catch(error){SCANNER_RUN={...SCANNER_RUN,poll_error:error.message};renderScannerControls();}
 }
 function renderLlmControls(){
   const provider=document.getElementById('llmProvider'),target=document.getElementById('llmTarget'),account=document.getElementById('llmAccount');
@@ -1601,6 +1607,7 @@ document.getElementById('setupAutoStage').addEventListener('click',()=>{SETUP_ST
 document.getElementById('humanRunStart').addEventListener('click',()=>changeHumanRun('begin'));
 document.getElementById('humanRunEnd').addEventListener('click',()=>changeHumanRun('end'));
 document.getElementById('scannerRunStart').addEventListener('click',startScannerRun);
+document.getElementById('scannerRunCancel').addEventListener('click',cancelScannerRun);
 document.getElementById('scannerTarget').addEventListener('change',renderScannerControls);
 document.getElementById('llmProvider').addEventListener('change',renderLlmControls);
 document.getElementById('llmTarget').addEventListener('change',renderLlmControls);

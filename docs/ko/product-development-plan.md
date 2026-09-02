@@ -8,9 +8,10 @@
 2. Explorer의 실제 방문 사실과 BOLA/BFLA coverage 자격을 분리해 제외된 navigation/static route가 완료를 영구 차단하지 않게 한다.
 3. 기본 `identity → API`, 선택형 사이트 개요, 계층별 viewport와 고유 API 집계를 회귀로 고정한다.
 4. ZAP 비로그인·로그인 lane의 두 rendered crawler, Passive 진행·부분 완료, 모든 실패 경로의 crawler/queue cleanup과 다음 신원 격리, bounded 실시간 실행 기록을 회귀로 고정한다.
-5. 전체 verify·독립 Web 검증 후 beta.39 JAR을 실제 Burp에 재로드하고 crAPI HUMAN/ZAP/LLM을 새 run으로 실행한다.
+5. ZAP SYSTEM 캠페인의 포트 기반 귀속을 run별 capability로 교체하고, native Burp Scanner 분리, lane 계정 provenance, crawler terminal 확인, 취소·예외 terminal 상태, exact-scope AJAX/Active Context, bounded Alert와 API key/Docker 경계를 회귀로 고정한다.
+6. 전체 verify·독립 Web 검증 후 beta.39 JAR을 실제 Burp에 재로드하고 crAPI HUMAN/ZAP/LLM을 새 run으로 실행한다.
 
-**현재 상태:** 1~4는 코드·집중 회귀·전체 306 tests 연속 2회와 byte-for-byte 동일한 JAR, 독립 Web API↔사이트 전환을 통과했다. 5의 실제 Burp beta.39 재로드·crAPI 재실행·장시간 ZAP 비로그인→로그인 전환은 대기한다.
+**현재 상태:** 1~5는 코드·집중 회귀·전체 313 tests와 배포 JAR 검증을 통과했다. 6의 실제 Burp beta.39 재로드·crAPI 재실행, Replacer capability 실전 통과, 취소/stop quiescence와 장시간 ZAP 비로그인→로그인 전환은 대기한다. 자동 회귀는 실제 endpoint recall이나 취약점 탐지율을 증명하지 않는다.
 
 ## 0. beta.38 우선순위: ZAP 장시간 실행 관측 가능성
 

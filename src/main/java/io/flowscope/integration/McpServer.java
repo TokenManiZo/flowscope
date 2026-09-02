@@ -22,6 +22,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Localhost 전용 MCP Streamable HTTP(JSON-RPC) 서버. 모델 제공자 토큰을 취급하지 않는다. */
 public final class McpServer implements AutoCloseable {
@@ -43,6 +46,9 @@ public final class McpServer implements AutoCloseable {
         ScopePolicy scope();
         void updateScope(String value);
         ZapClient zap();
+        default int scannerProxyPort() { return 8081; }
+        default void scannerCapability(String runId, String capability) { }
+        default void clearScannerCapability(String runId) { }
         RunContextRegistry contexts();
         AnalysisConfig config();
         default List<RouteCandidate> routeCandidates() { return List.of(); }
@@ -98,12 +104,13 @@ public final class McpServer implements AutoCloseable {
 
     private static final int MAX_BODY = 1024 * 1024;
     private static final int MAX_ZAP_ALERT_SNAPSHOT = 20_000;
+    private static final int MAX_ZAP_LANES = 20;
     private static final int MAX_ZAP_PROGRESS_EVENTS = 120;
     private static final int MAX_ASSESSMENTS = 1_000;
     private static final long MAX_ASSESSMENT_RETAINED_BYTES = 4L * 1024 * 1024;
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
             "spider", "client", "spiderAjax", "pscan", "pscanrules", "selenium", "openapi", "websocket",
-            "network");
+            "network", "replacer");
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> SUPPORTED_PROTOCOLS = Set.of(
             LATEST_PROTOCOL, "2025-06-18", "2025-03-26");
@@ -128,6 +135,13 @@ public final class McpServer implements AutoCloseable {
     private volatile List<ZapLaneResult> zapBaselineLanes = List.of();
     private volatile List<ZapLaneRuntime> zapLaneRuntime = List.of();
     private volatile List<ZapProgressEvent> zapProgressEvents = List.of();
+    private final AtomicBoolean zapCancelRequested = new AtomicBoolean();
+    private volatile Future<?> zapWorkflowFuture;
+    private volatile String ownedTraditionalScanId = "";
+    private volatile String ownedClientScanId = "";
+    private volatile boolean ownedAjaxRunning;
+    private volatile String zapCapabilityRunId = "";
+    private volatile String zapCapabilityRule = "";
 
     private record ZapBaselineRun(String runId, String target, String status, String stage,
                                   String scanId, String warning, long capturedRecords,
@@ -194,6 +208,26 @@ public final class McpServer implements AutoCloseable {
         return startZapBaseline(args);
     }
     public JsonNode deterministicZapBaselineStatus() { return zapBaselineStatus(); }
+    public JsonNode cancelDeterministicZapBaseline() {
+        ZapBaselineRun current = zapBaseline;
+        if (current == null || !"RUNNING".equals(current.status())) return zapBaselineStatus();
+        zapCancelRequested.set(true);
+        Future<?> future = zapWorkflowFuture;
+        if (future != null) future.cancel(true);
+        RuntimeException cleanupFailure = stopAndAwaitOwnedCrawlers();
+        state.contexts().abort(Source.SCANNER, current.runId());
+        RuntimeException capabilityFailure = removeScannerCapability(current.runId());
+        if (capabilityFailure != null) {
+            cleanupFailure = mergeFailure(cleanupFailure, "scanner capability cleanup failed", capabilityFailure);
+        }
+        String warning = cleanupFailure == null ? "" : "취소 중 ZAP 정리 실패: " + cleanupFailure.getMessage();
+        zapBaseline = new ZapBaselineRun(current.runId(), current.target(), "CANCELLED", "CANCELLED",
+                "", warning, capturedForRun(current.runId()), current.definitionCount(),
+                zapBaselineAlerts.size(), "");
+        recordZapProgress("전체", "CANCELLED", cleanupFailure == null ? "DONE" : "ERROR",
+                cleanupFailure == null ? "사용자 요청으로 ZAP 캠페인 취소·정리 완료" : warning);
+        return zapBaselineStatus();
+    }
     public void clearAssessments() {
         synchronized (assessments) { assessments.clear(); }
         state.assessmentsChanged(List.of());
@@ -212,6 +246,7 @@ public final class McpServer implements AutoCloseable {
         state.validationsChanged(List.of());
     }
     public void resetWorkflow() {
+        if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) cancelDeterministicZapBaseline();
         lockedSnapshot = null;
         lockedRouteCandidates = List.of();
         lockId = "";
@@ -243,6 +278,7 @@ public final class McpServer implements AutoCloseable {
         state.validationsChanged(snapshotValidations());
     }
     @Override public void close() {
+        if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) cancelDeterministicZapBaseline();
         browserDiscoveredRoutes.clear();
         zapLaneRuntime = List.of();
         zapWorkflow.shutdownNow();
@@ -385,6 +421,7 @@ public final class McpServer implements AutoCloseable {
         tools.add(tool("flowscope_zap_environment", "Read the local ZAP version and installed add-ons before a scanner pass.", schema(), true, false));
         tools.add(tool("flowscope_zap_baseline", "Run the deterministic isolated scanner campaign for anonymous and selected account IDs: optional explicit API definitions, Traditional Spider, Client Spider, AJAX Spider, passive queue, then native alerts.", zapBaselineSchema(), false, false));
         tools.add(tool("flowscope_zap_baseline_status", "Read deterministic scanner-lane progress and captured-output counts.", schema(), true, false));
+        tools.add(tool("flowscope_zap_baseline_cancel", "Cancel the active scanner campaign and wait for FlowScope-owned ZAP crawlers to stop.", schema(), false, false));
         tools.add(tool("flowscope_zap_passive_status", "Read ZAP passive-scan queue and current tasks.", schema(), true, false));
         tools.add(tool("flowscope_zap_alerts", "Read paginated native ZAP alerts after the three-lane dataset is locked.", zapAlertsSchema(), true, false));
         tools.add(tool("flowscope_zap_spider", "Start a scoped ZAP spider; resulting HTTP remains source=SCANNER.", targetSchema(false), false, false));
@@ -432,6 +469,7 @@ public final class McpServer implements AutoCloseable {
                 case "flowscope_zap_environment" -> zapEnvironment();
                 case "flowscope_zap_baseline" -> startZapBaseline(args);
                 case "flowscope_zap_baseline_status" -> zapBaselineStatus();
+                case "flowscope_zap_baseline_cancel" -> cancelDeterministicZapBaseline();
                 case "flowscope_zap_passive_status" -> zapPassiveStatus();
                 case "flowscope_zap_alerts" -> zapAlerts(args);
                 case "flowscope_zap_spider" -> startZap(args, false);
@@ -1306,24 +1344,118 @@ public final class McpServer implements AutoCloseable {
             lanes.add(new ZapLane(validated, session.accountLabel()));
         }
         if (lanes.isEmpty()) throw new IllegalArgumentException("select anonymous or at least one active account");
+        if (lanes.size() > MAX_ZAP_LANES) {
+            throw new IllegalArgumentException("a ZAP campaign supports at most " + MAX_ZAP_LANES + " identities");
+        }
         String runId = validatedRunId(args.path("run_id").asText("zap-baseline-" + System.currentTimeMillis()));
         state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
                 Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, lanes.get(0).accountId()));
-        zapBaselineAlerts = json.createArrayNode();
-        zapProgressEvents = List.of();
-        long queuedAt = System.currentTimeMillis();
-        zapBaselineLanes = lanes.stream().map(lane -> new ZapLaneResult(lane.accountId(), lane.accountLabel(),
-                "PENDING", "PENDING", 0, 0, 0, 0, 0,
-                false, false, -1, false, "", "")).toList();
-        zapLaneRuntime = lanes.stream().map(lane -> new ZapLaneRuntime(queuedAt, 0, 0, 0,
-                0, queuedAt, 0, 0, 0, 0, 0,
-                -1, "", "대기 중")).toList();
-        zapBaseline = new ZapBaselineRun(runId, target, "RUNNING", "INITIALIZING",
-                "", "", 0, definitions.size(), 0, "");
-        recordZapProgress("전체", "INITIALIZING", "INFO",
-                lanes.size() + "개 신원 격리 검사 대기열 생성");
-        zapWorkflow.submit(() -> runZapCampaign(runId, target, lanes, definitions));
+        try {
+            installScannerCapability(target, runId);
+            zapBaselineAlerts = json.createArrayNode();
+            zapProgressEvents = List.of();
+            long queuedAt = System.currentTimeMillis();
+            zapBaselineLanes = lanes.stream().map(lane -> new ZapLaneResult(lane.accountId(), lane.accountLabel(),
+                    "PENDING", "PENDING", 0, 0, 0, 0, 0,
+                    false, false, -1, false, "", "")).toList();
+            zapLaneRuntime = lanes.stream().map(lane -> new ZapLaneRuntime(queuedAt, 0, 0, 0,
+                    0, queuedAt, 0, 0, 0, 0, 0,
+                    -1, "", "대기 중")).toList();
+            zapBaseline = new ZapBaselineRun(runId, target, "RUNNING", "INITIALIZING",
+                    "", "", 0, definitions.size(), 0, "");
+            zapCancelRequested.set(false);
+            ownedTraditionalScanId = "";
+            ownedClientScanId = "";
+            ownedAjaxRunning = false;
+            recordZapProgress("전체", "INITIALIZING", "INFO",
+                    lanes.size() + "개 신원 격리 검사 대기열 생성");
+            zapWorkflowFuture = zapWorkflow.submit(() -> runZapCampaignSafely(runId, target, lanes, definitions));
+        } catch (RuntimeException error) {
+            RuntimeException capabilityFailure = removeScannerCapability(runId);
+            state.contexts().abort(Source.SCANNER, runId);
+            String detail = error instanceof RejectedExecutionException
+                    ? "ZAP workflow executor is unavailable"
+                    : (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
+            if (capabilityFailure != null) {
+                detail = appendWarning(detail, "scanner capability cleanup: " + capabilityFailure.getMessage());
+            }
+            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "", 0,
+                    definitions.size(), 0, detail);
+            throw error;
+        }
         return zapBaselineNode(zapBaseline);
+    }
+
+    private void runZapCampaignSafely(String runId, String target, List<ZapLane> lanes,
+                                      List<ZapDefinition> definitions) {
+        try {
+            runZapCampaign(runId, target, lanes, definitions);
+        } catch (Throwable error) {
+            RuntimeException cleanup = stopAndAwaitOwnedCrawlers();
+            state.contexts().abort(Source.SCANNER, runId);
+            if (zapCancelRequested.get()) return;
+            String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            if (cleanup != null) detail = appendWarning(detail, "cleanup: " + cleanup.getMessage());
+            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                    capturedForRun(runId), definitions.size(), zapBaselineAlerts.size(), detail);
+            recordZapProgress("전체", "FAILED", "ERROR", "ZAP 캠페인 내부 오류 · " + detail);
+        } finally {
+            RuntimeException capabilityFailure = removeScannerCapability(runId);
+            if (capabilityFailure != null && zapBaseline != null && runId.equals(zapBaseline.runId())
+                    && !"CANCELLED".equals(zapBaseline.status())) {
+                state.contexts().abort(Source.SCANNER, runId);
+                zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                        capturedForRun(runId), definitions.size(), zapBaselineAlerts.size(),
+                        "ZAP scanner capability cleanup failed: " + capabilityFailure.getMessage());
+                recordZapProgress("전체", "FAILED", "ERROR", "ZAP 식별 capability 정리 실패");
+            }
+            ownedTraditionalScanId = "";
+            ownedClientScanId = "";
+            ownedAjaxRunning = false;
+            zapWorkflowFuture = null;
+        }
+    }
+
+    private void installScannerCapability(String target, String runId) {
+        String staleRunId;
+        synchronized (this) { staleRunId = zapCapabilityRunId; }
+        if (!staleRunId.isBlank()) {
+            RuntimeException staleCleanup = removeScannerCapability(staleRunId);
+            if (staleCleanup != null) {
+                throw new IllegalStateException("previous ZAP scanner capability cleanup is still failing",
+                        staleCleanup);
+            }
+        }
+        String capability = randomToken();
+        String description = "flowscope-capability-" + runId + "-" + Long.toUnsignedString(System.nanoTime(), 36);
+        requireZapOk(state.zap().addRequestHeaderRule(description, ZapClient.exactSubtreeRegex(target),
+                "X-FlowScope-Scanner-Capability", capability), "install its scanner provenance capability");
+        synchronized (this) {
+            zapCapabilityRunId = runId;
+            zapCapabilityRule = description;
+        }
+        state.scannerCapability(runId, capability);
+    }
+
+    private synchronized RuntimeException removeScannerCapability(String runId) {
+        String rule;
+        synchronized (this) {
+            if (!runId.equals(zapCapabilityRunId)) return null;
+            rule = zapCapabilityRule;
+        }
+        state.clearScannerCapability(runId);
+        try {
+            requireZapOk(state.zap().removeReplacerRule(rule), "remove its scanner provenance capability");
+            synchronized (this) {
+                if (runId.equals(zapCapabilityRunId) && rule.equals(zapCapabilityRule)) {
+                    zapCapabilityRunId = "";
+                    zapCapabilityRule = "";
+                }
+            }
+            return null;
+        } catch (RuntimeException error) {
+            return error;
+        }
     }
 
     private JsonNode zapBaselineStatus() {
@@ -1338,6 +1470,7 @@ public final class McpServer implements AutoCloseable {
         boolean failed = false;
         String campaignError = "";
         for (int index = 0; index < lanes.size(); index++) {
+            ensureZapNotCancelled();
             ZapLane lane = lanes.get(index);
             try {
                 runZapLane(runId, target, lane, index, definitions, collectedAlerts);
@@ -1346,7 +1479,7 @@ public final class McpServer implements AutoCloseable {
                 String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
                 if (campaignError.isBlank()) campaignError = lane.accountLabel() + ": " + message;
                 boolean isolationBlocked = error instanceof ZapIsolationException;
-                if (!isolationBlocked && index + 1 < lanes.size()) {
+                if (!isolationBlocked) {
                     try {
                         isolationBlocked = !resetPassiveQueueForNextIdentity(runId, index);
                     } catch (RuntimeException cleanupError) {
@@ -1358,11 +1491,12 @@ public final class McpServer implements AutoCloseable {
                     }
                 }
                 if (isolationBlocked) {
-                    blockRemainingZapLanes(lanes, index + 1);
+                    if (index + 1 < lanes.size()) blockRemainingZapLanes(lanes, index + 1);
                     break;
                 }
             }
         }
+        ensureZapNotCancelled();
         long captured = capturedForRun(runId);
         zapBaselineAlerts = collectedAlerts;
         if (failed) {
@@ -1372,6 +1506,7 @@ public final class McpServer implements AutoCloseable {
             recordZapProgress("전체", "FAILED", "ERROR", "ZAP 캠페인 실패");
         } else {
             try {
+                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, null);
                 LaneCompletionPolicy.complete(state.contexts(), Source.SCANNER, runId, state.completionSnapshot());
             } catch (RuntimeException error) {
                 state.contexts().abort(Source.SCANNER, runId);
@@ -1459,15 +1594,25 @@ public final class McpServer implements AutoCloseable {
             JsonNode traditional = parseZap(state.zap().spider(target));
             String scanId = traditional.path("scan").asText();
             if (scanId.isBlank()) throw new IllegalStateException("ZAP Traditional Spider did not return a scan id");
+            ownedTraditionalScanId = scanId;
             updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · TRADITIONAL_SPIDER", scanId, warning, "");
-            boolean traditionalFinished = false;
             try {
                 waitForZap(() -> state.zap().spiderStatus(scanId), 15 * 60_000L,
                         "Traditional Spider", runId, index);
-                traditionalFinished = true;
-            } finally {
-                if (!traditionalFinished) stopOwnedSpider(scanId, false);
+                releaseTraditionalSpider(scanId);
+            } catch (RuntimeException failure) {
+                if (claimTraditionalSpider(scanId)) {
+                    try { stopOwnedSpider(scanId, false); }
+                    catch (RuntimeException cleanup) {
+                        ZapIsolationException isolation = new ZapIsolationException(
+                                "Traditional Spider did not reach a terminal state: " + cleanup.getMessage());
+                        isolation.addSuppressed(failure);
+                        throw isolation;
+                    }
+                }
+                throw failure;
             }
+            ensureZapNotCancelled();
             long traditionalCaptured = capturedForRun(runId, SourceDetail.ZAP_SPIDER) - traditionalBefore;
 
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
@@ -1479,24 +1624,27 @@ public final class McpServer implements AutoCloseable {
             String clientId = "";
             boolean clientFinished = false;
             try {
-                JsonNode client = parseZap(state.zap().clientSpider(target));
+                JsonNode client = parseZap(state.zap().clientSpider(target, contextName));
                 clientId = client.path("scan").asText();
                 if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
+                ownedClientScanId = clientId;
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · CLIENT_SPIDER", clientId, warning, "");
                 String finalClientId = clientId;
                 waitForZap(() -> state.zap().clientSpiderStatus(finalClientId), 20 * 60_000L,
                         "Client Spider", runId, index);
                 clientFinished = true;
+                releaseClientSpider(clientId);
             } catch (RuntimeException clientError) {
                 clientFailure = clientError;
             } finally {
-                if (!clientFinished && !clientId.isBlank()) {
+                if (!clientFinished && !clientId.isBlank() && claimClientSpider(clientId)) {
                     try { stopOwnedSpider(clientId, true); }
                     catch (RuntimeException cleanupError) {
-                        clientFailure = mergeFailure(clientFailure, "Client Spider cleanup failed", cleanupError);
+                        throw new ZapIsolationException("Client Spider cleanup failed: " + cleanupError.getMessage());
                     }
                 }
             }
+            ensureZapNotCancelled();
             long clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
             if (clientFailure != null) {
                 warning = appendWarning(warning, "Client Spider unavailable: " + clientFailure.getMessage());
@@ -1515,25 +1663,28 @@ public final class McpServer implements AutoCloseable {
             boolean ajaxStarted = false;
             boolean ajaxFinished = false;
             try {
-                JsonNode ajax = parseZap(state.zap().ajaxSpider(target));
+                JsonNode ajax = parseZap(state.zap().ajaxSpider(target, contextName));
                 if (!"OK".equalsIgnoreCase(ajax.path("Result").asText())) {
                     throw new IllegalStateException("ZAP AJAX Spider did not start");
                 }
                 ajaxStarted = true;
+                ownedAjaxRunning = true;
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SUPPLEMENT", "", warning, "");
                 waitForZap(() -> state.zap().ajaxSpiderStatus(), 20 * 60_000L,
                         "AJAX Spider", runId, index);
                 ajaxFinished = true;
+                releaseAjaxSpider();
             } catch (RuntimeException ajaxError) {
                 ajaxFailure = ajaxError;
             } finally {
-                if (ajaxStarted && !ajaxFinished) {
+                if (ajaxStarted && !ajaxFinished && claimAjaxSpider()) {
                     try { stopOwnedAjax(); }
                     catch (RuntimeException cleanupError) {
-                        ajaxFailure = mergeFailure(ajaxFailure, "AJAX Spider cleanup failed", cleanupError);
+                        throw new ZapIsolationException("AJAX Spider cleanup failed: " + cleanupError.getMessage());
                     }
                 }
             }
+            ensureZapNotCancelled();
             long ajaxCaptured = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER) - ajaxBefore;
             if (ajaxFailure != null) {
                 warning = appendWarning(warning, "AJAX Spider unavailable: " + ajaxFailure.getMessage());
@@ -1639,10 +1790,11 @@ public final class McpServer implements AutoCloseable {
         JsonNode proxy = parseZap(state.zap().httpProxy()).path("getHttpProxy");
         String host = proxy.path("host").asText().toLowerCase(java.util.Locale.ROOT);
         int port = proxy.path("port").asInt(-1);
+        int expectedPort = state.scannerProxyPort();
         if (!(host.equals("127.0.0.1") || host.equals("localhost") || host.equals("::1")
-                || host.equals("host.docker.internal")) || port != 8081) {
-            throw new IllegalStateException("ZAP outgoing HTTP proxy must point to FlowScope 127.0.0.1:8081 "
-                    + "(Docker: host.docker.internal:8081)");
+                || host.equals("host.docker.internal")) || port != expectedPort) {
+            throw new IllegalStateException("ZAP outgoing HTTP proxy must point to FlowScope 127.0.0.1:"
+                    + expectedPort + " (Docker: host.docker.internal:" + expectedPort + ")");
         }
     }
 
@@ -1720,11 +1872,14 @@ public final class McpServer implements AutoCloseable {
     private ZapAlertCollection collectZapAlerts(String target, ZapLane lane, String runId,
                                                  ArrayNode collectedAlerts) {
         int reported = parseZap(state.zap().numberOfAlerts(target)).path("numberOfAlerts").asInt(-1);
+        if (reported < 0) throw new IllegalStateException("ZAP alert count response was invalid");
         int laneCount = 0;
         int start = 0;
-        while (start < MAX_ZAP_ALERT_SNAPSHOT && (reported < 0 || start < reported)) {
+        int capacity = Math.max(0, MAX_ZAP_ALERT_SNAPSHOT - collectedAlerts.size());
+        while (laneCount < capacity && start < reported) {
             JsonNode page = maskTextValues(parseZap(state.zap().alerts(target, start, 500))).path("alerts");
-            if (!page.isArray() || page.isEmpty()) break;
+            if (!page.isArray()) throw new IllegalStateException("ZAP alert page response was invalid");
+            if (page.isEmpty()) break;
             for (JsonNode alert : page) {
                 ObjectNode copy = alert.isObject() ? (ObjectNode) alert.deepCopy()
                         : json.createObjectNode().set("alert", alert);
@@ -1732,12 +1887,12 @@ public final class McpServer implements AutoCloseable {
                 copy.put("flowscope_run_id", runId);
                 collectedAlerts.add(copy);
                 laneCount++;
-                if (laneCount >= MAX_ZAP_ALERT_SNAPSHOT) break;
+                if (laneCount >= capacity) break;
             }
             start += page.size();
-            if (page.size() < 500 || laneCount >= MAX_ZAP_ALERT_SNAPSHOT) break;
+            if (page.size() < 500 || laneCount >= capacity) break;
         }
-        return new ZapAlertCollection(laneCount, reported > laneCount);
+        return new ZapAlertCollection(laneCount, reported > laneCount || collectedAlerts.size() >= MAX_ZAP_ALERT_SNAPSHOT);
     }
 
     private static String appendWarning(String current, String value) {
@@ -1757,6 +1912,9 @@ public final class McpServer implements AutoCloseable {
         try {
             requireZapOk(clientSpider ? state.zap().stopClientSpider(scanId) : state.zap().stopSpider(scanId),
                     "stop its unfinished " + (clientSpider ? "Client Spider" : "Traditional Spider"));
+            awaitZapTerminal(clientSpider ? () -> state.zap().clientSpiderStatus(scanId)
+                            : () -> state.zap().spiderStatus(scanId),
+                    clientSpider ? "Client Spider" : "Traditional Spider");
         } finally {
             if (interrupted) Thread.currentThread().interrupt();
         }
@@ -1766,9 +1924,83 @@ public final class McpServer implements AutoCloseable {
         boolean interrupted = Thread.interrupted();
         try {
             requireZapOk(state.zap().stopAjaxSpider(), "stop its unfinished AJAX Spider");
+            awaitZapTerminal(() -> state.zap().ajaxSpiderStatus(), "AJAX Spider");
         } finally {
             if (interrupted) Thread.currentThread().interrupt();
         }
+    }
+
+    private RuntimeException stopAndAwaitOwnedCrawlers() {
+        RuntimeException failure = null;
+        String traditional;
+        String client;
+        boolean ajax;
+        synchronized (this) {
+            traditional = ownedTraditionalScanId;
+            client = ownedClientScanId;
+            ajax = ownedAjaxRunning;
+            ownedTraditionalScanId = "";
+            ownedClientScanId = "";
+            ownedAjaxRunning = false;
+        }
+        if (!traditional.isBlank()) {
+            try { stopOwnedSpider(traditional, false); }
+            catch (RuntimeException error) { failure = mergeFailure(failure, "Traditional Spider cleanup failed", error); }
+        }
+        if (!client.isBlank()) {
+            try { stopOwnedSpider(client, true); }
+            catch (RuntimeException error) { failure = mergeFailure(failure, "Client Spider cleanup failed", error); }
+        }
+        if (ajax) {
+            try { stopOwnedAjax(); }
+            catch (RuntimeException error) { failure = mergeFailure(failure, "AJAX Spider cleanup failed", error); }
+        }
+        return failure;
+    }
+
+    private synchronized boolean claimTraditionalSpider(String scanId) {
+        if (!scanId.equals(ownedTraditionalScanId)) return false;
+        ownedTraditionalScanId = "";
+        return true;
+    }
+
+    private synchronized void releaseTraditionalSpider(String scanId) {
+        if (scanId.equals(ownedTraditionalScanId)) ownedTraditionalScanId = "";
+    }
+
+    private synchronized boolean claimClientSpider(String scanId) {
+        if (!scanId.equals(ownedClientScanId)) return false;
+        ownedClientScanId = "";
+        return true;
+    }
+
+    private synchronized void releaseClientSpider(String scanId) {
+        if (scanId.equals(ownedClientScanId)) ownedClientScanId = "";
+    }
+
+    private synchronized boolean claimAjaxSpider() {
+        if (!ownedAjaxRunning) return false;
+        ownedAjaxRunning = false;
+        return true;
+    }
+
+    private synchronized void releaseAjaxSpider() { ownedAjaxRunning = false; }
+
+    private void awaitZapTerminal(ZapStatusCall call, String label) {
+        long deadline = System.currentTimeMillis() + passiveCleanupTimeoutMillis();
+        RuntimeException last = null;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                String value = requiredZapStatus(call.get(), label).toLowerCase(java.util.Locale.ROOT);
+                if (zapTerminal(value)) return;
+                last = null;
+            } catch (RuntimeException error) {
+                last = error;
+            }
+            sleepZapPoll(false);
+        }
+        throw new IllegalStateException(label + " stop was not confirmed"
+                + (last == null ? "" : ": " + last.getMessage()), last);
     }
 
     private synchronized void replaceZapLane(int index, ZapLaneResult value) {
@@ -1826,16 +2058,46 @@ public final class McpServer implements AutoCloseable {
     private void waitForZap(ZapStatusCall call, long timeoutMillis, String label,
                             String runId, int laneIndex) {
         long deadline = System.currentTimeMillis() + timeoutMillis;
+        int consecutiveErrors = 0;
         while (System.currentTimeMillis() < deadline) {
-            JsonNode status = parseZap(call.get());
-            String value = findStatus(status).toLowerCase(java.util.Locale.ROOT);
+            ensureZapNotCancelled();
+            String value;
+            try {
+                value = requiredZapStatus(call.get(), label).toLowerCase(java.util.Locale.ROOT);
+                consecutiveErrors = 0;
+            } catch (RuntimeException error) {
+                if (++consecutiveErrors >= 3) throw error;
+                recordZapHeartbeat(runId, laneIndex, "일시적 ZAP 상태 조회 실패 " + consecutiveErrors + "/3");
+                sleepZapPoll();
+                continue;
+            }
             recordZapHeartbeat(runId, laneIndex, value.isBlank() ? "응답 수신" : value);
-            if (value.equals("100") || value.equals("stopped") || value.equals("finished")
-                    || value.equals("complete") || value.equals("completed")) return;
+            if (zapTerminal(value)) return;
             if (value.equals("failed") || value.equals("error")) throw new IllegalStateException(label + " failed");
             sleepZapPoll();
         }
+        ensureZapNotCancelled();
+        String finalValue = requiredZapStatus(call.get(), label).toLowerCase(java.util.Locale.ROOT);
+        recordZapHeartbeat(runId, laneIndex, finalValue);
+        if (zapTerminal(finalValue)) return;
         throw new IllegalStateException(label + " timed out");
+    }
+
+    private String requiredZapStatus(String raw, String label) {
+        JsonNode status = parseZap(raw);
+        String value = findStatus(status);
+        if (value.isBlank()) {
+            String code = status.path("code").asText();
+            String message = status.path("message").asText();
+            throw new IllegalStateException(label + " returned no status"
+                    + (code.isBlank() && message.isBlank() ? "" : ": " + code + " " + message));
+        }
+        return value;
+    }
+
+    private static boolean zapTerminal(String value) {
+        return value.equals("100") || value.equals("stopped") || value.equals("finished")
+                || value.equals("complete") || value.equals("completed");
     }
 
     private PassiveDrainResult waitForPassive(String runId, int laneIndex) {
@@ -1844,18 +2106,27 @@ public final class McpServer implements AutoCloseable {
         long lastProgressAt = now;
         int previous = Integer.MAX_VALUE;
         int remaining = -1;
-        String previousTask = "";
         String task = "";
+        int consecutiveErrors = 0;
         while ((now = System.currentTimeMillis()) < deadline) {
-            JsonNode queue = parseZap(state.zap().passiveRecordsToScan());
-            remaining = queue.path("recordsToScan").asInt(-1);
-            if (remaining < 0) throw new IllegalStateException("ZAP passive queue returned no record count");
-            JsonNode tasks = parseZap(state.zap().passiveTasks());
-            task = passiveTaskSummary(tasks);
-            boolean progressed = remaining < previous || (!task.isBlank() && !task.equals(previousTask));
+            ensureZapNotCancelled();
+            try {
+                JsonNode queue = parseZap(state.zap().passiveRecordsToScan());
+                remaining = queue.path("recordsToScan").asInt(-1);
+                if (remaining < 0) throw new IllegalStateException("ZAP passive queue returned no record count");
+                JsonNode tasks = parseZap(state.zap().passiveTasks());
+                task = passiveTaskSummary(tasks);
+                consecutiveErrors = 0;
+            } catch (RuntimeException error) {
+                if (++consecutiveErrors >= 3) throw error;
+                recordZapHeartbeat(runId, laneIndex,
+                        "일시적 Passive 상태 조회 실패 " + consecutiveErrors + "/3");
+                sleepZapPoll();
+                continue;
+            }
+            boolean progressed = remaining < previous;
             if (progressed) lastProgressAt = now;
             previous = remaining;
-            previousTask = task;
             recordZapPassiveHeartbeat(runId, laneIndex, remaining, task);
             if (remaining == 0 && task.isBlank()) return new PassiveDrainResult(true, 0, "");
             if (remaining > 0 && now - lastProgressAt >= passiveStallTimeoutMillis()) {
@@ -1872,9 +2143,22 @@ public final class McpServer implements AutoCloseable {
                 "다음 신원 전환 전 Passive queue 정리 시작");
         requireZapOk(state.zap().clearPassiveQueue(), "clear the abandoned passive scan queue");
         long deadline = System.currentTimeMillis() + passiveCleanupTimeoutMillis();
+        int consecutiveErrors = 0;
         while (System.currentTimeMillis() < deadline) {
-            int remaining = parseZap(state.zap().passiveRecordsToScan()).path("recordsToScan").asInt(-1);
-            String task = passiveTaskSummary(parseZap(state.zap().passiveTasks()));
+            int remaining;
+            String task;
+            try {
+                remaining = parseZap(state.zap().passiveRecordsToScan()).path("recordsToScan").asInt(-1);
+                if (remaining < 0) throw new IllegalStateException("ZAP passive queue returned no record count");
+                task = passiveTaskSummary(parseZap(state.zap().passiveTasks()));
+                consecutiveErrors = 0;
+            } catch (RuntimeException error) {
+                if (++consecutiveErrors >= 3) throw error;
+                recordZapHeartbeat(runId, laneIndex,
+                        "일시적 Passive 격리 상태 조회 실패 " + consecutiveErrors + "/3");
+                sleepZapPoll(false);
+                continue;
+            }
             recordZapPassiveHeartbeat(runId, laneIndex, remaining, task);
             if (remaining == 0 && task.isBlank()) {
                 recordZapProgress(accountLabel, "ISOLATION_CLEANUP", "DONE",
@@ -1943,8 +2227,7 @@ public final class McpServer implements AutoCloseable {
         List<ZapLaneRuntime> runtime = new ArrayList<>(zapLaneRuntime);
         ZapLaneRuntime current = runtime.get(laneIndex);
         boolean progressed = captured != current.lastCaptured()
-                || (remaining >= 0 && (current.passiveRemaining() < 0 || remaining < current.passiveRemaining()))
-                || (!task.isBlank() && !task.equals(current.passiveTask()));
+                || (remaining >= 0 && (current.passiveRemaining() < 0 || remaining < current.passiveRemaining()));
         runtime.set(laneIndex, new ZapLaneRuntime(current.queuedAt(), current.startedAt(), current.endedAt(),
                 current.stageStartedAt(), now, progressed ? now : current.lastProgressAt(),
                 current.stageTimeoutMillis(), current.capturedAtStart(), current.traditionalAtStart(),
@@ -2011,11 +2294,21 @@ public final class McpServer implements AutoCloseable {
         return "";
     }
 
-    private static void sleepZapPoll() {
+    private void sleepZapPoll() { sleepZapPoll(true); }
+
+    private void sleepZapPoll(boolean observeCancellation) {
+        if (observeCancellation) ensureZapNotCancelled();
         try { Thread.sleep(Math.max(100L, Long.getLong("flowscope.zap.poll.ms", 1_000L))); }
         catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("ZAP baseline interrupted", error);
+        }
+        if (observeCancellation) ensureZapNotCancelled();
+    }
+
+    private void ensureZapNotCancelled() {
+        if (zapCancelRequested.get() || Thread.currentThread().isInterrupted()) {
+            throw new IllegalStateException("ZAP baseline cancelled");
         }
     }
 
@@ -2230,6 +2523,7 @@ public final class McpServer implements AutoCloseable {
         if (lockedSnapshot != null) throw new IllegalStateException("scanner runs must finish before dataset lock");
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
+        verifySafeZapEnvironment(List.of());
         if (active && (!args.path("confirmed").asBoolean(false) || !state.approve("ZAP Active Scan", target))) {
             throw new IllegalArgumentException("active scan approval denied");
         }
@@ -2240,6 +2534,7 @@ public final class McpServer implements AutoCloseable {
         state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(detail, Orchestrator.LLM,
                 ToolKind.ZAP, RunPhase.EXPLORATION, runId, accountId));
         try {
+            configureExactZapContext(target, runId);
             JsonNode response = parseZap(active ? state.zap().activeScan(target) : state.zap().spider(target));
             if (response.path("scan").asText().isBlank()) {
                 throw new IllegalStateException("ZAP did not return a scan id");
@@ -2257,12 +2552,14 @@ public final class McpServer implements AutoCloseable {
         if (lockedSnapshot != null) throw new IllegalStateException("scanner runs must finish before dataset lock");
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
+        verifySafeZapEnvironment(List.of());
         String runId = validatedRunId(args.path("run_id").asText("zap-ajax-" + System.currentTimeMillis()));
         String accountId = validatedAccountForTarget(args.path("account_id").asText(), target);
         state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_AJAX_SPIDER,
                 Orchestrator.LLM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, accountId));
         try {
-            JsonNode response = parseZap(state.zap().ajaxSpider(target));
+            String contextName = configureExactZapContext(target, runId);
+            JsonNode response = parseZap(state.zap().ajaxSpider(target, contextName));
             if (!"OK".equalsIgnoreCase(response.path("Result").asText())) {
                 throw new IllegalStateException("ZAP AJAX Spider did not start");
             }
@@ -2279,12 +2576,14 @@ public final class McpServer implements AutoCloseable {
         if (lockedSnapshot != null) throw new IllegalStateException("scanner runs must finish before dataset lock");
         String target = required(args, "target");
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
+        verifySafeZapEnvironment(List.of());
         String runId = validatedRunId(args.path("run_id").asText("zap-client-" + System.currentTimeMillis()));
         String accountId = validatedAccountForTarget(args.path("account_id").asText(), target);
         state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_CLIENT_SPIDER,
                 Orchestrator.LLM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, accountId));
         try {
-            JsonNode response = parseZap(state.zap().clientSpider(target));
+            String contextName = configureExactZapContext(target, runId);
+            JsonNode response = parseZap(state.zap().clientSpider(target, contextName));
             if (response.path("scan").asText().isBlank()) {
                 throw new IllegalStateException("ZAP Client Spider did not return a scan id");
             }
@@ -2294,6 +2593,18 @@ public final class McpServer implements AutoCloseable {
             state.contexts().abort(Source.SCANNER, runId);
             throw error;
         }
+    }
+
+    private String configureExactZapContext(String target, String runId) {
+        String contextName = "flowscope-" + runId + "-" + Long.toUnsignedString(System.nanoTime(), 36);
+        JsonNode context = parseZap(state.zap().newContext(contextName));
+        if (context.path("contextId").asText().isBlank()) {
+            throw new IllegalStateException("ZAP did not create an exact-scope context");
+        }
+        requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+                "include the exact target subtree in context");
+        requireZapOk(state.zap().setContextInScope(contextName), "mark the exact target context in scope");
+        return contextName;
     }
 
     private JsonNode parseZap(String raw) {

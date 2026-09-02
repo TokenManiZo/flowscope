@@ -49,6 +49,7 @@ final class SqliteProjectStoreTest {
         record.tool = ToolKind.BROWSER;
         record.phase = RunPhase.EXPLORATION;
         record.runId = "human-1";
+        record.laneAccountId = "acct-test1";
         record.executionTrust = ExecutionTrust.OBSERVED;
         record.reqText = Masking.maskHeaders("GET /orders/7 HTTP/1.1\r\nCookie: session=RAWCOOKIE");
         record.requestPayload = StoredPayload.capture(record.reqText, "text/plain", 1024 * 1024);
@@ -98,6 +99,7 @@ final class SqliteProjectStoreTest {
         }
 
         ProjectStore.ProjectData loaded = store.load(database);
+        assertEquals("acct-test1", loaded.records().getFirst().laneAccountId);
         assertEquals(1, loaded.records().size());
         assertEquals("test1", loaded.config().account(account.id()).orElseThrow().label());
         assertEquals(account.id(), loaded.config().boundAccount(record.service, record.fp).orElseThrow().id());

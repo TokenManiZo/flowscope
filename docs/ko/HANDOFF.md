@@ -12,7 +12,7 @@
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
 | 자동 회귀 | 최신 수치와 JAR digest는 `beta-validation.md` 정본 참조 |
-| 현재 판정 | 기능이 연결된 베타. clean-room P1 1~9는 자동 회귀로 닫았고, 오픈소스 정식 출시 전 P2 정확성·운영 결함, 실제 Burp 통합 검증과 블라인드 효능 평가가 남음 |
+| 현재 판정 | 기능이 연결된 베타. clean-room P1 1~9와 ZAP 출처·격리·취소 hardening은 자동 회귀로 닫았고, 오픈소스 정식 출시 전 나머지 P2 정확성·운영 결함, 실제 Burp 통합 검증과 블라인드 효능 평가가 남음 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
 
@@ -97,7 +97,7 @@ Traditional Spider
 
 `scope-only`는 ZAP Context 기준이므로 각 lane은 선택 target의 origin·path subtree만 포함하는 fresh Context를 만든다. sibling path·subdomain·다른 port/scheme은 regex 회귀로 제외한다.
 
-시작 전 `spider/client/spiderAjax/pscan/pscanrules/selenium/openapi/websocket` add-on을 검사하고 신원별 fresh session에서 passive engine·전체 passive rule·scope-only를 명시 적용한다. lane은 비로그인부터 직렬 실행하며 Web/API는 전체·단계 경과시간, 단계 제한, 마지막 ZAP heartbeat와 capture/status 변화, 후속 계정의 대기 순번·선행 lane, Passive 남은 건수·현재 task와 Alert snapshot 완결성을 표시한다. 단계 전환·queue 감소·Alert 집계·격리 cleanup은 bounded 실행 기록으로 1초 갱신한다. Client/AJAX 실패나 0 capture는 숨기지 않고 경고 완료로 남긴다. Passive가 10분간 진행되지 않거나 30분을 넘으면 현재 Evidence와 Alert를 부분 완료로 보존하고 queue/task를 정리하며, Passive 전 실패를 포함해 정리가 확인되지 않으면 다음 신원은 실행하지 않는다. Alert 상세는 신원별 최대 20,000개까지 snapshot으로 보존한다. 기본 캠페인에는 Active Scan·Fuzzer·Forced Browse가 포함되지 않는다. Active Scan은 별도 사용자 승인이 필요하다. 각 신원 lane에서 실제 범위 내 SCANNER 응답이 수집되어야 완료 gate가 열린다.
+시작 전 `spider/client/spiderAjax/pscan/pscanrules/selenium/openapi/websocket/network/replacer` add-on을 검사하고 신원별 fresh session에서 passive engine·전체 passive rule·scope-only를 명시 적용한다. 시스템 캠페인은 exact target용 run capability를 ZAP Replacer로 붙이고 Burp 8081에서 검증·제거하므로 capability 없는 수동 8081 요청과 native Burp Scanner는 활성 ZAP run/account를 상속하지 않는다. lane은 비로그인부터 직렬 실행하며 각 Evidence가 별도 `laneAccountId`를 보존한다. Web/API는 전체·단계 경과시간, 단계 제한, 마지막 ZAP heartbeat와 capture/status 변화, 후속 계정의 대기 순번·선행 lane, Passive 남은 건수·현재 task와 Alert snapshot 완결성을 표시한다. 단계 전환·queue 감소·Alert 집계·격리 cleanup은 bounded 실행 기록으로 1초 갱신한다. Client/AJAX 실패나 0 capture는 숨기지 않고 경고 완료로 남긴다. crawler stop 뒤 terminal 상태를 확인하지 못하면 다음 stage/identity를 실행하지 않는다. Passive queue가 10분간 감소하지 않거나 30분을 넘으면 현재 Evidence와 Alert를 부분 완료로 보존하고 queue/task를 정리하며, 마지막 lane을 포함해 정리가 확인되지 않으면 terminal failure로 남긴다. Alert 상세는 캠페인 전체 최대 20,000개까지 snapshot으로 보존한다. 사용자는 실행 중 캠페인을 취소할 수 있으며 소유 crawler·capability·run context를 정리한 뒤 `CANCELLED`가 된다. 기본 캠페인에는 Active Scan·Fuzzer·Forced Browse가 포함되지 않는다. Active Scan은 별도 사용자 승인이 필요하다. 각 신원 lane에서 실제 범위 내 SCANNER 응답이 수집되어야 완료 gate가 열린다.
 
 ### 3.5 독립 LLM Explorer와 Judge
 
@@ -267,7 +267,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-09-02 기준 beta.39의 전체 `mvn clean verify`는 연속 두 번 각각 306 tests가 실패·오류·skip 없이 통과했고 두 JAR의 SHA-256이 일치했다. 정확한 digest는 `beta-validation.md` 정본을 따른다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장, beta.33은 Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시, beta.34는 선형 snapshot/DataFlow와 live/persistence/assessment byte 경계, beta.37은 browser request 승인·Graph Fact, beta.38은 ZAP 장시간 실행 관측성, beta.39는 분류·Explorer 방문 gate·기본 그래프 회귀 복구, Passive 정체/모든 실패 경로의 신원 cleanup, bounded ZAP 실행 기록을 추가했다. 실제 Burp beta.39 재로드는 대기한다.
+2026-09-02 기준 beta.39의 전체 `mvn clean verify`는 연속 두 번 각각 313 tests가 실패·오류·skip 없이 통과했고 두 JAR의 SHA-256이 일치했다. 정확한 digest는 `beta-validation.md` 정본을 따른다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장, beta.33은 Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시, beta.34는 선형 snapshot/DataFlow와 live/persistence/assessment byte 경계, beta.37은 browser request 승인·Graph Fact, beta.38은 ZAP 장시간 실행 관측성, beta.39는 분류·Explorer 방문 gate·기본 그래프 회귀 복구, Passive 정체/모든 실패 경로의 신원 cleanup, run capability 귀속, 취소 terminal 보장과 bounded ZAP 실행 기록을 추가했다. 실제 Burp beta.39 재로드는 대기한다.
 
 ### 실제·standalone 검증
 
@@ -347,10 +347,9 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
    - 영향: SIGTERM을 무시하는 CLI가 살아서 다음 실행을 막고 MCP 환경을 유지할 수 있다.
    - 완료 조건: graceful timeout, `destroyForcibly`, exit 확인, resistant fake process 테스트가 필요하다.
 
-7. **ZAP run 중 native Burp Scanner가 같은 캠페인으로 귀속될 수 있음**
-   - 위치: `FlowScopeExtension.ToolHandler`와 전역 SCANNER context
-   - 영향: 무관한 Burp Scanner 요청이 ZAP run ID/account/CONTROLLED trust와 completion count를 오염시킬 수 있다.
-   - 완료 조건: 실행 채널/listener 상관관계 또는 native Scanner 배제 정책과 동시 실행 회귀가 필요하다.
+7. **해결됨 — ZAP run 중 native Burp Scanner 오귀속**
+   - 현재 계약: native Burp Scanner는 ZAP context를 상속하지 않고, SYSTEM 캠페인은 exact-target Replacer capability가 run ID와 일치하는 8081 요청만 세션 주입·CONTROLLED 귀속한다.
+   - 회귀: native Scanner 배제와 capability 일치/불일치 판정을 자동 테스트로 고정했다. 실제 Burp+ZAP의 Replacer end-to-end 확인은 통합 gate에 남는다.
 
 8. **Burp XML의 비 UTF-8 body 손실**
    - 위치: `BurpXmlParser`
