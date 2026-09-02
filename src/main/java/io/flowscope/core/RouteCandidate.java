@@ -5,7 +5,8 @@ import java.util.List;
 import java.util.Set;
 
 /** 실제 관측 operation과 아직 요청하지 않은 route를 분리하는 provenance 보존 모델. */
-public record RouteCandidate(String service, String method, String pathTemplate, boolean observed,
+public record RouteCandidate(String service, String method, String pathTemplate,
+                             List<String> concretePaths, boolean concretePathsTruncated, boolean observed,
                              List<Provenance> provenance,
                              Applicability applicability, String reviewReason) {
     public enum ProvenanceType {
@@ -47,6 +48,9 @@ public record RouteCandidate(String service, String method, String pathTemplate,
 
     public RouteCandidate {
         method = method == null || method.isBlank() ? "UNKNOWN" : method;
+        concretePaths = concretePaths == null ? List.of() : concretePaths.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(RouteCandidate::safeConcretePath).distinct().toList();
         provenance = provenance == null ? List.of() : List.copyOf(new LinkedHashSet<>(provenance));
         applicability = applicability == null ? Applicability.REVIEW : applicability;
         reviewReason = reviewReason == null ? "" : reviewReason;
@@ -58,6 +62,15 @@ public record RouteCandidate(String service, String method, String pathTemplate,
         }
     }
 
+    /** 기존 저장 형식과 호출부는 concrete 실행값이 없던 계약으로 계속 읽는다. */
+    public RouteCandidate(String service, String method, String pathTemplate, boolean observed,
+                          List<Provenance> provenance, Applicability applicability, String reviewReason) {
+        this(service, method, pathTemplate,
+                pathTemplate != null && !pathTemplate.contains("{") && !pathTemplate.contains("}")
+                        ? List.of(pathTemplate) : List.of(),
+                false, observed, provenance, applicability, reviewReason);
+    }
+
     public Set<ProvenanceType> provenanceTypes() {
         return provenance.stream().map(Provenance::type)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -65,6 +78,13 @@ public record RouteCandidate(String service, String method, String pathTemplate,
 
     public List<String> provenanceEvidenceIds() {
         return provenance.stream().map(Provenance::evidenceId).distinct().toList();
+    }
+
+    private static String safeConcretePath(String value) {
+        String masked = Masking.maskSecrets(value);
+        if (value.equals(masked)) return value;
+        int query = value.indexOf('?');
+        return query >= 0 ? value.substring(0, query) : masked;
     }
 
     public Set<Source> discoveredSources() {

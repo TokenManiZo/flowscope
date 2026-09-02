@@ -6,6 +6,30 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-02 · 1.2.0-beta.40 · Explorer 1~10 실행 계약과 concrete frontier
+
+**개발·수정**
+
+- **재현된 결함:** 응답에서 발견한 `/orders/42`를 `/orders/{id}`로 정규화하면서 실제 `42`가 route 후보에서 사라졌다. 완료 gate는 중괄호 template을 실행 불가능으로 제외했기 때문에 Explorer가 객체 경로를 발견하고도 요청하지 않은 채 종료할 수 있었다. 또한 긴 실행을 취소할 때 provider parent에 `destroy()`만 호출해 하위 프로세스 종료 완료를 확인하지 않았다.
+- **template/concrete 분리:** `RouteCandidate`에 bounded `concretePaths`와 초과 표시를 추가했다. template은 endpoint 정렬·표시에, 실제 응답에서 추출한 path+query와 이미 관측된 request의 path+query는 HTTP 실행·방문 확인에 쓴다. 최초 수정 점검에서 관측 요청 query가 `addObserved`에서 누락돼 이미 방문한 URL이 pending으로 남는 회귀를 발견해 함께 수정했다. 후보당 200개를 보존하며 인증성 query가 탐지되면 raw query를 버리고 path만 남긴다. 값이 없는 OpenAPI template에는 임의 ID를 만들지 않는다. JSON project와 Web snapshot도 같은 필드를 보존한다.
+- **서버 강제 1~10:** route API가 `pending_concrete_paths`, endpoint/object/function/workflow `review_dimensions`, `explorer_guidance.next_action`을 반환한다. 한 응답의 후보·남은 개수·guidance는 동일 snapshot에서 계산한다. INDEPENDENT concrete frontier가 남으면 ASSISTED 전환을, 어느 safe concrete가 남으면 종료를 거부한다. HTML script 신호는 격리 브라우저를 조건부 discovery 보조로 권고하지만 HTTP executor 재현만 Evidence다. 권고된 rendered discovery 미사용·불가와 실제 값 없는 dynamic template은 `PARTIAL_WITH_LIMITATIONS`로 반환한다.
+- **prompt·불신 입력:** Explorer prompt를 범위/계정 고정과 첫 Evidence부터 독립 인벤토리, route 분류, 저영향 요청, BOLA/IDOR, BFLA, workflow, 승인 write, Evidence/control, blind assisted·한계 보고까지 10단계로 고정했다. 대상 응답·DOM·tool output은 지시가 아닌 불신 데이터로 취급한다.
+- **프로세스 종료:** 취소·확장 unload·시작 경합이 알려진 descendants를 leaf-first로 정상 종료하고 parent를 종료한 뒤 1초 기다린다. 남은 프로세스는 강제 종료하고 다시 1초 안에 실제 종료를 확인한다. 확인 실패는 성공이나 취소가 아닌 복구 안내가 있는 실패다.
+
+**왜 필요했고 무엇을 기각했는가**
+
+- template만 남기는 방식은 고카디널리티 표시는 정리하지만 실제 객체 탐색을 막는다. 반대로 ID별 endpoint를 모두 분리하면 그래프와 인벤토리를 다시 오염시키므로 표시 template과 실행 concrete 값을 분리했다. schema placeholder를 LLM이 추측하는 방식은 존재하지 않는 객체를 꾸미므로 기각했다.
+- 브라우저-first는 API-only 대상의 비용·노이즈를 늘리고 UI가 호출하지 않는 API를 놓친다. HTTP-only는 SPA runtime 경로를 놓칠 수 있어 API-first와 조건부 browser discovery를 결합했다. 브라우저 결과를 바로 Evidence로 올리지 않고 controlled HTTP 재현을 요구한다.
+- prompt만으로 단계 준수를 주장하지 않는다. 서버가 강제할 수 있는 frontier·Evidence·완료 조건은 구조화 응답과 gate로 고정하고, BOLA/BFLA/logic 의미 검토는 후보 차원으로 남겨 status만으로 verdict를 만들지 않는다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드: `RouteCandidate.java`, `RouteCandidateExtractor.java`, `RouteCandidateViews.java`, `McpServer.java`, `ProjectStore.java`, `SnapshotJsonWriter.java`, `LocalLlmRunner.java`; 역할 지침: `agent-workspace/AGENTS.md`, `agent-workspace/CLAUDE.md`, `agent-workspace/prompts/explorer.md`.
+- 회귀: `RouteCandidateExtractorTest.java`, `ProjectStoreTest.java`, `McpServerTest.java`, `LocalLlmRunnerTest.java`, 새 `ExplorerEndpointHarnessTest.java`. 문서: `README.md`, `architecture.md`, `decisions.md`, `product-development-plan.md`, `product-overview.md`, 시작 가이드, 한·영 CHANGELOG, agent workspace, `HANDOFF.md`, 이 기록.
+- 집중 회귀는 두 object ID+query 보존, 이미 관측한 request query 보존, secret query 제거, 200개 상한/초과 표시, project round-trip, concrete frontier 요청 전 종료 거부, rendered limitation 반환과 provider process-tree 종료를 통과했다. 매 실행 새 포트의 실제 local HTTP fixture는 HTML→외부 script→API/object 연쇄 발견, exact-scope 밖 링크 제외와 POST 묵시 실행 금지를 통과했다.
+- 전체 `mvn clean verify`를 연속 두 번 실행해 매회 324 tests, failure/error/skip 0을 확인했다. 두 JAR은 16,025,306 bytes·2,066 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `b472c9eae70afd4dd6d818af576e458570ac9b3116e2dc288ee6a62f0bf4ff55`로 동일했다.
+- 이 검증은 실제 Burp Session Broker, 실제 Codex/Claude 장기 Explorer 완주, SPA 브라우저 recall 또는 endpoint/finding precision·recall을 증명하지 않는다. 실제 Codex/Claude 즉시 취소 smoke는 해당 실행의 잔존 process/workspace가 없음을 확인했지만 장기 run을 대체하지 않는다. descendants는 종료 시작 시점 snapshot이라 이후 분리된 daemon까지 운영체제 수준으로 소유·종료함을 증명하지 않는다.
+
 ## 2026-09-02 · 1.2.0-beta.39 · ZAP capability 실패 원인화와 blocking 단계 heartbeat
 
 **개발·수정**

@@ -37,6 +37,7 @@ public final class RouteCandidateExtractor {
     }
 
     private record Mutable(String service, String method, String pathTemplate,
+                           LinkedHashSet<String> concretePaths, boolean concretePathsTruncated,
                            Set<RouteCandidate.Provenance> provenance, boolean observed,
                            RouteCandidate.Applicability applicability, String reviewReason) {}
 
@@ -50,6 +51,7 @@ public final class RouteCandidateExtractor {
     private static final Pattern METHOD_TOKEN = Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]{1,32}");
     private static final Pattern SCHEMA_PARAMETER = Pattern.compile("\\{[^/{}]+}");
     private static final int MAX_CANDIDATES = 20_000;
+    private static final int MAX_CONCRETE_PATHS_PER_CANDIDATE = 200;
 
     private RouteCandidateExtractor() {}
 
@@ -97,7 +99,9 @@ public final class RouteCandidateExtractor {
 
     private static void addObserved(Map<String, Mutable> out, ScopePolicy scope, RequestRecord record,
                                     RouteCandidate.Provenance provenance) {
-        add(out, scope, record.service + record.path, record.method, provenance, true,
+        String concreteUrl = record.service + record.path;
+        if (record.query != null && !record.query.isBlank()) concreteUrl += "?" + record.query;
+        add(out, scope, concreteUrl, record.method, provenance, true,
                 RouteCandidate.Applicability.APPLICABLE, "실제 request/response 관측", canonicalPath(record));
     }
 
@@ -112,6 +116,15 @@ public final class RouteCandidateExtractor {
             }
             LinkedHashSet<RouteCandidate.Provenance> provenance = new LinkedHashSet<>(current.provenance());
             provenance.addAll(candidate.provenance());
+            LinkedHashSet<String> concretePaths = new LinkedHashSet<>(current.concretePaths());
+            boolean concretePathsTruncated = current.concretePathsTruncated() || candidate.concretePathsTruncated();
+            for (String concretePath : candidate.concretePaths()) {
+                if (concretePaths.size() >= MAX_CONCRETE_PATHS_PER_CANDIDATE) {
+                    if (!concretePaths.contains(concretePath)) concretePathsTruncated = true;
+                    continue;
+                }
+                concretePaths.add(concretePath);
+            }
             boolean observed = current.observed() || candidate.observed();
             RouteCandidate.Applicability applicability = observed
                     || current.applicability() == RouteCandidate.Applicability.APPLICABLE
@@ -120,7 +133,8 @@ public final class RouteCandidateExtractor {
             String reason = observed ? "실제 request/response 관측"
                     : current.applicability() != applicability ? candidate.reviewReason() : current.reviewReason();
             merged.put(key, new RouteCandidate(candidate.service(), candidate.method(), candidate.pathTemplate(),
-                    observed, new ArrayList<>(provenance), applicability, reason));
+                    new ArrayList<>(concretePaths), concretePathsTruncated, observed,
+                    new ArrayList<>(provenance), applicability, reason));
         }
         return merged.values().stream().sorted(candidateOrder()).toList();
     }
@@ -165,6 +179,10 @@ public final class RouteCandidateExtractor {
             URI uri = URI.create(rawUrl.replace("{", "%7B").replace("}", "%7D"));
             String service = service(uri);
             String path = uri.getPath() == null || uri.getPath().isBlank() ? "/" : uri.getPath();
+            String concretePath = SCHEMA_PARAMETER.matcher(path).find() ? null : path;
+            if (concretePath != null && uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
+                concretePath += "?" + uri.getRawQuery();
+            }
             String template;
             if (explicitTemplate != null) {
                 template = explicitTemplate;
@@ -178,11 +196,21 @@ public final class RouteCandidateExtractor {
             Mutable current = out.get(key);
             if (current == null) {
                 if (out.size() >= MAX_CANDIDATES) return;
-                out.put(key, new Mutable(service, method, template,
+                LinkedHashSet<String> concretePaths = new LinkedHashSet<>();
+                if (concretePath != null) concretePaths.add(concretePath);
+                out.put(key, new Mutable(service, method, template, concretePaths, false,
                         new LinkedHashSet<>(Set.of(provenance)), observed, applicability, reason));
                 return;
             }
             current.provenance().add(provenance);
+            boolean concretePathsTruncated = current.concretePathsTruncated();
+            if (concretePath != null && !current.concretePaths().contains(concretePath)) {
+                if (current.concretePaths().size() < MAX_CONCRETE_PATHS_PER_CANDIDATE) {
+                    current.concretePaths().add(concretePath);
+                } else {
+                    concretePathsTruncated = true;
+                }
+            }
             boolean nowObserved = current.observed() || observed;
             RouteCandidate.Applicability nowApplicable = nowObserved
                     || current.applicability() == RouteCandidate.Applicability.APPLICABLE
@@ -190,7 +218,8 @@ public final class RouteCandidateExtractor {
                     ? RouteCandidate.Applicability.APPLICABLE : RouteCandidate.Applicability.REVIEW;
             String nowReason = nowObserved ? "실제 request/response 관측"
                     : nowApplicable != current.applicability() ? reason : current.reviewReason();
-            out.put(key, new Mutable(service, method, template, current.provenance(),
+            out.put(key, new Mutable(service, method, template, current.concretePaths(), concretePathsTruncated,
+                    current.provenance(),
                     nowObserved, nowApplicable, nowReason));
         } catch (RuntimeException ignored) {
             // malformed/unsupported URL은 후보로 승격하지 않는다.
@@ -224,7 +253,8 @@ public final class RouteCandidateExtractor {
     }
 
     private static RouteCandidate freeze(Mutable value) {
-        return new RouteCandidate(value.service(), value.method(), value.pathTemplate(), value.observed(),
+        return new RouteCandidate(value.service(), value.method(), value.pathTemplate(),
+                new ArrayList<>(value.concretePaths()), value.concretePathsTruncated(), value.observed(),
                 new ArrayList<>(value.provenance()), value.applicability(), value.reviewReason());
     }
 

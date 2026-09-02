@@ -19,6 +19,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -96,7 +97,7 @@ final class McpServerTest {
         JsonNode initialized = json(post("test-token", request(2, "initialize",
                 "{\"protocolVersion\":\"future-version\"}")));
         assertEquals("2025-11-25", initialized.at("/result/protocolVersion").asText());
-        assertEquals("1.2.0-beta.39", initialized.at("/result/serverInfo/version").asText());
+        assertEquals("1.2.0-beta.40", initialized.at("/result/serverInfo/version").asText());
         assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
 
         JsonNode evidence = tool("flowscope_get_evidence",
@@ -307,6 +308,45 @@ final class McpServerTest {
     }
 
     @Test
+    void browserUsageIsRecordedEvenWhenRenderedPageDiscoversNoNetworkRoute() throws Exception {
+        String runId = "browser-empty-run";
+        RequestRecord entry = observationAt(Source.LLM, "A", 200,
+                "<html><script>window.app = true</script></html>",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1");
+        entry.responseContentType = "text/html";
+        Pipeline.Result result = Pipeline.run(List.of(entry));
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return result; }
+            @Override public ScopePolicy scope() { return ScopePolicy.parse("https://api.example.test/v1"); }
+            @Override public void updateScope(String value) { throw new UnsupportedOperationException(); }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String value) { return false; }
+            @Override public ControlledBrowserExplorer.Snapshot browserNavigate(
+                    String activeRunId, String target, String accountId) {
+                return new ControlledBrowserExplorer.Snapshot(activeRunId, target, "Shell", "",
+                        List.of(), List.of(), true);
+            }
+            @Override public boolean browserAvailable() { return true; }
+        }, 0, "test-token");
+        server.start();
+
+        assertFalse(tool("flowscope_browser_navigate",
+                "{\"target\":\"https://api.example.test/v1\"}").at("/result/isError").asBoolean());
+        JsonNode frontier = tool("flowscope_list_route_candidates", "{\"view\":\"INDEPENDENT\"}");
+
+        assertTrue(frontier.at("/result/structuredContent/explorer_guidance/browser_used").asBoolean());
+        assertFalse(frontier.at("/result/structuredContent/explorer_guidance/rendered_discovery_recommended")
+                .asBoolean());
+        assertEquals("REVIEW_ASSISTED_FRONTIER",
+                frontier.at("/result/structuredContent/explorer_guidance/next_action").asText());
+    }
+
+    @Test
     void refusesToLockCompletedButEmptyExplorationLanes() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
         completeAll(contexts);
@@ -493,6 +533,61 @@ final class McpServerTest {
         JsonNode ended = tool("flowscope_end_run",
                 "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}");
         assertFalse(ended.at("/result/isError").asBoolean(), ended.toString());
+    }
+
+    @Test
+    void explorerReceivesConcreteObjectPathsAndCannotFinishBeforeRequestingThem() throws Exception {
+        String runId = "explore-concrete-object";
+        RequestRecord entry = observationAt(Source.LLM, "A", 200, "<html><script src='/app.js'></script></html>",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1");
+        entry.responseContentType = "text/html";
+        AtomicReference<Pipeline.Result> result = new AtomicReference<>(Pipeline.run(List.of(entry)));
+        RouteCandidate.Provenance provenance = routeProvenance(RouteCandidate.ProvenanceType.HTML_LINK,
+                entry.evidenceId, Source.LLM, runId, RouteCandidate.Applicability.REVIEW, "object link");
+        AtomicReference<List<RouteCandidate>> routes = new AtomicReference<>(List.of(new RouteCandidate(
+                "https://api.example.test:443", "UNKNOWN", "/v1/orders/{id}",
+                List.of("/v1/orders/42?detail=full"), false, false, List.of(provenance),
+                RouteCandidate.Applicability.REVIEW, "discovered object path")));
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
+        server = new McpServer(state(result, contexts, ScopePolicy.parse("https://api.example.test/v1"),
+                new AnalysisConfig(), routes), 0, "test-token");
+        server.start();
+
+        JsonNode frontier = tool("flowscope_list_route_candidates", "{\"view\":\"INDEPENDENT\"}");
+        assertEquals(1, frontier.at("/result/structuredContent/remaining_safe_concrete").asInt());
+        assertEquals("/v1/orders/42?detail=full",
+                frontier.at("/result/structuredContent/routes/0/pending_concrete_paths/0").asText());
+        assertTrue(frontier.at("/result/structuredContent/routes/0/review_dimensions").toString()
+                .contains("OBJECT_AUTHORIZATION"));
+        assertEquals("REQUEST_INDEPENDENT_SAFE_FRONTIER",
+                frontier.at("/result/structuredContent/explorer_guidance/next_action").asText());
+        assertTrue(tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}")
+                .at("/result/isError").asBoolean());
+
+        RequestRecord visited = observationAt(Source.LLM, "A", 200, "{\"id\":42}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1/orders/42");
+        visited.query = "detail=full";
+        result.set(Pipeline.run(List.of(entry, visited)));
+        routes.set(List.of(new RouteCandidate("https://api.example.test:443", "UNKNOWN", "/v1/orders/{id}",
+                List.of("/v1/orders/42?detail=full"), false, true, List.of(provenance),
+                RouteCandidate.Applicability.APPLICABLE, "visited object path")));
+
+        JsonNode exhausted = tool("flowscope_list_route_candidates", "{\"view\":\"INDEPENDENT\"}");
+        assertEquals(0, exhausted.at("/result/structuredContent/remaining_safe_concrete").asInt());
+        assertTrue(List.of("BROWSER_DISCOVERY_RECOMMENDED", "BROWSER_UNAVAILABLE_CONTINUE_PARTIAL")
+                .contains(exhausted.at("/result/structuredContent/explorer_guidance/next_action").asText()));
+
+        JsonNode assisted = tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}");
+        assertEquals(0, assisted.at("/result/structuredContent/remaining_safe_concrete").asInt());
+        JsonNode ended = tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}");
+        assertFalse(ended.at("/result/isError").asBoolean(), ended.toString());
+        assertEquals("PARTIAL_WITH_LIMITATIONS",
+                ended.at("/result/structuredContent/completion_quality").asText());
+        assertEquals(1, ended.at("/result/structuredContent/coverage_limitations").size());
+        assertTrue(Set.of("RENDERED_DISCOVERY_NOT_USED", "SUPPORTED_BROWSER_UNAVAILABLE").contains(
+                ended.at("/result/structuredContent/coverage_limitations/0").asText()));
     }
 
     @Test

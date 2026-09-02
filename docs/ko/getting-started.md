@@ -50,7 +50,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.39.jar` 자산이 게시돼 있으면 받는다. 아직 게시되지 않았다면 저장소를 clone하고 §7의 소스 빌드 절차로 같은 이름의 JAR을 만든다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.40.jar` 자산이 게시돼 있으면 받는다. 아직 게시되지 않았다면 저장소를 clone하고 §7의 소스 빌드 절차로 같은 이름의 JAR을 만든다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`
@@ -229,7 +229,7 @@ doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명
 2. Web **계정·세션**에서 테스트 계정을 등록한다. 계정 로그인이 필요하면 **로그인 연결**을 시작하고 HUMAN `8080` 경로로 로그인한 뒤 성공한 인증 페이지까지 확인하고 캡처를 종료한다.
 3. **HUMAN pass 시작**을 누르고 Burp 브라우저로 허가된 기능을 탐색한 다음 pass를 종료한다.
 4. 빠른 시작의 ZAP 카드에서 대상과 비로그인/ACTIVE 계정을 고른다. 이미 보유한 API 정의가 있으면 한 줄에 하나씩 `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, `GRAPHQL ENDPOINT [SCHEMA_URL]`로 입력하고 **신원별 격리 검사 시작**을 누른다. 모든 URL은 현재 exact scope 안이어야 한다. 정의 import는 명세의 write method 요청도 만들 수 있으므로 이어지는 Burp 승인창에서 한 번 더 확인한다. 비워 두면 정의를 추측하지 않고 Spider 기준선만 실행한다. Active Scan은 자동 baseline에 포함되지 않는다. 계정 검사는 세션 오염을 막기 위해 비로그인부터 직렬 실행한다. 화면의 `세션 / Traditional / Client / AJAX 보완 / Passive / Alert` 진행선, 전체·단계 경과시간, ZAP 응답, 트래픽 변화, Passive 남은 건수·현재 task, Alert 집계 완결성과 대기 이유로 정상 실행·부분 완료·응답 단절을 구분한다. **실시간 실행 기록**은 실제 단계 시작·queue 감소·Alert 집계·격리 정리를 최신순으로 보여 준다. Passive가 10분간 진행되지 않거나 30분을 넘으면 현재 결과를 보존하고 queue를 정리하며, 정리가 확인되지 않으면 다음 계정을 실행하지 않는다.
-5. 계정을 고르고 **LLM Explorer 시작**을 누른다. FlowScope가 공식 상태 명령으로 확인한 READY provider를 자동 선택하므로 API key 입력이나 MCP 설정 복사는 없다. Explorer는 통제 HTTP executor로 먼저 API를 탐색한다. Chrome/Chromium/Edge는 SPA shell·JavaScript state·UI-only 흐름 때문에 HTTP frontier가 막힐 때 쓰는 fallback이며, 그 경우에도 Playwright·Chrome MCP·별도 드라이버나 8082 listener는 필요 없다. 격리 임시 프로필이 exact-scope DOM·링크·폼·SPA network를 관찰하며, 발견 route는 통제 executor로 다시 보내야 Evidence가 된다. 클릭·입력 자체를 사전 승인하는 대신 그 결과 실제 발생한 POST/PUT/PATCH/DELETE의 메서드·마스킹 URL·마스킹 body preview를 Burp에서 확인하고 해당 요청 하나를 승인한다. 비밀번호·파일 입력은 차단한다. provider 상태가 방금 바뀌었을 때만 **다시 확인**을 누른다. **LLM 작업 피드**에서 실제 모델 메시지·FlowScope 도구 상태·Evidence 완료 게이트와 주입 지침을 확인한다. 숨겨진 추론과 raw tool payload는 표시하지 않는다. Explorer가 실제 응답 Evidence를 한 건 이상 남기고 서버가 같은 run 종료를 승인해야 LLM lane이 완료된다. 취소·도구 거부·0건 실행은 실패로 남는다.
+5. 계정을 고르고 **LLM Explorer 시작**을 누른다. FlowScope가 공식 상태 명령으로 확인한 READY provider를 자동 선택하므로 API key 입력이나 MCP 설정 복사는 없다. Explorer는 통제 HTTP executor로 첫 Evidence를 만든 뒤 서버가 반환한 `pending_concrete_paths`를 반복 요청한다. `/orders/42`와 `/orders/77`은 화면에서 `/orders/{id}`로 정렬되더라도 실행값을 잃지 않는다. Chrome/Chromium/Edge는 own-run HTML script 등 rendered 신호가 있을 때의 fallback이며, Playwright·Chrome MCP·별도 드라이버나 8082 listener는 필요 없다. 격리 임시 프로필이 exact-scope DOM·링크·폼·SPA network를 관찰하며, 발견 route는 통제 executor로 다시 보내야 Evidence가 된다. 클릭·입력 자체를 사전 승인하는 대신 그 결과 실제 발생한 POST/PUT/PATCH/DELETE의 메서드·마스킹 URL·마스킹 body preview를 Burp에서 확인하고 해당 요청 하나를 승인한다. 비밀번호·파일 입력은 차단한다. provider 상태가 방금 바뀌었을 때만 **다시 확인**을 누른다. **LLM 작업 피드**에서 실제 모델 메시지·FlowScope 도구 상태·Evidence 완료 게이트와 주입 지침을 확인한다. 숨겨진 추론과 raw tool payload는 표시하지 않는다. Explorer가 실제 응답 Evidence를 한 건 이상 남기고 두 frontier를 확인하며 안전한 concrete 경로를 소진해야 서버가 종료를 승인한다. browser 미사용·불가나 실제 값 없는 schema template은 성공으로 숨기지 않고 completion limitation으로 남는다. 취소·도구 거부·0건 실행은 실패다.
 6. `REVIEW` 항목을 확인한 뒤 세 lane이 완료되면 **Judge 시작**을 누른다.
 7. finding은 원 Evidence, 같은 run의 반복 재현, 정상 대조가 서버 gate를 통과했는지 확인한다. ZAP Alert나 LLM 문장만으로 확정하지 않는다.
 8. `.flowscope.db`를 연결해 자동 checkpoint를 활성화한다. raw broker credential은 DB에 저장되지 않으므로 Burp 재시작 뒤에는 다시 로그인 연결한다.
@@ -252,6 +252,7 @@ Web 상단의 **스캐너 XML/HAR**에서 ZAP **Save Selected Entries as HAR**�
 | Rendered 0건 경고 | Client/AJAX가 실제 요청을 만들지 않음 | ZAP logs, Firefox/Selenium add-on, 대상 CSP/login 상태 확인. Traditional 결과와 혼동하지 않음 |
 | 후속 계정이 0건 `PENDING` | 앞선 비로그인/계정 lane이 직렬 실행 중 | 대기 순번·선행 lane, 전체/단계 경과, 마지막 ZAP 응답과 트래픽 변화 확인. `ZAP 응답 없음`이면 ZAP log/API를 점검 |
 | Explorer가 종료했는데 LLM lane 실패 | target read 취소·거부 또는 응답 Evidence 0건 | output tail의 MCP 오류를 확인하고 범위·세션·승인 상태를 수정한 뒤 새 Explorer 실행 |
+| Explorer가 `PARTIAL_WITH_LIMITATIONS`로 끝남 | rendered discovery 권고 미사용·지원 브라우저 없음 또는 실제 값 없는 dynamic template | `coverage_limitations`를 확인한다. 설치 브라우저 경로를 고친 뒤 새 run으로 재실행하거나, 관측값이 없는 template은 임의 ID를 만들지 말고 Judge/수동 검증 대상으로 남긴다 |
 | `supported Chrome/Chromium/Edge executable was not found` | 지원 브라우저가 표준 경로에 없음 | Chrome/Chromium/Edge를 설치하거나 Burp JVM에 `-Dflowscope.browser.path=<실행 파일 절대경로>`를 지정한 뒤 확장을 재로드 |
 | CLI 실행 파일 없음 | Burp가 CLI PATH를 상속하지 않음 | 절대경로 시스템 속성 지정 후 Burp 재시작 |
 | 로그인 계정이 ZAP/LLM 선택지에 없음 | broker가 `ACTIVE`가 아님 | 로그인 연결을 다시 시작해 인증 성공 응답까지 관측 |

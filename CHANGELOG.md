@@ -2,6 +2,17 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.40 — 2026-09-02
+
+- Explorer route를 표시·분석용 template과 실제 실행용 concrete path로 분리했습니다. `/orders/42`, `/orders/77`을 `/orders/{id}` 한 항목으로 정렬하면서 실제 관측값과 query는 보존하고, 인증성 query는 저장하지 않습니다.
+- 안전한 concrete GET/HEAD/OPTIONS/UNKNOWN 경로가 남아 있으면 INDEPENDENT→ASSISTED 전환과 run 종료를 거부합니다. 값이 없는 OpenAPI template에는 임의 ID를 만들지 않고 한계로 남깁니다.
+- Explorer prompt를 범위 고정, 첫 Evidence, 독립 인벤토리, route 분류, 저영향 probe, BOLA/IDOR, BFLA, workflow, Evidence/control, blind assisted·한계 보고의 10단계로 정리했습니다. 서버가 pending concrete path, 검토 차원과 다음 행동을 구조화해 일부 단계 생략을 줄입니다.
+- HTML script 신호가 있으면 설치 브라우저를 조건부 discovery 보조로 권고합니다. 브라우저 출력은 Evidence가 아니며 controlled HTTP executor로 재현해야 합니다. 권고된 rendered discovery를 사용하지 못한 완료와 실제 값 없는 동적 template은 `PARTIAL_WITH_LIMITATIONS`로 표시합니다.
+- 대상 응답·DOM·tool output을 명령이 아닌 불신 데이터로 취급하도록 Explorer 작업공간 지침을 보강했습니다.
+- Codex/Claude 취소·확장 종료 시 알려진 하위 프로세스와 부모에 정상 종료 후 강제 종료를 순차 적용하고 실제 종료 여부를 확인합니다. 종료를 확인하지 못하면 `CANCELLED`로 가장하지 않고 실패로 표시합니다.
+- 매 실행 새 포트의 실제 로컬 HTTP fixture로 HTML→외부 JavaScript→API/object route 연쇄 발견, exact-scope 제외와 POST 묵시 실행 금지를 검증합니다. 실제 Burp+provider endpoint recall과 취약점 정확도는 별도 실환경·블라인드 gate입니다.
+- 전체 `mvn clean verify` 324 tests를 연속 두 번 통과했고 두 beta.40 JAR의 SHA-256이 일치했습니다.
+
 ## 1.2.0-beta.39 — 2026-09-01
 
 - SYSTEM ZAP 요청의 run capability 누락을 계수해 상태 API/Web에 표시하고, crawler polling 중 발견하면 다음 crawler·신원 전에 명시적인 격리 실패로 종료합니다.

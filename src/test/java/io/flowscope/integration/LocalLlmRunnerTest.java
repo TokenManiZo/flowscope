@@ -147,8 +147,9 @@ final class LocalLlmRunnerTest {
         assertFalse(process.prompt().contains("local-mcp-token"));
         assertTrue(process.prompt().contains("Primary entry target: https://api.example.test/v1"));
         assertTrue(process.prompt().contains("run_id=" + started.runId()));
-        assertTrue(process.prompt().contains("first target operation MUST be `flowscope_target_read method=GET`"));
-        assertTrue(process.prompt().contains("use `flowscope_browser_navigate` as a fallback"));
+        assertTrue(process.prompt().contains("first target operation must be `flowscope_target_read method=GET`"));
+        assertTrue(process.prompt().contains("BROWSER_DISCOVERY_RECOMMENDED"));
+        assertTrue(process.prompt().contains("pending_concrete_paths"));
 
         complete(Source.LLM, started.runId());
         process.release();
@@ -267,7 +268,7 @@ final class LocalLlmRunnerTest {
 
     @Test
     void cancellationBeforeProcessRegistrationStillStopsTheChild() throws Exception {
-        FakeProcess process = new FakeProcess(0, "must not continue\n");
+        ResistantProcess process = new ResistantProcess();
         CountDownLatch launcherEntered = new CountDownLatch(1);
         CountDownLatch returnProcess = new CountDownLatch(1);
         runner = runner((provider, command, directory, environment) -> {
@@ -289,6 +290,8 @@ final class LocalLlmRunnerTest {
         returnProcess.countDown();
 
         await(() -> !process.isAlive());
+        assertEquals(1, process.gracefulDestroyCount);
+        assertEquals(1, process.forcedDestroyCount);
         assertEquals(LocalLlmRunner.Status.CANCELLED, runner.state().status());
         assertNull(contexts.current(Source.LLM));
         assertFalse(contexts.completedExplorations().contains(Source.LLM));
@@ -311,8 +314,48 @@ final class LocalLlmRunnerTest {
     }
 
     @Test
+    void cancellationForciblyTerminatesChildThatIgnoresGracefulDestroy() throws Exception {
+        ResistantProcess process = new ResistantProcess();
+        runner = runner((provider, command, directory, environment) -> process);
+
+        runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
+                LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
+                List.of("https://api.example.test/v1"), ""));
+        await(() -> !process.prompt().isBlank());
+
+        LocalLlmRunner.State cancelled = runner.cancel();
+
+        assertEquals(LocalLlmRunner.Status.CANCELLED, cancelled.status(), cancelled.message());
+        assertEquals(1, process.gracefulDestroyCount);
+        assertEquals(1, process.forcedDestroyCount);
+        assertFalse(process.isAlive());
+        assertNull(contexts.current(Source.LLM));
+        assertFalse(contexts.completedExplorations().contains(Source.LLM));
+    }
+
+    @Test
+    void cancellationTerminatesProviderDescendantsBeforeReportingCancelled() throws Exception {
+        FakeProcessHandle descendant = new FakeProcessHandle(91_001);
+        ResistantProcess process = new ResistantProcess(List.of(descendant));
+        runner = runner((provider, command, directory, environment) -> process);
+
+        runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
+                LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
+                List.of("https://api.example.test/v1"), ""));
+        await(() -> !process.prompt().isBlank());
+
+        LocalLlmRunner.State cancelled = runner.cancel();
+
+        assertEquals(LocalLlmRunner.Status.CANCELLED, cancelled.status(), cancelled.message());
+        assertEquals(1, descendant.gracefulDestroyCount);
+        assertEquals(1, descendant.forcedDestroyCount);
+        assertFalse(descendant.isAlive());
+        assertFalse(process.isAlive());
+    }
+
+    @Test
     void closeBeforeProcessRegistrationStopsTheChildAndRejectsNewRuns() throws Exception {
-        FakeProcess process = new FakeProcess(0, "must not survive extension unload\n");
+        ResistantProcess process = new ResistantProcess();
         CountDownLatch launcherEntered = new CountDownLatch(1);
         CountDownLatch returnProcess = new CountDownLatch(1);
         runner = runner((provider, command, directory, environment) -> {
@@ -339,6 +382,8 @@ final class LocalLlmRunnerTest {
         returnProcess.countDown();
 
         await(() -> !process.isAlive());
+        assertEquals(1, process.gracefulDestroyCount);
+        assertEquals(1, process.forcedDestroyCount);
         assertEquals(LocalLlmRunner.Status.CANCELLED, runner.state().status());
         assertThrows(IllegalStateException.class, () -> runner.start(request));
     }
@@ -555,5 +600,63 @@ final class LocalLlmRunnerTest {
         @Override public void destroy() { release(); }
         @Override public Process destroyForcibly() { release(); return this; }
         @Override public boolean isAlive() { return alive; }
+    }
+
+    private static final class ResistantProcess extends Process {
+        private final ByteArrayOutputStream prompt = new ByteArrayOutputStream();
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final List<ProcessHandle> descendants;
+        private volatile boolean alive = true;
+        private volatile int gracefulDestroyCount;
+        private volatile int forcedDestroyCount;
+
+        ResistantProcess() { this(List.of()); }
+        ResistantProcess(List<ProcessHandle> descendants) { this.descendants = List.copyOf(descendants); }
+        String prompt() { return prompt.toString(java.nio.charset.StandardCharsets.UTF_8); }
+        @Override public OutputStream getOutputStream() { return prompt; }
+        @Override public InputStream getInputStream() { return InputStream.nullInputStream(); }
+        @Override public InputStream getErrorStream() { return InputStream.nullInputStream(); }
+        @Override public int waitFor() throws InterruptedException { release.await(); return 0; }
+        @Override public boolean waitFor(long timeout, TimeUnit unit) { return !alive; }
+        @Override public int exitValue() {
+            if (alive) throw new IllegalThreadStateException();
+            return 0;
+        }
+        @Override public void destroy() { gracefulDestroyCount++; }
+        @Override public Process destroyForcibly() {
+            forcedDestroyCount++;
+            alive = false;
+            release.countDown();
+            return this;
+        }
+        @Override public boolean isAlive() { return alive; }
+        @Override public java.util.stream.Stream<ProcessHandle> descendants() { return descendants.stream(); }
+    }
+
+    private static final class FakeProcessHandle implements ProcessHandle {
+        private final long pid;
+        private final java.util.concurrent.CompletableFuture<ProcessHandle> exit =
+                new java.util.concurrent.CompletableFuture<>();
+        private volatile boolean alive = true;
+        private volatile int gracefulDestroyCount;
+        private volatile int forcedDestroyCount;
+
+        FakeProcessHandle(long pid) { this.pid = pid; }
+        @Override public long pid() { return pid; }
+        @Override public java.util.Optional<ProcessHandle> parent() { return java.util.Optional.empty(); }
+        @Override public java.util.stream.Stream<ProcessHandle> children() { return java.util.stream.Stream.empty(); }
+        @Override public java.util.stream.Stream<ProcessHandle> descendants() { return java.util.stream.Stream.empty(); }
+        @Override public Info info() { return ProcessHandle.current().info(); }
+        @Override public java.util.concurrent.CompletableFuture<ProcessHandle> onExit() { return exit; }
+        @Override public boolean supportsNormalTermination() { return true; }
+        @Override public boolean destroy() { gracefulDestroyCount++; return true; }
+        @Override public boolean destroyForcibly() {
+            forcedDestroyCount++;
+            alive = false;
+            exit.complete(this);
+            return true;
+        }
+        @Override public boolean isAlive() { return alive; }
+        @Override public int compareTo(ProcessHandle other) { return Long.compare(pid, other.pid()); }
     }
 }

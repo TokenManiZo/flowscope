@@ -7,14 +7,18 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-09-02 |
-| 제품 버전 | `1.2.0-beta.39` |
-| 인계 기준 | beta.39 코드·문서가 함께 포함된 동일 커밋 |
+| 제품 버전 | `1.2.0-beta.40` |
+| 로컬 기준 커밋 | beta.40 Explorer 1~10 작업 커밋(현재 `HEAD`; `git log -1 --oneline`으로 확인) |
+| 브랜치·원격 차이 | 로컬 `main`; `origin/main`은 `v1.2.0-beta.25`(`c2c9945`). 정확한 ahead/behind는 `git rev-list --left-right --count origin/main...HEAD`로 확인 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
-| 자동 회귀 | 최신 수치와 JAR digest는 `beta-validation.md` 정본 참조 |
-| 현재 판정 | 기능이 연결된 베타. clean-room P1 1~9와 ZAP 출처·격리·취소 hardening은 자동 회귀로 닫았고, 오픈소스 정식 출시 전 나머지 P2 정확성·운영 결함, 실제 Burp 통합 검증과 블라인드 효능 평가가 남음 |
+| 자동 회귀 | 324 tests, failure/error/skip 0; 연속 두 clean build 동일 |
+| 현재 JAR | `target/flowscope-1.2.0-beta.40.jar`, 16,025,306 bytes, SHA-256 `b472c9eae70afd4dd6d818af576e458570ac9b3116e2dc288ee6a62f0bf4ff55` |
+| 현재 판정 | ZAP 출처·격리·취소 hardening과 Explorer 1~10의 concrete frontier·완료 한계·CLI 종료 계약은 자동 회귀로 고정했다. 실제 Burp 통합 검증, 블라인드 효능 평가와 아래 나머지 P2 정확성 결함은 남음 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
+
+현재 작업 전부터 사용자가 별도 작성한 `mentor-progress-report.md`가 untracked이고 루트 `CLAUDE.md`에도 사용자 변경이 있었다. 보고서는 사용자가 명시적으로 “커밋하지 말라”고 했으므로 수정·삭제·커밋하지 않으며, 루트 `CLAUDE.md`도 이번 Explorer 변경과 분리한다. `.local/`, `output/`, `target/`, `tmp/`는 ignored 로컬 산출물이다.
 
 ## 1. 문서 정본과 읽는 순서
 
@@ -55,7 +59,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.39.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.40.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -63,6 +67,17 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 4. Burp FlowScope 탭에서 허가된 `http(s)://host[:port]/path-prefix`를 줄별로 입력하고 범위를 적용한다.
 
 모든 저장과 active request는 exact scheme, host, effective port, path prefix 범위를 검사한다. HUMAN 브라우저의 범위 밖 이동은 막지 않지만 범위 밖 응답은 FlowScope에 저장하지 않는다.
+
+| 기본 주소 | 소유 프로세스 | 용도 |
+|---|---|---|
+| `127.0.0.1:8080` | Burp | HUMAN listener |
+| `127.0.0.1:8081` | Burp | ZAP outgoing proxy가 거치는 SCANNER listener |
+| `127.0.0.1:8082` | Burp | 선택적 LLM direct fallback; 기본 MCP Explorer 경로가 아님 |
+| `127.0.0.1:8089` | ZAP | 로컬 ZAP proxy/API |
+| `127.0.0.1:8787` | FlowScope | bearer-token localhost MCP |
+| `127.0.0.1:17777` | FlowScope | 사용자 Web 작업면 |
+
+`17778`은 현재 제품 기본 포트가 아니다. `17779`처럼 다른 Web 포트는 standalone 검증에서 충돌을 피하려고 JVM 속성으로 일시 사용한 값이며 사용자 기본 계약에 포함되지 않는다.
 
 ### 3.2 계정과 세션
 
@@ -267,7 +282,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 자동 검증
 
-2026-09-02 기준 beta.39의 전체 `mvn clean verify`는 연속 두 번 각각 315 tests가 실패·오류·skip 없이 통과했고 두 JAR의 SHA-256이 일치했다. 정확한 digest는 `beta-validation.md` 정본을 따른다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장, beta.33은 Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시, beta.34는 선형 snapshot/DataFlow와 live/persistence/assessment byte 경계, beta.37은 browser request 승인·Graph Fact, beta.38은 ZAP 장시간 실행 관측성, beta.39는 분류·Explorer 방문 gate·기본 그래프 회귀 복구, Passive 정체/모든 실패 경로의 신원 cleanup, run capability 귀속·거부 원인화, blocking worker heartbeat, 취소 terminal 보장과 bounded ZAP 실행 기록을 추가했다. 실제 Burp beta.39 재로드는 대기한다.
+2026-09-02 기준 beta.40의 전체 `mvn clean verify`는 연속 두 번 각각 324 tests가 실패·오류·skip 없이 통과했고 두 JAR의 SHA-256이 일치했다. 정확한 digest는 `beta-validation.md` 정본을 따른다. 파서, 정규화, 분류, 인가 분석, 저장 round-trip, MCP, ZAP client mock, 세션 broker, byte codec, raw vault, ZAP key file, Web API 문자열 계약을 포함한다. beta.24는 판정 오라클과 게시 격리, beta.25는 streaming manifest와 version-independent MR-JAR relocation, beta.26은 ZAP HAR import, beta.27은 ZAP Context/passive/scope preflight·Traditional/Client/AJAX 독립 실행·501개 Alert pagination과 구독 CLI 자식 `PATH`, beta.28은 LLM read/write 분리·server 0-Evidence 종료 거부와 ZAP outgoing-proxy/명시 API 정의 import, beta.29는 login-only 임시 Codex home과 launcher exact-Evidence gate, beta.30은 bounded 실시간 LLM 작업 피드, beta.31은 공식 auth status·표준 경로 탐지·READY provider 자동 선택, beta.32는 목적별 trust·exact-run 완료·동결 Evidence dataset lock과 JSON v3/SQLite v2 저장, beta.33은 Request Lab 단일 실행·분석 publication epoch·exact 미교차 표시, beta.34는 선형 snapshot/DataFlow와 live/persistence/assessment byte 경계, beta.37은 browser request 승인·Graph Fact, beta.38은 ZAP 장시간 실행 관측성, beta.39는 분류·Explorer 방문 gate·기본 그래프 회귀 복구와 ZAP 운영 hardening, beta.40은 concrete route 보존·Explorer 1~10 guidance/한계·provider process-tree 종료 확인을 추가했다. 실제 Burp beta.40 재로드는 대기한다.
 
 ### 실제·standalone 검증
 
@@ -277,8 +292,8 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.34 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
-- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.34 scanner import와 Evidence 상세 확인
+- beta.40 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
+- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.40 scanner import와 Evidence 상세 확인
 - 실제 Burp Request Lab의 고지연 A→B 선택, 상태 변경 이중 전송, clear/rebuild callback 경합
 - 실제 ZAP 2.17에서 OpenAPI·GraphQL·Postman·SOAP 정의별 요청 생성, exact-scope 차단, 신원별 인증 주입과 경고 표시 확인
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
@@ -303,7 +318,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 3. **stale pipeline 결과 게시:** `AnalysisPublicationGate`의 publication epoch가 같은 결과만 `latest`·route candidate·revision에 원자 게시한다.
 4. **일반 빈 셀의 IDOR 오표시:** exact server `UNCROSSED` key만 gap으로 표시하고 나머지는 중립 `미검증`으로 분리한다.
 
-집중 회귀는 완료했지만 실제 Burp UI의 고지연 A→B 선택, 상태 변경 중복 클릭, clear/rebuild 동시 실행은 최신 beta.34 JAR 수동 gate가 남아 있다. 자동 회귀를 실환경 완료로 표현하지 않는다.
+집중 회귀는 완료했지만 실제 Burp UI의 고지연 A→B 선택, 상태 변경 중복 클릭, clear/rebuild 동시 실행은 최신 beta.40 JAR 수동 gate가 남아 있다. 자동 회귀를 실환경 완료로 표현하지 않는다.
 
 ### beta.34에서 닫은 P1
 
@@ -342,10 +357,9 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
    - 영향: corrupt/unsupported 파일을 골라도 세션, run context, route 상태가 먼저 사라진다.
    - 완료 조건: 완전한 임시 load/검증 뒤 원자 교체하고 실패 rollback 테스트를 통과해야 한다.
 
-6. **LLM 취소가 child 종료를 보장하지 않음**
-   - 위치: `LocalLlmRunner.cancel/close`
-   - 영향: SIGTERM을 무시하는 CLI가 살아서 다음 실행을 막고 MCP 환경을 유지할 수 있다.
-   - 완료 조건: graceful timeout, `destroyForcibly`, exit 확인, resistant fake process 테스트가 필요하다.
+6. **해결됨 — LLM 취소의 알려진 process tree 종료 확인**
+   - 현재 계약: descendants와 parent에 정상 종료를 요청하고 1초 뒤 남은 프로세스를 강제 종료한 다음 다시 1초 안에 alive 상태를 확인한다. 확인 실패는 `FAILED`다.
+   - 회귀·한계: resistant fake parent/descendant 회귀와 실제 Codex/Claude 즉시 취소 잔존 PID 확인을 통과했다. 이후 분리된 daemon은 snapshot 밖일 수 있어 실제 장기 run 취소는 계속 운영 gate다.
 
 7. **해결됨 — ZAP run 중 native Burp Scanner 오귀속**
    - 현재 계약: native Burp Scanner는 ZAP context를 상속하지 않고, SYSTEM 캠페인은 exact-target Replacer capability가 run ID와 일치하는 8081 요청만 세션 주입·CONTROLLED 귀속한다.
@@ -443,7 +457,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 1. native Burp Scanner와 ZAP campaign provenance를 분리한다.
 2. ZAP 비로그인·USER A·USER B 각 lane에서 session injection과 raw capture gate를 실제 확인한다.
-3. LLM cancel/close에 강제 종료와 workspace cleanup을 추가한다.
+3. beta.40의 LLM graceful→forced 종료와 workspace cleanup 계약을 실제 장기 Codex/Claude run 취소에서 다시 확인한다.
 4. Explorer와 Judge를 실제 Codex 구독 CLI로 실행해 시야 격리와 run 종료를 확인한다.
 5. Claude는 사용 가능한 팀원 환경에서 별도 확인하고 Codex 결과를 Claude 성공으로 간주하지 않는다.
 
@@ -522,7 +536,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.39.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.40.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 
@@ -579,14 +593,15 @@ git status --short
 
 | 작업 | 중심 파일 | 선행 조건 |
 |---|---|---|
-| A. rebuild epoch/CAS | `FlowScopeExtension`, 동시성 회귀 | 없음 |
-| B. Request Lab race/in-flight | `index.html`, `FlowScopeWebServer`, browser 행동 테스트 | draft 계약 합의 |
-| C. matrix candidate 정합성 | `index.html`, `SnapshotJsonWriter`, Web 행동 테스트 | 서버 candidate key 유지 |
-| D. Snapshot/DataFlow 성능 | `SnapshotJsonWriter`, `DataFlowAnalyzer`, stress fixture | 출력 계약 합의 |
-| E. payload memory 경계 | `StoredPayload`, `ProjectStore`, live capture path | byte budget 합의 |
-| F. Session Broker 신뢰 | `SessionBroker`, `Fingerprints`, `AnalysisConfig` | ACTIVE 계약 결정 |
+| A. ZAP 실제 provenance gate | `FlowScopeExtension`, `McpServer`, 실제 Burp/ZAP | beta.40 JAR 재로드 |
+| B. project validate-then-swap | `FlowScopeExtension`, `ProjectStore`, `SqliteProjectStore` | 실패 rollback fixture |
+| C. Session Broker 신뢰 | `SessionBroker`, account/session Web 상태 | ACTIVE·auth material 계약 결정 |
+| D. merge/JWT 신원 무결성 | `RecordMerge`, `Fingerprints`, `AnalysisConfig` | account/run provenance와 hint 계약 |
+| E. owner·정책 오라클 | `AuthorizationAnalyzer`, response fixture | OWNER/ACTOR/CREATOR 의미와 UNKNOWN 정책 합의 |
+| F. LLM child 수명 | `LocalLlmRunner` | resistant fake process fixture |
+| G. XML·IPv6 상호운용 | `BurpXmlParser`, authority formatter, persistence | byte/charset·URI fixture |
 
-작업 A~F가 같은 `FlowScopeExtension` 또는 `index.html`을 동시에 바꾸게 되면 먼저 작은 PR부터 순차 병합한다. 리팩터링을 선행하지 말고 각 결함과 직접 연결된 최소 변경부터 적용한다.
+작업 B~G는 같은 `FlowScopeExtension` 또는 분석 정본을 동시에 바꿀 수 있으므로 작은 PR부터 순차 병합한다. 이미 닫은 Request Lab, publication epoch, Snapshot/DataFlow, payload 상한을 다시 구현하지 않는다. 리팩터링을 선행하지 말고 각 결함과 직접 연결된 최소 변경부터 적용한다.
 
 ## 15. 인계 완료 판단
 
@@ -597,8 +612,424 @@ git status --short
 3. route candidate와 observed operation은 무엇이 다른가?
 4. coverage gap과 취약점 finding은 무엇이 다른가?
 5. LLM assessment와 final validation은 무엇이 다른가?
-6. 현재 P1은 무엇이며 어떤 순서로 닫는가?
+6. 현재 남은 P0/P2 정확성·운영 결함은 무엇이며 어떤 순서로 닫는가?
 7. 자동테스트가 증명하지 못하는 실제 gate는 무엇인가?
 8. 다음 benchmark가 정답 누수 없이 어떻게 수행되는가?
 
 이 문서의 결함 목록이나 상태가 바뀌면 코드·테스트·해당 정본 문서와 같은 commit에서 갱신한다.
+
+## 16. 제품 책임자의 의도와 작업 원칙
+
+이 절은 코드만으로 알 수 없는 제품 책임자의 반복된 요구를 다음 작업자가 놓치지 않도록 정리한 것이다. 아래 문장은 구현 완료를 뜻하지 않으며, 구현과 다른 요구는 **미해결 제품 요구**로 취급한다.
+
+### 최종 사용자
+
+- FlowScope의 사용자는 프로젝트 개발자가 아니라 허가된 웹·API 보안 진단자와 레드팀 운영자다.
+- crAPI는 검증용 대상 중 하나일 뿐이다. 어떤 분류·경로·세션 규칙도 crAPI 전용 상수나 정답 목록에 맞추면 안 된다.
+- 새 사용자가 Release JAR과 필요한 로컬 도구를 준비하고, 로그인한 뒤 버튼 중심으로 실행할 수 있어야 한다.
+- 고급 기능을 없애서 단순화하지 않는다. 기본 경로는 간결하게, 진단자용 원인·Evidence·설정은 단계적으로 펼쳐 제공한다.
+- 실패를 `FAILED` 한 단어로 끝내지 않는다. 현재 단계, 경과시간, 마지막 실제 응답, 마지막 수집 변화, 대기 이유, 복구 방법을 보여 줘야 한다.
+- 대화 후반에는 backend 기능·Evidence 품질을 먼저 안정화하고 대규모 UI 재설계는 보류하기로 했다. 현재 화면의 기능 회귀·진행 가시성은 고치되, 새 UI 방향이 확정되기 전에 전면 재작성하지 않는다. 재설계 시에는 기존 `whs_flow` 기반의 차분한 시각 언어와 진단자 중심 정보 밀도를 출발점으로 삼는다.
+
+### 진단 철학
+
+```text
+탐색은 넓게
+→ 원 Evidence는 잃지 않게 보존
+→ 분석 입력은 결정론적으로 분류·정규화
+→ 그래프는 필요한 관계만 계층적으로 투영
+→ 실행은 exact scope 안에서 비무기화·저영향
+→ 판정은 재현 Evidence와 정상 대조를 통과한 경우만 확정
+```
+
+- 위험한 기능을 무조건 제거하는 것이 목표가 아니다. 허가된 범위에서 실제 Evidence가 생길 정도의 저영향 검증은 가능해야 한다.
+- 반대로 Active Scan, 대량 동시 요청, 경합, 파일 업로드, 결제·삭제 같은 상태 변경을 묵시적으로 실행해서는 안 된다. 별도 승인·예산·정지 수단이 필요하다.
+- 노이즈를 저장 단계에서 삭제하면 나중에 규칙을 교정할 수 없다. `INCLUDE/REVIEW/EXCLUDE`는 보존과 표시·분석 자격을 분리한다.
+- “스캐너가 찾았다”, “LLM이 말했다”, “HTTP 200이다”는 취약점 확정 근거가 아니다.
+- 오탐·미탐 0, 완전 탐색, 전체 공격면 대비 완료율 같은 측정 불가능한 주장을 하지 않는다.
+
+### 개발 방식
+
+- 구현 전에 현재 코드를 읽고, 주장을 코드·테스트·공식 프로토콜 또는 실제 실행으로 확인한다.
+- 모르면 모른다고 표시하되 조사 가능한 것을 추측으로 남기지 않는다.
+- 난도가 높다는 이유로 핵심 기능을 축소하지 않는다. 다만 큰 변경은 실패 fixture, 단계별 gate, rollback 가능한 작은 commit으로 나눈다.
+- 코드와 사용자 동작이 바뀌면 같은 작업 단위에서 README, architecture, decisions, development-log, CHANGELOG, validation, product plan 중 해당 정본을 함께 갱신한다.
+- “구현됨”, “자동 회귀 통과”, “standalone 확인”, “실제 Burp/ZAP 확인”, “블라인드 효능 확인”을 서로 바꿔 말하지 않는다.
+- 사용자가 아직 허가하지 않은 Git push, Release 게시, 실제 대상 요청, 상태 변경 검증은 실행하지 않는다.
+
+## 17. 대화에서 확정된 데이터·그래프 방향
+
+### 정본 관계
+
+그래프의 분석 정본은 화면 노드가 아니라 Evidence에 연결된 다음 fact다.
+
+```text
+Identity × Method/API × Object × Source × Run × Phase × Response outcome
+```
+
+화면의 권장 계층은 다음과 같다.
+
+```text
+Level 0  Target → API Group
+Level 1  Identity → API
+Level 2  Identity → API → Object
+Detail   Owner policy + source별 Request/Response Evidence + 판정 근거
+```
+
+- `/orders/101`, `/orders/202`는 근거가 있을 때 `/orders/{id}` API template으로 정렬하되 원래 URL과 Evidence는 보존한다.
+- 같은 path라도 GET, POST, PUT, PATCH, DELETE, OPTIONS는 별도 API다.
+- `api`, `rest`, `v1`, `v2` 같은 공통 segment를 건너뛴 API Group은 **표시용**일 뿐 분석 key가 아니다.
+- `orders:101`, `orders:202`처럼 인스턴스가 많으면 `orders` object family를 기본으로 접고 선택 시 펼친다. 인스턴스를 삭제하거나 하나의 객체로 합치지 않는다.
+- Owner는 별도 요청자가 아니라 Object의 확인된 속성이다. 사용자 명시 또는 신뢰 가능한 Evidence가 없으면 `미확정`이다.
+- `H`는 파랑 실선, `S`는 빨강 파선, `L`은 검정 점선이다. 선은 요청 관측을 뜻하며 성공·인가·취약점을 뜻하지 않는다.
+- source filter를 끄면 그 source 전용 edge와 고아 node가 실제로 사라져야 한다. 단순 checkbox 표시 변경이면 안 된다.
+- Candidate, REVIEW, EXCLUDE, validation traffic, auth/session 준비, static asset, polling은 메인 비교와 다른 층이다. 필요할 때 볼 수 있지만 기본 business graph를 뒤덮으면 안 된다.
+
+### 현재 구현과 남은 문제
+
+- beta.37에서 `GraphObservationFact`와 Site/API/Object 계층 투영, object family 접기를 구현했다.
+- beta.39에서 기본 화면을 `Identity → API`로 되돌리고 Site overview를 선택형으로 만들었다.
+- 자동 테스트는 fact 필드·계층·중복 edge 억제·source별 API 집계를 확인한다.
+- 실제 고카디널리티 대상에서 node/edge 수, 교차선, 라벨 가독성, 진단자 검토시간이 좋아졌다는 실증은 아직 없다.
+- 과거 화면에서 node 겹침, 긴 글자 잘림, source가 꺼졌는데 흐린 다른 선이 남음, 객체 인스턴스 폭증, 샘플과 실제 Evidence 혼동이 반복됐다. 이 현상이 재발하면 CSS만 덧대지 말고 snapshot fact와 projection/filter 계약부터 확인한다.
+- `docs/ko/backend-evidence-architecture-plan.md`는 다음 backend 재설계 계획이다. 현재 코드가 이미 그 계획을 모두 구현했다고 가정하면 안 된다.
+
+### 샘플 데이터의 출처
+
+`SampleProject.java`의 `https://demo.flowscope.test:443` H/S/L record는 온보딩을 위해 코드에 손으로 정의한 **완전 합성 데이터**다. crAPI, 실제 Burp history, ZAP 결과, LLM 실행에서 얻은 데이터가 아니며 샘플 로드 자체는 대상 네트워크 요청을 보내지 않는다. 화면의 샘플 배너와 `sampleMode` 계약을 제거하거나 샘플 수치를 탐지 성능으로 사용하지 않는다.
+
+## 18. HUMAN lane의 현재 계약과 제품 요구
+
+### 구현된 것
+
+- Burp callback에서 HUMAN 8080과 Proxy/Repeater/Intruder/Target 도구 detail을 수집한다.
+- 명시한 exact scope 안의 응답만 저장하며 scope 밖 브라우징 자체를 제품이 가로막지는 않는다.
+- HUMAN pass 시작·종료와 run ID, phase, trust를 기록한다.
+- 로그인 준비는 `SESSION_SETUP`, pass 밖 트래픽은 `BASELINE`, 수동 Request Lab 검증은 `VALIDATION`으로 분리해 discovery coverage를 오염시키지 않는다.
+- Request Lab은 live raw byte vault를 현재 프로세스 메모리에 한정해 `ORIGINAL/ANONYMOUS/ACCOUNT` 전송과 Repeater handoff를 제공한다.
+- 계정 화면은 Cookie·token·subject 단서를 별도 계정처럼 늘리지 않고 하나의 계정 카드 아래 기술 정보로 묶는다.
+- local SQLite가 계정 메타데이터·Evidence·정책·검토를 저장하지만 raw credential은 저장하지 않는다.
+
+### 왜 pass 종료가 있는가
+
+제품 책임자는 사람이 움직이면 그래프가 즉시 반영되고 시작 버튼만 있는 경험을 선호했다. 현재 explicit pass 종료는 UI 편의보다 다음 무결성 때문에 존재한다.
+
+- 어느 run의 Evidence인지 고정
+- late response와 dataset replacement 구분
+- 탐색 완료 시점 Evidence ID 동결
+- SCANNER/LLM과 비교할 동일 기준선 생성
+- Judge 입력이 실행 중 변하지 않게 lock
+
+따라서 실시간 그래프 갱신은 유지할 수 있지만, 완료/lock 경계 자체를 없애려면 동일한 무결성을 보장하는 대체 상태 기계를 먼저 설계해야 한다.
+
+### 남은 핵심 문제
+
+- 신규 세션은 단순 cookie 보유와 2xx~4xx 응답만으로 ACTIVE가 될 수 있다.
+- 저장 cookie 전부 exact match라 보조 cookie 회전이 정상 계정 귀속을 깨뜨릴 수 있다.
+- Proxy history 병합 key가 account/run을 포함하지 않는다.
+- 미검증 JWT payload `sub`가 identity hint를 넘어 계정 결합에 영향을 줄 수 있다.
+- 잘못된 project load가 검증 전에 현재 session/run을 지운다.
+- Burp XML base64 body는 UTF-8로 강제 해석한다.
+- IPv6 authority 처리가 일부 경로에서만 고쳐져 전체 round-trip이 증명되지 않았다.
+- response의 `userId/accountId/authorId`를 관계 의미 없이 owner로 보는 경로가 있어 actor/creator/owner 구분이 부족하다.
+
+## 19. ZAP lane의 구현·실패 이력·현재 gate
+
+### 제품이 현재 실행하는 기능
+
+신원마다 fresh ZAP session과 fresh exact-scope Context를 만들고 직렬로 다음을 실행한다.
+
+```text
+선택형 API definition import
+→ Traditional Spider
+→ Client Spider
+→ AJAX Spider
+→ Passive queue drain
+→ native Alert 전체 페이지 snapshot
+```
+
+- 비로그인과 선택한 ACTIVE 계정을 서로 다른 lane으로 실행한다.
+- 필요한 add-on은 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network`, `replacer`다.
+- OpenAPI, GraphQL, Postman, SOAP은 사용자가 실제 정의 URL/endpoint를 제공하고 승인한 경우만 import한다.
+- 기본 캠페인은 Active Scan, Fuzzer, Forced Browse, Sequence Scan, Authentication Helper 자동 구성을 포함하지 않는다.
+- Active Scan은 exact-scope와 별도 Burp 승인이 필요한 독립 기능이다.
+- ZAP Alert는 진단 신호이며 BOLA/BFLA 최종 verdict가 아니다.
+
+### 왜 FlowScope가 orchestration을 유지하는가
+
+ZAP 캠페인 전체를 외부에 무조건 위임하면 다음 제품 계약을 잃는다.
+
+- Session Broker 계정별 인증 주입
+- 비로그인→계정 A→계정 B 직렬 격리
+- source/run/account provenance
+- exact-scope와 write 승인
+- 단계별 capture·진행·경고·취소
+- 기존 Evidence와 ZAP Alert의 공통 데이터셋 결합
+
+그래서 ZAP 기능은 최대한 활용하되 FlowScope가 실행 순서, 세션, 범위, Evidence 귀속과 완료 gate를 소유한다.
+
+### 실제로 겪은 장애
+
+- ZAP API timeout을 모두 “연결 실패”로 표현해 원인이 숨었다.
+- AJAX Spider가 API상 끝났지만 rendered capture 0건이었다.
+- 비로그인 lane이 오래 실행되는 동안 다음 계정이 이유 없는 `PENDING`으로 보였다.
+- Passive queue가 5분을 넘으면 이미 모은 Evidence·Alert까지 실패처럼 보였다.
+- stop 호출만 하고 terminal 상태를 기다리지 않아 다음 계정과 겹칠 위험이 있었다.
+- 8081 포트만으로 SYSTEM ZAP이라고 간주하면 native Burp Scanner나 수동 요청이 현재 계정으로 오귀속될 수 있었다.
+- capability를 엄격히 검사한 뒤 Replacer 전달이 안 되면 요청을 drop하지만 UI에서 원인을 알 수 없었다.
+
+beta.38~39는 경과시간·heartbeat·capture 변화·queue 상태·Alert 완결성, 취소, terminal wait, lane account, capability rejection 원인화를 추가했다. 그러나 mock/자동 회귀와 실제 설치 ZAP의 initiator 동작은 같은 증거가 아니다.
+
+### 다음 사람이 가장 먼저 할 실제 gate
+
+1. Burp에서 이전 FlowScope 확장을 제거하고 현재 beta.40 JAR을 다시 로드한다.
+2. ZAP 2.17 API가 `127.0.0.1:8089`, outgoing proxy가 Burp `127.0.0.1:8081`인지 확인한다.
+3. exact scope와 비로그인 lane 하나만 선택해 시작한다.
+4. Traditional 단계부터 `출처 검증 차단 0건`인지 확인한다.
+5. `수집 N건`과 실제 scanner Evidence가 증가하는지 확인한다.
+6. Client와 AJAX에도 capability가 전달되고 target에서 내부 header가 제거됐는지 확인한다.
+7. 취소 후 crawler terminal, Replacer 제거, run abort, 포트 quiescence를 확인한다.
+8. 위 gate가 통과한 뒤 ACTIVE 계정 하나를 추가해 비로그인→계정 전환 중 cookie와 `laneAccountId`가 섞이지 않는지 확인한다.
+
+첫 lane에서 capability rejection이 1 이상이면 자동 fallback으로 익명 수집을 허용하지 않는다. ZAP Replacer initiator 적용 또는 outgoing proxy 전달을 고쳐야 한다.
+
+## 20. LLM Explorer·Judge의 현재 구조와 목표
+
+### 역할 분리
+
+- **Explorer:** 사람이 놓친 endpoint, API, object reference, 인가·워크플로 가설을 넓게 찾고 실제 통제 요청 Evidence를 만든다.
+- **Assessment:** Explorer/Judge가 Evidence에 묶어 내는 `LIKELY/INCONCLUSIVE/REJECTED` 후보 설명이다. 최종 판정이 아니다.
+- **Judge:** Explorer와 분리된 새 세션에서 동결된 HUMAN/SCANNER/LLM Evidence를 읽고, 재현·정상 대조 bundle을 제출한다.
+- **서버 final validation:** current candidate와 Evidence bundle이 계약을 만족할 때만 `CONFIRMED/INCONCLUSIVE/REJECTED`를 수락한다.
+
+Explorer와 Judge를 같은 대화로 이어 붙이지 않는 이유는 Explorer가 자기 탐색을 스스로 확증하거나 다른 lane 결과를 미리 보고 독립 비교를 오염시키는 것을 막기 위해서다.
+
+### 실행 구조
+
+- Codex 또는 Claude Code의 로컬 구독 로그인을 사용하며 API key 입력을 기본 요구하지 않는다.
+- FlowScope가 executable과 로그인 상태를 확인하고 owner-only 임시 workspace, strict MCP 설정, 새 CLI process를 만든다.
+- GUI로 실행한 Burp의 축소 PATH를 보완하도록 executable 디렉터리를 자식 PATH 앞에 넣는다. 과거 `env: node: No such file or directory`는 이 경로 누락으로 발생했고 beta.27 이후 회귀를 추가했다.
+- shell curl을 허용하지 않고 Session Broker와 결합된 FlowScope MCP HTTP executor로 요청한다. raw credential은 모델에 반환하지 않고 서버가 선택 계정 handle로 주입한다.
+- 브라우저 없이도 GET/HEAD/OPTIONS와 승인된 write API 탐색은 가능하다.
+- SPA, UI 전용 상태, 런타임 생성 endpoint가 응답·정적 후보만으로 보이지 않을 때만 설치 Chrome/Chromium/Edge 기반 CDP worker를 보조로 쓴다. Playwright, Chrome MCP, ChromeDriver는 필수 설치가 아니다.
+- browser DOM/network 결과는 discovery hint이며 controlled executor 재현 전에는 Evidence나 완료 근거가 아니다.
+- 작업 피드는 실제 provider message, MCP tool 상태, Evidence gate를 표시하되 reasoning과 raw tool payload·credential은 표시하지 않는다.
+
+### 원하는 Explorer harness
+
+현재 구현을 느슨한 자유 프롬프트로 되돌리지 않는다. 동시에 첫 GET과 몇 개 route만 보고 끝나는 과도하게 좁은 harness도 제품 목적을 달성하지 못한다. 목표 상태는 다음 상태 기계다.
+
+```text
+1. exact scope/account/run을 고정하고 상태·세션 handle을 확인한다.
+2. exact entry GET으로 첫 controlled Evidence를 만든다.
+3. own-run HTML/JS/metadata/OpenAPI/XML과 매 응답에서 확장되는 `pending_concrete_paths`를 소진한다.
+4. route를 endpoint/object/function/workflow 검토 차원으로 분류한다.
+5. HTML script 등 근거가 있을 때만 격리 browser를 discovery-only로 사용하고 HTTP executor로 재현한다.
+6. 실제 관측값만 사용해 object/identity와 BOLA/IDOR 가설을 검토한다.
+7. method/function/workflow, BFLA·상태전이·중복·mass assignment·과다노출·rate-limit 가설을 Evidence 범위에서 검토한다.
+8. 상태 변경은 exact 요청 승인 뒤에만 실행하고 Evidence ID·반증/control·불확실성을 기록한다.
+9. 독립 frontier 소진 뒤 source/Evidence/provenance를 제거한 blind assisted concrete hint를 소진한다.
+10. 두 frontier와 exact-run 응답을 서버가 재검증한 뒤 limitation을 숨기지 않고 종료한다.
+```
+
+각 candidate는 최소한 `가설`, `대상 API/object`, `선행 조건`, `사용 계정`, `실행한 요청`, `Evidence ID`, `관측 결과`, `반증 또는 control`, `남은 불확실성`을 가져야 한다.
+
+### 현재 한계와 과거 실패
+
+- 초기에 Explorer가 `/manifest.json` GET/HEAD 두 건만 만들고 끝난 적이 있다. 이는 LLM 능력의 증명이 아니라 frontier와 prompt가 제품 목표에 부족했다는 실행 결과다.
+- 이후 excluded static/navigation route를 실제 방문했는데도 `unobserved`로 남아 `flowscope_end_run`을 거부하는 회귀가 생겼고 beta.39에서 방문 사실과 분석 자격을 분리했다.
+- 설치 Chrome worker의 로컬 smoke는 통과했지만 실제 Burp HTTPS, ACTIVE account, SPA 탐색→replay→Evidence→종료는 아직 수동 검증하지 않았다.
+- Codex 로그인 성공을 Claude 성공으로 간주하면 안 된다. 공급자별 실제 gate가 필요하다.
+- beta.40은 `LocalLlmRunner.cancel()`·`close()`·시작 경합을 같은 bounded graceful→forced process-tree 종료 함수로 묶고 종료 실패를 `FAILED`로 표시한다. descendants는 종료 시작 시점 snapshot이므로 이후 분리된 daemon까지 운영체제 수준으로 종료한다고 주장하지 않는다.
+- 완전한 양방향 채팅형 사용자 개입 UI는 아직 없다. 현재 작업 피드는 읽기 전용이고 Judge 후속 입력만 별도 resume 경로가 있다.
+
+## 21. 세션 자동화에 대한 결정 경계
+
+제품 책임자는 “대상마다 cookie/token 조합이 다르므로 LLM이 자동으로 세션을 따와 Explorer/Judge에 설정할 수 없나”를 반복 검토했다. 현재 결론은 다음과 같다.
+
+- Burp에서 실제 로그인 흐름을 관측해 cookie, Authorization, CSRF를 캡처하고 회전을 갱신하는 것은 Session Broker 책임이다.
+- LLM은 계정 label/handle과 상태만 보고 어떤 계정을 사용할지 선택할 수 있다.
+- raw credential을 LLM prompt, MCP response, project, log에 내보내지 않는다.
+- 범용 LLM이 로그인 폼, MFA, CAPTCHA, SSO를 추론해 무인 로그인하는 기능은 현재 구현·보장 범위가 아니다.
+- 추후 로그인 자동화가 필요하면 per-target auth recipe 또는 사용자가 확인하는 브라우저 로그인 capture를 별도 설계한다. Session Broker를 제거하면 credential 수명, service 경계, account 전환, 비밀 비영속 계약을 잃으므로 제거하지 않는다.
+
+## 22. 검토했지만 현재 제품에 바로 채택하지 않은 방향
+
+### Noir + Joern + Neo4j 정적 Entry→Guard→Sink 분석
+
+외부 검토에서 Noir route extraction, Joern CPG/taint, Neo4j graph를 조립해 “guard를 우회해 sink에 도달하고 object ID가 principal과 비교되지 않는 경로”를 찾는 방향이 제안됐다. 개념상 source code가 있는 SAST/CPG 제품에는 가치가 있지만 현재 FlowScope의 동적 블랙박스 제품을 대체하지 않는다.
+
+이유:
+
+- FlowScope의 현재 입력은 Burp/ZAP/LLM이 실제로 관측한 HTTP Evidence다.
+- CPG는 대상 소스와 언어별 frontend가 필요하며 배포된 외부 서비스만 진단하는 사용자에게 항상 제공되지 않는다.
+- “guard node 없음”만으로 framework interceptor, DB row policy, gateway 정책, 외부 PDP를 모두 알 수 없다.
+- 동적 BOLA/BFLA의 핵심인 계정별 실제 응답과 상태 효과는 정적 reachability만으로 확정되지 않는다.
+- Joern/Neo4j 운영은 JAR 하나 중심의 현재 설치 계약을 크게 바꾼다.
+
+따라서 이 방향은 별도 optional source-code overlay 또는 후속 제품 연구로 보류한다. 명시적 제품 pivot 승인 없이 현재 Evidence core를 제거하거나 Joern을 필수 의존성으로 넣지 않는다.
+
+### Playwright 필수화
+
+Playwright는 강력하지만 Node/npm과 browser bundle 설치를 외부 사용자에게 추가로 요구한다. 현재 JDK 21 CDP worker는 설치된 Chrome 계열을 사용해 핵심 SPA discovery를 제공하므로 필수화하지 않았다. CDP 구현의 브라우저 호환·유지 비용이 실제 gate에서 감당 불가능하다는 자료가 생기면 Playwright adapter를 선택형으로 다시 비교한다.
+
+### 의미 기반 고정 가중치
+
+특정 method, `admin`, `payment`, `coupon` 같은 이름에 임의 숫자를 부여하면 데이터셋마다 편향되고 성능 근거가 없다. 현재는 Evidence 유무, object reference, state-changing 여부, provenance 같은 설명 가능한 범주형 정렬만 사용한다. 블라인드 corpus에서 precision/recall과 검토 비용을 측정하기 전에는 “최적 가중치”를 문서화하지 않는다.
+
+## 23. 외부 리뷰 항목의 현재 처분
+
+리뷰 문장을 그대로 사실로 취급하지 않고 현재 코드에서 다시 확인한다. 2026-09-02 기준 처분은 다음과 같다.
+
+### 해결 또는 회귀로 고정된 축
+
+- fat JAR NOTICE/라이선스, dependency relocation, MR-JAR 보존, plugin pin, shell CI, streaming manifest와 version-independent MR relocation은 beta.23~25에서 수정했다.
+- `ResponseEvidence`의 다양한 ID field, soft-deny 오류 봉투, JSON 크기·깊이·순회 상한은 beta.24에서 수정했다.
+- 익명과 지문 추출 실패 분리, binding service 정규화, binding 재적용, AnalysisConfig 단일 잠금, framed stable key/digest는 beta.24에서 수정했다.
+- Request Lab 멱등성, stale publication, 빈 셀과 실제 UNCROSSED 분리는 beta.33에서 수정했다.
+- snapshot/DataFlow 제곱 증가와 payload/decompression/assessment 상한은 beta.34에서 수정했다.
+- native Burp Scanner의 SYSTEM ZAP 오귀속, lane account 보존, crawler terminal wait, 취소, AJAX scope, API key header, HAR 반복 import, transient poll snapshot 보존은 beta.39 자동 회귀로 고정했다.
+
+### 현재 코드에서 여전히 확인되는 결함
+
+1. `SessionBroker.observeResponse()`의 200~499 `responseConfirmed=true`.
+2. `SessionBroker.accountForRequest()`의 적용 cookie 전부 exact match.
+3. `RecordMerge.Key`에 identity/account/run 없음.
+4. 서명 검증 없는 JWT `sub` hint와 계정 binding 경계가 충분히 분리되지 않음.
+5. `FlowScopeExtension.loadProjectFile()`이 load/검증 전 run/session/route를 지움.
+6. **beta.40 자동 회귀로 해결:** `LocalLlmRunner.cancel()/close()`의 알려진 process tree graceful→forced 종료와 alive 확인. 실제 장기 provider run과 분리 daemon은 운영 gate다.
+7. `BurpXmlParser` base64 body UTF-8 강제 변환.
+8. IPv6 service/scope/XML/live/persistence 전체 round-trip 미검증.
+9. 객체 없는 endpoint 2xx에서 required role이 UNKNOWN이어도 `ALLOW`로 표시되는 경로. 이 값은 취약점 확정은 아니지만 “정책 미확정”을 “허용”처럼 보이게 해 의미 오류가 있다.
+10. owner field의 관계 타입이 없어 actor/creator/author와 실제 owner를 오인할 수 있음.
+11. `McpServer`, `FlowScopeExtension`, `index.html`에 책임이 집중돼 변경 충돌과 회귀 영향 반경이 큼.
+
+### 실제 환경에서만 닫을 수 있는 항목
+
+- ZAP Replacer capability가 Traditional/Client/AJAX/definition 모든 initiator에 붙는지.
+- capability header가 대상 서버로 전달되기 전에 제거되는지.
+- crawler stop/cancel 후 실제 quiescence와 다음 신원 격리.
+- actual Burp에서 HUMAN/ZAP/LLM/Judge와 SQLite save/reload.
+- Windows 10/11 + Docker Desktop + PowerShell 7의 전체 연결.
+- 고카디널리티 그래프 가독성, 메모리, polling 비용.
+- endpoint/object/finding precision·recall과 진단자 검토시간.
+
+## 24. 제품 결정 보류 — 3-way와 2-way 발언
+
+현재 코드·README·기능명세·Judge lock은 다음 세 source를 독립 비교하는 3-way 제품이다.
+
+```text
+HUMAN vs SCANNER(ZAP) vs LLM Explorer
+```
+
+대화 중 제품 책임자가 한 차례 “3way 에서 2way 로 변경”이라고 지시했지만, 바로 다음 대화에서 탐색 방식과 Playwright 필요성을 다시 검토했고 어느 두 축을 남길지, Judge 입력과 ZAP 역할을 어떻게 바꿀지 확정하지 않았다. 이후에도 HUMAN, ZAP, LLM을 모두 개발·검증 대상으로 계속 요구했다.
+
+따라서 현재 사실은 다음과 같다.
+
+- 구현과 문서는 3-way다.
+- 2-way 전환은 코드에 반영되지 않았다.
+- 2-way를 확정하려면 `HUMAN+LLM`, `HUMAN+ZAP`, `HUMAN 대 자동화(ZAP+LLM orchestrator)` 중 의미, source model, Judge lock, UI 용어, benchmark를 먼저 결정해야 한다.
+- 명시적 확정 전에는 source enum이나 기존 Evidence 호환을 삭제하지 않는다.
+
+이 항목은 다음 Claude가 임의로 해석해 변경하면 안 되는 최우선 제품 확인 사항이다.
+
+## 25. 작업 연혁 요약
+
+전체 release 단위 변경은 [CHANGELOG](../../CHANGELOG.md), 이유·실패 재현·검증은 [개발 기록](development-log.md)이 정본이다. 다음은 왜 현재 구조가 되었는지 빠르게 파악하기 위한 축약 연혁이다.
+
+| 구간 | 핵심 작업 | 남긴 교훈 |
+|---|---|---|
+| beta.1~6 | Burp 수집, 3-source 정규화, graph/matrix, route candidate, 분류·판정 기본 | 관측·후보·판정과 source·identity를 섞으면 안 됨 |
+| beta.7~12 | 로컬 MCP, Explorer/Judge 격리, 계정·세션, SQLite, UI 흐름 | 모델 서술이 아니라 서버 Evidence gate가 권위여야 함 |
+| beta.13~16 | ZAP stage raw capture, Client/AJAX 경고, 비Proxy HUMAN 상관관계, 계정 카드 정리 | API 완료 상태와 실제 트래픽은 다름 |
+| beta.17~19 | Request Lab, byte 보존·charset, graph label/반응형 복구 | raw 진단 편의와 비밀 비영속을 분리해야 함 |
+| beta.20~22 | 공개 설치, Docker/Desktop ZAP, Windows helper, 빠른 시작 | 사용자 환경 준비와 제품 실행을 한눈에 연결해야 함 |
+| beta.23~25 | 라이선스·shade·MR-JAR·CI·manifest hardening | 배포물은 소스 테스트와 별도 검증 대상 |
+| beta.26~28 | ZAP HAR import, ZAP Context/add-on/definition, LLM safe read/write·0 Evidence gate | 가져온 파일은 캠페인 완료가 아니며 write는 승인 필요 |
+| beta.29~32 | CLI 격리, 작업 피드, 로그인 자동 확인, exact completed run과 dataset lock | 실행 성공·로그인 성공·탐색 완료를 분리해야 함 |
+| beta.33~34 | Request Lab 멱등성, stale publication, 선형 snapshot/DataFlow, bounded payload | UI race와 메모리 경계는 실제 결함 fixture로 고정 |
+| beta.35~37 | 독립/보조 frontier, 설치 Chrome CDP worker, Graph Fact·계층 투영 | browser는 보조 discovery, controlled replay가 Evidence |
+| beta.38~39 | ZAP 진행·정체·partial 결과, capability provenance, 취소·cleanup, graph/explorer 회귀 복구 | 장시간 자동화에는 liveness, provenance, terminal cleanup이 제품 기능 |
+
+## 26. Claude가 인수 직후 수행할 순서
+
+### 0단계 — 변경 금지 상태 확인
+
+```bash
+git status --short
+git log -1 --oneline
+git rev-list --left-right --count origin/main...HEAD
+shasum -a 256 target/flowscope-1.2.0-beta.40.jar
+```
+
+기대값은 사용자 소유 변경인 루트 `CLAUDE.md`와 untracked `mentor-progress-report.md`가 남고, `HEAD`가 beta.40 Explorer 1~10 작업 커밋이며, JAR digest가 `b472c9eae70afd4dd6d818af576e458570ac9b3116e2dc288ee6a62f0bf4ff55`인 상태다. 원격 차이는 위 명령의 실측값을 따른다. 다르면 새 상태를 먼저 기록하고 이 문서를 기계적으로 믿지 않는다.
+
+### 1단계 — 실제 ZAP provenance gate
+
+코드 수정 전에 19절의 비로그인 첫 lane gate를 수행한다. 실패하면 status/API/Burp log/ZAP status와 첫 capability rejection 시점만 수집한다. Evidence가 섞일 수 있는 fallback을 추가하지 않는다.
+
+### 2단계 — P0 정확성 수정
+
+서로 독립된 작은 commit으로 다음 순서를 권장한다.
+
+1. project load validate-then-swap과 실패 rollback.
+2. Session Broker ACTIVE 계약과 auth material/보조 cookie 구분.
+3. provenance-aware `RecordMerge` key.
+4. JWT subject를 unresolved hint로 격하하고 account binding 근거 분리.
+5. owner/actor/creator typed relation과 owner alias fixture.
+6. 객체 없는 endpoint의 UNKNOWN policy 표시를 `UNTESTED/UNDECIDED`로 정정.
+7. **beta.40 자동 회귀로 해결:** LLM child graceful→forced termination과 exit 확인. 실제 장기 provider run은 운영 gate로 유지.
+8. 비UTF-8 XML과 canonical IPv6 authority.
+
+각 항목은 수정 전에 실제 실패 테스트를 먼저 추가한다. 여러 항목을 한 대형 refactor에 섞지 않는다.
+
+### 3단계 — 실제 HUMAN·LLM gate
+
+- USER A/USER B 계정을 실제 로그인해 ACTIVE 신뢰 계약을 확인한다.
+- HUMAN pass의 real Burp Browser/Repeater/Intruder와 graph projection을 확인한다.
+- Codex와 Claude를 각각 Explorer로 실행해 endpoint inventory, exact-scope, account injection, Evidence, 정상 end-run을 확인한다.
+- SPA가 있는 fixture에서 browser 없이 가능한 route와 CDP 보조로만 발견되는 route를 구분한다.
+- Judge는 세 lane lock과 current reproduction/control bundle을 실제로 통과시킨다.
+
+### 4단계 — 블라인드 효능 평가 전 제품 결정
+
+- 3-way 유지 또는 2-way 전환 의미를 제품 책임자에게 확정받는다.
+- 그 결정 전에는 benchmark schema와 source enum을 바꾸지 않는다.
+- 허가된 일반 fixture에서 endpoint/API/object/classifier truth set과 review cost를 먼저 측정한다.
+- 그 뒤 새 프로젝트로 crAPI 정답 격리 benchmark를 수행한다.
+
+## 27. 절대 하지 말아야 할 인수 후 행동
+
+- 샘플 데이터를 실제 수집 결과처럼 표시하거나 성능 근거로 사용하지 않는다.
+- crAPI 정답, 특정 취약 endpoint, 공격 절차를 prompt·fixture·규칙에 넣고 탐지 성능이라고 주장하지 않는다.
+- source와 orchestrator, source와 identity, requester와 owner를 합치지 않는다.
+- `/orders/{id}` normalization 뒤 raw `/orders/101` Evidence를 버리지 않는다.
+- status 2xx, ZAP Alert, LLM 문장 하나로 BOLA/BFLA를 확정하지 않는다.
+- 미요청 route를 observed coverage나 finding으로 승격하지 않는다.
+- REVIEW/EXCLUDE를 데이터셋에서 삭제하지 않는다.
+- raw Cookie/Authorization/password/API/provider token을 project, snapshot, MCP, log, Git에 넣지 않는다.
+- 실제 대상에 write, Active Scan, 경합, 대량 요청을 묵시적으로 실행하지 않는다.
+- ZAP/LLM 장시간 작업을 취소·terminal cleanup 없이 남기지 않는다.
+- UI만 숨겨 backend 의미 오류를 덮지 않는다.
+- 자동테스트 통과를 실제 Burp, ZAP, Windows, target 성능 완료로 표현하지 않는다.
+- `mentor-progress-report.md`를 커밋하지 않는다.
+- 사용자 승인 없이 push, tag, GitHub Release를 만들지 않는다.
+
+## 28. 인수 완료 체크리스트
+
+Claude는 개발을 시작하기 전에 다음 질문에 파일·코드·테스트 근거로 답할 수 있어야 한다.
+
+1. 현재 HEAD와 origin/main의 차이는 무엇인가?
+2. 최신 JAR과 자동 회귀가 증명한 것과 증명하지 못한 것은 무엇인가?
+3. HUMAN, SCANNER, LLM, orchestrator, identity, role, owner는 어떻게 다른가?
+4. Session Broker가 raw credential을 어디에 보관하고 누구에게 무엇만 노출하는가?
+5. ZAP capability rejection이 왜 안전한 실패이며 다음 실환경 gate는 무엇인가?
+6. Explorer가 browser 없이 할 수 있는 것과 CDP worker가 필요한 경우는 무엇인가?
+7. Assessment와 final validation은 어떻게 다른가?
+8. Graph Fact, API template, object family, object instance는 어떻게 연결되는가?
+9. 현재 코드에서 남은 P0/P2 결함은 무엇인가?
+10. 2-way 발언을 왜 아직 코드 변경으로 해석하면 안 되는가?
+11. 코드 변경 시 함께 갱신할 문서는 무엇인가?
+12. 어떤 검증을 수행해야 “실제 동작 확인”이라고 말할 수 있는가?
+
+이 12개를 설명하지 못하면 새 기능을 추가하기 전에 이 문서와 정본 코드를 다시 읽는다.

@@ -64,7 +64,8 @@ final class ProjectStoreTest {
                 "token=REVIEWSECRET 재현 완료", assessment.evidenceIds());
         Path file = temp.resolve("session.flowscope.json");
         RouteCandidate routeCandidate = new RouteCandidate(record.service, "UNKNOWN", "/undocumented/{id}",
-                false, List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.BURP_UNREQUESTED,
+                List.of("/undocumented/42"), false, false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.BURP_UNREQUESTED,
                 "sitemap:abc", Source.UNKNOWN, "burp-site-map", "burp-site-map")),
                 RouteCandidate.Applicability.REVIEW, "응답 없는 Site Map 항목");
 

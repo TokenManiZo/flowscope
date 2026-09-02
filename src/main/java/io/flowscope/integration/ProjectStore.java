@@ -269,6 +269,8 @@ public final class ProjectStore {
         out.put("service", candidate.service());
         out.put("method", candidate.method());
         out.put("path_template", candidate.pathTemplate());
+        out.set("concrete_paths", json.valueToTree(candidate.concretePaths()));
+        out.put("concrete_paths_truncated", candidate.concretePathsTruncated());
         out.put("observed", candidate.observed());
         out.set("provenance_types", json.valueToTree(candidate.provenanceTypes().stream()
                 .map(Enum::name).sorted().toList()));
@@ -306,7 +308,9 @@ public final class ProjectStore {
             }
         }
         return new RouteCandidate(required(value, "service"), required(value, "method"),
-                required(value, "path_template"), value.path("observed").asBoolean(false), provenance,
+                required(value, "path_template"), stringList(value, "concrete_paths"),
+                value.path("concrete_paths_truncated").asBoolean(false),
+                value.path("observed").asBoolean(false), provenance,
                 enumValue(RouteCandidate.Applicability.class, required(value, "applicability")),
                 masked(value, "review_reason"));
     }

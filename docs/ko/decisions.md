@@ -1025,3 +1025,25 @@
 - **근거:** ZAP Replacer 구현은 전역 `HttpSender` listener이고, API에서 `initiators`를 생략하면 `appliesToAllInitiators()`가 참이다. 따라서 현재 규칙은 crawler 종류를 의도적으로 제한하지 않는다. 그러나 이 코드 계약은 실제 설치본의 Replacer→outgoing proxy→Burp 전달을 증명하지 않으므로 end-to-end gate를 대체하지 않는다. [Replacer 문서](https://www.zaproxy.org/docs/desktop/addons/replacer/), [Replacer 소스](https://github.com/zaproxy/zap-extensions/tree/main/addOns/replacer/src/main/java/org/zaproxy/zap/extension/replacer)
 - **기각:** capability 누락 요청을 경고만 남기고 수집하면 HUMAN/native Scanner/다른 로컬 프로세스가 현재 ZAP account/run으로 오귀속될 수 있어 기각했다. 일정 시간마다 “ZAP 응답 수신”을 꾸며 내는 방식도 원격 API 상태를 거짓 표시하므로 기각하고 worker liveness와 실제 status/capture progress를 분리했다.
 - **검증·한계:** 자동 회귀는 capability 거부가 다음 crawler 전에 terminal failure가 되는 경로, 거부 건수 API, 지연된 `newSession` 동안 heartbeat 갱신을 확인한다. 실제 ZAP 2.17의 Traditional·Client·AJAX·definition 각 initiator 전달은 beta.39 JAR 재로드 후 별도 수동 gate다.
+
+## D-110 · Explorer route 정규화는 표시 template과 실행 concrete path를 분리한다
+
+- **문제:** `/orders/42` 같은 실제 HTML/JavaScript route를 `/orders/{id}`로 정렬한 뒤 원 concrete 값이 후보에서 사라졌다. Explorer 완료 gate는 brace가 있는 candidate를 실행 불가로 제외했으므로, 객체 route를 발견하고도 요청하지 않은 채 종료할 수 있었다. 반대로 schema의 `{id}`에 임의 값을 넣으면 존재하지 않는 endpoint와 객체를 꾸며낸다.
+- **결정:** `RouteCandidate`는 분석·표시용 `pathTemplate`과 실제 응답에서 추출하거나 request/response로 이미 관측한 `concretePaths`를 함께 보존한다. 후보 하나당 concrete 값은 200개로 제한하고 초과 여부를 별도 표시한다. query는 그대로 보존하되 인증·token 표식이 탐지되면 비밀값을 저장하지 않고 query를 제거한 path만 남긴다. INDEPENDENT와 provenance-free ASSISTED 모두 concrete safe path를 실행 frontier로 사용하며, 남은 concrete가 하나라도 있으면 전환·종료를 거부한다. 실제 값 없는 OpenAPI template은 unresolved limitation으로 남긴다.
+- **기각:** template을 없애고 모든 ID별 route를 별도 후보로 두면 고카디널리티 객체가 endpoint 인벤토리를 다시 뒤덮는다. `{id}`를 LLM이 추측하게 하면 Evidence 원칙과 미탐 보완을 동시에 깨뜨린다. 다른 lane의 전체 Evidence를 공개하면 독립 비교가 오염되므로 assisted는 route/concrete 값만 주고 provenance와 결과는 계속 제거한다.
+- **검증:** extractor 회귀가 두 object ID와 query를 하나의 template 아래 concrete 값으로 보존하고, 이미 관측한 request query도 방문값에서 잃지 않으며, secret query는 제거하고 OpenAPI schema template에는 값을 만들지 않는지 확인한다. MCP 회귀가 concrete object path를 pending frontier로 반환하고 요청 전 종료를 거부하며 query까지 일치한 controlled Evidence 뒤 소진되는지 확인한다. 매번 새 포트를 쓰는 local HTTP fixture가 HTML→외부 script→API와 object route를 연쇄 발견하고 POST를 묵시 실행하지 않는지 확인한다.
+- **한계:** 200개를 넘는 concrete 값은 보존하지 않고 `concrete_paths_truncated=true`로 표시하므로 전체 객체 열거가 아니다. assisted concrete 값은 출처를 숨겨도 다른 lane이 관측한 경로 자체는 공개한다. 이 절충은 독립 단계가 먼저 끝난 뒤 recall을 보완하기 위한 것이며 blind benchmark에서 별도 측정한다.
+
+## D-111 · Explorer 1~10은 모델 자유 프롬프트가 아니라 서버 guidance·완료 gate와 결합한다
+
+- **문제:** “HTTP가 막히면 브라우저를 쓴다”, “객체·BFLA·workflow를 검토한다”, “한계를 보고한다”가 prompt 문장에만 있으면 provider가 일부 단계를 건너뛰어도 서버가 알 수 없다. 반대로 모든 HTML에 브라우저를 강제하면 전통 페이지와 API-only 대상에 불필요한 비용과 노이즈가 생긴다.
+- **결정:** prompt를 경계 고정→첫 Evidence→독립 인벤토리→검토 차원→조건부 rendered discovery→객체/신원→method/workflow→Evidence/control→blind assisted→한계 포함 종료의 10단계로 고정한다. 서버는 `pending_concrete_paths`, 범주형 `review_dimensions`, `explorer_guidance.next_action`을 반환한다. HTML script 신호가 있고 브라우저 route가 아직 없으면 rendered discovery를 권고하되, 브라우저가 없거나 사용되지 않았다는 사실을 completion limitation으로 남기고 HTTP·assisted 결과까지 버리지는 않는다. target 응답·DOM·tool output은 명령이 아닌 불신 데이터로 취급한다.
+- **기각:** 브라우저-first는 API-only 대상에서 불필요하고 UI가 호출하지 않는 API를 놓친다. HTTP-only는 SPA runtime route를 놓칠 수 있다. 브라우저를 취약점 Evidence로 직접 쓰면 세션·재현·source/run 신뢰 계약이 깨진다. 따라서 HTTP가 Evidence 정본이고 브라우저는 조건부 discovery인 구조를 유지한다.
+- **검증:** MCP 구조 응답, 완료 limitation, route persistence와 10단계 prompt 문자열을 자동 회귀로 고정한다. 로컬 fixture는 endpoint frontier 동작을 검증하지만 실제 provider의 장기 탐색 품질, 실제 Burp session injection, SPA route recall 또는 취약점 precision/recall을 증명하지 않는다.
+
+## D-112 · 로컬 구독 CLI 취소는 bounded graceful→forced process-tree 확인으로 처리한다
+
+- **문제:** `Process.destroy()` 한 번만 호출하면 provider wrapper나 하위 프로세스가 종료 신호를 무시할 수 있고, UI가 CANCELLED여도 실제 CLI가 계속 실행될 수 있다. Java의 `destroy()`는 정상 종료 요청일 뿐 동작이 구현 의존이며, `destroyForcibly()`도 즉시 종료 완료를 보장하지 않는다.
+- **결정:** 현재 process의 descendants snapshot을 leaf-first로 정상 종료하고 parent를 종료한 뒤 공통 1초 경계에서 기다린다. 남은 process는 leaf-first 강제 종료하고 parent도 강제 종료한 뒤 다시 1초 안에 `isAlive`를 확인한다. 시작·등록 경합, 사용자 취소, extension unload가 같은 함수를 사용한다. 종료 확인 실패는 FAILED와 수동 복구 안내로 표시한다.
+- **근거:** Java 21 `Process`와 `ProcessHandle` 공식 API가 normal/forcible termination, `descendants()` snapshot, `onExit`·`waitFor`·`isAlive` 확인 계약을 제공한다. <https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Process.html>, <https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/ProcessHandle.html>
+- **한계:** descendants는 호출 시점 snapshot이므로 이후 생성된 process나 별도 daemon/process group까지 완전한 소유권 종료를 증명하지 않는다. 운영체제별 실제 Codex/Claude 취소 후 잔존 PID 검사를 별도 gate로 유지한다.

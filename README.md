@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.39
+# FlowScope 1.2.0-beta.40
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 실제 대상에 남긴 트래픽을 하나의 신원 인지 인가 그래프와 커버리지 매트릭스에 정렬하는 Burp Suite Community 호환 확장입니다. LLM의 추측을 확정 취약점으로 취급하지 않으며, 관측 범위 안의 미교차 객체 조합과 Evidence 기반 BOLA/IDOR·BFLA 후보를 보여 줍니다. 응답 또는 Burp Site Map에서 발견됐지만 아직 요청하지 않은 exact-scope 경로는 관측 그래프와 분리된 중립 후보로 제시합니다.
 
@@ -34,7 +34,9 @@ USER B         GET /api/orders/{id}  orders:101
 - 서버가 강제하는 독립-first/비식별 보조 Explorer 시야, 불변 3-lane dataset lock, 최종 LLM Judge 종합
 - 목적별 Evidence 신뢰 정책과 exact-run 완료 gate. HUMAN은 관측/통제 응답, SCANNER·LLM은 FlowScope 통제 응답만 레인 완료 근거가 되며 완료 시점 Evidence ID를 동결해 후발·가져오기·8082 직접 fallback 트래픽이 잠금 데이터셋에 섞이지 않음
 - Web 빠른 시작에서 로컬 구독 Codex/Claude CLI를 새 프로세스로 실행하는 `LLM Explorer 시작`·`Judge 시작` 버튼. Explorer는 비영속 새 세션, Judge는 별도 새 세션으로 시작하며 완료 뒤 같은 Judge 대화를 명시적으로 재개 가능
-- Explorer는 먼저 자신의 source/run provenance route를 소진한 뒤 다른 lane의 source·run·Evidence·응답을 제거한 blind route hint만 받습니다. pre-lock status는 다른 lane의 수량·run·판정을 숨기고, Explorer 중에는 ZAP 상태/실행도 차단하며, lock 시 route inventory를 함께 고정합니다.
+- Explorer는 먼저 자신의 source/run provenance route를 소진한 뒤 다른 lane의 source·run·Evidence·응답을 제거한 blind route hint만 받습니다. `/orders/42`를 `/orders/{id}`로 정렬하더라도 실제 관측된 `/orders/42`는 별도 concrete 실행값으로 보존하며, 안전한 concrete path가 남아 있으면 종료할 수 없습니다. 서버는 endpoint/object/function/workflow 검토 차원과 다음 행동을 구조화해 주되 이를 취약점 판정으로 사용하지 않습니다. pre-lock status는 다른 lane의 수량·run·판정을 숨기고, Explorer 중에는 ZAP 상태/실행도 차단하며, lock 시 route inventory를 함께 고정합니다.
+- HTML·script가 관측되면 서버가 rendered discovery 필요 가능성을 표시합니다. 설치 브라우저가 있으면 격리 브라우저를 discovery-only로 사용할 수 있고, 없거나 사용하지 않은 경우 run은 그 한계를 숨기지 않고 `PARTIAL_WITH_LIMITATIONS`로 끝납니다. 브라우저가 발견한 안전한 route도 controlled HTTP executor로 재현해야 완료할 수 있습니다.
+- Codex/Claude CLI 취소와 확장 unload는 알려진 하위 프로세스와 부모에 정상 종료를 요청하고, 제한 시간 안에 살아 있으면 강제 종료한 뒤 실제 종료 여부를 확인합니다. 확인하지 못하면 성공이나 취소로 가장하지 않고 복구 가능한 실패로 표시합니다.
 - Explorer는 별도 Playwright·Chrome MCP 설치 없이 컴퓨터에 설치된 Chrome/Chromium/Edge를 incognito 임시 격리 프로필로 띄울 수 있습니다. 이 작업기는 8082 listener에 의존하지 않고 CDP에서 exact scope 밖 요청을 차단하며, 선택 계정 세션은 디스크 cookie DB가 아니라 메모리 broker에서 같은 target service 요청에만 주입합니다. DOM·링크·폼·SPA network 요약은 발견 힌트일 뿐이고 발견 route는 통제 executor로 재현해야 Evidence가 됩니다. 클릭·입력 자체가 아니라 그 결과 발생하는 실제 POST/PUT/PATCH/DELETE 요청의 메서드·URL·마스킹 본문을 Burp에서 승인하며, 비밀번호·파일 입력은 차단합니다.
 - 기존 Burp Proxy history 원클릭 가져오기. 같은 동작에서 응답 없는 exact-scope Site Map 항목은 미요청 route 후보로 가져오고, 실제 반복 횟수를 보존해 중복을 억제. 네트워크를 사용하지 않는 온보딩 샘플은 화면에 “실제 점검 결과 아님” 배너로 명시
 - 스캐너 파일 업로드에서 ZAP이 내보낸 HAR 1.2 요청·응답을 SCANNER Evidence로 가져오기. HAR의 메서드·URL·query·header·body·status·timestamp를 기존 정규화 파이프라인에 넣되, HAR만으로 ZAP native Alert나 캠페인 완료를 만들지 않음
@@ -68,7 +70,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.39.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.39 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.40.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.40 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
 3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
@@ -103,7 +105,7 @@ cd testflowscope
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.39.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.40.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 

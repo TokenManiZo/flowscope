@@ -192,6 +192,8 @@ public final class SnapshotJsonWriter {
             value.put("service", candidate.service());
             value.put("method", candidate.method());
             value.put("pathTemplate", candidate.pathTemplate());
+            value.set("concretePaths", json.valueToTree(candidate.concretePaths()));
+            value.put("concretePathsTruncated", candidate.concretePathsTruncated());
             value.put("observed", candidate.observed());
             value.set("provenanceTypes", json.valueToTree(candidate.provenanceTypes().stream()
                     .map(Enum::name).sorted().toList()));

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0-beta.40 — 2026-09-02
+
+- Explorer routes now keep a display/analysis template and bounded executable concrete paths separately. `/orders/42` and `/orders/77` remain grouped under `/orders/{id}` without losing their observed values or non-secret queries.
+- FlowScope blocks the INDEPENDENT-to-ASSISTED transition and run completion while a safe concrete GET/HEAD/OPTIONS/UNKNOWN path remains. It does not invent values for schema-only templates.
+- The Explorer contract is now an explicit ten-step sequence covering scope and first Evidence, independent inventory, classification, low-impact probes, BOLA/IDOR, BFLA, workflow hypotheses, Evidence/control, and blind-assisted review with truthful limitations. Server guidance exposes pending paths, review dimensions, and the next required action.
+- Rendered discovery is recommended only when an own-run HTML/script signal warrants it. Browser output remains discovery-only and must be replayed through the controlled HTTP executor. Skipped or unavailable recommended rendering and unresolved dynamic templates produce `PARTIAL_WITH_LIMITATIONS`.
+- Explorer instructions treat target responses, DOM content, and tool output as untrusted data rather than instructions.
+- Codex/Claude cancellation and extension shutdown now attempt bounded graceful then forced termination for the known process tree and report failure instead of a false `CANCELLED` state when exit cannot be confirmed.
+- A fresh-port local HTTP fixture verifies chained HTML → external JavaScript → API/object discovery, exact-scope exclusion, and no implicit POST execution. Real Burp/provider recall and vulnerability accuracy remain separate operational and blind-evaluation gates.
+- All 324 Maven tests passed in two consecutive clean builds, and both beta.40 JARs had the same SHA-256.
+
 ## 1.2.0-beta.39 — 2026-09-01
 
 - The isolated ZAP baseline now runs Traditional, Client, and AJAX crawlers for every identity and stops unfinished FlowScope-owned crawler work on timeout or failure.

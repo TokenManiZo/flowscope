@@ -51,6 +51,73 @@ class RouteCandidateExtractorTest {
     }
 
     @Test
+    void 정규화된_object_template에도_실제로_요청할_concrete_path를_보존한다() {
+        RequestRecord page = html("""
+                <a href="/app/orders/42?view=full">first</a>
+                <a href="/app/orders/77?view=full">second</a>
+                """);
+
+        RouteCandidate candidate = find(RouteCandidateExtractor.extract(List.of(page),
+                ScopePolicy.parse("https://app.test/app/"), List.of()),
+                "UNKNOWN", "/app/orders/{id}");
+
+        assertEquals(List.of("/app/orders/42?view=full", "/app/orders/77?view=full"),
+                candidate.concretePaths());
+        assertFalse(candidate.concretePathsTruncated());
+    }
+
+    @Test
+    void concrete_path의_인증_query값은_저장하거나_explorer에_노출하지_않는다() {
+        RequestRecord page = html("<a href='/app/orders/42?access_token=raw-secret'>order</a>");
+
+        RouteCandidate candidate = find(RouteCandidateExtractor.extract(List.of(page),
+                ScopePolicy.parse("https://app.test/app/"), List.of()),
+                "UNKNOWN", "/app/orders/{id}");
+
+        assertEquals(List.of("/app/orders/42"), candidate.concretePaths());
+        assertFalse(candidate.toString().contains("raw-secret"));
+    }
+
+    @Test
+    void 실제_관측_request의_query도_concrete_visit값으로_보존한다() {
+        RequestRecord first = new RequestRecord(Source.LLM, "https://app.test:443",
+                "GET", "/app/orders/42", 200, "A");
+        first.query = "view=full";
+        first.hasResponse = true;
+        first.responseContentType = "application/json";
+        RequestRecord second = new RequestRecord(Source.LLM, "https://app.test:443",
+                "GET", "/app/orders/77", 200, "A");
+        second.query = "view=summary";
+        second.hasResponse = true;
+        second.responseContentType = "application/json";
+        List<RequestRecord> observed = Pipeline.run(List.of(first, second)).records;
+
+        RouteCandidate candidate = find(RouteCandidateExtractor.extract(observed,
+                ScopePolicy.parse("https://app.test/app/"), List.of()),
+                "GET", "/app/orders/{id}");
+
+        assertEquals(List.of("/app/orders/42?view=full", "/app/orders/77?view=summary"),
+                candidate.concretePaths());
+    }
+
+    @Test
+    void 고카디널리티_object의_concrete_path는_상한과_초과표시를_유지한다() {
+        StringBuilder links = new StringBuilder();
+        for (int id = 1; id <= 201; id++) {
+            links.append("<a href='/app/orders/").append(id).append("'>order</a>");
+        }
+
+        RouteCandidate candidate = find(RouteCandidateExtractor.extract(List.of(html(links.toString())),
+                ScopePolicy.parse("https://app.test/app/"), List.of()),
+                "UNKNOWN", "/app/orders/{id}");
+
+        assertEquals(200, candidate.concretePaths().size());
+        assertTrue(candidate.concretePathsTruncated());
+        assertEquals("/app/orders/1", candidate.concretePaths().getFirst());
+        assertEquals("/app/orders/200", candidate.concretePaths().getLast());
+    }
+
+    @Test
     void 관측_JavaScript_literal은_후보지만_문자열조합은_꾸며내지_않는다() {
         RequestRecord script = new RequestRecord(Source.HUMAN, "https://app.test:443",
                 "GET", "/app/main.js", 200, "anon");
@@ -149,6 +216,7 @@ class RouteCandidateExtractorTest {
 
         assertCandidate(candidates, "GET", "/app/api/v2/orders/{id}", "openapi-json-yaml");
         RouteCandidate post = find(candidates, "POST", "/app/api/v2/orders/{id}");
+        assertTrue(post.concretePaths().isEmpty(), "스키마 template에 실제 관측하지 않은 ID를 만들면 안 된다");
         assertEquals(Set.of(Source.SCANNER), post.discoveredSources());
         assertEquals(Set.of("scanner-run"), post.discoveredRunIds());
     }

@@ -31,8 +31,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -82,6 +84,7 @@ public final class LocalLlmRunner implements AutoCloseable {
     private static final int PROVIDER_LINE_LIMIT = 32 * 1024;
     private static final int PREFLIGHT_OUTPUT_LIMIT = 16 * 1024;
     private static final long PREFLIGHT_TTL_SECONDS = 30;
+    private static final long PROCESS_TERMINATION_TIMEOUT_MILLIS = 1_000;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern CODEX_SESSION = Pattern.compile("\\\"thread_id\\\"\\s*:\\s*\\\"([0-9a-fA-F-]{16,64})\\\"");
     private static final List<String> EXPLORER_TOOLS = List.of(
@@ -349,8 +352,6 @@ public final class LocalLlmRunner implements AutoCloseable {
     public synchronized State cancel() {
         State current = state.get();
         if (current.status() != Status.RUNNING) return current;
-        Process process = activeProcess;
-        if (process != null) process.destroy();
         abortActiveLlm();
         if (current.role() == Role.EXPLORER) contexts.invalidateCompleted(Source.LLM);
         addActivity("SYSTEM", "실행 중단", "사용자가 현재 LLM 실행을 중단했습니다.", "CANCELLED");
@@ -358,6 +359,12 @@ public final class LocalLlmRunner implements AutoCloseable {
                 current.providerSessionId(), current.startedAt(), Instant.now(), "사용자가 LLM 실행을 중단했습니다.",
                 current.outputTail(), current.sessionMetadataMayRemain());
         state.set(cancelled);
+        Process process = activeProcess;
+        if (process != null && !terminateProcess(process)) {
+            State failed = terminationFailed(current);
+            state.set(failed);
+            return failed;
+        }
         return cancelled;
     }
 
@@ -385,7 +392,7 @@ public final class LocalLlmRunner implements AutoCloseable {
             Process process = launcher.start(running.provider(), command, workspace, environment);
             synchronized (this) {
                 if (closed || state.get() != running) {
-                    process.destroy();
+                    if (!terminateProcess(process)) state.set(terminationFailed(running));
                     return;
                 }
                 activeProcess = process;
@@ -459,6 +466,87 @@ public final class LocalLlmRunner implements AutoCloseable {
         return new State(Status.FAILED, running.provider(), running.role(), running.runId(),
                 running.providerSessionId(), running.startedAt(), Instant.now(), safe,
                 sanitizeOutput(output), running.sessionMetadataMayRemain());
+    }
+
+    private State terminationFailed(State running) {
+        String message = "LLM 자식 프로세스 종료를 확인하지 못했습니다. 실행 중인 CLI를 직접 종료한 뒤 다시 시도하세요.";
+        logger.accept("FlowScope " + running.provider() + " " + running.role() + " 종료 실패");
+        addActivity("ERROR", "프로세스 종료 실패", message, "FAILED");
+        return new State(Status.FAILED, running.provider(), running.role(), running.runId(),
+                running.providerSessionId(), running.startedAt(), Instant.now(), message,
+                running.outputTail(), running.sessionMetadataMayRemain());
+    }
+
+    private static boolean terminateProcess(Process process) {
+        if (process == null || !process.isAlive()) return true;
+        List<ProcessHandle> descendants = processDescendants(process);
+        requestTermination(descendants, false);
+        process.destroy();
+        if (awaitExit(process, descendants)) return true;
+        requestTermination(descendants, true);
+        process.destroyForcibly();
+        return awaitExit(process, descendants);
+    }
+
+    private static List<ProcessHandle> processDescendants(Process process) {
+        try {
+            return process.descendants().sorted(Comparator
+                    .comparingInt(LocalLlmRunner::processDepth).reversed()
+                    .thenComparingLong(ProcessHandle::pid)).toList();
+        }
+        catch (UnsupportedOperationException | SecurityException ignored) { return List.of(); }
+    }
+
+    private static int processDepth(ProcessHandle handle) {
+        int depth = 0;
+        ProcessHandle current = handle;
+        for (int hop = 0; hop < 64; hop++) {
+            try {
+                var parent = current.parent();
+                if (parent.isEmpty()) return depth;
+                depth++;
+                current = parent.get();
+            } catch (SecurityException ignored) {
+                return depth;
+            }
+        }
+        return depth;
+    }
+
+    private static void requestTermination(List<ProcessHandle> descendants, boolean forcibly) {
+        for (ProcessHandle handle : descendants) {
+            if (!handle.isAlive()) continue;
+            try {
+                if (forcibly) handle.destroyForcibly();
+                else handle.destroy();
+            } catch (IllegalStateException | UnsupportedOperationException | SecurityException ignored) {
+                // 최종 alive 확인이 실패 여부를 결정한다.
+            }
+        }
+    }
+
+    private static boolean awaitExit(Process process, List<ProcessHandle> descendants) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(PROCESS_TERMINATION_TIMEOUT_MILLIS);
+        try {
+            process.waitFor(PROCESS_TERMINATION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+            List<CompletableFuture<ProcessHandle>> pending = descendants.stream()
+                    .filter(ProcessHandle::isAlive).map(ProcessHandle::onExit).toList();
+            if (!pending.isEmpty()) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining > 0) {
+                    CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
+                            .get(remaining, TimeUnit.NANOSECONDS);
+                }
+            }
+            return !process.isAlive() && descendants.stream().noneMatch(ProcessHandle::isAlive);
+        } catch (TimeoutException ignored) {
+            return false;
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            return !process.isAlive() && descendants.stream().noneMatch(ProcessHandle::isAlive);
+        } catch (java.util.concurrent.ExecutionException ignored) {
+            return false;
+        }
     }
 
     private void cleanupExplorer(String runId) {
@@ -1070,7 +1158,10 @@ public final class LocalLlmRunner implements AutoCloseable {
         closed = true;
         cancel();
         Process process = activeProcess;
-        if (process != null) process.destroy();
+        if (process != null && !terminateProcess(process)) {
+            State current = state.get();
+            if (current.provider() != null) state.set(terminationFailed(current));
+        }
         abortActiveLlm();
         worker.shutdownNow();
         readinessWorker.shutdownNow();

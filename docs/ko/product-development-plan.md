@@ -1,8 +1,25 @@
-# FlowScope 1.2.0-beta.39 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.40 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.39 절만 현재 우선순위다. 아래 beta.38 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.39 절을 따른다.
+> **읽는 법:** 맨 위 beta.40 절만 현재 우선순위다. 아래 beta.39 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.40 절을 따른다.
 
-## 0. beta.39 우선순위: 통합 회귀 복구와 실제 Burp gate
+## 0. beta.40 우선순위: Explorer 1~10 실행 계약과 실제 경로 보존
+
+1. own-run inventory를 읽고 exact entry GET Evidence를 만든다.
+2. HTML·JavaScript·metadata·OpenAPI·XML 응답에서 독립 frontier를 확장한다.
+3. 표시용 path template과 실제 관측 concrete path를 분리해 객체 ID를 잃지 않는다.
+4. endpoint/object/function/workflow 검토 차원을 서버가 구조화하되 취약점 verdict로 승격하지 않는다.
+5. concrete GET/HEAD/OPTIONS/UNKNOWN을 controlled executor로 소진한다.
+6. rendered-app 신호가 있으면 격리 브라우저를 discovery-only로 권고하고, 발견 route를 HTTP executor로 재현한다.
+7. 객체·BOLA/IDOR와 method·BFLA·workflow 후보는 현재 run의 실제 Evidence에서만 만든다.
+8. 상태 변경은 기존 요청 단위 Burp 승인 계약을 유지하고 미승인 route를 실행하지 않는다.
+9. 독립 frontier 뒤에만 provenance-free assisted concrete hint를 공개한다.
+10. 두 frontier와 exact-run Evidence를 검증하고, 브라우저 미사용·불가와 실제 값 없는 template을 완료 한계로 반환한다.
+
+추가 운영 gate는 Codex/Claude 자식 프로세스가 정상 종료를 무시할 때 parent와 알려진 descendants를 강제 종료하고 실제 종료를 확인하는 것이다. 자동 회귀와 매번 새 포트의 local HTTP fixture를 먼저 통과한 뒤 실제 Burp+provider run을 수행한다. endpoint/finding 정확도 향상은 블라인드 benchmark 전에는 주장하지 않는다.
+
+**현재 상태:** 1~10의 코드·집중 회귀, 매번 새 포트 local HTTP fixture, 전체 324 tests 연속 두 clean verify와 byte-for-byte 동일 beta.40 JAR은 통과했다. 실제 Burp+Session Broker+Codex/Claude 장기 Explorer, SPA browser 추가 recall과 블라인드 endpoint/finding precision·recall은 대기한다. 따라서 구현 gate 통과와 실환경·효능 검증을 구분한다.
+
+## 0.1 beta.39 당시 우선순위: 통합 회귀 복구와 실제 Burp gate
 
 1. API 문맥 없는 401/403 scanner probe와 `/manifest.json`을 메인 API 그래프에서 분리하되 Evidence는 보존한다.
 2. Explorer의 실제 방문 사실과 BOLA/BFLA coverage 자격을 분리해 제외된 navigation/static route가 완료를 영구 차단하지 않게 한다.

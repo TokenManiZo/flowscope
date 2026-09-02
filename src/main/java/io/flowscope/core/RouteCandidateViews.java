@@ -25,7 +25,8 @@ public final class RouteCandidateViews {
                     .map(RouteCandidate.Provenance::reason).filter(value -> !value.isBlank())
                     .findFirst().orElse("현재 source/run provenance만 표시");
             visible.add(new RouteCandidate(candidate.service(), candidate.method(), candidate.pathTemplate(),
-                    observed, provenance, applicability, reason));
+                    candidate.concretePaths(), candidate.concretePathsTruncated(), observed,
+                    provenance, applicability, reason));
         }
         return RouteCandidateExtractor.prioritized(visible);
     }

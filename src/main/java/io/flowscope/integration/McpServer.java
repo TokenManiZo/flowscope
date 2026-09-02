@@ -129,6 +129,7 @@ public final class McpServer implements AutoCloseable {
     private volatile String lockId = "";
     private final Map<String, ExplorerProgress> explorerProgress = new ConcurrentHashMap<>();
     private final Map<String, List<RouteCandidate>> browserDiscoveredRoutes = new ConcurrentHashMap<>();
+    private final Set<String> explorerBrowserUsed = ConcurrentHashMap.newKeySet();
     private final ExecutorService zapWorkflow = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "flowscope-zap-baseline");
         thread.setDaemon(true);
@@ -261,6 +262,7 @@ public final class McpServer implements AutoCloseable {
         lockId = "";
         explorerProgress.clear();
         browserDiscoveredRoutes.clear();
+        explorerBrowserUsed.clear();
         if (zapBaseline == null || !"RUNNING".equals(zapBaseline.status())) {
             zapBaseline = null;
             zapBaselineAlerts = json.createArrayNode();
@@ -289,6 +291,7 @@ public final class McpServer implements AutoCloseable {
     @Override public void close() {
         if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) cancelDeterministicZapBaseline();
         browserDiscoveredRoutes.clear();
+        explorerBrowserUsed.clear();
         zapLaneRuntime = List.of();
         zapWorkflow.shutdownNow();
         zapHeartbeat.shutdownNow();
@@ -376,7 +379,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.39");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.40");
         result.put("instructions", "Authorized exact-scope assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_read/flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or provider-controlled browser networking. If needed, set only the exact target supplied "
@@ -680,21 +683,26 @@ public final class McpServer implements AutoCloseable {
         if (active == null || !runId.equals(active.runId())) {
             throw new IllegalArgumentException("run_id does not match the active " + source.name() + " run");
         }
+        List<String> coverageLimitations = List.of();
         if (active.phase() == RunPhase.EXPLORATION) {
             if (source == Source.LLM && active.detail() == SourceDetail.LLM_EXPLORER) {
-                assertExplorerHarnessComplete(active);
+                coverageLimitations = assertExplorerHarnessComplete(active);
             }
             LaneCompletionPolicy.complete(state.contexts(), source, runId, state.completionSnapshot());
             explorerProgress.remove(runId);
             browserDiscoveredRoutes.remove(runId);
+            explorerBrowserUsed.remove(runId);
             if (source == Source.LLM) state.browserClose(runId);
         } else if (!state.contexts().abort(source, runId)) {
             throw new IllegalStateException("run lease disappeared before completion");
         }
-        return json.createObjectNode().put("ended", source.name()).put("run_id", runId);
+        ObjectNode out = json.createObjectNode().put("ended", source.name()).put("run_id", runId);
+        out.set("coverage_limitations", json.valueToTree(coverageLimitations));
+        out.put("completion_quality", coverageLimitations.isEmpty() ? "FRONTIERS_REVIEWED" : "PARTIAL_WITH_LIMITATIONS");
+        return out;
     }
 
-    private void assertExplorerHarnessComplete(RunContextRegistry.Context explorer) {
+    private List<String> assertExplorerHarnessComplete(RunContextRegistry.Context explorer) {
         LaneCompletionPolicy.Decision evidence = LaneCompletionPolicy.evaluate(Source.LLM, explorer.runId(),
                 state.completionSnapshot());
         if (!evidence.eligible()) throw new IllegalStateException(evidence.reason());
@@ -707,15 +715,29 @@ public final class McpServer implements AutoCloseable {
             throw new IllegalStateException("Explorer must exhaust INDEPENDENT routes and review ASSISTED hints before completion");
         }
         Pipeline.Result snapshot = state.completionSnapshot();
-        List<RouteCandidate> independentRemaining = actionableRoutes(explorerRoutes(snapshot, explorer),
-                snapshot, explorer);
-        List<RouteCandidate> assistedRemaining = actionableRoutes(assistedExplorerRoutes(snapshot, explorer),
-                snapshot, explorer);
-        int remaining = independentRemaining.size() + assistedRemaining.size();
+        List<RouteCandidate> independentRoutes = explorerRoutes(snapshot, explorer);
+        List<RouteCandidate> assistedRoutes = assistedExplorerRoutes(snapshot, explorer);
+        List<RouteCandidate> independentRemaining = actionableRoutes(independentRoutes, snapshot, explorer);
+        List<RouteCandidate> assistedRemaining = actionableRoutes(assistedRoutes, snapshot, explorer);
+        int remaining = pendingConcreteCount(independentRemaining, snapshot, explorer)
+                + pendingConcreteCount(assistedRemaining, snapshot, explorer);
         if (remaining > 0) {
             throw new IllegalStateException("Explorer safe concrete frontier changed and still has " + remaining
                     + " route(s); re-list and request them before completion");
         }
+        List<String> limitations = new ArrayList<>();
+        if (renderedDiscoveryRecommended(snapshot, explorer)
+                && !explorerBrowserUsed.contains(explorer.runId())) {
+            limitations.add(state.browserAvailable()
+                    ? "RENDERED_DISCOVERY_NOT_USED"
+                    : "SUPPORTED_BROWSER_UNAVAILABLE");
+        }
+        boolean unresolvedTemplate = java.util.stream.Stream.concat(independentRoutes.stream(),
+                        assistedRoutes.stream())
+                .anyMatch(candidate -> candidate.concretePaths().isEmpty()
+                        && candidate.pathTemplate().contains("{"));
+        if (unresolvedTemplate) limitations.add("DYNAMIC_TEMPLATE_WITHOUT_OBSERVED_VALUE");
+        return List.copyOf(limitations);
     }
 
     public boolean hasExplorationResponse(Source source, String runId) {
@@ -736,6 +758,7 @@ public final class McpServer implements AutoCloseable {
     private JsonNode routeCandidates(JsonNode args) {
         RunContextRegistry.Context explorer = independentExplorer();
         List<RouteCandidate> visible;
+        Pipeline.Result explorerSnapshot = null;
         boolean assisted = false;
         if (explorer != null) {
             String view = args.path("view").asText("INDEPENDENT").toUpperCase(java.util.Locale.ROOT);
@@ -743,6 +766,7 @@ public final class McpServer implements AutoCloseable {
                 throw new IllegalArgumentException("view must be INDEPENDENT or ASSISTED");
             }
             Pipeline.Result snapshot = state.snapshot();
+            explorerSnapshot = snapshot;
             explorerProgress.keySet().removeIf(runId -> !runId.equals(explorer.runId()));
             ExplorerProgress progress = explorerProgress.getOrDefault(explorer.runId(),
                     new ExplorerProgress(false, false));
@@ -779,8 +803,10 @@ public final class McpServer implements AutoCloseable {
         out.put("has_more", end < visible.size());
         out.put("view", assisted ? "ASSISTED" : explorer == null ? "LOCKED" : "INDEPENDENT");
         if (explorer != null) {
-            out.put("remaining_safe_concrete", actionableRoutes(visible, state.snapshot(), explorer).size());
+            List<RouteCandidate> actionable = actionableRoutes(visible, explorerSnapshot, explorer);
+            out.put("remaining_safe_concrete", pendingConcreteCount(actionable, explorerSnapshot, explorer));
             out.put("provenance_redacted", assisted);
+            addExplorerGuidance(out, explorer, explorerSnapshot, visible, assisted);
         }
         ArrayNode routes = out.putArray("routes");
         if (offset < visible.size()) for (RouteCandidate candidate : visible.subList(offset, end)) {
@@ -788,6 +814,13 @@ public final class McpServer implements AutoCloseable {
             route.put("service", candidate.service());
             route.put("method", candidate.method());
             route.put("path_template", candidate.pathTemplate());
+            route.set("concrete_paths", json.valueToTree(candidate.concretePaths()));
+            route.put("concrete_paths_truncated", candidate.concretePathsTruncated());
+            if (explorer != null) {
+                route.set("pending_concrete_paths", json.valueToTree(
+                        pendingConcretePaths(candidate, explorerSnapshot, explorer)));
+                route.set("review_dimensions", json.valueToTree(reviewDimensions(candidate)));
+            }
             route.put("observed", candidate.observed());
             route.put("applicability", candidate.applicability().name());
             route.put("review_reason", candidate.reviewReason());
@@ -997,6 +1030,9 @@ public final class McpServer implements AutoCloseable {
     }
 
     private ObjectNode browserNode(ControlledBrowserExplorer.Snapshot snapshot) {
+        if (snapshot != null && snapshot.runId() != null && !snapshot.runId().isBlank()) {
+            explorerBrowserUsed.add(snapshot.runId());
+        }
         registerBrowserRoutes(snapshot);
         ObjectNode out = json.valueToTree(snapshot);
         out.put("evidence_status", "DISCOVERY_ONLY");
@@ -1017,6 +1053,9 @@ public final class McpServer implements AutoCloseable {
                         + uri.getHost().toLowerCase(java.util.Locale.ROOT) + ":" + port;
                 String path = uri.getRawPath();
                 if (path == null || path.isBlank()) path = "/";
+                if (uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
+                    path += "?" + uri.getRawQuery();
+                }
                 String method = route.method() == null || route.method().isBlank()
                         ? "UNKNOWN" : route.method().toUpperCase(java.util.Locale.ROOT);
                 String material = snapshot.runId() + "\n" + method + "\n" + service + "\n" + path;
@@ -3046,13 +3085,15 @@ public final class McpServer implements AutoCloseable {
                     .filter(item -> item.source() == Source.HUMAN || item.source() == Source.SCANNER
                             || item.source() == Source.UNKNOWN)
                     .findAny().isPresent();
-            if (!hasCrossLane || routeVisited(candidate, ownVisited)) continue;
+            if (!hasCrossLane || (!candidate.concretePaths().isEmpty()
+                    && pendingConcretePaths(candidate, ownVisited).isEmpty())) continue;
             RouteCandidate.Provenance blind = new RouteCandidate.Provenance(
                     RouteCandidate.ProvenanceType.LEGACY_UNMAPPED, "blind-assisted", Source.UNKNOWN,
                     "blind-assisted", "blind-assisted", RouteCandidate.Applicability.REVIEW,
                     "cross-lane provenance redacted");
             blindHints.add(new RouteCandidate(candidate.service(), candidate.method(), candidate.pathTemplate(),
-                    false, List.of(blind), RouteCandidate.Applicability.REVIEW,
+                    candidate.concretePaths(), candidate.concretePathsTruncated(), false,
+                    List.of(blind), RouteCandidate.Applicability.REVIEW,
                     "다른 수집 레인에서 발견된 exact-scope 경로 힌트"));
         }
         return RouteCandidateExtractor.prioritized(blindHints);
@@ -3063,9 +3104,24 @@ public final class McpServer implements AutoCloseable {
         List<RequestRecord> ownVisited = explorerVisits(snapshot, explorer);
         return candidates.stream()
                 .filter(candidate -> SAFE_DISCOVERY_METHODS.contains(candidate.method()))
-                .filter(candidate -> !candidate.pathTemplate().contains("{")
-                        && !candidate.pathTemplate().contains("}"))
-                .filter(candidate -> !routeVisited(candidate, ownVisited))
+                .filter(candidate -> !pendingConcretePaths(candidate, ownVisited).isEmpty())
+                .toList();
+    }
+
+    private int pendingConcreteCount(List<RouteCandidate> candidates, Pipeline.Result snapshot,
+                                     RunContextRegistry.Context explorer) {
+        List<RequestRecord> ownVisited = explorerVisits(snapshot, explorer);
+        return candidates.stream().mapToInt(candidate -> pendingConcretePaths(candidate, ownVisited).size()).sum();
+    }
+
+    private List<String> pendingConcretePaths(RouteCandidate candidate, Pipeline.Result snapshot,
+                                              RunContextRegistry.Context explorer) {
+        return pendingConcretePaths(candidate, explorerVisits(snapshot, explorer));
+    }
+
+    private List<String> pendingConcretePaths(RouteCandidate candidate, List<RequestRecord> ownVisited) {
+        return candidate.concretePaths().stream()
+                .filter(path -> !routeVisited(candidate.service(), candidate.method(), path, ownVisited))
                 .toList();
     }
 
@@ -3078,10 +3134,81 @@ public final class McpServer implements AutoCloseable {
                 .toList();
     }
 
-    private boolean routeVisited(RouteCandidate candidate, List<RequestRecord> ownVisited) {
-        return ownVisited.stream().anyMatch(record -> record.service.equals(candidate.service())
-                && record.path.equals(candidate.pathTemplate())
-                && (candidate.method().equals("UNKNOWN") || record.method.equals(candidate.method())));
+    private boolean routeVisited(String service, String method, String concretePath,
+                                 List<RequestRecord> ownVisited) {
+        return ownVisited.stream().anyMatch(record -> record.service.equals(service)
+                && recordPathWithQuery(record).equals(concretePath)
+                && (method.equals("UNKNOWN") || record.method.equals(method)));
+    }
+
+    private static String recordPathWithQuery(RequestRecord record) {
+        return record.query == null || record.query.isBlank() ? record.path : record.path + "?" + record.query;
+    }
+
+    private void addExplorerGuidance(ObjectNode out, RunContextRegistry.Context explorer,
+                                     Pipeline.Result snapshot, List<RouteCandidate> visible,
+                                     boolean assisted) {
+        List<RouteCandidate> actionable = actionableRoutes(visible, snapshot, explorer);
+        int pending = pendingConcreteCount(actionable, snapshot, explorer);
+        long unresolvedTemplates = visible.stream().filter(candidate -> candidate.concretePaths().isEmpty()
+                && candidate.pathTemplate().contains("{")).count();
+        long stateChanging = visible.stream().filter(candidate -> Set.of("POST", "PUT", "PATCH", "DELETE")
+                .contains(candidate.method())).count();
+        boolean browserUsed = explorerBrowserUsed.contains(explorer.runId());
+        boolean browserAvailable = state.browserAvailable();
+        boolean renderRecommended = renderedDiscoveryRecommended(snapshot, explorer) && !browserUsed;
+        String nextAction;
+        if (pending > 0) {
+            nextAction = assisted ? "REQUEST_ASSISTED_SAFE_FRONTIER" : "REQUEST_INDEPENDENT_SAFE_FRONTIER";
+        } else if (!assisted && renderRecommended) {
+            nextAction = browserAvailable
+                    ? "BROWSER_DISCOVERY_RECOMMENDED" : "BROWSER_UNAVAILABLE_CONTINUE_PARTIAL";
+        } else if (!assisted) {
+            nextAction = "REVIEW_ASSISTED_FRONTIER";
+        } else if (unresolvedTemplates > 0 || stateChanging > 0) {
+            nextAction = "REVIEW_BLOCKED_DYNAMIC_OR_STATE_CHANGING_ROUTES";
+        } else {
+            nextAction = "READY_TO_END";
+        }
+        ObjectNode guidance = out.putObject("explorer_guidance");
+        guidance.put("next_action", nextAction);
+        guidance.put("http_executor_is_evidence_channel", true);
+        guidance.put("browser_is_discovery_only", true);
+        guidance.put("browser_available", browserAvailable);
+        guidance.put("browser_used", browserUsed);
+        guidance.put("rendered_discovery_recommended", renderRecommended);
+        guidance.put("unresolved_dynamic_templates", unresolvedTemplates);
+        guidance.put("state_changing_routes_requiring_approval", stateChanging);
+        guidance.put("pending_safe_concrete_requests", pending);
+    }
+
+    private boolean renderedDiscoveryRecommended(Pipeline.Result snapshot,
+                                                  RunContextRegistry.Context explorer) {
+        return explorerVisits(snapshot, explorer).stream().anyMatch(record -> {
+            String media = record.responseContentType == null ? ""
+                    : record.responseContentType.toLowerCase(java.util.Locale.ROOT);
+            if (!media.contains("html")) return false;
+            String body = record.responseBodyForAnalysis();
+            if (body == null) return false;
+            String lower = body.toLowerCase(java.util.Locale.ROOT);
+            return lower.contains("<script") || lower.contains("type=\"module\"")
+                    || lower.contains("type='module'");
+        });
+    }
+
+    private static List<String> reviewDimensions(RouteCandidate candidate) {
+        List<String> dimensions = new ArrayList<>();
+        if (candidate.pathTemplate().contains("{") || candidate.concretePaths().stream()
+                .anyMatch(path -> !path.equals(candidate.pathTemplate()))) {
+            dimensions.add("OBJECT_AUTHORIZATION");
+        }
+        if (Set.of("POST", "PUT", "PATCH", "DELETE").contains(candidate.method())) {
+            dimensions.add("FUNCTION_AUTHORIZATION");
+            dimensions.add("WORKFLOW_STATE");
+        }
+        if (candidate.method().equals("UNKNOWN")) dimensions.add("METHOD_DISCOVERY");
+        if (dimensions.isEmpty()) dimensions.add("ENDPOINT_DISCOVERY");
+        return List.copyOf(dimensions);
     }
 
     private String validatedAccount(String accountId) {

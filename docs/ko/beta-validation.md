@@ -1,4 +1,22 @@
-# FlowScope 1.2.0-beta.39 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.40 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.40 Explorer 1~10·concrete frontier gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| template/concrete 분리 | `/orders/42`, `/orders/77`을 하나의 `/orders/{id}` template으로 정렬하면서 두 실제 path와 서로 다른 query를 보존하는 회귀 통과 |
+| 비밀·상한 | secret-bearing query는 raw 값을 남기지 않고 path만 보존; 후보당 concrete 200개와 `concrete_paths_truncated=true` 회귀 통과 |
+| schema 정직성 | 실제 값 없는 OpenAPI `{id}` template에 concrete 값을 발명하지 않는 회귀 통과 |
+| persistence/snapshot | JSON project round-trip과 Web snapshot에 concrete path·초과 표시를 보존하는 회귀 통과 |
+| Explorer server gate | `pending_concrete_paths`, `review_dimensions`, `explorer_guidance` 구조 응답, query 포함 exact 방문 전 종료 거부, INDEPENDENT→ASSISTED 소진과 limitation 포함 종료 회귀 통과 |
+| rendered 경계 | own-run HTML script 신호에서 조건부 browser 권고; 미사용·미설치 상태는 `PARTIAL_WITH_LIMITATIONS`, browser가 route를 추가로 찾지 못해도 실제 사용 여부는 보존, browser 결과는 controlled HTTP replay 전 Evidence가 아님 |
+| 실제 로컬 HTTP fixture | 매 실행 운영체제가 배정한 새 loopback 포트에서 HTML→외부 JavaScript→API/profile/order/notices route를 연쇄 발견하고 exact-scope 밖 링크 제외, 관측 POST의 묵시 GET 실행 금지 통과 |
+| process 종료 | resistant fake parent/descendant에 graceful→forced 종료와 alive 확인 회귀 통과. 실제 로컬 Codex·Claude 즉시 취소 후 해당 smoke의 잔존 `flowscope-llm-*` process/workspace 없음 확인 |
+| 전체 회귀 | `mvn clean verify` 연속 2회, 매회 324 tests, failure/error/skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.40.jar` 하나, 16,025,306 bytes, 2,066 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `b472c9eae70afd4dd6d818af576e458570ac9b3116e2dc288ee6a62f0bf4ff55`; 두 clean build가 byte-for-byte 동일 |
+| 실제 Burp/provider 장기 실행 | **대기** — 실제 Session Broker 계정 주입, SPA browser recall, Codex/Claude 1~10 장기 완주와 endpoint/finding 효능은 수행하지 않음 |
+
+이 gate는 route 값 손실, 서버 frontier 상태 기계, 로컬 HTTP 연쇄 발견과 알려진 provider process-tree 종료를 검증한다. 로컬 fixture는 하네스가 실제 HTTP 응답으로 확장됨을 증명하지만 실제 사이트의 모든 endpoint를 발견한다는 뜻이 아니다. `PARTIAL_WITH_LIMITATIONS`도 블랙박스 공격면의 완료율이 아니다. descendants는 종료 시작 시점 snapshot이므로 이후 분리된 daemon까지 종료됨을 증명하지 않으며, 실제 Burp+provider·ZAP·복수 계정과 블라인드 BOLA/BFLA/IDOR precision·recall은 별도 gate다.
 
 ## 1.2.0-beta.39 통합 회귀 복구 gate
 
