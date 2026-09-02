@@ -6,6 +6,22 @@
 
 현재 작업 디렉터리는 사용자 승인으로 Git `main` 저장소가 됐고 `origin`은 `https://github.com/choewonwoo1817/testflowscope.git`에 연결되어 있다. 초기화 전 1.2.0-beta.3의 정확한 파일별 변경 순서는 복원하지 않으며, 기존 `CHANGELOG.md`와 `decisions.md`를 역사 기록으로 유지한다. 아래 beta.3 기록은 현재 코드·테스트·문서와 2026-08-25 검증 결과를 대조해 작성했다.
 
+## 2026-09-02 · 1.2.0-beta.39 · ZAP capability 실패 원인화와 blocking 단계 heartbeat
+
+**개발·수정**
+
+- **재현된 결함:** SYSTEM ZAP 요청의 capability 누락은 Burp 8081에서 안전하게 drop됐지만 캠페인 상태에는 원인이 없었다. Replacer/outgoing proxy 전달이 깨지면 crawler가 0건으로 끝날 때까지 기다린 뒤 일반적인 수집 실패만 보였다. `newSession`·Context/passive 설정과 API 정의 import의 동기 호출 중에는 status poll이 없어 10초 뒤 `NO_HEARTBEAT`처럼 보였다.
+- **출처 실패 조기 종료:** Burp listener가 활성 run의 capability 거부 요청 수를 메모리에서 계수한다. McpServer는 Traditional·Client·AJAX status poll, Passive poll, 정의 import 경계에서 이를 확인해 한 건이라도 있으면 다음 crawler·신원으로 진행하지 않고 `FAILED`로 끝낸다. 상태 API와 Web은 차단 건수와 `Replacer/outgoing proxy` 확인 원인을 그대로 표시한다. 누락 요청을 받아들이는 fallback은 계정·run 오귀속을 만들므로 추가하지 않았다.
+- **blocking 단계 liveness:** 세션 설정과 정의 import 동안 별도 daemon scheduler가 5초 간격 worker heartbeat를 갱신한다. 실제 원격 응답과 혼동하지 않도록 상태는 `응답 대기/응답 수신`, Web age는 `작업 신호`로 표현한다. stage elapsed/deadline과 capture progress는 기존대로 별도 유지한다.
+- **문서 정합성:** D-051의 “AJAX inScope/subtreeOnly 미지원” 문장을 scan ID 없는 상태 조회라는 실제 호환 지점으로 정정하고, D-108 이후 exact-scope 인자 계약을 연결했다. ZAP Replacer 공식 소스의 전역 `HttpSender` listener와 빈 initiator 목록의 전체 적용을 근거로 기록하되, 실제 설치본 end-to-end 전달은 수동 gate로 남겼다.
+
+**영향 파일·회귀·남은 gate**
+
+- 코드: `FlowScopeExtension.java`, `McpServer.java`, `web/index.html`; 회귀: `McpServerTest.java`; 문서: `README.md`, `architecture.md`, `decisions.md`, `ui-product-rationale.md`, `product-development-plan.md`, `beta-validation.md`, `HANDOFF.md`, `CHANGELOG.md`, 이 기록.
+- 집중 회귀는 capability 거부 1건이 다음 crawler 전에 terminal failure가 되고 run context가 정리되는 경로와, 1.4초 지연된 `newSession` 동안 worker heartbeat가 갱신되는 경로를 통과했다.
+- inline JavaScript `node --check`와 `mvn clean verify`를 연속 두 번 실행해 매회 315 tests, failure/error/skip 0을 확인했다. 두 JAR은 16,018,159 bytes·2,066 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `c1095a2ffdff7f2334cff6fd9aab0fc2ecb8379aca908e44b2e53da9b1662748`로 동일했다.
+- 실제 Burp+ZAP 2.17에서 Replacer가 Traditional·Client·AJAX·definition 요청에 capability를 붙이는지는 자동 테스트로 증명하지 않았다. beta.39 JAR 재로드 후 비로그인 첫 lane에서 `출처 검증 차단 0건`과 실제 수집 증가를 확인해야 한다. 소유자 별칭 P0은 이 ZAP 실행 수정과 독립된 다음 작업이다.
+
 ## 2026-09-02 · 1.2.0-beta.39 · ZAP 출처·신원 격리·종료 상태 hardening
 
 **개발·수정**

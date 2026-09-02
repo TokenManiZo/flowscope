@@ -721,6 +721,110 @@ final class McpServerTest {
     }
 
     @Test
+    void zapCampaignFailsFastWhenBurpRejectsMissingRunCapability() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicLong rejected = new AtomicLong();
+        AtomicBoolean clientStarted = new AtomicBoolean();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+            rejected.incrementAndGet();
+            zapReply(exchange, "{\"scan\":\"1\"}");
+        });
+        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange,
+                "{\"status\":\"100\"}"));
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+            clientStarted.set(true);
+            zapReply(exchange, "{\"scan\":\"2\"}");
+        });
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new McpServer(new McpServer.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public void updateScope(String value) {}
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+                @Override public boolean approve(String action, String value) { return false; }
+                @Override public long scannerCapabilityRejections(String runId) {
+                    return rejected.get();
+                }
+            }, 0, "test-token");
+
+            server.startDeterministicZapCampaign(target, List.of(), true);
+            JsonNode status = null;
+            for (int i = 0; i < 100; i++) {
+                status = server.deterministicZapBaselineStatus();
+                if (!"RUNNING".equals(status.path("status").asText())) break;
+                Thread.sleep(10);
+            }
+
+            assertNotNull(status);
+            assertEquals("FAILED", status.path("status").asText(), status.toString());
+            assertEquals(1, status.path("capability_rejected_requests").asLong());
+            assertTrue(status.path("error").asText().contains("run capability"), status.toString());
+            assertFalse(clientStarted.get(), "a rejected lane must not advance to the next crawler");
+            assertNull(contexts.current(Source.SCANNER));
+        } finally {
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
+    void zapSessionSetupPublishesWorkerHeartbeatWhileApiResponseIsPending() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicBoolean sessionRequestStarted = new AtomicBoolean();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> {
+            sessionRequestStarted.set(true);
+            try { Thread.sleep(1_400); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); }
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        zapServer.createContext("/JSON/spider/action/scan/", exchange -> zapReply(exchange,
+                "{\"scan\":\"1\"}"));
+        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange,
+                "{\"status\":\"100\"}"));
+        zapServer.start();
+        String previousHeartbeat = System.getProperty("flowscope.zap.workerHeartbeat.ms");
+        try {
+            System.setProperty("flowscope.zap.workerHeartbeat.ms", "20");
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new McpServer(new McpServer.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public void updateScope(String value) {}
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+                @Override public boolean approve(String action, String value) { return false; }
+            }, 0, "test-token");
+
+            server.startDeterministicZapCampaign(target, List.of(), true);
+            for (int i = 0; i < 100 && !sessionRequestStarted.get(); i++) Thread.sleep(5);
+            assertTrue(sessionRequestStarted.get());
+            Thread.sleep(1_150);
+
+            JsonNode status = server.deterministicZapBaselineStatus();
+            assertEquals("RUNNING", status.path("status").asText(), status.toString());
+            assertEquals("SESSION_SETUP", status.at("/lanes/0/stage").asText());
+            assertEquals(0, status.path("last_heartbeat_age_seconds").asLong());
+            assertTrue(status.path("heartbeat_status").asText().contains("응답 대기"), status.toString());
+            assertEquals("WAITING_FOR_ZAP_RESPONSE", status.path("activity_state").asText());
+        } finally {
+            restoreProperty("flowscope.zap.workerHeartbeat.ms", previousHeartbeat);
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
     void deterministicZapBaselineImportsExplicitDefinitionRunsSpidersWaitsForPassiveAndPublishesAlerts() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(

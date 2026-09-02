@@ -113,6 +113,9 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("실시간 실행 기록"));
         assertTrue(index.body().contains("SCANNER_RUN.events"));
         assertTrue(index.body().contains("id=\"scannerRunCancel\""));
+        assertTrue(index.body().contains("출처 검증 차단"));
+        assertTrue(index.body().contains("WAITING_FOR_ZAP_RESPONSE"));
+        assertTrue(index.body().contains("작업 신호"));
         assertTrue(index.body().contains("마지막 정상 상태를 유지합니다"));
         assertTrue(index.body().contains("1초마다 갱신"));
         assertTrue(index.body().contains("ZAP Desktop 설정"));

@@ -216,6 +216,8 @@ public final class FlowScopeExtension implements BurpExtension {
     private McpServer mcpServer;
     private volatile String scannerCapabilityRunId = "";
     private volatile String scannerCapability = "";
+    private volatile String scannerCapabilityRejectionRunId = "";
+    private final AtomicLong scannerCapabilityRejections = new AtomicLong();
     private LocalLlmRunner llmRunner;
     private final ControlledBrowserExplorer browserExplorer = new ControlledBrowserExplorer(
             () -> scope,
@@ -340,6 +342,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 String expected = context.runId().equals(scannerCapabilityRunId) ? scannerCapability : "";
                 String supplied = request.headerValue("X-FlowScope-Scanner-Capability");
                 if (!scannerCampaignRequestAllowed(context, scannerCapabilityRunId, expected, supplied)) {
+                    scannerCapabilityRejections.incrementAndGet();
                     throw new IllegalStateException("ZAP campaign provenance capability is missing or invalid");
                 }
                 prepared = prepared.withRemovedHeader("X-FlowScope-Scanner-Capability");
@@ -1312,12 +1315,17 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public void scannerCapability(String runId, String capability) {
                     scannerCapabilityRunId = runId;
                     scannerCapability = capability;
+                    scannerCapabilityRejectionRunId = runId;
+                    scannerCapabilityRejections.set(0);
                 }
                 @Override public void clearScannerCapability(String runId) {
                     if (runId.equals(scannerCapabilityRunId)) {
                         scannerCapability = "";
                         scannerCapabilityRunId = "";
                     }
+                }
+                @Override public long scannerCapabilityRejections(String runId) {
+                    return runId.equals(scannerCapabilityRejectionRunId) ? scannerCapabilityRejections.get() : 0;
                 }
                 @Override public RunContextRegistry contexts() { return runContexts; }
                 @Override public AnalysisConfig config() { return analysisConfig; }

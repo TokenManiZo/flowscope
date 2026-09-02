@@ -11,14 +11,15 @@
 | Passive 정체·격리 | queue 감소가 없는 정체에서 기존 Evidence·현재 Alert 보존, 부분 완료·미완결 snapshot 표시, current task 진단·cleanup 성공 경로와 Passive 전 조기 실패 cleanup 실패 시 후속 계정 `NOT_RUN/BLOCKED_BY_ISOLATION` 회귀 통과 |
 | ZAP 진행 표시 | 여섯 단계 진행선, live Traditional/rendered count, Passive 남은 수·현재 task, Alert snapshot 완결성, bounded 실행 이벤트와 1초 Web 표시 계약 통과 |
 | 출처·신원 provenance | native Burp Scanner의 ZAP context 배제, SYSTEM run capability 일치/불일치, `laneAccountId` JSON·SQLite round-trip 회귀 통과 |
+| capability 실패·blocking liveness | capability 누락 1건을 다음 crawler 전에 terminal failure로 원인화하고 차단 수를 상태에 보존하는 회귀, 지연된 `newSession` 동안 worker heartbeat와 `응답 대기` 표시 회귀 통과 |
 | 범위·API | AJAX `contextName/inScope/subtreeOnly`, IPv6 exact subtree, API key header 전송·query 미포함, 비정상 ZAP HTTP 오류 보존 회귀 통과 |
 | 취소·Web 상태 | Web/MCP 취소 계약, transient Web poll 경고가 기존 snapshot을 보존하는 계약, loopback IPv6 제어면 제외 회귀 통과 |
-| 전체 회귀 | `mvn clean verify` 연속 2회, 매회 313 tests, failure/error/skip 0 |
+| 전체 회귀 | inline JavaScript `node --check`, `mvn clean verify` 연속 2회, 매회 315 tests, failure/error/skip 0 |
 | 독립 Web 수동 확인 | `127.0.0.1:17779` 샘플에서 API 기본 그래프, Site→API 전환·복귀, 화면 배치, browser error/warning 0건 확인 |
-| 배포물 | `target/flowscope-1.2.0-beta.39.jar`, 16,016,248 bytes, 2,066 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `048c29293dc3d61612bde2a86008d0f2ae11370e26eb604858a54ce17868d852`; manifest의 `Multi-Release: true` 확인, 두 clean build가 byte-for-byte 동일 |
+| 배포물 | `target/flowscope-1.2.0-beta.39.jar`, 16,018,159 bytes, 2,066 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `c1095a2ffdff7f2334cff6fd9aab0fc2ecb8379aca908e44b2e53da9b1662748`; manifest의 `Multi-Release: true` 확인, 두 clean build가 byte-for-byte 동일 |
 | 실제 Burp 재로드 | **대기** — beta.39 JAR의 crAPI HUMAN/ZAP/LLM 재실행은 아직 수행하지 않음 |
 
-이 gate는 확인된 분류·Explorer·그래프 회귀와 mock ZAP의 Passive 정체, run capability, crawler 종료, 신원 provenance 경로를 닫는다. 실제 Burp/ZAP 장시간 운영, Replacer capability의 end-to-end 전달, 취소 후 quiescence, 10분/30분 운영 경계의 대상별 최적성, crAPI의 endpoint recall 또는 BOLA/BFLA/IDOR 효능을 증명하지는 않는다.
+이 gate는 확인된 분류·Explorer·그래프 회귀와 mock ZAP의 Passive 정체, run capability 거부 원인화, blocking worker heartbeat, crawler 종료, 신원 provenance 경로를 닫는다. 실제 Burp/ZAP 장시간 운영, Replacer capability의 Traditional·Client·AJAX·definition end-to-end 전달, 취소 후 quiescence, 10분/30분 운영 경계의 대상별 최적성, crAPI의 endpoint recall 또는 BOLA/BFLA/IDOR 효능을 증명하지는 않는다.
 
 ## 1.2.0-beta.38 ZAP 실행 관측 가능성 gate
 

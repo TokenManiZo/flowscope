@@ -4,6 +4,8 @@
 
 ## 1.2.0-beta.39 — 2026-09-01
 
+- SYSTEM ZAP 요청의 run capability 누락을 계수해 상태 API/Web에 표시하고, crawler polling 중 발견하면 다음 crawler·신원 전에 명시적인 격리 실패로 종료합니다.
+- 세션/Context 설정과 API 정의 import의 동기 응답 대기 동안 worker heartbeat를 유지하고, 화면에서 `응답 대기/응답 수신`과 실제 트래픽 변화를 분리합니다.
 - ZAP SYSTEM 캠페인마다 exact-target Replacer capability를 발급해 일치하는 8081 요청만 현재 run/account의 CONTROLLED Evidence로 수집합니다. native Burp Scanner와 capability 없는 수동 요청은 캠페인 context를 상속하지 않으며 내부 header는 대상 전송 전에 제거됩니다.
 - Traditional·Client·AJAX stop 뒤 terminal 상태를 확인하고 마지막 lane까지 cleanup합니다. Web/MCP 취소, executor 거부와 예상 밖 예외도 crawler·capability·run context를 정리해 `CANCELLED` 또는 `FAILED` terminal 상태를 남깁니다.
 - 각 scanner Evidence에 lane account ID를 보존하고, AJAX scope/context, standalone Active/Spider Context, Passive 정체 판정, Alert 완결성·캠페인 전체 상한을 보강했습니다.
@@ -16,7 +18,7 @@
 - `/manifest.json`을 Content-Type이 부정확해도 web app manifest 경로 근거로 탐색 메타데이터에서 분리합니다.
 - Explorer가 실제로 통제 응답을 받은 탐색·정적 route를 메인 coverage에서 제외했다는 이유로 미방문 처리하던 완료 gate 회귀를 수정했습니다. 방문 사실과 분석 자격을 별도로 판정합니다.
 - 그래프 기본 화면을 사이트 집계에서 `신원 → API`로 복구하고, 사이트 개요는 선택형으로 유지했습니다. 사이트 소스 수는 요청 반복 수가 아닌 고유 API 수로 세며, 계층별 viewport를 분리했습니다.
-- 새 분류·Explorer·Web·ZAP 격리·출처 회귀를 포함한 전체 `mvn clean verify` 313 tests를 연속 두 번 통과했고 JAR SHA-256이 일치했습니다. 독립 Web 실행의 API↔사이트 전환·브라우저 오류 로그도 확인했습니다. 실제 Burp의 beta.39 재로드는 별도 gate입니다.
+- 새 분류·Explorer·Web·ZAP 격리·출처·blocking heartbeat 회귀를 포함한 전체 `mvn clean verify` 315 tests를 연속 두 번 통과했고 JAR SHA-256이 일치했습니다. 독립 Web 실행의 API↔사이트 전환·브라우저 오류 로그도 확인했습니다. 실제 Burp의 beta.39 재로드는 별도 gate입니다.
 
 ## 1.2.0-beta.38 — 2026-09-01
 
