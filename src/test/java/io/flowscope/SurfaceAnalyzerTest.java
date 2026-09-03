@@ -11,6 +11,8 @@ import io.flowscope.core.SurfaceAnalyzer;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -271,6 +273,26 @@ final class SurfaceAnalyzerTest {
         assertTrue(analysis.extractions().stream().anyMatch(report ->
                 report.artifactKind().equals("OPENAPI")
                         && report.failure() == SurfaceAnalysis.ExtractionFailure.PARSE_FAILED));
+    }
+
+    @Test
+    void JavaScript_call_site_해석실패를_정상파싱_0건과_구분한다() {
+        RequestRecord script = document("/assets/app.js", "application/javascript", """
+                const client = axios.create({baseURL: window.runtimeBase});
+                client.get('/orders');
+                const routes = loadRoutes();
+                fetch(routes.admin);
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(script), new io.flowscope.core.AnalysisConfig());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+
+        SurfaceAnalysis.ExtractionReport report = analysis.extractions().getFirst();
+        assertEquals(SurfaceAnalysis.ExtractionStatus.PARSED, report.status());
+        assertEquals(0, report.endpointCallSites());
+        assertEquals(Set.of(SurfaceAnalysis.ExtractionIssueKind.UNRESOLVED_AXIOS_BASE_URL,
+                        SurfaceAnalysis.ExtractionIssueKind.UNRESOLVED_MEMBER_REFERENCE),
+                report.issues().stream().map(SurfaceAnalysis.ExtractionIssue::kind).collect(Collectors.toSet()));
     }
 
     private static RequestRecord request(Source source, String method, String path, int status) {

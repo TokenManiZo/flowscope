@@ -1,4 +1,22 @@
-# FlowScope 1.2.0-beta.42 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.43 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.43 lexical URL 해석·검토면 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| object member·scope | 같은 이름의 inner/outer object map과 정적 dot/bracket member를 lexical `Scope/Var`로 분리해 올바른 route를 만드는 회귀 통과 |
+| axios 결합 | 서로 다른 `axios.create` instance, 정적 `baseURL`, 요청별 `baseURL` override, absolute URL과 `allowAbsoluteUrls=false` 결합 회귀 통과. 동적 baseURL은 거짓 상대 endpoint를 만들지 않음 |
+| stale value 차단 | 재할당된 URL binding과 object property를 초기값으로 해석하지 않고 endpoint 0건·typed issue 2건으로 남기는 음성 회귀 통과 |
+| 실패 가시성 | 동적 URL, unresolved member, 동적 axios baseURL, 함수 반환 URL, 제한된 HTTP-like wrapper를 산출물별 issue로 Surface에 연결하고 Web이 issue 수·Evidence·line을 표시하는 계약 회귀 통과 |
+| 화면 집중 | no-cache standalone에서 기본 Surface의 rail은 `surface/shared`만, 인가 화면은 `auth/shared`만 보이는 것을 확인. `객체` 버튼 대신 `접근 대상`, 인가 rail의 `접근 대상 ID` 표현 확인 |
+| 기존 Surface | standalone sample에서 endpoint card 4개, 입력 field 5개와 source delta가 렌더됨. 분석 산출물이 없는 sample은 0개로 표시돼 issue 표시를 꾸며내지 않음 |
+| 브라우저 오류 | no-cache URL로 기본 Surface → 인가 그래프 → sample Surface를 전환한 뒤 warning/error 0건 |
+| 전체 회귀 | OpenJDK 26.0.2에서 Java `release 21` 대상으로 `mvn clean verify` 연속 2회, 매회 349 tests, failure/error/skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.43.jar` 하나, 31,081,416 bytes, 9,105 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `f783066814e577efce4fb2e42dceb4ce3a11482c6bd574fbaf6e00a2e8cef4f6`; 두 clean build가 byte-for-byte 동일 |
+| relocation·고지 | relocated Closure 6,846 entries, 원래 `com/google/javascript/` 0 entries, `META-INF/NOTICE`, `META-INF/LICENSE.txt`, `THIRD_PARTY_NOTICES` 존재 확인 |
+| 실제 Burp·외부 효능 | **대기** — 실제 Burp beta.43 재로드, 실제 bundle/corpus의 endpoint·parameter precision/recall·검토시간과 framework별 지원 Tier는 확인하지 않음 |
+
+이 gate는 확인된 JavaScript 문법 계약, 거짓 endpoint 차단, Surface 직렬화/UI 연결과 전체 회귀를 검증한다. HTTP-like wrapper issue는 제한된 이름 근거만 쓰므로 모든 application wrapper를 찾아낸다는 뜻이 아니다. 함수 간 data flow, axios defaults mutation·interceptor, source map, 받지 않은 lazy chunk와 서버 전용 route도 미지원이다. 자동 회귀와 저장소 내부 fixture를 실제 앱의 탐지율 또는 취약점 발견 성능으로 확대하지 않는다.
 
 ## 1.2.0-beta.42 AST 선언·실패 가시성 gate
 
@@ -17,7 +35,7 @@
 | relocation·고지 | relocated Closure 6,846 entries, 원래 `com/google/javascript/` 0 entries. Closure notice, `META-INF/LICENSE.txt`, `THIRD_PARTY_NOTICES` 존재 확인 |
 | 실제 Burp·외부 pilot | **대기** — 실제 Burp beta.42 재로드, 승인된 외부 exact scope, 실제 bundle precision/recall·검토량·성능과 지원 Tier 조정은 수행하지 않음 |
 
-이 gate는 1~8의 코드·회귀·standalone 연결을 검증한다. 같은 저장소의 held-out fixture는 analyzer가 truth를 입력으로 받지 않는다는 점에서는 독립이지만, 외부 corpus나 real-world pilot은 아니다. 따라서 Next.js 전체, Vue/Nuxt·Angular 전체, GraphQL schema, lazy chunk 전체 또는 취약점 탐지 우월성을 증명하지 않는다. 9~10은 승인된 외부 pilot 뒤에만 완료할 수 있다.
+이 gate는 당시 구현한 1~4와 5의 저장소 내부 구조 fixture, 6의 parser/limit 실패 일부, 7의 Next pages chunk 연결, 8의 공통 asset/GraphQL 관측 회귀를 검증한다. 같은 저장소의 held-out fixture는 analyzer가 truth를 입력으로 받지 않는다는 점에서는 분리됐지만 외부 corpus나 real-world pilot은 아니다. 따라서 Next.js 전체, Vue/Nuxt·Angular 전체, GraphQL schema, lazy chunk 전체 또는 취약점 탐지 우월성을 증명하지 않는다. 9~10은 승인된 외부 pilot 뒤에만 완료할 수 있다.
 
 ## 1.2.0-beta.41 Endpoint·Parameter Surface Delta gate
 
@@ -658,7 +676,7 @@ W3C Web App Manifest 규격상 `application/manifest+json`은 웹 앱 manifest m
 
 ## 아직 실환경에서 검증하지 않은 것
 
-다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.34의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
+다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.43의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
 
 - Burp Community에서 extension unload 뒤 Web/MCP 포트 해제와 재로드, Repeater handoff, project save/load 왕복
 - 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지, 선택 ACTIVE 계정과 다른 브라우저 자격증명이 계정으로 오기록되지 않는지

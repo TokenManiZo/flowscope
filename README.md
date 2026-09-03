@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.42
+# FlowScope 1.2.0-beta.43
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 허가된 대상에서 실제로 관측한 API·입력을 같은 좌표에 정렬해, 어느 endpoint와 parameter를 누가 보았고 아직 무엇이 미관측인지 Evidence로 보여 주는 Burp Suite Community 호환 확장입니다. 선언 근거(OpenAPI·HTML form·정적 JavaScript)와 실제 HTTP Evidence를 분리해 비교하고, 선택한 API의 BOLA/IDOR·BFLA 근거는 기존 인가 그래프·매트릭스에서 상세 확인합니다.
 
@@ -6,7 +6,7 @@ FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 허가된 대상에�
 
 > 허가된 exact scope에서 선언되거나 실제 관측된 API·입력을 구조화하고, HUMAN·SCANNER·LLM의 탐색 차이와 인가 후보를 원 Evidence까지 역추적 가능하게 만들어 진단자가 다음에 볼 위치를 줄인다.
 
-FlowScope는 블랙박스 대상의 모든 endpoint·parameter·객체·상태를 발견하거나 오탐·미탐을 0으로 만든다고 보장하지 않습니다. `미관측`은 취약점이나 lane 실패 판정이 아니며, LLM의 설명만으로 취약점을 확정하지도 않습니다. 제품의 완성도는 개발 corpus와 분리된 블라인드 benchmark에서 endpoint·parameter·객체·분류·finding의 precision/recall, 사람의 `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하는 방식으로 판단합니다.
+FlowScope는 블랙박스 대상의 모든 endpoint·parameter·접근 대상 ID·상태를 발견하거나 오탐·미탐을 0으로 만든다고 보장하지 않습니다. `미관측`은 취약점이나 lane 실패 판정이 아니며, LLM의 설명만으로 취약점을 확정하지도 않습니다. 제품의 완성도는 개발 corpus와 분리된 블라인드 benchmark에서 endpoint·parameter·접근 대상 ID·분류·finding의 precision/recall, 사람의 `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하는 방식으로 판단합니다.
 
 ```text
 선언(OpenAPI·HTML·JS) ─┐
@@ -16,13 +16,13 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 ## 주요 기능
 
 - 값 없는 범용 `EndpointKey(service, method, canonical path)`와 `ParameterKey(endpoint, location, fieldPath)`로 선언과 실제 관측을 분리하고 H/S/L source별 차이를 기본 작업목록에 표시. query, path, 중첩 JSON, form, multipart, GraphQL variables와 OpenAPI·HTML form·정적 JavaScript AST call-site를 처리하며 타깃명·업무명으로 분기하지 않음
-- JavaScript는 실행하지 않고 Closure Compiler AST로 `fetch`, `XMLHttpRequest`, axios, jQuery, `sendBeacon`의 직접 확인 가능한 URL·method·query/body key와 정적/dynamic import 자산을 추출. 임의 application wrapper의 의미는 추측하지 않으며 파싱 부분 복구·실패·입력/AST 상한을 `surface.extractions`와 Web에 별도로 표시
+- JavaScript는 실행하지 않고 Closure Compiler AST로 `fetch`, `XMLHttpRequest`, axios, jQuery, `sendBeacon`의 직접 확인 가능한 URL·method·query/body key와 정적/dynamic import 자산을 추출. lexical scope의 불변 literal·object member와 axios instance `baseURL`/요청별 override를 해석하되 재할당·동적 값은 거짓 endpoint로 만들지 않고 산출물별 해석 실패로 표시
 - Next.js pages-router의 공개 build manifest는 API를 추측하지 않고 client chunk 참조만 추가해 후속 JavaScript 분석 대상으로 연결. HTML `script`, `modulepreload`, script `preload/prefetch`는 Vue/Nuxt·Angular를 포함한 공통 자산 경로로 처리하며, GraphQL HTTP 관측은 operation과 variable field를 transport 필드와 분리
 - source, source detail, orchestrator, tool, phase, run 정보를 독립적으로 보존하는 Burp 실시간 수집
 - 모든 source에 대한 exact scope Evidence 수집. HUMAN은 Burp로 다른 사이트를 방문할 수 있지만 범위 밖 응답은 FlowScope에 저장하거나 그래프로 만들지 않음
-- HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 IDA식 계층 그래프. 기본은 `신원 → API`, API 선택 시 `신원 → API → 객체`, 사이트 개요는 선택형 `사이트 → API 그룹`으로 분리한다. 화면에서 접거나 전환해도 `Evidence × Identity × API × Object × Source × Run × HTTP outcome` 관계는 Fact Core에 그대로 유지
+- HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 IDA식 계층 그래프. 기본은 `신원 → API`, API 선택 시 `신원 → API → 접근 대상 ID`, 사이트 개요는 선택형 `사이트 → API 그룹`으로 분리한다. 사용자 화면의 접근 대상 ID는 내부 `Resource` 모델의 표현이며, 화면에서 접거나 전환해도 `Evidence × Identity × API × Resource × Source × Run × HTTP outcome` 관계는 Fact Core에 그대로 유지
 - 원본 URL은 보존하고, UUID/긴 16진 형식·성공 응답 ID 일치·같은 위치의 복수 값/독립 관측을 근거로 operation 경로를 자동 묶음. `LITERAL/INFERRED/CORROBORATED`와 이유를 상세에 표시
-- `신원 × 작업 × 객체` 커버리지 매트릭스, 미교차 조합, 일부만 발견, source 간 판정 불일치
+- `신원 × 작업 × 접근 대상 ID` 커버리지 매트릭스, 미교차 조합, 일부만 발견, source 간 판정 불일치
 - 응답 분류, 명시적 소유자 Evidence, 사용자가 입력한 역할 정책을 이용하는 결정론적 BOLA/IDOR·BFLA 후보 엔진
 - 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 성공 응답 확인 전 `UNVERIFIED`, 쿠키 회전, 만료·의심 상태, 계정별 ZAP/LLM 요청을 지원. 같은 서비스의 동일 인증 지문을 다른 계정으로 다시 연결하려 하면 자동 이동하지 않고 충돌 상태로 차단
 - query, 요청 본문, 마스킹된 요청·응답, timestamp, redirect, GraphQL operation, 응답→요청 데이터 흐름 수집. 텍스트 전문은 메시지당 기본 1MiB, 중복 제거 후 압축 총량 48MiB까지 GZIP·SHA-256으로 보존하고 UI preview는 8KiB로 분리. 상한 초과 live 메시지는 전체 문자열로 복제하지 않고 64KiB 제한 미리보기와 실제 byte 수·미보존 사유만 남김
@@ -73,7 +73,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.42.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.42 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.43.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.43 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
 3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
@@ -108,7 +108,7 @@ cd testflowscope
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.42.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.43.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 

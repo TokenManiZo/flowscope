@@ -1,6 +1,6 @@
 # Endpoint·Parameter Surface Delta 설계·검증
 
-이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.42 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다.
+이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.43 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다.
 
 ## 1. 제품 질문
 
@@ -23,7 +23,7 @@
 - 위치: `PATH`, `QUERY`, `JSON_BODY`, `FORM_BODY`, `MULTIPART_BODY`, `GRAPHQL_VARIABLE`
 - 관측에는 값 대신 shape, source, run, identity, status와 Evidence ID만 둔다.
 - 선언에는 type, adapter, reason과 Evidence ID를 둔다.
-- 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 실패 범주와 추출 수를 둔다.
+- 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, call-site 해석 실패 범주와 추출 수를 둔다.
 - 비밀값 원문, 조합 가능한 값 목록, 인증 header는 surface snapshot에 넣지 않는다.
 - `SurfaceAnalysis`는 Evidence에서 재생성되는 projection이다. SQLite에 두 번째 정본을 만들지 않는다.
 
@@ -44,7 +44,8 @@
 - HTML form action/method, 성공 가능한 이름 있는 control, submitter의 `formaction/formmethod`
 - JavaScript AST에서 직접 확인한 `fetch`, `XMLHttpRequest`, axios, jQuery, `sendBeacon` call-site
 - 해당 call-site의 static URL, method, query 이름과 literal object body key
-- 문자열, template literal, 단순 `+` 결합과 제한된 `const/let` 참조
+- lexical scope에서 확인되는 불변 문자열·object member, template literal, 단순 `+` 결합
+- axios import/direct call과 `axios.create` instance의 정적 `baseURL`, 요청별 `baseURL`·`allowAbsoluteUrls` override
 
 ### client asset inventory
 
@@ -57,7 +58,7 @@ asset은 후속 JavaScript 분석 대상으로만 남긴다. HTML navigation과 
 ### 명시적 비지원
 
 - application 고유 wrapper의 HTTP 의미
-- 일반 interprocedural data flow, 런타임 계산, 난독화 복원, source map
+- 일반 interprocedural data flow, 재할당된 binding/property, 런타임 계산, axios defaults mutation·interceptor, 난독화 복원, source map
 - 아직 받지 않은 lazy chunk
 - GraphQL introspection/schema declaration과 batch request 완전 분리
 - 서버에만 존재하는 endpoint·조건부 입력
@@ -76,7 +77,7 @@ asset은 후속 JavaScript 분석 대상으로만 남긴다. HTML navigation과 
 
 기본 화면 `API·입력 차이`는 endpoint 행, parameter badge, source별 관측과 provenance를 보여 준다. source checkbox를 끄면 행·badge·상태·통계·상세 Evidence가 같은 projection으로 다시 계산되며 원 Evidence는 삭제되지 않는다.
 
-산출물 요약은 분석 대상 수, 정상 수와 부분/실패/상한 수를 함께 표시한다. 실패가 있으면 종류·범주·Evidence ID·제한된 이유를 표시한다. 따라서 결과 0건이 “실제로 API가 없음”인지 “분석기가 읽지 못함”인지 구분할 수 있다.
+산출물 요약은 분석 대상 수, 완전 해석 수, 일부 미해석/실패 산출물 수와 해석 실패 지점 수를 함께 표시한다. 실패가 있으면 종류·범주·Evidence ID·line·제한된 이유를 표시한다. `PARSED`는 문법 파싱 성공일 뿐 모든 call-site 해석 성공을 뜻하지 않는다. 따라서 결과 0건이 “현재 지원 계약에서 call-site가 없음”인지 “동적 값·임의 wrapper 등을 읽지 못함”인지 구분할 수 있다.
 
 Resource/object와 owner는 첫 화면에서 펼치지 않고 선택 API의 인가 상세층에 유지한다. 이 projection은 기존 BOLA/IDOR·BFLA 판정 입력을 바꾸지 않는다.
 
@@ -111,6 +112,9 @@ Closure Compiler는 `ECMASCRIPT_NEXT` parser로만 사용하고 target JavaScrip
 | parser failure | `FAILED/PARSE_FAILED` |
 | input/AST limit | `LIMIT_EXCEEDED/INPUT_SIZE_LIMIT` 또는 `AST_NODE_LIMIT` |
 | application wrapper | 의미를 추측하지 않고 held-out 실패 목록에 유지 |
+| unresolved member/dynamic URL | 후보를 발명하지 않고 Evidence·line에 연결된 해석 실패로 표시 |
+| dynamic axios baseURL | `/items` 같은 거짓 상대 endpoint를 만들지 않고 별도 실패 범주로 표시 |
+| mutable binding/property | 초기값을 현재값으로 오인하지 않고 정적 해석에서 제외 |
 | unobserved lazy asset | 받은 산출물 안 추출률과 전체 fixture 발견률을 분리 |
 | server-only surface | 알 수 없음. 분모에 넣지 않음 |
 
@@ -120,10 +124,10 @@ Closure Compiler는 `ECMASCRIPT_NEXT` parser로만 사용하고 target JavaScrip
 2. OpenAPI·HTML parameter declaration — 구현·회귀 완료
 3. Generic JavaScript AST/call-site 분석 — 구현·회귀 완료
 4. endpoint·parameter delta 화면 — 구현·회귀 완료, 파서 상태 포함
-5. held-out fixture 검증 — 로컬 exact-set 회귀 완료
-6. 실패 사례 분류 — parser/limit과 known unsupported 분리 완료
-7. 실패 구조 기반 Next.js adapter — pages-router manifest의 chunk discovery만 완료
-8. Vue/Nuxt·Angular·GraphQL 확장 — 공통 HTML/ESM asset 경로와 GraphQL observed operation/variables 회귀 완료. framework별 router/schema parser는 미구현
+5. held-out fixture 검증 — 저장소 내부 합성 truth exact-set 회귀만 완료. 독립 효능 검증은 미완료
+6. 실패 사례 분류 — parser/limit, 동적 URL, member, axios baseURL, interprocedural flow와 일부 HTTP-like wrapper를 구조화. 모든 wrapper·런타임 흐름 분류는 미완료
+7. 실패 구조 기반 Next.js adapter — pages-router manifest의 chunk discovery만 구현. 실제 실패 빈도에 근거한 우선순위 검증은 미완료
+8. Vue/Nuxt·Angular·GraphQL 확장 — 공통 HTML/ESM asset 경로와 GraphQL observed operation/variables 회귀만 완료. framework별 router/schema parser와 실제 앱 검증은 미구현
 9. 승인된 외부 대상 pilot — exact scope와 실행 승인이 없어 미실행
 10. 결과 기반 지원 Tier 조정 — 9 결과 전에는 확정하지 않음
 

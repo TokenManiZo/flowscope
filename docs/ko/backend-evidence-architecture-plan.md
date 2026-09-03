@@ -14,6 +14,8 @@
 
 > **beta.42 교차 상태:** 이 장기 계획의 `property` 전면 모델보다 좁은 읽기 projection으로 `SurfaceAnalysis`를 구현했다. 실제 Observation과 OpenAPI·HTML form·JavaScript AST Declaration 및 산출물 파싱 상태를 값 없는 Endpoint/Parameter fact로 분리하며, 현재 Pipeline·SQLite 정본이나 아래 전체 ledger 계획을 대체하지 않는다. 현재 계약과 pilot gate는 `endpoint-parameter-surface.md`, 결정은 D-113·D-114를 따른다.
 
+> **beta.43 교차 상태:** 위 projection의 JavaScript 선언 해석을 lexical 불변 binding·object member·axios instance까지 보강하고, 미해석 call-site를 typed issue로 보존했다. 이는 아래 full data-flow/property ledger 구현이 아니며 D-115의 범위와 한계를 따른다.
+
 ## 1. 한 문장 목표
 
 허가된 exact scope에서 HUMAN·SCANNER·LLM이 실제로 만든 요청과 응답을 손실과 출처 혼동 없이 Evidence로 보존하고, 이를 route·identity·entity·property·state로 점진적으로 구조화한 뒤, 설명 가능한 후보 생성과 통제 재현·정상 대조를 통해 취약점 판정을 뒷받침한다.

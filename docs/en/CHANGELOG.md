@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0-beta.43 — 2026-09-03
+
+- Resolve immutable JavaScript object-member URLs and axios instance `baseURL`/per-request overrides through lexical bindings, while refusing to invent endpoints from shadowed, reassigned, or dynamic values.
+- Expose typed call-site resolution issues with their artifact Evidence and source line so a successful syntax parse is not presented as complete extraction.
+- Keep the default endpoint/parameter worklist focused on surface and source controls, and label the existing internal Resource detail as an access-target ID for users.
+- Final automated verification results are recorded in the Korean validation ledger; actual Burp and external generalization gates remain pending.
+
 ## 1.2.0-beta.42 — 2026-09-03
 
 - Replaced regex JavaScript declaration discovery with non-executing Closure Compiler `ECMASCRIPT_NEXT` AST call-site analysis for directly evidenced fetch/XHR/axios/jQuery/sendBeacon calls, static/dynamic imports, and bounded string/template/simple-concatenation references.

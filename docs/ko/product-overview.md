@@ -2,7 +2,7 @@
 
 > 사용자 확정 스코프("예상 아웃풋", 2026-08-24). 이 문서가 목표의 정본이며, `proposal.md`(초기 추정본)를 대체한다.
 
-> **구현 상태(1.2.0-beta.42):** 값 없는 `Endpoint·Parameter Surface Delta`가 OpenAPI·HTML form·JavaScript AST call-site 선언과 실제 H/S/L HTTP 관측을 분리하고, 산출물 파싱 상태까지 Web 기본 작업목록에 표시한다. 기존 Resource/owner/BOLA·BFLA 그래프와 판정은 선택 API의 상세층으로 유지한다. 저장소 내부 held-out 구조 회귀는 추가했지만 실제 Burp beta.42 재로드와 승인된 다양한 대상의 endpoint·parameter 성능 평가는 아직 완료하지 않았다.
+> **구현 상태(1.2.0-beta.43):** 값 없는 `Endpoint·Parameter Surface Delta`가 OpenAPI·HTML form·JavaScript AST call-site 선언과 실제 H/S/L HTTP 관측을 분리한다. JavaScript는 lexical 불변 object member와 axios instance 설정까지 해석하고 동적·재할당 값은 거짓 endpoint 대신 typed issue로 표시한다. 기존 Resource/owner/BOLA·BFLA 그래프와 판정은 `접근 대상 ID` 상세층으로 유지한다. 저장소 내부 held-out 구조 회귀는 실제 Burp 재로드나 승인된 다양한 대상의 endpoint·parameter 성능 평가가 아니다.
 
 ## 문제의식 (Premise)
 웹/API 모의해킹의 첫 병목은 **수집한 요청 목록만 보고 아직 보지 못한 endpoint와 조건부 parameter를 알아내기 어렵다는 것**이고, 다음 병목은 권한·상태·객체 흐름을 사람이 머릿속으로 재구성해야 한다는 것이다. FlowScope는 선언 산출물과 실제 H/S/L Evidence의 차이를 먼저 작업목록으로 만들고, 선택한 API의 인가 관계를 그래프와 매트릭스로 연다.

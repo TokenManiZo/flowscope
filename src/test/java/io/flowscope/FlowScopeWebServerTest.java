@@ -124,7 +124,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.42 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.43 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
@@ -235,6 +235,9 @@ final class FlowScopeWebServerTest {
         assertEquals("OBSERVED_NOT_DECLARED", observedSurface.path("deltaState").asText());
         assertEquals("human", observedSurface.at("/observations/0/source").asText().toLowerCase());
         assertTrue(body.at("/surface/extractions").isArray());
+        assertTrue(index.body().contains("해석 실패 지점"));
+        assertTrue(index.body().contains("data-rail=\"surface\""));
+        assertTrue(index.body().contains("접근 대상 ID"));
 
         JsonNode evidence = json(get("/api/evidence?operation="
                 + encode(body.at("/events/0/op").asText()), token, origin()));

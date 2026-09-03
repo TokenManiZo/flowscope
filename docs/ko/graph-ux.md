@@ -4,6 +4,8 @@
 
 > **beta.42 주의:** 제품 기본 작업면은 그래프가 아니라 Endpoint·Parameter Surface Delta다. 이 문서의 그래프 원칙은 선택 API의 `인가 그래프` 상세층에만 적용한다(D-113·D-114).
 
+> **beta.43 주의:** 기본 Surface에서는 인가용 rail을 숨기고 Surface·source 제어만 보여 준다. 내부 Resource는 삭제하지 않았으며 화면 용어만 `접근 대상 ID`로 바꿨다(D-115).
+
 > OSS·정보시각화 문헌 5갈래 조사 종합. 우리 제약(단일 Java Burp 확장 + JGraphX)을 최우선 현실 기준으로.
 
 ## 0. 결론 한 줄

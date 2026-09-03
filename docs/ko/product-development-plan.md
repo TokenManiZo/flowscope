@@ -1,6 +1,19 @@
-# FlowScope 1.2.0-beta.42 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.43 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.42 절만 현재 우선순위다. beta.41 이하 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** 맨 위 beta.43 절만 현재 우선순위다. beta.42 이하 절은 당시 계획과 검증 상태를 보존한 이력이다.
+
+## 0. beta.43 우선순위: 정적 해석 정확도와 검토 화면 집중
+
+1. lexical scope가 다른 같은 이름의 binding을 구분하고 정적 object member URL을 해석한다.
+2. axios import·instance를 구분하고 `baseURL`, 요청별 override, absolute URL 결합 규칙을 실제 axios 계약과 맞춘다.
+3. 재할당·동적 baseURL·함수 반환·미지원 wrapper는 거짓 endpoint로 만들지 않고 typed resolution issue로 남긴다.
+4. 산출물 요약에서 parser 실패와 call-site 일부 미해석을 Evidence·line 단위로 구분한다.
+5. Surface 화면에는 Surface·source 제어만, 인가 화면에는 인가 제어만 보여 한 화면의 경쟁 작업을 줄인다.
+6. 사용자 화면의 `객체`를 `접근 대상 ID`로 바꾸되 내부 Resource/owner/BOLA 판정 모델은 유지한다.
+7. 집중 회귀와 전체 clean verify 2회, 재현 JAR, standalone no-cache 화면을 검증한다.
+8. 실제 Burp 재로드와 독립 외부 corpus pilot은 별도 gate로 남기고 자동 회귀 결과로 일반화 성능을 주장하지 않는다.
+
+**현재 상태:** 1~7은 코드·집중 회귀, 전체 349 tests의 clean verify 연속 2회, byte-for-byte 재현 JAR과 standalone no-cache 화면 확인을 통과했다. 8은 미실행이다. beta.42에서 “1~8 완료”라고 쓴 문장은 구현과 내부 구조 회귀의 범위를 과도하게 합친 표현이었다. 정확한 단계별 상태는 아래 beta.42 정정과 `endpoint-parameter-surface.md`를 따른다.
 
 ## 0. beta.42 우선순위: 범용 선언 추출과 검증 가능한 실패 경계
 
@@ -15,7 +28,7 @@
 9. 정확한 범위와 승인을 받은 외부 대상에서 pilot한다.
 10. pilot 결과의 정확도·검토량·실패 구조를 근거로 지원 Tier를 조정한다.
 
-**현재 상태:** 1~8은 코드·집중 회귀, 340 tests의 clean verify 연속 2회, byte-for-byte 재현 JAR과 standalone Web 확인을 통과했다. 실제 Burp beta.42 재로드는 별도 운영 gate다. 9는 승인된 exact scope가 없어 미실행이며, 10은 그 결과 전에는 확정하지 않는다. 상세 계약과 정확한 검증 수치는 `endpoint-parameter-surface.md`, `beta-validation.md`를 따른다.
+**beta.43에서 정정한 상태:** 1~4는 구현·자동 회귀 완료다. 5는 저장소 내부 합성 truth의 구조 회귀만 완료했으며 독립 효능 검증은 아니다. 6은 parser/limit과 일부 resolution issue를 구조화했지만 모든 런타임·wrapper 실패를 분류하지 못한다. 7은 Next.js pages-router manifest의 chunk 연결만 구현했으며 실패 빈도에 기반한 우선순위 검증이 없다. 8은 공통 asset 경로와 GraphQL 관측 회귀만 있고 framework별 parser·실제 앱 검증은 없다. 9~10은 미실행이다. beta.42의 340 tests·재현 JAR·standalone 결과는 그 릴리스의 자동 회귀 사실로 유효하지만 “1~8 완료” 근거로 확대하지 않는다.
 
 ## 0. beta.41 우선순위: 범용 Endpoint·Parameter Surface Delta
 

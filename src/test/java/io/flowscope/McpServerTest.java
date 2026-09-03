@@ -97,7 +97,7 @@ final class McpServerTest {
         JsonNode initialized = json(post("test-token", request(2, "initialize",
                 "{\"protocolVersion\":\"future-version\"}")));
         assertEquals("2025-11-25", initialized.at("/result/protocolVersion").asText());
-        assertEquals("1.2.0-beta.42", initialized.at("/result/serverInfo/version").asText());
+        assertEquals("1.2.0-beta.43", initialized.at("/result/serverInfo/version").asText());
         assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
 
         JsonNode evidence = tool("flowscope_get_evidence",

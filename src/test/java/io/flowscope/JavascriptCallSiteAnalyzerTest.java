@@ -30,7 +30,7 @@ final class JavascriptCallSiteAnalyzerTest {
         assertEquals(Set.of("expand"), names(orders));
         JavascriptAnalysis.CallSite search = find(analysis, "POST", "/api/search");
         assertEquals(Set.of("product_id", "filters.active"), names(search));
-        JavascriptAnalysis.CallSite profile = find(analysis, "GET", "/api/profile");
+        JavascriptAnalysis.CallSite profile = find(analysis, "GET", "/api/api/profile");
         assertEquals(Set.of("view"), names(profile));
     }
 
@@ -70,6 +70,119 @@ final class JavascriptCallSiteAnalyzerTest {
         assertEquals(Set.of("page", "sort"), names(find(analysis, "GET", "/api/list?page=1")));
         assertTrue(analysis.callSites().stream().flatMap(item -> item.parameters().stream())
                 .noneMatch(item -> item.name().equals("secretFlag")));
+    }
+
+    @Test
+    void lexical_scope의_객체_멤버에서_fetch_endpoint를_해석한다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const routes = {list:'/api/outer'};
+                function inner() {
+                  const routes = {list:'/api/inner'};
+                  fetch(routes.list);
+                }
+                fetch(routes.list);
+                """);
+
+        assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis::detail);
+        find(analysis, "GET", "/api/inner");
+        find(analysis, "GET", "/api/outer");
+        assertTrue(analysis.issues().isEmpty(), () -> "unexpected issues: " + analysis.issues());
+    }
+
+    @Test
+    void 정적_bracket_member와_상대경로를_해석한다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const routes = {'list':'../orders'};
+                fetch(routes['list']);
+                const client = axios.create({baseURL:'https://api.example/v2/groups/'});
+                client.get('../members');
+                """);
+
+        find(analysis, "GET", "../orders");
+        find(analysis, "GET", "https://api.example/v2/members");
+    }
+
+    @Test
+    void axios_instance_baseURL을_상대_URL과_결합하고_instance별로_격리한다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const inventory = axios.create({baseURL:'/api/inventory'});
+                const billing = axios.create({baseURL:'/api/billing/'});
+                inventory.get('/items', {params:{page:1}});
+                billing.post('charges', {amount:100});
+                """);
+
+        assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis::detail);
+        assertEquals(Set.of("page"), names(find(analysis, "GET", "/api/inventory/items")));
+        assertEquals(Set.of("amount"), names(find(analysis, "POST", "/api/billing/charges")));
+        assertTrue(analysis.callSites().stream().noneMatch(item -> item.reference().equals("/items")));
+    }
+
+    @Test
+    void axios_call별_baseURL_override와_절대_URL_규칙을_적용한다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const client = axios.create({baseURL:'/api/default'});
+                client.get('/orders', {baseURL:'/api/override'});
+                client.get('https://other.example/public');
+                client.get('https://other.example/forced', {allowAbsoluteUrls:false});
+                """);
+
+        find(analysis, "GET", "/api/override/orders");
+        find(analysis, "GET", "https://other.example/public");
+        find(analysis, "GET", "/api/default/https://other.example/forced");
+    }
+
+    @Test
+    void 동적_axios_baseURL은_거짓_상대_endpoint를_만들지_않고_실패를_구조화한다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const client = axios.create({baseURL: window.runtimeBase});
+                client.get('/inst');
+                """);
+
+        assertTrue(analysis.callSites().isEmpty());
+        assertTrue(analysis.issues().stream().anyMatch(issue ->
+                issue.kind() == JavascriptAnalysis.ResolutionIssueKind.UNRESOLVED_AXIOS_BASE_URL));
+    }
+
+    @Test
+    void 동적_멤버와_알수없는_wrapper는_endpoint로_추정하지_않고_원인을_구분한다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const routes = getRoutes();
+                fetch(routes.orders);
+                apiClient.load('/service/private/report');
+                """);
+
+        assertTrue(analysis.callSites().isEmpty());
+        assertTrue(analysis.issues().stream().anyMatch(issue ->
+                issue.kind() == JavascriptAnalysis.ResolutionIssueKind.UNRESOLVED_MEMBER_REFERENCE));
+        assertTrue(analysis.issues().stream().anyMatch(issue ->
+                issue.kind() == JavascriptAnalysis.ResolutionIssueKind.UNRECOGNIZED_APPLICATION_WRAPPER));
+    }
+
+    @Test
+    void 지역변수가_axios_이름을_가리면_HTTP_client로_오인하지_않는다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                function render() {
+                  const axios = {get(value) { return value; }};
+                  axios.get('/not-http');
+                }
+                """);
+
+        assertTrue(analysis.callSites().isEmpty());
+    }
+
+    @Test
+    void 재할당된_URL과_객체_멤버는_초기값으로_거짓_endpoint를_만들지_않는다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                let route = '/api/initial';
+                route = '/api/runtime';
+                fetch(route);
+                const routes = {list:'/api/old'};
+                routes.list = window.runtimeRoute;
+                fetch(routes.list);
+                """);
+
+        assertTrue(analysis.callSites().isEmpty());
+        assertEquals(2, analysis.issues().size());
     }
 
     private static JavascriptAnalysis.CallSite find(JavascriptAnalysis analysis, String method, String reference) {

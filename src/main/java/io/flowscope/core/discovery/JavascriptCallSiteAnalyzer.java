@@ -2,7 +2,11 @@ package io.flowscope.core.discovery;
 
 import com.google.javascript.jscomp.BlackHoleErrorManager;
 import com.google.javascript.jscomp.CompilerOptions;
+import com.google.javascript.jscomp.NodeTraversal;
+import com.google.javascript.jscomp.NodeUtil;
+import com.google.javascript.jscomp.Scope;
 import com.google.javascript.jscomp.SourceFile;
+import com.google.javascript.jscomp.Var;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
@@ -12,7 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,6 +41,7 @@ public final class JavascriptCallSiteAnalyzer {
     private static final int MAX_NODES = 250_000;
     private static final int MAX_CALL_SITES = 20_000;
     private static final int MAX_ASSETS = 20_000;
+    private static final int MAX_ISSUES = 20_000;
     private static final int MAX_PARAMETERS_PER_CALL = 1_024;
     private static final int MAX_RESOLUTION_DEPTH = 12;
     private static final int MAX_CACHE_ENTRIES = 128;
@@ -94,63 +101,87 @@ public final class JavascriptCallSiteAnalyzer {
                 return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSE_FAILED,
                         "parser returned no AST");
             }
-            Analyzer analyzer = new Analyzer();
-            analyzer.collectBindings(root);
-            analyzer.visit(root);
+            MutationCollector mutationCollector = new MutationCollector();
+            NodeTraversal.traverse(compiler, root, mutationCollector);
+            if (mutationCollector.limited) {
+                return new JavascriptAnalysis(List.of(), List.of(), List.of(),
+                        JavascriptAnalysis.Status.LIMIT_EXCEEDED,
+                        "AST exceeds 250000 node traversal limit");
+            }
+            Analyzer analyzer = new Analyzer(mutationCollector.mutatedDeclarations);
+            NodeTraversal.traverse(compiler, root, analyzer);
             JavascriptAnalysis.Status status = analyzer.limited ? JavascriptAnalysis.Status.LIMIT_EXCEEDED
                     : compiler.getErrorCount() == 0 ? JavascriptAnalysis.Status.PARSED
                     : JavascriptAnalysis.Status.PARTIAL;
             String detail = compiler.getErrorCount() == 0 ? ""
                     : "parser recovered with " + compiler.getErrorCount() + " syntax error(s)";
             if (analyzer.limited) detail = "AST exceeds 250000 node traversal limit";
-            return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, status, detail);
+            return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, analyzer.issues, status, detail);
         } catch (RuntimeException | LinkageError | StackOverflowError exception) {
             return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSE_FAILED,
                     exception.getClass().getSimpleName());
         }
     }
 
-    private static final class Analyzer {
-        private final Map<String, Node> constants = new LinkedHashMap<>();
-        private final Set<String> axiosAliases = new LinkedHashSet<>(Set.of("axios"));
-        private final Set<String> xhrNames = new LinkedHashSet<>();
-        private final List<JavascriptAnalysis.CallSite> callSites = new ArrayList<>();
-        private final List<JavascriptAnalysis.AssetReference> assets = new ArrayList<>();
+    private static final class MutationCollector implements NodeTraversal.Callback {
+        private final Set<Node> mutatedDeclarations = Collections.newSetFromMap(new IdentityHashMap<>());
         private int nodes;
-        private int visited;
         private boolean limited;
 
-        private void collectBindings(Node node) {
-            if (node == null || nodes++ >= MAX_NODES) {
+        @Override
+        public boolean shouldTraverse(NodeTraversal traversal, Node node, Node parent) {
+            if (limited || nodes++ >= MAX_NODES) {
                 limited = true;
-                return;
+                return false;
             }
-            if (node.isConst() || node.isLet()) {
-                for (Node name : node.children()) {
-                    if (!name.isName() || name.getFirstChild() == null) continue;
-                    constants.putIfAbsent(name.getString(), name.getFirstChild());
-                    if (isAxiosCreate(name.getFirstChild())) axiosAliases.add(name.getString());
-                    if (isNewXmlHttpRequest(name.getFirstChild())) xhrNames.add(name.getString());
-                }
-            } else if (node.isImport()) {
-                collectAxiosImport(node);
-            }
-            for (Node child : node.children()) {
-                if (limited) return;
-                collectBindings(child);
-            }
+            return true;
         }
 
-        private void visit(Node node) {
-            if (node == null || limited) return;
-            if (visited++ >= MAX_NODES || callSites.size() >= MAX_CALL_SITES || assets.size() >= MAX_ASSETS) {
-                limited = true;
-                return;
+        @Override
+        public void visit(NodeTraversal traversal, Node node, Node parent) {
+            if (!NodeUtil.isAssignmentOp(node) && !node.isInc() && !node.isDec()) return;
+            Node target = node.getFirstChild();
+            while (target != null && (target.isGetProp() || target.isGetElem())) {
+                target = target.getFirstChild();
             }
-            if (node.isCall()) inspectCall(node);
+            if (target == null || !target.isName()) return;
+            Var variable = traversal.getScope().getVar(target.getString());
+            if (variable != null && variable.getNameNode() != null) {
+                mutatedDeclarations.add(variable.getNameNode());
+            }
+        }
+    }
+
+    private static final class Analyzer implements NodeTraversal.Callback {
+        private final Set<Node> mutatedDeclarations;
+        private final Set<Var> axiosImports = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final List<JavascriptAnalysis.CallSite> callSites = new ArrayList<>();
+        private final List<JavascriptAnalysis.AssetReference> assets = new ArrayList<>();
+        private final List<JavascriptAnalysis.ResolutionIssue> issues = new ArrayList<>();
+        private int nodes;
+        private boolean limited;
+
+        private Analyzer(Set<Node> mutatedDeclarations) {
+            this.mutatedDeclarations = mutatedDeclarations;
+        }
+
+        @Override
+        public boolean shouldTraverse(NodeTraversal traversal, Node node, Node parent) {
+            if (nodes++ >= MAX_NODES || callSites.size() >= MAX_CALL_SITES || assets.size() >= MAX_ASSETS) {
+                limited = true;
+                return false;
+            }
+            return true;
+        }
+
+        @Override
+        public void visit(NodeTraversal traversal, Node node, Node parent) {
+            if (limited) return;
+            Scope scope = traversal.getScope();
+            if (node.isImport()) collectAxiosImport(node, scope);
+            if (node.isCall()) inspectCall(node, scope);
             if (node.isImport()) inspectStaticImport(node);
-            if (node.getToken() == Token.DYNAMIC_IMPORT) inspectDynamicImport(node);
-            for (Node child : node.children()) visit(child);
+            if (node.getToken() == Token.DYNAMIC_IMPORT) inspectDynamicImport(node, scope);
         }
 
         private void inspectStaticImport(Node node) {
@@ -159,8 +190,8 @@ public final class JavascriptCallSiteAnalyzer {
             addAsset(module.getString(), "ECMAScript static import", node);
         }
 
-        private void inspectDynamicImport(Node node) {
-            addAsset(staticReference(node.getFirstChild(), 0), "ECMAScript dynamic import", node);
+        private void inspectDynamicImport(Node node, Scope scope) {
+            addAsset(staticReference(node.getFirstChild(), scope, 0), "ECMAScript dynamic import", node);
         }
 
         private void addAsset(String reference, String reason, Node node) {
@@ -170,115 +201,127 @@ public final class JavascriptCallSiteAnalyzer {
             if (!assets.contains(asset)) assets.add(asset);
         }
 
-        private void inspectCall(Node call) {
+        private void inspectCall(Node call, Scope scope) {
             Node target = call.getFirstChild();
             if (target == null) return;
             String qualified = target.getQualifiedName();
             if (isFetch(qualified)) {
-                inspectFetch(call);
+                inspectFetch(call, scope);
                 return;
             }
             if (qualified != null && qualified.endsWith(".sendBeacon")) {
-                inspectBeacon(call);
+                inspectBeacon(call, scope);
                 return;
             }
             if (qualified != null && qualified.endsWith(".open")) {
-                inspectXhr(call, qualified.substring(0, qualified.length() - 5));
+                inspectXhr(call, qualified.substring(0, qualified.length() - 5), scope);
                 return;
             }
             if (qualified != null && qualified.startsWith("$.")) {
-                inspectJquery(call, qualified.substring(2).toLowerCase(Locale.ROOT));
+                inspectJquery(call, qualified.substring(2).toLowerCase(Locale.ROOT), scope);
                 return;
             }
-            inspectAxios(call, qualified);
+            if (!inspectAxios(call, qualified, scope)) inspectUnknownWrapper(call, qualified, scope);
         }
 
-        private void inspectFetch(Node call) {
+        private void inspectFetch(Node call, Scope scope) {
             List<Node> args = arguments(call);
             if (args.isEmpty()) return;
-            String reference = staticReference(args.get(0), 0);
-            if (!routeLike(reference)) return;
-            Node options = args.size() > 1 ? resolve(args.get(1), 0) : null;
-            String method = stringProperty(options, "method");
+            String reference = staticReference(args.get(0), scope, 0);
+            if (!routeLike(reference)) {
+                addReferenceIssue(args.get(0), scope, "fetch", call);
+                return;
+            }
+            Node options = args.size() > 1 ? resolve(args.get(1), scope, 0) : null;
+            String method = stringProperty(options, "method", scope);
             if (method == null) method = args.size() == 1 ? "GET" : "UNKNOWN";
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
-            Node body = property(options, "body");
-            addBodyParameters(parameters, body, bodyKind(body, options));
+            Node body = property(options, "body", scope);
+            addBodyParameters(parameters, body, bodyKind(body, options, scope), scope);
             add(reference, method, parameters, "fetch AST call-site", call);
         }
 
-        private void inspectAxios(Node call, String qualified) {
-            if (qualified == null) return;
+        private boolean inspectAxios(Node call, String qualified, Scope scope) {
+            if (qualified == null) return false;
             List<Node> args = arguments(call);
             int dot = qualified.indexOf('.');
             String receiver = dot < 0 ? qualified : qualified.substring(0, dot);
-            if (!axiosAliases.contains(receiver)) return;
+            AxiosDefaults defaults = axiosDefaults(receiver, scope, 0);
+            if (defaults == null) return false;
             String operation = dot < 0 ? "call" : qualified.substring(dot + 1).toLowerCase(Locale.ROOT);
             if (operation.equals("request") || operation.equals("call")) {
-                if (args.isEmpty()) return;
-                Node config = resolve(args.get(0), 0);
-                String reference = staticReference(property(config, "url"), 0);
-                if (!routeLike(reference)) return;
-                String method = stringProperty(config, "method");
+                if (args.isEmpty()) return true;
+                Node config = resolve(args.get(0), scope, 0);
+                Node url = property(config, "url", scope);
+                String reference = axiosReference(url, config, defaults, scope, call);
+                if (!routeLike(reference)) return true;
+                String method = stringProperty(config, "method", scope);
                 List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
-                addObjectParameters(parameters, property(config, "params"), QUERY, "");
-                addObjectParameters(parameters, property(config, "data"), JSON_BODY, "");
+                addObjectParameters(parameters, property(config, "params", scope), QUERY, "", scope);
+                addObjectParameters(parameters, property(config, "data", scope), JSON_BODY, "", scope);
                 add(reference, method, parameters, "axios config AST call-site", call);
-                return;
+                return true;
             }
             String method = operation.toUpperCase(Locale.ROOT);
-            if (!HTTP_METHODS.contains(method) || args.isEmpty()) return;
-            String reference = staticReference(args.get(0), 0);
-            if (!routeLike(reference)) return;
-            List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
+            if (!HTTP_METHODS.contains(method) || args.isEmpty()) return true;
             boolean bodyMethod = Set.of("POST", "PUT", "PATCH", "DELETE").contains(method);
-            if (bodyMethod && args.size() > 1) addObjectParameters(parameters, args.get(1), JSON_BODY, "");
             Node config = args.size() > (bodyMethod ? 2 : 1) ? args.get(bodyMethod ? 2 : 1) : null;
-            addObjectParameters(parameters, property(resolve(config, 0), "params"), QUERY, "");
+            Node resolvedConfig = resolve(config, scope, 0);
+            String reference = axiosReference(args.get(0), resolvedConfig, defaults, scope, call);
+            if (!routeLike(reference)) return true;
+            List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
+            if (bodyMethod && args.size() > 1) {
+                addObjectParameters(parameters, args.get(1), JSON_BODY, "", scope);
+            }
+            addObjectParameters(parameters, property(resolvedConfig, "params", scope), QUERY, "", scope);
             add(reference, method, parameters, "axios verb AST call-site", call);
+            return true;
         }
 
-        private void inspectXhr(Node call, String receiver) {
+        private void inspectXhr(Node call, String receiver, Scope scope) {
             String root = receiver.contains(".") ? receiver.substring(0, receiver.indexOf('.')) : receiver;
-            if (!xhrNames.contains(root)) return;
+            Var variable = scope.getVar(root);
+            if (variable == null || mutatedDeclarations.contains(variable.getNameNode())
+                    || !isNewXmlHttpRequest(variable.getInitialValue())) return;
             List<Node> args = arguments(call);
             if (args.size() < 2) return;
-            String method = staticString(args.get(0), 0);
-            String reference = staticReference(args.get(1), 0);
+            String method = staticString(args.get(0), scope, 0);
+            String reference = staticReference(args.get(1), scope, 0);
             if (routeLike(reference)) add(reference, method, queryParameters(reference),
                     "XMLHttpRequest.open AST call-site", call);
         }
 
-        private void inspectJquery(Node call, String operation) {
+        private void inspectJquery(Node call, String operation, Scope scope) {
             List<Node> args = arguments(call);
             if (operation.equals("ajax")) {
                 if (args.isEmpty()) return;
-                Node config = resolve(args.get(0), 0);
-                String reference = staticReference(property(config, "url"), 0);
+                Node config = resolve(args.get(0), scope, 0);
+                String reference = staticReference(property(config, "url", scope), scope, 0);
                 if (!routeLike(reference)) return;
-                String method = firstNonBlank(stringProperty(config, "method"), stringProperty(config, "type"));
+                String method = firstNonBlank(stringProperty(config, "method", scope),
+                        stringProperty(config, "type", scope));
                 List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
                 JavascriptAnalysis.ParameterKind kind = "GET".equalsIgnoreCase(method) ? QUERY : FORM_BODY;
-                addObjectParameters(parameters, property(config, "data"), kind, "");
+                addObjectParameters(parameters, property(config, "data", scope), kind, "", scope);
                 add(reference, method, parameters, "jQuery.ajax AST call-site", call);
                 return;
             }
             if (!Set.of("get", "post").contains(operation) || args.isEmpty()) return;
-            String reference = staticReference(args.get(0), 0);
+            String reference = staticReference(args.get(0), scope, 0);
             if (!routeLike(reference)) return;
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
             if (args.size() > 1) addObjectParameters(parameters, args.get(1),
-                    operation.equals("get") ? QUERY : FORM_BODY, "");
+                    operation.equals("get") ? QUERY : FORM_BODY, "", scope);
             add(reference, operation, parameters, "jQuery verb AST call-site", call);
         }
 
-        private void inspectBeacon(Node call) {
+        private void inspectBeacon(Node call, Scope scope) {
             List<Node> args = arguments(call);
             if (args.isEmpty()) return;
-            String reference = staticReference(args.get(0), 0);
+            String reference = staticReference(args.get(0), scope, 0);
             if (!routeLike(reference)) return;
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
-            if (args.size() > 1) addObjectParameters(parameters, args.get(1), FORM_BODY, "");
+            if (args.size() > 1) addObjectParameters(parameters, args.get(1), FORM_BODY, "", scope);
             add(reference, "POST", parameters, "sendBeacon AST call-site", call);
         }
 
@@ -308,36 +351,36 @@ public final class JavascriptCallSiteAnalyzer {
         }
 
         private void addBodyParameters(List<JavascriptAnalysis.Parameter> out, Node body,
-                                       JavascriptAnalysis.ParameterKind kind) {
-            Node resolved = resolve(body, 0);
+                                       JavascriptAnalysis.ParameterKind kind, Scope scope) {
+            Node resolved = resolve(body, scope, 0);
             if (resolved != null && resolved.isCall()
                     && "JSON.stringify".equals(resolved.getFirstChild().getQualifiedName())) {
                 List<Node> args = arguments(resolved);
-                if (!args.isEmpty()) addObjectParameters(out, args.get(0), JSON_BODY, "");
+                if (!args.isEmpty()) addObjectParameters(out, args.get(0), JSON_BODY, "", scope);
                 return;
             }
             if (resolved != null && resolved.isNew()
                     && "URLSearchParams".equals(resolved.getFirstChild().getQualifiedName())) {
                 List<Node> args = arguments(resolved);
-                if (!args.isEmpty()) addObjectParameters(out, args.get(0), FORM_BODY, "");
+                if (!args.isEmpty()) addObjectParameters(out, args.get(0), FORM_BODY, "", scope);
                 return;
             }
-            addObjectParameters(out, resolved, kind, "");
+            addObjectParameters(out, resolved, kind, "", scope);
         }
 
-        private JavascriptAnalysis.ParameterKind bodyKind(Node body, Node options) {
-            String contentType = staticString(property(resolve(options, 0), "contentType"), 0);
+        private JavascriptAnalysis.ParameterKind bodyKind(Node body, Node options, Scope scope) {
+            String contentType = staticString(property(resolve(options, scope, 0), "contentType", scope), scope, 0);
             if (contentType != null && contentType.toLowerCase(Locale.ROOT).contains("json")) return JSON_BODY;
-            Node resolved = resolve(body, 0);
+            Node resolved = resolve(body, scope, 0);
             if (resolved != null && resolved.isCall()
                     && "JSON.stringify".equals(resolved.getFirstChild().getQualifiedName())) return JSON_BODY;
             return FORM_BODY;
         }
 
         private void addObjectParameters(List<JavascriptAnalysis.Parameter> out, Node raw,
-                                         JavascriptAnalysis.ParameterKind kind, String prefix) {
+                                         JavascriptAnalysis.ParameterKind kind, String prefix, Scope scope) {
             if (out.size() >= MAX_PARAMETERS_PER_CALL) return;
-            Node object = resolve(raw, 0);
+            Node object = resolve(raw, scope, 0);
             if (object == null || !object.isObjectLit()) return;
             for (Node property : object.children()) {
                 if (out.size() >= MAX_PARAMETERS_PER_CALL || !property.isStringKey()) continue;
@@ -345,32 +388,40 @@ public final class JavascriptCallSiteAnalyzer {
                 if (name == null || name.isBlank()) continue;
                 String path = prefix.isBlank() ? name : prefix + "." + name;
                 Node value = property.getFirstChild();
-                Node resolvedValue = resolve(value, 0);
+                Node resolvedValue = resolve(value, scope, 0);
                 if (kind == JSON_BODY && resolvedValue != null && resolvedValue.isObjectLit()) {
-                    addObjectParameters(out, resolvedValue, kind, path);
+                    addObjectParameters(out, resolvedValue, kind, path, scope);
                 } else {
                     out.add(new JavascriptAnalysis.Parameter(path, kind));
                 }
             }
         }
 
-        private Node resolve(Node node, int depth) {
+        private Node resolve(Node node, Scope scope, int depth) {
             if (node == null || depth >= MAX_RESOLUTION_DEPTH) return node;
             if (node.isName()) {
-                Node value = constants.get(node.getString());
-                return value == null || value == node ? node : resolve(value, depth + 1);
+                Var variable = scope.getVar(node.getString());
+                if (variable != null && mutatedDeclarations.contains(variable.getNameNode())) return node;
+                Node value = variable == null ? null : variable.getInitialValue();
+                return value == null || value == node ? node : resolve(value, scope, depth + 1);
+            }
+            if (node.isGetProp() || node.isGetElem()) {
+                Node object = resolve(node.getFirstChild(), scope, depth + 1);
+                String name = memberName(node, scope, depth + 1);
+                Node value = property(object, name, scope);
+                return value == null ? node : resolve(value, scope, depth + 1);
             }
             return node;
         }
 
-        private String staticReference(Node node, int depth) {
+        private String staticReference(Node node, Scope scope, int depth) {
             if (node == null || depth >= MAX_RESOLUTION_DEPTH) return null;
-            Node value = resolve(node, depth);
+            Node value = resolve(node, scope, depth);
             if (value.isStringLit()) return value.getString();
-            if (value.isTemplateLit()) return templateReference(value, depth + 1);
+            if (value.isTemplateLit()) return templateReference(value, scope, depth + 1);
             if (value.isAdd()) {
-                String left = referencePart(value.getFirstChild(), depth + 1);
-                String right = referencePart(value.getLastChild(), depth + 1);
+                String left = referencePart(value.getFirstChild(), scope, depth + 1);
+                String right = referencePart(value.getLastChild(), scope, depth + 1);
                 if (left == null || right == null) return null;
                 String joined = left + right;
                 return hasStaticRouteShape(joined) ? collapsePlaceholders(joined) : null;
@@ -378,23 +429,23 @@ public final class JavascriptCallSiteAnalyzer {
             return null;
         }
 
-        private String referencePart(Node node, int depth) {
+        private String referencePart(Node node, Scope scope, int depth) {
             if (node == null || depth >= MAX_RESOLUTION_DEPTH) return null;
-            Node value = resolve(node, depth);
-            String exact = staticString(value, depth + 1);
+            Node value = resolve(node, scope, depth);
+            String exact = staticString(value, scope, depth + 1);
             if (exact != null) return exact;
-            if (value.isTemplateLit()) return templateReference(value, depth + 1);
-            if (value.isAdd()) return staticReference(value, depth + 1);
+            if (value.isTemplateLit()) return templateReference(value, scope, depth + 1);
+            if (value.isAdd()) return staticReference(value, scope, depth + 1);
             return "{expr}";
         }
 
-        private String templateReference(Node template, int depth) {
+        private String templateReference(Node template, Scope scope, int depth) {
             StringBuilder out = new StringBuilder();
             for (Node part : template.children()) {
                 if (part.isTemplateLitString()) out.append(part.getCookedString());
                 else if (part.isTemplateLitSub()) {
                     Node expression = part.getFirstChild();
-                    String exact = staticString(expression, depth + 1);
+                    String exact = staticString(expression, scope, depth + 1);
                     out.append(exact == null ? "{expr}" : exact);
                 }
             }
@@ -402,16 +453,16 @@ public final class JavascriptCallSiteAnalyzer {
             return hasStaticRouteShape(value) ? value : null;
         }
 
-        private String staticString(Node node, int depth) {
+        private String staticString(Node node, Scope scope, int depth) {
             if (node == null || depth >= MAX_RESOLUTION_DEPTH) return null;
-            Node value = resolve(node, depth);
+            Node value = resolve(node, scope, depth);
             if (value.isStringLit()) return value.getString();
             if (value.isTemplateLit()) {
                 StringBuilder out = new StringBuilder();
                 for (Node part : value.children()) {
                     if (part.isTemplateLitString()) out.append(part.getCookedString());
                     else if (part.isTemplateLitSub()) {
-                        String exact = staticString(part.getFirstChild(), depth + 1);
+                        String exact = staticString(part.getFirstChild(), scope, depth + 1);
                         if (exact == null) return null;
                         out.append(exact);
                     }
@@ -419,40 +470,169 @@ public final class JavascriptCallSiteAnalyzer {
                 return out.toString();
             }
             if (value.isAdd()) {
-                String left = staticString(value.getFirstChild(), depth + 1);
-                String right = staticString(value.getLastChild(), depth + 1);
+                String left = staticString(value.getFirstChild(), scope, depth + 1);
+                String right = staticString(value.getLastChild(), scope, depth + 1);
                 return left == null || right == null ? null : left + right;
             }
             return null;
         }
 
-        private Node property(Node object, String name) {
-            if (object == null || !object.isObjectLit()) return null;
-            for (Node child : object.children()) {
+        private Node property(Node object, String name, Scope scope) {
+            Node resolved = resolve(object, scope, 0);
+            if (resolved == null || name == null || !resolved.isObjectLit()) return null;
+            for (Node child : resolved.children()) {
                 if (child.isStringKey() && child.getString().equals(name)) return child.getFirstChild();
             }
             return null;
         }
 
-        private String stringProperty(Node object, String name) {
-            return staticString(property(object, name), 0);
+        private String stringProperty(Node object, String name, Scope scope) {
+            return staticString(property(object, name, scope), scope, 0);
         }
 
-        private void collectAxiosImport(Node importNode) {
+        private void collectAxiosImport(Node importNode, Scope scope) {
             Node module = importNode.getLastChild();
             if (module == null || !module.isStringLit() || !module.getString().equals("axios")) return;
             for (Node child : importNode.children()) {
-                if (child.isName() && !child.getString().isBlank()) axiosAliases.add(child.getString());
+                collectImportedNames(child, scope);
             }
         }
 
-        private boolean isAxiosCreate(Node node) {
-            return node != null && node.isCall() && "axios.create".equals(node.getFirstChild().getQualifiedName());
+        private void collectImportedNames(Node node, Scope scope) {
+            if (node == null || node.isStringLit()) return;
+            if (node.isName() && !node.getString().isBlank()) {
+                Var variable = scope.getVar(node.getString());
+                if (variable != null) axiosImports.add(variable);
+            }
+            for (Node child : node.children()) collectImportedNames(child, scope);
+        }
+
+        private String memberName(Node member, Scope scope, int depth) {
+            if (member == null) return null;
+            if (member.isGetProp()) return member.getString();
+            Node key = member.getLastChild();
+            if (key == null || key == member.getFirstChild()) return null;
+            return member.isGetElem() ? staticString(key, scope, depth + 1) : null;
+        }
+
+        private AxiosDefaults axiosDefaults(String receiver, Scope scope, int depth) {
+            if (receiver == null || depth >= MAX_RESOLUTION_DEPTH) return null;
+            Var variable = scope.getVar(receiver);
+            if (variable != null && axiosImports.contains(variable)) return AxiosDefaults.library();
+            if ("axios".equals(receiver) && variable == null) return AxiosDefaults.library();
+            if (variable == null) return null;
+            if (mutatedDeclarations.contains(variable.getNameNode())) return null;
+            Node initial = variable.getInitialValue();
+            if (initial == null) return null;
+            if (initial.isName()) return axiosDefaults(initial.getString(), scope, depth + 1);
+            if (!initial.isCall()) return null;
+            Node target = initial.getFirstChild();
+            if (target == null || !(target.isGetProp() || target.isGetElem())
+                    || !"create".equals(memberName(target, scope, depth + 1))) return null;
+            Node creator = target.getFirstChild();
+            if (creator == null || !creator.isName()
+                    || axiosDefaults(creator.getString(), scope, depth + 1) == null) return null;
+            List<Node> args = arguments(initial);
+            Node config = args.isEmpty() ? null : resolve(args.get(0), scope, depth + 1);
+            return axiosConfig(AxiosDefaults.library(), config, scope);
+        }
+
+        private AxiosDefaults axiosConfig(AxiosDefaults defaults, Node config, Scope scope) {
+            Node resolved = resolve(config, scope, 0);
+            if (resolved == null || !resolved.isObjectLit()) return defaults;
+            Node base = property(resolved, "baseURL", scope);
+            boolean basePresent = hasProperty(resolved, "baseURL");
+            String baseUrl = basePresent ? staticString(base, scope, 0) : defaults.baseUrl();
+            boolean baseKnown = basePresent ? baseUrl != null : defaults.baseKnown();
+            Node allow = property(resolved, "allowAbsoluteUrls", scope);
+            boolean allowPresent = hasProperty(resolved, "allowAbsoluteUrls");
+            Boolean allowAbsolute = allowPresent ? staticBoolean(allow, scope) : defaults.allowAbsoluteUrls();
+            return new AxiosDefaults(baseUrl, baseKnown, allowAbsolute);
+        }
+
+        private String axiosReference(Node url, Node requestConfig, AxiosDefaults defaults,
+                                      Scope scope, Node call) {
+            String requested = staticReference(url, scope, 0);
+            if (requested == null || requested.isBlank()) {
+                addReferenceIssue(url, scope, "axios", call);
+                return null;
+            }
+            AxiosDefaults effective = axiosConfig(defaults, requestConfig, scope);
+            boolean absolute = absoluteUrl(requested);
+            if (absolute && Boolean.TRUE.equals(effective.allowAbsoluteUrls())) return requested;
+            if (!effective.baseKnown()) {
+                addIssue(JavascriptAnalysis.ResolutionIssueKind.UNRESOLVED_AXIOS_BASE_URL,
+                        "axios", "axios baseURL is not statically resolvable", call);
+                return null;
+            }
+            if (effective.baseUrl() == null || effective.baseUrl().isBlank()) return requested;
+            if (absolute && effective.allowAbsoluteUrls() == null) {
+                addIssue(JavascriptAnalysis.ResolutionIssueKind.UNRESOLVED_AXIOS_BASE_URL,
+                        "axios", "axios allowAbsoluteUrls is not statically resolvable", call);
+                return null;
+            }
+            return normalizeReference(combineUrls(effective.baseUrl(), requested));
+        }
+
+        private boolean hasProperty(Node object, String name) {
+            if (object == null || !object.isObjectLit()) return false;
+            for (Node child : object.children()) {
+                if (child.isStringKey() && child.getString().equals(name)) return true;
+            }
+            return false;
+        }
+
+        private Boolean staticBoolean(Node node, Scope scope) {
+            Node resolved = resolve(node, scope, 0);
+            if (resolved == null) return null;
+            if (resolved.isTrue()) return true;
+            if (resolved.isFalse()) return false;
+            return null;
+        }
+
+        private void addReferenceIssue(Node raw, Scope scope, String adapter, Node call) {
+            Node resolved = resolve(raw, scope, 0);
+            JavascriptAnalysis.ResolutionIssueKind kind;
+            String detail;
+            if (raw != null && (raw.isGetProp() || raw.isGetElem())) {
+                kind = JavascriptAnalysis.ResolutionIssueKind.UNRESOLVED_MEMBER_REFERENCE;
+                detail = "member URL reference is not statically resolvable";
+            } else if (resolved != null && resolved.isCall()) {
+                kind = JavascriptAnalysis.ResolutionIssueKind.UNSUPPORTED_INTERPROCEDURAL_FLOW;
+                detail = "URL returned by a function is not followed";
+            } else {
+                kind = JavascriptAnalysis.ResolutionIssueKind.DYNAMIC_URL;
+                detail = "URL expression is not statically resolvable";
+            }
+            addIssue(kind, adapter, detail, call);
+        }
+
+        private void inspectUnknownWrapper(Node call, String qualified, Scope scope) {
+            if (qualified == null || qualified.indexOf('.') < 0) return;
+            String receiver = qualified.substring(0, qualified.indexOf('.')).toLowerCase(Locale.ROOT);
+            if (!(receiver.contains("api") || receiver.contains("http")
+                    || receiver.contains("client") || receiver.contains("request"))) return;
+            List<Node> args = arguments(call);
+            if (args.isEmpty() || !routeLike(staticReference(args.get(0), scope, 0))) return;
+            addIssue(JavascriptAnalysis.ResolutionIssueKind.UNRECOGNIZED_APPLICATION_WRAPPER,
+                    "javascript-ast", "HTTP-like application wrapper has no declared adapter", call);
+        }
+
+        private void addIssue(JavascriptAnalysis.ResolutionIssueKind kind, String adapter,
+                              String detail, Node node) {
+            if (issues.size() >= MAX_ISSUES) return;
+            JavascriptAnalysis.ResolutionIssue issue = new JavascriptAnalysis.ResolutionIssue(
+                    kind, adapter, detail, node.getLineno(), node.getCharno());
+            if (!issues.contains(issue)) issues.add(issue);
         }
 
         private boolean isNewXmlHttpRequest(Node node) {
             return node != null && node.isNew() && node.getFirstChild() != null
                     && "XMLHttpRequest".equals(node.getFirstChild().getQualifiedName());
+        }
+
+        private record AxiosDefaults(String baseUrl, boolean baseKnown, Boolean allowAbsoluteUrls) {
+            private static AxiosDefaults library() { return new AxiosDefaults(null, true, true); }
         }
     }
 
@@ -475,6 +655,27 @@ public final class JavascriptCallSiteAnalyzer {
         return lower.startsWith("/") || lower.startsWith("./") || lower.startsWith("../")
                 || lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("//")
                 || (!lower.contains(" ") && lower.contains("/"));
+    }
+
+    private static boolean absoluteUrl(String value) {
+        return value != null && value.matches("(?i)^([a-z][a-z0-9+.-]*:)?//.*");
+    }
+
+    private static String combineUrls(String baseUrl, String relativeUrl) {
+        if (relativeUrl == null || relativeUrl.isBlank()) return baseUrl;
+        String base = baseUrl.replaceFirst("/+$", "");
+        String relative = relativeUrl.replaceFirst("^/+", "");
+        return base + "/" + relative;
+    }
+
+    private static String normalizeReference(String value) {
+        if (value.startsWith("/") && value.indexOf("://") > 0) return value;
+        try {
+            return URI.create(value.replace("{expr}", "flowscope-expression"))
+                    .normalize().toString().replace("flowscope-expression", "{expr}");
+        } catch (RuntimeException ignored) {
+            return value;
+        }
     }
 
     private static boolean scriptReference(String value) {

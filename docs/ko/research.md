@@ -6,6 +6,8 @@
 
 > **beta.42 적용 경계:** OpenAPI·HTML form·JavaScript AST call-site에서 얻은 Endpoint/Parameter Declaration은 실제 요청 Observation과 분리해 표시한다. 같은 세션에서 받은 bundle만 정답지로 사용한 recall은 방문하지 않은 lazy chunk를 함께 누락해 과대평가될 수 있으므로 제품 효능 수치에는 쓰지 않는다. 저장소 내부 truth-separated fixture는 구조 회귀이고, 실제 효능은 승인된 pilot에서 별도로 측정한다. 현재 구현 계약은 `endpoint-parameter-surface.md`와 D-113·D-114를 따른다.
 
+> **beta.43 적용 경계:** lexical object member·axios 설정 해석과 typed unresolved 표시는 확인 가능한 정적 근거와 미해석을 구분하는 정확성 보강이다. 자동 회귀만으로 실제 bundle recall·precision 향상이나 framework 지원 Tier를 주장하지 않으며 D-115와 동일 pilot 기준을 적용한다.
+
 ## 1. 분야 지형 (6 계열)
 - (a) **스펙+능동 프로빙 블랙박스 스캐너** — AuthProbe`[프리프린트]`, BOLABuster(Unit42)`[탄탄/벤더]`, Akto`[도구]`
 - (b) **화이트박스(소스/DB)** — BOLAZ(arXiv:2507.02309)`[프리프린트·다저자]`, BolaRay(CCS'24)`[본문·아티팩트 확인]`
@@ -74,4 +76,4 @@
 - BolaRay(CCS'24) `[본문·아티팩트 확인]` — [논문](https://leehaofeng.github.io/papers/2024-BolaRay.pdf), [공개 아티팩트](https://zenodo.org/records/13744942); CODASPY'14 `[초록만]`, BOLABuster(Unit42) `[벤더]`
 
 ---
-*v4 — beta.34 현재 AuthProbe/BOLAZ의 근거 강도를 절대 ground truth로 과장한 문장, action-level BOLA=BFLA 오분류, AuthScope 역할 서열 설명, BOLAZ response-owner-field 인용, APICarv/Log-Coverage의 일반화 범위를 원문 수준으로 교정한 상태다. beta.34의 성능 경계 변경은 이 선행연구 판정을 바꾸지 않으며, 신규성·우월성은 계속 블라인드 평가와 체계적 선행연구 검토 전까지 가설이다.*
+*v4 — beta.34에서 AuthProbe/BOLAZ의 근거 강도를 절대 ground truth로 과장한 문장, action-level BOLA=BFLA 오분류, AuthScope 역할 서열 설명, BOLAZ response-owner-field 인용, APICarv/Log-Coverage의 일반화 범위를 원문 수준으로 교정했다. beta.43의 lexical 해석·실패 가시성 보강도 이 선행연구 판정을 바꾸지 않으며, 신규성·우월성은 계속 블라인드 평가와 체계적 선행연구 검토 전까지 가설이다.*

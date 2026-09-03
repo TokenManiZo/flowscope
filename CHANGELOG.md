@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.43 — 2026-09-03
+
+- JavaScript lexical scope의 불변 object member와 axios instance `baseURL`/요청별 override를 해석해 이전의 누락과 잘못된 상대 endpoint를 수정했습니다.
+- shadowed binding과 재할당된 URL/property, 동적 axios baseURL은 초기값으로 추측하지 않습니다. 동적 URL·member·baseURL·함수 반환·제한된 HTTP-like wrapper 미지원은 산출물 Evidence와 line에 연결된 typed resolution issue로 표시합니다.
+- 기본 `API·입력 차이` 화면은 Surface와 source 제어에 집중하고, 인가용 제어는 인가 화면에서만 표시합니다. 내부 Resource 모델은 유지하면서 사용자 용어를 `접근 대상 ID`로 정리했습니다.
+- 전체 `mvn clean verify`를 두 번 실행해 매회 349 tests가 통과했고 두 beta.43 JAR의 SHA-256이 일치했습니다. standalone no-cache 화면 전환도 warning/error 없이 확인했으며 실제 Burp와 외부 일반화 성능은 아직 검증하지 않았습니다.
+
 ## 1.2.0-beta.42 — 2026-09-03
 
 - JavaScript route/parameter declaration을 정규식에서 실행 없는 Closure Compiler `ECMASCRIPT_NEXT` AST call-site 분석으로 교체했습니다. `fetch`, 실제 XHR binding, axios, jQuery, `sendBeacon`, 정적/dynamic import와 문자열·template·단순 결합을 bounded하게 처리합니다.

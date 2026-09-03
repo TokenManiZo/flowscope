@@ -9,6 +9,8 @@ import io.flowscope.core.SurfaceAnalysis.EndpointFact;
 import io.flowscope.core.SurfaceAnalysis.EndpointKey;
 import io.flowscope.core.SurfaceAnalysis.ExtractionReport;
 import io.flowscope.core.SurfaceAnalysis.ExtractionFailure;
+import io.flowscope.core.SurfaceAnalysis.ExtractionIssue;
+import io.flowscope.core.SurfaceAnalysis.ExtractionIssueKind;
 import io.flowscope.core.SurfaceAnalysis.ExtractionStatus;
 import io.flowscope.core.SurfaceAnalysis.Observation;
 import io.flowscope.core.SurfaceAnalysis.ParameterFact;
@@ -71,7 +73,10 @@ public final class SurfaceAnalyzer {
                 extractionReports.add(new ExtractionReport(record.evidenceId, record.source, record.runId,
                         "JAVASCRIPT", "javascript-ast", extractionStatus(analysis.status()),
                         extractionFailure(analysis), analysis.detail(),
-                        analysis.callSites().size(), analysis.assets().size()));
+                        analysis.callSites().size(), analysis.assets().size(), analysis.issues().stream()
+                        .map(issue -> new ExtractionIssue(ExtractionIssueKind.valueOf(issue.kind().name()),
+                                issue.adapter(), issue.detail(), issue.line(), issue.column()))
+                        .toList()));
             } else if (openApiArtifact(record)) {
                 boolean parsed = parseOpenApi(record.responseBodyForAnalysis()) != null;
                 extractionReports.add(new ExtractionReport(record.evidenceId, record.source, record.runId,

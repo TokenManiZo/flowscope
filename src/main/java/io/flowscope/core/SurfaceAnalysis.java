@@ -13,6 +13,13 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     public enum Requirement { REQUIRED, OPTIONAL, UNKNOWN }
     public enum ExtractionStatus { PARSED, PARTIAL, FAILED, LIMIT_EXCEEDED }
     public enum ExtractionFailure { NONE, SYNTAX_RECOVERY, PARSE_FAILED, INPUT_SIZE_LIMIT, AST_NODE_LIMIT }
+    public enum ExtractionIssueKind {
+        DYNAMIC_URL,
+        UNRESOLVED_MEMBER_REFERENCE,
+        UNRESOLVED_AXIOS_BASE_URL,
+        UNRECOGNIZED_APPLICATION_WRAPPER,
+        UNSUPPORTED_INTERPROCEDURAL_FLOW
+    }
     public enum DeltaState {
         DECLARED_NOT_OBSERVED,
         ONE_SOURCE_OBSERVED,
@@ -34,9 +41,23 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     public record Declaration(String evidenceId, Source source, String runId, String type,
                               String adapter, String reason) {}
 
+    public record ExtractionIssue(ExtractionIssueKind kind, String adapter, String detail,
+                                  int line, int column) {}
+
     public record ExtractionReport(String evidenceId, Source source, String runId, String artifactKind,
                                    String adapter, ExtractionStatus status, ExtractionFailure failure, String detail,
-                                   int endpointCallSites, int assetReferences) {}
+                                   int endpointCallSites, int assetReferences, List<ExtractionIssue> issues) {
+        public ExtractionReport {
+            issues = issues == null ? List.of() : List.copyOf(issues);
+        }
+
+        public ExtractionReport(String evidenceId, Source source, String runId, String artifactKind,
+                                String adapter, ExtractionStatus status, ExtractionFailure failure, String detail,
+                                int endpointCallSites, int assetReferences) {
+            this(evidenceId, source, runId, artifactKind, adapter, status, failure, detail,
+                    endpointCallSites, assetReferences, List.of());
+        }
+    }
 
     public record ParameterFact(ParameterLocation location, String fieldPath, String displayName,
                                 Requirement requirement, Set<ValueShape> observedShapes,

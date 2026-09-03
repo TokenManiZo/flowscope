@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.42
+# FlowScope 1.2.0-beta.43
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -65,9 +65,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.42.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.42 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.43.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.43 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.42.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.43.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

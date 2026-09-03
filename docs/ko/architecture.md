@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.42
+# FlowScope 설계서 v1.2.0-beta.43
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -178,13 +178,13 @@ routeCandidates ──▶ provenance·미요청 route ──┘
 
 - endpoint key는 `service + method + canonical path template`, parameter key는 `endpoint + PATH/QUERY/JSON_BODY/FORM_BODY/MULTIPART_BODY/GRAPHQL_VARIABLE + fieldPath`다.
 - 요청 값은 저장하지 않고 shape만 남긴다. source/run/identity/status와 Evidence ID는 Observation에 유지한다.
-- OpenAPI/Swagger local `$ref`, HTML form control, JavaScript AST가 직접 확인한 `fetch`·XHR·axios·jQuery·`sendBeacon`의 URL/method/query/body key만 Declaration으로 만든다. 문자열·template literal·단순 결합과 제한된 `const` 참조는 처리하지만 임의 wrapper 의미, 일반 data flow, 난독화 값은 추정하지 않는다.
+- OpenAPI/Swagger local `$ref`, HTML form control, JavaScript AST가 직접 확인한 `fetch`·XHR·axios·jQuery·`sendBeacon`의 URL/method/query/body key만 Declaration으로 만든다. lexical scope의 불변 literal·object member, template literal·단순 결합과 axios instance의 정적 `baseURL`/요청별 override를 처리하지만 재할당, 임의 wrapper 의미, 일반 data flow, 난독화 값은 추정하지 않는다.
 - 정적·dynamic import와 HTML script/modulepreload/preload/prefetch는 후속 분석할 client asset 후보로 유지하되 API surface로 세지 않는다. Next.js pages-router build manifest adapter도 route key를 API로 오인하지 않고 chunk 참조만 만든다.
 - GraphQL HTTP 요청은 `path#operationName` endpoint와 `variables` field를 관측하며 `query`·`operationName` transport 필드는 입력 surface에서 제외한다. introspection/schema declaration은 아직 없다.
 - 타깃 host와 업무명은 분기 조건이 아니다. 프레임워크 adapter는 공개 산출물의 명시 구조를 읽을 때만 route discovery 뒤에 붙고 공통 fact schema나 판정 코어를 바꾸지 않는다.
-- `surface.extractions`는 HTML/OpenAPI/JavaScript 산출물별 `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 실패 범주, Evidence ID와 추출 수를 보존한다. 빈 추출과 파서 실패를 같은 상태로 숨기지 않는다.
+- `surface.extractions`는 HTML/OpenAPI/JavaScript 산출물별 `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, typed call-site resolution issue, Evidence ID·line과 추출 수를 보존한다. 문법 파싱 성공과 모든 call-site 해석 성공을 같은 상태로 취급하지 않는다.
 - 선언 미관측은 다음 검토 위치이며 coverage gap이나 취약점이 아니다. 서버에만 있는 표면은 알 수 없다고 표시하고 전체 퍼센트를 만들지 않는다.
-- Resource와 owner는 이 projection에서 삭제하지 않고 인가 상세층에 유지한다. 따라서 Surface UI 변경이 기존 BOLA/BFLA 후보·Evidence 계약을 바꾸지 않는다.
+- 내부 `Resource`와 owner는 이 projection에서 삭제하지 않고 인가 상세층에 유지한다. 사용자 화면에서는 의미가 불명확한 `객체` 대신 `접근 대상 ID`로 표시한다. 따라서 Surface UI 변경이 기존 BOLA/BFLA 후보·Evidence 계약을 바꾸지 않는다.
 
 세부 계약과 held-out 평가 기준은 `endpoint-parameter-surface.md`, 기본 projection 결정은 D-113, AST·adapter 경계는 D-114를 따른다.
 
@@ -312,6 +312,6 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
 - Repeater handoff는 live 원문이 메모리에 있으면 그 원문, 아니면 마스킹 전문을 미전송 초안으로 연다. Repeater에서 사용자가 별도로 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다. Web 요청 실험실 전송만 서버가 직접 새 HUMAN `VALIDATION` Evidence로 기록한다.
 - 포트 매핑은 확장 로드 시 시스템 속성으로 읽으므로 변경 후 Burp를 다시 시작한다.
-- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.34 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v3·SQLite v2 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
+- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.43 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v3·SQLite v2 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
 
 세부 결정과 기각 대안은 `decisions.md`를 참조한다.

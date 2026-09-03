@@ -1,5 +1,43 @@
 # FlowScope 개발 기록
 
+## 2026-09-03 · 1.2.0-beta.43 · JavaScript URL 해석 정확도와 검토면 정리
+
+### 목표와 성공 조건
+
+- object map과 axios instance를 범용 JavaScript 문법 근거로 해석하되 shadowing·재할당·동적 설정에서 거짓 endpoint를 만들지 않는다.
+- parser 성공과 call-site 완전 해석을 구분하고, 미해석 원인을 사용자가 Evidence와 source line으로 확인할 수 있게 한다.
+- 기본 Surface 작업면에서 인가용 제어를 치우고 사용자 용어를 `접근 대상 ID`로 정리하되 기존 Resource/owner/BOLA·BFLA 분석을 바꾸지 않는다.
+
+### 개발·수정
+
+- Closure `Scope/Var` 기반 lexical resolver로 불변 literal·object member, bracket member, template·단순 결합을 처리한다. 같은 이름의 지역·외부 binding을 분리하고 재할당된 binding/property는 초기값으로 해석하지 않는다.
+- 실제 axios import/direct client와 `axios.create` instance를 구분한다. 정적 instance `baseURL`, 요청별 `baseURL`·`allowAbsoluteUrls` override와 absolute URL 결합을 적용하며 동적 baseURL에서는 틀린 상대 endpoint를 만들지 않는다.
+- `DYNAMIC_URL`, `UNRESOLVED_MEMBER_REFERENCE`, `UNRESOLVED_AXIOS_BASE_URL`, `UNRECOGNIZED_APPLICATION_WRAPPER`, `UNSUPPORTED_INTERPROCEDURAL_FLOW`를 산출물별 typed issue로 추가했다. Surface snapshot과 Web 요약은 issue 수·Evidence·line·detail을 표시한다.
+- 왼쪽 제어 rail을 Surface/shared, 인가/shared, raw/shared 문맥으로 나눴다. 기본 Surface에는 Surface·source만, 인가 화면에는 인가 제어만 보인다. 화면의 `객체` 용어는 `접근 대상 ID`로 바꿨지만 내부 모델은 유지했다.
+
+### 이유와 기각한 대안
+
+- 전역 변수명 map은 lexical shadowing을 구분하지 못하고, 재할당된 `let`·object property의 초기값을 현재 URL로 오인할 수 있어 사용하지 않았다.
+- 동적 axios baseURL을 무시하고 `/inst`를 실제 endpoint처럼 올리면 검토 노이즈가 증가하므로 후보 대신 해석 실패로 남긴다. 임의 wrapper 실행·이름 사전도 대상 코드 실행과 target tuning 문제 때문에 넣지 않았다.
+- Resource를 삭제하면 BOLA/IDOR의 접근 대상과 owner 관계가 사라지므로 데이터 모델은 보존하고 사용자 표현만 바꿨다.
+
+### 영향 파일
+
+- 코드: `JavascriptAnalysis.java`, `JavascriptCallSiteAnalyzer.java`, `SurfaceAnalysis.java`, `SurfaceAnalyzer.java`, `McpServer.java`, `index.html`
+- 회귀: `JavascriptCallSiteAnalyzerTest.java`, `SurfaceAnalyzerTest.java`, `FlowScopeWebServerTest.java`, `McpServerTest.java`
+- 문서: README, architecture, decisions D-115, Endpoint·Parameter Surface, 제품 계획, UI 근거, 한·영 시작·변경 이력, 인계·검증 기록
+
+### 재현과 검증
+
+- 실패 우선 회귀에서 object member call-site가 0건이고 axios instance가 baseURL 없이 `/items`로 나오는 것을 재현했다. 동적 baseURL·재할당 URL은 거짓 endpoint 대신 typed issue가 되어야 한다는 회귀도 추가했다.
+- 집중 분석기·Surface·Web 테스트를 통과했다. OpenJDK 26.0.2에서 Java `release 21` 대상으로 전체 `mvn clean verify`를 연속 두 번 실행해 매회 349 tests, failure/error/skip 0을 확인했다. 두 JAR은 31,081,416 bytes·9,105 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `f783066814e577efce4fb2e42dceb4ce3a11482c6bd574fbaf6e00a2e8cef4f6`로 동일했다.
+- standalone을 no-cache URL로 열어 기본 Surface rail `surface/shared`, 인가 화면 `auth/shared`, `접근 대상` 용어, sample endpoint 4개·입력 field 5개를 확인했다. 화면 전환 뒤 browser warning/error는 0건이었다.
+
+### 남은 한계·다음 gate
+
+- 함수 간 data flow, axios defaults mutation·interceptor, 임의 application wrapper, source map, 미수신 lazy chunk와 서버 전용 route는 미지원이다. HTTP-like wrapper issue도 전체 wrapper 탐지율을 보장하지 않는다.
+- 저장소 내부 구조 회귀는 실제 앱의 precision/recall 또는 진단 시간 개선 증거가 아니다. 실제 Burp 재로드와 독립 corpus/pilot은 별도 gate다.
+
 ## 2026-09-03 · 1.2.0-beta.42 · AST 기반 선언 추출과 실패 가시성
 
 ### 목표와 성공 조건
@@ -38,8 +76,8 @@
 
 ### 남은 한계·다음 gate
 
-- 1~8은 구현·자동 회귀와 standalone 화면 gate를 통과했다. 실제 Burp 확장 재로드, 실제 bundle의 precision/recall·검토량·성능, source map·Next App Router 내부 manifest·GraphQL schema는 검증하지 않았다.
-- 9는 사용자가 승인한 외부 exact scope가 없어 미실행이다. 10의 지원 Tier는 외부 pilot 결과 전에는 정하지 않는다.
+- 1~4는 구현·자동 회귀와 standalone 화면 gate를 통과했다. 5는 저장소 내부 합성 truth의 구조 회귀이고, 6은 parser/limit과 일부 해석 실패 분류, 7은 Next.js pages-router manifest의 chunk 연결, 8은 공통 asset/GraphQL 관측 회귀까지만 확인했다. beta.42에서 이를 “1~8 완료”라고 묶은 표현은 외부 효능과 framework 지원 범위를 과장하므로 beta.43에서 정정했다.
+- 실제 Burp 확장 재로드, 실제 bundle의 precision/recall·검토량·성능, source map·Next App Router 내부 manifest·GraphQL schema는 검증하지 않았다. 9는 사용자가 승인한 외부 exact scope가 없어 미실행이고, 10의 지원 Tier는 외부 pilot 결과 전에는 정하지 않는다.
 - Vue/Nuxt·Angular는 표준 HTML/ESM asset 발견까지만 확인했다. 제품 전용 adapter가 필요한지는 pilot 실패 사례를 먼저 분류한 뒤 결정한다.
 
 ## 2026-09-03 · 1.2.0-beta.41 · 범용 Endpoint·Parameter Surface Delta
