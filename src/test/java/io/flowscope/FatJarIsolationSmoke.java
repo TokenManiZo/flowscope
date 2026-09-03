@@ -37,6 +37,7 @@ public final class FatJarIsolationSmoke {
                     "io.flowscope.shaded.snakeyaml.internal.Logger",
                     "io/flowscope/shaded/snakeyaml/internal/Logger.class",
                     "META-INF/versions/9/");
+            Class.forName("io.flowscope.shaded.closure.jscomp.Compiler", true, firstLoader);
 
             Object mapper = Class.forName("io.flowscope.shaded.jackson.databind.ObjectMapper", true, firstLoader)
                     .getDeclaredConstructor()

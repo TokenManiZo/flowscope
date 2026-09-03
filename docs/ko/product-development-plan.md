@@ -1,6 +1,21 @@
-# FlowScope 1.2.0-beta.41 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.42 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.41 절만 현재 우선순위다. 아래 beta.40 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.41 절을 따른다.
+> **읽는 법:** 맨 위 beta.42 절만 현재 우선순위다. beta.41 이하 절은 당시 계획과 검증 상태를 보존한 이력이다.
+
+## 0. beta.42 우선순위: 범용 선언 추출과 검증 가능한 실패 경계
+
+1. 범용 HTTP·parameter observation을 query/path/JSON/form/multipart/GraphQL variable 단위로 완성한다.
+2. OpenAPI·HTML form parameter declaration을 실제 산출물 Evidence에 연결한다.
+3. 정규식 JavaScript 추출을 실행 없는 `ECMASCRIPT_NEXT` AST call-site 분석으로 교체한다.
+4. endpoint·parameter delta 화면에 H/S/L 관측뿐 아니라 산출물 파싱 정상·부분·실패·상한을 표시한다.
+5. 분석기에 전달하지 않는 별도 truth를 가진 held-out fixture에서 endpoint·parameter·asset exact set을 확인한다.
+6. syntax recovery, parser failure, input/AST limit, application wrapper, unobserved lazy asset, server-only unknown을 구분한다.
+7. held-out에서 일반 asset 연결로 부족한 Next.js pages-router build manifest의 client chunk 참조만 전용 adapter로 보완한다.
+8. Vue/Nuxt·Angular는 공통 HTML/ESM asset 경로로, GraphQL은 observed operation/variables로 검증하고 제품별 의미 추정은 추가하지 않는다.
+9. 정확한 범위와 승인을 받은 외부 대상에서 pilot한다.
+10. pilot 결과의 정확도·검토량·실패 구조를 근거로 지원 Tier를 조정한다.
+
+**현재 상태:** 1~8은 코드·집중 회귀, 340 tests의 clean verify 연속 2회, byte-for-byte 재현 JAR과 standalone Web 확인을 통과했다. 실제 Burp beta.42 재로드는 별도 운영 gate다. 9는 승인된 exact scope가 없어 미실행이며, 10은 그 결과 전에는 확정하지 않는다. 상세 계약과 정확한 검증 수치는 `endpoint-parameter-surface.md`, `beta-validation.md`를 따른다.
 
 ## 0. beta.41 우선순위: 범용 Endpoint·Parameter Surface Delta
 

@@ -29,14 +29,14 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
 
-1. If `flowscope-1.2.0-beta.41.jar` is published on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. Otherwise clone the repository and use the source-build section to create the same JAR locally.
+1. If `flowscope-1.2.0-beta.42.jar` is published on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. Otherwise clone the repository and use the source-build section to create the same JAR locally.
 2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
 3. Load the JAR from **Extensions → Installed → Add → Java**.
 4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777` and MCP `8787`.
 
 Release users do not need Maven. A custom Java runtime used to launch Burp must support Java 21 class files.
 
-Open **Quick Start** at Web `127.0.0.1:17777`. It shows Scope, HUMAN, ZAP, and LLM/Judge status but opens only the first incomplete panel. Complete the visible panel, use a stage tab to inspect another setting, or select **Current stage** to return to the required step. After collection, inspect the default **놓친 API·입력** surface for endpoint/parameter declaration-versus-observation deltas, then drill into **인가 그래프** and the matrix. An unobserved item is not a vulnerability or a failed lane.
+Open **Quick Start** at Web `127.0.0.1:17777`. It shows Scope, HUMAN, ZAP, and LLM/Judge status but opens only the first incomplete panel. Complete the visible panel, use a stage tab to inspect another setting, or select **Current stage** to return to the required step. After collection, inspect the default **API·입력 차이** surface for endpoint/parameter declaration-versus-observation deltas and artifact parsing failures, then drill into **인가 그래프** and the matrix. An unobserved item is not a vulnerability or a failed lane.
 
 ## Choose ZAP Desktop or Docker
 

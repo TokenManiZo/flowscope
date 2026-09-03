@@ -118,7 +118,7 @@ class RouteCandidateExtractorTest {
     }
 
     @Test
-    void 관측_JavaScript_literal은_후보지만_문자열조합은_꾸며내지_않는다() {
+    void 관측_JavaScript_AST는_literal과_구조가_보이는_dynamic_template을_분리한다() {
         RequestRecord script = new RequestRecord(Source.HUMAN, "https://app.test:443",
                 "GET", "/app/main.js", 200, "anon");
         script.hasResponse = true;
@@ -130,13 +130,16 @@ class RouteCandidateExtractorTest {
         List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(script),
                 ScopePolicy.parse("https://app.test/app/"), List.of());
 
-        assertEquals(3, candidates.size());
+        assertEquals(4, candidates.size());
         assertTrue(candidates.stream().anyMatch(value -> value.method().equals("GET")
                 && value.pathTemplate().equals("/app/api/users/{id}")));
         assertTrue(candidates.stream().anyMatch(value -> value.method().equals("POST")
                 && value.pathTemplate().equals("/app/api/orders/{id}")));
         assertTrue(candidates.stream().anyMatch(value -> value.method().equals("UNKNOWN")
                 && value.pathTemplate().equals("/app/api/dynamic")));
+        assertTrue(candidates.stream().anyMatch(value -> value.method().equals("GET")
+                && value.pathTemplate().equals("/app/api/orders/{id}")
+                && value.concretePaths().isEmpty()));
         assertTrue(candidates.stream().allMatch(value -> value.applicability() == RouteCandidate.Applicability.REVIEW));
     }
 
@@ -279,7 +282,28 @@ class RouteCandidateExtractorTest {
         assertTrue(candidate.provenance().stream().anyMatch(value -> value.source() == Source.HUMAN
                 && value.adapter().equals("html-dom") && value.evidenceId().equals(human.evidenceId)));
         assertTrue(candidate.provenance().stream().anyMatch(value -> value.source() == Source.LLM
-                && value.adapter().equals("javascript-static-literal") && value.evidenceId().equals(llm.evidenceId)));
+                && value.adapter().equals("javascript-ast") && value.evidenceId().equals(llm.evidenceId)));
+    }
+
+    @Test
+    void 모던번들의_정적동적_import와_Next_manifest_chunk를_탐색후보로_보존한다() {
+        RequestRecord module = document("/assets/main.mjs", "application/javascript", """
+                import './shared.js';
+                const feature = './feature.mjs';
+                import(feature);
+                """, Source.HUMAN, "human-run");
+        RequestRecord next = document("/_next/static/build/_buildManifest.js", "application/javascript", """
+                self.__BUILD_MANIFEST={"/admin":["static/chunks/pages/admin-a1.js"],
+                  "/orders":["static/chunks/pages/orders-b2.js"]};
+                """, Source.HUMAN, "human-run");
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(List.of(module, next),
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        assertCandidate(candidates, "GET", "/assets/shared.js", "javascript-ast");
+        assertCandidate(candidates, "GET", "/assets/feature.mjs", "javascript-ast");
+        assertCandidate(candidates, "GET", "/_next/static/chunks/pages/admin-a1.js", "next-build-manifest");
+        assertCandidate(candidates, "GET", "/_next/static/chunks/pages/orders-b2.js", "next-build-manifest");
     }
 
     private RequestRecord document(String path, String mediaType, String body, Source source, String runId) {

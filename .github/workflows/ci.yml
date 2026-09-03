@@ -33,11 +33,14 @@ jobs:
           jar tf "$release_jar" | grep -q '^io/flowscope/shaded/jackson/'
           jar tf "$release_jar" | grep -q '^io/flowscope/shaded/jsoup/'
           jar tf "$release_jar" | grep -q '^io/flowscope/shaded/snakeyaml/'
+          jar tf "$release_jar" | grep -q '^io/flowscope/shaded/closure/'
           jar tf "$release_jar" | grep -q 'META-INF/LICENSE-apache-2.0.txt'
           jar tf "$release_jar" | grep -q 'META-INF/NOTICE'
           jar tf "$release_jar" | grep -q 'META-INF/FastDoubleParser-LICENSE'
           jar tf "$release_jar" | grep -q 'META-INF/FastDoubleParser-ThirdParty-LICENSE'
           jar tf "$release_jar" | grep -q 'META-INF/Schubfach-LICENSE'
+          jar tf "$release_jar" | grep -q '^META-INF/LICENSE.txt$'
+          jar tf "$release_jar" | grep -q '^THIRD_PARTY_NOTICES$'
           jar tf "$release_jar" | grep -q '^META-INF/versions/21/io/flowscope/shaded/jackson/'
           jar tf "$release_jar" | grep -q '^META-INF/versions/11/io/flowscope/shaded/jsoup/'
           jar tf "$release_jar" | grep -q '^META-INF/versions/9/io/flowscope/shaded/snakeyaml/'
@@ -50,6 +53,7 @@ jobs:
           if jar tf "$release_jar" | grep -Eq '^(com/fasterxml/jackson/|META-INF/versions/.*/com/fasterxml/jackson/)'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(org/jsoup/|META-INF/versions/.*/org/jsoup/)'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(org/yaml/snakeyaml/|META-INF/versions/.*/org/yaml/snakeyaml/)'; then exit 1; fi
+          if jar tf "$release_jar" | grep -q '^com/google/javascript/'; then exit 1; fi
       - name: Verify reproducible package
         shell: bash
         run: |

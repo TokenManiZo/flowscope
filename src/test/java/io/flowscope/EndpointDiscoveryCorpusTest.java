@@ -63,7 +63,7 @@ final class EndpointDiscoveryCorpusTest {
                     + " missing=" + missing + " unexpected=" + unexpected);
         }
 
-        assertEquals(18, truePositive, "고정 truth set의 알려진 route 수");
+        assertEquals(20, truePositive, "고정 truth set의 알려진 route 수");
         assertEquals(0, falsePositive, "고정 fixture에서 꾸며낸 route 회귀");
         assertEquals(0, falseNegative, "고정 fixture에서 놓친 route 회귀");
     }

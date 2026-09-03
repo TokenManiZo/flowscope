@@ -1,65 +1,70 @@
-# Endpoint·Parameter Surface Delta 설계와 검증 계획
+# Endpoint·Parameter Surface Delta 설계·검증
 
-이 문서는 FlowScope가 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하고 보여 주는 현재 계약과 다음 검증 순서를 정의한다. 인가 판정의 정본은 `architecture.md`와 `decisions.md`이며, 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다.
+이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.42 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다.
 
 ## 1. 제품 질문
 
-첫 화면은 다음 질문에 답해야 한다.
+> 대상이 명시한 API·입력과 실제 HTTP Evidence를 비교했을 때, 어느 출처가 어떤 엔드포인트와 파라미터를 관측했고 무엇이 현재 미관측인가?
 
-> 대상이 명시한 API·입력과 실제 HTTP Evidence를 비교했을 때, 어느 출처가 어떤 엔드포인트와 파라미터를 관측했고 무엇이 아직 미관측인가?
+`미관측`은 취약점, 도달 가능, 실제 기능 또는 lane 실패를 뜻하지 않는다. 현재 데이터셋에서 선언과 대응하는 Request/Response Evidence를 찾지 못했다는 뜻뿐이다. 블랙박스의 서버 전용 표면은 알 수 없으므로 전체 완료 퍼센트를 만들지 않는다.
 
-`미관측`은 취약점, 도달 가능, 실제 기능 또는 특정 source의 실패를 뜻하지 않는다. 해당 선언과 대응하는 실제 Request/Response Evidence를 현재 데이터셋에서 찾지 못했다는 뜻뿐이다.
-
-## 2. 데이터 계층
+## 2. 사실 모델
 
 ```text
-Raw Evidence
-  ├─ 실제 HTTP 요청/응답
-  └─ 실제 응답으로 받은 OpenAPI·HTML·JavaScript
-        ↓
-Observation Fact                    Declaration Fact
-실제로 요청한 endpoint/parameter    산출물에 명시된 endpoint/parameter
-        └──────────────┬──────────────┘
-                       ↓
-             Endpoint·Parameter Delta
-                       ↓
-      인가 그래프·매트릭스·재현 검토(별도 상세층)
+실제 HTTP Request/Response ─────────────▶ Observation Fact ─┐
+응답으로 받은 OpenAPI·HTML·JavaScript ─▶ Declaration Fact ─┼─▶ Endpoint·Parameter Delta
+산출물 파싱 결과 ──────────────────────▶ Extraction Report ─┘
+                                                            ↓
+                                         인가 그래프·재현 검토(상세층)
 ```
 
 - `EndpointKey = service + method + canonical path template`
 - `ParameterKey = EndpointKey + location + fieldPath`
-- 위치는 `PATH`, `QUERY`, `JSON_BODY`, `FORM_BODY`, `MULTIPART_BODY`다.
-- 값은 저장하지 않는다. 관측 형태(`STRING`, `INTEGER`, `UUID`, `ARRAY` 등), source, run, identity, status와 Evidence ID만 보존한다.
-- 비밀값 원문, 조합 가능한 값 목록, 인증 header는 surface snapshot에 포함하지 않는다.
-- `SurfaceAnalysis`는 저장된 Evidence와 `RouteCandidate`에서 결정론적으로 다시 만들 수 있는 projection이다. 별도 SQLite 정본 테이블을 만들지 않는다.
+- 위치: `PATH`, `QUERY`, `JSON_BODY`, `FORM_BODY`, `MULTIPART_BODY`, `GRAPHQL_VARIABLE`
+- 관측에는 값 대신 shape, source, run, identity, status와 Evidence ID만 둔다.
+- 선언에는 type, adapter, reason과 Evidence ID를 둔다.
+- 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 실패 범주와 추출 수를 둔다.
+- 비밀값 원문, 조합 가능한 값 목록, 인증 header는 surface snapshot에 넣지 않는다.
+- `SurfaceAnalysis`는 Evidence에서 재생성되는 projection이다. SQLite에 두 번째 정본을 만들지 않는다.
 
 ## 3. 범용 추출 계약
 
-### 실제 관측
+### 실제 HTTP 관측
 
-- query string 이름과 값 형태
-- JSON body의 중첩 field path와 배열 형태
-- `application/x-www-form-urlencoded` 이름
-- multipart의 `Content-Disposition name`
+- query 이름과 값 shape
 - canonical path template의 변수 위치
+- 중첩 JSON field path와 배열 shape
+- form-urlencoded 이름
+- multipart `Content-Disposition name`
+- GraphQL은 `path#operationName`과 `variables` field. `query`·`operationName` transport 필드는 제외
 
-### 선언
+### 대상 선언
 
-- OpenAPI/Swagger의 path/query parameter, request body schema, 로컬 `$ref`
-- HTML form의 action/method와 이름 있는 control
-- 정적 JavaScript literal URL의 query 이름
-- 같은 호출 표현식 안에서 직접 확인되는 `fetch`/axios 계열 request object의 literal body key
-- 기존 route discovery provenance
+- OpenAPI/Swagger path/query parameter, request body schema, local `$ref`
+- HTML form action/method, 성공 가능한 이름 있는 control, submitter의 `formaction/formmethod`
+- JavaScript AST에서 직접 확인한 `fetch`, `XMLHttpRequest`, axios, jQuery, `sendBeacon` call-site
+- 해당 call-site의 static URL, method, query 이름과 literal object body key
+- 문자열, template literal, 단순 `+` 결합과 제한된 `const/let` 참조
 
-### 하지 않는 것
+### client asset inventory
 
-- 타깃 이름, host, `/orders` 같은 업무 명사를 조건으로 삼지 않는다.
-- React·Next.js 등 프레임워크를 보고 의미를 추정하지 않는다.
-- 문자열 결합, 런타임 계산, 암호화·난독화된 route를 실제 값처럼 복원하지 않는다.
-- 서버에만 존재하는 endpoint를 블랙박스 전체 분모에 넣지 않는다.
-- header 전체를 기본 파라미터 표면으로 세지 않는다. 인증·브라우저 협상·추적 header가 입력 작업목록을 압도하고 비밀 경계를 넓히기 때문이다. 명시 schema가 생기면 비밀값 없는 별도 adapter로 검토한다.
+- HTML `script[src]`, `modulepreload`, script `preload/prefetch`
+- ECMAScript static/dynamic import
+- Next.js pages-router `__BUILD_MANIFEST`의 client chunk 참조
 
-## 4. 상태와 표시
+asset은 후속 JavaScript 분석 대상으로만 남긴다. HTML navigation과 script file을 API endpoint로 세지 않는다. Next manifest의 화면 route key도 API로 추정하지 않는다.
+
+### 명시적 비지원
+
+- application 고유 wrapper의 HTTP 의미
+- 일반 interprocedural data flow, 런타임 계산, 난독화 복원, source map
+- 아직 받지 않은 lazy chunk
+- GraphQL introspection/schema declaration과 batch request 완전 분리
+- 서버에만 존재하는 endpoint·조건부 입력
+
+타깃 host, 업무 명사, crAPI 정답은 규칙 조건으로 쓰지 않는다. 프레임워크 adapter는 공개 산출물의 명시 구조를 읽어 공통 route/fact schema로 변환할 때만 추가한다.
+
+## 4. 차이 상태와 화면
 
 | 상태 | 뜻 |
 |---|---|
@@ -67,67 +72,73 @@ Observation Fact                    Declaration Fact
 | `ONE_SOURCE_OBSERVED` | 선언된 항목을 H/S/L 중 한 source에서 관측 |
 | `MULTI_SOURCE_OBSERVED` | 두 source에서 관측 |
 | `ALL_SOURCES_OBSERVED` | 세 source에서 관측 |
-| `OBSERVED_NOT_DECLARED` | 실제 관측은 있으나 현재 선언 산출물에서 근거를 찾지 못함 |
+| `OBSERVED_NOT_DECLARED` | 실제 관측은 있으나 현재 선언 산출물에서 근거 없음 |
 
-첫 화면은 이 상태를 endpoint 행과 parameter badge로 보여 준다. `H/S/L —`는 미관측 표시이며 해당 lane이 완료됐다는 뜻이 아니다. lane 완료를 확인하지 않은 상태에서 “놓쳤다”고 확정하지 않는다. Resource/object와 owner는 삭제하지 않고 API를 선택한 인가 상세층에 유지한다.
+기본 화면 `API·입력 차이`는 endpoint 행, parameter badge, source별 관측과 provenance를 보여 준다. source checkbox를 끄면 행·badge·상태·통계·상세 Evidence가 같은 projection으로 다시 계산되며 원 Evidence는 삭제되지 않는다.
 
-source checkbox는 표시 장식이 아니라 현재 projection 필터다. 체크를 끈 source는 endpoint·parameter badge, delta 문구, 통계와 상세 Evidence에서 함께 빠지며 원 Evidence는 삭제되지 않는다.
+산출물 요약은 분석 대상 수, 정상 수와 부분/실패/상한 수를 함께 표시한다. 실패가 있으면 종류·범주·Evidence ID·제한된 이유를 표시한다. 따라서 결과 0건이 “실제로 API가 없음”인지 “분석기가 읽지 못함”인지 구분할 수 있다.
 
-## 5. 현재 구현과 한계
+Resource/object와 owner는 첫 화면에서 펼치지 않고 선택 API의 인가 상세층에 유지한다. 이 projection은 기존 BOLA/IDOR·BFLA 판정 입력을 바꾸지 않는다.
 
-beta.41은 다음을 구현한다.
+## 5. 구현 상한
 
-- `SurfaceAnalysis`의 값 없는 사실 모델
-- `SurfaceAnalyzer`의 관측·OpenAPI·HTML form·정적 JavaScript literal 추출
-- Web snapshot의 `surface.endpoints`
-- 기본 `놓친 API·입력` 작업목록과 endpoint별 provenance/Evidence 상세
-- Standalone도 입력 Evidence의 service를 로컬 scope로 삼아 route candidate와 surface를 재생성
-- 동일 snapshot revision의 projection 재사용과, 다른 JavaScript 문장의 객체 key를 앞 요청에 붙이지 않는 호출 경계
+- JavaScript 입력 1,048,576자, AST 순회 250,000노드, call-site 20,000개, asset 20,000개
+- call-site당 parameter 1,024개, 참조 해석 깊이 12
+- endpoint당 parameter 1,024개, 관측 JSON 깊이 16, OpenAPI schema 깊이 20
+- JavaScript 분석 cache 128개. key는 원문 대신 SHA-256 digest, value는 추출 결과만 두며 dataset 교체·초기화 시 비운다.
 
-아직 구현 또는 실증되지 않은 범위:
+Closure Compiler는 `ECMASCRIPT_NEXT` parser로만 사용하고 target JavaScript를 실행하지 않는다. Node, Chrome, Playwright 또는 네트워크가 이 정적 추출에 필요하지 않다. dependency는 버전을 고정하고 fat JAR에서 relocation하며 원 LICENSE·NOTICE·third-party notice를 보존한다.
 
-- JavaScript AST와 source map을 이용한 alias/wrapper/data-flow 분석
-- lazy chunk를 받지 않은 화면의 선언 분모
-- GraphQL schema의 argument와 operation별 variable 계약
-- framework-specific manifest/router adapter
-- lane 완료 상태를 결합한 확정 “source 누락” 문구
-- 실제 다양한 앱에서 endpoint·parameter precision/recall 우월성
+## 6. held-out fixture와 실패 분류
 
-## 6. 특정 타깃 튜닝 방지
+`src/test/resources/surface-heldout/`는 개발용 단위 입력과 분리된 server-truth fixture다. `truth.json`은 분석기 입력에 전달하지 않고 테스트가 끝난 뒤 exact set을 비교한다.
 
-1. fixture는 업무명 대신 구조 특성으로 나눈다: REST/JSON, form, multipart, SPA static bundle, OpenAPI, GraphQL.
-2. 같은 구조에서 route·field 이름만 무작위로 바꾼 semantic-renaming 회귀를 둔다.
-3. 개발 corpus와 최종 held-out corpus를 분리한다.
-4. crAPI는 사용성·통합 확인 대상일 수 있으나 규칙 튜닝과 정답 작성에 사용하지 않는다.
-5. 실패 사례는 새 타깃 이름 조건이 아니라 새로운 표준 문법 또는 명시적 adapter 계약으로만 일반화한다.
+현재 fixture 계약:
 
-## 7. 평가 계획
+- endpoint 7개
+- parameter 18개
+- client asset 5개
+- application wrapper 1개는 `UNRECOGNIZED_APPLICATION_WRAPPER`로 명시적 비지원
+- OpenAPI, HTML form/submitter, modern ESM, axios/fetch, Next pages manifest, Nuxt형 module asset, Angular형 module script, GraphQL operation/variables 포함
 
-### 단위 정확성
+이 fixture는 자기 저장소 안에서 작성한 구조 회귀다. 실제 다양한 앱의 효과나 외부 일반화 성능을 증명하는 독립 benchmark는 아니다.
+
+실패는 다음처럼 분리한다.
+
+| 범주 | 현재 처리 |
+|---|---|
+| syntax recovery | `PARTIAL/SYNTAX_RECOVERY`로 사실과 추출 결과를 함께 표시 |
+| parser failure | `FAILED/PARSE_FAILED` |
+| input/AST limit | `LIMIT_EXCEEDED/INPUT_SIZE_LIMIT` 또는 `AST_NODE_LIMIT` |
+| application wrapper | 의미를 추측하지 않고 held-out 실패 목록에 유지 |
+| unobserved lazy asset | 받은 산출물 안 추출률과 전체 fixture 발견률을 분리 |
+| server-only surface | 알 수 없음. 분모에 넣지 않음 |
+
+## 7. 확정한 10단계와 현재 gate
+
+1. 범용 HTTP·parameter observation — 구현·회귀 완료
+2. OpenAPI·HTML parameter declaration — 구현·회귀 완료
+3. Generic JavaScript AST/call-site 분석 — 구현·회귀 완료
+4. endpoint·parameter delta 화면 — 구현·회귀 완료, 파서 상태 포함
+5. held-out fixture 검증 — 로컬 exact-set 회귀 완료
+6. 실패 사례 분류 — parser/limit과 known unsupported 분리 완료
+7. 실패 구조 기반 Next.js adapter — pages-router manifest의 chunk discovery만 완료
+8. Vue/Nuxt·Angular·GraphQL 확장 — 공통 HTML/ESM asset 경로와 GraphQL observed operation/variables 회귀 완료. framework별 router/schema parser는 미구현
+9. 승인된 외부 대상 pilot — exact scope와 실행 승인이 없어 미실행
+10. 결과 기반 지원 Tier 조정 — 9 결과 전에는 확정하지 않음
+
+## 8. 다음 평가
+
+외부 pilot은 같은 scope·계정·시간·요청 예산에서 H/S/L의 고유 endpoint/parameter와 검토 작업량을 분리한다. 정답은 가능한 경우 서버 fixture route manifest 또는 빌드 전에 고정한 truth를 사용하고 런타임 분석기에 주지 않는다.
+
+최소 보고 항목:
 
 - endpoint declaration precision/recall
 - parameter declaration precision/recall
 - observed parameter extraction precision/recall
-- canonical endpoint merge 오류율
+- canonical merge 오류
+- parsing failure와 unsupported 구조 수
+- source별 고유 유효 발견과 사람이 검토한 false positive/false negative/unresolved
 - 비밀값 snapshot 노출 0건
 
-### 3-way 효능
-
-동일 scope, 계정, 시간·요청 예산에서 다음을 별도로 측정한다.
-
-1. HUMAN
-2. SCANNER
-3. LLM Explorer
-4. 각 source의 고유 endpoint와 parameter
-5. 선언 후 미관측 항목을 검토해 실제 도달 가능/조건부/죽은 코드/범위 밖으로 분류
-
-관측한 문서를 정답지로 쓰면서 같은 문서에서 recall을 계산하면 순환 평가가 된다. 최종 평가는 별도 fixture의 서버 route manifest 또는 빌드 단계에서 고정한 정답을 사용하고, 런타임에 전달하지 않는다. lazy chunk는 “받은 산출물 안의 추출률”과 “전체 fixture route 대비 발견률”을 분리한다.
-
-### 다음 gate
-
-1. JavaScript parser를 regex에서 AST 기반 adapter로 교체할 가치가 있는지 blind corpus로 비교
-2. GraphQL/OpenAPI/HTML adapter별 오탐·미탐 보고
-3. 실제 Burp 재로드 후 HUMAN·ZAP·LLM source delta가 UI와 Evidence 상세에 일치하는지 확인
-4. 사용자가 상위 미관측 항목에서 실제 검토 위치를 더 빨리 찾는지 task-time 비교
-
-성능 향상이 없거나 REVIEW 작업량이 과도한 adapter는 기본 경로에서 낮추거나 제거한다.
+같은 세션에서 받은 bundle만 분모로 쓰면 방문하지 않은 화면의 lazy chunk가 분모와 분자에서 함께 빠져 과대평가된다. 따라서 “받은 산출물 안의 추출률”과 “서버 truth 전체 대비 발견률”을 반드시 분리한다. pilot 전에는 지원 Tier나 성능 우월성을 확정하지 않는다.

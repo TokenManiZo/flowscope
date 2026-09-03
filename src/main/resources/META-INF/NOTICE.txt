@@ -47,3 +47,11 @@ Xerial SQLite JDBC 3.53.1.0
   Copyright (c) Xerial Project and contributors
   Copyright (c) 2006, David Crawshaw
 --------------------------------------------------------------------
+Google Closure Compiler v20260831
+  Artifact : com.google.javascript:closure-compiler:v20260831
+  Source   : https://github.com/google/closure-compiler
+  License  : Apache License 2.0 and bundled third-party terms preserved in
+             META-INF/LICENSE.txt and THIRD_PARTY_NOTICES
+  Copyright 2009-2026 Google LLC and contributors
+  Original Apache NOTICE content is merged into META-INF/NOTICE.
+--------------------------------------------------------------------

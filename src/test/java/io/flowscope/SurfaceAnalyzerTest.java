@@ -136,6 +136,74 @@ final class SurfaceAnalyzerTest {
     }
 
     @Test
+    void HTML_script_link는_route_inventory에_남지만_API_surface를_오염시키지_않는다() {
+        RequestRecord html = document("/", "text/html", """
+                <a href="/dashboard">dashboard</a>
+                <script src="/assets/app.js"></script>
+                <form action="/api/search"><input name="keyword"></form>
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(html), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        assertNotNull(endpoint(analysis, "GET", "/api/search"));
+        assertTrue(analysis.endpoints().stream().noneMatch(item -> item.key().pathTemplate().equals("/dashboard")));
+        assertTrue(analysis.endpoints().stream().noneMatch(item -> item.key().pathTemplate().equals("/assets/app.js")));
+        assertTrue(candidates.stream().anyMatch(item -> item.pathTemplate().equals("/assets/app.js")));
+    }
+
+    @Test
+    void HTML_formaction은_부모폼_필드와_선택_submitter를_해당_endpoint에_선언한다() {
+        RequestRecord html = document("/orders", "text/html", """
+                <form action="/api/orders" method="post">
+                  <input name="product_id" required>
+                  <button name="intent" value="save">save</button>
+                  <button name="format" value="csv" formaction="/api/orders/export" formmethod="get">export</button>
+                </form>
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(html), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact export = endpoint(analysis, "GET", "/api/orders/export");
+        assertNotNull(parameter(export, SurfaceAnalysis.ParameterLocation.QUERY, "product_id"));
+        assertNotNull(parameter(export, SurfaceAnalysis.ParameterLocation.QUERY, "format"));
+        assertTrue(export.parameters().stream().noneMatch(item -> item.fieldPath().equals("intent")));
+    }
+
+    @Test
+    void GraphQL은_operation별_endpoint와_variable을_transport필드와_분리한다() {
+        RequestRecord first = request(Source.HUMAN, "POST", "/graphql", 200);
+        first.requestContentType = "application/json";
+        first.reqBody = """
+                {"operationName":"GetOrder","query":"query GetOrder($id: ID!){order(id:$id){id}}",
+                 "variables":{"id":"a1","includeOwner":true}}
+                """;
+        RequestRecord second = request(Source.LLM, "POST", "/graphql", 200);
+        second.requestContentType = "application/json";
+        second.reqBody = """
+                {"operationName":"ListOrders","query":"query ListOrders($page:Int){orders(page:$page){id}}",
+                 "variables":{"page":2}}
+                """;
+        Pipeline.Result result = Pipeline.runIsolated(List.of(first, second), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact getOrder = endpoint(analysis, "POST", "/graphql#GetOrder");
+        assertNotNull(parameter(getOrder, SurfaceAnalysis.ParameterLocation.GRAPHQL_VARIABLE, "id"));
+        assertNotNull(parameter(getOrder, SurfaceAnalysis.ParameterLocation.GRAPHQL_VARIABLE, "includeOwner"));
+        assertTrue(getOrder.parameters().stream().noneMatch(item -> item.fieldPath().equals("query")
+                || item.fieldPath().equals("operationName")));
+        assertNotNull(endpoint(analysis, "POST", "/graphql#ListOrders"));
+    }
+
+    @Test
     void OpenAPI3_form과_multipart도_JSON과_같은_범용_입력사실로_분리한다() {
         RequestRecord openapi = document("/schema", "application/json", """
                 {"openapi":"3.1.0","paths":{
@@ -185,6 +253,24 @@ final class SurfaceAnalyzerTest {
         assertEquals(java.util.Set.of(Source.HUMAN, Source.SCANNER), endpoint.observedSources());
         assertNotNull(parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "aa_z9"));
         assertNotNull(parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "nested_k.r2"));
+    }
+
+    @Test
+    void 산출물_파싱실패와_입력상한을_빈결과와_구분해_보고한다() {
+        RequestRecord oversized = document("/assets/large.js", "application/javascript",
+                "a".repeat(1_048_577));
+        RequestRecord invalidOpenApi = document("/openapi.json", "application/json", "{not-json");
+        Pipeline.Result result = Pipeline.runIsolated(List.of(oversized, invalidOpenApi),
+                new io.flowscope.core.AnalysisConfig());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+
+        assertTrue(analysis.extractions().stream().anyMatch(report ->
+                report.failure() == SurfaceAnalysis.ExtractionFailure.INPUT_SIZE_LIMIT
+                        && report.status() == SurfaceAnalysis.ExtractionStatus.LIMIT_EXCEEDED));
+        assertTrue(analysis.extractions().stream().anyMatch(report ->
+                report.artifactKind().equals("OPENAPI")
+                        && report.failure() == SurfaceAnalysis.ExtractionFailure.PARSE_FAILED));
     }
 
     private static RequestRecord request(Source source, String method, String path, int status) {

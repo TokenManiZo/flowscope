@@ -1,5 +1,47 @@
 # FlowScope 개발 기록
 
+## 2026-09-03 · 1.2.0-beta.42 · AST 기반 선언 추출과 실패 가시성
+
+### 목표와 성공 조건
+
+- beta.41의 값 없는 endpoint·parameter fact를 유지하면서 JavaScript 정규식 추출을 실행 없는 구조 분석으로 교체한다.
+- HTTP 관측, OpenAPI·HTML form·JavaScript call-site, GraphQL operation/variable을 같은 좌표에 정렬하되 target·업무명 사전으로 튜닝하지 않는다.
+- 분석하지 못한 산출물을 0건 성공처럼 보이지 않게 하고, 개발 입력과 분리된 truth fixture로 지원·비지원 경계를 고정한다.
+
+### 개발·수정
+
+- 고정 버전 Closure Compiler의 `ECMASCRIPT_NEXT` parser로 `fetch`, 실제 XHR binding, axios, jQuery, `sendBeacon`, 정적·동적 import를 실행 없이 분석한다. 정적 문자열·template·단순 결합과 bounded `const/let` 참조만 해석하고 임의 application wrapper는 추정하지 않는다.
+- HTML navigation과 client asset을 API surface에서 제외하고 route inventory에만 남겼다. 공통 `script/modulepreload/preload/prefetch`를 처리하며, Next.js pages-router `__BUILD_MANIFEST`는 API를 발명하지 않고 client chunk만 연결한다.
+- GraphQL 요청은 `POST /graphql#operationName`과 `variables` field로 정렬하고 transport의 `query`·`operationName`은 입력 파라미터에서 제외한다.
+- `surface.extractions`에 산출물별 정상·부분·실패·입력/AST 상한, 실패 범주, Evidence ID와 추출 수를 추가하고 Web `API·입력 차이` 화면에 표시한다.
+- JavaScript 분석 cache는 128개 LRU로 제한하고 원문 대신 SHA-256 digest를 key로 사용한다. dataset 교체·초기화·sample load 때 cache를 비운다.
+- analyzer에 전달하지 않는 `surface-heldout/truth.json`에서 endpoint 7개, parameter 18개, client asset 5개 exact set과 application wrapper 1개 비지원을 회귀로 고정했다.
+
+### 이유와 기각한 대안
+
+- 정규식을 계속 늘리면 중첩 괄호·호출 경계·alias·modern syntax를 안정적으로 구분하지 못한다. 반대로 대상 JavaScript 실행이나 Node/Chrome 의존은 공격 대상 코드를 실행하고 설치면을 넓혀 기각했다.
+- Next/Nuxt/Angular route 이름을 API로 바꾸는 규칙은 공개 asset 관계 이상의 의미를 추측하므로 넣지 않았다. 공통 HTML/ESM으로 부족한 것이 fixture에서 확인된 Next pages manifest의 chunk 연결만 전용 adapter로 추가했다.
+- held-out fixture는 회귀에는 유효하지만 같은 저장소에 있는 합성 truth이므로 실제 일반화 성능이나 프레임워크 지원 Tier의 근거로 사용하지 않는다.
+
+### 영향 파일
+
+- 코드: `JavascriptAnalysis.java`, `JavascriptCallSiteAnalyzer.java`, `JavascriptRouteDiscoveryAdapter.java`, `NextBuildManifestDiscoveryAdapter.java`, `HtmlRouteDiscoveryAdapter.java`, `RouteCandidate.java`, `RouteCandidateExtractor.java`, `SurfaceAnalysis.java`, `SurfaceAnalyzer.java`, `Standalone.java`, `FlowScopeExtension.java`, `index.html`
+- 빌드·회귀: `pom.xml`, `ci.yml`, `NOTICE.txt`, `FatJarIsolationSmoke.java`, `JavascriptCallSiteAnalyzerTest.java`, `SurfaceAnalyzerTest.java`, `SurfaceHeldOutEvaluationTest.java`, discovery corpus와 held-out fixture
+- 문서: README, architecture, decisions D-114, Endpoint·Parameter Surface, 제품 계획·개요·연구·제안·기능명세·UI 근거, 한·영 시작 가이드와 변경 이력, 인계·검증 기록
+
+### 재현과 검증
+
+- 집중 회귀와 최종 `mvn clean verify`를 연속 두 번 실행했다. 매회 340 tests, failure/error/skip 0이었다.
+- 두 clean build 모두 `target/flowscope-1.2.0-beta.42.jar`, 31,069,397 bytes, 9,099 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `c8f53c170058a4803730e2419660ff77e21603ad9506f0156c54951623651a58`로 동일했다.
+- fat JAR에서 relocated Closure 6,846 entries, 원래 `com/google/javascript/` 0 entries, Closure 고지와 `META-INF/LICENSE.txt`, `THIRD_PARTY_NOTICES`를 확인했다. inline Web JavaScript도 `node --check`를 통과했다.
+- standalone `127.0.0.1:17779` 합성 sample에서 beta.42·`API·입력 차이`, endpoint/parameter 목록과 extraction summary, LLM source 해제 시 해당 관측 제거, 기존 인가 그래프 전환을 확인했다. 브라우저 warning/error는 0건이었다.
+
+### 남은 한계·다음 gate
+
+- 1~8은 구현·자동 회귀와 standalone 화면 gate를 통과했다. 실제 Burp 확장 재로드, 실제 bundle의 precision/recall·검토량·성능, source map·Next App Router 내부 manifest·GraphQL schema는 검증하지 않았다.
+- 9는 사용자가 승인한 외부 exact scope가 없어 미실행이다. 10의 지원 Tier는 외부 pilot 결과 전에는 정하지 않는다.
+- Vue/Nuxt·Angular는 표준 HTML/ESM asset 발견까지만 확인했다. 제품 전용 adapter가 필요한지는 pilot 실패 사례를 먼저 분류한 뒤 결정한다.
+
 ## 2026-09-03 · 1.2.0-beta.41 · 범용 Endpoint·Parameter Surface Delta
 
 ### 목표와 성공 조건

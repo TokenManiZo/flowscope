@@ -4,6 +4,7 @@ import io.flowscope.core.discovery.DiscoveredRoute;
 import io.flowscope.core.discovery.HtmlRouteDiscoveryAdapter;
 import io.flowscope.core.discovery.JavascriptRouteDiscoveryAdapter;
 import io.flowscope.core.discovery.MetadataRouteDiscoveryAdapter;
+import io.flowscope.core.discovery.NextBuildManifestDiscoveryAdapter;
 import io.flowscope.core.discovery.OpenApiRouteDiscoveryAdapter;
 import io.flowscope.core.discovery.RouteDiscoveryAdapter;
 import io.flowscope.core.discovery.RouteDiscoveryDocument;
@@ -44,6 +45,7 @@ public final class RouteCandidateExtractor {
     private static final List<RouteDiscoveryAdapter> ADAPTERS = List.of(
             new MetadataRouteDiscoveryAdapter(),
             new HtmlRouteDiscoveryAdapter(),
+            new NextBuildManifestDiscoveryAdapter(),
             new JavascriptRouteDiscoveryAdapter(),
             new OpenApiRouteDiscoveryAdapter(),
             new XmlRouteDiscoveryAdapter());

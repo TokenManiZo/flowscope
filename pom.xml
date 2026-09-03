@@ -6,7 +6,7 @@
 
   <groupId>io.flowscope</groupId>
   <artifactId>flowscope</artifactId>
-  <version>1.2.0-beta.41</version>
+  <version>1.2.0-beta.42</version>
   <packaging>jar</packaging>
 
   <name>FlowScope</name>
@@ -20,6 +20,7 @@
     <jackson.version>2.22.2</jackson.version>
     <jsoup.version>1.23.1</jsoup.version>
     <sqlite.jdbc.version>3.53.1.0</sqlite.jdbc.version>
+    <closure.compiler.version>v20260831</closure.compiler.version>
     <maven.clean.version>3.5.0</maven.clean.version>
     <maven.compiler.version>3.15.0</maven.compiler.version>
     <maven.resources.version>3.4.0</maven.resources.version>
@@ -61,6 +62,13 @@
       <groupId>org.xerial</groupId>
       <artifactId>sqlite-jdbc</artifactId>
       <version>${sqlite.jdbc.version}</version>
+    </dependency>
+
+    <!-- Parse target JavaScript without executing it or requiring Node/Chrome on the operator host. -->
+    <dependency>
+      <groupId>com.google.javascript</groupId>
+      <artifactId>closure-compiler</artifactId>
+      <version>${closure.compiler.version}</version>
     </dependency>
 
     <dependency>
@@ -165,6 +173,10 @@
                 <relocation>
                   <pattern>org.yaml.snakeyaml</pattern>
                   <shadedPattern>io.flowscope.shaded.snakeyaml</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.google.javascript</pattern>
+                  <shadedPattern>io.flowscope.shaded.closure</shadedPattern>
                 </relocation>
               </relocations>
               <transformers>

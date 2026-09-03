@@ -12,7 +12,8 @@
     "expected": [
       "UNKNOWN /app/v3/orders/{id}",
       "POST /app/v3/search",
-      "GET /app/v3/api/me"
+      "GET /app/v3/api/me",
+      "GET /app/dynamic/{id}"
     ]
   },
   {
@@ -29,7 +30,8 @@
       "GET /app/api/orders/{id}",
       "PATCH /app/api/profile",
       "POST /app/api/search",
-      "POST /app/api/audit"
+      "POST /app/api/audit",
+      "GET /app/api/dynamic/{id}"
     ]
   },
   {

@@ -2,6 +2,17 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.42 — 2026-09-03
+
+- JavaScript route/parameter declaration을 정규식에서 실행 없는 Closure Compiler `ECMASCRIPT_NEXT` AST call-site 분석으로 교체했습니다. `fetch`, 실제 XHR binding, axios, jQuery, `sendBeacon`, 정적/dynamic import와 문자열·template·단순 결합을 bounded하게 처리합니다.
+- HTML navigation·script asset을 API surface에서 제외하고, client asset은 별도 route inventory로 유지했습니다. HTML modulepreload/preload/prefetch와 Next.js pages-router build manifest의 chunk 참조를 후속 JavaScript 분석 대상으로 연결합니다.
+- GraphQL 관측을 operation별 endpoint와 variable field로 분리하고 transport의 `query`·`operationName`은 parameter surface에서 제외했습니다.
+- `surface.extractions`와 Web `API·입력 차이` 화면에 HTML/OpenAPI/JavaScript 산출물의 정상·부분·실패·입력/AST 상한을 Evidence와 함께 표시합니다.
+- 개발 단위 입력과 분리된 held-out truth fixture에서 endpoint 7개, parameter 18개, client asset 5개의 exact set과 임의 application wrapper 비지원을 회귀로 고정했습니다. 이 결과는 외부 일반화 성능이나 취약점 탐지 우월성 증거가 아닙니다.
+- Closure Compiler를 fat JAR 내부 namespace로 relocation하고 원 LICENSE·NOTICE·third-party notice를 배포물에 보존합니다.
+- 최종 `mvn clean verify`를 두 번 실행해 각각 340 tests가 통과했고, 두 beta.42 JAR의 SHA-256 `c8f53c170058a4803730e2419660ff77e21603ad9506f0156c54951623651a58`이 일치했습니다. standalone source filter·인가 화면 전환도 browser warning/error 없이 확인했으며 실제 Burp·외부 pilot 결과는 아닙니다.
+- 승인된 외부 pilot과 그 결과에 따른 지원 Tier 확정은 아직 수행하지 않았습니다.
+
 ## 1.2.0-beta.41 — 2026-09-03
 
 - 값 없는 `EndpointKey`·`ParameterKey` fact로 실제 H/S/L 관측과 OpenAPI·HTML form·정적 JavaScript 선언을 분리하는 범용 Surface Analyzer를 추가했습니다.

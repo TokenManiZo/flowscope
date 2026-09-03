@@ -45,6 +45,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.HarParser;
 import io.flowscope.core.StoredPayload;
+import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.LocalMcpToken;
 import io.flowscope.integration.LocalZapApiKey;
@@ -834,6 +835,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
                 synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
                 SampleProject.Data sample = SampleProject.create();
+                JavascriptCallSiteAnalyzer.clearCache();
                 analysisConfig.replaceWith(sample.config());
                 List<RequestRecord> loaded = new ArrayList<>(sample.records());
                 resetPayloadPool();
@@ -879,6 +881,7 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         routeCandidates = List.of();
+        JavascriptCallSiteAnalyzer.clearCache();
         analysisConfig.clearReviews();
         Pipeline.Result empty = Pipeline.runIsolated(List.of(), analysisConfig);
         if (mcpServer != null) mcpServer.clearAssessments();
@@ -929,6 +932,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 ProjectStore.ProjectData data = database
                         ? sqliteProjectStore.load(path) : projectStore.load(path);
                 analysisConfig.replaceWith(data.config());
+                JavascriptCallSiteAnalyzer.clearCache();
                 List<RequestRecord> loaded = new ArrayList<>(data.records());
                 resetPayloadPool();
                 loaded.forEach(record -> {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0-beta.42 — 2026-09-03
+
+- Replaced regex JavaScript declaration discovery with non-executing Closure Compiler `ECMASCRIPT_NEXT` AST call-site analysis for directly evidenced fetch/XHR/axios/jQuery/sendBeacon calls, static/dynamic imports, and bounded string/template/simple-concatenation references.
+- Kept HTML navigation and client assets out of the API surface while retaining them in route inventory. Added generic HTML module asset discovery and a narrow Next.js pages-router build-manifest adapter that discovers client chunks but does not infer API meaning.
+- Split observed GraphQL operations and variables from transport fields.
+- Added artifact extraction status and failure categories to the snapshot and the default **API·입력 차이** workspace so a parser failure cannot look like a successful empty result.
+- Added a truth-separated held-out fixture that checks exact sets of 7 endpoints, 18 parameters, and 5 client assets while retaining one application-wrapper miss as explicitly unsupported. This is an in-repository structural regression, not evidence of real-world superiority.
+- Two consecutive clean builds each passed 340 tests and produced the same `c8f53c170058a4803730e2419660ff77e21603ad9506f0156c54951623651a58` SHA-256 JAR. Standalone source-filter and authorization-view checks completed with no browser warning or error; this is not a Burp or external-pilot result.
+- External pilot testing and support-tier changes remain pending an explicitly authorized exact scope.
+
 ## 1.2.0-beta.41 — 2026-09-03
 
 - Added a value-free Endpoint/Parameter Surface Analyzer that keeps actual H/S/L observations separate from declarations found in OpenAPI, HTML forms, and static JavaScript literals.

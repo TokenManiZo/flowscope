@@ -50,7 +50,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 완전한 3-way에서 ZAP key 또는 Docker helper를 사용하려면 `git clone https://github.com/choewonwoo1817/testflowscope.git` 후 저장소 루트로 이동한다. HUMAN-only 사용자는 clone 없이 JAR만 받아도 된다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.41.jar` 자산이 게시돼 있으면 받는다. 아직 게시되지 않았다면 저장소를 clone하고 §7의 소스 빌드 절차로 같은 이름의 JAR을 만든다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.42.jar` 자산이 게시돼 있으면 받는다. 아직 게시되지 않았다면 저장소를 clone하고 §7의 소스 빌드 절차로 같은 이름의 JAR을 만든다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 다음 두 listener를 만든다.
    - bind address `127.0.0.1`, port `8080`
    - bind address `127.0.0.1`, port `8081`
@@ -61,7 +61,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 Release JAR 사용자는 Maven이 필요하지 않다. Burp를 custom Java로 실행하면 class file 호환을 위해 Java 21 이상을 사용한다.
 
-Web `127.0.0.1:17777`의 **빠른 시작**은 `범위 → HUMAN → ZAP → LLM·Judge` 상태를 표시하고 첫 미완료 단계 하나만 연다. 열린 단계의 입력과 버튼만 처리하면 다음 단계로 이동하며, 완료된 설정을 다시 확인하려면 상단 단계 버튼을 누른다. `현재 단계로`를 누르면 첫 미완료 단계로 돌아온다. 수집 뒤에는 기본 **놓친 API·입력**에서 endpoint·parameter별 선언/관측 차이를 먼저 확인하고, 선택한 API의 인가 관계는 **인가 그래프**와 판정 매트릭스에서 확인한다. `미관측`은 취약점이나 lane 실패 판정이 아니다.
+Web `127.0.0.1:17777`의 **빠른 시작**은 `범위 → HUMAN → ZAP → LLM·Judge` 상태를 표시하고 첫 미완료 단계 하나만 연다. 열린 단계의 입력과 버튼만 처리하면 다음 단계로 이동하며, 완료된 설정을 다시 확인하려면 상단 단계 버튼을 누른다. `현재 단계로`를 누르면 첫 미완료 단계로 돌아온다. 수집 뒤에는 기본 **API·입력 차이**에서 endpoint·parameter별 선언/관측 차이와 산출물 파싱 상태를 먼저 확인하고, 선택한 API의 인가 관계는 **인가 그래프**와 판정 매트릭스에서 확인한다. `미관측`은 취약점이나 lane 실패 판정이 아니다.
 
 ## 4. ZAP 준비 — Desktop 또는 Docker 중 택1
 

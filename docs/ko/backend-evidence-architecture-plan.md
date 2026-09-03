@@ -12,7 +12,7 @@
 
 **현재 교차 구현:** beta.32에서 `SourceTrustPolicy`, `LaneCompletionPolicy`, exact completed-run manifest, 완료 시점 Evidence ID 동결, 고정 Judge dataset, JSON v3·SQLite v2 저장을 구현했다. beta.33은 Phase -1의 Request Lab generation·단일 실행 멱등성, stale 분석 게시 epoch, exact `UNCROSSED` 표시를 추가했다. beta.34는 남은 Phase -1의 cluster/DataFlow 선형화와 live decode·프로젝트 복원·assessment byte 경계를 닫았다. 이는 아래 전체 ledger·incremental projection·typed state·safe experiment 계획의 완료를 뜻하지 않는다. 이미 끝난 항목은 재구현하지 않고 현재 계약을 후속 단계의 기준선으로 사용한다.
 
-> **beta.41 교차 상태:** 이 장기 계획의 `property` 전면 모델보다 좁은 읽기 projection으로 `SurfaceAnalysis`를 구현했다. 실제 Observation과 OpenAPI·HTML form·정적 JavaScript Declaration을 값 없는 Endpoint/Parameter fact로 분리하며, 현재 Pipeline·SQLite 정본이나 아래 전체 ledger 계획을 대체하지 않는다. 현재 계약과 blind gate는 `endpoint-parameter-surface.md`, 결정은 D-113을 따른다.
+> **beta.42 교차 상태:** 이 장기 계획의 `property` 전면 모델보다 좁은 읽기 projection으로 `SurfaceAnalysis`를 구현했다. 실제 Observation과 OpenAPI·HTML form·JavaScript AST Declaration 및 산출물 파싱 상태를 값 없는 Endpoint/Parameter fact로 분리하며, 현재 Pipeline·SQLite 정본이나 아래 전체 ledger 계획을 대체하지 않는다. 현재 계약과 pilot gate는 `endpoint-parameter-surface.md`, 결정은 D-113·D-114를 따른다.
 
 ## 1. 한 문장 목표
 

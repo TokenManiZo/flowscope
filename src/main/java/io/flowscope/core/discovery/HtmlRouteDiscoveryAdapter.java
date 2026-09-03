@@ -39,7 +39,9 @@ public final class HtmlRouteDiscoveryAdapter implements RouteDiscoveryAdapter {
             if (tokens(rel).contains("manifest")) {
                 add(routes, reference(element, "href"), "UNKNOWN", RouteCandidate.ProvenanceType.WEB_MANIFEST,
                         RouteCandidate.Applicability.REVIEW, "manifest link는 method를 증명하지 않음");
-            } else if (tokens(rel).contains("modulepreload")) {
+            } else if (tokens(rel).contains("modulepreload")
+                    || (tokens(rel).contains("prefetch") && scriptPath(element.attr("href")))
+                    || (tokens(rel).contains("preload") && element.attr("as").equalsIgnoreCase("script"))) {
                 add(routes, reference(element, "href"), "GET", RouteCandidate.ProvenanceType.HTML_SCRIPT,
                         RouteCandidate.Applicability.REVIEW, "HTML modulepreload script 참조");
             }
@@ -103,5 +105,10 @@ public final class HtmlRouteDiscoveryAdapter implements RouteDiscoveryAdapter {
         java.util.Set<String> values = new java.util.HashSet<>();
         for (String token : value.toLowerCase(Locale.ROOT).trim().split("\\s+")) if (!token.isBlank()) values.add(token);
         return values;
+    }
+
+    private static boolean scriptPath(String value) {
+        String clean = value == null ? "" : value.split("[?#]", 2)[0].toLowerCase(Locale.ROOT);
+        return clean.endsWith(".js") || clean.endsWith(".mjs") || clean.endsWith(".cjs");
     }
 }

@@ -1,4 +1,23 @@
-# FlowScope 1.2.0-beta.41 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.42 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.42 AST 선언·실패 가시성 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| HTTP·parameter observation | query/path/중첩 JSON/form-urlencoded/multipart와 GraphQL operation별 variables를 값 없이 source/run/identity/status/Evidence에 연결하는 회귀 통과 |
+| OpenAPI·HTML declaration | OpenAPI 3.1 path/query와 JSON requestBody, HTML form과 submitter `formaction/formmethod`의 endpoint·parameter 선언 회귀 통과 |
+| JavaScript AST | 실행 없는 Closure `ECMASCRIPT_NEXT` parser로 ESM import, async/optional chaining, fetch template·query, axios import/create/direct call, XHR binding, jQuery, sendBeacon, 정적·동적 import를 확인. 임의 함수·가짜 `.open`·무관 객체 key 음성 회귀 통과 |
+| 실패 가시성·경계 | JavaScript 1,048,576자, AST traversal 250,000, call/asset 각 20,000, call당 parameter 1,024, cache 128개 상한. 입력 초과와 OpenAPI parse 실패가 `surface.extractions`에서 빈 성공과 구분됨 |
+| 비밀·cache | Surface에 parameter 값·인증정보를 넣지 않음. JavaScript cache key는 원문이 아닌 SHA-256 digest이며 dataset 교체·초기화에서 비움 |
+| asset/API 분리 | HTML navigation·script asset과 Next build manifest chunk는 route inventory에 남지만 API surface endpoint로 올라가지 않는 회귀 통과 |
+| truth 분리 fixture | analyzer 입력과 분리한 held-out truth에서 endpoint 7, parameter 18, client asset 5 exact set 일치. application wrapper 1개는 `UNRECOGNIZED_APPLICATION_WRAPPER` 비지원으로 유지 |
+| Web 수동 확인 | standalone `127.0.0.1:17779` sample에서 beta.42·`API·입력 차이`, extraction summary, LLM filter 해제 후 해당 관측 제거, 기존 인가 그래프 전환 확인. warning/error 0건 |
+| 전체 회귀 | `mvn clean verify` 연속 2회, 매회 340 tests, failure/error/skip 0. inline Web JavaScript `node --check` 통과 |
+| 배포물 | `target/flowscope-1.2.0-beta.42.jar` 하나, 31,069,397 bytes, 9,099 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `c8f53c170058a4803730e2419660ff77e21603ad9506f0156c54951623651a58`; 두 clean build가 byte-for-byte 동일 |
+| relocation·고지 | relocated Closure 6,846 entries, 원래 `com/google/javascript/` 0 entries. Closure notice, `META-INF/LICENSE.txt`, `THIRD_PARTY_NOTICES` 존재 확인 |
+| 실제 Burp·외부 pilot | **대기** — 실제 Burp beta.42 재로드, 승인된 외부 exact scope, 실제 bundle precision/recall·검토량·성능과 지원 Tier 조정은 수행하지 않음 |
+
+이 gate는 1~8의 코드·회귀·standalone 연결을 검증한다. 같은 저장소의 held-out fixture는 analyzer가 truth를 입력으로 받지 않는다는 점에서는 독립이지만, 외부 corpus나 real-world pilot은 아니다. 따라서 Next.js 전체, Vue/Nuxt·Angular 전체, GraphQL schema, lazy chunk 전체 또는 취약점 탐지 우월성을 증명하지 않는다. 9~10은 승인된 외부 pilot 뒤에만 완료할 수 있다.
 
 ## 1.2.0-beta.41 Endpoint·Parameter Surface Delta gate
 

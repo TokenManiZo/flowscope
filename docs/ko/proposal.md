@@ -2,7 +2,7 @@
 
 > **문서 지위(2026-08-31):** 이 문서는 연구 가설과 평가 설계를 보존하는 제안서이며 제품 동작 정본이 아니다. 현재 제품 계약은 `README.md`, `architecture.md`, `decisions.md`, 실제 검증은 `beta-validation.md`가 담당한다. beta.34는 블랙박스 전체 분모나 “셋 다 놓친 전체 여집합”을 안다고 주장하지 않으며, 관측된 적용 가능 cell과 근거 있는 미요청 route 후보만 다룬다. 최종 verdict는 별도 VALIDATION run의 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 허용한다.
 
-> **beta.41 보충:** 현재 제품은 관측 cell 비교 앞에 Endpoint·Parameter Declaration/Observation Delta를 둔다. 이는 논문 효능이 입증됐다는 뜻이 아니며, `endpoint-parameter-surface.md`의 target-independent held-out 평가를 통과하기 전까지 연구 가설로 분리한다.
+> **beta.42 보충:** 현재 제품은 관측 cell 비교 앞에 Endpoint·Parameter Declaration/Observation Delta를 두고 JavaScript AST call-site와 파싱 실패 상태를 분리한다. 저장소 내부 held-out 구조 회귀를 통과한 것은 논문 효능이나 외부 일반화를 입증하지 않으며, `endpoint-parameter-surface.md`의 승인된 pilot 전까지 연구 가설로 분리한다.
 
 **English title (working):** *FlowScope: Differential Traffic Coverage for LLM-Assisted Discovery of API Authorization Vulnerabilities*
 

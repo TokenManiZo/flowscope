@@ -1,0 +1,1 @@
+{"operationName":"LookupEntry","query":"query LookupEntry($entryKey: ID!, $withOwner: Boolean!){entry(id:$entryKey){id owner @include(if:$withOwner)}}","variables":{"entryKey":"opaque-value","withOwner":true}}

@@ -124,14 +124,15 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.41 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.42 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
         assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
         assertTrue(index.body().contains("<div class=\"graphcanvas\" id=\"graphCanvas\" style=\"display:none\"><div id=\"cy\"></div></div>"));
-        assertTrue(index.body().contains("놓친 API·입력 작업목록"));
-        assertTrue(index.body().contains("SERVER_SURFACE=data.surface||{endpoints:[]}"));
+        assertTrue(index.body().contains("API·입력 차이 작업목록"));
+        assertTrue(index.body().contains("surfaceExtraction"));
+        assertTrue(index.body().contains("SERVER_SURFACE=data.surface||{endpoints:[],extractions:[]}"));
         assertTrue(index.body().contains("function renderSurface()"));
         assertTrue(index.body().contains("function filteredSurface()"));
         assertTrue(index.body().contains("visibleObservations:observations"));
@@ -226,13 +227,14 @@ final class FlowScopeWebServerTest {
         assertEquals(List.of("REVIEW"), JSON.convertValue(
                 body.at("/routeCandidates/0/priorityReasons"),
                 new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
-        assertEquals(2, body.at("/surface/endpoints").size());
+        assertEquals(1, body.at("/surface/endpoints").size());
         JsonNode observedSurface = java.util.stream.StreamSupport.stream(
                         body.at("/surface/endpoints").spliterator(), false)
                 .filter(item -> item.at("/key/pathTemplate").asText().equals("/v1/orders/{id}"))
                 .findFirst().orElseThrow();
         assertEquals("OBSERVED_NOT_DECLARED", observedSurface.path("deltaState").asText());
         assertEquals("human", observedSurface.at("/observations/0/source").asText().toLowerCase());
+        assertTrue(body.at("/surface/extractions").isArray());
 
         JsonNode evidence = json(get("/api/evidence?operation="
                 + encode(body.at("/events/0/op").asText()), token, origin()));

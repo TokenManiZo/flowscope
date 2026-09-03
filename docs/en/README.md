@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.41
+# FlowScope 1.2.0-beta.42
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
@@ -65,9 +65,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.41.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.41 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.42.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.42 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.41.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.42.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
@@ -188,8 +188,8 @@ The ZAP API endpoint is accepted only on a loopback address. Key precedence is `
 ## Product workspace
 
 - **Burp tab** — exact scope, port mapping, live counts, MCP connection copy, Proxy-history import, project save/load, sample, reset, and a button that opens the canonical local Web workspace.
-- **Web top modes** — the default 놓친 API·입력 surface, 인가 그래프 drill-down, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
-- **놓친 API·입력** — declaration-versus-observation endpoint/parameter facts with source badges and Evidence/provenance links; it does not fabricate a black-box completion percentage.
+- **Web top modes** — the default API·입력 차이 surface, 인가 그래프 drill-down, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
+- **API·입력 차이** — declaration-versus-observation endpoint/parameter facts with source badges, Evidence/provenance links, and artifact parsing status; it does not fabricate a black-box completion percentage.
 - **Left rail** — captured/analysis/hidden/review counts without a fabricated percentage, HUMAN/SCANNER/LLM filters paired with actual main-Evidence counts, Evidence display classes, read-only authorization-policy state, three-way gaps, and graph verdict controls.
 - **Flow Graph** — The default is Identity → API, selecting an API opens Identity → API → Object, and Site → API Group is an optional overview. The retained analytical relation is Identity × API × Object × Source; high-cardinality objects are folded into families and expanded on demand. HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L remain provenance encodings. Unrequested-route candidates stay outside observed coverage, HTTP status remains an outcome rather than an authorization verdict, and response-to-request dependencies stay in the separate sequence view.
 - **판정 매트릭스** — observed identity/role × operation × resource cells, per-source verdicts, uncrossed combinations, partial discovery, and conflicts.

@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.41
+# FlowScope 1.2.0-beta.42
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 허가된 대상에서 실제로 관측한 API·입력을 같은 좌표에 정렬해, 어느 endpoint와 parameter를 누가 보았고 아직 무엇이 미관측인지 Evidence로 보여 주는 Burp Suite Community 호환 확장입니다. 선언 근거(OpenAPI·HTML form·정적 JavaScript)와 실제 HTTP Evidence를 분리해 비교하고, 선택한 API의 BOLA/IDOR·BFLA 근거는 기존 인가 그래프·매트릭스에서 상세 확인합니다.
 
@@ -15,7 +15,9 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 
 ## 주요 기능
 
-- 값 없는 범용 `EndpointKey(service, method, canonical path)`와 `ParameterKey(endpoint, location, fieldPath)`로 선언과 실제 관측을 분리하고 H/S/L source별 차이를 기본 작업목록에 표시. query, path, 중첩 JSON, form, multipart와 OpenAPI·HTML form·정적 JavaScript literal을 처리하며 타깃명·업무명·프레임워크 이름으로 분기하지 않음
+- 값 없는 범용 `EndpointKey(service, method, canonical path)`와 `ParameterKey(endpoint, location, fieldPath)`로 선언과 실제 관측을 분리하고 H/S/L source별 차이를 기본 작업목록에 표시. query, path, 중첩 JSON, form, multipart, GraphQL variables와 OpenAPI·HTML form·정적 JavaScript AST call-site를 처리하며 타깃명·업무명으로 분기하지 않음
+- JavaScript는 실행하지 않고 Closure Compiler AST로 `fetch`, `XMLHttpRequest`, axios, jQuery, `sendBeacon`의 직접 확인 가능한 URL·method·query/body key와 정적/dynamic import 자산을 추출. 임의 application wrapper의 의미는 추측하지 않으며 파싱 부분 복구·실패·입력/AST 상한을 `surface.extractions`와 Web에 별도로 표시
+- Next.js pages-router의 공개 build manifest는 API를 추측하지 않고 client chunk 참조만 추가해 후속 JavaScript 분석 대상으로 연결. HTML `script`, `modulepreload`, script `preload/prefetch`는 Vue/Nuxt·Angular를 포함한 공통 자산 경로로 처리하며, GraphQL HTTP 관측은 operation과 variable field를 transport 필드와 분리
 - source, source detail, orchestrator, tool, phase, run 정보를 독립적으로 보존하는 Burp 실시간 수집
 - 모든 source에 대한 exact scope Evidence 수집. HUMAN은 Burp로 다른 사이트를 방문할 수 있지만 범위 밖 응답은 FlowScope에 저장하거나 그래프로 만들지 않음
 - HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 IDA식 계층 그래프. 기본은 `신원 → API`, API 선택 시 `신원 → API → 객체`, 사이트 개요는 선택형 `사이트 → API 그룹`으로 분리한다. 화면에서 접거나 전환해도 `Evidence × Identity × API × Object × Source × Run × HTTP outcome` 관계는 Fact Core에 그대로 유지
@@ -71,7 +73,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.41.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.41 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 `flowscope-1.2.0-beta.42.jar` 자산이 게시돼 있으면 받아서 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. 해당 자산이 아직 없으면 이 저장소의 beta.42 소스를 clone한 뒤 아래 소스 빌드 절차로 JAR을 생성합니다. 문서 버전만 보고 게시되지 않은 Release 자산이 존재한다고 가정하지 마십시오.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN `127.0.0.1:8080`과 SCANNER `127.0.0.1:8081`을 만듭니다.
 3. 완전한 3-way를 쓸 때만 저장소를 clone하고 ZAP을 아래 두 방식 중 하나로 준비합니다. HUMAN-only 사용자는 이 단계가 필요 없습니다.
 
@@ -102,11 +104,11 @@ cd testflowscope
 1. Burp의 **FlowScope** 탭에서 허가된 exact scope를 입력하고 **범위 적용**을 누릅니다.
 2. `http://127.0.0.1:17777/`에서 **빠른 시작**을 엽니다.
 3. 화면이 자동으로 여는 첫 미완료 단계만 수행합니다: **범위 → HUMAN → ZAP → LLM·Judge**.
-4. 완료 뒤 **놓친 API·입력**에서 선언/관측 차이를 먼저 보고, 선택한 API를 인가 그래프·판정 매트릭스·Evidence에서 검토합니다.
+4. 완료 뒤 **API·입력 차이**에서 선언/관측 차이와 산출물 파싱 상태를 먼저 보고, 선택한 API를 인가 그래프·판정 매트릭스·Evidence에서 검토합니다.
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
 
-소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.41.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때만 JDK 21과 Maven 3.9 이상으로 `mvn clean verify`를 실행합니다. 결과는 `target/flowscope-1.2.0-beta.42.jar` 하나입니다. 빌드는 사용 플러그인 버전을 고정하고, 서드파티 NOTICE·라이선스와 버전 숫자에 종속되지 않는 MR-JAR relocation을 보존하며, streaming manifest·격리 class loading·같은 입력의 반복 SHA-256을 검사합니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
@@ -228,8 +230,8 @@ ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 
 ## 제품 작업면
 
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, MCP 연결 복사, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 초기화, 정본 로컬 Web 작업면 열기
-- **Web 상단 모드** — 기본 `놓친 API·입력`, 상세 `인가 그래프`, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
-- **놓친 API·입력** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
+- **Web 상단 모드** — 기본 `API·입력 차이`, 상세 `인가 그래프`, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
+- **API·입력 차이** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 분석한 HTML/OpenAPI/JavaScript 산출물 수와 부분·실패·상한 상태도 보여 주며, 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
 - **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, 실제 메인 Evidence 수와 함께 동작하는 HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 읽기 전용 역할 정책 상태, 3-way gap, 그래프 판정 제어
 - **인가 그래프** — 기본 `Identity → API`, API 선택 시 `Identity → API → Object`, 선택형 `사이트 → API 그룹` 개요를 제공합니다. 실제 분석 관계는 `Identity × API × Object × Source`로 보존하고, 고카디널리티 Object는 family로 먼저 접은 뒤 선택적으로 인스턴스를 펼칩니다. HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, focus+context, 화면 맞춤을 제공합니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.
 - **판정 매트릭스** — 관측된 `identity/role × operation × resource` cell, source별 verdict, 미교차 조합, 일부만 발견, 불일치
@@ -278,7 +280,7 @@ MCP와 Web 서버는 `127.0.0.1`에만 bind하고 Host·Origin을 검증하며, 
 - `ACTIVE`는 자격증명이 포함된 캡처에서 401·로그인 redirect·invalid-token이 아닌 HTTP 응답을 관측했다는 범용 transport 증거입니다. 서비스 고유 `/me` 의미나 계정 소유를 자동 증명하지 않으므로 실제 역할·계정 연결은 운영자가 확인해야 합니다.
 - 안정 신호가 없는 opaque 회전 token은 자동 상관할 수 없습니다. 운영자가 확인된 fingerprint를 등록 계정에 명시적으로 연결할 수 있습니다.
 - Fetch Metadata와 MIME은 없거나 잘못될 수 있고 business API가 document·asset·telemetry와 비슷할 수 있습니다. 분류기는 여러 고신뢰 신호가 합치할 때만 제외하고 애매한 요청을 메인 그래프 밖 `REVIEW`로 보존하며 이유와 reversible override를 제공합니다. `REVIEW`를 확인하지 않으면 실제 API가 메인 비교에서 빠질 수 있으므로 트래픽 노이즈를 완벽하게 분류한다고 주장하지 않습니다.
-- 미요청 route는 보존된 마스킹 textual 응답(전문 미보존 시 8KiB preview)과 응답 없는 Burp Site Map 항목에서 최대 20,000개까지 추출합니다. 동적으로 조합된 JavaScript URL, 클라이언트 실행으로만 생기는 경로, 대상 밖 문서는 추측하지 않으므로 후보 목록도 전체 공격면이 아닙니다. 후보 우선순위는 공개된 범주형 근거이며 확률이나 취약성 점수가 아닙니다.
+- 미요청 route는 보존된 마스킹 textual 응답(전문 미보존 시 8KiB preview)과 응답 없는 Burp Site Map 항목에서 최대 20,000개까지 추출합니다. JavaScript AST가 정적으로 확인한 문자열·template·단순 결합은 처리하지만 임의 wrapper 의미, 런타임 계산, 클라이언트 실행으로만 생기는 경로, 받지 않은 lazy chunk와 대상 밖 문서는 추측하지 않으므로 후보 목록도 전체 공격면이 아닙니다. 후보 우선순위는 공개된 범주형 근거이며 확률이나 취약성 점수가 아닙니다.
 - 데이터 흐름은 제한된 exact-value matching이며 완전한 semantic taint analysis가 아닙니다.
 - Repeater handoff는 live 원문이 메모리에 있으면 그 원문, 아니면 저장된 마스킹 요청을 사용하며 자동 전송하지 않습니다. Web 요청 실험실의 명시적 전송은 HUMAN `VALIDATION` Evidence로 수집하지만 LLM 최종 verdict gate를 우회하지 않습니다. 결정적 자동 validation은 FlowScope 통제 MCP 요청과 서버 검증 bundle을 사용합니다.
 - closed-world 실행은 제공된 agent workspace의 instruction·tool 계약입니다. 별도로 개조한 에이전트 설치나 다른 로컬 process를 통제하지는 못합니다. 서버의 scope·Evidence 시야·verdict gate가 최종 권위입니다.

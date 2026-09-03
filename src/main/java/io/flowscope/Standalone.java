@@ -14,6 +14,7 @@ import io.flowscope.core.Source;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
 import io.flowscope.web.FlowScopeWebServer;
+import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 
 import java.awt.Desktop;
 import java.net.URI;
@@ -71,8 +72,8 @@ public final class Standalone {
                     result.records, ScopePolicy.parse(services), List.of());
             revision.incrementAndGet();
         }
-        @Override public void clearTraffic() { records.clear(); rebuild(); }
-        @Override public void loadSample() { replaceWithSample(); rebuild(); }
+        @Override public void clearTraffic() { records.clear(); JavascriptCallSiteAnalyzer.clearCache(); rebuild(); }
+        @Override public void loadSample() { replaceWithSample(); JavascriptCallSiteAnalyzer.clearCache(); rebuild(); }
         @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
             BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
             records.addAll(parsed.records);

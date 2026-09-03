@@ -7,6 +7,9 @@ import io.flowscope.core.SurfaceAnalysis.Declaration;
 import io.flowscope.core.SurfaceAnalysis.DeltaState;
 import io.flowscope.core.SurfaceAnalysis.EndpointFact;
 import io.flowscope.core.SurfaceAnalysis.EndpointKey;
+import io.flowscope.core.SurfaceAnalysis.ExtractionReport;
+import io.flowscope.core.SurfaceAnalysis.ExtractionFailure;
+import io.flowscope.core.SurfaceAnalysis.ExtractionStatus;
 import io.flowscope.core.SurfaceAnalysis.Observation;
 import io.flowscope.core.SurfaceAnalysis.ParameterFact;
 import io.flowscope.core.SurfaceAnalysis.ParameterLocation;
@@ -14,6 +17,8 @@ import io.flowscope.core.SurfaceAnalysis.ParameterObservation;
 import io.flowscope.core.SurfaceAnalysis.Requirement;
 import io.flowscope.core.SurfaceAnalysis.ValueShape;
 import io.flowscope.core.discovery.RouteDiscoveryDocument;
+import io.flowscope.core.discovery.JavascriptAnalysis;
+import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -43,15 +48,9 @@ public final class SurfaceAnalyzer {
             "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
     private static final Pattern MULTIPART_NAME = Pattern.compile(
             "(?i)content-disposition\\s*:[^\\r\\n]*\\bname\\s*=\\s*(?:\"([^\"]+)\"|([^;\\s]+))");
-    private static final Pattern JS_PROPERTY = Pattern.compile(
-            "(?s)(?:^|[,\\{])\\s*(?:([A-Za-z_$][\\w$-]*)|'([^']+)'|\"([^\"]+)\")\\s*:");
-    private static final Set<String> JS_OPTION_KEYS = Set.of(
-            "method", "headers", "body", "credentials", "mode", "cache", "redirect", "referrer",
-            "signal", "integrity", "keepalive", "url", "type", "data", "params", "timeout");
     private static final int MAX_PARAMETERS_PER_ENDPOINT = 1_024;
     private static final int MAX_JSON_DEPTH = 16;
     private static final int MAX_SCHEMA_DEPTH = 20;
-    private static final int MAX_JS_WINDOW = 4_096;
 
     private SurfaceAnalyzer() {}
 
@@ -60,17 +59,37 @@ public final class SurfaceAnalyzer {
                                           List<RouteCandidate> routeCandidates) {
         Map<String, MutableEndpoint> endpoints = new LinkedHashMap<>();
         Map<String, RequestRecord> recordsByEvidence = new LinkedHashMap<>();
+        Map<String, JavascriptAnalysis> javascriptByEvidence = new LinkedHashMap<>();
+        List<ExtractionReport> extractionReports = new ArrayList<>();
         for (RequestRecord record : allRecords == null ? List.<RequestRecord>of() : allRecords) {
             if (record.evidenceId != null && !record.evidenceId.isBlank()) {
                 recordsByEvidence.putIfAbsent(record.evidenceId, record);
             }
+            if (javascriptArtifact(record)) {
+                JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(record.responseBodyForAnalysis());
+                if (record.evidenceId != null) javascriptByEvidence.put(record.evidenceId, analysis);
+                extractionReports.add(new ExtractionReport(record.evidenceId, record.source, record.runId,
+                        "JAVASCRIPT", "javascript-ast", extractionStatus(analysis.status()),
+                        extractionFailure(analysis), analysis.detail(),
+                        analysis.callSites().size(), analysis.assets().size()));
+            } else if (openApiArtifact(record)) {
+                boolean parsed = parseOpenApi(record.responseBodyForAnalysis()) != null;
+                extractionReports.add(new ExtractionReport(record.evidenceId, record.source, record.runId,
+                        "OPENAPI", "openapi-json-yaml", parsed ? ExtractionStatus.PARSED : ExtractionStatus.FAILED,
+                        parsed ? ExtractionFailure.NONE : ExtractionFailure.PARSE_FAILED,
+                        parsed ? "" : "OpenAPI/Swagger document parse failed", 0, 0));
+            } else if (htmlArtifact(record)) {
+                extractionReports.add(new ExtractionReport(record.evidenceId, record.source, record.runId,
+                        "HTML", "html-dom", ExtractionStatus.PARSED, ExtractionFailure.NONE, "", 0, 0));
+            }
         }
 
         for (RouteCandidate candidate : routeCandidates == null ? List.<RouteCandidate>of() : routeCandidates) {
-            EndpointKey key = new EndpointKey(candidate.service(), candidate.method(), candidate.pathTemplate());
-            MutableEndpoint endpoint = endpoints.computeIfAbsent(key.stableKey(), ignored -> new MutableEndpoint(key));
             for (RouteCandidate.Provenance provenance : candidate.provenance()) {
-                if (provenance.type() == RouteCandidate.ProvenanceType.OBSERVED_REQUEST) continue;
+                if (!surfaceDeclaration(candidate, provenance.type())) continue;
+                EndpointKey key = new EndpointKey(candidate.service(), candidate.method(), candidate.pathTemplate());
+                MutableEndpoint endpoint = endpoints.computeIfAbsent(key.stableKey(),
+                        ignored -> new MutableEndpoint(key));
                 endpoint.declarations.add(declaration(provenance));
             }
         }
@@ -88,13 +107,15 @@ public final class SurfaceAnalyzer {
 
         for (RouteCandidate candidate : routeCandidates == null ? List.<RouteCandidate>of() : routeCandidates) {
             for (RouteCandidate.Provenance provenance : candidate.provenance()) {
-                if (provenance.type() == RouteCandidate.ProvenanceType.OBSERVED_REQUEST) continue;
+                if (!surfaceDeclaration(candidate, provenance.type())) continue;
                 RequestRecord artifact = recordsByEvidence.get(provenance.evidenceId());
                 if (artifact == null) continue;
                 switch (provenance.type()) {
                     case OPENAPI -> declareOpenApi(endpoints, candidate, artifact, provenance);
                     case HTML_FORM -> declareHtmlForm(endpoints, candidate, artifact, provenance);
-                    case JAVASCRIPT_LITERAL -> declareJavascript(endpoints, candidate, artifact, provenance);
+                    case JAVASCRIPT_LITERAL -> declareJavascript(endpoints, candidate, artifact, provenance,
+                            javascriptByEvidence.computeIfAbsent(provenance.evidenceId(),
+                                    ignored -> JavascriptCallSiteAnalyzer.analyze(artifact.responseBodyForAnalysis())));
                     default -> declareQueryLiteral(endpoints, candidate, provenance);
                 }
             }
@@ -106,15 +127,63 @@ public final class SurfaceAnalyzer {
                         .thenComparing(fact -> fact.key().pathTemplate())
                         .thenComparing(fact -> fact.key().method()))
                 .toList();
-        return new SurfaceAnalysis(facts);
+        return new SurfaceAnalysis(facts, extractionReports);
+    }
+
+    private static ExtractionStatus extractionStatus(JavascriptAnalysis.Status status) {
+        return switch (status) {
+            case PARSED -> ExtractionStatus.PARSED;
+            case PARTIAL -> ExtractionStatus.PARTIAL;
+            case PARSE_FAILED -> ExtractionStatus.FAILED;
+            case LIMIT_EXCEEDED -> ExtractionStatus.LIMIT_EXCEEDED;
+        };
+    }
+
+    private static ExtractionFailure extractionFailure(JavascriptAnalysis analysis) {
+        return switch (analysis.status()) {
+            case PARSED -> ExtractionFailure.NONE;
+            case PARTIAL -> ExtractionFailure.SYNTAX_RECOVERY;
+            case PARSE_FAILED -> ExtractionFailure.PARSE_FAILED;
+            case LIMIT_EXCEEDED -> analysis.detail().startsWith("script exceeds")
+                    ? ExtractionFailure.INPUT_SIZE_LIMIT : ExtractionFailure.AST_NODE_LIMIT;
+        };
+    }
+
+    private static boolean javascriptArtifact(RequestRecord record) {
+        String media = mediaType(record.responseContentType);
+        String path = record.path.toLowerCase(Locale.ROOT);
+        return media.contains("javascript") || path.endsWith(".js") || path.endsWith(".mjs")
+                || path.endsWith(".cjs");
+    }
+
+    private static boolean htmlArtifact(RequestRecord record) {
+        String media = mediaType(record.responseContentType);
+        String body = record.responseBodyForAnalysis();
+        String leading = body == null ? "" : body.stripLeading().toLowerCase(Locale.ROOT);
+        return media.equals("text/html") || media.equals("application/xhtml+xml")
+                || leading.startsWith("<!doctype html") || leading.startsWith("<html");
+    }
+
+    private static boolean openApiArtifact(RequestRecord record) {
+        String path = record.path.toLowerCase(Locale.ROOT);
+        String body = record.responseBodyForAnalysis();
+        return path.endsWith("openapi.json") || path.endsWith("openapi.yaml") || path.endsWith("openapi.yml")
+                || path.endsWith("swagger.json") || path.endsWith("swagger.yaml") || path.endsWith("swagger.yml")
+                || body != null && (body.contains("\"openapi\"") || body.contains("\"swagger\"")
+                || body.matches("(?s)^\\s*(openapi|swagger)\\s*:.*"));
+    }
+
+    private static boolean surfaceDeclaration(RouteCandidate candidate, RouteCandidate.ProvenanceType type) {
+        return type == RouteCandidate.ProvenanceType.OPENAPI
+                || type == RouteCandidate.ProvenanceType.HTML_FORM
+                || type == RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL
+                || (type == RouteCandidate.ProvenanceType.XML_ROUTE && !candidate.method().equals("UNKNOWN"));
     }
 
     private static EndpointKey observedKey(RequestRecord record) {
         String prefix = record.service + " " + record.method + " ";
         String path = record.op != null && record.op.startsWith(prefix)
                 ? record.op.substring(prefix.length()) : record.path;
-        int operationName = path.indexOf('#');
-        if (operationName >= 0) path = path.substring(0, operationName);
         return new EndpointKey(record.service, record.method, path);
     }
 
@@ -124,7 +193,10 @@ public final class SurfaceAnalyzer {
     }
 
     private static void observePathParameters(MutableEndpoint endpoint, RequestRecord record) {
-        String[] template = endpoint.key.pathTemplate().split("/", -1);
+        String pathTemplate = endpoint.key.pathTemplate();
+        int operationName = pathTemplate.indexOf('#');
+        if (operationName >= 0) pathTemplate = pathTemplate.substring(0, operationName);
+        String[] template = pathTemplate.split("/", -1);
         String[] actual = record.path.split("/", -1);
         int length = Math.min(template.length, actual.length);
         for (int index = 0; index < length; index++) {
@@ -150,7 +222,12 @@ public final class SurfaceAnalyzer {
         if (media.contains("json") || stripped.startsWith("{") || stripped.startsWith("[")) {
             try {
                 JsonNode root = JSON.readTree(body);
-                observeJson(endpoint, record, root, "", 0, new int[]{0});
+                if (graphql(record) && root.isObject()) {
+                    observeJson(endpoint, record, root.path("variables"), "", 0, new int[]{0},
+                            ParameterLocation.GRAPHQL_VARIABLE);
+                } else {
+                    observeJson(endpoint, record, root, "", 0, new int[]{0}, ParameterLocation.JSON_BODY);
+                }
             } catch (Exception ignored) {
                 // JSON으로 확인되지 않은 본문을 추정 파싱하지 않는다.
             }
@@ -174,30 +251,38 @@ public final class SurfaceAnalyzer {
     }
 
     private static void observeJson(MutableEndpoint endpoint, RequestRecord record, JsonNode node,
-                                    String path, int depth, int[] count) {
+                                    String path, int depth, int[] count, ParameterLocation location) {
         if (node == null || depth > MAX_JSON_DEPTH || count[0] >= MAX_PARAMETERS_PER_ENDPOINT) return;
         if (node.isObject()) {
             if (!path.isBlank() && node.isEmpty()) {
-                endpoint.parameter(ParameterLocation.JSON_BODY, path, path).observe(record, ValueShape.OBJECT);
+                endpoint.parameter(location, path, path).observe(record, ValueShape.OBJECT);
                 count[0]++;
             }
             node.properties().forEach(entry -> {
                 if (count[0] >= MAX_PARAMETERS_PER_ENDPOINT) return;
                 String child = path.isBlank() ? entry.getKey() : path + "." + entry.getKey();
-                observeJson(endpoint, record, entry.getValue(), child, depth + 1, count);
+                observeJson(endpoint, record, entry.getValue(), child, depth + 1, count, location);
             });
             return;
         }
         if (node.isArray()) {
-            endpoint.parameter(ParameterLocation.JSON_BODY, path, path).observe(record, ValueShape.ARRAY);
+            endpoint.parameter(location, path, path).observe(record, ValueShape.ARRAY);
             count[0]++;
-            if (!node.isEmpty()) observeJson(endpoint, record, node.get(0), path + "[]", depth + 1, count);
+            if (!node.isEmpty() && (node.get(0).isObject() || node.get(0).isArray())) {
+                observeJson(endpoint, record, node.get(0), path + "[]", depth + 1, count, location);
+            }
             return;
         }
         if (!path.isBlank()) {
-            endpoint.parameter(ParameterLocation.JSON_BODY, path, path).observe(record, shape(node));
+            endpoint.parameter(location, path, path).observe(record, shape(node));
             count[0]++;
         }
+    }
+
+    private static boolean graphql(RequestRecord record) {
+        return record.requestContentType != null && record.requestContentType.toLowerCase(Locale.ROOT).contains("graphql")
+                || record.path.equalsIgnoreCase("/graphql")
+                || record.op != null && record.op.contains("#");
     }
 
     private static void declareQueryLiteral(Map<String, MutableEndpoint> endpoints, RouteCandidate candidate,
@@ -341,8 +426,11 @@ public final class SurfaceAnalyzer {
                 } else if (value.path("type").asText().equals("array")) {
                     endpoint.parameter(location, child, child)
                             .declare(provenance, requirement, child);
-                    declareSchema(endpoint, root, value.path("items"), child + "[]", provenance, requirement,
-                            location, depth + 1, new LinkedHashSet<>(refs));
+                    JsonNode items = resolveLocalRef(root, value.path("items"), 0);
+                    if (items.has("properties") || items.path("type").asText().equals("object")) {
+                        declareSchema(endpoint, root, items, child + "[]", provenance, requirement,
+                                location, depth + 1, new LinkedHashSet<>(refs));
+                    }
                 } else {
                     endpoint.parameter(location, child, child)
                             .declare(provenance, requirement, child);
@@ -376,9 +464,20 @@ public final class SurfaceAnalyzer {
                                         RequestRecord artifact, RouteCandidate.Provenance provenance) {
         Document document = Jsoup.parse(artifact.responseBodyForAnalysis(), artifact.service + artifact.path);
         for (Element form : document.select("form")) {
-            String method = form.attr("method").isBlank() ? "GET" : form.attr("method").toUpperCase(Locale.ROOT);
-            String action = form.hasAttr("action") ? form.absUrl("action") : artifact.service + artifact.path;
-            if (!htmlCandidateMatches(candidate, method, action)) continue;
+            String defaultMethod = form.attr("method").isBlank()
+                    ? "GET" : form.attr("method").toUpperCase(Locale.ROOT);
+            String defaultAction = form.hasAttr("action") ? form.absUrl("action") : artifact.service + artifact.path;
+            List<Element> matchingSubmitters = new ArrayList<>();
+            boolean defaultMatches = htmlCandidateMatches(candidate, defaultMethod, defaultAction);
+            for (Element submitter : form.select("button[formaction], input[formaction]")) {
+                String method = submitter.attr("formmethod").isBlank()
+                        ? defaultMethod : submitter.attr("formmethod").toUpperCase(Locale.ROOT);
+                if (htmlCandidateMatches(candidate, method, submitter.absUrl("formaction"))) {
+                    matchingSubmitters.add(submitter);
+                }
+            }
+            if (!defaultMatches && matchingSubmitters.isEmpty()) continue;
+            String method = candidate.method();
             ParameterLocation location = method.equals("GET") ? ParameterLocation.QUERY
                     : form.attr("enctype").toLowerCase(Locale.ROOT).startsWith("multipart/form-data")
                     ? ParameterLocation.MULTIPART_BODY : ParameterLocation.FORM_BODY;
@@ -387,6 +486,11 @@ public final class SurfaceAnalyzer {
             if (endpoint == null) continue;
             for (Element control : form.select("input[name], select[name], textarea[name], button[name]")) {
                 if (control.hasAttr("disabled")) continue;
+                boolean submitControl = control.tagName().equals("button")
+                        || (control.tagName().equals("input") && Set.of("submit", "image")
+                        .contains(control.attr("type").toLowerCase(Locale.ROOT)));
+                if (submitControl && !matchingSubmitters.contains(control)
+                        && (!defaultMatches || control.hasAttr("formaction") || control.hasAttr("formmethod"))) continue;
                 String name = control.attr("name").trim();
                 if (name.isBlank()) continue;
                 Requirement requirement = control.hasAttr("required") ? Requirement.REQUIRED : Requirement.OPTIONAL;
@@ -408,126 +512,46 @@ public final class SurfaceAnalyzer {
     }
 
     private static void declareJavascript(Map<String, MutableEndpoint> endpoints, RouteCandidate candidate,
-                                          RequestRecord artifact, RouteCandidate.Provenance provenance) {
-        declareQueryLiteral(endpoints, candidate, provenance);
-        if (candidate.method().equals("GET") || candidate.method().equals("HEAD")
-                || candidate.method().equals("OPTIONS") || candidate.method().equals("UNKNOWN")) return;
+                                          RequestRecord artifact, RouteCandidate.Provenance provenance,
+                                          JavascriptAnalysis analysis) {
         MutableEndpoint endpoint = endpoints.get(new EndpointKey(candidate.service(), candidate.method(),
                 candidate.pathTemplate()).stableKey());
         if (endpoint == null) return;
-        String body = artifact.responseBodyForAnalysis();
-        for (String concrete : candidate.concretePaths()) {
-            String path = concrete.split("\\?", 2)[0];
-            int from = 0;
-            while (from < body.length()) {
-                int hit = body.indexOf(path, from);
-                if (hit < 0) break;
-                String window = requestExpression(body, hit);
-                int objectStart = requestObjectStart(window);
-                if (objectStart >= 0) {
-                    int objectEnd = balancedObjectEnd(window, objectStart);
-                    if (objectEnd > objectStart) {
-                        Matcher property = JS_PROPERTY.matcher(window.substring(objectStart, objectEnd + 1));
-                        while (property.find()) {
-                            String name = first(property.group(1), property.group(2), property.group(3));
-                            if (name != null && !JS_OPTION_KEYS.contains(name)) {
-                                endpoint.parameter(ParameterLocation.JSON_BODY, name, name)
-                                        .declare(provenance, Requirement.UNKNOWN, name);
-                            }
-                        }
+        for (JavascriptAnalysis.CallSite call : analysis.callSites()) {
+            if (!candidate.method().equalsIgnoreCase(call.method())
+                    || !javascriptPathMatches(artifact, candidate.pathTemplate(), call.reference())) continue;
+            if (call.reference().contains("{expr}")) {
+                String[] segments = candidate.pathTemplate().split("/", -1);
+                for (int index = 0; index < segments.length; index++) {
+                    if (segments[index].equals("{id}")) {
+                        endpoint.parameter(ParameterLocation.PATH, "path[" + index + "]", "dynamic expression")
+                                .declare(provenance, Requirement.UNKNOWN, "dynamic expression");
                     }
                 }
-                from = hit + path.length();
+            }
+            for (JavascriptAnalysis.Parameter parameter : call.parameters()) {
+                ParameterLocation location = switch (parameter.kind()) {
+                    case QUERY -> ParameterLocation.QUERY;
+                    case JSON_BODY -> ParameterLocation.JSON_BODY;
+                    case FORM_BODY -> ParameterLocation.FORM_BODY;
+                };
+                endpoint.parameter(location, parameter.name(), parameter.name())
+                        .declare(provenance, Requirement.UNKNOWN, parameter.name());
             }
         }
     }
 
-    private static String requestExpression(String script, int pathStart) {
-        int lowerBound = Math.max(0, pathStart - 256);
-        int callStart = -1;
-        for (int index = pathStart - 1; index >= lowerBound; index--) {
-            char current = script.charAt(index);
-            if (current == '(') {
-                callStart = index;
-                break;
-            }
-            if (current == ';' || current == '\n' || current == '\r') break;
+    private static boolean javascriptPathMatches(RequestRecord artifact, String candidatePath, String reference) {
+        try {
+            String encoded = reference.replace("{", "%7B").replace("}", "%7D");
+            String path = URI.create(artifact.service + artifact.path).resolve(encoded).getPath();
+            if (path == null) return false;
+            String normalized = Normalizer.normalize("GET", path.replace("{expr}", "1")).op;
+            String template = normalized.substring(normalized.indexOf(' ') + 1);
+            return candidatePath.equals(template);
+        } catch (RuntimeException ignored) {
+            return false;
         }
-        if (callStart >= 0) {
-            int callEnd = balancedCallEnd(script, callStart, Math.min(script.length(), callStart + MAX_JS_WINDOW));
-            if (callEnd > pathStart) return script.substring(pathStart, callEnd + 1);
-        }
-        int limit = Math.min(script.length(), pathStart + MAX_JS_WINDOW);
-        int end = limit;
-        for (int index = pathStart; index < limit; index++) {
-            char current = script.charAt(index);
-            if (current == ';' || current == '\n' || current == '\r') {
-                end = index;
-                break;
-            }
-        }
-        return script.substring(pathStart, end);
-    }
-
-    private static int balancedCallEnd(String value, int start, int limit) {
-        int depth = 0;
-        char quote = 0;
-        boolean escaped = false;
-        for (int index = start; index < limit; index++) {
-            char current = value.charAt(index);
-            if (quote != 0) {
-                if (escaped) escaped = false;
-                else if (current == '\\') escaped = true;
-                else if (current == quote) quote = 0;
-                continue;
-            }
-            if (current == '\'' || current == '"' || current == '`') {
-                quote = current;
-                continue;
-            }
-            if (current == '(') depth++;
-            else if (current == ')' && --depth == 0) return index;
-        }
-        return -1;
-    }
-
-    private static int requestObjectStart(String window) {
-        int stringify = window.indexOf("JSON.stringify");
-        if (stringify >= 0) {
-            int brace = window.indexOf('{', stringify);
-            if (brace >= 0) return brace;
-        }
-        int body = window.indexOf("body:");
-        if (body < 0) body = window.indexOf("body :");
-        if (body >= 0) {
-            int brace = window.indexOf('{', body);
-            if (brace >= 0) return brace;
-        }
-        int comma = window.indexOf(',');
-        if (comma >= 0) {
-            int brace = window.indexOf('{', comma);
-            if (brace >= 0) return brace;
-        }
-        return -1;
-    }
-
-    private static int balancedObjectEnd(String value, int start) {
-        int depth = 0;
-        char quote = 0;
-        boolean escaped = false;
-        for (int index = start; index < value.length(); index++) {
-            char current = value.charAt(index);
-            if (quote != 0) {
-                if (escaped) escaped = false;
-                else if (current == '\\') escaped = true;
-                else if (current == quote) quote = 0;
-                continue;
-            }
-            if (current == '\'' || current == '"' || current == '`') { quote = current; continue; }
-            if (current == '{') depth++;
-            else if (current == '}' && --depth == 0) return index;
-        }
-        return -1;
     }
 
     private static JsonNode parseOpenApi(String body) {
