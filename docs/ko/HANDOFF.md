@@ -7,14 +7,14 @@
 | 항목 | 기준 |
 |---|---|
 | 기준 날짜 | 2026-09-03 |
-| 제품 버전 | `1.2.0-beta.43` |
-| 로컬 기준 커밋 | beta.43 lexical URL 해석·검토면 정리의 집중 커밋은 `git log -1 --oneline`으로 확인 |
+| 제품 버전 | `1.2.0-beta.44` |
+| 로컬 기준 커밋 | beta.44 LLM 실행 실패 가시성의 집중 커밋은 `git log -1 --oneline`으로 확인 |
 | 브랜치·원격 차이 | 로컬 `main`; `origin/main`은 `v1.2.0-beta.25`(`c2c9945`). 정확한 ahead/behind는 `git rev-list --left-right --count origin/main...HEAD`로 확인 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
-| 자동 회귀 | beta.43 최종 `mvn clean verify` 연속 2회, 매회 349 tests, failure/error/skip 0 |
-| 현재 JAR | `target/flowscope-1.2.0-beta.43.jar`, 31,081,416 bytes, 9,105 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `f783066814e577efce4fb2e42dceb4ce3a11482c6bd574fbaf6e00a2e8cef4f6` |
-| 현재 판정 | 범용 관측·선언·AST·delta에 lexical object member, axios baseURL과 typed 해석 실패를 보강. 내부 fixture는 구조 회귀이며 실제 Burp·독립 외부 pilot·지원 Tier 조정은 남음 |
+| 자동 회귀 | beta.44 최종 `mvn clean verify` 연속 2회, 매회 356 tests, failure/error/skip 0 |
+| 현재 JAR | `target/flowscope-1.2.0-beta.44.jar`, 31,100,350 bytes, 9,113 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `3832bd134a8ae093ebdea214c9ceb914b1e5395d7d4c5df0add65a0696ca2256` |
+| 현재 판정 | LLM 통제 요청의 응답 전 실패를 Evidence와 분리하고 실행 전·전부 실패·부분 실패·응답 수신을 Web/저장에 연결. 실제 Burp TLS/DNS 분류·독립 외부 pilot은 남음 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
 
@@ -61,7 +61,7 @@ FlowScope의 핵심 문제는 보안 진단자가 Burp의 요청 목록만 보�
 ### 3.1 설치와 범위
 
 1. `mvn clean verify`로 fat JAR을 만든다.
-2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.43.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
+2. Burp Suite Community/Professional에서 Release 또는 빌드한 `flowscope-1.2.0-beta.44.jar`를 Java 확장으로 로드한다. 처음 설치는 [설치·첫 실행 가이드](getting-started.md)를 따른다.
 3. Burp Proxy listener를 준비한다.
    - `127.0.0.1:8080`: HUMAN
    - `127.0.0.1:8081`: SCANNER
@@ -224,7 +224,8 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 | [`ZapClient.java`](../../src/main/java/io/flowscope/integration/ZapClient.java) | localhost ZAP API, spider/passive/alert orchestration |
 | [`McpServer.java`](../../src/main/java/io/flowscope/integration/McpServer.java) | localhost 인증 MCP, Explorer 격리, dataset lock, target executor, assessment/validation gate |
 | [`LocalLlmRunner.java`](../../src/main/java/io/flowscope/integration/LocalLlmRunner.java) | Codex/Claude CLI 새 프로세스, 임시 workspace, Judge 재개 |
-| [`ProjectStore.java`](../../src/main/java/io/flowscope/integration/ProjectStore.java) | JSON schema v3 저장·로드, v1/v2 호환 읽기, exact completed run 보존 |
+| [`ProjectStore.java`](../../src/main/java/io/flowscope/integration/ProjectStore.java) | JSON schema v4 저장·로드, v1/v2/v3 호환 읽기, exact completed run·실행 시도 원장 보존 |
+| [`RunExecutionLedger.java`](../../src/main/java/io/flowscope/integration/RunExecutionLedger.java) | MCP 통제 HTTP 시도의 비밀 없는 typed outcome과 run 품질 집계 |
 | [`SqliteProjectStore.java`](../../src/main/java/io/flowscope/integration/SqliteProjectStore.java) | 관계형 로컬 DB와 atomic checkpoint |
 
 ### 5.5 Web 작업면
@@ -301,8 +302,8 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ### 아직 검증되지 않은 것
 
-- beta.43 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
-- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.43 scanner import와 Evidence 상세 확인
+- beta.44 JAR의 실제 Burp Community end-to-end HUMAN/SCANNER/LLM/Judge 실행과 프로젝트 저장·재열기
+- 실제 ZAP 2.17 UI에서 저장한 HAR의 beta.44 scanner import와 Evidence 상세 확인
 - 실제 Burp Request Lab의 고지연 A→B 선택, 상태 변경 이중 전송, clear/rebuild callback 경합
 - 실제 ZAP 2.17에서 OpenAPI·GraphQL·Postman·SOAP 정의별 요청 생성, exact-scope 차단, 신원별 인증 주입과 경고 표시 확인
 - 실제 ZAP Desktop의 key·8089 API·8081 upstream·필수 add-on과 Web 연결 상태 수동 gate
@@ -327,7 +328,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 3. **stale pipeline 결과 게시:** `AnalysisPublicationGate`의 publication epoch가 같은 결과만 `latest`·route candidate·revision에 원자 게시한다.
 4. **일반 빈 셀의 IDOR 오표시:** exact server `UNCROSSED` key만 gap으로 표시하고 나머지는 중립 `미검증`으로 분리한다.
 
-집중 회귀는 완료했지만 실제 Burp UI의 고지연 A→B 선택, 상태 변경 중복 클릭, clear/rebuild 동시 실행은 최신 beta.43 JAR 수동 gate가 남아 있다. 자동 회귀를 실환경 완료로 표현하지 않는다.
+집중 회귀는 완료했지만 실제 Burp UI의 고지연 A→B 선택, 상태 변경 중복 클릭, clear/rebuild 동시 실행은 최신 beta.44 JAR 수동 gate가 남아 있다. 자동 회귀를 실환경 완료로 표현하지 않는다.
 
 ### beta.34에서 닫은 P1
 
@@ -396,7 +397,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ## 9. 다음 개발 순서
 
-현재 출발점은 beta.43의 **최종 자동 검증, 실제 Burp 회귀와 승인된 독립 pilot**이다. 1~4는 구현·자동 회귀 완료다. 5는 저장소 내부 합성 truth 구조 회귀이며, 6은 일부 typed 실패 분류, 7은 Next pages manifest chunk 연결, 8은 공통 asset/GraphQL 관측 회귀까지만 완료됐다. beta.43은 lexical object member와 axios baseURL을 보강하고 동적·재할당 값의 거짓 후보를 차단한다. 다음에는 실제 bundle에서 precision/recall·검토량·성능과 실패 구조를 측정한다. source map, Next App Router, GraphQL schema, 추가 framework adapter는 반복 실패 근거가 있을 때만 같은 fact schema 뒤에 추가하며 이후 지원 Tier를 실측으로 조정한다. 승인 전 외부 대상에는 요청하지 않는다. 그 뒤 기존 **P2 세션·신원·프로세스 수명·가져오기 무결성**으로 돌아간다.
+현재 출발점은 beta.44의 **최종 자동 검증, 실제 Burp 회귀와 승인된 독립 pilot**이다. LLM 통제 요청의 응답 전 실패는 Evidence와 분리되어 실행 전·전부 실패·부분 실패·응답 수신으로 표시되며, JSON v4·SQLite v3에 저장된다. 실제 Burp TLS/DNS/timeout 분류와 재열기 gate는 아직 남아 있다. Surface 계획 1~4는 구현·자동 회귀 완료다. 5는 저장소 내부 합성 truth 구조 회귀이며, 6은 일부 typed 실패 분류, 7은 Next pages manifest chunk 연결, 8은 공통 asset/GraphQL 관측 회귀까지만 완료됐다. 다음에는 실제 bundle에서 precision/recall·검토량·성능과 실패 구조를 측정한다. source map, Next App Router, GraphQL schema, 추가 framework adapter는 반복 실패 근거가 있을 때만 같은 fact schema 뒤에 추가하며 이후 지원 Tier를 실측으로 조정한다. 승인 전 외부 대상에는 요청하지 않는다. 그 뒤 기존 **P2 세션·신원·프로세스 수명·가져오기 무결성**으로 돌아간다.
 
 ### 단계 A — 기준선과 재현 고정 (beta.34 완료)
 
@@ -545,7 +546,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.43.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.44.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
 
 ## 12. Git 협업 규칙
 
@@ -602,7 +603,7 @@ git status --short
 
 | 작업 | 중심 파일 | 선행 조건 |
 |---|---|---|
-| A. ZAP 실제 provenance gate | `FlowScopeExtension`, `McpServer`, 실제 Burp/ZAP | beta.43 JAR 재로드 |
+| A. ZAP 실제 provenance gate | `FlowScopeExtension`, `McpServer`, 실제 Burp/ZAP | beta.44 JAR 재로드 |
 | B. project validate-then-swap | `FlowScopeExtension`, `ProjectStore`, `SqliteProjectStore` | 실패 rollback fixture |
 | C. Session Broker 신뢰 | `SessionBroker`, account/session Web 상태 | ACTIVE·auth material 계약 결정 |
 | D. merge/JWT 신원 무결성 | `RecordMerge`, `Fingerprints`, `AnalysisConfig` | account/run provenance와 hint 계약 |
@@ -791,7 +792,7 @@ beta.38~39는 경과시간·heartbeat·capture 변화·queue 상태·Alert 완�
 
 ### 다음 사람이 가장 먼저 할 실제 gate
 
-1. Burp에서 이전 FlowScope 확장을 제거하고 현재 beta.43 JAR을 다시 로드한다.
+1. Burp에서 이전 FlowScope 확장을 제거하고 현재 beta.44 JAR을 다시 로드한다.
 2. ZAP 2.17 API가 `127.0.0.1:8089`, outgoing proxy가 Burp `127.0.0.1:8081`인지 확인한다.
 3. exact scope와 비로그인 lane 하나만 선택해 시작한다.
 4. Traditional 단계부터 `출처 검증 차단 0건`인지 확인한다.
@@ -968,10 +969,10 @@ HUMAN vs SCANNER(ZAP) vs LLM Explorer
 git status --short
 git log -1 --oneline
 git rev-list --left-right --count origin/main...HEAD
-shasum -a 256 target/flowscope-1.2.0-beta.43.jar
+shasum -a 256 target/flowscope-1.2.0-beta.44.jar
 ```
 
-기대값은 사용자 소유 변경인 루트 `CLAUDE.md`와 untracked `mentor-progress-report.md`가 남고, `HEAD`가 beta.43 lexical URL 해석·검토면 정리 집중 커밋인 상태다. JAR digest와 원격 차이는 `beta-validation.md`와 위 명령의 실측값을 따른다. 다르면 새 상태를 먼저 기록하고 이 문서를 기계적으로 믿지 않는다.
+기대값은 사용자 소유 변경인 루트 `CLAUDE.md`와 untracked `mentor-progress-report.md`가 남고, `HEAD`가 beta.44 LLM 실행 실패 가시성 집중 커밋인 상태다. JAR digest와 원격 차이는 `beta-validation.md`와 위 명령의 실측값을 따른다. 다르면 새 상태를 먼저 기록하고 이 문서를 기계적으로 믿지 않는다.
 
 ### 1단계 — 실제 ZAP provenance gate
 

@@ -1,8 +1,20 @@
-# FlowScope 1.2.0-beta.43 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.44 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.43 절만 현재 우선순위다. beta.42 이하 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** 맨 위 beta.44 절만 현재 우선순위다. beta.43 이하 절은 당시 계획과 검증 상태를 보존한 이력이다.
 
-## 0. beta.43 우선순위: 정적 해석 정확도와 검토 화면 집중
+## 0. beta.44 우선순위: 실행 실패와 탐색 0건의 분리
+
+1. MCP 통제 HTTP 시도를 HTTP Evidence와 분리한 bounded typed 원장으로 기록한다.
+2. `실행 전 / 전부 전송 실패 / 일부 실패 / HTTP 응답 수신`을 run 단위로 계산한다.
+3. 전부 실패한 Explorer 완료를 거부하고 일부 실패를 완료 limitation으로 남긴다.
+4. LLM 실행 패널과 Endpoint·Parameter Surface에 시도·응답·실패를 표시하되 실패를 관측 endpoint로 올리지 않는다.
+5. JSON v4·SQLite v3에 비밀 없는 실행 원장을 round-trip하고 구버전 exact completed run을 보존한다.
+6. 집중 회귀 뒤 전체 `mvn clean verify` 2회, 재현 JAR, inline JavaScript, manifest/notice gate를 수행한다.
+7. 실제 Burp에서 정상 HTTPS, 신뢰되지 않은 인증서, 연결 timeout을 각각 실행해 typed outcome과 UI·재열기를 확인한다.
+
+**현재 상태:** 1~6을 완료했다. 고정된 최종 입력에서 전체 356 tests와 byte-for-byte 재현 JAR을 확인했다. 7의 실제 Burp gate는 대기하며, 자동 테스트만으로 운영체제별 Montoya 예외 분류를 완료했다고 주장하지 않는다.
+
+## 0. beta.43 이력: 정적 해석 정확도와 검토 화면 집중
 
 1. lexical scope가 다른 같은 이름의 binding을 구분하고 정적 object member URL을 해석한다.
 2. axios import·instance를 구분하고 `baseURL`, 요청별 override, absolute URL 결합 규칙을 실제 axios 계약과 맞춘다.

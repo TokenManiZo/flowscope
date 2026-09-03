@@ -22,6 +22,7 @@ import io.flowscope.core.SurfaceAnalyzer;
 import io.flowscope.core.Verdict;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
+import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
 
 import java.util.Comparator;
@@ -60,6 +61,15 @@ public final class SnapshotJsonWriter {
                         List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates, long droppedRecords) throws JsonProcessingException {
+        return write(revision, result, config, assessments, validations, managedSessions,
+                routeCandidates, droppedRecords, List.of());
+    }
+
+    public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
+                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions,
+                        List<RouteCandidate> routeCandidates, long droppedRecords,
+                        List<RunExecutionLedger.Summary> executionSummaries) throws JsonProcessingException {
         config = config.snapshotCopy();
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
@@ -94,6 +104,7 @@ public final class SnapshotJsonWriter {
         root.set("sessions", sessions(config, result.records));
         root.set("managedSessions", managedSessions(managedSessions));
         root.set("routeCandidates", routeCandidates(routeCandidates));
+        root.set("runExecutions", json.valueToTree(executionSummaries == null ? List.of() : executionSummaries));
         root.set("surface", json.valueToTree(surface(revision, result, routeCandidates)));
         return json.writeValueAsBytes(root);
     }

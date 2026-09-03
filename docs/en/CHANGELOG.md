@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0-beta.44 — 2026-09-03
+
+- Keep controlled HTTP attempts that fail before a response in a bounded typed ledger instead of silently collapsing them into zero discoveries or promoting them to Evidence.
+- Distinguish not attempted, all failed, partially failed, and HTTP responses observed in the LLM status and endpoint/parameter surface summary. All-failed Explorer runs cannot complete.
+- Persist the secret-free attempt ledger in JSON project schema v4 and SQLite storage schema v3. Real Burp TLS/DNS exception classification remains a manual beta.44 gate.
+- Two consecutive clean builds each passed 356 tests and produced the same byte-for-byte beta.44 JAR.
+
 ## 1.2.0-beta.43 — 2026-09-03
 
 - Resolve immutable JavaScript object-member URLs and axios instance `baseURL`/per-request overrides through lexical bindings, while refusing to invent endpoints from shadowed, reassigned, or dynamic values.

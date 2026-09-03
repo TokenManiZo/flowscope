@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.44 — 2026-09-03
+
+- LLM 통제 HTTP 요청의 응답 전 실패를 Evidence와 분리한 bounded 실행 원장으로 기록합니다. TLS·DNS·timeout·연결·무응답·범위 차단·승인 거부를 typed outcome으로 구분하며 query·header·body·raw 예외문은 저장하지 않습니다.
+- 실행 전, 전부 실패, 일부 실패, HTTP 응답 수신을 서로 다르게 표시합니다. 전부 실패한 Explorer는 완료할 수 없고 일부 실패는 완료 limitation으로 남습니다.
+- LLM 실행 상태와 기본 API·입력 차이 화면에서 시도·응답·실패 수를 보여 주며 실패 요청을 그래프 Evidence로 만들지 않습니다.
+- 프로젝트 저장 계약을 JSON v4·SQLite v3으로 올려 실행 원장을 저장·재열기합니다. 실제 Burp의 TLS/DNS 예외 분류 수동 gate는 아직 남아 있습니다.
+- 고정된 최종 입력에서 `mvn clean verify`를 두 번 실행해 매회 356 tests가 통과했고 두 beta.44 JAR이 byte-for-byte 일치했습니다.
+
 ## 1.2.0-beta.43 — 2026-09-03
 
 - JavaScript lexical scope의 불변 object member와 axios instance `baseURL`/요청별 override를 해석해 이전의 누락과 잘못된 상대 endpoint를 수정했습니다.

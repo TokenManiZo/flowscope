@@ -20,6 +20,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.ProjectStore;
+import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SqliteProjectStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -83,8 +84,12 @@ final class SqliteProjectStoreTest {
 
         Path database = temp.resolve("test.flowscope.db");
         SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        RunExecutionLedger ledger = new RunExecutionLedger();
+        ledger.record(Source.LLM, "llm-failed", "acct-test1", "GET",
+                "https://api.test/orders/8?token=raw-token", RunExecutionLedger.Outcome.TIMEOUT,
+                0, null, Instant.parse("2026-09-03T00:02:00Z"), 30_000);
         store.save(database, List.of(record), config, List.of(assessment), List.of(validation),
-                contexts.completedRuns(), List.of(route));
+                contexts.completedRuns(), List.of(route), ledger.attempts());
 
         byte[] bytes = Files.readAllBytes(database);
         assertEquals("SQLite format 3\000", new String(bytes, 0, 16, StandardCharsets.ISO_8859_1));
@@ -96,6 +101,7 @@ final class SqliteProjectStoreTest {
             assertEquals(1, scalar(statement.executeQuery("SELECT COUNT(*) FROM session_bindings")));
             assertEquals(2, scalar(statement.executeQuery("SELECT COUNT(*) FROM payloads")));
             assertEquals(1, scalar(statement.executeQuery("SELECT COUNT(*) FROM completed_runs")));
+            assertEquals(1, scalar(statement.executeQuery("SELECT COUNT(*) FROM run_attempts")));
         }
 
         ProjectStore.ProjectData loaded = store.load(database);
@@ -108,6 +114,8 @@ final class SqliteProjectStoreTest {
         assertEquals(List.of(route), loaded.routeCandidates());
         assertEquals("INCONCLUSIVE", loaded.assessments().getFirst().verdict());
         assertEquals(ValidationDecision.FinalVerdict.INCONCLUSIVE, loaded.validations().getFirst().verdict());
+        assertEquals(RunExecutionLedger.Outcome.TIMEOUT, loaded.runAttempts().getFirst().outcome());
+        assertEquals("/orders/8", loaded.runAttempts().getFirst().path());
     }
 
     @Test

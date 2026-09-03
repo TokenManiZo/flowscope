@@ -1,4 +1,21 @@
-# FlowScope 1.2.0-beta.43 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.44 LLM 실행 실패 가시성 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 실행 품질 | 실행 전 `NOT_ATTEMPTED`, TLS 실패만 있는 `ALL_FAILED`, 응답+timeout의 `PARTIAL_FAILURE`, 응답만 있는 `RESPONSES_OBSERVED` 회귀 통과 |
+| Evidence 분리 | 실패 시도는 `RequestRecord`/snapshot event를 만들지 않고 HTTP 응답 시도만 status·Evidence ID를 갖는 회귀 통과 |
+| 비밀 경계 | target query를 실행 원장 path에서 제거하고 header·body·raw exception을 schema에 두지 않는 회귀 통과 |
+| 완료 gate | 통제 요청이 전부 실패한 Explorer의 종료 거부 회귀 통과. 일부 실패 completion limitation은 전체 완료 fixture에서 추가 확인 예정 |
+| 저장 | JSON v4·SQLite v3에 typed 실행 시도를 저장·재열고, query가 복원되지 않는 회귀 통과 |
+| Web 계약 | snapshot `runExecutions`와 UI의 실행 품질·시도·응답·실패 표시 문자열 회귀 통과 |
+| 집중 회귀 | `RunExecutionLedgerTest,McpServerTest,ProjectStoreTest,SqliteProjectStoreTest,SnapshotJsonWriterScaleTest,FlowScopeWebServerTest` 통과 |
+| 전체 회귀 | 고정된 최종 입력에서 `mvn clean verify` 연속 2회, 매회 356 tests, failure/error/skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.44.jar` 하나, 31,100,350 bytes, 9,113 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `3832bd134a8ae093ebdea214c9ceb914b1e5395d7d4c5df0add65a0696ca2256`; 두 clean build가 byte-for-byte 동일 |
+| 실제 Burp | **대기** — beta.44 JAR에서 정상 HTTPS·신뢰되지 않은 인증서·DNS/timeout과 저장·재열기 확인 필요 |
+
+이 gate는 실패 상태를 잃지 않는 데이터·화면 계약을 확인한다. 합성 typed exception은 실제 Montoya/운영체제별 예외 계층의 완전한 분류를 증명하지 않는다. 미분류 응답 전 오류는 `OTHER_FAILURE`로 남으며 실제 Burp gate 전에는 TLS·DNS 분류의 실환경 완료를 주장하지 않는다.
 
 ## 1.2.0-beta.43 lexical URL 해석·검토면 gate
 
@@ -676,7 +693,7 @@ W3C Web App Manifest 규격상 `application/manifest+json`은 웹 앱 manifest m
 
 ## 아직 실환경에서 검증하지 않은 것
 
-다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.43의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
+다음은 beta.3 당시 구현과 자동 회귀는 끝났지만 그 JAR의 실환경에서 끝까지 확인하지 않은 항목이다. 최신 beta.44의 미검증 gate는 이 문서 맨 위와 `HANDOFF.md`를 따른다.
 
 - Burp Community에서 extension unload 뒤 Web/MCP 포트 해제와 재로드, Repeater handoff, project save/load 왕복
 - 실제 HUMAN 로그인 캡처·pass 전·pass 중 요청이 각각 `SESSION_SETUP`·기본 숨김·분석 포함으로 보이는지, 선택 ACTIVE 계정과 다른 브라우저 자격증명이 계정으로 오기록되지 않는지

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import io.flowscope.core.*;
 import io.flowscope.integration.McpServer;
+import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.ControlledBrowserExplorer;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.ZapClient;
@@ -97,7 +98,7 @@ final class McpServerTest {
         JsonNode initialized = json(post("test-token", request(2, "initialize",
                 "{\"protocolVersion\":\"future-version\"}")));
         assertEquals("2025-11-25", initialized.at("/result/protocolVersion").asText());
-        assertEquals("1.2.0-beta.43", initialized.at("/result/serverInfo/version").asText());
+        assertEquals("1.2.0-beta.44", initialized.at("/result/serverInfo/version").asText());
         assertFalse(tool("flowscope_lock_dataset", "{}").at("/result/isError").asBoolean());
 
         JsonNode evidence = tool("flowscope_get_evidence",
@@ -717,6 +718,120 @@ final class McpServerTest {
         assertTrue(tool("flowscope_target_request",
                 "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders\"}")
                 .at("/result/isError").asBoolean());
+    }
+
+    @Test
+    void recordsTransportFailureSeparatelyFromEvidenceAndRejectsAllFailedCompletion() throws Exception {
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicReference<ScopePolicy> scope = new AtomicReference<>(ScopePolicy.parse("https://api.example.test/v1"));
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+            @Override public ScopePolicy scope() { return scope.get(); }
+            @Override public void updateScope(String value) { scope.set(ScopePolicy.parse(value)); }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String target) { return true; }
+            @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
+                throw new McpServer.TargetExecutionException(RunExecutionLedger.Outcome.TLS_FAILURE,
+                        "TLS 인증서 검증 때문에 대상 요청이 전송되지 않았습니다.");
+            }
+        }, 0, "test-token");
+        server.start();
+        assertFalse(tool("flowscope_begin_llm_run",
+                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"tls-failed\"}")
+                .at("/result/isError").asBoolean());
+
+        JsonNode request = tool("flowscope_target_read",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders?token=secret\"}");
+        assertTrue(request.at("/result/isError").asBoolean());
+        RunExecutionLedger.Summary summary = server.executionSummary(Source.LLM, "tls-failed");
+        assertEquals(RunExecutionLedger.Quality.ALL_FAILED, summary.quality());
+        assertEquals(1, summary.failures());
+        assertEquals("/v1/orders", server.executionAttempts().getFirst().path());
+        assertFalse(server.executionAttempts().getFirst().path().contains("secret"));
+        assertTrue(tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"tls-failed\"}")
+                .at("/result/content/0/text").asText().contains("none returned an HTTP response"));
+    }
+
+    @Test
+    void marksRunPartialWhenOneControlledRequestRespondsAndAnotherFails() throws Exception {
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicLong calls = new AtomicLong();
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+            @Override public ScopePolicy scope() { return ScopePolicy.parse("https://api.example.test/v1"); }
+            @Override public void updateScope(String value) { }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String target) { return true; }
+            @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
+                if (calls.getAndIncrement() == 0) return new McpServer.TargetResult(
+                        "ev-0123456789abcdef", 200, null, "HTTP/1.1 200 OK", "{}");
+                throw new McpServer.TargetExecutionException(RunExecutionLedger.Outcome.TIMEOUT,
+                        "대상 요청이 제한시간 안에 응답하지 않았습니다.");
+            }
+        }, 0, "test-token");
+        server.start();
+        tool("flowscope_begin_llm_run",
+                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"partial\"}");
+        assertFalse(tool("flowscope_target_read",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/one\"}")
+                .at("/result/isError").asBoolean());
+        assertTrue(tool("flowscope_target_read",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/two\"}")
+                .at("/result/isError").asBoolean());
+
+        RunExecutionLedger.Summary summary = server.executionSummary(Source.LLM, "partial");
+        assertEquals(RunExecutionLedger.Quality.PARTIAL_FAILURE, summary.quality());
+        assertEquals(2, summary.attempted());
+        assertEquals(1, summary.responses());
+        assertEquals(1, summary.failures());
+    }
+
+    @Test
+    void completedExplorerReportsPartialControlledRequestFailureAsLimitation() throws Exception {
+        String runId = "partial-completion";
+        RequestRecord evidence = observationAt(Source.LLM, "A", 200, "{\"ok\":true}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, runId, "/v1/one");
+        Pipeline.Result snapshot = Pipeline.run(List.of(evidence));
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicLong calls = new AtomicLong();
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return snapshot; }
+            @Override public ScopePolicy scope() { return ScopePolicy.parse("https://api.example.test/v1"); }
+            @Override public void updateScope(String value) { }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String target) { return true; }
+            @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
+                if (calls.getAndIncrement() == 0) return new McpServer.TargetResult(
+                        evidence.evidenceId, 200, null, "HTTP/1.1 200 OK", "{}");
+                throw new McpServer.TargetExecutionException(RunExecutionLedger.Outcome.CONNECTION_FAILURE,
+                        "대상 서버 연결에 실패했습니다.");
+            }
+        }, 0, "test-token");
+        server.start();
+        tool("flowscope_begin_llm_run",
+                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"" + runId + "\"}");
+        tool("flowscope_target_read",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/one\"}");
+        tool("flowscope_target_read",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/two\"}");
+        tool("flowscope_list_route_candidates", "{\"view\":\"INDEPENDENT\"}");
+        tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}");
+
+        JsonNode ended = tool("flowscope_end_run",
+                "{\"source\":\"LLM\",\"run_id\":\"" + runId + "\"}");
+        assertFalse(ended.at("/result/isError").asBoolean(), ended.toString());
+        assertEquals("PARTIAL_WITH_LIMITATIONS",
+                ended.at("/result/structuredContent/completion_quality").asText());
+        assertTrue(ended.at("/result/structuredContent/coverage_limitations").toString()
+                .contains("CONTROLLED_REQUEST_FAILURES_PRESENT"));
+        assertEquals("PARTIAL_FAILURE",
+                ended.at("/result/structuredContent/execution_summary/quality").asText());
     }
 
     @Test

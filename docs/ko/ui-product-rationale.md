@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.43, 2026-09-03 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.43은 Endpoint·Parameter Surface Delta에 lexical 정적 해석, typed 해석 실패와 화면별 제어 분리를 연결했다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.44, 2026-09-03 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.44는 Endpoint·Parameter Surface와 LLM 실행 패널에서 “응답 후 신규 발견 없음”과 “요청 전송 실패”를 분리한다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -11,6 +11,8 @@ FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청과 대상 산
 1. **어떤 API·입력이 선언됐고 HUMAN/SCANNER/LLM 중 누가 실제로 관측했는가?** — Endpoint·Parameter Surface Delta.
 2. **선택한 API에서 어떤 사용자·객체·기능 조합이 허용되거나 거부됐는가?** — identity/role/owner 인가 비교.
 3. **그 판단을 실제 요청·응답으로 확인할 수 있는가?** — Evidence와 통제 재현.
+
+LLM source가 0건일 때는 실행 품질을 함께 읽는다. `NOT_ATTEMPTED`는 실행 전, `ALL_FAILED`는 HTTP 응답 전 전부 실패, `PARTIAL_FAILURE`는 일부만 응답, `RESPONSES_OBSERVED`는 실행한 통제 요청이 모두 HTTP 응답 Evidence로 이어졌다는 뜻이다. 이 상태는 취약점이나 endpoint 발견 판정이 아니다. 실패 시도를 선이나 endpoint 카드로 그리지 않아 그래프의 “관측됨” 의미를 보존한다.
 
 ## 2. 왜 일반 Burp 요청 목록만으로 부족한가
 

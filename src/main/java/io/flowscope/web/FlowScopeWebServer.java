@@ -23,6 +23,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.McpServer;
+import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
 
 import java.io.IOException;
@@ -67,6 +68,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default SessionBroker sessions() { return null; }
         default List<String> scopeEntries() { return List.of(); }
         default List<RouteCandidate> routeCandidates() { return List.of(); }
+        default List<RunExecutionLedger.Summary> executionSummaries() { return List.of(); }
         default long droppedRecords() { return 0; }
         default com.fasterxml.jackson.databind.JsonNode startScanner(String target, List<String> accountIds,
                                                                      boolean includeAnonymous) {
@@ -221,7 +223,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return response(200, "application/json; charset=utf-8",
                 snapshots.write(state.revision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
                         state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates(),
-                        state.droppedRecords()));
+                        state.droppedRecords(), state.executionSummaries()));
     }
 
     private LoopbackHttpServer.Response evidence(LoopbackHttpServer.Request request, URI target) throws IOException {

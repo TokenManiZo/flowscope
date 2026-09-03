@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.flowscope.core.*;
 import io.flowscope.integration.McpServer;
 import io.flowscope.integration.ProjectStore;
+import io.flowscope.integration.RunExecutionLedger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -224,7 +225,7 @@ final class ProjectStoreTest {
         var root = new ObjectMapper().readTree(Files.readString(file));
         ProjectStore.ProjectData loaded = store.load(file);
 
-        assertEquals(3, root.path("schema_version").asInt());
+        assertEquals(4, root.path("schema_version").asInt());
         assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
         assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
         assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());
@@ -269,16 +270,30 @@ final class ProjectStoreTest {
 
         ProjectStore store = new ProjectStore();
         Path current = temp.resolve("exact-run.flowscope.json");
+        RunExecutionLedger ledger = new RunExecutionLedger();
+        ledger.record(Source.LLM, evidence.runId, null, "GET", "https://api.test/health?token=raw",
+                RunExecutionLedger.Outcome.HTTP_RESPONSE, 200, evidence.evidenceId,
+                Instant.parse("2026-09-03T00:00:00Z"), 11);
         store.save(current, List.of(evidence), new AnalysisConfig(), List.of(), List.of(),
-                contexts.completedRuns(), List.of());
+                contexts.completedRuns(), List.of(), ledger.attempts());
         ProjectStore.ProjectData loaded = store.load(current);
 
         assertEquals(evidence.runId, loaded.completedRuns().get(Source.LLM).runId());
         assertEquals(List.of(evidence.evidenceId), loaded.completedRuns().get(Source.LLM).evidenceIds());
         assertEquals(Set.of(Source.LLM), loaded.completedLanes());
+        assertEquals(1, loaded.runAttempts().size());
+        assertEquals("/health", loaded.runAttempts().getFirst().path());
 
         ObjectMapper json = new ObjectMapper();
         var legacy = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(Files.readString(current));
+        legacy.put("schema_version", 3);
+        legacy.remove("run_attempts");
+        Path versionThree = temp.resolve("v3-exact-run.flowscope.json");
+        Files.writeString(versionThree, json.writeValueAsString(legacy));
+        ProjectStore.ProjectData restoredV3 = store.load(versionThree);
+        assertEquals(evidence.runId, restoredV3.completedRuns().get(Source.LLM).runId());
+        assertTrue(restoredV3.runAttempts().isEmpty());
+
         legacy.put("schema_version", 2);
         Path old = temp.resolve("legacy-lanes.flowscope.json");
         Files.writeString(old, json.writeValueAsString(legacy));

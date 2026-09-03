@@ -76,6 +76,7 @@ public final class McpServer implements AutoCloseable {
         default boolean browserAvailable() { return ControlledBrowserExplorer.locateBrowser().isPresent(); }
         default void assessmentsChanged(List<Assessment> values) {}
         default void validationsChanged(List<ValidationDecision> values) {}
+        default void executionAttemptsChanged(List<RunExecutionLedger.Attempt> values) {}
     }
 
     public record Assessment(String id, String type, String verdict, String title, String reason,
@@ -103,6 +104,19 @@ public final class McpServer implements AutoCloseable {
                                 String body, String accountId) {}
     public record TargetResult(String evidenceId, int status, String location,
                                String response, String responseBody) {}
+    public static final class TargetExecutionException extends RuntimeException {
+        private final RunExecutionLedger.Outcome outcome;
+
+        public TargetExecutionException(RunExecutionLedger.Outcome outcome, String message) {
+            super(message);
+            if (outcome == null || outcome == RunExecutionLedger.Outcome.HTTP_RESPONSE) {
+                throw new IllegalArgumentException("target failure outcome is required");
+            }
+            this.outcome = outcome;
+        }
+
+        public RunExecutionLedger.Outcome outcome() { return outcome; }
+    }
     public enum ZapDefinitionType { OPENAPI, GRAPHQL, POSTMAN, SOAP }
     public record ZapDefinition(ZapDefinitionType type, String url, String endpoint) {}
 
@@ -124,6 +138,7 @@ public final class McpServer implements AutoCloseable {
     private final LoopbackHttpServer server;
     private final List<Assessment> assessments = new ArrayList<>();
     private final List<ValidationDecision> validations = new ArrayList<>();
+    private final RunExecutionLedger executionLedger = new RunExecutionLedger();
     private volatile Pipeline.Result lockedSnapshot;
     private volatile List<RouteCandidate> lockedRouteCandidates = List.of();
     private volatile String lockId = "";
@@ -263,6 +278,8 @@ public final class McpServer implements AutoCloseable {
         explorerProgress.clear();
         browserDiscoveredRoutes.clear();
         explorerBrowserUsed.clear();
+        executionLedger.clear();
+        state.executionAttemptsChanged(List.of());
         if (zapBaseline == null || !"RUNNING".equals(zapBaseline.status())) {
             zapBaseline = null;
             zapBaselineAlerts = json.createArrayNode();
@@ -270,6 +287,15 @@ public final class McpServer implements AutoCloseable {
             zapLaneRuntime = List.of();
             zapProgressEvents = List.of();
         }
+    }
+    public List<RunExecutionLedger.Attempt> executionAttempts() { return executionLedger.attempts(); }
+    public List<RunExecutionLedger.Summary> executionSummaries() { return executionLedger.summaries(); }
+    public RunExecutionLedger.Summary executionSummary(Source source, String runId) {
+        return executionLedger.summarize(source, runId == null ? "" : runId);
+    }
+    public void replaceExecutionAttempts(List<RunExecutionLedger.Attempt> values) {
+        executionLedger.replace(values);
+        state.executionAttemptsChanged(executionLedger.attempts());
     }
     public void replaceValidations(List<ValidationDecision> values) {
         List<ValidationDecision> accepted = new ArrayList<>();
@@ -379,7 +405,7 @@ public final class McpServer implements AutoCloseable {
         String requested = params.path("protocolVersion").asText(LATEST_PROTOCOL);
         result.put("protocolVersion", negotiate(requested));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.43");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0-beta.44");
         result.put("instructions", "Authorized exact-scope assessment only. Use FlowScope MCP state and controlled "
                 + "flowscope_target_read/flowscope_target_request responses; do not use web search, Wayback, external API documentation, "
                 + "source repositories, direct curl, or provider-controlled browser networking. If needed, set only the exact target supplied "
@@ -684,6 +710,7 @@ public final class McpServer implements AutoCloseable {
             throw new IllegalArgumentException("run_id does not match the active " + source.name() + " run");
         }
         List<String> coverageLimitations = List.of();
+        RunExecutionLedger.Summary executionSummary = executionLedger.summarize(source, runId);
         if (active.phase() == RunPhase.EXPLORATION) {
             if (source == Source.LLM && active.detail() == SourceDetail.LLM_EXPLORER) {
                 coverageLimitations = assertExplorerHarnessComplete(active);
@@ -698,11 +725,17 @@ public final class McpServer implements AutoCloseable {
         }
         ObjectNode out = json.createObjectNode().put("ended", source.name()).put("run_id", runId);
         out.set("coverage_limitations", json.valueToTree(coverageLimitations));
+        out.set("execution_summary", json.valueToTree(executionSummary));
         out.put("completion_quality", coverageLimitations.isEmpty() ? "FRONTIERS_REVIEWED" : "PARTIAL_WITH_LIMITATIONS");
         return out;
     }
 
     private List<String> assertExplorerHarnessComplete(RunContextRegistry.Context explorer) {
+        RunExecutionLedger.Summary execution = executionLedger.summarize(Source.LLM, explorer.runId());
+        if (execution.quality() == RunExecutionLedger.Quality.ALL_FAILED) {
+            throw new IllegalStateException("Explorer sent " + execution.attempted()
+                    + " controlled request(s), but none returned an HTTP response");
+        }
         LaneCompletionPolicy.Decision evidence = LaneCompletionPolicy.evaluate(Source.LLM, explorer.runId(),
                 state.completionSnapshot());
         if (!evidence.eligible()) throw new IllegalStateException(evidence.reason());
@@ -737,6 +770,9 @@ public final class McpServer implements AutoCloseable {
                 .anyMatch(candidate -> candidate.concretePaths().isEmpty()
                         && candidate.pathTemplate().contains("{"));
         if (unresolvedTemplate) limitations.add("DYNAMIC_TEMPLATE_WITHOUT_OBSERVED_VALUE");
+        if (execution.quality() == RunExecutionLedger.Quality.PARTIAL_FAILURE) {
+            limitations.add("CONTROLLED_REQUEST_FAILURES_PRESENT");
+        }
         return List.copyOf(limitations);
     }
 
@@ -936,54 +972,86 @@ public final class McpServer implements AutoCloseable {
     private JsonNode targetRequest(JsonNode args, boolean safeRead) {
         RunContextRegistry.Context context = state.contexts().current(Source.LLM);
         if (context == null) throw new IllegalStateException("begin an LLM run before target requests");
-        String method = required(args, "method").toUpperCase(java.util.Locale.ROOT);
-        Set<String> allowedMethods = safeRead ? Set.of("GET", "HEAD", "OPTIONS")
-                : Set.of("POST", "PUT", "PATCH", "DELETE");
-        if (!allowedMethods.contains(method)) throw new IllegalArgumentException(safeRead
-                ? "flowscope_target_read allows only GET, HEAD, or OPTIONS"
-                : "flowscope_target_request allows only POST, PUT, PATCH, or DELETE");
-        String target = required(args, "target");
-        if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
-        if (!safeRead && (!args.path("confirmed").asBoolean(false)
-                || !state.approve("LLM state-changing request", target))) {
-            throw new IllegalArgumentException("state-changing request approval denied");
-        }
-        Map<String, String> headers = new java.util.LinkedHashMap<>();
-        JsonNode suppliedHeaders = args.path("headers");
-        if (suppliedHeaders.isObject()) suppliedHeaders.properties().forEach(entry -> {
-            String name = entry.getKey();
-            String value = entry.getValue().asText();
-            if (!name.matches("[A-Za-z0-9!#$%&'*+.^_`|~-]{1,80}") || value.length() > 2_000
-                    || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0
-                    || Set.of("authorization", "cookie", "proxy-authorization", "host", "content-length", "connection")
-                    .contains(name.toLowerCase(java.util.Locale.ROOT))) {
-                throw new IllegalArgumentException("unsafe or broker-owned request header: " + name);
-            }
-            headers.put(name, value);
-        });
-        String body = args.path("body").isMissingNode() || args.path("body").isNull()
-                ? null : args.path("body").asText();
-        if (body != null && body.length() > 64 * 1024) throw new IllegalArgumentException("request body exceeds 64 KiB");
+        String method = args.path("method").asText().toUpperCase(java.util.Locale.ROOT);
+        String target = args.path("target").asText();
         String accountId = args.path("account_id").asText();
-        if (context.phase() == RunPhase.EXPLORATION && context.detail() == SourceDetail.LLM_EXPLORER) {
-            if (!accountId.isBlank() && !java.util.Objects.equals(accountId, context.accountId())) {
-                throw new IllegalArgumentException("Explorer account is fixed by the active run");
+        Instant startedAt = Instant.now();
+        long startedNanos = System.nanoTime();
+        boolean attemptRecorded = false;
+        try {
+            method = required(args, "method").toUpperCase(java.util.Locale.ROOT);
+            Set<String> allowedMethods = safeRead ? Set.of("GET", "HEAD", "OPTIONS")
+                    : Set.of("POST", "PUT", "PATCH", "DELETE");
+            if (!allowedMethods.contains(method)) throw new IllegalArgumentException(safeRead
+                    ? "flowscope_target_read allows only GET, HEAD, or OPTIONS"
+                    : "flowscope_target_request allows only POST, PUT, PATCH, or DELETE");
+            target = required(args, "target");
+            if (!state.scope().allows(target)) {
+                throw new TargetExecutionException(RunExecutionLedger.Outcome.SCOPE_BLOCKED,
+                        "target is outside configured scope");
             }
-            accountId = context.accountId();
-        } else if (accountId.isBlank()) {
-            accountId = context.accountId();
+            if (!safeRead && (!args.path("confirmed").asBoolean(false)
+                    || !state.approve("LLM state-changing request", target))) {
+                throw new TargetExecutionException(RunExecutionLedger.Outcome.APPROVAL_DENIED,
+                        "state-changing request approval denied");
+            }
+            Map<String, String> headers = new java.util.LinkedHashMap<>();
+            JsonNode suppliedHeaders = args.path("headers");
+            if (suppliedHeaders.isObject()) suppliedHeaders.properties().forEach(entry -> {
+                String name = entry.getKey();
+                String value = entry.getValue().asText();
+                if (!name.matches("[A-Za-z0-9!#$%&'*+.^_`|~-]{1,80}") || value.length() > 2_000
+                        || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0
+                        || Set.of("authorization", "cookie", "proxy-authorization", "host", "content-length", "connection")
+                        .contains(name.toLowerCase(java.util.Locale.ROOT))) {
+                    throw new IllegalArgumentException("unsafe or broker-owned request header: " + name);
+                }
+                headers.put(name, value);
+            });
+            String body = args.path("body").isMissingNode() || args.path("body").isNull()
+                    ? null : args.path("body").asText();
+            if (body != null && body.length() > 64 * 1024) {
+                throw new IllegalArgumentException("request body exceeds 64 KiB");
+            }
+            if (context.phase() == RunPhase.EXPLORATION && context.detail() == SourceDetail.LLM_EXPLORER) {
+                if (!accountId.isBlank() && !java.util.Objects.equals(accountId, context.accountId())) {
+                    throw new IllegalArgumentException("Explorer account is fixed by the active run");
+                }
+                accountId = context.accountId();
+            } else if (accountId.isBlank()) {
+                accountId = context.accountId();
+            }
+            accountId = validatedAccountForTarget(accountId, target);
+            TargetResult result = state.targetRequest(new TargetRequest(method, target, Map.copyOf(headers), body,
+                    accountId == null || accountId.isBlank() ? null : accountId));
+            recordExecution(context, accountId, method, target, RunExecutionLedger.Outcome.HTTP_RESPONSE,
+                    result.status(), result.evidenceId(), startedAt, startedNanos);
+            attemptRecorded = true;
+            ObjectNode out = json.createObjectNode();
+            out.put("evidence_id", result.evidenceId());
+            out.put("status", result.status());
+            if (result.location() == null) out.putNull("location"); else out.put("location", result.location());
+            out.put("response", Masking.maskHeaders(Masking.maskSecrets(result.response())));
+            out.put("response_body", Masking.maskSecrets(result.responseBody()));
+            out.put("execution_trust", ExecutionTrust.CONTROLLED.name());
+            return out;
+        } catch (RuntimeException error) {
+            if (!attemptRecorded) {
+                RunExecutionLedger.Outcome outcome = error instanceof TargetExecutionException failure
+                        ? failure.outcome() : RunExecutionLedger.Outcome.INVALID_REQUEST;
+                recordExecution(context, accountId, method.isBlank() ? "UNKNOWN" : method, target, outcome,
+                        0, null, startedAt, startedNanos);
+            }
+            throw error;
         }
-        accountId = validatedAccountForTarget(accountId, target);
-        TargetResult result = state.targetRequest(new TargetRequest(method, target, Map.copyOf(headers), body,
-                accountId == null || accountId.isBlank() ? null : accountId));
-        ObjectNode out = json.createObjectNode();
-        out.put("evidence_id", result.evidenceId());
-        out.put("status", result.status());
-        if (result.location() == null) out.putNull("location"); else out.put("location", result.location());
-        out.put("response", Masking.maskHeaders(Masking.maskSecrets(result.response())));
-        out.put("response_body", Masking.maskSecrets(result.responseBody()));
-        out.put("execution_trust", ExecutionTrust.CONTROLLED.name());
-        return out;
+    }
+
+    private void recordExecution(RunContextRegistry.Context context, String accountId, String method,
+                                 String target, RunExecutionLedger.Outcome outcome, int status,
+                                 String evidenceId, Instant startedAt, long startedNanos) {
+        executionLedger.record(Source.LLM, context.runId(), accountId, method, target, outcome, status,
+                evidenceId, startedAt, Math.max(0, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)));
+        state.executionAttemptsChanged(executionLedger.attempts());
     }
 
     private JsonNode browserNavigate(JsonNode args) throws Exception {

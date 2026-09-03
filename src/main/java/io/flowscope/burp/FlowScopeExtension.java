@@ -902,10 +902,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 Path path = file.toPath().toAbsolutePath().normalize();
                 if (database) {
                     sqliteProjectStore.save(path, snapshot, analysisConfig, assessments, validations,
-                            runContexts.completedRuns(), routeCandidates);
+                            runContexts.completedRuns(), routeCandidates,
+                            mcpServer == null ? List.of() : mcpServer.executionAttempts());
                 } else {
                     projectStore.save(path, snapshot, analysisConfig, assessments, validations,
-                            runContexts.completedRuns(), routeCandidates);
+                            runContexts.completedRuns(), routeCandidates,
+                            mcpServer == null ? List.of() : mcpServer.executionAttempts());
                 }
                 if (database) {
                     activeProjectDatabase = path;
@@ -965,6 +967,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (mcpServer != null) mcpServer.resetWorkflow();
                 if (mcpServer != null) mcpServer.replaceAssessments(assessments);
                 if (mcpServer != null) mcpServer.replaceValidations(validations);
+                if (mcpServer != null) mcpServer.replaceExecutionAttempts(data.runAttempts());
                 runContexts.restoreCompletedRuns(data.completedRuns());
                 activeProjectDatabase = database ? path : null;
                 databaseSavedRevision.set(database ? revision.get() : -1);
@@ -1021,7 +1024,8 @@ public final class FlowScopeExtension implements BurpExtension {
         List<McpServer.Assessment> assessments = mcpServer == null ? List.of() : mcpServer.assessments();
         List<ValidationDecision> validations = mcpServer == null ? List.of() : mcpServer.validations();
         sqliteProjectStore.save(database, snapshot, analysisConfig, assessments, validations,
-                runContexts.completedRuns(), routeCandidates);
+                runContexts.completedRuns(), routeCandidates,
+                mcpServer == null ? List.of() : mcpServer.executionAttempts());
     }
 
     private void configureInitialScope() {
@@ -1088,6 +1092,9 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public SessionBroker sessions() { return sessionBroker; }
             @Override public List<String> scopeEntries() { return scope.entries(); }
             @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
+            @Override public List<io.flowscope.integration.RunExecutionLedger.Summary> executionSummaries() {
+                return mcpServer == null ? List.of() : mcpServer.executionSummaries();
+            }
             @Override public long droppedRecords() { return droppedRecords.get(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
                                                                                    List<String> accountIds,
@@ -1367,6 +1374,11 @@ public final class FlowScopeExtension implements BurpExtension {
                     revision.incrementAndGet();
                     scheduleDatabaseSave();
                 }
+                @Override public void executionAttemptsChanged(
+                        List<io.flowscope.integration.RunExecutionLedger.Attempt> values) {
+                    revision.incrementAndGet();
+                    scheduleDatabaseSave();
+                }
             }, port, configuredToken);
             mcpServer.start();
             llmRunner = new LocalLlmRunner("http://127.0.0.1:" + mcpServer.port() + "/mcp", mcpServer.token(),
@@ -1449,6 +1461,10 @@ public final class FlowScopeExtension implements BurpExtension {
         body.put("output_tail", current.outputTail());
         body.put("prompt_preview", llmRunner.promptPreview());
         body.put("session_metadata_may_remain", current.sessionMetadataMayRemain());
+        if (mcpServer != null && current.runId() != null && !current.runId().isBlank()) {
+            body.set("execution_summary", executionSummaryNode(
+                    mcpServer.executionSummary(Source.LLM, current.runId())));
+        }
         com.fasterxml.jackson.databind.node.ObjectNode providers = body.putObject("providers");
         llmRunner.availability().forEach((provider, available) -> providers.put(provider.name(), available));
         com.fasterxml.jackson.databind.node.ObjectNode providerMessages = body.putObject("provider_messages");
@@ -1473,6 +1489,21 @@ public final class FlowScopeExtension implements BurpExtension {
             item.put("status", activity.status());
         });
         return body;
+    }
+
+    private static com.fasterxml.jackson.databind.node.ObjectNode executionSummaryNode(
+            io.flowscope.integration.RunExecutionLedger.Summary summary) {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode out = mapper.createObjectNode();
+        out.put("source", summary.source().name());
+        out.put("run_id", summary.runId());
+        out.put("attempted", summary.attempted());
+        out.put("responses", summary.responses());
+        out.put("failures", summary.failures());
+        out.put("quality", summary.quality().name());
+        com.fasterxml.jackson.databind.node.ObjectNode outcomes = out.putObject("outcomes");
+        summary.outcomes().forEach((outcome, count) -> outcomes.put(outcome.name(), count));
+        return out;
     }
 
     private void clearRunContexts() {
@@ -1502,9 +1533,11 @@ public final class FlowScopeExtension implements BurpExtension {
         burp.api.montoya.http.message.HttpRequestResponse exchange;
         controlledRequest.set(true);
         try { exchange = api.http().sendRequest(request, options); }
+        catch (RuntimeException error) { throw controlledRequestFailure(error); }
         finally { controlledRequest.remove(); }
         if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
-            throw new IllegalStateException("target did not return an HTTP response");
+            throw new McpServer.TargetExecutionException(io.flowscope.integration.RunExecutionLedger.Outcome.NO_RESPONSE,
+                    "대상에서 HTTP 응답을 받지 못했습니다.");
         }
         var response = exchange.response();
         RequestRecord record = recordFrom(exchange.request(), response,
@@ -1532,6 +1565,36 @@ public final class FlowScopeExtension implements BurpExtension {
         rebuildImmediately();
         return new McpServer.TargetResult(record.evidenceId, record.status, record.location,
                 record.respText, record.body);
+    }
+
+    private static McpServer.TargetExecutionException controlledRequestFailure(Throwable error) {
+        StringBuilder signature = new StringBuilder();
+        for (Throwable current = error; current != null && signature.length() < 2_000; current = current.getCause()) {
+            signature.append(current.getClass().getName()).append(' ')
+                    .append(current.getMessage() == null ? "" : current.getMessage()).append('\n');
+        }
+        String value = signature.toString().toLowerCase(java.util.Locale.ROOT);
+        io.flowscope.integration.RunExecutionLedger.Outcome outcome;
+        String message;
+        if (value.contains("ssl") || value.contains("tls") || value.contains("certificate")
+                || value.contains("certpath") || value.contains("pkix")) {
+            outcome = io.flowscope.integration.RunExecutionLedger.Outcome.TLS_FAILURE;
+            message = "TLS 인증서 검증 때문에 대상 요청이 전송되지 않았습니다.";
+        } else if (value.contains("unknownhost") || value.contains("unresolvedaddress")
+                || value.contains("name or service not known")) {
+            outcome = io.flowscope.integration.RunExecutionLedger.Outcome.DNS_FAILURE;
+            message = "대상 호스트 이름을 확인하지 못했습니다.";
+        } else if (value.contains("timeout") || value.contains("timed out")) {
+            outcome = io.flowscope.integration.RunExecutionLedger.Outcome.TIMEOUT;
+            message = "대상 요청이 제한시간 안에 응답하지 않았습니다.";
+        } else if (value.contains("connect") || value.contains("socket") || value.contains("closedchannel")) {
+            outcome = io.flowscope.integration.RunExecutionLedger.Outcome.CONNECTION_FAILURE;
+            message = "대상 서버 연결에 실패했습니다.";
+        } else {
+            outcome = io.flowscope.integration.RunExecutionLedger.Outcome.OTHER_FAILURE;
+            message = "대상 요청 실행 중 응답 전 오류가 발생했습니다.";
+        }
+        return new McpServer.TargetExecutionException(outcome, message);
     }
 
     private FlowScopeWebServer.RequestLabResult executeHumanRequestLab(

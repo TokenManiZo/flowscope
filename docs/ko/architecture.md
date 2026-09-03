@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.43
+# FlowScope 설계서 v1.2.0-beta.44
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -22,7 +22,9 @@ Browser :8080 ─┐
 ZAP     :8081 ─┘        ▲                                  │
                         │ session broker                    │ locked snapshot
 Web 실행 버튼 ─▶ 새 Codex/Claude CLI ─▶ MCP ─┬─▶ isolated Chrome/CDP discovery
-                    ├─▶ independent LLM Explorer └─▶ controlled target executor Evidence
+                    ├─▶ independent LLM Explorer └─▶ controlled target executor
+                    │                                  ├─ HTTP 응답 ─▶ Evidence
+                    │                                  └─ 응답 전 실패 ─▶ RunExecutionLedger
                     └─▶ separate final LLM Judge
                     └─▶ deterministic ZAP baseline     └─▶ validation gate
 
@@ -87,6 +89,15 @@ SurfaceAnalysis {
                observedSources[], evidenceIds[], provenance[]]
   }]
 }
+
+RunExecutionLedger {
+  attempts[sequence, source, runId, accountId, method, service, path,
+           outcome, status, evidenceId, attemptedAt, durationMillis]
+  outcome = HTTP_RESPONSE | TLS_FAILURE | DNS_FAILURE | TIMEOUT |
+            CONNECTION_FAILURE | NO_RESPONSE | SCOPE_BLOCKED |
+            APPROVAL_DENIED | INVALID_REQUEST | OTHER_FAILURE
+  quality = NOT_ATTEMPTED | ALL_FAILED | PARTIAL_FAILURE | RESPONSES_OBSERVED
+}
 ```
 
 - `source`: 실제 대상 요청 생성자. ZAP은 지시자가 LLM이어도 SCANNER다.
@@ -107,7 +118,9 @@ SurfaceAnalysis {
 - `evidenceId`: 전체 의미 내용 digest 기반 ID. digest 입력은 외부 값의 개행과 필드 경계가 충돌하지 않도록 null 표식과 UTF-8 byte 길이 접두 framing을 사용한다. beta.23 이하 newline digest가 일치하면 기존 Evidence ID를 유지한 채 새 digest로 이행한다. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
-논리 프로젝트 schema v3는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록과 **완료된 정확한 run**을 저장한다. 완료 run은 source만 저장하지 않고 `source/runId/detail/orchestrator/tool/phase/account/completedAt/evidenceIds/responseCount/coverageCount`를 묶는다. 기본 내구 저장은 SQLite storage schema v2의 기존 관계형 테이블과 `completed_runs`이며 JSON schema v3 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2는 읽을 수 있지만 source-only `completed_lanes`는 정확한 run과 Evidence를 증명하지 못하므로 완료 자격으로 복원하지 않고 세 레인을 다시 실행해야 한다. v3 내보내기는 exact completed run과 중복 표시용 `completed_lanes`의 일치를 검증한다. raw broker 세션은 어느 형식에도 저장하지 않는다. 전문은 메시지당 1MiB, 서로 다른 복원 전문 합계 48MiB 안에서 streaming GZIP 해제하며 digest/size/retention을 검증하고 동일 digest는 한 번만 복원한다. metadata-only 항목은 압축 blob을 허용하지 않는다. 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증하며, 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075/D-099/D-101).
+논리 프로젝트 schema v4는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, LLM assessment, 서버 검증 `ValidationDecision`, Evidence-bound 사람 감사 기록, **완료된 정확한 run**과 bounded `RunExecutionLedger`를 저장한다. 실행 원장은 query·header·body·raw exception 없이 method·service·path와 typed outcome만 보존하며 실패를 RequestRecord/Evidence로 승격하지 않는다. 완료 run은 source만 저장하지 않고 `source/runId/detail/orchestrator/tool/phase/account/completedAt/evidenceIds/responseCount/coverageCount`를 묶는다. 기본 내구 저장은 SQLite storage schema v3의 기존 관계형 테이블, `completed_runs`, `run_attempts`이며 JSON schema v4 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2는 source-only `completed_lanes`를 완료 자격으로 복원하지 않으며 schema v3 exact completed run은 유지한 채 실행 원장은 빈 값으로 마이그레이션한다. v4 내보내기는 exact completed run과 중복 표시용 `completed_lanes`의 일치를 검증한다. raw broker 세션은 어느 형식에도 저장하지 않는다. 전문은 메시지당 1MiB, 서로 다른 복원 전문 합계 48MiB 안에서 streaming GZIP 해제하며 digest/size/retention을 검증하고 동일 digest는 한 번만 복원한다. metadata-only 항목은 압축 blob을 허용하지 않는다. 로드한 validation은 현재 Evidence와 규칙 후보에 대해 다시 검증하며, 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075/D-099/D-101/D-116).
+
+- 실행 원장 보존 상한은 5,000개 시도이며, 반복 polling되는 Web snapshot에는 최근 100개 run의 집계만 노출한다.
 
 ## 4. 파이프라인
 
@@ -312,6 +325,6 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 - 그래프 접기는 의미 기반 클러스터링이 아니라 현재 필터 결과를 객체/API별 18개 단위로 늘리는 표시 페이지다. 20,000 record 상한은 별도로 Burp를 보호한다.
 - Repeater handoff는 live 원문이 메모리에 있으면 그 원문, 아니면 마스킹 전문을 미전송 초안으로 연다. Repeater에서 사용자가 별도로 보낸 결과를 원 Evidence에 자동 연결하는 안정적인 Montoya correlation 계약은 없으므로 자동 validation에는 사용하지 않는다. Web 요청 실험실 전송만 서버가 직접 새 HUMAN `VALIDATION` Evidence로 기록한다.
 - 포트 매핑은 확장 로드 시 시스템 속성으로 읽으므로 변경 후 Burp를 다시 시작한다.
-- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.43 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v3·SQLite v2 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
+- SQLite JDBC는 desktop native library를 포함한다. 자동 테스트의 현재 JDK에서는 로드 경고만 발생했지만, beta.44 fat JAR을 실제 Burp bundled JVM에서 load/unload하고 JSON v4·SQLite v3 프로젝트를 저장·재열기하는 수동 gate 전에는 모든 Burp/JVM·확장 조합의 런타임 호환을 완료로 주장하지 않는다.
 
 세부 결정과 기각 대안은 `decisions.md`를 참조한다.

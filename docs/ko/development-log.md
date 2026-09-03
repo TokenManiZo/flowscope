@@ -1,5 +1,30 @@
 # FlowScope 개발 기록
 
+## 2026-09-03 · 1.2.0-beta.44 · LLM 통제 요청 실패와 0건 발견 분리
+
+### 개발·수정
+
+- MCP 통제 HTTP executor의 실행 시도를 `RunExecutionLedger`에 최대 5,000건 보존하고, 반복 polling되는 Web snapshot에는 최근 100개 run의 집계만 노출한다. HTTP 응답이 생긴 시도만 기존 `RequestRecord`·Evidence로 유지하고 TLS·DNS·timeout·연결·무응답·scope 차단·승인 거부·입력 거부는 typed outcome으로만 기록한다.
+- run 품질을 `NOT_ATTEMPTED`, `ALL_FAILED`, `PARTIAL_FAILURE`, `RESPONSES_OBSERVED`로 계산한다. 전부 실패한 Explorer는 Evidence 완료 gate 전에 명시적으로 거부하고, 부분 실패 run은 완료 limitation을 남긴다.
+- Web LLM 실행 상태와 기본 `API·입력 차이` 요약에 시도·응답·실패 수를 표시한다. 실패는 source 관측선이나 endpoint Evidence를 만들지 않는다.
+- JSON project schema를 v4, SQLite storage schema를 v3으로 올려 실행 원장을 저장·재열기한다. JSON v1/v2, SQLite v1/v2는 계속 읽고 JSON v3 exact completed run도 신뢰를 잃지 않고 복원한다.
+
+### 필요성·기각 대안
+
+- 기존에는 응답 전 오류가 `RequestRecord`를 만들지 않아 즉시 CLI 실패 문구가 사라진 뒤 “LLM이 신규 endpoint를 발견하지 않음”과 “요청 전부 전송 실패”를 구분할 수 없었다. 일부 성공 뒤 나머지가 실패하면 성공 Evidence만 남는 문제도 있었다.
+- 실패를 `hasResponse=false` Evidence로 넣는 대안은 그래프와 source delta를 오염시키므로 기각했다. raw 예외/CLI 로그 저장도 인증정보 노출과 비결정 문자열 의존 때문에 기각했다.
+
+### 영향 파일·회귀
+
+- 코드: `RunExecutionLedger`, `McpServer`, `FlowScopeExtension`, `ProjectStore`, `SqliteProjectStore`, `FlowScopeWebServer`, `SnapshotJsonWriter`, Web UI.
+- 테스트: `RunExecutionLedgerTest`, `McpServerTest`, `ProjectStoreTest`, `SqliteProjectStoreTest`, `SnapshotJsonWriterScaleTest`, `FlowScopeWebServerTest`.
+- 재현: LLM executor가 TLS failure만 반환하는 run, 응답 1건 뒤 timeout인 run, query에 비밀값이 있는 target, 저장·재열기를 회귀로 추가했다. 고정된 최종 입력에서 `mvn clean verify`를 연속 2회 실행해 매회 356 tests가 failure/error/skip 없이 통과했고 두 beta.44 JAR의 SHA-256이 일치했다. 정확한 산출물 수치는 `beta-validation.md`를 따른다.
+
+### 남은 한계·다음 gate
+
+- 실제 Burp Montoya가 운영체제별 TLS·DNS·timeout에서 반환하는 예외 유형은 beta.44 JAR로 수동 재현해야 한다. 미분류 예외는 `OTHER_FAILURE`로 안전하게 남는다.
+- 이 원장은 MCP 통제 HTTP executor 범위다. 브라우저 discovery와 ZAP은 각각 기존 run/campaign 상태 기계를 사용하며, 향후 공통 실행 모델로 합치려면 실제 운영 요구와 마이그레이션 계획이 먼저 필요하다.
+
 ## 2026-09-03 · 1.2.0-beta.43 · JavaScript URL 해석 정확도와 검토면 정리
 
 ### 목표와 성공 조건

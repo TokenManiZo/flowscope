@@ -4,16 +4,35 @@ import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.Source;
+import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.web.SnapshotJsonWriter;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 final class SnapshotJsonWriterScaleTest {
+    @Test
+    void exposesSanitizedExecutionQualityWithoutCreatingEvidence() throws Exception {
+        Pipeline.Result result = Pipeline.run(List.of());
+        RunExecutionLedger.Summary failed = new RunExecutionLedger.Summary(Source.LLM, "tls-run",
+                2, 0, 2, RunExecutionLedger.Quality.ALL_FAILED,
+                Map.of(RunExecutionLedger.Outcome.TLS_FAILURE, 2L));
+
+        var snapshot = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                new SnapshotJsonWriter().write(1, result, new AnalysisConfig(), List.of(), List.of(),
+                        List.of(), List.of(), 0, List.of(failed)));
+
+        assertTrue(snapshot.path("events").isEmpty());
+        assertEquals("ALL_FAILED", snapshot.at("/runExecutions/0/quality").asText());
+        assertEquals(0, snapshot.at("/runExecutions/0/responses").asInt());
+        assertEquals(2, snapshot.at("/runExecutions/0/failures").asInt());
+    }
+
     @Test
     void serializesTwentyThousandRepeatedObservationsWithoutQuadraticClusterExpansion() {
         List<RequestRecord> records = new ArrayList<>(20_000);

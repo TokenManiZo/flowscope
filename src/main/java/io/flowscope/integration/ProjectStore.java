@@ -25,10 +25,11 @@ public final class ProjectStore {
                               List<ValidationDecision> validations,
                               Set<Source> completedLanes,
                               Map<Source, RunContextRegistry.CompletedRun> completedRuns,
-                              List<RouteCandidate> routeCandidates) {}
+                              List<RouteCandidate> routeCandidates,
+                              List<RunExecutionLedger.Attempt> runAttempts) {}
 
-    private static final int SCHEMA_VERSION = 3;
-    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2);
+    private static final int SCHEMA_VERSION = 4;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -71,7 +72,19 @@ public final class ProjectStore {
                      List<RouteCandidate> routeCandidates) throws IOException {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = toDocument(records, config, assessments, validations,
-                runs.keySet(), runs, routeCandidates);
+                runs.keySet(), runs, routeCandidates, List.of());
+        saveDocument(target, root);
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<McpServer.Assessment> assessments,
+                     List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates,
+                     List<RunExecutionLedger.Attempt> runAttempts) throws IOException {
+        Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
+        ObjectNode root = toDocument(records, config, assessments, validations,
+                runs.keySet(), runs, routeCandidates, runAttempts);
         saveDocument(target, root);
     }
 
@@ -111,6 +124,17 @@ public final class ProjectStore {
                           Set<Source> completedLanes,
                           Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                           List<RouteCandidate> routeCandidates) {
+        return toDocument(records, config, assessments, validations, completedLanes, completedRuns,
+                routeCandidates, List.of());
+    }
+
+    ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
+                          List<McpServer.Assessment> assessments,
+                          List<ValidationDecision> validations,
+                          Set<Source> completedLanes,
+                          Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                          List<RouteCandidate> routeCandidates,
+                          List<RunExecutionLedger.Attempt> runAttempts) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         assessments = assessments == null ? List.of() : List.copyOf(assessments);
         McpServer.validateAssessmentSet(assessments);
@@ -141,6 +165,12 @@ public final class ProjectStore {
         ArrayNode savedRouteCandidates = root.putArray("route_candidates");
         for (RouteCandidate candidate : routeCandidates == null ? List.<RouteCandidate>of() : routeCandidates) {
             savedRouteCandidates.add(writeRouteCandidate(candidate));
+        }
+        ArrayNode savedAttempts = root.putArray("run_attempts");
+        List<RunExecutionLedger.Attempt> attempts = runAttempts == null ? List.of() : List.copyOf(runAttempts);
+        if (attempts.size() > 5_000) throw new IllegalArgumentException("run attempt limit exceeded");
+        for (RunExecutionLedger.Attempt attempt : attempts) {
+            savedAttempts.add(writeRunAttempt(attempt));
         }
         root.set("policy", writePolicy(config));
         ArrayNode savedReviews = root.putArray("reviews");
@@ -204,7 +234,7 @@ public final class ProjectStore {
         JsonNode runNodes = root.path("completed_runs");
         // completed_runs is defined by v3. Legacy documents cannot acquire trusted completion by
         // carrying an unknown future field or by changing only their schema_version value.
-        if (schemaVersion == SCHEMA_VERSION && runNodes.isArray()) {
+        if (schemaVersion >= 3 && runNodes.isArray()) {
             if (runNodes.size() > 3) throw new IllegalArgumentException("completed run limit exceeded");
             for (JsonNode value : runNodes) {
                 RunContextRegistry.CompletedRun run = readCompletedRun(value);
@@ -213,7 +243,7 @@ public final class ProjectStore {
                 }
             }
         }
-        if (schemaVersion == SCHEMA_VERSION && !completedLanes.equals(completedRuns.keySet())) {
+        if (schemaVersion >= 3 && !completedLanes.equals(completedRuns.keySet())) {
             throw new IllegalArgumentException("completed lanes do not match exact completed runs");
         }
         List<RouteCandidate> routeCandidates = new ArrayList<>();
@@ -222,8 +252,44 @@ public final class ProjectStore {
             if (candidateNodes.size() > MAX_RECORDS) throw new IllegalArgumentException("route candidate limit exceeded");
             for (JsonNode value : candidateNodes) routeCandidates.add(readRouteCandidate(value));
         }
+        List<RunExecutionLedger.Attempt> runAttempts = new ArrayList<>();
+        JsonNode attemptNodes = root.path("run_attempts");
+        if (schemaVersion >= 4 && !attemptNodes.isArray()) {
+            throw new IllegalArgumentException("invalid run attempts array");
+        }
+        if (schemaVersion >= 4) {
+            if (attemptNodes.size() > 5_000) throw new IllegalArgumentException("run attempt limit exceeded");
+            for (JsonNode value : attemptNodes) runAttempts.add(readRunAttempt(value));
+        }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
-                Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates));
+                Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates),
+                List.copyOf(runAttempts));
+    }
+
+    private ObjectNode writeRunAttempt(RunExecutionLedger.Attempt attempt) {
+        ObjectNode out = json.createObjectNode();
+        out.put("sequence", attempt.sequence());
+        out.put("source", attempt.source().name());
+        out.put("run_id", attempt.runId());
+        put(out, "account_id", attempt.accountId());
+        out.put("method", attempt.method());
+        put(out, "service", attempt.service());
+        out.put("path", attempt.path());
+        out.put("outcome", attempt.outcome().name());
+        out.put("status", attempt.status());
+        put(out, "evidence_id", attempt.evidenceId());
+        out.put("attempted_at", attempt.attemptedAt().toString());
+        out.put("duration_ms", attempt.durationMillis());
+        return out;
+    }
+
+    private RunExecutionLedger.Attempt readRunAttempt(JsonNode value) {
+        return new RunExecutionLedger.Attempt(value.path("sequence").asLong(-1),
+                enumValue(Source.class, required(value, "source")), required(value, "run_id"),
+                nullable(value, "account_id"), required(value, "method"), nullable(value, "service"),
+                required(value, "path"), enumValue(RunExecutionLedger.Outcome.class, required(value, "outcome")),
+                value.path("status").asInt(-1), nullable(value, "evidence_id"),
+                Instant.parse(required(value, "attempted_at")), value.path("duration_ms").asLong(-1));
     }
 
     private ObjectNode writeCompletedRun(RunContextRegistry.CompletedRun run) {

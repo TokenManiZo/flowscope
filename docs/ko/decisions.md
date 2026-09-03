@@ -1074,3 +1074,10 @@
 - **기각:** 임의 JavaScript 실행은 대상 코드를 신뢰해야 하므로 정적 선언 추출에 사용하지 않는다. 전역 문자열→초기값 map과 재할당된 초기값 사용은 shadowing·stale value 오탐 때문에 기각한다. 모든 framework wrapper 이름을 사전으로 넣는 방식과 동적 baseURL을 무시한 상대 경로 채택도 target tuning·거짓 후보 때문에 기각한다. Resource 자체 삭제는 BOLA/IDOR의 소유자·교차 접근 근거를 잃으므로 하지 않는다.
 - **한계:** 함수 간 data flow, computed runtime property, axios defaults mutation·interceptor, 임의 wrapper, source map, 아직 받지 않은 lazy chunk와 서버 전용 route는 해석하지 않는다. HTTP-like wrapper issue는 제한된 이름 근거의 검토 신호일 뿐 전체 wrapper 탐지기가 아니다. 저장소 내부 fixture와 자동 회귀는 실제 앱의 precision/recall을 증명하지 않는다.
 - **근거:** axios 공식 요청 설정은 `baseURL`과 기본 true인 `allowAbsoluteUrls`의 결합 규칙 및 요청별 config 우선순위를 명시한다. <https://axios-http.com/docs/req_config>, <https://axios-http.com/docs/config_defaults>
+## D-116 · HTTP Evidence와 실행 실패 원장을 분리하고 완료 품질에 실패를 반영
+
+- **문제:** 통제 HTTP executor는 응답을 받은 뒤에만 `RequestRecord`를 만들었다. TLS·DNS·timeout·연결 오류로 모든 요청이 응답 전에 끝나면 즉시 LLM 실행 화면에는 실패가 보이지만, snapshot·Surface·프로젝트 재열기에서는 “실행하지 않음” 또는 “응답은 받았으나 신규 API 없음”과 구분할 근거가 없었다. 일부 요청만 실패한 경우에는 성공 Evidence 한 건으로 lane 완료 조건을 만족하면서 나머지 실패가 사라질 수 있었다.
+- **결정:** HTTP 응답 Evidence와 별도의 bounded `RunExecutionLedger`를 둔다. 원장은 source/run/account, method, query 없는 service/path, typed outcome, 응답 status/Evidence ID(응답 성공에만), 시각과 duration만 저장한다. raw header·body·query·exception message는 저장하지 않는다. 품질은 `NOT_ATTEMPTED`, `ALL_FAILED`, `PARTIAL_FAILURE`, `RESPONSES_OBSERVED` 네 상태로 계산한다. 전부 실패한 Explorer는 완료를 거부하고, 일부 실패한 완료는 `CONTROLLED_REQUEST_FAILURES_PRESENT` limitation을 남긴다. Web의 LLM 상태와 기본 Surface 요약은 시도·응답·실패 수를 표시한다.
+- **기각:** 실패를 `RequestRecord(hasResponse=false)`로 넣는 방식은 요청을 실제 관측한 Evidence와 전송 시도를 혼합해 source delta·그래프를 오염시키므로 기각했다. CLI 출력 문자열만 보존하는 방식은 구조화·재열기·부분 실패 집계가 불가능하고 raw 예외에 비밀이 섞일 수 있어 기각했다. status 없는 단일 `FAILED` flag도 원인과 부분 성공을 구분하지 못한다.
+- **검증·한계:** ledger 상태·상한·query 제거, MCP TLS 실패/부분 실패, all-failed 완료 거부, JSON v4/SQLite v3 round-trip, snapshot/UI 문자열 계약을 자동 회귀로 확인한다. Montoya가 실제 인증서·DNS 오류에서 내는 예외 분류와 beta.44 JAR의 실제 Burp 화면은 별도 수동 gate다. 브라우저/CDP discovery와 ZAP 실행 실패는 각자의 기존 상태 기계가 담당하며 이 원장은 현재 MCP 통제 HTTP executor 요청만 다룬다.
+- **상태:** beta.44 구현·자동 회귀 대상, 실제 Burp TLS/timeout 재현 gate 대기.

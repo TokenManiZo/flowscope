@@ -4,7 +4,7 @@
 
 > **beta.42 주의:** 제품 기본 작업면은 그래프가 아니라 Endpoint·Parameter Surface Delta다. 이 문서의 그래프 원칙은 선택 API의 `인가 그래프` 상세층에만 적용한다(D-113·D-114).
 
-> **beta.43 주의:** 기본 Surface에서는 인가용 rail을 숨기고 Surface·source 제어만 보여 준다. 내부 Resource는 삭제하지 않았으며 화면 용어만 `접근 대상 ID`로 바꿨다(D-115).
+> **beta.44 주의:** 기본 Surface에서는 인가용 rail을 숨기고 Surface·source 제어만 보여 준다. 내부 Resource는 삭제하지 않았으며 화면 용어만 `접근 대상 ID`로 바꿨다(D-115). LLM 0건은 실행 원장의 시도·응답·실패와 함께 표시하고 실패 시도를 그래프에 그리지 않는다(D-116).
 
 > OSS·정보시각화 문헌 5갈래 조사 종합. 우리 제약(단일 Java Burp 확장 + JGraphX)을 최우선 현실 기준으로.
 

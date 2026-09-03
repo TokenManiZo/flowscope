@@ -29,7 +29,7 @@ import java.util.Set;
 
 /** Local relational FlowScope project store. Raw broker credentials are never part of this schema. */
 public final class SqliteProjectStore {
-    private static final int STORAGE_SCHEMA_VERSION = 2;
+    private static final int STORAGE_SCHEMA_VERSION = 3;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
 
     private final ProjectStore codec;
@@ -57,6 +57,18 @@ public final class SqliteProjectStore {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = codec.toDocument(records, config, assessments, validations,
                 runs.keySet(), runs, routeCandidates);
+        saveDocument(target, root);
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<McpServer.Assessment> assessments,
+                     List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates,
+                     List<RunExecutionLedger.Attempt> runAttempts) throws IOException {
+        Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
+        ObjectNode root = codec.toDocument(records, config, assessments, validations,
+                runs.keySet(), runs, routeCandidates, runAttempts);
         saveDocument(target, root);
     }
 
@@ -133,6 +145,8 @@ public final class SqliteProjectStore {
             statement.execute("CREATE TABLE completed_lanes (source TEXT PRIMARY KEY)");
             statement.execute("CREATE TABLE completed_runs (source TEXT PRIMARY KEY, run_id TEXT NOT NULL, document TEXT NOT NULL)");
             statement.execute("CREATE TABLE route_candidates (seq INTEGER PRIMARY KEY, service TEXT NOT NULL, method TEXT NOT NULL, path_template TEXT NOT NULL, observed INTEGER NOT NULL, document TEXT NOT NULL)");
+            statement.execute("CREATE TABLE run_attempts (seq INTEGER PRIMARY KEY, source TEXT NOT NULL, run_id TEXT NOT NULL, outcome TEXT NOT NULL, document TEXT NOT NULL)");
+            statement.execute("CREATE INDEX run_attempts_run_idx ON run_attempts(source, run_id)");
         }
     }
 
@@ -162,7 +176,9 @@ public final class SqliteProjectStore {
              PreparedStatement completedRun = connection.prepareStatement(
                      "INSERT INTO completed_runs(source, run_id, document) VALUES(?, ?, ?)");
              PreparedStatement candidate = connection.prepareStatement(
-                     "INSERT INTO route_candidates(seq, service, method, path_template, observed, document) VALUES(?, ?, ?, ?, ?, ?)")) {
+                     "INSERT INTO route_candidates(seq, service, method, path_template, observed, document) VALUES(?, ?, ?, ?, ?, ?)");
+             PreparedStatement runAttempt = connection.prepareStatement(
+                     "INSERT INTO run_attempts(seq, source, run_id, outcome, document) VALUES(?, ?, ?, ?, ?)")) {
             migration.setInt(1, STORAGE_SCHEMA_VERSION);
             migration.setString(2, root.path("saved_at").asText());
             migration.executeUpdate();
@@ -246,6 +262,16 @@ public final class SqliteProjectStore {
                 candidate.addBatch();
             }
             candidate.executeBatch();
+            index = 0;
+            for (JsonNode value : root.path("run_attempts")) {
+                runAttempt.setInt(1, index++);
+                runAttempt.setString(2, required(value, "source"));
+                runAttempt.setString(3, required(value, "run_id"));
+                runAttempt.setString(4, required(value, "outcome"));
+                runAttempt.setString(5, json.writeValueAsString(value));
+                runAttempt.addBatch();
+            }
+            runAttempt.executeBatch();
         } catch (SqlWriteFailure failure) {
             throw failure.cause;
         }
@@ -253,7 +279,7 @@ public final class SqliteProjectStore {
 
     private ObjectNode read(Connection connection) throws SQLException, IOException {
         int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
-        if (version != STORAGE_SCHEMA_VERSION && version != 1) {
+        if (version != STORAGE_SCHEMA_VERSION && version != 1 && version != 2) {
             throw new IllegalArgumentException("unsupported FlowScope SQLite schema version: " + version);
         }
         try (Statement statement = connection.createStatement();
@@ -315,6 +341,8 @@ public final class SqliteProjectStore {
         }
         readDocuments(connection, "SELECT document FROM route_candidates ORDER BY seq",
                 root.putArray("route_candidates"));
+        ArrayNode runAttempts = root.putArray("run_attempts");
+        if (version >= 3) readDocuments(connection, "SELECT document FROM run_attempts ORDER BY seq", runAttempts);
         return root;
     }
 

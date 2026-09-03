@@ -92,6 +92,10 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("llmProviderReadiness"));
         assertTrue(index.body().contains("refreshLlmReadiness()"));
         assertTrue(index.body().contains("LLM_RUN.prompt_preview"));
+        assertTrue(index.body().contains("executionQualityLabel"));
+        assertTrue(index.body().contains("전송 전부 실패"));
+        assertTrue(index.body().contains("TLS 인증서 검증"));
+        assertTrue(index.body().contains("통제 요청 "));
         assertTrue(index.body().contains("LLM_COMPLETED.includes(lane)"));
         assertTrue(index.body().contains("scannerlane"));
         assertTrue(index.body().contains("Traditional "));
@@ -124,7 +128,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("/api/llm-run"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.43 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.44 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
