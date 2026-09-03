@@ -426,7 +426,7 @@ beta.17에서 이미 깨진 문자열에는 원래 byte 정보가 없으므로 b
 | standalone UI | 합성 샘플·대상 요청 0건. 1280×720에서 요청 실험실 1,244×684, request/response 양쪽 표시, page overflow 0; 600×800에서 단일 열 526px, 양쪽 편집기 높이 210px, page/dialog overflow 0; console warning/error 0 |
 | 실제 beta.17 | 아직 수행하지 않음. Burp Community에서 live 원문, ORIGINAL/ANONYMOUS/USER A/USER B 수신 헤더, response, HUMAN VALIDATION provenance, discovery coverage 불변, reset/unload 폐기를 확인해야 함 |
 
-standalone의 `request lab is unavailable`은 DemoState가 대상 네트워크 전송을 의도적으로 구현하지 않은 정상 경계다. 위 렌더 검증은 layout과 JS 오류 부재만 증명하며 실제 Burp/Montoya 전송 성공을 대신하지 않는다.
+standalone은 선택한 합성 샘플 Evidence의 마스킹된 읽기 전용 Request Lab 초안만 제공한다. `rawRequestRetained=false`, `rawResponseRetained=false`, `requestEditable=false`, 재사용 세션 없음으로 고정하며 POST 전송은 계속 거부한다. 위 렌더 검증은 layout과 무대상 읽기 계약만 증명하며 실제 Burp/Montoya 전송 성공을 대신하지 않는다.
 
 ## 1.2.0-beta.16 HUMAN 요청 문맥·표현 gate
 

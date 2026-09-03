@@ -2216,3 +2216,504 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 ### 남은 한계·다음 gate
 - 아직 검증하지 않은 것과 진행 조건
 ```
+
+## 2026-08-31 · React shadcn 대시보드 기반
+
+### 목표와 성공 조건
+
+- 기존 Web UI의 기능 동등성 범위를 먼저 고정하고, `/app/` 전환에 사용할 React·TypeScript·Vite 기반의 실제 shadcn/Radix 셸을 만든다.
+- 상대 asset URL로 Burp classpath 정적 배포에서도 해시 asset을 찾을 수 있고, 셸의 두 주 탐색 링크와 사이드바 전환 버튼이 컴포넌트 테스트로 검증돼야 한다.
+
+### 개발·수정
+
+- `docs/ko/web-ui-feature-parity.md`에 50개 기존 기능, action/API, 계획된 React·자동·Burp gate 칸을 동결했다.
+- `frontend/`에 정확 고정 npm 계약, Vite 상대 `base`, Java 생성 resource 출력, Vitest jsdom 설정, capability placeholder를 추가했다.
+- shadcn 4.19.1의 기존 `base-nova` 인자는 Base UI 출력을 요구해 Radix 계약과 맞지 않았다. CLI가 생성한 `radix-nova` 설정과 `radix-ui`, `tw-animate-css`, Geist 의존성 및 실제 컴포넌트 source를 사용했다.
+- 최소 `SidebarProvider`/`Sidebar`/`SidebarTrigger`/`Button`/`Card` 셸과 React Query provider를 추가했다.
+
+### 이유
+
+- 복사된 shadcn source는 버전·스타일을 소스 tree에서 검토하고 향후 화면에 일관되게 적용할 수 있어 CDN 또는 수제 대체 컴포넌트보다 선택했다.
+- Vite `base: "./"`는 `/app/` 또는 JAR classpath의 중첩 URL에서도 해시 asset을 root-relative 경로에 의존하지 않게 한다.
+- Base UI `base-nova` 출력을 유지하는 대안은 Radix primitive 계약을 위반하므로 기각했다.
+
+### 영향 파일
+
+- `frontend/package.json`, `frontend/package-lock.json`, Vite/TypeScript 설정, shadcn 설정·source, React 셸·테스트
+- `.gitignore`, `docs/ko/web-ui-feature-parity.md`, `docs/ko/ui-product-rationale.md`
+
+### 검증
+
+- RED: 빈 scaffold에서 `AppShell.test.tsx`는 `대시보드` accessible link가 없어서 실패했다.
+- GREEN: `npm run typecheck`, `npm test -- src/app/AppShell.test.tsx`, `npm run build`가 모두 성공했고 `target/generated-resources/react-web/index.html` 및 해시 JS/CSS asset을 생성했다.
+
+### 남은 한계·다음 gate
+
+- 현재 셸은 navigation contract만 제공한다. parity 표의 모든 기능, Java API contract, browser E2E와 Task 14의 explicit Burp runtime parity gate는 아직 `PLANNED`다.
+
+## 2026-09-01 · React bundle classpath 전송과 legacy 병행
+
+### 목표와 성공 조건
+
+- Vite가 만든 해시 React asset을 fat JAR classpath에 포함하고 `/app/`에서 안전하게 제공한다.
+- 기본 `/`는 기존 UI를 유지하고 `/legacy/` fallback, `/app` trailing-slash redirect, `/api/*` 보안 gate 분리를 자동 계약으로 고정한다.
+
+### 개발·수정
+
+- Maven `generate-resources`에 고정 Node 24.11.1/npm 11.6.2 install, `npm ci`, typecheck/Vitest, Vite build를 연결하고 생성물을 `web/app` resource로 복사했다.
+- `ClasspathWebAssets`가 raw path 한 번 decode, allowlist extension/MIME, encoded separator·NUL·dot segment 거부를 담당한다.
+- `/`와 `/legacy/`는 legacy HTML, `/app`은 `308 Location: /app/`, `/app/`와 해시 asset은 React bundle을 제공한다. 정적 경로는 GET/HEAD만 허용하고 성공·누락·invalid path를 포함한 HEAD는 GET의 status/header/content length와 raw socket 빈 body를 보장한다.
+- capability token은 HTML response에만 넣고 Vite JS/CSS/font과 `/api/*`에는 넣지 않았다. `/api/*`는 기존 origin/capability/authorization 흐름을 유지한다.
+- Windows Node 24에서 Vite의 native output cleanup/중복 Tailwind optimizer가 `0xC0000409`로 종료되는 재현을 분리했다. target 한정 Node cleanup script와 Vite의 자체 CSS minify를 유지한 Tailwind optimizer 비활성화로 재현 가능한 build를 만들었다.
+- Vite build 전 cleaner는 resolve된 정확한 `target/generated-resources/react-web`과 `target/classes/web/app`만 지운다. 따라서 Maven resources의 additive copy가 non-clean second package의 obsolete hash asset을 classpath/fat JAR에 남기지 않는다.
+- 반복 가능한 release/CI 확인 명령은 `frontend`에서 실행하는 `npm run verify:incremental-package`다. Maven과 JDK `jar`가 PATH에 있어야 하며, 필요하면 각각 `FLOWSCOPE_MAVEN`, `FLOWSCOPE_JAR`로 절대 경로를 준다. 이 verifier는 script 위치에서 repository와 정확한 `target` 하위만 해석하고, `index.css`의 semantic token을 바꾼 두 번의 non-clean `-DskipTests package` 뒤 두 번째 fat JAR와 `target/classes/web/app`에 old hash가 없고 단 하나의 같은 new hash가 있는지 확인한다. 이어 source bytes를 복원하고 세 번째 recovery package를 실행해 final JAR/classes가 restored hash만 포함하고 mutated hash를 제외하는지 확인한다. verification과 recovery가 함께 실패하면 두 error를 `AggregateError`로 함께 surface한다. Maven lifecycle에 bind하지 않아 재귀 호출하지 않는다.
+- 같은 command의 `test:incremental-package` Node suite는 recovery JAR 또는 classpath에 mutated CSS가 남는 경우, restored identity가 틀린 경우, 그리고 JAR/classes CSS 불일치를 각각 negative fixture로 거부한다.
+
+### 검증
+
+- RED: `mvn -Dtest=FlowScopeWebServerTest#redirectsAppMountToTrailingSlash test`는 변경 전 `/app`에서 `expected: <308> but was: <404>`로 실패했다.
+- GREEN: `mvn -Dtest=ClasspathWebAssetsTest,FlowScopeWebServerTest test`는 frontend typecheck/Vitest/Vite build와 Java contract tests를 모두 통과했다. raw socket HEAD와 두 번의 non-clean Maven package/JAR hash 교체 회귀도 통과했다.
+- fat JAR packaging과 `web/app/index.html` 및 해시 asset 포함 검증은 같은 Task 2 gate로 기록한다. Task 13 소유의 Jackson multi-release `verify-release-jar` 한계는 이 전송 계약 변경으로 감추거나 수정하지 않는다.
+
+### 남은 한계·다음 gate
+
+- React 셸의 개별 기능 parity와 Burp 실런타임 parity는 Task 14 gate 전까지 완료로 표시하지 않는다.
+
+## 2026-09-01 · React typed API client와 중앙 polling
+
+### 목표와 성공 조건
+
+- Java `FlowScopeWebServer`의 비-deprecated `/api/*` surface를 정확한 wire type과 endpoint wrapper로 노출한다.
+- capability는 매 요청 직전에 HTML meta에서만 읽고 API header에만 붙이며, polling/query key/오류/저장소에 남기지 않는다.
+- Snapshot, HUMAN, ZAP, Scanner, LLM 상태를 공유되는 1초 TanStack Query polling으로 읽고, 마지막 성공 결과와 revision identity를 보존한다.
+
+### 개발·수정
+
+- `client.ts`는 JSON/error parsing, status contract, capability header, form/XML body media type을 중앙화했다. 기본 성공 status는 `200`이고 Scanner 및 LLM의 start/follow-up만 명시적으로 `202`를 허용한다.
+- `endpoints.ts`는 snapshot, evidence, ai-preview/scenarios, replay, request-lab, clear, HUMAN, sample, policy/account/session, ZAP/scanner/LLM, XML import, owner까지 현재 dispatch되는 모든 비-deprecated route의 typed wrapper를 제공한다. legacy verdict route는 wrapper로 만들지 않았다.
+- Java writer의 nullable `resource`, payload retention metadata, `completed_lanes`, source/per-source map, Scanner/LLM의 snake_case run field를 포함한 named TypeScript wire type을 추가했다.
+- 하나의 application `QueryClient`와 secret-free query key를 두고, 500ms stale time, focus refetch off, read retry 1회, mutation retry 0회, 1초 shared polling 및 snapshot revision structural sharing을 설정했다.
+
+### 검증
+
+- RED: `npm test -- src/lib/api/client.test.ts src/lib/query/hooks.test.tsx`는 구현 전 `./client`, `./endpoints`, `./hooks` import를 resolve하지 못해 예상대로 실패했다.
+- GREEN: capability header 재-read, URLSearchParams form body, exact XML media type, explicit 202, JSON/non-JSON error status/message, shared polling, final-unmount abort, revision sharing, failed-poll LLM last-success tests를 추가했다. `npm run typecheck`, focused Vitest (8 tests), `npm run verify` (3 files/9 tests), `npm run build`는 모두 성공했다.
+- Task 2 package smoke는 제공된 Maven 3.9.11/JDK 21으로 `mvn -DskipTests package`를 한 번 실행했으나, frontend-maven-plugin의 선행 `npm ci`가 기존 `node_modules/lightningcss-win32-x64-msvc/lightningcss.win32-x64-msvc.node` unlink에서 Windows `EPERM (-4048)`로 실패했다. Java source나 packaging rule은 변경하지 않았고, frontend build 자체는 위 Vite gate에서 성공했다.
+
+### 남은 한계·다음 gate
+
+- 이 작업은 transport/query ownership만 다룬다. React page-level feature parity와 Task 14의 Burp runtime gate는 아직 `PLANNED`다.
+
+## 2026-09-01 · React dashboard shell과 빈 상태
+
+### 목표와 성공 조건
+
+- 닫힌 9개 hash route로 실제 shadcn sidebar shell을 제공하고, 현재 `/api/*` shared query 결과만 대시보드에 표시한다.
+- 빈 workspace의 온보딩, sample/clear mutation, 정확한 Evidence 수량, source 문자 상태, 오류 복구를 component contract로 고정한다.
+
+### 개발·수정
+
+- `dashboard`, `inspection`, `graph`, `matrix`, `sequence`, `scenarios`, `evidence`, `accounts`, `runs`만 허용하는 route union을 추가했다. 빈 값, 미지 route, encoded/path-like hash는 `#dashboard`로 정규화하며 path나 HTML로 해석하지 않는다. 후속 8개 화면은 기능 동등성을 주장하지 않는 탐색 자리표시자다.
+- retained shadcn Sidebar/Sheet, Breadcrumb, Tooltip, Badge, Button, Card, Skeleton, Alert, AlertDialog로 sidebar, 상단 scope·HUMAN/ZAP/LLM 상태, Evidence disposition, 대시보드를 구성했다. shadcn mobile Sidebar가 900px 미만에서 Sheet 경로를 쓰도록 breakpoint를 맞췄다.
+- count는 서버 `trafficStats`의 captured, coverage, review, excluded, dropped, payloadMetadataOnly를 각각 수집/분석 대상/검토 대기/제외/삭제됨/Payload 메타데이터만으로 그대로 표시하며 percentage를 만들지 않는다. gap은 `gaps`, finding 요약은 서버가 제공한 `scenarios`만 사용한다.
+- empty 상태는 분석 card를 숨기고 빠른 시작과 sample 동작만 보이며, clear는 AlertDialog 확인 뒤에만 중앙 clear mutation을 실행한다. snapshot 최초 로딩은 Skeleton, 마지막 성공 data가 없는 오류는 한국어 Alert와 retry를 사용한다.
+
+### 검증
+
+- RED: `npm test -- src/features/dashboard/DashboardPage.test.tsx`는 기존 Task 1 shell에서 4/4가 실패했다(점검 대시보드, counts, empty/sample/clear, loading/retry 미구현).
+- GREEN: `npm test -- src/features/dashboard/DashboardPage.test.tsx src/app/AppShell.test.tsx`는 2 files/5 tests를 통과했다. 9개 route/current-page/hashchange-popstate/unsafe hash, count/source/gap/finding/sample warning/no percentage, empty/sample/confirm-clear, loading/error retry와 focusable Korean navigation을 검증한다.
+
+### 남은 한계·다음 gate
+
+- component scope의 shell, onboarding, sample, clear, banner, count, loading/error rows만 근거를 추가했다. Inspection/Graph/Matrix/Sequence/Scenarios/Evidence/Accounts/Runs의 실제 workflow, browser E2E, Java contract, Burp runtime은 계속 `PLANNED`다.
+
+## 2026-09-01 · Task 4 dashboard review 보정
+
+### 개발·수정
+
+- 상단 bar는 모든 shared query의 최초 응답 전 `상단 상태를 불러오는 중`을, prior data 없는 terminal error에는 `상단 상태를 불러올 수 없습니다.`를 표시한다. scope/Evidence/disposition 숫자는 실제 query data가 있을 때만 표시하고, background poll 오류는 기존 값을 보존한 채 `최근 동기화 오류`로 구분한다.
+- `SidebarInset`만 main landmark로 유지하고 route content의 중첩 main을 named section으로 바꿨다.
+- retained mobile hook은 900px media query의 `matches` 값을 사용한다. 실제 shadcn Sheet navigation은 Korean trigger와 links를 사용하며 route 선택 뒤 닫힌다.
+- scope, HUMAN/ZAP/LLM state는 bounded truncate/wrap styling과 full escaped `title`/Tooltip을 함께 사용한다.
+
+### 검증
+
+- RED: review regression tests는 상단 loading/unavailable state 부재, stale status 부재, nested main을 각각 재현했다.
+- GREEN: focused component tests는 background snapshot retry exhaustion 뒤에도 `수집 18건`/`Evidence 18`이 유지되고 empty/loading/zero로 바뀌지 않는 것과 900px 미만 Sheet route selection을 확인한다.
+
+### 남은 한계·다음 gate
+
+- 이 보정은 Task 4 component contracts만 넓힌다. later-page workflow, browser E2E, Java contract, Burp runtime parity는 계속 `PLANNED`다.
+
+## 2026-09-01 · Task 4 dashboard re-review 보정
+
+### 개발·수정
+
+- terminal unavailable query가 하나라도 있으면 top bar는 loading과 동시에 표시하지 않고 unavailable을 우선한다.
+- retained mobile hook은 guarded `matchMedia('(max-width: 899px)')`로 첫 client render를 초기화해 900px 미만 desktop-first flash를 피하고, 이후 media change와 unmount listener cleanup을 유지한다.
+- Sheet test의 불필요한 `innerWidth` mutation을 제거해 global viewport descriptor를 건드리지 않는다.
+
+### 검증
+
+- RED: terminal unavailable과 pending sibling이 함께 있을 때 loading label이 남았고, matchMedia true 첫 render가 false였다.
+- GREEN: focused shell/dashboard/hook tests는 unavailable 우선, first-render mobile, media transition, listener cleanup, and 900px Sheet navigation을 확인한다.
+
+## 2026-09-01 · React 점검 시작·실행 상태 제어
+
+### 목표와 성공 조건
+
+- 기존 Java run API를 바꾸지 않고 `#inspection`에서 scope → HUMAN → ZAP → LLM·Judge의 현재 단계를 안내하고, `#runs`에서 각 lane의 서버 상태를 표시한다.
+- HUMAN/ZAP/LLM form field와 성공 status, ACTIVE managed session 선택 경계, polling/mutation 오류의 last-success 보존을 component contract로 고정한다.
+
+### 개발·수정
+
+- `InspectionPage`는 자동 추천 단계를 scope, HUMAN 완료, ZAP 완료/경고 완료, LLM 완료 lane 순서로 결정한다. 사용자가 탭을 선택하면 polling이 해당 선택을 덮지 않고 `현재 단계로`에서만 자동 추천으로 돌아간다.
+- HUMAN begin은 `action=begin&account=`만, end는 현재 nonblank `runId`와 `action=end`만 중앙 endpoint wrapper로 보낸다. ZAP baseline은 connected, exact returned scope target, anonymous 또는 ACTIVE managed account가 모두 충족될 때에만 `target`, string boolean `anonymous`, comma-separated `accounts`를 202 contract로 보낸다.
+- 재사용 선택지는 `managedSessions` 중 exact `ACTIVE`, non-capturing, non-conflicted session만 사용한다. observed identity, fingerprint, raw credential, inactive session은 DOM과 form choice에 넣지 않았다.
+- `RunsPage`는 HUMAN/ZAP/LLM text status, lane의 전체/Traditional/Rendered/Alert count, provider availability, bounded escaped output tail, Judge session follow-up을 actual shadcn Tabs/Card/Select/Checkbox/Progress/Alert/Accordion/Input/Button으로 표시한다. running/pending buttons prevent double submit; disabled reason is text as well as state.
+- polling으로 scope가 바뀌어도 이미 선택한 target을 다른 target으로 자동 대체하지 않는다. target이 exact scanner scope 밖이면 ZAP baseline은 설명과 함께 비활성화된다. `COMPLETED_WITH_WARNINGS`는 경고를 보존한 100% progress이며, completed lane은 색만이 아닌 읽을 수 있는 label로 표시한다.
+- ZAP 능동 스캔 control/action/form/endpoint는 React page에 추가하지 않았다. actual active execution and Burp approval remain the Task 14 runtime gate.
+
+### 검증
+
+- RED: `npm test -- src/features/inspection/InspectionPage.test.tsx src/features/runs/RunsPage.test.tsx`는 `InspectionPage`와 `RunsPage` import를 resolve하지 못해 예상대로 실패했다.
+- GREEN: focused Vitest suite (2 files/20 tests) verifies automatic/manual stage selection across deterministic query refetch, exact HUMAN/ZAP/LLM forms and accepted starts, opened Select ACTIVE filtering, disconnected/out-of-scope/provider/lane/whitespace gates, readable completed lanes, warning-complete progress, escaped output, and 503 mutation/poll errors preserving the preceding successful run. It is transport simulation only; it never starts HUMAN, ZAP, or an LLM CLI.
+
+### 남은 한계·다음 gate
+
+- Component evidence does not demonstrate a connected ZAP, captured traffic, CLI availability, or a real LLM/Judge session. Java contract, browser E2E, and Task 14 explicit Burp runtime parity remain open.
+
+## 2026-09-01 · React 계정·신원·세션 관리
+
+### 개발·수정
+
+- `#accounts`는 등록 Account(`id/label/role/target`), 관측 identity/service/비가역 fingerprint, observed binding, 재사용 managed session을 별도 카드와 진단 표로 표시한다. complete fingerprint는 text·title·tooltip·accessible name·storage에 넣지 않고, 표에는 비민감 진단 label만 제공한다. exact 값은 사용자가 bind/unbind를 명시적으로 실행할 때의 form closure 안에서만 쓴다.
+- 계정 저장은 기존 id를 포함한 정확한 form을 보낸 뒤에만 form을 비우고, 수정 중 role/target과 실패 입력은 그대로 남긴다. bound observed session이 있는 계정은 client에서 삭제 버튼 대신 `연결된 세션을 먼저 해제하세요.`를 표시하며, 다른 삭제와 identity reset은 Korean AlertDialog 확인 뒤에만 전송한다.
+- 관측 신원 role은 고급 accordion의 `/api/role`로 분리했고, identity merge는 관측 service와 같은 등록 account만 선택하며 같은 identity는 POST 전에 막는다. bind choice도 observed service와 account target의 exact match로 제한한다.
+- managed session status는 `ACTIVE`, `CAPTURING`, `UNVERIFIED`, `REVOKED`, `credential-conflict`를 text로 남기고 begin/end/revoke를 해당 account id에만 보낸다. 모든 writes는 기존 중앙 mutation의 snapshot invalidation을 재사용하며, 실패는 각 action 옆 Alert에 보존한다.
+
+### 검증
+
+- RED: `npm test -- src/features/accounts/AccountsPage.test.tsx`는 구현 전 `./AccountsPage` import를 resolve하지 못해 예상대로 실패했다.
+- GREEN: focused Vitest 11 tests는 exact eight form contracts, create `id=`, edit failure retention, destructive confirmation, bound-delete client gate, same-service merge/bind, begin/end/revoke state actions, every successful mutation의 snapshot refetch, and raw credential/cookie/authorization/password/capability plus complete-fingerprint exclusion from DOM/title/accessible attributes/storage/request bodies를 transport simulation으로 확인한다. 각 server failure는 해당 action/dialog에 남고 다른 form을 지우지 않는다. 이 test는 로그인·capture·target traffic을 시작하지 않는다.
+
+### 남은 한계·다음 gate
+
+- Component evidence only이다. Java contract/browser E2E와 Task 14 explicit Burp runtime parity는 계속 열려 있으며 이 작업은 live login/capture를 실행하지 않았다.
+
+## 2026-09-01 · React Evidence 작업면과 XML 가져오기
+
+### 개발·수정
+
+- `#evidence`는 snapshot의 Evidence를 실제 shadcn Table/ScrollArea/Checkbox/Badge/Button/Alert/Skeleton으로 표시한다. 기본값은 H/S/L, INCLUDE/REVIEW, API·UNKNOWN·TELEMETRY_CANDIDATE·POLLING·BACKGROUND이며, EXCLUDE와 인증·navigation·asset·metadata·preflight은 기본 숨김이다. 이 상태는 표시만 바꾸며 숨김 수를 삭제와 구분해 알린다.
+- 안정 cluster ID로 반복을 대표 행 하나로 접고, 확장하면 모든 record를 보인다. `상세 보기`는 operation의 첫 행이 아닌 눌린 `eventId`의 메타데이터를 선택한다. 상세 metadata는 classification/auth/template/first-last/repeat/coverage/source/run 문맥만 React text node로 bounded rendering하며 raw request/response는 표시하지 않는다.
+- Evidence pagination은 중앙 `useEvidenceQuery`의 secret-free `[evidence, operation, offset, limit]` key와 AbortSignal을 사용한다. operation 전환 시 stale in-flight/cache를 취소·폐기하고 offset 0부터 다시 요청하며, next/back는 서버 응답의 offset/limit/total/hasMore만 따른다.
+- XML Dialog는 source와 `.xml` 선택을 검증하고 file마다 `/api/import-xml?source=&name=` POST를 보낸다. filename은 URL encoding하고 본문은 `application/xml;charset=UTF-8`의 원문 그대로이며, 실패 뒤에도 다음 file을 처리한다. summary는 서버가 돌려준 imported/candidates/failed만 합산하고 filename별 server error를 보존한다. XML과 raw Evidence는 storage/log/title/ARIA에 쓰지 않는다.
+
+### 검증
+
+- RED: `npm test -- src/features/evidence/EvidencePage.test.tsx`는 `EvidencePage` import를 resolve하지 못해 예상대로 실패했다.
+- GREEN: focused Vitest 6 tests는 filter default/source/class behavior, repeat collapse/expand, exact clicked ID, server-driven pagination/cache replacement, raw-secret DOM/localStorage/sessionStorage exclusion, XML encoded filename/media type/body/per-file continuation/server-only aggregate/error, and unsupported-file no-transport를 simulated transport/File API로 검증한다. Radix ScrollArea는 jsdom에서 test-only ResizeObserver stub을 사용했다.
+
+### 남은 한계·다음 gate
+
+- 이 작업은 Component evidence만 추가한다. Java import contract, browser E2E, actual XML import, raw Evidence Sheet/Request Lab, 그리고 Task 14 explicit Burp runtime parity는 열려 있다.
+
+## 2026-09-01 · React Evidence Sheet·정책·Request Lab
+
+### 개발·수정
+
+- `#evidence`의 정확히 선택한 event는 shadcn Sheet에서 operation/cell/scenario 문맥, required role, traffic override, resource owner를 함께 보여 준다. 모든 policy write는 기존 중앙 URL-encoded endpoint/mutation과 snapshot invalidation을 사용하며 실패하면 Sheet와 입력을 닫지 않고 server message를 표시한다.
+- Request Lab은 TanStack Query 밖의 instance-local memory owner에서 draft/request/response/current-tab history만 관리한다. raw 텍스트는 plain controlled Textarea로만 표시하고, close·selected event/revision change·unmount·`beforeunload`에서 빈 문자열로 덮어쓴 뒤 history reference를 제거한다. UTF-8 `TextEncoder` 1,048,576 byte client guard와 최대 최근 10개 결과는 Java server limit를 보완할 뿐 대체하지 않는다.
+- service는 draft의 immutable 값이고, ACCOUNT는 동일 service의 `ACTIVE` managed session으로만 선택한다. credential material은 React에 전달하지 않는다. metadata(보존/charset/editability/observed identity/reusable session)를 원문보다 먼저 표시한다.
+- Repeater action은 `/api/replay`의 unsent draft acknowledgement만 보여 준다. UI는 전송·결과 판정·실제 Burp 호출을 주장하거나 수행하지 않는다.
+
+### 검증
+
+- RED: `npm test -- src/features/evidence/RequestLabDialog.test.tsx src/lib/security/memoryOnlyRawState.test.ts`는 새 `RequestLabDialog`와 `memoryOnlyRawState` module을 resolve하지 못해 예상대로 실패했다.
+- GREEN: focused Vitest 3 files/12 tests는 simulated transport로 exact policy/replay/request-lab forms and media type, ORIGINAL/ANONYMOUS/ACCOUNT, exact-service ACTIVE filtering, 1 MiB multibyte boundary, history cap, query/storage/IndexedDB/log exclusion, close/unload cleanup, exact selected Evidence와 pagination을 검증한다. 실제 Request Lab, Burp Repeater, HUMAN, ZAP, LLM, target traffic은 실행하지 않았다.
+
+### 남은 한계·다음 gate
+
+- Java contract, browser E2E, live Request Lab 및 Burp runtime parity는 계속 열려 있다.
+
+## 2026-09-01 · React 공격면 그래프
+
+### 개발·수정
+
+- `#graph`는 기존 shared snapshot query만 읽어 `trafficDisposition === INCLUDE` Evidence를 identity → resource → operation(객체 없음은 identity → operation)으로 투영한다. REVIEW/EXCLUDE Evidence, server cell verdict, route candidate/provenance는 재계산하거나 바꾸지 않는다.
+- HUMAN은 파랑 실선과 `HUMAN`, SCANNER는 빨강 파선과 `SCANNER`, LLM은 검정 점선과 `LLM`으로 동시에 표시한다. authz 보기에서는 서버 verdict의 색과 `ALLOW`/`DENY` 등 문자 label을 함께 제공하고 UNKNOWN은 알려진 값으로 합치지 않는다. 반복 edge label은 2회 이상일 때만 `×n`이다.
+- bundled Cytoscape만 하나의 owned ref에서 만들고, element/style 갱신은 Cytoscape API로 수행한다. listener는 unmount/모바일 전환 때 해제한 뒤 instance를 destroy한다. 900px 이하는 같은 projection을 keyboard-accessible API 목록으로 바꾸며 canvas를 남기지 않는다.
+- localStorage에는 version 5의 graph positions/viewport/locked만 한 namespaced key로 저장한다. malformed, wrong-version, non-finite, prototype-polluting, key/node-limit 초과 값은 적용하지 않으며 filter, selected Evidence, raw HTTP, capability/session/provider data는 저장하지 않는다.
+- graph/list/edge/candidate selection은 operation/resource/identity/source와 exact Evidence IDs를 shared Evidence Sheet에 넘긴다. IDs는 bounded detail text로만 보이며 title, ARIA/live region, log, preference에는 넣지 않는다.
+
+### 검증
+
+- RED: `npm test -- src/features/graph/graphProjection.test.ts src/features/graph/graphPreferences.test.ts`는 구현 전 두 graph module import를 resolve하지 못해 예상대로 실패했다.
+- GREEN: focused Vitest 5 files/11 tests는 INCLUDE projection, source/verdict text·style, exact 18 expand/collapse, support/route/UNKNOWN candidate, exact selection IDs, full slash-aware labels, v5 preference validation/reset and storage exclusion, Cytoscape listener cleanup/destroy/safe renderer failure, and canvas↔list breakpoint transition을 fixture와 mocked canvas boundary로 검증했다. target traffic, Burp, Request Lab, HUMAN, ZAP, LLM, live import는 실행하지 않았다.
+
+### 남은 한계·다음 gate
+
+- Component evidence만 추가했다. Java contract, browser E2E, real Cytoscape layout usability, and Task 14 explicit Burp runtime parity remain open.
+
+## 2026-09-01 · React 권한 매트릭스와 데이터 의존 순서
+
+### 개발·수정
+
+- `#matrix`는 shared `useSnapshotQuery`의 `cells`, `roles`, `owners`, `requiredRoles`, `gaps`만 읽는다. 신원별은 concrete server cell만, 역할별은 server role 아래 각 구성원의 원 cell을 그대로 보여 주며 React가 verdict를 합성하거나 HTTP status로 인가 판단을 다시 하지 않는다.
+- 열 머리말은 operation, 서버 required role(Unknown/unset 포함), null 객체 상태, 서버 owner를 함께 보이고 좌표 key는 null-aware JSON tuple이다. HUMAN/SCANNER/LLM는 H/S/L·실선/파선/점선·verdict text로 중복 표시하며 누락은 strike와 `미관측/놓침` text, conflict/gap은 server field의 명시 label로 남긴다. gap-only는 presentation filter여서 선택을 지우거나 snapshot을 바꾸지 않는다.
+- `#sequence`는 producer/consumer event가 모두 존재하는 `flowLinks`만 observed link identity로 나눈다. finite positive producer timestamp는 시간순, unknown/equal은 server link 원순서로 안정적으로 남긴다. operation/source/masked value는 server text 그대로 escaped/bounded UI에 표시하며 data-dependency는 coverage·IDOR·authorization verdict를 바꾸지 않는 보조 정보라고 명시한다.
+- matrix cell과 sequence link은 raw를 운반하지 않는 structured selection으로 shared Evidence Sheet를 연다. ID는 bounded visible detail에만 남기고 ARIA/title/live region에는 넣지 않으며, snapshot에서 선택한 cell 또는 link endpoint가 사라질 때만 selection을 해제한다.
+
+### 검증
+
+- RED: `npm test -- src/features/matrix/MatrixPage.test.tsx src/features/sequence/SequencePage.test.tsx`는 새 Matrix/Sequence page·projection module import를 resolve하지 못해 예상대로 실패했다.
+- GREEN: focused Vitest 2 files/8 tests와 `npm run typecheck`는 server truth projection, role members/no synthetic verdict, requirements/owner/null-safe collision key, H/S/L source+reason+miss/conflict/gap semantics, gap-only selection retention, exact Evidence privacy, link timestamp/identity/server-only/masked-value behavior, auxiliary notice, and selection invalidation을 simulated snapshot으로 확인했다. target traffic, HUMAN, ZAP, LLM, Request Lab, Repeater, import는 실행하지 않았다.
+
+### 남은 한계·다음 gate
+
+- Java contract, browser E2E, responsive browser usability, and Task 14 explicit Burp runtime parity are open. 이 작업은 live target traffic이나 active operation을 실행하지 않았다.
+
+### Task 10 fix round 1
+
+- sequence timestamp는 known positive producer timestamp를 먼저 오름차순으로 정렬하고, 같은 known timestamp와 unknown timestamp는 server `flowLinks` 원순서로 안정적으로 둔다. 선택 key는 global index가 아니라 complete link JSON signature와 같은-signature occurrence만 사용하므로 무관한 앞 link 삽입으로 선택이 사라지지 않는다.
+- H/S/L badge는 각 HUMAN/SCANNER/LLM text label과 함께 실제 solid/dashed/dotted border class를 가진다. matrix/sequence의 긴 markup-like operation·reason·masked value는 text node에서 bounded로 보이고 명시적으로 펼칠 수 있다. matrix Evidence ID는 3개/값 160자 initial body surface 뒤 `Evidence ID 더 보기/접기`로 전체를 열며 ARIA/title/live region에는 남기지 않는다.
+
+### Task 10 fix round 2
+
+- matrix/sequence의 shared Evidence Sheet는 조합한 raw context 문자열을 직접 렌더하지 않는다. identity·resource·operation을 구조화해 operation은 160자 ordinary-text surface와 `선택 상세 더 보기/접기` 뒤에만 전체를 표시한다. markup-like operation은 element로 해석되지 않고 ID·operation 모두 title/ARIA/live region에 두지 않는다.
+- 동일 signature link는 occurrence별 고유 key를 갖고, unrelated link의 삽입·재정렬 뒤에도 그 occurrence 순서가 유지되는 한 선택 key를 유지한다. sequence의 HUMAN/SCANNER/LLM badge도 각각 visible source text와 solid/dashed/dotted border class를 유지한다.
+
+### Task 10 fix round 3
+
+- shared Evidence Sheet의 matrix identity/resource/operation과 sequence identity/operation/from/to endpoint는 하나의 bounded ordinary-text field group으로 표시한다. 어느 untrusted coordinate 값도 initial surface, title, ARIA name, live region에 전체로 남지 않고 `선택 상세 더 보기/접기` 뒤에만 escaped text로 펼쳐진다.
+- exact-signature duplicate link의 두 occurrence 중 선택한 occurrence는 unrelated link 삽입·재정렬 후 그대로 남고, 그 occurrence만 제거하면 endpoint가 남아 있어도 selection을 해제한다. endpoint 삭제에 따른 해제는 별도 회귀로 유지한다.
+
+### Task 10 fix round 4
+
+- structured matrix/sequence 선택에서 exact `EventRecord`는 policy, Request Lab, Repeater 동작을 위해 그대로 유지하되, 같은 event ID를 generic Sheet header와 `OperationDetail` metadata가 다시 표시하지 않는다. 긴 Evidence/endpoint ID의 유일한 표시 경로는 기존 bounded structured field이며 명시적 펼치기 전 전체 값은 Sheet의 body, button accessible name, title, ARIA description/live text 어디에도 남지 않는다.
+- RED는 matching long-ID event를 포함한 component fixture에서 header와 metadata의 중복 전체 ID 노출을 재현했다. 전체 ID를 무조건 숨기는 방식은 짧은 좌표의 가독성을 해치므로 채택하지 않았고, 160자를 넘는 값만 기존 `선택 상세`/`Evidence ID` control 뒤에서 펼치는 경계를 유지했다. 영향 파일은 `EvidenceSheet.tsx`, `OperationDetail.tsx`, Matrix/Sequence component tests와 Task 10 문서다. Java/live traffic은 변경하거나 실행하지 않았으며 browser/Burp runtime gate는 계속 열려 있다.
+- GREEN verification은 focused 3 files/34 tests, typecheck, aggregate frontend 20 files/116 tests, production build에 성공했다. 전체 Vitest의 기존 jsdom canvas notice와 Vite의 500 kB chunk advisory는 남아 있으며 release browser/Burp gate 결과로 간주하지 않는다.
+
+## 2026-09-01 · React 시나리오 검토 작업면
+
+### 개발·수정
+
+- `#scenarios`의 명시적 첫 동작은 `GET /api/ai-preview`, 다음 동작은 `POST /api/ai-scenarios`뿐이다. 둘은 중복 pending을 막고 각 action 가까이에 loading, server error, retry를 유지한다. 미리보기는 MCP Judge 입력 요약이지 전송·실행·승인 결과가 아니다.
+- 생성 결과는 서버 envelope만 표시한다. `usedLlm=false`는 `결정론적 폴백`과 MCP 평가/검증 부재를 뜻하며 모델 실행 성공으로 말하지 않는다. snapshot revision이 바뀌면 이전 preview/result와 Evidence 선택을 해제하고 다시 확인하도록 알린다.
+- 규칙 후보, LLM 비최종 평가, 서버 최종 검증, 사람 검토는 별도 block이다. 최종 검증은 server verdict/reason/run ID/validation·control Evidence의 빈 값까지 보이며 `INCONCLUSIVE`와 severity/risk/model 문구를 CONFIRMED로 바꾸지 않는다.
+- review transport는 `ReviewStatus = UNRESOLVED | CONFIRMED | DISMISSED`를 사용한다. 각 카드가 자신의 note(최대 2,000자), pending/error/success를 보유해 실패 초안을 지키고 다른 카드 제어를 막지 않는다. raw HTTP, capability, provider output은 저장하거나 기록하지 않았다.
+- 후보/평가, 검증, 정상 제어 Evidence 그룹은 exact snapshot event만 shared Evidence Sheet로 연다. 없는 ID는 사용 불가로 남기며, structured scenario selection은 bounded body text 하나만 써서 generic Sheet header/metadata/ARIA/live region에 ID를 중복하지 않는다.
+
+### 검증
+
+- RED: `npm test -- src/features/scenarios/ScenariosPage.test.tsx`는 새 `ScenariosPage` import를 resolve하지 못해 예상대로 실패했다.
+- GREEN: focused scenario suite는 simulated transport로 preview GET→scenario POST ordering, fallback wording, final/non-final/review separation, exact capped review form 및 per-card 실패 격리, exact/missing Evidence selection, escaped bounded text, revision reset, loading/error/empty state를 검증했다. Java, browser E2E, Burp runtime, HUMAN/ZAP/LLM CLI, Request Lab send, Repeater는 실행하지 않았다.
+
+### 남은 한계·다음 gate
+
+- Java contract, browser E2E, 실제 Burp runtime parity 및 능동 동작은 Task 12–14 gate로 계속 열려 있다.
+
+### Task 11 fix round 1
+
+- scenario card는 더 이상 `snapshot.scenarios`를 fallback으로 사용하지 않는다. 현재 revision에서 preview가 성공한 뒤 `POST /api/ai-scenarios`가 돌려준 envelope만 렌더하며, 그 전에는 중립 안내만 보인다. preview 실패·snapshot revision 변경·late preview response는 생성 eligibility를 만들지 못한다.
+- revision 변경은 preview/result/error/pending/selection과 card-local review surface를 함께 해제한다. stale snapshot은 같은 revision의 마지막 성공 상태를 계속 읽을 수 있지만, 다른 revision의 preview나 generated card를 현재 사실처럼 보이지 않는다.
+- preview finding/gap 모든 필드는 구조화된 bounded text로 보이고, preview 및 scenario list는 처음 일부만 표시한 뒤 Korean expand/collapse로 전체를 연다. ID는 ordinary body text에만 남는다.
+
+## 2026-09-01 · Task 12 · standalone React parity browser harness
+
+### 개발·수정
+
+- packaged fat JAR만 직접 기동하는 Chromium Playwright harness를 추가했다. Vite 또는 다른 포트로 우회하지 않고 `127.0.0.1:17777/app/`와 `reuseExistingServer: false`를 고정해 standalone 계약을 유지한다. launcher는 port가 비어 있지 않으면 기존 listener를 재사용·접속하지 않고 즉시 실패한다.
+- Korean role/label selector로 아홉 navigation route, sample surface, graph/matrix/sequence/Evidence exact selection, responsive 1280/900/600, keyboard/overflow, console/page error 및 exact-origin request를 검증하도록 구현했다. 시나리오는 먼저 `MCP Judge 입력 미리보기` GET이 끝나 생성 가능 상태가 된 뒤에만 생성하고, 후보/평가 Evidence heading의 직접 parent group에서 서버 순서상 첫 usable Evidence를 Sheet로 연다. group을 펼친 뒤 실제 Evidence row 수를 세어 scenario structured Sheet의 `Evidence IDs (exact count)`와 방금 선택한 exact ID가 모두 일치하는지 확인하며, generic 단일-event header인 `선택 Evidence: ...`를 기대하지 않는다. 같은 card의 다른 Evidence group과 이름이 같은 button은 선택하지 않는다.
+- suite는 Request Lab, HUMAN, scanner, LLM, Repeater의 active POST를 route guard로 중단한다. 허용된 metadata account CRUD는 retry별 고유 label을 사용하고 `finally`에서 정리한다. in-memory XML fixture의 서로 다른 request/response raw marker와 capability 모두 local/session storage에 남지 않는지 점검한다.
+
+### 검증
+
+- RED: harness/launcher가 없던 상태의 `npm run e2e`와 launcher module 부재를 재현했다. fix round 2 전 정적 contract scan은 preview-before-generate, non-first selection, XML raw marker, retry cleanup 조건이 누락됐음을 확인했고, 보강 뒤 조건이 모두 존재함을 확인했다. fix round 4 정적 RED는 scenario structured Sheet에 없는 generic `선택 Evidence: ...` assertion을 재현했다. fix round 5 정적 RED는 outer section 밖의 ancestor를 포함한 `has` locator와 임의 count regex를 재현했고, heading에서 직접 parent로 이동하는 locator 및 선택 group DOM에서 산출한 exact count assertion으로 바꾼 뒤 GREEN을 확인했다.
+- GREEN: 이전 fix round에서 `npx playwright test --list`와 `node --check e2e/parity.spec.ts`는 browser/server를 기동하지 않고 harness discovery·syntax를 통과했다. fix round 4의 Windows shell에서는 Playwright `--list`가 test 목록 출력 전에 비진단 process exit해 새 PASS 근거로 쓰지 않았다. fix round 5의 정적 contract scan과 두 Node syntax check, `npm run verify` 21 files / 129 tests, `npm run typecheck`, `npm run build`, `git diff --check`는 통과했다. build의 Cytoscape 500 kB chunk advisory는 기존 advisory다.
+- Controller package evidence: JDK 21 + Maven 3.9.11 `mvn -B clean package`는 4:21에 BUILD SUCCESS였고, `npm ci`는 vulnerabilities 0, frontend 21/129와 Java 258/258은 pass, final fat JAR은 생성됐다.
+
+### 남은 한계·다음 gate
+
+- 실제 packaged Chromium E2E는 실행하지 않았다. user-owned Burp가 mandated `127.0.0.1:17777`을 점유하고 있어 harness가 fail-fast하며, 이를 중지·attach·reuse하지 않는다. 그러므로 browser E2E PASS나 Burp runtime parity PASS를 주장하지 않으며 다음 gate는 Task 14다.
+
+### Task 12 fix round 6 · React verdict wire 계약
+
+- packaged `/api/snapshot`의 event/cell verdict는 Java `Verdict`의 `ALLOW`, `DENY`, `SUSPICIOUS`, `UNDECIDED`, `UNTESTED`를 소문자로 직렬화한다. React `Verdict`와 graph style이 존재하지 않는 `soft_deny/error/inconclusive`를 선언하던 불일치 때문에, matching coverage cell이 없는 `suspicious/undecided` event를 node로 투영할 때 style lookup이 `undefined`가 되어 `style.text`에서 중단됐다.
+- frontend API union과 graph styles를 서버의 다섯 값으로 정확히 맞췄다. `SUSPICIOUS`는 주황색, `UNDECIDED`는 보라색 문자·색 조합을 사용하고 `ALLOW/DENY/UNTESTED`는 기존 의미를 유지한다. 알 수 없는 서버 값을 조용히 숨기는 generic fallback이나 page error suppression은 wire drift를 가리므로 추가하지 않았다.
+- graph, matrix, dashboard fixture에서 허구의 verdict를 모두 제거했다. matching cell이 없는 실제 `suspicious/undecided` event 두 건을 직접 투영하는 회귀가 두 verdict와 정확한 text/color를 검증한다.
+
+**영향 파일**
+
+- 계약·투영: `frontend/src/lib/api/types.ts`, `frontend/src/features/graph/graphProjection.ts`
+- 회귀·fixture: graph projection, matrix, dashboard component test
+- 공개 정본: `CHANGELOG.md`, `docs/ko/architecture.md`, 이 개발 기록
+
+**검증 및 남은 gate**
+
+- RED: focused graph projection test는 `TypeError: Cannot read properties of undefined (reading 'text')`로 기존 runtime crash를 재현했다.
+- GREEN: focused graph/page 2 files/10 tests, matrix/dashboard 2 files/17 tests, frontend typecheck, full frontend 21 files/130 tests, production build를 통과했다. exact JDK 21 + Maven 3.9.11 `mvn -B clean verify`도 frontend 21/130, Java 260/260, fat JAR package/relocation/release verification과 함께 `BUILD SUCCESS`였다.
+- 기존 jsdom canvas notice, Vite 500 kB chunk advisory, Java deprecation diagnostic, XML DOCTYPE negative-test stderr는 유지된다. 이 fix는 browser/target/Burp/ZAP/LLM/Request Lab traffic을 실행하지 않았으며 Task 14 runtime gate를 완료로 바꾸지 않는다.
+
+### Task 12 fix round 7 · standalone Request Lab 읽기 전용 경계
+
+- packaged browser E2E에서 Request Lab을 열면 `FlowScopeWebServer.State`의 기본 `requestLabDraft`가 HTTP 400을 반환했다. Dialog는 오류를 처리했지만 Chromium의 `Failed to load resource` console error가 무오류 gate를 깨뜨렸다. console allowlist나 suppression 대신 standalone 상태의 제품 계약을 보완했다.
+- `DemoState`는 현재 snapshot에서 exact Evidence ID만 조회하고, 요청·응답을 다시 마스킹한 뒤 `rawRequestRetained=false`, `rawResponseRetained=false`, `requestEditable=false`, 재사용 세션 `없음`인 draft를 반환한다. 알 수 없는 Evidence는 다른 레코드로 대체하지 않고 거부하며, POST 전송은 명시적인 한국어 오류로 계속 거부해 대상 네트워크 트래픽을 만들지 않는다.
+- React Dialog는 서버 draft message를 표시하고, 비편집 draft의 전송 버튼뿐 아니라 `send` handler 자체에서도 전송을 거부한다. 원문은 기존 instance-local memory owner를 거치며 query cache·browser storage·로그에 추가로 저장하지 않는다.
+
+**검증 및 남은 gate**
+
+- RED: Java focused test는 exact/unknown sample draft에서 기본 `request lab is unavailable` 예외를 재현했고, React focused test는 standalone 제한 message가 렌더되지 않는 실패를 재현했다. 별도 POST 회귀는 기존 영문 기본 예외가 standalone 한국어 경계를 충족하지 못함을 확인했다.
+- GREEN: `StandaloneTest` 3/3과 `RequestLabDialog.test.tsx` 12/12, 단일 worker 전체 frontend 21 files/131 tests, production build를 통과했다. exact JDK 21 + Maven 3.9.11 `mvn -B clean verify`도 frontend 21/131, Java 263/263, fat JAR relocation/release verification과 함께 `BUILD SUCCESS`였다. 기본 병렬 frontend 실행은 shared Windows 부하에서 기존 Accounts test의 5초 timeout이 반복됐지만 해당 파일 단독 11/11과 동일 전체 suite 단일 worker 131/131은 통과했다. 이 수정 자체는 browser·Burp·ZAP·LLM·target traffic 또는 실제 Request Lab 전송을 실행하지 않았다.
+
+#### Fix round 1 · 낮은 viewport의 footer 접근성
+
+- controller의 실제 packaged Chromium E2E는 안전한 standalone draft까지 도달했지만 1280×720에서 Dialog 전체 높이가 viewport를 넘겨 `닫기`가 visible/enabled 상태면서 화면 밖에 놓이는 RED를 재현했다. 공통 Dialog에는 영향을 주지 않고 Request Lab에만 `100dvh - 2rem` 최대 높이와 `header / minmax(0, 1fr) body / footer` 3행 grid를 적용했다.
+- header와 footer는 고정 행에 두고 draft·metadata·request/response·history가 있는 본문만 `min-height: 0`, 세로 스크롤, overscroll containment를 갖는다. 따라서 낮은 화면에서도 footer 조작을 viewport 안에 유지하면서 모든 읽기 전용 내용은 내부 스크롤로 접근할 수 있다. raw memory owner, 비편집 send 이중 guard, storage/log 제외 및 active POST 거부는 바꾸지 않았다.
+- focused Request Lab 12/12, typecheck, 단일 worker 전체 frontend 21 files/131 tests와 production build를 통과했다. 생성 CSS에서 `max-height: calc(100dvh - 2rem)`, 3행 grid, `overflow-y: auto`, `overscroll-behavior: contain`을 확인했다. 이 fix agent는 browser·Burp·target traffic을 실행하지 않았으며 packaged E2E 재검증은 controller gate로 남긴다.
+
+### Task 12 fix round 8 · sample 상태의 점검 시작 경로
+
+- 실제 packaged E2E의 sample snapshot에는 Evidence가 있어 대시보드의 빈 상태 온보딩 카드와 `빠른 시작` 버튼이 정상적으로 렌더되지 않는다. harness 한 항목만 빈 상태 전용 버튼을 전제해 실패했으며, 제품 UI나 sample 상태를 바꾸지 않고 다른 route 검증과 동일한 sidebar `점검 시작` 링크로 진입하도록 보정했다.
+- exact-origin·active POST 차단, console/page error, storage secret, route heading 검증은 그대로 유지한다. 이 수정은 browser·Burp·target traffic을 실행하지 않았으며 packaged E2E PASS는 controller 재실행 전까지 주장하지 않는다.
+
+### Task 12 fix round 9 · ZAP 상태 locator의 의미론적 범위
+
+- 실제 packaged E2E에서 전역 `ZAP UNAVAILABLE`·`LLM UNAVAILABLE` badge와 Inspection의 ZAP 상태 줄이 모두 넓은 text pattern에 걸려 Playwright strict-mode가 실패했다. `3 · ZAP` tabpanel 안으로 locator를 한정하고, standalone의 exact unavailable 문구 또는 query 초기 연결 확인 문구만 anchored pattern으로 검증한다. 임의 첫 element 선택이나 전역 badge 결합은 사용하지 않는다.
+- ZAP 실행 버튼의 disabled assertion과 exact-origin·active POST 차단을 포함한 보안 guard는 그대로 유지한다. 이 수정은 browser·Burp·target traffic을 실행하지 않았으며 packaged E2E PASS는 controller 재실행 전까지 주장하지 않는다.
+
+### Task 12 fix round 10 · LLM CLI 상태 locator의 의미론적 범위
+
+- 실제 packaged E2E에서 전역 ZAP/LLM badge, LLM card title, CLI 상태 줄이 넓은 `UNAVAILABLE` pattern에 함께 걸려 Playwright strict-mode가 실패했다. active `LLM` tabpanel 안에서 `CODEX CLI 사용할 수 없음 · CLAUDE CLI 사용할 수 없음` exact text만 검증하도록 좁혔다.
+- 같은 panel의 `LLM Explorer 시작` disabled assertion과 exact-origin·active POST 차단을 포함한 보안 guard는 그대로 유지한다. 이 수정은 browser·Burp·target traffic을 실행하지 않았으며 packaged E2E PASS는 controller 재실행 전까지 주장하지 않는다.
+
+### Task 12 closeout · packaged Chromium 자동 E2E
+
+- controller가 exact JDK 21로 만든 latest packaged fat JAR을 fresh ASCII `PWTEST_CACHE_DIR=C:\CodexPwDiag\pw-cache-e2e-6aee210eb6fc437a97cf561dd62264d8`에서 기동해 `npm run e2e`를 다시 실행했다. 결과는 exit 0, 8/8 pass, 11.3초였다.
+- suite의 route guard는 HUMAN, ZAP, LLM, Request Lab send, Repeater의 active 요청을 금지했다. 상태 변경은 정리까지 검증한 metadata-only account CRUD와 raw marker를 storage에 남기지 않는 in-memory XML import에 한정됐다. console error, uncaught page error, 외부 origin 요청, capability/raw marker의 local/session storage 잔존은 모두 0건이었다.
+- 따라서 standalone packaged Chromium 자동 gate는 PASS다. 실제 target을 사용하는 HUMAN/ZAP/LLM/Request Lab/Repeater와 Burp runtime parity, root cutover는 별도 Task 14 gate로 계속 PENDING이며 이 결과로 확대 해석하지 않는다.
+
+## 2026-09-01 · Task 13 · frontend notice와 release smoke
+
+### 개발·수정
+
+- `license-checker-rseidelsohn` API를 production dependency graph에만 사용해 package name/version 순서의 deterministic notice를 만든다. dev-only Vitest/Playwright는 포함하지 않고, UNKNOWN/UNLICENSED license, repository metadata, 또는 local `node_modules` license file이 없으면 fail closed 한다. 결과는 LF-normalized complete local license text만 포함하며 절대 workspace path를 출력하지 않는다.
+- notice generator는 `target/generated-resources/frontend-notices/META-INF/NOTICE-frontend.txt`만 쓴다. Maven은 `npm ci` 직후 이 파일을 생성하고 generated notice root만 resource로 복사한다. primary NOTICE는 기존 Java/legacy notices를 보존한 채 frontend notice resource를 참조한다.
+- release smoke는 React index, hashed JS/CSS, frontend NOTICE, legacy Cytoscape asset exactly once를 요구하고 node_modules/Playwright/Vitest 및 React asset의 legacy Cytoscape reference를 거부한다.
+- 기존 generic MR-JAR regexp move가 Java 11/17/21 versioned entries를 final JAR에서 잃는 것을 확인했다. explicit version-root move로 Jackson, JSoup, SnakeYAML relocated MR entries를 보존해 Java 21 class selection, Multi-Release manifest, Shade relocations, streaming manifest, and one-public-JAR contract를 함께 유지했다.
+
+### 검증
+
+- RED: `node --test scripts/generate-notices.test.mjs`는 generator 부재로 `ERR_MODULE_NOT_FOUND`를 내며 실패했다. 첫 release `mvn -B clean verify`는 new `.test.mjs`가 Vitest에 discovery되어 no-suite failure를 재현했고, Node-only test path를 package Vitest command에서 명시적으로 제외했다. 다음 release RED는 기존 MR-JAR smoke의 `FastDoubleSwar` base-class selection failure였다.
+- GREEN: isolated temporary package-lock/node_modules fixture와 installed graph notice test 2/2, `npm run typecheck`, full Vitest 21 files/129 tests, 그리고 exact JDK 21 + Maven 3.9.11 `mvn -B clean verify`가 pass했다. Maven lifecycle generated notice, frontend build, Java 258/258, MR relocation, one-JAR check, and `FatJarIsolationSmoke` all completed successfully.
+
+### 남은 한계·경고
+
+- Target/Burp/ZAP/LLM/Request Lab/browser traffic은 Task 13에서 실행하지 않았다. Existing `@types/cytoscape` deprecation, jsdom canvas notice, Vite 500 kB chunk advisory, Java deprecation diagnostic, XML DOCTYPE negative-test stderr are recorded warnings; release result is BUILD SUCCESS.
+
+### Task 13 fix round 1
+
+- notice generator는 license-checker가 낸 문자열, 배열의 각 element, structured `type`/`name`/`license` identifier를 모두 fail-closed로 검사한다. blank, missing, `UNKNOWN`, `UNLICENSED`는 유효한 값과 섞여도 reject하며 empty/missing local license text도 계속 reject한다. 이 변경은 허가된 license identifier를 새로 해석하거나 license text를 보완하지 않는다.
+- MR-JAR relocation은 더 이상 Java version root 목록에 의존하지 않는다. package phase의 deterministic JAR rewrite가 모든 `META-INF/versions/<root>/` Jackson/JSoup/SnakeYAML source entry를 shaded path로 옮기고 sorted source-to-target map을 JAR에 기록한다. smoke는 모든 root에서 source namespace 부재, map의 exact destination, source 부재/target 존재를 검사하면서 existing known-class selection과 `Multi-Release: true` 검사를 유지한다.
+
+### Task 13 fix round 2
+
+- deterministic MR-JAR writer는 `JarOutputStream(OutputStream, Manifest)`의 현재 시각 manifest entry를 사용하지 않는다. serialized manifest bytes를 output timestamp를 가진 첫 `META-INF/MANIFEST.MF` entry로 명시적으로 쓰고, 나머지 entry와 relocation map도 같은 timestamp로 쓴다. equivalent input archive 두 개의 byte-for-byte output과 모든 entry timestamp를 regression으로 확인한다.
+- local LICENSE directory fixture는 license-checker가 metadata를 반환하기 전에 걸러질 수 있으므로, 그것만으로 FlowScope `readFile` catch를 증명하지 않는다.
+
+### Task 13 fix round 3
+
+- notice collection에는 test-only metadata source를 위한 narrow `packageCollector` boundary가 있다. CLI/default 경로는 계속 programmatic `license-checker-rseidelsohn`의 production graph를 사용한다. injected metadata가 `node_modules` 아래 directory LICENSE를 가리키는 경우 실제 `readFile` error가 cause로 wrapped되어 fail closed함을 확인하고, license metadata 자체가 없는 경우와 구분한다.
+
+## 2026-09-02 · 통합 분석 작업면 최종 whole-branch review 수정
+
+### 개발·수정
+
+- Request Lab send에 context generation과 `AbortController`를 연결했다. close, unmount, Evidence/event 변경, dataset revision 변경은 현재 send를 abort하고 generation을 올리므로 이전 promise의 success/error/finally가 response, error, pending state 또는 instance-local raw owner를 다시 채우지 못한다.
+- 상단 탐색은 symbol/`ACCESS ANALYSIS`, dashboard·inspection·runs primary links, Scope/HUMAN/ZAP indicators, refresh/continue action과 emerald active state를 제공한다. 분석 route는 horizontal overflow의 자식이 아닌 Radix portal menu에서 열려 compact와 desktop 모두 같은 전체 route set을 유지한다.
+- `xl` 미만 그래프 toolbar에 desktop rail과 동일한 filter controls를 재사용하는 Sheet를 추가했다. Cytoscape lane clamp는 rendered half-width를 반영하고, opt-in browser geometry seam으로 center/bounds를 노출해 zoom/fit/resize 및 diagonal drag 뒤의 lane containment를 실제 Chromium에서 검증한다. route candidate REVIEW는 공통 amber tone을 사용하면서 dotted border와 text 구분을 유지한다.
+- Matrix는 중첩 overflow를 제거하고 하나의 bounded two-axis viewport만 사용한다. corner header는 `top-0 left-0 z-40`, operation header는 top, identity header는 left에 고정한다. Playwright는 viewport의 두 축을 실제로 끝까지 scroll하고 세 sticky offset이 유지됨을 검증한다.
+- `FLOWSCOPE_E2E_ORIGIN`은 `new URL(...).origin`으로 정규화하며 외부 origin이 주어지면 Playwright `webServer`를 생략한다. stale Evidence/Sequence locator도 exact accessible surface로 좁혀 strict-mode 중복을 제거했다.
+
+### 검증과 한계
+
+- TDD RED는 Request Lab의 close/Evidence/revision 뒤 늦은 완료가 raw owner를 되살리는 세 실패, compact graph filter와 nav/matrix/geometry 계약의 누락을 재현했다. focused aggregate 10 files / 67 tests와 nav/dashboard 2 files / 16 tests를 통과했다.
+- 최종 frontend는 `npm test -- --maxWorkers=1` 32 files / 193 tests, `npm run typecheck`, `npm run notices`, `npm run build`를 통과했다. jsdom canvas notice와 Vite 500 kB chunk advisory는 기존 비차단 진단이다.
+- portable Maven 3.9.11의 `clean`, 독립 frontend notices/build, `-B '-Dskip.npm=true' verify` 순서로 Java 264 / 264와 fat-JAR relocation/release verification이 `BUILD SUCCESS`였다.
+- 최초 Playwright 실행은 Unicode workspace transform cache에서 Windows exit `-1073740791`을 재현했다. repository-established fresh ASCII cache를 사용한 최종 실행은 free loopback port `61349`, `PWTEST_CACHE_DIR=C:\CodexPwDiag\pw-cache-final-6e276569abcc47b084ad2395dec76571`, normalized external origin에서 packaged Chromium 8 / 8, 14.1초, exit 0이었다. standalone gate는 실제 target/Burp/HUMAN/ZAP/LLM/Request Lab active traffic을 실행하지 않으므로 Task 14 runtime gate는 계속 PENDING이다.
+
+## 2026-09-02 · Task 4 review fix round 1 · compact core analysis routes
+
+### 개발·수정
+
+- Matrix, Sequence, Scenarios, Evidence는 compact `선택 상세 열기`를 route-owned open state로 제어한다. 빈 선택에서도 Korean guidance를 열고, 실제 선택은 inspector를 열며 close는 선택과 Sheet를 함께 정리한다. desktop persistent inspector는 같은 selection body를 유지한다.
+- Sequence context는 현재 deterministic `flowLinks` projection만 좁히는 identity filter를 제공한다. 서버 link order·contents·verdict는 변경하지 않으며 filter로 숨겨진 선택은 닫힌다.
+- 각 route는 900px와 600px에서 실제 context Sheet control, center projection, Evidence inspector Sheet, close 후 focus/selection cleanup을 회귀로 검증한다.
+
+### 검증과 한계
+
+- focused 5 files/61 tests와 typecheck를 통과했다. final serial frontend gate 결과는 Task 4 report와 commit에 기록한다.
+- 이 review fix는 browser/packaged JAR/Burp/target traffic을 실행하지 않았으며 그 runtime gate는 Task 6 범위다.
+
+## 2026-09-02 · Task 5 · 운영 화면 공통 분석 작업면
+
+### 개발·수정
+
+- Dashboard, 점검 시작, 계정·세션, 실행 상태를 `ReferenceAnalysisWorkspace`의 context·main·inspector 슬롯으로 옮겼다. 중앙의 metrics/chart, 네 단계 점검 제어, 계정·세션 mutation, HUMAN/ZAP/LLM 실행 제어는 기존 상태 소유권과 gate를 그대로 유지한다.
+- 좌측은 현재 snapshot, 점검 단계, 계정/세션 수, 실행 lane처럼 서버가 제공한 상태만 요약한다. 우측은 선택 항목이 없을 때 명시적 안내를 보이며, 연결됨·0건·선택 항목 같은 가짜 운영 상태나 지원하지 않는 동작 버튼을 추가하지 않았다.
+- 독립적인 새 route별 side panel 구현은 같은 responsive Sheet와 접근성 동작을 중복하게 되어 기각했다. 공통 workspace를 재사용해 900px/600px에서도 같은 context/inspector 접근 경로를 유지한다.
+
+### 회귀·검증과 한계
+
+- 새 회귀는 네 화면이 `분석 필터`와 `선택 상세` landmark를 갖고 기존 chart, stage tabs, 계정 mutation, LLM tab을 그대로 노출하는지 확인한다. RED에서는 아직 workspace를 조합하지 않은 route가 새 landmark 계약을 충족하지 못했다.
+- GREEN: focused 4 files/49 tests와 `npm.cmd run typecheck`를 통과했고, serial `npm.cmd test -- --maxWorkers=1`은 36 files/231 tests, exit 0으로 통과했다.
+- jsdom canvas diagnostic은 기존 테스트 환경 경고다. 브라우저·packaged JAR·실제 Burp/HUMAN/ZAP/LLM traffic 검증은 수행하지 않았으며 Task 6/runtime gate가 다음 단계다.
+
+## 2026-09-02 · Task 5 review fix round 1 · truthful HUMAN 상태와 compact 운영 여정
+
+### 개발·수정
+
+- Inspection과 Runs의 HUMAN 요약은 마지막으로 받은 실제 데이터가 있을 때만 그 데이터의 진행·완료·대기 상태를 쓴다. 최초 데이터가 없으면 pending은 `불러오는 중`, 오류는 `상태 확인 필요`로 context와 inspector에 함께 표시한다. 연결됨·0건·선택 항목 같은 추정 상태는 추가하지 않았다.
+- Dashboard, Inspection, Accounts, Runs의 실제 route adapter는 900px와 600px에서 context와 inspector Sheet를 각각 열어 route 제공 요약/안내를 읽고, 닫은 뒤 중심 chart, stage tab, account mutation, LLM control에 다시 접근하는 회귀 여정을 갖는다. generic workspace만 검증하는 대안은 각 route의 runtime composition을 증명하지 못해 기각했다.
+
+### 검증과 한계
+
+- RED에서 최초 HUMAN no-data loading/error 4개 assertion이 `대기` 및 inspector 상태 부재를 재현했다. GREEN focused 4 files/61 tests, `npm.cmd run typecheck`, serial `npm.cmd test -- --maxWorkers=1` 36 files/243 tests가 모두 exit 0으로 통과했다.
+- jsdom canvas diagnostic은 기존 비차단 경고다. browser, packaged JAR, Burp, 실제 HUMAN/ZAP/LLM traffic은 이 review fix에서 실행하지 않았고 다음 runtime gate로 남긴다.
+
+## 2026-09-02 · Task 6 · Reference 분석 셸 verification
+
+- packaged journey는 아홉 route의 five-region frame, desktop/900px/600px overflow, closed compact current-route semantics, context/inspector Sheet, graph `IDENTITY/ENDPOINT/OBJECT` lane과 diagonal drag, Matrix sticky, Request Lab draft, `/legacy/`를 다룬다.
+- focused shell coverage는 15 / 15을 통과했다. final serial frontend gate는 `npm.cmd test -- --maxWorkers=1` 36 files / 255 tests, typecheck, notices, Vite 2,040-module build를 통과했다. 기존 jsdom canvas notice와 Vite 500kB advisory는 비차단 진단이다.
+- Accounts의 일곱 mutation/refetch journey는 assertion 실패 없이 focused 14 / 14에서 12.67초가 걸려 per-test timeout만 15초로 좁혔다. Maven 3.9.11 `verify`는 Java 264 / 264를 통과했고, bundled Node Chromium packaged journey는 fresh ASCII cache에서 8 / 8 (19.2초), console/page error 0으로 통과했다. 전달 JAR `flowscope-1.2.0-beta.25-ui-final.jar`는 worktree source와 16,340,463 bytes 및 SHA-256 `872ECB3B4B82BB4317074F6DC4F69323F07D0950719515FD6E202A35112B0F37`가 일치한다. standalone 검증은 실제 Burp/target traffic을 대체하지 않는다.
+
+## 2026-09-02 · Task 5 review fix round 2 · 중앙 HUMAN 상태와 초기 오류 이력의 정직성
+
+### 개발·수정
+
+- Inspection과 Runs의 중앙 HUMAN card는 최초 query data가 없을 때 `NOT_STARTED` 또는 pass 대기를 만들지 않고 `불러오는 중`/`상태 확인 필요`를 표시한다. 실제 HUMAN 응답이 있는 경우에만 idle, running, completed 상태를 사용하므로 refetch 오류 중 마지막 성공 상태는 유지된다.
+- Inspection의 HUMAN account selector와 시작 action은 확인되지 않은 초기 상태에서 disabled다. Runs에는 지원하지 않는 HUMAN action을 새로 만들지 않았고, LLM action은 기존의 실제 LLM provider·scope gate를 그대로 사용한다.
+- query 오류 alert는 오류가 난 query의 cached data가 있을 때만 마지막 성공 상태라고 말한다. 최초 data 없는 오류는 상태를 가져오지 못해 확인이 필요하다고 구분한다.
+
+### 검증과 한계
+
+- RED는 loading/error 중앙 card의 fabricated `NOT_STARTED`, 초기 data 없는 Inspection 시작 action, 그리고 거짓 last-success alert를 재현했다. GREEN focused 4 files/63 tests, `npm.cmd run typecheck`, serial `npm.cmd test -- --maxWorkers=1` 36 files/245 tests가 exit 0으로 통과했다.
+- jsdom canvas diagnostic은 기존 비차단 경고다. browser, packaged JAR, Burp, 실제 HUMAN/ZAP/LLM traffic은 이 review fix에서 실행하지 않았고 다음 runtime gate로 남긴다.
+
+## 2026-09-02 · Reference shell 최종 whole-branch review fix
+
+### 개발·수정
+
+- desktop 중심 작업면을 실제 keyboard/wheel scroll owner로 만들고 Graph는 같은 slot의 남은 높이를 전부 쓰게 했다. packaged 1280×720 Accounts route에서 처음 화면 밖의 마지막 초기화 조작까지 keyboard `End`로 도달함을 확인했다.
+- 상단 Scope/HUMAN/ZAP/SCANNER/LLM는 query별 cached data, loading, unavailable의 세 상태를 독립적으로 계산한다. Scope readiness를 exact scope와 분리하고 compact에서는 모든 상태, project selector, DB, 실제 action을 wrap 안에 유지한다.
+- Cytoscape max zoom을 lane 가용 폭과 zoom-scaled node 폭으로 제한했다. 선택 element ID를 graph state에 두고 preference/zoom/fit/resize/lock/reset 뒤 실제 Cytoscape selected border까지 복구한다.
+- Graph inspector를 독립 open state로 바꿔 빈 Korean guidance, selection auto-open, close-selection cleanup을 desktop/900px/600px에 고정했다. Evidence 선택은 현재 snapshot membership에서 동기적으로 파생해 dataset 교체 직후 이전 ID나 Request Lab draft fetch가 재등장하지 않는다.
+- import가 없는 legacy `TopBar`, `AppTopNavigation`, `WorkspaceContextBar`, `AnalysisWorkspace`와 obsolete tests를 제거했다. 보호된 dirty `AppSidebar.tsx`와 Java 5개 파일은 수정·stage하지 않았다.
+
+### TDD·검증과 한계
+
+- RED는 새 계약 12개 실패로 desktop scroll owner, per-query tri-state, zoom-scaled geometry, actual selection 유지, Graph inspector lifecycle, stale Evidence fetch를 재현했다. GREEN은 focused 6 files / 53 tests와 Dashboard 1 file / 16 tests였다.
+- Maven 3.9.11 `clean verify` 한 번으로 frontend 34 files / 254 tests, typecheck, notices, Vite 2,040-module build, Java 264 / 264와 release JAR verifier를 통과했다. 기존 jsdom canvas, Vite 500 kB, Java native/deprecation, XXE negative-test stderr만 비차단 진단으로 남았다.
+- packaged Chromium은 fresh ASCII cache와 free port `55407`에서 8 / 8, 21.0초, console/page error 0이었다. `try/finally` cleanup 뒤 exact PID `51324`와 port가 모두 사라졌다.
+- 최종 source/delivery JAR은 각각 16,340,715 bytes이며 SHA-256 `F00679E620EE00A0FB1C63CCB468AB5F889C3F2FBBA56ACBD5765C99D13000C4`로 일치한다. 실제 Burp load, 실제 target traffic, HUMAN/ZAP/LLM과 active Request Lab 전송은 standalone gate가 대신하지 않는다.

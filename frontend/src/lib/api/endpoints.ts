@@ -1,0 +1,69 @@
+import { apiFetch, postForm } from "./client"
+import type {
+  AccountSaveResult,
+  AiPreview,
+  AiScenariosEnvelope,
+  ApiSuccess,
+  EvidencePage,
+  HumanRun,
+  ImportXmlResult,
+  LlmRunEnvelope,
+  ReplayResult,
+  RequestLabDraft,
+  RequestLabResult,
+  LlmRunMutationResult,
+  ScannerRunEnvelope,
+  ScannerRunMutationResult,
+  Snapshot,
+  ZapStatus,
+  ManagedSession,
+  ReviewStatus,
+} from "./types"
+
+const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
+
+export const getSnapshot = (signal?: AbortSignal) => apiFetch<Snapshot>("/api/snapshot", formSignal(signal))
+export const getEvidence = (operation: string, offset = 0, limit = 200, signal?: AbortSignal) =>
+  apiFetch<EvidencePage>(`/api/evidence?${new URLSearchParams({ operation, offset: String(offset), limit: String(limit) })}` as `/api/${string}`, formSignal(signal))
+export const getAiPreview = (signal?: AbortSignal) => apiFetch<AiPreview>("/api/ai-preview", formSignal(signal))
+export const createAiScenarios = () => postForm<AiScenariosEnvelope>("/api/ai-scenarios", {})
+export const openReplay = (eventId: string) => postForm<ReplayResult>("/api/replay", { eventId })
+export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
+  apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
+export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
+  postForm<RequestLabResult>("/api/request-lab", { action: "send", ...values }, undefined, signal)
+export const clearTraffic = () => postForm<ApiSuccess>("/api/clear", {})
+export const getHumanRun = (signal?: AbortSignal) => apiFetch<HumanRun>("/api/human-run", formSignal(signal))
+export const setHumanRun = (values: { action: "begin"; account: string } | { action: "end"; runId: string }) =>
+  postForm<HumanRun>("/api/human-run", values)
+export const loadSample = () => postForm<ApiSuccess>("/api/sample", {})
+export const saveRole = (identity: string, role: string) => postForm<ApiSuccess>("/api/role", { identity, role })
+export const saveRequirement = (operation: string, role: string) => postForm<ApiSuccess>("/api/requirement", { operation, role })
+export const saveReview = (itemId: string, status: ReviewStatus, note: string) => postForm<ApiSuccess>("/api/review", { itemId, status, note })
+export const saveTrafficOverride = (operation: string, value: string) => postForm<ApiSuccess>("/api/traffic-override", { operation, value })
+export const mergeIdentity = (from: string, into: string) => postForm<ApiSuccess>("/api/identity-merge", { from, into })
+export const saveAccount = (values: { id: string; label: string; role: string; target: string }) =>
+  postForm<AccountSaveResult>("/api/account-save", values)
+export const deleteAccount = (id: string) => postForm<ApiSuccess>("/api/account-delete", { id })
+export const bindSession = (service: string, fingerprint: string, account: string) => postForm<ApiSuccess>("/api/session-bind", { service, fingerprint, account })
+export const unbindSession = (service: string, fingerprint: string) => postForm<ApiSuccess>("/api/session-unbind", { service, fingerprint })
+export const getManagedSessions = (signal?: AbortSignal) => apiFetch<{ sessions: readonly ManagedSession[] }>("/api/session-capture", formSignal(signal))
+export const manageSessionCapture = (action: "begin" | "end" | "revoke", account: string) => postForm<ApiSuccess>("/api/session-capture", { action, account })
+export const getZapStatus = (signal?: AbortSignal) => apiFetch<ZapStatus>("/api/zap-status", formSignal(signal))
+export const getScannerRun = (signal?: AbortSignal) => apiFetch<ScannerRunEnvelope>("/api/scanner-run", formSignal(signal))
+export const startScannerRun = (target: string, accounts: string, anonymous: boolean) =>
+  postForm<ScannerRunMutationResult>("/api/scanner-run", { target, accounts, anonymous: String(anonymous) }, [202])
+export const getLlmRun = (signal?: AbortSignal) => apiFetch<LlmRunEnvelope>("/api/llm-run", formSignal(signal))
+export const startLlmRun = (values: { provider: "CODEX" | "CLAUDE"; role: "EXPLORER" | "JUDGE"; target: string; account: string }) =>
+  postForm<LlmRunMutationResult>("/api/llm-run", { action: "start", ...values }, [202])
+export const cancelLlmRun = () => postForm<LlmRunMutationResult>("/api/llm-run", { action: "cancel" })
+export const followUpLlmJudge = (message: string) => postForm<LlmRunMutationResult>("/api/llm-run", { action: "followup", message }, [202])
+export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
+export const importXml = (source: "human" | "scanner" | "llm", name: string, xml: string | ArrayBuffer, signal?: AbortSignal) =>
+  apiFetch<ImportXmlResult>(`/api/import-xml?${new URLSearchParams({ source, name })}` as `/api/${string}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/xml;charset=UTF-8" },
+    body: xml,
+    ...formSignal(signal),
+  })
+export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })

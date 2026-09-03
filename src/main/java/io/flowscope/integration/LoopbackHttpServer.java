@@ -29,7 +29,11 @@ public final class LoopbackHttpServer implements AutoCloseable {
         public String header(String name) { return headers.get(name.toLowerCase(Locale.ROOT)); }
     }
 
-    public record Response(int status, Map<String, String> headers, byte[] body) {}
+    public record Response(int status, Map<String, String> headers, byte[] body, long contentLength) {
+        public Response(int status, Map<String, String> headers, byte[] body) {
+            this(status, headers, body, body == null ? 0 : body.length);
+        }
+    }
 
     private static final int MAX_HEADERS = 32 * 1024;
     private static final int DEFAULT_MAX_BODY = 1024 * 1024;
@@ -205,7 +209,7 @@ public final class LoopbackHttpServer implements AutoCloseable {
         byte[] body = response.body() == null ? new byte[0] : response.body();
         StringBuilder head = new StringBuilder("HTTP/1.1 ").append(response.status()).append(' ')
                 .append(reason(response.status())).append("\r\n")
-                .append("Content-Length: ").append(body.length).append("\r\n")
+                .append("Content-Length: ").append(response.contentLength()).append("\r\n")
                 .append("Connection: close\r\n")
                 .append("X-Content-Type-Options: nosniff\r\n");
         response.headers().forEach((name, value) -> head.append(name).append(": ").append(value).append("\r\n"));
@@ -225,6 +229,7 @@ public final class LoopbackHttpServer implements AutoCloseable {
     private static String reason(int status) {
         return switch (status) {
             case 200 -> "OK";
+            case 308 -> "Permanent Redirect";
             case 202 -> "Accepted";
             case 400 -> "Bad Request";
             case 401 -> "Unauthorized";

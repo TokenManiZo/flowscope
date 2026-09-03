@@ -27,7 +27,9 @@ import io.flowscope.web.FlowScopeWebServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.OutputStream;
 import java.net.URI;
+import java.net.Socket;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -56,9 +58,110 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void redirectsAppMountToTrailingSlash() throws Exception {
+        start();
+
+        HttpResponse<String> response = get("/app", null, null);
+
+        assertEquals(308, response.statusCode());
+        assertEquals("/app/", response.headers().firstValue("Location").orElseThrow());
+    }
+
+    @Test
+    void servesReactUiAtTheBurpLaunchRootAndKeepsLegacyAtItsExplicitMount() throws Exception {
+        start();
+
+        HttpResponse<String> root = get("/", null, null);
+        HttpResponse<String> legacy = get("/legacy/", null, null);
+
+        assertEquals(200, root.statusCode());
+        assertTrue(root.body().contains("<div id=\"root\"></div>"));
+        assertFalse(root.body().contains("<h1>FlowScope</h1>"));
+        assertTrue(legacy.body().contains("<h1>FlowScope</h1>"));
+    }
+
+    @Test
+    void servesMigratingStaticMountsWithoutLeakingCapabilitiesIntoViteAssets() throws Exception {
+        start();
+
+        HttpResponse<String> root = get("/", null, null);
+        HttpResponse<String> legacy = get("/legacy/", null, null);
+        HttpResponse<String> app = get("/app/", null, null);
+        assertEquals(200, root.statusCode());
+        assertTrue(root.body().contains("<div id=\"root\"></div>"));
+        assertFalse(root.body().contains("<h1>FlowScope</h1>"));
+        assertEquals(200, legacy.statusCode());
+        assertTrue(legacy.body().contains("<h1>FlowScope</h1>"));
+        assertTrue(legacy.body().contains(token));
+        assertEquals(200, app.statusCode());
+        assertTrue(app.body().contains("<div id=\"root\"></div>"));
+        assertTrue(app.body().matches("(?s).*name=\"flowscope-capability\" content=\"[0-9a-f]{64}\".*"));
+
+        List<String> assets = viteAssetUrls(app.body());
+        assertTrue(assets.stream().anyMatch(path -> path.endsWith(".js")));
+        assertTrue(assets.stream().anyMatch(path -> path.endsWith(".css")));
+        for (String asset : assets) {
+            HttpResponse<String> assetResponse = get(asset, null, null);
+            assertEquals(200, assetResponse.statusCode(), asset);
+            assertEquals(asset.endsWith(".css") ? "text/css; charset=utf-8" : "application/javascript; charset=utf-8",
+                    assetResponse.headers().firstValue("Content-Type").orElseThrow());
+            assertFalse(assetResponse.body().contains(token), asset);
+        }
+    }
+
+    @Test
+    void constrainsStaticMountsToSafeMethodsAndPaths() throws Exception {
+        start();
+        HttpResponse<String> app = get("/app/", null, null);
+        String asset = viteAssetUrls(app.body()).getFirst();
+        HttpResponse<String> getResponse = get(asset, null, null);
+        HttpResponse<String> headResponse = head(asset);
+
+        assertEquals(getResponse.statusCode(), headResponse.statusCode());
+        assertEquals(getResponse.headers().map(), headResponse.headers().map());
+        assertEquals("", headResponse.body());
+        HttpResponse<String> postResponse = post(asset, "", token);
+        assertEquals(405, postResponse.statusCode());
+        assertEquals("GET, HEAD", postResponse.headers().firstValue("Allow").orElseThrow());
+        for (String invalidPath : List.of("/app/%2e%2e/index.html", "/app/assets/%5csecret", "/app/assets/%00",
+                "/app/assets/unknown.exe", "/app/assets/not-present.js")) {
+            assertEquals(404, get(invalidPath, null, null).statusCode(), invalidPath);
+        }
+        assertEquals(403, get("/api/snapshot", null, null).statusCode());
+    }
+
+    @Test
+    void staticHeadSuccessTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/");
+    }
+
+    @Test
+    void staticHeadMissingAssetTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/assets/not-present.js");
+    }
+
+    @Test
+    void staticHeadInvalidAssetTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/assets/%5csecret");
+    }
+
+    @Test
+    void staticHeadMalformedAssetTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/assets/%zz");
+    }
+
+    @Test
     void servesBrandedUiAndProtectsApiWithCapabilityAndOrigin() throws Exception {
         start();
-        HttpResponse<String> index = get("/", null, null);
+        HttpResponse<String> index = get("/legacy/", null, null);
         assertEquals(200, index.statusCode());
         assertTrue(index.body().contains("<h1>FlowScope</h1>"));
         assertTrue(index.body().contains("HUMAN pass 시작"));
@@ -724,6 +827,52 @@ final class FlowScopeWebServerTest {
         return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> head(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path))
+                .method("HEAD", HttpRequest.BodyPublishers.noBody()).build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private void assertStaticHeadMatchesGet(String path) throws Exception {
+        RawHttpResponse getResponse = rawRequest("GET", path);
+        RawHttpResponse headResponse = rawRequest("HEAD", path);
+
+        assertEquals(getResponse.status(), headResponse.status());
+        assertEquals(getResponse.contentLength(), headResponse.contentLength());
+        assertArrayEquals(new byte[0], headResponse.body());
+    }
+
+    private RawHttpResponse rawRequest(String method, String path) throws Exception {
+        try (Socket socket = new Socket("127.0.0.1", server.port())) {
+            OutputStream output = socket.getOutputStream();
+            output.write((method + " " + path + " HTTP/1.1\r\nHost: 127.0.0.1:" + server.port()
+                    + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            output.flush();
+            byte[] response = socket.getInputStream().readAllBytes();
+            int separator = headerSeparator(response);
+            assertTrue(separator >= 0, "response must contain HTTP headers");
+            String headers = new String(response, 0, separator, StandardCharsets.ISO_8859_1);
+            String[] lines = headers.split("\\r\\n");
+            int status = Integer.parseInt(lines[0].split(" ")[1]);
+            String contentLength = java.util.Arrays.stream(lines)
+                    .filter(line -> line.regionMatches(true, 0, "Content-Length: ", 0, "Content-Length: ".length()))
+                    .findFirst().orElseThrow().substring("Content-Length: ".length());
+            return new RawHttpResponse(status, contentLength,
+                    java.util.Arrays.copyOfRange(response, separator + 4, response.length));
+        }
+    }
+
+    private static int headerSeparator(byte[] response) {
+        for (int i = 0; i <= response.length - 4; i++) {
+            if (response[i] == '\r' && response[i + 1] == '\n' && response[i + 2] == '\r' && response[i + 3] == '\n') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private record RawHttpResponse(int status, String contentLength, byte[] body) {}
+
     private HttpResponse<String> post(String path, String body, String capability) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path))
                 .header("X-FlowScope-Token", capability)
@@ -748,6 +897,13 @@ final class FlowScopeWebServerTest {
         return JSON.readTree(response.body());
     }
     private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
+
+    private static List<String> viteAssetUrls(String html) {
+        var matcher = Pattern.compile("(?:src|href)=\"\\./assets/([^\"]+)\"").matcher(html);
+        List<String> paths = new ArrayList<>();
+        while (matcher.find()) paths.add("/app/assets/" + matcher.group(1));
+        return paths;
+    }
 
     private static final class TestState implements FlowScopeWebServer.State {
         private final AnalysisConfig config = new AnalysisConfig();

@@ -21,3 +21,7 @@ dependency-reduced-pom.xml
 *.flowscope.db
 *.flowscope.db-*
 .flowscope-*.db.tmp
+
+/frontend/node_modules/
+/frontend/playwright-report/
+/frontend/test-results/

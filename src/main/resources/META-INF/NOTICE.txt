@@ -5,6 +5,13 @@ Licensed under the MIT License (see LICENSE in the source repository).
 This distribution bundles third-party software:
 
 --------------------------------------------------------------------
+Frontend production dependencies
+  Resource : META-INF/NOTICE-frontend.txt
+  Source   : generated from the installed frontend production dependency graph
+  License  : each bundled frontend dependency's complete local license text is
+             preserved in META-INF/NOTICE-frontend.txt
+
+--------------------------------------------------------------------
 Cytoscape.js 3.26.0
   Resource : web/vendor/cytoscape-3.26.0.min.js
   Source   : https://github.com/cytoscape/cytoscape.js

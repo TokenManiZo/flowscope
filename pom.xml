@@ -86,6 +86,13 @@
         <directory>src/main/resources</directory>
       </resource>
       <resource>
+        <directory>${project.build.directory}/generated-resources/react-web</directory>
+        <targetPath>web/app</targetPath>
+      </resource>
+      <resource>
+        <directory>${project.build.directory}/generated-resources/frontend-notices</directory>
+      </resource>
+      <resource>
         <directory>agent-workspace</directory>
         <targetPath>agent-workspace</targetPath>
         <includes>
@@ -116,6 +123,62 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${maven.surefire.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>com.github.eirslett</groupId>
+        <artifactId>frontend-maven-plugin</artifactId>
+        <version>1.15.4</version>
+        <configuration>
+          <installDirectory>${project.build.directory}/frontend-runtime</installDirectory>
+        </configuration>
+        <executions>
+          <execution>
+            <id>install-node-and-npm</id>
+            <phase>generate-resources</phase>
+            <goals><goal>install-node-and-npm</goal></goals>
+            <configuration>
+              <nodeVersion>v24.11.1</nodeVersion>
+              <npmVersion>11.6.2</npmVersion>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-ci</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>ci</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-notices</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>run notices</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-verify</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>run verify</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-build</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>run build</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
 
       <!-- Shade post-processes this JAR; always recreate the thin input on repeated package runs. -->
@@ -213,44 +276,6 @@
             <configuration>
               <target>
                 <delete file="${project.build.directory}/original-${project.build.finalName}.jar"/>
-                <!-- MSHADE-406 rewrites MR-JAR bytecode but leaves versioned entry paths unrelocated. -->
-                <delete dir="${project.build.directory}/mrjar-relocation"/>
-                <mkdir dir="${project.build.directory}/mrjar-relocation"/>
-                <unzip src="${project.build.directory}/${project.build.finalName}.jar"
-                       dest="${project.build.directory}/mrjar-relocation"/>
-                <move todir="${project.build.directory}/mrjar-relocation"
-                      includeemptydirs="false">
-                  <fileset dir="${project.build.directory}/mrjar-relocation"
-                           includes="META-INF/versions/*/com/fasterxml/jackson/**"/>
-                  <regexpmapper from="^META-INF/versions/([^/]+)/com/fasterxml/jackson/(.*)$"
-                                to="META-INF/versions/\1/io/flowscope/shaded/jackson/\2"/>
-                </move>
-                <move todir="${project.build.directory}/mrjar-relocation"
-                      includeemptydirs="false">
-                  <fileset dir="${project.build.directory}/mrjar-relocation"
-                           includes="META-INF/versions/*/org/jsoup/**"/>
-                  <regexpmapper from="^META-INF/versions/([^/]+)/org/jsoup/(.*)$"
-                                to="META-INF/versions/\1/io/flowscope/shaded/jsoup/\2"/>
-                </move>
-                <move todir="${project.build.directory}/mrjar-relocation"
-                      includeemptydirs="false">
-                  <fileset dir="${project.build.directory}/mrjar-relocation"
-                           includes="META-INF/versions/*/org/yaml/snakeyaml/**"/>
-                  <regexpmapper from="^META-INF/versions/([^/]+)/org/yaml/snakeyaml/(.*)$"
-                                to="META-INF/versions/\1/io/flowscope/shaded/snakeyaml/\2"/>
-                </move>
-                <delete file="${project.build.directory}/${project.build.finalName}.jar"/>
-                <jar destfile="${project.build.directory}/${project.build.finalName}.jar"
-                     basedir="${project.build.directory}/mrjar-relocation"
-                     manifest="${project.build.directory}/mrjar-relocation/META-INF/MANIFEST.MF"
-                     excludes="META-INF/MANIFEST.MF"
-                     filesonly="true"
-                     modificationtime="${project.build.outputTimestamp}">
-                  <manifest>
-                    <attribute name="Created-By" value="FlowScope reproducible build"/>
-                  </manifest>
-                </jar>
-                <delete dir="${project.build.directory}/mrjar-relocation"/>
                 <resourcecount property="flowscope.public.jar.count">
                   <fileset dir="${project.build.directory}" includes="*.jar"/>
                 </resourcecount>
@@ -271,6 +296,21 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.5.0</version>
         <executions>
+          <execution>
+            <id>relocate-multi-release-jar</id>
+            <phase>package</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <!-- MSHADE-406 leaves versioned entry paths unrelocated; scan every MR root after Shade. -->
+              <mainClass>io.flowscope.FatJarIsolationSmoke</mainClass>
+              <classpathScope>test</classpathScope>
+              <arguments>
+                <argument>--relocate-mr-jar</argument>
+                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                <argument>${project.build.outputTimestamp}</argument>
+              </arguments>
+            </configuration>
+          </execution>
           <execution>
             <id>verify-release-jar</id>
             <phase>verify</phase>
