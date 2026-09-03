@@ -1,15 +1,15 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.34, 2026-08-31 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.33은 Request Lab 비동기 무결성·분석 게시 경합·빈 셀 의미를 수정했고, beta.34는 화면 외형을 바꾸지 않은 채 반복 cluster의 Evidence 상세를 페이지 조회로 분리해 기본 snapshot 폭증을 막았다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.41, 2026-09-03 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.41은 Endpoint·Parameter Surface Delta를 기본 작업면으로 두고 기존 인가 그래프를 선택 API의 상세층으로 이동했다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
-FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청을 동일한 신원–API–객체 좌표에 정렬**해, 누가 무엇을 발견하거나 놓쳤는지와 BOLA/IDOR·BFLA 의심 근거를 그래프·매트릭스·원본 Evidence로 함께 보여 주는 Burp Community 확장이다.
+FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청과 대상 산출물에 선언된 API·입력을 같은 좌표에 정렬**해, 진단자가 아직 보지 못한 endpoint·parameter를 먼저 찾고 선택한 API의 BOLA/IDOR·BFLA 근거를 그래프·매트릭스·원 Evidence로 확인하게 하는 Burp Community 확장이다.
 
 화면 전체는 다음 세 질문에 답하도록 설계했다.
 
-1. **누가 어디까지 실제로 갔는가?** — HUMAN/SCANNER/LLM source 비교.
-2. **어떤 사용자·객체·기능 조합이 허용되거나 거부됐는가?** — identity/role/owner 인가 비교.
+1. **어떤 API·입력이 선언됐고 HUMAN/SCANNER/LLM 중 누가 실제로 관측했는가?** — Endpoint·Parameter Surface Delta.
+2. **선택한 API에서 어떤 사용자·객체·기능 조합이 허용되거나 거부됐는가?** — identity/role/owner 인가 비교.
 3. **그 판단을 실제 요청·응답으로 확인할 수 있는가?** — Evidence와 통제 재현.
 
 ## 2. 왜 일반 Burp 요청 목록만으로 부족한가
@@ -29,6 +29,8 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 
 | 화면 요소 | 사용자가 묻는 질문 | 이렇게 설계한 이유 | 하지 않는 것 |
 |---|---|---|---|
+| 놓친 API·입력 | 내가 아직 확인하지 못한 endpoint와 parameter는 어디인가? | OpenAPI·HTML form·정적 JavaScript의 선언과 실제 H/S/L HTTP Evidence를 분리해 endpoint 행과 입력 badge로 정렬한다. source 필터와 Evidence/provenance를 그대로 연결한다. | 선언 미관측을 취약점·도달 가능·lane 실패로 부르거나, 서버 전용 표면까지 안다는 전체 퍼센트를 만들지 않는다. |
+| 인가 그래프 | 선택한 API의 신원·객체·source 관계는 무엇인가? | 기존 `Identity → API → Object`와 owner/BOLA/BFLA Evidence를 상세층에 보존해 첫 화면의 고카디널리티 노이즈와 판정 근거 손실을 함께 피한다. | Resource를 코어에서 삭제하거나 모든 객체 인스턴스를 첫 화면에 펼치지 않는다. |
 | 빠른 시작 | 지금 바로 무엇을 해야 하는가? | `범위 → HUMAN → ZAP → LLM·Judge` 네 단계 상태를 항상 보이되, 첫 미완료 단계의 설명과 제어만 연다. 사용자가 단계 탭을 누르면 원하는 설정을 확인할 수 있고 `현재 단계로`로 복귀한다. | 여섯 단계 설명과 세 실행기의 모든 입력·버튼을 동시에 펼쳐 사용자가 다음 행동을 찾게 하지 않는다. 수집 건수만으로 단계를 완료 처리하지 않는다. |
 | 관측 범위 | 현재 실제로 본 것은 얼마나 되는가? | 관측된 `신원 × 메서드·엔드포인트 × 객체` 조합과 endpoint/method/object 수만 표시한다. | 알 수 없는 전체 API 수를 분모로 삼은 완료 퍼센트를 만들지 않는다. |
 | 수집·메인 비교·기본 숨김·검토 대기 | 분류 때문에 무엇이 메인 비교에서 빠졌는가? | 전체 Evidence와 서로 겹치지 않는 `INCLUDE/EXCLUDE/REVIEW` 수를 나란히 표시해 분류 영향을 숨기지 않는다. | `기본 숨김`이나 `검토 대기`를 삭제·정상·취약점 없음으로 표현하지 않는다. |
@@ -164,27 +166,31 @@ beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 �
 
 beta.39에서는 사이트 집계가 기본 그래프를 대체한 회귀를 복구했다. 사용자의 첫 질문은 “누가 어떤 API를 밟았는가”이므로 `identity → API`를 기본으로 두고, “사이트에 어떤 API 영역이 있는가”에 답하는 사이트 개요는 선택형으로 두었다. 개요의 H/S/L 숫자는 반복 request 횟수가 아닌 소스별 고유 API 수를 표시하고, 상세 tooltip에 전체 request 수를 남긴다. 사이트·API·객체의 pan/zoom은 별도로 저장해 전환 후 노드가 범위 밖으로 사라지지 않게 한다. 이 변경은 Fact Core나 판정을 바꾸지 않고 표현 계층만 수정한다(D-106).
 
+beta.41에서는 외부 리뷰의 핵심 질문인 “누가 어떤 API·입력을 보았고 아직 무엇이 미관측인가”를 먼저 답하기 위해 Endpoint·Parameter Surface Delta를 기본 작업면으로 바꿨다. 기존 `identity → API`는 **인가 그래프**에 그대로 남으며 Resource/owner/BOLA·BFLA를 삭제하지 않는다. 이 변경은 탐색 차이와 판정 기계를 한 화면에 섞지 않는 정보 계층 변경이다(D-113).
+
+Surface의 H/S/L checkbox는 행을 단순히 숨기는 옵션이 아니다. 선택된 source만 endpoint·parameter 관측 badge, delta 상태, 통계와 상세 Evidence에 반영해 체크 전후 의미가 일관되게 바뀐다. 해제한 source의 Evidence는 저장소에서 삭제되지 않는다.
+
 ZAP 캠페인의 실행 버튼은 시작 후 **검사 취소**로 바뀐다. 취소 클릭 즉시 화면만 종료된 것처럼 숨기지 않고, 서버가 소유 crawler·run capability·context 정리를 수행한 뒤 `CANCELLED` terminal 상태와 정리 실패 경고를 반환한다. 1초 상태 poll 한 번이 실패해도 전체 lane과 실행 이벤트를 `FAILED` 빈 화면으로 덮지 않고 마지막 정상 snapshot을 유지하며 별도 `상태 갱신 실패` 경고를 표시한다. 사용자는 실제 scanner 실패와 UI 통신 실패를 구분할 수 있다. lane 상세에는 `laneAccountId` 자체를 추가 노출하기보다 등록 계정 label을 유지하고, 저장된 provenance는 Evidence 상세·분석 결합에 사용한다.
 
 FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 숨기고 시작 요청을 거부한다. 모든 localhost를 막으면 crAPI 같은 로컬 허가 대상을 점검할 수 없으므로 현재 Web port만 제어면으로 판별한다.
 
 ## 9. 발표 시연 순서
 
-1. **문제 제시:** Proxy history만으로 사용자·객체·도구 간 관계를 머릿속에서 맞춰야 한다.
+1. **문제 제시:** Proxy history만으로 조건부 endpoint·parameter와 source별 미관측을 찾아내고, 다시 사용자·객체 관계까지 머릿속에서 맞춰야 한다.
 2. **세 lane 제시:** HUMAN, SYSTEM ZAP, 독립 LLM Explorer가 같은 exact scope를 각자 탐색한다.
-3. **그래프:** source filter를 하나씩 켜 고유·중복 발견을 보여 준다.
-4. **매트릭스와 갭:** 미교차·일부만 발견·불일치를 선택한다.
-5. **Evidence:** 선택 cell의 실제 마스킹 Request/Response로 이동한다.
-6. **인가 정책:** 계정 역할과 확인된 객체 owner가 판정축이라는 점을 보여 준다.
-7. **Dataset Lock:** 세 exploration 완료 전에는 Judge가 볼 수 없음을 보여 준다.
-8. **Judge:** 반복 재현과 정상 대조가 부족하면 확정되지 않는 것을 보여 준다.
-9. **한계 선언:** 전체 블랙박스 분모, 미관측 API, MFA/WebAuthn, 오탐·미탐 0을 주장하지 않는다.
+3. **놓친 API·입력:** 선언과 실제 Evidence를 endpoint/parameter로 정렬하고 H/S/L badge와 provenance를 연다.
+4. **인가 그래프:** 선택 API의 identity→API→object만 열어 고카디널리티 노이즈를 피한다.
+5. **매트릭스와 갭:** 미교차·일부만 발견·불일치를 선택한다.
+6. **Evidence:** 선택 cell의 실제 마스킹 Request/Response로 이동한다.
+7. **인가 정책:** 계정 역할과 확인된 객체 owner가 판정축이라는 점을 보여 준다.
+8. **Dataset Lock·Judge:** 세 exploration 완료 뒤 반복 재현과 정상 대조가 부족하면 확정되지 않는 것을 보여 준다.
+9. **한계 선언:** 전체 블랙박스 분모, 동적 번들 전체, 서버 전용 endpoint, 오탐·미탐 0을 주장하지 않는다.
 
 ## 10. 발표 질의응답 핵심
 
 ### “왜 커버리지 퍼센트가 없나요?”
 
-블랙박스에서는 전체 endpoint/object 분모를 모르므로 퍼센트가 정확하지 않다. FlowScope는 관측된 조합 수와 세 source의 교집합·차집합만 사실로 표시한다. 벤치마크 정답 집합이 사후에 주어질 때만 연구 평가 지표로 recall을 계산한다.
+블랙박스에서는 전체 endpoint/parameter/object 분모를 모르므로 퍼센트가 정확하지 않다. FlowScope는 현재 받은 산출물의 선언과 실제 관측, 세 source의 교집합·차집합만 사실로 표시한다. 런타임에서 숨긴 별도 fixture truth가 있을 때만 연구 평가 지표로 precision/recall을 계산한다.
 
 ### “ADMIN 계정이 꼭 필요한가요?”
 
@@ -196,7 +202,7 @@ FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 
 
 ### “Burp나 ZAP과 무엇이 다른가요?”
 
-Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 차별점은 HUMAN/ZAP/LLM의 실제 트래픽을 같은 Identity/API/Object 좌표에 정렬하고, 고유·중복·미교차·판정 충돌과 Evidence를 한 화면에서 비교한다는 점이다.
+Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 차별점은 HUMAN/ZAP/LLM의 실제 트래픽과 대상 산출물의 선언을 같은 Endpoint/Parameter 좌표에 정렬하고, 선택 API에서만 Identity/Object 인가 근거와 Evidence를 연결한다는 점이다.
 
 ### “왜 외부 검색과 Wayback을 막나요?”
 
@@ -207,6 +213,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 ### 말해도 되는 것
 
 - 관측된 세 source 트래픽을 동일 데이터 모델로 정렬한다.
+- OpenAPI·HTML form·정적 JavaScript literal에서 직접 확인한 endpoint·parameter 선언과 실제 관측을 분리해 표시한다.
 - exact scope, provenance, 실행 신뢰도와 Evidence ID를 보존한다.
 - LLM Explorer의 가시성을 서버가 제한하고 세 lane 뒤 dataset을 잠근다.
 - 서버 조건을 통과한 재현·대조 Evidence만 최종 verdict에 사용한다.
@@ -219,6 +226,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 - 기존 도구보다 취약점을 더 잘 찾는 것이 입증됐다.
 - beta.7의 Burp/ZAP/Codex/Claude 전체 실행이 통과했다.
 - 화면의 0 또는 관측 조합 수가 전체 공격면 대비 완료율이다.
+- 정적 JavaScript literal 추출이 동적 번들·lazy chunk·서버 전용 endpoint 전체를 복원한다.
 
 ## 12. 2026-08-26 현재 확인된 UI·배포 부채
 

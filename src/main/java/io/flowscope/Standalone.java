@@ -5,8 +5,11 @@ import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.HarParser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RouteCandidateExtractor;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.SampleProject;
+import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
@@ -40,6 +43,7 @@ public final class Standalone {
         private final AtomicLong revision = new AtomicLong();
         private final RunContextRegistry contexts = new RunContextRegistry();
         private volatile Pipeline.Result result;
+        private volatile List<RouteCandidate> routeCandidates = List.of();
 
         DemoState(String[] args) throws Exception {
             if (args.length >= 2) {
@@ -58,8 +62,13 @@ public final class Standalone {
         @Override public List<McpServer.Assessment> assessments() { return List.of(); }
         @Override public List<ValidationDecision> validations() { return List.of(); }
         @Override public RunContextRegistry contexts() { return contexts; }
+        @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
         @Override public void rebuild() {
             result = Pipeline.runIsolated(new ArrayList<>(records), config);
+            String services = result.records.stream().map(record -> record.service + "/")
+                    .distinct().collect(java.util.stream.Collectors.joining("\n"));
+            routeCandidates = services.isBlank() ? List.of() : RouteCandidateExtractor.extract(
+                    result.records, ScopePolicy.parse(services), List.of());
             revision.incrementAndGet();
         }
         @Override public void clearTraffic() { records.clear(); rebuild(); }

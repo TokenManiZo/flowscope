@@ -14,6 +14,7 @@
 - [그래프 UX](graph-ux.md): 초기 Swing/JGraphX 조사 기록. 현재 구현 계획은 아님
 - [UI·제품 근거](ui-product-rationale.md): 화면 설계 이유
 - [제품 개발 계획](product-development-plan.md): 단계별 개발 계획
+- [Endpoint·Parameter Surface Delta](endpoint-parameter-surface.md): API·입력 선언/관측 사실 모델, 범용 추출 경계와 블라인드 검증 계획
 - [백엔드 Evidence·분석 재정비 계획](backend-evidence-architecture-plan.md): HUMAN 수집 정본부터 3-way 검증까지의 단계별 구현·삭제·검증 계획
 - [제안서](proposal.md): 연구 가설·평가 설계. 현재 제품 동작 정본은 아님
 - [베타 검증](beta-validation.md): 현재 베타 검증 증거

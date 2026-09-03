@@ -1,4 +1,22 @@
-# FlowScope 1.2.0-beta.40 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.41 사전 벤치마크 검증 기록
+
+## 1.2.0-beta.41 Endpoint·Parameter Surface Delta gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 관측 입력 | query, canonical path 변수 위치, 중첩 JSON·배열, form-urlencoded, multipart 이름과 값 없는 shape/source/run/identity/status/Evidence ID 회귀 통과. parameter도 observation 단위 provenance를 보존 |
+| 선언 입력 | OpenAPI/Swagger path·query와 JSON/form-urlencoded/multipart requestBody/local `$ref`, HTML form, 정적 JavaScript literal URL query와 직접 연결된 request-object key 회귀 통과 |
+| JavaScript 오귀속 방지 | 요청 호출이 끝난 뒤 다른 문장에 나타난 `JSON.stringify` 객체 key를 앞 요청의 파라미터로 붙이지 않는 음성 회귀 통과; 동적 문자열/data-flow는 지원한다고 주장하지 않음 |
+| 범용성 회귀 | 업무명과 무관한 임의 route·field 이름으로 동일한 구조 규칙이 작동함을 확인; host·업무명·React/Next.js 이름을 조건으로 쓰지 않음 |
+| 비밀 경계 | surface에는 실제 parameter value와 raw 인증정보를 넣지 않고 shape와 Evidence 참조만 직렬화하는 회귀 통과 |
+| snapshot 비용 경계 | 동일 revision·동일 result·동일 route candidate 목록에서는 `SurfaceAnalysis`를 재사용하고 입력 revision이 바뀌면 재계산하도록 구현; 실제 Burp 20,000건 polling RSS/latency는 미측정 |
+| Web 계약 | 기본 메뉴 `놓친 API·입력`, 기존 화면 `인가 그래프`, snapshot `surface`와 beta.41 버전 계약 회귀 통과 |
+| 독립 Web 수동 확인 | standalone `127.0.0.1:17779` 샘플에서 기본 Surface 목록과 기존 인가 그래프 전환 확인. LLM filter 해제 시 `/api/admin/invites`가 `H·L/두 출처`에서 `H·L—/관측됨`으로 바뀌고 상세 Evidence도 H만 남음. browser warning/error 0건 |
+| 전체 회귀 | `mvn clean verify` 연속 2회, 매회 330 tests, failure/error/skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.41.jar` 하나, 16,062,971 bytes, 2,082 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `2f3902f0178a3b53db3f1ec8c8e86ce8533cf7fd0384197e8926482ad2bf4c1b`; 두 clean build가 byte-for-byte 동일 |
+| 실제 Burp·효능 | **대기** — beta.41 실제 확장 재로드, HUMAN/ZAP/LLM 실데이터 정합성, 개발 corpus와 분리한 server-truth fixture의 endpoint/parameter precision·recall과 task-time은 수행하지 않음 |
+
+이 gate는 값 없는 데이터 계약, 지원하는 명시 문법, UI 연결과 회귀 안정성을 검증한다. standalone 샘플은 합성 데이터이며 실제 대상 네트워크 요청을 만들지 않는다. 따라서 이 결과는 동적 JavaScript, lazy chunk 전체, 서버 전용 route, 모든 프레임워크 또는 실제 취약점 탐지 성능을 증명하지 않는다. 블랙박스 전체 공격면의 완료율도 아니다.
 
 ## 1.2.0-beta.40 Explorer 1~10·concrete frontier gate
 

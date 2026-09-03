@@ -1,18 +1,18 @@
-# FlowScope 설계서 v1.2.0-beta.34
+# FlowScope 설계서 v1.2.0-beta.41
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
-사람·스캐너·LLM이 만든 실제 API 점검 트래픽을 하나의 신원 인지 그래프와 매트릭스에 정렬하고, BOLA/IDOR·BFLA 후보를 Evidence로 검증하는 Burp Suite 확장이다. `docs/ko/specification/functional-spec.md`가 WHAT, 이 문서가 HOW, `decisions.md`가 WHY의 정본이다. 화면별 사용자 질문과 발표 논리는 `ui-product-rationale.md`가 정본이다.
+사람·스캐너·LLM이 선언·관측한 API와 입력을 같은 범용 좌표에 정렬해 탐색 차이를 먼저 보여 주고, 선택한 API의 BOLA/IDOR·BFLA 후보를 기존 신원 인지 그래프와 Evidence로 검증하는 Burp Suite 확장이다. `docs/ko/specification/functional-spec.md`가 WHAT, 이 문서가 HOW, `decisions.md`가 WHY의 정본이다. 화면별 사용자 질문과 발표 논리는 `ui-product-rationale.md`가 정본이다.
 
 ## 1. 제품 목표와 신뢰 경계
 
-- 정본 목표는 “허가된 exact scope에서 관측 가능한 접근통제 공격면을 최대한 구조화하고, 신원·작업·객체·상태 흐름의 차이를 재현 가능한 Evidence로 검증해 사람이 놓치기 쉬운 경로와 인가 후보를 드러내는 것”이다.
-- 플로우 그래프가 중심이다. 메인 관측을 `identity → API(operation) → object`로 재구성한다. 기본 화면은 `identity → API`, API 선택 후에만 object를 펼친다. `site → API group`은 선택형 전체 개요이며 메인 관계를 대체하지 않는다. 접기·그룹화·화면 전환은 표현일 뿐 원 Evidence 관계를 합치거나 삭제하지 않는다.
+- 정본 목표는 “허가된 exact scope에서 선언되거나 실제 관측된 API·입력을 구조화하고, HUMAN·SCANNER·LLM의 탐색 차이와 인가 후보를 원 Evidence까지 역추적 가능하게 만들어 진단자가 다음에 볼 위치를 줄이는 것”이다.
+- 기본 작업면은 `Endpoint·Parameter Surface Delta`다. 선언 근거와 실제 HTTP 관측을 분리하고 source별 미관측 위치를 중립 작업목록으로 제시한다. 인가 그래프는 선택한 API의 `identity → API(operation) → object` 관계를 여는 상세층이다. 접기·그룹화·화면 전환은 표현일 뿐 원 Evidence 관계를 합치거나 삭제하지 않는다.
 - 비교 축 `source={HUMAN,SCANNER,LLM}`와 판정 축 `identity/role/owner`를 섞지 않는다(D-001).
 - LLM은 독립적인 세 번째 트래픽 소스이자 최종 Judge다. Explorer는 서버가 HUMAN/SCANNER 상태를 가린 상태에서 동작하고, Judge는 세 레인을 잠근 뒤에만 종합한다. 일반 assessment는 후보일 뿐이며, 최종 verdict는 별도 VALIDATION run의 통제 Evidence 묶음을 서버가 검증할 때만 허용한다(D-049/D-053/D-054).
 - 블랙박스 전체 분모는 알 수 없으므로 커버리지 퍼센트를 만들지 않는다(D-002).
 - 모든 액티브 도구는 명시적 exact scope 안에서만 동작한다. ZAP Active Scan은 Burp에서 다시 승인한다.
-- 모든 endpoint 발견, 오탐·미탐 0, LLM 서술만으로 최종 확정은 보장하지 않는다. 완료 여부는 공개 fixture와 정답 격리 블라인드 benchmark에서 endpoint·객체·분류·finding 측정값, `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고 모든 후보·판정을 원본/재현/정상 대조 Evidence로 역추적할 수 있는지로 판단한다.
+- 모든 endpoint·parameter 발견, 오탐·미탐 0, LLM 서술만으로 최종 확정은 보장하지 않는다. 완료 여부는 개발 corpus와 분리된 블라인드 benchmark에서 endpoint·parameter·객체·분류·finding 측정값, `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고 모든 후보·판정을 원본/재현/정상 대조 Evidence로 역추적할 수 있는지로 판단한다.
 
 ## 2. 단일 확장 아키텍처
 
@@ -77,6 +77,16 @@ RouteCandidate {
   provenance[{type, evidenceId, source, runId, adapter, applicability, reason}],
   applicability, reviewReason
 }
+
+SurfaceAnalysis {
+  endpoints[EndpointFact {
+    key(service, method, pathTemplate), deltaState,
+    observedSources[], observations[evidenceId, source, runId, identity, status],
+    declarations[evidenceId, source, runId, type, adapter, reason],
+    parameters[location, fieldPath, displayName, requirement, observedShape,
+               observedSources[], evidenceIds[], provenance[]]
+  }]
+}
 ```
 
 - `source`: 실제 대상 요청 생성자. ZAP은 지시자가 LLM이어도 SCANNER다.
@@ -89,6 +99,7 @@ RouteCandidate {
 - `resourceReferences`: path/query/body/GraphQL에서 실제 값으로 관측된 모든 객체 참조와 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/*_SEMANTIC_FIELD_CORROBORATED` 근거다. `resource`는 기존 인가 cell의 보수적 primary 하나다.
 - `trafficClassification`: `API/AUTH_SESSION/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/POLLING/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
 - `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
+- `SurfaceAnalysis`: 저장된 Evidence와 `RouteCandidate`에서 결정론적으로 재생성하는 값 없는 projection이다. Observation은 실제 request의 endpoint, parameter 위치·field path·shape와 source/run/identity/status/Evidence ID를 보존한다. Declaration은 OpenAPI·HTML form·정적 JavaScript·route provenance에서 직접 확인한 endpoint/parameter만 보존한다. `DECLARED_NOT_OBSERVED`, `ONE_SOURCE_OBSERVED`, `MULTI_SOURCE_OBSERVED`, `ALL_SOURCES_OBSERVED`, `OBSERVED_NOT_DECLARED`는 작업목록 상태이며 취약점·도달성·lane 완료 판정이 아니다. 별도 DB 정본을 만들지 않으며, Web 직렬화는 동일 revision·동일 입력의 projection을 재사용하고 입력 revision이 바뀌면 다시 계산한다(D-113).
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 키 하나는 계정 하나에만 귀속되며, 이미 연결된 지문을 다른 계정으로 옮기려면 먼저 기존 연결을 해제해야 한다. 실제 비인증 `anon`과 추출 실패 `unresolved`는 계정에 연결할 수 없다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
 - Cookie·Authorization·subject fingerprint는 한 principal 안의 기술 단서이지 로그인 세션 개수가 아니다. 기본 권한 카드는 principal을 한 줄로 표시하고 단서 종류·개수는 계정 화면의 접힌 진단에서만 보여 준다.
@@ -155,7 +166,26 @@ route inventory는 다음 공통 파이프라인을 사용한다(D-069).
 
 어댑터는 네트워크를 사용하거나 scope·관측 여부를 결정하지 않는다. 공통 코어만 unsupported scheme과 범위 밖 참조를 버리고, 명시적 method 근거가 없으면 `UNKNOWN`으로 유지하며, `service + method/UNKNOWN + normalized path`로 병합한다. 관측된 `GET`과 같은 path의 미관측 `UNKNOWN`은 서로 다른 후보이고, `UNKNOWN`을 관측으로 승격하지 않는다. HTML은 로컬 HTML5 DOM 파서로 깨진 markup과 `<base>`를 처리하고, OpenAPI는 대상 응답에서 관측한 JSON/YAML만 읽으며, XML은 제품명 없는 명시 URL/method 필드만 XXE 차단 DOM으로 읽는다. 추출된 후보는 관측 분석 파이프라인에 다시 넣지 않는다.
 
-### 4.4 소유자·판정 F-10~11
+### 4.4 Endpoint·Parameter Surface Delta
+
+`SurfaceAnalyzer`는 Pipeline의 판정 입력을 바꾸지 않는 별도 projection이다.
+
+```text
+allRecords ──▶ OpenAPI·HTML·정적 JS 선언 추출 ─┐
+coverageRecords ──▶ 실제 endpoint·입력 관측 ──┼─▶ SurfaceAnalysis ─▶ Web 기본 작업목록
+routeCandidates ──▶ provenance·미요청 route ──┘
+```
+
+- endpoint key는 `service + method + canonical path template`, parameter key는 `endpoint + PATH/QUERY/JSON_BODY/FORM_BODY/MULTIPART_BODY + fieldPath`다.
+- 요청 값은 저장하지 않고 shape만 남긴다. source/run/identity/status와 Evidence ID는 Observation에 유지한다.
+- OpenAPI/Swagger local `$ref`, HTML form control, 정적 JavaScript literal URL/query와 직접 확인되는 request-object key만 Declaration으로 만든다. 문자열 결합·runtime data flow·난독화 값은 추정하지 않는다.
+- 타깃 host, 업무명, 제품명, React/Next 같은 프레임워크 이름은 분기 조건이 아니다. 구조가 같은데 이름만 바뀐 대상에서도 같은 결과가 나와야 한다.
+- 선언 미관측은 다음 검토 위치이며 coverage gap이나 취약점이 아니다. 서버에만 있는 표면은 알 수 없다고 표시하고 전체 퍼센트를 만들지 않는다.
+- Resource와 owner는 이 projection에서 삭제하지 않고 인가 상세층에 유지한다. 따라서 Surface UI 변경이 기존 BOLA/BFLA 후보·Evidence 계약을 바꾸지 않는다.
+
+세부 계약과 블라인드 평가 기준은 `endpoint-parameter-surface.md`, 결정은 D-113을 따른다.
+
+### 4.5 소유자·판정 F-10~11
 
 소유자 우선순위는 사용자 확정 → **성공한 2xx 비메타데이터 응답 본문**의 명시적 owner/user/account 필드 또는 같은 이름의 중첩 principal 객체 → 저신뢰 first-success다. 401/403·redirect·soft deny와 OPTIONS/HEAD의 owner 필드는 소유권 근거로 쓰지 않는다. 공격자가 조작 가능한 요청 본문과 문맥 없는 임의 email/id 필드도 제외한다. 저신뢰나 충돌은 미확정이므로 취약 판정에서 제외한다.
 
@@ -175,7 +205,7 @@ route inventory는 다음 공통 파이프라인을 사용한다(D-069).
 
 role/requirement는 자동추정하지 않고 사용자가 지정한다(D-018).
 
-### 4.5 비교·그래프 F-07~15/F-20~24
+### 4.6 비교·그래프 F-07~15/F-20~24
 
 CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존 셀은 finding/review ID 호환을 위해 기존 stable key를 유지하고, 외부 입력에 `|` 또는 실제 `<none>` 값이 있는 셀만 `v2` byte 길이+hex framing을 써 충돌을 막는다. 소스별 5-state verdict를 보존하고 다음 갭을 계산한다.
 
@@ -185,7 +215,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 
 데이터 Flow 엣지는 같은 identity에서 이전 응답의 ID/token이 30분 안의 뒤 요청 path/query/body에 실제 소비될 때만 만든다. 단순 시간순 엣지는 만들지 않는다(D-019). 현재 소비 판정은 exact substring 보조분석이며 semantic taint가 아니므로 동일 부분문자열 오연결과 전체 조합 O(N²)은 별도 성능·정확성 부채다.
 
-### 4.6 세션·LLM·ZAP F-16~19
+### 4.7 세션·LLM·ZAP F-16~19
 
 로컬 Codex/Claude CLI가 사용자의 기존 구독 로그인으로 모델을 실행한다. FlowScope는 model OAuth/API key를 받지 않는다. Web quick-start는 공급자·exact target·선택적 ACTIVE 계정을 받아 새 자식 프로세스를 실행하며, 수동 `agent-workspace` 실행은 호환 폴백이다.
 
@@ -233,7 +263,8 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 
 | 작업면 | 역할 |
 |---|---|
-| 그래프 | `사이트 → API 그룹` 개요, `identity → API` 비교, 선택 API의 `identity → API → object` 상세를 분리한다. 객체는 family로 접고 선택 시 인스턴스를 펼친다. 화면 집계와 무관하게 Fact Core의 Evidence 관계를 보존한다. 긴 경로는 생략하지 않고 줄바꿈하며 미요청 route는 중립 후보로 분리한다. |
+| 놓친 API·입력 | 기본 작업면. 선언/관측 endpoint와 parameter를 source별로 정렬하고 provenance·Evidence를 연다. `미관측`을 취약점·lane 실패로 표현하지 않으며 전체 퍼센트를 만들지 않는다. |
+| 인가 그래프 | `사이트 → API 그룹` 개요, `identity → API` 비교, 선택 API의 `identity → API → object` 상세를 분리한다. 객체는 family로 접고 선택 시 인스턴스를 펼친다. 화면 집계와 무관하게 Fact Core의 Evidence 관계를 보존한다. 긴 경로는 생략하지 않고 줄바꿈하며 미요청 route는 중립 후보로 분리한다. |
 | 판정 매트릭스 | identity/role × operation × resource의 소스별 판정과 3종 갭 |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용된 실제 데이터 의존성 |
 | 시나리오 | BOLA/BFLA 규칙 후보·갭·LLM assessment·서버 검증 최종 verdict와 사람 감사 |
@@ -253,6 +284,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 |---|---|
 | Capture | `burp/FlowScopeExtension` |
 | Normalize/mask/classify | `core/Normalizer`, `Fingerprints`, `Masking`, `BurpXmlParser`, `HarParser`, `TrafficClassifier`, `ObservationCollapser` |
+| Endpoint/parameter surface | `core/SurfaceAnalysis`, `core/SurfaceAnalyzer`, `core/RouteCandidateExtractor`, `core/discovery/*` |
 | Identity/review state | `AccountProfile`, `AnalysisConfig`, `ReviewDecision`, `ValidationDecision` |
 | Rules | `AuthorizationAnalyzer`, `DataFlowAnalyzer`, `EvidenceIds` |
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |

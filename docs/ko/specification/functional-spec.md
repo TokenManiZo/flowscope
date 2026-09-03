@@ -870,3 +870,36 @@ MCP 통제 실행이 어려운 환경의 과거 기록을 보존하기 위한 �
 <p align="center">
   <img src="images/f24.png" style="width:5.23872in; max-width:100%; height:auto;" />
 </p>
+
+
+### F-25 : Endpoint·Parameter Surface Delta
+
+대상 산출물에서 직접 확인한 API·입력 선언과 HUMAN·SCANNER·LLM의 실제 HTTP Evidence를 값 없는 공통 좌표로 정렬해 다음 검토 위치를 표시한다.
+
+**사용자 흐름**
+
+1. 기본 `놓친 API·입력` 작업면 진입
+2. endpoint별 선언 provenance와 H/S/L 관측 상태 확인
+3. path/query/JSON/form/multipart parameter badge 확인
+4. Evidence 또는 인가 그래프 상세로 이동
+
+| **입력값** | **출력값** |
+|---|---|
+| 저장된 Request/Response Evidence, RouteCandidate | `EndpointKey`, 값 없는 `ParameterFact`, source별 Observation/Declaration, 중립 delta 상태 |
+
+**조건 및 예외 처리**
+
+- endpoint key는 `service + method + canonical path template`, parameter key는 `endpoint + location + fieldPath`로 한다.
+- 실제 관측은 query, path template 위치, 중첩 JSON, form-urlencoded, multipart 이름과 값의 형태만 보존한다. 원 parameter 값과 인증값을 surface에 저장하지 않는다.
+- 선언은 OpenAPI/Swagger, HTML form, 정적 JavaScript literal 및 기존 route provenance에서 직접 확인한 사실만 사용한다.
+- 타깃 host·업무명·프레임워크 이름으로 분기하지 않는다. 동적 문자열·lazy chunk·서버 전용 route는 실제로 확인할 수 없으면 `미확정`으로 둔다.
+- `DECLARED_NOT_OBSERVED`는 취약점·도달 가능·lane 실패가 아니라 현재 데이터셋에서 대응 HTTP Evidence를 찾지 못했다는 뜻이다.
+- source lane 완료를 확인하지 않고 “놓쳤다”고 확정하지 않는다. 블랙박스 전체 분모나 완료 퍼센트를 만들지 않는다.
+- Resource/owner/BOLA·BFLA 분석은 삭제하지 않고 선택 API의 인가 상세층에 유지한다.
+
+**검증 기준**
+
+- 개발 corpus와 분리된 held-out 구조 corpus에서 endpoint/parameter precision·recall을 측정한다.
+- route·field 이름을 바꾼 semantic-renaming fixture에서도 구조적으로 같은 결과가 나와야 한다.
+- 동일 세션에서 받은 bundle을 정답으로 삼는 순환 평가를 금지하고, 서버 manifest 또는 빌드 시 숨긴 truth를 사용한다.
+- adapter가 검토 노이즈만 늘리고 유효한 추가 발견을 만들지 못하면 기본 경로에서 제외한다.

@@ -4,6 +4,8 @@
 > 태그: `[탄탄]` 동료검증/확립된 연구 · `[프리프린트]` 2025~26 단독저자 미검증 · `[학사논문]` · `[본문·아티팩트 확인]` 논문 본문과 공개 재현물을 직접 확인 · `[초록만]` 전문 미열람.
 > ⚠️ **검증에서 걸러낸 것**: 서베이 종합이 "BOLA taxonomy에서 action-level 78.6%"라 했으나 **원문은 41.7%**(78.5%는 '확인된 BOLA 비율'로 다른 값). "77.4% 의미이해/22.6% 순차정수"는 원문 초록에 없어 **폐기**.
 
+> **beta.41 적용 경계:** OpenAPI·HTML form·정적 JavaScript에서 얻은 Endpoint/Parameter Declaration은 실제 요청 Observation과 분리해 표시한다. 같은 세션에서 받은 bundle을 정답지로 사용한 recall은 순환 평가가 될 수 있으므로 제품 효능 수치에는 쓰지 않고, 개발 corpus와 분리된 server-truth fixture에서 측정한다. 현재 구현 계약은 `endpoint-parameter-surface.md`와 D-113을 따른다.
+
 ## 1. 분야 지형 (6 계열)
 - (a) **스펙+능동 프로빙 블랙박스 스캐너** — AuthProbe`[프리프린트]`, BOLABuster(Unit42)`[탄탄/벤더]`, Akto`[도구]`
 - (b) **화이트박스(소스/DB)** — BOLAZ(arXiv:2507.02309)`[프리프린트·다저자]`, BolaRay(CCS'24)`[본문·아티팩트 확인]`

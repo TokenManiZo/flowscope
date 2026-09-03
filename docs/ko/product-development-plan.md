@@ -1,6 +1,18 @@
-# FlowScope 1.2.0-beta.40 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.41 제품 개발·검증 계획
 
-> **읽는 법:** 맨 위 beta.40 절만 현재 우선순위다. 아래 beta.39 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.40 절을 따른다.
+> **읽는 법:** 맨 위 beta.41 절만 현재 우선순위다. 아래 beta.40 이하 절은 각 버전에서 세운 계획과 당시 검증 상태를 보존한 이력이며, 남은 작업의 현재 우선순위는 `HANDOFF.md`와 beta.41 절을 따른다.
+
+## 0. beta.41 우선순위: 범용 Endpoint·Parameter Surface Delta
+
+1. 실제 HTTP 관측과 OpenAPI·HTML form·정적 JavaScript 선언을 같은 값 없는 endpoint/parameter fact schema로 분리한다.
+2. query, canonical path 위치, 중첩 JSON, form-urlencoded, multipart 이름을 source/run/identity/status/Evidence ID와 함께 관측하되 원 값을 surface에 저장하지 않는다.
+3. 타깃 host·업무명·프레임워크 이름을 조건으로 쓰지 않고 동적 계산은 미확정으로 둔다. 구조는 같고 route·field 이름만 바꾼 회귀를 다음 blind corpus gate에 포함한다.
+4. Web 기본 작업면을 source별 endpoint/parameter delta로 두고, 기존 Resource/owner/BOLA·BFLA 그래프와 매트릭스는 선택 API의 상세층으로 보존한다.
+5. snapshot/UI 계약, JavaScript parse, 전체 `mvn clean verify` 두 번, 단일 JAR·SHA-256 재현을 확인한다.
+6. 실제 Burp beta.41 재로드 뒤 H/S/L filter, Evidence/provenance 상세, 기존 인가 그래프·매트릭스 회귀를 확인한다.
+7. 개발 corpus와 분리된 server truth fixture에서 endpoint/parameter precision·recall, 검토 항목 수와 사용자 task-time을 측정한다. 성능 향상이 없는 adapter는 기본 경로에 추가하지 않는다.
+
+**현재 상태:** 1~5는 코드·문서 정합성, 최종 330 tests 연속 두 clean verify, byte-for-byte 동일 JAR과 standalone Web 수동 확인을 통과했다. 6의 실제 Burp beta.41 재로드와 7의 개발 corpus 분리 blind 효능 gate는 대기한다. 정적 JavaScript literal 지원을 동적 bundle 전체 분석으로 표현하지 않는다.
 
 ## 0. beta.40 우선순위: Explorer 1~10 실행 계약과 실제 경로 보존
 

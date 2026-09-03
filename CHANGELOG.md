@@ -2,6 +2,17 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.41 — 2026-09-03
+
+- 값 없는 `EndpointKey`·`ParameterKey` fact로 실제 H/S/L 관측과 OpenAPI·HTML form·정적 JavaScript 선언을 분리하는 범용 Surface Analyzer를 추가했습니다.
+- query, canonical path 위치, 중첩 JSON, form-urlencoded, multipart 입력을 값 대신 field path·shape·source/run/identity/status/Evidence ID로 보존합니다.
+- Web 기본 작업면을 `놓친 API·입력`으로 바꿔 endpoint/parameter별 source delta와 provenance를 먼저 보여 줍니다. 미관측은 취약점이나 lane 실패가 아닙니다.
+- 기존 Resource/owner/BOLA·BFLA 그래프와 매트릭스는 `인가 그래프` 상세층에 그대로 유지했습니다.
+- Standalone도 입력 Evidence에서 route candidate와 surface를 재생성합니다.
+- 같은 JavaScript 요청 호출식 안의 literal body key만 연결해 뒤의 무관한 객체 key 오귀속을 막고, 동일 snapshot revision의 surface projection을 재사용합니다.
+- 타깃 host·업무명·프레임워크 이름 분기는 추가하지 않았으며, 동적 JavaScript·lazy chunk·서버 전용 표면과 실제 precision/recall은 미검증 한계로 남겼습니다.
+- 최종 자동 회귀와 재현 JAR 수치는 `docs/ko/beta-validation.md`의 beta.41 gate를 따릅니다.
+
 ## 1.2.0-beta.40 — 2026-09-02
 
 - Explorer route를 표시·분석용 template과 실제 실행용 concrete path로 분리했습니다. `/orders/42`, `/orders/77`을 `/orders/{id}` 한 항목으로 정렬하면서 실제 관측값과 query는 보존하고, 인증성 query는 저장하지 않습니다.

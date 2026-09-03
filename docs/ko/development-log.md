@@ -1,5 +1,47 @@
 # FlowScope 개발 기록
 
+## 2026-09-03 · 1.2.0-beta.41 · 범용 Endpoint·Parameter Surface Delta
+
+### 목표와 성공 조건
+
+- 제품 첫 화면이 판정 기계보다 먼저 “HUMAN·SCANNER·LLM 중 누가 어떤 endpoint와 parameter를 관측했고 무엇이 현재 미관측인가”에 답해야 한다.
+- 특정 target, host, 업무명 또는 프레임워크 이름에 맞춘 규칙 없이 HTTP 위치와 명시 schema/markup/script 문법만 사용해야 한다.
+- 기존 Resource/owner/BOLA·BFLA Fact와 판정은 삭제하거나 바꾸지 않고 API 상세층에 유지해야 한다.
+
+### 개발·수정
+
+- `SurfaceAnalysis`에 값 없는 Endpoint/Parameter fact와 `DECLARED_NOT_OBSERVED` 등 중립 delta 상태를 정의했다.
+- `SurfaceAnalyzer`가 실제 query/path/중첩 JSON/form-urlencoded/multipart 입력과 OpenAPI/Swagger local `$ref`, HTML form, 정적 JavaScript literal URL/query/direct request-object key를 추출한다.
+- `SnapshotJsonWriter`가 `surface` projection을 제공하고 동일 revision·동일 입력에서는 분석 결과를 재사용해 1초 polling마다 대형 선언 산출물을 다시 파싱하지 않는다. Standalone도 record service에서 route candidate를 재생성한다.
+- Web 기본 작업면을 `놓친 API·입력`으로 바꾸고 endpoint별 H/S/L 관측, parameter 위치·형태, Declaration/Evidence provenance를 표시한다. 기존 화면은 `인가 그래프`로 명확히 이름 붙여 유지했다.
+- 최종 UI 점검에서 source checkbox를 꺼도 Surface 행·상태·상세 Evidence가 전체 source 기준으로 남는 결함을 재현했다. parameter observation을 Evidence/source/run/identity/status/shape 단위로 보강하고, 체크된 source만 행 badge·delta·통계·상세 Evidence에 반영하도록 수정했다.
+
+### 이유와 기각한 대안
+
+- 정상 요청만 나열하면 아직 실행되지 않은 조건부 입력을 알 수 없으므로, 실제 관측과 대상이 명시한 선언을 서로 다른 fact로 보존했다.
+- Resource 노드를 삭제하는 대안은 BOLA 교차 접근과 owner Evidence를 잃어 기각했다. 반대로 모든 객체를 첫 화면에 유지하면 고카디널리티 노이즈가 endpoint·parameter 차이를 가려 상세층으로 내렸다.
+- target별 사전, URL 업무명 가중치, React/Next 식별 분기는 보지 못한 대상에 일반화되지 않아 사용하지 않았다. 동적 JavaScript를 regex로 추측하는 대신 직접 확인되는 literal만 선언하고 나머지는 미확정으로 둔다.
+- 별도 SQLite surface 테이블은 같은 Evidence에서 파생되는 데이터를 이중 정본화하므로 만들지 않고 snapshot 시 결정론적으로 재생성한다.
+
+### 영향 파일
+
+- 코드: `SurfaceAnalysis.java`, `SurfaceAnalyzer.java`, `SnapshotJsonWriter.java`, `Standalone.java`, `index.html`
+- 회귀: `SurfaceAnalyzerTest.java`, `FlowScopeWebServerTest.java`, 버전 계약의 `McpServerTest.java`
+- 문서: README, architecture, decisions D-113, 기능명세 F-25, UI 근거, 제품 개요·계획, 시작 가이드, 변경 이력, 인계·검증 기록
+
+### 재현과 검증
+
+- 회귀는 query/중첩 JSON shape와 H/S/L source, OpenAPI path/query/JSON·form-urlencoded·multipart requestBody, HTML form, 정적 JavaScript literal query/body key, 다른 문장의 객체 key 오귀속 방지, snapshot/UI 계약을 고정한다.
+- 최종 `mvn clean verify`를 연속 두 번 실행해 매회 330 tests, failure/error/skip 0을 확인했다. 두 JAR은 16,062,971 bytes·2,082 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `2f3902f0178a3b53db3f1ec8c8e86ce8533cf7fd0384197e8926482ad2bf4c1b`로 동일했다.
+- standalone `127.0.0.1:17779` 샘플에서 기본 Surface 작업목록, LLM 소스 체크 해제 전후 `H 관측·L 관측·두 출처`가 `H 관측·L —·관측됨`으로 바뀌고 상세 Evidence도 H만 남는 것, API 상세의 선언 provenance·파라미터 표면, 기존 인가 그래프 전환을 직접 확인했다. 브라우저 warning/error는 0건이었다.
+- 이 자동 회귀는 실제 diverse target의 precision/recall, lazy chunk 전체, 동적 JavaScript data-flow 또는 실제 Burp 사용성 향상을 증명하지 않는다.
+
+### 남은 한계·다음 gate
+
+- 개발 corpus와 분리된 server-truth fixture, route·field semantic-renaming, lazy chunk 포함/미포함 조건으로 endpoint/parameter precision·recall을 측정한다.
+- 실제 Burp에서 기존 HUMAN/ZAP/LLM 필터, Evidence 상세, 인가 그래프·매트릭스가 함께 회귀하지 않았는지 확인한다. standalone 확인은 Burp 확장 런타임 검증을 대체하지 않는다.
+- JavaScript AST/source-map, GraphQL schema, framework manifest adapter는 blind 효능이 현재 literal adapter보다 나은 경우에만 별도 수직 단위로 추가한다.
+
 이 문서는 작업 단위로 **무엇을 개발했는지, 무엇을 수정했는지, 왜 수정했는지, 어떤 파일이 영향을 받았는지, 어떻게 검증했는지, 무엇이 아직 남았는지**를 기록하는 정본이다.
 
 릴리스 사용자 변경점은 루트 `CHANGELOG.md`, 현재 동작은 `architecture.md`, 설계 선택과 기각 이유는 `decisions.md`, 실제 수행한 검증과 미검증 범위는 `beta-validation.md`가 각각 정본이다. 같은 내용을 모든 문서에 복사하지 않고 이 문서에서 관련 정본을 연결한다.

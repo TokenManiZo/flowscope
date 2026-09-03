@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0-beta.41 — 2026-09-03
+
+- Added a value-free Endpoint/Parameter Surface Analyzer that keeps actual H/S/L observations separate from declarations found in OpenAPI, HTML forms, and static JavaScript literals.
+- Query, canonical path positions, nested JSON, form-urlencoded, and multipart inputs retain field paths, shapes, source/run/identity/status, and Evidence IDs rather than raw values.
+- The default Web workspace is now **놓친 API·입력**, which shows endpoint/parameter source deltas and provenance before authorization analysis. An unobserved item is not a vulnerability or failed lane.
+- Existing Resource/owner/BOLA/BFLA graphs and the matrix remain available under **인가 그래프** as API-level drill-downs.
+- Static JavaScript body keys are associated only within the same request call expression, and unchanged snapshot revisions reuse the derived surface projection.
+- No target-host, business-vocabulary, or framework-name rules were added. Dynamic JavaScript, unloaded lazy chunks, server-only surfaces, and real-world precision/recall remain explicit evaluation gates.
+- Final regression and reproducible-JAR measurements are recorded only in the beta.41 section of `docs/ko/beta-validation.md`.
+
 ## 1.2.0-beta.40 — 2026-09-02
 
 - Explorer routes now keep a display/analysis template and bounded executable concrete paths separately. `/orders/42` and `/orders/77` remain grouped under `/orders/{id}` without losing their observed values or non-secret queries.

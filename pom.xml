@@ -6,7 +6,7 @@
 
   <groupId>io.flowscope</groupId>
   <artifactId>flowscope</artifactId>
-  <version>1.2.0-beta.40</version>
+  <version>1.2.0-beta.41</version>
   <packaging>jar</packaging>
 
   <name>FlowScope</name>

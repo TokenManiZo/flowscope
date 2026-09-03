@@ -17,6 +17,8 @@ import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.RouteCandidateExtractor;
 import io.flowscope.core.Normalizer;
 import io.flowscope.core.Source;
+import io.flowscope.core.SurfaceAnalysis;
+import io.flowscope.core.SurfaceAnalyzer;
 import io.flowscope.core.Verdict;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.McpServer;
@@ -30,6 +32,10 @@ import java.util.Map;
 /** Serializes the masked analysis state consumed by the bundled localhost UI. */
 public final class SnapshotJsonWriter {
     private final ObjectMapper json = new ObjectMapper();
+    private long surfaceRevision = Long.MIN_VALUE;
+    private Pipeline.Result surfaceResult;
+    private List<RouteCandidate> surfaceCandidates;
+    private SurfaceAnalysis cachedSurface;
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
                         List<McpServer.Assessment> assessments,
@@ -88,7 +94,22 @@ public final class SnapshotJsonWriter {
         root.set("sessions", sessions(config, result.records));
         root.set("managedSessions", managedSessions(managedSessions));
         root.set("routeCandidates", routeCandidates(routeCandidates));
+        root.set("surface", json.valueToTree(surface(revision, result, routeCandidates)));
         return json.writeValueAsBytes(root);
+    }
+
+    private synchronized SurfaceAnalysis surface(long revision, Pipeline.Result result,
+                                                 List<RouteCandidate> routeCandidates) {
+        if (cachedSurface != null && surfaceRevision == revision && surfaceResult == result
+                && surfaceCandidates == routeCandidates) {
+            return cachedSurface;
+        }
+        SurfaceAnalysis computed = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, routeCandidates);
+        surfaceRevision = revision;
+        surfaceResult = result;
+        surfaceCandidates = routeCandidates;
+        cachedSurface = computed;
+        return computed;
     }
 
     ArrayNode managedSessions(List<SessionBroker.SessionView> values) {

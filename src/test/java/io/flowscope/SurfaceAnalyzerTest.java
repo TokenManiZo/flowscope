@@ -1,0 +1,221 @@
+package io.flowscope;
+
+import io.flowscope.core.Pipeline;
+import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RouteCandidateExtractor;
+import io.flowscope.core.ScopePolicy;
+import io.flowscope.core.Source;
+import io.flowscope.core.SurfaceAnalysis;
+import io.flowscope.core.SurfaceAnalyzer;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+final class SurfaceAnalyzerTest {
+    @Test
+    void 관측값은_저장하지_않고_위치_필드경로_형태와_소스만_데이터화한다() {
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/order/search", 200);
+        human.query = "sort=DESC&page=2";
+        human.requestContentType = "application/json";
+        human.reqBody = "{\"product_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"filters\":{\"active\":true}}";
+        RequestRecord llm = request(Source.LLM, "POST", "/api/order/search", 200);
+        llm.requestContentType = "application/json";
+        llm.reqBody = "{\"product_id\":7,\"coupon\":\"WELCOME\"}";
+
+        Pipeline.Result result = Pipeline.runIsolated(List.of(human, llm), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact endpoint = endpoint(analysis, "POST", "/api/order/search");
+        assertEquals(SurfaceAnalysis.DeltaState.MULTI_SOURCE_OBSERVED, endpoint.deltaState());
+        assertEquals(java.util.Set.of(Source.HUMAN, Source.LLM), endpoint.observedSources());
+        assertEquals(java.util.Set.of(SurfaceAnalysis.ValueShape.UUID, SurfaceAnalysis.ValueShape.INTEGER),
+                parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "product_id").observedShapes());
+        assertEquals(java.util.Set.of(Source.LLM),
+                parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "coupon").observedSources());
+        SurfaceAnalysis.ParameterObservation couponObservation = parameter(endpoint,
+                SurfaceAnalysis.ParameterLocation.JSON_BODY, "coupon").observations().getFirst();
+        assertEquals(Source.LLM, couponObservation.source());
+        assertEquals("llm-run", couponObservation.runId());
+        assertEquals("anon", couponObservation.identity());
+        assertEquals(200, couponObservation.status());
+        assertEquals(SurfaceAnalysis.ValueShape.STRING, couponObservation.shape());
+        assertEquals(SurfaceAnalysis.ValueShape.BOOLEAN,
+                parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "filters.active")
+                        .observedShapes().iterator().next());
+        assertEquals(java.util.Set.of(Source.HUMAN),
+                parameter(endpoint, SurfaceAnalysis.ParameterLocation.QUERY, "sort").observedSources());
+        assertFalse(analysis.toString().contains("WELCOME"));
+        assertFalse(analysis.toString().contains("550e8400"));
+    }
+
+    @Test
+    void OpenAPI와_HTML_form의_선언을_관측과_분리하고_미관측으로_표시한다() {
+        RequestRecord openapi = document("/openapi.json", "application/json", """
+                {"openapi":"3.0.3","paths":{"/api/orders/{orderId}":{
+                  "get":{"parameters":[{"name":"orderId","in":"path","required":true},
+                    {"name":"expand","in":"query","required":false}]},
+                  "post":{"requestBody":{"required":true,"content":{"application/json":{"schema":{
+                    "type":"object","required":["product_id"],"properties":{"product_id":{"type":"integer"},
+                    "note":{"type":"string"}}}}}}}}}}
+                """);
+        RequestRecord html = document("/search", "text/html", """
+                <form action="/api/search" method="get">
+                  <input name="keyword" required><select name="sort"><option>DESC</option></select>
+                </form>
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi, html), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact get = endpoint(analysis, "GET", "/api/orders/{id}");
+        assertEquals(SurfaceAnalysis.DeltaState.DECLARED_NOT_OBSERVED, get.deltaState());
+        assertEquals(SurfaceAnalysis.Requirement.REQUIRED,
+                parameter(get, SurfaceAnalysis.ParameterLocation.PATH, "path[3]").requirement());
+        assertEquals("orderId", parameter(get, SurfaceAnalysis.ParameterLocation.PATH, "path[3]").displayName());
+        assertEquals(SurfaceAnalysis.Requirement.OPTIONAL,
+                parameter(get, SurfaceAnalysis.ParameterLocation.QUERY, "expand").requirement());
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/orders/{id}");
+        assertEquals(SurfaceAnalysis.Requirement.REQUIRED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "product_id").requirement());
+        assertEquals(SurfaceAnalysis.Requirement.OPTIONAL,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "note").requirement());
+
+        SurfaceAnalysis.EndpointFact form = endpoint(analysis, "GET", "/api/search");
+        assertEquals(SurfaceAnalysis.Requirement.REQUIRED,
+                parameter(form, SurfaceAnalysis.ParameterLocation.QUERY, "keyword").requirement());
+        assertEquals(SurfaceAnalysis.Requirement.OPTIONAL,
+                parameter(form, SurfaceAnalysis.ParameterLocation.QUERY, "sort").requirement());
+    }
+
+    @Test
+    void 정적_JS는_직접_확인되는_query와_body_key만_선언하고_동적값은_추정하지_않는다() {
+        RequestRecord script = document("/assets/app.js", "application/javascript", """
+                fetch('/api/search?sort=DESC&page=1');
+                fetch('/api/orders', {method:'POST', body: JSON.stringify({product_id: selected, note: memo})});
+                const dynamic = '/api/' + moduleName;
+                fetch(dynamic);
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(script), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact search = endpoint(analysis, "GET", "/api/search");
+        assertNotNull(parameter(search, SurfaceAnalysis.ParameterLocation.QUERY, "sort"));
+        assertNotNull(parameter(search, SurfaceAnalysis.ParameterLocation.QUERY, "page"));
+        SurfaceAnalysis.EndpointFact orders = endpoint(analysis, "POST", "/api/orders");
+        assertNotNull(parameter(orders, SurfaceAnalysis.ParameterLocation.JSON_BODY, "product_id"));
+        assertNotNull(parameter(orders, SurfaceAnalysis.ParameterLocation.JSON_BODY, "note"));
+        assertTrue(analysis.endpoints().stream().noneMatch(item -> item.key().pathTemplate().contains("moduleName")));
+    }
+
+    @Test
+    void 정적_JS의_다른_문장에_있는_객체키를_요청_파라미터로_오인하지_않는다() {
+        RequestRecord script = document("/assets/app.js", "application/javascript", """
+                fetch('/api/orders', {method:'POST'});
+                const unrelated = JSON.stringify({adminOnly: true, hiddenFlag: false});
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(script), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact orders = endpoint(analysis, "POST", "/api/orders");
+        assertTrue(orders.parameters().stream().noneMatch(item -> item.fieldPath().equals("adminOnly")));
+        assertTrue(orders.parameters().stream().noneMatch(item -> item.fieldPath().equals("hiddenFlag")));
+    }
+
+    @Test
+    void OpenAPI3_form과_multipart도_JSON과_같은_범용_입력사실로_분리한다() {
+        RequestRecord openapi = document("/schema", "application/json", """
+                {"openapi":"3.1.0","paths":{
+                  "/v9/alpha":{"post":{"requestBody":{"content":{
+                    "application/x-www-form-urlencoded":{"schema":{"type":"object","required":["qv"],
+                      "properties":{"qv":{"type":"string"},"zn":{"type":"integer"}}}}
+                  }}}},
+                  "/v9/beta":{"post":{"requestBody":{"content":{
+                    "multipart/form-data":{"schema":{"type":"object","required":["blob"],
+                      "properties":{"blob":{"type":"string","format":"binary"},"tag":{"type":"string"}}}}
+                  }}}}
+                }}
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact form = endpoint(analysis, "POST", "/v9/alpha");
+        assertEquals(SurfaceAnalysis.Requirement.REQUIRED,
+                parameter(form, SurfaceAnalysis.ParameterLocation.FORM_BODY, "qv").requirement());
+        assertEquals(SurfaceAnalysis.Requirement.OPTIONAL,
+                parameter(form, SurfaceAnalysis.ParameterLocation.FORM_BODY, "zn").requirement());
+        SurfaceAnalysis.EndpointFact multipart = endpoint(analysis, "POST", "/v9/beta");
+        assertEquals(SurfaceAnalysis.Requirement.REQUIRED,
+                parameter(multipart, SurfaceAnalysis.ParameterLocation.MULTIPART_BODY, "blob").requirement());
+        assertEquals(SurfaceAnalysis.Requirement.OPTIONAL,
+                parameter(multipart, SurfaceAnalysis.ParameterLocation.MULTIPART_BODY, "tag").requirement());
+    }
+
+    @Test
+    void 업무명과_무관한_임의_경로와_필드도_동일한_구조규칙으로_분석한다() {
+        RequestRecord first = request(Source.HUMAN, "POST", "/xqv/917", 200);
+        first.requestContentType = "application/json";
+        first.reqBody = "{\"aa_z9\":17,\"nested_k\":{\"r2\":false}}";
+        RequestRecord second = request(Source.SCANNER, "POST", "/xqv/918", 200);
+        second.requestContentType = "application/json";
+        second.reqBody = "{\"aa_z9\":18,\"nested_k\":{\"r2\":true}}";
+
+        Pipeline.Result result = Pipeline.runIsolated(List.of(first, second), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact endpoint = endpoint(analysis, "POST", "/xqv/{id}");
+        assertEquals(java.util.Set.of(Source.HUMAN, Source.SCANNER), endpoint.observedSources());
+        assertNotNull(parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "aa_z9"));
+        assertNotNull(parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "nested_k.r2"));
+    }
+
+    private static RequestRecord request(Source source, String method, String path, int status) {
+        RequestRecord record = new RequestRecord(source, "https://app.test:443", method, path, status, "anon");
+        record.hasResponse = true;
+        record.responseContentType = "application/json";
+        record.body = "{}";
+        record.runId = source.name().toLowerCase() + "-run";
+        return record;
+    }
+
+    private static RequestRecord document(String path, String mediaType, String body) {
+        RequestRecord record = new RequestRecord(Source.HUMAN, "https://app.test:443", "GET", path, 200, "anon");
+        record.hasResponse = true;
+        record.responseContentType = mediaType;
+        record.body = body;
+        record.runId = "human-run";
+        return record;
+    }
+
+    private static SurfaceAnalysis.EndpointFact endpoint(SurfaceAnalysis analysis, String method, String path) {
+        return analysis.endpoints().stream()
+                .filter(item -> item.key().method().equals(method) && item.key().pathTemplate().equals(path))
+                .findFirst().orElseThrow();
+    }
+
+    private static SurfaceAnalysis.ParameterFact parameter(SurfaceAnalysis.EndpointFact endpoint,
+                                                           SurfaceAnalysis.ParameterLocation location,
+                                                           String path) {
+        return endpoint.parameters().stream()
+                .filter(item -> item.location() == location && item.fieldPath().equals(path))
+                .findFirst().orElseThrow();
+    }
+}

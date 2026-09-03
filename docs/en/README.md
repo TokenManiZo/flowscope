@@ -1,22 +1,23 @@
-# FlowScope 1.2.0-beta.40
+# FlowScope 1.2.0-beta.41
 
 This is the English user guide. The repository root [README](../../README.md) is the canonical Korean guide. See also the English [changelog](CHANGELOG.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
-FlowScope is a Burp Suite Community-compatible extension that aligns real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into one identity-aware authorization graph and coverage matrix. It highlights uncrossed object combinations inside the observed set and evidence-grounded BOLA/IDOR and BFLA candidates without treating an LLM guess as a confirmed vulnerability. Exact-scope routes referenced by stored responses or present as response-less Burp Site Map items are shown as neutral candidates, separate from observed coverage.
+FlowScope is a Burp Suite Community-compatible extension that aligns declared API inputs and real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into a shared endpoint/parameter surface. It shows which source observed each endpoint and parameter before opening the existing identity-aware BOLA/IDOR/BFLA graph as an API-level drill-down. An unobserved declaration is a review item, not a vulnerability or failed lane.
 
 ## Product objective and completion criteria
 
-> Within an authorized exact scope, structure as much of the observable authorization attack surface as possible and use reproducible Evidence to expose missed paths and authorization candidates across identities, operations, objects, and state flows.
+> Within an authorized exact scope, structure declared and observed APIs and inputs, expose HUMAN/SCANNER/LLM exploration deltas, and keep authorization candidates traceable to reproducible Evidence.
 
 FlowScope does not promise discovery of every endpoint, object, or state in a black-box target, zero false positives or false negatives, or confirmation from LLM prose alone. Product maturity is judged on published fixtures and answer-isolated blind benchmarks that disclose endpoint, object, classification, and finding measurements together with human `REVIEW` workload, false positives, false negatives, and unresolved cases. Every candidate and final verdict must remain traceable to original Request/Response Evidence and to reproduction and authorized-control Evidence.
 
 ```
-identity ──access──▶ operation ──targets──▶ object
- user-b              orders:101          GET /api/orders/{id}
+declarations(OpenAPI/HTML/JS) ─┐
+HUMAN/SCANNER/LLM observations ┴─▶ endpoint/parameter delta ─▶ authorization drill-down
 ```
 
 ## What is included
 
+- A value-free, target-neutral `EndpointKey` and `ParameterKey` model that separates actual observations from OpenAPI, HTML-form, and static-JavaScript declarations. It covers path/query/nested-JSON/form/multipart locations without host, business-vocabulary, or framework-name branches.
 - Live Burp capture with independent source, sub-source, orchestrator, tool, phase, and run metadata.
 - Exact-scope Evidence capture for every source. HUMAN may browse other sites through Burp, but out-of-scope responses are not stored or graphed by FlowScope.
 - HUMAN / SCANNER / LLM filters and an IDA-style hierarchical graph with bounded drill-down. Repeated edges for the same identity, API, folded object family, and source are collapsed visually while every original Object instance, Evidence item, and verdict remains available in the detail data.
@@ -64,9 +65,9 @@ ZAP and a local model client are required for the complete three-way workflow. T
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.40.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.40 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
+Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.41.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.41 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.40.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.41.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
@@ -187,7 +188,8 @@ The ZAP API endpoint is accepted only on a loopback address. Key precedence is `
 ## Product workspace
 
 - **Burp tab** — exact scope, port mapping, live counts, MCP connection copy, Proxy-history import, project save/load, sample, reset, and a button that opens the canonical local Web workspace.
-- **Web top modes** — 그래프, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
+- **Web top modes** — the default 놓친 API·입력 surface, 인가 그래프 drill-down, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, and 계정·세션 are stable views over one captured dataset.
+- **놓친 API·입력** — declaration-versus-observation endpoint/parameter facts with source badges and Evidence/provenance links; it does not fabricate a black-box completion percentage.
 - **Left rail** — captured/analysis/hidden/review counts without a fabricated percentage, HUMAN/SCANNER/LLM filters paired with actual main-Evidence counts, Evidence display classes, read-only authorization-policy state, three-way gaps, and graph verdict controls.
 - **Flow Graph** — The default is Identity → API, selecting an API opens Identity → API → Object, and Site → API Group is an optional overview. The retained analytical relation is Identity × API × Object × Source; high-cardinality objects are folded into families and expanded on demand. HUMAN blue/solid/H, SCANNER red/dashed/S, and LLM black/dotted/L remain provenance encodings. Unrequested-route candidates stay outside observed coverage, HTTP status remains an outcome rather than an authorization verdict, and response-to-request dependencies stay in the separate sequence view.
 - **판정 매트릭스** — observed identity/role × operation × resource cells, per-source verdicts, uncrossed combinations, partial discovery, and conflicts.
