@@ -276,6 +276,8 @@ React 대시보드는 먼저 **현재 route와 exact scope**, 이어서 HUMAN/ZA
 
 실행 상태는 color만으로 정상·경고·실패를 말하지 않는다. `RUNNING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`, `FAILED`, `CANCELLED`, `NOT_STARTED`, `UNAVAILABLE`와 신원별 lane count를 문자로 남기고, poll이 실패해도 마지막 성공 상태를 0이나 실패로 덮지 않는다. output tail은 plain text의 bounded accordion으로만 보여 주며 HTML로 해석하지 않는다. ZAP 능동 스캔은 이 작업면에 넣지 않고 별도 Burp 승인 gate로 남긴다.
 
+LLM 탭의 작업 피드는 "모델이 지금 무엇을 했고 어디서 실패했는가"에 답한다. 도구 호출은 원문 이름 대신 `대상 읽기 · GET https://…`처럼 행동명과 method·URL로 보이고, 실패는 빨간 배지와 마스킹된 사유 한 줄로, 각 항목은 실행 시작 기준 경과와 호출 소요 시간을 붙인다. 헤더·본문·계정·결과 전문은 피드에 넣지 않는다. 사용자는 이 피드로 출력 tail을 읽지 않고도 실패 지점을 찾고, 모델의 운영자용 보고는 한국어로 받는다. 피드는 서버 `llmStatus`의 활동 기록을 그대로 그리며 클라이언트가 상태를 추정하지 않는다.
+
 ## 16. React 계정·세션 화면의 개념 경계
 
 `#accounts`는 등록 계정, 관측 신원, 비가역 fingerprint binding, 메모리 broker managed session을 한 이름으로 합치지 않는다. 등록 계정은 사람이 입력한 label/role/target 정책이고, 관측 신원과 fingerprint는 Evidence에서 얻은 진단 단서이며, binding은 그 둘을 명시적으로 연결한 기록이다. managed session만이 로그인 capture 뒤 ZAP/LLM에 재사용될 수 있는 broker 상태다.

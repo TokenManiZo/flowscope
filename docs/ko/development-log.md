@@ -1,5 +1,36 @@
 # FlowScope 개발 기록
 
+## 2026-09-04 · 1.2.0-beta.44 · LLM 작업 피드의 실패 표시·한국어 행동명·경과 시간
+
+### 개발·수정
+
+- 실제 Explorer 실행에서 `flowscope_target_read`가 11번 실패했는데 작업 피드에는 전부 `COMPLETED`로 찍혔다. `publishCodexEvent`가 이벤트 종류(`item.completed`)만 보고 상태를 정하고 item 안의 `"status":"failed"`를 읽지 않았기 때문이다. 이제 item의 `status`와 `error`를 읽어 실패는 `FAILED`로 남기고, 결과의 `{"error":...}` 값이나 텍스트 앞부분을 마스킹·절단해 사유로 보여 준다. Claude stream-json의 `tool_result.is_error`도 같은 방식으로 사유를 남긴다.
+- 도구 이름을 한국어 행동명으로 바꾼다(`toolLabel`). `flowscope_target_read`는 `대상 읽기`, `flowscope_browser_navigate`는 `브라우저 열기` 등이며 모르는 이름은 원문을 둔다. 인자 중 `method`와 `target`(또는 `evidence_id`)만 제목에 붙이고 헤더·본문·계정은 표시하지 않는다.
+- `Activity`에 실행 시작 기준 경과(`elapsedMillis`)와 도구 호출 하나의 소요(`durationMillis`, item id·tool_use id로 시작 시각을 기억)를 추가했다. `llmStatus` JSON은 `elapsed_ms`·`duration_ms`를 내보낸다.
+- 런처 프롬프트 머리말에 운영자용 메시지(진행 메모·요약·최종 보고)를 한국어로 쓰라는 지시를 넣었다. 도구 이름·URL·메서드·Evidence ID는 원문을 유지한다. `AGENTS.md`와 역할 프롬프트는 건드리지 않았다.
+- React 실행 화면은 그동안 작업 피드를 전혀 그리지 않고 상태와 출력 tail만 보여 줬다. LLM 탭에 피드 목록을 추가해 경과 시간, 상태 배지(실패는 빨강), 행동명, 소요 시간, 사유를 표시한다. legacy 화면은 서버 필드를 그대로 받지만 새 필드를 그리지는 않는다.
+
+### 필요성·기각 대안
+
+- 도구 인자·결과 원문을 통째로 보여 주는 방식은 인증 헤더·본문·토큰이 피드에 남으므로 기각했다. method·URL·오류 사유만 마스킹해 노출한다.
+- 실패 여부를 출력 tail에서 사용자가 직접 읽게 두는 현재 방식은 1,500자 안에 실패 항목이 없으면 원인을 볼 수 없어 기각했다.
+- 한국어 지시를 `AGENTS.md`에 넣는 방식은 진단 규칙 문서와 표시 언어를 섞으므로 런처 머리말에만 둔다.
+
+### 영향 파일·회귀
+
+- 코드: `LocalLlmRunner.java`(`Activity`, `addActivity`, `publishCodexEvent`, `publishClaudeEvent`, `toolLabel`·`toolDetail`·`toolFailureReason`, `prompt`), `FlowScopeExtension.java`(`llmStatus` 직렬화), `frontend/src/lib/api/types.ts`, `frontend/src/features/runs/RunsPage.tsx`.
+- 테스트: `LocalLlmRunnerTest` — 실패한 Codex 도구 item이 `FAILED`·한국어 행동명·사유·소요 시간으로 남고 비밀이 남지 않으며 프롬프트에 한국어 지시가 있는 회귀. 기존 피드 테스트는 원문 이름 대신 행동명을 단언한다. `RunsPage.test.tsx` — 피드가 행동명·실패 사유·경과·소요를 렌더링하는 회귀.
+- 문서: decisions D-120, beta validation, changelog, ui-product-rationale, 이 기록.
+
+### 최종 검증
+
+- 집중 회귀와 전체 `mvn clean verify` 수치는 `beta-validation.md`의 해당 gate에 기록한다.
+
+### 남은 한계·다음 gate
+
+- Codex `--json` 이벤트의 `item.status`·`error` 필드 형태는 로컬 CLI 버전에서 관측한 것이다. 필드가 없는 버전에서는 이전처럼 완료로 보이므로, 실제 Burp 재실행에서 실패 항목이 빨갛게 보이는지 확인해야 한다.
+- 브라우저 워커 페이지 로드는 여전히 실행 원장에 들어가지 않는다. `target` 절대 URL 계약 명시는 별도 작업 단위다.
+
 ## 2026-09-04 · 1.2.0-beta.44 · 통제 요청 Evidence ID 누락과 Explorer 완료 교착 수정
 
 ### 개발·수정

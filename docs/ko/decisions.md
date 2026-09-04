@@ -1103,3 +1103,10 @@
 - **결정:** 통제 실행기는 레코드를 추가한 잠금 안에서 원본 목록에 `EvidenceIds.assign`을 적용해 돌려주는 ID를 확정한다. 격리 분석 복사본은 같은 `contentDigest`로 그 ID를 유지하므로 MCP·원장·UI가 같은 값을 본다. `targetRequest`는 대상이 응답한 순간 시도를 실패 후보에서 제외하고, 이후 원장 기록 실패는 요청 실패로 다시 적지 않는다. Explorer 완료는 응답 Evidence(`LaneCompletionPolicy`)를 먼저 평가하고, 응답 Evidence가 없을 때만 `ALL_FAILED`로 거부한다. 응답 Evidence가 있는데 원장이 전부 실패면 그것은 회계 불일치이지 완료 거부 사유가 아니다.
 - **기각:** `Attempt`의 Evidence ID 요구를 완화하는 방식은 원장과 Evidence의 역참조를 끊는다. `rebuildImmediately`를 제자리 정규화로 바꾸는 방식은 게시본과 수집 DTO를 다시 섞어 격리 분석의 이유를 없앤다. `ALL_FAILED` 거부 자체를 없애는 방식은 D-116이 막으려던 "전부 실패했는데 완료"를 다시 허용한다. 브라우저 워커 페이지 로드를 원장 시도로 세는 방식은 discovery 채널과 통제 요청을 섞으므로 이번 범위에서 다루지 않았다.
 - **검증·한계:** `McpServerTest`가 응답은 있고 Evidence ID가 빈 실행기에서 `INVALID_REQUEST`가 남지 않고 `end_run`이 성공함을, `EvidenceIdsTest`가 원본 ID와 격리 스냅샷 ID의 일치를 고정한다. 실제 Burp에서 같은 대상의 Explorer 재실행과 `RESPONSES_OBSERVED` 집계는 아직 확인하지 않았다. 같은 실행에서 드러난 `target` 절대 URL 계약 부재와 작업 피드의 실패 미표시는 별도 결정으로 다룬다.
+
+## D-120 · LLM 작업 피드는 도구 호출의 실제 결과·행동명·시간을 보이되 인자 원문은 보이지 않는다
+
+- **문제:** 실제 Explorer 실행에서 도구 호출 11건이 실패했는데 피드는 전부 `COMPLETED`였고 사유가 없었다. `publishCodexEvent`가 이벤트 종류만 보고 item의 `status:"failed"`를 읽지 않았고, 인자와 결과를 "인증정보 보호" 문구로 통째로 감췄으며, React 실행 화면은 피드를 그리지 않고 출력 tail 1,500자만 보여 줬다. 사용자는 실패 원인을 JSON에서 직접 찾아야 했고 모델은 영어로만 보고했다.
+- **결정:** 도구 항목은 item의 `status`·`error`(Codex)와 `tool_result.is_error`(Claude)로 상태를 정한다. 제목은 한국어 행동명 + `method` + `target`(또는 `evidence_id`)이고, 실패면 결과의 `error` 값 또는 텍스트 앞부분을 마스킹·절단해 사유로 붙인다. 헤더·본문·계정·결과 전문은 피드에 넣지 않는다. `Activity`는 실행 시작 기준 경과와 도구 호출 소요를 갖고 `llmStatus`가 `elapsed_ms`·`duration_ms`로 내보낸다. 런처 머리말이 운영자용 메시지를 한국어로 쓰라고 지시하되 도구 이름·URL·메서드·Evidence ID는 원문을 유지한다. React 실행 화면은 피드를 목록으로 그리고 실패를 빨갛게 표시한다.
+- **기각:** 인자·결과 원문 노출은 비밀 경계를 넓힌다. 실패를 tail에서만 읽게 두는 방식은 tail 밖의 실패를 잃는다. 한국어 지시를 `AGENTS.md`에 두는 방식은 진단 규칙과 표시 언어를 섞는다. 모르는 도구 이름을 억지로 번역하는 방식은 오표기를 만들므로 원문을 둔다.
+- **검증·한계:** `LocalLlmRunnerTest`가 실패 item의 `FAILED`·행동명·사유·소요 시간과 비밀 부재, 프롬프트의 한국어 지시를 고정하고 `RunsPage.test.tsx`가 피드 렌더링을 고정한다. Codex 이벤트의 `status`·`error` 필드는 로컬 CLI에서 관측한 형태이며 다른 버전의 완전한 호환은 실제 재실행에서 확인한다.

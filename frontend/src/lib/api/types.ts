@@ -446,6 +446,18 @@ export interface LlmRun {
   output_tail?: string
   session_metadata_may_remain?: boolean
   providers?: { CODEX: boolean; CLAUDE: boolean }
+  activities?: readonly LlmActivity[]
+}
+
+export interface LlmActivity {
+  sequence: number
+  at: string
+  kind: string
+  title: string
+  detail: string
+  status: string
+  elapsed_ms?: number
+  duration_ms?: number | null
 }
 
 export interface LlmRunEnvelope {

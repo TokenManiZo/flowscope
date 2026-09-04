@@ -15,6 +15,19 @@ import { RunLaneCard } from "./RunLaneCard"
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : "요청을 완료하지 못했습니다." }
 function isCompleted(status: string | undefined): boolean { return status === "COMPLETED" || status === "COMPLETED_WITH_WARNINGS" || status === "SUCCEEDED" }
+/** 실행 시작 기준 경과. 1분 미만은 초, 이상은 분:초. */
+function formatElapsed(ms: number | undefined): string {
+  if (ms == null || ms < 0) return "-"
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  const minutes = Math.floor(ms / 60_000)
+  const seconds = Math.floor((ms % 60_000) / 1000)
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`
+}
+/** 도구 호출 하나의 소요. 1초 미만은 ms. */
+function formatDuration(ms: number): string { return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s` }
+function activityStatusLabel(status: string): string {
+  return status === "FAILED" ? "실패" : status === "RUNNING" ? "진행" : status === "COMPLETED" || status === "SUCCEEDED" ? "완료" : status === "READY" ? "준비" : status
+}
 function completedLaneLabel(lane: string): string {
   return { HUMAN: "HUMAN", SCANNER: "ZAP 기준선", LLM: "LLM" }[lane] ?? lane
 }
@@ -98,6 +111,7 @@ export function RunsPage() {
           <div className="flex flex-wrap gap-2"><Button disabled={running || !providerAvailable || !targetInScope || start.isPending} onClick={() => requestStart("EXPLORER")}>LLM Explorer 시작</Button><Button disabled={running || !providerAvailable || !targetInScope || !lanesReady || start.isPending} onClick={() => requestStart("JUDGE")}>Judge 시작</Button><Button variant="destructive" disabled={!running || cancel.isPending} onClick={() => cancel.mutate()}>LLM 실행 취소</Button></div>
           <p className="text-sm">실행 상태 · {run?.status ?? "UNAVAILABLE"}{run?.started_at ? ` · 시작 ${run.started_at}` : ""}</p>
           {run?.message && <p className="text-sm">{run.message}</p>}
+          {run?.activities?.length ? <section aria-label="LLM 작업 피드" className="space-y-1"><h3 className="text-sm font-semibold">작업 피드 · {run.activities.length}건</h3><ol className="max-h-96 space-y-1 overflow-auto text-sm">{run.activities.map((activity) => <li key={activity.sequence} className={`grid gap-1 rounded-md border px-2 py-1 md:grid-cols-[4.5rem_auto_minmax(0,1fr)] ${activity.status === "FAILED" ? "border-red-500/60" : ""}`}><span className="font-mono text-xs text-muted-foreground">{formatElapsed(activity.elapsed_ms)}</span><Badge variant={activity.status === "FAILED" ? "destructive" : activity.status === "RUNNING" ? "secondary" : "outline"}>{activityStatusLabel(activity.status)}</Badge><span className="min-w-0"><span className="break-all font-medium">{activity.title}</span>{activity.duration_ms != null && <span className="ml-1 font-mono text-xs text-muted-foreground">{formatDuration(activity.duration_ms)}</span>}{activity.detail && <span className={`block break-words text-xs ${activity.status === "FAILED" ? "text-red-400" : "text-muted-foreground"}`}>{activity.detail}</span>}</span></li>)}</ol></section> : null}
           {run?.session_metadata_may_remain && <Alert><AlertDescription>Claude 비지속 옵션에도 공급자 메타데이터 파일이 남을 수 있으며 다음 실행에 재사용하지 않습니다.</AlertDescription></Alert>}
           {outputTail && <Accordion type="single" collapsible><AccordionItem value="output"><AccordionTrigger>출력 tail 보기 (최대 1500자)</AccordionTrigger><AccordionContent><pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words">{outputTail}</pre></AccordionContent></AccordionItem></Accordion>}
           <div className="space-y-2"><label className="grid gap-1 text-sm" htmlFor="judge-followup">Judge 후속 질문<Input id="judge-followup" aria-label="Judge 후속 질문" value={message} onChange={(event) => setMessage(event.target.value)} disabled={!judgeEligible || followUp.isPending} /></label><Button disabled={!judgeEligible || !message.trim() || followUp.isPending} onClick={() => { const value = message.trim(); if (value) followUp.mutate(value, { onSuccess: () => setMessage("") }) }}>Judge 계속</Button>{!judgeEligible && <p className="text-sm text-muted-foreground">완료된 Judge session에서만 후속 질문을 보낼 수 있습니다.</p>}</div>

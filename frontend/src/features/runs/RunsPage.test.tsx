@@ -29,7 +29,11 @@ function renderRuns(options: {
   meta.content = "a".repeat(64)
   document.head.append(meta)
   let llmReads = 0
-  let llmRun = { status: "COMPLETED", provider: "CODEX", role: "JUDGE", provider_session_id: "judge-session", output_tail: "<unsafe-output>", providers: { CODEX: true, CLAUDE: false } }
+  let llmRun = { status: "COMPLETED", provider: "CODEX", role: "JUDGE", provider_session_id: "judge-session", output_tail: "<unsafe-output>", providers: { CODEX: true, CLAUDE: false },
+    activities: [
+      { sequence: 1, at: "2026-09-04T09:28:44Z", kind: "TOOL", title: "대상 읽기 · GET https://api.example.test/v1/orders/8", detail: "완료", status: "COMPLETED", elapsed_ms: 1234, duration_ms: 87 },
+      { sequence: 2, at: "2026-09-04T09:28:45Z", kind: "TOOL", title: "대상 읽기 · GET /chatbot/genai/state", detail: "실패 · target is outside configured scope", status: "FAILED", elapsed_ms: 65432, duration_ms: 12 },
+    ] }
   const llmValue = (read: number) => Array.isArray(options.llm) ? options.llm[Math.min(read, options.llm.length - 1)] : options.llm ?? llmRun
   const currentScope = () => typeof options.scope === "function" ? options.scope() : options.scope ?? [target]
   const fetchStub = vi.fn((path: string, init?: RequestInit) => {
@@ -104,6 +108,20 @@ describe("run status controls", () => {
     expect(screen.getByText("<unsafe-output>")).toBeVisible()
     expect(document.querySelector("unsafe-output")).toBeNull()
     expect(screen.queryByText(/Active Scan/i)).not.toBeInTheDocument()
+  })
+
+  it("renders the LLM activity feed with Korean actions, failure reasons, and elapsed time", async () => {
+    renderRuns()
+
+    await userEvent.setup().click(await screen.findByRole("tab", { name: "LLM" }))
+    const feed = await screen.findByRole("region", { name: "LLM 작업 피드" })
+    expect(feed).toBeVisible()
+    expect(screen.getByText("대상 읽기 · GET /chatbot/genai/state")).toBeVisible()
+    expect(screen.getByText("실패 · target is outside configured scope")).toBeVisible()
+    expect(screen.getAllByText("실패").length).toBeGreaterThan(0)
+    expect(screen.getByText("1.2s")).toBeVisible()
+    expect(screen.getByText("1m 05s")).toBeVisible()
+    expect(screen.getByText("87ms")).toBeVisible()
   })
 
   it("sends exact LLM start, cancel, and eligible Judge follow-up requests", async () => {

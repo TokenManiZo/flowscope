@@ -65,8 +65,9 @@ public final class LocalLlmRunner implements AutoCloseable {
     }
 
     /** Sanitized provider activity shown to the operator; hidden reasoning and raw tool payloads are excluded. */
+    /** elapsedMillis는 실행 시작 기준 경과, durationMillis는 도구 호출 하나의 소요(없으면 null). */
     public record Activity(long sequence, Instant at, String kind, String title, String detail,
-                           String status) {}
+                           String status, long elapsedMillis, Long durationMillis) {}
 
     /** Sanitized local CLI readiness. Provider account identifiers and command output are never retained. */
     public record ProviderReadiness(ReadinessState state, boolean ready, String message,
@@ -103,6 +104,9 @@ public final class LocalLlmRunner implements AutoCloseable {
 
     private final String mcpUrl;
     private final String mcpToken;
+    /** 도구 호출 시작 시각(item id 또는 tool_use id 기준). 완료 이벤트에서 소요 시간을 계산하고 비운다. */
+    private final java.util.concurrent.ConcurrentHashMap<String, Instant> toolStarts =
+            new java.util.concurrent.ConcurrentHashMap<>();
     private final RunContextRegistry contexts;
     private final SessionBroker sessions;
     private final ProcessLauncher launcher;
@@ -629,7 +633,9 @@ public final class LocalLlmRunner implements AutoCloseable {
                 + "Exact allowed scope:\n" + scopes + "\n"
                 + account
                 + "Provider: " + request.provider() + "\n"
-                + preamble + "Do not resume, inspect, or infer any previous model conversation.\n\n"
+                + preamble + "Do not resume, inspect, or infer any previous model conversation.\n"
+                + "Write every message intended for the operator (progress notes, summaries, the final report) in Korean. "
+                + "Keep tool names, URLs, HTTP methods, and Evidence IDs exactly as they are.\n\n"
                 + common + "\n\n" + role;
     }
 
@@ -1050,9 +1056,18 @@ public final class LocalLlmRunner implements AutoCloseable {
                 addActivity("MODEL", "LLM 응답", item.path("text").asText(""), "item.completed".equals(type) ? "COMPLETED" : "RUNNING");
             } else if (itemType.contains("tool") || itemType.contains("mcp")) {
                 String name = firstText(item, "name", "tool", "server");
-                addActivity("TOOL", name.isBlank() ? "FlowScope 도구 호출" : name,
-                        "원문 인자와 결과는 인증정보 보호를 위해 작업 피드에 표시하지 않습니다.",
-                        "item.completed".equals(type) ? "COMPLETED" : "RUNNING");
+                String itemId = item.path("id").asText("");
+                boolean completed = "item.completed".equals(type);
+                if (!completed && !itemId.isBlank()) toolStarts.put(itemId, Instant.now());
+                Long duration = completed ? toolDuration(itemId) : null;
+                // Codex는 item.completed 이벤트 안의 item.status("failed")로 도구 실패를 알린다. 이벤트 종류만 보면 실패가 성공으로 찍힌다.
+                boolean failed = completed && ("failed".equalsIgnoreCase(item.path("status").asText(""))
+                        || !item.path("error").isMissingNode() && !item.path("error").isNull());
+                String reason = failed ? toolFailureReason(item) : "";
+                addActivity("TOOL", toolLabel(name) + toolDetail(item.path("arguments")),
+                        failed ? "실패 · " + (reason.isBlank() ? "사유 없음" : reason)
+                                : completed ? "완료" : "호출 중",
+                        failed ? "FAILED" : completed ? "COMPLETED" : "RUNNING", duration);
             }
         } else if (type.contains("error") || root.path("error").isObject() || root.path("error").isTextual()) {
             addActivity("ERROR", "Codex 오류", firstText(root, "message", "error"), "FAILED");
@@ -1072,8 +1087,10 @@ public final class LocalLlmRunner implements AutoCloseable {
                 if ("text".equals(contentType)) {
                     addActivity("MODEL", "LLM 응답", content.path("text").asText(""), "RUNNING");
                 } else if ("tool_use".equals(contentType)) {
-                    addActivity("TOOL", content.path("name").asText("FlowScope 도구 호출"),
-                            "원문 인자는 인증정보 보호를 위해 작업 피드에 표시하지 않습니다.", "RUNNING");
+                    String useId = content.path("id").asText("");
+                    if (!useId.isBlank()) toolStarts.put(useId, Instant.now());
+                    addActivity("TOOL", toolLabel(content.path("name").asText("")) + toolDetail(content.path("input")),
+                            "호출 중", "RUNNING");
                 }
             }
             return;
@@ -1081,8 +1098,11 @@ public final class LocalLlmRunner implements AutoCloseable {
         if ("user".equals(type)) {
             for (JsonNode content : root.path("message").path("content")) {
                 if ("tool_result".equals(content.path("type").asText(""))) {
-                    addActivity("TOOL", "FlowScope 도구 결과", "도구 실행 결과를 모델에 전달했습니다.",
-                            content.path("is_error").asBoolean(false) ? "FAILED" : "COMPLETED");
+                    boolean failed = content.path("is_error").asBoolean(false);
+                    String reason = failed ? toolFailureReason(content) : "";
+                    addActivity("TOOL", "FlowScope 도구 결과",
+                            failed ? "실패 · " + (reason.isBlank() ? "사유 없음" : reason) : "완료",
+                            failed ? "FAILED" : "COMPLETED", toolDuration(content.path("tool_use_id").asText("")));
                 }
             }
             return;
@@ -1098,15 +1118,23 @@ public final class LocalLlmRunner implements AutoCloseable {
     private void resetActivities(String prompt) {
         activities.set(List.of());
         activitySequence.set(0);
+        toolStarts.clear();
         promptPreview = Masking.truncate(Masking.maskSecrets(prompt == null ? "" : prompt), 24_000);
     }
 
     private void addActivity(String kind, String title, String detail, String activityStatus) {
+        addActivity(kind, title, detail, activityStatus, null);
+    }
+
+    private void addActivity(String kind, String title, String detail, String activityStatus, Long durationMillis) {
         String safeTitle = Masking.truncate(Masking.maskSecrets(title == null ? "" : title), 160);
         String safeDetail = Masking.truncate(Masking.maskSecrets(detail == null ? "" : detail), ACTIVITY_DETAIL_LIMIT);
         if (safeTitle.isBlank() && safeDetail.isBlank()) return;
-        Activity activity = new Activity(activitySequence.incrementAndGet(), Instant.now(), kind,
-                safeTitle, safeDetail, activityStatus);
+        Instant now = Instant.now();
+        Instant startedAt = state.get().startedAt();
+        long elapsed = startedAt == null ? 0 : Math.max(0, now.toEpochMilli() - startedAt.toEpochMilli());
+        Activity activity = new Activity(activitySequence.incrementAndGet(), now, kind,
+                safeTitle, safeDetail, activityStatus, elapsed, durationMillis);
         activities.updateAndGet(previous -> {
             if (!previous.isEmpty()) {
                 Activity last = previous.getLast();
@@ -1120,6 +1148,76 @@ public final class LocalLlmRunner implements AutoCloseable {
             next.add(activity);
             return List.copyOf(next);
         });
+    }
+
+    /** 도구 이름을 사용자가 읽는 행동명으로 바꾼다. 모르는 이름은 원문을 그대로 둔다. */
+    static String toolLabel(String name) {
+        String key = name == null ? "" : name.replaceFirst("^mcp__flowscope__", "");
+        return switch (key) {
+            case "flowscope_target_read" -> "대상 읽기";
+            case "flowscope_target_request" -> "대상 요청(쓰기)";
+            case "flowscope_list_route_candidates" -> "route 후보 조회";
+            case "flowscope_get_status" -> "상태 확인";
+            case "flowscope_list_sessions" -> "세션 확인";
+            case "flowscope_list_evidence" -> "Evidence 목록 조회";
+            case "flowscope_get_evidence" -> "Evidence 조회";
+            case "flowscope_browser_navigate" -> "브라우저 열기";
+            case "flowscope_browser_snapshot" -> "브라우저 스냅샷";
+            case "flowscope_browser_interact" -> "브라우저 조작";
+            case "flowscope_browser_close" -> "브라우저 닫기";
+            case "flowscope_end_run" -> "실행 종료 요청";
+            case "flowscope_begin_llm_run" -> "실행 시작";
+            case "flowscope_lock_dataset" -> "데이터셋 잠금";
+            case "flowscope_list_candidates" -> "후보 조회";
+            case "flowscope_list_assessments" -> "평가 목록 조회";
+            case "flowscope_submit_assessment" -> "평가 제출";
+            case "flowscope_submit_validation" -> "검증 제출";
+            case "flowscope_list_validations" -> "검증 목록 조회";
+            case "flowscope_zap_alerts" -> "ZAP 경고 조회";
+            case "" -> "FlowScope 도구 호출";
+            default -> key;
+        };
+    }
+
+    /** 인자 중 method와 target(URL)만 보여준다. 헤더·본문·계정은 표시하지 않는다. */
+    static String toolDetail(JsonNode arguments) {
+        if (arguments == null || !arguments.isObject()) return "";
+        String method = arguments.path("method").asText("");
+        String target = arguments.path("target").asText("");
+        if (target.isBlank()) target = arguments.path("evidence_id").asText("");
+        if (method.isBlank() && target.isBlank()) return "";
+        return " · " + (method.isBlank() ? "" : method.toUpperCase(Locale.ROOT) + " ") + target;
+    }
+
+    /** 실패 결과에서 사유 문장만 뽑는다. {"error":"..."} JSON이면 error 값만, 아니면 텍스트 앞부분. */
+    static String toolFailureReason(JsonNode item) {
+        List<String> texts = new ArrayList<>();
+        String direct = firstText(item, "error");
+        if (!direct.isBlank()) texts.add(direct);
+        JsonNode content = item.path("result").path("content");
+        if (content.isMissingNode()) content = item.path("content");
+        if (content.isTextual()) texts.add(content.asText());
+        else for (JsonNode part : content) {
+            String text = part.path("text").asText("");
+            if (!text.isBlank()) texts.add(text);
+        }
+        for (String text : texts) {
+            String trimmed = text.trim();
+            if (trimmed.startsWith("{")) {
+                try {
+                    String error = JSON.readTree(trimmed).path("error").asText("");
+                    if (!error.isBlank()) return error;
+                } catch (Exception ignored) { /* JSON이 아니면 원문 앞부분을 쓴다 */ }
+            }
+            if (!trimmed.isBlank()) return Masking.truncate(trimmed, 300);
+        }
+        return "";
+    }
+
+    private Long toolDuration(String id) {
+        if (id == null || id.isBlank()) return null;
+        Instant started = toolStarts.remove(id);
+        return started == null ? null : Math.max(0, Instant.now().toEpochMilli() - started.toEpochMilli());
     }
 
     private static String firstText(JsonNode node, String... fields) {

@@ -179,7 +179,9 @@ final class LocalLlmRunnerTest {
         await(() -> runner.activities().stream().anyMatch(activity -> activity.kind().equals("MODEL")));
         await(() -> !runner.state().outputTail().isBlank());
         String activityText = runner.activities().toString();
-        assertTrue(activityText.contains("flowscope_target_read"));
+        // 도구 호출은 원문 이름이 아니라 한국어 행동명으로 보인다. 호출 사실은 남고 인자 원문은 남지 않는다.
+        assertTrue(activityText.contains("대상 읽기"), activityText);
+        assertFalse(activityText.contains("flowscope_target_read"), activityText);
         assertTrue(activityText.contains("Evidence was recorded"));
         assertFalse(activityText.contains("hidden chain of thought"));
         assertFalse(activityText.contains("secret-token"));
@@ -191,6 +193,49 @@ final class LocalLlmRunnerTest {
         process.release();
         assertEquals(LocalLlmRunner.Status.SUCCEEDED, awaitFinished().status());
         assertTrue(runner.activities().stream().anyMatch(activity -> activity.kind().equals("EVIDENCE")));
+    }
+
+    @Test
+    void 도구_호출_실패는_한국어_행동명과_사유와_소요시간으로_피드에_남고_성공으로_찍히지_않는다() throws Exception {
+        // 실환경 재현: item.completed 이벤트 안의 item.status="failed"를 무시해 실패가 COMPLETED로 표시됐다.
+        String output = """
+                {"type":"thread.started","thread_id":"123e4567-e89b-12d3-a456-426614174000"}
+                {"type":"turn.started"}
+                {"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"flowscope","tool":"flowscope_target_read","arguments":{"method":"GET","target":"/chatbot/genai/state","headers":{"authorization":"Bearer secret-token"}},"status":"in_progress"}}
+                {"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"flowscope","tool":"flowscope_target_read","arguments":{"method":"GET","target":"/chatbot/genai/state"},"result":{"content":[{"type":"text","text":"{\\"error\\":\\"target is outside configured scope\\"}"}]},"error":null,"status":"failed"}}
+                {"type":"item.started","item":{"id":"item_2","type":"mcp_tool_call","server":"flowscope","tool":"flowscope_target_read","arguments":{"method":"GET","target":"https://api.example.test/v1/orders/8"},"status":"in_progress"}}
+                {"type":"item.completed","item":{"id":"item_2","type":"mcp_tool_call","server":"flowscope","tool":"flowscope_target_read","arguments":{"method":"GET","target":"https://api.example.test/v1/orders/8"},"result":{"content":[{"type":"text","text":"{\\"evidence_id\\":\\"ev-1\\",\\"status\\":200}"}]},"error":null,"status":"completed"}}
+                {"type":"item.completed","item":{"type":"agent_message","text":"탐색을 마쳤습니다."}}
+                {"type":"turn.completed"}
+                """;
+        FakeProcess process = new FakeProcess(0, output);
+        runner = runner((provider, command, directory, environment) -> process);
+
+        LocalLlmRunner.State started = runner.start(new LocalLlmRunner.Request(LocalLlmRunner.Provider.CODEX,
+                LocalLlmRunner.Role.EXPLORER, "https://api.example.test/v1",
+                List.of("https://api.example.test/v1"), ""));
+
+        await(() -> runner.activities().stream().anyMatch(activity -> activity.kind().equals("MODEL")));
+        List<LocalLlmRunner.Activity> tools = runner.activities().stream()
+                .filter(activity -> activity.kind().equals("TOOL")).toList();
+        LocalLlmRunner.Activity failed = tools.stream()
+                .filter(activity -> activity.title().contains("/chatbot/genai/state") && !activity.status().equals("RUNNING"))
+                .findFirst().orElseThrow();
+        assertEquals("FAILED", failed.status(), failed.toString());
+        assertEquals("대상 읽기 · GET /chatbot/genai/state", failed.title());
+        assertTrue(failed.detail().contains("target is outside configured scope"), failed.detail());
+        assertFalse(runner.activities().toString().contains("secret-token"));
+        LocalLlmRunner.Activity ok = tools.stream()
+                .filter(activity -> activity.title().contains("/v1/orders/8") && activity.status().equals("COMPLETED"))
+                .findFirst().orElseThrow();
+        assertEquals("완료", ok.detail());
+        assertTrue(ok.durationMillis() != null && ok.durationMillis() >= 0, "소요시간 없음: " + ok);
+        assertTrue(ok.elapsedMillis() >= 0);
+        assertTrue(runner.promptPreview().contains("in Korean"));
+
+        complete(Source.LLM, started.runId());
+        process.release();
+        assertEquals(LocalLlmRunner.Status.SUCCEEDED, awaitFinished().status());
     }
 
     @Test

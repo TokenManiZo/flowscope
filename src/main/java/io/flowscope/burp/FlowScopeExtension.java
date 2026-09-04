@@ -1487,6 +1487,9 @@ public final class FlowScopeExtension implements BurpExtension {
             item.put("title", activity.title());
             item.put("detail", activity.detail());
             item.put("status", activity.status());
+            item.put("elapsed_ms", activity.elapsedMillis());
+            if (activity.durationMillis() == null) item.putNull("duration_ms");
+            else item.put("duration_ms", activity.durationMillis());
         });
         return body;
     }

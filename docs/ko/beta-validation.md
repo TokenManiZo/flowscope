@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 1.2.0-beta.44 LLM 작업 피드 가시성 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 실환경 재현 | 실제 Explorer 실행의 도구 호출 11건 실패가 피드에 전부 `COMPLETED`로 표시되고 사유가 없었음. 출력 tail 원문에만 `{"error":"target is outside configured scope"}`가 있었음 |
+| 실패 상태·사유 회귀 | `LocalLlmRunnerTest` — Codex `item.completed`의 `status:"failed"` item이 `FAILED`, 제목 `대상 읽기 · GET /chatbot/genai/state`, 사유에 scope 오류 문장, 인자의 `authorization` 값 미노출. 성공 item은 `완료`와 `durationMillis`·`elapsedMillis` 보유 |
+| 한국어 지시 | 프롬프트 미리보기에 운영자용 메시지 한국어 지시 포함 회귀 통과 |
+| React 피드 | `RunsPage.test.tsx` — LLM 탭에 `LLM 작업 피드` 영역, 행동명, `실패 · ...` 사유, `1.2s`·`1m 05s` 경과, `87ms` 소요 렌더링 |
+| 전체 회귀 | JDK 21.0.12·Maven 3.9.16 `mvn clean verify` 1회, Java 377 tests(직전 376 + 신규 1)·failure/error/skip 0, React typecheck·vitest는 같은 verify의 `npm run verify` 단계에서 통과. 산출물 `flowscope-1.2.0-beta.44.jar` 31,675,235 bytes. 문서의 beta.44 릴리스 SHA-256은 이 빌드에 적용되지 않음 |
+| 실제 Burp 재실행 | **대기** — 수정 JAR로 Explorer를 다시 실행해 실패 항목이 빨갛게, 성공 항목이 행동명·소요 시간으로 보이고 모델 보고가 한국어인지 확인 |
+
 ## 1.2.0-beta.44 Explorer 완료 교착 gate
 
 | 검증 항목 | 현재 확인 결과 |
