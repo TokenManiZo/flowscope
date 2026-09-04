@@ -53,7 +53,7 @@ jobs:
           if jar tf "$release_jar" | grep -Eq '^(com/fasterxml/jackson/|META-INF/versions/.*/com/fasterxml/jackson/)'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(org/jsoup/|META-INF/versions/.*/org/jsoup/)'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(org/yaml/snakeyaml/|META-INF/versions/.*/org/yaml/snakeyaml/)'; then exit 1; fi
-          if jar tf "$release_jar" | grep -q '^com/google/javascript/'; then exit 1; fi
+          if jar tf "$release_jar" | grep -Eq '^(com/google/javascript/|META-INF/versions/.*/com/google/javascript/)'; then exit 1; fi
       - name: Verify reproducible package
         shell: bash
         run: |

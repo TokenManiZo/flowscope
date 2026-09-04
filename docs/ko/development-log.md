@@ -1,5 +1,36 @@
 # FlowScope 개발 기록
 
+## 2026-09-04 · 1.2.0-beta.44 · 빌드 JVM 경계와 MR-JAR 전수 검증 복구
+
+### 개발·수정
+
+- 동일 소스의 JDK 21/26 JAR 차이를 엔트리 단위로 재현했다. 차이는 React/Node 산출물이 아니라 javac가 만든 FlowScope class 30개였으므로 Maven Enforcer 3.6.3으로 소스 빌드를 JDK 21·Maven 3.9.x에 한정했다. JDK 26은 lifecycle 초기에 원인을 포함한 메시지로 실패한다.
+- React PR에 있던 결정적 MR-JAR writer와 `MultiReleaseJarRelocatorTest`를 복구했다. 모든 version root의 Jackson·jsoup·SnakeYAML뿐 아니라 미래 Closure versioned class도 shaded 경로로 옮기며 source→target map, 원 namespace 부재, target 존재, 단일 timestamp와 동등 입력 byte equality를 검사한다.
+- 반복 release 검증 중 `npm ci`가 registry audit 연결 뒤 로그·CPU 진척 없이 정체되는 현상을 두 번 관측했다. lockfile 기반 설치는 유지하고 `--prefer-offline --no-audit --fund=false`로 package lifecycle에 불필요한 audit/funding 네트워크를 분리했다. 변경 뒤 동일 설치가 5초에 완료됐다.
+- 검증 문서의 SHA-256을 임의 환경의 기대값이 아니라 명시한 JDK 21.0.12·Maven 3.9.16 산출물의 식별값으로 한정했다. Burp runtime의 Java 21+와 source build의 JDK 21 계약을 분리했다.
+
+### 필요성·기각 대안
+
+- `--release 21`만으로 충분하다는 가정은 JDK 26에서 정확히 194-byte 차이가 재현돼 기각했다. Node/Vite 원인 가설도 React asset이 byte-identical이어서 기각했다.
+- CI의 원 namespace grep만 유지하면 로컬 verify와 source→target 완전성이 약하다. 반대로 dependency version 디렉터리를 숫자로 나열하면 새 MR root에 취약하므로 모든 root를 순회하는 writer와 합성 미래 version 회귀를 사용한다.
+- 현재 자료는 임의 운영체제·vendor·JDK patch 간 동일 해시를 증명하지 않는다. 이를 완료로 꾸미지 않고 canonical release builder와 독립 rebuild는 후속 release gate로 남긴다.
+
+### 영향 파일·회귀
+
+- 코드·빌드: `pom.xml`, `FatJarIsolationSmoke.java`, `MultiReleaseJarRelocatorTest.java`, `ci.yml`.
+- 문서: README와 한·영 시작 가이드, architecture, decisions D-118, HANDOFF, changelog, 제품 계획, beta validation, 이 기록.
+- 실패 재현: 같은 Mac에서 JDK 21.0.12 JAR `31,525,631 bytes/7aa41c…`와 JDK 26.0.2 JAR `31,525,437 bytes/028897…`; entry 집합·metadata 동일, Java class 내용 30개 차이, 압축 크기 합계 -194 bytes, frontend 내용 차이 0.
+
+### 최종 검증
+
+- 기본 JDK 26.0.2 `mvn validate`는 Enforcer의 JDK 21 요구 메시지로 예상 실패했다.
+- JDK 21.0.12·Maven 3.9.16에서 합성 MR-JAR 회귀 2/2와 전체 React 265 tests·Java 374 tests를 통과했다. 같은 고정 환경의 `mvn clean verify`를 연속 두 번 수행해 JAR byte equality를 확인했으며 정확한 size·entry·SHA-256은 `beta-validation.md`에 기록한다.
+
+### 남은 한계·다음 gate
+
+- JDK major 오사용은 차단했지만 vendor·patch·운영체제가 다른 독립 환경의 bit-for-bit 재현은 아직 수행하지 않았다. Release 게시 전 canonical builder를 고정하고 독립 rebuild compare를 별도 gate로 수행한다.
+- 이 수정은 실제 Burp HUMAN/ZAP/LLM·세션·Request Lab runtime gate를 수행하지 않았다. React 통합의 다음 기능 gate는 그대로 유지한다.
+
 ## 2026-09-04 · 1.2.0-beta.44 · React 분석 작업면과 최신 코어 통합
 
 ### 개발·수정

@@ -8,7 +8,7 @@ This guide covers a reproducible HUMAN, SCANNER, and LLM/Judge setup. FlowScope 
 |---|---|
 | Release JAR + ZAP Desktop | Burp, ZAP 2.17.0, and either model client |
 | Release JAR + Docker ZAP | Burp, Docker Compose v2, and either Codex CLI or Claude Code |
-| Source build | The runtime above, JDK 21+, and Maven 3.9+ |
+| Source build | The runtime above, JDK 21 exactly, and Maven 3.9.x |
 
 The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, JDK 21, and macOS arm64 with Docker Engine/Desktop 29.5.3. Windows 10/11 with Docker Desktop Linux containers and PowerShell 7 is the beta.21 support contract; GitHub `windows-latest` parses all PowerShell helpers, but a real Windows Docker Desktop target run remains an explicit validation gate.
 

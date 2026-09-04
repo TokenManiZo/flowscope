@@ -8,12 +8,12 @@
 |---|---|
 | 기준 날짜 | 2026-09-04 |
 | 제품 버전 | `1.2.0-beta.44` |
-| 로컬 기준 커밋 | beta.44 React 통합 집중 커밋은 `git log -1 --oneline`으로 확인 |
+| 로컬 기준 커밋 | beta.44 React 통합과 빌드 재현 경계의 최신 집중 커밋은 `git log -1 --oneline`으로 확인 |
 | 브랜치·원격 차이 | 로컬 `codex/react-ui-integration`; `origin/main`과의 정확한 ahead/behind는 `git rev-list --left-right --count origin/main...HEAD`로 확인 |
-| Java | JDK 21 이상 |
-| 빌드 | Maven 3.9 이상, `mvn clean verify` |
-| 자동 회귀 | beta.44 최종 `mvn clean verify` 연속 2회, 매회 React 37 files/265 tests와 Java 372 tests, failure/error/skip 0 |
-| 현재 JAR | `target/flowscope-1.2.0-beta.44.jar`, 31,525,631 bytes, 9,125 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `7aa41c27ea33c0129ed706a1f9b18f9bca9dcf6e9e3314c7442315382278dee0` |
+| Java | Burp 실행은 Java 21+; 소스 빌드는 JDK 21 정확히 |
+| 빌드 | Maven 3.9.x, `mvn clean verify` |
+| 자동 회귀 | beta.44 최종 `mvn clean verify` 연속 2회, 매회 React 37 files/265 tests와 Java 374 tests, failure/error/skip 0 |
+| 현재 JAR | JDK 21.0.12·Maven 3.9.16 검증 산출물 `target/flowscope-1.2.0-beta.44.jar`, 31,672,031 bytes, 9,126 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `46be5678854a5a78e2ed399a395651317dec5a573ccc0cee22821715a757a372` |
 | 현재 판정 | React 기본 작업면과 beta.44 Surface·실행 원장·그래프를 standalone에서 연결하고 전체 route를 확인. 실제 Burp HUMAN/ZAP/LLM·세션·Request Lab과 TLS/DNS 분류·독립 외부 pilot은 남음 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
@@ -546,7 +546,7 @@ git log -1 --oneline
 mvn clean verify
 ```
 
-성공 후 `target/flowscope-1.2.0-beta.44.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 IDE의 임의 JDK로 우회하기 전에 JDK 21과 Maven 3.9 이상을 명시적으로 맞춘다.
+성공 후 `target/flowscope-1.2.0-beta.44.jar`를 Burp에 로드한다. `target/`은 커밋하지 않는다. Release JAR 사용자는 Maven이 필요 없고, 소스 빌드자는 JDK 21과 Maven 3.9.x를 명시적으로 맞춘다. JDK 22 이상은 release-21 class API와 별개로 javac bytecode가 달라질 수 있어 Enforcer가 거부한다.
 
 ## 12. Git 협업 규칙
 

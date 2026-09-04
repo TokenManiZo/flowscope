@@ -8,7 +8,7 @@
 |---|---|---|
 | Release JAR + ZAP Desktop | 기존 GUI 점검 환경을 그대로 사용 | Burp, ZAP 2.17.0, Codex 또는 Claude Code |
 | Release JAR + Docker ZAP | 버전·add-on을 고정한 재현 환경 | Burp, Docker Compose v2, Codex 또는 Claude Code |
-| 소스 빌드 | 코드 수정·기여 | 위 환경, JDK 21+, Maven 3.9+ |
+| 소스 빌드 | 코드 수정·기여 | 위 환경, JDK 21 정확히, Maven 3.9.x |
 
 실제 확인한 기준선은 다음과 같다.
 

@@ -12,7 +12,7 @@
 6. 집중 회귀 뒤 전체 `mvn clean verify` 2회, 재현 JAR, inline JavaScript, manifest/notice gate를 수행한다.
 7. 실제 Burp에서 정상 HTTPS, 신뢰되지 않은 인증서, 연결 timeout을 각각 실행해 typed outcome과 UI·재열기를 확인한다.
 
-**현재 상태:** 1~6을 완료했다. React 통합을 포함한 고정 최종 입력에서 React 265 tests와 Java 372 tests를 두 clean verify 모두 통과했고 byte-for-byte 재현 JAR을 확인했다. 7의 실제 Burp gate는 대기하며, 자동 테스트만으로 운영체제별 Montoya 예외 분류를 완료했다고 주장하지 않는다.
+**현재 상태:** 1~6을 완료했다. React 통합과 MR-JAR 전수 회귀를 포함한 고정 최종 입력에서 React 265 tests와 Java 374 tests를 명시한 JDK 21.0.12·Maven 3.9.16 환경의 두 clean verify 모두 통과했고 byte-for-byte 동일 JAR을 확인했다. 이는 임의 JDK·운영체제 사이의 동일 해시 주장이 아니다. 7의 실제 Burp gate는 대기하며, 자동 테스트만으로 운영체제별 Montoya 예외 분류를 완료했다고 주장하지 않는다.
 
 ### beta.44 React 작업면 통합 gate
 
@@ -24,7 +24,7 @@
 6. standalone no-cache 브라우저에서 기본 route와 주요 화면·console error를 확인한다.
 7. 실제 Burp에서 HUMAN/ZAP/LLM·세션·Request Lab을 재검증한 뒤에만 legacy 제거 여부를 결정한다.
 
-**현재 상태:** 1~6을 완료했다. React 265 tests·Java 372 tests의 연속 두 clean verify, 재현 JAR, no-cache standalone의 전체 React route·legacy 전환과 새 browser warning/error 0건을 확인했다. 7의 실제 Burp HUMAN/ZAP/LLM·세션·live Request Lab gate는 대기하므로 legacy는 유지한다.
+**현재 상태:** 1~6을 완료했다. React 265 tests·Java 374 tests의 연속 두 clean verify, 명시 환경의 동일 JAR, no-cache standalone의 전체 React route·legacy 전환과 새 browser warning/error 0건을 확인했다. 7의 실제 Burp HUMAN/ZAP/LLM·세션·live Request Lab gate는 대기하므로 legacy는 유지한다.
 
 ## 0. beta.43 이력: 정적 해석 정확도와 검토 화면 집중
 
