@@ -1,9 +1,10 @@
 import type { LucideIcon } from "lucide-react"
-import { Activity, FileSearch, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
+import { Activity, Braces, FileSearch, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
 
 export type AppRoute =
   | "dashboard"
   | "inspection"
+  | "surface"
   | "graph"
   | "matrix"
   | "sequence"
@@ -22,6 +23,7 @@ export interface AppRouteDefinition {
 export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "dashboard", label: "대시보드", group: "overview", icon: LayoutDashboard },
   { route: "inspection", label: "점검 시작", group: "overview", icon: ScanSearch },
+  { route: "surface", label: "API·입력 차이", group: "analysis", icon: Braces },
   { route: "graph", label: "공격면 그래프", group: "analysis", icon: Network },
   { route: "matrix", label: "권한 매트릭스", group: "analysis", icon: Table2 },
   { route: "sequence", label: "흐름 순서", group: "analysis", icon: ListTree },
@@ -34,9 +36,9 @@ export const appRoutes: readonly AppRouteDefinition[] = [
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))
 
 export function routeFromHash(hash: string): AppRoute {
-  if (!hash.startsWith("#")) return "dashboard"
+  if (!hash.startsWith("#")) return "surface"
   const candidate = hash.slice(1)
-  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "dashboard"
+  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "surface"
 }
 
 export function routeHash(route: AppRoute): string {

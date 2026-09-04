@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **기준:** FlowScope 1.2.0-beta.44, 2026-09-03 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.44는 Endpoint·Parameter Surface와 LLM 실행 패널에서 “응답 후 신규 발견 없음”과 “요청 전송 실패”를 분리한다. 실제 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
+> **기준:** FlowScope 1.2.0-beta.44, 2026-09-04 현재. 이 문서는 제품 화면이 답하려는 사용자 질문, 설계 선택과 기각 이유, 발표 시 설명 순서의 정본이다. beta.44는 Endpoint·Parameter Surface와 LLM 실행 패널에서 “응답 후 신규 발견 없음”과 “요청 전송 실패”를 분리한다. React 기본 작업면의 standalone 통합과 실제 Burp runtime gate는 구분하며, 구현·검증 상태는 각각 `architecture.md`와 `beta-validation.md`를 따른다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -256,7 +256,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 React 작업면은 실제 shadcn/Radix source와 상단 탐색 정보 구조를 사용한다. FlowScope symbol과 `ACCESS ANALYSIS`, `분석 대시보드`·`점검 시작`·`실행 기록`, Scope/HUMAN/ZAP 상태, `점검 계속`을 한 줄의 primary shell에 두고, 여섯 분석 작업면은 overflow strip 밖 Radix portal 메뉴에서 연다. 따라서 데스크톱과 좁은 화면 모두 같은 route 집합에 키보드로 접근하며 emerald active state를 문자 `aria-current`와 함께 제공한다. `base-nova`가 현재 CLI에서 Base UI로 해석되는 출력은 Radix primitive 계약과 맞지 않아 사용하지 않았고, CLI가 생성한 `radix-nova` source를 선택했다.
 
-Vite asset은 상대 경로로 생성한다. 이는 Burp가 `/app/` classpath resource에서 해시 asset을 제공할 때 root-relative asset 경로가 깨지는 것을 피하기 위한 배포 선택이며, root cutover나 `/legacy/` 제거를 뜻하지 않는다. 실제 Request Lab의 메모리 전용 보장과 Burp runtime 검증은 Task 14 전까지 아직 주장하지 않는다.
+Vite asset은 상대 경로로 생성한다. 이는 Burp가 `/`와 `/app/`에서 같은 classpath 해시 asset을 제공할 때 root-relative asset 경로가 깨지는 것을 피하기 위한 배포 선택이다. beta.44 통합에서는 React를 `/`의 기본 UI로 전환하고 `/legacy/`를 기존 작업면의 복구·비교 경로로 유지한다. 실제 Request Lab 전송과 Burp runtime 동등성은 별도 실환경 gate 전까지 주장하지 않는다.
 
 ## 14. React 대시보드 정보 계층
 
@@ -270,7 +270,7 @@ React 대시보드는 먼저 **현재 route와 exact scope**, 이어서 HUMAN/ZA
 
 ## 15. React 점검 시작과 실행 상태의 안전 경계
 
-`점검 시작`은 scope → HUMAN → ZAP → LLM·Judge의 한 단계만 자동 추천한다. 사용자가 다른 탭을 살펴보는 중 polling이 화면을 빼앗지 않도록 수동 선택을 유지하고, `현재 단계로`를 눌렀을 때만 실제 server state의 다음 단계로 돌아간다.
+`점검 시작`은 scope → HUMAN → ZAP → LLM·Judge의 한 단계만 자동 추천한다. 사용자가 다른 탭을 살펴보는 중 polling이 화면을 빼앗지 않도록 수동 선택을 유지하고, `현재 단계로`를 눌렀을 때만 실제 server state의 다음 단계로 돌아간다. 1/4~4/4는 순서이지 완료율이므로 progress percentage로 그리지 않는다.
 
 `재사용할 등록 계정`은 observed identity와 다르다. React 선택지는 현재 target에 대응하고 status가 정확히 `ACTIVE`인 managed session으로 한정하며, 관측 fingerprint나 historical/inactive session, credential material을 제어면에 노출하지 않는다. 이 제약은 목록을 적게 보이게 하지만 임의의 관측 identity가 scanner/LLM 자격증명처럼 보이는 오해를 막는다.
 
@@ -296,7 +296,7 @@ Repeater는 검토 가능한 **미전송 초안**을 여는 handoff이다. 이 �
 
 `#graph`는 독립 분석기가 아니라 현재 shared snapshot의 표시 투영이다. 주 그래프는 서버가 이미 `INCLUDE`로 처분한 Evidence만 사용하고, REVIEW/EXCLUDE를 숨기거나 재분류하지 않는다. source/identity/view/route/support controls도 presentation-only이므로 coverage, cell, verdict, Evidence 자체를 변경하지 않는다.
 
-선은 source별로 분리해 HUMAN/SCANNER/LLM의 독립 관측을 색·선형·문자로 중복 부호화한다. authz 보기의 색과 text는 server-provided cell/event verdict를 읽기만 하며, UNKNOWN route method나 provenance는 관측 traffic 또는 authorization 결과가 아니다. route 후보는 `미관측 후보`와 provenance/applicability/review reason을 명시해 실제 요청과 섞이지 않게 한다. REVIEW applicability는 공통 amber 의미색을 쓰되 점선 테두리와 REVIEW 문자를 유지해 관측 verdict와 혼동하지 않는다.
+선은 source별로 분리해 HUMAN/SCANNER/LLM의 독립 관측을 색·선형·문자로 중복 부호화한다. 같은 identity·resource·source라도 operation이 다른 GET/PATCH 관계는 합치지 않는다. operation/resource/identity 집계 노드는 여러 cell outcome이 섞이면 첫 event verdict를 대표값으로 쓰지 않고 `UNKNOWN`으로 표시하며, 정확한 판정은 edge나 Evidence 좌표에서 확인한다. authz 보기의 색과 text는 server-provided cell/event verdict를 읽기만 하며, UNKNOWN route method나 provenance는 관측 traffic 또는 authorization 결과가 아니다. route 후보는 현재 source 필터에 맞는 provenance가 있을 때만 표시하고 identity를 알 수 없으므로 특정 identity 필터에서는 숨긴다. `미관측 후보`와 provenance/applicability/review reason을 명시해 실제 요청과 섞이지 않게 한다. REVIEW applicability는 공통 amber 의미색을 쓰되 점선 테두리와 REVIEW 문자를 유지해 관측 verdict와 혼동하지 않는다.
 
 좁은 화면은 canvas를 축소한 모방이 아니라 같은 filtered projection의 API 목록을 사용한다. `xl` 미만에서는 toolbar의 `그래프 필터`가 Sheet를 열어 데스크톱 rail과 동일한 source/identity/review/focus/route/support/authz controls를 재사용하므로 화면 폭에 따라 필터 능력이 줄지 않는다. 모든 graph/list 선택은 정확한 Evidence ID 집합과 좌표를 shared Evidence Sheet로 전달하지만, 그 선택과 raw material은 layout preference나 ARIA/title/log에 남기지 않는다. graph preference는 사용자 배치와 viewport/lock만 저장하며 reset도 그 key만 제거한다.
 

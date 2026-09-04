@@ -3,6 +3,7 @@ import type { Snapshot, Source } from "@/lib/api/types"
 export const sourceStates: readonly { source: Source; label: string; short: string }[] = [
   { source: "human", label: "HUMAN", short: "H" },
   { source: "scanner", label: "ZAP", short: "S" },
+  { source: "llm", label: "LLM", short: "L" },
 ]
 
 export function dashboardCounts(snapshot: Snapshot) {

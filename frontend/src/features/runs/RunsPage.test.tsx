@@ -127,13 +127,14 @@ describe("run status controls", () => {
     await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/llm-run" && (init as RequestInit).body?.toString() === "action=cancel")).toBe(true))
   })
 
-  it("renders completed lanes as readable statuses and gives warning-completed runs full progress", async () => {
+  it("renders completed lanes and exact ZAP stage without fabricating completion progress", async () => {
     const user = userEvent.setup()
     renderRuns({ completedLanes: ["HUMAN", "SCANNER"] })
 
     await screen.findByRole("tab", { name: "ZAP" })
     await user.click(screen.getByRole("tab", { name: "ZAP" }))
-    expect(screen.getByRole("progressbar", { name: "ZAP 실행 진행률" })).toHaveAttribute("aria-valuenow", "100")
+    expect(screen.getByText(/현재 단계 대기 · 수집 8건 · Alert 2건/)).toBeVisible()
+    expect(screen.queryByRole("progressbar", { name: "ZAP 실행 진행률" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("tab", { name: "LLM" }))
     expect(await screen.findByText("완료 레인 · HUMAN 완료")).toBeVisible()
     expect(screen.getByText("완료 레인 · ZAP 기준선 완료")).toBeVisible()

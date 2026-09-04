@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useHumanRunMutation, useHumanRunQuery, useLlmRunQuery, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
@@ -24,8 +23,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "요청을 완료하지 못했습니다."
 }
 
-function stageProgress(stage: InspectionStage): number {
-  return { scope: 25, human: 50, scanner: 75, llm: 100 }[stage]
+function stageNumber(stage: InspectionStage): number {
+  return { scope: 1, human: 2, scanner: 3, llm: 4 }[stage]
 }
 
 function StageWorkspace({ label, title, description, setup, status }: { label: string; title: string; description: string; setup: ReactNode; status: ReactNode }) {
@@ -125,7 +124,7 @@ export function InspectionPage() {
           <CardDescription>{stageCopy[automaticStage].message}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Progress value={stageProgress(automaticStage)} aria-label="점검 진행률" />
+          <p className="text-sm text-muted-foreground" role="status">현재 단계 {stageNumber(automaticStage)}/4 · 단계 번호는 완료율이 아닙니다.</p>
           <div className="flex flex-wrap items-center justify-between gap-2" role="status">
             <p>{stageCopy[selectedStage].message}</p>
             <Button variant="outline" onClick={() => setManualStage(null)}>현재 단계로</Button>

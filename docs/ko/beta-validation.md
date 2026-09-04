@@ -11,11 +11,25 @@
 | 저장 | JSON v4·SQLite v3에 typed 실행 시도를 저장·재열고, query가 복원되지 않는 회귀 통과 |
 | Web 계약 | snapshot `runExecutions`와 UI의 실행 품질·시도·응답·실패 표시 문자열 회귀 통과 |
 | 집중 회귀 | `RunExecutionLedgerTest,McpServerTest,ProjectStoreTest,SqliteProjectStoreTest,SnapshotJsonWriterScaleTest,FlowScopeWebServerTest` 통과 |
-| 전체 회귀 | 고정된 최종 입력에서 `mvn clean verify` 연속 2회, 매회 356 tests, failure/error/skip 0 |
-| 배포물 | `target/flowscope-1.2.0-beta.44.jar` 하나, 31,100,350 bytes, 9,113 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `3832bd134a8ae093ebdea214c9ceb914b1e5395d7d4c5df0add65a0696ca2256`; 두 clean build가 byte-for-byte 동일 |
+| 전체 회귀 | 아래 React 통합을 포함한 고정 최종 입력에서 `mvn clean verify` 연속 2회, 매회 React 37 files/265 tests와 Java 372 tests, failure/error/skip 0 |
+| 배포물 | `target/flowscope-1.2.0-beta.44.jar` 하나, 31,525,631 bytes, 9,125 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `7aa41c27ea33c0129ed706a1f9b18f9bca9dcf6e9e3314c7442315382278dee0`; 두 clean build가 byte-for-byte 동일 |
 | 실제 Burp | **대기** — beta.44 JAR에서 정상 HTTPS·신뢰되지 않은 인증서·DNS/timeout과 저장·재열기 확인 필요 |
 
 이 gate는 실패 상태를 잃지 않는 데이터·화면 계약을 확인한다. 합성 typed exception은 실제 Montoya/운영체제별 예외 계층의 완전한 분류를 증명하지 않는다. 미분류 응답 전 오류는 `OTHER_FAILURE`로 남으며 실제 Burp gate 전에는 TLS·DNS 분류의 실환경 완료를 주장하지 않는다.
+
+## 1.2.0-beta.44 React 통합 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 코어 보존 | beta.25 기반 PR의 Java/Maven/LLM 구현은 병합하지 않고 beta.44의 Surface·실행 원장·세션/ZAP·MR-JAR 계약을 유지 |
+| 기본 작업면 | `/` no-cache 접속이 `#surface`로 열리고 endpoint 4개·parameter 5개 샘플과 H/S/L 표시 필터 동작 확인 |
+| 그래프 snapshot 호환 | cluster 전체 member 배열이 없는 실제 bounded snapshot에서 기존 React가 `undefined.length`로 중단되는 회귀를 재현하고 representative `eventId` fallback으로 수정; focused regression 통과 |
+| 주요 화면 | Surface, Dashboard, Graph canvas, Runs, Evidence, Accounts, Inspection, Matrix, Sequence, Scenarios 전환 후 새 browser warning/error 0건 |
+| 정적 경로 | `/`·`/app/` 200, `/app` 308→`/app/`, `/legacy/` 200, HEAD content length/type와 fat JAR의 단일 해시 JS/CSS 확인 |
+| 전체 회귀·배포물 | 위 beta.44 LLM gate의 최종 265 React/372 Java tests와 재현 JAR 수치를 공유 |
+| 실제 Burp | **대기** — 실제 Montoya snapshot, HUMAN/ZAP/LLM, 관리 세션, live Request Lab을 beta.44 JAR로 재확인해야 함 |
+
+이 gate는 standalone sample과 정적 HTTP 계약에서 최신 코어와 React 표시 계층의 연결을 검증한다. 실제 Burp 트래픽·ZAP·LLM 실행이나 보안 finding 정확도를 검증한 결과가 아니다. Vite main JS는 minified 1,046.59 kB(gzip 316.16 kB)로 chunk-size 경고가 남아 있으며, 기능 실패가 아니라 실제 초기 로드 성능 측정 전의 최적화 부채로 기록한다.
 
 ## 1.2.0-beta.43 lexical URL 해석·검토면 gate
 

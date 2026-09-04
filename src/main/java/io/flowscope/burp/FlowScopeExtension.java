@@ -1106,7 +1106,7 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public com.fasterxml.jackson.databind.JsonNode scannerStatus() {
                 return mcpServer == null
                         ? new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("status", "NOT_STARTED")
-                        : mcpServer.deterministicZapBaselineStatusForOperator();
+                        : mcpServer.deterministicZapBaselineStatus();
             }
             @Override public com.fasterxml.jackson.databind.JsonNode cancelScanner() {
                 if (mcpServer == null) throw new IllegalStateException("MCP/스캐너 제어면이 아직 준비되지 않았습니다.");

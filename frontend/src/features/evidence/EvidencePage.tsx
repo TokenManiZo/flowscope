@@ -11,12 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { importXml } from "@/lib/api/endpoints"
 import type { EventRecord } from "@/lib/api/types"
-import { queryKeys, useEvidenceQuery, useSnapshotQuery } from "@/lib/query/hooks"
+import { queryKeys, useSnapshotQuery } from "@/lib/query/hooks"
 import { EvidenceFilters } from "./EvidenceFilters"
 import { ImportXmlDialog } from "./ImportXmlDialog"
 import { boundedText, defaultEvidenceFilters, hiddenEvidenceCount, visibleEvidence } from "./evidenceSelectors"
-
-const evidencePageLimit = 200
 
 function sourceLabel(source: EventRecord["source"]): string {
   return source === "human" ? "H" : source === "scanner" ? "S" : source === "llm" ? "L" : "UNKNOWN"
@@ -32,9 +30,7 @@ export function EvidencePage() {
   const [filters, setFilters] = useState(defaultEvidenceFilters)
   const [selected, setSelected] = useState<EventRecord | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  const [offset, setOffset] = useState(0)
   const selectedEvent = selected ? snapshot.data?.events.find((item) => item.eventId === selected.eventId) ?? null : null
-  const evidence = useEvidenceQuery(selectedEvent?.op ?? null, offset, evidencePageLimit)
 
   useEffect(() => {
     if (selected && !selectedEvent) { setSelected(null); setInspectorOpen(false) }
@@ -42,14 +38,9 @@ export function EvidencePage() {
 
   const rows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], filters), [snapshot.data?.events, filters])
   const hidden = hiddenEvidenceCount(snapshot.data?.events ?? [], filters)
-  const page = evidence.data
-
   function selectEvent(event: EventRecord) {
-    void queryClient.cancelQueries({ queryKey: ["evidence"] })
-    queryClient.removeQueries({ queryKey: ["evidence"] })
     setSelected(event)
     setInspectorOpen(true)
-    setOffset(0)
   }
 
   const context = <section className="grid gap-4 p-3"><div><h2 className="text-sm font-semibold">Evidence 표시</h2><p className="text-xs text-muted-foreground">필터는 현재 표시에만 적용되며 Evidence를 삭제하지 않습니다.</p></div><EvidenceFilters value={filters} onChange={setFilters} /><div className="border-t pt-3"><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div></section>
@@ -76,14 +67,7 @@ export function EvidencePage() {
           </Table>
         </ScrollArea>
       </>}
-      {selectedEvent && <div className="sr-only" aria-live="polite">선택한 Evidence 상세를 {evidence.isLoading ? "불러오는 중" : evidence.isError ? "불러오지 못했습니다" : "표시합니다"}.</div>}
-      {selectedEvent && <div className="flex flex-wrap items-center gap-2">
-        {page && <div>
-          <span className="text-sm">총 {page.total}건 · {page.offset + 1}번째부터 표시</span>
-          <Button variant="outline" size="sm" aria-label="이전 Evidence 페이지" disabled={page.offset <= 0 || evidence.isFetching} onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>이전</Button>
-          <Button variant="outline" size="sm" aria-label="다음 Evidence 페이지" disabled={!page.hasMore || evidence.isFetching} onClick={() => setOffset(page.offset + page.limit)}>다음</Button>
-        </div>}
-      </div>}
+      {selectedEvent && <div className="sr-only" aria-live="polite">선택한 Evidence 상세를 표시합니다.</div>}
       </section>
     </ReferenceAnalysisWorkspace>
   )

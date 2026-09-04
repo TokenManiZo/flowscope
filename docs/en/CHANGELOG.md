@@ -2,10 +2,13 @@
 
 ## 1.2.0-beta.44 — 2026-09-03
 
+- Integrated the React analysis workspace over the beta.44 core without merging the PR branch's older Java, Maven, LLM, or ZAP implementation. `/` and `/app/` serve React, `/legacy/` keeps the previous UI, and the default route is the endpoint/parameter surface.
+- Added the server `surface` and `runExecutions` projections to React, restored all three HUMAN/SCANNER/LLM dashboard lanes, removed completion-like stage percentages, and stopped prefetching unused operation-wide raw Evidence payloads.
+- Kept operations distinct in graph edges, showed mixed aggregate verdicts as unknown, applied source/identity filters to route candidates, and made the graph compatible with bounded snapshots that omit complete cluster-member ID arrays.
 - Keep controlled HTTP attempts that fail before a response in a bounded typed ledger instead of silently collapsing them into zero discoveries or promoting them to Evidence.
 - Distinguish not attempted, all failed, partially failed, and HTTP responses observed in the LLM status and endpoint/parameter surface summary. All-failed Explorer runs cannot complete.
 - Persist the secret-free attempt ledger in JSON project schema v4 and SQLite storage schema v3. Real Burp TLS/DNS exception classification remains a manual beta.44 gate.
-- Two consecutive clean builds each passed 356 tests and produced the same byte-for-byte beta.44 JAR.
+- Two consecutive clean builds each passed 265 React tests and 372 Java tests and produced the same byte-for-byte beta.44 JAR. Standalone no-cache route checks completed without a new browser warning or error; actual Burp runtime parity remains pending.
 
 ## 1.2.0-beta.43 — 2026-09-03
 

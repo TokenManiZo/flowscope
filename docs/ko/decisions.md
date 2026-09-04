@@ -1081,3 +1081,10 @@
 - **기각:** 실패를 `RequestRecord(hasResponse=false)`로 넣는 방식은 요청을 실제 관측한 Evidence와 전송 시도를 혼합해 source delta·그래프를 오염시키므로 기각했다. CLI 출력 문자열만 보존하는 방식은 구조화·재열기·부분 실패 집계가 불가능하고 raw 예외에 비밀이 섞일 수 있어 기각했다. status 없는 단일 `FAILED` flag도 원인과 부분 성공을 구분하지 못한다.
 - **검증·한계:** ledger 상태·상한·query 제거, MCP TLS 실패/부분 실패, all-failed 완료 거부, JSON v4/SQLite v3 round-trip, snapshot/UI 문자열 계약을 자동 회귀로 확인한다. Montoya가 실제 인증서·DNS 오류에서 내는 예외 분류와 beta.44 JAR의 실제 Burp 화면은 별도 수동 gate다. 브라우저/CDP discovery와 ZAP 실행 실패는 각자의 기존 상태 기계가 담당하며 이 원장은 현재 MCP 통제 HTTP executor 요청만 다룬다.
 - **상태:** beta.44 구현·자동 회귀 대상, 실제 Burp TLS/timeout 재현 gate 대기.
+
+## D-117 · React는 beta.44 코어의 표시 계층으로 통합하고 legacy UI를 복구 경로로 유지
+
+- **결정:** `/`와 `/app/`는 classpath에 포함한 React 작업면을, `/legacy/`는 기존 단일 HTML 작업면을 제공한다. React는 `snapshot.surface`, `runExecutions`, 기존 cell·Evidence·session·run API를 소비하며 분석·세션·ZAP·LLM 상태 기계를 다시 구현하지 않는다. 첫 route는 `API·입력 차이`다.
+- **이유:** PR의 화면 구조를 사용하되 beta.25 기반 Java·Maven·LLM 변경을 병합하면 beta.44의 MR-JAR, 실행 실패 원장과 최신 코어 계약을 되돌릴 수 있다. UI와 코어의 권위를 분리해야 회귀 원인을 추적할 수 있다.
+- **보정:** 단계 순서를 완료 퍼센트로 표시하지 않고 Dashboard는 H/S/L 모두를 표시한다. graph edge key는 operation을 포함하며 집계 노드의 혼합 verdict를 하나로 확정하지 않는다. source가 없는 route 후보는 특정 identity 관측처럼 표시하지 않는다. Evidence 표는 사용하지 않는 operation 원문 묶음을 선조회하지 않는다.
+- **기각:** PR branch 전체 merge, React 내부 분석 재구현, 즉시 legacy 제거를 기각했다. 실제 Burp runtime parity가 끝나기 전 legacy 제거는 복구 경로와 비교 기준을 동시에 잃는다.

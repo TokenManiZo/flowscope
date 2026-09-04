@@ -37,6 +37,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -127,6 +128,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private final String capabilityToken = randomCapabilityToken();
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
+    private final ClasspathWebAssets webAssets = new ClasspathWebAssets(ClasspathWebAssets.DefaultUi.REACT);
     private final Map<String, RequestLabOperation> requestLabOperations = new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> requestLabOperationOrder = new ConcurrentLinkedDeque<>();
     private final LoopbackHttpServer server;
@@ -156,13 +158,19 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response handle(LoopbackHttpServer.Request request) throws Exception {
         URI target;
         try { target = URI.create(request.path()); }
-        catch (RuntimeException error) { return error(400, "잘못된 요청 경로입니다."); }
+        catch (RuntimeException error) {
+            return staticPath(request.path()) ? staticError(request, 400, "잘못된 요청 경로입니다.")
+                    : error(400, "잘못된 요청 경로입니다.");
+        }
         String path = target.getPath();
         if (!request.remoteAddress().isLoopbackAddress() || !validHost(request.header("Host"))) {
             return error(403, "localhost 요청만 허용됩니다.");
         }
-        if (path.equals("/")) return index(request);
+        if (path.equals("/app")) return appRedirect(request);
+        Optional<ClasspathWebAssets.Asset> asset = webAssets.resolve(target.getRawPath());
+        if (asset.isPresent()) return staticAsset(request, asset.orElseThrow());
         if (path.equals("/vendor/cytoscape-3.26.0.min.js")) return cytoscape(request);
+        if (staticPath(target.getRawPath())) return staticError(request, 404, "Not found");
         if (!path.startsWith("/api/")) return error(404, "Not found");
         if (!authorized(request)) return error(403, "FlowScope 로컬 API 인증에 실패했습니다. UI를 다시 여세요.");
         return switch (path) {
@@ -199,22 +207,58 @@ public final class FlowScopeWebServer implements AutoCloseable {
         };
     }
 
-    private LoopbackHttpServer.Response index(LoopbackHttpServer.Request request) throws IOException {
-        if (!request.method().equals("GET")) return method("GET");
-        try (var input = FlowScopeWebServer.class.getResourceAsStream("/web/index.html")) {
-            if (input == null) return error(500, "UI resource missing");
-            byte[] body = new String(input.readAllBytes(), StandardCharsets.UTF_8)
-                    .replace("__FLOWSCOPE_CAPABILITY__", capabilityToken)
-                    .getBytes(StandardCharsets.UTF_8);
-            return response(200, "text/html; charset=utf-8", body);
+    private LoopbackHttpServer.Response appRedirect(LoopbackHttpServer.Request request) {
+        if (!staticMethod(request)) return method("GET, HEAD");
+        return new LoopbackHttpServer.Response(308,
+                headers("text/plain; charset=utf-8", Map.of("Location", "/app/")), new byte[0]);
+    }
+
+    private LoopbackHttpServer.Response staticAsset(LoopbackHttpServer.Request request,
+                                                     ClasspathWebAssets.Asset asset) throws IOException {
+        if (!staticMethod(request)) return method("GET, HEAD");
+        try (var input = FlowScopeWebServer.class.getResourceAsStream(asset.resource())) {
+            if (input == null) return staticError(request, 404, "Not found");
+            byte[] body = input.readAllBytes();
+            if (asset.html()) {
+                body = new String(body, StandardCharsets.UTF_8)
+                        .replace("__FLOWSCOPE_CAPABILITY__", capabilityToken)
+                        .getBytes(StandardCharsets.UTF_8);
+            }
+            return new LoopbackHttpServer.Response(200, headers(asset.contentType(), Map.of()),
+                    request.method().equals("HEAD") ? new byte[0] : body, body.length);
         }
     }
 
+    private LoopbackHttpServer.Response staticError(LoopbackHttpServer.Request request,
+                                                     int status, String message) throws IOException {
+        return staticResponse(request, error(status, message));
+    }
+
+    private static LoopbackHttpServer.Response staticResponse(LoopbackHttpServer.Request request,
+                                                               LoopbackHttpServer.Response response) {
+        if (!request.method().equals("HEAD")) return response;
+        return new LoopbackHttpServer.Response(response.status(), response.headers(), new byte[0],
+                response.contentLength());
+    }
+
+    private static boolean staticMethod(LoopbackHttpServer.Request request) {
+        return request.method().equals("GET") || request.method().equals("HEAD");
+    }
+
+    private static boolean staticPath(String rawPath) {
+        return rawPath != null && (rawPath.equals("/") || rawPath.startsWith("/app/")
+                || rawPath.startsWith("/legacy/") || rawPath.startsWith("/assets/")
+                || rawPath.startsWith("/vendor/"));
+    }
+
     private LoopbackHttpServer.Response cytoscape(LoopbackHttpServer.Request request) throws IOException {
-        if (!request.method().equals("GET")) return method("GET");
+        if (!staticMethod(request)) return method("GET, HEAD");
         try (var input = FlowScopeWebServer.class.getResourceAsStream("/web/vendor/cytoscape-3.26.0.min.js")) {
-            if (input == null) return error(500, "Graph library missing");
-            return response(200, "application/javascript; charset=utf-8", input.readAllBytes());
+            if (input == null) return staticError(request, 500, "Graph library missing");
+            byte[] body = input.readAllBytes();
+            return new LoopbackHttpServer.Response(200,
+                    headers("application/javascript; charset=utf-8", Map.of()),
+                    request.method().equals("HEAD") ? new byte[0] : body, body.length);
         }
     }
 

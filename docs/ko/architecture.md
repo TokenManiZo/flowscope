@@ -304,7 +304,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 | Identity/review state | `AccountProfile`, `AnalysisConfig`, `ReviewDecision`, `ValidationDecision` |
 | Rules | `AuthorizationAnalyzer`, `DataFlowAnalyzer`, `EvidenceIds` |
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |
-| Product UI | `web/FlowScopeWebServer`, `resources/web/index.html`, `ui/FlowScopeControlTab` |
+| Product UI | `frontend/src`, `web/ClasspathWebAssets`, `web/FlowScopeWebServer`, legacy `resources/web/index.html`, `ui/FlowScopeControlTab` |
 | Session/LLM/ZAP | `integration/SessionBroker`, `McpServer`, `ZapClient`, `RunContextRegistry` |
 | Local setup | `integration/LocalSecretFile`, `LocalZapApiKey`, `infra/zap`, `scripts` |
 | Persistence | `integration/SqliteProjectStore`, JSON codec/import-export `integration/ProjectStore` |

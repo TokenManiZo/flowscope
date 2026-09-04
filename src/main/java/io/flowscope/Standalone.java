@@ -3,6 +3,7 @@ package io.flowscope;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.HarParser;
+import io.flowscope.core.Masking;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RouteCandidate;
@@ -38,7 +39,7 @@ public final class Standalone {
         }
     }
 
-    private static final class DemoState implements FlowScopeWebServer.State {
+    static final class DemoState implements FlowScopeWebServer.State {
         private final AnalysisConfig config = new AnalysisConfig();
         private final List<RequestRecord> records = new ArrayList<>();
         private final AtomicLong revision = new AtomicLong();
@@ -88,6 +89,24 @@ public final class Standalone {
         }
         @Override public RequestRecord openInRepeater(String evidenceId) {
             throw new IllegalStateException("Repeater 초안은 Burp Extension에서만 열 수 있습니다.");
+        }
+        @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
+            RequestRecord record = result.records.stream()
+                    .filter(candidate -> candidate.evidenceId.equals(evidenceId))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("해당 Evidence를 찾을 수 없습니다."));
+            String request = Masking.maskHeaders(record.requestTextForEvidence());
+            String response = Masking.maskHeaders(record.responseTextForEvidence());
+            return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
+                    request, response, false, false, false,
+                    request == null ? null : "UTF-8", response == null ? null : "UTF-8",
+                    record.idn == null || record.idn.isBlank() ? "미확정" : record.idn, "없음",
+                    "Standalone 데모에서는 마스킹된 읽기 전용 초안만 제공하며 Request Lab 전송을 사용할 수 없습니다.");
+        }
+        @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
+                String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
+                String accountId) {
+            throw new UnsupportedOperationException("Standalone 데모에서는 Request Lab 전송을 사용할 수 없습니다.");
         }
 
         private void replaceWithSample() {

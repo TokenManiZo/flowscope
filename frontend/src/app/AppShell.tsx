@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { InspectionPage } from "@/features/inspection/InspectionPage"
 import { RunsPage } from "@/features/runs/RunsPage"
+import { SurfacePage } from "@/features/surface/SurfacePage"
 import { AccountsPage } from "@/features/accounts/AccountsPage"
 import { EvidencePage } from "@/features/evidence/EvidencePage"
 import { GraphPage } from "@/features/graph/GraphPage"
@@ -24,7 +25,7 @@ function RoutePlaceholder({ route }: { route: AppRoute }) {
   )
 }
 
-export function AppShell({ route = "dashboard" }: { route?: AppRoute }) {
+export function AppShell({ route = "surface" }: { route?: AppRoute }) {
   useEffect(() => {
     const root = document.documentElement
     const alreadyDark = root.classList.contains("dark")
@@ -37,7 +38,7 @@ export function AppShell({ route = "dashboard" }: { route?: AppRoute }) {
     }
   }, [])
 
-  const routeContent = route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
+  const routeContent = route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "surface" ? <SurfacePage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
 
   return <ReferenceAppShell route={route}>{routeContent}</ReferenceAppShell>
 }

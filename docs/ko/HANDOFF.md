@@ -6,15 +6,15 @@
 
 | 항목 | 기준 |
 |---|---|
-| 기준 날짜 | 2026-09-03 |
+| 기준 날짜 | 2026-09-04 |
 | 제품 버전 | `1.2.0-beta.44` |
-| 로컬 기준 커밋 | beta.44 LLM 실행 실패 가시성의 집중 커밋은 `git log -1 --oneline`으로 확인 |
-| 브랜치·원격 차이 | 로컬 `main`; `origin/main`은 `v1.2.0-beta.25`(`c2c9945`). 정확한 ahead/behind는 `git rev-list --left-right --count origin/main...HEAD`로 확인 |
+| 로컬 기준 커밋 | beta.44 React 통합 집중 커밋은 `git log -1 --oneline`으로 확인 |
+| 브랜치·원격 차이 | 로컬 `codex/react-ui-integration`; `origin/main`과의 정확한 ahead/behind는 `git rev-list --left-right --count origin/main...HEAD`로 확인 |
 | Java | JDK 21 이상 |
 | 빌드 | Maven 3.9 이상, `mvn clean verify` |
-| 자동 회귀 | beta.44 최종 `mvn clean verify` 연속 2회, 매회 356 tests, failure/error/skip 0 |
-| 현재 JAR | `target/flowscope-1.2.0-beta.44.jar`, 31,100,350 bytes, 9,113 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `3832bd134a8ae093ebdea214c9ceb914b1e5395d7d4c5df0add65a0696ca2256` |
-| 현재 판정 | LLM 통제 요청의 응답 전 실패를 Evidence와 분리하고 실행 전·전부 실패·부분 실패·응답 수신을 Web/저장에 연결. 실제 Burp TLS/DNS 분류·독립 외부 pilot은 남음 |
+| 자동 회귀 | beta.44 최종 `mvn clean verify` 연속 2회, 매회 React 37 files/265 tests와 Java 372 tests, failure/error/skip 0 |
+| 현재 JAR | `target/flowscope-1.2.0-beta.44.jar`, 31,525,631 bytes, 9,125 entries, 첫 entry `META-INF/MANIFEST.MF`, SHA-256 `7aa41c27ea33c0129ed706a1f9b18f9bca9dcf6e9e3314c7442315382278dee0` |
+| 현재 판정 | React 기본 작업면과 beta.44 Surface·실행 원장·그래프를 standalone에서 연결하고 전체 route를 확인. 실제 Burp HUMAN/ZAP/LLM·세션·Request Lab과 TLS/DNS 분류·독립 외부 pilot은 남음 |
 
 `target/`의 JAR은 Git 산출물이 아니다. clone한 팀원은 직접 빌드해야 한다. `.flowscope.db`, `.flowscope.json`, 실제 대상 트래픽, 인증정보, `output/`, `tmp/`도 공유 소스에 포함하지 않는다.
 
@@ -397,7 +397,7 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 
 ## 9. 다음 개발 순서
 
-현재 출발점은 beta.44의 **최종 자동 검증, 실제 Burp 회귀와 승인된 독립 pilot**이다. LLM 통제 요청의 응답 전 실패는 Evidence와 분리되어 실행 전·전부 실패·부분 실패·응답 수신으로 표시되며, JSON v4·SQLite v3에 저장된다. 실제 Burp TLS/DNS/timeout 분류와 재열기 gate는 아직 남아 있다. Surface 계획 1~4는 구현·자동 회귀 완료다. 5는 저장소 내부 합성 truth 구조 회귀이며, 6은 일부 typed 실패 분류, 7은 Next pages manifest chunk 연결, 8은 공통 asset/GraphQL 관측 회귀까지만 완료됐다. 다음에는 실제 bundle에서 precision/recall·검토량·성능과 실패 구조를 측정한다. source map, Next App Router, GraphQL schema, 추가 framework adapter는 반복 실패 근거가 있을 때만 같은 fact schema 뒤에 추가하며 이후 지원 Tier를 실측으로 조정한다. 승인 전 외부 대상에는 요청하지 않는다. 그 뒤 기존 **P2 세션·신원·프로세스 수명·가져오기 무결성**으로 돌아간다.
+현재 출발점은 beta.44 React 통합의 **실제 Burp runtime parity와 승인된 독립 pilot**이다. React는 `/`의 기본 화면이고 `/legacy/`는 runtime gate가 끝날 때까지 복구 경로로 남는다. LLM 통제 요청의 응답 전 실패는 Evidence와 분리되어 실행 전·전부 실패·부분 실패·응답 수신으로 표시되며 JSON v4·SQLite v3에 저장된다. standalone의 Surface·Dashboard·Graph·Runs·Evidence·Accounts·Inspection·Matrix·Sequence·Scenarios 전환과 bounded snapshot 그래프 회귀는 통과했지만 실제 Burp HUMAN/ZAP/LLM·관리 세션·live Request Lab과 TLS/DNS/timeout 분류는 아직 확인하지 않았다. Surface 계획 1~4는 구현·자동 회귀 완료다. 5는 저장소 내부 합성 truth 구조 회귀이며, 6은 일부 typed 실패 분류, 7은 Next pages manifest chunk 연결, 8은 공통 asset/GraphQL 관측 회귀까지만 완료됐다. 다음에는 실제 bundle에서 precision/recall·검토량·성능과 실패 구조를 측정한다. source map, Next App Router, GraphQL schema, 추가 framework adapter는 반복 실패 근거가 있을 때만 같은 fact schema 뒤에 추가하며 이후 지원 Tier를 실측으로 조정한다. 승인 전 외부 대상에는 요청하지 않는다. 그 뒤 기존 **P2 세션·신원·프로세스 수명·가져오기 무결성**으로 돌아간다.
 
 ### 단계 A — 기준선과 재현 고정 (beta.34 완료)
 
@@ -972,7 +972,7 @@ git rev-list --left-right --count origin/main...HEAD
 shasum -a 256 target/flowscope-1.2.0-beta.44.jar
 ```
 
-기대값은 사용자 소유 변경인 루트 `CLAUDE.md`와 untracked `mentor-progress-report.md`가 남고, `HEAD`가 beta.44 LLM 실행 실패 가시성 집중 커밋인 상태다. JAR digest와 원격 차이는 `beta-validation.md`와 위 명령의 실측값을 따른다. 다르면 새 상태를 먼저 기록하고 이 문서를 기계적으로 믿지 않는다.
+기대값은 사용자 소유 변경인 루트 `CLAUDE.md`와 untracked `mentor-progress-report.md`가 남고, `HEAD`가 beta.44 React 통합 집중 커밋인 상태다. JAR digest와 원격 차이는 `beta-validation.md`와 위 명령의 실측값을 따른다. 다르면 새 상태를 먼저 기록하고 이 문서를 기계적으로 믿지 않는다.
 
 ### 1단계 — 실제 ZAP provenance gate
 

@@ -100,14 +100,15 @@ const verdictStyles: Record<Verdict | "unknown", { text: string; color: string }
   unknown: { text: "UNKNOWN", color: "#6b7280" },
 }
 
-function normalizedSource(source: EventRecord["source"]): Source | "unknown" {
-  return source === "human" || source === "scanner" || source === "llm" ? source : "unknown"
+function normalizedSource(source: unknown): Source | "unknown" {
+  const normalized = String(source ?? "").toLowerCase()
+  return normalized === "human" || normalized === "scanner" || normalized === "llm" ? normalized : "unknown"
 }
 
 function compareText(left: string, right: string) { return left.localeCompare(right, "en") }
 
 function evidenceIds(events: readonly EventRecord[]): readonly string[] {
-  return [...new Set(events.flatMap((event) => event.clusterEvidenceIds.length ? event.clusterEvidenceIds : [event.eventId]))].sort(compareText)
+  return [...new Set(events.flatMap((event) => event.clusterEvidenceIds?.length ? event.clusterEvidenceIds : [event.eventId]))].sort(compareText)
 }
 
 function eventSelection(events: readonly EventRecord[]): GraphSelection {
@@ -116,13 +117,24 @@ function eventSelection(events: readonly EventRecord[]): GraphSelection {
   return { operation: first.op, resource: first.resource, identity: first.idn, source: normalizedSource(first.source), evidenceIds: evidenceIds(events) }
 }
 
+function nodeSelection(kind: GraphNode["kind"], key: string, events: readonly EventRecord[]): GraphSelection {
+  return {
+    operation: kind === "operation" ? key : null,
+    resource: kind === "resource" ? key : null,
+    identity: kind === "identity" ? key : null,
+    source: null,
+    evidenceIds: evidenceIds(events),
+  }
+}
+
 export function graphReviewVerdict(snapshot: Snapshot, event: EventRecord): Verdict | "unknown" {
   return snapshot.cells.find((cell) => cell.idn === event.idn && cell.op === event.op && cell.resource === event.resource)?.overall ?? event.verdict ?? "unknown"
 }
 
 function toNode(kind: GraphNode["kind"], key: string, events: readonly EventRecord[], snapshot: Snapshot): GraphNode {
-  const selection = eventSelection(events)
-  const verdict = events.length ? graphReviewVerdict(snapshot, events[0]) : "unknown"
+  const selection = nodeSelection(kind, key, events)
+  const verdicts = new Set(events.map((event) => graphReviewVerdict(snapshot, event)))
+  const verdict = verdicts.size === 1 ? [...verdicts][0] : "unknown"
   const style = verdictStyles[verdict]
   return { id: `${kind}:${key}`, kind, label: key, wrappedLabel: kind === "operation" ? wrapOperationLabel(key) : key, verdict, verdictText: style.text, verdictColor: style.color, selection }
 }
@@ -156,18 +168,19 @@ function sortedNodes(kind: GraphNode["kind"], groups: Map<string, EventRecord[]>
   return expanded ? nodes : nodes.slice(0, PAGE_SIZE)
 }
 
-function edgeKey(relation: GraphEdge["relation"], sourceId: string, targetId: string, source: GraphEdge["source"]) {
-  return `${relation}:${sourceId}:${targetId}:${source}`
+function edgeKey(relation: GraphEdge["relation"], sourceId: string, targetId: string, source: GraphEdge["source"], operation = "") {
+  return JSON.stringify([relation, sourceId, targetId, source, operation])
 }
 
 function buildEdges(events: readonly EventRecord[], visibleNodeIds: ReadonlySet<string>): readonly GraphEdge[] {
-  type EdgeBucket = { relation: GraphEdge["relation"]; sourceId: string; targetId: string; source: GraphEdge["source"]; events: EventRecord[] }
+  type EdgeBucket = { relation: GraphEdge["relation"]; sourceId: string; targetId: string; source: GraphEdge["source"]; operation: string; events: EventRecord[] }
   const buckets = new Map<string, EdgeBucket>()
   const add = (relation: GraphEdge["relation"], sourceId: string, targetId: string, event: EventRecord) => {
     if (!visibleNodeIds.has(sourceId) || !visibleNodeIds.has(targetId)) return
     const source = normalizedSource(event.source)
-    const key = edgeKey(relation, sourceId, targetId, source)
-    const bucket = buckets.get(key) ?? { relation, sourceId, targetId, source, events: [] }
+    const operation = event.op
+    const key = edgeKey(relation, sourceId, targetId, source, operation)
+    const bucket = buckets.get(key) ?? { relation, sourceId, targetId, source, operation, events: [] }
     bucket.events.push(event)
     buckets.set(key, bucket)
   }
@@ -183,7 +196,7 @@ function buildEdges(events: readonly EventRecord[], visibleNodeIds: ReadonlySet<
   return [...buckets.values()].sort((left, right) => left.relation.localeCompare(right.relation) || left.sourceId.localeCompare(right.sourceId) || left.targetId.localeCompare(right.targetId) || left.source.localeCompare(right.source)).map((bucket) => {
     const style = sourceStyles[bucket.source]
     const count = bucket.events.reduce((total, event) => total + Math.max(1, event.repeatCount), 0)
-    return { id: edgeKey(bucket.relation, bucket.sourceId, bucket.targetId, bucket.source), relation: bucket.relation, sourceId: bucket.sourceId, targetId: bucket.targetId, source: bucket.source, ...style, count, countLabel: count > 1 ? `×${count}` : "", selection: eventSelection(bucket.events) }
+    return { id: edgeKey(bucket.relation, bucket.sourceId, bucket.targetId, bucket.source, bucket.operation), relation: bucket.relation, sourceId: bucket.sourceId, targetId: bucket.targetId, source: bucket.source, ...style, count, countLabel: count > 1 ? `×${count}` : "", selection: eventSelection(bucket.events) }
   })
 }
 
@@ -200,10 +213,14 @@ export function projectGraph(snapshot: Snapshot, filters: GraphFilters): GraphPr
   const identities = sortedNodes("identity", group(events, (event) => event.idn), snapshot, true)
   const resources = sortedNodes("resource", group(events.filter((event) => event.resource !== null), (event) => event.resource ?? ""), snapshot, filters.expanded)
   const operations = sortedNodes("operation", group(events, (event) => event.op), snapshot, filters.expanded)
-  const routeCandidates = filters.includeRouteCandidates ? snapshot.routeCandidates.map((candidate) => {
+  const enabledSources = new Set(filters.source.map(normalizedSource))
+  const routeCandidates = filters.includeRouteCandidates && filters.identity.length === 0 ? snapshot.routeCandidates.filter((candidate) =>
+    candidate.provenance.length === 0 || candidate.provenance.some((item) => enabledSources.has(normalizedSource(item.source))),
+  ).map((candidate) => {
     const id = graphRouteCandidateId(candidate)
     const detail: GraphRouteCandidateDetail = { id, service: candidate.service, method: candidate.method, pathTemplate: candidate.pathTemplate, observed: candidate.observed, applicability: candidate.applicability, provenanceTypes: candidate.provenanceTypes, provenanceEvidenceIds: candidate.provenanceEvidenceIds, provenance: candidate.provenance, reviewReason: candidate.reviewReason, priorityReasons: candidate.priorityReasons }
-    return { ...candidate, id, label: `${candidate.method} ${candidate.pathTemplate}`, observedText: candidate.observed && candidate.method !== "UNKNOWN" ? "관측됨" as const : "미관측 후보" as const, selection: { operation: `${candidate.method} ${candidate.pathTemplate}`, resource: null, identity: null, source: normalizedSource(candidate.provenance[0]?.source as Source), evidenceIds: [...candidate.provenanceEvidenceIds].sort(compareText), routeCandidate: detail } }
+    const selectedProvenance = candidate.provenance.find((item) => enabledSources.has(normalizedSource(item.source)))
+    return { ...candidate, id, label: `${candidate.method} ${candidate.pathTemplate}`, observedText: candidate.observed && candidate.method !== "UNKNOWN" ? "관측됨" as const : "미관측 후보" as const, selection: { operation: `${candidate.method} ${candidate.pathTemplate}`, resource: null, identity: null, source: normalizedSource(selectedProvenance?.source), evidenceIds: [...candidate.provenanceEvidenceIds].sort(compareText), routeCandidate: detail } }
   }) : []
   const visibleNodeIds = new Set([...identities, ...resources, ...operations].map((node) => node.id))
   return { view: filters.view, identities, resources, operations, routeCandidates, listItems: operations, edges: buildEdges(events, visibleNodeIds) }

@@ -45,7 +45,7 @@ export interface EventRecord {
   repeatCount: number
   firstSeen: number
   lastSeen: number
-  clusterEvidenceIds: readonly string[]
+  clusterEvidenceIds?: readonly string[]
   objects: readonly EventObject[]
   verdict: Verdict
 }
@@ -176,6 +176,81 @@ export interface RouteCandidate {
   priorityReasons: readonly string[]
 }
 
+export type SurfaceSource = "HUMAN" | "SCANNER" | "LLM" | "UNKNOWN"
+export type SurfaceDeltaState = "DECLARED_NOT_OBSERVED" | "ONE_SOURCE_OBSERVED" | "MULTI_SOURCE_OBSERVED" | "ALL_SOURCES_OBSERVED" | "OBSERVED_NOT_DECLARED"
+
+export interface SurfaceObservation {
+  evidenceId: string
+  source: SurfaceSource
+  runId: string
+  identity: string
+  status: number
+  shape?: string
+}
+
+export interface SurfaceDeclaration {
+  evidenceId: string
+  source: SurfaceSource
+  runId: string
+  type: string
+  adapter: string
+  reason: string
+}
+
+export interface SurfaceParameter {
+  location: string
+  fieldPath: string
+  displayName: string
+  requirement: string
+  observedShapes: readonly string[]
+  observedSources: readonly SurfaceSource[]
+  observationEvidenceIds: readonly string[]
+  observations: readonly SurfaceObservation[]
+  declarations: readonly SurfaceDeclaration[]
+  deltaState: SurfaceDeltaState
+}
+
+export interface SurfaceEndpoint {
+  key: { service: string; method: string; pathTemplate: string }
+  observedSources: readonly SurfaceSource[]
+  observations: readonly SurfaceObservation[]
+  declarations: readonly SurfaceDeclaration[]
+  parameters: readonly SurfaceParameter[]
+  deltaState: SurfaceDeltaState
+}
+
+export interface SurfaceExtractionIssue {
+  kind: string
+  adapter: string
+  detail: string
+  line: number
+  column: number
+}
+
+export interface SurfaceExtraction {
+  evidenceId: string
+  source: SurfaceSource
+  runId: string
+  artifactKind: string
+  adapter: string
+  status: string
+  failure: string
+  detail: string
+  endpointCallSites: number
+  assetReferences: number
+  issues: readonly SurfaceExtractionIssue[]
+}
+
+export interface RunExecutionSummary {
+  source: SurfaceSource
+  runId: string
+  attempted: number
+  responses: number
+  failures: number
+  quality: "NOT_ATTEMPTED" | "ALL_FAILED" | "PARTIAL_FAILURE" | "RESPONSES_OBSERVED"
+  outcomes: Readonly<Record<string, number>>
+}
+
 export interface Snapshot {
   revision: number
   identityRevision: number
@@ -196,6 +271,11 @@ export interface Snapshot {
   sessions: readonly ObservedSession[]
   managedSessions: readonly ManagedSession[]
   routeCandidates: readonly RouteCandidate[]
+  runExecutions?: readonly RunExecutionSummary[]
+  surface?: {
+    endpoints: readonly SurfaceEndpoint[]
+    extractions: readonly SurfaceExtraction[]
+  }
 }
 
 export interface PayloadRetentionMetadata {

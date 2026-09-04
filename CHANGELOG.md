@@ -4,11 +4,16 @@
 
 ## 1.2.0-beta.44 — 2026-09-03
 
+- React 분석 작업면을 최신 beta.44 코어 위에 통합했습니다. `/`와 `/app/`는 React, `/legacy/`는 기존 UI이며 첫 화면은 `API·입력 차이`입니다.
+- React가 endpoint·parameter Surface와 실행 실패 원장을 표시하고 H/S/L source 필터, 파싱 실패·provenance·시도/응답/실패를 유지합니다.
+- 동일 identity/resource/source의 서로 다른 operation edge 병합, 집계 노드 첫 verdict 오표시, route 후보의 source/identity 필터 무시를 수정했습니다.
+- bounded snapshot이 cluster 전체 Evidence ID 배열을 생략해도 그래프가 중단되지 않고 대표 Evidence ID로 선택을 유지합니다.
+- 실행 단계 번호를 완료 퍼센트로 표시하지 않고 Dashboard의 누락된 LLM lane을 복구했습니다. Evidence 선택 시 사용하지 않는 operation 원문 묶음을 선조회하지 않습니다.
 - LLM 통제 HTTP 요청의 응답 전 실패를 Evidence와 분리한 bounded 실행 원장으로 기록합니다. TLS·DNS·timeout·연결·무응답·범위 차단·승인 거부를 typed outcome으로 구분하며 query·header·body·raw 예외문은 저장하지 않습니다.
 - 실행 전, 전부 실패, 일부 실패, HTTP 응답 수신을 서로 다르게 표시합니다. 전부 실패한 Explorer는 완료할 수 없고 일부 실패는 완료 limitation으로 남습니다.
 - LLM 실행 상태와 기본 API·입력 차이 화면에서 시도·응답·실패 수를 보여 주며 실패 요청을 그래프 Evidence로 만들지 않습니다.
 - 프로젝트 저장 계약을 JSON v4·SQLite v3으로 올려 실행 원장을 저장·재열기합니다. 실제 Burp의 TLS/DNS 예외 분류 수동 gate는 아직 남아 있습니다.
-- 고정된 최종 입력에서 `mvn clean verify`를 두 번 실행해 매회 356 tests가 통과했고 두 beta.44 JAR이 byte-for-byte 일치했습니다.
+- React 통합을 포함한 고정 최종 입력에서 `mvn clean verify`를 두 번 실행해 매회 React 265 tests와 Java 372 tests가 통과했고 두 beta.44 JAR이 byte-for-byte 일치했습니다. 실제 Burp runtime gate는 남아 있습니다.
 
 ## 1.2.0-beta.43 — 2026-09-03
 

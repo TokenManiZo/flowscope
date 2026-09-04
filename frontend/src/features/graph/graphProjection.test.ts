@@ -30,6 +30,17 @@ describe("projectGraph", () => {
     expect(graph.operations.find((item) => item.label === "GET /health")).toMatchObject({ verdict: "undecided", verdictText: "UNDECIDED", verdictColor: "#7c3aed" })
   })
 
+  it("does not assign one event verdict to an aggregate operation node with mixed outcomes", () => {
+    const data = snapshot([
+      event({ eventId: "ev-allow", idn: "alice", verdict: "allow" }),
+      event({ eventId: "ev-deny", idn: "bob", verdict: "deny" }),
+    ])
+
+    const graph = projectGraph(data, { source: ["human"], identity: [], view: "authz", includeRouteCandidates: false, includeSupportTraffic: false, expanded: true })
+
+    expect(graph.operations).toEqual([expect.objectContaining({ label: "GET /orders/{id}", verdict: "unknown", verdictText: "UNKNOWN" })])
+  })
+
   it("builds a deterministic collision-safe route-candidate identity from the backend-unique triple", () => {
     const first = { service: "https://api.example.test:GET", method: "POST", pathTemplate: "/orders" }
     const delimiterCollision = { service: "https://api.example.test", method: "GET:POST", pathTemplate: "/orders" }
@@ -60,16 +71,51 @@ describe("projectGraph", () => {
     expect(graph.operations.find((item) => item.label === "POST /login")).toMatchObject({ verdict: "undecided", verdictText: "UNDECIDED" })
     expect(graph.operations.map((item) => item.label)).not.toContain("GET /review-only")
     expect(graph.operations.map((item) => item.label)).not.toContain("GET /poll")
-    expect(selectGraphItem(graph, "operation:GET /orders/{id}")).toEqual({ operation: "GET /orders/{id}", resource: "order:101", identity: "alice", source: "human", evidenceIds: ["ev-human-1", "ev-human-2", "ev-llm-1", "ev-scanner-1"] })
+    expect(selectGraphItem(graph, "operation:GET /orders/{id}")).toEqual({ operation: "GET /orders/{id}", resource: null, identity: null, source: null, evidenceIds: ["ev-human-1", "ev-human-2", "ev-llm-1", "ev-scanner-1"] })
   })
 
   it("filters source, identity, current view, route candidates, and support traffic without changing the mobile dataset", () => {
     const data = snapshot([event(), event({ eventId: "ev-scanner", source: "scanner", idn: "bob", op: "DELETE /orders/{id}", method: "DELETE", verdict: "deny" })], [{ service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/unseen/{id}", observed: false, provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["route-evidence"], provenance: [{ type: "SITE_MAP", evidenceId: "route-evidence", source: "human", runId: "r", adapter: "burp", applicability: "REVIEW", reason: "candidate" }], applicability: "REVIEW", reviewReason: "needs review", priorityReasons: ["input"] }])
     const graph = projectGraph(data, { source: ["scanner"], identity: ["bob"], view: "source", includeRouteCandidates: true, includeSupportTraffic: true, expanded: true })
     expect(graph.operations.map((item) => item.label)).toEqual(["DELETE /orders/{id}"])
-    expect(graph.routeCandidates).toEqual([expect.objectContaining({ service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/unseen/{id}", observed: false, observedText: "미관측 후보", applicability: "REVIEW", provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["route-evidence"], reviewReason: "needs review", priorityReasons: ["input"] })])
-    expect(selectGraphItem(graph, graph.routeCandidates[0].id)).toMatchObject({ evidenceIds: ["route-evidence"], routeCandidate: expect.objectContaining({ service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/unseen/{id}", provenance: [expect.objectContaining({ adapter: "burp", reason: "candidate" })] }) })
+    expect(graph.routeCandidates).toEqual([])
     expect(graph.listItems).toEqual(graph.operations)
+  })
+
+  it("keeps GET and PATCH edges distinct for the same identity, resource, and source", () => {
+    const data = snapshot([
+      event({ eventId: "ev-get", op: "GET /orders/{id}", method: "GET" }),
+      event({ eventId: "ev-patch", op: "PATCH /orders/{id}", method: "PATCH" }),
+    ])
+
+    const graph = projectGraph(data, { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: true })
+    const identityEdges = graph.edges.filter((edge) => edge.relation === "identity-resource")
+
+    expect(identityEdges).toHaveLength(2)
+    expect(new Set(identityEdges.map((edge) => edge.selection.operation))).toEqual(new Set(["GET /orders/{id}", "PATCH /orders/{id}"]))
+    expect(new Set(identityEdges.map((edge) => edge.id)).size).toBe(2)
+  })
+
+  it("uses the representative Evidence ID when the bounded snapshot omits cluster members", () => {
+    const withoutClusterMembers = { ...event(), clusterEvidenceIds: undefined }
+    const graph = projectGraph(snapshot([withoutClusterMembers]), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: true })
+
+    expect(graph.identities[0].selection.evidenceIds).toEqual([withoutClusterMembers.eventId])
+    expect(graph.edges[0].selection.evidenceIds).toEqual([withoutClusterMembers.eventId])
+  })
+
+  it("normalizes uppercase route provenance and applies source and identity filters", () => {
+    const candidate: Snapshot["routeCandidates"][number] = { service: "https://api.example.test", method: "GET", pathTemplate: "/declared", observed: false, provenanceTypes: ["JAVASCRIPT"], provenanceEvidenceIds: ["js-1"], provenance: [{ type: "JAVASCRIPT", evidenceId: "js-1", source: "SCANNER", runId: "scan-1", adapter: "fetch", applicability: "REVIEW", reason: "declared" }], applicability: "REVIEW", reviewReason: "not requested", priorityReasons: [] }
+    const data = snapshot([], [candidate])
+
+    const scanner = projectGraph(data, { source: ["scanner"], identity: [], view: "source", includeRouteCandidates: true, includeSupportTraffic: false, expanded: true })
+    const human = projectGraph(data, { source: ["human"], identity: [], view: "source", includeRouteCandidates: true, includeSupportTraffic: false, expanded: true })
+    const identityScoped = projectGraph(data, { source: ["scanner"], identity: ["alice"], view: "source", includeRouteCandidates: true, includeSupportTraffic: false, expanded: true })
+
+    expect(scanner.routeCandidates).toHaveLength(1)
+    expect(scanner.routeCandidates[0].selection.source).toBe("scanner")
+    expect(human.routeCandidates).toHaveLength(0)
+    expect(identityScoped.routeCandidates).toHaveLength(0)
   })
 
   it("filters the projection by the server-projected review verdict", () => {

@@ -1,5 +1,39 @@
 # FlowScope 개발 기록
 
+## 2026-09-04 · 1.2.0-beta.44 · React 분석 작업면과 최신 코어 통합
+
+### 개발·수정
+
+- PR #8의 React·TypeScript·Vite 화면과 정적 자산 파이프라인을 beta.44 코어 위에 통합했다. `/`와 `/app/`는 React, `/legacy/`는 기존 UI이며 기본 route는 `API·입력 차이`다.
+- React가 서버 snapshot의 `surface`와 `runExecutions`를 직접 읽어 endpoint·parameter 선언/관측 차이, H/S/L 필터, provenance·parser issue, 통제 요청의 시도·응답·실패를 표시한다. 실패 시도는 관측 endpoint나 그래프 edge로 합성하지 않는다.
+- Dashboard에서 누락됐던 LLM source를 복구하고, 점검·실행 화면의 단계 번호를 완료율로 표현하지 않는다. Evidence 표는 행 선택만으로 사용하지 않는 operation 원문 묶음을 선조회하지 않고 Request Lab을 열 때 선택한 하나의 bounded draft만 요청한다.
+- 그래프의 identity/resource/source가 같아도 GET과 PATCH 같은 operation edge를 분리했다. 여러 판정이 합쳐진 노드는 첫 event 판정 대신 `UNKNOWN`을 표시하고, route candidate source 비교는 대소문자를 정규화하며 identity filter 중에는 신원 없는 후보를 숨긴다.
+- beta.44의 bounded snapshot은 cluster 전체 Evidence ID 배열을 보내지 않는데 React 그래프가 해당 배열을 필수로 가정해 `#graph` 전체가 비는 실화면 회귀를 발견했다. 배열이 없으면 representative `eventId`를 선택 근거로 쓰도록 수정하고 회귀를 추가했다.
+
+### 필요성·기각 대안
+
+- PR은 beta.25 기반이어서 Java·Maven·LLM/ZAP 코드를 통째로 병합하면 beta.26~44의 세션 격리, Surface, 실행 실패 원장과 JAR 빌드 계약이 후퇴한다. 따라서 React source·정적 자산 전송만 선택적으로 통합하고 현재 코어를 정본으로 유지했다.
+- 그래프 회귀를 고치기 위해 cluster 전체 Evidence ID를 snapshot에 다시 싣는 대안은 반복 polling payload를 고카디널리티로 되돌리므로 기각했다. 대표 ID는 즉시 선택에 사용하고 전체 cluster 열람은 기존 bounded `/api/cluster-evidence` 계약을 유지한다.
+- 단계 번호를 퍼센트로 꾸미거나 혼합 판정을 첫 event로 대표하는 대안은 서버가 증명하지 않은 의미를 화면이 만들기 때문에 사용하지 않았다.
+
+### 영향 파일·회귀
+
+- 코드: `frontend/`, `pom.xml`, `ClasspathWebAssets`, `LoopbackHttpServer`, `FlowScopeWebServer`, `Standalone`, `FlowScopeExtension`, `FatJarIsolationSmoke`.
+- 회귀: React 37개 test file의 265 tests, `graphProjection.test.ts`의 bounded snapshot cluster-member 부재 회귀, Java 372 tests와 fat-JAR release smoke.
+- 문서: README, architecture, decisions D-117, UI 제품 근거, React 기능 동등성, 제품 계획, changelog, 이 검증 기록.
+
+### 최종 검증
+
+- 고정된 최종 입력에서 JDK 21로 `mvn clean verify`를 연속 두 번 실행했다. 매회 React 37 files/265 tests와 Java 372 tests가 failure/error/skip 없이 통과했다.
+- 두 `target/flowscope-1.2.0-beta.44.jar`는 31,525,631 bytes·9,125 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `7aa41c27ea33c0129ed706a1f9b18f9bca9dcf6e9e3314c7442315382278dee0`로 byte-for-byte 동일했다.
+- 최종 standalone을 no-cache URL로 열어 Surface source 필터, Dashboard, Graph canvas, Runs, Evidence, Accounts, Inspection, Matrix, Sequence, Scenarios와 `/legacy/`를 전환했고 새 browser warning/error는 0건이었다. `/`·`/app/` 200, `/app` 308→`/app/`, `/legacy/` 200과 React JS/CSS의 fat JAR 포함도 확인했다.
+
+### 남은 한계·다음 gate
+
+- standalone 샘플은 실제 Burp Montoya, HUMAN 수집, ZAP 캠페인, Codex/Claude, 관리 세션과 live Request Lab 전송을 검증하지 않는다. beta.44 JAR을 Burp에 재로드해 이 경로를 확인하기 전에는 실제 runtime 동등성이나 legacy 제거를 주장하지 않는다.
+- Vite는 minified main JS 1,046.59 kB(gzip 316.16 kB)에 대해 500 kB 초과 경고를 낸다. 현재 기능 오류는 아니지만 초기 로드 성능 측정 뒤 route 단위 code splitting 여부를 결정한다.
+- Vitest의 jsdom은 Cytoscape canvas `getContext` 미구현 진단을 출력하지만 회귀는 통과한다. 실제 canvas는 standalone 브라우저에서 별도로 렌더와 오류 0건을 확인했다.
+
 ## 2026-09-03 · 1.2.0-beta.44 · LLM 통제 요청 실패와 0건 발견 분리
 
 ### 개발·수정

@@ -117,7 +117,7 @@ afterEach(() => {
 })
 
 describe("dashboard shell", () => {
-  it("exposes the reference rail route set and normalizes unsafe hashes to the dashboard", async () => {
+  it("exposes the reference rail route set and normalizes unsafe hashes to the API delta work surface", async () => {
     const user = userEvent.setup()
     renderDashboard()
 
@@ -140,7 +140,7 @@ describe("dashboard shell", () => {
     for (const unsafeHash of ["#", "#unknown", "#/assets/evil.js", "#%2Fassets%2Fevil.js"]) {
       window.location.hash = unsafeHash
       window.dispatchEvent(new HashChangeEvent("hashchange"))
-      await waitFor(() => expect(window.location.hash).toBe("#dashboard"))
+      await waitFor(() => expect(window.location.hash).toBe("#surface"))
     }
     window.history.pushState(null, "", "#runs")
     window.dispatchEvent(new PopStateEvent("popstate"))
@@ -164,6 +164,7 @@ describe("dashboard shell", () => {
     expect(screen.queryByText(/%/)).not.toBeInTheDocument()
     expect(screen.getByText(/H · HUMAN/)).toBeVisible()
     expect(screen.getByText(/S · ZAP/)).toBeVisible()
+    expect(screen.getByText(/L · LLM/)).toBeVisible()
     expect(screen.getByText("LLM 탐색이 아직 없습니다.")).toBeVisible()
     expect(screen.getByText("계정 조회 인가 확인")).toBeVisible()
     expect(screen.getByRole("alert", { name: /샘플 데이터/ })).toBeVisible()
@@ -178,7 +179,7 @@ describe("dashboard shell", () => {
     expect(screen.getByText("분석 대상")).toBeVisible()
     expect(screen.getByText("검토 대기")).toBeVisible()
     expect(screen.getByText("활성 세션")).toBeVisible()
-    expect(screen.getByRole("img", { name: "HUMAN과 ZAP Evidence 수집 추이" })).toBeVisible()
+    expect(screen.getByRole("img", { name: "HUMAN, ZAP, LLM Evidence 수집 추이" })).toBeVisible()
     expect(screen.getByRole("heading", { name: "Evidence 수집 현황" })).toBeVisible()
     expect(screen.getByRole("progressbar", { name: "HUMAN Evidence 1건" })).toBeVisible()
     expect(screen.getByRole("heading", { name: "트래픽 분류 분포" })).toBeVisible()
@@ -188,15 +189,15 @@ describe("dashboard shell", () => {
     expect(screen.getByText("/community/api/v2/community/posts/recent")).toBeVisible()
   })
 
-  it("keeps the primary dashboard free of the waived LLM lane", async () => {
+  it("shows the LLM lane and excludes unknown-source activity from the three-way dashboard", async () => {
     const llmEvent = { ...representativeSnapshot.events[0], eventId: "llm-1", source: "llm" as const, path: "/llm-only", timestamp: 1_700_000_120_000 }
     const unknownEvent = { ...representativeSnapshot.events[0], eventId: "unknown-1", source: "unknown" as const, path: "/unknown-only", timestamp: 1_700_000_180_000 }
     renderDashboard({ ...representativeSnapshot, events: [...representativeSnapshot.events, llmEvent, unknownEvent] })
 
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })
-    expect(screen.queryByText(/L · LLM/)).not.toBeInTheDocument()
+    expect(screen.getByText(/L · LLM/)).toBeVisible()
     expect(screen.queryByText(/LLM Explorer/)).not.toBeInTheDocument()
-    expect(screen.queryByText("/llm-only")).not.toBeInTheDocument()
+    expect(screen.getByText("/llm-only")).toBeVisible()
     expect(screen.queryByText("/unknown-only")).not.toBeInTheDocument()
   })
 

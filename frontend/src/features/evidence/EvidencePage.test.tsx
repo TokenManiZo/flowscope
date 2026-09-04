@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { EvidencePage } from "./EvidencePage"
 import { ImportXmlDialog } from "./ImportXmlDialog"
 import { renderWithQueryClient } from "@/test/render"
-import type { EvidencePage as EvidencePageResult, EventRecord, Snapshot } from "@/lib/api/types"
+import type { EventRecord, Snapshot } from "@/lib/api/types"
 
 const rawSentinel = "RAW-REQUEST-SECRET-DO-NOT-RENDER"
 
@@ -63,11 +63,10 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 }
 
-function installFetch(events: readonly EventRecord[], evidencePage: EvidencePageResult = { records: [], total: 0, offset: 0, limit: 200, hasMore: false }) {
+function installFetch(events: readonly EventRecord[]) {
   const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => {
     const path = String(input)
     if (path === "/api/snapshot") return Promise.resolve(json(snapshot(events)))
-    if (path.startsWith("/api/evidence?")) return Promise.resolve(json(evidencePage))
     return Promise.resolve(json({ success: true, imported: 1, candidates: 0, failed: 0 }))
   })
   vi.stubGlobal("fetch", fetch)
@@ -158,37 +157,22 @@ describe("EvidencePage", () => {
     expect(screen.getAllByText("/orders/2")).toHaveLength(2)
   })
 
-  it("uses server pagination metadata and never renders raw Evidence payloads or persists secret sentinels", async () => {
-    const fetch = installFetch([event({ eventId: "event-1", op: "GET /space path" })], {
-      records: [{ eventId: "event-1", request: rawSentinel, response: rawSentinel } as never],
-      total: 406,
-      offset: 80,
-      limit: 200,
-      hasMore: true,
-    })
+  it("does not bulk-fetch raw operation payloads when the selected detail only needs snapshot metadata", async () => {
+    const fetch = installFetch([event({ eventId: "event-1", op: "GET /space path" })])
     renderWithQueryClient(<EvidencePage />)
     const eventOneRow = (await screen.findByText("event-1")).closest("tr")
     expect(eventOneRow).not.toBeNull()
     await userEvent.click(within(eventOneRow as HTMLTableRowElement).getByRole("button", { name: "상세 보기" }))
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/evidence?operation=GET+%2Fspace+path&offset=0&limit=200",
-      expect.any(Object),
-    ))
-    expect(await screen.findByText("총 406건 · 81번째부터 표시")).toBeVisible()
+    expect(await screen.findByText("선택 Evidence: event-1")).toBeVisible()
+    expect(fetch.mock.calls.some(([input]) => String(input).startsWith("/api/evidence?"))).toBe(false)
     expect(screen.queryByText(rawSentinel)).not.toBeInTheDocument()
     expect(document.body.textContent).not.toContain(rawSentinel)
     expect(Object.values(localStorage)).not.toContain(rawSentinel)
     expect(Object.values(sessionStorage)).not.toContain(rawSentinel)
-
-    await userEvent.click(screen.getByRole("button", { name: "다음 Evidence 페이지" }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/evidence?operation=GET+%2Fspace+path&offset=280&limit=200",
-      expect.any(Object),
-    ))
   })
 
-  it("discards the prior operation page when selecting a different operation", async () => {
+  it("switches selected operation detail without creating an unused Evidence query cache", async () => {
     const fetch = installFetch([
       event({ eventId: "first", op: "GET /first", clusterId: "first" }),
       event({ eventId: "second", op: "GET /second", clusterId: "second" }),
@@ -197,13 +181,14 @@ describe("EvidencePage", () => {
     const firstRow = (await screen.findByText("first")).closest("tr")
     expect(firstRow).not.toBeNull()
     await userEvent.click(within(firstRow as HTMLTableRowElement).getByRole("button", { name: "상세 보기" }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/evidence?operation=GET+%2Ffirst&offset=0&limit=200", expect.any(Object)))
+    expect(await screen.findByText("선택 Evidence: first")).toBeVisible()
     const secondRow = (await screen.findByText("second")).closest("tr")
     expect(secondRow).not.toBeNull()
     await userEvent.click(within(secondRow as HTMLTableRowElement).getByRole("button", { name: "상세 보기" }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/evidence?operation=GET+%2Fsecond&offset=0&limit=200", expect.any(Object)))
+    expect(await screen.findByText("선택 Evidence: second")).toBeVisible()
 
-    expect(client.getQueryCache().findAll({ queryKey: ["evidence"] })).toHaveLength(1)
+    expect(client.getQueryCache().findAll({ queryKey: ["evidence"] })).toHaveLength(0)
+    expect(fetch.mock.calls.some(([input]) => String(input).startsWith("/api/evidence?"))).toBe(false)
   })
 
   it("uses generic Korean live status without placing the selected Evidence ID in ARIA", async () => {
