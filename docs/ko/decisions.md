@@ -1117,3 +1117,10 @@
 - **결정:** `target` 스키마에 "절대 URL만, 상대 경로 거부, `pending_targets` 사용" 설명을 넣는다. 후보 출력은 `pending_targets` = `service` + 각 pending 경로를 준다. `requireAbsoluteTarget`이 scope 검사 전에 `http(s)://`가 아닌 값을 형식 오류로 거부하고 사유에 안내를 담는다. 원장에는 `INVALID_REQUEST`로 남겨 실제 범위 밖(`SCOPE_BLOCKED`)과 구분한다. 프롬프트는 `pending_targets`를 실행 값으로 안내하되 순서·도구는 그대로 둔다.
 - **기각:** 서버가 상대 경로를 scope entry에 자동으로 붙이는 방식은 host 추정이라 exact scope에 host가 둘 이상이면 오귀속된다. 스키마 설명만 두는 방식은 문자열 조립 실수를 그대로 남긴다.
 - **검증·한계:** `McpServerTest`가 `pending_targets` 구성, 상대 경로의 형식 오류·안내 문구·`INVALID_REQUEST` 기록, `tools/list` 스키마 설명을 고정한다. 실제 Explorer가 안내를 따라 상대 경로 실패 0건이 되는지는 재실행 gate다.
+
+## D-122 · 발견용 응답만 분석문을 넓히고, 정적 자산은 실행 값에서 빼며, 익명 run은 계정 인자를 요구하지 않는다
+
+- **문제:** 실제 Explorer가 정상 종료했지만 수집 4건이 전부 정적 자산·문서였고 메인 비교 대상은 0건이었다. 원인이 셋이다. (1) 캡처가 보존 상한 1MB 초과 시 앞 64KB만 분석문으로 남기고 JS 분석기도 1,048,576자에서 `LIMIT_EXCEEDED`를 내는데, crAPI `main.js`는 1,655,900 bytes이고 경로 문자열 58개가 모두 1MB 이후에 있어 하나도 보이지 않았다. (2) 완료 게이트가 "남은 안전 구체 경로 0"이라 모델이 CSS·manifest를 받는 데 실행을 소모했다. (3) 런처 프롬프트가 익명 run에 `account_id: ANONYMOUS`를 알려 주고 서버가 그 값을 계정 전환으로 거부했다.
+- **결정:** 보존 상한은 1MB로 두고, javascript·json·html·xml 응답에 한해 **분석문 상한만** 4MB로 올린다(`flowscope.payload.discoveryPreviewBytes`). 초과 응답은 여전히 metadata-only이므로 전문 보존을 주장하지 않는다. `MAX_SCRIPT_CHARS`를 같은 값으로 맞추고 파싱 비용은 기존 `MAX_NODES`가 제한한다. `pendingConcretePaths`가 CSS·폰트·이미지·미디어를 실행 값에서 빼되 `js`·`mjs`·`map`은 남긴다. 한 지점이 제시·예산·완료 게이트를 함께 덮는다. 프롬프트는 익명이면 "account_id를 보내지 마라", 계정이 있으면 "run이 이미 고정하니 보내지 마라"로 통일하고, 서버는 익명 run의 `ANONYMOUS` 문자열을 빈 값으로 정규화하며 거부 메시지에 현재 계정을 적는다.
+- **기각:** `MAX_PAYLOAD_BYTES` 전역 상향은 모든 대용량 응답을 레코드마다 보존해 메모리를 크게 늘린다. 정적 자산을 후보 목록에서 삭제하면 사용자가 대상 구성을 못 본다. `js`를 자산으로 묶어 제외하면 endpoint 발견 자체가 사라진다. 익명 표식을 서버에서만 정규화하고 잘못된 프롬프트를 두는 방식은 원인을 남긴다.
+- **검증·한계:** `JavascriptCallSiteAnalyzerTest`·`BoundedHttpCaptureTest`·`McpServerTest`·`LocalLlmRunnerTest`가 1MB 이후 call site 해석, 보존 상한 불변, 자산 제외와 `.js` 유지, 익명 인자 수용, 프롬프트 문구를 고정한다. **한계가 크다.** crAPI 번들에는 API 경로가 아예 없고 화면 경로 58개만 있으며 실제 API 호출은 화면 렌더링 시 로드되는 chunk에 있다. 이 결정은 "번들을 다 읽는다"를 고칠 뿐 "SPA에서 API를 끌어낸다"를 풀지 않는다. 화면 경로 순회는 별도 결정이다.

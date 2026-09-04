@@ -17,8 +17,19 @@ public final class TrafficClassifier {
     private static final Set<String> ASSET_EXTENSIONS = Set.of(
             "js", "mjs", "css", "map", "png", "jpg", "jpeg", "gif", "svg", "ico", "webp",
             "avif", "bmp", "woff", "woff2", "ttf", "eot", "mp3", "mp4", "webm");
+    /** 정적 자산이지만 endpoint 선언을 담을 수 있어 탐색 대상으로 남기는 확장자. */
+    private static final Set<String> DISCOVERY_ASSET_EXTENSIONS = Set.of("js", "mjs", "map");
     private static final Set<String> TELEMETRY_PATHS = Set.of(
             "/collect", "/analytics", "/telemetry", "/beacon", "/pixel");
+
+    /**
+     * 응답 없이 경로만으로 "탐색 가치가 없는 정적 자산"인지 본다. route 후보 frontier에서만 쓴다.
+     * JavaScript와 source map은 endpoint 선언을 담으므로 제외하지 않는다.
+     */
+    public static boolean looksLikeNonDiscoveryAssetPath(String path) {
+        String ext = extension(path);
+        return !ext.isBlank() && ASSET_EXTENSIONS.contains(ext) && !DISCOVERY_ASSET_EXTENSIONS.contains(ext);
+    }
 
     private TrafficClassifier() {}
 

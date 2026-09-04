@@ -50,11 +50,24 @@ final class JavascriptCallSiteAnalyzerTest {
 
     @Test
     void 입력상한을_넘긴_script는_빈결과가_아니라_제한상태로_보고한다() {
-        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("a".repeat(1_048_577));
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("a".repeat(4_194_305));
 
         assertEquals(JavascriptAnalysis.Status.LIMIT_EXCEEDED, analysis.status());
-        assertTrue(analysis.detail().contains("1048576"));
+        assertTrue(analysis.detail().contains("4194304"));
         assertTrue(analysis.callSites().isEmpty());
+    }
+
+    @Test
+    void 실제_SPA_번들_크기인_1MB_초과_script의_뒷부분_call_site도_해석한다() {
+        // 실환경 재현: crAPI main.js는 1,655,900 bytes이고 경로 문자열 58개가 모두 1MB 지점 이후에 있었다.
+        String filler = "const pad" + "x".repeat(64) + " = \"" + "y".repeat(1_200_000) + "\";\n";
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(
+                filler + "fetch('/community/api/v2/community/posts/recent');\n");
+
+        assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis.detail());
+        assertTrue(analysis.callSites().stream()
+                        .anyMatch(site -> site.reference().equals("/community/api/v2/community/posts/recent")),
+                "1MB 이후 call site를 놓침: " + analysis.callSites());
     }
 
     @Test

@@ -1,5 +1,20 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 1.2.0-beta.44 SPA 번들 분석·자산 frontier·익명 계정 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 실환경 측정 | 실제 Explorer가 `SUCCEEDED`로 끝났으나 수집 4건(`/`, `main.js`, `manifest.json`, `main.css`)이 전부 정적 자산·문서로 분류돼 메인 비교 0건. surface extraction이 번들 evidence에 `PARTIAL` |
+| 번들 실측 | crAPI `main.js` 1,655,900 bytes. 경로 문자열 58개 전부 1MB 지점 이후, 64KB 프리뷰 안 0개. `identity/api`·`community/api`·`workshop/api` 0회이며 API 경로는 번들에 없음 |
+| 분석 상한 회귀 | `JavascriptCallSiteAnalyzerTest` — 1.2MB 뒤의 `fetch` call site를 `PARSED`로 해석. 4,194,304자 초과는 여전히 `LIMIT_EXCEEDED` |
+| 보존 경계 회귀 | `BoundedHttpCaptureTest` — 1.4MB 스크립트가 `complete=false`·`OVER_LIMIT_METADATA_ONLY`·`payload.text()==null`을 유지한 채 분석문에는 1MB 이후 call site 포함. CSS·PNG·null 미디어는 프리뷰 상한 64KB 불변 |
+| 자산 frontier 회귀 | `McpServerTest` — `.css`·`.woff2`가 `pending_targets`에서 제외되고 `.js`와 API 경로는 유지 |
+| 익명 계정 회귀 | `McpServerTest` — 익명 run에서 `account_id=ANONYMOUS`가 오류 아님. `LocalLlmRunnerTest` — 프롬프트에 `Never pass account_id` 포함, 옛 `Selected Explorer account_id: ANONYMOUS` 부재 |
+| 전체 회귀 | JDK 21.0.12·Maven 3.9.16 `mvn clean verify` 1회, Java 382 tests(직전 378 + 신규 4)·failure/error/skip 0, React typecheck·vitest는 같은 verify 안에서 통과. 산출물 `flowscope-1.2.0-beta.44.jar` 31,676,803 bytes. 문서의 beta.44 릴리스 SHA-256은 이 빌드에 적용되지 않음 |
+| 기존 회귀 조정 | `SurfaceAnalyzerTest`의 입력상한 사례를 1,048,577자에서 4,194,305자로 올려 새 상한을 계속 검사한다. 단언은 그대로이며 약화하지 않았다 |
+| 실제 Burp 재실행 | **대기** — 수정 JAR로 Explorer 재실행 시 번들에서 화면 경로가 후보로 잡히는지, CSS 요청이 사라지는지, 계정 인자 실패가 0건인지 확인 |
+| 미해결 | crAPI API 경로는 번들에 없어 이 수정만으로는 드러나지 않는다. 화면 경로 브라우저 순회가 별도 필요 |
+
 ## 1.2.0-beta.44 통제 요청 target 계약 gate
 
 | 검증 항목 | 현재 확인 결과 |

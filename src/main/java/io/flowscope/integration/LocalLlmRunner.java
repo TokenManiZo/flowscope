@@ -624,8 +624,12 @@ public final class LocalLlmRunner implements AutoCloseable {
                 ? "FlowScope has already started the isolated EXPLORATION run. Do not call flowscope_begin_llm_run. "
                 + "Use exactly run_id=" + runId + " and end it with flowscope_end_run before exiting.\n"
                 : "Start as a new Judge context with no Explorer conversation. Lock the dataset before synthesis.\n";
+        // 익명 run에 "ANONYMOUS"를 계정 이름처럼 알려 주면 모델이 그 값을 account_id 인자로 보내고 서버가 거부한다.
         String account = request.role() == Role.EXPLORER
-                ? "Selected Explorer account_id: " + (accountId.isBlank() ? "ANONYMOUS" : accountId) + "\n"
+                ? (accountId.isBlank()
+                        ? "No account is selected for this run; it is anonymous. Never pass account_id.\n"
+                        : "Selected Explorer account_id: " + accountId
+                                + ". The run already fixes it, so do not pass account_id.\n")
                 : "Judge account selection: use only safe account IDs returned by flowscope_list_sessions.\n";
         return "# FlowScope launcher-bound execution\n\n"
                 + "This invocation was started by the local FlowScope UI for an explicitly authorized assessment.\n"

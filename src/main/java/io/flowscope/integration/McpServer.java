@@ -1019,8 +1019,12 @@ public final class McpServer implements AutoCloseable {
                 throw new IllegalArgumentException("request body exceeds 64 KiB");
             }
             if (context.phase() == RunPhase.EXPLORATION && context.detail() == SourceDetail.LLM_EXPLORER) {
+                // 익명 run의 표시 이름을 계정 인자로 되돌려 준 경우는 계정 전환 시도가 아니다.
+                if (context.accountId() == null && accountId.equalsIgnoreCase("ANONYMOUS")) accountId = "";
                 if (!accountId.isBlank() && !java.util.Objects.equals(accountId, context.accountId())) {
-                    throw new IllegalArgumentException("Explorer account is fixed by the active run");
+                    throw new IllegalArgumentException("Explorer account is fixed by the active run; this run uses "
+                            + (context.accountId() == null ? "no account (anonymous)" : context.accountId())
+                            + ", so omit account_id");
                 }
                 accountId = context.accountId();
             } else if (accountId.isBlank()) {
@@ -3210,7 +3214,10 @@ public final class McpServer implements AutoCloseable {
     }
 
     private List<String> pendingConcretePaths(RouteCandidate candidate, List<RequestRecord> ownVisited) {
+        // CSS·폰트·이미지는 실행할 값으로 제시하지 않는다. 완료를 막지도 않고 모델의 요청 예산도 쓰지 않는다.
+        // JavaScript와 source map은 endpoint 선언을 담으므로 남긴다.
         return candidate.concretePaths().stream()
+                .filter(path -> !TrafficClassifier.looksLikeNonDiscoveryAssetPath(path))
                 .filter(path -> !routeVisited(candidate.service(), candidate.method(), path, ownVisited))
                 .toList();
     }

@@ -1,5 +1,37 @@
 # FlowScope 개발 기록
 
+## 2026-09-04 · 1.2.0-beta.44 · SPA 번들 분석 상한, 정적 자산 frontier 제외, 익명 run 계정 인자 모순
+
+### 개발·수정
+
+실제 Explorer 실행이 정상 종료했지만 수집 4건이 모두 정적 자산·문서였고 메인 비교 대상은 0건이었다. 원인 셋을 실측으로 분리했다.
+
+- **번들 분석 상한(두 겹).** crAPI `main.js`는 1,655,900 bytes이고 경로 문자열 58개가 모두 1MB 지점 이후에 있었다. 캡처는 보존 상한 1MB를 넘으면 앞 64KB만 디코딩해 분석문으로 남기고, JS 분석기는 자체적으로 1,048,576자를 넘으면 `LIMIT_EXCEEDED`를 낸다. 둘 중 하나만 올리면 효과가 없다. `BoundedHttpCapture.previewLimitFor`가 javascript·json·html·xml 응답에만 분석문 상한을 4MB로 올리고(`flowscope.payload.discoveryPreviewBytes`), `MAX_SCRIPT_CHARS`를 4,194,304로 올렸다. **보존 상한 1MB는 그대로**라 초과 응답은 여전히 metadata-only이며 "전문 보존"을 주장하지 않는다. 파싱 비용은 기존 `MAX_NODES`(250,000)가 계속 제한한다.
+- **정적 자산 frontier.** `pendingConcretePaths`가 CSS·폰트·이미지·미디어 경로를 실행 값에서 제외한다. `TrafficClassifier.looksLikeNonDiscoveryAssetPath`가 기존 `ASSET_EXTENSIONS`에서 `js`·`mjs`·`map`을 뺀 집합으로 판단한다. JavaScript와 source map은 endpoint 선언을 담으므로 남긴다. 이 한 지점이 `pending_concrete_paths`·`pending_targets`·`actionableRoutes`·완료 게이트를 모두 덮으므로 제시·예산·완료가 함께 해결된다.
+- **익명 run 계정 인자.** 런처 프롬프트가 익명 run에 `Selected Explorer account_id: ANONYMOUS`라고 알려 주고, 서버는 그 값을 계정 전환 시도로 거부했다. 우리가 만든 모순이다. 프롬프트를 "이 run은 익명이며 account_id를 보내지 마라"로 바꾸고, 계정이 지정된 경우에도 "run이 이미 고정하므로 보내지 마라"로 통일했다. 서버는 익명 run에서 `ANONYMOUS` 문자열을 빈 값으로 정규화하고, 거부 메시지에 현재 run의 계정을 적어 원인을 드러낸다.
+
+### 필요성·기각 대안
+
+- `MAX_PAYLOAD_BYTES`를 전역으로 올리는 방식은 모든 대용량 응답을 레코드마다 보존해 20,000건 상한과 함께 메모리를 크게 늘리므로 기각했다. 보존은 그대로 두고 분석문만 넓혔다.
+- 정적 자산을 후보 목록에서 통째로 지우는 방식은 사용자가 대상 구성을 보지 못하게 하므로 기각했다. `concrete_paths`에는 남고 실행 값에서만 빠진다.
+- `js`까지 자산으로 묶어 제외하는 방식은 endpoint 발견 자체를 없애므로 기각했다.
+- 익명 표식을 서버에서만 정규화하고 프롬프트를 두는 방식은 잘못된 안내가 남으므로 기각했다. 근본은 프롬프트이고 정규화는 보조다.
+
+### 영향 파일·회귀
+
+- 코드: `BoundedHttpCapture.java`(`previewLimitFor`), `FlowScopeExtension.java`(응답 캡처 호출), `JavascriptCallSiteAnalyzer.java`(`MAX_SCRIPT_CHARS`, 상한 문구를 상수 기반으로), `TrafficClassifier.java`(`looksLikeNonDiscoveryAssetPath`, `DISCOVERY_ASSET_EXTENSIONS`), `McpServer.java`(`pendingConcretePaths` 필터, 익명 정규화와 메시지), `LocalLlmRunner.java`(프롬프트 계정 문장).
+- 테스트: `JavascriptCallSiteAnalyzerTest` — 1MB 이후 call site 해석, 상한 초과는 여전히 `LIMIT_EXCEEDED`. `BoundedHttpCaptureTest` — 스크립트는 보존 상한을 넘겨도 분석문에 1MB 이후 call site를 담고 payload는 metadata-only 유지, 비발견 미디어는 프리뷰 상한 불변. `McpServerTest` — CSS·폰트가 `pending_targets`에서 빠지고 `.js`는 남으며 익명 run이 `ANONYMOUS` 인자를 거부하지 않음. `LocalLlmRunnerTest` — 프롬프트에 `Never pass account_id`가 있고 옛 문구가 없음.
+- 문서: decisions D-122, beta validation, changelog 한·영, 이 기록.
+
+### 최종 검증
+
+- 집중 회귀 통과. 전체 수치는 `beta-validation.md`에 기록한다.
+
+### 남은 한계·다음 gate
+
+- crAPI `main.js`에는 API 경로가 애초에 없다. 화면 경로 58개만 있고 실제 API 호출은 화면 렌더링 시 로드되는 chunk에 있다. 상한을 올리면 화면 경로는 보이지만 **API는 여전히 안 보인다**. 번들에서 얻은 화면 경로를 브라우저로 순회해 chunk를 끌어내는 일은 별도 작업이며 프롬프트·서버 안내를 함께 바꿔야 한다.
+- 4MB 분석문은 JavaScript 응답이 많은 대상에서 상주 메모리를 늘린다. 실제 Burp에서의 측정은 아직 없다.
+
 ## 2026-09-04 · 1.2.0-beta.44 · 통제 요청 `target`의 절대 URL 계약과 route 후보의 실행 가능 URL
 
 ### 개발·수정

@@ -260,7 +260,7 @@ final class SurfaceAnalyzerTest {
     @Test
     void 산출물_파싱실패와_입력상한을_빈결과와_구분해_보고한다() {
         RequestRecord oversized = document("/assets/large.js", "application/javascript",
-                "a".repeat(1_048_577));
+                "a".repeat(4_194_305));
         RequestRecord invalidOpenApi = document("/openapi.json", "application/json", "{not-json");
         Pipeline.Result result = Pipeline.runIsolated(List.of(oversized, invalidOpenApi),
                 new io.flowscope.core.AnalysisConfig());

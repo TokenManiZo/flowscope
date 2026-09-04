@@ -232,6 +232,9 @@ final class LocalLlmRunnerTest {
         assertTrue(ok.durationMillis() != null && ok.durationMillis() >= 0, "소요시간 없음: " + ok);
         assertTrue(ok.elapsedMillis() >= 0);
         assertTrue(runner.promptPreview().contains("in Korean"));
+        // 익명 run에 "ANONYMOUS"를 계정 이름처럼 알려 주면 모델이 그 값을 인자로 보내 거부당한다.
+        assertTrue(runner.promptPreview().contains("Never pass account_id"), runner.promptPreview());
+        assertFalse(runner.promptPreview().contains("Selected Explorer account_id: ANONYMOUS"));
 
         complete(Source.LLM, started.runId());
         process.release();

@@ -2011,6 +2011,56 @@ final class McpServerTest {
         assertTrue(schemas.contains("Absolute URL only"), "target 스키마에 절대 URL 설명이 없음");
     }
 
+    @Test
+    void 정적자산은_실행값에서_빠지고_스크립트는_남으며_익명run은_ANONYMOUS_인자를_거부하지_않는다() throws Exception {
+        // 실환경 재현: 모델이 CSS·manifest를 받느라 실행을 소모했고, 프롬프트가 알려 준 "ANONYMOUS"를 인자로 보내 거부당했다.
+        RequestRecord llm = observation(Source.LLM, "B", 200, "{\"id\":8,\"owner\":\"user-b\"}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, "explore-assets");
+        Pipeline.Result result = Pipeline.run(List.of(llm));
+        RouteCandidate assets = new RouteCandidate("https://api.example.test:443", "GET", "/v1/bundle",
+                List.of("/v1/static/main.css", "/v1/logo.woff2", "/v1/static/main.js", "/v1/coupons"),
+                false, false,
+                List.of(routeProvenance(RouteCandidate.ProvenanceType.HTML_SCRIPT, llm.evidenceId,
+                        Source.LLM, "explore-assets", RouteCandidate.Applicability.REVIEW, "html script")),
+                RouteCandidate.Applicability.REVIEW, "html script");
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicReference<ScopePolicy> scope = new AtomicReference<>(ScopePolicy.parse("https://api.example.test/v1"));
+        List<String> sent = new java.util.ArrayList<>();
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return result; }
+            @Override public ScopePolicy scope() { return scope.get(); }
+            @Override public void updateScope(String value) { scope.set(ScopePolicy.parse(value)); }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String target) { return false; }
+            @Override public List<RouteCandidate> routeCandidates() { return List.of(assets); }
+            @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
+                sent.add(request.target());
+                return new McpServer.TargetResult("ev-asset-" + sent.size(), 200, null,
+                        "HTTP/1.1 200 OK\r\n\r\n{}", "{}");
+            }
+        }, 0, "test-token");
+        server.start();
+        assertFalse(tool("flowscope_begin_llm_run",
+                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"explore-assets\"}")
+                .at("/result/isError").asBoolean());
+
+        JsonNode route = tool("flowscope_list_route_candidates", "{}").at("/result/structuredContent/routes/0");
+        List<String> pending = new java.util.ArrayList<>();
+        route.path("pending_targets").forEach(value -> pending.add(value.asText()));
+        assertTrue(pending.contains("https://api.example.test:443/v1/static/main.js"), pending.toString());
+        assertTrue(pending.contains("https://api.example.test:443/v1/coupons"), pending.toString());
+        assertFalse(pending.stream().anyMatch(value -> value.endsWith(".css") || value.endsWith(".woff2")),
+                "CSS·폰트가 실행값으로 제시됨: " + pending);
+
+        // 익명 run이 알려 준 표시 이름을 그대로 보내도 계정 전환 시도로 보지 않는다.
+        JsonNode anonymous = tool("flowscope_target_read",
+                "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/coupons\","
+                        + "\"account_id\":\"ANONYMOUS\"}");
+        assertFalse(anonymous.at("/result/isError").asBoolean(), anonymous.toString());
+    }
+
     private JsonNode tool(String name, String arguments) throws Exception {
         return json(post("test-token", request(3, "tools/call",
                 "{\"name\":\"" + name + "\",\"arguments\":" + arguments + "}")));

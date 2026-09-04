@@ -518,7 +518,8 @@ public final class FlowScopeExtension implements BurpExtension {
         BoundedHttpCapture.Result capturedRequest = BoundedHttpCapture.capture(req.toByteArray(), req.bodyOffset(),
                 req.headerValue("Content-Type"), MAX_PAYLOAD_BYTES, CAPTURE_PREVIEW_BYTES);
         BoundedHttpCapture.Result capturedResponse = BoundedHttpCapture.capture(response.toByteArray(),
-                response.bodyOffset(), responseContentType, MAX_PAYLOAD_BYTES, CAPTURE_PREVIEW_BYTES);
+                response.bodyOffset(), responseContentType, MAX_PAYLOAD_BYTES,
+                BoundedHttpCapture.previewLimitFor(responseContentType, CAPTURE_PREVIEW_BYTES));
         HttpMessageTextCodec.Decoded decodedRequest = capturedRequest.decoded();
         HttpMessageTextCodec.Decoded decodedResponse = capturedResponse.decoded();
         String requestText = decodedRequest.text();
