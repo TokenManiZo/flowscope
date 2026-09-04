@@ -4,6 +4,7 @@
 
 ## 1.2.0-beta.44 — 2026-09-03
 
+- 통제 실행기가 원본 레코드의 Evidence ID를 확정해 돌려주도록 고쳤습니다. 이전에는 격리 분석 복사본에만 ID가 붙어 응답을 받은 LLM 요청이 실행 원장에 `INVALID_REQUEST`로 적혔고, 그 때문에 응답 Evidence가 있는 Explorer도 `end_run`을 닫지 못했습니다. 완료 거부는 이제 응답 Evidence가 없을 때만 `ALL_FAILED`로 판단합니다.
 - React 분석 작업면을 최신 beta.44 코어 위에 통합했습니다. `/`와 `/app/`는 React, `/legacy/`는 기존 UI이며 첫 화면은 `API·입력 차이`입니다.
 - React가 endpoint·parameter Surface와 실행 실패 원장을 표시하고 H/S/L source 필터, 파싱 실패·provenance·시도/응답/실패를 유지합니다.
 - 동일 identity/resource/source의 서로 다른 operation edge 병합, 집계 노드 첫 verdict 오표시, route 후보의 source/identity 필터 무시를 수정했습니다.

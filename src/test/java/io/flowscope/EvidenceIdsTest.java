@@ -36,6 +36,25 @@ class EvidenceIdsTest {
         assertNotEquals(previousDigest, record.contentDigest);
     }
 
+    @Test
+    void 원본에_먼저_부여한_Evidence_ID는_격리_분석_스냅샷에서도_같은_값으로_유지된다() {
+        // 통제 실행기는 격리 분석(복사본) 직후 원본 레코드의 ID를 돌려주므로,
+        // 원본에 먼저 ID를 붙이고 그 값이 스냅샷 복사본과 일치해야 MCP·원장·UI가 같은 ID를 본다.
+        RequestRecord original = record("/orders/1", null);
+        original.runId = "explore-1";
+
+        EvidenceIds.assign(List.of(original));
+        String assigned = original.evidenceId;
+        io.flowscope.core.Pipeline.Result snapshot =
+                io.flowscope.core.Pipeline.runIsolated(new java.util.ArrayList<>(List.of(original)),
+                        new io.flowscope.core.AnalysisConfig());
+
+        org.junit.jupiter.api.Assertions.assertNotNull(assigned);
+        org.junit.jupiter.api.Assertions.assertTrue(assigned.startsWith("ev-"));
+        assertEquals(assigned, snapshot.records.getFirst().evidenceId);
+        assertEquals(assigned, original.evidenceId);
+    }
+
     private static RequestRecord record(String path, String query) {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://t:443",
                 "GET", path, 200, "anon");

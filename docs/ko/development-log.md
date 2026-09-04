@@ -1,5 +1,35 @@
 # FlowScope 개발 기록
 
+## 2026-09-04 · 1.2.0-beta.44 · 통제 요청 Evidence ID 누락과 Explorer 완료 교착 수정
+
+### 개발·수정
+
+- 실제 Burp에서 Codex Explorer를 두 번 실행했더니 둘 다 `LLM이 활성 run을 정상 종료하지 않았습니다`로 실패했다. 스냅샷에는 그 run의 `CONTROLLED` HTTP 200 Evidence가 각각 9건·12건 있었는데 실행 원장은 `시도 11·응답 0·실패 11`(`SCOPE_BLOCKED` 1, `INVALID_REQUEST` 10)과 `시도 12·응답 0·실패 12`(`INVALID_REQUEST` 12)였다. 두 번째 run에는 `HEAD /`와 `OPTIONS /chatbot/genai/state`가 있어 브라우저 워커가 아니라 `flowscope_target_read`가 실제로 실행된 것이었다.
+- 원인은 확장의 통제 실행기가 `rebuildImmediately()`(`Pipeline.runIsolated`) 뒤에 원본 `record.evidenceId`를 돌려주는데, 격리 분석은 복사본에만 `EvidenceIds.assign`을 적용해 원본 ID가 항상 `null`이었던 것이다. `RunExecutionLedger.Attempt`는 `HTTP_RESPONSE`에 Evidence ID를 요구하므로 `recordExecution`이 예외를 던졌고, 그 지점이 `attemptRecorded = true` 앞이라 catch가 같은 요청을 `INVALID_REQUEST`로 다시 적은 뒤 모델에 오류를 돌려줬다. 그 결과 `end_run`의 `ALL_FAILED` 거부가 응답 Evidence보다 먼저 걸려 run을 닫을 수 없었다.
+- 세 곳을 고쳤다. 통제 실행기는 레코드를 추가한 잠금 안에서 원본 목록에 `EvidenceIds.assign`을 적용해 돌려주는 ID를 확정한다(격리 분석 복사본은 같은 `contentDigest`로 그 ID를 유지한다). `McpServer.targetRequest`는 대상이 응답한 직후 `attemptRecorded`를 세워 이후 원장 기록 실패를 요청 실패로 다시 적지 않는다. `assertExplorerHarnessComplete`는 `LaneCompletionPolicy`를 먼저 평가하고, 응답 Evidence가 없을 때만 `ALL_FAILED`로 완료를 거부한다.
+
+### 필요성·기각 대안
+
+- `Attempt`의 Evidence ID 검증을 풀어 `HTTP_RESPONSE`에 `null`을 허용하는 방식은 원장과 Evidence의 역참조를 끊으므로 기각했다. 원장의 목적이 응답 Evidence와 실패를 분리하는 것이라 ID 없는 응답 기록은 그 목적과 모순된다.
+- `rebuildImmediately`를 `Pipeline.run`(제자리 정규화)으로 바꾸면 UI·MCP가 읽는 게시본과 수집 DTO가 다시 섞여 격리 분석을 둔 이유가 사라지므로 기각했다. 원본에는 ID만 붙이고 분석은 복사본에서 계속한다.
+- `ALL_FAILED` 거부를 없애는 방식은 D-116이 막으려던 "전부 실패했는데 완료"를 다시 허용하므로 기각했다. 응답 Evidence가 없을 때는 여전히 거부한다.
+
+### 영향 파일·회귀
+
+- 코드: `FlowScopeExtension.java`(통제 요청 경로), `McpServer.java`(`targetRequest`, `assertExplorerHarnessComplete`).
+- 테스트: `McpServerTest` — 실행기가 응답은 돌려주고 Evidence ID가 비어 있을 때 원장에 `INVALID_REQUEST`가 남지 않고 `flowscope_end_run`이 성공하는 재현 회귀. `EvidenceIdsTest` — 원본에 먼저 부여한 ID가 `Pipeline.runIsolated` 스냅샷 복사본과 같은 값으로 유지되는 회귀.
+- 문서: decisions D-119, beta validation, changelog, 이 기록.
+
+### 최종 검증
+
+- 수정 전 재현 테스트는 `outcome=INVALID_REQUEST, status=0, evidenceId=null`로 실패했고 수정 후 두 테스트가 통과했다.
+- 전체 회귀 수치는 `beta-validation.md`의 해당 gate에 기록한다.
+
+### 남은 한계·다음 gate
+
+- 실제 Burp에서 같은 대상으로 Explorer를 다시 실행해 원장이 `RESPONSES_OBSERVED`로 집계되고 `end_run`이 정상 종료되는지 확인해야 한다. 이번 수정은 자동 회귀와 실패 재현으로만 검증했다.
+- 같은 실행에서 확인된 별개 결함은 아직 남아 있다. `flowscope_target_read`의 `target` 스키마에 절대 URL 계약 설명이 없고 route 후보 출력이 `service`와 경로를 따로 주어 모델이 상대 경로를 넣었다(`SCOPE_BLOCKED` 1건). 작업 피드는 도구 호출의 실패 상태와 사유를 표시하지 않는다. 별도 작업 단위로 다룬다.
+
 ## 2026-09-04 · 1.2.0-beta.44 · 빌드 JVM 경계와 MR-JAR 전수 검증 복구
 
 ### 개발·수정

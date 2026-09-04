@@ -2,6 +2,7 @@
 
 ## 1.2.0-beta.44 — 2026-09-03
 
+- The controlled executor now assigns and returns the original record's Evidence ID. Previously only the isolated analysis copies received IDs, so a controlled LLM request that did get an HTTP response was written to the execution ledger as `INVALID_REQUEST`, and an Explorer run with real response Evidence could never pass `end_run`. Completion is now refused as `ALL_FAILED` only when no response Evidence exists.
 - Integrated the React analysis workspace over the beta.44 core without merging the PR branch's older Java, Maven, LLM, or ZAP implementation. `/` and `/app/` serve React, `/legacy/` keeps the previous UI, and the default route is the endpoint/parameter surface.
 - Added the server `surface` and `runExecutions` projections to React, restored all three HUMAN/SCANNER/LLM dashboard lanes, removed completion-like stage percentages, and stopped prefetching unused operation-wide raw Evidence payloads.
 - Kept operations distinct in graph edges, showed mixed aggregate verdicts as unknown, applied source/identity filters to route candidates, and made the graph compatible with bounded snapshots that omit complete cluster-member ID arrays.

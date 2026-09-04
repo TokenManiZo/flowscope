@@ -1904,6 +1904,58 @@ final class McpServerTest {
         assertEquals("REJECTED", server.validations().getFirst().verdict().name());
     }
 
+    @Test
+    void 응답을_받은_통제요청은_증거ID가_비어도_실패로_원장에_기록되지_않고_완료를_막지_않는다() throws Exception {
+        // 실환경 재현: 확장이 원본 레코드에 Evidence ID를 붙이지 않아 TargetResult.evidenceId가 null이었고,
+        // 원장이 그 요청을 INVALID_REQUEST로 적어 ALL_FAILED가 되면서 end_run이 영구 거부됐다.
+        RequestRecord llm = observation(Source.LLM, "B", 200, "{\"id\":8,\"owner\":\"user-b\"}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, "explore-null-id");
+        RequestRecord human = laneMarker(Source.HUMAN);
+        human.runId = "human-1";
+        RequestRecord scanner = laneMarker(Source.SCANNER);
+        scanner.runId = "scanner-1";
+        Pipeline.Result result = Pipeline.run(List.of(human, llm, scanner));
+        RunContextRegistry contexts = new RunContextRegistry();
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "human-1", result);
+        complete(contexts, Source.SCANNER, SourceDetail.ZAP_SPIDER, "scanner-1", result);
+        AtomicReference<List<RunExecutionLedger.Attempt>> attempts = new AtomicReference<>(List.of());
+        AtomicReference<ScopePolicy> scope = new AtomicReference<>(ScopePolicy.parse("https://api.example.test/v1"));
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return result; }
+            @Override public ScopePolicy scope() { return scope.get(); }
+            @Override public void updateScope(String value) { scope.set(ScopePolicy.parse(value)); }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String target) { return false; }
+            @Override public List<RouteCandidate> routeCandidates() { return List.of(); }
+            @Override public void executionAttemptsChanged(List<RunExecutionLedger.Attempt> values) {
+                attempts.set(values);
+            }
+            @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
+                // 응답은 받았지만 Evidence ID가 아직 비어 있는 실제 확장 동작을 그대로 흉내 낸다.
+                return new McpServer.TargetResult(null, 200, null,
+                        "HTTP/1.1 200 OK\r\n\r\n{\"id\":8}", "{\"id\":8}");
+            }
+        }, 0, "test-token");
+        server.start();
+        assertFalse(tool("flowscope_begin_llm_run",
+                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"explore-null-id\"}")
+                .at("/result/isError").asBoolean());
+
+        tool("flowscope_target_read", "{\"method\":\"GET\",\"target\":\"https://api.example.test/v1/orders/8\"}");
+
+        assertTrue(attempts.get().stream().noneMatch(attempt ->
+                        attempt.outcome() == RunExecutionLedger.Outcome.INVALID_REQUEST),
+                "HTTP 응답을 받은 요청이 INVALID_REQUEST로 기록됨: " + attempts.get());
+        assertFalse(tool("flowscope_list_route_candidates", "{}").at("/result/isError").asBoolean());
+        assertFalse(tool("flowscope_list_route_candidates", "{\"view\":\"ASSISTED\"}")
+                .at("/result/isError").asBoolean());
+        JsonNode ended = tool("flowscope_end_run", "{\"source\":\"LLM\",\"run_id\":\"explore-null-id\"}");
+        assertFalse(ended.at("/result/isError").asBoolean(),
+                "응답 Evidence가 있는 run의 완료가 원장 때문에 거부됨: " + ended);
+    }
+
     private JsonNode tool(String name, String arguments) throws Exception {
         return json(post("test-token", request(3, "tools/call",
                 "{\"name\":\"" + name + "\",\"arguments\":" + arguments + "}")));

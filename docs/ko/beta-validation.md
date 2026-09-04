@@ -1,5 +1,18 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 1.2.0-beta.44 Explorer 완료 교착 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 실환경 재현 | 실제 Burp(scope `http://127.0.0.1:8888/`, 계정 미등록·ANONYMOUS)에서 Codex Explorer 2회 실행이 모두 `LLM이 활성 run을 정상 종료하지 않았습니다`로 실패. 스냅샷 `events`에는 각 run의 `LLM_EXPLORER`·`CONTROLLED`·200 기록이 9건·12건 존재했고 두 번째 run에 `HEAD /`·`OPTIONS /chatbot/genai/state` 포함. `runExecutions`는 `시도 11·응답 0·실패 11`(`SCOPE_BLOCKED` 1·`INVALID_REQUEST` 10)과 `시도 12·응답 0·실패 12`(`INVALID_REQUEST` 12) |
+| 원인 확인 | `FlowScopeExtension` 통제 실행기가 `Pipeline.runIsolated` 뒤 원본 `record.evidenceId`(항상 `null`)를 반환. `RunExecutionLedger.Attempt`의 `HTTP_RESPONSE` Evidence ID 요구로 `recordExecution`이 예외, `attemptRecorded` 전이라 `INVALID_REQUEST` 재기록. `end_run`이 `ALL_FAILED`를 응답 Evidence보다 먼저 검사 |
+| 재현 회귀 | 수정 전 `McpServerTest` 신규 테스트가 `outcome=INVALID_REQUEST, status=0, evidenceId=null`로 실패함을 확인. 수정 후 통과 |
+| ID 일치 회귀 | `EvidenceIdsTest` — 원본에 부여한 ID가 `runIsolated` 스냅샷 복사본과 동일 |
+| 전체 회귀 | JDK 21.0.12·Maven 3.9.16 `mvn clean verify` 1회, Java 376 tests(기존 374 + 신규 2)·failure/error/skip 0, React 테스트는 같은 verify 안에서 통과. 산출물 `flowscope-1.2.0-beta.44.jar` 31,672,053 bytes. 소스가 바뀌었으므로 아래 gate에 기록된 beta.44 SHA-256은 이 빌드에 적용되지 않으며, 릴리스 해시는 병합 뒤 D-118 환경에서 다시 만든다 |
+| 실제 Burp 재실행 | **대기** — 수정 JAR로 같은 대상의 Explorer를 다시 실행해 `RESPONSES_OBSERVED`와 정상 `end_run`을 확인해야 함 |
+
+이 gate는 응답 Evidence가 있는 run이 원장 회계 오류로 닫히지 않는 문제를 자동 회귀로 고정한다. 같은 실행에서 확인된 `target` 절대 URL 계약 부재(모델이 `service`와 경로를 이어 붙이지 않아 `SCOPE_BLOCKED`)와 작업 피드의 도구 실패 미표시는 이 gate의 범위가 아니며 별도로 남아 있다.
+
 ## 1.2.0-beta.44 LLM 실행 실패 가시성 gate
 
 | 검증 항목 | 현재 확인 결과 |

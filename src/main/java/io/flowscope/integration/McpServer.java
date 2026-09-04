@@ -732,12 +732,13 @@ public final class McpServer implements AutoCloseable {
 
     private List<String> assertExplorerHarnessComplete(RunContextRegistry.Context explorer) {
         RunExecutionLedger.Summary execution = executionLedger.summarize(Source.LLM, explorer.runId());
-        if (execution.quality() == RunExecutionLedger.Quality.ALL_FAILED) {
+        LaneCompletionPolicy.Decision evidence = LaneCompletionPolicy.evaluate(Source.LLM, explorer.runId(),
+                state.completionSnapshot());
+        // 응답 Evidence가 실제로 있으면 원장의 전부 실패는 회계 불일치이지 완료 거부 사유가 아니다.
+        if (execution.quality() == RunExecutionLedger.Quality.ALL_FAILED && !evidence.eligible()) {
             throw new IllegalStateException("Explorer sent " + execution.attempted()
                     + " controlled request(s), but none returned an HTTP response");
         }
-        LaneCompletionPolicy.Decision evidence = LaneCompletionPolicy.evaluate(Source.LLM, explorer.runId(),
-                state.completionSnapshot());
         if (!evidence.eligible()) throw new IllegalStateException(evidence.reason());
         ExplorerProgress progress = explorerProgress.getOrDefault(explorer.runId(),
                 new ExplorerProgress(false, false));
@@ -1024,9 +1025,10 @@ public final class McpServer implements AutoCloseable {
             accountId = validatedAccountForTarget(accountId, target);
             TargetResult result = state.targetRequest(new TargetRequest(method, target, Map.copyOf(headers), body,
                     accountId == null || accountId.isBlank() ? null : accountId));
+            // 대상이 응답한 순간부터 이 시도는 실패가 아니다. 이후 원장 기록이 실패해도 실패로 다시 적지 않는다.
+            attemptRecorded = true;
             recordExecution(context, accountId, method, target, RunExecutionLedger.Outcome.HTTP_RESPONSE,
                     result.status(), result.evidenceId(), startedAt, startedNanos);
-            attemptRecorded = true;
             ObjectNode out = json.createObjectNode();
             out.put("evidence_id", result.evidenceId());
             out.put("status", result.status());

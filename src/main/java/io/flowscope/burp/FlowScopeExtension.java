@@ -1561,6 +1561,8 @@ public final class FlowScopeExtension implements BurpExtension {
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("record limit reached");
             records.add(record);
             retainRawExchange(record, exchange.request(), response);
+            // 격리 분석은 복사본에만 Evidence ID를 붙이므로, 통제 실행기가 돌려줄 원본 ID는 여기서 확정한다.
+            io.flowscope.core.EvidenceIds.assign(records);
         }
         rebuildImmediately();
         return new McpServer.TargetResult(record.evidenceId, record.status, record.location,
