@@ -854,8 +854,11 @@ public final class McpServer implements AutoCloseable {
             route.set("concrete_paths", json.valueToTree(candidate.concretePaths()));
             route.put("concrete_paths_truncated", candidate.concretePathsTruncated());
             if (explorer != null) {
-                route.set("pending_concrete_paths", json.valueToTree(
-                        pendingConcretePaths(candidate, explorerSnapshot, explorer)));
+                List<String> pending = pendingConcretePaths(candidate, explorerSnapshot, explorer);
+                route.set("pending_concrete_paths", json.valueToTree(pending));
+                // 모델이 service와 경로를 직접 이어 붙이다 상대 경로를 넣는 실수를 막기 위해 실행 가능한 절대 URL을 같이 준다.
+                route.set("pending_targets", json.valueToTree(pending.stream()
+                        .map(path -> candidate.service() + path).toList()));
                 route.set("review_dimensions", json.valueToTree(reviewDimensions(candidate)));
             }
             route.put("observed", candidate.observed());
@@ -987,6 +990,7 @@ public final class McpServer implements AutoCloseable {
                     ? "flowscope_target_read allows only GET, HEAD, or OPTIONS"
                     : "flowscope_target_request allows only POST, PUT, PATCH, or DELETE");
             target = required(args, "target");
+            requireAbsoluteTarget(target);
             if (!state.scope().allows(target)) {
                 throw new TargetExecutionException(RunExecutionLedger.Outcome.SCOPE_BLOCKED,
                         "target is outside configured scope");
@@ -1048,6 +1052,16 @@ public final class McpServer implements AutoCloseable {
         }
     }
 
+    /** 상대 경로는 scope 검사에서 조용히 SCOPE_BLOCKED가 되어 원인이 가려진다. 형식 오류로 먼저 잡아 사유를 돌려준다. */
+    static void requireAbsoluteTarget(String target) {
+        String lower = target == null ? "" : target.toLowerCase(java.util.Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            throw new IllegalArgumentException("target must be an absolute URL (scheme://host[:port]/path) inside the "
+                    + "exact scope, not a relative path; use pending_targets from flowscope_list_route_candidates: "
+                    + Masking.truncate(String.valueOf(target), 200));
+        }
+    }
+
     private void recordExecution(RunContextRegistry.Context context, String accountId, String method,
                                  String target, RunExecutionLedger.Outcome outcome, int status,
                                  String evidenceId, Instant startedAt, long startedNanos) {
@@ -1059,6 +1073,7 @@ public final class McpServer implements AutoCloseable {
     private JsonNode browserNavigate(JsonNode args) throws Exception {
         RunContextRegistry.Context context = requireExplorerContext();
         String target = required(args, "target");
+        requireAbsoluteTarget(target);
         if (!state.scope().allows(target)) {
             throw new IllegalArgumentException("browser target is outside configured exact scope");
         }
@@ -2948,7 +2963,9 @@ public final class McpServer implements AutoCloseable {
     private ObjectNode browserNavigateSchema() {
         ObjectNode schema = schema();
         ObjectNode properties = (ObjectNode) schema.get("properties");
-        properties.putObject("target").put("type", "string");
+        properties.putObject("target").put("type", "string")
+                .put("description", "Absolute URL only: scheme://host[:port]/path, inside the exact scope. "
+                        + "Relative paths are rejected.");
         schema.putArray("required").add("target");
         return schema;
     }
@@ -2970,7 +2987,10 @@ public final class McpServer implements AutoCloseable {
         ObjectNode method = properties.putObject("method").put("type", "string");
         ArrayNode methodValues = method.putArray("enum");
         methods.forEach(methodValues::add);
-        properties.putObject("target").put("type", "string");
+        properties.putObject("target").put("type", "string")
+                .put("description", "Absolute URL only: scheme://host[:port]/path[?query], inside the exact scope. "
+                        + "Relative paths such as /api/x are rejected. Use pending_targets from "
+                        + "flowscope_list_route_candidates, or join a route's service with its concrete path.");
         properties.putObject("account_id").put("type", "string");
         properties.putObject("headers").put("type", "object")
                 .putObject("additionalProperties").put("type", "string");

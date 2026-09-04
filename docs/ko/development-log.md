@@ -1,5 +1,34 @@
 # FlowScope 개발 기록
 
+## 2026-09-04 · 1.2.0-beta.44 · 통제 요청 `target`의 절대 URL 계약과 route 후보의 실행 가능 URL
+
+### 개발·수정
+
+- 실제 Explorer 실행에서 모델이 `flowscope_target_read`의 `target`에 `/chatbot/genai/state` 같은 상대 경로를 넣어 `SCOPE_BLOCKED`로 실패했다. `target` 스키마에는 `type: string` 외 설명이 없었고, `flowscope_list_route_candidates`는 `service`와 `pending_concrete_paths`를 따로 주어 모델이 둘을 이어 붙여야 했다. 상대 경로는 `ScopePolicy.allows`에서 조용히 거짓이 되어 형식 오류가 범위 차단으로 보였다.
+- `target` 스키마(`flowscope_target_read`, `flowscope_target_request`, `flowscope_browser_navigate`)에 절대 URL 계약과 상대 경로 거부를 설명으로 넣었다. route 후보 출력에 `pending_targets`(= `service` + 각 `pending_concrete_paths`)를 추가해 모델이 그대로 `target`에 쓰게 했다.
+- `requireAbsoluteTarget`이 scope 검사보다 먼저 `http://`·`https://`가 아닌 `target`을 형식 오류로 거부하고, 사유에 `pending_targets` 사용을 안내한다. 원장에는 `INVALID_REQUEST`로 남아 실제 범위 밖 요청(`SCOPE_BLOCKED`)과 구분된다.
+- `AGENTS.md`와 `prompts/explorer.md`의 실행 값 안내를 `pending_targets`로 바꾸고 상대 경로 금지를 명시했다. 탐색 순서와 도구 목록은 바꾸지 않았다.
+
+### 필요성·기각 대안
+
+- 서버가 상대 경로를 scope의 첫 entry에 자동으로 붙여 주는 방식은 모델이 어느 host를 뜻했는지 추정하는 것이라 기각했다. exact scope에 host가 둘 이상이면 오귀속이 된다.
+- 스키마 설명만 추가하고 출력은 그대로 두는 방식은 모델이 여전히 문자열을 조립해야 해 같은 실수가 남으므로 절대 URL을 서버가 만들어 준다.
+
+### 영향 파일·회귀
+
+- 코드: `McpServer.java`(스키마 설명, `pending_targets`, `requireAbsoluteTarget`), `agent-workspace/AGENTS.md`, `agent-workspace/prompts/explorer.md`.
+- 테스트: `McpServerTest` — 후보 출력의 `pending_targets`가 `service + 경로`이고, 상대 경로 `target`이 `absolute URL`·`pending_targets`를 담은 오류로 거부되며 원장에 `SCOPE_BLOCKED`가 아니라 `INVALID_REQUEST`로 남고, `tools/list` 스키마에 설명이 있는 회귀. 이 회귀는 수정과 함께 작성했으며 수정 전 상태에서는 세 단언 모두 성립하지 않는다.
+- 문서: decisions D-121, beta validation, changelog, 이 기록.
+
+### 최종 검증
+
+- 집중 회귀 `McpServerTest` 40건 통과. 전체 수치는 `beta-validation.md`에 기록한다.
+
+### 남은 한계·다음 gate
+
+- 실제 Burp에서 Explorer가 `pending_targets`를 그대로 쓰는지, 상대 경로 실패가 0건이 되는지는 재실행으로 확인해야 한다.
+- 브라우저 워커 요청은 여전히 실행 원장에 들어가지 않는다.
+
 ## 2026-09-04 · 1.2.0-beta.44 · LLM 작업 피드의 실패 표시·한국어 행동명·경과 시간
 
 ### 개발·수정

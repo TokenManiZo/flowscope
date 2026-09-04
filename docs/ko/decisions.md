@@ -1110,3 +1110,10 @@
 - **결정:** 도구 항목은 item의 `status`·`error`(Codex)와 `tool_result.is_error`(Claude)로 상태를 정한다. 제목은 한국어 행동명 + `method` + `target`(또는 `evidence_id`)이고, 실패면 결과의 `error` 값 또는 텍스트 앞부분을 마스킹·절단해 사유로 붙인다. 헤더·본문·계정·결과 전문은 피드에 넣지 않는다. `Activity`는 실행 시작 기준 경과와 도구 호출 소요를 갖고 `llmStatus`가 `elapsed_ms`·`duration_ms`로 내보낸다. 런처 머리말이 운영자용 메시지를 한국어로 쓰라고 지시하되 도구 이름·URL·메서드·Evidence ID는 원문을 유지한다. React 실행 화면은 피드를 목록으로 그리고 실패를 빨갛게 표시한다.
 - **기각:** 인자·결과 원문 노출은 비밀 경계를 넓힌다. 실패를 tail에서만 읽게 두는 방식은 tail 밖의 실패를 잃는다. 한국어 지시를 `AGENTS.md`에 두는 방식은 진단 규칙과 표시 언어를 섞는다. 모르는 도구 이름을 억지로 번역하는 방식은 오표기를 만들므로 원문을 둔다.
 - **검증·한계:** `LocalLlmRunnerTest`가 실패 item의 `FAILED`·행동명·사유·소요 시간과 비밀 부재, 프롬프트의 한국어 지시를 고정하고 `RunsPage.test.tsx`가 피드 렌더링을 고정한다. Codex 이벤트의 `status`·`error` 필드는 로컬 CLI에서 관측한 형태이며 다른 버전의 완전한 호환은 실제 재실행에서 확인한다.
+
+## D-121 · 통제 요청 `target`은 절대 URL만 받고 route 후보는 실행 가능한 절대 URL을 함께 준다
+
+- **문제:** 실제 Explorer가 route 후보의 경로를 그대로 `target`에 넣어 `SCOPE_BLOCKED`로 실패했다. 스키마에 형식 설명이 없었고 후보 출력이 `service`와 `pending_concrete_paths`를 분리해 모델이 조립해야 했으며, 상대 경로는 scope 검사에서 조용히 거짓이 되어 형식 오류가 범위 차단처럼 보였다.
+- **결정:** `target` 스키마에 "절대 URL만, 상대 경로 거부, `pending_targets` 사용" 설명을 넣는다. 후보 출력은 `pending_targets` = `service` + 각 pending 경로를 준다. `requireAbsoluteTarget`이 scope 검사 전에 `http(s)://`가 아닌 값을 형식 오류로 거부하고 사유에 안내를 담는다. 원장에는 `INVALID_REQUEST`로 남겨 실제 범위 밖(`SCOPE_BLOCKED`)과 구분한다. 프롬프트는 `pending_targets`를 실행 값으로 안내하되 순서·도구는 그대로 둔다.
+- **기각:** 서버가 상대 경로를 scope entry에 자동으로 붙이는 방식은 host 추정이라 exact scope에 host가 둘 이상이면 오귀속된다. 스키마 설명만 두는 방식은 문자열 조립 실수를 그대로 남긴다.
+- **검증·한계:** `McpServerTest`가 `pending_targets` 구성, 상대 경로의 형식 오류·안내 문구·`INVALID_REQUEST` 기록, `tools/list` 스키마 설명을 고정한다. 실제 Explorer가 안내를 따라 상대 경로 실패 0건이 되는지는 재실행 gate다.

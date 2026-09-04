@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 1.2.0-beta.44 통제 요청 target 계약 gate
+
+| 검증 항목 | 현재 확인 결과 |
+|---|---|
+| 실환경 재현 | 실제 Explorer가 `{"method":"GET","target":"/chatbot/genai/state"}`를 보내 `target is outside configured scope`로 실패(원장 `SCOPE_BLOCKED` 1). 스키마에 형식 설명 없음, 후보 출력이 `service`와 경로를 분리 |
+| 후보 출력 회귀 | `McpServerTest` — `pending_concrete_paths[0]="/v1/coupons"`일 때 `pending_targets[0]="https://api.example.test:443/v1/coupons"` |
+| 형식 오류 회귀 | 상대 경로 `target`이 실행기 전에 거부되고 오류 문구에 `absolute URL`·`pending_targets` 포함, 원장 outcome `INVALID_REQUEST`(`SCOPE_BLOCKED` 아님) |
+| 스키마 회귀 | `tools/list`의 `target` 설명에 `Absolute URL only` 포함 |
+| 전체 회귀 | JDK 21.0.12·Maven 3.9.16 `mvn clean verify` 1회, Java 378 tests(직전 377 + 신규 1)·failure/error/skip 0, React typecheck·vitest는 같은 verify 안에서 통과. 산출물 `flowscope-1.2.0-beta.44.jar` 31,675,820 bytes. 문서의 beta.44 릴리스 SHA-256은 이 빌드에 적용되지 않음 |
+| 실제 Burp 재실행 | **대기** — 수정 JAR로 Explorer 재실행 시 상대 경로 실패 0건, `pending_targets` 사용 확인 |
+
 ## 1.2.0-beta.44 LLM 작업 피드 가시성 gate
 
 | 검증 항목 | 현재 확인 결과 |

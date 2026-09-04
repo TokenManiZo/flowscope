@@ -1956,6 +1956,61 @@ final class McpServerTest {
                 "응답 Evidence가 있는 run의 완료가 원장 때문에 거부됨: " + ended);
     }
 
+    @Test
+    void 상대경로_target은_형식오류로_거부되고_route_후보는_실행가능한_절대URL을_함께_준다() throws Exception {
+        // 실환경 재현: 모델이 route 후보의 경로를 그대로 target에 넣어 SCOPE_BLOCKED로만 실패했고 원인이 가려졌다.
+        RequestRecord llm = observation(Source.LLM, "B", 200, "{\"id\":8,\"owner\":\"user-b\"}",
+                SourceDetail.LLM_EXPLORER, RunPhase.EXPLORATION, "explore-abs");
+        Pipeline.Result result = Pipeline.run(List.of(llm));
+        RouteCandidate pending = new RouteCandidate("https://api.example.test:443", "GET", "/v1/coupons",
+                List.of("/v1/coupons"), false, false,
+                List.of(routeProvenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL, llm.evidenceId,
+                        Source.LLM, "explore-abs", RouteCandidate.Applicability.REVIEW, "llm literal")),
+                RouteCandidate.Applicability.REVIEW, "llm literal");
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicReference<List<RunExecutionLedger.Attempt>> attempts = new AtomicReference<>(List.of());
+        AtomicReference<ScopePolicy> scope = new AtomicReference<>(ScopePolicy.parse("https://api.example.test/v1"));
+        server = new McpServer(new McpServer.State() {
+            @Override public Pipeline.Result snapshot() { return result; }
+            @Override public ScopePolicy scope() { return scope.get(); }
+            @Override public void updateScope(String value) { scope.set(ScopePolicy.parse(value)); }
+            @Override public ZapClient zap() { return new ZapClient("http://127.0.0.1:9", ""); }
+            @Override public RunContextRegistry contexts() { return contexts; }
+            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
+            @Override public boolean approve(String action, String target) { return false; }
+            @Override public List<RouteCandidate> routeCandidates() { return List.of(pending); }
+            @Override public void executionAttemptsChanged(List<RunExecutionLedger.Attempt> values) {
+                attempts.set(values);
+            }
+            @Override public McpServer.TargetResult targetRequest(McpServer.TargetRequest request) {
+                throw new AssertionError("상대 경로는 실행기까지 오면 안 된다: " + request.target());
+            }
+        }, 0, "test-token");
+        server.start();
+        assertFalse(tool("flowscope_begin_llm_run",
+                "{\"phase\":\"EXPLORATION\",\"tool\":\"CODEX\",\"run_id\":\"explore-abs\"}")
+                .at("/result/isError").asBoolean());
+
+        JsonNode routes = tool("flowscope_list_route_candidates", "{}");
+        assertFalse(routes.at("/result/isError").asBoolean(), routes.toString());
+        JsonNode route = routes.at("/result/structuredContent/routes/0");
+        assertEquals("/v1/coupons", route.at("/pending_concrete_paths/0").asText());
+        assertEquals("https://api.example.test:443/v1/coupons", route.at("/pending_targets/0").asText());
+
+        JsonNode relative = tool("flowscope_target_read", "{\"method\":\"GET\",\"target\":\"/v1/coupons\"}");
+        assertTrue(relative.at("/result/isError").asBoolean());
+        String message = relative.toString();
+        assertTrue(message.contains("absolute URL"), message);
+        assertTrue(message.contains("pending_targets"), message);
+        assertTrue(attempts.get().stream().allMatch(attempt ->
+                        attempt.outcome() == RunExecutionLedger.Outcome.INVALID_REQUEST),
+                "형식 오류가 scope 차단으로 기록됨: " + attempts.get());
+
+        JsonNode schema = json(post("test-token", request(4, "tools/list", "{}")));
+        String schemas = schema.toString();
+        assertTrue(schemas.contains("Absolute URL only"), "target 스키마에 절대 URL 설명이 없음");
+    }
+
     private JsonNode tool(String name, String arguments) throws Exception {
         return json(post("test-token", request(3, "tools/call",
                 "{\"name\":\"" + name + "\",\"arguments\":" + arguments + "}")));

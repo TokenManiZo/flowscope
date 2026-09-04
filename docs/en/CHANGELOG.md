@@ -2,6 +2,7 @@
 
 ## 1.2.0-beta.44 — 2026-09-03
 
+- Controlled request `target` values must be absolute URLs. The schema now says so, route candidates include ready-to-use `pending_targets` (service joined with each pending path), and a relative path is rejected as a format error with guidance instead of surfacing as a scope block. This was why a real Explorer run failed with `SCOPE_BLOCKED` after passing a bare path.
 - The LLM activity feed now shows what each tool call actually did. Failed calls are marked `FAILED` with a masked reason (previously every completed event was shown as success), tool names become Korean action labels with method and URL, and every entry carries elapsed time since run start plus per-call duration. Headers, bodies, accounts, and full results stay hidden. The launcher instructs the model to write operator-facing messages in Korean, and the React runs page renders the feed.
 - The controlled executor now assigns and returns the original record's Evidence ID. Previously only the isolated analysis copies received IDs, so a controlled LLM request that did get an HTTP response was written to the execution ledger as `INVALID_REQUEST`, and an Explorer run with real response Evidence could never pass `end_run`. Completion is now refused as `ALL_FAILED` only when no response Evidence exists.
 - Integrated the React analysis workspace over the beta.44 core without merging the PR branch's older Java, Maven, LLM, or ZAP implementation. `/` and `/app/` serve React, `/legacy/` keeps the previous UI, and the default route is the endpoint/parameter surface.
