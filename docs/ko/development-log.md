@@ -2931,3 +2931,30 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 ### 남은 한계
 
 - 재현 해시는 여전히 명시 환경(Homebrew JDK 21.0.12) 한정이며 벤더 교차 재현은 미검증이다.
+
+## 2026-09-06 · 1.2.0-beta.44 · 다중 항목 scope의 ZAP capability 커버리지 이식
+
+### 개발·수정
+
+- 예전 `claude/hai-8351a0` 브랜치(main 미병합)를 검토해, 문서 2커밋은 새 문서로 대체돼 폐기하고 코드 커밋 `849f843`의 두 수정 중 하나만 남아 있음을 확인했다. route 매칭은 코덱스의 concrete frontier(D-113 계열)로 재구현돼 대체됐고, **scope-wide ZAP capability 커버리지는 main에 없었다.**
+- 현재 main은 capability 헤더 Replacer 규칙을 단일 target 하위(`exactSubtreeRegex(target)`)에만 붙였다. 그러나 Burp 8081은 스캐너 캠페인 레인의 **모든** in-scope 요청에 capability를 요구한다(`scannerCampaignRequestAllowed`). exact scope에 항목이 둘 이상이고 브라우저 크롤러(Client/AJAX)가 형제 항목이나 그 항목이 참조하는 리소스를 부르면, ZAP이 헤더를 안 붙여 8081이 "capability missing or invalid"로 거부하고 캠페인이 격리 오류로 끝난다.
+- `ZapClient.exactSubtreeRegex(Collection)` 오버로드를 추가해 여러 항목을 union regex로 덮는다. 항목이 하나면 단일 target 버전과 완전히 동일한 문자열을 돌려주므로 crAPI 등 단일 항목 scope의 동작은 불변이다. capability 설치 지점에서 `state.scope().entries()` 전체(+target)를 커버리지로 쓴다. `includeInContext`(ZAP 크롤 경계)는 바꾸지 않았다 — 크롤 범위 변경은 별도 결정이다.
+
+### 필요성·기각 대안
+
+- 예전 브랜치를 통째로 병합하는 방식은 낡은 문서와 대체된 코드를 함께 끌어와 기각하고, 살아 있는 수정만 현재 코드에 새로 이식했다.
+- capability를 단일 target으로 두는 현행은 다중 항목 scope에서 잠복 실패를 남기므로 기각했다.
+
+### 영향 파일·회귀
+
+- 코드: `ZapClient.java`(union 오버로드), `McpServer.java`(capability 커버리지=scope 전체).
+- 테스트: `ZapClientTest` — union이 모든 scope 항목을 덮고 외부는 거부, 단일 항목 union == 단일 target 회귀.
+- 문서: decisions D-124, 이 기록.
+
+### 최종 검증
+
+- 집중 회귀 통과. 전체 수치는 아래 커밋의 verify에 기록.
+
+### 남은 한계
+
+- 다중 항목 scope의 실제 ZAP 캠페인 완주는 실환경 gate로 남는다. `includeInContext`는 여전히 단일 target이라 ZAP 스파이더 자체의 형제 항목 크롤은 별도 검토가 필요하다.

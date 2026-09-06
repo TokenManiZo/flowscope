@@ -1566,7 +1566,11 @@ public final class McpServer implements AutoCloseable {
         }
         String capability = randomToken();
         String description = "flowscope-capability-" + runId + "-" + Long.toUnsignedString(System.nanoTime(), 36);
-        requireZapOk(state.zap().addRequestHeaderRule(description, ZapClient.exactSubtreeRegex(target),
+        // 8081은 스캐너 레인의 모든 in-scope 요청에 capability를 요구한다. target 하위에만 헤더를 붙이면
+        // 다중 항목 scope에서 브라우저 크롤러가 형제 항목을 부를 때 헤더 없이 도착해 캠페인이 격리 오류로 끝난다.
+        List<String> capabilityCoverage = new ArrayList<>(state.scope().entries());
+        if (!capabilityCoverage.contains(target)) capabilityCoverage.add(target);
+        requireZapOk(state.zap().addRequestHeaderRule(description, ZapClient.exactSubtreeRegex(capabilityCoverage),
                 "X-FlowScope-Scanner-Capability", capability), "install its scanner provenance capability");
         synchronized (this) {
             zapCapabilityRunId = runId;

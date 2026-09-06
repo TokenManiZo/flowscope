@@ -137,6 +137,25 @@ class ZapClientTest {
     }
 
     @Test
+    void exactSubtreeRegexUnionCoversEveryScopeEntryAndRejectsOutsiders() {
+        // 다중 항목 scope: capability 헤더가 target 하위뿐 아니라 모든 in-scope 항목 요청에 붙어야 한다.
+        Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex(
+                java.util.List.of("https://api.example.test/v1", "https://api.example.test/admin")));
+
+        assertTrue(pattern.matcher("https://api.example.test/v1/users").matches());
+        assertTrue(pattern.matcher("https://api.example.test/admin/reset").matches());
+        assertFalse(pattern.matcher("https://api.example.test/other").matches());
+        assertFalse(pattern.matcher("https://evil.example.test/v1").matches());
+    }
+
+    @Test
+    void exactSubtreeRegexUnionOfOneEqualsSingleTargetRegex() {
+        // 단일 항목이면 기존 단일 target 동작과 완전히 동일해야 한다(회귀 방지).
+        assertEquals(ZapClient.exactSubtreeRegex("https://api.example.test/v1"),
+                ZapClient.exactSubtreeRegex(java.util.List.of("https://api.example.test/v1")));
+    }
+
+    @Test
     void exactContextRegexSupportsBracketedIpv6AndOptionalDefaultPort() {
         Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex("http://[::1]:80/api"));
 

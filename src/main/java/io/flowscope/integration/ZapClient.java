@@ -146,6 +146,25 @@ public final class ZapClient {
         return get("/JSON/graphql/action/importUrl/", query, Duration.ofMinutes(2));
     }
 
+    /**
+     * 여러 exact-scope 항목을 한 규칙으로 덮는 union regex. Burp 8081이 스캐너 레인의 모든 요청에 capability
+     * 헤더를 요구하므로, ZAP이 target 하위뿐 아니라 모든 in-scope 항목 요청에 헤더를 붙이도록 만든다.
+     * 항목이 하나면 단일 target 버전과 완전히 동일한 regex를 돌려준다(기존 동작 불변).
+     */
+    public static String exactSubtreeRegex(java.util.Collection<String> targets) {
+        if (targets == null || targets.isEmpty()) {
+            throw new IllegalArgumentException("at least one ZAP context target is required");
+        }
+        java.util.LinkedHashSet<String> perTarget = new java.util.LinkedHashSet<>();
+        for (String target : targets) {
+            if (target != null && !target.isBlank()) perTarget.add(exactSubtreeRegex(target));
+        }
+        if (perTarget.isEmpty()) throw new IllegalArgumentException("at least one valid ZAP context target is required");
+        if (perTarget.size() == 1) return perTarget.iterator().next();
+        return perTarget.stream().map(regex -> "(?:" + regex + ")")
+                .reduce((left, right) -> left + "|" + right).orElseThrow();
+    }
+
     public static String exactSubtreeRegex(String target) {
         URI uri = URI.create(target);
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);

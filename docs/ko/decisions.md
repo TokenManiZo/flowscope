@@ -1131,3 +1131,10 @@
 - **결정:** `com.google.debugging → io.flowscope.shaded.sourcemap`, `org.jspecify → io.flowscope.shaded.jspecify`를 shade에 추가한다. 그리고 이름별 allowlist 대신 일반 검사를 둔다. `io.flowscope`와 `org.sqlite`(네이티브 로딩 때문에 의도적 미relocate), `module-info`, `META-INF` 외의 최상위 네임스페이스로 클래스가 하나라도 새면 smoke와 CI가 빌드를 실패시킨다.
 - **기각:** `com.google` 전체 relocate는 기존 `com.google.javascript` 규칙과 겹쳐 위험해 실제 하위 패키지만 명시. `org.sqlite` relocate는 네이티브 로딩을 깨므로 명시적 예외.
 - **검증·한계:** `FatJarIsolationSmoke`가 낯선 top-level 클래스 0건을 강제하고 산출물에서 `com/google`·`org/jspecify` top-level이 사라지고 `sourcemap` 43·`jspecify` 4가 relocate됨을 확인. 벤더 교차 재현은 여전히 미검증.
+
+## D-124 · ZAP capability 헤더는 단일 target이 아니라 exact scope 전체를 덮는다
+
+- **문제:** capability Replacer 규칙이 `exactSubtreeRegex(target)`로 단일 target 하위에만 붙었다. Burp 8081은 스캐너 캠페인 레인의 모든 in-scope 요청에 capability를 요구하므로(`scannerCampaignRequestAllowed`), 다중 항목 exact scope에서 브라우저 크롤러가 형제 항목을 부르면 헤더 없이 도착해 캠페인이 격리 오류로 끝난다. 단일 항목 scope(crAPI)에선 안 터지는 잠복 버그였고, 예전 claude 브랜치의 수정이 main에 병합되지 않아 남아 있었다.
+- **결정:** `ZapClient.exactSubtreeRegex(Collection)` union 오버로드를 추가하고 capability 설치 시 `state.scope().entries()` 전체(+target)를 덮는다. 항목이 하나면 단일 target 버전과 byte-identical한 regex를 반환해 기존 단일 항목 동작은 불변이다.
+- **기각:** 예전 브랜치 통째 병합(낡은 문서·대체된 코드 동반)은 기각. `includeInContext`(ZAP 크롤 경계)까지 넓히는 것은 ZAP이 크롤하는 대상을 바꾸는 별도 결정이라 이번 범위에서 제외.
+- **검증·한계:** `ZapClientTest`가 union의 다중 항목 커버리지와 단일 항목 동치를 고정. 다중 항목 scope의 실제 캠페인 완주는 실환경 gate.
