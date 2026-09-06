@@ -114,6 +114,7 @@ public final class FatJarIsolationSmoke {
             requireNone(entries, "Playwright", name -> name.toLowerCase(Locale.ROOT).contains("playwright"));
             requireNone(entries, "Vitest", name -> name.toLowerCase(Locale.ROOT).contains("vitest"));
             assertAllVersionedSourceNamespacesWereRelocated(jar, entries);
+            assertNoForeignClassNamespace(entries);
 
             String legacyCytoscapeReference = "/vendor/cytoscape-3.26.0.min.js";
             assertDoesNotReference(jar, "web/app/index.html", legacyCytoscapeReference);
@@ -266,6 +267,26 @@ public final class FatJarIsolationSmoke {
     private static void requireAny(List<String> entries, String description, java.util.function.Predicate<String> matches) {
         if (entries.stream().noneMatch(matches)) {
             throw new IllegalStateException("Release JAR is missing " + description);
+        }
+    }
+
+    /**
+     * 어떤 의존성이든 io.flowscope 밖의 원래 네임스페이스로 새면 빌드를 실패시킨다. 이름별 allowlist가 아니라
+     * "낯선 최상위 네임스페이스가 하나라도 있으면 실패"라서, 알려진 것뿐 아니라 앞으로 추가될 누락도 잡는다.
+     * org.sqlite는 네이티브 라이브러리를 고정 패키지명으로 로드해 relocate하면 깨지므로 명시적으로 허용한다.
+     */
+    private static void assertNoForeignClassNamespace(List<String> entries) {
+        List<String> leaks = entries.stream()
+                .filter(name -> name.endsWith(".class"))
+                .map(name -> name.replaceFirst("^META-INF/versions/[^/]+/", ""))
+                .filter(name -> !name.equals("module-info.class"))
+                .filter(name -> !name.startsWith("io/flowscope/"))
+                .filter(name -> !name.startsWith("org/sqlite/")) // 네이티브 로딩 때문에 의도적으로 미relocate
+                .distinct()
+                .toList();
+        if (!leaks.isEmpty()) {
+            throw new IllegalStateException("Release JAR leaks unshaded dependency classes at their original namespace "
+                    + "(relocate them in pom.xml shade config, or add a documented exception): " + leaks);
         }
     }
 

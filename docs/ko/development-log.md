@@ -2904,3 +2904,30 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 - Maven 3.9.11 `clean verify` 한 번으로 frontend 34 files / 254 tests, typecheck, notices, Vite 2,040-module build, Java 264 / 264와 release JAR verifier를 통과했다. 기존 jsdom canvas, Vite 500 kB, Java native/deprecation, XXE negative-test stderr만 비차단 진단으로 남았다.
 - packaged Chromium은 fresh ASCII cache와 free port `55407`에서 8 / 8, 21.0초, console/page error 0이었다. `try/finally` cleanup 뒤 exact PID `51324`와 port가 모두 사라졌다.
 - 최종 source/delivery JAR은 각각 16,340,715 bytes이며 SHA-256 `F00679E620EE00A0FB1C63CCB468AB5F889C3F2FBBA56ACBD5765C99D13000C4`로 일치한다. 실제 Burp load, 실제 target traffic, HUMAN/ZAP/LLM과 active Request Lab 전송은 standalone gate가 대신하지 않는다.
+
+## 2026-09-06 · 1.2.0-beta.44 · 셰이딩 누락 봉합과 일반 누출 검사
+
+### 개발·수정
+
+- 리뷰에서 fat JAR에 `com/google/debugging/sourcemap`(43) 및 `org/jspecify`(4) 클래스가 원래 네임스페이스 그대로 실려 있음을 확인했다. shade relocation이 `com.google.javascript`만 다뤘고 closure-compiler가 함께 끌어오는 이 두 패키지는 빠져 있었다. 완결성 검사(`assertAllVersionedSourceNamespacesWereRelocated`)가 `META-INF/versions/` 트리만 보고 top-level 누출은 검사하지 않아 잡히지 않았다.
+- pom shade에 `com.google.debugging → io.flowscope.shaded.sourcemap`, `org.jspecify → io.flowscope.shaded.jspecify` relocation을 추가했다.
+- 이름별 allowlist가 아니라 일반 검사 `assertNoForeignClassNamespace`를 추가했다. `io.flowscope`와 (네이티브 로딩 때문에 의도적으로 미relocate하는) `org.sqlite`, `module-info`, `META-INF` 외의 최상위 네임스페이스로 클래스가 하나라도 새면 빌드를 실패시킨다. 앞으로 추가되는 의존성의 누락까지 잡는다. CI에도 같은 grep 가드를 넣었다.
+
+### 필요성·기각 대안
+
+- `com.google` 전체를 한 규칙으로 relocate하는 방식은 이미 있는 `com.google.javascript` 규칙과 겹쳐 shade의 중복 relocation 위험이 있어 기각하고, 실제 존재하는 하위 패키지만 명시적으로 relocate했다.
+- `org.sqlite`는 네이티브 라이브러리를 고정 패키지명으로 로드하므로 relocate하지 않고 검사에서 명시적으로 허용했다.
+
+### 영향 파일·회귀
+
+- 코드: `pom.xml`(shade relocations), `.github/workflows/ci.yml`(누출 grep 가드).
+- 테스트: `FatJarIsolationSmoke.assertNoForeignClassNamespace` — org.sqlite 외 낯선 최상위 네임스페이스 0건을 강제.
+- 문서: decisions D-123, 이 기록.
+
+### 최종 검증
+
+- JDK 21.0.12·Maven 3.9.16 `mvn clean verify` 1회, Java 382 tests·failure/error 0. 산출물 JAR에서 `com/google/*`·`org/jspecify/*` top-level 클래스 0건, `io/flowscope/shaded/sourcemap` 43·`io/flowscope/shaded/jspecify` 4 확인.
+
+### 남은 한계
+
+- 재현 해시는 여전히 명시 환경(Homebrew JDK 21.0.12) 한정이며 벤더 교차 재현은 미검증이다.

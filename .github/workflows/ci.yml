@@ -34,6 +34,7 @@ jobs:
           jar tf "$release_jar" | grep -q '^io/flowscope/shaded/jsoup/'
           jar tf "$release_jar" | grep -q '^io/flowscope/shaded/snakeyaml/'
           jar tf "$release_jar" | grep -q '^io/flowscope/shaded/closure/'
+          if jar tf "$release_jar" | grep -Eq '^(META-INF/versions/[0-9]+/)?(com/google/|org/jspecify/)'; then echo "unshaded dependency namespace leaked"; exit 1; fi
           jar tf "$release_jar" | grep -q 'META-INF/LICENSE-apache-2.0.txt'
           jar tf "$release_jar" | grep -q 'META-INF/NOTICE'
           jar tf "$release_jar" | grep -q 'META-INF/FastDoubleParser-LICENSE'

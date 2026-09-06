@@ -1124,3 +1124,10 @@
 - **결정:** 보존 상한은 1MB로 두고, javascript·json·html·xml 응답에 한해 **분석문 상한만** 4MB로 올린다(`flowscope.payload.discoveryPreviewBytes`). 초과 응답은 여전히 metadata-only이므로 전문 보존을 주장하지 않는다. `MAX_SCRIPT_CHARS`를 같은 값으로 맞추고 파싱 비용은 기존 `MAX_NODES`가 제한한다. `pendingConcretePaths`가 CSS·폰트·이미지·미디어를 실행 값에서 빼되 `js`·`mjs`·`map`은 남긴다. 한 지점이 제시·예산·완료 게이트를 함께 덮는다. 프롬프트는 익명이면 "account_id를 보내지 마라", 계정이 있으면 "run이 이미 고정하니 보내지 마라"로 통일하고, 서버는 익명 run의 `ANONYMOUS` 문자열을 빈 값으로 정규화하며 거부 메시지에 현재 계정을 적는다.
 - **기각:** `MAX_PAYLOAD_BYTES` 전역 상향은 모든 대용량 응답을 레코드마다 보존해 메모리를 크게 늘린다. 정적 자산을 후보 목록에서 삭제하면 사용자가 대상 구성을 못 본다. `js`를 자산으로 묶어 제외하면 endpoint 발견 자체가 사라진다. 익명 표식을 서버에서만 정규화하고 잘못된 프롬프트를 두는 방식은 원인을 남긴다.
 - **검증·한계:** `JavascriptCallSiteAnalyzerTest`·`BoundedHttpCaptureTest`·`McpServerTest`·`LocalLlmRunnerTest`가 1MB 이후 call site 해석, 보존 상한 불변, 자산 제외와 `.js` 유지, 익명 인자 수용, 프롬프트 문구를 고정한다. **한계가 크다.** crAPI 번들에는 API 경로가 아예 없고 화면 경로 58개만 있으며 실제 API 호출은 화면 렌더링 시 로드되는 chunk에 있다. 이 결정은 "번들을 다 읽는다"를 고칠 뿐 "SPA에서 API를 끌어낸다"를 풀지 않는다. 화면 경로 순회는 별도 결정이다.
+
+## D-123 · 모든 의존성은 io.flowscope로 relocate하고 낯선 top-level 네임스페이스는 빌드를 실패시킨다
+
+- **문제:** closure-compiler가 함께 싣는 `com.google.debugging.sourcemap`(43)과 `org.jspecify`(4)가 원래 네임스페이스로 fat JAR에 남았다. shade는 `com.google.javascript`만 relocate했고, 완결성 검사는 `META-INF/versions/` 트리만 봐 top-level 누출을 놓쳤다. Burp가 확장 클래스로더를 격리해 실제 충돌 위험은 낮지만 D-118의 격리 목표에 난 구멍이다.
+- **결정:** `com.google.debugging → io.flowscope.shaded.sourcemap`, `org.jspecify → io.flowscope.shaded.jspecify`를 shade에 추가한다. 그리고 이름별 allowlist 대신 일반 검사를 둔다. `io.flowscope`와 `org.sqlite`(네이티브 로딩 때문에 의도적 미relocate), `module-info`, `META-INF` 외의 최상위 네임스페이스로 클래스가 하나라도 새면 smoke와 CI가 빌드를 실패시킨다.
+- **기각:** `com.google` 전체 relocate는 기존 `com.google.javascript` 규칙과 겹쳐 위험해 실제 하위 패키지만 명시. `org.sqlite` relocate는 네이티브 로딩을 깨므로 명시적 예외.
+- **검증·한계:** `FatJarIsolationSmoke`가 낯선 top-level 클래스 0건을 강제하고 산출물에서 `com/google`·`org/jspecify` top-level이 사라지고 `sourcemap` 43·`jspecify` 4가 relocate됨을 확인. 벤더 교차 재현은 여전히 미검증.

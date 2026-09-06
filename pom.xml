@@ -266,6 +266,15 @@
                   <pattern>com.google.javascript</pattern>
                   <shadedPattern>io.flowscope.shaded.closure</shadedPattern>
                 </relocation>
+                <!-- closure-compiler also ships these outside com.google.javascript; relocate so nothing leaks at its original name. -->
+                <relocation>
+                  <pattern>com.google.debugging</pattern>
+                  <shadedPattern>io.flowscope.shaded.sourcemap</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.jspecify</pattern>
+                  <shadedPattern>io.flowscope.shaded.jspecify</shadedPattern>
+                </relocation>
               </relocations>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
