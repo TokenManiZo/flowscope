@@ -1,13 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   bindSession,
-  cancelLlmRun,
   clearTraffic,
   deleteAccount,
-  followUpLlmJudge,
   getEvidence,
   getHumanRun,
-  getLlmRun,
   getScannerRun,
   getSnapshot,
   getZapStatus,
@@ -24,7 +21,6 @@ import {
   saveTrafficOverride,
   sendRequestLab,
   setHumanRun,
-  startLlmRun,
   startScannerRun,
   unbindSession,
 } from "@/lib/api/endpoints"
@@ -37,7 +33,6 @@ export const queryKeys = {
   humanRun: ["human-run"] as const,
   zapStatus: ["zap-status"] as const,
   scannerRun: ["scanner-run"] as const,
-  llmRun: ["llm-run"] as const,
 }
 
 const pollingOptions = {
@@ -87,10 +82,6 @@ export function useScannerRunQuery() {
   return useQuery({ queryKey: queryKeys.scannerRun, queryFn: ({ signal }) => getScannerRun(signal), ...pollingOptions })
 }
 
-export function useLlmRunQuery() {
-  return useQuery({ queryKey: queryKeys.llmRun, queryFn: ({ signal }) => getLlmRun(signal), ...pollingOptions })
-}
-
 function useInvalidatingMutation<TData, TVariables>(
   mutationFn: (variables: TVariables) => Promise<TData>,
   keys: readonly (readonly string[])[],
@@ -107,9 +98,6 @@ export function useClearTrafficMutation() { return useInvalidatingMutation(clear
 export function useLoadSampleMutation() { return useInvalidatingMutation(loadSample, [queryKeys.snapshot]) }
 export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
 export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous }: { target: string; accounts: string; anonymous: boolean }) => startScannerRun(target, accounts, anonymous), [queryKeys.scannerRun]) }
-export function useStartLlmRunMutation() { return useInvalidatingMutation(startLlmRun, [queryKeys.llmRun]) }
-export function useCancelLlmRunMutation() { return useInvalidatingMutation(cancelLlmRun, [queryKeys.llmRun]) }
-export function useFollowUpLlmJudgeMutation() { return useInvalidatingMutation(followUpLlmJudge, [queryKeys.llmRun]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }
 export function useReviewMutation() { return useInvalidatingMutation(({ itemId, status, note }: { itemId: string; status: ReviewStatus; note: string }) => saveReview(itemId, status, note), [queryKeys.snapshot]) }

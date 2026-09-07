@@ -1,7 +1,7 @@
-import { Activity, Database, Radio, ScanSearch, Sparkles, UserRoundCheck, Zap } from "lucide-react"
+import { Activity, Database, Radio, ScanSearch, UserRoundCheck, Zap } from "lucide-react"
 
 import { routeHash, type AppRoute } from "@/app/routes"
-import { useHumanRunQuery, useLlmRunQuery, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
+import { useHumanRunQuery, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
 
 function humanState(active: boolean | undefined, completed: boolean | undefined) {
   if (active) return "RUNNING"
@@ -18,16 +18,14 @@ export function WorkspaceTopBar({ route }: { route: AppRoute }) {
   const human = useHumanRunQuery()
   const zap = useZapStatusQuery()
   const scanner = useScannerRunQuery()
-  const llm = useLlmRunQuery()
-  const scopeData = scanner.data?.scope ?? llm.data?.scope
-  const scopePending = scanner.isPending || llm.isPending
+  const scopeData = scanner.data?.scope
+  const scopePending = scanner.isPending
   const scope = scopeData !== undefined ? scopeData[0] ?? "미설정" : scopePending ? "불러오는 중" : "확인 불가"
   const scopeReady = scopeData !== undefined ? scopeData.length > 0 ? "준비됨" : "미준비" : scopePending ? "불러오는 중" : "확인 불가"
   const liveCapture = queryValue(snapshot, (data) => String(data.trafficStats.captured))
   const humanRun = queryValue(human, (data) => humanState(data.active, data.completed))
   const zapState = queryValue(zap, (data) => data.state ?? (data.connected ? "READY" : "연결 안 됨"))
   const scannerState = queryValue(scanner, (data) => data.run.status)
-  const llmState = queryValue(llm, (data) => data.run.status)
 
   return (
     <header aria-label="FlowScope 상단 상태" className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] px-3 py-2">
@@ -42,7 +40,6 @@ export function WorkspaceTopBar({ route }: { route: AppRoute }) {
         <StatusItem icon={UserRoundCheck} label="HUMAN" value={humanRun} />
         <StatusItem icon={Zap} label="ZAP" value={zapState} />
         <StatusItem icon={ScanSearch} label="SCANNER" value={scannerState} />
-        <StatusItem icon={Sparkles} label="LLM" value={llmState} />
         <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">PROJECT<select aria-label="프로젝트 선택" defaultValue="flowscope" className="h-7 border border-border bg-background px-1 text-foreground"><option value="flowscope">FlowScope</option></select></label>
         <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><Database className="size-3.5" aria-hidden="true" />DB 준비됨</span>
       </div>

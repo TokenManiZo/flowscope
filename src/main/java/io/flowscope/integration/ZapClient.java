@@ -66,9 +66,6 @@ public final class ZapClient {
     public String spider(String target) {
         return get("/JSON/spider/action/scan/", "url=" + enc(target) + "&recurse=true&subtreeOnly=true");
     }
-    public String activeScan(String target) {
-        return get("/JSON/ascan/action/scan/", "url=" + enc(target) + "&recurse=true&inScopeOnly=true");
-    }
     public String ajaxSpider(String target) {
         return ajaxSpider(target, "");
     }
@@ -87,9 +84,6 @@ public final class ZapClient {
     }
     public String spiderStatus(String scanId) {
         return get("/JSON/spider/view/status/", "scanId=" + enc(scanId));
-    }
-    public String activeScanStatus(String scanId) {
-        return get("/JSON/ascan/view/status/", "scanId=" + enc(scanId));
     }
     public String ajaxSpiderStatus() { return get("/JSON/ajaxSpider/view/status/", ""); }
     public String clientSpiderStatus(String scanId) {

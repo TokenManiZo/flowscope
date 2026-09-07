@@ -2,7 +2,7 @@ package io.flowscope;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.flowscope.core.*;
-import io.flowscope.integration.McpServer;
+import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.RunExecutionLedger;
 import org.junit.jupiter.api.Test;
@@ -55,7 +55,7 @@ final class ProjectStoreTest {
                 .withTrafficOverride(record.op, TrafficOverride.INCLUDE);
         AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
         config.upsertAccount(account).bindSession(record.service, record.fp, account.id());
-        McpServer.Assessment assessment = new McpServer.Assessment("a-1", "BOLA", "LIKELY",
+        LegacyAssessment assessment = new LegacyAssessment("a-1", "BOLA", "LIKELY",
                 "candidate", "evidence based", List.of(record.evidenceId), Instant.parse("2026-08-24T00:00:00Z"));
         ValidationDecision validation = new ValidationDecision("finding-1",
                 ValidationDecision.FinalVerdict.INCONCLUSIVE, "needs a second account",

@@ -2,7 +2,15 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
-## 미출시 · Judge·MCP 제거 1단계
+## 미출시 · Judge·하네스 MCP 제거 완료 (D-126)
+
+- Judge·Explorer 구독 CLI 실행기, 통제 브라우저, MCP 서버·토큰·도구, agent-workspace 설정과 프롬프트를 삭제했습니다. 관련 Web API는 404이며 연결·실행 버튼과 doctor의 CLI/MCP 검사도 제거했습니다.
+- HUMAN·독립 ZAP 캠페인·Session Broker·요청 실험실과 H/S/L 관측 비교를 유지했습니다. ZAP 회귀는 MCP 서버 대신 캠페인 자체를 검사합니다.
+- 이전 프로젝트의 LLM Evidence·실행 원장·평가·판정을 JSON/SQLite에서 보존합니다. 과거 평가는 React의 읽기 전용 이력으로 분리하고 현재 규칙 후보·사람 검토에 자동 판정으로 합치지 않습니다.
+- 새로운 Explorer 하네스와 FlowScope Evidence용 MCP는 아직 구현하지 않았습니다. Client-only 전환도 이번 변경에 포함하지 않았습니다.
+- 검증 수치는 `docs/ko/beta-validation.md`의 D-126 산출물 기록을 따릅니다. 실물 Burp/ZAP 완료를 주장하지 않습니다.
+
+## 이전 단계 · Judge·MCP 제거 1단계
 
 - ZAP 캠페인을 `McpServer`에서 `ZapCampaign`으로 분리했습니다. 웹 스캐너의 시작·상태·취소는 호스트가 소유한 캠페인을 직접 호출하고, MCP 포트 bind 실패가 캠페인 생성을 막지 않습니다.
 - 기존 MCP ZAP 도구는 같은 캠페인에 위임합니다. 기존 crawler 순서, 계정·scope·capability 경계, 상태 JSON과 프로젝트 저장 형식은 유지합니다. Judge·MCP 삭제와 Client Spider 필수 전환은 후속 단계입니다.

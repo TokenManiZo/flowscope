@@ -105,11 +105,6 @@ export interface Scenario {
   evidence: string
   risk: string
   evidenceIds: readonly string[]
-  finalVerdict?: string
-  validationReason?: string
-  validationRunId?: string
-  validationEvidenceIds?: readonly string[]
-  controlEvidenceIds?: readonly string[]
   reviewStatus: ReviewStatus
   reviewNote: string
 }
@@ -251,7 +246,14 @@ export interface RunExecutionSummary {
   outcomes: Readonly<Record<string, number>>
 }
 
+export interface LegacyLlm {
+  readOnly: true
+  assessments: readonly { id: string; type: string; verdict: string; title: string; reason: string; evidenceIds: readonly string[]; createdAt: string }[]
+  validations: readonly { candidateId: string; verdict: string; reason: string; originalEvidenceIds: readonly string[]; validationEvidenceIds: readonly string[]; controlEvidenceIds: readonly string[]; runId: string; decidedAt: string }[]
+}
+
 export interface Snapshot {
+  legacyLlm?: LegacyLlm
   revision: number
   identityRevision: number
   sampleMode: boolean
@@ -306,50 +308,6 @@ export interface EvidencePage {
   offset: number
   limit: number
   hasMore: boolean
-}
-
-export interface AiPreview {
-  notice: string
-  records: number
-  coverageCells: number
-  findings: readonly AiFinding[]
-  gaps: readonly AiGap[]
-}
-
-export interface AiFinding {
-  id: string
-  type: string
-  severity: string
-  title: string
-  cell: {
-    identity: string
-    operation: string
-    resource: string | null
-  }
-  reason: string
-  evidenceIds: readonly string[]
-  confirmed: boolean
-}
-
-export interface AiGap {
-  id: string
-  type: string
-  identity: string
-  operation: string
-  resource: string | null
-  missedBy: readonly string[]
-  risk: number
-  reason: string
-}
-
-export interface AiScenariosResult {
-  scenarios: readonly Scenario[]
-}
-
-export interface AiScenariosEnvelope {
-  usedLlm: boolean
-  message: string
-  result: AiScenariosResult
 }
 
 export interface ReplayResult extends ApiSuccess {
@@ -432,42 +390,6 @@ export interface ScannerRunEnvelope {
 
 export interface ScannerRunMutationResult {
   run: ScannerRun
-}
-
-export interface LlmRun {
-  status: string
-  provider?: string
-  role?: string
-  run_id?: string
-  provider_session_id?: string
-  started_at?: string
-  ended_at?: string
-  message?: string
-  output_tail?: string
-  session_metadata_may_remain?: boolean
-  providers?: { CODEX: boolean; CLAUDE: boolean }
-  activities?: readonly LlmActivity[]
-}
-
-export interface LlmActivity {
-  sequence: number
-  at: string
-  kind: string
-  title: string
-  detail: string
-  status: string
-  elapsed_ms?: number
-  duration_ms?: number | null
-}
-
-export interface LlmRunEnvelope {
-  run: LlmRun
-  scope: readonly string[]
-  completed_lanes: readonly string[]
-}
-
-export interface LlmRunMutationResult {
-  run: LlmRun
 }
 
 export interface ApiSuccess {

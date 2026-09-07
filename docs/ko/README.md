@@ -2,10 +2,15 @@
 
 프로젝트의 기본 문서는 한국어입니다. 설치와 사용 방법은 저장소 루트의 [README](../../README.md)를 먼저 확인하세요. 영어 문서는 [docs/en](../en/README.md)에 분리되어 있습니다.
 
+## 현재 전환 상태
+
+Judge·기존 Explorer 하네스·MCP 실행 경로는 제거했습니다(D-126). HUMAN·ZAP과 H/S/L 이력 비교는 유지합니다. 새 Explorer 하네스와 FlowScope용 MCP는 아직 구현하지 않습니다. 과거 연구·명세의 Judge/MCP 설계는 현재 기능 안내가 아닙니다.
+
 ## 문서 목록
 
+- [Judge·MCP 제거 및 후속 경계](mcp-judge-removal-plan.md): 삭제·보존 범위, 회귀 결과와 다음 gate
 - [팀 인계 정본](HANDOFF.md): 현재 구현, 코드 지도, 알려진 결함, 다음 작업 순서와 완료 기준
-- [설치·첫 실행](getting-started.md): Release JAR, Burp listener, ZAP Docker/Desktop, 구독 CLI, 환경 점검
+- [설치·첫 실행](getting-started.md): Release JAR, Burp listener, ZAP Docker/Desktop, 환경 점검
 - [아키텍처](architecture.md): 구성 요소, 데이터 흐름, 신뢰 경계
 - [설계 결정](decisions.md): 주요 판단과 선택 근거
 - [개발 기록](development-log.md): 변경 내용, 이유, 검증 결과

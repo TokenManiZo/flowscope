@@ -2,10 +2,10 @@ import { act, renderHook, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { llmRunFixture, snapshotFixture } from "@/test/fixtures"
+import { scannerRunFixture, snapshotFixture } from "@/test/fixtures"
 import { createTestQueryClient } from "@/test/render"
 import { QueryClientProvider } from "@tanstack/react-query"
-import { useLlmRunQuery, useSnapshotQuery } from "./hooks"
+import { useScannerRunQuery, useSnapshotQuery } from "./hooks"
 
 function wrapperFor(client: ReturnType<typeof createTestQueryClient>) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -96,22 +96,22 @@ describe("centralized FlowScope polling", () => {
     view.unmount()
   })
 
-  it("retains the last successful LLM run when a poll fails", async () => {
+  it("retains the last successful scanner run when a poll fails", async () => {
     vi.useFakeTimers()
     capabilityMeta()
     const fetchStub = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(llmRunFixture))
+      .mockResolvedValueOnce(jsonResponse(scannerRunFixture))
       .mockRejectedValueOnce(new TypeError("offline"))
-      .mockResolvedValueOnce(jsonResponse(llmRunFixture))
+      .mockResolvedValueOnce(jsonResponse(scannerRunFixture))
     vi.stubGlobal("fetch", fetchStub)
     const client = createTestQueryClient()
-    const view = renderHook(() => useLlmRunQuery(), { wrapper: wrapperFor(client) })
+    const view = renderHook(() => useScannerRunQuery(), { wrapper: wrapperFor(client) })
 
     await flushQuery()
-    expect(view.result.current.data?.run.status).toBe("IDLE")
+    expect(view.result.current.data?.run.status).toBe("NOT_STARTED")
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
 
-    expect(view.result.current.data).toEqual(llmRunFixture)
+    expect(view.result.current.data).toEqual(scannerRunFixture)
     view.unmount()
   })
 })

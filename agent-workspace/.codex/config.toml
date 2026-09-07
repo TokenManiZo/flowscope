@@ -1,6 +1,0 @@
-[mcp_servers.flowscope]
-url = "http://127.0.0.1:8787/mcp"
-bearer_token_env_var = "FLOWSCOPE_MCP_TOKEN"
-required = true
-default_tools_approval_mode = "writes"
-tool_timeout_sec = 60

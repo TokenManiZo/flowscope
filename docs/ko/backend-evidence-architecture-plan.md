@@ -1,6 +1,8 @@
 # FlowScope 백엔드 Evidence·분석 아키텍처 재정비 계획
 
-> 문서 상태: **단계 실행 계획 — beta.34 교차 구현 반영**
+> **2026-09-07 적용 경계(D-126):** 아래는 이전 백엔드 재정비 계획의 보존 기록이다. Judge·MCP·LocalLlmRunner·dataset lock 관련 구현 지시는 폐기됐으며 현재 작업으로 실행하지 않는다. 수집 정본·출처·분류·정규화에 대한 연구는 남지만 재착수 전에 현행 구조와 대조한다. 최신 구현/후속 순서는 [제거 계획](mcp-judge-removal-plan.md), [아키텍처](architecture.md), [제품 계획](product-development-plan.md)을 따른다. 과거 검증은 새 산출물의 검증이 아니다.
+>
+> 문서 상태: **과거 단계 계획 — beta.34 기준, 아래 교차 기록 보존**
 >
 > 적용 대상: FlowScope `1.2.0-beta.34` 이후
 >

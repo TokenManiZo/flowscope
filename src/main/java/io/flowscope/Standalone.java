@@ -13,7 +13,7 @@ import io.flowscope.core.SampleProject;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.core.ValidationDecision;
-import io.flowscope.integration.McpServer;
+import io.flowscope.core.LegacyAssessment;
 import io.flowscope.web.FlowScopeWebServer;
 import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 
@@ -61,7 +61,7 @@ public final class Standalone {
         @Override public Pipeline.Result snapshot() { return result; }
         @Override public long revision() { return revision.get(); }
         @Override public AnalysisConfig config() { return config; }
-        @Override public List<McpServer.Assessment> assessments() { return List.of(); }
+        @Override public List<LegacyAssessment> assessments() { return List.of(); }
         @Override public List<ValidationDecision> validations() { return List.of(); }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }

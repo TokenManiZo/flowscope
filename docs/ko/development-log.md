@@ -1,5 +1,41 @@
 # FlowScope 개발 기록
 
+## 2026-09-07 · 미출시 D-126 · Judge·Explorer 하네스와 MCP 실제 제거
+
+### 개발·수정
+
+- 사용자 결정은 기존 Judge와 하네스 MCP를 완전히 없애고, Explorer는 별도 하네스로 재설계하며 FlowScope Evidence용 MCP는 나중에 설계하는 것이다. 이번에는 새 MCP, 대체 HTTP 하네스나 이름만 바꾼 실행기를 만들지 않았다.
+- `5a47af9`의 독립 `ZapCampaign`을 유지하고 `McpServer`, `LocalMcpToken`, `LocalLlmRunner`, `ControlledBrowserExplorer`, `RouteCandidateViews`, `agent-workspace` 설정/프롬프트를 삭제했다. MCP 전용 ZAP 개별 도구 wrapper와 호출부 없는 Active Scan adapter도 제거했다.
+- Burp 호스트의 MCP/CLI 기동·로그인 검사·닫기/잠금 callback, Web 세 실행 API, React/legacy 실행·후속 질문·미리보기 제어, doctor의 CLI/MCP 검사를 제거했다. 계정 연결 안내가 제거된 LLM 실행을 약속하지 않도록 바꿨다.
+- HUMAN 수집, ZAP 캠페인 시작/상태/취소, Session Broker, Request Lab, exact-scope/capability, Surface·분류·그래프·인가 분석은 유지했다. Client와 AJAX는 기존 순서 그대로이며 Client-only 전환은 하지 않았다.
+- 기존 프로젝트의 assessment는 독립 `LegacyAssessment` 기록으로 옮겼다. JSON schema v4/SQLite schema v3와 필드 형식을 유지하고 과거 validation·Evidence·run manifest·실행 원장·human review를 보존한다. 삭제된 Judge 결론은 현재 규칙 후보에 합치지 않고 `snapshot.legacyLlm`의 read-only 이력으로 제공한다. React는 이력/현재 후보를 분리하고 없는 Evidence 참조를 명시한다.
+
+### 필요성·기각 대안
+
+버튼만 숨기면 MCP 리스너·CLI 프로세스와 내부 실행 경로가 살아남고 ZAP/저장소의 의존성도 남는다. 따라서 transport와 실행기 자체를 제거했다. 반대로 Source.LLM·구버전 enum·평가 데이터를 함께 지우면 프로젝트를 열거나 다시 저장할 때 사용자의 이력이 소실되므로 기각했다. 신규 하네스/MCP 설계를 섞거나 AJAX까지 한꺼번에 교체하는 것은 이번 승인 범위를 넘어가므로 하지 않았다.
+
+### 영향 파일
+
+- 실행/저장: `FlowScopeExtension`, `ZapCampaign`, `ZapClient`, `ProjectStore`, `SqliteProjectStore`, `Standalone`, `LegacyAssessment`, `ValidationDecision`, `SourceTrustPolicy`, `LaneCompletionPolicy`.
+- Web/UI/배포: `FlowScopeWebServer`, `SnapshotJsonWriter`, `FlowScopeControlTab`, legacy `web/index.html`, React inspection/runs/scenarios/dashboard/topbar와 API/query 계약, `pom.xml`, `scripts/doctor.sh`/`.ps1`.
+- 회귀: `RetiredHarnessTest`, `LegacyLlmArchiveTest`, `ZapCampaignRegressionTest`, 기존 Campaign/Web/Store/ControlTab/Phase/Trust/Completion/final-JAR 테스트와 React component·E2E 테스트.
+- 문서: 한·영 README/설치·보안·기여·변경 이력, AGENTS, 한국어 architecture/decisions/인계/제품 개요·계획/제거 계획/UI rationale·parity/문서 목차/검증 기록. 이전 백엔드 장기 계획의 폐기된 Judge/MCP 지시는 상단에서 superseded로 표시했다. 역사 연구·원 명세를 일괄 다시 쓰지 않았다.
+- 사용자 변경 `CLAUDE.md`와 미추적 멘토 보고서는 보존하고 이 변경의 커밋에서 제외한다.
+
+### 재현 회귀와 검증 범위
+
+- 삭제 전 negative regression은 `McpServer` 클래스가 남아 실패했다. 삭제 후 classpath 및 최종 shaded JAR에 실행기/transport/agent-workspace가 없음을 검사한다. 인증된 옛 Web 실행 API의 GET/POST는 404다.
+- 기존 MCP 테스트 중 ZAP 캠페인 13개를 실제 `ZapCampaign.State` 경계로 옮겼다. scope·승인·계정 격리·capability 누락·진행·passive 정체·cleanup·취소는 FakeZap 계약 회귀이며 실물 ZAP 성공을 뜻하지 않는다.
+- 취소 fixture는 최초 start 응답 직전에 취소해도 이미 시작된 crawler의 stop을 기대하던 race를 발견했다. 첫 status poll(서버가 scan ID를 인계받은 시점)을 확인한 뒤 취소하도록 바꿔 소유권이 확정된 crawler 정리를 검사한다. 시작 API 전송 중 취소 레이스 자체는 이번에 해결하거나 실증하지 않았다.
+- archive 회귀는 현재 finding과 같은 ID의 옛 CONFIRMED를 복원해도 현재 scenarios가 그대로임을 확인하고 JSON → SQLite 왕복 후 평가·판정·Evidence ID가 유지되는지 검사한다. 샘플 payload는 저장 경계가 요구하는 정규 마스킹을 적용했다.
+- 브라우저 E2E 최초 실행은 테스트용 Chromium 부재로 실패했고 격리된 임시 cache에 테스트 브라우저만 준비했다. 기존 테스트의 기본 route 가정은 현재 기본 `#surface`와 달라 dashboard 검사는 `#dashboard`를 명시했다. 삭제된 평가 문구/생성 버튼 기대를 현재 규칙 후보·Evidence 링크로 바꿨다. 실제 fixture 네트워크·console·active-route·secret-storage 경계는 유지했다.
+- 최종 `mvn clean verify` 동일 소스 2회는 각각 Java 335 / React 238 tests 통과, 두 JAR SHA-256 일치. 해당 최종 JAR의 standalone Chromium E2E 8 / 8도 통과했다. 명령·환경·해시는 [beta-validation](beta-validation.md)의 D-126 절에 실제 수행 결과만 기록한다. 이전 389 Java/266 React 수치보다 줄어든 주된 이유는 삭제된 실행기의 테스트를 함께 제거했기 때문이며, ZAP 회귀는 위와 같이 독립 유지했다.
+
+### 남은 한계·다음 gate
+
+실제 Burp 재로드와 실물 ZAP Client/AJAX 헤더·로그인 계정 격리·취소, Request Lab 실제 전송은 수행하지 않았다. 사용 중인 Burp/ZAP에 명령을 보내지 않았고 외부 타깃도 요청하지 않았다. 다음은 새 JAR의 실환경 보존 기능 점검이며, 새 Explorer 하네스·FlowScope용 MCP·Client-only는 각각 별도 설계/승인 범위다. 사용자 전역 모델 설정/인증 파일은 변경하지 않았다. 이전 버전의 실행 프로세스와 포트가 실제로 닫히는 것은 운영자가 옛 확장을 unload/reload한 뒤 확인해야 한다.
+
+
 ## 2026-09-04 · 1.2.0-beta.44 · SPA 번들 분석 상한, 정적 자산 frontier 제외, 익명 run 계정 인자 모순
 
 ### 개발·수정

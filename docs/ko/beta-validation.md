@@ -1,5 +1,31 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 2026-09-07 · 미출시 D-126 · Judge·Explorer 하네스·MCP 제거 최종 gate
+
+`5a47af9` 이후 **제거 완료 소스**로 만든 JAR이다. 아래 1단계 분리 JAR 및 이전 beta.44 Release와 다르며 원격 배포하지 않았다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS arm64, Homebrew JDK 21.0.12, Maven 3.9.16, Maven 고정 Node 24.11.1 |
+| 최종 빌드 | 같은 최종 소스에서 `mvn clean verify` 2회 성공, 51.778초 / 48.489초 |
+| Java | 매회 335 tests, failure/error/skip 0 |
+| React | 매회 37 files / 238 tests, typecheck·고지 생성·Vite build 통과 |
+| 삭제 부재 회귀 | `RetiredHarnessTest` classpath 검사, `FatJarIsolationSmoke` 최종 JAR 클래스·nested 클래스·agent-workspace 부재 검사 |
+| 폐기 API | `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`, `/mcp` GET/POST 404 — Web 회귀 |
+| 보존 회귀 | ZAP 캠페인 13개 직접 상태 회귀 + 기존 3개, HUMAN 완료·계정·scope·capability·Request Lab·인가·Surface·그래프·JSON/SQLite 전체 기존 suite |
+| 과거 데이터 | 기존 평가 4MiB 제한 회귀, 같은 현재 finding ID의 과거 CONFIRMED가 현재 후보에 합쳐지지 않음, JSON→SQLite 평가/판정/Evidence ID 왕복, snapshot 날짜·비밀 마스킹·read-only, 과거 평가 ID의 새 review 거부 |
+| 산출물 | `target/flowscope-1.2.0-beta.44.jar`, 31,535,956 bytes, 9,098 entries |
+| SHA-256 | 두 빌드 모두 `acfeb7c745f69040239eca77f0933e76d3588338e18683979b050d44498bd981` |
+| 기존 JAR 검사 | streaming manifest, MR relocation 전수 경계, namespace·서드파티 고지·격리 class loading·SQLite gate 통과 |
+| 최종 packaged browser | 위 해시 JAR의 별도 `127.0.0.1:38177` standalone에서 Playwright Chromium 8 / 8 통과, 24.0초. 새 브라우저 context로 화면 전환·그래프/매트릭스/sequence·규칙 후보/Evidence·계정 메타데이터·읽기 전용 Request Lab·ZAP 설정·옛 LLM 제어 부재·legacy를 검사 |
+| 브라우저 경계 | 외부 origin·능동 실행 API를 테스트에서 차단하며 console/pageerror·브라우저 저장소 secret 회귀 유지. 실제 target HTTP 전송은 하지 않음 |
+| 셸 | `bash -n scripts/doctor.sh`와 `git diff --check` 통과. 이 머신에 `pwsh`가 없어 PowerShell 파싱은 미실행 |
+
+최종 브라우저 명령은 고정 Node PATH와 테스트 전용 임시 `PLAYWRIGHT_BROWSERS_PATH`, `FLOWSCOPE_E2E_ORIGIN=http://127.0.0.1:38177`로 `npm run e2e -- --reporter=line`을 실행했다. 최초에는 해당 테스트 Chromium이 설치되지 않아 실패했고 임시 cache에 headless shell을 설치했다. 제품의 Explorer 브라우저 기능이나 새 사용자 설치 의존성을 추가한 것이 아니다. 최초 E2E의 기본 route·옛 후보/평가 문구 기대도 현재 계약에 맞췄으며, 최종 8개는 실패·재시도 없이 통과했다.
+
+실물 ZAP API/Firefox·Client 확장·로그인 계정·upstream capability, 실제 Burp load/unload·HUMAN 캡처·Request Lab 전송, Windows 실환경은 **미실행**이다. mock은 FlowScope의 상태 처리만 증명한다. 크롤러 시작 API 반환 중 취소 경합은 남은 gate이며 이번 제거로 해결했다고 주장하지 않는다. 반복 JAR 해시 일치는 이 머신·고정 도구·같은 소스에서만 검증했으며 임의 OS/JDK 전체 재현 보장이 아니다. 사용자 Burp/ZAP 프로세스나 전역 모델 인증·MCP 설정은 건드리지 않았다.
+
+
 ## 2026-09-07 · 미출시 작업트리 · ZAP 캠페인 분리 gate
 
 `c006679` 기반의 Judge·MCP 제거 **1단계** 산출물이다. Judge·MCP 자체는 남아 있으며 기존 beta.44 릴리스 검증을 대체하지 않는다.

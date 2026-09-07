@@ -19,7 +19,6 @@ printf 'FlowScope environment check\n'
 human_port="${FLOWSCOPE_HUMAN_PORT:-8080}"
 scanner_port="${FLOWSCOPE_BURP_SCANNER_PORT:-8081}"
 web_port="${FLOWSCOPE_WEB_PORT:-17777}"
-mcp_port="${FLOWSCOPE_MCP_PORT:-8787}"
 
 if has_port "$human_port"; then ok "HUMAN port 127.0.0.1:${human_port} is open"; else fail "HUMAN port 127.0.0.1:${human_port} is closed"; fi
 if has_port "$scanner_port"; then ok "SCANNER port 127.0.0.1:${scanner_port} is open"; else fail "SCANNER port 127.0.0.1:${scanner_port} is closed"; fi
@@ -74,19 +73,7 @@ else
   fail "curl and a local ZAP API key are required for the ZAP check"
 fi
 
-provider=false
-if command -v codex >/dev/null 2>&1; then
-  provider=true
-  ok "Codex CLI is executable: $(codex --version 2>/dev/null | head -n 1)"
-fi
-if command -v claude >/dev/null 2>&1; then
-  provider=true
-  ok "Claude Code is executable: $(claude --version 2>/dev/null | head -n 1)"
-fi
-$provider || fail "install and sign in to Codex CLI or Claude Code"
-
 if has_port "$web_port"; then ok "FlowScope Web UI port ${web_port} is open"; else warn "FlowScope Web UI port ${web_port} is closed; load the JAR in Burp"; fi
-if has_port "$mcp_port"; then ok "FlowScope MCP port ${mcp_port} is open"; else warn "FlowScope MCP port ${mcp_port} is closed; load the JAR in Burp"; fi
 
 if $build_mode; then
   if command -v mvn >/dev/null 2>&1; then

@@ -1,17 +1,13 @@
 import { apiFetch, postForm } from "./client"
 import type {
   AccountSaveResult,
-  AiPreview,
-  AiScenariosEnvelope,
   ApiSuccess,
   EvidencePage,
   HumanRun,
   ImportXmlResult,
-  LlmRunEnvelope,
   ReplayResult,
   RequestLabDraft,
   RequestLabResult,
-  LlmRunMutationResult,
   ScannerRunEnvelope,
   ScannerRunMutationResult,
   Snapshot,
@@ -25,8 +21,6 @@ const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ?
 export const getSnapshot = (signal?: AbortSignal) => apiFetch<Snapshot>("/api/snapshot", formSignal(signal))
 export const getEvidence = (operation: string, offset = 0, limit = 200, signal?: AbortSignal) =>
   apiFetch<EvidencePage>(`/api/evidence?${new URLSearchParams({ operation, offset: String(offset), limit: String(limit) })}` as `/api/${string}`, formSignal(signal))
-export const getAiPreview = (signal?: AbortSignal) => apiFetch<AiPreview>("/api/ai-preview", formSignal(signal))
-export const createAiScenarios = () => postForm<AiScenariosEnvelope>("/api/ai-scenarios", {})
 export const openReplay = (eventId: string) => postForm<ReplayResult>("/api/replay", { eventId })
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
@@ -53,11 +47,6 @@ export const getZapStatus = (signal?: AbortSignal) => apiFetch<ZapStatus>("/api/
 export const getScannerRun = (signal?: AbortSignal) => apiFetch<ScannerRunEnvelope>("/api/scanner-run", formSignal(signal))
 export const startScannerRun = (target: string, accounts: string, anonymous: boolean) =>
   postForm<ScannerRunMutationResult>("/api/scanner-run", { target, accounts, anonymous: String(anonymous) }, [202])
-export const getLlmRun = (signal?: AbortSignal) => apiFetch<LlmRunEnvelope>("/api/llm-run", formSignal(signal))
-export const startLlmRun = (values: { provider: "CODEX" | "CLAUDE"; role: "EXPLORER" | "JUDGE"; target: string; account: string }) =>
-  postForm<LlmRunMutationResult>("/api/llm-run", { action: "start", ...values }, [202])
-export const cancelLlmRun = () => postForm<LlmRunMutationResult>("/api/llm-run", { action: "cancel" })
-export const followUpLlmJudge = (message: string) => postForm<LlmRunMutationResult>("/api/llm-run", { action: "followup", message }, [202])
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const importXml = (source: "human" | "scanner" | "llm", name: string, xml: string | ArrayBuffer, signal?: AbortSignal) =>
   apiFetch<ImportXmlResult>(`/api/import-xml?${new URLSearchParams({ source, name })}` as `/api/${string}`, {

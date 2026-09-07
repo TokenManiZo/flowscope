@@ -1,4 +1,4 @@
-import type { HumanRun, LlmRunEnvelope, ScannerRunEnvelope, Snapshot, ZapStatus } from "@/lib/api/types"
+import type { HumanRun, ScannerRunEnvelope, Snapshot, ZapStatus } from "@/lib/api/types"
 
 export const snapshotFixture: Snapshot = {
   revision: 1,
@@ -25,4 +25,3 @@ export const snapshotFixture: Snapshot = {
 export const humanRunFixture: HumanRun = { active: false, completed: false, runId: "", accountId: "", proxy: "http://127.0.0.1:8080" }
 export const zapStatusFixture: ZapStatus = { connected: false, state: "UNAVAILABLE", message: "ZAP unavailable" }
 export const scannerRunFixture: ScannerRunEnvelope = { run: { status: "NOT_STARTED" }, scope: [] }
-export const llmRunFixture: LlmRunEnvelope = { run: { status: "IDLE", providers: { CODEX: true, CLAUDE: true } }, scope: [], completed_lanes: [] }

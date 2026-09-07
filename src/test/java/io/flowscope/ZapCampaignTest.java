@@ -3,14 +3,12 @@ package io.flowscope;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.net.httpserver.HttpServer;
 import io.flowscope.core.*;
-import io.flowscope.integration.McpServer;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapClient;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -48,41 +46,7 @@ final class ZapCampaignTest {
         }
     }
 
-    @Test
-    void mcpBindFailureDoesNotPreventIndependentCampaignExecution() throws Exception {
-        try (Fixture fixture = new Fixture(false);
-             ZapCampaign campaign = new ZapCampaign(fixture);
-             ServerSocket occupied = new ServerSocket()) {
-            occupied.bind(new InetSocketAddress("127.0.0.1", 0));
-            assertThrows(IOException.class,
-                    () -> new McpServer(legacyState(fixture), occupied.getLocalPort(), "test-token", campaign));
 
-            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
-            assertEquals("COMPLETED", awaitTerminal(campaign).path("status").asText());
-        }
-    }
-
-    @Test
-    void closingSharedMcpAdapterLeavesCampaignOwnedByHost() throws Exception {
-        try (Fixture fixture = new Fixture(true);
-             ZapCampaign campaign = new ZapCampaign(fixture)) {
-            try (McpServer adapter = new McpServer(legacyState(fixture), 0, "test-token", campaign)) {
-                adapter.startDeterministicZapCampaign(TARGET, List.of(), true);
-                assertTrue(fixture.started.await(3, TimeUnit.SECONDS));
-                await(() -> !campaign.deterministicZapBaselineStatus().path("scan_id").asText().isEmpty());
-                assertEquals(adapter.deterministicZapBaselineStatus().path("run_id"),
-                        campaign.deterministicZapBaselineStatus().path("run_id"));
-            }
-
-            assertEquals("RUNNING", campaign.deterministicZapBaselineStatus().path("status").asText());
-            assertFalse(fixture.stopped.get());
-            JsonNode cancelled = campaign.cancelDeterministicZapBaseline();
-            assertEquals("CANCELLED", cancelled.path("status").asText());
-            assertTrue(fixture.stopped.get());
-            assertNull(fixture.contexts.current(Source.SCANNER));
-            assertEquals("", fixture.capabilityRun.get());
-        }
-    }
 
     @Test
     void campaignCloseStopsOwnedCrawlerWithoutMcp() throws Exception {
@@ -103,22 +67,12 @@ final class ZapCampaignTest {
     }
 
     @Test
-    void extractionPreservesScopeAndIndependentExplorerAndDatasetLockGuards() throws Exception {
+    void preservesScopeGuard() throws Exception {
         try (Fixture fixture = new Fixture(false);
              ZapCampaign campaign = new ZapCampaign(fixture)) {
             assertTrue(assertThrows(IllegalArgumentException.class,
                     () -> campaign.startDeterministicZapCampaign("https://outside.example.test/", List.of(), true))
                     .getMessage().contains("outside configured scope"));
-            fixture.contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
-                    Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "explorer-fixture"));
-            assertTrue(assertThrows(IllegalStateException.class,
-                    () -> campaign.startDeterministicZapCampaign(TARGET, List.of(), true))
-                    .getMessage().contains("independent Explorer"));
-            fixture.contexts.abort(Source.LLM, "explorer-fixture");
-            fixture.locked.set(true);
-            assertTrue(assertThrows(IllegalStateException.class,
-                    () -> campaign.startDeterministicZapCampaign(TARGET, List.of(), true))
-                    .getMessage().contains("before dataset lock"));
             assertEquals(1, fixture.started.getCount(), "blocked starts must not invoke a crawler");
             assertEquals("", fixture.capabilityRun.get());
         }
@@ -135,17 +89,6 @@ final class ZapCampaignTest {
         assertTrue(condition.getAsBoolean(), "condition did not become true within five seconds");
     }
 
-    private static McpServer.State legacyState(Fixture fixture) {
-        return new McpServer.State() {
-            @Override public Pipeline.Result snapshot() { return fixture.snapshot(); }
-            @Override public ScopePolicy scope() { return fixture.scope(); }
-            @Override public void updateScope(String value) { }
-            @Override public ZapClient zap() { return fixture.zap(); }
-            @Override public RunContextRegistry contexts() { return fixture.contexts; }
-            @Override public AnalysisConfig config() { return new AnalysisConfig(); }
-            @Override public boolean approve(String action, String target) { return false; }
-        };
-    }
 
     private static final class Fixture implements ZapCampaign.State, AutoCloseable {
         private final HttpServer server;
@@ -154,7 +97,6 @@ final class ZapCampaignTest {
         private final List<RequestRecord> records = new CopyOnWriteArrayList<>();
         private final CountDownLatch started = new CountDownLatch(1);
         private final AtomicBoolean stopped = new AtomicBoolean();
-        private final AtomicBoolean locked = new AtomicBoolean();
         private final AtomicReference<String> capabilityRun = new AtomicReference<>("");
 
         Fixture(boolean blockTraditional) throws IOException {
@@ -208,7 +150,6 @@ final class ZapCampaignTest {
         @Override public ZapClient zap() { return client; }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public boolean approve(String action, String target) { return false; }
-        @Override public boolean scannerRunsLocked() { return locked.get(); }
         @Override public void scannerCapability(String runId, String capability) { capabilityRun.set(runId); }
         @Override public void clearScannerCapability(String runId) { capabilityRun.compareAndSet(runId, ""); }
         @Override public void close() { server.stop(0); }

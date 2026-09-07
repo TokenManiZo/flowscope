@@ -18,7 +18,7 @@ import io.flowscope.core.SourceDetail;
 import io.flowscope.core.StoredPayload;
 import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
-import io.flowscope.integration.McpServer;
+import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SqliteProjectStore;
@@ -70,7 +70,7 @@ final class SqliteProjectStoreTest {
                 .bindSession(record.service, record.fp, account.id());
         config.reviewItem("candidate-1", ReviewDecision.Status.UNRESOLVED,
                 "추가 재현 필요", List.of(record.evidenceId));
-        McpServer.Assessment assessment = new McpServer.Assessment("assessment-1", "BOLA", "INCONCLUSIVE",
+        LegacyAssessment assessment = new LegacyAssessment("assessment-1", "BOLA", "INCONCLUSIVE",
                 "candidate", "more evidence required", List.of(record.evidenceId),
                 Instant.parse("2026-08-27T00:00:00Z"));
         ValidationDecision validation = new ValidationDecision("candidate-1",

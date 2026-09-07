@@ -8,7 +8,6 @@ const queryState = vi.hoisted(() => ({
   human: {} as Record<string, unknown>,
   zap: {} as Record<string, unknown>,
   scanner: {} as Record<string, unknown>,
-  llm: {} as Record<string, unknown>,
 }))
 
 vi.mock("@/lib/query/hooks", () => ({
@@ -16,7 +15,6 @@ vi.mock("@/lib/query/hooks", () => ({
   useHumanRunQuery: () => queryState.human,
   useZapStatusQuery: () => queryState.zap,
   useScannerRunQuery: () => queryState.scanner,
-  useLlmRunQuery: () => queryState.llm,
 }))
 
 beforeEach(() => {
@@ -24,7 +22,6 @@ beforeEach(() => {
   queryState.human = { data: { active: true, completed: false }, isPending: false, isError: false }
   queryState.zap = { data: { connected: true, state: "READY" }, isPending: false, isError: false }
   queryState.scanner = { data: { run: { status: "RUNNING" }, scope: ["https://app.example.test"] }, isPending: false, isError: false }
-  queryState.llm = { data: { run: { status: "COMPLETE" }, scope: ["https://app.example.test"] }, isPending: false, isError: false }
 })
 
 it("announces each live analysis status with text as well as an icon", () => {
@@ -35,7 +32,7 @@ it("announces each live analysis status with text as well as an icon", () => {
   expect(screen.getByText("LIVE")).toBeVisible()
   expect(screen.getByText("HUMAN")).toBeVisible()
   expect(screen.getByText("ZAP")).toBeVisible()
-  expect(screen.getByText("LLM")).toBeVisible()
+  expect(screen.queryByLabelText("LLM 상태")).not.toBeInTheDocument()
   expect(screen.getByLabelText("SCOPE 상태")).toHaveTextContent("https://app.example.test")
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
   expect(screen.getByRole("link", { name: "빠른 시작" })).toHaveAttribute("href", "#inspection")
@@ -46,7 +43,7 @@ it("reports each query lane as loading without inventing scope, counts, or waiti
 
   render(<WorkspaceTopBar route="dashboard" />)
 
-  for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER", "LLM"]) {
+  for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) {
     expect(screen.getByLabelText(`${label} 상태`)).toHaveTextContent("불러오는 중")
   }
   expect(screen.queryByText("WAITING")).not.toBeInTheDocument()
@@ -59,7 +56,7 @@ it("reports unavailable per query lane when no server data exists", () => {
 
   render(<WorkspaceTopBar route="dashboard" />)
 
-  for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER", "LLM"]) {
+  for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) {
     expect(screen.getByLabelText(`${label} 상태`)).toHaveTextContent("확인 불가")
   }
   expect(screen.queryByText("WAITING")).not.toBeInTheDocument()
@@ -74,7 +71,6 @@ it("keeps cached server values authoritative during refetch failures", () => {
   expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("RUNNING")
   expect(screen.getByLabelText("ZAP 상태")).toHaveTextContent("READY")
   expect(screen.getByLabelText("SCANNER 상태")).toHaveTextContent("RUNNING")
-  expect(screen.getByLabelText("LLM 상태")).toHaveTextContent("COMPLETE")
   expect(screen.getByLabelText("SCOPE 상태")).toHaveTextContent("https://app.example.test")
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
 })

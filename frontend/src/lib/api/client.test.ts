@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest"
 
 import { ApiError, apiFetch, postForm } from "./client"
-import { cancelLlmRun, followUpLlmJudge, importXml, startLlmRun, startScannerRun } from "./endpoints"
-import type { LlmRun, ScannerRun } from "./types"
+import { importXml, startScannerRun } from "./endpoints"
+import type { ScannerRun } from "./types"
 
 const capability = "a".repeat(64)
 
@@ -49,8 +49,8 @@ describe("FlowScope API transport", () => {
     vi.stubGlobal("fetch", fetchStub)
 
     await expect(apiFetch("/api/snapshot")).rejects.toMatchObject({ status: 202 })
-    await postForm("/api/llm-run", {
-      action: "start", provider: "CODEX", role: "EXPLORER",
+    await postForm("/api/scanner-run", {
+      action: "start",
       target: "http://localhost:8888/", account: "user-a",
     }, [202])
 
@@ -61,38 +61,19 @@ describe("FlowScope API transport", () => {
     expect(new Headers(init.headers).get("Content-Type")).toBe("application/x-www-form-urlencoded;charset=UTF-8")
   })
 
-  it("returns only run from scanner and LLM mutations with their exact accepted statuses", async () => {
+  it("returns the scanner run with its exact accepted status", async () => {
     const meta = document.createElement("meta")
     meta.name = "flowscope-capability"
     meta.content = capability
     document.head.append(meta)
-    const fetchStub = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ run: { status: "RUNNING", stage: "TRADITIONAL_SPIDER" } }, 202))
-      .mockResolvedValueOnce(jsonResponse({ run: { status: "RUNNING", provider: "CODEX" } }, 202))
-      .mockResolvedValueOnce(jsonResponse({ run: { status: "CANCELLED" } }, 200))
-      .mockResolvedValueOnce(jsonResponse({ run: { status: "RUNNING", role: "JUDGE" } }, 202))
+    const fetchStub = vi.fn().mockResolvedValue(jsonResponse({ run: { status: "RUNNING", stage: "TRADITIONAL_SPIDER" } }, 202))
     vi.stubGlobal("fetch", fetchStub)
-
     const scanner = await startScannerRun("https://app.test/", "user-a", true)
-    const started = await startLlmRun({ provider: "CODEX", role: "EXPLORER", target: "https://app.test/", account: "user-a" })
-    const cancelled = await cancelLlmRun()
-    const followedUp = await followUpLlmJudge("explain evidence")
-
     expect(scanner).toEqual({ run: { status: "RUNNING", stage: "TRADITIONAL_SPIDER" } })
-    expect(started).toEqual({ run: { status: "RUNNING", provider: "CODEX" } })
-    expect(cancelled).toEqual({ run: { status: "CANCELLED" } })
-    expect(followedUp).toEqual({ run: { status: "RUNNING", role: "JUDGE" } })
     expect("scope" in scanner).toBe(false)
-    expect("completed_lanes" in started).toBe(false)
-    expect(fetchStub.mock.calls.map(([path]) => path)).toEqual([
-      "/api/scanner-run", "/api/llm-run", "/api/llm-run", "/api/llm-run",
-    ])
+    expect(fetchStub.mock.calls[0]?.[0]).toBe("/api/scanner-run")
   })
-
   expectTypeOf(startScannerRun).returns.toEqualTypeOf<Promise<{ run: ScannerRun }>>()
-  expectTypeOf(startLlmRun).returns.toEqualTypeOf<Promise<{ run: LlmRun }>>()
-  expectTypeOf(cancelLlmRun).returns.toEqualTypeOf<Promise<{ run: LlmRun }>>()
-  expectTypeOf(followUpLlmJudge).returns.toEqualTypeOf<Promise<{ run: LlmRun }>>()
 
   it("uses the exact XML media type without converting the raw document into a form", async () => {
     const meta = document.createElement("meta")

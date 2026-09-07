@@ -48,10 +48,6 @@
   .scannerlane.not_run{border-left-color:var(--faint)}.scansteps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px;margin-top:7px}.scanstep{border:1px solid var(--line);border-radius:4px;padding:3px 2px;text-align:center;color:var(--faint);font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.scanstep.done{border-color:var(--allow);color:var(--allow);background:var(--allowbg)}.scanstep.active{border-color:var(--scanner);color:var(--scanner);background:var(--panel2);font-weight:700}.scanstep.skipped{border-style:dashed;color:var(--faint)}.scanprogressdetail{margin-top:5px;padding:5px 6px;border-radius:5px;background:var(--panel2);color:var(--muted);font-size:9.5px}.scanprogressdetail b{color:var(--text)}
   .scannerfeed{margin-top:8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);overflow:hidden}.scannerfeedhead{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);color:var(--text);font-weight:700}.scannerfeedhead span{color:var(--faint);font-weight:400}.scannerfeedlist{max-height:190px;overflow:auto}.scannerevent{display:grid;grid-template-columns:58px minmax(65px,auto) minmax(0,1fr);gap:7px;padding:5px 8px;border-bottom:1px solid var(--line);align-items:start}.scannerevent:last-child{border-bottom:0}.scannerevent time{color:var(--faint)}.scannereventaccount{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.scannereventmessage{color:var(--muted)}.scannerevent.warn .scannereventmessage,.scannerevent.error .scannereventmessage{color:var(--suspicious)}.scannerevent.done .scannereventmessage{color:var(--allow)}
   .scannerdefinitions{grid-column:1/-1;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:7px 9px}.scannerdefinitions summary{cursor:pointer;color:var(--muted);font-size:10.5px}.scannerdefinitions label{margin-top:7px}
-  .llmsetup{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(180px,1.5fr) minmax(130px,1fr);gap:8px;align-items:end;margin-top:9px;padding:11px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2)}
-  .llmsetup label{display:grid;gap:4px;color:var(--faint);font-size:10px;min-width:0}.llmsetup select{width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;text-overflow:ellipsis}.llmreadiness{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:10px}.llmproviderstate{border:1px solid var(--line2);border-radius:6px;padding:4px 7px;font:700 9.5px 'JetBrains Mono',monospace}.llmproviderstate.ready{border-color:var(--allow);color:var(--allow)}.llmproviderstate.login_required,.llmproviderstate.error{border-color:var(--suspicious);color:var(--suspicious)}.llmreadiness .go{margin-left:auto}.llmstatus{grid-column:1/-1;color:var(--muted);font:10.5px 'JetBrains Mono',monospace;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.llmstatus.ok{color:var(--allow)}.llmstatus.fail{color:var(--suspicious)}
-  .llmfollowup{grid-column:1/-2;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--text);padding:8px;font:11px 'JetBrains Mono',monospace;min-width:0}
-  .llmactivity{grid-column:1/-1;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}.llmactivityhead{display:flex;align-items:center;gap:7px;padding:8px 9px;border-bottom:1px solid var(--line);font-size:11px}.llmactivityhead b{color:var(--text)}.llmlive{border:1px solid var(--line2);border-radius:5px;padding:2px 6px;color:var(--faint);font:700 9px 'JetBrains Mono',monospace}.llmlive.running{border-color:var(--allow);color:var(--allow)}.llmactivityhead span:last-child{margin-left:auto;color:var(--faint);font-size:9.5px}.llmfeed{max-height:270px;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:7px;scrollbar-gutter:stable}.llmempty{padding:18px 10px;text-align:center;color:var(--faint);font-size:10.5px;line-height:1.55}.llmevent{max-width:86%;border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:7px 8px;overflow-wrap:anywhere}.llmevent.model{align-self:flex-end;border-color:rgba(17,24,39,.28);background:rgba(17,24,39,.04)}.llmevent.tool{border-left:3px solid var(--accent)}.llmevent.evidence{border-left:3px solid var(--allow)}.llmevent.error{border-left:3px solid var(--suspicious)}.llmeventhead{display:flex;align-items:center;gap:6px;color:var(--text);font-size:10.5px;font-weight:700}.llmeventkind{color:var(--faint);font:700 8.5px 'JetBrains Mono',monospace}.llmeventtime{margin-left:auto;color:var(--faint);font:9px 'JetBrains Mono',monospace}.llmevent p{margin:4px 0 0;color:var(--muted);font-size:10px;line-height:1.5;white-space:pre-wrap}.llmprompt{grid-column:1/-1;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:7px 9px}.llmprompt summary{cursor:pointer;color:var(--muted);font-size:10.5px;font-weight:700}.llmprompt pre{max-height:220px;margin:7px 0 0;padding:8px;border-radius:6px;background:var(--bg);overflow:auto;color:var(--text);font:9.5px/1.5 'JetBrains Mono',monospace;white-space:pre-wrap;overflow-wrap:anywhere}
   main{flex:1; display:flex; min-height:0}
   .emptyworkspace{display:none;flex:1;align-items:center;justify-content:center;padding:24px;overflow:auto}.emptycard{width:min(760px,100%);border:1px solid var(--line2);border-radius:14px;background:var(--panel);padding:22px;box-shadow:0 14px 40px rgba(30,42,56,.08)}.emptycard h2{font-size:20px}.emptylead{margin:7px 0 17px;color:var(--muted);font-size:12.5px;line-height:1.6}.emptysteps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.emptystep{border:1px solid var(--line);border-radius:9px;background:var(--panel2);padding:12px;display:grid;grid-template-columns:26px minmax(0,1fr);gap:9px}.emptystep .num{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line2);font:700 11px 'JetBrains Mono',monospace}.emptystep b{font-size:12px}.emptystep p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}.emptyactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.emptytruth{margin-top:11px;color:var(--faint);font:10.5px 'JetBrains Mono',monospace;line-height:1.5}
   body.empty-state main>.rail,body.empty-state main>.stage,body.empty-state main>.detail,body.empty-state footer,body.empty-state header>.modeswitch{display:none}body.empty-state .emptyworkspace{display:flex}body.empty-state.accounts-mode .emptyworkspace{display:none}body.empty-state.accounts-mode main>.stage{display:block}body.empty-state.accounts-mode header>.modeswitch{display:flex}
@@ -215,7 +211,7 @@
   .li{display:flex; align-items:center; gap:5px}.li .sw{width:10px;height:10px;border-radius:3px}.li .swl{width:20px;height:0;border-top-width:2px}
   @media (max-width:1400px){header .spacer{display:none}header>.modeswitch{order:4;width:100%;display:grid;grid-template-columns:repeat(6,minmax(max-content,1fr));overflow-x:auto}}
   @media (max-width:1250px){.rail{flex-basis:220px}.detail{flex-basis:280px}}
-  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.setupprogress{grid-template-columns:repeat(2,minmax(0,1fr))}.setupfocus{align-items:flex-start;flex-direction:column}.scannersetup,.llmsetup{grid-template-columns:1fr}.scannerstatus,.llmstatus,.llmfollowup{grid-column:1}.zapsetupchoices{grid-template-columns:1fr}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}.requestlabgrid{grid-template-columns:1fr}.requestlabdialog{height:calc(100vh - 20px)}.requestlabpane textarea{min-height:210px}}
+  @media (max-width:720px){header .imp{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}header>.modeswitch{grid-template-columns:repeat(6,max-content)}.setupprogress{grid-template-columns:repeat(2,minmax(0,1fr))}.setupfocus{align-items:flex-start;flex-direction:column}.scannersetup{grid-template-columns:1fr}.scannerstatus{grid-column:1}.zapsetupchoices{grid-template-columns:1fr}.emptysteps{grid-template-columns:1fr}.emptyworkspace{padding:14px}.emptycard{padding:16px}.requestlabgrid{grid-template-columns:1fr}.requestlabdialog{height:calc(100vh - 20px)}.requestlabpane textarea{min-height:210px}}
   @media (max-width:900px){ main{flex-direction:column; overflow:auto} .rail,.detail{flex-basis:auto} .stage{min-height:460px} .graphcanvas{display:none}.graphlist{display:block}.stagehint{display:none} }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -243,17 +239,17 @@
   </div>
 </header>
 
-<div class="statusbar" id="status"><span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요. 사람·스캐너는 전용 프록시로, LLM은 MCP 통제 실행기로 구분 수집합니다. Burp XML과 스캐너용 ZAP HAR 업로드는 실시간 수집이 불가능할 때의 폴백입니다.</span></div>
+<div class="statusbar" id="status"><span>파일을 넣거나 <b>샘플 데이터로 보기</b>를 누르세요. 사람·스캐너는 전용 프록시로 수집합니다. LLM 실행 연동은 현재 제공하지 않습니다. Burp XML과 스캐너용 ZAP HAR 업로드는 실시간 수집이 불가능할 때의 폴백입니다.</span></div>
 <div class="samplebanner" id="sampleBanner" role="status">샘플 데이터 · 실제 HUMAN/ZAP/LLM 점검 결과가 아님 · 대상 네트워크 요청 0건</div>
 
 <div class="setupbackdrop" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
   <div class="setupdialog">
-    <div class="setuphead"><div><h2 id="setupTitle">점검 시작</h2><p>완료되지 않은 단계 하나만 엽니다. 아래 순서대로 진행하면 HUMAN·ZAP·LLM 비교와 Judge 검증까지 이어집니다.</p></div><span class="spacer"></span><button class="go" id="setupClose" aria-label="닫기">닫기</button></div>
+    <div class="setuphead"><div><h2 id="setupTitle">점검 시작</h2><p>완료되지 않은 단계 하나만 엽니다. HUMAN·ZAP 수집 후 Evidence와 API·입력 차이를 검토합니다.</p></div><span class="spacer"></span><button class="go" id="setupClose" aria-label="닫기">닫기</button></div>
     <div class="setupprogress" role="tablist" aria-label="점검 진행 단계">
       <button class="setupstage" id="setupStageScope" data-setup-stage="scope" role="tab" aria-selected="true"><span>1</span><b>범위</b><small id="setupScope">확인 필요</small></button>
       <button class="setupstage" id="setupStageHuman" data-setup-stage="human" role="tab" aria-selected="false"><span>2</span><b>HUMAN</b><small id="setupHumanRun">pass 대기</small></button>
       <button class="setupstage" id="setupStageScanner" data-setup-stage="scanner" role="tab" aria-selected="false"><span>3</span><b>ZAP</b><small id="setupScanner">미실행</small></button>
-      <button class="setupstage" id="setupStageLlm" data-setup-stage="llm" role="tab" aria-selected="false"><span>4</span><b>LLM·Judge</b><small id="setupThreeWay">대기</small></button>
+      <button class="setupstage" id="setupStageReview" data-setup-stage="review" role="tab" aria-selected="false"><span>4</span><b>Evidence 검토</b><small>수집 후 검토</small></button>
     </div>
     <div class="setupfocus" role="status"><div><b id="setupNextTitle">지금 할 일</b><p id="setupNextMessage">Burp의 FlowScope 탭에서 허가된 exact scope를 적용하세요.</p></div><button class="go" id="setupAutoStage">현재 단계로</button></div>
     <section class="setuppane scopepane" data-setup-pane="scope" role="tabpanel" aria-labelledby="setupStageScope">
@@ -281,22 +277,7 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
       <div class="scannerstatus" id="scannerRunStatus">ZAP 연결과 허용 범위를 확인하는 중입니다.</div>
     </div>
     </section>
-    <section class="setuppane" data-setup-pane="llm" role="tabpanel" aria-labelledby="setupStageLlm" hidden>
-    <div class="llmsetup">
-      <label>구독 LLM<select id="llmProvider" aria-label="구독 LLM"><option value="CODEX">Codex</option><option value="CLAUDE">Claude Code</option></select></label>
-      <label>기본 진입 대상<select id="llmTarget" aria-label="LLM 기본 진입 대상"><option value="">Burp 탭에서 범위를 먼저 적용하세요</option></select></label>
-      <label>Explorer 신원<select id="llmAccount" aria-label="LLM Explorer 신원"><option value="">비로그인</option></select></label>
-      <button class="go primary" id="llmExplorerStart" disabled>LLM Explorer 시작</button>
-      <button class="go" id="llmJudgeStart" disabled>Judge 시작</button>
-      <button class="go" id="llmCancel" disabled>실행 중단</button>
-      <div class="llmreadiness" id="llmProviderReadiness"><span>설치된 CLI와 구독 로그인을 자동 확인하는 중입니다.</span><button class="go" id="llmReadinessRefresh" type="button">다시 확인</button></div>
-      <div class="llmstatus" id="llmRunStatus">설치된 구독 CLI와 MCP 상태를 확인하는 중입니다.</div>
-      <div class="llmactivity"><div class="llmactivityhead"><b>LLM 작업 피드</b><span class="llmlive" id="llmLiveState">대기</span><span>실제 공급자 메시지·도구 상태만 표시</span></div><div class="llmfeed" id="llmActivityFeed" role="log" aria-live="polite"><div class="llmempty">Explorer를 시작하면 진행 상황이 여기에 표시됩니다.</div></div></div>
-      <details class="llmprompt" id="llmPromptDetails"><summary>이번 실행에 주입한 지침 보기</summary><pre id="llmPromptPreview">실행 전입니다.</pre></details>
-      <input class="llmfollowup" id="llmJudgeFollowup" maxlength="4000" placeholder="완료된 Judge 세션에 후속 질문 (새 Explorer로 사용되지 않음)" disabled>
-      <button class="go" id="llmJudgeFollowupSend" disabled>Judge 계속</button>
-    </div>
-    </section>
+    <section class="setuppane" data-setup-pane="review" role="tabpanel" aria-labelledby="setupStageReview" hidden><p>수집된 Evidence와 API·입력 차이를 검토하세요. 전체 탐색 완료나 취약점 확정을 의미하지 않습니다.</p><p>새 Explorer 하네스와 FlowScope용 MCP는 아직 제공하지 않습니다.</p></section>
     <div class="setupactions"><button class="go" id="setupSample">샘플로 UI 확인</button></div>
   </div>
 </div>
@@ -324,12 +305,12 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
   <section class="emptyworkspace" id="emptyWorkspace" aria-labelledby="emptyTitle">
     <div class="emptycard">
       <h2 id="emptyTitle">첫 점검을 시작하세요</h2>
-      <p class="emptylead">아직 FlowScope Evidence가 없습니다. 분석 그래프보다 아래 수집 순서를 먼저 완료하면 같은 대상에서 사람·ZAP·LLM의 발견 차이를 비교할 수 있습니다.</p>
+      <p class="emptylead">아직 FlowScope Evidence가 없습니다. 아래 순서로 HUMAN·ZAP 요청을 수집하고 API·입력 차이를 확인하세요. 과거 LLM 관측은 가져와 비교할 수 있지만 새 LLM 실행은 제공하지 않습니다.</p>
       <div class="emptysteps">
         <div class="emptystep"><span class="num">1</span><div><b>Burp에서 exact scope 적용</b><p>FlowScope 탭에 허가된 scheme·host·port·path prefix를 입력합니다.</p></div></div>
         <div class="emptystep"><span class="num">2</span><div><b>로그인 후 HUMAN pass</b><p>필요한 테스트 계정을 캡처하고 명시적 HUMAN pass 동안 기능을 탐색합니다.</p></div></div>
         <div class="emptystep"><span class="num">3</span><div><b>안전 ZAP 기준선</b><p>Traditional·Client·AJAX Spider와 scope 제한 passive 결과를 시스템 순서로 수집합니다.</p></div></div>
-        <div class="emptystep"><span class="num">4</span><div><b>독립 LLM Explorer와 Judge</b><p>MCP Explorer를 끝낸 뒤 세 레인을 잠그고 Evidence 기반 검증을 수행합니다.</p></div></div>
+        <div class="emptystep"><span class="num">4</span><div><b>Evidence 검토</b><p>API·입력 차이와 규칙 후보의 근거를 확인하세요.</p></div></div>
       </div>
       <div class="emptyactions"><button class="go primary" id="emptySetup">빠른 시작 열기</button><button class="go" id="emptySample">샘플로 화면 익히기</button></div>
       <div class="emptytruth">ADMIN 계정은 필수가 아닙니다. 기본 BOLA 비교에는 서로 다른 최소 권한 테스트 계정 2개를 권장하며, BFLA 역할 비교가 필요할 때만 관리자 역할을 추가합니다.</div>
@@ -437,10 +418,10 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
       <div id="seqBody"></div>
     </div>
     <div class="pane" id="paneScenario">
-      <div class="matrixhead"><h2>공격 시나리오 제안</h2><span class="note">세 소스 전체 그림을 종합 → 선택형 LLM 분석, 실패 시 근거 기반 규칙 폴백</span></div>
+      <div class="matrixhead"><h2>공격 시나리오 제안</h2><span class="note">현재 규칙 후보와 사람 검토 · 자동 LLM 판정 미제공</span></div>
       <div class="scenctl">
         <button class="go" id="btnSummary">① 전체 그림 요약 생성</button>
-        <button class="go primary" id="btnScenario" disabled>② 후보·LLM 평가 모아보기</button>
+        <button class="go primary" id="btnScenario" disabled>② 규칙 후보 보기</button>
       </div>
       <div id="scenSummary"></div>
       <div id="scenList"></div>
@@ -526,7 +507,6 @@ let SETUP_AUTO_CHECKED=false, SETUP_STAGE='scope', SETUP_STAGE_PINNED=false;
 let HUMAN_RUN={active:false,completed:false,runId:''};
 let REQUEST_LAB_EVENT_ID='',REQUEST_LAB_SERVICE='',REQUEST_LAB_HISTORY=[],REQUEST_LAB_EDITABLE=false,REQUEST_LAB_GENERATION=0,REQUEST_LAB_IN_FLIGHT=false,REQUEST_LAB_RETRY=null;
 let SCANNER_RUN={status:'NOT_STARTED'}, SCANNER_SCOPE=[], ZAP_STATUS={connected:false,state:'CHECKING',message:'ZAP 연결을 확인하는 중입니다.'}, ZAP_STATUS_TIMER=null;
-let LLM_RUN={status:'UNAVAILABLE',providers:{}}, LLM_SCOPE=[], LLM_COMPLETED=[];
 // v5 separates viewport state by hierarchy level so switching views cannot move the next graph off-screen.
 const GRAPH_STATE_KEY='flowscope.graph-state.v5';
 let GRAPH_STATE=loadGraphState();
@@ -1055,7 +1035,7 @@ async function showOperation(op,offset=0,preferredEventId=''){
     `<div class="val" style="font-size:10.5px; color:var(--faint); margin-bottom:6px">현재 첫 Evidence의 메모리 원문을 큰 편집 화면에서 수정·전송하고 응답을 확인합니다. 결과는 탐색과 분리된 HUMAN 검증 Evidence입니다.</div>`+
     `<div class="row"><button id="requestLabOpen">요청 실험실 열기</button><button id="rsSend">Burp Repeater 열기</button></div>`+
     `<div class="resendlog" id="rsLog"></div></div>`+
-    `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--resend);width:9px;height:9px;border-radius:50%"></span>검증 경계</div><p>FlowScope는 이 화면에서 응답을 만들거나 상태코드만으로 취약점을 확정하지 않습니다. LLM 최종 판정은 별도 VALIDATION 실행의 반복 재현·정상 대조 Evidence가 서버 검증을 통과해야 합니다.</p></div>`;
+    `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--resend);width:9px;height:9px;border-radius:50%"></span>검증 경계</div><p>FlowScope는 이 화면에서 응답을 만들거나 상태코드만으로 취약점을 확정하지 않습니다. 현재 Evidence와 소유자·역할 정책을 함께 검토해야 합니다. 자동 LLM 판정은 제공하지 않습니다.</p></div>`;
   document.getElementById('evPrev').onclick=()=>showOperation(op,Math.max(0,detailMeta.offset-detailMeta.limit));
   document.getElementById('evNext').onclick=()=>showOperation(op,detailMeta.offset+detailMeta.limit);
   document.querySelectorAll('.trafficOverride').forEach(button=>button.onclick=async()=>{document.querySelectorAll('.trafficOverride').forEach(item=>item.disabled=true);try{const response=await fetch('/api/traffic-override',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({operation:op,value:button.dataset.value})});const data=await response.json();if(!response.ok)throw new Error(data.message||'분류 정책 저장 실패');document.getElementById('trafficOverrideMessage').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}catch(error){document.getElementById('trafficOverrideMessage').textContent=error.message;document.querySelectorAll('.trafficOverride').forEach(item=>item.disabled=false);}});
@@ -1233,7 +1213,7 @@ async function deleteAccount(id){const account=accountById(id);if(!account||!con
   catch(error){alert('계정 삭제 실패: '+error.message);}
 }
 async function captureSession(accountId,action){const account=accountById(accountId);if(!account)return;
-  const message=action==='begin'?account.label+' 로그인 연결을 시작할까요? HUMAN 8080 브라우저에서 로그인하고 인증된 페이지까지 여세요.':action==='end'?'로그인이 완료되고 인증된 페이지가 열렸나요? 확인되었다면 캡처를 종료합니다.':account.label+' 로그인 세션을 메모리에서 폐기할까요? 이후 ZAP·LLM에서 사용할 수 없습니다.';if(!confirm(message))return;
+  const message=action==='begin'?account.label+' 로그인 연결을 시작할까요? HUMAN 8080 브라우저에서 로그인하고 인증된 페이지까지 여세요.':action==='end'?'로그인이 완료되고 인증된 페이지가 열렸나요? 확인되었다면 캡처를 종료합니다.':account.label+' 로그인 세션을 메모리에서 폐기할까요? 이후 ZAP에서 사용할 수 없습니다.';if(!confirm(message))return;
   try{const response=await fetch('/api/session-capture',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({account:accountId,action})});const data=await response.json();if(!response.ok)throw new Error(data.message||'세션 작업 실패');document.getElementById('accountNotice').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}
   catch(error){alert('세션 작업 실패: '+error.message);}
 }
@@ -1256,7 +1236,7 @@ function sessionStatusView(managed){
   if(!managed)return {label:'로그인 필요',tone:'warn',help:'로그인 연결을 눌러 HUMAN 8080 브라우저에서 이 계정으로 로그인하세요.'};
   if(managed.credentialConflict)return {label:'동일 인증정보 충돌',tone:'warn',help:'이 로그인 정보가 이미 다른 등록 계정에 연결되어 자동 연결을 차단했습니다. 세션을 폐기한 뒤 올바른 계정으로 다시 로그인하세요.'};
   if(managed.status==='CAPTURING')return {label:'로그인 확인 중',tone:'wait',help:'HUMAN 8080 브라우저에서 로그인하고 인증된 페이지가 열린 뒤 캡처 종료를 누르세요.'};
-  if(managed.status==='ACTIVE')return {label:'사용 가능',tone:'ok',help:'현재 세션을 HUMAN pass, ZAP, LLM 탐색에 사용할 수 있습니다.'};
+  if(managed.status==='ACTIVE')return {label:'사용 가능',tone:'ok',help:'현재 세션을 HUMAN pass와 ZAP 탐색에 사용할 수 있습니다.'};
   if(managed.status==='UNVERIFIED')return {label:'로그인 확인 필요',tone:'warn',help:'인증 성공 응답이 확인되지 않았습니다. 다시 캡처해 로그인 후 인증된 페이지까지 여세요.'};
   if(managed.status==='SUSPECT')return {label:'세션 이상 감지',tone:'warn',help:'로그인 화면 이동 또는 인증 실패가 관측됐습니다. 다시 로그인하세요.'};
   if(managed.status==='REAUTH_REQUIRED')return {label:'다시 로그인 필요',tone:'warn',help:'인증값이 없거나 만료됐습니다. 다시 로그인해야 합니다.'};
@@ -1341,7 +1321,7 @@ function renderSeq(){
   seqBody.innerHTML=html||'<span style="color:var(--faint)">데이터가 없습니다.</span>';
 }
 
-/* ── F-17/F-18 시나리오 제안: 선택형 LLM + 규칙 폴백 ── */
+/* ── 현재 규칙 후보와 사람 검토 ── */
 function resetScenario(){ if(typeof scenSummary!=='undefined'){scenSummary.innerHTML='';scenList.innerHTML='';btnScenario.disabled=true;} }
 function buildSummary(){
   if(!MODEL)return null; const arr=Object.values(MODEL.cells);
@@ -1351,24 +1331,23 @@ function buildSummary(){
 }
 async function renderSummary(){
   const s=buildSummary(); if(!s){scenSummary.innerHTML='<div class="sumbox">데이터를 먼저 불러오세요.</div>';return;}
-  scenSummary.innerHTML=`<div class="sumbox"><h4>전체 그림 요약 (LLM 입력용)</h4>`+
+  scenSummary.innerHTML=`<div class="sumbox"><h4>관측 요약</h4>`+
     `<div class="kv">관측: 신원 ${s.counts.신원} · 엔드포인트 ${s.counts.엔드포인트} · 대상 ID ${s.counts.대상ID}</div>`+
     `<div class="kv">불일치 ${s.conflict.length} · 일부만 발견 ${s.partial.length} · 미교차 후보 ${s.cross.length}</div>`+
     `<div class="mask">※ 세션 토큰·개인정보는 요약에서 마스킹됨 (원문 미포함)</div></div>`;
-  if(LIVE_MODE)try{const response=await fetch('/api/ai-preview',{cache:'no-store'});if(response.ok){const payload=await response.json();scenSummary.insertAdjacentHTML('beforeend',`<div class="sumbox"><h4>MCP Judge 입력 미리보기</h4><pre class="reqblk" style="max-height:240px;overflow:auto;white-space:pre-wrap">${esc(JSON.stringify(payload,null,2))}</pre><div class="mask">FlowScope가 외부 모델 API를 호출하지 않습니다. 구독 LLM이 잠긴 마스킹 Evidence를 로컬 MCP로 읽습니다.</div></div>`);}}catch(error){scenSummary.insertAdjacentHTML('beforeend',`<div class="sumbox">MCP 미리보기를 불러오지 못했습니다: ${esc(error.message)}</div>`);}
   btnScenario.disabled=false;
 }
 async function renderScenarios(){
   const s=buildSummary(); if(!s)return;
   if(LIVE_MODE){
-    try{btnScenario.disabled=true;const response=await fetch('/api/ai-scenarios',{method:'POST'});const data=await response.json();const out=(data.result&&data.result.scenarios)||[];
+    try{btnScenario.disabled=true;const response=await fetch('/api/snapshot',{cache:'no-store'});const data=await response.json();const out=data.scenarios||[];
       SCENARIO_ITEMS=Object.fromEntries(out.filter(item=>item.id).map(item=>[item.id,item]));
-      scenList.innerHTML=`<div class="sumbox"><div class="kv">${esc(data.message||'시나리오 분석')}</div><div class="mask">※ 최종 판정은 MCP로 수집된 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 확정/폐기됩니다. 사람 기록은 감사·오버라이드입니다.</div></div>`+
-        (out.length?out.map(o=>`<div class="scen"><div class="st"><span class="tag">${esc(o.finalVerdict||o.tag||o.category||'INCONCLUSIVE')}</span>${esc(o.title||'')}</div><p>${esc(o.proposal||'')}</p><div class="basis">${esc(o.evidence||'')}</div>${o.finalVerdict?`<div class="gapbox" style="margin-top:9px"><div class="name">LLM 최종 판정 · ${esc(o.finalVerdict)}</div><p>${esc(o.validationReason||'')} ${o.validationRunId?'· run '+esc(o.validationRunId):''}</p></div>`:''}`+
+      scenList.innerHTML=`<div class="sumbox"><div class="kv">${esc(data.message||'시나리오 분석')}</div><div class="mask">※ 규칙 후보와 사람 검토를 구분합니다. 자동 LLM 판정은 제공하지 않습니다.</div></div>`+
+        (out.length?out.map(o=>`<div class="scen"><div class="st"><span class="tag">${esc(o.tag||o.category||'INCONCLUSIVE')}</span>${esc(o.title||'')}</div><p>${esc(o.proposal||'')}</p><div class="basis">${esc(o.evidence||'')}</div>`+
           (o.id?`<div class="accountform" style="margin-top:9px"><label>사람 감사·오버라이드<select data-review-status="${esc(o.id)}"><option value="UNRESOLVED" ${o.reviewStatus==='UNRESOLVED'?'selected':''}>기록 없음</option><option value="CONFIRMED" ${o.reviewStatus==='CONFIRMED'?'selected':''}>동의/승인</option><option value="DISMISSED" ${o.reviewStatus==='DISMISSED'?'selected':''}>이의/기각</option></select></label><label>감사 메모<input data-review-note="${esc(o.id)}" maxlength="2000" value="${esc(o.reviewNote||'')}"></label><div class="accountactions"><button type="button" class="primary" data-review-save="${esc(o.id)}">감사 기록 저장</button><span data-review-message="${esc(o.id)}" class="accountnote"></span></div></div>`:'')+`</div>`).join(''):'<div class="sumbox">근거가 있는 시나리오 후보가 없습니다.</div>');
       scenList.querySelectorAll('[data-review-save]').forEach(button=>button.addEventListener('click',()=>saveScenarioReview(button.dataset.reviewSave,button)));
       return;
-    }catch(error){scenList.innerHTML=`<div class="sumbox">LLM 평가 조회 실패: ${esc(error.message)} · 화면 규칙 기반 폴백을 사용합니다.</div>`;}finally{btnScenario.disabled=false;}
+    }catch(error){scenList.innerHTML=`<div class="sumbox">규칙 후보 조회 실패: ${esc(error.message)} · 화면 규칙 기반 폴백을 사용합니다.</div>`;}finally{btnScenario.disabled=false;}
   }
   const out=[];
   s.conflict.forEach(c=>out.push({tag:'BFLA/우회',t:`${c.op} — 소스 간 판정 불일치 검증`,
@@ -1396,7 +1375,7 @@ async function saveScenarioReview(itemId,button){
 
 function updateStatus(){
   document.body.classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length);
-  const el=document.getElementById('status');renderTrafficStats(SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed).length);if(!EVENTS.length){el.innerHTML='<span>시작 순서 · Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → 독립 LLM Explorer/Judge</span>';updateSetup();return;}
+  const el=document.getElementById('status');renderTrafficStats(SERVER_ROUTE_CANDIDATES.filter(candidate=>!candidate.observed).length);if(!EVENTS.length){el.innerHTML='<span>시작 순서 · Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → Evidence 검토</span>';updateSetup();return;}
   const coverageEvents=EVENTS.filter(e=>e.coverageEligible);const cnt=s=>coverageEvents.filter(e=>e.source===s).length; const conf=Object.values(MODEL.cells).filter(c=>c.conflict).length;
   const part=Object.values(MODEL.cells).filter(c=>c.partial).length;
   const unknown=cnt('unknown');el.innerHTML='<span>메인 비교 기준 · 사람 <b>'+cnt('human')+'</b> · 스캐너 <b>'+cnt('scanner')+'</b> · LLM <b>'+cnt('llm')+'</b>'+(unknown?' · 분류불명 <b>'+unknown+'</b>':'')+'</span><span>수집 <b>'+SERVER_TRAFFIC_STATS.captured+'</b> · 기본 숨김 <b>'+SERVER_TRAFFIC_STATS.excluded+'</b> · 검토 대기 <b>'+SERVER_TRAFFIC_STATS.review+'</b> · 신원 <b>'+MODEL.identities.length+'</b> · Op <b>'+MODEL.operations.length+'</b> · Res <b>'+MODEL.resources.length+'</b></span>'+(part?'<span class="warn">일부만 발견 <b>'+part+'</b> · 불일치 <b>'+conf+'</b></span>':'');
@@ -1410,27 +1389,23 @@ function selectSetupStage(stage,pinned=true){
 }
 
 function updateSetup(){
-  const scopeReady=SCANNER_SCOPE.length>0||LLM_SCOPE.length>0;
+  const scopeReady=SCANNER_SCOPE.length>0;
   const activeSessions=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing).length;
   const humanReady=HUMAN_RUN.completed;
   const scannerWarning=SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS',scannerReady=SCANNER_RUN.status==='COMPLETED'||scannerWarning;
-  const explorerDone=LLM_COMPLETED.includes('LLM');
-  const lanesReady=['HUMAN','SCANNER','LLM'].every(lane=>LLM_COMPLETED.includes(lane));
-  const judgeDone=LLM_RUN.role==='JUDGE'&&LLM_RUN.status==='SUCCEEDED',judgeRunning=LLM_RUN.role==='JUDGE'&&LLM_RUN.status==='RUNNING';
   const stageState=(stage,done,text,warning=false)=>{const button=document.querySelector(`[data-setup-stage="${stage}"]`),label=button?.querySelector('small');if(label)label.textContent=text;if(button){button.classList.toggle('done',done);button.classList.toggle('warning',warning);}};
   stageState('scope',scopeReady,scopeReady?'적용됨':'확인 필요');
   stageState('human',humanReady,HUMAN_RUN.active?'진행 중':humanReady?'pass 완료':'pass 대기');
   stageState('scanner',scannerReady&&!scannerWarning,scannerWarning?'경고 완료':scannerReady?'기준선 완료':SCANNER_RUN.status==='RUNNING'?'진행 중':SCANNER_RUN.status==='FAILED'?'실패':'미실행',scannerWarning||SCANNER_RUN.status==='FAILED');
-  stageState('llm',judgeDone,judgeDone?'Judge 완료':judgeRunning?'Judge 진행 중':explorerDone?'Explorer 완료':'Explorer 대기');
-  const autoStage=!scopeReady?'scope':!humanReady?'human':!scannerReady?'scanner':'llm';
+  const autoStage=!scopeReady?'scope':!humanReady?'human':!scannerReady?'scanner':'review';
   if(!SETUP_STAGE_PINNED)SETUP_STAGE=autoStage;
   selectSetupStage(SETUP_STAGE,SETUP_STAGE_PINNED);
   const title=document.getElementById('setupNextTitle'),message=document.getElementById('setupNextMessage');
   const guidance={
     scope:['1. exact scope 적용',scopeReady?'범위가 적용됐습니다. 다음 할 일 버튼을 눌러 HUMAN 단계로 이동하세요.':'Burp의 FlowScope 탭에서 허가된 서비스와 경로 prefix를 입력하고 범위 적용을 누르세요.'],
     human:['2. HUMAN 기준선',HUMAN_RUN.active?'HUMAN 8080 브라우저에서 허가된 기능을 탐색한 뒤 pass 종료를 누르세요.':humanReady?'HUMAN pass가 완료됐습니다. 다음은 ZAP 기준선입니다.':'비로그인 또는 ACTIVE 계정을 선택하고 pass를 시작한 뒤 대상 기능을 직접 탐색하세요.'],
-    scanner:['3. ZAP 기준선',!ZAP_STATUS.connected?'ZAP Desktop 또는 Docker ZAP 중 하나를 연결하세요. 연결되면 검사 버튼이 활성화됩니다.':SCANNER_RUN.status==='RUNNING'?'신원별 격리 검사가 진행 중입니다. 완료 상태와 경고를 확인하세요.':scannerReady?'ZAP 기준선이 종료됐습니다. 경고 완료라면 rendered 수집 경고를 확인한 뒤 LLM 단계로 이동하세요.':'대상과 신원을 확인하고 신원별 격리 검사를 시작하세요.'],
-    llm:['4. LLM Explorer · Judge',judgeDone?'Judge가 종료됐습니다. 시나리오에서 Evidence 기반 판정을 검토하세요.':judgeRunning?'Judge가 잠긴 세 레인을 검증하고 있습니다.':!explorerDone?'구독 CLI와 대상·신원을 확인하고 독립 Explorer를 시작하세요.':lanesReady?'세 레인이 준비됐습니다. 별도 Judge를 시작하세요.':'Explorer는 완료됐지만 HUMAN·SCANNER 완료 레인이 더 필요합니다.']
+    scanner:['3. ZAP 기준선',!ZAP_STATUS.connected?'ZAP Desktop 또는 Docker ZAP 중 하나를 연결하세요. 연결되면 검사 버튼이 활성화됩니다.':SCANNER_RUN.status==='RUNNING'?'신원별 격리 검사가 진행 중입니다. 완료 상태와 경고를 확인하세요.':scannerReady?'ZAP 기준선이 종료됐습니다. 경고 완료라면 rendered 수집 경고를 확인한 뒤 Evidence를 검토하세요.':'대상과 신원을 확인하고 신원별 격리 검사를 시작하세요.'],
+    review:['4. Evidence 검토','수집된 요청·응답과 API·입력 차이를 확인하세요. 미관측은 취약점이나 탐색 실패를 의미하지 않습니다.']
   };
   [title.textContent,message.textContent]=guidance[SETUP_STAGE];
   document.getElementById('setupAutoStage').hidden=SETUP_STAGE===autoStage;
@@ -1502,75 +1477,7 @@ async function cancelScannerRun(){
   try{const response=await fetch('/api/scanner-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'cancel'})});const data=await response.json();if(!response.ok)throw new Error(data.message||'ZAP 기준선 취소 실패');SCANNER_RUN=data.run||SCANNER_RUN;renderScannerControls();}
   catch(error){SCANNER_RUN={...SCANNER_RUN,poll_error:error.message};renderScannerControls();}
 }
-function renderLlmControls(){
-  const provider=document.getElementById('llmProvider'),target=document.getElementById('llmTarget'),account=document.getElementById('llmAccount');
-  const explorer=document.getElementById('llmExplorerStart'),judge=document.getElementById('llmJudgeStart'),cancel=document.getElementById('llmCancel'),status=document.getElementById('llmRunStatus'),followup=document.getElementById('llmJudgeFollowup'),followupSend=document.getElementById('llmJudgeFollowupSend');
-  const selectedTarget=target.value,selectedAccount=account.value;
-  target.innerHTML=LLM_SCOPE.length?LLM_SCOPE.map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join(''):'<option value="">Burp 탭에서 범위를 먼저 적용하세요</option>';
-  if(LLM_SCOPE.includes(selectedTarget))target.value=selectedTarget;
-  let service='';try{const url=new URL(target.value);service=url.protocol+'//'+url.hostname.toLowerCase()+':'+(url.port||(url.protocol==='https:'?'443':'80'));}catch(_){}
-  const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===service);
-  account.innerHTML='<option value="">비로그인</option>'+usable.map(session=>{const registered=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(registered?registered.label:session.accountId)}</option>`;}).join('');
-  if(usable.some(session=>session.accountId===selectedAccount))account.value=selectedAccount;
-  const running=LLM_RUN.status==='RUNNING',readiness=LLM_RUN.provider_readiness||{};
-  if(!running&&!(readiness[provider.value]&&readiness[provider.value].ready)){
-    const automatic=['CODEX','CLAUDE'].find(value=>readiness[value]&&readiness[value].ready);if(automatic)provider.value=automatic;
-  }
-  const available=!!(LLM_RUN.providers&&LLM_RUN.providers[provider.value]);
-  const lanesReady=['HUMAN','SCANNER','LLM'].every(lane=>LLM_COMPLETED.includes(lane));
-  explorer.disabled=running||!available||!target.value;judge.disabled=running||!available||!target.value||!lanesReady;cancel.disabled=!running;
-  provider.disabled=running;target.disabled=running;account.disabled=running;
-  const resumable=!running&&LLM_RUN.status==='SUCCEEDED'&&LLM_RUN.role==='JUDGE'&&!!LLM_RUN.provider_session_id;followup.disabled=!resumable;followupSend.disabled=!resumable||!followup.value.trim();
-  const parts=[LLM_RUN.status||'UNAVAILABLE'];if(LLM_RUN.provider)parts.push(LLM_RUN.provider);if(LLM_RUN.role)parts.push(LLM_RUN.role);if(LLM_RUN.message)parts.push(LLM_RUN.message);
-  if(LLM_RUN.provider_session_id)parts.push('세션 '+LLM_RUN.provider_session_id);
-  const execution=LLM_RUN.execution_summary;if(execution&&Number(execution.attempted||0)>0){const causes=executionOutcomeSummary(execution);parts.push('통제 요청 '+executionQualityLabel(execution.quality)+' · 시도 '+Number(execution.attempted||0)+' · 응답 '+Number(execution.responses||0)+' · 실패 '+Number(execution.failures||0)+(causes?' · '+causes:''));}
-  if(LLM_RUN.session_metadata_may_remain)parts.push('Claude 비지속 옵션에서도 공급자 메타데이터 파일이 남을 수 있으나 다음 실행에 재사용하지 않습니다.');
-  if(LLM_RUN.output_tail&&(LLM_RUN.status==='FAILED'||LLM_RUN.status==='CANCELLED'))parts.push(LLM_RUN.output_tail.slice(-1500));
-  const providerMessage=LLM_RUN.provider_messages&&LLM_RUN.provider_messages[provider.value];
-  if(providerMessage)parts.push(providerMessage);else if(!available)parts.push(provider.value+' CLI 또는 구독 로그인을 확인하지 못했습니다.');
-  if(available&&!lanesReady&&!running)parts.push('Judge 대기: HUMAN·SCANNER·LLM 완료 레인이 모두 필요합니다.');
-  status.textContent=parts.join(' · ');status.classList.toggle('ok',LLM_RUN.status==='SUCCEEDED');status.classList.toggle('fail',LLM_RUN.status==='FAILED'||LLM_RUN.status==='CANCELLED');
-  const readinessBox=document.getElementById('llmProviderReadiness');
-  readinessBox.innerHTML=['CODEX','CLAUDE'].map(value=>{const item=readiness[value]||{state:'CHECKING',message:'확인 중'};return `<span class="llmproviderstate ${esc(String(item.state||'checking').toLowerCase())}" title="${esc(item.message||'')}">${value} · ${esc(item.state||'CHECKING')}</span>`;}).join('')+'<button class="go" id="llmReadinessRefresh" type="button">다시 확인</button>';
-  document.getElementById('llmReadinessRefresh').addEventListener('click',refreshLlmReadiness);
-  renderLlmActivity();
-}
-function renderLlmActivity(){
-  const feed=document.getElementById('llmActivityFeed'),live=document.getElementById('llmLiveState'),prompt=document.getElementById('llmPromptPreview');if(!feed||!live||!prompt)return;
-  const nearBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<48,items=Array.isArray(LLM_RUN.activities)?LLM_RUN.activities:[];
-  live.textContent=LLM_RUN.status==='RUNNING'?'실행 중':LLM_RUN.status==='SUCCEEDED'?'완료':LLM_RUN.status==='FAILED'?'실패':LLM_RUN.status==='CANCELLED'?'중단':'대기';live.classList.toggle('running',LLM_RUN.status==='RUNNING');
-  prompt.textContent=LLM_RUN.prompt_preview||'실행 전입니다.';
-  if(!items.length){feed.innerHTML='<div class="llmempty">Explorer를 시작하면 실제 모델 메시지, FlowScope 도구 호출 상태, Evidence 완료 게이트가 여기에 표시됩니다. 숨겨진 추론 원문은 제공하지 않습니다.</div>';return;}
-  feed.innerHTML=items.map(item=>{const kind=String(item.kind||'SYSTEM').toLowerCase(),time=item.at?new Date(item.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';return `<article class="llmevent ${esc(kind)}"><div class="llmeventhead"><span class="llmeventkind">${esc(item.kind||'SYSTEM')}</span><span>${esc(item.title||'진행 상태')}</span><time class="llmeventtime">${esc(time)}</time></div>${item.detail?`<p>${esc(item.detail)}</p>`:''}</article>`;}).join('');
-  if(nearBottom||LLM_RUN.status==='RUNNING'&&items.length<=2)feed.scrollTop=feed.scrollHeight;
-}
-async function syncLlmRun(){
-  if(!LIVE_MODE)return;try{const response=await fetch('/api/llm-run',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'LLM 실행 상태 조회 실패');LLM_RUN=data.run||{status:'UNAVAILABLE',providers:{}};LLM_SCOPE=data.scope||[];LLM_COMPLETED=data.completed_lanes||[];renderLlmControls();updateSetup();}
-  catch(error){LLM_RUN={status:'UNAVAILABLE',message:error.message,providers:{}};renderLlmControls();}
-}
-async function refreshLlmReadiness(){
-  const button=document.getElementById('llmReadinessRefresh');if(button)button.disabled=true;
-  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'refresh'})});const data=await response.json();if(!response.ok)throw new Error(data.message||'LLM 준비 상태 확인 실패');LLM_RUN=data.run;renderLlmControls();setTimeout(syncLlmRun,500);}
-  catch(error){alert(error.message);await syncLlmRun();}
-}
-async function startLlmRun(role){
-  const provider=document.getElementById('llmProvider').value,target=document.getElementById('llmTarget').value,account=role==='EXPLORER'?document.getElementById('llmAccount').value:'';if(!target)return;
-  const roleLabel=role==='EXPLORER'?'독립 Explorer':'별도 Judge';
-  if(!confirm(provider+' '+roleLabel+'를 새 세션으로 시작할까요?\n\n대상: '+target+(account?'\n계정: '+account:'\n계정: 비로그인/필요 시 Judge가 안전한 계정 ID 선택')))return;
-  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'start',provider,role,target,account})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'LLM 실행 시작 실패');LLM_RUN=data.run;renderLlmControls();updateSetup();}
-  catch(error){alert(error.message);await syncLlmRun();}
-}
-async function cancelLlmRun(){
-  if(!confirm('현재 LLM 실행을 중단할까요? 중단된 Explorer는 완료 레인으로 인정되지 않습니다.'))return;
-  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'cancel'})});const data=await response.json();if(!response.ok)throw new Error(data.message||'LLM 실행 중단 실패');LLM_RUN=data.run;renderLlmControls();updateSetup();}
-  catch(error){alert(error.message);}
-}
-async function continueJudge(){
-  const input=document.getElementById('llmJudgeFollowup'),message=input.value.trim();if(!message)return;
-  try{const response=await fetch('/api/llm-run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({action:'followup',message})});const data=await response.json();if(response.status!==202)throw new Error(data.message||'Judge 후속 실행 실패');input.value='';LLM_RUN=data.run;renderLlmControls();updateSetup();}
-  catch(error){alert(error.message);}
-}
-function openSetup(){SETUP_STAGE_PINNED=false;updateSetup();syncHumanRun();syncZapStatus();syncScannerRun();syncLlmRun();setupModal.style.display='flex';setupClose.focus();}
+function openSetup(){SETUP_STAGE_PINNED=false;updateSetup();syncHumanRun();syncZapStatus();syncScannerRun();setupModal.style.display='flex';setupClose.focus();}
 function closeSetup(){setupModal.style.display='none';try{localStorage.setItem('flowscope.setup.seen','1');}catch(_){}}
 
 async function loadFiles(input,source){
@@ -1648,13 +1555,6 @@ document.getElementById('humanRunEnd').addEventListener('click',()=>changeHumanR
 document.getElementById('scannerRunStart').addEventListener('click',startScannerRun);
 document.getElementById('scannerRunCancel').addEventListener('click',cancelScannerRun);
 document.getElementById('scannerTarget').addEventListener('change',renderScannerControls);
-document.getElementById('llmProvider').addEventListener('change',renderLlmControls);
-document.getElementById('llmTarget').addEventListener('change',renderLlmControls);
-document.getElementById('llmExplorerStart').addEventListener('click',()=>startLlmRun('EXPLORER'));
-document.getElementById('llmJudgeStart').addEventListener('click',()=>startLlmRun('JUDGE'));
-document.getElementById('llmCancel').addEventListener('click',cancelLlmRun);
-document.getElementById('llmJudgeFollowup').addEventListener('input',renderLlmControls);
-document.getElementById('llmJudgeFollowupSend').addEventListener('click',continueJudge);
 document.getElementById('setupModal').addEventListener('click',event=>{if(event.target===setupModal)closeSetup();});
 document.getElementById('requestLabClose').addEventListener('click',closeRequestLab);
 document.getElementById('requestLabSend').addEventListener('click',sendRequestLab);
@@ -1667,11 +1567,11 @@ document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(re
 async function syncExtension(){
   try{const response=await fetch('/api/snapshot',{cache:'no-store'});if(!response.ok){LIVE_MODE=false;return;}LIVE_MODE=true;const data=await response.json();if(data.revision===SERVER_REVISION&&data.identityRevision===SERVER_IDENTITY_REVISION)return;
     SERVER_REVISION=data.revision;SERVER_IDENTITY_REVISION=data.identityRevision||0;SERVER_OWNERS=data.owners||{};SERVER_ROLES=data.roles||{};SERVER_REQUIRED_ROLES=data.requiredRoles||{};SERVER_FLOW_LINKS=data.flowLinks||[];SERVER_ACCOUNTS=data.accounts||[];SERVER_SESSIONS=data.sessions||[];SERVER_MANAGED_SESSIONS=data.managedSessions||[];SERVER_CELLS=data.cells||[];SERVER_GRAPH_FACTS=data.graphFacts||[];SERVER_GAPS=data.gaps||[];SERVER_ROUTE_CANDIDATES=data.routeCandidates||[];SERVER_SURFACE=data.surface||{endpoints:[],extractions:[]};SERVER_RUN_EXECUTIONS=data.runExecutions||[];SERVER_ACTIVE_SOURCES=data.activeSources||[];SERVER_TRAFFIC_STATS=data.trafficStats||{captured:0,coverage:0,excluded:0,review:0,dropped:0,payloadMetadataOnly:0};SERVER_SAMPLE_MODE=!!data.sampleMode;SERVER_EVENTS=(data.events||[]);EVENTS=[...SERVER_EVENTS];renderSampleMode();
-    if(EVENTS.length||SERVER_ROUTE_CANDIDATES.length)build();else{renderAccounts();renderIdentityFilter();renderRoles();updateStatus();}renderLlmControls();
+    if(EVENTS.length||SERVER_ROUTE_CANDIDATES.length)build();else{renderAccounts();renderIdentityFilter();renderRoles();updateStatus();}
     if(!SETUP_AUTO_CHECKED){SETUP_AUTO_CHECKED=true;try{if(!localStorage.getItem('flowscope.setup.seen'))openSetup();}catch(_){openSetup();}}
   }catch(error){LIVE_MODE=false;}
 }
-setMode('surface');syncHumanRun();syncExtension();syncZapStatus();syncScannerRun();syncLlmRun();setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();syncLlmRun();},1000);
+setMode('surface');syncHumanRun();syncExtension();syncZapStatus();syncScannerRun();setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();},1000);
 </script>
 </body>
 </html>

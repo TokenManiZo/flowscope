@@ -21,8 +21,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.TrafficOverride;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
-import io.flowscope.integration.LocalLlmRunner;
-import io.flowscope.integration.McpServer;
+import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
@@ -51,7 +50,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default Pipeline.Result completionSnapshot() { return snapshot(); }
         long revision();
         AnalysisConfig config();
-        List<McpServer.Assessment> assessments();
+        List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
         RunContextRegistry contexts();
         void rebuild();
@@ -92,21 +91,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     .put("connected", false)
                     .put("state", "UNAVAILABLE")
                     .put("message", "ZAP 연결 확인 기능을 사용할 수 없습니다.");
-        }
-        default com.fasterxml.jackson.databind.JsonNode startLlm(LocalLlmRunner.Provider provider,
-                                                                  LocalLlmRunner.Role role,
-                                                                  String target, String accountId) {
-            throw new UnsupportedOperationException("LLM CLI workflow is unavailable");
-        }
-        default com.fasterxml.jackson.databind.JsonNode llmStatus() {
-            return new ObjectMapper().createObjectNode().put("status", "UNAVAILABLE");
-        }
-        default com.fasterxml.jackson.databind.JsonNode refreshLlm() { return llmStatus(); }
-        default com.fasterxml.jackson.databind.JsonNode cancelLlm() {
-            throw new UnsupportedOperationException("LLM CLI workflow is unavailable");
-        }
-        default com.fasterxml.jackson.databind.JsonNode followUpJudge(String message) {
-            throw new UnsupportedOperationException("Judge continuation is unavailable");
         }
     }
 
@@ -178,8 +162,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/snapshot" -> snapshot(request);
             case "/api/evidence" -> evidence(request, target);
             case "/api/cluster-evidence" -> clusterEvidence(request, target);
-            case "/api/ai-preview" -> preview(request);
-            case "/api/ai-scenarios" -> scenarios(request);
             case "/api/replay" -> replay(request);
             case "/api/request-lab" -> requestLab(request, target);
             case "/api/clear" -> clear(request);
@@ -197,7 +179,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/session-capture" -> sessionCapture(request);
             case "/api/zap-status" -> zapStatus(request);
             case "/api/scanner-run" -> scannerRun(request);
-            case "/api/llm-run" -> llmRun(request);
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-xml" -> importXml(request, target);
             case "/api/import-har" -> importHar(request, target);
@@ -313,25 +294,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
     }
 
-    private LoopbackHttpServer.Response preview(LoopbackHttpServer.Request request) throws IOException {
-        if (!request.method().equals("GET")) return method("GET");
-        return response(200, "application/json; charset=utf-8", snapshots.preview(state.snapshot()));
-    }
 
-    private LoopbackHttpServer.Response scenarios(LoopbackHttpServer.Request request) throws IOException {
-        if (postForm(request) == null) return invalidForm(request);
-        ObjectNode result = json.createObjectNode();
-        result.set("scenarios", json.readTree(snapshots.write(state.revision(), state.snapshot(),
-                state.config(), state.assessments(), state.validations(),
-                state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates())).path("scenarios"));
-        ObjectNode body = json.createObjectNode();
-        body.put("usedLlm", !state.assessments().isEmpty() || !state.validations().isEmpty());
-        body.put("message", state.assessments().isEmpty() && state.validations().isEmpty()
-                ? "MCP LLM 평가가 아직 없어 결정론적 후보만 표시합니다."
-                : "MCP LLM 평가·검증 판정과 결정론적 후보를 함께 표시합니다.");
-        body.set("result", result);
-        return json(200, body);
-    }
 
     private LoopbackHttpServer.Response replay(LoopbackHttpServer.Request request) throws IOException {
         Map<String, String> form = postForm(request);
@@ -577,8 +540,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private List<String> evidenceForReview(String itemId) {
         return state.snapshot().analysis.findings().stream().filter(finding -> finding.id().equals(itemId))
                 .map(finding -> finding.evidenceIds()).findFirst()
-                .or(() -> state.assessments().stream().filter(value -> value.id().equals(itemId))
-                        .map(value -> value.evidenceIds()).findFirst())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 후보입니다."));
     }
 
@@ -692,7 +653,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 state.rebuild();
                 SessionBroker.Status status = broker.viewForAccount(accountId).orElseThrow().status();
                 String message = status == SessionBroker.Status.ACTIVE
-                        ? account.label() + " 로그인이 연결됐습니다. HUMAN pass, ZAP, LLM에서 사용할 수 있습니다."
+                        ? account.label() + " 로그인이 연결됐습니다. HUMAN pass와 ZAP에서 사용할 수 있습니다."
                         : account.label() + " 로그인 확인이 끝나지 않았습니다. HUMAN 8080에서 다시 로그인하고 "
                         + "인증된 페이지가 열린 뒤 캡처를 종료하세요.";
                 return success(message);
@@ -768,51 +729,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response zapStatus(LoopbackHttpServer.Request request) throws IOException {
         if (!request.method().equals("GET")) return method("GET");
         return json(200, state.zapStatus());
-    }
-
-    private LoopbackHttpServer.Response llmRun(LoopbackHttpServer.Request request) throws IOException {
-        if (request.method().equals("GET")) {
-            ObjectNode body = json.createObjectNode();
-            body.set("run", state.llmStatus());
-            body.set("scope", json.valueToTree(state.scopeEntries().stream()
-                    .filter(entry -> !isOwnControlPlane(entry)).toList()));
-            body.set("completed_lanes", json.valueToTree(state.contexts().completedExplorations().stream()
-                    .map(Source::name).sorted().toList()));
-            return json(200, body);
-        }
-        Map<String, String> form = postForm(request);
-        if (form == null) return invalidForm(request);
-        try {
-            String action = required(form, "action").toLowerCase(Locale.ROOT);
-            ObjectNode body = json.createObjectNode();
-            if (action.equals("cancel")) {
-                body.set("run", state.cancelLlm());
-                return json(200, body);
-            }
-            if (action.equals("followup")) {
-                body.set("run", state.followUpJudge(required(form, "message")));
-                return json(202, body);
-            }
-            if (action.equals("refresh")) {
-                body.set("run", state.refreshLlm());
-                return json(200, body);
-            }
-            if (!action.equals("start")) {
-                throw new IllegalArgumentException("action은 start, cancel, followup 또는 refresh여야 합니다.");
-            }
-            LocalLlmRunner.Provider provider;
-            LocalLlmRunner.Role role;
-            try { provider = LocalLlmRunner.Provider.valueOf(required(form, "provider").toUpperCase(Locale.ROOT)); }
-            catch (IllegalArgumentException error) { throw new IllegalArgumentException("provider는 CODEX 또는 CLAUDE여야 합니다."); }
-            try { role = LocalLlmRunner.Role.valueOf(required(form, "role").toUpperCase(Locale.ROOT)); }
-            catch (IllegalArgumentException error) { throw new IllegalArgumentException("role은 EXPLORER 또는 JUDGE여야 합니다."); }
-            String target = required(form, "target");
-            if (isOwnControlPlane(target)) throw new IllegalArgumentException("FlowScope Web 제어면은 LLM 대상이 될 수 없습니다.");
-            body.set("run", state.startLlm(provider, role, target, form.getOrDefault("account", "")));
-            return json(202, body);
-        } catch (RuntimeException error) {
-            return error(400, error.getMessage());
-        }
     }
 
     private boolean isOwnControlPlane(String value) {

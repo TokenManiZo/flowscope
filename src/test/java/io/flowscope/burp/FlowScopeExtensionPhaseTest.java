@@ -104,14 +104,13 @@ class FlowScopeExtensionPhaseTest {
     }
 
     @Test
-    void 활성_run이나_Judge_lock이_있으면_범위_변경을_막는다() {
+    void 활성_run이_있으면_범위_변경을_막는다() {
         RunContextRegistry contexts = new RunContextRegistry();
-        assertFalse(FlowScopeExtension.scopeMutationBlocked(false, contexts));
-        assertTrue(FlowScopeExtension.scopeMutationBlocked(true, contexts));
+        assertFalse(FlowScopeExtension.scopeMutationBlocked(contexts));
 
         contexts.activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
                 Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.BASELINE, "human-active"));
-        assertTrue(FlowScopeExtension.scopeMutationBlocked(false, contexts));
+        assertTrue(FlowScopeExtension.scopeMutationBlocked(contexts));
     }
 
     @Test

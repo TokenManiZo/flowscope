@@ -21,7 +21,7 @@ import io.flowscope.core.SurfaceAnalysis;
 import io.flowscope.core.SurfaceAnalyzer;
 import io.flowscope.core.Verdict;
 import io.flowscope.core.ValidationDecision;
-import io.flowscope.integration.McpServer;
+import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
 
@@ -39,26 +39,26 @@ public final class SnapshotJsonWriter {
     private SurfaceAnalysis cachedSurface;
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
-                        List<McpServer.Assessment> assessments,
+                        List<LegacyAssessment> assessments,
                         List<ValidationDecision> validations) throws JsonProcessingException {
         return write(revision, result, config, assessments, validations, List.of(), List.of());
     }
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
-                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions) throws JsonProcessingException {
         return write(revision, result, config, assessments, validations, managedSessions, List.of());
     }
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
-                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates) throws JsonProcessingException {
         return write(revision, result, config, assessments, validations, managedSessions, routeCandidates, 0);
     }
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
-                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates, long droppedRecords) throws JsonProcessingException {
         return write(revision, result, config, assessments, validations, managedSessions,
@@ -66,7 +66,7 @@ public final class SnapshotJsonWriter {
     }
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
-                        List<McpServer.Assessment> assessments, List<ValidationDecision> validations,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates, long droppedRecords,
                         List<RunExecutionLedger.Summary> executionSummaries) throws JsonProcessingException {
@@ -99,7 +99,18 @@ public final class SnapshotJsonWriter {
         root.set("cells", cells(result.analysis.cells()));
         root.putArray("verifications");
         root.set("gaps", gaps(result.analysis.gaps()));
-        root.set("scenarios", scenarios(result, assessments, validations, config));
+        root.set("scenarios", scenarios(result, config));
+        ObjectNode history = root.putObject("legacyLlm");
+        history.put("readOnly", true);
+        history.set("assessments", json.valueToTree(assessments.stream().map(value -> Map.of(
+                "id", value.id(), "type", value.type(), "verdict", value.verdict(),
+                "title", Masking.maskSecrets(value.title()), "reason", Masking.maskSecrets(value.reason()),
+                "evidenceIds", value.evidenceIds(), "createdAt", value.createdAt().toString())).toList()));
+        history.set("validations", json.valueToTree(validations.stream().map(value -> Map.of(
+                "candidateId", value.candidateId(), "verdict", value.verdict().name(),
+                "reason", Masking.maskSecrets(value.reason()), "originalEvidenceIds", value.originalEvidenceIds(),
+                "validationEvidenceIds", value.validationEvidenceIds(), "controlEvidenceIds", value.controlEvidenceIds(),
+                "runId", value.runId(), "decidedAt", value.decidedAt().toString())).toList()));
         root.set("accounts", accounts(config, result.records));
         root.set("sessions", sessions(config, result.records));
         root.set("managedSessions", managedSessions(managedSessions));
@@ -145,15 +156,6 @@ public final class SnapshotJsonWriter {
         return out;
     }
 
-    public byte[] preview(Pipeline.Result result) throws JsonProcessingException {
-        ObjectNode root = json.createObjectNode();
-        root.put("notice", "Masked metadata only. Connect a subscription LLM through FlowScope MCP for analysis.");
-        root.put("records", result.records.size());
-        root.put("coverageCells", result.analysis.cells().size());
-        root.set("findings", json.valueToTree(result.analysis.findings()));
-        root.set("gaps", json.valueToTree(result.analysis.gaps()));
-        return json.writeValueAsBytes(root);
-    }
 
     private ArrayNode events(Pipeline.Result result) {
         Map<String, ObservationCollapser.Group> clusters = ObservationCollapser.byEvidence(result.records);
@@ -376,12 +378,8 @@ public final class SnapshotJsonWriter {
         return out;
     }
 
-    private ArrayNode scenarios(Pipeline.Result result, List<McpServer.Assessment> assessments,
-                                List<ValidationDecision> validations,
-                                AnalysisConfig config) {
+    private ArrayNode scenarios(Pipeline.Result result, AnalysisConfig config) {
         ArrayNode out = json.createArrayNode();
-        Map<String, ValidationDecision> finalByCandidate = new LinkedHashMap<>();
-        for (ValidationDecision validation : validations) finalByCandidate.put(validation.candidateId(), validation);
         for (AuthorizationAnalysis.Finding finding : result.analysis.findings()) {
             ObjectNode value = out.addObject();
             value.put("id", finding.id());
@@ -391,26 +389,7 @@ public final class SnapshotJsonWriter {
             value.put("evidence", String.join(", ", finding.evidenceIds()));
             value.put("risk", finding.severity().name());
             value.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
-            ValidationDecision validation = finalByCandidate.get(finding.id());
-            value.put("finalVerdict", validation == null ? "INCONCLUSIVE" : validation.verdict().name());
-            value.put("validationReason", validation == null ? "LLM 검증 번들이 아직 제출되지 않음" : validation.reason());
-            value.put("validationRunId", validation == null ? "" : validation.runId());
-            value.set("validationEvidenceIds", json.valueToTree(
-                    validation == null ? List.of() : validation.validationEvidenceIds()));
-            value.set("controlEvidenceIds", json.valueToTree(
-                    validation == null ? List.of() : validation.controlEvidenceIds()));
             appendReview(value, config, finding.id(), finding.evidenceIds());
-        }
-        for (McpServer.Assessment assessment : assessments) {
-            ObjectNode value = out.addObject();
-            value.put("id", assessment.id());
-            value.put("tag", "LLM " + assessment.verdict());
-            value.put("title", assessment.title());
-            value.put("proposal", assessment.reason());
-            value.put("evidence", String.join(", ", assessment.evidenceIds()));
-            value.put("risk", assessment.type());
-            value.set("evidenceIds", json.valueToTree(assessment.evidenceIds()));
-            appendReview(value, config, assessment.id(), assessment.evidenceIds());
         }
         return out;
     }

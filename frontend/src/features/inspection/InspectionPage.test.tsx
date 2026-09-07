@@ -15,7 +15,7 @@ function response(body: unknown, status = 200) {
 
 type PollResponse = unknown | readonly unknown[] | ((read: number) => unknown)
 
-function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; zap?: unknown; scanner?: PollResponse; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; llm?: unknown; managedSessions?: readonly unknown[] } = {}) {
+function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; zap?: unknown; scanner?: PollResponse; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; managedSessions?: readonly unknown[] } = {}) {
   let humanReads = 0
   let scannerReads = 0
   const next = (value: PollResponse | undefined, reads: number, fallback: unknown) => typeof value === "function" ? value(reads) : Array.isArray(value) ? value[Math.min(reads, value.length - 1)] : value ?? fallback
@@ -42,7 +42,6 @@ function installTransport(options: { human?: PollResponse; humanPending?: boolea
       if (scannerReads > 0 && options.scannerPollError) return Promise.resolve(response({ success: false, message: options.scannerPollError.message }, options.scannerPollError.status))
       return Promise.resolve(response(next(options.scanner, scannerReads++, { run: { status: "NOT_STARTED" }, scope: [target] })))
     }
-    if (path === "/api/llm-run") return Promise.resolve(response(options.llm ?? { run: { status: "UNAVAILABLE", providers: { CODEX: true, CLAUDE: true } }, scope: [target], completed_lanes: [] }))
     return Promise.reject(new Error(`unexpected endpoint: ${path} ${init?.method ?? "GET"}`))
   })
   vi.stubGlobal("fetch", fetchStub)
@@ -328,11 +327,10 @@ describe("four-stage inspection controls", () => {
     const user = userEvent.setup()
     renderInspection({
       scanner: { run: { status: "COMPLETED", captured_records: 9, alert_count: 2 }, scope: [target] },
-      llm: { run: { status: "RUNNING", provider: "CODEX", role: "EXPLORER", run_id: "llm-7", providers: { CODEX: true, CLAUDE: false } }, scope: [target], completed_lanes: ["HUMAN", "SCANNER"] },
     })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    for (const [stageName, viewName] of [[/범위/, "범위 실행 보기"], [/HUMAN/, "HUMAN pass 실행 보기"], [/ZAP/, "ZAP 기준선 실행 보기"], [/LLM/, "LLM Explorer와 Judge 실행 보기"]] as const) {
+    for (const [stageName, viewName] of [[/범위/, "범위 실행 보기"], [/HUMAN/, "HUMAN pass 실행 보기"], [/ZAP/, "ZAP 기준선 실행 보기"]] as const) {
       await user.click(screen.getByRole("tab", { name: stageName }))
       const stagePanel = screen.getByRole("tabpanel", { name: stageName })
       const views = within(stagePanel).getByRole("tablist", { name: viewName })
@@ -341,8 +339,9 @@ describe("four-stage inspection controls", () => {
       expect(within(views).getByRole("tab", { name: "실행 상태" })).toHaveAttribute("data-state", "active")
     }
 
-    expect(screen.getByText("LLM 상태 · RUNNING")).toBeVisible()
-    expect(screen.getByText("CODEX · EXPLORER")).toBeVisible()
-    expect(screen.getByRole("button", { name: "전체 실행 상태 열기" })).toBeVisible()
+    await user.click(screen.getByRole("tab", { name: /Evidence 검토/ }))
+    await user.click(screen.getByRole("button", { name: "API·입력 차이 보기" }))
+    expect(window.location.hash).toBe("#surface")
+    expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()
   })
 })

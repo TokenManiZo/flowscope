@@ -1,5 +1,7 @@
 # React Web UI 기능 동등성 인벤토리
 
+**2026-09-07 D-126:** 현재 UI는 HUMAN/ZAP 실행과 규칙 후보·사람 검토만 제공한다. Explorer/Judge·MCP 실행 화면은 폐기했다. 과거 LLM 기록은 읽기 전용으로 보존한다. 아래 P21~P24/P38/P39는 미완료가 아니라 삭제한 기능이며, 과거 브라우저 검증을 새 JAR의 결과로 쓰지 않는다. 최신 검증은 [beta-validation](beta-validation.md)의 D-126 절을 따른다.
+
 이 표는 기존 Web UI가 제공하는 동작을 React 전환 전에 고정한 이력과 beta.44 통합 상태를 함께 기록한다. React는 `/`와 `/app/`의 기본 UI이고 legacy는 `/legacy/`에 남아 있다. component/standalone 통과와 실제 Burp runtime 동등성은 분리하며, 런타임 항목은 explicit Burp gate 전에는 완료로 표시하지 않는다.
 
 | ID | Existing capability | Existing action/API | React route | Unit/component test | Java contract test | Browser E2E | Burp gate | Status |
@@ -24,10 +26,10 @@
 | P18 | HUMAN 시작·종료 | `GET/POST /api/human-run` | `#inspection` | `InspectionPage.test.tsx` (exact begin/end forms) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
 | P19 | ZAP 상태 새로고침 | `GET /api/zap-status` | `#inspection` | `InspectionPage.test.tsx` (disconnected/exact-scope/identity gate) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
 | P20 | 격리된 anonymous/account ZAP baseline | `GET/POST /api/scanner-run` | `#inspection`, `#runs` | `InspectionPage.test.tsx`, `RunsPage.test.tsx` (202 form, out-of-scope disable, lane state/error retention) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
-| P21 | LLM Explorer | `POST /api/llm-run` action=start | `#runs` | `RunsPage.test.tsx` (exact 202 form, provider/scope reason, error retention) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
-| P22 | LLM Judge | `POST /api/llm-run` action=start | `#runs` | `RunsPage.test.tsx` (completed-lane gate/exact 202 form) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
-| P23 | LLM 취소 | `POST /api/llm-run` action=cancel | `#runs` | `RunsPage.test.tsx` (exact 200 form) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
-| P24 | Judge 후속 질문 | `POST /api/llm-run` action=followup | `#runs` | `RunsPage.test.tsx` (eligible session/exact 202 form) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
+| P21 | LLM Explorer | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
+| P22 | LLM Judge | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
+| P23 | LLM 취소 | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
+| P24 | Judge 후속 질문 | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
 | P25 | run 상태 | `GET /api/llm-run`, `GET /api/scanner-run`, snapshot `runExecutions` | `#runs` | `InspectionPage.test.tsx`, `RunsPage.test.tsx` (문자 상태·단계·count/error retention, 가짜 완료율 없음, 실행 실패/응답 분리) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (beta.44 통합; Burp gate open) |
 | P26 | graph source/authz 보기 | `/api/snapshot` graph projection | `#graph` | `graphProjection.test.ts`, `CytoscapeGraph.test.tsx` (source/authz text·style, exact selection, lifecycle) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 9; runtime gate open) |
 | P27 | graph 페이지·collapse·layout 지속 | legacy graph state | `#graph` | `graphProjection.test.ts`, `graphPreferences.test.ts` (18-item page, expand/collapse, validated v5 layout only) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 9; runtime gate open) |
@@ -41,9 +43,9 @@
 | P35 | matrix identity/role 모드 | `/api/snapshot` matrix projection | `#matrix` | `MatrixPage.test.tsx` (server cells/role members, H/S/L line classes, matching long Evidence ID bounded across the whole Sheet without header/metadata duplication) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 10; runtime gate open) |
 | P36 | gap-only matrix | `/api/snapshot` gap projection | `#matrix` | `MatrixPage.test.tsx` (server gap/missed-source filter, collision-safe keys, selection retention/invalidation) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 10; runtime gate open) |
 | P37 | sequence data dependency | `/api/snapshot` sequence projection | `#sequence` | `SequencePage.test.tsx` (valid server-only links, timestamp fallback, duplicate lifecycle, H/S/L line classes, matching long endpoint IDs bounded across the whole Sheet with expand/collapse privacy) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 10; runtime gate open) |
-| P38 | scenario 미리보기 | `GET /api/ai-preview` | `#scenarios` | `ScenariosPage.test.tsx` (GET ordering, bounded/escaped complete preview fields/lists, loading/error/retry, late-response and revision reset) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 11; runtime gate open) |
-| P39 | scenario 생성 및 deterministic fallback | `POST /api/ai-scenarios` | `#scenarios` | `ScenariosPage.test.tsx` (preview-before-POST gate, envelope-only cards, duplicate gate, empty/error/retry, bounded list, `usedLlm` wording, stale revision reset) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 11; runtime gate open) |
-| P40 | human review 및 scenario Evidence 링크 | `POST /api/review`, snapshot exact event selection | `#scenarios` | `ScenariosPage.test.tsx` (exact status/note cap, per-card failure/success isolation, validation/assessment/review separation, exact/missing Evidence selection) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 11; runtime gate open) |
+| P38 | MCP Judge 입력 미리보기 | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
+| P39 | 시나리오 생성 API | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
+| P40 | 현재 규칙 후보와 사람 검토·Evidence | `GET /api/snapshot`, `POST /api/review` | `#scenarios` | `ScenariosPage.test.tsx`, `ScenarioWorkspace.test.tsx` | `FlowScopeWebServerTest`, `LegacyLlmArchiveTest` | D-126 시나리오·Evidence 선택 회귀 | 실제 Burp gate 미실행 | IMPLEMENTED (D-126) |
 | P41 | Evidence 표 | `GET /api/evidence` | `#evidence` | `EvidencePage.test.tsx` (table, filters, repeat count, safe text) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 7; Burp gate open) |
 | P42 | 선택 Evidence 원문 상세 | `GET /api/request-lab?evidenceId=` | `#evidence` | `EvidencePage.test.tsx` (일반 표에서 원문 묶음 선조회 없음), `RequestLabDialog.test.tsx` (선택한 하나의 bounded memory-only draft) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (beta.44 통합; active send gate open) |
 | P43 | 정확한 Evidence 선택 | `GET /api/evidence` eventId selection | `#evidence` | `EvidencePage.test.tsx` (duplicate operation exact clicked eventId) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 7; Burp gate open) |
@@ -55,6 +57,10 @@
 | P49 | `/legacy/` | legacy fallback mount | legacy `/legacy/` asset | `FlowScopeWebServerTest` | `FlowScopeWebServerTest` | beta.44 no-cache legacy 화면·console 확인 | Task 14 explicit Burp runtime parity gate | BETA.44 STANDALONE PASS (Burp gate open) |
 | P50 | root cutover | default UI route resolver | React `/` | `DashboardPage.test.tsx`, `ReferenceAppShell.test.tsx` | `FlowScopeWebServerTest` | beta.44 no-cache `/`→`#surface`와 전체 route 전환 확인 | Task 14 explicit Burp runtime parity gate | BETA.44 STANDALONE PASS (Burp gate open) |
 | P51 | Endpoint·Parameter Surface Delta와 실행 실패 구분 | snapshot `surface`, `runExecutions` | `#surface` | `SurfacePage.test.tsx` (H/S/L 표시 필터, delta 재계산, provenance·입력 shape·Evidence, parser issue, 전부 실패 실행, 퍼센트 금지) | `FlowScopeWebServerTest`, `SnapshotJsonWriterScaleTest` | beta.44 no-cache Surface 필터와 Graph bounded snapshot 회귀 확인 | actual Burp HUMAN/ZAP/LLM gate | BETA.44 STANDALONE PASS (Burp gate open) |
+
+### D-126 과거 기록 보존
+
+`snapshot.legacyLlm`는 `readOnly=true`이며 React 시나리오의 접힌 이력 구역에서만 보여 준다. 현재 finding에 같은 ID의 과거 CONFIRMED가 있어도 current scenarios에는 최종 판정을 합치지 않는다. JSON/SQLite 왕복은 `LegacyLlmArchiveTest`, snapshot·폐기 API·현재 후보만 review 허용은 `FlowScopeWebServerTest`, 화면의 missing Evidence/페이지 증가/수정 버튼 없음은 `ScenariosPage.test.tsx`가 검사한다. Legacy UI에는 이력 구역을 새로 추가하지 않고 현재 규칙 후보·사람 검토만 유지한다.
 
 ### Task 2 정적 전송 계약
 

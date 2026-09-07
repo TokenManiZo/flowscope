@@ -43,7 +43,7 @@ public final class Pipeline {
         return runInternal(all, config, false);
     }
 
-    /** 동시 조회되는 UI/MCP 게시본을 수집 DTO와 분리해 재분석 중 데이터 레이스를 막는다. */
+    /** 동시 조회되는 UI 게시본을 수집 DTO와 분리해 재분석 중 데이터 레이스를 막는다. */
     public static Result runIsolated(List<RequestRecord> all, AnalysisConfig config) {
         return runInternal(all, config, true);
     }

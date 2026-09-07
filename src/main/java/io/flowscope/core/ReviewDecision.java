@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 결정론적 후보 또는 LLM 평가에 대한 사람의 검토 상태. */
+/** 현재 규칙 후보의 사람 검토 상태. 구버전 LLM 평가의 검토 기록도 저장 호환을 위해 보존한다. */
 public record ReviewDecision(String itemId, Status status, String note,
                              List<String> evidenceIds, Instant decidedAt) {
     public enum Status {

@@ -70,10 +70,10 @@ These guidelines are working when diffs contain fewer unnecessary changes, imple
 - `source` is the traffic generator: `HUMAN`, `SCANNER`, `LLM`. It is not identity or role.
 - `orchestrator` is independent. ZAP started by an LLM remains `source=SCANNER, orchestrator=LLM`.
 - Do not claim a vulnerability from status alone. BOLA/BFLA need stored Evidence plus owner/role policy.
-- Ordinary LLM assessments may be `LIKELY`, `INCONCLUSIVE`, or `REJECTED`; they are never final.
-- A final LLM verdict may be `CONFIRMED`, `INCONCLUSIVE`, or `REJECTED` only when the server accepts a current, Evidence-bound reproduction and authorized-control bundle. Human records remain audit/override inputs.
-- Never persist, export, log, or expose through snapshots/MCP raw authorization headers, cookies, passwords, API keys, or provider tokens. Operator-requested live HTTP editing may retain bounded raw text only in current-process memory and must clear it on dataset replacement and unload.
-- Active traffic must be exact-scope guarded. ZAP Active Scan requires an explicit Burp confirmation.
+- The old Explorer/Judge harness and MCP are removed (D-126). Do not recreate them implicitly. A separate Explorer harness and a future FlowScope Evidence MCP are not implemented.
+- Historical LLM assessments/verdicts are read-only archive data, never current findings. Preserve their Evidence references and existing human audit records when loading/saving projects.
+- Never persist, export, log, or expose through snapshots raw authorization headers, cookies, passwords, API keys, or provider tokens. Operator-requested live HTTP editing may retain bounded raw text only in current-process memory and must clear it on dataset replacement and unload.
+- Active traffic must be exact-scope guarded. No ZAP Active Scan entry point is currently exposed. Keep existing explicit approval for definition imports and HUMAN Request Lab actions.
 - Black-box coverage has no knowable denominator; never display a completion percentage.
 
 Read `docs/ko/architecture.md`, `docs/ko/decisions.md`, and `README.md` before changing architecture. Read `docs/ko/ui-product-rationale.md` before changing UI labels, onboarding, graph/matrix behavior, or presentation claims. Append architecture decisions to `docs/ko/decisions.md`.

@@ -46,6 +46,15 @@ public final class FatJarIsolationSmoke {
         Path releaseJarPath = Path.of(args[0]).toAbsolutePath();
         assertStreamingManifest(releaseJarPath);
         assertFrontendReleaseAssets(releaseJarPath);
+        try (JarFile jar = new JarFile(releaseJarPath.toFile())) {
+            for (var entry : jar.stream().toList()) {
+                String name = entry.getName();
+                if (name.startsWith("agent-workspace/") ||
+                        name.matches("io/flowscope/integration/(McpServer|LocalMcpToken|LocalLlmRunner|ControlledBrowserExplorer)(\\$.*)?\\.class")) {
+                    throw new IllegalStateException("Retired harness leaked into release JAR: " + name);
+                }
+            }
+        }
         URL releaseJar = releaseJarPath.toUri().toURL();
         try (URLClassLoader firstLoader = isolatedLoader(releaseJar);
              URLClassLoader secondLoader = isolatedLoader(releaseJar)) {

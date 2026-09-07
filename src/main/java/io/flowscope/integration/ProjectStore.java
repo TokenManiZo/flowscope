@@ -1,5 +1,6 @@
 package io.flowscope.integration;
 
+import io.flowscope.core.LegacyAssessment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -21,7 +22,7 @@ import java.util.Set;
 /** Versioned, masked FlowScope session file. Model-provider credentials are never part of this schema. */
 public final class ProjectStore {
     public record ProjectData(List<RequestRecord> records, AnalysisConfig config,
-                              List<McpServer.Assessment> assessments,
+                              List<LegacyAssessment> assessments,
                               List<ValidationDecision> validations,
                               Set<Source> completedLanes,
                               Map<Source, RunContextRegistry.CompletedRun> completedRuns,
@@ -38,25 +39,25 @@ public final class ProjectStore {
     private final ObjectMapper json = new ObjectMapper();
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments) throws IOException {
+                     List<LegacyAssessment> assessments) throws IOException {
         save(target, records, config, assessments, List.of(), Set.of());
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations) throws IOException {
         save(target, records, config, assessments, validations, Set.of());
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations,
                      Set<Source> completedLanes) throws IOException {
         save(target, records, config, assessments, validations, completedLanes, List.of());
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations,
                      Set<Source> completedLanes,
                      List<RouteCandidate> routeCandidates) throws IOException {
@@ -66,7 +67,7 @@ public final class ProjectStore {
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations,
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates) throws IOException {
@@ -77,7 +78,7 @@ public final class ProjectStore {
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations,
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates,
@@ -111,7 +112,7 @@ public final class ProjectStore {
     }
 
     ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
-                          List<McpServer.Assessment> assessments,
+                          List<LegacyAssessment> assessments,
                           List<ValidationDecision> validations,
                           Set<Source> completedLanes,
                           List<RouteCandidate> routeCandidates) {
@@ -119,7 +120,7 @@ public final class ProjectStore {
     }
 
     ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
-                          List<McpServer.Assessment> assessments,
+                          List<LegacyAssessment> assessments,
                           List<ValidationDecision> validations,
                           Set<Source> completedLanes,
                           Map<Source, RunContextRegistry.CompletedRun> completedRuns,
@@ -129,7 +130,7 @@ public final class ProjectStore {
     }
 
     ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
-                          List<McpServer.Assessment> assessments,
+                          List<LegacyAssessment> assessments,
                           List<ValidationDecision> validations,
                           Set<Source> completedLanes,
                           Map<Source, RunContextRegistry.CompletedRun> completedRuns,
@@ -137,7 +138,7 @@ public final class ProjectStore {
                           List<RunExecutionLedger.Attempt> runAttempts) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         assessments = assessments == null ? List.of() : List.copyOf(assessments);
-        McpServer.validateAssessmentSet(assessments);
+        LegacyAssessment.validateSet(assessments);
         config = config.snapshotCopy();
         EvidenceIds.assign(records);
         ObjectNode root = json.createObjectNode();
@@ -177,7 +178,7 @@ public final class ProjectStore {
         config.reviews().values().stream().sorted(java.util.Comparator.comparing(ReviewDecision::itemId))
                 .forEach(review -> savedReviews.add(writeReview(review)));
         ArrayNode savedAssessments = root.putArray("assessments");
-        for (McpServer.Assessment assessment : assessments) savedAssessments.add(writeAssessment(assessment));
+        for (LegacyAssessment assessment : assessments) savedAssessments.add(writeAssessment(assessment));
         ArrayNode savedValidations = root.putArray("validations");
         for (ValidationDecision validation : validations) savedValidations.add(writeValidation(validation));
         return root;
@@ -211,13 +212,13 @@ public final class ProjectStore {
             if (reviewNodes.size() > 2_000) throw new IllegalArgumentException("review limit exceeded");
             for (JsonNode value : reviewNodes) config.restoreReview(readReview(value));
         }
-        List<McpServer.Assessment> assessments = new ArrayList<>();
+        List<LegacyAssessment> assessments = new ArrayList<>();
         JsonNode assessmentNodes = root.path("assessments");
         if (assessmentNodes.isArray()) {
             if (assessmentNodes.size() > 1_000) throw new IllegalArgumentException("assessment limit exceeded");
             for (JsonNode value : assessmentNodes) assessments.add(readAssessment(value));
         }
-        McpServer.validateAssessmentSet(assessments);
+        LegacyAssessment.validateSet(assessments);
         List<ValidationDecision> validations = new ArrayList<>();
         JsonNode validationNodes = root.path("validations");
         if (validationNodes.isArray()) {
@@ -564,7 +565,7 @@ public final class ProjectStore {
         return config;
     }
 
-    private ObjectNode writeAssessment(McpServer.Assessment value) {
+    private ObjectNode writeAssessment(LegacyAssessment value) {
         ObjectNode out = json.createObjectNode();
         out.put("id", value.id());
         out.put("type", value.type());
@@ -608,14 +609,14 @@ public final class ProjectStore {
                 Instant.parse(required(value, "decided_at")));
     }
 
-    private McpServer.Assessment readAssessment(JsonNode value) {
+    private LegacyAssessment readAssessment(JsonNode value) {
         List<String> evidence = new ArrayList<>();
         value.path("evidence_ids").forEach(id -> evidence.add(id.asText()));
         String verdict = required(value, "verdict");
         if (!Set.of("LIKELY", "INCONCLUSIVE", "REJECTED").contains(verdict)) {
             throw new IllegalArgumentException("invalid assessment verdict: " + verdict);
         }
-        return new McpServer.Assessment(required(value, "id"), required(value, "type"),
+        return new LegacyAssessment(required(value, "id"), required(value, "type"),
                 verdict, masked(value, "title"), masked(value, "reason"),
                 List.copyOf(evidence), Instant.parse(required(value, "created_at")));
     }

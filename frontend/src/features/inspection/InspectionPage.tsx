@@ -6,17 +6,16 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useHumanRunMutation, useHumanRunQuery, useLlmRunQuery, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
+import { useHumanRunMutation, useHumanRunQuery, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
 import { activeManagedAccountIds, automaticInspectionStage, type InspectionStage } from "./inspectionState"
 
 const stageCopy: Record<InspectionStage, { title: string; message: string }> = {
   scope: { title: "범위를 확인하세요", message: "허가된 exact scope를 Burp FlowScope 탭에서 적용하세요." },
   human: { title: "HUMAN pass", message: "HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요." },
   scanner: { title: "ZAP 기준선", message: "연결된 ZAP으로 범위 안의 신원별 기준선을 실행하세요." },
-  llm: { title: "LLM·Judge", message: "Explorer를 실행하고 세 레인이 완료된 뒤 Judge를 시작하세요." },
+  review: { title: "Evidence 검토", message: "HUMAN·ZAP 기록과 API·입력 차이를 확인하세요. 전체 탐색 완료를 뜻하지 않습니다." },
 }
 
 function errorMessage(error: unknown): string {
@@ -24,7 +23,7 @@ function errorMessage(error: unknown): string {
 }
 
 function stageNumber(stage: InspectionStage): number {
-  return { scope: 1, human: 2, scanner: 3, llm: 4 }[stage]
+  return { scope: 1, human: 2, scanner: 3, review: 4 }[stage]
 }
 
 function StageWorkspace({ label, title, description, setup, status }: { label: string; title: string; description: string; setup: ReactNode; status: ReactNode }) {
@@ -49,7 +48,6 @@ export function InspectionPage() {
   const human = useHumanRunQuery()
   const zap = useZapStatusQuery()
   const scanner = useScannerRunQuery()
-  const llm = useLlmRunQuery()
   const humanMutation = useHumanRunMutation()
   const scannerMutation = useScannerRunMutation()
   const [manualStage, setManualStage] = useState<InspectionStage | null>(null)
@@ -58,12 +56,12 @@ export function InspectionPage() {
   const [anonymous, setAnonymous] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
 
-  const scope = scanner.data?.scope ?? llm.data?.scope ?? []
+  const scope = scanner.data?.scope ?? []
   useEffect(() => {
     if (!target && scope[0]) setTarget(scope[0])
   }, [scope, target])
 
-  const automaticStage = automaticInspectionStage(scope, human.data, scanner.data, llm.data)
+  const automaticStage = automaticInspectionStage(scope, human.data, scanner.data)
   const selectedStage = manualStage ?? automaticStage
   const activeAccounts = useMemo(() => {
     const ids = activeManagedAccountIds(target, snapshot.data?.managedSessions ?? [])
@@ -97,16 +95,14 @@ export function InspectionPage() {
       ? { error: zap.error, hasLastSuccess: zap.data !== undefined }
       : scanner.isError
         ? { error: scanner.error, hasLastSuccess: scanner.data !== undefined }
-        : llm.isError
-          ? { error: llm.error, hasLastSuccess: llm.data !== undefined }
-          : undefined
+        : undefined
   const context = <section className="grid gap-3 p-3"><div><h2 className="text-sm font-semibold">현재 점검 단계</h2><p className="text-xs text-muted-foreground">자동 상태는 현재 scope와 실행 결과에서만 계산합니다.</p></div><dl className="grid gap-2 text-sm"><div className="flex justify-between gap-2"><dt>현재 단계</dt><dd>{stageCopy[automaticStage].title}</dd></div><div className="flex justify-between gap-2"><dt>적용 scope</dt><dd className="font-mono">{scope.length}</dd></div><div className="flex justify-between gap-2"><dt>HUMAN</dt><dd>{humanSummary}</dd></div><div className="flex justify-between gap-2"><dt>ZAP</dt><dd>{scanner.data?.run.status ?? "상태 없음"}</dd></div></dl></section>
 
   return (
     <ReferenceAnalysisWorkspace ariaLabel="점검 시작 작업 영역" context={context} inspector={null}><section className="space-y-4 p-3" aria-labelledby="inspection-title">
       <div>
         <h1 id="inspection-title" className="text-2xl font-semibold">점검 시작</h1>
-        <p className="text-sm text-muted-foreground">범위 → HUMAN → ZAP → LLM·Judge 순서로 각각의 Evidence를 분리합니다.</p>
+        <p className="text-sm text-muted-foreground">범위 → HUMAN → ZAP → Evidence 검토 순서로 각각의 Evidence를 분리합니다.</p>
       </div>
 
       {queryError && (
@@ -137,7 +133,7 @@ export function InspectionPage() {
           <TabsTrigger value="scope">1 · 범위</TabsTrigger>
           <TabsTrigger value="human">2 · HUMAN</TabsTrigger>
           <TabsTrigger value="scanner">3 · ZAP</TabsTrigger>
-          <TabsTrigger value="llm">4 · LLM·Judge</TabsTrigger>
+          <TabsTrigger value="review">4 · Evidence 검토</TabsTrigger>
         </TabsList>
         <TabsContent value="scope">
           <StageWorkspace
@@ -173,7 +169,7 @@ export function InspectionPage() {
           <StageWorkspace
             label="ZAP 기준선"
             title="ZAP 기준선"
-            description="신원마다 새 ZAP 세션을 사용하며 능동 스캔은 별도 Burp 승인 경계에 남아 있습니다."
+            description="신원마다 새 ZAP 세션을 사용합니다. 기준선은 크롤링과 Passive 분석이며 Active Scan을 실행하지 않습니다."
             setup={<div className="space-y-4">
               <div className="flex flex-wrap items-end gap-2">
                 <label className="grid gap-1 text-sm" htmlFor="scanner-target">대상
@@ -199,14 +195,8 @@ export function InspectionPage() {
             status={<section className="grid gap-3" aria-label="ZAP 실행 상태"><div className="grid gap-1 rounded-lg border border-border/70 bg-background/30 p-3"><p className="font-medium">ZAP 상태 · {scanner.data?.run.status ?? "NOT_STARTED"}</p><p className="text-sm text-muted-foreground">연결 {zap.data?.connected ? "정상" : zap.data?.state ?? "확인 필요"} · 수집 {scanner.data?.run.captured_records ?? "-"}건 · Alert {scanner.data?.run.alert_count ?? "-"}건</p>{scanner.data?.run.run_id && <p className="font-mono text-xs text-muted-foreground">run {scanner.data.run.run_id}</p>}</div>{scanner.data?.run.warning && <Alert><AlertDescription>주의 · {scanner.data.run.warning}</AlertDescription></Alert>}{scanner.data?.run.error && <Alert variant="destructive"><AlertDescription>{scanner.data.run.error}</AlertDescription></Alert>}<OpenRunsButton /></section>}
           />
         </TabsContent>
-        <TabsContent value="llm">
-          <StageWorkspace
-            label="LLM Explorer와 Judge"
-            title="LLM Explorer와 Judge"
-            description="실행 상태 화면에서 provider, 시작, 취소, Judge 후속 질문을 제어합니다."
-            setup={<div className="grid gap-3"><p className="text-sm text-muted-foreground">Provider와 Explorer/Judge 제어는 전체 실행 상태 화면에서 설정합니다.</p><OpenRunsButton /></div>}
-            status={<section className="grid gap-3" aria-label="LLM 실행 상태"><div className="grid gap-1 rounded-lg border border-border/70 bg-background/30 p-3"><p className="font-medium">LLM 상태 · {llm.data?.run.status ?? "상태 없음"}</p><p className="text-sm text-muted-foreground">{llm.data?.run.provider ?? "공급자 없음"} · {llm.data?.run.role ?? "실행 대기"}</p>{llm.data?.run.run_id && <p className="font-mono text-xs text-muted-foreground">run {llm.data.run.run_id}</p>}</div><div className="flex flex-wrap gap-2" aria-label="LLM 완료 레인">{llm.data?.completed_lanes.length ? llm.data.completed_lanes.map((lane) => <span className="rounded-full border border-border/70 px-2 py-1 text-xs" key={lane}>{lane} 완료</span>) : <span className="text-sm text-muted-foreground">완료된 lane이 없습니다.</span>}</div>{llm.data?.run.message && <p className="text-sm text-muted-foreground">{llm.data.run.message}</p>}<OpenRunsButton /></section>}
-          />
+        <TabsContent value="review">
+          <Card><CardHeader><CardTitle>Evidence 검토</CardTitle><CardDescription>기존 Judge와 실행 하네스는 제거되었습니다. 새 Explorer 하네스와 FlowScope용 MCP는 아직 제공하지 않습니다.</CardDescription></CardHeader><CardContent><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button></CardContent></Card>
         </TabsContent>
       </Tabs>
 

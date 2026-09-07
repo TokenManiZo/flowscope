@@ -11,7 +11,6 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
-import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
@@ -19,8 +18,6 @@ import java.awt.Desktop;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
-import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
 import java.io.File;
 import java.net.URI;
 
@@ -39,15 +36,10 @@ public final class FlowScopeControlTab extends JPanel {
     private final String webUrl;
     private final JTextArea scope = new JTextArea(6, 56);
     private final JLabel collection = new JLabel("관측 0건 · HUMAN 0 · SCANNER 0 · LLM 0");
-    private final JTextField mcp = new JTextField("MCP 시작 중", 48);
-    private volatile String mcpConnection = "MCP 시작 중";
-
     public FlowScopeControlTab(Actions actions, String webUrl, String portMapping) {
         super(new BorderLayout(14, 14));
         this.actions = actions;
         this.webUrl = webUrl;
-        mcp.setEditable(false);
-        mcp.setToolTipText("Bearer 토큰은 화면에 표시하지 않습니다. 연결 문자열 복사 버튼을 사용하세요.");
         setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
         add(header(), BorderLayout.NORTH);
         add(content(portMapping), BorderLayout.CENTER);
@@ -55,16 +47,6 @@ public final class FlowScopeControlTab extends JPanel {
     }
 
     public void setScopeText(String value) { scope.setText(value == null ? "" : value); }
-
-    public void setMcpStatus(String value) {
-        mcpConnection = "MCP · " + (value == null ? "" : value);
-        SwingUtilities.invokeLater(() -> mcp.setText(maskMcpConnection(mcpConnection)));
-    }
-
-    static String maskMcpConnection(String value) {
-        if (value == null) return "";
-        return value.replaceAll("(?i)(Bearer\\s+)[A-Za-z0-9._~-]+", "$1••••••••");
-    }
 
     public void render(Pipeline.Result result) {
         long human = result.records.stream().filter(record -> record.source == Source.HUMAN).count();
@@ -101,7 +83,7 @@ public final class FlowScopeControlTab extends JPanel {
         scope.setWrapStyleWord(false);
         scope.setName("scope.input");
         settings.add(new JScrollPane(scope), BorderLayout.CENTER);
-        JLabel help = new JLabel("한 줄에 하나의 http(s)://host[:port]/path-prefix · 빈 범위는 MCP 능동 작업 차단 · 포트 분류: " + portMapping);
+        JLabel help = new JLabel("한 줄에 하나의 http(s)://host[:port]/path-prefix · 빈 범위는 대상 요청·수집 차단 · 포트 분류: " + portMapping);
         settings.add(help, BorderLayout.NORTH);
         JButton apply = new JButton("범위 적용");
         apply.setName("scope.apply");
@@ -116,13 +98,8 @@ public final class FlowScopeControlTab extends JPanel {
         actionsPanel.add(button("로컬 DB 저장·연결", this::chooseSave));
         actionsPanel.add(button("JSON 내보내기", this::chooseJsonExport));
         actionsPanel.add(button("수집 초기화", this::confirmClear));
-        JPanel connection = new JPanel(new BorderLayout(8, 0));
-        connection.setBorder(BorderFactory.createTitledBorder("구독 LLM 로컬 MCP 연결"));
-        connection.add(mcp, BorderLayout.CENTER);
-        connection.add(button("연결 문자열 복사", this::copyMcpConnection), BorderLayout.EAST);
         root.add(settings, BorderLayout.NORTH);
         root.add(actionsPanel, BorderLayout.CENTER);
-        root.add(connection, BorderLayout.SOUTH);
         return root;
     }
 
@@ -187,12 +164,4 @@ public final class FlowScopeControlTab extends JPanel {
         }
     }
 
-    private void copyMcpConnection() {
-        try {
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(mcpConnection), null);
-        } catch (Exception error) {
-            JOptionPane.showMessageDialog(this, "클립보드에 접근하지 못했습니다. " + maskMcpConnection(mcpConnection),
-                    "연결 문자열 복사 실패", JOptionPane.WARNING_MESSAGE);
-        }
-    }
 }

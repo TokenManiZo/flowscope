@@ -1,5 +1,6 @@
 package io.flowscope.integration;
 
+import io.flowscope.core.LegacyAssessment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -40,7 +41,7 @@ public final class SqliteProjectStore {
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations,
                      Set<Source> completedLanes,
                      List<RouteCandidate> routeCandidates) throws IOException {
@@ -50,7 +51,7 @@ public final class SqliteProjectStore {
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations,
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates) throws IOException {
@@ -61,7 +62,7 @@ public final class SqliteProjectStore {
     }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
-                     List<McpServer.Assessment> assessments,
+                     List<LegacyAssessment> assessments,
                      List<ValidationDecision> validations,
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates,

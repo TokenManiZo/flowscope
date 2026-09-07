@@ -29,7 +29,7 @@ final class LaneCompletionPolicyTest {
     }
 
     @Test
-    void completionFreezesEvidenceMembershipForDatasetLock() {
+    void completionRetainsExactEvidenceMembership() {
         String runId = "scanner-" + UUID.randomUUID();
         RequestRecord original = evidence(Source.SCANNER, runId, ExecutionTrust.CONTROLLED);
         Pipeline.Result completionSnapshot = Pipeline.run(List.of(original));
@@ -40,13 +40,8 @@ final class LaneCompletionPolicyTest {
         RunContextRegistry.CompletedRun completed = LaneCompletionPolicy.complete(
                 contexts, Source.SCANNER, runId, completionSnapshot);
         assertEquals(List.of(original.evidenceId), completed.evidenceIds());
-        assertTrue(LaneCompletionPolicy.lockEligible(completed, completionSnapshot));
-
-        RequestRecord later = evidence(Source.SCANNER, runId, ExecutionTrust.CONTROLLED);
-        later.pathTemplateStatus = PathTemplateStatus.INFERRED;
-        Pipeline.Result missingFrozenEvidence = Pipeline.run(List.of(later));
-        assertFalse(LaneCompletionPolicy.lockEligible(completed, missingFrozenEvidence),
-                "a later same-run record must not replace the Evidence frozen at completion");
+        assertThrows(UnsupportedOperationException.class, () -> completed.evidenceIds().add("late"));
+        assertNull(contexts.current(Source.SCANNER));
     }
 
     private static RequestRecord evidence(Source source, String runId, ExecutionTrust trust) {

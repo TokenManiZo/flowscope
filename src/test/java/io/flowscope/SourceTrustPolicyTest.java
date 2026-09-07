@@ -11,9 +11,9 @@ final class SourceTrustPolicyTest {
         assertTrue(SourceTrustPolicy.allows(Source.HUMAN, ExecutionTrust.OBSERVED,
                 SourceTrustPolicy.Use.LANE_COMPLETION));
         assertTrue(SourceTrustPolicy.allows(Source.SCANNER, ExecutionTrust.CONTROLLED,
-                SourceTrustPolicy.Use.DATASET_LOCK));
+                SourceTrustPolicy.Use.LANE_COMPLETION));
         assertTrue(SourceTrustPolicy.allows(Source.LLM, ExecutionTrust.CONTROLLED,
-                SourceTrustPolicy.Use.EXPLORER_VISIBILITY));
+                SourceTrustPolicy.Use.LANE_COMPLETION));
 
         for (SourceTrustPolicy.Use use : SourceTrustPolicy.Use.values()) {
             assertFalse(SourceTrustPolicy.allows(Source.LLM, ExecutionTrust.UNVERIFIED_RUNTIME, use), use.name());
@@ -22,7 +22,5 @@ final class SourceTrustPolicyTest {
                 SourceTrustPolicy.Use.LANE_COMPLETION));
         assertTrue(SourceTrustPolicy.allows(Source.SCANNER, ExecutionTrust.IMPORTED,
                 SourceTrustPolicy.Use.ANALYSIS_COVERAGE));
-        assertFalse(SourceTrustPolicy.allows(Source.HUMAN, ExecutionTrust.OBSERVED,
-                SourceTrustPolicy.Use.DECISIVE_VERDICT));
     }
 }

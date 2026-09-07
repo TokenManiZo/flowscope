@@ -9,7 +9,6 @@ vi.mock("@/lib/query/hooks", () => ({
   useHumanRunQuery: () => ({ data: undefined }),
   useZapStatusQuery: () => ({ data: undefined }),
   useScannerRunQuery: () => ({ data: undefined }),
-  useLlmRunQuery: () => ({ data: undefined }),
 }))
 
 it("uses the status bar, route rail, and viewport landmark around route content", () => {

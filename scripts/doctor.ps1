@@ -60,7 +60,6 @@ $humanPort = Get-EnvironmentPort 'FLOWSCOPE_HUMAN_PORT' 8080
 $scannerPort = Get-EnvironmentPort 'FLOWSCOPE_BURP_SCANNER_PORT' 8081
 $zapPort = Get-EnvironmentPort 'FLOWSCOPE_ZAP_PORT' 8089
 $webPort = Get-EnvironmentPort 'FLOWSCOPE_WEB_PORT' 17777
-$mcpPort = Get-EnvironmentPort 'FLOWSCOPE_MCP_PORT' 8787
 
 if (Test-LocalPort $humanPort) { Write-Ok "HUMAN port 127.0.0.1:$humanPort is open" }
 else { Write-Failure "HUMAN port 127.0.0.1:$humanPort is closed" }
@@ -125,21 +124,8 @@ if (-not [string]::IsNullOrWhiteSpace($key)) {
     }
 }
 
-$providerFound = $false
-foreach ($provider in @('codex', 'claude')) {
-    $command = Get-Command $provider -ErrorAction SilentlyContinue
-    if ($null -ne $command) {
-        $providerFound = $true
-        $versionText = (& $provider --version 2>$null | Select-Object -First 1)
-        Write-Ok "$provider CLI is executable: $versionText"
-    }
-}
-if (-not $providerFound) { Write-Failure 'install and sign in to Codex CLI or Claude Code' }
-
 if (Test-LocalPort $webPort) { Write-Ok "FlowScope Web UI port $webPort is open" }
 else { Write-WarningResult "FlowScope Web UI port $webPort is closed; load the JAR in Burp" }
-if (Test-LocalPort $mcpPort) { Write-Ok "FlowScope MCP port $mcpPort is open" }
-else { Write-WarningResult "FlowScope MCP port $mcpPort is closed; load the JAR in Burp" }
 
 if ($Build) {
     $maven = Get-Command mvn -ErrorAction SilentlyContinue

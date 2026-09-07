@@ -10,7 +10,7 @@ const monitors = new WeakMap<Page, Monitor>()
 const test = base.extend({})
 
 async function openDashboard(page: Page) {
-  await page.goto(`${origin}/?flowscope-e2e-geometry=1`)
+  await page.goto(`${origin}/?flowscope-e2e-geometry=1#dashboard`)
   await expect(page.getByRole("heading", { name: "보안 점검 대시보드" })).toBeVisible()
 }
 type GraphGeometry = { width: number; height: number; maxZoom: number; nodes: Array<{ id: string; kind: "identity" | "resource" | "operation" | "route-candidate"; index: number; selected: boolean; center: { x: number; y: number }; bounds: { left: number; right: number; top: number; bottom: number } }> }
@@ -271,15 +271,12 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   await expect(page.getByRole("region", { name: "Evidence 상세" })).toBeVisible()
   await navigate(page, "취약점 시나리오", "취약점 시나리오")
   await expect(page.getByText("이전 snapshot을 표시 중입니다.", { exact: true })).toHaveCount(0)
-  const generate = page.getByRole("button", { name: "시나리오 생성" })
-  await expect(generate).toBeDisabled()
-  await page.getByRole("button", { name: "MCP Judge 입력 미리보기" }).click()
-  await expect(page.getByText(/^레코드: \d+ · coverage 셀:/)).toBeVisible()
-  await expect(generate).toBeEnabled(); await generate.click()
-  await expect(page.getByText(/결정론적 폴백|기존 MCP 평가·검증 상태 포함/)).toBeVisible()
-  const generatedScenario = page.locator("article").filter({ has: page.getByText("후보/평가 Evidence", { exact: true }) }).first()
+  await expect(page.getByRole("button", { name: "시나리오 생성" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "MCP Judge 입력 미리보기" })).toHaveCount(0)
+  await page.getByRole("region", { name: "시나리오 후보 목록" }).getByRole("button").first().click()
+  const generatedScenario = page.locator("article").filter({ has: page.getByText("후보 Evidence", { exact: true }) }).first()
   await expect(generatedScenario).toBeVisible()
-  const candidateEvidenceGroup = generatedScenario.getByRole("heading", { name: "후보/평가 Evidence", exact: true }).locator("xpath=..")
+  const candidateEvidenceGroup = generatedScenario.getByRole("heading", { name: "후보 Evidence", exact: true }).locator("xpath=..")
   const showAllCandidateEvidence = candidateEvidenceGroup.getByRole("button", { name: "Evidence 더 보기" })
   if (await showAllCandidateEvidence.count() > 0) {
     await showAllCandidateEvidence.click()
@@ -360,7 +357,7 @@ test("creates, edits, refreshes, and removes a metadata-only account", async ({ 
   }
 })
 
-test("shows unavailable quick-start ZAP and LLM controls without starting them", async ({ page }) => {
+test("keeps ZAP setup and removes obsolete LLM execution controls", async ({ page }) => {
   await openDashboard(page); await navigate(page, "점검 시작", "점검 시작")
   await expect(page.getByRole("complementary", { name: "선택 상세" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "선택 상세 열기" })).toHaveCount(0)
@@ -372,10 +369,10 @@ test("shows unavailable quick-start ZAP and LLM controls without starting them",
   await zapPanel.getByRole("tab", { name: "실행 설정" }).click()
   await expect(zapPanel.getByText(/^UNAVAILABLE · (?:ZAP 연결 확인 기능을 사용할 수 없습니다\.|연결 상태 확인 중)$/)).toBeVisible()
   await expect(page.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
-  await navigate(page, "실행 상태", "실행 상태"); await page.getByRole("tab", { name: "LLM" }).click()
-  const llmPanel = page.getByRole("tabpanel", { name: "LLM" })
-  await expect(llmPanel.getByRole("button", { name: "LLM Explorer 시작" })).toBeDisabled()
-  await expect(llmPanel.getByText("CODEX CLI 사용할 수 없음 · CLAUDE CLI 사용할 수 없음", { exact: true })).toBeVisible()
+  await navigate(page, "실행 상태", "실행 상태")
+  await expect(page.getByRole("tab", { name: "LLM" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "LLM Explorer 시작" })).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "ZAP" })).toBeVisible()
 })
 
 test("imports an in-memory XML fixture and reports the aggregate without persisting its raw marker", async ({ page }) => {
@@ -410,7 +407,7 @@ test("keeps the reference frame current-route semantics, Sheets, and layout usab
     const banner = page.getByRole("banner", { name: "FlowScope 상단 상태" })
     await expect(banner).toBeVisible()
     if (width <= 900) {
-      for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER", "LLM"]) await expect(banner.getByLabel(`${label} 상태`)).toBeVisible()
+      for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) await expect(banner.getByLabel(`${label} 상태`)).toBeVisible()
       await expect(banner.getByLabel("프로젝트 선택")).toBeVisible()
       await expect(banner.getByText("DB 준비됨")).toBeVisible()
       await expect(banner.getByRole("link", { name: /빠른 시작|점검 계속/ })).toBeVisible()

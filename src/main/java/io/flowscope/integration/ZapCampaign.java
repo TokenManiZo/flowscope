@@ -21,7 +21,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BooleanSupplier;
 
 /** 전송 계층과 독립된 ZAP 캠페인. 호스트가 한 인스턴스의 실행·취소·종료를 소유한다. */
 public final class ZapCampaign implements AutoCloseable {
@@ -43,7 +42,6 @@ public final class ZapCampaign implements AutoCloseable {
         RunContextRegistry contexts();
         boolean approve(String action, String target);
         default SessionBroker sessions() { return null; }
-        default boolean scannerRunsLocked() { return false; }
     }
 
     public enum ZapDefinitionType { OPENAPI, GRAPHQL, POSTMAN, SOAP }
@@ -57,7 +55,6 @@ public final class ZapCampaign implements AutoCloseable {
             "network", "replacer");
     private final ObjectMapper json = new ObjectMapper();
     private final State state;
-    private final BooleanSupplier datasetLocked;
     private final ExecutorService zapWorkflow = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "flowscope-zap-baseline");
         thread.setDaemon(true);
@@ -104,13 +101,7 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     public ZapCampaign(State state) {
-        this(state, state::scannerRunsLocked);
-    }
-
-    // 기존 dataset lock은 호스트가 제공한다. Judge 제거 시 이 이행용 의존성도 제거한다.
-    ZapCampaign(State state, BooleanSupplier datasetLocked) {
         this.state = java.util.Objects.requireNonNull(state);
-        this.datasetLocked = java.util.Objects.requireNonNull(datasetLocked);
     }
 
     public JsonNode startDeterministicZapBaseline(String target, String accountId) {
@@ -178,66 +169,7 @@ public final class ZapCampaign implements AutoCloseable {
         zapHeartbeat.shutdownNow();
     }
 
-    JsonNode zapStatus(JsonNode args) {
-        rejectIndependentExplorer("ZAP state");
-        String scanType = args.path("scan_type").asText();
-        String scanId = args.path("scan_id").asText();
-        String raw;
-        if (scanType.equalsIgnoreCase("ajax")) raw = state.zap().ajaxSpiderStatus();
-        else if (scanId.isBlank()) raw = state.zap().version();
-        else if (scanType.equalsIgnoreCase("spider")) raw = state.zap().spiderStatus(scanId);
-        else if (scanType.equalsIgnoreCase("client")) raw = state.zap().clientSpiderStatus(scanId);
-        else if (scanType.equalsIgnoreCase("active")) raw = state.zap().activeScanStatus(scanId);
-        else throw new IllegalArgumentException("scan_type must be spider, client, ajax, or active");
-        JsonNode result = parseZap(raw);
-        RunContextRegistry.Context context = state.contexts().current(Source.SCANNER);
-        boolean matchingContext = context != null && switch (scanType.toLowerCase()) {
-            case "ajax" -> context.detail() == SourceDetail.ZAP_AJAX_SPIDER;
-            case "spider" -> context.detail() == SourceDetail.ZAP_SPIDER;
-            case "client" -> context.detail() == SourceDetail.ZAP_CLIENT_SPIDER;
-            case "active" -> context.detail() == SourceDetail.ZAP_ACTIVE_SCAN;
-            default -> false;
-        };
-        if (matchingContext && scanType.equalsIgnoreCase("ajax") && result instanceof ObjectNode object) {
-            long captured = state.snapshot().records.stream()
-                    .filter(record -> record.source == Source.SCANNER && context.runId().equals(record.runId))
-                    .count();
-            object.put("run_id", context.runId());
-            object.put("captured_records", captured);
-            if ("stopped".equalsIgnoreCase(result.path("status").asText()) && captured == 0) {
-                object.put("warning_code", "NO_SCANNER_TRAFFIC_CAPTURED");
-                object.put("warning", "AJAX Spider stopped without captured in-scope traffic; check ZAP Selenium "
-                        + "browser/driver compatibility and proxy routing");
-            }
-        }
-        String status = findStatus(result);
-        if (matchingContext && ("100".equals(status) || "stopped".equalsIgnoreCase(status)
-                || "finished".equalsIgnoreCase(status) || "complete".equalsIgnoreCase(status))) {
-            try {
-                LaneCompletionPolicy.complete(state.contexts(), Source.SCANNER, context.runId(),
-                        state.completionSnapshot());
-            } catch (RuntimeException error) {
-                state.contexts().abort(Source.SCANNER, context.runId());
-                if (result instanceof ObjectNode object && !object.has("warning_code")) {
-                    object.put("warning_code", "SCANNER_RUN_NOT_COMPLETABLE");
-                    object.put("warning", error.getMessage());
-                }
-            }
-        }
-        return result;
-    }
-
-    JsonNode zapEnvironment() {
-        rejectIndependentExplorer("ZAP environment");
-        ObjectNode out = json.createObjectNode();
-        out.set("version", parseZap(state.zap().version()));
-        out.set("installed_addons", parseZap(state.zap().installedAddons()));
-        return out;
-    }
-
     synchronized JsonNode startZapBaseline(JsonNode args) {
-        rejectIndependentExplorer("ZAP baseline");
-        if (datasetLocked.getAsBoolean()) throw new IllegalStateException("scanner runs must finish before dataset lock");
         if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) {
             throw new IllegalStateException("ZAP baseline is already running: " + zapBaseline.runId());
         }
@@ -385,7 +317,6 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     JsonNode zapBaselineStatus() {
-        rejectIndependentExplorer("ZAP baseline state");
         ZapBaselineRun value = zapBaseline;
         return value == null ? json.createObjectNode().put("status", "NOT_STARTED") : zapBaselineNode(value);
     }
@@ -1454,38 +1385,6 @@ public final class ZapCampaign implements AutoCloseable {
         return "RESPONDING";
     }
 
-    JsonNode zapPassiveStatus() {
-        rejectIndependentExplorer("ZAP passive state");
-        ObjectNode out = json.createObjectNode();
-        out.set("queue", parseZap(state.zap().passiveRecordsToScan()));
-        out.set("tasks", parseZap(state.zap().passiveTasks()));
-        return out;
-    }
-
-    JsonNode zapAlerts(JsonNode args) {
-        requireLocked();
-        String target = required(args, "target");
-        if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
-        int start = Math.max(0, args.path("start").asInt(0));
-        int count = Math.max(1, Math.min(500, args.path("count").asInt(100)));
-        ZapBaselineRun baseline = zapBaseline;
-        ArrayNode stored = zapBaselineAlerts;
-        if (baseline != null && ("COMPLETED".equals(baseline.status())
-                || "COMPLETED_WITH_WARNINGS".equals(baseline.status())) && target.equals(baseline.target())
-                && stored != null) {
-            ObjectNode out = json.createObjectNode();
-            ArrayNode page = out.putArray("alerts");
-            int end = Math.min(stored.size(), start + count);
-            if (start < stored.size()) for (int i = start; i < end; i++) page.add(stored.get(i).deepCopy());
-            out.put("source", "BASELINE_SNAPSHOT");
-            out.put("returned", page.size());
-            out.put("has_more", end < stored.size());
-            out.put("snapshot_limit", MAX_ZAP_ALERT_SNAPSHOT);
-            return out;
-        }
-        return maskTextValues(parseZap(state.zap().alerts(target, start, count)));
-    }
-
     private JsonNode maskTextValues(JsonNode value) {
         JsonNode copy = value.deepCopy();
         maskTextValuesInPlace(copy);
@@ -1511,83 +1410,6 @@ public final class ZapCampaign implements AutoCloseable {
         }
     }
 
-    JsonNode startZap(JsonNode args, boolean active) {
-        rejectIndependentExplorer("ZAP execution");
-        if (datasetLocked.getAsBoolean()) throw new IllegalStateException("scanner runs must finish before dataset lock");
-        String target = required(args, "target");
-        if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
-        verifySafeZapEnvironment(List.of());
-        if (active && (!args.path("confirmed").asBoolean(false) || !state.approve("ZAP Active Scan", target))) {
-            throw new IllegalArgumentException("active scan approval denied");
-        }
-        String runId = validatedRunId(args.path("run_id").asText(
-                (active ? "zap-active-" : "zap-spider-") + System.currentTimeMillis()));
-        String accountId = validatedAccountForTarget(args.path("account_id").asText(), target);
-        SourceDetail detail = active ? SourceDetail.ZAP_ACTIVE_SCAN : SourceDetail.ZAP_SPIDER;
-        state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(detail, Orchestrator.LLM,
-                ToolKind.ZAP, RunPhase.EXPLORATION, runId, accountId));
-        try {
-            configureExactZapContext(target, runId);
-            JsonNode response = parseZap(active ? state.zap().activeScan(target) : state.zap().spider(target));
-            if (response.path("scan").asText().isBlank()) {
-                throw new IllegalStateException("ZAP did not return a scan id");
-            }
-            if (response instanceof ObjectNode object) object.put("run_id", runId);
-            return response;
-        } catch (RuntimeException error) {
-            state.contexts().abort(Source.SCANNER, runId);
-            throw error;
-        }
-    }
-
-    JsonNode startZapAjax(JsonNode args) {
-        rejectIndependentExplorer("ZAP execution");
-        if (datasetLocked.getAsBoolean()) throw new IllegalStateException("scanner runs must finish before dataset lock");
-        String target = required(args, "target");
-        if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
-        verifySafeZapEnvironment(List.of());
-        String runId = validatedRunId(args.path("run_id").asText("zap-ajax-" + System.currentTimeMillis()));
-        String accountId = validatedAccountForTarget(args.path("account_id").asText(), target);
-        state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_AJAX_SPIDER,
-                Orchestrator.LLM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, accountId));
-        try {
-            String contextName = configureExactZapContext(target, runId);
-            JsonNode response = parseZap(state.zap().ajaxSpider(target, contextName));
-            if (!"OK".equalsIgnoreCase(response.path("Result").asText())) {
-                throw new IllegalStateException("ZAP AJAX Spider did not start");
-            }
-            if (response instanceof ObjectNode object) object.put("run_id", runId);
-            return response;
-        } catch (RuntimeException error) {
-            state.contexts().abort(Source.SCANNER, runId);
-            throw error;
-        }
-    }
-
-    JsonNode startZapClient(JsonNode args) {
-        rejectIndependentExplorer("ZAP execution");
-        if (datasetLocked.getAsBoolean()) throw new IllegalStateException("scanner runs must finish before dataset lock");
-        String target = required(args, "target");
-        if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
-        verifySafeZapEnvironment(List.of());
-        String runId = validatedRunId(args.path("run_id").asText("zap-client-" + System.currentTimeMillis()));
-        String accountId = validatedAccountForTarget(args.path("account_id").asText(), target);
-        state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_CLIENT_SPIDER,
-                Orchestrator.LLM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, accountId));
-        try {
-            String contextName = configureExactZapContext(target, runId);
-            JsonNode response = parseZap(state.zap().clientSpider(target, contextName));
-            if (response.path("scan").asText().isBlank()) {
-                throw new IllegalStateException("ZAP Client Spider did not return a scan id");
-            }
-            if (response instanceof ObjectNode object) object.put("run_id", runId);
-            return response;
-        } catch (RuntimeException error) {
-            state.contexts().abort(Source.SCANNER, runId);
-            throw error;
-        }
-    }
-
     private String configureExactZapContext(String target, String runId) {
         String contextName = "flowscope-" + runId + "-" + Long.toUnsignedString(System.nanoTime(), 36);
         JsonNode context = parseZap(state.zap().newContext(contextName));
@@ -1609,24 +1431,6 @@ public final class ZapCampaign implements AutoCloseable {
         String value = args.path(field).asText();
         if (value.isBlank()) throw new IllegalArgumentException(field + " is required");
         return value;
-    }
-
-    private void requireLocked() {
-        if (!datasetLocked.getAsBoolean()) {
-            throw new IllegalStateException("dataset must be locked after HUMAN, SCANNER, and independent LLM passes");
-        }
-    }
-
-    private void rejectIndependentExplorer(String capability) {
-        if (independentExplorer() != null) {
-            throw new IllegalStateException("independent Explorer cannot access " + capability);
-        }
-    }
-
-    private RunContextRegistry.Context independentExplorer() {
-        if (datasetLocked.getAsBoolean()) return null;
-        RunContextRegistry.Context context = state.contexts().current(Source.LLM);
-        return context != null && context.phase() == RunPhase.EXPLORATION ? context : null;
     }
 
     private String validatedAccount(String accountId) {
@@ -1656,6 +1460,7 @@ public final class ZapCampaign implements AutoCloseable {
         }
         return value;
     }
+
 
     private static String validatedRunId(String value) {
         String runId = value == null ? "" : value.trim();

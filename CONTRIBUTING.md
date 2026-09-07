@@ -15,7 +15,7 @@ FlowScope는 Evidence와 provenance 모델을 보존하는 범위에서 작고 �
 아키텍처 변경은 다음 불변 조건을 지켜야 합니다.
 
 - source와 orchestrator는 독립적입니다.
-- LLM 문장만으로 finding을 확정할 수 없습니다. 서버가 현재 controlled Evidence bundle을 검증한 경우에만 최종 verdict를 만들 수 있습니다.
+- 현재 Judge·Explorer 실행기와 MCP 서버는 제거되었습니다(D-126). 이전 LLM 평가·판정은 읽기 전용 이력이며 현재 규칙 후보의 결론으로 합치지 않습니다. 후속 Explorer 하네스와 FlowScope용 MCP는 별도 미구현 계획입니다.
 - active request에는 exact scope와 필요한 승인이 적용됩니다.
 - raw 인증정보는 저장·로그·노출하지 않습니다. 명시적 메모리 전용 Session Broker lifecycle에서만 존재할 수 있습니다.
 - 블랙박스 커버리지 퍼센트를 표시하지 않습니다.

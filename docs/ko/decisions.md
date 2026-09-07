@@ -1147,3 +1147,11 @@
 - **기각:** MCP 파일부터 삭제하면 ZAP·Web·저장소의 타입과 lifecycle을 함께 깨뜨린다. 웹과 MCP가 각각 캠페인을 생성하면 상태와 취소 소유권이 중복된다. 이 이동과 Client-only·새 하네스·Judge schema migration을 한꺼번에 섞으면 회귀 원인을 분리할 수 없어 단계별로 검증한다.
 - **후속 결정:** 사용자 목표는 Judge와 MCP의 제거이며, 그 다음 ZAP의 AJAX 실행을 없애고 Client Spider를 필수로 둔다. Explorer 새 하네스는 별도 작업이다. 최종 제거 과정에서 새 하네스가 준비되지 않으면 Explorer 실행을 명시적 전환 대기로 둔다. 현재 단계에서 제거 완료로 표시하지 않는다. 구체 범위는 `mcp-judge-removal-plan.md`를 따른다.
 - **검증·한계:** `ZapCampaignTest`가 MCP 없는 완료·진행·합성 Evidence, MCP bind 실패 독립성, 공유 adapter close와 host close의 서로 다른 소유권, scope·독립 Explorer·lock 거부를 검증한다. 기존 `McpServerTest`는 위임 경로 회귀를 유지한다. FakeZap helper는 기존 API 모사 응답을 이동했을 뿐 실제 ZAP 실행기가 아니다. 실제 Burp·ZAP Client·로그인 lane 검증은 별도 gate다.
+
+## D-126 · 기존 Judge·하네스 MCP 완전 제거, 제품 MCP는 보류 (2026-09-07)
+
+- **결정:** 사용자는 Judge를 폐기하고 Explorer를 별도 하네스로 설계하며, 향후 MCP는 FlowScope Evidence/분석용 제품 연동으로 검토하되 지금 구현하지 않도록 명시했다. D-125의 ZAP 추출에 이어 기존 MCP·runner·격리 브라우저·frontier/lock·Judge 제출·resume·프롬프트·설정과 Web 조작을 삭제한다. D-049/053/054 등 기존 Judge 실행 계약은 현재 기능에서 폐기되며 역사 기록으로 남긴다.
+- **보존:** HUMAN/ZAP, exact scope, Session Broker·Request Lab, Evidence/분류/Surface/그래프·규칙·사람 검토·저장 schema. `LegacyAssessment`와 `ValidationDecision`은 과거 기록만 보존하고 snapshot `legacyLlm` 읽기 전용으로 표시한다. 현재 `scenarios`에는 합치지 않는다. 과거 assessment를 새 사람 review 대상으로 쓰지 않되 기존 감사 기록을 저장소에서 지우지 않는다.
+- **기각:** 버튼만 숨겨 실행기를 남기기, 옛 API를 성공 stub로 바꾸기, 과거 판정 조용히 삭제/현재 결과로 재승인하기, 새 MCP나 대체 하네스를 미리 구현하기. 모두 명시된 삭제 범위나 데이터 의미를 어긴다. 같은 변경에서 ZAP Client-only까지 바꾸면 회귀 원인을 분리하기 어려워 후속 단위로 남긴다.
+- **소유권:** Web이 호스트 소유 `ZapCampaign`을 직접 호출한다. MCP만 제공하던 개별 스캐너/Active Scan 진입점은 함께 제거하고 기존 Web 캠페인과 ZAP API key는 유지한다. Web 공용 서버·JSON 라이브러리는 삭제하지 않는다.
+- **검증:** 삭제 부재 RED/clean classpath/JAR negative gate, 폐기 HTTP route 404, archive masking/date/read-only, JSON/SQLite 왕복, HUMAN/ZAP 회귀. 상세 수행 결과는 beta-validation D-126. Mock 성공과 실물 ZAP·Burp 성공을 혼동하지 않는다.

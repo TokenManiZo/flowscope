@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased — Judge/MCP removal, step 1
+## Unreleased — Judge and harness MCP removed (D-126)
+
+- Deleted the Judge/Explorer CLI launcher, controlled browser, MCP server/token/tools, and bundled agent-workspace settings/prompts. Their Web routes now return 404; runtime/connection controls and CLI/MCP doctor checks are removed.
+- Retained HUMAN, the independent ZAP campaign, Session Broker, Request Lab, and H/S/L observation comparisons. Campaign regressions no longer require an MCP server.
+- Preserved legacy LLM Evidence, execution summaries, assessments, and verdicts in JSON/SQLite. React presents old assessments/verdicts as read-only history, never current rule conclusions.
+- A separate Explorer harness and future Evidence-oriented FlowScope MCP are unimplemented. Client-only crawling is not part of this change.
+- Artifact-specific verification is recorded under D-126 in `../ko/beta-validation.md`; no live Burp/ZAP success is claimed.
+
+## Historical step — Judge/MCP removal, step 1
 
 - Extracted ZAP execution, progress, cancellation, and cleanup into a host-owned `ZapCampaign`. Web scanner controls call it directly; MCP port binding is no longer required to construct or use the campaign.
 - Existing MCP ZAP tools delegate to the same campaign. Crawler order, identity/scope/capability guards, status JSON, and project storage remain unchanged. Judge/MCP removal and mandatory Client Spider without AJAX are subsequent steps.

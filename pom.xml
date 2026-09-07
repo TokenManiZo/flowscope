@@ -38,7 +38,7 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Local MCP JSON-RPC transport. Relocated in the fat JAR to avoid Burp extension conflicts. -->
+    <!-- Evidence, project and ZAP JSON serialization. Relocated in the fat JAR to avoid Burp extension conflicts. -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
@@ -92,15 +92,6 @@
       </resource>
       <resource>
         <directory>${project.build.directory}/generated-resources/frontend-notices</directory>
-      </resource>
-      <resource>
-        <directory>agent-workspace</directory>
-        <targetPath>agent-workspace</targetPath>
-        <includes>
-          <include>AGENTS.md</include>
-          <include>prompts/explorer.md</include>
-          <include>prompts/judge.md</include>
-        </includes>
       </resource>
     </resources>
     <plugins>

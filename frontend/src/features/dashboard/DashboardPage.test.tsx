@@ -82,7 +82,6 @@ function installTransport(snapshot: Snapshot, failSnapshotOnce = false, failAfte
     if (path === "/api/human-run") return Promise.resolve(response({ active: false, completed: false, runId: "", accountId: "", proxy: "http://127.0.0.1:8080" }))
     if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, state: "READY", message: "ZAP 연결됨" }))
     if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "IDLE" }, scope: ["https://demo.flowscope.test"] }))
-    if (path === "/api/llm-run") return Promise.resolve(response({ run: { status: "IDLE", providers: { CODEX: true, CLAUDE: true } }, scope: ["https://demo.flowscope.test"], completed_lanes: [] }))
     if (path === "/api/sample" || path === "/api/clear") return Promise.resolve(response({ success: true, message: "완료" }))
     return Promise.reject(new Error(`unexpected endpoint: ${path} ${init?.method ?? "GET"}`))
   })

@@ -4,13 +4,14 @@
 
 ## 현재 우선순위 · LLM Judge·MCP 제거
 
-1. ZAP 캠페인의 실행·상태·취소·종료와 정의 입력 타입을 MCP에서 분리하고, 웹이 호스트 소유 캠페인을 직접 사용하게 한다.
-2. Judge 생성·실행·후속 대화·UI와 관련 완료 게이트를 제거한다. 과거 프로젝트의 Evidence·사람 검토·과거 판정은 호환 계약을 먼저 정해 보존한다.
-3. Explorer 실행 원장·저장 타입 등 잔여 공용 책임을 분리하고 MCP 서버·토큰·설정·doctor 검사를 제거한다. 새 하네스가 없는 동안 기존 Explorer 실행은 전환 대기로 표시한다.
-4. ZAP 브라우저 탐색을 Client Spider 필수로 바꾸고 AJAX 실행과 fallback을 제거한다.
-5. 새 Explorer 하네스는 별도 설계·검증 단위로 진행한다.
+1. ZAP 독립 캠페인 분리: `5a47af9` 완료.
+2. Judge와 기존 MCP/Explorer 실행기·설정·프롬프트 제거: D-126 구현 및 자동 회귀 통과.
+3. 기존 저장 schema와 과거 LLM 기록을 읽기 전용으로 보존: 구현. 현재 규칙 후보·사람 검토와 분리.
+4. 새 JAR 실제 Burp/HUMAN/ZAP/프로젝트 gate: 대기.
+5. Client Spider 필수화·AJAX 제거: 미착수. 이번 제거와 crawler 변경을 섞지 않음.
+6. 별도 Explorer 하네스와 FlowScope Evidence용 제품 MCP: 각각 설계 대기, 현재 구현 없음.
 
-**현재 상태:** 1번 구현, JDK 21 `mvn clean verify`의 Java 389/React 266 tests·최종 JAR 검사를 통과했다. 실제 Burp·ZAP gate와 2~5번은 미실행이다. 세부 삭제 목록과 완료 조건은 [제거 계획](mcp-judge-removal-plan.md)이 정본이다.
+자세한 삭제 목록·보존 계약·검증 범위는 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
 
 ## 0. beta.44 우선순위: 실행 실패와 탐색 0건의 분리
 

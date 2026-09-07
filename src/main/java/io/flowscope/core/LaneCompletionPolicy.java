@@ -3,7 +3,7 @@ package io.flowscope.core;
 import java.time.Instant;
 import java.util.List;
 
-/** HUMAN·SCANNER·LLM exploration 완료와 dataset lock 자격을 같은 run 기준으로 판정한다. */
+/** HUMAN·SCANNER·LLM exploration 완료 자격을 같은 run 기준으로 판정한다. */
 public final class LaneCompletionPolicy {
     public record Decision(boolean eligible, String reason, List<String> evidenceIds,
                            long responseCount, long coverageCount) {
@@ -31,7 +31,7 @@ public final class LaneCompletionPolicy {
         long coverage = snapshot.coverageRecords.stream()
                 .filter(record -> record.source == source && runId.equals(record.runId))
                 .filter(record -> record.phase == RunPhase.EXPLORATION && record.hasResponse)
-                .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.DATASET_LOCK))
+                .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.LANE_COMPLETION))
                 .count();
         List<String> evidenceIds = responses.stream().map(record -> record.evidenceId)
                 .filter(value -> value != null && !value.isBlank()).distinct().sorted().toList();
@@ -61,24 +61,6 @@ public final class LaneCompletionPolicy {
         return completed;
     }
 
-    public static boolean lockEligible(RunContextRegistry.CompletedRun completion, Pipeline.Result snapshot) {
-        if (completion == null || completion.phase() != RunPhase.EXPLORATION
-                || completion.evidenceIds().isEmpty() || snapshot == null) return false;
-        java.util.Set<String> frozen = java.util.Set.copyOf(completion.evidenceIds());
-        List<RequestRecord> records = snapshot.records.stream()
-                .filter(record -> frozen.contains(record.evidenceId))
-                .filter(record -> record.source == completion.source()
-                        && completion.runId().equals(record.runId)
-                        && record.phase == RunPhase.EXPLORATION && record.hasResponse)
-                .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.DATASET_LOCK))
-                .toList();
-        if (records.size() != frozen.size()) return false;
-        java.util.Set<String> coverage = snapshot.coverageRecords.stream()
-                .map(record -> record.evidenceId)
-                .filter(frozen::contains)
-                .collect(java.util.stream.Collectors.toSet());
-        return !coverage.isEmpty();
-    }
 
     private static Decision denied(String reason) {
         return new Decision(false, reason, List.of(), 0, 0);

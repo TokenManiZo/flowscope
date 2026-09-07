@@ -1,18 +1,16 @@
-import type { HumanRun, LlmRunEnvelope, ScannerRunEnvelope } from "@/lib/api/types"
+import type { HumanRun, ScannerRunEnvelope } from "@/lib/api/types"
 
-export type InspectionStage = "scope" | "human" | "scanner" | "llm"
+export type InspectionStage = "scope" | "human" | "scanner" | "review"
 
 export function automaticInspectionStage(
   scope: readonly string[],
   human: HumanRun | undefined,
   scanner: ScannerRunEnvelope | undefined,
-  llm: LlmRunEnvelope | undefined,
 ): InspectionStage {
   if (scope.length === 0) return "scope"
   if (!human?.completed) return "human"
   if (!isCompletedScannerRun(scanner?.run.status)) return "scanner"
-  if (!llm?.completed_lanes.includes("LLM")) return "llm"
-  return "llm"
+  return "review"
 }
 
 export function isCompletedScannerRun(status: string | undefined): boolean {

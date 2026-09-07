@@ -2,7 +2,22 @@
 
 이 문서는 새 팀원이 현재 코드의 상태를 과장 없이 파악하고 바로 개발을 이어가기 위한 시작점이다. 제품 설명, 구현 위치, 완료·미완료 구분, 알려진 결함, 다음 작업 순서와 검증 기준을 한곳에 모은다.
 
-## 0. 인계 기준선
+## 2026-09-07 현재 인계 — D-126 우선
+
+- `5a47af9`의 ZAP 분리 이후 Judge·Explorer 하네스·MCP 서버/토큰·CLI·격리 브라우저·agent-workspace를 실제 삭제했다. 기존 실행 버튼을 숨긴 상태나 서버 stub이 아니다.
+- `FlowScopeExtension → ZapCampaign` 직접 호출과 HUMAN 수집·Session Broker·Request Lab·Evidence·Surface·그래프는 유지한다. AJAX를 끄는 변경은 아직 하지 않았다.
+- 현재 실행 API는 HUMAN/ZAP이며 옛 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`는 404다. ZAP 상태는 MCP 리스너 없이 조회한다.
+- `LegacyAssessment`·`ValidationDecision`은 구버전 JSON/SQLite 읽기·쓰기 호환 기록이다. `SnapshotJsonWriter.legacyLlm`와 React 읽기 전용 이력에서만 표시하며 현재 규칙 후보에 최종 판정을 덮어쓰지 않는다. LLM source·과거 실행 원장도 보존한다.
+- 새 Explorer 하네스와 FlowScope Evidence용 MCP는 **미구현**이다. 옛 `McpServer`를 되살리는 후속 계획이 아니다.
+- 현재 삭제 목록·테스트 범위·다음 gate: [제거 계획](mcp-judge-removal-plan.md). 최신 실제 빌드/JAR/브라우저 수치: [검증 기록](beta-validation.md)의 2026-09-07 D-126 절. 아래 374 tests·JAR 해시는 **이전 기준선**이다.
+- 다음 작업은 실제 Burp 재로드 후 HUMAN·세션·ZAP·Request Lab의 보존 기능 확인이다. standalone/mock 통과를 실제 ZAP 로그인·크롤 성공으로 해석하지 않는다.
+- 이 작업 전부터 있던 루트 `CLAUDE.md` 변경과 `mentor-progress-report.md`는 건드리거나 이번 커밋에 넣지 않는다.
+
+## 이전 인계 기록 (2026-09-04, 현재 계약 아님)
+
+아래 구현 위치·미완료 목록에는 삭제된 실행기와 당시 평가가 포함된다. 현재 작업 지시로 사용하지 말고 위 D-126 및 최신 정본과 먼저 대조한다. 과거 결함 목록을 제거 완료로 일괄 닫았다는 뜻도 아니다.
+
+## 0. 이전 인계 기준선
 
 | 항목 | 기준 |
 |---|---|
@@ -212,7 +227,7 @@ Burp Proxy/도구 callback
 |---|---|
 | [`RouteCandidateExtractor.java`](../../src/main/java/io/flowscope/core/RouteCandidateExtractor.java) | 공통 exact-scope/method/정규화/dedup gate |
 | [`discovery/`](../../src/main/java/io/flowscope/core/discovery) | HTML, JavaScript, OpenAPI, metadata, generic XML 어댑터 |
-| [`RouteCandidateViews.java`](../../src/main/java/io/flowscope/core/RouteCandidateViews.java) | Explorer 자기 run 및 잠긴 Judge 시야 projection |
+| ``RouteCandidateViews.java`` (D-126 삭제) | Explorer 자기 run 및 잠긴 Judge 시야 projection |
 
 Route candidate는 실제 request/response가 없는 중립 후보다. coverage, gap, verdict, finding을 만들면 안 된다.
 
@@ -222,8 +237,8 @@ Route candidate는 실제 request/response가 없는 중립 후보다. coverage,
 |---|---|
 | [`SessionBroker.java`](../../src/main/java/io/flowscope/integration/SessionBroker.java) | 계정별 메모리 전용 Cookie/Authorization/CSRF 수명과 주입 |
 | [`ZapClient.java`](../../src/main/java/io/flowscope/integration/ZapClient.java) | localhost ZAP API, spider/passive/alert orchestration |
-| [`McpServer.java`](../../src/main/java/io/flowscope/integration/McpServer.java) | localhost 인증 MCP, Explorer 격리, dataset lock, target executor, assessment/validation gate |
-| [`LocalLlmRunner.java`](../../src/main/java/io/flowscope/integration/LocalLlmRunner.java) | Codex/Claude CLI 새 프로세스, 임시 workspace, Judge 재개 |
+| ``McpServer.java`` (D-126 삭제) | localhost 인증 MCP, Explorer 격리, dataset lock, target executor, assessment/validation gate |
+| ``LocalLlmRunner.java`` (D-126 삭제) | Codex/Claude CLI 새 프로세스, 임시 workspace, Judge 재개 |
 | [`ProjectStore.java`](../../src/main/java/io/flowscope/integration/ProjectStore.java) | JSON schema v4 저장·로드, v1/v2/v3 호환 읽기, exact completed run·실행 시도 원장 보존 |
 | [`RunExecutionLedger.java`](../../src/main/java/io/flowscope/integration/RunExecutionLedger.java) | MCP 통제 HTTP 시도의 비밀 없는 typed outcome과 run 품질 집계 |
 | [`SqliteProjectStore.java`](../../src/main/java/io/flowscope/integration/SqliteProjectStore.java) | 관계형 로컬 DB와 atomic checkpoint |
