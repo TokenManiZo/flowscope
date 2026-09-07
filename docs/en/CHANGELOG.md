@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — documentation consistency (D-127, 2026-09-07)
+
+- Separated current handoff from historical instructions; corrected Korean/English operating guides, contributor instructions, architecture, plans and UI claims about retired MCP/Judge/Active Scan paths. See the [document inventory](../ko/documentation-status.md).
+- Corrected the JS parser limit to 4,194,304 characters and recorded the remaining host-record truncation to 8,192 characters. The older beta.44 large-bundle claim covers helper/parser changes, not verified end-to-end live analysis.
+- No code, functionality or JAR changed in this documentation work. Builds and live-runtime checks were not rerun; earlier measurements remain tied to their original artifacts.
+
 ## Unreleased — Judge and harness MCP removed (D-126)
 
 - Deleted the Judge/Explorer CLI launcher, controlled browser, MCP server/token/tools, and bundled agent-workspace settings/prompts. Their Web routes now return 404; runtime/connection controls and CLI/MCP doctor checks are removed.

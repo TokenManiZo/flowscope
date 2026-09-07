@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 문서 전수 정합성 (D-127, 2026-09-07)
+
+- 현재 인계와 과거 인계 본문을 분리하고 한·영 운영법, 개발 지침, 설계·계획·UI 설명의 폐기된 MCP/Judge/Active Scan 실행 안내를 정정했습니다. [문서별 점검 목록](docs/ko/documentation-status.md)을 제공합니다.
+- JS parser 상한은 4,194,304자지만 live host record에서 8,192자로 재절단되는 미해결 연결 문제를 명시했습니다. 아래 beta.44의 “큰 SPA 번들 분석” 설명은 helper/parser 변경 범위이며 live 전 구간 지원이 확인됐다는 뜻이 아닙니다.
+- 이번에는 코드·기능·JAR을 변경하거나 빌드/실환경 검증을 재실행하지 않았습니다. 이전 검증 수치와 연구 기록은 당시 artifact에 묶어 보존합니다.
+
 ## 미출시 · Judge·하네스 MCP 제거 완료 (D-126)
 
 - Judge·Explorer 구독 CLI 실행기, 통제 브라우저, MCP 서버·토큰·도구, agent-workspace 설정과 프롬프트를 삭제했습니다. 관련 Web API는 404이며 연결·실행 버튼과 doctor의 CLI/MCP 검사도 제거했습니다.

@@ -1,0 +1,81 @@
+# 문서 정합성·갱신 기준
+
+최종 대조: 2026-09-07. 코드 기준 `57d1bb4`, 빈 디렉터리 정리 `962edfe`. 감사 시작 시 Git 추적 Markdown **33개**, 이번에 추가한 과거 인계 보존본·이 목록 **2개**, 총 **35개**를 관리한다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다.
+
+## 1. 무엇을 어디서 읽는가
+
+- **지금 상태·다음 작업:** [HANDOFF](HANDOFF.md). 끝난 구현, 자동 회귀, 실제 운영 검증과 미착수를 구분한다.
+- **현재 계약:** README·설치 안내·architecture·Surface·UI 근거. 이전 요구와 충돌하면 코드를 확인하고 해당 계약을 정정한다.
+- **왜/언제 바뀌었는가:** decisions·development-log·CHANGELOG. 과거 항목을 최신 결과로 덮지 않는다.
+- **실제 검증:** beta-validation의 날짜·commit·환경·해시별 기록. 같은 beta.44 이름은 같은 artifact를 뜻하지 않는다.
+- **과거 제안·명세:** 연구/원 명세/superpowers 계획/이전 인계는 당시 목적과 대체 관계를 남긴다. 현재 구현 또는 재개 명령으로 읽지 않는다.
+
+## 2. 이번에 정정한 핵심 불일치
+
+1. 삭제한 agent-workspace·CLI·Judge/최종 제출·closed-world executor를 아직 제공한다는 한·영 안내를 제거했다. source LLM·과거 기록은 계속 보존한다.
+2. 현재 없는 ZAP Active Scan 경로를 “별도 승인하면 실행”이라고 안내하던 문장을 정정했다. 정의 import 승인과 HUMAN Request Lab은 별개다.
+3. Request Lab을 독립 source처럼 나열하던 문장을 H/S/L과 HUMAN VALIDATION으로 바로잡았다.
+4. JS parser는 1,048,576자가 아니라 4,194,304자다. 그러나 live `recordFrom`의 8,192자 재절단 때문에 큰 발견용 응답 전체 전달은 미해결이다. helper/parser 단위 성공과 end-to-end 성공을 구분했다.
+5. DataFlow의 옛 substring/전체 쌍 비교 설명을 현재 exact-token index로 수정했다. 인과관계/semantic taint 증명이라는 주장은 하지 않는다.
+6. ZAP capability는 D-124의 전체 exact scope+선택 target union, crawler Context는 선택 target이며 서로 다르다. Alert 상한은 lane별이 아니라 캠페인 전체 20,000개, Passive 정체는 queue 감소로만 판단한다.
+7. 한국어 기여 안내의 “JDK 21 이상”을 실제 Enforcer와 맞는 JDK 21·Maven 3.9.x로 정정했다.
+8. 현재 인계와 과거 인계를 분리했다. 옛 결함은 일괄 닫지 않고 재검증 대기로 승계했다. 기존 사용자 인계 지침은 보존했고 멘토 보고서는 수정하지 않았다.
+
+## 3. 전수 목록
+
+“현행화”는 모든 문장을 최신 시제로 고쳤다는 뜻이 아니다. 현행 계약의 모순은 고치고, 역사 문서는 당시 내용을 보존하면서 적용이 끝난 지시를 표시했다. 외부 문헌의 진위·모든 제품 동작을 이번에 전수 실증했다는 주장도 아니다.
+
+| 문서 | 지위 | 이번 대조·처리 |
+|---|---|---|
+| [AGENTS.md](../../AGENTS.md) | 개발 지침 | 작업 단계별 진행 기록·현행 인계 우선 규칙 추가 |
+| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | 기존 사용자 인계 문단 보존, 삭제된 실행기·beta.39 안내 정정 |
+| [CONTRIBUTING.md](../../CONTRIBUTING.md) | 개발 지침 | JDK 21 정확히·Maven 3.9.x, 중간 상태 갱신 |
+| [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
+| [README.md](../../README.md) | 현행 계약 | 폐기 실행 보장 제거·현재 결과 의미·입력/보존/분석 상한 구분 |
+| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 영문 Judge/closed-world/자동 validation 안내·Passive 정체 기준 정정 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | 동일 beta.44 이름의 이전 JAR과 D-126 소스 구분, 현재 인계 연결 |
+| [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 제거 소스·설치 경계 |
+| [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
+| [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
+| [docs/ko/README.md](README.md) | 목차 | 현재/역사 문서 목록과 진행 갱신 기준 |
+| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | 현재 코드·상태·열린 문제·다음 gate로 재구성 |
+| [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
+| [docs/ko/architecture.md](architecture.md) | 현행 계약 | data-flow exact-token·ZAP scope union/Alert 총량·미해결 분석 전달 경계 정정 |
+| [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | JS parser 상한과 live 전달 한계, source LLM/미실행 실험 구분 |
+| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | 현재 실행과 초기 연구·공개 확장 목표 구분 |
+| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | H/S/L과 Request Lab phase 구분, 없는 최종 Judge/Active Scan 안내 정정 |
+| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | run 상태 API 수정, P별 당시 표와 실제 최신 검증 구분 |
+| [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | 완료 커밋·미착수 하네스/MCP/Client-only·열린 분석 전달 문제 |
+| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | 현재 우선순위와 이전 beta별 계획 분리, 회귀 미착수 기록 |
+| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-126 폐기 관계 안내, D-127 문서 운영 결정 append |
+| [docs/ko/development-log.md](development-log.md) | 역사 | 이번 문서 변경·코드 대조·실제 수행 검사·미실행 범위 append |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-126 커밋 식별, 과거 검증·재실행 대기와 현행 gate 분리 |
+| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
+| [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
+| [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
+| [docs/ko/graph-ux.md](graph-ux.md) | 역사 | 초기 Swing/JGraphX 및 과거 LLM 설명과 현행 UI 분리 |
+| [docs/ko/proposal.md](proposal.md) | 역사 | Judge·동결 dataset·ablation은 이전 연구 제안, 효과 입증 아님 |
+| [docs/ko/research.md](research.md) | 역사 | D-126 이후 적용 경계 표시, 외부 문헌·수치를 이번에 재검증하지 않음 |
+| [docs/ko/specification/functional-spec.md](specification/functional-spec.md) | 역사 | 원 요구 보존, beta.38 MCP/브라우저/Judge 구현 주석의 폐기 명시 |
+| [docs/superpowers/plans/2026-09-01-unified-analysis-workspace.md](../../docs/superpowers/plans/2026-09-01-unified-analysis-workspace.md) | 역사 | 옛 worker/skill/보존 파일 지시를 현재 작업으로 재사용하지 않음 |
+| [docs/superpowers/plans/2026-09-02-reference-analysis-shell.md](../../docs/superpowers/plans/2026-09-02-reference-analysis-shell.md) | 역사 | 과거 API 전부 보존 지시가 D-126 삭제를 되돌리지 않음 |
+| [docs/superpowers/specs/2026-09-01-unified-analysis-workspace-design.md](../../docs/superpowers/specs/2026-09-01-unified-analysis-workspace-design.md) | 역사 | 당시 UI 승인 범위 보존·현행 UI 근거 연결 |
+| [docs/superpowers/specs/2026-09-02-reference-analysis-shell-design.md](../../docs/superpowers/specs/2026-09-02-reference-analysis-shell-design.md) | 역사 | 과거 Explorer 상태/제어 요구 대체 관계 명시 |
+| [docs/ko/documentation-status.md](documentation-status.md) | 목차 | 이 전수 목록과 실제 확인 범위·상시 갱신 규칙 |
+
+## 4. 확인 범위
+
+- 최종 점검: 관리 문서 35개와 목록 대응 일치, 로컬 파일/디렉터리 링크 217개 모두 존재, `git diff --check` 통과. 이전 인계 본문과 사용자 CLAUDE 인계 문단 보존 확인. 외부 URL 응답·heading anchor·모든 제품 동작을 검증한 것은 아니다.
+- 코드 대조: 제거된 runtime/API, 호스트 소유 ZAP, 과거 데이터 모델, JS parser·capture·record·RouteDiscoveryDocument/Surface 전달, DataFlow index, capability scope, Alert/Passive 상한, 빌드 JDK 계약.
+- 기존 JAR의 SHA-256을 다시 읽어 D-126 기록과 같음을 확인했다. 코드·테스트·빌드 파일과 JAR은 변경하지 않았다.
+- `mvn clean verify`·브라우저 E2E·실물 Burp/ZAP·외부 대상 요청·문헌 재조사·원격 Git 조회/푸시는 이번 문서 작업에서 실행하지 않았다. 기존 335/238/8 결과는 이전 D-126 검증이다.
+- 대형 응답 전달 문제는 코드 경로 확인 단계다. 새 실패 회귀와 수정·실환경 재현은 미착수이며 [HANDOFF](HANDOFF.md)의 열린 항목으로 추적한다.
+
+## 5. 앞으로의 갱신 시점
+
+1. **작업 시작:** HANDOFF·제품 계획에서 이번 범위, 시작 기준 commit, 완료 기준, 미착수 항목을 확인하고 달라졌으면 갱신한다.
+2. **진행 중:** 원인 확정·실패·범위 변경·차단이 나타나면 HANDOFF와 개발 기록에 근거와 다음 행동을 적는다. 마지막 응답까지 미루지 않는다.
+3. **검증 후:** 실제 실행한 명령·환경·artifact·결과만 beta-validation에 기록한다. 문서 전용 작업은 링크·정합성 확인 결과를 개발 기록에 기록하며 제품 검증을 새로 했다고 쓰지 않는다.
+4. **인계/커밋 전:** 영향받은 현행 문서의 한·영 대응, 과거 계획의 대체 관계, 링크와 사용자 변경 보존을 확인한다. 진행·검증·미착수가 서로 다른 문서에서 모순되지 않게 한다.
+
+자동 타이머나 별도 모니터링을 만드는 규칙이 아니다. 각 실제 개발 작업 안에서 AGENTS/CLAUDE/기여 지침과 함께 이행한다.

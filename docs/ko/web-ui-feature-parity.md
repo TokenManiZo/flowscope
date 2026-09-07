@@ -30,7 +30,7 @@
 | P22 | LLM Judge | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
 | P23 | LLM 취소 | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
 | P24 | Judge 후속 질문 | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
-| P25 | run 상태 | `GET /api/llm-run`, `GET /api/scanner-run`, snapshot `runExecutions` | `#runs` | `InspectionPage.test.tsx`, `RunsPage.test.tsx` (문자 상태·단계·count/error retention, 가짜 완료율 없음, 실행 실패/응답 분리) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (beta.44 통합; Burp gate open) |
+| P25 | run 상태 | `GET /api/human-run`, `GET /api/scanner-run`, snapshot `runExecutions`(과거 기록) | `#runs` | `InspectionPage.test.tsx`, `RunsPage.test.tsx` (문자 상태·단계·count/error retention, 가짜 완료율 없음, 실행 실패/응답 분리) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (beta.44 통합; Burp gate open) |
 | P26 | graph source/authz 보기 | `/api/snapshot` graph projection | `#graph` | `graphProjection.test.ts`, `CytoscapeGraph.test.tsx` (source/authz text·style, exact selection, lifecycle) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 9; runtime gate open) |
 | P27 | graph 페이지·collapse·layout 지속 | legacy graph state | `#graph` | `graphProjection.test.ts`, `graphPreferences.test.ts` (18-item page, expand/collapse, validated v5 layout only) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 9; runtime gate open) |
 | P28 | route 후보 | `/api/snapshot` route candidates | `#graph` | `graphProjection.test.ts`, `ResponsiveGraphList.test.tsx` (UNKNOWN candidate distinction, provenance/detail selection) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 9; runtime gate open) |
@@ -61,6 +61,10 @@
 ### D-126 과거 기록 보존
 
 `snapshot.legacyLlm`는 `readOnly=true`이며 React 시나리오의 접힌 이력 구역에서만 보여 준다. 현재 finding에 같은 ID의 과거 CONFIRMED가 있어도 current scenarios에는 최종 판정을 합치지 않는다. JSON/SQLite 왕복은 `LegacyLlmArchiveTest`, snapshot·폐기 API·현재 후보만 review 허용은 `FlowScopeWebServerTest`, 화면의 missing Evidence/페이지 증가/수정 버튼 없음은 `ScenariosPage.test.tsx`가 검사한다. Legacy UI에는 이력 구역을 새로 추가하지 않고 현재 규칙 후보·사람 검토만 유지한다.
+
+## 이전 UI 통합 gate 기록
+
+아래 Task별 PASS·테스트 수·JDK·산출물은 당시 브랜치에서 수행한 기록이며 D-126 재실행 결과가 아니다. 현행 D-126 자동 검증과 미실행 Burp gate는 상단 링크를 따른다. 위 인벤토리의 PLANNED도 해당 칸의 당시 기록이며 코드 부재를 단정하는 값이 아니다.
 
 ### Task 2 정적 전송 계약
 

@@ -1,5 +1,7 @@
 # Security policy
 
+For the unreleased source's runtime boundaries and open gates, see the [handoff](../ko/HANDOFF.md) and [documentation inventory](../ko/documentation-status.md). Historical security checks do not validate a new artifact.
+
 ## Supported versions
 
 Security fixes are made on the latest `1.x` release.

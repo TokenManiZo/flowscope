@@ -1,6 +1,6 @@
 # Endpoint·Parameter Surface Delta 설계·검증
 
-이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.44 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. LLM 0건은 실행 원장의 품질과 함께 읽으며, 전송 실패는 endpoint 관측으로 승격하지 않는다.
+이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.44 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. D-126 이후 자동 LLM 실행은 없으며 LLM 0건은 미실행 상태와 구분해 해석한다. 저장된 실행 원장이 있으면 과거 요청의 품질로만 읽고 전송 실패는 endpoint 관측으로 승격하지 않는다.
 
 ## 1. 제품 질문
 
@@ -57,7 +57,7 @@ asset은 후속 JavaScript 분석 대상으로만 남긴다. HTML navigation과 
 
 ### 명시적 비지원
 
-- application 고유 wrapper의 HTTP 의미
+- superagent를 포함해 지원 목록 밖 client와 application 고유 wrapper의 HTTP 의미
 - 일반 interprocedural data flow, 재할당된 binding/property, 런타임 계산, axios defaults mutation·interceptor, 난독화 복원, source map
 - 아직 받지 않은 lazy chunk
 - GraphQL introspection/schema declaration과 batch request 완전 분리
@@ -83,10 +83,12 @@ Resource/object와 owner는 첫 화면에서 펼치지 않고 선택 API의 인�
 
 ## 5. 구현 상한
 
-- JavaScript 입력 1,048,576자, AST 순회 250,000노드, call-site 20,000개, asset 20,000개
+- JavaScript parser 입력 4,194,304자, AST 순회 250,000노드, call-site 20,000개, asset 20,000개
 - call-site당 parameter 1,024개, 참조 해석 깊이 12
 - endpoint당 parameter 1,024개, 관측 JSON 깊이 16, OpenAPI schema 깊이 20
 - JavaScript 분석 cache 128개. key는 원문 대신 SHA-256 digest, value는 추출 결과만 두며 dataset 교체·초기화 시 비운다.
+
+**전달 경계 미해결(2026-09-07 코드 대조):** 위 수치는 parser가 입력을 받았을 때의 상한이다. live capture helper의 발견용 MIME 미리보기는 기본 4MiB지만 호스트가 `body/respText`를 8,192자로 재절단하고, 전문 미보존 응답은 이 preview로 분석한다. 따라서 큰 번들의 뒷부분까지 RouteCandidate/Surface로 전달된다고 보장하지 않는다. [현재 인계](HANDOFF.md)의 합성 end-to-end 회귀가 다음 확인 항목이며 이번 문서 작업에서는 코드를 고치지 않았다.
 
 Closure Compiler는 `ECMASCRIPT_NEXT` parser로만 사용하고 target JavaScript를 실행하지 않는다. Node, Chrome, Playwright 또는 네트워크가 이 정적 추출에 필요하지 않다. dependency는 버전을 고정하고 fat JAR에서 relocation하며 원 LICENSE·NOTICE·third-party notice를 보존한다.
 
@@ -133,7 +135,7 @@ Closure Compiler는 `ECMASCRIPT_NEXT` parser로만 사용하고 target JavaScrip
 
 ## 8. 다음 평가
 
-외부 pilot은 같은 scope·계정·시간·요청 예산에서 H/S/L의 고유 endpoint/parameter와 검토 작업량을 분리한다. 정답은 가능한 경우 서버 fixture route manifest 또는 빌드 전에 고정한 truth를 사용하고 런타임 분석기에 주지 않는다.
+아래는 후속 평가 설계이며 아직 수행하지 않았다. 새 Explorer 하네스가 없으므로 현재 소스에서 자동 H/S/L 비교 실험을 시작할 수 있다고 안내하지 않는다. 외부 pilot에서는 같은 scope·계정·시간·요청 예산을 정의하고 source별 고유 endpoint/parameter와 검토 작업량을 분리할 계획이다. 정답은 가능한 경우 서버 fixture route manifest 또는 빌드 전에 고정한 truth를 사용하고 런타임 분석기에 주지 않는다.
 
 최소 보고 항목:
 

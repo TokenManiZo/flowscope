@@ -6,7 +6,7 @@ FlowScope accepts focused bug fixes and features that preserve its evidence and 
 2. Create a small change with a regression test. Do not refactor unrelated code.
 3. Append the work to `../ko/development-log.md`: what changed, why, affected files, verification, and remaining limits.
 4. Update only the documentation whose contract is affected: README for users, architecture for current structure, decisions for material choices, changelog for release-visible changes, validation for checks actually performed, and the product plan for gate status.
-5. Run `mvn clean verify` from the repository root on JDK 21.
+5. Run `mvn clean verify` from the repository root on exactly JDK 21 and Maven 3.9.x. Do not confuse the build toolchain with the runtime range of an already-built JAR.
 6. Confirm the release JAR does not bundle Montoya API classes and does include third-party license notices.
 7. Describe the security and false-positive impact in the pull request.
 
@@ -22,6 +22,7 @@ Architectural changes must preserve these invariants:
 
 ## Git and documentation discipline
 
+- Update the [current handoff](../ko/HANDOFF.md) and affected plan/log at work start, material results or blockers, verification, and handoff. Check the [documentation inventory](../ko/documentation-status.md); distinguish current contracts from history. For documentation-only changes, report the checks actually run, not an inherited build as a new validation.
 - Use one focused commit per coherent behavior change. Include its regression test and matching documentation in the same commit.
 - Do not mix formatting, unrelated cleanup, generated `target/` files, local `.flowscope.db`/`.flowscope.json` projects, credentials, or target traffic into a product commit.
 - Commit messages should state the behavior, for example `fix: reject suspect broker sessions`, not a vague activity such as `update files`.

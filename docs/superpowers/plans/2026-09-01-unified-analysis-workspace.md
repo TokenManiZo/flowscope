@@ -1,5 +1,7 @@
 # FlowScope Unified Analysis Workspace Implementation Plan
 
+> **Historical implementation plan (2026-09-01).** The worker/skill commands, protected paths, unchecked steps and dependency versions below describe that task, not present instructions. D-126 retired the old Explorer/Judge/MCP runtime; do not restore those endpoints to satisfy this plan. Current work and UI gates are owned by [HANDOFF](../../ko/HANDOFF.md) and [UI parity](../../ko/web-ui-feature-parity.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the global sidebar with a 90%-density top-navigation workspace, make the supplied reference layout the graph default, and improve Matrix, Sequence, Scenarios, and Request Lab without changing server-side authorization decisions.

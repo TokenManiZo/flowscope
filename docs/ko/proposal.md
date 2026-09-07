@@ -1,5 +1,7 @@
 # FlowScope — 리서치 제안서 (v2, beta.43 정합성 갱신)
 
+> **2026-09-07 연구 보류 경계:** 아래 영문 abstract·LLM Judge·동결 데이터셋·자동 최종 gate·ablation은 이전 연구 제안으로 보존한다. D-126으로 실행기를 제거했으므로 현재 제품 설명이나 완료 연구 결과가 아니다. 별도 Explorer/제품 MCP의 역할을 정한 뒤 연구 설계를 다시 검토하며, 현재 상태는 [HANDOFF](HANDOFF.md)를 따른다.
+
 > **문서 지위(2026-09-03):** 이 문서는 연구 가설과 평가 설계를 보존하는 제안서이며 제품 동작 정본이 아니다. 현재 제품 계약은 `README.md`, `architecture.md`, `decisions.md`, 실제 검증은 `beta-validation.md`가 담당한다. beta.43은 블랙박스 전체 분모나 “셋 다 놓친 전체 여집합”을 안다고 주장하지 않으며, 관측된 적용 가능 cell과 근거 있는 미요청 route 후보만 다룬다. 최종 verdict는 별도 VALIDATION run의 반복 재현·정상 대조 Evidence를 서버가 검증한 경우에만 허용한다.
 
 > **beta.42 보충:** 현재 제품은 관측 cell 비교 앞에 Endpoint·Parameter Declaration/Observation Delta를 두고 JavaScript AST call-site와 파싱 실패 상태를 분리한다. 저장소 내부 held-out 구조 회귀를 통과한 것은 논문 효능이나 외부 일반화를 입증하지 않으며, `endpoint-parameter-surface.md`의 승인된 pilot 전까지 연구 가설로 분리한다.

@@ -1,5 +1,7 @@
 # 보안 정책
 
+현재 배포 전 소스의 실행 경계와 미검증 gate는 [인계서](docs/ko/HANDOFF.md), 문서 적용 범위는 [문서 목록](docs/ko/documentation-status.md)을 따릅니다. 과거 버전의 보안 테스트를 새 산출물 검증으로 해석하지 마십시오.
+
 영문 보안 정책은 [`docs/en/SECURITY.md`](docs/en/SECURITY.md)에 있습니다.
 
 ## 지원 버전

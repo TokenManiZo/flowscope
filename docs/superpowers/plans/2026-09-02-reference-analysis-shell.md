@@ -1,5 +1,7 @@
 # Reference Analysis Shell Implementation Plan
 
+> **Historical implementation plan (2026-09-02).** “Preserve all behavior” and worker/skill instructions below apply to that past UI task. D-126 intentionally removed the old Explorer/Judge/MCP controls and endpoints; they are not a parity regression to restore. Current work, protected edits and runtime gates must be read from [HANDOFF](../../ko/HANDOFF.md) and the current checkout.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Apply the user-provided reference workspace structure to every FlowScope analysis route while retaining the current black/emerald palette and all existing behavior.

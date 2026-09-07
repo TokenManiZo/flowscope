@@ -7,11 +7,15 @@
 1. ZAP 독립 캠페인 분리: `5a47af9` 완료.
 2. Judge와 기존 MCP/Explorer 실행기·설정·프롬프트 제거: D-126 구현 및 자동 회귀 통과.
 3. 기존 저장 schema와 과거 LLM 기록을 읽기 전용으로 보존: 구현. 현재 규칙 후보·사람 검토와 분리.
-4. 새 JAR 실제 Burp/HUMAN/ZAP/프로젝트 gate: 대기.
+4. 새 JAR 실제 Burp/HUMAN/ZAP/프로젝트 gate: 대기. 문서 감사에서 확인한 대형 응답의 capture → record → 분석 전달 재절단은 회귀 작성·수정 미착수로 추가한다. 4MiB helper/parser 단위 통과를 live 전체 분석 완료로 보지 않는다.
 5. Client Spider 필수화·AJAX 제거: 미착수. 이번 제거와 crawler 변경을 섞지 않음.
 6. 별도 Explorer 하네스와 FlowScope Evidence용 제품 MCP: 각각 설계 대기, 현재 구현 없음.
 
 자세한 삭제 목록·보존 계약·검증 범위는 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
+
+## 이전 버전별 계획·검증 이력
+
+아래 “현재 상태/완료”는 각 beta 작성 당시의 상태다. 삭제된 MCP·Explorer·Judge의 남은 실행 gate는 현행 작업에서 폐기됐으며, 현재 후속 작업은 위 우선순위와 [HANDOFF](HANDOFF.md)만 따른다. 과거 테스트 결과는 변경하지 않는다.
 
 ## 0. beta.44 우선순위: 실행 실패와 탐색 0건의 분리
 

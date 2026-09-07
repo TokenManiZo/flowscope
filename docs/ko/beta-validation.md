@@ -2,7 +2,7 @@
 
 ## 2026-09-07 · 미출시 D-126 · Judge·Explorer 하네스·MCP 제거 최종 gate
 
-`5a47af9` 이후 **제거 완료 소스**로 만든 JAR이다. 아래 1단계 분리 JAR 및 이전 beta.44 Release와 다르며 원격 배포하지 않았다.
+`57d1bb4`의 **제거 완료 소스**로 만든 JAR이다. 아래 1단계 분리 JAR 및 이전 beta.44 Release와 다르며 원격 배포하지 않았다.
 
 | 항목 | 실제 확인 결과 |
 |---|---|
@@ -25,6 +25,10 @@
 
 실물 ZAP API/Firefox·Client 확장·로그인 계정·upstream capability, 실제 Burp load/unload·HUMAN 캡처·Request Lab 전송, Windows 실환경은 **미실행**이다. mock은 FlowScope의 상태 처리만 증명한다. 크롤러 시작 API 반환 중 취소 경합은 남은 gate이며 이번 제거로 해결했다고 주장하지 않는다. 반복 JAR 해시 일치는 이 머신·고정 도구·같은 소스에서만 검증했으며 임의 OS/JDK 전체 재현 보장이 아니다. 사용자 Burp/ZAP 프로세스나 전역 모델 인증·MCP 설정은 건드리지 않았다.
 
+
+## 이전 산출물 검증 이력 — 현재 gate와 분리
+
+아래 수치·성공·실패·재실행 대기는 각 당시 산출물 기준이다. D-126으로 제거된 Explorer/Judge/MCP 재실행은 현행 gate가 아니다. D-122의 큰 입력 helper/parser 회귀는 live record까지 전달됐다는 검증이 아니며, 2026-09-07 문서 대조에서 확인한 8,192자 재절단 경로는 [현재 인계](HANDOFF.md)에 미해결로 기록했다. 이번 문서 감사는 이전 측정값을 바꾸거나 실환경 검증으로 승격하지 않는다.
 
 ## 2026-09-07 · 미출시 작업트리 · ZAP 캠페인 분리 gate
 

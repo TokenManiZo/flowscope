@@ -1,5 +1,7 @@
 # FlowScope 초기 그래프 UX 조사 기록 — Swing/JGraphX
 
+> **2026-09-07 D-126:** 이 문서의 Swing/JGraphX 설계와 beta별 LLM 실행 설명은 역사 기록이다. 현재 React 기본 Surface·인가 상세와 저장된 LLM 이력의 의미는 [UI 근거](ui-product-rationale.md), 진행상황은 [HANDOFF](HANDOFF.md)를 따른다. 새 자동 LLM 실행을 전제로 이 계획을 재개하지 않는다.
+
 > **상태:** 아래 문서는 초기 Swing/JGraphX 조사 기록이며 현재 구현 계획이 아니다. 제품 UI 구현 선택은 D-048에 의해 번들 Cytoscape.js localhost Web 작업면으로 대체되었다. 계층 방향, source/verdict 채널 분리, focus+context, 필터, 단계적 펼치기 원칙만 계속 유효하다. 현재 화면별 근거와 발표 설명은 `ui-product-rationale.md`, 현재 백엔드 계약은 `architecture.md`를 따른다.
 
 > **beta.42 주의:** 제품 기본 작업면은 그래프가 아니라 Endpoint·Parameter Surface Delta다. 이 문서의 그래프 원칙은 선택 API의 `인가 그래프` 상세층에만 적용한다(D-113·D-114).

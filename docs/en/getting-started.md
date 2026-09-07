@@ -1,5 +1,7 @@
 # FlowScope installation and first run
 
+This guide targets the D-126 removal source. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs with the same beta.44 version. There is no current MCP/model setup procedure.
+
 The current source provides HUMAN and ZAP execution. The old Explorer/Judge harness and MCP server have been removed (D-126; unreleased change). H/S/L Evidence comparison and existing projects remain supported. Neither the new standalone Explorer harness nor a future FlowScope Evidence MCP is implemented. This removal is not published as a Release yet; build the JAR from this work instead of using an older beta.44 asset.
 
 ## Supported setup paths

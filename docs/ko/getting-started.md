@@ -1,5 +1,7 @@
 # FlowScope 설치·첫 실행 가이드
 
+이 가이드는 D-126 제거 소스 기준입니다. 같은 beta.44 이름의 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오. MCP/LLM 설치 절차는 현재 제공하지 않습니다.
+
 현재 소스의 실행 경로는 HUMAN·ZAP이다. 기존 LLM Judge·Explorer 하네스·MCP는 제거됐고, 새 하네스와 FlowScope용 MCP는 아직 없다(D-126, 미출시). H/S/L 관측 비교와 과거 프로젝트는 보존한다. Docker는 ZAP 준비를 위한 선택 경로다. 제거 변경은 아직 원격 Release에 게시하지 않았으므로 이전 beta.44 JAR 대신 이 작업 소스에서 빌드한 JAR을 사용해야 한다.
 
 ## 1. 지원 경로와 검증 범위

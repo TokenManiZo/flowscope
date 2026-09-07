@@ -82,6 +82,8 @@ Build and test from the repository root with `mvn clean verify`.
 
 ## Change records and documentation
 
+Read `docs/ko/HANDOFF.md` for current progress and `docs/ko/documentation-status.md` for the document inventory before starting work. Update current status when work starts, a material result or blocker appears, verification finishes, and work is handed off; do not wait until the final response. Separate implementation, automated verification, actual-runtime verification, and unstarted work. Keep historical results attached to their original artifact. Review every document for relevance, but do not rewrite unaffected history just to change its date.
+
 Every code or behavior change must update `docs/ko/development-log.md` in the same work unit with:
 
 - what was developed or fixed;

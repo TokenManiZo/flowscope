@@ -1,6 +1,6 @@
 # LLM Judge·MCP 제거 상태와 후속 계획
 
-기준: `c006679` → ZAP 분리 `5a47af9` → 2026-09-07 D-126 제거 작업. 미출시 소스 변경이며 이전 beta.44 배포물과 구분한다.
+기준: `c006679` → ZAP 분리 `5a47af9` → D-126 제거 `57d1bb4` → 빈 디렉터리 정리 `962edfe`. 미출시 소스 변경이며 이전 beta.44 배포물과 구분한다.
 
 ## 현재 목표
 
@@ -45,5 +45,7 @@ HUMAN·SCANNER·LLM이라는 source, 기존 Evidence, endpoint·parameter 분석
 자동 검증 결과·산출물 식별값은 [beta-validation](beta-validation.md)의 D-126 항목에 기록한다. `RetiredHarnessTest`는 삭제 전 존재 검사 실패(RED), 삭제 후 clean classpath 부재를 검사하며 최종 JAR도 별도로 검사한다. Web 회귀는 폐기 API 404·과거 기록 read-only·마스킹·날짜·현재 후보 분리를 확인한다. JSON/SQLite 왕복, HUMAN 완료·계정·scope·Request Lab과 독립 ZAP 캠페인 회귀를 유지한다.
 
 ZAP 테스트는 로컬 가짜 API와 합성 Evidence로 **FlowScope의 호출·상태 처리**를 확인한다. 실제 ZAP Firefox/확장, capability 전달, 로그인 상태, OS별 동작을 증명하지 않는다. 취소 회귀는 scan ID가 등록되어 status polling 중인 crawler를 대상으로 한다. start API 반환과 취소가 겹치는 모든 타이밍을 검증한 것이 아니며 Client-only 전환 전에 실제 시작/취소 경합도 확인해야 한다.
+
+문서 전수 대조에서 별도 분석 입력 연결 문제가 확인됐다. 발견용 MIME 4MiB capture와 4,194,304자 JS parser 사이에서 host record가 8,192자로 재절단하므로 live 대형 번들 전체 분석은 미해결이다. 상세 근거와 회귀 미착수 상태는 [HANDOFF](HANDOFF.md)에 기록하며, 이 제거 작업이 해결한 것으로 표시하지 않는다.
 
 다음 gate는 새 JAR의 실제 Burp load/unload, HUMAN pass·로그인 캡처, ZAP 비로그인/로그인 lane·진행/취소, 기존 프로젝트 재열기다. 이 변경만으로 실물 gate, 성능·발견률·오탐률 개선을 완료했다고 주장하지 않는다.

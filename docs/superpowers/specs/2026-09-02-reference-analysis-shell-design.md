@@ -1,5 +1,7 @@
 # FlowScope Reference Analysis Shell Design
 
+> **Historical UI specification (2026-09-02).** D-126 supersedes the old LLM Explorer status/control and endpoint-preservation requirements. Shared panes and Evidence boundaries remain documented in the [current UI rationale](../../ko/ui-product-rationale.md); implementation and runtime gates are tracked in [HANDOFF](../../ko/HANDOFF.md). This approval is not a new instruction to rebuild the retired harness.
+
 Date: 2026-09-02
 Status: approved in chat for specification
 Branch: `codex/react-shadcn-dashboard`

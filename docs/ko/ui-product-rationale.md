@@ -49,7 +49,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | 자동 구조 프로파일 | 서비스마다 다른 객체 필드명을 어떻게 다루는가? | 명시 `*Id`는 기존처럼 보존하고, `*No/*Number/*Seq/*Key/*Ref/*Uuid/*Guid/*Vin`은 같은 위치에서 복수 값이 관측될 때만 범주형 근거로 보강한다. | target별 사전, 이름 하나만의 확정, `pageNo/sortKey/apiKey` 객체화를 하지 않는다. |
 | 동일 사용자로 병합 | 재로그인으로 바뀐 세션이 같은 계정인가? | 서비스 경계 안에서 사용자가 확인한 경우에만 새 fingerprint를 기존 계정과 연결한다. | 회전 토큰을 비슷하다는 이유로 자동 병합하지 않는다. 다른 사용자를 합치면 IDOR 판정이 뒤집힌다. |
 | 3-way 갭 | 세 주체가 무엇을 놓쳤거나 다르게 판단했는가? | 미교차·일부만 발견·불일치를 분리하고 클릭하면 해당 위치로 이동한다. | 갭 자체를 취약점으로 확정하지 않는다. |
-| 미요청 route | 응답이나 Site Map에는 있지만 아직 실제 요청하지 않은 경로가 있는가? | source edge 없는 중립색·점선 테두리 노드와 별도 수량·필터로 관측 그래프 옆에 표시하고 provenance의 type·Evidence·source·run·adapter 대응과 범주형 정렬 이유를 연다. | HUMAN/ZAP·HUMAN Request Lab의 관측 요청, `UNCROSSED`, coverage, verdict, finding으로 계산하지 않는다. |
+| 미요청 route | 응답이나 Site Map에는 있지만 아직 실제 요청하지 않은 경로가 있는가? | source edge 없는 중립색·점선 테두리 노드와 별도 수량·필터로 관측 그래프 옆에 표시하고 provenance의 type·Evidence·source·run·adapter 대응과 범주형 정렬 이유를 연다. | 실제 H/S/L 요청 관측이나 `UNCROSSED`, coverage, verdict, finding으로 계산하지 않는다. |
 | 소스 뷰 | 발견 주체의 차이를 보고 싶은가? | 색·선형·H/S/L이 다른 평행 source overlay를 우선한다. 일반 버튼·포커스·선택 상태는 별도 중립 accent를 사용해 source 색으로 오인되지 않게 한다. | 인가 결과와 발견 주체를 한 색에 겹쳐 읽기 어렵게 만들지 않는다. |
 | 계층 그래프 | 사이트 전체와 한 객체의 Evidence를 한 화면에 모두 그려야 하는가? | 사이트에서는 Target→API Group, 그룹에서는 Identity→API, API 선택 뒤에만 Identity→API→Object를 표시한다. Object는 family로 먼저 접고 눌렀을 때 인스턴스를 펼친다. | 접기 때문에 원 CoverageCell이나 Evidence를 합치거나 삭제하지 않고, path group을 업무 의미나 취약점으로 해석하지 않는다. |
 | 긴 경로 라벨 | API가 중간 생략돼 서로 다른 경로를 구분할 수 없는가? | 원 operation 문자열을 모두 유지하고 노드 안에서 여러 줄로 나누며 내용에 맞춰 높이를 늘린다. | 그래프 공간을 아끼기 위해 경로 중간을 `…`로 지워 핵심 세그먼트를 숨기지 않는다. |
@@ -63,7 +63,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | 흐름 순서 | 응답 값이 뒤 요청에 사용됐는가? | 실제로 재사용된 ID/token 값의 시간순 의존성만 연결하고 메인 접근 그래프와 분리한다. | 단순히 시간상 앞뒤라는 이유로 관계를 만들거나 접근선 위에 보조 의존선을 겹쳐 출처를 혼동시키지 않는다. |
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 현재 규칙 후보와 사람 검토를 Evidence에 연결하고, 과거 LLM 기록은 별도 읽기 전용으로 분리한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |
 | 파싱 결과 | 어떤 요청이 어떤 좌표와 분류로 정규화됐는가? | source/identity/method/operation/resource/status에 class/disposition/repeat/Evidence ID를 함께 두고 행 선택을 operation 상세로 연결한다. 반복 접기는 표시만 줄이며 모든 Evidence ID는 상세에서 유지한다. | raw 인증정보를 표시하거나 숨긴 행을 저장소에서 삭제하지 않는다. |
-| Request/Response 상세 | 판정의 실제 근거가 무엇인가? | 선택 API에서만 마스킹 전문을 지연 로드해 Burp 메시지와 판정을 연결하고, 전문 보존 여부·원 byte 수·SHA-256 또는 binary/메시지별/압축 총량 metadata-only 이유를 표시한다. 수집 통계에는 전문 미보존 메시지 수도 공개한다. | preview 8KiB를 완전한 전문이라고 부르거나 2만 건 전문을 polling snapshot마다 보내지 않는다. |
+| Request/Response 상세 | 판정의 실제 근거가 무엇인가? | 선택 API에서만 마스킹 전문을 지연 로드해 Burp 메시지와 판정을 연결하고, 전문 보존 여부·원 byte 수·SHA-256 또는 binary/메시지별/압축 총량 metadata-only 이유를 표시한다. 수집 통계에는 전문 미보존 메시지 수도 공개한다. | preview 8,192자를 완전한 전문이라고 부르거나 2만 건 전문을 polling snapshot마다 보내지 않는다. |
 | 요청 실험실 | 진단자가 값·세션을 바꾸고 응답을 바로 비교할 수 있는가? | 특정 Evidence에서만 전체 화면 편집기를 열고 `원문 그대로/비로그인/등록 계정`을 명시적으로 선택한다. Evidence generation이 늦은 응답을 폐기하고 전송 중 draft를 잠그며, 서버 operation ID 멱등성이 동일 상태 변경을 한 번만 실행한다. 응답을 받지 못한 동일 draft 재시도는 같은 ID를 사용한다. 대상 서비스·exact scope·TLS·redirect 경계는 서버가 강제하고 결과는 HUMAN `VALIDATION`으로 분리한다. 원문은 bounded Burp 메모리와 현재 탭에만 존재하며 10건 화면 이력은 새로고침 시 사라진다. | raw를 프로젝트·MCP·로그·localStorage·멱등 cache에 저장하거나, 반복 검증 요청을 discovery coverage로 부풀리거나, status 하나로 취약점을 확정하지 않는다. |
 | 계정·세션 | ZAP과 HUMAN Request Lab이 어느 테스트 계정으로 실행되는가? | secret-free 계정과 메모리 전용 broker 상태를 분리해 보여 준다. | 비밀번호·raw cookie/token을 프로젝트나 LLM에 전달하지 않는다. |
 
@@ -77,7 +77,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 
 ### 일부만 발견(PARTIAL_DISCOVERY)
 
-동일 cell을 HUMAN/ZAP·HUMAN Request Lab 중 일부 source만 관측했다. 이는 특정 도구의 고유 발견 또는 다른 도구의 탐색 누락을 보여 주지만, 그 자체가 취약점은 아니다.
+동일 cell을 HUMAN·SCANNER·LLM 중 활성 비교 source 일부만 관측했다. Request Lab은 HUMAN의 VALIDATION phase이지 별도 source나 discovery 관측이 아니다. 이는 특정 도구의 고유 발견 또는 다른 도구의 탐색 누락을 보여 주지만, 그 자체가 취약점은 아니다.
 
 ### 불일치(CONFLICT)
 
@@ -145,7 +145,7 @@ Traditional Spider
 
 ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 트래픽을 만들었다는 충분조건이 아니다. 실제 crAPI 실행에서 Firefox binary 부재로 Client task가 내부 실패했지만 status는 완료가 됐고 FlowScope rendered count는 0이었다. 또한 Client와 AJAX가 모든 앱에서 같은 route 집합을 만든다는 근거가 없으므로 기본 기준선은 둘 다 실행한다. 둘 중 하나가 실패하거나 0건이면 수집된 Traditional·다른 rendered Evidence와 Alert를 버리지 않으면서 `COMPLETED_WITH_WARNINGS`와 원인을 표시한다. 이 상태는 깨끗한 rendered-browser 기준선 완료가 아니다.
 
-Active Scan은 상태를 바꿀 수 있고 트래픽이 크므로 기본 baseline에서 분리하며 exact scope와 별도 Burp 승인을 요구한다. “ZAP 기능을 적게 쓴다”가 아니라 안전한 자동 기준선과 고위험 능동 스캔의 승인 경계를 분리한 것이다.
+현재 FlowScope에는 Active Scan 실행 API·버튼이 없다. D-126에서 MCP 전용 진입점과 adapter를 삭제했다. 별도 승인하면 현재 제품에서 실행할 수 있다고 안내하지 않는다. API 정의 import의 Burp 승인과 HUMAN Request Lab 명시적 전송은 유지하며, 이를 Active Scan과 혼동하지 않는다.
 
 비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 fresh ZAP session을 만든다. 화면은 whs_flow 작업면의 카드·간격 문법을 유지한 신원별 lane card로 현재 단계, 전체 수집, Traditional 수집, Client/AJAX rendered 수집, Alert, 주의·실패 원인을 분리한다. 한 문장 상태는 실패한 신원과 실패 단계를 찾기 어려워 기각했다. 계정 레인은 broker 자격증명으로 완전 교체하고, 비로그인 레인은 fresh session 안에서 새로 생긴 익명 Cookie/CSRF를 유지해 상태형 공개 흐름을 끊지 않는다.
 
@@ -191,7 +191,7 @@ FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 
 
 ### “Burp나 ZAP과 무엇이 다른가요?”
 
-Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 차별점은 HUMAN/ZAP·HUMAN Request Lab의 실제 트래픽과 대상 산출물의 선언을 같은 Endpoint/Parameter 좌표에 정렬하고, 선택 API에서만 Identity/Object 인가 근거와 Evidence를 연결한다는 점이다.
+Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 비교 기능은 HUMAN·SCANNER·LLM source의 실제 관측과 대상 산출물의 선언을 같은 Endpoint/Parameter 좌표에 정렬하고, 선택 API에서만 Identity/Object 인가 근거와 Evidence를 연결한다는 점이다.
 
 ### “새 Explorer에서 외부 정보는 어떻게 다루나요?”
 
@@ -205,7 +205,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 - OpenAPI·HTML form·JavaScript AST call-site에서 직접 확인한 endpoint·parameter 선언과 실제 관측을 분리해 표시한다.
 - exact scope, provenance, 실행 신뢰도와 Evidence ID를 보존한다.
 - 기존 Judge·MCP 실행 기능을 제거했고, H/S/L 데이터 의미와 사람 검토를 보존한다.
-- 서버 조건을 통과한 재현·대조 Evidence만 최종 verdict에 사용한다.
+- 현재 규칙 후보와 사람 검토를 원 Evidence에 연결한다. 자동 최종 Judge 판정은 제공하지 않는다.
 - 현재 자동 회귀와 standalone UI 검증 결과는 `beta-validation.md`에 기록돼 있다.
 
 ### 아직 말하면 안 되는 것
@@ -217,9 +217,9 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 - 화면의 0 또는 관측 조합 수가 전체 공격면 대비 완료율이다.
 - JavaScript AST call-site 추출이 동적 번들·lazy chunk·서버 전용 endpoint 전체를 복원한다.
 
-## 12. 2026-08-26 현재 확인된 UI·배포 부채
+## 12. 과거 UI·배포 부채와 수정 기록
 
-다음은 설계 의도가 아니라 실제 사용자 검증으로 발견된 미완료 항목이다.
+아래는 2026-08-26 이후 당시 버전의 기록이다. 이 절의 “현재”·“해결”·테스트 수·CLI 사용법은 현행 지시가 아니다. D-126이 Explorer/Judge·MCP를 폐기했으며 현재 완료·남은 gate는 [HANDOFF](HANDOFF.md)와 [검증 기록](beta-validation.md)의 최신 절을 따른다.
 
 1. **빈 데이터 화면의 정보 과다 — 해결:** 관측 0건이면 분석 패널을 숨기고 `scope → 로그인/HUMAN → ZAP → Explorer/Judge` 네 단계와 빠른 시작·샘플 조작을 먼저 보여 준다. Evidence가 생기면 기존 분석 작업면으로 전환한다.
 2. **ADMIN 예시의 오해 — 해결:** 빈 상태에 BOLA는 서로 다른 최소 권한 계정 두 개를 권장하고 ADMIN은 BFLA 역할 비교가 필요할 때만 추가한다는 경계를 명시했다.
@@ -246,7 +246,7 @@ Vite asset은 상대 경로로 생성한다. 이는 Burp가 `/`와 `/app/`에서
 
 ## 14. React 대시보드 정보 계층
 
-React 대시보드는 먼저 **현재 route와 exact scope**, 이어서 HUMAN/ZAP·HUMAN Request Lab 상태와 Evidence disposition, 마지막으로 data가 있을 때만 count·source·gap/finding·다음 행동을 배치한다. 수량은 서버가 준 Evidence 분류별 절대값이며 전체 공격면의 completion rate가 아니다. source는 색에 기대지 않고 `H · HUMAN`, `S · ZAP`, `L · LLM` 문자와 관측/대기 상태를 같이 쓴다.
+React 대시보드는 먼저 **현재 route와 exact scope**, 이어서 HUMAN/ZAP 실행 상태와 저장된 LLM 관측·Evidence disposition, 마지막으로 data가 있을 때만 count·source·gap/finding·다음 행동을 배치한다. 수량은 서버가 준 Evidence 분류별 절대값이며 전체 공격면의 completion rate가 아니다. source는 색에 기대지 않고 `H · HUMAN`, `S · ZAP`, `L · LLM` 문자와 관측/대기 상태를 같이 쓴다.
 
 관측 0건에서는 분석 요약을 숨기고 `첫 점검을 시작하세요`, 빠른 시작, 샘플 진입만 남긴다. 샘플 경고는 실제 실행 결과처럼 보이는 것을 막으며, destructive clear는 선택 전 AlertDialog로 멈춘다. 아홉 route는 안전한 hash allowlist이고, primary strip과 portal 분석 메뉴가 Korean navigation label을 유지하므로 좁은 화면에서도 route를 잘라내지 않는다.
 
@@ -260,9 +260,9 @@ D-125는 ZAP 소유권을 추출했고, D-126은 기존 MCP와 LLM 실행기를 
 
 `점검 시작`은 scope → HUMAN → ZAP → Evidence 검토의 한 단계만 자동 추천한다. 사용자가 다른 탭을 살펴보는 중 polling이 화면을 빼앗지 않도록 수동 선택을 유지하고, `현재 단계로`를 눌렀을 때만 실제 server state의 다음 단계로 돌아간다. 1/4~4/4는 순서이지 완료율이므로 progress percentage로 그리지 않는다.
 
-`재사용할 등록 계정`은 observed identity와 다르다. React 선택지는 현재 target에 대응하고 status가 정확히 `ACTIVE`인 managed session으로 한정하며, 관측 fingerprint나 historical/inactive session, credential material을 제어면에 노출하지 않는다. 이 제약은 목록을 적게 보이게 하지만 임의의 관측 identity가 scanner/LLM 자격증명처럼 보이는 오해를 막는다.
+`재사용할 등록 계정`은 observed identity와 다르다. React 선택지는 현재 target에 대응하고 status가 정확히 `ACTIVE`인 managed session으로 한정하며, 관측 fingerprint나 historical/inactive session, credential material을 제어면에 노출하지 않는다. 이 제약은 목록을 적게 보이게 하지만 임의의 관측 identity가 재사용 가능한 ZAP 계정 자격증명처럼 보이는 오해를 막는다.
 
-실행 상태는 color만으로 정상·경고·실패를 말하지 않는다. `RUNNING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`, `FAILED`, `CANCELLED`, `NOT_STARTED`, `UNAVAILABLE`와 신원별 lane count를 문자로 남기고, poll이 실패해도 마지막 성공 상태를 0이나 실패로 덮지 않는다. output tail은 plain text의 bounded accordion으로만 보여 주며 HTML로 해석하지 않는다. ZAP 능동 스캔은 이 작업면에 넣지 않고 별도 Burp 승인 gate로 남긴다.
+실행 상태는 color만으로 정상·경고·실패를 말하지 않는다. `RUNNING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`, `FAILED`, `CANCELLED`, `NOT_STARTED`, `UNAVAILABLE`와 신원별 lane count를 문자로 남기고, poll이 실패해도 마지막 성공 상태를 0이나 실패로 덮지 않는다. output tail은 plain text의 bounded accordion으로만 보여 주며 HTML로 해석하지 않는다. 현재 ZAP Active Scan 진입점은 없으며 별도 승인만으로 활성화되지 않는다.
 
 LLM 실행 탭·작업 피드는 제거됐다. 실행 상태에는 HUMAN·ZAP와 별도의 저장된 통제 요청 기록만 남는다.
 
@@ -314,4 +314,4 @@ Repeater는 검토 가능한 **미전송 초안**을 여는 handoff이다. 이 �
 
 desktop 중앙 영역은 긴 운영 화면의 명시적 scroll owner이고 Graph는 그 영역의 남은 높이를 canvas로 사용한다. Graph zoom은 node의 실제 렌더 폭과 lane 폭에서 안전 상한을 계산한다. 지원 상한에서도 node 전체가 자기 lane 안에 남으며, zoom·fit·resize·lock·preference 변경은 semantic inspector 선택뿐 아니라 Cytoscape의 실제 selected element와 테두리도 유지한다.
 
-Graph inspector는 빈 안내를 사용자가 직접 열 수 있지만 선택하면 자동으로 열리고 닫으면 선택도 정리된다. Evidence inspector와 Request Lab은 현재 snapshot에 실제로 존재하는 event에만 연결된다. snapshot 교체 직후 effect를 기다리는 한 frame 동안에도 이전 ID나 이전 Request Lab fetch가 살아나지 않게 현재 membership을 render에서 동기적으로 확인한다. standalone Chromium은 이 UI 계약을 검증하지만 실제 Burp/target/HUMAN/ZAP·HUMAN Request Lab 및 active Request Lab traffic은 여전히 별도 runtime gate다.
+Graph inspector는 빈 안내를 사용자가 직접 열 수 있지만 선택하면 자동으로 열리고 닫으면 선택도 정리된다. Evidence inspector와 Request Lab은 현재 snapshot에 실제로 존재하는 event에만 연결된다. snapshot 교체 직후 effect를 기다리는 한 frame 동안에도 이전 ID나 이전 Request Lab fetch가 살아나지 않게 현재 membership을 render에서 동기적으로 확인한다. standalone Chromium은 이 UI 계약을 검증하지만 실제 Burp/target/HUMAN/ZAP 및 Request Lab 전송은 여전히 별도 runtime gate다.

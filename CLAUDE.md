@@ -72,7 +72,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **현재 단계: 제품 구현·하드닝.** 사용자가 제품 완성을 승인했다. 기능 변경은 테스트로 고정하고, 아키텍처 결정은 결정로그에 append한 뒤 `mvn clean verify`로 검증한다.
 
-런타임 보안 진단용 Claude 지침은 `agent-workspace/CLAUDE.md`에 별도로 둔다. 이 파일은 제품 개발 지침이며 진단 프롬프트가 아니다.
+이 파일은 제품 개발 지침이며 진단 프롬프트가 아니다. 기존 Judge·Explorer 하네스·MCP와 `agent-workspace`는 D-126에서 삭제했다. 새 Explorer 하네스와 FlowScope Evidence용 MCP는 별도 설계 대기이며, 현재 구현하거나 옛 실행기를 복원하지 않는다. HUMAN·ZAP 실행과 H/S/L 관측 데이터·과거 LLM 읽기 전용 이력은 보존한다.
+
+새 Claude 작업자는 코드를 수정하기 전에 반드시 `docs/ko/HANDOFF.md`의 **현재 인수인계 상태**, **미해결 결함**, **실환경 gate**, **제품 결정 보류 사항**을 끝까지 읽는다. 과거 대화 요약이나 오래된 버전 문구보다 현재 코드·테스트·`beta-validation.md`를 우선한다.
 
 ## 먼저 읽을 것
 - `docs/ko/architecture.md` — 데이터 모델·파이프라인·모듈 계약 (어떻게)
@@ -101,12 +103,14 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - ❌ 커버리지 퍼센트 (블랙박스, 분모 불가지) (D-002) · ❌ 미교차를 전체 조합 공간에서 산출 (D-003)
 
 ## 구축 순서 (D-011, D-049, D-053~D-055)
-L0 그래프(수집+정규화+시각화, 오라클 불필요) → L1 IDOR 최소(소유자+타인접근) → L2 풀 비교(미교차·불일치·5-state+BFLA). 규칙엔진과 서버 Evidence gate가 권위다. LLM은 독립 Explorer와 최종 Judge를 수행할 수 있지만 통제되지 않은 트래픽이나 모델 서술만으로 판정을 확정할 수 없다.
+L0 그래프(수집+정규화+시각화, 오라클 불필요) → L1 IDOR 최소(소유자+타인접근) → L2 풀 비교(미교차·불일치·5-state+BFLA)는 초기 계층 설계다. 현재 기본 화면은 Endpoint·Parameter Surface Delta이며 인가 그래프는 상세층이다. 현재 규칙 후보와 사람 검토를 Evidence에 연결하고, 과거 LLM assessment/validation은 읽기 전용 이력으로 분리한다. 자동 Judge와 최종 verdict 제출 gate는 제거됐다.
 
 ## 작업 방식
 - **결정로그 디스코플린**: 선택할 때 "더 나은 방식 있나?"를 묻고, 있으면 교체·없으면 **기각 이유를 결정로그에 기록**. 리뷰 지적도 코드에서 검증 후 반영.
-- **현재는 beta.32 사전 벤치마크 단계** — 자동 회귀와 재현 JAR은 통과했지만, 새 JAR의 실제 Burp 3-way/Judge 저장·재열기 gate와 사용자 검토 전에는 blind benchmark를 시작하지 않는다. 알려진 정답·풀이를 미리 보지 않으며, 확정 안 된 것은 결정로그의 열린 질문이나 검증 문서의 미검증 항목으로 남기고 추측으로 메우지 않는다.
+- **현재는 beta.44 기반 D-126 제거 후 보존 기능 검증 단계(미출시)** — 상태의 정본은 `docs/ko/HANDOFF.md`다. 새 JAR의 실제 Burp/HUMAN/ZAP capability·계정 격리·Request Lab·저장/재열기는 미검증이며, 제거한 Explorer/Judge 실행을 다음 gate로 안내하지 않는다. 알려진 정답·풀이를 미리 보지 않으며, 자동 회귀를 실물 성공이나 독립 benchmark 효과로 확대하지 않는다.
 
 ## 변경 기록과 문서 동기화
+
+작업 시작, 중간 결과·차단 발견, 검증 종료, 인계 때 상태가 달라지면 `docs/ko/HANDOFF.md`와 해당 계획·개발 기록을 같은 작업 단위에서 갱신한다. 문서 전수 목록과 적용 범위는 `docs/ko/documentation-status.md`를 따른다. 구현 완료·자동 회귀 통과·실환경 통과·미착수를 구분하고, 과거 계획의 명령·테스트 수·버전 문구를 현행으로 재사용하지 않는다.
 
 모든 코드·동작 변경은 같은 작업 단위에서 `docs/ko/development-log.md`에 개발/수정 내용, 이유, 영향 파일, 회귀·최종 검증, 남은 한계를 기록한다. 사용자 동작은 `README.md`, 현재 구조는 `docs/ko/architecture.md`, 설계 선택·기각 이유는 `docs/ko/decisions.md`, 화면·발표 논리는 `docs/ko/ui-product-rationale.md`, 릴리스 변경은 `CHANGELOG.md`, 실제 수행한 검증만 `docs/ko/beta-validation.md`, 단계 변화는 `docs/ko/product-development-plan.md`에 함께 반영한다. 관련 없는 역사 문서를 형식적으로 고치지 말고, 계획·추정·이전 산출물의 결과를 현재 검증처럼 기록하지 않는다. Git을 사용할 수 있으면 구현·회귀 테스트·관련 문서를 하나의 기능 단위 커밋에 포함한다.

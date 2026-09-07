@@ -1,5 +1,7 @@
 # **AI-API 플로우 취약점 기능명세서**
 
+> **2026-09-07 D-126 우선:** 아래 원 요구와 beta.38 주석의 MCP 통제 executor·Explorer 브라우저·Judge lock/최종 제출은 폐기된 실행 설계다. 원본 요구를 삭제하지 않되 현행 설치·작업 지시로 사용하지 않는다. 현재는 HUMAN·ZAP 실행, H/S/L 관측 비교, 규칙 후보·사람 검토와 과거 LLM 읽기 전용 이력이다. 새 하네스·제품 MCP는 미구현이며 [현재 인계](../HANDOFF.md)·[아키텍처](../architecture.md)가 우선한다.
+
 > 이 문서는 F-01~F-24의 원본 기능 요구와 참조 화면을 보존한다. 현재 제품 행동과 신뢰 경계의 정본은 루트 `README.md`, `docs/ko/architecture.md`, `docs/ko/decisions.md`다.
 
 > **beta.38 구현 주석:** LLM의 권위 있는 Evidence 경로는 전용 Proxy 포트가 아니라 FlowScope MCP 통제 executor다. 설치된 Chrome/Chromium/Edge의 임시 CDP worker는 8082 listener와 독립적으로 DOM·링크·폼·SPA network를 exact-scope discovery hint로 찾는다. runtime route는 `BROWSER_RUNTIME/evidence_backed=false` frontier이며 executor 재현 전 coverage·lane 완료·Judge lock을 만들지 않는다. Explorer 계정은 run 동안 고정하고 실제 POST/PUT/PATCH/DELETE가 전송되기 직전에 Burp 승인을 받는다. 아래 원 요구의 “포트 기반 LLM 수집” 문구는 이 구현 주석과 함께 읽는다.

@@ -1,5 +1,31 @@
 # FlowScope 개발 기록
 
+## 2026-09-07 · D-127 문서 전수 정합성 및 현재 진행상황 분리
+
+### 변경·필요성·기각안
+
+- 기존 추적 Markdown 33개와 새 인계 보존본·문서 전수 목록 2개를 대상으로 현재 계약·진행·검증·역사 지위를 대조했다. 현재 HANDOFF를 다시 쓰고 이전 기준선 이하 본문은 `handoff-2026-09-04.md`로 보존했다. 문서별 처리와 범위는 [documentation-status](documentation-status.md)에 기록한다.
+- 한·영 README·설치·기여·보안·변경 이력, 한국어 설계·Surface·제품 계획·개요·UI 근거/동등성·제거 계획·검증/결정 기록을 맞췄다. 삭제된 Judge/MCP/closed-world 실행·최종 verdict·Active Scan 승인 실행 안내를 정정했다. H/S/L source와 HUMAN Request Lab의 VALIDATION phase를 구분했다.
+- AGENTS/CLAUDE/기여 지침에 작업 시작·중간 결과/차단·검증·인계 시 상태를 기록하는 규칙을 넣었다. CLAUDE의 기존 사용자 인계 문단은 유지했고 beta.39 실행 안내는 현행 D-126으로 정정했다. 비공개 멘토 보고서는 수정·커밋 대상이 아니다.
+- 연구·제안·원 명세·superpowers UI 계획/설계는 관련된 폐기 계약을 상단에서 명시하고 본문을 보존했다. 옛 모든 버전·테스트 수를 최신 값으로 일괄 치환하는 대안은 검증 기록을 왜곡하므로 기각했다. 현재 상태 전체를 각 문서에 복제하지 않고 HANDOFF로 모았다.
+
+### 코드 대조에서 드러난 것
+
+- JS parser 상한은 4,194,304자이며 문서의 1,048,576자는 낡은 값이었다. 그러나 `BoundedHttpCapture.previewLimitFor` → `FlowScopeExtension.recordFrom` → `RequestRecord.responseBodyForAnalysis` → route/Surface 경로에서 보존 상한 초과 응답은 `body/respText` 8,192자 재절단 때문에 전체 분석문을 잃는다. helper/parser 단위 성공을 live 전 구간 완료로 설명하지 않도록 정정했다. **코드 경로 확인이며 새 실패 테스트·수정·실환경 재현은 이번에 하지 않았다.**
+- DataFlow는 최근 producer의 exact-token index를 사용하며 옛 substring/모든 쌍 비교 설명은 맞지 않았다. ZAP capability는 전체 scope+target union이고 Alert 20,000개 상한은 캠페인 전체, Passive 정체는 queue 감소 기준임을 현행 소스와 대조했다. 한국어 기여 안내의 JDK 21 이상은 빌드 Enforcer와 충돌해 JDK 21 정확히로 수정했다.
+- 이전 인계의 기타 세션·신원·병합·프로젝트 교체·XML/IPv6 결함은 이번에 일괄 재현하지 않았으므로 재검증 대기로 승계했다. 해결/현존을 자동 판정하지 않았다.
+
+### 이번에 실제 수행한 검사
+
+- 최종 점검: 관리 Markdown 35개가 전수 목록과 일치하고 로컬 파일/디렉터리 링크 217개가 모두 존재한다. 역사 인계의 이전 기준선 이하 본문은 이동 전과 문자열 동일하며, 기존 사용자 CLAUDE 인계 문단도 보존했다. `git diff --check` 통과, src/frontend/pom/scripts/infra 변경 0. 링크 검사는 로컬 경로 존재 검사이며 외부 URL 응답이나 모든 heading anchor·코드 주장의 실증 검사는 아니다.
+- 기존 `target/flowscope-1.2.0-beta.44.jar` SHA-256 재확인: `acfeb7c745f69040239eca77f0933e76d3588338e18683979b050d44498bd981`, D-126 기록과 일치.
+- 이번에는 `mvn clean verify`, React/브라우저 테스트, Burp/ZAP 실제 실행, 대상 요청, 외부 문헌 재조사, 원격 조회·push를 하지 않았다. 이전 Java 335 / React 238 / packaged E2E 8 결과를 이번 문서 검증으로 복제하지 않았다.
+
+### 남은 gate
+
+큰 발견용 응답의 전달 회귀 작성·수정, 새 JAR의 실제 Burp/HUMAN/로그인·ZAP capability/복수 계정/취소·Request Lab·저장/재열기·unload, Windows 운영 검증이 남아 있다. Client-only와 새 Explorer/제품 MCP는 미착수다. 코드·실환경 검증 없이 문서 정리를 제품 완료로 보고하지 않는다.
+
+
 ## 2026-09-07 · MCP 제거 후 빈 디렉터리 정리
 
 - D-126에서 설정·프롬프트 파일을 삭제한 뒤 로컬에 비어 있던 `agent-workspace/.codex`, `agent-workspace/prompts`, `agent-workspace` 디렉터리까지 제거했다. Git은 빈 디렉터리를 추적하지 않으므로 파일 삭제 커밋과 별개로 로컬 정리가 필요했다.
