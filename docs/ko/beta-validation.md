@@ -1,5 +1,25 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 2026-09-07 · 미출시 작업트리 · ZAP 캠페인 분리 gate
+
+`c006679` 기반의 Judge·MCP 제거 **1단계** 산출물이다. Judge·MCP 자체는 남아 있으며 기존 beta.44 릴리스 검증을 대체하지 않는다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS 14.8.3 arm64, Homebrew JDK 21.0.12, Maven 3.9.16 |
+| 전체 빌드 | `mvn clean verify` 2회 모두 성공. 두 번째는 MCP 참조 volatile 게시까지 반영한 최종 입력, 59.595초. 소스가 다른 두 회차이므로 재현 해시 비교가 아님 |
+| Java | 389 tests, failure/error/skip 0 |
+| React | 37 files / 266 tests, typecheck·Vite build 통과 |
+| 분리 회귀 | MCP 없는 완료·진행·합성 Evidence, MCP 포트 bind 실패, 공유 adapter 종료와 캠페인 종료 소유권, scope·독립 Explorer·lock 거부 |
+| 기존 회귀 | HUMAN 캡처 분류·인가 규칙·Session Broker·Web·JSON/SQLite·Explorer/MCP 및 ZAP adapter 테스트 통과 |
+| 이동 검증 | ZAP 메서드 본문 1,427줄은 접근 수식자·lock provider 치환 외 원본과 동일. `jdeps -filter:none`에서 캠페인 및 내부 클래스의 MCP transport 타입 참조 없음 |
+| 산출물 | `target/flowscope-1.2.0-beta.44.jar`, 31,686,464 bytes |
+| SHA-256 | `caad2cc831d58fe3c5d6e4ef880ccf0f6de28676f58be1c554b396c626daba2d` |
+| 검사 범위 | manifest·MR relocation·namespace·라이선스 등 기존 최종 JAR gate 통과. 두 번 빌드 동일성과 교차 머신 재현은 이번에 검사하지 않음 |
+| 미실행 | 실제 Burp 재로드, 실물 ZAP Client 브라우저·capability upstream·로그인 lane·취소, endpoint 발견률 평가 |
+
+FakeZap은 기존 ZAP HTTP 응답을 모사한다. 위 회귀는 오케스트레이션과 데이터 경계를 검증하며 실제 크롤링 성공을 증명하지 않는다.
+
 ## 1.2.0-beta.44 SPA 번들 분석·자산 frontier·익명 계정 gate
 
 | 검증 항목 | 현재 확인 결과 |

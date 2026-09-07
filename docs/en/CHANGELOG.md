@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Judge/MCP removal, step 1
+
+- Extracted ZAP execution, progress, cancellation, and cleanup into a host-owned `ZapCampaign`. Web scanner controls call it directly; MCP port binding is no longer required to construct or use the campaign.
+- Existing MCP ZAP tools delegate to the same campaign. Crawler order, identity/scope/capability guards, status JSON, and project storage remain unchanged. Judge/MCP removal and mandatory Client Spider without AJAX are subsequent steps.
+
 ## 1.2.0-beta.44 — 2026-09-03
 
 - Route discovery now reads large SPA bundles. The retention limit stays at 1 MB while the **analysis text** for JavaScript, JSON, HTML, and XML responses extends to 4 MB; oversized responses are still reported as not fully retained. A measured 1.66 MB bundle kept every path string past the 1 MB mark, so none were visible before.

@@ -1,5 +1,7 @@
 # FlowScope 1.2.0-beta.44
 
+현재 개발 목표는 **LLM Judge와 MCP 제거**다. 첫 단계로 ZAP 실행·상태·취소를 독립 `ZapCampaign`으로 옮겼으며, Burp의 웹 스캐너 제어는 MCP 리스너를 경유하지 않는다. 이 단계에는 기존 Judge·MCP·Explorer가 남아 있고 Client/AJAX 실행 순서도 유지된다. 삭제 범위·후속 순서·검증 조건은 [제거 계획](docs/ko/mcp-judge-removal-plan.md)을 따른다.
+
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 허가된 대상에서 실제로 관측한 API·입력을 같은 좌표에 정렬해, 어느 endpoint와 parameter를 누가 보았고 아직 무엇이 미관측인지 Evidence로 보여 주는 Burp Suite Community 호환 확장입니다. 선언 근거(OpenAPI·HTML form·정적 JavaScript)와 실제 HTTP Evidence를 분리해 비교하고, 선택한 API의 BOLA/IDOR·BFLA 근거는 기존 인가 그래프·매트릭스에서 상세 확인합니다.
 
 ## 제품 목표와 완료 판단

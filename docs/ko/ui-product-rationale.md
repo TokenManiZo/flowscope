@@ -270,6 +270,8 @@ React 대시보드는 먼저 **현재 route와 exact scope**, 이어서 HUMAN/ZA
 
 ## 15. React 점검 시작과 실행 상태의 안전 경계
 
+2026-09-07의 D-125는 스캐너 제어의 내부 소유권만 바꾼다. 웹 시작·조회·취소는 독립 `ZapCampaign`을 호출하므로 MCP 시작 실패와 ZAP 준비 실패를 같은 오류로 안내하지 않는다. 화면 단계·상태 JSON·Judge 조작은 이번 단계에서 유지하며, Judge 제거와 Explorer 전환 대기 표시는 별도 후속 변경이다.
+
 `점검 시작`은 scope → HUMAN → ZAP → LLM·Judge의 한 단계만 자동 추천한다. 사용자가 다른 탭을 살펴보는 중 polling이 화면을 빼앗지 않도록 수동 선택을 유지하고, `현재 단계로`를 눌렀을 때만 실제 server state의 다음 단계로 돌아간다. 1/4~4/4는 순서이지 완료율이므로 progress percentage로 그리지 않는다.
 
 `재사용할 등록 계정`은 observed identity와 다르다. React 선택지는 현재 target에 대응하고 status가 정확히 `ACTIVE`인 managed session으로 한정하며, 관측 fingerprint나 historical/inactive session, credential material을 제어면에 노출하지 않는다. 이 제약은 목록을 적게 보이게 하지만 임의의 관측 identity가 scanner/LLM 자격증명처럼 보이는 오해를 막는다.

@@ -2,6 +2,8 @@
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
+**2026-09-07 이행 상태:** LLM Judge·MCP 제거의 첫 단계로 ZAP 오케스트레이션을 `integration/ZapCampaign`에 분리했다(D-125). 현재 문서의 Judge·MCP 설명은 아직 남아 있는 실행 계약이며, 목표 구조와 삭제 순서는 [mcp-judge-removal-plan.md](mcp-judge-removal-plan.md)에 명시한다. 새 Explorer 하네스 구현이나 MCP 제거가 완료된 상태는 아니다.
+
 사람·스캐너·LLM이 선언·관측한 API와 입력을 같은 범용 좌표에 정렬해 탐색 차이를 먼저 보여 주고, 선택한 API의 BOLA/IDOR·BFLA 후보를 기존 신원 인지 그래프와 Evidence로 검증하는 Burp Suite 확장이다. `docs/ko/specification/functional-spec.md`가 WHAT, 이 문서가 HOW, `decisions.md`가 WHY의 정본이다. 화면별 사용자 질문과 발표 논리는 `ui-product-rationale.md`가 정본이다.
 
 ## 1. 제품 목표와 신뢰 경계
@@ -25,8 +27,10 @@ Web 실행 버튼 ─▶ 새 Codex/Claude CLI ─▶ MCP ─┬─▶ isolated C
                     ├─▶ independent LLM Explorer └─▶ controlled target executor
                     │                                  ├─ HTTP 응답 ─▶ Evidence
                     │                                  └─ 응답 전 실패 ─▶ RunExecutionLedger
-                    └─▶ separate final LLM Judge
-                    └─▶ deterministic ZAP baseline     └─▶ validation gate
+                    └─▶ separate final LLM Judge ──▶ validation gate
+
+Web 스캐너 버튼 ─▶ ZapCampaign ─▶ ZapClient ─▶ 로컬 ZAP API
+기존 MCP ZAP 도구 ─────┘  (동일 인스턴스에 위임)
 
 LLM :8082 = optional observed fallback; decisive validation에는 사용하지 않음
 ```
@@ -47,6 +51,8 @@ optional Docker
 ```
 
 ZAP 배포 방식은 캠페인 엔진과 분리한다. FlowScope는 loopback의 호환 ZAP API/version과 key 성공 여부만 확인하며 API 응답만으로 Desktop/컨테이너를 추측하지 않는다. Web 빠른 시작은 `범위 → HUMAN → ZAP → LLM·Judge` 네 단계 중 첫 미완료 단계 하나만 열고, 사용자가 상단 단계 버튼을 누른 경우에만 다른 제어면으로 이동한다. ZAP 단계는 연결 전 캠페인을 비활성화하고 Desktop 설정과 Docker Quick Start를 같은 수준의 접힌 선택지로 제공한다. `zap-key.sh`/`zap-key.ps1`은 Desktop 사용자도 owner-only key를 값 출력 없이 준비하게 한다.
+
+`FlowScopeExtension.startZapIntegration()`은 MCP token 로드·포트 bind보다 먼저 ZAP 클라이언트와 캠페인을 만든다. 웹의 시작·조회·취소는 이 인스턴스를 직접 사용한다. MCP 호환 adapter는 동일 인스턴스에 위임하고 공유 캠페인을 소유하거나 종료하지 않는다. 확장 unload는 캠페인을 별도로 닫으며, 데이터 초기화·교체는 MCP 생성 실패 상태에서도 캠페인 reset을 수행한다. 독립 Explorer 시야 제한과 기존 dataset lock은 아직 유지되며, 후자는 호스트의 boolean callback으로만 전달한다. `ZapCampaign` 자체에는 MCP 타입·리스너·토큰 의존성이 없다.
 
 선택형 `zap-up.sh` 또는 Windows `zap-up.ps1`은 같은 key helper를 사용하고, digest 고정 이미지의 ZAP Network API를 통해 `host.docker.internal:8081` upstream을 설정한 뒤 다시 읽어 검증한다. Linux는 Compose `host-gateway`, Docker Desktop은 공식 `host.docker.internal`을 사용한다. key 값은 container environment가 아니라 Compose file-backed secret으로 read-only mount한다. POSIX는 mode, Windows는 상속 차단·현재 SID 전용 ACL을 helper/doctor가 관리한다. FlowScope는 시스템 속성 key, 환경 key, 지정 key 파일, 기본 key 파일 순으로 읽으며 ZAP API URL 자체는 기존처럼 loopback만 허용한다. 이 편의 계층은 actual scanner capture·rendered crawl·대상 TLS를 완료로 대체하지 않는다(D-086, D-087, D-088).
 
@@ -305,7 +311,8 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 | Rules | `AuthorizationAnalyzer`, `DataFlowAnalyzer`, `EvidenceIds` |
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |
 | Product UI | `frontend/src`, `web/ClasspathWebAssets`, `web/FlowScopeWebServer`, legacy `resources/web/index.html`, `ui/FlowScopeControlTab` |
-| Session/LLM/ZAP | `integration/SessionBroker`, `McpServer`, `ZapClient`, `RunContextRegistry` |
+| Session/LLM | `integration/SessionBroker`, `McpServer`, `LocalLlmRunner`, `core/RunContextRegistry` |
+| ZAP 실행·상태·취소 | `integration/ZapCampaign`(호스트 소유), `ZapClient`(API), `ZapCampaign.State`(캡처·scope·session 계약) |
 | Local setup | `integration/LocalSecretFile`, `LocalZapApiKey`, `infra/zap`, `scripts` |
 | Persistence | `integration/SqliteProjectStore`, JSON codec/import-export `integration/ProjectStore` |
 

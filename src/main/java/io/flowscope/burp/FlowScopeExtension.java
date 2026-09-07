@@ -52,6 +52,7 @@ import io.flowscope.integration.LocalZapApiKey;
 import io.flowscope.integration.LocalLlmRunner;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.ZapClient;
+import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.ControlledBrowserExplorer;
 import io.flowscope.integration.SqliteProjectStore;
@@ -214,7 +215,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicLong compressedPayloadBytes = new AtomicLong();
     private FlowScopeControlTab controlTab;
     private FlowScopeWebServer webServer;
-    private McpServer mcpServer;
+    private volatile McpServer mcpServer;
     private volatile String scannerCapabilityRunId = "";
     private volatile String scannerCapability = "";
     private volatile String scannerCapabilityRejectionRunId = "";
@@ -227,6 +228,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     request.method() + " " + request.url()
                             + (request.bodyPreview().isBlank() ? "" : "\n\nBody preview:\n" + request.bodyPreview())));
     private ZapClient zapClient;
+    private volatile ZapCampaign zapCampaign;
     private final ScheduledExecutorService worker =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "flowscope-rebuild");
@@ -287,6 +289,7 @@ public final class FlowScopeExtension implements BurpExtension {
         // Repeater/Scanner/다른 확장의 트래픽도 수집 (프록시 리스너를 지나지 않는 경우 대비)
         api.http().registerHttpHandler(new ToolHandler());
         api.extension().registerUnloadingHandler(this::shutdown);
+        startZapIntegration();
         startMcp();
         api.logging().logToOutput("FlowScope loaded. 포트 매핑: " + PORT_SOURCE
                 + " (미매핑 포트는 '미상'으로 수집). 변경: "
@@ -856,7 +859,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 publishAnalysis(analysisEpoch, result);
                 if (mcpServer != null) mcpServer.clearAssessments();
                 if (mcpServer != null) mcpServer.clearValidations();
-                if (mcpServer != null) mcpServer.resetWorkflow();
+                resetIntegrationWorkflow();
                 activeProjectDatabase = null;
                 databaseSavedRevision.set(-1);
                 api.logging().logToOutput("FlowScope 샘플 프로젝트 열기: " + loaded.size()
@@ -887,7 +890,7 @@ public final class FlowScopeExtension implements BurpExtension {
         Pipeline.Result empty = Pipeline.runIsolated(List.of(), analysisConfig);
         if (mcpServer != null) mcpServer.clearAssessments();
         if (mcpServer != null) mcpServer.clearValidations();
-        if (mcpServer != null) mcpServer.resetWorkflow();
+        resetIntegrationWorkflow();
         publishAnalysis(analysisEpoch, empty);
         api.logging().logToOutput("FlowScope 수집 데이터가 삭제되었습니다.");
     }
@@ -965,7 +968,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 rawExchanges.clear();
                 droppedRecords.set(0);
                 publishAnalysis(analysisEpoch, result);
-                if (mcpServer != null) mcpServer.resetWorkflow();
+                resetIntegrationWorkflow();
                 if (mcpServer != null) mcpServer.replaceAssessments(assessments);
                 if (mcpServer != null) mcpServer.replaceValidations(validations);
                 if (mcpServer != null) mcpServer.replaceExecutionAttempts(data.runAttempts());
@@ -1100,18 +1103,18 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
                                                                                    List<String> accountIds,
                                                                                    boolean includeAnonymous,
-                                                                                   List<McpServer.ZapDefinition> definitions) {
-                if (mcpServer == null) throw new IllegalStateException("MCP/스캐너 제어면이 아직 준비되지 않았습니다.");
-                return mcpServer.startDeterministicZapCampaign(target, accountIds, includeAnonymous, definitions);
+                                                                                   List<ZapCampaign.ZapDefinition> definitions) {
+                if (zapCampaign == null) throw new IllegalStateException("ZAP 캠페인이 아직 준비되지 않았습니다.");
+                return zapCampaign.startDeterministicZapCampaign(target, accountIds, includeAnonymous, definitions);
             }
             @Override public com.fasterxml.jackson.databind.JsonNode scannerStatus() {
-                return mcpServer == null
+                return zapCampaign == null
                         ? new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("status", "NOT_STARTED")
-                        : mcpServer.deterministicZapBaselineStatus();
+                        : zapCampaign.deterministicZapBaselineStatus();
             }
             @Override public com.fasterxml.jackson.databind.JsonNode cancelScanner() {
-                if (mcpServer == null) throw new IllegalStateException("MCP/스캐너 제어면이 아직 준비되지 않았습니다.");
-                return mcpServer.cancelDeterministicZapBaseline();
+                if (zapCampaign == null) throw new IllegalStateException("ZAP 캠페인이 아직 준비되지 않았습니다.");
+                return zapCampaign.cancelDeterministicZapBaseline();
             }
             @Override public com.fasterxml.jackson.databind.node.ObjectNode zapStatus() { return zapConnectionStatus(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startLlm(LocalLlmRunner.Provider provider,
@@ -1296,7 +1299,7 @@ public final class FlowScopeExtension implements BurpExtension {
         return body;
     }
 
-    private void startMcp() {
+    private void startZapIntegration() {
         try {
             String zapKey = LocalZapApiKey.resolve(System.getProperty("flowscope.zap.key", ""),
                     System.getenv().getOrDefault("FLOWSCOPE_ZAP_API_KEY", ""),
@@ -1304,6 +1307,52 @@ public final class FlowScopeExtension implements BurpExtension {
                     Path.of(System.getProperty("user.home"), ".flowscope", "zap-api-key"));
             zapClient = new ZapClient(System.getProperty("flowscope.zap.url", "http://127.0.0.1:8089"),
                     zapKey);
+            zapCampaign = new ZapCampaign(new ZapCampaign.State() {
+                @Override public Pipeline.Result snapshot() { return latest; }
+                @Override public Pipeline.Result completionSnapshot() { rebuildImmediately(); return latest; }
+                @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
+                    synchronized (records) { return FlowScopeExtension.capturedCount(records, source, runId, detail); }
+                }
+                @Override public ScopePolicy scope() { return scope; }
+                @Override public ZapClient zap() { return zapClient; }
+                @Override public int scannerProxyPort() { return configuredScannerProxyPort(); }
+                @Override public void scannerCapability(String runId, String capability) {
+                    scannerCapabilityRunId = runId;
+                    scannerCapability = capability;
+                    scannerCapabilityRejectionRunId = runId;
+                    scannerCapabilityRejections.set(0);
+                }
+                @Override public void clearScannerCapability(String runId) {
+                    if (runId.equals(scannerCapabilityRunId)) {
+                        scannerCapability = "";
+                        scannerCapabilityRunId = "";
+                    }
+                }
+                @Override public long scannerCapabilityRejections(String runId) {
+                    return runId.equals(scannerCapabilityRejectionRunId) ? scannerCapabilityRejections.get() : 0;
+                }
+                @Override public RunContextRegistry contexts() { return runContexts; }
+                @Override public SessionBroker sessions() { return sessionBroker; }
+                @Override public boolean approve(String action, String target) {
+                    return approveInBurp(action, target);
+                }
+                @Override public boolean scannerRunsLocked() {
+                    return mcpServer != null && mcpServer.datasetLocked();
+                }
+            });
+        } catch (Exception error) {
+            api.logging().logToError("FlowScope ZAP 초기화 실패", error);
+        }
+    }
+
+    private void resetIntegrationWorkflow() {
+        if (mcpServer != null) mcpServer.resetWorkflow();
+        else if (zapCampaign != null) zapCampaign.resetWorkflow();
+    }
+
+    private void startMcp() {
+        try {
+            if (zapCampaign == null) throw new IllegalStateException("ZAP integration is unavailable");
             int port = Integer.getInteger("flowscope.mcp.port", 8787);
             String configuredToken = System.getProperty("flowscope.mcp.token", "").trim();
             if (configuredToken.isBlank()) configuredToken = System.getenv().getOrDefault("FLOWSCOPE_MCP_TOKEN", "").trim();
@@ -1323,22 +1372,6 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public ScopePolicy scope() { return scope; }
                 @Override public void updateScope(String value) { applyScope(value); }
                 @Override public ZapClient zap() { return zapClient; }
-                @Override public int scannerProxyPort() { return configuredScannerProxyPort(); }
-                @Override public void scannerCapability(String runId, String capability) {
-                    scannerCapabilityRunId = runId;
-                    scannerCapability = capability;
-                    scannerCapabilityRejectionRunId = runId;
-                    scannerCapabilityRejections.set(0);
-                }
-                @Override public void clearScannerCapability(String runId) {
-                    if (runId.equals(scannerCapabilityRunId)) {
-                        scannerCapability = "";
-                        scannerCapabilityRunId = "";
-                    }
-                }
-                @Override public long scannerCapabilityRejections(String runId) {
-                    return runId.equals(scannerCapabilityRejectionRunId) ? scannerCapabilityRejections.get() : 0;
-                }
                 @Override public RunContextRegistry contexts() { return runContexts; }
                 @Override public AnalysisConfig config() { return analysisConfig; }
                 @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
@@ -1380,7 +1413,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     revision.incrementAndGet();
                     scheduleDatabaseSave();
                 }
-            }, port, configuredToken);
+            }, port, configuredToken, zapCampaign);
             mcpServer.start();
             llmRunner = new LocalLlmRunner("http://127.0.0.1:" + mcpServer.port() + "/mcp", mcpServer.token(),
                     runContexts, sessionBroker, mcpServer::datasetLocked,
@@ -1419,6 +1452,7 @@ public final class FlowScopeExtension implements BurpExtension {
         browserExplorer.close();
         if (webServer != null) webServer.close();
         if (mcpServer != null) mcpServer.close();
+        if (zapCampaign != null) zapCampaign.close();
         if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {
             try {
                 java.util.concurrent.Future<?> save = worker.submit(() -> {

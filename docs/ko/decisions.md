@@ -1138,3 +1138,12 @@
 - **결정:** `ZapClient.exactSubtreeRegex(Collection)` union 오버로드를 추가하고 capability 설치 시 `state.scope().entries()` 전체(+target)를 덮는다. 항목이 하나면 단일 target 버전과 byte-identical한 regex를 반환해 기존 단일 항목 동작은 불변이다.
 - **기각:** 예전 브랜치 통째 병합(낡은 문서·대체된 코드 동반)은 기각. `includeInContext`(ZAP 크롤 경계)까지 넓히는 것은 ZAP이 크롤하는 대상을 바꾸는 별도 결정이라 이번 범위에서 제외.
 - **검증·한계:** `ZapClientTest`가 union의 다중 항목 커버리지와 단일 항목 동치를 고정. 다중 항목 scope의 실제 캠페인 완주는 실환경 gate.
+
+## D-125 · Judge·MCP 제거의 첫 단계는 호스트 소유 ZAP 캠페인 분리
+
+- **문제:** `McpServer`가 MCP transport 외에 ZAP lane·executor·heartbeat·crawler 종료·capability·Alert를 소유했다. 웹 스캐너도 `mcpServer`를 직접 호출하고 ZAP 초기화가 `startMcp()` 안에 있어, Judge·MCP를 삭제하거나 MCP 포트 bind가 실패하면 스캐너 제어까지 영향을 받는다. Web의 정의 입력 타입도 `McpServer.ZapDefinition`이었다.
+- **결정:** `integration/ZapCampaign`에 ZAP 실행과 상태 전체를 옮긴다. `ZapCampaign.State`는 scope·session·contexts·실제 capture·승인·capability 계약만 가지며 MCP 타입을 참조하지 않는다. 정의 입력 타입도 캠페인으로 이동한다. Burp가 MCP보다 먼저 캠페인 한 개를 생성하고 웹이 직접 사용한다. 기존 MCP는 같은 캠페인에 위임하며 외부 소유 캠페인을 `close()`하지 않는다. 기존 자체 소유 생성자는 호환용으로만 유지한다.
+- **호환 경계:** HTTP API·상태 JSON·crawler 순서·계정/source 귀속·capability·scope·완료 정책·프로젝트 schema를 변경하지 않는다. 기존 Judge dataset lock은 호스트 callback으로 유지하며, 독립 Explorer의 scanner 접근 제한도 동일하게 유지한다. MCP 시작 실패 시 데이터 reset/unload도 캠페인을 따로 처리한다.
+- **기각:** MCP 파일부터 삭제하면 ZAP·Web·저장소의 타입과 lifecycle을 함께 깨뜨린다. 웹과 MCP가 각각 캠페인을 생성하면 상태와 취소 소유권이 중복된다. 이 이동과 Client-only·새 하네스·Judge schema migration을 한꺼번에 섞으면 회귀 원인을 분리할 수 없어 단계별로 검증한다.
+- **후속 결정:** 사용자 목표는 Judge와 MCP의 제거이며, 그 다음 ZAP의 AJAX 실행을 없애고 Client Spider를 필수로 둔다. Explorer 새 하네스는 별도 작업이다. 최종 제거 과정에서 새 하네스가 준비되지 않으면 Explorer 실행을 명시적 전환 대기로 둔다. 현재 단계에서 제거 완료로 표시하지 않는다. 구체 범위는 `mcp-judge-removal-plan.md`를 따른다.
+- **검증·한계:** `ZapCampaignTest`가 MCP 없는 완료·진행·합성 Evidence, MCP bind 실패 독립성, 공유 adapter close와 host close의 서로 다른 소유권, scope·독립 Explorer·lock 거부를 검증한다. 기존 `McpServerTest`는 위임 경로 회귀를 유지한다. FakeZap helper는 기존 API 모사 응답을 이동했을 뿐 실제 ZAP 실행기가 아니다. 실제 Burp·ZAP Client·로그인 lane 검증은 별도 gate다.

@@ -2,6 +2,11 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · Judge·MCP 제거 1단계
+
+- ZAP 캠페인을 `McpServer`에서 `ZapCampaign`으로 분리했습니다. 웹 스캐너의 시작·상태·취소는 호스트가 소유한 캠페인을 직접 호출하고, MCP 포트 bind 실패가 캠페인 생성을 막지 않습니다.
+- 기존 MCP ZAP 도구는 같은 캠페인에 위임합니다. 기존 crawler 순서, 계정·scope·capability 경계, 상태 JSON과 프로젝트 저장 형식은 유지합니다. Judge·MCP 삭제와 Client Spider 필수 전환은 후속 단계입니다.
+
 ## 1.2.0-beta.44 — 2026-09-03
 
 - 큰 SPA 번들에서 route를 찾습니다. 보존 상한(1MB)은 그대로 두고 JavaScript·JSON·HTML·XML 응답의 **분석문만** 4MB까지 읽습니다. 초과 응답은 여전히 전문 미보존으로 표시됩니다. 실측한 1.66MB 번들은 경로 문자열이 전부 1MB 뒤에 있어 이전에는 하나도 보이지 않았습니다.

@@ -2958,3 +2958,37 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 ### 남은 한계
 
 - 다중 항목 scope의 실제 ZAP 캠페인 완주는 실환경 gate로 남는다. `includeInContext`는 여전히 단일 target이라 ZAP 스파이더 자체의 형제 항목 크롤은 별도 검토가 필요하다.
+
+## 2026-09-07 · 미출시 · Judge·MCP 제거 1단계 — ZapCampaign 분리
+
+### 개발·수정
+
+- ZAP 캠페인의 상태·worker·heartbeat·lane 순회·crawler 종료·capability·Alert snapshot과 기존 ZAP 도구 구현을 `McpServer`에서 `ZapCampaign`으로 이동했다. `ZapDefinitionType/Definition`도 새 소유 모듈로 옮겨 Web parser의 MCP 타입 참조를 제거했다.
+- Burp가 `startZapIntegration()`에서 캠페인 한 개를 먼저 만들고 웹이 시작·상태·취소를 직접 호출한다. MCP는 같은 인스턴스에 위임하며 host 소유 캠페인을 닫지 않는다. 확장 unload와 MCP 생성 실패 상태의 reset 경로에도 캠페인 정리를 연결했다.
+- 호스트의 캠페인·MCP 참조를 `volatile`로 게시해 웹 thread와 dataset-lock callback이 초기화된 현재 참조를 읽게 했다.
+- `FakeZap`에는 기존 테스트의 환경 응답 helper만 이동했다. 독립 캠페인 회귀 5개를 추가했다. Judge·MCP 실행 자체와 Client/AJAX 순서는 아직 유지했다.
+
+### 필요성·기각 대안
+
+- 목표는 Judge·MCP 제거다. 기존에는 MCP 삭제 또는 포트 충돌이 ZAP 초기화·웹 제어까지 끊는 결합이 있어 이 소유권부터 분리했다.
+- MCP 전체 즉시 삭제, 두 개의 캠페인 생성, Client-only 동작 변경과의 일괄 병합을 기각했다. 기존 계정·scope·완료·JSON 계약을 유지한 이동부터 확인한다.
+
+### 영향 파일·회귀
+
+- 코드: `integration/ZapCampaign.java`, `integration/McpServer.java`, `burp/FlowScopeExtension.java`, `web/FlowScopeWebServer.java`.
+- 테스트: `ZapCampaignTest`, `FakeZap`, 기존 `McpServerTest` helper 이동, `FlowScopeWebServerParsingTest` 타입 변경.
+- 문서: README, architecture, decisions D-125, 이 기록, product-development-plan, ui-product-rationale, 한·영 CHANGELOG, beta-validation, 새 mcp-judge-removal-plan.
+- RED: 독립 서비스 회귀를 먼저 추가한 `compiler:testCompile`은 없는 `ZapCampaign`과 생성자 계약 때문에 실패했다. GREEN: 분리 후 독립 5 + 기존 MCP 41 + 정의 parser 1, 총 47 tests가 실패·오류·skip 없이 통과했다.
+
+### 최종 검증
+
+- Homebrew JDK 21.0.12·Maven 3.9.16, `mvn clean verify` 2회 모두 성공. 각 회차 Java **389 tests**, failure/error/skip 0; React **37 files / 266 tests**, typecheck·Vite build·최종 JAR 검사를 통과했다. 두 번째는 MCP 참조의 volatile 게시를 반영한 최종 입력으로 실행했고 59.595초가 걸렸다. 두 회차는 소스가 달라 재현 해시 비교로 사용하지 않는다.
+- 이동한 ZAP 메서드 본문 1,427줄을 원본과 비교해 접근 수식자와 dataset-lock callback 치환 외 변경이 없음을 확인했다. 산출물의 `ZapCampaign` 및 내부 클래스에 `jdeps -filter:none`을 적용해 MCP 서버·토큰·HTTP 리스너 타입 참조가 없음을 확인했다.
+- 미출시 최종 작업트리 산출물 `target/flowscope-1.2.0-beta.44.jar`: 31,686,464 bytes, SHA-256 `caad2cc831d58fe3c5d6e4ef880ccf0f6de28676f58be1c554b396c626daba2d`. 기존 beta.44 릴리스 해시를 대체하거나 교차 머신 재현을 주장하지 않는다.
+- jsdom canvas 미구현 알림, Vite 큰 chunk 안내, 기존 deprecated API와 XXE 거부 테스트 stderr가 남아 있다. 이번 검증은 실제 ZAP 브라우저·로그인·Burp 재로드 검증이 아니다.
+
+### 남은 한계·다음 gate
+
+- Judge·MCP는 아직 삭제하지 않았다. 다음 단계는 과거 프로젝트 판정 호환을 정한 뒤 Judge 실행·UI·잠금 제거, 공용 타입·실행 원장 분리, MCP transport 제거 순이다. 새 Explorer 하네스는 이후 별도 설계한다.
+- 현재 ZAP 흐름은 여전히 Traditional → Client → AJAX → Passive다. 사용자 결정인 Client 필수·AJAX 제거는 다음 동작 변경에서 적용한다.
+- 실제 Burp 재로드·ZAP Client 브라우저·upstream·로그인 계정 lane·취소 검증은 미실행이다. 자동 회귀가 실제 크롤링이나 탐지 효능을 증명하지 않는다.
