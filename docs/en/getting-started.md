@@ -2,16 +2,19 @@
 
 This guide targets the D-128 standalone Explorer source. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs with the same beta.44 version.
 
-The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old Judge, MCP server, and browser harness remain removed; the replacement uses Codex app-server dynamic tools behind a Java exact-scope gateway (D-128; unreleased). H/S/L Evidence comparison and existing projects remain supported. This work is not published as a Release yet; build the JAR from this source instead of using an older beta.44 asset.
+The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old Judge, MCP server, and browser harness remain removed; the replacement uses Codex app-server dynamic tools behind a Java exact-scope gateway (D-128; unreleased). H/S/L Evidence comparison and existing projects remain supported. This work is not published as a Release yet; build the JAR or distribution bundle from this source instead of using an older beta.44 asset.
 
 ## Supported setup paths
 
 | Path | Requirements |
 |---|---|
-| Release JAR + ZAP Desktop | Burp and ZAP 2.17.0 |
-| Release JAR + Docker ZAP | Burp, Docker Compose v2 |
-| LLM Explorer | The JAR, official Codex CLI, and a valid Codex login |
+| HUMAN only | Release JAR and Burp |
+| HUMAN + ZAP Desktop | Distribution bundle, Burp, and ZAP 2.17.0 |
+| HUMAN + Docker ZAP | Distribution bundle, Burp, and Docker Compose v2 |
+| LLM Explorer | The JAR or bundle, Burp, official Codex CLI, and a valid Codex login |
 | Source build | The runtime above, JDK 21 exactly, and Maven 3.9.x |
+
+Download users do not install Maven, Node.js, or npm. Prefer `flowscope-1.2.0-beta.44-bundle.zip`; it contains the Burp JAR, ZAP Compose/helpers, macOS/Linux/Windows doctors, and current manuals. The JAR alone is sufficient for HUMAN and Explorer, but it does not contain the ZAP helpers.
 
 The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, JDK 21, and macOS arm64 with Docker Engine/Desktop 29.5.3. Windows 10/11 with Docker Desktop Linux containers and PowerShell 7 is the beta.21 support contract; GitHub `windows-latest` parses all PowerShell helpers, but a real Windows Docker Desktop target run remains an explicit validation gate.
 
@@ -27,14 +30,13 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 | `127.0.0.1:8089` | ZAP | Local ZAP proxy/API |
 | `127.0.0.1:17777` | FlowScope | Local Web workspace |
 
-## Release installation
+## Release bundle installation
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` first if you want the ZAP key helper, Docker Quick Start, and local documentation for the complete three-way setup. HUMAN-only users can download only the release JAR.
-
-1. If `flowscope-1.2.0-beta.44.jar` is published on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. Otherwise clone the repository and use the source-build section to create the same JAR locally.
-2. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` and `127.0.0.1:8081`.
-3. Load the JAR from **Extensions → Installed → Add → Java**.
-4. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777`.
+1. Download and extract `flowscope-1.2.0-beta.44-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). If the bundle is not published yet, clone the repository and build it using the source-build instructions. HUMAN/Explorer users may download only the JAR.
+2. Keep the extracted directory structure. `scripts/zap-up.*` uses the relative `infra/zap/compose.yaml` path.
+3. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` for HUMAN and add `127.0.0.1:8081` only when using ZAP.
+4. Load the bundle-root JAR from **Extensions → Installed → Add → Java**.
+5. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777`.
 
 Release users do not need Maven. A custom Java runtime used to launch Burp must support Java 21 class files.
 
@@ -48,7 +50,7 @@ Use Desktop to preserve an existing GUI testing workflow. Use the optional Docke
 
 ### Docker Quick Start on macOS/Linux
 
-From the repository root:
+From the extracted bundle root or repository root:
 
 ```bash
 ./scripts/zap-up.sh
@@ -64,11 +66,11 @@ docker compose -p flowscope-zap -f infra/zap/compose.yaml logs
 
 ### Docker Quick Start on Windows
 
-From a non-administrator PowerShell 7 session in the repository root:
+From a non-administrator PowerShell 7 session in the extracted bundle root or repository root:
 
 ```powershell
 .\scripts\zap-up.ps1
-.\scripts\doctor.ps1
+.\scripts\doctor.ps1 -Mode zap
 ```
 
 The helper creates a 32-byte key with .NET's cryptographic RNG, disables ACL inheritance, grants the current Windows user FullControl, and passes the file through a Compose file-backed secret rather than a container environment value. Docker Desktop's documented `host.docker.internal` name connects ZAP to host Burp `8081`.
@@ -92,26 +94,29 @@ PowerShell 5.1, Windows container mode, and running the helper inside WSL are ou
 
 ## LLM Explorer
 
-Install the official Codex CLI and complete `codex login` as the same OS user that runs Burp. Apply exact scope, open **Explorer**, select anonymous mode or add a memory-only HTML-form/JSON-API account, choose a start URL, and start the run. The activity feed shows elapsed time, actual requests and Evidence IDs, unresolved items, failures, steering, and cancellation.
+Install the [official Codex CLI](https://learn.chatgpt.com/docs/codex/cli). On macOS/Linux the official standalone command is `curl -fsSL https://chatgpt.com/codex/install.sh | sh`; follow the official page for Windows. As the same OS user that runs Burp, run `codex` and complete **Sign in with ChatGPT**. Apply exact scope, open **Explorer**, use **Recheck** if readiness is not READY, select anonymous mode or add a memory-only HTML-form/JSON-API account, choose a start URL, and start the run. The activity feed shows elapsed time, actual requests and Evidence IDs, unresolved items, failures, steering, and cancellation.
 
 FlowScope does not require an MCP token, port 8787, Chrome/Playwright, a provider API key, or a separately installed Node runtime. The model receives opaque account handles rather than credentials; Java injects memory-only session material after scope/method/header/budget checks. Historical Judge output remains read-only. See the [Explorer contract](../ko/llm-explorer.md).
 
 ## Preflight and source build
 
-After loading the JAR and starting ZAP:
+Run only the checks needed for the selected feature set. `full` is the default and checks every path.
 
 ```bash
-./scripts/doctor.sh
+./scripts/doctor.sh --mode human
+./scripts/doctor.sh --mode zap
+./scripts/doctor.sh --mode explorer
+./scripts/doctor.sh --mode full
 ```
 
-Windows uses `.\scripts\doctor.ps1`; add `-Build` for source-build checks.
+Windows uses `.\scripts\doctor.ps1 -Mode human|zap|explorer|full`; add `-Build` for source-build checks.
 
-The check covers Burp listener reachability, the loopback ZAP API and upstream proxy, required ZAP add-ons, the FlowScope Web port. An open port does not prove that the process is Burp, so verify the listener table manually. If you changed defaults, set `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT` in the same shell so doctor checks the same contract.
+`human` checks HUMAN `8080` and Web; `zap` adds SCANNER `8081`, the loopback ZAP key/API/upstream and required add-ons; `explorer` checks the Codex executable and current OS user's login; `full` checks all of them. An open port does not prove that the process is Burp, so verify the listener table manually. If you changed defaults, set `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT` in the same shell so doctor checks the same contract.
 
 Source contributors additionally run:
 
 ```bash
-./scripts/doctor.sh --build
+./scripts/doctor.sh --mode full --build
 mvn clean verify
 ```
 
@@ -125,11 +130,17 @@ mvn clean verify
 6. Run the standalone Explorer with anonymous and/or memory-only accounts; zero response Evidence is a failure, not completion.
 7. Compare H/S/L endpoint and parameter observations in **API·입력 차이**.
 8. Review current rule candidates and their Evidence; save human review independently of LLM prose. Historical LLM verdicts are not revalidated or promoted.
-8. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.
+9. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.
 
 ### Importing an existing ZAP traffic export
 
 Use **Scanner XML/HAR** in the Web header and select a `.har` created by ZAP's **Save Selected Entries as HAR** action. FlowScope imports only the HAR HTTP request/response entries as `SCANNER / HAR_IMPORT / IMPORT` Evidence and removes entries outside the current exact scope. This fallback does not reconstruct identity-isolated fresh sessions, rendered-crawl completion, the passive queue, or native alerts, so importing a file never marks the ZAP baseline complete. Use the normal campaign path when ZAP alerts are required for comparison.
+
+## Automation boundary
+
+FlowScope validates exact scope, collects in-scope HUMAN traffic, starts the bundled Docker ZAP helper, checks ZAP/Codex readiness, performs memory-only Explorer login, and stores only actual HTTP responses as Evidence. The operator still installs Burp, Docker or ZAP Desktop, and Codex; creates Burp listeners; enters authorized scope; and completes any CAPTCHA, MFA, WebAuthn, or SSO interaction.
+
+FlowScope does not silently alter Burp settings, install third-party software/add-ons, or bypass interactive authentication. A failed optional lane does not disable the other lanes. Codex app-server is documented by OpenAI as experimental, so after a Codex CLI update recheck READY and confirm that the run records at least one response Evidence.
 
 ## Troubleshooting
 
@@ -144,5 +155,6 @@ Use **Scanner XML/HAR** in the Web header and select a `.har` created by ZAP's *
 | API definition import warning | Check exact-scope URLs and the matching `openapi`, `graphql`, `postman`, or `soap` add-on; other crawler Evidence remains available |
 | Rendered capture warning | Inspect ZAP Firefox/Selenium/Client/AJAX logs; do not mislabel Traditional-only output as rendered coverage |
 | Account absent from ZAP choices | Recapture login until the memory-only broker reports `ACTIVE` |
+| Codex readiness is not READY | Sign in by running `codex` as the same OS user, then use Explorer **Recheck** or run `doctor --mode explorer` |
 
 Never attach target credentials, Authorization/Cookie values, ZAP keys, provider tokens, or private Request/Response bodies to a public issue.

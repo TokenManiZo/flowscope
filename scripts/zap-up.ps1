@@ -54,7 +54,7 @@ for ($attempt = 1; $attempt -le 90; $attempt++) {
         if ($null -ne $version.version) {
             Write-Host "FlowScope ZAP is ready at http://127.0.0.1:$zapPort."
             Write-Host "The API key is stored in $keyFile and is read by FlowScope automatically."
-            Write-Host "Next: confirm Burp SCANNER 127.0.0.1:$scannerPort, then run .\scripts\doctor.ps1."
+            Write-Host "Next: confirm Burp SCANNER 127.0.0.1:$scannerPort, then run .\scripts\doctor.ps1 -Mode zap."
             exit 0
         }
     } catch {

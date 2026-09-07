@@ -116,6 +116,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default ExplorerCoordinator.Snapshot clearExplorer() {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
+        default ExplorerCoordinator.Snapshot recheckExplorerProvider() {
+            throw new UnsupportedOperationException("Explorer workflow is unavailable");
+        }
     }
 
     public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT }
@@ -784,6 +787,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 case "steer" -> snapshot = state.steerExplorer(required(form, "message"));
                 case "cancel" -> snapshot = state.cancelExplorer();
                 case "clear" -> snapshot = state.clearExplorer();
+                case "recheck" -> snapshot = state.recheckExplorerProvider();
                 default -> throw new IllegalArgumentException("지원하지 않는 Explorer 동작입니다.");
             }
             ObjectNode body = json.createObjectNode();

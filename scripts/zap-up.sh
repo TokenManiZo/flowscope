@@ -30,7 +30,7 @@ for _ in $(seq 1 90); do
       "http://127.0.0.1:${zap_port}/JSON/core/view/version/" >/dev/null 2>&1; then
     echo "FlowScope ZAP is ready at http://127.0.0.1:${zap_port}."
     echo "The API key is stored in $key_file and is read by FlowScope automatically."
-    echo "Next: make sure Burp's SCANNER listener is 127.0.0.1:${FLOWSCOPE_BURP_SCANNER_PORT:-8081}, then run scripts/doctor.sh."
+    echo "Next: make sure Burp's SCANNER listener is 127.0.0.1:${FLOWSCOPE_BURP_SCANNER_PORT:-8081}, then run scripts/doctor.sh --mode zap."
     exit 0
   fi
   sleep 1

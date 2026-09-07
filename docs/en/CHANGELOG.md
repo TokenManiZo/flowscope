@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — download distribution and feature-specific preflight (D-129)
+
+- Package a download bundle containing the Burp JAR, ZAP Compose/helpers, platform doctors, and current manuals so ZAP users do not need to clone the repository.
+- Add `human`, `zap`, `explorer`, and `full` doctor modes so an unused optional tool is not reported as a setup failure.
+- When Codex is not READY, Explorer now shows the affected feature, official install/sign-in guidance, and a recheck action that invalidates the 15-second readiness cache.
+
 ## Unreleased — standalone LLM Explorer (D-128)
 
 - Added a standalone Explorer backed by the locally authenticated Codex app-server dynamic-tool protocol without restoring the removed Judge or MCP server.

@@ -63,6 +63,17 @@ final class ExplorerCoordinatorTest {
         }
     }
 
+    @Test
+    void recheckInvalidatesProviderReadinessCache() {
+        FakeProvider provider = new FakeProvider();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("gateway transport should not be called"); }, provider,
+                new RunContextRegistry(), value -> true, () -> Pipeline.run(List.of()), ignored -> {})) {
+            assertEquals("READY", coordinator.recheckProvider().providerReadiness());
+            assertEquals(1, provider.invalidations);
+        }
+    }
+
     private static void await(java.util.function.BooleanSupplier ready) throws InterruptedException {
         for (int count = 0; count < 100 && !ready.getAsBoolean(); count++) Thread.sleep(10);
         assertTrue(ready.getAsBoolean());
@@ -71,7 +82,9 @@ final class ExplorerCoordinatorTest {
     private static final class FakeProvider implements ExplorerProvider {
         private final AtomicReference<Request> request = new AtomicReference<>();
         private final AtomicReference<Listener> listener = new AtomicReference<>();
+        private int invalidations;
         @Override public String readiness() { return "READY"; }
+        @Override public void invalidateReadiness() { invalidations++; }
         @Override public Handle start(Request request, Listener listener) {
             this.request.set(request);
             this.listener.set(listener);

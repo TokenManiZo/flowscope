@@ -52,3 +52,30 @@ it("registers memory-only credentials and starts an anonymous explorer run", asy
   const startCall = fetchStub.mock.calls.find(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")
   expect(String((startCall?.[1] as RequestInit).body)).toContain("anonymous=true")
 })
+
+it("shows actionable setup help and rechecks Codex readiness", async () => {
+  const user = userEvent.setup()
+  const unavailable = { ...idle, run: { ...idle.run, providerReadiness: "Codex CLI 로그인이 필요합니다." } }
+  const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === "/api/explorer-run" && (!init?.method || init.method === "GET")) {
+      return new Response(JSON.stringify(unavailable), { headers: { "Content-Type": "application/json" } })
+    }
+    if (path === "/api/explorer-run" && init?.method === "POST") {
+      return new Response(JSON.stringify({ run: idle.run }), { headers: { "Content-Type": "application/json" } })
+    }
+    throw new Error(`unexpected API ${path}`)
+  })
+  vi.stubGlobal("fetch", fetchStub)
+  renderWithQueryClient(<ExplorerPage />)
+
+  expect(await screen.findByText("Codex 준비가 필요합니다")).toBeVisible()
+  expect(screen.getByRole("link", { name: /공식 설치 안내/ })).toHaveAttribute(
+    "href", "https://learn.chatgpt.com/docs/codex/cli",
+  )
+  expect(screen.getByRole("button", { name: "Explorer 시작" })).toBeDisabled()
+  await user.click(screen.getByRole("button", { name: /다시 확인/ }))
+  await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) =>
+    String(path) === "/api/explorer-run" && String((init as RequestInit)?.body).includes("action=recheck"),
+  )).toBe(true))
+})

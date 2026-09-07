@@ -53,18 +53,18 @@ Binary messages, general textual messages over 1 MiB, discovery HTML/JavaScript/
 ## Requirements
 
 - HUMAN-only mode: current Burp Suite Community or Professional with Montoya API support
-- HUMAN + SCANNER: Burp plus OWASP ZAP 2.17.0
-- HUMAN + SCANNER + LLM Explorer: the above plus the official Codex CLI and a valid Codex login
-- Source builds only: JDK 21 or newer and Maven 3.9 or newer
+- HUMAN + SCANNER: the distribution bundle, Burp, and OWASP ZAP 2.17.0 or Docker Compose v2
+- LLM Explorer: the release JAR or bundle, Burp, the official Codex CLI, and a valid Codex login
+- Source builds only: JDK 21 exactly and Maven 3.9 or newer
 - Optional containerized ZAP: Docker Engine/Desktop with Docker Compose v2; Windows helper contract requires Windows 10/11, Docker Desktop Linux containers, and PowerShell 7
 
 ZAP is required for the SCANNER campaign and optional for HUMAN-only use. The LLM lane requires the official logged-in Codex CLI; it does not require a provider API key, Chrome/Playwright, MCP, or a separately managed Node runtime. The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, and JDK 21; this is not a compatibility claim for every older version or operating system.
 
 ## Build and install
 
-Clone `https://github.com/choewonwoo1817/testflowscope.git` when using the ZAP key helper or optional Docker Quick Start for a complete three-way setup; HUMAN-only users may download just the JAR. If the `flowscope-1.2.0-beta.44.jar` asset is present on [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases), download it there. If that asset has not been published yet, clone this beta.44 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven.
+Download `flowscope-1.2.0-beta.44-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP helpers/Compose, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this beta.44 source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, or npm.
 
-The build leaves exactly one Burp-loadable artifact in `target/`: `flowscope-1.2.0-beta.44.jar`. Load it in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one.
+The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.44.jar`, and one download bundle, `target/flowscope-1.2.0-beta.44-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

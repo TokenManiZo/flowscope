@@ -149,6 +149,12 @@ public final class ExplorerCoordinator implements AutoCloseable {
         return snapshot;
     }
 
+    public synchronized Snapshot recheckProvider() {
+        if (active(snapshot.status())) throw new IllegalStateException("실행 중에는 Codex 준비 상태를 다시 확인할 수 없습니다.");
+        provider.invalidateReadiness();
+        return current();
+    }
+
     private void prepareAndStart(StartRequest request, String runId) {
         List<String> readyAccounts = new ArrayList<>();
         List<ExplorerProvider.Unresolved> limitations = new ArrayList<>();

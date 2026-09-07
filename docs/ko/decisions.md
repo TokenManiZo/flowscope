@@ -1175,3 +1175,11 @@
 - **기각:** 기존 MCP/Judge 복원, 모델의 shell curl에 광범위 네트워크 허용, Chrome/Playwright 기본 의존, 비밀번호나 live 세션을 모델/자식 환경에 전달, 로그인 교환 저장, status만으로 완료 처리. 안전 sandbox에서 직접 curl은 loopback gateway에 도달하지 못했고, 네트워크를 넓히면 gateway를 우회할 수 있어 app-server 동적 도구를 선택했다.
 - **호환·한계:** 공식 app-server dynamic tools는 experimental API다. Codex CLI의 설치·로그인·프로토콜 호환을 readiness와 opt-in 실물 provider 하네스로 확인하며, 실패를 “미발견”으로 바꾸지 않는다. CAPTCHA/MFA/WebAuthn/SSO, runtime-only lazy chunk, server-only endpoint, 임의 wrapper의 완전 발견은 보장하지 않는다. 새 JAR의 실제 Burp·복수 인증 방식·Windows 및 독립 corpus 효능은 별도 gate다.
 - **근거:** 공식 Codex app-server 문서의 `initialize` experimental capability, `thread/start.dynamicTools`, `item/tool/call` 계약과 설치된 CLI 생성 schema를 대조했다. 자동 회귀와 실제 로그인된 로컬 provider opt-in 하네스의 결과는 [검증 기록](beta-validation.md)에 구분해 남긴다. 사용자 실행 계약은 [LLM Explorer](llm-explorer.md)를 정본으로 한다.
+
+## D-129 · 다운로드 사용자는 distribution bundle과 기능별 preflight를 기본 경로로 쓴다 (2026-09-08)
+
+- **문제:** JAR만 배포하면 HUMAN은 실행할 수 있지만 ZAP Docker에 필요한 Compose·key helper·doctor가 저장소에만 있어 SCANNER 사용자가 clone해야 했다. 기존 doctor는 항상 ZAP을 검사해 HUMAN 또는 Explorer만 쓰는 사용자에게 불필요한 실패를 냈다. Explorer는 Codex 실패 사유를 보여도 설치·로그인 직후 15초 cache를 즉시 갱신하는 사용자 동작이 없었다.
+- **결정:** package가 Burp용 fat JAR과 별도로 `flowscope-<version>-bundle.zip`을 만든다. bundle은 같은 base directory 아래 JAR, LICENSE/NOTICE, 한·영 문서, ZAP Compose/helper, Bash·PowerShell doctor를 담는다. doctor는 `human|zap|explorer|full` mode로 선택한 기능의 선행 조건만 검사한다. Explorer 화면은 준비 실패의 영향 범위, 공식 설치/로그인 절차와 **다시 확인**을 제공하고 시작 버튼을 READY 전까지 비활성화한다. CI는 bundle 필수 항목과 동일 환경 반복 hash를 JAR과 함께 검사한다.
+- **자동화 경계:** release 사용자는 Maven·Node.js·npm이 필요 없다. FlowScope는 third-party 프로그램을 무단 설치하거나 Burp listener를 만들거나 CAPTCHA/MFA/WebAuthn/SSO를 우회하지 않는다. 사용자가 Burp, 선택한 ZAP/Docker, Codex를 설치·로그인하고 허가 scope를 입력한다. 선택 lane 준비 실패는 다른 lane을 막지 않는다.
+- **기각:** helper를 JAR에서 실행 중 임시 추출하면 Burp extension이 Docker와 파일 수명을 직접 소유하고 보안 제품이 사용자 동의 없이 외부 프로세스를 시작하는 경계가 커진다. Git clone을 계속 요구하면 release asset의 자급성이 없다. doctor 단일 `full`만 유지하면 선택 기능과 실패 의미가 어긋난다.
+- **검증 계약:** assembly 결과의 필수 파일·상대 경로와 반복 byte equality, Bash syntax/shellcheck, Windows PowerShell parse, Web recheck API와 React 안내/비활성화를 회귀로 고정한다. 실제 Windows Docker Desktop, ZAP Desktop, Burp load와 외부 대상은 별도 실환경 gate다. Codex app-server는 공식 문서상 experimental이므로 READY와 실제 response Evidence를 실행 환경에서 다시 확인한다.

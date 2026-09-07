@@ -81,6 +81,11 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         return value;
     }
 
+    @Override public synchronized void invalidateReadiness() {
+        cachedReadiness = "확인 전";
+        readinessCheckedAt = 0;
+    }
+
     @Override public synchronized Handle start(Request request, Listener listener) {
         if (closed.get()) throw new IllegalStateException("Codex 공급자가 종료됐습니다.");
         if (active != null) throw new IllegalStateException("Codex Explorer가 이미 실행 중입니다.");

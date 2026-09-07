@@ -1,6 +1,6 @@
 # React Web UI 기능 동등성 인벤토리
 
-**2026-09-07 D-128:** 현재 UI는 HUMAN/ZAP와 새 독립 Codex Explorer, 규칙 후보·사람 검토를 제공한다. Judge·MCP·옛 브라우저 화면은 폐기 상태를 유지하고 과거 LLM 기록은 읽기 전용으로 보존한다. 아래 P21/P23은 D-128 계약으로 대체됐고 P22/P24/P38/P39는 계속 폐기 상태다. 최신 검증은 [beta-validation](beta-validation.md)의 D-128 절을 따른다.
+**2026-09-08 D-129:** 현재 UI는 HUMAN/ZAP와 독립 Codex Explorer, 규칙 후보·사람 검토를 제공한다. Explorer가 준비되지 않으면 설치·로그인 원인과 공식 설치 링크, `다시 확인` 동선을 표시한다. Judge·MCP·옛 브라우저 화면은 폐기 상태를 유지하고 과거 LLM 기록은 읽기 전용으로 보존한다. 아래 P21/P23은 D-128 계약으로 대체됐고 P22/P24/P38/P39는 계속 폐기 상태다. 최신 배포 검증은 [beta-validation](beta-validation.md)의 D-129 절을 따른다.
 
 이 표는 기존 Web UI가 제공하는 동작을 React 전환 전에 고정한 이력과 beta.44 통합 상태를 함께 기록한다. React는 `/`와 `/app/`의 기본 UI이고 legacy는 `/legacy/`에 남아 있다. component/standalone 통과와 실제 Burp runtime 동등성은 분리하며, 런타임 항목은 explicit Burp gate 전에는 완료로 표시하지 않는다.
 

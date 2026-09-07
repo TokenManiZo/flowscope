@@ -26,6 +26,7 @@
     <maven.resources.version>3.4.0</maven.resources.version>
     <maven.surefire.version>3.5.4</maven.surefire.version>
     <maven.enforcer.version>3.6.3</maven.enforcer.version>
+    <maven.assembly.version>3.7.1</maven.assembly.version>
     <project.build.outputTimestamp>2026-08-24T00:00:00Z</project.build.outputTimestamp>
   </properties>
 
@@ -352,6 +353,28 @@
         <configuration>
           <mainClass>io.flowscope.Standalone</mainClass>
         </configuration>
+      </plugin>
+
+      <!-- Release users receive the JAR, ZAP helpers and current manuals without cloning the source tree. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>${maven.assembly.version}</version>
+        <executions>
+          <execution>
+            <id>distribution-bundle</id>
+            <phase>package</phase>
+            <goals><goal>single</goal></goals>
+            <configuration>
+              <descriptors>
+                <descriptor>src/assembly/distribution.xml</descriptor>
+              </descriptors>
+              <finalName>${project.build.finalName}</finalName>
+              <appendAssemblyId>true</appendAssemblyId>
+              <attach>false</attach>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

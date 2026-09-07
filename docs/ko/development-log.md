@@ -1,5 +1,33 @@
 # FlowScope 개발 기록
 
+## 2026-09-08 · D-129 다운로드 배포 동선·기능별 환경 점검
+
+### 개발·필요성·기각안
+
+- 저장소를 clone하지 않는 사용자가 Release ZIP 하나로 Burp JAR, ZAP Compose/helper, macOS·Linux·Windows 점검기와 현재 문서를 받을 수 있도록 Maven distribution bundle을 추가했다. JAR만 배포하면 HUMAN·Explorer는 실행할 수 있어도 ZAP helper와 올바른 문서 버전이 분리되는 문제가 있어 기각했다.
+- `doctor`를 `human`, `zap`, `explorer`, `full` 모드로 나눴다. 사용하지 않는 ZAP이나 Explorer가 없다는 이유로 HUMAN만 쓰는 사용자의 전체 점검을 실패시키지 않으며, `--build`/`-Build`에서 POM과 동일하게 Maven 3.9.x와 JDK 21 정확히를 확인한다.
+- Explorer의 준비 상태 캐시를 사용자가 명시적으로 무효화하고 다시 검사하는 Web/API/UI 동선을 추가했다. CLI를 설치하거나 로그인한 뒤 Burp 전체를 재시작하게 하는 대안은 불필요한 마찰이라 기각했다. 시작 버튼은 Codex가 `READY`일 때만 활성화하고, 실패 화면은 공식 설치·동일 OS 사용자 로그인·재확인 순서를 표시한다.
+- 외부 프로그램과 보안 경계를 자동 설치로 숨기지 않았다. Burp listener 설정, Codex 설치·ChatGPT 로그인, ZAP/Docker 설치, CAPTCHA·MFA·WebAuthn·서비스 고유 로그인은 사용자 또는 대상별 확인이 필요함을 시작 가이드에 분리했다.
+
+### 영향 파일
+
+- 배포·CI: `pom.xml`, `src/assembly/distribution.xml`, `.github/workflows/ci.yml`.
+- 점검기: `scripts/doctor.sh`, `scripts/doctor.ps1`.
+- 코드·UI: Explorer provider/coordinator, `FlowScopeExtension`, `FlowScopeWebServer`, React Explorer와 API/query 계약.
+- 테스트: `ExplorerCoordinatorTest`, `FlowScopeWebServerTest`, `ExplorerPage.test.tsx`.
+- 문서: 한·영 README/시작 가이드/변경 이력, Explorer·아키텍처·결정·제품/UI·동등성·인계·검증 문서.
+
+### 재현·검증 상태
+
+- 수정 전에는 release 사용자가 ZAP helper를 얻으려면 저장소를 clone해야 했고, Codex 설치·로그인 뒤 기존 readiness 캐시를 즉시 다시 검사하는 조작이 없었다. JDK 26으로 소스 빌드했을 때 POM은 거부했지만 기존 doctor는 `21 이상`을 허용하는 계약 불일치도 재현했다.
+- JDK 21.0.12.1·Maven 3.9.16에서 전체 `mvn clean verify` 2회가 성공했다. 매회 Java 352 tests 중 opt-in provider 1 skip, failures/errors 0, React 38 files/242 tests와 typecheck·notices·Vite build가 통과했다.
+- Bash 5개는 `bash -n`·`shellcheck`를 통과했다. 실제 로컬 `doctor.sh --mode explorer --build`는 Codex 경로·로그인·Web·Maven·JDK를 모두 통과했고, 기본 JDK 26에서는 정확히 실패했다. Windows PowerShell parse는 CI 계약이며 현재 macOS에 `pwsh`가 없어 실기기 실행은 미확인이다.
+
+### 남은 gate
+
+- 검증 기록 직전 입력의 반복 `clean package`에서 JAR과 bundle SHA-256이 각각 동일했다. 깨끗한 임시 디렉터리에 bundle을 풀어 JAR·한/영 가이드·실행 권한·ZAP key helper·Compose 구성·Explorer doctor를 clone 없이 확인했다. 이 결과를 기록한 최종 문서 입력도 같은 방식으로 다시 package한다.
+- 실제 Burp에 최종 JAR을 load/unload하고 Windows에서 bundle·doctor·Docker helper를 실행하는 운영 gate는 자동 테스트와 구분해 남긴다. app-server dynamic tool은 experimental이므로 설치된 Codex 버전 호환 실패는 Explorer 화면에서 차단·원인 표시하며 모든 향후 CLI 호환을 보장하지 않는다.
+
 ## 2026-09-07 · D-128 판정 없는 독립 LLM Explorer
 
 ### 개발·필요성·기각안

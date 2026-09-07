@@ -109,7 +109,7 @@ export function useLoadSampleMutation() { return useInvalidatingMutation(loadSam
 export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
 export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous }: { target: string; accounts: string; anonymous: boolean }) => startScannerRun(target, accounts, anonymous), [queryKeys.scannerRun]) }
 export function useExplorerStartMutation() { return useInvalidatingMutation(startExplorerRun, [queryKeys.explorerRun, queryKeys.snapshot]) }
-export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear" | "recheck") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerSteerMutation() { return useInvalidatingMutation((message: string) => steerExplorerRun(message), [queryKeys.explorerRun]) }
 export function useExplorerAccountSaveMutation() { return useInvalidatingMutation(saveExplorerAccount, [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }

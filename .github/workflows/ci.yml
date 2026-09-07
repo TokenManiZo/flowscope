@@ -55,16 +55,38 @@ jobs:
           if jar tf "$release_jar" | grep -Eq '^(org/jsoup/|META-INF/versions/.*/org/jsoup/)'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(org/yaml/snakeyaml/|META-INF/versions/.*/org/yaml/snakeyaml/)'; then exit 1; fi
           if jar tf "$release_jar" | grep -Eq '^(com/google/javascript/|META-INF/versions/.*/com/google/javascript/)'; then exit 1; fi
+      - name: Inspect download bundle
+        shell: bash
+        run: |
+          mapfile -t bundles < <(find target -maxdepth 1 -type f -name 'flowscope-*-bundle.zip' -print | sort)
+          test "${#bundles[@]}" -eq 1
+          bundle="${bundles[0]}"
+          test -s "$bundle"
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/flowscope-[^/]+\.jar$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/docs/ko/getting-started\.md$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/docs/en/getting-started\.md$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/doctor\.sh$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/doctor\.ps1$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/zap-up\.sh$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/zap-up\.ps1$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/infra/zap/compose\.yaml$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/infra/zap/start-zap\.sh$'
       - name: Verify reproducible package
         shell: bash
         run: |
           release_jar=$(find target -maxdepth 1 -type f -name 'flowscope-*.jar' -print -quit)
-          first_sha=$(sha256sum "$release_jar" | cut -d' ' -f1)
+          release_bundle=$(find target -maxdepth 1 -type f -name 'flowscope-*-bundle.zip' -print -quit)
+          first_jar_sha=$(sha256sum "$release_jar" | cut -d' ' -f1)
+          first_bundle_sha=$(sha256sum "$release_bundle" | cut -d' ' -f1)
           mvn --batch-mode --no-transfer-progress clean package -DskipTests
           mapfile -t rebuilt_jars < <(find target -maxdepth 1 -type f -name 'flowscope-*.jar' -print | sort)
+          mapfile -t rebuilt_bundles < <(find target -maxdepth 1 -type f -name 'flowscope-*-bundle.zip' -print | sort)
           test "${#rebuilt_jars[@]}" -eq 1
-          second_sha=$(sha256sum "${rebuilt_jars[0]}" | cut -d' ' -f1)
-          test "$first_sha" = "$second_sha"
+          test "${#rebuilt_bundles[@]}" -eq 1
+          second_jar_sha=$(sha256sum "${rebuilt_jars[0]}" | cut -d' ' -f1)
+          second_bundle_sha=$(sha256sum "${rebuilt_bundles[0]}" | cut -d' ' -f1)
+          test "$first_jar_sha" = "$second_jar_sha"
+          test "$first_bundle_sha" = "$second_bundle_sha"
 
   shell-scripts:
     runs-on: ubuntu-latest

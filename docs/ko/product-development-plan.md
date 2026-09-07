@@ -1,6 +1,6 @@
 # FlowScope 1.2.0-beta.44 제품 개발·검증 계획
 
-> **읽는 법:** 현재 우선순위는 D-128 독립 Explorer의 최종 자동 검증과 실제 Burp gate다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** 현재 우선순위는 D-129 다운로드 bundle·기능별 preflight의 최종 자동 검증과 실제 Burp gate다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
 
 ## 현재 우선순위 · 독립 LLM Explorer
 
@@ -12,6 +12,7 @@
 6. 새 JAR 실제 Burp에서 anonymous·HTML form·JSON token, exact-scope, Evidence 귀속, 취소/정리, 프로젝트 비밀 비저장을 확인한다.
 7. 승인된 독립 corpus에서 HUMAN·ZAP 대비 추가 endpoint·parameter, 중복·노이즈·요청량·검토시간을 측정한다. 결과 전에는 발견률 우월성을 주장하지 않는다.
 8. ZAP Client-only/AJAX 제거와 FlowScope Evidence용 제품 MCP는 이번 Explorer와 섞지 않는 별도 결정으로 남긴다.
+9. 다운로드 사용자가 clone 없이 실행하도록 JAR·ZAP helper·문서를 distribution bundle로 만들고, `human|zap|explorer|full` doctor와 Explorer readiness 재확인을 제공한다. JAR/bundle 재현 검사와 Windows parser를 통과한 뒤에만 배포 준비 완료로 표시한다.
 
 현재 Explorer 실행 계약은 [LLM Explorer](llm-explorer.md), 삭제 목록·보존 계약은 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
 

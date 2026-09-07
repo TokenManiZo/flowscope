@@ -1,6 +1,6 @@
 # FlowScope 팀 인계 정본
 
-최종 갱신: 2026-09-07 D-128 작업본. 시작 기준 `453c0ba`; 독립 Explorer 구현은 아직 로컬 미커밋·미출시 상태다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
+최종 갱신: 2026-09-08 D-129 작업본. 시작 기준 `5da5b08`; 독립 Explorer는 로컬 커밋됐고 distribution bundle·기능별 doctor·Explorer 재확인은 현재 미커밋·미출시 작업이다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -24,8 +24,9 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 | 기존 Judge·하네스 MCP 제거 | 구현·자동 회귀 완료 | `57d1bb4`, 클래스/JAR 부재·폐기 route 404 |
 | 과거 프로젝트 호환 | 구현·자동 회귀 완료 | JSON v4 / SQLite v3, 원 Evidence ID·과거 평가 분리 |
 | 빈 agent-workspace 정리 | 완료 | `962edfe`, 정확한 빈 디렉터리만 제거 |
-| 문서 현행화 | 2026-09-07 정합성 갱신 | [전수 목록·확인 범위](documentation-status.md); 과거 기록과 현행 구분 |
-| 독립 LLM Explorer | 구현·최종 검증 중 | 메모리 인증, dynamic HTTP tool, exact-scope gateway, actual-response Evidence, React 작업 피드; 실제 Burp gate 대기 |
+| 문서 현행화 | 2026-09-08 D-129 정합성 갱신 | [전수 목록·확인 범위](documentation-status.md); 배포/점검 안내와 과거 기록 구분 |
+| 독립 LLM Explorer | 구현·자동/provider 검증 완료 | `5da5b08`; 메모리 인증, dynamic HTTP tool, exact-scope gateway, actual-response Evidence, React 작업 피드; 실제 Burp gate 대기 |
+| 다운로드 bundle·기능별 doctor | 구현·자동/추출 검증 완료 | JAR+ZAP helper+문서 ZIP, `human/zap/explorer/full`, Explorer 재확인; Windows 실기기 대기 |
 | 새 JAR 실제 Burp/ZAP 검증 | 미실행 | 아래 gate, mock/standalone으로 대체하지 않음 |
 | Client 필수화·AJAX 제거 | 미착수 | 실제 Client/capability/로그인·취소 확인이 선행 |
 | 제품 MCP | 미착수 | Explorer 하네스가 아니며 현재 리스너·토큰·도구 없음 |
@@ -33,13 +34,14 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 ## 3. 검증과 배포 상태
 
-[beta-validation의 D-128 기록](beta-validation.md)이 현재 산출물 식별값과 실제 실행 검증의 정본이다.
+[beta-validation의 D-129 기록](beta-validation.md)이 현재 배포 작업의 검증 정본이며, D-128 절은 Explorer 구현·실물 provider 검증의 정본이다.
 
 - 같은 최종 D-128 입력에서 `mvn clean verify` 2회: 매회 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 241 tests 통과. JAR SHA-256과 크기가 동일했다.
+- D-129 작업에서 `mvn clean verify` 2회: 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 242 tests 통과. 반복 package의 JAR/bundle 동일성과 clone 없는 clean extraction을 확인했다.
 - 별도 opt-in 실제 Codex app-server 하네스가 dynamic HTTP tool 호출과 구조화 결과를 확인했다. 이는 Burp Montoya/실제 대상 전체 실행이 아니다.
 - D-126 당시 Chromium standalone E2E 8/8은 과거 UI 기준 기록이다. D-128 Explorer 화면의 standalone/browser E2E나 실제 Burp gate로 재사용하지 않는다.
 - 버전 문자열은 여전히 `1.2.0-beta.44`다. 같은 버전명의 이전 JAR과 동일하다는 뜻이 아니므로 commit·SHA-256으로 식별한다.
-- D-128 변경은 현재 로컬 작업본이며 push/Release 게시하지 않았다.
+- D-128은 로컬 commit `5da5b08`이며 D-129 작업과 함께 아직 push/Release 게시하지 않았다.
 - 실제 Burp load/unload, HUMAN 로그인/캡처, ZAP 비로그인·복수 로그인 lane, Request Lab 실제 전송, Windows 운영 검증은 새 JAR 기준 미실행이다.
 
 ## 4. 현재 구조와 코드 위치
@@ -76,11 +78,9 @@ D-128은 발견용 HTML/JavaScript/JSON/XML 응답을 기본 4MiB까지 `FULL` p
 
 ## 6. 다음 작업·제품 결정 보류 사항과 완료 기준
 
-1. **D-128 최종 자동 검증** → 전체 `mvn clean verify`, 실제 로그인된 Codex dynamic-tool opt-in 하네스, JAR negative/secret/document gate와 식별값을 기록한다.
-2. **새 JAR 실제 Burp gate** → 기존 HUMAN/ZAP/Request Lab/저장 회귀와 함께 Explorer anonymous·HTML form·JSON token, exact-scope, Evidence 귀속, steer·취소·unload 정리를 확인한다.
-3. **독립 평가** → 승인된 범위와 독립 truth를 확보해 HUMAN·ZAP 대비 추가 endpoint/parameter, 중복·노이즈·요청량·검토시간을 측정한다. 자동 회귀만으로 우월성을 주장하지 않는다.
-4. **Client-only 변경 검토** → ZAP 지원 환경의 실제 Client 성공·실패·인증·정리 근거 후 별도 작업으로 진행한다.
-5. **제품 MCP 결정** → Evidence·분석 연동 요구가 확정될 때 별도 설계한다. Explorer 실행을 위해 복원하지 않는다.
+1. **Release 게시 전 운영 gate** → Windows PowerShell 실기기에서 bundle/doctor/ZAP helper를 확인하고, 실제 Burp에서 최종 JAR load/unload·HUMAN·ZAP·Request Lab·저장 회귀와 Explorer anonymous·HTML form·JSON token, exact-scope, Evidence 귀속, steer·취소 정리를 확인한다.
+2. **독립 평가** → 승인된 범위와 독립 truth를 확보해 HUMAN·ZAP 대비 추가 endpoint/parameter, 중복·노이즈·요청량·검토시간을 측정한다. 자동 회귀만으로 우월성을 주장하지 않는다.
+3. **Client-only 변경 검토** → ZAP 지원 환경의 실제 Client 성공·실패·인증·정리 근거 후 별도 작업으로 진행한다.
 
 ## 7. 문서와 협업 운영
 

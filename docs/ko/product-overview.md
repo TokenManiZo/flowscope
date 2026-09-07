@@ -1,6 +1,6 @@
 # FlowScope 프로젝트 개요 (목표·범위)
 
-> 현재 제품 범위: 2026-09-07 D-128 반영. 초기 Judge·하네스 MCP 구성은 폐기한 상태를 유지하고, 판정 없는 독립 Codex Explorer를 별도 실행기로 구현했다. FlowScope용 제품 MCP는 여전히 구현하지 않았다.
+> 현재 제품 범위: 2026-09-08 D-129 반영. 초기 Judge·하네스 MCP 구성은 폐기한 상태를 유지하고, 판정 없는 독립 Codex Explorer를 별도 실행기로 구현했다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인을 추가했으며 FlowScope용 제품 MCP는 여전히 구현하지 않았다.
 
 > **구현 상태(1.2.0-beta.44 미출시 소스):** 값 없는 `Endpoint·Parameter Surface Delta`가 OpenAPI·HTML form·JavaScript AST call-site 선언과 실제 H/S/L HTTP 관측을 분리한다. 새 Explorer는 로그인된 Codex와 exact-scope HTTP tool로 실제 LLM Evidence를 만들며 계정별 응답 차이와 미해결 항목을 남긴다. 취약점 verdict·Judge·LLM assessment는 만들지 않는다. 기존 Resource/owner/BOLA·BFLA 그래프와 판정은 `접근 대상 ID` 상세층으로 유지한다. 자동 회귀와 provider 하네스는 실제 Burp 재로드나 다양한 대상의 endpoint·parameter 효능 평가가 아니다.
 

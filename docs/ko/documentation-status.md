@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-07 D-128 작업본. 기준선은 `453c0ba`이며 현재 미출시 변경에 독립 Explorer와 새 `llm-explorer.md`가 추가됐다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-128로 갱신한다.
+최종 대조: 2026-09-08 D-129 작업본. 기준선은 `5da5b08`이며 현재 미출시 변경에 다운로드 distribution bundle, 기능별 doctor와 Explorer readiness 재확인이 추가됐다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-129로 갱신한다.
 
 ## 1. 무엇을 어디서 읽는가
 
@@ -21,6 +21,7 @@
 7. 한국어 기여 안내의 “JDK 21 이상”을 실제 Enforcer와 맞는 JDK 21·Maven 3.9.x로 정정했다.
 8. 현재 인계와 과거 인계를 분리했다. 옛 결함은 일괄 닫지 않고 재검증 대기로 승계했다. 기존 사용자 인계 지침은 보존했고 멘토 보고서는 수정하지 않았다.
 9. D-128 독립 Explorer의 app-server dynamic tool, 메모리 인증, actual-response Evidence, no-MCP/no-Judge 계약을 README·설치·아키텍처·제품·UI·Surface·계획·인계에 반영했다. 이전 D-126 제거 자체와 과거 실행 기록은 덮어쓰지 않았다.
+10. D-129 distribution bundle, clone 없는 ZAP helper 경로, 기능별 doctor와 Explorer 설치·로그인·재확인 동선을 한·영 README/시작 가이드, 아키텍처·결정·계획·인계·UI 근거에 반영했다. 자동 설치가 불가능하거나 하지 않는 외부 선행 조건과 Windows/실물 gate를 분리했다.
 
 ## 3. 전수 목록
 
@@ -34,7 +35,7 @@
 | [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
 | [README.md](../../README.md) | 현행 계약 | 폐기 실행 보장 제거·현재 결과 의미·입력/보존/분석 상한 구분 |
 | [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 영문 Judge/closed-world/자동 validation 안내·Passive 정체 기준 정정 |
-| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | D-128 Codex 로그인·메모리 계정·Explorer 실행·포트 경계 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | D-129 bundle 설치·기능별 doctor, D-128 Codex 로그인·메모리 계정·Explorer 실행·포트 경계 |
 | [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Explorer 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
@@ -45,13 +46,13 @@
 | [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | JS parser 상한과 live 전달 한계, source LLM/미실행 실험 구분 |
 | [docs/ko/llm-explorer.md](llm-explorer.md) | 현행 계약 | 독립 Explorer 실행·인증·scope·Evidence·사용자 조작·남은 gate |
 | [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | HUMAN/ZAP/Explorer와 no-Judge/no-MCP 범위 |
-| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | Explorer 피드·actual Evidence·과거 Judge 분리 |
-| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P21/P23 D-128 대체와 폐기 기능 구분 |
+| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-129 준비 실패 안내, Explorer 피드·actual Evidence·과거 Judge 분리 |
+| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P21/P23 D-128 대체, D-129 readiness 재확인과 폐기 기능 구분 |
 | [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, 제품 MCP/Client-only 보류 |
 | [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-128 검증·Burp·독립 효능 gate와 이전 beta 이력 분리 |
 | [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-128 실행·비밀·scope·Evidence 선택과 기각안 |
-| [docs/ko/development-log.md](development-log.md) | 역사 | D-128 코드/UI/문서·검증·남은 gate append |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | 두 clean verify·동일 JAR·실제 provider 하네스와 미실행 Burp gate 분리 |
+| [docs/ko/development-log.md](development-log.md) | 역사 | D-129 배포/점검 변경과 D-128 Explorer 코드/UI/문서·검증·남은 gate append |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-129 JAR/bundle 반복 검증과 D-128 실제 provider 하네스·미실행 Burp gate 분리 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
@@ -69,6 +70,7 @@
 
 - 최종 점검: 관리 문서 36개와 목록 대응 일치, 로컬 파일/디렉터리 링크 230개 모두 존재, `git diff --check` 통과. 이전 인계 본문과 사용자 CLAUDE 인계 문단 보존 확인. 외부 URL 응답·heading anchor·모든 제품 동작을 검증한 것은 아니다.
 - 코드 대조: 제거된 runtime/API, 호스트 소유 ZAP, 과거 데이터 모델, JS parser·capture·record·RouteDiscoveryDocument/Surface 전달, DataFlow index, capability scope, Alert/Passive 상한, 빌드 JDK 계약.
+- D-129 작업에서 `mvn clean verify`를 2회 실행했고 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files/242 tests가 통과했다. 기능별 Bash doctor는 JDK 21/Codex 로그인 성공과 JDK 26 거부를 실제 확인했다. JAR/bundle 반복 package와 clone 없는 clean extraction도 통과했다.
 - D-128 최종 입력에서 `mvn clean verify`를 두 번 실행했고 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files/241 tests가 매회 통과했다. 두 JAR은 31,626,205 bytes, 9,130 entries와 SHA-256 `762728bff34d9d4d9d9f3a695d43fc5ed6ede25a9900c6db552affdcc268d87b`로 동일했다.
 - opt-in provider 하네스를 별도로 두 번 실행해 설치·로그인된 실제 Codex app-server의 dynamic HTTP tool 호출을 확인했다. 실제 Burp/ZAP, 외부 대상 요청, Windows, 독립 corpus 효능은 실행하지 않았다. 검증 범위와 명령은 [beta-validation](beta-validation.md)이 정본이다.
 - 대형 응답 전달 문제는 D-128 코드와 1.4MiB 회귀로 수정·검증했다. 실제 Burp 대상에서의 운영 재현과 4MiB 초과 응답은 [HANDOFF](HANDOFF.md)의 별도 gate·한계로 추적한다.

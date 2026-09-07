@@ -195,6 +195,17 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void explorerReadinessCanBeRecheckedWithoutStartingARun() throws Exception {
+        start();
+
+        HttpResponse<String> response = post("/api/explorer-run", "action=recheck", token);
+
+        assertEquals(200, response.statusCode());
+        assertEquals("READY", JSON.readTree(response.body()).at("/run/providerReadiness").asText());
+        assertEquals(1, state.explorerReadinessChecks);
+    }
+
+    @Test
     void archivedAssessmentsAreReadOnlyAndDoNotBecomeCurrentCandidates() throws Exception {
         start();
         state.archivedAssessments = List.of(new LegacyAssessment("old-1", "BOLA", "LIKELY",
@@ -946,6 +957,7 @@ final class FlowScopeWebServerTest {
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
                 List.of(), false, 0, 0, List.of(), List.of());
+        private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
         private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
@@ -1015,6 +1027,10 @@ final class FlowScopeWebServerTest {
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
                     request.accountIds(), request.includeAnonymous(), 0, 0, List.of(), List.of());
+            return explorerRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
+            explorerReadinessChecks++;
             return explorerRun;
         }
 

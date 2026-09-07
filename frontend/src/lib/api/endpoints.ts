@@ -52,7 +52,7 @@ export const startScannerRun = (target: string, accounts: string, anonymous: boo
 export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))
 export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean }) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "start", ...values, anonymous: String(values.anonymous) }, [202])
-export const controlExplorerRun = (action: "cancel" | "clear") =>
+export const controlExplorerRun = (action: "cancel" | "clear" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
 export const steerExplorerRun = (message: string) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })

@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 다운로드 배포와 기능별 점검 (D-129, 2026-09-08)
+
+- 다운로드 사용자가 저장소를 clone하지 않아도 되도록 Burp JAR, ZAP Compose/helper, OS별 doctor와 현재 문서를 `flowscope-1.2.0-beta.44-bundle.zip`으로 함께 만듭니다.
+- doctor를 `human`, `zap`, `explorer`, `full` 모드로 나눠 선택하지 않은 외부 도구가 실패 원인이 되지 않게 했습니다.
+- Explorer가 READY가 아니면 영향 범위와 공식 Codex 설치·로그인 절차를 보여 주고, 설치 후 15초 cache를 기다리지 않는 **다시 확인** 동작을 추가했습니다.
+
 ## 미출시 · 독립 LLM Explorer (D-128, 2026-09-07)
 
 - Judge와 MCP 서버를 복원하지 않고 로그인된 로컬 Codex app-server의 dynamic HTTP tool을 사용하는 독립 Explorer를 추가했습니다.

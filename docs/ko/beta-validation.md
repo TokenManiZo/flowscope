@@ -1,8 +1,28 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 2026-09-08 · 미출시 D-129 · 다운로드 bundle·환경 점검 gate
+
+`5da5b08`의 D-128 Explorer 위에 distribution bundle, 기능별 doctor와 Explorer readiness 재확인을 추가한 작업트리다. 원격 Release에는 아직 게시하지 않았다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS arm64, Homebrew JDK 21.0.12.1, Maven 3.9.16, Maven 고정 Node 24.11.1 |
+| 전체 빌드 | `mvn clean verify` 2회 성공, 52.042초 / 50.949초 |
+| Java | 매회 352 tests, failures/errors 0, opt-in provider 하네스 1 skip |
+| React | 매회 38 files / 242 tests, typecheck·notices·Vite build 통과 |
+| readiness 회귀 | provider cache 무효화, 실행 중 재확인 거부, Web `recheck` 위임, 설치·로그인 안내와 READY 전 시작 비활성 |
+| 셸 점검 | Bash helper 5개 `bash -n`·`shellcheck` 통과. 실제 `doctor.sh --mode explorer --build`는 Codex·로그인·Web·Maven·JDK 21 확인 0 failures; 기본 JDK 26은 1 failure로 종료 |
+| 산출물 구조 | JAR 1개 9,130 entries. bundle 1개 57 entries이며 JAR, LICENSE/NOTICE/README/SECURITY, 한·영 문서, doctor/ZAP helper, ZAP Compose를 포함 |
+| 반복 패키징 | 같은 입력의 `mvn clean package -DskipTests` 2회에서 JAR과 bundle SHA-256이 각각 동일. JAR은 31,627,230 bytes, SHA-256 `8401c18017b172e39137abfb62b8fc5f3a81cf7c54b9c2b18cd84b78ea8ed977` |
+| clean extraction | `/tmp`의 새 디렉터리에 bundle을 풀어 필수 파일, Bash 실행 권한·구문, ZAP key helper, `docker compose config --quiet`, 추출본 Explorer/build doctor를 통과 |
+| 현재 자동화 경계 | 다운로드 사용자는 Maven·Node.js·npm 불필요. HUMAN/Explorer만 쓰면 JAR 단독 가능. ZAP helper까지 쓰면 bundle 필요 |
+| 미실행 | Windows PowerShell 실기기, 실제 Burp 최종 JAR load/unload, 실물 ZAP/Explorer 전체 대상 실행 |
+
+이 표는 설치·배포 동선과 회귀 결과다. endpoint 발견률, 취약점 판정 정확도, ZAP 실물 크롤링, 모든 Codex CLI 버전 호환을 증명하지 않는다. bundle은 이 문서 자체를 포함하므로 자기 SHA-256을 내부에 기록하지 않는다. 게시할 최종 bundle 해시는 Release 자산과 외부 결과에서 식별한다.
+
 ## 2026-09-07 · 미출시 D-128 · 독립 LLM Explorer 자동·실물 provider gate
 
-`453c0ba`에서 시작한 현재 D-128 작업트리로 만든 JAR이다. 아직 로컬 커밋 전이며 원격 Release에 게시하지 않았다.
+`453c0ba`에서 시작해 로컬 commit `5da5b08`로 고정한 D-128 JAR이다. 원격 Release에는 게시하지 않았다.
 
 | 항목 | 실제 확인 결과 |
 |---|---|

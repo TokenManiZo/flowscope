@@ -31,6 +31,7 @@ public interface ExplorerProvider extends AutoCloseable {
     }
 
     String readiness();
+    default void invalidateReadiness() {}
     Handle start(Request request, Listener listener);
     @Override void close();
 }

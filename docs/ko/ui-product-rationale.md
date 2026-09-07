@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-07, D-128 (미출시 변경).** 기존 Judge·MCP·브라우저 실행기는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 추가했다. 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토이며, H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-08, D-129 (미출시 변경).** 기존 Judge·MCP·브라우저 실행기는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -12,7 +12,7 @@ FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청과 대상 산
 2. **선택한 API에서 어떤 사용자·객체·기능 조합이 허용되거나 거부됐는가?** — identity/role/owner 인가 비교.
 3. **그 판단을 실제 요청·응답으로 확인할 수 있는가?** — Evidence와 통제 재현.
 
-새 Explorer는 `IDLE/AUTHENTICATING/RUNNING/COMPLETED/FAILED/CANCELLED`와 시도·응답·Evidence·미해결을 분리한다. LLM 응답 Evidence 0건은 “못 찾음”이나 완료로 바꾸지 않고 실패 원인을 표시한다. 실패 시도는 실제 HTTP Evidence가 아니므로 그래프 노드를 만들지 않는다.
+새 Explorer는 `IDLE/AUTHENTICATING/RUNNING/COMPLETED/FAILED/CANCELLED`와 시도·응답·Evidence·미해결을 분리한다. LLM 응답 Evidence 0건은 “못 찾음”이나 완료로 바꾸지 않고 실패 원인을 표시한다. 실패 시도는 실제 HTTP Evidence가 아니므로 그래프 노드를 만들지 않는다. Codex가 READY가 아니면 Explorer만 사용할 수 없음을 명시하고 공식 설치 안내와 **다시 확인**을 같은 화면에 둔다. HUMAN·ZAP은 이 실패로 비활성화하지 않는다.
 
 ## 2. 왜 일반 Burp 요청 목록만으로 부족한가
 

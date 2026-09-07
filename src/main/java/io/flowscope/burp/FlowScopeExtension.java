@@ -1146,6 +1146,9 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public ExplorerCoordinator.Snapshot cancelExplorer() { return explorer.cancel(); }
             @Override public ExplorerCoordinator.Snapshot clearExplorer() { return explorer.clear(); }
+            @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
+                return explorer.recheckProvider();
+            }
             @Override public void rebuild() { scheduleRebuild(); }
             @Override public void clearTraffic() { clearRecords(); }
             @Override public void loadSample() { loadSampleProject(); }

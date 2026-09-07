@@ -36,9 +36,9 @@ MCP 서버나 포트 8787은 없다. 모델이 대상에 직접 `curl`하지도 
 
 ## 사용자 준비와 실행
 
-1. 공식 Codex CLI를 설치하고 같은 OS 사용자로 한 번 로그인한다. API key는 FlowScope에 입력하지 않는다.
+1. [공식 Codex CLI 안내](https://learn.chatgpt.com/docs/codex/cli)에 따라 설치하고 같은 OS 사용자로 터미널에서 `codex`를 실행해 **Sign in with ChatGPT**를 완료한다. API key는 FlowScope에 입력하지 않는다.
 2. Burp에 현재 JAR을 로드하고 exact scope를 적용한다.
-3. Web `http://127.0.0.1:17777/#explorer`를 연다.
+3. Web `http://127.0.0.1:17777/#explorer`를 연다. 준비 상태가 READY가 아니면 화면의 원인을 해결하고 **다시 확인**을 누른다. 이 동작은 15초 readiness cache를 즉시 무효화한다.
 4. 비로그인 탐색만 쓸 경우 시작 URL을 고르고 바로 실행한다.
 5. 인증 탐색은 계정 이름·역할·로그인 URL·ID·비밀번호를 입력한다.
    - `HTML form`: password input이 있는 표준 POST form과 hidden field를 사용한다. 비밀번호를 query에 넣는 GET form은 거부한다.
@@ -67,6 +67,7 @@ POST의 업무 의미를 범용 블랙박스에서 완전히 판별할 수 없�
 - 런타임 불필요: Node.js 직접 설치, Playwright, Chrome/Chrome MCP, 별도 MCP 서버, provider API key.
 - FlowScope는 Finder 등 축소된 PATH에서도 macOS Homebrew `/opt/homebrew/bin`, `/usr/local/bin`, Windows WinGet/npm 표준 위치를 확인한다. 사용자 지정 실행 파일은 `-Dflowscope.llm.codex.path=/absolute/path`로 지정할 수 있다.
 - 이 구현은 Codex app-server의 experimental dynamic-tools API를 사용한다. 현재 설치된 CLI와 실물 opt-in 하네스에서 확인했지만 향후 CLI 프로토콜 변경 시 readiness 또는 provider gate가 실패할 수 있다. 실패를 LLM 미발견으로 바꾸지 않고 실행 실패로 표시한다.
+- Release 사용자는 Maven·Node.js·npm을 설치하지 않는다. Codex CLI 설치와 ChatGPT 로그인만 외부 선행 조건이고, FlowScope는 이를 자동 설치하거나 로그인 자격을 대신 만들지 않는다. `doctor.sh --mode explorer` 또는 `doctor.ps1 -Mode explorer`로 Web UI 밖에서도 선행 조건을 확인할 수 있다.
 
 ## 검증 수준과 남은 gate
 
