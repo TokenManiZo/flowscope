@@ -34,7 +34,8 @@ public final class ProjectStore {
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
-    private static final int MAX_PAYLOAD_BYTES = 1024 * 1024;
+    /** Discovery documents may be retained up to the live capture's 4 MiB analysis limit. */
+    private static final int MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
     private static final long MAX_RESTORED_PAYLOAD_BYTES = 48L * 1024 * 1024;
     private final ObjectMapper json = new ObjectMapper();
 

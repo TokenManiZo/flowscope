@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — standalone LLM Explorer (D-128)
+
+- Added a standalone Explorer backed by the locally authenticated Codex app-server dynamic-tool protocol without restoring the removed Judge or MCP server.
+- The Web UI can run anonymous or memory-only HTML-form/JSON-API accounts and shows elapsed time, actual HTTP Evidence, unresolved items, steering, and cancellation.
+- A Java exact-scope gateway enforces methods, headers, deduplication and a request budget before Burp Montoya sends target traffic. Login exchanges and raw credentials/session values are not persisted or exposed to the model; only exploration requests with real responses become controlled LLM Evidence.
+- Discovery analysis now retains up to 4 MiB for HTML/JavaScript/JSON/XML and includes a 1.4 MiB JavaScript regression.
+- The Explorer inventories endpoints, methods, parameters and account response differences; it does not produce vulnerability verdicts, Judge output or LLM assessments. Real Burp and independent-corpus effectiveness remain separate gates.
+
 ## Unreleased — documentation consistency (D-127, 2026-09-07)
 
 - Separated current handoff from historical instructions; corrected Korean/English operating guides, contributor instructions, architecture, plans and UI claims about retired MCP/Judge/Active Scan paths. See the [document inventory](../ko/documentation-status.md).

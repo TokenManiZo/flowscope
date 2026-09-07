@@ -1,6 +1,6 @@
 # React Web UI 기능 동등성 인벤토리
 
-**2026-09-07 D-126:** 현재 UI는 HUMAN/ZAP 실행과 규칙 후보·사람 검토만 제공한다. Explorer/Judge·MCP 실행 화면은 폐기했다. 과거 LLM 기록은 읽기 전용으로 보존한다. 아래 P21~P24/P38/P39는 미완료가 아니라 삭제한 기능이며, 과거 브라우저 검증을 새 JAR의 결과로 쓰지 않는다. 최신 검증은 [beta-validation](beta-validation.md)의 D-126 절을 따른다.
+**2026-09-07 D-128:** 현재 UI는 HUMAN/ZAP와 새 독립 Codex Explorer, 규칙 후보·사람 검토를 제공한다. Judge·MCP·옛 브라우저 화면은 폐기 상태를 유지하고 과거 LLM 기록은 읽기 전용으로 보존한다. 아래 P21/P23은 D-128 계약으로 대체됐고 P22/P24/P38/P39는 계속 폐기 상태다. 최신 검증은 [beta-validation](beta-validation.md)의 D-128 절을 따른다.
 
 이 표는 기존 Web UI가 제공하는 동작을 React 전환 전에 고정한 이력과 beta.44 통합 상태를 함께 기록한다. React는 `/`와 `/app/`의 기본 UI이고 legacy는 `/legacy/`에 남아 있다. component/standalone 통과와 실제 Burp runtime 동등성은 분리하며, 런타임 항목은 explicit Burp gate 전에는 완료로 표시하지 않는다.
 
@@ -26,9 +26,9 @@
 | P18 | HUMAN 시작·종료 | `GET/POST /api/human-run` | `#inspection` | `InspectionPage.test.tsx` (exact begin/end forms) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
 | P19 | ZAP 상태 새로고침 | `GET /api/zap-status` | `#inspection` | `InspectionPage.test.tsx` (disconnected/exact-scope/identity gate) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
 | P20 | 격리된 anonymous/account ZAP baseline | `GET/POST /api/scanner-run` | `#inspection`, `#runs` | `InspectionPage.test.tsx`, `RunsPage.test.tsx` (202 form, out-of-scope disable, lane state/error retention) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 5; Burp gate open) |
-| P21 | LLM Explorer | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
+| P21 | 독립 LLM Explorer | `GET/POST /api/explorer-run`, `GET/POST /api/explorer-accounts` | `#explorer`, `#runs` | `ExplorerPage.test.tsx`, `RunsPage.test.tsx` | `FlowScopeWebServerTest`, Explorer auth/gateway/coordinator tests | Codex app-server opt-in dynamic-tool harness | 실제 Burp anonymous/form/JSON gate | IMPLEMENTED (D-128; Burp gate open) |
 | P22 | LLM Judge | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
-| P23 | LLM 취소 | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
+| P23 | Explorer steer·취소·clear | `POST /api/explorer-run` actions | `#explorer` | `ExplorerPage.test.tsx` | `ExplorerCoordinatorTest`, `FlowScopeWebServerTest` | cancellation race 회귀 | 실제 Codex/Burp process 정리 gate | IMPLEMENTED (D-128; Burp gate open) |
 | P24 | Judge 후속 질문 | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
 | P25 | run 상태 | `GET /api/human-run`, `GET /api/scanner-run`, snapshot `runExecutions`(과거 기록) | `#runs` | `InspectionPage.test.tsx`, `RunsPage.test.tsx` (문자 상태·단계·count/error retention, 가짜 완료율 없음, 실행 실패/응답 분리) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (beta.44 통합; Burp gate open) |
 | P26 | graph source/authz 보기 | `/api/snapshot` graph projection | `#graph` | `graphProjection.test.ts`, `CytoscapeGraph.test.tsx` (source/authz text·style, exact selection, lifecycle) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 9; runtime gate open) |

@@ -1,6 +1,6 @@
 # **AI-API 플로우 취약점 기능명세서**
 
-> **2026-09-07 D-126 우선:** 아래 원 요구와 beta.38 주석의 MCP 통제 executor·Explorer 브라우저·Judge lock/최종 제출은 폐기된 실행 설계다. 원본 요구를 삭제하지 않되 현행 설치·작업 지시로 사용하지 않는다. 현재는 HUMAN·ZAP 실행, H/S/L 관측 비교, 규칙 후보·사람 검토와 과거 LLM 읽기 전용 이력이다. 새 하네스·제품 MCP는 미구현이며 [현재 인계](../HANDOFF.md)·[아키텍처](../architecture.md)가 우선한다.
+> **2026-09-07 D-128 우선:** 아래 원 요구와 beta.38 주석의 MCP 통제 executor·Explorer 브라우저·Judge lock/최종 제출은 폐기된 실행 설계다. 원본 요구를 삭제하지 않되 현행 설치·작업 지시로 사용하지 않는다. 현재는 HUMAN·ZAP·판정 없는 독립 Codex Explorer, H/S/L 관측 비교, 규칙 후보·사람 검토와 과거 LLM 읽기 전용 이력이다. 제품 MCP는 미구현이며 [현재 인계](../HANDOFF.md)·[아키텍처](../architecture.md)·[Explorer 계약](../llm-explorer.md)이 우선한다.
 
 > 이 문서는 F-01~F-24의 원본 기능 요구와 참조 화면을 보존한다. 현재 제품 행동과 신뢰 경계의 정본은 루트 `README.md`, `docs/ko/architecture.md`, `docs/ko/decisions.md`다.
 

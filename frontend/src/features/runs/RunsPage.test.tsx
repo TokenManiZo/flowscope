@@ -16,6 +16,7 @@ function setup() {
       : path === "/api/human-run" ? humanRunFixture
       : path === "/api/zap-status" ? zapStatusFixture
       : path === "/api/scanner-run" ? { ...scannerRunFixture, run: { status: "RUNNING", stage: "CLIENT_SPIDER", captured_records: 8, alert_count: 2 } }
+      : path === "/api/explorer-run" ? { run: { status: "IDLE", runId: "", target: "", startedAt: null, endedAt: null, elapsedMillis: 0, message: "Explorer 실행 대기", providerReadiness: "READY", accountIds: [], anonymous: false, attempts: 0, responses: 0, unresolved: [], activities: [] }, accounts: [], scope: [] }
       : null
     if (body === null) throw new Error("Unexpected API " + path)
     return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } })
@@ -24,12 +25,14 @@ function setup() {
   const view = renderWithQueryClient(<RunsPage />)
   return { ...view, fetchStub, goOffline: () => { offline = true } }
 }
-it("shows HUMAN and scanner status without an LLM execution API or controls", async () => {
+it("shows HUMAN, scanner, and independent LLM Explorer status", async () => {
   const { fetchStub } = setup()
   expect(await screen.findByText("현재 단계 CLIENT_SPIDER · 수집 8건 · Alert 2건")).toBeVisible()
-  expect(screen.queryByRole("tab", { name: "LLM" })).not.toBeInTheDocument()
-  expect(screen.queryByRole("button", { name: /Judge|Explorer/ })).not.toBeInTheDocument()
+  expect(screen.getByRole("tab", { name: "LLM" })).toBeVisible()
   expect(fetchStub.mock.calls.every(([path]) => !String(path).includes("llm-run"))).toBe(true)
+  await userEvent.click(screen.getByRole("tab", { name: "LLM" }))
+  expect(screen.getByText("LLM Explorer · IDLE")).toBeVisible()
+  expect(screen.getByRole("button", { name: "LLM Explorer 열기" })).toBeVisible()
   await userEvent.click(screen.getByRole("tab", { name: "HUMAN" }))
   expect(screen.getByText("HUMAN · NOT_STARTED")).toBeVisible()
 })

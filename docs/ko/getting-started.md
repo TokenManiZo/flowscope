@@ -1,8 +1,8 @@
 # FlowScope 설치·첫 실행 가이드
 
-이 가이드는 D-126 제거 소스 기준입니다. 같은 beta.44 이름의 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오. MCP/LLM 설치 절차는 현재 제공하지 않습니다.
+이 가이드는 D-128 독립 Explorer 소스 기준입니다. 같은 beta.44 이름의 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
 
-현재 소스의 실행 경로는 HUMAN·ZAP이다. 기존 LLM Judge·Explorer 하네스·MCP는 제거됐고, 새 하네스와 FlowScope용 MCP는 아직 없다(D-126, 미출시). H/S/L 관측 비교와 과거 프로젝트는 보존한다. Docker는 ZAP 준비를 위한 선택 경로다. 제거 변경은 아직 원격 Release에 게시하지 않았으므로 이전 beta.44 JAR 대신 이 작업 소스에서 빌드한 JAR을 사용해야 한다.
+현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server dynamic tool과 Java exact-scope gateway를 쓴다(D-128, 미출시). H/S/L 관측 비교와 과거 프로젝트는 보존한다. Docker는 ZAP 준비를 위한 선택 경로다. 이 변경은 아직 원격 Release에 게시하지 않았으므로 이전 beta.44 JAR 대신 이 작업 소스에서 빌드한 JAR을 사용해야 한다.
 
 ## 1. 지원 경로와 검증 범위
 
@@ -10,6 +10,7 @@
 |---|---|---|
 | Release JAR + ZAP Desktop | 기존 GUI 점검 환경을 그대로 사용 | Burp, ZAP 2.17.0 |
 | Release JAR + Docker ZAP | 버전·add-on을 고정한 재현 환경 | Burp, Docker Compose v2 |
+| LLM Explorer | 독립 endpoint·parameter·계정별 응답 관측 | 위 JAR, 공식 Codex CLI와 유효한 Codex 로그인 |
 | 소스 빌드 | 코드 수정·기여 | 위 환경, JDK 21 정확히, Maven 3.9.x |
 
 실제 확인한 기준선은 다음과 같다.
@@ -39,7 +40,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 |---|---|---|
 | `127.0.0.1:8080` | Burp | HUMAN 브라우저·수동 도구 트래픽 |
 | `127.0.0.1:8081` | Burp | ZAP이 upstream으로 보내는 SCANNER 트래픽 |
-| `127.0.0.1:8082` | Burp | 이전 직접 LLM 관측 호환용. 현재 자동 실행 없음 |
+| `127.0.0.1:8082` | Burp | 이전 직접 LLM 관측 호환용. 새 Explorer는 이 listener를 쓰지 않음 |
 | `127.0.0.1:8089` | ZAP | 로컬 ZAP proxy/API |
 | `127.0.0.1:17777` | FlowScope | 로컬 Web 작업면 |
 
@@ -159,9 +160,14 @@ PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta
 우선순위는 JVM 속성 key → 환경 변수 → 지정 key 파일 → 기본 key 파일이다. secret을 Git, README, 실행 로그에 넣지 않는다.
 이미 FlowScope를 로드한 뒤 key를 만들었다면 확장을 한 번 재로드한다.
 
-## 6. LLM 전환 안내
+## 6. LLM Explorer 준비
 
-모델 CLI 설치·로그인, MCP 토큰·8787 포트 설정은 현재 FlowScope 실행에 필요하지 않다. 기존 실행 버튼·agent-workspace는 제거됐으며 새 제품 MCP도 아직 없다. 사용자 전역 설정·인증 파일은 자동 삭제하지 않는다. 과거 LLM 기록은 React 시나리오의 읽기 전용 구역에서 확인한다.
+1. 공식 Codex CLI를 설치하고 Burp와 같은 OS 사용자로 `codex login`을 한 번 완료한다. FlowScope에 API key를 입력하지 않는다.
+2. exact scope를 적용한 뒤 Web **Explorer**를 연다.
+3. 비로그인만 선택하거나, HTML form/JSON API 로그인 계정을 메모리 전용으로 추가한다. 계정 ID·비밀번호·live cookie/token은 프로젝트에 저장되지 않으며 모델에는 opaque account handle만 전달된다.
+4. 시작 URL과 신원을 선택해 실행한다. 진행 피드의 경과시간·HTTP 요청·Evidence ID·미해결·실패를 확인하고 필요하면 steer 또는 취소한다.
+
+MCP 토큰·8787 포트, Chrome/Playwright, provider API key는 필요하지 않다. 새 Explorer는 모델 일반 네트워크 대신 app-server dynamic tool을 Java exact-scope gateway에 연결한다. 자세한 설정·경계·남은 실환경 gate는 [LLM Explorer](llm-explorer.md)를 따른다. 과거 LLM Judge 기록은 React 시나리오의 읽기 전용 구역에만 남는다.
 
 ## 7. 환경 점검
 
@@ -196,14 +202,16 @@ Windows 소스 빌드는 `.\scripts\doctor.ps1 -Build` 후 `mvn clean verify`를
 doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명하지 않는다. `8080/8081`이 열렸더라도 Burp listener 표와 FlowScope 포트 분류를 눈으로 대조한다.
 기본 포트를 바꿨다면 `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT`를 같은 shell/PowerShell 세션에 지정해 doctor 기준도 맞춘다. Windows doctor는 key ACL 상속과 다른 SID의 허용 규칙도 검사한다.
 
-## 8. 첫 HUMAN·ZAP 실행
+## 8. 첫 HUMAN·ZAP·LLM 실행
 
 1. FlowScope 탭에 허가받은 `scheme://host[:port]/path-prefix` exact scope를 한 줄씩 입력하고 **범위 적용**을 누른다.
 2. Web **계정·세션**에서 테스트 계정을 등록한다. 계정 로그인이 필요하면 **로그인 연결**을 시작하고 HUMAN `8080` 경로로 로그인한 뒤 성공한 인증 페이지까지 확인하고 캡처를 종료한다.
 3. **HUMAN pass 시작**을 누르고 Burp 브라우저로 허가된 기능을 탐색한 다음 pass를 종료한다.
 4. 빠른 시작의 ZAP 카드에서 대상과 비로그인/ACTIVE 계정을 고른다. 이미 보유한 API 정의가 있으면 한 줄에 하나씩 `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, `GRAPHQL ENDPOINT [SCHEMA_URL]`로 입력하고 **신원별 격리 검사 시작**을 누른다. 모든 URL은 현재 exact scope 안이어야 한다. 정의 import는 명세의 write method 요청도 만들 수 있으므로 이어지는 Burp 승인창에서 한 번 더 확인한다. 비워 두면 정의를 추측하지 않고 Spider 기준선만 실행한다. Active Scan은 자동 baseline에 포함되지 않는다. 계정 검사는 세션 오염을 막기 위해 비로그인부터 직렬 실행한다. 화면의 `세션 / Traditional / Client / AJAX 보완 / Passive / Alert` 진행선, 전체·단계 경과시간, ZAP 응답, 트래픽 변화, Passive 남은 건수·현재 task, Alert 집계 완결성과 대기 이유로 정상 실행·부분 완료·응답 단절을 구분한다. **실시간 실행 기록**은 실제 단계 시작·queue 감소·Alert 집계·격리 정리를 최신순으로 보여 준다. Passive가 10분간 진행되지 않거나 30분을 넘으면 현재 결과를 보존하고 queue를 정리하며, 정리가 확인되지 않으면 다음 계정을 실행하지 않는다.
 5. **API·입력 차이**에서 선언/관측과 산출물 파싱 상태를 확인한다.
-6. **시나리오**에서 현재 규칙 후보와 Evidence를 확인하고 사람 검토를 기록한다. 자동 LLM 판정은 하지 않는다.
+6. **Explorer**에서 비로그인 또는 등록한 메모리 계정을 골라 독립 탐색을 실행한다. 실제 응답 Evidence가 0건이면 완료가 아니라 실패다.
+7. **API·입력 차이**에서 H/S/L endpoint·parameter 관측을 비교한다.
+8. **시나리오**에서 현재 규칙 후보와 Evidence를 확인하고 사람 검토를 기록한다. 자동 LLM 판정은 하지 않는다.
 7. 과거 assessment/validation은 별도 읽기 전용 기록이며 현재 검증 결과가 아니다.
 8. `.flowscope.db`를 연결해 자동 checkpoint를 활성화한다. raw broker credential은 DB에 저장되지 않으므로 Burp 재시작 뒤에는 다시 로그인 연결한다.
 

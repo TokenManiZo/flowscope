@@ -12,15 +12,14 @@ final class BoundedHttpCapture {
     record Result(HttpMessageTextCodec.Decoded decoded, String maskedText,
                   StoredPayload payload, int originalBytes, boolean complete) {}
 
-    /** route discovery가 읽는 media type. 이 값들만 분석문을 길게 남긴다. */
-    private static final int DISCOVERY_PREVIEW_BYTES = Integer.getInteger(
-            "flowscope.payload.discoveryPreviewBytes", 4 * 1024 * 1024);
+    /** route discovery가 읽는 media type. 이 값들만 분석·보존 상한을 넓힌다. */
+    private static final int DISCOVERY_PAYLOAD_BYTES = Integer.getInteger(
+            "flowscope.payload.discoveryBytes", 4 * 1024 * 1024);
 
     private BoundedHttpCapture() {}
 
     /**
-     * 보존 상한(retainedPayloadLimit)은 그대로 두고, route discovery가 읽는 분석문만 넓힌다.
-     * 초과 응답은 여전히 metadata-only로 남으므로 "전문 보존"을 주장하지 않는다.
+     * route discovery가 읽을 수 있는 크기까지 분석 preview를 넓힌다.
      */
     static int previewLimitFor(String contentType, int defaultPreviewLimit) {
         String media = contentType == null ? "" : contentType.toLowerCase(java.util.Locale.ROOT);
@@ -29,7 +28,15 @@ final class BoundedHttpCapture {
         media = media.trim();
         boolean discovery = media.contains("javascript") || media.contains("ecmascript")
                 || media.contains("json") || media.contains("html") || media.contains("xml");
-        return discovery ? Math.max(defaultPreviewLimit, DISCOVERY_PREVIEW_BYTES) : defaultPreviewLimit;
+        return discovery ? Math.max(defaultPreviewLimit, DISCOVERY_PAYLOAD_BYTES) : defaultPreviewLimit;
+    }
+
+    /**
+     * JavaScript·HTML·OpenAPI 문서는 후반부 call-site까지 분석하려면 retained payload가 필요하다.
+     * 그 외 본문과 discovery 상한 초과 본문은 기존 metadata-only 계약을 유지한다.
+     */
+    static int retainedLimitFor(String contentType, int defaultRetainedLimit) {
+        return Math.max(defaultRetainedLimit, previewLimitFor(contentType, defaultRetainedLimit));
     }
 
     static Result capture(ByteArray message, int bodyOffset, String contentType,

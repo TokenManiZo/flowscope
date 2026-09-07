@@ -1,6 +1,6 @@
 # FlowScope 결정 로그 (Decision Log)
 
-현재 상태는 [HANDOFF](HANDOFF.md), 문서 정본·이력 구분은 [문서 정합성·갱신 기준](documentation-status.md)을 따른다. 결정은 시간순 기록이며 과거 `확정`이 지금도 모두 유효하다는 뜻은 아니다. D-126이 기존 Judge·Explorer 하네스·MCP 실행 계약을 폐기했다.
+현재 상태는 [HANDOFF](HANDOFF.md), 문서 정본·이력 구분은 [문서 정합성·갱신 기준](documentation-status.md)을 따른다. 결정은 시간순 기록이며 과거 `확정`이 지금도 모두 유효하다는 뜻은 아니다. D-126이 기존 Judge·Explorer 하네스·MCP 실행 계약을 폐기했고, D-128은 Judge/MCP를 되살리지 않는 새 독립 Explorer 계약을 도입했다.
 
 > **운영 원칙 (카파시 마인드).** 최소로 시작한다. 각 선택마다 "더 나은 방식이 있나?"를 묻는다.
 > **있으면 교체하고, 없으면 유지하되 기각 이유를 여기 적는다.** 그리고 계속 디벨롭한다.
@@ -1165,3 +1165,13 @@
 - **기각:** 모든 날짜·버전·테스트 수를 최신 값으로 일괄 치환하면 과거 검증을 조작한다. 상단 안내만 두고 모순된 현재 사용법을 유지하면 오안내가 남는다. 매 문서에 전체 진행표를 복제하면 다시 어긋나므로 현재 진행은 HANDOFF, 실제 artifact 결과는 beta-validation로 구분한다.
 - **확인된 한계:** D-122 helper/parser의 4MiB 입력 회귀와 별개로 live host record의 8,192자 재절단이 남아 있다. 이를 문서 정정으로 고쳤다고 표시하지 않고 코드 경로 확인·실행 재현 미실시·수정 미착수로 기록한다. 과거 리뷰의 다른 결함은 항목별 재확인 전까지 해결/현존을 단정하지 않는다.
 - **검증·상태:** 문서 전용 변경이다. 파일 목록·상대 링크·코드 대조·기존 산출물 식별값 확인 범위는 documentation-status와 development-log에 기록하며 새 실환경 통과나 성능 개선을 주장하지 않는다.
+
+## D-128 · 독립 Explorer는 Codex app-server 동적 HTTP 도구와 메모리 인증 vault로 실행한다 (2026-09-07)
+
+- **문제:** D-126 이후 LLM source 데이터 모델만 남고 실행기가 없었다. 사용자가 요구한 것은 Judge나 취약점 서술이 아니라, HUMAN·ZAP과 독립적으로 endpoint·method·parameter·인증 상태·응답을 넓게 관측해 실제 LLM Evidence로 남기는 Explorer다. 모델에 대상 네트워크나 자격증명을 직접 주면 exact-scope와 비밀 비노출 계약을 코드로 강제할 수 없다.
+- **결정:** Web에서 비로그인 또는 메모리 전용 계정을 선택하면 `ExplorerCoordinator`가 계정 로그인을 준비하고 로그인된 로컬 Codex app-server를 시작한다. Codex에는 experimental dynamic HTTP tool 하나만 제공한다. 도구 호출은 Java `ExplorerHttpGateway`가 exact scope, method, 위험 header, 중복, 요청 수를 검사한 뒤 Burp Montoya로 전송한다. 실제 HTTP 응답이 있는 탐색 요청만 `source=LLM`, `sourceDetail=LLM_EXPLORER`, `CONTROLLED`, `EXPLORATION` Evidence와 실행 원장에 기록한다. 로그인 준비 교환과 raw 비밀번호·Cookie·Authorization/token은 Evidence·snapshot·프로젝트·로그·모델 입력에 넣지 않는다.
+- **역할 경계:** Explorer는 endpoint·method·query/path/header/body parameter, 계정별 응답 차이, 링크·응답으로 이어지는 workflow와 미해결 사유를 수집한다. 취약점 verdict, 심각도, 확률, LLM assessment, Judge를 만들지 않는다. HUMAN·SCANNER·LLM 비교와 기존 규칙·사람 검토가 후속 소비자다.
+- **실행 경계:** 모델 일반 네트워크는 비활성화하고 dynamic tool만 대상 요청에 사용한다. 허용 method는 GET/HEAD/OPTIONS/POST이며 POST는 조회·검색 목적 지침을 따른다. PUT/PATCH/DELETE, 업로드, brute force, race, exploit payload, 외부 callback은 차단/금지한다. run당 기본 500회, 성공 중복 차단, inline 512KiB·artifact 4MiB/24개 한계를 둔다. 실제 응답 Evidence가 0건이면 완료가 아니라 실패다.
+- **기각:** 기존 MCP/Judge 복원, 모델의 shell curl에 광범위 네트워크 허용, Chrome/Playwright 기본 의존, 비밀번호나 live 세션을 모델/자식 환경에 전달, 로그인 교환 저장, status만으로 완료 처리. 안전 sandbox에서 직접 curl은 loopback gateway에 도달하지 못했고, 네트워크를 넓히면 gateway를 우회할 수 있어 app-server 동적 도구를 선택했다.
+- **호환·한계:** 공식 app-server dynamic tools는 experimental API다. Codex CLI의 설치·로그인·프로토콜 호환을 readiness와 opt-in 실물 provider 하네스로 확인하며, 실패를 “미발견”으로 바꾸지 않는다. CAPTCHA/MFA/WebAuthn/SSO, runtime-only lazy chunk, server-only endpoint, 임의 wrapper의 완전 발견은 보장하지 않는다. 새 JAR의 실제 Burp·복수 인증 방식·Windows 및 독립 corpus 효능은 별도 gate다.
+- **근거:** 공식 Codex app-server 문서의 `initialize` experimental capability, `thread/start.dynamicTools`, `item/tool/call` 계약과 설치된 CLI 생성 schema를 대조했다. 자동 회귀와 실제 로그인된 로컬 provider opt-in 하네스의 결과는 [검증 기록](beta-validation.md)에 구분해 남긴다. 사용자 실행 계약은 [LLM Explorer](llm-explorer.md)를 정본으로 한다.

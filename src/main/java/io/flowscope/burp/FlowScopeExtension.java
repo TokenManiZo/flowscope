@@ -52,6 +52,11 @@ import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.SqliteProjectStore;
+import io.flowscope.integration.RunExecutionLedger;
+import io.flowscope.explorer.CodexAppServerProvider;
+import io.flowscope.explorer.ExplorerAccountVault;
+import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.explorer.ExplorerTransport;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
 
@@ -75,6 +80,7 @@ import java.nio.file.Path;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.time.Instant;
 
 /**
  * FlowScope Burp 확장 진입점 (Montoya). 프록시 트래픽을 포트별 소스로 수집하고
@@ -220,6 +226,8 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicLong scannerCapabilityRejections = new AtomicLong();
     private ZapClient zapClient;
     private volatile ZapCampaign zapCampaign;
+    private ExplorerAccountVault explorerAccounts;
+    private ExplorerCoordinator explorer;
     private final ScheduledExecutorService worker =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "flowscope-rebuild");
@@ -248,6 +256,10 @@ public final class FlowScopeExtension implements BurpExtension {
         this.api = api;
         api.extension().setName("FlowScope");
         configureInitialScope();
+        explorerAccounts = new ExplorerAccountVault();
+        explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
+                new CodexAppServerProvider(), runContexts, value -> scope.allows(value),
+                () -> { rebuildImmediately(); return latest; }, api.logging()::logToOutput);
         try {
             startWebUi();
         } catch (Exception e) {
@@ -505,13 +517,21 @@ public final class FlowScopeExtension implements BurpExtension {
     private RequestRecord recordFrom(HttpRequest req, HttpResponse response, PortProfile profile,
                                      long timestamp, boolean applyRunContext, String runId,
                                      InFlightRequestTracker.Observation observation) {
+        return recordFrom(req, response, profile, timestamp, applyRunContext, runId, observation, null);
+    }
+
+    private RequestRecord recordFrom(HttpRequest req, HttpResponse response, PortProfile profile,
+                                     long timestamp, boolean applyRunContext, String runId,
+                                     InFlightRequestTracker.Observation observation,
+                                     String forcedAccountId) {
         int status = response.statusCode();
         String location = response.headerValue("Location");
         String responseContentType = response.headerValue("Content-Type");
         BoundedHttpCapture.Result capturedRequest = BoundedHttpCapture.capture(req.toByteArray(), req.bodyOffset(),
                 req.headerValue("Content-Type"), MAX_PAYLOAD_BYTES, CAPTURE_PREVIEW_BYTES);
         BoundedHttpCapture.Result capturedResponse = BoundedHttpCapture.capture(response.toByteArray(),
-                response.bodyOffset(), responseContentType, MAX_PAYLOAD_BYTES,
+                response.bodyOffset(), responseContentType,
+                BoundedHttpCapture.retainedLimitFor(responseContentType, MAX_PAYLOAD_BYTES),
                 BoundedHttpCapture.previewLimitFor(responseContentType, CAPTURE_PREVIEW_BYTES));
         HttpMessageTextCodec.Decoded decodedRequest = capturedRequest.decoded();
         HttpMessageTextCodec.Decoded decodedResponse = capturedResponse.decoded();
@@ -527,7 +547,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 : observation.humanCaptureAccountId();
         String detectedAccountId = sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
                 java.time.Instant.now()).orElse(null);
-        String accountId = resolveObservedAccount(profile.source(), context == null ? null : context.accountId(),
+        String accountId = forcedAccountId != null ? forcedAccountId
+                : resolveObservedAccount(profile.source(), context == null ? null : context.accountId(),
                 humanCaptureAccountId, detectedAccountId);
         String fp = captureFingerprint(profile.source(), context, accountId,
                 req.headerValue("Authorization"), req.headerValue("Cookie"));
@@ -825,6 +846,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 long analysisEpoch = analysisPublication.invalidate();
                 clearRunContexts();
                 sessionBroker.close();
+                resetExplorerSecrets();
                 synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
                 synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
                 SampleProject.Data sample = SampleProject.create();
@@ -879,6 +901,7 @@ public final class FlowScopeExtension implements BurpExtension {
         archivedAssessments = List.of();
         archivedValidations = List.of();
         resetIntegrationWorkflow();
+        resetExplorerSecrets();
         publishAnalysis(analysisEpoch, empty);
         api.logging().logToOutput("FlowScope 수집 데이터가 삭제되었습니다.");
     }
@@ -918,6 +941,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 long analysisEpoch = analysisPublication.invalidate();
                 clearRunContexts();
                 sessionBroker.close();
+                resetExplorerSecrets();
                 synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
                 synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
                 Path path = file.toPath().toAbsolutePath().normalize();
@@ -1096,6 +1120,32 @@ public final class FlowScopeExtension implements BurpExtension {
                 return zapCampaign.cancelDeterministicZapBaseline();
             }
             @Override public com.fasterxml.jackson.databind.node.ObjectNode zapStatus() { return zapConnectionStatus(); }
+            @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorer.current(); }
+            @Override public List<ExplorerAccountVault.View> explorerAccounts() { return explorer.accounts(); }
+            @Override public ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
+                ExplorerAccountVault.View saved = explorer.saveAccount(input);
+                URI login = URI.create(saved.loginUrl());
+                io.flowscope.core.AccessRole role;
+                try { role = io.flowscope.core.AccessRole.valueOf(saved.role().toUpperCase(Locale.ROOT)); }
+                catch (RuntimeException ignored) { role = io.flowscope.core.AccessRole.UNKNOWN; }
+                analysisConfig.upsertAccount(new io.flowscope.core.AccountProfile(
+                        saved.id(), saved.label(), login.getScheme() + "://" + login.getAuthority(), role));
+                scheduleRebuild();
+                return saved;
+            }
+            @Override public void removeExplorerAccount(String id) {
+                explorer.removeAccount(id);
+                analysisConfig.removeAccount(id);
+                scheduleRebuild();
+            }
+            @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
+                return explorer.start(request);
+            }
+            @Override public ExplorerCoordinator.Snapshot steerExplorer(String message) {
+                return explorer.steer(message);
+            }
+            @Override public ExplorerCoordinator.Snapshot cancelExplorer() { return explorer.cancel(); }
+            @Override public ExplorerCoordinator.Snapshot clearExplorer() { return explorer.clear(); }
             @Override public void rebuild() { scheduleRebuild(); }
             @Override public void clearTraffic() { clearRecords(); }
             @Override public void loadSample() { loadSampleProject(); }
@@ -1299,6 +1349,14 @@ public final class FlowScopeExtension implements BurpExtension {
         executionLedger.clear();
     }
 
+    private void resetExplorerSecrets() {
+        if (explorer == null) return;
+        try { explorer.cancel(); } catch (RuntimeException ignored) { }
+        explorer.accounts().forEach(account -> analysisConfig.removeAccount(account.id()));
+        explorer.clearAccounts();
+        try { explorer.clear(); } catch (RuntimeException ignored) { }
+    }
+
     private boolean approveInBurp(String action, String target) {
         AtomicBoolean approved = new AtomicBoolean(false);
         Runnable prompt = () -> approved.set(JOptionPane.showConfirmDialog(controlTab,
@@ -1318,6 +1376,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void shutdown() {
         if (webServer != null) webServer.close();
+        if (explorer != null) explorer.close();
         if (zapCampaign != null) zapCampaign.close();
         if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {
             try {
@@ -1435,6 +1494,127 @@ public final class FlowScopeExtension implements BurpExtension {
                 : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
         return new FlowScopeWebServer.RequestLabResult(record.evidenceId, record.status, displayResponse,
                 durationMs, requestBytes, responseBytes);
+    }
+
+    private ExplorerTransport.Response executeExplorerRequest(ExplorerTransport.Request input) throws Exception {
+        URI target;
+        try { target = URI.create(input.url()); }
+        catch (RuntimeException error) { throw new IllegalArgumentException("Explorer 대상 URL이 올바르지 않습니다."); }
+        if (!scope.allows(input.url())) throw new IllegalArgumentException("Explorer 요청이 exact scope 밖입니다.");
+        boolean secure = "https".equalsIgnoreCase(target.getScheme());
+        int port = target.getPort() >= 0 ? target.getPort() : secure ? 443 : 80;
+        String host = target.getHost();
+        if (host == null) throw new IllegalArgumentException("Explorer 대상 host를 확인할 수 없습니다.");
+        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
+        HttpService service = HttpService.httpService(host, port, secure);
+        String path = target.getRawPath() == null || target.getRawPath().isBlank() ? "/" : target.getRawPath();
+        if (target.getRawQuery() != null) path += "?" + target.getRawQuery();
+        String authority = target.getRawAuthority();
+        StringBuilder raw = new StringBuilder(input.method()).append(' ').append(path).append(" HTTP/1.1\r\n")
+                .append("Host: ").append(authority).append("\r\n");
+        boolean hasAccept = false;
+        boolean hasConnection = false;
+        for (Map.Entry<String, String> header : input.headers().entrySet()) {
+            if (!safeHeader(header.getKey(), header.getValue())) {
+                throw new IllegalArgumentException("Explorer HTTP 헤더가 올바르지 않습니다.");
+            }
+            if (header.getKey().equalsIgnoreCase("Host") || header.getKey().equalsIgnoreCase("Content-Length")) continue;
+            hasAccept |= header.getKey().equalsIgnoreCase("Accept");
+            hasConnection |= header.getKey().equalsIgnoreCase("Connection");
+            raw.append(header.getKey()).append(": ").append(header.getValue()).append("\r\n");
+        }
+        if (!hasAccept) raw.append("Accept: */*\r\n");
+        if (!hasConnection) raw.append("Connection: close\r\n");
+        if (input.body().length > 0) raw.append("Content-Length: ").append(input.body().length).append("\r\n");
+        raw.append("\r\n");
+        byte[] prefix = raw.toString().getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+        byte[] bytes = java.util.Arrays.copyOf(prefix, prefix.length + input.body().length);
+        System.arraycopy(input.body(), 0, bytes, prefix.length, input.body().length);
+        HttpRequest request = HttpRequest.httpRequest(service, burp.api.montoya.core.ByteArray.byteArray(bytes));
+        RequestOptions options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
+                .withUpstreamTLSVerification().withResponseTimeout(30_000);
+        long startedAt = System.nanoTime();
+        Instant attemptedAt = Instant.now();
+        try {
+            controlledRequest.set(true);
+            burp.api.montoya.http.message.HttpRequestResponse exchange = api.http().sendRequest(request, options);
+            long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+            if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
+                if (!input.sessionSetup()) {
+                    executionLedger.record(Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
+                            input.url(), RunExecutionLedger.Outcome.NO_RESPONSE, 0, null, attemptedAt, duration);
+                }
+                throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
+            }
+            HttpResponse response = exchange.response();
+            Map<String, List<String>> responseHeaders = new LinkedHashMap<>();
+            for (HttpHeader header : response.headers()) {
+                responseHeaders.computeIfAbsent(header.name(), ignored -> new ArrayList<>()).add(header.value());
+            }
+            burp.api.montoya.core.ByteArray responseBody = response.body();
+            int explorerBodyLimit = 4 * 1024 * 1024;
+            int copiedBody = Math.min(responseBody.length(), explorerBodyLimit);
+            byte[] responseBodyBytes = copiedBody == responseBody.length()
+                    ? responseBody.getBytes() : responseBody.subArray(0, copiedBody).getBytes();
+            String decoded = HttpMessageTextCodec.decode(responseBodyBytes, 0,
+                    response.headerValue("Content-Type")).text();
+            // Login requests may use target-specific password field names and token response shapes.
+            // They are consumed only by the in-memory vault and never become records, payloads, ledger
+            // entries, snapshots, or project data.
+            if (input.sessionSetup()) {
+                return new ExplorerTransport.Response(response.statusCode(), exchange.request().url(),
+                        response.headerValue("Location"), response.headerValue("Content-Type"), responseHeaders,
+                        decoded, copiedBody < responseBody.length(), "", duration, Instant.now());
+            }
+            RequestRecord record = recordFrom(exchange.request(), response,
+                    new PortProfile(Source.LLM, SourceDetail.LLM_EXPLORER), System.currentTimeMillis(),
+                    false, input.runId(), null, emptyToNull(input.accountId()));
+            record.sourceDetail = SourceDetail.LLM_EXPLORER;
+            record.orchestrator = Orchestrator.LLM;
+            record.tool = ToolKind.CODEX;
+            record.phase = RunPhase.EXPLORATION;
+            record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
+            record.runId = input.runId();
+            record.laneAccountId = emptyToNull(input.accountId());
+            synchronized (records) {
+                if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
+                records.add(record);
+            }
+            rebuildImmediately();
+            RequestRecord published = latest.records.stream().filter(value -> value.runtimeId() == record.runtimeId())
+                    .findFirst().orElseThrow(() -> new IllegalStateException("Explorer Evidence 게시에 실패했습니다."));
+            executionLedger.record(Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
+                    input.url(), RunExecutionLedger.Outcome.HTTP_RESPONSE, response.statusCode(),
+                    published.evidenceId, attemptedAt, duration);
+            return new ExplorerTransport.Response(response.statusCode(), exchange.request().url(),
+                    response.headerValue("Location"), response.headerValue("Content-Type"), responseHeaders,
+                    decoded, copiedBody < responseBody.length(), published.evidenceId, duration, Instant.now());
+        } catch (Exception error) {
+            long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+            if (!input.sessionSetup() && (executionLedger.summarize(Source.LLM, input.runId()).attempted() == 0
+                    || executionLedger.attempts().stream().noneMatch(value -> value.runId().equals(input.runId())
+                    && value.attemptedAt().equals(attemptedAt)))) {
+                executionLedger.record(Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
+                        input.url(), executionOutcome(error), 0, null, attemptedAt, duration);
+            }
+            throw error;
+        } finally {
+            controlledRequest.remove();
+        }
+    }
+
+    private static boolean safeHeader(String name, String value) {
+        return name != null && !name.isBlank() && name.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+                && value != null && value.indexOf('\r') < 0 && value.indexOf('\n') < 0;
+    }
+
+    private static RunExecutionLedger.Outcome executionOutcome(Exception error) {
+        String text = (error.getClass().getName() + " " + error.getMessage()).toLowerCase(Locale.ROOT);
+        if (text.contains("ssl") || text.contains("certificate") || text.contains("tls")) return RunExecutionLedger.Outcome.TLS_FAILURE;
+        if (text.contains("unknownhost") || text.contains("dns")) return RunExecutionLedger.Outcome.DNS_FAILURE;
+        if (text.contains("timeout") || text.contains("timed out")) return RunExecutionLedger.Outcome.TIMEOUT;
+        if (text.contains("connect")) return RunExecutionLedger.Outcome.CONNECTION_FAILURE;
+        return RunExecutionLedger.Outcome.OTHER_FAILURE;
     }
 
     private void retainRawExchange(RequestRecord record, HttpRequest request, HttpResponse response) {

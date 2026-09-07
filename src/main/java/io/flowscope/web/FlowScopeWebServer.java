@@ -23,6 +23,8 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ZapCampaign;
+import io.flowscope.explorer.ExplorerAccountVault;
+import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
 
@@ -91,6 +93,28 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     .put("connected", false)
                     .put("state", "UNAVAILABLE")
                     .put("message", "ZAP 연결 확인 기능을 사용할 수 없습니다.");
+        }
+        default ExplorerCoordinator.Snapshot explorerStatus() {
+            throw new UnsupportedOperationException("Explorer workflow is unavailable");
+        }
+        default List<ExplorerAccountVault.View> explorerAccounts() { return List.of(); }
+        default ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
+            throw new UnsupportedOperationException("Explorer account workflow is unavailable");
+        }
+        default void removeExplorerAccount(String id) {
+            throw new UnsupportedOperationException("Explorer account workflow is unavailable");
+        }
+        default ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
+            throw new UnsupportedOperationException("Explorer workflow is unavailable");
+        }
+        default ExplorerCoordinator.Snapshot steerExplorer(String message) {
+            throw new UnsupportedOperationException("Explorer workflow is unavailable");
+        }
+        default ExplorerCoordinator.Snapshot cancelExplorer() {
+            throw new UnsupportedOperationException("Explorer workflow is unavailable");
+        }
+        default ExplorerCoordinator.Snapshot clearExplorer() {
+            throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
     }
 
@@ -179,6 +203,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/session-capture" -> sessionCapture(request);
             case "/api/zap-status" -> zapStatus(request);
             case "/api/scanner-run" -> scannerRun(request);
+            case "/api/explorer-run" -> explorerRun(request);
+            case "/api/explorer-accounts" -> explorerAccounts(request);
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-xml" -> importXml(request, target);
             case "/api/import-har" -> importHar(request, target);
@@ -729,6 +755,109 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response zapStatus(LoopbackHttpServer.Request request) throws IOException {
         if (!request.method().equals("GET")) return method("GET");
         return json(200, state.zapStatus());
+    }
+
+    private LoopbackHttpServer.Response explorerRun(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            ObjectNode body = json.createObjectNode();
+            body.set("run", explorerSnapshot(state.explorerStatus()));
+            body.set("accounts", json.valueToTree(state.explorerAccounts()));
+            body.set("scope", json.valueToTree(state.scopeEntries()));
+            return json(200, body);
+        }
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String action = form.getOrDefault("action", "start").trim().toLowerCase(Locale.ROOT);
+            ExplorerCoordinator.Snapshot snapshot;
+            int status = 200;
+            switch (action) {
+                case "start" -> {
+                    String target = required(form, "target");
+                    if (isOwnControlPlane(target)) throw new IllegalArgumentException("FlowScope 제어면은 Explorer 대상이 될 수 없습니다.");
+                    List<String> accounts = java.util.Arrays.stream(form.getOrDefault("accounts", "").split(","))
+                            .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
+                    boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous", "true"));
+                    snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous));
+                    status = 202;
+                }
+                case "steer" -> snapshot = state.steerExplorer(required(form, "message"));
+                case "cancel" -> snapshot = state.cancelExplorer();
+                case "clear" -> snapshot = state.clearExplorer();
+                default -> throw new IllegalArgumentException("지원하지 않는 Explorer 동작입니다.");
+            }
+            ObjectNode body = json.createObjectNode();
+            body.set("run", explorerSnapshot(snapshot));
+            return json(status, body);
+        } catch (RuntimeException error) {
+            return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response explorerAccounts(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            ObjectNode body = json.createObjectNode();
+            body.set("accounts", json.valueToTree(state.explorerAccounts()));
+            return json(200, body);
+        }
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String action = form.getOrDefault("action", "save").trim().toLowerCase(Locale.ROOT);
+            if (action.equals("delete")) {
+                state.removeExplorerAccount(required(form, "id"));
+                return success("Explorer 메모리 계정과 인증값을 폐기했습니다.");
+            }
+            if (!action.equals("save")) throw new IllegalArgumentException("지원하지 않는 계정 동작입니다.");
+            ExplorerAccountVault.LoginMode mode;
+            try { mode = ExplorerAccountVault.LoginMode.valueOf(
+                    form.getOrDefault("loginMode", "AUTO_FORM").toUpperCase(Locale.ROOT)); }
+            catch (RuntimeException error) { throw new IllegalArgumentException("로그인 방식은 AUTO_FORM 또는 JSON이어야 합니다."); }
+            ExplorerAccountVault.View account = state.saveExplorerAccount(new ExplorerAccountVault.Input(
+                    form.getOrDefault("id", ""), required(form, "label"), form.getOrDefault("role", "UNKNOWN"),
+                    required(form, "loginUrl"), required(form, "username"), required(form, "password"), mode,
+                    form.getOrDefault("usernameField", ""), form.getOrDefault("passwordField", ""),
+                    form.getOrDefault("tokenJsonPath", ""), form.getOrDefault("authHeader", ""),
+                    form.getOrDefault("authPrefix", ""), form.getOrDefault("validationUrl", "")));
+            ObjectNode body = json.createObjectNode().put("success", true)
+                    .put("message", "Explorer 계정을 현재 프로세스 메모리에 등록했습니다.");
+            body.set("account", json.valueToTree(account));
+            return json(200, body);
+        } catch (RuntimeException error) {
+            return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());
+        }
+    }
+
+    private ObjectNode explorerSnapshot(ExplorerCoordinator.Snapshot value) {
+        ObjectNode body = json.createObjectNode();
+        body.put("status", value.status().name());
+        body.put("runId", value.runId());
+        body.put("target", value.target());
+        if (value.startedAt() == null) body.putNull("startedAt");
+        else body.put("startedAt", value.startedAt().toString());
+        if (value.endedAt() == null) body.putNull("endedAt");
+        else body.put("endedAt", value.endedAt().toString());
+        body.put("elapsedMillis", value.elapsedMillis());
+        body.put("message", value.message());
+        body.put("providerReadiness", value.providerReadiness());
+        body.set("accountIds", json.valueToTree(value.accountIds()));
+        body.put("anonymous", value.anonymous());
+        body.put("attempts", value.attempts());
+        body.put("responses", value.responses());
+        body.set("unresolved", json.valueToTree(value.unresolved()));
+        var activities = body.putArray("activities");
+        value.activities().forEach(activity -> {
+            ObjectNode item = activities.addObject();
+            item.put("sequence", activity.sequence());
+            item.put("at", activity.at().toString());
+            item.put("kind", activity.kind());
+            item.put("title", activity.title());
+            item.put("detail", activity.detail());
+            item.put("status", activity.status());
+            if (activity.durationMillis() == null) item.putNull("durationMillis");
+            else item.put("durationMillis", activity.durationMillis());
+        });
+        return body;
     }
 
     private boolean isOwnControlPlane(String value) {

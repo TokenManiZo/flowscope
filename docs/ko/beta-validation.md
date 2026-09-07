@@ -1,5 +1,26 @@
 # FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
 
+## 2026-09-07 · 미출시 D-128 · 독립 LLM Explorer 자동·실물 provider gate
+
+`453c0ba`에서 시작한 현재 D-128 작업트리로 만든 JAR이다. 아직 로컬 커밋 전이며 원격 Release에 게시하지 않았다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS arm64, Homebrew JDK 21.0.12.1, Maven 3.9.16, Maven 고정 Node 24.11.1 |
+| 최종 빌드 | 같은 최종 코드·문서 입력에서 `mvn clean verify` 2회 성공, 51.681초 / 50.270초 |
+| Java | 매회 350 tests, failures/errors 0, opt-in provider 하네스 1 skip |
+| React | 매회 38 files / 241 tests, typecheck·notices·Vite build 통과 |
+| Explorer 회귀 | account secret 비노출/폐기, HTML form·JSON login·redirect·validation, GET password form 거부, exact scope, 보호 header 주입/차단, method·요청 상한·성공 중복 차단·전송 실패 재시도, 실제 응답 완료 gate, 취소 경합, Web API·React 피드 |
+| 대형 발견 응답 | HTML/JavaScript/JSON/XML 분석 상한 4MiB와 1.4MiB JavaScript capture→record 회귀 통과 |
+| 실물 provider | `-Dflowscope.harness=true`로 설치·로그인된 로컬 Codex app-server를 실제 실행해 experimental dynamic HTTP tool 호출과 구조화된 종료 결과 확인, exit 0 |
+| 산출물 | `target/flowscope-1.2.0-beta.44.jar`, 31,626,205 bytes, 9,130 entries |
+| SHA-256 | 두 clean verify 모두 `762728bff34d9d4d9d9f3a695d43fc5ed6ede25a9900c6db552affdcc268d87b` |
+| JAR 경계 | `io/flowscope/explorer/*`와 `explorer/explorer-system.md` 포함. `McpServer`, agent-workspace, Judge runtime class/resource는 없음. 기존 manifest/MR/namespace/license 검사는 Maven release gate 통과 |
+
+실물 provider 하네스는 로컬 fixture에 대한 dynamic-tool 프로토콜과 모델 호출 가능성을 확인한다. 실제 Burp Montoya 대상 전송, anonymous·HTML form·JSON token 계정 전체 실행, TLS/redirect, steer·취소 후 프로세스 정리, Windows 탐지는 확인하지 않는다. crAPI나 외부 대상의 endpoint·parameter 발견률, 미탐·오탐, HUMAN/ZAP 대비 우월성도 측정하지 않았다. app-server dynamic tools는 experimental API이므로 이번 설치본 통과를 향후 모든 Codex CLI 호환 보장으로 확대하지 않는다.
+
+직접 shell curl 방식은 `networkAccess=false` sandbox에서 loopback gateway에 연결되지 않는 실패를 확인했고, 광범위 네트워크 허용은 exact-scope gateway를 우회할 수 있어 최종 구현으로 쓰지 않았다. 현재는 모델 일반 네트워크를 끄고 Java가 app-server의 `item/tool/call`을 받아 capability를 모델/자식 환경에 노출하지 않은 채 gateway를 호출한다.
+
 ## 2026-09-07 · 미출시 D-126 · Judge·Explorer 하네스·MCP 제거 최종 gate
 
 `57d1bb4`의 **제거 완료 소스**로 만든 JAR이다. 아래 1단계 분리 JAR 및 이전 beta.44 Release와 다르며 원격 배포하지 않았다.
@@ -28,7 +49,7 @@
 
 ## 이전 산출물 검증 이력 — 현재 gate와 분리
 
-아래 수치·성공·실패·재실행 대기는 각 당시 산출물 기준이다. D-126으로 제거된 Explorer/Judge/MCP 재실행은 현행 gate가 아니다. D-122의 큰 입력 helper/parser 회귀는 live record까지 전달됐다는 검증이 아니며, 2026-09-07 문서 대조에서 확인한 8,192자 재절단 경로는 [현재 인계](HANDOFF.md)에 미해결로 기록했다. 이번 문서 감사는 이전 측정값을 바꾸거나 실환경 검증으로 승격하지 않는다.
+아래 수치·성공·실패·재실행 대기는 각 당시 산출물 기준이다. D-126으로 제거된 옛 Explorer/Judge/MCP 재실행은 현행 gate가 아니다. D-122의 helper/parser 회귀만으로는 live record 전달을 증명하지 못했지만, 후속 D-128이 발견용 응답의 4MiB `FULL` 보존과 1.4MiB capture→record 회귀로 해당 연결을 닫았다. 이는 실제 Burp 대상의 대형 번들 운영 검증이나 4MiB 초과 지원을 뜻하지 않는다. 이번 문서 감사는 이전 측정값을 바꾸거나 실환경 검증으로 승격하지 않는다.
 
 ## 2026-09-07 · 미출시 작업트리 · ZAP 캠페인 분리 gate
 

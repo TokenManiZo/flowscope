@@ -13,6 +13,8 @@ import type {
   Snapshot,
   ZapStatus,
   ManagedSession,
+  ExplorerRunEnvelope,
+  ExplorerAccountSaveResult,
   ReviewStatus,
 } from "./types"
 
@@ -47,6 +49,19 @@ export const getZapStatus = (signal?: AbortSignal) => apiFetch<ZapStatus>("/api/
 export const getScannerRun = (signal?: AbortSignal) => apiFetch<ScannerRunEnvelope>("/api/scanner-run", formSignal(signal))
 export const startScannerRun = (target: string, accounts: string, anonymous: boolean) =>
   postForm<ScannerRunMutationResult>("/api/scanner-run", { target, accounts, anonymous: String(anonymous) }, [202])
+export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))
+export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean }) =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "start", ...values, anonymous: String(values.anonymous) }, [202])
+export const controlExplorerRun = (action: "cancel" | "clear") =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
+export const steerExplorerRun = (message: string) =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })
+export const saveExplorerAccount = (values: {
+  id: string; label: string; role: string; loginUrl: string; username: string; password: string;
+  loginMode: "AUTO_FORM" | "JSON"; usernameField: string; passwordField: string;
+  tokenJsonPath: string; authHeader: string; authPrefix: string; validationUrl: string
+}) => postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "save", ...values })
+export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const importXml = (source: "human" | "scanner" | "llm", name: string, xml: string | ArrayBuffer, signal?: AbortSignal) =>
   apiFetch<ImportXmlResult>(`/api/import-xml?${new URLSearchParams({ source, name })}` as `/api/${string}`, {

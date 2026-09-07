@@ -2,7 +2,7 @@
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
-**2026-09-07 현재:** 기존 Judge·MCP와 여기에 결합된 Explorer 실행기를 제거했다(D-126). HUMAN·ZAP 실행, 분석 코어와 프로젝트 호환을 유지하며 새 Explorer 하네스·제품용 MCP는 미구현이다. 과거 명세와 D-125 이전 실행 설명은 역사 기록이며 현재 계약은 이 문서와 [제거 상태](mcp-judge-removal-plan.md)를 따른다.
+**2026-09-07 현재:** 기존 Judge·MCP·브라우저 하네스는 제거한 채, 판정 없는 독립 Codex Explorer를 새 실행 경계로 구현했다(D-128). HUMAN·ZAP, 분석 코어와 프로젝트 호환은 유지한다. 제품용 MCP는 미구현이다. 과거 명세와 D-125 이전 실행 설명은 역사 기록이며 현재 LLM 계약은 [Explorer 문서](llm-explorer.md)를 따른다.
 
 사람·스캐너·LLM이 선언·관측한 API와 입력을 같은 범용 좌표에 정렬해 탐색 차이를 먼저 보여 주고, 선택한 API의 BOLA/IDOR·BFLA 후보를 기존 신원 인지 그래프와 Evidence로 검증하는 Burp Suite 확장이다. `docs/ko/specification/functional-spec.md`는 원 요구사항의 이력이다. 현재 범위는 `product-overview.md`·README, 현재 HOW는 이 문서, 선택 이유와 대체 관계는 `decisions.md`, 진행상황은 `HANDOFF.md`를 따른다. 화면별 사용자 질문과 발표 논리는 `ui-product-rationale.md`가 정본이다.
 
@@ -11,7 +11,7 @@
 - 정본 목표는 “허가된 exact scope에서 선언되거나 실제 관측된 API·입력을 구조화하고, HUMAN·SCANNER·LLM의 탐색 차이와 인가 후보를 원 Evidence까지 역추적 가능하게 만들어 진단자가 다음에 볼 위치를 줄이는 것”이다.
 - 기본 작업면은 `Endpoint·Parameter Surface Delta`다. 선언 근거와 실제 HTTP 관측을 분리하고 source별 미관측 위치를 중립 작업목록으로 제시한다. 인가 그래프는 선택한 API의 `identity → API(operation) → object` 관계를 여는 상세층이다. 접기·그룹화·화면 전환은 표현일 뿐 원 Evidence 관계를 합치거나 삭제하지 않는다.
 - 비교 축 `source={HUMAN,SCANNER,LLM}`와 판정 축 `identity/role/owner`를 섞지 않는다(D-001).
-- LLM source는 저장된 관측의 생성자 표시다. 현재 자동 LLM 실행·판정은 없으며, 과거 assessment/validation은 읽기 전용으로 분리한다.
+- LLM source는 새 Explorer가 실제로 보낸 대상 요청 또는 과거 저장 관측의 생성자 표시다. 새 Explorer는 endpoint·parameter·인증별 응답·workflow Evidence만 수집하고 판정하지 않는다. 과거 assessment/validation은 읽기 전용으로 분리한다.
 - 블랙박스 전체 분모는 알 수 없으므로 커버리지 퍼센트를 만들지 않는다(D-002).
 - 모든 액티브 도구는 명시적 exact scope 안에서만 동작한다. 현재 FlowScope에는 ZAP Active Scan 시작 API가 없다. 기본 캠페인과 HUMAN 명시 전송의 scope·승인 경계는 유지한다.
 - 모든 endpoint·parameter 발견, 오탐·미탐 0, LLM 서술만으로 최종 확정은 보장하지 않는다. 완료 여부는 개발 corpus와 분리된 블라인드 benchmark에서 endpoint·parameter·객체·분류·finding 측정값, `REVIEW` 작업량, false positive·false negative·unresolved를 함께 공개하고 모든 후보·판정을 원본/재현/정상 대조 Evidence로 역추적할 수 있는지로 판단한다.
@@ -24,14 +24,17 @@ Browser :8080 ─┐
 ZAP     :8081 ─┘         ▲                                    ├─▶ Surface/Graph/Matrix
                          │ Session Broker                     └─▶ 규칙 후보 + 사람 검토
 Web 스캐너 버튼 ─▶ ZapCampaign ─▶ ZapClient ─▶ 로컬 ZAP API
+Web Explorer ─▶ ExplorerCoordinator ─▶ Codex app-server dynamic tool
+                    ├─▶ memory-only auth vault
+                    └─▶ exact-scope gateway ─▶ Burp Montoya HTTP ─▶ LLM Evidence
 Web Request Lab ─▶ 명시적 HUMAN 전송 ─▶ VALIDATION Evidence
 ProjectStore/SqliteProjectStore ◀─▶ 마스킹 Evidence·정책·완료 run·과거 LLM 기록
 FlowScopeWebServer :17777 ─▶ SnapshotJsonWriter ─▶ React / legacy UI
 ```
 
-Burp는 호스트에서 실행하고 ZAP은 Desktop 또는 선택형 Docker로 준비한다. ZAP API 기본은 loopback `8089`, upstream은 Burp `8081`이다. LLM CLI와 MCP `8787` 리스너는 더 이상 기동하지 않는다. `8082`는 기존 직접 관측 source 분류만 남으며 `UNVERIFIED_RUNTIME`으로 분석·완료에서 제외한다.
+Burp는 호스트에서 실행하고 ZAP은 Desktop 또는 선택형 Docker로 준비한다. ZAP API 기본은 loopback `8089`, upstream은 Burp `8081`이다. Explorer는 로그인된 로컬 Codex CLI의 `app-server`를 자식 프로세스로 실행하지만 MCP `8787` 리스너는 기동하지 않는다. `8082`는 기존 직접 관측 source 분류만 남으며 `UNVERIFIED_RUNTIME`으로 분석·완료에서 제외한다.
 
-Web 빠른 시작은 `범위 → HUMAN → ZAP → Evidence 검토`다. `FlowScopeExtension.startZapIntegration()`이 캠페인 한 개를 소유하며 Web 시작·조회·취소가 직접 호출한다. 데이터 교체/reset과 unload는 캠페인을 직접 정리한다. MCP adapter, Judge 잠금 callback, 독립 Explorer 상태 제약은 없다. scope·활성 run·세션·capability·crawler cleanup 경계는 유지한다.
+Web 빠른 시작은 `범위 → HUMAN → ZAP → LLM Explorer → Evidence 검토`로 연결한다. `FlowScopeExtension.startZapIntegration()`이 캠페인 한 개를, `ExplorerCoordinator`가 LLM run 한 개를 소유하며 Web 시작·조회·취소가 직접 호출한다. 데이터 교체/reset과 unload는 캠페인과 Explorer memory vault를 직접 정리한다. MCP adapter와 Judge 잠금 callback은 없다. scope·active run·세션·capability·crawler cleanup 경계는 유지한다.
 
 선택형 `zap-up.sh` 또는 Windows `zap-up.ps1`은 같은 key helper를 사용하고, digest 고정 이미지의 ZAP Network API를 통해 `host.docker.internal:8081` upstream을 설정한 뒤 다시 읽어 검증한다. Linux는 Compose `host-gateway`, Docker Desktop은 공식 `host.docker.internal`을 사용한다. key 값은 container environment가 아니라 Compose file-backed secret으로 read-only mount한다. POSIX는 mode, Windows는 상속 차단·현재 SID 전용 ACL을 helper/doctor가 관리한다. FlowScope는 시스템 속성 key, 환경 key, 지정 key 파일, 기본 key 파일 순으로 읽으며 ZAP API URL 자체는 기존처럼 loopback만 허용한다. 이 편의 계층은 actual scanner capture·rendered crawl·대상 TLS를 완료로 대체하지 않는다(D-086, D-087, D-088).
 
@@ -90,7 +93,7 @@ RunExecutionLedger {
 - `service`: scheme://host:port. op/resource/identity 경계를 서비스별로 분리한다.
 - `fp`: JWT subject 이름공간 또는 opaque token/cookie 단방향 지문. raw 인증값을 저장하지 않는다. 쿠키 fingerprint는 계정 연결·감사를 위한 안전한 식별자이지 로그인 증명이 아니다.
 - `authState`: `ANONYMOUS/ACCOUNT_BOUND/UNRESOLVED`. 명시적 계정 연결이나 memory-only broker의 exact credential match만 `ACCOUNT_BOUND`가 된다. 계정에 연결되지 않은 cookie/session fingerprint는 서비스별 하나의 `UNRESOLVED` 그래프 신원으로 안정화하되 원 fingerprint는 Evidence에 남긴다.
-- `requestPayload/responsePayload`: 저장 전 구조 마스킹된 전문의 SHA-256, byte 수, 보존 상태와 선택적 GZIP이다. 메시지당 기본 1MiB 이하 textual이며 digest 중복 제거 후 압축 전문 총량 48MiB 안에 있을 때만 `FULL`이다. binary, 메시지별 상한 초과, 압축 총량 상한 초과는 서로 다른 metadata-only 사유를 남긴다. 상한 초과 live 메시지 식별자는 일반 최대 64KiB, 발견용 MIME 기본 최대 4MiB의 제한된 마스킹 표현·실제 byte 수·보존 사유를 길이 구분해 digest하므로 같은 접두부의 다른 크기를 구분하지만 원문 전체 checksum은 아니다. 8,192자 `reqText/respText/body`는 UI preview이며 전문과 같은 필드가 아니다.
+- `requestPayload/responsePayload`: 저장 전 구조 마스킹된 전문의 SHA-256, byte 수, 보존 상태와 선택적 GZIP이다. 일반 textual 메시지는 기본 1MiB, route discovery가 읽는 HTML/JavaScript/JSON/XML 응답은 기본 4MiB 이하이며 digest 중복 제거 후 압축 전문 총량 48MiB 안에 있을 때 `FULL`이다. binary, 유형별 메시지 상한 초과, 압축 총량 상한 초과는 서로 다른 metadata-only 사유를 남긴다. 상한 초과 live 메시지 식별자는 일반 최대 64KiB, 발견용 MIME 기본 최대 4MiB의 제한된 마스킹 표현·실제 byte 수·보존 사유를 길이 구분해 digest하므로 같은 접두부의 다른 크기를 구분하지만 원문 전체 checksum은 아니다. 8,192자 `reqText/respText/body`는 UI preview이며, 분석기는 `FULL` payload 전문을 우선 사용한다.
 - `resourceReferences`: path/query/body/GraphQL에서 실제 값으로 관측된 모든 객체 참조와 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/*_SEMANTIC_FIELD_CORROBORATED` 근거다. `resource`는 기존 인가 cell의 보수적 primary 하나다.
 - `trafficClassification`: `API/AUTH_SESSION/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/POLLING/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
 - `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
@@ -102,7 +105,7 @@ RunExecutionLedger {
 - `evidenceId`: 전체 의미 내용 digest 기반 ID. digest 입력은 외부 값의 개행과 필드 경계가 충돌하지 않도록 null 표식과 UTF-8 byte 길이 접두 framing을 사용한다. beta.23 이하 newline digest가 일치하면 기존 Evidence ID를 유지한 채 새 digest로 이행한다. 프로젝트 왕복에서는 `contentDigest`가 일치할 때만 기존 ID를 보존하고, 동일 관측은 순서 suffix로 유일화한다.
 - `owner`: 노드가 아니라 resource 속성이다(D-006). 명시적 본문 필드나 사용자 확정만 판정 근거가 된다.
 
-논리 프로젝트 schema v4는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 과거 `LegacyAssessment`와 `ValidationDecision`, Evidence-bound 사람 감사 기록, **완료된 정확한 run**과 bounded `RunExecutionLedger`를 저장한다. 실행 원장은 query·header·body·raw exception 없이 method·service·path와 typed outcome만 보존하며 실패를 RequestRecord/Evidence로 승격하지 않는다. 완료 run은 source만 저장하지 않고 `source/runId/detail/orchestrator/tool/phase/account/completedAt/evidenceIds/responseCount/coverageCount`를 묶는다. 기본 내구 저장은 SQLite storage schema v3의 기존 관계형 테이블, `completed_runs`, `run_attempts`이며 JSON schema v4 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2는 source-only `completed_lanes`를 완료 자격으로 복원하지 않으며 schema v3 exact completed run은 유지한 채 실행 원장은 빈 값으로 마이그레이션한다. v4 내보내기는 exact completed run과 중복 표시용 `completed_lanes`의 일치를 검증한다. raw broker 세션은 어느 형식에도 저장하지 않는다. 전문은 메시지당 1MiB, 서로 다른 복원 전문 합계 48MiB 안에서 streaming GZIP 해제하며 digest/size/retention을 검증하고 동일 digest는 한 번만 복원한다. metadata-only 항목은 압축 blob을 허용하지 않는다. 로드한 assessment/validation은 기존 ID와 생성 시각을 유지하는 읽기 전용 기록이며 현재 판정으로 재승인하지 않는다. 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075/D-099/D-101/D-116).
+논리 프로젝트 schema v4는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 과거 `LegacyAssessment`와 `ValidationDecision`, Evidence-bound 사람 감사 기록, **완료된 정확한 run**과 bounded `RunExecutionLedger`를 저장한다. 실행 원장은 query·header·body·raw exception 없이 method·service·path와 typed outcome만 보존하며 실패를 RequestRecord/Evidence로 승격하지 않는다. 완료 run은 source만 저장하지 않고 `source/runId/detail/orchestrator/tool/phase/account/completedAt/evidenceIds/responseCount/coverageCount`를 묶는다. 기본 내구 저장은 SQLite storage schema v3의 기존 관계형 테이블, `completed_runs`, `run_attempts`이며 JSON schema v4 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2는 source-only `completed_lanes`를 완료 자격으로 복원하지 않으며 schema v3 exact completed run은 유지한 채 실행 원장은 빈 값으로 마이그레이션한다. v4 내보내기는 exact completed run과 중복 표시용 `completed_lanes`의 일치를 검증한다. raw broker 세션은 어느 형식에도 저장하지 않는다. 복원기는 payload 하나당 최대 4MiB, 서로 다른 복원 전문 합계 48MiB 안에서 streaming GZIP 해제하며 digest/size/retention을 검증하고 동일 digest는 한 번만 복원한다. 실제 capture의 `FULL` 상한은 일반 textual 1MiB와 발견용 응답 4MiB로 구분된다. metadata-only 항목은 압축 blob을 허용하지 않는다. 로드한 assessment/validation은 기존 ID와 생성 시각을 유지하는 읽기 전용 기록이며 현재 판정으로 재승인하지 않는다. 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075/D-099/D-101/D-116).
 
 - 실행 원장 보존 상한은 5,000개 시도이며, 반복 polling되는 Web snapshot에는 최근 100개 run의 집계만 노출한다.
 
@@ -110,9 +113,9 @@ RunExecutionLedger {
 
 ### 4.1 수집·마스킹 F-01~03/F-22
 
-beta.34 live 경계는 Montoya byte 길이를 먼저 확인한다. 요청 1MiB·응답 4MiB를 넘으면 전체 Java 배열을 만들지 않고 크기만 raw vault에 전달하며, 저장 상한 1MiB를 넘는 메시지는 일반 64KiB, 발견용 응답 MIME(JavaScript/JSON/HTML/XML)은 D-122의 기본 4MiB까지 제한 복사해 decode·mask한다. 다만 현재 `recordFrom()`가 `body/respText`를 8,192자로 다시 자르므로, metadata-only 응답을 route/Surface까지 4MiB로 전달하는 연결은 완료되지 않았다. 캡처 helper와 parser의 개별 회귀를 전체 live 경로 검증으로 확대하지 않는다. 따라서 아래 `byte[]` 원문 보존은 각 raw 상한 이내 메시지에만 해당한다(D-101).
+live 경계는 Montoya byte 길이를 먼저 확인한다. 요청 1MiB·응답 4MiB를 넘으면 전체 Java 배열을 만들지 않고 크기만 raw vault에 전달한다. 일반 textual 메시지는 기본 1MiB, 발견용 응답 MIME(JavaScript/JSON/HTML/XML)은 기본 4MiB까지 decode·mask하고 `FULL` payload로 보존한다. `recordFrom()`의 `body/respText`는 8,192자 UI preview지만 `RequestRecord.responseBodyForAnalysis()`는 보존된 payload의 message body를 우선 반환하므로 4MiB 이하 발견용 응답은 route/Surface 분석까지 전달된다. 1.4MiB JavaScript의 후반 call-site를 capture→record 경로에서 확인하는 회귀가 이 연결을 고정한다. 발견용 4MiB 초과 응답은 metadata-only이며 전체 분석하지 않는다. 따라서 아래 `byte[]` 원문 보존은 각 raw 상한 이내 메시지에만 해당한다(D-101/D-128).
 
-Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 textual 전문은 메시지당 기본 1MiB, digest 중복 제거 후 압축 총량 48MiB까지 GZIP으로 보존하고 8,192자 preview를 별도로 유지한다. binary·메시지별/총량 상한 초과 전문은 크기·bounded 식별자·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다. ZAP HAR 1.2 폴백은 `log.entries`의 request/response를 `SCANNER/HAR_IMPORT/ZAP/IMPORT/IMPORTED`로 변환하고 동일 scope·마스킹·payload 상한을 적용한다. `status=0`은 응답 없는 후보로 보존하고 binary base64 응답은 문자열로 왜곡하지 않고 metadata-only로 둔다. HAR에는 ZAP Alert와 campaign completion 계약이 없으므로 둘을 생성하지 않는다(D-093).
+Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범위 밖 요청을 송신 전에 차단한다. Proxy와 `Http.registerHttpHandler`가 받는 Repeater·Intruder·Target 등 비-Proxy Burp 도구는 각각 요청 `messageId`에 요청 시점 run/account/login-capture 문맥과 dataset epoch를 임시 보관하고 응답에서 한 번 소비한다. 따라서 HUMAN pass 종료 뒤 늦게 도착한 응답도 시작 당시 provenance로 귀속하고, 초기화·샘플 교체·프로젝트 열기 전 요청은 새 데이터셋에 들어오지 않는다. 상관 문맥이 없으면 응답 시점 context로 추측하지 않고 제외한다. in-flight 문맥은 채널별 20,000건·10분 상한을 두며 원 인증값이나 요청 전문은 이 상관 테이블에 저장하지 않는다. HUMAN 브라우저의 범위 밖 이동 자체는 막지 않지만 response capture 직전에 모든 source를 현재 exact scope로 검사하므로 범위 밖 응답은 저장·그래프화하지 않는다. 정상 수집된 비-Proxy HUMAN 응답도 broker에 전달해 같은 계정의 쿠키 회전을 반영한다. 사용자가 요청하면 기존 Proxy history도 원래 listener·시각·최종 요청·응답으로 가져오되 scope 밖 item을 제거한다. 재가져오기는 관측 횟수를 보존하는 multiset 병합으로 이미 반영된 사본만 제외한다. Authorization/Cookie/Set-Cookie와 password/token/secret/api-key류는 header와 JSON/form/multipart/XML 구조를 따라 저장 전에 마스킹한다. 마스킹된 일반 textual 전문은 기본 1MiB, 발견용 응답은 기본 4MiB, digest 중복 제거 후 압축 총량은 48MiB까지 GZIP으로 보존하고 8,192자 preview를 별도로 유지한다. binary·유형별 메시지/총량 상한 초과 전문은 크기·bounded 식별자·사유만 보존해 잘린 내용을 완전 Evidence처럼 쓰지 않는다. Burp XML도 같은 보존 정책을 적용하며 XXE를 차단하고 불완전 item을 이유와 함께 skip한다. ZAP HAR 1.2 폴백은 `log.entries`의 request/response를 `SCANNER/HAR_IMPORT/ZAP/IMPORT/IMPORTED`로 변환하고 동일 scope·마스킹·payload 상한을 적용한다. `status=0`은 응답 없는 후보로 보존하고 binary base64 응답은 문자열로 왜곡하지 않고 metadata-only로 둔다. HAR에는 ZAP Alert와 campaign completion 계약이 없으므로 둘을 생성하지 않는다(D-093).
 
 live HTTP 원문은 별도의 `TransientExchangeVault`에 요청·응답 `byte[]`와 각각의 body offset으로만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API가 표시용 텍스트를 만든다. 헤더는 ISO-8859-1, textual 본문은 명시된 Content-Type charset 또는 기본 UTF-8로 replacement 없이 엄격히 디코딩한다. 바이너리, 알 수 없는 비텍스트, 잘못된 byte sequence는 원문 바이트는 유지하되 Web 텍스트 편집·전송을 차단한다. 수정하지 않은 요청과 Repeater 초안은 원래 바이트를 그대로 사용하며, 실제 편집한 본문만 선언 charset으로 엄격히 재인코딩한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML/HAR, 상한 초과 Evidence에는 raw가 없어 마스킹 전문만 표시하고 Web 전송은 허용하지 않는다(D-084/D-093).
 
@@ -215,13 +218,19 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 
 데이터 Flow 엣지는 같은 identity에서 이전 응답의 ID/token이 30분 안의 뒤 요청 path/query/body에 실제 소비될 때만 만든다. 단순 시간순 엣지는 만들지 않는다(D-019). 현재 소비 판정은 identity+exact-token index의 최근 producer 조회이며 모든 producer/consumer 쌍을 비교하지 않는다. semantic taint나 인과관계 증명은 아니며 우연한 동일 값·미관측 값·index 축출의 한계는 남는다.
 
-### 4.7 세션·ZAP 실행과 과거 LLM 데이터
+### 4.7 세션·ZAP·독립 LLM Explorer와 과거 LLM 데이터
 
 `SessionBroker`의 명시적 HUMAN 캡처와 ACTIVE 계정 주입을 유지한다. `LaneCompletionPolicy`는 HUMAN/ZAP 완료 시 동일 source·run·EXPLORATION·응답·trust를 검사하고 Evidence ID를 저장한다. 과거 프로젝트의 완료 run도 기존 검증 codec으로 읽는다.
 
-기존 `McpServer`, `LocalMcpToken`, `LocalLlmRunner`, `ControlledBrowserExplorer`, `RouteCandidateViews`와 agent-workspace를 삭제했다. `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`는 404이며 코드·JAR에 대체 stub 실행기는 없다. Web이 사용하는 `LoopbackHttpServer`, JSON·SQLite 저장, `RunExecutionLedger`와 Source/Tool/Phase enum은 데이터 호환 때문에 유지한다.
+기존 `McpServer`, `LocalMcpToken`, `LocalLlmRunner`, `ControlledBrowserExplorer`, `RouteCandidateViews`와 agent-workspace는 삭제된 채 유지한다. `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`는 404다. 새 `ExplorerCoordinator`, `CodexAppServerProvider`, `ExplorerHttpGateway`, `ExplorerAuthRuntime`, `ExplorerAccountVault`는 MCP나 브라우저가 아닌 별도 계약이며 `/api/explorer-run`, `/api/explorer-accounts`로만 제어한다.
 
-`LegacyAssessment`는 기존 assessment 필드·마스킹·상한을 유지하는 독립 데이터 타입이다. Snapshot의 `legacyLlm={readOnly,assessments,validations}`에 날짜·Evidence ID와 함께 기록하고 현재 `scenarios`에 합치지 않는다. 과거 assessment ID로 새 `/api/review`를 제출할 수 없다. 현재 규칙 finding의 사람 검토는 계속 허용한다. 실행 원장은 과거 기록이며 새 Explorer 요청을 발생시키지 않는다.
+Explorer 계정 입력과 live cookie/token은 vault 메모리에만 둔다. 로그인 준비 HTTP는 Burp Montoya로 실제 전송하지만 `RequestRecord`, payload, 실행 원장, snapshot, 프로젝트에 기록하지 않는다. 모델에는 opaque account handle만 주고 Authorization/Cookie 지정은 gateway에서 거부한 뒤 vault 값만 주입한다. 프로젝트 교체·초기화·계정 삭제·unload는 vault를 비운다.
+
+Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델 일반 네트워크는 꺼 두고 experimental `flowscope_http_request` dynamic tool만 target 전송 수단으로 제공한다. Java provider가 모델의 tool call을 random bearer가 걸린 loopback gateway로 전달하므로 capability는 provider 프로세스 환경이나 모델 입력에 노출하지 않는다. gateway는 absolute HTTP(S), exact scope, `GET/HEAD/OPTIONS/POST`, forbidden auth header, 성공 중복, 기본 500회 budget을 검사한다. POST는 prompt에서 검색·조회로 제한하지만 업무 의미를 블랙박스에서 완전 판별할 수 없다는 한계를 공개한다. 큰 마스킹 응답은 최대 4MiB 임시 artifact로 격리 workspace에 쓰고 종료·취소 시 삭제한다.
+
+실제 응답은 `source=LLM`, `sourceDetail=LLM_EXPLORER`, `orchestrator=LLM`, `tool=CODEX`, `phase=EXPLORATION`, `executionTrust=CONTROLLED`, exact run/account로 저장한다. `LaneCompletionPolicy`가 같은 run의 신뢰 가능한 응답 Evidence ID를 하나 이상 요구하므로 TLS/DNS/timeout만 발생한 실행은 “미발견” 완료가 되지 않는다. provider summary와 unresolved는 실행 피드용이며 assessment/verdict/finding으로 저장하지 않는다.
+
+`LegacyAssessment`는 기존 assessment 필드·마스킹·상한을 유지하는 독립 데이터 타입이다. Snapshot의 `legacyLlm={readOnly,assessments,validations}`에 날짜·Evidence ID와 함께 기록하고 현재 `scenarios`에 합치지 않는다. 과거 assessment ID로 새 `/api/review`를 제출할 수 없다. 현재 규칙 finding의 사람 검토는 계속 허용한다. `RunExecutionLedger`는 새 Explorer의 응답 전 실패와 HTTP Evidence를 구분하되 header/body/query/예외 원문을 저장하지 않는다.
 
 - 기본 ZAP 캠페인은 `orchestrator=SYSTEM`이다. 시작 전에 ZAP version API, `network`를 포함한 안전 add-on, outgoing proxy enabled와 Desktop `127.0.0.1:8081` 또는 Docker `host.docker.internal:8081`을 확인하고, 누락·불일치 시 대상 트래픽 전에 실패한다. Web에서 비로그인과 복수 ACTIVE 계정을 선택하면 비로그인 → 선택 계정 순으로 실행하며, 각 신원 앞에서 ZAP `core/newSession`을 호출해 crawler/cookie 상태를 분리한다. 운영자가 이미 알고 있는 OpenAPI·GraphQL·Postman·SOAP 정의를 최대 20개 명시하면 URL·GraphQL endpoint를 exact scope로 검증하고 fresh Context 안에서 정의별 최대 1,000 message의 동기 import를 먼저 실행한다. 이름 기반 URL 추측은 하지 않는다. 이어 passive scanner 활성화 → 전체 passive rule 활성화 → scope-only 설정 → Traditional Spider → strict Client Spider → AJAX Spider → Passive 분석 → native Alert 전 페이지 수집 순서를 고정한다. Client와 AJAX의 결과 집합이 완전히 같다고 가정하지 않으므로 둘 다 실행한다. 정의 import와 rendered crawler 실패는 다른 Evidence를 버리지 않고 lane warning으로 보존한다. Passive는 절대 30분, `recordsToScan` 감소가 없는 정체 10분을 경계로 추적한다. task/URL 변화는 표시용이며 정체 시간을 초기화하지 않는다. 정체나 절대 제한에 도달하면 현재까지의 Alert를 먼저 snapshot하고 `passive_complete=false`, 남은 queue와 현재 task를 공개한 `COMPLETED_WITH_WARNINGS`로 보존한다. 이어 `clearQueue` 뒤 queue 0과 current task 0을 모두 확인해야 다음 신원을 시작하며, 확인하지 못하면 후속 lane은 `NOT_RUN/BLOCKED_BY_ISOLATION`이다. Passive 단계 전 실패도 다음 신원이 있으면 같은 queue/task 정리 검증을 통과해야 하며 실패하면 후속 lane을 차단한다. 완료 gate와 stage count는 400ms debounce가 있는 분석 `Pipeline.Result`가 아니라 응답 callback이 추가한 raw record 저장소를 `source + runId + sourceDetail`로 센다. 신원별 전체 capture가 0이면 캠페인을 실패시키고, Alert API는 500개씩 반복 호출해 캠페인 전체 최대 20,000개 상세를 메모리 snapshot에 보존한다. LLM이 scanner 단계를 고르지 않는다. 상태 계약은 campaign/lane/stage 시작 시각과 세션 설정 1분·API 정의 한 건당 2분·Traditional 15분·Client 20분·AJAX 20분·Passive 30분 제한, 매 status poll heartbeat, 마지막 raw capture/status 변화, queue 순번·대기 이유, Passive 남은 수·현재 task와 Alert snapshot 완결성을 메모리에서 추적한다. 실제 단계 전환·Passive 감소·Alert 집계·격리 정리는 비밀 마스킹된 이벤트 최대 120건의 current-process 목록으로 남기고 Web이 1초마다 조회한다. heartbeat 10초 초과, 응답 정상이나 새 트래픽 30초 초과, 단계 deadline 초과를 서로 다른 운영 상태로 내보내며 이는 scan 성공이나 취약점 verdict가 아니다.
 - D-108은 위 기본 캠페인의 종료·귀속 계약을 강화한다. `network`와 함께 `replacer` add-on을 필수 확인하고, D-124에 따라 캠페인마다 전체 exact scope 항목과 선택 target의 union에 적용되는 ZAP Replacer rule로 무작위 `X-FlowScope-Scanner-Capability`를 붙인다. Burp 8081 handler는 활성 SYSTEM run ID와 capability가 모두 일치할 때만 broker 세션을 주입하고 `CONTROLLED` ZAP Evidence로 수집하며 capability 헤더는 대상 전송 전에 제거한다. native Burp Scanner와 capability 없는 8081 수동 요청은 활성 ZAP context를 상속하지 않는다. D-109는 capability 없는 요청을 run별로 계수해 상태 API에 노출하고 crawler polling 중 한 건이라도 확인되면 다음 crawler·신원으로 진행하지 않도록 한다. 허용 fallback은 두지 않는다. 각 Evidence는 `runId`와 별개로 `laneAccountId`를 보존해 캠페인의 마지막 계정으로 전체 결과를 대표하지 않는다.
@@ -244,11 +253,12 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 | 시나리오 | 현재 BOLA/BFLA 규칙 후보·사람 검토와 별도 과거 LLM 읽기 전용 기록 |
 | 파싱 결과 | 마스킹된 source/identity/method/operation/resource/status, traffic class/disposition/reason, 반복 수, stable Evidence ID. 행 선택은 operation 상세와 페이지형 Evidence로 연결 |
 | 계정·세션 | 전체 폭 계정 등록, HUMAN 로그인 캡처, broker 상태/재인증/폐기, 발견 지문 비교와 명시 연결·해제 |
-| 빠른 시작 | HUMAN run, 결정론적 ZAP 대상·비로그인/복수 계정 선택·신원별 단계/수집/Alert 상태, Evidence 검토 안내 |
+| LLM Explorer | 시작 URL·비로그인/메모리 계정 선택, Codex 준비상태, 경과시간·요청·Evidence ID·실패·미해결 작업 피드, steer·취소 |
+| 빠른 시작 | HUMAN run, 결정론적 ZAP 대상·비로그인/복수 계정 선택·신원별 단계/수집/Alert 상태, LLM Explorer와 Evidence 검토 안내 |
 | 공통 우측 | 선택 API의 지연 로드된 마스킹 Request/Response, Web 요청 실험실, Repeater 미전송 초안 |
 | Burp 제어판 | exact scope, 세 레인 포트, Web UI 열기, Proxy history, project I/O, sample/reset |
 
-관측 Evidence가 0건이면 분석 패널을 숨기고 `scope → 계정 로그인/HUMAN → ZAP → Evidence 검토` 네 단계와 빠른 시작·샘플 조작만 먼저 노출한다. Evidence가 생기면 위 분석 작업면으로 전환한다. 이 progressive disclosure는 분석 모델을 줄이지 않고 첫 행동만 분리하며, ADMIN은 BFLA 역할 비교가 필요할 때만 선택적으로 추가한다(D-057).
+관측 Evidence가 0건이면 분석 패널을 숨기고 `scope → 계정 로그인/HUMAN → ZAP → LLM Explorer → Evidence 검토` 흐름과 빠른 시작·샘플 조작을 먼저 노출한다. Evidence가 생기면 위 분석 작업면으로 전환한다. 이 progressive disclosure는 분석 모델을 줄이지 않고 첫 행동만 분리하며, ADMIN은 BFLA 역할 비교가 필요할 때만 선택적으로 추가한다(D-057/D-128).
 
 번들 `SampleProject`는 `demo.flowscope.test`의 합성 H/S/L record만 만들며 대상 네트워크를 호출하지 않는다. snapshot은 모든 record가 이 고정 demo service·run provenance일 때만 `sampleMode=true`를 보내고 샘플 배너는 H/S/L 표시가 실제 점검 결과가 아니고 대상 네트워크 요청을 만들지 않았음을 명시한다. 실제 traffic이 하나라도 섞이면 sample mode로 표시하지 않는다.
 
@@ -264,7 +274,9 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 | Graph model | `core/graph/*`, `web/SnapshotJsonWriter` |
 | Product UI | `frontend/src`, `web/ClasspathWebAssets`, `web/FlowScopeWebServer`, legacy `resources/web/index.html`, `ui/FlowScopeControlTab` |
 | Session/run | `integration/SessionBroker`, `core/RunContextRegistry`, `LaneCompletionPolicy` |
-| 과거 LLM 데이터 | `core/LegacyAssessment`, `ValidationDecision`, `integration/RunExecutionLedger` (새 실행·판정 없음) |
+| LLM Explorer 실행 | `explorer/ExplorerCoordinator`, `CodexAppServerProvider`, `ExplorerHttpGateway`, `ExplorerAuthRuntime`, `ExplorerAccountVault` |
+| 과거 LLM 데이터 | `core/LegacyAssessment`, `ValidationDecision`; 새 Explorer와 무관한 읽기 전용 이력 |
+| 실행 실패 원장 | `integration/RunExecutionLedger`; 새 Explorer의 응답 전 실패와 응답 Evidence를 분리 |
 | ZAP 실행·상태·취소 | `integration/ZapCampaign`(호스트 소유), `ZapClient`(API), `ZapCampaign.State`(캡처·scope·session 계약) |
 | Local setup | `integration/LocalSecretFile`, `LocalZapApiKey`, `infra/zap`, `scripts` |
 | Persistence | `integration/SqliteProjectStore`, JSON codec/import-export `integration/ProjectStore` |
@@ -272,7 +284,7 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 ## 7. 명시적 한계
 
 - 후보는 exploitability/business impact의 증명이 아니다.
-- `UNCROSSED`는 관측된 identity와 관측된 operation/resource 안의 미실행 cell만 계산한다. 별도 route inventory는 구현됐지만 기본 1MiB 이하로 보존된 textual 응답(초과/metadata-only면 8,192자 preview)과 응답 없는 Burp Site Map 항목에서 최대 20,000개만 만든다. JavaScript AST의 정적으로 해석 가능한 call-site 밖인 임의 wrapper·런타임 생성 경로·받지 않은 lazy chunk와 전체 블랙박스 공격면은 알 수 없다.
+- `UNCROSSED`는 관측된 identity와 관측된 operation/resource 안의 미실행 cell만 계산한다. 별도 route inventory는 구현됐지만 보존된 textual 응답(일반 기본 1MiB, 발견용 MIME 기본 4MiB, metadata-only면 8,192자 preview)과 응답 없는 Burp Site Map 항목에서 최대 20,000개만 만든다. JavaScript AST의 정적으로 해석 가능한 call-site 밖인 임의 wrapper·런타임 생성 경로·받지 않은 lazy chunk와 전체 블랙박스 공격면은 알 수 없다.
 - domain-specific 또는 일반 principal 문맥이 아닌 중첩 ownership은 사용자 확정이 필요하다.
 - 안정 신호 없는 opaque rotating token은 자동으로 같은 identity로 합칠 수 없으며 사용자 확인 binding이 필요하다.
 - 쿠키 존재만으로 익명/로그인 여부를 완전히 알 수 없고 Fetch Metadata/MIME도 모든 클라이언트가 제공하지 않는다. 따라서 `UNRESOLVED`와 `REVIEW`가 정상 상태이며 분류의 오탐·미탐 0을 주장하지 않는다.

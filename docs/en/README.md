@@ -2,9 +2,9 @@
 
 Current implementation and open gates: [handoff](../ko/HANDOFF.md). Document scope and audit results: [documentation inventory](../ko/documentation-status.md) (Korean).
 
-The removal is an unreleased source change. Use a JAR built from this work; an older beta.44 Release asset does not include it.
+The standalone Explorer is an unreleased source change. Use a JAR built from this work; an older beta.44 Release asset does not include it.
 
-**Current source / unreleased:** the old MCP server and Explorer/Judge execution harness are removed (D-126). HUMAN/ZAP execution and H/S/L Evidence comparison remain. A separate Explorer harness and a future FlowScope Evidence MCP are not implemented. See the [removal status](../ko/mcp-judge-removal-plan.md).
+**Current source / unreleased:** the old MCP server, Judge and browser harness remain removed. D-128 adds a standalone Codex Explorer through app-server dynamic tools and a Java exact-scope gateway. HUMAN/ZAP execution and H/S/L Evidence comparison remain; no replacement MCP or automatic verdict path was added. See the [Explorer contract](../ko/llm-explorer.md).
 
 FlowScope is a Burp Suite Community-compatible extension that aligns declared API inputs and real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into a shared endpoint/parameter surface. It shows which source observed each endpoint and parameter before opening the existing identity-aware BOLA/IDOR/BFLA graph as an API-level drill-down. An unobserved declaration is a review item, not a vulnerability or failed lane.
 
@@ -30,7 +30,7 @@ HUMAN/SCANNER/LLM observations ┴─▶ endpoint/parameter delta ─▶ authori
 - Identity × operation × resource coverage matrix, uncrossed combinations, partial discovery, and source conflicts.
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
 - Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and account-bound ZAP requests. Rebinding one service-scoped credential fingerprint to a different account fails closed instead of silently moving it.
-- Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture. Text messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate, separate from 8,192-character UI previews.
+- Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture. General textual messages are retained up to 1 MiB each, while discovery HTML/JavaScript/JSON/XML responses are retained up to 4 MiB; both share a 48 MiB deduplicated compressed-payload budget. The 8,192-character fields are UI previews, and analysis prefers the retained payload.
 - Evidence-preserving traffic classification: every captured observation remains inspectable while only eligible API traffic enters the main graph. A bare 401/403 directory probe without independent API context stays `UNKNOWN/REVIEW`; JSON/API context, object evidence, or an unsafe method still promotes the record through the existing rules.
 - Classifier v5 separates authentication setup and stable repeated polling as `AUTH_SESSION` and `POLLING`, separates manifests/source maps/service workers as discovery metadata, and recognizes the exact `/manifest.json` path even when its media type is generic JSON.
 - A common route-discovery pipeline applies one scope, method, normalization, deduplication, and provenance gate to same-scope HTML, static JavaScript call sites, OpenAPI JSON/YAML, standard metadata, generic XML, and response-less Burp Site Map items. A method without evidence remains `UNKNOWN`; candidates never affect coverage, gaps, verdicts, or findings before a request/response is observed.
@@ -48,16 +48,17 @@ HUMAN/SCANNER/LLM observations ┴─▶ endpoint/parameter delta ─▶ authori
 
 FlowScope does not know the complete black-box attack surface, so it never reports a misleading coverage percentage.
 
-Binary messages, messages over the 1 MiB per-message limit, and messages beyond the 48 MiB deduplicated compressed-payload budget retain only their original size, retention reason, and a length-framed SHA-256 identifier over the bounded masked representation, actual size, and reason. This is not claimed to be a checksum of the complete oversized original. Live capture stops at 20,000 records to protect Burp and reports dropped records and metadata-only messages; this beta does not promise unbounded capture.
+Binary messages, general textual messages over 1 MiB, discovery HTML/JavaScript/JSON/XML responses over 4 MiB, and messages beyond the 48 MiB deduplicated compressed-payload budget retain only their original size, retention reason, and a length-framed SHA-256 identifier over the bounded masked representation, actual size, and reason. This is not claimed to be a checksum of the complete oversized original. Live capture stops at 20,000 records to protect Burp and reports dropped records and metadata-only messages; this beta does not promise unbounded capture.
 
 ## Requirements
 
 - HUMAN-only mode: current Burp Suite Community or Professional with Montoya API support
 - HUMAN + SCANNER: Burp plus OWASP ZAP 2.17.0
+- HUMAN + SCANNER + LLM Explorer: the above plus the official Codex CLI and a valid Codex login
 - Source builds only: JDK 21 or newer and Maven 3.9 or newer
 - Optional containerized ZAP: Docker Engine/Desktop with Docker Compose v2; Windows helper contract requires Windows 10/11, Docker Desktop Linux containers, and PowerShell 7
 
-ZAP is required for the current SCANNER campaign and optional for HUMAN-only use. No model client is required or launched. H/S/L is the stored observation-source model, not a promise of an available three-lane executor. The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, and JDK 21; this is not a compatibility claim for every older version or operating system.
+ZAP is required for the SCANNER campaign and optional for HUMAN-only use. The LLM lane requires the official logged-in Codex CLI; it does not require a provider API key, Chrome/Playwright, MCP, or a separately managed Node runtime. The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, and JDK 21; this is not a compatibility claim for every older version or operating system.
 
 ## Build and install
 
@@ -81,7 +82,7 @@ Build artifacts live only under `target/`. User-selected local `.flowscope.db`/`
 
 The exact beta test boundary and remaining target-phase gates are recorded in the Korean [`docs/ko/beta-validation.md`](../ko/beta-validation.md). A work-by-work account of what was developed, changed, why it changed, affected files, and verification is maintained in [`docs/ko/development-log.md`](../ko/development-log.md). Screen-by-screen design and presentation rationale is in [`docs/ko/ui-product-rationale.md`](../ko/ui-product-rationale.md). Those detailed documents are not presented as English translations.
 
-Create the HUMAN and SCANNER Burp proxy listeners. Montoya cannot create them for the extension. The LLM listener is an optional compatibility fallback; no automatic LLM executor is currently provided.
+Create the HUMAN and SCANNER Burp proxy listeners. Montoya cannot create them for the extension. The 8082 LLM listener is only a compatibility fallback; the new Explorer sends through Montoya and does not depend on it.
 
 | Listener | Source | Intended client |
 |---|---|---|
@@ -114,13 +115,14 @@ ZAP `scope-only` uses ZAP Context membership rather than FlowScope scope. Each i
 3. Configure ZAP's outgoing proxy as `127.0.0.1:8081` for Desktop or `host.docker.internal:8081` for Docker. FlowScope verifies this setting and the Network add-on before target traffic. In Web quick-start, select an exact-scope target plus anonymous and/or ACTIVE accounts. If definitions are already known, optionally enter `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`; FlowScope never guesses locations and rejects out-of-scope URLs. Each fresh identity Context imports the selected definitions with a 1,000-message soft bound, then runs Traditional Spider → Client Spider → AJAX Spider → bounded Passive processing → paginated alerts. Passive processing waits up to 30 minutes and treats ten minutes without a decrease in recordsToScan as stalled; task/URL changes alone do not reset that timer. It snapshots current alerts and Evidence before clearing abandoned queue work; if cleanup cannot be verified, later identities remain `NOT_RUN` to prevent cross-identity attribution. Definition or rendered-crawler failures remain visible warnings without discarding other Evidence. Active Scan, fuzzing, and Forced Browse remain outside the default campaign.
    API definition imports may generate write-method example requests, so any non-empty definition list also requires a separate Burp approval dialog before the campaign starts.
 4. Inspect endpoint/parameter deltas, Evidence and current authorization-rule candidates.
-5. Save explicit human review; there is no automatic LLM verdict.
-6. Historical LLM assessments and verdicts appear only in the React read-only archive.
-7. Use **로컬 DB 저장·연결** once to select a `.flowscope.db`; later changes are coalesced into atomic snapshots. Use **JSON 내보내기** for interchange. Raw broker credentials are never persisted, so login capture must be repeated after a reload.
+5. Open **Explorer**, select anonymous and/or memory-only HTML-form/JSON-API accounts, and start an independent run. Its feed distinguishes elapsed time, requests, response Evidence, unresolved items and failures; zero response Evidence cannot complete the run.
+6. Compare H/S/L observations, then save explicit human review. The Explorer does not create an automatic LLM verdict.
+7. Historical LLM assessments and verdicts appear only in the React read-only archive.
+8. Use **로컬 DB 저장·연결** once to select a `.flowscope.db`; later changes are coalesced into atomic snapshots. Use **JSON 내보내기** for interchange. Raw broker or Explorer credentials are never persisted, so authentication must be prepared again after reload.
 
-## LLM transition
+## Standalone LLM Explorer
 
-Model CLI detection/login, the isolated Explorer browser, MCP listener/token loader, resume sessions, and bundled agent-workspace settings/prompts have been removed. Global user configuration and login files are not modified. The removed HTTP routes return 404. Future Explorer and product MCP work is separate; no replacement harness is hidden behind the old buttons.
+D-126 removed the old browser/Judge/MCP runtime. D-128 adds a separate Explorer that launches the locally authenticated Codex app-server in an isolated temporary workspace. It exposes one dynamic HTTP tool to the model; Java validates exact scope, method, protected headers, deduplication and budget before Burp Montoya sends the request. Credentials and live cookies/tokens stay in the in-process account vault and are represented to the model only by opaque account handles. Login setup traffic is not persisted. The activity feed supports steering and cancellation. See the [full contract](../ko/llm-explorer.md).
 
 ## Provenance model
 
@@ -132,6 +134,7 @@ Model CLI detection/login, the isolated Explorer browser, MCP listener/token loa
 | Burp Repeater | HUMAN | BURP_REPEATER | HUMAN |
 | ZAP started by tester | SCANNER | ZAP_* | HUMAN |
 | Deterministic ZAP baseline | SCANNER | ZAP_* | SYSTEM |
+| Standalone Codex Explorer | LLM | LLM_EXPLORER | LLM (`CONTROLLED`) |
 | Direct 8082 fallback | LLM | configured listener detail | LLM (`UNVERIFIED_RUNTIME`) |
 
 Port defaults can be changed before Burp starts:
@@ -185,7 +188,7 @@ The Web server binds to loopback and retains Host/Origin/capability, request-siz
 - Authorization, Cookie, Set-Cookie, password, token, secret, and API-key values are masked before Evidence storage.
 - Authentication grouping uses a subject or a short one-way fingerprint; raw opaque tokens are not retained. Cookie presence alone is not login proof: an unbound cookie fingerprint is retained for audit/binding but shown as one service-scoped `UNRESOLVED` graph identity until a controlled broker match or explicit account binding proves the account.
 - Traffic classification never deletes stored Evidence. User `include/exclude/auto` overrides are operation-scoped but cannot turn no-response, unknown-source, or non-discovery validation traffic into discovery coverage; repeated observations are collapsed only in the display and retain every Evidence ID, count, and first/last timestamp.
-- UI previews are truncated to 8,192 characters per field. Masked textual messages are retained up to 1 MiB each and 48 MiB of deduplicated compressed payloads in aggregate by default; binary and over-limit messages keep only size, retention reason, and a bounded-representation identifier rather than a full-original checksum. Live capture is capped at 20,000 records and exposes dropped-record and metadata-only-message counts.
+- UI previews are truncated to 8,192 characters per field. Masked general textual messages are retained up to 1 MiB, discovery HTML/JavaScript/JSON/XML responses up to 4 MiB, and deduplicated compressed payloads up to 48 MiB in aggregate by default; binary and over-limit messages keep only size, retention reason, and a bounded-representation identifier rather than a full-original checksum. Live capture is capped at 20,000 records and exposes dropped-record and metadata-only-message counts.
 - Project files contain masked traffic but may still contain sensitive application data. POSIX files are written owner-read/write only; protect them under the engagement's data policy.
 - Project writes use a temporary file and atomic replacement when the filesystem supports it.
 
@@ -197,12 +200,12 @@ The Web server binds to loopback and retains Host/Origin/capability, request-siz
 - `ACTIVE` is transport-level evidence that a credential-bearing capture observed an HTTP response that was not a 401, login redirect, or invalid-token response. It is not a generic proof of application-specific `/me` semantics, account ownership, or role; the operator must verify those mappings.
 - Opaque rotating tokens cannot be correlated automatically without a stable signal; the operator can explicitly bind verified fingerprints to one registered account.
 - Fetch Metadata and MIME signals can be absent or misleading, and business APIs can resemble documents, assets, or telemetry. The classifier therefore excludes only converging high-confidence signals, keeps ambiguous traffic in `REVIEW` outside the main graph, exposes reasons, and permits a reversible operation-level override. An unreviewed real API can therefore remain outside the main comparison; traffic-noise classification is not perfect.
-- Up to 20,000 unrequested routes are extracted only from retained masked textual responses (falling back to the 8,192-character preview when the full message is metadata-only) and response-less Burp Site Map items. Dynamically composed JavaScript URLs and client-runtime-only routes are not guessed. Candidate priority is an inspectable categorical order, not a probability or vulnerability score.
-- Discovery capture allows a bounded preview of up to 4 MiB by default for discovery MIME types, but the current host record path truncates it to 8,192 characters before analysis when no full payload is retained. The 4,194,304-character parser limit does not prove end-to-end large-bundle support; see the [open handoff item](../ko/HANDOFF.md).
+- Up to 20,000 unrequested routes are extracted only from retained masked textual responses (general limit 1 MiB, discovery MIME limit 4 MiB, falling back to the 8,192-character preview when the full message is metadata-only) and response-less Burp Site Map items. Dynamically composed JavaScript URLs and client-runtime-only routes are not guessed. Candidate priority is an inspectable categorical order, not a probability or vulnerability score.
+- Discovery HTML/JavaScript/JSON/XML responses are retained and delivered to analysis up to 4 MiB by default; a 1.4 MiB capture-to-record regression covers a call site after the former limit. Responses above 4 MiB remain metadata-only, and the 4,194,304-character parser limit does not prove support for dynamically composed routes or unreceived lazy chunks.
 - Data-flow links use bounded exact-value matching, not full semantic taint analysis.
 - Repeater handoff opens an unsent draft. Explicit Request Lab sends produce HUMAN VALIDATION Evidence, not discovery coverage or an automatic LLM verdict.
-- The old agent workspace and closed-world Explorer executor are removed. Tools, setup and execution boundaries for a new harness remain undesigned; they are not current product guarantees.
-- One active metadata context per source and exact run-ID completion/cancellation checks remain. There is no automatic LLM run-start path.
+- The old agent workspace, browser executor, Judge and MCP remain removed. The new Explorer depends on an experimental Codex app-server dynamic-tool contract, so CLI compatibility is checked and protocol failure is reported as failure rather than “nothing found.”
+- One active metadata context per source and exact run-ID completion/cancellation checks remain. The Explorer requires at least one actual same-run response Evidence item to complete.
 - Graph folding is presentation pagination, not semantic clustering: each click exposes 18 more eligible resource/API nodes, while the 20,000-record capture bound still protects Burp.
 - Live compatibility is compiled against Montoya `2026.7`; verify the release JAR in the Burp version used by the engagement.
 

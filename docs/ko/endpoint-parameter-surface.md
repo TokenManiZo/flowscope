@@ -1,6 +1,6 @@
 # Endpoint·Parameter Surface Delta 설계·검증
 
-이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.44 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. D-126 이후 자동 LLM 실행은 없으며 LLM 0건은 미실행 상태와 구분해 해석한다. 저장된 실행 원장이 있으면 과거 요청의 품질로만 읽고 전송 실패는 endpoint 관측으로 승격하지 않는다.
+이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.44 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. D-128 독립 Explorer는 실제 응답이 있는 통제 HTTP 요청만 LLM 관측으로 추가하며, 실행 전·전송 실패·응답 0건을 endpoint 관측이나 완료로 승격하지 않는다.
 
 ## 1. 제품 질문
 
@@ -88,7 +88,7 @@ Resource/object와 owner는 첫 화면에서 펼치지 않고 선택 API의 인�
 - endpoint당 parameter 1,024개, 관측 JSON 깊이 16, OpenAPI schema 깊이 20
 - JavaScript 분석 cache 128개. key는 원문 대신 SHA-256 digest, value는 추출 결과만 두며 dataset 교체·초기화 시 비운다.
 
-**전달 경계 미해결(2026-09-07 코드 대조):** 위 수치는 parser가 입력을 받았을 때의 상한이다. live capture helper의 발견용 MIME 미리보기는 기본 4MiB지만 호스트가 `body/respText`를 8,192자로 재절단하고, 전문 미보존 응답은 이 preview로 분석한다. 따라서 큰 번들의 뒷부분까지 RouteCandidate/Surface로 전달된다고 보장하지 않는다. [현재 인계](HANDOFF.md)의 합성 end-to-end 회귀가 다음 확인 항목이며 이번 문서 작업에서는 코드를 고치지 않았다.
+**전달 경계:** D-128은 발견용 HTML/JavaScript/JSON/XML 응답의 `FULL` payload 상한을 기본 4MiB로 맞췄다. `body/respText`는 8,192자 UI preview로 남지만 RouteCandidate/Surface는 보존된 payload 전문을 우선 읽는다. 1.4MiB JavaScript의 뒤쪽 call-site를 capture→record 경로에서 확인하는 회귀가 있다. 4MiB 초과 응답은 metadata-only이므로 전체 분석하지 않으며, parser 입력 상한과 임의 wrapper·런타임 조립의 의미 분석은 별개다.
 
 Closure Compiler는 `ECMASCRIPT_NEXT` parser로만 사용하고 target JavaScript를 실행하지 않는다. Node, Chrome, Playwright 또는 네트워크가 이 정적 추출에 필요하지 않다. dependency는 버전을 고정하고 fat JAR에서 relocation하며 원 LICENSE·NOTICE·third-party notice를 보존한다.
 

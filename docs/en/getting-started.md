@@ -1,8 +1,8 @@
 # FlowScope installation and first run
 
-This guide targets the D-126 removal source. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs with the same beta.44 version. There is no current MCP/model setup procedure.
+This guide targets the D-128 standalone Explorer source. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs with the same beta.44 version.
 
-The current source provides HUMAN and ZAP execution. The old Explorer/Judge harness and MCP server have been removed (D-126; unreleased change). H/S/L Evidence comparison and existing projects remain supported. Neither the new standalone Explorer harness nor a future FlowScope Evidence MCP is implemented. This removal is not published as a Release yet; build the JAR from this work instead of using an older beta.44 asset.
+The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old Judge, MCP server, and browser harness remain removed; the replacement uses Codex app-server dynamic tools behind a Java exact-scope gateway (D-128; unreleased). H/S/L Evidence comparison and existing projects remain supported. This work is not published as a Release yet; build the JAR from this source instead of using an older beta.44 asset.
 
 ## Supported setup paths
 
@@ -10,6 +10,7 @@ The current source provides HUMAN and ZAP execution. The old Explorer/Judge harn
 |---|---|
 | Release JAR + ZAP Desktop | Burp and ZAP 2.17.0 |
 | Release JAR + Docker ZAP | Burp, Docker Compose v2 |
+| LLM Explorer | The JAR, official Codex CLI, and a valid Codex login |
 | Source build | The runtime above, JDK 21 exactly, and Maven 3.9.x |
 
 The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, JDK 21, and macOS arm64 with Docker Engine/Desktop 29.5.3. Windows 10/11 with Docker Desktop Linux containers and PowerShell 7 is the beta.21 support contract; GitHub `windows-latest` parses all PowerShell helpers, but a real Windows Docker Desktop target run remains an explicit validation gate.
@@ -22,7 +23,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 |---|---|---|
 | `127.0.0.1:8080` | Burp | HUMAN traffic |
 | `127.0.0.1:8081` | Burp | SCANNER traffic from ZAP |
-| `127.0.0.1:8082` | Burp | Optional direct LLM fallback |
+| `127.0.0.1:8082` | Burp | Legacy direct-LLM observation fallback; not used by the new Explorer |
 | `127.0.0.1:8089` | ZAP | Local ZAP proxy/API |
 | `127.0.0.1:17777` | FlowScope | Local Web workspace |
 
@@ -89,9 +90,11 @@ PowerShell 5.1, Windows container mode, and running the helper inside WSL are ou
 5. Confirm `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, and `network` are installed. Explicit GraphQL, Postman, or SOAP imports also require the matching add-on.
 6. FlowScope reads owner-only `~/.flowscope/zap-api-key` by default; alternatives are `flowscope.zap.keyFile`, `FLOWSCOPE_ZAP_API_KEY`, and `flowscope.zap.key`. Reload the extension if the key was created after loading it.
 
-## LLM transition
+## LLM Explorer
 
-No model CLI login, MCP token or port 8787 is required by the current application. Retired controls and agent-workspace files are removed. Global user/provider configuration is not deleted. Historical LLM assessments and verdicts are a separate read-only archive in the React scenarios view.
+Install the official Codex CLI and complete `codex login` as the same OS user that runs Burp. Apply exact scope, open **Explorer**, select anonymous mode or add a memory-only HTML-form/JSON-API account, choose a start URL, and start the run. The activity feed shows elapsed time, actual requests and Evidence IDs, unresolved items, failures, steering, and cancellation.
+
+FlowScope does not require an MCP token, port 8787, Chrome/Playwright, a provider API key, or a separately installed Node runtime. The model receives opaque account handles rather than credentials; Java injects memory-only session material after scope/method/header/budget checks. Historical Judge output remains read-only. See the [Explorer contract](../ko/llm-explorer.md).
 
 ## Preflight and source build
 
@@ -112,15 +115,16 @@ Source contributors additionally run:
 mvn clean verify
 ```
 
-## First HUMAN/ZAP run
+## First HUMAN/ZAP/LLM run
 
 1. Set an authorized exact scope in the FlowScope Burp tab.
 2. Register test accounts and capture any required login through HUMAN `8080` until the broker reports the account usable.
 3. Start a HUMAN pass, explore with the Burp browser, and end the pass.
 4. Select the target and anonymous/ACTIVE identities. If you already have an API definition, optionally add one line per definition as `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`, then start the isolated ZAP campaign. Every URL must remain in exact scope. Because an import can generate write-method example requests, a non-empty list requires a separate Burp approval. Identity lanes run serially to isolate ZAP state; use the six-stage progress line, campaign/stage elapsed time, deadline, last ZAP response and traffic change, queue position, Passive remaining/task fields, alert-snapshot status, and the one-second activity feed to distinguish a healthy wait, partial completion, and failure. A lane that cannot clear old Passive work blocks later identities instead of mixing their traffic. Active Scan is not part of this automatic baseline.
 5. Inspect endpoint/parameter observations, declarations and parsing status.
-6. Review current rule candidates and their Evidence; save human review independently of LLM execution.
-7. Historical LLM verdicts are not revalidated or promoted into current findings.
+6. Run the standalone Explorer with anonymous and/or memory-only accounts; zero response Evidence is a failure, not completion.
+7. Compare H/S/L endpoint and parameter observations in **API·입력 차이**.
+8. Review current rule candidates and their Evidence; save human review independently of LLM prose. Historical LLM verdicts are not revalidated or promoted.
 8. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.
 
 ### Importing an existing ZAP traffic export

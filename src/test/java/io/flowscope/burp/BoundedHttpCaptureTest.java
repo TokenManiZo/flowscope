@@ -28,7 +28,7 @@ final class BoundedHttpCaptureTest {
     }
 
     @Test
-    void 발견용_스크립트는_보존상한을_넘겨도_분석문을_프리뷰보다_길게_남긴다() {
+    void 발견용_스크립트는_기본상한을_넘겨도_분석가능한_전문을_보존한다() {
         // 실환경 재현: 1.66MB SPA 번들이 64KB 프리뷰로 잘려 route 문자열을 하나도 못 봤다.
         String headers = "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n\r\n";
         String script = "var pad=\"" + "y".repeat(1_400_000) + "\";fetch('/community/api/v2/posts');";
@@ -36,11 +36,12 @@ final class BoundedHttpCaptureTest {
 
         BoundedHttpCapture.Result result = BoundedHttpCapture.capture(message,
                 headers.getBytes(StandardCharsets.UTF_8).length, "application/javascript",
-                1024 * 1024, BoundedHttpCapture.previewLimitFor("application/javascript", 64 * 1024));
+                BoundedHttpCapture.retainedLimitFor("application/javascript", 1024 * 1024),
+                BoundedHttpCapture.previewLimitFor("application/javascript", 64 * 1024));
 
-        assertFalse(result.complete(), "보존 상한은 그대로여야 한다");
-        assertEquals(StoredPayload.Retention.OVER_LIMIT_METADATA_ONLY, result.payload().retention());
-        assertNull(result.payload().text(), "전문을 보존했다고 주장하면 안 된다");
+        assertTrue(result.complete());
+        assertEquals(StoredPayload.Retention.FULL, result.payload().retention());
+        assertTrue(result.payload().text().contains("/community/api/v2/posts"));
         assertTrue(result.decoded().text().contains("/community/api/v2/posts"),
                 "분석문이 1MB 이후 call site를 담지 못함");
     }
@@ -52,6 +53,10 @@ final class BoundedHttpCaptureTest {
         assertEquals(64 * 1024, BoundedHttpCapture.previewLimitFor(null, 64 * 1024));
         assertTrue(BoundedHttpCapture.previewLimitFor("application/json", 64 * 1024) > 64 * 1024);
         assertTrue(BoundedHttpCapture.previewLimitFor("text/html; charset=utf-8", 64 * 1024) > 64 * 1024);
+        assertEquals(4 * 1024 * 1024,
+                BoundedHttpCapture.retainedLimitFor("application/javascript", 1024 * 1024));
+        assertEquals(1024 * 1024,
+                BoundedHttpCapture.retainedLimitFor("image/png", 1024 * 1024));
     }
 
     @Test

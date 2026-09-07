@@ -1,17 +1,19 @@
 # FlowScope 1.2.0-beta.44 제품 개발·검증 계획
 
-> **읽는 법:** 현재 우선순위는 아래의 Judge·MCP 제거다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** 현재 우선순위는 D-128 독립 Explorer의 최종 자동 검증과 실제 Burp gate다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
 
-## 현재 우선순위 · LLM Judge·MCP 제거
+## 현재 우선순위 · 독립 LLM Explorer
 
-1. ZAP 독립 캠페인 분리: `5a47af9` 완료.
-2. Judge와 기존 MCP/Explorer 실행기·설정·프롬프트 제거: D-126 구현 및 자동 회귀 통과.
-3. 기존 저장 schema와 과거 LLM 기록을 읽기 전용으로 보존: 구현. 현재 규칙 후보·사람 검토와 분리.
-4. 새 JAR 실제 Burp/HUMAN/ZAP/프로젝트 gate: 대기. 문서 감사에서 확인한 대형 응답의 capture → record → 분석 전달 재절단은 회귀 작성·수정 미착수로 추가한다. 4MiB helper/parser 단위 통과를 live 전체 분석 완료로 보지 않는다.
-5. Client Spider 필수화·AJAX 제거: 미착수. 이번 제거와 crawler 변경을 섞지 않음.
-6. 별도 Explorer 하네스와 FlowScope Evidence용 제품 MCP: 각각 설계 대기, 현재 구현 없음.
+1. Judge와 기존 MCP/브라우저 실행기는 D-126 상태로 제거 유지. 새 MCP·Judge를 복구하지 않는다.
+2. 대형 HTML/JavaScript/JSON/XML의 capture → record → 분석 전달을 4MiB 경계와 1.4MiB 회귀로 수정했다.
+3. 메모리 전용 계정 vault, HTML form/JSON API 인증, exact-scope HTTP gateway, Codex app-server dynamic-tool provider, coordinator를 구현했다.
+4. React Explorer에 계정 입력, anonymous/account 선택, 경과시간·요청·응답 Evidence·미해결·오류, steer·취소를 연결했다.
+5. 집중 회귀, 전체 `mvn clean verify`, 실제 로그인된 Codex provider opt-in 하네스와 JAR 식별값을 최종 소스에서 다시 확인한다.
+6. 새 JAR 실제 Burp에서 anonymous·HTML form·JSON token, exact-scope, Evidence 귀속, 취소/정리, 프로젝트 비밀 비저장을 확인한다.
+7. 승인된 독립 corpus에서 HUMAN·ZAP 대비 추가 endpoint·parameter, 중복·노이즈·요청량·검토시간을 측정한다. 결과 전에는 발견률 우월성을 주장하지 않는다.
+8. ZAP Client-only/AJAX 제거와 FlowScope Evidence용 제품 MCP는 이번 Explorer와 섞지 않는 별도 결정으로 남긴다.
 
-자세한 삭제 목록·보존 계약·검증 범위는 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
+현재 Explorer 실행 계약은 [LLM Explorer](llm-explorer.md), 삭제 목록·보존 계약은 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
 
 ## 이전 버전별 계획·검증 이력
 

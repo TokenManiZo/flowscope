@@ -15,7 +15,7 @@ Do not submit real target traffic, credentials, tokens, customer names, or propr
 Architectural changes must preserve these invariants:
 
 - source and orchestrator remain independent;
-- the Judge/Explorer runtime and MCP server are removed (D-126); old LLM assessments/verdicts remain read-only history, not current rule conclusions; future Explorer and FlowScope MCP work is separate and unimplemented;
+- the Judge, browser runtime and MCP server remain removed (D-126); D-128's standalone Codex Explorer is a separate dynamic-tool HTTP inventory path and never produces final verdicts; old LLM assessments/verdicts remain read-only history;
 - active requests require exact scope and appropriate approval;
 - raw authentication material is never persisted, logged, or exposed; it may exist only in the explicit memory-only Session Broker lifecycle;
 - no black-box coverage percentage is presented.

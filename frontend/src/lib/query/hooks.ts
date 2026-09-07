@@ -23,6 +23,12 @@ import {
   setHumanRun,
   startScannerRun,
   unbindSession,
+  getExplorerRun,
+  startExplorerRun,
+  controlExplorerRun,
+  steerExplorerRun,
+  saveExplorerAccount,
+  deleteExplorerAccount,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -33,6 +39,7 @@ export const queryKeys = {
   humanRun: ["human-run"] as const,
   zapStatus: ["zap-status"] as const,
   scannerRun: ["scanner-run"] as const,
+  explorerRun: ["explorer-run"] as const,
 }
 
 const pollingOptions = {
@@ -81,6 +88,9 @@ export function useZapStatusQuery() {
 export function useScannerRunQuery() {
   return useQuery({ queryKey: queryKeys.scannerRun, queryFn: ({ signal }) => getScannerRun(signal), ...pollingOptions })
 }
+export function useExplorerRunQuery() {
+  return useQuery({ queryKey: queryKeys.explorerRun, queryFn: ({ signal }) => getExplorerRun(signal), ...pollingOptions })
+}
 
 function useInvalidatingMutation<TData, TVariables>(
   mutationFn: (variables: TVariables) => Promise<TData>,
@@ -98,6 +108,11 @@ export function useClearTrafficMutation() { return useInvalidatingMutation(clear
 export function useLoadSampleMutation() { return useInvalidatingMutation(loadSample, [queryKeys.snapshot]) }
 export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
 export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous }: { target: string; accounts: string; anonymous: boolean }) => startScannerRun(target, accounts, anonymous), [queryKeys.scannerRun]) }
+export function useExplorerStartMutation() { return useInvalidatingMutation(startExplorerRun, [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useExplorerSteerMutation() { return useInvalidatingMutation((message: string) => steerExplorerRun(message), [queryKeys.explorerRun]) }
+export function useExplorerAccountSaveMutation() { return useInvalidatingMutation(saveExplorerAccount, [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }
 export function useReviewMutation() { return useInvalidatingMutation(({ itemId, status, note }: { itemId: string; status: ReviewStatus; note: string }) => saveReview(itemId, status, note), [queryKeys.snapshot]) }

@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-07, D-126 (미출시 변경).** 기존 LLM 실행·Judge·MCP는 제거됐다. 현재 조작은 HUMAN·ZAP와 Evidence/사람 검토이며, H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 제거된 기능의 현행 사용법이 아니다.
+> **현재 계약: 2026-09-07, D-128 (미출시 변경).** 기존 Judge·MCP·브라우저 실행기는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 추가했다. 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토이며, H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -12,7 +12,7 @@ FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청과 대상 산
 2. **선택한 API에서 어떤 사용자·객체·기능 조합이 허용되거나 거부됐는가?** — identity/role/owner 인가 비교.
 3. **그 판단을 실제 요청·응답으로 확인할 수 있는가?** — Evidence와 통제 재현.
 
-현재 자동 LLM 실행이 없으므로 LLM 0건은 실행 대기나 탐색 실패로 표시하지 않는다. 저장된 `runExecutions`가 있으면 과거 통제 요청의 `NOT_ATTEMPTED/ALL_FAILED/PARTIAL_FAILURE/RESPONSES_OBSERVED`를 읽기 전용으로 표시한다. 실패 시도는 실제 HTTP Evidence가 아니므로 그래프 노드를 만들지 않는다.
+새 Explorer는 `IDLE/AUTHENTICATING/RUNNING/COMPLETED/FAILED/CANCELLED`와 시도·응답·Evidence·미해결을 분리한다. LLM 응답 Evidence 0건은 “못 찾음”이나 완료로 바꾸지 않고 실패 원인을 표시한다. 실패 시도는 실제 HTTP Evidence가 아니므로 그래프 노드를 만들지 않는다.
 
 ## 2. 왜 일반 Burp 요청 목록만으로 부족한가
 
@@ -66,6 +66,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | Request/Response 상세 | 판정의 실제 근거가 무엇인가? | 선택 API에서만 마스킹 전문을 지연 로드해 Burp 메시지와 판정을 연결하고, 전문 보존 여부·원 byte 수·SHA-256 또는 binary/메시지별/압축 총량 metadata-only 이유를 표시한다. 수집 통계에는 전문 미보존 메시지 수도 공개한다. | preview 8,192자를 완전한 전문이라고 부르거나 2만 건 전문을 polling snapshot마다 보내지 않는다. |
 | 요청 실험실 | 진단자가 값·세션을 바꾸고 응답을 바로 비교할 수 있는가? | 특정 Evidence에서만 전체 화면 편집기를 열고 `원문 그대로/비로그인/등록 계정`을 명시적으로 선택한다. Evidence generation이 늦은 응답을 폐기하고 전송 중 draft를 잠그며, 서버 operation ID 멱등성이 동일 상태 변경을 한 번만 실행한다. 응답을 받지 못한 동일 draft 재시도는 같은 ID를 사용한다. 대상 서비스·exact scope·TLS·redirect 경계는 서버가 강제하고 결과는 HUMAN `VALIDATION`으로 분리한다. 원문은 bounded Burp 메모리와 현재 탭에만 존재하며 10건 화면 이력은 새로고침 시 사라진다. | raw를 프로젝트·MCP·로그·localStorage·멱등 cache에 저장하거나, 반복 검증 요청을 discovery coverage로 부풀리거나, status 하나로 취약점을 확정하지 않는다. |
 | 계정·세션 | ZAP과 HUMAN Request Lab이 어느 테스트 계정으로 실행되는가? | secret-free 계정과 메모리 전용 broker 상태를 분리해 보여 준다. | 비밀번호·raw cookie/token을 프로젝트나 LLM에 전달하지 않는다. |
+| LLM Explorer | LLM이 지금 무엇을 요청했고 어떤 근거를 남겼는가? | 메모리 계정·시작 URL·실행 상태·경과시간·실제 요청/Evidence ID·미해결·실패를 한 화면에 두고 steer·취소를 제공한다. | 모델 문장을 취약점 판정으로 표시하거나 로그인 비밀·raw 세션·도구 인자를 피드에 노출하지 않는다. |
 
 ## 4. 3-way 갭의 정확한 의미
 
@@ -125,7 +126,7 @@ orchestrator = SYSTEM 또는 HUMAN
 
 ## 7. LLM 실행과 과거 기록의 분리
 
-기존 Explorer/Judge 버튼·작업 피드·공급자 로그인·후속 대화·MCP 설정을 제거한다. 실행 불가 버튼을 남기거나 같은 API를 stub로 유지하지 않는다. 새 Explorer 하네스와 Evidence 중심 FlowScope MCP는 별도 설계이며 아직 없다.
+기존 Explorer/Judge 버튼·MCP 설정·후속 Judge 대화는 제거 상태를 유지한다. D-128 Explorer는 별도 `/api/explorer-run`·`/api/explorer-accounts` 계약과 화면으로 제공하며, 옛 API를 다시 쓰거나 성공 stub로 만들지 않는다. app-server dynamic tool은 실제 HTTP 관측만 만들고 판정·assessment를 저장하지 않는다. Evidence 중심 FlowScope MCP는 여전히 별도 미구현 범위다.
 
 LLM source 색·필터와 저장된 Evidence는 호환 분석을 위해 유지한다. React 시나리오의 `과거 LLM 기록 · 읽기 전용`에는 원 시각·Evidence ID·과거 verdict를 표시하되 현재 규칙 후보에 합치지 않는다. 누락된 Evidence를 다른 요청으로 대체하지 않고 `현재 데이터에 없음`으로 표시한다. 날짜는 문자열로 직렬화하고 비밀값은 마스킹한다.
 
@@ -166,7 +167,7 @@ FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 
 ## 9. 발표 시연 순서
 
 1. **문제 제시:** Proxy history만으로 조건부 endpoint·parameter와 source별 미관측을 찾아내고, 다시 사용자·객체 관계까지 머릿속에서 맞춰야 한다.
-2. **관측 source 제시:** 현재 HUMAN·ZAP 실행과 저장/가져온 LLM 관측을 구분한다. 자동 Explorer가 실행된 것처럼 시연하지 않는다.
+2. **관측 source 제시:** HUMAN·ZAP·독립 Explorer를 각각 실행하고 실제 H/S/L Evidence를 구분한다. 자동 회귀만 통과한 실환경 동작을 시연 성공처럼 말하지 않는다.
 3. **API·입력 차이:** 선언과 실제 Evidence를 endpoint/parameter로 정렬하고 H/S/L badge, provenance와 산출물 파싱 상태를 연다.
 4. **인가 그래프:** 선택 API의 identity→API→object만 열어 고카디널리티 노이즈를 피한다.
 5. **매트릭스와 갭:** 미교차·일부만 발견·불일치를 선택한다.
@@ -187,7 +188,7 @@ FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 
 
 ### “LLM이 환각하면 어떻게 하나요?”
 
-현재 모델은 실행하지 않는다. 과거 LLM 평가·판정은 원 기록으로만 보존하며 현재 서버가 재검증한 것으로 표시하지 않는다.
+Explorer 모델은 endpoint·parameter 관측만 수행하고 판정하지 않는다. 모델 요약은 사실로 승격하지 않고 실제 요청·응답 Evidence만 H/S/L 비교에 들어간다. 과거 LLM 평가·판정은 원 기록으로만 보존한다.
 
 ### “Burp나 ZAP과 무엇이 다른가요?”
 
@@ -195,7 +196,7 @@ Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowSc
 
 ### “새 Explorer에서 외부 정보는 어떻게 다루나요?”
 
-새 Explorer 하네스는 아직 설계·구현하지 않았다. 현재 코드에 없는 네트워크 통제나 독립성 보장을 설명하지 않는다.
+Explorer는 모델 일반 네트워크를 끄고 Java exact-scope dynamic HTTP tool만 제공한다. 대상 응답·번들·문서는 비신뢰 데이터이며 모델 명령으로 취급하지 않는다. 자격증명은 모델이 아니라 메모리 vault가 주입한다. 실제 Burp/외부 corpus gate 전에는 발견률이나 완전성을 주장하지 않는다.
 
 ## 11. 발표에서 허용되는 주장과 금지되는 주장
 
@@ -264,7 +265,7 @@ D-125는 ZAP 소유권을 추출했고, D-126은 기존 MCP와 LLM 실행기를 
 
 실행 상태는 color만으로 정상·경고·실패를 말하지 않는다. `RUNNING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`, `FAILED`, `CANCELLED`, `NOT_STARTED`, `UNAVAILABLE`와 신원별 lane count를 문자로 남기고, poll이 실패해도 마지막 성공 상태를 0이나 실패로 덮지 않는다. output tail은 plain text의 bounded accordion으로만 보여 주며 HTML로 해석하지 않는다. 현재 ZAP Active Scan 진입점은 없으며 별도 승인만으로 활성화되지 않는다.
 
-LLM 실행 탭·작업 피드는 제거됐다. 실행 상태에는 HUMAN·ZAP와 별도의 저장된 통제 요청 기록만 남는다.
+새 Explorer 탭·작업 피드는 D-128 계약으로 제공한다. 실행 상태에는 HUMAN·ZAP와 별도로 LLM 인증 준비, 실제 HTTP 시도·응답 Evidence, 미해결·실패·취소를 표시하며 Judge 상태는 만들지 않는다.
 
 ## 16. React 계정·세션 화면의 개념 경계
 

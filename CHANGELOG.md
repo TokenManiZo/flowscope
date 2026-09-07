@@ -2,6 +2,14 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 독립 LLM Explorer (D-128, 2026-09-07)
+
+- Judge와 MCP 서버를 복원하지 않고 로그인된 로컬 Codex app-server의 dynamic HTTP tool을 사용하는 독립 Explorer를 추가했습니다.
+- Web에서 비로그인 또는 메모리 전용 HTML form/JSON API 계정을 선택하고, 실행 상태·경과시간·실제 요청/Evidence·미해결 사유를 확인하며 steer·취소할 수 있습니다.
+- 모델의 직접 대상 네트워크와 raw 인증정보 접근을 막고 Java exact-scope gateway가 method/header/중복/요청 예산을 검사한 뒤 Burp Montoya로 전송합니다. 실제 응답만 LLM `CONTROLLED` Evidence로 기록하고 로그인 준비 교환은 저장하지 않습니다.
+- 큰 HTML/JavaScript/JSON/XML 응답의 발견용 분석 상한을 4MiB로 맞추고 1.4MiB JavaScript 회귀를 추가했습니다.
+- Explorer는 endpoint·method·parameter·계정별 응답 차이를 수집할 뿐 취약점 verdict·Judge·LLM assessment를 만들지 않습니다. 실제 Burp 및 독립 corpus 효능은 아직 별도 gate입니다.
+
 ## 미출시 · 문서 전수 정합성 (D-127, 2026-09-07)
 
 - 현재 인계와 과거 인계 본문을 분리하고 한·영 운영법, 개발 지침, 설계·계획·UI 설명의 폐기된 MCP/Judge/Active Scan 실행 안내를 정정했습니다. [문서별 점검 목록](docs/ko/documentation-status.md)을 제공합니다.

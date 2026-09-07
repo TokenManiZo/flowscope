@@ -392,6 +392,58 @@ export interface ScannerRunMutationResult {
   run: ScannerRun
 }
 
+export interface ExplorerAccount {
+  id: string
+  label: string
+  role: string
+  loginUrl: string
+  loginMode: "AUTO_FORM" | "JSON"
+  validationUrl: string
+  status: "UNVERIFIED" | "READY" | "NEEDS_INPUT" | "EXPIRED" | "FAILED"
+  message: string
+  updatedAt: string
+  hasPassword: boolean
+  cookieCount: number
+  hasTokenHeader: boolean
+}
+
+export interface ExplorerActivity {
+  sequence: number
+  at: string
+  kind: string
+  title: string
+  detail: string
+  status: string
+  durationMillis: number | null
+}
+
+export interface ExplorerUnresolved { kind: string; target: string; reason: string }
+
+export interface ExplorerRun {
+  status: "IDLE" | "AUTHENTICATING" | "RUNNING" | "COMPLETED" | "COMPLETED_WITH_LIMITATIONS" | "FAILED" | "CANCELLED" | "FAILED_CLEANUP"
+  runId: string
+  target: string
+  startedAt: string | null
+  endedAt: string | null
+  elapsedMillis: number
+  message: string
+  providerReadiness: string
+  accountIds: readonly string[]
+  anonymous: boolean
+  attempts: number
+  responses: number
+  unresolved: readonly ExplorerUnresolved[]
+  activities: readonly ExplorerActivity[]
+}
+
+export interface ExplorerRunEnvelope {
+  run: ExplorerRun
+  accounts: readonly ExplorerAccount[]
+  scope: readonly string[]
+}
+
+export interface ExplorerAccountSaveResult extends ApiSuccess { account: ExplorerAccount }
+
 export interface ApiSuccess {
   success: true
   message: string

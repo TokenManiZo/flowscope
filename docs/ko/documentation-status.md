@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-07. 코드 기준 `57d1bb4`, 빈 디렉터리 정리 `962edfe`. 감사 시작 시 Git 추적 Markdown **33개**, 이번에 추가한 과거 인계 보존본·이 목록 **2개**, 총 **35개**를 관리한다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다.
+최종 대조: 2026-09-07 D-128 작업본. 기준선은 `453c0ba`이며 현재 미출시 변경에 독립 Explorer와 새 `llm-explorer.md`가 추가됐다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-128로 갱신한다.
 
 ## 1. 무엇을 어디서 읽는가
 
@@ -15,11 +15,12 @@
 1. 삭제한 agent-workspace·CLI·Judge/최종 제출·closed-world executor를 아직 제공한다는 한·영 안내를 제거했다. source LLM·과거 기록은 계속 보존한다.
 2. 현재 없는 ZAP Active Scan 경로를 “별도 승인하면 실행”이라고 안내하던 문장을 정정했다. 정의 import 승인과 HUMAN Request Lab은 별개다.
 3. Request Lab을 독립 source처럼 나열하던 문장을 H/S/L과 HUMAN VALIDATION으로 바로잡았다.
-4. JS parser는 1,048,576자가 아니라 4,194,304자다. 그러나 live `recordFrom`의 8,192자 재절단 때문에 큰 발견용 응답 전체 전달은 미해결이다. helper/parser 단위 성공과 end-to-end 성공을 구분했다.
+4. JS parser는 1,048,576자가 아니라 4,194,304자다. D-127에서 확인한 live payload 전달 결함은 후속 D-128이 발견용 HTML/JavaScript/JSON/XML을 기본 4MiB까지 `FULL`로 보존하고 1.4MiB capture→record 회귀를 추가해 닫았다. 8,192자 필드는 UI preview이며, 4MiB 초과와 동적 의미 해석은 계속 별도 한계다.
 5. DataFlow의 옛 substring/전체 쌍 비교 설명을 현재 exact-token index로 수정했다. 인과관계/semantic taint 증명이라는 주장은 하지 않는다.
 6. ZAP capability는 D-124의 전체 exact scope+선택 target union, crawler Context는 선택 target이며 서로 다르다. Alert 상한은 lane별이 아니라 캠페인 전체 20,000개, Passive 정체는 queue 감소로만 판단한다.
 7. 한국어 기여 안내의 “JDK 21 이상”을 실제 Enforcer와 맞는 JDK 21·Maven 3.9.x로 정정했다.
 8. 현재 인계와 과거 인계를 분리했다. 옛 결함은 일괄 닫지 않고 재검증 대기로 승계했다. 기존 사용자 인계 지침은 보존했고 멘토 보고서는 수정하지 않았다.
+9. D-128 독립 Explorer의 app-server dynamic tool, 메모리 인증, actual-response Evidence, no-MCP/no-Judge 계약을 README·설치·아키텍처·제품·UI·Surface·계획·인계에 반영했다. 이전 D-126 제거 자체와 과거 실행 기록은 덮어쓰지 않았다.
 
 ## 3. 전수 목록
 
@@ -33,8 +34,8 @@
 | [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
 | [README.md](../../README.md) | 현행 계약 | 폐기 실행 보장 제거·현재 결과 의미·입력/보존/분석 상한 구분 |
 | [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 영문 Judge/closed-world/자동 validation 안내·Passive 정체 기준 정정 |
-| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | 동일 beta.44 이름의 이전 JAR과 D-126 소스 구분, 현재 인계 연결 |
-| [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 제거 소스·설치 경계 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | D-128 Codex 로그인·메모리 계정·Explorer 실행·포트 경계 |
+| [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Explorer 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
 | [docs/ko/README.md](README.md) | 목차 | 현재/역사 문서 목록과 진행 갱신 기준 |
@@ -42,14 +43,15 @@
 | [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
 | [docs/ko/architecture.md](architecture.md) | 현행 계약 | data-flow exact-token·ZAP scope union/Alert 총량·미해결 분석 전달 경계 정정 |
 | [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | JS parser 상한과 live 전달 한계, source LLM/미실행 실험 구분 |
-| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | 현재 실행과 초기 연구·공개 확장 목표 구분 |
-| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | H/S/L과 Request Lab phase 구분, 없는 최종 Judge/Active Scan 안내 정정 |
-| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | run 상태 API 수정, P별 당시 표와 실제 최신 검증 구분 |
-| [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | 완료 커밋·미착수 하네스/MCP/Client-only·열린 분석 전달 문제 |
-| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | 현재 우선순위와 이전 beta별 계획 분리, 회귀 미착수 기록 |
-| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-126 폐기 관계 안내, D-127 문서 운영 결정 append |
-| [docs/ko/development-log.md](development-log.md) | 역사 | 이번 문서 변경·코드 대조·실제 수행 검사·미실행 범위 append |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-126 커밋 식별, 과거 검증·재실행 대기와 현행 gate 분리 |
+| [docs/ko/llm-explorer.md](llm-explorer.md) | 현행 계약 | 독립 Explorer 실행·인증·scope·Evidence·사용자 조작·남은 gate |
+| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | HUMAN/ZAP/Explorer와 no-Judge/no-MCP 범위 |
+| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | Explorer 피드·actual Evidence·과거 Judge 분리 |
+| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P21/P23 D-128 대체와 폐기 기능 구분 |
+| [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, 제품 MCP/Client-only 보류 |
+| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-128 검증·Burp·독립 효능 gate와 이전 beta 이력 분리 |
+| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-128 실행·비밀·scope·Evidence 선택과 기각안 |
+| [docs/ko/development-log.md](development-log.md) | 역사 | D-128 코드/UI/문서·검증·남은 gate append |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | 두 clean verify·동일 JAR·실제 provider 하네스와 미실행 Burp gate 분리 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
@@ -65,11 +67,11 @@
 
 ## 4. 확인 범위
 
-- 최종 점검: 관리 문서 35개와 목록 대응 일치, 로컬 파일/디렉터리 링크 217개 모두 존재, `git diff --check` 통과. 이전 인계 본문과 사용자 CLAUDE 인계 문단 보존 확인. 외부 URL 응답·heading anchor·모든 제품 동작을 검증한 것은 아니다.
+- 최종 점검: 관리 문서 36개와 목록 대응 일치, 로컬 파일/디렉터리 링크 230개 모두 존재, `git diff --check` 통과. 이전 인계 본문과 사용자 CLAUDE 인계 문단 보존 확인. 외부 URL 응답·heading anchor·모든 제품 동작을 검증한 것은 아니다.
 - 코드 대조: 제거된 runtime/API, 호스트 소유 ZAP, 과거 데이터 모델, JS parser·capture·record·RouteDiscoveryDocument/Surface 전달, DataFlow index, capability scope, Alert/Passive 상한, 빌드 JDK 계약.
-- 기존 JAR의 SHA-256을 다시 읽어 D-126 기록과 같음을 확인했다. 코드·테스트·빌드 파일과 JAR은 변경하지 않았다.
-- `mvn clean verify`·브라우저 E2E·실물 Burp/ZAP·외부 대상 요청·문헌 재조사·원격 Git 조회/푸시는 이번 문서 작업에서 실행하지 않았다. 기존 335/238/8 결과는 이전 D-126 검증이다.
-- 대형 응답 전달 문제는 코드 경로 확인 단계다. 새 실패 회귀와 수정·실환경 재현은 미착수이며 [HANDOFF](HANDOFF.md)의 열린 항목으로 추적한다.
+- D-128 최종 입력에서 `mvn clean verify`를 두 번 실행했고 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files/241 tests가 매회 통과했다. 두 JAR은 31,626,205 bytes, 9,130 entries와 SHA-256 `762728bff34d9d4d9d9f3a695d43fc5ed6ede25a9900c6db552affdcc268d87b`로 동일했다.
+- opt-in provider 하네스를 별도로 두 번 실행해 설치·로그인된 실제 Codex app-server의 dynamic HTTP tool 호출을 확인했다. 실제 Burp/ZAP, 외부 대상 요청, Windows, 독립 corpus 효능은 실행하지 않았다. 검증 범위와 명령은 [beta-validation](beta-validation.md)이 정본이다.
+- 대형 응답 전달 문제는 D-128 코드와 1.4MiB 회귀로 수정·검증했다. 실제 Burp 대상에서의 운영 재현과 4MiB 초과 응답은 [HANDOFF](HANDOFF.md)의 별도 gate·한계로 추적한다.
 
 ## 5. 앞으로의 갱신 시점
 

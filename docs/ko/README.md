@@ -6,11 +6,12 @@
 
 ## 현재 전환 상태
 
-Judge·기존 Explorer 하네스·MCP 실행 경로는 제거했습니다(D-126). HUMAN·ZAP과 H/S/L 이력 비교는 유지합니다. 새 Explorer 하네스와 FlowScope용 MCP는 아직 구현하지 않습니다. 과거 연구·명세의 Judge/MCP 설계는 현재 기능 안내가 아닙니다.
+Judge·기존 Explorer 하네스·MCP 실행 경로는 제거한 상태를 유지합니다(D-126). D-128은 MCP나 브라우저를 복원하지 않고 Codex app-server dynamic tool과 Java exact-scope gateway로 독립 Explorer를 새로 구현했습니다. HUMAN·ZAP과 H/S/L 비교는 유지하며 Explorer는 취약점 판정을 만들지 않습니다. 과거 연구·명세의 Judge/MCP 설계는 현재 기능 안내가 아닙니다.
 
 ## 문서 목록
 
 - [Judge·MCP 제거 및 후속 경계](mcp-judge-removal-plan.md): 삭제·보존 범위, 회귀 결과와 다음 gate
+- [LLM Explorer](llm-explorer.md): 현재 실행 구조, 메모리 인증, exact-scope 경계, 사용법과 남은 gate
 - [팀 인계 정본](HANDOFF.md): 현재 구현, 코드 지도, 알려진 결함, 다음 작업 순서와 완료 기준
 - [이전 인계 보존본](handoff-2026-09-04.md): 2026-09-04 기준 상세 연혁·리뷰·실행법. 현행 작업 지시가 아님
 - [문서 정합성·갱신 기준](documentation-status.md): 저장소 Markdown 전수 목록, 이번 정정·검증 범위와 갱신 시점

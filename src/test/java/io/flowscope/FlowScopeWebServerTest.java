@@ -23,6 +23,8 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.web.FlowScopeWebServer;
+import io.flowscope.explorer.ExplorerAccountVault;
+import io.flowscope.explorer.ExplorerCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -164,6 +166,32 @@ final class FlowScopeWebServerTest {
             assertEquals(404, get(path, token, null).statusCode(), path);
             assertEquals(404, post(path, "action=start&role=JUDGE", token).statusCode(), path);
         }
+    }
+
+    @Test
+    void explorerRoutesExposeRunFactsWithoutEchoingCredentials() throws Exception {
+        start();
+
+        JsonNode initial = json(get("/api/explorer-run", token, origin()));
+        assertEquals("IDLE", initial.at("/run/status").asText());
+        assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
+
+        HttpResponse<String> saved = post("/api/explorer-accounts",
+                "action=save&label=LLM-A&role=USER&loginUrl=" + encode(state.record.service + "/login")
+                        + "&username=" + encode("alice@example.test") + "&password=" + encode("secret-password")
+                        + "&loginMode=JSON&usernameField=email&passwordField=password"
+                        + "&tokenJsonPath=token&authHeader=Authorization&authPrefix=" + encode("Bearer "), token);
+        assertEquals(200, saved.statusCode());
+        assertFalse(saved.body().contains("secret-password"));
+        assertFalse(saved.body().contains("alice@example.test"));
+        String accountId = JSON.readTree(saved.body()).at("/account/id").asText();
+
+        HttpResponse<String> started = post("/api/explorer-run",
+                "action=start&target=" + encode(state.record.service + "/") + "&anonymous=false&accounts=" + accountId,
+                token);
+        assertEquals(202, started.statusCode());
+        assertEquals("RUNNING", JSON.readTree(started.body()).at("/run/status").asText());
+        assertEquals(accountId, JSON.readTree(started.body()).at("/run/accountIds/0").asText());
     }
 
     @Test
@@ -914,6 +942,10 @@ final class FlowScopeWebServerTest {
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
         private volatile boolean scannerCancelled;
+        private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
+        private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
+                ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
+                List.of(), false, 0, 0, List.of(), List.of());
         private volatile String manualRequest = "";
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
         private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
@@ -968,6 +1000,22 @@ final class FlowScopeWebServerTest {
         @Override public JsonNode cancelScanner() {
             scannerCancelled = true;
             return JSON.createObjectNode().put("status", "CANCELLED");
+        }
+        @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
+        @Override public List<ExplorerAccountVault.View> explorerAccounts() { return List.copyOf(explorerAccounts); }
+        @Override public ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View("llm-test", input.label(), input.role(),
+                    input.loginUrl(), input.loginMode(), input.validationUrl(),
+                    ExplorerAccountVault.AuthStatus.UNVERIFIED, "로그인 확인 전",
+                    java.time.Instant.now().toString(), true, 0, false);
+            explorerAccounts.add(value);
+            return value;
+        }
+        @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
+            explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
+                    request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
+                    request.accountIds(), request.includeAnonymous(), 0, 0, List.of(), List.of());
+            return explorerRun;
         }
 
 

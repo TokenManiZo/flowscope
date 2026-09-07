@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react"
-import { Activity, Braces, FileSearch, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
+import { Activity, Bot, Braces, FileSearch, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
 
 export type AppRoute =
   | "dashboard"
@@ -11,6 +11,7 @@ export type AppRoute =
   | "scenarios"
   | "evidence"
   | "accounts"
+  | "explorer"
   | "runs"
 
 export interface AppRouteDefinition {
@@ -30,6 +31,7 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "scenarios", label: "취약점 시나리오", group: "analysis", icon: ShieldAlert },
   { route: "evidence", label: "Evidence", group: "evidence", icon: FileSearch },
   { route: "accounts", label: "계정·세션", group: "operations", icon: UsersRound },
+  { route: "explorer", label: "LLM Explorer", group: "operations", icon: Bot },
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 

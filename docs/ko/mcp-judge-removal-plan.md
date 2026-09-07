@@ -4,9 +4,9 @@
 
 ## 현재 목표
 
-기존 LLM Judge와 하네스용 MCP를 실제로 삭제한다. Explorer는 **별도 하네스**로 이후 설계한다. 미래 MCP는 Explorer 실행 하네스가 아니라 FlowScope의 Evidence·분석을 이용하는 제품 연동으로 검토하되, **이번에는 구현하지 않는다**.
+기존 LLM Judge와 하네스용 MCP는 D-126에서 실제로 삭제했다. D-128은 Judge/MCP를 복원하지 않고 Codex app-server dynamic tool과 Java exact-scope gateway를 사용하는 **별도 Explorer**를 구현했다. 미래 MCP는 Explorer 실행 하네스가 아니라 FlowScope Evidence·분석용 제품 연동으로만 검토하며 현재 구현하지 않는다.
 
-HUMAN·SCANNER·LLM이라는 source, 기존 Evidence, endpoint·parameter 분석, 인가 규칙, 사람 검토, Session Broker, Request Lab과 프로젝트 저장은 보존한다. LLM source 보존은 자동 LLM 실행기 보존을 뜻하지 않는다.
+HUMAN·SCANNER·LLM source, 기존 Evidence, endpoint·parameter 분석, 인가 규칙, 사람 검토, Session Broker, Request Lab과 프로젝트 저장은 보존한다. 새 Explorer의 자격증명/session은 별도 메모리 vault에 있고 프로젝트에 저장하지 않는다.
 
 ## 단계별 상태
 
@@ -16,7 +16,7 @@ HUMAN·SCANNER·LLM이라는 source, 기존 Evidence, endpoint·parameter 분석
 | 2 | Judge role·prompt·후속 세션·UI·dataset lock·최종 verdict 제출 제거 | D-126 구현, Java/React 자동 회귀 통과 |
 | 3 | 기존 MCP transport·token·runner·격리 브라우저·설정·doctor 검사 제거; 저장 모델 독립 | D-126 구현, 클래스/리소스 및 HTTP endpoint 부재 회귀 통과 |
 | 4 | ZAP 브라우저 탐색 Client 필수화와 AJAX 제거 | 미착수. 현재 Traditional → Client → AJAX → Passive 유지 |
-| 5 | 별도 Explorer 하네스 설계 | 미착수. 공급자/도구/인증 방식을 이번에 정하지 않음 |
+| 5 | 별도 Explorer 하네스 설계 | D-128 구현. Codex app-server dynamic tool·메모리 인증·exact-scope gateway; 최종 자동/실제 Burp gate 진행 |
 | 6 | FlowScope Evidence용 제품 MCP 설계 | 미착수. 현재 MCP 리스너나 대체 API stub 없음 |
 
 ## 제거한 것
@@ -46,6 +46,6 @@ HUMAN·SCANNER·LLM이라는 source, 기존 Evidence, endpoint·parameter 분석
 
 ZAP 테스트는 로컬 가짜 API와 합성 Evidence로 **FlowScope의 호출·상태 처리**를 확인한다. 실제 ZAP Firefox/확장, capability 전달, 로그인 상태, OS별 동작을 증명하지 않는다. 취소 회귀는 scan ID가 등록되어 status polling 중인 crawler를 대상으로 한다. start API 반환과 취소가 겹치는 모든 타이밍을 검증한 것이 아니며 Client-only 전환 전에 실제 시작/취소 경합도 확인해야 한다.
 
-문서 전수 대조에서 별도 분석 입력 연결 문제가 확인됐다. 발견용 MIME 4MiB capture와 4,194,304자 JS parser 사이에서 host record가 8,192자로 재절단하므로 live 대형 번들 전체 분석은 미해결이다. 상세 근거와 회귀 미착수 상태는 [HANDOFF](HANDOFF.md)에 기록하며, 이 제거 작업이 해결한 것으로 표시하지 않는다.
+D-127 문서 전수 대조에서 발견용 MIME과 JS parser 사이의 분석 입력 연결 문제가 확인됐다. 이 제거 작업 자체가 해결한 것은 아니며, 후속 D-128에서 발견용 HTML/JavaScript/JSON/XML을 기본 4MiB까지 `FULL` payload로 보존하고 1.4MiB capture→record 회귀를 추가해 닫았다. 4MiB 초과와 동적 의미 해석은 [HANDOFF](HANDOFF.md)의 현재 한계로 남는다.
 
 다음 gate는 새 JAR의 실제 Burp load/unload, HUMAN pass·로그인 캡처, ZAP 비로그인/로그인 lane·진행/취소, 기존 프로젝트 재열기다. 이 변경만으로 실물 gate, 성능·발견률·오탐률 개선을 완료했다고 주장하지 않는다.

@@ -1,5 +1,32 @@
 # FlowScope 개발 기록
 
+## 2026-09-07 · D-128 판정 없는 독립 LLM Explorer
+
+### 개발·필요성·기각안
+
+- D-126에서 제거한 Judge/MCP/브라우저 하네스를 복원하지 않고, endpoint·method·parameter·계정별 응답과 workflow 단서를 실제 LLM HTTP Evidence로 남기는 Explorer를 새로 구현했다. `ExplorerCoordinator`, 메모리 계정 vault, form/JSON 인증 runtime, exact-scope HTTP gateway, Codex app-server provider를 서로 분리했다.
+- 모델에는 opaque 계정 handle과 dynamic HTTP tool만 제공한다. 자격증명과 live Cookie/token은 Java 메모리에서만 주입하고 로그인 준비 교환은 Record·payload·ledger·snapshot·프로젝트에 저장하지 않는다. 대상이 반환한 콘텐츠는 지시가 아닌 비신뢰 입력으로 다룬다.
+- 직접 shell curl은 안전 sandbox에서 loopback gateway에 도달하지 못하는 것을 실측했다. 모델 네트워크를 넓히면 exact-scope gateway 우회가 가능해 기각하고, 공식 app-server의 experimental `dynamicTools`/`item/tool/call` 계약을 Java가 처리하는 구조로 바꿨다. MCP·Chrome/Playwright·API key·Node 직접 설치를 사용자 요건으로 다시 넣지 않았다.
+- React에 Explorer 화면과 실행 피드를 추가하고 기존 Runs·점검·대시보드에서 Judge가 아닌 Explorer로 연결했다. 실행 중 elapsed/시도/응답/Evidence/미해결/실패를 구분하고 steer·취소를 제공한다.
+- `BoundedHttpCapture`와 `ProjectStore`의 발견용 HTML/JavaScript/JSON/XML 상한을 4MiB로 맞춰 1.4MiB 번들 회귀를 닫았다. 임의 wrapper나 runtime-only lazy chunk의 의미 추출까지 해결했다고 주장하지 않는다.
+
+### 영향 파일
+
+- 코드: `src/main/java/io/flowscope/explorer/*`, `src/main/resources/explorer/explorer-system.md`, `FlowScopeExtension`, `FlowScopeWebServer`, `BoundedHttpCapture`, `ProjectStore`.
+- UI: `frontend/src/features/explorer/*`, 실행·점검·대시보드·route/API/query 계약.
+- 테스트: Explorer vault/auth/gateway/coordinator/provider 하네스, Web API, 대형 응답, React 실행 화면.
+- 문서: README, architecture, decisions, Explorer 사용법, HANDOFF, 시작/제품/UI/Surface/검증/변경 이력.
+
+### 검증 상태
+
+- 같은 최종 입력에서 `mvn clean verify` 2회를 실행해 매회 React 38 files/241 tests와 Java 350 tests 중 opt-in 1 skip, failures/errors 0을 확인했다. 두 JAR은 31,626,205 bytes, 9,130 entries와 SHA-256 `762728bff34d9d4d9d9f3a695d43fc5ed6ede25a9900c6db552affdcc268d87b`로 동일했다.
+- 일반 suite에서 skip되는 provider 하네스를 `-Dflowscope.harness=true`로 별도 실행해 설치·로그인된 실제 Codex app-server의 dynamic HTTP tool 호출과 구조화 결과를 확인했다. 전체 명령·한계는 [beta-validation](beta-validation.md)에 기록했다.
+- 실제 Burp에 새 JAR을 재로드한 anonymous·HTML form·JSON token 전체 실행, Windows 실기기, 외부 독립 corpus 효능은 아직 수행하지 않았다. 자동 테스트나 provider 프로토콜 확인을 실환경 발견률로 표현하지 않는다.
+
+### 다음 gate
+
+새 JAR을 실제 Burp에서 로드해 계정별 로그인, exact-scope, Evidence 귀속, 취소/정리와 UI 피드를 확인한다. 그다음 개발 corpus와 분리된 승인 대상에서 HUMAN·ZAP 대비 추가 endpoint/parameter, 중복/노이즈, 요청량과 검토시간을 측정한다.
+
 ## 2026-09-07 · D-127 문서 전수 정합성 및 현재 진행상황 분리
 
 ### 변경·필요성·기각안

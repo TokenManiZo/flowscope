@@ -196,7 +196,7 @@ export function InspectionPage() {
           />
         </TabsContent>
         <TabsContent value="review">
-          <Card><CardHeader><CardTitle>Evidence 검토</CardTitle><CardDescription>기존 Judge와 실행 하네스는 제거되었습니다. 새 Explorer 하네스와 FlowScope용 MCP는 아직 제공하지 않습니다.</CardDescription></CardHeader><CardContent><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button></CardContent></Card>
+          <Card><CardHeader><CardTitle>Evidence 검토</CardTitle><CardDescription>Judge 없이 실제 HUMAN·ZAP·LLM Evidence를 비교합니다. LLM 수집은 독립 Explorer에서 실행합니다.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button><Button variant="outline" onClick={() => { window.location.hash = "#explorer" }}>LLM Explorer 열기</Button></CardContent></Card>
         </TabsContent>
       </Tabs>
 
