@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-08 D-133 작업본. 기준선은 `352ce1a`이며 현재 미출시 변경에 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Client Spider 단일 실행과 실물 Docker API 호환 수정이 추가됐다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-133으로 갱신한다.
+최종 대조: 2026-09-08 D-133 후속 문서 정합성 점검. 구현 기준은 `7353144`이며 현재 미출시 beta.45 소스에는 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Client Spider 단일 실행과 실물 Docker API 호환 수정이 들어 있다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-133으로 갱신한다.
 
 ## 1. 무엇을 어디서 읽는가
 
@@ -25,6 +25,7 @@
 11. D-130 ZAP 계정 lane을 HUMAN Session Broker와 분리했다. 별도 메모리 vault, Browser Based Authentication의 명시적 성공, account crawler, direct-auth Evidence 귀속, 임시 user/Context cleanup, React 계정·인증 상태·정의·취소, `authhelper` doctor 계약과 실물 미검증 범위를 현행 문서에 반영했다.
 12. D-131은 인증 lane의 ZAP home·session·브라우저 임시 파일을 제공 Docker의 tmpfs로 제한한다. D-132는 새 캠페인을 strict Client Spider 하나로 줄이고 Traditional/AJAX 실행·fallback·필수 add-on·상태 필드를 제거했다. 과거 Evidence enum과 역사 기록은 읽기 호환을 위해 보존하며 실물 Burp 8081 gate는 완료로 쓰지 않았다.
 13. D-133은 실제 Compose publish 요청의 source인 bridge gateway를 ZAP API allowlist에 포함하고 ZAP 2.17 action POST Content-Type을 exact form media type으로 고정했다. 임시 8090 daemon/API/session gate와 아직 남은 8081 target gate를 구분했다.
+14. 후속 전수 대조에서 `mcp-judge-removal-plan.md`가 D-132 이전의 Traditional → Client → AJAX 흐름을 현행으로 잘못 표시한 것을 발견했다. 단계 4를 Client-only 구현 완료·실물 gate 대기로 정정하고 제품/UI 문서의 현재 결정 번호를 D-133으로 맞췄다.
 
 ## 3. 전수 목록
 
@@ -51,7 +52,7 @@
 | [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | HUMAN/ZAP/Explorer와 no-Judge/no-MCP 범위 |
 | [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-132 ZAP 계정·Client 단일 진행·정의·취소, Explorer 피드·과거 Judge 분리 |
 | [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P20 ZAP 직접 인증·정의·취소, P21/P23 D-128 Explorer, 폐기 기능 구분 |
-| [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, 제품 MCP 보류 |
+| [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, D-132 Client-only 완료와 실물 gate, 제품 MCP 보류 |
 | [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-130~133 자동·실물 ZAP gate, D-128 Explorer gate와 이전 beta 이력 분리 |
 | [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-130~133 ZAP 인증·휘발성 저장·Client 단일 실행·Docker API 호환, D-128 Explorer 결정 |
 | [docs/ko/development-log.md](development-log.md) | 역사 | D-132 Client 단일 실행, D-130 인증, D-129 배포, D-128 Explorer 기록 |
@@ -71,7 +72,7 @@
 
 ## 4. 확인 범위
 
-- 최종 점검: 관리 문서 36개와 목록 대응 일치, 로컬 파일/디렉터리 링크 230개 모두 존재, `git diff --check` 통과. 이전 인계 본문과 사용자 CLAUDE 인계 문단 보존 확인. 외부 URL 응답·heading anchor·모든 제품 동작을 검증한 것은 아니다.
+- 최종 점검: 관리 문서 36개와 목록 대응 일치, 추적 Markdown의 로컬 파일/디렉터리 링크 236개 모두 존재, `git diff --check` 통과. 이전 인계 본문과 사용자 CLAUDE 인계 문단 보존 확인. 외부 URL 응답·heading anchor·모든 제품 동작을 검증한 것은 아니다.
 - 코드 대조: 제거된 runtime/API, 호스트 소유 ZAP, 과거 데이터 모델, JS parser·capture·record·RouteDiscoveryDocument/Surface 전달, DataFlow index, capability scope, Alert/Passive 상한, 빌드 JDK 계약.
 - D-129 작업에서 `mvn clean verify`를 2회 실행했고 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files/242 tests가 통과했다. 기능별 Bash doctor는 JDK 21/Codex 로그인 성공과 JDK 26 거부를 실제 확인했다. JAR/bundle 반복 package와 clone 없는 clean extraction도 통과했다.
 - D-130~133 작업은 같은 최종 입력에서 `mvn clean verify` 2회를 실행해 매회 Java 370 tests(실패·오류 0, opt-in 1 skip), React 38 files/247 tests를 통과했고 JAR·bundle SHA-256이 각각 일치했다. Bash 5개 syntax/shellcheck, Compose와 JAR 구조도 확인했다. 실제 ZAP 2.17 daemon/API/session gate는 별도 8090에서 통과했지만 doctor는 Burp 8081이 닫혀 실패했으므로 실물 target 캠페인 성공으로 기록하지 않는다.

@@ -1,6 +1,6 @@
 # LLM Judge·MCP 제거 상태와 후속 계획
 
-기준: `c006679` → ZAP 분리 `5a47af9` → D-126 제거 `57d1bb4` → 빈 디렉터리 정리 `962edfe`. 미출시 소스 변경이며 이전 beta.44 배포물과 구분한다.
+기준: `c006679` → ZAP 분리 `5a47af9` → D-126 제거 `57d1bb4` → 빈 디렉터리 정리 `962edfe` → D-128 독립 Explorer → D-132·133 Client-only ZAP `7353144`. 미출시 beta.45 소스 변경이며 이전 beta.44 배포물과 구분한다.
 
 ## 현재 목표
 
@@ -15,7 +15,7 @@ HUMAN·SCANNER·LLM source, 기존 Evidence, endpoint·parameter 분석, 인가 
 | 1 | ZAP 캠페인 실행·상태·취소를 `ZapCampaign`으로 추출; Web 직접 호출 | `5a47af9` 완료 |
 | 2 | Judge role·prompt·후속 세션·UI·dataset lock·최종 verdict 제출 제거 | D-126 구현, Java/React 자동 회귀 통과 |
 | 3 | 기존 MCP transport·token·runner·격리 브라우저·설정·doctor 검사 제거; 저장 모델 독립 | D-126 구현, 클래스/리소스 및 HTTP endpoint 부재 회귀 통과 |
-| 4 | ZAP 브라우저 탐색 Client 필수화와 AJAX 제거 | 미착수. 현재 Traditional → Client → AJAX → Passive 유지 |
+| 4 | ZAP 브라우저 탐색 Client 필수화와 Traditional/AJAX 제거 | D-132 구현. 선택적 정의 import → 선택적 로그인 → strict Client → Passive → Alert; 자동 fallback 없음. 실제 Burp 8081 완주 gate 대기 |
 | 5 | 별도 Explorer 하네스 설계 | D-128 구현. Codex app-server dynamic tool·메모리 인증·exact-scope gateway; 최종 자동/실제 Burp gate 진행 |
 | 6 | FlowScope Evidence용 제품 MCP 설계 | 미착수. 현재 MCP 리스너나 대체 API stub 없음 |
 
@@ -42,9 +42,9 @@ HUMAN·SCANNER·LLM source, 기존 Evidence, endpoint·parameter 분석, 인가 
 
 ## 검증 범위와 다음 gate
 
-자동 검증 결과·산출물 식별값은 [beta-validation](beta-validation.md)의 D-126 항목에 기록한다. `RetiredHarnessTest`는 삭제 전 존재 검사 실패(RED), 삭제 후 clean classpath 부재를 검사하며 최종 JAR도 별도로 검사한다. Web 회귀는 폐기 API 404·과거 기록 read-only·마스킹·날짜·현재 후보 분리를 확인한다. JSON/SQLite 왕복, HUMAN 완료·계정·scope·Request Lab과 독립 ZAP 캠페인 회귀를 유지한다.
+자동 검증 결과·산출물 식별값은 [beta-validation](beta-validation.md)의 D-126~133 항목에 나눠 기록한다. `RetiredHarnessTest`는 삭제 전 존재 검사 실패(RED), 삭제 후 clean classpath 부재를 검사하며 최종 JAR도 별도로 검사한다. Web 회귀는 폐기 API 404·과거 기록 read-only·마스킹·날짜·현재 후보 분리를 확인한다. JSON/SQLite 왕복, HUMAN 완료·계정·scope·Request Lab과 독립 ZAP 캠페인 회귀를 유지한다.
 
-ZAP 테스트는 로컬 가짜 API와 합성 Evidence로 **FlowScope의 호출·상태 처리**를 확인한다. 실제 ZAP Firefox/확장, capability 전달, 로그인 상태, OS별 동작을 증명하지 않는다. 취소 회귀는 scan ID가 등록되어 status polling 중인 crawler를 대상으로 한다. start API 반환과 취소가 겹치는 모든 타이밍을 검증한 것이 아니며 Client-only 전환 전에 실제 시작/취소 경합도 확인해야 한다.
+ZAP 테스트는 로컬 가짜 API와 합성 Evidence로 **FlowScope의 호출·상태 처리**를 확인한다. 실제 ZAP Firefox/확장, capability 전달, 로그인 상태, OS별 동작을 증명하지 않는다. D-132 회귀는 Client 단일 호출, 0건 실패, timeout·취소 시 stop/terminal 확인을 검사한다. 다만 start API 반환과 취소가 겹치는 모든 타이밍이나 실제 브라우저 프로세스의 시작/취소 경합을 검증한 것은 아니다.
 
 D-127 문서 전수 대조에서 발견용 MIME과 JS parser 사이의 분석 입력 연결 문제가 확인됐다. 이 제거 작업 자체가 해결한 것은 아니며, 후속 D-128에서 발견용 HTML/JavaScript/JSON/XML을 기본 4MiB까지 `FULL` payload로 보존하고 1.4MiB capture→record 회귀를 추가해 닫았다. 4MiB 초과와 동적 의미 해석은 [HANDOFF](HANDOFF.md)의 현재 한계로 남는다.
 
