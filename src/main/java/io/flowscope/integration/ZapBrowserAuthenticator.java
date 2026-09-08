@@ -10,7 +10,7 @@ import java.util.function.Predicate;
 final class ZapBrowserAuthenticator {
     record Identity(String contextId, String contextName, String userId, String userName, String browser) {}
 
-    private static final String BROWSER = "firefox-headless";
+    private static final String BROWSER = ZapClient.CLIENT_BROWSER;
     private final ZapClient zap;
     private final ObjectMapper json;
     private final Predicate<String> scopeAllows;

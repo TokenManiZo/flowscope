@@ -1,5 +1,58 @@
 # FlowScope 개발 기록
 
+## 2026-09-09 · 미출시 · PR #10 흐름을 현행 Docker Chromium ZAP에 이식
+
+### 개발·수정
+
+- PR #10은 옛 MCP/Session Broker 의존과 Firefox fallback을 포함하고 현재 브랜치와 충돌하므로 병합하지 않았다. 사용자가 Web에서 대상별 계정 이름·역할·로그인 URL·ID·비밀번호를 등록하고 ZAP Browser Based Authentication 뒤 계정 지정 Client Spider를 실행하는 흐름은 현행 `ZapAccountVault`·`ZapBrowserAuthenticator`·`ZapCampaign`·React 작업면에 유지했다.
+- `infra/zap/Dockerfile`을 추가해 digest 고정 ZAP 2.17 base에 Debian Chromium과 ChromeDriver를 같은 저장소에서 설치한다. Compose는 이 이미지를 빌드하고 `/run/flowscope-zap`·`/tmp` tmpfs, 1GiB shared memory, unprivileged `zap` 사용자를 유지한다.
+- 시작 스크립트는 browser/driver 파일·실행·version·주 버전 일치와 임시 profile의 실제 headless 기동을 먼저 검사한다. Docker 기본 격리에서 Chromium sandbox가 namespace 오류로 실패한 실측에 따라 Chromium에만 `--no-sandbox`를 전달하고 broad capability/seccomp 완화는 추가하지 않았다.
+- 비로그인·로그인 Client Spider 모두 `chrome-headless`를 명시한다. `ZapCampaign`과 연결 상태 API는 tmpfs `zapHomePath`를 요구해 임의 ZAP Desktop/API runtime이 “연결됨”만으로 실행되는 것을 막는다. React와 legacy 안내는 FlowScope Docker Chromium 한 경로와 로그인 계정 입력을 표시한다.
+- macOS/Linux와 Windows `zap-up`은 custom image를 `--build --wait`로 기동한다. distribution과 CI에 Dockerfile을 포함하고 version을 beta.46으로 올렸다.
+
+### 필요성·기각 대안
+
+- 호스트 Chrome/ChromeDriver를 탐색하면 설치 경로와 browser/driver 버전이 사용자마다 달라지고 오픈소스 다운로드 동선이 깨진다. Selenium Manager의 실행 중 다운로드는 네트워크·버전 재현 경계를 늘린다.
+- Chrome 실패 시 Firefox/AJAX/Traditional로 fallback하면 사용자가 선택한 실행 경로와 실패 의미가 바뀌고 0건을 다른 crawler 결과로 숨길 수 있어 기각했다.
+- ZAP Desktop을 함께 지원하면 D-131의 tmpfs 비밀 수명과 browser preflight를 강제할 수 없다. PR #10 전체 병합은 삭제된 MCP/Judge와 현행 타입을 되살리므로 기각했다.
+
+### 영향 파일·회귀
+
+- runtime/배포: `infra/zap/Dockerfile`, `compose.yaml`, `start-zap.sh`, `scripts/zap-up.sh`, `scripts/zap-up.ps1`, `src/assembly/distribution.xml`, `.github/workflows/ci.yml`.
+- Java/UI: `ZapClient`, `ZapBrowserAuthenticator`, `ZapCampaign`, `FlowScopeExtension`, React Inspection/type, legacy Web와 관련 테스트.
+- 문서: README, 한·영 README/시작 가이드/CHANGELOG, architecture, decisions D-135, product overview/plan, UI 근거, HANDOFF, beta-validation, documentation-status, 이 기록.
+- RED/GREEN: startup 회귀가 browser/driver 부재·headless 실행 실패·주 버전 불일치를 먼저 요구했고, campaign 회귀가 익명 lane의 관리 runtime 강제를 요구했다. 구현 뒤 집중 Java 68 tests가 failures/errors 0으로 통과했다.
+
+### 실제 검증
+
+- `./scripts/zap-up.sh`로 최종 custom image를 build/recreate하고 health를 확인했다. `doctor.sh --mode zap`은 failures 0 / warnings 0이었다.
+- 컨테이너에서 Chromium/ChromeDriver가 모두 `152.0.7977.82`였고, 실제 ZAP Client Spider가 exact Context의 `http://127.0.0.1:8888/`를 HTTP 200으로 1건 수집한 뒤 status 100으로 끝났다. FakeZap 결과가 아니다.
+- 최종 코드·문서 입력에서 JDK 21 `mvn clean verify`를 1회 실행해 Java 375 tests(failures/errors 0, opt-in provider 1 skip), React 38 files/247 tests, typecheck·notices·Vite build와 release gate를 통과했다. JAR은 31,649,129 bytes, 9,140 entries, SHA-256 `d03c5a602f8c06f3e345468f1b69adb5557b6b3cfc04fd500a04e8dec87ca8c3`이며 bundle에 Dockerfile이 포함됐다.
+
+### 남은 한계·다음 gate
+
+- 실제 Burp에 beta.46 JAR을 재로드한 Browser Based Authentication 성공/실패, 복수 계정의 SCANNER `laneAccountId` 귀속·쿠키 격리, 취소·정리는 아직 미검증이다.
+- Windows helper는 자동 parser/계약 회귀 대상이며 실제 Windows Docker Desktop의 image build와 target capture는 별도 gate다.
+- Chromium/ChromeDriver는 같은 Debian 저장소에서 함께 설치하고 runtime에서 주 버전을 검사하지만 package 숫자는 Dockerfile에 고정하지 않았다. 이후 release image digest를 게시하기 전까지 교차 시점 byte-identical image를 주장하지 않는다.
+
+## 2026-09-06 · 1.2.0-beta.44 · 다중 항목 scope의 ZAP capability 커버리지 이식
+
+### 개발·수정
+
+- 예전 `claude/hai-8351a0` 브랜치(main 미병합)를 검토해, 문서 2커밋은 새 문서로 대체돼 폐기하고 코드 커밋 `849f843`의 두 수정 중 하나만 남아 있음을 확인했다. route 매칭은 코덱스의 concrete frontier(D-113 계열)로 재구현돼 대체됐고, **scope-wide ZAP capability 커버리지는 main에 없었다.**
+- 현재 main은 capability 헤더 Replacer 규칙을 단일 target 하위(`exactSubtreeRegex(target)`)에만 붙였다. 그러나 Burp 8081은 스캐너 캠페인 레인의 **모든** in-scope 요청에 capability를 요구한다(`scannerCampaignRequestAllowed`). exact scope에 항목이 둘 이상이고 브라우저 크롤러(Client/AJAX)가 형제 항목이나 그 항목이 참조하는 리소스를 부르면, ZAP이 헤더를 안 붙여 8081이 "capability missing or invalid"로 거부하고 캠페인이 격리 오류로 끝난다.
+- `ZapClient.exactSubtreeRegex(Collection)` 오버로드를 추가해 여러 항목을 union regex로 덮는다. 항목이 하나면 단일 target 버전과 완전히 동일한 문자열을 돌려주므로 crAPI 등 단일 항목 scope의 동작은 불변이다. capability 설치 지점에서 `state.scope().entries()` 전체(+target)를 커버리지로 쓴다. `includeInContext`(ZAP 크롤 경계)는 바꾸지 않았다 — 크롤 범위 변경은 별도 결정이다.
+
+### 필요성·기각 대안
+
+- 예전 브랜치를 통째로 병합하는 방식은 낡은 문서와 대체된 코드를 함께 끌어와 기각하고, 살아 있는 수정만 현재 코드에 새로 이식했다.
+- capability를 단일 target으로 두는 현행은 다중 항목 scope에서 잠복 실패를 남기므로 기각했다.
+
+### 영향 파일·회귀
+
+- 코드: `ZapClient.java`(union 오버로드), `McpServer.java`(capability 커버리지=scope 전체).
+- 테스트: `ZapClientTest` — union이 모든 scope 항목을 덮고 외부는 거부, 단일 항목 union == 단일 target 회귀.
+
 ## 2026-09-08 · D-134 ZAP 2.17 로그인 REST 호환 수정
 
 ### 개발·수정
@@ -3180,23 +3233,6 @@ README에서 파일명을 구분하라는 안내만으로는 실제 오선택을
 
 - 재현 해시는 여전히 명시 환경(Homebrew JDK 21.0.12) 한정이며 벤더 교차 재현은 미검증이다.
 
-## 2026-09-06 · 1.2.0-beta.44 · 다중 항목 scope의 ZAP capability 커버리지 이식
-
-### 개발·수정
-
-- 예전 `claude/hai-8351a0` 브랜치(main 미병합)를 검토해, 문서 2커밋은 새 문서로 대체돼 폐기하고 코드 커밋 `849f843`의 두 수정 중 하나만 남아 있음을 확인했다. route 매칭은 코덱스의 concrete frontier(D-113 계열)로 재구현돼 대체됐고, **scope-wide ZAP capability 커버리지는 main에 없었다.**
-- 현재 main은 capability 헤더 Replacer 규칙을 단일 target 하위(`exactSubtreeRegex(target)`)에만 붙였다. 그러나 Burp 8081은 스캐너 캠페인 레인의 **모든** in-scope 요청에 capability를 요구한다(`scannerCampaignRequestAllowed`). exact scope에 항목이 둘 이상이고 브라우저 크롤러(Client/AJAX)가 형제 항목이나 그 항목이 참조하는 리소스를 부르면, ZAP이 헤더를 안 붙여 8081이 "capability missing or invalid"로 거부하고 캠페인이 격리 오류로 끝난다.
-- `ZapClient.exactSubtreeRegex(Collection)` 오버로드를 추가해 여러 항목을 union regex로 덮는다. 항목이 하나면 단일 target 버전과 완전히 동일한 문자열을 돌려주므로 crAPI 등 단일 항목 scope의 동작은 불변이다. capability 설치 지점에서 `state.scope().entries()` 전체(+target)를 커버리지로 쓴다. `includeInContext`(ZAP 크롤 경계)는 바꾸지 않았다 — 크롤 범위 변경은 별도 결정이다.
-
-### 필요성·기각 대안
-
-- 예전 브랜치를 통째로 병합하는 방식은 낡은 문서와 대체된 코드를 함께 끌어와 기각하고, 살아 있는 수정만 현재 코드에 새로 이식했다.
-- capability를 단일 target으로 두는 현행은 다중 항목 scope에서 잠복 실패를 남기므로 기각했다.
-
-### 영향 파일·회귀
-
-- 코드: `ZapClient.java`(union 오버로드), `McpServer.java`(capability 커버리지=scope 전체).
-- 테스트: `ZapClientTest` — union이 모든 scope 항목을 덮고 외부는 거부, 단일 항목 union == 단일 target 회귀.
 - 문서: decisions D-124, 이 기록.
 
 ### 최종 검증

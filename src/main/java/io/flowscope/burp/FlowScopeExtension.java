@@ -1323,16 +1323,24 @@ public final class FlowScopeExtension implements BurpExtension {
         try {
             com.fasterxml.jackson.databind.JsonNode response = mapper.readTree(zapClient.probeVersion());
             String version = response.path("version").asText("");
+            String home = mapper.readTree(zapClient.zapHomePath()).path("zapHomePath").asText("");
+            boolean managedRuntime = home.startsWith("/run/flowscope-zap/");
+            body.put("managedRuntime", managedRuntime);
+            if (!managedRuntime) {
+                return body.put("connected", false).put("state", "WRONG_RUNTIME")
+                        .put("version", version)
+                        .put("message", "FlowScope Docker Chromium ZAP이 아닙니다. bundle의 zap-up helper를 실행하세요.");
+            }
             body.put("connected", true).put("state", "CONNECTED").put("version", version)
-                    .put("message", version.isBlank() ? "실행 중인 로컬 ZAP API에 연결됐습니다."
-                            : "실행 중인 로컬 ZAP " + version + " API에 연결됐습니다.");
+                    .put("message", version.isBlank() ? "FlowScope Docker Chromium ZAP에 연결됐습니다."
+                            : "FlowScope Docker Chromium ZAP " + version + "에 연결됐습니다.");
         } catch (Exception error) {
             String detail = error.getMessage() == null ? "" : error.getMessage();
             boolean auth = detail.contains("HTTP 401") || detail.contains("HTTP 403");
             body.put("connected", false).put("state", auth ? "AUTH_FAILED" : "UNREACHABLE")
                     .put("message", auth
                             ? "ZAP API는 응답했지만 API key가 일치하지 않습니다. FlowScope와 ZAP 설정을 맞춘 뒤 확장을 다시 로드하세요."
-                            : "127.0.0.1의 ZAP API에 연결할 수 없습니다. ZAP Desktop 또는 Docker Quick Start를 먼저 실행하세요.");
+                            : "127.0.0.1의 FlowScope Docker ZAP에 연결할 수 없습니다. bundle의 zap-up helper를 실행하세요.");
         }
         return body;
     }

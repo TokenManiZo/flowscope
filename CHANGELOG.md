@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · FlowScope Docker Chromium ZAP 단일 경로 (D-135, 2026-09-09)
+
+- PR #10은 병합하지 않고 로그인 URL·ID·비밀번호 입력 → ZAP Browser Based Authentication → 계정 지정 Client Spider → SCANNER Evidence 귀속 흐름을 현행 `ZapAccountVault`·`ZapCampaign`·React UI에 맞게 유지했습니다.
+- distribution bundle에 digest 고정 ZAP 2.17 base를 사용하는 Dockerfile을 포함하고, Chromium과 같은 Debian 저장소의 ChromeDriver를 함께 설치합니다. macOS/Linux·Windows helper는 Compose 이미지를 자동 빌드합니다.
+- 비로그인·로그인 lane 모두 `chrome-headless`를 명시합니다. 캠페인 시작 전 Chromium/driver 실행 가능 여부·주 버전 일치·실제 headless 기동과 tmpfs `zapHomePath`를 확인하며, 임의 ZAP Desktop/API runtime은 거부합니다.
+- 실제 macOS arm64 Docker 컨테이너에서 Chromium/ChromeDriver `152.0.7977.82`, doctor 실패·경고 0건, exact Context의 Client Spider HTTP 200 1건과 status 100을 확인했습니다. beta.46 JAR의 Burp 재로드·로그인 계정·복수 계정·Windows 실기기 검증은 아직 남았습니다.
+
 ## 미출시 · ZAP 2.17 로그인 API 호환 (D-134, 2026-09-08)
 
 - 실물 ZAP 2.17 REST에 존재하지 않아 로그인 lane을 `400 no_implementor`로 중단시키던 verification auto-detect action 호출을 제거했습니다.
@@ -19,7 +26,7 @@
 - 새 ZAP 캠페인은 선택적 exact-scope 정의 import와 로그인 뒤 strict Client Spider 하나만 실행하고, 이어 Passive 분석과 native Alert를 수집합니다. Traditional/AJAX 실행·fallback과 관련 상태 필드를 제거했습니다.
 - Client API·terminal 대기·capability가 실패하거나 범위 안 Client 응답이 0건이면 해당 lane을 실패 처리합니다. `client_captures`와 세션·로그인·Client·Passive·Alert 진행만 표시합니다.
 - `spider`, `spiderAjax`를 필수 add-on/doctor에서 제외하고 capability initiator를 인증·정의 import·Client에 한정했습니다. 과거 `ZAP_SPIDER`·`ZAP_AJAX_SPIDER` Evidence enum은 읽기 호환을 위해 유지합니다.
-- PR #10은 병합하지 않고 로그인 URL·ID·비밀번호를 작업면에서 받는 UX만 참고했습니다. 현행 ZAP 전용 메모리 vault와 Firefox Headless 고정, 비밀 비노출 계약을 유지합니다.
+- PR #10은 병합하지 않고 로그인 URL·ID·비밀번호를 작업면에서 받는 UX만 참고했습니다. 이 항목의 당시 Firefox 고정은 D-135의 FlowScope Docker Chromium 단일 경로가 대체합니다.
 - 관련 mock·React 계약은 확인했지만 실제 Burp 8081 + ZAP 2.17의 비로그인·로그인 Client 완주는 아직 별도 gate입니다.
 
 ## 미출시 · ZAP 직접 브라우저 인증 계정 lane (D-130, 2026-09-08)

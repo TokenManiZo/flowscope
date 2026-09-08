@@ -98,6 +98,7 @@ class ZapClientTest {
         try {
             ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
             assertEquals("{\"scan\":\"3\"}", client.clientSpider("http://127.0.0.1:8888/app"));
+            assertTrue(clientQuery.get().contains("browser=chrome-headless"));
             assertTrue(clientQuery.get().contains("subtreeOnly=true"));
             assertTrue(clientQuery.get().contains("scopeCheck=STRICT"));
             assertEquals("{\"recordsToScan\":\"0\"}", client.passiveRecordsToScan());
@@ -301,11 +302,11 @@ class ZapClientTest {
         server.start();
         try {
             ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
-            client.clientSpider("https://app.test/", "ctx", "FlowScope user A", "firefox-headless");
+            client.clientSpider("https://app.test/", "ctx", "FlowScope user A", "chrome-headless");
 
             assertTrue(clientSpider.get().contains("contextName=ctx"));
             assertTrue(clientSpider.get().contains("userName=FlowScope+user+A"));
-            assertTrue(clientSpider.get().contains("browser=firefox-headless"));
+            assertTrue(clientSpider.get().contains("browser=chrome-headless"));
             assertTrue(clientSpider.get().contains("scopeCheck=STRICT"));
         } finally {
             server.stop(0);

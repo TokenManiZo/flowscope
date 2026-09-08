@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ZapBrowserAuthenticatorTest {
     @Test
-    void configuresFirefoxUserWithoutCallingTheUnsupportedVerificationApi() throws Exception {
+    void configuresChromeUserWithoutCallingTheUnsupportedVerificationApi() throws Exception {
         List<String> requests = new ArrayList<>();
         HttpServer server = authenticationApi(requests, "{\"authSuccessful\":\"true\"}");
         server.start();
@@ -27,10 +27,10 @@ final class ZapBrowserAuthenticatorTest {
                     authenticator.authenticate("run-1", "https://app.example.test/", 0, "3", "ctx", secret));
 
             assertEquals("7", identity.userId());
-            assertEquals("firefox-headless", identity.browser());
+            assertEquals("chrome-headless", identity.browser());
             assertTrue(requests.stream().anyMatch(value -> value.startsWith(
                     "/JSON/context/action/includeInContext/")));
-            assertTrue(requests.stream().anyMatch(value -> value.contains("browserId%3Dfirefox-headless")));
+            assertTrue(requests.stream().anyMatch(value -> value.contains("browserId%3Dchrome-headless")));
             assertTrue(requests.stream().noneMatch(value -> value.startsWith("/JSON/verification/")));
         } finally {
             server.stop(0);

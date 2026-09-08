@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.45
+# FlowScope 1.2.0-beta.46
 
 현재 진행상황과 남은 gate는 [팀 인계 정본](docs/ko/HANDOFF.md), 문서 전수 대조 결과는 [문서 정합성·갱신 기준](docs/ko/documentation-status.md)에 기록합니다.
 
@@ -34,8 +34,8 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 - classifier v6가 인증 준비를 source와 무관하게 `AUTH_SESSION/EXCLUDE`, 반복 polling을 `POLLING`으로 분리하고, web manifest·source map·service worker를 탐색 메타데이터로 분리한다. API 문맥 없는 401/403 디렉터리 probe는 `REVIEW`로 보존하고, JSON/API 문맥·접근 대상·비안전 메서드 등 독립 근거가 있을 때만 메인 API로 포함한다.
 - 공통 route discovery 파이프라인이 exact-scope HTML, 정적 JavaScript 호출, OpenAPI JSON/YAML, 표준 metadata, generic XML과 응답 없는 Burp Site Map 항목을 동일한 검증·정규화·dedup gate로 처리. method 근거가 없으면 `UNKNOWN`이며 후보는 실제 요청·응답 전까지 coverage·gap·verdict·finding을 바꾸지 않음
 - `ANONYMOUS / ACCOUNT_BOUND / UNRESOLVED` 인증 상태. 연결되지 않은 회전 쿠키가 그래프 신원을 폭증시키지 않으며, 확인된 계정 연결은 서비스 경계를 유지
-- 시스템 소유 신원 격리 ZAP 기준선: 비로그인과 선택한 ZAP 브라우저 로그인 계정마다 이름 없는 임시 ZAP session과 exact-scope Context를 만들고 `network`·`replacer`·`authhelper` 포함 필수 add-on과 outgoing proxy를 먼저 확인합니다. ZAP은 이름 없는 session도 DB 파일을 만들므로 로그인 lane은 FlowScope Docker의 tmpfs 작업공간에서만 허용하고, 실행 전에 `zapHomePath`를 검증합니다. ZAP Desktop은 비로그인 lane에 계속 사용할 수 있습니다. 로그인 lane은 Firefox Headless Browser Based Authentication과 session auto-detect를 설정하고 ZAP이 `authSuccessful=true`를 반환한 경우에만 계정 지정 Client Spider를 시작합니다. ZAP 2.17 REST API에는 verification auto-detect 설정 API가 없으므로 FlowScope는 지원되지 않는 호출을 하지 않으며, 이 성공값과 범위 안 Client 응답을 인증 실행의 별도 gate로 사용합니다. 새 캠페인은 Traditional Spider와 AJAX Spider를 실행하지 않습니다. 운영자가 명시하고 별도 승인한 exact-scope OpenAPI·GraphQL·Postman·SOAP 정의 import(선택) → 로그인(계정 lane) → strict Client Spider → Passive 분석 → 전체 native Alert 페이지 수집 순서입니다. Client Spider가 실패하거나 범위 안 응답을 한 건도 남기지 못하면 해당 lane을 실패시켜 조용한 fallback이나 거짓 완료를 만들지 않습니다. 캠페인마다 무작위 내부 capability 헤더를 ZAP Replacer로 인증·정의 import·Client initiator에만 붙이고 Burp SCANNER listener에서 검증한 뒤 대상 전송 전 제거합니다. 각 Client 종료·오류·취소 뒤 실제 terminal 상태를 확인해야 다음 단계나 신원으로 넘어갑니다. Passive queue는 최대 30분, queue가 10분 동안 감소하지 않으면 정체로 보고 현재 Evidence와 Alert를 보존한 경고 완료로 전환하되, 정리가 확인되지 않으면 후속 신원을 시작하지 않습니다. Web은 단계 전환·로그인 결과·Client·Passive·Alert·격리 정리 이벤트를 최근 120건까지 메모리에 보관해 1초마다 표시하며 인증값은 기록하지 않습니다. 사용자는 실행 중인 캠페인을 취소할 수 있고, 취소도 Client·temporary user/context·capability·run context 정리 뒤 `CANCELLED`가 됩니다. 최대 20,000개 Alert 상세를 캠페인 전체 bounded snapshot으로 보존하고 초과는 경고합니다. Active Scan·Fuzzer·Forced Browse는 기본 캠페인에 포함하지 않습니다.
-- 배포 중립 비로그인 ZAP 온보딩. 빠른 시작이 loopback API/version/key를 먼저 확인하고 ZAP Desktop과 Docker Quick Start를 함께 안내합니다. ID·비밀번호를 쓰는 인증 lane은 tmpfs 저장 경계를 확인할 수 있는 FlowScope Docker로 제한합니다.
+- 시스템 소유 신원 격리 ZAP 기준선: 비로그인과 선택한 로그인 계정마다 이름 없는 임시 ZAP session과 exact-scope Context를 만듭니다. 모든 lane은 bundle의 FlowScope Docker 이미지가 제공하는 Chromium·동일 주 버전 ChromeDriver와 `chrome-headless` Client Spider로 실행하며, `zapHomePath`가 tmpfs `/run/flowscope-zap/` 아래가 아니면 시작 전에 차단합니다. 로그인 lane은 Chrome Headless Browser Based Authentication과 session auto-detect를 설정하고 ZAP이 `authSuccessful=true`를 반환한 경우에만 계정 지정 Client Spider를 시작합니다. ZAP 2.17 REST에 없는 verification auto-detect 호출은 하지 않습니다. 선택적 exact-scope API 정의 import → 로그인 → strict Client Spider → Passive 분석 → native Alert 수집 순서이며 Traditional/AJAX/Active Scan/Fuzzer/Forced Browse는 실행하지 않습니다. Client 실패·범위 안 응답 0건·출처 capability 손상·격리 정리 실패를 성공으로 숨기지 않습니다.
+- ZAP은 FlowScope Docker 경로 하나만 제공합니다. `zap-up` helper가 pinned ZAP 2.17 base 위에 Debian Chromium과 ChromeDriver를 함께 빌드하고 API key·Burp upstream·휘발성 작업공간을 구성합니다. 호스트에 Chrome·ChromeDriver·ZAP Desktop을 별도로 설치하거나 브라우저 버전을 맞출 필요가 없습니다.
 - 목적별 Evidence 신뢰 정책과 exact-run 완료 gate. HUMAN은 관측/통제 응답, SCANNER는 통제 응답을 요구하며 완료 당시 Evidence ID를 보존합니다. 가져오기·직접 fallback을 새 run 완료로 승격하지 않습니다.
 - 독립 LLM Explorer. Web에서 비로그인 또는 메모리 전용 HTML form/JSON API 계정을 선택하면 로그인된 Codex가 HTML·JavaScript·manifest·source map·API 정의와 응답 frontier를 순회합니다. 대상 요청은 모델의 직접 네트워크가 아니라 exact-scope dynamic HTTP tool을 거쳐 Burp Montoya로 전송되고 실제 응답만 `CONTROLLED` LLM Evidence가 됩니다. 작업 피드에는 경과시간·요청·Evidence ID·실패·미해결 사유가 표시되며 실행 중 steer·취소를 지원합니다. 취약점 verdict·심각도·확률은 만들지 않습니다.
 - 기존 Burp Proxy history 원클릭 가져오기. 같은 동작에서 응답 없는 exact-scope Site Map 항목은 미요청 route 후보로 가져오고, 실제 반복 횟수를 보존해 중복을 억제. 네트워크를 사용하지 않는 온보딩 샘플은 화면에 “실제 점검 결과 아님” 배너로 명시
@@ -58,10 +58,10 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 | 목적 | 필수 환경 |
 |---|---|
 | Release JAR로 HUMAN-only 사용 | Montoya API를 지원하는 최신 Burp Suite Community 또는 Professional |
-| HUMAN + SCANNER | distribution bundle + 위 환경 + OWASP ZAP 2.17.0 또는 Docker Compose v2 |
+| HUMAN + SCANNER | distribution bundle + 위 환경 + Docker Compose v2 |
 | LLM Explorer | Release JAR 또는 bundle + 위 환경 + 공식 Codex CLI와 유효한 Codex 로그인 |
 | 소스 빌드 | 위 실행 환경 + JDK 21 정확히 + Maven 3.9.x |
-| 선택적 ZAP 컨테이너 | macOS/Linux: Docker Engine/Desktop + Compose v2, Windows: Docker Desktop + PowerShell 7 |
+| ZAP 컨테이너 | macOS/Linux: Docker Engine/Desktop + Compose v2, Windows: Docker Desktop + PowerShell 7 |
 
 현재 실환경 기준선은 Burp Community `2026.7.3`, ZAP `2.17.0`, JDK `21`입니다. 이는 확인한 조합이지 모든 운영체제와 이전 버전에 대한 호환 보장이 아닙니다. PortSwigger도 최신 Montoya 변경과의 호환을 위해 최신 Burp 사용을 권고합니다.
 
@@ -69,16 +69,9 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.45-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.45 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.46-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.46 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN용 `127.0.0.1:8080`을 만들고, ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다.
-3. ZAP 기준선을 실행할 때는 압축을 푼 bundle 루트에서 아래 두 방식 중 하나를 준비합니다. HUMAN/Explorer만 쓰면 이 단계가 필요 없습니다.
-
-| ZAP 방식 | 실행 |
-|---|---|
-| 기존 ZAP Desktop | `./scripts/zap-key.sh` 또는 PowerShell 7의 `.\scripts\zap-key.ps1` 실행 후, ZAP API `127.0.0.1:8089`, upstream proxy `127.0.0.1:8081`, 생성된 key를 설정 |
-| Docker Quick Start | macOS/Linux `./scripts/zap-up.sh` · Windows PowerShell 7 `.\scripts\zap-up.ps1` |
-
-두 ZAP 방식은 동시에 실행하지 않습니다. Docker는 선택 사항이며, 중지했다면 다음 점검 전에 `zap-up`만 다시 실행하면 됩니다. Burp는 호스트에서 실행합니다.
+3. ZAP 기준선을 실행할 때는 압축을 푼 bundle 루트에서 macOS/Linux `./scripts/zap-up.sh`, Windows PowerShell 7 `.\scripts\zap-up.ps1`을 실행합니다. helper가 Chromium·ChromeDriver가 포함된 FlowScope ZAP 이미지를 자동 빌드·기동합니다. HUMAN/Explorer만 쓰면 이 단계가 필요 없습니다. 중지했다면 다음 점검 전에 `zap-up`만 다시 실행하면 됩니다. Burp는 호스트에서 실행합니다.
 
 4. 사용할 기능에 맞는 환경만 확인합니다.
 
@@ -103,17 +96,17 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 3. 화면이 자동으로 여는 첫 미완료 단계만 수행합니다: **범위 → HUMAN → ZAP**. 이어 **LLM Explorer 열기**에서 독립 탐색을 실행합니다.
 4. 완료 뒤 **API·입력 차이**에서 HUMAN·ZAP·LLM 선언/관측 차이와 산출물 파싱 상태를 먼저 보고, 선택한 API를 인가 그래프·판정 매트릭스·Evidence에서 검토합니다.
 
-빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 Desktop 설정과 Docker 명령만 펼쳐 보여 줍니다.
+빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 운영체제별 Docker helper를 보여 줍니다.
 
-소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-1.2.0-beta.45.jar`와 다운로드용 `target/flowscope-1.2.0-beta.45-bundle.zip`입니다. bundle에는 JAR, ZAP helper/Compose, macOS·Linux·Windows doctor, 현재 문서가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다. 검증 문서의 SHA-256은 거기에 적힌 환경에서 만든 해당 산출물의 식별값이지, 임의 JDK·운영체제 빌드가 같은 해시를 낸다는 약속이 아닙니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-1.2.0-beta.46.jar`와 다운로드용 `target/flowscope-1.2.0-beta.46-bundle.zip`입니다. bundle에는 JAR, ZAP Dockerfile/Compose/helper, macOS·Linux·Windows doctor, 현재 문서가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다. 검증 문서의 SHA-256은 거기에 적힌 환경에서 만든 해당 산출물의 식별값이지, 임의 JDK·운영체제 빌드가 같은 해시를 낸다는 약속이 아닙니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
 - [`src/main`](src/main) — Burp 확장, 분석 코어, 로컬 Web 작업면, ZAP 통합, 번들 고지
 - [`src/test`](src/test) — 보안·파서·분석·저장·ZAP·로컬 Web 결정론적 회귀 테스트
 - [`frontend`](frontend) — 기본 React 작업면, component test, Vite build와 브라우저 E2E 하네스
-- [`infra/zap`](infra/zap) — 선택형 공식 ZAP 2.17.0 Docker Compose와 안전한 시작 스크립트
-- [`scripts`](scripts) — macOS/Linux Bash와 Windows PowerShell ZAP key 준비·선택형 Docker 시작/중지·환경 점검 도구
+- [`infra/zap`](infra/zap) — 공식 ZAP 2.17.0 base에 Chromium·ChromeDriver를 더한 FlowScope Dockerfile, Compose와 안전한 시작 스크립트
+- [`scripts`](scripts) — macOS/Linux Bash와 Windows PowerShell ZAP key 준비·FlowScope Docker 시작/중지·환경 점검 도구
 - [`docs/ko`](docs/ko) — 한국어 설계·결정·개발 기록·검증·연구·기능명세 정본
 - [`docs/en`](docs/en) — 영어 사용자·협업·보안·변경 이력 문서
 - [`.github`](.github) — Maven CI와 의존성 업데이트 설정
@@ -156,7 +149,7 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 
 - 선택적 수동 검증: 그래프에서 API를 누르고 Evidence의 **요청 실험실**을 엽니다. `원문 그대로`, `비로그인으로 전송`, `등록 계정으로 전송` 중 의도한 모드를 고르고 path/query/header/body를 편집한 뒤 명시적으로 전송합니다. 네트워크 목적지는 원 Evidence 서비스로 고정되고 redirect는 따라가지 않습니다. 응답과 시간·크기를 확인할 수 있으며 전송 결과는 HUMAN `VALIDATION` Evidence가 되어 탐색 커버리지를 늘리지 않습니다. live 원문은 기본 요청 1MiB·응답 4MiB·총 32MiB의 Burp 프로세스 메모리에서만 유지되고 프로젝트 교체·초기화·unload 때 폐기됩니다. 프로젝트/XML/HAR에서 가져온 항목이나 상한 초과 항목은 마스킹 전문만 사용할 수 있습니다.
 
-3. ZAP의 outgoing proxy를 Desktop은 `127.0.0.1:8081`, Docker는 `host.docker.internal:8081`로 설정합니다. Web 빠른 시작의 **로컬 ZAP 연결**이 `연결됨`인지 확인합니다. 캠페인은 시작 전에 이 upstream과 `client`·`selenium`·`network`·`replacer`·`authhelper` 등 필수 add-on을 확인하고 틀리면 대상 트래픽 전에 실패합니다. exact-scope target과 비로그인을 선택하거나 **ZAP 브라우저 로그인 계정**에 계정 이름·역할·로그인 URL·ID·비밀번호를 현재 프로세스 메모리로 등록한 뒤 선택하고 **신원별 격리 검사 시작**을 누릅니다. 이미 알고 있는 OpenAPI·GraphQL·Postman·SOAP 정의가 있으면 형식과 URL을 명시할 수 있으며 FlowScope는 현재 exact scope를 검사하고 별도 Burp 승인 후 최대 1,000 messages로 가져옵니다. 로그인 lane은 Firefox Headless Browser Based Authentication 성공 확인 뒤 strict Client Spider → Passive 분석 → 전체 native Alert 페이지 순서를 실행합니다. 화면은 캠페인·현재 단계 경과시간, 단계 최대시간, worker 작업 신호·트래픽 변화, 계정별 대기 순번, `세션 / 로그인 / Client / Passive / Alert` 단계, 인증 상태, Client 수집 건수, Passive 남은 건수·현재 task와 Alert 집계 완료 여부를 표시합니다. `응답 대기`는 worker가 살아 있고 동기 ZAP API 결과를 기다린다는 뜻이지 ZAP이 이미 응답했다는 뜻이 아닙니다. `출처 검증 차단 N건`은 capability가 없는 요청을 계정 Evidence로 받지 않았다는 뜻입니다. Client가 실패하거나 범위 안 응답을 0건 남기면 해당 lane과 캠페인을 실패 처리합니다. Passive가 30분 내 끝나지 않거나 queue가 10분 동안 감소하지 않으면 현재 Alert와 Evidence를 보존한 경고 완료로 전환하고 미처리 queue를 정리합니다. 정리가 끝나지 않으면 다음 계정은 `NOT_RUN`으로 남깁니다. 실행 중 **검사 취소**를 누르면 Client, temporary ZAP user/context, campaign capability와 run context를 정리한 뒤 상태를 `CANCELLED`로 바꿉니다. 로그인 실패는 익명 성공으로 바꾸지 않습니다. 각 Evidence에는 캠페인 run ID와 별개로 해당 lane의 account ID가 저장됩니다. Active Scan·Fuzzer·Forced Browse는 기본 캠페인에 포함되지 않습니다.
+3. bundle의 `zap-up` helper로 FlowScope Docker Chromium ZAP을 시작합니다. helper가 outgoing proxy를 `host.docker.internal:8081`로 설정하고, Web 빠른 시작은 API key·휘발성 runtime·필수 add-on을 확인합니다. exact-scope target과 비로그인을 선택하거나 **ZAP 브라우저 로그인 계정**에 계정 이름·역할·로그인 URL·ID·비밀번호를 현재 프로세스 메모리로 등록한 뒤 **신원별 격리 검사 시작**을 누릅니다. 로그인 lane은 Chrome Headless Browser Based Authentication 성공 확인 뒤 strict Client Spider → Passive 분석 → native Alert 수집 순서로 실행합니다. Client 실패·범위 안 응답 0건·격리 정리 실패는 lane 실패로 표시하고, 로그인 실패를 익명 성공으로 바꾸지 않습니다. 화면은 경과시간·작업 신호·계정별 순번·인증 상태·Client 수집 건수·Passive queue·Alert 집계를 표시합니다. Active Scan·Fuzzer·Forced Browse는 기본 캠페인에 포함되지 않습니다.
 4. Web **LLM Explorer**에서 시작 URL, 비로그인 및 필요한 계정을 고른 뒤 실행합니다. Explorer 계정의 ID·비밀번호와 live cookie/token은 현재 프로세스 메모리에만 있고 모델에는 opaque handle만 전달됩니다. 로그인 준비 교환은 프로젝트/Evidence/원장에 저장하지 않습니다. 대상 응답은 exact-scope dynamic HTTP tool을 거친 실제 LLM Evidence로 저장되며, 작업 피드에서 경과시간·실패·미해결 항목을 확인하고 실행 중 steer·취소할 수 있습니다. 상세한 form/JSON token 설정은 [Explorer 문서](docs/ko/llm-explorer.md)를 따릅니다.
 5. **API·입력 차이**, **Evidence**, 그래프·매트릭스에서 선언/관측과 인가 후보를 확인합니다. 규칙 후보의 사람 검토를 저장할 수 있으며, 자동 LLM 판정은 하지 않습니다.
 6. 과거 프로젝트의 assessment/validation은 React **시나리오 → 과거 LLM 기록 · 읽기 전용**에서 확인합니다. 원 Evidence ID·생성 시각을 보존하되 현재 후보나 새 판정으로 합치지 않습니다.

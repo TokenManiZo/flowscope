@@ -193,7 +193,7 @@ describe("four-stage inspection controls", () => {
     await user.type(screen.getByLabelText("로그인 URL"), `${target}/login`)
     await user.type(screen.getByLabelText("로그인 ID"), "alice@example.test")
     await user.type(screen.getByLabelText("비밀번호"), "memory-secret")
-    await user.click(screen.getByRole("button", { name: "Docker 로그인 계정 등록" }))
+    await user.click(screen.getByRole("button", { name: "로그인 계정 등록" }))
     await waitFor(() => expect(fetchStub.mock.calls.some(([path]) => path === "/api/zap-accounts")).toBe(true))
     const saved = fetchStub.mock.calls.find(([path]) => path === "/api/zap-accounts")
     expect((saved?.[1] as RequestInit).body?.toString()).toContain("password=memory-secret")
@@ -214,7 +214,7 @@ describe("four-stage inspection controls", () => {
         captured_records: 0, alert_count: 0,
         lanes: [{
           account_id: "zap-a", account_label: "ZAP A", status: "RUNNING", stage: "AUTHENTICATION",
-          authentication_state: "AUTHENTICATING", authentication_browser: "firefox-headless",
+          authentication_state: "AUTHENTICATING", authentication_browser: "chrome-headless",
           authentication_message: "ZAP 브라우저 로그인 실행 중", captured_records: 0,
           client_captures: 0, alert_count: 0, warning: "", error: "",
           elapsed_seconds: 11,
@@ -228,7 +228,7 @@ describe("four-stage inspection controls", () => {
     await user.click(screen.getByRole("tab", { name: "실행 상태" }))
 
     expect(screen.getByText(/ZAP 브라우저 로그인 · 전체 1분 11초/)).toBeVisible()
-    expect(screen.getByText(/로그인 AUTHENTICATING · firefox-headless/)).toBeVisible()
+    expect(screen.getByText(/로그인 AUTHENTICATING · chrome-headless/)).toBeVisible()
     expect(screen.getByText("ZAP 브라우저 로그인 실행 중")).toBeVisible()
   })
 

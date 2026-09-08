@@ -12,6 +12,7 @@ import java.time.Duration;
 
 /** 로컬 OWASP ZAP daemon API 어댑터. 대상 트래픽은 별도 Burp 리스너를 통과시켜야 한다. */
 public final class ZapClient {
+    static final String CLIENT_BROWSER = "chrome-headless";
     private final URI baseUri;
     private final String apiKey;
     private final HttpClient client;
@@ -53,7 +54,7 @@ public final class ZapClient {
     }
     public String setBrowserAuthentication(String contextId, String loginPageUrl, String browser) {
         String config = "loginPageUrl=" + enc(loginPageUrl)
-                + "&browserId=" + enc(browser == null || browser.isBlank() ? "firefox-headless" : browser);
+                + "&browserId=" + enc(browser == null || browser.isBlank() ? CLIENT_BROWSER : browser);
         return post("/JSON/authentication/action/setAuthenticationMethod/",
                 "contextId=" + enc(contextId) + "&authMethodName=browserBasedAuthentication"
                         + "&authMethodConfigParams=" + enc(config));
@@ -115,7 +116,8 @@ public final class ZapClient {
         return clientSpider(target, "");
     }
     public String clientSpider(String target, String contextName) {
-        String query = "url=" + enc(target) + "&subtreeOnly=true&scopeCheck=STRICT";
+        String query = "browser=" + enc(CLIENT_BROWSER) + "&url=" + enc(target)
+                + "&subtreeOnly=true&scopeCheck=STRICT";
         if (contextName != null && !contextName.isBlank()) query += "&contextName=" + enc(contextName);
         return get("/JSON/clientSpider/action/scan/", query);
     }

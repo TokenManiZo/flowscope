@@ -6,7 +6,7 @@
 
 ## 현재 전환 상태
 
-Judge·기존 Explorer 하네스·MCP 실행 경로는 제거한 상태를 유지합니다(D-126). D-128은 MCP나 브라우저를 복원하지 않고 Codex app-server dynamic tool과 Java exact-scope gateway로 독립 Explorer를 새로 구현했습니다. HUMAN·ZAP과 H/S/L 비교는 유지하며 Explorer는 취약점 판정을 만들지 않습니다. 과거 연구·명세의 Judge/MCP 설계는 현재 기능 안내가 아닙니다.
+Judge·기존 Explorer 하네스·MCP 실행 경로는 제거한 상태를 유지합니다(D-126). D-128은 MCP나 브라우저를 복원하지 않고 Codex app-server dynamic tool과 Java exact-scope gateway로 독립 Explorer를 새로 구현했습니다. D-135는 ZAP을 bundle의 FlowScope Docker Chromium 단일 runtime과 `chrome-headless` Client Spider로 고정했습니다. HUMAN·ZAP과 H/S/L 비교는 유지하며 Explorer는 취약점 판정을 만들지 않습니다. 과거 연구·명세의 Judge/MCP 및 ZAP Desktop/Firefox 선택 경로는 현재 기능 안내가 아닙니다.
 
 ## 문서 목록
 
@@ -15,7 +15,7 @@ Judge·기존 Explorer 하네스·MCP 실행 경로는 제거한 상태를 유�
 - [팀 인계 정본](HANDOFF.md): 현재 구현, 코드 지도, 알려진 결함, 다음 작업 순서와 완료 기준
 - [이전 인계 보존본](handoff-2026-09-04.md): 2026-09-04 기준 상세 연혁·리뷰·실행법. 현행 작업 지시가 아님
 - [문서 정합성·갱신 기준](documentation-status.md): 저장소 Markdown 전수 목록, 이번 정정·검증 범위와 갱신 시점
-- [설치·첫 실행](getting-started.md): Release JAR, Burp listener, ZAP Docker/Desktop, 환경 점검
+- [설치·첫 실행](getting-started.md): Release JAR, Burp listener, FlowScope Docker Chromium ZAP, 환경 점검
 - [아키텍처](architecture.md): 구성 요소, 데이터 흐름, 신뢰 경계
 - [설계 결정](decisions.md): 주요 판단과 선택 근거
 - [개발 기록](development-log.md): 변경 내용, 이유, 검증 결과

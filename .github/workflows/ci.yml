@@ -70,6 +70,7 @@ jobs:
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/zap-up\.sh$'
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/zap-up\.ps1$'
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/infra/zap/compose\.yaml$'
+          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/infra/zap/Dockerfile$'
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/infra/zap/start-zap\.sh$'
       - name: Verify reproducible package
         shell: bash

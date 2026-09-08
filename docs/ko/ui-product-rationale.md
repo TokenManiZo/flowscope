@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-08, D-134 (미출시 beta.45 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한 뒤 명시적인 인증 성공이 있을 때만 strict Client Spider 하나를 실행한다. ZAP 2.17 REST에 없는 verification auto-detect action은 호출하지 않는다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-09, D-135 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한 뒤 명시적인 인증 성공이 있을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. ZAP 2.17 REST에 없는 verification auto-detect action은 호출하지 않는다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -114,7 +114,7 @@ orchestrator = SYSTEM 또는 HUMAN
 - `/admin` 경로나 `role=admin` 문자열은 실제 서버 권한의 증거가 아니다.
 - 잘못된 사용자 병합이나 역할 추정은 BOLA/BFLA의 공격자·소유자·정상 대조를 바꾼다.
 
-따라서 HUMAN/Request Lab은 사용자가 Burp 브라우저에서 명시적으로 캡처해 `ACTIVE`가 된 메모리 Session Broker만 재사용한다. ZAP 계정 lane은 별도다. 사용자가 target·로그인 URL·ID·비밀번호·역할을 등록하면 자격증명은 현재 Burp 프로세스 메모리에만 두고 ZAP Browser Based Authentication API 호출 시 사용한다. 둘을 한 저장소로 합치면 Burp 브라우저 세션과 ZAP의 Firefox 세션을 같은 것으로 오인하므로 분리한다.
+따라서 HUMAN/Request Lab은 사용자가 Burp 브라우저에서 명시적으로 캡처해 `ACTIVE`가 된 메모리 Session Broker만 재사용한다. ZAP 계정 lane은 별도다. 사용자가 target·로그인 URL·ID·비밀번호·역할을 등록하면 자격증명은 현재 Burp 프로세스 메모리에만 두고 ZAP Browser Based Authentication API 호출 시 사용한다. 둘을 한 저장소로 합치면 Burp 브라우저 세션과 ZAP의 Chromium 세션을 같은 것으로 오인하므로 분리한다.
 
 기본 화면의 정보 단위는 fingerprint가 아니라 `AccountProfile`이다. 한 번의 로그인에서 Cookie·Bearer·JWT subject가 함께 관측되어도 `test1` 카드 하나만 보이며 상태와 다음 행동을 한국어로 표시한다. 비가역 fingerprint는 같은 카드의 접힌 **기술 정보**로 들어가고, 계정에 아직 연결되지 않은 기록만 **고급 세션 진단**에서 다룬다. 내부 구현 단서를 세 계정처럼 평면 나열하면 사용자가 실제 principal 수를 오해하므로, 수집은 세밀하게 유지하면서 표현만 계정 중심 projection으로 바꿨다.
 
@@ -142,11 +142,11 @@ strict-scope Client Spider
 → native alerts 수집
 ```
 
-ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 범위 안 응답을 만들었다는 충분조건이 아니다. 실제 과거 crAPI 실행에서도 Firefox binary 부재와 status 완료가 동시에 관측됐다. 따라서 FlowScope는 같은 run의 raw `ZAP_CLIENT_SPIDER` 응답 수를 확인하고 0건이면 lane을 실패시킨다. D-132 이후 새 캠페인은 Traditional/AJAX를 실행하거나 fallback하지 않는다. ZAP 공식 문서는 Client Spider를 modern app의 권장 crawler로 설명하지만, 이 선택이 임의 대상에서 Traditional의 모든 정적 링크까지 더 잘 찾는다는 제품 실측은 아니다. 화면은 단일 Client 단계와 그 실제 capture·실패를 보여 주며, 부족한 범위를 다른 crawler 결과로 숨기지 않는다.
+ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 범위 안 응답을 만들었다는 충분조건이 아니다. 실제 과거 crAPI 실행에서도 이전 Firefox binary 부재와 status 완료가 동시에 관측됐다. 따라서 FlowScope는 같은 run의 raw `ZAP_CLIENT_SPIDER` 응답 수를 확인하고 0건이면 lane을 실패시킨다. D-132 이후 새 캠페인은 Traditional/AJAX를 실행하거나 fallback하지 않는다. ZAP 공식 문서는 Client Spider를 modern app의 권장 crawler로 설명하지만, 이 선택이 임의 대상에서 Traditional의 모든 정적 링크까지 더 잘 찾는다는 제품 실측은 아니다. 화면은 단일 Client 단계와 그 실제 capture·실패를 보여 주며, 부족한 범위를 다른 crawler 결과로 숨기지 않는다.
 
 현재 FlowScope에는 Active Scan 실행 API·버튼이 없다. D-126에서 MCP 전용 진입점과 adapter를 삭제했다. 별도 승인하면 현재 제품에서 실행할 수 있다고 안내하지 않는다. API 정의 import의 Burp 승인과 HUMAN Request Lab 명시적 전송은 유지하며, 이를 Active Scan과 혼동하지 않는다.
 
-비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 이름 없는 temporary ZAP session과 임시 Context를 만든다. 계정 lane은 Browser Based Authentication으로 로그인하고 명시적 성공 뒤 Client `userName`·`firefox-headless`를 사용한다. FlowScope의 8081 capture는 capability 검증 뒤 ZAP이 만든 Cookie/Authorization을 보존하고, 해당 run의 `laneAccountId`로만 귀속한다. 화면은 신원별 lane card로 로그인 상태·브라우저·현재 단계·전체/Client 수집·Alert·주의·실패 원인을 분리한다. 종료·실패·취소 때 임시 user·Context를 제거하고 정리 확인 실패 시 후속 신원으로 넘어가지 않는다.
+비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 이름 없는 temporary ZAP session과 임시 Context를 만든다. 계정 lane은 Browser Based Authentication으로 로그인하고 명시적 성공 뒤 Client `userName`·`chrome-headless`를 사용한다. 비로그인도 같은 browser를 명시한다. FlowScope의 8081 capture는 capability 검증 뒤 ZAP이 만든 Cookie/Authorization을 보존하고, 해당 run의 `laneAccountId`로만 귀속한다. 화면은 신원별 lane card로 로그인 상태·브라우저·현재 단계·전체/Client 수집·Alert·주의·실패 원인을 분리한다. 종료·실패·취소 때 임시 user·Context를 제거하고 정리 확인 실패 시 후속 신원으로 넘어가지 않는다.
 
 beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 보이면서 정지로 오인되는 실제 수동 회귀를 계기로 관측 가능성을 보강했다. 캠페인·lane·stage 경과시간과 단계 최대시간, 마지막 ZAP status heartbeat, 마지막 raw capture/status 변화, queue 위치와 “현재 lane 완료 후 시작” 이유를 1초 polling 화면에 표시한다. heartbeat가 정상이어도 새 트래픽이 없을 수 있으므로 이를 실패로 바꾸지 않고 `응답 정상·새 트래픽 없음`으로 구분한다. 반대로 10초 넘게 status 응답이 없거나 deadline을 넘으면 별도 경고 상태를 표시한다. D-132 이후 각 lane은 `세션 / 로그인 / Client / Passive / Alert` 진행선과 Client 수집 건수, Passive 남은 건수·현재 task·Alert 집계 완결성을 표시한다. 별도 실시간 실행 기록에는 서버가 실제로 수행한 단계 시작·queue 감소·Alert 집계·격리 정리만 최신순으로 보여 준다. 반복 poll 전체를 기록하지 않고 실제 변화가 있을 때만 최대 120건을 메모리에 남긴다. Passive가 절대 30분 또는 10분 무진행 경계에 도달하면 현재 결과를 숨기거나 전부 실패로 바꾸지 않고 부분 완료로 표시한다. 다만 미처리 queue를 비운 뒤 current task까지 0임을 확인하지 못하면 후속 신원을 시작하지 않는다.
 

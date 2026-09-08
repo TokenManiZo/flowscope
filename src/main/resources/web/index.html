@@ -218,7 +218,7 @@
 </head>
 <body>
 <header>
-    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.45 · 3소스</span></div>
+    <div class="brand"><h1>FlowScope</h1><span class="tag">v1.2.0-beta.46 · 3소스</span></div>
   <div class="imp">
     <label class="filebtn"><span class="dot" style="background:var(--human)"></span>사람<input type="file" id="fHuman" accept=".xml" multiple></label>
     <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
@@ -262,11 +262,10 @@
     <section class="setuppane" data-setup-pane="scanner" role="tabpanel" aria-labelledby="setupStageScanner" hidden>
     <div class="scannersetup">
       <div class="zapconnection" id="zapConnection">
-        <div class="zapconnectionhead"><span class="zapconnectionstate" id="zapConnectionState">확인 중</span><b>로컬 ZAP 연결</b><button class="go" id="zapStatusRefresh">다시 확인</button></div>
-        <div class="zapconnectionmessage" id="zapConnectionMessage">실행 중인 ZAP Desktop 또는 Docker ZAP을 확인합니다.</div>
+        <div class="zapconnectionhead"><span class="zapconnectionstate" id="zapConnectionState">확인 중</span><b>FlowScope Docker ZAP</b><button class="go" id="zapStatusRefresh">다시 확인</button></div>
+        <div class="zapconnectionmessage" id="zapConnectionMessage">FlowScope Docker Chromium ZAP을 확인합니다.</div>
         <div class="zapsetupchoices" id="zapSetupChoices">
-          <details><summary>ZAP Desktop 설정</summary><ol><li>main proxy/API를 127.0.0.1:8089로 설정</li><li>API key를 ~/.flowscope/zap-api-key와 동일하게 설정</li><li>Network → Connection → HTTP Proxy를 127.0.0.1:8081로 설정</li><li>키를 새로 만들었다면 FlowScope 확장 재로드</li></ol></details>
-          <details><summary>Docker Quick Start</summary><pre>macOS/Linux: ./scripts/zap-up.sh
+          <details><summary>Docker Chromium 시작</summary><pre>macOS/Linux: ./scripts/zap-up.sh
 Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
         </div>
       </div>
@@ -1404,7 +1403,7 @@ function updateSetup(){
   const guidance={
     scope:['1. exact scope 적용',scopeReady?'범위가 적용됐습니다. 다음 할 일 버튼을 눌러 HUMAN 단계로 이동하세요.':'Burp의 FlowScope 탭에서 허가된 서비스와 경로 prefix를 입력하고 범위 적용을 누르세요.'],
     human:['2. HUMAN 기준선',HUMAN_RUN.active?'HUMAN 8080 브라우저에서 허가된 기능을 탐색한 뒤 pass 종료를 누르세요.':humanReady?'HUMAN pass가 완료됐습니다. 다음은 ZAP 기준선입니다.':'비로그인 또는 ACTIVE 계정을 선택하고 pass를 시작한 뒤 대상 기능을 직접 탐색하세요.'],
-    scanner:['3. ZAP 기준선',!ZAP_STATUS.connected?'ZAP Desktop 또는 Docker ZAP 중 하나를 연결하세요. 연결되면 검사 버튼이 활성화됩니다.':SCANNER_RUN.status==='RUNNING'?'신원별 격리 검사가 진행 중입니다. 완료 상태와 경고를 확인하세요.':scannerReady?'ZAP 기준선이 종료됐습니다. 경고 완료라면 rendered 수집 경고를 확인한 뒤 Evidence를 검토하세요.':'대상과 신원을 확인하고 신원별 격리 검사를 시작하세요.'],
+    scanner:['3. ZAP 기준선',!ZAP_STATUS.connected?'bundle의 FlowScope Docker Chromium ZAP을 실행하세요. 연결되면 검사 버튼이 활성화됩니다.':SCANNER_RUN.status==='RUNNING'?'신원별 격리 검사가 진행 중입니다. 완료 상태와 경고를 확인하세요.':scannerReady?'ZAP 기준선이 종료됐습니다. 경고 완료라면 rendered 수집 경고를 확인한 뒤 Evidence를 검토하세요.':'대상과 신원을 확인하고 신원별 격리 검사를 시작하세요.'],
     review:['4. Evidence 검토','수집된 요청·응답과 API·입력 차이를 확인하세요. 미관측은 취약점이나 탐색 실패를 의미하지 않습니다.']
   };
   [title.textContent,message.textContent]=guidance[SETUP_STAGE];
@@ -1453,7 +1452,7 @@ function renderZapStatus(){
   message.textContent=(ZAP_STATUS.message||'ZAP 연결 상태를 확인할 수 없습니다.')+(ZAP_STATUS.endpoint?' · '+ZAP_STATUS.endpoint:'');choices.style.display=ZAP_STATUS.connected?'none':'grid';renderScannerControls();
 }
 async function syncZapStatus(){
-  const button=document.getElementById('zapStatusRefresh');button.disabled=true;ZAP_STATUS={connected:false,state:'CHECKING',message:'실행 중인 로컬 ZAP API를 확인하는 중입니다.'};renderZapStatus();
+  const button=document.getElementById('zapStatusRefresh');button.disabled=true;ZAP_STATUS={connected:false,state:'CHECKING',message:'FlowScope Docker Chromium ZAP을 확인하는 중입니다.'};renderZapStatus();
   try{const response=await fetch('/api/zap-status',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'ZAP 연결 확인 실패');ZAP_STATUS=data;}
   catch(error){ZAP_STATUS={connected:false,state:'UNREACHABLE',message:error.message};}
   button.disabled=false;renderZapStatus();clearTimeout(ZAP_STATUS_TIMER);if(!ZAP_STATUS.connected)ZAP_STATUS_TIMER=setTimeout(syncZapStatus,5000);

@@ -57,6 +57,7 @@
       <directory>infra/zap</directory>
       <outputDirectory>infra/zap</outputDirectory>
       <includes>
+        <include>Dockerfile</include>
         <include>compose.yaml</include>
         <include>start-zap.sh</include>
         <include>.env.example</include>

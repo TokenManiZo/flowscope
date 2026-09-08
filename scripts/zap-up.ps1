@@ -44,7 +44,7 @@ $env:FLOWSCOPE_ZAP_KEY_FILE = [System.IO.Path]::GetFullPath($keyFile)
 $env:FLOWSCOPE_ZAP_PORT = $zapPort.ToString()
 $env:FLOWSCOPE_BURP_SCANNER_PORT = $scannerPort.ToString()
 
-& docker compose --project-name flowscope-zap --file (Join-Path $repoDirectory 'infra/zap/compose.yaml') up --detach
+& docker compose --project-name flowscope-zap --file (Join-Path $repoDirectory 'infra/zap/compose.yaml') up --detach --build --wait --wait-timeout 120
 if ($LASTEXITCODE -ne 0) { throw 'Docker Compose could not start FlowScope ZAP.' }
 
 $versionUri = "http://127.0.0.1:$zapPort/JSON/core/view/version/"

@@ -107,7 +107,7 @@ L0 그래프(수집+정규화+시각화, 오라클 불필요) → L1 IDOR 최소
 
 ## 작업 방식
 - **결정로그 디스코플린**: 선택할 때 "더 나은 방식 있나?"를 묻고, 있으면 교체·없으면 **기각 이유를 결정로그에 기록**. 리뷰 지적도 코드에서 검증 후 반영.
-- **현재는 beta.45 ZAP 직접 브라우저 인증 작업 단계(미출시, D-133)** — 상태의 정본은 `docs/ko/HANDOFF.md`다. ZAP Docker daemon/API/session 실물 gate는 완료했지만 새 JAR의 실제 Burp/HUMAN/ZAP target capability·계정 격리·Request Lab·저장/재열기는 미검증이다. 제거한 Judge/MCP 실행을 다음 gate로 안내하지 않는다. 알려진 정답·풀이를 미리 보지 않으며, 자동 회귀나 daemon 확인을 대상 탐색 성공·독립 benchmark 효과로 확대하지 않는다.
+- **현재는 beta.46 FlowScope Docker Chromium ZAP 작업 단계(미출시, D-135)** — 상태의 정본은 `docs/ko/HANDOFF.md`다. 실제 Chromium headless/Client HTTP 200 gate는 완료했지만 새 JAR의 실제 Burp 로그인·복수 계정 capability/귀속·Request Lab·저장/재열기와 Windows는 미검증이다. 제거한 Judge/MCP 실행이나 ZAP Desktop/Firefox 경로를 다음 gate로 안내하지 않는다. 알려진 정답·풀이를 미리 보지 않으며, 자동 회귀나 직접 Client 1건을 대상 탐색 성공·독립 benchmark 효과로 확대하지 않는다.
 
 ## 변경 기록과 문서 동기화
 

@@ -197,7 +197,7 @@ public final class ZapCampaign implements AutoCloseable {
         boolean includeAnonymous = args.has("include_anonymous")
                 ? args.path("include_anonymous").asBoolean(false) : requestedAccounts.isEmpty();
         List<ZapDefinition> definitions = validatedZapDefinitions(args.path("definitions"));
-        verifySafeZapEnvironment(definitions, !requestedAccounts.isEmpty());
+        verifySafeZapEnvironment(definitions);
         if (!definitions.isEmpty() && !state.approve("ZAP API 정의가 만든 요청 전송", target)) {
             throw new IllegalStateException("API definition import requires explicit Burp approval");
         }
@@ -225,7 +225,7 @@ public final class ZapCampaign implements AutoCloseable {
                     false, false, -1, "", "")).toList();
             zapAuthentication = lanes.stream().map(lane -> lane.accountId() == null
                     ? new ZapAuthenticationResult("NOT_APPLICABLE", "", "비로그인 lane")
-                    : new ZapAuthenticationResult("PENDING", "firefox-headless", "ZAP 로그인 대기")).toList();
+                    : new ZapAuthenticationResult("PENDING", ZapClient.CLIENT_BROWSER, "ZAP 로그인 대기")).toList();
             zapLaneRuntime = lanes.stream().map(lane -> new ZapLaneRuntime(queuedAt, 0, 0, 0,
                     0, queuedAt, 0, 0, 0, 0,
                     -1, "", "대기 중")).toList();
@@ -508,13 +508,13 @@ public final class ZapCampaign implements AutoCloseable {
             if (directAuthentication) {
                 state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AUTHENTICATION, null);
                 replaceZapAuthentication(index, new ZapAuthenticationResult(
-                        "AUTHENTICATING", "firefox-headless", "ZAP 브라우저 로그인 실행 중"));
+                        "AUTHENTICATING", ZapClient.CLIENT_BROWSER, "ZAP 브라우저 로그인 실행 중"));
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                         "AUTHENTICATION", 0, 0, definitionImports, 0,
                         false, false, -1, warning, ""));
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AUTHENTICATION", "", warning, "");
                 recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "INFO",
-                        "ZAP Browser Based Authentication · Firefox Headless 시작");
+                        "ZAP Browser Based Authentication · Chrome Headless 시작");
                 state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.AUTHENTICATING,
                         "ZAP 브라우저 로그인 실행 중");
                 String finalContextId = contextId;
@@ -637,7 +637,7 @@ public final class ZapCampaign implements AutoCloseable {
             if (directAuthentication && !authenticationVerified) {
                 state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.FAILED, message);
                 replaceZapAuthentication(index, new ZapAuthenticationResult(
-                        "FAILED", "firefox-headless", message));
+                        "FAILED", ZapClient.CLIENT_BROWSER, message));
             }
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
                     Math.max(0, capturedForRun(runId) - capturedBefore),
@@ -680,17 +680,14 @@ public final class ZapCampaign implements AutoCloseable {
         return state.capturedCount(Source.SCANNER, runId, detail);
     }
 
-    private void verifySafeZapEnvironment(List<ZapDefinition> definitions, boolean authenticatedLane) {
+    private void verifySafeZapEnvironment(List<ZapDefinition> definitions) {
         JsonNode version = parseZap(state.zap().version());
         if (version.path("version").asText().isBlank()) {
             throw new IllegalStateException("ZAP version API did not return a version");
         }
-        if (authenticatedLane) {
-            String home = parseZap(state.zap().zapHomePath()).path("zapHomePath").asText();
-            if (!home.startsWith("/run/flowscope-zap/")) {
-                throw new IllegalStateException("authenticated ZAP lanes require the FlowScope Docker "
-                        + "ephemeral runtime; anonymous lanes remain available with ZAP Desktop");
-            }
+        String home = parseZap(state.zap().zapHomePath()).path("zapHomePath").asText();
+        if (!home.startsWith("/run/flowscope-zap/")) {
+            throw new IllegalStateException("ZAP campaigns require the FlowScope Docker Chromium runtime");
         }
         JsonNode installed = parseZap(state.zap().installedAddons()).path("installedAddons");
         Set<String> ids = new LinkedHashSet<>();

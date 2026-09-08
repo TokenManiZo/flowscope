@@ -21,6 +21,37 @@ flowscope_default_api_allowed_regex() {
   fi
 }
 
+flowscope_check_chromium_runtime() {
+  local browser="$1"
+  local driver="$2"
+  local browser_version driver_version browser_major driver_major profile
+  if [[ ! -f "$browser" || ! -x "$browser" ]] \
+      || ! browser_version="$("$browser" --version 2>/dev/null)"; then
+    echo "ZAP Chromium browser cannot execute: $browser." >&2
+    return 1
+  fi
+  if [[ ! -f "$driver" || ! -x "$driver" ]] \
+      || ! driver_version="$("$driver" --version 2>/dev/null)"; then
+    echo "ZAP Chromium driver cannot execute: $driver." >&2
+    return 1
+  fi
+  browser_major="$(printf '%s\n' "$browser_version" | sed -nE 's/[^0-9]*([0-9]+)(\.[0-9]+).*/\1/p')"
+  driver_major="$(printf '%s\n' "$driver_version" | sed -nE 's/[^0-9]*([0-9]+)(\.[0-9]+).*/\1/p')"
+  if [[ -z "$browser_major" || -z "$driver_major" || "$browser_major" != "$driver_major" ]]; then
+    echo "ZAP Chromium and ChromeDriver major versions do not match." >&2
+    return 1
+  fi
+  profile="$(mktemp -d "${TMPDIR:-/tmp}/flowscope-chromium-check.XXXXXX")" \
+    || { echo "ZAP Chromium preflight profile could not be created." >&2; return 1; }
+  if ! "$browser" --headless=new --no-sandbox --disable-gpu \
+      --user-data-dir="$profile" --dump-dom about:blank >/dev/null 2>&1; then
+    rm -rf -- "$profile"
+    echo "ZAP Chromium could not start in headless mode." >&2
+    return 1
+  fi
+  rm -rf -- "$profile"
+}
+
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
   return 0
 fi
@@ -64,9 +95,15 @@ printf 'header = "X-ZAP-API-Key: %s"\n' "$api_key" > "$curl_config"
 chmod 600 "$config_file" "$curl_config"
 trap 'rm -rf "$runtime_dir"' EXIT
 
+if ! flowscope_check_chromium_runtime /usr/bin/chromium /usr/bin/chromedriver; then
+  exit 1
+fi
+export JDK_JAVA_OPTIONS="${JDK_JAVA_OPTIONS:+$JDK_JAVA_OPTIONS }-Dwebdriver.chrome.driver=/usr/bin/chromedriver -Dselenium.chromeBinary=/usr/bin/chromium"
+
 rm -f /tmp/flowscope-zap-ready
 zap-x.sh -daemon -dir "$zap_home" -host 0.0.0.0 -port "$zap_port" \
-  -configfile "$config_file" &
+  -configfile "$config_file" \
+  -config 'selenium.chromeArgs.arg.argument=--no-sandbox' &
 zap_pid=$!
 
 stop_zap() {

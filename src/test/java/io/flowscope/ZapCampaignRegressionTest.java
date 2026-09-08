@@ -70,11 +70,41 @@ final class ZapCampaignRegressionTest {
             IllegalStateException error = assertThrows(IllegalStateException.class,
                     () -> server.startDeterministicZapCampaign(target, List.of("zap-user-a"), false));
 
-            assertTrue(error.getMessage().contains("ephemeral runtime"), error.getMessage());
+            assertTrue(error.getMessage().contains("Docker Chromium runtime"), error.getMessage());
             assertFalse(credentialsSent.get());
             assertNull(contexts.current(Source.SCANNER));
         } finally {
             accounts.close();
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
+    void anonymousLaneAlsoRequiresTheManagedChromiumRuntime() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.removeContext("/JSON/core/view/zapHomePath/");
+        zapServer.createContext("/JSON/core/view/zapHomePath/", exchange -> zapReply(exchange,
+                "{\"zapHomePath\":\"/home/zap/.ZAP/\"}"));
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new ZapCampaign(new ZapCampaign.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public boolean approve(String action, String value) { return false; }
+            });
+
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> server.startDeterministicZapCampaign(target, List.of(), true));
+
+            assertTrue(error.getMessage().contains("Docker Chromium runtime"), error.getMessage());
+            assertNull(contexts.current(Source.SCANNER));
+        } finally {
             zapServer.stop(0);
         }
     }
@@ -850,6 +880,8 @@ final class ZapCampaignRegressionTest {
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         zapServer.createContext("/JSON/core/view/version/", exchange -> zapReply(exchange,
                 "{\"version\":\"2.17.0\"}"));
+        zapServer.createContext("/JSON/core/view/zapHomePath/", exchange -> zapReply(exchange,
+                "{\"zapHomePath\":\"/run/flowscope-zap/test/home/\"}"));
         zapServer.createContext("/JSON/autoupdate/view/installedAddons/", exchange -> zapReply(exchange,
                 "{\"installedAddons\":[{\"id\":\"spider\"}]}"));
         zapServer.start();

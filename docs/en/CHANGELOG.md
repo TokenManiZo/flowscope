@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — single FlowScope Docker Chromium ZAP path (D-135, 2026-09-09)
+
+- PR #10 was not merged. Its login URL/username/password → ZAP Browser Based Authentication → account-scoped Client Spider → SCANNER Evidence flow was adapted to the current `ZapAccountVault`, `ZapCampaign`, and React UI.
+- The distribution bundle now includes a Dockerfile based on the digest-pinned ZAP 2.17 image and installs Chromium plus ChromeDriver from the same Debian repository. The macOS/Linux and Windows helpers build the image automatically.
+- Anonymous and authenticated lanes both explicitly use `chrome-headless`. Startup verifies browser/driver executability, matching major versions, an actual headless launch, and the tmpfs `zapHomePath`; an arbitrary ZAP Desktop/API runtime is rejected.
+- A real macOS arm64 container confirmed Chromium/ChromeDriver `152.0.7977.82`, a clean ZAP doctor, and one HTTP 200 from an exact-context Client Spider ending at status 100. Reloading beta.46 in Burp, authenticated/multi-account lanes, and a real Windows host remain open gates.
+
 ## Unreleased · ZAP 2.17 authenticated API compatibility (D-134, 2026-09-08)
 
 - Removed the verification auto-detection action that does not exist in the real ZAP 2.17 REST API and caused authenticated lanes to fail with HTTP 400 `no_implementor`.
@@ -17,7 +24,7 @@
 - New campaigns run one strict, context/user-bound Client Spider after optional exact-scope definition import and authentication, then process the Passive queue and native alerts. Traditional/AJAX execution, fallback, and transient status fields were removed.
 - A Client API, terminal-wait, capability, or zero in-scope response failure now fails the lane. Status exposes `client_captures` and the session/authentication/Client/Passive/Alert stages only.
 - `spider` and `spiderAjax` are no longer required by the doctor. Capability initiators are limited to authentication, definition import, and Client Spider traffic. Historical source-detail enums remain readable for old projects.
-- PR #10 was not merged; only its inline login URL/username/password account-entry UX was used as a reference. The separate in-memory ZAP vault, fixed Firefox Headless path, and secret non-disclosure contract remain authoritative.
+- PR #10 was not merged; only its inline login URL/username/password account-entry UX was used as a reference. D-135 supersedes this entry's then-current Firefox path with the single FlowScope Docker Chromium runtime.
 - Focused mock and React contracts pass, but a real anonymous and authenticated Client run through Burp 8081 and ZAP 2.17 remains an operational gate.
 
 ## Unreleased — direct ZAP browser-authenticated account lanes (D-130)

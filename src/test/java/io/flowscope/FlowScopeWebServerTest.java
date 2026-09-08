@@ -315,12 +315,12 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("작업 신호"));
         assertTrue(index.body().contains("마지막 정상 상태를 유지합니다"));
         assertTrue(index.body().contains("1초마다 갱신"));
-        assertTrue(index.body().contains("ZAP Desktop 설정"));
-        assertTrue(index.body().contains("Docker Quick Start"));
+        assertFalse(index.body().contains("ZAP Desktop 설정"));
+        assertTrue(index.body().contains("Docker Chromium 시작"));
         assertTrue(index.body().contains("/api/zap-status"));
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.45 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.46 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));

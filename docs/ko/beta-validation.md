@@ -1,4 +1,25 @@
-# FlowScope 1.2.0-beta.45 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
+
+## 2026-09-09 · 미출시 D-135 · FlowScope Docker Chromium ZAP 단일 runtime
+
+PR #10은 충돌 상태의 옛 MCP/Session Broker 구조와 Firefox fallback을 포함하므로 병합하지 않았다. 대신 사용자가 Web에서 로그인 URL·ID·비밀번호를 등록하고 ZAP이 Browser Based Authentication을 수행한 뒤 계정 지정 Client Spider를 실행하는 흐름을 현행 `ZapAccountVault`·`ZapCampaign`·React에 유지했다. 실행 환경은 distribution bundle의 custom Docker image 하나로 줄이고 비로그인·로그인 모두 `chrome-headless`를 명시했다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS arm64, Docker Engine/Desktop 29.5.3, ZAP 2.17.0 digest base |
+| custom image | Debian 저장소의 Chromium `152.0.7977.82`, ChromeDriver `152.0.7977.82`; 컨테이너 user `zap` |
+| 시작 전 browser gate | browser/driver 실행 파일·version 파싱·동일 주 버전·임시 profile의 실제 `--headless=new --dump-dom about:blank` 기동을 확인한 뒤에만 ZAP 시작 |
+| sandbox 경계 | Docker 기본 namespace에서 Chromium sandbox가 `Failed to move to new namespace ... Operation not permitted`로 실패함을 직접 확인. broad capability/seccomp 완화 없이 Chromium 인수에만 `--no-sandbox` 사용 |
+| managed runtime gate | 모든 캠페인이 `zapHomePath=/run/flowscope-zap/...`를 요구. 임의 disk-backed/API runtime은 비로그인도 시작 전에 거부 |
+| 실제 helper/doctor | `./scripts/zap-up.sh`가 image build·recreate·health 완료. `./scripts/doctor.sh --mode zap`은 HUMAN 8080, SCANNER 8081, key, ZAP 2.17 API, Burp upstream, 필수 add-on, Web을 확인해 failures 0 / warnings 0 |
+| 실제 Client Spider | exact Context와 target `http://127.0.0.1:8888/`, `browser=chrome-headless`, `subtreeOnly=true`, `scopeCheck=STRICT`로 실물 ZAP API 실행. scan id 0, status 100, target HTTP 200 수집 1건 확인 |
+| 집중 자동 회귀 | `ZapStartupScriptTest,ZapClientTest,ZapCampaignRegressionTest,ZapBrowserAuthenticatorTest,FlowScopeWebServerTest`: Java 68 tests, failures/errors 0 |
+| 전체 자동 회귀 | JDK 21 `mvn clean verify`: Java 375 tests, failures/errors 0, opt-in provider 1 skip; React 38 files / 247 tests, typecheck·notices·Vite build 통과 |
+| 최종 산출물 | JAR 31,649,129 bytes / 9,140 entries / SHA-256 `d03c5a602f8c06f3e345468f1b69adb5557b6b3cfc04fd500a04e8dec87ca8c3`; streaming manifest의 Java 21·Main-Class·Multi-Release 확인 |
+| 배포 구조 | bundle에 `infra/zap/Dockerfile` 포함, macOS/Linux·Windows `zap-up`이 `docker compose up --build --wait` 사용, CI가 Dockerfile 존재를 검사 |
+| 미실행 | beta.46 JAR의 실제 Burp load/unload, ZAP Browser Based Authentication 성공/실패, SCANNER `laneAccountId` 귀속, 복수 계정 격리·취소, Windows Docker Desktop 실기기 |
+
+이 검증은 가짜 ZAP의 `OK`가 아니라 실물 컨테이너의 Chromium WebDriver와 Client Spider가 실제 HTTP 응답을 만든 사실까지 확인한다. 다만 직접 ZAP API로 실행한 비로그인 Client 한 건이 FlowScope의 전체 계정 캠페인, Burp capture, 로그인 성공을 대신하지 않는다. 다운로드 사용자는 호스트 Chrome·ChromeDriver·ZAP Desktop을 별도로 설치할 필요가 없지만, Docker Desktop/Engine과 최초 image build를 위한 package network는 필요하다. Debian package version은 Dockerfile에 숫자로 고정하지 않았으므로 이 로컬 `152.0.7977.82`를 모든 향후 빌드의 동일 버전이라고 주장하지 않는다.
 
 ## 2026-09-08 · 미출시 D-134 · ZAP 2.17 로그인 REST 호환 수정
 

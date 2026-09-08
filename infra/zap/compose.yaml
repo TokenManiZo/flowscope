@@ -1,6 +1,8 @@
 services:
   zap:
-    image: ghcr.io/zaproxy/zaproxy:2.17.0@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef
+    build:
+      context: .
+      dockerfile: Dockerfile
     entrypoint: ["/bin/bash", "/opt/flowscope/start-zap.sh"]
     environment:
       ZAP_PORT: "${FLOWSCOPE_ZAP_PORT:-8089}"
@@ -27,6 +29,7 @@ services:
       retries: 24
       start_period: 15s
     restart: unless-stopped
+    shm_size: 1gb
     stop_grace_period: 30s
 
 secrets:

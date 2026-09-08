@@ -354,6 +354,7 @@ export interface ZapStatus {
   message: string
   endpoint?: string
   apiKeyConfigured?: boolean
+  managedRuntime?: boolean
   version?: string
 }
 
