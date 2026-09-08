@@ -1,5 +1,24 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-09 · 미출시 D-136 · 인증 응답 Evidence gate
+
+D-135의 Docker Chromium 경로를 그대로 사용하되, ZAP API action 응답을 로그인 성공으로 간주하던 계약을 폐기했다. 사용자 8089 ZAP과 격리한 실물 하네스에서 `authenticateAsUser`의 `OK`와 인증 시각만 검사하면 틀린 비밀번호도 통과해 Client Spider가 시작되는 것을 먼저 재현했다. 현재 구현은 사용자가 등록한 필수 로그인 성공 정규식과 선택적 로그아웃 정규식을 ZAP Context에 설정하고, 같은 run·`laneAccountId`·`ZAP_AUTHENTICATION`의 실제 응답 Evidence를 별도로 확인한다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS arm64, Docker Engine/Desktop 29.5.3, digest 고정 공식 ZAP 2.17 base |
+| 격리된 실물 하네스 | Compose project `flowscope-zap-runtime-test`, ZAP API 18889, 기록 프록시 18881, 합성 exact-scope target `http://flowscope-runtime.test/`; 사용자 8089 ZAP과 포트·project 분리 |
+| 공식 add-on | Authentication Helper 0.41.0, Client 0.30.0. 잠시 검토한 미출시 0.43.0 직접 build와 Common Library binary는 최종 distribution에서 제거 |
+| 오수락 재현 | ZAP action `OK`와 `lastSuccessfulAuthTimeInMs` 조합은 같은 사용자명의 틀린 비밀번호도 성공으로 처리해 Client Spider를 시작함. 성공 증거로 사용할 수 없음을 실물로 반증 |
+| 정상 계정 | 익명 → alice → bob lane 완료. alice/bob은 각각 Client 단계의 `/api/me`에서 자기 사용자 응답을 받았고 계정 간 session 혼입과 capability 거부는 0건 |
+| 오류 계정 | alice 사용자명과 틀린 비밀번호의 실제 인증 응답이 로그인 성공 정규식과 불일치해 lane이 `FAILED`; 해당 계정 Client Spider 요청 0건 |
+| 집중 회귀 | ZAP account/auth/client/campaign/Web Java 회귀와 React Inspection 22 tests 통과 |
+| 전체 자동 회귀 | JDK 21 `mvn clean verify`: Java 381 tests, failures/errors 0, opt-in 실물 하네스 2 skip; React 38 files / 247 tests, typecheck·notices·Vite build와 release gate 통과 |
+| 최종 산출물 | JAR 31,651,530 bytes / 9,140 entries / SHA-256 `8708565ff18c04bbe94af26cce7c6da37cb732ea47fcedd9e78888ffbbd53b44` |
+| 미실행 | 최종 JAR의 실제 Burp load/unload와 8081 capture, 승인 대상의 실제 로그인 화면, Windows Docker Desktop, CAPTCHA·MFA·WebAuthn·외부 SSO |
+
+이 결과는 합성 로그인 폼과 기록 프록시에서 account lane의 실제 브라우저 요청·응답·실패 차단을 확인한 것이다. 실제 대상별 성공/실패 문구를 자동으로 의미 해석했다는 뜻은 아니며, 성공 정규식은 로그인 전·실패 화면에는 없고 성공 응답에만 나타나는 값을 진단자가 제공해야 한다. API action의 수락이나 status code만으로 로그인 성공을 확정하지 않는다.
+
 ## 2026-09-09 · 미출시 D-135 · FlowScope Docker Chromium ZAP 단일 runtime
 
 PR #10은 충돌 상태의 옛 MCP/Session Broker 구조와 Firefox fallback을 포함하므로 병합하지 않았다. 대신 사용자가 Web에서 로그인 URL·ID·비밀번호를 등록하고 ZAP이 Browser Based Authentication을 수행한 뒤 계정 지정 Client Spider를 실행하는 흐름을 현행 `ZapAccountVault`·`ZapCampaign`·React에 유지했다. 실행 환경은 distribution bundle의 custom Docker image 하나로 줄이고 비로그인·로그인 모두 `chrome-headless`를 명시했다.

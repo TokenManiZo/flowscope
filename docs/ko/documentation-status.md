@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-09 D-135 FlowScope Docker Chromium 단일 runtime. 현재 미출시 beta.46 소스에는 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Chromium/ChromeDriver 포함 이미지, 모든 lane의 `chrome-headless` Client Spider 단일 실행, 실물 Docker API와 직접 Client HTTP 200 검증이 들어 있다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-135로 갱신한다.
+최종 대조: 2026-09-09 D-136 ZAP 인증 응답 Evidence gate. 현재 미출시 beta.46 소스에는 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Chromium/ChromeDriver 포함 이미지, 모든 lane의 `chrome-headless` Client Spider 단일 실행, 필수 로그인 성공/선택적 로그아웃 정규식과 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence 검증이 들어 있다. 별도 실물 하네스에서 익명·정상 계정 2개·오류 비밀번호 차단을 확인했다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-136으로 갱신한다.
 
 ## 1. 무엇을 어디서 읽는가
 
@@ -28,6 +28,7 @@
 14. 후속 전수 대조에서 `mcp-judge-removal-plan.md`가 D-132 이전의 Traditional → Client → AJAX 흐름을 현행으로 잘못 표시한 것을 발견했다. 단계 4를 Client-only 구현 완료·실물 gate 대기로 정정하고 제품/UI 문서의 현재 결정 번호를 D-133으로 맞췄다.
 15. D-134 실물 로그인 재현에서 ZAP 2.17 REST에 `verification` component가 없고 기존 FakeZap만 가짜 `OK`를 반환한 사실을 확인했다. current README·한영 시작 가이드·아키텍처·계획·인계·변경 이력은 Browser Based Authentication + session auto-detect + 명시적 인증 성공으로 정정하고, 과거 D-130 기록은 D-134가 해당 부분을 대체하는 결정 이력으로 남겼다.
 16. D-135는 PR #10을 병합하지 않고 사용자 계정 입력→ZAP 인증→계정 Client→SCANNER Evidence 흐름을 현행 구조에 이식했다. ZAP Desktop/Firefox 선택 경로는 현재 계약에서 제거하고 bundle의 Dockerfile, Chromium/ChromeDriver 사전 검사, 관리 tmpfs runtime, 모든 lane의 `chrome-headless`와 직접 Client 실측을 README·한영 시작 가이드·아키텍처·제품·UI·계획·인계·변경 이력에 반영했다. 과거 D-130~132의 당시 설명은 D-135가 대체하는 이력으로 보존한다.
+17. D-136은 실물에서 ZAP action `OK`와 인증 시각이 오류 비밀번호까지 통과시킨 사실을 반영한다. 로그인 성공 정규식을 필수화하고 같은 run·계정의 실제 인증 응답 Evidence로만 account Client 진입을 허용한다. 미출시 Authentication Helper 직접 빌드는 제거하고 공식 ZAP 2.17 base의 안정판 add-on으로 정상 2계정·오류 비밀번호 차단을 재검증했다. 실제 Burp 재로드와 Windows는 남은 gate로 유지한다.
 
 ## 3. 전수 목록
 
@@ -46,19 +47,19 @@
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
 | [docs/ko/README.md](README.md) | 목차 | 현재/역사 문서 목록과 진행 갱신 기준 |
-| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-135 Chromium 직접 Client 실측과 beta.46 Burp 로그인 재검증 gate |
+| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-136 인증 응답 Evidence 실물 하네스와 beta.46 Burp·Windows 재검증 gate |
 | [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
 | [docs/ko/architecture.md](architecture.md) | 현행 계약 | data-flow exact-token·ZAP 별도 계정 vault/browser auth/direct lane 귀속·scope union/Alert 총량 |
 | [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | JS parser 상한과 live 전달 한계, source LLM/미실행 실험 구분 |
 | [docs/ko/llm-explorer.md](llm-explorer.md) | 현행 계약 | 독립 Explorer 실행·인증·scope·Evidence·사용자 조작·남은 gate |
-| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | D-135 HUMAN/Docker Chromium ZAP/Explorer와 no-Judge/no-MCP 범위 |
-| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-135 ZAP 계정·Chromium Client 단일 진행, Explorer 피드·과거 Judge 분리 |
+| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | D-136 HUMAN/Docker Chromium ZAP/Explorer와 인증 응답 gate, no-Judge/no-MCP 범위 |
+| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-136 ZAP 계정·인증 응답·Chromium Client 단일 진행, Explorer 피드·과거 Judge 분리 |
 | [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P20 ZAP 직접 인증·정의·취소, P21/P23 D-128 Explorer, 폐기 기능 구분 |
 | [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, D-132 Client-only 완료와 실물 gate, 제품 MCP 보류 |
 | [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-130~135 자동·실물 ZAP gate, D-128 Explorer gate와 이전 beta 이력 분리 |
 | [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-130~135 ZAP 인증·휘발성 저장·Client 단일 실행·Chromium runtime, D-128 Explorer 결정 |
-| [docs/ko/development-log.md](development-log.md) | 역사 | D-135 Chromium runtime, D-134 ZAP REST 호환, D-132 Client 단일 실행, D-130 인증, D-129 배포, D-128 Explorer 기록 |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-135 실제 Chromium Client와 남은 Burp 로그인 gate, D-130~134 실물/API·자동 결과, D-128 provider gate 분리 |
+| [docs/ko/development-log.md](development-log.md) | 역사 | D-136 인증 응답 Evidence, D-135 Chromium runtime, D-134 ZAP REST 호환, D-132 Client 단일 실행, D-130 인증, D-129 배포, D-128 Explorer 기록 |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-136 실물 정상 2계정·오류 비밀번호 차단, D-135 Chromium Client, 남은 Burp·Windows gate와 D-128 provider gate 분리 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
@@ -79,6 +80,7 @@
 - D-129 작업에서 `mvn clean verify`를 2회 실행했고 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files/242 tests가 통과했다. 기능별 Bash doctor는 JDK 21/Codex 로그인 성공과 JDK 26 거부를 실제 확인했다. JAR/bundle 반복 package와 clone 없는 clean extraction도 통과했다.
 - D-130~133 작업은 같은 최종 입력에서 `mvn clean verify` 2회를 실행해 매회 Java 370 tests(실패·오류 0, opt-in 1 skip), React 38 files/247 tests를 통과했고 JAR·bundle SHA-256이 각각 일치했다. Bash 5개 syntax/shellcheck, Compose와 JAR 구조도 확인했다. 실제 ZAP 2.17 daemon/API/session gate는 별도 8090에서 통과했지만 doctor는 Burp 8081이 닫혀 실패했으므로 실물 target 캠페인 성공으로 기록하지 않는다.
 - D-135 최종 입력에서 JDK 21 `mvn clean verify` 1회로 Java 375 tests(실패·오류 0, opt-in 1 skip), React 38 files/247 tests와 release gate를 통과했다. Compose, Bash syntax/shellcheck, bundle Dockerfile과 JAR manifest/namespace를 확인했다. 실제 FlowScope Docker Chromium/ChromeDriver 주 버전 일치, doctor 0/0, strict Client HTTP 200 수집 1건은 확인했지만 beta.46 JAR의 Burp 로그인·복수 계정과 Windows는 미실행이다.
+- D-136 최종 입력에서 JDK 21 `mvn clean verify` 1회로 Java 381 tests(실패·오류 0, opt-in 실물 하네스 2 skip), React 38 files/247 tests와 release gate를 통과했다. 별도 실물 하네스에서 익명·정상 2계정의 Client와 오류 비밀번호의 Client 전 차단을 확인했다. beta.46 JAR의 실제 Burp 재로드·8081 capture와 Windows는 미실행이다.
 - D-128 최종 입력에서 `mvn clean verify`를 두 번 실행했고 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files/241 tests가 매회 통과했다. 두 JAR은 31,626,205 bytes, 9,130 entries와 SHA-256 `762728bff34d9d4d9d9f3a695d43fc5ed6ede25a9900c6db552affdcc268d87b`로 동일했다.
 - opt-in provider 하네스를 별도로 두 번 실행해 설치·로그인된 실제 Codex app-server의 dynamic HTTP tool 호출을 확인했다. 실제 Burp/ZAP, 외부 대상 요청, Windows, 독립 corpus 효능은 실행하지 않았다. 검증 범위와 명령은 [beta-validation](beta-validation.md)이 정본이다.
 - 대형 응답 전달 문제는 D-128 코드와 1.4MiB 회귀로 수정·검증했다. 실제 Burp 대상에서의 운영 재현과 4MiB 초과 응답은 [HANDOFF](HANDOFF.md)의 별도 gate·한계로 추적한다.

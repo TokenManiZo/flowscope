@@ -1,6 +1,6 @@
 # FlowScope 팀 인계 정본
 
-최종 갱신: 2026-09-09 D-135 작업본. PR #10을 병합하지 않고 계정 입력→ZAP Browser Based Authentication→계정 Client→SCANNER Evidence 흐름을 현행 구조에 유지하면서, ZAP 실행을 bundle의 Docker Chromium 단일 runtime으로 고정했다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
+최종 갱신: 2026-09-09 D-136 작업본. PR #10을 병합하지 않고 계정 입력→ZAP Browser Based Authentication→계정 Client→SCANNER Evidence 흐름을 현행 구조에 유지하면서, ZAP 실행을 bundle의 Docker Chromium 단일 runtime으로 고정했다. 로그인 성공은 ZAP action 값이 아니라 같은 run·계정의 실제 인증 응답 Evidence로 확인한다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -18,6 +18,8 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 ## 2. 진행상황
 
+2026-09-09 후속 실물 검증: 사용자 8089 ZAP을 건드리지 않고 별도 Compose project(API 18889, 기록 프록시 18881, 합성 exact-scope target)에서 공식 ZAP 2.17 base의 Chromium/ChromeDriver, Authentication Helper 0.41.0, Client 0.30.0으로 익명 → alice → bob lane을 완주했다. 두 로그인 계정은 각각 `/api/me`에서 자기 사용자 응답을 받았고 다른 계정 세션 혼입은 0건이었다. 이어 같은 사용자명과 틀린 비밀번호는 `ZAP_AUTHENTICATION` 실패 응답이 로그인 성공 정규식과 불일치해 Client Spider 시작 전에 차단됐다. 이 과정에서 ZAP action `OK`와 `lastSuccessfulAuthTimeInMs`만 사용하면 틀린 비밀번호도 통과하는 결함을 실증해 해당 fallback을 폐기했다. 현재 코드는 같은 run·`laneAccountId`의 실제 인증 응답 Evidence를 필수 성공 정규식과 선택적 로그아웃 정규식으로 확인한다. 실제 Burp beta.46 JAR 재로드와 Windows 실기기는 계속 별도 gate다.
+
 2026-09-09 진행 중: geckodriver/noexec 실패 경로를 폐기하고 digest 고정 ZAP 2.17 base에 Chromium과 같은 Debian 저장소의 ChromeDriver를 설치하는 FlowScope 이미지를 추가했다. 시작 전 두 실행 파일·동일 주 버전·실제 headless 기동을 확인하고, 비로그인·로그인 모두 `chrome-headless`를 명시한다. 실제 컨테이너에서 Chromium/ChromeDriver `152.0.7977.82`, doctor 실패·경고 0건, exact Context Client HTTP 200 수집 1건과 status 100을 확인했다. beta.46 JAR의 실제 Burp 재로드·로그인/복수 계정은 아직 확인하지 않았다.
 
 | 작업 | 현재 상태 | 근거 / 남은 확인 |
@@ -26,10 +28,10 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 | 기존 Judge·하네스 MCP 제거 | 구현·자동 회귀 완료 | `57d1bb4`, 클래스/JAR 부재·폐기 route 404 |
 | 과거 프로젝트 호환 | 구현·자동 회귀 완료 | JSON v4 / SQLite v3, 원 Evidence ID·과거 평가 분리 |
 | 빈 agent-workspace 정리 | 완료 | `962edfe`, 정확한 빈 디렉터리만 제거 |
-| 문서 현행화 | 2026-09-09 D-135 계약 갱신 | [전수 목록·확인 범위](documentation-status.md); Docker Chromium 단일 runtime·Client 실측·남은 로그인 gate와 과거 기록 구분 |
+| 문서 현행화 | 2026-09-09 D-136 계약 갱신 | [전수 목록·확인 범위](documentation-status.md); Docker Chromium 단일 runtime·인증 응답 Evidence gate·남은 실제 Burp/Windows gate와 과거 기록 구분 |
 | 독립 LLM Explorer | 구현·자동/provider 검증 완료 | `5da5b08`; 메모리 인증, dynamic HTTP tool, exact-scope gateway, actual-response Evidence, React 작업 피드; 실제 Burp gate 대기 |
 | 다운로드 bundle·기능별 doctor | 구현·자동/추출 검증 완료 | JAR+ZAP helper+문서 ZIP, `human/zap/explorer/full`, Explorer 재확인; Windows 실기기 대기 |
-| ZAP 직접 브라우저 인증 | 구현·전체 자동 회귀 완료, 로그인 실물 gate 대기 | 메모리 `ZapAccountVault`, `ZapBrowserAuthenticator`, Chrome Headless, 명시적 `authSuccessful`, Context/user 지정 Client, 임시 user/Context 정리 |
+| ZAP 직접 브라우저 인증 | 별도 실물 하네스에서 정상 2계정·오류 비밀번호 차단 통과, 실제 Burp·Windows gate 대기 | 메모리 `ZapAccountVault`, 필수 성공/선택적 로그아웃 정규식, 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence, Chrome Headless, Context/user 지정 Client, 임시 user/Context 정리 |
 | React ZAP 기능 보존 | 구현·집중 회귀 완료 | target별 로그인 계정, 로그인/단계/경과 상태, 명세 정의 입력, 취소 복구 |
 | 새 JAR 실제 Burp/ZAP 검증 | 미실행 | 아래 gate, mock/standalone으로 대체하지 않음 |
 | Client 단일 crawler | 코드·전체 자동 회귀·직접 실물 Client 완료 | 관리 Docker `chrome-headless`로 exact Context HTTP 200 수집. capability/로그인·취소·0건 실패의 beta.46 Burp 8081 gate는 남음 |
@@ -41,12 +43,13 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 ## 3. 검증과 배포 상태
 
-[beta-validation의 D-130~135 기록](beta-validation.md)이 현재 ZAP 작업의 자동·실물 검증 정본이며, D-129는 배포 작업, D-128은 Explorer 구현·실물 provider 검증의 정본이다.
+[beta-validation의 D-130~136 기록](beta-validation.md)이 현재 ZAP 작업의 자동·실물 검증 정본이며, D-129는 배포 작업, D-128은 Explorer 구현·실물 provider 검증의 정본이다.
 
 - 같은 최종 D-128 입력에서 `mvn clean verify` 2회: 매회 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 241 tests 통과. JAR SHA-256과 크기가 동일했다.
 - D-129 작업에서 `mvn clean verify` 2회: 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 242 tests 통과. 반복 package의 JAR/bundle 동일성과 clone 없는 clean extraction을 확인했다.
 - D-130~133 최종 입력에서 `mvn clean verify` 2회: 매회 Java 370 tests(실패·오류 0, 일반 suite의 opt-in provider 1 skip), React 38 files / 247 tests와 release JAR/bundle 생성 통과. 두 JAR·bundle의 SHA-256은 각각 동일했고 최종 JAR SHA-256은 `78868e06a2af099df26e5cbc9254daf42bacc791bdee8aaa1c321e940612cb24`다.
 - D-135 최종 입력에서 JDK 21 `mvn clean verify` 1회: Java 375 tests(실패·오류 0, opt-in provider 1 skip), React 38 files / 247 tests와 release gate 통과. beta.46 JAR은 31,649,129 bytes, 9,140 entries, SHA-256 `d03c5a602f8c06f3e345468f1b69adb5557b6b3cfc04fd500a04e8dec87ca8c3`이다. FlowScope Docker에서 Chromium/ChromeDriver `152.0.7977.82`, doctor 0/0, 실제 strict Client HTTP 200 수집 1건을 별도로 확인했다.
+- D-136 최종 입력에서 JDK 21 `mvn clean verify` 1회: Java 381 tests(실패·오류 0, opt-in 실물 하네스 2 skip), React 38 files / 247 tests와 release gate 통과. beta.46 JAR은 31,651,530 bytes, 9,140 entries, SHA-256 `8708565ff18c04bbe94af26cce7c6da37cb732ea47fcedd9e78888ffbbd53b44`이다. 별도 실물 ZAP 하네스는 익명·정상 2계정과 오류 비밀번호의 Client 전 차단을 확인했다.
 - 별도 opt-in 실제 Codex app-server 하네스가 dynamic HTTP tool 호출과 구조화 결과를 확인했다. 이는 Burp Montoya/실제 대상 전체 실행이 아니다.
 - D-126 당시 Chromium standalone E2E 8/8은 과거 UI 기준 기록이다. D-128 Explorer 화면의 standalone/browser E2E나 실제 Burp gate로 재사용하지 않는다.
 - 작업트리 버전 문자열은 `1.2.0-beta.46`이다. 최종 전체 자동 검증과 JAR 식별값을 이 작업 단위에서 다시 확정하며 push·Release는 하지 않는다.
@@ -81,7 +84,7 @@ D-128은 발견용 HTML/JavaScript/JSON/XML 응답을 기본 4MiB까지 `FULL` p
 
 - ZAP 시작 API 반환과 취소가 겹치는 race: 현재 취소 회귀는 scan ID 등록 후 상태 polling 중인 경우다. 모든 시작/취소 타이밍의 정리를 증명하지 않는다.
 - FlowScope Docker 이미지에서 Chromium/ChromeDriver 동일 주 버전과 실제 headless 기동, `authhelper`·`client`·`selenium` add-on, 비로그인 strict Client HTTP 200 수집을 확인했다. beta.46 JAR의 Browser Based Authentication 성공, Client capability 전달, 복수 계정 세션 격리, 다중 scope, 취소 후 Client 정지는 mock이나 직접 ZAP API가 아닌 Burp 8081 capture 환경으로 다시 확인해야 한다.
-- CAPTCHA·MFA·WebAuthn·복합 SSO는 자동 로그인의 지원 범위로 주장하지 않는다. `authSuccessful=true`가 아니면 계정 lane을 실패 처리한다.
+- CAPTCHA·MFA·WebAuthn·복합 SSO는 자동 로그인의 지원 범위로 주장하지 않는다. 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치하지 않으면 계정 lane을 실패 처리한다.
 - SessionBroker ACTIVE 의미·보조 쿠키 회전, 지문/계정 바인딩, owner 별칭, history 병합 키, 실패한 프로젝트 열기의 원자성, XML 문자셋·IPv6: 이전 인계의 정확성 항목을 그대로 **재검증 대기**로 승계한다. 이번 문서 작업에서 일괄 해결 또는 모두 현존한다고 단정하지 않았다. [이전 결함 목록](handoff-2026-09-04.md)을 코드와 항목별 재대조해야 한다.
 - 제거한 LLM 프로세스 종료·Judge 동작은 현행 실행 gate에서 제외한다. 다만 과거 데이터 호환과 읽기 전용 표시 검사는 유지한다.
 - 외부 pilot·전체 발견률·오탐/미탐률·성능 우월성은 미측정이다. 합성 테스트 통과로 수치나 완성률을 만들지 않는다.

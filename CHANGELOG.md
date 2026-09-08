@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · ZAP 인증 응답 Evidence gate (D-136, 2026-09-09)
+
+- ZAP action인 계정 등록에 필수 로그인 성공 정규식과 선택적 로그아웃 정규식을 추가했습니다. 값은 ID·비밀번호와 함께 현재 프로세스 메모리에만 두며 ZAP Context indicator와 FlowScope 인증 응답 검증에 사용합니다.
+- ZAP API action의 `OK`, `authSuccessful` 필드 유무, 인증 시각을 로그인 성공 증거로 쓰지 않습니다. 현재 run·계정의 실제 `ZAP_AUTHENTICATION` 응답 Evidence에서 마지막 성공 일치가 마지막 로그아웃 일치보다 뒤일 때만 account Client Spider를 시작합니다.
+- 별도 실물 ZAP 2.17/Chromium 하네스에서 익명·정상 계정 2개의 Client 탐색과 오류 비밀번호의 Client 전 차단을 확인했습니다. 이 gate가 동작하므로 잠시 검토한 미출시 Authentication Helper 0.43.0 직접 build는 distribution에 포함하지 않습니다.
+- 실제 Burp 최종 JAR 재로드와 Windows Docker Desktop은 아직 별도 gate입니다.
+
 ## 미출시 · FlowScope Docker Chromium ZAP 단일 경로 (D-135, 2026-09-09)
 
 - PR #10은 병합하지 않고 로그인 URL·ID·비밀번호 입력 → ZAP Browser Based Authentication → 계정 지정 Client Spider → SCANNER Evidence 귀속 흐름을 현행 `ZapAccountVault`·`ZapCampaign`·React UI에 맞게 유지했습니다.

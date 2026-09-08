@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — ZAP authentication-response Evidence gate (D-136, 2026-09-09)
+
+- ZAP account registration now requires a logged-in response regex and accepts an optional logged-out regex. They remain in current-process memory with the username/password and configure both ZAP Context indicators and FlowScope's observed-response check.
+- An action `OK`, the presence of an `authSuccessful` field, and an authentication timestamp are not accepted as proof of login. The account Client Spider starts only when the last matching authentication-response Evidence for the current run/account is a logged-in match.
+- A separate real ZAP 2.17/Chromium harness completed anonymous plus two correct account Client lanes and blocked a wrong password before Client execution. Because the Evidence gate works with the official image's stable add-ons, the briefly evaluated unreleased Authentication Helper 0.43.0 build is not distributed.
+- Reloading the final JAR in real Burp and a real Windows Docker Desktop run remain open gates.
+
 ## Unreleased — single FlowScope Docker Chromium ZAP path (D-135, 2026-09-09)
 
 - PR #10 was not merged. Its login URL/username/password → ZAP Browser Based Authentication → account-scoped Client Spider → SCANNER Evidence flow was adapted to the current `ZapAccountVault`, `ZapCampaign`, and React UI.

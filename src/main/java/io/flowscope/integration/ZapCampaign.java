@@ -506,7 +506,8 @@ public final class ZapCampaign implements AutoCloseable {
                 }
             }
             if (directAuthentication) {
-                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AUTHENTICATION, null);
+                state.contexts().transition(Source.SCANNER, runId,
+                        SourceDetail.ZAP_AUTHENTICATION, lane.accountId());
                 replaceZapAuthentication(index, new ZapAuthenticationResult(
                         "AUTHENTICATING", ZapClient.CLIENT_BROWSER, "ZAP 브라우저 로그인 실행 중"));
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
@@ -522,20 +523,21 @@ public final class ZapCampaign implements AutoCloseable {
                         "AUTHENTICATION", "ZAP 브라우저 로그인 · 인증 결과 대기");
                 try {
                     identity = state.zapAccounts().withSecret(lane.accountId(), secret ->
-                            new ZapBrowserAuthenticator(state.zap(), json, state.scope()::allows).authenticate(
+                            new ZapBrowserAuthenticator(state.zap(), json, state.scope()::allows,
+                                    () -> state.snapshot().records).authenticate(
                                     runId, target, index, finalContextId, contextName, secret));
                     recordZapHeartbeat(runId, index, "ZAP 브라우저 로그인 · 인증 성공 응답 수신");
                 } finally {
                     authenticationHeartbeat.cancel(false);
                 }
                 state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
-                        "ZAP verification이 로그인 성공으로 판정했습니다.");
+                        "ZAP 인증 응답 Evidence가 로그인 성공 정규식과 일치했습니다.");
                 authenticationVerified = true;
                 replaceZapAuthentication(index, new ZapAuthenticationResult(
                         "VERIFIED_BY_ZAP", identity.browser(),
-                        "ZAP verification이 로그인 성공으로 판정했습니다."));
+                        "ZAP 인증 응답 Evidence가 로그인 성공 정규식과 일치했습니다."));
                 recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
-                        "ZAP verification 로그인 성공 · 계정 크롤링 시작");
+                        "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
             }
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",

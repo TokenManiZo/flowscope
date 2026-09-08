@@ -1,5 +1,25 @@
 # FlowScope 개발 기록
 
+## 2026-09-09 · 미출시 · ZAP 로그인 성공을 실제 응답 Evidence로 검증
+
+### 원인과 수정
+
+- 별도 실물 Docker/기록 프록시 하네스에서 ZAP 2.17의 `authenticateAsUser`가 실제 브라우저 로그인 뒤에도 `{"Result":"OK"}`만 반환하는 경우를 확인했다. 이를 보완하려고 `getAuthenticationState.lastSuccessfulAuthTimeInMs`를 성공 조건으로 시도했으나, 같은 하네스의 오류 비밀번호 계정도 성공으로 통과해 Client Spider가 시작됐다. API 호출 수락·인증 시각은 현재 계정의 로그인 성공 증거가 아니었다.
+- `ZapAccountVault`에 필수 로그인 성공 정규식과 선택적 로그아웃 정규식을 추가했다. 두 값은 username/password처럼 현재 프로세스 메모리에만 두고 응답·snapshot·프로젝트에 원문을 내보내지 않는다. React 등록 화면은 필수/선택과 용도를 명시한다.
+- `ZapBrowserAuthenticator`는 Browser Based Authentication과 session auto-detect 뒤 ZAP Context의 logged-in/out indicator를 설정한다. 이후 같은 run·`laneAccountId`·`ZAP_AUTHENTICATION`·응답 존재 조건을 모두 만족하는 실제 레코드만 검사한다. 마지막 성공 일치가 있고 더 나중 실패 일치가 없을 때만 계정 지정 Client Spider를 시작한다. 인증 단계의 run context에도 계정 ID를 넣었다.
+- 계정 폐기 때 `AnalysisConfig`의 비밀 없는 계정 메타데이터도 함께 제거해 폐기된 ZAP 신원이 새 분석에 남지 않게 했다.
+
+### 대안 검증과 실물 결과
+
+- ZAP Authentication Helper의 브라우저 인증 결과 알림 수정이 포함된 미출시 0.43.0 upstream build를 잠시 고정해 시험했지만, action 결과 자체를 신뢰하지 않는 Evidence gate가 더 직접적인 계약이다. 미출시 binary와 Common Library를 distribution에 넣는 유지·공급망 비용을 피하기 위해 제거했다.
+- 사용자 8089 컨테이너와 분리한 `flowscope-zap-runtime-test` project(API 18889, 기록 프록시 18881)에서 공식 ZAP 2.17 base의 Authentication Helper 0.41.0·Client 0.30.0으로 다시 실행했다. 익명 → alice → bob lane이 완료됐고 두 계정은 `/api/me`에서 자기 사용자 응답을 받았다. 교차 계정 session 혼입과 capability 거부는 0건이었다. 이어 alice 사용자명·오류 비밀번호는 인증 단계에서 `FAILED`가 됐고 그 계정의 Client Spider 요청은 0건이었다.
+- 집중 Java 회귀는 응답 body뿐 아니라 status/header indicator와 성공 뒤 늦은 로그아웃 응답을 포함해 통과했고 React Inspection 22 tests도 통과했다. JDK 21 전체 `mvn clean verify`는 Java 381 tests(실패·오류 0, opt-in 실물 하네스 2 skip), React 38 files/247 tests와 release gate를 통과했다. JAR은 31,651,530 bytes, 9,140 entries, SHA-256 `8708565ff18c04bbe94af26cce7c6da37cb732ea47fcedd9e78888ffbbd53b44`이며 상세 환경과 실물 결과는 beta-validation에 기록했다.
+
+### 남은 gate
+
+- 실제 Burp에 최종 JAR을 재로드한 8081 capture와 UI 정상·오류 계정, Windows Docker Desktop은 아직 별도 검증 대상이다.
+- 사용자가 성공/실패 응답을 구분하는 정규식을 제공해야 한다. SPA/CAPTCHA/MFA/WebAuthn/외부 SSO를 자동으로 해석하거나 우회한다고 주장하지 않는다.
+
 ## 2026-09-09 · 미출시 · PR #10 흐름을 현행 Docker Chromium ZAP에 이식
 
 ### 개발·수정

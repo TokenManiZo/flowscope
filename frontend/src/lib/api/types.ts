@@ -393,6 +393,8 @@ export interface ZapAccount {
   message: string
   updatedAt: string
   hasPassword: boolean
+  hasLoggedInIndicator?: boolean
+  hasLoggedOutIndicator?: boolean
 }
 
 export interface ScannerRun {

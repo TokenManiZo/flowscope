@@ -43,7 +43,7 @@ final class ZapCampaignRegressionTest {
         RunContextRegistry contexts = new RunContextRegistry();
         ZapAccountVault accounts = new ZapAccountVault();
         accounts.save(new ZapAccountVault.Input("zap-user-a", "USER A", "USER", target,
-                target + "login", "user-a@example.test", "password-a"));
+                target + "login", "user-a@example.test", "password-a", "Signed in", "Signed out"));
         AtomicBoolean credentialsSent = new AtomicBoolean();
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 0);
@@ -548,7 +548,7 @@ final class ZapCampaignRegressionTest {
         AtomicLong clientStarts = new AtomicLong();
         ZapAccountVault accounts = new ZapAccountVault();
         accounts.save(new ZapAccountVault.Input("zap-user-a", "USER A", "USER", target,
-                target + "login", "user-a@example.test", "password-a"));
+                target + "login", "user-a@example.test", "password-a", "Signed in", "Signed out"));
 
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 1);
@@ -754,7 +754,8 @@ final class ZapCampaignRegressionTest {
         ZapAccountVault accounts = new ZapAccountVault();
         for (String accountId : List.of("zap-user-a", "zap-user-b")) {
             accounts.save(new ZapAccountVault.Input(accountId, accountId.toUpperCase(), "USER", target,
-                    target + "login", accountId + "@example.test", "password-" + accountId));
+                    target + "login", accountId + "@example.test", "password-" + accountId,
+                    "Signed in", "Signed out"));
         }
 
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -763,8 +764,10 @@ final class ZapCampaignRegressionTest {
         zapServer.createContext("/JSON/users/action/authenticateAsUser/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
             List<RequestRecord> copy = new ArrayList<>(records.get());
-            copy.add(observationAt(Source.SCANNER, "anon", 200, "{\"authSuccessful\":true}",
-                    context.detail(), RunPhase.SESSION_SETUP, context.runId(), "/api/auth/login"));
+            RequestRecord authentication = observationAt(Source.SCANNER, "anon", 200, "Signed in",
+                    context.detail(), RunPhase.SESSION_SETUP, context.runId(), "/api/auth/login");
+            authentication.laneAccountId = context.accountId();
+            copy.add(authentication);
             records.set(copy);
             zapReply(exchange, "{\"authSuccessful\":true}");
         });

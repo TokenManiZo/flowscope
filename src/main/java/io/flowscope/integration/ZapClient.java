@@ -63,6 +63,14 @@ public final class ZapClient {
         return post("/JSON/sessionManagement/action/setSessionManagementMethod/",
                 "contextId=" + enc(contextId) + "&methodName=autoDetectSessionManagement");
     }
+    public String setLoggedInIndicator(String contextId, String pattern) {
+        return post("/JSON/authentication/action/setLoggedInIndicator/",
+                "contextId=" + enc(contextId) + "&loggedInIndicatorRegex=" + enc(pattern));
+    }
+    public String setLoggedOutIndicator(String contextId, String pattern) {
+        return post("/JSON/authentication/action/setLoggedOutIndicator/",
+                "contextId=" + enc(contextId) + "&loggedOutIndicatorRegex=" + enc(pattern));
+    }
     public String newUser(String contextId, String name) {
         return post("/JSON/users/action/newUser/", "contextId=" + enc(contextId) + "&name=" + enc(name));
     }
@@ -79,10 +87,6 @@ public final class ZapClient {
     public String authenticateAsUser(String contextId, String userId) {
         return post("/JSON/users/action/authenticateAsUser/",
                 "contextId=" + enc(contextId) + "&userId=" + enc(userId), Duration.ofMinutes(2));
-    }
-    public String authenticationState(String contextId, String userId) {
-        return get("/JSON/users/view/getAuthenticationState/",
-                "contextId=" + enc(contextId) + "&userId=" + enc(userId));
     }
     public String removeUser(String contextId, String userId) {
         return post("/JSON/users/action/removeUser/",
@@ -117,13 +121,15 @@ public final class ZapClient {
     }
     public String clientSpider(String target, String contextName) {
         String query = "browser=" + enc(CLIENT_BROWSER) + "&url=" + enc(target)
-                + "&subtreeOnly=true&scopeCheck=STRICT";
+                + "&subtreeOnly=true&scopeCheck=STRICT&maxCrawlDepth=5"
+                + "&numberOfBrowsers=1&logoutAvoidance=true";
         if (contextName != null && !contextName.isBlank()) query += "&contextName=" + enc(contextName);
         return get("/JSON/clientSpider/action/scan/", query);
     }
     public String clientSpider(String target, String contextName, String userName, String browser) {
         return get("/JSON/clientSpider/action/scan/", "url=" + enc(target)
                 + "&subtreeOnly=true&scopeCheck=STRICT&contextName=" + enc(contextName)
+                + "&maxCrawlDepth=5&numberOfBrowsers=1&logoutAvoidance=true"
                 + "&userName=" + enc(userName) + "&browser=" + enc(browser));
     }
     public String clientSpiderStatus(String scanId) {

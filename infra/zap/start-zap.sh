@@ -15,9 +15,9 @@ flowscope_default_api_allowed_regex() {
   local trusted_regex="${trusted_host//./\\.}"
   local bridge_regex="${bridge_gateway//./\\.}"
   if [[ "$trusted_host" == "$bridge_gateway" ]]; then
-    printf '^(127\\.0\\.0\\.1|%s)$\n' "$trusted_regex"
+    printf '^(127\\.0\\.0\\.1|zap|%s)$\n' "$trusted_regex"
   else
-    printf '^(127\\.0\\.0\\.1|%s|%s)$\n' "$trusted_regex" "$bridge_regex"
+    printf '^(127\\.0\\.0\\.1|zap|%s|%s)$\n' "$trusted_regex" "$bridge_regex"
   fi
 }
 

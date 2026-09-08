@@ -15,10 +15,13 @@ final class ZapAccountVaultTest {
     void exposesOnlyMetadataAndClearsTemporarySecretCopies() {
         ZapAccountVault vault = new ZapAccountVault();
         ZapAccountVault.View saved = vault.save(new ZapAccountVault.Input("", "사용자 A", "USER",
-                "https://app.example.test", "https://app.example.test/login", "alice", "secret-value"));
+                "https://app.example.test", "https://app.example.test/login", "alice", "secret-value",
+                "Welcome alice", "Invalid credentials"));
 
         assertTrue(saved.id().startsWith("zap-"));
         assertTrue(saved.hasPassword());
+        assertTrue(saved.hasLoggedInIndicator());
+        assertTrue(saved.hasLoggedOutIndicator());
         assertFalse(saved.toString().contains("alice"));
         assertFalse(saved.toString().contains("secret-value"));
 
@@ -39,13 +42,14 @@ final class ZapAccountVaultTest {
         ZapAccountVault vault = new ZapAccountVault();
         assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
                 "user-a", "A", "USER", "https://app.example.test", "https://app.example.test/login",
-                "a", "pw")));
+                "a", "pw", "Signed in", "Signed out")));
         assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
                 "", "A", "USER", "https://app.example.test/private", "https://app.example.test/login",
-                "a", "pw")));
+                "a", "pw", "Signed in", "Signed out")));
 
         ZapAccountVault.View ipv6 = vault.save(new ZapAccountVault.Input(
-                "", "IPv6", "USER", "http://[::1]:8888", "http://[::1]:8888/login", "a", "pw"));
+                "", "IPv6", "USER", "http://[::1]:8888", "http://[::1]:8888/login", "a", "pw",
+                "Signed in", "Signed out"));
         assertEquals("http://[::1]:8888", ipv6.service());
     }
 
@@ -54,14 +58,14 @@ final class ZapAccountVaultTest {
         ZapAccountVault vault = new ZapAccountVault();
         assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
                 "", "anonymous contradiction", "ANONYMOUS", "https://app.example.test",
-                "https://app.example.test/login", "a", "pw")));
+                "https://app.example.test/login", "a", "pw", "Signed in", "Signed out")));
         assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
                 "", "unknown role", "ROOT", "https://app.example.test",
-                "https://app.example.test/login", "a", "pw")));
+                "https://app.example.test/login", "a", "pw", "Signed in", "Signed out")));
 
         ZapAccountVault.View saved = vault.save(new ZapAccountVault.Input(
                 "", "level", "lv1", "https://app.example.test",
-                "https://app.example.test/login", "a", "pw"));
+                "https://app.example.test/login", "a", "pw", "Signed in", "Signed out"));
         assertEquals("LV1", saved.role());
     }
 
@@ -70,7 +74,7 @@ final class ZapAccountVaultTest {
         ZapAccountVault vault = new ZapAccountVault();
         ZapAccountVault.View saved = vault.save(new ZapAccountVault.Input(
                 "", "사용자 A", "USER", "https://app.example.test",
-                "https://app.example.test/login", "a", "pw"));
+                "https://app.example.test/login", "a", "pw", "Signed in", "Signed out"));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
 
@@ -93,12 +97,24 @@ final class ZapAccountVaultTest {
         ZapAccountVault vault = new ZapAccountVault();
         ZapAccountVault.View saved = vault.save(new ZapAccountVault.Input(
                 "", "사용자 A", "USER", "https://app.example.test",
-                "https://app.example.test/login", " alice ", " secret value "));
+                "https://app.example.test/login", " alice ", " secret value ",
+                "Signed in", "Signed out"));
 
         vault.withSecret(saved.id(), secret -> {
             assertEquals(" alice ", new String(secret.username()));
             assertEquals(" secret value ", new String(secret.password()));
             return null;
         });
+    }
+
+    @Test
+    void requiresAValidLoggedInVerificationIndicator() {
+        ZapAccountVault vault = new ZapAccountVault();
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+                "", "A", "USER", "https://app.example.test", "https://app.example.test/login",
+                "a", "pw", "", "")));
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+                "", "A", "USER", "https://app.example.test", "https://app.example.test/login",
+                "a", "pw", "[", "")));
     }
 }

@@ -13,6 +13,21 @@ final class ZapStartupScriptTest {
     @TempDir Path temporaryDirectory;
 
     @Test
+    void permitsTheBrowserExtensionsZapHostWithoutPermittingOtherHosts() throws Exception {
+        Path routes = temporaryDirectory.resolve("browser-route");
+        Files.writeString(routes, "Iface\tDestination\tGateway\neth0\t00000000\t01001EAC\n");
+        Process process = new ProcessBuilder("bash", "-c",
+                "source \"$1\"; flowscope_default_api_allowed_regex 192.168.65.254 \"$2\"",
+                "zap-browser-host", Path.of("infra/zap/start-zap.sh").toAbsolutePath().toString(),
+                routes.toString()).start();
+        String regex = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+        assertEquals(0, process.waitFor());
+        assertTrue("zap".matches(regex), "ZAP validates the extension callback Host as well as its source IP");
+        org.junit.jupiter.api.Assertions.assertFalse("zap.attacker.test".matches(regex));
+        org.junit.jupiter.api.Assertions.assertFalse("172.30.0.20".matches(regex));
+    }
+
+    @Test
     void allowsTheDockerBridgeGatewaySeenByPublishedPortRequests() throws Exception {
         Path routes = temporaryDirectory.resolve("route");
         Files.writeString(routes, "Iface\tDestination\tGateway\neth0\t00000000\t01001EAC\n");
@@ -25,7 +40,7 @@ final class ZapStartupScriptTest {
         String error = new String(started.getErrorStream().readAllBytes());
 
         assertEquals(0, started.waitFor(), error);
-        assertEquals("^(127\\.0\\.0\\.1|192\\.168\\.65\\.254|172\\.30\\.0\\.1)$", output);
+        assertEquals("^(127\\.0\\.0\\.1|zap|192\\.168\\.65\\.254|172\\.30\\.0\\.1)$", output);
     }
 
     @Test

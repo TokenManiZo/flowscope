@@ -1129,6 +1129,8 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public void removeZapAccount(String id) {
                 zapAccounts.remove(id);
+                analysisConfig.removeAccount(id);
+                scheduleRebuild();
             }
             @Override public List<String> scopeEntries() { return scope.entries(); }
             @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }

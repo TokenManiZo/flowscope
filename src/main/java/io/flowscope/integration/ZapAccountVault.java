@@ -17,13 +17,16 @@ public final class ZapAccountVault implements AutoCloseable {
     public enum AuthStatus { UNVERIFIED, AUTHENTICATING, VERIFIED_BY_ZAP, FAILED }
 
     public record Input(String id, String label, String role, String service, String loginUrl,
-                        String username, String password) {}
+                        String username, String password, String loggedInIndicator,
+                        String loggedOutIndicator) {}
 
     public record View(String id, String label, String role, String service, String loginUrl,
-                       AuthStatus status, String message, String updatedAt, boolean hasPassword) {}
+                       AuthStatus status, String message, String updatedAt, boolean hasPassword,
+                       boolean hasLoggedInIndicator, boolean hasLoggedOutIndicator) {}
 
     record Secret(String id, String label, String role, URI service, URI loginUrl,
-                  char[] username, char[] password) {}
+                  char[] username, char[] password, String loggedInIndicator,
+                  String loggedOutIndicator) {}
 
     private static final int MAX_ACCOUNTS = 16;
     private final Map<String, Entry> entries = new LinkedHashMap<>();
@@ -45,8 +48,11 @@ public final class ZapAccountVault implements AutoCloseable {
         String username = requiredCredential(input.username(), "로그인 ID", 512);
         if (username.isBlank()) throw new IllegalArgumentException("로그인 ID가 필요합니다.");
         String password = requiredCredential(input.password(), "비밀번호", 4_096);
+        String loggedInIndicator = verificationPattern(input.loggedInIndicator(), "로그인 상태 정규식");
+        String loggedOutIndicator = verificationPattern(input.loggedOutIndicator(), "로그아웃 상태 정규식");
+        if (loggedInIndicator.isBlank()) throw new IllegalArgumentException("로그인 상태 정규식이 필요합니다.");
         Entry replacement = new Entry(id, label, role, service, loginUrl,
-                username.toCharArray(), password.toCharArray());
+                username.toCharArray(), password.toCharArray(), loggedInIndicator, loggedOutIndicator);
         Entry previous = entries.put(id, replacement);
         if (previous != null) previous.clear();
         return replacement.view();
@@ -159,6 +165,17 @@ public final class ZapAccountVault implements AutoCloseable {
         return credential;
     }
 
+    private static String verificationPattern(String value, String label) {
+        String pattern = clean(value, 2_048);
+        if (pattern.isBlank()) return "";
+        try {
+            java.util.regex.Pattern.compile(pattern);
+            return pattern;
+        } catch (java.util.regex.PatternSyntaxException error) {
+            throw new IllegalArgumentException(label + "이 올바른 Java 정규식이 아닙니다.");
+        }
+    }
+
     private static String clean(String value, int max) {
         String clean = value == null ? "" : value.trim();
         if (clean.length() > max) throw new IllegalArgumentException("입력 길이 상한을 초과했습니다.");
@@ -173,12 +190,15 @@ public final class ZapAccountVault implements AutoCloseable {
         private final URI loginUrl;
         private final char[] username;
         private final char[] password;
+        private final String loggedInIndicator;
+        private final String loggedOutIndicator;
         private AuthStatus status = AuthStatus.UNVERIFIED;
         private String message = "ZAP 로그인 확인 전";
         private Instant updatedAt = Instant.now();
 
         private Entry(String id, String label, String role, URI service, URI loginUrl,
-                      char[] username, char[] password) {
+                      char[] username, char[] password, String loggedInIndicator,
+                      String loggedOutIndicator) {
             this.id = id;
             this.label = label;
             this.role = role;
@@ -186,15 +206,19 @@ public final class ZapAccountVault implements AutoCloseable {
             this.loginUrl = loginUrl;
             this.username = username;
             this.password = password;
+            this.loggedInIndicator = loggedInIndicator;
+            this.loggedOutIndicator = loggedOutIndicator;
         }
 
         private Secret secret() {
-            return new Secret(id, label, role, service, loginUrl, username.clone(), password.clone());
+            return new Secret(id, label, role, service, loginUrl, username.clone(), password.clone(),
+                    loggedInIndicator, loggedOutIndicator);
         }
 
         private View view() {
             return new View(id, label, role, service.toString(), loginUrl.toString(), status,
-                    message, updatedAt.toString(), password.length > 0);
+                    message, updatedAt.toString(), password.length > 0,
+                    !loggedInIndicator.isBlank(), !loggedOutIndicator.isBlank());
         }
 
         private void clear() {

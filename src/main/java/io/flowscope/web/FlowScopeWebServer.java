@@ -791,7 +791,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ZapAccountVault.View saved = state.saveZapAccount(new ZapAccountVault.Input(
                     form.getOrDefault("id", ""), required(form, "label"),
                     form.getOrDefault("role", "UNKNOWN"), required(form, "service"),
-                    required(form, "loginUrl"), requiredRaw(form, "username"), requiredRaw(form, "password")));
+                    required(form, "loginUrl"), requiredRaw(form, "username"), requiredRaw(form, "password"),
+                    form.getOrDefault("loggedInIndicator", ""),
+                    form.getOrDefault("loggedOutIndicator", "")));
             ObjectNode body = json.createObjectNode().put("success", true)
                     .put("message", "ZAP 로그인 계정을 현재 프로세스 메모리에 등록했습니다.");
             body.set("account", json.valueToTree(saved));

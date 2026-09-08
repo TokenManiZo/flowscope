@@ -184,7 +184,7 @@ describe("four-stage inspection controls", () => {
 
   it("registers a memory-only ZAP login account and starts the authenticated lane by its dedicated id", async () => {
     const user = userEvent.setup()
-    const account = { id: "zap-a", label: "ZAP A", role: "USER", service: "https://demo.flowscope.test:443", loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true }
+    const account = { id: "zap-a", label: "ZAP A", role: "USER", service: "https://demo.flowscope.test:443", loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true, hasLoggedInIndicator: true, hasLoggedOutIndicator: true }
     const { fetchStub } = renderInspection({ scannerAccounts: [account] })
 
     await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
@@ -193,10 +193,14 @@ describe("four-stage inspection controls", () => {
     await user.type(screen.getByLabelText("로그인 URL"), `${target}/login`)
     await user.type(screen.getByLabelText("로그인 ID"), "alice@example.test")
     await user.type(screen.getByLabelText("비밀번호"), "memory-secret")
+    await user.type(screen.getByLabelText("로그인 상태 정규식 (필수)"), "내 계정")
+    await user.type(screen.getByLabelText("로그아웃 상태 정규식 (선택)"), "로그인 필요")
     await user.click(screen.getByRole("button", { name: "로그인 계정 등록" }))
     await waitFor(() => expect(fetchStub.mock.calls.some(([path]) => path === "/api/zap-accounts")).toBe(true))
     const saved = fetchStub.mock.calls.find(([path]) => path === "/api/zap-accounts")
     expect((saved?.[1] as RequestInit).body?.toString()).toContain("password=memory-secret")
+    expect((saved?.[1] as RequestInit).body?.toString()).toContain("loggedInIndicator=%EB%82%B4+%EA%B3%84%EC%A0%95")
+    expect((saved?.[1] as RequestInit).body?.toString()).toContain("loggedOutIndicator=%EB%A1%9C%EA%B7%B8%EC%9D%B8+%ED%95%84%EC%9A%94")
 
     await user.click(screen.getByRole("checkbox", { name: /ZAP A/ }))
     await user.click(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" }))

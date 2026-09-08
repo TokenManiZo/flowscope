@@ -101,6 +101,9 @@ class ZapClientTest {
             assertTrue(clientQuery.get().contains("browser=chrome-headless"));
             assertTrue(clientQuery.get().contains("subtreeOnly=true"));
             assertTrue(clientQuery.get().contains("scopeCheck=STRICT"));
+            assertTrue(clientQuery.get().contains("maxCrawlDepth=5"));
+            assertTrue(clientQuery.get().contains("numberOfBrowsers=1"));
+            assertTrue(clientQuery.get().contains("logoutAvoidance=true"));
             assertEquals("{\"recordsToScan\":\"0\"}", client.passiveRecordsToScan());
             assertEquals("{\"scanners\":[]}", client.passiveScanners());
             assertEquals("{\"Result\":\"OK\"}", client.enablePassiveScan());
@@ -308,6 +311,9 @@ class ZapClientTest {
             assertTrue(clientSpider.get().contains("userName=FlowScope+user+A"));
             assertTrue(clientSpider.get().contains("browser=chrome-headless"));
             assertTrue(clientSpider.get().contains("scopeCheck=STRICT"));
+            assertTrue(clientSpider.get().contains("maxCrawlDepth=5"));
+            assertTrue(clientSpider.get().contains("numberOfBrowsers=1"));
+            assertTrue(clientSpider.get().contains("logoutAvoidance=true"));
         } finally {
             server.stop(0);
         }

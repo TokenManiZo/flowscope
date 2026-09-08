@@ -18,7 +18,8 @@ FLOWSCOPE_ZAP_API_KEY="$(tr -d '\r\n' < "$key_file")"
 FLOWSCOPE_ZAP_KEY_FILE="$key_file"
 export FLOWSCOPE_ZAP_KEY_FILE
 
-docker compose --project-name flowscope-zap --file "$repo_dir/infra/zap/compose.yaml" up --detach --build --wait --wait-timeout 120
+docker compose --project-name flowscope-zap --file "$repo_dir/infra/zap/compose.yaml" \
+  up --detach --build --force-recreate --wait --wait-timeout 120
 
 zap_port="${FLOWSCOPE_ZAP_PORT:-8089}"
 curl_config="$(mktemp "${TMPDIR:-/tmp}/flowscope-zap-up.XXXXXX")"

@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-09, D-135 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한 뒤 명시적인 인증 성공이 있을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. ZAP 2.17 REST에 없는 verification auto-detect action은 호출하지 않는다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-09, D-136 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한다. 같은 run·계정의 실제 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치하고 더 나중 로그아웃 정규식 Evidence가 없을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -114,7 +114,7 @@ orchestrator = SYSTEM 또는 HUMAN
 - `/admin` 경로나 `role=admin` 문자열은 실제 서버 권한의 증거가 아니다.
 - 잘못된 사용자 병합이나 역할 추정은 BOLA/BFLA의 공격자·소유자·정상 대조를 바꾼다.
 
-따라서 HUMAN/Request Lab은 사용자가 Burp 브라우저에서 명시적으로 캡처해 `ACTIVE`가 된 메모리 Session Broker만 재사용한다. ZAP 계정 lane은 별도다. 사용자가 target·로그인 URL·ID·비밀번호·역할을 등록하면 자격증명은 현재 Burp 프로세스 메모리에만 두고 ZAP Browser Based Authentication API 호출 시 사용한다. 둘을 한 저장소로 합치면 Burp 브라우저 세션과 ZAP의 Chromium 세션을 같은 것으로 오인하므로 분리한다.
+따라서 HUMAN/Request Lab은 사용자가 Burp 브라우저에서 명시적으로 캡처해 `ACTIVE`가 된 메모리 Session Broker만 재사용한다. ZAP 계정 lane은 별도다. 사용자가 target·로그인 URL·ID·비밀번호·역할·로그인 성공 정규식과 선택적 로그아웃 정규식을 등록하면 이 값은 현재 Burp 프로세스 메모리에만 두고 ZAP Browser Based Authentication 및 응답 Evidence 확인에 사용한다. 둘을 한 저장소로 합치면 Burp 브라우저 세션과 ZAP의 Chromium 세션을 같은 것으로 오인하므로 분리한다.
 
 기본 화면의 정보 단위는 fingerprint가 아니라 `AccountProfile`이다. 한 번의 로그인에서 Cookie·Bearer·JWT subject가 함께 관측되어도 `test1` 카드 하나만 보이며 상태와 다음 행동을 한국어로 표시한다. 비가역 fingerprint는 같은 카드의 접힌 **기술 정보**로 들어가고, 계정에 아직 연결되지 않은 기록만 **고급 세션 진단**에서 다룬다. 내부 구현 단서를 세 계정처럼 평면 나열하면 사용자가 실제 principal 수를 오해하므로, 수집은 세밀하게 유지하면서 표현만 계정 중심 projection으로 바꿨다.
 
@@ -122,7 +122,7 @@ orchestrator = SYSTEM 또는 HUMAN
 
 빠른 시작의 HUMAN 계정 선택에는 `ACTIVE` Session Broker 계정만 표시한다. 이 선택은 브라우저 신원을 덮어쓰는 라벨이 아니다. 실제 요청의 자격증명이 선택한 broker 계정과 exact match할 때만 해당 계정으로 기록하고, 불일치는 미확정 상태로 남긴다. ZAP 실행 신원에는 해당 target에 등록한 ZAP 로그인 계정만 표시하며, `ANONYMOUS`는 로그인 계정 역할로 등록할 수 없다.
 
-같은 서비스의 동일 인증 지문이 이미 다른 등록 계정에 연결돼 있으면 새 HUMAN 계정으로 자동 이동하지 않는다. 현재 캡처는 `동일 인증정보 충돌`로 표시하고 HUMAN/Request Lab 주입에서 제외한다. ZAP은 cookie fingerprint로 계정을 추측하지 않는다. 해당 lane에서 ZAP이 명시적으로 `authSuccessful=true`를 반환한 뒤에만 안전한 `laneAccountId`를 SCANNER Evidence 신원으로 사용한다.
+같은 서비스의 동일 인증 지문이 이미 다른 등록 계정에 연결돼 있으면 새 HUMAN 계정으로 자동 이동하지 않는다. 현재 캡처는 `동일 인증정보 충돌`로 표시하고 HUMAN/Request Lab 주입에서 제외한다. ZAP은 cookie fingerprint로 계정을 추측하지 않는다. 해당 lane의 `ZAP_AUTHENTICATION` 응답이 필수 성공 정규식과 일치한 뒤에만 `laneAccountId`를 SCANNER Evidence 신원으로 사용한다. API `OK`나 인증 시각만으로는 이를 허용하지 않는다.
 
 ## 7. LLM 실행과 과거 기록의 분리
 

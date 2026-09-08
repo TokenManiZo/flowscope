@@ -40,6 +40,10 @@ final class FakeZap {
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/authentication/action/setAuthenticationMethod/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/authentication/action/setLoggedInIndicator/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/authentication/action/setLoggedOutIndicator/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/sessionManagement/action/setSessionManagementMethod/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/users/action/newUser/", exchange -> zapReply(exchange,

@@ -1,11 +1,11 @@
 # FlowScope 1.2.0-beta.46 제품 개발·검증 계획
 
-> **읽는 법:** 현재 우선순위는 D-135 FlowScope Docker Chromium 단일 runtime을 beta.46 JAR로 실제 Burp에 재로드해 로그인·복수 계정까지 검증하는 것이다. Docker daemon/API/session와 직접 비로그인 Client HTTP 200 gate는 완료했고 beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** 현재 우선순위는 D-136 인증 응답 Evidence gate를 beta.46 JAR로 실제 Burp에 재로드해 검증하는 것이다. 별도 실물 Docker/기록 프록시에서는 익명·정상 계정 2개·오류 비밀번호 차단을 완료했고, 실제 Burp와 Windows gate가 남았다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
 
 ## 현재 우선순위 · ZAP 직접 브라우저 인증
 
 1. HUMAN/Request Lab의 Session Broker와 ZAP 로그인 계정 vault를 분리하고 raw 자격증명을 현재 프로세스 밖으로 내보내지 않는다.
-2. 계정마다 이름 없는 ZAP session과 임시 Context/user를 만들고 FlowScope Docker Chromium의 Browser Based Authentication과 session auto-detect를 설정한 뒤 명시적 `authSuccessful=true`가 있을 때만 account-scoped `chrome-headless` strict Client Spider를 실행한다. 비로그인도 같은 browser를 명시한다. ZAP 2.17 REST에 없는 verification component는 호출하지 않고 Traditional/AJAX도 호출하지 않는다.
+2. 계정마다 이름 없는 ZAP session과 임시 Context/user를 만들고 FlowScope Docker Chromium의 Browser Based Authentication과 session auto-detect를 설정한다. ZAP action의 `OK`나 인증 시각이 아니라 같은 run·계정의 실제 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치할 때만 account-scoped `chrome-headless` strict Client Spider를 실행한다. 비로그인도 같은 browser를 명시하고 Traditional/AJAX는 호출하지 않는다.
 3. valid campaign capability를 통과한 직접 인증 SCANNER 요청의 ZAP Cookie/Authorization을 보존하고, 명시적 인증 성공이 있는 `laneAccountId`만 Evidence 신원으로 사용한다.
 4. 성공·실패·취소에서 crawler quiescence와 임시 user/Context cleanup을 확인하며 실패한 격리 상태로 후속 계정을 실행하지 않는다.
 5. React에서 계정 등록/폐기, 인증 상태·브라우저·단계·경과·heartbeat, API 정의 입력, 캠페인 취소를 제공하고 비밀값은 server 응답·query cache에 반환하지 않는다.
@@ -13,11 +13,11 @@
 7. Burp scanner listener 8081이 열린 실제 ZAP 2.17 환경에서 비로그인+로그인 2계정, 로그인 실패, capture 귀속, 쿠키 격리, strict Client와 0건 실패, Passive/Alert, 정의 import, 취소·cleanup을 검증한다.
 8. Windows bundle/doctor/Docker 실기기와 CAPTCHA·MFA·WebAuthn·복합 SSO 한계를 별도 운영 gate로 남긴다.
 
-D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완료했다. D-134는 실제 Burp 로그인 lane에서 드러난 `verification` API `no_implementor`를 제거했다. D-135는 bundle에 Chromium/ChromeDriver 포함 이미지를 추가하고 모든 lane을 `chrome-headless`로 고정했다. 최종 container에서 실제 비로그인 Client Spider가 exact Context의 HTTP 200을 1건 수집했다. 이 결과는 7번의 beta.46 JAR 실제 target/Burp 8081 로그인·복수 계정 gate를 대신하지 않는다.
+D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완료했다. D-134는 실제 Burp 로그인 lane에서 드러난 `verification` API `no_implementor`를 제거했다. D-135는 bundle에 Chromium/ChromeDriver 포함 이미지를 추가하고 모든 lane을 `chrome-headless`로 고정했다. D-136은 `OK`/인증 시각의 오류 비밀번호 오수락을 실물로 반증하고 같은 run·계정의 실제 인증 응답 Evidence를 성공 gate로 바꿨다. 별도 API 18889/기록 프록시 18881 하네스에서 익명·alice·bob Client 탐색과 오류 비밀번호의 Client 전 차단을 확인했다. 이 결과는 7번의 실제 Burp beta.46 JAR 재로드를 대신하지 않는다.
 
-**현재 상태:** 1~6, D-133 daemon/API/session gate와 D-135 직접 Chromium Client gate를 완료했다. beta.46 JAR의 실제 Burp 재로드·로그인/복수 계정과 7~8의 target·Windows 운영 gate는 대기한다.
+**현재 상태:** 1~6과 D-136 별도 실물 로그인/복수 계정/오류 비밀번호 gate를 완료했다. 7은 합성 기록서버·기록 프록시 범위에서는 완료했지만 실제 Burp beta.46 JAR과 승인 대상의 검증은 대기한다. 8의 Windows 운영 gate도 대기한다.
 
-현재 구현 계약은 [D-135](decisions.md#d-135--zap은-bundle의-chromium-docker-runtime-하나로-고정한다-2026-09-09), 검증 결과는 [beta-validation](beta-validation.md), 인계는 [HANDOFF](HANDOFF.md)가 정본이다.
+현재 구현 계약은 [D-136](decisions.md#d-136--zap-로그인-성공은-api-상태가-아니라-같은-lane의-응답-evidence로-확인한다-2026-09-09), 검증 결과는 [beta-validation](beta-validation.md), 인계는 [HANDOFF](HANDOFF.md)가 정본이다.
 
 ## 현재 우선순위 · 독립 LLM Explorer
 
