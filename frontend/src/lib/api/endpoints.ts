@@ -12,6 +12,7 @@ import type {
   ScannerRunMutationResult,
   Snapshot,
   ZapStatus,
+  ZapAccount,
   ManagedSession,
   ExplorerRunEnvelope,
   ExplorerAccountSaveResult,
@@ -47,8 +48,17 @@ export const getManagedSessions = (signal?: AbortSignal) => apiFetch<{ sessions:
 export const manageSessionCapture = (action: "begin" | "end" | "revoke", account: string) => postForm<ApiSuccess>("/api/session-capture", { action, account })
 export const getZapStatus = (signal?: AbortSignal) => apiFetch<ZapStatus>("/api/zap-status", formSignal(signal))
 export const getScannerRun = (signal?: AbortSignal) => apiFetch<ScannerRunEnvelope>("/api/scanner-run", formSignal(signal))
-export const startScannerRun = (target: string, accounts: string, anonymous: boolean) =>
-  postForm<ScannerRunMutationResult>("/api/scanner-run", { target, accounts, anonymous: String(anonymous) }, [202])
+export const startScannerRun = (target: string, accounts: string, anonymous: boolean, definitions = "") =>
+  postForm<ScannerRunMutationResult>("/api/scanner-run", {
+    target,
+    accounts,
+    anonymous: String(anonymous),
+    ...(definitions.trim() ? { definitions } : {}),
+  }, [202])
+export const cancelScannerRun = () => postForm<ScannerRunMutationResult>("/api/scanner-run", { action: "cancel" })
+export const saveZapAccount = (values: { id: string; label: string; role: string; service: string; loginUrl: string; username: string; password: string }) =>
+  postForm<{ success: true; message: string; account: ZapAccount }>("/api/zap-accounts", { action: "save", ...values })
+export const deleteZapAccount = (id: string) => postForm<ApiSuccess>("/api/zap-accounts", { action: "delete", id })
 export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))
 export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean }) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "start", ...values, anonymous: String(values.anonymous) }, [202])

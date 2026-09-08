@@ -50,6 +50,7 @@ import io.flowscope.integration.LocalZapApiKey;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.ZapCampaign;
+import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.SqliteProjectStore;
 import io.flowscope.integration.RunExecutionLedger;
@@ -201,6 +202,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
     private final SessionBroker sessionBroker = new SessionBroker();
+    private final ZapAccountVault zapAccounts = new ZapAccountVault();
     private final TransientExchangeVault rawExchanges = new TransientExchangeVault(
             RAW_REQUEST_LIMIT_BYTES, RAW_RESPONSE_LIMIT_BYTES, RAW_EXCHANGE_MEMORY_BYTES);
     private final ProjectStore projectStore = new ProjectStore();
@@ -224,6 +226,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private volatile String scannerCapability = "";
     private volatile String scannerCapabilityRejectionRunId = "";
     private final AtomicLong scannerCapabilityRejections = new AtomicLong();
+    private volatile String scannerDirectAuthenticationRunId = "";
     private ZapClient zapClient;
     private volatile ZapCampaign zapCampaign;
     private ExplorerAccountVault explorerAccounts;
@@ -352,6 +355,11 @@ public final class FlowScopeExtension implements BurpExtension {
                     throw new IllegalStateException("ZAP campaign provenance capability is missing or invalid");
                 }
                 prepared = prepared.withRemovedHeader("X-FlowScope-Scanner-Capability");
+                // Browser Based Authentication이 만드는 Cookie/Authorization은 ZAP 사용자 세션의 일부다.
+                // 이 lane에서는 SessionBroker로 교체하지 않고 ZAP이 만든 값을 그대로 대상에 전달한다.
+                if (scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId)) {
+                    return prepared.withRemovedHeader("Proxy-Authorization");
+                }
             }
             for (String header : SessionBroker.managedHeaderNames()) {
                 if (profile.source() == Source.SCANNER && context.accountId() == null
@@ -375,6 +383,11 @@ public final class FlowScopeExtension implements BurpExtension {
         return java.security.MessageDigest.isEqual(
                 expected.getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 (supplied == null ? "" : supplied).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    static boolean scannerUsesDirectAuthentication(RunContextRegistry.Context context, String directRunId) {
+        return context != null && context.orchestrator() == Orchestrator.SYSTEM
+                && directRunId != null && !directRunId.isBlank() && context.runId().equals(directRunId);
     }
 
     /** 프록시 트래픽: 리스너 포트로 소스를 구분한다 (F-01). */
@@ -572,11 +585,14 @@ public final class FlowScopeExtension implements BurpExtension {
             rec.sourceDetail = effectiveDetail(profile.source(), profile.detail(), context);
             rec.orchestrator = context.orchestrator();
             rec.tool = effectiveTool(profile.source(), profile.detail(), context);
-            rec.phase = context.phase();
+            rec.phase = rec.sourceDetail == SourceDetail.ZAP_AUTHENTICATION
+                    ? RunPhase.SESSION_SETUP : context.phase();
             rec.runId = context.runId();
             rec.laneAccountId = context.accountId();
         }
-        if (accountId != null && !"anon".equals(fp)) {
+        boolean directZapAccount = profile.source() == Source.SCANNER
+                && scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId);
+        if (accountId != null && !"anon".equals(fp) && !directZapAccount) {
             try { analysisConfig.bindSession(rec.service, fp, accountId); }
             catch (AnalysisConfig.SessionBindingConflictException error) {
                 sessionBroker.markCredentialConflict(accountId);
@@ -711,7 +727,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 String accountId = resolveObservedAccount(Source.HUMAN,
                         context == null ? null : context.accountId(), captureAccountId, detectedAccountId);
                 if (accountId != null) handle = sessionBroker.handleForAccount(accountId);
-            } else if (context != null && context.accountId() != null) {
+            } else if (context != null && context.accountId() != null
+                    && !scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId)) {
                 handle = sessionBroker.handleForAccount(context.accountId());
             }
             if (handle == null) return;
@@ -765,6 +782,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private static RunPhase phaseOf(SourceDetail detail) {
         return switch (detail) {
+            case ZAP_AUTHENTICATION -> RunPhase.SESSION_SETUP;
             case LLM_EXPLORER, ZAP_SPIDER, ZAP_API_IMPORT, ZAP_AJAX_SPIDER, ZAP_CLIENT_SPIDER,
                     ZAP_PASSIVE_SCAN, ZAP_ACTIVE_SCAN,
                     OTHER_SCANNER -> RunPhase.EXPLORATION;
@@ -871,6 +889,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 archivedAssessments = List.of();
                 archivedValidations = List.of();
                 resetIntegrationWorkflow();
+                resetZapSecrets();
                 activeProjectDatabase = null;
                 databaseSavedRevision.set(-1);
                 api.logging().logToOutput("FlowScope 샘플 프로젝트 열기: " + loaded.size()
@@ -901,6 +920,7 @@ public final class FlowScopeExtension implements BurpExtension {
         archivedAssessments = List.of();
         archivedValidations = List.of();
         resetIntegrationWorkflow();
+        resetZapSecrets();
         resetExplorerSecrets();
         publishAnalysis(analysisEpoch, empty);
         api.logging().logToOutput("FlowScope 수집 데이터가 삭제되었습니다.");
@@ -972,6 +992,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 droppedRecords.set(0);
                 publishAnalysis(analysisEpoch, result);
                 resetIntegrationWorkflow();
+                resetZapSecrets();
                 archivedAssessments = data.assessments();
                 archivedValidations = data.validations();
                 executionLedger.replace(data.runAttempts());
@@ -1097,6 +1118,18 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public RunContextRegistry contexts() { return runContexts; }
             @Override public SessionBroker sessions() { return sessionBroker; }
+            @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
+            @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
+                ZapAccountVault.View saved = zapAccounts.save(input);
+                io.flowscope.core.AccessRole role = io.flowscope.core.AccessRole.valueOf(saved.role());
+                analysisConfig.upsertAccount(new io.flowscope.core.AccountProfile(
+                        saved.id(), saved.label(), saved.service(), role));
+                scheduleRebuild();
+                return saved;
+            }
+            @Override public void removeZapAccount(String id) {
+                zapAccounts.remove(id);
+            }
             @Override public List<String> scopeEntries() { return scope.entries(); }
             @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
             @Override public List<io.flowscope.integration.RunExecutionLedger.Summary> executionSummaries() {
@@ -1336,8 +1369,14 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public long scannerCapabilityRejections(String runId) {
                     return runId.equals(scannerCapabilityRejectionRunId) ? scannerCapabilityRejections.get() : 0;
                 }
+                @Override public void scannerDirectAuthentication(String runId, boolean enabled) {
+                    if (enabled) scannerDirectAuthenticationRunId = runId;
+                    else if (runId.equals(scannerDirectAuthenticationRunId)) {
+                        scannerDirectAuthenticationRunId = "";
+                    }
+                }
                 @Override public RunContextRegistry contexts() { return runContexts; }
-                @Override public SessionBroker sessions() { return sessionBroker; }
+                @Override public ZapAccountVault zapAccounts() { return zapAccounts; }
                 @Override public boolean approve(String action, String target) {
                     return approveInBurp(action, target);
                 }
@@ -1358,6 +1397,10 @@ public final class FlowScopeExtension implements BurpExtension {
         explorer.accounts().forEach(account -> analysisConfig.removeAccount(account.id()));
         explorer.clearAccounts();
         try { explorer.clear(); } catch (RuntimeException ignored) { }
+    }
+
+    private void resetZapSecrets() {
+        zapAccounts.clear();
     }
 
     private boolean approveInBurp(String action, String target) {
@@ -1381,6 +1424,7 @@ public final class FlowScopeExtension implements BurpExtension {
         if (webServer != null) webServer.close();
         if (explorer != null) explorer.close();
         if (zapCampaign != null) zapCampaign.close();
+        zapAccounts.close();
         if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {
             try {
                 java.util.concurrent.Future<?> save = worker.submit(() -> {

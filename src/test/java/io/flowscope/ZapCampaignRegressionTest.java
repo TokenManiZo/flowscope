@@ -4,14 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import io.flowscope.core.*;
-import io.flowscope.integration.SessionBroker;
+import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.ZapCampaign;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import java.net.InetSocketAddress;
-import java.net.URI;
-import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.*;
 import static io.flowscope.FakeZap.*;
@@ -40,25 +38,106 @@ final class ZapCampaignRegressionTest {
     }
 
     @Test
+    void authenticatedLaneRejectsDiskBackedZapBeforeSendingCredentials() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        ZapAccountVault accounts = new ZapAccountVault();
+        accounts.save(new ZapAccountVault.Input("zap-user-a", "USER A", "USER", target,
+                target + "login", "user-a@example.test", "password-a"));
+        AtomicBoolean credentialsSent = new AtomicBoolean();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.removeContext("/JSON/core/view/zapHomePath/");
+        zapServer.createContext("/JSON/core/view/zapHomePath/", exchange -> zapReply(exchange,
+                "{\"zapHomePath\":\"/home/zap/.ZAP/\"}"));
+        zapServer.removeContext("/JSON/users/action/setAuthenticationCredentials/");
+        zapServer.createContext("/JSON/users/action/setAuthenticationCredentials/", exchange -> {
+            credentialsSent.set(true);
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new ZapCampaign(new ZapCampaign.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public ZapAccountVault zapAccounts() { return accounts; }
+                @Override public boolean approve(String action, String value) { return false; }
+            });
+
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> server.startDeterministicZapCampaign(target, List.of("zap-user-a"), false));
+
+            assertTrue(error.getMessage().contains("ephemeral runtime"), error.getMessage());
+            assertFalse(credentialsSent.get());
+            assertNull(contexts.current(Source.SCANNER));
+        } finally {
+            accounts.close();
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
+    void immediateCancellationDoesNotLeaveTheCampaignPermanentlyLocked() throws Exception {
+        String target = "http://127.0.0.1:8888/";
+        RunContextRegistry contexts = new RunContextRegistry();
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new ZapCampaign(new ZapCampaign.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public boolean approve(String action, String value) { return false; }
+            });
+
+            server.startDeterministicZapCampaign(target, List.of(), true);
+            assertEquals("CANCELLED", server.cancelDeterministicZapBaseline().path("status").asText());
+
+            JsonNode restarted = null;
+            for (int attempt = 0; attempt < 100 && restarted == null; attempt++) {
+                try {
+                    restarted = server.startDeterministicZapCampaign(target, List.of(), true);
+                } catch (IllegalStateException error) {
+                    assertTrue(error.getMessage().contains("cleanup is still running"), error.getMessage());
+                    Thread.sleep(10);
+                }
+            }
+            assertNotNull(restarted, "cancelled task must eventually release the workflow lifecycle gate");
+            assertEquals("RUNNING", restarted.path("status").asText());
+            server.cancelDeterministicZapBaseline();
+        } finally {
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
     void cancellingZapBaselineStopsOwnedCrawlerClearsCapabilityAndAbortsRun() throws Exception {
         String target = "http://127.0.0.1:8888/";
         RunContextRegistry contexts = new RunContextRegistry();
-        AtomicBoolean spiderStarted = new AtomicBoolean();
-        AtomicBoolean spiderStopped = new AtomicBoolean();
+        AtomicBoolean clientStarted = new AtomicBoolean();
+        AtomicBoolean clientStopped = new AtomicBoolean();
         AtomicReference<String> capabilityRun = new AtomicReference<>("");
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 0);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+            clientStarted.set(true);
             zapReply(exchange, "{\"scan\":\"1\"}");
         });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> {
-            spiderStarted.set(true); // status polling means the returned scan ID is owned by the campaign
-            zapReply(exchange, spiderStopped.get() ? "{\"status\":\"100\"}" : "{\"status\":\"0\"}");
+        zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> {
+            zapReply(exchange, clientStopped.get() ? "{\"status\":\"100\"}" : "{\"status\":\"0\"}");
         });
-        zapServer.createContext("/JSON/spider/action/stop/", exchange -> {
-            spiderStopped.set(true);
+        zapServer.createContext("/JSON/clientSpider/action/stop/", exchange -> {
+            clientStopped.set(true);
             zapReply(exchange, "{\"Result\":\"OK\"}");
         });
         zapServer.start();
@@ -80,13 +159,13 @@ final class ZapCampaignRegressionTest {
 
             JsonNode started = server.startDeterministicZapCampaign(target, List.of(), true);
             assertEquals("RUNNING", started.path("status").asText());
-            for (int i = 0; i < 100 && !spiderStarted.get(); i++) Thread.sleep(10);
-            assertTrue(spiderStarted.get());
+            for (int i = 0; i < 100 && !clientStarted.get(); i++) Thread.sleep(10);
+            assertTrue(clientStarted.get());
 
             JsonNode cancelled = server.cancelDeterministicZapBaseline();
 
             assertEquals("CANCELLED", cancelled.path("status").asText(), cancelled.toString());
-            assertTrue(spiderStopped.get());
+            assertTrue(clientStopped.get());
             assertEquals("", capabilityRun.get());
             assertNull(contexts.current(Source.SCANNER));
         } finally {
@@ -104,16 +183,15 @@ final class ZapCampaignRegressionTest {
         registerSafeZapEnvironment(zapServer, 0);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
-            rejected.incrementAndGet();
-            zapReply(exchange, "{\"scan\":\"1\"}");
-        });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange,
-                "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
             clientStarted.set(true);
+            rejected.incrementAndGet();
             zapReply(exchange, "{\"scan\":\"2\"}");
         });
+        zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
+                "{\"status\":\"100\"}"));
+        zapServer.createContext("/JSON/clientSpider/action/stop/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
         zapServer.start();
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
@@ -140,7 +218,7 @@ final class ZapCampaignRegressionTest {
             assertEquals("FAILED", status.path("status").asText(), status.toString());
             assertEquals(1, status.path("capability_rejected_requests").asLong());
             assertTrue(status.path("error").asText().contains("run capability"), status.toString());
-            assertFalse(clientStarted.get(), "a rejected lane must not advance to the next crawler");
+            assertTrue(clientStarted.get(), "the Client Spider request must trigger the capability rejection");
             assertNull(contexts.current(Source.SCANNER));
         } finally {
             zapServer.stop(0);
@@ -195,7 +273,7 @@ final class ZapCampaignRegressionTest {
     }
 
     @Test
-    void deterministicZapBaselineImportsExplicitDefinitionRunsSpidersWaitsForPassiveAndPublishesAlerts() throws Exception {
+    void deterministicZapBaselineImportsExplicitDefinitionRunsOnlyClientSpiderAndPublishesAlerts() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
                 laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
@@ -210,15 +288,11 @@ final class ZapCampaignRegressionTest {
             definitionQuery.set(exchange.getRequestURI().getRawQuery());
             zapReply(exchange, "{\"Result\":\"OK\"}");
         });
+        AtomicBoolean traditionalStarted = new AtomicBoolean();
         zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            List<RequestRecord> copy = new ArrayList<>(records.get());
-            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
-            records.set(copy);
-            zapReply(exchange, "{\"scan\":\"1\"}");
+            traditionalStarted.set(true);
+            zapReply(exchange, "{\"scan\":\"unexpected\"}");
         });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
             List<RequestRecord> copy = new ArrayList<>(records.get());
@@ -232,15 +306,8 @@ final class ZapCampaignRegressionTest {
         AtomicBoolean ajaxStarted = new AtomicBoolean();
         zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
             ajaxStarted.set(true);
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            List<RequestRecord> copy = new ArrayList<>(records.get());
-            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_AJAX_SPIDER, RunPhase.EXPLORATION, context.runId()));
-            records.set(copy);
-            zapReply(exchange, "{\"Result\":\"OK\"}");
+            zapReply(exchange, "{\"Result\":\"unexpected\"}");
         });
-        zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange,
-                "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"0\"}"));
         zapServer.createContext("/JSON/alert/view/alerts/", exchange -> {
@@ -279,10 +346,9 @@ final class ZapCampaignRegressionTest {
             assertEquals(1, status.at("/lanes/0/definition_imports").asInt());
             assertTrue(definitionQuery.get().contains("contextId="));
             assertEquals(501, status.at("/alert_count").asInt());
-            assertEquals(1, status.at("/lanes/0/traditional_captures").asInt());
-            assertEquals(2, status.at("/lanes/0/rendered_captures").asInt());
-            assertTrue(status.at("/lanes/0/ajax_executed").asBoolean());
-            assertTrue(ajaxStarted.get(), "broad discovery must run both rendered spiders");
+            assertEquals(1, status.at("/lanes/0/client_captures").asInt());
+            assertFalse(traditionalStarted.get(), "Traditional Spider must not be used by the Client-only campaign");
+            assertFalse(ajaxStarted.get(), "AJAX Spider must not be used by the Client-only campaign");
             assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
             assertFalse(status.toString().contains("raw-alert-secret"));
         } finally {
@@ -291,7 +357,7 @@ final class ZapCampaignRegressionTest {
     }
 
     @Test
-    void deterministicZapBaselineFallsBackWhenClientCompletesWithoutRenderedTraffic() throws Exception {
+    void deterministicZapBaselineFailsWhenTheOnlyCrawlerCapturesNoTraffic() throws Exception {
         String target = "http://127.0.0.1:8888/";
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
@@ -303,15 +369,6 @@ final class ZapCampaignRegressionTest {
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 1);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            List<RequestRecord> copy = new ArrayList<>(records.get());
-            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
-            records.set(copy);
-            zapReply(exchange, "{\"scan\":\"1\"}");
-        });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
@@ -349,13 +406,11 @@ final class ZapCampaignRegressionTest {
                 Thread.sleep(10);
             }
             assertNotNull(status);
-            assertTrue(ajaxStarted.get(), status.toString());
-            assertEquals("COMPLETED_WITH_WARNINGS", status.at("/status").asText(),
-                    status.toString());
-            assertEquals(1, status.at("/lanes/0/rendered_captures").asInt());
-            assertTrue(status.at("/lanes/0/warning").asText()
-                    .contains("completed without captured rendered traffic"));
-            assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
+            assertFalse(ajaxStarted.get(), status.toString());
+            assertEquals("FAILED", status.at("/status").asText(), status.toString());
+            assertEquals(0, status.at("/lanes/0/client_captures").asInt());
+            assertTrue(status.at("/error").asText().contains("Client Spider completed without captured"));
+            assertFalse(contexts.completedExplorations().contains(Source.SCANNER));
         } finally {
             zapServer.stop(0);
         }
@@ -435,7 +490,7 @@ final class ZapCampaignRegressionTest {
             assertNotNull(status);
             assertEquals("COMPLETED_WITH_WARNINGS",
                     status.at("/status").asText(), status.toString());
-            assertEquals(2, status.at("/captured_records").asInt());
+            assertEquals(1, status.at("/captured_records").asInt());
             assertFalse(status.at("/lanes/0/passive_complete").asBoolean());
             assertEquals(5, status.at("/lanes/0/passive_remaining").asInt());
             assertEquals(1, status.at("/lanes/0/alert_count").asInt());
@@ -460,49 +515,25 @@ final class ZapCampaignRegressionTest {
         String target = "http://127.0.0.1:8888/";
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>());
-        AtomicLong spiderStarts = new AtomicLong();
-        AnalysisConfig config = new AnalysisConfig();
-        SessionBroker sessions = new SessionBroker();
-        AccountProfile account = new AccountProfile("user-a", "USER A", target, AccessRole.USER);
-        config.upsertAccount(account);
-        String handle = sessions.beginCapture(account, java.time.Instant.now());
-        sessions.observeRequest(handle, URI.create(target + "login"),
-                java.util.Map.of("Authorization", "Bearer user-a"), java.time.Instant.now());
-        sessions.observeResponse(handle, URI.create(target + "account"), 200, null, "{}", List.of(),
-                java.time.Instant.now());
-        sessions.endCapture(handle);
+        AtomicLong clientStarts = new AtomicLong();
+        ZapAccountVault accounts = new ZapAccountVault();
+        accounts.save(new ZapAccountVault.Input("zap-user-a", "USER A", "USER", target,
+                target + "login", "user-a@example.test", "password-a"));
 
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 1);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
-            spiderStarts.incrementAndGet();
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+            clientStarts.incrementAndGet();
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
             List<RequestRecord> copy = new ArrayList<>(records.get());
             copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
+                    SourceDetail.ZAP_CLIENT_SPIDER, RunPhase.EXPLORATION, context.runId()));
             records.set(copy);
-            zapReply(exchange, "{\"scan\":\"1\"}");
+            zapReply(exchange, "{\"scan\":\"2\"}");
         });
-        AtomicBoolean spiderStopped = new AtomicBoolean();
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> {
-            if (spiderStopped.get()) zapReply(exchange, "{\"status\":\"100\"}");
-            else {
-                byte[] body = "spider status failed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                exchange.sendResponseHeaders(500, body.length);
-                exchange.getResponseBody().write(body);
-                exchange.close();
-            }
-        });
-        zapServer.createContext("/JSON/spider/action/stop/", exchange -> {
-            spiderStopped.set(true);
-            zapReply(exchange, "{\"Result\":\"OK\"}");
-        });
-        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
                 "{\"status\":{\"state\":\"COMPLETED\"}}"));
-        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"1\"}"));
         zapServer.removeContext("/JSON/pscan/view/currentTasks/");
@@ -526,13 +557,13 @@ final class ZapCampaignRegressionTest {
                 @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
                 @Override public ZapClient zap() { return zap; }
                 @Override public RunContextRegistry contexts() { return contexts; }
-                @Override public SessionBroker sessions() { return sessions; }
+                @Override public ZapAccountVault zapAccounts() { return accounts; }
                 @Override public boolean approve(String action, String value) { return false; }
             });
 
             JsonNode started = startBaseline( "{\"target\":\"" + target
                     + "\",\"run_id\":\"isolation-stop\",\"include_anonymous\":true,"
-                    + "\"account_ids\":[\"user-a\"]}");
+                    + "\"account_ids\":[\"zap-user-a\"]}");
 
             JsonNode status = null;
             for (int i = 0; i < 100; i++) {
@@ -548,7 +579,7 @@ final class ZapCampaignRegressionTest {
                     .contains("Passive background 작업이 제한시간 안에 종료되지 않음"));
             assertTrue(status.at("/events").toString()
                     .contains("이전 신원 격리 실패로 실행하지 않음"));
-            assertEquals(1, spiderStarts.get(), "the account lane must not start with dirty passive work");
+            assertEquals(1, clientStarts.get(), "the account lane must not start with dirty passive work");
             assertFalse(contexts.completedExplorations().contains(Source.SCANNER));
         } finally {
             restoreProperty("flowscope.zap.poll.ms", previousPoll);
@@ -556,30 +587,20 @@ final class ZapCampaignRegressionTest {
             restoreProperty("flowscope.zap.passive.stall.ms", previousStall);
             restoreProperty("flowscope.zap.passive.cleanup.ms", previousCleanup);
             zapServer.stop(0);
-            sessions.close();
+            accounts.close();
         }
     }
 
     @Test
-    void failedClientSpiderIsStoppedBeforeAjaxFallbackStarts() throws Exception {
+    void failedClientSpiderIsStoppedAndDoesNotInvokeAnotherCrawler() throws Exception {
         String target = "http://127.0.0.1:8888/";
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>());
         AtomicBoolean clientStopped = new AtomicBoolean();
         AtomicBoolean ajaxStarted = new AtomicBoolean();
-        AtomicBoolean ajaxStartedAfterClientStop = new AtomicBoolean();
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 0);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            List<RequestRecord> copy = new ArrayList<>(records.get());
-            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
-            records.set(copy);
-            zapReply(exchange, "{\"scan\":\"1\"}");
-        });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> {
             if (clientStopped.get()) zapReply(exchange, "{\"status\":{\"state\":\"COMPLETED\"}}");
@@ -596,15 +617,8 @@ final class ZapCampaignRegressionTest {
         });
         zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
             ajaxStarted.set(true);
-            ajaxStartedAfterClientStop.set(clientStopped.get());
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            List<RequestRecord> copy = new ArrayList<>(records.get());
-            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_AJAX_SPIDER, RunPhase.EXPLORATION, context.runId()));
-            records.set(copy);
-            zapReply(exchange, "{\"Result\":\"OK\"}");
+            zapReply(exchange, "{\"Result\":\"unexpected\"}");
         });
-        zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"0\"}"));
         zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange, "{\"alerts\":[]}"));
@@ -631,13 +645,10 @@ final class ZapCampaignRegressionTest {
                 Thread.sleep(10);
             }
             assertNotNull(status);
-            assertEquals("COMPLETED_WITH_WARNINGS",
+            assertEquals("FAILED",
                     status.at("/status").asText(), status.toString());
             assertTrue(clientStopped.get());
-            assertTrue(ajaxStarted.get());
-            assertTrue(ajaxStartedAfterClientStop.get(),
-                    "failed Client Spider must be stopped before AJAX fallback");
-            assertTrue(status.at("/lanes/0/ajax_executed").asBoolean());
+            assertFalse(ajaxStarted.get(), "a failed Client Spider must not invoke AJAX fallback");
         } finally {
             restoreProperty("flowscope.zap.poll.ms", previousPoll);
             zapServer.stop(0);
@@ -653,21 +664,16 @@ final class ZapCampaignRegressionTest {
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 0);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
             rawCaptures.incrementAndGet();
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
             List<RequestRecord> copy = new ArrayList<>(rawRecords.get());
             copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
+                    SourceDetail.ZAP_CLIENT_SPIDER, RunPhase.EXPLORATION, context.runId()));
             rawRecords.set(copy);
-            zapReply(exchange, "{\"scan\":\"1\"}");
+            zapReply(exchange, "{\"scan\":\"2\"}");
         });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
-        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"2\"}"));
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
-        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> zapReply(exchange,
-                "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"0\"}"));
         zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange, "{\"alerts\":[]}"));
@@ -679,7 +685,7 @@ final class ZapCampaignRegressionTest {
                 @Override public Pipeline.Result completionSnapshot() { return Pipeline.run(rawRecords.get()); }
                 @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
                     return source == Source.SCANNER && rawRecords.get().stream().anyMatch(record -> runId.equals(record.runId))
-                            && (detail == null || detail == SourceDetail.ZAP_SPIDER) ? rawCaptures.get() : 0;
+                            && (detail == null || detail == SourceDetail.ZAP_CLIENT_SPIDER) ? rawCaptures.get() : 0;
                 }
                 @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
                 @Override public ZapClient zap() { return zap; }
@@ -697,7 +703,7 @@ final class ZapCampaignRegressionTest {
                 Thread.sleep(10);
             }
             assertNotNull(status);
-            assertEquals("COMPLETED_WITH_WARNINGS", status.at("/status").asText(),
+            assertEquals("COMPLETED", status.at("/status").asText(),
                     status.toString());
             assertEquals(1, status.at("/captured_records").asInt());
         } finally {
@@ -713,46 +719,48 @@ final class ZapCampaignRegressionTest {
         AtomicReference<List<String>> seenAccounts = new AtomicReference<>(new ArrayList<>());
         AtomicReference<List<String>> zapSessions = new AtomicReference<>(new ArrayList<>());
         AtomicBoolean omitUserBTraffic = new AtomicBoolean(true);
-        SessionBroker sessions = new SessionBroker();
-        AnalysisConfig config = new AnalysisConfig();
-        for (String accountId : List.of("user-a", "user-b")) {
-            AccountProfile account = new AccountProfile(accountId, accountId.toUpperCase(), target, AccessRole.USER);
-            config.upsertAccount(account);
-            String handle = sessions.beginCapture(account, java.time.Instant.now());
-            sessions.observeRequest(handle, URI.create(target + "login"),
-                    java.util.Map.of("Authorization", "Bearer " + accountId), java.time.Instant.now());
-            sessions.observeResponse(handle, URI.create(target + "account"), 200, null, "{}", List.of(),
-                    java.time.Instant.now());
-            sessions.endCapture(handle);
+        AtomicLong removedUsers = new AtomicLong();
+        AtomicLong removedContexts = new AtomicLong();
+        ZapAccountVault accounts = new ZapAccountVault();
+        for (String accountId : List.of("zap-user-a", "zap-user-b")) {
+            accounts.save(new ZapAccountVault.Input(accountId, accountId.toUpperCase(), "USER", target,
+                    target + "login", accountId + "@example.test", "password-" + accountId));
         }
 
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 0);
+        zapServer.removeContext("/JSON/users/action/authenticateAsUser/");
+        zapServer.createContext("/JSON/users/action/authenticateAsUser/", exchange -> {
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            List<RequestRecord> copy = new ArrayList<>(records.get());
+            copy.add(observationAt(Source.SCANNER, "anon", 200, "{\"authSuccessful\":true}",
+                    context.detail(), RunPhase.SESSION_SETUP, context.runId(), "/api/auth/login"));
+            records.set(copy);
+            zapReply(exchange, "{\"authSuccessful\":true}");
+        });
+        zapServer.removeContext("/JSON/users/action/removeUser/");
+        zapServer.createContext("/JSON/users/action/removeUser/", exchange -> {
+            removedUsers.incrementAndGet();
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        zapServer.removeContext("/JSON/context/action/removeContext/");
+        zapServer.createContext("/JSON/context/action/removeContext/", exchange -> {
+            removedContexts.incrementAndGet();
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> {
             List<String> copy = new ArrayList<>(zapSessions.get());
             copy.add(exchange.getRequestURI().getRawQuery());
             zapSessions.set(copy);
             zapReply(exchange, "{\"Result\":\"OK\"}");
         });
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
             String account = context.accountId() == null ? "anonymous" : context.accountId();
             List<String> seen = new ArrayList<>(seenAccounts.get());
             seen.add(account);
             seenAccounts.set(seen);
-            if (!(omitUserBTraffic.get() && account.equals("user-b"))) {
-                List<RequestRecord> copy = new ArrayList<>(records.get());
-                copy.add(observation(Source.SCANNER, account, 200, "{}",
-                        SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
-                records.set(copy);
-            }
-            zapReply(exchange, "{\"scan\":\"1\"}");
-        });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
-        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            String account = context.accountId() == null ? "anonymous" : context.accountId();
-            if (!(omitUserBTraffic.get() && account.equals("user-b"))) {
+            if (!(omitUserBTraffic.get() && account.equals("zap-user-b"))) {
                 List<RequestRecord> copy = new ArrayList<>(records.get());
                 copy.add(observation(Source.SCANNER, account, 200, "{}",
                         SourceDetail.ZAP_CLIENT_SPIDER, RunPhase.EXPLORATION, context.runId()));
@@ -762,18 +770,6 @@ final class ZapCampaignRegressionTest {
         });
         zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
                 "{\"status\":{\"state\":\"COMPLETED\"}}"));
-        zapServer.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            String account = context.accountId() == null ? "anonymous" : context.accountId();
-            if (!(omitUserBTraffic.get() && account.equals("user-b"))) {
-                List<RequestRecord> copy = new ArrayList<>(records.get());
-                copy.add(observation(Source.SCANNER, account, 200, "{}",
-                        SourceDetail.ZAP_AJAX_SPIDER, RunPhase.EXPLORATION, context.runId()));
-                records.set(copy);
-            }
-            zapReply(exchange, "{\"Result\":\"OK\"}");
-        });
-        zapServer.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"stopped\"}"));
         zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
                 "{\"recordsToScan\":\"0\"}"));
         zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange, "{\"alerts\":[]}"));
@@ -785,13 +781,13 @@ final class ZapCampaignRegressionTest {
                 @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
                 @Override public ZapClient zap() { return zap; }
                 @Override public RunContextRegistry contexts() { return contexts; }
-                @Override public SessionBroker sessions() { return sessions; }
+                @Override public ZapAccountVault zapAccounts() { return accounts; }
                 @Override public boolean approve(String action, String value) { return false; }
             });
 
             JsonNode failedStart = startBaseline( "{\"target\":\"" + target
                     + "\",\"run_id\":\"campaign-1\",\"include_anonymous\":true,"
-                    + "\"account_ids\":[\"user-a\",\"user-b\"]}");
+                    + "\"account_ids\":[\"zap-user-a\",\"zap-user-b\"]}");
 
             assertTrue(failedStart.at("/campaign_started_at").asLong() > 0);
             assertTrue(failedStart.at("/elapsed_seconds").asLong() >= 0);
@@ -809,7 +805,7 @@ final class ZapCampaignRegressionTest {
             assertEquals("FAILED", failedStatus.at("/status").asText(),
                     failedStatus.toString());
             assertEquals("FAILED", failedStatus.at("/lanes/2/status").asText());
-            assertEquals(List.of("anonymous", "user-a", "user-b"), seenAccounts.get());
+            assertEquals(List.of("anonymous", "zap-user-a", "zap-user-b"), seenAccounts.get());
             assertEquals(3, zapSessions.get().size());
             assertFalse(contexts.completedExplorations().contains(Source.SCANNER));
             assertNull(contexts.current(Source.SCANNER));
@@ -818,7 +814,7 @@ final class ZapCampaignRegressionTest {
             seenAccounts.set(new ArrayList<>());
             JsonNode started = startBaseline( "{\"target\":\"" + target
                     + "\",\"run_id\":\"campaign-2\",\"include_anonymous\":true,"
-                    + "\"account_ids\":[\"user-a\",\"user-b\"]}");
+                    + "\"account_ids\":[\"zap-user-a\",\"zap-user-b\"]}");
 
             JsonNode status = null;
             for (int i = 0; i < 200; i++) {
@@ -828,10 +824,14 @@ final class ZapCampaignRegressionTest {
             }
             assertNotNull(status);
             assertEquals("COMPLETED", status.at("/status").asText(), status.toString());
-            assertEquals(List.of("anonymous", "user-a", "user-b"), seenAccounts.get());
+            assertEquals(List.of("anonymous", "zap-user-a", "zap-user-b"), seenAccounts.get());
             assertEquals(6, zapSessions.get().size());
+            assertEquals(4, removedUsers.get(), "each authenticated lane must delete its temporary ZAP user");
+            assertEquals(6, removedContexts.get(), "every lane must delete its temporary ZAP context");
             assertEquals(3, status.at("/lanes").size());
-            assertEquals("user-b", status.at("/lanes/2/account_id").asText());
+            assertEquals("zap-user-b", status.at("/lanes/2/account_id").asText());
+            assertEquals(3, status.at("/captured_records").asInt(),
+                    "authentication setup traffic must not inflate scanner discovery captures");
             assertTrue(status.at("/lanes/0/elapsed_seconds").asLong() >= 0);
             assertTrue(status.at("/lanes/0/stage_timeout_seconds").asLong() >= 0);
             assertFalse(status.at("/lanes/0/heartbeat_status").asText().isBlank());
@@ -839,7 +839,7 @@ final class ZapCampaignRegressionTest {
             assertNull(contexts.current(Source.SCANNER));
         } finally {
             zapServer.stop(0);
-            sessions.close();
+            accounts.close();
         }
     }
 
@@ -931,7 +931,7 @@ final class ZapCampaignRegressionTest {
     private static RequestRecord laneMarker(Source source) {
         SourceDetail detail = switch (source) {
             case HUMAN -> SourceDetail.BROWSER;
-            case SCANNER -> SourceDetail.ZAP_SPIDER;
+            case SCANNER -> SourceDetail.ZAP_CLIENT_SPIDER;
             case LLM -> SourceDetail.LLM_EXPLORER;
             default -> SourceDetail.UNKNOWN;
         };

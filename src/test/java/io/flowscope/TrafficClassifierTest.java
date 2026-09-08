@@ -120,18 +120,26 @@ class TrafficClassifierTest {
     }
 
     @Test
-    void 로그인_세션_준비_트래픽은_Evidence만_보존하고_3way_비교에서_제외한다() {
+    void 로그인_세션_준비_트래픽은_source와_무관하게_Evidence만_보존하고_3way_비교에서_제외한다() {
         RequestRecord login = record("POST", "/login", "application/json", "application/json");
         login.sourceDetail = SourceDetail.BROWSER;
         login.phase = RunPhase.SESSION_SETUP;
+        RequestRecord zapLogin = new RequestRecord(Source.SCANNER, "https://t:443",
+                "POST", "/api/auth/login", 200, "anon");
+        zapLogin.hasResponse = true;
+        zapLogin.requestContentType = "application/json";
+        zapLogin.responseContentType = "application/json";
+        zapLogin.sourceDetail = SourceDetail.ZAP_AUTHENTICATION;
+        zapLogin.phase = RunPhase.SESSION_SETUP;
 
-        Pipeline.Result result = Pipeline.run(List.of(login));
+        Pipeline.Result result = Pipeline.run(List.of(login, zapLogin));
 
-        assertEquals(1, result.records.size());
+        assertEquals(2, result.records.size());
         assertTrue(result.coverageRecords.isEmpty());
-        assertEquals(TrafficClassification.TrafficClass.AUTH_SESSION,
-                result.records.getFirst().trafficClassification.trafficClass());
-        assertEquals(List.of("SESSION_SETUP"), result.records.getFirst().trafficClassification.reasons());
+        assertTrue(result.records.stream().allMatch(record -> record.trafficClassification.trafficClass()
+                == TrafficClassification.TrafficClass.AUTH_SESSION));
+        assertTrue(result.records.stream().allMatch(record -> record.trafficClassification.reasons()
+                .equals(List.of("SESSION_SETUP"))));
     }
 
     @Test

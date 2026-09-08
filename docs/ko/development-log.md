@@ -1,5 +1,90 @@
 # FlowScope 개발 기록
 
+## 2026-09-08 · D-133 실물 ZAP Docker API 호환 수정
+
+### 개발·수정
+
+- 제공 Compose를 별도 8090 project로 실제 실행해, 호스트 publish 요청이 `host.docker.internal` 주소가 아니라 Compose bridge gateway 주소로 ZAP에 도착하는 것을 확인했다.
+- `start-zap.sh`가 `/proc/net/route`의 default route에서 bridge gateway를 검증·변환해 loopback·신뢰 host gateway와 함께 exact API allowlist에 넣도록 수정했다. 해석 실패 시 wildcard로 열지 않고 시작을 실패시킨다.
+- ZAP 2.17 action API가 charset이 붙은 form media type을 400으로 거부하는 실제 동작에 맞춰 `ZapClient` POST를 exact `application/x-www-form-urlencoded`로 고정했다.
+- bridge gateway 계산과 모든 인증 action POST의 method·query 비노출·API key·exact Content-Type을 회귀 테스트로 고정했다.
+
+### 실물 검증과 영향
+
+- 기존 사용자 8089 컨테이너는 유지하고 임시 8090 project만 생성·제거했다. ZAP API 준비, tmpfs `zapHomePath`, initiator 18 Replacer 규칙이 이름 없는 `newSession` 뒤에도 유지됨, session 파일은 tmpfs에만 생성되고 `/home/zap/.ZAP/session`에는 0개임을 확인했다.
+- 실제 ZAP 2.17에서 exact form POST는 200 `Result: OK`, charset 포함 form과 JSON POST는 400 `content_type_not_supported`였다.
+- 영향 파일: `infra/zap/start-zap.sh`, `ZapClient.java`, `ZapStartupScriptTest.java`, `ZapClientTest.java`, 현재 계약·검증 문서.
+
+### 남은 한계·다음 gate
+
+- 이번 실물 gate는 daemon/API/session 경계까지다. Burp SCANNER listener 8081이 닫혀 대상 로그인, Client capture, capability 전달과 복수 계정 격리는 확인하지 못했다.
+
+### 최종 자동 검증
+
+- JDK 21.0.12.1에서 `mvn clean verify`를 두 번 실행해 매회 Java 370 tests(실패·오류 0, opt-in 1 skip), React 38 files/247 tests와 typecheck·Vite·release packaging을 통과했다.
+- 두 실행의 JAR과 bundle SHA-256이 각각 일치했다. 최종 JAR은 31,649,268 bytes, 9,140 entries, SHA-256 `78868e06a2af099df26e5cbc9254daf42bacc791bdee8aaa1c321e940612cb24`다.
+- 검증 수치를 문서에 반영한 최종 입력에서도 clean package를 두 번 실행해 JAR·bundle SHA-256이 각각 일치하는지 다시 확인했다. bundle 자체 해시는 이 문서에 넣지 않아 자기 참조를 피했다.
+- Bash 5개 `bash -n`·`shellcheck`, Compose config, manifest 첫 entry, 폐기 MCP/Judge 클래스 부재와 MR namespace 검사가 통과했다. 이 머신에는 `pwsh`가 없어 Windows script parse는 실행하지 못했다.
+
+## 2026-09-08 · D-132 ZAP Client Spider 단일 실행
+
+### 개발·수정
+
+- `ZapCampaign`의 신원별 실행을 optional API 정의 import → optional Browser Based Authentication → strict Client Spider → Passive queue → native Alert로 줄였다. Traditional/AJAX 시작·상태·중지·fallback과 전용 capture 필드를 제거했다.
+- Client가 scan ID를 반환하지 않거나 terminal 대기·capability 검증에 실패하거나 같은 run의 `ZAP_CLIENT_SPIDER` 범위 안 응답을 한 건도 남기지 못하면 lane을 실패시킨다. 실패를 다른 crawler 성공으로 덮지 않는다.
+- `ZapClient`, doctor와 required add-on에서 Traditional/AJAX API 및 `spider`·`spiderAjax` 요구를 제거했다. capability initiator는 인증 5, 정의 import/manual 6, Authentication Helper 14, 인증 확인 15, Client 18만 남겼다.
+- React와 legacy 상태를 `세션 / 로그인 / Client / Passive / Alert`, `client_captures` 계약으로 맞췄다. 샘플 SCANNER source detail도 새 캠페인과 같은 `ZAP_CLIENT_SPIDER`로 바꿨다.
+- 계정 입력 UX는 PR #10의 ZAP 로그인 URL·ID·비밀번호 inline 흐름을 대조했다. PR은 삭제된 MCP·이전 신원 계약을 포함하므로 병합하지 않고, 현행 `ZapAccountVault`·target별 계정 선택·인증 상태·폐기·실행 중 수정 차단을 유지했다.
+
+### 이유와 기각안
+
+- 사용자는 기본 crawler를 Client Spider 하나로 고정하도록 결정했다. ZAP 공식 문서는 Client Spider를 modern app의 권장 crawler로 설명하고 AJAX보다 권장하며, API에서 strict scope·Context·user·browser·status·stop을 제공한다.
+- 세 crawler 유지와 자동 fallback은 단계·timeout·정리·화면 의미를 다시 늘리고 Client 실패를 가리므로 기각했다. 다만 공식 설명을 임의 대상에서 Traditional의 모든 정적 링크까지 우월하다는 내부 실측으로 확대하지 않는다.
+
+### 영향 파일
+
+- 코드: `ZapCampaign.java`, `ZapClient.java`, `SampleProject.java`, legacy Web, React ZAP 상태·API 타입, doctor.
+- 테스트: `ZapClientTest`, `ZapCampaignTest`, `ZapCampaignRegressionTest`, `FlowScopeWebServerTest`, React inspection/client fixture.
+- 문서: README, 시작 가이드, architecture, decisions, product/UI/기능 계약, HANDOFF, CHANGELOG, beta-validation, documentation-status.
+
+### 재현·검증 상태
+
+- 변경 전 회귀는 Traditional/Client/AJAX 호출과 rendered 합계를 기대했다. 변경 후 main campaign에서 Traditional/AJAX trap이 호출되지 않고 Client 1건만 수집되는 회귀, Client 0건 실패, Client 취소·정리, 복수 신원 분리로 바꿨다.
+- 집중 Java 62 tests와 React 2 files/28 tests, TypeScript typecheck가 통과했다. 전체 clean verify 2회와 최종 산출물 결과는 같은 작업 입력에서 실행한 뒤 `beta-validation.md`에 추가한다.
+
+### 남은 한계·다음 gate
+
+- FakeZap은 API 순서와 상태만 모사한다. 실제 Firefox extension, 로그인, capability 전달, Burp 8081 capture, 복수 계정 격리를 증명하지 않는다.
+- 실제 Burp listener가 열린 환경에서 비로그인·로그인 Client 완주, 0건/실패 표시, Passive/Alert, 취소 cleanup을 확인해야 한다. Windows Docker Desktop 실기기 gate도 별도다.
+
+## 2026-09-08 · D-130 ZAP 직접 브라우저 인증 계정 lane
+
+### 개발·필요성·기각안
+
+- HUMAN 로그인 캡처의 Session Broker를 ZAP에 주입하던 계정 lane을 별도 메모리 `ZapAccountVault`와 `ZapBrowserAuthenticator`로 분리했다. ZAP 브라우저 세션·SPA 저장소는 Burp 브라우저 세션과 같지 않으므로 header 교체만으로 로그인 성공을 주장하는 기존 경로를 기각했다.
+- 계정마다 이름 없는 ZAP session과 임시 Context/user를 만들고 Browser Based Authentication, 자동 session management·verification, `authenticateAsUser`의 명시적 성공을 확인한다. 그 뒤 Traditional/AJAX `scanAsUser`와 Client `userName`·`firefox-headless`로만 계정 crawler를 시작한다.
+- 해당 run의 capability를 통과한 직접 인증 SCANNER 요청은 ZAP이 만든 Cookie/Authorization을 보존하며, 성공한 lane의 안전한 account ID로 Evidence를 귀속한다. cookie/JWT 문자열 추측이나 UI 선택만으로 계정을 붙이지 않는다. 종료·실패·취소 때 임시 ZAP user/Context를 제거하고 cleanup 실패는 격리 실패로 남긴다.
+- capability Replacer는 공식 ZAP 2.17 `HttpSender` 상수와 각 add-on 호출부를 대조해 Traditional(3), authentication(5), API import/manual(6), AJAX(10), Authentication Helper(14), authentication poll(15), Client Spider(18)에만 적용했다. 로그인 URL을 exact-scope Context에 추가하고 로그인 교환은 `ZAP_AUTHENTICATION / SESSION_SETUP`으로 분리해 crawler 수집 건수와 완료 gate를 채우지 못하게 했다.
+- React ZAP 설정에 target별 메모리 로그인 계정, 인증 상태·브라우저·메시지, 단계·경과·heartbeat를 연결했다. React 전환에서 빠져 있던 exact-scope OpenAPI·GraphQL·Postman·SOAP 정의 입력과 캠페인 취소도 기존 서버 계약에 다시 연결했다.
+
+### 영향 파일
+
+- 코드: `ZapAccountVault`, `ZapBrowserAuthenticator`, `ZapClient`, `ZapCampaign`, `FlowScopeExtension`, `Pipeline`, `FlowScopeWebServer`.
+- UI: React Inspection/API/query/types/fixture와 legacy ZAP 계정 source·인증 상태.
+- 운영: Bash·PowerShell doctor의 필수 `authhelper` add-on 검사.
+- 테스트: vault 비밀 수명·역할, ZAP 인증 API, account crawler·cleanup, direct-auth header 보존, SCANNER identity 귀속, Web 비밀 비노출, React 등록·시작·상태·정의·취소.
+
+### 현재 검증 상태
+
+- 집중 React 2 files/28 tests와 typecheck가 통과했다.
+- 집중 Java `ZapAccountVaultTest,ZapBrowserAuthenticatorTest,ZapClientTest,ZapCampaignRegressionTest,TrafficClassifierTest,PipelineClassificationTest,FlowScopeWebServerTest,FlowScopeExtensionPhaseTest`가 실패 없이 통과했다.
+- 실제 공식 ZAP 2.17.0 Docker 컨테이너에서 Firefox와 `authhelper`·`client`·`selenium` add-on 존재를 확인했다. `doctor.sh --mode zap`에서 ZAP API/version/upstream/add-on/Web은 통과했지만 Burp scanner listener `127.0.0.1:8081`이 닫혀 실제 로그인·capture end-to-end는 수행하지 못했다.
+
+### 남은 gate
+
+- 최종 입력의 전체 `mvn clean verify` 2회, JAR/bundle 구조·해시, 문서·버전 정합성은 아직 남았다.
+- 실제 Burp 8081을 연 상태에서 비로그인과 로그인 계정 최소 2개로 명시적 인증 성공/실패, Traditional/Client/AJAX capture, lane 귀속·쿠키 격리, Passive/Alert, 정의 import, 취소와 임시 user/Context 제거를 확인해야 한다. CAPTCHA·MFA·WebAuthn·복합 SSO는 자동 지원으로 주장하지 않는다.
+
 ## 2026-09-08 · D-129 다운로드 배포 동선·기능별 환경 점검
 
 ### 개발·필요성·기각안

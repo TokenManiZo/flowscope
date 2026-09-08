@@ -6,9 +6,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useHumanRunMutation, useHumanRunQuery, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
+import { useHumanRunMutation, useHumanRunQuery, useScannerCancelMutation, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapAccountDeleteMutation, useZapAccountSaveMutation, useZapStatusQuery } from "@/lib/query/hooks"
 import { activeManagedAccountIds, automaticInspectionStage, type InspectionStage } from "./inspectionState"
 
 const stageCopy: Record<InspectionStage, { title: string; message: string }> = {
@@ -43,6 +44,39 @@ function OpenRunsButton() {
   return <Button variant="outline" onClick={() => { window.location.hash = "#runs" }}>전체 실행 상태 열기</Button>
 }
 
+function normalizedOrigin(value: string): string {
+  try {
+    const url = new URL(value)
+    const port = url.port || (url.protocol === "https:" ? "443" : "80")
+    return `${url.protocol}//${url.hostname.toLowerCase()}:${port}`
+  } catch {
+    return ""
+  }
+}
+
+function duration(seconds?: number): string {
+  if (seconds === undefined || seconds < 0) return "확인 전"
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return minutes > 0 ? `${minutes}분 ${remainder}초` : `${remainder}초`
+}
+
+function age(seconds?: number): string {
+  return seconds === undefined || seconds < 0 ? "확인 전" : `${duration(seconds)} 전`
+}
+
+function scannerStage(stage?: string): string {
+  return {
+    SESSION_SETUP: "격리 세션 설정",
+    API_DEFINITION_IMPORT: "API 정의 가져오기",
+    AUTHENTICATION: "ZAP 브라우저 로그인",
+    CLIENT_SPIDER: "Client Spider",
+    PASSIVE_SCAN_QUEUE: "Passive Scan 대기",
+    ALERTS_READY: "Alert 집계 완료",
+    FAILED: "실패",
+  }[stage ?? ""] ?? stage ?? "대기"
+}
+
 export function InspectionPage() {
   const snapshot = useSnapshotQuery()
   const human = useHumanRunQuery()
@@ -50,11 +84,20 @@ export function InspectionPage() {
   const scanner = useScannerRunQuery()
   const humanMutation = useHumanRunMutation()
   const scannerMutation = useScannerRunMutation()
+  const scannerCancel = useScannerCancelMutation()
+  const zapAccountSave = useZapAccountSaveMutation()
+  const zapAccountDelete = useZapAccountDeleteMutation()
   const [manualStage, setManualStage] = useState<InspectionStage | null>(null)
   const [target, setTarget] = useState("")
   const [humanAccount, setHumanAccount] = useState("")
   const [anonymous, setAnonymous] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
+  const [zapDefinitions, setZapDefinitions] = useState("")
+  const [zapLabel, setZapLabel] = useState("")
+  const [zapRole, setZapRole] = useState("USER")
+  const [zapLoginUrl, setZapLoginUrl] = useState("")
+  const [zapUsername, setZapUsername] = useState("")
+  const [zapPassword, setZapPassword] = useState("")
 
   const scope = scanner.data?.scope ?? []
   useEffect(() => {
@@ -63,14 +106,18 @@ export function InspectionPage() {
 
   const automaticStage = automaticInspectionStage(scope, human.data, scanner.data)
   const selectedStage = manualStage ?? automaticStage
-  const activeAccounts = useMemo(() => {
+  const humanAccounts = useMemo(() => {
     const ids = activeManagedAccountIds(target, snapshot.data?.managedSessions ?? [])
     const labels = new Map((snapshot.data?.managedSessions ?? []).map((session) => [session.accountId, session.accountLabel]))
     return ids.map((id) => ({ id, label: labels.get(id) ?? id }))
   }, [snapshot.data?.managedSessions, target])
-  const activeAccountIds = activeAccounts.map((account) => account.id)
+  const humanAccountIds = humanAccounts.map((account) => account.id)
+  const scannerAccounts = useMemo(() => (scanner.data?.accounts ?? []).filter((account) =>
+    normalizedOrigin(account.service) === normalizedOrigin(target)), [scanner.data?.accounts, target])
+  const scannerAccountIds = scannerAccounts.map((account) => account.id)
   const targetInScope = target !== "" && scope.includes(target)
-  const zapCanStart = zap.data?.connected === true && targetInScope && (anonymous || selectedAccounts.length > 0) && !scannerMutation.isPending
+  const scannerRunning = scanner.data?.run.status === "RUNNING"
+  const zapCanStart = zap.data?.connected === true && targetInScope && (anonymous || selectedAccounts.length > 0) && !scannerRunning && !scannerMutation.isPending
   const humanCanStart = human.data !== undefined && !human.data.active && !humanMutation.isPending
   const humanCanEnd = human.data?.active === true && human.data.runId.trim() !== "" && !humanMutation.isPending
   const scannerDisabledReason = !zap.data?.connected
@@ -81,11 +128,11 @@ export function InspectionPage() {
         ? "비로그인 또는 하나 이상의 활성 계정을 선택하세요."
         : ""
 
-  const removeUnavailableAccounts = (ids: readonly string[]) => ids.filter((id) => activeAccountIds.includes(id))
+  const removeUnavailableAccounts = (ids: readonly string[]) => ids.filter((id) => scannerAccountIds.includes(id))
   useEffect(() => {
     setSelectedAccounts((current) => removeUnavailableAccounts(current))
-    if (humanAccount && !activeAccountIds.includes(humanAccount)) setHumanAccount("")
-  }, [activeAccountIds.join(","), humanAccount])
+    if (humanAccount && !humanAccountIds.includes(humanAccount)) setHumanAccount("")
+  }, [scannerAccountIds.join(","), humanAccountIds.join(","), humanAccount])
 
   const humanSummary = human.data ? human.data.active ? "진행 중" : human.data.completed ? "완료" : "대기" : human.isPending ? "불러오는 중" : "상태 확인 필요"
   const humanCardStatus = human.data ? human.data.active ? `실행 중 · ${human.data.accountId || "비로그인"}` : human.data.completed ? "COMPLETED · HUMAN lane 완료" : "NOT_STARTED · HUMAN pass 대기" : `HUMAN 상태 · ${humanSummary}`
@@ -113,6 +160,9 @@ export function InspectionPage() {
       )}
       {humanMutation.isError && <Alert variant="destructive" aria-label={errorMessage(humanMutation.error)}><AlertDescription>{errorMessage(humanMutation.error)}</AlertDescription></Alert>}
       {scannerMutation.isError && <Alert variant="destructive" aria-label={errorMessage(scannerMutation.error)}><AlertDescription>{errorMessage(scannerMutation.error)}</AlertDescription></Alert>}
+      {scannerCancel.isError && <Alert variant="destructive" aria-label={errorMessage(scannerCancel.error)}><AlertDescription>{errorMessage(scannerCancel.error)}</AlertDescription></Alert>}
+      {zapAccountSave.isError && <Alert variant="destructive" aria-label={errorMessage(zapAccountSave.error)}><AlertDescription>{errorMessage(zapAccountSave.error)}</AlertDescription></Alert>}
+      {zapAccountDelete.isError && <Alert variant="destructive" aria-label={errorMessage(zapAccountDelete.error)}><AlertDescription>{errorMessage(zapAccountDelete.error)}</AlertDescription></Alert>}
 
       <Card>
         <CardHeader>
@@ -153,7 +203,7 @@ export function InspectionPage() {
               <label className="grid gap-1 text-sm" htmlFor="human-account">HUMAN pass 계정
                 <Select value={humanAccount} onValueChange={setHumanAccount} disabled={!humanCanStart}>
                   <SelectTrigger id="human-account" aria-label="HUMAN pass 계정"><SelectValue placeholder="비로그인 pass" /></SelectTrigger>
-                  <SelectContent><SelectItem value="">비로그인 pass</SelectItem>{activeAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.label}</SelectItem>)}</SelectContent>
+                  <SelectContent><SelectItem value="">비로그인 pass</SelectItem>{humanAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.label}</SelectItem>)}</SelectContent>
                 </Select>
               </label>
               <Button disabled={!humanCanStart} onClick={() => humanMutation.mutate({ action: "begin", account: humanAccount })}>HUMAN pass 시작</Button>
@@ -186,13 +236,53 @@ export function InspectionPage() {
               {scanner.data?.run.error && <Alert variant="destructive"><AlertDescription>{scanner.data.run.error}</AlertDescription></Alert>}
               <fieldset className="space-y-2"><legend className="text-sm font-medium">실행 신원</legend>
                 <label className="flex items-center gap-2"><Checkbox id="scanner-anonymous" checked={anonymous} onCheckedChange={(checked) => setAnonymous(checked === true)} /><span>비로그인</span></label>
-                {activeAccounts.map((account) => <label className="flex items-center gap-2" key={account.id}><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label}</span></label>)}
-                {!activeAccounts.length && <p className="text-sm text-muted-foreground">현재 target에 ACTIVE 등록 계정이 없습니다.</p>}
+                {scannerAccounts.map((account) => <div className="flex flex-wrap items-center gap-2" key={account.id}><label className="flex items-center gap-2"><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label} · {account.role} · {account.status}</span></label><Button type="button" size="sm" variant="ghost" disabled={scanner.data?.run.status === "RUNNING" || zapAccountDelete.isPending} onClick={() => zapAccountDelete.mutate(account.id)}>자격증명 폐기</Button>{account.message && <span className="w-full pl-6 text-xs text-muted-foreground">{account.message}</span>}</div>)}
+                {!scannerAccounts.length && <p className="text-sm text-muted-foreground">현재 target에 등록된 ZAP 로그인 계정이 없습니다.</p>}
               </fieldset>
+              <section className="grid gap-3 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="ZAP 로그인 계정 등록">
+                <div><p className="font-medium">ZAP 브라우저 로그인 계정</p><p className="text-xs text-muted-foreground">인증 lane은 FlowScope Docker ZAP에서만 실행됩니다. ID·비밀번호는 Burp 메모리에서 ZAP의 휘발성 tmpfs 작업공간으로 전송되며 프로젝트·Evidence·로그에는 저장하지 않습니다.</p></div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <label className="grid gap-1 text-sm">계정 이름<Input value={zapLabel} onChange={(event) => setZapLabel(event.target.value)} autoComplete="off" /></label>
+                  <label className="grid gap-1 text-sm">역할<Select value={zapRole} onValueChange={setZapRole}><SelectTrigger aria-label="ZAP 계정 역할"><SelectValue /></SelectTrigger><SelectContent>{["USER", "LV1", "LV2", "ADMIN", "UNKNOWN"].map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></label>
+                  <label className="grid gap-1 text-sm md:col-span-2">로그인 URL<Input value={zapLoginUrl} onChange={(event) => setZapLoginUrl(event.target.value)} placeholder={target ? `${normalizedOrigin(target)}/login` : "https://target.example/login"} autoComplete="off" /></label>
+                  <label className="grid gap-1 text-sm">로그인 ID<Input value={zapUsername} onChange={(event) => setZapUsername(event.target.value)} autoComplete="username" /></label>
+                  <label className="grid gap-1 text-sm">비밀번호<Input type="password" value={zapPassword} onChange={(event) => setZapPassword(event.target.value)} autoComplete="new-password" /></label>
+                </div>
+                <Button type="button" variant="outline" disabled={!targetInScope || !zapLabel.trim() || !zapLoginUrl.trim() || !zapUsername || !zapPassword || zapAccountSave.isPending || scanner.data?.run.status === "RUNNING"} onClick={() => zapAccountSave.mutate({ id: "", label: zapLabel, role: zapRole, service: normalizedOrigin(target), loginUrl: zapLoginUrl, username: zapUsername, password: zapPassword }, { onSuccess: () => { setZapLabel(""); setZapLoginUrl(""); setZapUsername(""); setZapPassword("") } })}>Docker 로그인 계정 등록</Button>
+              </section>
+              <details className="rounded-lg border border-border/70 bg-background/30 p-3">
+                <summary className="cursor-pointer text-sm font-medium">명세 기반 탐색 추가 (선택)</summary>
+                <label className="mt-3 grid gap-1 text-sm" htmlFor="scanner-definitions">exact-scope API 정의
+                  <textarea id="scanner-definitions" className="min-h-28 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" value={zapDefinitions} onChange={(event) => setZapDefinitions(event.target.value)} spellCheck={false} placeholder={"OPENAPI https://target/openapi.json\nGRAPHQL https://target/graphql [schema URL]\nPOSTMAN 또는 SOAP https://target/definition"} />
+                </label>
+                <p className="mt-2 text-xs text-muted-foreground">이미 알고 있는 정의만 입력합니다. 명세 import가 상태 변경 요청을 만들 수 있어 Burp 승인창에서 다시 확인합니다.</p>
+              </details>
               {!zapCanStart && <p className="text-sm text-muted-foreground">{scannerDisabledReason}</p>}
-              <Button disabled={!zapCanStart} onClick={() => scannerMutation.mutate({ target, anonymous, accounts: selectedAccounts.join(",") })}>신원별 격리 ZAP 기준선 시작</Button>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={!zapCanStart} onClick={() => scannerMutation.mutate({ target, anonymous, accounts: selectedAccounts.join(","), definitions: zapDefinitions })}>신원별 격리 ZAP 기준선 시작</Button>
+                <Button variant="outline" disabled={!scannerRunning || scannerCancel.isPending} onClick={() => scannerCancel.mutate()}>ZAP 검사 취소</Button>
+              </div>
             </div>}
-            status={<section className="grid gap-3" aria-label="ZAP 실행 상태"><div className="grid gap-1 rounded-lg border border-border/70 bg-background/30 p-3"><p className="font-medium">ZAP 상태 · {scanner.data?.run.status ?? "NOT_STARTED"}</p><p className="text-sm text-muted-foreground">연결 {zap.data?.connected ? "정상" : zap.data?.state ?? "확인 필요"} · 수집 {scanner.data?.run.captured_records ?? "-"}건 · Alert {scanner.data?.run.alert_count ?? "-"}건</p>{scanner.data?.run.run_id && <p className="font-mono text-xs text-muted-foreground">run {scanner.data.run.run_id}</p>}</div>{scanner.data?.run.warning && <Alert><AlertDescription>주의 · {scanner.data.run.warning}</AlertDescription></Alert>}{scanner.data?.run.error && <Alert variant="destructive"><AlertDescription>{scanner.data.run.error}</AlertDescription></Alert>}<OpenRunsButton /></section>}
+            status={<section className="grid gap-3" aria-label="ZAP 실행 상태">
+              <div className="grid gap-1 rounded-lg border border-border/70 bg-background/30 p-3">
+                <p className="font-medium">ZAP 상태 · {scanner.data?.run.status ?? "NOT_STARTED"}</p>
+                <p className="text-sm text-muted-foreground">{scannerStage(scanner.data?.run.stage)} · 전체 {duration(scanner.data?.run.elapsed_seconds)} · 현재 단계 {duration(scanner.data?.run.stage_elapsed_seconds)}{scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${duration(scanner.data.run.stage_timeout_seconds)}` : ""}</p>
+                <p className="text-sm text-muted-foreground">작업 상태 {scanner.data?.run.activity_state ?? "확인 전"} · 신호 {age(scanner.data?.run.last_heartbeat_age_seconds)} · 수집 {scanner.data?.run.captured_records ?? "-"}건 · Alert {scanner.data?.run.alert_count ?? "-"}건</p>
+                {scanner.data?.run.run_id && <p className="font-mono text-xs text-muted-foreground">run {scanner.data.run.run_id}</p>}
+              </div>
+              {(scanner.data?.run.lanes ?? []).map((lane) => <div className="grid gap-1 rounded-lg border border-border/70 bg-background/30 p-3" key={lane.account_id ?? "anonymous"}>
+                <div className="flex flex-wrap justify-between gap-2"><p className="font-medium">{lane.account_label}</p><p className="font-mono text-sm">{lane.status}</p></div>
+                <p className="text-sm text-muted-foreground">{scannerStage(lane.stage)} · 경과 {duration(lane.elapsed_seconds)} · 수집 {lane.captured_records}건</p>
+                {lane.account_id && <p className="text-sm text-muted-foreground">로그인 {lane.authentication_state ?? "UNKNOWN"}{lane.authentication_browser ? ` · ${lane.authentication_browser}` : ""}</p>}
+                {lane.authentication_message && <p className="text-xs text-muted-foreground">{lane.authentication_message}</p>}
+                {lane.warning && <p className="text-sm text-amber-600">주의 · {lane.warning}</p>}
+                {lane.error && <p className="text-sm text-destructive">오류 · {lane.error}</p>}
+              </div>)}
+              {scanner.data?.run.warning && <Alert><AlertDescription>주의 · {scanner.data.run.warning}</AlertDescription></Alert>}
+              {scanner.data?.run.error && <Alert variant="destructive"><AlertDescription>{scanner.data.run.error}</AlertDescription></Alert>}
+              <Button variant="outline" disabled={!scannerRunning || scannerCancel.isPending} onClick={() => scannerCancel.mutate()}>ZAP 검사 취소</Button>
+              <OpenRunsButton />
+            </section>}
           />
         </TabsContent>
         <TabsContent value="review">

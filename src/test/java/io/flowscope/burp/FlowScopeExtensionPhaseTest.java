@@ -52,6 +52,8 @@ class FlowScopeExtensionPhaseTest {
                 FlowScopeExtension.capturePhase(Source.LLM, SourceDetail.LLM_EXPLORER, false));
         assertEquals(RunPhase.EXPLORATION,
                 FlowScopeExtension.capturePhase(Source.SCANNER, SourceDetail.ZAP_SPIDER, false));
+        assertEquals(RunPhase.SESSION_SETUP,
+                FlowScopeExtension.capturePhase(Source.SCANNER, SourceDetail.ZAP_AUTHENTICATION, false));
     }
 
     @Test
@@ -101,6 +103,18 @@ class FlowScopeExtensionPhaseTest {
                 zapLane, "zap-run", "capability", "wrong"));
         assertFalse(FlowScopeExtension.scannerCampaignRequestAllowed(
                 zapLane, "other-run", "capability", "capability"));
+    }
+
+    @Test
+    void ZAP_직접_로그인_lane만_ZAP이_만든_인증값을_보존한다() {
+        RunContextRegistry.Context zapLane = new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
+                Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, "zap-run", "zap-user-a");
+        RunContextRegistry.Context humanLane = new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "zap-run", "user-a");
+
+        assertTrue(FlowScopeExtension.scannerUsesDirectAuthentication(zapLane, "zap-run"));
+        assertFalse(FlowScopeExtension.scannerUsesDirectAuthentication(zapLane, "other-run"));
+        assertFalse(FlowScopeExtension.scannerUsesDirectAuthentication(humanLane, "zap-run"));
     }
 
     @Test

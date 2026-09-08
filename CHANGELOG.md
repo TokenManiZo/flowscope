@@ -2,9 +2,32 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 실물 ZAP Docker API 호환 (D-133, 2026-09-08)
+
+- Docker publish를 거친 호스트 API 요청의 실제 출발점인 Compose bridge gateway를 기본 ZAP API allowlist에 정확히 추가했습니다. loopback·신뢰 host gateway·default bridge gateway 외 주소로 넓히지는 않습니다.
+- ZAP 2.17이 action POST에서 허용하는 exact `application/x-www-form-urlencoded` Content-Type으로 고정했습니다.
+- 별도 임시 8090 컨테이너에서 API 준비, tmpfs home/session, Client initiator Replacer 규칙의 session reset 후 유지와 영구 session 파일 0개를 확인했습니다. 실제 Burp 8081 대상 로그인·Client capture는 계속 별도 gate입니다.
+
+## 미출시 · Client Spider 단일 ZAP 캠페인 (D-132, 2026-09-08)
+
+- 새 ZAP 캠페인은 선택적 exact-scope 정의 import와 로그인 뒤 strict Client Spider 하나만 실행하고, 이어 Passive 분석과 native Alert를 수집합니다. Traditional/AJAX 실행·fallback과 관련 상태 필드를 제거했습니다.
+- Client API·terminal 대기·capability가 실패하거나 범위 안 Client 응답이 0건이면 해당 lane을 실패 처리합니다. `client_captures`와 세션·로그인·Client·Passive·Alert 진행만 표시합니다.
+- `spider`, `spiderAjax`를 필수 add-on/doctor에서 제외하고 capability initiator를 인증·정의 import·Client에 한정했습니다. 과거 `ZAP_SPIDER`·`ZAP_AJAX_SPIDER` Evidence enum은 읽기 호환을 위해 유지합니다.
+- PR #10은 병합하지 않고 로그인 URL·ID·비밀번호를 작업면에서 받는 UX만 참고했습니다. 현행 ZAP 전용 메모리 vault와 Firefox Headless 고정, 비밀 비노출 계약을 유지합니다.
+- 관련 mock·React 계약은 확인했지만 실제 Burp 8081 + ZAP 2.17의 비로그인·로그인 Client 완주는 아직 별도 gate입니다.
+
+## 미출시 · ZAP 직접 브라우저 인증 계정 lane (D-130, 2026-09-08)
+
+- HUMAN/Request Lab의 Session Broker와 ZAP 로그인 계정을 분리했습니다. ZAP 계정 ID·비밀번호는 현재 Burp 프로세스 메모리에만 두며 project·snapshot·Evidence·로그·LLM으로 내보내지 않습니다.
+- 계정마다 새 ZAP session/Context/user를 만들고 Browser Based Authentication의 명시적 성공 뒤 Client Spider 계정 실행을 시작합니다. D-132에 따라 Traditional/AJAX는 실행하지 않습니다. 성공·실패·취소 때 임시 ZAP user와 Context를 제거합니다.
+- 직접 인증 lane의 Cookie/Authorization을 Burp가 broker 값으로 덮어쓰지 않으며, valid campaign capability와 명시적 인증 성공이 있는 `laneAccountId`만 SCANNER Evidence 신원으로 사용합니다.
+- capability는 ZAP campaign의 인증·정의 import·Client initiator에만 붙입니다. 로그인 교환은 별도 `ZAP_AUTHENTICATION / SESSION_SETUP`으로 보존하고 scanner 발견 건수와 완료 gate에서는 제외합니다.
+- React ZAP 화면에 target별 로그인 계정, 인증 상태·브라우저·실행 경과를 추가하고 React 전환에서 빠졌던 API 정의 입력과 캠페인 취소를 복구했습니다. `authhelper`는 필수 ZAP add-on입니다.
+- 집중 자동 회귀와 공식 ZAP 2.17.0 컨테이너의 Firefox/add-on 존재는 확인했습니다. Burp scanner listener 8081이 닫혀 실제 대상 로그인·capture·복수 계정 격리는 아직 검증하지 않았습니다.
+
 ## 미출시 · 다운로드 배포와 기능별 점검 (D-129, 2026-09-08)
 
-- 다운로드 사용자가 저장소를 clone하지 않아도 되도록 Burp JAR, ZAP Compose/helper, OS별 doctor와 현재 문서를 `flowscope-1.2.0-beta.44-bundle.zip`으로 함께 만듭니다.
+- 다운로드 사용자가 저장소를 clone하지 않아도 되도록 Burp JAR, ZAP Compose/helper, OS별 doctor와 현재 문서를 `flowscope-1.2.0-beta.45-bundle.zip`으로 함께 만듭니다.
 - doctor를 `human`, `zap`, `explorer`, `full` 모드로 나눠 선택하지 않은 외부 도구가 실패 원인이 되지 않게 했습니다.
 - Explorer가 READY가 아니면 영향 범위와 공식 Codex 설치·로그인 절차를 보여 주고, 설치 후 15초 cache를 기다리지 않는 **다시 확인** 동작을 추가했습니다.
 

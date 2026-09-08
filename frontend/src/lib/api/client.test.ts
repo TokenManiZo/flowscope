@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest"
 
 import { ApiError, apiFetch, postForm } from "./client"
-import { importXml, startScannerRun } from "./endpoints"
+import { cancelScannerRun, importXml, startScannerRun } from "./endpoints"
 import type { ScannerRun } from "./types"
 
 const capability = "a".repeat(64)
@@ -66,14 +66,31 @@ describe("FlowScope API transport", () => {
     meta.name = "flowscope-capability"
     meta.content = capability
     document.head.append(meta)
-    const fetchStub = vi.fn().mockResolvedValue(jsonResponse({ run: { status: "RUNNING", stage: "TRADITIONAL_SPIDER" } }, 202))
+    const fetchStub = vi.fn().mockResolvedValue(jsonResponse({ run: { status: "RUNNING", stage: "CLIENT_SPIDER" } }, 202))
     vi.stubGlobal("fetch", fetchStub)
     const scanner = await startScannerRun("https://app.test/", "user-a", true)
-    expect(scanner).toEqual({ run: { status: "RUNNING", stage: "TRADITIONAL_SPIDER" } })
+    expect(scanner).toEqual({ run: { status: "RUNNING", stage: "CLIENT_SPIDER" } })
     expect("scope" in scanner).toBe(false)
     expect(fetchStub.mock.calls[0]?.[0]).toBe("/api/scanner-run")
   })
   expectTypeOf(startScannerRun).returns.toEqualTypeOf<Promise<{ run: ScannerRun }>>()
+
+  it("sends optional ZAP definitions only when provided and uses the existing cancel action", async () => {
+    const meta = document.createElement("meta")
+    meta.name = "flowscope-capability"
+    meta.content = capability
+    document.head.append(meta)
+    const fetchStub = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ run: { status: "RUNNING" } }, 202))
+      .mockResolvedValueOnce(jsonResponse({ run: { status: "CANCEL_REQUESTED" } }))
+    vi.stubGlobal("fetch", fetchStub)
+
+    await startScannerRun("https://app.test/", "zap-a", false, "OPENAPI https://app.test/openapi.json")
+    await cancelScannerRun()
+
+    expect((fetchStub.mock.calls[0]?.[1] as RequestInit).body?.toString()).toContain("definitions=OPENAPI+")
+    expect((fetchStub.mock.calls[1]?.[1] as RequestInit).body?.toString()).toBe("action=cancel")
+  })
 
   it("uses the exact XML media type without converting the raw document into a form", async () => {
     const meta = document.createElement("meta")

@@ -72,6 +72,22 @@ class PipelineClassificationTest {
     }
 
     @Test
+    void 통제된_ZAP_계정_lane은_cookie_형식이_아닌_laneAccountId로_귀속한다() {
+        RequestRecord record = api(Source.SCANNER, "/api/me", "ck:rotating-cookie");
+        record.executionTrust = ExecutionTrust.CONTROLLED;
+        record.laneAccountId = "zap-a";
+        AnalysisConfig config = new AnalysisConfig();
+        config.upsertAccount(new AccountProfile("zap-a", "ZAP A", "https://t:443", AccessRole.USER));
+
+        Pipeline.Result result = Pipeline.run(List.of(record), config);
+
+        assertEquals("zap-a", result.records.getFirst().idn);
+        assertEquals(AuthState.ACCOUNT_BOUND, result.records.getFirst().authState);
+        assertTrue(config.boundAccount("https://t:443", "ck:rotating-cookie").isEmpty(),
+                "ZAP lane attribution must not create a reusable Session Broker binding");
+    }
+
+    @Test
     void 같은_응답의_반복_폴링은_Evidence와_검토함에_남지만_메인_비교에서는_보류한다() {
         List<RequestRecord> records = new ArrayList<>();
         for (int i = 0; i < 3; i++) {

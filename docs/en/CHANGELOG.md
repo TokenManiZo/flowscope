@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased · real-ZAP Docker API compatibility (D-133, 2026-09-08)
+
+- Add the actual Compose bridge gateway used by host-published requests to the default ZAP API allowlist without widening it beyond loopback, the trusted host gateway, and the default bridge gateway.
+- Send ZAP 2.17 action POSTs with the exact `application/x-www-form-urlencoded` media type that its API accepts.
+- A separate temporary container on port 8090 confirmed API readiness, tmpfs home/session files, persistence of the Client-initiator Replacer rule across a new unnamed session, and zero files in the persistent session directory. Target login and Client capture through Burp 8081 remain a separate gate.
+
+## Unreleased · Client-Spider-only ZAP campaign (D-132, 2026-09-08)
+
+- New campaigns run one strict, context/user-bound Client Spider after optional exact-scope definition import and authentication, then process the Passive queue and native alerts. Traditional/AJAX execution, fallback, and transient status fields were removed.
+- A Client API, terminal-wait, capability, or zero in-scope response failure now fails the lane. Status exposes `client_captures` and the session/authentication/Client/Passive/Alert stages only.
+- `spider` and `spiderAjax` are no longer required by the doctor. Capability initiators are limited to authentication, definition import, and Client Spider traffic. Historical source-detail enums remain readable for old projects.
+- PR #10 was not merged; only its inline login URL/username/password account-entry UX was used as a reference. The separate in-memory ZAP vault, fixed Firefox Headless path, and secret non-disclosure contract remain authoritative.
+- Focused mock and React contracts pass, but a real anonymous and authenticated Client run through Burp 8081 and ZAP 2.17 remains an operational gate.
+
+## Unreleased — direct ZAP browser-authenticated account lanes (D-130)
+
+- Separate HUMAN/Request Lab Session Broker credentials from ZAP login accounts. ZAP usernames/passwords live only in current Burp process memory and are not exported to projects, snapshots, Evidence, logs, or the LLM.
+- Create a fresh ZAP session, Context, and temporary user per account; start the account-scoped Client Spider only after Browser Based Authentication returns explicit success. D-132 removes Traditional/AJAX execution. Remove temporary users and Contexts on completion, failure, and cancellation.
+- Preserve ZAP-created Cookie/Authorization values after campaign-capability validation and attribute SCANNER Evidence by `laneAccountId` only after explicit authentication success.
+- Limit the capability rule to ZAP campaign authentication, definition-import, and Client initiators. Authentication exchanges remain auditable `ZAP_AUTHENTICATION / SESSION_SETUP` records but do not count as scanner discovery or satisfy completion.
+- Add target-scoped login accounts, authentication/browser/progress status, and restore API-definition input and campaign cancellation in the React ZAP workspace. `authhelper` is now a required ZAP add-on.
+- Focused automated regressions and Firefox/add-on presence in the official ZAP 2.17.0 container passed. The Burp scanner listener on 8081 was closed, so live target login, capture, and multi-account isolation remain unverified.
+
 ## Unreleased — download distribution and feature-specific preflight (D-129)
 
 - Package a download bundle containing the Burp JAR, ZAP Compose/helpers, platform doctors, and current manuals so ZAP users do not need to clone the repository.

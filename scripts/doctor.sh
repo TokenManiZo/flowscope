@@ -106,7 +106,7 @@ if $check_zap; then
     addons="$(curl --config "$curl_config" --silent --show-error --fail --get \
       "http://127.0.0.1:${zap_port}/JSON/autoupdate/view/installedAddons/" 2>/dev/null || true)"
     missing_addons=""
-    for addon in spider client spiderAjax pscan pscanrules selenium openapi websocket network replacer; do
+    for addon in client pscan pscanrules selenium openapi websocket network replacer authhelper; do
       [[ "$addons" == *"\"id\":\"$addon\""* ]] || missing_addons="$missing_addons $addon"
     done
     if [[ -z "$missing_addons" ]]; then

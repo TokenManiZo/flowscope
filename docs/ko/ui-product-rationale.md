@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-08, D-129 (미출시 변경).** 기존 Judge·MCP·브라우저 실행기는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-08, D-130 (미출시 beta.45 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication을 실행한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -65,7 +65,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | 파싱 결과 | 어떤 요청이 어떤 좌표와 분류로 정규화됐는가? | source/identity/method/operation/resource/status에 class/disposition/repeat/Evidence ID를 함께 두고 행 선택을 operation 상세로 연결한다. 반복 접기는 표시만 줄이며 모든 Evidence ID는 상세에서 유지한다. | raw 인증정보를 표시하거나 숨긴 행을 저장소에서 삭제하지 않는다. |
 | Request/Response 상세 | 판정의 실제 근거가 무엇인가? | 선택 API에서만 마스킹 전문을 지연 로드해 Burp 메시지와 판정을 연결하고, 전문 보존 여부·원 byte 수·SHA-256 또는 binary/메시지별/압축 총량 metadata-only 이유를 표시한다. 수집 통계에는 전문 미보존 메시지 수도 공개한다. | preview 8,192자를 완전한 전문이라고 부르거나 2만 건 전문을 polling snapshot마다 보내지 않는다. |
 | 요청 실험실 | 진단자가 값·세션을 바꾸고 응답을 바로 비교할 수 있는가? | 특정 Evidence에서만 전체 화면 편집기를 열고 `원문 그대로/비로그인/등록 계정`을 명시적으로 선택한다. Evidence generation이 늦은 응답을 폐기하고 전송 중 draft를 잠그며, 서버 operation ID 멱등성이 동일 상태 변경을 한 번만 실행한다. 응답을 받지 못한 동일 draft 재시도는 같은 ID를 사용한다. 대상 서비스·exact scope·TLS·redirect 경계는 서버가 강제하고 결과는 HUMAN `VALIDATION`으로 분리한다. 원문은 bounded Burp 메모리와 현재 탭에만 존재하며 10건 화면 이력은 새로고침 시 사라진다. | raw를 프로젝트·MCP·로그·localStorage·멱등 cache에 저장하거나, 반복 검증 요청을 discovery coverage로 부풀리거나, status 하나로 취약점을 확정하지 않는다. |
-| 계정·세션 | ZAP과 HUMAN Request Lab이 어느 테스트 계정으로 실행되는가? | secret-free 계정과 메모리 전용 broker 상태를 분리해 보여 준다. | 비밀번호·raw cookie/token을 프로젝트나 LLM에 전달하지 않는다. |
+| 계정·세션 | HUMAN/Request Lab과 ZAP이 각각 어느 테스트 계정으로 실행되는가? | HUMAN/Request Lab은 명시적 로그인 캡처의 Session Broker를, ZAP은 별도 메모리 전용 로그인 계정과 ZAP 인증 결과를 보여 준다. | 두 저장소를 같은 세션으로 오인하거나 비밀번호·raw cookie/token을 프로젝트·snapshot·로그·LLM에 전달하지 않는다. |
 | LLM Explorer | LLM이 지금 무엇을 요청했고 어떤 근거를 남겼는가? | 메모리 계정·시작 URL·실행 상태·경과시간·실제 요청/Evidence ID·미해결·실패를 한 화면에 두고 steer·취소를 제공한다. | 모델 문장을 취약점 판정으로 표시하거나 로그인 비밀·raw 세션·도구 인자를 피드에 노출하지 않는다. |
 
 ## 4. 3-way 갭의 정확한 의미
@@ -114,15 +114,15 @@ orchestrator = SYSTEM 또는 HUMAN
 - `/admin` 경로나 `role=admin` 문자열은 실제 서버 권한의 증거가 아니다.
 - 잘못된 사용자 병합이나 역할 추정은 BOLA/BFLA의 공격자·소유자·정상 대조를 바꾼다.
 
-따라서 사용자는 비밀값을 직접 입력하는 대신, 자신이 만든 테스트 계정의 표시 이름·역할과 로그인 구간만 확인한다. FlowScope는 그 최소 입력을 ZAP·HUMAN Request Lab 실행에 재사용한다.
+따라서 HUMAN/Request Lab은 사용자가 Burp 브라우저에서 명시적으로 캡처해 `ACTIVE`가 된 메모리 Session Broker만 재사용한다. ZAP 계정 lane은 별도다. 사용자가 target·로그인 URL·ID·비밀번호·역할을 등록하면 자격증명은 현재 Burp 프로세스 메모리에만 두고 ZAP Browser Based Authentication API 호출 시 사용한다. 둘을 한 저장소로 합치면 Burp 브라우저 세션과 ZAP의 Firefox 세션을 같은 것으로 오인하므로 분리한다.
 
 기본 화면의 정보 단위는 fingerprint가 아니라 `AccountProfile`이다. 한 번의 로그인에서 Cookie·Bearer·JWT subject가 함께 관측되어도 `test1` 카드 하나만 보이며 상태와 다음 행동을 한국어로 표시한다. 비가역 fingerprint는 같은 카드의 접힌 **기술 정보**로 들어가고, 계정에 아직 연결되지 않은 기록만 **고급 세션 진단**에서 다룬다. 내부 구현 단서를 세 계정처럼 평면 나열하면 사용자가 실제 principal 수를 오해하므로, 수집은 세밀하게 유지하면서 표현만 계정 중심 projection으로 바꿨다.
 
 캡처 종료 시 자격증명은 있으나 성공 응답이 없으면 계정 카드를 `UNVERIFIED`로 표시한다. 이 상태를 ACTIVE처럼 숨겨 자동 실행하면 로그인 폼·실패 응답에서 우연히 본 Cookie를 실제 계정 세션으로 오인할 수 있다. 반대로 ACTIVE도 서비스 고유 인증 의미를 보편적으로 증명하는 값은 아니므로 역할과 계정 연결은 사용자가 확인한다.
 
-빠른 시작의 HUMAN 계정 선택에는 `ACTIVE` 계정만 표시한다. 이 선택은 브라우저 신원을 덮어쓰는 라벨이 아니다. 실제 요청의 자격증명이 선택한 broker 계정과 exact match할 때만 해당 계정으로 기록하고, 불일치는 미확정 상태로 남긴다. 사용자가 dropdown 하나를 잘못 선택해 USER A/B 비교 Evidence 전체를 오염시키는 것보다 재로그인 안내가 드러나는 편이 안전하다.
+빠른 시작의 HUMAN 계정 선택에는 `ACTIVE` Session Broker 계정만 표시한다. 이 선택은 브라우저 신원을 덮어쓰는 라벨이 아니다. 실제 요청의 자격증명이 선택한 broker 계정과 exact match할 때만 해당 계정으로 기록하고, 불일치는 미확정 상태로 남긴다. ZAP 실행 신원에는 해당 target에 등록한 ZAP 로그인 계정만 표시하며, `ANONYMOUS`는 로그인 계정 역할로 등록할 수 없다.
 
-같은 서비스의 동일 인증 지문이 이미 다른 등록 계정에 연결돼 있으면 새 계정으로 자동 이동하지 않는다. 현재 캡처는 `동일 인증정보 충돌`로 표시하고 신원 귀속과 ZAP·HUMAN Request Lab 주입에서 제외한다. 사용자가 기존 연결을 해제하거나 잘못 만든 세션을 폐기하고 올바른 계정으로 다시 로그인해야 한다. 계정 카드 중복을 화면에서만 숨기면 실제 binding 오염이 남기 때문에 엔진과 UI를 함께 fail-closed로 처리한다.
+같은 서비스의 동일 인증 지문이 이미 다른 등록 계정에 연결돼 있으면 새 HUMAN 계정으로 자동 이동하지 않는다. 현재 캡처는 `동일 인증정보 충돌`로 표시하고 HUMAN/Request Lab 주입에서 제외한다. ZAP은 cookie fingerprint로 계정을 추측하지 않는다. 해당 lane에서 ZAP이 명시적으로 `authSuccessful=true`를 반환한 뒤에만 안전한 `laneAccountId`를 SCANNER Evidence 신원으로 사용한다.
 
 ## 7. LLM 실행과 과거 기록의 분리
 
@@ -137,20 +137,18 @@ LLM source 색·필터와 저장된 Evidence는 호환 분석을 위해 유지�
 LLM이 그때그때 ZAP 기능을 선택하면 같은 입력에서도 결과가 달라지고, passive queue가 남았는데 완료로 처리하거나 SPA 경로를 놓칠 수 있다. 기본 scanner lane은 다음 순서로 고정한다.
 
 ```text
-Traditional Spider
-→ strict-scope Client Spider
-→ AJAX Spider 보완 탐색
+strict-scope Client Spider
 → Passive queue·현재 task 진행 추적
 → native alerts 수집
 ```
 
-ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 트래픽을 만들었다는 충분조건이 아니다. 실제 crAPI 실행에서 Firefox binary 부재로 Client task가 내부 실패했지만 status는 완료가 됐고 FlowScope rendered count는 0이었다. 또한 Client와 AJAX가 모든 앱에서 같은 route 집합을 만든다는 근거가 없으므로 기본 기준선은 둘 다 실행한다. 둘 중 하나가 실패하거나 0건이면 수집된 Traditional·다른 rendered Evidence와 Alert를 버리지 않으면서 `COMPLETED_WITH_WARNINGS`와 원인을 표시한다. 이 상태는 깨끗한 rendered-browser 기준선 완료가 아니다.
+ZAP API의 Client 상태 `100/COMPLETED`는 브라우저 프로세스가 실제로 범위 안 응답을 만들었다는 충분조건이 아니다. 실제 과거 crAPI 실행에서도 Firefox binary 부재와 status 완료가 동시에 관측됐다. 따라서 FlowScope는 같은 run의 raw `ZAP_CLIENT_SPIDER` 응답 수를 확인하고 0건이면 lane을 실패시킨다. D-132 이후 새 캠페인은 Traditional/AJAX를 실행하거나 fallback하지 않는다. ZAP 공식 문서는 Client Spider를 modern app의 권장 crawler로 설명하지만, 이 선택이 임의 대상에서 Traditional의 모든 정적 링크까지 더 잘 찾는다는 제품 실측은 아니다. 화면은 단일 Client 단계와 그 실제 capture·실패를 보여 주며, 부족한 범위를 다른 crawler 결과로 숨기지 않는다.
 
 현재 FlowScope에는 Active Scan 실행 API·버튼이 없다. D-126에서 MCP 전용 진입점과 adapter를 삭제했다. 별도 승인하면 현재 제품에서 실행할 수 있다고 안내하지 않는다. API 정의 import의 Burp 승인과 HUMAN Request Lab 명시적 전송은 유지하며, 이를 Active Scan과 혼동하지 않는다.
 
-비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 fresh ZAP session을 만든다. 화면은 whs_flow 작업면의 카드·간격 문법을 유지한 신원별 lane card로 현재 단계, 전체 수집, Traditional 수집, Client/AJAX rendered 수집, Alert, 주의·실패 원인을 분리한다. 한 문장 상태는 실패한 신원과 실패 단계를 찾기 어려워 기각했다. 계정 레인은 broker 자격증명으로 완전 교체하고, 비로그인 레인은 fresh session 안에서 새로 생긴 익명 Cookie/CSRF를 유지해 상태형 공개 흐름을 끊지 않는다.
+비로그인과 USER A/B를 한 ZAP 세션에서 연속 실행하면 cookie jar와 crawler state가 섞여 “누가 밟았나” 비교 자체가 오염된다. 빠른 시작은 신원을 복수 선택하게 하고, 실행기는 비로그인 → 선택 계정 순서로 각 신원 앞에서 이름 없는 temporary ZAP session과 임시 Context를 만든다. 계정 lane은 Browser Based Authentication으로 로그인하고 명시적 성공 뒤 Client `userName`·`firefox-headless`를 사용한다. FlowScope의 8081 capture는 capability 검증 뒤 ZAP이 만든 Cookie/Authorization을 보존하고, 해당 run의 `laneAccountId`로만 귀속한다. 화면은 신원별 lane card로 로그인 상태·브라우저·현재 단계·전체/Client 수집·Alert·주의·실패 원인을 분리한다. 종료·실패·취소 때 임시 user·Context를 제거하고 정리 확인 실패 시 후속 신원으로 넘어가지 않는다.
 
-beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 보이면서 정지로 오인되는 실제 수동 회귀를 계기로 관측 가능성을 보강했다. 캠페인·lane·stage 경과시간과 단계 최대시간, 마지막 ZAP status heartbeat, 마지막 raw capture/status 변화, queue 위치와 “현재 lane 완료 후 시작” 이유를 1초 polling 화면에 표시한다. heartbeat가 정상이어도 새 트래픽이 없을 수 있으므로 이를 실패로 바꾸지 않고 `응답 정상·새 트래픽 없음`으로 구분한다. 반대로 10초 넘게 status 응답이 없거나 deadline을 넘으면 별도 경고 상태를 표시한다. 후속 보정에서는 각 lane에 `세션 / Traditional / Client / AJAX 보완 / Passive / Alert` 진행선을 추가하고, Passive 남은 건수·현재 task·Alert 집계 완결성을 함께 표시한다. 별도 실시간 실행 기록에는 서버가 실제로 수행한 단계 시작·queue 감소·Alert 집계·격리 정리만 최신순으로 보여 준다. 이를 LLM식 설명문이나 추정 상태로 만들면 사실과 화면이 어긋날 수 있어 기각했고, 반복 poll 전체를 기록하면 노이즈가 커지므로 실제 변화가 있을 때만 최대 120건을 메모리에 남긴다. Passive가 절대 30분 또는 10분 무진행 경계에 도달하면 현재 결과를 숨기거나 전부 실패로 바꾸지 않고 부분 완료로 표시한다. 다만 미처리 queue를 비운 뒤 current task까지 0임을 확인하지 못하면 후속 신원을 시작하지 않는다.
+beta.38에서는 직렬 실행의 후속 계정이 0건 `PENDING`으로 오래 보이면서 정지로 오인되는 실제 수동 회귀를 계기로 관측 가능성을 보강했다. 캠페인·lane·stage 경과시간과 단계 최대시간, 마지막 ZAP status heartbeat, 마지막 raw capture/status 변화, queue 위치와 “현재 lane 완료 후 시작” 이유를 1초 polling 화면에 표시한다. heartbeat가 정상이어도 새 트래픽이 없을 수 있으므로 이를 실패로 바꾸지 않고 `응답 정상·새 트래픽 없음`으로 구분한다. 반대로 10초 넘게 status 응답이 없거나 deadline을 넘으면 별도 경고 상태를 표시한다. D-132 이후 각 lane은 `세션 / 로그인 / Client / Passive / Alert` 진행선과 Client 수집 건수, Passive 남은 건수·현재 task·Alert 집계 완결성을 표시한다. 별도 실시간 실행 기록에는 서버가 실제로 수행한 단계 시작·queue 감소·Alert 집계·격리 정리만 최신순으로 보여 준다. 반복 poll 전체를 기록하지 않고 실제 변화가 있을 때만 최대 120건을 메모리에 남긴다. Passive가 절대 30분 또는 10분 무진행 경계에 도달하면 현재 결과를 숨기거나 전부 실패로 바꾸지 않고 부분 완료로 표시한다. 다만 미처리 queue를 비운 뒤 current task까지 0임을 확인하지 못하면 후속 신원을 시작하지 않는다.
 
 세션 설정·정의 import는 동기 ZAP API 호출이라 status 응답을 주기적으로 받을 수 없다. 이 구간에 가짜 “ZAP 응답 정상”을 표시하지 않고 worker heartbeat를 별도로 갱신해 `응답 대기/응답 수신`을 구분하며, 화면 age도 `작업 신호`라고 부른다. 또한 SYSTEM run capability가 없는 8081 요청은 조용히 0건으로 끝내지 않고 `출처 검증 차단 N건`과 Replacer/outgoing proxy 확인 문구를 표시한다. 차단 요청을 익명 또는 선택 계정으로 수집하는 대안은 그래프의 신원 provenance를 훼손하므로 제공하지 않는다.
 
@@ -261,7 +259,9 @@ D-125는 ZAP 소유권을 추출했고, D-126은 기존 MCP와 LLM 실행기를 
 
 `점검 시작`은 scope → HUMAN → ZAP → Evidence 검토의 한 단계만 자동 추천한다. 사용자가 다른 탭을 살펴보는 중 polling이 화면을 빼앗지 않도록 수동 선택을 유지하고, `현재 단계로`를 눌렀을 때만 실제 server state의 다음 단계로 돌아간다. 1/4~4/4는 순서이지 완료율이므로 progress percentage로 그리지 않는다.
 
-`재사용할 등록 계정`은 observed identity와 다르다. React 선택지는 현재 target에 대응하고 status가 정확히 `ACTIVE`인 managed session으로 한정하며, 관측 fingerprint나 historical/inactive session, credential material을 제어면에 노출하지 않는다. 이 제약은 목록을 적게 보이게 하지만 임의의 관측 identity가 재사용 가능한 ZAP 계정 자격증명처럼 보이는 오해를 막는다.
+HUMAN의 `재사용할 등록 계정`은 observed identity와 다르다. React HUMAN 선택지는 현재 target에 대응하고 status가 정확히 `ACTIVE`인 managed session으로 한정하며, 관측 fingerprint나 historical/inactive session, credential material을 제어면에 노출하지 않는다. React ZAP 선택지는 별도 `/api/zap-accounts` 메모리 vault의 target별 계정만 사용한다. ID·비밀번호는 저장·snapshot·응답으로 되돌려 보내지 않고 등록 직후 form에서도 지운다. 실행 중에는 계정 추가·삭제를 막는다.
+
+ZAP 설정에는 기존 기능인 exact-scope OpenAPI·GraphQL·Postman·SOAP 정의 입력과 캠페인 취소를 함께 둔다. 시작 요청은 정의가 있을 때만 `definitions`를 보내고, 취소는 서버의 기존 `action=cancel` 상태 기계를 호출한다. 로그인·정의 import·crawler·Passive·Alert 단계를 진행 상태에서 분리해 “미발견”과 “실행 실패”를 같은 0건으로 보이지 않는다.
 
 실행 상태는 color만으로 정상·경고·실패를 말하지 않는다. `RUNNING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`, `FAILED`, `CANCELLED`, `NOT_STARTED`, `UNAVAILABLE`와 신원별 lane count를 문자로 남기고, poll이 실패해도 마지막 성공 상태를 0이나 실패로 덮지 않는다. output tail은 plain text의 bounded accordion으로만 보여 주며 HTML로 해석하지 않는다. 현재 ZAP Active Scan 진입점은 없으며 별도 승인만으로 활성화되지 않는다.
 
@@ -269,7 +269,7 @@ D-125는 ZAP 소유권을 추출했고, D-126은 기존 MCP와 LLM 실행기를 
 
 ## 16. React 계정·세션 화면의 개념 경계
 
-`#accounts`는 등록 계정, 관측 신원, 비가역 fingerprint binding, 메모리 broker managed session을 한 이름으로 합치지 않는다. 등록 계정은 사람이 입력한 label/role/target 정책이고, 관측 신원과 fingerprint는 Evidence에서 얻은 진단 단서이며, binding은 그 둘을 명시적으로 연결한 기록이다. managed session만이 로그인 capture 뒤 ZAP·HUMAN Request Lab에 재사용될 수 있는 broker 상태다.
+`#accounts`는 등록 계정, 관측 신원, 비가역 fingerprint binding, HUMAN용 메모리 broker managed session을 한 이름으로 합치지 않는다. 등록 계정은 사람이 입력한 label/role/target 정책이고, 관측 신원과 fingerprint는 Evidence에서 얻은 진단 단서이며, binding은 그 둘을 명시적으로 연결한 기록이다. managed session은 로그인 capture 뒤 HUMAN pass·Request Lab에만 재사용된다. ZAP 브라우저 로그인 계정은 점검 시작의 ZAP 영역에서 별도 등록·폐기한다.
 
 따라서 일반 화면은 등록 계정마다 다음 행동과 `ACTIVE`/`CAPTURING`/`UNVERIFIED`/`REVOKED`/`credential-conflict` 상태를 글자로 제시한다. 고급 진단은 complete fingerprint 대신 비민감 관측 세션 label과 observed service만 보여 주며, exact fingerprint는 사용자가 bind/unbind를 명시적으로 실행하는 form에만 남는다. 같은 service target의 등록 계정만 bind 선택지에 넣고 role 변경도 등록 계정 role과 별도로 `관측 신원 역할` accordion에 둔다. 이 분리는 cookie·token·subject 단서를 계정이나 재사용 credential로 오인하는 것을 막는다.
 

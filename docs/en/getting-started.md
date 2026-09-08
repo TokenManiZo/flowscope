@@ -1,8 +1,8 @@
 # FlowScope installation and first run
 
-This guide targets the D-128 standalone Explorer source. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs with the same beta.44 version.
+This guide targets the D-128 standalone Explorer and D-130 direct ZAP browser-authentication source. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs.
 
-The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old Judge, MCP server, and browser harness remain removed; the replacement uses Codex app-server dynamic tools behind a Java exact-scope gateway (D-128; unreleased). H/S/L Evidence comparison and existing projects remain supported. This work is not published as a Release yet; build the JAR or distribution bundle from this source instead of using an older beta.44 asset.
+The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old Judge, MCP server, and browser harness remain removed; the replacement uses Codex app-server dynamic tools behind a Java exact-scope gateway (D-128). An authenticated ZAP lane uses a dedicated memory-only login account and proceeds only after ZAP Browser Based Authentication explicitly reports success (D-130). H/S/L Evidence comparison and existing projects remain supported. This work is not published as a Release yet; build the JAR or distribution bundle from this source.
 
 ## Supported setup paths
 
@@ -14,7 +14,7 @@ The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old
 | LLM Explorer | The JAR or bundle, Burp, official Codex CLI, and a valid Codex login |
 | Source build | The runtime above, JDK 21 exactly, and Maven 3.9.x |
 
-Download users do not install Maven, Node.js, or npm. Prefer `flowscope-1.2.0-beta.44-bundle.zip`; it contains the Burp JAR, ZAP Compose/helpers, macOS/Linux/Windows doctors, and current manuals. The JAR alone is sufficient for HUMAN and Explorer, but it does not contain the ZAP helpers.
+Download users do not install Maven, Node.js, or npm. Prefer `flowscope-1.2.0-beta.45-bundle.zip`; it contains the Burp JAR, ZAP Compose/helpers, macOS/Linux/Windows doctors, and current manuals. The JAR alone is sufficient for HUMAN and Explorer, but it does not contain the ZAP helpers.
 
 The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, JDK 21, and macOS arm64 with Docker Engine/Desktop 29.5.3. Windows 10/11 with Docker Desktop Linux containers and PowerShell 7 is the beta.21 support contract; GitHub `windows-latest` parses all PowerShell helpers, but a real Windows Docker Desktop target run remains an explicit validation gate.
 
@@ -32,7 +32,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 ## Release bundle installation
 
-1. Download and extract `flowscope-1.2.0-beta.44-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). If the bundle is not published yet, clone the repository and build it using the source-build instructions. HUMAN/Explorer users may download only the JAR.
+1. Download and extract `flowscope-1.2.0-beta.45-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). If the bundle is not published yet, clone the repository and build it using the source-build instructions. HUMAN/Explorer users may download only the JAR.
 2. Keep the extracted directory structure. `scripts/zap-up.*` uses the relative `infra/zap/compose.yaml` path.
 3. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` for HUMAN and add `127.0.0.1:8081` only when using ZAP.
 4. Load the bundle-root JAR from **Extensions → Installed → Add → Java**.
@@ -89,7 +89,7 @@ PowerShell 5.1, Windows container mode, and running the helper inside WSL are ou
 2. Create an owner-only key without printing its value: `./scripts/zap-key.sh` on macOS/Linux or `.\scripts\zap-key.ps1` in Windows PowerShell 7.
 3. Set the main local proxy/API to `127.0.0.1:8089` and set the ZAP API key to the value stored in `~/.flowscope/zap-api-key`. Keep key checks enabled.
 4. In **Options → Network → Connection → HTTP Proxy**, enable upstream host `127.0.0.1`, port `8081`.
-5. Confirm `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, and `network` are installed. Explicit GraphQL, Postman, or SOAP imports also require the matching add-on.
+5. Confirm `client`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network`, `replacer`, and `authhelper` are installed. FlowScope's campaign does not require or invoke the Traditional or AJAX Spider. Explicit GraphQL, Postman, or SOAP imports also require the matching add-on.
 6. FlowScope reads owner-only `~/.flowscope/zap-api-key` by default; alternatives are `flowscope.zap.keyFile`, `FLOWSCOPE_ZAP_API_KEY`, and `flowscope.zap.key`. Reload the extension if the key was created after loading it.
 
 ## LLM Explorer
@@ -123,14 +123,16 @@ mvn clean verify
 ## First HUMAN/ZAP/LLM run
 
 1. Set an authorized exact scope in the FlowScope Burp tab.
-2. Register test accounts and capture any required login through HUMAN `8080` until the broker reports the account usable.
+2. Register HUMAN test accounts and capture any required HUMAN login through `8080`. ZAP uses a separate memory-only browser-login account entered in the ZAP step.
 3. Start a HUMAN pass, explore with the Burp browser, and end the pass.
-4. Select the target and anonymous/ACTIVE identities. If you already have an API definition, optionally add one line per definition as `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`, then start the isolated ZAP campaign. Every URL must remain in exact scope. Because an import can generate write-method example requests, a non-empty list requires a separate Burp approval. Identity lanes run serially to isolate ZAP state; use the six-stage progress line, campaign/stage elapsed time, deadline, last ZAP response and traffic change, queue position, Passive remaining/task fields, alert-snapshot status, and the one-second activity feed to distinguish a healthy wait, partial completion, and failure. A lane that cannot clear old Passive work blocks later identities instead of mixing their traffic. Active Scan is not part of this automatic baseline.
+4. Select the target and anonymous lane and/or register a ZAP browser-login account with label, role, exact-scope login URL, username, and password. The credentials remain only in current Burp-process memory and are not written to projects, snapshots, or logs. If you already have an API definition, optionally add one line per definition as `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, or `GRAPHQL ENDPOINT [SCHEMA_URL]`, then start the isolated ZAP campaign. Every URL must remain in exact scope. Because an import can generate write-method example requests, a non-empty list requires a separate Burp approval. An authenticated lane creates an unnamed temporary ZAP session and Context, runs Firefox Headless Browser Based Authentication with auto-detected session handling and verification, and proceeds only when ZAP explicitly reports authentication success. It then uses one strict, account-bound Client Spider. Identity lanes run serially to isolate ZAP state; use the session/login/Client/Passive/Alert progress line, campaign/stage elapsed time, deadline, worker signal, traffic change, queue position, Passive remaining/task fields, alert-snapshot status, and the one-second activity feed to distinguish a healthy wait, partial completion, and failure. Client failure or zero in-scope responses fail the lane; FlowScope does not run an automatic Traditional/AJAX fallback. A lane that cannot clear old work blocks later identities instead of mixing their traffic. Active Scan is not part of this automatic baseline.
 5. Inspect endpoint/parameter observations, declarations and parsing status.
 6. Run the standalone Explorer with anonymous and/or memory-only accounts; zero response Evidence is a failure, not completion.
 7. Compare H/S/L endpoint and parameter observations in **API·입력 차이**.
 8. Review current rule candidates and their Evidence; save human review independently of LLM prose. Historical LLM verdicts are not revalidated or promoted.
 9. Attach a local `.flowscope.db` for checkpoints. Raw broker credentials are not persisted and must be recaptured after Burp restarts.
+
+ZAP authentication exchanges remain auditable `ZAP_AUTHENTICATION / SESSION_SETUP` Evidence, but they do not count as scanner discovery, crawler capture, or lane completion. A lane that authenticates but captures no crawler response therefore does not complete successfully.
 
 ### Importing an existing ZAP traffic export
 
@@ -153,8 +155,9 @@ FlowScope does not silently alter Burp settings, install third-party software/ad
 | ZAP completes with zero SCANNER captures | Verify ZAP upstream `8081`, the Burp listener, and exact scope together |
 | Campaign rejects ZAP outgoing proxy | Enable the Network HTTP proxy and use `127.0.0.1:8081` for Desktop or `host.docker.internal:8081` for Docker |
 | API definition import warning | Check exact-scope URLs and the matching `openapi`, `graphql`, `postman`, or `soap` add-on; other crawler Evidence remains available |
-| Rendered capture warning | Inspect ZAP Firefox/Selenium/Client/AJAX logs; do not mislabel Traditional-only output as rendered coverage |
-| Account absent from ZAP choices | Recapture login until the memory-only broker reports `ACTIVE` |
+| Client lane failed or captured zero responses | Inspect ZAP Firefox/Selenium/Client logs, outgoing proxy, exact scope, and capability rule; FlowScope does not convert this to a successful fallback |
+| Account absent from ZAP choices | Register a ZAP browser-login account for the currently selected target origin; credentials are intentionally cleared on reload or dataset replacement |
+| ZAP authentication failed | Check the login URL, credentials, Firefox/Selenium/Auth Helper state. FlowScope does not bypass CAPTCHA, MFA, WebAuthn, or external SSO and does not relabel a failed login as an authenticated lane |
 | Codex readiness is not READY | Sign in by running `codex` as the same OS user, then use Explorer **Recheck** or run `doctor --mode explorer` |
 
 Never attach target credentials, Authorization/Cookie values, ZAP keys, provider tokens, or private Request/Response bodies to a public issue.

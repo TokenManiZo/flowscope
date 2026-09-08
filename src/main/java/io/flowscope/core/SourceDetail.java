@@ -7,6 +7,7 @@ public enum SourceDetail {
     BURP_INTRUDER(Source.HUMAN, "Burp Intruder"),
     MANUAL_HTTP(Source.HUMAN, "수동 HTTP"),
     ZAP_SPIDER(Source.SCANNER, "ZAP Spider"),
+    ZAP_AUTHENTICATION(Source.SCANNER, "ZAP 브라우저 로그인"),
     ZAP_API_IMPORT(Source.SCANNER, "ZAP API 정의 가져오기"),
     ZAP_AJAX_SPIDER(Source.SCANNER, "ZAP AJAX Spider"),
     ZAP_CLIENT_SPIDER(Source.SCANNER, "ZAP Client Spider"),

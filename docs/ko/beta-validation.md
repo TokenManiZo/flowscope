@@ -1,4 +1,31 @@
-# FlowScope 1.2.0-beta.44 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.45 사전 벤치마크 검증 기록
+
+## 2026-09-08 · 미출시 D-130~D-133 · ZAP 직접 인증·휘발성 환경·Client 단일 실행·Docker API gate
+
+`352ce1a`의 D-129 distribution bundle 위에 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Client Spider 단일 실행과 실물 Docker API 호환 수정을 추가한 미출시 작업 결과다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS arm64, Homebrew JDK 21.0.12.1, 로컬 공식 ZAP 2.17.0 Docker 컨테이너 |
+| 전체 빌드 | 같은 코드 입력에서 `mvn clean verify` 2회 성공 |
+| Java | 매회 370 tests, failures/errors 0, opt-in provider 하네스 1 skip |
+| React | 매회 38 files / 247 tests, typecheck·notices·Vite build 통과 |
+| 집중 Java | `ZapAccountVaultTest,ZapBrowserAuthenticatorTest,ZapClientTest,ZapCampaignRegressionTest,TrafficClassifierTest,PipelineClassificationTest,FlowScopeWebServerTest,FlowScopeExtensionPhaseTest` 통과 |
+| 집중 React | `InspectionPage.test.tsx`, `client.test.ts` 28 tests 통과, typecheck 통과 |
+| 비밀·귀속 계약 | Web/snapshot은 username/password를 반환하지 않음, 임시 secret copy 폐기, 명시적 `authSuccessful=true` 뒤에만 account crawler·SCANNER lane identity 사용 |
+| 격리·정리 계약 | lane별 휘발성 ZAP session/Context/user, account Client Spider, direct-auth header 보존, ZAP campaign initiator 제한, 로그인 준비 traffic의 coverage/count 제외, 성공/실패/취소의 user/Context cleanup 자동 회귀 |
+| Client 단일 실행 | 새 캠페인은 Traditional/AJAX를 호출하지 않으며 Client 실패·terminal 대기 실패·범위 안 Client 응답 0건을 lane 실패로 유지. 상태는 `client_captures`만 노출 |
+| UI 기능 보존 | target별 ZAP 로그인 계정, 로그인/브라우저/경과/heartbeat, Client 진행·수집량, OpenAPI·GraphQL·Postman·SOAP 정의 입력, 캠페인 취소 component 회귀 |
+| 실물 선행 조건 | 컨테이너에 Firefox와 `authhelper`·`client`·`selenium` add-on 존재 확인 |
+| 실물 Docker API | 기존 8089와 분리한 임시 8090 project에서 host 요청의 Compose bridge gateway allowlist, API 준비, exact form POST 200을 확인. charset 포함 form·JSON POST는 ZAP 2.17에서 400 `content_type_not_supported` |
+| 실물 session/Replacer | `zapHomePath`가 `/run/flowscope-zap/` tmpfs 아래임, initiator 18 Replacer 규칙이 이름 없는 `newSession` 뒤에도 유지됨, tmpfs session 파일 408개, `/home/zap/.ZAP/session` 파일 0개 확인 |
+| 실제 doctor | ZAP API/version/upstream/add-on/Web 통과. Burp SCANNER listener `127.0.0.1:8081`은 CLOSED |
+| 산출물 | JAR 31,649,268 bytes / 9,140 entries, bundle 57 entries. JAR SHA-256 `78868e06a2af099df26e5cbc9254daf42bacc791bdee8aaa1c321e940612cb24` |
+| 반복 패키징 | D-133 회귀를 포함한 두 clean verify의 JAR·bundle SHA-256이 각각 동일. 이 문서의 최종 수치까지 포함한 clean package 2회에서도 JAR·bundle SHA-256이 각각 동일. bundle은 이 문서를 포함하므로 자기 크기·해시를 문서 안에 고정하지 않음 |
+| 정적 운영 검사 | `git diff --check`, Bash 5개 `bash -n`·`shellcheck`, `docker compose config --quiet`, manifest 첫 엔트리·폐기 MCP/Judge 클래스 부재·MR namespace 검사 통과 |
+| 미실행 | 실제 target browser 로그인, Burp 8081 capture, 복수 계정 격리, Windows PowerShell 실기기 |
+
+현재 자동 결과는 FlowScope의 API 호출 순서·상태·비밀·정리 계약을 검증한다. FakeZap은 실제 Firefox 로그인이나 대상 크롤링을 수행하지 않는다. 별도 실물 gate는 Docker API 접근·form 호환·tmpfs session·Replacer 규칙 수명까지만 확인했다. `doctor.sh --mode zap`은 ZAP API 2.17.0, upstream 8081 설정, 필수 add-on과 Web을 확인했지만 실제 Burp listener가 닫혀 1 failure로 종료했다. 따라서 실물 target end-to-end 성공을 주장하지 않는다. CAPTCHA·MFA·WebAuthn·복합 SSO 지원도 검증하지 않았다. PowerShell은 이 머신에 `pwsh`가 없어 파싱하지 못했다.
 
 ## 2026-09-08 · 미출시 D-129 · 다운로드 bundle·환경 점검 gate
 

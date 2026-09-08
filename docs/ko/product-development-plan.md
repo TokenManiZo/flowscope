@@ -1,6 +1,23 @@
-# FlowScope 1.2.0-beta.44 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.45 제품 개발·검증 계획
 
-> **읽는 법:** 현재 우선순위는 D-129 다운로드 bundle·기능별 preflight의 최종 자동 검증과 실제 Burp gate다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** 현재 우선순위는 D-130~D-133 ZAP 직접 브라우저 인증·Client 단일 crawler의 최종 검증과 실제 Burp target gate다. Docker daemon/API/session gate는 완료했고 beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+
+## 현재 우선순위 · ZAP 직접 브라우저 인증
+
+1. HUMAN/Request Lab의 Session Broker와 ZAP 로그인 계정 vault를 분리하고 raw 자격증명을 현재 프로세스 밖으로 내보내지 않는다.
+2. 계정마다 이름 없는 ZAP session과 임시 Context/user를 만들고 Browser Based Authentication의 명시적 성공 뒤에만 account-scoped strict Client Spider를 실행한다. Traditional/AJAX는 호출하지 않는다.
+3. valid campaign capability를 통과한 직접 인증 SCANNER 요청의 ZAP Cookie/Authorization을 보존하고, 명시적 인증 성공이 있는 `laneAccountId`만 Evidence 신원으로 사용한다.
+4. 성공·실패·취소에서 crawler quiescence와 임시 user/Context cleanup을 확인하며 실패한 격리 상태로 후속 계정을 실행하지 않는다.
+5. React에서 계정 등록/폐기, 인증 상태·브라우저·단계·경과·heartbeat, API 정의 입력, 캠페인 취소를 제공하고 비밀값은 server 응답·query cache에 반환하지 않는다.
+6. 집중 회귀 뒤 전체 `mvn clean verify` 2회와 JAR/bundle 구조·hash를 확인한다.
+7. Burp scanner listener 8081이 열린 실제 ZAP 2.17 환경에서 비로그인+로그인 2계정, 로그인 실패, capture 귀속, 쿠키 격리, strict Client와 0건 실패, Passive/Alert, 정의 import, 취소·cleanup을 검증한다.
+8. Windows bundle/doctor/Docker 실기기와 CAPTCHA·MFA·WebAuthn·복합 SSO 한계를 별도 운영 gate로 남긴다.
+
+D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완료했다. host publish 요청용 bridge gateway allowlist와 ZAP 2.17 exact form POST 계약은 회귀로 고정했으며, 7번의 실제 target/Burp 8081 gate를 대신하지 않는다.
+
+**현재 상태:** 1~6과 D-133 daemon/API/session gate를 완료했다. 7~8의 실제 target·Windows 운영 gate는 대기한다.
+
+현재 구현 계약은 [D-130](decisions.md#d-130--zap-계정-lane은-별도-메모리-vault와-browser-based-authentication을-사용한다-2026-09-08), 검증 결과는 [beta-validation](beta-validation.md), 인계는 [HANDOFF](HANDOFF.md)가 정본이다.
 
 ## 현재 우선순위 · 독립 LLM Explorer
 
@@ -11,7 +28,7 @@
 5. 집중 회귀, 전체 `mvn clean verify`, 실제 로그인된 Codex provider opt-in 하네스와 JAR 식별값을 최종 소스에서 다시 확인한다.
 6. 새 JAR 실제 Burp에서 anonymous·HTML form·JSON token, exact-scope, Evidence 귀속, 취소/정리, 프로젝트 비밀 비저장을 확인한다.
 7. 승인된 독립 corpus에서 HUMAN·ZAP 대비 추가 endpoint·parameter, 중복·노이즈·요청량·검토시간을 측정한다. 결과 전에는 발견률 우월성을 주장하지 않는다.
-8. ZAP Client-only/AJAX 제거와 FlowScope Evidence용 제품 MCP는 이번 Explorer와 섞지 않는 별도 결정으로 남긴다.
+8. ZAP Client-only 전환은 D-132로 구현했다. FlowScope Evidence용 제품 MCP는 이번 Explorer와 섞지 않는 별도 결정으로 남긴다.
 9. 다운로드 사용자가 clone 없이 실행하도록 JAR·ZAP helper·문서를 distribution bundle로 만들고, `human|zap|explorer|full` doctor와 Explorer readiness 재확인을 제공한다. JAR/bundle 재현 검사와 Windows parser를 통과한 뒤에만 배포 준비 완료로 표시한다.
 
 현재 Explorer 실행 계약은 [LLM Explorer](llm-explorer.md), 삭제 목록·보존 계약은 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.

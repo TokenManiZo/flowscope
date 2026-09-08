@@ -22,6 +22,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.SessionBroker;
+import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.web.FlowScopeWebServer;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -56,6 +57,7 @@ final class FlowScopeWebServerTest {
     @AfterEach void stop() {
         if (server != null) server.close();
         state.sessions.close();
+        state.zapAccounts.close();
     }
 
     @Test
@@ -206,6 +208,34 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void zapAccountsStayMemoryOnlyAndScannerRunExposesOnlySafeMetadata() throws Exception {
+        start();
+
+        HttpResponse<String> saved = post("/api/zap-accounts",
+                "action=save&label=ZAP-A&role=USER&service=" + encode(state.record.service)
+                        + "&loginUrl=" + encode(state.record.service + "/login")
+                        + "&username=" + encode(" zap-user@example.test ")
+                        + "&password=" + encode("  zap-secret-password  "), token);
+
+        assertEquals(200, saved.statusCode(), saved.body());
+        assertFalse(saved.body().contains("zap-user@example.test"));
+        assertFalse(saved.body().contains("zap-secret-password"));
+        assertEquals(" zap-user@example.test ", state.lastZapAccountInput.username());
+        assertEquals("  zap-secret-password  ", state.lastZapAccountInput.password());
+        String accountId = JSON.readTree(saved.body()).at("/account/id").asText();
+        JsonNode scanner = json(get("/api/scanner-run", token, origin()));
+        assertEquals(accountId, scanner.at("/accounts/0/id").asText());
+        assertTrue(scanner.at("/accounts/0/hasPassword").asBoolean());
+        assertFalse(scanner.toString().contains("zap-user@example.test"));
+        assertFalse(scanner.toString().contains("zap-secret-password"));
+
+        HttpResponse<String> deleted = post("/api/zap-accounts",
+                "action=delete&id=" + encode(accountId), token);
+        assertEquals(200, deleted.statusCode(), deleted.body());
+        assertEquals(0, json(get("/api/scanner-run", token, origin())).at("/accounts").size());
+    }
+
+    @Test
     void archivedAssessmentsAreReadOnlyAndDoNotBecomeCurrentCandidates() throws Exception {
         start();
         state.archivedAssessments = List.of(new LegacyAssessment("old-1", "BOLA", "LIKELY",
@@ -263,8 +293,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("전송 전부 실패"));
         assertTrue(index.body().contains("TLS 인증서 검증"));
         assertTrue(index.body().contains("scannerlane"));
-        assertTrue(index.body().contains("Traditional "));
-        assertTrue(index.body().contains("Rendered "));
+        assertTrue(index.body().contains("Client "));
         assertTrue(index.body().contains("scannerstate.completed_with_warnings"));
         assertTrue(index.body().contains("SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS'"));
         assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
@@ -273,12 +302,11 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("lane.wait_reason"));
         assertTrue(index.body().contains("RESPONDING_NO_NEW_TRAFFIC"));
         assertTrue(index.body().contains("STARTING:'실행 준비 중'"));
-        assertTrue(index.body().contains("AJAX 보완"));
         assertTrue(index.body().contains("lane.passive_remaining"));
         assertTrue(index.body().contains("lane.passive_task"));
         assertTrue(index.body().contains("Alert 집계 전"));
-        assertTrue(index.body().contains("lane.ajax_executed"));
-        assertTrue(index.body().contains("Client·AJAX 둘 다 실행"));
+        assertFalse(index.body().contains("Traditional Spider"));
+        assertFalse(index.body().contains("AJAX Spider 보완"));
         assertTrue(index.body().contains("실시간 실행 기록"));
         assertTrue(index.body().contains("SCANNER_RUN.events"));
         assertTrue(index.body().contains("id=\"scannerRunCancel\""));
@@ -292,7 +320,7 @@ final class FlowScopeWebServerTest {
         assertTrue(index.body().contains("/api/zap-status"));
         assertTrue(index.body().contains("!ZAP_STATUS.connected"));
         assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.2.0-beta.44 · 3소스"));
+        assertTrue(index.body().contains("v1.2.0-beta.45 · 3소스"));
         assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
         assertTrue(index.body().contains("ZAP HAR"));
         assertTrue(index.body().contains("/api/import-har"));
@@ -531,7 +559,7 @@ final class FlowScopeWebServerTest {
                 null, "{\"id\":\"user-a\"}", List.of(), java.time.Instant.now());
         var ended = post("/api/session-capture", "action=end&account=user-a", token);
         assertEquals(200, ended.statusCode());
-        assertTrue(ended.body().contains("HUMAN pass와 ZAP"));
+        assertTrue(ended.body().contains("HUMAN pass와 요청 실험실"));
         assertFalse(ended.body().contains("LLM에서"));
 
         JsonNode snapshot = json(get("/api/snapshot", token, origin()));
@@ -947,12 +975,14 @@ final class FlowScopeWebServerTest {
         private final AtomicBoolean opened = new AtomicBoolean();
         private final RunContextRegistry contexts = new RunContextRegistry();
         private final SessionBroker sessions = new SessionBroker();
+        private final ZapAccountVault zapAccounts = new ZapAccountVault();
         private final RequestRecord record;
         private volatile String scannerTarget = "";
         private volatile List<String> scannerScope;
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
         private volatile boolean scannerCancelled;
+        private volatile ZapAccountVault.Input lastZapAccountInput;
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
@@ -998,13 +1028,19 @@ final class FlowScopeWebServerTest {
         @Override public List<ValidationDecision> validations() { return archivedValidations; }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public SessionBroker sessions() { return sessions; }
+        @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
+        @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
+            lastZapAccountInput = input;
+            return zapAccounts.save(input);
+        }
+        @Override public void removeZapAccount(String id) { zapAccounts.remove(id); }
         @Override public List<String> scopeEntries() { return scannerScope; }
         @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
         @Override public JsonNode startScanner(String target, List<String> accountIds, boolean includeAnonymous) {
             scannerTarget = target;
             scannerAccounts = List.copyOf(accountIds);
             scannerAnonymous = includeAnonymous;
-            return JSON.createObjectNode().put("status", "RUNNING").put("stage", "TRADITIONAL_SPIDER");
+            return JSON.createObjectNode().put("status", "RUNNING").put("stage", "CLIENT_SPIDER");
         }
         @Override public JsonNode scannerStatus() {
             return JSON.createObjectNode().put("status", "NOT_STARTED");

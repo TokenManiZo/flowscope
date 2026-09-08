@@ -362,12 +362,36 @@ export interface ScannerLane {
   account_label: string
   status: string
   stage: string
+  authentication_state?: string
+  authentication_browser?: string
+  authentication_message?: string
   captured_records: number
-  traditional_captures: number
-  rendered_captures: number
+  client_captures: number
+  definition_imports?: number
   alert_count: number
+  elapsed_seconds?: number
+  stage_elapsed_seconds?: number
+  stage_timeout_seconds?: number
+  last_heartbeat_age_seconds?: number
+  last_progress_age_seconds?: number
+  heartbeat_status?: string
+  queue_position?: number
+  queue_total?: number
+  wait_reason?: string
   warning: string
   error: string
+}
+
+export interface ZapAccount {
+  id: string
+  label: string
+  role: string
+  service: string
+  loginUrl: string
+  status: "UNVERIFIED" | "AUTHENTICATING" | "VERIFIED_BY_ZAP" | "FAILED"
+  message: string
+  updatedAt: string
+  hasPassword: boolean
 }
 
 export interface ScannerRun {
@@ -379,12 +403,20 @@ export interface ScannerRun {
   warning?: string
   captured_records?: number
   alert_count?: number
+  elapsed_seconds?: number
+  stage_elapsed_seconds?: number
+  stage_timeout_seconds?: number
+  last_heartbeat_age_seconds?: number
+  last_progress_age_seconds?: number
+  heartbeat_status?: string
+  activity_state?: string
   error?: string
   lanes?: readonly ScannerLane[]
 }
 
 export interface ScannerRunEnvelope {
   run: ScannerRun
+  accounts: readonly ZapAccount[]
   scope: readonly string[]
 }
 

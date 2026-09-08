@@ -23,6 +23,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ZapCampaign;
+import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.integration.RunExecutionLedger;
@@ -69,6 +70,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
         default SessionBroker sessions() { return null; }
+        default List<ZapAccountVault.View> zapAccounts() { return List.of(); }
+        default ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
+            throw new UnsupportedOperationException("ZAP account workflow is unavailable");
+        }
+        default void removeZapAccount(String id) {
+            throw new UnsupportedOperationException("ZAP account workflow is unavailable");
+        }
         default List<String> scopeEntries() { return List.of(); }
         default List<RouteCandidate> routeCandidates() { return List.of(); }
         default List<RunExecutionLedger.Summary> executionSummaries() { return List.of(); }
@@ -205,6 +213,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/session-unbind" -> sessionUnbind(request);
             case "/api/session-capture" -> sessionCapture(request);
             case "/api/zap-status" -> zapStatus(request);
+            case "/api/zap-accounts" -> zapAccounts(request);
             case "/api/scanner-run" -> scannerRun(request);
             case "/api/explorer-run" -> explorerRun(request);
             case "/api/explorer-accounts" -> explorerAccounts(request);
@@ -682,7 +691,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 state.rebuild();
                 SessionBroker.Status status = broker.viewForAccount(accountId).orElseThrow().status();
                 String message = status == SessionBroker.Status.ACTIVE
-                        ? account.label() + " 로그인이 연결됐습니다. HUMAN pass와 ZAP에서 사용할 수 있습니다."
+                        ? account.label() + " 로그인이 연결됐습니다. HUMAN pass와 요청 실험실에서 사용할 수 있습니다."
                         : account.label() + " 로그인 확인이 끝나지 않았습니다. HUMAN 8080에서 다시 로그인하고 "
                         + "인증된 페이지가 열린 뒤 캡처를 종료하세요.";
                 return success(message);
@@ -700,6 +709,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (request.method().equals("GET")) {
             ObjectNode body = json.createObjectNode();
             body.set("run", state.scannerStatus());
+            body.set("accounts", json.valueToTree(state.zapAccounts()));
             body.set("scope", json.valueToTree(state.scopeEntries().stream()
                     .filter(entry -> !isOwnControlPlane(entry)).toList()));
             return json(200, body);
@@ -758,6 +768,37 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response zapStatus(LoopbackHttpServer.Request request) throws IOException {
         if (!request.method().equals("GET")) return method("GET");
         return json(200, state.zapStatus());
+    }
+
+    private LoopbackHttpServer.Response zapAccounts(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            ObjectNode body = json.createObjectNode();
+            body.set("accounts", json.valueToTree(state.zapAccounts()));
+            return json(200, body);
+        }
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            if ("RUNNING".equals(state.scannerStatus().path("status").asText())) {
+                throw new IllegalStateException("실행 중인 ZAP 캠페인을 종료한 뒤 계정을 변경하세요.");
+            }
+            String action = form.getOrDefault("action", "save").trim().toLowerCase(Locale.ROOT);
+            if (action.equals("delete")) {
+                state.removeZapAccount(required(form, "id"));
+                return success("ZAP 로그인 계정의 메모리 자격증명을 폐기했습니다.");
+            }
+            if (!action.equals("save")) throw new IllegalArgumentException("action은 save 또는 delete여야 합니다.");
+            ZapAccountVault.View saved = state.saveZapAccount(new ZapAccountVault.Input(
+                    form.getOrDefault("id", ""), required(form, "label"),
+                    form.getOrDefault("role", "UNKNOWN"), required(form, "service"),
+                    required(form, "loginUrl"), requiredRaw(form, "username"), requiredRaw(form, "password")));
+            ObjectNode body = json.createObjectNode().put("success", true)
+                    .put("message", "ZAP 로그인 계정을 현재 프로세스 메모리에 등록했습니다.");
+            body.set("account", json.valueToTree(saved));
+            return json(200, body);
+        } catch (RuntimeException error) {
+            return error(400, error.getMessage());
+        }
     }
 
     private LoopbackHttpServer.Response explorerRun(LoopbackHttpServer.Request request) throws IOException {

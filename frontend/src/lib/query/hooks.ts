@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   bindSession,
+  cancelScannerRun,
   clearTraffic,
   deleteAccount,
   getEvidence,
@@ -29,6 +30,8 @@ import {
   steerExplorerRun,
   saveExplorerAccount,
   deleteExplorerAccount,
+  saveZapAccount,
+  deleteZapAccount,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -107,7 +110,10 @@ function useInvalidatingMutation<TData, TVariables>(
 export function useClearTrafficMutation() { return useInvalidatingMutation(clearTraffic, [queryKeys.snapshot]) }
 export function useLoadSampleMutation() { return useInvalidatingMutation(loadSample, [queryKeys.snapshot]) }
 export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
-export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous }: { target: string; accounts: string; anonymous: boolean }) => startScannerRun(target, accounts, anonymous), [queryKeys.scannerRun]) }
+export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous, definitions }: { target: string; accounts: string; anonymous: boolean; definitions: string }) => startScannerRun(target, accounts, anonymous, definitions), [queryKeys.scannerRun]) }
+export function useScannerCancelMutation() { return useInvalidatingMutation(cancelScannerRun, [queryKeys.scannerRun]) }
+export function useZapAccountSaveMutation() { return useInvalidatingMutation(saveZapAccount, [queryKeys.scannerRun, queryKeys.snapshot]) }
+export function useZapAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteZapAccount(id), [queryKeys.scannerRun, queryKeys.snapshot]) }
 export function useExplorerStartMutation() { return useInvalidatingMutation(startExplorerRun, [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear" | "recheck") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerSteerMutation() { return useInvalidatingMutation((message: string) => steerExplorerRun(message), [queryKeys.explorerRun]) }

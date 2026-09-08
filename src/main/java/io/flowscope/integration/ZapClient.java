@@ -31,6 +31,10 @@ public final class ZapClient {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("ZAP session name is required");
         return get("/JSON/core/action/newSession/", "name=" + enc(name) + "&overwrite=true");
     }
+    /** 이름 없는 임시 세션. ZAP 자체는 user directory 아래에 untitled DB를 만들 수 있다. */
+    public String newTemporarySession() {
+        return post("/JSON/core/action/newSession/", "");
+    }
     public String newContext(String name) {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("ZAP context name is required");
         return get("/JSON/context/action/newContext/", "contextName=" + enc(name));
@@ -47,32 +51,69 @@ public final class ZapClient {
         return get("/JSON/context/action/setContextInScope/",
                 "contextName=" + enc(name) + "&booleanInScope=true");
     }
+    public String setBrowserAuthentication(String contextId, String loginPageUrl, String browser) {
+        String config = "loginPageUrl=" + enc(loginPageUrl)
+                + "&browserId=" + enc(browser == null || browser.isBlank() ? "firefox-headless" : browser);
+        return post("/JSON/authentication/action/setAuthenticationMethod/",
+                "contextId=" + enc(contextId) + "&authMethodName=browserBasedAuthentication"
+                        + "&authMethodConfigParams=" + enc(config));
+    }
+    public String setAutoDetectSessionManagement(String contextId) {
+        return post("/JSON/sessionManagement/action/setSessionManagementMethod/",
+                "contextId=" + enc(contextId) + "&methodName=autoDetectSessionManagement");
+    }
+    public String setAutoDetectVerification(String contextId) {
+        return post("/JSON/verification/action/setVerificationMethod/",
+                "contextId=" + enc(contextId) + "&checkingStrategy=AUTO_DETECT");
+    }
+    public String newUser(String contextId, String name) {
+        return post("/JSON/users/action/newUser/", "contextId=" + enc(contextId) + "&name=" + enc(name));
+    }
+    public String setUserCredentials(String contextId, String userId, String username, String password) {
+        String credentials = "username=" + enc(username) + "&password=" + enc(password);
+        return postSensitive("/JSON/users/action/setAuthenticationCredentials/",
+                "contextId=" + enc(contextId) + "&userId=" + enc(userId)
+                        + "&authCredentialsConfigParams=" + enc(credentials));
+    }
+    public String setUserEnabled(String contextId, String userId) {
+        return post("/JSON/users/action/setUserEnabled/",
+                "contextId=" + enc(contextId) + "&userId=" + enc(userId) + "&enabled=true");
+    }
+    public String authenticateAsUser(String contextId, String userId) {
+        return post("/JSON/users/action/authenticateAsUser/",
+                "contextId=" + enc(contextId) + "&userId=" + enc(userId), Duration.ofMinutes(2));
+    }
+    public String authenticationState(String contextId, String userId) {
+        return get("/JSON/users/view/getAuthenticationState/",
+                "contextId=" + enc(contextId) + "&userId=" + enc(userId));
+    }
+    public String removeUser(String contextId, String userId) {
+        return post("/JSON/users/action/removeUser/",
+                "contextId=" + enc(contextId) + "&userId=" + enc(userId));
+    }
+    public String removeContext(String contextName) {
+        return post("/JSON/context/action/removeContext/", "contextName=" + enc(contextName));
+    }
     public String addRequestHeaderRule(String description, String urlRegex,
-                                       String headerName, String replacement) {
+                                       String headerName, String replacement,
+                                       java.util.List<Integer> initiators) {
         if (description == null || description.isBlank() || urlRegex == null || urlRegex.isBlank()
-                || headerName == null || headerName.isBlank() || replacement == null || replacement.isBlank()) {
+                || headerName == null || headerName.isBlank() || replacement == null || replacement.isBlank()
+                || initiators == null || initiators.isEmpty()) {
             throw new IllegalArgumentException("ZAP Replacer capability rule fields are required");
         }
-        return get("/JSON/replacer/action/addRule/", "description=" + enc(description)
+        String initiatorList = initiators.stream().map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(","));
+        return post("/JSON/replacer/action/addRule/", "description=" + enc(description)
                 + "&enabled=true&matchType=REQ_HEADER&matchRegex=false&matchString=" + enc(headerName)
-                + "&replacement=" + enc(replacement) + "&url=" + enc(urlRegex));
+                + "&replacement=" + enc(replacement) + "&url=" + enc(urlRegex)
+                + "&initiators=" + enc(initiatorList));
     }
     public String removeReplacerRule(String description) {
         if (description == null || description.isBlank()) {
             throw new IllegalArgumentException("ZAP Replacer rule description is required");
         }
-        return get("/JSON/replacer/action/removeRule/", "description=" + enc(description));
-    }
-    public String spider(String target) {
-        return get("/JSON/spider/action/scan/", "url=" + enc(target) + "&recurse=true&subtreeOnly=true");
-    }
-    public String ajaxSpider(String target) {
-        return ajaxSpider(target, "");
-    }
-    public String ajaxSpider(String target, String contextName) {
-        String query = "url=" + enc(target) + "&inScope=true&subtreeOnly=true";
-        if (contextName != null && !contextName.isBlank()) query += "&contextName=" + enc(contextName);
-        return get("/JSON/ajaxSpider/action/scan/", query);
+        return post("/JSON/replacer/action/removeRule/", "description=" + enc(description));
     }
     public String clientSpider(String target) {
         return clientSpider(target, "");
@@ -82,20 +123,17 @@ public final class ZapClient {
         if (contextName != null && !contextName.isBlank()) query += "&contextName=" + enc(contextName);
         return get("/JSON/clientSpider/action/scan/", query);
     }
-    public String spiderStatus(String scanId) {
-        return get("/JSON/spider/view/status/", "scanId=" + enc(scanId));
+    public String clientSpider(String target, String contextName, String userName, String browser) {
+        return get("/JSON/clientSpider/action/scan/", "url=" + enc(target)
+                + "&subtreeOnly=true&scopeCheck=STRICT&contextName=" + enc(contextName)
+                + "&userName=" + enc(userName) + "&browser=" + enc(browser));
     }
-    public String ajaxSpiderStatus() { return get("/JSON/ajaxSpider/view/status/", ""); }
     public String clientSpiderStatus(String scanId) {
         return get("/JSON/clientSpider/view/status/", "scanId=" + enc(scanId));
-    }
-    public String stopSpider(String scanId) {
-        return get("/JSON/spider/action/stop/", "scanId=" + enc(scanId));
     }
     public String stopClientSpider(String scanId) {
         return get("/JSON/clientSpider/action/stop/", "scanId=" + enc(scanId));
     }
-    public String stopAjaxSpider() { return get("/JSON/ajaxSpider/action/stop/", ""); }
     public String passiveRecordsToScan() { return get("/JSON/pscan/view/recordsToScan/", ""); }
     public String passiveTasks() { return get("/JSON/pscan/view/currentTasks/", ""); }
     public String clearPassiveQueue() { return get("/JSON/pscan/action/clearQueue/", ""); }
@@ -119,6 +157,7 @@ public final class ZapClient {
         return get("/JSON/alert/view/numberOfAlerts/", query);
     }
     public String installedAddons() { return get("/JSON/autoupdate/view/installedAddons/", ""); }
+    public String zapHomePath() { return get("/JSON/core/view/zapHomePath/", ""); }
     public String httpProxyEnabled() { return get("/JSON/network/view/isHttpProxyEnabled/", ""); }
     public String httpProxy() { return get("/JSON/network/view/getHttpProxy/", ""); }
     public String importOpenApi(String definitionUrl, String hostOverride, String contextId, int maxMessages) {
@@ -200,6 +239,45 @@ public final class ZapClient {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 String detail = io.flowscope.core.Masking.truncate(
                         io.flowscope.core.Masking.maskSecrets(response.body()), 512);
+                throw new IllegalStateException("ZAP API HTTP " + response.statusCode()
+                        + (detail == null || detail.isBlank() ? "" : ": " + detail));
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("ZAP API 호출 중단", e);
+        } catch (IOException e) {
+            throw new IllegalStateException("ZAP API 통신 실패: " + e.getMessage(), e);
+        }
+    }
+
+    private String post(String path, String form) {
+        return post(path, form, Duration.ofSeconds(20));
+    }
+
+    private String postSensitive(String path, String form) {
+        return post(path, form, Duration.ofSeconds(20), false);
+    }
+
+    private String post(String path, String form, Duration timeout) {
+        return post(path, form, timeout, true);
+    }
+
+    private String post(String path, String form, Duration timeout, boolean includeErrorBody) {
+        URI uri = baseUri.resolve(path);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(form == null ? "" : form, StandardCharsets.UTF_8));
+        if (!apiKey.isBlank()) builder.header("X-ZAP-API-Key", apiKey);
+        return send(builder.build(), includeErrorBody);
+    }
+
+    private String send(HttpRequest request, boolean includeErrorBody) {
+        try {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String detail = includeErrorBody ? io.flowscope.core.Masking.truncate(
+                        io.flowscope.core.Masking.maskSecrets(response.body()), 512) : "";
                 throw new IllegalStateException("ZAP API HTTP " + response.statusCode()
                         + (detail == null || detail.isBlank() ? "" : ": " + detail));
             }

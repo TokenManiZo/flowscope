@@ -112,10 +112,10 @@ public final class Pipeline {
     private static boolean immutableDiscoveryGateAllows(RequestRecord record) {
         return record.hasResponse
                 && record.source != Source.UNKNOWN
+                && record.phase != RunPhase.SESSION_SETUP
                 && record.phase != RunPhase.VALIDATION
                 && record.phase != RunPhase.COACH_PROBE
-                && (record.source != Source.HUMAN
-                || (record.phase != RunPhase.SESSION_SETUP && record.phase != RunPhase.BASELINE));
+                && (record.source != Source.HUMAN || record.phase != RunPhase.BASELINE);
     }
 
     private static String serviceOperationKey(RequestRecord record) {
@@ -125,7 +125,14 @@ public final class Pipeline {
     private static void applyIdentityState(List<RequestRecord> records, AnalysisConfig config) {
         config.applyIdentityBindings(records);
         for (RequestRecord record : records) {
-            if (config.boundAccount(record.service, record.fp).isPresent()) {
+            AccountProfile laneAccount = record.source == Source.SCANNER
+                    && record.executionTrust == ExecutionTrust.CONTROLLED
+                    && record.laneAccountId != null
+                    ? config.account(record.laneAccountId).orElse(null) : null;
+            if (sameService(laneAccount, record.service)) {
+                record.idn = laneAccount.id();
+                record.authState = AuthState.ACCOUNT_BOUND;
+            } else if (config.boundAccount(record.service, record.fp).isPresent()) {
                 record.authState = AuthState.ACCOUNT_BOUND;
             } else if (Fingerprints.ANONYMOUS.equals(record.fp)) {
                 record.authState = AuthState.ANONYMOUS;
@@ -139,5 +146,11 @@ public final class Pipeline {
             }
             record.role = config.identityRole(record.idn);
         }
+    }
+
+    private static boolean sameService(AccountProfile account, String service) {
+        if (account == null) return false;
+        try { return account.service().equals(AccountProfile.normalizeService(service)); }
+        catch (RuntimeException ignored) { return false; }
     }
 }

@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -39,9 +40,10 @@ public final class ZapCampaign implements AutoCloseable {
         default void scannerCapability(String runId, String capability) { }
         default void clearScannerCapability(String runId) { }
         default long scannerCapabilityRejections(String runId) { return 0; }
+        default void scannerDirectAuthentication(String runId, boolean enabled) { }
         RunContextRegistry contexts();
         boolean approve(String action, String target);
-        default SessionBroker sessions() { return null; }
+        default ZapAccountVault zapAccounts() { return null; }
     }
 
     public enum ZapDefinitionType { OPENAPI, GRAPHQL, POSTMAN, SOAP }
@@ -50,9 +52,12 @@ public final class ZapCampaign implements AutoCloseable {
     private static final int MAX_ZAP_ALERT_SNAPSHOT = 20_000;
     private static final int MAX_ZAP_LANES = 20;
     private static final int MAX_ZAP_PROGRESS_EVENTS = 120;
+    // ZAP 2.17 HttpSender: auth=5, import/manual=6, Authentication Helper=14,
+    // auth poll=15, Client Spider=18.
+    private static final List<Integer> CAPABILITY_INITIATORS = List.of(5, 6, 14, 15, 18);
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
-            "spider", "client", "spiderAjax", "pscan", "pscanrules", "selenium", "openapi", "websocket",
-            "network", "replacer");
+            "client", "pscan", "pscanrules", "selenium", "openapi", "websocket",
+            "network", "replacer", "authhelper");
     private final ObjectMapper json = new ObjectMapper();
     private final State state;
     private final ExecutorService zapWorkflow = Executors.newSingleThreadExecutor(r -> {
@@ -68,13 +73,13 @@ public final class ZapCampaign implements AutoCloseable {
     private volatile ZapBaselineRun zapBaseline;
     private volatile ArrayNode zapBaselineAlerts = json.createArrayNode();
     private volatile List<ZapLaneResult> zapBaselineLanes = List.of();
+    private volatile List<ZapAuthenticationResult> zapAuthentication = List.of();
     private volatile List<ZapLaneRuntime> zapLaneRuntime = List.of();
     private volatile List<ZapProgressEvent> zapProgressEvents = List.of();
     private final AtomicBoolean zapCancelRequested = new AtomicBoolean();
     private volatile Future<?> zapWorkflowFuture;
-    private volatile String ownedTraditionalScanId = "";
+    private volatile boolean zapWorkflowActive;
     private volatile String ownedClientScanId = "";
-    private volatile boolean ownedAjaxRunning;
     private volatile String zapCapabilityRunId = "";
     private volatile String zapCapabilityRule = "";
 
@@ -82,15 +87,16 @@ public final class ZapCampaign implements AutoCloseable {
                                   String scanId, String warning, long capturedRecords,
                                   int definitionCount, int alertCount, String error) {}
     private record ZapLaneResult(String accountId, String accountLabel, String status, String stage,
-                                 long capturedRecords, long traditionalCaptures, long renderedCaptures,
-                                 int definitionImports, int alertCount, boolean alertSnapshotComplete,
-                                 boolean passiveComplete, int passiveRemaining, boolean ajaxExecuted,
+                                 long capturedRecords, long clientCaptures, int definitionImports,
+                                 int alertCount, boolean alertSnapshotComplete,
+                                 boolean passiveComplete, int passiveRemaining,
                                  String warning, String error) {}
     private record ZapLaneRuntime(long queuedAt, long startedAt, long endedAt, long stageStartedAt,
                                   long lastHeartbeatAt, long lastProgressAt, long stageTimeoutMillis,
-                                  long capturedAtStart, long traditionalAtStart, long renderedAtStart,
+                                  long capturedAtStart, long clientAtStart,
                                   long lastCaptured, int passiveRemaining, String passiveTask,
                                   String heartbeatStatus) {}
+    private record ZapAuthenticationResult(String state, String browser, String message) {}
     private record ZapLane(String accountId, String accountLabel) {}
     private record ZapAlertCollection(int count, boolean truncated) {}
     private record PassiveDrainResult(boolean complete, int remaining, String task) {}
@@ -131,13 +137,14 @@ public final class ZapCampaign implements AutoCloseable {
         return startZapBaseline(args);
     }
     public JsonNode deterministicZapBaselineStatus() { return zapBaselineStatus(); }
-    public JsonNode cancelDeterministicZapBaseline() {
+    public synchronized JsonNode cancelDeterministicZapBaseline() {
         ZapBaselineRun current = zapBaseline;
         if (current == null || !"RUNNING".equals(current.status())) return zapBaselineStatus();
         zapCancelRequested.set(true);
         Future<?> future = zapWorkflowFuture;
         if (future != null) future.cancel(true);
         RuntimeException cleanupFailure = stopAndAwaitOwnedCrawlers();
+        state.scannerDirectAuthentication(current.runId(), false);
         state.contexts().abort(Source.SCANNER, current.runId());
         RuntimeException capabilityFailure = removeScannerCapability(current.runId());
         if (capabilityFailure != null) {
@@ -157,6 +164,7 @@ public final class ZapCampaign implements AutoCloseable {
             zapBaseline = null;
             zapBaselineAlerts = json.createArrayNode();
             zapBaselineLanes = List.of();
+            zapAuthentication = List.of();
             zapLaneRuntime = List.of();
             zapProgressEvents = List.of();
         }
@@ -170,6 +178,9 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     synchronized JsonNode startZapBaseline(JsonNode args) {
+        if (zapWorkflowActive) {
+            throw new IllegalStateException("ZAP campaign cleanup is still running");
+        }
         if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) {
             throw new IllegalStateException("ZAP baseline is already running: " + zapBaseline.runId());
         }
@@ -186,7 +197,7 @@ public final class ZapCampaign implements AutoCloseable {
         boolean includeAnonymous = args.has("include_anonymous")
                 ? args.path("include_anonymous").asBoolean(false) : requestedAccounts.isEmpty();
         List<ZapDefinition> definitions = validatedZapDefinitions(args.path("definitions"));
-        verifySafeZapEnvironment(definitions);
+        verifySafeZapEnvironment(definitions, !requestedAccounts.isEmpty());
         if (!definitions.isEmpty() && !state.approve("ZAP API 정의가 만든 요청 전송", target)) {
             throw new IllegalStateException("API definition import requires explicit Burp approval");
         }
@@ -194,37 +205,50 @@ public final class ZapCampaign implements AutoCloseable {
         if (includeAnonymous) lanes.add(new ZapLane(null, "비로그인"));
         for (String accountId : requestedAccounts) {
             String validated = validatedAccountForTarget(accountId, target);
-            SessionBroker.SessionView session = state.sessions().viewForAccount(validated).orElseThrow();
-            lanes.add(new ZapLane(validated, session.accountLabel()));
+            ZapAccountVault.View account = state.zapAccounts().view(validated);
+            lanes.add(new ZapLane(validated, account.label()));
         }
         if (lanes.isEmpty()) throw new IllegalArgumentException("select anonymous or at least one active account");
         if (lanes.size() > MAX_ZAP_LANES) {
             throw new IllegalArgumentException("a ZAP campaign supports at most " + MAX_ZAP_LANES + " identities");
         }
         String runId = validatedRunId(args.path("run_id").asText("zap-baseline-" + System.currentTimeMillis()));
-        state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
-                Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, lanes.get(0).accountId()));
+        state.contexts().activate(Source.SCANNER, new RunContextRegistry.Context(SourceDetail.ZAP_CLIENT_SPIDER,
+                Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, runId, null));
         try {
             installScannerCapability(target, runId);
             zapBaselineAlerts = json.createArrayNode();
             zapProgressEvents = List.of();
             long queuedAt = System.currentTimeMillis();
             zapBaselineLanes = lanes.stream().map(lane -> new ZapLaneResult(lane.accountId(), lane.accountLabel(),
-                    "PENDING", "PENDING", 0, 0, 0, 0, 0,
-                    false, false, -1, false, "", "")).toList();
+                    "PENDING", "PENDING", 0, 0, 0, 0,
+                    false, false, -1, "", "")).toList();
+            zapAuthentication = lanes.stream().map(lane -> lane.accountId() == null
+                    ? new ZapAuthenticationResult("NOT_APPLICABLE", "", "비로그인 lane")
+                    : new ZapAuthenticationResult("PENDING", "firefox-headless", "ZAP 로그인 대기")).toList();
             zapLaneRuntime = lanes.stream().map(lane -> new ZapLaneRuntime(queuedAt, 0, 0, 0,
-                    0, queuedAt, 0, 0, 0, 0, 0,
+                    0, queuedAt, 0, 0, 0, 0,
                     -1, "", "대기 중")).toList();
             zapBaseline = new ZapBaselineRun(runId, target, "RUNNING", "INITIALIZING",
                     "", "", 0, definitions.size(), 0, "");
             zapCancelRequested.set(false);
-            ownedTraditionalScanId = "";
             ownedClientScanId = "";
-            ownedAjaxRunning = false;
             recordZapProgress("전체", "INITIALIZING", "INFO",
                     lanes.size() + "개 신원 격리 검사 대기열 생성");
-            zapWorkflowFuture = zapWorkflow.submit(() -> runZapCampaignSafely(runId, target, lanes, definitions));
+            zapWorkflowActive = true;
+            FutureTask<Void> task = new FutureTask<>(() -> {
+                runZapCampaignSafely(runId, target, lanes, definitions);
+                return null;
+            }) {
+                @Override public void run() {
+                    try { super.run(); }
+                    finally { finishZapWorkflowTask(this); }
+                }
+            };
+            zapWorkflowFuture = task;
+            zapWorkflow.execute(task);
         } catch (RuntimeException error) {
+            zapWorkflowActive = false;
             RuntimeException capabilityFailure = removeScannerCapability(runId);
             state.contexts().abort(Source.SCANNER, runId);
             String detail = error instanceof RejectedExecutionException
@@ -254,6 +278,7 @@ public final class ZapCampaign implements AutoCloseable {
                     capturedForRun(runId), definitions.size(), zapBaselineAlerts.size(), detail);
             recordZapProgress("전체", "FAILED", "ERROR", "ZAP 캠페인 내부 오류 · " + detail);
         } finally {
+            state.scannerDirectAuthentication(runId, false);
             RuntimeException capabilityFailure = removeScannerCapability(runId);
             if (capabilityFailure != null && zapBaseline != null && runId.equals(zapBaseline.runId())
                     && !"CANCELLED".equals(zapBaseline.status())) {
@@ -263,10 +288,14 @@ public final class ZapCampaign implements AutoCloseable {
                         "ZAP scanner capability cleanup failed: " + capabilityFailure.getMessage());
                 recordZapProgress("전체", "FAILED", "ERROR", "ZAP 식별 capability 정리 실패");
             }
-            ownedTraditionalScanId = "";
             ownedClientScanId = "";
-            ownedAjaxRunning = false;
+        }
+    }
+
+    private synchronized void finishZapWorkflowTask(Future<?> task) {
+        if (zapWorkflowFuture == task) {
             zapWorkflowFuture = null;
+            zapWorkflowActive = false;
         }
     }
 
@@ -287,7 +316,8 @@ public final class ZapCampaign implements AutoCloseable {
         List<String> capabilityCoverage = new ArrayList<>(state.scope().entries());
         if (!capabilityCoverage.contains(target)) capabilityCoverage.add(target);
         requireZapOk(state.zap().addRequestHeaderRule(description, ZapClient.exactSubtreeRegex(capabilityCoverage),
-                "X-FlowScope-Scanner-Capability", capability), "install its scanner provenance capability");
+                "X-FlowScope-Scanner-Capability", capability, CAPABILITY_INITIATORS),
+                "install its scanner provenance capability");
         synchronized (this) {
             zapCapabilityRunId = runId;
             zapCapabilityRule = description;
@@ -388,8 +418,8 @@ public final class ZapCampaign implements AutoCloseable {
         for (int blocked = fromIndex; blocked < lanes.size(); blocked++) {
             ZapLane pending = lanes.get(blocked);
             replaceZapLane(blocked, new ZapLaneResult(pending.accountId(), pending.accountLabel(),
-                    "NOT_RUN", "BLOCKED_BY_ISOLATION", 0, 0, 0, 0, 0,
-                    false, false, -1, false, "",
+                    "NOT_RUN", "BLOCKED_BY_ISOLATION", 0, 0, 0, 0,
+                    false, false, -1, "",
                     "이전 신원의 ZAP background 작업을 격리 종료하지 못해 시작하지 않음"));
         }
     }
@@ -402,28 +432,34 @@ public final class ZapCampaign implements AutoCloseable {
         int passiveRemaining = -1;
         boolean alertSnapshotComplete = false;
         int alertCount = 0;
-        boolean ajaxExecuted = false;
         long capturedBefore = capturedForRun(runId);
-        long traditionalBefore = capturedForRun(runId, SourceDetail.ZAP_SPIDER);
-        long renderedBefore = capturedForRenderedStages(runId);
+        long clientBefore = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER);
+        ZapBrowserAuthenticator.Identity identity = null;
+        String contextName = "flowscope-" + runId + "-" + index;
+        String contextId = "";
+        boolean contextCreated = false;
+        boolean directAuthentication = lane.accountId() != null;
+        boolean authenticationVerified = false;
         try {
+            state.scannerDirectAuthentication(runId, directAuthentication);
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "SESSION_SETUP", 0, 0, 0, 0, 0,
-                    false, false, -1, false, "", ""));
+                    "SESSION_SETUP", 0, 0, 0, 0,
+                    false, false, -1, "", ""));
             updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · SESSION_SETUP", "", "", "");
-            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_SPIDER, lane.accountId());
-            String contextName = "flowscope-" + runId + "-" + index;
+            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, null);
             JsonNode context;
             ScheduledFuture<?> setupHeartbeat = startZapWorkerHeartbeat(runId, index, "SESSION_SETUP",
                     "격리 세션 설정 · ZAP API 응답 대기");
             try {
-                JsonNode reset = parseZap(state.zap().newSession(contextName));
+                JsonNode reset = parseZap(state.zap().newTemporarySession());
                 if (!"OK".equalsIgnoreCase(reset.path("Result").asText())) {
                     throw new IllegalStateException("ZAP did not create an isolated session");
                 }
                 recordZapHeartbeat(runId, index, "격리 세션 생성 응답 수신");
                 context = parseZap(state.zap().newContext(contextName));
-                if (context.path("contextId").asText().isBlank()) {
+                contextCreated = true;
+                contextId = context.path("contextId").asText();
+                if (contextId.isBlank()) {
                     throw new IllegalStateException("ZAP did not create an isolated target context");
                 }
                 recordZapHeartbeat(runId, index, "exact-scope Context 설정 중");
@@ -440,10 +476,10 @@ public final class ZapCampaign implements AutoCloseable {
                 setupHeartbeat.cancel(false);
             }
             if (!definitions.isEmpty()) {
-                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_API_IMPORT, lane.accountId());
+                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_API_IMPORT, null);
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                        "API_DEFINITION_IMPORT", 0, 0, 0, 0, 0,
-                        false, false, -1, false, "", ""));
+                        "API_DEFINITION_IMPORT", 0, 0, 0, 0,
+                        false, false, -1, "", ""));
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · API_DEFINITION_IMPORT", "", warning, "");
                 ScheduledFuture<?> importHeartbeat = startZapWorkerHeartbeat(runId, index,
                         "API_DEFINITION_IMPORT",
@@ -454,7 +490,7 @@ public final class ZapCampaign implements AutoCloseable {
                         recordZapHeartbeat(runId, index, "API 정의 " + (definitionIndex + 1) + "/"
                                 + definitions.size() + " · " + definition.type() + " 응답 대기");
                         try {
-                            importZapDefinition(definition, target, context.path("contextId").asText());
+                            importZapDefinition(definition, target, contextId);
                             ensureScannerCapabilityIntact(runId);
                             definitionImports++;
                             recordZapHeartbeat(runId, index, "API 정의 " + (definitionIndex + 1) + "/"
@@ -469,45 +505,48 @@ public final class ZapCampaign implements AutoCloseable {
                     importHeartbeat.cancel(false);
                 }
             }
-            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_SPIDER, lane.accountId());
-            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "TRADITIONAL_SPIDER", 0, 0, 0, definitionImports, 0,
-                    false, false, -1, false, warning, ""));
-            JsonNode traditional = parseZap(state.zap().spider(target));
-            String scanId = traditional.path("scan").asText();
-            if (scanId.isBlank()) throw new IllegalStateException("ZAP Traditional Spider did not return a scan id");
-            ownedTraditionalScanId = scanId;
-            ensureScannerCapabilityIntact(runId);
-            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · TRADITIONAL_SPIDER", scanId, warning, "");
-            try {
-                waitForZap(() -> state.zap().spiderStatus(scanId), 15 * 60_000L,
-                        "Traditional Spider", runId, index);
-                releaseTraditionalSpider(scanId);
-            } catch (RuntimeException failure) {
-                if (claimTraditionalSpider(scanId)) {
-                    try { stopOwnedSpider(scanId, false); }
-                    catch (RuntimeException cleanup) {
-                        ZapIsolationException isolation = new ZapIsolationException(
-                                "Traditional Spider did not reach a terminal state: " + cleanup.getMessage());
-                        isolation.addSuppressed(failure);
-                        throw isolation;
-                    }
+            if (directAuthentication) {
+                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AUTHENTICATION, null);
+                replaceZapAuthentication(index, new ZapAuthenticationResult(
+                        "AUTHENTICATING", "firefox-headless", "ZAP 브라우저 로그인 실행 중"));
+                replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                        "AUTHENTICATION", 0, 0, definitionImports, 0,
+                        false, false, -1, warning, ""));
+                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AUTHENTICATION", "", warning, "");
+                recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "INFO",
+                        "ZAP Browser Based Authentication · Firefox Headless 시작");
+                state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.AUTHENTICATING,
+                        "ZAP 브라우저 로그인 실행 중");
+                String finalContextId = contextId;
+                ScheduledFuture<?> authenticationHeartbeat = startZapWorkerHeartbeat(runId, index,
+                        "AUTHENTICATION", "ZAP 브라우저 로그인 · 인증 결과 대기");
+                try {
+                    identity = state.zapAccounts().withSecret(lane.accountId(), secret ->
+                            new ZapBrowserAuthenticator(state.zap(), json, state.scope()::allows).authenticate(
+                                    runId, target, index, finalContextId, contextName, secret));
+                    recordZapHeartbeat(runId, index, "ZAP 브라우저 로그인 · 인증 성공 응답 수신");
+                } finally {
+                    authenticationHeartbeat.cancel(false);
                 }
-                throw failure;
+                state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
+                        "ZAP verification이 로그인 성공으로 판정했습니다.");
+                authenticationVerified = true;
+                replaceZapAuthentication(index, new ZapAuthenticationResult(
+                        "VERIFIED_BY_ZAP", identity.browser(),
+                        "ZAP verification이 로그인 성공으로 판정했습니다."));
+                recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
+                        "ZAP verification 로그인 성공 · 계정 크롤링 시작");
             }
-            ensureZapNotCancelled();
-            long traditionalCaptured = capturedForRun(runId, SourceDetail.ZAP_SPIDER) - traditionalBefore;
-
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "CLIENT_SPIDER", traditionalCaptured, traditionalCaptured, 0,
-                    definitionImports, 0, false, false, -1, false, warning, ""));
-            long clientBefore = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER);
-            RuntimeException clientFailure = null;
+                    "CLIENT_SPIDER", 0, 0, definitionImports, 0,
+                    false, false, -1, warning, ""));
             String clientId = "";
             boolean clientFinished = false;
             try {
-                JsonNode client = parseZap(state.zap().clientSpider(target, contextName));
+                JsonNode client = parseZap(identity == null
+                        ? state.zap().clientSpider(target, contextName)
+                        : state.zap().clientSpider(target, contextName, identity.userName(), identity.browser()));
                 clientId = client.path("scan").asText();
                 if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
                 ownedClientScanId = clientId;
@@ -517,11 +556,9 @@ public final class ZapCampaign implements AutoCloseable {
                         "Client Spider", runId, index);
                 clientFinished = true;
                 releaseClientSpider(clientId);
-            } catch (RuntimeException clientError) {
-                clientFailure = clientError;
             } finally {
                 if (!clientFinished && !clientId.isBlank() && claimClientSpider(clientId)) {
-                    try { stopOwnedSpider(clientId, true); }
+                    try { stopOwnedClientSpider(clientId); }
                     catch (RuntimeException cleanupError) {
                         throw new ZapIsolationException("Client Spider cleanup failed: " + cleanupError.getMessage());
                     }
@@ -530,59 +567,13 @@ public final class ZapCampaign implements AutoCloseable {
             ensureScannerCapabilityIntact(runId);
             ensureZapNotCancelled();
             long clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
-            if (clientFailure != null) {
-                warning = appendWarning(warning, "Client Spider unavailable: " + clientFailure.getMessage());
-            } else if (clientCaptured == 0) {
-                warning = appendWarning(warning, "Client Spider completed without captured rendered traffic");
+            if (clientCaptured == 0) {
+                throw new IllegalStateException("Client Spider completed without captured in-scope traffic");
             }
-
-            ajaxExecuted = true;
-            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AJAX_SPIDER, lane.accountId());
-            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "AJAX_SUPPLEMENT", traditionalCaptured + clientCaptured,
-                    traditionalCaptured, clientCaptured, definitionImports, 0,
-                    false, false, -1, true, warning, ""));
-            long ajaxBefore = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
-            RuntimeException ajaxFailure = null;
-            boolean ajaxStarted = false;
-            boolean ajaxFinished = false;
-            try {
-                JsonNode ajax = parseZap(state.zap().ajaxSpider(target, contextName));
-                if (!"OK".equalsIgnoreCase(ajax.path("Result").asText())) {
-                    throw new IllegalStateException("ZAP AJAX Spider did not start");
-                }
-                ajaxStarted = true;
-                ownedAjaxRunning = true;
-                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AJAX_SUPPLEMENT", "", warning, "");
-                waitForZap(() -> state.zap().ajaxSpiderStatus(), 20 * 60_000L,
-                        "AJAX Spider", runId, index);
-                ajaxFinished = true;
-                releaseAjaxSpider();
-            } catch (RuntimeException ajaxError) {
-                ajaxFailure = ajaxError;
-            } finally {
-                if (ajaxStarted && !ajaxFinished && claimAjaxSpider()) {
-                    try { stopOwnedAjax(); }
-                    catch (RuntimeException cleanupError) {
-                        throw new ZapIsolationException("AJAX Spider cleanup failed: " + cleanupError.getMessage());
-                    }
-                }
-            }
-            ensureScannerCapabilityIntact(runId);
-            ensureZapNotCancelled();
-            long ajaxCaptured = capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER) - ajaxBefore;
-            if (ajaxFailure != null) {
-                warning = appendWarning(warning, "AJAX Spider unavailable: " + ajaxFailure.getMessage());
-            } else if (ajaxCaptured == 0) {
-                warning = appendWarning(warning, "AJAX Spider completed without captured rendered traffic");
-            }
-
-            long renderedCaptured = capturedForRenderedStages(runId) - renderedBefore;
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
-                    "PASSIVE_SCAN_QUEUE", traditionalCaptured + renderedCaptured,
-                    traditionalCaptured, renderedCaptured, definitionImports, 0,
-                    false, false, -1, ajaxExecuted, warning, ""));
+                    "PASSIVE_SCAN_QUEUE", clientCaptured, clientCaptured, definitionImports, 0,
+                    false, false, -1, warning, ""));
             updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · PASSIVE_SCAN_QUEUE", "", warning, "");
             PassiveDrainResult passive = waitForPassive(runId, index);
             passiveComplete = passive.complete();
@@ -620,40 +611,86 @@ public final class ZapCampaign implements AutoCloseable {
                 warning = appendWarning(warning,
                         "다음 신원과 섞이지 않도록 미처리 Passive queue를 정리함");
             }
+            RuntimeException identityCleanup = cleanupZapIdentity(identity, contextName, contextCreated);
+            identity = null;
+            contextCreated = false;
+            if (identityCleanup != null) {
+                throw new ZapIsolationException("ZAP 로그인 사용자·Context 정리 실패: "
+                        + identityCleanup.getMessage());
+            }
             String laneStatus = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), laneStatus,
-                    "ALERTS_READY", captured, traditionalCaptured, renderedCaptured,
-                    definitionImports, alertCount, alertSnapshotComplete,
-                    passiveComplete, passiveRemaining, ajaxExecuted, warning, ""));
+                    "ALERTS_READY", captured, clientCaptured, definitionImports, alertCount,
+                    alertSnapshotComplete, passiveComplete, passiveRemaining, warning, ""));
         } catch (RuntimeException error) {
+            boolean interrupted = Thread.interrupted();
+            RuntimeException identityCleanup = cleanupZapIdentity(identity, contextName, contextCreated);
+            contextCreated = false;
+            if (interrupted) Thread.currentThread().interrupt();
+            if (identityCleanup != null) {
+                ZapIsolationException isolation = new ZapIsolationException(
+                        "ZAP 로그인 사용자·Context 정리 실패: " + identityCleanup.getMessage());
+                isolation.addSuppressed(error);
+                error = isolation;
+            }
             String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            if (directAuthentication && !authenticationVerified) {
+                state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.FAILED, message);
+                replaceZapAuthentication(index, new ZapAuthenticationResult(
+                        "FAILED", "firefox-headless", message));
+            }
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
                     Math.max(0, capturedForRun(runId) - capturedBefore),
-                    Math.max(0, capturedForRun(runId, SourceDetail.ZAP_SPIDER) - traditionalBefore),
-                    Math.max(0, capturedForRenderedStages(runId) - renderedBefore), definitionImports,
-                    alertCount, alertSnapshotComplete, passiveComplete, passiveRemaining,
-                    ajaxExecuted, warning, message));
+                    Math.max(0, capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore),
+                    definitionImports, alertCount, alertSnapshotComplete, passiveComplete,
+                    passiveRemaining, warning, message));
             throw error;
+        } finally {
+            state.scannerDirectAuthentication(runId, false);
         }
     }
 
+    private RuntimeException cleanupZapIdentity(ZapBrowserAuthenticator.Identity identity,
+                                                String contextName, boolean contextCreated) {
+        RuntimeException failure = null;
+        if (identity != null) {
+            try {
+                requireZapOk(state.zap().removeUser(identity.contextId(), identity.userId()),
+                        "remove its temporary authenticated user");
+            } catch (RuntimeException error) {
+                failure = error;
+            }
+        }
+        if (contextCreated) {
+            try {
+                requireZapOk(state.zap().removeContext(contextName), "remove its temporary context");
+            } catch (RuntimeException error) {
+                failure = mergeFailure(failure, "temporary ZAP context cleanup failed", error);
+            }
+        }
+        return failure;
+    }
+
     private long capturedForRun(String runId) {
-        return state.capturedCount(Source.SCANNER, runId, null);
+        return Math.max(0, state.capturedCount(Source.SCANNER, runId, null)
+                - state.capturedCount(Source.SCANNER, runId, SourceDetail.ZAP_AUTHENTICATION));
     }
 
     private long capturedForRun(String runId, SourceDetail detail) {
         return state.capturedCount(Source.SCANNER, runId, detail);
     }
 
-    private long capturedForRenderedStages(String runId) {
-        return capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER)
-                + capturedForRun(runId, SourceDetail.ZAP_AJAX_SPIDER);
-    }
-
-    private void verifySafeZapEnvironment(List<ZapDefinition> definitions) {
+    private void verifySafeZapEnvironment(List<ZapDefinition> definitions, boolean authenticatedLane) {
         JsonNode version = parseZap(state.zap().version());
         if (version.path("version").asText().isBlank()) {
             throw new IllegalStateException("ZAP version API did not return a version");
+        }
+        if (authenticatedLane) {
+            String home = parseZap(state.zap().zapHomePath()).path("zapHomePath").asText();
+            if (!home.startsWith("/run/flowscope-zap/")) {
+                throw new IllegalStateException("authenticated ZAP lanes require the FlowScope Docker "
+                        + "ephemeral runtime; anonymous lanes remain available with ZAP Desktop");
+            }
         }
         JsonNode installed = parseZap(state.zap().installedAddons()).path("installedAddons");
         Set<String> ids = new LinkedHashSet<>();
@@ -795,24 +832,11 @@ public final class ZapCampaign implements AutoCloseable {
         return new IllegalStateException(current.getMessage() + "; " + label + ": " + detail, current);
     }
 
-    private void stopOwnedSpider(String scanId, boolean clientSpider) {
+    private void stopOwnedClientSpider(String scanId) {
         boolean interrupted = Thread.interrupted();
         try {
-            requireZapOk(clientSpider ? state.zap().stopClientSpider(scanId) : state.zap().stopSpider(scanId),
-                    "stop its unfinished " + (clientSpider ? "Client Spider" : "Traditional Spider"));
-            awaitZapTerminal(clientSpider ? () -> state.zap().clientSpiderStatus(scanId)
-                            : () -> state.zap().spiderStatus(scanId),
-                    clientSpider ? "Client Spider" : "Traditional Spider");
-        } finally {
-            if (interrupted) Thread.currentThread().interrupt();
-        }
-    }
-
-    private void stopOwnedAjax() {
-        boolean interrupted = Thread.interrupted();
-        try {
-            requireZapOk(state.zap().stopAjaxSpider(), "stop its unfinished AJAX Spider");
-            awaitZapTerminal(() -> state.zap().ajaxSpiderStatus(), "AJAX Spider");
+            requireZapOk(state.zap().stopClientSpider(scanId), "stop its unfinished Client Spider");
+            awaitZapTerminal(() -> state.zap().clientSpiderStatus(scanId), "Client Spider");
         } finally {
             if (interrupted) Thread.currentThread().interrupt();
         }
@@ -820,40 +844,16 @@ public final class ZapCampaign implements AutoCloseable {
 
     private RuntimeException stopAndAwaitOwnedCrawlers() {
         RuntimeException failure = null;
-        String traditional;
         String client;
-        boolean ajax;
         synchronized (this) {
-            traditional = ownedTraditionalScanId;
             client = ownedClientScanId;
-            ajax = ownedAjaxRunning;
-            ownedTraditionalScanId = "";
             ownedClientScanId = "";
-            ownedAjaxRunning = false;
-        }
-        if (!traditional.isBlank()) {
-            try { stopOwnedSpider(traditional, false); }
-            catch (RuntimeException error) { failure = mergeFailure(failure, "Traditional Spider cleanup failed", error); }
         }
         if (!client.isBlank()) {
-            try { stopOwnedSpider(client, true); }
+            try { stopOwnedClientSpider(client); }
             catch (RuntimeException error) { failure = mergeFailure(failure, "Client Spider cleanup failed", error); }
         }
-        if (ajax) {
-            try { stopOwnedAjax(); }
-            catch (RuntimeException error) { failure = mergeFailure(failure, "AJAX Spider cleanup failed", error); }
-        }
         return failure;
-    }
-
-    private synchronized boolean claimTraditionalSpider(String scanId) {
-        if (!scanId.equals(ownedTraditionalScanId)) return false;
-        ownedTraditionalScanId = "";
-        return true;
-    }
-
-    private synchronized void releaseTraditionalSpider(String scanId) {
-        if (scanId.equals(ownedTraditionalScanId)) ownedTraditionalScanId = "";
     }
 
     private synchronized boolean claimClientSpider(String scanId) {
@@ -865,14 +865,6 @@ public final class ZapCampaign implements AutoCloseable {
     private synchronized void releaseClientSpider(String scanId) {
         if (scanId.equals(ownedClientScanId)) ownedClientScanId = "";
     }
-
-    private synchronized boolean claimAjaxSpider() {
-        if (!ownedAjaxRunning) return false;
-        ownedAjaxRunning = false;
-        return true;
-    }
-
-    private synchronized void releaseAjaxSpider() { ownedAjaxRunning = false; }
 
     private void awaitZapTerminal(ZapStatusCall call, String label) {
         long deadline = System.currentTimeMillis() + passiveCleanupTimeoutMillis();
@@ -892,6 +884,7 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     private synchronized void replaceZapLane(int index, ZapLaneResult value) {
+        if (zapCancelRequested.get() && zapBaseline != null && "CANCELLED".equals(zapBaseline.status())) return;
         List<ZapLaneResult> copy = new ArrayList<>(zapBaselineLanes);
         ZapLaneResult previous = copy.get(index);
         copy.set(index, value);
@@ -908,16 +901,14 @@ public final class ZapCampaign implements AutoCloseable {
         long endedAt = current.endedAt() == 0 && terminal ? now : current.endedAt();
         long captured = capturedForRun(zapBaseline == null ? "" : zapBaseline.runId());
         long lastProgressAt = captured != current.lastCaptured() ? now : current.lastProgressAt();
-        long runTraditional = zapBaseline == null ? 0
-                : capturedForRun(zapBaseline.runId(), SourceDetail.ZAP_SPIDER);
-        long runRendered = zapBaseline == null ? 0 : capturedForRenderedStages(zapBaseline.runId());
+        long runClient = zapBaseline == null ? 0
+                : capturedForRun(zapBaseline.runId(), SourceDetail.ZAP_CLIENT_SPIDER);
         runtime.set(index, new ZapLaneRuntime(current.queuedAt(), startedAt, endedAt,
                 stageChanged ? now : current.stageStartedAt(),
                 stageChanged ? now : current.lastHeartbeatAt(), lastProgressAt,
                 stageChanged ? zapStageTimeoutMillis(value.stage()) : current.stageTimeoutMillis(),
                 current.startedAt() == 0 && started ? captured : current.capturedAtStart(),
-                current.startedAt() == 0 && started ? runTraditional : current.traditionalAtStart(),
-                current.startedAt() == 0 && started ? runRendered : current.renderedAtStart(),
+                current.startedAt() == 0 && started ? runClient : current.clientAtStart(),
                 captured, stageChanged ? value.passiveRemaining() : current.passiveRemaining(),
                 stageChanged ? "" : current.passiveTask(),
                 stageChanged ? "단계 시작" : current.heartbeatStatus()));
@@ -1107,9 +1098,15 @@ public final class ZapCampaign implements AutoCloseable {
                 || !java.util.Objects.equals(status, current.heartbeatStatus());
         runtime.set(laneIndex, new ZapLaneRuntime(current.queuedAt(), current.startedAt(), current.endedAt(),
                 current.stageStartedAt(), now, progressed ? now : current.lastProgressAt(),
-                current.stageTimeoutMillis(), current.capturedAtStart(), current.traditionalAtStart(),
-                current.renderedAtStart(), captured, current.passiveRemaining(), current.passiveTask(), status));
+                current.stageTimeoutMillis(), current.capturedAtStart(), current.clientAtStart(),
+                captured, current.passiveRemaining(), current.passiveTask(), status));
         zapLaneRuntime = List.copyOf(runtime);
+    }
+
+    private synchronized void replaceZapAuthentication(int index, ZapAuthenticationResult value) {
+        List<ZapAuthenticationResult> copy = new ArrayList<>(zapAuthentication);
+        copy.set(index, value);
+        zapAuthentication = List.copyOf(copy);
     }
 
     private ScheduledFuture<?> startZapWorkerHeartbeat(String runId, int laneIndex,
@@ -1148,8 +1145,8 @@ public final class ZapCampaign implements AutoCloseable {
                 || (remaining >= 0 && (current.passiveRemaining() < 0 || remaining < current.passiveRemaining()));
         runtime.set(laneIndex, new ZapLaneRuntime(current.queuedAt(), current.startedAt(), current.endedAt(),
                 current.stageStartedAt(), now, progressed ? now : current.lastProgressAt(),
-                current.stageTimeoutMillis(), current.capturedAtStart(), current.traditionalAtStart(),
-                current.renderedAtStart(), captured, remaining, task,
+                current.stageTimeoutMillis(), current.capturedAtStart(), current.clientAtStart(),
+                captured, remaining, task,
                 remaining < 0 ? "passive 응답 수신" : "passive queue " + remaining));
         zapLaneRuntime = List.copyOf(runtime);
         if (progressed && remaining >= 0) {
@@ -1178,9 +1175,8 @@ public final class ZapCampaign implements AutoCloseable {
         return switch (stage == null ? "" : stage) {
             case "API_DEFINITION_IMPORT" -> "API 정의 가져오기";
             case "SESSION_SETUP" -> "격리 세션 설정";
-            case "TRADITIONAL_SPIDER" -> "Traditional Spider";
+            case "AUTHENTICATION" -> "ZAP 브라우저 로그인";
             case "CLIENT_SPIDER" -> "Client Spider";
-            case "AJAX_SUPPLEMENT" -> "AJAX Spider 보완";
             case "PASSIVE_SCAN_QUEUE" -> "Passive Scan";
             case "ALERTS_READY" -> "Alert 집계";
             case "FAILED" -> "현재 단계";
@@ -1191,10 +1187,10 @@ public final class ZapCampaign implements AutoCloseable {
     private long zapStageTimeoutMillis(String stage) {
         return switch (stage == null ? "" : stage) {
             case "SESSION_SETUP" -> 60_000L;
+            case "AUTHENTICATION" -> 2 * 60_000L;
             case "API_DEFINITION_IMPORT" -> Math.max(1, zapBaseline == null
                     ? 1 : zapBaseline.definitionCount()) * 2 * 60_000L;
-            case "TRADITIONAL_SPIDER" -> 15 * 60_000L;
-            case "CLIENT_SPIDER", "AJAX_SUPPLEMENT" -> 20 * 60_000L;
+            case "CLIENT_SPIDER" -> 20 * 60_000L;
             case "PASSIVE_SCAN_QUEUE" -> passiveAbsoluteTimeoutMillis();
             default -> 0L;
         };
@@ -1230,9 +1226,10 @@ public final class ZapCampaign implements AutoCloseable {
         }
     }
 
-    private void updateZapBaseline(String runId, String status, String stage, String scanId,
-                                   String warning, String error) {
+    private synchronized void updateZapBaseline(String runId, String status, String stage, String scanId,
+                                                String warning, String error) {
         ZapBaselineRun previous = zapBaseline;
+        if (zapCancelRequested.get() && previous != null && "CANCELLED".equals(previous.status())) return;
         long captured = capturedForRun(runId);
         int alerts = previous == null ? 0 : previous.alertCount();
         zapBaseline = new ZapBaselineRun(runId, previous == null ? "" : previous.target(), status, stage,
@@ -1291,24 +1288,26 @@ public final class ZapCampaign implements AutoCloseable {
         for (int index = 0; index < zapBaselineLanes.size(); index++) {
             ZapLaneResult lane = zapBaselineLanes.get(index);
             ZapLaneRuntime timing = index < runtime.size() ? runtime.get(index) : null;
+            ZapAuthenticationResult authentication = index < zapAuthentication.size()
+                    ? zapAuthentication.get(index)
+                    : new ZapAuthenticationResult("UNKNOWN", "", "인증 상태 없음");
             ObjectNode node = lanes.addObject();
             if (lane.accountId() == null) node.putNull("account_id"); else node.put("account_id", lane.accountId());
             node.put("account_label", lane.accountLabel());
             node.put("status", lane.status());
             node.put("stage", lane.stage());
+            node.put("authentication_state", authentication.state());
+            node.put("authentication_browser", authentication.browser());
+            node.put("authentication_message", authentication.message());
             long laneCaptured = lane.capturedRecords();
-            long traditionalCaptured = lane.traditionalCaptures();
-            long renderedCaptured = lane.renderedCaptures();
+            long clientCaptured = lane.clientCaptures();
             if (timing != null && "RUNNING".equals(lane.status())) {
                 laneCaptured = Math.max(laneCaptured, timing.lastCaptured() - timing.capturedAtStart());
-                traditionalCaptured = Math.max(traditionalCaptured,
-                        capturedForRun(value.runId(), SourceDetail.ZAP_SPIDER) - timing.traditionalAtStart());
-                renderedCaptured = Math.max(renderedCaptured,
-                        capturedForRenderedStages(value.runId()) - timing.renderedAtStart());
+                clientCaptured = Math.max(clientCaptured,
+                        capturedForRun(value.runId(), SourceDetail.ZAP_CLIENT_SPIDER) - timing.clientAtStart());
             }
             node.put("captured_records", Math.max(0, laneCaptured));
-            node.put("traditional_captures", Math.max(0, traditionalCaptured));
-            node.put("rendered_captures", Math.max(0, renderedCaptured));
+            node.put("client_captures", Math.max(0, clientCaptured));
             node.put("definition_imports", lane.definitionImports());
             node.put("alert_count", lane.alertCount());
             node.put("alert_snapshot_complete", lane.alertSnapshotComplete());
@@ -1317,7 +1316,6 @@ public final class ZapCampaign implements AutoCloseable {
                     ? timing.passiveRemaining() : lane.passiveRemaining());
             node.put("passive_task", timing != null && "RUNNING".equals(lane.status())
                     ? timing.passiveTask() : "");
-            node.put("ajax_executed", lane.ajaxExecuted());
             node.put("warning", lane.warning());
             node.put("error", lane.error());
             if (timing != null) {
@@ -1378,7 +1376,8 @@ public final class ZapCampaign implements AutoCloseable {
         if (ageSeconds(runtime.lastHeartbeatAt(), now) > 10) return "NO_HEARTBEAT";
         if (runtime.stageTimeoutMillis() > 0
                 && now - runtime.stageStartedAt() > runtime.stageTimeoutMillis()) return "DEADLINE_EXCEEDED";
-        if ("SESSION_SETUP".equals(stage) || "API_DEFINITION_IMPORT".equals(stage)) {
+        if ("SESSION_SETUP".equals(stage) || "API_DEFINITION_IMPORT".equals(stage)
+                || "AUTHENTICATION".equals(stage)) {
             return "WAITING_FOR_ZAP_RESPONSE";
         }
         if (ageSeconds(runtime.lastProgressAt(), now) > 30) return "RESPONDING_NO_NEW_TRAFFIC";
@@ -1435,28 +1434,23 @@ public final class ZapCampaign implements AutoCloseable {
 
     private String validatedAccount(String accountId) {
         if (accountId == null || accountId.isBlank()) return null;
-        SessionBroker sessions = state.sessions();
-        if (sessions == null) throw new IllegalStateException("session broker is unavailable");
-        SessionBroker.SessionView session = sessions.viewForAccount(accountId)
-                .orElseThrow(() -> new IllegalArgumentException("no captured session for account: " + accountId));
-        if (session.status() != SessionBroker.Status.ACTIVE) {
-            throw new IllegalStateException("account session is not active: " + accountId
-                    + " (" + session.status() + ")");
-        }
+        ZapAccountVault accounts = state.zapAccounts();
+        if (accounts == null) throw new IllegalStateException("ZAP account vault is unavailable");
+        accounts.view(accountId);
         return accountId;
     }
 
     private String validatedAccountForTarget(String accountId, String target) {
         String value = validatedAccount(accountId);
         if (value == null) return null;
-        SessionBroker.SessionView session = state.sessions().viewForAccount(value).orElseThrow();
-        URI expected = URI.create(session.service());
+        ZapAccountVault.View account = state.zapAccounts().view(value);
+        URI expected = URI.create(account.service());
         URI actual = URI.create(target);
         int actualPort = actual.getPort() >= 0 ? actual.getPort()
                 : "https".equalsIgnoreCase(actual.getScheme()) ? 443 : 80;
         if (actual.getHost() == null || !expected.getScheme().equalsIgnoreCase(actual.getScheme())
                 || !expected.getHost().equalsIgnoreCase(actual.getHost()) || expected.getPort() != actualPort) {
-            throw new IllegalArgumentException("account session and target services differ: " + value);
+            throw new IllegalArgumentException("ZAP account and target services differ: " + value);
         }
         return value;
     }

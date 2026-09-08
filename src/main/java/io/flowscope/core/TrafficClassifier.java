@@ -10,7 +10,7 @@ import static io.flowscope.core.TrafficClassification.TrafficClass;
 
 /** 표준 요청 문맥과 저장된 Evidence만 사용하는 보수적 비파괴 분류기. */
 public final class TrafficClassifier {
-    public static final int VERSION = 5;
+    public static final int VERSION = 6;
 
     private static final Set<String> ASSET_DESTINATIONS = Set.of(
             "audio", "font", "image", "manifest", "script", "style", "track", "video");
@@ -40,7 +40,7 @@ public final class TrafficClassifier {
         if (record.source == Source.UNKNOWN) {
             return result(inferredClass(record), Disposition.EXCLUDE, false, "UNKNOWN_SOURCE");
         }
-        if (record.source == Source.HUMAN && record.phase == RunPhase.SESSION_SETUP) {
+        if (record.phase == RunPhase.SESSION_SETUP) {
             return result(TrafficClass.AUTH_SESSION, Disposition.EXCLUDE, false, "SESSION_SETUP");
         }
         if (record.source == Source.HUMAN && record.phase == RunPhase.BASELINE) {

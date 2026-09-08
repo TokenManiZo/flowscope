@@ -33,8 +33,8 @@ final class ZapCampaignTest {
             JsonNode result = awaitTerminal(campaign);
 
             assertEquals("COMPLETED", result.path("status").asText(), result.toString());
-            assertEquals(3, result.path("captured_records").asInt());
-            assertEquals(2, result.at("/lanes/0/rendered_captures").asInt());
+            assertEquals(1, result.path("captured_records").asInt());
+            assertEquals(1, result.at("/lanes/0/client_captures").asInt());
             assertTrue(result.path("passive_complete").asBoolean());
             assertTrue(result.path("alert_snapshot_complete").asBoolean());
             assertFalse(result.path("events").isEmpty());
@@ -55,7 +55,7 @@ final class ZapCampaignTest {
             try (campaign) {
                 campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
                 assertTrue(fixture.started.await(3, TimeUnit.SECONDS));
-                await(() -> "TRADITIONAL_SPIDER".equals(
+                await(() -> "CLIENT_SPIDER".equals(
                         campaign.deterministicZapBaselineStatus().at("/lanes/0/stage").asText())
                         && !campaign.deterministicZapBaselineStatus().path("scan_id").asText().isEmpty());
             }
@@ -99,31 +99,21 @@ final class ZapCampaignTest {
         private final AtomicBoolean stopped = new AtomicBoolean();
         private final AtomicReference<String> capabilityRun = new AtomicReference<>("");
 
-        Fixture(boolean blockTraditional) throws IOException {
+        Fixture(boolean blockClient) throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             registerSafeZapEnvironment(server, 0);
             server.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
-            server.createContext("/JSON/spider/action/scan/", exchange -> {
-                observe("/traditional");
-                zapReply(exchange, "{\"scan\":\"1\"}");
-                started.countDown();
-            });
-            server.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange,
-                    blockTraditional && !stopped.get() ? "{\"status\":\"0\"}" : "{\"status\":\"100\"}"));
-            server.createContext("/JSON/spider/action/stop/", exchange -> {
-                stopped.set(true);
-                zapReply(exchange, "{\"Result\":\"OK\"}");
-            });
             server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
                 observe("/client");
                 zapReply(exchange, "{\"scan\":\"2\"}");
+                started.countDown();
             });
-            server.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
-            server.createContext("/JSON/ajaxSpider/action/scan/", exchange -> {
-                observe("/ajax");
+            server.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
+                    blockClient && !stopped.get() ? "{\"status\":\"0\"}" : "{\"status\":\"100\"}"));
+            server.createContext("/JSON/clientSpider/action/stop/", exchange -> {
+                stopped.set(true);
                 zapReply(exchange, "{\"Result\":\"OK\"}");
             });
-            server.createContext("/JSON/ajaxSpider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"stopped\"}"));
             server.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange, "{\"recordsToScan\":\"0\"}"));
             server.start();
             client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");

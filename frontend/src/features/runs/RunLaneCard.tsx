@@ -10,7 +10,7 @@ export function RunLaneCard({ lane }: { lane: ScannerLane }) {
       <CardHeader><CardTitle>{text(lane.account_label, "비로그인")} · {text(lane.status, "NOT_STARTED")}</CardTitle></CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p>{text(lane.stage, "PENDING")}</p>
-        <p>전체 {lane.captured_records} · Traditional {lane.traditional_captures} · Rendered {lane.rendered_captures} · Alert {lane.alert_count}</p>
+        <p>전체 {lane.captured_records} · Client {lane.client_captures} · Alert {lane.alert_count}</p>
         {lane.warning && <p className="text-amber-700">주의 · {lane.warning}</p>}
         {lane.error && <p className="text-destructive">오류 · {lane.error}</p>}
       </CardContent>

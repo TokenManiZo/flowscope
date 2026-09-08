@@ -81,7 +81,7 @@ public final class SampleProject {
         record.runId = source == Source.HUMAN ? "demo-human"
                 : source == Source.SCANNER ? "demo-zap" : "demo-llm-explorer";
         record.sourceDetail = source == Source.HUMAN ? SourceDetail.BROWSER
-                : source == Source.SCANNER ? SourceDetail.ZAP_SPIDER : SourceDetail.LLM_EXPLORER;
+                : source == Source.SCANNER ? SourceDetail.ZAP_CLIENT_SPIDER : SourceDetail.LLM_EXPLORER;
         record.orchestrator = source == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
         record.tool = source == Source.HUMAN ? ToolKind.BROWSER
                 : source == Source.SCANNER ? ToolKind.ZAP : ToolKind.CODEX;

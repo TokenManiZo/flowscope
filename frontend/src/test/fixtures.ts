@@ -24,4 +24,4 @@ export const snapshotFixture: Snapshot = {
 
 export const humanRunFixture: HumanRun = { active: false, completed: false, runId: "", accountId: "", proxy: "http://127.0.0.1:8080" }
 export const zapStatusFixture: ZapStatus = { connected: false, state: "UNAVAILABLE", message: "ZAP unavailable" }
-export const scannerRunFixture: ScannerRunEnvelope = { run: { status: "NOT_STARTED" }, scope: [] }
+export const scannerRunFixture: ScannerRunEnvelope = { run: { status: "NOT_STARTED" }, accounts: [], scope: [] }

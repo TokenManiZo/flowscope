@@ -14,6 +14,9 @@ services:
       - "127.0.0.1:${FLOWSCOPE_ZAP_PORT:-8089}:${FLOWSCOPE_ZAP_PORT:-8089}"
     volumes:
       - ./start-zap.sh:/opt/flowscope/start-zap.sh:ro
+    tmpfs:
+      - /run/flowscope-zap:rw,nosuid,nodev,noexec,size=1073741824,uid=1000,gid=1000,mode=0700
+      - /tmp:rw,nosuid,nodev,size=1073741824,uid=1000,gid=1000,mode=1777
     secrets:
       - source: zap_api_key
         target: flowscope-zap-api-key

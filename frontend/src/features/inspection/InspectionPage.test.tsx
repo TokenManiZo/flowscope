@@ -15,7 +15,7 @@ function response(body: unknown, status = 200) {
 
 type PollResponse = unknown | readonly unknown[] | ((read: number) => unknown)
 
-function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; zap?: unknown; scanner?: PollResponse; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; managedSessions?: readonly unknown[] } = {}) {
+function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; zap?: unknown; scanner?: PollResponse; scannerAccounts?: readonly unknown[]; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; managedSessions?: readonly unknown[] } = {}) {
   let humanReads = 0
   let scannerReads = 0
   const next = (value: PollResponse | undefined, reads: number, fallback: unknown) => typeof value === "function" ? value(reads) : Array.isArray(value) ? value[Math.min(reads, value.length - 1)] : value ?? fallback
@@ -38,10 +38,15 @@ function installTransport(options: { human?: PollResponse; humanPending?: boolea
     }
     if (path === "/api/zap-status") return Promise.resolve(response(options.zap ?? { connected: true, state: "READY", message: "ZAP 연결됨" }))
     if (path === "/api/scanner-run") {
-      if (init?.method === "POST") return Promise.resolve(options.scannerPost ? response({ success: false, message: options.scannerPost.message }, options.scannerPost.status) : response({ run: { status: "RUNNING", target } }, 202))
+      if (init?.method === "POST") {
+        if (options.scannerPost) return Promise.resolve(response({ success: false, message: options.scannerPost.message }, options.scannerPost.status))
+        const form = init.body as URLSearchParams
+        return Promise.resolve(response({ run: { status: form.get("action") === "cancel" ? "CANCEL_REQUESTED" : "RUNNING", target } }, form.get("action") === "cancel" ? 200 : 202))
+      }
       if (scannerReads > 0 && options.scannerPollError) return Promise.resolve(response({ success: false, message: options.scannerPollError.message }, options.scannerPollError.status))
-      return Promise.resolve(response(next(options.scanner, scannerReads++, { run: { status: "NOT_STARTED" }, scope: [target] })))
+      return Promise.resolve(response(next(options.scanner, scannerReads++, { run: { status: "NOT_STARTED" }, accounts: options.scannerAccounts ?? [], scope: [target] })))
     }
+    if (path === "/api/zap-accounts" && init?.method === "POST") return Promise.resolve(response({ success: true, message: "saved", account: { id: "zap-a", label: "ZAP A", role: "USER", service: target, loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true } }))
     return Promise.reject(new Error(`unexpected endpoint: ${path} ${init?.method ?? "GET"}`))
   })
   vi.stubGlobal("fetch", fetchStub)
@@ -145,6 +150,86 @@ describe("four-stage inspection controls", () => {
     await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/scanner-run", expect.objectContaining({ method: "POST" })))
     const call = fetchStub.mock.calls.find(([path, init]) => path === "/api/scanner-run" && (init as RequestInit).method === "POST")
     expect((call?.[1] as RequestInit).body?.toString()).toBe(`target=${encodeURIComponent(target)}&accounts=&anonymous=true`)
+  })
+
+  it("can cancel a running ZAP campaign", async () => {
+    const user = userEvent.setup()
+    const { fetchStub } = renderInspection({ scanner: {
+      run: { status: "RUNNING", stage: "CLIENT_SPIDER", captured_records: 1, alert_count: 0 },
+      scope: [target], accounts: [],
+    } })
+
+    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "ZAP 검사 취소" }))
+
+    await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/scanner-run"
+      && (init as RequestInit).body?.toString() === "action=cancel")).toBe(true))
+
+  })
+
+  it("preserves optional API definitions when starting a ZAP campaign", async () => {
+    const user = userEvent.setup()
+    const completed = renderInspection()
+    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
+    await user.click(screen.getByText("명세 기반 탐색 추가 (선택)"))
+    await user.type(screen.getByLabelText("exact-scope API 정의"), "OPENAPI https://demo.flowscope.test/openapi.json")
+    await user.click(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" }))
+    await waitFor(() => expect(completed.fetchStub.mock.calls.some(([path, init]) => path === "/api/scanner-run"
+      && (init as RequestInit).body?.toString().includes("definitions=OPENAPI+") === true)).toBe(true))
+  })
+
+  it("registers a memory-only ZAP login account and starts the authenticated lane by its dedicated id", async () => {
+    const user = userEvent.setup()
+    const account = { id: "zap-a", label: "ZAP A", role: "USER", service: "https://demo.flowscope.test:443", loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true }
+    const { fetchStub } = renderInspection({ scannerAccounts: [account] })
+
+    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.type(screen.getByLabelText("계정 이름"), "새 계정")
+    await user.type(screen.getByLabelText("로그인 URL"), `${target}/login`)
+    await user.type(screen.getByLabelText("로그인 ID"), "alice@example.test")
+    await user.type(screen.getByLabelText("비밀번호"), "memory-secret")
+    await user.click(screen.getByRole("button", { name: "Docker 로그인 계정 등록" }))
+    await waitFor(() => expect(fetchStub.mock.calls.some(([path]) => path === "/api/zap-accounts")).toBe(true))
+    const saved = fetchStub.mock.calls.find(([path]) => path === "/api/zap-accounts")
+    expect((saved?.[1] as RequestInit).body?.toString()).toContain("password=memory-secret")
+
+    await user.click(screen.getByRole("checkbox", { name: /ZAP A/ }))
+    await user.click(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" }))
+    const started = fetchStub.mock.calls.find(([path, init]) => path === "/api/scanner-run" && (init as RequestInit).method === "POST")
+    expect((started?.[1] as RequestInit).body?.toString()).toBe(`target=${encodeURIComponent(target)}&accounts=zap-a&anonymous=false`)
+  })
+
+  it("shows the live authentication stage and its per-account result", async () => {
+    const user = userEvent.setup()
+    renderInspection({ scanner: {
+      run: {
+        status: "RUNNING", stage: "AUTHENTICATION", elapsed_seconds: 71,
+        stage_elapsed_seconds: 11, stage_timeout_seconds: 120,
+        last_heartbeat_age_seconds: 1, activity_state: "WAITING_FOR_ZAP_RESPONSE",
+        captured_records: 0, alert_count: 0,
+        lanes: [{
+          account_id: "zap-a", account_label: "ZAP A", status: "RUNNING", stage: "AUTHENTICATION",
+          authentication_state: "AUTHENTICATING", authentication_browser: "firefox-headless",
+          authentication_message: "ZAP 브라우저 로그인 실행 중", captured_records: 0,
+          client_captures: 0, alert_count: 0, warning: "", error: "",
+          elapsed_seconds: 11,
+        }],
+      },
+      accounts: [], scope: [target],
+    } })
+
+    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("tab", { name: "실행 상태" }))
+
+    expect(screen.getByText(/ZAP 브라우저 로그인 · 전체 1분 11초/)).toBeVisible()
+    expect(screen.getByText(/로그인 AUTHENTICATING · firefox-headless/)).toBeVisible()
+    expect(screen.getByText("ZAP 브라우저 로그인 실행 중")).toBeVisible()
   })
 
   it("keeps the last ZAP run visible when a deterministic QueryClient refetch fails", async () => {

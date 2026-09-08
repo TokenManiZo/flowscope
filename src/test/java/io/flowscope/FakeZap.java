@@ -16,12 +16,14 @@ final class FakeZap {
     static void registerSafeZapEnvironment(HttpServer server, int alertCount) {
         server.createContext("/JSON/core/view/version/", exchange -> zapReply(exchange,
                 "{\"version\":\"2.17.0\"}"));
+        server.createContext("/JSON/core/view/zapHomePath/", exchange -> zapReply(exchange,
+                "{\"zapHomePath\":\"/run/flowscope-zap/test/home/\"}"));
         server.createContext("/JSON/autoupdate/view/installedAddons/", exchange -> zapReply(exchange,
                 "{\"installedAddons\":["
-                        + "{\"id\":\"spider\"},{\"id\":\"client\"},{\"id\":\"spiderAjax\"},"
+                        + "{\"id\":\"client\"},"
                         + "{\"id\":\"pscan\"},{\"id\":\"pscanrules\"},{\"id\":\"selenium\"},"
                         + "{\"id\":\"openapi\"},{\"id\":\"websocket\"},{\"id\":\"network\"},"
-                        + "{\"id\":\"replacer\"}]}"));
+                        + "{\"id\":\"replacer\"},{\"id\":\"authhelper\"}]}"));
         server.createContext("/JSON/network/view/isHttpProxyEnabled/", exchange -> zapReply(exchange,
                 "{\"isHttpProxyEnabled\":\"true\"}"));
         server.createContext("/JSON/network/view/getHttpProxy/", exchange -> zapReply(exchange,
@@ -33,6 +35,24 @@ final class FakeZap {
         server.createContext("/JSON/context/action/includeInContext/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/context/action/setContextInScope/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/context/action/removeContext/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/authentication/action/setAuthenticationMethod/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/sessionManagement/action/setSessionManagementMethod/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/verification/action/setVerificationMethod/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/users/action/newUser/", exchange -> zapReply(exchange,
+                "{\"userId\":\"7\"}"));
+        server.createContext("/JSON/users/action/setAuthenticationCredentials/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/users/action/setUserEnabled/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/users/action/authenticateAsUser/", exchange -> zapReply(exchange,
+                "{\"authSuccessful\":true}"));
+        server.createContext("/JSON/users/action/removeUser/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/replacer/action/addRule/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));

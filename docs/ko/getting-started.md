@@ -1,8 +1,8 @@
 # FlowScope 설치·첫 실행 가이드
 
-이 가이드는 D-128 독립 Explorer 소스 기준입니다. 같은 beta.44 이름의 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
+이 가이드는 D-128 독립 Explorer와 D-130 ZAP 직접 브라우저 인증 소스 기준입니다. 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
 
-현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server dynamic tool과 Java exact-scope gateway를 쓴다(D-128, 미출시). H/S/L 관측 비교와 과거 프로젝트는 보존한다. Docker는 ZAP 준비를 위한 선택 경로다. 이 변경은 아직 원격 Release에 게시하지 않았으므로 이전 beta.44 JAR 대신 이 작업 소스에서 빌드한 JAR 또는 distribution bundle을 사용해야 한다.
+현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server dynamic tool과 Java exact-scope gateway를 쓴다(D-128). ZAP 로그인 lane은 HUMAN Session Broker를 재사용하지 않고, ZAP Browser Based Authentication이 명시적으로 성공한 계정만 계정 지정 crawler에 사용한다(D-130). H/S/L 관측 비교와 과거 프로젝트는 보존한다. Docker는 ZAP 준비를 위한 선택 경로다. 이 변경은 아직 원격 Release에 게시하지 않았으므로 이 작업 소스에서 빌드한 JAR 또는 distribution bundle을 사용해야 한다.
 
 ## 1. 지원 경로와 검증 범위
 
@@ -14,17 +14,17 @@
 | LLM Explorer | 독립 endpoint·parameter·계정별 응답 관측 | Release JAR 또는 bundle, Burp, 공식 Codex CLI와 유효한 Codex 로그인 |
 | 소스 빌드 | 코드 수정·기여 | 위 환경, JDK 21 정확히, Maven 3.9.x |
 
-다운로드 사용자는 Maven·Node.js·npm을 설치하지 않는다. `flowscope-1.2.0-beta.44-bundle.zip`을 권장하며, 이 파일에 Burp용 JAR, ZAP Compose/helper, macOS·Linux·Windows doctor와 현재 문서가 함께 들어간다. JAR 단독 파일은 HUMAN과 Explorer에 충분하지만 ZAP helper는 포함하지 않는다.
+다운로드 사용자는 Maven·Node.js·npm을 설치하지 않는다. `flowscope-1.2.0-beta.45-bundle.zip`을 권장하며, 이 파일에 Burp용 JAR, ZAP Compose/helper, macOS·Linux·Windows doctor와 현재 문서가 함께 들어간다. JAR 단독 파일은 HUMAN과 Explorer에 충분하지만 ZAP helper는 포함하지 않는다.
 
 실제 확인한 기준선은 다음과 같다.
 
 - Burp Suite Community 2026.7.3에서 Montoya 확장 로드
-- ZAP 2.17.0 API와 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network` add-on
+- ZAP 2.17.0 API와 `client`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network`, `replacer`, `authhelper` add-on. FlowScope 기본 캠페인은 Traditional/AJAX Spider를 호출하지 않는다.
 - macOS arm64, Docker Engine/Desktop 29.5.3에서 공식 ZAP 2.17.0 multi-architecture 이미지 기동, loopback API, Docker-host Burp upstream 설정
 - GitHub Actions `windows-latest` PowerShell 7에서 Windows helper 네 파일의 파서 검증
 - JDK 21 Maven 빌드
 
-Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backend, PowerShell 7을 지원 계약으로 삼는다. GitHub Windows runner의 파서 검증은 실제 Docker Desktop 기동을 증명하지 않는다. 특히 Windows 실기기의 ZAP API·Burp upstream, Docker ZAP의 HTTPS 대상, USER A/B 세션 주입, Client/AJAX rendered capture는 별도 실환경 gate를 통과해야 한다.
+Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backend, PowerShell 7을 지원 계약으로 삼는다. GitHub Windows runner의 파서 검증은 실제 Docker Desktop 기동을 증명하지 않는다. 특히 Windows 실기기의 ZAP API·Burp upstream, Docker ZAP의 HTTPS 대상, USER A/B Browser Based Authentication과 Client capture는 별도 실환경 gate를 통과해야 한다.
 
 공식 근거:
 
@@ -51,9 +51,9 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 ## 3. Release bundle 설치
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.44-bundle.zip`을 받고 압축을 푼다. Release에 bundle이 아직 없다면 저장소를 clone하고 §7의 소스 빌드 절차로 만든다. ZAP을 쓰지 않는 사용자는 `flowscope-1.2.0-beta.44.jar`만 받아도 된다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.45-bundle.zip`을 받고 압축을 푼다. Release에 bundle이 아직 없다면 저장소를 clone하고 §7의 소스 빌드 절차로 만든다. ZAP을 쓰지 않는 사용자는 `flowscope-1.2.0-beta.45.jar`만 받아도 된다.
 2. 압축을 푼 디렉터리 구조를 유지한다. `scripts/zap-up.*`가 상대 경로 `infra/zap/compose.yaml`을 사용하므로 파일 일부만 옮기면 Docker Quick Start가 동작하지 않는다.
-3. bundle 루트의 `flowscope-1.2.0-beta.44.jar`를 사용한다.
+3. bundle 루트의 `flowscope-1.2.0-beta.45.jar`를 사용한다.
 4. Burp **Settings → Tools → Proxy → Proxy listeners**에서 사용할 기능에 맞는 listener를 만든다.
    - HUMAN을 사용할 때 bind address `127.0.0.1`, port `8080`
    - ZAP을 사용할 때 bind address `127.0.0.1`, port `8081`
@@ -153,7 +153,7 @@ PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta
 3. ZAP의 main local server/proxy를 `127.0.0.1:8089`로 설정한다.
 4. ZAP API options에서 생성된 `~/.flowscope/zap-api-key` 값을 local API key로 설정한다. key 비활성화는 하지 않는다.
 5. ZAP **Options → Network → Connection → HTTP Proxy**에서 Desktop은 host `127.0.0.1`, Docker는 `host.docker.internal`, port `8081`, enabled를 설정한다. FlowScope는 캠페인 전에 이 값을 읽어 확인하며 자동으로 사용자의 ZAP 전역 프록시 설정을 덮어쓰지 않는다.
-6. 설치 add-on에 `spider`, `client`, `spiderAjax`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network`가 있는지 확인한다. 명시적 정의 import를 쓰면 해당 형식의 `graphql`, `postman`, `soap`도 필요하다.
+6. 설치 add-on에 `client`, `pscan`, `pscanrules`, `selenium`, `openapi`, `websocket`, `network`, `replacer`, `authhelper`가 있는지 확인한다. 명시적 정의 import를 쓰면 해당 형식의 `graphql`, `postman`, `soap`도 필요하다. `spider`와 `spiderAjax`는 FlowScope 기본 캠페인의 필수 add-on이 아니다.
 7. API key는 다음 중 하나로 FlowScope에 제공한다.
    - 기본 `~/.flowscope/zap-api-key`, owner-only 파일
    - `-Dflowscope.zap.keyFile=/absolute/path`
@@ -162,6 +162,8 @@ PowerShell 5.1, Windows container 모드, WSL 안에서 실행한 helper는 beta
 
 우선순위는 JVM 속성 key → 환경 변수 → 지정 key 파일 → 기본 key 파일이다. secret을 Git, README, 실행 로그에 넣지 않는다.
 이미 FlowScope를 로드한 뒤 key를 만들었다면 확장을 한 번 재로드한다.
+
+ZAP 로그인 교환은 감사 가능한 `ZAP_AUTHENTICATION / SESSION_SETUP` Evidence로 보존하지만 SCANNER 탐색 성과·crawler 수집 건수·완료 조건에는 포함하지 않는다. 로그인만 성공하고 crawler 응답이 0건인 lane은 완료로 표시하지 않는다.
 
 ## 6. LLM Explorer 준비
 
@@ -217,7 +219,7 @@ doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명
 1. FlowScope 탭에 허가받은 `scheme://host[:port]/path-prefix` exact scope를 한 줄씩 입력하고 **범위 적용**을 누른다.
 2. Web **계정·세션**에서 테스트 계정을 등록한다. 계정 로그인이 필요하면 **로그인 연결**을 시작하고 HUMAN `8080` 경로로 로그인한 뒤 성공한 인증 페이지까지 확인하고 캡처를 종료한다.
 3. **HUMAN pass 시작**을 누르고 Burp 브라우저로 허가된 기능을 탐색한 다음 pass를 종료한다.
-4. 빠른 시작의 ZAP 카드에서 대상과 비로그인/ACTIVE 계정을 고른다. 이미 보유한 API 정의가 있으면 한 줄에 하나씩 `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, `GRAPHQL ENDPOINT [SCHEMA_URL]`로 입력하고 **신원별 격리 검사 시작**을 누른다. 모든 URL은 현재 exact scope 안이어야 한다. 정의 import는 명세의 write method 요청도 만들 수 있으므로 이어지는 Burp 승인창에서 한 번 더 확인한다. 비워 두면 정의를 추측하지 않고 Spider 기준선만 실행한다. Active Scan은 자동 baseline에 포함되지 않는다. 계정 검사는 세션 오염을 막기 위해 비로그인부터 직렬 실행한다. 화면의 `세션 / Traditional / Client / AJAX 보완 / Passive / Alert` 진행선, 전체·단계 경과시간, ZAP 응답, 트래픽 변화, Passive 남은 건수·현재 task, Alert 집계 완결성과 대기 이유로 정상 실행·부분 완료·응답 단절을 구분한다. **실시간 실행 기록**은 실제 단계 시작·queue 감소·Alert 집계·격리 정리를 최신순으로 보여 준다. Passive가 10분간 진행되지 않거나 30분을 넘으면 현재 결과를 보존하고 queue를 정리하며, 정리가 확인되지 않으면 다음 계정을 실행하지 않는다.
+4. 빠른 시작의 ZAP 카드에서 대상을 고른다. 비로그인은 즉시 선택할 수 있다. 로그인 lane은 계정 이름·역할·대상 로그인 URL·로그인 ID·비밀번호를 **ZAP 브라우저 로그인 계정**에 등록한 뒤 선택한다. ID·비밀번호는 현재 Burp 프로세스 메모리에만 두며 프로젝트·snapshot·로그에 저장하지 않는다. 이미 보유한 API 정의가 있으면 한 줄에 하나씩 `OPENAPI URL`, `POSTMAN URL`, `SOAP URL`, `GRAPHQL ENDPOINT [SCHEMA_URL]`로 입력하고 **신원별 격리 검사 시작**을 누른다. 모든 URL은 현재 exact scope 안이어야 한다. 정의 import는 명세의 write method 요청도 만들 수 있으므로 이어지는 Burp 승인창에서 한 번 더 확인한다. 비워 두면 정의를 추측하지 않고 Client Spider 기준선만 실행한다. Active Scan은 자동 baseline에 포함되지 않는다. 계정 검사는 세션 오염을 막기 위해 비로그인부터 직렬 실행한다. 로그인 lane은 tmpfs 위의 이름 없는 ZAP session과 임시 Context에서 Firefox Headless Browser Based Authentication, session/verification auto-detect, 명시적 인증 성공 확인을 거쳐 계정 지정 strict Client Spider 하나만 실행한다. 새 캠페인은 Traditional/AJAX Spider를 호출하거나 실패 시 fallback하지 않는다. 로그인 실패, Client 실패, 범위 안 Client 응답 0건은 해당 lane 실패다. 화면의 `세션 / 로그인 / Client / Passive / Alert` 진행선, 전체·단계 경과시간, 작업 신호, 트래픽 변화, Client 수집 건수, Passive 남은 건수·현재 task, Alert 집계 완결성과 대기 이유로 정상 실행·부분 완료·응답 단절을 구분한다. **실시간 실행 기록**은 실제 단계 시작·로그인 결과·Client·queue 감소·Alert 집계·격리 정리를 최신순으로 보여 준다. Passive가 10분간 진행되지 않거나 30분을 넘으면 현재 결과를 보존하고 queue를 정리하며, 정리가 확인되지 않으면 다음 계정을 실행하지 않는다.
 5. **API·입력 차이**에서 선언/관측과 산출물 파싱 상태를 확인한다.
 6. **Explorer**에서 비로그인 또는 등록한 메모리 계정을 골라 독립 탐색을 실행한다. 실제 응답 Evidence가 0건이면 완료가 아니라 실패다.
 7. **API·입력 차이**에서 H/S/L endpoint·parameter 관측을 비교한다.
@@ -252,10 +254,11 @@ FlowScope는 Burp 설정 파일을 임의로 바꾸거나, ZAP Desktop/add-on과
 | Windows에서 컨테이너가 Burp에 연결되지 않음 | Docker Desktop Linux container 모드, Burp `127.0.0.1:8081` listener | Docker Desktop 상태와 `host.docker.internal` 도달성, Windows 방화벽을 확인 |
 | ZAP은 완료했는데 SCANNER 0건 | upstream이 Burp `8081`을 통과하지 않음 또는 scope 불일치 | ZAP HTTP proxy, Burp listener, exact scope를 함께 확인 |
 | 캠페인 전 ZAP outgoing proxy 오류 | Network API에서 HTTP proxy disabled 또는 host/port 불일치 | Desktop은 `127.0.0.1:8081`, Docker는 `host.docker.internal:8081`로 설정 후 다시 실행 |
-| API 정의 import 경고 | URL/GraphQL endpoint가 exact scope 밖이거나 형식 add-on 누락·정의 파싱 실패 | 정의 URL과 `graphql/postman/soap/openapi` 설치를 확인. Spider Evidence는 별도로 유지됨 |
-| Rendered 0건 경고 | Client/AJAX가 실제 요청을 만들지 않음 | ZAP logs, Firefox/Selenium add-on, 대상 CSP/login 상태 확인. Traditional 결과와 혼동하지 않음 |
+| API 정의 import 경고 | URL/GraphQL endpoint가 exact scope 밖이거나 형식 add-on 누락·정의 파싱 실패 | 정의 URL과 `graphql/postman/soap/openapi` 설치를 확인. Client Evidence는 별도로 유지됨 |
+| Client 실패 또는 0건 | Client가 실패했거나 범위 안 응답을 만들지 못함 | ZAP logs, Firefox/Selenium/Client add-on, outgoing proxy, exact scope, capability, 대상 CSP/login 상태를 확인. 자동 fallback이나 성공으로 바뀌지 않음 |
 | 후속 계정이 0건 `PENDING` | 앞선 비로그인/계정 lane이 직렬 실행 중 | 대기 순번·선행 lane, 전체/단계 경과, 마지막 ZAP 응답과 트래픽 변화 확인. `ZAP 응답 없음`이면 ZAP log/API를 점검 |
-| 로그인 계정이 ZAP 선택지에 없음 | broker가 `ACTIVE`가 아님 | 로그인 연결을 다시 시작해 인증 성공 응답까지 관측 |
+| 로그인 계정이 ZAP 선택지에 없음 | 현재 target origin의 ZAP 메모리 계정을 등록하지 않음 | 빠른 시작의 **ZAP 브라우저 로그인 계정**에 로그인 URL·ID·비밀번호를 다시 입력. Burp 재로드·프로젝트 교체 뒤에는 의도적으로 다시 등록해야 함 |
+| ZAP 로그인 실패 | Browser Based Authentication이 `authSuccessful=true`를 반환하지 않음 | 로그인 URL·ID·비밀번호와 Firefox/Selenium/Auth Helper 상태를 확인. CAPTCHA·MFA·WebAuthn·외부 SSO는 자동 우회하지 않으며 필요하면 비로그인/HUMAN lane만 사용 |
 | `17777` 충돌 | 다른 로컬 프로세스가 포트 사용 | 충돌 프로세스를 확인하거나 JVM 속성으로 포트를 일관되게 변경 |
 | Codex 준비 배지가 READY가 아님 | CLI 미설치, 다른 OS 사용자 로그인, 로그인 만료 | 같은 사용자 터미널에서 `codex` 로그인 후 Explorer의 **다시 확인** 또는 `doctor --mode explorer` 실행 |
 
