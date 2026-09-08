@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Objects;
 import java.util.function.Predicate;
 
-/** ZAP Browser Based Authentication을 구성하고 ZAP verification 결과가 명시적으로 성공한 경우만 반환한다. */
+/** ZAP Browser Based Authentication을 구성하고 ZAP이 명시적으로 인증 성공을 반환한 경우만 완료한다. */
 final class ZapBrowserAuthenticator {
     record Identity(String contextId, String contextName, String userId, String userName, String browser) {}
 
@@ -33,7 +33,6 @@ final class ZapBrowserAuthenticator {
         requireOk(zap.setBrowserAuthentication(contextId, login.loginUrl().toString(), BROWSER),
                 "Browser Based Authentication");
         requireOk(zap.setAutoDetectSessionManagement(contextId), "Auto-Detect Session Management");
-        requireOk(zap.setAutoDetectVerification(contextId), "Auto-Detect Verification");
         String userId = parse(zap.newUser(contextId, userName)).path("userId").asText();
         if (userId.isBlank()) throw new IllegalStateException("ZAP이 인증 사용자를 만들지 못했습니다.");
         requireOk(zap.setUserCredentials(contextId, userId,

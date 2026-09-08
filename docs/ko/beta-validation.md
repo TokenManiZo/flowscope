@@ -1,5 +1,25 @@
 # FlowScope 1.2.0-beta.45 사전 벤치마크 검증 기록
 
+## 2026-09-08 · 미출시 D-134 · ZAP 2.17 로그인 REST 호환 수정
+
+실제 Burp 로그인 lane에서 D-133까지의 빌드가 session·Context 생성 후 HTTP 400 `no_implementor`로 중단되는 것을 재현했다. 실행 중인 공식 ZAP 2.17.0 Docker API에는 `authentication`과 `sessionManagement` component가 있지만 기존 코드가 호출한 `/JSON/verification/action/setVerificationMethod/`는 없었다. 제공 Compose 컨테이너를 현재 정의로 다시 만든 뒤 tmpfs `/run/flowscope-zap`과 ZAP doctor 0 failure/0 warning을 확인했고, 그 다음에야 이 두 번째 실패를 분리해 확인했다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 환경 | macOS arm64, Homebrew JDK 21.0.12.1, 공식 ZAP 2.17.0 Docker 컨테이너 |
+| 실물 실패 재현 | 로그인 lane의 verification action에서 HTTP 400 `no_implementor`; ZAP 로그의 `ApiException: NO_IMPLEMENTOR`와 API component 부재 확인 |
+| 코드 수정 | 지원되지 않는 verification action 제거. Browser Based Authentication, Auto-Detect Session Management, temporary user/credentials, 명시적 `authSuccessful=true`, strict Client 범위 안 응답 gate 유지 |
+| FakeZap 회귀 | 존재하지 않는 verification endpoint의 가짜 `OK` 제거; 인증 흐름이 `/JSON/verification/`을 호출하지 않는다고 명시적으로 검사 |
+| 집중 Java | `ZapClientTest,ZapBrowserAuthenticatorTest` 통과 |
+| 전체 빌드 | JDK 21에서 `mvn clean verify` 1회 성공, 1분 47초 |
+| Java | 370 tests, failures/errors 0, opt-in provider 하네스 1 skip |
+| React | 38 files / 247 tests, typecheck·Vite build 통과 |
+| 산출물 | JAR 31,649,145 bytes / 9,140 entries / SHA-256 `6dca01097eb75e5c2809b23ce8aabdc2083b2e071e6d94367e76ada73e349860` |
+| 정적 검사 | `git diff --check` 통과 |
+| 미실행 | 수정 JAR의 실제 Burp 재로드 후 대상 Browser Based Authentication, Client capture, capability 전달, 복수 계정 격리, Windows 실기기 |
+
+이 검증은 존재하지 않는 REST 호출이 다시 추가되지 않고 기존 빌드 계약이 깨지지 않았음을 확인한다. 실제 인증 성공이나 Client Spider의 대상 탐색 성공은 아직 확인하지 않았으므로 완료로 기록하지 않는다. ZAP 공식 문서가 API auto-detection을 지원하지 않는다고 명시하는 것과 Automation Framework의 verification `autodetect` 설정은 서로 다른 인터페이스다. 이번 수정은 현재 REST 캠페인을 유지하며 지원되지 않는 호출만 제거했다.
+
 ## 2026-09-08 · 미출시 D-130~D-133 · ZAP 직접 인증·휘발성 환경·Client 단일 실행·Docker API gate
 
 `352ce1a`의 D-129 distribution bundle 위에 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Client Spider 단일 실행과 실물 Docker API 호환 수정을 추가한 미출시 작업 결과다.

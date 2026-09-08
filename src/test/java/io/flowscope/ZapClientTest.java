@@ -228,7 +228,6 @@ class ZapClientTest {
         for (String path : java.util.List.of(
                 "/JSON/authentication/action/setAuthenticationMethod/",
                 "/JSON/sessionManagement/action/setSessionManagementMethod/",
-                "/JSON/verification/action/setVerificationMethod/",
                 "/JSON/users/action/newUser/",
                 "/JSON/users/action/setAuthenticationCredentials/",
                 "/JSON/users/action/setUserEnabled/",
@@ -249,7 +248,6 @@ class ZapClientTest {
             ZapClient client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "api-secret");
             client.setBrowserAuthentication("3", "https://app.test/login", "firefox-headless");
             client.setAutoDetectSessionManagement("3");
-            client.setAutoDetectVerification("3");
             client.newUser("3", "FlowScope user A");
             client.setUserCredentials("3", "7", "alice@example.test", "password-secret");
             client.setUserEnabled("3", "7");

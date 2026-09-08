@@ -1220,3 +1220,11 @@
 - **보안 경계:** ZAP은 계속 `0.0.0.0`에 listen해 Docker publish를 제공하지만 API key와 위 주소 allowlist를 함께 요구한다. 임의 bridge 대역이나 `.*`를 허용하지 않는다. 이 결정은 upstream proxy와 target scope를 넓히지 않으며, Client Spider는 D-132의 strict Context/subtree 계약을 그대로 따른다.
 - **실물 확인:** 기존 8089 컨테이너를 건드리지 않고 임시 Compose project를 8090에서 실행했다. API 준비, tmpfs 아래 `zapHomePath`, initiator 18 Replacer 규칙 등록과 이름 없는 `newSession` 뒤 규칙 유지, tmpfs session 파일 생성, `/home/zap/.ZAP/session` 파일 0개를 확인한 뒤 임시 project를 제거했다. exact form POST는 `Result: OK`, charset 포함 form과 JSON POST는 400이었다.
 - **회귀·한계:** bridge gateway 변환과 exact Content-Type을 자동 회귀로 고정한다. 이 실물 확인은 ZAP daemon/API/session 경계만 다룬다. Burp listener 8081이 닫혀 실제 대상 Browser Based Authentication, Client traffic capture, capability header 전달과 복수 계정 격리는 여전히 별도 gate다.
+
+## D-134 · ZAP 2.17 REST에 없는 verification auto-detect 호출을 제거한다 (2026-09-08)
+
+- **문제:** 실제 Burp에서 로그인 계정 lane을 시작하자 session/Context 생성 뒤 `/JSON/verification/action/setVerificationMethod/`가 HTTP 400 `no_implementor`로 실패했다. 실행 중인 ZAP 2.17 API UI에는 `authentication`과 `sessionManagement` component는 있지만 `verification` component가 없고, 컨테이너 로그도 같은 endpoint에서 `ApiException: NO_IMPLEMENTOR`를 기록했다. 기존 FakeZap이 존재하지 않는 endpoint에 `OK`를 반환해 이 결함을 숨겼다.
+- **근거:** [ZAP 공식 Auto-Detection 문서](https://www.zaproxy.org/docs/getting-further/authentication/auto-detection/)는 API에서 auto-detection이 Core 제약으로 지원되지 않는다고 명시하며, Automation Framework 예시는 verification `autodetect`를 지원한다. FlowScope의 현재 캠페인은 Automation Framework가 아니라 REST action API를 사용한다.
+- **결정:** 존재하지 않는 verification action과 FakeZap 응답을 제거한다. 로그인 lane은 REST에서 실제 지원되는 Browser Based Authentication, Auto-Detect Session Management, 임시 user/credentials를 설정하고 `authenticateAsUser`가 `authSuccessful=true`를 반환해야만 strict Client Spider로 진행한다. 범위 안 Client 응답 0건 실패 gate도 유지한다.
+- **기각·한계:** `no_implementor`를 경고로 무시하는 방식은 API 계약 오류를 숨기므로 기각했다. 이 수정에서 캠페인 전체를 Automation Framework로 교체하면 capability·진행 상태·취소·비밀 수명 계약까지 바뀌므로 기각했다. 별도 verification strategy를 REST로 설정했다고 주장하지 않으며, 장시간 세션 만료 후 자동 재인증의 신뢰성은 실물 gate에서 별도로 확인해야 한다.
+- **검증:** 회귀는 인증 경로가 `/JSON/verification/`을 호출하지 않고 명시적인 `authSuccessful`이 없으면 계속 실패하는지 확인한다. 실제 대상 로그인·Client capture는 수정 JAR을 Burp에 재로드한 뒤 별도 검증한다.

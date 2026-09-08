@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · ZAP 2.17 로그인 API 호환 (D-134, 2026-09-08)
+
+- 실물 ZAP 2.17 REST에 존재하지 않아 로그인 lane을 `400 no_implementor`로 중단시키던 verification auto-detect action 호출을 제거했습니다.
+- Browser Based Authentication, Auto-Detect Session Management, `authenticateAsUser=true`, strict Client의 범위 안 응답 gate는 유지합니다. 이 변경을 장시간 세션 만료 후 자동 재인증 보장으로 확대하지 않습니다.
+- FakeZap도 존재하지 않는 verification API를 성공으로 모사하지 않도록 정정했습니다.
+
 ## 미출시 · 실물 ZAP Docker API 호환 (D-133, 2026-09-08)
 
 - Docker publish를 거친 호스트 API 요청의 실제 출발점인 Compose bridge gateway를 기본 ZAP API allowlist에 정확히 추가했습니다. loopback·신뢰 host gateway·default bridge gateway 외 주소로 넓히지는 않습니다.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased · ZAP 2.17 authenticated API compatibility (D-134, 2026-09-08)
+
+- Removed the verification auto-detection action that does not exist in the real ZAP 2.17 REST API and caused authenticated lanes to fail with HTTP 400 `no_implementor`.
+- Browser Based Authentication, Auto-Detect Session Management, the explicit `authSuccessful=true` gate, and the in-scope Client response gate remain. This does not claim reliable automatic re-authentication after a long-lived session expires.
+- FakeZap no longer returns a fabricated success response for the nonexistent verification component.
+
 ## Unreleased · real-ZAP Docker API compatibility (D-133, 2026-09-08)
 
 - Add the actual Compose bridge gateway used by host-published requests to the default ZAP API allowlist without widening it beyond loopback, the trusted host gateway, and the default bridge gateway.

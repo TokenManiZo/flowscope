@@ -62,10 +62,6 @@ public final class ZapClient {
         return post("/JSON/sessionManagement/action/setSessionManagementMethod/",
                 "contextId=" + enc(contextId) + "&methodName=autoDetectSessionManagement");
     }
-    public String setAutoDetectVerification(String contextId) {
-        return post("/JSON/verification/action/setVerificationMethod/",
-                "contextId=" + enc(contextId) + "&checkingStrategy=AUTO_DETECT");
-    }
     public String newUser(String contextId, String name) {
         return post("/JSON/users/action/newUser/", "contextId=" + enc(contextId) + "&name=" + enc(name));
     }

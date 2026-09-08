@@ -42,8 +42,6 @@ final class FakeZap {
                 "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/sessionManagement/action/setSessionManagementMethod/", exchange -> zapReply(exchange,
                 "{\"Result\":\"OK\"}"));
-        server.createContext("/JSON/verification/action/setVerificationMethod/", exchange -> zapReply(exchange,
-                "{\"Result\":\"OK\"}"));
         server.createContext("/JSON/users/action/newUser/", exchange -> zapReply(exchange,
                 "{\"userId\":\"7\"}"));
         server.createContext("/JSON/users/action/setAuthenticationCredentials/", exchange -> zapReply(exchange,

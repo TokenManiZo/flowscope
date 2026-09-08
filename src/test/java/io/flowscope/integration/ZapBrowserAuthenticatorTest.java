@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ZapBrowserAuthenticatorTest {
     @Test
-    void configuresFirefoxUserAndRequiresExplicitZapVerificationSuccess() throws Exception {
+    void configuresFirefoxUserWithoutCallingTheUnsupportedVerificationApi() throws Exception {
         List<String> requests = new ArrayList<>();
         HttpServer server = authenticationApi(requests, "{\"authSuccessful\":\"true\"}");
         server.start();
@@ -31,14 +31,14 @@ final class ZapBrowserAuthenticatorTest {
             assertTrue(requests.stream().anyMatch(value -> value.startsWith(
                     "/JSON/context/action/includeInContext/")));
             assertTrue(requests.stream().anyMatch(value -> value.contains("browserId%3Dfirefox-headless")));
-            assertTrue(requests.stream().anyMatch(value -> value.contains("checkingStrategy=AUTO_DETECT")));
+            assertTrue(requests.stream().noneMatch(value -> value.startsWith("/JSON/verification/")));
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    void refusesToExploreWhenZapDoesNotReturnAnAuthenticatedVerificationResult() throws Exception {
+    void refusesToExploreWhenZapDoesNotReturnAnExplicitAuthenticationSuccess() throws Exception {
         HttpServer server = authenticationApi(new ArrayList<>(), "{\"Result\":\"OK\"}");
         server.start();
         try {
@@ -85,7 +85,6 @@ final class ZapBrowserAuthenticatorTest {
                 "/JSON/context/action/includeInContext/",
                 "/JSON/authentication/action/setAuthenticationMethod/",
                 "/JSON/sessionManagement/action/setSessionManagementMethod/",
-                "/JSON/verification/action/setVerificationMethod/",
                 "/JSON/users/action/newUser/",
                 "/JSON/users/action/setAuthenticationCredentials/",
                 "/JSON/users/action/setUserEnabled/",

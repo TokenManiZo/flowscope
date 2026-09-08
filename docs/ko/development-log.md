@@ -1,5 +1,30 @@
 # FlowScope 개발 기록
 
+## 2026-09-08 · D-134 ZAP 2.17 로그인 REST 호환 수정
+
+### 개발·수정
+
+- 실제 Burp에서 로그인 ZAP lane을 시작해 session·Context 생성 뒤 `/JSON/verification/action/setVerificationMethod/`가 HTTP 400 `no_implementor`로 실패하는 문제를 재현했다. 실행 중인 ZAP 2.17 API에는 `authentication`과 `sessionManagement`는 있지만 `verification` component가 없었다.
+- `ZapBrowserAuthenticator`와 `ZapClient`에서 지원되지 않는 verification action을 제거했다. 로그인 흐름은 ZAP 2.17 REST에서 지원되는 Browser Based Authentication, Auto-Detect Session Management, 임시 user/credentials, `authenticateAsUser`의 명시적 `authSuccessful=true` 확인을 유지한다.
+- FakeZap이 존재하지 않는 verification endpoint에 무조건 `OK`를 반환하던 모사를 제거했다. 인증 회귀는 해당 endpoint를 호출하지 않으면서 인증 성공값이 없으면 계속 실패하도록 고정했다.
+
+### 이유와 기각안
+
+- [ZAP 공식 Auto-Detection 문서](https://www.zaproxy.org/docs/getting-further/authentication/auto-detection/)는 Core 제약으로 auto-detection을 API에서 지원하지 않는다고 명시하고, verification `autodetect`는 Automation Framework 예시로 제공한다. 현재 FlowScope 캠페인은 REST action API를 사용하므로 Automation Framework 설정을 REST endpoint처럼 호출할 수 없다.
+- 400 `no_implementor`만 경고로 무시하면 실제 API 계약 오류를 숨기므로 기각했다. 이번 수정에서 캠페인 전체를 Automation Framework로 바꾸면 capability·진행·취소·비밀 수명 계약까지 달라지므로 최소 호환 수정 범위를 넘어서 기각했다.
+
+### 영향 파일·회귀
+
+- 코드: `ZapClient.java`, `ZapBrowserAuthenticator.java`.
+- 테스트: `FakeZap.java`, `ZapClientTest.java`, `ZapBrowserAuthenticatorTest.java`.
+- 문서: README, 한·영 시작 가이드·아키텍처·변경 이력, 결정·제품·UI·계획·인계·문서 상태·검증 기록.
+- JDK 21 집중 회귀 `ZapClientTest,ZapBrowserAuthenticatorTest`는 통과했다. 전체 빌드 결과는 같은 작업 입력에서 `mvn clean verify`로 확인해 `beta-validation.md`에 기록한다.
+
+### 남은 한계·다음 gate
+
+- 이 수정은 존재하지 않는 REST 호출을 제거한 것이다. 장시간 세션 만료 후 자동 재인증을 보장하지 않는다.
+- 수정 JAR을 Burp에 재로드한 뒤 실제 대상에서 Browser Based Authentication 성공, strict Client 응답 capture, capability 전달과 계정 격리를 다시 확인해야 한다. FakeZap 결과로 이를 완료했다고 주장하지 않는다.
+
 ## 2026-09-08 · D-133 후속 문서 정합성 수정
 
 ### 수정·이유

@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-08, D-133 (미출시 beta.45 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication을 실행한 뒤 strict Client Spider 하나만 실행한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-08, D-134 (미출시 beta.45 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한 뒤 명시적인 인증 성공이 있을 때만 strict Client Spider 하나를 실행한다. ZAP 2.17 REST에 없는 verification auto-detect action은 호출하지 않는다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
