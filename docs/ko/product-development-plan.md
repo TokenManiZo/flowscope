@@ -1,6 +1,6 @@
 # FlowScope 1.2.0-beta.46 제품 개발·검증 계획
 
-> **읽는 법:** 현재 우선순위는 D-136 인증 응답 Evidence gate를 beta.46 JAR로 실제 Burp에 재로드해 검증하는 것이다. 별도 실물 Docker/기록 프록시에서는 익명·정상 계정 2개·오류 비밀번호 차단을 완료했고, 실제 Burp와 Windows gate가 남았다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** 현재 우선순위는 D-137 원시 인증 Evidence gate를 포함한 beta.46 JAR을 실제 Burp에 재로드해 검증하는 것이다. 별도 실물 Docker/기록 프록시에서는 익명·정상 계정 2개·오류 비밀번호 차단을 재확인했고, 실제 Burp와 Windows gate가 남았다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
 
 ## 현재 우선순위 · ZAP 직접 브라우저 인증
 
@@ -13,7 +13,7 @@
 7. Burp scanner listener 8081이 열린 실제 ZAP 2.17 환경에서 비로그인+로그인 2계정, 로그인 실패, capture 귀속, 쿠키 격리, strict Client와 0건 실패, Passive/Alert, 정의 import, 취소·cleanup을 검증한다.
 8. Windows bundle/doctor/Docker 실기기와 CAPTCHA·MFA·WebAuthn·복합 SSO 한계를 별도 운영 gate로 남긴다.
 
-D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완료했다. D-134는 실제 Burp 로그인 lane에서 드러난 `verification` API `no_implementor`를 제거했다. D-135는 bundle에 Chromium/ChromeDriver 포함 이미지를 추가하고 모든 lane을 `chrome-headless`로 고정했다. D-136은 `OK`/인증 시각의 오류 비밀번호 오수락을 실물로 반증하고 같은 run·계정의 실제 인증 응답 Evidence를 성공 gate로 바꿨다. 별도 API 18889/기록 프록시 18881 하네스에서 익명·alice·bob Client 탐색과 오류 비밀번호의 Client 전 차단을 확인했다. 이 결과는 7번의 실제 Burp beta.46 JAR 재로드를 대신하지 않는다.
+D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완료했다. D-134는 실제 Burp 로그인 lane에서 드러난 `verification` API `no_implementor`를 제거했다. D-135는 bundle에 Chromium/ChromeDriver 포함 이미지를 추가하고 모든 lane을 `chrome-headless`로 고정했다. D-136은 `OK`/인증 시각의 오류 비밀번호 오수락을 실물로 반증하고 같은 run·계정의 실제 인증 응답 Evidence를 성공 gate로 바꿨다. D-137은 인증 직후 비동기 분석 snapshot이 아직 게시되지 않아 정상 로그인을 실패 처리하는 경합을 재현하고, run·계정으로 제한한 원시 캡처 기록을 인증 gate로 분리했다. 별도 API 18889/기록 프록시 18881 하네스에서 익명·alice·bob Client 탐색과 오류 비밀번호의 Client 전 차단을 재확인했다. 이 결과는 7번의 실제 Burp beta.46 JAR 재로드를 대신하지 않는다.
 
 **현재 상태:** 1~6과 D-136 별도 실물 로그인/복수 계정/오류 비밀번호 gate를 완료했다. 7은 합성 기록서버·기록 프록시 범위에서는 완료했지만 실제 Burp beta.46 JAR과 승인 대상의 검증은 대기한다. 8의 Windows 운영 gate도 대기한다.
 

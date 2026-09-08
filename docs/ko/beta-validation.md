@@ -1,5 +1,19 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-09 · 미출시 D-137 · 인증 Evidence snapshot 지연 제거
+
+D-136 코드를 실제 Burp 수집 순서와 대조하자 response handler의 원시 기록 추가와 분석 snapshot 게시 사이에 지연이 있었다. 분석 snapshot을 의도적으로 빈 상태로 유지한 회귀에서 기존 코드는 익명 lane 뒤 첫 인증 계정을 실패 처리해 후속 계정을 실행하지 못했다. 인증 gate를 현재 run·계정의 동기화된 원시 `ZAP_AUTHENTICATION` 기록으로 분리한 뒤 같은 회귀가 통과했다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| RED 재현 | 원시 인증 응답은 존재하지만 `snapshot().records`가 비어 있으면 기대 lane `anonymous, zap-user-a, zap-user-b` 중 `anonymous`만 실행되고 테스트 실패 |
+| 수정 | Burp 원시 저장소의 현재 run·계정·인증 source/detail만 복사하는 `authenticationEvidence` 경계 추가; 전체 Pipeline 강제 재실행·고정 sleep 없음 |
+| 집중 회귀 | stale snapshot 계정 캠페인과 `ZapBrowserAuthenticatorTest` 통과 |
+| 실물 하네스 | 사용자 8089와 분리한 API 18889/기록 프록시 18881에서 ZAP 2.17/Chromium으로 익명+정상 계정 2개 Client 완료(65 requests), 오류 비밀번호는 인증 단계 실패·Client 시작 전 차단 |
+| 전체 자동 회귀 | JDK 21 `mvn clean verify`: Java 381 tests, failures/errors 0, opt-in 실물/provider 하네스 2 skip; React 38 files / 247 tests, typecheck·notices·Vite build와 release gate 통과 |
+| 최종 산출물 | JAR 31,652,617 bytes / 9,140 entries / SHA-256 `50993c1b2526a58ff8fd29f8f8eb488b0bf83f645c3553d4ec7fc968052891e0`; distribution bundle 생성·구조 gate 통과. 검증 문서를 bundle에 포함하므로 자기 참조 hash는 정본에 고정하지 않음 |
+| 남은 gate | 새 JAR을 실제 Burp에 재로드한 8081/UI 실행과 Windows Docker Desktop |
+
 ## 2026-09-09 · 미출시 D-136 · 인증 응답 Evidence gate
 
 D-135의 Docker Chromium 경로를 그대로 사용하되, ZAP API action 응답을 로그인 성공으로 간주하던 계약을 폐기했다. 사용자 8089 ZAP과 격리한 실물 하네스에서 `authenticateAsUser`의 `OK`와 인증 시각만 검사하면 틀린 비밀번호도 통과해 Client Spider가 시작되는 것을 먼저 재현했다. 현재 구현은 사용자가 등록한 필수 로그인 성공 정규식과 선택적 로그아웃 정규식을 ZAP Context에 설정하고, 같은 run·`laneAccountId`·`ZAP_AUTHENTICATION`의 실제 응답 Evidence를 별도로 확인한다.

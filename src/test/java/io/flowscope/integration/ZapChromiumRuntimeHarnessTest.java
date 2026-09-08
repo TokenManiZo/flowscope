@@ -211,6 +211,12 @@ final class ZapChromiumRuntimeHarnessTest {
         }
 
         @Override public Pipeline.Result snapshot() { return Pipeline.run(List.copyOf(records)); }
+        @Override public List<RequestRecord> authenticationEvidence(String runId, String accountId) {
+            return records.stream()
+                    .filter(record -> runId.equals(record.runId)
+                            && accountId.equals(record.laneAccountId))
+                    .toList();
+        }
         @Override public ScopePolicy scope() { return ScopePolicy.parse(TARGET); }
         @Override public ZapClient zap() { return client; }
         @Override public int scannerProxyPort() { return proxy.getAddress().getPort(); }

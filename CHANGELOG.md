@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · ZAP 인증 snapshot 경합 수정 (D-137, 2026-09-09)
+
+- 로그인 응답이 원시 저장소에는 들어왔지만 지연된 분석 snapshot에는 아직 없을 때 정상 계정 lane이 실패하던 경합을 수정했습니다.
+- 인증 gate는 현재 run·계정의 원시 `ZAP_AUTHENTICATION` 응답만 동기화해 읽으며, 전체 그래프 재계산이나 고정 대기를 추가하지 않습니다.
+- 빈 분석 snapshot 회귀와 별도 실물 ZAP 2.17/Chromium의 익명·정상 2계정·오류 비밀번호 차단을 재검증했습니다. 실제 Burp 재로드와 Windows 검증은 남았습니다.
+
 ## 미출시 · ZAP 인증 응답 Evidence gate (D-136, 2026-09-09)
 
 - ZAP action인 계정 등록에 필수 로그인 성공 정규식과 선택적 로그아웃 정규식을 추가했습니다. 값은 ID·비밀번호와 함께 현재 프로세스 메모리에만 두며 ZAP Context indicator와 FlowScope 인증 응답 검증에 사용합니다.

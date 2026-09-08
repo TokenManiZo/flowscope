@@ -1,6 +1,6 @@
 # FlowScope 팀 인계 정본
 
-최종 갱신: 2026-09-09 D-136 작업본. PR #10을 병합하지 않고 계정 입력→ZAP Browser Based Authentication→계정 Client→SCANNER Evidence 흐름을 현행 구조에 유지하면서, ZAP 실행을 bundle의 Docker Chromium 단일 runtime으로 고정했다. 로그인 성공은 ZAP action 값이 아니라 같은 run·계정의 실제 인증 응답 Evidence로 확인한다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
+최종 갱신: 2026-09-09 D-137 작업본. PR #10을 병합하지 않고 계정 입력→ZAP Browser Based Authentication→계정 Client→SCANNER Evidence 흐름을 현행 구조에 유지하면서, ZAP 실행을 bundle의 Docker Chromium 단일 runtime으로 고정했다. 로그인 성공은 ZAP action 값이나 지연될 수 있는 분석 그래프가 아니라 같은 run·계정의 원시 인증 응답 Evidence로 확인한다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -17,6 +17,8 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 사용자 전역 모델 설정·인증 파일, 사용 중인 Burp/ZAP, 다른 Claude worktree와 서드파티 패키지 내부 MCP 파일은 제거 대상이 아니었다. 구버전 확장이 실제로 실행 중이라면 새 소스의 삭제 사실만으로 그 프로세스·포트까지 종료됐다고 판단하지 않는다.
 
 ## 2. 진행상황
+
+2026-09-09 D-137: 실제 Burp 수집 순서를 대조해, 원시 로그인 응답 추가 뒤 분석 snapshot 게시가 지연되는 동안 D-136 인증 gate가 정상 로그인을 실패 처리할 수 있음을 회귀로 재현했다. 인증 전용 읽기를 현재 run·계정의 동기화된 원시 `ZAP_AUTHENTICATION` 기록으로 분리했고, 빈 분석 snapshot 상태에서도 복수 계정 캠페인 회귀가 통과했다. 별도 실물 ZAP 2.17/Chromium 하네스도 익명·정상 계정 2개 완료(65 requests)와 오류 비밀번호의 Client 전 차단을 재확인했다. 새 JAR의 실제 Burp 재로드/8081/UI와 Windows gate는 남았다.
 
 2026-09-09 후속 실물 검증: 사용자 8089 ZAP을 건드리지 않고 별도 Compose project(API 18889, 기록 프록시 18881, 합성 exact-scope target)에서 공식 ZAP 2.17 base의 Chromium/ChromeDriver, Authentication Helper 0.41.0, Client 0.30.0으로 익명 → alice → bob lane을 완주했다. 두 로그인 계정은 각각 `/api/me`에서 자기 사용자 응답을 받았고 다른 계정 세션 혼입은 0건이었다. 이어 같은 사용자명과 틀린 비밀번호는 `ZAP_AUTHENTICATION` 실패 응답이 로그인 성공 정규식과 불일치해 Client Spider 시작 전에 차단됐다. 이 과정에서 ZAP action `OK`와 `lastSuccessfulAuthTimeInMs`만 사용하면 틀린 비밀번호도 통과하는 결함을 실증해 해당 fallback을 폐기했다. 현재 코드는 같은 run·`laneAccountId`의 실제 인증 응답 Evidence를 필수 성공 정규식과 선택적 로그아웃 정규식으로 확인한다. 실제 Burp beta.46 JAR 재로드와 Windows 실기기는 계속 별도 gate다.
 
@@ -50,6 +52,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 - D-130~133 최종 입력에서 `mvn clean verify` 2회: 매회 Java 370 tests(실패·오류 0, 일반 suite의 opt-in provider 1 skip), React 38 files / 247 tests와 release JAR/bundle 생성 통과. 두 JAR·bundle의 SHA-256은 각각 동일했고 최종 JAR SHA-256은 `78868e06a2af099df26e5cbc9254daf42bacc791bdee8aaa1c321e940612cb24`다.
 - D-135 최종 입력에서 JDK 21 `mvn clean verify` 1회: Java 375 tests(실패·오류 0, opt-in provider 1 skip), React 38 files / 247 tests와 release gate 통과. beta.46 JAR은 31,649,129 bytes, 9,140 entries, SHA-256 `d03c5a602f8c06f3e345468f1b69adb5557b6b3cfc04fd500a04e8dec87ca8c3`이다. FlowScope Docker에서 Chromium/ChromeDriver `152.0.7977.82`, doctor 0/0, 실제 strict Client HTTP 200 수집 1건을 별도로 확인했다.
 - D-136 최종 입력에서 JDK 21 `mvn clean verify` 1회: Java 381 tests(실패·오류 0, opt-in 실물 하네스 2 skip), React 38 files / 247 tests와 release gate 통과. beta.46 JAR은 31,651,530 bytes, 9,140 entries, SHA-256 `8708565ff18c04bbe94af26cce7c6da37cb732ea47fcedd9e78888ffbbd53b44`이다. 별도 실물 ZAP 하네스는 익명·정상 2계정과 오류 비밀번호의 Client 전 차단을 확인했다.
+- D-137 최종 입력에서 JDK 21 `mvn clean verify` 1회: Java 381 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React 38 files / 247 tests와 release gate 통과. beta.46 JAR은 31,652,617 bytes, 9,140 entries, SHA-256 `50993c1b2526a58ff8fd29f8f8eb488b0bf83f645c3553d4ec7fc968052891e0`이다. 실물 ZAP 하네스는 익명·정상 2계정과 오류 비밀번호 차단을 다시 확인했다.
 - 별도 opt-in 실제 Codex app-server 하네스가 dynamic HTTP tool 호출과 구조화 결과를 확인했다. 이는 Burp Montoya/실제 대상 전체 실행이 아니다.
 - D-126 당시 Chromium standalone E2E 8/8은 과거 UI 기준 기록이다. D-128 Explorer 화면의 standalone/browser E2E나 실제 Burp gate로 재사용하지 않는다.
 - 작업트리 버전 문자열은 `1.2.0-beta.46`이다. 최종 전체 자동 검증과 JAR 식별값을 이 작업 단위에서 다시 확정하며 push·Release는 하지 않는다.

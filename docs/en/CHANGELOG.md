@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — ZAP authentication snapshot race fix (D-137, 2026-09-09)
+
+- Fixed a race where a valid login response was present in the raw capture store but absent from the delayed analysis snapshot, causing an authenticated lane to fail.
+- The authentication gate now synchronously reads only the current run/account's raw `ZAP_AUTHENTICATION` responses; it does not force a full graph rebuild or add a fixed delay.
+- A stale-analysis regression and a separate real ZAP 2.17/Chromium harness covering anonymous, two valid accounts, and wrong-password rejection passed. Reloading the JAR in real Burp and Windows validation remain open.
+
 ## Unreleased — ZAP authentication-response Evidence gate (D-136, 2026-09-09)
 
 - ZAP account registration now requires a logged-in response regex and accepts an optional logged-out regex. They remain in current-process memory with the username/password and configure both ZAP Context indicators and FlowScope's observed-response check.

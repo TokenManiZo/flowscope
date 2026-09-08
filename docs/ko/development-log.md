@@ -1,5 +1,21 @@
 # FlowScope 개발 기록
 
+## 2026-09-09 · 미출시 · ZAP 인증의 비동기 snapshot 경합 제거
+
+### 원인과 수정
+
+- 실제 Burp는 응답 `RequestRecord`를 원시 저장소에 먼저 추가하고 분석 그래프 snapshot을 400ms 지연 작업으로 게시한다. D-136 인증기는 API action 직후 게시된 snapshot을 한 번 읽어, 응답이 이미 수집됐어도 빈 snapshot이면 로그인 실패로 오판할 수 있었다.
+- `ZapCampaign.State`에 run·계정으로 제한한 인증 Evidence 읽기 경계를 추가했다. Burp 구현은 동기화된 원시 기록에서 `SCANNER/ZAP_AUTHENTICATION`만 복사하며 인증기는 기존 source/detail/run/account/response·성공/로그아웃 정규식 조건을 다시 적용한다.
+- 전체 Pipeline 동기 재실행은 로그인마다 그래프 계산과 publish 경합을 만들고, 고정 sleep은 환경에 따라 다시 실패하므로 기각했다.
+
+### 회귀·실물 확인·영향
+
+- `ZapCampaignRegressionTest`의 복수 계정 캠페인은 분석 snapshot을 계속 빈 값으로 반환하고 원시 기록만 갱신하도록 바꿨다. 수정 전에는 익명 lane 하나만 실행되어 실패했고, 수정 후 익명→두 계정과 실패/재실행 계약이 통과했다. `ZapBrowserAuthenticatorTest`도 함께 통과했다.
+- 사용자 8089 ZAP과 분리한 API 18889/기록 프록시 18881 실물 하네스에서 ZAP 2.17/Chromium의 익명·정상 계정 2개 Client lane이 65 requests로 완료됐고, 오류 비밀번호는 인증 단계에서 실패해 Client를 시작하지 않았다.
+- 최종 입력의 JDK 21 `mvn clean verify`는 Java 381 tests(실패·오류 0, opt-in 하네스 2 skip), React 38 files/247 tests와 release gate를 통과했다. JAR은 31,652,617 bytes, 9,140 entries, SHA-256 `50993c1b2526a58ff8fd29f8f8eb488b0bf83f645c3553d4ec7fc968052891e0`이다.
+- 코드: `ZapCampaign`, `FlowScopeExtension`; 테스트: `ZapCampaignRegressionTest`, `ZapChromiumRuntimeHarnessTest`; 문서: decisions D-137, architecture, beta-validation, product plan, HANDOFF, CHANGELOG와 이 기록.
+- 남은 gate는 새 JAR의 실제 Burp 재로드·8081/UI 실행과 Windows Docker Desktop이다. 별도 기록 프록시 하네스를 실제 Burp 검증으로 표현하지 않는다.
+
 ## 2026-09-09 · 미출시 · ZAP 로그인 성공을 실제 응답 Evidence로 검증
 
 ### 원인과 수정

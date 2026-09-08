@@ -810,7 +810,20 @@ final class ZapCampaignRegressionTest {
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
             server = new ZapCampaign(new ZapCampaign.State() {
-                @Override public Pipeline.Result snapshot() { return Pipeline.run(records.get()); }
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(List.of()); }
+                @Override public Pipeline.Result completionSnapshot() { return Pipeline.run(records.get()); }
+                @Override public List<RequestRecord> authenticationEvidence(String runId, String accountId) {
+                    return records.get().stream()
+                            .filter(record -> runId.equals(record.runId)
+                                    && accountId.equals(record.laneAccountId))
+                            .toList();
+                }
+                @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
+                    return records.get().stream()
+                            .filter(record -> record.source == source && runId.equals(record.runId))
+                            .filter(record -> detail == null || record.sourceDetail == detail)
+                            .count();
+                }
                 @Override public ScopePolicy scope() { return ScopePolicy.parse(target); }
                 @Override public ZapClient zap() { return zap; }
                 @Override public RunContextRegistry contexts() { return contexts; }

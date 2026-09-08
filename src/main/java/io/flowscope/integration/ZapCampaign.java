@@ -34,6 +34,14 @@ public final class ZapCampaign implements AutoCloseable {
                     .filter(record -> detail == null || record.sourceDetail == detail)
                     .count();
         }
+        default List<RequestRecord> authenticationEvidence(String runId, String accountId) {
+            return snapshot().records.stream()
+                    .filter(record -> record.source == Source.SCANNER
+                            && record.sourceDetail == SourceDetail.ZAP_AUTHENTICATION)
+                    .filter(record -> runId.equals(record.runId)
+                            && accountId.equals(record.laneAccountId))
+                    .toList();
+        }
         ScopePolicy scope();
         ZapClient zap();
         default int scannerProxyPort() { return 8081; }
@@ -524,7 +532,7 @@ public final class ZapCampaign implements AutoCloseable {
                 try {
                     identity = state.zapAccounts().withSecret(lane.accountId(), secret ->
                             new ZapBrowserAuthenticator(state.zap(), json, state.scope()::allows,
-                                    () -> state.snapshot().records).authenticate(
+                                    () -> state.authenticationEvidence(runId, lane.accountId())).authenticate(
                                     runId, target, index, finalContextId, contextName, secret));
                     recordZapHeartbeat(runId, index, "ZAP 브라우저 로그인 · 인증 성공 응답 수신");
                 } finally {

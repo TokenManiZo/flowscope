@@ -1361,6 +1361,16 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public long capturedCount(Source source, String runId, SourceDetail detail) {
                     synchronized (records) { return FlowScopeExtension.capturedCount(records, source, runId, detail); }
                 }
+                @Override public List<RequestRecord> authenticationEvidence(String runId, String accountId) {
+                    synchronized (records) {
+                        return records.stream()
+                                .filter(record -> record.source == Source.SCANNER
+                                        && record.sourceDetail == SourceDetail.ZAP_AUTHENTICATION)
+                                .filter(record -> runId.equals(record.runId)
+                                        && accountId.equals(record.laneAccountId))
+                                .toList();
+                    }
+                }
                 @Override public ScopePolicy scope() { return scope; }
                 @Override public ZapClient zap() { return zapClient; }
                 @Override public int scannerProxyPort() { return configuredScannerProxyPort(); }
