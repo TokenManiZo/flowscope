@@ -1,5 +1,26 @@
 # FlowScope 개발 기록
 
+## 2026-09-09 · 미출시 · Explorer 산출물 발견을 Evidence-bound 선언으로 데이터화
+
+### 원인과 수정
+
+- 실제 Explorer 실행은 HTTP Evidence를 만들었지만 번들·HTML·명세에서 읽은 endpoint·parameter를 모델의 자유서술 마지막 메시지에만 남겼다. 따라서 Surface의 `declaredByLlm`은 0으로 남을 수 있었고, 모델이 적은 요청·API 개수도 서버 원장과 달랐다. 모델 문장을 파싱하는 방식은 형식·언어·모델 버전에 따라 깨지고 Evidence 결박을 보장하지 못하므로 기각했다.
+- Codex app-server에 기존 `flowscope_http_request`와 분리된 `flowscope_record_discoveries` dynamic tool을 추가했다. 선언은 method, exact-scope 절대 URL/template, 값 없는 parameter 위치·field path, artifact 종류·locator·reason, 현재 run이 실제로 만든 응답 Evidence ID를 요구한다. 서버는 알 수 없는 필드, scope 밖 URL, 다른 run/가짜 Evidence, 인증·세션 header, 호출·run 상한 초과를 거부한다.
+- 선언은 `LLM_ARTIFACT_ANALYSIS` provenance의 `RouteCandidate`와 declared parameter로 저장해 프로젝트 재열기와 Surface H/S/L 필터를 통과시켰다. 실제 요청 Observation이나 취약점 verdict로 승격하지 않는다. endpoint·parameter·Evidence provenance는 의미 키로 중복 제거한다.
+- 64KiB를 넘는 텍스트 응답은 최대 4MiB까지 현재 run의 임시 artifact로 한 번만 전달하고 UTF-8 byte 경계에서 자른다. 프롬프트는 Range/cache-buster 반복을 금지하고 artifact 로컬 분석 뒤 묶음 선언을 요구한다. Explorer OPTIONS는 capability/preflight probe로 별도 집계하고, 일반 HUMAN OPTIONS와 산출물에 명시된 OPTIONS API는 유지한다.
+- 모델 마지막 메시지는 작업 메모로만 표시한다. HTTP 시도·응답 Evidence, endpoint/parameter 선언, probe 수는 `ExplorerCoordinator`가 원장에서 계산해 React에 제공한다.
+
+### 영향 파일·회귀
+
+- 코드: `RouteCandidate`, `RouteCandidateExtractor`, `SurfaceAnalysis`, `SurfaceAnalyzer`, `ExplorerHttpGateway`, `CodexAppServerProvider`, `ExplorerCoordinator`, `FlowScopeExtension`, `ProjectStore`, `FlowScopeWebServer`, `SnapshotJsonWriter`, React Explorer/Surface/type, Explorer system prompt.
+- 테스트: current-run Evidence 요구, 알 수 없는 필드·비밀 header·scope 거부, 의미 중복 제거, 다국어 artifact byte 상한, 프로젝트 round-trip, OPTIONS 분리, 서버 집계, source filter를 추가했다. 설치·로그인된 실제 Codex app-server opt-in 하네스는 로컬 HTTP 응답 Evidence를 만든 뒤 그 ID로 선언 tool을 호출해 1/1 통과했다.
+- 최종 코드 기준 JDK 21.0.12.1·Maven 3.9.16 `mvn clean verify`를 연속 두 번 실행했다. 매회 React 38 files/248 tests, Java 388 tests 중 opt-in 실물 ZAP·provider 하네스 2 skip, failures/errors 0, typecheck·Vite·release JAR gate가 통과했다. 두 JAR은 31,669,404 bytes·9,143 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `d00bcb35e36eb5e60e843e8d1a3bf8d425b4e35c9a32ade700780cbd8f949cf6`로 동일했다.
+
+### 남은 한계·다음 gate
+
+- 실제 Codex provider 하네스는 tool protocol·Evidence→선언 연결을 확인했지만 실제 Burp Montoya, 계정 로그인, 대형 실제 번들 전체 탐색, 임의 target의 endpoint/parameter 발견률을 증명하지 않는다.
+- 다음 gate는 beta.46 JAR을 실제 Burp에 재로드해 anonymous·HTML form·JSON token 계정, exact-scope, 큰 번들 단일 수집, Evidence·선언 귀속, OPTIONS probe, steer·취소·프로젝트 재열기를 확인하는 것이다. 그 뒤 독립 truth corpus에서 HUMAN/ZAP 대비 추가 발견·중복·노이즈·요청량·검토시간을 측정한다.
+
 ## 2026-09-09 · 미출시 · 일시적인 ZAP 응답 지연과 연결 불가를 구분
 
 ### 원인과 수정

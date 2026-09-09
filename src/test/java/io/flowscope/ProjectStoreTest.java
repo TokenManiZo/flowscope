@@ -68,7 +68,10 @@ final class ProjectStoreTest {
                 List.of("/undocumented/42"), false, false,
                 List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.BURP_UNREQUESTED,
                 "sitemap:abc", Source.UNKNOWN, "burp-site-map", "burp-site-map")),
-                RouteCandidate.Applicability.REVIEW, "응답 없는 Site Map 항목");
+                RouteCandidate.Applicability.REVIEW, "응답 없는 Site Map 항목",
+                List.of(new RouteCandidate.DeclaredParameter(SurfaceAnalysis.ParameterLocation.QUERY,
+                        "expand", "expand", SurfaceAnalysis.Requirement.OPTIONAL,
+                        record.evidenceId, Source.LLM, "validation-1", "llm-javascript", "app.js:7")));
 
         ProjectStore store = new ProjectStore();
         store.save(file, List.of(record), config, List.of(assessment), List.of(validation),

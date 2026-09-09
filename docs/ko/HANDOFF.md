@@ -1,6 +1,6 @@
 # FlowScope 팀 인계 정본
 
-최종 갱신: 2026-09-09 D-138 작업본. PR #10을 병합하지 않고 계정 입력→ZAP Browser Based Authentication→계정 Client→SCANNER Evidence 흐름을 현행 구조에 유지하면서, ZAP 실행을 bundle의 Docker Chromium 단일 runtime으로 고정했다. 로그인 성공은 ZAP action 값이나 지연될 수 있는 분석 그래프가 아니라 같은 run·계정의 원시 인증 응답 Evidence로 확인한다. 실제 macOS Burp 8081에서 익명 Client 캠페인을 완주했고, 한 번의 일시 probe 실패는 `UNREACHABLE`가 아닌 `RETRYING`으로 구분하도록 보정했다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
+최종 갱신: 2026-09-09 D-139 작업본. Explorer가 실제 HTTP Evidence만 남기고 산출물에서 찾은 endpoint·parameter를 모델 문장으로 버리던 연결 공백을 닫았다. 발견은 current-run 응답 Evidence에 결박된 별도 Declaration으로 저장하며 Observation·취약점 판정으로 승격하지 않는다. 큰 산출물은 한 번 받아 로컬 artifact로 분석하고, Explorer OPTIONS probe는 기능 API 관측과 분리하며, 화면 수치는 서버가 계산한다. D-138까지의 ZAP 계약과 실제 macOS 익명 Client 결과는 유지한다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -10,13 +10,15 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 - **보존 데이터:** HUMAN·SCANNER·LLM source, 기존 Evidence·계정 메타데이터·정책·완료 run·실행 원장·사람 검토.
 - **제거 유지:** 기존 Judge, 옛 Explorer 실행기, MCP transport/토큰/리스너, 후속 Judge 세션, 격리 브라우저, agent-workspace 설정·프롬프트·디렉터리. 옛 실행 API는 404이며 성공 stub이 아니다.
 - **과거 LLM:** `LegacyAssessment`·`ValidationDecision`은 저장 호환용 읽기 전용 기록이다. 현재 규칙 후보의 결론으로 합치지 않는다.
-- **새 Explorer:** `ExplorerCoordinator`가 메모리 계정 인증과 로그인된 Codex app-server를 연결하고, dynamic HTTP tool을 exact-scope Burp Montoya 전송으로 제한한다. 실제 응답만 LLM Evidence다. MCP·Judge·브라우저는 없다.
+- **새 Explorer:** `ExplorerCoordinator`가 메모리 계정 인증과 로그인된 Codex app-server를 연결한다. HTTP 도구는 exact-scope Burp Montoya 전송과 실제 LLM Observation Evidence를 만들고, 선언 도구는 같은 run의 응답 Evidence에서 직접 읽은 endpoint·parameter만 `LLM_ARTIFACT_ANALYSIS` Declaration으로 저장한다. MCP·Judge·브라우저는 없다.
 - **미착수:** FlowScope Evidence·분석용 제품 MCP. 새 Explorer와 무관하며 지금 만들지 않는다.
 - **ZAP beta.46 작업:** 비로그인 또는 별도 메모리 로그인 계정마다 이름 없는 temporary ZAP session/Context를 만들고 `인증 → chrome-headless strict Client → Passive → Alert`를 실행한다. 모든 lane은 bundle의 FlowScope Docker Chromium runtime만 사용한다. D-132 이후 Traditional/AJAX를, D-134 이후 ZAP 2.17 REST에 없는 verification component를 호출하지 않는다.
 
 사용자 전역 모델 설정·인증 파일, 사용 중인 Burp/ZAP, 다른 Claude worktree와 서드파티 패키지 내부 MCP 파일은 제거 대상이 아니었다. 구버전 확장이 실제로 실행 중이라면 새 소스의 삭제 사실만으로 그 프로세스·포트까지 종료됐다고 판단하지 않는다.
 
 ## 2. 진행상황
+
+2026-09-09 D-139: 실제 Explorer run이 HTTP Evidence는 남겼지만 번들에서 찾은 API·입력을 자유서술 요약에만 두어 Surface에 연결하지 못했고, 모델 요약의 요청/endpoint 개수도 저장된 Evidence와 일치하지 않았다. `flowscope_record_discoveries` dynamic tool과 Evidence-bound 선언 모델을 추가해 endpoint·값 없는 parameter·locator/reason을 기존 RouteCandidate/Surface/프로젝트 경로에 연결했다. current-run Evidence가 없거나 scope 밖·알 수 없는 필드·인증 header·상한 초과인 선언은 거부한다. Explorer가 보낸 OPTIONS는 probe로 분리하되 일반 HUMAN OPTIONS와 산출물에 선언된 OPTIONS API는 보존한다. 실제 로그인된 Codex app-server가 HTTP 도구 뒤 선언 도구를 호출하는 opt-in 하네스가 통과했고, 최종 전체 verify 2회도 React 248·Java 388 tests와 byte-identical JAR을 확인했다. 실제 Burp 리얼 대상 완주는 별도 gate다.
 
 2026-09-09 D-138: D-137 JAR을 실제 Burp에 로드한 macOS 환경에서 `127.0.0.1:8089` ZAP 2.17.0 상태를 10회 연속 확인했고, 새 비로그인 캠페인 `zap-baseline-1788925829413`이 59초 만에 `ALERTS_READY`로 완료됐다. SCANNER 14건, Client 14건, Alert 29건, capability 거부 0건, Passive 잔여 0건이었다. 실행 도중 단 한 번의 상태 probe 실패도 곧바로 `UNREACHABLE`와 helper 재실행 안내로 확정하는 UI/API 판정 결함을 확인했다. 일반 통신 실패 1·2회는 `RETRYING`, 3회 연속 실패부터 `UNREACHABLE`, API key 401/403은 즉시 `AUTH_FAILED`가 되도록 회귀와 코드를 추가했다. 최종 D-138 JAR을 실제 Burp에 재로드해 `RETRYING` 표시 자체를 확인하는 gate는 남는다.
 
@@ -32,8 +34,8 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 | 기존 Judge·하네스 MCP 제거 | 구현·자동 회귀 완료 | `57d1bb4`, 클래스/JAR 부재·폐기 route 404 |
 | 과거 프로젝트 호환 | 구현·자동 회귀 완료 | JSON v4 / SQLite v3, 원 Evidence ID·과거 평가 분리 |
 | 빈 agent-workspace 정리 | 완료 | `962edfe`, 정확한 빈 디렉터리만 제거 |
-| 문서 현행화 | 2026-09-09 D-138 계약 갱신 | [전수 목록·확인 범위](documentation-status.md); 실제 익명 Burp lane, ZAP 상태 재시도, 남은 로그인/Windows gate와 과거 기록 구분 |
-| 독립 LLM Explorer | 구현·자동/provider 검증 완료 | `5da5b08`; 메모리 인증, dynamic HTTP tool, exact-scope gateway, actual-response Evidence, React 작업 피드; 실제 Burp gate 대기 |
+| 문서 현행화 | 2026-09-09 D-139 계약 갱신 | [전수 목록·확인 범위](documentation-status.md); Explorer Observation/Declaration/probe와 실제 검증·남은 gate 구분 |
+| 독립 LLM Explorer | D-139 구현·집중/provider·전체 자동 검증 완료, Burp gate 대기 | 메모리 인증, exact-scope HTTP Observation, Evidence-bound endpoint/parameter Declaration, 서버 중복 제거·집계, React 작업 피드 |
 | 다운로드 bundle·기능별 doctor | 구현·자동/추출 검증 완료 | JAR+ZAP helper+문서 ZIP, `human/zap/explorer/full`, Explorer 재확인; Windows 실기기 대기 |
 | ZAP 직접 브라우저 인증 | 별도 실물 하네스에서 정상 2계정·오류 비밀번호 차단 통과, 실제 Burp·Windows gate 대기 | 메모리 `ZapAccountVault`, 필수 성공/선택적 로그아웃 정규식, 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence, Chrome Headless, Context/user 지정 Client, 임시 user/Context 정리 |
 | React ZAP 기능 보존 | 구현·집중 회귀 완료 | target별 로그인 계정, 로그인/단계/경과 상태, 명세 정의 입력, 취소 복구 |
@@ -47,7 +49,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 ## 3. 검증과 배포 상태
 
-[beta-validation의 D-130~136 기록](beta-validation.md)이 현재 ZAP 작업의 자동·실물 검증 정본이며, D-129는 배포 작업, D-128은 Explorer 구현·실물 provider 검증의 정본이다.
+[beta-validation의 D-130~138 기록](beta-validation.md)이 현재 ZAP 작업의 자동·실물 검증 정본이며, D-129는 배포 작업, D-128과 D-139는 Explorer 구현·provider 검증의 정본이다.
 
 - 같은 최종 D-128 입력에서 `mvn clean verify` 2회: 매회 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 241 tests 통과. JAR SHA-256과 크기가 동일했다.
 - D-129 작업에서 `mvn clean verify` 2회: 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 242 tests 통과. 반복 package의 JAR/bundle 동일성과 clone 없는 clean extraction을 확인했다.
@@ -56,9 +58,10 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 - D-136 최종 입력에서 JDK 21 `mvn clean verify` 1회: Java 381 tests(실패·오류 0, opt-in 실물 하네스 2 skip), React 38 files / 247 tests와 release gate 통과. beta.46 JAR은 31,651,530 bytes, 9,140 entries, SHA-256 `8708565ff18c04bbe94af26cce7c6da37cb732ea47fcedd9e78888ffbbd53b44`이다. 별도 실물 ZAP 하네스는 익명·정상 2계정과 오류 비밀번호의 Client 전 차단을 확인했다.
 - D-137 최종 입력에서 JDK 21 `mvn clean verify` 1회: Java 381 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React 38 files / 247 tests와 release gate 통과. beta.46 JAR은 31,652,617 bytes, 9,140 entries, SHA-256 `50993c1b2526a58ff8fd29f8f8eb488b0bf83f645c3553d4ec7fc968052891e0`이다. 실물 ZAP 하네스는 익명·정상 2계정과 오류 비밀번호 차단을 다시 확인했다.
 - D-138 JDK 21 전체 성공 실행은 매회 Java 383 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React 38 files / 247 tests와 release gate를 통과했다. 성공한 beta.46 JAR은 31,653,652 bytes, 9,141 entries, SHA-256 `8481edf973e226d1cd21c8862364542a7d572b9ba56af1bf12eb8915b5ff8c3a`로 동일하다. 반복 중 기존 React 테스트 2개의 5초 timeout 실패가 한 번 있었으나 단독 22/22와 다음 전체 247/247은 통과했다. 테스트 시간 변동성과 최종 Burp reload는 대기한다.
-- 별도 opt-in 실제 Codex app-server 하네스가 dynamic HTTP tool 호출과 구조화 결과를 확인했다. 이는 Burp Montoya/실제 대상 전체 실행이 아니다.
+- D-139 최종 코드에서 JDK 21 `mvn clean verify` 2회: 매회 Java 388 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React 38 files / 248 tests와 release gate 통과. beta.46 JAR은 31,669,404 bytes, 9,143 entries, SHA-256 `d00bcb35e36eb5e60e843e8d1a3bf8d425b4e35c9a32ade700780cbd8f949cf6`로 동일하다.
+- 별도 opt-in 실제 Codex app-server 하네스가 dynamic HTTP tool로 응답 Evidence를 만든 뒤 그 ID로 구조화 선언 도구를 호출하는 경로를 확인했다. 이는 Burp Montoya/실제 대상 전체 실행이 아니다.
 - D-126 당시 Chromium standalone E2E 8/8은 과거 UI 기준 기록이다. D-128 Explorer 화면의 standalone/browser E2E나 실제 Burp gate로 재사용하지 않는다.
-- 작업트리 버전 문자열은 `1.2.0-beta.46`이다. 최종 전체 자동 검증과 JAR 식별값을 이 작업 단위에서 다시 확정하며 push·Release는 하지 않는다.
+- 작업트리 버전 문자열은 `1.2.0-beta.46`이다. D-139 전체 자동 검증과 JAR 식별값은 위와 같이 확정했으며 push·Release는 하지 않았다.
 - 실제 Burp load와 ZAP 비로그인 lane은 D-137 JAR에서 확인했다. unload/reload, HUMAN 로그인/캡처, ZAP 복수 로그인 lane, Request Lab 실제 전송, Windows 운영 검증과 최종 D-138 상태 표시는 새 JAR 기준 미실행이다.
 
 ## 4. 현재 구조와 코드 위치
@@ -69,8 +72,8 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 | ZAP 실행·상태·취소 | [ZapCampaign](../../src/main/java/io/flowscope/integration/ZapCampaign.java), [ZapClient](../../src/main/java/io/flowscope/integration/ZapClient.java) | MCP 없는 캠페인, 신원 격리·capability·Browser Based Authentication·계정 crawler·정리 |
 | ZAP 계정 | [ZapAccountVault](../../src/main/java/io/flowscope/integration/ZapAccountVault.java), [ZapBrowserAuthenticator](../../src/main/java/io/flowscope/integration/ZapBrowserAuthenticator.java) | 자격증명 메모리 수명, 명시적 로그인 성공, 안전한 계정 메타데이터 |
 | HUMAN 세션 | [SessionBroker](../../src/main/java/io/flowscope/integration/SessionBroker.java) | 명시적 HUMAN 캡처와 Request Lab 인증정보 재사용. ZAP 계정 lane에는 사용하지 않음 |
-| LLM Explorer | [ExplorerCoordinator](../../src/main/java/io/flowscope/explorer/ExplorerCoordinator.java), [CodexAppServerProvider](../../src/main/java/io/flowscope/explorer/CodexAppServerProvider.java), [ExplorerHttpGateway](../../src/main/java/io/flowscope/explorer/ExplorerHttpGateway.java), [ExplorerAccountVault](../../src/main/java/io/flowscope/explorer/ExplorerAccountVault.java) | Codex 수명, 메모리 인증, exact-scope 동적 요청, 상태·취소·Evidence 완료 gate |
-| 분석·표면 | [Pipeline](../../src/main/java/io/flowscope/core/Pipeline.java), [SurfaceAnalyzer](../../src/main/java/io/flowscope/core/SurfaceAnalyzer.java), [RouteCandidateExtractor](../../src/main/java/io/flowscope/core/RouteCandidateExtractor.java) | 관측/선언 분리, 정규화·분류·인가 후보 |
+| LLM Explorer | [ExplorerCoordinator](../../src/main/java/io/flowscope/explorer/ExplorerCoordinator.java), [CodexAppServerProvider](../../src/main/java/io/flowscope/explorer/CodexAppServerProvider.java), [ExplorerHttpGateway](../../src/main/java/io/flowscope/explorer/ExplorerHttpGateway.java), [ExplorerAccountVault](../../src/main/java/io/flowscope/explorer/ExplorerAccountVault.java) | Codex 수명, 메모리 인증, exact-scope HTTP Observation, Evidence-bound 선언, 서버 집계, 상태·취소·Evidence 완료 gate |
+| 분석·표면 | [Pipeline](../../src/main/java/io/flowscope/core/Pipeline.java), [SurfaceAnalyzer](../../src/main/java/io/flowscope/core/SurfaceAnalyzer.java), [RouteCandidateExtractor](../../src/main/java/io/flowscope/core/RouteCandidateExtractor.java) | 관측/선언/probe 분리, 정규화·분류·인가 후보 |
 | Web·UI | [FlowScopeWebServer](../../src/main/java/io/flowscope/web/FlowScopeWebServer.java), [SnapshotJsonWriter](../../src/main/java/io/flowscope/web/SnapshotJsonWriter.java), [React](../../frontend/src) | 기본 Surface, 선택 인가 상세, 현재 규칙·사람 검토, 과거 이력 |
 | 저장 호환 | [ProjectStore](../../src/main/java/io/flowscope/integration/ProjectStore.java), [SqliteProjectStore](../../src/main/java/io/flowscope/integration/SqliteProjectStore.java) | 마스킹 데이터·schema 호환, raw 세션 비저장 |
 
@@ -98,7 +101,7 @@ D-128은 발견용 HTML/JavaScript/JSON/XML 응답을 기본 4MiB까지 `FULL` p
 ## 6. 다음 작업·제품 결정 보류 사항과 완료 기준
 
 1. **ZAP 실물 운영 gate** → beta.46 JAR을 실제 Burp에 재로드한 뒤 FlowScope Docker Chromium에서 비로그인과 로그인 계정 최소 2개를 실행해 로그인 성공/실패, SCANNER+laneAccountId 귀속, 쿠키 격리, strict Client capture와 0건 실패, Passive/Alert, 정의 import, 취소와 임시 user/Context 정리를 확인한다.
-2. **Release 게시 전 운영 gate** → Windows PowerShell 실기기에서 bundle/doctor/ZAP helper를 확인하고, 실제 Burp에서 최종 JAR load/unload·HUMAN·Request Lab·저장 회귀와 Explorer anonymous·HTML form·JSON token, exact-scope, Evidence 귀속, steer·취소 정리를 확인한다.
+2. **Release 게시 전 운영 gate** → Windows PowerShell 실기기에서 bundle/doctor/ZAP helper를 확인하고, 실제 Burp에서 최종 JAR load/unload·HUMAN·Request Lab·저장 회귀와 Explorer anonymous·HTML form·JSON token, exact-scope, Evidence·선언 귀속, 큰 번들 단일 수집, OPTIONS probe 분리, steer·취소 정리를 확인한다.
 3. **독립 평가** → 승인된 범위와 독립 truth를 확보해 HUMAN·ZAP 대비 추가 endpoint/parameter, 중복·노이즈·요청량·검토시간을 측정한다. 자동 회귀만으로 우월성을 주장하지 않는다.
 
 ## 7. 문서와 협업 운영

@@ -295,6 +295,56 @@ final class SurfaceAnalyzerTest {
                 report.issues().stream().map(SurfaceAnalysis.ExtractionIssue::kind).collect(Collectors.toSet()));
     }
 
+    @Test
+    void OPTIONS는_API기능_관측이_아닌_capability_probe로_분리한다() {
+        RequestRecord options = request(Source.LLM, "OPTIONS", "/api/orders/17", 204);
+        options.sourceDetail = io.flowscope.core.SourceDetail.LLM_EXPLORER;
+        Pipeline.Result result = Pipeline.runIsolated(List.of(options), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        assertTrue(analysis.endpoints().isEmpty());
+        assertEquals(1, analysis.probes().size());
+        assertEquals("OPTIONS", analysis.probes().getFirst().key().method());
+        assertEquals(result.records.getFirst().evidenceId, analysis.probes().getFirst().evidenceId());
+    }
+
+    @Test
+    void 일반_OPTIONS_API는_기존처럼_기능_관측으로_유지한다() {
+        RequestRecord options = request(Source.HUMAN, "OPTIONS", "/api/capabilities", 200);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(options), new io.flowscope.core.AnalysisConfig());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+
+        assertNotNull(endpoint(analysis, "OPTIONS", "/api/capabilities"));
+        assertTrue(analysis.probes().isEmpty());
+    }
+
+    @Test
+    void LLM_산출물_선언은_실제관측과_분리해_endpoint와_parameter를_보존한다() {
+        RouteCandidate candidate = new RouteCandidate("https://app.test:443", "POST", "/api/orders/{id}",
+                List.of(), false, false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS,
+                        "ev-js", Source.LLM, "llm-run", "llm-javascript",
+                        RouteCandidate.Applicability.REVIEW, "app.js:42")),
+                RouteCandidate.Applicability.REVIEW, "app.js:42",
+                List.of(new RouteCandidate.DeclaredParameter(SurfaceAnalysis.ParameterLocation.JSON_BODY,
+                        "product_id", "product_id", SurfaceAnalysis.Requirement.UNKNOWN,
+                        "ev-js", Source.LLM, "llm-run", "llm-javascript", "app.js:42")));
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(List.of(), List.of(), List.of(candidate));
+
+        SurfaceAnalysis.EndpointFact endpoint = endpoint(analysis, "POST", "/api/orders/{id}");
+        assertEquals(SurfaceAnalysis.DeltaState.DECLARED_NOT_OBSERVED, endpoint.deltaState());
+        assertEquals(Source.LLM, endpoint.declarations().getFirst().source());
+        SurfaceAnalysis.ParameterFact parameter = parameter(endpoint,
+                SurfaceAnalysis.ParameterLocation.JSON_BODY, "product_id");
+        assertEquals(SurfaceAnalysis.DeltaState.DECLARED_NOT_OBSERVED, parameter.deltaState());
+        assertEquals("ev-js", parameter.declarations().getFirst().evidenceId());
+    }
+
     private static RequestRecord request(Source source, String method, String path, int status) {
         RequestRecord record = new RequestRecord(source, "https://app.test:443", method, path, status, "anon");
         record.hasResponse = true;

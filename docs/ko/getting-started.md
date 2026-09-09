@@ -1,8 +1,8 @@
 # FlowScope 설치·첫 실행 가이드
 
-이 가이드는 D-128 독립 Explorer, D-135 FlowScope Docker Chromium ZAP과 D-138 연결 상태 기준입니다. 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
+이 가이드는 D-128/D-139 독립 Explorer, D-135 FlowScope Docker Chromium ZAP과 D-138 연결 상태 기준입니다. 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
 
-현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server dynamic tool과 Java exact-scope gateway를 쓴다(D-128). ZAP 로그인 lane은 HUMAN Session Broker를 재사용하지 않는다. Browser Based Authentication의 실제 응답 Evidence가 필수 로그인 성공 정규식과 일치한 계정만 계정 지정 crawler에 사용한다(D-136). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 `chrome-headless` Client Spider를 사용한다(D-135). H/S/L 관측 비교와 과거 프로젝트는 보존한다. 이 변경은 아직 원격 Release에 게시하지 않았으므로 이 작업 소스에서 빌드한 JAR 또는 distribution bundle을 사용해야 한다.
+현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server HTTP·선언 dynamic tool과 Java exact-scope gateway를 쓴다(D-128/D-139). ZAP 로그인 lane은 HUMAN Session Broker를 재사용하지 않는다. Browser Based Authentication의 실제 응답 Evidence가 필수 로그인 성공 정규식과 일치한 계정만 계정 지정 crawler에 사용한다(D-136). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 `chrome-headless` Client Spider를 사용한다(D-135). H/S/L 관측 비교와 과거 프로젝트는 보존한다. 이 변경은 아직 원격 Release에 게시하지 않았으므로 이 작업 소스에서 빌드한 JAR 또는 distribution bundle을 사용해야 한다.
 
 ## 1. 지원 경로와 검증 범위
 
@@ -140,9 +140,9 @@ ZAP 로그인 교환은 감사 가능한 `ZAP_AUTHENTICATION / SESSION_SETUP` Ev
 2. Burp와 같은 OS 사용자로 터미널에서 `codex`를 실행하고 **Sign in with ChatGPT**를 완료한다. FlowScope에 API key를 입력하지 않는다.
 3. exact scope를 적용한 뒤 Web **Explorer**를 연다. 준비 배지가 READY가 아니면 원인 문구를 확인하고 **다시 확인**을 누른다.
 4. 비로그인만 선택하거나, HTML form/JSON API 로그인 계정을 메모리 전용으로 추가한다. 계정 ID·비밀번호·live cookie/token은 프로젝트에 저장되지 않으며 모델에는 opaque account handle만 전달된다.
-5. 시작 URL과 신원을 선택해 실행한다. 진행 피드의 경과시간·HTTP 요청·Evidence ID·미해결·실패를 확인하고 필요하면 steer 또는 취소한다.
+5. 시작 URL과 신원을 선택해 실행한다. 진행 피드의 경과시간·HTTP 요청·응답 Evidence·선언 endpoint/parameter·OPTIONS probe·미해결·실패를 확인하고 필요하면 steer 또는 취소한다.
 
-MCP 토큰·8787 포트, Chrome/Playwright, provider API key는 필요하지 않다. 새 Explorer는 모델 일반 네트워크 대신 app-server dynamic tool을 Java exact-scope gateway에 연결한다. 자세한 설정·경계·남은 실환경 gate는 [LLM Explorer](llm-explorer.md)를 따른다. 과거 LLM Judge 기록은 React 시나리오의 읽기 전용 구역에만 남는다.
+MCP 토큰·8787 포트, Chrome/Playwright, provider API key는 필요하지 않다. 새 Explorer는 모델 일반 네트워크 대신 app-server의 HTTP·선언 dynamic tool을 Java exact-scope gateway에 연결한다. HTTP 응답은 Observation Evidence, 응답 산출물에서 읽은 endpoint·parameter는 같은 run Evidence에 결박된 Declaration으로 분리되며 화면 수치는 서버가 계산한다. 자세한 설정·경계·남은 실환경 gate는 [LLM Explorer](llm-explorer.md)를 따른다. 과거 LLM Judge 기록은 React 시나리오의 읽기 전용 구역에만 남는다.
 
 ## 6. 환경 점검
 

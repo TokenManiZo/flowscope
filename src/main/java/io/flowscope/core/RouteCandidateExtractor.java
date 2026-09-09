@@ -118,6 +118,9 @@ public final class RouteCandidateExtractor {
             }
             LinkedHashSet<RouteCandidate.Provenance> provenance = new LinkedHashSet<>(current.provenance());
             provenance.addAll(candidate.provenance());
+            LinkedHashSet<RouteCandidate.DeclaredParameter> declaredParameters =
+                    new LinkedHashSet<>(current.declaredParameters());
+            declaredParameters.addAll(candidate.declaredParameters());
             LinkedHashSet<String> concretePaths = new LinkedHashSet<>(current.concretePaths());
             boolean concretePathsTruncated = current.concretePathsTruncated() || candidate.concretePathsTruncated();
             for (String concretePath : candidate.concretePaths()) {
@@ -136,7 +139,8 @@ public final class RouteCandidateExtractor {
                     : current.applicability() != applicability ? candidate.reviewReason() : current.reviewReason();
             merged.put(key, new RouteCandidate(candidate.service(), candidate.method(), candidate.pathTemplate(),
                     new ArrayList<>(concretePaths), concretePathsTruncated, observed,
-                    new ArrayList<>(provenance), applicability, reason));
+                    new ArrayList<>(provenance), applicability, reason,
+                    new ArrayList<>(declaredParameters)));
         }
         return merged.values().stream().sorted(candidateOrder()).toList();
     }

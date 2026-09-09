@@ -1,5 +1,23 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-09 · 미출시 D-139 · Explorer Evidence-bound 선언·서버 집계 gate
+
+D-128 Explorer의 실제 provider 경로를 유지하면서, 응답 산출물에서 읽은 endpoint·parameter가 자유서술에만 남던 공백을 구조화했다. 선언은 현재 run의 응답 Evidence ID를 요구하고 실제 HTTP Observation·취약점 판정과 분리된다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 구조 회귀 | current-run 응답 Evidence 요구, scope 밖·가짜 Evidence·알 수 없는 필드·인증 header 거부, endpoint/parameter/provenance 중복 제거, UTF-8 64KiB inline·4MiB artifact 경계, 프로젝트 저장·재열기 통과 |
+| Surface/UI | LLM 선언이 값 없는 parameter provenance와 함께 source filter에 연결되고, LLM Explorer OPTIONS probe는 기능 endpoint와 분리됨. 일반 HUMAN OPTIONS와 선언된 OPTIONS API는 보존 |
+| 서버 집계 | 모델 마지막 메시지의 숫자를 사용하지 않고 HTTP 시도·응답 Evidence, endpoint·parameter 선언, probe를 coordinator가 계산하는 회귀 통과 |
+| 실물 provider | 설치·로그인된 로컬 Codex app-server를 opt-in으로 실행해 local fixture의 HTTP dynamic tool → 응답 Evidence ID → 선언 dynamic tool 호출 1/1 통과 |
+| 전체 빌드 | 최종 코드에서 JDK 21.0.12.1·Maven 3.9.16 `mvn clean verify` 연속 2회 성공 |
+| Java | 매회 388 tests, failures/errors 0, opt-in 실물 ZAP·provider 하네스 2 skip |
+| React | 매회 38 files / 248 tests, typecheck·notices·Vite build 통과 |
+| 최종 JAR | 31,669,404 bytes / 9,143 entries / 첫 entry `META-INF/MANIFEST.MF` / SHA-256 `d00bcb35e36eb5e60e843e8d1a3bf8d425b4e35c9a32ade700780cbd8f949cf6`; 두 clean build가 byte-for-byte 동일 |
+| 미실행 | 새 JAR의 실제 Burp load/unload, 실제 대상·계정·대형 번들 Explorer 완주, Windows, 독립 corpus endpoint/parameter 효능 측정 |
+
+실물 provider 하네스는 Codex app-server가 두 dynamic tool을 실제 호출하고 FlowScope가 Evidence 결박 선언을 수락하는 protocol gate다. Burp Montoya 대상 전송이나 임의 SPA 번들의 완전한 의미 해석을 대신하지 않는다. 응답 산출물에 없는 server-only route, runtime-only lazy chunk, 임의 wrapper·동적 URL은 계속 미확정이며 선언을 실제 접근 성공이나 취약점으로 표시하지 않는다.
+
 ## 2026-09-09 · 미출시 D-138 · 실제 Burp 익명 Client 완주와 ZAP 상태 재시도
 
 D-137 JAR을 실제 Burp에 로드한 macOS 환경에서 FlowScope Web·Docker ZAP·Burp scanner listener·crAPI를 함께 확인했다. 실행 전 `127.0.0.1:8089` ZAP 상태 probe 10회는 모두 `CONNECTED`와 version `2.17.0`을 반환했다. 같은 환경의 새 비로그인 캠페인은 다음과 같이 완료됐다.

@@ -16,6 +16,7 @@ import io.flowscope.core.SurfaceAnalysis.Observation;
 import io.flowscope.core.SurfaceAnalysis.ParameterFact;
 import io.flowscope.core.SurfaceAnalysis.ParameterLocation;
 import io.flowscope.core.SurfaceAnalysis.ParameterObservation;
+import io.flowscope.core.SurfaceAnalysis.ProbeObservation;
 import io.flowscope.core.SurfaceAnalysis.Requirement;
 import io.flowscope.core.SurfaceAnalysis.ValueShape;
 import io.flowscope.core.discovery.RouteDiscoveryDocument;
@@ -63,6 +64,7 @@ public final class SurfaceAnalyzer {
         Map<String, RequestRecord> recordsByEvidence = new LinkedHashMap<>();
         Map<String, JavascriptAnalysis> javascriptByEvidence = new LinkedHashMap<>();
         List<ExtractionReport> extractionReports = new ArrayList<>();
+        List<ProbeObservation> probes = new ArrayList<>();
         for (RequestRecord record : allRecords == null ? List.<RequestRecord>of() : allRecords) {
             if (record.evidenceId != null && !record.evidenceId.isBlank()) {
                 recordsByEvidence.putIfAbsent(record.evidenceId, record);
@@ -102,6 +104,11 @@ public final class SurfaceAnalyzer {
         for (RequestRecord record : coverageRecords == null ? List.<RequestRecord>of() : coverageRecords) {
             if (record.source != Source.HUMAN && record.source != Source.SCANNER && record.source != Source.LLM) continue;
             EndpointKey key = observedKey(record);
+            if (capabilityProbe(record)) {
+                probes.add(new ProbeObservation(key, record.evidenceId, record.source, record.runId,
+                        record.idn, record.status));
+                continue;
+            }
             MutableEndpoint endpoint = endpoints.computeIfAbsent(key.stableKey(), ignored -> new MutableEndpoint(key));
             endpoint.observations.add(new Observation(record.evidenceId, record.source, record.runId, record.idn,
                     record.status));
@@ -124,6 +131,16 @@ public final class SurfaceAnalyzer {
                     default -> declareQueryLiteral(endpoints, candidate, provenance);
                 }
             }
+            MutableEndpoint endpoint = endpoints.get(new EndpointKey(candidate.service(), candidate.method(),
+                    candidate.pathTemplate()).stableKey());
+            if (endpoint != null) for (RouteCandidate.DeclaredParameter parameter : candidate.declaredParameters()) {
+                RouteCandidate.Provenance provenance = new RouteCandidate.Provenance(
+                        RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS, parameter.evidenceId(),
+                        parameter.source(), parameter.runId(), parameter.adapter(),
+                        RouteCandidate.Applicability.REVIEW, parameter.reason());
+                endpoint.parameter(parameter.location(), parameter.fieldPath(), parameter.displayName())
+                        .declare(provenance, parameter.requirement(), parameter.displayName());
+            }
         }
 
         List<EndpointFact> facts = endpoints.values().stream()
@@ -132,7 +149,7 @@ public final class SurfaceAnalyzer {
                         .thenComparing(fact -> fact.key().pathTemplate())
                         .thenComparing(fact -> fact.key().method()))
                 .toList();
-        return new SurfaceAnalysis(facts, extractionReports);
+        return new SurfaceAnalysis(facts, extractionReports, probes);
     }
 
     private static ExtractionStatus extractionStatus(JavascriptAnalysis.Status status) {
@@ -182,6 +199,7 @@ public final class SurfaceAnalyzer {
         return type == RouteCandidate.ProvenanceType.OPENAPI
                 || type == RouteCandidate.ProvenanceType.HTML_FORM
                 || type == RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL
+                || type == RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS
                 || (type == RouteCandidate.ProvenanceType.XML_ROUTE && !candidate.method().equals("UNKNOWN"));
     }
 
@@ -190,6 +208,12 @@ public final class SurfaceAnalyzer {
         String path = record.op != null && record.op.startsWith(prefix)
                 ? record.op.substring(prefix.length()) : record.path;
         return new EndpointKey(record.service, record.method, path);
+    }
+
+    private static boolean capabilityProbe(RequestRecord record) {
+        if (!"OPTIONS".equals(record.method)) return false;
+        return (record.accessControlRequestMethod != null && !record.accessControlRequestMethod.isBlank())
+                || (record.source == Source.LLM && record.sourceDetail == SourceDetail.LLM_EXPLORER);
     }
 
     private static Declaration declaration(RouteCandidate.Provenance provenance) {

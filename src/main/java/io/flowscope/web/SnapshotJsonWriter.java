@@ -236,6 +236,11 @@ public final class SnapshotJsonWriter {
                     "type", item.type().name(), "evidenceId", item.evidenceId(),
                     "source", item.source().name(), "runId", item.runId(), "adapter", item.adapter(),
                     "applicability", item.applicability().name(), "reason", item.reason())).toList()));
+            value.set("declaredParameters", json.valueToTree(candidate.declaredParameters().stream().map(item -> Map.of(
+                    "location", item.location().name(), "fieldPath", item.fieldPath(),
+                    "displayName", item.displayName(), "requirement", item.requirement().name(),
+                    "evidenceId", item.evidenceId(), "source", item.source().name(),
+                    "runId", item.runId(), "adapter", item.adapter(), "reason", item.reason())).toList()));
             value.put("applicability", candidate.applicability().name());
             value.put("reviewReason", candidate.reviewReason());
             value.set("priorityReasons", json.valueToTree(RouteCandidateExtractor.priorityReasons(candidate)));

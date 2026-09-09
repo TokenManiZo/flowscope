@@ -263,7 +263,8 @@ public final class FlowScopeExtension implements BurpExtension {
         explorerAccounts = new ExplorerAccountVault();
         explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
                 new CodexAppServerProvider(), runContexts, value -> scope.allows(value),
-                () -> { rebuildImmediately(); return latest; }, api.logging()::logToOutput);
+                () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
+                api.logging()::logToOutput);
         try {
             startWebUi();
         } catch (Exception e) {
@@ -980,7 +981,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 Pipeline.Result result = Pipeline.runIsolated(loaded, analysisConfig);
                 synchronized (restoredRouteCandidates) {
                     restoredRouteCandidates.addAll(data.routeCandidates().stream()
-                            .filter(candidate -> !candidate.observed()).toList());
+                            .filter(candidate -> !candidate.observed()
+                                    || !candidate.declaredParameters().isEmpty()
+                                    || candidate.provenanceTypes().contains(
+                                            RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS))
+                            .toList());
                 }
                 // 과거 LLM 기록은 현재 판정에 재사용하지 않고 그대로 보존한다.
                 synchronized (records) {
@@ -1774,6 +1779,14 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void rebuildRouteCandidates(List<RequestRecord> sourceRecords) {
         routeCandidates = routeCandidatesFor(sourceRecords);
+    }
+
+    private void acceptExplorerDiscoveries(List<RouteCandidate> discoveries) {
+        if (discoveries == null || discoveries.isEmpty()) return;
+        synchronized (restoredRouteCandidates) {
+            restoredRouteCandidates.addAll(discoveries);
+        }
+        scheduleRebuild();
     }
 
     private List<RouteCandidate> routeCandidatesFor(List<RequestRecord> sourceRecords) {

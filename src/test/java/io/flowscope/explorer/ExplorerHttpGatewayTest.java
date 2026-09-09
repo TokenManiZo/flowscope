@@ -14,6 +14,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.Source;
+import io.flowscope.core.SurfaceAnalysis;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerHttpGatewayTest {
@@ -73,6 +77,29 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
+    void boundsArtifactsByUtf8BytesWithoutSplittingCharacters() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), "한".repeat(1_500_000),
+                false, "ev-unicode", 2, Instant.now());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
+                value -> true, "run-unicode", ignored -> {})) {
+            HttpResponse<String> first = post(gateway, JSON.createObjectNode().put("method", "GET")
+                    .put("url", "https://app.example.test/main.js").toString());
+            JsonNode body = JSON.readTree(first.body());
+            HttpRequest download = HttpRequest.newBuilder(URI.create(body.path("artifact_url").asText()))
+                    .header("Authorization", "Bearer " + gateway.token()).GET().build();
+            HttpResponse<String> artifact = HttpClient.newHttpClient().send(download,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            assertEquals(200, artifact.statusCode());
+            assertTrue(artifact.body().chars().allMatch(value -> value == '한'));
+            assertTrue(artifact.body().getBytes(StandardCharsets.UTF_8).length <= 4 * 1024 * 1024);
+            assertTrue(body.path("body").asText().getBytes(StandardCharsets.UTF_8).length <= 64 * 1024);
+            assertTrue(body.path("body_truncated").asBoolean());
+        }
+    }
+
+    @Test
     void blocksMutationMethodsOutsideExplorerSurfaceContract() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerTransport transport = request -> fail("blocked method must not reach transport");
@@ -103,8 +130,64 @@ final class ExplorerHttpGatewayTest {
         }
     }
 
+    @Test
+    void storesOnlyCurrentRunEvidenceBoundDiscoveriesAndDeduplicatesSemanticFacts() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), "const endpoint='/api/orders/{orderId}'",
+                false, "ev-artifact", 1, Instant.now());
+        AtomicReference<List<RouteCandidate>> stored = new AtomicReference<>(List.of());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
+                value -> value.startsWith("https://app.example.test/"), "run-discovery", ignored -> {},
+                stored::set)) {
+            assertEquals(200, post(gateway, JSON.createObjectNode().put("method", "GET")
+                    .put("url", "https://app.example.test/main.js").toString()).statusCode());
+            String declaration = """
+                    {"discoveries":[{"method":"POST",
+                      "url":"https://app.example.test/api/orders/{orderId}",
+                      "evidence_ids":["ev-artifact"],"artifact_kind":"JAVASCRIPT",
+                      "locator":"main.js:1","reason":"literal route table",
+                      "parameters":[
+                        {"location":"PATH","field_path":"path[3]","display_name":"orderId","requirement":"REQUIRED"},
+                        {"location":"JSON_BODY","field_path":"product_id","display_name":"product_id","requirement":"UNKNOWN"}
+                      ]}]}
+                    """;
+
+            HttpResponse<String> first = post(gateway, gateway.discoveriesUrl(), declaration);
+            assertEquals(200, first.statusCode(), first.body());
+            JsonNode counts = JSON.readTree(first.body());
+            assertEquals(1, counts.path("accepted_endpoints").asInt());
+            assertEquals(2, counts.path("accepted_parameters").asInt());
+            RouteCandidate candidate = stored.get().getFirst();
+            assertEquals("POST", candidate.method());
+            assertEquals("/api/orders/{id}", candidate.pathTemplate());
+            assertEquals(Source.LLM, candidate.provenance().getFirst().source());
+            assertEquals(RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS,
+                    candidate.provenance().getFirst().type());
+            assertEquals(2, candidate.declaredParameters().size());
+            assertEquals(SurfaceAnalysis.ParameterLocation.PATH,
+                    candidate.declaredParameters().getFirst().location());
+
+            HttpResponse<String> duplicate = post(gateway, gateway.discoveriesUrl(), declaration);
+            assertEquals(200, duplicate.statusCode(), duplicate.body());
+            assertEquals(0, JSON.readTree(duplicate.body()).path("accepted_endpoints").asInt());
+
+            String inventedEvidence = declaration.replace("ev-artifact", "ev-invented");
+            assertEquals(400, post(gateway, gateway.discoveriesUrl(), inventedEvidence).statusCode());
+            String secretHeader = declaration.replace("\"PATH\",\"field_path\":\"path[3]\"",
+                    "\"HEADER\",\"field_path\":\"Authorization\"");
+            assertEquals(400, post(gateway, gateway.discoveriesUrl(), secretHeader).statusCode());
+            String unknownRootField = declaration.replaceFirst("\\{", "{\"unexpected\":true,");
+            assertEquals(400, post(gateway, gateway.discoveriesUrl(), unknownRootField).statusCode());
+        }
+    }
+
     private static HttpResponse<String> post(ExplorerHttpGateway gateway, String body) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(gateway.url()))
+        return post(gateway, gateway.url(), body);
+    }
+
+    private static HttpResponse<String> post(ExplorerHttpGateway gateway, String url, String body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .header("Authorization", "Bearer " + gateway.token()).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body)).build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());

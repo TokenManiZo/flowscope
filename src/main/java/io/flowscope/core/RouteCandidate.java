@@ -8,7 +8,8 @@ import java.util.Set;
 public record RouteCandidate(String service, String method, String pathTemplate,
                              List<String> concretePaths, boolean concretePathsTruncated, boolean observed,
                              List<Provenance> provenance,
-                             Applicability applicability, String reviewReason) {
+                             Applicability applicability, String reviewReason,
+                             List<DeclaredParameter> declaredParameters) {
     public enum ProvenanceType {
         OBSERVED_REQUEST,
         BURP_UNREQUESTED,
@@ -25,6 +26,7 @@ public record RouteCandidate(String service, String method, String pathTemplate,
         HTML_EMBED,
         XML_ROUTE,
         BROWSER_RUNTIME,
+        LLM_ARTIFACT_ANALYSIS,
         LEGACY_UNMAPPED
     }
 
@@ -48,12 +50,33 @@ public record RouteCandidate(String service, String method, String pathTemplate,
         }
     }
 
+    /** LLM이 현재 run의 응답 산출물에서 읽어 낸 값 없는 parameter 선언. */
+    public record DeclaredParameter(SurfaceAnalysis.ParameterLocation location, String fieldPath,
+                                    String displayName, SurfaceAnalysis.Requirement requirement,
+                                    String evidenceId, Source source, String runId,
+                                    String adapter, String reason) {
+        public DeclaredParameter {
+            if (location == null || fieldPath == null || fieldPath.isBlank()
+                    || evidenceId == null || evidenceId.isBlank()) {
+                throw new IllegalArgumentException("declared parameter requires location, path, and evidence");
+            }
+            displayName = displayName == null || displayName.isBlank() ? fieldPath : displayName;
+            requirement = requirement == null ? SurfaceAnalysis.Requirement.UNKNOWN : requirement;
+            source = source == null ? Source.UNKNOWN : source;
+            runId = runId == null || runId.isBlank() ? "unknown-run" : runId;
+            adapter = adapter == null || adapter.isBlank() ? "unknown-adapter" : adapter;
+            reason = reason == null ? "" : reason;
+        }
+    }
+
     public RouteCandidate {
         method = method == null || method.isBlank() ? "UNKNOWN" : method;
         concretePaths = concretePaths == null ? List.of() : concretePaths.stream()
                 .filter(value -> value != null && !value.isBlank())
                 .map(RouteCandidate::safeConcretePath).distinct().toList();
         provenance = provenance == null ? List.of() : List.copyOf(new LinkedHashSet<>(provenance));
+        declaredParameters = declaredParameters == null
+                ? List.of() : List.copyOf(new LinkedHashSet<>(declaredParameters));
         applicability = applicability == null ? Applicability.REVIEW : applicability;
         reviewReason = reviewReason == null ? "" : reviewReason;
         if (service == null || service.isBlank() || pathTemplate == null || pathTemplate.isBlank()) {
@@ -70,7 +93,15 @@ public record RouteCandidate(String service, String method, String pathTemplate,
         this(service, method, pathTemplate,
                 pathTemplate != null && !pathTemplate.contains("{") && !pathTemplate.contains("}")
                         ? List.of(pathTemplate) : List.of(),
-                false, observed, provenance, applicability, reviewReason);
+                false, observed, provenance, applicability, reviewReason, List.of());
+    }
+
+    /** 기존 전체 생성자 호출은 선언 parameter가 없던 계약으로 계속 동작한다. */
+    public RouteCandidate(String service, String method, String pathTemplate,
+                          List<String> concretePaths, boolean concretePathsTruncated, boolean observed,
+                          List<Provenance> provenance, Applicability applicability, String reviewReason) {
+        this(service, method, pathTemplate, concretePaths, concretePathsTruncated, observed,
+                provenance, applicability, reviewReason, List.of());
     }
 
     public Set<ProvenanceType> provenanceTypes() {

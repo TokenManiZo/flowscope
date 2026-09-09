@@ -24,12 +24,13 @@ D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완
 1. Judge와 기존 MCP/브라우저 실행기는 D-126 상태로 제거 유지. 새 MCP·Judge를 복구하지 않는다.
 2. 대형 HTML/JavaScript/JSON/XML의 capture → record → 분석 전달을 4MiB 경계와 1.4MiB 회귀로 수정했다.
 3. 메모리 전용 계정 vault, HTML form/JSON API 인증, exact-scope HTTP gateway, Codex app-server dynamic-tool provider, coordinator를 구현했다.
-4. React Explorer에 계정 입력, anonymous/account 선택, 경과시간·요청·응답 Evidence·미해결·오류, steer·취소를 연결했다.
-5. 집중 회귀, 전체 `mvn clean verify`, 실제 로그인된 Codex provider opt-in 하네스와 JAR 식별값을 최종 소스에서 다시 확인한다.
-6. 새 JAR 실제 Burp에서 anonymous·HTML form·JSON token, exact-scope, Evidence 귀속, 취소/정리, 프로젝트 비밀 비저장을 확인한다.
-7. 승인된 독립 corpus에서 HUMAN·ZAP 대비 추가 endpoint·parameter, 중복·노이즈·요청량·검토시간을 측정한다. 결과 전에는 발견률 우월성을 주장하지 않는다.
-8. ZAP Client-only 전환은 D-132로 구현했다. FlowScope Evidence용 제품 MCP는 이번 Explorer와 섞지 않는 별도 결정으로 남긴다.
-9. 다운로드 사용자가 clone 없이 실행하도록 JAR·ZAP helper·문서를 distribution bundle로 만들고, `human|zap|explorer|full` doctor와 Explorer readiness 재확인을 제공한다. JAR/bundle 재현 검사와 Windows parser를 통과한 뒤에만 배포 준비 완료로 표시한다.
+4. React Explorer에 계정 입력, anonymous/account 선택, 경과시간·HTTP 시도/응답 Evidence·선언 endpoint/parameter·OPTIONS probe·미해결·오류, steer·취소를 연결했다.
+5. D-139에서 산출물 발견을 자유서술이 아닌 current-run Evidence-bound `RouteCandidate`/parameter declaration으로 저장하고 의미 중복 제거·프로젝트 round-trip·Surface source 필터에 연결했다. 큰 응답은 64KiB부터 최대 4MiB 임시 artifact로 전달하며 OPTIONS capability probe는 기능 관측과 분리한다.
+6. 집중 회귀와 실제 로그인된 Codex provider opt-in 하네스에서 HTTP Evidence → 선언 tool 호출을 통과했다. 최종 코드의 전체 `mvn clean verify` 2회도 React 248·Java 388 tests와 byte-identical JAR·release 구조 검사를 통과했다.
+7. 새 JAR 실제 Burp에서 anonymous·HTML form·JSON token, exact-scope, Evidence·선언 귀속, 큰 번들 단일 수집, OPTIONS 분리, 취소/정리, 프로젝트 비밀 비저장을 확인한다.
+8. 승인된 독립 corpus에서 HUMAN·ZAP 대비 추가 endpoint·parameter, 선언 precision, 중복·노이즈·요청량·검토시간을 측정한다. 결과 전에는 발견률 우월성을 주장하지 않는다.
+9. ZAP Client-only 전환은 D-132로 구현했다. FlowScope Evidence용 제품 MCP는 이번 Explorer와 섞지 않는 별도 결정으로 남긴다.
+10. 다운로드 사용자가 clone 없이 실행하도록 JAR·ZAP helper·문서를 distribution bundle로 만들고, `human|zap|explorer|full` doctor와 Explorer readiness 재확인을 제공한다. JAR/bundle 재현 검사와 Windows parser를 통과한 뒤에만 배포 준비 완료로 표시한다.
 
 현재 Explorer 실행 계약은 [LLM Explorer](llm-explorer.md), 삭제 목록·보존 계약은 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
 

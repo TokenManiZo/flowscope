@@ -1,5 +1,6 @@
 package io.flowscope.explorer;
 
+import io.flowscope.core.RouteCandidate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
@@ -25,8 +26,10 @@ final class CodexAppServerProviderHarnessTest {
             return new ExplorerTransport.Response(200, request.url(), "", "application/json", Map.of(),
                     "{\"service\":\"provider-harness\"}", false, "ev-provider-harness", 1, Instant.now());
         };
+        AtomicReference<List<RouteCandidate>> discoveries = new AtomicReference<>(List.of());
         try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
-                value -> value.equals("https://provider-harness.invalid/"), "run-provider-harness", ignored -> {});
+                value -> value.startsWith("https://provider-harness.invalid/"), "run-provider-harness", ignored -> {},
+                discoveries::set);
              CodexAppServerProvider provider = new CodexAppServerProvider()) {
             assertEquals("READY", provider.readiness());
             CountDownLatch completed = new CountDownLatch(1);
@@ -35,10 +38,12 @@ final class CodexAppServerProviderHarnessTest {
             List<ExplorerProvider.Activity> activities = new CopyOnWriteArrayList<>();
             String prompt = "대상 서버에 직접 연결하지 마세요. flowscope_http_request 도구를 정확히 한 번 호출하세요. "
                     + "method GET, url https://provider-harness.invalid/, account 빈 문자열, headers 빈 객체, body 빈 문자열입니다. "
-                    + "응답을 확인한 뒤 summary와 빈 unresolved 배열로 끝내세요.";
+                    + "응답의 Evidence ID를 사용하여 flowscope_record_discoveries를 정확히 한 번 호출하세요. "
+                    + "GET https://provider-harness.invalid/api/check, artifact_kind OTHER, locator response:service, "
+                    + "reason provider harness, parameters 빈 배열입니다. 그 뒤 summary와 빈 unresolved 배열로 끝내세요.";
             provider.start(new ExplorerProvider.Request("run-provider-harness",
                             "https://provider-harness.invalid/", List.of("https://provider-harness.invalid/"),
-                            List.of(), gateway.url(), gateway.token(), prompt),
+                            List.of(), gateway.url(), gateway.discoveriesUrl(), gateway.token(), prompt),
                     new ExplorerProvider.Listener() {
                         @Override public void activity(ExplorerProvider.Activity activity) { activities.add(activity); }
                         @Override public void completed(ExplorerProvider.Result value) {
@@ -57,6 +62,8 @@ final class CodexAppServerProviderHarnessTest {
             assertNotNull(requestSeen.get(), "model did not invoke the loopback HTTP gateway; result="
                     + result.get() + "; activities=" + activities);
             assertEquals("https://provider-harness.invalid/", requestSeen.get().url());
+            assertEquals("/api/check", discoveries.get().getFirst().pathTemplate(),
+                    "model did not persist the Evidence-bound discovery; activities=" + activities);
         }
     }
 }

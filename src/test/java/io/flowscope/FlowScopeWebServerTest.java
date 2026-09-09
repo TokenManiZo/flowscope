@@ -176,6 +176,9 @@ final class FlowScopeWebServerTest {
 
         JsonNode initial = json(get("/api/explorer-run", token, origin()));
         assertEquals("IDLE", initial.at("/run/status").asText());
+        assertEquals(0, initial.at("/run/endpointDeclarations").asInt());
+        assertEquals(0, initial.at("/run/parameterDeclarations").asInt());
+        assertEquals(0, initial.at("/run/capabilityProbes").asInt());
         assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
 
         HttpResponse<String> saved = post("/api/explorer-accounts",
@@ -990,7 +993,7 @@ final class FlowScopeWebServerTest {
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
-                List.of(), false, 0, 0, List.of(), List.of());
+                List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
@@ -1066,7 +1069,7 @@ final class FlowScopeWebServerTest {
         @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
-                    request.accountIds(), request.includeAnonymous(), 0, 0, List.of(), List.of());
+                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of());
             return explorerRun;
         }
         @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {

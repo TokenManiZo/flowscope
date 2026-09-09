@@ -25,9 +25,10 @@ ZAP     :8081 ─┘         ▲                                    ├─▶ Su
                          │                                    └─▶ 규칙 후보 + 사람 검토
 Web 스캐너 버튼 ─▶ ZAP 계정 메모리 vault ─▶ ZapCampaign ─▶ ZapClient ─▶ 로컬 ZAP API
                                                     └─▶ Browser Auth + 계정별 crawler
-Web Explorer ─▶ ExplorerCoordinator ─▶ Codex app-server dynamic tool
+Web Explorer ─▶ ExplorerCoordinator ─▶ Codex app-server dynamic tools
                     ├─▶ memory-only auth vault
-                    └─▶ exact-scope gateway ─▶ Burp Montoya HTTP ─▶ LLM Evidence
+                    ├─▶ exact-scope HTTP gateway ─▶ Burp Montoya HTTP ─▶ LLM Observation Evidence
+                    └─▶ Evidence-bound declaration gateway ─▶ RouteCandidate ─▶ Surface Declaration
 Web Request Lab ─▶ 명시적 HUMAN 전송 ─▶ VALIDATION Evidence
 ProjectStore/SqliteProjectStore ◀─▶ 마스킹 Evidence·정책·완료 run·과거 LLM 기록
 FlowScopeWebServer :17777 ─▶ SnapshotJsonWriter ─▶ React / legacy UI
@@ -67,7 +68,9 @@ RequestRecord {
 RouteCandidate {
   service, method, pathTemplate, observed,
   provenance[{type, evidenceId, source, runId, adapter, applicability, reason}],
-  applicability, reviewReason
+  applicability, reviewReason,
+  declaredParameters[{location, fieldPath, displayName, requirement,
+                      evidenceId, source, runId, adapter, reason}]
 }
 
 SurfaceAnalysis {
@@ -77,7 +80,8 @@ SurfaceAnalysis {
     declarations[evidenceId, source, runId, type, adapter, reason],
     parameters[location, fieldPath, displayName, requirement, observedShape,
                observedSources[], evidenceIds[], provenance[]]
-  }]
+  }],
+  probes[endpointKey, evidenceId, source, runId, identity, status]
 }
 
 RunExecutionLedger {
@@ -99,8 +103,8 @@ RunExecutionLedger {
 - `requestPayload/responsePayload`: 저장 전 구조 마스킹된 전문의 SHA-256, byte 수, 보존 상태와 선택적 GZIP이다. 일반 textual 메시지는 기본 1MiB, route discovery가 읽는 HTML/JavaScript/JSON/XML 응답은 기본 4MiB 이하이며 digest 중복 제거 후 압축 전문 총량 48MiB 안에 있을 때 `FULL`이다. binary, 유형별 메시지 상한 초과, 압축 총량 상한 초과는 서로 다른 metadata-only 사유를 남긴다. 상한 초과 live 메시지 식별자는 일반 최대 64KiB, 발견용 MIME 기본 최대 4MiB의 제한된 마스킹 표현·실제 byte 수·보존 사유를 길이 구분해 digest하므로 같은 접두부의 다른 크기를 구분하지만 원문 전체 checksum은 아니다. 8,192자 `reqText/respText/body`는 UI preview이며, 분석기는 `FULL` payload 전문을 우선 사용한다.
 - `resourceReferences`: path/query/body/GraphQL에서 실제 값으로 관측된 모든 객체 참조와 `PATH_ID/QUERY_ID/BODY_ID/GRAPHQL_VARIABLE/*_SEMANTIC_FIELD_CORROBORATED` 근거다. `resource`는 기존 인가 cell의 보수적 primary 하나다.
 - `trafficClassification`: `API/AUTH_SESSION/NAVIGATION/STATIC_ASSET/DISCOVERY_METADATA/PREFLIGHT/TELEMETRY_CANDIDATE/POLLING/BACKGROUND/UNKNOWN`, `INCLUDE/EXCLUDE/REVIEW`, 근거와 사용자 override를 가진 비파괴 파생값이다. `INCLUDE`만 coverage/graph 입력이며 `REVIEW`와 `EXCLUDE`도 Evidence에서는 삭제되지 않는다.
-- `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
-- `SurfaceAnalysis`: 저장된 Evidence와 `RouteCandidate`에서 결정론적으로 재생성하는 값 없는 projection이다. Observation은 실제 request의 endpoint, parameter 위치·field path·shape와 source/run/identity/status/Evidence ID를 보존한다. Declaration은 OpenAPI·HTML form·정적 JavaScript·route provenance에서 직접 확인한 endpoint/parameter만 보존한다. `DECLARED_NOT_OBSERVED`, `ONE_SOURCE_OBSERVED`, `MULTI_SOURCE_OBSERVED`, `ALL_SOURCES_OBSERVED`, `OBSERVED_NOT_DECLARED`는 작업목록 상태이며 취약점·도달성·lane 완료 판정이 아니다. 별도 DB 정본을 만들지 않으며, Web 직렬화는 동일 revision·동일 입력의 projection을 재사용하고 입력 revision이 바뀌면 다시 계산한다(D-113).
+- `RouteCandidate`: 응답 없는 Burp Site Map 항목 또는 저장된 exact-scope 응답에서 추출한 경로다. provenance는 type과 Evidence ID를 따로 모은 집합이 아니라 `type ↔ evidenceId ↔ source ↔ runId ↔ adapter ↔ applicability/reason`의 대응 관계로 보존한다. D-139 Explorer 선언은 현재 run 응답 Evidence에 결박된 값 없는 `declaredParameters`도 같은 후보에 보존한다. 실제 request/response 전에는 identity, coverage, verdict, finding을 갖지 않는다.
+- `SurfaceAnalysis`: 저장된 Evidence와 `RouteCandidate`에서 결정론적으로 재생성하는 값 없는 projection이다. Observation은 실제 request의 endpoint, parameter 위치·field path·shape와 source/run/identity/status/Evidence ID를 보존한다. Declaration은 OpenAPI·HTML form·정적 JavaScript·Explorer 산출물 분석 provenance에서 직접 확인한 endpoint/parameter만 보존한다. LLM Explorer가 capability 확인용으로 보낸 OPTIONS와 명시적 preflight는 `probes`로 분리하지만 일반 OPTIONS API 관측과 산출물 선언은 유지한다. `DECLARED_NOT_OBSERVED`, `ONE_SOURCE_OBSERVED`, `MULTI_SOURCE_OBSERVED`, `ALL_SOURCES_OBSERVED`, `OBSERVED_NOT_DECLARED`는 작업목록 상태이며 취약점·도달성·lane 완료 판정이 아니다. 별도 DB 정본을 만들지 않으며, Web 직렬화는 동일 revision·동일 입력의 projection을 재사용하고 입력 revision이 바뀌면 다시 계산한다(D-113/D-139).
 - `AccountProfile`: 서비스별 테스트 계정의 내부 ID·표시 이름·확정 역할만 저장한다. 로그인 ID·비밀번호·토큰은 받지 않는다.
 - `sessionBindings`: `(service, fingerprint) → accountId`의 사용자 명시 연결이다. 키 하나는 계정 하나에만 귀속되며, 이미 연결된 지문을 다른 계정으로 옮기려면 먼저 기존 연결을 해제해야 한다. 실제 비인증 `anon`과 추출 실패 `unresolved`는 계정에 연결할 수 없다. 자동으로 합칠 수 없는 회전 세션을 검증된 계정 단위로 정렬한다.
 - Cookie·Authorization·subject fingerprint는 한 principal 안의 기술 단서이지 로그인 세션 개수가 아니다. 기본 권한 카드는 principal을 한 줄로 표시하고 단서 종류·개수는 계정 화면의 접힌 진단에서만 보여 준다.
@@ -230,7 +234,9 @@ CoverageCell 키는 `(identity, operation, resource)` tuple이다. 일반 기존
 
 Explorer 계정 입력과 live cookie/token은 vault 메모리에만 둔다. 로그인 준비 HTTP는 Burp Montoya로 실제 전송하지만 `RequestRecord`, payload, 실행 원장, snapshot, 프로젝트에 기록하지 않는다. 모델에는 opaque account handle만 주고 Authorization/Cookie 지정은 gateway에서 거부한 뒤 vault 값만 주입한다. 프로젝트 교체·초기화·계정 삭제·unload는 vault를 비운다.
 
-Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델 일반 네트워크는 꺼 두고 experimental `flowscope_http_request` dynamic tool만 target 전송 수단으로 제공한다. Java provider가 모델의 tool call을 random bearer가 걸린 loopback gateway로 전달하므로 capability는 provider 프로세스 환경이나 모델 입력에 노출하지 않는다. gateway는 absolute HTTP(S), exact scope, `GET/HEAD/OPTIONS/POST`, forbidden auth header, 성공 중복, 기본 500회 budget을 검사한다. POST는 prompt에서 검색·조회로 제한하지만 업무 의미를 블랙박스에서 완전 판별할 수 없다는 한계를 공개한다. 큰 마스킹 응답은 최대 4MiB 임시 artifact로 격리 workspace에 쓰고 종료·취소 시 삭제한다.
+Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델 일반 네트워크는 꺼 두고 experimental `flowscope_http_request`와 `flowscope_record_discoveries` dynamic tool만 제공한다. Java provider가 model tool call을 random bearer가 걸린 loopback gateway로 전달하므로 capability는 provider 프로세스 환경이나 모델 입력에 노출하지 않는다. HTTP 경계는 absolute HTTP(S), exact scope, `GET/HEAD/OPTIONS/POST`, forbidden auth header, 성공 중복, 기본 500회 budget을 검사한다. POST는 prompt에서 검색·조회로 제한하지만 업무 의미를 블랙박스에서 완전 판별할 수 없다는 한계를 공개한다. 64KiB를 넘는 큰 마스킹 응답은 최대 4MiB 임시 artifact로 한 번 격리 workspace에 쓰고 종료·취소 시 삭제한다.
+
+선언 경계는 `GET/HEAD/OPTIONS/POST/PUT/PATCH/DELETE` endpoint와 값 없는 parameter schema를 받지만 실제 전송을 수행하지 않는다. 같은 gateway가 현재 run에서 만든 응답 Evidence ID, exact scope와 정해진 field만 허용하고 인증·세션 header와 값은 거부한다. service·method·canonical path와 endpoint·location·field path로 중복 제거한 뒤 `LLM_ARTIFACT_ANALYSIS` RouteCandidate로 전달한다. 모델 자유서술 개수는 집계로 사용하지 않고 Coordinator가 실제 HTTP Evidence·선언·probe 수를 계산한다. LLM Explorer의 OPTIONS 실행은 probe로 분리하고, 일반 HUMAN OPTIONS와 대상 산출물에 선언된 OPTIONS는 API 사실로 유지한다(D-139).
 
 실제 응답은 `source=LLM`, `sourceDetail=LLM_EXPLORER`, `orchestrator=LLM`, `tool=CODEX`, `phase=EXPLORATION`, `executionTrust=CONTROLLED`, exact run/account로 저장한다. `LaneCompletionPolicy`가 같은 run의 신뢰 가능한 응답 Evidence ID를 하나 이상 요구하므로 TLS/DNS/timeout만 발생한 실행은 “미발견” 완료가 되지 않는다. provider summary와 unresolved는 실행 피드용이며 assessment/verdict/finding으로 저장하지 않는다.
 

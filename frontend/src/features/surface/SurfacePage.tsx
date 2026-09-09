@@ -37,17 +37,19 @@ function filteredDelta(declared: boolean, sources: readonly SurfaceSource[]): Su
 
 function filterParameter(parameter: SurfaceParameter, enabled: ReadonlySet<SurfaceSource>): SurfaceParameter | null {
   const observations = parameter.observations.filter((item) => enabled.has(item.source))
+  const declarations = parameter.declarations.filter((item) => enabled.has(item.source))
   const observedSources = [...new Set(observations.map((item) => item.source))]
-  if (observations.length === 0 && parameter.declarations.length === 0) return null
-  return { ...parameter, observations, observedSources, observationEvidenceIds: observations.map((item) => item.evidenceId), observedShapes: [...new Set(observations.map((item) => item.shape).filter((value): value is string => Boolean(value)))], deltaState: filteredDelta(parameter.declarations.length > 0, observedSources) }
+  if (observations.length === 0 && declarations.length === 0) return null
+  return { ...parameter, observations, declarations, observedSources, observationEvidenceIds: observations.map((item) => item.evidenceId), observedShapes: [...new Set(observations.map((item) => item.shape).filter((value): value is string => Boolean(value)))], deltaState: filteredDelta(declarations.length > 0, observedSources) }
 }
 
 function filterEndpoint(endpoint: SurfaceEndpoint, enabled: ReadonlySet<SurfaceSource>): SurfaceEndpoint | null {
   const observations = endpoint.observations.filter((item) => enabled.has(item.source))
+  const declarations = endpoint.declarations.filter((item) => enabled.has(item.source))
   const observedSources = [...new Set(observations.map((item) => item.source))]
   const parameters = endpoint.parameters.map((parameter) => filterParameter(parameter, enabled)).filter((parameter): parameter is SurfaceParameter => parameter !== null)
-  if (observations.length === 0 && endpoint.declarations.length === 0 && parameters.length === 0) return null
-  return { ...endpoint, observations, observedSources, parameters, deltaState: filteredDelta(endpoint.declarations.length > 0, observedSources) }
+  if (observations.length === 0 && declarations.length === 0 && parameters.length === 0) return null
+  return { ...endpoint, observations, declarations, observedSources, parameters, deltaState: filteredDelta(declarations.length > 0, observedSources) }
 }
 
 function endpointId(endpoint: SurfaceEndpoint): string {
@@ -63,11 +65,12 @@ export function SurfacePage() {
   const [filter, setFilter] = useState<DeltaFilter>("ALL")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [enabledSources, setEnabledSources] = useState<ReadonlySet<SurfaceSource>>(() => new Set(["HUMAN", "SCANNER", "LLM"]))
-  const surface = snapshot.data?.surface ?? { endpoints: [], extractions: [] }
+  const surface = snapshot.data?.surface ?? { endpoints: [], extractions: [], probes: [] }
   const endpoints = useMemo(() => surface.endpoints.map((endpoint) => filterEndpoint(endpoint, enabledSources)).filter((endpoint): endpoint is SurfaceEndpoint => endpoint !== null), [enabledSources, surface.endpoints])
   const rows = useMemo(() => endpoints.filter((endpoint) => filter === "ALL" || endpoint.deltaState === filter), [endpoints, filter])
   const selected = endpoints.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
   const extractions = surface.extractions.filter((item) => enabledSources.has(item.source))
+  const probes = surface.probes.filter((item) => enabledSources.has(item.source))
   const unresolvedExtractions = extractions.filter((item) => item.status !== "PARSED" || item.issues.length > 0)
   const executionRuns = (snapshot.data?.runExecutions ?? []).filter((item) => enabledSources.has(item.source))
 
@@ -80,7 +83,7 @@ export function SurfacePage() {
     })
   }
 
-  const context = <section className="grid gap-4 p-3"><div><h2 className="text-sm font-semibold">차이 필터</h2><p className="text-xs text-muted-foreground">선언과 실제 HTTP 관측을 섞지 않고 비교합니다.</p></div><fieldset className="grid gap-2 text-sm"><legend className="mb-1 font-medium">관측 source</legend>{sourceOptions.map((source) => <label className="flex items-center gap-2" key={source.value}><Checkbox checked={enabledSources.has(source.value)} onCheckedChange={(checked) => toggleSource(source.value, checked === true)} />{source.label}</label>)}</fieldset><label className="grid gap-1 text-sm" htmlFor="surface-delta">상태<Select value={filter} onValueChange={(value) => setFilter(value as DeltaFilter)}><SelectTrigger id="surface-delta" aria-label="API·입력 차이 상태"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">전체</SelectItem>{Object.entries(deltaLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></label><dl className="grid gap-2 text-sm"><div className="flex justify-between"><dt>Endpoint</dt><dd>{endpoints.length}</dd></div><div className="flex justify-between"><dt>Parameter</dt><dd>{endpoints.reduce((sum, endpoint) => sum + endpoint.parameters.length, 0)}</dd></div><div className="flex justify-between"><dt>부분·실패 파싱</dt><dd>{unresolvedExtractions.length}</dd></div></dl><p className="text-xs text-muted-foreground">미관측은 취약점이나 lane 실패를 의미하지 않습니다.</p></section>
+  const context = <section className="grid gap-4 p-3"><div><h2 className="text-sm font-semibold">차이 필터</h2><p className="text-xs text-muted-foreground">선언과 실제 HTTP 관측을 섞지 않고 비교합니다.</p></div><fieldset className="grid gap-2 text-sm"><legend className="mb-1 font-medium">관측 source</legend>{sourceOptions.map((source) => <label className="flex items-center gap-2" key={source.value}><Checkbox checked={enabledSources.has(source.value)} onCheckedChange={(checked) => toggleSource(source.value, checked === true)} />{source.label}</label>)}</fieldset><label className="grid gap-1 text-sm" htmlFor="surface-delta">상태<Select value={filter} onValueChange={(value) => setFilter(value as DeltaFilter)}><SelectTrigger id="surface-delta" aria-label="API·입력 차이 상태"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">전체</SelectItem>{Object.entries(deltaLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></label><dl className="grid gap-2 text-sm"><div className="flex justify-between"><dt>Endpoint</dt><dd>{endpoints.length}</dd></div><div className="flex justify-between"><dt>Parameter</dt><dd>{endpoints.reduce((sum, endpoint) => sum + endpoint.parameters.length, 0)}</dd></div><div className="flex justify-between"><dt>OPTIONS probe</dt><dd>{probes.length}</dd></div><div className="flex justify-between"><dt>부분·실패 파싱</dt><dd>{unresolvedExtractions.length}</dd></div></dl><p className="text-xs text-muted-foreground">OPTIONS probe와 미관측 선언은 API 기능 관측이나 취약점으로 계산하지 않습니다.</p></section>
 
   const inspector = selected ? <section className="grid gap-4 p-4"><div><h2 className="font-semibold">선택 API</h2><p className="break-all font-mono text-sm">{selected.key.method} {selected.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{selected.key.service}</p></div><div className="grid gap-1 text-sm"><p>상태 · {deltaLabels[selected.deltaState]}</p><p>관측 소스 · {sourceLabel(selected.observedSources)}</p><p>관측 Evidence · {selected.observations.length}건</p><p>선언 근거 · {selected.declarations.length}건</p></div>{selected.declarations.length > 0 && <div><h3 className="mb-2 text-sm font-semibold">선언 provenance</h3>{selected.declarations.map((item, index) => <p className="break-all text-xs text-muted-foreground" key={`${item.evidenceId}:${index}`}>{item.type} · {item.adapter} · {item.reason} · {item.evidenceId}</p>)}</div>}<div><h3 className="mb-2 text-sm font-semibold">입력 필드</h3><div className="grid gap-2">{selected.parameters.map((parameter) => <div className="rounded-md border p-2 text-sm" key={`${parameter.location}:${parameter.fieldPath}`}><p className="break-all font-mono">{parameter.location} · {parameter.fieldPath}</p><p className="text-xs text-muted-foreground">{deltaLabels[parameter.deltaState]} · {parameter.requirement} · {sourceLabel(parameter.observedSources)} · {parameter.observedShapes.join(" · ") || "shape 미관측"}</p></div>)}{selected.parameters.length === 0 && <p className="text-sm text-muted-foreground">확인된 parameter가 없습니다.</p>}</div></div><div><h3 className="mb-2 text-sm font-semibold">Evidence ID</h3>{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{id}</p>)}</div></section> : <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">Endpoint를 선택하면 source별 관측과 parameter 근거를 표시합니다.</p></section>
 

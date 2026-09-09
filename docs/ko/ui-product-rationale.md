@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-09, D-138 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한다. 같은 run·계정의 실제 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치하고 더 나중 로그아웃 정규식 Evidence가 없을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. ZAP 일반 통신 실패는 첫 두 번 `RETRYING`, 세 번째 연속 실패부터 `UNREACHABLE`로 표시하며 API key·runtime 오류는 즉시 확정한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-09, D-139 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. Explorer의 실제 HTTP 응답은 LLM Observation Evidence, 그 응답 산출물에서 직접 읽은 endpoint·parameter는 Evidence-bound Declaration이며 OPTIONS probe는 기능 관측과 분리한다. 화면의 요청·응답·선언 수는 모델 문장이 아니라 서버가 계산한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한다. 같은 run·계정의 실제 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치하고 더 나중 로그아웃 정규식 Evidence가 없을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. ZAP 일반 통신 실패는 첫 두 번 `RETRYING`, 세 번째 연속 실패부터 `UNREACHABLE`로 표시하며 API key·runtime 오류는 즉시 확정한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -12,7 +12,7 @@ FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청과 대상 산
 2. **선택한 API에서 어떤 사용자·객체·기능 조합이 허용되거나 거부됐는가?** — identity/role/owner 인가 비교.
 3. **그 판단을 실제 요청·응답으로 확인할 수 있는가?** — Evidence와 통제 재현.
 
-새 Explorer는 `IDLE/AUTHENTICATING/RUNNING/COMPLETED/FAILED/CANCELLED`와 시도·응답·Evidence·미해결을 분리한다. LLM 응답 Evidence 0건은 “못 찾음”이나 완료로 바꾸지 않고 실패 원인을 표시한다. 실패 시도는 실제 HTTP Evidence가 아니므로 그래프 노드를 만들지 않는다. Codex가 READY가 아니면 Explorer만 사용할 수 없음을 명시하고 공식 설치 안내와 **다시 확인**을 같은 화면에 둔다. HUMAN·ZAP은 이 실패로 비활성화하지 않는다.
+새 Explorer는 `IDLE/AUTHENTICATING/RUNNING/COMPLETED/FAILED/CANCELLED`와 시도·응답 Evidence·선언 endpoint/parameter·OPTIONS probe·미해결을 분리한다. LLM 응답 Evidence 0건은 “못 찾음”이나 완료로 바꾸지 않고 실패 원인을 표시한다. 실패 시도와 선언은 실제 HTTP Observation이 아니므로 그래프 관측 노드를 만들지 않는다. Codex가 READY가 아니면 Explorer만 사용할 수 없음을 명시하고 공식 설치 안내와 **다시 확인**을 같은 화면에 둔다. HUMAN·ZAP은 이 실패로 비활성화하지 않는다.
 
 ## 2. 왜 일반 Burp 요청 목록만으로 부족한가
 
@@ -126,7 +126,7 @@ orchestrator = SYSTEM 또는 HUMAN
 
 ## 7. LLM 실행과 과거 기록의 분리
 
-기존 Explorer/Judge 버튼·MCP 설정·후속 Judge 대화는 제거 상태를 유지한다. D-128 Explorer는 별도 `/api/explorer-run`·`/api/explorer-accounts` 계약과 화면으로 제공하며, 옛 API를 다시 쓰거나 성공 stub로 만들지 않는다. app-server dynamic tool은 실제 HTTP 관측만 만들고 판정·assessment를 저장하지 않는다. Evidence 중심 FlowScope MCP는 여전히 별도 미구현 범위다.
+기존 Explorer/Judge 버튼·MCP 설정·후속 Judge 대화는 제거 상태를 유지한다. D-128/D-139 Explorer는 별도 `/api/explorer-run`·`/api/explorer-accounts` 계약과 화면으로 제공하며, 옛 API를 다시 쓰거나 성공 stub로 만들지 않는다. app-server 동적 도구는 실제 HTTP Observation과 Evidence-bound Declaration을 분리해 만들고 판정·assessment를 저장하지 않는다. Evidence 중심 FlowScope MCP는 여전히 별도 미구현 범위다.
 
 LLM source 색·필터와 저장된 Evidence는 호환 분석을 위해 유지한다. React 시나리오의 `과거 LLM 기록 · 읽기 전용`에는 원 시각·Evidence ID·과거 verdict를 표시하되 현재 규칙 후보에 합치지 않는다. 누락된 Evidence를 다른 요청으로 대체하지 않고 `현재 데이터에 없음`으로 표시한다. 날짜는 문자열로 직렬화하고 비밀값은 마스킹한다.
 
@@ -186,7 +186,7 @@ FlowScope Web URL이 exact scope에 실수로 들어와도 scanner target에서 
 
 ### “LLM이 환각하면 어떻게 하나요?”
 
-Explorer 모델은 endpoint·parameter 관측만 수행하고 판정하지 않는다. 모델 요약은 사실로 승격하지 않고 실제 요청·응답 Evidence만 H/S/L 비교에 들어간다. 과거 LLM 평가·판정은 원 기록으로만 보존한다.
+Explorer 모델은 endpoint·parameter 탐색만 수행하고 판정하지 않는다. 모델 요약과 자체 개수는 사실로 승격하지 않는다. 실제 요청·응답만 H/S/L Observation 비교에 들어가고, 산출물에서 직접 읽은 구조화 발견은 같은 run Evidence에 결박된 Declaration으로 따로 표시한다. 과거 LLM 평가·판정은 원 기록으로만 보존한다.
 
 ### “Burp나 ZAP과 무엇이 다른가요?”
 
@@ -265,7 +265,7 @@ ZAP 설정에는 기존 기능인 exact-scope OpenAPI·GraphQL·Postman·SOAP �
 
 실행 상태는 color만으로 정상·경고·실패를 말하지 않는다. `RUNNING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`, `FAILED`, `CANCELLED`, `NOT_STARTED`, `UNAVAILABLE`와 신원별 lane count를 문자로 남기고, poll이 실패해도 마지막 성공 상태를 0이나 실패로 덮지 않는다. output tail은 plain text의 bounded accordion으로만 보여 주며 HTML로 해석하지 않는다. 현재 ZAP Active Scan 진입점은 없으며 별도 승인만으로 활성화되지 않는다.
 
-새 Explorer 탭·작업 피드는 D-128 계약으로 제공한다. 실행 상태에는 HUMAN·ZAP와 별도로 LLM 인증 준비, 실제 HTTP 시도·응답 Evidence, 미해결·실패·취소를 표시하며 Judge 상태는 만들지 않는다.
+새 Explorer 탭·작업 피드는 D-128/D-139 계약으로 제공한다. 실행 상태에는 HUMAN·ZAP와 별도로 LLM 인증 준비, 실제 HTTP 시도·응답 Evidence, 선언 endpoint/parameter, OPTIONS probe, 미해결·실패·취소를 표시하며 Judge 상태는 만들지 않는다.
 
 ## 16. React 계정·세션 화면의 개념 경계
 

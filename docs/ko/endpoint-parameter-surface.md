@@ -1,6 +1,6 @@
 # Endpoint·Parameter Surface Delta 설계·검증
 
-이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.44 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. D-128 독립 Explorer는 실제 응답이 있는 통제 HTTP 요청만 LLM 관측으로 추가하며, 실행 전·전송 실패·응답 0건을 endpoint 관측이나 완료로 승격하지 않는다.
+이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.46 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. D-128 독립 Explorer는 실제 응답이 있는 통제 HTTP 요청만 LLM 관측으로 추가한다. D-139는 그 응답 산출물에서 읽은 endpoint·parameter를 current-run Evidence에 결박된 별도 선언으로 보존하며, 실행 전·전송 실패·응답 0건이나 모델의 자유서술을 관측 또는 선언으로 승격하지 않는다.
 
 ## 1. 제품 질문
 
@@ -13,6 +13,7 @@
 ```text
 실제 HTTP Request/Response ─────────────▶ Observation Fact ─┐
 응답으로 받은 OpenAPI·HTML·JavaScript ─▶ Declaration Fact ─┼─▶ Endpoint·Parameter Delta
+Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 산출물 파싱 결과 ──────────────────────▶ Extraction Report ─┘
                                                             ↓
                                          인가 그래프·재현 검토(상세층)
@@ -20,7 +21,7 @@
 
 - `EndpointKey = service + method + canonical path template`
 - `ParameterKey = EndpointKey + location + fieldPath`
-- 위치: `PATH`, `QUERY`, `JSON_BODY`, `FORM_BODY`, `MULTIPART_BODY`, `GRAPHQL_VARIABLE`
+- 위치: `PATH`, `QUERY`, `JSON_BODY`, `FORM_BODY`, `MULTIPART_BODY`, `HEADER`, `GRAPHQL_VARIABLE`
 - 관측에는 값 대신 shape, source, run, identity, status와 Evidence ID만 둔다.
 - 선언에는 type, adapter, reason과 Evidence ID를 둔다.
 - 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, call-site 해석 실패 범주와 추출 수를 둔다.
@@ -46,6 +47,7 @@
 - 해당 call-site의 static URL, method, query 이름과 literal object body key
 - lexical scope에서 확인되는 불변 문자열·object member, template literal, 단순 `+` 결합
 - axios import/direct call과 `axios.create` instance의 정적 `baseURL`, 요청별 `baseURL`·`allowAbsoluteUrls` override
+- 독립 Explorer가 현재 run의 실제 응답 Evidence에서 직접 읽어 구조화 도구로 등록한 endpoint·parameter. 이 경로는 `LLM_ARTIFACT_ANALYSIS` provenance와 locator/reason을 보존하며 값이나 인증·세션 header는 받지 않는다.
 
 ### client asset inventory
 
@@ -76,6 +78,8 @@ asset은 후속 JavaScript 분석 대상으로만 남긴다. HTML navigation과 
 | `OBSERVED_NOT_DECLARED` | 실제 관측은 있으나 현재 선언 산출물에서 근거 없음 |
 
 기본 화면 `API·입력 차이`는 endpoint 행, parameter badge, source별 관측과 provenance를 보여 준다. source checkbox를 끄면 행·badge·상태·통계·상세 Evidence가 같은 projection으로 다시 계산되며 원 Evidence는 삭제되지 않는다.
+
+LLM Explorer의 OPTIONS 요청과 명시적 CORS preflight는 capability probe로 별도 표시하고 endpoint 관측 수에서 제외한다. 일반 HUMAN OPTIONS API 관측과 OpenAPI·산출물에 명시된 OPTIONS 선언은 유지한다. 모든 OPTIONS를 일괄 삭제하면 실제 API 표면을 잃으므로 채택하지 않는다.
 
 산출물 요약은 분석 대상 수, 완전 해석 수, 일부 미해석/실패 산출물 수와 해석 실패 지점 수를 함께 표시한다. 실패가 있으면 종류·범주·Evidence ID·line·제한된 이유를 표시한다. `PARSED`는 문법 파싱 성공일 뿐 모든 call-site 해석 성공을 뜻하지 않는다. 따라서 결과 0건이 “현재 지원 계약에서 call-site가 없음”인지 “동적 값·임의 wrapper 등을 읽지 못함”인지 구분할 수 있다.
 
@@ -135,7 +139,7 @@ Closure Compiler는 `ECMASCRIPT_NEXT` parser로만 사용하고 target JavaScrip
 
 ## 8. 다음 평가
 
-아래는 후속 평가 설계이며 아직 수행하지 않았다. 새 Explorer 하네스가 없으므로 현재 소스에서 자동 H/S/L 비교 실험을 시작할 수 있다고 안내하지 않는다. 외부 pilot에서는 같은 scope·계정·시간·요청 예산을 정의하고 source별 고유 endpoint/parameter와 검토 작업량을 분리할 계획이다. 정답은 가능한 경우 서버 fixture route manifest 또는 빌드 전에 고정한 truth를 사용하고 런타임 분석기에 주지 않는다.
+아래는 후속 평가 설계이며 아직 수행하지 않았다. 현재 독립 Explorer는 실제 HTTP Observation과 Evidence-bound Declaration을 만들 수 있지만, 이것만으로 외부 대상 발견 효능이 검증된 것은 아니다. 외부 pilot에서는 같은 scope·계정·시간·요청 예산을 정의하고 source별 고유 endpoint/parameter와 검토 작업량을 분리할 계획이다. 정답은 가능한 경우 서버 fixture route manifest 또는 빌드 전에 고정한 truth를 사용하고 런타임 분석기에 주지 않는다.
 
 최소 보고 항목:
 

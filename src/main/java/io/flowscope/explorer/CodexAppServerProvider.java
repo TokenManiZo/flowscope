@@ -214,7 +214,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             } else if (method.equals("item/started") && item.path("type").asText("").equals("commandExecution")) {
                 listener.activity(activity("TOOL", "응답 산출물 분석", "격리 workspace에서 읽기 전용 분석을 실행 중입니다.", "RUNNING", null));
             } else if (method.equals("item/started") && item.path("type").asText("").equals("dynamicToolCall")) {
-                listener.activity(activity("TOOL", "FlowScope HTTP 요청", "exact-scope 요청을 전송 중입니다.", "RUNNING", null));
+                listener.activity(activity("TOOL", "FlowScope 도구 호출",
+                        "exact-scope 요청 또는 Evidence 결박 선언을 처리 중입니다.", "RUNNING", null));
             } else if (method.equals("item/completed")) {
                 String type = item.path("type").asText("");
                 if (type.equals("commandExecution")) {
@@ -226,12 +227,13 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 } else if (type.equals("dynamicToolCall")) {
                     String status = item.path("status").asText("");
                     Long duration = item.has("durationMs") ? item.path("durationMs").asLong() : null;
-                    listener.activity(activity("TOOL", "FlowScope HTTP 요청",
-                            "completed".equalsIgnoreCase(status) ? "요청 완료" : "요청 " + status,
+                    listener.activity(activity("TOOL", "FlowScope 도구 호출",
+                            "completed".equalsIgnoreCase(status) ? "도구 처리 완료" : "도구 처리 " + status,
                             "completed".equalsIgnoreCase(status) ? "COMPLETED" : "FAILED", duration));
                 } else if (type.equals("agentMessage")) {
                     finalMessage = item.path("text").asText(finalMessage);
-                    listener.activity(activity("MODEL", "Explorer 보고", displaySummary(finalMessage), "COMPLETED", null));
+                    listener.activity(activity("MODEL", "Explorer 모델 메모 (비집계)",
+                            displaySummary(finalMessage), "COMPLETED", null));
                 }
             } else if (method.equals("warning") || method.equals("configWarning")) {
                 listener.activity(activity("WARNING", "Codex 경고",
@@ -273,10 +275,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             ObjectNode result = response.putObject("result");
             try {
                 JsonNode params = message.path("params");
-                if (!"flowscope_http_request".equals(params.path("tool").asText())) {
-                    throw new IllegalArgumentException("지원하지 않는 Explorer 도구입니다.");
-                }
-                String gatewayResponse = callGateway(params.path("arguments"));
+                String tool = params.path("tool").asText();
+                String endpoint = switch (tool) {
+                    case "flowscope_http_request" -> request.gatewayUrl();
+                    case "flowscope_record_discoveries" -> request.discoveryUrl();
+                    default -> throw new IllegalArgumentException("지원하지 않는 Explorer 도구입니다.");
+                };
+                String gatewayResponse = callGateway(endpoint, params.path("arguments"),
+                        tool.equals("flowscope_http_request"));
                 result.put("success", true).putArray("contentItems").addObject()
                         .put("type", "inputText").put("text", gatewayResponse);
             } catch (Exception error) {
@@ -286,8 +292,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             write(response);
         }
 
-        private String callGateway(JsonNode arguments) throws Exception {
-            HttpRequest gatewayRequest = HttpRequest.newBuilder(URI.create(request.gatewayUrl()))
+        private String callGateway(String endpoint, JsonNode arguments, boolean downloadArtifact) throws Exception {
+            HttpRequest gatewayRequest = HttpRequest.newBuilder(URI.create(endpoint))
                     .header("Authorization", "Bearer " + request.gatewayToken())
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(arguments.toString(), StandardCharsets.UTF_8)).build();
@@ -297,7 +303,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (gatewayResponse.statusCode() >= 400) {
                 throw new IOException(parsed.path("error").asText("FlowScope HTTP 요청이 거부됐습니다."));
             }
-            if (parsed.hasNonNull("artifact_url") && !parsed.path("artifact_url").asText().isBlank()) {
+            if (downloadArtifact && parsed.hasNonNull("artifact_url")
+                    && !parsed.path("artifact_url").asText().isBlank()) {
                 HttpRequest artifactRequest = HttpRequest.newBuilder(URI.create(parsed.path("artifact_url").asText()))
                         .header("Authorization", "Bearer " + request.gatewayToken()).GET().build();
                 HttpResponse<byte[]> artifactResponse = HttpClient.newHttpClient().send(
@@ -384,7 +391,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
                     .put("serviceName", "flowscope_explorer").put("ephemeral", true)
                     .put("developerInstructions", request.prompt());
-            params.putArray("dynamicTools").add(httpTool());
+            params.putArray("dynamicTools").add(httpTool()).add(discoveryTool());
             return params;
         }
 
@@ -414,6 +421,49 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             properties.putObject("headers").put("type", "object").put("additionalProperties", true);
             properties.putObject("body").put("type", "string");
             schema.putArray("required").add("account").add("method").add("url").add("headers").add("body");
+            return tool;
+        }
+
+        private ObjectNode discoveryTool() {
+            ObjectNode tool = JSON.createObjectNode().put("type", "function")
+                    .put("name", "flowscope_record_discoveries")
+                    .put("description", "Store Evidence-bound endpoint and parameter declarations found in a response artifact. This records declarations, not HTTP observations or vulnerability verdicts.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode discoveries = schema.putObject("properties").putObject("discoveries")
+                    .put("type", "array").put("minItems", 1).put("maxItems", 200);
+            ObjectNode item = discoveries.putObject("items").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode properties = item.putObject("properties");
+            properties.putObject("method").put("type", "string").putArray("enum")
+                    .add("GET").add("HEAD").add("OPTIONS").add("POST").add("PUT").add("PATCH").add("DELETE");
+            properties.putObject("url").put("type", "string")
+                    .put("description", "Absolute exact-scope URL or URL template. Path placeholders may use {name}.");
+            properties.putObject("evidence_ids").put("type", "array").put("minItems", 1).put("maxItems", 8)
+                    .putObject("items").put("type", "string");
+            properties.putObject("artifact_kind").put("type", "string").putArray("enum")
+                    .add("JAVASCRIPT").add("HTML").add("OPENAPI").add("GRAPHQL")
+                    .add("SOURCE_MAP").add("MANIFEST").add("OTHER");
+            properties.putObject("locator").put("type", "string")
+                    .put("description", "Non-secret location such as artifact file and line or JSON pointer.");
+            properties.putObject("reason").put("type", "string");
+            ObjectNode parameters = properties.putObject("parameters").put("type", "array")
+                    .put("maxItems", 256);
+            ObjectNode parameter = parameters.putObject("items").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode parameterProperties = parameter.putObject("properties");
+            parameterProperties.putObject("location").put("type", "string").putArray("enum")
+                    .add("PATH").add("QUERY").add("JSON_BODY").add("FORM_BODY")
+                    .add("MULTIPART_BODY").add("HEADER").add("GRAPHQL_VARIABLE");
+            parameterProperties.putObject("field_path").put("type", "string");
+            parameterProperties.putObject("display_name").put("type", "string");
+            parameterProperties.putObject("requirement").put("type", "string").putArray("enum")
+                    .add("REQUIRED").add("OPTIONAL").add("UNKNOWN");
+            parameter.putArray("required").add("location").add("field_path")
+                    .add("display_name").add("requirement");
+            item.putArray("required").add("method").add("url").add("evidence_ids")
+                    .add("artifact_kind").add("locator").add("reason").add("parameters");
+            schema.putArray("required").add("discoveries");
             return tool;
         }
     }

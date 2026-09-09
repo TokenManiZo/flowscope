@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · Explorer Evidence-bound 산출물 선언 (D-139, 2026-09-09)
+
+- Codex가 HTML·JavaScript·API 정의에서 찾은 endpoint·parameter를 자유서술 요약에만 남기지 않고, 같은 run의 실제 응답 Evidence ID가 필요한 `flowscope_record_discoveries` 동적 도구로 저장합니다.
+- 저장 항목은 `LLM_ARTIFACT_ANALYSIS` RouteCandidate와 값 없는 parameter Declaration입니다. exact scope·허용 schema·상한·인증 header 금지와 의미 중복 제거를 적용하며 Observation·coverage·인가 판정·finding으로 승격하지 않습니다.
+- 64KiB를 넘는 마스킹 응답은 최대 4MiB의 유효한 UTF-8 artifact로 한 번 전달하고 같은 URL의 Range/cache-buster 재수집을 지침에서 금지합니다. Explorer가 보낸 OPTIONS는 capability probe로 분리하되 일반 HUMAN OPTIONS와 산출물에 선언된 OPTIONS API는 유지합니다.
+- React 작업 피드는 HTTP 시도·응답 Evidence·선언 endpoint/parameter·OPTIONS probe를 서버 계산값으로 표시합니다. 집중 자동 회귀와 실제 로그인된 Codex app-server의 HTTP→선언 opt-in 하네스는 통과했으며 실제 Burp 리얼 대상 완주는 별도 gate입니다.
+
 ## 미출시 · ZAP 일시 응답 지연 상태 보정 (D-138, 2026-09-09)
 
 - ZAP API의 일반 통신 실패 한 번을 즉시 `UNREACHABLE`로 확정하던 상태 판정을 수정했습니다. 첫 두 번은 `RETRYING`, 세 번째 연속 실패부터 `UNREACHABLE`이며 성공하면 즉시 초기화합니다. API key 401/403은 첫 응답에서 `AUTH_FAILED`로 유지합니다.

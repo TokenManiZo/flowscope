@@ -7,8 +7,9 @@ import java.util.Set;
  * 실제 HTTP 관측과 대상이 제공한 선언을 분리한 endpoint/parameter surface 사실 모델.
  * 값은 보존하지 않고 위치, 필드 경로, 형태, Evidence 역참조만 보존한다.
  */
-public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions) {
-    public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, GRAPHQL_VARIABLE }
+public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
+                              List<ProbeObservation> probes) {
+    public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, HEADER, GRAPHQL_VARIABLE }
     public enum ValueShape { EMPTY, STRING, INTEGER, DECIMAL, BOOLEAN, UUID, ARRAY, OBJECT, NULL, BINARY, UNKNOWN }
     public enum Requirement { REQUIRED, OPTIONAL, UNKNOWN }
     public enum ExtractionStatus { PARSED, PARTIAL, FAILED, LIMIT_EXCEEDED }
@@ -34,6 +35,10 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     }
 
     public record Observation(String evidenceId, Source source, String runId, String identity, int status) {}
+
+    /** OPTIONS는 API 기능 관측과 분리해 보존하는 capability/preflight 근거다. */
+    public record ProbeObservation(EndpointKey key, String evidenceId, Source source,
+                                   String runId, String identity, int status) {}
 
     public record ParameterObservation(String evidenceId, Source source, String runId, String identity,
                                        int status, ValueShape shape) {}
@@ -72,7 +77,12 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     public SurfaceAnalysis {
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);
         extractions = extractions == null ? List.of() : List.copyOf(extractions);
+        probes = probes == null ? List.of() : List.copyOf(probes);
     }
 
-    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of()); }
+    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of()); }
+
+    public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions) {
+        this(endpoints, extractions, List.of());
+    }
 }

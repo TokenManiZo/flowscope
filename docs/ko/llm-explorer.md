@@ -4,7 +4,7 @@
 
 ## 목적
 
-Explorer는 취약점을 판정하지 않는다. 허가된 exact scope 안에서 별도 LLM 실행이 HTML·JavaScript·manifest·source map·OpenAPI/Swagger·GraphQL 응답을 읽고 실제 HTTP 요청을 보내 다음 사실을 LLM Evidence로 남긴다.
+Explorer는 취약점을 판정하지 않는다. 허가된 exact scope 안에서 별도 LLM 실행이 HTML·JavaScript·manifest·source map·OpenAPI/Swagger·GraphQL 응답을 읽고 실제 HTTP 요청을 보낸다. 실제 요청·응답과 산출물에서 읽은 선언은 서로 다른 사실로 남긴다.
 
 - endpoint와 method
 - query·path·header·body parameter
@@ -26,13 +26,21 @@ React #explorer
 ExplorerCoordinator
   ├─ ExplorerAuthRuntime ──▶ Burp Montoya HTTP ──▶ memory-only cookie/token
   ├─ CodexAppServerProvider ──▶ logged-in Codex app-server
-  └─ ExplorerHttpGateway ◀── dynamic tool call
-            │ exact-scope/method/header/dedup/budget gate
-            ▼
-Burp Montoya HTTP ──▶ actual response ──▶ source=LLM Evidence
+  └─ ExplorerHttpGateway ◀── dynamic tool calls
+            ├─ HTTP: exact-scope/method/header/dedup/budget gate
+            │       └─▶ Burp Montoya HTTP ──▶ source=LLM Observation Evidence
+            └─ 선언: current-run Evidence/exact-scope/schema/dedup gate
+                    └─▶ RouteCandidate ──▶ Surface Declaration
 ```
 
-MCP 서버나 포트 8787은 없다. 모델이 대상에 직접 `curl`하지도 않는다. Codex app-server의 동적 도구 호출을 Java가 받아 loopback gateway와 Burp Montoya 전송 경계로 연결한다. 모델 sandbox의 일반 네트워크는 꺼져 있으므로 exact-scope 검사를 우회하는 별도 네트워크 경로가 없다. 512KiB를 넘는 마스킹 응답은 실행별 격리 workspace의 임시 artifact로 넘기며 종료·취소 때 삭제한다.
+MCP 서버나 포트 8787은 없다. 모델이 대상에 직접 `curl`하지도 않는다. Codex app-server의 동적 도구 호출을 Java가 받아 loopback gateway와 Burp Montoya 전송 경계로 연결한다. 모델 sandbox의 일반 네트워크는 꺼져 있으므로 exact-scope 검사를 우회하는 별도 네트워크 경로가 없다.
+
+동적 도구는 두 개다.
+
+- `flowscope_http_request`: 실제 대상 요청을 보내고 응답 Evidence ID를 만든다.
+- `flowscope_record_discoveries`: 그 Evidence의 HTML·JavaScript·API 정의 등에서 직접 읽은 endpoint·parameter 선언을 저장한다. 실제 요청이나 취약점 판정으로 승격하지 않는다.
+
+64KiB를 넘는 마스킹 응답은 실행별 격리 workspace의 최대 4MiB 임시 artifact로 한 번 넘기며 종료·취소 때 삭제한다. 모델 지침은 같은 파일을 Range나 cache-buster로 다시 받지 않고 임시 파일을 읽도록 고정한다.
 
 ## 사용자 준비와 실행
 
@@ -45,18 +53,22 @@ MCP 서버나 포트 8787은 없다. 모델이 대상에 직접 `curl`하지도 
    - `JSON API`: username/password field 이름을 지정할 수 있다. bearer 등 응답 token은 JSON 경로, header 이름, prefix를 지정한다.
    - 검증 URL을 지정하면 최종 응답이 2xx/3xx이면서 로그인 form으로 돌아가지 않았는지 확인한다.
 6. 계정과 비로그인을 필요한 조합으로 선택하고 **Explorer 시작**을 누른다.
-7. 작업 피드에서 인증, 실제 HTTP 요청, Evidence ID, 실패와 미해결 사유를 본다. 실행 중 메시지로 다음 탐색 위치를 steer하거나 중단할 수 있다.
+7. 작업 피드에서 인증, 실제 HTTP 요청, Evidence ID, 선언 endpoint/parameter, OPTIONS probe, 실패와 미해결 사유를 본다. 실행 중 메시지로 다음 탐색 위치를 steer하거나 중단할 수 있다. 완료 요약의 수치는 모델 문장이 아니라 FlowScope가 수집 상태에서 계산한다.
 
 계정 ID·비밀번호, live Cookie와 token은 현재 Burp 프로세스 메모리에만 둔다. 로그인 준비 요청/응답은 Record, payload, 실행 원장, snapshot, 프로젝트 파일로 만들지 않는다. 프로젝트 교체·초기화·계정 삭제·extension unload에서 메모리 인증값을 폐기한다. Java와 HTTP 라이브러리의 일시적 immutable 사본까지 물리적으로 지우는 hardware vault를 뜻하지는 않는다.
 
 ## 실행 경계
 
-- 허용 method: `GET`, `HEAD`, `OPTIONS`, `POST`. POST는 탐색 지침상 검색·조회 요청에만 사용한다.
+- 실제 실행 허용 method: `GET`, `HEAD`, `OPTIONS`, `POST`. POST는 탐색 지침상 검색·조회 요청에만 사용한다.
+- 선언 허용 method: `GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH`, `DELETE`. 선언은 실행이 아니므로 쓰기 method도 산출물에서 직접 확인된 경우 저장하되 실제 관측으로 표시하지 않는다.
 - 금지: `PUT`, `PATCH`, `DELETE`, 파일 업로드, 대량 생성, brute force, race, exploit payload, 외부 callback.
 - 대상 URL: 현재 FlowScope exact scope의 절대 HTTP(S) URL만.
 - 모델 지정 금지 header: Authorization, Cookie, Proxy-Authorization, Host, Content-Length. 등록 계정의 인증값은 Java vault가 주입한다.
-- run당 HTTP 시도 상한: 기본 500. 성공한 동일 account·method·URL·body는 다시 보내지 않는다. 전송 자체가 실패한 요청은 재시도할 수 있다.
-- 응답 분석 상한: inline 512KiB, 임시 artifact 4MiB, artifact 24개. live 발견용 HTML/JS/JSON/XML 보존·분석 상한도 기본 4MiB다.
+- run당 HTTP 시도 상한: 기본 500. 성공한 동일 account·method·URL·body는 다시 보내지 않는다. 전송 자체가 실패한 요청은 재시도할 수 있다. 같은 URL의 큰 산출물은 한 번 요청하고 로컬 artifact를 분석한다.
+- 선언 상한: 호출당 endpoint 200개, run당 Evidence 결박 endpoint provenance 5,000개와 parameter provenance 50,000개, endpoint당 parameter 256개. endpoint는 service·method·canonical path, parameter는 endpoint·location·field path로 의미 중복을 제거한다.
+- 선언 근거: 해당 gateway가 현재 run에서 실제 생성한 응답 Evidence ID 1~8개가 필수다. exact scope, 허용 field schema, 문자열 길이를 검증하고 값과 Authorization/Cookie/Proxy-Authorization 등 인증·세션 header 선언을 받지 않는다.
+- 응답 분석 상한: inline 64KiB, 임시 artifact 4MiB, artifact 24개. live 발견용 HTML/JS/JSON/XML 보존·분석 상한도 기본 4MiB다.
+- Explorer의 OPTIONS 요청은 capability/preflight probe로 별도 집계하여 기능 API 관측 수에 넣지 않는다. 일반 HUMAN OPTIONS 관측과 OpenAPI·산출물에 명시된 OPTIONS 선언은 기존처럼 유지한다.
 - 완료: 같은 run의 `CONTROLLED`, `EXPLORATION`, 실제 응답 Evidence ID가 하나 이상 있어야 한다. 응답 전 실패만 있으면 완료로 표시하지 않는다.
 
 POST의 업무 의미를 범용 블랙박스에서 완전히 판별할 수 없으므로 “조회 전용”을 수학적으로 보장하지는 못한다. 그래서 method·범위·요청 수·금지 행위를 코드와 지침 양쪽에서 제한하고, 상태 변경 가능성이 있는 endpoint는 사용자가 허가한 테스트 환경에서만 실행해야 한다.
@@ -71,7 +83,7 @@ POST의 업무 의미를 범용 블랙박스에서 완전히 판별할 수 없�
 
 ## 검증 수준과 남은 gate
 
-자동 테스트는 account secret 비노출, form/JSON 로그인, redirect/검증, exact-scope, 인증 header 주입, mutation method 차단, 성공 중복 차단, 전송 실패 재시도, 완료 Evidence gate, 취소 경합과 Web/React 계약을 확인한다. `-Dflowscope.harness=true` opt-in gate는 실제 로그인된 Codex가 동적 HTTP 도구를 호출하고 구조화된 결과를 반환하는지 확인한다.
+자동 테스트는 account secret 비노출, form/JSON 로그인, redirect/검증, exact-scope, 인증 header 주입, mutation method 차단, 성공 중복 차단, 전송 실패 재시도, current-run Evidence 없는 선언 차단, endpoint·parameter 의미 중복 제거, 프로젝트 round-trip, OPTIONS probe 분리, 서버 집계, 완료 Evidence gate, 취소 경합과 Web/React 계약을 확인한다. `-Dflowscope.harness=true` opt-in gate는 실제 로그인된 Codex가 HTTP 도구로 Evidence를 만든 뒤 그 ID로 선언 도구를 호출하고 구조화된 결과를 반환하는지 확인한다.
 
 아직 완료라고 주장하지 않는 항목은 다음과 같다.
 

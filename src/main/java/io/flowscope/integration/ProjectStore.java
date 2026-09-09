@@ -354,6 +354,19 @@ public final class ProjectStore {
             entry.put("applicability", item.applicability().name());
             entry.put("reason", Masking.maskSecrets(item.reason()));
         });
+        ArrayNode declaredParameters = out.putArray("declared_parameters");
+        candidate.declaredParameters().forEach(item -> {
+            ObjectNode entry = declaredParameters.addObject();
+            entry.put("location", item.location().name());
+            entry.put("field_path", Masking.maskSecrets(item.fieldPath()));
+            entry.put("display_name", Masking.maskSecrets(item.displayName()));
+            entry.put("requirement", item.requirement().name());
+            entry.put("evidence_id", item.evidenceId());
+            entry.put("source", item.source().name());
+            entry.put("run_id", item.runId());
+            entry.put("adapter", item.adapter());
+            entry.put("reason", Masking.maskSecrets(item.reason()));
+        });
         out.put("applicability", candidate.applicability().name());
         out.put("review_reason", Masking.maskSecrets(candidate.reviewReason()));
         return out;
@@ -361,6 +374,7 @@ public final class ProjectStore {
 
     private RouteCandidate readRouteCandidate(JsonNode value) {
         List<RouteCandidate.Provenance> provenance = new ArrayList<>();
+        List<RouteCandidate.DeclaredParameter> declaredParameters = new ArrayList<>();
         JsonNode stored = value.path("provenance");
         if (stored.isArray()) stored.forEach(item -> provenance.add(new RouteCandidate.Provenance(
                 enumValue(RouteCandidate.ProvenanceType.class, required(item, "type")),
@@ -375,12 +389,22 @@ public final class ProjectStore {
                         RouteCandidate.Applicability.REVIEW, "구버전 project의 provenance 대응 관계 미확정"));
             }
         }
+        JsonNode storedParameters = value.path("declared_parameters");
+        if (storedParameters.isArray()) storedParameters.forEach(item -> declaredParameters.add(
+                new RouteCandidate.DeclaredParameter(
+                        enumValue(SurfaceAnalysis.ParameterLocation.class, required(item, "location")),
+                        masked(item, "field_path"), masked(item, "display_name"),
+                        enumValue(SurfaceAnalysis.Requirement.class, optional(item, "requirement", "UNKNOWN")),
+                        required(item, "evidence_id"),
+                        enumValue(Source.class, optional(item, "source", "UNKNOWN")),
+                        optional(item, "run_id", "legacy-project"),
+                        optional(item, "adapter", "legacy-project"), masked(item, "reason"))));
         return new RouteCandidate(required(value, "service"), required(value, "method"),
                 required(value, "path_template"), stringList(value, "concrete_paths"),
                 value.path("concrete_paths_truncated").asBoolean(false),
                 value.path("observed").asBoolean(false), provenance,
                 enumValue(RouteCandidate.Applicability.class, required(value, "applicability")),
-                masked(value, "review_reason"));
+                masked(value, "review_reason"), declaredParameters);
     }
 
     private ObjectNode writeRecord(RequestRecord r, ObjectNode payloads) {

@@ -891,6 +891,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("anonymous", value.anonymous());
         body.put("attempts", value.attempts());
         body.put("responses", value.responses());
+        body.put("endpointDeclarations", value.endpointDeclarations());
+        body.put("parameterDeclarations", value.parameterDeclarations());
+        body.put("capabilityProbes", value.capabilityProbes());
         body.set("unresolved", json.valueToTree(value.unresolved()));
         var activities = body.putArray("activities");
         value.activities().forEach(activity -> {

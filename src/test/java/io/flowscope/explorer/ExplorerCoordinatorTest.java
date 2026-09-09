@@ -39,6 +39,9 @@ final class ExplorerCoordinatorTest {
 
             await(() -> coordinator.current().status() == ExplorerCoordinator.Status.COMPLETED);
             assertEquals(ExplorerCoordinator.Status.COMPLETED, coordinator.current().status());
+            assertTrue(coordinator.current().message().startsWith("Explorer 완료 · HTTP 시도 0건"));
+            assertFalse(coordinator.current().message().contains("탐색 완료"),
+                    "provider free text must not become the authoritative count summary");
             assertNull(contexts.current(Source.LLM));
         }
     }

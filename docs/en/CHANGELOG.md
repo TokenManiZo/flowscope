@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Evidence-bound Explorer artifact declarations (D-139, 2026-09-09)
+
+- Codex discoveries from HTML, JavaScript, and API definitions no longer exist only in free-form model prose. A `flowscope_record_discoveries` dynamic tool requires response Evidence IDs produced by the same run.
+- Stored facts are `LLM_ARTIFACT_ANALYSIS` route candidates and value-free parameter Declarations. Exact scope, a strict schema, bounds, forbidden authentication headers, and semantic deduplication are enforced; declarations never become observations, coverage, authorization verdicts, or findings.
+- Masked responses above 64 KiB are delivered once as bounded valid-UTF-8 artifacts up to 4 MiB. The prompt forbids Range/cache-buster re-fetching. Explorer OPTIONS requests are separate capability probes, while ordinary HUMAN OPTIONS and artifact-declared OPTIONS APIs remain visible.
+- The React work feed reports server-computed HTTP attempts, response Evidence, endpoint/parameter declarations, and OPTIONS probes. Focused regressions and an opt-in real logged-in Codex app-server HTTP-to-declaration harness passed; a real Burp target run remains an open gate.
+
 ## Unreleased — transient ZAP probe state correction (D-138, 2026-09-09)
 
 - A single generic ZAP API communication failure no longer becomes `UNREACHABLE` immediately. The first two consecutive failures are `RETRYING`, the third becomes `UNREACHABLE`, and any success resets the counter. HTTP 401/403 API-key errors remain immediate `AUTH_FAILED` results.

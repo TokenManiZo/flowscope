@@ -4,7 +4,7 @@ Current implementation and open gates: [handoff](../ko/HANDOFF.md). Document sco
 
 The standalone Explorer and direct ZAP browser-authentication lane are unreleased source changes. Use a JAR built from this work; older Release assets do not include them.
 
-**Current source / unreleased:** the old MCP server, Judge and browser harness remain removed. D-128 adds a standalone Codex Explorer through app-server dynamic tools and a Java exact-scope gateway. HUMAN/ZAP execution and H/S/L Evidence comparison remain; no replacement MCP or automatic verdict path was added. See the [Explorer contract](../ko/llm-explorer.md).
+**Current source / unreleased:** the old MCP server, Judge and browser harness remain removed. D-128/D-139 add a standalone Codex Explorer through app-server dynamic tools and a Java exact-scope gateway. Real HTTP responses become LLM Observation Evidence; endpoints and value-free parameters read from those response artifacts become separate, current-run Evidence-bound Declarations. HUMAN/ZAP execution and H/S/L Evidence comparison remain; no replacement MCP or automatic verdict path was added. See the [Explorer contract](../ko/llm-explorer.md).
 
 FlowScope is a Burp Suite Community-compatible extension that aligns declared API inputs and real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into a shared endpoint/parameter surface. It shows which source observed each endpoint and parameter before opening the existing identity-aware BOLA/IDOR/BFLA graph as an API-level drill-down. An unobserved declaration is a review item, not a vulnerability or failed lane.
 
@@ -124,7 +124,7 @@ ZAP authentication exchanges remain auditable `ZAP_AUTHENTICATION / SESSION_SETU
 
 ## Standalone LLM Explorer
 
-D-126 removed the old browser/Judge/MCP runtime. D-128 adds a separate Explorer that launches the locally authenticated Codex app-server in an isolated temporary workspace. It exposes one dynamic HTTP tool to the model; Java validates exact scope, method, protected headers, deduplication and budget before Burp Montoya sends the request. Credentials and live cookies/tokens stay in the in-process account vault and are represented to the model only by opaque account handles. Login setup traffic is not persisted. The activity feed supports steering and cancellation. See the [full contract](../ko/llm-explorer.md).
+D-126 removed the old browser/Judge/MCP runtime. D-128/D-139 add a separate Explorer that launches the locally authenticated Codex app-server in an isolated temporary workspace. It exposes an HTTP tool and an Evidence-bound declaration tool. Java validates exact scope, method, protected headers, deduplication and budget before Burp Montoya sends a request; declarations require an Evidence ID produced by that same run and never become observations or verdicts. Credentials and live cookies/tokens stay in the in-process account vault and are represented to the model only by opaque account handles. Login setup traffic is not persisted. The activity feed supports steering and cancellation and reports server-computed request, response, declaration and OPTIONS-probe counts. See the [full contract](../ko/llm-explorer.md).
 
 ## Provenance model
 

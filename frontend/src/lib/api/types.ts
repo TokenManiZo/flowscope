@@ -169,6 +169,17 @@ export interface RouteCandidate {
   applicability: string
   reviewReason: string
   priorityReasons: readonly string[]
+  declaredParameters?: readonly {
+    location: string
+    fieldPath: string
+    displayName: string
+    requirement: string
+    evidenceId: string
+    source: SurfaceSource
+    runId: string
+    adapter: string
+    reason: string
+  }[]
 }
 
 export type SurfaceSource = "HUMAN" | "SCANNER" | "LLM" | "UNKNOWN"
@@ -277,7 +288,17 @@ export interface Snapshot {
   surface?: {
     endpoints: readonly SurfaceEndpoint[]
     extractions: readonly SurfaceExtraction[]
+    probes: readonly SurfaceProbe[]
   }
+}
+
+export interface SurfaceProbe {
+  key: { service: string; method: string; pathTemplate: string }
+  evidenceId: string
+  source: SurfaceSource
+  runId: string
+  identity: string
+  status: number
 }
 
 export interface PayloadRetentionMetadata {
@@ -467,6 +488,9 @@ export interface ExplorerRun {
   anonymous: boolean
   attempts: number
   responses: number
+  endpointDeclarations: number
+  parameterDeclarations: number
+  capabilityProbes: number
   unresolved: readonly ExplorerUnresolved[]
   activities: readonly ExplorerActivity[]
 }

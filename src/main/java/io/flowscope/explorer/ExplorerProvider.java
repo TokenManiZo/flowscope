@@ -6,7 +6,7 @@ import java.util.List;
 /** LLM 공급자와 Explorer 코어 사이의 streaming 계약. */
 public interface ExplorerProvider extends AutoCloseable {
     record Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
-                   String gatewayUrl, String gatewayToken, String prompt) {
+                   String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt) {
         public Request { exactScope = List.copyOf(exactScope); accountHandles = List.copyOf(accountHandles); }
     }
 
