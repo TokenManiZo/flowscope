@@ -1252,3 +1252,10 @@
 - **결정:** `ZapCampaign.State.authenticationEvidence(runId, accountId)`를 인증 전용 읽기 경계로 추가한다. Burp 호스트 구현은 동기화된 원시 저장소에서 현재 run·계정·`SCANNER/ZAP_AUTHENTICATION` 기록만 복사해 반환하고, 그래프·coverage·판정 계산 완료를 기다리지 않는다. `ZapBrowserAuthenticator`의 기존 source/detail/run/account/response 조건과 성공·로그아웃 정규식 비교는 그대로 유지한다.
 - **기각:** 인증 직전에 전체 `Pipeline`을 동기 실행하면 로그인마다 그래프 재계산 비용과 publish 경합이 생긴다. 고정 sleep은 머신·데이터량에 따라 다시 실패하며, 필터 없는 전체 원시 목록 노출은 필요한 범위보다 넓다.
 - **검증·한계:** 회귀에서 분석 snapshot을 의도적으로 빈 상태로 유지하면서 원시 인증·Client 기록만 갱신해 익명→두 계정 실행과 오류 lane 처리가 완료되는지 확인한다. 별도 실물 ZAP 2.17/Chromium 하네스도 익명·정상 계정 2개 완료와 오류 비밀번호의 Client 전 차단을 재확인했다. 실제 Burp에 새 JAR을 재로드한 UI/8081 검증과 Windows 실기기는 계속 별도 gate다.
+
+## D-138 · ZAP 연결 불가는 일반 통신 실패 3회 연속 뒤에만 확정한다 (2026-09-09)
+
+- **문제:** Web이 1초마다 조회하는 ZAP 상태 API는 매번 실제 ZAP API를 확인한다. 기존 구현은 timeout을 포함한 일반 통신 예외 한 번을 즉시 `UNREACHABLE`로 표시했다. 실제 ZAP과 캠페인이 정상이어도 Client·Passive 작업 중 한 번 늦은 응답이 Docker 중단 안내로 보일 수 있었다.
+- **결정:** 일반 통신 실패 1·2회는 `connected=false, state=RETRYING`으로 표시하고 3회 연속 실패부터 `UNREACHABLE`로 확정한다. 성공한 probe는 실패 횟수를 즉시 0으로 초기화한다. HTTP 401/403은 key 불일치라는 결정적 응답이므로 첫 회에 `AUTH_FAILED`로 확정하며, 관리 runtime 불일치도 기존처럼 즉시 표시한다. 이 상태는 확장 프로세스 메모리에만 있고 프로젝트·Evidence에 저장하지 않는다.
+- **기각:** 한 번 실패 즉시 연결 불가 표시는 실제 재현된 일시 지연을 영구 장애처럼 보이게 한다. 반대로 무한 재시도는 실제 중단을 숨긴다. 캠페인 결과나 이전 `connected=true`를 연결 상태로 계속 재사용하면 현재 제어면 장애를 은폐하므로 채택하지 않는다.
+- **검증·한계:** 단위 회귀가 실패 1·2·3회, 성공 초기화, 인증 오류 즉시 확정을 검사한다. 수정 전 D-137 JAR의 실제 Burp에서 ZAP probe 10/10 성공과 새 익명 Client 캠페인 59초 완료(SCANNER/Client 14건, Alert 29건, capability 거부 0)를 확인해 crawler 장애와 상태 표시 결함을 분리했다. 3회라는 값은 현재 1초 polling에서 약 3회의 독립 확인을 요구하는 운영 절충이며, 장시간 pause·호스트 절전·Windows 네트워크에서의 최적값을 입증한 수치는 아니다. 최종 D-138 JAR의 `RETRYING` 화면 전이는 Burp 재로드 뒤 별도 확인한다.

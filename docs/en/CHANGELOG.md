@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — transient ZAP probe state correction (D-138, 2026-09-09)
+
+- A single generic ZAP API communication failure no longer becomes `UNREACHABLE` immediately. The first two consecutive failures are `RETRYING`, the third becomes `UNREACHABLE`, and any success resets the counter. HTTP 401/403 API-key errors remain immediate `AUTH_FAILED` results.
+- With the D-137 JAR loaded in real macOS Burp, ten consecutive ZAP status probes succeeded and a fresh anonymous Client campaign completed in 59 seconds with 14 SCANNER/Client captures, 29 Alerts, zero capability rejections, and an empty Passive queue.
+- Authenticated two-account/wrong-password runs in real Burp, Windows Docker Desktop, and the final D-138 JAR's visible `RETRYING` transition remain open gates.
+
 ## Unreleased — ZAP authentication snapshot race fix (D-137, 2026-09-09)
 
 - Fixed a race where a valid login response was present in the raw capture store but absent from the delayed analysis snapshot, causing an authenticated lane to fail.

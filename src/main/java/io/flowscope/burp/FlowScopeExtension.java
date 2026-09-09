@@ -229,6 +229,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private volatile String scannerDirectAuthenticationRunId = "";
     private ZapClient zapClient;
     private volatile ZapCampaign zapCampaign;
+    private final ZapProbeStatus zapProbeStatus = new ZapProbeStatus();
     private ExplorerAccountVault explorerAccounts;
     private ExplorerCoordinator explorer;
     private final ScheduledExecutorService worker =
@@ -1328,6 +1329,7 @@ public final class FlowScopeExtension implements BurpExtension {
             String home = mapper.readTree(zapClient.zapHomePath()).path("zapHomePath").asText("");
             boolean managedRuntime = home.startsWith("/run/flowscope-zap/");
             body.put("managedRuntime", managedRuntime);
+            zapProbeStatus.success();
             if (!managedRuntime) {
                 return body.put("connected", false).put("state", "WRONG_RUNTIME")
                         .put("version", version)
@@ -1339,12 +1341,38 @@ public final class FlowScopeExtension implements BurpExtension {
         } catch (Exception error) {
             String detail = error.getMessage() == null ? "" : error.getMessage();
             boolean auth = detail.contains("HTTP 401") || detail.contains("HTTP 403");
-            body.put("connected", false).put("state", auth ? "AUTH_FAILED" : "UNREACHABLE")
+            String state = zapProbeStatus.failure(auth);
+            body.put("connected", false).put("state", state)
                     .put("message", auth
                             ? "ZAP API는 응답했지만 API key가 일치하지 않습니다. FlowScope와 ZAP 설정을 맞춘 뒤 확장을 다시 로드하세요."
-                            : "127.0.0.1의 FlowScope Docker ZAP에 연결할 수 없습니다. bundle의 zap-up helper를 실행하세요.");
+                            : "RETRYING".equals(state)
+                                    ? "FlowScope Docker ZAP 응답을 다시 확인하고 있습니다 ("
+                                            + zapProbeStatus.consecutiveFailures() + "/3)."
+                                    : "127.0.0.1의 FlowScope Docker ZAP에 3회 연속 연결하지 못했습니다. bundle의 zap-up helper를 실행하세요.");
         }
         return body;
+    }
+
+    static final class ZapProbeStatus {
+        private static final int UNREACHABLE_THRESHOLD = 3;
+        private int consecutiveFailures;
+
+        synchronized void success() {
+            consecutiveFailures = 0;
+        }
+
+        synchronized String failure(boolean authenticationFailure) {
+            if (authenticationFailure) {
+                consecutiveFailures = 0;
+                return "AUTH_FAILED";
+            }
+            consecutiveFailures++;
+            return consecutiveFailures >= UNREACHABLE_THRESHOLD ? "UNREACHABLE" : "RETRYING";
+        }
+
+        synchronized int consecutiveFailures() {
+            return consecutiveFailures;
+        }
     }
 
     private void startZapIntegration() {

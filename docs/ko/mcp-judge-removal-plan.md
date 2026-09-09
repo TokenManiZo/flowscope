@@ -15,7 +15,7 @@ HUMAN·SCANNER·LLM source, 기존 Evidence, endpoint·parameter 분석, 인가 
 | 1 | ZAP 캠페인 실행·상태·취소를 `ZapCampaign`으로 추출; Web 직접 호출 | `5a47af9` 완료 |
 | 2 | Judge role·prompt·후속 세션·UI·dataset lock·최종 verdict 제출 제거 | D-126 구현, Java/React 자동 회귀 통과 |
 | 3 | 기존 MCP transport·token·runner·격리 브라우저·설정·doctor 검사 제거; 저장 모델 독립 | D-126 구현, 클래스/리소스 및 HTTP endpoint 부재 회귀 통과 |
-| 4 | ZAP 브라우저 탐색 Client 필수화와 Traditional/AJAX 제거 | D-132 구현. 선택적 정의 import → 선택적 로그인 → strict Client → Passive → Alert; 자동 fallback 없음. 실제 Burp 8081 완주 gate 대기 |
+| 4 | ZAP 브라우저 탐색 Client 필수화와 Traditional/AJAX 제거 | D-132 구현. 선택적 정의 import → 선택적 로그인 → strict Client → Passive → Alert; 자동 fallback 없음. 실제 Burp 8081 익명 Client 완주 확인, 로그인 계정·Windows gate 대기 |
 | 5 | 별도 Explorer 하네스 설계 | D-128 구현. Codex app-server dynamic tool·메모리 인증·exact-scope gateway; 최종 자동/실제 Burp gate 진행 |
 | 6 | FlowScope Evidence용 제품 MCP 설계 | 미착수. 현재 MCP 리스너나 대체 API stub 없음 |
 

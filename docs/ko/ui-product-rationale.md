@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-09, D-136 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한다. 같은 run·계정의 실제 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치하고 더 나중 로그아웃 정규식 Evidence가 없을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-09, D-138 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한다. 같은 run·계정의 실제 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치하고 더 나중 로그아웃 정규식 Evidence가 없을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. ZAP 일반 통신 실패는 첫 두 번 `RETRYING`, 세 번째 연속 실패부터 `UNREACHABLE`로 표시하며 API key·runtime 오류는 즉시 확정한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -34,7 +34,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | API·입력 차이 | 내가 아직 확인하지 못한 endpoint와 parameter는 어디인가? 분석기가 산출물을 실제로 읽었는가? | OpenAPI·HTML form·JavaScript AST의 선언과 실제 H/S/L HTTP Evidence를 분리해 endpoint 행과 입력 badge로 정렬한다. source 필터, Evidence/provenance와 산출물별 정상·부분·실패·상한을 함께 연결한다. | 선언 미관측을 취약점·도달 가능·lane 실패로 부르거나, parser 실패를 빈 결과로 숨기거나, 서버 전용 표면까지 안다는 전체 퍼센트를 만들지 않는다. |
 | 인가 그래프 | 선택한 API의 신원·객체·source 관계는 무엇인가? | 기존 `Identity → API → Object`와 owner/BOLA/BFLA Evidence를 상세층에 보존해 첫 화면의 고카디널리티 노이즈와 판정 근거 손실을 함께 피한다. | Resource를 코어에서 삭제하거나 모든 객체 인스턴스를 첫 화면에 펼치지 않는다. |
 | 빠른 시작 | 지금 바로 무엇을 해야 하는가? | `범위 → HUMAN → ZAP → Evidence 검토` 네 단계 상태를 항상 보이되, 첫 미완료 단계의 설명과 제어만 연다. 사용자가 단계 탭을 누르면 원하는 설정을 확인할 수 있고 `현재 단계로`로 복귀한다. | 여섯 단계 설명과 세 실행기의 모든 입력·버튼을 동시에 펼쳐 사용자가 다음 행동을 찾게 하지 않는다. 수집 건수만으로 단계를 완료 처리하지 않는다. |
-| 실행 상태와 gate | 어느 lane이 끝났고 왜 실행할 수 없는가? | completed lane과 `COMPLETED_WITH_WARNINGS`를 텍스트·수치로 함께 표시하고, scope·연결·pending gate는 비활성 button만이 아니라 바로 옆 설명으로 보인다. polling이 바뀌어도 사용자가 고른 target을 다른 target으로 바꾸지 않는다. | 색만으로 완료·경고를 알리거나, scope 밖 target을 조용히 첫 scope target으로 바꿔 다른 대상으로 실행하지 않는다. |
+| 실행 상태와 gate | 어느 lane이 끝났고 왜 실행할 수 없는가? | completed lane과 `COMPLETED_WITH_WARNINGS`를 텍스트·수치로 함께 표시하고, scope·연결·pending gate는 비활성 button만이 아니라 바로 옆 설명으로 보인다. ZAP 일반 통신 실패 1·2회는 `RETRYING`, 3회째는 `UNREACHABLE`로 구분한다. polling이 바뀌어도 사용자가 고른 target을 다른 target으로 바꾸지 않는다. | 색만으로 완료·경고를 알리거나, 한 번의 timeout을 영구 단절로 확정하거나, scope 밖 target을 조용히 첫 scope target으로 바꿔 다른 대상으로 실행하지 않는다. |
 | 관측 범위 | 현재 실제로 본 것은 얼마나 되는가? | 관측된 `신원 × 메서드·엔드포인트 × 객체` 조합과 endpoint/method/object 수만 표시한다. | 알 수 없는 전체 API 수를 분모로 삼은 완료 퍼센트를 만들지 않는다. |
 | 수집·메인 비교·기본 숨김·검토 대기 | 분류 때문에 무엇이 메인 비교에서 빠졌는가? | 전체 Evidence와 서로 겹치지 않는 `INCLUDE/EXCLUDE/REVIEW` 수를 나란히 표시해 분류 영향을 숨기지 않는다. | `기본 숨김`이나 `검토 대기`를 삭제·정상·취약점 없음으로 표현하지 않는다. |
 | 샘플 데이터 배너 | 지금 보이는 H/S/L이 실제 실행 결과인가? | 고정 `demo.flowscope.test` 합성 record만 있을 때 상단에 “실제 점검 결과 아님·네트워크 요청 0건”을 계속 표시한다. | 샘플 source 수를 HUMAN/ZAP/Codex 실행 또는 성능 검증으로 표현하지 않는다. |
@@ -132,7 +132,7 @@ LLM source 색·필터와 저장된 Evidence는 호환 분석을 위해 유지�
 
 ## 8. 왜 ZAP 실행 순서를 시스템이 정하는가
 
-빠른 시작은 캠페인보다 먼저 **로컬 ZAP 연결**을 확인한다. 연결 성공은 loopback API와 key가 맞는다는 뜻일 뿐이며 Desktop인지 Docker인지는 표시하지 않는다. 기존 GUI 점검자는 Desktop 설정을, 재현 가능한 팀 환경이 필요한 사용자는 Docker Quick Start를 같은 카드에서 선택한다. 연결되지 않은 상태에서 캠페인을 눌러 긴 오류를 받는 것보다 실행 버튼을 비활성화하고 원인을 먼저 보여 주는 것이 복구 비용이 낮다. 다만 API 연결 성공을 Burp upstream·필수 add-on·실제 target capture 성공으로 확대 해석하지 않는다.
+빠른 시작은 캠페인보다 먼저 **FlowScope Docker ZAP 연결**을 확인한다. 연결 성공은 loopback API·key·관리 runtime이 맞는다는 뜻이며, 현재 실행 경로는 distribution bundle의 Docker 하나다. 일반 통신 오류 한 번으로 helper 재실행을 지시하지 않고 두 번까지 `RETRYING`으로 자동 재확인하며, 세 번 연속 실패나 즉시 확정한 key/runtime 오류에서만 복구 행동을 안내한다. 연결되지 않은 상태에서 캠페인을 눌러 긴 오류를 받는 것보다 실행 버튼을 비활성화하고 원인을 먼저 보여 주는 것이 복구 비용이 낮다. 다만 API 연결 성공을 Burp upstream·필수 add-on·실제 target capture 성공으로 확대 해석하지 않는다.
 
 LLM이 그때그때 ZAP 기능을 선택하면 같은 입력에서도 결과가 달라지고, passive queue가 남았는데 완료로 처리하거나 SPA 경로를 놓칠 수 있다. 기본 scanner lane은 다음 순서로 고정한다.
 

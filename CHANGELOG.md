@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · ZAP 일시 응답 지연 상태 보정 (D-138, 2026-09-09)
+
+- ZAP API의 일반 통신 실패 한 번을 즉시 `UNREACHABLE`로 확정하던 상태 판정을 수정했습니다. 첫 두 번은 `RETRYING`, 세 번째 연속 실패부터 `UNREACHABLE`이며 성공하면 즉시 초기화합니다. API key 401/403은 첫 응답에서 `AUTH_FAILED`로 유지합니다.
+- D-137 JAR을 실제 macOS Burp에 로드한 환경에서 ZAP 상태 10회 연속 성공과 새 비로그인 Client 캠페인의 59초 완료를 확인했습니다. SCANNER/Client 14건, Alert 29건, capability 거부 0건, Passive 잔여 0건이었습니다.
+- 실제 Burp 로그인 2계정·실패 계정, Windows Docker Desktop, 최종 D-138 JAR의 `RETRYING` 화면 전이는 남은 gate입니다.
+
 ## 미출시 · ZAP 인증 snapshot 경합 수정 (D-137, 2026-09-09)
 
 - 로그인 응답이 원시 저장소에는 들어왔지만 지연된 분석 snapshot에는 아직 없을 때 정상 계정 lane이 실패하던 경합을 수정했습니다.

@@ -2,7 +2,7 @@
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
-**2026-09-09 현재:** 기존 Judge·MCP·브라우저 하네스는 제거한 채, 판정 없는 독립 Codex Explorer를 새 실행 경계로 구현했다(D-128). ZAP 로그인 lane은 별도 메모리 계정과 ZAP Browser Based Authentication으로 직접 구성한다(D-130). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 명시적인 `chrome-headless` Client Spider를 사용하며 임의 ZAP runtime은 거부한다(D-135). HUMAN, 분석 코어와 프로젝트 호환은 유지한다. 제품용 MCP는 미구현이다. 과거 명세와 D-125 이전 실행 설명은 역사 기록이며 현재 LLM 계약은 [Explorer 문서](llm-explorer.md)를 따른다.
+**2026-09-09 현재:** 기존 Judge·MCP·브라우저 하네스는 제거한 채, 판정 없는 독립 Codex Explorer를 새 실행 경계로 구현했다(D-128). ZAP 로그인 lane은 별도 메모리 계정과 ZAP Browser Based Authentication으로 직접 구성한다(D-130). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 명시적인 `chrome-headless` Client Spider를 사용하며 임의 ZAP runtime은 거부한다(D-135). ZAP 상태 확인의 일반 통신 실패는 3회 연속일 때만 `UNREACHABLE`로 확정하고, 그 전에는 `RETRYING`으로 구분한다(D-138). HUMAN, 분석 코어와 프로젝트 호환은 유지한다. 제품용 MCP는 미구현이다. 과거 명세와 D-125 이전 실행 설명은 역사 기록이며 현재 LLM 계약은 [Explorer 문서](llm-explorer.md)를 따른다.
 
 사람·스캐너·LLM이 선언·관측한 API와 입력을 같은 범용 좌표에 정렬해 탐색 차이를 먼저 보여 주고, 선택한 API의 BOLA/IDOR·BFLA 후보를 기존 신원 인지 그래프와 Evidence로 검증하는 Burp Suite 확장이다. `docs/ko/specification/functional-spec.md`는 원 요구사항의 이력이다. 현재 범위는 `product-overview.md`·README, 현재 HOW는 이 문서, 선택 이유와 대체 관계는 `decisions.md`, 진행상황은 `HANDOFF.md`를 따른다. 화면별 사용자 질문과 발표 논리는 `ui-product-rationale.md`가 정본이다.
 
@@ -34,6 +34,8 @@ FlowScopeWebServer :17777 ─▶ SnapshotJsonWriter ─▶ React / legacy UI
 ```
 
 Burp는 호스트에서 실행하고 ZAP은 distribution bundle의 FlowScope Docker 이미지로 준비한다. ZAP API 기본은 loopback `8089`, upstream은 Burp `8081`이다. 캠페인 시작 전 API version뿐 아니라 `zapHomePath`가 tmpfs `/run/flowscope-zap/` 아래인지 확인한다. Explorer는 로그인된 로컬 Codex CLI의 `app-server`를 자식 프로세스로 실행하지만 MCP `8787` 리스너는 기동하지 않는다. `8082`는 기존 직접 관측 source 분류만 남으며 `UNVERIFIED_RUNTIME`으로 분석·완료에서 제외한다.
+
+Web의 ZAP 상태 조회는 live ZAP API probe다. 성공하면 연속 통신 실패를 초기화하고, 일반 실패 1·2회는 `RETRYING`, 3회째는 `UNREACHABLE`로 전이한다. API key 401/403과 관리 runtime 불일치는 반복해도 회복되지 않는 구성 오류이므로 즉시 확정한다. 이 연결 상태는 캠페인 단계·완료 상태와 별개다.
 
 Web 빠른 시작은 `범위 → HUMAN → ZAP → LLM Explorer → Evidence 검토`로 연결한다. `FlowScopeExtension.startZapIntegration()`이 캠페인 한 개를, `ExplorerCoordinator`가 LLM run 한 개를 소유하며 Web 시작·조회·취소가 직접 호출한다. 데이터 교체/reset과 unload는 캠페인과 Explorer memory vault를 직접 정리한다. MCP adapter와 Judge 잠금 callback은 없다. scope·active run·세션·capability·crawler cleanup 경계는 유지한다.
 

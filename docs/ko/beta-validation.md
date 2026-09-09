@@ -1,5 +1,23 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-09 · 미출시 D-138 · 실제 Burp 익명 Client 완주와 ZAP 상태 재시도
+
+D-137 JAR을 실제 Burp에 로드한 macOS 환경에서 FlowScope Web·Docker ZAP·Burp scanner listener·crAPI를 함께 확인했다. 실행 전 `127.0.0.1:8089` ZAP 상태 probe 10회는 모두 `CONNECTED`와 version `2.17.0`을 반환했다. 같은 환경의 새 비로그인 캠페인은 다음과 같이 완료됐다.
+
+| 항목 | 실측 결과 |
+|---|---|
+| run | `zap-baseline-1788925829413` |
+| 단계 | `INITIALIZING → SESSION_SETUP → CLIENT_SPIDER → PASSIVE_SCAN_QUEUE → ALERTS_READY` |
+| 소요 | 59초 |
+| 수집 | SCANNER 14건, Client 14건, run에 연결된 고유 Evidence ID 10개 |
+| 분석 | Alert 29건, snapshot complete, Passive 잔여 0 |
+| 격리 | capability 거부 0건, 오류·경고 없음 |
+| Surface | 현재 메인 비교에 포함된 operation 1개; 나머지 분류·필터 품질은 별도 평가 대상 |
+
+이 결과는 실제 macOS Burp 8081 upstream에서 익명 `chrome-headless` Client 요청이 FlowScope SCANNER Evidence로 들어오고 캠페인이 종료됨을 확인한다. 로그인 계정 2개, 실패 계정, 정의 import, 취소, Windows Docker Desktop, 임의 대상의 발견 폭을 확인한 결과는 아니다.
+
+같은 실행 중 ZAP이 살아 있고 뒤 probe가 성공했는데 한 번의 일반 probe 오류를 즉시 `UNREACHABLE`로 표시하는 결함을 분리했다. D-138은 일반 실패 1·2회를 `RETRYING`, 3회 연속 실패를 `UNREACHABLE`로 전이하고 성공 시 즉시 초기화한다. HTTP 401/403은 첫 응답에서 `AUTH_FAILED`다. JDK 21 전체 `mvn clean verify` 성공 실행은 매회 Java 383 tests(실패·오류 0, opt-in 실물 하네스 2 skip), React 38 files/247 tests와 release gate를 통과했다. 성공 빌드의 JAR은 31,653,652 bytes, 9,141 entries, SHA-256 `8481edf973e226d1cd21c8862364542a7d572b9ba56af1bf12eb8915b5ff8c3a`로 동일했다. 반복 중 한 실행은 기존 `InspectionPage.test.tsx` 두 항목이 각각 5초 timeout을 넘겨 실패했지만, 즉시 단독 재실행 22/22와 다음 전체 실행 247/247은 통과해 제품 회귀는 재현되지 않았다. 반복 부하에서의 테스트 시간 변동성은 남은 테스트 인프라 부채다. 최종 D-138 JAR의 실제 Burp 재로드와 화면 상태 전이 확인은 대기한다.
+
 ## 2026-09-09 · 미출시 D-137 · 인증 Evidence snapshot 지연 제거
 
 D-136 코드를 실제 Burp 수집 순서와 대조하자 response handler의 원시 기록 추가와 분석 snapshot 게시 사이에 지연이 있었다. 분석 snapshot을 의도적으로 빈 상태로 유지한 회귀에서 기존 코드는 익명 lane 뒤 첫 인증 계정을 실패 처리해 후속 계정을 실행하지 못했다. 인증 gate를 현재 run·계정의 동기화된 원시 `ZAP_AUTHENTICATION` 기록으로 분리한 뒤 같은 회귀가 통과했다.

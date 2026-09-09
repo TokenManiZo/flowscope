@@ -1,5 +1,19 @@
 # FlowScope 개발 기록
 
+## 2026-09-09 · 미출시 · 일시적인 ZAP 응답 지연과 연결 불가를 구분
+
+### 원인과 수정
+
+- React는 ZAP 상태를 1초마다 다시 읽고, `FlowScopeExtension.zapConnectionStatus()`는 그때마다 ZAP API를 직접 확인한다. 기존 구현은 이 확인이 한 번이라도 timeout·일시 통신 오류를 내면 즉시 `UNREACHABLE`로 확정했다. 실제 컨테이너가 정상이고 뒤 요청이 성공해도 사용자는 Docker ZAP이 꺼진 것으로 오해할 수 있었다.
+- 일반 통신 실패는 연속 횟수를 확장 내부에만 보관하고, 첫 두 번은 `RETRYING`, 세 번째 연속 실패부터 `UNREACHABLE`로 표시한다. 확인 성공 즉시 횟수를 0으로 되돌린다. HTTP 401/403 API key 오류는 재시도로 회복될 문제가 아니므로 기존처럼 첫 응답에서 `AUTH_FAILED`로 확정한다. ZAP 캠페인·crawler·Evidence·인증 로직은 바꾸지 않았다.
+
+### 회귀·실물 확인·영향
+
+- `FlowScopeExtensionPhaseTest`가 일반 실패 1·2·3회의 상태 전이, 성공 뒤 초기화, 인증 오류 즉시 확정을 고정한다.
+- 수정 전 D-137 JAR을 실제 Burp에 로드한 상태에서 `127.0.0.1:8089` ZAP 2.17.0 연결을 10회 연속 확인했고 모두 성공했다. 같은 환경에서 새 비로그인 캠페인 `zap-baseline-1788925829413`은 `INITIALIZING → SESSION_SETUP → CLIENT_SPIDER → PASSIVE_SCAN_QUEUE → ALERTS_READY`를 거쳐 59초 만에 완료됐다. SCANNER 14건, Client 14건, Alert 29건, capability 거부 0건, Passive 잔여 0건이었다.
+- 이 실물 결과는 macOS의 실제 Burp 8081·익명 Client·Evidence 경로를 확인한다. 로그인 계정 2개, Windows Docker Desktop, 모든 대상의 탐색 폭을 증명하지 않는다. 14건 중 현재 메인 Surface에 포함된 operation은 1개였으므로 분류·Surface 품질은 별도 측정 대상이다.
+- 최종 D-138 소스의 전체 성공 실행은 Java 383 tests·React 247 tests와 release gate를 통과했고 동일 JAR을 만들었다. 반복 중 기존 React 테스트 2개의 5초 timeout이 한 번 발생했으나 단독·다음 전체 실행에서 재현되지 않아 테스트 시간 변동성으로 별도 기록했다. 상세 산출물 식별값은 `beta-validation.md`를 따른다. 실행 중인 Burp는 최종 JAR 재로드 전까지 D-138 표시 완화를 사용하지 않는다.
+
 ## 2026-09-09 · 미출시 · ZAP 인증의 비동기 snapshot 경합 제거
 
 ### 원인과 수정

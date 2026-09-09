@@ -18,6 +18,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlowScopeExtensionPhaseTest {
     @Test
+    void ZAP_일시_통신_실패는_세_번_연속되기_전까지_UNREACHABLE로_확정하지_않는다() {
+        FlowScopeExtension.ZapProbeStatus status = new FlowScopeExtension.ZapProbeStatus();
+
+        assertEquals("RETRYING", status.failure(false));
+        assertEquals("RETRYING", status.failure(false));
+        assertEquals("UNREACHABLE", status.failure(false));
+    }
+
+    @Test
+    void ZAP_probe_성공은_연속_실패를_초기화하고_API_key_오류는_즉시_확정한다() {
+        FlowScopeExtension.ZapProbeStatus status = new FlowScopeExtension.ZapProbeStatus();
+
+        assertEquals("RETRYING", status.failure(false));
+        status.success();
+        assertEquals("RETRYING", status.failure(false));
+        assertEquals("AUTH_FAILED", status.failure(true));
+        assertEquals(0, status.consecutiveFailures());
+        assertEquals("RETRYING", status.failure(false));
+    }
+
+    @Test
     void countsCapturedScannerRecordsFromTheRawStoreBeforePipelineRebuild() {
         RequestRecord matching = new RequestRecord(Source.SCANNER, "https://api.example.test:443",
                 "GET", "/v1/orders", 200, "anon");

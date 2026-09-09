@@ -1,6 +1,6 @@
 # FlowScope 설치·첫 실행 가이드
 
-이 가이드는 D-128 독립 Explorer와 D-135 FlowScope Docker Chromium ZAP 기준입니다. 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
+이 가이드는 D-128 독립 Explorer, D-135 FlowScope Docker Chromium ZAP과 D-138 연결 상태 기준입니다. 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
 
 현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server dynamic tool과 Java exact-scope gateway를 쓴다(D-128). ZAP 로그인 lane은 HUMAN Session Broker를 재사용하지 않는다. Browser Based Authentication의 실제 응답 Evidence가 필수 로그인 성공 정규식과 일치한 계정만 계정 지정 crawler에 사용한다(D-136). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 `chrome-headless` Client Spider를 사용한다(D-135). H/S/L 관측 비교와 과거 프로젝트는 보존한다. 이 변경은 아직 원격 Release에 게시하지 않았으므로 이 작업 소스에서 빌드한 JAR 또는 distribution bundle을 사용해야 한다.
 
@@ -68,6 +68,8 @@ Web `127.0.0.1:17777`의 **빠른 시작**은 `범위 → HUMAN → ZAP → Evid
 ## 4. ZAP 준비 — FlowScope Docker Chromium
 
 FlowScope는 `127.0.0.1:8089`의 ZAP API뿐 아니라 `zapHomePath`가 컨테이너 tmpfs `/run/flowscope-zap/` 아래인지 확인한다. Web **빠른 시작 → FlowScope Docker ZAP**은 연결 여부·버전·key·관리 runtime 오류를 실행 전에 표시하고, 조건을 만족하기 전에는 모든 캠페인 버튼을 비활성화한다. 임의 ZAP Desktop이나 다른 API 인스턴스는 “연결됨”만으로 실행 대상으로 인정하지 않는다.
+
+일반 timeout·일시 통신 실패는 첫 두 번 `RETRYING`으로 자동 재확인하고 세 번 연속 실패할 때만 `UNREACHABLE`로 확정한다. API key 401/403은 즉시 `AUTH_FAILED`, 다른 runtime은 즉시 runtime 오류로 표시한다. `CONNECTED`는 ZAP 제어 API가 준비됐다는 뜻이며 Client Spider나 캠페인이 완료됐다는 뜻이 아니다.
 
 ### Docker Quick Start — macOS/Linux
 

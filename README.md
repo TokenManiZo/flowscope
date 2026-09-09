@@ -96,7 +96,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 3. 화면이 자동으로 여는 첫 미완료 단계만 수행합니다: **범위 → HUMAN → ZAP**. 이어 **LLM Explorer 열기**에서 독립 탐색을 실행합니다.
 4. 완료 뒤 **API·입력 차이**에서 HUMAN·ZAP·LLM 선언/관측 차이와 산출물 파싱 상태를 먼저 보고, 선택한 API를 인가 그래프·판정 매트릭스·Evidence에서 검토합니다.
 
-빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP 연결이 안 되면 해당 단계 안에서 운영체제별 Docker helper를 보여 줍니다.
+빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP의 일반 통신 실패 1·2회는 `RETRYING`, 3회 연속 실패는 `UNREACHABLE`로 표시하며 API key 오류는 즉시 확정합니다(D-138). `CONNECTED`는 제어 API와 관리 runtime이 준비됐다는 뜻이지 crawler 완료를 뜻하지 않습니다. 연결이 실제로 끊기면 해당 단계 안에서 운영체제별 Docker helper를 보여 줍니다.
 
 소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-1.2.0-beta.46.jar`와 다운로드용 `target/flowscope-1.2.0-beta.46-bundle.zip`입니다. bundle에는 JAR, ZAP Dockerfile/Compose/helper, macOS·Linux·Windows doctor, 현재 문서가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다. 검증 문서의 SHA-256은 거기에 적힌 환경에서 만든 해당 산출물의 식별값이지, 임의 JDK·운영체제 빌드가 같은 해시를 낸다는 약속이 아닙니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 

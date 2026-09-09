@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-09 D-136 ZAP 인증 응답 Evidence gate. 현재 미출시 beta.46 소스에는 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Chromium/ChromeDriver 포함 이미지, 모든 lane의 `chrome-headless` Client Spider 단일 실행, 필수 로그인 성공/선택적 로그아웃 정규식과 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence 검증이 들어 있다. 별도 실물 하네스에서 익명·정상 계정 2개·오류 비밀번호 차단을 확인했다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-136으로 갱신한다.
+최종 대조: 2026-09-09 D-138 ZAP 상태 probe 재시도 계약. 현재 미출시 beta.46 소스에는 ZAP 직접 브라우저 인증 계정 lane, 휘발성 Docker 작업공간, Chromium/ChromeDriver 포함 이미지, 모든 lane의 `chrome-headless` Client Spider 단일 실행, 필수 로그인 성공/선택적 로그아웃 정규식과 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence 검증이 들어 있다. 별도 실물 하네스에서 익명·정상 계정 2개·오류 비밀번호 차단을 확인했고, 실제 macOS Burp 8081에서 익명 Client 캠페인을 완주했다. 일반 ZAP probe 실패는 3회 연속일 때만 `UNREACHABLE`로 확정한다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-138로 갱신한다.
 
 ## 1. 무엇을 어디서 읽는가
 
@@ -29,6 +29,7 @@
 15. D-134 실물 로그인 재현에서 ZAP 2.17 REST에 `verification` component가 없고 기존 FakeZap만 가짜 `OK`를 반환한 사실을 확인했다. current README·한영 시작 가이드·아키텍처·계획·인계·변경 이력은 Browser Based Authentication + session auto-detect + 명시적 인증 성공으로 정정하고, 과거 D-130 기록은 D-134가 해당 부분을 대체하는 결정 이력으로 남겼다.
 16. D-135는 PR #10을 병합하지 않고 사용자 계정 입력→ZAP 인증→계정 Client→SCANNER Evidence 흐름을 현행 구조에 이식했다. ZAP Desktop/Firefox 선택 경로는 현재 계약에서 제거하고 bundle의 Dockerfile, Chromium/ChromeDriver 사전 검사, 관리 tmpfs runtime, 모든 lane의 `chrome-headless`와 직접 Client 실측을 README·한영 시작 가이드·아키텍처·제품·UI·계획·인계·변경 이력에 반영했다. 과거 D-130~132의 당시 설명은 D-135가 대체하는 이력으로 보존한다.
 17. D-136은 실물에서 ZAP action `OK`와 인증 시각이 오류 비밀번호까지 통과시킨 사실을 반영한다. 로그인 성공 정규식을 필수화하고 같은 run·계정의 실제 인증 응답 Evidence로만 account Client 진입을 허용한다. 미출시 Authentication Helper 직접 빌드는 제거하고 공식 ZAP 2.17 base의 안정판 add-on으로 정상 2계정·오류 비밀번호 차단을 재검증했다. 실제 Burp 재로드와 Windows는 남은 gate로 유지한다.
+18. D-137은 인증 원시 기록과 분석 snapshot 게시의 경합을 제거했다. D-138은 실제 Burp 익명 Client 완주 중 드러난 단발 probe 오표시를 보정해 일반 실패 1·2회를 `RETRYING`, 3회째를 `UNREACHABLE`로 구분한다. 실제 Burp 로그인 2계정·Windows·최종 JAR 표시 확인은 계속 열린 gate다.
 
 ## 3. 전수 목록
 
@@ -81,6 +82,7 @@
 - D-130~133 작업은 같은 최종 입력에서 `mvn clean verify` 2회를 실행해 매회 Java 370 tests(실패·오류 0, opt-in 1 skip), React 38 files/247 tests를 통과했고 JAR·bundle SHA-256이 각각 일치했다. Bash 5개 syntax/shellcheck, Compose와 JAR 구조도 확인했다. 실제 ZAP 2.17 daemon/API/session gate는 별도 8090에서 통과했지만 doctor는 Burp 8081이 닫혀 실패했으므로 실물 target 캠페인 성공으로 기록하지 않는다.
 - D-135 최종 입력에서 JDK 21 `mvn clean verify` 1회로 Java 375 tests(실패·오류 0, opt-in 1 skip), React 38 files/247 tests와 release gate를 통과했다. Compose, Bash syntax/shellcheck, bundle Dockerfile과 JAR manifest/namespace를 확인했다. 실제 FlowScope Docker Chromium/ChromeDriver 주 버전 일치, doctor 0/0, strict Client HTTP 200 수집 1건은 확인했지만 beta.46 JAR의 Burp 로그인·복수 계정과 Windows는 미실행이다.
 - D-136 최종 입력에서 JDK 21 `mvn clean verify` 1회로 Java 381 tests(실패·오류 0, opt-in 실물 하네스 2 skip), React 38 files/247 tests와 release gate를 통과했다. 별도 실물 하네스에서 익명·정상 2계정의 Client와 오류 비밀번호의 Client 전 차단을 확인했다. beta.46 JAR의 실제 Burp 재로드·8081 capture와 Windows는 미실행이다.
+- D-138 작업에서 D-137 JAR을 실제 macOS Burp에 로드한 8081 경로로 익명 Client 캠페인을 59초 만에 완료했고 SCANNER/Client 14건·Alert 29건·capability 거부 0건·Passive 잔여 0건을 확인했다. D-138 상태 전이 회귀를 포함한 전체 성공 실행은 Java 383 tests(실패·오류 0, opt-in 2 skip), React 247 tests와 release gate를 통과했고 JAR이 byte-identical했다. 반복 중 기존 React 테스트 2개가 5초 timeout으로 한 번 실패했지만 단독·다음 전체 실행에서 재현되지 않았다. 로그인 2계정·Windows·최종 JAR 화면 전이는 미실행이다.
 - D-128 최종 입력에서 `mvn clean verify`를 두 번 실행했고 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files/241 tests가 매회 통과했다. 두 JAR은 31,626,205 bytes, 9,130 entries와 SHA-256 `762728bff34d9d4d9d9f3a695d43fc5ed6ede25a9900c6db552affdcc268d87b`로 동일했다.
 - opt-in provider 하네스를 별도로 두 번 실행해 설치·로그인된 실제 Codex app-server의 dynamic HTTP tool 호출을 확인했다. 실제 Burp/ZAP, 외부 대상 요청, Windows, 독립 corpus 효능은 실행하지 않았다. 검증 범위와 명령은 [beta-validation](beta-validation.md)이 정본이다.
 - 대형 응답 전달 문제는 D-128 코드와 1.4MiB 회귀로 수정·검증했다. 실제 Burp 대상에서의 운영 재현과 4MiB 초과 응답은 [HANDOFF](HANDOFF.md)의 별도 gate·한계로 추적한다.

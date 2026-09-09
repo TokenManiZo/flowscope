@@ -1,6 +1,6 @@
 # FlowScope installation and first run
 
-This guide targets the D-128 standalone Explorer and D-135 FlowScope Docker Chromium ZAP runtime. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs.
+This guide targets the D-128 standalone Explorer, the D-135 FlowScope Docker Chromium ZAP runtime, and the D-138 connection-state contract. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs.
 
 The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old Judge, MCP server, and browser harness remain removed; the replacement uses Codex app-server dynamic tools behind a Java exact-scope gateway (D-128). An authenticated ZAP lane uses a dedicated memory-only login account and proceeds only when an observed authentication response for the same run/account matches the required logged-in regex and no later response matches the optional logged-out regex (D-136). Every ZAP lane uses the bundle's FlowScope Docker image, its co-installed Chromium/ChromeDriver, and the explicit `chrome-headless` Client Spider (D-135). H/S/L Evidence comparison and existing projects remain supported. This work is not published as a Release yet; build the JAR or distribution bundle from this source.
 
@@ -44,6 +44,8 @@ Open **Quick Start** at Web `127.0.0.1:17777`. It shows Scope, HUMAN, ZAP, and E
 ## Start the FlowScope Docker Chromium runtime
 
 FlowScope checks the ZAP API at `127.0.0.1:8089` and verifies that `zapHomePath` is under the managed tmpfs `/run/flowscope-zap/`. **Quick Start → FlowScope Docker ZAP** shows reachability, version, key, and runtime mismatch before a campaign can start. An arbitrary ZAP Desktop or API instance is not accepted merely because it is reachable.
+
+A generic timeout or transient communication failure is shown as `RETRYING` for the first two consecutive probes and becomes `UNREACHABLE` on the third. An HTTP 401/403 API-key error becomes `AUTH_FAILED` immediately, and a wrong runtime is also reported immediately. `CONNECTED` means that the managed ZAP control API is ready; it does not mean that Client Spider or a campaign has completed.
 
 ### Docker Quick Start on macOS/Linux
 
