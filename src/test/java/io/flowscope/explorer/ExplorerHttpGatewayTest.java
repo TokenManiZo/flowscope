@@ -77,7 +77,7 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
-    void boundsArtifactsByUtf8BytesWithoutSplittingCharacters() throws Exception {
+    void preservesArtifactsBeyondFormerFourMibBoundaryAndSupportsBoundedSearchAndRead() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
                 "application/javascript", Map.of(), "한".repeat(1_500_000),
@@ -87,15 +87,51 @@ final class ExplorerHttpGatewayTest {
             HttpResponse<String> first = post(gateway, JSON.createObjectNode().put("method", "GET")
                     .put("url", "https://app.example.test/main.js").toString());
             JsonNode body = JSON.readTree(first.body());
+            assertTrue(body.path("artifact_bytes").asLong() > 4L * 1024 * 1024);
+            assertTrue(body.path("artifact_complete").asBoolean());
             HttpRequest download = HttpRequest.newBuilder(URI.create(body.path("artifact_url").asText()))
                     .header("Authorization", "Bearer " + gateway.token()).GET().build();
             HttpResponse<String> artifact = HttpClient.newHttpClient().send(download,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             assertEquals(200, artifact.statusCode());
             assertTrue(artifact.body().chars().allMatch(value -> value == '한'));
-            assertTrue(artifact.body().getBytes(StandardCharsets.UTF_8).length <= 4 * 1024 * 1024);
+            assertEquals(4_500_000, artifact.body().getBytes(StandardCharsets.UTF_8).length);
             assertTrue(body.path("body").asText().getBytes(StandardCharsets.UTF_8).length <= 64 * 1024);
             assertTrue(body.path("body_truncated").asBoolean());
+
+            String artifactId = body.path("artifact_id").asText();
+            HttpResponse<String> listed = post(gateway, gateway.artifactsUrl() + "/list", "{}");
+            assertEquals(artifactId, JSON.readTree(listed.body()).path("artifacts").get(0)
+                    .path("artifact_id").asText());
+            String search = JSON.createObjectNode().put("artifact_id", artifactId).put("query", "한한한")
+                    .put("case_sensitive", true).put("max_results", 2).toString();
+            JsonNode matches = JSON.readTree(post(gateway, gateway.artifactsUrl() + "/search", search).body());
+            assertEquals(2, matches.path("matches").size());
+            String read = JSON.createObjectNode().put("artifact_id", artifactId).put("char_offset", 1_499_990)
+                    .put("max_chars", 32).toString();
+            JsonNode range = JSON.readTree(post(gateway, gateway.artifactsUrl() + "/read", read).body());
+            assertTrue(range.path("end_of_artifact").asBoolean());
+            assertEquals(10, range.path("text").asText().length());
+        }
+    }
+
+    @Test
+    void indexesJavascriptArtifactWithoutCopyingItIntoTheToolResponse() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), " ".repeat(70_000) +
+                "fetch('/api/search?keyword=', {method:'POST', body: JSON.stringify({product_id: 1})});",
+                false, "ev-index", 2, Instant.now());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
+                value -> true, "run-index", ignored -> {})) {
+            JsonNode response = JSON.readTree(post(gateway, JSON.createObjectNode().put("method", "GET")
+                    .put("url", "https://app.example.test/app.js").toString()).body());
+            String request = JSON.createObjectNode().put("artifact_id", response.path("artifact_id").asText())
+                    .toString();
+            JsonNode index = JSON.readTree(post(gateway, gateway.artifactsUrl() + "/index", request).body());
+            assertEquals("PARSED", index.path("status").asText());
+            assertEquals("/api/search?keyword=", index.path("call_sites").get(0).path("reference").asText());
+            assertFalse(index.toString().contains(" ".repeat(70_000)));
         }
     }
 

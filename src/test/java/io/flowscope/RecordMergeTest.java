@@ -33,6 +33,39 @@ final class RecordMergeTest {
         assertEquals(List.of(scanner), RecordMerge.missing(List.of(human), List.of(scanner, changed), 1));
     }
 
+    @Test
+    void identicalHttpFromDifferentAccountsIsNotCollapsed() {
+        RequestRecord accountA = observed("GET /orders/1", "HTTP/1.1 200 OK");
+        accountA.laneAccountId = "account-a";
+        RequestRecord accountB = observed("GET /orders/1", "HTTP/1.1 200 OK");
+        accountB.laneAccountId = "account-b";
+
+        assertEquals(List.of(accountB), RecordMerge.missing(List.of(accountA), List.of(accountB), 10));
+    }
+
+    @Test
+    void identicalHttpFromDifferentRunsIsNotCollapsed() {
+        RequestRecord firstRun = observed("GET /orders/1", "HTTP/1.1 200 OK");
+        firstRun.runId = "human-run-1";
+        RequestRecord secondRun = observed("GET /orders/1", "HTTP/1.1 200 OK");
+        secondRun.runId = "human-run-2";
+
+        assertEquals(List.of(secondRun), RecordMerge.missing(List.of(firstRun), List.of(secondRun), 10));
+    }
+
+    @Test
+    void identicalHttpFromDifferentSessionFingerprintsIsNotCollapsed() {
+        RequestRecord accountA = observed("GET /orders/1", "HTTP/1.1 200 OK");
+        RequestRecord accountB = new RequestRecord(Source.HUMAN, accountA.service,
+                accountA.method, accountA.path, accountA.status, "session-b");
+        accountB.sourceDetail = accountA.sourceDetail;
+        accountB.reqText = accountA.reqText;
+        accountB.respText = accountA.respText;
+        accountB.hasResponse = true;
+
+        assertEquals(List.of(accountB), RecordMerge.missing(List.of(accountA), List.of(accountB), 10));
+    }
+
     private static RequestRecord observed(String request, String response) {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://target.test:443",
                 "GET", "/orders/1", response.contains("403") ? 403 : 200, "session-a");

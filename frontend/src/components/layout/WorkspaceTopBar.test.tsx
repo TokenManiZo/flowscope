@@ -8,6 +8,7 @@ const queryState = vi.hoisted(() => ({
   human: {} as Record<string, unknown>,
   zap: {} as Record<string, unknown>,
   scanner: {} as Record<string, unknown>,
+  projects: {} as Record<string, unknown>,
 }))
 
 vi.mock("@/lib/query/hooks", () => ({
@@ -15,6 +16,9 @@ vi.mock("@/lib/query/hooks", () => ({
   useHumanRunQuery: () => queryState.human,
   useZapStatusQuery: () => queryState.zap,
   useScannerRunQuery: () => queryState.scanner,
+  useProjectsQuery: () => queryState.projects,
+  useOpenProjectMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useStartProjectMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }))
 
 beforeEach(() => {
@@ -22,6 +26,7 @@ beforeEach(() => {
   queryState.human = { data: { active: true, completed: false }, isPending: false, isError: false }
   queryState.zap = { data: { connected: true, state: "READY" }, isPending: false, isError: false }
   queryState.scanner = { data: { run: { status: "RUNNING" }, scope: ["https://app.example.test"] }, isPending: false, isError: false }
+  queryState.projects = { data: { directory: "/tmp/projects", active: { id: "app", name: "App", scope: ["https://app.example.test"], readable: true }, projects: [{ id: "app", name: "App", scope: ["https://app.example.test"], readable: true }], saveState: "SAVED", lastSavedAt: "2026-09-10T01:02:03Z", saveError: "" }, isPending: false, isError: false }
 })
 
 it("announces each live analysis status with text as well as an icon", () => {
@@ -81,7 +86,17 @@ it("wraps required statuses and keeps the project, DB, and inspection controls d
   const banner = screen.getByRole("banner", { name: "FlowScope 상단 상태" })
   expect(banner).toHaveClass("flex-wrap")
   expect(within(banner).getByLabelText("프로젝트 선택")).toBeVisible()
-  expect(within(banner).getByText("DB 준비됨")).toBeVisible()
+  expect(within(banner).getByText("저장됨")).toBeVisible()
   expect(within(banner).getByRole("link", { name: "빠른 시작" })).toBeVisible()
   expect(banner.querySelector(".overflow-x-auto")).toBeNull()
+})
+
+it("shows a real persistence failure instead of claiming automatic save", () => {
+  queryState.projects = { ...queryState.projects, data: { ...(queryState.projects.data as Record<string, unknown>), saveState: "FAILED", saveError: "disk full" } }
+
+  render(<WorkspaceTopBar route="dashboard" />)
+
+  expect(screen.getByText("저장 실패")).toBeVisible()
+  expect(screen.getByText("저장 실패")).toHaveAttribute("title", "disk full")
+  expect(screen.queryByText("자동 저장")).not.toBeInTheDocument()
 })

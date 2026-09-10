@@ -34,10 +34,12 @@ public final class RecordMerge {
     }
 
     private record Key(Source source, SourceDetail detail, String service, String method,
-                       String path, int status, String request, String response) {
+                       String path, int status, String fingerprint, String laneAccountId,
+                       String runId, String request, String response) {
         static Key of(RequestRecord record) {
             return new Key(record.source, record.sourceDetail, record.service, record.method,
-                    record.path, record.status, payloadKey(record.requestPayload, record.reqText),
+                    record.path, record.status, record.fp, record.laneAccountId, record.runId,
+                    payloadKey(record.requestPayload, record.reqText),
                     payloadKey(record.responsePayload, record.respText));
         }
 

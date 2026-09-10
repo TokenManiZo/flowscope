@@ -8,11 +8,16 @@ import org.w3c.dom.NodeList;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.ByteArrayInputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,6 +25,7 @@ import java.util.regex.Pattern;
 /**
  * Burp "Save items" XML 파서 (기능명세서 F-01/F-02 폴백 경로).
  * <item> 의 method/path/status 와 base64(=true/false) request/response 를 읽는다.
+ * base64 HTTP header는 ISO-8859-1, body는 Content-Type charset 또는 UTF-8로 엄격히 디코딩한다.
  * fp(인증 지문)는 요청 헤더의 Authorization 또는 Cookie session= 에서 추출한다.
  */
 public final class BurpXmlParser {
@@ -36,6 +42,8 @@ public final class BurpXmlParser {
     private static final Pattern HOST = Pattern.compile("(?im)^Host:\\s*(.+)$");
     private static final Pattern LOCATION = Pattern.compile("(?im)^Location:\\s*(.+)$");
     private static final Pattern CONTENT_TYPE = Pattern.compile("(?im)^Content-Type:\\s*(.+)$");
+    private static final Pattern CHARSET = Pattern.compile(
+            "(?i)(?:^|;)\\s*charset\\s*=\\s*(?:\"([^\"]+)\"|'([^']+)'|([^;\\s]+))");
     private static final Pattern SEC_FETCH_DEST = Pattern.compile("(?im)^Sec-Fetch-Dest:\\s*(.+)$");
     private static final Pattern SEC_FETCH_MODE = Pattern.compile("(?im)^Sec-Fetch-Mode:\\s*(.+)$");
     private static final Pattern ACCESS_CONTROL_REQUEST_METHOD = Pattern.compile(
@@ -182,19 +190,41 @@ public final class BurpXmlParser {
 
     /** 타깃 서비스(scheme://host:port). Burp XML 의 host/port/protocol 또는 Host 헤더에서. */
     static String serviceOf(Element it, String reqText) {
-        String host = text(it, "host");
-        if (host == null || host.isBlank()) {
+        String authority = text(it, "host");
+        if (authority == null || authority.isBlank()) {
             Matcher m = HOST.matcher(reqText == null ? "" : reqText);
-            host = m.find() ? m.group(1).trim() : null;
+            authority = m.find() ? m.group(1).trim() : null;
         }
-        if (host == null || host.isBlank()) return "unknown-service";
-        String proto = text(it, "protocol");
+        if (authority == null || authority.isBlank()) return "unknown-service";
+        HostAndPort parsed = parseAuthority(authority);
+        String proto = firstNonBlank(text(it, "protocol"), "").toLowerCase(Locale.ROOT);
         String port = text(it, "port");
-        if (host.contains(":")) { String[] hp = host.split(":", 2); host = hp[0]; if (port == null || port.isBlank()) port = hp[1]; }
-        if (proto == null || proto.isBlank()) proto = "443".equals(port) ? "https" : "http";
-        if (port == null || port.isBlank()) port = "https".equalsIgnoreCase(proto) ? "443" : "80";
-        return proto + "://" + host + ":" + port;
+        if (port == null || port.isBlank()) port = parsed.port();
+        if (proto.isBlank()) proto = "443".equals(port) ? "https" : "http";
+        if (port == null || port.isBlank()) port = "https".equals(proto) ? "443" : "80";
+        return proto + "://" + parsed.host().toLowerCase(Locale.ROOT) + ":" + port;
     }
+
+    private static HostAndPort parseAuthority(String value) {
+        String authority = value.trim();
+        if (authority.startsWith("[")) {
+            int closing = authority.indexOf(']');
+            if (closing < 0) throw new IllegalArgumentException("IPv6 host 대괄호가 닫히지 않음");
+            String host = authority.substring(0, closing + 1);
+            String suffix = authority.substring(closing + 1);
+            String port = suffix.startsWith(":") ? suffix.substring(1) : null;
+            return new HostAndPort(host, port);
+        }
+        int firstColon = authority.indexOf(':');
+        int lastColon = authority.lastIndexOf(':');
+        if (firstColon >= 0 && firstColon == lastColon) {
+            return new HostAndPort(authority.substring(0, firstColon), authority.substring(firstColon + 1));
+        }
+        if (firstColon >= 0) return new HostAndPort("[" + authority + "]", null);
+        return new HostAndPort(authority, null);
+    }
+
+    private record HostAndPort(String host, String port) {}
 
     /** 저장 본문 상한 — 메모리 폭증 방지. */
     static final int MAX_BODY = 8192;
@@ -218,10 +248,8 @@ public final class BurpXmlParser {
     /** 헤더/본문 구분 후 본문 전체를 돌려준다(본문 내 빈 줄로 잘리지 않게). */
     static String responseBody(String respText) {
         if (respText == null) return null;
-        int idx = respText.indexOf("\r\n\r\n");
-        int len = 4;
-        if (idx < 0) { idx = respText.indexOf("\n\n"); len = 2; }
-        return idx < 0 ? "" : respText.substring(idx + len).trim();
+        Separator separator = separator(respText);
+        return separator.index() < 0 ? "" : respText.substring(separator.index() + separator.length());
     }
 
     private static String responseStatus(String respText) {
@@ -275,13 +303,69 @@ public final class BurpXmlParser {
         String b64 = e.getAttribute("base64");
         if ("true".equalsIgnoreCase(b64)) {
             try {
-                return new String(Base64.getMimeDecoder().decode(raw.trim()), StandardCharsets.UTF_8);
+                return decodeHttpMessage(Base64.getMimeDecoder().decode(raw.trim()));
             } catch (IllegalArgumentException ex) {
                 throw new IllegalArgumentException("base64 디코드 실패", ex);
             }
         }
         return raw;
     }
+
+    private static String decodeHttpMessage(byte[] message) {
+        ByteSeparator separator = separator(message);
+        if (separator.index() < 0) return new String(message, StandardCharsets.ISO_8859_1);
+        int bodyOffset = separator.index() + separator.length();
+        String headers = new String(message, 0, bodyOffset, StandardCharsets.ISO_8859_1);
+        if (bodyOffset == message.length) return headers;
+        String contentType = headerValue(CONTENT_TYPE, headers);
+        Charset charset = bodyCharset(contentType);
+        try {
+            String body = charset.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(message, bodyOffset, message.length - bodyOffset)).toString();
+            return headers + body;
+        } catch (CharacterCodingException error) {
+            throw new IllegalArgumentException("HTTP 본문 " + charset.name() + " 디코드 실패", error);
+        }
+    }
+
+    private static Charset bodyCharset(String contentType) {
+        Matcher matcher = CHARSET.matcher(contentType == null ? "" : contentType);
+        if (!matcher.find()) return StandardCharsets.UTF_8;
+        String value = matcher.group(1) != null ? matcher.group(1)
+                : matcher.group(2) != null ? matcher.group(2) : matcher.group(3);
+        try {
+            return Charset.forName(value.trim());
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException("지원하지 않는 HTTP 본문 문자셋: " + value.trim(), error);
+        }
+    }
+
+    private static Separator separator(String message) {
+        int crlf = message.indexOf("\r\n\r\n");
+        int lf = message.indexOf("\n\n");
+        if (crlf < 0 || (lf >= 0 && lf < crlf)) return new Separator(lf, 2);
+        return new Separator(crlf, 4);
+    }
+
+    private static ByteSeparator separator(byte[] message) {
+        int crlf = indexOf(message, new byte[]{'\r', '\n', '\r', '\n'});
+        int lf = indexOf(message, new byte[]{'\n', '\n'});
+        if (crlf < 0 || (lf >= 0 && lf < crlf)) return new ByteSeparator(lf, 2);
+        return new ByteSeparator(crlf, 4);
+    }
+
+    private static int indexOf(byte[] value, byte[] needle) {
+        outer:
+        for (int i = 0; i <= value.length - needle.length; i++) {
+            for (int j = 0; j < needle.length; j++) if (value[i + j] != needle[j]) continue outer;
+            return i;
+        }
+        return -1;
+    }
+
+    private record Separator(int index, int length) {}
+    private record ByteSeparator(int index, int length) {}
 
     private static String rawText(Element e) {
         StringBuilder sb = new StringBuilder();

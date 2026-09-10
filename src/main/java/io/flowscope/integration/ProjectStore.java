@@ -21,23 +21,53 @@ import java.util.Set;
 
 /** Versioned, masked FlowScope session file. Model-provider credentials are never part of this schema. */
 public final class ProjectStore {
+    /** A diagnostic workspace's user-visible identity. Secrets are never part of this metadata. */
+    public record ProjectContext(String name, List<String> scope, Instant createdAt) {
+        public ProjectContext {
+            name = name == null ? "" : name.trim();
+            scope = List.copyOf(scope == null ? List.of() : scope);
+            createdAt = createdAt == null ? Instant.EPOCH : createdAt;
+        }
+
+        public static ProjectContext empty() {
+            return new ProjectContext("", List.of(), Instant.EPOCH);
+        }
+
+        public boolean present() {
+            return !name.isBlank() || !scope.isEmpty() || !Instant.EPOCH.equals(createdAt);
+        }
+    }
+
     public record ProjectData(List<RequestRecord> records, AnalysisConfig config,
                               List<LegacyAssessment> assessments,
                               List<ValidationDecision> validations,
                               Set<Source> completedLanes,
                               Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                               List<RouteCandidate> routeCandidates,
-                              List<RunExecutionLedger.Attempt> runAttempts) {}
+                              List<RunExecutionLedger.Attempt> runAttempts,
+                              ProjectContext context) {}
 
-    private static final int SCHEMA_VERSION = 4;
-    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3);
+    private static final int SCHEMA_VERSION = 5;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
-    /** Discovery documents may be retained up to the live capture's 4 MiB analysis limit. */
-    private static final int MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
-    private static final long MAX_RESTORED_PAYLOAD_BYTES = 48L * 1024 * 1024;
+    /** Large masked discovery artifacts may be retained up to the Explorer response limit. */
+    private static final int MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
     private final ObjectMapper json = new ObjectMapper();
+    private final long maxRestoredPayloadBytes;
+
+    public ProjectStore() {
+        this(Math.max((long) MAX_PAYLOAD_BYTES, Long.getLong(
+                "flowscope.payload.expandedBytes", 512L * 1024 * 1024)));
+    }
+
+    private ProjectStore(long maxRestoredPayloadBytes) {
+        if (maxRestoredPayloadBytes < MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("restored payload limit must allow one retained payload");
+        }
+        this.maxRestoredPayloadBytes = maxRestoredPayloadBytes;
+    }
 
     public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
                      List<LegacyAssessment> assessments) throws IOException {
@@ -84,9 +114,20 @@ public final class ProjectStore {
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates,
                      List<RunExecutionLedger.Attempt> runAttempts) throws IOException {
+        save(target, records, config, assessments, validations, completedRuns, routeCandidates,
+                runAttempts, ProjectContext.empty());
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<LegacyAssessment> assessments,
+                     List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates,
+                     List<RunExecutionLedger.Attempt> runAttempts,
+                     ProjectContext context) throws IOException {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = toDocument(records, config, assessments, validations,
-                runs.keySet(), runs, routeCandidates, runAttempts);
+                runs.keySet(), runs, routeCandidates, runAttempts, context);
         saveDocument(target, root);
     }
 
@@ -137,6 +178,18 @@ public final class ProjectStore {
                           Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                           List<RouteCandidate> routeCandidates,
                           List<RunExecutionLedger.Attempt> runAttempts) {
+        return toDocument(records, config, assessments, validations, completedLanes, completedRuns,
+                routeCandidates, runAttempts, ProjectContext.empty());
+    }
+
+    ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
+                          List<LegacyAssessment> assessments,
+                          List<ValidationDecision> validations,
+                          Set<Source> completedLanes,
+                          Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                          List<RouteCandidate> routeCandidates,
+                          List<RunExecutionLedger.Attempt> runAttempts,
+                          ProjectContext context) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         assessments = assessments == null ? List.of() : List.copyOf(assessments);
         LegacyAssessment.validateSet(assessments);
@@ -146,6 +199,11 @@ public final class ProjectStore {
         root.put("schema_version", SCHEMA_VERSION);
         root.put("traffic_classifier_version", TrafficClassifier.VERSION);
         root.put("saved_at", Instant.now().toString());
+        ProjectContext safeContext = context == null ? ProjectContext.empty() : context;
+        ObjectNode savedProject = root.putObject("project");
+        savedProject.put("name", safeContext.name());
+        savedProject.set("scope", json.valueToTree(safeContext.scope()));
+        savedProject.put("created_at", safeContext.createdAt().toString());
         List<RunContextRegistry.CompletedRun> exactRuns =
                 (completedRuns == null ? Map.<Source, RunContextRegistry.CompletedRun>of() : completedRuns)
                         .entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
@@ -263,9 +321,25 @@ public final class ProjectStore {
             if (attemptNodes.size() > 5_000) throw new IllegalArgumentException("run attempt limit exceeded");
             for (JsonNode value : attemptNodes) runAttempts.add(readRunAttempt(value));
         }
+        ProjectContext context = ProjectContext.empty();
+        JsonNode projectNode = root.path("project");
+        if (schemaVersion >= 5) {
+            if (!projectNode.isObject()) throw new IllegalArgumentException("invalid project context");
+            JsonNode scopeNode = projectNode.path("scope");
+            if (!scopeNode.isArray()) throw new IllegalArgumentException("invalid project scope");
+            List<String> projectScope = new ArrayList<>();
+            for (JsonNode value : scopeNode) {
+                String entry = value.asText("").trim();
+                if (entry.isBlank()) throw new IllegalArgumentException("invalid project scope entry");
+                projectScope.add(entry);
+            }
+            String createdAt = required(projectNode, "created_at");
+            context = new ProjectContext(projectNode.path("name").asText(""), projectScope,
+                    Instant.parse(createdAt));
+        }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
                 Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates),
-                List.copyOf(runAttempts));
+                List.copyOf(runAttempts), context);
     }
 
     private ObjectNode writeRunAttempt(RunExecutionLedger.Attempt attempt) {
@@ -529,7 +603,7 @@ public final class ProjectStore {
         StoredPayload restored = StoredPayload.restore(digest, originalBytes, retention,
                 blob == null || blob.isNull() ? null : blob.asText(), MAX_PAYLOAD_BYTES);
         long next = restoredPayloadBytes[0] + (restored.retained() ? restored.originalBytes() : 0L);
-        if (next > MAX_RESTORED_PAYLOAD_BYTES) {
+        if (next > maxRestoredPayloadBytes) {
             throw new IllegalArgumentException("restored payload aggregate limit exceeded");
         }
         restoredPayloadBytes[0] = next;

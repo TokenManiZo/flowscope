@@ -88,8 +88,10 @@ final class SqliteProjectStoreTest {
         ledger.record(Source.LLM, "llm-failed", "acct-test1", "GET",
                 "https://api.test/orders/8?token=raw-token", RunExecutionLedger.Outcome.TIMEOUT,
                 0, null, Instant.parse("2026-09-03T00:02:00Z"), 30_000);
+        ProjectStore.ProjectContext projectContext = new ProjectStore.ProjectContext("API 진단",
+                List.of("https://api.test:443/"), Instant.parse("2026-09-10T00:00:00Z"));
         store.save(database, List.of(record), config, List.of(assessment), List.of(validation),
-                contexts.completedRuns(), List.of(route), ledger.attempts());
+                contexts.completedRuns(), List.of(route), ledger.attempts(), projectContext);
 
         byte[] bytes = Files.readAllBytes(database);
         assertEquals("SQLite format 3\000", new String(bytes, 0, 16, StandardCharsets.ISO_8859_1));
@@ -105,6 +107,8 @@ final class SqliteProjectStoreTest {
         }
 
         ProjectStore.ProjectData loaded = store.load(database);
+        assertEquals(projectContext, loaded.context());
+        assertEquals(projectContext, store.readContext(database));
         assertEquals("acct-test1", loaded.records().getFirst().laneAccountId);
         assertEquals(1, loaded.records().size());
         assertEquals("test1", loaded.config().account(account.id()).orElseThrow().label());

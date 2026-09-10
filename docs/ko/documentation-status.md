@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-09 D-139 Explorer Evidence-bound 선언 계약. 현재 미출시 beta.46 소스는 Explorer 실제 HTTP Observation과 산출물 endpoint·parameter Declaration, OPTIONS probe를 분리하고 서버가 집계를 계산한다. D-138까지의 ZAP 직접 브라우저 인증, Docker Chromium strict Client, 실제 macOS Burp 익명 캠페인과 3회 연속 통신 실패 기준은 유지한다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현재 계약 문서만 D-139로 갱신한다.
+최종 대조: 2026-09-11 D-140~142 보존형 프로젝트·Evidence·Standalone 검증과 그래프 현행 계약. 현재 미출시 beta.46 소스는 새 진단 전에 기존 SQLite 프로젝트를 저장하고, 저장 실패 시 현재 데이터셋을 유지하며, Surface Observation에서 exact Evidence·Request Lab·Repeater로 이동한다. 패키지 Standalone도 격리 workspace에서 같은 프로젝트 API를 제공한다. 그래프 현행은 단일 3-lane과 `18개 / 전체` 전환이며 사이트/API drill-down·resource family·증분 `+18`은 후속 작업이다. D-139 Explorer와 D-138 ZAP 계약은 유지한다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현행 계약 문서만 D-140~142로 갱신한다.
 
 ## 1. 무엇을 어디서 읽는가
 
@@ -31,6 +31,8 @@
 17. D-136은 실물에서 ZAP action `OK`와 인증 시각이 오류 비밀번호까지 통과시킨 사실을 반영한다. 로그인 성공 정규식을 필수화하고 같은 run·계정의 실제 인증 응답 Evidence로만 account Client 진입을 허용한다. 미출시 Authentication Helper 직접 빌드는 제거하고 공식 ZAP 2.17 base의 안정판 add-on으로 정상 2계정·오류 비밀번호 차단을 재검증했다. 실제 Burp 재로드와 Windows는 남은 gate로 유지한다.
 18. D-137은 인증 원시 기록과 분석 snapshot 게시의 경합을 제거했다. D-138은 실제 Burp 익명 Client 완주 중 드러난 단발 probe 오표시를 보정해 일반 실패 1·2회를 `RETRYING`, 3회째를 `UNREACHABLE`로 구분한다. 실제 Burp 로그인 2계정·Windows·최종 JAR 표시 확인은 계속 열린 gate다.
 19. D-139는 Explorer가 번들·문서에서 찾은 endpoint·parameter를 자유서술로만 남기던 공백을 current-run Evidence-bound Declaration으로 연결한다. 큰 artifact 단일 수집, 선언 schema·상한·중복 제거, OPTIONS probe 분리와 서버 집계를 현행 README·한영 시작 가이드·아키텍처·Surface·Explorer·계획·인계·UI·변경 이력에 반영했다. 집중/provider 검증과 아직 남은 실제 Burp gate를 구분한다.
+20. D-140~141은 새 진단을 삭제형 초기화가 아니라 저장 후 전환으로 바꾸고, 분석 revision과 데이터셋 교체 revision을 분리하며, Surface Observation을 실제 Evidence 작업면에 연결한다. 반복 XML/HAR/Proxy history 병합은 계정·세션·run provenance를 보존하고, Burp XML의 명시 charset과 XML/HAR IPv6 service를 정규화한다. 자동 회귀와 실제 Burp 운영 gate를 구분해 README·한영 시작 가이드·아키텍처·계획·인계·UI·변경 이력·검증 기록에 반영한다.
+21. D-142는 Standalone의 프로젝트 API 501과 Explorer 상태 500을 패키지 E2E에서 재현해 실제 SQLite workspace와 명시적 unavailable 상태로 고쳤다. 같은 대조에서 계층 graph·resource family·증분 `+18` 문서 주장이 현재 React projection과 다름을 확인해 현행 단일 3-lane/`18개 또는 전체`와 후속 설계를 분리했다.
 
 ## 3. 전수 목록
 
@@ -49,7 +51,7 @@
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
 | [docs/ko/README.md](README.md) | 목차 | 현재/역사 문서 목록과 진행 갱신 기준 |
-| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-139 Explorer 선언/provider 검증과 beta.46 Burp·Windows 재검증 gate |
+| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-142 Standalone·문서 기준선과 beta.46 Burp·Explorer 신원·그래프·ZAP·Windows 다음 gate |
 | [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
 | [docs/ko/architecture.md](architecture.md) | 현행 계약 | data-flow exact-token·ZAP 별도 계정 vault/browser auth/direct lane 귀속·scope union/Alert 총량 |
 | [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | LLM Observation/Declaration/probe, parameter provenance와 미실행 실험 구분 |

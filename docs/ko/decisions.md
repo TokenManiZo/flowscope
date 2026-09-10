@@ -456,7 +456,7 @@
 - **그래프:** 현재 소스·신원·run·의심 필터를 먼저 적용한 뒤 위험 판정 우선으로 객체와 API를 각각 최대 18개 표시한다. 남은 수는 클릭 가능한 그룹 노드로 표시하고 클릭마다 18개씩 늘린다. `노드 접기`는 두 제한을 기본값으로 되돌린다. 이는 의미 기반 클러스터나 전체 공격면 추정이 아니다.
 - **기각:** 비교 구현의 HTML/CSS/JS를 로컬 서버/JCEF로 직접 구동하는 방식은 Burp Swing 탭과 Request/Response 편집기를 이중화하고 새 웹 보안 경계를 만든다. 따라서 화면 정보 구조와 동선은 흡수하되 구현은 Swing/JGraphX로 유지한다.
 - **검증:** 여섯 모드와 명시 선택 계정 연결을 Swing EDT 테스트로 고정하고, 25개 객체+25개 API에서 `18+18+2개 그룹+신원`만 최초 렌더되는 회귀 테스트를 추가한다. 1500×900 계정 작업면과 1100×760 접힌 그래프를 실제 렌더링해 입력/표/그룹 라벨 잘림을 확인한다.
-- **상태:** 확정
+- **상태:** 당시 확정. Swing/JGraphX 선택은 D-048이 대체했고, 현재 React 그래프가 이 항목의 증분 `+18`을 구현하지 않는 사실과 후속 계층 그래프 gate는 D-142가 다시 확정한다.
 
 ## D-047 · 공개 저장소 구조 = 루트 단일 Maven 모듈 + `docs/` + 로컬 격리
 - **문제:** 저장소 루트와 `flowscope/` 하위 모듈에 README·LICENSE·SECURITY·CONTRIBUTING이 중복되고 CI도 하위 경로에 묶여 있어 공개 시 정본이 불명했다. 빌드 산출물, 로컬 MCP 설정, Office/PDF 검토 원본도 코드와 뒤섞여 있었다.
@@ -1269,3 +1269,24 @@
 - **OPTIONS 경계:** LLM Explorer가 보낸 OPTIONS와 명시적 preflight만 capability probe로 분리한다. 일반 HUMAN OPTIONS API 관측과 OpenAPI·산출물에 명시된 OPTIONS 선언은 보존한다. 모든 OPTIONS 제거는 실제 기능 표면을 잃으므로 기각했다.
 - **기각:** 모델 최종 문장에서 정규식으로 endpoint·개수를 복원하는 방식은 schema와 Evidence 결박이 없고 서술 변화에 취약하다. 발견을 실제 요청으로 간주하는 방식은 “정적 선언”과 “서버 응답 관측”을 섞는다. Java 정적 분석기를 무조건 확장하는 방식은 지원하지 않는 application wrapper를 LLM이 읽어 보완하는 이번 목적과 다르므로 기존 결정론 분석기를 대체하지 않고 병렬 선언 경로로 두었다.
 - **검증·한계:** 회귀는 current-run Evidence 없는 선언과 인증 header 선언 차단, exact scope, 의미 중복 제거, endpoint·parameter Surface 투영, OPTIONS 분리와 일반 OPTIONS 보존, 프로젝트 round-trip, 서버 집계를 확인한다. 실제 로그인된 Codex opt-in provider gate에서 HTTP Evidence 생성 뒤 선언 dynamic tool 호출까지 통과했다. 이 gate는 실제 Burp/crAPI 탐색 폭, 선언 정확도, 모든 wrapper 해석 또는 외부 corpus 효능을 증명하지 않으며 최종 JAR의 Burp 재로드와 독립 pilot은 별도다.
+
+## D-140 · 진단 교체는 Evidence 삭제가 아니라 저장 후 프로젝트 전환이다 (2026-09-10)
+
+- **문제:** 삭제형 초기화는 다른 대상을 시작하기 위해 현재 메모리 Evidence를 잃게 만들었고, DB를 수동으로 열지 않은 진단은 자동 저장 대상도 아니었다. React의 Request Lab은 분석 snapshot의 일반 revision 변화에도 닫혀 사용자가 편집 중인 초안을 잃었고, Surface의 실제 관측 행에서는 Evidence·Request Lab·Repeater로 바로 이동할 수 없었다.
+- **결정:** 사용자별 `~/.flowscope/projects/` 아래 진단마다 하나의 제한된 디렉터리와 `project.flowscope.db`를 만든다. **새 진단 시작**은 현재 상태 저장과 새 빈 DB 생성이 모두 성공한 뒤에만 exact scope와 메모리 데이터셋을 교체한다. 저장 실패 시 현재 진단을 유지하고 Web 상단에 `PENDING/SAVING/SAVED/FAILED`, 마지막 성공 시각과 마스킹한 오류를 표시한다. 분석 revision과 별도로 `datasetRevision`을 snapshot에 두고 Request Lab은 Evidence 변경 또는 실제 데이터셋 교체 때만 폐기한다. Surface의 Observation만 정확한 EventRecord를 선택해 기존 Evidence 상세·Request Lab·Repeater 경로를 재사용하며 Declaration-only 항목은 전송 가능한 Evidence로 꾸미지 않는다.
+- **기각:** 새 scope 적용 전에 메모리를 먼저 비우는 방식은 저장 실패 시 복구가 불가능하다. 모든 분석 revision에서 raw draft를 닫는 방식은 분류·정규화 갱신을 데이터셋 교체로 오인한다. Surface에 별도 HTTP 편집기를 복제하는 방식은 Evidence 선택·비밀 메모리·멱등 전송 계약을 이중화하므로 기존 OperationDetail/RequestLab을 재사용한다.
+- **검증·한계:** 프로젝트 디렉터리 충돌·Windows 예약명·path traversal·SQLite 목록, Web 프로젝트 API와 저장 상태, `datasetRevision` 직렬화, 같은 데이터셋 revision 갱신에서 Request Lab draft 유지, Surface Observation→Evidence 상세 연결을 자동 회귀로 확인했다. 실제 Burp에서 장시간 수집 중 강제 종료·disk full·DB 재열기, Windows 파일 권한과 최종 JAR 교체는 아직 운영 gate다. raw HTTP vault와 ZAP/Explorer 메모리 비밀은 의도적으로 프로젝트에 저장하지 않는다.
+
+## D-141 · 가져오기 중복 키는 HTTP 내용뿐 아니라 신원·run provenance를 포함한다 (2026-09-10)
+
+- **문제:** `RecordMerge`가 source/detail/HTTP 내용만 비교해 서로 다른 세션 지문, 계정 lane, run에서 같은 요청·응답이 나온 경우 한쪽 Evidence를 중복으로 제거했다. 반대로 XML 가져오기는 HAR·Proxy history와 달리 반복 파일 중복 억제를 사용하지 않았다. Burp XML의 base64 HTTP를 무조건 UTF-8로 디코딩하고 host의 첫 `:`을 포트로 나눠 명시 문자셋 본문과 IPv6 service를 왜곡했으며, HAR IPv6는 Java URI host에 대괄호를 중복 적용했다.
+- **결정:** multiset 병합 키에 안전한 fingerprint, `laneAccountId`, `runId`를 추가한다. 같은 provenance와 HTTP 내용의 이미 반영된 multiplicity만 제외하고, 계정·세션·run 중 하나라도 다르면 별도 관측으로 보존한다. XML과 HAR import 모두 이 병합을 사용한다. XML base64 메시지는 header를 ISO-8859-1로, textual body를 Content-Type의 명시 charset 또는 기본 UTF-8로 strict decode하고, XML/HAR service의 IPv6 literal은 한 쌍의 대괄호로 정규화한다.
+- **기각:** timestamp를 병합 키로 쓰면 동일 파일 재가져오기 방지는 되지만 내보내기 도구가 시각을 재작성한 동일 항목을 중복시킬 수 있다. 분석 후 `idn`을 키로 쓰면 import 시점에는 아직 binding이 없고 이후 정책 변경에 따라 키 의미가 바뀐다. 디코드 오류를 replacement character로 숨기는 방식은 Evidence 내용을 조용히 변경하므로 허용하지 않는다.
+- **검증·한계:** 서로 다른 계정 lane, run, fingerprint의 동일 HTTP 보존과 기존 multiplicity 억제, EUC-KR request/response, XML·HAR IPv6를 실패 회귀로 먼저 고정하고 통과시켰다. 명시 charset 없는 비UTF-8 본문, Content-Encoding 압축, binary 원문 편집은 지원한다고 주장하지 않으며 live raw byte vault 계약을 대체하지 않는다.
+
+## D-142 · Standalone 검증 경로도 보존형 프로젝트 API를 제공하고 그래프 문서는 현행 projection과 분리한다 (2026-09-11)
+
+- **문제:** React E2E가 삭제된 `/api/clear` 계약을 계속 기대했고, 실제 패키지 Standalone은 새 프로젝트 API를 기본 501로 반환해 **새 진단 시작**을 검증할 수 없었다. Explorer 상태 기본 구현도 예외를 던져 실행 상태 화면이 500이 됐다. HUMAN 계정 Select에는 Radix가 허용하지 않는 빈 문자열 option이 남아 있어 드롭다운을 여는 순간 런타임 예외가 날 수 있었다. 동시에 현행 문서는 React 그래프가 사이트→API 그룹 drill-down, resource family 접기와 클릭당 `+18` 증분 paging을 제공한다고 적었지만 코드는 단일 `IDENTITY / ENDPOINT / OBJECT` canvas와 `18개 / 전체` 전환만 구현한다.
+- **결정:** Standalone도 별도 임시/사용자 지정 `ProjectWorkspace`와 SQLite 저장소를 사용해 새 진단 생성·저장·목록·재열기를 실제 Web API로 수행한다. 샘플 payload는 프로젝트 저장 경계를 통과하도록 저장 전에 header를 마스킹한다. Standalone Explorer는 실행할 수 없는 상태를 예외가 아니라 `IDLE + providerReadiness=UNAVAILABLE`로 명시한다. HUMAN Select는 내부 익명 sentinel을 사용하되 서버 요청에는 기존 빈 account 계약을 보낸다. 그래프 문서는 현재 단일 3-lane projection과 이진 표시 제한을 현행으로 쓰고, 사이트/API drill-down·resource family·증분 `+18`은 후속 설계로 분리한다.
+- **기각:** E2E에서 프로젝트 API를 stub 처리하면 패키징된 Web/SQLite 경로의 실제 실패를 숨긴다. 삭제된 초기화 버튼을 복구하면 D-140의 보존 후 전환 계약을 깨뜨린다. 구현되지 않은 계층 그래프를 문서만 유지하면 다음 작업자가 존재하지 않는 기능을 회귀 기준으로 삼게 된다.
+- **검증·한계:** Standalone 회귀는 프로젝트 생성→샘플 저장→두 번째 프로젝트 전환→첫 프로젝트 재열기와 Explorer 상태 조회를 확인한다. Playwright는 격리된 임시 workspace에서 새 진단, 전체 route, 저장 상태, Explorer/ZAP 표시, XML import와 반응형 화면을 검사한다. 이는 실제 Burp Montoya, ZAP Docker, 로그인 Codex provider 또는 운영체제 장애를 검증하지 않는다. 계층 graph UX 자체는 구현하지 않았으며 다음 작업의 명시적 gate다.

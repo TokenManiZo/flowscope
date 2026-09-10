@@ -14,7 +14,7 @@ final class BoundedHttpCapture {
 
     /** route discovery가 읽는 media type. 이 값들만 분석·보존 상한을 넓힌다. */
     private static final int DISCOVERY_PAYLOAD_BYTES = Integer.getInteger(
-            "flowscope.payload.discoveryBytes", 4 * 1024 * 1024);
+            "flowscope.payload.discoveryBytes", 64 * 1024 * 1024);
 
     private BoundedHttpCapture() {}
 

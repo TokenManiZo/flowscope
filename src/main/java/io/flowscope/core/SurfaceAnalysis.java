@@ -13,7 +13,16 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     public enum ValueShape { EMPTY, STRING, INTEGER, DECIMAL, BOOLEAN, UUID, ARRAY, OBJECT, NULL, BINARY, UNKNOWN }
     public enum Requirement { REQUIRED, OPTIONAL, UNKNOWN }
     public enum ExtractionStatus { PARSED, PARTIAL, FAILED, LIMIT_EXCEEDED }
-    public enum ExtractionFailure { NONE, SYNTAX_RECOVERY, PARSE_FAILED, INPUT_SIZE_LIMIT, AST_NODE_LIMIT }
+    public enum ExtractionFailure {
+        NONE,
+        SYNTAX_RECOVERY,
+        PARSE_FAILED,
+        INPUT_SIZE_LIMIT,
+        AST_NODE_LIMIT,
+        WORKER_TIMEOUT,
+        WORKER_OUTPUT_LIMIT,
+        WORKER_FAILURE
+    }
     public enum ExtractionIssueKind {
         DYNAMIC_URL,
         UNRESOLVED_MEMBER_REFERENCE,
@@ -28,13 +37,27 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         ALL_SOURCES_OBSERVED,
         OBSERVED_NOT_DECLARED
     }
+    public enum EndpointKind {
+        OBSERVED_API,
+        ARTIFACT_API,
+        NAVIGATION,
+        STATIC_ASSET,
+        DISCOVERY_DOCUMENT,
+        FORM_ACTION,
+        UNVERIFIED
+    }
 
     public record EndpointKey(String service, String method, String pathTemplate) {
         public String operation() { return service + " " + method + " " + pathTemplate; }
         public String stableKey() { return service + "\u0000" + method + "\u0000" + pathTemplate; }
     }
 
-    public record Observation(String evidenceId, Source source, String runId, String identity, int status) {}
+    public record Observation(String evidenceId, Source source, String runId, String identity, int status,
+                              TrafficClassification.TrafficClass trafficClass) {
+        public Observation(String evidenceId, Source source, String runId, String identity, int status) {
+            this(evidenceId, source, runId, identity, status, TrafficClassification.TrafficClass.UNKNOWN);
+        }
+    }
 
     /** OPTIONS는 API 기능 관측과 분리해 보존하는 capability/preflight 근거다. */
     public record ProbeObservation(EndpointKey key, String evidenceId, Source source,
@@ -72,7 +95,15 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
 
     public record EndpointFact(EndpointKey key, Set<Source> observedSources,
                                List<Observation> observations, List<Declaration> declarations,
-                               List<ParameterFact> parameters, DeltaState deltaState) {}
+                               List<ParameterFact> parameters, DeltaState deltaState,
+                               Set<EndpointKind> kinds) {
+        public EndpointFact(EndpointKey key, Set<Source> observedSources,
+                            List<Observation> observations, List<Declaration> declarations,
+                            List<ParameterFact> parameters, DeltaState deltaState) {
+            this(key, observedSources, observations, declarations, parameters, deltaState,
+                    Set.of(EndpointKind.UNVERIFIED));
+        }
+    }
 
     public SurfaceAnalysis {
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);

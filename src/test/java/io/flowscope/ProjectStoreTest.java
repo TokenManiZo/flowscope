@@ -228,16 +228,35 @@ final class ProjectStoreTest {
         var root = new ObjectMapper().readTree(Files.readString(file));
         ProjectStore.ProjectData loaded = store.load(file);
 
-        assertEquals(4, root.path("schema_version").asInt());
+        assertEquals(5, root.path("schema_version").asInt());
         assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
         assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
         assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());
     }
 
     @Test
+    void projectContextRoundTripsWithoutBreakingLegacyVersionFour() throws Exception {
+        ProjectStore store = new ProjectStore();
+        Path file = temp.resolve("context.flowscope.json");
+        ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("검증 대상",
+                List.of("https://app.example.test:443/api"), Instant.parse("2026-09-10T00:00:00Z"));
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(),
+                List.of(), context);
+
+        assertEquals(context, store.load(file).context());
+
+        ObjectMapper mapper = new ObjectMapper();
+        var legacy = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(Files.readString(file));
+        legacy.put("schema_version", 4);
+        legacy.remove("project");
+        Files.writeString(file, mapper.writeValueAsString(legacy));
+        assertEquals(ProjectStore.ProjectContext.empty(), store.load(file).context());
+    }
+
+    @Test
     void rejectsProjectsWhoseDistinctRestoredPayloadsExceedAggregateBudget() throws Exception {
         List<RequestRecord> records = new java.util.ArrayList<>();
-        for (int index = 0; index < 49; index++) {
+        for (int index = 0; index < 65; index++) {
             String prefix = "payload-" + index + ":";
             String body = prefix + "x".repeat(1024 * 1024 - prefix.length());
             RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443",
@@ -247,10 +266,17 @@ final class ProjectStoreTest {
             records.add(record);
         }
         Path file = temp.resolve("aggregate-over-limit.flowscope.json");
-        ProjectStore store = new ProjectStore();
-        store.save(file, records, new AnalysisConfig(), List.of());
+        String previous = System.getProperty("flowscope.payload.expandedBytes");
+        try {
+            System.setProperty("flowscope.payload.expandedBytes", Long.toString(64L * 1024 * 1024));
+            ProjectStore store = new ProjectStore();
+            store.save(file, records, new AnalysisConfig(), List.of());
 
-        assertThrows(IllegalArgumentException.class, () -> store.load(file));
+            assertThrows(IllegalArgumentException.class, () -> store.load(file));
+        } finally {
+            if (previous == null) System.clearProperty("flowscope.payload.expandedBytes");
+            else System.setProperty("flowscope.payload.expandedBytes", previous);
+        }
     }
 
     @Test

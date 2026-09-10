@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — packaged Standalone projects and current UI contract (D-142, 2026-09-11)
+
+- Packaged Standalone now implements preserved project creation, saving, selection, and reopening against an actual SQLite workspace. An unavailable Explorer is reported as an explicit status instead of HTTP 500.
+- Playwright uses an isolated project root and tests the current new-assessment, independent Explorer, and save-state contracts rather than deleted clear/Judge controls. All 8 Chromium tests passed against the clean fat JAR.
+- Graph documentation now matches the implemented single `IDENTITY / ENDPOINT / OBJECT` canvas and the `18 / all` display toggle. Site/API drill-down, resource-family folding, and incremental `+18` paging remain future work.
+- Two JDK 21 full builds passed 250 React tests and 407 Java tests. Real Burp project reopening, Explorer account attribution, authenticated multi-account ZAP, and Windows gates remain outstanding.
+
+## Unreleased — preserved project switching, Evidence workspace, and import integrity (D-140–141, 2026-09-10)
+
+- **New assessment** saves the current SQLite project into the user workspace before switching to a new exact scope. A failed save leaves the current dataset active; the top bar reports pending, saving, saved, or failed state, the last successful save time, and available projects.
+- Snapshot analysis revisions are separate from dataset replacements, so polling no longer discards an in-progress Request Lab draft. An actual Surface Observation can open its exact Evidence, Request Lab, and Burp Repeater; declaration-only rows do not expose fabricated Evidence actions.
+- Repeated imports deduplicate only existing multiplicity with the same session fingerprint, lane account, and run provenance. Burp XML honors an explicit Content-Type charset with strict decoding, and XML/HAR IPv6 services use one canonical bracketed form.
+- Focused regressions and two JDK 21 full builds passed. A real Burp save/reopen, Explorer-to-Repeater, failure-injection, and final ZAP/Explorer operational gate remain outstanding.
+
 ## Unreleased — Evidence-bound Explorer artifact declarations (D-139, 2026-09-09)
 
 - Codex discoveries from HTML, JavaScript, and API definitions no longer exist only in free-form model prose. A `flowscope_record_discoveries` dynamic tool requires response Evidence IDs produced by the same run.

@@ -8,6 +8,8 @@ import io.flowscope.core.Normalizer;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
 import io.flowscope.core.SurfaceAnalysis;
+import io.flowscope.core.discovery.JavascriptAnalysis;
+import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import io.flowscope.integration.LoopbackHttpServer;
 
 import java.net.URI;
@@ -23,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -44,9 +45,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             "location", "field_path", "display_name", "requirement");
     private static final int REQUEST_LIMIT = 1024 * 1024;
     private static final int INLINE_BODY_LIMIT = 64 * 1024;
-    private static final int ARTIFACT_BODY_LIMIT = 4 * 1024 * 1024;
     private static final int MAX_REQUESTS = Integer.getInteger("flowscope.explorer.maxRequests", 500);
-    private static final int MAX_ARTIFACTS = 24;
+    private static final long MAX_INDEX_BYTES = Long.getLong(
+            "flowscope.javascript.indexBytes", 128L * 1024 * 1024);
     private static final int MAX_DISCOVERIES_PER_CALL = 200;
     private static final int MAX_DISCOVERIES = 5_000;
     private static final int MAX_PARAMETERS_PER_DISCOVERY = 256;
@@ -66,7 +67,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredEndpointKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
-    private final Map<String, byte[]> artifacts = new LinkedHashMap<>();
+    private final ExplorerArtifactStore artifacts;
 
     public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
                                Predicate<String> exactScope, String runId,
@@ -84,12 +85,14 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         this.runId = runId;
         this.events = events == null ? ignored -> {} : events;
         this.discoveries = discoveries == null ? ignored -> {} : discoveries;
+        this.artifacts = new ExplorerArtifactStore(runId);
         this.server = new LoopbackHttpServer(0, REQUEST_LIMIT, this::handle);
         this.server.start();
     }
 
     public String url() { return "http://127.0.0.1:" + server.port() + "/request"; }
     public String discoveriesUrl() { return "http://127.0.0.1:" + server.port() + "/discoveries"; }
+    public String artifactsUrl() { return "http://127.0.0.1:" + server.port() + "/artifacts"; }
     public String token() { return token; }
 
     private LoopbackHttpServer.Response handle(LoopbackHttpServer.Request request) throws Exception {
@@ -98,21 +101,31 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         if (request.method().equals("GET") && requestUri.getPath().startsWith("/artifact/")) {
             if (!authorized(request.header("Authorization"))) return error(403, "run capability가 올바르지 않습니다.");
             String id = requestUri.getPath().substring("/artifact/".length());
-            byte[] value;
-            synchronized (this) { value = artifacts.get(id); }
-            if (value == null) return error(404, "artifact를 찾을 수 없습니다.");
+            ExplorerArtifactStore.Metadata metadata;
+            String value;
+            try {
+                metadata = artifacts.metadata(id);
+                value = artifacts.readAll(id, Integer.MAX_VALUE);
+            } catch (IllegalArgumentException error) {
+                return error(404, "artifact를 찾을 수 없습니다.");
+            }
             return new LoopbackHttpServer.Response(200,
-                    Map.of("Content-Type", "text/plain; charset=utf-8", "Cache-Control", "no-store"), value);
+                    Map.of("Content-Type", "text/plain; charset=utf-8", "Cache-Control", "no-store"),
+                    value.getBytes(StandardCharsets.UTF_8), metadata.bytes());
         }
         if (!request.method().equals("POST")
-                || !(requestUri.getPath().equals("/request") || requestUri.getPath().equals("/discoveries"))) {
-            return error(405, "POST /request 또는 POST /discoveries만 허용됩니다.");
+                || !(requestUri.getPath().equals("/request") || requestUri.getPath().equals("/discoveries")
+                || requestUri.getPath().startsWith("/artifacts/"))) {
+            return error(405, "지원하지 않는 Explorer gateway 작업입니다.");
         }
         if (!authorized(request.header("Authorization"))) return error(403, "run capability가 올바르지 않습니다.");
         JsonNode body;
         try { body = JSON.readTree(request.body()); }
         catch (Exception error) { return error(400, "요청 JSON을 읽을 수 없습니다."); }
         if (requestUri.getPath().equals("/discoveries")) return handleDiscoveries(body);
+        if (requestUri.getPath().startsWith("/artifacts/")) {
+            return handleArtifacts(requestUri.getPath().substring("/artifacts/".length()), body);
+        }
         String method = body.path("method").asText("GET").toUpperCase(Locale.ROOT);
         String target = body.path("url").asText("");
         String accountId = body.path("account").asText("").trim();
@@ -172,22 +185,37 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             String safeBody = Masking.maskSecrets(response.body());
             byte[] encoded = safeBody.getBytes(StandardCharsets.UTF_8);
             if (encoded.length > INLINE_BODY_LIMIT) {
-                String retainedText = utf8Prefix(safeBody, ARTIFACT_BODY_LIMIT);
-                byte[] retained = retainedText.getBytes(StandardCharsets.UTF_8);
-                String artifactId = UUID.randomUUID().toString();
-                synchronized (this) {
-                    if (artifacts.size() >= MAX_ARTIFACTS) artifacts.remove(artifacts.keySet().iterator().next());
-                    artifacts.put(artifactId, retained);
-                }
                 result.put("body", utf8Prefix(safeBody, INLINE_BODY_LIMIT));
-                result.put("body_truncated", response.bodyTruncated() || encoded.length > ARTIFACT_BODY_LIMIT);
-                result.put("artifact_url", "http://127.0.0.1:" + server.port() + "/artifact/" + artifactId);
-                result.put("artifact_bytes", retained.length);
+                result.put("body_truncated", true);
+                try {
+                    ExplorerArtifactStore.Metadata artifact = artifacts.store(response.evidenceId(), response.url(),
+                            response.contentType(), safeBody, !response.bodyTruncated());
+                    result.put("artifact_id", artifact.id());
+                    result.put("artifact_complete", artifact.complete());
+                    result.put("artifact_sha256", artifact.sha256());
+                    result.put("artifact_url", "http://127.0.0.1:" + server.port() + "/artifact/" + artifact.id());
+                    result.put("artifact_bytes", artifact.bytes());
+                    result.put("artifact_error", "");
+                } catch (ExplorerArtifactStore.CapacityExceededException error) {
+                    String safe = Masking.truncate(Masking.maskSecrets(error.getMessage()), 500);
+                    result.put("artifact_id", "");
+                    result.put("artifact_complete", false);
+                    result.put("artifact_sha256", sha256(encoded));
+                    result.put("artifact_url", "");
+                    result.put("artifact_bytes", 0);
+                    result.put("artifact_error", safe);
+                    emit("ARTIFACT_LIMIT", accountId, method, target, response.status(),
+                            response.evidenceId(), response.durationMillis(), safe);
+                }
             } else {
                 result.put("body", safeBody);
                 result.put("body_truncated", response.bodyTruncated());
                 result.put("artifact_url", "");
+                result.put("artifact_id", "");
+                result.put("artifact_complete", !response.bodyTruncated());
+                result.put("artifact_sha256", sha256(encoded));
                 result.put("artifact_bytes", 0);
+                result.put("artifact_error", "");
             }
             return json(200, result);
         } catch (Exception error) {
@@ -198,6 +226,128 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             emit("FAILED", accountId, method, target, 0, "", duration, safe);
             return error(502, safe);
         }
+    }
+
+    private LoopbackHttpServer.Response handleArtifacts(String operation, JsonNode body) {
+        try {
+            return switch (operation) {
+                case "list" -> artifactList(body);
+                case "search" -> artifactSearch(body);
+                case "read" -> artifactRead(body);
+                case "index" -> artifactIndex(body);
+                default -> error(404, "artifact 작업을 찾을 수 없습니다.");
+            };
+        } catch (ExplorerArtifactStore.CapacityExceededException error) {
+            return error(413, error.getMessage());
+        } catch (IllegalArgumentException error) {
+            return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
+        } catch (Exception error) {
+            return error(500, "artifact 처리 중 오류가 발생했습니다.");
+        }
+    }
+
+    private LoopbackHttpServer.Response artifactList(JsonNode body) {
+        requireOnlyFields(body, Set.of(), "artifact list 요청");
+        ObjectNode result = JSON.createObjectNode().put("success", true);
+        var values = result.putArray("artifacts");
+        for (ExplorerArtifactStore.Metadata artifact : artifacts.list()) writeMetadata(values.addObject(), artifact);
+        return json(200, result);
+    }
+
+    private LoopbackHttpServer.Response artifactSearch(JsonNode body) throws java.io.IOException {
+        requireOnlyFields(body, Set.of("artifact_id", "query", "case_sensitive", "max_results"),
+                "artifact search 요청");
+        String artifactId = body.path("artifact_id").asText("").trim();
+        String query = body.path("query").asText("");
+        boolean caseSensitive = body.path("case_sensitive").asBoolean(true);
+        int maxResults = body.path("max_results").asInt(50);
+        ObjectNode result = JSON.createObjectNode().put("success", true).put("query", query);
+        var values = result.putArray("matches");
+        for (ExplorerArtifactStore.Match match : artifacts.search(
+                artifactId, query, caseSensitive, maxResults)) {
+            values.addObject().put("artifact_id", match.artifactId())
+                    .put("char_offset", match.charOffset()).put("snippet", match.snippet());
+        }
+        result.put("limited", values.size() >= Math.max(1, Math.min(maxResults, 200)));
+        return json(200, result);
+    }
+
+    private LoopbackHttpServer.Response artifactRead(JsonNode body) throws java.io.IOException {
+        requireOnlyFields(body, Set.of("artifact_id", "char_offset", "max_chars"), "artifact read 요청");
+        String artifactId = requiredText(body, "artifact_id", 128);
+        ExplorerArtifactStore.Read value = artifacts.read(artifactId, body.path("char_offset").asLong(0),
+                body.path("max_chars").asInt(64 * 1024));
+        ObjectNode result = JSON.createObjectNode().put("success", true)
+                .put("artifact_id", value.artifactId()).put("char_offset", value.charOffset())
+                .put("text", value.text()).put("end_of_artifact", value.endOfArtifact());
+        writeMetadata(result.putObject("metadata"), artifacts.metadata(artifactId));
+        return json(200, result);
+    }
+
+    private LoopbackHttpServer.Response artifactIndex(JsonNode body) throws java.io.IOException {
+        requireOnlyFields(body, Set.of("artifact_id", "offset", "max_items"), "artifact index 요청");
+        String artifactId = requiredText(body, "artifact_id", 128);
+        int offset = Math.max(0, body.path("offset").asInt(0));
+        int maxItems = Math.max(1, Math.min(body.path("max_items").asInt(250), 500));
+        ExplorerArtifactStore.Metadata metadata = artifacts.metadata(artifactId);
+        if (!javascript(metadata.contentType(), metadata.url())) {
+            return error(400, "JavaScript artifact만 AST index를 생성할 수 있습니다.");
+        }
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(
+                artifacts.readAll(artifactId, MAX_INDEX_BYTES));
+        ObjectNode result = JSON.createObjectNode().put("success", true)
+                .put("artifact_id", artifactId).put("status", analysis.status().name())
+                .put("detail", analysis.detail()).put("offset", offset).put("max_items", maxItems)
+                .put("call_site_total", analysis.callSites().size())
+                .put("asset_total", analysis.assets().size()).put("issue_total", analysis.issues().size());
+        var calls = result.putArray("call_sites");
+        for (JavascriptAnalysis.CallSite call : slice(analysis.callSites(), offset, maxItems)) {
+            ObjectNode value = calls.addObject().put("reference", call.reference()).put("method", call.method())
+                    .put("adapter", call.adapter()).put("reason", call.reason())
+                    .put("line", call.line()).put("column", call.column());
+            var parameters = value.putArray("parameters");
+            for (JavascriptAnalysis.Parameter parameter : call.parameters()) {
+                parameters.addObject().put("name", parameter.name()).put("kind", parameter.kind().name());
+            }
+        }
+        var assets = result.putArray("assets");
+        for (JavascriptAnalysis.AssetReference asset : slice(analysis.assets(), offset, maxItems)) {
+            assets.addObject().put("reference", asset.reference()).put("reason", asset.reason())
+                    .put("line", asset.line()).put("column", asset.column());
+        }
+        var issues = result.putArray("issues");
+        for (JavascriptAnalysis.ResolutionIssue issue : slice(analysis.issues(), offset, maxItems)) {
+            issues.addObject().put("kind", issue.kind().name()).put("adapter", issue.adapter())
+                    .put("detail", issue.detail()).put("line", issue.line()).put("column", issue.column());
+        }
+        boolean more = analysis.callSites().size() > offset + maxItems
+                || analysis.assets().size() > offset + maxItems || analysis.issues().size() > offset + maxItems;
+        result.put("next_offset", more ? offset + maxItems : -1);
+        writeMetadata(result.putObject("metadata"), metadata);
+        return json(200, result);
+    }
+
+    private static <T> List<T> slice(List<T> values, int offset, int limit) {
+        if (offset >= values.size()) return List.of();
+        return values.subList(offset, Math.min(values.size(), offset + limit));
+    }
+
+    private static void writeMetadata(ObjectNode value, ExplorerArtifactStore.Metadata artifact) {
+        value.put("artifact_id", artifact.id()).put("evidence_id", artifact.evidenceId())
+                .put("url", artifact.url()).put("content_type", artifact.contentType())
+                .put("sha256", artifact.sha256()).put("bytes", artifact.bytes())
+                .put("complete", artifact.complete()).put("created_at", artifact.createdAt().toString());
+        var provenance = value.putArray("provenance");
+        for (ExplorerArtifactStore.Provenance item : artifact.provenance()) {
+            provenance.addObject().put("evidence_id", item.evidenceId()).put("url", item.url())
+                    .put("content_type", item.contentType());
+        }
+    }
+
+    private static boolean javascript(String contentType, String url) {
+        String type = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        String path = url == null ? "" : url.toLowerCase(Locale.ROOT);
+        return type.contains("javascript") || type.contains("ecmascript") || path.matches(".*\\.(?:js|mjs|cjs)(?:[?#].*)?$");
     }
 
     private synchronized LoopbackHttpServer.Response handleDiscoveries(JsonNode root) {
@@ -455,7 +605,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     }
 
     @Override public synchronized void close() {
-        artifacts.clear();
+        artifacts.close();
         requestKeys.clear();
         responseEvidenceIds.clear();
         discoveryProvenanceKeys.clear();

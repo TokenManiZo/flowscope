@@ -1,5 +1,41 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 D-142 · 패키지 Standalone 프로젝트·현행 UI 계약 gate
+
+D-140~141의 보존형 프로젝트와 Evidence 계약을 패키지 fat JAR의 실제 Standalone Web 경로까지 연결하고, E2E가 폐기된 초기화/Judge 계약이 아니라 현행 프로젝트·독립 Explorer 계약을 검사하도록 바로잡았다. 같은 코드 대조에서 계층 그래프·resource family·증분 `+18`은 현행 구현이 아님을 문서에 명시했다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 실패 재현 | 패키지 Standalone의 `POST /api/projects/start`가 501, `GET /api/explorer-run`이 500이었고, E2E는 삭제된 `매핑·트래픽 초기화`와 LLM 탭 부재를 기대해 실패함. HUMAN 계정 Select에는 Radix가 허용하지 않는 빈 문자열 option이 남아 있었음 |
+| 프로젝트 회귀 | Standalone에서 첫 프로젝트 생성→샘플 저장→두 번째 프로젝트 생성→첫 프로젝트 재열기와 SQLite 파일 존재를 확인 |
+| Explorer 상태 | Standalone은 실행 불가를 예외로 던지지 않고 `status=IDLE`, `providerReadiness=UNAVAILABLE`과 원인을 반환 |
+| React E2E | clean fat JAR을 새 임시 project workspace에서 기동해 Chromium 8/8 통과. 새 진단·저장/재열기 API, 전체 route, 그래프/매트릭스/Evidence, ZAP·Explorer 상태, XML import, 1280/900/600px 동선 확인 |
+| 전체 빌드 | JDK 21.0.12.1·Maven 3.9.16 `mvn clean verify` 2회 성공 |
+| Java | 매회 407 tests, failures/errors 0, opt-in 실물 ZAP·provider 하네스 2 skip |
+| React | 매회 38 files / 250 tests, typecheck·notices·Vite build 통과 |
+| 최종 JAR | 31,732,361 bytes / 9,161 entries / 첫 entry `META-INF/MANIFEST.MF` / SHA-256 `90334b08e0b3c5f35e0d4dc99b5c5e3af0fd085ff2505a8411a9ee7a0f370eec` |
+| 미실행 | 실제 Burp 수집·자동 저장·재열기, Explorer account 귀속, ZAP 로그인 복수 계정/취소, Windows Docker Desktop, 계층 graph UX |
+
+E2E 서버는 테스트마다 별도 임시 project root를 사용하고 종료 뒤 제거한다. 이는 패키지 React·local HTTP·SQLite 수명주기의 회귀 증거이며 Burp Montoya, ZAP Docker, Codex provider, 외부 대상 탐색을 통과했다는 뜻이 아니다.
+
+## 2026-09-10 · 미출시 D-140~141 · 보존형 프로젝트·Evidence 작업면·가져오기 무결성 gate
+
+D-139의 Explorer 선언과 D-138의 ZAP 계약을 유지한 채, 다른 대상을 시작할 때 현재 진단을 잃지 않는 프로젝트 수명주기와 Surface Observation의 실제 Evidence 작업 동선, 반복 import의 provenance·문자셋·IPv6 무결성을 보강했다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 프로젝트 회귀 | 사용자 workspace 이름·scope 정규화, 경로 이탈·Windows 예약 이름 거부, 충돌 없는 진단 디렉터리, 외부 DB 열기, 저장 상태 직렬화 통과 |
+| 데이터셋·작업면 | `revision`과 `datasetRevision` 분리, 같은 데이터셋의 polling 중 Request Lab draft 보존, Surface Observation의 exact Evidence·Request Lab·Repeater 연결, Declaration-only 동작 부재 회귀 통과 |
+| 병합 무결성 | 같은 HTTP라도 session fingerprint·lane account·run이 다르면 보존하고, 같은 provenance의 기존 multiplicity만 제외하는 회귀 통과 |
+| XML/HAR | Burp XML EUC-KR request/response body 보존, XML IPv6 service 복원, HAR IPv6 단일 대괄호 정규화 회귀 통과 |
+| 전체 빌드 | JDK 21.0.12.1·Maven 3.9.16 `mvn clean verify` 2회 성공. 최종 실행 1분 12초 |
+| Java | 최종 실행 405 tests, failures/errors 0, opt-in 실물 ZAP·provider 하네스 2 skip |
+| React | 최종 실행 38 files / 250 tests, typecheck·notices·Vite build 통과 |
+| 최종 JAR | 31,728,851 bytes / 9,161 entries / 첫 entry `META-INF/MANIFEST.MF` / SHA-256 `91ff618304388408fe3a69e99ec72ef7ceed72a32f50dfc99ba7927db0003b6a` |
+| 미실행 | 실제 Burp 새 진단 저장·재열기, disk-full/강제 종료, Surface→Request Lab→Repeater, XML binary·모든 legacy charset, Windows 프로젝트 경로, 최종 ZAP/Explorer 운영 gate |
+
+자동 테스트는 저장 순서·직렬화·화면 연결과 parser 계약을 검증한다. 실제 파일시스템 장애에서의 내구성, Burp Montoya 원문 전달, 재시작 뒤 인증 세션 복구를 증명하지 않는다. raw Authorization/Cookie, 비밀번호, API key, provider token과 live Request Lab 원문을 프로젝트에 저장하지 않으므로 재열기 뒤 재로그인이 필요한 것은 의도된 경계다.
+
 ## 2026-09-09 · 미출시 D-139 · Explorer Evidence-bound 선언·서버 집계 gate
 
 D-128 Explorer의 실제 provider 경로를 유지하면서, 응답 산출물에서 읽은 endpoint·parameter가 자유서술에만 남던 공백을 구조화했다. 선언은 현재 run의 응답 Evidence ID를 요구하고 실제 HTTP Observation·취약점 판정과 분리된다.

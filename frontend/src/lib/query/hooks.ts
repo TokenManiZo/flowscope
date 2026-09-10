@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   bindSession,
   cancelScannerRun,
-  clearTraffic,
   deleteAccount,
   getEvidence,
   getHumanRun,
@@ -32,6 +31,9 @@ import {
   deleteExplorerAccount,
   saveZapAccount,
   deleteZapAccount,
+  getProjects,
+  startProject,
+  openProject,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -43,6 +45,7 @@ export const queryKeys = {
   zapStatus: ["zap-status"] as const,
   scannerRun: ["scanner-run"] as const,
   explorerRun: ["explorer-run"] as const,
+  projects: ["projects"] as const,
 }
 
 const pollingOptions = {
@@ -68,6 +71,11 @@ export function useSnapshotQuery() {
     structuralSharing: retainSnapshotRevision,
     ...pollingOptions,
   })
+}
+
+export function useProjectsQuery() {
+  return useQuery({ queryKey: queryKeys.projects, queryFn: ({ signal }) => getProjects(signal),
+    ...pollingOptions })
 }
 
 export function useEvidenceQuery(operation: string | null, offset: number, limit: number) {
@@ -107,7 +115,10 @@ function useInvalidatingMutation<TData, TVariables>(
   })
 }
 
-export function useClearTrafficMutation() { return useInvalidatingMutation(clearTraffic, [queryKeys.snapshot]) }
+const projectInvalidations = [queryKeys.projects, queryKeys.snapshot, queryKeys.humanRun,
+  queryKeys.scannerRun, queryKeys.explorerRun] as const
+export function useStartProjectMutation() { return useInvalidatingMutation(startProject, projectInvalidations) }
+export function useOpenProjectMutation() { return useInvalidatingMutation(openProject, projectInvalidations) }
 export function useLoadSampleMutation() { return useInvalidatingMutation(loadSample, [queryKeys.snapshot]) }
 export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
 export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous, definitions }: { target: string; accounts: string; anonymous: boolean; definitions: string }) => startScannerRun(target, accounts, anonymous, definitions), [queryKeys.scannerRun]) }

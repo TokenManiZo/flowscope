@@ -2,6 +2,20 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 패키지 Standalone 프로젝트·현행 UI 계약 (D-142, 2026-09-11)
+
+- 패키지 Standalone이 보존형 프로젝트 생성·저장·선택·재열기 API를 실제 SQLite workspace로 제공하며, 실행할 수 없는 Explorer 상태를 HTTP 500 대신 명시적으로 반환합니다.
+- Playwright는 임시 project root를 사용해 폐기된 삭제형 초기화/Judge가 아닌 새 진단·독립 Explorer·현재 저장 상태 계약을 검사합니다. clean fat JAR Chromium E2E 8/8이 통과했습니다.
+- 그래프 문서를 실제 단일 `IDENTITY / ENDPOINT / OBJECT` canvas와 `18개 / 전체` 표시 제한에 맞췄습니다. 사이트/API drill-down, resource family와 증분 `+18`은 아직 구현되지 않은 다음 작업입니다.
+- JDK 21 전체 빌드 2회가 React 250 tests와 Java 407 tests를 통과했습니다. 실제 Burp 프로젝트 재열기·Explorer 계정 귀속·ZAP 로그인 복수 계정·Windows gate는 남아 있습니다.
+
+## 미출시 · 보존형 진단 전환·Evidence 작업면·가져오기 무결성 (D-140~141, 2026-09-10)
+
+- Web의 **새 진단 시작**은 기존 Evidence를 사용자 프로젝트 디렉터리의 SQLite DB에 먼저 저장하고 새 exact scope로 전환합니다. 저장 상태·마지막 성공 시각·오류와 이전 프로젝트 선택을 상단에서 확인하며 삭제형 초기화 API는 거부합니다.
+- snapshot의 일반 분석 revision과 데이터셋 교체 revision을 분리해 polling 중 Request Lab 초안이 닫히지 않게 했습니다. API·입력 차이의 실제 관측에서 Evidence 상세·Request Lab·Burp Repeater로 바로 이동할 수 있습니다.
+- 반복 import 병합은 HTTP 내용뿐 아니라 session fingerprint, lane account와 run을 보존합니다. XML과 HAR 모두 기존 multiplicity만 중복 억제합니다.
+- Burp XML base64 HTTP는 명시 Content-Type charset을 strict decode하고, XML/HAR IPv6 service는 대괄호 한 쌍으로 정규화합니다. JDK 21 전체 빌드 2회와 자동 회귀는 통과했으며 실제 Burp 운영 gate는 남았습니다.
+
 ## 미출시 · Explorer Evidence-bound 산출물 선언 (D-139, 2026-09-09)
 
 - Codex가 HTML·JavaScript·API 정의에서 찾은 endpoint·parameter를 자유서술 요약에만 남기지 않고, 같은 run의 실제 응답 Evidence ID가 필요한 `flowscope_record_discoveries` 동적 도구로 저장합니다.

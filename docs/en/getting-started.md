@@ -41,6 +41,10 @@ Release users do not need Maven. A custom Java runtime used to launch Burp must 
 
 Open **Quick Start** at Web `127.0.0.1:17777`. It shows Scope, HUMAN, ZAP, and Evidence review status but opens only the first incomplete panel. Complete the visible panel, use a stage tab to inspect another setting, or select **Current stage** to return to the required step. After collection, inspect the default **API·입력 차이** surface for endpoint/parameter declaration-versus-observation deltas and artifact parsing failures, then drill into **인가 그래프** and the matrix. An unobserved item is not a vulnerability or a failed lane.
 
+For a new target, use **New assessment** in the top bar and enter a project name plus the authorized exact scope. FlowScope first saves the current assessment to `~/.flowscope/projects/<name--scope--time>/project.flowscope.db`, creates the new empty database, and only then replaces the active scope and screen. A failed save leaves the current Evidence and scope active and reports the cause. The project selector can reopen a previous database. Projects contain masked Evidence, policy, completed runs, the execution ledger, and human review, but not raw Authorization/Cookie values, passwords, API keys, provider tokens, or the live Request Lab exchange; authentication must be prepared again after reopening.
+
+Selecting an actual Observation on **API·입력 차이** opens its exact Evidence and Request Lab, and can send the live exchange to Burp Repeater while the bounded in-process raw copy still exists. A declaration-only row from OpenAPI, HTML, or JavaScript has no fabricated Evidence action. Ordinary analysis polling keeps the current draft open; replacing the dataset closes it.
+
 ## Start the FlowScope Docker Chromium runtime
 
 FlowScope checks the ZAP API at `127.0.0.1:8089` and verifies that `zapHomePath` is under the managed tmpfs `/run/flowscope-zap/`. **Quick Start → FlowScope Docker ZAP** shows reachability, version, key, and runtime mismatch before a campaign can start. An arbitrary ZAP Desktop or API instance is not accepted merely because it is reachable.

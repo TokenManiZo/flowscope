@@ -57,7 +57,8 @@ export interface EvidenceSheetProps {
 
 export function EvidenceInspectorBody({ event, snapshot, selection = null }: Omit<EvidenceSheetProps, "variant" | "inline" | "onOpenChange">) {
   const [requestLabOpen, setRequestLabOpen] = useState(false)
-  useEffect(() => { setRequestLabOpen(false) }, [event?.eventId, snapshot?.revision])
+  const datasetRevision = snapshot?.datasetRevision ?? snapshot?.identityRevision ?? 0
+  useEffect(() => { setRequestLabOpen(false) }, [event?.eventId, datasetRevision])
   const structuredSelection = selection !== null && "kind" in selection
   if ((event === null && selection === null) || snapshot === undefined) return <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">분석 결과에서 항목을 선택하면 서버가 제공한 Evidence 상세를 표시합니다.</p></section>
 
@@ -66,7 +67,7 @@ export function EvidenceInspectorBody({ event, snapshot, selection = null }: Omi
       {selection && !("kind" in selection) && !selection.routeCandidate && <section className="grid gap-2 rounded-md border p-3 text-sm"><p className="font-medium">그래프 선택 좌표</p><BoundedDetailFields fields={[{ label: "신원", value: selection.identity ?? "UNKNOWN" }, { label: "리소스", value: selection.resource ?? "객체 없음" }, { label: "작업", value: selection.operation ?? "경로 후보" }, { label: "소스", value: selection.source ?? "UNKNOWN" }]} /><BoundedEvidenceIds ids={selection.evidenceIds} /></section>}
       {selection && !("kind" in selection) && selection.routeCandidate && <RouteCandidateDetail candidate={selection.routeCandidate} />}
       {event && <OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} showEvidenceId={!structuredSelection} />}
-      {event && <RequestLabDialog key={`${event.eventId}:${snapshot.revision}`} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={snapshot.revision} />}
+      {event && <RequestLabDialog key={`${event.eventId}:${datasetRevision}`} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} />}
     </section>
 }
 

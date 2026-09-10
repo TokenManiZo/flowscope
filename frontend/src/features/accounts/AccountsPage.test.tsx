@@ -204,9 +204,9 @@ describe("account and session management", () => {
     await screen.findAllByText("ACTIVE")
     await user.click(screen.getByRole("button", { name: "계정 A 세션 폐기" }))
     await waitFor(() => expect(postBodies(fetchStub, "/api/session-capture")).toEqual(["action=revoke&account=account-a"]))
-    await user.click(screen.getByRole("button", { name: "매핑·트래픽 초기화" }))
+    await user.click(screen.getByRole("button", { name: "세션·신원 매핑 초기화" }))
     expect(postBodies(fetchStub, "/api/identity-reset")).toEqual([])
-    await user.click(await screen.findByRole("button", { name: "초기화 확인" }))
+    await user.click(await screen.findByRole("button", { name: "세션 매핑 초기화 확인" }))
     await waitFor(() => expect(postBodies(fetchStub, "/api/identity-reset")).toEqual([""]))
     expect(await screen.findByText("/api/identity-reset 완료")).toBeVisible()
 
@@ -323,8 +323,8 @@ describe("account and session management", () => {
     })
 
     await expectRefetch(async () => {
-      await user.click(screen.getByRole("button", { name: "매핑·트래픽 초기화" }))
-      await user.click(await screen.findByRole("button", { name: "초기화 확인" }))
+      await user.click(screen.getByRole("button", { name: "세션·신원 매핑 초기화" }))
+      await user.click(await screen.findByRole("button", { name: "세션 매핑 초기화 확인" }))
     })
     await user.click(screen.getByRole("button", { name: "취소" }))
     await expectRefetch(async () => {
@@ -369,8 +369,8 @@ describe("account and session management", () => {
     await user.click(screen.getByRole("button", { name: "계정 A 세션 폐기" }))
     expect(await screen.findByRole("alert", { name: errors["/api/session-capture"] })).toBeVisible()
 
-    await user.click(screen.getByRole("button", { name: "매핑·트래픽 초기화" }))
-    await user.click(await screen.findByRole("button", { name: "초기화 확인" }))
+    await user.click(screen.getByRole("button", { name: "세션·신원 매핑 초기화" }))
+    await user.click(await screen.findByRole("button", { name: "세션 매핑 초기화 확인" }))
     expect(await screen.findByRole("alert", { name: errors["/api/identity-reset"] })).toBeVisible()
     expect(screen.getByRole("alertdialog")).toBeVisible()
     expect(screen.getByLabelText("등록 계정 표시 이름")).toHaveValue("보존할 입력")
@@ -382,7 +382,7 @@ describe("account and session management", () => {
     await screen.findByRole("heading", { name: "계정·세션 관리" })
     expect(await screen.findByRole("complementary", { name: "분석 필터" })).toHaveTextContent("계정·세션 요약")
     expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("선택한 계정이나 세션이 없습니다.")
-    expect(screen.getByRole("button", { name: "매핑·트래픽 초기화" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "세션·신원 매핑 초기화" })).toBeEnabled()
   })
 
   it.each([900, 600])("keeps account summary, guidance, and account mutation controls reachable through compact Sheets at %ipx", async (width) => {

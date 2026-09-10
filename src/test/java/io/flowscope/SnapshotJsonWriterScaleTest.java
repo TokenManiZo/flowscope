@@ -17,6 +17,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class SnapshotJsonWriterScaleTest {
     @Test
+    void keepsDatasetReplacementRevisionSeparateFromOrdinaryAnalysisRevision() throws Exception {
+        Pipeline.Result result = Pipeline.run(List.of());
+
+        var snapshot = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                new SnapshotJsonWriter().write(17, 4, result, new AnalysisConfig(), List.of(), List.of(),
+                        List.of(), List.of(), 0, List.of()));
+
+        assertEquals(17, snapshot.path("revision").asLong());
+        assertEquals(4, snapshot.path("datasetRevision").asLong());
+    }
+
+    @Test
     void exposesSanitizedExecutionQualityWithoutCreatingEvidence() throws Exception {
         Pipeline.Result result = Pipeline.run(List.of());
         RunExecutionLedger.Summary failed = new RunExecutionLedger.Summary(Source.LLM, "tls-run",

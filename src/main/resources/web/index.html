@@ -224,7 +224,7 @@
     <label class="filebtn" title="Burp XML 또는 ZAP에서 내보낸 HAR 트래픽 가져오기"><span class="dot" style="background:var(--scanner)"></span>스캐너 XML/HAR<input type="file" id="fScanner" accept=".xml,.har" multiple></label>
     <label class="filebtn" title="전용 포트 실시간 수집이 기본, XML 업로드는 폴백"><span class="dot" style="background:var(--llm)"></span>LLM<input type="file" id="fLlm" accept=".xml" multiple></label>
     <button class="go primary" id="sample">샘플 데이터로 보기</button>
-    <button class="go" id="clear">초기화</button>
+    <button class="go" id="clear" disabled title="새 진단은 React 작업면에서 시작하세요.">새 진단은 React UI</button>
   </div>
   <button class="go" id="openSetup">빠른 시작</button>
   <span class="spacer"></span>
@@ -429,7 +429,7 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
       <table class="raw" id="raw"><thead><tr><th>#</th><th>소스</th><th>Identity</th><th>Method</th><th>정규화 Operation</th><th>접근 대상 ID</th><th>Status</th><th>분류</th><th>처리</th><th>반복</th><th>Evidence</th><th>상세</th></tr></thead><tbody></tbody></table>
     </div>
     <div class="pane" id="paneAccounts">
-      <div class="matrixhead"><h2>계정·세션 관리</h2><span class="note">등록 계정(Identity)은 유지하고 로그인 세션만 새로 연결합니다. raw 인증값은 Evidence·프로젝트에 저장하지 않고 broker 메모리에만 둡니다.</span><button type="button" class="go" id="identityReset" style="margin-left:auto">매핑·트래픽 초기화</button></div>
+      <div class="matrixhead"><h2>계정·세션 관리</h2><span class="note">등록 계정(Identity)은 유지하고 로그인 세션만 새로 연결합니다. raw 인증값은 Evidence·프로젝트에 저장하지 않고 broker 메모리에만 둡니다.</span><button type="button" class="go" id="identityReset" style="margin-left:auto">세션·신원 매핑 초기화</button></div>
       <div class="accountgrid">
         <div class="accountpanel">
           <h3>테스트 계정 등록</h3>
@@ -1227,7 +1227,7 @@ async function unbindSession(fingerprint,service){if(!confirm('이 세션을 현
 }
 async function resetIdentityMappings(){
   if(!LIVE_MODE)return;
-  if(!confirm('등록한 계정 카드는 유지하고 세션 연결과 현재 수집 트래픽을 모두 초기화할까요?'))return;
+  if(!confirm('등록 계정과 Evidence는 유지하고 메모리 세션 및 신원 연결만 초기화할까요?'))return;
   try{const response=await fetch('/api/identity-reset',{method:'POST'});const data=await response.json();if(!response.ok)throw new Error(data.message||'초기화 실패');EVENTS=[];SERVER_EVENTS=[];MODEL=null;ACTIVE_IDENTITY='all';SERVER_REVISION=-1;SERVER_IDENTITY_REVISION=-1;if(cy){cy.destroy();cy=null;}matrix.innerHTML='';document.querySelector('#raw tbody').innerHTML='';seqBody.innerHTML='';resetScenario();clearDetail();await syncExtension();renderIdentityFilter();renderRoles();updateStatus();alert(data.message);}
   catch(error){alert('식별 매핑 초기화 실패: '+error.message);}
 }
@@ -1494,7 +1494,7 @@ fHuman.addEventListener('change',e=>loadFiles(e.target,'human'));
 fScanner.addEventListener('change',e=>loadFiles(e.target,'scanner'));
 fLlm.addEventListener('change',e=>loadFiles(e.target,'llm'));
 sample.addEventListener('click',async()=>{if(!LIVE_MODE)return;const response=await fetch('/api/sample',{method:'POST'});const data=await response.json();if(!response.ok){alert(data.message||'샘플 프로젝트를 열 수 없습니다.');return;}SERVER_REVISION=-1;await syncExtension();setMode('surface');});
-clear.addEventListener('click',async()=>{ if(!LIVE_MODE||!confirm('Extension이 수집한 트래픽과 미요청 route 후보를 초기화할까요? 등록 계정과 세션 매핑은 유지됩니다.'))return; await fetch('/api/clear',{method:'POST'}); EVENTS=[];SERVER_EVENTS=[];SERVER_GRAPH_FACTS=[];SERVER_ROUTE_CANDIDATES=[];SERVER_SURFACE={endpoints:[],extractions:[]};SERVER_RUN_EXECUTIONS=[];MODEL=null;activeGap=null;ACTIVE_IDENTITY='all';SERVER_ROLES={};GRAPH_SELECTED_GROUP='';SELECTED_OPERATION='';EXPANDED_OBJECT_FAMILIES.clear();GRAPH_LEVEL='api';GRAPH_LIMITS={operations:GRAPH_PAGE_SIZE,resources:GRAPH_PAGE_SIZE}; if(cy){cy.destroy();cy=null;} matrix.innerHTML=''; document.querySelector('#raw tbody').innerHTML=''; seqBody.innerHTML=''; resetScenario(); clearDetail(); renderIdentityFilter(); renderRoles();refreshSourceFilters();renderAccounts();renderSurface(); updateStatus(); covObs.innerHTML='0<small>조합</small>';covFrac.textContent='엔드포인트 0 · 메서드 0 · 대상 ID 0';surfaceStats.textContent='엔드포인트 0 · 파라미터 0 · 선언 후 미관측 0';graphStat.textContent='노드가 많으면 +그룹 노드를 눌러 단계적으로 펼칠 수 있습니다.';collapseGraph.disabled=true; document.querySelectorAll('.gapline.gf').forEach(el=>el.classList.remove('on')); ['gUn','gFound','gCo','gClean','gRoute'].forEach(i=>document.getElementById(i).textContent='0'); });
+clear.addEventListener('click',()=>alert('Evidence 삭제형 초기화는 지원하지 않습니다. React 작업면에서 새 진단을 시작하면 현재 프로젝트를 보존한 뒤 새 scope로 전환합니다.'));
 
 document.querySelectorAll('.gapline.gf').forEach(el=>{
   el.addEventListener('click',()=>highlightGap(el.dataset.gk));

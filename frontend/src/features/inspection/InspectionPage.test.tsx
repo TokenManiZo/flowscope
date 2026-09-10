@@ -132,6 +132,10 @@ describe("four-stage inspection controls", () => {
     const { fetchStub } = renderInspection()
 
     await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
+    await user.click(screen.getByRole("option", { name: "활성 계정" }))
+    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
+    await user.click(screen.getByRole("option", { name: "비로그인 pass" }))
     await user.click(screen.getByRole("button", { name: "HUMAN pass 시작" }))
     await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/human-run" && (init as RequestInit).body?.toString() === "action=begin&account=")).toBe(true))
   })

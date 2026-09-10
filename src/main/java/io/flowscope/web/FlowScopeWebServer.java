@@ -21,6 +21,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.TrafficOverride;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
+import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapAccountVault;
@@ -52,12 +53,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         Pipeline.Result snapshot();
         default Pipeline.Result completionSnapshot() { return snapshot(); }
         long revision();
+        default long datasetRevision() { return revision(); }
         AnalysisConfig config();
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
         RunContextRegistry contexts();
         void rebuild();
-        void clearTraffic();
         void loadSample();
         BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception;
         BurpXmlParser.ParseResult importHar(byte[] har) throws Exception;
@@ -78,6 +79,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("ZAP account workflow is unavailable");
         }
         default List<String> scopeEntries() { return List.of(); }
+        default ProjectWorkspace.Status projectStatus() {
+            return new ProjectWorkspace.Status("", null, List.of());
+        }
+        default ProjectWorkspace.Status startProject(String name, String scope) {
+            throw new UnsupportedOperationException("project workflow is unavailable");
+        }
+        default ProjectWorkspace.Status openProject(String id) {
+            throw new UnsupportedOperationException("project workflow is unavailable");
+        }
         default List<RouteCandidate> routeCandidates() { return List.of(); }
         default List<RunExecutionLedger.Summary> executionSummaries() { return List.of(); }
         default long droppedRecords() { return 0; }
@@ -200,6 +210,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/replay" -> replay(request);
             case "/api/request-lab" -> requestLab(request, target);
             case "/api/clear" -> clear(request);
+            case "/api/projects" -> projects(request);
             case "/api/human-run" -> humanRun(request);
             case "/api/sample" -> sample(request);
             case "/api/role" -> role(request);
@@ -285,7 +296,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response snapshot(LoopbackHttpServer.Request request) throws IOException {
         if (!request.method().equals("GET")) return method("GET");
         return response(200, "application/json; charset=utf-8",
-                snapshots.write(state.revision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
+                snapshots.write(state.revision(), state.datasetRevision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
                         state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates(),
                         state.droppedRecords(), state.executionSummaries()));
     }
@@ -475,8 +486,55 @@ public final class FlowScopeWebServer implements AutoCloseable {
 
     private LoopbackHttpServer.Response clear(LoopbackHttpServer.Request request) throws IOException {
         if (postForm(request) == null) return invalidForm(request);
-        state.clearTraffic();
-        return success("수집 트래픽을 초기화했습니다.");
+        return error(409, "Evidence 삭제형 초기화는 지원하지 않습니다. 새 진단 시작으로 현재 프로젝트를 보존하세요.");
+    }
+
+    private LoopbackHttpServer.Response projects(LoopbackHttpServer.Request request) throws IOException {
+        try {
+            if (request.method().equals("GET")) return projectStatus(state.projectStatus());
+            Map<String, String> form = postForm(request);
+            if (form == null) return invalidForm(request);
+            String action = required(form, "action").toLowerCase(Locale.ROOT);
+            ProjectWorkspace.Status status = switch (action) {
+                case "start" -> state.startProject(form.getOrDefault("name", ""), required(form, "scope"));
+                case "open" -> state.openProject(required(form, "id"));
+                default -> throw new IllegalArgumentException("action은 start 또는 open이어야 합니다.");
+            };
+            return projectStatus(status);
+        } catch (UnsupportedOperationException error) {
+            return error(501, error.getMessage());
+        } catch (IllegalStateException error) {
+            return error(409, error.getMessage());
+        } catch (IllegalArgumentException error) {
+            return error(400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response projectStatus(ProjectWorkspace.Status status) throws IOException {
+        ObjectNode body = json.createObjectNode();
+        body.put("directory", status.directory());
+        body.put("saveState", status.saveState());
+        body.put("lastSavedAt", status.lastSavedAt());
+        body.put("saveError", Masking.maskSecrets(status.saveError()));
+        if (status.active() == null) body.putNull("active");
+        else body.set("active", projectEntry(status.active()));
+        var projects = body.putArray("projects");
+        status.projects().forEach(entry -> projects.add(projectEntry(entry)));
+        return json(200, body);
+    }
+
+    private ObjectNode projectEntry(ProjectWorkspace.Entry entry) {
+        ObjectNode body = json.createObjectNode();
+        body.put("id", entry.id());
+        body.put("name", entry.name());
+        body.set("scope", json.valueToTree(entry.scope()));
+        body.put("createdAt", entry.createdAt());
+        body.put("modifiedAtMillis", entry.modifiedAtMillis());
+        body.put("sizeBytes", entry.sizeBytes());
+        body.put("active", entry.active());
+        body.put("readable", entry.readable());
+        body.put("managed", entry.managed());
+        return body;
     }
 
     private LoopbackHttpServer.Response humanRun(LoopbackHttpServer.Request request) throws IOException {
@@ -930,8 +988,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (postForm(request) == null) return invalidForm(request);
         if (state.sessions() != null) state.sessions().close();
         state.config().clearSessionBindings();
-        state.clearTraffic();
-        return success("계정 카드는 유지하고 세션 매핑과 수집 트래픽을 초기화했습니다.");
+        state.rebuild();
+        return success("계정 카드와 Evidence는 유지하고 메모리 세션과 신원 매핑만 초기화했습니다.");
     }
 
     private LoopbackHttpServer.Response importXml(LoopbackHttpServer.Request request, URI target) throws IOException {

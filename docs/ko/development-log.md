@@ -1,5 +1,50 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · 패키지 Standalone 프로젝트 회귀와 그래프 계약 정합성
+
+### 원인과 수정
+
+- D-140 React는 새 진단 시작·프로젝트 선택 API를 사용하지만 패키지 Standalone의 State는 기본 501을 반환했다. E2E 서버를 임시 project workspace로 격리하고, Standalone에 `ProjectWorkspace`·SQLite 기반 생성/저장/목록/재열기 수명주기를 연결했다. 네트워크를 쓰지 않는 샘플도 같은 저장 경계를 통과하므로 sample request header를 저장 전에 마스킹했다.
+- Standalone의 Explorer 상태 기본 구현은 지원하지 않는 API를 예외로 던져 실행 상태 화면을 500으로 만들었다. 실행 동작을 가짜 성공으로 만들지 않고 `IDLE + providerReadiness=UNAVAILABLE`과 원인을 반환하게 했다.
+- Playwright는 삭제된 `매핑·트래픽 초기화`, LLM 탭 부재와 고정 상단 문구를 검사했다. 보존형 **새 진단 시작**, 독립 Explorer 상태, 세션·신원 매핑 초기화와 실제 저장 상태를 검사하도록 현행화했다.
+- HUMAN 계정 드롭다운의 `SelectItem value=""`는 Radix Select가 예약한 빈 값과 충돌했다. 내부 익명 sentinel을 사용하고 begin 요청 직전에만 기존 빈 account 값으로 변환하며, 활성 계정에서 비로그인으로 되돌린 뒤 정확한 form을 보내는 회귀를 추가했다.
+- 문서는 계층 graph·resource family·클릭당 `+18`을 현행으로 설명했지만 React는 단일 `IDENTITY / ENDPOINT / OBJECT` canvas와 `18개 / 전체` 전환만 구현한다. 없는 기능을 구현된 회귀 기준으로 삼는 대신 현재 projection을 문서화하고 단계형 graph를 다음 gate로 분리했다.
+
+### 영향 파일·회귀
+
+- 실행·저장: `Standalone`, `SampleProject`, `ProjectWorkspace`와 `StandaloneTest`.
+- 패키지 E2E: `frontend/scripts/start-e2e-server.mjs`, `frontend/e2e/parity.spec.ts`.
+- 계약: README, architecture, decisions D-142, UI 근거, 제품 계획, HANDOFF, 문서 상태, 변경 이력과 검증 기록.
+- JDK 21.0.12.1·Maven 3.9.16에서 `mvn clean verify` 2회가 각각 React 38 files/250 tests와 Java 407 tests(실패·오류 0, opt-in 2 skip)를 통과했다. clean fat JAR의 격리 Chromium E2E 8/8도 통과했다. 최종 JAR은 31,732,361 bytes·9,161 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `90334b08e0b3c5f35e0d4dc99b5c5e3af0fd085ff2505a8411a9ee7a0f370eec`였다.
+
+### 남은 한계·다음 gate
+
+- Standalone 성공을 실제 Burp 프로젝트 저장·Request Lab/Repeater·ZAP/Codex 성공으로 확대하지 않는다. 최종 JAR의 실제 Burp 수집→저장→전환→재열기와 Explorer account 귀속 회귀가 먼저다.
+- 그래프 단계화·resource family·실제 `+18` 증분·desktop label navigation은 미구현이다. Fact Core를 바꾸지 않는 별도 React projection 작업으로 진행한다.
+
+## 2026-09-10 · 미출시 · 보존형 프로젝트 전환과 Evidence 가져오기 무결성
+
+### 원인과 수정
+
+- 삭제형 초기화와 scope 교체는 아직 수동 DB를 열지 않은 진단의 Evidence를 잃을 수 있었다. 사용자별 프로젝트 workspace와 scope·표시 이름 metadata를 추가하고, 현재 진단 저장과 새 빈 SQLite DB 생성이 모두 성공한 뒤에만 데이터셋을 전환하도록 바꿨다. Web 상단은 자동 저장을 고정 문구로 주장하지 않고 `저장 대기/저장 중/저장됨/저장 실패`, 마지막 성공 시각과 마스킹 오류를 표시한다.
+- 분석 결과 revision과 실제 데이터셋 교체를 구분하지 않아 polling 분석 갱신이 Request Lab 편집 초안을 닫았다. snapshot에 `datasetRevision`을 추가하고 Evidence 또는 데이터셋이 실제 바뀔 때만 draft를 폐기한다. Explorer가 만든 live Evidence도 bounded raw vault에 연결해 현재 프로세스에서만 Request Lab/Repeater 원문 경로를 사용할 수 있게 했다.
+- API·입력 차이의 Observation은 원 Evidence를 보면서도 별도 Evidence 화면으로 이동해야 했다. Surface의 실제 관측 행에서 exact EventRecord를 선택해 기존 상세·Request Lab·Repeater를 열도록 연결했다. Declaration-only 행에는 이 버튼을 만들지 않는다.
+- `RecordMerge`가 fingerprint, lane account와 run을 무시해 동일 HTTP 내용을 가진 서로 다른 신원·실행 Evidence를 누락할 수 있었다. 세 provenance를 multiset key에 추가하고 XML/HAR/Proxy history가 같은 중복 계약을 사용하게 했다.
+- Burp XML base64 HTTP를 UTF-8로 고정 디코드하고 첫 `:`을 port로 분리해 명시 charset과 IPv6를 손상했다. header ISO-8859-1·body Content-Type charset/기본 UTF-8 strict decode, 단일 IPv6 대괄호 정규화를 적용했다. HAR의 IPv6 중복 대괄호도 같은 service 계약으로 수정했다.
+
+### 영향 파일·회귀
+
+- 수명주기·저장: `ProjectWorkspace`, `ProjectStore`, `SqliteProjectStore`, `FlowScopeExtension`, `FlowScopeWebServer`, `SnapshotJsonWriter`, React project query/top bar/new-project dialog.
+- Evidence 작업면: React `SurfacePage`, `EvidenceSheet`, `GraphInspectorPanel`, `RequestLabDialog` 회귀와 Explorer raw exchange 연결.
+- 가져오기: `RecordMerge`, `BurpXmlParser`, `HarParser`와 각 회귀 테스트.
+- TDD RED는 서로 다른 account/run/fingerprint의 동일 HTTP가 제거되는 3건, EUC-KR 손상, XML IPv6 손실, HAR IPv6 중복 대괄호를 재현했다. 집중 Java 65개와 React 전체 38 files/250 tests를 통과했다.
+- JDK 21.0.12.1에서 `mvn clean verify` 2회는 React 250 tests, Java 405 tests 중 opt-in 실물 ZAP/provider 2 skip, failures/errors 0, typecheck·Vite·release JAR/bundle gate까지 통과했다. Java 26으로 잘못 시작한 실행은 저장소 enforcer가 의도대로 즉시 거부했다. 최종 JAR은 31,728,851 bytes·9,161 entries·첫 entry `META-INF/MANIFEST.MF`·SHA-256 `91ff618304388408fe3a69e99ec72ef7ceed72a32f50dfc99ba7927db0003b6a`였다.
+
+### 남은 한계·다음 gate
+
+- 자동 회귀는 실제 Burp에서 새 진단 전환 중 disk full·강제 종료, 과거 DB 재열기, Explorer 원문 Repeater, XML의 모든 legacy charset과 binary를 증명하지 않는다. raw HTTP와 로그인 비밀은 프로젝트에 저장하지 않는 것이 정상 계약이다.
+- 실제 Burp load/unload·HUMAN/Request Lab·프로젝트 재열기, disk-full·강제 종료와 최종 ZAP/Explorer 운영 gate가 남는다. push·Release는 수행하지 않는다.
+
 ## 2026-09-09 · 미출시 · Explorer 산출물 발견을 Evidence-bound 선언으로 데이터화
 
 ### 원인과 수정

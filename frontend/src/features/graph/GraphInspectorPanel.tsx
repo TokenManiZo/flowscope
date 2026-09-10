@@ -37,7 +37,8 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
   const [requestLabOpen, setRequestLabOpen] = useState(false)
-  useEffect(() => { setRequestLabOpen(false) }, [event?.eventId, snapshot.revision])
+  const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision
+  useEffect(() => { setRequestLabOpen(false) }, [event?.eventId, datasetRevision])
   const cell = snapshot.cells.find((candidate) => candidate.idn === selection.identity && candidate.op === selection.operation && candidate.resource === selection.resource)
   const verdict = cell?.overall ?? event?.verdict ?? "unknown"
   const requiredRole = selection.operation ? snapshot.requiredRoles[selection.operation] : undefined
@@ -66,7 +67,7 @@ export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
       <TabsContent value="evidence" className="mt-0 grid gap-4" aria-label="Evidence">
         <EvidenceIds ids={selection.evidenceIds} />
         {event ? <section className="border-t border-border/70 pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} /></section> : <p className="text-sm text-muted-foreground">선택 좌표와 정확히 연결된 Evidence를 찾지 못했습니다.</p>}
-        {event && <RequestLabDialog key={`${event.eventId}:${snapshot.revision}`} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={snapshot.revision} />}
+        {event && <RequestLabDialog key={`${event.eventId}:${datasetRevision}`} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} />}
       </TabsContent>
       <TabsContent value="request" className="mt-0 grid gap-3" aria-label="Request">
         <p className="font-mono text-sm">{event ? `${event.method} ${event.path}` : selection.operation ?? "요청 없음"}</p>

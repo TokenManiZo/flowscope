@@ -1,8 +1,15 @@
 package io.flowscope;
 
 import io.flowscope.core.RequestRecord;
+import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,6 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class StandaloneTest {
+    @TempDir
+    Path temporaryDirectory;
+
     @Test
     void exposesAnExactSampleEvidenceAsAMaskedReadOnlyDraftWithoutReusableSession() throws Exception {
         FlowScopeWebServer.State state = newDemoState();
@@ -52,6 +62,44 @@ final class StandaloneTest {
                         FlowScopeWebServer.CredentialMode.ORIGINAL, ""));
 
         assertEquals("Standalone 데모에서는 Request Lab 전송을 사용할 수 없습니다.", error.getMessage());
+    }
+
+    @Test
+    void startsPersistsAndReopensIsolatedDiagnosisProjects() throws Exception {
+        Path workspaceRoot = temporaryDirectory.resolve("projects");
+        Standalone.DemoState state = new Standalone.DemoState(
+                new String[0], new ProjectWorkspace(workspaceRoot));
+        int sampleRecords = state.snapshot().records.size();
+        long initialDatasetRevision = state.datasetRevision();
+
+        ProjectWorkspace.Status first = state.startProject("첫 진단", "https://first.example/api/");
+
+        assertTrue(state.snapshot().records.isEmpty());
+        assertEquals("첫 진단", first.active().name());
+        assertEquals(List.of("https://first.example:443/api"), first.active().scope());
+        assertTrue(Files.isRegularFile(workspaceRoot.resolve(first.active().id())
+                .resolve(ProjectWorkspace.DATABASE_NAME)));
+        assertTrue(state.datasetRevision() > initialDatasetRevision);
+
+        state.loadSample();
+        assertEquals(sampleRecords, state.snapshot().records.size());
+        ProjectWorkspace.Status second = state.startProject("둘째 진단", "https://second.example/");
+        assertEquals(2, second.projects().size());
+        assertTrue(state.snapshot().records.isEmpty());
+
+        ProjectWorkspace.Status reopened = state.openProject(first.active().id());
+
+        assertEquals(first.active().id(), reopened.active().id());
+        assertEquals(sampleRecords, state.snapshot().records.size());
+        assertEquals("SAVED", reopened.saveState());
+    }
+
+    @Test
+    void reportsExplorerAsUnavailableWithoutFailingTheStandaloneStatusEndpoint() throws Exception {
+        ExplorerCoordinator.Snapshot status = newDemoState().explorerStatus();
+
+        assertEquals(ExplorerCoordinator.Status.IDLE, status.status());
+        assertEquals("UNAVAILABLE", status.providerReadiness());
     }
 
     private static FlowScopeWebServer.State newDemoState() throws Exception {

@@ -259,20 +259,28 @@ final class SurfaceAnalyzerTest {
 
     @Test
     void 산출물_파싱실패와_입력상한을_빈결과와_구분해_보고한다() {
-        RequestRecord oversized = document("/assets/large.js", "application/javascript",
-                "a".repeat(4_194_305));
-        RequestRecord invalidOpenApi = document("/openapi.json", "application/json", "{not-json");
-        Pipeline.Result result = Pipeline.runIsolated(List.of(oversized, invalidOpenApi),
-                new io.flowscope.core.AnalysisConfig());
+        String previous = System.getProperty("flowscope.javascript.workerBytes");
+        try {
+            System.setProperty("flowscope.javascript.workerBytes", "1024");
+            RequestRecord oversized = document("/assets/large.js", "application/javascript",
+                    "a".repeat(1_025));
+            RequestRecord invalidOpenApi = document("/openapi.json", "application/json", "{not-json");
+            Pipeline.Result result = Pipeline.runIsolated(List.of(oversized, invalidOpenApi),
+                    new io.flowscope.core.AnalysisConfig());
 
-        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+            SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
 
-        assertTrue(analysis.extractions().stream().anyMatch(report ->
-                report.failure() == SurfaceAnalysis.ExtractionFailure.INPUT_SIZE_LIMIT
-                        && report.status() == SurfaceAnalysis.ExtractionStatus.LIMIT_EXCEEDED));
-        assertTrue(analysis.extractions().stream().anyMatch(report ->
-                report.artifactKind().equals("OPENAPI")
-                        && report.failure() == SurfaceAnalysis.ExtractionFailure.PARSE_FAILED));
+            assertTrue(analysis.extractions().stream().anyMatch(report ->
+                    report.failure() == SurfaceAnalysis.ExtractionFailure.INPUT_SIZE_LIMIT
+                            && report.status() == SurfaceAnalysis.ExtractionStatus.LIMIT_EXCEEDED));
+            assertTrue(analysis.extractions().stream().anyMatch(report ->
+                    report.artifactKind().equals("OPENAPI")
+                            && report.failure() == SurfaceAnalysis.ExtractionFailure.PARSE_FAILED));
+        } finally {
+            if (previous == null) System.clearProperty("flowscope.javascript.workerBytes");
+            else System.setProperty("flowscope.javascript.workerBytes", previous);
+            io.flowscope.core.discovery.JavascriptCallSiteAnalyzer.clearCache();
+        }
     }
 
     @Test

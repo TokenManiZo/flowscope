@@ -70,10 +70,20 @@ public final class SnapshotJsonWriter {
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates, long droppedRecords,
                         List<RunExecutionLedger.Summary> executionSummaries) throws JsonProcessingException {
+        return write(revision, revision, result, config, assessments, validations, managedSessions,
+                routeCandidates, droppedRecords, executionSummaries);
+    }
+
+    public byte[] write(long revision, long datasetRevision, Pipeline.Result result, AnalysisConfig config,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions,
+                        List<RouteCandidate> routeCandidates, long droppedRecords,
+                        List<RunExecutionLedger.Summary> executionSummaries) throws JsonProcessingException {
         config = config.snapshotCopy();
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
         root.put("identityRevision", revision);
+        root.put("datasetRevision", datasetRevision);
         root.put("sampleMode", !result.records.isEmpty() && result.records.stream().allMatch(record ->
                 "https://demo.flowscope.test:443".equals(record.service)
                         && record.runId != null && record.runId.startsWith("demo-")));

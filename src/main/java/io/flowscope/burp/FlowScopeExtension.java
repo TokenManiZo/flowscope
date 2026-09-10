@@ -48,6 +48,7 @@ import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.LocalZapApiKey;
 import io.flowscope.integration.ProjectStore;
+import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapAccountVault;
@@ -183,11 +184,17 @@ public final class FlowScopeExtension implements BurpExtension {
     /** digest 중복 제거 후 메모리에 유지할 압축 전문 총량. */
     private static final long MAX_COMPRESSED_PAYLOAD_BYTES = Math.max(0L, Long.getLong(
             "flowscope.payload.memoryBytes", 48L * 1024 * 1024));
+    /** 압축률이 높은 대형 문서가 무제한으로 복원되지 않도록 평문 총량도 별도로 제한한다. */
+    private static final long MAX_EXPANDED_PAYLOAD_BYTES = Math.max(0L, Long.getLong(
+            "flowscope.payload.expandedBytes", 512L * 1024 * 1024));
     /** 웹 요청 실험실 원문은 프로젝트가 아니라 현재 Burp 프로세스의 제한된 메모리에만 둔다. */
     private static final int RAW_REQUEST_LIMIT_BYTES = Integer.getInteger(
             "flowscope.requestLab.requestBytes", 1024 * 1024);
     private static final int RAW_RESPONSE_LIMIT_BYTES = Integer.getInteger(
             "flowscope.requestLab.responseBytes", 4 * 1024 * 1024);
+    /** Explorer가 run 전용 artifact 저장소로 넘길 단일 텍스트 응답 상한. */
+    private static final int EXPLORER_RESPONSE_BYTES = Integer.getInteger(
+            "flowscope.explorer.responseBytes", 64 * 1024 * 1024);
     private static final long RAW_EXCHANGE_MEMORY_BYTES = Math.max(0L, Long.getLong(
             "flowscope.requestLab.memoryBytes", 32L * 1024 * 1024));
 
@@ -207,6 +214,7 @@ public final class FlowScopeExtension implements BurpExtension {
             RAW_REQUEST_LIMIT_BYTES, RAW_RESPONSE_LIMIT_BYTES, RAW_EXCHANGE_MEMORY_BYTES);
     private final ProjectStore projectStore = new ProjectStore();
     private final SqliteProjectStore sqliteProjectStore = new SqliteProjectStore(projectStore);
+    private final ProjectWorkspace projectWorkspace = ProjectWorkspace.defaultWorkspace();
     private volatile Pipeline.Result latest = Pipeline.runIsolated(List.of(), analysisConfig);
     private volatile List<RouteCandidate> routeCandidates = List.of();
     private final List<RouteCandidateExtractor.Seed> siteMapSeeds = new ArrayList<>();
@@ -217,6 +225,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicLong databaseSavedRevision = new AtomicLong(-1);
     private final AtomicLong droppedRecords = new AtomicLong();
     private final AtomicLong compressedPayloadBytes = new AtomicLong();
+    private final AtomicLong expandedPayloadBytes = new AtomicLong();
     private FlowScopeControlTab controlTab;
     private FlowScopeWebServer webServer;
     private volatile List<LegacyAssessment> archivedAssessments = List.of();
@@ -240,8 +249,12 @@ public final class FlowScopeExtension implements BurpExtension {
             });
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
     private final AtomicBoolean databaseSavePending = new AtomicBoolean(false);
+    private final AtomicBoolean databaseSaveRunning = new AtomicBoolean(false);
     private final AnalysisPublicationGate analysisPublication = new AnalysisPublicationGate();
     private volatile Path activeProjectDatabase;
+    private volatile ProjectStore.ProjectContext activeProjectContext = ProjectStore.ProjectContext.empty();
+    private volatile Instant databaseLastSavedAt;
+    private volatile String databaseSaveError = "";
     private boolean capacityWarned;
     private MontoyaApi api;
     private final ThreadLocal<Boolean> controlledRequest = ThreadLocal.withInitial(() -> false);
@@ -275,7 +288,10 @@ public final class FlowScopeExtension implements BurpExtension {
         try {
             SwingUtilities.invokeAndWait(() -> {
                 FlowScopeControlTab.Actions actions = new FlowScopeControlTab.Actions() {
-                    @Override public void clearTraffic() { clearRecords(); }
+                    @Override public void startProject(String name, String projectScope) {
+                        try { runProjectTask(() -> beginNewProject(name, projectScope)); }
+                        catch (RuntimeException error) { projectError("새 진단 시작 실패", error); }
+                    }
                     @Override public void saveProject(File file) { saveProjectFile(file); }
                     @Override public void loadProject(File file) { loadProjectFile(file); }
                     @Override public void importProxyHistory() { importProxyHistory(); }
@@ -653,13 +669,15 @@ public final class FlowScopeExtension implements BurpExtension {
             StoredPayload existing = payloadPool.get(key);
             if (existing != null) return existing;
             if (payload.retained()
-                    && compressedPayloadBytes.get() + payload.compressedBytes() > MAX_COMPRESSED_PAYLOAD_BYTES) {
+                    && (compressedPayloadBytes.get() + payload.compressedBytes() > MAX_COMPRESSED_PAYLOAD_BYTES
+                    || expandedPayloadBytes.get() + payload.originalBytes() > MAX_EXPANDED_PAYLOAD_BYTES)) {
                 StoredPayload metadata = payload.metadataOnly(StoredPayload.Retention.CAPACITY_METADATA_ONLY);
                 return payloadPool.computeIfAbsent(
                         metadata.digest() + ":" + metadata.retention().name(), ignored -> metadata);
             }
             payloadPool.put(key, payload);
             compressedPayloadBytes.addAndGet(payload.compressedBytes());
+            if (payload.retained()) expandedPayloadBytes.addAndGet(payload.originalBytes());
             return payload;
         }
     }
@@ -668,6 +686,7 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (payloadPool) {
             payloadPool.clear();
             compressedPayloadBytes.set(0);
+            expandedPayloadBytes.set(0);
         }
     }
 
@@ -863,6 +882,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private void loadSampleProject() {
         worker.execute(() -> {
             try {
+                preserveCurrentProject();
                 long analysisEpoch = analysisPublication.invalidate();
                 clearRunContexts();
                 sessionBroker.close();
@@ -893,7 +913,10 @@ public final class FlowScopeExtension implements BurpExtension {
                 resetIntegrationWorkflow();
                 resetZapSecrets();
                 activeProjectDatabase = null;
+                activeProjectContext = ProjectStore.ProjectContext.empty();
                 databaseSavedRevision.set(-1);
+                databaseLastSavedAt = null;
+                databaseSaveError = "";
                 api.logging().logToOutput("FlowScope 샘플 프로젝트 열기: " + loaded.size()
                         + "건 · 실제 네트워크 요청 없음");
             } catch (Exception e) {
@@ -902,9 +925,126 @@ public final class FlowScopeExtension implements BurpExtension {
         });
     }
 
-    private void clearRecords() {
+    private <T> T runProjectTask(java.util.concurrent.Callable<T> task) {
+        java.util.concurrent.Future<T> future = worker.submit(task);
+        try {
+            return future.get();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("프로젝트 작업 대기가 중단되었습니다.", error);
+        } catch (java.util.concurrent.ExecutionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException runtime) throw runtime;
+            throw new IllegalStateException(cause == null ? "프로젝트 작업에 실패했습니다." : cause.getMessage(), cause);
+        }
+    }
+
+    /** Persist the current diagnosis before replacing any target-specific in-memory state. */
+    private Path preserveCurrentProject() throws IOException {
+        if (isSampleDataset()) return activeProjectDatabase;
+        if (!hasPersistableProjectState()) return activeProjectDatabase;
+        if (activeProjectDatabase != null) {
+            saveActiveDatabase();
+            markDatabaseSaved(revision.get());
+            return activeProjectDatabase;
+        }
+        String archiveScope = archiveScopeText();
+        ProjectWorkspace.Allocation archive = projectWorkspace.allocate(
+                activeProjectContext.name(), archiveScope);
+        try {
+            saveProjectSnapshot(archive.database(), archive.context());
+            return archive.database();
+        } catch (IOException | RuntimeException error) {
+            projectWorkspace.removeEmptyAllocation(archive);
+            throw error;
+        }
+    }
+
+    private boolean hasPersistableProjectState() {
+        synchronized (records) {
+            if (!records.isEmpty()) return true;
+        }
+        return !routeCandidates.isEmpty()
+                || !analysisConfig.accounts().isEmpty()
+                || !analysisConfig.identityRoles().isEmpty()
+                || !analysisConfig.endpointRequirements().isEmpty()
+                || !analysisConfig.resourceOwners().isEmpty()
+                || !analysisConfig.reviews().isEmpty()
+                || !analysisConfig.trafficOverrides().isEmpty()
+                || !runContexts.completedRuns().isEmpty()
+                || !executionLedger.attempts().isEmpty()
+                || !archivedAssessments.isEmpty()
+                || !archivedValidations.isEmpty();
+    }
+
+    private boolean isSampleDataset() {
+        synchronized (records) {
+            return !records.isEmpty() && records.stream()
+                    .allMatch(record -> "https://demo.flowscope.test:443".equals(record.service)
+                            && record.runId != null && record.runId.startsWith("demo-"));
+        }
+    }
+
+    private String archiveScopeText() {
+        List<String> entries = new ArrayList<>(scope.entries());
+        if (entries.isEmpty()) {
+            synchronized (records) {
+                records.stream().map(record -> record.service).filter(java.util.Objects::nonNull)
+                        .filter(value -> !value.isBlank()).distinct().forEach(entries::add);
+            }
+        }
+        if (entries.isEmpty()) {
+            analysisConfig.accounts().values().stream().map(io.flowscope.core.AccountProfile::service)
+                    .distinct().forEach(entries::add);
+        }
+        if (entries.isEmpty()) {
+            throw new IllegalStateException("현재 진단을 보존할 scope를 확정할 수 없습니다. "
+                    + "현재 범위를 먼저 적용한 뒤 새 진단을 시작하세요.");
+        }
+        return String.join("\n", entries);
+    }
+
+    private ProjectWorkspace.Status beginNewProject(String name, String requestedScope) throws IOException {
+        if (scopeMutationBlocked(runContexts)) {
+            throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
+        }
+        ScopePolicy parsed = ScopePolicy.parse(requestedScope);
+        if (parsed.isEmpty()) throw new IllegalArgumentException("새 진단에는 exact scope가 한 개 이상 필요합니다.");
+
+        Path preserved = preserveCurrentProject();
+        ProjectWorkspace.Allocation next = projectWorkspace.allocate(name, requestedScope);
+        try {
+            sqliteProjectStore.save(next.database(), List.of(), new AnalysisConfig(), List.of(), List.of(),
+                    Map.of(), List.of(), List.of(), next.context());
+        } catch (IOException | RuntimeException error) {
+            projectWorkspace.removeEmptyAllocation(next);
+            throw error;
+        }
+
+        activateEmptyProject(parsed, requestedScope, next);
+        api.logging().logToOutput("FlowScope 새 진단 시작: " + next.context().name()
+                + " · " + next.context().scope() + " · 기존 진단 "
+                + (preserved == null ? "없음" : "보존 " + preserved));
+        return currentProjectStatus();
+    }
+
+    private ProjectWorkspace.Status openWorkspaceProject(String id) throws IOException {
+        if (scopeMutationBlocked(runContexts)) {
+            throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
+        }
+        loadProjectPath(projectWorkspace.resolveDatabase(id));
+        return currentProjectStatus();
+    }
+
+    private void activateEmptyProject(ScopePolicy parsed, String requestedScope,
+                                      ProjectWorkspace.Allocation next) {
         long analysisEpoch = analysisPublication.invalidate();
         clearRunContexts();
+        sessionBroker.close();
+        resetExplorerSecrets();
+        resetZapSecrets();
+        resetIntegrationWorkflow();
+        analysisConfig.replaceWith(new AnalysisConfig());
         synchronized (records) {
             datasetEpoch.incrementAndGet();
             records.clear();
@@ -917,15 +1057,39 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         routeCandidates = List.of();
         JavascriptCallSiteAnalyzer.clearCache();
-        analysisConfig.clearReviews();
-        Pipeline.Result empty = Pipeline.runIsolated(List.of(), analysisConfig);
         archivedAssessments = List.of();
         archivedValidations = List.of();
-        resetIntegrationWorkflow();
-        resetZapSecrets();
-        resetExplorerSecrets();
+        scannerCapabilityRunId = "";
+        scannerCapability = "";
+        scannerCapabilityRejectionRunId = "";
+        scannerCapabilityRejections.set(0);
+        scannerDirectAuthenticationRunId = "";
+        scope = parsed;
+        scopeText = requestedScope == null ? "" : requestedScope.trim();
+        activeProjectDatabase = null;
+        activeProjectContext = ProjectStore.ProjectContext.empty();
+        Pipeline.Result empty = Pipeline.runIsolated(List.of(), analysisConfig);
         publishAnalysis(analysisEpoch, empty);
-        api.logging().logToOutput("FlowScope 수집 데이터가 삭제되었습니다.");
+        activeProjectDatabase = next.database();
+        activeProjectContext = next.context();
+        markDatabaseSaved(revision.get());
+        if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
+    }
+
+    private void saveProjectSnapshot(Path target, ProjectStore.ProjectContext context) throws IOException {
+        List<RequestRecord> snapshot;
+        synchronized (records) { snapshot = new ArrayList<>(records); }
+        sqliteProjectStore.save(target, snapshot, analysisConfig, archivedAssessments, archivedValidations,
+                runContexts.completedRuns(), routeCandidates, executionLedger.attempts(), context);
+    }
+
+    private ProjectStore.ProjectContext currentProjectContext(String fallbackName) {
+        if (activeProjectContext != null && activeProjectContext.present()) return activeProjectContext;
+        List<String> entries = scope.entries();
+        String name = fallbackName == null ? "" : fallbackName
+                .replaceFirst("(?i)\\.(flowscope\\.db|json|db)$", "").trim();
+        if (name.isBlank() && !entries.isEmpty()) name = entries.getFirst();
+        return new ProjectStore.ProjectContext(name, entries, Instant.now());
     }
 
     private void saveProjectFile(File file) {
@@ -937,18 +1101,20 @@ public final class FlowScopeExtension implements BurpExtension {
                 List<ValidationDecision> validations = archivedValidations;
                 boolean database = sqliteProject(file.toPath());
                 Path path = file.toPath().toAbsolutePath().normalize();
+                ProjectStore.ProjectContext context = currentProjectContext(path.getFileName().toString());
                 if (database) {
                     sqliteProjectStore.save(path, snapshot, analysisConfig, assessments, validations,
                             runContexts.completedRuns(), routeCandidates,
-                            executionLedger.attempts());
+                            executionLedger.attempts(), context);
                 } else {
                     projectStore.save(path, snapshot, analysisConfig, assessments, validations,
                             runContexts.completedRuns(), routeCandidates,
-                            executionLedger.attempts());
+                            executionLedger.attempts(), context);
                 }
                 if (database) {
                     activeProjectDatabase = path;
-                    databaseSavedRevision.set(revision.get());
+                    activeProjectContext = context;
+                    markDatabaseSaved(revision.get());
                 }
                 api.logging().logToOutput("FlowScope 프로젝트 저장: " + file);
             } catch (Exception e) {
@@ -960,56 +1126,113 @@ public final class FlowScopeExtension implements BurpExtension {
     private void loadProjectFile(File file) {
         worker.execute(() -> {
             try {
-                long analysisEpoch = analysisPublication.invalidate();
-                clearRunContexts();
-                sessionBroker.close();
-                resetExplorerSecrets();
-                synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
-                synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
                 Path path = file.toPath().toAbsolutePath().normalize();
-                boolean database = sqliteProject(path);
-                ProjectStore.ProjectData data = database
-                        ? sqliteProjectStore.load(path) : projectStore.load(path);
-                analysisConfig.replaceWith(data.config());
-                JavascriptCallSiteAnalyzer.clearCache();
-                List<RequestRecord> loaded = new ArrayList<>(data.records());
-                resetPayloadPool();
-                loaded.forEach(record -> {
-                    record.requestPayload = internPayload(record.requestPayload);
-                    record.responsePayload = internPayload(record.responsePayload);
-                });
-                Pipeline.Result result = Pipeline.runIsolated(loaded, analysisConfig);
-                synchronized (restoredRouteCandidates) {
-                    restoredRouteCandidates.addAll(data.routeCandidates().stream()
-                            .filter(candidate -> !candidate.observed()
-                                    || !candidate.declaredParameters().isEmpty()
-                                    || candidate.provenanceTypes().contains(
-                                            RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS))
-                            .toList());
-                }
-                // 과거 LLM 기록은 현재 판정에 재사용하지 않고 그대로 보존한다.
-                synchronized (records) {
-                    datasetEpoch.incrementAndGet();
-                    records.clear();
-                    records.addAll(loaded);
-                    capacityWarned = records.size() >= MAX_RECORDS;
-                }
-                rawExchanges.clear();
-                droppedRecords.set(0);
-                publishAnalysis(analysisEpoch, result);
-                resetIntegrationWorkflow();
-                resetZapSecrets();
-                archivedAssessments = data.assessments();
-                archivedValidations = data.validations();
-                executionLedger.replace(data.runAttempts());
-                runContexts.restoreCompletedRuns(data.completedRuns());
-                activeProjectDatabase = database ? path : null;
-                databaseSavedRevision.set(database ? revision.get() : -1);
-                api.logging().logToOutput("FlowScope 프로젝트 열기: " + result.records.size() + "건 — " + file);
+                loadProjectPath(path);
             } catch (Exception e) {
                 projectError("프로젝트 열기 실패", e);
             }
         });
+    }
+
+    private void loadProjectPath(Path requestedPath) throws IOException {
+        Path path = requestedPath.toAbsolutePath().normalize();
+        boolean database = sqliteProject(path);
+        if (database && path.equals(activeProjectDatabase)) {
+            preserveCurrentProject();
+        }
+        ProjectStore.ProjectData data = database ? sqliteProjectStore.load(path) : projectStore.load(path);
+        ProjectStore.ProjectContext context = restoredProjectContext(data, path);
+        ScopePolicy restoredScope = ScopePolicy.parse(String.join("\n", context.scope()));
+        List<RequestRecord> loaded = new ArrayList<>(data.records());
+        Pipeline.Result result = Pipeline.runIsolated(loaded, data.config());
+
+        if (!(database && path.equals(activeProjectDatabase))) preserveCurrentProject();
+        Path managedPath = path;
+        if (!database) {
+            if (restoredScope.isEmpty()) {
+                throw new IllegalArgumentException("legacy JSON 프로젝트에 복원 가능한 scope가 없습니다.");
+            }
+            ProjectWorkspace.Allocation migrated = projectWorkspace.allocate(context.name(),
+                    String.join("\n", context.scope()));
+            context = migrated.context();
+            try {
+                sqliteProjectStore.save(migrated.database(), loaded, data.config(), data.assessments(),
+                        data.validations(), data.completedRuns(), data.routeCandidates(), data.runAttempts(), context);
+                managedPath = migrated.database();
+            } catch (IOException | RuntimeException error) {
+                projectWorkspace.removeEmptyAllocation(migrated);
+                throw error;
+            }
+        }
+
+        applyLoadedProject(data, loaded, result, restoredScope, context, managedPath);
+        api.logging().logToOutput("FlowScope 프로젝트 열기: " + result.records.size() + "건 — " + managedPath);
+    }
+
+    private ProjectStore.ProjectContext restoredProjectContext(ProjectStore.ProjectData data, Path path) {
+        ProjectStore.ProjectContext context = data.context();
+        if (context != null && !context.scope().isEmpty()) return context;
+        List<String> restoredScope = data.records().stream().map(record -> record.service)
+                .filter(java.util.Objects::nonNull).filter(value -> !value.isBlank()).distinct().toList();
+        String name = context == null || context.name().isBlank()
+                ? path.getFileName().toString().replaceFirst("(?i)\\.(flowscope\\.db|json|db)$", "")
+                : context.name();
+        Instant createdAt = context == null || !context.present() ? fileTimestamp(path) : context.createdAt();
+        return new ProjectStore.ProjectContext(name, restoredScope, createdAt);
+    }
+
+    private static Instant fileTimestamp(Path path) {
+        try { return java.nio.file.Files.getLastModifiedTime(path).toInstant(); }
+        catch (IOException ignored) { return Instant.now(); }
+    }
+
+    private void applyLoadedProject(ProjectStore.ProjectData data, List<RequestRecord> loaded,
+                                    Pipeline.Result result, ScopePolicy restoredScope,
+                                    ProjectStore.ProjectContext context, Path database) {
+        long analysisEpoch = analysisPublication.invalidate();
+        clearRunContexts();
+        sessionBroker.close();
+        resetExplorerSecrets();
+        resetZapSecrets();
+        resetIntegrationWorkflow();
+        analysisConfig.replaceWith(data.config());
+        JavascriptCallSiteAnalyzer.clearCache();
+        resetPayloadPool();
+        loaded.forEach(record -> {
+            record.requestPayload = internPayload(record.requestPayload);
+            record.responsePayload = internPayload(record.responsePayload);
+        });
+        synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
+        synchronized (restoredRouteCandidates) {
+            restoredRouteCandidates.clear();
+            restoredRouteCandidates.addAll(data.routeCandidates().stream()
+                    .filter(candidate -> !candidate.observed()
+                            || !candidate.declaredParameters().isEmpty()
+                            || candidate.provenanceTypes().contains(
+                                    RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS))
+                    .toList());
+        }
+        synchronized (records) {
+            datasetEpoch.incrementAndGet();
+            records.clear();
+            records.addAll(loaded);
+            capacityWarned = records.size() >= MAX_RECORDS;
+        }
+        rawExchanges.clear();
+        droppedRecords.set(0);
+        archivedAssessments = data.assessments();
+        archivedValidations = data.validations();
+        executionLedger.replace(data.runAttempts());
+        scope = restoredScope;
+        scopeText = String.join("\n", context.scope());
+        activeProjectDatabase = null;
+        activeProjectContext = ProjectStore.ProjectContext.empty();
+        publishAnalysis(analysisEpoch, result);
+        runContexts.restoreCompletedRuns(data.completedRuns());
+        activeProjectDatabase = database;
+        activeProjectContext = context;
+        markDatabaseSaved(revision.get());
+        if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
     }
 
     private void projectError(String title, Exception error) {
@@ -1036,12 +1259,15 @@ public final class FlowScopeExtension implements BurpExtension {
         if (!databaseSavePending.compareAndSet(false, true)) return;
         worker.schedule(() -> {
             long savingRevision = revision.get();
+            databaseSaveRunning.set(true);
             try {
                 saveActiveDatabase();
-                databaseSavedRevision.set(savingRevision);
+                markDatabaseSaved(savingRevision);
             } catch (Exception error) {
+                markDatabaseSaveFailed(error);
                 api.logging().logToError("FlowScope 로컬 DB 자동 저장 실패", error);
             } finally {
+                databaseSaveRunning.set(false);
                 databaseSavePending.set(false);
                 if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {
                     scheduleDatabaseSave();
@@ -1059,7 +1285,36 @@ public final class FlowScopeExtension implements BurpExtension {
         List<ValidationDecision> validations = archivedValidations;
         sqliteProjectStore.save(database, snapshot, analysisConfig, assessments, validations,
                 runContexts.completedRuns(), routeCandidates,
-                executionLedger.attempts());
+                executionLedger.attempts(), currentProjectContext(database.getParent() == null
+                        ? database.getFileName().toString() : database.getParent().getFileName().toString()));
+    }
+
+    private void markDatabaseSaved(long savedRevision) {
+        databaseSavedRevision.set(savedRevision);
+        databaseLastSavedAt = Instant.now();
+        databaseSaveError = "";
+    }
+
+    private void markDatabaseSaveFailed(Throwable error) {
+        String message = error == null || error.getMessage() == null
+                ? "로컬 프로젝트 DB 저장에 실패했습니다."
+                : error.getMessage();
+        databaseSaveError = Masking.truncate(Masking.maskSecrets(message), 512);
+    }
+
+    private ProjectWorkspace.Status currentProjectStatus() {
+        ProjectWorkspace.Status status = projectWorkspace.status(
+                activeProjectDatabase, activeProjectContext, sqliteProjectStore);
+        if (activeProjectDatabase == null) {
+            return status.withPersistence("UNMANAGED", "", "");
+        }
+        boolean dirty = databaseSavedRevision.get() != revision.get();
+        String state = !databaseSaveError.isBlank() && dirty ? "FAILED"
+                : databaseSaveRunning.get() ? "SAVING"
+                : dirty ? "PENDING" : "SAVED";
+        return status.withPersistence(state,
+                databaseLastSavedAt == null ? "" : databaseLastSavedAt.toString(),
+                "FAILED".equals(state) ? databaseSaveError : "");
     }
 
     private void configureInitialScope() {
@@ -1076,21 +1331,58 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void updateScopeFromUi(String value) {
         try {
-            applyScope(value);
+            runProjectTask(() -> {
+                applyScope(value);
+                return null;
+            });
         } catch (IllegalArgumentException | IllegalStateException e) {
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(controlTab, e.getMessage(),
                     "FlowScope 범위 오류", JOptionPane.ERROR_MESSAGE));
         }
     }
 
-    private void applyScope(String value) {
+    private void applyScope(String value) throws IOException {
         if (scopeMutationBlocked(runContexts)) {
             throw new IllegalStateException("활성 실행이 있습니다. "
                     + "실행을 종료한 뒤 범위를 변경하세요.");
         }
         ScopePolicy parsed = ScopePolicy.parse(value);
+        if (activeProjectDatabase != null && !activeProjectContext.scope().equals(parsed.entries())) {
+            throw new IllegalStateException("진행 중인 프로젝트의 scope는 바꿀 수 없습니다. "
+                    + "새 진단 시작을 사용하면 현재 Evidence를 보존하고 다른 scope로 전환합니다.");
+        }
+        if (activeProjectDatabase == null && !parsed.isEmpty()) {
+            if (isSampleDataset()) {
+                ProjectWorkspace.Allocation allocation = projectWorkspace.allocate("", value);
+                try {
+                    sqliteProjectStore.save(allocation.database(), List.of(), new AnalysisConfig(),
+                            List.of(), List.of(), Map.of(), List.of(), List.of(), allocation.context());
+                } catch (IOException | RuntimeException error) {
+                    projectWorkspace.removeEmptyAllocation(allocation);
+                    throw error;
+                }
+                activateEmptyProject(parsed, value, allocation);
+                api.logging().logToOutput("FlowScope 샘플을 닫고 새 진단 시작: "
+                        + allocation.context().name() + " · " + allocation.context().scope());
+                return;
+            }
+            if (hasPersistableProjectState() && !scope.entries().equals(parsed.entries())) {
+                throw new IllegalStateException("저장되지 않은 기존 진단 데이터와 새 scope를 섞을 수 없습니다. "
+                        + "새 진단 시작을 사용해 기존 Evidence를 먼저 보존하세요.");
+            }
+            ProjectWorkspace.Allocation allocation = projectWorkspace.allocate("", value);
+            try {
+                saveProjectSnapshot(allocation.database(), allocation.context());
+            } catch (IOException | RuntimeException error) {
+                projectWorkspace.removeEmptyAllocation(allocation);
+                throw error;
+            }
+            activeProjectDatabase = allocation.database();
+            activeProjectContext = allocation.context();
+            markDatabaseSaved(revision.get());
+        }
         scope = parsed;
-        scopeText = value == null ? "" : value;
+        scopeText = value == null ? "" : value.trim();
         synchronized (siteMapSeeds) { siteMapSeeds.removeIf(seed -> !parsed.allows(seed.url())); }
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         rebuildRouteCandidates(latest.records);
@@ -1115,6 +1407,7 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public Pipeline.Result snapshot() { return latest; }
             @Override public Pipeline.Result completionSnapshot() { rebuildImmediately(); return latest; }
             @Override public long revision() { return revision.get(); }
+            @Override public long datasetRevision() { return datasetEpoch.get(); }
             @Override public AnalysisConfig config() { return analysisConfig; }
             @Override public List<LegacyAssessment> assessments() {
                 return archivedAssessments;
@@ -1139,6 +1432,15 @@ public final class FlowScopeExtension implements BurpExtension {
                 scheduleRebuild();
             }
             @Override public List<String> scopeEntries() { return scope.entries(); }
+            @Override public ProjectWorkspace.Status projectStatus() {
+                return currentProjectStatus();
+            }
+            @Override public ProjectWorkspace.Status startProject(String name, String projectScope) {
+                return runProjectTask(() -> beginNewProject(name, projectScope));
+            }
+            @Override public ProjectWorkspace.Status openProject(String id) {
+                return runProjectTask(() -> openWorkspaceProject(id));
+            }
             @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
             @Override public List<io.flowscope.integration.RunExecutionLedger.Summary> executionSummaries() {
                 return executionLedger.summaries();
@@ -1191,7 +1493,6 @@ public final class FlowScopeExtension implements BurpExtension {
                 return explorer.recheckProvider();
             }
             @Override public void rebuild() { scheduleRebuild(); }
-            @Override public void clearTraffic() { clearRecords(); }
             @Override public void loadSample() { loadSampleProject(); }
             @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
                 BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
@@ -1200,14 +1501,22 @@ public final class FlowScopeExtension implements BurpExtension {
                     record.requestPayload = internPayload(record.requestPayload);
                     record.responsePayload = internPayload(record.responsePayload);
                 });
+                int parsedCount = parsed.records.size();
+                int duplicateCount;
                 synchronized (records) {
                     int room = Math.max(0, MAX_RECORDS - records.size());
-                    records.addAll(parsed.records.subList(0, Math.min(room, parsed.records.size())));
-                    droppedRecords.addAndGet(Math.max(0, parsed.records.size() - room));
+                    List<RequestRecord> missing = RecordMerge.missing(records, parsed.records, parsed.records.size());
+                    duplicateCount = parsed.records.size() - missing.size();
+                    List<RequestRecord> added = missing.subList(0, Math.min(room, missing.size()));
+                    records.addAll(added);
+                    droppedRecords.addAndGet(Math.max(0, missing.size() - room));
+                    parsed.records.clear();
+                    parsed.records.addAll(added);
                     capacityWarned = records.size() >= MAX_RECORDS;
                 }
                 scheduleRebuild();
                 api.logging().logToOutput("FlowScope Web XML 가져오기: " + parsed.records.size()
+                        + "/" + parsedCount + "건 추가 · 기존 중복 " + duplicateCount
                         + "건 · 건너뜀 " + parsed.skipped.size() + "건");
                 return parsed;
             }
@@ -1652,8 +1961,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 responseHeaders.computeIfAbsent(header.name(), ignored -> new ArrayList<>()).add(header.value());
             }
             burp.api.montoya.core.ByteArray responseBody = response.body();
-            int explorerBodyLimit = 4 * 1024 * 1024;
-            int copiedBody = Math.min(responseBody.length(), explorerBodyLimit);
+            int copiedBody = Math.min(responseBody.length(), EXPLORER_RESPONSE_BYTES);
             byte[] responseBodyBytes = copiedBody == responseBody.length()
                     ? responseBody.getBytes() : responseBody.subArray(0, copiedBody).getBytes();
             String decoded = HttpMessageTextCodec.decode(responseBodyBytes, 0,
@@ -1679,6 +1987,7 @@ public final class FlowScopeExtension implements BurpExtension {
             synchronized (records) {
                 if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
                 records.add(record);
+                retainRawExchange(record, exchange.request(), response);
             }
             rebuildImmediately();
             RequestRecord published = latest.records.stream().filter(value -> value.runtimeId() == record.runtimeId())

@@ -144,4 +144,18 @@ final class HarParserTest {
         assertThrows(IllegalArgumentException.class,
                 () -> HarParser.parseDetailed("not-json".getBytes(StandardCharsets.UTF_8)));
     }
+
+    @Test
+    void ipv6_url을_중복_대괄호_없이_service로_정규화한다() {
+        String har = """
+                {"log":{"version":"1.2","entries":[{
+                  "request":{"method":"GET","url":"http://[::1]:8080/health","headers":[]},
+                  "response":{"status":200,"headers":[],"content":{"text":"ok"}}
+                }]}}
+                """;
+
+        RequestRecord record = HarParser.parseDetailed(har.getBytes(StandardCharsets.UTF_8)).records.getFirst();
+
+        assertEquals("http://[::1]:8080", record.service);
+    }
 }

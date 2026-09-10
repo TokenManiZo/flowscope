@@ -111,7 +111,7 @@ public final class SurfaceAnalyzer {
             }
             MutableEndpoint endpoint = endpoints.computeIfAbsent(key.stableKey(), ignored -> new MutableEndpoint(key));
             endpoint.observations.add(new Observation(record.evidenceId, record.source, record.runId, record.idn,
-                    record.status));
+                    record.status, record.trafficClassification.trafficClass()));
             observePathParameters(endpoint, record);
             observeQueryParameters(endpoint, record);
             observeBodyParameters(endpoint, record);
@@ -165,9 +165,21 @@ public final class SurfaceAnalyzer {
         return switch (analysis.status()) {
             case PARSED -> ExtractionFailure.NONE;
             case PARTIAL -> ExtractionFailure.SYNTAX_RECOVERY;
-            case PARSE_FAILED -> ExtractionFailure.PARSE_FAILED;
-            case LIMIT_EXCEEDED -> analysis.detail().startsWith("script exceeds")
-                    ? ExtractionFailure.INPUT_SIZE_LIMIT : ExtractionFailure.AST_NODE_LIMIT;
+            case PARSE_FAILED -> analysis.detail().startsWith("isolated JavaScript parser")
+                    ? ExtractionFailure.WORKER_FAILURE : ExtractionFailure.PARSE_FAILED;
+            case LIMIT_EXCEEDED -> {
+                String detail = analysis.detail();
+                if (detail.startsWith("script exceeds isolated worker input budget")) {
+                    yield ExtractionFailure.INPUT_SIZE_LIMIT;
+                }
+                if (detail.startsWith("isolated JavaScript parser exceeded")) {
+                    yield ExtractionFailure.WORKER_TIMEOUT;
+                }
+                if (detail.startsWith("isolated JavaScript index exceeds")) {
+                    yield ExtractionFailure.WORKER_OUTPUT_LIMIT;
+                }
+                yield ExtractionFailure.AST_NODE_LIMIT;
+            }
         };
     }
 
@@ -685,7 +697,33 @@ public final class SurfaceAnalyzer {
                     .sorted(Comparator.comparing((ParameterFact fact) -> fact.location().ordinal())
                             .thenComparing(ParameterFact::fieldPath)).toList();
             return new EndpointFact(key, Set.copyOf(sources), List.copyOf(observations), List.copyOf(declarations),
-                    parameterFacts, delta(!declarations.isEmpty(), sources));
+                    parameterFacts, delta(!declarations.isEmpty(), sources), endpointKinds());
+        }
+
+        private Set<SurfaceAnalysis.EndpointKind> endpointKinds() {
+            EnumSet<SurfaceAnalysis.EndpointKind> kinds = EnumSet.noneOf(SurfaceAnalysis.EndpointKind.class);
+            for (Observation observation : observations) {
+                switch (observation.trafficClass()) {
+                    case API, AUTH_SESSION, POLLING, BACKGROUND, TELEMETRY_CANDIDATE ->
+                            kinds.add(SurfaceAnalysis.EndpointKind.OBSERVED_API);
+                    case NAVIGATION -> kinds.add(SurfaceAnalysis.EndpointKind.NAVIGATION);
+                    case STATIC_ASSET -> kinds.add(SurfaceAnalysis.EndpointKind.STATIC_ASSET);
+                    case DISCOVERY_METADATA -> kinds.add(SurfaceAnalysis.EndpointKind.DISCOVERY_DOCUMENT);
+                    default -> { }
+                }
+            }
+            for (Declaration declaration : declarations) {
+                switch (declaration.type()) {
+                    case "OPENAPI", "JAVASCRIPT_LITERAL", "LLM_ARTIFACT_ANALYSIS", "XML_ROUTE" ->
+                            kinds.add(SurfaceAnalysis.EndpointKind.ARTIFACT_API);
+                    case "HTML_FORM" -> kinds.add(SurfaceAnalysis.EndpointKind.FORM_ACTION);
+                    case "HTML_SCRIPT", "SCRIPT_DEPENDENCY", "FRAMEWORK_MANIFEST_ASSET" ->
+                            kinds.add(SurfaceAnalysis.EndpointKind.STATIC_ASSET);
+                    default -> { }
+                }
+            }
+            if (kinds.isEmpty()) kinds.add(SurfaceAnalysis.EndpointKind.UNVERIFIED);
+            return Set.copyOf(kinds);
         }
     }
 

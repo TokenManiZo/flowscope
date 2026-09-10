@@ -67,9 +67,20 @@ public final class SqliteProjectStore {
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates,
                      List<RunExecutionLedger.Attempt> runAttempts) throws IOException {
+        save(target, records, config, assessments, validations, completedRuns, routeCandidates,
+                runAttempts, ProjectStore.ProjectContext.empty());
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<LegacyAssessment> assessments,
+                     List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates,
+                     List<RunExecutionLedger.Attempt> runAttempts,
+                     ProjectStore.ProjectContext context) throws IOException {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = codec.toDocument(records, config, assessments, validations,
-                runs.keySet(), runs, routeCandidates, runAttempts);
+                runs.keySet(), runs, routeCandidates, runAttempts, context);
         saveDocument(target, root);
     }
 
@@ -117,6 +128,27 @@ public final class SqliteProjectStore {
             return codec.fromDocument(read(connection));
         } catch (SQLException error) {
             throw new IOException("FlowScope SQLite load failed", error);
+        }
+    }
+
+    /** Reads only non-secret project metadata for the workspace picker. */
+    public ProjectStore.ProjectContext readContext(Path source) throws IOException {
+        Path absolute = source.toAbsolutePath().normalize();
+        if (Files.size(absolute) > MAX_FILE_BYTES) {
+            throw new IllegalArgumentException("project database exceeds 100 MiB");
+        }
+        try (Connection connection = connect(absolute)) {
+            String value = readOptionalMetadata(connection, "project_context");
+            if (value == null) return ProjectStore.ProjectContext.empty();
+            JsonNode node = json.readTree(value);
+            List<String> scope = new java.util.ArrayList<>();
+            JsonNode scopeNode = node.path("scope");
+            if (!scopeNode.isArray()) throw new IllegalArgumentException("invalid project scope");
+            for (JsonNode entry : scopeNode) scope.add(entry.asText());
+            return new ProjectStore.ProjectContext(node.path("name").asText(""), scope,
+                    java.time.Instant.parse(required(node, "created_at")));
+        } catch (SQLException error) {
+            throw new IOException("FlowScope SQLite metadata read failed", error);
         }
     }
 
@@ -187,6 +219,7 @@ public final class SqliteProjectStore {
             putMetadata(metadata, "project_schema_version", root.path("schema_version").asText());
             putMetadata(metadata, "traffic_classifier_version", root.path("traffic_classifier_version").asText());
             putMetadata(metadata, "saved_at", root.path("saved_at").asText());
+            putMetadata(metadata, "project_context", json.writeValueAsString(root.path("project")));
 
             int index = 0;
             for (JsonNode value : root.path("records")) {
@@ -293,6 +326,8 @@ public final class SqliteProjectStore {
         root.put("schema_version", Integer.parseInt(readMetadata(connection, "project_schema_version")));
         root.put("traffic_classifier_version", Integer.parseInt(readMetadata(connection, "traffic_classifier_version")));
         root.put("saved_at", readMetadata(connection, "saved_at"));
+        String projectContext = readOptionalMetadata(connection, "project_context");
+        if (projectContext != null) root.set("project", json.readTree(projectContext));
         ArrayNode records = root.putArray("records");
         readDocuments(connection, "SELECT document FROM records ORDER BY seq", records);
         ObjectNode payloads = root.putObject("payloads");
@@ -401,6 +436,15 @@ public final class SqliteProjectStore {
             try (ResultSet values = statement.executeQuery()) {
                 if (!values.next()) throw new IllegalArgumentException("missing FlowScope SQLite metadata: " + key);
                 return values.getString(1);
+            }
+        }
+    }
+
+    private static String readOptionalMetadata(Connection connection, String key) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT value FROM metadata WHERE key=?")) {
+            statement.setString(1, key);
+            try (ResultSet values = statement.executeQuery()) {
+                return values.next() ? values.getString(1) : null;
             }
         }
     }

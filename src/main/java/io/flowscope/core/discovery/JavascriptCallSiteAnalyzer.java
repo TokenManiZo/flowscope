@@ -37,14 +37,14 @@ import static io.flowscope.core.discovery.JavascriptAnalysis.ParameterKind.QUERY
 public final class JavascriptCallSiteAnalyzer {
     private static final Set<String> HTTP_METHODS = Set.of(
             "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD");
-    /** 실측 SPA 번들(crAPI main.js 1,655,900 bytes)이 들어오도록 잡은 상한. 파싱 비용은 MAX_NODES가 계속 제한한다. */
-    private static final int MAX_SCRIPT_CHARS = 4_194_304;
-    private static final int MAX_NODES = 250_000;
-    private static final int MAX_CALL_SITES = 20_000;
-    private static final int MAX_ASSETS = 20_000;
-    private static final int MAX_ISSUES = 20_000;
-    private static final int MAX_PARAMETERS_PER_CALL = 1_024;
-    private static final int MAX_RESOLUTION_DEPTH = 12;
+    private static final int MAX_NODES = Integer.getInteger("flowscope.javascript.maxNodes", 2_000_000);
+    private static final int MAX_CALL_SITES = Integer.getInteger("flowscope.javascript.maxCallSites", 100_000);
+    private static final int MAX_ASSETS = Integer.getInteger("flowscope.javascript.maxAssets", 100_000);
+    private static final int MAX_ISSUES = Integer.getInteger("flowscope.javascript.maxIssues", 100_000);
+    private static final int MAX_PARAMETERS_PER_CALL = Integer.getInteger(
+            "flowscope.javascript.maxParametersPerCall", 4_096);
+    private static final int MAX_RESOLUTION_DEPTH = Integer.getInteger(
+            "flowscope.javascript.maxResolutionDepth", 32);
     private static final int MAX_CACHE_ENTRIES = 128;
     private static final Map<String, JavascriptAnalysis> CACHE = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
@@ -59,16 +59,12 @@ public final class JavascriptCallSiteAnalyzer {
         if (script == null || script.isBlank()) {
             return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSED, "empty script");
         }
-        if (script.length() > MAX_SCRIPT_CHARS) {
-            return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.LIMIT_EXCEEDED,
-                    "script exceeds " + MAX_SCRIPT_CHARS + " character parser limit");
-        }
         String cacheKey = cacheKey(script);
         synchronized (CACHE) {
             JavascriptAnalysis cached = CACHE.get(cacheKey);
             if (cached != null) return cached;
         }
-        JavascriptAnalysis analysis = parse(script);
+        JavascriptAnalysis analysis = JavascriptAnalysisProcess.analyze(script);
         synchronized (CACHE) {
             CACHE.put(cacheKey, analysis);
         }
@@ -77,6 +73,10 @@ public final class JavascriptCallSiteAnalyzer {
 
     public static void clearCache() {
         synchronized (CACHE) { CACHE.clear(); }
+    }
+
+    static JavascriptAnalysis analyzeInWorker(String script) {
+        return parse(script);
     }
 
     private static String cacheKey(String script) {
@@ -107,7 +107,7 @@ public final class JavascriptCallSiteAnalyzer {
             if (mutationCollector.limited) {
                 return new JavascriptAnalysis(List.of(), List.of(), List.of(),
                         JavascriptAnalysis.Status.LIMIT_EXCEEDED,
-                        "AST exceeds 250000 node traversal limit");
+                        "AST exceeds " + MAX_NODES + " node traversal limit");
             }
             Analyzer analyzer = new Analyzer(mutationCollector.mutatedDeclarations);
             NodeTraversal.traverse(compiler, root, analyzer);
@@ -116,7 +116,7 @@ public final class JavascriptCallSiteAnalyzer {
                     : JavascriptAnalysis.Status.PARTIAL;
             String detail = compiler.getErrorCount() == 0 ? ""
                     : "parser recovered with " + compiler.getErrorCount() + " syntax error(s)";
-            if (analyzer.limited) detail = "AST exceeds 250000 node traversal limit";
+            if (analyzer.limited) detail = "AST or extracted facts exceed configured worker budget";
             return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, analyzer.issues, status, detail);
         } catch (RuntimeException | LinkageError | StackOverflowError exception) {
             return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSE_FAILED,

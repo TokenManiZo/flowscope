@@ -74,8 +74,8 @@ public final class SampleProject {
         record.body = responseBody;
         record.respText = "HTTP/1.1 " + status + " Demo\r\nContent-Type: application/json\r\n\r\n"
                 + (responseBody == null ? "" : responseBody);
-        record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
-        record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
+        record.requestPayload = StoredPayload.capture(Masking.maskHeaders(record.reqText), "", 1024 * 1024);
+        record.responsePayload = StoredPayload.capture(Masking.maskHeaders(record.respText), "", 1024 * 1024);
         record.hasResponse = true;
         record.timestamp = START + offset * 1_000L;
         record.runId = source == Source.HUMAN ? "demo-human"

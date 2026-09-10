@@ -116,8 +116,11 @@ test("opens the packaged reference shell, loads the sample, navigates every rout
   expect(Number.parseFloat(density.rootFontSize)).toBeCloseTo(14.4, 1)
   expect(Number.parseFloat(density.bodyFontSize)).toBeCloseTo(14.4, 1)
   expect(Number.parseFloat(density.mainFontSize)).toBeCloseTo(14.4, 1)
-  await page.getByRole("button", { name: "트래픽 초기화" }).click()
-  await page.getByRole("button", { name: "초기화", exact: true }).click()
+  await page.getByRole("button", { name: "새 진단 시작" }).first().click()
+  await page.getByLabel("프로젝트 이름 (선택)").fill("Playwright 격리 진단")
+  await page.getByLabel("Exact scope").fill("https://e2e.invalid/")
+  await page.getByRole("button", { name: "보존하고 시작" }).click()
+  await expect(page.getByRole("button", { name: "샘플로 화면 익히기" })).toBeVisible()
   await page.getByRole("button", { name: "샘플로 화면 익히기" }).click()
   await expect(page.getByLabel("샘플 데이터")).toBeVisible()
   const routes = [["대시보드", "보안 점검 대시보드"], ["점검 시작", "점검 시작"], ["공격면 그래프", "공격면 그래프"], ["권한 매트릭스", "권한 매트릭스"], ["흐름 순서", "흐름 순서"], ["취약점 시나리오", "취약점 시나리오"], ["Evidence", "Evidence"], ["계정·세션", "계정·세션 관리"], ["실행 상태", "실행 상태"]] as const
@@ -357,7 +360,7 @@ test("creates, edits, refreshes, and removes a metadata-only account", async ({ 
   }
 })
 
-test("keeps ZAP setup and removes obsolete LLM execution controls", async ({ page }) => {
+test("keeps ZAP setup and the independent Explorer while removing obsolete Judge controls", async ({ page }) => {
   await openDashboard(page); await navigate(page, "점검 시작", "점검 시작")
   await expect(page.getByRole("complementary", { name: "선택 상세" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "선택 상세 열기" })).toHaveCount(0)
@@ -370,8 +373,13 @@ test("keeps ZAP setup and removes obsolete LLM execution controls", async ({ pag
   await expect(zapPanel.getByText(/^UNAVAILABLE · (?:ZAP 연결 확인 기능을 사용할 수 없습니다\.|연결 상태 확인 중)$/)).toBeVisible()
   await expect(page.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
   await navigate(page, "실행 상태", "실행 상태")
-  await expect(page.getByRole("tab", { name: "LLM" })).toHaveCount(0)
+  await expect(page.getByRole("tab", { name: "LLM" })).toBeVisible()
+  await page.getByRole("tab", { name: "LLM" }).click()
+  await expect(page.getByText(/^LLM Explorer · IDLE$/)).toBeVisible()
+  await expect(page.getByText("Standalone 데모에서는 LLM Explorer를 실행할 수 없습니다.", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "LLM Explorer 열기" })).toBeVisible()
   await expect(page.getByRole("button", { name: "LLM Explorer 시작" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: /Judge/ })).toHaveCount(0)
   await expect(page.getByRole("tab", { name: "ZAP" })).toBeVisible()
 })
 
@@ -389,7 +397,7 @@ test("keeps the reference frame current-route semantics, Sheets, and layout usab
   await page.setViewportSize({ width: 1280, height: 720 }); await openDashboard(page)
   await navigate(page, "계정·세션", "계정·세션 관리")
   const longWorkspace = page.getByRole("region", { name: "계정·세션 작업 영역" })
-  const finalControl = page.getByRole("button", { name: "매핑·트래픽 초기화" })
+  const finalControl = page.getByRole("button", { name: "세션·신원 매핑 초기화" })
   await expect(finalControl).not.toBeInViewport()
   await longWorkspace.focus()
   await page.keyboard.press("End")
@@ -409,7 +417,7 @@ test("keeps the reference frame current-route semantics, Sheets, and layout usab
     if (width <= 900) {
       for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) await expect(banner.getByLabel(`${label} 상태`)).toBeVisible()
       await expect(banner.getByLabel("프로젝트 선택")).toBeVisible()
-      await expect(banner.getByText("DB 준비됨")).toBeVisible()
+      await expect(banner.getByText(/^(저장 대기|저장 중|저장됨|저장 실패|새 진단 필요)$/)).toBeVisible()
       await expect(banner.getByRole("link", { name: /빠른 시작|점검 계속/ })).toBeVisible()
       expect(await banner.evaluate((element) => element.scrollWidth <= element.clientWidth), `top bar hidden strip at ${width}px`).toBe(true)
     }

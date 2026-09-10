@@ -191,6 +191,7 @@ export interface SurfaceObservation {
   runId: string
   identity: string
   status: number
+  trafficClass?: string
   shape?: string
 }
 
@@ -223,6 +224,7 @@ export interface SurfaceEndpoint {
   declarations: readonly SurfaceDeclaration[]
   parameters: readonly SurfaceParameter[]
   deltaState: SurfaceDeltaState
+  kinds?: readonly ("OBSERVED_API" | "ARTIFACT_API" | "NAVIGATION" | "STATIC_ASSET" | "DISCOVERY_DOCUMENT" | "FORM_ACTION" | "UNVERIFIED")[]
 }
 
 export interface SurfaceExtractionIssue {
@@ -267,6 +269,7 @@ export interface Snapshot {
   legacyLlm?: LegacyLlm
   revision: number
   identityRevision: number
+  datasetRevision?: number
   sampleMode: boolean
   events: readonly EventRecord[]
   trafficStats: TrafficStats
@@ -506,6 +509,27 @@ export interface ExplorerAccountSaveResult extends ApiSuccess { account: Explore
 export interface ApiSuccess {
   success: true
   message: string
+}
+
+export interface ProjectEntry {
+  id: string
+  name: string
+  scope: readonly string[]
+  createdAt: string
+  modifiedAtMillis: number
+  sizeBytes: number
+  active: boolean
+  readable: boolean
+  managed: boolean
+}
+
+export interface ProjectStatus {
+  directory: string
+  active: ProjectEntry | null
+  projects: readonly ProjectEntry[]
+  saveState?: "UNMANAGED" | "SAVED" | "PENDING" | "SAVING" | "FAILED"
+  lastSavedAt?: string
+  saveError?: string
 }
 
 export interface ApiErrorBody {

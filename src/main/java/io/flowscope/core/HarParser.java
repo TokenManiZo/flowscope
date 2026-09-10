@@ -201,7 +201,8 @@ public final class HarParser {
     }
 
     private static String service(URI uri) {
-        String host = uri.getHost().contains(":") ? "[" + uri.getHost() + "]" : uri.getHost();
+        String uriHost = uri.getHost();
+        String host = uriHost.contains(":") && !uriHost.startsWith("[") ? "[" + uriHost + "]" : uriHost;
         int port = uri.getPort() >= 0 ? uri.getPort() : uri.getScheme().equalsIgnoreCase("https") ? 443 : 80;
         return uri.getScheme().toLowerCase(Locale.ROOT) + "://" + host.toLowerCase(Locale.ROOT) + ":" + port;
     }

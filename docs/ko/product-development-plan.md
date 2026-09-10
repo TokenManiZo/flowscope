@@ -1,6 +1,19 @@
 # FlowScope 1.2.0-beta.46 제품 개발·검증 계획
 
-> **읽는 법:** D-137 beta.46 JAR의 실제 macOS Burp 8081에서 익명 Client 캠페인 완주를 확인했다. D-138은 그 실행 중 드러난 일시 probe 실패 표시를 보정한다. 현재 우선순위는 최종 D-138 JAR 재로드, 실제 Burp 로그인 2계정·실패 계정 격리와 Windows Docker Desktop 검증이다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** D-137 beta.46 JAR의 실제 macOS Burp 8081에서 익명 Client 캠페인 완주를 확인했다. D-140~142 작업트리는 보존형 프로젝트 전환, Surface Evidence 작업 동선, provenance-aware import와 패키지 Standalone의 프로젝트 API/E2E를 자동 검증했다. 현재 우선순위는 실제 Burp 프로젝트 재열기와 Explorer 신원 귀속 회귀이며, 그 다음 그래프 정보계층과 ZAP 로그인 복수 계정·Windows 검증이다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+
+## 현재 우선순위 · 보존형 프로젝트와 Evidence 무결성
+
+1. 현재 진단을 새 프로젝트 DB에 저장하기 전에는 scope·메모리 Evidence를 교체하지 않는다.
+2. 저장 실패는 숨기지 않고 `PENDING/SAVING/SAVED/FAILED`, 마지막 성공 시각과 마스킹 오류로 표시한다.
+3. 분석 revision과 데이터셋 교체 revision을 분리해 일반 polling/rebuild가 Request Lab 초안을 지우지 않게 한다.
+4. API·입력 차이의 실제 Observation에서 exact Evidence 상세·Request Lab·Repeater로 이동하되 Declaration-only 항목에는 전송 동작을 만들지 않는다.
+5. 반복 import는 같은 provenance의 기존 multiplicity만 억제하고 fingerprint·lane account·run이 다른 Evidence를 보존한다.
+6. Burp XML의 header/body 문자셋과 XML/HAR IPv6 service를 같은 canonical 계약으로 처리한다.
+7. JDK 21 전체 회귀와 distribution gate 뒤 실제 Burp에서 수집→저장→새 진단→재열기, Surface→Request Lab/Repeater, XML/HAR 반복 import를 확인한다.
+8. disk full·권한 거부·강제 종료와 Windows project directory를 운영 gate로 남긴다.
+
+**현재 상태:** 1~6 구현과 집중 회귀, JDK 21 전체 `mvn clean verify` 2회, 격리된 clean JAR Standalone Chromium E2E 8/8을 통과했다. 7의 실제 Burp 동선과 8의 실패 주입·Windows는 대기한다. 자동 회귀를 Burp 운영 성공으로 확대하지 않는다.
 
 ## 현재 우선순위 · ZAP 직접 브라우저 인증
 

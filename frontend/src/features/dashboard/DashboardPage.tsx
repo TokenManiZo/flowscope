@@ -1,14 +1,14 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { ReactNode } from "react"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
+import { NewProjectDialog } from "@/components/layout/NewProjectDialog"
 import type { EventRecord, ScannerRunEnvelope, Snapshot, Source } from "@/lib/api/types"
-import { useClearTrafficMutation, useHumanRunQuery, useLoadSampleMutation, useScannerRunQuery, useSnapshotQuery } from "@/lib/query/hooks"
+import { useHumanRunQuery, useLoadSampleMutation, useScannerRunQuery, useSnapshotQuery } from "@/lib/query/hooks"
 import { Activity, AlertTriangle, ArrowRight, FileSearch, ScanSearch, ShieldCheck, UsersRound } from "lucide-react"
 import { EvidenceTrendChart } from "./EvidenceTrendChart"
 import { hasDashboardData, nextRecommendation, sourceStates } from "./dashboardSelectors"
@@ -45,7 +45,6 @@ export function DashboardPage() {
   const human = useHumanRunQuery()
   const scanner = useScannerRunQuery()
   const sample = useLoadSampleMutation()
-  const clear = useClearTrafficMutation()
 
   const unavailableWorkspace = (children: ReactNode) => <ReferenceAnalysisWorkspace ariaLabel="대시보드 분석 영역" context={<section className="grid gap-2 p-3"><h2 className="text-sm font-semibold">현재 snapshot 요약</h2><p className="text-xs text-muted-foreground">snapshot 상태를 확인하는 동안 수집 상태를 변경하지 않습니다.</p></section>} inspector={null}>{children}</ReferenceAnalysisWorkspace>
   if (snapshot.isPending && !snapshot.data) {
@@ -71,7 +70,7 @@ export function DashboardPage() {
   const recommendation = nextRecommendation(data)
   const context = <section className="grid gap-3 p-3"><div><h2 className="text-sm font-semibold">현재 snapshot 요약</h2><p className="text-xs text-muted-foreground">서버 snapshot의 수집·검토 상태만 표시합니다.</p></div><dl className="grid gap-2 text-sm"><div className="flex justify-between gap-2"><dt>Evidence</dt><dd className="font-mono">{data.trafficStats.captured}</dd></div><div className="flex justify-between gap-2"><dt>REVIEW</dt><dd className="font-mono">{data.trafficStats.review}</dd></div><div className="flex justify-between gap-2"><dt>활성 관리 세션</dt><dd className="font-mono">{activeSessions(data)}</dd></div></dl><p className="border-t border-[var(--flowscope-divider)] pt-3 text-xs text-muted-foreground">HUMAN {humanDetail} · ZAP {scannerDetail} · LLM Evidence {llmEvents}건</p></section>
   return <ReferenceAnalysisWorkspace ariaLabel="대시보드 분석 영역" context={context} inspector={null}><section className="space-y-5 p-3" aria-labelledby="dashboard-title">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><div className="mb-2 flex items-center gap-2 text-xs font-medium text-emerald-400"><ShieldCheck className="size-4" />SECURITY OVERVIEW</div><h1 id="dashboard-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">보안 점검 대시보드</h1><p className="mt-2 text-sm text-muted-foreground">현재 범위의 권한 검증 Evidence와 분석 진행 상태입니다.</p></div><AlertDialog><AlertDialogTrigger asChild><Button variant="outline" size="sm" className="border-border/80 bg-card/70 text-muted-foreground hover:text-destructive">트래픽 초기화</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>트래픽을 초기화할까요?</AlertDialogTitle><AlertDialogDescription>수집된 화면 상태를 비웁니다. 서버의 기존 안전 확인도 계속 적용됩니다.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction onClick={() => clear.mutate()}>초기화</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>
+    <div className="flex flex-wrap items-end justify-between gap-4"><div><div className="mb-2 flex items-center gap-2 text-xs font-medium text-emerald-400"><ShieldCheck className="size-4" />SECURITY OVERVIEW</div><h1 id="dashboard-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">보안 점검 대시보드</h1><p className="mt-2 text-sm text-muted-foreground">현재 범위의 권한 검증 Evidence와 분석 진행 상태입니다.</p></div><NewProjectDialog defaultScope={scanner.data?.scope.join("\n") ?? ""} /></div>
 
     {snapshot.isError && <Alert variant="destructive" aria-label={errorMessage(snapshot.error)}><AlertTitle>마지막 데이터를 표시하고 있습니다.</AlertTitle><AlertDescription>{errorMessage(snapshot.error)}</AlertDescription><Button variant="outline" onClick={() => void snapshot.refetch()}>다시 시도</Button></Alert>}
     {data.sampleMode && <Alert aria-label="샘플 데이터" className="border-amber-500/25 bg-amber-500/5"><AlertTitle className="text-amber-300">샘플 데이터</AlertTitle><AlertDescription>현재 HUMAN/ZAP/LLM 표시는 실제 점검 결과가 아니며 네트워크 요청을 만들지 않습니다.</AlertDescription></Alert>}
@@ -92,6 +91,5 @@ export function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-3"><Card className="border-border/70 bg-card/50 ring-0"><CardHeader><CardTitle>갭 요약</CardTitle><CardDescription>{data.gaps.length}건</CardDescription></CardHeader><CardContent className="space-y-2">{data.gaps.slice(0, 3).map((gap) => <p key={gap.id} className="wrap-break-word text-sm text-muted-foreground">{gap.summary}</p>)}</CardContent></Card><Card className="border-border/70 bg-card/50 ring-0"><CardHeader><CardTitle>Finding 요약</CardTitle><CardDescription>{data.scenarios.length}건</CardDescription></CardHeader><CardContent className="space-y-2">{data.scenarios.slice(0, 3).map((scenario) => <p key={scenario.id} className="wrap-break-word text-sm text-muted-foreground">{scenario.title}</p>)}</CardContent></Card><Card className="border-border/70 bg-card/50 ring-0"><CardHeader><CardTitle>다음 행동</CardTitle><CardDescription>현재 데이터 기준 추천</CardDescription></CardHeader><CardContent><Button variant="outline" className="w-full justify-between" onClick={() => { window.location.hash = `#${recommendation.route}` }}>다음 권장 작업: {recommendation.label} <ArrowRight /></Button></CardContent></Card></div>
     </>}
     {sample.isError && <Alert variant="destructive" aria-label={errorMessage(sample.error)}><AlertDescription>{errorMessage(sample.error)}</AlertDescription></Alert>}
-    {clear.isError && <Alert variant="destructive" aria-label={errorMessage(clear.error)}><AlertDescription>{errorMessage(clear.error)}</AlertDescription></Alert>}
   </section></ReferenceAnalysisWorkspace>
 }

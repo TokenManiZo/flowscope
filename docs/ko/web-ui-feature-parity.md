@@ -84,7 +84,7 @@
 | standalone Chromium harness | `frontend/playwright.config.ts`, packaged-JAR launcher, exact-origin/active-route guards, Korean UI journeys | IMPLEMENTED |
 | frontend static verification | `npm run verify` 21 files / 131 tests, `npm run typecheck`, `npm run build` | AUTOMATED PASS |
 | package verification | JDK 21 + Maven 3.9.11 `mvn -B clean verify`, Java 263 / 263, final fat JAR | AUTOMATED PASS |
-| packaged Chromium browser E2E | latest JDK 21 fat JAR, fresh ASCII `PWTEST_CACHE_DIR`, `npm run e2e`; 8 / 8 passed in 11.3s. exact-origin·active-route·console/pageerror·external-origin·storage-secret guards 포함 | AUTOMATED PACKAGED CHROMIUM PASS |
+| packaged Chromium browser E2E | Task 12 당시 JDK 21 fat JAR, fresh ASCII `PWTEST_CACHE_DIR`, `npm run e2e`; 8 / 8 passed in 11.3s. D-142의 현재 clean-JAR 8/8 검증이 이 실행을 대체한다. | HISTORICAL — SUPERSEDED |
 | actual Burp runtime parity | explicit Task 14 gate | PENDING |
 
 ### Task 7 통합 검증 및 최종 패키지 — 역사 기록, 아래 최종 review gate가 대체함

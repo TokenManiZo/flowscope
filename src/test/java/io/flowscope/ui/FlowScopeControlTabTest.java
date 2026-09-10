@@ -15,7 +15,7 @@ final class FlowScopeControlTabTest {
             FlowScopeControlTab tab = new FlowScopeControlTab(new FlowScopeControlTab.Actions() {
                 public void importProxyHistory() {}
                 public void loadSample() {}
-                public void clearTraffic() {}
+                public void startProject(String name, String scope) {}
                 public void saveProject(File file) {}
                 public void loadProject(File file) {}
                 public void updateScope(String value) {}

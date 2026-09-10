@@ -82,7 +82,9 @@ function installTransport(snapshot: Snapshot, failSnapshotOnce = false, failAfte
     if (path === "/api/human-run") return Promise.resolve(response({ active: false, completed: false, runId: "", accountId: "", proxy: "http://127.0.0.1:8080" }))
     if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, state: "READY", message: "ZAP 연결됨" }))
     if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "IDLE" }, scope: ["https://demo.flowscope.test"] }))
-    if (path === "/api/sample" || path === "/api/clear") return Promise.resolve(response({ success: true, message: "완료" }))
+    if (path === "/api/projects" && (!init || init.method === undefined)) return Promise.resolve(response({ directory: "/tmp/projects", active: null, projects: [] }))
+    if (path === "/api/projects") return Promise.resolve(response({ directory: "/tmp/projects", active: { id: "demo", name: "Demo", scope: ["https://demo.flowscope.test"], readable: true }, projects: [{ id: "demo", name: "Demo", scope: ["https://demo.flowscope.test"], readable: true }] }))
+    if (path === "/api/sample") return Promise.resolve(response({ success: true, message: "완료" }))
     return Promise.reject(new Error(`unexpected endpoint: ${path} ${init?.method ?? "GET"}`))
   })
   vi.stubGlobal("fetch", fetchStub)
@@ -230,7 +232,7 @@ describe("dashboard shell", () => {
     expect(window.location.hash).toBe("#evidence")
   })
 
-  it("shows empty onboarding, loads a sample, and requires confirmation before clearing", async () => {
+  it("shows empty onboarding, loads a sample, and starts a preserved project instead of clearing Evidence", async () => {
     const user = userEvent.setup()
     const fetchStub = renderDashboard(snapshotFixture)
 
@@ -242,11 +244,12 @@ describe("dashboard shell", () => {
     await user.click(screen.getByRole("button", { name: "샘플로 화면 익히기" }))
     await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/sample", expect.objectContaining({ method: "POST" })))
 
-    await user.click(screen.getByRole("button", { name: "트래픽 초기화" }))
+    await user.click(screen.getAllByRole("button", { name: "새 진단 시작" }).at(-1)!)
+    expect(screen.getByRole("dialog", { name: "새 진단 시작" })).toHaveTextContent("기존 Evidence는 삭제하지 않습니다")
+    await user.type(screen.getByLabelText("프로젝트 이름 (선택)"), "다음 진단")
+    await user.click(screen.getByRole("button", { name: "보존하고 시작" }))
+    await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/projects", expect.objectContaining({ method: "POST" })))
     expect(fetchStub).not.toHaveBeenCalledWith("/api/clear", expect.anything())
-    expect(screen.getByRole("alertdialog", { name: "트래픽을 초기화할까요?" })).toBeVisible()
-    await user.click(screen.getByRole("button", { name: "초기화" }))
-    await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/clear", expect.objectContaining({ method: "POST" })))
   })
 
   it("announces loading and lets the user recover from a snapshot error", async () => {
@@ -281,6 +284,7 @@ describe("dashboard shell", () => {
       if (path === "/api/human-run") return new Promise<Response>(() => {})
       if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, state: "READY", message: "ZAP 연결됨" }))
       if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "IDLE" }, scope: [] }))
+      if (path === "/api/projects") return Promise.resolve(response({ directory: "/tmp/projects", active: null, projects: [] }))
       return Promise.resolve(response({ run: { status: "IDLE", providers: { CODEX: true, CLAUDE: true } }, scope: [], completed_lanes: [] }))
     }))
     renderWithQueryClient(<App />, createTestQueryClient())

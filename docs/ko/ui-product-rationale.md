@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-09, D-139 (미출시 beta.46 변경).** 기존 Judge·MCP는 제거된 상태를 유지하고 판정 없는 독립 Codex Explorer를 제공한다. Explorer의 실제 HTTP 응답은 LLM Observation Evidence, 그 응답 산출물에서 직접 읽은 endpoint·parameter는 Evidence-bound Declaration이며 OPTIONS probe는 기능 관측과 분리한다. 화면의 요청·응답·선언 수는 모델 문장이 아니라 서버가 계산한다. ZAP 계정 lane은 HUMAN Session Broker를 재사용하지 않고 메모리 전용 로그인 계정으로 ZAP Browser Based Authentication과 session auto-detect를 실행한다. 같은 run·계정의 실제 인증 응답 Evidence가 필수 로그인 성공 정규식과 일치하고 더 나중 로그아웃 정규식 Evidence가 없을 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 lane은 FlowScope Docker 이미지의 Chromium·ChromeDriver와 `chrome-headless`를 사용하며 임의 ZAP runtime은 실행 전에 거부한다. ZAP 일반 통신 실패는 첫 두 번 `RETRYING`, 세 번째 연속 실패부터 `UNREACHABLE`로 표시하며 API key·runtime 오류는 즉시 확정한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인이 현재 설치 동선이며, 현재 조작은 HUMAN·ZAP·Explorer와 Evidence/사람 검토다. H/S/L은 관측 데이터의 source다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-11, D-140~142 (미출시 beta.46 변경).** 기존 Judge·MCP 제거와 판정 없는 독립 Codex Explorer, D-139의 Evidence-bound Declaration, D-138의 ZAP 계약을 유지한다. 다른 대상을 시작할 때는 현재 Evidence를 사용자별 프로젝트 DB에 먼저 저장하고 전환하며, 상단은 프로젝트 선택과 실제 저장 상태를 표시한다. API·입력 차이의 실제 Observation에서 exact Evidence·Request Lab·Repeater로 바로 이동하고, 분석 갱신은 편집 초안을 닫지 않으며 데이터셋 교체만 닫는다. 패키지 Standalone도 같은 프로젝트 API를 검증한다. 현행 인가 그래프는 단일 3-lane/`18개 또는 전체` projection이며 계층 drill-down은 다음 작업이다. H/S/L은 관측 데이터의 source이고 선언 미관측은 취약점이 아니다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -31,7 +31,9 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 
 | 화면 요소 | 사용자가 묻는 질문 | 이렇게 설계한 이유 | 하지 않는 것 |
 |---|---|---|---|
+| 프로젝트·새 진단 | 다른 대상을 시작하면 지금 Evidence는 어디에서 다시 보는가? 저장이 실제 끝났는가? | 상단에서 현재 프로젝트, 이전 프로젝트 선택, `저장 대기/저장 중/저장됨/저장 실패`를 보여 준다. 새 진단은 현재 SQLite 저장과 새 빈 DB 생성을 먼저 끝낸 뒤 exact scope를 전환한다. | 화면을 먼저 비우거나, 저장 실패를 성공으로 표시하거나, raw 세션·비밀번호를 프로젝트에 넣지 않는다. |
 | API·입력 차이 | 내가 아직 확인하지 못한 endpoint와 parameter는 어디인가? 분석기가 산출물을 실제로 읽었는가? | OpenAPI·HTML form·JavaScript AST의 선언과 실제 H/S/L HTTP Evidence를 분리해 endpoint 행과 입력 badge로 정렬한다. source 필터, Evidence/provenance와 산출물별 정상·부분·실패·상한을 함께 연결한다. | 선언 미관측을 취약점·도달 가능·lane 실패로 부르거나, parser 실패를 빈 결과로 숨기거나, 서버 전용 표면까지 안다는 전체 퍼센트를 만들지 않는다. |
+| Surface Evidence 연결 | 이 차이를 만든 실제 요청·응답을 바로 확인하고 재현할 수 있는가? | Observation의 exact Evidence를 기존 상세 패널로 열어 Request Lab과 Repeater 초안을 같은 선택 계약으로 제공한다. 일반 분석 revision은 열린 draft를 닫지 않고 Evidence/데이터셋 교체만 닫는다. | Declaration-only 항목을 실제 요청으로 꾸미거나 Surface 전용 HTTP 편집기를 중복 구현하지 않는다. |
 | 인가 그래프 | 선택한 API의 신원·객체·source 관계는 무엇인가? | 기존 `Identity → API → Object`와 owner/BOLA/BFLA Evidence를 상세층에 보존해 첫 화면의 고카디널리티 노이즈와 판정 근거 손실을 함께 피한다. | Resource를 코어에서 삭제하거나 모든 객체 인스턴스를 첫 화면에 펼치지 않는다. |
 | 빠른 시작 | 지금 바로 무엇을 해야 하는가? | `범위 → HUMAN → ZAP → Evidence 검토` 네 단계 상태를 항상 보이되, 첫 미완료 단계의 설명과 제어만 연다. 사용자가 단계 탭을 누르면 원하는 설정을 확인할 수 있고 `현재 단계로`로 복귀한다. | 여섯 단계 설명과 세 실행기의 모든 입력·버튼을 동시에 펼쳐 사용자가 다음 행동을 찾게 하지 않는다. 수집 건수만으로 단계를 완료 처리하지 않는다. |
 | 실행 상태와 gate | 어느 lane이 끝났고 왜 실행할 수 없는가? | completed lane과 `COMPLETED_WITH_WARNINGS`를 텍스트·수치로 함께 표시하고, scope·연결·pending gate는 비활성 button만이 아니라 바로 옆 설명으로 보인다. ZAP 일반 통신 실패 1·2회는 `RETRYING`, 3회째는 `UNREACHABLE`로 구분한다. polling이 바뀌어도 사용자가 고른 target을 다른 target으로 바꾸지 않는다. | 색만으로 완료·경고를 알리거나, 한 번의 timeout을 영구 단절로 확정하거나, scope 밖 target을 조용히 첫 scope target으로 바꿔 다른 대상으로 실행하지 않는다. |
@@ -51,14 +53,14 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | 3-way 갭 | 세 주체가 무엇을 놓쳤거나 다르게 판단했는가? | 미교차·일부만 발견·불일치를 분리하고 클릭하면 해당 위치로 이동한다. | 갭 자체를 취약점으로 확정하지 않는다. |
 | 미요청 route | 응답이나 Site Map에는 있지만 아직 실제 요청하지 않은 경로가 있는가? | source edge 없는 중립색·점선 테두리 노드와 별도 수량·필터로 관측 그래프 옆에 표시하고 provenance의 type·Evidence·source·run·adapter 대응과 범주형 정렬 이유를 연다. | 실제 H/S/L 요청 관측이나 `UNCROSSED`, coverage, verdict, finding으로 계산하지 않는다. |
 | 소스 뷰 | 발견 주체의 차이를 보고 싶은가? | 색·선형·H/S/L이 다른 평행 source overlay를 우선한다. 일반 버튼·포커스·선택 상태는 별도 중립 accent를 사용해 source 색으로 오인되지 않게 한다. | 인가 결과와 발견 주체를 한 색에 겹쳐 읽기 어렵게 만들지 않는다. |
-| 계층 그래프 | 사이트 전체와 한 객체의 Evidence를 한 화면에 모두 그려야 하는가? | 사이트에서는 Target→API Group, 그룹에서는 Identity→API, API 선택 뒤에만 Identity→API→Object를 표시한다. Object는 family로 먼저 접고 눌렀을 때 인스턴스를 펼친다. | 접기 때문에 원 CoverageCell이나 Evidence를 합치거나 삭제하지 않고, path group을 업무 의미나 취약점으로 해석하지 않는다. |
+| 현재 인가 그래프 | 신원·API·접근 대상 관계를 현재 화면에서 어떻게 읽는가? | 한 canvas의 `IDENTITY / ENDPOINT / OBJECT` 3개 lane에 실제 Evidence 관계를 표시한다. 접근 대상 ID가 없으면 Identity→API, 있으면 Identity→접근 대상 ID→API로 투영한다. | 사이트/API drill-down이나 Object family 접기가 이미 구현됐다고 설명하지 않는다. 화면 제한 때문에 원 Evidence를 합치거나 삭제하지 않는다. |
 | 긴 경로 라벨 | API가 중간 생략돼 서로 다른 경로를 구분할 수 없는가? | 원 operation 문자열을 모두 유지하고 노드 안에서 여러 줄로 나누며 내용에 맞춰 높이를 늘린다. | 그래프 공간을 아끼기 위해 경로 중간을 `…`로 지워 핵심 세그먼트를 숨기지 않는다. |
 | 경로 묶음 | `/orders/101`과 `/orders/202`는 같은 API인가? | raw path를 유지하면서 operation은 Evidence가 있는 위치만 `{id}`로 묶는다. 상세에 `LITERAL/INFERRED/CORROBORATED`와 이유를 표시한다. | 모든 숫자를 ID로 단정하거나 route declaration 없이 “확정”이라 표시하지 않는다. |
 | 인가 뷰 | 허용·거부·의심 결과를 보고 싶은가? | 동일 구조에서 verdict 중심으로 표현을 바꾼다. | status code 하나만으로 suspicious를 만들지 않는다. |
 | 화면 맞춤 | 현재 그래프를 잃지 않고 전체를 볼 수 있는가? | 현재 표시 노드를 viewport에 맞춘다. | 데이터나 필터 상태를 변경하지 않는다. |
 | 노드 위치 잠금 | 사용자가 정리한 위치를 유지할 수 있는가? | 자동 재배치로 비교 맥락이 흔들리지 않게 한다. | 서버 분석 결과를 고정하거나 dataset을 lock하지 않는다. Judge dataset lock은 제거됐으며 UI 위치 잠금은 유지한다. |
-| 노드 접기·그룹 펼치기 | 대규모 그래프가 털뭉치가 되지 않는가? | API는 18개 단위로 늘리고, 객체는 패밀리 노드를 기본으로 두어 선택한 패밀리의 인스턴스만 펼친다. | 의미 기반 공격면 클러스터링이나 전체 API 추정을 주장하지 않는다. |
-| 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | 현재 계층의 기본 배치로 복구한다. 첫 화면은 `Identity → API`, 사이트 개요와 객체 상세는 각각 독립 viewport를 사용한다. | Evidence와 사용자 정책을 초기화하지 않는다. |
+| 노드 표시 제한 | 대규모 그래프가 털뭉치가 되지 않는가? | 현재는 정렬한 API·접근 대상 ID를 기본 18개 또는 전체로 전환한다. 증분 `+18`이나 family grouping은 아직 없다. | 이 제한을 의미 기반 공격면 클러스터링이나 전체 API 추정으로 설명하지 않는다. |
+| 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | 현재 단일 canvas의 저장 위치·viewport를 기본 3-lane 배치로 복구한다. | Evidence와 사용자 정책을 초기화하거나 아직 없는 계층별 viewport를 주장하지 않는다. |
 | 판정 매트릭스 | 같은 조합을 표로 빠르게 비교할 수 있는가? | identity/role × operation × resource cell에 source별 verdict와 갭을 정렬한다. | 그래프만 보고 놓치기 쉬운 조합 차이를 숨기지 않는다. |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용됐는가? | 실제로 재사용된 ID/token 값의 시간순 의존성만 연결하고 메인 접근 그래프와 분리한다. | 단순히 시간상 앞뒤라는 이유로 관계를 만들거나 접근선 위에 보조 의존선을 겹쳐 출처를 혼동시키지 않는다. |
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 현재 규칙 후보와 사람 검토를 Evidence에 연결하고, 과거 LLM 기록은 별도 읽기 전용으로 분리한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |
@@ -190,7 +192,7 @@ Explorer 모델은 endpoint·parameter 탐색만 수행하고 판정하지 않�
 
 ### “Burp나 ZAP과 무엇이 다른가요?”
 
-Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 비교 기능은 HUMAN·SCANNER·LLM source의 실제 관측과 대상 산출물의 선언을 같은 Endpoint/Parameter 좌표에 정렬하고, 선택 API에서만 Identity/Object 인가 근거와 Evidence를 연결한다는 점이다.
+Burp는 수집·수동 검증, ZAP은 자동 탐색·스캔에 강하다. FlowScope의 비교 기능은 HUMAN·SCANNER·LLM source의 실제 관측과 대상 산출물의 선언을 같은 Endpoint/Parameter 좌표에 정렬하고, 별도 인가 그래프·상세에서 Identity/접근 대상 ID 근거와 Evidence를 연결한다는 점이다.
 
 ### “새 Explorer에서 외부 정보는 어떻게 다루나요?”
 

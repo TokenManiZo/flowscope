@@ -26,7 +26,7 @@ public final class FlowScopeControlTab extends JPanel {
     public interface Actions {
         void importProxyHistory();
         void loadSample();
-        void clearTraffic();
+        void startProject(String name, String scope);
         void saveProject(File file);
         void loadProject(File file);
         void updateScope(String value);
@@ -97,7 +97,7 @@ public final class FlowScopeControlTab extends JPanel {
         actionsPanel.add(button("프로젝트 열기", this::chooseLoad));
         actionsPanel.add(button("로컬 DB 저장·연결", this::chooseSave));
         actionsPanel.add(button("JSON 내보내기", this::chooseJsonExport));
-        actionsPanel.add(button("수집 초기화", this::confirmClear));
+        actionsPanel.add(button("새 진단 시작", this::confirmNewProject));
         root.add(settings, BorderLayout.NORTH);
         root.add(actionsPanel, BorderLayout.CENTER);
         return root;
@@ -148,10 +148,20 @@ public final class FlowScopeControlTab extends JPanel {
         return chooser;
     }
 
-    private void confirmClear() {
-        if (JOptionPane.showConfirmDialog(this, "수집 트래픽과 검토 판정을 초기화할까요? 계정·세션 연결은 유지됩니다.",
+    private void confirmNewProject() {
+        if (scope.getText().isBlank()) {
+            JOptionPane.showMessageDialog(this, "새 진단의 exact scope를 먼저 입력하세요.",
+                    "FlowScope", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        String name = JOptionPane.showInputDialog(this,
+                "프로젝트 이름(선택)\n비우면 scope의 host를 사용합니다.", "새 진단 시작",
+                JOptionPane.QUESTION_MESSAGE);
+        if (name == null) return;
+        if (JOptionPane.showConfirmDialog(this,
+                "현재 진단을 로컬 프로젝트 DB에 보존하고 새 진단을 시작할까요?\n기존 Evidence는 삭제하지 않습니다.",
                 "FlowScope", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
-            actions.clearTraffic();
+            actions.startProject(name, scope.getText());
         }
     }
 

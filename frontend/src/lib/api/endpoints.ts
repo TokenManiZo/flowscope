@@ -17,6 +17,7 @@ import type {
   ExplorerRunEnvelope,
   ExplorerAccountSaveResult,
   ReviewStatus,
+  ProjectStatus,
 } from "./types"
 
 const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
@@ -29,7 +30,10 @@ export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
   postForm<RequestLabResult>("/api/request-lab", { action: "send", ...values }, undefined, signal)
-export const clearTraffic = () => postForm<ApiSuccess>("/api/clear", {})
+export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
+export const startProject = (values: { name: string; scope: string }) =>
+  postForm<ProjectStatus>("/api/projects", { action: "start", ...values })
+export const openProject = (id: string) => postForm<ProjectStatus>("/api/projects", { action: "open", id })
 export const getHumanRun = (signal?: AbortSignal) => apiFetch<HumanRun>("/api/human-run", formSignal(signal))
 export const setHumanRun = (values: { action: "begin"; account: string } | { action: "end"; runId: string }) =>
   postForm<HumanRun>("/api/human-run", values)

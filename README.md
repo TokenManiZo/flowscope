@@ -24,7 +24,7 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 - Next.js pages-router의 공개 build manifest는 API를 추측하지 않고 client chunk 참조만 추가해 후속 JavaScript 분석 대상으로 연결. HTML `script`, `modulepreload`, script `preload/prefetch`는 Vue/Nuxt·Angular를 포함한 공통 자산 경로로 처리하며, GraphQL HTTP 관측은 operation과 variable field를 transport 필드와 분리
 - source, source detail, orchestrator, tool, phase, run 정보를 독립적으로 보존하는 Burp 실시간 수집
 - 모든 source에 대한 exact scope Evidence 수집. HUMAN은 Burp로 다른 사이트를 방문할 수 있지만 범위 밖 응답은 FlowScope에 저장하거나 그래프로 만들지 않음
-- HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 IDA식 계층 그래프. 기본은 `신원 → API`, API 선택 시 `신원 → API → 접근 대상 ID`, 사이트 개요는 선택형 `사이트 → API 그룹`으로 분리한다. 사용자 화면의 접근 대상 ID는 내부 `Resource` 모델의 표현이며, 화면에서 접거나 전환해도 `Evidence × Identity × API × Resource × Source × Run × HTTP outcome` 관계는 Fact Core에 그대로 유지
+- HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 인가 그래프. 현재 React 화면은 `신원 / API / 접근 대상 ID` 3개 lane을 한 canvas에 투영하고 API·접근 대상 ID를 기본 18개 또는 전체로 전환합니다. 이는 Fact Core의 `Evidence × Identity × API × Resource × Source × Run × HTTP outcome` 관계를 삭제하거나 합치는 기능이 아닙니다. 사이트 개요·API drill-down·Resource family 접기는 다음 UI 작업이며 현재 기능으로 주장하지 않습니다.
 - 원본 URL은 보존하고, UUID/긴 16진 형식·성공 응답 ID 일치·같은 위치의 복수 값/독립 관측을 근거로 operation 경로를 자동 묶음. `LITERAL/INFERRED/CORROBORATED`와 이유를 상세에 표시
 - `신원 × 작업 × 접근 대상 ID` 커버리지 매트릭스, 미교차 조합, 일부만 발견, source 간 판정 불일치
 - 응답 분류, 명시적 소유자 Evidence, 사용자가 입력한 역할 정책을 이용하는 결정론적 BOLA/IDOR·BFLA 후보 엔진
@@ -40,12 +40,12 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 - 독립 LLM Explorer. Web에서 비로그인 또는 메모리 전용 HTML form/JSON API 계정을 선택하면 로그인된 Codex가 HTML·JavaScript·manifest·source map·API 정의와 응답 frontier를 순회합니다. 대상 요청은 모델의 직접 네트워크가 아니라 exact-scope HTTP 도구를 거쳐 Burp Montoya로 전송되고 실제 응답만 `CONTROLLED` LLM Observation Evidence가 됩니다. 산출물에서 직접 읽은 endpoint·parameter는 현재 run의 응답 Evidence ID가 있어야 별도 선언 도구로 저장되며, 서버가 의미 중복을 제거합니다. 64KiB를 넘는 응답은 최대 4MiB 임시 artifact로 한 번 전달해 로컬 분석하고 같은 파일의 Range 재수집을 지침에서 금지합니다. Explorer가 보낸 OPTIONS probe는 실제 기능 API 관측 수와 분리하되 일반 HUMAN/선언 OPTIONS API는 유지합니다. 작업 피드에는 경과시간·요청·Evidence ID·선언 수·probe·실패·미해결 사유가 표시되며 실행 중 steer·취소를 지원합니다. 취약점 verdict·심각도·확률은 만들지 않습니다.
 - 기존 Burp Proxy history 원클릭 가져오기. 같은 동작에서 응답 없는 exact-scope Site Map 항목은 미요청 route 후보로 가져오고, 실제 반복 횟수를 보존해 중복을 억제. 네트워크를 사용하지 않는 온보딩 샘플은 화면에 “실제 점검 결과 아님” 배너로 명시
 - 스캐너 파일 업로드에서 ZAP이 내보낸 HAR 1.2 요청·응답을 SCANNER Evidence로 가져오기. HAR의 메서드·URL·query·header·body·status·timestamp를 기존 정규화 파이프라인에 넣되, HAR만으로 ZAP native Alert나 캠페인 완료를 만들지 않음
-- 계정·세션 연결, 정책, LLM assessment, 과거 서버 verdict, 사람 감사 판정과 값·비밀정보 없는 LLM 실행 시도 결과를 관계형으로 보존하는 로컬 `.flowscope.db`. HTTP 응답 Evidence와 응답 전 TLS·DNS·timeout·연결 실패는 분리되어, “새 API를 못 찾음”과 “요청 자체를 못 보냄”을 구분합니다. 한 번 저장하거나 열면 변경을 30초 checkpoint로 합쳐 자동 저장하며, `.flowscope.json`은 호환 내보내기·가져오기로 유지
+- 계정·세션 연결, 정책, 과거 읽기 전용 평가, 사람 감사 판정과 값·비밀정보 없는 실행 시도 결과를 관계형으로 보존하는 로컬 `.flowscope.db`. Web의 **새 진단 시작**은 현재 진단을 `~/.flowscope/projects/<이름--scope--시각>/project.flowscope.db`에 먼저 저장한 뒤 새 exact scope의 빈 프로젝트로 전환하며, 저장 실패 시 현재 화면을 유지합니다. 상단에서 `저장 대기/저장 중/저장됨/저장 실패`와 이전 프로젝트를 확인할 수 있습니다. HTTP 응답 Evidence와 응답 전 TLS·DNS·timeout·연결 실패는 분리되어, “새 API를 못 찾음”과 “요청 자체를 못 보냄”을 구분합니다. 변경은 30초 checkpoint로 합쳐 자동 저장하며, `.flowscope.json`은 호환 내보내기·가져오기로 유지
 - path/query/JSON·XML·multipart·GraphQL에서 명시적으로 관측된 객체 참조를 모두 보존. 기존 인가 cell은 첫 번째 근거 있는 참조만 primary로 사용해 검증되지 않은 객체 Cartesian product를 만들지 않음
 - `*Id`가 아닌 `customerNo`, `documentSeq`, `accountRef` 같은 도메인 식별자는 이름 하나로 확정하지 않고, 동일 서비스·메서드·경로·필드 위치에서 서로 다른 값이 반복 관측될 때만 `*_SEMANTIC_FIELD_CORROBORATED` 객체 근거로 보강. `pageNo`, `sortKey`, API key류는 제외
 - 명시적 사람 검증을 위한 Web 요청 실험실. live Evidence의 HTTP 원문 바이트는 Burp 프로세스의 상한 있는 메모리에만 보관합니다. Content-Type 문자셋으로 엄격히 디코딩하고, 수정하지 않은 요청은 원래 바이트 그대로 재전송하며, 텍스트로 안전하게 해석할 수 없는 본문은 Web 편집 전송을 차단하고 Burp Repeater로 넘깁니다. Evidence generation과 전송 중 draft 잠금, 서버 operation ID 멱등성으로 늦은 응답·중복 상태 변경을 막으며, `원문 그대로/비로그인/등록 계정` 전송 결과는 discovery가 아닌 HUMAN `VALIDATION` Evidence입니다.
 - 긴 API 경로는 `/` 경계를 우선해 줄바꿈하고 단일 접근선의 의미 없는 `H×1` 라벨은 숨깁니다. 900px 이하 화면은 잘린 그래프 대신 같은 필터의 API 목록을 제공하며, 파싱 결과의 명시적 `상세 보기`는 선택한 Evidence ID를 그대로 엽니다. 관측 신원과 재사용 가능한 등록 계정 세션은 별도 개념으로 표시합니다.
-- XXE 차단과 item 단위 오류 건너뛰기를 적용한 엄격한 Burp XML 가져오기, 크기·깊이·항목 단위 오류 경계를 둔 ZAP HAR 가져오기
+- XXE 차단과 item 단위 오류 건너뛰기를 적용한 엄격한 Burp XML 가져오기, 크기·깊이·항목 단위 오류 경계를 둔 ZAP HAR 가져오기. 두 입력은 계정·세션 지문·run provenance가 다른 동일 HTTP를 합치지 않으며 같은 파일 재가져오기만 multiset 기준으로 억제합니다. XML base64 HTTP 본문은 명시된 Content-Type 문자셋을 따르고 XML/HAR의 IPv6 service는 대괄호 표기로 정규화합니다.
 
 FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만드는 커버리지 퍼센트를 표시하지 않습니다.
 
@@ -91,7 +91,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 점검할 때마다
 
-1. Burp의 **FlowScope** 탭에서 허가된 exact scope를 입력하고 **범위 적용**을 누릅니다.
+1. Web 상단의 **새 진단 시작**에서 프로젝트 이름과 허가된 exact scope를 입력합니다. 기존 진단이 있으면 먼저 로컬 프로젝트 DB에 보존되고, 저장 실패 시 새 scope로 전환되지 않습니다. Burp 탭의 **범위 적용**은 아직 데이터가 없는 첫 진단에서 같은 프로젝트 생성을 수행합니다.
 2. `http://127.0.0.1:17777/`에서 **빠른 시작**을 엽니다.
 3. 화면이 자동으로 여는 첫 미완료 단계만 수행합니다: **범위 → HUMAN → ZAP**. 이어 **LLM Explorer 열기**에서 독립 탐색을 실행합니다.
 4. 완료 뒤 **API·입력 차이**에서 HUMAN·ZAP·LLM 선언/관측 차이와 산출물 파싱 상태를 먼저 보고, 선택한 API를 인가 그래프·판정 매트릭스·Evidence에서 검토합니다.
@@ -145,9 +145,9 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 ## 일반적인 점검 흐름
 
 1. exact scope를 설정하고 익명 또는 최소 권한 테스트 계정을 사용합니다. 기본 제어면은 Burp 탭입니다. ADMIN 계정은 필수가 아니며 명시적 역할 비교가 필요한 경우에만 사용합니다.
-2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 HUMAN 표시 이름을 등록합니다. 계정마다 **로그인 연결**을 시작하고 HUMAN 8080을 통해 로그인한 뒤 인증된 페이지의 성공 응답까지 확인하고 캡처를 종료합니다. 기본 화면에는 계정 하나가 카드 하나로 보이며, 같은 로그인에서 얻은 Cookie·Authorization·subject 지문은 계정 수를 늘리지 않고 접힌 **기술 정보**에만 묶입니다. 미연결 지문을 직접 확인해야 할 때만 **고급 세션 진단**을 엽니다. 자격증명만 있고 성공 응답이 관측되지 않은 세션은 `로그인 확인 필요`로 남아 HUMAN pass와 Request Lab에 재사용되지 않습니다. ZAP 로그인 계정은 3단계에서 별도로 등록합니다. 빠른 시작의 HUMAN 계정 선택에는 실제 broker 상태가 `ACTIVE`인 계정만 나오며, 선택한 계정과 실제 요청 자격증명이 정확히 일치할 때만 그 계정으로 기록됩니다. 불일치 요청을 선택 계정으로 강제 표시하지 않습니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. Web의 `pass 완료`는 수집 건수가 아니라 해당 run의 정확한 종료가 확인됐을 때만 표시됩니다. pass 중 Repeater·Intruder로 만든 요청은 같은 run에 속하되 실제 Burp 도구 detail을 유지합니다. Proxy·Repeater·Intruder 응답은 Montoya `messageId`로 요청 시점 pass/account에 연결되며, 초기화·프로젝트 교체 이전의 늦은 응답이나 상관관계를 잃은 응답은 현재 pass로 추측하지 않고 제외됩니다. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다.
+2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 HUMAN 표시 이름을 등록합니다. 계정마다 **로그인 연결**을 시작하고 HUMAN 8080을 통해 로그인한 뒤 인증된 페이지의 성공 응답까지 확인하고 캡처를 종료합니다. 기본 화면에는 계정 하나가 카드 하나로 보이며, 같은 로그인에서 얻은 Cookie·Authorization·subject 지문은 계정 수를 늘리지 않고 접힌 **기술 정보**에만 묶입니다. 미연결 지문을 직접 확인해야 할 때만 **고급 세션 진단**을 엽니다. 자격증명만 있고 성공 응답이 관측되지 않은 세션은 `로그인 확인 필요`로 남아 HUMAN pass와 Request Lab에 재사용되지 않습니다. ZAP 로그인 계정은 3단계에서 별도로 등록합니다. 빠른 시작의 HUMAN 계정 선택에는 실제 broker 상태가 `ACTIVE`인 계정만 나오며, 선택한 계정과 실제 요청 자격증명이 정확히 일치할 때만 그 계정으로 기록됩니다. 불일치 요청을 선택 계정으로 강제 표시하지 않습니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. Web의 `pass 완료`는 수집 건수가 아니라 해당 run의 정확한 종료가 확인됐을 때만 표시됩니다. pass 중 Repeater·Intruder로 만든 요청은 같은 run에 속하되 실제 Burp 도구 detail을 유지합니다. Proxy·Repeater·Intruder 응답은 Montoya `messageId`로 요청 시점 pass/account에 연결되며, 데이터셋·프로젝트 교체 이전의 늦은 응답이나 상관관계를 잃은 응답은 현재 pass로 추측하지 않고 제외됩니다. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다.
 
-- 선택적 수동 검증: 그래프에서 API를 누르고 Evidence의 **요청 실험실**을 엽니다. `원문 그대로`, `비로그인으로 전송`, `등록 계정으로 전송` 중 의도한 모드를 고르고 path/query/header/body를 편집한 뒤 명시적으로 전송합니다. 네트워크 목적지는 원 Evidence 서비스로 고정되고 redirect는 따라가지 않습니다. 응답과 시간·크기를 확인할 수 있으며 전송 결과는 HUMAN `VALIDATION` Evidence가 되어 탐색 커버리지를 늘리지 않습니다. live 원문은 기본 요청 1MiB·응답 4MiB·총 32MiB의 Burp 프로세스 메모리에서만 유지되고 프로젝트 교체·초기화·unload 때 폐기됩니다. 프로젝트/XML/HAR에서 가져온 항목이나 상한 초과 항목은 마스킹 전문만 사용할 수 있습니다.
+- 선택적 수동 검증: 그래프에서 API를 누르고 Evidence의 **요청 실험실**을 엽니다. `원문 그대로`, `비로그인으로 전송`, `등록 계정으로 전송` 중 의도한 모드를 고르고 path/query/header/body를 편집한 뒤 명시적으로 전송합니다. 네트워크 목적지는 원 Evidence 서비스로 고정되고 redirect는 따라가지 않습니다. 응답과 시간·크기를 확인할 수 있으며 전송 결과는 HUMAN `VALIDATION` Evidence가 되어 탐색 커버리지를 늘리지 않습니다. live 원문은 기본 요청 1MiB·응답 4MiB·총 32MiB의 Burp 프로세스 메모리에서만 유지되고 프로젝트·샘플 교체와 unload 때 폐기됩니다. 프로젝트/XML/HAR에서 가져온 항목이나 상한 초과 항목은 마스킹 전문만 사용할 수 있습니다.
 
 3. bundle의 `zap-up` helper로 FlowScope Docker Chromium ZAP을 시작합니다. helper가 outgoing proxy를 `host.docker.internal:8081`로 설정하고, Web 빠른 시작은 API key·휘발성 runtime·필수 add-on을 확인합니다. exact-scope target과 비로그인을 선택하거나 **ZAP 브라우저 로그인 계정**에 계정 이름·역할·로그인 URL·ID·비밀번호와 필수 로그인 성공 정규식(예: 성공 뒤에만 보이는 `내 계정|로그아웃`)을 현재 프로세스 메모리로 등록한 뒤 **신원별 격리 검사 시작**을 누릅니다. 로그인 lane은 같은 계정의 실제 인증 응답 Evidence가 성공 정규식과 일치한 뒤에만 strict Client Spider → Passive 분석 → native Alert 수집 순서로 실행합니다. 선택적 로그아웃 정규식에는 실패 화면에만 보이는 문구를 넣습니다. Client 실패·범위 안 응답 0건·격리 정리 실패는 lane 실패로 표시하고, 로그인 실패를 익명 성공으로 바꾸지 않습니다. 화면은 경과시간·작업 신호·계정별 순번·인증 상태·Client 수집 건수·Passive queue·Alert 집계를 표시합니다. Active Scan·Fuzzer·Forced Browse는 기본 캠페인에 포함되지 않습니다.
 4. Web **LLM Explorer**에서 시작 URL, 비로그인 및 필요한 계정을 고른 뒤 실행합니다. Explorer 계정의 ID·비밀번호와 live cookie/token은 현재 프로세스 메모리에만 있고 모델에는 opaque handle만 전달됩니다. 로그인 준비 교환은 프로젝트/Evidence/원장에 저장하지 않습니다. 실제 대상 응답과 산출물 선언은 Observation/Declaration으로 분리되며 선언에는 현재 run Evidence ID가 필수입니다. 작업 피드에서 경과시간·HTTP 시도/응답, 선언 endpoint/parameter, OPTIONS probe, 실패·미해결 항목을 확인하고 실행 중 steer·취소할 수 있습니다. 상세한 form/JSON token 설정은 [Explorer 문서](docs/ko/llm-explorer.md)를 따릅니다.
@@ -195,11 +195,11 @@ ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 
 
 `http://127.0.0.1:17777/`와 `/app/`는 동일한 React 작업면을 제공하고 `/legacy/`는 전환 기간의 기존 작업면을 제공합니다. 첫 진입은 `API·입력 차이`이며, React가 분석기나 판정 상태 기계를 대체하지 않고 같은 localhost API snapshot을 표시합니다.
 
-- **Burp 탭** — exact scope, 포트 분류, 실시간 수량, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 초기화, 정본 로컬 Web 작업면 열기
+- **Burp 탭** — exact scope, 포트 분류, 실시간 수량, 새 진단 시작, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 정본 로컬 Web 작업면 열기
 - **Web 상단 모드** — 기본 `API·입력 차이`, 상세 `인가 그래프`, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
-- **API·입력 차이** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 분석한 HTML/OpenAPI/JavaScript 산출물 수와 부분·실패·상한 상태도 보여 주며, 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
+- **API·입력 차이** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 실제 관측 행의 **Evidence 상세**에서 Request Lab과 Burp Repeater 초안으로 바로 이어지며, 선언만 있고 요청이 없는 항목에는 전송 가능한 Evidence가 있는 것처럼 버튼을 만들지 않습니다. 분석한 HTML/OpenAPI/JavaScript 산출물 수와 부분·실패·상한 상태도 보여 주며, 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
 - **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, 실제 메인 Evidence 수와 함께 동작하는 HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 읽기 전용 역할 정책 상태, 3-way gap, 그래프 판정 제어
-- **인가 그래프** — 기본 `Identity → API`, API 선택 시 `Identity → API → Object`, 선택형 `사이트 → API 그룹` 개요를 제공합니다. 실제 분석 관계는 `Identity × API × Object × Source`로 보존하고, 고카디널리티 Object는 family로 먼저 접은 뒤 선택적으로 인스턴스를 펼칩니다. HUMAN 파랑·실선·H / SCANNER 빨강·파선·S / LLM 검정·점선·L overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, focus+context, 화면 맞춤을 제공합니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.
+- **인가 그래프** — 현재는 `Identity / API / 접근 대상 ID` 3개 lane을 같은 canvas에 표시합니다. 접근 대상 ID가 없는 요청은 Identity→API, 있는 요청은 Identity→접근 대상 ID→API edge로 투영합니다. API·접근 대상 ID는 기본 18개와 전체 표시를 전환하며, HUMAN 파랑·실선 / SCANNER 빨강·파선 / LLM 밝은 점선 overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, focus+context, 화면 맞춤을 제공합니다. 사이트/API 단계형 drill-down과 Resource family 접기는 아직 구현되지 않았습니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.
 - **판정 매트릭스** — 관측된 `identity/role × operation × resource` cell, source별 verdict, 미교차 조합, 일부만 발견, 불일치
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
 - **시나리오** — 현재 결정론적 BOLA/BFLA 규칙 후보와 사람 검토. 이전 LLM 평가·판정은 별도 읽기 전용 기록
@@ -246,7 +246,7 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 - 기존 agent workspace·MCP·브라우저/Judge 실행기는 제거된 상태입니다. 새 Explorer는 Codex app-server dynamic tool과 Java exact-scope gateway를 사용하며 별도 MCP나 브라우저를 다시 만들지 않습니다.
 - source별 active run context와 정확한 run ID의 완료·취소 경계를 유지합니다. LLM run은 같은 run의 신뢰 가능한 응답 Evidence ID가 없으면 완료되지 않습니다.
 - Explorer는 정적·응답 기반 frontier를 넓게 따라가지만 runtime에서만 로드되는 lazy chunk, CAPTCHA/MFA/WebAuthn, 서버 전용 endpoint와 임의 JavaScript wrapper를 완전 발견하지 못할 수 있습니다. POST의 업무 의미도 범용 블랙박스에서 완전히 판별할 수 없으므로 조회·검색 요청으로 제한하고 승인된 테스트 환경에서만 사용합니다.
-- 그래프 접기는 의미 기반 clustering이 아니라 화면 pagination입니다. 클릭할 때마다 대상 객체·API 18개를 추가하며, 20,000건 수집 상한은 계속 Burp를 보호합니다.
+- 현재 그래프 접기는 의미 기반 clustering이나 증분 pagination이 아닙니다. API·접근 대상 ID를 정렬한 뒤 `18개 / 전체`로 전환하는 표시 제한이며, 20,000건 수집 상한은 별도로 Burp를 보호합니다.
 - Montoya `2026.7`에 맞춰 컴파일했습니다. 실제 engagement에서 사용하는 Burp 버전으로 release JAR을 확인해야 합니다.
 
 ## Standalone 데모
@@ -255,6 +255,8 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 mvn exec:java
 mvn exec:java -Dexec.args="human.xml scanner.xml llm.xml"
 ```
+
+Standalone은 패키지 React·로컬 HTTP·프로젝트 저장/재열기·XML 입력을 확인하는 데모 경로입니다. `-Dflowscope.projects.dir=/격리/경로`로 프로젝트 root를 별도 지정할 수 있습니다. Burp Montoya가 없으므로 HUMAN live capture, Request Lab 전송, ZAP 캠페인과 LLM Explorer 실행은 사용할 수 없으며 화면은 이를 명시적 `UNAVAILABLE` 상태로 표시합니다. 실제 점검 실행 검증에는 Burp에 release JAR을 로드해야 합니다.
 
 ## 라이선스와 보안
 

@@ -19,6 +19,8 @@ const stageCopy: Record<InspectionStage, { title: string; message: string }> = {
   review: { title: "Evidence 검토", message: "HUMAN·ZAP 기록과 API·입력 차이를 확인하세요. 전체 탐색 완료를 뜻하지 않습니다." },
 }
 
+const ANONYMOUS_HUMAN_ACCOUNT = "__flowscope_anonymous__"
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "요청을 완료하지 못했습니다."
 }
@@ -89,7 +91,7 @@ export function InspectionPage() {
   const zapAccountDelete = useZapAccountDeleteMutation()
   const [manualStage, setManualStage] = useState<InspectionStage | null>(null)
   const [target, setTarget] = useState("")
-  const [humanAccount, setHumanAccount] = useState("")
+  const [humanAccount, setHumanAccount] = useState(ANONYMOUS_HUMAN_ACCOUNT)
   const [anonymous, setAnonymous] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
   const [zapDefinitions, setZapDefinitions] = useState("")
@@ -133,7 +135,9 @@ export function InspectionPage() {
   const removeUnavailableAccounts = (ids: readonly string[]) => ids.filter((id) => scannerAccountIds.includes(id))
   useEffect(() => {
     setSelectedAccounts((current) => removeUnavailableAccounts(current))
-    if (humanAccount && !humanAccountIds.includes(humanAccount)) setHumanAccount("")
+    if (humanAccount !== ANONYMOUS_HUMAN_ACCOUNT && !humanAccountIds.includes(humanAccount)) {
+      setHumanAccount(ANONYMOUS_HUMAN_ACCOUNT)
+    }
   }, [scannerAccountIds.join(","), humanAccountIds.join(","), humanAccount])
 
   const humanSummary = human.data ? human.data.active ? "진행 중" : human.data.completed ? "완료" : "대기" : human.isPending ? "불러오는 중" : "상태 확인 필요"
@@ -205,10 +209,13 @@ export function InspectionPage() {
               <label className="grid gap-1 text-sm" htmlFor="human-account">HUMAN pass 계정
                 <Select value={humanAccount} onValueChange={setHumanAccount} disabled={!humanCanStart}>
                   <SelectTrigger id="human-account" aria-label="HUMAN pass 계정"><SelectValue placeholder="비로그인 pass" /></SelectTrigger>
-                  <SelectContent><SelectItem value="">비로그인 pass</SelectItem>{humanAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.label}</SelectItem>)}</SelectContent>
+                  <SelectContent><SelectItem value={ANONYMOUS_HUMAN_ACCOUNT}>비로그인 pass</SelectItem>{humanAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.label}</SelectItem>)}</SelectContent>
                 </Select>
               </label>
-              <Button disabled={!humanCanStart} onClick={() => humanMutation.mutate({ action: "begin", account: humanAccount })}>HUMAN pass 시작</Button>
+              <Button disabled={!humanCanStart} onClick={() => humanMutation.mutate({
+                action: "begin",
+                account: humanAccount === ANONYMOUS_HUMAN_ACCOUNT ? "" : humanAccount,
+              })}>HUMAN pass 시작</Button>
               <Button variant="outline" disabled={!humanCanEnd} title={!humanCanEnd ? "현재 HUMAN run ID가 있을 때만 종료할 수 있습니다." : undefined} onClick={() => {
                 if (human.data?.runId.trim()) humanMutation.mutate({ action: "end", runId: human.data.runId })
               }}>HUMAN pass 종료</Button>

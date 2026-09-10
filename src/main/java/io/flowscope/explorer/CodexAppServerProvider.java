@@ -30,7 +30,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.UUID;
 
 /** 공식 Codex app-server JSONL 프로토콜을 사용하는 구독 로그인 기반 Explorer 공급자. */
 public final class CodexAppServerProvider implements ExplorerProvider {
@@ -276,13 +275,17 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             try {
                 JsonNode params = message.path("params");
                 String tool = params.path("tool").asText();
+                String artifactBase = request.gatewayUrl().replaceFirst("/request$", "/artifacts");
                 String endpoint = switch (tool) {
                     case "flowscope_http_request" -> request.gatewayUrl();
                     case "flowscope_record_discoveries" -> request.discoveryUrl();
+                    case "flowscope_artifact_list" -> artifactBase + "/list";
+                    case "flowscope_artifact_search" -> artifactBase + "/search";
+                    case "flowscope_artifact_read" -> artifactBase + "/read";
+                    case "flowscope_artifact_index" -> artifactBase + "/index";
                     default -> throw new IllegalArgumentException("지원하지 않는 Explorer 도구입니다.");
                 };
-                String gatewayResponse = callGateway(endpoint, params.path("arguments"),
-                        tool.equals("flowscope_http_request"));
+                String gatewayResponse = callGateway(endpoint, params.path("arguments"));
                 result.put("success", true).putArray("contentItems").addObject()
                         .put("type", "inputText").put("text", gatewayResponse);
             } catch (Exception error) {
@@ -292,7 +295,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             write(response);
         }
 
-        private String callGateway(String endpoint, JsonNode arguments, boolean downloadArtifact) throws Exception {
+        private String callGateway(String endpoint, JsonNode arguments) throws Exception {
             HttpRequest gatewayRequest = HttpRequest.newBuilder(URI.create(endpoint))
                     .header("Authorization", "Bearer " + request.gatewayToken())
                     .header("Content-Type", "application/json")
@@ -302,19 +305,6 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             JsonNode parsed = JSON.readTree(gatewayResponse.body());
             if (gatewayResponse.statusCode() >= 400) {
                 throw new IOException(parsed.path("error").asText("FlowScope HTTP 요청이 거부됐습니다."));
-            }
-            if (downloadArtifact && parsed.hasNonNull("artifact_url")
-                    && !parsed.path("artifact_url").asText().isBlank()) {
-                HttpRequest artifactRequest = HttpRequest.newBuilder(URI.create(parsed.path("artifact_url").asText()))
-                        .header("Authorization", "Bearer " + request.gatewayToken()).GET().build();
-                HttpResponse<byte[]> artifactResponse = HttpClient.newHttpClient().send(
-                        artifactRequest, HttpResponse.BodyHandlers.ofByteArray());
-                if (artifactResponse.statusCode() != 200) throw new IOException("큰 응답 artifact를 보존하지 못했습니다.");
-                Path artifactPath = workspace.resolve("response-" + UUID.randomUUID() + ".txt");
-                Files.write(artifactPath, artifactResponse.body());
-                ObjectNode mutable = (ObjectNode) parsed;
-                mutable.put("artifact_path", artifactPath.toString());
-                mutable.remove("artifact_url");
             }
             return parsed.toString();
         }
@@ -391,7 +381,9 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
                     .put("serviceName", "flowscope_explorer").put("ephemeral", true)
                     .put("developerInstructions", request.prompt());
-            params.putArray("dynamicTools").add(httpTool()).add(discoveryTool());
+            params.putArray("dynamicTools").add(httpTool()).add(artifactListTool())
+                    .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
+                    .add(discoveryTool());
             return params;
         }
 
@@ -422,6 +414,60 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             properties.putObject("body").put("type", "string");
             schema.putArray("required").add("account").add("method").add("url").add("headers").add("body");
             return tool;
+        }
+
+        private ObjectNode artifactListTool() {
+            ObjectNode tool = dynamicTool("flowscope_artifact_list",
+                    "List masked response artifacts retained for the active Explorer run, including Evidence ID, URL, media type, size, completeness, and SHA-256.");
+            tool.putObject("inputSchema").put("type", "object").put("additionalProperties", false)
+                    .putObject("properties");
+            return tool;
+        }
+
+        private ObjectNode artifactSearchTool() {
+            ObjectNode tool = dynamicTool("flowscope_artifact_search",
+                    "Search active-run masked response artifacts without copying the full artifact into model context. Use repeated literal searches for routes, API clients, source maps, chunks, and parameter names.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode properties = schema.putObject("properties");
+            properties.putObject("artifact_id").put("type", "string")
+                    .put("description", "Optional artifact ID. Empty searches every active-run artifact.");
+            properties.putObject("query").put("type", "string").put("minLength", 1).put("maxLength", 1024);
+            properties.putObject("case_sensitive").put("type", "boolean");
+            properties.putObject("max_results").put("type", "integer").put("minimum", 1).put("maximum", 200);
+            schema.putArray("required").add("artifact_id").add("query").add("case_sensitive").add("max_results");
+            return tool;
+        }
+
+        private ObjectNode artifactReadTool() {
+            ObjectNode tool = dynamicTool("flowscope_artifact_read",
+                    "Read a bounded character range from one active-run masked artifact. Continue with char_offset until end_of_artifact when exact surrounding source is required.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode properties = schema.putObject("properties");
+            properties.putObject("artifact_id").put("type", "string");
+            properties.putObject("char_offset").put("type", "integer").put("minimum", 0);
+            properties.putObject("max_chars").put("type", "integer").put("minimum", 1).put("maximum", 65536);
+            schema.putArray("required").add("artifact_id").add("char_offset").add("max_chars");
+            return tool;
+        }
+
+        private ObjectNode artifactIndexTool() {
+            ObjectNode tool = dynamicTool("flowscope_artifact_index",
+                    "Return FlowScope's deterministic JavaScript AST call-site, parameter, chunk, and unresolved-construct index for one active-run JavaScript artifact. This index is evidence, not an LLM verdict.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode properties = schema.putObject("properties");
+            properties.putObject("artifact_id").put("type", "string");
+            properties.putObject("offset").put("type", "integer").put("minimum", 0);
+            properties.putObject("max_items").put("type", "integer").put("minimum", 1).put("maximum", 500);
+            schema.putArray("required").add("artifact_id").add("offset").add("max_items");
+            return tool;
+        }
+
+        private ObjectNode dynamicTool(String name, String description) {
+            return JSON.createObjectNode().put("type", "function").put("name", name)
+                    .put("description", description);
         }
 
         private ObjectNode discoveryTool() {

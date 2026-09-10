@@ -23,6 +23,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.ZapAccountVault;
+import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -68,6 +69,25 @@ final class FlowScopeWebServerTest {
 
         assertEquals(308, response.statusCode());
         assertEquals("/app/", response.headers().firstValue("Location").orElseThrow());
+    }
+
+    @Test
+    void startsAndSwitchesProjectsWithoutOfferingDestructiveEvidenceClear() throws Exception {
+        start();
+
+        HttpResponse<String> clear = post("/api/clear", "", token);
+        HttpResponse<String> started = post("/api/projects", "action=start&name=Target+A&scope="
+                + URLEncoder.encode("https://app.example.test/", StandardCharsets.UTF_8), token);
+        HttpResponse<String> listed = get("/api/projects", token, null);
+
+        assertEquals(409, clear.statusCode());
+        assertEquals(1, state.records.size(), "legacy reset must not delete Evidence");
+        assertEquals(200, started.statusCode());
+        assertEquals("Target A", JSON.readTree(started.body()).path("active").path("name").asText());
+        assertEquals("SAVED", JSON.readTree(started.body()).path("saveState").asText());
+        assertEquals("https://app.example.test/", state.startedProjectScope);
+        assertEquals(200, listed.statusCode());
+        assertEquals(1, JSON.readTree(listed.body()).path("projects").size());
     }
 
     @Test
@@ -1005,6 +1025,9 @@ final class FlowScopeWebServerTest {
         private final java.util.concurrent.CountDownLatch manualRequestRelease =
                 new java.util.concurrent.CountDownLatch(1);
         private volatile Pipeline.Result result;
+        private volatile String startedProjectScope = "";
+        private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
+                null, List.of());
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
                 List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_LINK,
@@ -1042,6 +1065,15 @@ final class FlowScopeWebServerTest {
         }
         @Override public void removeZapAccount(String id) { zapAccounts.remove(id); }
         @Override public List<String> scopeEntries() { return scannerScope; }
+        @Override public ProjectWorkspace.Status projectStatus() { return projectStatus; }
+        @Override public ProjectWorkspace.Status startProject(String name, String scope) {
+            startedProjectScope = scope;
+            ProjectWorkspace.Entry entry = new ProjectWorkspace.Entry("target-a", name,
+                    List.of(scope), "2026-09-10T00:00:00Z", 1, 100, true, true, true);
+            projectStatus = new ProjectWorkspace.Status("/tmp/projects", entry, List.of(entry));
+            return projectStatus;
+        }
+        @Override public ProjectWorkspace.Status openProject(String id) { return projectStatus; }
         @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
         @Override public JsonNode startScanner(String target, List<String> accountIds, boolean includeAnonymous) {
             scannerTarget = target;
@@ -1082,7 +1114,6 @@ final class FlowScopeWebServerTest {
 
         @Override public void rebuild() { result = Pipeline.run(new ArrayList<>(records), config); revision.incrementAndGet(); }
         @Override public Pipeline.Result completionSnapshot() { rebuild(); return result; }
-        @Override public void clearTraffic() { records.clear(); rebuild(); }
         @Override public void loadSample() { }
         @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
             BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);

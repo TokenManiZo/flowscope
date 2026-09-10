@@ -1,4 +1,5 @@
-import { readdirSync } from "node:fs"
+import { mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { spawn } from "node:child_process"
@@ -33,9 +34,11 @@ if (jars.length !== 1) {
 }
 
 if (!process.exitCode) {
+  const projectWorkspace = mkdtempSync(join(tmpdir(), "flowscope-e2e-projects-"))
   const child = spawn(process.env.JAVA_BIN || "java", [
     "-Djava.awt.headless=true",
     "-Dflowscope.web.port=17777",
+    `-Dflowscope.projects.dir=${projectWorkspace}`,
     "-cp",
     jars[0],
     "io.flowscope.Standalone",
@@ -48,12 +51,14 @@ if (!process.exitCode) {
       child.kill()
     }
   }
+  const cleanWorkspace = () => rmSync(projectWorkspace, { recursive: true, force: true })
 
   child.once("error", (error) => {
     console.error(`Unable to start standalone server: ${error.message}`)
     process.exitCode = 1
   })
   child.once("exit", (code, signal) => {
+    cleanWorkspace()
     if (!stopping) {
       console.error(`Standalone server exited before Playwright completed (${signal ?? code ?? "unknown"}).`)
       process.exitCode = code ?? 1
@@ -61,5 +66,5 @@ if (!process.exitCode) {
   })
   process.once("SIGINT", () => { stop(); process.exit(130) })
   process.once("SIGTERM", () => { stop(); process.exit(143) })
-  process.once("exit", stop)
+  process.once("exit", () => { stop(); cleanWorkspace() })
 }

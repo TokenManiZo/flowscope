@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -309,6 +309,21 @@ describe("RequestLabDialog", () => {
     await waitFor(() => expect(owner.request).toBe(""))
     expect(owner.response).toBe("")
     expect(owner.history).toHaveLength(0)
+  })
+
+  it("keeps an edited draft when only ordinary analysis data refreshes", async () => {
+    const owner = createMemoryOnlyRawState()
+    const fetch = installTransport()
+    const user = userEvent.setup()
+    const view = render(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={7} rawState={owner} />)
+    const request = await screen.findByLabelText("Request Lab 요청 원문")
+    await user.clear(request)
+    await user.type(request, "EDITED-WHILE-CAPTURING")
+
+    view.rerender(<RequestLabDialog open onOpenChange={vi.fn()} event={{ ...event, repeatCount: 2 }} sessions={[activeSession]} datasetRevision={7} rawState={owner} />)
+
+    expect(owner.request).toBe("EDITED-WHILE-CAPTURING")
+    expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab?eventId=event-7")).toHaveLength(1)
   })
 
   it("overwrites populated raw owner and held history references when unmounted", async () => {
