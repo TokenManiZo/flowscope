@@ -29,7 +29,7 @@ export function validateGraphPreferences(value: unknown): GraphPreferences | nul
   }))
   const normalizedViewport = viewport === null ? null : (() => {
     const validViewport = viewport as { zoom: number; pan: { x: number; y: number } }
-    return { zoom: validViewport.zoom, pan: { x: validViewport.pan.x, y: validViewport.pan.y } }
+    return { zoom: Math.min(2, Math.max(0.4, validViewport.zoom)), pan: { x: validViewport.pan.x, y: validViewport.pan.y } }
   })()
   return { version: 5, positions, viewport: normalizedViewport, locked: value.locked }
 }

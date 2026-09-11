@@ -8,7 +8,8 @@ import { OperationDetail } from "@/features/evidence/OperationDetail"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
-import type { GraphSelection } from "./graphProjection"
+import { graphCellKey, type GraphSelection } from "./graphProjection"
+import type { HierarchySelection } from "./graphHierarchy"
 
 interface Props {
   selection: GraphSelection
@@ -39,10 +40,16 @@ export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
   const [requestLabOpen, setRequestLabOpen] = useState(false)
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision
   useEffect(() => { setRequestLabOpen(false) }, [event?.eventId, datasetRevision])
-  const cell = snapshot.cells.find((candidate) => candidate.idn === selection.identity && candidate.op === selection.operation && candidate.resource === selection.resource)
-  const verdict = cell?.overall ?? event?.verdict ?? "unknown"
-  const requiredRole = selection.operation ? snapshot.requiredRoles[selection.operation] : undefined
-  const owner = selection.resource ? snapshot.owners[selection.resource] : undefined
+  // 계층 그래프 선택은 서버 셀의 canonical key를 그대로 들고 온다. 현재 snapshot에서 다시 찾아 판정을 표시하고, 집계 판정은 만들지 않는다.
+  const hierarchy = selection as Partial<HierarchySelection>
+  const selectedKeys = new Set(hierarchy.cellKeys ?? [])
+  const rawCells = snapshot.cells.filter((cell) => selectedKeys.has(graphCellKey(cell)))
+  const cell = rawCells.length === 1 ? rawCells[0] : snapshot.cells.find((candidate) => candidate.idn === selection.identity && candidate.op === selection.operation && candidate.resource === selection.resource)
+  const verdict = rawCells.length > 1 ? "복수 셀" : cell?.overall ?? (hierarchy.gapIds?.length ? "미교차 후보" : event?.verdict ?? "unknown")
+  const operation = cell?.op ?? selection.operation
+  const resource = cell?.resource ?? selection.resource
+  const requiredRole = operation ? snapshot.requiredRoles[operation] : undefined
+  const owner = resource ? snapshot.owners[resource] : undefined
   const description = selection.operation ?? selection.routeCandidate?.pathTemplate ?? "선택한 그래프 항목"
 
   return <Tabs defaultValue="summary" className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
@@ -53,16 +60,19 @@ export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
     >
       <TabsContent value="summary" className="mt-0 grid gap-4">
         {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : <dl className="grid gap-3">
-          <DetailRow label="Operation" value={selection.operation ?? "경로 후보"} />
-          <DetailRow label="Identity" value={selection.identity ?? "UNKNOWN"} />
-          <DetailRow label="Resource" value={selection.resource ?? "객체 없음"} />
-          <DetailRow label="Source" value={(selection.source ?? "UNKNOWN").toUpperCase()} />
+          <DetailRow label="Operation" value={operation ?? "경로 후보"} />
+          <DetailRow label="Identity" value={cell?.idn ?? selection.identity ?? "UNKNOWN"} />
+          <DetailRow label="Resource" value={resource ?? "객체 없음"} />
+          <DetailRow label="Source" value={selection.source === null ? "중립 / 소스 집계" : selection.source.toUpperCase()} />
         </dl>}
         <section aria-label="Access Check" className="grid gap-3 rounded-md border border-border/70 bg-background/40 p-3">
           <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">Access Check</h3><Badge variant="outline">{verdict.toUpperCase()}</Badge></div>
           <p className="text-xs text-muted-foreground">서버 snapshot의 권한 셀과 정책을 그대로 표시합니다.</p>
           <div className="grid gap-1 text-sm"><p>필수 역할 {requiredRole ?? "미지정"}</p><p>소유자 {owner ?? "미확정"}</p>{cell?.conflict && <p>소스 판정 충돌</p>}{cell && cell.missedSources.length > 0 && <p>미관측 소스 {cell.missedSources.map((source) => source.toUpperCase()).join(", ")}</p>}</div>
+          {cell && Object.entries(cell.reasons).map(([source, reason]) => <p className="break-words text-xs" key={source}>{source.toUpperCase()} · {reason}</p>)}
         </section>
+        {rawCells.length > 1 && <section aria-label="서버 원본 셀" className="grid gap-2"><p className="text-xs text-muted-foreground">{rawCells.length}개 원본 셀 · 개별 서버 판정</p>{rawCells.map((raw) => <div key={graphCellKey(raw)} className="rounded border border-border/70 p-2 text-xs"><p className="break-all">{raw.idn} · {raw.op} · {raw.resource ?? "객체 없음"}</p><p>{raw.overall.toUpperCase()}{raw.conflict ? " · 소스 판정 충돌" : ""}</p></div>)}</section>}
+        {!!hierarchy.gapIds?.length && <section aria-label="서버 Gap IDs" className="grid gap-1 text-xs">{hierarchy.gapIds.map((id) => <p className="break-all" key={id}>{id}</p>)}</section>}
       </TabsContent>
       <TabsContent value="evidence" className="mt-0 grid gap-4" aria-label="Evidence">
         <EvidenceIds ids={selection.evidenceIds} />

@@ -1,5 +1,6 @@
 import { expect, test as base } from "@playwright/test"
 import type { Locator, Page } from "@playwright/test"
+import type { Core } from "cytoscape"
 
 const origin = new URL(process.env.FLOWSCOPE_E2E_ORIGIN ?? "http://127.0.0.1:17777").origin
 const forbiddenActivePaths = new Set(["/api/human-run", "/api/scanner-run", "/api/llm-run", "/api/request-lab", "/api/replay"])
@@ -13,7 +14,7 @@ async function openDashboard(page: Page) {
   await page.goto(`${origin}/?flowscope-e2e-geometry=1#dashboard`)
   await expect(page.getByRole("heading", { name: "보안 점검 대시보드" })).toBeVisible()
 }
-type GraphGeometry = { width: number; height: number; maxZoom: number; nodes: Array<{ id: string; kind: "identity" | "resource" | "operation" | "route-candidate"; index: number; selected: boolean; center: { x: number; y: number }; bounds: { left: number; right: number; top: number; bottom: number } }> }
+type GraphGeometry = { width: number; height: number; maxZoom: number; nodes: Array<{ id: string; kind: "identity" | "resource" | "operation" | "route-candidate" | "target" | "api-group" | "support-operation"; index: number; selected: boolean; center: { x: number; y: number }; bounds: { left: number; right: number; top: number; bottom: number } }> }
 async function readGraphGeometry(canvas: Locator): Promise<GraphGeometry> {
   await expect(canvas).toHaveAttribute("data-graph-geometry", /"nodes":\[/)
   return JSON.parse(await canvas.getAttribute("data-graph-geometry") ?? "null") as GraphGeometry
@@ -60,6 +61,14 @@ async function navigate(page: Page, label: string, heading: string) {
   await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible()
 }
 async function closeSheet(page: Page) { await page.keyboard.press("Escape"); await expect(page.getByRole("dialog", { name: "Evidence 상세" })).toBeHidden() }
+// Site Overview → API View (ORDERS group) → Object View (exact GET /api/orders/{id}) through the shared keyboard list.
+async function drillIntoOrders(page: Page) {
+  const list = page.getByRole("region", { name: "공격면 API 목록" })
+  await list.getByRole("button", { name: /^ORDERS APIs/ }).click()
+  await expect(page.getByRole("navigation", { name: "그래프 계층" })).toContainText("API View")
+  await list.locator(':scope > button[aria-label*="GET /api/orders/{id}"]').click()
+  await expect(page.getByRole("navigation", { name: "그래프 계층" })).toContainText("Object View")
+}
 async function deleteAccountIfPresent(page: Page, label: string) {
   const remove = page.getByRole("button", { name: `${label} 삭제` })
   if (await remove.count() === 0) return
@@ -150,9 +159,29 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   const graphWorkspace = page.getByRole("region", { name: "접근 그래프 작업면" })
   const graphCanvas = graphWorkspace.getByLabel("공격면 Cytoscape 그래프")
   const laneHeadings = graphWorkspace.locator('div[aria-hidden="true"] span')
-  await expect(laneHeadings).toHaveText(["IDENTITY", "ENDPOINT", "OBJECT"])
+  await expect(laneHeadings).toHaveText(["TARGET", "API GROUP"])
+  const siteCards = await graphCanvas.evaluate((element) => {
+    const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
+    return cy.nodes().map((node) => {
+      const svg = new DOMParser().parseFromString(decodeURIComponent(String(node.data("cardImage")).split(",")[1]), "image/svg+xml")
+      return { kind: node.data("kind"), label: node.data("accessibleLabel"), width: node.data("width"), height: node.data("height"), unsafe: svg.querySelectorAll("parsererror, script, image, foreignObject, [href]").length }
+    })
+  })
+  expect(new Set(siteCards.map((card) => card.kind))).toEqual(new Set(["target", "api-group"]))
+  for (const card of siteCards) { expect(card).toMatchObject({ width: 224, height: 124, unsafe: 0 }); expect(card.label).not.toBe("") }
+  await graphWorkspace.getByRole("button", { name: "API 목록 보기" }).click()
+  await drillIntoOrders(page)
+  await graphWorkspace.getByRole("button", { name: "그래프 보기" }).click()
+  await expect(laneHeadings).toHaveText(["IDENTITY", "API", "OBJECT"])
   const initialGeometry = await readGraphGeometry(graphCanvas)
   expectGraphNodesInLanes(initialGeometry)
+  const relationshipCards = await graphCanvas.evaluate((element) => {
+    const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
+    return cy.nodes().map((node) => ({ kind: node.data("kind"), label: node.data("accessibleLabel"), cardImage: String(node.data("cardImage")) }))
+  })
+  expect(new Set(relationshipCards.map((card) => card.kind))).toEqual(new Set(["identity", "operation", "resource"]))
+  expect(relationshipCards.find((card) => card.kind === "operation")?.label).toMatch(/\b(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD|UNKNOWN) \//)
+  for (const card of relationshipCards) expect(card.cardImage).toMatch(/^data:image\/svg\+xml,/)
   const initiallySelectedNode = initialGeometry.nodes.find((node) => node.kind === "operation")
   const initialCanvasBox = await graphCanvas.boundingBox()
   expect(initiallySelectedNode).toBeDefined()
@@ -169,6 +198,12 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   const initialZoom = Number((await zoom.textContent())?.replace("%", ""))
   expect(initialZoom, "initial graph zoom").toBeGreaterThanOrEqual(40)
   expect(initialZoom).toBeLessThanOrEqual(200)
+  // A drilled-down API can already be fitted to its lane-safe maximum.
+  if (await graphWorkspace.getByRole("button", { name: "확대" }).isDisabled()) {
+    expect(initialZoom).toBe(Math.round((await readGraphGeometry(graphCanvas)).maxZoom * 100))
+    await graphWorkspace.getByRole("button", { name: "축소" }).click()
+    await expect(zoom).not.toHaveText(`${initialZoom}%`)
+  }
   const initialGeometryText = await graphCanvas.getAttribute("data-graph-geometry")
   const zoomBeforeIncrease = await zoom.textContent()
   await graphWorkspace.getByRole("button", { name: "확대" }).click()
@@ -226,7 +261,7 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   await graphWorkspace.getByRole("button", { name: "API 목록 보기" }).click()
   const graphList = graphWorkspace.getByRole("region", { name: "공격면 API 목록" })
   await expect(graphList).toBeVisible()
-  await graphList.getByRole("button").first().click()
+  await graphList.locator(":scope > button").first().click()
   const inspector = page.getByRole("complementary", { name: "선택 상세" })
   await expect(inspector.getByText("선택 작업", { exact: true })).toBeVisible()
   await inspector.getByRole("tab", { name: "Summary" }).click()
@@ -239,7 +274,7 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   await expect(inspector.locator("dd").nth(1)).toHaveText(selectedIdentity)
   await expect(inspector.locator("dd").nth(2)).toHaveText(selectedResource)
   await graphWorkspace.getByRole("button", { name: "그래프 보기" }).click()
-  await expect(laneHeadings).toHaveText(["IDENTITY", "ENDPOINT", "OBJECT"])
+  await expect(laneHeadings).toHaveText(["IDENTITY", "API", "OBJECT"])
   await expect(inspector.locator("dd").nth(0)).toHaveText(selectedOperation)
   await expect(inspector.locator("dd").nth(1)).toHaveText(selectedIdentity)
   await expect(inspector.locator("dd").nth(2)).toHaveText(selectedResource)
@@ -442,7 +477,8 @@ test("keeps the reference frame current-route semantics, Sheets, and layout usab
       await page.getByRole("button", { name: "분석 필터 열기" }).click()
       await expect(page.getByRole("dialog", { name: "분석 필터" })).toBeVisible()
       await page.keyboard.press("Escape")
-      await page.getByRole("region", { name: "공격면 API 목록" }).getByRole("button").first().click()
+      await drillIntoOrders(page)
+      await page.getByRole("region", { name: "공격면 API 목록" }).locator(":scope > button").first().click()
       await expect(page.getByRole("dialog", { name: "선택 상세" })).toBeVisible()
       await page.keyboard.press("Escape")
     } else await expect(page.getByLabel("공격면 Cytoscape 그래프")).toBeVisible()

@@ -1,4 +1,4 @@
-import type { EventRecord, RouteCandidate, Snapshot, Source, Verdict } from "@/lib/api/types"
+import type { Cell, EventRecord, RouteCandidate, Snapshot, Source, Verdict } from "@/lib/api/types"
 
 export type GraphView = "source" | "authz"
 
@@ -19,6 +19,23 @@ export interface GraphSelection {
   source: Source | "unknown" | null
   evidenceIds: readonly string[]
   routeCandidate?: GraphRouteCandidateDetail
+}
+
+/** 계층 그래프 선택: 서버 권한 셀을 canonical key로 보존하고 Evidence ID를 합친다(판정은 다시 계산하지 않음). */
+export interface GraphCellSelection extends GraphSelection {
+  cellKeys: readonly string[]
+  cells: readonly Cell[]
+}
+
+export function graphCellKey(cell: Pick<Cell, "idn" | "op" | "resource">): string {
+  return JSON.stringify([cell.idn, cell.op, cell.resource ?? null])
+}
+
+export function graphCellSelection(cells: readonly Cell[], source: Source | null = null): GraphCellSelection {
+  const common = (key: "idn" | "op" | "resource") => cells.length && cells.every((cell) => cell[key] === cells[0][key]) ? cells[0][key] : null
+  return { operation: common("op"), resource: common("resource"), identity: common("idn"), source,
+    cellKeys: [...new Set(cells.map(graphCellKey))], cells,
+    evidenceIds: [...new Set(cells.flatMap((cell) => cell.evidenceIds))].sort(compareText) }
 }
 
 export interface GraphRouteCandidateDetail {
@@ -84,14 +101,14 @@ export function graphRouteCandidateId(candidate: Pick<RouteCandidate, "service" 
 const PAGE_SIZE = 18
 const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
 
-const sourceStyles: Record<Source | "unknown", Pick<GraphEdge, "sourceText" | "line" | "color">> = {
+export const sourceStyles: Record<Source | "unknown", Pick<GraphEdge, "sourceText" | "line" | "color">> = {
   human: { sourceText: "HUMAN", line: "solid", color: "#2563eb" },
   scanner: { sourceText: "SCANNER", line: "dashed", color: "#dc2626" },
   llm: { sourceText: "LLM", line: "dotted", color: "#e4e4e7" },
   unknown: { sourceText: "UNKNOWN", line: "dotted", color: "#6b7280" },
 }
 
-const verdictStyles: Record<Verdict | "unknown", { text: string; color: string }> = {
+export const verdictStyles: Record<Verdict | "unknown", { text: string; color: string }> = {
   allow: { text: "ALLOW", color: "#15803d" },
   deny: { text: "DENY", color: "#b91c1c" },
   suspicious: { text: "SUSPICIOUS", color: "#c2410c" },
@@ -213,17 +230,26 @@ export function projectGraph(snapshot: Snapshot, filters: GraphFilters): GraphPr
   const identities = sortedNodes("identity", group(events, (event) => event.idn), snapshot, true)
   const resources = sortedNodes("resource", group(events.filter((event) => event.resource !== null), (event) => event.resource ?? ""), snapshot, filters.expanded)
   const operations = sortedNodes("operation", group(events, (event) => event.op), snapshot, filters.expanded)
-  const enabledSources = new Set(filters.source.map(normalizedSource))
-  const routeCandidates = filters.includeRouteCandidates && filters.identity.length === 0 ? snapshot.routeCandidates.filter((candidate) =>
-    candidate.provenance.length === 0 || candidate.provenance.some((item) => enabledSources.has(normalizedSource(item.source))),
-  ).map((candidate) => {
-    const id = graphRouteCandidateId(candidate)
-    const detail: GraphRouteCandidateDetail = { id, service: candidate.service, method: candidate.method, pathTemplate: candidate.pathTemplate, observed: candidate.observed, applicability: candidate.applicability, provenanceTypes: candidate.provenanceTypes, provenanceEvidenceIds: candidate.provenanceEvidenceIds, provenance: candidate.provenance, reviewReason: candidate.reviewReason, priorityReasons: candidate.priorityReasons }
-    const selectedProvenance = candidate.provenance.find((item) => enabledSources.has(normalizedSource(item.source)))
-    return { ...candidate, id, label: `${candidate.method} ${candidate.pathTemplate}`, observedText: candidate.observed && candidate.method !== "UNKNOWN" ? "관측됨" as const : "미관측 후보" as const, selection: { operation: `${candidate.method} ${candidate.pathTemplate}`, resource: null, identity: null, source: normalizedSource(selectedProvenance?.source), evidenceIds: [...candidate.provenanceEvidenceIds].sort(compareText), routeCandidate: detail } }
-  }) : []
+  const routeCandidates = projectRouteCandidates(snapshot, filters)
   const visibleNodeIds = new Set([...identities, ...resources, ...operations].map((node) => node.id))
   return { view: filters.view, identities, resources, operations, routeCandidates, listItems: operations, edges: buildEdges(events, visibleNodeIds) }
+}
+
+/** 경로 후보 하나를 중립 그래프 항목으로 투영한다. `enabledSources`가 있으면 그 source의 provenance를 대표로 고른다. */
+export function projectRouteCandidate(candidate: RouteCandidate, enabledSources: ReadonlySet<Source> | null = null): GraphRouteCandidate {
+  const id = graphRouteCandidateId(candidate)
+  const detail: GraphRouteCandidateDetail = { id, service: candidate.service, method: candidate.method, pathTemplate: candidate.pathTemplate, observed: candidate.observed, applicability: candidate.applicability, provenanceTypes: candidate.provenanceTypes, provenanceEvidenceIds: candidate.provenanceEvidenceIds, provenance: candidate.provenance, reviewReason: candidate.reviewReason, priorityReasons: candidate.priorityReasons }
+  const selectedProvenance = enabledSources ? candidate.provenance.find((item) => enabledSources.has(normalizedSource(item.source))) : candidate.provenance[0]
+  return { ...candidate, id, label: `${candidate.method} ${candidate.pathTemplate}`, observedText: candidate.observed && candidate.method !== "UNKNOWN" ? "관측됨" : "미관측 후보", selection: { operation: `${candidate.method} ${candidate.pathTemplate}`, resource: null, identity: null, source: normalizedSource(selectedProvenance?.source), evidenceIds: [...candidate.provenanceEvidenceIds].sort(compareText), routeCandidate: detail } }
+}
+
+/** 현재 필터가 허용하는 경로 후보만 투영한다: 표시 옵션이 켜져 있고, 신원 필터가 없으며, provenance source가 활성 source에 포함될 때. */
+export function projectRouteCandidates(snapshot: Snapshot, filters: GraphFilters): readonly GraphRouteCandidate[] {
+  if (!filters.includeRouteCandidates || filters.identity.length > 0) return []
+  const enabledSources = new Set(filters.source.map(normalizedSource))
+  return snapshot.routeCandidates
+    .filter((candidate) => candidate.provenance.length === 0 || candidate.provenance.some((item) => enabledSources.has(normalizedSource(item.source))))
+    .map((candidate) => projectRouteCandidate(candidate, enabledSources))
 }
 
 export function selectGraphItem(projection: GraphProjection, id: string): GraphSelection | null {

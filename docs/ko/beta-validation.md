@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5c 계층 관계 그래프) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 회귀 | 착수 시 RED: graph 11 테스트 파일 중 9 실패(신규 모듈 4 파일 로드 실패 + 22 assertion 실패) → 구현 후 11/11 GREEN. vitest `graphHierarchy.test.ts` 22·`relationshipNodeCard.test.ts` 4·`CytoscapeGraph/ResponsiveGraphList/GraphInspectorPanel/GraphPage(.lifecycle)/graphProjection/graphPreferences` 이식 테스트. |
+| JDK 21 `mvn -o clean verify` | BUILD SUCCESS(1분 6초). Java 514 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 44 files/357 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,876,030 bytes(이 verify의 단일 빌드값). |
+| 패키지 Chromium 실측 | Standalone(17777) 샘플, `?fresh=5c&flowscope-e2e-geometry=1#graph`. 1600×900: Site Overview lane `TARGET / API GROUP`, 카드 TARGET `https://demo.flowscope.test:443 · 2 API groups`, `ADMIN APIs · 1 APIs · H 1 / S 0 / L 1 · Gap 1 · 경로 후보 0`, `ORDERS APIs · 3 APIs · H 3 / S 2 / L 2 · Gap 7 · 경로 후보 0`(카드 224×124) → ORDERS tap → API View `IDENTITY / API`(acct-demo-user-a·b, GET UNKNOWN 5 Evidence / OPTIONS UNDECIDED / PATCH ALLOW 순, HUMAN 실선·SCANNER 파선·LLM 점선 edge 7) → GET tap → Object View `IDENTITY / API / OBJECT`(orders:101 owner acct-demo-user-a, orders:202 owner acct-demo-user-b, identity→operation 5·operation→resource 5 edge) → orders:101 tap → 선택 상세 `복수 셀`·원본 셀 2(ALLOW / SUSPICIOUS·소스 판정 충돌)·Gap ID 3 → 신원 hover 툴팁 `Identity acct-demo-user-a; verdict UNKNOWN; 2 Evidence` → canvas focus + ArrowDown + Enter → acct-demo-user-b 선택, 해당 경로 `focused=yes` 6·나머지 `no` 4 → GAP `미교차 후보 acct-demo-user-b · PATCH /api/orders/{id} · orders:101` 클릭 → PATCH Object View, 중립 후보 edge 2 `yes`(#6b7280)·HUMAN 2 `no`. 900×800: canvas 없음, Identity focus 버튼 2, RESOURCE 항목 1, Source Evidence 경로 4(후보 2 `포커스 경로`) → 후보 클릭 → `선택 상세` dialog(`미교차 후보`, gap-a9601d09b142, aria-pressed) → Escape → acct-demo-user-a 클릭(aria-pressed=true, HUMAN 경로만 `yes`) → Escape → 후보 focus 복귀. 새 탭 콘솔 오류 0, `/api/*` 전부 200. |
+| Playwright parity(`npm run e2e` 동등, 패키지 JAR을 `scripts/start-e2e-server.mjs`가 격리 workspace로 기동) | 8/8 passed(16.6s). 그래프 검사: Site lane `TARGET / API GROUP`, 카드 SVG parsererror/script/image/foreignObject/href 0·224×124, `API 목록 보기`→`ORDERS APIs`→`GET /api/orders/{id}` drill(API View→Object View)→`그래프 보기` lane `IDENTITY / API / OBJECT`, 노드 click 선택 유지·zoom/fit/resize/drag/lock/초기화/최대 zoom 검사, 목록 첫 항목 선택→상세 dd 3개 일치; 반응형 검사 900/600px에서 목록 drill→선택 상세 dialog. 콘솔 오류·외부 origin·능동 요청 0. |
+| 미실측 | 보조 흐름·경로 후보 그룹·`18개 더 보기`(샘플 3 API·2 객체), resource family 접기(PR#11 범위 밖). 실제 Burp 미실행. |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5b 구조화 요청 비교) gate
 
 | 항목 | 실제 확인 결과 |

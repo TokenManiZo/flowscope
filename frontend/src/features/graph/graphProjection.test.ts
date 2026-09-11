@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { EventRecord, Snapshot } from "@/lib/api/types"
-import { graphRouteCandidateId, projectGraph, selectGraphItem, wrapOperationLabel } from "./graphProjection"
+import { graphCellKey, graphCellSelection, graphRouteCandidateId, projectGraph, selectGraphItem, wrapOperationLabel } from "./graphProjection"
 
 function event(overrides: Partial<EventRecord> = {}): EventRecord {
   const value: EventRecord = {
@@ -18,6 +18,14 @@ function snapshot(events: readonly EventRecord[], routeCandidates: Snapshot["rou
 }
 
 describe("projectGraph", () => {
+  it("preserves canonical cell keys and all Evidence when collapsing different resources", () => {
+    const first = snapshot([]).cells[0]
+    const second = { ...first, resource: null, evidenceIds: ["objectless", "ev-human-1"] }
+    expect(graphCellKey(first)).toBe('["alice","GET /orders/{id}","order:101"]')
+    expect(graphCellSelection([first, second], "scanner")).toMatchObject({ operation: "GET /orders/{id}", resource: null, identity: "alice", source: "scanner", cellKeys: ['["alice","GET /orders/{id}","order:101"]', '["alice","GET /orders/{id}",null]'], evidenceIds: ["ev-human-1", "ev-llm-1", "ev-scanner-1", "objectless"], cells: [first, second] })
+    expect(graphCellSelection([])).toMatchObject({ operation: null, identity: null, resource: null, source: null, evidenceIds: [], cellKeys: [] })
+  })
+
   it("projects server suspicious and undecided event verdicts when no coverage cell matches", () => {
     const serverEvents = [
       event({ eventId: "ev-suspicious", idn: "bob", op: "DELETE /orders/{id}", method: "DELETE", verdict: "suspicious" }),

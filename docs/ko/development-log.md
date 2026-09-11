@@ -1,5 +1,25 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5c) — 계층 관계 그래프(Site→API 그룹→API→Object, `+18`)
+
+### 원인과 수정
+
+- D-142는 React 인가 그래프가 단일 `IDENTITY / ENDPOINT / OBJECT` canvas와 `18개 / 전체` 전환만 구현한 사실을 문서에서 분리하고 계층 그래프를 다음 gate로 남겼다. PR#11의 `graphHierarchy/graphFocus/relationshipNodeCard`와 `CytoscapeGraph`·`ResponsiveGraphList`·`GraphInspectorPanel` 변경을 현행 `#graph` route(`GraphPage`)에 이식해 그 gate를 닫았다.
+- **projection(`graphHierarchy.ts`):** `projectHierarchy(snapshot, filters, navigation)`가 서버 `cells/gaps/events/routeCandidates`를 site(Target→API 그룹 구조 edge, 그룹 카드에 API·H/S/L Evidence·Gap·경로 후보 수), group(Identity→API source edge, suspicious>충돌>일부 관측>Evidence 수 정렬, `operationLimit` 18/`+18`, 남은 수), operation(Identity→API→Object, `objectLimit` 18/`+18`, UNCROSSED gap focus 시 중립 candidate edge 최대 40) 세 단계로 낸다. 선택은 `graphCellSelection`(canonical `graphCellKey`·원본 셀·Evidence ID 합집합·gapIds)이며 노드 판정은 셀이 모두 같을 때만 표시한다. 필터·snapshot 변화로 단계가 사라지면 상위 단계로 되돌리고 선택을 비운다.
+- **canvas/list/inspector:** `CytoscapeGraph`는 SVG 카드 이미지(`renderParameterNodeCardSvg` 재사용, 224×124), 2/3 lane 배치, 그룹·API 노드 tap→`onNavigate`, 선택 신원/edge/후보 focus dimming(`graphFocus`), 카드 전문 툴팁(pointer/키보드), 방향키·Enter·Escape 키보드 탐색을 갖는다. `ResponsiveGraphList`는 같은 계층을 그룹/API 탐색 버튼, Identity focus 버튼(aria-pressed), Source Evidence 경로 버튼(`data-focused`)으로 낸다. `GraphInspectorPanel`은 복수 셀 선택을 "복수 셀" + 원본 셀 목록 + 서버 Gap ID + 사유로 보여 주고 집계 판정을 만들지 않는다. `GraphPage`는 계층 nav(Site Overview/API View/Object View, Back, 개요로 접기, `API/Object 18개 더 보기 (N개 남음)`), GAP 목록의 미교차 후보 focus, 선택 재조정(셀 key·Gap ID·경로 후보 필드 갱신)을 맡는다. 저장 zoom은 0.4~2로 정규화한다.
+- **유지한 divergence:** 경로 후보는 flat projection의 source·identity 필터(`projectRouteCandidates`)를 계층에도 적용한다(PR은 무필터). Request Lab 연결은 D-140 `datasetRevision` key를 유지한다. PR의 두 탭 `GraphPage`(파라미터 맵/전체 관계), 서버 `FlowGraphBuilder` 방향 변경, legacy `index.html` 그래프 교체는 이식하지 않았다(D-143 5c 기각 기록). `projectGraph`(flat projection)는 컴포넌트 union 타입·회귀 기준으로 남긴다.
+- **e2e:** `frontend/e2e/parity.spec.ts`의 그래프 검사를 계층 기준으로 갱신했다(Site lane `TARGET / API GROUP`, 카드 SVG 안전성(parsererror/script/image/foreignObject/href 0)·224×124, 목록 drill(`drillIntoOrders`) 뒤 `IDENTITY / API / OBJECT` lane·기존 zoom/fit/drag/lock 검사, 900px 이하 drill→선택 상세 dialog).
+
+### 영향 파일·회귀
+
+- 코드: `frontend/src/features/graph/{graphHierarchy.ts,graphFocus.ts,relationshipNodeCard.ts}`(신규), `{graphProjection.ts(GraphCellSelection·graphCellKey·graphCellSelection·projectRouteCandidate(s)·styles export),CytoscapeGraph.tsx,ResponsiveGraphList.tsx,GraphInspectorPanel.tsx,GraphPage.tsx,graphPreferences.ts}`, `frontend/src/test/fixtures.ts`(`targetSnapshot`), `frontend/e2e/parity.spec.ts`.
+- 테스트(RED→GREEN, 착수 시 graph 11 파일 중 9 실패): `graphHierarchy.test.ts` 22, `relationshipNodeCard.test.ts` 4, `CytoscapeGraph.test.tsx`(카드·툴팁·키보드·2-lane·focus·잠금 폭 5건 추가), `ResponsiveGraphList.test.tsx`(계층 focus·후보·그룹 Evidence·site 탐색 5건 추가), `GraphInspectorPanel.test.tsx`(복수 셀·갱신·축소 3건 추가), `GraphPage.test.tsx`(계층 탐색·18개 증분·후보 focus·재조정 등 8건 추가/갱신), `GraphPage.lifecycle.test.tsx`(계층 canvas·5 listener·그룹 tap→후보), `graphProjection.test.ts`(cell key 1건), `graphPreferences.test.ts`(zoom 정규화 1건).
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 6초), Java 514 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 44 files/357 tests. JAR `target/flowscope-1.2.0-beta.46.jar` 31,876,030 bytes. 패키지 Standalone(17777) Chromium 실측: 1600×900 `#graph` Site Overview(TARGET 카드 `2 API groups`, ADMIN APIs `1 APIs · H 1 / S 0 / L 1 · Gap 1`, ORDERS APIs `3 APIs · H 3 / S 2 / L 2 · Gap 7`) → ORDERS 카드 tap → API View(IDENTITY/API, GET UNKNOWN·5 Evidence / OPTIONS UNDECIDED / PATCH ALLOW 순, H/S/L edge 7) → GET tap → Object View(IDENTITY/API/OBJECT, orders:101 owner acct-demo-user-a·orders:202 owner acct-demo-user-b) → orders:101 tap → 상세 pane "복수 셀"(user-a ALLOW / user-b SUSPICIOUS·소스 판정 충돌, Gap ID 3) → 신원 카드 hover 툴팁 `Identity acct-demo-user-a; verdict UNKNOWN; 2 Evidence` → canvas 키보드 ArrowDown+Enter로 acct-demo-user-b 선택·해당 경로만 focus → GAP 목록 `미교차 후보 acct-demo-user-b · PATCH …` 클릭 → PATCH Object View에서 중립(#6b7280) 후보 edge만 focus, HUMAN edge 흐림 → 900×800 목록: Identity focus 버튼·RESOURCE 항목·Source Evidence 경로 4건(후보 2건 `포커스 경로`) → 후보 클릭 → 선택 상세 dialog(`미교차 후보`, gap-a9601d09b142) → Escape → acct-demo-user-a focus(aria-pressed, HUMAN 경로만 focus) → Escape 후 후보 focus 복귀. 새 탭 콘솔 오류 0, `/api/*` 전부 200. Playwright 결과는 `beta-validation.md` 5c gate 표.
+
+### 남은 한계·다음 gate
+
+- 자동 회귀와 패키지 Standalone 실측이며 실제 Burp 실행은 미실행. 보조 흐름(support-operation)·경로 후보 그룹·`18개 더 보기`는 샘플 규모(3 API·2 객체)라 vitest로만 확인했다. resource family 접기는 PR#11 계층에 없어 이 단계 범위 밖이다. 다음: 5d snapshot 캐시·계약 테스트, 이후 6·7단계.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5b) — 구조화 요청 비교(Request Diff)
 
 ### 원인과 수정

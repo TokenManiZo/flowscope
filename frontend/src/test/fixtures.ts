@@ -22,6 +22,11 @@ export const snapshotFixture: Snapshot = {
   routeCandidates: [],
 }
 
+export const targetSnapshot = (overrides: Partial<Snapshot> = {}): Snapshot => ({
+  ...snapshotFixture,
+  ...overrides,
+})
+
 export const humanRunFixture: HumanRun = { active: false, completed: false, runId: "", accountId: "", proxy: "http://127.0.0.1:8080" }
 export const zapStatusFixture: ZapStatus = { connected: false, state: "UNAVAILABLE", message: "ZAP unavailable" }
 export const scannerRunFixture: ScannerRunEnvelope = { run: { status: "NOT_STARTED" }, accounts: [], scope: [] }

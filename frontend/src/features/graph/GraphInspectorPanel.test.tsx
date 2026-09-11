@@ -5,7 +5,7 @@ import { expect, it } from "vitest"
 import type { Snapshot } from "@/lib/api/types"
 import { renderWithQueryClient } from "@/test/render"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
-import type { GraphSelection } from "./graphProjection"
+import { graphCellSelection, type GraphSelection } from "./graphProjection"
 
 const event: Snapshot["events"][number] = {
   eventId: "ev-1", method: "GET", path: "/orders/1", status: 200, fp: "fp", idn: "alice", role: "USER", source: "human", op: "GET /orders/{id}", resource: "order:1", timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["ev-1"], objects: [{ resource: "order:1", evidence: "id" }], verdict: "allow",
@@ -16,6 +16,38 @@ const snapshot: Snapshot = {
 }
 
 const selection: GraphSelection = { operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }
+
+it("keeps collapsed raw cells and gaps distinct without inventing an aggregate verdict or UNKNOWN source", () => {
+  const cells = [snapshot.cells[0], { ...snapshot.cells[0], resource: "order:2", overall: "deny" as const, evidenceIds: ["raw-2"] }]
+  const aggregated = { ...graphCellSelection(cells), gapIds: ["gap-raw"] }
+  renderWithQueryClient(<GraphInspectorPanel selection={aggregated} event={event} snapshot={{ ...snapshot, cells }} />)
+  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("복수 셀")
+  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("order:1")
+  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("order:2")
+  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("DENY")
+  expect(screen.getByText("gap-raw")).toBeVisible()
+  expect(screen.queryByText("UNKNOWN")).not.toBeInTheDocument()
+})
+
+it("refreshes collapsed cell verdicts from the current snapshot using canonical keys", () => {
+  const cells = [snapshot.cells[0], { ...snapshot.cells[0], resource: "order:2", overall: "deny" as const, evidenceIds: ["raw-2"] }]
+  const aggregated = { ...graphCellSelection(cells), gapIds: [] }
+  renderWithQueryClient(<GraphInspectorPanel selection={aggregated} event={event} snapshot={{ ...snapshot, revision: 2, cells: [cells[0], { ...cells[1], overall: "suspicious" }] }} />)
+  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("SUSPICIOUS")
+  expect(screen.getByRole("region", { name: "서버 원본 셀" })).not.toHaveTextContent("DENY")
+})
+
+it("uses the surviving canonical cell's verdict and reasons when an aggregate shrinks to one cell", () => {
+  const survivor = { ...snapshot.cells[0], resource: "order:2", overall: "deny" as const, reasons: { human: "surviving server denial" }, evidenceIds: ["raw-survivor"] }
+  const aggregate = { ...graphCellSelection([snapshot.cells[0], survivor]), gapIds: [] }
+  const { rerender } = renderWithQueryClient(<GraphInspectorPanel selection={aggregate} event={event} snapshot={{ ...snapshot, cells: [snapshot.cells[0], survivor] }} />)
+  rerender(<GraphInspectorPanel selection={aggregate} event={event} snapshot={{ ...snapshot, revision: 2, cells: [survivor] }} />)
+  const access = screen.getByRole("region", { name: "Access Check" })
+  expect(access).toHaveTextContent("DENY")
+  expect(access).not.toHaveTextContent("ALLOW")
+  expect(access).toHaveTextContent("surviving server denial")
+  expect(screen.getByText("order:2")).toBeVisible()
+})
 
 it("shows the selected operation overview and server-projected access check", () => {
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />)

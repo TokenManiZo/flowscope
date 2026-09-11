@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-11, D-140~142 (미출시 beta.46 변경).** 기존 Judge·MCP 제거와 판정 없는 독립 Codex Explorer, D-139의 Evidence-bound Declaration, D-138의 ZAP 계약을 유지한다. 다른 대상을 시작할 때는 현재 Evidence를 사용자별 프로젝트 DB에 먼저 저장하고 전환하며, 상단은 프로젝트 선택과 실제 저장 상태를 표시한다. API·입력 차이의 실제 Observation에서 exact Evidence·Request Lab·Repeater로 바로 이동하고, 분석 갱신은 편집 초안을 닫지 않으며 데이터셋 교체만 닫는다. 패키지 Standalone도 같은 프로젝트 API를 검증한다. 현행 인가 그래프는 단일 3-lane/`18개 또는 전체` projection이며 계층 drill-down은 다음 작업이다. H/S/L은 관측 데이터의 source이고 선언 미관측은 취약점이 아니다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-11, D-140~142 (미출시 beta.46 변경).** 기존 Judge·MCP 제거와 판정 없는 독립 Codex Explorer, D-139의 Evidence-bound Declaration, D-138의 ZAP 계약을 유지한다. 다른 대상을 시작할 때는 현재 Evidence를 사용자별 프로젝트 DB에 먼저 저장하고 전환하며, 상단은 프로젝트 선택과 실제 저장 상태를 표시한다. API·입력 차이의 실제 Observation에서 exact Evidence·Request Lab·Repeater로 바로 이동하고, 분석 갱신은 편집 초안을 닫지 않으며 데이터셋 교체만 닫는다. 패키지 Standalone도 같은 프로젝트 API를 검증한다. 현행 인가 그래프는 PR#11 이식 5c(2026-09-11)로 Site Overview→API View→Object View 계층과 `+18` 증분을 제공한다. H/S/L은 관측 데이터의 source이고 선언 미관측은 취약점이 아니다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -54,14 +54,14 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | 3-way 갭 | 세 주체가 무엇을 놓쳤거나 다르게 판단했는가? | 미교차·일부만 발견·불일치를 분리하고 클릭하면 해당 위치로 이동한다. | 갭 자체를 취약점으로 확정하지 않는다. |
 | 미요청 route | 응답이나 Site Map에는 있지만 아직 실제 요청하지 않은 경로가 있는가? | source edge 없는 중립색·점선 테두리 노드와 별도 수량·필터로 관측 그래프 옆에 표시하고 provenance의 type·Evidence·source·run·adapter 대응과 범주형 정렬 이유를 연다. | 실제 H/S/L 요청 관측이나 `UNCROSSED`, coverage, verdict, finding으로 계산하지 않는다. |
 | 소스 뷰 | 발견 주체의 차이를 보고 싶은가? | 색·선형·H/S/L이 다른 평행 source overlay를 우선한다. 일반 버튼·포커스·선택 상태는 별도 중립 accent를 사용해 source 색으로 오인되지 않게 한다. | 인가 결과와 발견 주체를 한 색에 겹쳐 읽기 어렵게 만들지 않는다. |
-| 현재 인가 그래프 | 신원·API·접근 대상 관계를 현재 화면에서 어떻게 읽는가? | 한 canvas의 `IDENTITY / ENDPOINT / OBJECT` 3개 lane에 실제 Evidence 관계를 표시한다. 접근 대상 ID가 없으면 Identity→API, 있으면 Identity→접근 대상 ID→API로 투영한다. | 사이트/API drill-down이나 Object family 접기가 이미 구현됐다고 설명하지 않는다. 화면 제한 때문에 원 Evidence를 합치거나 삭제하지 않는다. |
+| 계층 인가 그래프 | 신원·API·접근 대상 관계를 어디서부터 읽는가? | Site Overview(`TARGET / API GROUP`) → API View(`IDENTITY / API`) → Object View(`IDENTITY / API / OBJECT`) 세 단계로 내려가며, 그룹 카드는 API·H/S/L·Gap·경로 후보 수를, API 카드는 method·경로·판정·Evidence 수를, 객체 카드는 소유자를 표시한다. 미교차 후보는 GAP 목록에서 골라 중립 점선 경로로 focus한다. | 그룹은 경로 세그먼트 표시 단위이지 의미 클러스터가 아니다. 노드 판정은 서버 셀이 모두 같을 때만 쓰고 여러 셀이면 원본 셀을 각각 보여 준다. 화면 제한 때문에 원 Evidence를 합치거나 삭제하지 않는다. |
 | 긴 경로 라벨 | API가 중간 생략돼 서로 다른 경로를 구분할 수 없는가? | 원 operation 문자열을 모두 유지하고 노드 안에서 여러 줄로 나누며 내용에 맞춰 높이를 늘린다. | 그래프 공간을 아끼기 위해 경로 중간을 `…`로 지워 핵심 세그먼트를 숨기지 않는다. |
 | 경로 묶음 | `/orders/101`과 `/orders/202`는 같은 API인가? | raw path를 유지하면서 operation은 Evidence가 있는 위치만 `{id}`로 묶는다. 상세에 `LITERAL/INFERRED/CORROBORATED`와 이유를 표시한다. | 모든 숫자를 ID로 단정하거나 route declaration 없이 “확정”이라 표시하지 않는다. |
 | 인가 뷰 | 허용·거부·의심 결과를 보고 싶은가? | 동일 구조에서 verdict 중심으로 표현을 바꾼다. | status code 하나만으로 suspicious를 만들지 않는다. |
 | 화면 맞춤 | 현재 그래프를 잃지 않고 전체를 볼 수 있는가? | 현재 표시 노드를 viewport에 맞춘다. | 데이터나 필터 상태를 변경하지 않는다. |
 | 노드 위치 잠금 | 사용자가 정리한 위치를 유지할 수 있는가? | 자동 재배치로 비교 맥락이 흔들리지 않게 한다. | 서버 분석 결과를 고정하거나 dataset을 lock하지 않는다. Judge dataset lock은 제거됐으며 UI 위치 잠금은 유지한다. |
-| 노드 표시 제한 | 대규모 그래프가 털뭉치가 되지 않는가? | 현재는 정렬한 API·접근 대상 ID를 기본 18개 또는 전체로 전환한다. 증분 `+18`이나 family grouping은 아직 없다. | 이 제한을 의미 기반 공격면 클러스터링이나 전체 API 추정으로 설명하지 않는다. |
-| 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | 현재 단일 canvas의 저장 위치·viewport를 기본 3-lane 배치로 복구한다. | Evidence와 사용자 정책을 초기화하거나 아직 없는 계층별 viewport를 주장하지 않는다. |
+| 노드 표시 제한 | 대규모 그래프가 털뭉치가 되지 않는가? | API View·Object View는 우선순위(suspicious·충돌·일부 관측·Evidence 수) 순 18개에서 시작해 `18개 더 보기 (N개 남음)`으로만 늘리고, Back은 그룹의 펼침 수를 유지한다. 숨긴 항목의 Evidence는 신원→API 선택에 남는다. | 이 제한을 의미 기반 공격면 클러스터링이나 전체 API 추정으로 설명하지 않는다. |
+| 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | 저장 위치·viewport를 현재 단계의 기본 lane 배치로 복구한다. 저장된 zoom은 0.4~2 범위로 정규화한다. | Evidence와 사용자 정책을 초기화하지 않는다. |
 | 판정 매트릭스 | 같은 조합을 표로 빠르게 비교할 수 있는가? | identity/role × operation × resource cell에 source별 verdict와 갭을 정렬한다. | 그래프만 보고 놓치기 쉬운 조합 차이를 숨기지 않는다. |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용됐는가? | 실제로 재사용된 ID/token 값의 시간순 의존성만 연결하고 메인 접근 그래프와 분리한다. | 단순히 시간상 앞뒤라는 이유로 관계를 만들거나 접근선 위에 보조 의존선을 겹쳐 출처를 혼동시키지 않는다. |
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 현재 규칙 후보와 사람 검토를 Evidence에 연결하고, 과거 LLM 기록은 별도 읽기 전용으로 분리한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |

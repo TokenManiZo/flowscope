@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest"
 import { GRAPH_PREFERENCES_KEY, loadGraphPreferences, resetGraphPreferences, saveGraphPreferences } from "./graphPreferences"
 
 describe("graph preferences", () => {
+  it("normalizes out-of-range restored viewport zoom while retaining semantic hierarchy positions", () => {
+    for (const [zoom, expected] of [[0, 0.4], [100, 2]]) {
+      localStorage.setItem(GRAPH_PREFERENCES_KEY, JSON.stringify({ version: 5, positions: { 'api-group:["Target","orders"]': { x: -999, y: 125 } }, viewport: { zoom, pan: { x: -1000, y: 50 } }, locked: true }))
+      expect(loadGraphPreferences()).toEqual({ version: 5, positions: { 'api-group:["Target","orders"]': { x: -999, y: 125 } }, viewport: { zoom: expected, pan: { x: -1000, y: 50 } }, locked: true })
+    }
+  })
   it("round-trips only the versioned layout preference shape", () => {
     saveGraphPreferences({ version: 5, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: { zoom: 1.2, pan: { x: 5, y: -4 } }, locked: true })
     expect(loadGraphPreferences()).toEqual({ version: 5, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: { zoom: 1.2, pan: { x: 5, y: -4 } }, locked: true })
