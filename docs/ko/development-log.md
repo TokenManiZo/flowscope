@@ -1,5 +1,23 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5b) — 구조화 요청 비교(Request Diff)
+
+### 원인과 수정
+
+- PR#11 `requestDiff.ts`·`ParameterRequestDiff`는 evidence API가 레코드마다 parameter observation(digest 포함)과 `parameterContext(complete/retention)`를 실어 주는 것을 전제했다. 우리 계약은 digest를 노출하지 않고 Surface 사실이 관측 metadata(presence/shape/valueType/byteLength/contextSignature/confidence)를 이미 Evidence ID별로 가지므로, 요청 비교를 Surface 사실에서 계산하고 완전성만 서버가 가산했다.
+- **서버:** `SurfaceAnalysis.RequestContext(evidenceId, complete, retained, discovery, contextSignature)`와 `EndpointFact.requestContexts`(요청 행 전부, Evidence ID 순). complete=추출 진단 없음+payload FULL, discovery=프로파일·Gap 분모(VALIDATION은 false). 값·digest 없음.
+- **프런트:** `requestDiff.ts`는 PR 알고리즘 그대로(중복·충돌 키 결정적 처리, 불완전 문맥은 ABSENT가 아니라 UNKNOWN/INCOMPLETE_CONTEXT, retention 차이, 식별자 충돌) + `structuralShape`(표시 형태 INTEGER/UUID 등을 구조 SCALAR로 환원해 형식 신호를 구조 변경으로 보지 않음). `ParameterRequestDiff.evidenceParameterContext`가 endpoint 사실과 requestContexts로 Evidence 문맥을 만들고, inspector "요청 비교" 탭 `EvidenceComparison`이 정확한 operation의 연결 실제 Evidence 둘을 골라 비교한다. 문맥이 없으면 `COMPLETENESS_NOT_RECORDED`, digest 비노출이라 값 변경은 UNKNOWN으로 표시한다.
+
+### 영향 파일·회귀
+
+- 코드: `core/SurfaceAnalysis.java`(RequestContext·EndpointFact.requestContexts), `core/SurfaceAnalyzer.java`(freeze에서 행 문맥 산출), `frontend/src/lib/api/types.ts`(`SurfaceRequestContext`), `frontend/src/features/parameter-map/{requestDiff.ts,ParameterRequestDiff.tsx,ParameterGapInspector.tsx,parameterProjection.ts(endpoint),parameterMapFixtures.ts}`.
+- 테스트: Java `SurfaceParameterProfileTest` 요청 문맥 1건(완전/잘림/파서 실패/VALIDATION), vitest `requestDiff.test.ts` 11건(PR 이식 + digest 미노출 UNKNOWN + 구조 형태 환원), `ParameterRequestDiff.test.tsx` 3건(원문 미읽기, 미기록 완전성, Surface 문맥 생성), `ParameterMapPage.test.tsx` 요청 비교 탭 1건.
+- 검증: JDK 21 `mvn clean verify` BUILD SUCCESS, Java 514 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 42 files/298 tests. JAR `target/flowscope-1.2.0-beta.46.jar` 31,869,808 bytes. 패키지 Standalone(17777) Chromium 실측: 큐 전체 보기 → GET `/api/orders/{id}` `PATH /segments/2` gap 선택 → "요청 비교" 탭 → 기준 ev-47af985ca3b863d0(acct-demo-user-a HUMAN 200)·비교 ev-6094976fbd1c99fa(acct-demo-user-b SCANNER 403) 선택 → 표에 `STATUS_CHANGED VERDICT_CHANGED`(200·ALLOW vs 403·DENY), `PATH /segments/2` 행 PRESENT·SCALAR (INTEGER)/STRING·RETAINED·길이 3 bytes·관측 신뢰 OBSERVED·같은 contextSignature·변경 UNKNOWN(값 digest 비노출); 콘솔 JS 오류 0.
+
+### 남은 한계·다음 gate
+
+- 값 변경·반복 수 비교는 digest·occurrence 비노출 계약이 유지되는 한 UNKNOWN이다. 5c 관계 그래프 계층, 5d snapshot 캐시·계약 테스트, 이후 6·7단계.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5a) — 우선순위 큐·파라미터 Gap 그래프·검증표·Gap 상세
 
 ### 원인과 수정

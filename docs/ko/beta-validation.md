@@ -1,5 +1,15 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5b 구조화 요청 비교) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 회귀 | Java `SurfaceParameterProfileTest` 요청 문맥 1건(완전 행 complete/retained/discovery, 잘린 payload complete=false·retained=false, 파서 실패 complete=false, VALIDATION discovery=false), vitest `requestDiff.test.ts` 11·`ParameterRequestDiff.test.tsx` 3·page 요청 비교 탭 1 → 모두 GREEN(parameter-map 44/44). |
+| JDK 21 `mvn clean verify` | BUILD SUCCESS(1분 5초). Java 514 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 42 files/298 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,869,808 bytes(이 verify의 단일 빌드값). |
+| 패키지 Chromium 실측 | Standalone(17777) 샘플, `?fresh=5b#parameter-map`, 1024×768. 큐 "전체 23개 보기" → GET `/api/orders/{id}` `PATH /segments/2` gap(LLM · UNKNOWN · OTHER_ROLE) 선택 → 상세 sheet "요청 비교" 탭: 연결 실제 EventRecord 5건, 기준 요청 select에 ev-47af985ca3b863d0 등 5개 옵션(신원/역할/source/HTTP 표시) → 기준 ev-47af…(acct-demo-user-a HUMAN 200)·비교 ev-6094…(acct-demo-user-b SCANNER 403) 선택 → 표: `응답 / 서버 표시 판정` 행 `STATUS_CHANGED VERDICT_CHANGED`(200·ALLOW vs 403·DENY), `PATH /segments/2` 행 변경 `UNKNOWN`(값 digest 비노출), 양쪽 PRESENT·SCALAR (INTEGER) / STRING·RETAINED·길이 3 bytes·관측 신뢰 OBSERVED·같은 `ctx:v1:sha256:…` 문맥; 콘솔 `Uncaught`/`TypeError` 0. |
+| 미실측 | 잘린 payload(INCOMPLETE_CONTEXT)·미기록 완전성 표시는 vitest로만(샘플에 잘린 요청 없음). 실제 Burp 실행 미실행. |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5a 우선순위 Gap 그래프 화면) gate
 
 | 항목 | 실제 확인 결과 |

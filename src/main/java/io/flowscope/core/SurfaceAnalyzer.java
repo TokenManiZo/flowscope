@@ -893,8 +893,12 @@ public final class SurfaceAnalyzer {
                 }
                 parameterFacts.add(parameter.freeze(profile, links));
             }
+            List<SurfaceAnalysis.RequestContext> contexts = sortedRows.stream().map(row -> new SurfaceAnalysis.RequestContext(
+                    row.evidenceId(), row.complete(),
+                    row.record().requestPayload == null || row.record().requestPayload.retained(),
+                    row.discovery(), row.signature())).toList();
             return new EndpointFact(key, Set.copyOf(sources), List.copyOf(observations), List.copyOf(declarations),
-                    parameterFacts, delta(!declarations.isEmpty(), sources), endpointKinds());
+                    parameterFacts, delta(!declarations.isEmpty(), sources), endpointKinds(), contexts);
         }
 
         private Set<SurfaceAnalysis.EndpointKind> endpointKinds() {

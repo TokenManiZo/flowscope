@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
-import type { EventRecord, Snapshot } from "@/lib/api/types"
+import type { EventRecord, Snapshot, SurfaceEndpoint } from "@/lib/api/types"
 import { EvidenceIdsPreview, ParameterCoverageMatrix } from "./ParameterCoverageMatrix"
+import { evidenceParameterContext, ParameterRequestDiff, type EvidenceParameterContext } from "./ParameterRequestDiff"
 import { locationLabel, resourceLabel } from "./parameterNodeCard"
 import { PARAMETER_EVIDENCE_PREVIEW_LIMIT, type ParameterGraphProjection, type ProjectedValidationCell } from "./parameterProjection"
 
@@ -65,7 +66,7 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
     <p className="break-all font-mono text-xs text-muted-foreground">Canonical key: {key.location} {key.canonicalPath}<br />{gap.status} · {gap.type}</p>
     <p>Gap 주체: {gap.identity ?? "UNKNOWN"} / {gap.role ?? "UNKNOWN"} / {gap.source ?? "UNKNOWN"}</p>
     <Tabs value={tab} onValueChange={setTab} className="min-w-0">
-      <TabsList className="grid w-full grid-cols-3 group-data-horizontal/tabs:h-auto [&_[data-slot=tabs-trigger]]:h-9" aria-label="선택 입력 상세 탭"><TabsTrigger value="core">핵심 근거</TabsTrigger><TabsTrigger value="evidence">Evidence</TabsTrigger><TabsTrigger value="definitions">정의 근거</TabsTrigger></TabsList>
+      <TabsList className="grid w-full grid-cols-2 group-data-horizontal/tabs:h-auto [&_[data-slot=tabs-trigger]]:h-9" aria-label="선택 입력 상세 탭"><TabsTrigger value="core">핵심 근거</TabsTrigger><TabsTrigger value="evidence">Evidence</TabsTrigger><TabsTrigger value="diff">요청 비교</TabsTrigger><TabsTrigger value="definitions">정의 근거</TabsTrigger></TabsList>
       <TabsContent value="core" className="min-w-0 space-y-4">
         <ol aria-label="서버 우선순위 근거" className="list-inside list-decimal space-y-2">{gap.priorityReasons.map((reason, index) => <li key={`${index}:${reason}`}>{reasonLabels[reason] ?? reason}</li>)}</ol>
         <section aria-label="입력과 권한 대상"><h3 className="font-semibold">입력 → 권한 대상</h3>{targets.length ? targets.slice(0, 20).map(target => <div key={target.resource ?? "unknown"} className="my-2 space-y-1"><p>{target.resource ? resourceLabel(target.resource, key.service) : "UNKNOWN"} · {target.confidence}</p><p>{target.basis}</p><EvidenceIdsPreview label="연결 근거" ids={target.evidenceIds} count={target.evidenceCount} /></div>) : <p>UNKNOWN · 연결 근거 없음</p>}<p className="text-xs text-muted-foreground">UNKNOWN은 근거 부족, INFERRED는 추론입니다. 정의와 연결 근거를 확인하세요. 입력 존재는 서버 사용이나 접근 허용의 증거가 아닙니다.</p></section>
@@ -87,6 +88,7 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
         <p className="text-xs text-muted-foreground">ID는 최대 {PARAMETER_EVIDENCE_PREVIEW_LIMIT}개 미리보기이며 전체 건수와 다릅니다. 근거 ID가 실제 요청이라는 뜻은 아닙니다. 선택 입력의 정확한 operation/key에 연결된 실제 Evidence만 열 수 있습니다. 파라미터 관측과 Gap witness는 선택 셀의 실행 근거가 아닐 수 있습니다.</p>
         <LinkedEvidenceList key={JSON.stringify([cell?.id, ids, [...eventById.keys()]])} events={events} selectedIds={cell?.evidenceIds ?? []} gapIds={gap.evidenceIds} profileIds={parameter?.observationEvidenceIds ?? []} onOpen={setDetailId} />
       </TabsContent>
+      <TabsContent value="diff" className="min-w-0">{projection.endpoint ? <EvidenceComparison key={gap.id} endpoint={projection.endpoint} events={events} /> : <p>연결된 endpoint 사실이 없어 요청을 비교할 수 없습니다.</p>}</TabsContent>
       <TabsContent value="definitions" className="space-y-3">
         {!projection.definitions.length && <p>정의 근거 없음 · UNKNOWN</p>}
         {projection.definitions.map((declaration, index) => <section key={`${declaration.evidenceId}:${index}`} className="space-y-2 border-b py-3"><p>{declarationTypeLabels[declaration.type] ?? declaration.type} · {declaration.adapter} · {declaration.confidence ?? "INFERRED"}</p><p>{declaration.declaredShape ?? "UNKNOWN"} / {declaration.declaredType ?? "UNKNOWN"}{declaration.coordinateResolved === false ? " · 좌표 미확정" : ""}</p><p>{declaration.conditionText || "조건 정의 없음"}</p><p className="text-xs text-muted-foreground">{declaration.reason}</p><EvidenceIdsPreview label="정의 근거" ids={[declaration.evidenceId]} count={1} /><p className="text-xs text-muted-foreground">정의는 실제 요청 관측이나 서버 사용의 증명이 아닙니다.</p></section>)}
@@ -96,6 +98,24 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
     <p className="text-xs text-muted-foreground">{representative ? `대표 실제 Evidence: ${representative.eventId}. 원문 요청·응답은 Request Lab에서 함께 확인합니다. 자동 전송하지 않습니다.` : "대표 실제 EventRecord가 없어 Request Lab을 열 수 없습니다."}</p>
     {detailEvent && <EvidenceSheet event={detailEvent} snapshot={snapshot} onOpenChange={open => { if (!open) setDetailId(null) }} />}
     {representative && <RequestLabDialog key={`${representative.eventId}:${datasetRevision}`} open={labOpen} onOpenChange={setLabOpen} event={representative} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} />}
+  </section>
+}
+
+const selectClass = "min-h-9 min-w-0 max-w-full rounded-md border border-input bg-background px-2 text-xs"
+
+/** 선택 입력에 연결된 실제 Evidence 둘을 Surface 관측 metadata로 비교한다(값·원문 없음, 미실행 basis는 요청이 아니다). */
+function EvidenceComparison({ endpoint, events }: { endpoint: SurfaceEndpoint; events: readonly EventRecord[] }) {
+  const [leftId, setLeftId] = useState("")
+  const [rightId, setRightId] = useState("")
+  const contextFor = (id: string): EvidenceParameterContext | null => {
+    const event = events.find(item => item.eventId === id)
+    return event ? evidenceParameterContext(endpoint, event.eventId, { identity: event.idn, role: event.role, source: event.source.toUpperCase(), status: event.status, verdict: event.verdict.toUpperCase() }) : null
+  }
+  const left = contextFor(leftId), right = contextFor(rightId)
+  return <section className="min-w-0 space-y-3" aria-label="비교 Evidence 선택">
+    <p className="text-xs text-muted-foreground">선택 입력의 정확한 operation에 연결된 실제 요청만 고를 수 있으며, 미실행 좌표 근거를 요청으로 만들지 않습니다. 현재 snapshot에 연결된 실제 EventRecord {events.length}건.</p>
+    <div className="grid gap-3">{(["기준 요청", "비교 요청"] as const).map((label, i) => <label key={label} className="grid gap-1"><span>{label}</span><select className={selectClass} aria-label={label} value={i === 0 ? leftId : rightId} onChange={event => (i === 0 ? setLeftId : setRightId)(event.target.value)}><option value="">실제 Evidence 선택</option>{events.map(event => <option key={event.eventId} value={event.eventId}>{event.eventId} · {event.idn} / {event.role} / {event.source.toUpperCase()} / HTTP {event.status}</option>)}</select></label>)}</div>
+    {left && right ? <ParameterRequestDiff left={left} right={right} /> : <p>기준 요청과 비교 요청을 각각 선택하세요. 구조화 metadata가 없으면 UNKNOWN으로 남습니다.</p>}
   </section>
 }
 

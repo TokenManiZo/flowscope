@@ -94,7 +94,8 @@ SurfaceAnalysis {
                        contextPresence{contextSignature → PRESENT|EXPLICIT_NULL|ABSENT_OBSERVED_CONTEXT},
                        serverUsageConfirmed=false},
                authorizationTargets[resource?, confidence(OBSERVED|CORROBORATED|INFERRED|UNKNOWN),
-                                    basis, evidenceIds[≤32], evidenceCount]]
+                                    basis, evidenceIds[≤32], evidenceCount]],
+    requestContexts[evidenceId, complete, retained, discovery, contextSignature]   // 요청 행 문맥(값 없음)
   }],
   probes[endpointKey, evidenceId, source, runId, identity, status],
   parameterDiagnostics[evidenceId, operation, reasonCode, droppedCount],

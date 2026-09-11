@@ -34,7 +34,7 @@ export function actualEvent(extra: Partial<EventRecord> = {}): EventRecord {
 }
 
 export function demoEndpoint(parameters: readonly SurfaceParameter[] = [statusParameter()], extra: Partial<SurfaceEndpoint> = {}): SurfaceEndpoint {
-  return { key: demoEndpointKey, observedSources: ["HUMAN"], observations: [{ evidenceId: "actual-a", source: "HUMAN", runId: "run", identity: "USER A", status: 200 }], declarations: [], parameters, deltaState: "OBSERVED_NOT_DECLARED", kinds: ["OBSERVED_API"], ...extra }
+  return { key: demoEndpointKey, observedSources: ["HUMAN"], observations: [{ evidenceId: "actual-a", source: "HUMAN", runId: "run", identity: "USER A", status: 200 }], declarations: [], parameters, deltaState: "OBSERVED_NOT_DECLARED", kinds: ["OBSERVED_API"], requestContexts: [{ evidenceId: "actual-a", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:aa" }], ...extra }
 }
 
 export interface SurfaceSnapshotOptions {

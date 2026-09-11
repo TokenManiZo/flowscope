@@ -93,6 +93,8 @@ export type ParameterGraphProjection = DeepReadonly<{
   /** 선택 Gap의 파라미터 사실(프로파일·관측·권한 대상 포함). 선언만 있어도 존재한다. */
   parameter?: SurfaceParameter
   parameterKey?: ParameterMapKey
+  /** 선택 파라미터의 endpoint 사실(요청 문맥·다른 파라미터 관측 포함). 요청 비교에 쓴다. */
+  endpoint?: SurfaceEndpoint
   visibleGapIds: readonly string[]
   hiddenGapCount: number
   diagnostics: readonly string[]
@@ -247,7 +249,8 @@ export function projectParameterMap(snapshot: Snapshot, filters: ParameterFilter
     if (targets.length > 20) diagnostics.push(`TARGET_PREVIEW_LIMIT: ${gap.id} (${targets.length})`)
   }
   const selectedKey = selected ? gapParameterKey(selected) : undefined
-  const selectedParameter = selectedKey ? parameters.get(selectedKey.stableKey)?.parameter : undefined
+  const selectedIndexed = selectedKey ? parameters.get(selectedKey.stableKey) : undefined
+  const selectedParameter = selectedIndexed?.parameter
   const validationCells = selectedKey ? [...uniqueIndex((surface.validationCells ?? []).filter(cell => parameterMapKey(cell.endpoint, cell.location, cell.canonicalPath).stableKey === selectedKey.stableKey)
     .map(cell => ({ ...cell, id: validationCellId(cell) })), cell => cell.id, "CELL", diagnostics).values()]
     .map(cell => ({ ...cell, evidenceIds: preview(cell.evidenceIds), basisEvidenceIds: preview(cell.basisEvidenceIds) })).sort((a, b) => textOrder(a.id, b.id)) : []
@@ -256,7 +259,7 @@ export function projectParameterMap(snapshot: Snapshot, filters: ParameterFilter
   return immutableCopy({
     queue, nodes, edges, selection, validationCells,
     definitions: selectedParameter?.declarations ?? [],
-    parameter: selectedParameter, parameterKey: selectedKey,
+    parameter: selectedParameter, parameterKey: selectedKey, endpoint: selectedIndexed?.endpoint,
     visibleGapIds: visible.map(gap => gap.id), hiddenGapCount: queue.length - visible.length,
     diagnostics: [...new Set(diagnostics)].sort(textOrder),
     emptyState: queue.length ? null : anyDeclared && !anyObserved ? "DEFINITIONS_ONLY"

@@ -109,6 +109,32 @@ it("links only actual events of the exact operation and opens Evidence detail an
   expect(await screen.findByRole("region", { name: "Evidence 상세" })).toHaveTextContent("actual-a")
 })
 
+it("compares two linked actual requests from Surface metadata in the diff tab", async () => {
+  const data = parameterSnapshot()
+  const parameter = statusParameter({
+    observationEvidenceIds: ["actual-a", "actual-b"],
+    observations: [
+      { evidenceId: "actual-a", source: "HUMAN", runId: "run", identity: "USER A", status: 200, shape: "STRING", presence: "PRESENT", valueType: "STRING", byteLength: 5, contextSignature: "ctx:v1:sha256:aa", confidence: "OBSERVED" },
+      { evidenceId: "actual-b", source: "SCANNER", runId: "run", identity: "USER B", status: 403, shape: "NULL", presence: "EXPLICIT_NULL", valueType: "UNKNOWN", byteLength: 0, contextSignature: "ctx:v1:sha256:bb", confidence: "OBSERVED" },
+    ],
+  })
+  data.surface!.endpoints = [demoEndpoint([parameter], { requestContexts: [{ evidenceId: "actual-a", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:aa" }, { evidenceId: "actual-b", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:bb" }] })] as never
+  data.events = [actualEvent(), actualEvent({ eventId: "actual-b", idn: "USER B", source: "scanner", status: 403, verdict: "deny" })]
+  state.query = { ...state.query, data }
+  render()
+  await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])
+  await userEvent.click(screen.getByRole("tab", { name: "요청 비교" }))
+  expect(screen.getByRole("region", { name: "비교 Evidence 선택" })).toHaveTextContent("실제 EventRecord 2건")
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "기준 요청" }), "actual-a")
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "비교 요청" }), "actual-b")
+  const table = screen.getByRole("region", { name: "요청 비교 표" })
+  expect(within(table).getByRole("columnheader", { name: "기준 요청 actual-a" })).toBeVisible()
+  expect(table).toHaveTextContent("STATUS_CHANGED VERDICT_CHANGED")
+  expect(table).toHaveTextContent("PRESENCE_CHANGED · SHAPE_CHANGED · TYPE_CHANGED")
+  expect(table).toHaveTextContent("길이: 5 bytes")
+  expect(table).not.toHaveTextContent("READY")
+})
+
 it("filters only display state and clears a stale selected Gap on refresh", async () => {
   const { rerender } = render()
   await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])

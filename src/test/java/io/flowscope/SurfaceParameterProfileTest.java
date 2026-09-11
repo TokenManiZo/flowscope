@@ -442,6 +442,39 @@ final class SurfaceParameterProfileTest {
     }
 
     @Test
+    void endpoint는_요청_문맥으로_완전_보존_discovery_여부를_남겨_요청_비교의_부재와_미상을_구분한다() {
+        RequestRecord complete = request(Source.HUMAN, "USER A", "sort=DESC");
+        RequestRecord truncated = request(Source.SCANNER, "USER B", null, "GET", "/api/orders");
+        truncated.requestContentType = "application/x-www-form-urlencoded";
+        truncated.reqBody = "visible=1";
+        truncated.requestPayload = StoredPayload.capture("visible=1&late=2", truncated.requestContentType, 1);
+        RequestRecord broken = json(Source.LLM, "USER C", "{broken");
+        RequestRecord validation = request(Source.HUMAN, "USER A", "sort=ASC");
+        validation.phase = RunPhase.VALIDATION;
+        validation.trafficClassification = TrafficClassification.unresolved("NON_DISCOVERY_PHASE");
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(List.of(complete, truncated, broken, validation),
+                coverage(List.of(complete, truncated, broken, validation)), List.of());
+
+        List<SurfaceAnalysis.RequestContext> contexts = endpoint(analysis, "GET", "/api/orders").requestContexts();
+        assertEquals(4, contexts.size(), "VALIDATION 행도 문맥에는 남는다(사실·프로파일은 아님)");
+        SurfaceAnalysis.RequestContext completeContext = contexts.stream().filter(c -> c.evidenceId().equals(complete.evidenceId)).findFirst().orElseThrow();
+        assertTrue(completeContext.complete() && completeContext.retained() && completeContext.discovery());
+        assertTrue(completeContext.contextSignature().startsWith("ctx:v1:sha256:"));
+        SurfaceAnalysis.RequestContext truncatedContext = contexts.stream().filter(c -> c.evidenceId().equals(truncated.evidenceId)).findFirst().orElseThrow();
+        assertFalse(truncatedContext.complete());
+        assertFalse(truncatedContext.retained());
+        SurfaceAnalysis.RequestContext brokenContext = contexts.stream().filter(c -> c.evidenceId().equals(broken.evidenceId)).findFirst().orElseThrow();
+        assertFalse(brokenContext.complete(), "추출 진단이 있는 행은 부재의 증인이 아니다");
+        assertTrue(brokenContext.retained());
+        SurfaceAnalysis.RequestContext validationContext = contexts.stream().filter(c -> c.evidenceId().equals(validation.evidenceId)).findFirst().orElseThrow();
+        assertFalse(validationContext.discovery());
+        assertTrue(validationContext.complete());
+        assertEquals(1, fact(analysis, "GET", "/api/orders", ParameterLocation.QUERY, "/sort").profile().observationCount());
+        assertEquals(List.of(complete.evidenceId), fact(analysis, "GET", "/api/orders", ParameterLocation.QUERY, "/sort").observationEvidenceIds());
+    }
+
+    @Test
     void Pipeline_경로에서도_프로파일과_gap이_생기고_직렬화는_값과_digest를_노출하지_않는다() {
         RequestRecord human = pipelineRecord(Source.HUMAN, "GET",
                 "/api/orders/550e8400-e29b-41d4-a716-446655440000?sort=DESC&keyword=SECRET_KEYWORD");

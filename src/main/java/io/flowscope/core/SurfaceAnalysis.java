@@ -309,15 +309,31 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     /** 최상위 요청 파라미터 추출 진단(파라미터마다 복제하지 않는다). */
     public record ParameterDiagnostic(String evidenceId, String operation, String reasonCode, int droppedCount) {}
 
+    /**
+     * 요청 행의 파라미터 추출 문맥(PR#11 evidence parameterContext). complete=추출 진단 없음+request payload FULL,
+     * retained=payload가 잘리지 않음, discovery=프로파일·Gap 분모 행(VALIDATION은 false). 요청 비교에서 "완전한 요청에서의
+     * 부재"와 "알 수 없음"을 구분하는 근거이며 값은 담지 않는다.
+     */
+    public record RequestContext(String evidenceId, boolean complete, boolean retained, boolean discovery,
+                                 String contextSignature) {}
+
     public record EndpointFact(EndpointKey key, Set<Source> observedSources,
                                List<Observation> observations, List<Declaration> declarations,
                                List<ParameterFact> parameters, DeltaState deltaState,
-                               Set<EndpointKind> kinds) {
+                               Set<EndpointKind> kinds, List<RequestContext> requestContexts) {
+        public EndpointFact {
+            requestContexts = requestContexts == null ? List.of() : List.copyOf(requestContexts);
+        }
         public EndpointFact(EndpointKey key, Set<Source> observedSources,
                             List<Observation> observations, List<Declaration> declarations,
                             List<ParameterFact> parameters, DeltaState deltaState) {
             this(key, observedSources, observations, declarations, parameters, deltaState,
-                    Set.of(EndpointKind.UNVERIFIED));
+                    Set.of(EndpointKind.UNVERIFIED), List.of());
+        }
+        public EndpointFact(EndpointKey key, Set<Source> observedSources,
+                            List<Observation> observations, List<Declaration> declarations,
+                            List<ParameterFact> parameters, DeltaState deltaState, Set<EndpointKind> kinds) {
+            this(key, observedSources, observations, declarations, parameters, deltaState, kinds, List.of());
         }
     }
 

@@ -315,6 +315,15 @@ export interface SurfaceParameterGap {
   evidenceCount: number
 }
 
+/** 요청 행의 추출 문맥. complete=추출 진단 없음+payload FULL, discovery=프로파일·Gap 분모(VALIDATION은 false). 값은 없다. */
+export interface SurfaceRequestContext {
+  evidenceId: string
+  complete: boolean
+  retained: boolean
+  discovery: boolean
+  contextSignature: string
+}
+
 export interface SurfaceEndpoint {
   key: { service: string; method: string; pathTemplate: string }
   observedSources: readonly SurfaceSource[]
@@ -322,6 +331,7 @@ export interface SurfaceEndpoint {
   declarations: readonly SurfaceDeclaration[]
   parameters: readonly SurfaceParameter[]
   deltaState: SurfaceDeltaState
+  requestContexts?: readonly SurfaceRequestContext[]
   kinds?: readonly ("OBSERVED_API" | "ARTIFACT_API" | "NAVIGATION" | "STATIC_ASSET" | "DISCOVERY_DOCUMENT" | "FORM_ACTION" | "UNVERIFIED")[]
 }
 
