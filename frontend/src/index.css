@@ -145,6 +145,66 @@ html.flowscope-density-90 {
   }
 }
 
+/* 권한·파라미터 Gap 그래프의 3-pane(큐·그래프·상세) 작업면. PR#11 focused graph workspace. */
+.focused-graph-workspace,
+.focused-graph-sheet {
+  --focused-surface: var(--flowscope-canvas, var(--background));
+  --focused-card: var(--card);
+  --focused-selection: #38bdf8;
+  --focused-spacing: 0.75rem;
+  --focused-queue-width: 14.5rem;
+  --focused-inspector-width: 23rem;
+  background: var(--focused-surface);
+}
+.focused-graph-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.focused-graph-workspace[data-queue-open="true"] { grid-template-columns: var(--focused-queue-width) minmax(0, 1fr); }
+.focused-graph-workspace[data-inspector-open="true"] { grid-template-columns: minmax(0, 1fr) var(--focused-inspector-width); }
+.focused-graph-workspace[data-queue-open="true"][data-inspector-open="true"] { grid-template-columns: var(--focused-queue-width) minmax(0, 1fr) var(--focused-inspector-width); }
+.focused-graph-center {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.focused-graph-pane {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--focused-surface);
+}
+.focused-graph-queue { border-right: 1px solid var(--flowscope-divider); }
+.focused-graph-inspector { border-left: 1px solid var(--flowscope-divider); }
+.focused-graph-sheet[data-slot="sheet-content"] { width: min(var(--focused-inspector-width), 94vw); max-width: none; }
+.focused-graph-workspace [data-gap-id][aria-pressed="true"] {
+  background: var(--focused-card);
+  border-color: var(--focused-selection);
+}
+.focused-graph-filters > fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--focused-spacing);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.focused-graph-filters > fieldset > * { margin: 0; }
+.focused-graph-filters > fieldset > legend,
+.focused-graph-filters > fieldset > p { display: none; }
+.focused-graph-filters > fieldset > button { width: auto; gap: var(--focused-spacing); }
+@media (900px <= width < 1440px) {
+  .focused-graph-workspace { --focused-queue-width: 12rem; }
+}
+
 @layer components {
   [data-slot="card"] {
     @apply border border-border/70;

@@ -1,5 +1,15 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5a 우선순위 Gap 그래프 화면) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| RED→GREEN | `parameterProjection.test.ts` 13건·`ParameterMapPage.test.tsx` 16건을 구현과 함께 작성해 첫 실행 26/29 통과, 실패 3건은 테스트 전제 오류(WRITE_METHOD 정렬 순서, 대상 근거 없는 fixture, rerender 시 QueryClientProvider 누락)로 정정 → 29/29. 캔버스는 cytoscape mock(throw)으로 목록 fallback을 검증. |
+| JDK 21 `mvn clean verify` | BUILD SUCCESS(1분 4초). Java 513 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 40 files/283 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,865,404 bytes(이 verify의 단일 빌드값). 번들에 `parameter-map` route 포함 확인(`unzip -p … index-*.js`). |
+| 패키지 Chromium 실측 | `java -Djava.awt.headless=true -Dflowscope.web.port=17777 -cp <jar> io.flowscope.Standalone`, 샘플 데이터, 캐시 회피용 `?fresh=5a#parameter-map`. 1024×768: rail에 "우선순위 Gap 그래프" 추가, 큐 23건(AUTH_VARIANT_UNTESTED, CONFIRMED_AUTH_BOUNDARY 우선), "먼저 확인" 요약, 4-lane 목록 fallback(anon·ANONYMOUS / PATCH `/api/orders/{id}` HTTP 200×1·1 Evidence / PATH `/segments/2` INTEGER·STRING / orders:101 OBSERVED owner acct-demo-user-a); 큐 첫 항목 클릭 → 상세 sheet(`data-gap-id`, 사유 확인된 권한 경계·권한 변형 미검증·쓰기 메서드, 입력→권한 대상 orders:101 OBSERVED/EXACT_SCALAR_RESOURCE_REFERENCE 연결 근거 1건, 프로파일 관측 1건 HUMAN×1·acct-demo-user-a×1·USER×1, Gap 근거 1건 ev-ade77…) → 검증표 펼치기(HUMAN × SELF/OTHER_OWNER/ANONYMOUS/OTHER_ROLE 4좌표, 미검증 3·적용 불가 0) → Evidence 탭(연결 EventRecord 1건) → `Evidence 상세 ev-ade77aee8c742e10`(EvidenceSheet: PATCH `/api/orders/101` 200 acct-demo-user-a/User, 연결 셀 allow, 정책 폼, Request Lab/Repeater) → 닫기 → `Request Lab 열기`(대표 Evidence 초안: PATCH `/api/orders/101`, Authorization `***MASKED***`, 응답 200, Standalone 읽기 전용) → 닫기. 1600×900: 큐·Cytoscape 캔버스(카드 4장, 선택 경로 강조·비선택 흐림, edge 라벨 `Gap 주체 H`·`관측 H × 1`·`관계 근거`)·상세 pane 3열, 확대 버튼 동작, `Gap 목록 보기` 전환. 콘솔 `Uncaught`/`TypeError` 0(403 항목은 이전 인스턴스 토큰의 잔여). |
+| 미실측 | 900px 미만 큐 sheet·600px 경로 목록은 vitest로만(7단계 packaged 실측 예정). 실제 Burp 실행 미실행(운영 gate). |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 4단계(권한 대상 연결) gate
 
 | 항목 | 실제 확인 결과 |

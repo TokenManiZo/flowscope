@@ -196,7 +196,8 @@ ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 
 `http://127.0.0.1:17777/`와 `/app/`는 동일한 React 작업면을 제공하고 `/legacy/`는 전환 기간의 기존 작업면을 제공합니다. 첫 진입은 `API·입력 차이`이며, React가 분석기나 판정 상태 기계를 대체하지 않고 같은 localhost API snapshot을 표시합니다.
 
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, 새 진단 시작, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 정본 로컬 Web 작업면 열기
-- **Web 상단 모드** — 기본 `API·입력 차이`, 상세 `인가 그래프`, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
+- **Web 상단 모드** — 기본 `API·입력 차이`, `우선순위 Gap 그래프`, 상세 `인가 그래프`, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
+- **우선순위 Gap 그래프** — 서버가 만든 Gap(source/계정/조건/타입 미관측, 선언 미관측, 권한 변형 미검증)을 우선순위 사유 순 큐와 조건/사용자→API→입력→권한 대상 카드 경로로 보여 주고, 선택 상세에서 연결 근거·관측 프로파일·검증표·실제 Evidence·정의 근거를 확인한 뒤 대표 Evidence로 Request Lab을 엽니다. Gap은 점검 후보이며 취약점 판정이나 퍼센트가 아닙니다.
 - **API·입력 차이** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 실제 관측 행의 **Evidence 상세**에서 Request Lab과 Burp Repeater 초안으로 바로 이어지며, 선언만 있고 요청이 없는 항목에는 전송 가능한 Evidence가 있는 것처럼 버튼을 만들지 않습니다. 분석한 HTML/OpenAPI/JavaScript 산출물 수와 부분·실패·상한 상태도 보여 주며, 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
 - **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, 실제 메인 Evidence 수와 함께 동작하는 HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 읽기 전용 역할 정책 상태, 3-way gap, 그래프 판정 제어
 - **인가 그래프** — 현재는 `Identity / API / 접근 대상 ID` 3개 lane을 같은 canvas에 표시합니다. 접근 대상 ID가 없는 요청은 Identity→API, 있는 요청은 Identity→접근 대상 ID→API edge로 투영합니다. API·접근 대상 ID는 기본 18개와 전체 표시를 전환하며, HUMAN 파랑·실선 / SCANNER 빨강·파선 / LLM 밝은 점선 overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, focus+context, 화면 맞춤을 제공합니다. 사이트/API 단계형 drill-down과 Resource family 접기는 아직 구현되지 않았습니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.

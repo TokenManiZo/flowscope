@@ -288,6 +288,7 @@ Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델
 | 작업면 | 역할 |
 |---|---|
 | API·입력 차이 | 기본 작업면. 선언/관측 endpoint와 parameter를 source별로 정렬하고 provenance·Evidence 및 산출물 파싱 상태를 연다. `미관측`을 취약점·lane 실패로 표현하지 않으며 전체 퍼센트를 만들지 않는다. |
+| 우선순위 Gap 그래프 | `frontend/src/features/parameter-map/parameterProjection.ts`가 `snapshot.surface`(endpoints[].parameters[].profile/authorizationTargets/declarations, parameterGaps, validationCells)를 machine key(endpoint+location+canonicalPath)로 색인해 서버 REASON_ORDER 순 큐, 40개 경로(선택 off-page 포함), 조건/사용자·API·입력·권한 대상 4-lane 노드·edge(gap/observation/definition/authorization-target/unknown-*), 선택 파라미터의 cell(파생 id)·선언을 낸다. 판정·우선순위를 재계산하지 않고 증인 preview는 20개, 미확정 좌표는 제외한다. `ParameterGapGraph`는 Cytoscape 카드(SVG)와 목록 fallback, `ParameterGapInspector`는 정확한 operation의 실제 EventRecord만 EvidenceSheet·RequestLabDialog로 연결한다. |
 | 인가 그래프 | 현재 React projection은 `identity / operation / resource` 3개 lane을 한 canvas에 둔다. resource 없는 record는 identity→operation, resource가 있는 record는 identity→resource→operation source edge가 된다. operation/resource는 정렬 뒤 기본 18개 또는 전체로 전환한다. 긴 경로는 생략하지 않고 줄바꿈하며 미요청 route는 중립 후보로 분리한다. 사이트/API 단계형 drill-down과 resource family 접기는 후속 UI 작업이다. |
 | 판정 매트릭스 | identity/role × operation × resource의 소스별 판정과 3종 갭 |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용된 실제 데이터 의존성 |

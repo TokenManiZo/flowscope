@@ -4,6 +4,7 @@ import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { InspectionPage } from "@/features/inspection/InspectionPage"
 import { RunsPage } from "@/features/runs/RunsPage"
 import { SurfacePage } from "@/features/surface/SurfacePage"
+import { ParameterMapPage } from "@/features/parameter-map/ParameterMapPage"
 import { AccountsPage } from "@/features/accounts/AccountsPage"
 import { EvidencePage } from "@/features/evidence/EvidencePage"
 import { GraphPage } from "@/features/graph/GraphPage"
@@ -39,7 +40,7 @@ export function AppShell({ route = "surface" }: { route?: AppRoute }) {
     }
   }, [])
 
-  const routeContent = route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "surface" ? <SurfacePage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "explorer" ? <ExplorerPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
+  const routeContent = route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "surface" ? <SurfacePage /> : route === "parameter-map" ? <ParameterMapPage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "explorer" ? <ExplorerPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
 
   return <ReferenceAppShell route={route}>{routeContent}</ReferenceAppShell>
 }

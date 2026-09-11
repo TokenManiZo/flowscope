@@ -1,5 +1,24 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5a) — 우선순위 큐·파라미터 Gap 그래프·검증표·Gap 상세
+
+### 원인과 수정
+
+- PR#11 `frontend/src/features/parameter-map/*`를 현행 React·`snapshot.surface` 계약 위로 이식했다. PR은 별도 `parameterProfiles/parameterGaps/parameterValidationCells/parameterDefinitions` 배열과 서버 생성 id를 전제했으나 우리 snapshot은 `surface.endpoints[].parameters[]`(profile·authorizationTargets·declarations 포함)와 최상위 `parameterGaps`·`validationCells`만 있으므로, projection이 `parameterMapKey`(endpoint+location+canonicalPath)로 사실을 색인하고 cell id를 좌표·판정에서 파생한다. 선언 근거는 `parameter.declarations`, 정의 출처 필터는 선언 `type`(OPENAPI/JAVASCRIPT_LITERAL/HTML_FORM/LLM_ARTIFACT_ANALYSIS/XML_ROUTE)이다.
+- **화면:** 새 route `#parameter-map`("우선순위 Gap 그래프")에 `ParameterMapPage` — 서버 우선순위 순 큐(상위 3개→전체), 위험 Gap/권한 검증/발견 범위 + 고급 필터(놓친 주체·신원·Gap 종류·우선순위 근거·정의 출처), 4-lane(조건/사용자·API 엔드포인트·입력 파라미터·권한 대상) Cytoscape 카드 그래프(lane 고정·focus·확대/맞추기·키보드 경로 선택·900px 미만/렌더러 불가 시 같은 경로의 목록 fallback), 선택 상세(핵심 근거: 서버 우선순위 사유·입력→권한 대상 link·discovery 프로파일 요약·Gap 근거·subject×source 검증표 / Evidence: cell 실행·basis·Gap witness·파라미터 관측 구분, 정확한 operation의 실제 EventRecord만 연결 / 정의 근거: 선언 목록), 대표 Evidence로 Request Lab. 3-pane `FocusedGraphWorkspace`(900px 미만 큐 sheet, 1440px 미만 상세 sheet)와 CSS를 이식했다.
+- **표시 원칙(PR 유지):** 입력 카드 제목은 표시 경로(fieldPath), 접근성 라벨에는 canonicalPath; 리소스는 service 접두를 뺀 라벨; UNKNOWN/INFERRED 도움말; "주체 ≠ 관계 · Gap 주체 ≠ 관측 출처 · Gap ≠ 취약점 판정" 범례; 퍼센트·취약점 확정 문구 없음; projection 출력은 깊게 동결하고 snapshot을 변형하지 않는다.
+- 현행 계약과 다른 PR 부분은 대조표 제외·변경 목록에 기록했다(PR `graph` route 교체 대신 별도 route, evidenceContext→datasetRevision key, parameterEvidence/digest 미이식, WorkspaceNavigation 미이식).
+
+### 영향 파일·회귀
+
+- 코드: `frontend/src/features/parameter-map/{parameterProjection,parameterLanes,parameterNodeCard,ParameterFilterBar,ParameterPriorityQueue,ParameterGapGraph,ParameterCoverageMatrix,ParameterGapInspector,FocusedGraphWorkspace,ParameterMapPage,parameterMapFixtures}.{ts,tsx}`(신규), `frontend/src/app/routes.ts`·`AppShell.tsx`(route), `frontend/src/index.css`(focused-graph 규칙).
+- 테스트: `parameterProjection.test.ts` 13건(4-lane 카드, 실제 event만 HTTP 집계, 미존재/선언만 사실, 우선순위 순서·동률, 필터 6종, 열린 위험 Gap·증인·count·cell, 중복 제거·40개 상한·off-page 선택, 빈 상태 3종·진단, 미확정 좌표 제외·source attribution, 대상 긍정 근거, 노드별 관측 상태, 깊은 동결, 5,000건 색인) + `ParameterMapPage.test.tsx` 16건(graph-first·큐 순서, 상위 3개, no-match, 큐/목록에서 상세, Evidence 연결→상세, 필터·stale 선택, 고급 필터·Gap 종류 6종, 1280px sheet, 600px 큐 sheet, 로딩/오류, 빈 상태 3종, 검증표 행 신원/역할, 도움말 2종). 캔버스는 jsdom 밖이라 cytoscape를 throw로 mock해 목록 fallback을 검증한다.
+- 검증: JDK 21 `mvn clean verify` BUILD SUCCESS, Java 513 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 40 files/283 tests. JAR `target/flowscope-1.2.0-beta.46.jar` 31,865,404 bytes. 패키지 Standalone(17777) Chromium 실측: `#parameter-map`에서 큐 23건(샘플 AUTH_VARIANT_UNTESTED, CONFIRMED_AUTH_BOUNDARY 우선)·"먼저 확인" 요약; 1024px에서 목록 fallback 4-lane 경로(anon·ANONYMOUS / PATCH `/api/orders/{id}` HTTP 200×1 / PATH `/segments/2` INTEGER·STRING / orders:101 OBSERVED owner acct-demo-user-a) → 큐 선택 → 상세 sheet(사유 3건, orders:101 OBSERVED EXACT_SCALAR_RESOURCE_REFERENCE, 프로파일 HUMAN×1·acct-demo-user-a×1, Gap 근거 1건) → 검증표 4좌표(SELF/OTHER_OWNER/ANONYMOUS/OTHER_ROLE×HUMAN) → Evidence 탭 연결 EventRecord 1건 → `Evidence 상세 ev-ade77…`(기존 EvidenceSheet: 정책·Repeater) → `Request Lab 열기`(대표 Evidence PATCH `/api/orders/101`, Authorization 마스킹, 읽기 전용 초안); 1600px에서 큐·캔버스(카드 4장, 선택 경로 강조·나머지 흐림, edge 라벨 `Gap 주체 H`·`관측 H × 1`·`관계 근거`)·상세 pane 3열, 확대 버튼·`Gap 목록 보기` 전환; 콘솔 JS 오류(Uncaught/TypeError) 0. 로컬 `npx vitest`는 시스템 Node 25의 `localStorage` 전역 때문에 RequestLab 테스트가 깨지므로 Maven이 설치한 `target/frontend-runtime/node`(v24)로 실행해야 한다(빌드 자체는 영향 없음).
+
+### 남은 한계·다음 gate
+
+- 5b: Request Diff 탭(구조화 요청 비교) — 서버 `EndpointFact` 요청 문맥(complete/retained) 가산 필요, VALUE_CHANGED는 digest 비노출이라 UNKNOWN. 5c: 전체 관계 그래프 계층(Site→API 그룹→API→Object, `+18`)은 D-142 gate. 5d: snapshot 캐시·계약 테스트. 좁은 viewport packaged 실측은 7단계. 실제 Burp 실행 미검증.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 4단계 — 권한 대상 연결
 
 ### 원인과 수정
