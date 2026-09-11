@@ -90,7 +90,7 @@ delta 상태와 별도로 discovery Gap(PR#11)은 같은 비교 조건에서 무
 |---|---|---|
 | `SOURCE_MISSED` | 어떤 source의 완전한 비교 가능 요청에서 이 입력이 관측되지 않음 | 긍정 관측 Evidence + 그 source의 대상 요청 Evidence |
 | `IDENTITY_MISSED` | 알려진 신원의 완전한 요청에서 미관측(인가 결론 아님) | 긍정 관측 + 그 신원의 요청 |
-| `DEFINED_NOT_OBSERVED` | 선언만 있고 해당 operation의 모든 요청이 완전한데 미관측(optional이면 결함 아님) | 선언 provenance |
+| `DEFINED_NOT_OBSERVED` | 선언만 있고 해당 operation의 모든 요청이 완전한데 미관측(optional이면 결함 아님) | 선언 provenance 전체(`evidenceCount`는 파라미터당 선언 32 상한과 무관한 distinct 증인 수, preview 32는 Evidence ID 순) |
 | `TYPE_VARIANT_UNOBSERVED` | 선언 구조 형태/native 타입 변형을 관측하지 못함(enum·wire 문자열·format은 비교 안 함) | 관측 + 선언 |
 | `CONDITION_COMBINATION_UNOBSERVED` | 독립 2건 이상 반복된 존재 서명이 다른 source의 같은 role/phase 문맥에 없음(확인된 업무 조건 아님) | 지지 2건 + 대상 문맥 1건 |
 | `AUTH_VARIANT_UNTESTED` | 관계가 알려진 입력×대상의 subject(SELF/OTHER_OWNER/ANONYMOUS/OTHER_ROLE)×source 좌표가 실행되지 않음(operation의 모든 요청이 완전할 때만) | link 증인(basis) |

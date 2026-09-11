@@ -130,6 +130,10 @@ public final class SnapshotJsonWriter {
         return json.writeValueAsBytes(root);
     }
 
+    /**
+     * 현재 게시본 하나만 캐시한다(revision·Pipeline.Result·route 후보 목록 동일성). 레코드 내용 fingerprint는 두지 않는다:
+     * 게시본은 Pipeline.run마다 새 Result·새 revision으로 바뀌므로 같은 Result에 대한 동시 poll만 한 번 계산하면 된다.
+     */
     private synchronized SurfaceAnalysis surface(long revision, Pipeline.Result result,
                                                  List<RouteCandidate> routeCandidates) {
         if (cachedSurface != null && surfaceRevision == revision && surfaceResult == result
@@ -142,8 +146,14 @@ public final class SnapshotJsonWriter {
         surfaceResult = result;
         surfaceCandidates = routeCandidates;
         cachedSurface = computed;
+        surfaceBuilds++;
         return computed;
     }
+
+    private int surfaceBuilds;
+
+    /** 테스트 seam: surface projection을 실제로 계산한 횟수(캐시 적중은 세지 않는다). */
+    synchronized int surfaceBuildCount() { return surfaceBuilds; }
 
     ArrayNode managedSessions(List<SessionBroker.SessionView> values) {
         ArrayNode out = json.createArrayNode();

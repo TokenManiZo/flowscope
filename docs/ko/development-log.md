@@ -1,5 +1,23 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5d) — snapshot surface 계약·캐시 회귀와 선언 preview 결정성
+
+### 원인과 수정
+
+- PR#11 `SnapshotParameterContractTest`(9)·`SnapshotParameterCacheTest`(7)는 attached parameter generation·record fingerprint 캐시·bounded node 직렬화 seam을 전제했다. 우리 계약은 `snapshot.surface` 하나를 게시본마다 계산하고 `SnapshotJsonWriter.surface()`가 현재 게시본(revision·`Pipeline.Result`·route 후보 목록 동일성)만 캐시하므로, 같은 의미를 우리 계약 위에서 `web/SnapshotSurfaceContractTest` 9건으로 고정했다(적용 불가 항목은 D-143 5d에 사유 기록). 테스트 seam으로 `surfaceBuildCount()`(package-private)를 추가했다.
+- 이식 중 드러난 결정성 결함: 파라미터당 선언 32 상한(`MAX_DECLARATIONS_PER_PARAMETER`)이 수집 순서대로 앞 32개를 남겨, 같은 데이터의 순서 역전에 다른 선언 preview·다른 `DECLARATION_LIMIT` anchor·`DEFINED_NOT_OBSERVED` count(32로 잘림)를 냈다. `MutableParameter`가 상한과 무관한 선언 증인 ID 집합(`declarationEvidence`, 정렬)을 따로 들고, 상한을 넘으면 `DECLARATION_ORDER`(Evidence ID·종류·adapter·사유·조건)로 가장 큰 항목을 밀어내며(`droppedDeclarations` 수 동일), 진단 anchor도 같은 순서의 첫 선언을 쓴다. `DEFINED_NOT_OBSERVED` gap은 이제 전체 선언 증인 수를 `evidenceCount`로, Evidence ID 순 32개를 preview로 낸다(PR `provenanceCount`+preview 의미 복원).
+- 순서 무관 계약의 범위를 명시했다: 집계(프로파일·link·cell·gap·진단·선언 preview 선택)는 입력 순서와 무관, Evidence 하나마다 한 항목인 사실 목록(`observations`·`observationEvidenceIds`·`requestContexts`·`declarations`·`extractions`·`probes`)은 수집 순서 보존. 테스트는 후자만 정렬해 비교한다.
+
+### 영향 파일·회귀
+
+- 코드: `core/SurfaceAnalyzer.java`(선언 preview 안정 선택·전체 증인 집합·진단 anchor), `web/SnapshotJsonWriter.java`(`surfaceBuildCount()` seam, 캐시 계약 주석).
+- 테스트: `web/SnapshotSurfaceContractTest` 9건 신규 — 빈 snapshot 가산 배열, 모델 dedupe·count·32 preview·불변, 40건 preview/count·UNTESTED basis 분리·순서 무관, 선언 전용 입력(관측 0·link 0·profile EMPTY·안정 preview·전체 count·`DECLARATION_LIMIT`·미관측 route)·순서 무관, 실제 ALLOW 40 vs VALIDATION 전용 UNDECIDED 1(basis 41), 민감 생략 진단 2·비밀 비노출, 단일 캐시 build count(revision/Result/route 목록/다른 writer/이전 revision), 동시 poll 12건 1회 계산·동일 바이트, 같은 게시본 원문 변경 무영향·새 revision 재계산. 첫 실행 RED 3건(ID 재부여 가정·`List.of()` 동일 인스턴스·순서 의존 선언 preview) 중 앞 둘은 테스트 가정 수정, 셋째는 제품 결함 수정으로 GREEN.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 6초), Java 523 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 44 files/357 tests. JAR `target/flowscope-1.2.0-beta.46.jar` 31,876,645 bytes. UI 변경 없음(패키지 Chromium 재실측 생략).
+
+### 남은 한계·다음 gate
+
+- VALIDATION 레코드의 민감 생략 진단은 Surface 진단에 포함하지 않는다(3단계 결정). 실제 Burp 실행 미실행. 다음: 6단계(PR#12 판정 매트릭스·BFLA/BOLA 수동 검토 추천·React 매트릭스·사람 검토 연결), 7단계 통합 검증·최종 인계.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5c) — 계층 관계 그래프(Site→API 그룹→API→Object, `+18`)
 
 ### 원인과 수정

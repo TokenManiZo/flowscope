@@ -1,5 +1,14 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5d snapshot 계약·캐시) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 회귀 | `web/SnapshotSurfaceContractTest` 9건 신규. 첫 실행 3 RED(명시 Evidence ID가 Pipeline 내용 digest로 재부여됨·`List.of()` 동일 인스턴스·선언 preview 순서 의존) → 앞 둘 테스트 가정 수정, 셋째는 `SurfaceAnalyzer` 결정성 결함 수정 후 9/9 GREEN. `SurfaceAnalyzerTest`·`SurfaceParameterProfileTest`·`SurfaceAuthorizationLinkTest` 포함 83/83. |
+| JDK 21 `mvn -o clean verify` | BUILD SUCCESS(1분 6초). Java 523 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 44 files/357 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,876,645 bytes(이 verify의 단일 빌드값). |
+| 미실측 | UI 변경 없음(5c 실측 유지). PR fingerprint 캐시·attached generation 항목은 설계상 해당 없음(D-143 5d). 실제 Burp 미실행. |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5c 계층 관계 그래프) gate
 
 | 항목 | 실제 확인 결과 |

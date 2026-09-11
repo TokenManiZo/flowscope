@@ -36,6 +36,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /** Evidence와 명시적 대상 산출물로부터 endpoint/parameter surface 사실을 파생한다. */
 public final class SurfaceAnalyzer {
@@ -839,7 +841,9 @@ public final class SurfaceAnalyzer {
         private void declarationDiagnostics(List<SurfaceAnalysis.ParameterDiagnostic> out) {
             for (MutableParameter parameter : parameters.values()) {
                 if (parameter.droppedDeclarations > 0) {
-                    String evidenceId = parameter.declarations.isEmpty() ? null : parameter.declarations.iterator().next().evidenceId();
+                    // 진단의 anchor Evidence도 preview와 같은 안정 순서의 첫 선언이라 수집 순서와 무관하다.
+                    String evidenceId = parameter.declarations.isEmpty() ? null
+                            : Collections.min(parameter.declarations, MutableParameter.DECLARATION_ORDER).evidenceId();
                     out.add(new SurfaceAnalysis.ParameterDiagnostic(evidenceId, key.method() + " " + key.pathTemplate(),
                             "DECLARATION_LIMIT", parameter.droppedDeclarations));
                 }
@@ -1060,8 +1064,17 @@ public final class SurfaceAnalyzer {
         private final LinkedHashSet<String> evidenceIds = new LinkedHashSet<>();
         private final LinkedHashSet<ParameterObservation> observations = new LinkedHashSet<>();
         private final LinkedHashSet<Declaration> declarations = new LinkedHashSet<>();
+        /** 상한과 무관한 모든 선언 증인 ID(정렬). DEFINED_NOT_OBSERVED gap의 전체 count·preview 근거. */
+        private final TreeSet<String> declarationEvidence = new TreeSet<>();
         private final EnumSet<Requirement> requirements = EnumSet.noneOf(Requirement.class);
         private int droppedDeclarations;
+        /** 상한 preview 선택 순서: 입력 순서가 아니라 Evidence ID·종류·adapter·사유·조건의 안정 순서. */
+        private static final Comparator<Declaration> DECLARATION_ORDER = Comparator
+                .comparing(Declaration::evidenceId, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(Declaration::type, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(Declaration::adapter, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(Declaration::reason, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(Declaration::conditionText);
 
         private MutableParameter(ParameterLocation location, String canonicalPath, String displayName,
                                  boolean resolved) {
@@ -1120,9 +1133,13 @@ public final class SurfaceAnalyzer {
             Declaration declaration = new Declaration(base.evidenceId(), base.source(), base.runId(), base.type(),
                     base.adapter(), base.reason(), version, coordinateResolved, declaredType, declaredShape,
                     conditionText, confidence);
+            if (base.evidenceId() != null) declarationEvidence.add(base.evidenceId());
             if (!declarations.contains(declaration) && declarations.size() >= MAX_DECLARATIONS_PER_PARAMETER) {
+                // 상한을 넘으면 입력 순서가 아니라 안정 순서로 preview를 고른다(가장 큰 항목을 밀어냄). 수집 순서 역전에도 같은 결과.
+                Declaration largest = Collections.max(declarations, DECLARATION_ORDER);
                 droppedDeclarations++;
-                return;
+                if (DECLARATION_ORDER.compare(declaration, largest) >= 0) return;
+                declarations.remove(largest);
             }
             declarations.add(declaration);
             requirements.add(requirement == null ? Requirement.UNKNOWN : requirement);
@@ -1212,7 +1229,7 @@ public final class SurfaceAnalyzer {
             if (!parameter.declarations.isEmpty() && rows.stream().allMatch(Row::complete)) {
                 result.add(gap(endpoint, parameter, 0, SurfaceAnalysis.GapType.DEFINED_NOT_OBSERVED, null, null, null, "",
                         "선언된 입력을 discovery 요청에서 관측하지 못했다. optional이면 결함이 아니다.",
-                        declarationEvidence(parameter.declarations), false));
+                        new ArrayList<>(parameter.declarationEvidence), false));
             }
             return result;
         }
@@ -1357,10 +1374,6 @@ public final class SurfaceAnalyzer {
                 + frame(role == null ? null : role.name()) + frame(source == null ? null : source.name()) + frame(variant);
         return new SurfaceAnalysis.ParameterGap("pg:v1:" + digest(coordinate), type, endpoint.key, parameter.location,
                 parameter.canonicalPath, identity, role, source, SurfaceAnalysis.GapStatus.OPEN, reasons, summary, evidence);
-    }
-
-    private static List<String> declarationEvidence(Collection<Declaration> declarations) {
-        return declarations.stream().map(Declaration::evidenceId).filter(java.util.Objects::nonNull).distinct().sorted().toList();
     }
 
     /** 표시 shape에서 구조 형태(SCALAR/ARRAY/OBJECT)만 뽑는다. NULL/UNKNOWN은 비교 대상이 아니라 null. */
