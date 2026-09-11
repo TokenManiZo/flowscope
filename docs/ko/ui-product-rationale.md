@@ -309,7 +309,7 @@ Repeater는 검토 가능한 **미전송 초안**을 여는 handoff이다. 이 �
 
 ## 21. Reference analysis shell과 검증 경계
 
-모든 route는 status·rail·context·workbench·inspector를 공유한다. desktop은 persistent pane을 쓰고 compact에서는 같은 node를 accessible Sheet로 옮긴다. 닫힌 route button도 current route 이름과 `aria-current`을 먼저 보여 준다. HUMAN solid blue, SCANNER/ZAP dashed red, LLM dotted gray, REVIEW amber는 text와 line style을 병행한다. Graph의 operation은 ENDPOINT, resource는 OBJECT lane에 놓이며 diagonal drag도 lane X를 넘지 않는다. standalone browser pass는 Burp/target/active Request Lab validation을 대체하지 않는다.
+모든 route는 status·rail·context·workbench·inspector를 공유한다. desktop은 persistent pane을 쓰고 compact에서는 같은 node를 accessible Sheet로 옮긴다. 닫힌 route button도 current route 이름과 `aria-current`을 먼저 보여 준다. desktop rail은 각 route를 아이콘과 함께 한국어 라벨로 표시해(아이콘 전용이 아님) 진단자가 화면을 이름으로 찾게 하고, compact 메뉴도 같은 라벨을 제공한다. HUMAN solid blue, SCANNER/ZAP dashed red, LLM dotted gray, REVIEW amber는 text와 line style을 병행한다. Graph의 operation은 ENDPOINT, resource는 OBJECT lane에 놓이며 diagonal drag도 lane X를 넘지 않는다. standalone browser pass는 Burp/target/active Request Lab validation을 대체하지 않는다.
 
 ## 22. Reference shell 최종 review의 사실성·조작성 경계
 

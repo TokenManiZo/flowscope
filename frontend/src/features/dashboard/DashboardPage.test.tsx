@@ -196,10 +196,12 @@ describe("dashboard shell", () => {
     renderDashboard({ ...representativeSnapshot, events: [...representativeSnapshot.events, llmEvent, unknownEvent] })
 
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })
+    const dashboardRegion = screen.getByRole("region", { name: "대시보드 분석 영역" })
     expect(screen.getByText(/L · LLM/)).toBeVisible()
-    expect(screen.queryByText(/LLM Explorer/)).not.toBeInTheDocument()
+    expect(within(dashboardRegion).queryByText(/LLM Explorer/)).not.toBeInTheDocument()
     expect(screen.getByText("/llm-only")).toBeVisible()
     expect(screen.queryByText("/unknown-only")).not.toBeInTheDocument()
+    expect(within(screen.getByRole("navigation", { name: "주요 분석 탐색" })).getByRole("link", { name: "LLM Explorer" })).toBeVisible()
   })
 
   it("does not fabricate operational zero or connected states when HUMAN and scanner queries fail", async () => {

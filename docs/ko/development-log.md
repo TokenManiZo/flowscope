@@ -1,5 +1,46 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · 데스크톱 내비게이션 라벨 노출
+
+### 원인과 수정
+
+- HANDOFF §6-3은 "desktop 내비는 아이콘만이 아니라 라벨을 기본 제공한다"를 다음 작업으로 명시했다. `RouteIconRail`의 desktop rail(`lg:block`)은 각 route를 `aria-label`/`title`(툴팁)로만 이름 붙이고 화면에는 아이콘만 표시해, 진단자가 11개 화면을 이름 없이 아이콘으로만 구분해야 했다. compact(모바일) 메뉴는 이미 라벨을 텍스트로 보여 비대칭이었다.
+- desktop rail 링크를 `아이콘 + 한국어 라벨(text-[10px])` 세로 배치로 바꾸고 rail 폭을 `w-15`(60px)→`w-24`(96px)로 넓혔다. `aria-current`, 활성 emerald 강조, group 간격(`mt-2`)은 유지했다. 라벨이 가시 텍스트가 되어 링크 접근가능 이름을 텍스트가 제공하므로 중복이던 `aria-label`/`title`은 제거했다(내 변경이 만든 orphan 정리). compact 메뉴는 그대로다.
+
+### 영향 파일·회귀
+
+- 코드: `frontend/src/components/layout/RouteIconRail.tsx`(desktop `<aside>`/링크만).
+- 테스트: `frontend/src/components/layout/RouteIconRail.test.tsx`에 "desktop rail이 각 route 한국어 라벨을 가시 텍스트로 노출"을 먼저 실패로 추가(RED: `Unable to find text 대시보드`) → 구현 후 GREEN. 기존 `RouteIconRail`·`ReferenceAppShell`·`AppShell` 테스트는 접근가능 이름 기반이라 무변경 통과(3 files / 26 tests).
+- 문서: `ui-product-rationale.md` §21에 desktop rail 라벨 노출을 기록. 계약 소유 문서만 갱신.
+
+### 남은 한계·다음 gate
+
+- **실제 렌더는 미확인**: packaged Playwright E2E는 `mvn verify`에 포함되지 않고 여기서 실행하지 않았다. rail 폭 확대의 실제 desktop 레이아웃(중앙 폭 잠식 여부)과 라벨 줄바꿈은 실제 Burp/Standalone 렌더 gate로 남는다. E2E 내비 단언은 accessible-name 기반이라 이 변경으로 깨지지 않는다.
+- **이 변경과 무관해 손대지 않은 드리프트(기록만)**: §14의 "primary strip과 portal 분석 메뉴"는 현재 코드(단일 icon+label rail + compact popover) 구조와 다르고(문서 X2 divergence, 결정 대기), 같은 문장의 "아홉 route"는 실제 11 route와 어긋난다. 이 변경 범위 밖이라 고치지 않았다.
+- **미구현(§6-3 나머지)**: 그래프 실제 `+18` 증분·남은 수 표시, 사이트/API drill-down·resource family는 이번에 하지 않았다(D-142가 후속 gate로 분리).
+- 최종 검증: JDK 21 `mvn clean verify` BUILD SUCCESS — React 38 files / 251 tests(250 기존 + nav 가시라벨 1), Java 411 tests(실패·오류 0, opt-in 하네스 2 skip). DashboardPage 3-way 테스트의 `/LLM Explorer/` 제외 단언은 Codex 지시에 따라 `within(getByRole("region",{name:"대시보드 분석 영역"}))`로 대시보드 영역에 한정하고, 내비게이션에는 Explorer 링크 가시 라벨 검증을 추가했다(LLM 관측·UNKNOWN 제외 단언 유지). 기존 커밋 테스트 수정은 Codex가 A안으로 승인함. rail 폭 확대의 실제 렌더 잘림·스크롤은 여전히 브라우저 gate.
+
+
+## 2026-09-11 · 미출시 · Explorer 신원 귀속 통합 회귀 고정
+
+### 원인과 수정
+
+- HANDOFF §6-2의 Explorer 신원 경로(LLM 계정 선택→인증 준비→forced account/lane 귀속→프로젝트 재열기)는 구현은 있었지만 하나로 잠그는 회귀가 없었다. `ExplorerHttpGatewayTest`는 `ExplorerTransport`를 스텁으로 바꿔 gateway 조립까지만 검증했고, `PipelineClassificationTest`에는 ZAP `laneAccountId` 귀속만 있었으며, `ProjectStoreTest`·`SqliteProjectStoreTest`는 재로드 뒤 `boundAccount` 키 일치까지만 확인해 `Pipeline` 재실행의 신원 재유도는 단언되지 않았다. `recordFrom`/`forcedAccountId`를 태우는 테스트는 0건이었다.
+- 구현 수정 없이 테스트만 추가했다. `ExplorerFingerprintTest`(io.flowscope.burp)는 실제 transport가 `recordFrom(applyRunContext=false, …, forcedAccountId)`로 호출하는 `captureFingerprint(LLM, context=null, …)`가 HUMAN/SCANNER 익명 특례 없이 `Fingerprints.of(authorization, cookie)`로 환원됨을 고정한다(opaque Bearer→`tok:`, JWT→`sub:`, 무자격→`anon`, 원문 토큰 미포함). `ExplorerIdentityAttributionTest`(io.flowscope.explorer)는 실제 `ExplorerAccountVault`·`ExplorerHttpGateway`로 선택 계정과 주입 토큰이 transport 요청에 실리는 것을 포착한 뒤, transport 본문이 만드는 LLM 레코드 필드와 `bindSession` 계약을 재현해 `Pipeline` 계정 신원(`ACCOUNT_BOUND`), binding 없는 음성 대조(D-130: laneAccountId만으로는 LLM lane 미귀속), `ProjectStore` 저장→로드→`Pipeline` 재실행 재유도와 원문 토큰 미저장을 단언한다.
+- 조사 중 의심한 재열기 결함은 결함이 아니었다. 레코드 fingerprint(`writeRecord`)와 `session_bindings` 키가 같은 `Fingerprints.safeForStorage`를 거치고, 이 함수는 `Fingerprints.of`가 만드는 모든 접두(`sub:/jwt:/tok:/sess:/ck:`)에 항등이라 재열기 뒤에도 키가 일치한다.
+
+### 영향 파일·회귀
+
+- 테스트: 신규 `src/test/java/io/flowscope/burp/ExplorerFingerprintTest.java`(3 tests), `src/test/java/io/flowscope/explorer/ExplorerIdentityAttributionTest.java`(1 test). 프로덕션 코드 변경 없음. 두 파일로 나눈 이유는 `captureFingerprint`(burp 패키지-private)와 `ExplorerAccountVault.setToken/status`(explorer 패키지-private)를 한 파일에서 쓸 수 없고, 비밀을 넣는 vault mutator를 public으로 넓히지 않기 위해서다.
+- 계약: HANDOFF §2·§6-2·§3, 이 기록. decisions.md는 새 결정이 없어 추가하지 않았다(D-130 경계를 확인한 것).
+- RED/GREEN: 첫 단일 파일은 패키지 가시성으로 `testCompile` 실패. 분리 뒤 JDK 21.0.12.1·Maven 3.9.16에서 `mvn -Dtest=… test` 4 tests 통과(실패·오류·skip 0).
+- 최종: 같은 워크트리에서 JDK 21 `mvn clean verify` 1회 성공 — surefire 합계 Java 411 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React verify와 release JAR/bundle gate 통과. JAR SHA-256 `90334b08e0b3c5f35e0d4dc99b5c5e3af0fd085ff2505a8411a9ee7a0f370eec`가 7f64c71 기준값과 같아 프로덕션 산출물이 바뀌지 않았음을 확인했다. 이 실행의 콘솔 로그를 보존하지 못해 React 테스트 수는 여기 기록하지 않는다.
+
+### 남은 한계·다음 gate
+
+- 이 회귀는 gateway와 `Fingerprints`·`AnalysisConfig`·`Pipeline`·`ProjectStore`의 공개 계약을 잠근다. FlowScopeExtension 안의 실제 transport 본문(Montoya 전송·records·ledger 게시)은 실행하지 않으므로, 실제 Burp에서 Explorer 계정 요청이 매트릭스의 같은 셀에 놓이는지는 HANDOFF §6-1·§6-2의 운영 gate로 남는다.
+- SQLite 저장소 재열기는 `SqliteProjectStoreTest`의 binding 일치로만 덮이며, 이 회귀는 JSON `ProjectStore` 경로다.
+
 ## 2026-09-11 · 미출시 · 패키지 Standalone 프로젝트 회귀와 그래프 계약 정합성
 
 ### 원인과 수정

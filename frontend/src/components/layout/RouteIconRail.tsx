@@ -11,9 +11,9 @@ export function RouteIconRail({ route }: { route: AppRoute }) {
   const activeLabel = routeLabel(route)
 
   return <>
-    <aside className="hidden w-15 shrink-0 border-r border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] lg:block">
-      <nav aria-label="주요 분석 탐색" className="flex h-full flex-col items-center gap-1 py-2">
-        {appRoutes.map(({ route: itemRoute, label, icon: Icon, group }) => <a key={itemRoute} href={routeHash(itemRoute)} aria-current={route === itemRoute ? "page" : undefined} aria-label={label} title={label} className={cn("grid size-10 place-items-center border border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground", route === itemRoute && "border-emerald-400/60 bg-emerald-400/10 text-emerald-300", group === "evidence" && "mt-2", group === "operations" && itemRoute === "accounts" && "mt-2")}><Icon className="size-4" aria-hidden="true" /></a>)}
+    <aside className="hidden w-24 shrink-0 border-r border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] lg:block">
+      <nav aria-label="주요 분석 탐색" className="flex h-full flex-col gap-0.5 px-1.5 py-2">
+        {appRoutes.map(({ route: itemRoute, label, icon: Icon, group }) => <a key={itemRoute} href={routeHash(itemRoute)} aria-current={route === itemRoute ? "page" : undefined} className={cn("flex flex-col items-center gap-1 rounded border border-transparent px-1 py-2 text-center text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground", route === itemRoute && "border-emerald-400/60 bg-emerald-400/10 text-emerald-300", group === "evidence" && "mt-2", group === "operations" && itemRoute === "accounts" && "mt-2")}><Icon className="size-4 shrink-0" aria-hidden="true" /><span className="text-[10px] leading-[1.15]">{label}</span></a>)}
       </nav>
     </aside>
     <div className="border-b border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] px-3 py-2 lg:hidden">
