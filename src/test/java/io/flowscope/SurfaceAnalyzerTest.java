@@ -541,9 +541,10 @@ final class SurfaceAnalyzerTest {
         assertFalse(serialized.contains("SECRET_QUERY_TOKEN"), "query 원문 노출 금지");
         assertFalse(serialized.contains("550e8400"), "UUID 원문 노출 금지");
         assertFalse(serialized.contains("\"digest\""), "값 digest 필드 노출 금지");
-        // sha256:는 요청 값 digest가 아니라 요청 단위 구조 서명(contextSignature)에만 허용된다.
-        String withoutSignatures = serialized.replaceAll("\"contextSignature\":\"ctx:v1:sha256:[0-9a-f]+\"", "");
-        assertFalse(withoutSignatures.contains("sha256:"), "contextSignature 외 digest 노출 금지");
+        // sha256:는 요청 값 digest가 아니라 요청 단위 구조 서명(contextSignature·profile.contextPresence 키)과
+        // 좌표만으로 만든 gap ID(pg:v1:)에만 허용된다. 둘 다 값이 아닌 구조·좌표의 digest다(3단계에서 범위 확장, 의미 동일).
+        String withoutSignatures = serialized.replaceAll("ctx:v1:sha256:[0-9a-f]+", "").replaceAll("pg:v1:sha256:[0-9a-f]+", "");
+        assertFalse(withoutSignatures.contains("sha256:"), "구조 서명·gap 좌표 ID 외 digest 노출 금지");
         assertFalse(serialized.toLowerCase().contains("preview"), "preview 필드 노출 금지");
     }
 

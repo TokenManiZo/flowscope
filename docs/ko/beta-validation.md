@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 3단계(파라미터 프로파일·discovery Gap) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| RED→GREEN | `SurfaceParameterProfileTest` 17건(PR `ParameterProfilerTest` 동작 이식)을 빈 프로파일·gap 없는 상태에서 실행해 12 실패·3 오류(부정 단언 2건만 통과) 확인 → 구현 후 17/17 GREEN. 기존 비노출 회귀 1건은 `ctx:v1:`·`pg:v1:` 구조/좌표 digest 허용으로 범위만 정정(값 digest 금지 유지). |
+| JDK 21 `mvn clean verify` | BUILD SUCCESS(1분 4초). Java 493 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 38 files/252 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,818,714 bytes(이 verify의 단일 빌드값). |
+| 패키지 Standalone 실측 | `java -Djava.awt.headless=true -Dflowscope.web.port=17777 -cp <jar> io.flowscope.Standalone`, 샘플 데이터. 화면(React)에서 발급된 capability 토큰으로 `/api/snapshot`을 읽어 `surface.endpoints[].parameters[].profile` 5건(GET `/api/orders/{id}` `/segments/2`: HUMAN 2·SCANNER 1·LLM 2, user-a 2·user-b 3, EXPLORATION 5, absent 0; POST `/api/admin/invites` `/email`: HUMAN 1·LLM 1)과 `parameterGaps` 0건(샘플은 모든 요청이 각 입력을 포함해 누락 조건이 없음)을 확인. 이어 `/api/import-har?source=scanner`로 `GET /api/orders/101?sort=DESC` 1건 가져오기(`imported:1`) → revision 2에서 `/sort` profile(SCANNER 1·IMPORT·identityCounts 비어 있음(미해결 신원)·absent 5·contextPresence 2키)과 SOURCE_MISSED 2건(HUMAN·LLM, 각 증인 2, `SOURCE_DISCREPANCY,HUMAN_REVIEW_REQUIRED`, OPEN, `pg:v1:sha256:` ID), IDENTITY_MISSED 없음(미해결 신원은 비교 신원이 아님), `digest`·preview 필드 없음. 가져오기는 메모리 상태만 바꿨고(activeProjectDatabase 없음) 프로젝트 저장은 하지 않았다. |
+| 화면 변경 | 없음(`types.ts` optional 가산만) — Chromium 화면 조작 실측은 5단계에서. |
+| 실제 Burp 실행 | 미실행(운영 gate). |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 2단계(선언 의미 확장) gate
 
 | 항목 | 실제 확인 결과 |

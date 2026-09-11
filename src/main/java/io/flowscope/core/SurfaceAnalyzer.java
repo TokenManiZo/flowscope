@@ -116,22 +116,9 @@ public final class SurfaceAnalyzer {
             MutableEndpoint endpoint = endpoints.computeIfAbsent(key.stableKey(), ignored -> new MutableEndpoint(key));
             endpoint.observations.add(new Observation(record.evidenceId, record.source, record.runId, record.idn,
                     record.status, record.trafficClassification.trafficClass()));
-            ParameterExtraction extraction = ParameterExtractor.extract(record);
-            for (io.flowscope.core.parameter.ParameterObservation observation : extraction.observations()) {
-                ParameterLocation location = ParameterCoordinates.location(observation.key().location());
-                String canonical = observation.key().canonicalPath();
-                MutableParameter parameter = endpoint.parameter(location, canonical,
-                        observedDisplayName(location, canonical, key.pathTemplate()));
-                if (parameter.observe(observation, record.status)) {
-                    parameterDiagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId,
-                            record.method + " " + key.pathTemplate(), "DISTINCT_VALUE_LIMIT", 1));
-                }
-            }
-            for (io.flowscope.core.parameter.ParameterDiagnostic diagnostic : extraction.diagnostics()) {
-                parameterDiagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId,
-                        diagnostic.operation(), diagnostic.reasonCode(), diagnostic.droppedCount()));
-            }
+            endpoint.addRow(record, ParameterExtractor.extract(record), parameterDiagnostics);
         }
+        for (MutableEndpoint endpoint : endpoints.values()) endpoint.applyRows(parameterDiagnostics);
 
         for (RouteCandidate candidate : routeCandidates == null ? List.<RouteCandidate>of() : routeCandidates) {
             for (RouteCandidate.Provenance provenance : candidate.provenance()) {
@@ -163,13 +150,26 @@ public final class SurfaceAnalyzer {
         }
 
         for (MutableEndpoint endpoint : endpoints.values()) endpoint.declarationDiagnostics(parameterDiagnostics);
+        List<SurfaceAnalysis.ParameterGap> gaps = new ArrayList<>();
         List<EndpointFact> facts = endpoints.values().stream()
-                .map(MutableEndpoint::freeze)
-                .sorted(Comparator.comparing((EndpointFact fact) -> fact.key().service())
-                        .thenComparing(fact -> fact.key().pathTemplate())
-                        .thenComparing(fact -> fact.key().method()))
+                .sorted(Comparator.comparing((MutableEndpoint endpoint) -> endpoint.key.service())
+                        .thenComparing(endpoint -> endpoint.key.pathTemplate())
+                        .thenComparing(endpoint -> endpoint.key.method()))
+                .map(endpoint -> endpoint.freeze(parameterDiagnostics, gaps))
                 .toList();
-        return new SurfaceAnalysis(facts, extractionReports, probes, parameterDiagnostics);
+        gaps.sort(SurfaceAnalysis.ParameterGap.PRIORITY_ORDER);
+        return new SurfaceAnalysis(facts, extractionReports, probes, parameterDiagnostics, gaps);
+    }
+
+    /** discovery 프로파일·Gap 분모(PR#11): coverage-eligible이며 VALIDATION/COACH_PROBE가 아닌 요청만. */
+    private static boolean discovery(RequestRecord record) {
+        return record.trafficClassification != null && record.trafficClassification.coverageEligible()
+                && record.phase != RunPhase.VALIDATION && record.phase != RunPhase.COACH_PROBE;
+    }
+
+    private static boolean knownIdentity(String identity) {
+        return identity != null && !identity.isBlank() && !identity.equalsIgnoreCase("UNKNOWN")
+                && !identity.toLowerCase(Locale.ROOT).startsWith("unresolved");
     }
 
     private static ExtractionStatus extractionStatus(JavascriptAnalysis.Status status) {
@@ -712,13 +712,92 @@ public final class SurfaceAnalyzer {
 
     private record NameValue(String name, String value) {}
 
+    /**
+     * discovery 프로파일·Gap의 분모가 되는 요청 행(PR#11 ParameterProfiler.Row). observed는 파라미터 map key→엔진 관측.
+     * complete=false(추출 진단 또는 잘린 request payload)는 긍정 관측만 남기고 부재·누락의 증인이 되지 못한다.
+     */
+    private record Row(RequestRecord record, Map<String, io.flowscope.core.parameter.ParameterObservation> observed,
+                       String signature, boolean complete, boolean discovery,
+                       List<io.flowscope.core.parameter.ParameterDiagnostic> diagnostics) {
+        private String evidenceId() { return record.evidenceId; }
+    }
+
     private static final class MutableEndpoint {
         private final EndpointKey key;
         private final LinkedHashSet<Observation> observations = new LinkedHashSet<>();
         private final LinkedHashSet<Declaration> declarations = new LinkedHashSet<>();
         private final Map<String, MutableParameter> parameters = new LinkedHashMap<>();
+        /** Evidence ID별 요청 행. 같은 ID의 같은 내용은 한 번만, 다른 내용은 둘 다 제외한다(독립 근거 아님). */
+        private final Map<String, Row> rows = new LinkedHashMap<>();
+        private final Set<String> conflicts = new LinkedHashSet<>();
 
         private MutableEndpoint(EndpointKey key) { this.key = key; }
+
+        private String operation() { return key.method() + " " + key.pathTemplate(); }
+
+        private void addRow(RequestRecord record, ParameterExtraction extraction,
+                            List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
+            if (record.evidenceId == null || record.evidenceId.isBlank()) {
+                forward(record, extraction.diagnostics(), diagnostics);
+                return;
+            }
+            if (conflicts.contains(record.evidenceId)) return;
+            Map<String, io.flowscope.core.parameter.ParameterObservation> observed = new LinkedHashMap<>();
+            for (io.flowscope.core.parameter.ParameterObservation observation : extraction.observations()) {
+                observed.put(ParameterCoordinates.location(observation.key().location()) + ":"
+                        + observation.key().canonicalPath(), observation);
+            }
+            String signature = observed.isEmpty()
+                    ? "ctx:v1:" + digest("ctx:v1;" + record.role + ";" + record.phase + ";")
+                    : observed.values().iterator().next().contextSignature();
+            boolean retained = record.requestPayload == null || record.requestPayload.retained();
+            Row row = new Row(record, observed, signature, extraction.diagnostics().isEmpty() && retained,
+                    discovery(record), List.copyOf(extraction.diagnostics()));
+            Row previous = rows.putIfAbsent(record.evidenceId, row);
+            if (previous != null && !sameEvidence(previous, row)) {
+                rows.remove(record.evidenceId);
+                conflicts.add(record.evidenceId);
+                diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId, operation(),
+                        "CONFLICTING_EVIDENCE", 1));
+            }
+        }
+
+        private static boolean sameEvidence(Row a, Row b) {
+            return a.complete == b.complete && a.observed.equals(b.observed) && a.signature.equals(b.signature)
+                    && a.diagnostics.equals(b.diagnostics) && a.record.source == b.record.source
+                    && java.util.Objects.equals(a.record.idn, b.record.idn)
+                    && java.util.Objects.equals(a.record.runId, b.record.runId);
+        }
+
+        private void forward(RequestRecord record, List<io.flowscope.core.parameter.ParameterDiagnostic> engine,
+                             List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
+            for (io.flowscope.core.parameter.ParameterDiagnostic diagnostic : engine) {
+                diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId,
+                        diagnostic.operation(), diagnostic.reasonCode(), diagnostic.droppedCount()));
+            }
+        }
+
+        /** 충돌하지 않은 행의 관측을 파라미터 사실로 적재한다(입력 순서 유지). */
+        private void applyRows(List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
+            for (Row row : rows.values()) {
+                RequestRecord record = row.record;
+                forward(record, row.diagnostics, diagnostics);
+                if (record.requestPayload != null && !record.requestPayload.retained()) {
+                    diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId, operation(),
+                            "REQUEST_PAYLOAD_NOT_RETAINED", 1));
+                }
+                for (io.flowscope.core.parameter.ParameterObservation observation : row.observed.values()) {
+                    ParameterLocation location = ParameterCoordinates.location(observation.key().location());
+                    String canonical = observation.key().canonicalPath();
+                    MutableParameter parameter = parameter(location, canonical,
+                            observedDisplayName(location, canonical, key.pathTemplate()));
+                    if (parameter.observe(observation, record.status)) {
+                        diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId, operation(),
+                                "DISTINCT_VALUE_LIMIT", 1));
+                    }
+                }
+            }
+        }
 
         /** 파라미터당 선언 상한을 넘겨 버린 선언 수를 진단으로 남긴다(조용히 누락하지 않는다). */
         private void declarationDiagnostics(List<SurfaceAnalysis.ParameterDiagnostic> out) {
@@ -751,12 +830,23 @@ public final class SurfaceAnalyzer {
                     ignored -> new MutableParameter(location, canonicalPath, displayName, resolved));
         }
 
-        private EndpointFact freeze() {
+        private EndpointFact freeze(List<SurfaceAnalysis.ParameterDiagnostic> diagnostics,
+                                    List<SurfaceAnalysis.ParameterGap> gaps) {
             Set<Source> sources = observations.stream().map(Observation::source)
                     .collect(java.util.stream.Collectors.toCollection(() -> EnumSet.noneOf(Source.class)));
-            List<ParameterFact> parameterFacts = parameters.values().stream().map(MutableParameter::freeze)
-                    .sorted(Comparator.comparing((ParameterFact fact) -> fact.location().ordinal())
-                            .thenComparing(ParameterFact::canonicalPath)).toList();
+            // 프로파일·Gap 증인 선택은 입력 순서가 아니라 Evidence ID 순서로 결정적이다(PR#11).
+            List<Row> discoveryRows = rows.values().stream().filter(Row::discovery)
+                    .sorted(Comparator.comparing(Row::evidenceId)).toList();
+            List<ParameterFact> parameterFacts = new ArrayList<>();
+            for (MutableParameter parameter : parameters.values().stream()
+                    .sorted(Comparator.comparing((MutableParameter p) -> p.location.ordinal())
+                            .thenComparing(p -> p.canonicalPath)).toList()) {
+                SurfaceAnalysis.ParameterProfile profile = parameter.resolved
+                        ? profile(this, parameter, discoveryRows, diagnostics)
+                        : SurfaceAnalysis.ParameterProfile.EMPTY;
+                if (parameter.resolved) gaps.addAll(gaps(this, parameter, discoveryRows));
+                parameterFacts.add(parameter.freeze(profile));
+            }
             return new EndpointFact(key, Set.copyOf(sources), List.copyOf(observations), List.copyOf(declarations),
                     parameterFacts, delta(!declarations.isEmpty(), sources), endpointKinds());
         }
@@ -989,13 +1079,298 @@ public final class SurfaceAnalyzer {
             if (name != null && !name.isBlank()) displayName = name;
         }
 
-        private ParameterFact freeze() {
+        /** 관측 행의 파라미터 map key(확정 좌표만 관측되므로 "?" 접두는 없다). */
+        private String mapKey() { return location + ":" + canonicalPath; }
+
+        private ParameterFact freeze(SurfaceAnalysis.ParameterProfile profile) {
             Requirement requirement = requirements.size() == 1 ? requirements.iterator().next() : Requirement.UNKNOWN;
             DeltaState state = resolved ? delta(!declarations.isEmpty(), sources) : DeltaState.UNRESOLVED_COORDINATE;
             return new ParameterFact(location, displayPath(location, canonicalPath, displayName, resolved), displayName,
                     requirement, Set.copyOf(shapes), Set.copyOf(sources), List.copyOf(evidenceIds),
                     List.copyOf(observations), List.copyOf(declarations), state, canonicalPath,
-                    Set.copyOf(valueTypes), distinctDigests.size(), resolved, distinctTruncated);
+                    Set.copyOf(valueTypes), distinctDigests.size(), resolved, distinctTruncated, profile);
+        }
+    }
+
+    // ---- discovery 프로파일과 Gap (PR#11 ParameterProfiler 의미) ----
+
+    private static final int MAX_PROFILE_CONTEXTS = 64;
+    private static final int MAX_PROFILE_AXIS_VALUES = 64;
+    private static final Set<String> WRITE_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
+    /** corroboration 계산에서 독립 정의 종류로 세는 선언 타입(PR#11 SourceType OPENAPI/JAVASCRIPT). */
+    private static final Set<String> DEFINITION_KINDS = Set.of("OPENAPI", "JAVASCRIPT_LITERAL");
+
+    private static SurfaceAnalysis.ParameterProfile profile(MutableEndpoint endpoint, MutableParameter parameter,
+                                                            List<Row> rows,
+                                                            List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
+        String mapKey = parameter.mapKey();
+        Map<Source, Long> sources = new java.util.EnumMap<>(Source.class);
+        Map<String, Long> identities = new java.util.TreeMap<>();
+        Map<AccessRole, Long> roles = new java.util.EnumMap<>(AccessRole.class);
+        Map<String, Long> runs = new java.util.TreeMap<>();
+        Map<RunPhase, Long> phases = new java.util.EnumMap<>(RunPhase.class);
+        EnumSet<Presence> presence = EnumSet.noneOf(Presence.class);
+        Set<String> structuralShapes = new LinkedHashSet<>();
+        EnumSet<ValueType> types = EnumSet.noneOf(ValueType.class);
+        Map<String, Set<SurfaceAnalysis.ContextPresence>> contexts = new java.util.TreeMap<>();
+        long count = 0;
+        long absent = 0;
+        // 선언이 있거나 완전한 긍정 관측이 하나라도 있어야 다른 완전한 요청의 부재를 "관측된 문맥에서의 부재"로 센다.
+        boolean completeExpectation = !parameter.declarations.isEmpty()
+                || rows.stream().anyMatch(row -> row.complete && row.observed.containsKey(mapKey));
+        for (Row row : rows) {
+            io.flowscope.core.parameter.ParameterObservation o = row.observed.get(mapKey);
+            if (o != null) {
+                count++;
+                sources.merge(o.source(), 1L, Long::sum);
+                if (knownIdentity(o.identity())) identities.merge(o.identity(), 1L, Long::sum);
+                roles.merge(o.role(), 1L, Long::sum);
+                if (o.runId() != null) runs.merge(o.runId(), 1L, Long::sum);
+                phases.merge(o.phase(), 1L, Long::sum);
+                presence.add(mapPresence(o.presence()));
+                String structural = structuralShape(o.shape());
+                if (structural != null) structuralShapes.add(structural);
+                ValueType type = mapType(o.value());
+                if (type != ValueType.UNKNOWN) types.add(type);
+                contexts.computeIfAbsent(row.signature, ignored -> EnumSet.noneOf(SurfaceAnalysis.ContextPresence.class))
+                        .add(o.presence() == io.flowscope.core.parameter.ParameterObservation.Presence.EXPLICIT_NULL
+                                ? SurfaceAnalysis.ContextPresence.EXPLICIT_NULL : SurfaceAnalysis.ContextPresence.PRESENT);
+            } else if (row.complete && completeExpectation) {
+                absent++;
+                contexts.computeIfAbsent(row.signature, ignored -> EnumSet.noneOf(SurfaceAnalysis.ContextPresence.class))
+                        .add(SurfaceAnalysis.ContextPresence.ABSENT_OBSERVED_CONTEXT);
+            }
+        }
+        // 미리보기 상한은 계수·Gap 비교를 바꾸지 않는다(원 행으로 계산). 넘친 수만 진단으로 남긴다.
+        limitDiagnostic(diagnostics, endpoint, "PROFILE_CONTEXT_LIMIT", contexts.size(), MAX_PROFILE_CONTEXTS);
+        limitDiagnostic(diagnostics, endpoint, "PROFILE_IDENTITY_LIMIT", identities.size(), MAX_PROFILE_AXIS_VALUES);
+        limitDiagnostic(diagnostics, endpoint, "PROFILE_RUN_LIMIT", runs.size(), MAX_PROFILE_AXIS_VALUES);
+        return new SurfaceAnalysis.ParameterProfile(count, sources, first(identities, MAX_PROFILE_AXIS_VALUES), roles,
+                first(runs, MAX_PROFILE_AXIS_VALUES), phases, presence,
+                structuralShapes.size() > 1 || types.size() > 1, absent, first(contexts, MAX_PROFILE_CONTEXTS), false);
+    }
+
+    private static List<SurfaceAnalysis.ParameterGap> gaps(MutableEndpoint endpoint, MutableParameter parameter,
+                                                           List<Row> rows) {
+        String mapKey = parameter.mapKey();
+        List<SurfaceAnalysis.ParameterGap> result = new ArrayList<>();
+        List<Row> positive = rows.stream().filter(row -> row.observed.containsKey(mapKey)).toList();
+        List<Row> complete = rows.stream().filter(Row::complete).toList();
+        if (positive.isEmpty()) {
+            // 불완전한 요청이 하나라도 있으면 선언 미관측을 확정하지 않는다(잘린 본문에 있었을 수 있다).
+            if (!parameter.declarations.isEmpty() && rows.stream().allMatch(Row::complete)) {
+                result.add(gap(endpoint, parameter, 0, SurfaceAnalysis.GapType.DEFINED_NOT_OBSERVED, null, null, null, "",
+                        "선언된 입력을 discovery 요청에서 관측하지 못했다. optional이면 결함이 아니다.",
+                        declarationEvidence(parameter.declarations), false));
+            }
+            return result;
+        }
+        List<Row> observed = positive.stream().filter(Row::complete).toList();
+        if (observed.isEmpty()) return result;
+        Map<Source, List<Row>> bySource = new java.util.EnumMap<>(Source.class);
+        Map<String, List<Row>> byIdentity = new java.util.TreeMap<>();
+        for (Row row : complete) {
+            if (row.record.source != null) bySource.computeIfAbsent(row.record.source, ignored -> new ArrayList<>()).add(row);
+            if (knownIdentity(row.record.idn)) byIdentity.computeIfAbsent(row.record.idn, ignored -> new ArrayList<>()).add(row);
+        }
+        EnumSet<Source> observedSources = EnumSet.noneOf(Source.class);
+        Set<String> observedIdentities = new LinkedHashSet<>();
+        List<Row> knownSourceRows = new ArrayList<>();
+        List<Row> knownIdentityRows = new ArrayList<>();
+        for (Row row : observed) {
+            if (row.record.source != null && row.record.source != Source.UNKNOWN) {
+                observedSources.add(row.record.source);
+                knownSourceRows.add(row);
+            }
+            if (knownIdentity(row.record.idn)) {
+                observedIdentities.add(row.record.idn);
+                knownIdentityRows.add(row);
+            }
+        }
+        for (Source source : Source.values()) {
+            if (source == Source.UNKNOWN) continue;
+            List<Row> target = bySource.getOrDefault(source, List.of());
+            if (!target.isEmpty() && !knownSourceRows.isEmpty() && !observedSources.contains(source)) {
+                result.add(gap(endpoint, parameter, observed.size(), SurfaceAnalysis.GapType.SOURCE_MISSED, null, null, source, "",
+                        "이 source의 완전한 비교 가능 discovery 요청에서 입력이 관측되지 않았다.",
+                        List.of(knownSourceRows.getFirst().evidenceId(), target.getFirst().evidenceId()), true));
+            }
+        }
+        for (Map.Entry<String, List<Row>> entry : byIdentity.entrySet()) {
+            if (!knownIdentityRows.isEmpty() && !observedIdentities.contains(entry.getKey())) {
+                result.add(gap(endpoint, parameter, observed.size(), SurfaceAnalysis.GapType.IDENTITY_MISSED, entry.getKey(), null, null, "",
+                        "이 discovery 신원의 완전한 요청에서 입력이 관측되지 않았다. 인가 결론은 아니다.",
+                        List.of(knownIdentityRows.getFirst().evidenceId(), entry.getValue().getFirst().evidenceId()), false));
+            }
+        }
+        result.addAll(typeVariantGaps(endpoint, parameter, observed));
+        result.addAll(conditionGaps(endpoint, parameter, observed));
+        return result;
+    }
+
+    /**
+     * 선언된 형태/타입 변형 중 완전한 관측이 하나도 맞지 않는 변형(PR#11 TYPE_VARIANT_UNOBSERVED). 타입 비교는
+     * JSON/GraphQL native 타입(STRING/INTEGER/NUMBER/BOOLEAN)만이며 wire 문자열·format 타입은 비교하지 않는다.
+     * enum 선택지는 같은 타입이라 변형이 아니다.
+     */
+    private static List<SurfaceAnalysis.ParameterGap> typeVariantGaps(MutableEndpoint endpoint, MutableParameter parameter,
+                                                                      List<Row> observed) {
+        String mapKey = parameter.mapKey();
+        List<SurfaceAnalysis.ParameterGap> result = new ArrayList<>();
+        Map<String, Variant> variants = new java.util.TreeMap<>();
+        Map<String, List<String>> provenance = new java.util.TreeMap<>();
+        for (Declaration declaration : parameter.declarations) {
+            Variant variant = new Variant(declaredStructuralShape(declaration.declaredShape()),
+                    comparableType(parameter.location, declaration.declaredType()));
+            if (variant.shape() == null && (variant.type() == null || variant.type() == ValueType.UNKNOWN)) continue;
+            variants.putIfAbsent(variant.label(), variant);
+            provenance.computeIfAbsent(variant.label(), ignored -> new ArrayList<>()).add(declaration.evidenceId());
+        }
+        for (Variant variant : variants.values()) {
+            boolean matched = observed.stream().map(row -> row.observed.get(mapKey)).anyMatch(o ->
+                    ambiguousVariant(o) || (variant.shape() == null || variant.shape().equals(structuralShape(o.shape())))
+                            && (variant.type() == null || variant.type() == ValueType.UNKNOWN || o.value() != null
+                            && (mapType(o.value()) == variant.type()
+                            || variant.type() == ValueType.NUMBER && mapType(o.value()) == ValueType.INTEGER)));
+            if (matched) continue;
+            List<String> refs = new ArrayList<>();
+            refs.add(observed.getFirst().evidenceId());
+            refs.addAll(provenance.get(variant.label()));
+            result.add(gap(endpoint, parameter, observed.size(), SurfaceAnalysis.GapType.TYPE_VARIANT_UNOBSERVED, null, null, null,
+                    variant.label(), "선언된 형태/타입 변형을 관측하지 못했다: " + variant.label() + ". enum 값은 추정하지 않는다.",
+                    refs, false));
+        }
+        return result;
+    }
+
+    /** 선언 변형 = 구조 형태(SCALAR/ARRAY/OBJECT 또는 정보 없음) × 비교 가능한 native 타입. */
+    private record Variant(String shape, ValueType type) {
+        private String label() { return shape + ":" + type; }
+    }
+
+    private record ContextAxis(Source source, AccessRole role, RunPhase phase) {}
+
+    /**
+     * 같은 존재 서명(contextSignature)이 독립 근거 2건 이상 반복됐는데 다른 source의 같은 role/phase 문맥에서는
+     * 그 서명이 없을 때(PR#11 CONDITION_COMBINATION_UNOBSERVED). 단일 동시출현은 조건으로 보지 않는다.
+     */
+    private static List<SurfaceAnalysis.ParameterGap> conditionGaps(MutableEndpoint endpoint, MutableParameter parameter,
+                                                                    List<Row> observed) {
+        List<SurfaceAnalysis.ParameterGap> result = new ArrayList<>();
+        Map<String, List<Row>> signatures = new java.util.TreeMap<>();
+        Map<ContextAxis, List<Row>> contextTargets = new java.util.HashMap<>();
+        Map<ContextAxis, Set<String>> targetSignatures = new java.util.HashMap<>();
+        for (Row row : observed) {
+            if (row.record.source == null || row.record.source == Source.UNKNOWN) continue;
+            signatures.computeIfAbsent(row.signature, ignored -> new ArrayList<>()).add(row);
+            ContextAxis axis = new ContextAxis(row.record.source, row.record.role, row.record.phase);
+            contextTargets.computeIfAbsent(axis, ignored -> new ArrayList<>()).add(row);
+            targetSignatures.computeIfAbsent(axis, ignored -> new java.util.HashSet<>()).add(row.signature);
+        }
+        for (Map.Entry<String, List<Row>> entry : signatures.entrySet()) {
+            List<Row> support = entry.getValue();
+            if (support.size() < 2) continue;
+            RequestRecord context = support.getFirst().record;
+            for (Source source : Source.values()) {
+                if (source == Source.UNKNOWN) continue;
+                ContextAxis axis = new ContextAxis(source, context.role, context.phase);
+                List<Row> target = contextTargets.getOrDefault(axis, List.of());
+                if (target.isEmpty() || targetSignatures.get(axis).contains(entry.getKey())) continue;
+                result.add(gap(endpoint, parameter, observed.size(), SurfaceAnalysis.GapType.CONDITION_COMBINATION_UNOBSERVED, null,
+                        context.role, source, entry.getKey(),
+                        "반복된 존재 서명이 이 source/role/phase 문맥에서 관측되지 않았다: " + entry.getKey()
+                                + ". 확인된 업무 조건은 아니다.",
+                        List.of(support.get(0).evidenceId(), support.get(1).evidenceId(), target.getFirst().evidenceId()), true));
+            }
+        }
+        return result;
+    }
+
+    private static SurfaceAnalysis.ParameterGap gap(MutableEndpoint endpoint, MutableParameter parameter, long completeEvidenceCount,
+                                                    SurfaceAnalysis.GapType type, String identity, AccessRole role, Source source,
+                                                    String variant, String summary, List<String> evidence, boolean sourceDiscrepancy) {
+        List<String> reasons = new ArrayList<>();
+        if (WRITE_METHODS.contains(endpoint.key.method())) reasons.add("WRITE_METHOD");
+        // 같은 문서를 여러 번 받은 provenance는 정의 하나이지 증인 셋이 아니다: 정의 종류(OpenAPI/JS)로만 센다.
+        long definitionKinds = parameter.declarations.stream().map(Declaration::type)
+                .filter(DEFINITION_KINDS::contains).distinct().count();
+        if (completeEvidenceCount >= 2 || completeEvidenceCount > 0 && definitionKinds > 0 || definitionKinds >= 2) {
+            reasons.add("CORROBORATED_EVIDENCE");
+        }
+        if (sourceDiscrepancy) reasons.add("SOURCE_DISCREPANCY");
+        // 권한 대상 관계 증명은 4단계 몫이다. 이름·status로 추측하지 않는다.
+        reasons.add("HUMAN_REVIEW_REQUIRED");
+        String stableKey = "pk:v1:" + frame(endpoint.key.service()) + frame(endpoint.key.method())
+                + frame(endpoint.key.operation()) + frame(parameter.location.name()) + frame(parameter.canonicalPath);
+        String coordinate = frame(stableKey) + frame(type.name()) + frame(identity)
+                + frame(role == null ? null : role.name()) + frame(source == null ? null : source.name()) + frame(variant);
+        return new SurfaceAnalysis.ParameterGap("pg:v1:" + digest(coordinate), type, endpoint.key, parameter.location,
+                parameter.canonicalPath, identity, role, source, SurfaceAnalysis.GapStatus.OPEN, reasons, summary, evidence);
+    }
+
+    private static List<String> declarationEvidence(Collection<Declaration> declarations) {
+        return declarations.stream().map(Declaration::evidenceId).filter(java.util.Objects::nonNull).distinct().sorted().toList();
+    }
+
+    /** 표시 shape에서 구조 형태(SCALAR/ARRAY/OBJECT)만 뽑는다. NULL/UNKNOWN은 비교 대상이 아니라 null. */
+    private static String structuralShape(ValueShape shape) {
+        if (shape == null) return null;
+        return switch (shape) {
+            case ARRAY -> "ARRAY";
+            case OBJECT -> "OBJECT";
+            case NULL, UNKNOWN -> null;
+            default -> "SCALAR";
+        };
+    }
+
+    private static String declaredStructuralShape(ValueShape declared) {
+        return declared == null ? null : structuralShape(declared);
+    }
+
+    /** wire 문자열은 서버 coercion 증명이 아니고 format 타입(UUID/DATE_TIME/BINARY)은 관측이 분류하지 않으므로 비교하지 않는다. */
+    private static ValueType comparableType(ParameterLocation location, ValueType declared) {
+        if (location != ParameterLocation.JSON_BODY && location != ParameterLocation.GRAPHQL_VARIABLE) return null;
+        return declared == ValueType.STRING || declared == ValueType.INTEGER || declared == ValueType.NUMBER
+                || declared == ValueType.BOOLEAN ? declared : null;
+    }
+
+    private static boolean ambiguousVariant(io.flowscope.core.parameter.ParameterObservation observation) {
+        return observation == null || observation.shape() == io.flowscope.core.parameter.ParameterObservation.Shape.UNKNOWN
+                || observation.shape() == io.flowscope.core.parameter.ParameterObservation.Shape.SCALAR
+                && observation.value() != null
+                && observation.value().type() == io.flowscope.core.parameter.ParameterObservation.ValueType.UNKNOWN;
+    }
+
+    private static String structuralShape(io.flowscope.core.parameter.ParameterObservation.Shape shape) {
+        return switch (shape) {
+            case ARRAY -> "ARRAY";
+            case OBJECT -> "OBJECT";
+            case SCALAR -> "SCALAR";
+            case NULL, UNKNOWN -> null;
+        };
+    }
+
+    private static <K, V> Map<K, V> first(Map<K, V> map, int limit) {
+        Map<K, V> result = new LinkedHashMap<>();
+        map.entrySet().stream().limit(limit).forEach(e -> result.put(e.getKey(), e.getValue()));
+        return result;
+    }
+
+    private static void limitDiagnostic(List<SurfaceAnalysis.ParameterDiagnostic> diagnostics, MutableEndpoint endpoint,
+                                        String reason, int count, int limit) {
+        if (count > limit) diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(null, endpoint.operation(), reason, count - limit));
+    }
+
+    private static String frame(String value) {
+        return value == null ? "-1:" : value.getBytes(StandardCharsets.UTF_8).length + ":" + value;
+    }
+
+    private static String digest(String value) {
+        try {
+            return "sha256:" + java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
         }
     }
 }

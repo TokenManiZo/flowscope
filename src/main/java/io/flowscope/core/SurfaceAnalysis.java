@@ -1,6 +1,11 @@
 package io.flowscope.core;
 
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -8,7 +13,8 @@ import java.util.Set;
  * 값은 보존하지 않고 위치, 필드 경로, 형태, Evidence 역참조만 보존한다.
  */
 public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
-                              List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics) {
+                              List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics,
+                              List<ParameterGap> parameterGaps) {
     public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, HEADER, GRAPHQL_VARIABLE, XML_PATH }
     public enum ValueShape { EMPTY, STRING, INTEGER, DECIMAL, BOOLEAN, UUID, ARRAY, OBJECT, NULL, BINARY, UNKNOWN }
     public enum Requirement { REQUIRED, OPTIONAL, CONDITIONAL, UNKNOWN }
@@ -43,6 +49,15 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         /** 선언 좌표를 canonical로 확정할 수 없어(모호한 dot 경로 등) 관측 join·Gap 승격 대상이 아니다(D-143). */
         UNRESOLVED_COORDINATE
     }
+    /** 요청 단위 문맥(contextSignature)별 파라미터 존재 상태(PR#11 ParameterProfile.ContextPresence). */
+    public enum ContextPresence { PRESENT, EXPLICIT_NULL, ABSENT_OBSERVED_CONTEXT }
+    /** PR#11 discovery Gap 종류. AUTH_VARIANT_UNTESTED는 권한 대상 연결(4단계)이 만든다. */
+    public enum GapType {
+        DEFINED_NOT_OBSERVED, SOURCE_MISSED, IDENTITY_MISSED, AUTH_VARIANT_UNTESTED,
+        CONDITION_COMBINATION_UNOBSERVED, TYPE_VARIANT_UNOBSERVED
+    }
+    /** 분석기는 OPEN만 만든다. VERIFIED/DISMISSED는 사람 검토 기록용이다. */
+    public enum GapStatus { OPEN, VERIFIED, DISMISSED }
     public enum EndpointKind {
         OBSERVED_API,
         ARTIFACT_API,
@@ -121,13 +136,93 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         }
     }
 
+    /**
+     * discovery 프로파일(PR#11 ParameterProfile). 분모는 coverage-eligible·discovery phase(VALIDATION/COACH_PROBE 제외)의
+     * 완전한 요청 행이며, 서버가 입력을 읽는다는 증명은 아니다(serverUsageConfirmed는 항상 false).
+     * contextPresence는 요청 단위 contextSignature별 존재/명시 null/관측된 문맥에서의 부재(상한 64).
+     */
+    public record ParameterProfile(long observationCount, Map<Source, Long> sourceCounts,
+                                   Map<String, Long> identityCounts, Map<AccessRole, Long> roleCounts,
+                                   Map<String, Long> runCounts, Map<RunPhase, Long> phaseCounts,
+                                   Set<Presence> observedPresence, boolean typeConflict,
+                                   long absentObservedContextCount,
+                                   Map<String, Set<ContextPresence>> contextPresence,
+                                   boolean serverUsageConfirmed) {
+        public static final ParameterProfile EMPTY = new ParameterProfile(0, Map.of(), Map.of(), Map.of(), Map.of(),
+                Map.of(), Set.of(), false, 0, Map.of(), false);
+
+        public ParameterProfile {
+            sourceCounts = immutableMap(sourceCounts);
+            identityCounts = immutableMap(identityCounts);
+            roleCounts = immutableMap(roleCounts);
+            runCounts = immutableMap(runCounts);
+            phaseCounts = immutableMap(phaseCounts);
+            observedPresence = immutableSet(observedPresence);
+            Map<String, Set<ContextPresence>> contexts = new LinkedHashMap<>();
+            if (contextPresence != null) contextPresence.forEach((signature, states) -> contexts.put(signature, immutableSet(states)));
+            contextPresence = Collections.unmodifiableMap(contexts);
+        }
+
+        private static <K, V> Map<K, V> immutableMap(Map<K, V> values) {
+            return Collections.unmodifiableMap(new LinkedHashMap<>(values == null ? Map.of() : values));
+        }
+
+        private static <T> Set<T> immutableSet(Set<T> values) {
+            return Collections.unmodifiableSet(new LinkedHashSet<>(values == null ? Set.of() : values));
+        }
+    }
+
     public record ParameterFact(ParameterLocation location, String fieldPath, String displayName,
                                 Requirement requirement, Set<ValueShape> observedShapes,
                                 Set<Source> observedSources, List<String> observationEvidenceIds,
                                 List<ParameterObservation> observations,
                                 List<Declaration> declarations, DeltaState deltaState,
                                 String canonicalPath, Set<ValueType> observedValueTypes, int distinctValueCount,
-                                boolean coordinateResolved, boolean distinctValueTruncated) {}
+                                boolean coordinateResolved, boolean distinctValueTruncated,
+                                ParameterProfile profile) {
+        public ParameterFact {
+            profile = profile == null ? ParameterProfile.EMPTY : profile;
+        }
+    }
+
+    /**
+     * Evidence 근거가 있는 우선순위 후보(PR#11 ParameterGap). 취약점·완전성 주장이 아니다.
+     * 파라미터는 machine key(endpoint + location + canonicalPath)로만 가리키고 표시 라벨은 ParameterFact에서 찾는다.
+     * evidenceIds는 독립 관측/선언 증인을 앞에 두며 32개로 잘리고 evidenceCount는 전체 distinct 수를 보존한다.
+     */
+    public record ParameterGap(String id, GapType type, EndpointKey endpoint, ParameterLocation location,
+                               String canonicalPath, String identity, AccessRole role, Source source,
+                               GapStatus status, List<String> priorityReasons, String summary,
+                               List<String> evidenceIds, long evidenceCount) {
+        public static final int MAX_EVIDENCE_IDS = 32;
+        /** 명세 순서. 앞선 사유가 있는 gap이 먼저 오고, 같으면 안정 ID로 정렬한다. */
+        public static final List<String> REASON_ORDER = List.of("CONFIRMED_AUTH_BOUNDARY", "AUTH_VARIANT_UNTESTED",
+                "WRITE_METHOD", "CORROBORATED_EVIDENCE", "SOURCE_DISCREPANCY", "HUMAN_REVIEW_REQUIRED");
+        public static final Comparator<ParameterGap> PRIORITY_ORDER = (a, b) -> {
+            for (String reason : REASON_ORDER) {
+                int comparison = Boolean.compare(b.priorityReasons.contains(reason), a.priorityReasons.contains(reason));
+                if (comparison != 0) return comparison;
+            }
+            return a.id.compareTo(b.id);
+        };
+
+        public ParameterGap(String id, GapType type, EndpointKey endpoint, ParameterLocation location,
+                            String canonicalPath, String identity, AccessRole role, Source source, GapStatus status,
+                            List<String> priorityReasons, String summary, List<String> evidenceIds) {
+            this(id, type, endpoint, location, canonicalPath, identity, role, source, status, priorityReasons, summary,
+                    evidenceIds, evidenceIds.stream().distinct().count());
+        }
+
+        public ParameterGap {
+            priorityReasons = List.copyOf(priorityReasons);
+            evidenceIds = evidenceIds.stream().distinct().toList();
+            if (evidenceCount < evidenceIds.size()
+                    || evidenceIds.size() != MAX_EVIDENCE_IDS && evidenceCount != evidenceIds.size()) {
+                throw new IllegalArgumentException("evidence count must match independent evidence or its bounded preview");
+            }
+            evidenceIds = evidenceIds.stream().limit(MAX_EVIDENCE_IDS).toList();
+        }
+    }
 
     /** 최상위 요청 파라미터 추출 진단(파라미터마다 복제하지 않는다). */
     public record ParameterDiagnostic(String evidenceId, String operation, String reasonCode, int droppedCount) {}
@@ -149,16 +244,22 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         extractions = extractions == null ? List.of() : List.copyOf(extractions);
         probes = probes == null ? List.of() : List.copyOf(probes);
         parameterDiagnostics = parameterDiagnostics == null ? List.of() : List.copyOf(parameterDiagnostics);
+        parameterGaps = parameterGaps == null ? List.of() : List.copyOf(parameterGaps);
     }
 
-    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of(), List.of()); }
+    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of(), List.of(), List.of()); }
 
     public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions) {
-        this(endpoints, extractions, List.of(), List.of());
+        this(endpoints, extractions, List.of(), List.of(), List.of());
     }
 
     public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
                            List<ProbeObservation> probes) {
-        this(endpoints, extractions, probes, List.of());
+        this(endpoints, extractions, probes, List.of(), List.of());
+    }
+
+    public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
+                           List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics) {
+        this(endpoints, extractions, probes, parameterDiagnostics, List.of());
     }
 }

@@ -26,6 +26,8 @@ Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 - 저장 좌표는 `coordinateVersion`(LEGACY_V1/FLOW_V2). PATH/QUERY/FORM/MULTIPART/HEADER와 점 없는 단일 JSON key는 LEGACY_V1을 무손실 변환해 join하고, 점 있는 legacy JSON/GraphQL, 세그먼트 없이 평탄화된 JS 이름, OpenAPI path slot 정렬 실패는 `UNRESOLVED_COORDINATE` 상태(`coordinateResolved=false`)와 진단으로만 남아 join·Gap 승격 대상이 아니다. 정적 JS 선언은 AST 세그먼트(중첩 키·배열 원소 wildcard)를 보존해 리터럴 점 키와 중첩, 리터럴 `*` 키(`~2`)와 배열 원소 `*`를 구분한다. PATH 선언의 `/segments/N`은 template의 실제 placeholder 위치만 확정 좌표로 받는다.
 - 관측에는 값 대신 shape·valueType·byteLength·masked, source, run, identity, status와 Evidence ID만 둔다. valueType은 실제 타입(`"1"`=STRING, `1`=INTEGER)이고 UUID·숫자형 문자열 형식 신호는 표시 shape에만 반영된다. distinct 값 수는 타입을 포함한 count만 남기고 digest는 노출하지 않는다.
 - 선언에는 type, adapter, reason, Evidence ID와 정의가 밝힌 declaredType/declaredShape/conditionText(`oneOf[i];`/`anyOf[i];`/`enum[i];` 인덱스, 값 미복사)·confidence(정의는 INFERRED, 관측은 OBSERVED)를 둔다. requirement는 REQUIRED/OPTIONAL/CONDITIONAL/UNKNOWN이며 선언이 서로 다르면 UNKNOWN.
+- 각 `ParameterFact`의 `profile`은 discovery 프로파일(PR#11)이다: source/identity/role/run/phase별 관측 수, 존재 종류(PRESENT/EXPLICIT_NULL), 구조 형태·native 타입 충돌 여부, "관측된 문맥에서의 부재" 수와 contextSignature별 존재 상태(상한 64). 분모는 coverage-eligible이며 VALIDATION/COACH_PROBE가 아닌 요청 행이고, 추출 진단이 있거나 request payload가 잘린 행은 긍정 관측만 남기고 부재의 증인이 되지 못한다. `serverUsageConfirmed`는 항상 false다(서버가 입력을 읽는다는 증명이 아님).
+- 최상위 `parameterGaps`는 Evidence 근거가 있는 우선순위 후보다(취약점·완전성 주장 아님): `DEFINED_NOT_OBSERVED`, `SOURCE_MISSED`, `IDENTITY_MISSED`, `TYPE_VARIANT_UNOBSERVED`, `CONDITION_COMBINATION_UNOBSERVED`(4단계 `AUTH_VARIANT_UNTESTED`). 각 gap은 machine key(endpoint+location+canonicalPath)·축(identity/role/source)·priority reason·요약·증인 Evidence ID(≤32)와 전체 수를 가지며 미확정 좌표는 gap을 만들지 않는다.
 - 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, call-site 해석 실패 범주와 추출 수를 둔다.
 - 비밀값 원문, 조합 가능한 값 목록, 인증 header는 surface snapshot에 넣지 않는다.
 - `SurfaceAnalysis`는 Evidence에서 재생성되는 projection이다. SQLite에 두 번째 정본을 만들지 않는다.
@@ -78,6 +80,19 @@ asset은 후속 JavaScript 분석 대상으로만 남긴다. HTML navigation과 
 | `MULTI_SOURCE_OBSERVED` | 두 source에서 관측 |
 | `ALL_SOURCES_OBSERVED` | 세 source에서 관측 |
 | `OBSERVED_NOT_DECLARED` | 실제 관측은 있으나 현재 선언 산출물에서 근거 없음 |
+| `UNRESOLVED_COORDINATE` | 선언 좌표를 확정할 수 없어 관측 비교·Gap 대상이 아님 |
+
+delta 상태와 별도로 discovery Gap(PR#11)은 같은 비교 조건에서 무엇이 빠졌는지를 Evidence와 함께 말한다.
+
+| Gap | 뜻 | 증인 |
+|---|---|---|
+| `SOURCE_MISSED` | 어떤 source의 완전한 비교 가능 요청에서 이 입력이 관측되지 않음 | 긍정 관측 Evidence + 그 source의 대상 요청 Evidence |
+| `IDENTITY_MISSED` | 알려진 신원의 완전한 요청에서 미관측(인가 결론 아님) | 긍정 관측 + 그 신원의 요청 |
+| `DEFINED_NOT_OBSERVED` | 선언만 있고 해당 operation의 모든 요청이 완전한데 미관측(optional이면 결함 아님) | 선언 provenance |
+| `TYPE_VARIANT_UNOBSERVED` | 선언 구조 형태/native 타입 변형을 관측하지 못함(enum·wire 문자열·format은 비교 안 함) | 관측 + 선언 |
+| `CONDITION_COMBINATION_UNOBSERVED` | 독립 2건 이상 반복된 존재 서명이 다른 source의 같은 role/phase 문맥에 없음(확인된 업무 조건 아님) | 지지 2건 + 대상 문맥 1건 |
+
+잘린 요청·파서 실패·상한 초과 행과 VALIDATION/COACH_PROBE 요청은 어떤 Gap의 분모도 되지 않으므로 "탐색했지만 발견하지 못함"과 "분석하지 못함"이 섞이지 않는다. Gap 화면(우선순위 큐·파라미터 그래프)은 5단계에서 연결한다.
 
 기본 화면 `API·입력 차이`는 endpoint 행, parameter badge, source별 관측과 provenance를 보여 준다. source checkbox를 끄면 행·badge·상태·통계·상세 Evidence가 같은 projection으로 다시 계산되며 원 Evidence는 삭제되지 않는다.
 

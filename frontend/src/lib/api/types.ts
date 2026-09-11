@@ -235,6 +235,51 @@ export interface SurfaceParameter {
   distinctValueCount: number
   coordinateResolved: boolean
   distinctValueTruncated: boolean
+  /** discovery 프로파일(PR#11 ParameterProfile). 분모는 coverage·discovery phase의 완전한 요청 행. */
+  profile?: SurfaceParameterProfile
+}
+
+export type SurfaceContextPresence = "PRESENT" | "EXPLICIT_NULL" | "ABSENT_OBSERVED_CONTEXT"
+
+export interface SurfaceParameterProfile {
+  observationCount: number
+  sourceCounts: Readonly<Record<string, number>>
+  identityCounts: Readonly<Record<string, number>>
+  roleCounts: Readonly<Record<string, number>>
+  runCounts: Readonly<Record<string, number>>
+  phaseCounts: Readonly<Record<string, number>>
+  observedPresence: readonly string[]
+  typeConflict: boolean
+  absentObservedContextCount: number
+  /** contextSignature → 존재 상태(상한 64). 값이 아닌 요청 구조 서명이다. */
+  contextPresence: Readonly<Record<string, readonly SurfaceContextPresence[]>>
+  serverUsageConfirmed: boolean
+}
+
+export type SurfaceGapType =
+  | "DEFINED_NOT_OBSERVED"
+  | "SOURCE_MISSED"
+  | "IDENTITY_MISSED"
+  | "AUTH_VARIANT_UNTESTED"
+  | "CONDITION_COMBINATION_UNOBSERVED"
+  | "TYPE_VARIANT_UNOBSERVED"
+export type SurfaceGapStatus = "OPEN" | "VERIFIED" | "DISMISSED"
+
+/** Evidence 근거가 있는 우선순위 후보(PR#11 ParameterGap). 취약점·완전성 주장이 아니다. */
+export interface SurfaceParameterGap {
+  id: string
+  type: SurfaceGapType
+  endpoint: { service: string; method: string; pathTemplate: string }
+  location: string
+  canonicalPath: string
+  identity: string | null
+  role: string | null
+  source: SurfaceSource | null
+  status: SurfaceGapStatus
+  priorityReasons: readonly string[]
+  summary: string
+  evidenceIds: readonly string[]
+  evidenceCount: number
 }
 
 export interface SurfaceEndpoint {
@@ -313,6 +358,8 @@ export interface Snapshot {
     extractions: readonly SurfaceExtraction[]
     probes: readonly SurfaceProbe[]
     parameterDiagnostics?: readonly SurfaceParameterDiagnostic[]
+    /** priority 순으로 정렬된 discovery Gap(PR#11). 표시 라벨은 endpoints[].parameters에서 machine key로 찾는다. */
+    parameterGaps?: readonly SurfaceParameterGap[]
   }
 }
 

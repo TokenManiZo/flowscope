@@ -1,5 +1,25 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 3단계 — 파라미터 프로파일과 관측 차이 분석
+
+### 원인과 수정
+
+- PR#11 `ParameterProfiler`(프로파일 계층·discovery Gap 5종·priority reasons·retention gate·coverage-only 분모·Evidence ID 충돌 제외)를 `SurfaceAnalysis` Fact 위에 이식했다. PR `ParameterProfilerTest`의 동작을 우리 모델로 옮긴 회귀 17건(`SurfaceParameterProfileTest`)을 먼저 RED(15 실패·오류, 부정 단언 2건만 통과)로 확인한 뒤 구현했다.
+- **모델:** `SurfaceAnalysis.ParameterProfile`(observationCount, source/identity/role/run/phase 카운트, observedPresence, typeConflict, absentObservedContextCount, contextSignature별 `ContextPresence`(PRESENT/EXPLICIT_NULL/ABSENT_OBSERVED_CONTEXT, 상한 64), serverUsageConfirmed=false)을 `ParameterFact.profile`로, `SurfaceAnalysis.ParameterGap`(id `pg:v1:sha256:`좌표 digest, `GapType` 6종, endpoint+location+canonicalPath machine key, identity/role/source 축, `GapStatus.OPEN`, priorityReasons, summary, evidenceIds≤32+evidenceCount, `PRIORITY_ORDER`)을 최상위 `parameterGaps`(priority 순)로 뒀다. 별도 프로파일 배열을 두지 않아 Fact 정본은 하나다.
+- **분석기:** `SurfaceAnalyzer`가 coverage 레코드를 endpoint별 요청 행(`Row`: Evidence ID당 1행)으로 보존한다. 같은 ID·같은 내용은 중복 제거, 다른 내용은 둘 다 제외하고 `CONFLICTING_EVIDENCE` 진단. 행은 추출 진단이 없고 request payload가 FULL일 때만 complete이며 잘린 payload는 `REQUEST_PAYLOAD_NOT_RETAINED` 진단. 관측 사실(`ParameterFact.observations`)은 모든 coverage phase를 담고, 프로파일·Gap 분모는 discovery 행(coverage-eligible + VALIDATION/COACH_PROBE 제외)만이다. 증인 선택은 Evidence ID 정렬로 입력 순서와 무관하다. Gap 규칙(SOURCE_MISSED/IDENTITY_MISSED/DEFINED_NOT_OBSERVED/TYPE_VARIANT_UNOBSERVED/CONDITION_COMBINATION_UNOBSERVED), corroboration(완전 관측 ≥2 또는 관측+정의 종류 또는 정의 종류 ≥2; 같은 문서 반복 provenance는 종류 1), wire 문자열·format 타입 미비교, NUMBER의 INTEGER 수용, enum 미추정, 조건 조합의 독립 2근거 요건은 PR과 같다. 미확정 좌표는 부재·Gap 모두 제외한다. 프로파일 미리보기 상한(contextPresence·identity·run 64)은 `PROFILE_CONTEXT_LIMIT`/`PROFILE_IDENTITY_LIMIT`/`PROFILE_RUN_LIMIT` 진단만 남기고 계수는 보존한다.
+- 기존 snapshot 비노출 회귀의 `sha256:` 검사 범위를 `ctx:v1:`(구조 서명·contextPresence 키)와 `pg:v1:`(좌표 digest gap ID)로 넓혔다. 값 digest·preview 금지 의미는 그대로다.
+- frontend `types.ts`에 `SurfaceParameterProfile`·`SurfaceParameterGap`·`surface.parameterGaps`를 optional로 가산했다(화면 소비는 5단계).
+
+### 영향 파일·회귀
+
+- 코드: `core/SurfaceAnalysis.java`(ContextPresence/GapType/GapStatus, ParameterProfile, ParameterGap, ParameterFact.profile, parameterGaps), `core/SurfaceAnalyzer.java`(Row·addRow/applyRows·충돌 제외·profile/gaps/typeVariantGaps/conditionGaps/gap·frame/digest), `frontend/src/lib/api/types.ts`(가산).
+- 테스트(RED 선행): `SurfaceParameterProfileTest` 17건 신규 — 축 카운트와 누락 축 증인, VALIDATION/probe/비커버리지 분모 제외, 명시 null vs 부재, 타입 충돌·반복 query 배열·distinct, optional 선언·미요청 route의 DEFINED_NOT_OBSERVED, 선언 타입 변형·enum·wire/format·배열 형태·number, 조건 조합 2근거, operation 범위·미상 source/신원, 파서 실패·상한, metadata-only retention gate(OVER_LIMIT/CAPACITY, legacy null), 불완전 긍정(부재 증인·DEFINED 보류·corroboration 보류), 순서 무관·쓰기 method 우선, 반복 provenance, 충돌 Evidence 제외, context/identity/run 상한·불변성, 미확정 좌표 제외, Pipeline 경로 직렬화. `SurfaceAnalyzerTest` 비노출 회귀 범위 정정.
+- 검증: JDK 21 `mvn clean verify` BUILD SUCCESS, Java 493 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 252 tests 포함. JAR `target/flowscope-1.2.0-beta.46.jar` 31,818,714 bytes. 패키지 Standalone(17777) 실측: `/api/snapshot`의 `surface.endpoints[].parameters[].profile`이 샘플 5개 입력에 source/identity/role/phase 카운트를 채우고(예: GET `/api/orders/{id}` `/segments/2` HUMAN 2·SCANNER 1·LLM 2, user-a 2·user-b 3), 샘플 자체는 비교 조건 누락이 없어 `parameterGaps` 0건. 같은 인스턴스에 `/api/import-har?source=scanner`로 `GET /api/orders/101?sort=DESC` 1건을 가져오자 revision 2에서 `/sort` 프로파일(SCANNER 1, IMPORT, 신원 미해결이라 identityCounts 비어 있음, absent 5)과 SOURCE_MISSED 2건(HUMAN·LLM, 증인 = 가져온 Evidence + 각 source의 첫 요청 Evidence, `SOURCE_DISCREPANCY,HUMAN_REVIEW_REQUIRED`, OPEN)이 생겼고 IDENTITY_MISSED는 미해결 신원이라 생기지 않았다. `digest`·preview 필드 없음.
+
+### 남은 한계·다음 gate
+
+- Gap·프로파일 화면(우선순위 큐·파라미터 그래프·Gap 인스펙터)은 5단계, `AUTH_VARIANT_UNTESTED`·권한 대상 연결은 4단계. IDENTITY_MISSED는 파라미터×신원 수만큼 생기므로 신원이 많은 데이터셋의 gap 수는 5단계 화면에서 필터·집계로 다룬다. 실제 Burp 실행은 미검증.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 2단계 — 선언 지원의 남은 공백 정리·이식
 
 ### 원인과 수정
