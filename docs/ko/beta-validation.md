@@ -1,5 +1,14 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · 데스크톱 내비 라벨·Explorer 신원 계약 회귀 gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| JDK 21 `mvn clean verify` | BUILD SUCCESS. React 38 files / 251 tests, Java 411 tests(실패·오류 0, opt-in 하네스 2 skip). |
+| 산출물 JAR | 31,732,411 bytes · 9,161 entries · SHA-256 `2baf0adc568ca6f3a9074d7330c71736171208a62c73f92f9b12b544a71ee7e8` · React asset `index-DtgDy0ib.js`. 이 verify 실행의 단일 빌드값이다(제3자 재현 미주장). nav가 React 번들을 바꿔 7f64c71의 `90334b08…`과 다르다. |
+| 데스크톱 rail 실제 렌더(코덱스 실측) | packaged Chromium 1280×600에서 마지막 메뉴 `실행 상태`가 viewport 밖(615px>600px)으로 잘림 확인 → rail `<nav>` `overflow-y-auto`로 세로 스크롤. **스크롤 수정 후 마지막 메뉴 in-viewport E2E는 미실행(브라우저 gate).** |
+| Explorer 신원 연결부 | 미검증. 신규 4 tests는 구성요소 계약만; 실제 `executeExplorerRequest()→recordFrom(forcedAccountId)` 연결부·Burp Montoya 귀속은 열림. 재열기는 JSON `ProjectStore`만 덮고 SQLite 통합은 미실행. |
+
 ## 2026-09-11 · 미출시 D-142 · 패키지 Standalone 프로젝트·현행 UI 계약 gate
 
 D-140~141의 보존형 프로젝트와 Evidence 계약을 패키지 fat JAR의 실제 Standalone Web 경로까지 연결하고, E2E가 폐기된 초기화/Judge 계약이 아니라 현행 프로젝트·독립 Explorer 계약을 검사하도록 바로잡았다. 같은 코드 대조에서 계층 그래프·resource family·증분 `+18`은 현행 구현이 아님을 문서에 명시했다.

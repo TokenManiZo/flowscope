@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-11 D-140~142 보존형 프로젝트·Evidence·Standalone 검증과 그래프 현행 계약. 현재 미출시 beta.46 소스는 새 진단 전에 기존 SQLite 프로젝트를 저장하고, 저장 실패 시 현재 데이터셋을 유지하며, Surface Observation에서 exact Evidence·Request Lab·Repeater로 이동한다. 패키지 Standalone도 격리 workspace에서 같은 프로젝트 API를 제공한다. 그래프 현행은 단일 3-lane과 `18개 / 전체` 전환이며 사이트/API drill-down·resource family·증분 `+18`은 후속 작업이다. D-139 Explorer와 D-138 ZAP 계약은 유지한다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현행 계약 문서만 D-140~142로 갱신한다.
+최종 대조: 2026-09-11 D-140~142 보존형 프로젝트·Evidence·Standalone 검증과 그래프 현행 계약. 현재 미출시 beta.46 소스는 새 진단 전에 기존 SQLite 프로젝트를 저장하고, 저장 실패 시 현재 데이터셋을 유지하며, Surface Observation에서 exact Evidence·Request Lab·Repeater로 이동한다. 패키지 Standalone도 격리 workspace에서 같은 프로젝트 API를 제공한다. 그래프 현행은 단일 3-lane과 `18개 / 전체` 전환이며 사이트/API drill-down·resource family·증분 `+18`은 후속 작업이다. D-139 Explorer와 D-138 ZAP 계약은 유지한다. 대상은 현재 checkout의 프로젝트 Markdown이며, 별도 worktree·의존성·생성물·비공개 미추적 멘토 보고서·라이선스 원문을 일괄 수정하지 않는다. 역사 문서는 당시 내용을 보존하고 현행 계약 문서만 D-140~142로 갱신한다. 2026-09-11 데스크톱 rail 한국어 라벨·세로 스크롤은 [ui-product-rationale §21](ui-product-rationale.md)에 반영했고, PR #11/#12(계층 그래프·판정 매트릭스) 흡수는 검토 중이라 현행 계약으로 기록하지 않는다.
 
 ## 1. 무엇을 어디서 읽는가
 

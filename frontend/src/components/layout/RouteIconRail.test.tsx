@@ -21,12 +21,10 @@ it("announces a secondary active route before the compact route menu opens", () 
   expect(screen.queryByRole("menu", { name: "분석 경로" })).not.toBeInTheDocument()
 })
 
-it("shows each route's Korean label as visible desktop rail text, not only an accessible name", () => {
+it("renders every route's Korean label as visible desktop rail text, not only an accessible name", () => {
   render(<RouteIconRail route="matrix" />)
 
   const rail = screen.getByRole("navigation", { name: "주요 분석 탐색" })
-  // 비활성 route 라벨은 접힌 모바일 트리거에 없으므로 데스크톱 rail의 가시 텍스트로만 존재한다.
-  expect(within(rail).getByText("대시보드")).toBeVisible()
-  expect(within(rail).getByText("권한 매트릭스")).toBeVisible()
-  expect(within(rail).getByText("공격면 그래프")).toBeVisible()
+  // 데스크톱 rail은 모든 route 라벨을 가시 텍스트로 노출한다(접근가능 이름 전용이 아님).
+  for (const { label } of appRoutes) expect(within(rail).getByText(label)).toBeVisible()
 })

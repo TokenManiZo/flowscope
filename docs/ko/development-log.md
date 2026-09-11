@@ -18,7 +18,7 @@
 - **실제 렌더는 미확인**: packaged Playwright E2E는 `mvn verify`에 포함되지 않고 여기서 실행하지 않았다. rail 폭 확대의 실제 desktop 레이아웃(중앙 폭 잠식 여부)과 라벨 줄바꿈은 실제 Burp/Standalone 렌더 gate로 남는다. E2E 내비 단언은 accessible-name 기반이라 이 변경으로 깨지지 않는다.
 - **이 변경과 무관해 손대지 않은 드리프트(기록만)**: §14의 "primary strip과 portal 분석 메뉴"는 현재 코드(단일 icon+label rail + compact popover) 구조와 다르고(문서 X2 divergence, 결정 대기), 같은 문장의 "아홉 route"는 실제 11 route와 어긋난다. 이 변경 범위 밖이라 고치지 않았다.
 - **미구현(§6-3 나머지)**: 그래프 실제 `+18` 증분·남은 수 표시, 사이트/API drill-down·resource family는 이번에 하지 않았다(D-142가 후속 gate로 분리).
-- 최종 검증: JDK 21 `mvn clean verify` BUILD SUCCESS — React 38 files / 251 tests(250 기존 + nav 가시라벨 1), Java 411 tests(실패·오류 0, opt-in 하네스 2 skip). DashboardPage 3-way 테스트의 `/LLM Explorer/` 제외 단언은 Codex 지시에 따라 `within(getByRole("region",{name:"대시보드 분석 영역"}))`로 대시보드 영역에 한정하고, 내비게이션에는 Explorer 링크 가시 라벨 검증을 추가했다(LLM 관측·UNKNOWN 제외 단언 유지). 기존 커밋 테스트 수정은 Codex가 A안으로 승인함. rail 폭 확대의 실제 렌더 잘림·스크롤은 여전히 브라우저 gate.
+- 최종 검증: JDK 21 `mvn clean verify` BUILD SUCCESS — React 38 files / 251 tests(250 기존 + nav 가시라벨 1), Java 411 tests(실패·오류 0, opt-in 하네스 2 skip). DashboardPage 3-way 테스트의 `/LLM Explorer/` 제외 단언은 Codex 지시에 따라 `within(getByRole("region",{name:"대시보드 분석 영역"}))`로 대시보드 영역에 한정하고, 내비게이션에는 Explorer 링크 가시 라벨 검증을 추가했다(LLM 관측·UNKNOWN 제외 단언 유지). 기존 커밋 테스트 수정은 Codex가 A안으로 승인함. 코덱스가 packaged Chromium 1280×600에서 마지막 메뉴(`실행 상태`)가 viewport 밖(615px>600px)으로 잘림을 실측 → rail `<nav>`에 `overflow-y-auto`(세로 스크롤) 추가, nav 테스트를 전 route 검사로 확장. jsdom은 Tailwind 미적용이라 스크롤 후 1280×600 마지막 메뉴 in-viewport 확인은 packaged Chromium 브라우저 gate. **현재 커밋 산출물: 31,732,411 bytes · 9,161 entries · JAR SHA-256 `2baf0adc568ca6f3a9074d7330c71736171208a62c73f92f9b12b544a71ee7e8` · React asset `index-DtgDy0ib.js`**(7f64c71의 `90334b08…`과 다름 — nav가 React 번들을 바꾼다; 직전 72025aa는 `21b4e0cc…`였고 코덱스 재빌드로 확인됨).
 
 
 ## 2026-09-11 · 미출시 · Explorer 신원 귀속 통합 회귀 고정
@@ -34,7 +34,7 @@
 - 테스트: 신규 `src/test/java/io/flowscope/burp/ExplorerFingerprintTest.java`(3 tests), `src/test/java/io/flowscope/explorer/ExplorerIdentityAttributionTest.java`(1 test). 프로덕션 코드 변경 없음. 두 파일로 나눈 이유는 `captureFingerprint`(burp 패키지-private)와 `ExplorerAccountVault.setToken/status`(explorer 패키지-private)를 한 파일에서 쓸 수 없고, 비밀을 넣는 vault mutator를 public으로 넓히지 않기 위해서다.
 - 계약: HANDOFF §2·§6-2·§3, 이 기록. decisions.md는 새 결정이 없어 추가하지 않았다(D-130 경계를 확인한 것).
 - RED/GREEN: 첫 단일 파일은 패키지 가시성으로 `testCompile` 실패. 분리 뒤 JDK 21.0.12.1·Maven 3.9.16에서 `mvn -Dtest=… test` 4 tests 통과(실패·오류·skip 0).
-- 최종: 같은 워크트리에서 JDK 21 `mvn clean verify` 1회 성공 — surefire 합계 Java 411 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React verify와 release JAR/bundle gate 통과. JAR SHA-256 `90334b08e0b3c5f35e0d4dc99b5c5e3af0fd085ff2505a8411a9ee7a0f370eec`가 7f64c71 기준값과 같아 프로덕션 산출물이 바뀌지 않았음을 확인했다. 이 실행의 콘솔 로그를 보존하지 못해 React 테스트 수는 여기 기록하지 않는다.
+- 검증(정정): T1은 테스트만 추가라 프로덕션 코드는 무변경이다. **다만 최종 산출물 해시는 아래 nav 항목·beta-validation을 정본으로 한다** — 앞서 이 줄을 `90334b08…` '최종·프로덕션 무변경'으로 적은 것은 오기록이었다(코덱스 리뷰). 같은 커밋에 nav 변경이 함께 들어가 React 번들이 바뀌므로 JAR가 7f64c71과 달라진다.
 
 ### 남은 한계·다음 gate
 

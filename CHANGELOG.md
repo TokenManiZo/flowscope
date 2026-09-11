@@ -2,6 +2,11 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 데스크톱 내비게이션 라벨·Explorer 신원 계약 회귀 (2026-09-11)
+
+- 데스크톱 분석 rail이 각 화면을 아이콘과 함께 한국어 라벨로 표시합니다(이전 아이콘 전용). 짧은 화면에서 마지막 메뉴가 잘리지 않도록 rail에 세로 스크롤을 두었습니다. 1280×600 실제 렌더 확인은 브라우저 gate입니다.
+- Explorer 신원 경로(gateway→지문→`bindSession`→`Pipeline`→`ProjectStore`)의 구성요소 계약을 회귀로 고정했습니다. 실제 연결부(`executeExplorerRequest`)와 Burp Montoya 귀속은 운영 gate로 남습니다.
+
 ## 미출시 · 패키지 Standalone 프로젝트·현행 UI 계약 (D-142, 2026-09-11)
 
 - 패키지 Standalone이 보존형 프로젝트 생성·저장·선택·재열기 API를 실제 SQLite workspace로 제공하며, 실행할 수 없는 Explorer 상태를 HTTP 500 대신 명시적으로 반환합니다.
