@@ -25,7 +25,7 @@ Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 - 위치: `PATH`, `QUERY`, `JSON_BODY`, `FORM_BODY`, `MULTIPART_BODY`, `HEADER`, `GRAPHQL_VARIABLE`, `XML_PATH`
 - 저장 좌표는 `coordinateVersion`(LEGACY_V1/FLOW_V2). PATH/QUERY/FORM/MULTIPART/HEADER와 점 없는 단일 JSON key는 LEGACY_V1을 무손실 변환해 join하고, 점 있는 legacy JSON/GraphQL, 세그먼트 없이 평탄화된 JS 이름, OpenAPI path slot 정렬 실패는 `UNRESOLVED_COORDINATE` 상태(`coordinateResolved=false`)와 진단으로만 남아 join·Gap 승격 대상이 아니다. 정적 JS 선언은 AST 세그먼트(중첩 키·배열 원소 wildcard)를 보존해 리터럴 점 키와 중첩, 리터럴 `*` 키(`~2`)와 배열 원소 `*`를 구분한다. PATH 선언의 `/segments/N`은 template의 실제 placeholder 위치만 확정 좌표로 받는다.
 - 관측에는 값 대신 shape·valueType·byteLength·masked, source, run, identity, status와 Evidence ID만 둔다. valueType은 실제 타입(`"1"`=STRING, `1`=INTEGER)이고 UUID·숫자형 문자열 형식 신호는 표시 shape에만 반영된다. distinct 값 수는 타입을 포함한 count만 남기고 digest는 노출하지 않는다.
-- 선언에는 type, adapter, reason과 Evidence ID를 둔다.
+- 선언에는 type, adapter, reason, Evidence ID와 정의가 밝힌 declaredType/declaredShape/conditionText(`oneOf[i];`/`anyOf[i];`/`enum[i];` 인덱스, 값 미복사)·confidence(정의는 INFERRED, 관측은 OBSERVED)를 둔다. requirement는 REQUIRED/OPTIONAL/CONDITIONAL/UNKNOWN이며 선언이 서로 다르면 UNKNOWN.
 - 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, call-site 해석 실패 범주와 추출 수를 둔다.
 - 비밀값 원문, 조합 가능한 값 목록, 인증 header는 surface snapshot에 넣지 않는다.
 - `SurfaceAnalysis`는 Evidence에서 재생성되는 projection이다. SQLite에 두 번째 정본을 만들지 않는다.
@@ -43,10 +43,10 @@ Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 
 ### 대상 선언
 
-- OpenAPI/Swagger path/query parameter, request body schema, local `$ref`
+- OpenAPI/Swagger path/query/formData/body parameter(path·operation 병합, operation override), request body schema, local `$ref`만(외부·순환 거부), oneOf/anyOf 변형(CONDITIONAL)·enum 인덱스, `type/format` 타입, binary·file 제외, `required` 미표기 OPTIONAL
 - HTML form action/method, 성공 가능한 이름 있는 control, submitter의 `formaction/formmethod`
 - JavaScript AST에서 직접 확인한 `fetch`, `XMLHttpRequest`, axios, jQuery, `sendBeacon` call-site
-- 해당 call-site의 static URL, method, query 이름과 literal object body key
+- 해당 call-site의 static URL, method, query 이름과 literal object body key(리터럴 값 종류 포함). spread 객체·`__proto__`·constructor/prototype 컨테이너·method 미해석 call-site는 선언하지 않음
 - lexical scope에서 확인되는 불변 문자열·object member, template literal, 단순 `+` 결합
 - axios import/direct call과 `axios.create` instance의 정적 `baseURL`, 요청별 `baseURL`·`allowAbsoluteUrls` override
 - 독립 Explorer가 현재 run의 실제 응답 Evidence에서 직접 읽어 구조화 도구로 등록한 endpoint·parameter. 이 경로는 `LLM_ARTIFACT_ANALYSIS` provenance와 locator/reason을 보존하며 값이나 인증·세션 header는 받지 않는다.

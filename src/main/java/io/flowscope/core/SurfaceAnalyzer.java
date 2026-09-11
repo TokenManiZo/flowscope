@@ -35,6 +35,7 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -54,6 +55,8 @@ public final class SurfaceAnalyzer {
     private static final int MAX_SCHEMA_DEPTH = 20;
     /** 파라미터별 distinct 값 digest 상한. 넘으면 count를 고정하고 truncated+DISTINCT_VALUE_LIMIT 진단을 남긴다. */
     public static final int MAX_DISTINCT_VALUES = 256;
+    /** 파라미터당 선언 상한(PR#11 definition/provenance 32). 넘으면 DECLARATION_LIMIT 진단. */
+    static final int MAX_DECLARATIONS_PER_PARAMETER = 32;
 
     private SurfaceAnalyzer() {}
 
@@ -159,6 +162,7 @@ public final class SurfaceAnalyzer {
             }
         }
 
+        for (MutableEndpoint endpoint : endpoints.values()) endpoint.declarationDiagnostics(parameterDiagnostics);
         List<EndpointFact> facts = endpoints.values().stream()
                 .map(MutableEndpoint::freeze)
                 .sorted(Comparator.comparing((EndpointFact fact) -> fact.key().service())
@@ -278,10 +282,12 @@ public final class SurfaceAnalyzer {
                 MutableEndpoint endpoint = endpoints.get(new EndpointKey(candidate.service(), candidate.method(),
                         candidate.pathTemplate()).stableKey());
                 if (endpoint == null) return;
-                declareTemplatePath(endpoint, pathEntry.getKey(), provenance, diagnostics);
-                declareOpenApiParameters(endpoint, root, pathEntry.getKey(), pathItem.path("parameters"), provenance);
                 JsonNode operation = operationEntry.getValue();
-                declareOpenApiParameters(endpoint, root, pathEntry.getKey(), operation.path("parameters"), provenance);
+                Map<String, JsonNode> merged = new LinkedHashMap<>();
+                collectOpenApiParameters(root, pathItem.path("parameters"), merged);
+                collectOpenApiParameters(root, operation.path("parameters"), merged);
+                declareOpenApiParameters(endpoint, root, pathEntry.getKey(), merged.values(), provenance);
+                declareTemplatePath(endpoint, pathEntry.getKey(), provenance, diagnostics);
                 declareRequestBody(endpoint, root, operation.path("requestBody"), provenance);
             });
         });
@@ -351,36 +357,58 @@ public final class SurfaceAnalyzer {
         }
         for (int i = 0; i < templateSlots.size(); i++) {
             String name = schemaSlots.get(i).declaredName();
+            MutableParameter existing = endpoint.parameters.get(ParameterLocation.PATH + ":" + templateSlots.get(i).canonicalPath());
+            if (existing != null && !existing.declarations.isEmpty()) continue; // 이름 있는 path parameter가 타입과 함께 선언함
             endpoint.parameter(ParameterLocation.PATH, templateSlots.get(i).canonicalPath(), name)
                     .declare(provenance, Requirement.REQUIRED, name);
         }
     }
 
-    private static void declareOpenApiParameters(MutableEndpoint endpoint, JsonNode root, String schemaPath,
-                                                 JsonNode parameters, RouteCandidate.Provenance provenance) {
-        if (!parameters.isArray()) return;
-        for (JsonNode raw : parameters) {
+    /** path-level과 operation-level parameter를 (in|name)으로 병합한다. operation-level이 override한다(PR#11 collect). */
+    private static void collectOpenApiParameters(JsonNode root, JsonNode array, Map<String, JsonNode> out) {
+        if (!array.isArray()) return;
+        for (JsonNode raw : array) {
             JsonNode parameter = resolveLocalRef(root, raw, 0);
+            if (parameter.isObject() && !parameter.path("name").asText().isBlank()) {
+                out.put(parameter.path("in").asText() + "|" + parameter.path("name").asText(), parameter);
+            }
+        }
+    }
+
+    private static void declareOpenApiParameters(MutableEndpoint endpoint, JsonNode root, String schemaPath,
+                                                 Collection<JsonNode> parameters, RouteCandidate.Provenance provenance) {
+        for (JsonNode parameter : parameters) {
             String name = parameter.path("name").asText();
-            if (name.isBlank()) continue;
-            ParameterLocation location = switch (parameter.path("in").asText()) {
+            String in = parameter.path("in").asText();
+            // PR#11: required 미표기는 OPTIONAL. 선언 타입은 schema 또는(swagger 2) parameter 자체의 type/format.
+            Requirement requirement = parameter.path("required").asBoolean(false) ? Requirement.REQUIRED : Requirement.OPTIONAL;
+            JsonNode schema = parameter.has("schema") ? parameter.get("schema") : parameter;
+            if (in.equals("body")) {
+                declareSchema(endpoint, root, schema, "", provenance, requirement, ParameterLocation.JSON_BODY, 0,
+                        new LinkedHashSet<>(), "", null);
+                continue;
+            }
+            ParameterLocation location = switch (in) {
                 case "path" -> ParameterLocation.PATH;
                 case "query" -> ParameterLocation.QUERY;
                 case "formData" -> ParameterLocation.FORM_BODY;
-                case "body" -> null;
                 default -> null;
             };
-            if (parameter.path("in").asText().equals("body")) {
-                declareSchema(endpoint, root, parameter.path("schema"), "", provenance,
-                        parameter.path("required").asBoolean(false) ? Requirement.REQUIRED : Requirement.OPTIONAL,
-                        ParameterLocation.JSON_BODY, 0, new LinkedHashSet<>());
+            if (location == null) continue;
+            if (location == ParameterLocation.PATH) {
+                var schemaSlots = ParameterCoordinates.pathSlots(schemaPath);
+                var templateSlots = ParameterCoordinates.pathSlots(endpoint.key.pathTemplate());
+                if (schemaSlots.size() != templateSlots.size()) continue; // declareTemplatePath가 정렬 실패를 진단한다
+                for (int i = 0; i < schemaSlots.size(); i++) {
+                    if (schemaSlots.get(i).declaredName().equals(name)) {
+                        declareSchema(endpoint, root, schema, templateSlots.get(i).canonicalPath(), provenance,
+                                Requirement.REQUIRED, ParameterLocation.PATH, 0, new LinkedHashSet<>(), "", name);
+                    }
+                }
                 continue;
             }
-            if (location == null || location == ParameterLocation.PATH) continue;
-            Requirement requirement = parameter.has("required")
-                    ? (parameter.path("required").asBoolean() ? Requirement.REQUIRED : Requirement.OPTIONAL)
-                    : Requirement.UNKNOWN;
-            endpoint.parameter(location, ParameterCoordinates.nameToken(name), name).declare(provenance, requirement, name);
+            declareSchema(endpoint, root, schema, ParameterCoordinates.nameToken(name), provenance, requirement,
+                    location, 0, new LinkedHashSet<>(), "", name);
         }
     }
 
@@ -388,8 +416,7 @@ public final class SurfaceAnalyzer {
                                            RouteCandidate.Provenance provenance) {
         JsonNode requestBody = resolveLocalRef(root, raw, 0);
         if (!requestBody.isObject()) return;
-        Requirement rootRequirement = requestBody.has("required") && requestBody.path("required").asBoolean()
-                ? Requirement.REQUIRED : Requirement.UNKNOWN;
+        Requirement rootRequirement = requestBody.path("required").asBoolean(false) ? Requirement.REQUIRED : Requirement.OPTIONAL;
         JsonNode content = requestBody.path("content");
         if (!content.isObject()) return;
         content.properties().forEach(entry -> {
@@ -399,57 +426,117 @@ public final class SurfaceAnalyzer {
                     : media.equals("multipart/form-data") ? ParameterLocation.MULTIPART_BODY : null;
             if (location == null) return;
             declareSchema(endpoint, root, entry.getValue().path("schema"), "", provenance, rootRequirement,
-                    location, 0, new LinkedHashSet<>());
+                    location, 0, new LinkedHashSet<>(), "", null);
         });
     }
 
+    /**
+     * OpenAPI schema를 PR#11 정의 의미로 선언한다: local $ref만(외부·순환 거부), oneOf/anyOf 변형은 CONDITIONAL +
+     * {@code union[i];} 조건, enum은 값 없이 {@code enum[i];} 인덱스별 선언, type/format→declaredType, 배열/객체→declaredShape,
+     * FORM/MULTIPART의 binary/file 제외. 중첩 객체는 자식만 선언하고 배열은 필드 자체와 객체 원소 필드를 선언한다.
+     */
     private static void declareSchema(MutableEndpoint endpoint, JsonNode root, JsonNode raw, String path,
                                       RouteCandidate.Provenance provenance, Requirement inherited,
-                                      ParameterLocation location, int depth, Set<String> refs) {
-        if (raw == null || depth > MAX_SCHEMA_DEPTH || endpoint.parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) return;
+                                      ParameterLocation location, int depth, Set<String> refs,
+                                      String condition, String displayName) {
+        if (raw == null || raw.isMissingNode() || !raw.isObject() || depth > MAX_SCHEMA_DEPTH
+                || condition.length() > 512 || endpoint.parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) return;
         JsonNode schema = raw;
         if (schema.has("$ref")) {
             String ref = schema.path("$ref").asText();
-            if (!ref.startsWith("#/") || !refs.add(ref)) return;
-            schema = resolveLocalRef(root, schema, 0);
+            if (!ref.startsWith("#/") || ref.length() > 8_192 || refs.size() >= 32 || !refs.add(ref)) return;
+            declareSchema(endpoint, root, root.at(ref.substring(1)), path, provenance, inherited, location,
+                    depth + 1, refs, condition, displayName);
+            return;
         }
-        JsonNode required = schema.path("required");
-        Set<String> requiredNames = new LinkedHashSet<>();
-        if (required.isArray()) for (JsonNode item : required) requiredNames.add(item.asText());
-        JsonNode properties = schema.path("properties");
-        if (properties.isObject()) {
-            properties.properties().forEach(entry -> {
-                String child = ParameterCoordinates.jsonChild(path, entry.getKey());
-                Requirement requirement = requiredNames.contains(entry.getKey())
-                        ? Requirement.REQUIRED : Requirement.OPTIONAL;
-                JsonNode value = entry.getValue();
-                if (value.path("type").asText().equals("object") || value.has("properties") || value.has("$ref")) {
-                    declareSchema(endpoint, root, value, child, provenance, requirement, location,
-                            depth + 1, new LinkedHashSet<>(refs));
-                } else if (value.path("type").asText().equals("array")) {
-                    endpoint.parameter(location, child, entry.getKey())
-                            .declare(provenance, requirement, entry.getKey());
-                    JsonNode items = resolveLocalRef(root, value.path("items"), 0);
-                    if (items.has("properties") || items.path("type").asText().equals("object")) {
-                        declareSchema(endpoint, root, items, ParameterCoordinates.arrayElement(child), provenance, requirement,
-                                location, depth + 1, new LinkedHashSet<>(refs));
-                    }
-                } else {
-                    endpoint.parameter(location, child, entry.getKey())
-                            .declare(provenance, requirement, entry.getKey());
+        for (String union : List.of("oneOf", "anyOf")) {
+            JsonNode variants = schema.path(union);
+            if (variants.isArray()) {
+                for (int i = 0; i < variants.size(); i++) {
+                    declareSchema(endpoint, root, variants.get(i), path, provenance, Requirement.CONDITIONAL, location,
+                            depth + 1, new LinkedHashSet<>(refs), condition + union + "[" + i + "];", displayName);
                 }
-            });
-        } else if (!path.isBlank()) {
-            endpoint.parameter(location, path, path)
-                    .declare(provenance, inherited, path);
-        }
-        for (String composition : List.of("allOf", "oneOf", "anyOf")) {
-            JsonNode values = schema.path(composition);
-            if (values.isArray()) for (JsonNode value : values) {
-                declareSchema(endpoint, root, value, path, provenance, inherited, location,
-                        depth + 1, new LinkedHashSet<>(refs));
+                return;
             }
         }
+        ValueType type = declaredType(schema);
+        String typeName = schema.path("type").asText();
+        if ((location == ParameterLocation.FORM_BODY || location == ParameterLocation.MULTIPART_BODY)
+                && (type == ValueType.BINARY || typeName.equals("file"))) return;
+        JsonNode properties = schema.path("properties");
+        boolean array = typeName.equals("array");
+        boolean object = properties.isObject() || typeName.equals("object");
+        ValueShape shape = array ? ValueShape.ARRAY : object ? ValueShape.OBJECT : declaredShape(type);
+        if (!path.isEmpty() && !properties.isObject()) {
+            String label = displayName != null ? displayName : observedDisplayName(location, path, endpoint.key.pathTemplate());
+            JsonNode enums = schema.path("enum");
+            if (enums.isArray() && !enums.isEmpty()) {
+                for (int i = 0; i < enums.size(); i++) {
+                    endpoint.parameter(location, path, label).declare(provenance, inherited, label,
+                            ParameterCoordinates.CoordinateVersion.FLOW_V2, true, type, shape,
+                            condition + "enum[" + i + "];", SurfaceAnalysis.Confidence.INFERRED);
+                }
+            } else {
+                endpoint.parameter(location, path, label).declare(provenance, inherited, label,
+                        ParameterCoordinates.CoordinateVersion.FLOW_V2, true, type, shape, condition,
+                        SurfaceAnalysis.Confidence.INFERRED);
+            }
+        }
+        if (properties.isObject()) {
+            Set<String> requiredNames = new LinkedHashSet<>();
+            JsonNode required = schema.path("required");
+            if (required.isArray()) for (JsonNode item : required) requiredNames.add(item.asText());
+            properties.properties().forEach(entry -> {
+                Requirement childRequirement = inherited == Requirement.CONDITIONAL ? Requirement.CONDITIONAL
+                        : requiredNames.contains(entry.getKey()) ? Requirement.REQUIRED : Requirement.OPTIONAL;
+                declareSchema(endpoint, root, entry.getValue(), ParameterCoordinates.jsonChild(path, entry.getKey()),
+                        provenance, childRequirement, location, depth + 1, new LinkedHashSet<>(refs), condition, entry.getKey());
+            });
+        }
+        if (array) {
+            JsonNode items = resolveLocalRef(root, schema.path("items"), 0);
+            if (items.has("properties") || items.path("type").asText().equals("object")
+                    || items.has("oneOf") || items.has("anyOf") || items.has("allOf")) {
+                declareSchema(endpoint, root, schema.path("items"), ParameterCoordinates.arrayElement(path), provenance,
+                        inherited, location, depth + 1, new LinkedHashSet<>(refs), condition, null);
+            }
+        }
+        JsonNode allOf = schema.path("allOf");
+        if (allOf.isArray()) for (JsonNode value : allOf) {
+            declareSchema(endpoint, root, value, path, provenance, inherited, location, depth + 1,
+                    new LinkedHashSet<>(refs), condition, displayName);
+        }
+    }
+
+    /** OpenAPI type/format → 선언 타입. type이 없으면 null(정보 없음). */
+    private static ValueType declaredType(JsonNode schema) {
+        if (!schema.has("type")) return null;
+        return switch (schema.path("type").asText()) {
+            case "string" -> switch (schema.path("format").asText()) {
+                case "uuid" -> ValueType.UUID;
+                case "date-time" -> ValueType.DATE_TIME;
+                case "binary", "byte" -> ValueType.BINARY;
+                default -> ValueType.STRING;
+            };
+            case "integer" -> ValueType.INTEGER;
+            case "number" -> ValueType.NUMBER;
+            case "boolean" -> ValueType.BOOLEAN;
+            case "array", "object" -> null;
+            default -> ValueType.UNKNOWN;
+        };
+    }
+
+    private static ValueShape declaredShape(ValueType type) {
+        if (type == null) return null;
+        return switch (type) {
+            case STRING, DATE_TIME -> ValueShape.STRING;
+            case INTEGER -> ValueShape.INTEGER;
+            case NUMBER -> ValueShape.DECIMAL;
+            case BOOLEAN -> ValueShape.BOOLEAN;
+            case UUID -> ValueShape.UUID;
+            case BINARY -> ValueShape.BINARY;
+            case UNKNOWN -> ValueShape.UNKNOWN;
+        };
     }
 
     private static JsonNode resolveLocalRef(JsonNode root, JsonNode node, int depth) {
@@ -522,7 +609,7 @@ public final class SurfaceAnalyzer {
                 candidate.pathTemplate()).stableKey());
         if (endpoint == null) return;
         for (JavascriptAnalysis.CallSite call : analysis.callSites()) {
-            if (!candidate.method().equalsIgnoreCase(call.method())
+            if (!candidate.method().equalsIgnoreCase(call.method()) || "UNKNOWN".equalsIgnoreCase(call.method())
                     || !javascriptPathMatches(artifact, candidate.pathTemplate(), call.reference())) continue;
             if (call.reference().contains("{expr}")) {
                 for (var slot : ParameterCoordinates.pathSlots(candidate.pathTemplate())) {
@@ -545,7 +632,9 @@ public final class SurfaceAnalyzer {
                 }
                 endpoint.parameter(location, coordinate.path(), parameter.name(), coordinate.resolved())
                         .declare(provenance, Requirement.UNKNOWN, parameter.name(),
-                                ParameterCoordinates.CoordinateVersion.FLOW_V2, coordinate.resolved());
+                                ParameterCoordinates.CoordinateVersion.FLOW_V2, coordinate.resolved(),
+                                literalType(parameter.literal()), literalShape(parameter.literal()), "",
+                                SurfaceAnalysis.Confidence.INFERRED);
             }
         }
     }
@@ -631,6 +720,17 @@ public final class SurfaceAnalyzer {
 
         private MutableEndpoint(EndpointKey key) { this.key = key; }
 
+        /** 파라미터당 선언 상한을 넘겨 버린 선언 수를 진단으로 남긴다(조용히 누락하지 않는다). */
+        private void declarationDiagnostics(List<SurfaceAnalysis.ParameterDiagnostic> out) {
+            for (MutableParameter parameter : parameters.values()) {
+                if (parameter.droppedDeclarations > 0) {
+                    String evidenceId = parameter.declarations.isEmpty() ? null : parameter.declarations.iterator().next().evidenceId();
+                    out.add(new SurfaceAnalysis.ParameterDiagnostic(evidenceId, key.method() + " " + key.pathTemplate(),
+                            "DECLARATION_LIMIT", parameter.droppedDeclarations));
+                }
+            }
+        }
+
         private MutableParameter parameter(ParameterLocation location, String canonicalPath, String displayName) {
             return parameter(location, canonicalPath, displayName, true);
         }
@@ -641,7 +741,9 @@ public final class SurfaceAnalyzer {
          */
         private MutableParameter parameter(ParameterLocation location, String canonicalPath, String displayName,
                                            boolean resolved) {
-            if (canonicalPath == null || canonicalPath.isBlank() || parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) {
+            // 인증·비밀 이름의 좌표는 관측(엔진)과 마찬가지로 선언에서도 만들지 않는다(PR#11 sink 규칙).
+            if (canonicalPath == null || canonicalPath.isBlank() || Masking.isSensitiveParameterPath(canonicalPath)
+                    || parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) {
                 return MutableParameter.IGNORED;
             }
             String key = location + ":" + (resolved ? "" : "?") + canonicalPath;
@@ -738,6 +840,29 @@ public final class SurfaceAnalyzer {
         };
     }
 
+    private static ValueType literalType(JavascriptAnalysis.LiteralKind literal) {
+        return switch (literal) {
+            case STRING -> ValueType.STRING;
+            case INTEGER -> ValueType.INTEGER;
+            case NUMBER -> ValueType.NUMBER;
+            case BOOLEAN -> ValueType.BOOLEAN;
+            case NULL, ARRAY, OBJECT, DYNAMIC -> null;
+        };
+    }
+
+    private static ValueShape literalShape(JavascriptAnalysis.LiteralKind literal) {
+        return switch (literal) {
+            case STRING -> ValueShape.STRING;
+            case INTEGER -> ValueShape.INTEGER;
+            case NUMBER -> ValueShape.DECIMAL;
+            case BOOLEAN -> ValueShape.BOOLEAN;
+            case NULL -> ValueShape.NULL;
+            case ARRAY -> ValueShape.ARRAY;
+            case OBJECT -> ValueShape.OBJECT;
+            case DYNAMIC -> null;
+        };
+    }
+
     /** 관측 전용 파라미터의 사람 라벨: PATH는 endpoint template placeholder 이름, 그 외는 canonical의 마지막 세그먼트. */
     private static String observedDisplayName(ParameterLocation location, String canonicalPath, String pathTemplate) {
         if (location == ParameterLocation.PATH) {
@@ -796,6 +921,7 @@ public final class SurfaceAnalyzer {
         private final LinkedHashSet<ParameterObservation> observations = new LinkedHashSet<>();
         private final LinkedHashSet<Declaration> declarations = new LinkedHashSet<>();
         private final EnumSet<Requirement> requirements = EnumSet.noneOf(Requirement.class);
+        private int droppedDeclarations;
 
         private MutableParameter(ParameterLocation location, String canonicalPath, String displayName,
                                  boolean resolved) {
@@ -830,7 +956,8 @@ public final class SurfaceAnalyzer {
             }
             observations.add(new ParameterObservation(engineObs.evidenceId(), engineObs.source(), engineObs.runId(),
                     engineObs.identity(), status, observedShape, engineObs.role(), engineObs.phase(),
-                    presence, valueType, byteLength, masked, engineObs.contextSignature()));
+                    presence, valueType, byteLength, masked, engineObs.contextSignature(),
+                    SurfaceAnalysis.Confidence.valueOf(engineObs.confidence().name())));
             return newlyTruncated;
         }
 
@@ -840,10 +967,24 @@ public final class SurfaceAnalyzer {
 
         private void declare(RouteCandidate.Provenance provenance, Requirement requirement, String name,
                              ParameterCoordinates.CoordinateVersion version, boolean coordinateResolved) {
+            declare(provenance, requirement, name, version, coordinateResolved, null, null, "",
+                    SurfaceAnalysis.Confidence.INFERRED);
+        }
+
+        private void declare(RouteCandidate.Provenance provenance, Requirement requirement, String name,
+                             ParameterCoordinates.CoordinateVersion version, boolean coordinateResolved,
+                             ValueType declaredType, ValueShape declaredShape, String conditionText,
+                             SurfaceAnalysis.Confidence confidence) {
             if (this == IGNORED) return;
             Declaration base = declaration(provenance);
-            declarations.add(new Declaration(base.evidenceId(), base.source(), base.runId(), base.type(),
-                    base.adapter(), base.reason(), version, coordinateResolved));
+            Declaration declaration = new Declaration(base.evidenceId(), base.source(), base.runId(), base.type(),
+                    base.adapter(), base.reason(), version, coordinateResolved, declaredType, declaredShape,
+                    conditionText, confidence);
+            if (!declarations.contains(declaration) && declarations.size() >= MAX_DECLARATIONS_PER_PARAMETER) {
+                droppedDeclarations++;
+                return;
+            }
+            declarations.add(declaration);
             requirements.add(requirement == null ? Requirement.UNKNOWN : requirement);
             if (name != null && !name.isBlank()) displayName = name;
         }

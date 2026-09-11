@@ -1,5 +1,27 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 2단계 — 선언 지원의 남은 공백 정리·이식
+
+### 원인과 수정
+
+- PR#11 `OpenApiParameterDefinitionAdapter`·`JavascriptParameterDefinitionAdapter`·`ParameterDefinitionExtractor.Sink`의 정의 의미를 우리 `Declaration`에 이식했다. 각 공백을 실패 회귀로 먼저 재현했다(6건 RED: operation override 없이 `/q` 2건 선언, `CONDITIONAL`·`oneOf[i];`·`enum[i];` 부재, path 타입 미부착, swagger `required` 미표기 UNKNOWN, binary `/file` 선언, 외부/순환 `$ref`·`password` 선언, JS spread 객체의 `admin`·`__proto__`·constructor 컨테이너 선언, 선언 무제한, servers 확장 무제한).
+- **모델:** `Requirement.CONDITIONAL`, `Confidence{OBSERVED,CORROBORATED,INFERRED,UNKNOWN}`, `Declaration`에 `declaredType/declaredShape/conditionText/confidence`, `ParameterObservation.confidence`(엔진 OBSERVED 전달). frontend `types.ts`는 가산(optional).
+- **OpenAPI:** path-level·operation-level parameter를 `(in|name)`으로 병합해 operation이 override(PR `collect`). `declareSchema`는 local `$ref`만(외부·8,192자 초과·32회·순환 거부), oneOf/anyOf 변형을 `CONDITIONAL`+`union[i];`로, enum을 값 없이 `enum[i];` 인덱스별로, `type/format`→declaredType(uuid/date-time/binary·byte), 배열/객체→declaredShape, FORM/MULTIPART의 binary·file 제외, `required` 미표기는 OPTIONAL, parent CONDITIONAL 상속. `in: path`는 선언 이름과 일치하는 slot 좌표에 타입과 함께 선언하고 `declareTemplatePath`는 미선언 slot만 채운다. swagger 2 `formData`(parameter 자체의 type)·`body`도 같은 경로.
+- **JS:** `Parameter.literal`(`LiteralKind`)로 리터럴 값 종류를 전달해 declaredType/Shape에 반영. spread가 섞인 객체는 전체 미선언, `__proto__` 제외, constructor/prototype 컨테이너 제외(flat scalar 이름은 유지), method를 해석하지 못한 call-site(`UNKNOWN`)는 입력을 선언하지 않는다.
+- **join 규칙:** `MutableEndpoint.parameter`가 민감 이름 좌표(`Masking.isSensitiveParameterPath`)를 선언에서도 제외한다(엔진 관측과 대칭). 파라미터당 선언 32 상한, 초과분은 `DECLARATION_LIMIT` 진단(조용히 누락하지 않음). 선언 confidence는 INFERRED.
+- **servers 확장:** `OpenApiRouteDiscoveryAdapter.expandServer`가 변수 치환 결과 8,192자 초과 base를 거부한다(PR "excessive server expansion").
+- 기존 테스트 정정 1건: multipart binary `blob`을 REQUIRED 선언으로 단언하던 것을 "선언하지 않는다"로 바꿨다. 엔진이 파일 파트를 관측하지 않으므로(`multipart_extracts_text_fields_without_file_bytes`) 그 선언은 영구 거짓 DECLARED_NOT_OBSERVED gap이 되는 결함이었다(PR#11 규칙과 동일).
+
+### 영향 파일·회귀
+
+- 코드: `core/SurfaceAnalysis.java`(CONDITIONAL·Confidence·Declaration/ParameterObservation 필드), `core/SurfaceAnalyzer.java`(collect/declareOpenApiParameters/declareRequestBody/declareSchema/declaredType/declaredShape/literalType/literalShape, 민감 이름 제외, 선언 상한·진단, JS method 미해석 skip), `core/discovery/JavascriptAnalysis.java`(LiteralKind), `core/discovery/JavascriptCallSiteAnalyzer.java`(spread/__proto__/컨테이너 제외·literalKind), `core/discovery/OpenApiRouteDiscoveryAdapter.java`(server 확장 상한), `frontend/src/lib/api/types.ts`(가산).
+- 테스트(RED 선행): `SurfaceAnalyzerTest` 6건 추가(override·union·enum·path 타입·DATE_TIME / swagger body·formData·form·multipart·binary 제외 / 외부·순환·민감 / JS 거부 규칙·리터럴 타입 / 선언 32 상한·진단 / servers 확장 상한) + multipart binary 단언 정정. 화면 변경 없음(types 가산만)이라 Chromium 실측은 하지 않았다.
+- 검증: JDK 21 `mvn clean verify` BUILD SUCCESS, Java 476 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 포함. JAR `target/flowscope-1.2.0-beta.46.jar` 31,795,884 bytes.
+
+### 남은 한계·다음 gate
+
+- PR과 다른 관례(제외 목록): scalar 배열 원소·중간 객체 노드 미선언, JS 문자 수 window 미이식. HTML form 선언은 declaredType 없음(PR에도 HTML 어댑터 없음). Explorer 선언 declaredType은 도구 계약에 없어 null. 다음: 3단계 파라미터 프로파일과 관측 차이 분석.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 1단계 — 재현된 네 결함 수정과 기능 대조표
 
 ### 원인과 수정

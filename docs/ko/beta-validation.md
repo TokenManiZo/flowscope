@@ -1,5 +1,15 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 2단계(선언 의미 확장) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| RED→GREEN | 선언 공백 6건 실패 회귀 선행(operation override·union/enum·path 타입, swagger body/formData·binary, 외부/순환/민감, JS 거부 규칙·리터럴 타입, 선언 32 상한, servers 확장 상한) → 구현 후 GREEN. 기존 multipart binary 단언 1건 정정(근거: 개발 기록). |
+| JDK 21 `mvn clean verify` | BUILD SUCCESS. Java 476 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,795,884 bytes. |
+| Chromium 실측 | 미실행 — 화면 변경 없음(`types.ts` optional 필드 가산만). |
+| 실제 Burp 실행 | 미실행(운영 gate). |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 1단계(네 결함 수정) gate
 
 | 항목 | 실제 확인 결과 |

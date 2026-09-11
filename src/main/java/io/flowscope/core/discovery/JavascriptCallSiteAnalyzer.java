@@ -387,18 +387,27 @@ public final class JavascriptCallSiteAnalyzer {
             if (out.size() >= MAX_PARAMETERS_PER_CALL) return;
             Node object = resolve(raw, scope, 0);
             if (object == null || !object.isObjectLit()) return;
+            // PR#11 literal grammar: spread가 섞인 객체는 전체 형태를 알 수 없어 어떤 키도 선언하지 않는다.
+            for (Node property : object.children()) {
+                if (property.getToken().name().contains("SPREAD")) return;
+            }
             for (Node property : object.children()) {
                 if (out.size() >= MAX_PARAMETERS_PER_CALL || !property.isStringKey()) continue;
                 String name = property.getString();
-                if (name == null || name.isBlank()) continue;
+                // __proto__는 literal setter이지 own request field가 아니다(PR#11).
+                if (name == null || name.isBlank() || name.equals("__proto__")) continue;
+                Node resolvedValue = resolve(property.getFirstChild(), scope, 0);
+                boolean container = resolvedValue != null && (resolvedValue.isObjectLit() || resolvedValue.isArrayLit());
+                // constructor/prototype 컨테이너는 prototype-chain 좌표로 투영하지 않는다(flat scalar 이름은 유지).
+                if (container && (name.equals("constructor") || name.equals("prototype"))) continue;
                 List<JavascriptAnalysis.Segment> segments = new ArrayList<>(prefix);
                 segments.add(new JavascriptAnalysis.Segment(name, false));
-                Node resolvedValue = resolve(property.getFirstChild(), scope, 0);
                 if (kind == JSON_BODY && resolvedValue != null && resolvedValue.isObjectLit()) {
                     addObjectParameters(out, resolvedValue, kind, segments, scope);
                     continue;
                 }
-                JavascriptAnalysis.Parameter parameter = new JavascriptAnalysis.Parameter(displayName(segments), kind, segments);
+                JavascriptAnalysis.Parameter parameter = new JavascriptAnalysis.Parameter(displayName(segments), kind, segments,
+                        literalKind(resolvedValue));
                 if (!out.contains(parameter)) out.add(parameter);
                 if (kind == JSON_BODY && resolvedValue != null && resolvedValue.isArrayLit()) {
                     List<JavascriptAnalysis.Segment> elementSegments = new ArrayList<>(segments);
@@ -411,6 +420,21 @@ public final class JavascriptCallSiteAnalyzer {
                     }
                 }
             }
+        }
+
+        private static JavascriptAnalysis.LiteralKind literalKind(Node value) {
+            if (value == null) return JavascriptAnalysis.LiteralKind.DYNAMIC;
+            if (value.isStringLit()) return JavascriptAnalysis.LiteralKind.STRING;
+            if (value.isNumber()) {
+                double number = value.getDouble();
+                return number == Math.rint(number) && !Double.isInfinite(number)
+                        ? JavascriptAnalysis.LiteralKind.INTEGER : JavascriptAnalysis.LiteralKind.NUMBER;
+            }
+            if (value.isTrue() || value.isFalse()) return JavascriptAnalysis.LiteralKind.BOOLEAN;
+            if (value.isNull()) return JavascriptAnalysis.LiteralKind.NULL;
+            if (value.isArrayLit()) return JavascriptAnalysis.LiteralKind.ARRAY;
+            if (value.isObjectLit()) return JavascriptAnalysis.LiteralKind.OBJECT;
+            return JavascriptAnalysis.LiteralKind.DYNAMIC;
         }
 
         /** 세그먼트의 점 표기 표시명. 배열 원소 wildcard는 앞 세그먼트에 {@code []}로 붙는다. */

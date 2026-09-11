@@ -201,6 +201,7 @@ export interface SurfaceObservation {
   byteLength?: number
   masked?: boolean
   contextSignature?: string
+  confidence?: string
 }
 
 export interface SurfaceDeclaration {
@@ -212,6 +213,10 @@ export interface SurfaceDeclaration {
   reason: string
   coordinateVersion?: string
   coordinateResolved?: boolean
+  declaredType?: string | null
+  declaredShape?: string | null
+  conditionText?: string
+  confidence?: string
 }
 
 export interface SurfaceParameter {

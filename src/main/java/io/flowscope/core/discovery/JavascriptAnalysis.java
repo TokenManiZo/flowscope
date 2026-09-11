@@ -31,10 +31,15 @@ public record JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> 
         }
     }
 
-    public record Parameter(String name, ParameterKind kind, List<Segment> segments) {
-        public Parameter(String name, ParameterKind kind) { this(name, kind, null); }
+    /** body key 값이 리터럴이면 그 종류. DYNAMIC은 식별자·호출 등 정적으로 알 수 없는 값이다. */
+    public enum LiteralKind { STRING, INTEGER, NUMBER, BOOLEAN, NULL, ARRAY, OBJECT, DYNAMIC }
+
+    public record Parameter(String name, ParameterKind kind, List<Segment> segments, LiteralKind literal) {
+        public Parameter(String name, ParameterKind kind) { this(name, kind, null, LiteralKind.DYNAMIC); }
+        public Parameter(String name, ParameterKind kind, List<Segment> segments) { this(name, kind, segments, LiteralKind.DYNAMIC); }
         public Parameter {
             segments = segments == null ? null : List.copyOf(segments);
+            literal = literal == null ? LiteralKind.DYNAMIC : literal;
         }
     }
 

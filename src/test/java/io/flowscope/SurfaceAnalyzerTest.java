@@ -231,8 +231,8 @@ final class SurfaceAnalyzerTest {
         assertEquals(SurfaceAnalysis.Requirement.OPTIONAL,
                 parameter(form, SurfaceAnalysis.ParameterLocation.FORM_BODY, "/zn").requirement());
         SurfaceAnalysis.EndpointFact multipart = endpoint(analysis, "POST", "/v9/beta");
-        assertEquals(SurfaceAnalysis.Requirement.REQUIRED,
-                parameter(multipart, SurfaceAnalysis.ParameterLocation.MULTIPART_BODY, "/blob").requirement());
+        // binary 파일 파트는 엔진이 관측하지 않으므로(text field만) 선언하면 영구 거짓 미관측 gap이 된다 — PR#11 규칙대로 제외.
+        assertTrue(multipart.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/blob")));
         assertEquals(SurfaceAnalysis.Requirement.OPTIONAL,
                 parameter(multipart, SurfaceAnalysis.ParameterLocation.MULTIPART_BODY, "/tag").requirement());
     }
@@ -759,6 +759,176 @@ final class SurfaceAnalyzerTest {
         assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED,
                 parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/items/*/id").deltaState(),
                 "배열 원소 wildcard 동작은 유지");
+    }
+
+    @Test
+    void OpenAPI_선언은_operation_override_union_enum_path타입을_PR_정의_의미로_보존한다() {
+        RequestRecord openapi = document("/openapi.json", "application/json", """
+                {"openapi":"3.1.0","components":{"parameters":{"q":{"name":"q","in":"query","required":true,"schema":{"type":"integer"}}},
+                  "schemas":{"Choice":{"oneOf":[{"type":"string","enum":["READY","DONE"]},{"type":"integer"}]}}},
+                 "paths":{"/orders/{orderId}":{
+                   "parameters":[{"$ref":"#/components/parameters/q"},{"name":"orderId","in":"path","required":true,"schema":{"type":"integer"}}],
+                   "get":{},
+                   "post":{"parameters":[{"name":"q","in":"query","required":false,"schema":{"type":"string"}}],
+                     "requestBody":{"content":{"application/json":{"schema":{"type":"object","properties":{
+                       "choice":{"$ref":"#/components/schemas/Choice"},
+                       "alternative":{"anyOf":[{"type":"boolean"},{"type":"number"}]},
+                       "createdAt":{"type":"string","format":"date-time"}}}}}}}}}}
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact get = endpoint(analysis, "GET", "/orders/{id}");
+        SurfaceAnalysis.ParameterFact getQ = parameter(get, SurfaceAnalysis.ParameterLocation.QUERY, "/q");
+        assertEquals(1, getQ.declarations().size(), "path-level parameter는 한 번만 선언");
+        assertEquals(SurfaceAnalysis.Requirement.REQUIRED, getQ.requirement());
+        assertEquals(SurfaceAnalysis.ValueType.INTEGER, getQ.declarations().getFirst().declaredType());
+        assertEquals(SurfaceAnalysis.Confidence.INFERRED, getQ.declarations().getFirst().confidence());
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/orders/{id}");
+        SurfaceAnalysis.ParameterFact postQ = parameter(post, SurfaceAnalysis.ParameterLocation.QUERY, "/q");
+        assertEquals(1, postQ.declarations().size(), "operation-level parameter가 같은 (in,name)의 path-level을 override");
+        assertEquals(SurfaceAnalysis.Requirement.OPTIONAL, postQ.requirement());
+        assertEquals(SurfaceAnalysis.ValueType.STRING, postQ.declarations().getFirst().declaredType());
+        SurfaceAnalysis.ParameterFact orderId = parameter(post, SurfaceAnalysis.ParameterLocation.PATH, "/segments/1");
+        assertEquals("orderId", orderId.displayName());
+        assertEquals(SurfaceAnalysis.ValueType.INTEGER, orderId.declarations().getFirst().declaredType(),
+                "path parameter의 선언 타입은 slot 좌표에 부착");
+        SurfaceAnalysis.ParameterFact choice = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/choice");
+        assertEquals(3, choice.declarations().size(), "oneOf 변형과 enum 인덱스별 선언");
+        assertEquals(SurfaceAnalysis.Requirement.CONDITIONAL, choice.requirement());
+        assertEquals(Set.of("oneOf[0];enum[0];", "oneOf[0];enum[1];", "oneOf[1];"),
+                choice.declarations().stream().map(SurfaceAnalysis.Declaration::conditionText).collect(Collectors.toSet()));
+        assertEquals(Set.of(SurfaceAnalysis.ValueType.STRING, SurfaceAnalysis.ValueType.INTEGER),
+                choice.declarations().stream().map(SurfaceAnalysis.Declaration::declaredType).collect(Collectors.toSet()));
+        SurfaceAnalysis.ParameterFact alternative = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/alternative");
+        assertEquals(2, alternative.declarations().size());
+        assertEquals(SurfaceAnalysis.Requirement.CONDITIONAL, alternative.requirement());
+        assertEquals(Set.of(SurfaceAnalysis.ValueType.BOOLEAN, SurfaceAnalysis.ValueType.NUMBER),
+                alternative.declarations().stream().map(SurfaceAnalysis.Declaration::declaredType).collect(Collectors.toSet()));
+        assertEquals(SurfaceAnalysis.ValueType.DATE_TIME,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/createdAt").declarations().getFirst().declaredType());
+        assertFalse(analysis.toString().contains("READY"), "enum 값은 복사하지 않는다");
+    }
+
+    @Test
+    void OpenAPI_swagger_body_formData와_form_multipart_binary_제외를_PR_의미로_처리한다() {
+        RequestRecord swagger = document("/swagger.json", "application/json", """
+                {"swagger":"2.0","basePath":"/v2","paths":{"/orders":{"post":{"parameters":[
+                  {"in":"formData","name":"note","type":"string"},
+                  {"in":"body","name":"payload","schema":{"type":"object","properties":{"count":{"type":"integer"}}}}]}}}}
+                """);
+        RequestRecord form = document("/form.json", "application/json", """
+                {"openapi":"3.0.0","paths":{"/form":{"post":{"requestBody":{"content":{
+                  "application/x-www-form-urlencoded":{"schema":{"properties":{"q":{"type":"string"}}}},
+                  "multipart/form-data":{"schema":{"properties":{"label":{"type":"string"},"file":{"type":"string","format":"binary"}}}}}}}}}}
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(swagger, form), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact orders = endpoint(analysis, "POST", "/v2/orders");
+        SurfaceAnalysis.ParameterFact note = parameter(orders, SurfaceAnalysis.ParameterLocation.FORM_BODY, "/note");
+        assertEquals(SurfaceAnalysis.Requirement.OPTIONAL, note.requirement(), "required 미표기는 OPTIONAL(PR 의미)");
+        assertEquals(SurfaceAnalysis.ValueType.STRING, note.declarations().getFirst().declaredType());
+        assertEquals(SurfaceAnalysis.ValueType.INTEGER,
+                parameter(orders, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/count").declarations().getFirst().declaredType());
+        SurfaceAnalysis.EndpointFact formEndpoint = endpoint(analysis, "POST", "/form");
+        assertEquals(SurfaceAnalysis.ValueType.STRING,
+                parameter(formEndpoint, SurfaceAnalysis.ParameterLocation.FORM_BODY, "/q").declarations().getFirst().declaredType());
+        assertEquals(SurfaceAnalysis.ValueType.STRING,
+                parameter(formEndpoint, SurfaceAnalysis.ParameterLocation.MULTIPART_BODY, "/label").declarations().getFirst().declaredType());
+        assertTrue(formEndpoint.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/file")),
+                "binary 파일 필드는 입력 선언으로 만들지 않는다");
+    }
+
+    @Test
+    void OpenAPI_외부ref_순환ref_민감이름_선언은_건너뛴다() {
+        RequestRecord openapi = document("/openapi.json", "application/json", """
+                {"openapi":"3.0.0","components":{"schemas":{"Loop":{"$ref":"#/components/schemas/Loop"}}},
+                 "paths":{"/orders":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{
+                  "remote":{"$ref":"https://outside.test/schema"},"loop":{"$ref":"#/components/schemas/Loop"},
+                  "password":{"type":"string"},"safe":{"type":"boolean"}}}}}}}}}}
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/orders");
+        assertEquals(Set.of("/safe"), post.parameters().stream().map(SurfaceAnalysis.ParameterFact::canonicalPath)
+                .collect(Collectors.toSet()), "외부 $ref·순환 $ref·민감 이름은 선언하지 않는다");
+    }
+
+    @Test
+    void JS_선언은_computed_spread_동적method_proto_컨테이너를_거부하고_리터럴_타입을_전달한다() {
+        RequestRecord script = document("/assets/app.js", "application/javascript", """
+                axios.post('/orders', {[field]: true});
+                axios.post('/orders', payload);
+                axios.post('/orders', {...payload, admin: true});
+                fetch('/orders', {method: verb, body: JSON.stringify({admin2: true})});
+                // axios.post('/orders', {comment: true});
+                const text = "axios.post('/orders', {text: true})";
+                axios.post('/orders', {__proto__: {polluted: true}, constructor: {chain: true}, prototype: {x: 1}, safe: true, plain: 1});
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(script), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/orders");
+        assertEquals(Set.of("/safe", "/plain"), post.parameters().stream()
+                .filter(item -> item.location() == SurfaceAnalysis.ParameterLocation.JSON_BODY)
+                .map(SurfaceAnalysis.ParameterFact::canonicalPath).collect(Collectors.toSet()),
+                "computed key·비리터럴·spread 포함 객체·__proto__·constructor/prototype 컨테이너·주석·문자열은 선언이 아니다");
+        assertTrue(analysis.endpoints().stream().noneMatch(item -> item.parameters().stream()
+                .anyMatch(parameter -> parameter.canonicalPath().equals("/admin2"))), "method를 해석하지 못한 call-site는 입력을 선언하지 않는다");
+        SurfaceAnalysis.Declaration safe = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/safe").declarations().getFirst();
+        assertEquals(SurfaceAnalysis.Confidence.INFERRED, safe.confidence());
+        assertEquals(SurfaceAnalysis.ValueType.BOOLEAN, safe.declaredType(), "리터럴 값 종류를 선언 타입으로 전달");
+        assertEquals(SurfaceAnalysis.ValueType.INTEGER,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/plain").declarations().getFirst().declaredType());
+    }
+
+    @Test
+    void 파라미터당_선언은_32개에서_잘리고_진단을_남긴다() {
+        StringBuilder enums = new StringBuilder();
+        for (int i = 0; i < 40; i++) { if (i > 0) enums.append(','); enums.append("\"V").append(i).append('"'); }
+        RequestRecord openapi = document("/openapi.json", "application/json",
+                "{\"openapi\":\"3.0.0\",\"paths\":{\"/orders\":{\"post\":{\"requestBody\":{\"content\":{\"application/json\":{\"schema\":"
+                        + "{\"type\":\"object\",\"properties\":{\"state\":{\"type\":\"string\",\"enum\":[" + enums + "]}}}}}}}}}}");
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.ParameterFact state = parameter(endpoint(analysis, "POST", "/orders"),
+                SurfaceAnalysis.ParameterLocation.JSON_BODY, "/state");
+        assertEquals(32, state.declarations().size(), "PR provenance/definition 상한 32");
+        assertTrue(analysis.parameterDiagnostics().stream()
+                .anyMatch(item -> item.reasonCode().equals("DECLARATION_LIMIT") && item.droppedCount() == 8));
+        assertFalse(analysis.toString().contains("V39"), "enum 값은 복사하지 않는다");
+    }
+
+    @Test
+    void OpenAPI_servers_변수_확장이_상한을_넘으면_route를_만들지_않는다() {
+        RequestRecord openapi = document("/openapi.json", "application/json",
+                "{\"openapi\":\"3.0.0\",\"servers\":[{\"url\":\"/{v}{v}\",\"variables\":{\"v\":{\"default\":\""
+                        + "x".repeat(5000) + "\"}}}],\"paths\":{\"/orders\":{\"post\":{}}}}");
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        assertTrue(candidates.stream().noneMatch(item -> item.pathTemplate().contains("xxxx")),
+                "확장 상한을 넘는 server base는 거부한다");
     }
 
     private static RequestRecord request(Source source, String method, String path, int status) {

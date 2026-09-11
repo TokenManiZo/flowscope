@@ -93,8 +93,11 @@ public final class OpenApiRouteDiscoveryAdapter implements RouteDiscoveryAdapter
             matcher.appendReplacement(expanded, java.util.regex.Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(expanded);
-        return expanded.toString();
+        // 변수 default가 반복 치환돼 좌표 상한(8,192자)을 넘는 server base는 route를 만들지 않는다.
+        return expanded.length() > MAX_SERVER_URL_CHARS ? "" : expanded.toString();
     }
+
+    private static final int MAX_SERVER_URL_CHARS = 8_192;
 
     private static String resolve(String base, String reference) {
         try { return URI.create(base).resolve(reference).toString(); }

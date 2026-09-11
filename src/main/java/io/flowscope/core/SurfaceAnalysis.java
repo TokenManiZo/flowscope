@@ -11,7 +11,9 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
                               List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics) {
     public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, HEADER, GRAPHQL_VARIABLE, XML_PATH }
     public enum ValueShape { EMPTY, STRING, INTEGER, DECIMAL, BOOLEAN, UUID, ARRAY, OBJECT, NULL, BINARY, UNKNOWN }
-    public enum Requirement { REQUIRED, OPTIONAL, UNKNOWN }
+    public enum Requirement { REQUIRED, OPTIONAL, CONDITIONAL, UNKNOWN }
+    /** 근거 신뢰도(PR#11): 실제 관측=OBSERVED, 독립 근거 2개 이상=CORROBORATED, 정의·추론=INFERRED, 부족=UNKNOWN. */
+    public enum Confidence { OBSERVED, CORROBORATED, INFERRED, UNKNOWN }
     public enum Presence { PRESENT, EXPLICIT_NULL }
     public enum ValueType { STRING, INTEGER, NUMBER, BOOLEAN, UUID, DATE_TIME, BINARY, UNKNOWN }
     public enum ExtractionStatus { PARSED, PARTIAL, FAILED, LIMIT_EXCEEDED }
@@ -70,17 +72,34 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     public record ParameterObservation(String evidenceId, Source source, String runId, String identity,
                                        int status, ValueShape shape, AccessRole role, RunPhase phase,
                                        Presence presence, ValueType valueType, int byteLength, boolean masked,
-                                       String contextSignature) {}
+                                       String contextSignature, Confidence confidence) {}
 
+    /**
+     * 선언 근거. declaredType/declaredShape/conditionText는 OpenAPI·JS 정의가 밝힌 타입·형태·조건(oneOf[i]/anyOf[i]/enum[i] 인덱스,
+     * 값은 복사하지 않음)이며 없으면 null/빈 문자열. confidence는 정의·추론이면 INFERRED(PR#11 ParameterDefinition 의미).
+     */
     public record Declaration(String evidenceId, Source source, String runId, String type,
                               String adapter, String reason,
                               io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion coordinateVersion,
-                              boolean coordinateResolved) {
+                              boolean coordinateResolved, ValueType declaredType, ValueShape declaredShape,
+                              String conditionText, Confidence confidence) {
+        public Declaration {
+            conditionText = conditionText == null ? "" : conditionText;
+            confidence = confidence == null ? Confidence.INFERRED : confidence;
+        }
         /** endpoint 수준 선언·좌표가 확정된 파라미터 선언용(FLOW_V2, resolved). */
         public Declaration(String evidenceId, Source source, String runId, String type,
                            String adapter, String reason) {
             this(evidenceId, source, runId, type, adapter, reason,
-                    io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.FLOW_V2, true);
+                    io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.FLOW_V2, true,
+                    null, null, "", Confidence.INFERRED);
+        }
+        public Declaration(String evidenceId, Source source, String runId, String type,
+                           String adapter, String reason,
+                           io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion coordinateVersion,
+                           boolean coordinateResolved) {
+            this(evidenceId, source, runId, type, adapter, reason, coordinateVersion, coordinateResolved,
+                    null, null, "", Confidence.INFERRED);
         }
     }
 
