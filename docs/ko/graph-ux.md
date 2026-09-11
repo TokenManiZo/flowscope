@@ -1,5 +1,7 @@
 # FlowScope 초기 그래프 UX 조사 기록 — Swing/JGraphX
 
+> **2026-09-11 D-143 5c:** 현재 React 그래프의 방향과 계층 계약은 `GRAPH_IDA_REDESIGN.md`(PR#11 이식본)의 `Identity → API → Object`, `Site → API 그룹 → API → Object`와 `+18` 증분이 우선한다. 아래 조사 기록은 그 이전 상태다.
+
 > **2026-09-07 D-126:** 이 문서의 Swing/JGraphX 설계와 beta별 LLM 실행 설명은 역사 기록이다. 현재 React 기본 Surface·인가 상세와 저장된 LLM 이력의 의미는 [UI 근거](ui-product-rationale.md), 진행상황은 [HANDOFF](HANDOFF.md)를 따른다. 새 자동 LLM 실행을 전제로 이 계획을 재개하지 않는다.
 
 > **상태:** 아래 문서는 초기 Swing/JGraphX 조사 기록이며 현재 구현 계획이 아니다. 제품 UI 구현 선택은 D-048에 의해 번들 Cytoscape.js localhost Web 작업면으로 대체되었다. 계층 방향, source/verdict 채널 분리, focus+context, 필터, 단계적 펼치기 원칙만 계속 유효하다. 현재 화면별 근거와 발표 설명은 `ui-product-rationale.md`, 현재 백엔드 계약은 `architecture.md`를 따른다.

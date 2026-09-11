@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 7단계(통합 검증·최종 인계) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 저장·재열기 통합 | `PortedFeaturesReopenTest`: 샘플 프로젝트 + 매트릭스 검토(object CONFIRMED·function DISMISSED) → JSON·SQLite 저장·재열기 → Evidence ID 순서 동일, `surface` 6개 배열·`cells`·`gaps`·`authorizationMatrix`(reviewStatus 포함) JSON 동일, 비밀 문자열 없음. GREEN. |
+| 화면 간 선택·Evidence | `crossScreenSelection.test.ts` 4건(캡처 snapshot 무값 확인, 큐 Gap→검증 cell→정본 cell Evidence 포함, Object View·판정 매트릭스·기존 매트릭스 동일 Evidence, 경로 후보 중립). GREEN. |
+| JDK 21 `mvn -o clean verify` | BUILD SUCCESS. Java 533 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 47 files/371 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,930,936 bytes(이 verify의 단일 빌드값). |
+| Playwright parity(패키지 JAR, 격리 workspace) | 최종 10/10 passed(20.3s; 우선순위 Gap 그래프 1920/1280/600·판정 매트릭스 900/600 검사 포함). 같은 JAR로 3회 실행: 1·2회차는 새 우선순위 Gap 그래프 테스트의 순서 결함(모달 Sheet 아래 workspace 가시성, 600px 진입 전에 상세를 닫아 큐 sheet가 자동 열림)으로 실패해 테스트만 수정(제품 코드 변경 없음). 1회차에서 graph-lane 검사(zoom·fit 기하 polling) 1회 flaky, 재시도 통과. |
+| 미실측 | 실제 Burp 재로드·프로젝트 재열기·Windows·ZAP 복수 계정(기존 운영 gate). 대규모 dataset interaction latency. |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 6단계(판정 매트릭스 P/E/O) gate
 
 | 항목 | 실제 확인 결과 |

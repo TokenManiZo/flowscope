@@ -1,6 +1,6 @@
 # FlowScope 팀 인계 정본
 
-최종 갱신: 2026-09-11 PR #11·#12 이식 6단계(PR#12 판정 매트릭스 P/E/O·BFLA/BOLA 수동 테스트 추천·사람 검토, D-144 정본 재판정 금지 guard; 패키지 Chromium 실측·Playwright) 완료, 5단계(5a: `#parameter-map` 우선순위 Gap 그래프·검증표·Gap 상세→Evidence→Request Lab, 5b: 구조화 요청 비교 탭 + `EndpointFact.requestContexts`, 5c: `#graph` 계층 관계 그래프 Site→API 그룹→API→Object·`+18`, D-142 gate 해소, 5d: snapshot surface 계약·단일 캐시 회귀 + 선언 preview 결정성 수정) 패키지 Chromium 실측 완료, 4단계(권한 대상 link·검증 cell·AUTH_VARIANT_UNTESTED)·3단계(파라미터 프로파일·discovery Gap) 자동 회귀 + 패키지 Standalone snapshot 실측 완료, 2단계(선언 의미 확장) 자동 회귀 완료, 1단계(네 결함 수정·기능 대조표)는 패키지 Chromium 실측 포함; Burp 미실행 — 관측·선언이 공통 ParameterCoordinate로 병합하고 `mvn clean verify` 통과; packaged JAR·실제 실행은 미실행. 이전: D-140~142 자동 회귀와 패키지 Standalone E2E 완료, 운영 gate 대기. 새 진단 시작 시 기존 화면을 삭제하는 대신 현재 상태를 `~/.flowscope/projects/<진단명--scope--시각>/project.flowscope.db`에 먼저 저장하고 새 exact scope의 빈 프로젝트로 전환한다. React 상단 프로젝트 선택기·저장 상태·새 진단 대화상자와 Surface→Evidence/Request Lab/Repeater를 실제 API에 연결하고 삭제형 `/api/clear`는 거부한다. Standalone도 격리된 SQLite workspace로 같은 프로젝트 API를 검증하며 Explorer 사용 불가는 500이 아닌 명시적 상태로 표시한다. JDK 21 전체 verify 2회가 React 250·Java 407 tests와 최종 JAR gate를 통과했고, clean JAR의 Chromium E2E 8/8이 통과했다. 실제 Burp 재로드·프로젝트 재열기·최종 ZAP/Explorer 운영 검증 전이므로 릴리스 완료로 간주하지 않는다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
+최종 갱신: 2026-09-11 PR #11·#12 이식 1~7단계 완료(최종 인계 §1-1; 7단계: JSON·SQLite 재열기·화면 간 Evidence 통합 회귀, Playwright 좁은 viewport, 설계 문서 이식), 6단계(PR#12 판정 매트릭스 P/E/O·BFLA/BOLA 수동 테스트 추천·사람 검토, D-144 정본 재판정 금지 guard; 패키지 Chromium 실측·Playwright) 완료, 5단계(5a: `#parameter-map` 우선순위 Gap 그래프·검증표·Gap 상세→Evidence→Request Lab, 5b: 구조화 요청 비교 탭 + `EndpointFact.requestContexts`, 5c: `#graph` 계층 관계 그래프 Site→API 그룹→API→Object·`+18`, D-142 gate 해소, 5d: snapshot surface 계약·단일 캐시 회귀 + 선언 preview 결정성 수정) 패키지 Chromium 실측 완료, 4단계(권한 대상 link·검증 cell·AUTH_VARIANT_UNTESTED)·3단계(파라미터 프로파일·discovery Gap) 자동 회귀 + 패키지 Standalone snapshot 실측 완료, 2단계(선언 의미 확장) 자동 회귀 완료, 1단계(네 결함 수정·기능 대조표)는 패키지 Chromium 실측 포함; Burp 미실행 — 관측·선언이 공통 ParameterCoordinate로 병합하고 `mvn clean verify` 통과; packaged JAR·실제 실행은 미실행. 이전: D-140~142 자동 회귀와 패키지 Standalone E2E 완료, 운영 gate 대기. 새 진단 시작 시 기존 화면을 삭제하는 대신 현재 상태를 `~/.flowscope/projects/<진단명--scope--시각>/project.flowscope.db`에 먼저 저장하고 새 exact scope의 빈 프로젝트로 전환한다. React 상단 프로젝트 선택기·저장 상태·새 진단 대화상자와 Surface→Evidence/Request Lab/Repeater를 실제 API에 연결하고 삭제형 `/api/clear`는 거부한다. Standalone도 격리된 SQLite workspace로 같은 프로젝트 API를 검증하며 Explorer 사용 불가는 500이 아닌 명시적 상태로 표시한다. JDK 21 전체 verify 2회가 React 250·Java 407 tests와 최종 JAR gate를 통과했고, clean JAR의 Chromium E2E 8/8이 통과했다. 실제 Burp 재로드·프로젝트 재열기·최종 ZAP/Explorer 운영 검증 전이므로 릴리스 완료로 간주하지 않는다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -16,7 +16,49 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 사용자 전역 모델 설정·인증 파일, 사용 중인 Burp/ZAP, 다른 Claude worktree와 서드파티 패키지 내부 MCP 파일은 제거 대상이 아니었다. 구버전 확장이 실제로 실행 중이라면 새 소스의 삭제 사실만으로 그 프로세스·포트까지 종료됐다고 판단하지 않는다.
 
+## 1-1. PR #11·#12 이식 최종 인계 (2026-09-11)
+
+**흡수한 기능과 코드 위치** (기능 대조표 전체는 `product-development-plan.md` "PR #11·#12 이식 기능 대조표")
+
+- 관측·선언 공통 parameter coordinate와 네 결함 수정(1단계): `core/parameter/ParameterCoordinates`·`ParameterExtractor`, `core/SurfaceAnalyzer`(PATH `/segments/N` placeholder 위치, JSON 실제 타입, JS `Segment`, Surface React key). 커밋 `588de54`·`268769c`·`97a94a2`.
+- 선언 의미 확장(2단계): OpenAPI union/enum `CONDITIONAL`·declaredType/Shape·servers 상한, JS `__proto__`/오버사이즈 거부. 커밋 `a1445f6`.
+- 파라미터 프로파일·discovery Gap(3단계): `SurfaceAnalysis.ParameterProfile/ParameterGap`, `SurfaceAnalyzer.profile/gaps` (`SOURCE_MISSED`·`IDENTITY_MISSED`·`DEFINED_NOT_OBSERVED`·`TYPE_VARIANT_UNOBSERVED`·`CONDITION_COMBINATION_UNOBSERVED`, `RowLedger`, 32 preview). 커밋 `55edaa2`.
+- 권한 대상 link·검증 cell·`AUTH_VARIANT_UNTESTED`(4단계): `core/SurfaceAuthorizationLinker`, `SurfaceAnalysis.AuthorizationTargetLink/ParameterValidationCell`, snapshot `surface.validationCells`. 커밋 `5d415ce`.
+- 우선순위 Gap 그래프 화면(5a): `frontend/src/features/parameter-map/*`, route `#parameter-map`. 커밋 `56f21c9`.
+- 구조화 요청 비교(5b): `EndpointFact.requestContexts`, `parameter-map/requestDiff.ts`·`ParameterRequestDiff.tsx`. 커밋 `f4e71c5`.
+- 계층 관계 그래프(5c): `frontend/src/features/graph/{graphHierarchy,graphFocus,relationshipNodeCard}.ts`, `CytoscapeGraph/ResponsiveGraphList/GraphInspectorPanel/GraphPage`(Site→API 그룹→API→Object, `+18`). 커밋 `6527484`.
+- snapshot 계약·캐시 회귀와 선언 preview 결정성(5d): `web/SnapshotSurfaceContractTest`, `SnapshotJsonWriter.surfaceBuildCount()`, `SurfaceAnalyzer` 선언 안정 선택. 커밋 `b3bd07d`.
+- 판정 매트릭스 P/E/O·수동 테스트 추천·사람 검토(6단계, D-144): `core/AuthorizationMatrix`·`AuthorizationMatrixAnalyzer`, snapshot `authorizationMatrix`, `/api/review` cell id, `frontend/src/features/matrix/{JudgmentMatrixView,judgmentProjection}`·`MatrixPage` 두 탭. 커밋 `330cb6c`.
+- 통합 검증·설계 문서(7단계): `PortedFeaturesReopenTest`, `frontend/src/features/crossScreenSelection.test.ts`(+`src/test/sample/sample-snapshot.json`), Playwright parity 확장, `docs/ko/GRAPH_IDA_REDESIGN.md`·`GRAPH_NOISE_FP_FN_REDUCTION.md`, decisions 부록. 커밋 7단계 마지막 커밋(`git log -1`, 이 문서 포함).
+
+**제외·변경한 기능과 이유** (`product-development-plan.md` 제외·변경 목록, D-143 각 단계 기각, D-144 기각)
+
+- PR record-level `parameterObservations` 영속·attached generation·fingerprint 캐시 → projection 재계산·단일 게시본 캐시(제2정본 없음). 64자 masked preview snapshot 노출 → 비노출 유지(코덱스 지시, 결정 대기).
+- PR `graph` route를 파라미터 맵으로 교체·두 탭 wrapper → 별도 route `#parameter-map` + `#graph`는 계층 관계 그래프. PR `WorkspaceNavigation` 드롭다운 → 현행 `RouteIconRail`. PR `evidenceContext` → D-140 `datasetRevision`. PR evidence API per-record 관측·digest → 미노출.
+- PR 서버 `FlowGraphBuilder` 방향 변경·legacy `index.html` 그래프/매트릭스 교체 → 미이식(legacy 전체 교체 금지, React가 정본 UI). PR `inputCoverage`·`events[].inputs` → `snapshot.surface` 프로파일로 대체.
+- PR#12 후보 승격(2xx+소유관계)·`ValidationDecision` E3 승격·교차 객체 fallback → 정본 cell SUSPICIOUS/roleViolation만, 본문 미확인 성공은 수동 결과 검토, 이력 표시만(D-144).
+- PR plans/specs 작업 계획서 4건 → 미이식(계약 아님), D-093~D-099는 decisions 부록 대응표.
+
+**검증한 사용자 흐름** (`beta-validation.md` 각 단계 gate)
+
+- 패키지 Standalone Chromium 실측: Surface 상세 canonical 표시(1단계) → HAR import로 SOURCE_MISSED gap(3단계) → snapshot link/cell(4단계) → `#parameter-map` 큐→경로 카드→상세→검증표→Evidence→Request Lab(5a), 요청 비교 탭(5b) → `#graph` Site→ORDERS→GET→객체 상세·툴팁·키보드·GAP 후보 focus·900px 목록(5c) → `#matrix` 판정 매트릭스 BFLA/BOLA 상세·기준 Evidence·사람 판정 저장(6단계).
+- Playwright parity(패키지 JAR): 전체 route, 계층 그래프 카드·lane·zoom/fit/drag/lock, 판정 매트릭스 요약·상세·검토 폼, 우선순위 Gap 그래프 1920/1280/600, 반응형 900/600(매트릭스·그래프·Sheet), Request Lab, 계정, ZAP/Explorer, XML import.
+- 자동 회귀: `mvn -o clean verify` Java 533 tests·frontend 47 files/371 tests, JSON·SQLite 재열기 동일성, 화면 간 Evidence 일관성.
+
+**남은 결함·미검증**
+
+- 실제 Burp Montoya 재로드·프로젝트 재열기·Request Lab 전송·복수 계정 귀속, Windows, ZAP 로그인 복수 계정(기존 운영 gate)은 미실행.
+- Playwright `keeps graph lanes …` 검사가 한 번 첫 시도에서 resize 후 geometry 갱신 poll(5초)을 넘겨 재시도로 통과했다(flaky, 재현 조건 미확정).
+- 대규모 실제 dataset의 그래프·매트릭스 interaction latency 미측정. 파라미터당 선언 32 상한·경로 후보 그룹·보조 흐름은 샘플 규모 밖이라 vitest로만 확인.
+- masked preview 노출 여부는 결정 대기.
+
+**산출물**
+
+- 브랜치 `claude/explorer-identity-regression`, 커밋 `588de54`~7단계 마지막 커밋(`git log -1`, 이 문서 포함)(push·Release 없음). JAR `target/flowscope-1.2.0-beta.46.jar` 31,930,936 bytes(최종 verify 단일 빌드값).
+
 ## 2. 진행상황
+
+2026-09-11 완료(자동 회귀·패키지 JAR Playwright) · PR #11·#12 이식 7단계 — 통합 검증·설계 문서·최종 인계: JSON·SQLite 재열기 뒤 Gap·검증 cell·link·판정 매트릭스·사람 검토 재계산 동일성(`PortedFeaturesReopenTest`), 패키지 샘플 snapshot 캡처로 네 화면의 동일 Evidence(`crossScreenSelection.test.ts` 4건), Playwright 우선순위 Gap 그래프 1920/1280/600·판정 매트릭스 900/600 추가, PR#11 그래프 설계 문서 2건 이식본과 decisions 부록(D-093~099 대응). `mvn -o clean verify` 533 tests·frontend 47 files/371 tests BUILD SUCCESS, JAR 31,930,936 bytes, Playwright 최종 10/10 passed(20.3s; 1·2회차는 새 e2e 테스트 순서 결함으로 실패해 테스트만 수정, 1회차 graph-lane 검사 1회 flaky 재시도 통과). 최종 인계는 위 1-1.
 
 2026-09-11 완료(자동 회귀·패키지 Chromium 실측·Playwright) · PR #11·#12 이식 6단계 — 판정 매트릭스: PR#12 `AuthorizationMatrix`/`AuthorizationMatrixAnalyzer`를 이식하되 후보 승격은 정본 cell(BOLA: SUSPICIOUS, BFLA: roleViolation)만 따르고 본문 미확인 성공은 `수동 결과 검토`, 과거 `ValidationDecision`은 정확 cell 이력 표시만(E3·재현 자동 부여 없음)으로 guard했다(D-144). snapshot `authorizationMatrix`, `/api/review`의 매트릭스 cell id 수용(서버 Evidence 결박), React `#matrix` 두 탭(판정 매트릭스 기본: 요약·BFLA/BOLA·IDOR/실행 Evidence 보기·주의 필터·P/E/O 범례·셀 상세(추천 조합·게이트·오라클·Evidence 상세·사람 최종 판정) / 기존 권한 매트릭스). `inputCoverage`·legacy HTML 교체는 미이식. Java `AuthorizationMatrixAnalyzerTest` 10·웹 서버 검토 왕복, vitest 10건 신규, `mvn -o clean verify` 532 tests·frontend 46 files/367 tests BUILD SUCCESS, JAR 31,930,936 bytes; Standalone(17777) 실측(BFLA 후보 상세, BOLA/IDOR 후보 상세 P2·E2·O3, 사람 판정 기각 저장 `POST /api/review` 200→라벨·요약 반영, Evidence 상세 시트, 기존 매트릭스 탭, 콘솔 오류 0), Playwright parity 9/9 passed(판정 매트릭스 검사 포함). 다음: 7단계 통합 검증(화면 간 선택·Evidence·저장/재열기, 좁은 viewport 패키지 실측, PR#11 설계 문서 이식)·최종 인계.
 

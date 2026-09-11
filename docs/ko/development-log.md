@@ -1,5 +1,25 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 7단계 — 통합 검증(화면 간 선택·Evidence·저장/재열기·좁은 viewport)과 설계 문서 이식, 최종 인계
+
+### 원인과 수정
+
+- 1~6단계가 각 기능을 단위·패키지 실측으로 고정했지만, 이식한 관계(파라미터 Gap·검증 cell·권한 대상 link·판정 매트릭스·사람 검토)가 프로젝트 저장·재열기 뒤에도 같은 Evidence ID·좌표·검토 상태로 재계산되는지, 그리고 네 화면(우선순위 Gap 그래프·계층 관계 그래프·판정 매트릭스·기존 권한 매트릭스)이 같은 좌표에서 같은 서버 Evidence를 여는지는 통합으로 고정하지 않았다. 좁은 viewport의 패키지 실측도 5a는 수동 Chromium뿐이었다.
+- **Java 통합 회귀** `PortedFeaturesReopenTest`: 샘플 프로젝트에서 판정 매트릭스 object cell(BOLA/IDOR 후보)을 CONFIRMED, function cell을 DISMISSED로 검토한 뒤 JSON `ProjectStore`와 `SqliteProjectStore`로 저장·재열기 → Evidence ID 순서·`surface`(parameterGaps·validationCells·parameterDiagnostics·endpoints·extractions·probes)·`cells`·`gaps`·`authorizationMatrix`(검토 상태 포함) JSON이 저장 전과 동일하고 값·digest·원문이 없다(제2정본 없이 재계산 동일성).
+- **프런트 통합 회귀** `crossScreenSelection.test.ts`: 패키지 Standalone 샘플의 실제 `/api/snapshot`(값·원문·digest·마스킹 문자열 없음, 146KB)을 `src/test/sample/sample-snapshot.json`으로 캡처해 (1) 큐 Gap 증인이 서버 event/선언 Evidence이고 선택 검증 cell이 서버 목록에서 오며 tested cell Evidence가 같은 좌표의 정본 cell Evidence에 포함됨, (2) 계층 그래프 Object View의 셀 선택·판정 매트릭스 object cell·기존 매트릭스 member가 같은 정본 cell의 Evidence를 열음, (3) 경로 후보가 네 화면에서 중립(identity/resource null, provenance는 서버 event)임을 고정했다.
+- **Playwright**: 우선순위 Gap 그래프 작업면 검사(1920 canvas·큐 선택→`Parameter Gap 상세` `pg:` id, `Gap 그래프 맞추기`, 1280 상세 sheet·큐 pane 유지, 600 경로 목록·`점검 큐 열기` sheet→상세 dialog, 가로 overflow 없음)와 반응형 검사(900/600)에 판정 매트릭스(필터 dialog에서 BOLA/IDOR 탭 → risk 셀 → 선택 상세 dialog의 신뢰도 축) 추가.
+- **설계 문서 이식**: PR#11 `GRAPH_IDA_REDESIGN.md`·`GRAPH_NOISE_FP_FN_REDUCTION.md`를 현행 React 계층(D-143 5c)과 D-144 guard 기준으로 고쳐 써 `docs/ko/`에 두고, `graph-ux.md` 서문과 `decisions.md` 부록(PR D-093~D-099 ↔ D-143/D-144 대응표), `documentation-status.md` 등록을 추가했다. PR 작업 계획서(plans/specs 4건)는 이식하지 않았다(계획서이지 계약이 아님).
+
+### 영향 파일·회귀
+
+- 코드/테스트: `src/test/java/io/flowscope/PortedFeaturesReopenTest.java`, `frontend/src/features/crossScreenSelection.test.ts`, `frontend/src/test/sample/sample-snapshot.json`, `frontend/e2e/parity.spec.ts`.
+- 문서: `docs/ko/GRAPH_IDA_REDESIGN.md`, `docs/ko/GRAPH_NOISE_FP_FN_REDUCTION.md`, `docs/ko/graph-ux.md`, `docs/ko/decisions.md`(부록), `docs/ko/documentation-status.md`, `docs/ko/product-development-plan.md`(7단계·최종 대조표), `docs/ko/HANDOFF.md`(최종 인계), `CHANGELOG.md`, `docs/ko/beta-validation.md`.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 533 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 47 files/371 tests. JAR `target/flowscope-1.2.0-beta.46.jar` 31,930,936 bytes. Playwright parity 최종 10/10 passed(20.3s): 같은 JAR로 3회 실행했고 1·2회차는 새 우선순위 Gap 그래프 테스트의 순서 결함(모달 Sheet 아래 workspace 가시성, 600px 진입 전 상세 닫힘→큐 sheet 자동 열림)으로 실패해 테스트만 수정, 1회차 graph-lane 검사 1회 flaky(재시도 통과).
+
+### 남은 한계·다음 gate
+
+- 실제 Burp Montoya 재로드·프로젝트 재열기·Windows·ZAP 로그인 복수 계정은 미실행(기존 운영 gate). 64자 masked preview snapshot 노출은 코덱스 지시로 비노출 유지(결정 대기). 대규모 실제 dataset의 그래프·매트릭스 interaction latency 미측정.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 6단계 — 판정 매트릭스(P/E/O)·BFLA/BOLA 수동 테스트 추천·사람 검토(D-144)
 
 ### 원인과 수정
