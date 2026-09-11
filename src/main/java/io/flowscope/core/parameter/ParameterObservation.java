@@ -16,8 +16,15 @@ public record ParameterObservation(
     public enum ValueType { STRING, INTEGER, NUMBER, BOOLEAN, UUID, DATE_TIME, BINARY, UNKNOWN }
     public enum Confidence { OBSERVED, CORROBORATED, INFERRED, UNKNOWN }
 
-    public record ValueSummary(ValueType type, int byteLength, String digest, String maskedPreview) {
+    /** 값 문자열의 형식 신호. 실제 타입({@link ValueType})을 덮어쓰지 않는 별도 메타데이터다. */
+    public enum Format { NONE, UUID, INTEGER_LIKE, DECIMAL_LIKE, BOOLEAN_LIKE }
+
+    public record ValueSummary(ValueType type, int byteLength, String digest, String maskedPreview, Format format) {
+        public ValueSummary(ValueType type, int byteLength, String digest, String maskedPreview) {
+            this(type, byteLength, digest, maskedPreview, Format.NONE);
+        }
         public ValueSummary {
+            format = format == null ? Format.NONE : format;
             if (type == null || byteLength < 0) {
                 throw new IllegalArgumentException("parameter value summary requires type and non-negative byte length");
             }

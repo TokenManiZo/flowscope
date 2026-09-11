@@ -297,6 +297,13 @@ public final class SurfaceAnalyzer {
     private static Coordinate declaredCoordinate(RouteCandidate.DeclaredParameter parameter, RouteCandidate candidate,
                                                  List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
         if (parameter.coordinateVersion() == ParameterCoordinates.CoordinateVersion.FLOW_V2) {
+            if (parameter.location() == ParameterLocation.PATH
+                    && !ParameterCoordinates.pathSlotPosition(candidate.pathTemplate(), parameter.fieldPath())) {
+                // legacy path[i]가 placeholder가 아닌 위치를 가리킬 때와 같은 결과: 확정하지 않는다.
+                diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(parameter.evidenceId(),
+                        candidate.method() + " " + candidate.pathTemplate(), "INVALID_PATH_POSITION", 0));
+                return new Coordinate(parameter.fieldPath(), false);
+            }
             return new Coordinate(parameter.fieldPath(), true);
         }
         return ParameterCoordinates.legacyToCanonical(parameter.location(), parameter.fieldPath(),
@@ -316,10 +323,10 @@ public final class SurfaceAnalyzer {
     private static Coordinate jsBodyCoordinate(JavascriptAnalysis.Parameter parameter) {
         if (parameter.segments() != null && !parameter.segments().isEmpty()) {
             String canonical = "";
-            for (String segment : parameter.segments()) {
-                canonical = segment.equals(ParameterCoordinates.ARRAY_WILDCARD)
+            for (JavascriptAnalysis.Segment segment : parameter.segments()) {
+                canonical = segment.arrayElement()
                         ? ParameterCoordinates.arrayElement(canonical)
-                        : ParameterCoordinates.jsonChild(canonical, segment);
+                        : ParameterCoordinates.jsonChild(canonical, segment.key());
             }
             return new Coordinate(canonical, true);
         }
@@ -698,14 +705,29 @@ public final class SurfaceAnalyzer {
         };
     }
 
-    private static ValueShape mapShape(io.flowscope.core.parameter.ParameterObservation.Shape shape, ValueType type) {
+    /**
+     * 표시용 shape. 실제 타입이 있는 JSON/GraphQL은 타입 기준이며 UUID 형식만 승격한다(숫자형 문자열 "1"은 STRING 유지).
+     * wire 위치(PATH/QUERY/FORM/MULTIPART/HEADER/XML)는 타입이 항상 STRING이므로 형식 신호로 INTEGER/UUID 등을 표시한다.
+     */
+    private static ValueShape mapShape(ParameterLocation location,
+                                       io.flowscope.core.parameter.ParameterObservation.Shape shape, ValueType type,
+                                       io.flowscope.core.parameter.ParameterObservation.Format format) {
         return switch (shape) {
             case OBJECT -> ValueShape.OBJECT;
             case ARRAY -> ValueShape.ARRAY;
             case NULL -> ValueShape.NULL;
             case UNKNOWN -> ValueShape.UNKNOWN;
             case SCALAR -> switch (type) {
-                case STRING, DATE_TIME -> ValueShape.STRING;
+                case STRING, DATE_TIME -> {
+                    boolean wire = location != ParameterLocation.JSON_BODY && location != ParameterLocation.GRAPHQL_VARIABLE;
+                    yield switch (format) {
+                        case UUID -> ValueShape.UUID;
+                        case INTEGER_LIKE -> wire ? ValueShape.INTEGER : ValueShape.STRING;
+                        case DECIMAL_LIKE -> wire ? ValueShape.DECIMAL : ValueShape.STRING;
+                        case BOOLEAN_LIKE -> wire ? ValueShape.BOOLEAN : ValueShape.STRING;
+                        case NONE -> ValueShape.STRING;
+                    };
+                }
                 case INTEGER -> ValueShape.INTEGER;
                 case NUMBER -> ValueShape.DECIMAL;
                 case BOOLEAN -> ValueShape.BOOLEAN;
@@ -789,7 +811,8 @@ public final class SurfaceAnalyzer {
             sources.add(engineObs.source());
             if (engineObs.evidenceId() != null) evidenceIds.add(engineObs.evidenceId());
             ValueType valueType = mapType(engineObs.value());
-            ValueShape observedShape = mapShape(engineObs.shape(), valueType);
+            ValueShape observedShape = mapShape(location, engineObs.shape(), valueType, engineObs.value() == null
+                    ? io.flowscope.core.parameter.ParameterObservation.Format.NONE : engineObs.value().format());
             Presence presence = mapPresence(engineObs.presence());
             shapes.add(observedShape);
             valueTypes.add(valueType);
@@ -797,7 +820,10 @@ public final class SurfaceAnalyzer {
             boolean masked = engineObs.value() != null && engineObs.value().maskedPreview() != null
                     && engineObs.value().maskedPreview().contains("***MASKED***");
             boolean newlyTruncated = false;
-            String digest = engineObs.value() == null ? null : engineObs.value().digest();
+            // 엔진 digest는 원문 스칼라 기준(PR#11 권한 연결의 exact scalar 매칭 계약)이라 "1"과 1이 같다.
+            // distinct 계수는 실제 타입을 키에 포함해 타입 차이를 보존한다.
+            String digest = engineObs.value() == null || engineObs.value().digest() == null
+                    ? null : valueType.name() + ":" + engineObs.value().digest();
             if (digest != null && !distinctDigests.contains(digest)) {
                 if (distinctDigests.size() < MAX_DISTINCT_VALUES) distinctDigests.add(digest);
                 else if (!distinctTruncated) { distinctTruncated = true; newlyTruncated = true; }

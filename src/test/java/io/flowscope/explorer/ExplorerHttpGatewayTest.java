@@ -246,6 +246,13 @@ final class ExplorerHttpGatewayTest {
             HttpResponse<String> accepted = post(gateway, gateway.discoveriesUrl(), canonicalPointer);
             assertEquals(200, accepted.statusCode(), accepted.body());
             assertEquals(1, JSON.readTree(accepted.body()).path("accepted_parameters").asInt());
+            // PATH 위치는 변수 개수가 아니라 실제 placeholder 위치여야 한다: /api/orders/{id}는 /segments/2만 유효.
+            String wrongSlot = declaration.replace("\"field_path\":\"path[3]\"", "\"field_path\":\"/segments/0\"");
+            assertEquals(400, post(gateway, gateway.discoveriesUrl(), wrongSlot).statusCode(),
+                    "/segments/0은 'api' 세그먼트이지 placeholder가 아니다");
+            String rightSlot = declaration.replace("\"field_path\":\"path[3]\"", "\"field_path\":\"/segments/2\"");
+            HttpResponse<String> slotOk = post(gateway, gateway.discoveriesUrl(), rightSlot);
+            assertEquals(200, slotOk.statusCode(), slotOk.body());
         }
     }
 

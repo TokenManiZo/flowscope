@@ -1,5 +1,26 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 1단계 — 재현된 네 결함 수정과 기능 대조표
+
+### 원인과 수정
+
+- 사용자가 재현한 네 결함을 하나의 후속 수정 단위로 고쳤다. 각 결함을 먼저 실패 회귀로 재현한 뒤(Java 5건·React 1건 RED 확인) 구현했다. 같은 단위에서 `product-development-plan.md`에 PR #11·#12 기능 대조표(1~7단계)와 제외·변경 목록을 만들었다.
+- **PATH 위치 검증:** Explorer `canonicalFieldPath`가 `/segments/N`을 변수 개수(`N < slots.size()`)로만 검사해 `/api/orders/{id}`의 `/segments/0`("api")을 받아들였다. `ParameterCoordinates.pathSlotPosition(template, canonical)`이 실제 placeholder 위치인지 검사하고, Explorer는 아니면 400, `SurfaceAnalyzer.declaredCoordinate`는 FLOW_V2 PATH도 같은 검사로 미확정(`INVALID_PATH_POSITION`)에 둔다. legacy `path[1]`(placeholder 아님)과 같은 결과다.
+- **JSON 실제 타입 보존:** 슬라이스 1의 `scalarType`이 JSON 문자열 `"1"`을 INTEGER로, UUID 문자열을 UUID 타입으로 분류해 실제 타입을 덮어썼고, 그 결과 엔진 sequence의 STRING 인용이 빠져 `"1"`과 `1`의 digest가 같아져 distinct가 1로 접혔다. PR#11 원칙(D-096 보정: wire 문자열은 타입 분류하지 않음, UUID/DATE_TIME/BINARY는 OpenAPI `format`의 선언 타입)대로 엔진 `type()`·PATH/FORM 추출을 STRING으로 복원하고, 형식 신호는 새 `ValueSummary.format`(NONE/UUID/INTEGER_LIKE/DECIMAL_LIKE/BOOLEAN_LIKE)으로만 전달한다. 표시 `ValueShape`는 JSON/GraphQL이면 실제 타입 기준(UUID 형식만 승격), wire 위치(PATH/QUERY/FORM/MULTIPART/HEADER/XML)는 타입이 항상 STRING이므로 형식 신호로 INTEGER/UUID 등을 표시해 기존 IDOR 신호를 유지한다. distinct 계수는 `타입:digest` 키로 타입 차이를 보존한다. 엔진 digest 자체는 원문 스칼라 기준을 유지한다 — PR#11 권한 연결(4단계)의 exact scalar 매칭이 `digest(id) == observation.digest()`를 요구하므로, 제 RED 테스트의 "digest 부등" 전제는 이 계약과 충돌해 제거했다(엔진 테스트는 실제 타입만 단언).
+- **JS 세그먼트 의미:** `Parameter.segments`가 `List<String>`이라 배열 wildcard `*`와 리터럴 키 `"*"`가 구분되지 않았다. `JavascriptAnalysis.Segment(key, arrayElement)`로 바꿔 리터럴 `*`는 `jsonChild`가 `~2`로 이스케이프해 관측과 `/payload/~2`에서 합쳐지고, 배열 원소는 `arrayElement`로 `/items/*/id`를 유지한다.
+- **React 식별자:** `SurfacePage`가 표시용 `fieldPath`를 React key로 써서 리터럴 `a.b`와 중첩 `a.b`가 충돌했고 사용자가 둘을 구분할 수 없었다. key를 `location:[?]canonicalPath`(확정 여부 포함)로 바꾸고 canonicalPath를 보조 줄로 표시한다. 같은 조사에서 source 필터의 `filterParameter()`가 `UNRESOLVED_COORDINATE`를 `filteredDelta()`로 재계산해 `DECLARED_NOT_OBSERVED`로 되돌리는 결함(미확정이 정상 미관측으로 오해됨)을 발견해 미확정 상태를 유지하도록 고쳤다.
+
+### 영향 파일·회귀
+
+- 코드: `core/parameter/ParameterCoordinates.java`(pathSlotPosition), `core/parameter/ParameterObservation.java`(Format, ValueSummary 5번째 컴포넌트+호환 생성자), `core/parameter/ParameterExtractor.java`(실제 타입 복원·format 추적), `core/SurfaceAnalyzer.java`(위치 검사·mapShape(location,shape,type,format)·distinct 키·Segment), `core/discovery/JavascriptAnalysis.java`·`JavascriptCallSiteAnalyzer.java`(Segment), `explorer/ExplorerHttpGateway.java`(위치 검사), `frontend/src/features/surface/SurfacePage.tsx`(key·canonical 줄·미확정 유지).
+- 테스트(RED 선행): `ExplorerHttpGatewayTest`(`/segments/0` 400·`/segments/2` 200), `SurfaceAnalyzerTest`(PATH 위치·legacy 동일 결과, JSON 실제 타입·distinct 2, 리터럴 `*` vs wildcard), `ParameterExtractorTest`(`"1"`/`1` 타입·UUID 문자열 STRING), `JavascriptCallSiteAnalyzerTest`(Segment·리터럴 `*`), `SurfacePage.test.tsx`(canonical 표시·중복 key 없음·필터 후 미확정 유지; 기존 첫 테스트는 canonical 줄이 `/product_id/`에도 매칭돼 `findAllByText`로 보정 — 의미 동일).
+- 검증: JDK 21 `mvn clean verify` BUILD SUCCESS, Java 470 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·SurfacePage vitest 4/4. 패키지 JAR `target/flowscope-1.2.0-beta.46.jar` 31,789,381 bytes. 패키지 Chromium 실측: standalone(17777) 샘플 프로젝트에서 PATCH `/api/orders/{id}` 상세 sheet의 입력 필드가 `PATH · id`/`/segments/2`, `JSON_BODY · status`/`/status`로 표시되고 콘솔 오류 0건. 미확정 라벨은 샘플에 미확정 선언이 없어 unit test로만 확인.
+- 문서: product-development-plan 기능 대조표, decisions D-143 1단계 노트, architecture·Surface 계약, HANDOFF, CHANGELOG, documentation-status, beta-validation.
+
+### 남은 한계·다음 gate
+
+- 2단계(선언 공백: OpenAPI union/enum 조건·CONDITIONAL·declaredType/Shape·servers 상한, JS `__proto__`/오버사이즈 거부, Confidence 표기)부터 대조표 순서대로 진행. 실제 Burp 실행은 미검증.
+
 ## 2026-09-11 · 미출시 · 슬라이스 1 후속 수정 — 미확정 좌표·표시 분리·contextSignature·Explorer FLOW_V2·JS AST 구조 보존
 
 ### 원인과 수정

@@ -143,7 +143,7 @@ public final class ParameterExtractor {
                     if (omittedSensitivePath(slot.declaredName())) continue;
                     try {
                         String pathValue = decode(original[i].replace("+", "%2B"));
-                        add(Location.PATH, slot.canonicalPath(), Shape.SCALAR, scalarType(pathValue), pathValue);
+                        add(Location.PATH, slot.canonicalPath(), Shape.SCALAR, ValueType.STRING, pathValue);
                     } catch (IllegalArgumentException ignored) { diagnostic("INVALID_ENCODING", 1); }
                 }
             }
@@ -162,7 +162,7 @@ public final class ParameterExtractor {
                     try {
                         String name = decode(eq < 0 ? field : field.substring(0, eq));
                         String value = decode(eq < 0 ? "" : field.substring(eq + 1));
-                        add(location, "/" + pointer(name), Shape.SCALAR, scalarType(value), value);
+                        add(location, "/" + pointer(name), Shape.SCALAR, ValueType.STRING, value);
                     } catch (IllegalArgumentException ignored) { diagnostic("INVALID_ENCODING", 1); }
                 }
                 if (end == text.length()) return;
@@ -353,6 +353,7 @@ public final class ParameterExtractor {
         private Shape firstShape;
         private boolean mixedShapes;
         private ValueType type;
+        private ParameterObservation.Format format = ParameterObservation.Format.NONE;
         private boolean allNull = true;
         private boolean container;
         private String firstScalar;
@@ -361,10 +362,12 @@ public final class ParameterExtractor {
         private Values(boolean nativeShapes) { this.nativeShapes = nativeShapes; }
 
         private void add(Shape shape, ValueType nextType, String scalar) {
-            if (count == 0) { firstShape = shape; type = nextType; firstScalar = scalar; }
+            ParameterObservation.Format nextFormat = scalar == null ? ParameterObservation.Format.NONE : format(scalar);
+            if (count == 0) { firstShape = shape; type = nextType; firstScalar = scalar; format = nextFormat; }
             else {
                 mixedShapes |= firstShape != shape;
                 if (type != nextType) type = ValueType.UNKNOWN;
+                if (format != nextFormat) format = ParameterObservation.Format.NONE;
             }
             if (count > 0) sequence.append(',');
             if (scalar != null) sequence.append(nextType == ValueType.STRING ? quote(scalar) : scalar);
@@ -389,7 +392,7 @@ public final class ParameterExtractor {
             String preview = Masking.maskSecrets(masked.substring(0, Math.min(MAX_PREVIEW_CHARS, masked.length())));
             preview = preview.substring(0, Math.min(MAX_PREVIEW_CHARS, preview.length()));
             if (!isSafeMaskedPreview(preview)) preview = "***MASKED***";
-            return new ValueSummary(type, utf8.length, sensitive ? null : digest(canonical), preview);
+            return new ValueSummary(type, utf8.length, sensitive ? null : digest(canonical), preview, format);
         }
     }
 
@@ -417,21 +420,21 @@ public final class ParameterExtractor {
     private static String pointer(String value) { return value.replace("~", "~0").replace("/", "~1").replace("*", "~2"); }
     private static String decode(String value) { return URLDecoder.decode(value, StandardCharsets.UTF_8); }
     private static ValueType type(JsonNode node) {
-        if (node.isTextual()) return scalarType(node.textValue());
+        if (node.isTextual()) return ValueType.STRING;
         if (node.isIntegralNumber()) return ValueType.INTEGER;
         if (node.isNumber()) return ValueType.NUMBER;
         if (node.isBoolean()) return ValueType.BOOLEAN;
         return ValueType.UNKNOWN;
     }
 
-    /** 요청 값 문자열의 형식만 분류한다(응답 미참조). PATH/QUERY/FORM/JSON 문자열 스칼라에 공통 적용. */
-    private static ValueType scalarType(String value) {
-        if (value == null || value.isEmpty()) return ValueType.STRING;
-        if (UUID.matcher(value).matches()) return ValueType.UUID;
-        if (INTEGER.matcher(value).matches()) return ValueType.INTEGER;
-        if (DECIMAL.matcher(value).matches()) return ValueType.NUMBER;
-        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) return ValueType.BOOLEAN;
-        return ValueType.STRING;
+    /** 값 문자열의 형식 신호(응답 미참조). 실제 {@link ValueType}을 덮어쓰지 않고 {@code ValueSummary.format}으로만 전달한다. */
+    private static ParameterObservation.Format format(String value) {
+        if (value == null || value.isEmpty()) return ParameterObservation.Format.NONE;
+        if (UUID.matcher(value).matches()) return ParameterObservation.Format.UUID;
+        if (INTEGER.matcher(value).matches()) return ParameterObservation.Format.INTEGER_LIKE;
+        if (DECIMAL.matcher(value).matches()) return ParameterObservation.Format.DECIMAL_LIKE;
+        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) return ParameterObservation.Format.BOOLEAN_LIKE;
+        return ParameterObservation.Format.NONE;
     }
     private static String scalar(JsonNode node) { return node.isTextual() ? node.textValue() : node.toString(); }
     private static String xmlName(Node node) {

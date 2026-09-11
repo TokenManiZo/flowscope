@@ -2,6 +2,52 @@
 
 > **읽는 법:** D-137 beta.46 JAR의 실제 macOS Burp 8081에서 익명 Client 캠페인 완주를 확인했다. D-140~142 작업트리는 보존형 프로젝트 전환, Surface Evidence 작업 동선, provenance-aware import와 패키지 Standalone의 프로젝트 API/E2E를 자동 검증했다. D-143(슬라이스 1)은 PR#11 파라미터 엔진을 관측 정본으로 이식해 관측·선언을 공통 ParameterCoordinate로 병합했다(자동 회귀 통과, packaged/실행 gate 남음). 현재 우선순위는 실제 Burp 프로젝트 재열기와 Explorer 신원 귀속 회귀이며, 그 다음 파라미터 엔진 슬라이스 2+(ParameterProfile·Gap·인가 연결·파라미터맵 UI)와 그래프 정보계층, ZAP 로그인 복수 계정·Windows 검증이다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
 
+## 현재 우선순위 · PR #11·#12 이식 기능 대조표 (2026-09-11)
+
+목적: 진단자가 실제 Evidence와 함께 (1) 어떤 API·입력을 HUMAN·ZAP·LLM이 각각 관측했는가, (2) 같은 비교 조건에서 어느 source·계정의 관측이 부족한가, (3) 다음에 확인할 API·파라미터와 추천 근거, (4) 정책·응답·소유자 근거의 확보 정도, (5) 해당 요청·응답 확인과 기존 Request Lab 연결을 확인하게 한다. 전체 사이트를 다 안다고 주장하거나 미관측을 취약점으로 확정하지 않으며, 실행 실패·분석 실패·미실행을 "탐색했지만 발견하지 못함"과 구분한다.
+
+통합 원칙: `SurfaceAnalysis`가 endpoint·parameter 공개 Fact의 정본, `AuthorizationAnalysis`가 인가 판정의 정본이다. PR 분석 코드는 재사용하되 같은 사실·판정을 이중 계산하지 않는다(D-050). 읽기 BOLA 후보는 owner와 2xx만으로 만들지 않고 현재 엔진이 요구하는 본문 근거가 필요하다(D-004). machine key(canonicalPath)와 표시 라벨(fieldPath/displayName)을 분리하고 모든 항목에 provenance를 둔다. 제거한 MCP·Judge·옛 실행기는 복구하지 않고, 현재 React·서버 API에 연결하며 레거시 HTML 전체를 교체하지 않는다.
+
+진행 단계(완료 보고와 번호를 일치시킨다): **1** 현재 네 결함 수정 → **2** 선언 지원의 남은 공백 정리·이식 → **3** 파라미터 프로파일과 관측 차이 분석 → **4** 권한 대상 연결 → **5** 우선순위 큐·파라미터 그래프·Diff → **6** PR #12 근거별 매트릭스 → **7** 화면 간 선택·Evidence·저장/재열기 통합 검증.
+
+상태 값: 미착수 / 구현 중 / 자동 검증 완료 / 실제 UI·운영 검증 완료.
+
+| PR 기능 | 원본 코드 | 현재 코드 | 상태 | 검증 근거 | 남은 일 |
+|---|---|---|---|---|---|
+| #11 파라미터 관측 추출(PATH/QUERY/FORM/JSON/GraphQL/Multipart/XML, bounded parser, 진단) | `core/parameter/ParameterExtractor`·`PathSlotCanonicalizer`·`ParameterKey/Observation/Extraction/Diagnostic` | `core/parameter/*`(이식) + `SurfaceAnalyzer` 관측 배선(D-143) | 자동 검증 완료 | `ParameterExtractorTest` 41, `SurfaceAnalyzerTest`, `mvn clean verify` 470 tests | 실제 Burp 실행 미검증 |
+| #11 공통 좌표(ParameterKey 5좌표, PATH 구조 정체성 D-097) | `ParameterKey`, D-097(`/id`·`/segments/N`) | `ParameterCoordinates`(D-143: 단일 슬롯도 `/segments/N`, 배열 `*`, literal `*`=`~2`), `pathSlotPosition` 위치 검사 | 자동 검증 완료 | 1단계 결함1 회귀(`/segments/0` 거부·legacy 동일 결과) | D-097 표기와의 차이는 결정 기록(아래 변경 목록) |
+| #11 실제 타입·값 요약(ValueType, digest, byteLength, 64자 masked preview) | `ParameterObservation.ValueSummary` | 실제 타입 복원 + 별도 `Format` 신호; distinct는 타입 포함 키; preview는 snapshot 비노출(코덱스 지시) | 자동 검증 완료 | 1단계 결함2 회귀(`"1"`/`1` STRING·INTEGER, distinct 2) | masked preview 표시 복원 여부는 결정 대기 |
+| #11 요청 단위 contextSignature | `ParameterExtractor.result()` | `SurfaceAnalysis.ParameterObservation.contextSignature` | 자동 검증 완료 | 후속 수정 회귀 | 프로파일 소비는 3단계 |
+| #11/#12 공통 Surface 입력 필드 표시(machine key와 표시 라벨 분리, 리터럴/중첩 구분, 미확정 유지) | `SurfacePage`(현행 React) | `SurfacePage.tsx`: key=`location:[?]canonicalPath`, canonical 보조 줄, source 필터 시 `UNRESOLVED_COORDINATE` 유지 | 실제 UI·운영 검증 완료(UI: 패키지 Chromium / Burp 미실행) | `SurfacePage.test.tsx` 4/4; standalone 17777에서 PATCH `/api/orders/{id}` 상세의 `/segments/2`·`/status` 표시, 콘솔 오류 0 | 미확정 라벨 실측은 해당 샘플 데이터 없음(unit test) |
+| #11 OpenAPI 정의(local `$ref`, oneOf/anyOf·enum 인덱스 조건, `CONDITIONAL`, declaredType/Shape, servers 확장 상한, form/swagger body) | `OpenApiParameterDefinitionAdapter` | `SurfaceAnalyzer.declareOpenApi/declareSchema`(local `$ref`, required/optional, array 필드·원소 객체) | 구현 중 | `SurfaceAnalyzerTest` OpenAPI 회귀 | 2단계: union/enum 조건·`CONDITIONAL`·declaredType/Shape·servers 상한·swagger body/formData |
+| #11 JS 정의(작은 literal grammar, AST 구조 보존, `__proto__`·computed/spread 거부, 오버사이즈 거부) | `JavascriptParameterDefinitionAdapter` | `JavascriptCallSiteAnalyzer`(`Parameter.segments`=`Segment(key/arrayElement)`) + `declareJavascript` | 구현 중 | 결함3·구조 보존 회귀, `JavascriptCallSiteAnalyzerTest` | 2단계: `__proto__`/constructor·prototype 컨테이너 제외, 오버사이즈 call 거부 |
+| #11 정의 join 규칙(기존 candidate의 동일 문서 Evidence·provenance만, provenance 32 상한, INFERRED) | `ParameterDefinitionExtractor.Sink.joined/add` | `RouteCandidateExtractor` provenance + `declare*` | 구현 중 | 기존 candidate 회귀 | 2단계: provenance 상한·Confidence 표기 |
+| #11 Confidence(OBSERVED/CORROBORATED/INFERRED/UNKNOWN) | `ParameterObservation.Confidence`, `ParameterDefinition.confidence` | 없음(관측 confidence 미전달, Declaration 미표기) | 미착수 | — | 2단계(선언 INFERRED·관측 OBSERVED), 4단계(CORROBORATED) |
+| #11 ParameterProfile(source/identity/role/run/phase 카운트, contextPresence·`ABSENT_OBSERVED_CONTEXT`, typeConflict, distinct) | `ParameterProfile`, `ParameterProfiler.profile()` | `ParameterFact`의 observedSources/observedValueTypes/distinctValueCount(256 상한)만 | 미착수(프로파일 계층) | — | 3단계 |
+| #11 discovery Gap 5종 + priority reasons + retention gate + coverage-only 분모 + Evidence ID 충돌 제외 | `ParameterProfiler.gaps()` | 없음(`UNRESOLVED_COORDINATE` 제외 상태만) | 미착수 | — | 3단계 |
+| #11 AuthorizationTargetLink(exact scalar OBSERVED / 독립 2 witness CORROBORATED / 단일 동시출현 INFERRED) | `ParameterAuthorizationAnalyzer.relation/exact/corroborated` | 없음 | 미착수 | — | 4단계 |
+| #11 ParameterValidationCell(SELF/OTHER_OWNER/ANONYMOUS/OTHER_ROLE × source, actual vs basis Evidence) + AUTH_VARIANT_UNTESTED | `ParameterAuthorizationAnalyzer.enrich` | 없음 | 미착수 | — | 4단계(D-004·D-050 준수) |
+| #11 Pipeline attach·record 영속·snapshot 캐시(generation·fingerprint)·additive 5배열·bounded preview | `Pipeline`·`RequestRecord`·`ProjectStore`·`SnapshotJsonWriter` | snapshot `surface`(valueToTree)만; 영속은 projection 재계산 | 구현 중 | `SnapshotJsonWriter` surface 회귀 | 5단계: 캐시·배열·계약 테스트(SnapshotParameterContract 9·Cache 7) 이식, 제2정본 없음 유지 |
+| #11 우선순위 큐·파라미터 Gap 그래프(4-lane 카드)·커버리지 매트릭스·Gap 인스펙터·Request Diff·Focused workspace | `frontend/src/features/parameter-map/*`(20파일), `e2e/parameter-map.spec.ts` | 없음 | 미착수 | — | 5단계 |
+| #11 전체 관계 그래프 계층·카드(Identity→API→Object, IDA 4레벨, `graphHierarchy/graphFocus/relationshipNodeCard/RelationshipGraphView`, `FlowGraphBuilder` 방향) | `frontend/src/features/graph/*`, `core/graph/*` | 현행 단일 3-lane(D-142) | 미착수 | — | 5단계(D-142 gate) |
+| #11 좁은 화면 탐색·선택(계층 목록 동등성, WorkspaceNavigation) | `ParameterMapPage`, `WorkspaceNavigation` | `RouteIconRail` compact만 | 미착수 | — | 5단계 |
+| #11 Evidence 상세·Request Lab 연결(Gap→Evidence→Request Lab, evidenceContext) | `ParameterGapInspector`, `evidenceContext` | Surface→Evidence/Request Lab(D-140) | 구현 중 | D-140 회귀 | 5·7단계 |
+| #11 설계 문서(GRAPH_IDA_REDESIGN, GRAPH_NOISE_FP_FN_REDUCTION, specs 4, D-093~099) | `docs/` | 미이식 | 미착수 | — | 7단계에서 근거 문서로 이식 |
+| #12 AuthorizationMatrix 모델(정책 P·Evidence E·소유자 O 근거 Confidence, Expected/Actual/Status, Gate, Oracle, Legend) | `core/AuthorizationMatrix` | 없음 | 미착수 | — | 6단계 |
+| #12 AuthorizationMatrixAnalyzer(FunctionCell/ObjectCell, BFLA/BOLA 수동 검토 추천, validationByCell, review 기록) | `core/AuthorizationMatrixAnalyzer` | 없음 | 미착수 | — | 6단계(D-050 재판정 금지·D-004 본문 근거 필요) |
+| #12 snapshot `authorizationMatrix`·`inputCoverage` 배선 | `SnapshotJsonWriter` diff | 없음 | 미착수 | — | 6단계(`inputCoverage`는 삭제된 `RequestInputExtractor` 의존 → 파라미터 프로파일로 대체) |
+| #12 매트릭스 UI + 관계 그래프 카드(legacy index.html) | `src/main/resources/web/index.html` | React `MatrixPage`(현행) | 미착수 | — | 6단계(React에 이식, 레거시 교체 안 함) |
+| #12 정확한 셀의 Evidence와 사람 검토 기록 | analyzer `reviewStatus/reviewNote/reviewEvidence` | `ReviewDecision` 저장·재열기(기존) | 구현 중 | `ProjectStoreTest` | 6·7단계 |
+
+**제외·변경 목록(근거)** — 합의 없이 조용히 제외한 기능은 없다.
+
+- 단일 PATH 슬롯 `/id` 축약(D-097) → 항상 `/segments/N`(D-143): 다중 슬롯과 일관성·구조 정보 보존. 우리 트리에 PR 키가 없어 호환 비용은 없다.
+- 배열 원소 `/[]`(PR 표기) → `*` + literal `*`=`~2`(D-143): `[]` 리터럴 키와의 충돌 제거. PR 문서·프런트의 `[]` 표기는 이식 시 치환.
+- record-level `parameterObservations` 영속(PR) → Evidence에서 projection 재계산: D-113/D-139 "제2정본 없음" 유지. snapshot 캐시는 5단계에서 이식.
+- 64자 masked preview snapshot 노출(PR 정책) → 비노출(코덱스 지시): PR의 "관측값 요약" 표시가 필요하면 재검토(결정 대기).
+- `inputCoverage`(#12) → 삭제된 `RequestInputExtractor` 의존이라 파라미터 프로파일로 대체.
+- legacy `index.html` UI(#12) → React `MatrixPage`에 이식.
+
 ## 현재 우선순위 · 보존형 프로젝트와 Evidence 무결성
 
 1. 현재 진단을 새 프로젝트 DB에 저장하기 전에는 scope·메모리 Evidence를 교체하지 않는다.

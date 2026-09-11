@@ -532,9 +532,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         switch (location) {
             case PATH -> {
                 if (raw.matches("/segments/\\d+")) {
-                    int slot = Integer.parseInt(raw.substring("/segments/".length()));
-                    if (slot >= ParameterCoordinates.pathSlots(pathTemplate).size()) {
-                        throw new IllegalArgumentException("PATH field_path의 segment 위치가 선언 URL template 밖입니다.");
+                    if (!ParameterCoordinates.pathSlotPosition(pathTemplate, raw)) {
+                        throw new IllegalArgumentException("PATH field_path " + raw + "은(는) 선언 URL template의 placeholder 위치가 아닙니다.");
                     }
                     return raw;
                 }

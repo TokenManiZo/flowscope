@@ -21,7 +21,17 @@ public record JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> 
      * {@code segments}는 AST에서 보존한 body key 경로(중첩은 세그먼트, 배열 원소 객체는 {@code *})다.
      * null은 세그먼트 정보 없이 만들어진(이미 평탄화된) 이름으로, 점이 있으면 중첩과 리터럴 키를 구분할 수 없다.
      */
-    public record Parameter(String name, ParameterKind kind, List<String> segments) {
+    /** body key 경로의 한 단계. {@code arrayElement}면 배열 원소 wildcard이고 key는 null, 아니면 리터럴 키(문자 {@code *} 포함). */
+    public record Segment(String key, boolean arrayElement) {
+        public static Segment element() { return new Segment(null, true); }
+        public Segment {
+            if (arrayElement ? key != null : key == null) {
+                throw new IllegalArgumentException("segment is either a literal key or an array element");
+            }
+        }
+    }
+
+    public record Parameter(String name, ParameterKind kind, List<Segment> segments) {
         public Parameter(String name, ParameterKind kind) { this(name, kind, null); }
         public Parameter {
             segments = segments == null ? null : List.copyOf(segments);

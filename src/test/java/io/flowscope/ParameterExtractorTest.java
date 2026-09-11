@@ -92,6 +92,17 @@ class ParameterExtractorTest {
         assertKeys(result, "GRAPHQL_VARIABLE:/filter", "GRAPHQL_VARIABLE:/filter/id");
     }
 
+    @Test void json_textual_and_numeric_values_keep_actual_types_and_distinct_digests() {
+        var text = ParameterExtractor.extract(normalized("/orders", null, "application/json", "{\"code\":\"1\",\"id\":\"550e8400-e29b-41d4-a716-446655440000\"}"));
+        var number = ParameterExtractor.extract(normalized("/orders", null, "application/json", "{\"code\":1}"));
+        assertEquals(ValueType.STRING, at(text, "JSON_BODY:/code").value().type(), "\"1\"은 STRING");
+        assertEquals(ValueType.INTEGER, at(number, "JSON_BODY:/code").value().type(), "1은 INTEGER");
+        // digest는 원문 스칼라 기준(PR#11 권한 연결의 exact scalar 매칭 계약)이라 같을 수 있다; 타입 차이는 type과
+        // Surface의 distinct 계수가 보존한다.
+        assertEquals(at(text, "JSON_BODY:/code").value().digest(), at(number, "JSON_BODY:/code").value().digest());
+        assertEquals(ValueType.STRING, at(text, "JSON_BODY:/id").value().type(), "UUID 형식 신호가 실제 타입을 덮어쓰지 않는다");
+    }
+
     @Test void multipart_extracts_text_fields_without_file_bytes() {
         String body = "--x\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nhello\r\n"
                 + "--x\r\nContent-Disposition: form-data; name=\"upload\"; filename=\"a.txt\"\r\nContent-Type: text/plain\r\n\r\nFILE-CONTENT\r\n"

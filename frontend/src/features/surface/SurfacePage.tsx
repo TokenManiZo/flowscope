@@ -60,7 +60,8 @@ function filterParameter(parameter: SurfaceParameter, enabled: ReadonlySet<Surfa
     observedSources,
     observationEvidenceIds: observations.map((item) => item.evidenceId),
     observedShapes: [...new Set(observations.map((item) => item.shape).filter((value): value is string => Boolean(value)))],
-    deltaState: filteredDelta(declarations.length > 0, observedSources),
+    // 좌표 미확정은 source 필터로 재계산하지 않는다: 정상 미관측(DECLARED_NOT_OBSERVED)으로 오해되면 안 된다.
+    deltaState: parameter.coordinateResolved === false ? "UNRESOLVED_COORDINATE" : filteredDelta(declarations.length > 0, observedSources),
   }
 }
 
@@ -167,7 +168,7 @@ export function SurfacePage() {
         return <Button type="button" variant={selectedEvidenceId === observation.evidenceId ? "secondary" : "outline"} className="h-auto justify-start whitespace-normal text-left" disabled={!event} key={observation.evidenceId} onClick={() => setSelectedEvidenceId(observation.evidenceId)}>Evidence 상세 · {source} · HTTP {observation.status}</Button>
       })}</div>}
       {selectedEvent && <section className="border-t pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={selectedEvent} snapshot={snapshot.data!} onOpenRequestLab={() => setRequestLabOpen(true)} /></section>}
-      <div><h3 className="mb-2 text-sm font-semibold">입력 필드</h3><div className="grid gap-2">{selected.parameters.map((parameter) => <div className="rounded-md border p-2 text-sm" key={parameter.location + ":" + parameter.fieldPath}><p className="break-all font-mono">{parameter.location} · {parameter.fieldPath}</p><p className="text-xs text-muted-foreground">{deltaLabels[parameter.deltaState]} · {parameter.requirement} · {sourceLabel(parameter.observedSources)} · {parameter.observedShapes.join(" · ") || "형태 응답 없음"}</p></div>)}{selected.parameters.length === 0 && <p className="text-sm text-muted-foreground">확인된 입력 필드가 없습니다.</p>}</div></div>
+      <div><h3 className="mb-2 text-sm font-semibold">입력 필드</h3><div className="grid gap-2">{selected.parameters.map((parameter) => <div className="rounded-md border p-2 text-sm" key={parameter.location + ":" + (parameter.coordinateResolved ? "" : "?") + parameter.canonicalPath}><p className="break-all font-mono">{parameter.location} · {parameter.fieldPath}</p><p className="break-all font-mono text-xs text-muted-foreground">{parameter.canonicalPath}</p><p className="text-xs text-muted-foreground">{deltaLabels[parameter.deltaState]} · {parameter.requirement} · {sourceLabel(parameter.observedSources)} · {parameter.observedShapes.join(" · ") || "형태 응답 없음"}</p></div>)}{selected.parameters.length === 0 && <p className="text-sm text-muted-foreground">확인된 입력 필드가 없습니다.</p>}</div></div>
       <div><h3 className="mb-2 text-sm font-semibold">Evidence ID</h3>{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{id}</p>)}</div>
     </section>
   ) : <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">항목을 선택하면 실제 응답과 산출물 근거를 분리해 표시합니다.</p></section>

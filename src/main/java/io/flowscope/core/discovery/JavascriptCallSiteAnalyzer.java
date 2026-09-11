@@ -383,7 +383,7 @@ public final class JavascriptCallSiteAnalyzer {
          * 자체를 선언한 뒤 객체 리터럴 원소마다 {@code *} 세그먼트로 재귀한다. 점 표기 name은 표시·인덱스용이다.
          */
         private void addObjectParameters(List<JavascriptAnalysis.Parameter> out, Node raw,
-                                         JavascriptAnalysis.ParameterKind kind, List<String> prefix, Scope scope) {
+                                         JavascriptAnalysis.ParameterKind kind, List<JavascriptAnalysis.Segment> prefix, Scope scope) {
             if (out.size() >= MAX_PARAMETERS_PER_CALL) return;
             Node object = resolve(raw, scope, 0);
             if (object == null || !object.isObjectLit()) return;
@@ -391,8 +391,8 @@ public final class JavascriptCallSiteAnalyzer {
                 if (out.size() >= MAX_PARAMETERS_PER_CALL || !property.isStringKey()) continue;
                 String name = property.getString();
                 if (name == null || name.isBlank()) continue;
-                List<String> segments = new ArrayList<>(prefix);
-                segments.add(name);
+                List<JavascriptAnalysis.Segment> segments = new ArrayList<>(prefix);
+                segments.add(new JavascriptAnalysis.Segment(name, false));
                 Node resolvedValue = resolve(property.getFirstChild(), scope, 0);
                 if (kind == JSON_BODY && resolvedValue != null && resolvedValue.isObjectLit()) {
                     addObjectParameters(out, resolvedValue, kind, segments, scope);
@@ -401,8 +401,8 @@ public final class JavascriptCallSiteAnalyzer {
                 JavascriptAnalysis.Parameter parameter = new JavascriptAnalysis.Parameter(displayName(segments), kind, segments);
                 if (!out.contains(parameter)) out.add(parameter);
                 if (kind == JSON_BODY && resolvedValue != null && resolvedValue.isArrayLit()) {
-                    List<String> elementSegments = new ArrayList<>(segments);
-                    elementSegments.add("*");
+                    List<JavascriptAnalysis.Segment> elementSegments = new ArrayList<>(segments);
+                    elementSegments.add(JavascriptAnalysis.Segment.element());
                     for (Node item : resolvedValue.children()) {
                         Node element = resolve(item, scope, 0);
                         if (element != null && element.isObjectLit()) {
@@ -414,12 +414,12 @@ public final class JavascriptCallSiteAnalyzer {
         }
 
         /** 세그먼트의 점 표기 표시명. 배열 원소 wildcard는 앞 세그먼트에 {@code []}로 붙는다. */
-        private static String displayName(List<String> segments) {
+        private static String displayName(List<JavascriptAnalysis.Segment> segments) {
             StringBuilder out = new StringBuilder();
-            for (String segment : segments) {
-                if (segment.equals("*")) { out.append("[]"); continue; }
+            for (JavascriptAnalysis.Segment segment : segments) {
+                if (segment.arrayElement()) { out.append("[]"); continue; }
                 if (!out.isEmpty()) out.append('.');
-                out.append(segment);
+                out.append(segment.key());
             }
             return out.toString();
         }

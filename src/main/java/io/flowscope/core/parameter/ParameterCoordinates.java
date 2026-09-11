@@ -64,6 +64,12 @@ public final class ParameterCoordinates {
         return PathSlotCanonicalizer.slots(template);
     }
 
+    /** {@code /segments/N}이 template의 실제 placeholder 위치인지(변수 개수가 아니라 위치) 검사한다. */
+    public static boolean pathSlotPosition(String template, String canonicalPath) {
+        return template != null && canonicalPath != null
+                && pathSlots(template).stream().anyMatch(slot -> slot.canonicalPath().equals(canonicalPath));
+    }
+
     /** 엔진 Location → 공개 SurfaceAnalysis.ParameterLocation(wire 호환 이름). */
     public static ParameterLocation location(ParameterObservation.Location location) {
         return switch (location) {

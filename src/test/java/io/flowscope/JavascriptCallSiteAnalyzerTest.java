@@ -203,17 +203,20 @@ final class JavascriptCallSiteAnalyzerTest {
     @Test
     void 중첩_객체와_배열_원소_객체의_body_key는_AST_세그먼트를_보존한다() {
         JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
-                fetch('/api/items', {method:'POST', body:JSON.stringify({meta:{reason:'x'}, "a.b": 1, items:[{id: 1}], tags:['t']})});
+                fetch('/api/items', {method:'POST', body:JSON.stringify({meta:{reason:'x'}, "a.b": 1, "*": 2, items:[{id: 1}], tags:['t']})});
                 """);
 
         JavascriptAnalysis.CallSite call = find(analysis, "POST", "/api/items");
-        Map<String, List<String>> segments = new java.util.LinkedHashMap<>();
+        Map<String, List<JavascriptAnalysis.Segment>> segments = new java.util.LinkedHashMap<>();
         call.parameters().forEach(parameter -> segments.put(parameter.name(), parameter.segments()));
-        assertEquals(List.of("meta", "reason"), segments.get("meta.reason"), "중첩은 세그먼트로 보존");
-        assertEquals(List.of("a.b"), segments.get("a.b"), "리터럴 점 키는 한 세그먼트");
-        assertEquals(List.of("items", "*", "id"), segments.get("items[].id"), "배열 원소 객체는 wildcard 세그먼트");
-        assertEquals(List.of("items"), segments.get("items"), "배열 필드 자체");
-        assertEquals(List.of("tags"), segments.get("tags"));
+        JavascriptAnalysis.Segment meta = new JavascriptAnalysis.Segment("meta", false);
+        assertEquals(List.of(meta, new JavascriptAnalysis.Segment("reason", false)), segments.get("meta.reason"), "중첩은 세그먼트로 보존");
+        assertEquals(List.of(new JavascriptAnalysis.Segment("a.b", false)), segments.get("a.b"), "리터럴 점 키는 한 세그먼트");
+        assertEquals(List.of(new JavascriptAnalysis.Segment("*", false)), segments.get("*"), "리터럴 * 키는 배열 원소가 아닌 키 세그먼트");
+        assertEquals(List.of(new JavascriptAnalysis.Segment("items", false), JavascriptAnalysis.Segment.element(),
+                new JavascriptAnalysis.Segment("id", false)), segments.get("items[].id"), "배열 원소 객체는 wildcard 세그먼트");
+        assertEquals(List.of(new JavascriptAnalysis.Segment("items", false)), segments.get("items"), "배열 필드 자체");
+        assertEquals(List.of(new JavascriptAnalysis.Segment("tags", false)), segments.get("tags"));
     }
 
     private static JavascriptAnalysis.CallSite find(JavascriptAnalysis analysis, String method, String reference) {

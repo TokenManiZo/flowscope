@@ -1,5 +1,15 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 1단계(네 결함 수정) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| RED→GREEN | 네 결함 각각 실패 회귀 선행: Java 5건(`/segments/0` 200, FLOW_V2 `/segments/0` 확정, `"1"`→INTEGER, distinct 1, `/payload/*` 미병합)·React 1건(canonical 미표시) 실패 확인 → 구현 후 GREEN. |
+| JDK 21 `mvn clean verify` | BUILD SUCCESS. Java 470 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest(SurfacePage 4/4) 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,789,381 bytes(이 verify의 단일 빌드값, 제3자 재현 미주장). |
+| 패키지 Chromium 실측 | `java -Djava.awt.headless=true -Dflowscope.web.port=17777 -cp <jar> io.flowscope.Standalone`, 샘플 프로젝트. API·입력 차이 → PATCH `/api/orders/{id}` "상세 보기" → 입력 필드에 `PATH · id`/`/segments/2`(H · INTEGER), `JSON_BODY · status`/`/status`(H · STRING) 표시, 콘솔 오류 0건. 미확정 라벨·리터럴/중첩 동시 표시는 샘플에 해당 데이터가 없어 unit test(`SurfacePage.test.tsx`)로만 확인. |
+| 실제 Burp 실행 | 미실행(운영 gate). |
+
 ## 2026-09-11 · 미출시 · 슬라이스 1 후속 수정(리뷰 6건·JS AST 구조 보존) gate
 
 | 항목 | 실제 확인 결과 |

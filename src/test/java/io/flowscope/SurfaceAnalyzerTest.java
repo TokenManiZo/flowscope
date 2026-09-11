@@ -678,6 +678,89 @@ final class SurfaceAnalyzerTest {
                 .anyMatch(item -> item.reasonCode().equals("UNRESOLVED_PATH_ALIGNMENT")));
     }
 
+    @Test
+    void PATH_좌표는_변수_개수가_아니라_실제_placeholder_위치를_검사하고_legacy와_같은_결과를_낸다() {
+        RouteCandidate candidate = new RouteCandidate("https://app.test:443", "GET", "/api/orders/{id}",
+                List.of(), false, false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS,
+                        "ev-js", Source.LLM, "llm-run", "llm-javascript",
+                        RouteCandidate.Applicability.REVIEW, "app.js:1")),
+                RouteCandidate.Applicability.REVIEW, "app.js:1",
+                List.of(
+                        new RouteCandidate.DeclaredParameter(SurfaceAnalysis.ParameterLocation.PATH, "/segments/0",
+                                "wrongSlot", SurfaceAnalysis.Requirement.REQUIRED, "ev-js", Source.LLM, "llm-run",
+                                "llm-javascript", "app.js:1",
+                                io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.FLOW_V2),
+                        new RouteCandidate.DeclaredParameter(SurfaceAnalysis.ParameterLocation.PATH, "path[1]",
+                                "legacyWrongSlot", SurfaceAnalysis.Requirement.REQUIRED, "ev-js", Source.LLM, "llm-run",
+                                "llm-javascript", "app.js:1"),
+                        new RouteCandidate.DeclaredParameter(SurfaceAnalysis.ParameterLocation.PATH, "/segments/2",
+                                "orderId", SurfaceAnalysis.Requirement.REQUIRED, "ev-js", Source.LLM, "llm-run",
+                                "llm-javascript", "app.js:1",
+                                io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.FLOW_V2)));
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(List.of(), List.of(), List.of(candidate));
+
+        SurfaceAnalysis.EndpointFact get = endpoint(analysis, "GET", "/api/orders/{id}");
+        SurfaceAnalysis.ParameterFact valid = parameter(get, SurfaceAnalysis.ParameterLocation.PATH, "/segments/2");
+        assertTrue(valid.coordinateResolved());
+        assertEquals("orderId", valid.displayName());
+        List<SurfaceAnalysis.ParameterFact> unresolved = get.parameters().stream()
+                .filter(item -> item.location() == SurfaceAnalysis.ParameterLocation.PATH && !item.coordinateResolved())
+                .toList();
+        assertEquals(2, unresolved.size(), "placeholder가 아닌 위치는 신규(/segments/0)·legacy(path[1]) 모두 미확정");
+        assertTrue(unresolved.stream().allMatch(item -> item.deltaState() == SurfaceAnalysis.DeltaState.UNRESOLVED_COORDINATE));
+        assertTrue(get.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/segments/0")
+                && item.coordinateResolved()), "/segments/0을 확정 좌표로 받지 않는다");
+    }
+
+    @Test
+    void JSON_실제_타입은_형식_신호에_덮이지_않고_distinct도_타입_차이를_보존한다() {
+        RequestRecord text = request(Source.HUMAN, "POST", "/api/codes", 200);
+        text.requestContentType = "application/json";
+        text.reqBody = "{\"code\":\"1\",\"id\":\"550e8400-e29b-41d4-a716-446655440000\"}";
+        RequestRecord number = request(Source.HUMAN, "POST", "/api/codes", 200);
+        number.requestContentType = "application/json";
+        number.reqBody = "{\"code\":1}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(text, number), new io.flowscope.core.AnalysisConfig());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/codes");
+        SurfaceAnalysis.ParameterFact code = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/code");
+        assertEquals(Set.of(SurfaceAnalysis.ValueType.STRING, SurfaceAnalysis.ValueType.INTEGER), code.observedValueTypes(),
+                "\"1\"과 1은 실제 타입이 다르다");
+        assertEquals(2, code.distinctValueCount(), "타입이 다르면 같은 문자열이라도 distinct");
+        SurfaceAnalysis.ParameterFact id = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/id");
+        assertTrue(id.observedValueTypes().contains(SurfaceAnalysis.ValueType.STRING), "UUID 형식은 실제 타입 STRING을 유지");
+        assertTrue(id.observedShapes().contains(SurfaceAnalysis.ValueShape.UUID), "형식 신호는 표시 shape로만 남는다");
+    }
+
+    @Test
+    void JS_리터럴_별표_키와_배열_원소_wildcard를_구분해_관측과_합친다() {
+        RequestRecord script = document("/assets/app.js", "application/javascript", """
+                fetch('/api/bulk', {method:'POST', body: JSON.stringify({payload: {"*": flag}, items: [{id: selected}]})});
+                """);
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/bulk", 200);
+        human.requestContentType = "application/json";
+        human.reqBody = "{\"payload\":{\"*\":1},\"items\":[{\"id\":1}]}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(script, human), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/bulk");
+        SurfaceAnalysis.ParameterFact literal = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/payload/~2");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, literal.deltaState(),
+                "리터럴 * 키는 ~2로 이스케이프되어 선언·관측이 한 Fact로 합쳐진다");
+        assertTrue(post.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/payload/*")),
+                "리터럴 * 키를 배열 wildcard로 오인하지 않는다");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/items/*/id").deltaState(),
+                "배열 원소 wildcard 동작은 유지");
+    }
+
     private static RequestRecord request(Source source, String method, String path, int status) {
         RequestRecord record = new RequestRecord(source, "https://app.test:443", method, path, status, "anon");
         record.hasResponse = true;

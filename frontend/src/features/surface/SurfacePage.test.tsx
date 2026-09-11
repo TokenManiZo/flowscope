@@ -37,7 +37,7 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   expect(screen.getAllByText("H").length).toBeGreaterThan(0)
   expect(screen.queryByText(/%/)).not.toBeInTheDocument()
   screen.getByRole("button", { name: "상세 보기" }).click()
-  expect(await screen.findByText(/product_id/)).toBeVisible()
+  expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
   expect(screen.getByText("ev-human")).toBeVisible()
   await userEvent.setup().click(screen.getByRole("button", { name: "Evidence 상세 · H · HTTP 200" }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
@@ -82,4 +82,35 @@ it("filters LLM-only declarations and probes without turning them into observati
   await userEvent.setup().click(screen.getByRole("checkbox", { name: "L · LLM" }))
   expect(screen.queryByText("/api/declared")).not.toBeInTheDocument()
   expect(screen.getByText("OPTIONS probe").parentElement).toHaveTextContent("0")
+})
+
+it("keeps a literal dotted key and a nested path distinguishable and never reuses a React key", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+  const observation = { evidenceId: "ev-human", source: "HUMAN" as const, runId: "human-1", identity: "user-a", status: 200, shape: "INTEGER" }
+  const declaration = { evidenceId: "ev-js", source: "HUMAN" as const, runId: "human-1", type: "JAVASCRIPT_LITERAL", adapter: "javascript-ast", reason: "app.js:1", coordinateVersion: "LEGACY_V1", coordinateResolved: false }
+  const parameter = (fieldPath: string, canonicalPath: string, resolved: boolean, deltaState: "ONE_SOURCE_OBSERVED" | "UNRESOLVED_COORDINATE") => ({
+    location: "JSON_BODY", fieldPath, displayName: fieldPath, requirement: "UNKNOWN",
+    observedShapes: resolved ? ["INTEGER"] : [], observedSources: resolved ? (["HUMAN"] as const) : ([] as const),
+    observationEvidenceIds: resolved ? ["ev-human"] : [], observations: resolved ? [observation] : [], declarations: resolved ? [] : [declaration],
+    deltaState, canonicalPath, observedValueTypes: resolved ? ["INTEGER"] : [], distinctValueCount: resolved ? 1 : 0,
+    coordinateResolved: resolved, distinctValueTruncated: false,
+  })
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [surfaceEvent], surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" }, observedSources: ["HUMAN"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }], declarations: [], deltaState: "ONE_SOURCE_OBSERVED", parameters: [
+    parameter("a.b", "/a.b", true, "ONE_SOURCE_OBSERVED"),
+    parameter("a.b", "/a/b", true, "ONE_SOURCE_OBSERVED"),
+    parameter("legacy.x", "legacy.x", false, "UNRESOLVED_COORDINATE"),
+  ] }] } }
+
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  screen.getByRole("button", { name: "상세 보기" }).click()
+
+  // 표시 경로가 같아도 기계 좌표로 구분해 보여 준다.
+  expect(await screen.findByText("/a.b")).toBeVisible()
+  expect(screen.getByText("/a/b")).toBeVisible()
+  // source 필터 재계산이 미확정 좌표를 정상 미관측으로 되돌리지 않는다.
+  expect(screen.getByText(/선언 좌표 미확정 · 관측 비교 제외/)).toBeVisible()
+  expect(screen.queryByText(/산출물에서 발견 · 아직 요청 없음 · UNKNOWN/)).not.toBeInTheDocument()
+  // 표시 경로를 React key로 쓰면 중복 key 경고가 난다.
+  expect(errors.mock.calls.flat().map(String).join(" ")).not.toMatch(/same key|two children with the same key/)
+  errors.mockRestore()
 })
