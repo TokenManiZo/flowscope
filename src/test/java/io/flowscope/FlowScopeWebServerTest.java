@@ -731,6 +731,27 @@ final class FlowScopeWebServerTest {
         assertEquals(200, post("/api/review", "itemId=" + encode(findingId)
                 + "&status=CONFIRMED&note=manual+reproduction", token).statusCode());
         assertEquals("CONFIRMED", state.config.reviews().get(findingId).status().name());
+
+        // 판정 매트릭스 cell도 서버가 정한 Evidence(대상+기준)로만 사람 검토를 받는다(D-144).
+        JsonNode matrixSnapshot = json(get("/api/snapshot", token, origin()));
+        JsonNode matrix = matrixSnapshot.path("authorizationMatrix");
+        assertTrue(matrix.path("summary").has("bolaIdorTestRecommendations"));
+        assertFalse(matrix.path("functions").isEmpty());
+        JsonNode reviewable = null;
+        for (JsonNode cell : matrix.path("objects")) if (!cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull()) { reviewable = cell; break; }
+        assertNotNull(reviewable, "다른 신원에 추천된 객체 cell이 있어야 한다");
+        String cellId = reviewable.path("id").asText();
+        assertEquals("UNRESOLVED", reviewable.path("reviewStatus").asText());
+        assertEquals(200, post("/api/review", "itemId=" + encode(cellId) + "&status=DISMISSED&note=shared+object", token).statusCode());
+        List<String> boundEvidence = new java.util.ArrayList<>();
+        reviewable.path("reviewEvidenceIds").forEach(id -> boundEvidence.add(id.asText()));
+        assertEquals(boundEvidence, state.config.reviews().get(cellId).evidenceIds());
+        JsonNode reviewed = json(get("/api/snapshot", token, origin())).path("authorizationMatrix");
+        boolean dismissed = false;
+        for (JsonNode cell : reviewed.path("objects")) if (cell.path("id").asText().equals(cellId)) dismissed = cell.path("reviewStatus").asText().equals("DISMISSED");
+        assertTrue(dismissed);
+        assertEquals(1, reviewed.path("summary").path("humanDismissed").asInt());
+        assertEquals(400, post("/api/review", "itemId=object-unknown&status=CONFIRMED&note=x", token).statusCode());
     }
 
     @Test

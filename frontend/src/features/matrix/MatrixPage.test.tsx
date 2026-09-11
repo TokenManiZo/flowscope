@@ -8,7 +8,7 @@ import type { Snapshot } from "@/lib/api/types"
 import { snapshotFixture } from "@/test/fixtures"
 import { renderWithQueryClient } from "@/test/render"
 import { matrixCellKey } from "./matrixProjection"
-import { MatrixPage } from "./MatrixPage"
+import { LegacyMatrixView, MatrixPage } from "./MatrixPage"
 
 class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub)
@@ -66,9 +66,20 @@ function matrixSnapshot(): Snapshot {
   }
 }
 
+it("defaults to the judgment matrix and keeps the legacy cell matrix behind its own tab", async () => {
+  current = { ...matrixSnapshot(), authorizationMatrix: { summary: { policyConfirmed: 0, policyReview: 0, bflaCandidates: 0, bolaIdorCandidates: 0, coverageGaps: 0, invalidExperiments: 0, bflaTestRecommendations: 0, bolaIdorTestRecommendations: 0, manualReviewPending: 0, humanConfirmed: 0, humanDismissed: 0 }, identities: [], functions: [], objects: [], evidence: [], policyLegend: [], evidenceLegend: [], ownershipLegend: [] } }
+  renderPage(<MatrixPage />)
+  expect(screen.getByRole("tab", { name: "판정 매트릭스" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.getByRole("heading", { name: "판정 매트릭스" })).toBeVisible()
+  expect(screen.queryByRole("region", { name: "권한 매트릭스 표" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("tab", { name: "기존 권한 매트릭스" }))
+  expect(await screen.findByRole("region", { name: "권한 매트릭스 표" })).toBeVisible()
+  expect(screen.getByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
+})
+
 it("projects server identity cells with requirement, owner, source text, miss, conflict, gap, and exact Evidence selection", async () => {
   current = matrixSnapshot()
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
 
   expect((await screen.findAllByText("/orders/{id}"))[0]).toBeVisible()
   const viewport = screen.getByRole("region", { name: "권한 매트릭스 표" })
@@ -96,7 +107,7 @@ it("projects server identity cells with requirement, owner, source text, miss, c
 
 it("groups existing server cells by server role without inventing a role verdict, filters gaps only, and retains selection across the filter", async () => {
   current = matrixSnapshot()
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
   const user = userEvent.setup()
   await user.click(await screen.findByRole("tab", { name: "역할별" }))
   expect(screen.getByText("역할: USER")).toBeVisible()
@@ -114,26 +125,26 @@ it("uses collision-safe null-aware coordinate keys and clears selected cell only
   expect(matrixCellKey("identity", "a:b", "c", null)).not.toBe(matrixCellKey("identity", "a", "b:c", null))
   expect(matrixCellKey("identity", "alice", "GET /orders", null)).not.toBe(matrixCellKey("identity", "alice", "GET /orders", "null"))
   current = matrixSnapshot()
-  const { rerender } = renderPage(<MatrixPage />)
+  const { rerender } = renderPage(<LegacyMatrixView />)
   await userEvent.click((await screen.findAllByRole("button", { name: "권한 셀 Evidence 열기" }))[0])
   current = { ...matrixSnapshot(), revision: 5, cells: matrixSnapshot().cells.slice(1) }
-  rerender(<MatrixPage />)
+  rerender(<LegacyMatrixView />)
   await waitFor(() => expect(screen.queryByText("Evidence 상세")).not.toBeInTheDocument())
 })
 
 it("states loading and empty snapshot outcomes without issuing a page-local request", async () => {
   queryError = false
   current = undefined
-  const { rerender } = renderPage(<MatrixPage />)
+  const { rerender } = renderPage(<LegacyMatrixView />)
   expect(screen.getByText("권한 매트릭스를 불러오는 중입니다.")).toBeVisible()
   current = { ...snapshotFixture }
-  rerender(<MatrixPage />)
+  rerender(<LegacyMatrixView />)
   expect(await screen.findByText("표시할 서버 권한 셀이 없습니다.")).toBeVisible()
 })
 
 it("keeps matrix controls and the bounded server matrix inside one reference workspace", async () => {
   current = matrixSnapshot()
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
 
   expect(await screen.findByRole("complementary", { name: "분석 필터" })).toBeVisible()
   expect(screen.getByRole("region", { name: "권한 매트릭스 분석 영역" })).toBeVisible()
@@ -145,7 +156,7 @@ it("keeps matrix controls and the bounded server matrix inside one reference wor
 it("keeps a server-query error separate from a zero-cell snapshot", () => {
   queryError = true
   current = matrixSnapshot()
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
   expect(screen.getByText("권한 매트릭스를 불러오지 못했습니다.")).toBeVisible()
   expect(screen.getByText("snapshot unavailable")).toBeVisible()
   queryError = false
@@ -157,7 +168,7 @@ it("keeps retained stale snapshot data usable and bounds escaped long server tex
   const value = matrixSnapshot()
   current = { ...value, requiredRoles: { [longOperation]: "USER" }, cells: [{ ...value.cells[0], op: longOperation, reasons: { ...value.cells[0].reasons, human: longReason } }] }
   queryStale = true
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
   expect(screen.queryByText("이전 snapshot을 표시 중입니다.")).not.toBeInTheDocument()
   expect(screen.queryByRole("img")).not.toBeInTheDocument()
   expect(screen.queryByRole("script")).not.toBeInTheDocument()
@@ -178,7 +189,7 @@ it("keeps a matching long matrix Evidence ID out of the entire Sheet until expli
     events: [{ ...value.events[0], eventId: ids[0], clusterEvidenceIds: [ids[0]] }],
     cells: [{ ...value.cells[0], evidenceIds: ids }],
   }
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
   await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })[0])
   const sheet = await screen.findByRole("complementary", { name: "선택 상세" })
   expect(await screen.findByRole("button", { name: "Evidence ID 더 보기" })).toBeVisible()
@@ -197,7 +208,7 @@ it("bounds selected long matrix context until the operator explicitly expands es
   const longOperation = `<matrix-op>${"m".repeat(220)}</matrix-op>`
   const value = matrixSnapshot()
   current = { ...value, cells: [{ ...value.cells[0], op: longOperation }] }
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
   await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })[0])
   expect(document.body.textContent).not.toContain(longOperation)
   expect(await screen.findByRole("button", { name: "선택 상세 더 보기" })).toBeVisible()
@@ -212,7 +223,7 @@ it("bounds every selected matrix coordinate field until the operator expands esc
   const longResource = `<matrix-resource>${"r".repeat(220)}</matrix-resource>`
   const value = matrixSnapshot()
   current = { ...value, cells: [{ ...value.cells[0], idn: longIdentity, resource: longResource }] }
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
   await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })[0])
   const detail = screen.getByText("매트릭스 선택 좌표").closest("section")
   expect(detail?.textContent).not.toContain(longIdentity)
@@ -229,7 +240,7 @@ it.each([900, 600])("keeps matrix context and inspector journeys functional at c
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("1279") && width < 1280, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
   current = matrixSnapshot()
   const user = userEvent.setup()
-  renderPage(<MatrixPage />)
+  renderPage(<LegacyMatrixView />)
 
   const contextTrigger = screen.getByRole("button", { name: "분석 필터 열기" })
   const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })

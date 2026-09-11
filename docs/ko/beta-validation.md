@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 6단계(판정 매트릭스 P/E/O) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 회귀 | Java `AuthorizationMatrixAnalyzerTest` 10건(PR 7건 이식 + guard: 본문 미확인 성공→수동 검토, 소유자 미확정→검토, BOLA 의심 비누설, 과거 검증 이력 비승격·정확 좌표), `FlowScopeWebServerTest` 매트릭스 cell 검토 왕복(서버 Evidence 결박·DISMISSED·미존재 id 400); vitest `judgmentProjection` 4·`JudgmentMatrixView` 5(요약·칩, 상세·저장·기각 mutation, 기준/대상 Evidence 시트, 주의 필터·Evidence 목록·선택 해제, 로딩/없음/오류)·`MatrixPage` 탭 1 → 모두 GREEN. |
+| JDK 21 `mvn -o clean verify` | BUILD SUCCESS(1분 6초). Java 532 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 46 files/367 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,930,936 bytes(이 verify의 단일 빌드값). |
+| 패키지 Chromium 실측 | Standalone(17777) 샘플, `?fresh=6#matrix`, 1600×900 새 탭. 기본 탭 `판정 매트릭스`(aria-selected), 요약 `BFLA 테스트 추천 0 · BOLA/IDOR 테스트 추천 4 · 수동 검토 대기 7 · 사용자 취약점 확정 0 · 정상·기각 0`, 기능 표 열 `USER A User / USER B User / ADMIN Admin`, 행 `GET /api/admin/users P3 · 사람 확인 정책` 등 5행, 셀 15개(`교차 실행 공백` gap / `응답 관측 · 기대 정책 미정` unknown / `BFLA 후보 · 통제 재현 필요` risk), 범례 P/E/O. BFLA 후보 셀 클릭 → 상세: `USER A · POST /api/admin/invites`, 기대 차단→실제 응답 갈림 HTTP 200/403, HUMAN=DENY·LLM=SUSPICIOUS, P3 사람 확인 정책·E1 단일 관측, 게이트(세션 PASS·기준선/통제/반복/전제조건/오라클 UNKNOWN), 오라클 생성 후 확인 미충족, Evidence 2건, 사람 최종 판정 폼. `BOLA/IDOR · 계정 × 객체` 탭 → 4행(orders:101 소유 USER A ×3 op, orders:202 소유 USER B), 셀 `BOLA/IDOR 후보: USER B · GET …orders:101`(risk) 클릭 → 관계 SAME_ROLE_FOREIGN·기법 IDOR/BOLA·소유자 USER A, 기대 차단→실제 응답 갈림 200/403, LLM=SUSPICIOUS·SCANNER=DENY, P2 소유관계·E2 차등 비교·O3 확정(사용자 명시 소유자), 정상 기준선 PASS·결과 오라클 PASS(읽기 의미 응답 충족 예), Evidence 2 → 검증 메모 "shared object confirmed by owner" 입력 → `정상·기각` 클릭 → `POST /api/review` 200, 헤딩·셀 라벨 `BOLA/IDOR 후보 · 정상/기각`, 요약 수동 검토 대기 6·정상·기각 1 → `Evidence 상세 열기` → `Evidence 상세` dialog(매트릭스 선택 좌표 acct-demo-user-b / orders:101 / GET /api/orders/{id}, Evidence IDs 2, GET /api/orders/101 HTTP 403 acct-demo-user-b/User) → Escape → `기존 권한 매트릭스` 탭 → `권한 매트릭스 표`·`권한 셀 Evidence 열기` 7. 콘솔 오류 0, `/api/*` 200. 실측 중 발견: 저장 뒤 서버 메시지가 snapshot 갱신으로 즉시 사라짐 → 다른 cell로 옮길 때만 지우도록 수정. 재빌드 JAR 재실측: `BOLA/IDOR 수동 테스트 추천: USER B · PATCH …orders:101` 상세의 추천 조합(USER A → USER B, 상태변경 경고, 기준 ev-ade77aee8c742e10) → `기준 Evidence 상세 열기` → 시트(acct-demo-user-a · PATCH /api/orders/{id} · orders:101, PATCH /api/orders/101 HTTP 200) → Escape → 메모 입력 후 `판정 저장`(UNRESOLVED) → `POST /api/review` 200, 상태 메시지 "Evidence에 묶인 사람 감사·오버라이드 기록을 저장했습니다." 유지, 메모 값 유지, 콘솔 오류 0. |
+| Playwright parity | 9/9 passed(17.8s, 재빌드 JAR을 `scripts/start-e2e-server.mjs`가 격리 workspace로 기동). 새 검사 `shows the judgment matrix with server recommendations and a server-bound review form`: 권한 매트릭스 → 판정 매트릭스 탭 → 요약 목록에 `BOLA/IDOR 테스트 추천` → BOLA/IDOR 탭 → `BOLA/IDOR (후보|수동 테스트 추천|수동 결과 검토)` 셀 클릭 → 상세의 `독립 신뢰도 축`·`테스트 유효성 게이트`·`사람 최종 판정`·`판정 저장` 활성·E3 미표시. 기존 검사는 `navigate("권한 매트릭스")`가 `기존 권한 매트릭스` 탭을 연 뒤 그대로 통과. 콘솔 오류·외부 origin·능동 요청 0. | |
+| 미실측 | 프로젝트 저장·재열기 뒤 매트릭스 검토 보존은 7단계 통합 검증. 실제 Burp 미실행. |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5d snapshot 계약·캐시) gate
 
 | 항목 | 실제 확인 결과 |

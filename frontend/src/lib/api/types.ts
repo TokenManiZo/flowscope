@@ -111,6 +111,87 @@ export interface Scenario {
 
 export type ReviewStatus = "UNRESOLVED" | "CONFIRMED" | "DISMISSED"
 
+/** 판정 매트릭스(PR#12, D-144): 정책 P·실행 E·소유권 O를 독립 축으로 둔 서버 projection. 후보 여부는 정본 cell을 따른다. */
+export type MatrixExpected = "ALLOW" | "DENY" | "UNKNOWN"
+export type MatrixActual = "SUCCESS" | "DENIED" | "CONFLICT" | "AMBIGUOUS" | "UNTESTED"
+export type MatrixStatus =
+  | "BFLA_REPRODUCED" | "BFLA_CANDIDATE" | "BFLA_TEST_RECOMMENDED" | "BFLA_REVIEW_REQUIRED"
+  | "BOLA_REPRODUCED" | "BOLA_IDOR_CANDIDATE" | "BOLA_IDOR_TEST_RECOMMENDED" | "BOLA_IDOR_REVIEW_REQUIRED"
+  | "POLICY_CONFIRMATION_REQUIRED" | "POLICY_ENFORCED" | "EXPECTED_ACCESS" | "EXPECTED_ACCESS_DENIED"
+  | "UNKNOWN_POLICY" | "OWNERSHIP_UNKNOWN" | "INVALID_EXPERIMENT" | "COVERAGE_GAP" | "UNTESTED"
+export type MatrixGateState = "PASS" | "FAIL" | "UNKNOWN" | "NOT_APPLICABLE"
+export interface MatrixConfidence { code: string; level: number; label: string; basis: string }
+export interface MatrixGate { key: string; label: string; state: MatrixGateState; reason: string }
+export interface MatrixOracle { type: string; label: string; satisfied: boolean; requirement: string }
+export interface MatrixRecommendation {
+  type: string
+  basisIdentity: string
+  basisIdentityLabel: string
+  testIdentity: string
+  testIdentityLabel: string
+  reason: string
+  instruction: string
+  stateChanging: boolean
+  basisEvidenceIds: readonly string[]
+}
+export interface MatrixIdentity { id: string; label: string; role: string; kind: string }
+export interface MatrixLegendItem { code: string; title: string; description: string }
+export interface MatrixCellBase {
+  id: string
+  identity: string
+  identityLabel: string
+  operation: string
+  expected: MatrixExpected
+  actual: MatrixActual
+  status: MatrixStatus
+  statusLabel: string
+  policy: MatrixConfidence
+  evidence: MatrixConfidence
+  oracle: MatrixOracle
+  gates: readonly MatrixGate[]
+  sourceVerdicts: Readonly<Record<string, string>>
+  statusCodes: readonly number[]
+  evidenceIds: readonly string[]
+  validationVerdict: string
+  recommendation: MatrixRecommendation | null
+  reviewStatus: ReviewStatus
+  reviewNote: string
+  reviewEvidenceIds: readonly string[]
+}
+export interface MatrixFunctionCell extends MatrixCellBase { role: string }
+export interface MatrixObjectCell extends MatrixCellBase {
+  role: string
+  resource: string
+  owner: string | null
+  ownerLabel: string
+  relation: string
+  techniques: readonly string[]
+  ownership: MatrixConfidence
+}
+export interface MatrixEvidenceRow extends MatrixCellBase { type: string; resource: string | null; ownership: MatrixConfidence }
+export interface AuthorizationMatrix {
+  summary: {
+    policyConfirmed: number
+    policyReview: number
+    bflaCandidates: number
+    bolaIdorCandidates: number
+    coverageGaps: number
+    invalidExperiments: number
+    bflaTestRecommendations: number
+    bolaIdorTestRecommendations: number
+    manualReviewPending: number
+    humanConfirmed: number
+    humanDismissed: number
+  }
+  identities: readonly MatrixIdentity[]
+  functions: readonly MatrixFunctionCell[]
+  objects: readonly MatrixObjectCell[]
+  evidence: readonly MatrixEvidenceRow[]
+  policyLegend: readonly MatrixLegendItem[]
+  evidenceLegend: readonly MatrixLegendItem[]
+  ownershipLegend: readonly MatrixLegendItem[]
+}
+
 export interface Account {
   id: string
   label: string
@@ -396,6 +477,7 @@ export interface Snapshot {
   managedSessions: readonly ManagedSession[]
   routeCandidates: readonly RouteCandidate[]
   runExecutions?: readonly RunExecutionSummary[]
+  authorizationMatrix?: AuthorizationMatrix
   surface?: {
     endpoints: readonly SurfaceEndpoint[]
     extractions: readonly SurfaceExtraction[]

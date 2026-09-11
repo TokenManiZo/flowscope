@@ -58,6 +58,7 @@ async function navigate(page: Page, label: string, heading: string) {
     link = page.getByRole("menu", { name: "분석 경로" }).getByRole("menuitem", { name: label, exact: true })
   }
   await link.click()
+  if (label === "권한 매트릭스") await page.getByRole("tab", { name: "기존 권한 매트릭스", exact: true }).click()
   await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible()
 }
 async function closeSheet(page: Page) { await page.keyboard.press("Escape"); await expect(page.getByRole("dialog", { name: "Evidence 상세" })).toBeHidden() }
@@ -344,6 +345,27 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   const detailSheet = page.getByRole("region", { name: "Evidence 상세" })
   await expect(detailSheet).toBeVisible()
   await expect(detailSheet.getByText(`선택 Evidence: ${evidenceId}`, { exact: true })).toBeVisible()
+})
+
+test("shows the judgment matrix with server recommendations and a server-bound review form", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openDashboard(page)
+  await navigate(page, "권한 매트릭스", "권한 매트릭스")
+  await page.getByRole("tab", { name: "판정 매트릭스", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "판정 매트릭스", exact: true })).toBeVisible()
+  const summary = page.getByRole("list", { name: "판정 요약" })
+  await expect(summary).toContainText("BOLA/IDOR 테스트 추천")
+  await page.getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체", exact: true }).click()
+  const table = page.getByRole("region", { name: "판정 매트릭스 표" })
+  const candidate = table.getByRole("button", { name: /^BOLA\/IDOR (후보|수동 테스트 추천|수동 결과 검토)/ }).first()
+  await expect(candidate).toBeVisible()
+  await candidate.click()
+  const inspector = page.getByRole("complementary", { name: "선택 상세" })
+  await expect(inspector.getByRole("region", { name: "독립 신뢰도 축" })).toBeVisible()
+  await expect(inspector.getByRole("region", { name: "테스트 유효성 게이트" })).toBeVisible()
+  await expect(inspector.getByRole("region", { name: "사람 최종 판정" })).toBeVisible()
+  await expect(inspector.getByRole("button", { name: "판정 저장" })).toBeEnabled()
+  await expect(inspector).not.toContainText("E3")
 })
 
 test("opens Request Lab as a two-column disabled standalone draft", async ({ page }) => {

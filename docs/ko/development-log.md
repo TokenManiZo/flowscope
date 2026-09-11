@@ -1,5 +1,24 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 6단계 — 판정 매트릭스(P/E/O)·BFLA/BOLA 수동 테스트 추천·사람 검토(D-144)
+
+### 원인과 수정
+
+- PR#12 `AuthorizationMatrix`/`AuthorizationMatrixAnalyzer`는 정책 P·실행 E·소유권 O를 독립 축으로 둔 판정 매트릭스와 수동 테스트 추천을 legacy `index.html`에만 붙였고, 후보 승격을 2xx+소유관계로 직접 판단했으며 과거 `ValidationDecision`을 E3·재현으로 승격했다. 우리 계약(D-050 정본 재판정 금지, D-004 본문 오라클, 과거 LLM 이력 읽기 전용, legacy HTML 미교체)에 맞춰 이식했다.
+- **서버:** `core/AuthorizationMatrix`(PR record 그대로), `core/AuthorizationMatrixAnalyzer`(PR 구조 유지 + guard: 객체 후보는 정본 cell SUSPICIOUS만, 본문 미확인 성공은 `BOLA_IDOR_REVIEW_REQUIRED`; 기능 후보는 정본 `roleViolation`만이며 BOLA 의심이 기능 집계로 새지 않음; `Actual`은 정본과 같은 `ResponseEvidence`; 과거 검증은 정확 cell의 `validationVerdict` 표시만, E3·`*_REPRODUCED` 자동 부여 없음, gate controlled/repeat UNKNOWN). `SnapshotJsonWriter`가 `authorizationMatrix`를 게시한다(`inputCoverage`·`events[].inputs`는 미이식). `/api/review`는 finding 외에 매트릭스 cell id도 받고 Evidence는 서버가 정한 대상+기준 목록(`reviewEvidenceIds`)만 결박한다.
+- **프런트:** `features/matrix/{judgmentProjection.ts,JudgmentMatrixView.tsx}`와 `MatrixPage` 두 탭(판정 매트릭스 기본 / 기존 권한 매트릭스=`LegacyMatrixView`). 요약 KPI, BFLA·BOLA/IDOR·실행 Evidence 보기, 주의 항목 필터, P/E/O 범례, 셀 버튼(상태·검토 접미·기대→실제·P/E/O 칩), 상세(추천 조합·기준 Evidence 상세·기대/실제·신뢰도 축·게이트·오라클·Evidence 상세(EvidenceSheet)·사람 최종 판정 폼 `useReviewMutation`). 저장 뒤 snapshot 갱신으로 같은 cell의 review 값이 바뀌어도 서버 응답 메시지는 다른 cell로 옮길 때만 지운다(실측에서 발견해 수정).
+- **e2e:** `parity.spec.ts`의 `navigate("권한 매트릭스")`가 기존 셀 표 검사 전에 "기존 권한 매트릭스" 탭을 열고, 새 검사가 판정 매트릭스 요약·BOLA/IDOR 후보 셀 상세(신뢰도 축·게이트·사람 최종 판정)와 E3 미표시를 확인한다.
+
+### 영향 파일·회귀
+
+- 코드: `core/{AuthorizationMatrix,AuthorizationMatrixAnalyzer}.java`(신규), `web/SnapshotJsonWriter.java`, `web/FlowScopeWebServer.java`(`evidenceForReview`+`matrixReviewEvidence`), `frontend/src/lib/api/types.ts`(`AuthorizationMatrix` 타입·`Snapshot.authorizationMatrix`), `frontend/src/features/matrix/{judgmentProjection.ts,JudgmentMatrixView.tsx,MatrixPage.tsx}`, `frontend/e2e/parity.spec.ts`.
+- 테스트: Java `AuthorizationMatrixAnalyzerTest` 10건(PR 7건 이식 + guard 3건), `FlowScopeWebServerTest` cell 검토 왕복(서버 Evidence 결박·DISMISSED 반영·미존재 id 400); vitest `judgmentProjection.test.ts` 4·`JudgmentMatrixView.test.tsx` 5·`MatrixPage.test.tsx` 탭 1(기존 legacy 검사는 `LegacyMatrixView` 직접 렌더).
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 6초), Java 532 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 46 files/367 tests. JAR `target/flowscope-1.2.0-beta.46.jar` 31,930,936 bytes. 패키지 Standalone(17777) Chromium 실측(1600×900, 새 탭): `#matrix` 기본 탭 판정 매트릭스, 요약 BFLA 0·BOLA/IDOR 4·수동 검토 대기 7·확정 0·기각 0, 기능 표 5행×3신원(P3 `GET /api/admin/users`·`POST /api/admin/invites`, P0 나머지), `BFLA 후보 · 통제 재현 필요: USER A · POST /api/admin/invites` 상세(기대 차단→실제 응답 갈림 HTTP 200/403, HUMAN=DENY·LLM=SUSPICIOUS, P3·E1, 게이트 6, 오라클 생성 후 확인, Evidence 2, 사람 최종 판정 폼) → BOLA/IDOR 탭 4행(orders:101 소유 USER A, orders:202 소유 USER B)·셀 `BOLA/IDOR 후보: USER B · GET …orders:101`(P2·E2·O3, 관계 SAME_ROLE_FOREIGN·기법 IDOR/BOLA, 정상 기준선 PASS·결과 오라클 PASS, LLM=SUSPICIOUS·SCANNER=DENY), `수동 결과 검토`(OPTIONS USER B), `수동 테스트 추천`(PATCH USER B) → 검증 메모 입력 후 `정상·기각` → `POST /api/review` 200, 셀 라벨 `· 정상/기각`, 요약 수동 검토 대기 6·정상·기각 1 → `Evidence 상세 열기` → EvidenceSheet(매트릭스 선택 좌표 acct-demo-user-b·orders:101, Evidence IDs 2, GET /api/orders/101 403) → Escape → `기존 권한 매트릭스` 탭(권한 매트릭스 표·셀 버튼 7). 콘솔 오류 0, `/api/*` 200. Playwright parity: 9/9 passed(17.8s; 판정 매트릭스 검사 — 요약 목록, BOLA/IDOR 후보 셀 상세의 신뢰도 축·게이트·사람 최종 판정, `판정 저장` 활성, E3 미표시 — 와 `기존 권한 매트릭스` 탭 경유 기존 검사 포함).
+
+### 남은 한계·다음 gate
+
+- 사람 검토는 서버 Evidence에 결박되므로 Evidence가 바뀌면 다시 UNRESOLVED로 보인다(기존 `ReviewDecision.appliesTo` 계약). 추천은 관측 조합 공백의 제안이지 취약점 주장이 아니다. 실제 Burp 미실행. 다음: 7단계 통합 검증(화면 간 선택·Evidence·저장/재열기, 좁은 viewport 패키지 실측, 설계 문서 이식)·최종 인계.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 5단계(5d) — snapshot surface 계약·캐시 회귀와 선언 preview 결정성
 
 ### 원인과 수정

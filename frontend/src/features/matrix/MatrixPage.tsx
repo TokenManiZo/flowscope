@@ -6,9 +6,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useSnapshotQuery } from "@/lib/query/hooks"
+import { JudgmentMatrixView } from "./JudgmentMatrixView"
 import { MatrixVerdictCell } from "./MatrixVerdictCell"
 import { projectMatrix, type MatrixMember, type MatrixMode } from "./matrixProjection"
 
@@ -30,7 +31,19 @@ function BoundedOperation({ value }: { value: string }) {
   return <div className="grid gap-1">{method && <Badge variant="outline" className="w-fit">{method}</Badge>}<span aria-hidden="true" className="break-all font-medium">{boundedText(path, expanded)}</span><span className="sr-only">서버 작업 값</span>{long && <button type="button" className="w-fit text-xs underline" onClick={() => setExpanded((current) => !current)}>{expanded ? "작업 접기" : "작업 더 보기"}</button>}</div>
 }
 
+/** 판정 매트릭스(P/E/O, PR#12 이식)가 기본이고 기존 권한 셀 표는 둘째 탭으로 남긴다(D-144). */
 export function MatrixPage() {
+  return <Tabs defaultValue="judgment" className="h-full min-h-0 min-w-0 gap-0 bg-[var(--flowscope-canvas)]">
+    <TabsList aria-label="매트릭스 보기" variant="line" className="mx-4 my-2 shrink-0">
+      <TabsTrigger value="judgment" className="px-3">판정 매트릭스</TabsTrigger>
+      <TabsTrigger value="legacy" className="px-3">기존 권한 매트릭스</TabsTrigger>
+    </TabsList>
+    <TabsContent value="judgment" className="min-h-0 min-w-0 flex-1"><JudgmentMatrixView /></TabsContent>
+    <TabsContent value="legacy" className="min-h-0 min-w-0 flex-1"><LegacyMatrixView /></TabsContent>
+  </Tabs>
+}
+
+export function LegacyMatrixView() {
   const snapshot = useSnapshotQuery()
   const [mode, setMode] = useState<MatrixMode>("identity")
   const [gapsOnly, setGapsOnly] = useState(false)

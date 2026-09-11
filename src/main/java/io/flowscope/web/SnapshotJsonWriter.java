@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AuthorizationAnalysis;
+import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.DataFlowAnalyzer;
 import io.flowscope.core.Fingerprints;
 import io.flowscope.core.GraphObservationFact;
@@ -107,6 +108,9 @@ public final class SnapshotJsonWriter {
         root.set("activeSources", json.valueToTree(result.analysis.activeSources().stream()
                 .map(SnapshotJsonWriter::wire).sorted().toList()));
         root.set("cells", cells(result.analysis.cells()));
+        // 판정 매트릭스(P/E/O)는 정본 cell 위의 표시 projection이다(D-144). 과거 검증은 이력 표시에만 쓴다.
+        root.set("authorizationMatrix", json.valueToTree(
+                AuthorizationMatrixAnalyzer.analyze(result, config, validations)));
         root.putArray("verifications");
         root.set("gaps", gaps(result.analysis.gaps()));
         root.set("scenarios", scenarios(result, config));

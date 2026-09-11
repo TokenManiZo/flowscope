@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.AuthorizationMatrix;
+import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.LaneCompletionPolicy;
 import io.flowscope.core.Masking;
@@ -633,10 +635,20 @@ public final class FlowScopeWebServer implements AutoCloseable {
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
+    /** 검토 대상의 Evidence는 서버가 정한다: 규칙 후보(finding) 또는 판정 매트릭스 cell(대상+기준 Evidence). 클라이언트 목록은 받지 않는다. */
     private List<String> evidenceForReview(String itemId) {
         return state.snapshot().analysis.findings().stream().filter(finding -> finding.id().equals(itemId))
                 .map(finding -> finding.evidenceIds()).findFirst()
+                .or(() -> matrixReviewEvidence(itemId))
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 후보입니다."));
+    }
+
+    private java.util.Optional<List<String>> matrixReviewEvidence(String itemId) {
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
+        return java.util.stream.Stream.concat(
+                        matrix.functions().stream().filter(cell -> cell.id().equals(itemId)).map(AuthorizationMatrix.FunctionCell::reviewEvidenceIds),
+                        matrix.objects().stream().filter(cell -> cell.id().equals(itemId)).map(AuthorizationMatrix.ObjectCell::reviewEvidenceIds))
+                .findFirst();
     }
 
     private LoopbackHttpServer.Response identityMerge(LoopbackHttpServer.Request request) throws IOException {
