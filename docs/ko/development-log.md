@@ -1,5 +1,29 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · 슬라이스 1 후속 수정 — 미확정 좌표·표시 분리·contextSignature·Explorer FLOW_V2·JS AST 구조 보존
+
+### 원인과 수정
+
+- 코덱스 리뷰가 `588de54`에서 확정 문제 6건을 잡았다: JS 점 이름 추정 join(D-143 위반), legacy 모호 선언의 Gap 제외 미구현, `fieldPath`에 기계 좌표 노출, 엔진 `contextSignature` 유실, Explorer 신규 선언이 LEGACY_V1, distinct digest 무제한. 사용자가 후속 수정 10항목을 지시했고, 이어 "PR 원본이 보존하던 구조를 잃거나 새 제한을 추가하지 말 것 / `/a//b` 거부 테스트 정정 / JS는 AST 구조를 보존해 전달하고 이미 평탄화된 결과만 미확정"을 지시했다.
+- **미확정 좌표:** `DeltaState.UNRESOLVED_COORDINATE`와 `Declaration`/`ParameterFact`의 `coordinateVersion`·`coordinateResolved`를 추가했다. `MutableEndpoint.parameter(location, canonicalPath, displayName, resolved)`가 미확정 좌표를 `?` 접두 key 공간에 두어 확정 좌표와 절대 join하지 않고, `freeze()`가 상태를 `UNRESOLVED_COORDINATE`로 낸다. OpenAPI `declareTemplatePath`는 schema slot 수와 template slot 수가 다르면(mounted prefix 등) 임의 선언 대신 `UNRESOLVED_PATH_ALIGNMENT`만 남긴다(`candidatePathMatches`의 `endsWith`로 실제 도달 가능).
+- **표시·기계 좌표 분리:** `fieldPath`는 `displayPath()`가 만든 사람용 경로(PATH→선언명, JSON→`parent.child`·`parent[].child`, 그 외→이스케이프 해제), `canonicalPath`만 join key. 관측 전용 파라미터의 `displayName`은 `observedDisplayName()`(PATH는 template placeholder 이름, 그 외 마지막 세그먼트). 정렬 기준도 canonicalPath.
+- **contextSignature:** 엔진 관측의 요청 단위 구조 서명을 `SurfaceAnalysis.ParameterObservation.contextSignature`로 전달한다. 값 digest가 아니므로 snapshot 비노출 회귀는 `"digest"` 필드와 contextSignature 외 `sha256:`만 금지하도록 정밀화했다.
+- **Explorer FLOW_V2:** `ExplorerHttpGateway.canonicalFieldPath()`가 location별로 canonical을 만들어 `DeclaredParameter(…, FLOW_V2)`로 저장한다. 처음 구현은 `validPointer`가 빈 세그먼트를 거부해 `/a//b`(RFC 6901 유효, 엔진도 `{"a":{"":{"b":1}}}`에서 생성)를 400으로 막았는데, 이는 새 제한이자 round-trip 파괴라 제거하고 테스트를 "수용·FLOW_V2 보존"으로 바로잡았다. `~` 뒤 0/1/2 이외의 이스케이프만 계약 위반으로 거부한다.
+- **JS AST 구조 보존:** 처음 구현은 분석기가 평탄화한 `criteria.status`를 전부 미확정으로 두었으나(추정 join은 막았지만 AST가 아는 구조를 버림), PR#11 `JavascriptParameterDefinitionAdapter.walk`(JsonNode 구조 재귀, 배열 원소 wildcard)를 이식해 `JavascriptCallSiteAnalyzer.addObjectParameters`가 `Parameter.segments`(중첩 세그먼트, 배열은 필드 + 객체 원소마다 `*`)를 보존한다. `SurfaceAnalyzer.jsBodyCoordinate`는 세그먼트로 canonical을 만들어 확정하고(`/criteria/status` join, 리터럴 점 키 `/criteria.status`는 별도 확정 좌표), 세그먼트 없이 평탄화된 이름만 `UNRESOLVED_PARAMETER_COORDINATE`. `pr12`는 파라미터·JS 구조 코드가 없어 해당 없음. 점 표기 `name`은 Explorer 인덱스·표시용으로 유지(기존 분석기 테스트 무변경 통과).
+- **distinct 상한:** `SurfaceAnalyzer.MAX_DISTINCT_VALUES=256`을 넘는 새 digest는 세지 않고 `distinctValueTruncated`+`DISTINCT_VALUE_LIMIT` 진단(파라미터당 1회).
+- **orphan 정리:** 슬라이스 1에서 남긴 `pathKey`·`alignedPathIndex`(옛 `path[i]` 좌표) 제거.
+
+### 영향 파일·회귀
+
+- 코드: `core/SurfaceAnalysis.java`(UNRESOLVED_COORDINATE, Declaration/ParameterObservation/ParameterFact 필드), `core/SurfaceAnalyzer.java`(Coordinate·declaredCoordinate·jsBodyCoordinate·displayPath·observedDisplayName·MutableParameter 재작성·distinct 상한·path alignment 진단), `core/discovery/JavascriptAnalysis.java`(Parameter.segments), `core/discovery/JavascriptCallSiteAnalyzer.java`(AST 세그먼트·배열 원소 재귀), `explorer/ExplorerHttpGateway.java`(canonicalFieldPath·validPointer·FLOW_V2 저장), `frontend/src/lib/api/types.ts`(가산)·`SurfacePage.tsx`(미확정 라벨).
+- 테스트(RED 선행): `SurfaceAnalyzerTest`에 JS AST 구조 보존·표시 분리·contextSignature·distinct 상한·path alignment 5건 추가 + legacy 미확정·첫 병합 테스트 단언 정정 + helper를 canonicalPath 매칭으로; `JavascriptCallSiteAnalyzerTest` 세그먼트 보존 1건; `ExplorerHttpGatewayTest` FLOW_V2 저장·`/a//b` 수용·`~x` 거부·점 표기 거부·canonical pointer 수용; `surface-heldout/truth.json`은 표시 경로 기준 원본으로 복원(구조 보존으로 JS 항목이 확정 좌표가 되어도 표시는 동일).
+- 최종 검증: JDK 21 `mvn clean verify` BUILD SUCCESS, Java 466 tests(실패·오류 0, opt-in 2 skip). frontend `npm run typecheck` 통과, SurfacePage vitest 3/3.
+
+### 남은 한계·다음 gate
+
+- packaged JAR·실제 Burp/ZAP/Explorer·E2E 미실행. Gap 분석기(슬라이스 2)는 `coordinateResolved`/`UNRESOLVED_COORDINATE`를 제외 조건으로 써야 하며 아직 구현 전이다.
+- Explorer의 점·배열 표기 JSON `field_path`는 구조를 추정하지 않고 canonical pointer 재요청을 안내한다(모델이 pointer로 다시 보내야 저장됨). 배열 원소가 객체가 아닌 배열(`[[…]]`)의 중첩은 JS 세그먼트 보존 범위 밖이다.
+
 ## 2026-09-11 · 미출시 · 관측·선언 공통 parameter coordinate 통합(슬라이스 1)
 
 ### 원인과 수정

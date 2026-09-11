@@ -8,6 +8,7 @@ import io.flowscope.core.Normalizer;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
 import io.flowscope.core.SurfaceAnalysis;
+import io.flowscope.core.parameter.ParameterCoordinates;
 import io.flowscope.core.discovery.JavascriptAnalysis;
 import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import io.flowscope.integration.LoopbackHttpServer;
@@ -419,11 +420,13 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                         SurfaceAnalysis.ParameterLocation location = enumValue(
                                 SurfaceAnalysis.ParameterLocation.class,
                                 requiredToken(parameter, "location", 32));
-                        String fieldPath = requiredText(parameter, "field_path", 512);
+                        String rawFieldPath = requiredText(parameter, "field_path", 512);
+                        String headerName = rawFieldPath.startsWith("/") ? rawFieldPath.substring(1) : rawFieldPath;
                         if (location == SurfaceAnalysis.ParameterLocation.HEADER
-                                && FORBIDDEN_HEADERS.contains(fieldPath.toLowerCase(Locale.ROOT))) {
+                                && FORBIDDEN_HEADERS.contains(headerName.toLowerCase(Locale.ROOT))) {
                             throw new IllegalArgumentException("인증·세션 header는 parameter 선언으로 저장하지 않습니다.");
                         }
+                        String fieldPath = canonicalFieldPath(location, rawFieldPath, pathTemplate);
                         String displayName = optionalText(parameter, "display_name", 512);
                         SurfaceAnalysis.Requirement requirement = enumValue(SurfaceAnalysis.Requirement.class,
                                 parameter.path("requirement").asText("UNKNOWN"));
@@ -436,7 +439,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                         }
                         if (!declaredParameterKeys.contains(parameterKey)) newParameterKeys.add(parameterKey);
                         parameters.add(new RouteCandidate.DeclaredParameter(location, fieldPath,
-                                displayName, requirement, evidenceId, Source.LLM, runId, adapter, reason));
+                                displayName, requirement, evidenceId, Source.LLM, runId, adapter, reason,
+                                ParameterCoordinates.CoordinateVersion.FLOW_V2));
                     }
                 }
                 if (provenance.isEmpty() && parameters.isEmpty()) {
@@ -517,6 +521,61 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
         int port = uri.getPort() >= 0 ? uri.getPort() : scheme.equals("https") ? 443 : 80;
         return scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
+    }
+
+    /**
+     * D-143: Explorer 선언 좌표는 저장 전에 canonical FLOW_V2로 검증·정규화한다. 점·배열 표기 JSON처럼 구조를
+     * 추정해야 하는 입력은 거부해 모델이 canonical pointer로 다시 보내게 한다(추정 join 없음).
+     */
+    private static String canonicalFieldPath(SurfaceAnalysis.ParameterLocation location, String raw,
+                                             String pathTemplate) {
+        switch (location) {
+            case PATH -> {
+                if (raw.matches("/segments/\\d+")) {
+                    int slot = Integer.parseInt(raw.substring("/segments/".length()));
+                    if (slot >= ParameterCoordinates.pathSlots(pathTemplate).size()) {
+                        throw new IllegalArgumentException("PATH field_path의 segment 위치가 선언 URL template 밖입니다.");
+                    }
+                    return raw;
+                }
+                return ParameterCoordinates.legacyToCanonical(location, raw, pathTemplate).orElseThrow(() ->
+                        new IllegalArgumentException("PATH field_path는 /segments/N 또는 template 위치의 path[i] 형식이어야 합니다."));
+            }
+            case JSON_BODY, GRAPHQL_VARIABLE, XML_PATH -> {
+                if (raw.startsWith("/")) {
+                    if (!validPointer(raw)) {
+                        throw new IllegalArgumentException("field_path pointer 형식이 올바르지 않습니다(빈 세그먼트·잘못된 ~ 이스케이프).");
+                    }
+                    return raw;
+                }
+                if (location != SurfaceAnalysis.ParameterLocation.XML_PATH
+                        && ParameterCoordinates.legacyToCanonical(location, raw, pathTemplate).isPresent()) {
+                    return ParameterCoordinates.jsonChild("", raw);
+                }
+                throw new IllegalArgumentException("점·배열 표기 " + location
+                        + " field_path는 구조를 추정하지 않습니다. canonical pointer(/parent/child, 배열 원소 *)로 보내세요.");
+            }
+            case QUERY, FORM_BODY, MULTIPART_BODY -> {
+                return raw.startsWith("/") && validPointer(raw) && raw.indexOf('/', 1) < 0
+                        ? raw : ParameterCoordinates.nameToken(raw);
+            }
+            case HEADER -> {
+                return raw.startsWith("/") && validPointer(raw) && raw.indexOf('/', 1) < 0
+                        ? raw.toLowerCase(Locale.ROOT) : ParameterCoordinates.headerToken(raw);
+            }
+        }
+        throw new IllegalArgumentException("지원하지 않는 parameter location입니다.");
+    }
+
+    private static boolean validPointer(String pointer) {
+        if (!pointer.startsWith("/")) return false;
+        for (String segment : pointer.substring(1).split("/", -1)) {
+            for (int i = 0; i < segment.length(); i++) {
+                if (segment.charAt(i) == '~'
+                        && (i + 1 >= segment.length() || "012".indexOf(segment.charAt(i + 1)) < 0)) return false;
+            }
+        }
+        return true;
     }
 
     private static void requireOnlyFields(JsonNode value, Set<String> allowed, String label) {

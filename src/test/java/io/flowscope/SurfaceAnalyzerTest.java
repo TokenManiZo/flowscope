@@ -133,8 +133,8 @@ final class SurfaceAnalyzerTest {
         SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
 
         SurfaceAnalysis.EndpointFact orders = endpoint(analysis, "POST", "/api/orders");
-        assertTrue(orders.parameters().stream().noneMatch(item -> item.fieldPath().equals("/adminOnly")));
-        assertTrue(orders.parameters().stream().noneMatch(item -> item.fieldPath().equals("/hiddenFlag")));
+        assertTrue(orders.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/adminOnly")));
+        assertTrue(orders.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/hiddenFlag")));
     }
 
     @Test
@@ -174,7 +174,7 @@ final class SurfaceAnalyzerTest {
         SurfaceAnalysis.EndpointFact export = endpoint(analysis, "GET", "/api/orders/export");
         assertNotNull(parameter(export, SurfaceAnalysis.ParameterLocation.QUERY, "/product_id"));
         assertNotNull(parameter(export, SurfaceAnalysis.ParameterLocation.QUERY, "/format"));
-        assertTrue(export.parameters().stream().noneMatch(item -> item.fieldPath().equals("/intent")));
+        assertTrue(export.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/intent")));
     }
 
     @Test
@@ -200,8 +200,8 @@ final class SurfaceAnalyzerTest {
         SurfaceAnalysis.EndpointFact getOrder = endpoint(analysis, "POST", "/graphql#GetOrder");
         assertNotNull(parameter(getOrder, SurfaceAnalysis.ParameterLocation.GRAPHQL_VARIABLE, "/id"));
         assertNotNull(parameter(getOrder, SurfaceAnalysis.ParameterLocation.GRAPHQL_VARIABLE, "/includeOwner"));
-        assertTrue(getOrder.parameters().stream().noneMatch(item -> item.fieldPath().equals("/query")
-                || item.fieldPath().equals("/operationName")));
+        assertTrue(getOrder.parameters().stream().noneMatch(item -> item.canonicalPath().equals("/query")
+                || item.canonicalPath().equals("/operationName")));
         assertNotNull(endpoint(analysis, "POST", "/graphql#ListOrders"));
     }
 
@@ -377,7 +377,7 @@ final class SurfaceAnalyzerTest {
         assertFalse(fact.declarations().isEmpty(), "선언 보존");
         assertFalse(fact.observations().isEmpty(), "관측 보존");
         assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, fact.deltaState());
-        assertEquals("/product_id", fact.fieldPath(), "fieldPath는 canonicalPath와 동일한 machine 좌표");
+        assertEquals("product_id", fact.fieldPath(), "fieldPath는 사람이 읽는 표시 경로(기계 좌표는 canonicalPath)");
     }
 
     @Test
@@ -419,6 +419,8 @@ final class SurfaceAnalyzerTest {
         // 선언 이름(userId/orderId)이 구조 좌표(/segments/N)와 무관하게 표시되고, 이름이 아니라 위치로 join한다.
         assertEquals("userId", userSlot.displayName());
         assertEquals("orderId", orderSlot.displayName());
+        assertEquals("userId", userSlot.fieldPath(), "PATH 표시 경로는 /segments/N이 아니라 선언명");
+        assertEquals("/segments/2", userSlot.canonicalPath());
         assertFalse(userSlot.declarations().isEmpty(), "선언 join");
         assertFalse(userSlot.observations().isEmpty(), "관측 join");
         assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, userSlot.deltaState());
@@ -511,8 +513,12 @@ final class SurfaceAnalyzerTest {
         SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/orders");
         SurfaceAnalysis.ParameterFact declared = post.parameters().stream()
                 .filter(item -> item.canonicalPath().equals("filters.active")).findFirst().orElseThrow();
-        assertEquals(SurfaceAnalysis.DeltaState.DECLARED_NOT_OBSERVED, declared.deltaState(),
-                "모호한 legacy 좌표는 관측과 자동 join하지 않는다");
+        assertEquals(SurfaceAnalysis.DeltaState.UNRESOLVED_COORDINATE, declared.deltaState(),
+                "모호한 legacy 좌표는 UNRESOLVED_COORDINATE로 남아 Gap 승격 대상이 아니다");
+        assertFalse(declared.coordinateResolved());
+        assertFalse(declared.declarations().getFirst().coordinateResolved());
+        assertEquals(io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.LEGACY_V1,
+                declared.declarations().getFirst().coordinateVersion());
         SurfaceAnalysis.ParameterFact observed = post.parameters().stream()
                 .filter(item -> item.canonicalPath().equals("/filters/active")).findFirst().orElseThrow();
         assertEquals(SurfaceAnalysis.DeltaState.OBSERVED_NOT_DECLARED, observed.deltaState());
@@ -534,8 +540,142 @@ final class SurfaceAnalyzerTest {
         assertFalse(serialized.contains("P@ssw0rd-RAW"), "원문 값 노출 금지");
         assertFalse(serialized.contains("SECRET_QUERY_TOKEN"), "query 원문 노출 금지");
         assertFalse(serialized.contains("550e8400"), "UUID 원문 노출 금지");
-        assertFalse(serialized.contains("sha256:"), "digest 노출 금지");
+        assertFalse(serialized.contains("\"digest\""), "값 digest 필드 노출 금지");
+        // sha256:는 요청 값 digest가 아니라 요청 단위 구조 서명(contextSignature)에만 허용된다.
+        String withoutSignatures = serialized.replaceAll("\"contextSignature\":\"ctx:v1:sha256:[0-9a-f]+\"", "");
+        assertFalse(withoutSignatures.contains("sha256:"), "contextSignature 외 digest 노출 금지");
         assertFalse(serialized.toLowerCase().contains("preview"), "preview 필드 노출 금지");
+    }
+
+    @Test
+    void JS_body는_AST_구조를_보존해_중첩_리터럴점키_배열원소를_구분하고_관측과_join한다() {
+        RequestRecord script = document("/assets/app.js", "application/javascript", """
+                fetch('/api/search', {method:'POST', body: JSON.stringify({
+                  criteria: {status: state, tags: ['new']},
+                  "criteria.status": literalDot,
+                  items: [{id: selected}],
+                  cursor: null
+                })});
+                """);
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/search", 200);
+        human.requestContentType = "application/json";
+        human.reqBody = "{\"criteria\":{\"status\":true,\"tags\":[\"x\"]},\"items\":[{\"id\":1}],\"cursor\":null}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(script, human), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/search");
+        SurfaceAnalysis.ParameterFact nested = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria/status");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, nested.deltaState(),
+                "AST 중첩 객체는 pointer 세그먼트로 확정되어 관측과 join");
+        assertTrue(nested.coordinateResolved());
+        assertEquals("criteria.status", nested.fieldPath());
+        SurfaceAnalysis.ParameterFact literal = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria.status");
+        assertEquals(SurfaceAnalysis.DeltaState.DECLARED_NOT_OBSERVED, literal.deltaState(),
+                "리터럴 점 키는 중첩과 다른 확정 좌표");
+        assertTrue(literal.coordinateResolved());
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/items/*/id").deltaState(),
+                "배열 원소 객체 필드는 wildcard 세그먼트로 join");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria/tags").deltaState(),
+                "배열 필드 자체도 선언");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/cursor").deltaState());
+        assertTrue(post.parameters().stream().allMatch(SurfaceAnalysis.ParameterFact::coordinateResolved),
+                "AST 세그먼트가 있는 JS 선언은 미확정이 없다");
+        assertTrue(analysis.parameterDiagnostics().stream()
+                .noneMatch(item -> item.reasonCode().equals("UNRESOLVED_PARAMETER_COORDINATE")));
+    }
+
+    @Test
+    void 표시_경로는_기계_좌표와_분리되어_사람이_읽는_형태다() {
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/order/search", 200);
+        human.query = "sort=DESC";
+        human.requestContentType = "application/json";
+        human.reqBody = "{\"filters\":{\"active\":true},\"items\":[{\"id\":1}]}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(human), new io.flowscope.core.AnalysisConfig());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/order/search");
+        SurfaceAnalysis.ParameterFact nested = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/filters/active");
+        assertEquals("filters.active", nested.fieldPath());
+        assertEquals("active", nested.displayName());
+        SurfaceAnalysis.ParameterFact element = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/items/*/id");
+        assertEquals("items[].id", element.fieldPath());
+        SurfaceAnalysis.ParameterFact sort = parameter(post, SurfaceAnalysis.ParameterLocation.QUERY, "/sort");
+        assertEquals("sort", sort.fieldPath());
+        assertEquals("sort", sort.displayName());
+        assertTrue(post.parameters().stream().noneMatch(item -> item.fieldPath().startsWith("/")),
+                "기계 좌표(/...)가 표시 경로로 새지 않는다");
+    }
+
+    @Test
+    void 관측은_요청_단위_contextSignature를_보존한다() {
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/order/search", 200);
+        human.requestContentType = "application/json";
+        human.reqBody = "{\"product_id\":7,\"coupon\":\"WELCOME\"}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(human), new io.flowscope.core.AnalysisConfig());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/order/search");
+        String product = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/product_id")
+                .observations().getFirst().contextSignature();
+        String coupon = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/coupon")
+                .observations().getFirst().contextSignature();
+        assertNotNull(product);
+        assertTrue(product.startsWith("ctx:v1:"), "조건 조합 분석용 요청 단위 서명");
+        assertEquals(product, coupon, "같은 요청의 파라미터는 같은 context signature");
+        assertFalse(product.contains("WELCOME"));
+    }
+
+    @Test
+    void distinct_값_집계는_상한에서_잘리고_truncated와_진단을_남긴다() {
+        List<RequestRecord> records = new java.util.ArrayList<>();
+        for (int i = 0; i < SurfaceAnalyzer.MAX_DISTINCT_VALUES + 4; i++) {
+            RequestRecord human = request(Source.HUMAN, "POST", "/api/items", 200);
+            human.requestContentType = "application/json";
+            human.reqBody = "{\"code\":\"v" + i + "\"}";
+            records.add(human);
+        }
+        Pipeline.Result result = Pipeline.runIsolated(records, new io.flowscope.core.AnalysisConfig());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+
+        SurfaceAnalysis.ParameterFact code = parameter(endpoint(analysis, "POST", "/api/items"),
+                SurfaceAnalysis.ParameterLocation.JSON_BODY, "/code");
+        assertEquals(SurfaceAnalyzer.MAX_DISTINCT_VALUES, code.distinctValueCount());
+        assertTrue(code.distinctValueTruncated());
+        assertTrue(analysis.parameterDiagnostics().stream()
+                .anyMatch(item -> item.reasonCode().equals("DISTINCT_VALUE_LIMIT")));
+    }
+
+    @Test
+    void OpenAPI_path_slot_정렬이_모호하면_임의_선언_대신_진단만_남긴다() {
+        RequestRecord openapi = document("/openapi.json", "application/json", """
+                {"openapi":"3.0.3","paths":{"/orders/{orderId}":{"get":{"parameters":[
+                  {"name":"orderId","in":"path","required":true}]}}}}
+                """);
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+        String evidenceId = result.records.getFirst().evidenceId;
+        // mounted prefix가 placeholder를 하나 더 가진 후보: schema slot 1개 vs template slot 2개 → 정렬 불가
+        RouteCandidate mounted = new RouteCandidate("https://app.test:443", "GET", "/tenants/{id}/orders/{id}",
+                List.of(), false, false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.OPENAPI, evidenceId,
+                        Source.HUMAN, "human-run", "openapi", RouteCandidate.Applicability.REVIEW, "mounted")),
+                RouteCandidate.Applicability.REVIEW, "mounted", List.of());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of(mounted));
+
+        SurfaceAnalysis.EndpointFact get = endpoint(analysis, "GET", "/tenants/{id}/orders/{id}");
+        assertTrue(get.parameters().stream().noneMatch(item -> item.location() == SurfaceAnalysis.ParameterLocation.PATH),
+                "정렬할 수 없는 PATH slot을 임의로 선언하지 않는다");
+        assertTrue(analysis.parameterDiagnostics().stream()
+                .anyMatch(item -> item.reasonCode().equals("UNRESOLVED_PATH_ALIGNMENT")));
     }
 
     private static RequestRecord request(Source source, String method, String path, int status) {
@@ -566,7 +706,7 @@ final class SurfaceAnalyzerTest {
                                                            SurfaceAnalysis.ParameterLocation location,
                                                            String path) {
         return endpoint.parameters().stream()
-                .filter(item -> item.location() == location && item.fieldPath().equals(path))
+                .filter(item -> item.location() == location && item.canonicalPath().equals(path))
                 .findFirst().orElseThrow();
     }
 }

@@ -37,7 +37,9 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         ONE_SOURCE_OBSERVED,
         MULTI_SOURCE_OBSERVED,
         ALL_SOURCES_OBSERVED,
-        OBSERVED_NOT_DECLARED
+        OBSERVED_NOT_DECLARED,
+        /** 선언 좌표를 canonical로 확정할 수 없어(모호한 dot 경로 등) 관측 join·Gap 승격 대상이 아니다(D-143). */
+        UNRESOLVED_COORDINATE
     }
     public enum EndpointKind {
         OBSERVED_API,
@@ -67,10 +69,20 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
 
     public record ParameterObservation(String evidenceId, Source source, String runId, String identity,
                                        int status, ValueShape shape, AccessRole role, RunPhase phase,
-                                       Presence presence, ValueType valueType, int byteLength, boolean masked) {}
+                                       Presence presence, ValueType valueType, int byteLength, boolean masked,
+                                       String contextSignature) {}
 
     public record Declaration(String evidenceId, Source source, String runId, String type,
-                              String adapter, String reason) {}
+                              String adapter, String reason,
+                              io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion coordinateVersion,
+                              boolean coordinateResolved) {
+        /** endpoint 수준 선언·좌표가 확정된 파라미터 선언용(FLOW_V2, resolved). */
+        public Declaration(String evidenceId, Source source, String runId, String type,
+                           String adapter, String reason) {
+            this(evidenceId, source, runId, type, adapter, reason,
+                    io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.FLOW_V2, true);
+        }
+    }
 
     public record ExtractionIssue(ExtractionIssueKind kind, String adapter, String detail,
                                   int line, int column) {}
@@ -95,7 +107,8 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
                                 Set<Source> observedSources, List<String> observationEvidenceIds,
                                 List<ParameterObservation> observations,
                                 List<Declaration> declarations, DeltaState deltaState,
-                                String canonicalPath, Set<ValueType> observedValueTypes, int distinctValueCount) {}
+                                String canonicalPath, Set<ValueType> observedValueTypes, int distinctValueCount,
+                                boolean coordinateResolved, boolean distinctValueTruncated) {}
 
     /** 최상위 요청 파라미터 추출 진단(파라미터마다 복제하지 않는다). */
     public record ParameterDiagnostic(String evidenceId, String operation, String reasonCode, int droppedCount) {}

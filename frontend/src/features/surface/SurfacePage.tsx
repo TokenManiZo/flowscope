@@ -16,6 +16,7 @@ type DeltaFilter = "ALL" | SurfaceDeltaState
 
 const deltaLabels: Record<SurfaceDeltaState, string> = {
   DECLARED_NOT_OBSERVED: "산출물에서 발견 · 아직 요청 없음",
+  UNRESOLVED_COORDINATE: "선언 좌표 미확정 · 관측 비교 제외",
   ONE_SOURCE_OBSERVED: "실제 응답 있음 · 한 source",
   MULTI_SOURCE_OBSERVED: "실제 응답 있음 · 두 source",
   ALL_SOURCES_OBSERVED: "실제 응답 있음 · 세 source",

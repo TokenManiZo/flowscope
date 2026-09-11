@@ -4,6 +4,8 @@ import io.flowscope.core.discovery.JavascriptAnalysis;
 import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -196,6 +198,22 @@ final class JavascriptCallSiteAnalyzerTest {
 
         assertTrue(analysis.callSites().isEmpty());
         assertEquals(2, analysis.issues().size());
+    }
+
+    @Test
+    void 중첩_객체와_배열_원소_객체의_body_key는_AST_세그먼트를_보존한다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                fetch('/api/items', {method:'POST', body:JSON.stringify({meta:{reason:'x'}, "a.b": 1, items:[{id: 1}], tags:['t']})});
+                """);
+
+        JavascriptAnalysis.CallSite call = find(analysis, "POST", "/api/items");
+        Map<String, List<String>> segments = new java.util.LinkedHashMap<>();
+        call.parameters().forEach(parameter -> segments.put(parameter.name(), parameter.segments()));
+        assertEquals(List.of("meta", "reason"), segments.get("meta.reason"), "중첩은 세그먼트로 보존");
+        assertEquals(List.of("a.b"), segments.get("a.b"), "리터럴 점 키는 한 세그먼트");
+        assertEquals(List.of("items", "*", "id"), segments.get("items[].id"), "배열 원소 객체는 wildcard 세그먼트");
+        assertEquals(List.of("items"), segments.get("items"), "배열 필드 자체");
+        assertEquals(List.of("tags"), segments.get("tags"));
     }
 
     private static JavascriptAnalysis.CallSite find(JavascriptAnalysis analysis, String method, String reference) {

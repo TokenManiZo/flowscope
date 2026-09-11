@@ -184,7 +184,7 @@ export interface RouteCandidate {
 }
 
 export type SurfaceSource = "HUMAN" | "SCANNER" | "LLM" | "UNKNOWN"
-export type SurfaceDeltaState = "DECLARED_NOT_OBSERVED" | "ONE_SOURCE_OBSERVED" | "MULTI_SOURCE_OBSERVED" | "ALL_SOURCES_OBSERVED" | "OBSERVED_NOT_DECLARED"
+export type SurfaceDeltaState = "DECLARED_NOT_OBSERVED" | "ONE_SOURCE_OBSERVED" | "MULTI_SOURCE_OBSERVED" | "ALL_SOURCES_OBSERVED" | "OBSERVED_NOT_DECLARED" | "UNRESOLVED_COORDINATE"
 
 export interface SurfaceObservation {
   evidenceId: string
@@ -200,6 +200,7 @@ export interface SurfaceObservation {
   valueType?: string
   byteLength?: number
   masked?: boolean
+  contextSignature?: string
 }
 
 export interface SurfaceDeclaration {
@@ -209,6 +210,8 @@ export interface SurfaceDeclaration {
   type: string
   adapter: string
   reason: string
+  coordinateVersion?: string
+  coordinateResolved?: boolean
 }
 
 export interface SurfaceParameter {
@@ -225,6 +228,8 @@ export interface SurfaceParameter {
   canonicalPath: string
   observedValueTypes: readonly string[]
   distinctValueCount: number
+  coordinateResolved: boolean
+  distinctValueTruncated: boolean
 }
 
 export interface SurfaceEndpoint {

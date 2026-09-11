@@ -20,10 +20,10 @@ Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 ```
 
 - `EndpointKey = service + method + canonical path template`
-- `ParameterCoordinate = EndpointKey + location + canonicalPath`(D-143). 관측(`ParameterExtractor`)과 모든 선언 어댑터가 `ParameterCoordinates`로 같은 canonicalPath를 만들어 같은 논리 파라미터를 하나의 `ParameterFact`로 병합한다. canonicalPath는 machine join key, displayName은 사람 라벨로 분리한다. `fieldPath`는 canonicalPath와 동일 값인 하위호환 별칭이다.
+- `ParameterCoordinate = EndpointKey + location + canonicalPath`(D-143). 관측(`ParameterExtractor`)과 모든 선언 어댑터가 `ParameterCoordinates`로 같은 canonicalPath를 만들어 같은 논리 파라미터를 하나의 `ParameterFact`로 병합한다. canonicalPath는 machine join key, displayName은 사람 라벨로 분리한다. `fieldPath`는 사람이 읽는 표시 경로(PATH→선언명, JSON→`parent.child`·`parent[].child`, 그 외→이스케이프 해제 이름)로 canonicalPath와 다르다.
 - canonicalPath 문법: PATH `/segments/N`(빈 세그먼트 제거 zero-based, 선언 이름·실제 값 아님), JSON_BODY/GRAPHQL_VARIABLE RFC6901 기반 FlowScope pointer(`~0/~1`, 배열 원소 `*`, literal `*`=`~2`, 중첩 `/`), QUERY/FORM_BODY/MULTIPART_BODY escaped name token, HEADER lowercase token, XML_PATH `{uri}local`.
 - 위치: `PATH`, `QUERY`, `JSON_BODY`, `FORM_BODY`, `MULTIPART_BODY`, `HEADER`, `GRAPHQL_VARIABLE`, `XML_PATH`
-- 저장 좌표는 `coordinateVersion`(LEGACY_V1/FLOW_V2). PATH/QUERY/FORM/MULTIPART/HEADER와 점 없는 단일 JSON key는 LEGACY_V1을 무손실 변환해 join하고, 점 있는 legacy JSON/GraphQL은 모호해 자동 join·Gap 승격 없이 `LEGACY_AMBIGUOUS_COORDINATE` 진단으로만 남긴다.
+- 저장 좌표는 `coordinateVersion`(LEGACY_V1/FLOW_V2). PATH/QUERY/FORM/MULTIPART/HEADER와 점 없는 단일 JSON key는 LEGACY_V1을 무손실 변환해 join하고, 점 있는 legacy JSON/GraphQL, 세그먼트 없이 평탄화된 JS 이름, OpenAPI path slot 정렬 실패는 `UNRESOLVED_COORDINATE` 상태(`coordinateResolved=false`)와 진단으로만 남아 join·Gap 승격 대상이 아니다. 정적 JS 선언은 AST 세그먼트(중첩·배열 원소 `*`)를 보존해 리터럴 점 키와 중첩을 구분한다.
 - 관측에는 값 대신 shape·valueType·byteLength·masked, source, run, identity, status와 Evidence ID만 둔다. distinct 값 수는 count만 남기고 digest는 노출하지 않는다.
 - 선언에는 type, adapter, reason과 Evidence ID를 둔다.
 - 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, call-site 해석 실패 범주와 추출 수를 둔다.

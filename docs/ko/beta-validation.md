@@ -1,5 +1,14 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · 슬라이스 1 후속 수정(리뷰 6건·JS AST 구조 보존) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| RED→GREEN | 리뷰 10항목 각각 실패 회귀를 먼저 두어 RED 10건(동작 실패, 컴파일 오류 없음) 확인 → 구현 후 GREEN. 이어 구조 보존 정정(JS AST 세그먼트·`/a//b` 수용·분석기 세그먼트 보존) RED 3건 확인 → GREEN. |
+| JDK 21 `mvn clean verify` | BUILD SUCCESS. Java 466 tests(실패·오류 0, opt-in 하네스 2 skip). |
+| frontend | `npm run typecheck` 통과. SurfacePage vitest 3/3(후속 수정 직후 실행, 이후 frontend 무변경). AccountsPage/graphPreferences/EvidencePage의 `localStorage.clear` 선존 환경 결함은 이 변경과 무관(base 커밋 동일 재현). |
+| 산출물 JAR·실제 실행 | 미빌드·미실행(자동 회귀까지). |
+
 ## 2026-09-11 · 미출시 · canonical parameter coordinate 통합(슬라이스 1, D-143) gate
 
 | 항목 | 실제 확인 결과 |

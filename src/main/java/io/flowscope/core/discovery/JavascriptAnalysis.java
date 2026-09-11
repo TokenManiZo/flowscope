@@ -17,7 +17,16 @@ public record JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> 
         UNSUPPORTED_INTERPROCEDURAL_FLOW
     }
 
-    public record Parameter(String name, ParameterKind kind) {}
+    /**
+     * {@code segments}는 AST에서 보존한 body key 경로(중첩은 세그먼트, 배열 원소 객체는 {@code *})다.
+     * null은 세그먼트 정보 없이 만들어진(이미 평탄화된) 이름으로, 점이 있으면 중첩과 리터럴 키를 구분할 수 없다.
+     */
+    public record Parameter(String name, ParameterKind kind, List<String> segments) {
+        public Parameter(String name, ParameterKind kind) { this(name, kind, null); }
+        public Parameter {
+            segments = segments == null ? null : List.copyOf(segments);
+        }
+    }
 
     public record AssetReference(String reference, String reason, int line, int column) {}
 

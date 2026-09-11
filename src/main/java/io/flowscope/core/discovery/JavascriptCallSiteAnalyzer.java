@@ -258,8 +258,8 @@ public final class JavascriptCallSiteAnalyzer {
                 if (!routeLike(reference)) return true;
                 String method = stringProperty(config, "method", scope);
                 List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
-                addObjectParameters(parameters, property(config, "params", scope), QUERY, "", scope);
-                addObjectParameters(parameters, property(config, "data", scope), JSON_BODY, "", scope);
+                addObjectParameters(parameters, property(config, "params", scope), QUERY, List.of(), scope);
+                addObjectParameters(parameters, property(config, "data", scope), JSON_BODY, List.of(), scope);
                 add(reference, method, parameters, "axios config AST call-site", call);
                 return true;
             }
@@ -272,9 +272,9 @@ public final class JavascriptCallSiteAnalyzer {
             if (!routeLike(reference)) return true;
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
             if (bodyMethod && args.size() > 1) {
-                addObjectParameters(parameters, args.get(1), JSON_BODY, "", scope);
+                addObjectParameters(parameters, args.get(1), JSON_BODY, List.of(), scope);
             }
-            addObjectParameters(parameters, property(resolvedConfig, "params", scope), QUERY, "", scope);
+            addObjectParameters(parameters, property(resolvedConfig, "params", scope), QUERY, List.of(), scope);
             add(reference, method, parameters, "axios verb AST call-site", call);
             return true;
         }
@@ -303,7 +303,7 @@ public final class JavascriptCallSiteAnalyzer {
                         stringProperty(config, "type", scope));
                 List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
                 JavascriptAnalysis.ParameterKind kind = "GET".equalsIgnoreCase(method) ? QUERY : FORM_BODY;
-                addObjectParameters(parameters, property(config, "data", scope), kind, "", scope);
+                addObjectParameters(parameters, property(config, "data", scope), kind, List.of(), scope);
                 add(reference, method, parameters, "jQuery.ajax AST call-site", call);
                 return;
             }
@@ -312,7 +312,7 @@ public final class JavascriptCallSiteAnalyzer {
             if (!routeLike(reference)) return;
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
             if (args.size() > 1) addObjectParameters(parameters, args.get(1),
-                    operation.equals("get") ? QUERY : FORM_BODY, "", scope);
+                    operation.equals("get") ? QUERY : FORM_BODY, List.of(), scope);
             add(reference, operation, parameters, "jQuery verb AST call-site", call);
         }
 
@@ -322,7 +322,7 @@ public final class JavascriptCallSiteAnalyzer {
             String reference = staticReference(args.get(0), scope, 0);
             if (!routeLike(reference)) return;
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
-            if (args.size() > 1) addObjectParameters(parameters, args.get(1), FORM_BODY, "", scope);
+            if (args.size() > 1) addObjectParameters(parameters, args.get(1), FORM_BODY, List.of(), scope);
             add(reference, "POST", parameters, "sendBeacon AST call-site", call);
         }
 
@@ -357,16 +357,16 @@ public final class JavascriptCallSiteAnalyzer {
             if (resolved != null && resolved.isCall()
                     && "JSON.stringify".equals(resolved.getFirstChild().getQualifiedName())) {
                 List<Node> args = arguments(resolved);
-                if (!args.isEmpty()) addObjectParameters(out, args.get(0), JSON_BODY, "", scope);
+                if (!args.isEmpty()) addObjectParameters(out, args.get(0), JSON_BODY, List.of(), scope);
                 return;
             }
             if (resolved != null && resolved.isNew()
                     && "URLSearchParams".equals(resolved.getFirstChild().getQualifiedName())) {
                 List<Node> args = arguments(resolved);
-                if (!args.isEmpty()) addObjectParameters(out, args.get(0), FORM_BODY, "", scope);
+                if (!args.isEmpty()) addObjectParameters(out, args.get(0), FORM_BODY, List.of(), scope);
                 return;
             }
-            addObjectParameters(out, resolved, kind, "", scope);
+            addObjectParameters(out, resolved, kind, List.of(), scope);
         }
 
         private JavascriptAnalysis.ParameterKind bodyKind(Node body, Node options, Scope scope) {
@@ -378,8 +378,12 @@ public final class JavascriptCallSiteAnalyzer {
             return FORM_BODY;
         }
 
+        /**
+         * body key 경로를 AST 세그먼트로 보존한다(PR#11 walk 이식): 중첩 객체는 세그먼트로 재귀하고, 배열은 필드
+         * 자체를 선언한 뒤 객체 리터럴 원소마다 {@code *} 세그먼트로 재귀한다. 점 표기 name은 표시·인덱스용이다.
+         */
         private void addObjectParameters(List<JavascriptAnalysis.Parameter> out, Node raw,
-                                         JavascriptAnalysis.ParameterKind kind, String prefix, Scope scope) {
+                                         JavascriptAnalysis.ParameterKind kind, List<String> prefix, Scope scope) {
             if (out.size() >= MAX_PARAMETERS_PER_CALL) return;
             Node object = resolve(raw, scope, 0);
             if (object == null || !object.isObjectLit()) return;
@@ -387,15 +391,37 @@ public final class JavascriptCallSiteAnalyzer {
                 if (out.size() >= MAX_PARAMETERS_PER_CALL || !property.isStringKey()) continue;
                 String name = property.getString();
                 if (name == null || name.isBlank()) continue;
-                String path = prefix.isBlank() ? name : prefix + "." + name;
-                Node value = property.getFirstChild();
-                Node resolvedValue = resolve(value, scope, 0);
+                List<String> segments = new ArrayList<>(prefix);
+                segments.add(name);
+                Node resolvedValue = resolve(property.getFirstChild(), scope, 0);
                 if (kind == JSON_BODY && resolvedValue != null && resolvedValue.isObjectLit()) {
-                    addObjectParameters(out, resolvedValue, kind, path, scope);
-                } else {
-                    out.add(new JavascriptAnalysis.Parameter(path, kind));
+                    addObjectParameters(out, resolvedValue, kind, segments, scope);
+                    continue;
+                }
+                JavascriptAnalysis.Parameter parameter = new JavascriptAnalysis.Parameter(displayName(segments), kind, segments);
+                if (!out.contains(parameter)) out.add(parameter);
+                if (kind == JSON_BODY && resolvedValue != null && resolvedValue.isArrayLit()) {
+                    List<String> elementSegments = new ArrayList<>(segments);
+                    elementSegments.add("*");
+                    for (Node item : resolvedValue.children()) {
+                        Node element = resolve(item, scope, 0);
+                        if (element != null && element.isObjectLit()) {
+                            addObjectParameters(out, element, kind, elementSegments, scope);
+                        }
+                    }
                 }
             }
+        }
+
+        /** 세그먼트의 점 표기 표시명. 배열 원소 wildcard는 앞 세그먼트에 {@code []}로 붙는다. */
+        private static String displayName(List<String> segments) {
+            StringBuilder out = new StringBuilder();
+            for (String segment : segments) {
+                if (segment.equals("*")) { out.append("[]"); continue; }
+                if (!out.isEmpty()) out.append('.');
+                out.append(segment);
+            }
+            return out.toString();
         }
 
         private Node resolve(Node node, Scope scope, int depth) {

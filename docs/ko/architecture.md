@@ -78,12 +78,15 @@ SurfaceAnalysis {
     key(service, method, pathTemplate), deltaState,
     observedSources[], observations[evidenceId, source, runId, identity, status],
     declarations[evidenceId, source, runId, type, adapter, reason],
-    parameters[location, fieldPath(=canonicalPath), displayName, requirement,
+    parameters[location, fieldPath(표시 경로), displayName, requirement,
                observedShapes[], observedSources[], observationEvidenceIds[],
                observations[evidenceId, source, runId, identity, status, shape,
-                            role, phase, presence, valueType, byteLength, masked],
-               declarations[], deltaState,
-               canonicalPath, observedValueTypes[], distinctValueCount]
+                            role, phase, presence, valueType, byteLength, masked, contextSignature],
+               declarations[evidenceId, source, runId, type, adapter, reason,
+                            coordinateVersion, coordinateResolved],
+               deltaState(+UNRESOLVED_COORDINATE),
+               canonicalPath, observedValueTypes[], distinctValueCount,
+               coordinateResolved, distinctValueTruncated]
   }],
   probes[endpointKey, evidenceId, source, runId, identity, status],
   parameterDiagnostics[evidenceId, operation, reasonCode, droppedCount]
@@ -193,8 +196,8 @@ coverageRecords ──▶ 실제 endpoint·입력 관측 ──┼─▶ Surface
 routeCandidates ──▶ provenance·미요청 route ──┘
 ```
 
-- endpoint key는 `service + method + canonical path template`, parameter key는 관측·선언 공통 `ParameterCoordinate = endpoint + PATH/QUERY/JSON_BODY/FORM_BODY/MULTIPART_BODY/GRAPHQL_VARIABLE/HEADER/XML_PATH + canonicalPath`다(D-143). canonicalPath는 machine join key이고 displayName은 사람 라벨로 분리한다. 관측(`ParameterExtractor`)과 모든 선언 어댑터가 `ParameterCoordinates`로 같은 canonicalPath를 만들어 같은 논리 파라미터가 하나의 `ParameterFact`로 병합된다. `fieldPath`는 하위호환 별칭으로 canonicalPath와 동일 값이다. 저장 좌표는 `coordinateVersion`(LEGACY_V1/FLOW_V2)으로 구분하며 점 있는 legacy JSON/GraphQL은 모호해 자동 join하지 않고 `LEGACY_AMBIGUOUS_COORDINATE`로 남긴다.
-- 요청 값은 저장하지 않고 shape·valueType·byteLength·masked·distinctValueCount만 남긴다(digest는 distinct 산출 내부용, 직렬화·노출 안 함). source/run/identity/status와 Evidence ID는 Observation에 유지한다. 값 형식 분류(UUID/INTEGER/DECIMAL/BOOLEAN)는 `ParameterExtractor.scalarType`이 요청 값 문자열만 보고 판정한다(응답 미참조).
+- endpoint key는 `service + method + canonical path template`, parameter key는 관측·선언 공통 `ParameterCoordinate = endpoint + PATH/QUERY/JSON_BODY/FORM_BODY/MULTIPART_BODY/GRAPHQL_VARIABLE/HEADER/XML_PATH + canonicalPath`다(D-143). canonicalPath는 machine join key이고 displayName은 사람 라벨로 분리한다. 관측(`ParameterExtractor`)과 모든 선언 어댑터가 `ParameterCoordinates`로 같은 canonicalPath를 만들어 같은 논리 파라미터가 하나의 `ParameterFact`로 병합된다. `fieldPath`는 사람이 읽는 표시 경로(PATH는 선언명, JSON은 `parent.child`·`parent[].child`)이며 canonicalPath와 다르다. 저장 좌표는 `coordinateVersion`(LEGACY_V1/FLOW_V2)으로 구분하며 점 있는 legacy JSON/GraphQL·세그먼트 없이 평탄화된 JS 이름·OpenAPI path slot 정렬 실패처럼 확정할 수 없는 선언은 `UNRESOLVED_COORDINATE` 상태(`coordinateResolved=false`)와 진단(`LEGACY_AMBIGUOUS_COORDINATE`/`UNRESOLVED_PARAMETER_COORDINATE`/`UNRESOLVED_PATH_ALIGNMENT`)으로 남아 join·Gap 승격 대상이 아니다. 정적 JavaScript 선언은 `JavascriptCallSiteAnalyzer`가 AST 세그먼트(중첩·배열 원소 `*`)를 보존해 전달하므로 리터럴 점 키와 중첩을 구분한다.
+- 요청 값은 저장하지 않고 shape·valueType·byteLength·masked·distinctValueCount(256 상한, 초과 시 truncated+`DISTINCT_VALUE_LIMIT`)와 요청 단위 구조 서명 `contextSignature`(값 digest가 아님)만 남긴다(값 digest는 distinct 산출 내부용, 직렬화·노출 안 함). source/run/identity/status와 Evidence ID는 Observation에 유지한다. 값 형식 분류(UUID/INTEGER/DECIMAL/BOOLEAN)는 `ParameterExtractor.scalarType`이 요청 값 문자열만 보고 판정한다(응답 미참조).
 - OpenAPI/Swagger local `$ref`, HTML form control, JavaScript AST가 직접 확인한 `fetch`·XHR·axios·jQuery·`sendBeacon`의 URL/method/query/body key만 Declaration으로 만든다. lexical scope의 불변 literal·object member, template literal·단순 결합과 axios instance의 정적 `baseURL`/요청별 override를 처리하지만 재할당, 임의 wrapper 의미, 일반 data flow, 난독화 값은 추정하지 않는다.
 - 정적·dynamic import와 HTML script/modulepreload/preload/prefetch는 후속 분석할 client asset 후보로 유지하되 API surface로 세지 않는다. Next.js pages-router build manifest adapter도 route key를 API로 오인하지 않고 chunk 참조만 만든다.
 - GraphQL HTTP 요청은 `path#operationName` endpoint와 `variables` field를 관측하며 `query`·`operationName` transport 필드는 입력 surface에서 제외한다. introspection/schema declaration은 아직 없다.

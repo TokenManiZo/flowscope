@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
 import io.flowscope.core.SurfaceAnalysis;
+import io.flowscope.core.parameter.ParameterCoordinates;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -203,6 +204,14 @@ final class ExplorerHttpGatewayTest {
             assertEquals(2, candidate.declaredParameters().size());
             assertEquals(SurfaceAnalysis.ParameterLocation.PATH,
                     candidate.declaredParameters().getFirst().location());
+            // D-143 후속: 신규 Explorer 선언은 서버가 canonical FLOW_V2 좌표로 검증·정규화해 저장한다.
+            RouteCandidate.DeclaredParameter pathParameter = candidate.declaredParameters().getFirst();
+            assertEquals(ParameterCoordinates.CoordinateVersion.FLOW_V2, pathParameter.coordinateVersion());
+            assertEquals("/segments/2", pathParameter.fieldPath(), "legacy path[3]는 template 위치로 무손실 변환");
+            assertEquals("orderId", pathParameter.displayName());
+            RouteCandidate.DeclaredParameter bodyParameter = candidate.declaredParameters().get(1);
+            assertEquals(ParameterCoordinates.CoordinateVersion.FLOW_V2, bodyParameter.coordinateVersion());
+            assertEquals("/product_id", bodyParameter.fieldPath());
 
             HttpResponse<String> duplicate = post(gateway, gateway.discoveriesUrl(), declaration);
             assertEquals(200, duplicate.statusCode(), duplicate.body());
@@ -215,6 +224,28 @@ final class ExplorerHttpGatewayTest {
             assertEquals(400, post(gateway, gateway.discoveriesUrl(), secretHeader).statusCode());
             String unknownRootField = declaration.replaceFirst("\\{", "{\"unexpected\":true,");
             assertEquals(400, post(gateway, gateway.discoveriesUrl(), unknownRootField).statusCode());
+            String ambiguousJson = declaration.replace("\"field_path\":\"product_id\"",
+                    "\"field_path\":\"criteria.status\"");
+            assertEquals(400, post(gateway, gateway.discoveriesUrl(), ambiguousJson).statusCode(),
+                    "점 표기 JSON 경로는 canonical pointer가 아니면 추정 없이 거부");
+            // RFC 6901: 빈 참조 토큰(빈 문자열 키)은 유효하다. 엔진도 {"a":{"":{"b":1}}}에서 /a//b를 만든다.
+            String emptyKeyPointer = declaration.replace("\"field_path\":\"product_id\"",
+                    "\"field_path\":\"/a//b\"");
+            HttpResponse<String> emptyKey = post(gateway, gateway.discoveriesUrl(), emptyKeyPointer);
+            assertEquals(200, emptyKey.statusCode(), emptyKey.body());
+            assertTrue(stored.get().getFirst().declaredParameters().stream()
+                    .anyMatch(item -> item.fieldPath().equals("/a//b")
+                            && item.coordinateVersion() == ParameterCoordinates.CoordinateVersion.FLOW_V2),
+                    "빈 키 pointer를 새 제한 없이 FLOW_V2로 보존");
+            String malformedEscape = declaration.replace("\"field_path\":\"product_id\"",
+                    "\"field_path\":\"/a~x\"");
+            assertEquals(400, post(gateway, gateway.discoveriesUrl(), malformedEscape).statusCode(),
+                    "~ 뒤에 0/1/2가 아니면 pointer 이스케이프 계약 위반");
+            String canonicalPointer = declaration.replace("\"field_path\":\"product_id\"",
+                    "\"field_path\":\"/criteria/status\"");
+            HttpResponse<String> accepted = post(gateway, gateway.discoveriesUrl(), canonicalPointer);
+            assertEquals(200, accepted.statusCode(), accepted.body());
+            assertEquals(1, JSON.readTree(accepted.body()).path("accepted_parameters").asInt());
         }
     }
 
