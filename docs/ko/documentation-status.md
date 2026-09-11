@@ -33,6 +33,7 @@
 19. D-139는 Explorer가 번들·문서에서 찾은 endpoint·parameter를 자유서술로만 남기던 공백을 current-run Evidence-bound Declaration으로 연결한다. 큰 artifact 단일 수집, 선언 schema·상한·중복 제거, OPTIONS probe 분리와 서버 집계를 현행 README·한영 시작 가이드·아키텍처·Surface·Explorer·계획·인계·UI·변경 이력에 반영했다. 집중/provider 검증과 아직 남은 실제 Burp gate를 구분한다.
 20. D-140~141은 새 진단을 삭제형 초기화가 아니라 저장 후 전환으로 바꾸고, 분석 revision과 데이터셋 교체 revision을 분리하며, Surface Observation을 실제 Evidence 작업면에 연결한다. 반복 XML/HAR/Proxy history 병합은 계정·세션·run provenance를 보존하고, Burp XML의 명시 charset과 XML/HAR IPv6 service를 정규화한다. 자동 회귀와 실제 Burp 운영 gate를 구분해 README·한영 시작 가이드·아키텍처·계획·인계·UI·변경 이력·검증 기록에 반영한다.
 21. D-142는 Standalone의 프로젝트 API 501과 Explorer 상태 500을 패키지 E2E에서 재현해 실제 SQLite workspace와 명시적 unavailable 상태로 고쳤다. 같은 대조에서 계층 graph·resource family·증분 `+18` 문서 주장이 현재 React projection과 다름을 확인해 현행 단일 3-lane/`18개 또는 전체`와 후속 설계를 분리했다.
+22. D-143(슬라이스 1)은 PR#11 파라미터 엔진을 SurfaceAnalyzer 관측 정본으로 이식하고, 관측·선언이 공통 `ParameterCoordinate(canonicalPath)`로 병합하게 했다. 기존 observe*·shape() 제거, 선언 어댑터 canonical화, 값 형식 분류 동등성(scalarType), `coordinateVersion` 영속(SQLite 스키마 무변경), 점 있는 legacy JSON 모호 좌표 미join, snapshot 비밀 비노출을 architecture·Surface·decisions·development-log·CHANGELOG·인계·검증 기록에 반영했다. 자동 회귀(`mvn clean verify`)와 실제 실행 gate를 구분한다. ParameterProfile·Gap·인가 연결·그래프 UI는 슬라이스 2+.
 
 ## 3. 전수 목록
 
@@ -54,15 +55,15 @@
 | [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-142 Standalone·문서 기준선과 beta.46 Burp·Explorer 신원·그래프·ZAP·Windows 다음 gate |
 | [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
 | [docs/ko/architecture.md](architecture.md) | 현행 계약 | data-flow exact-token·ZAP 별도 계정 vault/browser auth/direct lane 귀속·scope union/Alert 총량 |
-| [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | LLM Observation/Declaration/probe, parameter provenance와 미실행 실험 구분 |
+| [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | D-143 공통 ParameterCoordinate(canonicalPath), LLM Observation/Declaration/probe, parameter provenance와 미실행 실험 구분 |
 | [docs/ko/llm-explorer.md](llm-explorer.md) | 현행 계약 | 독립 Explorer 실행·인증·HTTP/선언 도구·scope·Evidence·사용자 조작·남은 gate |
 | [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | D-136 HUMAN/Docker Chromium ZAP/Explorer와 인증 응답 gate, no-Judge/no-MCP 범위 |
 | [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-139 Explorer Observation/Declaration/probe와 ZAP·과거 Judge 분리 |
 | [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P20 ZAP, P21/P23 D-128/D-139 Explorer, 폐기 기능 구분 |
 | [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, D-132 Client-only 완료와 실물 gate, 제품 MCP 보류 |
 | [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-139 Explorer와 D-130~138 ZAP의 완료·남은 gate 분리 |
-| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-139 Explorer 선언과 D-130~138 ZAP 결정 |
-| [docs/ko/development-log.md](development-log.md) | 역사 | D-139 Explorer 선언과 이전 ZAP/Explorer 작업 기록 |
+| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-143 공통 parameter coordinate, D-139~142, D-130~138 ZAP 결정 |
+| [docs/ko/development-log.md](development-log.md) | 역사 | D-143 슬라이스 1 파라미터 좌표 통합과 이전 nav/Explorer/ZAP 작업 기록 |
 | [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-139 provider/자동 gate, ZAP 실물 결과와 남은 Burp·Windows gate 분리 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |

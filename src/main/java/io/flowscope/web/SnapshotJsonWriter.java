@@ -250,7 +250,8 @@ public final class SnapshotJsonWriter {
                     "location", item.location().name(), "fieldPath", item.fieldPath(),
                     "displayName", item.displayName(), "requirement", item.requirement().name(),
                     "evidenceId", item.evidenceId(), "source", item.source().name(),
-                    "runId", item.runId(), "adapter", item.adapter(), "reason", item.reason())).toList()));
+                    "runId", item.runId(), "adapter", item.adapter(), "reason", item.reason(),
+                    "coordinateVersion", item.coordinateVersion().name())).toList()));
             value.put("applicability", candidate.applicability().name());
             value.put("reviewReason", candidate.reviewReason());
             value.set("priorityReasons", json.valueToTree(RouteCandidateExtractor.priorityReasons(candidate)));

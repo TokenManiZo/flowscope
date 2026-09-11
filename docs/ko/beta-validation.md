@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · canonical parameter coordinate 통합(슬라이스 1, D-143) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| JDK 21 `mvn clean verify` | BUILD SUCCESS. Java 회귀 실패·오류 0(opt-in 하네스 2 skip). `ParameterExtractorTest`(포팅 39) 통과, `SurfaceAnalyzerTest`에 D-143 통합 회귀 8건, `ProjectStoreTest`·`SqliteProjectStoreTest`에 FLOW_V2 재열기 좌표·버전·Evidence 보존 각 1건 추가. `SurfaceHeldOutEvaluationTest` truth를 canonical로 갱신 후 통과. |
+| frontend `npm run typecheck` | 통과(가산 타입 `canonicalPath`/`observedValueTypes`/`distinctValueCount`/`coordinateVersion`/`parameterDiagnostics`). |
+| frontend vitest | SurfacePage 3-way 테스트 통과. AccountsPage·graphPreferences·EvidencePage의 `localStorage.clear is not a function`(jsdom setup 미폴리필) 실패는 **base 커밋에도 동일 재현**(내 2개 파일을 base로 되돌려 확인) — 이 변경과 무관한 선존 환경 결함이라 손대지 않음. |
+| 산출물 JAR | **미빌드.** 이 슬라이스는 자동 회귀까지만 수행했다. 산출물 해시는 직전 nav 커밋(`2baf0adc…`)을 정본으로 두고 갱신하지 않는다. |
+| 관측 동등성 | 제거한 observe*의 값 형식 분류(UUID/INTEGER/DECIMAL/BOOLEAN)를 엔진 `scalarType`으로 이관해 동등 유지. PATH 통합 테스트가 처음 실패해 실측 → Pipeline이 단일 숫자 세그먼트를 corroboration 없이 {id}로 승격하지 않는 정규화 특성 확인(테스트 전제 오류였고 구현 결함 아님, 두 UUID 입력으로 수정). |
+| 실제 실행 | 미검증. 실제 Burp/ZAP/Explorer HTTP 경로·packaged Chromium E2E는 이 슬라이스에서 실행하지 않음(운영 gate). |
+
 ## 2026-09-11 · 미출시 · 데스크톱 내비 라벨·Explorer 신원 계약 회귀 gate
 
 | 항목 | 실제 확인 결과 |

@@ -1,6 +1,6 @@
 # FlowScope 1.2.0-beta.46 제품 개발·검증 계획
 
-> **읽는 법:** D-137 beta.46 JAR의 실제 macOS Burp 8081에서 익명 Client 캠페인 완주를 확인했다. D-140~142 작업트리는 보존형 프로젝트 전환, Surface Evidence 작업 동선, provenance-aware import와 패키지 Standalone의 프로젝트 API/E2E를 자동 검증했다. 현재 우선순위는 실제 Burp 프로젝트 재열기와 Explorer 신원 귀속 회귀이며, 그 다음 그래프 정보계층과 ZAP 로그인 복수 계정·Windows 검증이다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
+> **읽는 법:** D-137 beta.46 JAR의 실제 macOS Burp 8081에서 익명 Client 캠페인 완주를 확인했다. D-140~142 작업트리는 보존형 프로젝트 전환, Surface Evidence 작업 동선, provenance-aware import와 패키지 Standalone의 프로젝트 API/E2E를 자동 검증했다. D-143(슬라이스 1)은 PR#11 파라미터 엔진을 관측 정본으로 이식해 관측·선언을 공통 ParameterCoordinate로 병합했다(자동 회귀 통과, packaged/실행 gate 남음). 현재 우선순위는 실제 Burp 프로젝트 재열기와 Explorer 신원 귀속 회귀이며, 그 다음 파라미터 엔진 슬라이스 2+(ParameterProfile·Gap·인가 연결·파라미터맵 UI)와 그래프 정보계층, ZAP 로그인 복수 계정·Windows 검증이다. beta별 절은 당시 계획과 검증 상태를 보존한 이력이다.
 
 ## 현재 우선순위 · 보존형 프로젝트와 Evidence 무결성
 

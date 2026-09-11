@@ -8,10 +8,12 @@ import java.util.Set;
  * 값은 보존하지 않고 위치, 필드 경로, 형태, Evidence 역참조만 보존한다.
  */
 public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
-                              List<ProbeObservation> probes) {
-    public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, HEADER, GRAPHQL_VARIABLE }
+                              List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics) {
+    public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, HEADER, GRAPHQL_VARIABLE, XML_PATH }
     public enum ValueShape { EMPTY, STRING, INTEGER, DECIMAL, BOOLEAN, UUID, ARRAY, OBJECT, NULL, BINARY, UNKNOWN }
     public enum Requirement { REQUIRED, OPTIONAL, UNKNOWN }
+    public enum Presence { PRESENT, EXPLICIT_NULL }
+    public enum ValueType { STRING, INTEGER, NUMBER, BOOLEAN, UUID, DATE_TIME, BINARY, UNKNOWN }
     public enum ExtractionStatus { PARSED, PARTIAL, FAILED, LIMIT_EXCEEDED }
     public enum ExtractionFailure {
         NONE,
@@ -64,7 +66,8 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
                                    String runId, String identity, int status) {}
 
     public record ParameterObservation(String evidenceId, Source source, String runId, String identity,
-                                       int status, ValueShape shape) {}
+                                       int status, ValueShape shape, AccessRole role, RunPhase phase,
+                                       Presence presence, ValueType valueType, int byteLength, boolean masked) {}
 
     public record Declaration(String evidenceId, Source source, String runId, String type,
                               String adapter, String reason) {}
@@ -91,7 +94,11 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
                                 Requirement requirement, Set<ValueShape> observedShapes,
                                 Set<Source> observedSources, List<String> observationEvidenceIds,
                                 List<ParameterObservation> observations,
-                                List<Declaration> declarations, DeltaState deltaState) {}
+                                List<Declaration> declarations, DeltaState deltaState,
+                                String canonicalPath, Set<ValueType> observedValueTypes, int distinctValueCount) {}
+
+    /** 최상위 요청 파라미터 추출 진단(파라미터마다 복제하지 않는다). */
+    public record ParameterDiagnostic(String evidenceId, String operation, String reasonCode, int droppedCount) {}
 
     public record EndpointFact(EndpointKey key, Set<Source> observedSources,
                                List<Observation> observations, List<Declaration> declarations,
@@ -109,11 +116,17 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);
         extractions = extractions == null ? List.of() : List.copyOf(extractions);
         probes = probes == null ? List.of() : List.copyOf(probes);
+        parameterDiagnostics = parameterDiagnostics == null ? List.of() : List.copyOf(parameterDiagnostics);
     }
 
-    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of()); }
+    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of(), List.of()); }
 
     public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions) {
-        this(endpoints, extractions, List.of());
+        this(endpoints, extractions, List.of(), List.of());
+    }
+
+    public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
+                           List<ProbeObservation> probes) {
+        this(endpoints, extractions, probes, List.of());
     }
 }

@@ -1,5 +1,7 @@
 package io.flowscope.core;
 
+import io.flowscope.core.parameter.ParameterCoordinates;
+
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -54,7 +56,8 @@ public record RouteCandidate(String service, String method, String pathTemplate,
     public record DeclaredParameter(SurfaceAnalysis.ParameterLocation location, String fieldPath,
                                     String displayName, SurfaceAnalysis.Requirement requirement,
                                     String evidenceId, Source source, String runId,
-                                    String adapter, String reason) {
+                                    String adapter, String reason,
+                                    ParameterCoordinates.CoordinateVersion coordinateVersion) {
         public DeclaredParameter {
             if (location == null || fieldPath == null || fieldPath.isBlank()
                     || evidenceId == null || evidenceId.isBlank()) {
@@ -66,6 +69,17 @@ public record RouteCandidate(String service, String method, String pathTemplate,
             runId = runId == null || runId.isBlank() ? "unknown-run" : runId;
             adapter = adapter == null || adapter.isBlank() ? "unknown-adapter" : adapter;
             reason = reason == null ? "" : reason;
+            coordinateVersion = coordinateVersion == null
+                    ? ParameterCoordinates.CoordinateVersion.LEGACY_V1 : coordinateVersion;
+        }
+
+        /** 좌표 버전 미상(LLM 산출물·구버전 project)은 LEGACY_V1로 저장하고 재적재 시 canonical로 변환한다. */
+        public DeclaredParameter(SurfaceAnalysis.ParameterLocation location, String fieldPath,
+                                 String displayName, SurfaceAnalysis.Requirement requirement,
+                                 String evidenceId, Source source, String runId,
+                                 String adapter, String reason) {
+            this(location, fieldPath, displayName, requirement, evidenceId, source, runId, adapter, reason,
+                    ParameterCoordinates.CoordinateVersion.LEGACY_V1);
         }
     }
 

@@ -16,6 +16,9 @@ import io.flowscope.core.RunPhase;
 import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
 import io.flowscope.core.StoredPayload;
+import io.flowscope.core.SurfaceAnalysis;
+import io.flowscope.core.SurfaceAnalyzer;
+import io.flowscope.core.parameter.ParameterCoordinates;
 import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
@@ -120,6 +123,32 @@ final class SqliteProjectStoreTest {
         assertEquals(ValidationDecision.FinalVerdict.INCONCLUSIVE, loaded.validations().getFirst().verdict());
         assertEquals(RunExecutionLedger.Outcome.TIMEOUT, loaded.runAttempts().getFirst().outcome());
         assertEquals("/orders/8", loaded.runAttempts().getFirst().path());
+    }
+
+    @Test
+    void sqlite_재열기가_FLOW_V2_선언좌표버전과_canonical경로를_스키마변경_없이_보존한다() throws Exception {
+        Path database = temp.resolve("coordinate-version.flowscope.db");
+        RouteCandidate candidate = new RouteCandidate("https://api.test:443", "POST", "/api/orders",
+                List.of(), false, false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS,
+                        "ev-1", Source.LLM, "run-1", "llm-javascript",
+                        RouteCandidate.Applicability.REVIEW, "main.js:1")),
+                RouteCandidate.Applicability.REVIEW, "main.js:1",
+                List.of(new RouteCandidate.DeclaredParameter(SurfaceAnalysis.ParameterLocation.JSON_BODY,
+                        "/product_id", "product_id", SurfaceAnalysis.Requirement.REQUIRED,
+                        "ev-1", Source.LLM, "run-1", "llm-javascript", "main.js:1",
+                        ParameterCoordinates.CoordinateVersion.FLOW_V2)));
+        SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        store.save(database, List.of(), new AnalysisConfig(), List.of(), List.of(), Set.of(), List.of(candidate));
+
+        RouteCandidate restored = store.load(database).routeCandidates().getFirst();
+        RouteCandidate.DeclaredParameter param = restored.declaredParameters().getFirst();
+        assertEquals(ParameterCoordinates.CoordinateVersion.FLOW_V2, param.coordinateVersion());
+        assertEquals("/product_id", param.fieldPath());
+        assertEquals("ev-1", param.evidenceId());
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(List.of(), List.of(), List.of(restored));
+        assertEquals("/product_id", analysis.endpoints().getFirst().parameters().getFirst().canonicalPath());
     }
 
     @Test

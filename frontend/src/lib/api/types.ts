@@ -179,6 +179,7 @@ export interface RouteCandidate {
     runId: string
     adapter: string
     reason: string
+    coordinateVersion?: string
   }[]
 }
 
@@ -193,6 +194,12 @@ export interface SurfaceObservation {
   status: number
   trafficClass?: string
   shape?: string
+  role?: string
+  phase?: string
+  presence?: string
+  valueType?: string
+  byteLength?: number
+  masked?: boolean
 }
 
 export interface SurfaceDeclaration {
@@ -215,6 +222,9 @@ export interface SurfaceParameter {
   observations: readonly SurfaceObservation[]
   declarations: readonly SurfaceDeclaration[]
   deltaState: SurfaceDeltaState
+  canonicalPath: string
+  observedValueTypes: readonly string[]
+  distinctValueCount: number
 }
 
 export interface SurfaceEndpoint {
@@ -292,7 +302,15 @@ export interface Snapshot {
     endpoints: readonly SurfaceEndpoint[]
     extractions: readonly SurfaceExtraction[]
     probes: readonly SurfaceProbe[]
+    parameterDiagnostics?: readonly SurfaceParameterDiagnostic[]
   }
+}
+
+export interface SurfaceParameterDiagnostic {
+  evidenceId: string
+  operation: string
+  reasonCode: string
+  droppedCount: number
 }
 
 export interface SurfaceProbe {

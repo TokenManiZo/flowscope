@@ -440,6 +440,7 @@ public final class ProjectStore {
             entry.put("run_id", item.runId());
             entry.put("adapter", item.adapter());
             entry.put("reason", Masking.maskSecrets(item.reason()));
+            entry.put("coordinate_version", item.coordinateVersion().name());
         });
         out.put("applicability", candidate.applicability().name());
         out.put("review_reason", Masking.maskSecrets(candidate.reviewReason()));
@@ -472,7 +473,9 @@ public final class ProjectStore {
                         required(item, "evidence_id"),
                         enumValue(Source.class, optional(item, "source", "UNKNOWN")),
                         optional(item, "run_id", "legacy-project"),
-                        optional(item, "adapter", "legacy-project"), masked(item, "reason"))));
+                        optional(item, "adapter", "legacy-project"), masked(item, "reason"),
+                        enumValue(io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.class,
+                                optional(item, "coordinate_version", "LEGACY_V1")))));
         return new RouteCandidate(required(value, "service"), required(value, "method"),
                 required(value, "path_template"), stringList(value, "concrete_paths"),
                 value.path("concrete_paths_truncated").asBoolean(false),

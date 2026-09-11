@@ -1,5 +1,30 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · 관측·선언 공통 parameter coordinate 통합(슬라이스 1)
+
+### 원인과 수정
+
+- PR#11 파라미터 엔진 흡수의 슬라이스 1. 기존 `SurfaceAnalyzer`는 관측을 자체 observe*(path/query/json/form/multipart)로, 선언을 `path[i]`/dot/bare 좌표로 만들어 같은 논리 파라미터가 관측·선언에서 다른 join key를 가졌다(deltaState가 한 파라미터를 `DECLARED_NOT_OBSERVED`+`OBSERVED_NOT_DECLARED`로 분리). D-143 공통 좌표 계약으로 관측·선언이 하나의 `ParameterCoordinate(EndpointKey+ParameterLocation+canonicalPath)`를 join key로 공유하게 했다.
+- **관측:** `io.flowscope.core.parameter`(PR#11 포팅: ParameterKey/ParameterObservation/ParameterExtraction/ParameterDiagnostic/PathSlotCanonicalizer/ParameterExtractor)를 관측 소스로 삼고, `SurfaceAnalyzer`의 observe*·observeJson·shape()를 제거했다(production 이중 관측 없음). `PathSlotCanonicalizer`는 빈 세그먼트 제거 zero-based `/segments/N`(단일 `/id` 축약 폐지)로, 엔진 배열 pointer는 `/*`, escaping은 `~0/~1/~2`로 맞췄다.
+- **선언:** 모든 선언 어댑터(template path·OpenAPI param·schema·HTML form·JS literal·query literal)를 `ParameterCoordinates`로 canonical화했다. PATH는 `pathSlots`로 endpoint template 위치를 구해 선언 이름과 무관하게 `/segments/N`로 join, JS 중첩 body(`parent.child` 평탄화)는 점을 세그먼트로 재분해(`/parent/child`)해 관측과 join한다. displayName은 사람 이름(orderId 등)을 유지한다.
+- **값 형식 동등성:** 제거한 observe*의 UUID/INTEGER/DECIMAL/BOOLEAN 분류를 엔진 `scalarType`으로 이관해 PATH/QUERY/FORM/JSON 문자열 스칼라에 동일 적용(응답 미참조). UUID 문자열이 STRING으로 강등되던 회귀를 막았다. multipart 텍스트필드는 STRING으로 타입화(정보 증가).
+- **영속성:** `RouteCandidate.DeclaredParameter`에 `coordinateVersion`(기본 LEGACY_V1) 추가 + 9-arg 호환 생성자. `ProjectStore.write/readRouteCandidate`가 `coordinate_version`을 선택 필드로 저장/복원(**SQLite 스키마·STORAGE_SCHEMA_VERSION 무변경**, SqliteProjectStore가 ProjectStore codec 공유). 재적재 시 LEGACY_V1은 D-143로 변환하되 점 있는 JSON/GraphQL은 `LEGACY_AMBIGUOUS_COORDINATE` 진단으로 남기고 join 안 함. 점 없는 단일 key(product_id)는 무손실 변환해 join.
+- **직렬화:** `ParameterFact`(+canonicalPath/observedValueTypes/distinctValueCount)와 `ParameterObservation`(+presence/valueType/byteLength/masked), 최상위 `parameterDiagnostics`(evidenceId/operation/reasonCode/droppedCount)를 record 필드로만 두어 `valueToTree`가 raw value·digest·preview 없이 직렬화. `Masking`에 `isSensitiveParameterPath`/`splitParameterWords`/`maskPlainText`(JSON 문자열 값 내 비밀 마스킹)를 추가.
+
+### 영향 파일·회귀
+
+- 신규: `core/parameter/*`(6, PR#11 포팅), `core/parameter/ParameterCoordinates.java`(공통 변환기).
+- 수정: `core/SurfaceAnalysis.java`(XML_PATH·Presence·ValueType enum, ParameterFact/ParameterObservation 확장, parameterDiagnostics 최상위 4번째 컴포넌트), `core/SurfaceAnalyzer.java`(관측 재배선·선언 canonical·observe* 제거·declaredCanonical·jsBodyCanonical), `core/RouteCandidate.java`(DeclaredParameter.coordinateVersion), `core/Masking.java`, `integration/ProjectStore.java`(coordinate_version), `web/SnapshotJsonWriter.java`(declaredParameters coordinateVersion), `frontend/src/lib/api/types.ts`(가산 필드).
+- 테스트: `ParameterExtractorTest`(포팅, 39) 통과. `SurfaceAnalyzerTest`에 D-143 통합 회귀 8건 추가(선언·관측 단일 Fact / 점 리터럴 vs 중첩 / PATH 이름무관 구조 join·세그먼트 구분 / QUERY vs FORM 좌표 구분 / 배열 wildcard·escaping / 잘린 본문 진단·관측 오인 없음 / legacy 점 미join·진단 / 직렬화 비밀 비노출). `ProjectStoreTest`·`SqliteProjectStoreTest`에 FLOW_V2 재열기 좌표·버전·Evidence 보존 각 1건. `SurfaceHeldOutEvaluationTest` truth.json을 canonical로 갱신. `frontend/.../SurfacePage.test.tsx` fixture에 canonicalPath/observedValueTypes/distinctValueCount 추가.
+- RED/GREEN: PATH 통합 테스트가 처음 실패해 실측 → Pipeline 정규화는 단일 숫자 세그먼트(`42`)를 corroboration 없이 {id}로 승격하지 않아(UUID는 구조적으로 승격) 관측·선언 endpoint가 갈렸음을 확인, 테스트 입력을 co-normalize되는 두 UUID로 수정(구현이 아니라 테스트 전제 오류). JS 중첩 body가 `/criteria.status`(점)로 남아 관측 `/criteria/status`와 안 붙던 문제를 `jsBodyCanonical`로 교정.
+- 최종 검증: JDK 21 `mvn clean verify` **BUILD SUCCESS**(Java 회귀 0 실패, opt-in 하네스 2 skip). frontend `npm run typecheck` 통과. frontend vitest는 이 변경과 무관한 기존 환경 결함(`localStorage.clear is not a function`, jsdom setup 미폴리필)이 AccountsPage/graphPreferences/EvidencePage에서 base 커밋에도 동일 재현(내 2개 파일을 base로 되돌려 확인) — SurfacePage 3-way 테스트는 통과.
+
+### 남은 한계·다음 gate
+
+- **미실행:** packaged JAR 빌드·실제 Burp/ZAP/Explorer 실행·Playwright E2E는 이번에 하지 않았다(자동 회귀까지만). 산출물 해시는 이번 커밋에서 갱신하지 않음.
+- **슬라이스 2+로 연기:** ParameterProfile, ParameterGap, 인가 타깃 연결, 그래프/매트릭스/파라미터맵 UI, OpenAPI style/explode·deepObject 완전 해석, 새 선언 종류. PR#12 analyzer의 D-050(이중 판정)·D-004(showsObject 없는 read-candidate) 가드는 별도.
+- **이 변경과 무관(기록만):** frontend vitest 환경의 `localStorage.clear` 미폴리필은 base 커밋의 선존 결함이라 슬라이스 1에서 고치지 않았다.
+
 ## 2026-09-11 · 미출시 · 데스크톱 내비게이션 라벨 노출
 
 ### 원인과 수정

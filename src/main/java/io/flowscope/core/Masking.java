@@ -3,6 +3,7 @@ package io.flowscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -40,6 +41,40 @@ public final class Masking {
             "(?is)(<\\s*(password|passwd|pwd|token|secret|client_secret|api_key|access_token|refresh_token|id_token|session_token|authorization)\\b[^>]*>)(.*?)(</\\s*\\2\\s*>)");
 
     private Masking() {}
+
+    /** Parameter profiles omit secret-bearing paths, including encoded and compound field names. */
+    public static boolean isSensitiveParameterPath(String path) {
+        if (path == null) return false;
+        String decoded = splitParameterWords(decode(path).replace("~1", "/").replace("~0", "~"))
+                .toLowerCase(Locale.ROOT);
+        for (String segment : decoded.split("[^a-z0-9]+")) {
+            if (switch (segment) {
+                case "authorization", "cookie", "password", "passwd", "secret", "token", "csrf",
+                        "session", "credential", "credentials", "apikey", "pwd", "pass" -> true;
+                default -> false;
+            }) return true;
+        }
+        return decoded.matches("(?s).*(?:^|[^a-z0-9])api[^a-z0-9]+key(?:[^a-z0-9]|$).*");
+    }
+
+    /** One forward pass, at most 2n character reads and one inserted separator per character. */
+    static String splitParameterWords(CharSequence value) {
+        int length = value.length();
+        StringBuilder words = new StringBuilder(length);
+        char previous = 0;
+        for (int i = 0; i < length; i++) {
+            char current = value.charAt(i);
+            char next = i + 1 < length ? value.charAt(i + 1) : 0;
+            boolean uppercase = current >= 'A' && current <= 'Z';
+            boolean previousLowerOrDigit = previous >= 'a' && previous <= 'z'
+                    || previous >= '0' && previous <= '9';
+            boolean acronymEnd = previous >= 'A' && previous <= 'Z' && next >= 'a' && next <= 'z';
+            if (i > 0 && uppercase && (previousLowerOrDigit || acronymEnd)) words.append('/');
+            words.append(current);
+            previous = current;
+        }
+        return words.toString();
+    }
 
     /** 요청 전문에서 인증 헤더 값을 가린다. 헤더 이름·구조는 남겨 상세 보기(F-22)에 쓸 수 있게. */
     public static String maskHeaders(String reqText) {
@@ -110,11 +145,20 @@ public final class Masking {
             object.fieldNames().forEachRemaining(names::add);
             for (String name : names) {
                 if (isSecretKey(name)) object.put(name, MASK);
+                else if (object.get(name).isTextual()) object.put(name, maskPlainText(object.get(name).textValue()));
                 else maskJsonNode(object.get(name));
             }
-        } else if (node != null && node.isArray()) {
-            node.forEach(Masking::maskJsonNode);
+        } else if (node instanceof ArrayNode array) {
+            for (int i = 0; i < array.size(); i++) {
+                if (array.get(i).isTextual()) array.set(i, JSON.getNodeFactory().textNode(maskPlainText(array.get(i).textValue())));
+                else maskJsonNode(array.get(i));
+            }
         }
+    }
+
+    private static String maskPlainText(String value) {
+        String xml = XML_SECRET.matcher(value).replaceAll(m -> m.group(1) + MASK + m.group(4));
+        return SECRET_FIELD.matcher(xml).replaceAll(m -> m.group(1) + MASK);
     }
 
     private static String maskForm(String body) {

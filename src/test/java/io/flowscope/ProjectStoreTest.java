@@ -110,6 +110,34 @@ final class ProjectStoreTest {
     }
 
     @Test
+    void 재열기가_FLOW_V2_선언좌표버전과_canonical경로와_Evidence를_보존한다() throws Exception {
+        Path file = temp.resolve("coordinate-version.flowscope.json");
+        RouteCandidate candidate = new RouteCandidate("https://api.test:443", "POST", "/api/orders",
+                List.of(), false, false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS,
+                        "ev-1", Source.LLM, "run-1", "llm-javascript",
+                        RouteCandidate.Applicability.REVIEW, "main.js:1")),
+                RouteCandidate.Applicability.REVIEW, "main.js:1",
+                List.of(new RouteCandidate.DeclaredParameter(SurfaceAnalysis.ParameterLocation.JSON_BODY,
+                        "/product_id", "product_id", SurfaceAnalysis.Requirement.REQUIRED,
+                        "ev-1", Source.LLM, "run-1", "llm-javascript", "main.js:1",
+                        io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.FLOW_V2)));
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Set.of(), List.of(candidate));
+
+        RouteCandidate restored = store.load(file).routeCandidates().getFirst();
+        RouteCandidate.DeclaredParameter param = restored.declaredParameters().getFirst();
+        assertEquals(io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.FLOW_V2,
+                param.coordinateVersion(), "좌표 버전 보존");
+        assertEquals("/product_id", param.fieldPath(), "canonical fieldPath 보존");
+        assertEquals("ev-1", param.evidenceId(), "Evidence 보존");
+
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(List.of(), List.of(), List.of(restored));
+        SurfaceAnalysis.ParameterFact fact = analysis.endpoints().getFirst().parameters().getFirst();
+        assertEquals("/product_id", fact.canonicalPath(), "재열기 후에도 canonical 좌표로 분석");
+    }
+
+    @Test
     void rejectsUnknownSchema() throws Exception {
         Path file = temp.resolve("bad.json");
         Files.writeString(file, "{\"schema_version\":99,\"records\":[]}");

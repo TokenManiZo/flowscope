@@ -16,6 +16,11 @@ import io.flowscope.core.SurfaceAnalysis.Observation;
 import io.flowscope.core.SurfaceAnalysis.ParameterFact;
 import io.flowscope.core.SurfaceAnalysis.ParameterLocation;
 import io.flowscope.core.SurfaceAnalysis.ParameterObservation;
+import io.flowscope.core.SurfaceAnalysis.Presence;
+import io.flowscope.core.SurfaceAnalysis.ValueType;
+import io.flowscope.core.parameter.ParameterCoordinates;
+import io.flowscope.core.parameter.ParameterExtraction;
+import io.flowscope.core.parameter.ParameterExtractor;
 import io.flowscope.core.SurfaceAnalysis.ProbeObservation;
 import io.flowscope.core.SurfaceAnalysis.Requirement;
 import io.flowscope.core.SurfaceAnalysis.ValueShape;
@@ -38,8 +43,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /** Evidence와 명시적 대상 산출물로부터 endpoint/parameter surface 사실을 파생한다. */
 public final class SurfaceAnalyzer {
@@ -47,12 +50,7 @@ public final class SurfaceAnalyzer {
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "post", "put", "patch", "delete", "options", "head");
-    private static final Pattern UUID = Pattern.compile(
-            "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
-    private static final Pattern MULTIPART_NAME = Pattern.compile(
-            "(?i)content-disposition\\s*:[^\\r\\n]*\\bname\\s*=\\s*(?:\"([^\"]+)\"|([^;\\s]+))");
     private static final int MAX_PARAMETERS_PER_ENDPOINT = 1_024;
-    private static final int MAX_JSON_DEPTH = 16;
     private static final int MAX_SCHEMA_DEPTH = 20;
 
     private SurfaceAnalyzer() {}
@@ -65,6 +63,7 @@ public final class SurfaceAnalyzer {
         Map<String, JavascriptAnalysis> javascriptByEvidence = new LinkedHashMap<>();
         List<ExtractionReport> extractionReports = new ArrayList<>();
         List<ProbeObservation> probes = new ArrayList<>();
+        List<SurfaceAnalysis.ParameterDiagnostic> parameterDiagnostics = new ArrayList<>();
         for (RequestRecord record : allRecords == null ? List.<RequestRecord>of() : allRecords) {
             if (record.evidenceId != null && !record.evidenceId.isBlank()) {
                 recordsByEvidence.putIfAbsent(record.evidenceId, record);
@@ -112,9 +111,16 @@ public final class SurfaceAnalyzer {
             MutableEndpoint endpoint = endpoints.computeIfAbsent(key.stableKey(), ignored -> new MutableEndpoint(key));
             endpoint.observations.add(new Observation(record.evidenceId, record.source, record.runId, record.idn,
                     record.status, record.trafficClassification.trafficClass()));
-            observePathParameters(endpoint, record);
-            observeQueryParameters(endpoint, record);
-            observeBodyParameters(endpoint, record);
+            ParameterExtraction extraction = ParameterExtractor.extract(record);
+            for (io.flowscope.core.parameter.ParameterObservation observation : extraction.observations()) {
+                endpoint.parameter(ParameterCoordinates.location(observation.key().location()),
+                                observation.key().canonicalPath(), observation.key().canonicalPath())
+                        .observe(observation, record.status);
+            }
+            for (io.flowscope.core.parameter.ParameterDiagnostic diagnostic : extraction.diagnostics()) {
+                parameterDiagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId,
+                        diagnostic.operation(), diagnostic.reasonCode(), diagnostic.droppedCount()));
+            }
         }
 
         for (RouteCandidate candidate : routeCandidates == null ? List.<RouteCandidate>of() : routeCandidates) {
@@ -138,7 +144,8 @@ public final class SurfaceAnalyzer {
                         RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS, parameter.evidenceId(),
                         parameter.source(), parameter.runId(), parameter.adapter(),
                         RouteCandidate.Applicability.REVIEW, parameter.reason());
-                endpoint.parameter(parameter.location(), parameter.fieldPath(), parameter.displayName())
+                String canonical = declaredCanonical(parameter, candidate, parameterDiagnostics);
+                endpoint.parameter(parameter.location(), canonical, parameter.displayName())
                         .declare(provenance, parameter.requirement(), parameter.displayName());
             }
         }
@@ -149,7 +156,7 @@ public final class SurfaceAnalyzer {
                         .thenComparing(fact -> fact.key().pathTemplate())
                         .thenComparing(fact -> fact.key().method()))
                 .toList();
-        return new SurfaceAnalysis(facts, extractionReports, probes);
+        return new SurfaceAnalysis(facts, extractionReports, probes, parameterDiagnostics);
     }
 
     private static ExtractionStatus extractionStatus(JavascriptAnalysis.Status status) {
@@ -233,99 +240,6 @@ public final class SurfaceAnalyzer {
                 provenance.type().name(), provenance.adapter(), provenance.reason());
     }
 
-    private static void observePathParameters(MutableEndpoint endpoint, RequestRecord record) {
-        String pathTemplate = endpoint.key.pathTemplate();
-        int operationName = pathTemplate.indexOf('#');
-        if (operationName >= 0) pathTemplate = pathTemplate.substring(0, operationName);
-        String[] template = pathTemplate.split("/", -1);
-        String[] actual = record.path.split("/", -1);
-        int length = Math.min(template.length, actual.length);
-        for (int index = 0; index < length; index++) {
-            if (!template[index].startsWith("{") || !template[index].endsWith("}")) continue;
-            endpoint.parameter(ParameterLocation.PATH, "path[" + index + "]", template[index])
-                    .observe(record, shape(decode(actual[index])));
-        }
-    }
-
-    private static void observeQueryParameters(MutableEndpoint endpoint, RequestRecord record) {
-        if (record.query == null || record.query.isBlank()) return;
-        for (NameValue value : query(record.query)) {
-            endpoint.parameter(ParameterLocation.QUERY, value.name(), value.name())
-                    .observe(record, shape(value.value()));
-        }
-    }
-
-    private static void observeBodyParameters(MutableEndpoint endpoint, RequestRecord record) {
-        String body = record.requestBodyForAnalysis();
-        if (body == null || body.isBlank()) return;
-        String media = mediaType(record.requestContentType);
-        String stripped = body.stripLeading();
-        if (media.contains("json") || stripped.startsWith("{") || stripped.startsWith("[")) {
-            try {
-                JsonNode root = JSON.readTree(body);
-                if (graphql(record) && root.isObject()) {
-                    observeJson(endpoint, record, root.path("variables"), "", 0, new int[]{0},
-                            ParameterLocation.GRAPHQL_VARIABLE);
-                } else {
-                    observeJson(endpoint, record, root, "", 0, new int[]{0}, ParameterLocation.JSON_BODY);
-                }
-            } catch (Exception ignored) {
-                // JSON으로 확인되지 않은 본문을 추정 파싱하지 않는다.
-            }
-            return;
-        }
-        if (media.equals("application/x-www-form-urlencoded")) {
-            for (NameValue value : query(body)) {
-                endpoint.parameter(ParameterLocation.FORM_BODY, value.name(), value.name())
-                        .observe(record, shape(value.value()));
-            }
-            return;
-        }
-        if (media.startsWith("multipart/form-data")) {
-            Matcher matcher = MULTIPART_NAME.matcher(body);
-            while (matcher.find()) {
-                String name = matcher.group(1) == null ? matcher.group(2) : matcher.group(1);
-                endpoint.parameter(ParameterLocation.MULTIPART_BODY, name, name)
-                        .observe(record, ValueShape.UNKNOWN);
-            }
-        }
-    }
-
-    private static void observeJson(MutableEndpoint endpoint, RequestRecord record, JsonNode node,
-                                    String path, int depth, int[] count, ParameterLocation location) {
-        if (node == null || depth > MAX_JSON_DEPTH || count[0] >= MAX_PARAMETERS_PER_ENDPOINT) return;
-        if (node.isObject()) {
-            if (!path.isBlank() && node.isEmpty()) {
-                endpoint.parameter(location, path, path).observe(record, ValueShape.OBJECT);
-                count[0]++;
-            }
-            node.properties().forEach(entry -> {
-                if (count[0] >= MAX_PARAMETERS_PER_ENDPOINT) return;
-                String child = path.isBlank() ? entry.getKey() : path + "." + entry.getKey();
-                observeJson(endpoint, record, entry.getValue(), child, depth + 1, count, location);
-            });
-            return;
-        }
-        if (node.isArray()) {
-            endpoint.parameter(location, path, path).observe(record, ValueShape.ARRAY);
-            count[0]++;
-            if (!node.isEmpty() && (node.get(0).isObject() || node.get(0).isArray())) {
-                observeJson(endpoint, record, node.get(0), path + "[]", depth + 1, count, location);
-            }
-            return;
-        }
-        if (!path.isBlank()) {
-            endpoint.parameter(location, path, path).observe(record, shape(node));
-            count[0]++;
-        }
-    }
-
-    private static boolean graphql(RequestRecord record) {
-        return record.requestContentType != null && record.requestContentType.toLowerCase(Locale.ROOT).contains("graphql")
-                || record.path.equalsIgnoreCase("/graphql")
-                || record.op != null && record.op.contains("#");
-    }
-
     private static void declareQueryLiteral(Map<String, MutableEndpoint> endpoints, RouteCandidate candidate,
                                             RouteCandidate.Provenance provenance) {
         MutableEndpoint endpoint = endpoints.get(new EndpointKey(candidate.service(), candidate.method(),
@@ -335,7 +249,7 @@ public final class SurfaceAnalyzer {
             int question = concrete.indexOf('?');
             if (question < 0 || question + 1 >= concrete.length()) continue;
             for (NameValue value : query(concrete.substring(question + 1))) {
-                endpoint.parameter(ParameterLocation.QUERY, value.name(), value.name())
+                endpoint.parameter(ParameterLocation.QUERY, ParameterCoordinates.nameToken(value.name()), value.name())
                         .declare(provenance, Requirement.UNKNOWN, value.name());
             }
         }
@@ -363,17 +277,44 @@ public final class SurfaceAnalyzer {
         });
     }
 
+    /**
+     * 저장/전송된 선언 파라미터의 canonicalPath를 만든다. FLOW_V2는 그대로, LEGACY_V1은 D-143 계약으로 변환하며
+     * dot 표기 JSON처럼 무손실 변환이 불가능하면 legacy 경로를 유지하고 LEGACY_AMBIGUOUS_COORDINATE로 진단한다.
+     */
+    private static String declaredCanonical(RouteCandidate.DeclaredParameter parameter, RouteCandidate candidate,
+                                            List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
+        if (parameter.coordinateVersion() == ParameterCoordinates.CoordinateVersion.FLOW_V2) {
+            return parameter.fieldPath();
+        }
+        return ParameterCoordinates.legacyToCanonical(parameter.location(), parameter.fieldPath(),
+                candidate.pathTemplate()).orElseGet(() -> {
+            diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(parameter.evidenceId(),
+                    candidate.method() + " " + candidate.pathTemplate(), "LEGACY_AMBIGUOUS_COORDINATE", 0));
+            return parameter.fieldPath();
+        });
+    }
+
+    /**
+     * JS 정적 분석기는 중첩 JSON body를 {@code parent.child} 점 경로로 평탄화한다. 관측(엔진)과 같은
+     * canonical pointer로 join하려면 점을 세그먼트 경계로 다시 분해한다(리터럴 점 키는 분석기가 이미 잃었다).
+     */
+    private static String jsBodyCanonical(String dottedName) {
+        String canonical = "";
+        for (String segment : dottedName.split("\\.")) {
+            if (!segment.isEmpty()) canonical = ParameterCoordinates.jsonChild(canonical, segment);
+        }
+        return canonical.isEmpty() ? ParameterCoordinates.jsonChild("", dottedName) : canonical;
+    }
+
     private static void declareTemplatePath(MutableEndpoint endpoint, String schemaPath,
                                             RouteCandidate.Provenance provenance) {
-        String[] segments = schemaPath.split("/", -1);
-        for (int index = 0; index < segments.length; index++) {
-            String value = segments[index];
-            if (value.startsWith("{") && value.endsWith("}")) {
-                String name = value.substring(1, value.length() - 1);
-                endpoint.parameter(ParameterLocation.PATH, "path[" + alignedPathIndex(endpoint.key.pathTemplate(),
-                                schemaPath, index) + "]", name)
-                        .declare(provenance, Requirement.REQUIRED, name);
-            }
+        var templateSlots = ParameterCoordinates.pathSlots(endpoint.key.pathTemplate());
+        var schemaSlots = ParameterCoordinates.pathSlots(schemaPath);
+        boolean aligned = schemaSlots.size() == templateSlots.size();
+        for (int i = 0; i < templateSlots.size(); i++) {
+            String name = aligned ? schemaSlots.get(i).declaredName() : templateSlots.get(i).declaredName();
+            endpoint.parameter(ParameterLocation.PATH, templateSlots.get(i).canonicalPath(), name)
+                    .declare(provenance, Requirement.REQUIRED, name);
         }
     }
 
@@ -402,13 +343,11 @@ public final class SurfaceAnalyzer {
                         ParameterLocation.JSON_BODY, 0, new LinkedHashSet<>());
                 continue;
             }
-            if (location == null) continue;
-            String key = location == ParameterLocation.PATH
-                    ? pathKey(schemaPath, name, endpoint.key.pathTemplate()) : name;
+            if (location == null || location == ParameterLocation.PATH) continue;
             Requirement requirement = parameter.has("required")
                     ? (parameter.path("required").asBoolean() ? Requirement.REQUIRED : Requirement.OPTIONAL)
-                    : location == ParameterLocation.PATH ? Requirement.REQUIRED : Requirement.UNKNOWN;
-            endpoint.parameter(location, key, name).declare(provenance, requirement, name);
+                    : Requirement.UNKNOWN;
+            endpoint.parameter(location, ParameterCoordinates.nameToken(name), name).declare(provenance, requirement, name);
         }
     }
 
@@ -457,7 +396,7 @@ public final class SurfaceAnalyzer {
         JsonNode properties = schema.path("properties");
         if (properties.isObject()) {
             properties.properties().forEach(entry -> {
-                String child = path.isBlank() ? entry.getKey() : path + "." + entry.getKey();
+                String child = ParameterCoordinates.jsonChild(path, entry.getKey());
                 Requirement requirement = requiredNames.contains(entry.getKey())
                         ? Requirement.REQUIRED : Requirement.OPTIONAL;
                 JsonNode value = entry.getValue();
@@ -465,16 +404,16 @@ public final class SurfaceAnalyzer {
                     declareSchema(endpoint, root, value, child, provenance, requirement, location,
                             depth + 1, new LinkedHashSet<>(refs));
                 } else if (value.path("type").asText().equals("array")) {
-                    endpoint.parameter(location, child, child)
-                            .declare(provenance, requirement, child);
+                    endpoint.parameter(location, child, entry.getKey())
+                            .declare(provenance, requirement, entry.getKey());
                     JsonNode items = resolveLocalRef(root, value.path("items"), 0);
                     if (items.has("properties") || items.path("type").asText().equals("object")) {
-                        declareSchema(endpoint, root, items, child + "[]", provenance, requirement,
+                        declareSchema(endpoint, root, items, ParameterCoordinates.arrayElement(child), provenance, requirement,
                                 location, depth + 1, new LinkedHashSet<>(refs));
                     }
                 } else {
-                    endpoint.parameter(location, child, child)
-                            .declare(provenance, requirement, child);
+                    endpoint.parameter(location, child, entry.getKey())
+                            .declare(provenance, requirement, entry.getKey());
                 }
             });
         } else if (!path.isBlank()) {
@@ -535,7 +474,7 @@ public final class SurfaceAnalyzer {
                 String name = control.attr("name").trim();
                 if (name.isBlank()) continue;
                 Requirement requirement = control.hasAttr("required") ? Requirement.REQUIRED : Requirement.OPTIONAL;
-                endpoint.parameter(location, name, name).declare(provenance, requirement, name);
+                endpoint.parameter(location, ParameterCoordinates.nameToken(name), name).declare(provenance, requirement, name);
             }
         }
     }
@@ -562,12 +501,9 @@ public final class SurfaceAnalyzer {
             if (!candidate.method().equalsIgnoreCase(call.method())
                     || !javascriptPathMatches(artifact, candidate.pathTemplate(), call.reference())) continue;
             if (call.reference().contains("{expr}")) {
-                String[] segments = candidate.pathTemplate().split("/", -1);
-                for (int index = 0; index < segments.length; index++) {
-                    if (segments[index].equals("{id}")) {
-                        endpoint.parameter(ParameterLocation.PATH, "path[" + index + "]", "dynamic expression")
-                                .declare(provenance, Requirement.UNKNOWN, "dynamic expression");
-                    }
+                for (var slot : ParameterCoordinates.pathSlots(candidate.pathTemplate())) {
+                    endpoint.parameter(ParameterLocation.PATH, slot.canonicalPath(), "dynamic expression")
+                            .declare(provenance, Requirement.UNKNOWN, "dynamic expression");
                 }
             }
             for (JavascriptAnalysis.Parameter parameter : call.parameters()) {
@@ -576,7 +512,9 @@ public final class SurfaceAnalyzer {
                     case JSON_BODY -> ParameterLocation.JSON_BODY;
                     case FORM_BODY -> ParameterLocation.FORM_BODY;
                 };
-                endpoint.parameter(location, parameter.name(), parameter.name())
+                endpoint.parameter(location, location == ParameterLocation.JSON_BODY
+                                ? jsBodyCanonical(parameter.name())
+                                : ParameterCoordinates.nameToken(parameter.name()), parameter.name())
                         .declare(provenance, Requirement.UNKNOWN, parameter.name());
             }
         }
@@ -631,25 +569,6 @@ public final class SurfaceAnalyzer {
     private static String decode(String value) {
         try { return URLDecoder.decode(value, StandardCharsets.UTF_8); }
         catch (IllegalArgumentException ignored) { return value; }
-    }
-
-    private static ValueShape shape(JsonNode node) {
-        if (node == null || node.isNull()) return ValueShape.NULL;
-        if (node.isBoolean()) return ValueShape.BOOLEAN;
-        if (node.isIntegralNumber()) return ValueShape.INTEGER;
-        if (node.isFloatingPointNumber() || node.isBigDecimal()) return ValueShape.DECIMAL;
-        if (node.isArray()) return ValueShape.ARRAY;
-        if (node.isObject()) return ValueShape.OBJECT;
-        return shape(node.asText());
-    }
-
-    private static ValueShape shape(String value) {
-        if (value == null || value.isEmpty()) return ValueShape.EMPTY;
-        if (UUID.matcher(value).matches()) return ValueShape.UUID;
-        if (value.matches("-?\\d+")) return ValueShape.INTEGER;
-        if (value.matches("-?(?:\\d+\\.\\d*|\\d*\\.\\d+)(?:[eE][+-]?\\d+)?")) return ValueShape.DECIMAL;
-        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) return ValueShape.BOOLEAN;
-        return ValueShape.STRING;
     }
 
     private static String mediaType(String value) {
@@ -727,12 +646,51 @@ public final class SurfaceAnalyzer {
         }
     }
 
+    private static Presence mapPresence(io.flowscope.core.parameter.ParameterObservation.Presence presence) {
+        return presence == io.flowscope.core.parameter.ParameterObservation.Presence.EXPLICIT_NULL
+                ? Presence.EXPLICIT_NULL : Presence.PRESENT;
+    }
+
+    private static ValueType mapType(io.flowscope.core.parameter.ParameterObservation.ValueSummary value) {
+        if (value == null) return ValueType.UNKNOWN;
+        return switch (value.type()) {
+            case STRING -> ValueType.STRING;
+            case INTEGER -> ValueType.INTEGER;
+            case NUMBER -> ValueType.NUMBER;
+            case BOOLEAN -> ValueType.BOOLEAN;
+            case UUID -> ValueType.UUID;
+            case DATE_TIME -> ValueType.DATE_TIME;
+            case BINARY -> ValueType.BINARY;
+            case UNKNOWN -> ValueType.UNKNOWN;
+        };
+    }
+
+    private static ValueShape mapShape(io.flowscope.core.parameter.ParameterObservation.Shape shape, ValueType type) {
+        return switch (shape) {
+            case OBJECT -> ValueShape.OBJECT;
+            case ARRAY -> ValueShape.ARRAY;
+            case NULL -> ValueShape.NULL;
+            case UNKNOWN -> ValueShape.UNKNOWN;
+            case SCALAR -> switch (type) {
+                case STRING, DATE_TIME -> ValueShape.STRING;
+                case INTEGER -> ValueShape.INTEGER;
+                case NUMBER -> ValueShape.DECIMAL;
+                case BOOLEAN -> ValueShape.BOOLEAN;
+                case UUID -> ValueShape.UUID;
+                case BINARY -> ValueShape.BINARY;
+                case UNKNOWN -> ValueShape.UNKNOWN;
+            };
+        };
+    }
+
     private static final class MutableParameter {
         private static final MutableParameter IGNORED = new MutableParameter(null, "", "");
         private final ParameterLocation location;
         private final String fieldPath;
         private String displayName;
         private final EnumSet<ValueShape> shapes = EnumSet.noneOf(ValueShape.class);
+        private final EnumSet<ValueType> valueTypes = EnumSet.noneOf(ValueType.class);
+        private final java.util.LinkedHashSet<String> distinctDigests = new java.util.LinkedHashSet<>();
         private final EnumSet<Source> sources = EnumSet.noneOf(Source.class);
         private final LinkedHashSet<String> evidenceIds = new LinkedHashSet<>();
         private final LinkedHashSet<ParameterObservation> observations = new LinkedHashSet<>();
@@ -745,14 +703,24 @@ public final class SurfaceAnalyzer {
             this.displayName = displayName;
         }
 
-        private void observe(RequestRecord record, ValueShape shape) {
+        private void observe(io.flowscope.core.parameter.ParameterObservation engineObs, int status) {
             if (this == IGNORED) return;
-            sources.add(record.source);
-            if (record.evidenceId != null) evidenceIds.add(record.evidenceId);
-            ValueShape observedShape = shape == null ? ValueShape.UNKNOWN : shape;
+            sources.add(engineObs.source());
+            if (engineObs.evidenceId() != null) evidenceIds.add(engineObs.evidenceId());
+            ValueType valueType = mapType(engineObs.value());
+            ValueShape observedShape = mapShape(engineObs.shape(), valueType);
+            Presence presence = mapPresence(engineObs.presence());
             shapes.add(observedShape);
-            observations.add(new ParameterObservation(record.evidenceId, record.source, record.runId,
-                    record.idn, record.status, observedShape));
+            valueTypes.add(valueType);
+            int byteLength = engineObs.value() == null ? 0 : engineObs.value().byteLength();
+            boolean masked = engineObs.value() != null && engineObs.value().maskedPreview() != null
+                    && engineObs.value().maskedPreview().contains("***MASKED***");
+            if (engineObs.value() != null && engineObs.value().digest() != null) {
+                distinctDigests.add(engineObs.value().digest());
+            }
+            observations.add(new ParameterObservation(engineObs.evidenceId(), engineObs.source(), engineObs.runId(),
+                    engineObs.identity(), status, observedShape, engineObs.role(), engineObs.phase(),
+                    presence, valueType, byteLength, masked));
         }
 
         private void declare(RouteCandidate.Provenance provenance, Requirement requirement, String name) {
@@ -766,7 +734,7 @@ public final class SurfaceAnalyzer {
             Requirement requirement = requirements.size() == 1 ? requirements.iterator().next() : Requirement.UNKNOWN;
             return new ParameterFact(location, fieldPath, displayName, requirement, Set.copyOf(shapes),
                     Set.copyOf(sources), List.copyOf(evidenceIds), List.copyOf(observations), List.copyOf(declarations),
-                    delta(!declarations.isEmpty(), sources));
+                    delta(!declarations.isEmpty(), sources), fieldPath, Set.copyOf(valueTypes), distinctDigests.size());
         }
     }
 }
