@@ -63,6 +63,17 @@ public final class SurfaceAnalyzer {
     public static SurfaceAnalysis analyze(List<RequestRecord> allRecords,
                                           List<RequestRecord> coverageRecords,
                                           List<RouteCandidate> routeCandidates) {
+        return analyze(allRecords, coverageRecords, routeCandidates, AuthorizationAnalysis.empty());
+    }
+
+    /**
+     * authorization은 인가 판정 정본(AuthorizationAnalysis)이며 입력→권한 대상 link·검증 cell은 그 판정을 재사용만 한다.
+     * 비어 있으면 소유자·정책 판정이 없는 상태로 계산한다(ALLOW는 만들어지지 않는다).
+     */
+    public static SurfaceAnalysis analyze(List<RequestRecord> allRecords,
+                                          List<RequestRecord> coverageRecords,
+                                          List<RouteCandidate> routeCandidates,
+                                          AuthorizationAnalysis authorization) {
         Map<String, MutableEndpoint> endpoints = new LinkedHashMap<>();
         Map<String, RequestRecord> recordsByEvidence = new LinkedHashMap<>();
         Map<String, JavascriptAnalysis> javascriptByEvidence = new LinkedHashMap<>();
@@ -105,6 +116,7 @@ public final class SurfaceAnalyzer {
             }
         }
 
+        RowLedger ledger = new RowLedger();
         for (RequestRecord record : coverageRecords == null ? List.<RequestRecord>of() : coverageRecords) {
             if (record.source != Source.HUMAN && record.source != Source.SCANNER && record.source != Source.LLM) continue;
             EndpointKey key = observedKey(record);
@@ -116,7 +128,14 @@ public final class SurfaceAnalyzer {
             MutableEndpoint endpoint = endpoints.computeIfAbsent(key.stableKey(), ignored -> new MutableEndpoint(key));
             endpoint.observations.add(new Observation(record.evidenceId, record.source, record.runId, record.idn,
                     record.status, record.trafficClassification.trafficClass()));
-            endpoint.addRow(record, ParameterExtractor.extract(record), parameterDiagnostics);
+            endpoint.addRow(record, ParameterExtractor.extract(record), true, ledger, parameterDiagnostics);
+        }
+        // VALIDATION(Request Lab 등) 응답은 discovery 사실을 늘리지 않지만 검증 cell·link에는 연결된다(PR#11).
+        for (RequestRecord record : allRecords == null ? List.<RequestRecord>of() : allRecords) {
+            if (record.phase != RunPhase.VALIDATION || !record.hasResponse || capabilityProbe(record)
+                    || record.source != Source.HUMAN && record.source != Source.SCANNER && record.source != Source.LLM) continue;
+            MutableEndpoint endpoint = endpoints.get(observedKey(record).stableKey());
+            if (endpoint != null) endpoint.addRow(record, ParameterExtractor.extract(record), false, ledger, parameterDiagnostics);
         }
         for (MutableEndpoint endpoint : endpoints.values()) endpoint.applyRows(parameterDiagnostics);
 
@@ -150,15 +169,25 @@ public final class SurfaceAnalyzer {
         }
 
         for (MutableEndpoint endpoint : endpoints.values()) endpoint.declarationDiagnostics(parameterDiagnostics);
+        SurfaceAuthorizationLinker linker = new SurfaceAuthorizationLinker(
+                endpoints.values().stream().map(endpoint -> List.copyOf(endpoint.rows.values())).toList(), authorization);
         List<SurfaceAnalysis.ParameterGap> gaps = new ArrayList<>();
+        List<SurfaceAnalysis.ParameterValidationCell> cells = new ArrayList<>();
         List<EndpointFact> facts = endpoints.values().stream()
                 .sorted(Comparator.comparing((MutableEndpoint endpoint) -> endpoint.key.service())
                         .thenComparing(endpoint -> endpoint.key.pathTemplate())
                         .thenComparing(endpoint -> endpoint.key.method()))
-                .map(endpoint -> endpoint.freeze(parameterDiagnostics, gaps))
+                .map(endpoint -> endpoint.freeze(parameterDiagnostics, gaps, cells, linker))
                 .toList();
         gaps.sort(SurfaceAnalysis.ParameterGap.PRIORITY_ORDER);
-        return new SurfaceAnalysis(facts, extractionReports, probes, parameterDiagnostics, gaps);
+        cells.sort(Comparator.comparing(SurfaceAuthorizationLinker::cellKey));
+        return new SurfaceAnalysis(facts, extractionReports, probes, parameterDiagnostics, gaps, cells);
+    }
+
+    /** 분석 전체에서 Evidence ID는 유일하다. 같은 ID의 다른 내용은 operation이 달라도 둘 다 제외한다. */
+    private static final class RowLedger {
+        private final Map<String, MutableEndpoint> owners = new LinkedHashMap<>();
+        private final Set<String> conflicts = new LinkedHashSet<>();
     }
 
     /** discovery 프로파일·Gap 분모(PR#11): coverage-eligible이며 VALIDATION/COACH_PROBE가 아닌 요청만. */
@@ -713,13 +742,15 @@ public final class SurfaceAnalyzer {
     private record NameValue(String name, String value) {}
 
     /**
-     * discovery 프로파일·Gap의 분모가 되는 요청 행(PR#11 ParameterProfiler.Row). observed는 파라미터 map key→엔진 관측.
-     * complete=false(추출 진단 또는 잘린 request payload)는 긍정 관측만 남기고 부재·누락의 증인이 되지 못한다.
+     * 요청 행(PR#11 ParameterProfiler/ParameterAuthorizationAnalyzer.Row). observed는 파라미터 map key→엔진 관측.
+     * fact=true(coverage 레코드)만 파라미터 사실이 되고, discovery=true만 프로파일·Gap 분모가 되며, VALIDATION 행은
+     * fact=false로 검증 cell·link에만 쓰인다. complete=false(추출 진단 또는 잘린 request payload)는 긍정 관측만 남기고
+     * 부재·누락의 증인이 되지 못한다.
      */
-    private record Row(RequestRecord record, Map<String, io.flowscope.core.parameter.ParameterObservation> observed,
-                       String signature, boolean complete, boolean discovery,
-                       List<io.flowscope.core.parameter.ParameterDiagnostic> diagnostics) {
-        private String evidenceId() { return record.evidenceId; }
+    record Row(RequestRecord record, Map<String, io.flowscope.core.parameter.ParameterObservation> observed,
+               String signature, boolean complete, boolean discovery, boolean fact,
+               List<io.flowscope.core.parameter.ParameterDiagnostic> diagnostics) {
+        String evidenceId() { return record.evidenceId; }
     }
 
     private static final class MutableEndpoint {
@@ -727,21 +758,20 @@ public final class SurfaceAnalyzer {
         private final LinkedHashSet<Observation> observations = new LinkedHashSet<>();
         private final LinkedHashSet<Declaration> declarations = new LinkedHashSet<>();
         private final Map<String, MutableParameter> parameters = new LinkedHashMap<>();
-        /** Evidence ID별 요청 행. 같은 ID의 같은 내용은 한 번만, 다른 내용은 둘 다 제외한다(독립 근거 아님). */
+        /** Evidence ID별 요청 행. 같은 ID의 같은 내용은 한 번만, 다른 내용은 둘 다 제외한다(독립 근거 아님, RowLedger). */
         private final Map<String, Row> rows = new LinkedHashMap<>();
-        private final Set<String> conflicts = new LinkedHashSet<>();
 
         private MutableEndpoint(EndpointKey key) { this.key = key; }
 
         private String operation() { return key.method() + " " + key.pathTemplate(); }
 
-        private void addRow(RequestRecord record, ParameterExtraction extraction,
+        private void addRow(RequestRecord record, ParameterExtraction extraction, boolean fact, RowLedger ledger,
                             List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
             if (record.evidenceId == null || record.evidenceId.isBlank()) {
-                forward(record, extraction.diagnostics(), diagnostics);
+                if (fact) forward(record, extraction.diagnostics(), diagnostics);
                 return;
             }
-            if (conflicts.contains(record.evidenceId)) return;
+            if (ledger.conflicts.contains(record.evidenceId)) return;
             Map<String, io.flowscope.core.parameter.ParameterObservation> observed = new LinkedHashMap<>();
             for (io.flowscope.core.parameter.ParameterObservation observation : extraction.observations()) {
                 observed.put(ParameterCoordinates.location(observation.key().location()) + ":"
@@ -752,14 +782,19 @@ public final class SurfaceAnalyzer {
                     : observed.values().iterator().next().contextSignature();
             boolean retained = record.requestPayload == null || record.requestPayload.retained();
             Row row = new Row(record, observed, signature, extraction.diagnostics().isEmpty() && retained,
-                    discovery(record), List.copyOf(extraction.diagnostics()));
-            Row previous = rows.putIfAbsent(record.evidenceId, row);
-            if (previous != null && !sameEvidence(previous, row)) {
-                rows.remove(record.evidenceId);
-                conflicts.add(record.evidenceId);
-                diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId, operation(),
-                        "CONFLICTING_EVIDENCE", 1));
+                    fact && discovery(record), fact, List.copyOf(extraction.diagnostics()));
+            MutableEndpoint owner = ledger.owners.putIfAbsent(record.evidenceId, this);
+            if (owner == null) {
+                rows.put(record.evidenceId, row);
+                return;
             }
+            Row previous = owner.rows.get(record.evidenceId);
+            if (owner == this && previous != null && sameEvidence(previous, row)) return; // 같은 Evidence 반복
+            owner.rows.remove(record.evidenceId);
+            ledger.owners.remove(record.evidenceId);
+            ledger.conflicts.add(record.evidenceId);
+            diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(record.evidenceId, operation(),
+                    "CONFLICTING_EVIDENCE", 1));
         }
 
         private static boolean sameEvidence(Row a, Row b) {
@@ -777,9 +812,10 @@ public final class SurfaceAnalyzer {
             }
         }
 
-        /** 충돌하지 않은 행의 관측을 파라미터 사실로 적재한다(입력 순서 유지). */
+        /** 충돌하지 않은 coverage 행의 관측을 파라미터 사실로 적재한다(입력 순서 유지). VALIDATION 행은 사실이 아니다. */
         private void applyRows(List<SurfaceAnalysis.ParameterDiagnostic> diagnostics) {
             for (Row row : rows.values()) {
+                if (!row.fact) continue;
                 RequestRecord record = row.record;
                 forward(record, row.diagnostics, diagnostics);
                 if (record.requestPayload != null && !record.requestPayload.retained()) {
@@ -831,12 +867,14 @@ public final class SurfaceAnalyzer {
         }
 
         private EndpointFact freeze(List<SurfaceAnalysis.ParameterDiagnostic> diagnostics,
-                                    List<SurfaceAnalysis.ParameterGap> gaps) {
+                                    List<SurfaceAnalysis.ParameterGap> gaps,
+                                    List<SurfaceAnalysis.ParameterValidationCell> cells,
+                                    SurfaceAuthorizationLinker linker) {
             Set<Source> sources = observations.stream().map(Observation::source)
                     .collect(java.util.stream.Collectors.toCollection(() -> EnumSet.noneOf(Source.class)));
             // 프로파일·Gap 증인 선택은 입력 순서가 아니라 Evidence ID 순서로 결정적이다(PR#11).
-            List<Row> discoveryRows = rows.values().stream().filter(Row::discovery)
-                    .sorted(Comparator.comparing(Row::evidenceId)).toList();
+            List<Row> sortedRows = rows.values().stream().sorted(Comparator.comparing(Row::evidenceId)).toList();
+            List<Row> discoveryRows = sortedRows.stream().filter(Row::discovery).toList();
             List<ParameterFact> parameterFacts = new ArrayList<>();
             for (MutableParameter parameter : parameters.values().stream()
                     .sorted(Comparator.comparing((MutableParameter p) -> p.location.ordinal())
@@ -844,8 +882,16 @@ public final class SurfaceAnalyzer {
                 SurfaceAnalysis.ParameterProfile profile = parameter.resolved
                         ? profile(this, parameter, discoveryRows, diagnostics)
                         : SurfaceAnalysis.ParameterProfile.EMPTY;
-                if (parameter.resolved) gaps.addAll(gaps(this, parameter, discoveryRows));
-                parameterFacts.add(parameter.freeze(profile));
+                List<SurfaceAnalysis.AuthorizationTargetLink> links = List.of();
+                if (parameter.resolved) {
+                    gaps.addAll(gaps(this, parameter, discoveryRows));
+                    SurfaceAuthorizationLinker.Result linked = linker.link(
+                            new SurfaceAuthorizationLinker.Parameter(key, parameter.location, parameter.canonicalPath), sortedRows);
+                    links = linked.links();
+                    cells.addAll(linked.cells());
+                    gaps.addAll(linked.gaps());
+                }
+                parameterFacts.add(parameter.freeze(profile, links));
             }
             return new EndpointFact(key, Set.copyOf(sources), List.copyOf(observations), List.copyOf(declarations),
                     parameterFacts, delta(!declarations.isEmpty(), sources), endpointKinds());
@@ -1082,13 +1128,14 @@ public final class SurfaceAnalyzer {
         /** 관측 행의 파라미터 map key(확정 좌표만 관측되므로 "?" 접두는 없다). */
         private String mapKey() { return location + ":" + canonicalPath; }
 
-        private ParameterFact freeze(SurfaceAnalysis.ParameterProfile profile) {
+        private ParameterFact freeze(SurfaceAnalysis.ParameterProfile profile,
+                                     List<SurfaceAnalysis.AuthorizationTargetLink> links) {
             Requirement requirement = requirements.size() == 1 ? requirements.iterator().next() : Requirement.UNKNOWN;
             DeltaState state = resolved ? delta(!declarations.isEmpty(), sources) : DeltaState.UNRESOLVED_COORDINATE;
             return new ParameterFact(location, displayPath(location, canonicalPath, displayName, resolved), displayName,
                     requirement, Set.copyOf(shapes), Set.copyOf(sources), List.copyOf(evidenceIds),
                     List.copyOf(observations), List.copyOf(declarations), state, canonicalPath,
-                    Set.copyOf(valueTypes), distinctDigests.size(), resolved, distinctTruncated, profile);
+                    Set.copyOf(valueTypes), distinctDigests.size(), resolved, distinctTruncated, profile, links);
         }
     }
 
@@ -1361,11 +1408,12 @@ public final class SurfaceAnalyzer {
         if (count > limit) diagnostics.add(new SurfaceAnalysis.ParameterDiagnostic(null, endpoint.operation(), reason, count - limit));
     }
 
-    private static String frame(String value) {
+    static String frame(String value) {
         return value == null ? "-1:" : value.getBytes(StandardCharsets.UTF_8).length + ":" + value;
     }
 
-    private static String digest(String value) {
+    /** 엔진 ValueSummary.digest와 같은 형식("sha256:" + hex)이라 exact scalar 매칭에 그대로 비교한다. */
+    static String digest(String value) {
         try {
             return "sha256:" + java.util.HexFormat.of().formatHex(
                     java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));

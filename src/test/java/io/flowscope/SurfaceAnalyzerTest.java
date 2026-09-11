@@ -51,8 +51,20 @@ final class SurfaceAnalyzerTest {
                         .observedShapes().iterator().next());
         assertEquals(java.util.Set.of(Source.HUMAN),
                 parameter(endpoint, SurfaceAnalysis.ParameterLocation.QUERY, "/sort").observedSources());
-        assertFalse(analysis.toString().contains("WELCOME"));
-        assertFalse(analysis.toString().contains("550e8400"));
+        // 파라미터 값은 저장하지 않는다. 4단계 link/cell의 resource(객체 키 `product:<id>`)는 인가 정본이 이미 공개하는
+        // 객체 식별자라 값 검사에서 그 필드만 제외한다(같은 UUID가 객체 키이기도 함).
+        String withoutResourceKeys = withoutResourceKeys(analysis);
+        assertFalse(withoutResourceKeys.contains("WELCOME"));
+        assertFalse(withoutResourceKeys.contains("550e8400"));
+        assertTrue(parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/product_id").authorizationTargets()
+                .stream().allMatch(link -> link.resource() == null || link.resource().startsWith("https://app.test:443 ")),
+                "link resource는 인가 정본의 객체 키 형식이다");
+    }
+
+    /** 직렬화 결과에서 인가 객체 키 필드(resource/targetResource)만 제거한다. 값 노출 검사용. */
+    private static String withoutResourceKeys(SurfaceAnalysis analysis) {
+        String serialized = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(analysis).toString();
+        return serialized.replaceAll("\"(?:resource|targetResource)\":\"[^\"]*\"", "");
     }
 
     @Test
@@ -539,11 +551,13 @@ final class SurfaceAnalyzerTest {
         String serialized = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(analysis).toString();
         assertFalse(serialized.contains("P@ssw0rd-RAW"), "원문 값 노출 금지");
         assertFalse(serialized.contains("SECRET_QUERY_TOKEN"), "query 원문 노출 금지");
-        assertFalse(serialized.contains("550e8400"), "UUID 원문 노출 금지");
+        // `id` 값은 인가 정본의 객체 키(resource)로도 쓰이므로 그 필드를 뺀 나머지에서 값 노출을 검사한다(4단계).
+        assertFalse(withoutResourceKeys(analysis).contains("550e8400"), "UUID 원문 노출 금지");
         assertFalse(serialized.contains("\"digest\""), "값 digest 필드 노출 금지");
         // sha256:는 요청 값 digest가 아니라 요청 단위 구조 서명(contextSignature·profile.contextPresence 키)과
-        // 좌표만으로 만든 gap ID(pg:v1:)에만 허용된다. 둘 다 값이 아닌 구조·좌표의 digest다(3단계에서 범위 확장, 의미 동일).
-        String withoutSignatures = serialized.replaceAll("ctx:v1:sha256:[0-9a-f]+", "").replaceAll("pg:v1:sha256:[0-9a-f]+", "");
+        // 좌표만으로 만든 gap ID(pg:v1:/pg:auth:)에만 허용된다. 모두 값이 아닌 구조·좌표의 digest다(3·4단계 범위 확장, 의미 동일).
+        String withoutSignatures = serialized.replaceAll("ctx:v1:sha256:[0-9a-f]+", "")
+                .replaceAll("pg:(?:v1|auth):sha256:[0-9a-f]+", "");
         assertFalse(withoutSignatures.contains("sha256:"), "구조 서명·gap 좌표 ID 외 digest 노출 금지");
         assertFalse(serialized.toLowerCase().contains("preview"), "preview 필드 노출 금지");
     }

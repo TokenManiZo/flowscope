@@ -136,7 +136,8 @@ public final class SnapshotJsonWriter {
                 && surfaceCandidates == routeCandidates) {
             return cachedSurface;
         }
-        SurfaceAnalysis computed = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, routeCandidates);
+        SurfaceAnalysis computed = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, routeCandidates,
+                result.analysis);
         surfaceRevision = revision;
         surfaceResult = result;
         surfaceCandidates = routeCandidates;

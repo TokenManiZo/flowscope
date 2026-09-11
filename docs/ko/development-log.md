@@ -1,5 +1,27 @@
 # FlowScope 개발 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 4단계 — 권한 대상 연결
+
+### 원인과 수정
+
+- PR#11 `ParameterAuthorizationAnalyzer`(입력→권한 대상 link, subject×source 검증 cell, `AUTH_VARIANT_UNTESTED`)를 `SurfaceAuthorizationLinker`로 이식하고 `SurfaceAnalyzer.analyze(records, coverage, routes, AuthorizationAnalysis)` 오버로드로 배선했다(`SnapshotJsonWriter.surface()`가 `result.analysis`를 전달). PR `ParameterAuthorizationAnalyzerTest`의 동작을 우리 모델로 옮긴 회귀 20건(`SurfaceAuthorizationLinkTest`)을 먼저 RED(15 실패·2 오류; 불변식·부정 단언 3건만 통과)로 확인한 뒤 구현했다.
+- **모델:** `SurfaceAnalysis.SubjectClass`, `AuthorizationTargetLink(resource, confidence, basis, evidenceIds≤32, evidenceCount)`를 `ParameterFact.authorizationTargets`로, `ParameterValidationCell(endpoint, location, canonicalPath, targetResource, subjectClass, source, identity, role, verdict, reason, applicable, evidenceIds, basisEvidenceIds, evidenceCount, basisEvidenceCount)`를 최상위 `validationCells`로 두고 PR 불변식(비적용은 UNTESTED만, UNTESTED는 basis만, 판정은 실제 Evidence 필수, count는 잘린 preview와만 불일치 허용)을 compact 생성자로 고정했다.
+- **link:** 관측 스칼라 digest와 리소스 참조 ID digest가 같고 (PATH) `Normalizer.normalize` resource가 일치하거나 (그 외) 그 필드만 넣은 스칼라 query projection을 `Normalizer.normalizeAll`로 재생해 `QUERY_ID` 또는 의미 필드 corroboration(`*_SEMANTIC_FIELD_CORROBORATED`, 실제 관측 값 2개 재생) 참조가 나올 때만 OBSERVED. 리소스 하나뿐인 동시출현 INFERRED, 공개된(≤32) 완전 독립 증인 2건 이상 CORROBORATED, 참조 없음·복수 UNKNOWN. 값이 같아도 의미 leaf가 아니면 연결하지 않는다.
+- **cell·판정 재사용(D-050·D-004):** applicable은 SELF/OTHER_OWNER=확인된 소유자, ANONYMOUS=관계 확인, OTHER_ROLE=소유자 역할 1개 또는 op·resource 역할 2개 이상. verdict는 metadata method·응답 거부·모호 응답만 직접(UNDECIDED/DENY) 읽고, 성공 응답은 `AuthorizationAnalysis` CoverageCell의 per-source Decision을 그 Evidence에 결박된 경우에만 재사용한다(cell의 모든 Evidence가 행으로 있고 같은 source 대표 요청의 판정 입력이 같을 때; 아니면 `NO_EVIDENCE_BOUND_POLICY_DECISION` UNDECIDED). 필드를 생략한 요청의 집계 ALLOW나 다른 응답의 객체 노출을 파라미터 셀이 빌리지 못한다. UNTESTED cell은 applicable하고 operation의 모든 행이 complete일 때만 `pg:auth:` gap(CONFIRMED_AUTH_BOUNDARY→AUTH_VARIANT_UNTESTED→WRITE_METHOD→CORROBORATED_EVIDENCE→HUMAN_REVIEW_REQUIRED).
+- **행 모델 확장:** `Row.fact`(coverage 행만 파라미터 사실)·VALIDATION phase 행(`allRecords`에서 H/S/L·응답 있음·기존 endpoint만)을 사실·프로파일에는 넣지 않고 link·cell에만 연결한다. Evidence ID 충돌 판단을 endpoint별에서 전 operation(`RowLedger`)으로 확장했다(EvidenceIds 유일성과 동일, PR 인가 단계와 같음).
+- 비노출 회귀 정정: link/cell의 `resource`/`targetResource`는 인가 정본이 이미 공개하는 객체 키라 값 검사에서 그 두 필드만 제외(`withoutResourceKeys`)하고, `pg:auth:sha256`을 허용 목록에 추가했다. 값·digest·preview 금지는 그대로다.
+- frontend `types.ts`에 `SurfaceAuthorizationTargetLink`·`SurfaceValidationCell`·`authorizationTargets`·`validationCells`를 optional로 가산했다(화면 소비는 5·6단계).
+
+### 영향 파일·회귀
+
+- 코드: `core/SurfaceAnalysis.java`(SubjectClass·AuthorizationTargetLink·ParameterValidationCell·ParameterFact.authorizationTargets·validationCells), `core/SurfaceAuthorizationLinker.java`(신규), `core/SurfaceAnalyzer.java`(4-arg analyze·Row.fact·VALIDATION 행·RowLedger·freeze 배선·frame/digest 공유), `web/SnapshotJsonWriter.java`(authorization 전달), `frontend/src/lib/api/types.ts`(가산).
+- 테스트(RED 선행): `SurfaceAuthorizationLinkTest` 20건 신규 — exact/corroboration·다중 대상·정본 재사용·SELF ALLOW 금지·metadata/모호 응답·VALIDATION 연결·미검증 gap·결정성/상한/불변·의미 참조·basis 전용·충돌 제외(같은/다른 operation)·미상 source·부분집합 미차용·객체 노출 미차용·리소스별 증인·잘린 link·cell 불변식/round-trip·불완전 payload·우선순위·Pipeline 직렬화. `SurfaceAnalyzerTest`·`SurfaceParameterProfileTest`의 비노출 검사 범위 정정 3곳(근거: 위).
+- 검증: JDK 21 `mvn clean verify` BUILD SUCCESS, Java 513 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 252 tests 포함. JAR `target/flowscope-1.2.0-beta.46.jar` 31,846,822 bytes. 패키지 Standalone(17777) 샘플 `/api/snapshot` 실측: `authorizationTargets`가 GET/PATCH/OPTIONS `/api/orders/{id}` `/segments/2`를 `orders:101`/`orders:202`에 OBSERVED(EXACT_SCALAR_RESOURCE_REFERENCE), PATCH `/status`를 INFERRED(SINGLE_RESOURCE_COOCCURRENCE), POST `/api/admin/invites` `/email`을 UNKNOWN으로 연결; `validationCells` 40건 — SELF·HUMAN ALLOW("소유자의 정상 접근", 정본 재사용), OTHER_OWNER·SCANNER DENY(RESPONSE_DENIAL_EVIDENCE), OTHER_OWNER·LLM SUSPICIOUS(정본 "비소유자의 응답에 타 소유 객체가 포함됨"), LLM 404는 UNDECIDED(AMBIGUOUS_RESPONSE_EVIDENCE), OPTIONS는 UNDECIDED(METADATA_METHOD_NOT_AUTHORIZATION_PROOF), 관계 없는 `/email`은 applicable=false; `parameterGaps` 23건 모두 AUTH_VARIANT_UNTESTED로 CONFIRMED_AUTH_BOUNDARY(확인 소유자+OBSERVED link)가 앞서고 PATCH는 WRITE_METHOD, INFERRED link는 HUMAN_REVIEW_REQUIRED; `digest` 필드 없음.
+
+### 남은 한계·다음 gate
+
+- link/cell/gap 화면(우선순위 큐·Gap 인스펙터·매트릭스)은 5·6단계. 실제 Burp에서 Request Lab(VALIDATION) 전송이 cell에 연결되는 동선은 미검증(운영 gate). PR의 attached 20개 wire preview는 이식하지 않았다(단일 계산 경로, 32 통일).
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 3단계 — 파라미터 프로파일과 관측 차이 분석
 
 ### 원인과 수정

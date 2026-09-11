@@ -1,5 +1,16 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-11 · 미출시 · PR #11·#12 이식 4단계(권한 대상 연결) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| RED→GREEN | `SurfaceAuthorizationLinkTest` 20건(PR `ParameterAuthorizationAnalyzerTest` 이식)을 link·cell 없는 stub에서 실행해 15 실패·2 오류(불변식·부정 단언 3건만 통과) 확인 → 구현 후 20/20 GREEN. 기존 비노출 회귀 3곳은 인가 객체 키 필드 제외·`pg:auth:` 허용으로 범위만 정정(값·digest·preview 금지 유지). |
+| JDK 21 `mvn clean verify` | BUILD SUCCESS(1분 4초). Java 513 tests(실패·오류 0, opt-in 2 skip). frontend typecheck·vitest 38 files/252 tests 포함. |
+| 산출물 JAR | `target/flowscope-1.2.0-beta.46.jar` 31,846,822 bytes(이 verify의 단일 빌드값). |
+| 패키지 Standalone 실측 | `java -Djava.awt.headless=true -Dflowscope.web.port=17777 -cp <jar> io.flowscope.Standalone`, 샘플 데이터(소유자 orders:101=user-a, orders:202=user-b). React가 발급한 capability 토큰으로 `/api/snapshot`을 읽어 `authorizationTargets` 5건(GET/PATCH/OPTIONS `/api/orders/{id}` `/segments/2` → `orders:101`·`orders:202` OBSERVED/EXACT_SCALAR_RESOURCE_REFERENCE, PATCH `/status` → INFERRED/SINGLE_RESOURCE_COOCCURRENCE, POST `/api/admin/invites` `/email` → UNKNOWN), `validationCells` 40건(SELF·HUMAN ALLOW "소유자의 정상 접근"=정본 재사용, OTHER_OWNER·SCANNER DENY=RESPONSE_DENIAL_EVIDENCE, OTHER_OWNER·LLM SUSPICIOUS=정본 "비소유자의 응답에 타 소유 객체가 포함됨", LLM 404 → UNDECIDED/AMBIGUOUS_RESPONSE_EVIDENCE, OPTIONS → UNDECIDED/METADATA_METHOD_NOT_AUTHORIZATION_PROOF, `/email` 8건 applicable=false/SUBJECT_RELATION_NOT_ESTABLISHED, UNTESTED는 evidenceCount 0·basis 1~3), `parameterGaps` 23건 전부 AUTH_VARIANT_UNTESTED(CONFIRMED_AUTH_BOUNDARY 우선, PATCH는 WRITE_METHOD, INFERRED link는 HUMAN_REVIEW_REQUIRED), `digest` 필드 없음을 확인. |
+| 화면 변경 | 없음(`types.ts` optional 가산만) — 화면 조작 실측은 5·6단계에서. |
+| 실제 Burp 실행 | 미실행(운영 gate). Request Lab VALIDATION 전송의 cell 연결은 unit test(`VALIDATION_Evidence는…`)로만 확인. |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 3단계(파라미터 프로파일·discovery Gap) gate
 
 | 항목 | 실제 확인 결과 |

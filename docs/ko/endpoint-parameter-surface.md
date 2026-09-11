@@ -27,7 +27,8 @@ Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 - 관측에는 값 대신 shape·valueType·byteLength·masked, source, run, identity, status와 Evidence ID만 둔다. valueType은 실제 타입(`"1"`=STRING, `1`=INTEGER)이고 UUID·숫자형 문자열 형식 신호는 표시 shape에만 반영된다. distinct 값 수는 타입을 포함한 count만 남기고 digest는 노출하지 않는다.
 - 선언에는 type, adapter, reason, Evidence ID와 정의가 밝힌 declaredType/declaredShape/conditionText(`oneOf[i];`/`anyOf[i];`/`enum[i];` 인덱스, 값 미복사)·confidence(정의는 INFERRED, 관측은 OBSERVED)를 둔다. requirement는 REQUIRED/OPTIONAL/CONDITIONAL/UNKNOWN이며 선언이 서로 다르면 UNKNOWN.
 - 각 `ParameterFact`의 `profile`은 discovery 프로파일(PR#11)이다: source/identity/role/run/phase별 관측 수, 존재 종류(PRESENT/EXPLICIT_NULL), 구조 형태·native 타입 충돌 여부, "관측된 문맥에서의 부재" 수와 contextSignature별 존재 상태(상한 64). 분모는 coverage-eligible이며 VALIDATION/COACH_PROBE가 아닌 요청 행이고, 추출 진단이 있거나 request payload가 잘린 행은 긍정 관측만 남기고 부재의 증인이 되지 못한다. `serverUsageConfirmed`는 항상 false다(서버가 입력을 읽는다는 증명이 아님).
-- 최상위 `parameterGaps`는 Evidence 근거가 있는 우선순위 후보다(취약점·완전성 주장 아님): `DEFINED_NOT_OBSERVED`, `SOURCE_MISSED`, `IDENTITY_MISSED`, `TYPE_VARIANT_UNOBSERVED`, `CONDITION_COMBINATION_UNOBSERVED`(4단계 `AUTH_VARIANT_UNTESTED`). 각 gap은 machine key(endpoint+location+canonicalPath)·축(identity/role/source)·priority reason·요약·증인 Evidence ID(≤32)와 전체 수를 가지며 미확정 좌표는 gap을 만들지 않는다.
+- 최상위 `parameterGaps`는 Evidence 근거가 있는 우선순위 후보다(취약점·완전성 주장 아님): `DEFINED_NOT_OBSERVED`, `SOURCE_MISSED`, `IDENTITY_MISSED`, `TYPE_VARIANT_UNOBSERVED`, `CONDITION_COMBINATION_UNOBSERVED`, `AUTH_VARIANT_UNTESTED`. 각 gap은 machine key(endpoint+location+canonicalPath)·축(identity/role/source)·priority reason·요약·증인 Evidence ID(≤32)와 전체 수를 가지며 미확정 좌표는 gap을 만들지 않는다.
+- 각 `ParameterFact`의 `authorizationTargets`는 입력→권한 대상(resource) 관계 근거다(소유권·서버 사용 증명 아님): 정확한 스칼라 리소스 참조 OBSERVED, 리소스 하나뿐인 동시출현 INFERRED, 공개된 완전 독립 증인 2건 이상 CORROBORATED, 없음·복수 UNKNOWN. 최상위 `validationCells`는 입력×대상×subject(SELF/OTHER_OWNER/ANONYMOUS/OTHER_ROLE)×source의 검증 좌표로, verdict는 인가 정본(`AuthorizationAnalysis`)의 Evidence 결박 판정과 응답 거부 근거만 재사용하고 status만으로 ALLOW를 만들지 않는다. UNTESTED는 실제 Evidence 없이 basis(관계 증인)만 가지며, `applicable=false`는 소유자·역할 근거가 없어 좌표 자체가 성립하지 않는 경우다. Request Lab 등 VALIDATION 응답은 discovery 사실을 늘리지 않고 cell·link에만 연결된다.
 - 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, call-site 해석 실패 범주와 추출 수를 둔다.
 - 비밀값 원문, 조합 가능한 값 목록, 인증 header는 surface snapshot에 넣지 않는다.
 - `SurfaceAnalysis`는 Evidence에서 재생성되는 projection이다. SQLite에 두 번째 정본을 만들지 않는다.
@@ -91,6 +92,7 @@ delta 상태와 별도로 discovery Gap(PR#11)은 같은 비교 조건에서 무
 | `DEFINED_NOT_OBSERVED` | 선언만 있고 해당 operation의 모든 요청이 완전한데 미관측(optional이면 결함 아님) | 선언 provenance |
 | `TYPE_VARIANT_UNOBSERVED` | 선언 구조 형태/native 타입 변형을 관측하지 못함(enum·wire 문자열·format은 비교 안 함) | 관측 + 선언 |
 | `CONDITION_COMBINATION_UNOBSERVED` | 독립 2건 이상 반복된 존재 서명이 다른 source의 같은 role/phase 문맥에 없음(확인된 업무 조건 아님) | 지지 2건 + 대상 문맥 1건 |
+| `AUTH_VARIANT_UNTESTED` | 관계가 알려진 입력×대상의 subject(SELF/OTHER_OWNER/ANONYMOUS/OTHER_ROLE)×source 좌표가 실행되지 않음(operation의 모든 요청이 완전할 때만) | link 증인(basis) |
 
 잘린 요청·파서 실패·상한 초과 행과 VALIDATION/COACH_PROBE 요청은 어떤 Gap의 분모도 되지 않으므로 "탐색했지만 발견하지 못함"과 "분석하지 못함"이 섞이지 않는다. Gap 화면(우선순위 큐·파라미터 그래프)은 5단계에서 연결한다.
 

@@ -462,7 +462,8 @@ final class SurfaceParameterProfileTest {
         assertTrue(serialized.contains("\"absentObservedContextCount\":1"));
         assertFalse(serialized.contains("SECRET_KEYWORD"));
         assertFalse(serialized.contains("\"digest\""));
-        String withoutSignatures = serialized.replaceAll("ctx:v1:sha256:[0-9a-f]+", "").replaceAll("pg:v1:sha256:[0-9a-f]+", "");
+        String withoutSignatures = serialized.replaceAll("ctx:v1:sha256:[0-9a-f]+", "")
+                .replaceAll("pg:(?:v1|auth):sha256:[0-9a-f]+", "");
         assertFalse(withoutSignatures.contains("sha256:"), "구조 서명·gap 좌표 ID 외 digest 노출 금지");
     }
 

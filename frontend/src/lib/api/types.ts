@@ -237,6 +237,39 @@ export interface SurfaceParameter {
   distinctValueTruncated: boolean
   /** discovery 프로파일(PR#11 ParameterProfile). 분모는 coverage·discovery phase의 완전한 요청 행. */
   profile?: SurfaceParameterProfile
+  /** 입력→권한 대상(resource) 관계 근거(PR#11 AuthorizationTargetLink). 소유권·서버 사용 증명이 아니다. */
+  authorizationTargets?: readonly SurfaceAuthorizationTargetLink[]
+}
+
+export type SurfaceConfidence = "OBSERVED" | "CORROBORATED" | "INFERRED" | "UNKNOWN"
+
+export interface SurfaceAuthorizationTargetLink {
+  resource: string | null
+  confidence: SurfaceConfidence
+  basis: string
+  evidenceIds: readonly string[]
+  evidenceCount: number
+}
+
+export type SurfaceSubjectClass = "SELF" | "OTHER_OWNER" | "ANONYMOUS" | "OTHER_ROLE"
+
+/** 입력 지점 × 권한 대상 × subject × source 검증 좌표(PR#11 ParameterValidationCell). 판정은 인가 정본 재사용. */
+export interface SurfaceValidationCell {
+  endpoint: { service: string; method: string; pathTemplate: string }
+  location: string
+  canonicalPath: string
+  targetResource: string | null
+  subjectClass: SurfaceSubjectClass
+  source: SurfaceSource
+  identity: string | null
+  role: string
+  verdict: "ALLOW" | "DENY" | "SUSPICIOUS" | "UNDECIDED" | "UNTESTED"
+  reason: string
+  applicable: boolean
+  evidenceIds: readonly string[]
+  basisEvidenceIds: readonly string[]
+  evidenceCount: number
+  basisEvidenceCount: number
 }
 
 export type SurfaceContextPresence = "PRESENT" | "EXPLICIT_NULL" | "ABSENT_OBSERVED_CONTEXT"
@@ -358,8 +391,10 @@ export interface Snapshot {
     extractions: readonly SurfaceExtraction[]
     probes: readonly SurfaceProbe[]
     parameterDiagnostics?: readonly SurfaceParameterDiagnostic[]
-    /** priority 순으로 정렬된 discovery Gap(PR#11). 표시 라벨은 endpoints[].parameters에서 machine key로 찾는다. */
+    /** priority 순으로 정렬된 discovery·권한 Gap(PR#11). 표시 라벨은 endpoints[].parameters에서 machine key로 찾는다. */
     parameterGaps?: readonly SurfaceParameterGap[]
+    /** 입력×권한 대상×subject×source 검증 cell(PR#11). UNTESTED는 basis Evidence만 갖는다. */
+    validationCells?: readonly SurfaceValidationCell[]
   }
 }
 

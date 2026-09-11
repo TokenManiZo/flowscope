@@ -14,7 +14,7 @@ import java.util.Set;
  */
 public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
                               List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics,
-                              List<ParameterGap> parameterGaps) {
+                              List<ParameterGap> parameterGaps, List<ParameterValidationCell> validationCells) {
     public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, HEADER, GRAPHQL_VARIABLE, XML_PATH }
     public enum ValueShape { EMPTY, STRING, INTEGER, DECIMAL, BOOLEAN, UUID, ARRAY, OBJECT, NULL, BINARY, UNKNOWN }
     public enum Requirement { REQUIRED, OPTIONAL, CONDITIONAL, UNKNOWN }
@@ -58,6 +58,8 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
     }
     /** 분석기는 OPEN만 만든다. VERIFIED/DISMISSED는 사람 검토 기록용이다. */
     public enum GapStatus { OPEN, VERIFIED, DISMISSED }
+    /** 검증 cell의 주체 부류(PR#11): 소유자 자신·다른 소유자·미인증·다른 역할. */
+    public enum SubjectClass { SELF, OTHER_OWNER, ANONYMOUS, OTHER_ROLE }
     public enum EndpointKind {
         OBSERVED_API,
         ARTIFACT_API,
@@ -172,6 +174,85 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         }
     }
 
+    /**
+     * 입력→권한 대상(resource) 관계 근거(PR#11 AuthorizationTargetLink). 소유권·서버 사용 증명이 아니다.
+     * OBSERVED=정확한 스칼라 리소스 참조, CORROBORATED=독립 완전 증인 2건 이상의 리소스 동시출현(공개된 증인 안에서만),
+     * INFERRED=단일 리소스 동시출현, UNKNOWN=관계 없음/충돌. evidenceIds는 정렬·32개 상한, evidenceCount는 전체 수.
+     */
+    public record AuthorizationTargetLink(String resource, Confidence confidence, String basis,
+                                          List<String> evidenceIds, long evidenceCount) {
+        public static final int MAX_EVIDENCE_IDS = 32;
+
+        public AuthorizationTargetLink(String resource, Confidence confidence, String basis, List<String> evidenceIds) {
+            this(resource, confidence, basis, evidenceIds, evidenceIds.stream().distinct().count());
+        }
+
+        public AuthorizationTargetLink {
+            evidenceIds = evidenceIds.stream().distinct().sorted().toList();
+            if (evidenceCount < evidenceIds.size()
+                    || evidenceIds.size() != MAX_EVIDENCE_IDS && evidenceCount != evidenceIds.size()) {
+                throw new IllegalArgumentException("evidence count must match independent evidence or its bounded preview");
+            }
+            evidenceIds = evidenceIds.stream().limit(MAX_EVIDENCE_IDS).toList();
+        }
+    }
+
+    /**
+     * 입력 지점 × 권한 대상 × subject × source의 검증 좌표(PR#11 ParameterValidationCell). verdict는 기존 wire Verdict이며
+     * UNTESTED는 basis Evidence(관계 근거)만 갖고 실제 실행 Evidence는 비어 있다. applicable=false는 관계·소유자 근거가
+     * 없어 검증 좌표 자체가 성립하지 않는 경우다. 판정은 AuthorizationAnalysis 정본을 재사용한다(D-050).
+     */
+    public record ParameterValidationCell(EndpointKey endpoint, ParameterLocation location, String canonicalPath,
+                                          String targetResource, SubjectClass subjectClass, Source source,
+                                          String identity, AccessRole role, Verdict verdict, String reason,
+                                          boolean applicable, List<String> evidenceIds, List<String> basisEvidenceIds,
+                                          long evidenceCount, long basisEvidenceCount) {
+        public static final int MAX_EVIDENCE_IDS = 32;
+
+        public ParameterValidationCell(EndpointKey endpoint, ParameterLocation location, String canonicalPath,
+                                       String targetResource, SubjectClass subjectClass, Source source,
+                                       String identity, AccessRole role, Verdict verdict, String reason,
+                                       boolean applicable, List<String> evidenceIds, List<String> basisEvidenceIds,
+                                       long evidenceCount) {
+            this(endpoint, location, canonicalPath, targetResource, subjectClass, source, identity, role, verdict,
+                    reason, applicable, evidenceIds, basisEvidenceIds, evidenceCount, normalizedIds(basisEvidenceIds).size());
+        }
+
+        public ParameterValidationCell {
+            evidenceIds = normalizedIds(evidenceIds);
+            basisEvidenceIds = normalizedIds(basisEvidenceIds);
+            int disclosed = evidenceIds.size();
+            if (basisEvidenceCount < basisEvidenceIds.size()
+                    || basisEvidenceIds.size() != MAX_EVIDENCE_IDS && basisEvidenceCount != basisEvidenceIds.size()) {
+                throw new IllegalArgumentException("basis count must match independent evidence or its bounded preview");
+            }
+            // 32개 미리보기는 더 큰 전체 수를 round-trip할 수 있다. 잘리지 않은 목록은 정확한 독립 수와 일치해야 한다.
+            if (evidenceCount < 0 || evidenceCount < disclosed || disclosed != MAX_EVIDENCE_IDS && evidenceCount != disclosed) {
+                throw new IllegalArgumentException("evidence count must match independent actual evidence or its bounded preview");
+            }
+            if (verdict == null || !applicable && verdict != Verdict.UNTESTED) {
+                throw new IllegalArgumentException("non-applicable coordinates must be untested");
+            }
+            if (verdict == Verdict.UNTESTED) {
+                if (!evidenceIds.isEmpty() || applicable && basisEvidenceIds.isEmpty()) {
+                    throw new IllegalArgumentException("applicable untested variants require basis-only evidence");
+                }
+            } else if (evidenceIds.isEmpty()) {
+                throw new IllegalArgumentException("tested verdicts require actual evidence");
+            }
+            evidenceIds = evidenceIds.stream().limit(MAX_EVIDENCE_IDS).toList();
+            basisEvidenceIds = basisEvidenceIds.stream().limit(MAX_EVIDENCE_IDS).toList();
+        }
+
+        private static List<String> normalizedIds(List<String> ids) {
+            if (ids == null) return List.of();
+            if (ids.stream().anyMatch(id -> id == null || id.isBlank())) {
+                throw new IllegalArgumentException("evidence IDs must be nonblank");
+            }
+            return ids.stream().distinct().sorted().toList();
+        }
+    }
+
     public record ParameterFact(ParameterLocation location, String fieldPath, String displayName,
                                 Requirement requirement, Set<ValueShape> observedShapes,
                                 Set<Source> observedSources, List<String> observationEvidenceIds,
@@ -179,9 +260,10 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
                                 List<Declaration> declarations, DeltaState deltaState,
                                 String canonicalPath, Set<ValueType> observedValueTypes, int distinctValueCount,
                                 boolean coordinateResolved, boolean distinctValueTruncated,
-                                ParameterProfile profile) {
+                                ParameterProfile profile, List<AuthorizationTargetLink> authorizationTargets) {
         public ParameterFact {
             profile = profile == null ? ParameterProfile.EMPTY : profile;
+            authorizationTargets = authorizationTargets == null ? List.of() : List.copyOf(authorizationTargets);
         }
     }
 
@@ -245,21 +327,28 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         probes = probes == null ? List.of() : List.copyOf(probes);
         parameterDiagnostics = parameterDiagnostics == null ? List.of() : List.copyOf(parameterDiagnostics);
         parameterGaps = parameterGaps == null ? List.of() : List.copyOf(parameterGaps);
+        validationCells = validationCells == null ? List.of() : List.copyOf(validationCells);
     }
 
-    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of(), List.of(), List.of()); }
+    public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of(), List.of(), List.of(), List.of()); }
 
     public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions) {
-        this(endpoints, extractions, List.of(), List.of(), List.of());
+        this(endpoints, extractions, List.of(), List.of(), List.of(), List.of());
     }
 
     public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
                            List<ProbeObservation> probes) {
-        this(endpoints, extractions, probes, List.of(), List.of());
+        this(endpoints, extractions, probes, List.of(), List.of(), List.of());
     }
 
     public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
                            List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics) {
-        this(endpoints, extractions, probes, parameterDiagnostics, List.of());
+        this(endpoints, extractions, probes, parameterDiagnostics, List.of(), List.of());
+    }
+
+    public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
+                           List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics,
+                           List<ParameterGap> parameterGaps) {
+        this(endpoints, extractions, probes, parameterDiagnostics, parameterGaps, List.of());
     }
 }
