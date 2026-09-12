@@ -30,7 +30,7 @@ import java.util.TreeSet;
  * PR#11 ParameterAuthorizationAnalyzer 의미의 수동 additive projection: 입력→권한 대상 link, subject×source 검증 cell,
  * AUTH_VARIANT_UNTESTED gap. 기존 AuthorizationAnalysis cell/finding이 판정 정본이며 여기서는 재판정하지 않는다(D-050).
  * status만으로 ALLOW를 만들지 않고 응답 근거·Evidence에 결박된 정본 판정만 재사용한다(D-004).
- * 중첩 PATH는 구조 슬롯에 대응하는 리소스 prefix에 연결하고, 단순 동시출현은 확인된 인가 경계로 승격하지 않는다(D-146).
+ * 중첩 PATH는 구조 슬롯에 대응하는 리소스 prefix에 연결하고, 단일 동시출현(INFERRED)은 확인된 인가 경계로 승격하지 않으며, 공개된 독립 증인 2건의 CORROBORATED는 확정 소유자와 함께 PR #11 원본대로 승격한다(D-146 ①②, D-154).
  */
 final class SurfaceAuthorizationLinker {
     private static final int EVIDENCE_PREVIEW = AuthorizationTargetLink.MAX_EVIDENCE_IDS;
@@ -338,13 +338,13 @@ final class SurfaceAuthorizationLinker {
     private static ParameterGap gap(Parameter parameter, ParameterValidationCell cell, AuthorizationTargetLink link,
                                     boolean confirmedOwner) {
         List<String> reasons = new ArrayList<>();
-        if (confirmedOwner && link.confidence() == Confidence.OBSERVED) {
+        if (confirmedOwner && (link.confidence() == Confidence.OBSERVED || link.confidence() == Confidence.CORROBORATED)) {
             reasons.add("CONFIRMED_AUTH_BOUNDARY");
         }
         reasons.add("AUTH_VARIANT_UNTESTED");
         if (WRITE_METHODS.contains(parameter.endpoint().method())) reasons.add("WRITE_METHOD");
         if (link.confidence() == Confidence.CORROBORATED) reasons.add("CORROBORATED_EVIDENCE");
-        if (link.confidence() != Confidence.OBSERVED) reasons.add("HUMAN_REVIEW_REQUIRED");
+        if (link.confidence() == Confidence.INFERRED || link.confidence() == Confidence.UNKNOWN) reasons.add("HUMAN_REVIEW_REQUIRED");
         return new ParameterGap("pg:auth:" + SurfaceAnalyzer.digest(cellKey(parameter, cell)),
                 SurfaceAnalysis.GapType.AUTH_VARIANT_UNTESTED, parameter.endpoint(), parameter.location(),
                 parameter.canonicalPath(), cell.identity(), cell.role(), cell.source(), SurfaceAnalysis.GapStatus.OPEN,

@@ -1,5 +1,13 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · D-154 인가 경계 우선순위·요청 비교 라벨 PR 원본 복원
+
+- 사용자 지시에 따라 D-146 ③과 D-147 ①을 PR #11 원본 의미로 되돌렸다. `SurfaceAuthorizationLinker.gap`은 확정 소유자와 OBSERVED 또는 CORROBORATED link가 함께 있으면 `CONFIRMED_AUTH_BOUNDARY`를 부여하고 `HUMAN_REVIEW_REQUIRED`는 INFERRED·UNKNOWN에만 붙인다. `requestDiff.ts`는 shape/type/occurrence가 다르면 라벨을 붙이고 한쪽이 UNKNOWN이면 `UNKNOWN`을 병기한다.
+- 회귀: `SurfaceAuthorizationLinkTest`의 D-146 ③ 테스트를 단일 동시출현(INFERRED→사람 검토)과 독립 2건(CORROBORATED+확정 소유자→확정 경계)을 함께 검사하는 테스트로 바꿨다. `requestDiff.test.ts`·`ParameterRequestDiff.test.tsx`·`ParameterMapPage.test.tsx`는 PR 원본 기대값으로 되돌렸다. 패키지 sample에는 CORROBORATED link가 없어 `sample-snapshot.json` 골든 테스트는 그대로 통과한다.
+- 문서: decisions D-154, product-development-plan(대조표·제외 목록·상태), endpoint-parameter-surface, web-ui-feature-parity, ui-product-rationale, README 한·영, CHANGELOG 한·영, documentation-status, HANDOFF, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 13초), Java 574건(실패·오류 0, opt-in 2 skip), React 59파일/472건·typecheck, JAR/bundle release guard 통과. Playwright는 Burp가 17777을 점유해 standalone 서버(17797, 임시 projects dir)와 `FLOWSCOPE_E2E_ORIGIN`으로 `--retries=0` 15/15 통과(29.7s). JAR 31,942,089 bytes, SHA-256 `1a4dcdaef4ebe513f7153477e7d6bfaa15f83cadb648824d0715134b2fb936e0`.
+- 남은 한계: main 미반영·push 없음. 실제 대상에서 pagination·sort 같은 일반 입력의 독립 동시출현이 큐 상단으로 올라오는 것은 PR 원본 설계대로이며 사람 검토가 흡수한다.
+
 ## 2026-09-12 · beta.48 관리자 예외 승인·배포 인계
 
 - 사용자가 PR #16의 관리자 예외 병합과 main·Release 반영을 명시적으로 승인해 이전 승인 대기 조건을 해소했다. 규칙 변경이나 강제 푸시는 하지 않는다.

@@ -10,6 +10,16 @@
 - [PR #16 CI 34697738243](https://github.com/choewonwoo1817/testflowscope/actions/runs/34697738243): 전체 build·JAR/ZIP 검사·동일 러너 반복 해시·Bash/Windows 구문 검사 통과(verify 9분 2초). 후속 문서 커밋 `7810f46`의 [CI 34698310197](https://github.com/choewonwoo1817/testflowscope/actions/runs/34698310197)도 같은 검사 통과(verify 8분 8초). 사용자는 이번 PR의 관리자 예외 병합과 main·Release 게시를 명시적으로 승인했다. 최종 main CI·태그·업로드 자산 식별은 [beta.48 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48) 기록을 따른다.
 - 설치된 Burp 번들 Java의 별도 probe는 60초 이상 출력 없이 OS 대기 상태였다. 임시 PID를 재확인해 TERM/KILL을 보냈지만 마지막 확인에서도 남아 있었으며 성공/종료 완료로 기록하지 않는다. 실제 사용자 Burp 새 JAR 재로드·Windows 실기기·ZAP/Explorer 실물 재실행은 미실행이다. 아래 beta.47 결과를 beta.48 실물 결과로 합산하지 않는다.
 
+## 2026-09-12 · D-154 PR 원본 의미 복원 검증(미출시 브랜치)
+
+| 검사 | 실제 결과 |
+|---|---|
+| 집중 회귀 | `SurfaceAuthorizationLinkTest` 24건·`SurfaceParameterProfileTest` 18건 통과. 새 테스트는 단일 동시출현 INFERRED→`HUMAN_REVIEW_REQUIRED`, 독립 2건 CORROBORATED+확정 소유자→`CONFIRMED_AUTH_BOUNDARY`·`CORROBORATED_EVIDENCE`를 검사한다. Vitest `requestDiff`·`ParameterRequestDiff`·`ParameterMapPage` 3파일 32건 통과. |
+| 전체 빌드 | JDK 21.0.12.1 `mvn -o clean verify` BUILD SUCCESS(1분 13초). Java 574건, 실패·오류 0, opt-in 2 skip. React 59파일/472건·typecheck, JAR/bundle release guard 통과. `SampleProjectTest` 골든 fixture 일치(sample에 CORROBORATED link 없음). |
+| 패키지 브라우저 | 실행 중인 Burp가 17777을 점유해 같은 JAR의 standalone 서버를 17797·임시 projects dir로 띄우고 `FLOWSCOPE_E2E_ORIGIN`으로 Playwright `--retries=0` 15/15 통과(29.7s). |
+| 산출물 | JAR 31,942,089 bytes, SHA-256 `1a4dcdaef4ebe513f7153477e7d6bfaa15f83cadb648824d0715134b2fb936e0`. bundle은 이 검증 기록 이전 문서로 조립됐으며 main 반영 시 재조립한다. |
+| 미실행 | 실제 Burp·Windows·외부 대상. 같은 날 실제 Burp에서 범위 적용 시 `FlowScope SQLite save failed`가 관측됐고(커널 로그 AMFI가 `libsqlitejdbc.dylib` 서명을 거부), 원인 문자열이 기록되지 않는 결함은 별도 항목이다. |
+
 ## 2026-09-12 · D-152 beta.47 ZAP 종료·재시작 보정
 
 | 검사 | 실제 결과 |

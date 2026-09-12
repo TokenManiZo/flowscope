@@ -1,5 +1,12 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · D-154 PR #11 원본 의미 복원(미출시 브랜치 `claude/restore-pr-semantics`)
+
+- 사용자 지시("너무 보수적으로 하지 말 것", "PR이 보존하던 정보를 잃거나 새 제한을 추가하지 말 것")로 D-146 ③ CORROBORATED 비승격과 D-147 ① UNKNOWN 비교 라벨 억제를 PR #11 원본 의미로 되돌렸다. 독립 증인 2건과 확정 소유자는 `CONFIRMED_AUTH_BOUNDARY`를 받고, 한쪽이 UNKNOWN인 shape/type/occurrence 차이는 변경 라벨과 `UNKNOWN`을 함께 표시한다. link·gap 수는 그대로다.
+- D-146 ①②(서비스 경계·중첩 PATH)와 D-147 ②(미지원 본문 진단)는 결함 수정이라 유지했다. 64자 masked preview 노출은 계속 결정 대기다.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 574건(실패·오류 0, opt-in 2 skip), React 59파일/472건·typecheck, release guard 통과. 실행 중인 Burp가 17777을 점유해 같은 JAR의 standalone 서버를 17797에 띄우고 `FLOWSCOPE_E2E_ORIGIN`으로 Playwright `--retries=0` 15/15 통과(29.7s). JAR 31,942,089 bytes, SHA-256 `1a4dcdaef4ebe513f7153477e7d6bfaa15f83cadb648824d0715134b2fb936e0`.
+- main 반영·push·Release는 하지 않았다. 같은 날 실제 Burp에서 범위 적용 시 `FlowScope SQLite save failed` 다이얼로그가 관측됐다. 커널 로그는 Burp 프로세스가 푼 `libsqlitejdbc.dylib`의 서명을 AMFI가 거부했다고 남겼고, `updateScopeFromUi`는 원인을 기록하지 않은 채 "범위 오류" 제목으로 띄운다. 이 결함은 이후 D-153/beta.48이 번들 드라이버 직접 연결로 수정했고, 이 브랜치는 beta.48 위로 rebase돼 그 수정을 포함한다. 실제 Burp 재로드에서의 해소 확인은 별도 gate다.
+
 ## 2026-09-12 · D-153 SQLite 수정·검증·beta.48 배포 기준
 
 - 사용자 Burp의 `FlowScope SQLite save failed`를 beta.47 배포 JAR의 실제 저장 경로에서 재현했다. 호스트가 DriverManager를 먼저 초기화하면 `No suitable driver found`가 발생하고, 확장 드라이버를 명시적으로 로드한 대조군은 저장·재열기가 성공했다.

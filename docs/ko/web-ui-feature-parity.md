@@ -6,7 +6,7 @@ D-152 beta.47은 ZAP `RUNNING / CLEANUP` 단계의 설명·경과시간과 시�
 
 - Graph: 상단 `분석 → 점검 Gap 그래프`에서 점검 우선순위/전체 관계 보기 두 탭을 제공한다.
 - Matrix: P/E/O 판정·파라미터 커버리지·기존 권한 셀 세 탭. dataset 교체·연결 실패·서버 review Evidence 변경 시 선택과 편집 수명을 갱신한다. 설정 서비스가 현재 작업과 맞지 않는 등록 계정은 조합에 넣지 않고 설정 경고로 표시한다(D-149).
-- Evidence: 선택 operation의 마스킹 Request/Response·payload retention을 200건씩 읽고, 요청 비교는 같은 서버 Evidence의 extractor metadata를 사용한다. 불완전 본문과 UNKNOWN을 확정 부재·변경으로 표시하지 않는다. 일시 snapshot 실패는 모든 Evidence 작업면의 선택·검토 메모·열린 Request Lab 초안을 보존하고 새 전송을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다(D-151).
+- Evidence: 선택 operation의 마스킹 Request/Response·payload retention을 200건씩 읽고, 요청 비교는 같은 서버 Evidence의 extractor metadata를 사용한다. 불완전 본문은 확정 부재로 표시하지 않고, 한쪽이 UNKNOWN인 shape/type/occurrence 차이는 PR 원본대로 변경 라벨과 `UNKNOWN`을 함께 표시한다(D-154). 일시 snapshot 실패는 모든 Evidence 작업면의 선택·검토 메모·열린 Request Lab 초안을 보존하고 새 전송을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다(D-151).
 - 프로젝트: 삭제형 초기화(P04)는 제거됐으며 새 진단 시작·프로젝트 재열기로 대체됐다. 현재 작업을 저장한 뒤 전환하고, 샘플도 저장·교체가 성공해야 성공 응답을 반환한다.
 - 최신 자동·패키지 검증은 [beta-validation](beta-validation.md) 맨 위 절을 따른다. 아래 P01~ 표는 React 초기 전환 시점의 이력이며 `PLANNED`를 현재 미구현 목록으로 읽지 않는다.
 

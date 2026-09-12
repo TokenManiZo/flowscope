@@ -26,16 +26,16 @@ describe("structured metadata diff", () => {
 
   it("reports presence, shape/type and occurrence independently", () => {
     const rows = diffParameterContexts(context([row()]), context([row({ presence: "EXPLICIT_NULL", shape: "NULL", valueType: "UNKNOWN", occurrenceCount: 2, digest: null })]))
-    expect(rows[0].changes).toEqual(["PRESENCE_CHANGED", "SHAPE_CHANGED", "OCCURRENCE_CHANGED", "UNKNOWN"])
+    expect(rows[0].changes).toEqual(["PRESENCE_CHANGED", "SHAPE_CHANGED", "TYPE_CHANGED", "OCCURRENCE_CHANGED", "UNKNOWN"])
   })
 
-  it("keeps unrecorded shape, type and occurrence unknown without fabricating changes", () => {
+  it("labels shape, type and occurrence differences against an unrecorded side and still marks the row UNKNOWN", () => {
     const unknown = row({ shape: "UNKNOWN", valueType: "UNKNOWN", occurrenceCount: null })
     const rows = diffParameterContexts(context([unknown]), context([row()]))
-    expect(rows[0].changes).toEqual(["UNKNOWN"])
+    expect(rows[0].changes).toEqual(["SHAPE_CHANGED", "TYPE_CHANGED", "OCCURRENCE_CHANGED", "UNKNOWN"])
     expect(rows[0].left.presence).toBe("PRESENT")
     expect(rows[0].right.shape).toBe("SCALAR")
-    expect(diffParameterContexts(context([row()]), context([unknown]))[0].changes).toEqual(["UNKNOWN"])
+    expect(diffParameterContexts(context([row()]), context([unknown]))[0].changes).toEqual(["SHAPE_CHANGED", "TYPE_CHANGED", "OCCURRENCE_CHANGED", "UNKNOWN"])
   })
 
   it("does not claim absent from an incomplete or metadata-only context", () => {

@@ -1429,6 +1429,14 @@
 - **기각:** 별도 SQLite 설치/범위 재입력은 원인과 무관하다. 테스트에서만 Class.forName을 넣거나 TCCL을 바꾸면 제품 경로 결함을 숨긴다. 제품에서 Class.forName 후 DriverManager 검색을 유지할 필요도 없다.
 - **검증:** 드라이버 선행 준비 없는 새 JVM에서 실제 저장소 save/load/readContext를 호출하고, 두 독립 확장 로더 사이 Evidence ID·내용 보존과 덮어쓰기를 검사한다. 완성 JAR에도 같은 검사를 적용한다. Burp 범위 실패는 기존 projectError 처리로 상세 원인 기록을 보존한다. 자동/패키지 검증과 실제 Burp 재로드 성공은 별개로 보고한다.
 
+## D-154 · 인가 경계 우선순위와 요청 비교 라벨을 PR #11 원본 의미로 되돌린다 (2026-09-12)
+
+- **문제:** D-146 ③은 공개된 독립 증인 2건의 CORROBORATED link를 확정 소유자가 있어도 `HUMAN_REVIEW_REQUIRED`로 두어 점검 큐 하단에 배치했고, D-147 ①은 한쪽이 UNKNOWN인 shape/type/occurrence 차이에 변경 라벨을 붙이지 않았다. 두 규칙은 PR #11 원본(`ParameterAuthorizationAnalyzer.gap`, `requestDiff.ts`)보다 보수적이며, 사용자는 PR이 보존하던 구조 정보를 잃거나 새 제한을 추가하지 말고 너무 보수적으로 가지 말 것을 지시했다.
+- **결정:** ① `SurfaceAuthorizationLinker.gap`은 확정 소유자와 OBSERVED 또는 CORROBORATED link가 함께 있으면 `CONFIRMED_AUTH_BOUNDARY`를 부여하고, `HUMAN_REVIEW_REQUIRED`는 INFERRED·UNKNOWN에만 붙인다. `CORROBORATED_EVIDENCE` 이유와 `REASON_ORDER`는 그대로이며 link·gap 수는 바뀌지 않고 우선순위 순서만 PR 원본으로 돌아간다. ② `requestDiff.ts`는 PR 원본대로 shape/type/occurrence가 다르면 라벨을 붙이고 한쪽이 UNKNOWN이면 `UNKNOWN`을 병기한다. 값은 이전에도 양쪽 다 표시됐으므로 바뀌는 것은 라벨뿐이다.
+- **유지:** D-146 ①(등록 계정의 서비스 경계)·②(중첩 PATH 부모 슬롯)는 실행 불가능한 추천과 잘못된 리소스 연결을 고친 것이라 유지한다. D-147 ②(미지원 본문·불완전 multipart 진단)는 파싱하지 않은 본문으로 부재를 주장하지 않기 위한 것이라 유지한다. 64자 masked preview 노출은 값 조각이 snapshot에 실리는 문제라 계속 결정 대기다.
+- **기각:** CORROBORATED를 별도 중간 순위로 두는 절충은 PR에 없던 새 규칙을 만든다. UNKNOWN 라벨을 계속 숨기는 방식은 사용자가 지적한 보수성이다. D-146·D-147 기록은 고쳐 쓰지 않고 이 결정으로 ③·①만 대체한다.
+- **검증:** `SurfaceAuthorizationLinkTest`는 단일 동시출현(INFERRED)이 사람 검토로 남고 독립 2건(CORROBORATED)과 확정 소유자가 확정 경계 우선순위를 받는 것을, `requestDiff`·`ParameterRequestDiff`·`ParameterMapPage` 테스트는 PR 원본 기대값을 검사한다. 패키지 sample에는 CORROBORATED link가 없어 snapshot fixture는 변하지 않는다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

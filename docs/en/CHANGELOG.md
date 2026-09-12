@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — restore PR #11 boundary priority and diff labels (D-154, 2026-09-12)
+
+- An input observed with the same resource in two independent requests receives the `CONFIRMED_AUTH_BOUNDARY` priority again when the owner is confirmed, as in the original PR. A single co-occurrence still requires human review.
+- Request comparison labels shape, type, and occurrence differences even when one side is UNKNOWN, and marks the row `UNKNOWN` alongside.
+
 ## 1.2.0-beta.48 — SQLite connection in extension classloaders (2026-09-12)
 
 - Connect through the bundled SQLite driver rather than host DriverManager discovery. Preserve the database schema, masking, and atomic replacement.
