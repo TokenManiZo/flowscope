@@ -1,13 +1,14 @@
 # FlowScope 팀 인계 정본
 
-## 2026-09-12 · D-152 ZAP 종료·재시작 보정 — 로컬·실물 검증 완료, 원격 검증·배포 진행
+## 2026-09-12 · D-152 beta.47 수정·검증·main 반영 완료
 
 - beta.46 최종 문서 커밋 `15654c2`의 CI가 캠페인 결과 `FAILED` 게시 후 background cleanup이 끝나기 전에 다음 캠페인을 시작하면서 실패했다. `570d576`의 성공 기록과 별개로 이 재현을 현행 미해결로 기록한다.
 - 정리 중에는 `RUNNING / CLEANUP`을 공개하고 worker 정리와 시작 잠금 해제가 끝나야 terminal 결과를 게시하도록 보정했다. 활성 run을 정리까지 유지하고, 시작 응답 수신/scan ID 등록과 취소를 직렬화한다. 취소된 lane과 미시작 lane도 마감한다.
 - 새 latch 회귀 4건은 수정 전 모두 실패했다. 로컬 JDK 21 `mvn -o clean verify`: Java 574건(실패·오류 0, opt-in 2 skip), React 59파일·472건, release guard 통과. beta.47 패키지 Playwright는 retry 0으로 15/15 통과(30.2s). JAR은 31,942,102 bytes, SHA-256 `80d6e5357b3d73fdcfa274662f5bdfce39d792e3675c24dbbc7b9fa331e38cbe`.
 - 별도 Docker ZAP(API 18889/fixture proxy 18881)에서 실물 Chromium/ChromeDriver 152.0.7977.82로 익명·정상 두 계정 Client 완료(63요청), 이어 잘못된 비밀번호 계정의 인증 단계 거부를 확인했다. opt-in 하네스 1/1, 106.6초 통과. 사용자 8089 ZAP을 검증 대상으로 쓰지 않았다. 실제 Burp·Windows 실기기와 외부 대상 효능 검증은 이 결과와 다르다.
-- 원격 CI 성공 뒤 보호 규칙에 맞는 수정 PR 병합과 beta.47 새 Release를 완료한다. beta.46 태그와 파일은 보존하고 팀원에게 beta.47 가이드를 제공한다.
-- 원 PR #11·#12는 현재 모델로 수동 이식돼 기존 branch와 충돌한다. 원본 head와 대조표를 확인한 뒤 이식 근거를 남기고 정리하며, 원본 코드나 팀원 branch를 강제로 덮어쓰지 않는다. 멘토 보고서는 계속 제외한다.
+- [PR #13 CI](https://github.com/choewonwoo1817/testflowscope/actions/runs/34693083743)가 전체 build·JAR/bundle·동일 러너 재현성·Bash/Windows 구문 검사를 통과했다(verify 9분 10초). 검증 코드 `3f9d107`, main 병합 `43706f1`은 파일 내용이 같다. 저장소의 승인 1건 규칙에 대해 소유자 관리자 예외로 PR을 병합했으며 보호 규칙을 변경하지 않았다.
+- PR #11(`d3d5ed3`)·#12(`4b809b8`)의 원본 head는 이식 당시와 같았다. 현재 Surface/React/Authorization 연결부와 기능 대조표를 확인하고 이식·대체·제외 근거를 댓글로 남겨 두 PR을 종료했다. 직접 merge한 이력으로 표시하지 않았고 원본/팀원 브랜치를 삭제하지 않았다.
+- 팀원용 파일은 [beta.47 테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.47)의 JAR·설치 bundle·SHA256SUMS다. [팀원 첫 실행](team-quick-start.md)을 따른다. beta.46 태그/JAR은 이전 산출물로 보존하며 멘토 보고서는 Git·배포 파일에서 제외한다.
 
 ## 2026-09-12 · main 반영·beta.46 팀원 테스트 배포 기준
 
