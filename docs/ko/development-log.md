@@ -1,5 +1,11 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · beta.47 현행 문서 정합성 정정
+
+- 문서 업데이트 여부를 재점검하면서 HANDOFF의 해결된 D-152 문제를 `현행 미해결`로 적은 문장, 문서 현황의 중복 `최신/현재 beta.46` 안내, 제품 개요·한영 README·제거 계획의 미출시 표현을 확인했다. 새 완료 문단만 덧붙이고 이전 현행 문단을 정리하지 않은 누락이었다.
+- mutable 현행 안내를 beta.47/D-152와 배포 코드 `60a3291` 기준으로 맞추고, 과거 수치·미출시·push 미실행 문장은 당시 이력임을 분명히 했다. 최종 main CI와 인증된 다운로드 결과, 비공개 저장소의 팀원 로그인 조건을 인계·설치 안내에 반영했다.
+- 검증: `docs/` Markdown 33개와 루트 지침/안내 6개가 목록 39행과 대응하며 누락 0개다. code fence·외부 URL·heading anchor를 제외한 로컬 링크 257개 모두 존재하고 `git diff --check`를 통과했다. 외부 문헌이나 과거 이미지·모든 제품 기능을 새로 검증한 작업은 아니다. 코드·테스트·기존 JAR/태그는 바꾸지 않으며 정정 문서는 source와 별도 문서 정정본으로 제공한다.
+
 ## 2026-09-12 · D-152 ZAP terminal 게시와 cleanup 완료 경합 보정
 
 - 최신 원격 CI `34690153265`에서 `ZapCampaignRegressionTest.scannerCampaignResetsZapAndRunsAnonymousThenEachActiveAccount`가 `ZAP campaign cleanup is still running`으로 실패했다. `runZapCampaign`이 terminal 결과를 공개한 뒤 capability cleanup과 `finishZapWorkflowTask`가 별도로 시작 잠금을 해제하므로, 화면과 다음 호출자가 결과를 보고 즉시 시작할 수 없었다.

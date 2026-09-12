@@ -1,6 +1,6 @@
 # Endpoint·Parameter Surface Delta 설계·검증
 
-이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 beta.46 계약과 검증 경계를 정의한다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. D-128 독립 Explorer는 실제 응답이 있는 통제 HTTP 요청만 LLM 관측으로 추가한다. D-139는 그 응답 산출물에서 읽은 endpoint·parameter를 current-run Evidence에 결박된 별도 선언으로 보존하며, 실행 전·전송 실패·응답 0건이나 모델의 자유서술을 관측 또는 선언으로 승격하지 않는다.
+이 문서는 특정 타깃에 맞춘 규칙 없이 HUMAN·SCANNER·LLM의 탐색 차이를 데이터화하는 현행 Surface 계약과 검증 경계를 정의한다. 배포 버전과 검증 산출물은 [현재 인계](HANDOFF.md)를 따른다. 이 기능은 취약점 판정기가 아니라 다음 검토 위치를 좁히는 작업목록이다. D-128 독립 Explorer는 실제 응답이 있는 통제 HTTP 요청만 LLM 관측으로 추가한다. D-139는 그 응답 산출물에서 읽은 endpoint·parameter를 current-run Evidence에 결박된 별도 선언으로 보존하며, 실행 전·전송 실패·응답 0건이나 모델의 자유서술을 관측 또는 선언으로 승격하지 않는다.
 
 ## 1. 제품 질문
 

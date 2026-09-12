@@ -4,6 +4,8 @@
 
 현재 진행상황은 [팀 인계 정본](HANDOFF.md), 문서별 정본·역사 구분과 점검 결과는 [문서 정합성·갱신 기준](documentation-status.md)에서 확인합니다.
 
+현재 배포는 beta.47입니다. 팀원은 [첫 실행 가이드](team-quick-start.md)를 사용하세요. 비공개 저장소의 다운로드에는 협업 권한이 있는 본인 GitHub 계정 로그인이 필요합니다.
+
 ## 현재 전환 상태
 
 Judge·기존 Explorer 하네스·MCP 실행 경로는 제거한 상태를 유지합니다(D-126). D-128은 MCP나 브라우저를 복원하지 않고 Codex app-server dynamic tool과 Java exact-scope gateway로 독립 Explorer를 새로 구현했습니다. D-135는 ZAP을 bundle의 FlowScope Docker Chromium 단일 runtime과 `chrome-headless` Client Spider로 고정했습니다. HUMAN·ZAP과 H/S/L 비교는 유지하며 Explorer는 취약점 판정을 만들지 않습니다. 과거 연구·명세의 Judge/MCP 및 ZAP Desktop/Firefox 선택 경로는 현재 기능 안내가 아닙니다.
@@ -16,6 +18,7 @@ Judge·기존 Explorer 하네스·MCP 실행 경로는 제거한 상태를 유�
 - [이전 인계 보존본](handoff-2026-09-04.md): 2026-09-04 기준 상세 연혁·리뷰·실행법. 현행 작업 지시가 아님
 - [문서 정합성·갱신 기준](documentation-status.md): 저장소 Markdown 전수 목록, 이번 정정·검증 범위와 갱신 시점
 - [설치·첫 실행](getting-started.md): Release JAR, Burp listener, FlowScope Docker Chromium ZAP, 환경 점검
+- [팀원 첫 실행](team-quick-start.md): ZIP 선택, Windows/macOS 준비 순서, 계정별 환경 점검, 업데이트
 - [아키텍처](architecture.md): 구성 요소, 데이터 흐름, 신뢰 경계
 - [설계 결정](decisions.md): 주요 판단과 선택 근거
 - [개발 기록](development-log.md): 변경 내용, 이유, 검증 결과

@@ -1,5 +1,7 @@
 # 팀원용 첫 실행 — FlowScope beta.47
 
+현재 저장소는 비공개이므로 **협업 권한이 있는 본인 GitHub 계정으로 로그인**하세요. 로그인하지 않았거나 권한이 없으면 Release 링크가 404로 보입니다. 등록된 협업자는 저장소와 Release에 접근할 수 있습니다.
+
 [테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.47)에서 **`flowscope-1.2.0-beta.47-bundle.zip`**을 받으세요. GitHub가 자동 생성하는 `Source code.zip`은 실행 번들이 아닙니다. 압축을 푼 뒤 JAR·`scripts`·`infra`·`docs`를 같은 폴더 구조로 유지하세요.
 
 ## 1. 사용할 기능에 맞춰 준비

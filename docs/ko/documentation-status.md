@@ -1,16 +1,14 @@
 # 문서 정합성·갱신 기준
 
-현재 기준: D-152 beta.47. ZAP cleanup과 terminal 게시·재시작, 수락된 Client 시작 응답 전 취소를 보정했다. 로컬 Java 574(2 skip)·React 472·Playwright 15/15, 별도 실물 ZAP 하네스 1/1 및 PR #13 원격 전체 CI/재현성이 통과했다. main 반영과 원본 PR #11·#12 종료 근거는 HANDOFF를 따른다. 배포 대상은 beta.47 JAR·bundle이며 아래 beta.46 정보는 이전 산출물의 이력이다.
+현재 배포는 [beta.47 테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.47), 배포 코드·태그는 `60a3291`, 변경 계약은 D-152다. ZAP cleanup과 최종 상태 게시·재시작, 수락된 Client 시작 응답 전 취소를 보정했다. 실제 완료 상태와 남은 운영 검증은 [HANDOFF](HANDOFF.md), 설치는 [팀원 첫 실행](team-quick-start.md)을 따른다. 비공개 저장소이므로 협업 권한이 있는 본인 GitHub 계정 로그인이 필요하다.
 
-팀원 테스트 배포 기준: `570d576`의 원격 CI는 전체 빌드·JAR/번들 검사·동일 러너 재현성·Bash·Windows 구문 검사를 통과했다. [팀원 첫 실행](team-quick-start.md)은 다운로드 bundle 사용자용이며 README와 설치 가이드에서 연결한다. 아래의 미출시 표현과 push/Release 미실행 문장은 각 개발 시점의 이력이다. 공개 상태와 자산은 [beta.46 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.46)에서 확인한다.
+검증 기준: 로컬 Java 574(실패·오류 0, opt-in 2 skip), React 472, 패키지 Playwright 15/15, 별도 실물 ZAP 하네스 1/1. PR #13 및 [최종 main CI 34694001780](https://github.com/choewonwoo1817/testflowscope/actions/runs/34694001780)가 전체 build·패키지·동일 러너 재현성·스크립트 검사를 통과했다. 실제 Burp hook·Windows 실기기·외부 대상 효능은 이 결과로 완료 처리하지 않는다.
 
-최종 대조: 2026-09-12 D-151 전 작업면 snapshot 초안·전송 수명 통일. 현재 미출시 beta.46 소스는 operation별 마스킹 Evidence/retention 페이지, 모든 Evidence 작업면의 일시 snapshot 실패 중 선택·검토 메모·Request Lab 초안 보존, 실패 전 시작 전송의 동일 문맥 결과 귀속, D-149 종료·서비스·샘플 경계를 포함한다. D-146의 같은 서비스 추천·OBSERVED 확정 경계와 D-147의 불확실성 처리를 유지한다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약도 유지한다. 자동·패키지 검증과 실제 Burp 미검증 경계는 beta-validation·HANDOFF를 따른다.
+2026-09-12 문서 정정: 새 결과를 위에 덧붙이면서 아래의 과거 문단이 여전히 `현재`, `최신`, `미해결`, `미출시`를 주장한 누락을 바로잡았다. 문서 목록·현행 안내·완료 상태·로컬 링크를 대조하고, 과거 연구·명세·검증 수치는 각 당시 기록으로 보존한다. 문서 정정은 새 실행 검증이나 새 바이너리 배포를 뜻하지 않는다.
 
 ## 1. 무엇을 어디서 읽는가
 
-D-151 최신 대조: D-150의 snapshot 실패 draft 보존을 판정·파라미터·기존 권한 매트릭스, Gap, 시나리오, 흐름 상세로 확장하고 진행 중 전송을 일시 실패만으로 abort하지 않게 했다. Java 570·React 471·Playwright 15/15와 release guard가 통과했으며 실제 Burp/Windows/native Linux gate는 열려 있다. 현재 상태는 HANDOFF 맨 위와 beta-validation D-151을 따른다.
-
-이전 결과: D-149 Java 554·React 468·Playwright 15/15, D-148 Java 550·React 467·Playwright 15/15, D-147 Java 550·React 461·Playwright 15/15. D-145~149의 개별 기록은 당시 산출물의 이력으로 보존한다.
+이전 결과는 `beta-validation.md`에 해당 artifact와 함께 보존한다. D-151 Java 570·React 471, D-149 Java 554·React 468, D-148 Java 550·React 467, D-147 Java 550·React 461과 당시 Playwright 결과는 beta.47의 새 실행 결과로 합산하지 않는다.
 
 2026-09-12 D-147 연결부 보완에서는 문서 목록의 현행/이력 구분을 다시 대조했다. HANDOFF·계획서의 D-145 이전 route/기각안, 그래프 설계 문서의 옛 hash, 기능 동등성 표의 초기 PLANNED 상태를 현행으로 오인하지 않게 정리했다. Evidence 비교·Matrix 선택·종료 저장 계약은 D-147을 따르며, `AGENTS.md`의 별도 Explorer 미구현 문구도 이미 있는 D-128/D-139 구현과 맞췄다.
 
@@ -20,7 +18,7 @@ D-151 최신 대조: D-150의 snapshot 실패 draft 보존을 판정·파라미�
 - **실제 검증:** beta-validation의 날짜·commit·환경·해시별 기록. 같은 beta.44 이름은 같은 artifact를 뜻하지 않는다.
 - **과거 제안·명세:** 연구/원 명세/superpowers 계획/이전 인계는 당시 목적과 대체 관계를 남긴다. 현재 구현 또는 재개 명령으로 읽지 않는다.
 
-## 2. 이번에 정정한 핵심 불일치
+## 2. 누적 정정 이력 (각 날짜·단계 당시의 변경)
 
 1. 삭제한 agent-workspace·CLI·Judge/최종 제출·closed-world executor를 아직 제공한다는 한·영 안내를 제거했다. source LLM·과거 기록은 계속 보존한다.
 2. 현재 없는 ZAP Active Scan 경로를 “별도 승인하면 실행”이라고 안내하던 문장을 정정했다. 정의 import 승인과 HUMAN Request Lab은 별개다.
@@ -59,33 +57,33 @@ D-151 최신 대조: D-150의 snapshot 실패 draft 보존을 판정·파라미�
 
 | 문서 | 지위 | 이번 대조·처리 |
 |---|---|---|
-| [AGENTS.md](../../AGENTS.md) | 개발 지침 | 작업 단계별 진행 기록·현행 인계 우선 규칙 추가 |
-| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | 기존 사용자 인계 문단 보존, 삭제된 실행기·beta.39 안내 정정 |
+| [AGENTS.md](../../AGENTS.md) | 개발 지침 | 제품 불변식·작업 범위·코드/검증/문서 기록 규칙 |
+| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | beta.47/D-152 인계 우선과 기존 사용자 지침 보존 |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | 개발 지침 | JDK 21 정확히·Maven 3.9.x, 중간 상태 갱신 |
 | [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
-| [README.md](../../README.md) | 현행 계약 | 현재 결과 의미·입력/보존/분석 상한, D-150 operation Evidence page·일시 실패 draft 수명 |
-| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어 현행 계약과 동일한 operation Evidence page·Request Lab 수명·실행 경계 |
-| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | D-150 Evidence page·draft 수명, beta.46 bundle/doctor, Docker Chromium ZAP·Codex Explorer 경계 |
+| [README.md](../../README.md) | 현행 계약 | beta.47 배포·비공개 저장소 접근·설치·실행·증거 의미 |
+| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어와 같은 beta.47 배포·접근 조건·실행 계약 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.47 bundle/doctor·GitHub 접근·Burp/ZAP/Explorer 설치 |
 | [docs/ko/team-quick-start.md](team-quick-start.md) | 사용자 가이드 | 팀원용 ZIP 선택·Burp/Docker 준비 순서·OS별 doctor·JAR 교체·첫 진단 |
 | [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Evidence/Request Lab·Explorer·ZAP 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
 | [docs/ko/README.md](README.md) | 목차 | 현재/역사 문서 목록과 진행 갱신 기준 |
-| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-150 PR 잔존 계약 완료와 beta.46 Burp·Explorer·그래프·ZAP·Windows 다음 gate |
+| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-152 수정·최종 main CI·배포·PR 종료와 남은 운영 gate |
 | [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
-| [docs/ko/architecture.md](architecture.md) | 현행 계약 | D-150 Evidence pagination·snapshot 실패 draft 수명, data-flow exact-token, ZAP 계정·scope·Alert 경계 |
+| [docs/ko/architecture.md](architecture.md) | 현행 계약 | 현행 데이터 흐름·증거/초안 수명·D-152 종료 및 재시작 경계 |
 | [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | D-143 공통 ParameterCoordinate(canonicalPath), LLM Observation/Declaration/probe, parameter provenance·미실행 실험 구분, D-149 Surface enum 순서·sample fixture 일치 |
 | [docs/ko/llm-explorer.md](llm-explorer.md) | 현행 계약 | 독립 Explorer 실행·인증·HTTP/선언 도구·scope·Evidence·사용자 조작·남은 gate |
-| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | D-136 HUMAN/Docker Chromium ZAP/Explorer와 인증 응답 gate, no-Judge/no-MCP 범위 |
-| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-150 operation Evidence·draft 보존, 통합 Graph/Matrix와 Explorer/ZAP 경계 |
-| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | D-150 P31/P41/P42, P20 ZAP, P21/P23 Explorer, 폐기 기능 구분 |
+| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | 현행 목적·D-152/beta.47 구현·실측/미실측 범위 |
+| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | 현행 작업면 목적·증거 표현·D-152 정리 단계·과거 UI 이력 |
+| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | 작업면별 API/회귀/실측 근거와 폐기 기능 구분 |
 | [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, D-132 Client-only 완료와 실물 gate, 제품 MCP 보류 |
-| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-150 PR 잔존 계약·D-146 인가 추천 보정과 Explorer/ZAP 남은 gate 분리 |
-| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-143~150 parameter·matrix·Evidence·수명 경계와 D-130~139 ZAP/Explorer 결정 |
-| [docs/ko/development-log.md](development-log.md) | 역사 | D-150 PR 잔존 Evidence·회귀 보완과 이전 nav/Explorer/ZAP 기록 |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-151 Java 570·React 471·Playwright 15/15와 실제 Burp/OS 미실행 경계 |
-| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
-| [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
+| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | PR 이식 대조표·D-152 완료·후속 운영 및 연구 gate |
+| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-152까지의 결정·기각안·원 PR 대비 대체 관계 |
+| [docs/ko/development-log.md](development-log.md) | 역사 | 실제 변경·이유·회귀·검증 및 문서 정정의 작업별 이력 |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-152/beta.47의 로컬·원격·실물 검증과 artifact별 과거 결과 |
+| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | beta.47 변경과 과거 버전별 배포/개발 이력 |
+| [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 변경 이력과 동일한 버전·변경 범위 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
 | [docs/ko/graph-ux.md](graph-ux.md) | 역사 | 초기 Swing/JGraphX 및 과거 LLM 설명과 현행 UI 분리, 현행 계층 계약은 `GRAPH_IDA_REDESIGN.md`·D-143 5c 우선 |
 | [docs/ko/GRAPH_IDA_REDESIGN.md](GRAPH_IDA_REDESIGN.md) | 현행 계약(PR#11 이식본) | Site→API 그룹→API→Object 계층, 18개 증분, 카드·focus·Evidence 상세, React projection 기준(서버 FlowGraph·legacy HTML 미변경) |
@@ -101,7 +99,8 @@ D-151 최신 대조: D-150의 snapshot 실패 draft 보존을 판정·파라미�
 
 ## 4. 확인 범위
 
-- 최종 점검: 관리 문서 36개와 목록 대응 일치, 추적 Markdown의 로컬 파일/디렉터리 링크 236개 모두 존재, `git diff --check` 통과. 이전 인계 본문과 사용자 CLAUDE 인계 문단 보존 확인. 외부 URL 응답·heading anchor·모든 제품 동작을 검증한 것은 아니다.
+- 현재 점검은 `docs/` Markdown 33개와 루트 지침/안내 6개, 총 39개를 대상으로 했다. 목록 누락 0개, code fence·외부 URL·heading anchor를 제외한 로컬 링크 257개 모두 존재, 문서 diff 검사 통과를 확인했다. 현행 버전·진행 상태·배포 안내의 불일치를 정정했으며, 외부 문헌·URL 전체나 모든 제품 동작을 재검증했다는 뜻은 아니다.
+- 이전 목록 점검은 당시 관리 문서 36개·로컬 링크 236개를 확인한 결과다. 그 수치를 현재 파일 수나 새 검증 결과로 사용하지 않는다.
 - 코드 대조: 제거된 runtime/API, 호스트 소유 ZAP, 과거 데이터 모델, JS parser·capture·record·RouteDiscoveryDocument/Surface 전달, DataFlow index, capability scope, Alert/Passive 상한, 빌드 JDK 계약.
 - D-129 작업에서 `mvn clean verify`를 2회 실행했고 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files/242 tests가 통과했다. 기능별 Bash doctor는 JDK 21/Codex 로그인 성공과 JDK 26 거부를 실제 확인했다. JAR/bundle 반복 package와 clone 없는 clean extraction도 통과했다.
 - D-130~133 작업은 같은 최종 입력에서 `mvn clean verify` 2회를 실행해 매회 Java 370 tests(실패·오류 0, opt-in 1 skip), React 38 files/247 tests를 통과했고 JAR·bundle SHA-256이 각각 일치했다. Bash 5개 syntax/shellcheck, Compose와 JAR 구조도 확인했다. 실제 ZAP 2.17 daemon/API/session gate는 별도 8090에서 통과했지만 doctor는 Burp 8081이 닫혀 실패했으므로 실물 target 캠페인 성공으로 기록하지 않는다.

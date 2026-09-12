@@ -1,6 +1,6 @@
 # LLM Judge·MCP 제거 상태와 후속 계획
 
-기준: `c006679` → ZAP 분리 `5a47af9` → D-126 제거 `57d1bb4` → 빈 디렉터리 정리 `962edfe` → D-128 독립 Explorer → D-132·133 Client-only ZAP `7353144` → D-135 Docker Chromium runtime. 미출시 beta.46 소스 변경이며 이전 beta.44 배포물과 구분한다.
+구현 이력: `c006679` → ZAP 분리 `5a47af9` → D-126 제거 `57d1bb4` → 빈 디렉터리 정리 `962edfe` → D-128 독립 Explorer → D-132·133 Client-only ZAP `7353144` → D-135 Docker Chromium runtime. 이 경로는 현재 beta.47 배포에 포함돼 있다. 배포 코드·검증 수준은 [현재 인계](HANDOFF.md)와 D-152를 따른다.
 
 ## 현재 목표
 
@@ -16,7 +16,7 @@ HUMAN·SCANNER·LLM source, 기존 Evidence, endpoint·parameter 분석, 인가 
 | 2 | Judge role·prompt·후속 세션·UI·dataset lock·최종 verdict 제출 제거 | D-126 구현, Java/React 자동 회귀 통과 |
 | 3 | 기존 MCP transport·token·runner·격리 브라우저·설정·doctor 검사 제거; 저장 모델 독립 | D-126 구현, 클래스/리소스 및 HTTP endpoint 부재 회귀 통과 |
 | 4 | ZAP 브라우저 탐색 Client 필수화와 Traditional/AJAX 제거 | D-132 구현. 선택적 정의 import → 선택적 로그인 → strict Client → Passive → Alert; 자동 fallback 없음. 실제 Burp 8081 익명 Client 완주 확인, 로그인 계정·Windows gate 대기 |
-| 5 | 별도 Explorer 하네스 설계 | D-128 구현. Codex app-server dynamic tool·메모리 인증·exact-scope gateway; 최종 자동/실제 Burp gate 진행 |
+| 5 | 별도 Explorer 하네스 설계 | D-128/D-139 구현·자동 회귀 완료. 당시 provider 실물 검증은 beta-validation에 보존하며 현재 실제 Burp 운영 gate는 별도 |
 | 6 | FlowScope Evidence용 제품 MCP 설계 | 미착수. 현재 MCP 리스너나 대체 API stub 없음 |
 
 ## 제거한 것

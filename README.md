@@ -2,7 +2,7 @@
 
 현재 진행상황과 남은 gate는 [팀 인계 정본](docs/ko/HANDOFF.md), 문서 전수 대조 결과는 [문서 정합성·갱신 기준](docs/ko/documentation-status.md)에 기록합니다.
 
-현재 소스는 기존 LLM Judge·MCP·브라우저 하네스를 제거한 상태에서, **판정 없는 독립 LLM Explorer**를 새로 구현했습니다(D-128, 미출시 변경). HUMAN·ZAP 실행과 H/S/L Evidence 비교는 유지합니다. Explorer는 로그인된 로컬 Codex app-server의 동적 도구 호출을 exact-scope Burp HTTP 전송에 연결합니다. 실제 응답은 `source=LLM` Observation Evidence로, 그 응답 산출물에서 읽은 endpoint·parameter는 같은 run Evidence에 결박된 검토용 Declaration으로 분리 저장합니다(D-139). MCP 서버와 Judge는 다시 넣지 않았습니다. [Explorer 실행 계약](docs/ko/llm-explorer.md)과 [현재 인계](docs/ko/HANDOFF.md)를 참고하십시오.
+현재 배포는 기존 LLM Judge·MCP·브라우저 하네스를 제거한 상태에서, **판정 없는 독립 LLM Explorer**를 제공합니다(D-128/D-139). HUMAN·ZAP 실행과 H/S/L Evidence 비교는 유지합니다. Explorer는 로그인된 로컬 Codex app-server의 동적 도구 호출을 exact-scope Burp HTTP 전송에 연결합니다. 실제 응답은 `source=LLM` Observation Evidence로, 그 응답 산출물에서 읽은 endpoint·parameter는 같은 run Evidence에 결박된 검토용 Declaration으로 분리 저장합니다. MCP 서버와 Judge는 다시 넣지 않았습니다. [Explorer 실행 계약](docs/ko/llm-explorer.md)과 [현재 인계](docs/ko/HANDOFF.md)를 참고하십시오.
 
 FlowScope는 **사람(HUMAN), 스캐너(SCANNER), LLM**이 허가된 대상에서 실제로 관측한 API·입력을 같은 좌표에 정렬해, 어느 endpoint와 parameter를 누가 보았고 아직 무엇이 미관측인지 Evidence로 보여 주는 Burp Suite Community 호환 확장입니다. 선언 근거(OpenAPI·HTML form·정적 JavaScript)와 실제 HTTP Evidence를 분리해 비교하고, 선택한 API의 BOLA/IDOR·BFLA 근거는 기존 인가 그래프·매트릭스에서 상세 확인합니다.
 
@@ -68,6 +68,8 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 ## 5분 시작 — 이 순서만 따라 하세요
 
 팀원에게 처음 전달한다면 [팀원용 첫 실행 가이드](docs/ko/team-quick-start.md)를 먼저 보세요. 다운로드 파일 선택, Windows/macOS 준비 순서, 환경 점검과 JAR 교체 방법을 한곳에 정리했습니다.
+
+현재 GitHub 저장소는 비공개입니다. 협업 권한이 있는 본인 GitHub 계정으로 로그인한 뒤 Release를 받으십시오. 로그아웃 상태나 권한 없는 계정에서는 링크가 404로 보일 수 있습니다.
 
 ### 처음 한 번만 준비
 

@@ -8,6 +8,7 @@
 | 수정 후 집중 | ZAP 7+16=23건 통과. cleanup 차단 중 RUNNING/CLEANUP·활성 run 유지, terminal 뒤 즉시 재시작, 취소 lane 마감과 반환된 scan ID의 stop을 확인했다. |
 | 전체 빌드 | JDK 21 `mvn -o clean verify` BUILD SUCCESS. Java 574, 실패·오류 0, opt-in 2 skip. React 59파일/472건·타입검사와 JAR/bundle release guard 통과. |
 | 원격 CI | [PR #13 CI 34693083743](https://github.com/choewonwoo1817/testflowscope/actions/runs/34693083743), 코드 `3f9d107`: verify 9분 10초 성공, 전체 build·JAR/bundle 검사·동일 러너 반복 SHA-256 비교·Bash/Windows 구문 검사 통과. main 병합 `43706f1`과 검증 코드의 파일 내용이 같다. |
+| 최종 배포 | 태그/배포 코드 `60a3291`, [main CI 34694001780](https://github.com/choewonwoo1817/testflowscope/actions/runs/34694001780) verify 8분 35초 성공. beta.47 Release 게시 뒤 인증된 GitHub 경로로 ZIP·체크섬을 다운로드해 원본과 바이트 일치·CRC를 확인했다. 비공개 저장소이므로 익명 요청의 404는 접근 조건에 따른 결과다. |
 | 패키지 브라우저 | beta.47 JAR의 Standalone Playwright `--retries=0`: 15/15, 30.2초. Graph/Matrix/Evidence/Request Lab·계정·실행 상태·반응형 동선 검사. |
 | 실물 ZAP | 사용자 8089와 다른 Compose project `flowscope-beta47-gate`, API 18889, 기록 proxy 18881, 전용 임시 key. Docker Chromium/ChromeDriver 152.0.7977.82. 익명·정상 2계정 Client 63요청 완료 뒤 다음 캠페인의 잘못된 비밀번호 계정은 인증 단계에서 거부됐다. opt-in 1/1, 106.6초, 실패·skip 0. 외부로 전달하지 않는 로컬 fixture다. |
 | JAR | 31,942,102 bytes, SHA-256 `80d6e5357b3d73fdcfa274662f5bdfce39d792e3675c24dbbc7b9fa331e38cbe`. bundle은 최종 문서를 넣어 재조립하며 자신의 hash를 내부에 기록하지 않는다. |

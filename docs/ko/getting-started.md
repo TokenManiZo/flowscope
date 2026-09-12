@@ -54,6 +54,8 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 ## 3. Release bundle 설치
 
+현재 저장소는 비공개다. 본인의 협업 권한이 있는 GitHub 계정으로 로그인한 뒤 아래 파일을 받는다. 로그아웃/권한 없음의 404는 ZAP이나 FlowScope 실행 오류가 아니다.
+
 1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.47-bundle.zip`을 받고 압축을 푼다. Release에 bundle이 아직 없다면 저장소를 clone하고 §6의 소스 빌드 절차로 만든다. ZAP을 쓰지 않는 사용자는 `flowscope-1.2.0-beta.47.jar`만 받아도 된다.
 2. 압축을 푼 디렉터리 구조를 유지한다. `scripts/zap-up.*`가 상대 경로 `infra/zap/compose.yaml`을 사용하므로 파일 일부만 옮기면 Docker Quick Start가 동작하지 않는다.
 3. bundle 루트의 `flowscope-1.2.0-beta.47.jar`를 사용한다.

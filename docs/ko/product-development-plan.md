@@ -6,7 +6,7 @@
 
 **D-152 완료:** beta.46의 terminal/cleanup 경합을 지연 응답 회귀로 재현하고 제품 상태 게시·활성 run·취소 lane 마감을 보정했다. beta.47 로컬 전체 Java 574(2 skip)·React 472·패키지 Playwright 15/15, 실물 ZAP 하네스 1/1과 PR #13 원격 CI/재현성을 통과해 main에 반영했다. 원 PR #11·#12는 이식·대체 근거와 함께 종료했고, 팀원 배포 파일은 beta.47로 분리한다. 실물 fixture 검증과 실제 Burp/Windows/외부 대상 미실측은 계속 구분한다.
 
-**D-151 완료 상태:** D-150의 일시 snapshot 실패 수명을 판정·파라미터·기존 권한 매트릭스, 점검 Gap, 시나리오, 흐름 상세까지 통일했다. 선택·검토 메모·Request Lab 초안을 보존하고 새 동작만 잠그며, 실패 전에 시작한 전송은 같은 dataset·Evidence 결과를 기다린다. PR #11 persistence 9건은 현행 대체 회귀와 폐기된 record-level/generation 계약을 사례별로 기록했다. 최신 검증 수치는 `beta-validation.md` D-151을 따른다.
+**D-151 완료 이력:** D-150의 일시 snapshot 실패 수명을 판정·파라미터·기존 권한 매트릭스, 점검 Gap, 시나리오, 흐름 상세까지 통일했다. 선택·검토 메모·Request Lab 초안을 보존하고 새 동작만 잠그며, 실패 전에 시작한 전송은 같은 dataset·Evidence 결과를 기다린다. PR #11 persistence 9건은 현행 대체 회귀와 폐기된 record-level/generation 계약을 사례별로 기록했다. 당시 검증 수치는 `beta-validation.md` D-151에 보존한다.
 
 **D-150 완료 상태:** PR #11 재대조에서 누락된 operation별 마스킹 Evidence/retention 페이지, 일시 snapshot 실패 중 Request Lab 초안 보존, source NUL·Masking/model/10,000-input/lifecycle/FatJar 회귀를 보완했다. Java 570(2 skip)·React 468·typecheck·Playwright 15/15가 통과했다. attached parameter 제2정본은 D-143 Surface Fact 대체를 유지하고 D-146/D-147 의미 변경도 유지한다.
 
@@ -14,7 +14,7 @@
 
 **D-148 최종 상태:** 공통 editor의 dataset 경계와 Evidence/Surface/관계 그래프의 조회 실패 동선을 보정해 전체 Java 550(2 skip)·React 467·패키지 Playwright 15/15를 통과했다. 배포 안내의 native Linux bridge 조건도 정정했다. 실제 Burp gate는 GUI timeout 및 확장 없는 기준선의 vendor 내부 오류로 차단됐으며, 미실행을 완료로 바꾸지 않는다. 이번 PR 흡수 범위에서 확인된 코드 결함은 회귀로 수정했고, 호스트 오류는 beta-validation D-148에 증거를 남겼다.
 
-**2026-09-12 최종 연결부 검증(D-147):** 요청 비교의 불완전/UNKNOWN 처리·공개 위치, Matrix 선택/검토 수명, 종료 직전 Evidence 보존·sample 실패 전파를 수정했다. Java 550 tests(2 opt-in skip, 실패·오류 0), React 461 tests·typecheck, packaged Playwright 15/15(`--retries=0`)가 통과했다. 아래 단계별 수치는 각 단계의 이전 결과이며 현재 완료 근거는 `beta-validation.md` D-147이다.
+**2026-09-12 최종 연결부 검증(D-147):** 요청 비교의 불완전/UNKNOWN 처리·공개 위치, Matrix 선택/검토 수명, 종료 직전 Evidence 보존·sample 실패 전파를 수정했다. Java 550 tests(2 opt-in skip, 실패·오류 0), React 461 tests·typecheck, packaged Playwright 15/15(`--retries=0`)가 통과했다. 아래 단계별 수치는 각 단계의 이전 결과이며 해당 단계의 완료 근거는 `beta-validation.md` D-147이다.
 
 목적: 진단자가 실제 Evidence와 함께 (1) 어떤 API·입력을 HUMAN·ZAP·LLM이 각각 관측했는가, (2) 같은 비교 조건에서 어느 source·계정의 관측이 부족한가, (3) 다음에 확인할 API·파라미터와 추천 근거, (4) 정책·응답·소유자 근거의 확보 정도, (5) 해당 요청·응답 확인과 기존 Request Lab 연결을 확인하게 한다. 전체 사이트를 다 안다고 주장하거나 미관측을 취약점으로 확정하지 않으며, 실행 실패·분석 실패·미실행을 "탐색했지만 발견하지 못함"과 구분한다.
 
