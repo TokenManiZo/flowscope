@@ -1,12 +1,12 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-12 D-149 종료 응답·계정 서비스·샘플 snapshot 경계 보완. 현재 미출시 beta.46 소스는 상단 `분석 / 점검 / 기록`, 통합 Graph·Matrix 탭, on-demand Evidence parameter 비교, 성공 기반 Request Lab 수명과 unload 저장을 제공한다. D-146의 같은 서비스 추천·OBSERVED 확정 경계를 유지하며 D-149는 서비스 불일치 계정의 제외 사유를 화면에 표시하고, unload 뒤 통제 응답 삽입을 막고, 현재 샘플 fixture와 결정적 Surface JSON을 고정한다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약은 유지한다. 자동·패키지 검증과 실제 Burp 미검증 경계는 beta-validation·HANDOFF를 따른다.
+최종 대조: 2026-09-12 D-150 PR #11 잔존 Evidence·회귀 계약 보완. 현재 미출시 beta.46 소스는 operation별 마스킹 Evidence/retention 페이지, 일시 snapshot 실패 중 Request Lab 초안 보존·전송 잠금, D-149 종료·서비스·샘플 경계를 포함한다. D-146의 같은 서비스 추천·OBSERVED 확정 경계와 D-147의 불확실성 처리를 유지한다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약도 유지한다. 자동·패키지 검증과 실제 Burp 미검증 경계는 beta-validation·HANDOFF를 따른다.
 
 ## 1. 무엇을 어디서 읽는가
 
-D-149 최신 대조: 종료 뒤 통제 Evidence 삽입, matrix 서비스 불일치 설명, sample fixture와 Surface JSON 결정성을 보완했다. 코드/패키지 검증(Java 554·React 468·Playwright 15/15)은 통과했고 실제 Burp는 D-148의 호스트 차단 뒤 재실행하지 않았다. 현재 상태는 HANDOFF 맨 위와 beta-validation D-149이다.
+D-150 최신 대조: operation Evidence retention, snapshot 실패 draft 보존, NUL/Masking/model/scale/lifecycle/FatJar 회귀를 보완했다. 코드/패키지 검증(Java 570·React 468·Playwright 15/15)은 통과했고 실제 Burp는 D-148의 호스트 차단 뒤 재실행하지 않았다. 현재 상태는 HANDOFF 맨 위와 beta-validation D-150이다.
 
-이전 결과: D-148 Java 550·React 467·Playwright 15/15, D-147 Java 550·React 461·Playwright 15/15. D-145~148의 개별 기록은 당시 산출물의 이력으로 보존한다.
+이전 결과: D-149 Java 554·React 468·Playwright 15/15, D-148 Java 550·React 467·Playwright 15/15, D-147 Java 550·React 461·Playwright 15/15. D-145~149의 개별 기록은 당시 산출물의 이력으로 보존한다.
 
 2026-09-12 D-147 연결부 보완에서는 문서 목록의 현행/이력 구분을 다시 대조했다. HANDOFF·계획서의 D-145 이전 route/기각안, 그래프 설계 문서의 옛 hash, 기능 동등성 표의 초기 PLANNED 상태를 현행으로 오인하지 않게 정리했다. Evidence 비교·Matrix 선택·종료 저장 계약은 D-147을 따르며, `AGENTS.md`의 별도 Explorer 미구현 문구도 이미 있는 D-128/D-139 구현과 맞췄다.
 
@@ -46,6 +46,8 @@ D-149 최신 대조: 종료 뒤 통제 Evidence 삽입, matrix 서비스 불일�
 
 25. D-149는 리뷰 7건을 현행 코드에 다시 대조해 이미 닫힌 project-install 교착·shutdown checkpoint와 의도된 D-146 신뢰 경계를 분리했다. 실제로 남은 Request Lab/Explorer 종료 뒤 삽입, matrix 서비스 불일치 설명, 뒤처진 sample fixture와 Surface enum 순서 비결정성을 코드·회귀로 보완하고 README 한/영·architecture·UI 근거·결정·계획·인계·변경 이력·검증 기록에 반영했다. HANDOFF §6의 제거된 rail/resource-family 상충 지시도 현행 graph 운영 gate로 정리했다. Java 554·React 468·Playwright 15/15 통과와 실제 Burp/Windows/Linux 미실행을 분리한다.
 
+26. D-150은 PR #11 잔존 목록을 실제 branch와 대조해 operation Evidence page·NUL·Masking/model/authorization-work/persistence/FatJar 회귀를 현행 모델에 맞춰 보완했다. snapshot 실패에서 초안을 제거하던 D-148 현행 동작은 전송 잠금+초안 보존으로 대체했다. attached parameter 제2정본은 D-143 대체 사유를 명시하고, D-146/D-147 신뢰 경계는 유지했다. README 한·영·architecture·UI 근거·결정·계획·인계·변경 이력·검증 기록·Web parity를 함께 갱신한다.
+
 ## 3. 전수 목록
 
 “현행화”는 모든 문장을 최신 시제로 고쳤다는 뜻이 아니다. 현행 계약의 모순은 고치고, 역사 문서는 당시 내용을 보존하면서 적용이 끝난 지시를 표시했다. 외부 문헌의 진위·모든 제품 동작을 이번에 전수 실증했다는 주장도 아니다.
@@ -56,26 +58,26 @@ D-149 최신 대조: 종료 뒤 통제 Evidence 삽입, matrix 서비스 불일�
 | [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | 기존 사용자 인계 문단 보존, 삭제된 실행기·beta.39 안내 정정 |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | 개발 지침 | JDK 21 정확히·Maven 3.9.x, 중간 상태 갱신 |
 | [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
-| [README.md](../../README.md) | 현행 계약 | 폐기 실행 보장 제거·현재 결과 의미·입력/보존/분석 상한 구분 |
-| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 영문 Judge/closed-world/자동 validation 안내·Passive 정체 기준 정정 |
-| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.46 bundle/doctor, Docker Chromium ZAP·메모리 로그인 계정, Codex Explorer 실행·포트 경계 |
-| [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Explorer 설치·실행 경계 |
+| [README.md](../../README.md) | 현행 계약 | 현재 결과 의미·입력/보존/분석 상한, D-150 operation Evidence page·일시 실패 draft 수명 |
+| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어 현행 계약과 동일한 operation Evidence page·Request Lab 수명·실행 경계 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | D-150 Evidence page·draft 수명, beta.46 bundle/doctor, Docker Chromium ZAP·Codex Explorer 경계 |
+| [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Evidence/Request Lab·Explorer·ZAP 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
 | [docs/ko/README.md](README.md) | 목차 | 현재/역사 문서 목록과 진행 갱신 기준 |
-| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-142 Standalone·문서 기준선과 beta.46 Burp·Explorer 신원·그래프·ZAP·Windows 다음 gate |
+| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-150 PR 잔존 계약 완료와 beta.46 Burp·Explorer·그래프·ZAP·Windows 다음 gate |
 | [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
-| [docs/ko/architecture.md](architecture.md) | 현행 계약 | data-flow exact-token·ZAP 별도 계정 vault/browser auth/direct lane 귀속·scope union/Alert 총량 |
+| [docs/ko/architecture.md](architecture.md) | 현행 계약 | D-150 Evidence pagination·snapshot 실패 draft 수명, data-flow exact-token, ZAP 계정·scope·Alert 경계 |
 | [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | D-143 공통 ParameterCoordinate(canonicalPath), LLM Observation/Declaration/probe, parameter provenance·미실행 실험 구분, D-149 Surface enum 순서·sample fixture 일치 |
 | [docs/ko/llm-explorer.md](llm-explorer.md) | 현행 계약 | 독립 Explorer 실행·인증·HTTP/선언 도구·scope·Evidence·사용자 조작·남은 gate |
 | [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | D-136 HUMAN/Docker Chromium ZAP/Explorer와 인증 응답 gate, no-Judge/no-MCP 범위 |
-| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-145 grouped navigation·통합 Graph/Matrix·Evidence 비교 수명과 D-139 Explorer/ZAP 경계 |
-| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P20 ZAP, P21/P23 D-128/D-139 Explorer, 폐기 기능과 D-149 matrix 서비스 경고 구분 |
+| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-150 operation Evidence·draft 보존, 통합 Graph/Matrix와 Explorer/ZAP 경계 |
+| [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | D-150 P31/P41/P42, P20 ZAP, P21/P23 Explorer, 폐기 기능 구분 |
 | [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, D-132 Client-only 완료와 실물 gate, 제품 MCP 보류 |
-| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-145 PR 최종 흡수·D-146 인가 추천 보정과 Explorer/ZAP 남은 gate 분리 |
-| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-143~146 parameter·matrix·작업면·인가 추천 경계, D-139~142, D-130~138 ZAP 결정 |
-| [docs/ko/development-log.md](development-log.md) | 역사 | D-145 최종 PR 흡수·D-146 정확성 보정과 이전 nav/Explorer/ZAP 기록 |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-145+D-146 최종 542/452·Playwright 14/14 retry 0, ZAP/Explorer 실물 경계 |
+| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-150 PR 잔존 계약·D-146 인가 추천 보정과 Explorer/ZAP 남은 gate 분리 |
+| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-143~150 parameter·matrix·Evidence·수명 경계와 D-130~139 ZAP/Explorer 결정 |
+| [docs/ko/development-log.md](development-log.md) | 역사 | D-150 PR 잔존 Evidence·회귀 보완과 이전 nav/Explorer/ZAP 기록 |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-150 Java 570·React 468·Playwright 15/15와 실제 Burp/OS 미실행 경계 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |

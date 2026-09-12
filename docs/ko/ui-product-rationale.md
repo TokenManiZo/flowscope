@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-12, D-149 (미출시 beta.46 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. 요청 비교는 사용자가 연 Evidence 페이지에서만 비민감 digest를 사용하며 main snapshot·프로젝트·판정에는 넣지 않는다. 프로젝트 전환 성공 뒤에만 Request Lab을 닫고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
+> **현재 계약: 2026-09-12, D-150 (미출시 beta.46 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. Evidence는 operation별 마스킹 기록과 보존 상태를 페이지로 제공하고, Request Lab raw는 선택한 한 Evidence의 메모리에만 둔다. 일시 snapshot 실패는 초안을 보존하며 전송을 잠근다. 프로젝트 전환 성공 뒤에만 Request Lab을 폐기하고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
 
 ## 1. 한 문장으로 설명하기
 

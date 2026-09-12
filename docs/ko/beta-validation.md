@@ -1,5 +1,18 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-12 · D-150 PR #11 잔존 계약 최종 검증
+
+| 항목 | 실제 결과 |
+|---|---|
+| 코드 대조 | `pr11` branch와 `e174a80`을 다시 비교해 operation Evidence page, Masking/model/authorization-work/persistence 회귀, Fat JAR sentinel, raw NUL 누락을 확인했다. 별도 attached parameter 모델은 D-143 Surface 단일 Fact 대체 관계를 유지했다. |
+| 전체 빌드 | JDK 21.0.12.1, Maven 3.9.16 `mvn -o clean verify` BUILD SUCCESS. Java 570 tests, 실패·오류 0, opt-in 2 skip. React 59 files/468 tests·typecheck, JAR/bundle release guard 통과. |
+| 추가 회귀 | Masking 5, 선형 경계 2, parameter model 4, Surface authorization 10,000 inputs 1, extension lifecycle 총 7(신규 3), source NUL 1. release verify가 JAR 모든 entry의 12 fixture sentinel을 검사한다. |
+| snapshot 장애 | Evidence·Surface·graph-list·graph-canvas 4개 경로에서 Request Lab 편집 후 실제 snapshot 503/retry 실패를 주입했다. 편집값 보존·모든 전송 비활성·같은 dataset 복구 뒤 raw/session metadata 재검증과 편집 재활성을 확인했다. |
+| 패키지 브라우저 | 명시적 JDK 21 PATH에서 `npm run e2e -- --retries=0 --reporter=line`: 15/15 passed, 30.3s. 실제 sample operation의 Evidence ID와 마스킹 retention 페이지, 기존 Graph/Matrix/Request Lab/계정/ZAP/Explorer/XML/반응형 동선을 검사했다. |
+| 산출물 | JAR 31,940,812 bytes, SHA-256 `9c537476765bc75d8924e3e6ae7b0a138d03aac6cf74b75045fcdaef7b811103`. 최종 문서를 반영해 bundle을 다시 조립하고 ZIP CRC·중첩 JAR 바이트·D-150 문서 일치를 확인했다. bundle 자기 hash는 내부 문서에 기록하지 않는다. |
+| 유지한 의미 | UNKNOWN과 알려진 metadata 한쪽만 있으면 확정 SHAPE/TYPE/OCCURRENCE 변경을 만들지 않는다. unsupported/malformed body는 불완전 문맥이고, CORROBORATED 동시출현은 link를 유지하되 확정 인가 경계로 승격하지 않는다. |
+| 미실행 | 실제 Burp snapshot 장애·project import 경합, Windows/native Linux, 대규모 실제 operation page 체감 성능. |
+
 ## 2026-09-12 · D-149 종료·서비스·샘플 경계 최종 검증
 
 | 항목 | 실제 결과 |

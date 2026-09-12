@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — remaining PR #11 Evidence and regression contracts (D-150, 2026-09-12)
+
+- Evidence selection again opens 200-record pages of masked request/response retention metadata for the same operation, keyed by dataset revision.
+- A temporary background snapshot failure preserves an open unsent Request Lab draft while disabling policy, credential, send, and Repeater actions until the same dataset recovers.
+- A raw NUL introduced during porting was restored to a textual `\u0000` Java escape. Current-model regressions now cover masking boundaries, parameter model bounds, 10,000-input operation partitioning, project open/shutdown lifetime, raw-NUL source hygiene, and release-JAR fixture sentinels.
+- The D-147 unknown/unsupported-body handling and D-146 corroborated-boundary rule remain the current evidence contract.
+
 ## Unreleased — shutdown responses, account services, and sample snapshot boundaries (D-149, 2026-09-12)
 
 - In-flight Request Lab and Explorer responses cannot append new Evidence or raw text after unload starts; responses recorded first remain part of the final rebuild and checkpoint.

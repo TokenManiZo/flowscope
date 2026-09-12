@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · PR #11 잔존 Evidence·회귀 계약 보완 (D-150, 2026-09-12)
+
+- Evidence 행에서 같은 operation의 마스킹 Request/Response와 payload 보존 상태를 200건씩 탐색하는 페이지를 복구하고, cache key를 datasetRevision에 결박했습니다.
+- 일시 snapshot 조회 실패에서 열린 Request Lab 편집을 유지하면서 정책·인증 변경·전송·Repeater를 잠그고, 같은 dataset 복구 후 다시 활성화합니다.
+- 이식 중 들어간 Java source의 실제 NUL byte를 `\u0000` escape로 복구했습니다. Masking·parameter model·10,000 입력 operation 격리·project open/shutdown 수명·raw NUL·Fat JAR fixture sentinel 회귀를 현행 모델에 맞춰 추가했습니다.
+- D-147의 UNKNOWN/미지원 본문 처리와 D-146의 CORROBORATED 비승격은 Evidence보다 강한 결론을 피하는 현행 계약으로 유지합니다.
+
 ## 미출시 · 종료 응답·계정 서비스·샘플 snapshot 경계 보완 (D-149, 2026-09-12)
 
 - unload가 먼저 시작되면 대기 중이던 Request Lab·Explorer 응답이 새 Evidence나 raw 원문을 추가하지 않습니다. 먼저 기록된 응답은 종료의 최종 재분석·저장에 포함됩니다.

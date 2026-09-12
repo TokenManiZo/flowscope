@@ -67,7 +67,7 @@ Web `127.0.0.1:17777` 상단의 **점검**을 누르면 `범위 → HUMAN → ZA
 
 새 대상을 시작할 때는 상단 **새 진단 시작**에서 프로젝트 이름과 허가된 exact scope를 입력한다. 현재 진단이 있으면 FlowScope가 먼저 `~/.flowscope/projects/<이름--scope--시각>/project.flowscope.db`에 저장하고 새 빈 DB를 만든 뒤에만 화면과 scope를 전환한다. 저장 실패 시 현재 Evidence와 scope를 유지하며 상단에 원인을 표시한다. 상단 프로젝트 선택기에서 이전 DB를 다시 열 수 있다. 프로젝트에는 마스킹 Evidence·설정·완료 run·실행 원장·사람 검토가 들어가지만 raw Authorization/Cookie, 비밀번호, API key, provider token, 현재 메모리 Request Lab 원문은 저장하지 않으므로 재개한 진단의 인증 세션은 다시 준비해야 한다.
 
-**API·입력 차이**의 실제 Observation을 선택하면 exact Evidence 상세와 요청 실험실을 열 수 있고, live raw 교환이 현재 Burp 프로세스 메모리에 남아 있는 경우 Burp Repeater로 보낼 수 있다. OpenAPI·HTML·JavaScript에서만 선언되고 실제 응답 Evidence가 없는 행에는 이 동작이 나타나지 않는다. 분석 polling은 열린 초안을 닫지 않으며, 프로젝트 교체처럼 데이터셋 자체가 바뀔 때만 닫는다.
+**API·입력 차이**의 실제 Observation 또는 **Evidence** 행을 선택하면 exact Evidence 상세와 요청 실험실을 열 수 있다. Evidence 화면은 같은 operation의 마스킹 Request/Response와 payload 보존 상태를 200건씩 보여 준다. live raw 교환이 현재 Burp 프로세스 메모리에 남아 있을 때만 선택한 한 Evidence를 편집하거나 Burp Repeater로 보낼 수 있다. OpenAPI·HTML·JavaScript에서만 선언되고 실제 응답 Evidence가 없는 행에는 이 동작이 나타나지 않는다. 일시 snapshot 조회 실패는 열린 초안을 메모리에 유지하고 전송을 잠그며, 같은 dataset이 복구되면 다시 활성화한다. 프로젝트 교체·Evidence 변경·raw/session 전제 상실은 초안을 닫는다.
 
 ## 4. ZAP 준비 — FlowScope Docker Chromium
 

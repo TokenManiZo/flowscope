@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -448,6 +449,34 @@ final class SurfaceAuthorizationLinkTest {
         assertTrue(surface.parameterGaps().stream().anyMatch(gap -> gap.canonicalPath().equals("/segments/2")
                 && gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")),
                 "The confirmed owner's exact resource identifier keeps its established priority");
+    }
+
+    @Test
+    void tenThousandParameterObservationsStayPartitionedByOperation() {
+        List<RequestRecord> records = new ArrayList<>();
+        String query = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(index -> "field" + index + "=" + index)
+                .collect(java.util.stream.Collectors.joining("&"));
+        for (int operation = 0; operation < 100; operation++) {
+            RequestRecord record = new RequestRecord(Source.HUMAN, "https://scale.test:443", "GET",
+                    "/api/type-" + operation, 200, "user-a");
+            record.query = query;
+            record.hasResponse = true;
+            record.body = "{}";
+            record.responseContentType = "application/json";
+            record.phase = RunPhase.EXPLORATION;
+            record.runId = "scale";
+            records.add(record);
+        }
+
+        SurfaceAnalysis surface = assertTimeout(Duration.ofSeconds(10), () -> {
+            Pipeline.Result pipeline = Pipeline.run(records);
+            return SurfaceAnalyzer.analyze(pipeline.records, pipeline.coverageRecords, List.of(), pipeline.analysis);
+        });
+
+        assertEquals(100, surface.endpoints().size());
+        assertEquals(10_000, surface.endpoints().stream().mapToInt(endpoint -> endpoint.parameters().size()).sum());
+        assertTrue(surface.endpoints().stream().allMatch(endpoint -> endpoint.parameters().size() == 100));
     }
 
     private static ParameterValidationCell cell(Verdict verdict, boolean applicable, List<String> ids, List<String> basis, long count) {

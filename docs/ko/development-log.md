@@ -1,5 +1,16 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · D-150 PR #11 잔존 Evidence·회귀 계약 보완 완료
+
+- PR #11과 `e174a80`을 파일·호출부·테스트 단위로 다시 비교했다. 미커밋 26파일 지적은 D-149 커밋 뒤에는 해당하지 않았지만, operation별 Evidence retention 화면, raw NUL, Masking/model/authorization work/persistence/FatJar 회귀 누락은 확인됐다.
+- `#evidence`가 선택 event의 operation을 `/api/evidence`에서 200건씩 읽어 마스킹 Request/Response, payload retained/retention/bytes/SHA-256, 분류 사유와 이전/다음 페이지를 표시한다. query key는 datasetRevision까지 포함하고 `gcTime=0`; operation 전환 시 이전 evidence query를 취소·제거한다. Request Lab raw는 이 페이지에 합치지 않는다. 패키지 E2E가 실제 sample Evidence ID와 retention 표시를 확인한다.
+- D-148의 background snapshot 실패 처리에서 미전송 Request Lab 편집 손실을 재현했다. Evidence·Surface·전체 관계 화면은 마지막 성공 선택과 열린 dialog를 유지하며 `suspended` 상태에서 정책·인증 모드·요청 편집·전송·Repeater를 비활성화한다. 같은 dataset 복구 뒤 편집 문자열이 그대로 활성화되는 4화면 회귀를 갱신했다. dataset 교체·Evidence 좌표 변경·raw/session 전제 상실·사용자 닫기는 기존 폐기 경계다.
+- `AuthorizationMatrixAnalyzer.java` line 734의 실제 NUL 2바이트를 원 PR처럼 `\u0000` source escape로 고쳤다. 모든 Java source의 raw NUL 검사도 추가했다.
+- 원 PR 회귀를 현행 모델에 맞춰 복원했다: 민감 경로/acronym/embedded secret/preview 5건, `splitParameterWords` 100,000자 선형 경계 2건, ParameterKey·Observation·ValueSummary·Diagnostic 4건, SurfaceAuthorizationLinker 100 operation×100 parameter 격리, shutdown 뒤 open 거부·shutdown 선행 candidate 폐기·정상 SQLite project open 3건, release JAR 모든 entry의 fixture-secret sentinel 검사. 별도 attached `ParameterDefinition/Profile/AuthorizationAnalyzer` 클래스와 record-level parameter 영속은 D-143 단일 Surface Fact로 대체됐으므로 복구하지 않았다.
+- D-147의 UNKNOWN 비교와 unsupported/malformed body 진단, D-146의 CORROBORATED 비승격은 유지했다. 원 PR 기대값에 맞춰 불확실성을 확정 변경이나 확정 인가 경계로 되돌리지 않았다.
+- 검증: JDK 21.0.12.1 `mvn -o clean verify` BUILD SUCCESS, Java 570 tests(실패·오류 0, opt-in 2 skip), React 59 files/468 tests·typecheck, release sentinel 포함 JAR/bundle guard 통과. Playwright `--retries=0` 15/15 통과(30.3s). JAR 31,940,812 bytes, SHA-256 `9c537476765bc75d8924e3e6ae7b0a138d03aac6cf74b75045fcdaef7b811103`.
+- 실제 Burp background 장애·project import 경합·Windows/native Linux와 대규모 operation Evidence 페이지 성능은 이번 자동·Standalone 검증으로 완료 처리하지 않는다.
+
 ## 2026-09-12 · D-149 종료 응답·계정 서비스·샘플 snapshot 경계 보완 완료
 
 - 외부 리뷰 7건을 `59174d6` 기준으로 다시 확인했다. 프로젝트 설치의 records↔Explorer 잠금 역전과 종료 직전 SQLite 저장은 D-147에서 이미 회귀와 함께 닫혔다. HANDOFF의 D-145 이전 `#parameter-map`·RouteIconRail·당시 테스트 수치는 역사로 표시돼 있어 현행 모순이 아니었다. D-146의 CORROBORATED 비승격도 정확 참조 없이 인가 경계를 확정하지 않기 위한 의도된 결정으로 유지한다.

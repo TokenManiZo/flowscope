@@ -15,6 +15,7 @@ interface Props {
   credentialMode: RequestLabCredentialMode
   eligibleAccounts: readonly ManagedSession[]
   selectedAccountId: string
+  disabled?: boolean
   onCredentialModeChange(mode: RequestLabCredentialMode): void
   onAccountChange(accountId: string): void
 }
@@ -33,6 +34,7 @@ export function RequestLabMetadata({
   credentialMode,
   eligibleAccounts,
   selectedAccountId,
+  disabled = false,
   onCredentialModeChange,
   onAccountChange,
 }: Props) {
@@ -48,7 +50,7 @@ export function RequestLabMetadata({
 
     <div className="grid gap-2">
       <Label htmlFor="request-lab-mode">자격 증명 모드</Label>
-      <select id="request-lab-mode" aria-label="자격 증명 모드" className={selectClassName} value={credentialMode} onChange={(change) => onCredentialModeChange(change.target.value as RequestLabCredentialMode)}>
+      <select id="request-lab-mode" aria-label="자격 증명 모드" className={selectClassName} value={credentialMode} disabled={disabled} onChange={(change) => onCredentialModeChange(change.target.value as RequestLabCredentialMode)}>
         <option value="ORIGINAL">ORIGINAL</option>
         <option value="ANONYMOUS">ANONYMOUS</option>
         <option value="ACCOUNT" disabled={eligibleAccounts.length === 0}>ACCOUNT</option>
@@ -58,7 +60,7 @@ export function RequestLabMetadata({
 
     {credentialMode === "ACCOUNT" && <div className="grid gap-2">
       <Label htmlFor="request-lab-account">계정</Label>
-      <select id="request-lab-account" aria-label="계정" className={selectClassName} value={selectedAccountId} onChange={(change) => onAccountChange(change.target.value)}>
+      <select id="request-lab-account" aria-label="계정" className={selectClassName} value={selectedAccountId} disabled={disabled} onChange={(change) => onAccountChange(change.target.value)}>
         <option value="">계정 선택</option>
         {eligibleAccounts.map((account) => <option key={account.handle} value={account.accountId}>{account.accountLabel}</option>)}
       </select>

@@ -108,8 +108,8 @@ export function SurfacePage() {
     [enabledSources, surface.endpoints],
   )
   const rows = useMemo(() => endpoints.filter((endpoint) => filter === "ALL" || endpoint.deltaState === filter), [endpoints, filter])
-  const selected = snapshot.isError ? null : endpoints.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
-  const selectedEvent = selectedEvidenceId && !snapshot.isError
+  const selected = endpoints.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
+  const selectedEvent = selectedEvidenceId
     ? snapshot.data?.events.find((event) => event.eventId === selectedEvidenceId) ?? null
     : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
@@ -125,7 +125,7 @@ export function SurfacePage() {
   const countKind = (kind: string) => endpoints.filter((endpoint) => endpoint.kinds?.includes(kind as never)).length
 
   useEffect(() => {
-    if (snapshot.isError) { setSelectedId(null); setSelectedEvidenceId(null); setRequestLabContext(null); return }
+    if (snapshot.isError) return
     if (selectedEvidenceId && !selectedEvent) {
       setSelectedEvidenceId(null)
       setRequestLabOpen(false)
@@ -171,9 +171,9 @@ export function SurfacePage() {
       {selected.observations.length > 0 && <div className="grid gap-2"><h3 className="text-sm font-semibold">실제 응답 Evidence</h3>{selected.observations.map((observation) => {
         const event = snapshot.data?.events.find((candidate) => candidate.eventId === observation.evidenceId)
         const source = observation.source === "HUMAN" ? "H" : observation.source === "SCANNER" ? "S" : observation.source === "LLM" ? "L" : "?"
-        return <Button type="button" variant={selectedEvidenceId === observation.evidenceId ? "secondary" : "outline"} className="h-auto justify-start whitespace-normal text-left" disabled={!event} key={observation.evidenceId} onClick={() => setSelectedEvidenceId(observation.evidenceId)}>Evidence 상세 · {source} · HTTP {observation.status}</Button>
+        return <Button type="button" variant={selectedEvidenceId === observation.evidenceId ? "secondary" : "outline"} className="h-auto justify-start whitespace-normal text-left" disabled={!event || snapshot.isError} key={observation.evidenceId} onClick={() => setSelectedEvidenceId(observation.evidenceId)}>Evidence 상세 · {source} · HTTP {observation.status}</Button>
       })}</div>}
-      {selectedEvent && <section className="border-t pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={selectedEvent} snapshot={snapshot.data!} onOpenRequestLab={() => setRequestLabOpen(true)} /></section>}
+      {selectedEvent && <section className="border-t pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={selectedEvent} snapshot={snapshot.data!} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={snapshot.isError} /></section>}
       <div><h3 className="mb-2 text-sm font-semibold">입력 필드</h3><div className="grid gap-2">{selected.parameters.map((parameter) => <div className="rounded-md border p-2 text-sm" key={parameter.location + ":" + (parameter.coordinateResolved ? "" : "?") + parameter.canonicalPath}><p className="break-all font-mono">{parameter.location} · {parameter.fieldPath}</p><p className="break-all font-mono text-xs text-muted-foreground">{parameter.canonicalPath}</p><p className="text-xs text-muted-foreground">{deltaLabels[parameter.deltaState]} · {parameter.requirement} · {sourceLabel(parameter.observedSources)} · {parameter.observedShapes.join(" · ") || "형태 응답 없음"}</p></div>)}{selected.parameters.length === 0 && <p className="text-sm text-muted-foreground">확인된 입력 필드가 없습니다.</p>}</div></div>
       <div><h3 className="mb-2 text-sm font-semibold">Evidence ID</h3>{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{id}</p>)}</div>
     </section>
@@ -192,7 +192,7 @@ export function SurfacePage() {
           </Table>
         </div>
       </section>
-      {selectedEvent && labContext && <RequestLabDialog key={labContext} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={selectedEvent} sessions={snapshot.data?.managedSessions ?? []} datasetRevision={datasetRevision} snapshotRevision={snapshot.data?.revision} />}
+      {selectedEvent && labContext && <RequestLabDialog key={labContext} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={selectedEvent} sessions={snapshot.data?.managedSessions ?? []} datasetRevision={datasetRevision} snapshotRevision={snapshot.data?.revision} suspended={snapshot.isError} />}
     </ReferenceAnalysisWorkspace>
   )
 }

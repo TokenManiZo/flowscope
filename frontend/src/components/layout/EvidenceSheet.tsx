@@ -52,10 +52,11 @@ export interface EvidenceSheetProps {
   selection?: GraphSelection | StructuredEvidenceSelection | ScenarioEvidenceSelection | null
   variant?: "default" | "graph"
   inline?: boolean
+  disabled?: boolean
   onOpenChange(open: boolean): void
 }
 
-export function EvidenceInspectorBody({ event, snapshot, selection = null }: Omit<EvidenceSheetProps, "variant" | "inline" | "onOpenChange">) {
+export function EvidenceInspectorBody({ event, snapshot, selection = null, disabled = false }: Omit<EvidenceSheetProps, "variant" | "inline" | "onOpenChange">) {
   const datasetRevision = snapshot?.datasetRevision ?? snapshot?.identityRevision ?? 0
   // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
   const contextKey = event ? JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp]) : null
@@ -69,18 +70,18 @@ export function EvidenceInspectorBody({ event, snapshot, selection = null }: Omi
       {selection && "kind" in selection && <section className="grid gap-1 rounded-md border p-3 text-sm"><p className="font-medium">{selection.kind === "matrix" ? "매트릭스 선택 좌표" : selection.kind === "sequence" ? "흐름 링크 선택" : "시나리오 Evidence 선택"}</p>{selection.kind === "scenario" ? <BoundedEvidenceIds ids={selection.evidenceIds} /> : <><BoundedDetailFields fields={selection.kind === "matrix" ? [{ label: "신원", value: selection.identity }, { label: "리소스", value: selection.resource ?? "객체 없음" }, { label: "작업", value: selection.operation }] : [{ label: "신원", value: selection.identity }, { label: "작업", value: selection.operation }]} endpoints={selection.kind === "sequence" ? [{ label: "from", value: selection.eventIds[0] ?? "" }, { label: "to", value: selection.eventIds[1] ?? "" }] : undefined} />{selection.kind === "matrix" && <BoundedEvidenceIds ids={selection.evidenceIds} />}</>}</section>}
       {selection && !("kind" in selection) && !selection.routeCandidate && <section className="grid gap-2 rounded-md border p-3 text-sm"><p className="font-medium">그래프 선택 좌표</p><BoundedDetailFields fields={[{ label: "신원", value: selection.identity ?? "UNKNOWN" }, { label: "리소스", value: selection.resource ?? "객체 없음" }, { label: "작업", value: selection.operation ?? "경로 후보" }, { label: "소스", value: selection.source ?? "UNKNOWN" }]} /><BoundedEvidenceIds ids={selection.evidenceIds} /></section>}
       {selection && !("kind" in selection) && selection.routeCandidate && <RouteCandidateDetail candidate={selection.routeCandidate} />}
-      {event && <OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} showEvidenceId={!structuredSelection} />}
-      {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} />}
+      {event && <OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} showEvidenceId={!structuredSelection} disabled={disabled} />}
+      {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}
     </section>
 }
 
-export function EvidenceSheet({ event, snapshot, selection = null, variant = "default", inline = false, onOpenChange }: EvidenceSheetProps) {
-  if (inline) return <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} />
+export function EvidenceSheet({ event, snapshot, selection = null, variant = "default", inline = false, disabled = false, onOpenChange }: EvidenceSheetProps) {
+  if (inline) return <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} disabled={disabled} />
   const open = (event !== null || selection !== null) && snapshot !== undefined
   return <Sheet modal={false} open={open} onOpenChange={onOpenChange}>
     <SheetContent className={variant === "graph" ? "w-full overflow-y-auto border-l border-border/80 bg-[var(--flowscope-pane)] p-4 text-[13px] leading-5 sm:max-w-[26rem]" : "w-full overflow-y-auto sm:max-w-xl"} aria-describedby="evidence-sheet-description" onPointerDownOutside={(event) => { if (selection && ("kind" in selection || selection.routeCandidate)) event.preventDefault() }}>
       <SheetHeader className="sr-only"><SheetTitle>Evidence 상세</SheetTitle><SheetDescription id="evidence-sheet-description">선택한 Evidence, 연결 셀 및 시나리오의 정책을 확인합니다.</SheetDescription></SheetHeader>
-      <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} />
+      <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} disabled={disabled} />
     </SheetContent>
   </Sheet>
 }

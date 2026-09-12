@@ -15,6 +15,7 @@ interface Props {
   snapshot: Snapshot
   onOpenRequestLab(): void
   showEvidenceId?: boolean
+  disabled?: boolean
 }
 
 export function OperationDetail(props: Props) {
@@ -22,7 +23,7 @@ export function OperationDetail(props: Props) {
   return <OperationEditor key={JSON.stringify([datasetRevision, props.event.eventId, props.event.op, props.event.resource, props.event.idn, props.event.source])} {...props} />
 }
 
-function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = true }: Props) {
+function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = true, disabled = false }: Props) {
   const queryClient = useQueryClient()
   const active = useRef(true)
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
@@ -55,11 +56,11 @@ function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = t
     {replayMessage && <Alert><AlertTitle>Repeater 초안</AlertTitle><AlertDescription>{replayMessage}</AlertDescription></Alert>}
     <section className="grid gap-2 rounded-md border p-3" aria-label="정책 작업">
       <h3 className="font-medium">정책</h3>
-      <div className="flex flex-wrap items-end gap-2"><div className="grid gap-1"><Label htmlFor="required-role">필수 역할</Label><Input id="required-role" value={role} onChange={(change) => setRole(change.target.value)} /></div><Button type="button" disabled={requirement.isPending} onClick={() => void submitRequirement()}>필수 역할 저장</Button></div>
-      <div className="flex flex-wrap items-end gap-2"><div className="grid gap-1"><Label htmlFor="traffic-override">트래픽 재정의</Label><select id="traffic-override" value={override} onChange={(change) => setOverride(change.target.value as "AUTO" | "INCLUDE" | "EXCLUDE")}><option value="AUTO">AUTO</option><option value="INCLUDE">INCLUDE</option><option value="EXCLUDE">EXCLUDE</option></select></div><Button type="button" disabled={traffic.isPending} onClick={() => void submitTraffic()}>트래픽 정책 저장</Button></div>
-      {event.resource && <div className="flex flex-wrap items-end gap-2"><div className="grid gap-1"><Label htmlFor="resource-owner">리소스 소유자</Label><Input id="resource-owner" value={identity} onChange={(change) => setIdentity(change.target.value)} /></div><Button type="button" disabled={owner.isPending} onClick={() => void submitOwner()}>소유자 저장</Button></div>}
+      <div className="flex flex-wrap items-end gap-2"><div className="grid gap-1"><Label htmlFor="required-role">필수 역할</Label><Input id="required-role" value={role} disabled={disabled} onChange={(change) => setRole(change.target.value)} /></div><Button type="button" disabled={disabled || requirement.isPending} onClick={() => void submitRequirement()}>필수 역할 저장</Button></div>
+      <div className="flex flex-wrap items-end gap-2"><div className="grid gap-1"><Label htmlFor="traffic-override">트래픽 재정의</Label><select id="traffic-override" value={override} disabled={disabled} onChange={(change) => setOverride(change.target.value as "AUTO" | "INCLUDE" | "EXCLUDE")}><option value="AUTO">AUTO</option><option value="INCLUDE">INCLUDE</option><option value="EXCLUDE">EXCLUDE</option></select></div><Button type="button" disabled={disabled || traffic.isPending} onClick={() => void submitTraffic()}>트래픽 정책 저장</Button></div>
+      {event.resource && <div className="flex flex-wrap items-end gap-2"><div className="grid gap-1"><Label htmlFor="resource-owner">리소스 소유자</Label><Input id="resource-owner" value={identity} disabled={disabled} onChange={(change) => setIdentity(change.target.value)} /></div><Button type="button" disabled={disabled || owner.isPending} onClick={() => void submitOwner()}>소유자 저장</Button></div>}
     </section>
-    <section className="flex flex-wrap gap-2"><Button type="button" onClick={onOpenRequestLab}>Request Lab 열기</Button><Button type="button" variant="outline" disabled={replayPending} onClick={() => void replay()}>{replayPending ? "Repeater 초안 여는 중" : "Repeater 초안 열기"}</Button></section>
+    <section className="flex flex-wrap gap-2"><Button type="button" disabled={disabled} onClick={onOpenRequestLab}>Request Lab 열기</Button><Button type="button" variant="outline" disabled={disabled || replayPending} onClick={() => void replay()}>{replayPending ? "Repeater 초안 여는 중" : "Repeater 초안 열기"}</Button></section>
     <p className="text-sm text-muted-foreground">원문 요청과 응답은 Request Lab에서만 현재 탭 메모리로 처리합니다.</p>
   </div>
 }

@@ -7,12 +7,14 @@ import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.SqliteProjectStore;
+import burp.api.montoya.MontoyaApi;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -145,6 +148,77 @@ class FlowScopeExtensionLifecycleTest {
         }
     }
 
+    @Test
+    void projectOpenRequestedAfterShutdownIsNotQueued() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        try {
+            invoke(extension, "shutdown");
+            assertDoesNotThrow(() -> invoke(extension, "loadProjectFile",
+                    new Class<?>[]{java.io.File.class}, temp.resolve("not-opened.db").toFile()));
+            assertEquals(null, field("activeProjectDatabase").get(extension));
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
+    void shutdownWinnerDiscardsAPreparedProjectCandidate() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        RequestRecord current = new RequestRecord(Source.HUMAN, "https://current.test:443",
+                "GET", "/current", 200, "anon");
+        records.add(current);
+        ((AtomicBoolean) field("shuttingDown").get(extension)).set(true);
+        AnalysisConfig candidateConfig = new AnalysisConfig();
+        RequestRecord candidate = new RequestRecord(Source.HUMAN, "https://candidate.test:443",
+                "GET", "/candidate", 200, "anon");
+        ProjectStore.ProjectData data = new ProjectStore.ProjectData(List.of(candidate), candidateConfig,
+                List.of(), List.of(), Set.of(), Map.of(), List.of(), List.of(), context());
+        Method apply = FlowScopeExtension.class.getDeclaredMethod("applyLoadedProject",
+                ProjectStore.ProjectData.class, List.class, Pipeline.Result.class, ScopePolicy.class,
+                ProjectStore.ProjectContext.class, Path.class);
+        apply.setAccessible(true);
+        try {
+            assertEquals(false, apply.invoke(extension, data, new ArrayList<>(data.records()),
+                    Pipeline.runIsolated(data.records(), candidateConfig),
+                    ScopePolicy.parse("https://candidate.test"), context(), temp.resolve("candidate.db")));
+            assertEquals(List.of(current), records);
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
+    void successfulProjectOpenInstallsTheCandidateDatabase() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        field("api").set(extension, loggingApi());
+        ScheduledExecutorService worker = (ScheduledExecutorService) field("worker").get(extension);
+        Path database = temp.resolve("candidate.flowscope.db");
+        AnalysisConfig config = new AnalysisConfig().upsertAccount(new io.flowscope.core.AccountProfile(
+                "acct-candidate", "Candidate", "https://api.example.test:443",
+                io.flowscope.core.AccessRole.USER));
+        RequestRecord candidate = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
+                "GET", "/candidate", 200, "anon");
+        candidate.hasResponse = true;
+        ProjectStore.ProjectContext candidateContext = new ProjectStore.ProjectContext(
+                "Candidate", List.of("https://api.example.test"), Instant.EPOCH);
+        new SqliteProjectStore(new ProjectStore()).save(database, List.of(candidate), config,
+                List.of(), List.of(), Map.of(), List.of(), List.of(), candidateContext);
+        try {
+            invoke(extension, "loadProjectFile", new Class<?>[]{java.io.File.class}, database.toFile());
+            worker.submit(() -> { }).get(5, TimeUnit.SECONDS);
+            assertEquals(database.toAbsolutePath(), field("activeProjectDatabase").get(extension));
+            @SuppressWarnings("unchecked")
+            List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+            assertEquals(List.of("/candidate"), records.stream().map(record -> record.path).toList());
+            assertEquals("Candidate", ((AnalysisConfig) field("analysisConfig").get(extension))
+                    .account("acct-candidate").orElseThrow().label());
+        } finally {
+            worker.shutdownNow();
+        }
+    }
+
     private static ProjectStore.ProjectContext context() {
         return new ProjectStore.ProjectContext("Lifecycle regression", List.of("https://api.example.test"), Instant.EPOCH);
     }
@@ -159,5 +233,22 @@ class FlowScopeExtensionLifecycleTest {
         Method method = FlowScopeExtension.class.getDeclaredMethod(name);
         method.setAccessible(true);
         method.invoke(extension);
+    }
+
+    private static void invoke(FlowScopeExtension extension, String name,
+                               Class<?>[] parameterTypes, Object... arguments) throws Exception {
+        Method method = FlowScopeExtension.class.getDeclaredMethod(name, parameterTypes);
+        method.setAccessible(true);
+        method.invoke(extension, arguments);
+    }
+
+    private static MontoyaApi loggingApi() {
+        return (MontoyaApi) Proxy.newProxyInstance(MontoyaApi.class.getClassLoader(),
+                new Class<?>[]{MontoyaApi.class}, (proxy, method, args) -> {
+                    if (!method.getName().equals("logging")) throw new AssertionError(method.getName());
+                    Class<?> type = method.getReturnType();
+                    return Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type},
+                            (logging, call, values) -> null);
+                });
     }
 }

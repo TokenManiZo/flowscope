@@ -31,6 +31,11 @@ import java.util.jar.Manifest;
 public final class FatJarIsolationSmoke {
     private static final String MR_RELOCATION_MAP = "META-INF/flowscope-mr-relocation.txt";
     private static final String MR_VERSION_PREFIX = "META-INF/versions/";
+    private static final List<String> FIXTURE_SENTINELS = List.of(
+            "ACRONYM-VALUE-SENTINEL", "FOLDED-FILE-SENTINEL", "DUPLICATE-VALUE-SENTINEL",
+            "UPPERCASE-NAME-VALUE-SENTINEL", "ordinary-scalar-sentinel", "QUERYSECRET",
+            "BODYSECRET", "HEADERSECRET", "COOKIESECRET", "REDIRECTSECRET", "REVIEWSECRET",
+            "raw-session-value");
 
     private FatJarIsolationSmoke() {
     }
@@ -124,6 +129,7 @@ public final class FatJarIsolationSmoke {
             requireNone(entries, "Vitest", name -> name.toLowerCase(Locale.ROOT).contains("vitest"));
             assertAllVersionedSourceNamespacesWereRelocated(jar, entries);
             assertNoForeignClassNamespace(entries);
+            assertNoFixtureSentinels(jar, entries);
 
             String legacyCytoscapeReference = "/vendor/cytoscape-3.26.0.min.js";
             assertDoesNotReference(jar, "web/app/index.html", legacyCytoscapeReference);
@@ -296,6 +302,22 @@ public final class FatJarIsolationSmoke {
         if (!leaks.isEmpty()) {
             throw new IllegalStateException("Release JAR leaks unshaded dependency classes at their original namespace "
                     + "(relocate them in pom.xml shade config, or add a documented exception): " + leaks);
+        }
+    }
+
+    private static void assertNoFixtureSentinels(JarFile jar, List<String> entries) throws IOException {
+        for (String name : entries) {
+            JarEntry entry = jar.getJarEntry(name);
+            if (entry == null || entry.isDirectory()) continue;
+            String content;
+            try (var input = jar.getInputStream(entry)) {
+                content = new String(input.readAllBytes(), StandardCharsets.ISO_8859_1);
+            }
+            for (String sentinel : FIXTURE_SENTINELS) {
+                if (content.contains(sentinel)) {
+                    throw new IllegalStateException("Fixture secret in release entry: " + name);
+                }
+            }
         }
     }
 

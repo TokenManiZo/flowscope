@@ -15,6 +15,7 @@ interface Props {
   selection: GraphSelection
   event: EventRecord | null
   snapshot: Snapshot
+  suspended?: boolean
 }
 
 const INITIAL_EVIDENCE_COUNT = 3
@@ -36,7 +37,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   return <div className="grid gap-1 border-b border-border/60 pb-2 last:border-b-0"><dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{label}</dt><dd className="break-words text-sm">{value}</dd></div>
 }
 
-export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
+export function GraphInspectorPanel({ selection, event, snapshot, suspended = false }: Props) {
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision
   // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
   const contextKey = event ? JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp]) : null
@@ -79,8 +80,8 @@ export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
       </TabsContent>
       <TabsContent value="evidence" className="mt-0 grid gap-4" aria-label="Evidence">
         <EvidenceIds ids={selection.evidenceIds} />
-        {event ? <section className="border-t border-border/70 pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} /></section> : <p className="text-sm text-muted-foreground">선택 좌표와 정확히 연결된 Evidence를 찾지 못했습니다.</p>}
-        {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} />}
+        {event ? <section className="border-t border-border/70 pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={suspended} /></section> : <p className="text-sm text-muted-foreground">선택 좌표와 정확히 연결된 Evidence를 찾지 못했습니다.</p>}
+        {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={suspended} />}
       </TabsContent>
       <TabsContent value="request" className="mt-0 grid gap-3" aria-label="Request">
         <p className="font-mono text-sm">{event ? `${event.method} ${event.path}` : selection.operation ?? "요청 없음"}</p>

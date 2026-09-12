@@ -1398,6 +1398,15 @@
 - **유지:** D-146의 `CONFIRMED_AUTH_BOUNDARY`는 정확한 OBSERVED 참조와 확정 소유자에만 부여한다. PR #11의 CORROBORATED 승격을 복원하지 않는다. 동시출현 link와 `AUTH_VARIANT_UNTESTED`는 삭제하지 않고 사람 검토 대상으로 남기므로 후보 recall을 없애는 결정이 아니다. 다른 서비스 계정을 matrix에 다시 넣는 방식도 실행 불가능한 추천을 만들기 때문에 기각한다.
 - **검증 경계:** 종료 후 삽입 거부, 서비스 불일치/정책 전용/빈 매트릭스, React 경고와 column 비포함, 현재 SampleProject와 fixture 전체 일치를 회귀로 검사한다. macOS WindowServer 상태에 따라 Swing component test가 정지한 재현을 반영해 Surefire JVM만 `java.awt.headless=true`로 고정한다. 이 테스트는 창 상호작용 E2E가 아니며 제품 JAR 실행 속성은 바꾸지 않는다. 샘플은 합성 온보딩 데이터이고 실제 Burp·대상 탐지 성능 근거가 아니다. 실제 unload 중 응답 도착과 복수 서비스 UI는 운영 gate로 남긴다.
 
+## D-150 · PR #11 잔존 계약을 현행 Surface·Evidence 수명에 맞춰 닫는다 (2026-09-12)
+
+- **문제:** PR #11 최종 흡수 뒤에도 operation별 마스킹 Evidence 페이지와 보존 metadata 탐색이 React에서 빠져 `useEvidenceQuery`가 미사용이었다. 원 PR의 Masking·parameter model·authorization work·extension persistence 회귀 일부와 Fat JAR fixture-secret sentinel 검사도 대체 또는 제외 사유 없이 사라졌다. `AuthorizationMatrixAnalyzer.java`의 `\u0000` escape는 이식 중 실제 NUL byte로 변형돼 소스가 binary data로 인식됐다. D-148은 background snapshot 조회가 retry 뒤 실패하면 열린 Request Lab 컴포넌트를 제거해 미전송 편집까지 잃었다.
+- **Evidence 결정:** `#evidence`에서 event를 선택하면 같은 operation의 서버 마스킹 Evidence를 200건씩 조회하고 request/response 보존 여부·retention·크기·SHA-256, 분류 사유와 이전/다음 페이지를 표시한다. query key는 `datasetRevision + operation + offset + limit`이며 unmount 시 cache를 폐기해 다른 프로젝트나 operation의 페이지를 재사용하지 않는다. Request Lab raw는 이 페이지에 합치지 않는다.
+- **장애 수명 결정:** Evidence·Surface·전체 관계 화면이 마지막 성공 snapshot을 가진 상태에서 background 조회가 실패하면 열린 Request Lab의 메모리 초안을 유지한다. 정책·인증 모드·요청 편집·전송·Repeater는 잠그고 실패 안내와 재시도를 표시한다. 같은 dataset·Evidence로 snapshot이 복구되면 기존 편집을 다시 활성화한다. dataset 교체, Evidence 좌표 변경, raw/session 전제 상실, 사용자의 닫기는 기존대로 초안을 폐기한다.
+- **회귀 결정:** 원 PR의 Masking 민감 경로·acronym·embedded secret·선형 split 검사를 현행 `ParameterObservation`에 맞춰 복원한다. 별도 `ParameterDefinition/Profile/AuthorizationAnalyzer` 모델은 D-143에서 `SurfaceAnalysis/SurfaceAuthorizationLinker`로 대체됐으므로 원 클래스를 복구하지 않고 stable key·모델 bounds·10,000 parameter operation 격리·project open/shutdown candidate·성공 import 회귀로 옮긴다. Fat JAR은 원 PR sentinel 전체를 모든 entry에서 검사한다. 모든 Java source의 raw NUL byte도 실패시킨다.
+- **유지:** D-147의 UNKNOWN 비교와 unsupported/malformed body 진단, D-146의 CORROBORATED 비승격은 그대로 둔다. UNKNOWN을 확정 변경으로 만들거나 일반 동시출현을 인가 경계로 승격하는 원 PR 동작은 현재 Evidence 신뢰 계약보다 강한 결론이므로 복원하지 않는다.
+- **검증 경계:** 전체 자동·패키지 검증은 operation Evidence 페이지와 기존 화면 동선, snapshot 실패 중 초안 보존, NUL/Masking/model/10,000 observation/lifecycle/sentinel을 확인한다. 실제 Burp background 장애·프로젝트 import 경합과 대규모 Evidence 페이지의 체감 성능은 운영 gate다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

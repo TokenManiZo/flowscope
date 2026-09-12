@@ -40,7 +40,7 @@ import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
 
 export const queryKeys = {
   snapshot: ["snapshot"] as const,
-  evidence: (operation: string, offset: number, limit: number) => ["evidence", operation, offset, limit] as const,
+  evidence: (datasetRevision: number, operation: string, offset: number, limit: number) => ["evidence", datasetRevision, operation, offset, limit] as const,
   humanRun: ["human-run"] as const,
   zapStatus: ["zap-status"] as const,
   scannerRun: ["scanner-run"] as const,
@@ -78,13 +78,14 @@ export function useProjectsQuery() {
     ...pollingOptions })
 }
 
-export function useEvidenceQuery(operation: string | null, offset: number, limit: number) {
+export function useEvidenceQuery(operation: string | null, offset: number, limit: number, datasetRevision = 0) {
   return useQuery({
-    queryKey: queryKeys.evidence(operation ?? "", offset, limit),
+    queryKey: queryKeys.evidence(datasetRevision, operation ?? "", offset, limit),
     queryFn: ({ signal }) => getEvidence(operation ?? "", offset, limit, signal),
     enabled: operation !== null && operation.length > 0,
     staleTime: FLOW_SCOPE_STALE_TIME_MS,
     retry: 1,
+    gcTime: 0,
   })
 }
 

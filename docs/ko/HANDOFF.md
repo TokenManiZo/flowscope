@@ -1,5 +1,13 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · D-150 PR #11 잔존 계약 보완·전체 검증 완료
+
+- PR #11 원본과 현행 트리를 다시 대조해 빠졌던 operation별 마스킹 Evidence/retention 200건 페이지를 `#evidence`에 복구했다. query cache는 datasetRevision·operation·offset·limit에 묶이고 화면 이탈 시 폐기된다.
+- background snapshot 조회 실패는 열린 Request Lab의 미전송 편집을 유지하면서 정책·인증 변경·전송·Repeater를 잠근다. 같은 dataset이 복구되면 편집을 그대로 다시 활성화하고, dataset/Evidence/raw/session 경계 변경은 계속 폐기한다.
+- `AuthorizationMatrixAnalyzer.java`의 실제 NUL 2바이트를 텍스트 `\u0000` escape로 복구했다. Masking 5건·선형 경계 2건·parameter model 4건·10,000 입력 operation 격리·project open/shutdown candidate 3건·source NUL·Fat JAR sentinel 회귀를 추가했다.
+- JDK 21 `mvn -o clean verify` BUILD SUCCESS: Java 570 tests(실패·오류 0, opt-in 2 skip), React 59 files/468 tests·typecheck, Fat JAR/bundle release guard 통과. 새 JAR Playwright `--retries=0` 15/15 통과(30.3s).
+- JAR: 31,940,812 bytes, SHA-256 `9c537476765bc75d8924e3e6ae7b0a138d03aac6cf74b75045fcdaef7b811103`. D-146 CORROBORATED 비승격과 D-147 UNKNOWN/미지원 본문 처리는 유지한다. 실제 Burp·Windows·native Linux는 이번 변경 기준 미실행이다.
+
 ## 2026-09-12 · D-149 잔존 리뷰 보완·전체 검증 완료
 
 - 리뷰 7건 중 프로젝트 설치 교착과 종료 저장은 D-147에서 이미 닫혔고, D-145 이전 route/rail/테스트 수치는 역사로 구분돼 있었다. D-146의 CORROBORATED 비승격은 정확 참조 없는 동시출현을 확정 인가 경계로 과대 표시하지 않기 위해 유지한다.
@@ -39,7 +47,7 @@
 - 최종 산출물 JAR: 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`. 최종 bundle 해시는 모든 내부 문서가 확정된 뒤 외부 결과에서만 식별한다.
 - 실제 Burp 복수 서비스·중첩 API와 대규모 dataset precision/recall은 계속 운영 gate다.
 
-최종 갱신: 2026-09-12. 현재 브랜치는 `codex/react-ui-integration`이며 D-145의 통합 작업면, D-146의 서비스·리소스 관계 보정, D-147~149의 수명·설명·fixture 연결부 보완을 포함한다. 현행 상태는 맨 위 진행 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 2026-09-11 이식 내역과 단계별 수치는 당시 산출물의 이력이다.
+최종 갱신: 2026-09-12. 현재 브랜치는 `codex/react-ui-integration`이며 D-145의 통합 작업면, D-146의 서비스·리소스 관계 보정, D-147~150의 수명·Evidence·검증 연결부 보완을 포함한다. 현행 상태는 맨 위 진행 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 2026-09-11 이식 내역과 단계별 수치는 당시 산출물의 이력이다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 

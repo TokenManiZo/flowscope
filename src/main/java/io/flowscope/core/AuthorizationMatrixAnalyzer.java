@@ -731,7 +731,7 @@ public final class AuthorizationMatrixAnalyzer {
     }
 
     private static String key(String identity, String operation, String resource) {
-        return String.valueOf(identity) + " " + operation + " " + String.valueOf(resource);
+        return String.valueOf(identity) + "\u0000" + operation + "\u0000" + String.valueOf(resource);
     }
 
     private static Confidence p0() { return new Confidence("P0", 0, "정책 미정", "명시 정책 근거 없음"); }

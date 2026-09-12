@@ -356,6 +356,10 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   const detailSheet = page.getByRole("region", { name: "Evidence 상세" })
   await expect(detailSheet).toBeVisible()
   await expect(detailSheet.getByText(`선택 Evidence: ${evidenceId}`, { exact: true })).toBeVisible()
+  const operationEvidence = page.getByRole("region", { name: "작업 Evidence 페이지" })
+  await expect(operationEvidence).toBeVisible()
+  await expect(operationEvidence.getByText(evidenceId, { exact: true })).toBeVisible()
+  await expect(operationEvidence.getByText(/Request 보존:/)).toBeVisible()
 })
 
 test("keeps the priority Gap graph workspace, queue sheet, path list, and detail usable across 1920, 1280 and 600px", async ({ page }) => {

@@ -165,7 +165,7 @@ HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLO
 
 Web 요청 실험실은 관측 Evidence의 HTTP 전문을 큰 편집기에서 열고 원래 `HttpService`에만 보낸다. 화면에는 관측 신원과 현재 재사용 가능한 등록 계정 세션을 별도 필드로 표시한다. 요청 path가 현재 exact scope 밖이면 전송 전에 거부하고 redirect는 `NEVER`, upstream TLS 검증과 30초 응답 상한을 유지한다. `ORIGINAL`은 사용자가 편집하지 않았다면 원문 바이트를 그대로 사용하고, 편집했다면 선언 문자셋으로 재구성한다. `ANONYMOUS`는 broker 관리 인증 헤더를 제거하며, `ACCOUNT`는 먼저 동일 헤더를 제거한 뒤 선택한 ACTIVE 계정의 현재 값을 주입한다. 기존 `Content-Length`는 Montoya가 계산한 실제 body byte 길이에 맞춘다. 결과는 `source=HUMAN`, `detail=MANUAL_HTTP`, `tool=BURP`, `phase=VALIDATION`, `executionTrust=CONTROLLED`로 새 Evidence가 되며 immutable discovery gate가 coverage·gap 성과로 계산하지 않는다. 화면 전송 이력은 탭 메모리 10건뿐이고 저장하지 않는다.
 
-beta.33부터 요청 실험실은 Evidence를 열 때마다 generation을 올려 늦게 도착한 이전 초안을 폐기하고, 전송 중에는 Evidence 변경·요청 편집·인증 모드·계정·닫기·재전송을 잠근다. 각 전송은 난수 operation ID를 가지며 localhost 서버는 `Evidence ID + 요청 전문 + 인증 모드 + 계정`의 길이 프레이밍 SHA-256이 같은 중복만 최초 결과로 합치고, 같은 ID의 다른 요청은 거부한다. 서버 응답을 받지 못한 경우 같은 탭의 동일 draft에 한해 operation ID를 재사용하고, 입력 또는 Evidence가 바뀌면 새 작업으로 취급한다. 캐시에는 요청 원문이나 전체 응답을 남기지 않고 compact 결과만 최대 256건 유지한다. 분석 publish는 별도 epoch를 사용해 입력 변경 뒤 끝난 오래된 pipeline 결과가 초기화·검증 Evidence·최신 정책 snapshot을 덮지 못하게 한다(D-100).
+beta.33부터 요청 실험실은 Evidence를 열 때마다 generation을 올려 늦게 도착한 이전 초안을 폐기하고, 전송 중에는 Evidence 변경·요청 편집·인증 모드·계정·닫기·재전송을 잠근다. 각 전송은 난수 operation ID를 가지며 localhost 서버는 `Evidence ID + 요청 전문 + 인증 모드 + 계정`의 길이 프레이밍 SHA-256이 같은 중복만 최초 결과로 합치고, 같은 ID의 다른 요청은 거부한다. 서버 응답을 받지 못한 경우 같은 탭의 동일 draft에 한해 operation ID를 재사용하고, 입력 또는 Evidence가 바뀌면 새 작업으로 취급한다. 캐시에는 요청 원문이나 전체 응답을 남기지 않고 compact 결과만 최대 256건 유지한다. background snapshot 조회 실패는 같은 dataset·Evidence의 미전송 raw draft를 메모리에 유지하되 편집·인증 변경·전송·Repeater를 잠그며, 복구 후 같은 문맥이면 활성화한다. dataset 교체·좌표 변경·raw/session 전제 상실·사용자 닫기는 계속 폐기 경계다(D-100/D-150).
 
 ### 4.2 정규화 F-04~06
 
@@ -295,7 +295,7 @@ Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델
 
 ## 5. UI
 
-D-148: 공통 OperationEditor의 수명은 datasetRevision과 Evidence 좌표에 결박된다. Evidence/Surface/전체 관계 그래프는 snapshot 실패를 렌더에 즉시 반영해 편집 컴포넌트를 제거하고 마지막 성공 데이터·시각·재시도만 유지한다. 세 화면과 Matrix가 같은 실패 경계를 따른다.
+D-150: 공통 OperationEditor와 operation Evidence query는 datasetRevision·Evidence/operation 좌표에 결박된다. Evidence/Surface/전체 관계 그래프는 background snapshot 실패를 즉시 표시하고 마지막 성공 데이터·시각·재시도를 유지한다. 열린 Request Lab은 같은 dataset의 미전송 초안을 유지하지만 모든 변경·전송 동작을 잠그며 복구 후 다시 활성화한다. 처음부터 성공 snapshot이 없거나 dataset/Evidence 전제가 바뀌면 상세와 초안을 만들지 않는다.
 
 | 작업면 | 역할 |
 |---|---|
@@ -305,7 +305,7 @@ D-148: 공통 OperationEditor의 수명은 datasetRevision과 Evidence 좌표에
 | 판정 매트릭스 | 첫 탭은 D-144 P/E/O projection, 둘째는 `surface.validationCells`의 parameter×authorization-target×subject×source 좌표, 셋째는 기존 identity/role×operation×resource cell이다. 어느 탭도 status·digest로 판정을 새로 만들지 않으며 사람 검토는 서버 Evidence에 결박한다. |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용된 실제 데이터 의존성 |
 | 시나리오 | 현재 BOLA/BFLA 규칙 후보·사람 검토와 별도 과거 LLM 읽기 전용 기록 |
-| 파싱 결과 | 마스킹된 source/identity/method/operation/resource/status, traffic class/disposition/reason, 반복 수, stable Evidence ID. 행 선택은 operation 상세와 페이지형 Evidence로 연결 |
+| 파싱 결과 | 마스킹된 source/identity/method/operation/resource/status, traffic class/disposition/reason, 반복 수, stable Evidence ID. 행 선택은 operation 상세와 200건 단위 마스킹 Request/Response·payload retention 페이지로 연결하며 query key에 datasetRevision을 포함한다. |
 | 계정·세션 | 전체 폭 계정 등록, HUMAN 로그인 캡처, broker 상태/재인증/폐기, 발견 지문 비교와 명시 연결·해제 |
 | LLM Explorer | 시작 URL·비로그인/메모리 계정 선택, Codex 준비상태, 경과시간·요청·Evidence ID·실패·미해결 작업 피드, steer·취소 |
 | 빠른 시작 | HUMAN run, 결정론적 ZAP 대상·비로그인/메모리 브라우저 로그인 계정 선택·신원별 인증/단계/수집/Alert 상태, LLM Explorer와 Evidence 검토 안내 |

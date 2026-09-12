@@ -24,11 +24,14 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }))
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
 
-it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("closes %s actions after a real snapshot failure and keeps the confirmed display available for retry", async kind => {
+it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspends %s actions during a snapshot failure and preserves the unsent Request Lab draft", async kind => {
   let failed = false
-  const fetch = vi.fn((input: RequestInfo | URL) => Promise.resolve(String(input) === "/api/snapshot"
-    ? failed ? json({ success: false, message: "snapshot unavailable" }, 503) : json(snapshot)
-    : json(draft)))
+  const fetch = vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === "/api/snapshot") return Promise.resolve(failed ? json({ success: false, message: "snapshot unavailable" }, 503) : json(snapshot))
+    if (path.startsWith("/api/evidence?")) return Promise.resolve(json({ records: [], total: 0, offset: 0, limit: 200, hasMore: false }))
+    return Promise.resolve(json(draft))
+  })
   vi.stubGlobal("fetch", fetch)
   const client = createTestQueryClient()
   client.setQueryDefaults(["snapshot"], { retryDelay: 0 })
@@ -50,29 +53,30 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("closes 
   }
   await select()
   await userEvent.click(await screen.findByRole("button", { name: "Request Lab 열기" }))
-  await screen.findByLabelText("Request Lab 요청 원문")
+  const request = await screen.findByLabelText("Request Lab 요청 원문")
+  await userEvent.clear(request)
+  await userEvent.type(request, "EDITED-DRAFT")
 
   failed = true
   await act(async () => { await client.invalidateQueries({ queryKey: ["snapshot"] }) })
   expect(client.getQueryState(["snapshot"])?.status).toBe("error")
   await screen.findByText("snapshot unavailable")
-  expect(screen.queryByLabelText("필수 역할")).not.toBeInTheDocument()
-  expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument()
-  expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
-  expect(screen.queryByRole("button", { name: "Repeater 초안 열기" })).not.toBeInTheDocument()
+  expect(screen.getByLabelText("Request Lab 일시 중지")).toBeVisible()
+  expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
+  expect(screen.getByLabelText("Request Lab 요청 원문")).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
   expect(screen.getByText("마지막 성공 데이터 · 현재 상태 아님")).toBeVisible()
   expect(client.getQueryData(["snapshot"])).toEqual(snapshot)
-  if (kind === "evidence") expect(screen.getByText("actual-a")).toBeVisible()
-  if (kind === "surface") expect(screen.getByText("/orders/{id}")).toBeVisible()
-  if (kind === "evidence" || kind === "surface") expect(screen.getByRole("button", { name: "상세 보기" })).toBeDisabled()
-  await select()
-  expect(screen.queryByLabelText("필수 역할")).not.toBeInTheDocument()
+  if (kind === "evidence") expect(screen.getAllByText("actual-a").length).toBeGreaterThan(0)
+  if (kind === "surface") expect(screen.getAllByText("/orders/{id}").length).toBeGreaterThan(0)
+  expect(screen.getByLabelText("필수 역할")).toBeDisabled()
   expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(1)
 
   failed = false
-  await userEvent.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
+  await act(async () => { await client.invalidateQueries({ queryKey: ["snapshot"] }) })
   await waitFor(() => expect(screen.queryByText("snapshot unavailable")).not.toBeInTheDocument())
-  expect(screen.queryByLabelText("필수 역할")).not.toBeInTheDocument()
-  await select()
-  expect(await screen.findByLabelText("필수 역할")).toBeVisible()
+  expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
+  expect(screen.getByLabelText("Request Lab 요청 원문")).toBeEnabled()
+  expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeEnabled()
+  await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(2))
 })

@@ -43,7 +43,7 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 - 계정·세션 연결, 정책, 과거 읽기 전용 평가, 사람 감사 판정과 값·비밀정보 없는 실행 시도 결과를 관계형으로 보존하는 로컬 `.flowscope.db`. Web의 **새 진단 시작**은 현재 진단을 `~/.flowscope/projects/<이름--scope--시각>/project.flowscope.db`에 먼저 저장한 뒤 새 exact scope의 빈 프로젝트로 전환하며, 저장 실패 시 현재 화면을 유지합니다. 상단에서 `저장 대기/저장 중/저장됨/저장 실패`와 이전 프로젝트를 확인할 수 있습니다. HTTP 응답 Evidence와 응답 전 TLS·DNS·timeout·연결 실패는 분리되어, “새 API를 못 찾음”과 “요청 자체를 못 보냄”을 구분합니다. 변경은 30초 checkpoint로 합쳐 자동 저장하며, `.flowscope.json`은 호환 내보내기·가져오기로 유지
 - path/query/JSON·XML·multipart·GraphQL에서 명시적으로 관측된 객체 참조를 모두 보존. 기존 인가 cell은 첫 번째 근거 있는 참조만 primary로 사용해 검증되지 않은 객체 Cartesian product를 만들지 않음
 - `*Id`가 아닌 `customerNo`, `documentSeq`, `accountRef` 같은 도메인 식별자는 이름 하나로 확정하지 않고, 동일 서비스·메서드·경로·필드 위치에서 서로 다른 값이 반복 관측될 때만 `*_SEMANTIC_FIELD_CORROBORATED` 객체 근거로 보강. `pageNo`, `sortKey`, API key류는 제외
-- 명시적 사람 검증을 위한 Web 요청 실험실. live Evidence의 HTTP 원문 바이트는 Burp 프로세스의 상한 있는 메모리에만 보관합니다. Content-Type 문자셋으로 엄격히 디코딩하고, 수정하지 않은 요청은 원래 바이트 그대로 재전송하며, 텍스트로 안전하게 해석할 수 없는 본문은 Web 편집 전송을 차단하고 Burp Repeater로 넘깁니다. Evidence generation과 전송 중 draft 잠금, 서버 operation ID 멱등성으로 늦은 응답·중복 상태 변경을 막으며, `원문 그대로/비로그인/등록 계정` 전송 결과는 discovery가 아닌 HUMAN `VALIDATION` Evidence입니다.
+- 명시적 사람 검증을 위한 Web 요청 실험실. live Evidence의 HTTP 원문 바이트는 Burp 프로세스의 상한 있는 메모리에만 보관합니다. Content-Type 문자셋으로 엄격히 디코딩하고, 수정하지 않은 요청은 원래 바이트 그대로 재전송하며, 텍스트로 안전하게 해석할 수 없는 본문은 Web 편집 전송을 차단하고 Burp Repeater로 넘깁니다. Evidence generation과 전송 중 draft 잠금, 서버 operation ID 멱등성으로 늦은 응답·중복 상태 변경을 막으며, `원문 그대로/비로그인/등록 계정` 전송 결과는 discovery가 아닌 HUMAN `VALIDATION` Evidence입니다. 일시적인 snapshot 조회 실패에서는 미전송 편집을 메모리에 유지하고 전송·인증 변경만 잠그며, 같은 dataset의 조회가 복구되면 다시 활성화합니다.
 - 긴 API 경로는 `/` 경계를 우선해 줄바꿈하고 단일 접근선의 의미 없는 `H×1` 라벨은 숨깁니다. 900px 이하 화면은 잘린 그래프 대신 같은 필터의 API 목록을 제공하며, 파싱 결과의 명시적 `상세 보기`는 선택한 Evidence ID를 그대로 엽니다. 관측 신원과 재사용 가능한 등록 계정 세션은 별도 개념으로 표시합니다.
 - XXE 차단과 item 단위 오류 건너뛰기를 적용한 엄격한 Burp XML 가져오기, 크기·깊이·항목 단위 오류 경계를 둔 ZAP HAR 가져오기. 두 입력은 계정·세션 지문·run provenance가 다른 동일 HTTP를 합치지 않으며 같은 파일 재가져오기만 multiset 기준으로 억제합니다. XML base64 HTTP 본문은 명시된 Content-Type 문자셋을 따르고 XML/HAR의 IPv6 service는 대괄호 표기로 정규화합니다.
 
@@ -213,7 +213,7 @@ ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
 - **시나리오** — 현재 결정론적 BOLA/BFLA 규칙 후보와 사람 검토. 이전 LLM 평가·판정은 별도 읽기 전용 기록
 - **시나리오 감사·오버라이드** — Evidence-bound 상태와 마스킹 note를 갖는 사람 감사면. 자동 LLM 판정이 아님
-- **Evidence** — 마스킹된 source, identity, method, 정규화 operation, resource, status, traffic class/disposition, repeat count, stable Evidence ID. 행을 선택하면 snapshot의 정확한 Evidence metadata를 표시하고, 원문은 사용자가 Request Lab을 열 때 해당 Evidence 하나만 메모리로 가져옴
+- **Evidence** — 마스킹된 source, identity, method, 정규화 operation, resource, status, traffic class/disposition, repeat count, stable Evidence ID. 행을 선택하면 같은 operation의 마스킹 Request/Response와 payload 보존 상태를 200건씩 페이지로 확인합니다. live 원문은 사용자가 Request Lab을 열 때 해당 Evidence 하나만 메모리로 가져옵니다.
 - **계정·세션** — 비밀값 없는 계정별 카드, `로그인 필요/확인 중/사용 가능/다시 로그인 필요` 행동 안내, 명시적 HUMAN 로그인 캡처, 접힌 내부 인증 단서와 고급 미연결 진단, 연결·해제, 재인증, 메모리 폐기, 계정 삭제
 - **오른쪽 상세·요청 비교** — 선택 API의 source별 verdict, 필요할 때만 가져오는 마스킹 Request/Response, 전체 화면 요청 실험실과 Burp Repeater 초안을 제공합니다. Gap의 요청 비교는 사용자가 연 시점에만 `/api/evidence`에서 민감 경로·값을 제외한 구조 metadata와 비민감 값 SHA-256을 가져와 presence/shape/type/value 변화를 비교합니다. digest는 값 동일성 신호일 뿐 서버 사용·인가·취약점 증거가 아니며 main polling snapshot·프로젝트에는 들어가지 않습니다.
 
