@@ -1,5 +1,12 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-12 · main 배포 CI 첫 실행과 상태 대기 보정
+
+- 원격 [CI 34689208640](https://github.com/choewonwoo1817/testflowscope/actions/runs/34689208640), 소스 `8fe8527`: React 471건, Bash/ShellCheck와 Windows PowerShell 구문 검사 통과. Java 570건 중 실패 2, 오류 0, opt-in 2 skip. 패키지 검사·재현성 단계는 도달하지 않았다.
+- 실패는 `cancellingZapBaselineStopsOwnedCrawlerClearsCapabilityAndAbortsRun`의 scan ID 등록 전 취소와 `scannerCampaignResetsZapAndRunsAnonymousThenEachActiveAccount`의 2초 대기 종료 시 아직 세 번째 계정 인증 중인 상태였다.
+- 테스트를 scan ID 게시·terminal 상태의 monotonic 최대 10초 대기로 바꿨다. 제품 코드를 변경하거나 실패·정리 단언을 제거하지 않았다. 로컬 JDK 21 집중 `ZapCampaignRegressionTest` 16/16 통과.
+- 후속 로컬 전체 `mvn -o clean verify`: 2026-09-12 19:53 KST BUILD SUCCESS, Java 570건(실패·오류 0, opt-in 2 skip), React 59파일·471건·타입검사, JAR/bundle guard 통과. 원격 CI 재실행 결과는 별도로 확인한다.
+
 ## 2026-09-12 · D-151 전 작업면 snapshot 초안·전송 수명 최종 검증
 
 | 항목 | 실제 결과 |

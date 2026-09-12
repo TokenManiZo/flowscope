@@ -11,7 +11,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import java.net.InetSocketAddress;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
+import java.util.function.Predicate;
 import static io.flowscope.FakeZap.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,6 +25,20 @@ final class ZapCampaignRegressionTest {
     private static void restoreProperty(String name, String value) {
         if (value == null) System.clearProperty(name);
         else System.setProperty(name, value);
+    }
+
+    private JsonNode awaitBaselineState(Predicate<JsonNode> ready) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        JsonNode status;
+        do {
+            status = server.deterministicZapBaselineStatus();
+            if (ready.test(status)) return status;
+            Thread.sleep(10);
+        } while (System.nanoTime() < deadline);
+        status = server.deterministicZapBaselineStatus();
+        assertTrue(ready.test(status), () -> "campaign did not reach the expected state: "
+                + server.deterministicZapBaselineStatus());
+        return status;
     }
 
     private JsonNode startBaseline(String input) throws Exception {
@@ -189,7 +205,7 @@ final class ZapCampaignRegressionTest {
 
             JsonNode started = server.startDeterministicZapCampaign(target, List.of(), true);
             assertEquals("RUNNING", started.path("status").asText());
-            for (int i = 0; i < 100 && !clientStarted.get(); i++) Thread.sleep(10);
+            awaitBaselineState(status -> "1".equals(status.path("scan_id").asText()));
             assertTrue(clientStarted.get());
 
             JsonNode cancelled = server.cancelDeterministicZapBaseline();
@@ -841,12 +857,8 @@ final class ZapCampaignRegressionTest {
             assertEquals(3, failedStart.at("/lanes/1/queue_total").asInt());
             assertTrue(failedStart.at("/lanes/1/wait_reason").asText()
                     .contains("lane 완료 후 시작"));
-            JsonNode failedStatus = null;
-            for (int i = 0; i < 200; i++) {
-                failedStatus = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(failedStatus.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode failedStatus = awaitBaselineState(status ->
+                    !"RUNNING".equals(status.path("status").asText()));
             assertNotNull(failedStatus);
             assertEquals("FAILED", failedStatus.at("/status").asText(),
                     failedStatus.toString());
@@ -862,12 +874,8 @@ final class ZapCampaignRegressionTest {
                     + "\",\"run_id\":\"campaign-2\",\"include_anonymous\":true,"
                     + "\"account_ids\":[\"zap-user-a\",\"zap-user-b\"]}");
 
-            JsonNode status = null;
-            for (int i = 0; i < 200; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
             assertNotNull(status);
             assertEquals("COMPLETED", status.at("/status").asText(), status.toString());
             assertEquals(List.of("anonymous", "zap-user-a", "zap-user-b"), seenAccounts.get());

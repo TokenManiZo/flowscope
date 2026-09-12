@@ -1,5 +1,12 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · main 반영 완료·beta.46 테스트 Release 게시 준비
+
+- 사용자 요청으로 작업 브랜치의 완료 커밋 37개를 원격 `main`에 fast-forward했다. 배포 코드 기준은 `8fe852729f21c12cdfc27af1b9e35ca8117c46ae`이며 강제 푸시는 하지 않았다.
+- `v1.2.0-beta.46` 사전 릴리스 초안에 검증된 JAR, 설치 번들, `SHA256SUMS.txt`를 업로드했다. GitHub가 반환한 JAR·번들 digest가 로컬 파일과 일치한다. 원격 CI의 전체 검증 완료 뒤 공개한다.
+- 첫 원격 CI는 ZAP mock 회귀 2건의 대기 전제로 실패했다. scan ID 등록·terminal 상태를 최대 10초까지 기다리도록 테스트만 수정했다. 집중 16/16과 로컬 전체 `mvn -o clean verify`(Java 570, 실패·오류 0, opt-in 2 skip / React 471)가 통과했고 원격 재검증을 기다린다. 실제 시작 응답 이전 취소 경합은 이 검증 범위에 포함하지 않는다.
+- 멘토 보고서 `mentor-progress-report.md`는 미추적 로컬 파일로 보존하고 Git·JAR·번들·Release 자산에서 제외했다. 아래 D-151 이전의 `push/Release 없음`은 당시 작업 이력이다.
+
 ## 2026-09-12 · D-151 전 작업면 snapshot 초안·전송 수명 통일·전체 검증 완료
 
 - D-150 뒤 남은 판정 매트릭스·파라미터 커버리지·기존 권한 매트릭스·점검 Gap의 일시 snapshot 실패 선택 해제를 제거했다. 시나리오와 흐름 상세도 같은 공통 `EvidenceSheet` 잠금 계약으로 맞췄다. 마지막 성공 데이터·선택·검토 메모·Request Lab 초안은 남고 새 선택·정책 변경·전송·Repeater는 잠긴다.
