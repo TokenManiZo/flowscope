@@ -5,7 +5,7 @@
 - `11bb07b`와 Claude worktree의 미커밋 PR 흡수분을 인수해 상단 그룹 탐색, Gap/관계 그래프 통합, 파라미터 매트릭스, Evidence 단위 요청 비교, Request Lab 수명, 종료 저장을 현행 정본 위에 완성했다. 삭제된 Judge/MCP, 레거시 판정, record-level 제2정본은 복구하지 않았다.
 - 실패한 프로젝트 전환에서도 Request Lab 폐기 신호가 먼저 발생하던 문제를 RED 회귀로 확인하고 서버 성공 뒤에만 신호를 보내도록 수정했다. 프로젝트 설치와 unload는 같은 monitor에서 시작 순서를 확정한다.
 - JDK 21 `mvn -o clean verify`는 Java 536 tests(실패·오류 0, opt-in 2 skip), React 58 files/452 tests와 패키징을 통과했다. 패키지 JAR Playwright는 grouped navigation·Graph/Matrix·Gap·Request Lab·계정·ZAP/Explorer·반응형 14/14를 재시도 없이 통과했다.
-- 산출물: JAR 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`; bundle 30,820,681 bytes, SHA-256 `03ba745794b06c114800d49f34371cb512d99ac8f4bd4023e958139942422f67`.
+- D-145 산출물 JAR: 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`. bundle은 이 문서를 포함하므로 자기 해시를 내부에 기록하지 않는다.
 - 실제 Burp load/unload·disk failure·대규모 Evidence 비교 비용과 Windows는 아직 운영 gate다. 자동·Standalone 통과를 실대상 탐지 성능으로 확대하지 않는다.
 
 ## 2026-09-12 · 인가 추천의 서비스·구조·관계 경계 보정 완료(D-146)
@@ -13,7 +13,7 @@
 - 기준 `11bb07b`를 별도 `codex/pr11-pr12-core-repair` 작업트리에서 재검증해 타 서비스 등록 계정의 BOLA 추천 혼입, 중첩 PATH 부모 슬롯의 자식 리소스 오연결, 일반 입력 반복 동시출현의 확정 인가 경계 과대 표시를 재현하고 수정했다.
 - 판정 매트릭스는 등록 계정의 설정 서비스 또는 미등록 신원의 실제 관측 서비스 안에서만 조합한다. 중첩 PATH는 `/segments/N` 순서에 맞는 resource chain prefix를 사용하고, CORROBORATED/INFERRED 동시출현은 link를 보존하되 `HUMAN_REVIEW_REQUIRED`로 표시한다.
 - 수정 전 실패한 회귀 6건이 수정 후 통과했다. D-145 작업면과 합친 최종 JDK 21 `mvn -o clean verify`는 Java 542 tests(실패·오류 0, opt-in 2 skip), React 58 files/452 tests를 통과했고 패키지 Playwright 14/14도 retry 없이 통과했다.
-- 최종 산출물: JAR 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`; bundle 30,828,562 bytes, SHA-256 `6b13b63f6350f3f2566e6c98ce68a32450be4b0d064a6d324c4fd37bad9d7811`.
+- 최종 산출물 JAR: 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`. 최종 bundle 해시는 모든 내부 문서가 확정된 뒤 외부 결과에서만 식별한다.
 - 실제 Burp 복수 서비스·중첩 API와 대규모 dataset precision/recall은 계속 운영 gate다.
 
 최종 갱신: 2026-09-11 PR #11·#12 이식 1~7단계 완료(최종 인계 §1-1; 7단계: JSON·SQLite 재열기·화면 간 Evidence 통합 회귀, Playwright 좁은 viewport, 설계 문서 이식), 6단계(PR#12 판정 매트릭스 P/E/O·BFLA/BOLA 수동 테스트 추천·사람 검토, D-144 정본 재판정 금지 guard; 패키지 Chromium 실측·Playwright) 완료, 5단계(5a: `#parameter-map` 우선순위 Gap 그래프·검증표·Gap 상세→Evidence→Request Lab, 5b: 구조화 요청 비교 탭 + `EndpointFact.requestContexts`, 5c: `#graph` 계층 관계 그래프 Site→API 그룹→API→Object·`+18`, D-142 gate 해소, 5d: snapshot surface 계약·단일 캐시 회귀 + 선언 preview 결정성 수정) 패키지 Chromium 실측 완료, 4단계(권한 대상 link·검증 cell·AUTH_VARIANT_UNTESTED)·3단계(파라미터 프로파일·discovery Gap) 자동 회귀 + 패키지 Standalone snapshot 실측 완료, 2단계(선언 의미 확장) 자동 회귀 완료, 1단계(네 결함 수정·기능 대조표)는 패키지 Chromium 실측 포함; Burp 미실행 — 관측·선언이 공통 ParameterCoordinate로 병합하고 `mvn clean verify` 통과; packaged JAR·실제 실행은 미실행. 이전: D-140~142 자동 회귀와 패키지 Standalone E2E 완료, 운영 gate 대기. 새 진단 시작 시 기존 화면을 삭제하는 대신 현재 상태를 `~/.flowscope/projects/<진단명--scope--시각>/project.flowscope.db`에 먼저 저장하고 새 exact scope의 빈 프로젝트로 전환한다. React 상단 프로젝트 선택기·저장 상태·새 진단 대화상자와 Surface→Evidence/Request Lab/Repeater를 실제 API에 연결하고 삭제형 `/api/clear`는 거부한다. Standalone도 격리된 SQLite workspace로 같은 프로젝트 API를 검증하며 Explorer 사용 불가는 500이 아닌 명시적 상태로 표시한다. JDK 21 전체 verify 2회가 React 250·Java 407 tests와 최종 JAR gate를 통과했고, clean JAR의 Chromium E2E 8/8이 통과했다. 실제 Burp 재로드·프로젝트 재열기·최종 ZAP/Explorer 운영 검증 전이므로 릴리스 완료로 간주하지 않는다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.

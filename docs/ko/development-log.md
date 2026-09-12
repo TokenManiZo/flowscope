@@ -15,7 +15,7 @@
 - 코드: React app/navigation/dashboard/graph/matrix/parameter-map/evidence, API types/endpoints/dataset boundary, `SnapshotJsonWriter`, `FlowScopeExtension`, `SampleProject`.
 - 테스트: React 58 files/452 tests, Java 536 tests(실패·오류 0, opt-in 2 skip), focused Request Lab 실패 전환·install/unload 원자성 회귀, 패키지 Playwright 14/14 재시도 없이 통과.
 - 문서: README 한/영, architecture, endpoint Surface, UI rationale, decisions D-145, plan, HANDOFF, CHANGELOG 한/영, documentation status, beta validation.
-- 산출물: JAR 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`; bundle 30,820,681 bytes, SHA-256 `03ba745794b06c114800d49f34371cb512d99ac8f4bd4023e958139942422f67`.
+- D-145 산출물 JAR: 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`. bundle은 문서를 포함하므로 내부에 자기 해시를 고정하지 않는다.
 
 ### 남은 한계·다음 gate
 
@@ -35,11 +35,12 @@
 - 코드: `core/AuthorizationMatrixAnalyzer.java`, `core/SurfaceAuthorizationLinker.java`.
 - 테스트: `AuthorizationMatrixAnalyzerTest` 3건(타 서비스 등록 계정, 두 서비스 등록 계정, 실제 관측 서비스의 익명 신원), `SurfaceAuthorizationLinkTest` 3건(중첩 부모/자식, 반복 ID, 동시출현과 정확 PATH 경계 분리). 수정 전 6건 RED, 수정 후 focused 35/35 GREEN.
 - 문서: README 한/영, CHANGELOG 한/영, architecture, endpoint-parameter-surface, decisions D-146, product plan, UI rationale, documentation status, HANDOFF, beta validation.
-- D-145 통합 최종 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS. Java 542 tests(실패·오류 0, opt-in 2 skip), React 58 files/452 tests 통과. 패키지 Playwright 14/14 retry 0. JAR 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`; bundle 30,828,562 bytes, SHA-256 `6b13b63f6350f3f2566e6c98ce68a32450be4b0d064a6d324c4fd37bad9d7811`.
+- D-145 통합 최종 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS. Java 542 tests(실패·오류 0, opt-in 2 skip), React 58 files/452 tests 통과. 패키지 Playwright 14/14 retry 0. JAR 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`.
 
 ### 남은 한계·다음 gate
 
 - 실제 Burp에서 복수 서비스 프로젝트, 중첩 API, 대규모 실제 dataset의 추천 precision/recall은 미검증이다. 통합 첫 E2E에서 이미 fit된 graph의 geometry가 반드시 바뀐다고 가정한 검사가 1회 retry됐고, fit 명령 소비 version을 명시적으로 검사하도록 고친 최종 실행은 14/14 retry 0이다.
+- 검증 직후 bundle SHA-256을 이 문서 안에 적으려다, 문서 자체가 bundle에 포함되어 기록 순간 산출물이 다시 바뀌는 자기참조를 재확인했다. 기존 D-129/D-133 원칙대로 bundle hash는 내부 문서에서 제거하고 최종 package 뒤 외부 결과에서만 보고한다.
 
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 7단계 — 통합 검증(화면 간 선택·Evidence·저장/재열기·좁은 viewport)과 설계 문서 이식, 최종 인계
 

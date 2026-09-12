@@ -7,7 +7,7 @@
 | 수정 전 재현 | Claude 미커밋 트리의 Maven 회귀는 통과했지만 패키지 Playwright는 grouped menu 접근성 이름 불일치로 14건 중 1건 실패·9건 미실행. 실패한 프로젝트 열기에도 dataset replacement signal이 발생하는 RED 회귀와 프로젝트 설치/unload TOCTOU를 확인했다. |
 | 자동 회귀 | JDK 21 `mvn -o clean verify` BUILD SUCCESS. Java 536 tests(실패·오류 0, opt-in 2 skip), React typecheck·58 files/452 tests 통과. 실패 전환은 Request Lab 편집과 signal 0회를 보존하고, install/unload 원자 경계 회귀는 15/15를 통과했다. |
 | 패키지 Playwright | `npm run e2e -- --reporter=line`: 14/14 passed(29.3s), retry 0. grouped navigation, Dashboard→Gap, Gap 카드/필터/tooltip/600px Sheet, 관계 그래프, 세 Matrix tab, Request Lab, 계정, ZAP/Explorer, XML, 900/600px shell을 같은 JAR에서 확인했다. 외부 origin·능동 대상 요청·console/page error 0. |
-| 산출물 | JAR 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`; bundle 30,820,681 bytes, SHA-256 `03ba745794b06c114800d49f34371cb512d99ac8f4bd4023e958139942422f67`. |
+| 산출물 | JAR 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`. bundle은 이 문서를 포함하므로 자기 hash/size를 내부에 고정하지 않는다. |
 | 미실측 | 실제 Burp load/unload·disk failure·Windows, 대규모 Evidence 비교 비용, 실제 대상의 탐지 precision/recall. |
 
 ## 2026-09-12 · 미출시 · 인가 추천 서비스·구조·관계 경계(D-146) gate
@@ -18,7 +18,7 @@
 | 수정 후 집중 회귀 | `AuthorizationMatrixAnalyzerTest` 12건 중 신규 서비스 경계 3건, `SurfaceAuthorizationLinkTest` 23건 중 신규 중첩 PATH·반복 ID·동시출현 경계 3건 통과. 두 focused class 35/35 GREEN. |
 | D-145 통합 `mvn -o clean verify` | BUILD SUCCESS. Java 542 tests(실패·오류 0, opt-in 2 skip), frontend typecheck·vitest 58 files/452 tests 통과. |
 | 통합 Playwright | 최종 14/14 passed(29.0s), retry 0. 첫 통합 실행은 이미 fit된 geometry가 반드시 바뀐다고 가정한 검사 1건이 retry됐고, 제품의 E2E seam이 fit 명령 소비 version을 게시하도록 바꾼 뒤 최종 재실행했다. |
-| 최종 산출물 | JAR 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`; bundle 30,828,562 bytes, SHA-256 `6b13b63f6350f3f2566e6c98ce68a32450be4b0d064a6d324c4fd37bad9d7811`. |
+| 최종 산출물 | JAR 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`. bundle hash는 모든 내부 문서 확정 뒤 외부 결과에서 식별한다. |
 | 미실측 | 실제 Burp 복수 서비스·중첩 API, 대규모 dataset의 추천 precision/recall은 별도 운영 gate다. |
 
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 7단계(통합 검증·최종 인계) gate
