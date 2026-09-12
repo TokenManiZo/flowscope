@@ -4,7 +4,7 @@
 
 ## 현재 우선순위 · PR #11·#12 이식 기능 대조표 (2026-09-11)
 
-**D-152 진행:** beta.46의 terminal/cleanup 경합을 지연 응답 회귀로 재현하고 제품 상태 게시·활성 run·취소 lane 마감을 보정했다. beta.47 로컬 전체 Java 574(2 skip)·React 472·패키지 Playwright 15/15, 실물 ZAP 하네스 1/1을 통과했다. 원격 CI·수정 PR·새 Release는 진행 중이다. 원 PR #11·#12의 head는 이식 당시와 같으며 대조표·차이 근거를 남기고 종료할 예정이다.
+**D-152 완료:** beta.46의 terminal/cleanup 경합을 지연 응답 회귀로 재현하고 제품 상태 게시·활성 run·취소 lane 마감을 보정했다. beta.47 로컬 전체 Java 574(2 skip)·React 472·패키지 Playwright 15/15, 실물 ZAP 하네스 1/1과 PR #13 원격 CI/재현성을 통과해 main에 반영했다. 원 PR #11·#12는 이식·대체 근거와 함께 종료했고, 팀원 배포 파일은 beta.47로 분리한다. 실물 fixture 검증과 실제 Burp/Windows/외부 대상 미실측은 계속 구분한다.
 
 **D-151 완료 상태:** D-150의 일시 snapshot 실패 수명을 판정·파라미터·기존 권한 매트릭스, 점검 Gap, 시나리오, 흐름 상세까지 통일했다. 선택·검토 메모·Request Lab 초안을 보존하고 새 동작만 잠그며, 실패 전에 시작한 전송은 같은 dataset·Evidence 결과를 기다린다. PR #11 persistence 9건은 현행 대체 회귀와 폐기된 record-level/generation 계약을 사례별로 기록했다. 최신 검증 수치는 `beta-validation.md` D-151을 따른다.
 

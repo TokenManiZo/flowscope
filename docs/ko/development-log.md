@@ -8,7 +8,9 @@
 - React 점검 화면은 정리 경과시간·한국어 설명을 표시하고 시작·중복 취소를 막는다. 기존 테스트의 정리 전 `CANCELLED` 기대는 cleanup 응답→최종 취소→즉시 재시작으로 바꿨으며, 재시작을 예외 retry로 통과시키던 경로는 제거했다. 단순 1초 추측 polling은 10초 상한의 실제 상태 대기로 통일했다. 제품 timeout·검사 범위·판정 규칙은 바꾸지 않았다.
 - 검증: 로컬 JDK 21 전체 Java 574(실패·오류 0, opt-in 2 skip), React 59파일/472건·타입검사·release guard 통과. 패키지 Playwright retry 0으로 15/15(30.2s). JAR 31,942,102 bytes, SHA-256 `80d6e5357b3d73fdcfa274662f5bdfce39d792e3675c24dbbc7b9fa331e38cbe`.
 - 실물: Docker Desktop을 시작한 뒤 별도 Compose project `flowscope-beta47-gate`, API 18889/fixture proxy 18881/전용 임시 key로 테스트했다. ZAP 2.17 기반 Chromium/ChromeDriver 152.0.7977.82, 익명+정상 2계정 Client 완료 63요청, 다음 캠페인 잘못된 비밀번호는 Client 실행 전 거부. opt-in 1/1, 106.6초 통과. Burp hook·Windows 실기기·임의 외부 대상 결과로 확대하지 않는다.
-- 배포: beta.46을 재작성하지 않고 beta.47로 버전과 현행 설치 안내를 올렸다. 코드/회귀/문서 한 작업 단위로 PR·원격 CI 뒤 배포한다. 원본 PR #11·#12의 head가 이식 당시와 같음을 확인했고 현행 Surface·React·Authorization 경로와 대조표를 재확인했다.
+- 배포: beta.46을 재작성하지 않고 beta.47로 버전과 현행 설치 안내를 올렸다. 원본 PR #11·#12의 head가 이식 당시와 같음을 확인했고 현행 Surface·React·Authorization 경로와 대조표를 재확인했다.
+- 원격 CI `34693083743`: verify 9분 10초, 전체 build·JAR/bundle·동일 러너 재현성·Bash/Windows 구문 검사 전부 성공. 코드 `3f9d107`을 PR #13으로 main `43706f1`에 병합했고 두 트리의 파일 내용이 같다. 승인 1건 규칙은 소유자 관리자 예외 병합을 사용했으며 규칙을 수정하지 않았다.
+- PR #11·#12는 수동 이식 위치·달라진 계약과 검증 링크를 댓글로 남긴 뒤 종료했다. 원본 브랜치 삭제나 수동 이식을 merge 이력으로 꾸미는 작업은 하지 않았다. 검증용 Docker 컨테이너·네트워크와 전용 임시 key는 제거했고 사용자 8089 ZAP은 보존했다. 팀원 설치·검증 경계는 beta.47 가이드/Release 설명에 제공한다.
 
 ## 2026-09-12 · main 반영·beta.46 팀원 테스트 배포 준비
 

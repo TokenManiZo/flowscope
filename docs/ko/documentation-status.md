@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-현재 작업: D-152 beta.47. ZAP cleanup과 terminal 게시·재시작, 수락된 Client 시작 응답 전 취소를 보정했다. 로컬 Java 574(2 skip)·React 472·Playwright 15/15 및 별도 실물 ZAP 하네스 1/1(익명·정상 2계정·잘못된 비밀번호)이 통과했다. 원격 CI와 배포 상태는 HANDOFF를 따른다. 아래 beta.46 수치와 배포 정보는 그 산출물의 이력이다.
+현재 기준: D-152 beta.47. ZAP cleanup과 terminal 게시·재시작, 수락된 Client 시작 응답 전 취소를 보정했다. 로컬 Java 574(2 skip)·React 472·Playwright 15/15, 별도 실물 ZAP 하네스 1/1 및 PR #13 원격 전체 CI/재현성이 통과했다. main 반영과 원본 PR #11·#12 종료 근거는 HANDOFF를 따른다. 배포 대상은 beta.47 JAR·bundle이며 아래 beta.46 정보는 이전 산출물의 이력이다.
 
 팀원 테스트 배포 기준: `570d576`의 원격 CI는 전체 빌드·JAR/번들 검사·동일 러너 재현성·Bash·Windows 구문 검사를 통과했다. [팀원 첫 실행](team-quick-start.md)은 다운로드 bundle 사용자용이며 README와 설치 가이드에서 연결한다. 아래의 미출시 표현과 push/Release 미실행 문장은 각 개발 시점의 이력이다. 공개 상태와 자산은 [beta.46 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.46)에서 확인한다.
 
