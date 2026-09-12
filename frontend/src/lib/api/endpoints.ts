@@ -49,6 +49,7 @@ export const setHumanRun = (values: { action: "begin"; account: string } | { act
 export const loadSample = () => confirmedDatasetReplacement(postForm<ApiSuccess>("/api/sample", {}))
 export const saveRole = (identity: string, role: string) => postForm<ApiSuccess>("/api/role", { identity, role })
 export const saveRequirement = (operation: string, role: string) => postForm<ApiSuccess>("/api/requirement", { operation, role })
+export const saveResourcePolicy = (target: string, policy: string) => postForm<ApiSuccess>("/api/resource-policy", { target, policy })
 export const saveReview = (itemId: string, status: ReviewStatus, note: string) => postForm<ApiSuccess>("/api/review", { itemId, status, note })
 export const saveTrafficOverride = (operation: string, value: string) => postForm<ApiSuccess>("/api/traffic-override", { operation, value })
 export const mergeIdentity = (from: string, into: string) => postForm<ApiSuccess>("/api/identity-merge", { from, into })

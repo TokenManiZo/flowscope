@@ -12,6 +12,7 @@ import io.flowscope.core.LaneCompletionPolicy;
 import io.flowscope.core.Masking;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.ResourcePolicy;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.ReviewDecision;
 import io.flowscope.core.RunContextRegistry;
@@ -218,6 +219,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/sample" -> sample(request);
             case "/api/role" -> role(request);
             case "/api/requirement" -> requirement(request);
+            case "/api/resource-policy" -> resourcePolicy(request);
             case "/api/review" -> review(request);
             case "/api/traffic-override" -> trafficOverride(request);
             case "/api/identity-merge" -> identityMerge(request);
@@ -632,6 +634,19 @@ public final class FlowScopeWebServer implements AutoCloseable {
             state.config().withEndpointRequirement(required(form, "operation"), parseRole(form.get("role")));
             state.rebuild();
             return success("엔드포인트 요구 권한을 저장했습니다.");
+        } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    private LoopbackHttpServer.Response resourcePolicy(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String target = required(form, "target");
+            ResourcePolicy policy = ResourcePolicy.valueOf(required(form, "policy").toUpperCase(Locale.ROOT));
+            state.config().withResourcePolicy(target, policy);
+            state.rebuild();
+            return success(policy == ResourcePolicy.UNKNOWN
+                    ? "객체 정책을 미정으로 되돌렸습니다." : "객체 접근 정책을 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 

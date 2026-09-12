@@ -52,6 +52,7 @@ final class ProjectStoreTest {
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withEndpointRequirement(record.op, AccessRole.LV1)
                 .withResourceOwner(record.resource, "user-a")
+                .withResourcePolicy(record.resource, ResourcePolicy.OWNER_ONLY)
                 .withTrafficOverride(record.op, TrafficOverride.INCLUDE);
         AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
         config.upsertAccount(account).bindSession(record.service, record.fp, account.id());
@@ -98,6 +99,7 @@ final class ProjectStoreTest {
         assertEquals(TrafficOverride.INCLUDE, loaded.config().trafficOverride(record.op));
         assertEquals(AccessRole.USER, loaded.config().identityRole("user-a"));
         assertEquals("user-a", loaded.config().resourceOwner(record.resource));
+        assertEquals(ResourcePolicy.OWNER_ONLY, loaded.config().resourcePolicy(record.op, record.resource));
         assertEquals("USER A", loaded.config().account("acct-a").orElseThrow().label());
         assertEquals("acct-a", loaded.config().boundAccount(record.service, restored.fp).orElseThrow().id());
         assertEquals("LIKELY", loaded.assessments().get(0).verdict());

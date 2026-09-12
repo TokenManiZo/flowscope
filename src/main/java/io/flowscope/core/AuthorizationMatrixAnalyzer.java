@@ -141,17 +141,27 @@ public final class AuthorizationMatrixAnalyzer {
                                              Pipeline.Result result, AnalysisConfig config,
                                              ValidationDecision validation,
                                              Map<String, RequestRecord> recordsByEvidence) {
-        AccessRole required = config.endpointRequirement(operation);
-        Confidence policy = required == AccessRole.UNKNOWN ? p0() : p3(required);
-        Expected expected = expected(config.identityRole(identity.id()), required);
+        EndpointRequirementInference.Requirement requirement = EndpointRequirementInference.resolve(
+                operation, identity.id(), result.coverageRecords, config);
+        AccessRole required = requirement.role();
+        Confidence policy = switch (requirement.provenance()) {
+            case EXPLICIT -> p3(required);
+            case OBSERVED_DISTRIBUTION -> p2(required, requirement.basis());
+            case UNKNOWN -> p0();
+        };
+        AuthorizationPolicy.LayerDecision functionExpected = AuthorizationPolicy.function(
+                config.identityRole(identity.id()), required);
+        Expected expected = expected(functionExpected);
+        List<String> blockingLayers = functionExpected == AuthorizationPolicy.LayerDecision.DENY
+                ? List.of("BFLA") : List.of();
         List<RequestRecord> records = records(cell, recordsByEvidence);
         Actual actual = actual(cell, records);
         Oracle oracle = oracle(operation, records, false, null, null);
         Confidence evidence = evidenceConfidence(cell, records, result, oracle, false, null);
-        List<Gate> gates = gates(identity, operation, null, records, result, config, oracle, false);
+        List<Gate> gates = gates(identity, operation, null, records, result, config, oracle, false, required);
         Status status = functionStatus(expected, actual, policy, gates, roleViolation);
         TestRecommendation recommendation = functionRecommendation(identity, operation, actual, result, config,
-                recordsByEvidence);
+                recordsByEvidence, required);
         if (recommendation != null && status == Status.COVERAGE_GAP) status = Status.BFLA_TEST_RECOMMENDED;
         else if (recommendation != null && actual == Actual.SUCCESS
                 && (status == Status.UNKNOWN_POLICY || status == Status.POLICY_CONFIRMATION_REQUIRED)) {
@@ -161,7 +171,7 @@ public final class AuthorizationMatrixAnalyzer {
         List<String> reviewEvidence = reviewEvidence(evidenceIds(cell), recommendation);
         ReviewDecision review = config.review(id, reviewEvidence).orElse(null);
         return new FunctionCell(id, identity.id(), identity.label(),
-                identity.role(), operation, expected, actual, status, label(status), policy, evidence, oracle,
+                identity.role(), operation, expected, blockingLayers, actual, status, label(status), policy, evidence, oracle,
                 gates, sourceVerdicts(cell), statusCodes(records), evidenceIds(cell), validationName(validation),
                 recommendation, reviewStatus(review), reviewNote(review), reviewEvidence);
     }
@@ -175,17 +185,27 @@ public final class AuthorizationMatrixAnalyzer {
         Confidence ownership = ownership(owner);
         String ownerId = owner == null ? null : owner.identity();
         String relation = relation(identity.id(), config.identityRole(identity.id()), ownerId, config);
-        Confidence policy = objectPolicy(relation, ownership);
-        Expected expected = objectExpected(relation, policy);
+        ResourcePolicy resourcePolicy = config.resourcePolicy(row.operation(), row.resource());
+        Confidence policy = objectPolicy(resourcePolicy, relation, ownership);
+        AccessRole actualRole = config.identityRole(identity.id());
+        AccessRole ownerRole = ownerId == null ? AccessRole.UNKNOWN : config.identityRole(ownerId);
+        AuthorizationPolicy.Evaluation expectation = AuthorizationPolicy.evaluate(actualRole,
+                config.endpointRequirement(row.operation()), resourcePolicy, identity.id(), ownerId, ownerRole,
+                owner != null && owner.decisionGrade());
+        Expected expected = expected(expectation.combined());
         List<RequestRecord> records = records(cell, recordsByEvidence);
         Actual actual = actual(cell, records);
         Oracle oracle = oracle(row.operation(), records, true, row.resource(), ownerId);
         Confidence evidence = evidenceConfidence(cell, records, result, oracle, true, ownerId);
-        List<Gate> gates = gates(identity, row.operation(), row.resource(), records, result, config, oracle, true);
+        List<Gate> gates = gates(identity, row.operation(), row.resource(), records, result, config, oracle, true,
+                config.endpointRequirement(row.operation()));
         // 객체 권한 우회 후보는 정본 cell의 SUSPICIOUS(roleViolation 아님)만 인정한다(D-050·D-004: 본문 오라클은 정본이 판단).
         boolean authoritySuspicious = cell != null && cell.perSource().values().stream()
                 .anyMatch(decision -> decision.verdict() == Verdict.SUSPICIOUS && !decision.roleViolation());
-        Status status = objectStatus(relation, expected, actual, policy, ownership, gates, authoritySuspicious);
+        boolean authorityRoleViolation = cell != null && cell.perSource().values().stream()
+                .anyMatch(decision -> decision.verdict() == Verdict.SUSPICIOUS && decision.roleViolation());
+        Status status = objectStatus(expected, actual, policy, ownership, gates,
+                authoritySuspicious, authorityRoleViolation, resourcePolicy);
         TestRecommendation recommendation = objectRecommendation(identity, row, actual, result, config,
                 recordsByEvidence);
         if (recommendation != null && status == Status.COVERAGE_GAP) status = Status.BOLA_IDOR_TEST_RECOMMENDED;
@@ -201,18 +221,19 @@ public final class AuthorizationMatrixAnalyzer {
         return new ObjectCell(id, identity.id(),
                 identity.label(), identity.role(), row.operation(), row.resource(), ownerId,
                 ownerId == null ? "미확정" : config.identityLabel(ownerId), relation, techniques,
-                expected, actual, status, label(status), policy, evidence, ownership, oracle, gates,
+                resourcePolicy.name(), expected, expectation.blockingLayers(), actual, status, label(status), policy,
+                evidence, ownership, oracle, gates,
                 sourceVerdicts(cell), statusCodes(records), evidenceIds(cell), validationName(validation),
                 recommendation, reviewStatus(review), reviewNote(review), reviewEvidence);
     }
 
     private static TestRecommendation functionRecommendation(Identity target, String operation, Actual actual,
                                                              Pipeline.Result result, AnalysisConfig config,
-                                                             Map<String, RequestRecord> recordsByEvidence) {
+                                                             Map<String, RequestRecord> recordsByEvidence,
+                                                             AccessRole required) {
         if ("UNRESOLVED".equals(target.kind()) || actual == Actual.DENIED || actual == Actual.CONFLICT) return null;
         AccessRole targetRole = config.identityRole(target.id());
         if (targetRole == AccessRole.UNKNOWN || targetRole == AccessRole.ADMIN) return null;
-        AccessRole required = config.endpointRequirement(operation);
         boolean strongPolicyMismatch = required != AccessRole.UNKNOWN && !targetRole.isKnownAndAtLeast(required);
         if (actual == Actual.SUCCESS && !strongPolicyMismatch && !looksPrivileged(operation)) return null;
 
@@ -245,6 +266,14 @@ public final class AuthorizationMatrixAnalyzer {
                                                            Map<String, RequestRecord> recordsByEvidence) {
         if ("UNRESOLVED".equals(target.kind()) || config.identityRole(target.id()) == AccessRole.ADMIN
                 || actual == Actual.DENIED || actual == Actual.CONFLICT) return null;
+        // 판정 가능한 O2/O3 소유자 자신은 자기 객체의 교차 테스트 대상이 아니다(D-166·D-167).
+        AuthorizationAnalysis.OwnerInfo owner = result.analysis.owners().get(row.resource());
+        ResourcePolicy resourcePolicy = config.resourcePolicy(row.operation(), row.resource());
+        String ownerId = owner == null ? null : owner.identity();
+        if (AuthorizationPolicy.object(resourcePolicy, target.id(), config.identityRole(target.id()), ownerId,
+                ownerId == null ? AccessRole.UNKNOWN : config.identityRole(ownerId),
+                owner != null && owner.decisionGrade()) == AuthorizationPolicy.LayerDecision.ALLOW) return null;
+        if (owner != null && owner.decisionGrade() && target.id().equals(owner.identity())) return null;
         AccessRole targetRole = config.identityRole(target.id());
         return result.analysis.cells().stream()
                 .filter(cell -> !cell.key().identity().equals(target.id()))
@@ -343,15 +372,12 @@ public final class AuthorizationMatrixAnalyzer {
         };
     }
 
-    private static Expected expected(AccessRole actual, AccessRole required) {
-        if (actual == AccessRole.UNKNOWN || required == AccessRole.UNKNOWN) return Expected.UNKNOWN;
-        return actual.isKnownAndAtLeast(required) ? Expected.ALLOW : Expected.DENY;
-    }
-
-    private static Expected objectExpected(String relation, Confidence policy) {
-        if ("OWNER".equals(relation) || "ADMIN".equals(relation)) return Expected.ALLOW;
-        if (policy.level() >= 2 && relation.contains("FOREIGN")) return Expected.DENY;
-        return Expected.UNKNOWN;
+    private static Expected expected(AuthorizationPolicy.LayerDecision value) {
+        return switch (value) {
+            case ALLOW -> Expected.ALLOW;
+            case DENY -> Expected.DENY;
+            case UNKNOWN -> Expected.UNKNOWN;
+        };
     }
 
     /** 실행 결과 축. 정본과 같은 응답 taxonomy(D-004/013/015)를 쓰며 인가 판정이 아니다. */
@@ -388,14 +414,16 @@ public final class AuthorizationMatrixAnalyzer {
 
     private static List<Gate> gates(Identity identity, String operation, String resource,
                                     List<RequestRecord> records, Pipeline.Result result,
-                                    AnalysisConfig config, Oracle oracle, boolean objectMatrix) {
+                                    AnalysisConfig config, Oracle oracle, boolean objectMatrix,
+                                    AccessRole effectiveRequirement) {
         List<Gate> out = new ArrayList<>();
         boolean unresolved = "UNRESOLVED".equals(identity.kind())
                 || records.stream().anyMatch(record -> record.authState == AuthState.UNRESOLVED);
         out.add(new Gate("session", "테스트 신원 유효", unresolved ? GateState.FAIL : GateState.PASS,
                 unresolved ? "등록 계정 또는 비로그인 상태로 귀속되지 않은 세션" : "요청이 등록 계정 또는 비로그인 상태로 귀속됨"));
 
-        boolean baseline = hasBaseline(identity.id(), operation, resource, result, config, objectMatrix);
+        boolean baseline = hasBaseline(identity.id(), operation, resource, result, config, objectMatrix,
+                effectiveRequirement);
         out.add(new Gate("baseline", "정상 기준선", baseline ? GateState.PASS : GateState.UNKNOWN,
                 baseline ? "권한 보유자 또는 객체 소유자의 동일 대상 성공 Evidence가 있음"
                         : "권한 보유자 또는 객체 소유자의 동일 대상 성공 Evidence가 없음"));
@@ -412,15 +440,16 @@ public final class AuthorizationMatrixAnalyzer {
     }
 
     private static boolean hasBaseline(String identity, String operation, String resource,
-                                       Pipeline.Result result, AnalysisConfig config, boolean objectMatrix) {
+                                       Pipeline.Result result, AnalysisConfig config, boolean objectMatrix,
+                                       AccessRole effectiveRequirement) {
         if (objectMatrix) {
             AuthorizationAnalysis.OwnerInfo owner = result.analysis.owners().get(resource);
-            if (owner == null || !owner.confirmed() || owner.identity() == null) return false;
+            if (owner == null || !owner.decisionGrade()) return false;
             return result.coverageRecords.stream().anyMatch(record -> owner.identity().equals(record.idn)
                     && operation.equals(record.op) && Objects.equals(resource, record.resource)
                     && ResponseEvidence.successful(record));
         }
-        AccessRole required = config.endpointRequirement(operation);
+        AccessRole required = effectiveRequirement == null ? AccessRole.UNKNOWN : effectiveRequirement;
         if (required == AccessRole.UNKNOWN) return false;
         return result.coverageRecords.stream().anyMatch(record -> operation.equals(record.op)
                 && config.identityRole(record.idn).isKnownAndAtLeast(required)
@@ -479,22 +508,25 @@ public final class AuthorizationMatrixAnalyzer {
      * 객체 후보(BOLA/IDOR)는 정본 cell이 SUSPICIOUS일 때만 인정한다. 확정 소유자의 객체에 타인이 성공했지만 정본이 본문
      * 오라클을 확인하지 못한 경우(UNDECIDED)는 후보가 아니라 수동 결과 검토다(D-004: 2xx 단독으로 승격하지 않음).
      */
-    private static Status objectStatus(String relation, Expected expected, Actual actual,
+    private static Status objectStatus(Expected expected, Actual actual,
                                        Confidence policy, Confidence ownership,
-                                       List<Gate> gates, boolean authoritySuspicious) {
+                                       List<Gate> gates, boolean authoritySuspicious,
+                                       boolean authorityRoleViolation, ResourcePolicy resourcePolicy) {
         if (gateFailed(gates)) return Status.INVALID_EXPERIMENT;
         if (actual == Actual.UNTESTED) return Status.COVERAGE_GAP;
         boolean success = actual == Actual.SUCCESS || actual == Actual.CONFLICT;
         boolean denied = actual == Actual.DENIED || actual == Actual.CONFLICT;
-        if ("OWNER".equals(relation) || "ADMIN".equals(relation)) {
-            if (success) return Status.EXPECTED_ACCESS;
-            if (actual == Actual.DENIED) return Status.EXPECTED_ACCESS_DENIED;
-        }
-        if (ownership.level() < 2) return Status.OWNERSHIP_UNKNOWN;
         if (expected == Expected.DENY && success) {
+            if (authorityRoleViolation) return Status.BFLA_CANDIDATE;
             return authoritySuspicious ? Status.BOLA_IDOR_CANDIDATE : Status.BOLA_IDOR_REVIEW_REQUIRED;
         }
         if (expected == Expected.DENY && denied) return Status.POLICY_ENFORCED;
+        if (expected == Expected.ALLOW && success) return Status.EXPECTED_ACCESS;
+        if (expected == Expected.ALLOW && actual == Actual.DENIED) return Status.EXPECTED_ACCESS_DENIED;
+        if (resourcePolicy != ResourcePolicy.PUBLIC
+                && resourcePolicy != ResourcePolicy.AUTHENTICATED_SHARED
+                && resourcePolicy != ResourcePolicy.ADMIN_ONLY
+                && ownership.level() < 2) return Status.OWNERSHIP_UNKNOWN;
         if (policy.level() < 2) return Status.POLICY_CONFIRMATION_REQUIRED;
         return Status.UNTESTED;
     }
@@ -503,7 +535,10 @@ public final class AuthorizationMatrixAnalyzer {
         return gates.stream().anyMatch(gate -> gate.state() == GateState.FAIL);
     }
 
-    private static Confidence objectPolicy(String relation, Confidence ownership) {
+    private static Confidence objectPolicy(ResourcePolicy resourcePolicy, String relation, Confidence ownership) {
+        if (resourcePolicy != ResourcePolicy.UNKNOWN) {
+            return new Confidence("P3", 3, "사람 확인 객체 정책", resourcePolicy.label());
+        }
         if ("OWNER".equals(relation) || "ADMIN".equals(relation)) {
             return new Confidence("P2", 2, "소유관계 기반", "확정 소유자/관리자 정상 접근을 기대");
         }
@@ -568,7 +603,8 @@ public final class AuthorizationMatrixAnalyzer {
             ObjectCell object = objectByCell.get(key(raw.key().identity(), raw.key().operation(), raw.key().resource()));
             if (object != null) {
                 out.add(new EvidenceRow(object.id(), String.join("/", object.techniques()), object.identity(),
-                        object.identityLabel(), object.operation(), object.resource(), object.status(),
+                        object.identityLabel(), object.operation(), object.resource(), object.resourcePolicy(),
+                        object.blockingLayers(), object.status(),
                         object.statusLabel(), object.policy(), object.evidence(), object.ownership(), object.oracle(),
                         object.gates(), object.sourceVerdicts(), object.statusCodes(), object.evidenceIds(),
                         object.validationVerdict(), object.recommendation(), object.reviewStatus(),
@@ -578,7 +614,8 @@ public final class AuthorizationMatrixAnalyzer {
             FunctionCell function = functions.stream().filter(cell -> cell.identity().equals(raw.key().identity())
                     && cell.operation().equals(raw.key().operation())).findFirst().orElse(null);
             if (function != null) out.add(new EvidenceRow(function.id(), "BFLA", function.identity(),
-                    function.identityLabel(), function.operation(), raw.key().resource(), function.status(),
+                    function.identityLabel(), function.operation(), raw.key().resource(), ResourcePolicy.UNKNOWN.name(),
+                    function.blockingLayers(), function.status(),
                     function.statusLabel(), function.policy(), function.evidence(), o(0, "해당 없음", "기능 판정"),
                     function.oracle(), function.gates(), function.sourceVerdicts(), function.statusCodes(),
                     raw.evidenceIds(), function.validationVerdict(), function.recommendation(),
@@ -590,8 +627,12 @@ public final class AuthorizationMatrixAnalyzer {
     }
 
     private static Summary summary(List<FunctionCell> functions, List<ObjectCell> objects) {
-        int policies = (int) functions.stream().filter(cell -> cell.policy().level() >= 3)
-                .map(FunctionCell::operation).distinct().count();
+        int policies = (int) java.util.stream.Stream.concat(
+                        functions.stream().filter(cell -> cell.policy().level() >= 3)
+                                .map(cell -> "function:" + cell.operation()),
+                        objects.stream().filter(cell -> !ResourcePolicy.UNKNOWN.name().equals(cell.resourcePolicy()))
+                                .map(cell -> "object:" + cell.resource()))
+                .distinct().count();
         int policyReview = (int) java.util.stream.Stream.concat(
                         functions.stream().filter(cell -> cell.status() == Status.UNKNOWN_POLICY
                                 || cell.status() == Status.POLICY_CONFIRMATION_REQUIRED).map(FunctionCell::id),
@@ -735,6 +776,10 @@ public final class AuthorizationMatrixAnalyzer {
     }
 
     private static Confidence p0() { return new Confidence("P0", 0, "정책 미정", "명시 정책 근거 없음"); }
+    private static Confidence p2(AccessRole required, String basis) {
+        return new Confidence("P2", 2, "관측 분포 정책 후보",
+                required.label() + " 요구 추론 · " + basis);
+    }
     private static Confidence p3(AccessRole required) {
         return new Confidence("P3", 3, "사람 확인 정책", "사용자가 요구 권한 " + required.label() + "을 명시함");
     }

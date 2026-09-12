@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { AuthorizationMatrix, MatrixLegendItem, ReviewStatus } from "@/lib/api/types"
-import { useHumanRunQuery, useRequirementMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { actualLabel, confidenceCodes, expectedLabel, findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -32,6 +32,11 @@ function EvidenceIdList({ ids }: { ids: readonly string[] }) {
 }
 
 const ROLE_OPTIONS = ["USER", "LV1", "LV2", "ADMIN"] as const
+const RESOURCE_POLICY_OPTIONS = ["UNKNOWN", "OWNER_ONLY", "ROLE_SHARED", "AUTHENTICATED_SHARED", "PUBLIC", "ADMIN_ONLY"] as const
+const resourcePolicyLabel: Record<(typeof RESOURCE_POLICY_OPTIONS)[number], string> = {
+  UNKNOWN: "미정", OWNER_ONLY: "소유자 전용", ROLE_SHARED: "동일 역할 공유",
+  AUTHENTICATED_SHARED: "인증 사용자 공유", PUBLIC: "공개", ADMIN_ONLY: "관리자 전용",
+}
 
 /**
  * BFLA 판정은 이 작업의 필수 역할(P3)과 신원의 역할이 모두 지정돼야 만들어진다. 역할은 토큰이나 경로에서 추정하지
@@ -39,13 +44,16 @@ const ROLE_OPTIONS = ["USER", "LV1", "LV2", "ADMIN"] as const
  */
 function PolicyAssignment({ item, identityKind, identityRole, disabled }: { item: JudgmentItem; identityKind: string | undefined; identityRole: string | undefined; disabled: boolean }) {
   const requirement = useRequirementMutation()
+  const resourcePolicyMutation = useResourcePolicyMutation()
   const roleMutation = useRoleMutation()
   const [requiredRole, setRequiredRole] = useState<string>("ADMIN")
   const [role, setRole] = useState<string>("USER")
+  const resourceTarget = "resource" in item ? item.resource : null
+  const [resourcePolicy, setResourcePolicy] = useState<string>("resourcePolicy" in item ? item.resourcePolicy ?? "UNKNOWN" : "UNKNOWN")
   const [message, setMessage] = useState<string | null>(null)
   const needsRequirement = item.policy.level < 3
   const needsRole = (identityKind === "REGISTERED" || identityKind === "OBSERVED") && identityRole === "Unknown"
-  if (!needsRequirement && !needsRole) return null
+  if (!needsRequirement && !needsRole && !resourceTarget) return null
   const run = async (action: () => Promise<{ message?: string }>, fallback: string) => {
     setMessage(null)
     try { setMessage((await action()).message ?? fallback) }
@@ -56,6 +64,7 @@ function PolicyAssignment({ item, identityKind, identityRole, disabled }: { item
     <p className="text-xs">{needsRequirement ? `정책 ${item.policy.code}: 이 작업의 필수 역할이 지정되지 않아 BFLA 판정을 만들 수 없습니다.` : ""}{needsRequirement && needsRole ? " " : ""}{needsRole ? `${item.identityLabel}의 역할이 Unknown이라 기대 판정을 세울 수 없습니다.` : ""} 역할은 추정하지 않고 사용자가 지정합니다.</p>
     {needsRequirement && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>필수 역할</span><select aria-label="필수 역할" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" disabled={disabled || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "필수 역할을 저장했습니다.")}>필수 역할 저장</Button></div>}
     {needsRole && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>{item.identityLabel} 역할</span><select aria-label="신원 역할" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" value={role} disabled={disabled} onChange={(event) => setRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" disabled={disabled || roleMutation.isPending} onClick={() => void run(() => roleMutation.mutateAsync({ identity: item.identity, role }), "신원 역할을 저장했습니다.")}>신원 역할 저장</Button></div>}
+    {resourceTarget && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>객체 접근 정책</span><select aria-label="객체 접근 정책" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" value={resourcePolicy} disabled={disabled} onChange={(event) => setResourcePolicy(event.target.value)}>{RESOURCE_POLICY_OPTIONS.map((value) => <option key={value} value={value}>{resourcePolicyLabel[value]}</option>)}</select></label><Button type="button" size="sm" disabled={disabled || resourcePolicyMutation.isPending} onClick={() => void run(() => resourcePolicyMutation.mutateAsync({ target: resourceTarget, policy: resourcePolicy }), "객체 접근 정책을 저장했습니다.")}>객체 정책 저장</Button></div>}
     {message && <p role="status" className="text-xs">{message}</p>}
   </section>
 }
@@ -98,7 +107,7 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
   const basisIdentity = matrix.identities.find((identity) => identity.id === item.recommendation?.basisIdentity)
   const cellIdentity = matrix.identities.find((identity) => identity.id === item.identity)
   return <div className="grid gap-4 p-4 text-sm">
-    <div><h2 className="text-base font-semibold">{item.statusLabel}{reviewSuffix(item.reviewStatus)}</h2><p className="break-all text-xs text-muted-foreground">{item.identityLabel} · {withoutService(item.operation)}{resource ? ` · ${resource}` : ""}</p>{"relation" in item && <p className="text-xs text-muted-foreground">관계 {item.relation} · 기법 {item.techniques.join("/")} · 소유자 {item.ownerLabel || "미확정"}</p>}</div>
+    <div><h2 className="text-base font-semibold">{item.statusLabel}{reviewSuffix(item.reviewStatus)}</h2><p className="break-all text-xs text-muted-foreground">{item.identityLabel} · {withoutService(item.operation)}{resource ? ` · ${resource}` : ""}</p>{"relation" in item && <p className="text-xs text-muted-foreground">관계 {item.relation} · 기법 {item.techniques.join("/")} · 소유자 {item.ownerLabel || "미확정"} · 객체 정책 {resourcePolicyLabel[item.resourcePolicy ?? "UNKNOWN"]}</p>}</div>
     {item.recommendation && <section aria-label="테스트 추천 조합" className="grid gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
       <h3 className="text-sm font-semibold">{item.recommendation.type} 테스트 추천 조합</h3>
       <p><b>{item.recommendation.basisIdentityLabel} → {item.recommendation.testIdentityLabel}</b></p>
@@ -113,6 +122,7 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
     <section aria-label="기대와 실제" className="grid gap-1">
       <h3 className="text-sm font-semibold">기대와 실제</h3>
       <p>기대 {expectedLabel[item.expected]} → 실제 {actualLabel[item.actual]} · HTTP {item.statusCodes.length ? item.statusCodes.join("/") : "-"}</p>
+      {(item.blockingLayers?.length ?? 0) > 0 && <p className="flex flex-wrap gap-1">차단층 {item.blockingLayers?.map((layer) => <Badge key={layer} variant="outline">{layer}</Badge>)}</p>}
       <p className="text-xs text-muted-foreground">{Object.entries(item.sourceVerdicts).map(([source, verdict]) => `${source}=${verdict}`).join(" · ") || "관측 없음"}</p>
       {item.validationVerdict !== "NONE" && <p className="text-xs text-muted-foreground">과거 검증 이력 {item.validationVerdict} (읽기 전용 · 신뢰도·상태에 반영하지 않음)</p>}
     </section>
@@ -120,7 +130,7 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       <h3 className="text-sm font-semibold">독립 신뢰도 축</h3>
       <div className="grid gap-2 sm:grid-cols-3">{[item.policy, item.evidence, ownership].filter((value): value is NonNullable<typeof value> => !!value).map((value) => <div key={value.code} className="rounded border border-border/70 p-2"><p className="font-mono text-xs font-semibold">{value.code} · {value.label}</p><p className="text-xs text-muted-foreground">{value.basis}</p></div>)}</div>
     </section>
-    <PolicyAssignment key={`${item.id}:${item.policy.code}:${cellIdentity?.role ?? ""}`} item={item} identityKind={cellIdentity?.kind} identityRole={cellIdentity?.role} disabled={disabled} />
+    <PolicyAssignment key={`${item.id}:${item.policy.code}:${"resourcePolicy" in item ? item.resourcePolicy : ""}:${cellIdentity?.role ?? ""}`} item={item} identityKind={cellIdentity?.kind} identityRole={cellIdentity?.role} disabled={disabled} />
     <section aria-label="테스트 유효성 게이트" className="grid gap-1">
       <h3 className="text-sm font-semibold">테스트 유효성 게이트</h3>
       <ul className="grid gap-1">{item.gates.map((gate) => <li key={gate.key} className="text-xs"><Badge variant="outline" className="mr-1.5">{gate.state}</Badge><b>{gate.label}</b> <span className="text-muted-foreground">{gate.reason}</span></li>)}</ul>
@@ -206,7 +216,7 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
         ["정상·기각", summary.humanDismissed, "사람이 후보를 종료함"],
       ].map(([label, value, hint]) => <li key={String(label)} className="rounded-md border border-border/70 p-2"><p className="text-[11px] text-muted-foreground">{label}</p><p className="text-xl font-semibold tabular-nums">{value}</p><p className="text-[11px] text-muted-foreground">{hint}</p></li>)}</ul>}
       {projection && <p className="text-xs text-muted-foreground">{captions[view]}{projection.hiddenRows > 0 && ` · 주의 필터로 ${projection.hiddenRows}개 숨김`}</p>}
-      {projection && view !== "evidence" && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" tabIndex={0} className="max-h-[44rem] max-w-full overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 left-0 z-40 bg-background">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background"><span className="break-all">{identity.label}</span><span className="block text-xs text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="sticky left-0 z-20 min-w-48 whitespace-normal bg-background"><span className="break-all font-mono text-xs">{withoutService(row.operation)}</span><span className="block text-xs text-muted-foreground">{view === "function" ? `${row.policy?.code ?? "P0"} · ${row.policy?.label ?? "정책 미정"}` : `${row.resource} · 소유 ${row.ownerLabel || "미확정"}`}</span></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; return <TableCell key={identity.id} className="whitespace-normal align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${cell.statusLabel}${reviewSuffix(cell.reviewStatus)}: ${cell.identityLabel} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} className={`grid w-full min-w-48 gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className="font-semibold">{cell.statusLabel}{reviewSuffix(cell.reviewStatus)}</span><span className="text-muted-foreground">기대 {expectedLabel[cell.expected]} → 실제 {actualLabel[cell.actual]}</span><span className="flex flex-wrap gap-1">{confidenceCodes(cell).map((code) => <Badge key={code} variant="outline" className="font-mono">{code}</Badge>)}</span></button> : <span className="text-xs text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 Evidence가 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
+      {projection && view !== "evidence" && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" tabIndex={0} className="max-h-[44rem] max-w-full overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 left-0 z-40 bg-background">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background"><span className="break-all">{identity.label}</span><span className="block text-xs text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="sticky left-0 z-20 min-w-48 whitespace-normal bg-background"><span className="break-all font-mono text-xs">{withoutService(row.operation)}</span><span className="block text-xs text-muted-foreground">{view === "function" ? `${row.policy?.code ?? "P0"} · ${row.policy?.label ?? "정책 미정"}` : `${row.resource} · 소유 ${row.ownerLabel || "미확정"}`}</span></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; return <TableCell key={identity.id} className="whitespace-normal align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${cell.statusLabel}${reviewSuffix(cell.reviewStatus)}: ${cell.identityLabel} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} className={`grid w-full min-w-48 gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className="font-semibold">{cell.statusLabel}{reviewSuffix(cell.reviewStatus)}</span><span className="text-muted-foreground">기대 {expectedLabel[cell.expected]} → 실제 {actualLabel[cell.actual]}</span>{(cell.blockingLayers?.length ?? 0) > 0 && <span className="flex flex-wrap gap-1">{cell.blockingLayers?.map((layer) => <Badge key={layer} variant="outline">{layer} 차단</Badge>)}</span>}<span className="flex flex-wrap gap-1">{confidenceCodes(cell).map((code) => <Badge key={code} variant="outline" className="font-mono">{code}</Badge>)}</span></button> : <span className="text-xs text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 Evidence가 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
       {projection && view === "evidence" && (projection.evidenceRows.length ? <ul role="list" aria-label="실행 Evidence 목록" className="grid gap-2">{projection.evidenceRows.map((row) => <li key={row.id}><button type="button" disabled={disabled} data-tone={judgmentTone(row.status)} aria-pressed={row.id === selectedId} className={`grid w-full gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(row.status)]}`} onClick={() => select(row.id)}><span className="font-mono">{withoutService(row.operation)}</span><span className="text-muted-foreground">{row.identityLabel} · {row.resource ?? "객체 없음"} · HTTP {row.statusCodes.join("/") || "-"} · {row.type}</span><span className="font-semibold">{row.statusLabel}{reviewSuffix(row.reviewStatus)}</span><span className="text-muted-foreground">{confidenceCodes(row).join(" · ")}</span></button></li>)}</ul> : <p className="rounded-md border p-6 text-sm text-muted-foreground">현재 필터에 표시할 실행 Evidence가 없습니다.</p>)}
     </section>
     {evidenceSelection && snapshot.data && selected && <EvidenceSheet event={evidenceEvent} snapshot={snapshot.data} selection={evidenceSelection} disabled={disabled} onOpenChange={(open) => { if (!open) setEvidenceSelection(null) }} />}

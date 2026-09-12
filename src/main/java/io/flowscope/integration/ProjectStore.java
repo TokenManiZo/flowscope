@@ -619,6 +619,7 @@ public final class ProjectStore {
         policy.set("identity_roles", json.valueToTree(config.identityRoles()));
         policy.set("endpoint_requirements", json.valueToTree(config.endpointRequirements()));
         policy.set("resource_owners", json.valueToTree(config.resourceOwners()));
+        policy.set("resource_policies", json.valueToTree(config.resourcePolicies()));
         policy.set("traffic_overrides", json.valueToTree(config.trafficOverrides()));
         ArrayNode accounts = policy.putArray("accounts");
         config.accounts().values().stream().sorted(java.util.Comparator.comparing(AccountProfile::id)).forEach(account -> {
@@ -648,6 +649,8 @@ public final class ProjectStore {
                 config.withEndpointRequirement(e.getKey(), enumValue(AccessRole.class, e.getValue().asText())));
         value.path("resource_owners").properties().forEach(e ->
                 config.withResourceOwner(e.getKey(), e.getValue().asText()));
+        value.path("resource_policies").properties().forEach(e ->
+                config.withResourcePolicy(e.getKey(), enumValue(ResourcePolicy.class, e.getValue().asText())));
         value.path("traffic_overrides").properties().forEach(e ->
                 config.withTrafficOverride(e.getKey(), enumValue(TrafficOverride.class, e.getValue().asText())));
         JsonNode accounts = value.path("accounts");

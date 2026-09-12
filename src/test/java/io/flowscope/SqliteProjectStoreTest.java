@@ -70,7 +70,8 @@ final class SqliteProjectStoreTest {
 
         AccountProfile account = new AccountProfile("acct-test1", "test1", record.service, AccessRole.USER);
         AnalysisConfig config = new AnalysisConfig().upsertAccount(account)
-                .bindSession(record.service, record.fp, account.id());
+                .bindSession(record.service, record.fp, account.id())
+                .withResourcePolicy(record.resource, io.flowscope.core.ResourcePolicy.OWNER_ONLY);
         config.reviewItem("candidate-1", ReviewDecision.Status.UNRESOLVED,
                 "추가 재현 필요", List.of(record.evidenceId));
         LegacyAssessment assessment = new LegacyAssessment("assessment-1", "BOLA", "INCONCLUSIVE",
@@ -116,6 +117,8 @@ final class SqliteProjectStoreTest {
         assertEquals(1, loaded.records().size());
         assertEquals("test1", loaded.config().account(account.id()).orElseThrow().label());
         assertEquals(account.id(), loaded.config().boundAccount(record.service, record.fp).orElseThrow().id());
+        assertEquals(io.flowscope.core.ResourcePolicy.OWNER_ONLY,
+                loaded.config().resourcePolicy(record.op, record.resource));
         assertEquals(Set.of(Source.HUMAN), loaded.completedLanes());
         assertEquals("human-1", loaded.completedRuns().get(Source.HUMAN).runId());
         assertEquals(List.of(route), loaded.routeCandidates());

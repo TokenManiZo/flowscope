@@ -759,6 +759,13 @@ final class FlowScopeWebServerTest {
         String operation = state.snapshot().records.getFirst().op;
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());
         assertEquals("Admin", state.config.endpointRequirement(operation).label());
+        String resource = state.snapshot().records.getFirst().resource;
+        assertEquals(200, post("/api/resource-policy", "target=" + encode(resource)
+                + "&policy=PUBLIC", token).statusCode());
+        assertEquals(io.flowscope.core.ResourcePolicy.PUBLIC, state.config.resourcePolicy(operation, resource));
+        assertEquals(200, post("/api/resource-policy", "target=" + encode(resource)
+                + "&policy=UNKNOWN", token).statusCode());
+        assertEquals(io.flowscope.core.ResourcePolicy.UNKNOWN, state.config.resourcePolicy(operation, resource));
         assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
                 + "&value=EXCLUDE", token).statusCode());
         assertEquals(io.flowscope.core.TrafficOverride.EXCLUDE, state.config.trafficOverride(operation));
@@ -781,8 +788,14 @@ final class FlowScopeWebServerTest {
         assertTrue(matrix.path("summary").has("bolaIdorTestRecommendations"));
         assertFalse(matrix.path("functions").isEmpty());
         JsonNode reviewable = null;
-        for (JsonNode cell : matrix.path("objects")) if (!cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull()) { reviewable = cell; break; }
-        assertNotNull(reviewable, "다른 신원에 추천된 객체 cell이 있어야 한다");
+        // D-166: 확정 소유자 자기추천은 제거됐으므로, 추천 또는 후보/검토 상태인 실제 리뷰 대상 cell로 왕복을 검사한다.
+        java.util.Set<String> reviewableStatus = java.util.Set.of(
+                "BFLA_CANDIDATE", "BFLA_REVIEW_REQUIRED", "BOLA_IDOR_CANDIDATE", "BOLA_IDOR_REVIEW_REQUIRED");
+        for (JsonNode cell : matrix.path("objects")) {
+            boolean hasRec = !cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull();
+            if (hasRec || reviewableStatus.contains(cell.path("status").asText())) { reviewable = cell; break; }
+        }
+        assertNotNull(reviewable, "사람 검토가 가능한(추천 또는 후보) 객체 cell이 있어야 한다");
         String cellId = reviewable.path("id").asText();
         assertEquals("UNRESOLVED", reviewable.path("reviewStatus").asText());
         assertEquals(200, post("/api/review", "itemId=" + encode(cellId) + "&status=DISMISSED&note=shared+object", token).statusCode());

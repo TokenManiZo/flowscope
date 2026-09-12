@@ -17,6 +17,7 @@ let queryError = false
 const refetchSnapshot = vi.fn()
 const saveReview = vi.fn(async (itemId: string, status: string, note: string) => ({ success: true, message: `saved ${itemId} ${status} ${note}` }))
 const saveRequirement = vi.fn(async (operation: string, role: string) => ({ success: true, message: `requirement ${operation} ${role}` }))
+const saveResourcePolicy = vi.fn(async (target: string, policy: string) => ({ success: true, message: `resource ${target} ${policy}` }))
 const saveRole = vi.fn(async (identity: string, role: string) => ({ success: true, message: `role ${identity} ${role}` }))
 
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
@@ -29,15 +30,16 @@ vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api/endpoints")>(),
   saveReview: (itemId: string, status: string, note: string) => saveReview(itemId, status, note),
   saveRequirement: (operation: string, role: string) => saveRequirement(operation, role),
+  saveResourcePolicy: (target: string, policy: string) => saveResourcePolicy(target, policy),
   saveRole: (identity: string, role: string) => saveRole(identity, role),
 }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: () => null }))
 
 const service = "https://demo.test:443"
 const confidence = (code: string, level: number, label = code) => ({ code, level, label, basis: `${code} basis` })
-const base = { expected: "UNKNOWN" as const, actual: "UNTESTED" as const, policy: confidence("P0", 0, "정책 미정"), evidence: confidence("E0", 0, "미실행"), oracle: { type: "READ_SEMANTIC", label: "읽기 의미 응답", satisfied: false, requirement: "응답에 대상 객체 식별자가 포함되고 soft-deny가 아님" }, gates: [{ key: "session", label: "테스트 신원 유효", state: "PASS" as const, reason: "등록 계정 귀속" }, { key: "repeat", label: "독립 반복", state: "UNKNOWN" as const, reason: "자동 통제 반복 묶음이 없음" }], sourceVerdicts: {}, statusCodes: [], evidenceIds: [], validationVerdict: "NONE", recommendation: null, reviewStatus: "UNRESOLVED" as const, reviewNote: "", reviewEvidenceIds: [] }
+const base = { expected: "UNKNOWN" as const, blockingLayers: [] as const, actual: "UNTESTED" as const, policy: confidence("P0", 0, "정책 미정"), evidence: confidence("E0", 0, "미실행"), oracle: { type: "READ_SEMANTIC", label: "읽기 의미 응답", satisfied: false, requirement: "응답에 대상 객체 식별자가 포함되고 soft-deny가 아님" }, gates: [{ key: "session", label: "테스트 신원 유효", state: "PASS" as const, reason: "등록 계정 귀속" }, { key: "repeat", label: "독립 반복", state: "UNKNOWN" as const, reason: "자동 통제 반복 묶음이 없음" }], sourceVerdicts: {}, statusCodes: [], evidenceIds: [], validationVerdict: "NONE", recommendation: null, reviewStatus: "UNRESOLVED" as const, reviewNote: "", reviewEvidenceIds: [] }
 const fn = (id: string, identity: string, operation: string, overrides: Partial<MatrixFunctionCell> = {}): MatrixFunctionCell => ({ ...base, id, identity, identityLabel: identity.toUpperCase(), role: "User", operation, status: "COVERAGE_GAP", statusLabel: "교차 실행 공백", ...overrides })
-const obj = (id: string, identity: string, resource: string, overrides: Partial<MatrixObjectCell> = {}): MatrixObjectCell => ({ ...base, id, identity, identityLabel: identity.toUpperCase(), role: "User", operation: `${service} GET /api/orders/{id}`, resource, owner: "a", ownerLabel: "A", relation: "SAME_ROLE_FOREIGN", techniques: ["BOLA", "IDOR"], ownership: confidence("O3", 3, "확정"), status: "POLICY_ENFORCED", statusLabel: "기대 차단 관측", ...overrides })
+const obj = (id: string, identity: string, resource: string, overrides: Partial<MatrixObjectCell> = {}): MatrixObjectCell => ({ ...base, id, identity, identityLabel: identity.toUpperCase(), role: "User", operation: `${service} GET /api/orders/{id}`, resource, owner: "a", ownerLabel: "A", relation: "SAME_ROLE_FOREIGN", techniques: ["BOLA", "IDOR"], resourcePolicy: "UNKNOWN", ownership: confidence("O3", 3, "확정"), status: "POLICY_ENFORCED", statusLabel: "기대 차단 관측", ...overrides })
 const recommendation = { type: "BOLA/IDOR", basisIdentity: "a", basisIdentityLabel: "A", testIdentity: "b", testIdentityLabel: "B", reason: "다른 신원에 연결된 객체를 교차 접근하는 조합입니다.", instruction: "B 세션으로 객체 요청을 Burp Repeater에서 수동 실행하세요.", stateChanging: false, basisEvidenceIds: ["ev-a"] }
 const matrix: AuthorizationMatrix = {
   summary: { policyConfirmed: 1, policyReview: 0, bflaCandidates: 0, bolaIdorCandidates: 0, coverageGaps: 1, invalidExperiments: 0, bflaTestRecommendations: 1, bolaIdorTestRecommendations: 1, manualReviewPending: 2, humanConfirmed: 0, humanDismissed: 0 },
@@ -269,6 +271,22 @@ it("offers required-role and identity-role assignment on a P0 cell through the e
   // 정책 P3·역할 확인된 셀에는 지정 섹션이 없다.
   await user.click(within(table).getByRole("button", { name: "기대 허용 관측: A · GET /api/admin/export" }))
   expect(screen.queryByRole("region", { name: "정책·역할 지정" })).not.toBeInTheDocument()
+})
+
+it("shows the blocking layer and saves an object policy from the object cell", async () => {
+  const user = userEvent.setup()
+  current = { ...snapshot, authorizationMatrix: { ...matrix, objects: matrix.objects.map((cell) =>
+    cell.id === "object-b" ? { ...cell, blockingLayers: ["BOLA"], resourcePolicy: "OWNER_ONLY" } : cell) } }
+  renderView(<JudgmentMatrixView />)
+  await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
+
+  expect(screen.getByText("차단층").parentElement).toHaveTextContent("BOLA")
+  expect(screen.getByText(/객체 정책 소유자 전용/)).toBeVisible()
+  const assignment = screen.getByRole("region", { name: "정책·역할 지정" })
+  await user.selectOptions(within(assignment).getByRole("combobox", { name: "객체 접근 정책" }), "PUBLIC")
+  await user.click(within(assignment).getByRole("button", { name: "객체 정책 저장" }))
+  await waitFor(() => expect(saveResourcePolicy).toHaveBeenCalledWith(`${service} orders:101`, "PUBLIC"))
 })
 
 it("tells the operator whether a Repeater confirmation will count, and routes to start a HUMAN pass when it is off", async () => {

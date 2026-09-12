@@ -152,6 +152,7 @@ export interface MatrixCellBase {
   identityLabel: string
   operation: string
   expected: MatrixExpected
+  blockingLayers?: readonly ("BFLA" | "BOLA")[]
   actual: MatrixActual
   status: MatrixStatus
   statusLabel: string
@@ -176,9 +177,10 @@ export interface MatrixObjectCell extends MatrixCellBase {
   ownerLabel: string
   relation: string
   techniques: readonly string[]
+  resourcePolicy?: "UNKNOWN" | "OWNER_ONLY" | "ROLE_SHARED" | "AUTHENTICATED_SHARED" | "PUBLIC" | "ADMIN_ONLY"
   ownership: MatrixConfidence
 }
-export interface MatrixEvidenceRow extends MatrixCellBase { type: string; resource: string | null; ownership: MatrixConfidence }
+export interface MatrixEvidenceRow extends MatrixCellBase { type: string; resource: string | null; resourcePolicy?: MatrixObjectCell["resourcePolicy"]; ownership: MatrixConfidence }
 export interface AuthorizationMatrix {
   summary: {
     policyConfirmed: number
