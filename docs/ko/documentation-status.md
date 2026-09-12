@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-현재 작업은 D-153/beta.48 SQLite 연결 수정이다. 호스트가 JDBC를 먼저 초기화해도 번들 드라이버로 직접 저장·재열기하며 DB 형식은 유지한다. 집중 12/12·전체 Java 575(2 skip)·React 472·패키지 UI 15/15와 원격 PR #16 CI가 통과했다. main 필수 리뷰/관리자 예외 승인이 없어 main·Release는 대기한다. 완료 상태와 남은 운영 검증은 [HANDOFF](HANDOFF.md), 설치는 [팀원 첫 실행](team-quick-start.md)을 따른다. 비공개 저장소이므로 협업 권한이 있는 본인 GitHub 계정 로그인이 필요하다.
+현재 기준은 D-153/beta.48 SQLite 연결 수정이다. 호스트가 JDBC를 먼저 초기화해도 번들 드라이버로 직접 저장·재열기하며 DB 형식은 유지한다. 집중 12/12·전체 Java 575(2 skip)·React 472·패키지 UI 15/15와 원격 PR #16 CI가 통과했다. 사용자에게 이번 PR의 관리자 예외 병합·게시 승인을 받았으며 배포 기준은 PR #16 main 병합 커밋과 `v1.2.0-beta.48`이다. 자산·최종 CI는 [Release 기록](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48), 운영 검증은 [HANDOFF](HANDOFF.md), 설치는 [팀원 첫 실행](team-quick-start.md)을 따른다. 비공개 저장소이므로 협업 권한이 있는 본인 GitHub 계정 로그인이 필요하다.
 
 D-153 문서 대조: 관리 문서 39개의 현행/역사 구분과 SQLite·버전·교체 안내 관련성을 확인했다. 로컬 링크 258개와 inventory 누락 0개다. 이전 beta.47 실물 결과·원 명세·연구는 수정본의 새 검증으로 바꾸지 않았다. 코드·회귀·현재 계약/설치/진행/검증 문서를 같은 작업 단위로 반영한다.
 

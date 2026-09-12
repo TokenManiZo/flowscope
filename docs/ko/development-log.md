@@ -1,5 +1,12 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · beta.48 관리자 예외 승인·배포 인계
+
+- 사용자가 PR #16의 관리자 예외 병합과 main·Release 반영을 명시적으로 승인해 이전 승인 대기 조건을 해소했다. 규칙 변경이나 강제 푸시는 하지 않는다.
+- 문서 커밋 `7810f46`의 CI 34698310197도 verify 8분 8초, 전체 build·JAR/bundle·재현성·Bash/Windows 구문 검사를 통과했다. 제품 코드는 이미 검증한 `36a5020`과 같다.
+- HANDOFF·계획·문서 현황·검증 기록의 승인 대기 표현을 정정하고 배포 기준을 PR #16 main 병합 커밋/태그 `v1.2.0-beta.48`로 지정했다. 최종 문서를 설치 bundle에 다시 넣고, 게시한 파일은 인증된 GitHub 다운로드로 검증한다. 게시 시각·최종 CI·자산 해시는 Release의 외부 기록으로 식별하며 bundle 안에 자신의 해시를 넣지 않는다.
+- 실제 Burp 새 JAR 재로드·Windows 실기기·이번 ZAP/Explorer 실물 gate는 여전히 별도다. 멘토 보고서는 추적/배포하지 않는다.
+
 ## 2026-09-12 · D-153 SQLite 호스트 초기화 순서 결함 수정
 
 - 사용자 Burp에서 범위 적용 시 `FlowScope SQLite save failed`가 발생했다. beta.47 JAR의 실제 SqliteProjectStore를 호스트 선행 JDBC 초기화 조건에서 호출해 `No suitable driver found`를 재현했다. 실행 중 Burp의 class hierarchy에도 저장 클래스/DriverManager는 있고 SQLite JDBC는 없었다. 대조군의 명시적 드라이버 로드는 저장·재열기가 성공했다.
