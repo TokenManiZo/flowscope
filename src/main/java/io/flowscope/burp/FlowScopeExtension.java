@@ -1948,11 +1948,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
                     java.time.Instant.now());
         }
-        synchronized (records) {
-            if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
-            records.add(record);
-            retainRawExchange(record, exchange.request(), response);
-        }
+        appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
         rebuildImmediately();
         int requestBytes = exchange.request().toByteArray().length();
         String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
@@ -2040,11 +2036,7 @@ public final class FlowScopeExtension implements BurpExtension {
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
             record.runId = input.runId();
             record.laneAccountId = emptyToNull(input.accountId());
-            synchronized (records) {
-                if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
-                records.add(record);
-                retainRawExchange(record, exchange.request(), response);
-            }
+            appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
             rebuildImmediately();
             RequestRecord published = latest.records.stream().filter(value -> value.runtimeId() == record.runtimeId())
                     .findFirst().orElseThrow(() -> new IllegalStateException("Explorer Evidence 게시에 실패했습니다."));
@@ -2071,6 +2063,18 @@ public final class FlowScopeExtension implements BurpExtension {
     private static boolean safeHeader(String name, String value) {
         return name != null && !name.isBlank() && name.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
                 && value != null && value.indexOf('\r') < 0 && value.indexOf('\n') < 0;
+    }
+
+    /** Request Lab/Explorer처럼 응답을 기다리는 통제 요청이 unload 뒤 Evidence를 되살리지 않게 한다. */
+    void appendControlledToolRecord(RequestRecord record, Runnable retainExchange) {
+        synchronized (records) {
+            if (shuttingDown.get()) {
+                throw new IllegalStateException("FlowScope 종료 중에는 새 Evidence를 기록할 수 없습니다.");
+            }
+            if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
+            records.add(record);
+            retainExchange.run();
+        }
     }
 
     private static RunExecutionLedger.Outcome executionOutcome(Exception error) {

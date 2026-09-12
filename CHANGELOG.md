@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 종료 응답·계정 서비스·샘플 snapshot 경계 보완 (D-149, 2026-09-12)
+
+- unload가 먼저 시작되면 대기 중이던 Request Lab·Explorer 응답이 새 Evidence나 raw 원문을 추가하지 않습니다. 먼저 기록된 응답은 종료의 최종 재분석·저장에 포함됩니다.
+- 현재 관측·정책 작업과 서비스가 하나도 맞지 않는 등록 계정은 판정 조합에 섞지 않고 설정 확인 경고로 표시합니다.
+- 화면 간 샘플 fixture를 현재 21건 SampleProject·route 후보·전체 snapshot과 동기화하고 자동 일치 회귀를 추가했습니다. Surface enum 배열도 JVM마다 순서가 달라지지 않게 고정했습니다.
+- Swing 컴포넌트 테스트 JVM을 headless로 고정해 Maven 검증이 macOS WindowServer 상태에 따라 정지하지 않게 했습니다. 제품 JAR의 UI 실행 설정은 바뀌지 않습니다.
+
 ## 미출시 · 전체 Evidence 편집 수명과 설치 안내 보완 (D-148, 2026-09-12)
 
 - 같은 Evidence ID가 다른 프로젝트에 있어도 역할·소유자·분류 편집값과 저장 상태가 옮겨가지 않습니다.

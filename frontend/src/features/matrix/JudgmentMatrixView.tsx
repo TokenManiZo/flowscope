@@ -118,6 +118,7 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
   const select = (id: string) => { setSelectedId(id); setEvidenceSelection(null); setInspectorOpen(true) }
   const evidenceEvent = evidenceSelection ? snapshot.data?.events.find((event) => evidenceSelection.eventIds.includes(event.eventId)) ?? null : null
   const summary = matrix?.summary
+  const configurationWarnings = matrix?.configurationWarnings ?? []
   const captions: Record<JudgmentView, string> = {
     function: "열=신원·역할, 행=기능. 상위 역할에서 관측된 기능을 하위 역할로 시험할 BFLA 조합을 추천합니다.",
     object: "열=신원·역할, 행=작업·객체. 한 계정에서 관측된 객체를 다른 계정·비로그인으로 시험할 BOLA/IDOR 조합을 추천합니다.",
@@ -142,6 +143,13 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
       </AlertDescription></Alert>}
       {snapshot.isLoading && !snapshot.isError && <p className="rounded-md border p-6 text-sm text-muted-foreground">판정 매트릭스를 불러오는 중입니다.</p>}
       {snapshot.data && !matrix && <p className="rounded-md border p-6 text-sm text-muted-foreground">이 snapshot에는 판정 매트릭스가 없습니다.</p>}
+      {configurationWarnings.length > 0 && <Alert aria-label="계정 서비스 설정 경고" className="border-amber-500/50 bg-amber-500/10">
+        <AlertTitle>계정 서비스 설정 확인</AlertTitle>
+        <AlertDescription><ul className="grid gap-2">{configurationWarnings.map((warning) => <li key={`${warning.code}:${warning.accountId}:${warning.configuredService}`} className="rounded border border-amber-500/30 p-2">
+          <span className="font-semibold text-foreground">{warning.accountLabel}</span><span className="mx-1 text-muted-foreground">·</span><span className="break-all font-mono text-xs">{warning.configuredService}</span>
+          <span className="mt-1 block text-xs">{warning.message}</span>
+        </li>)}</ul></AlertDescription>
+      </Alert>}
       {summary && <ul role="list" aria-label="판정 요약" className="grid gap-2 sm:grid-cols-5">{[
         ["BFLA 테스트 추천", summary.bflaTestRecommendations, "상위 역할 → 하위 역할"],
         ["BOLA/IDOR 테스트 추천", summary.bolaIdorTestRecommendations, "관측 객체 → 다른 계정"],

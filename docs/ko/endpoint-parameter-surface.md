@@ -33,6 +33,7 @@ Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 - 파싱 보고에는 산출물 종류, adapter, `PARSED/PARTIAL/FAILED/LIMIT_EXCEEDED`, 파서 실패 범주, call-site 해석 실패 범주와 추출 수를 둔다.
 - 비밀값 원문, 조합 가능한 값 목록, 인증 header는 surface snapshot에 넣지 않는다.
 - `SurfaceAnalysis`는 Evidence에서 재생성되는 projection이다. SQLite에 두 번째 정본을 만들지 않는다.
+- source·shape·valueType·endpointKind 집합은 enum 선언 순서로 직렬화해 동일 입력의 snapshot 배열 순서가 JVM마다 달라지지 않게 한다. 합성 `SampleProject`의 프런트 통합 fixture는 현재 route 후보를 포함한 전체 snapshot과 Java 회귀에서 일치해야 한다(D-149).
 
 ## 3. 범용 추출 계약
 

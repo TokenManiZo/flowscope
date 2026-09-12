@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — shutdown responses, account services, and sample snapshot boundaries (D-149, 2026-09-12)
+
+- In-flight Request Lab and Explorer responses cannot append new Evidence or raw text after unload starts; responses recorded first remain part of the final rebuild and checkpoint.
+- A registered account whose configured service matches no current observed or policy operation remains excluded from unsafe matrix combinations and is shown in a configuration warning.
+- The cross-screen sample fixture now matches the current 21-record SampleProject, route candidates, and complete snapshot. Surface enum arrays also retain deterministic declaration order across JVMs.
+- Surefire runs Swing component tests headlessly so Maven verification does not depend on macOS WindowServer state; this does not change the product JAR's UI runtime.
+
 ## Unreleased — Evidence editor lifetime and setup guidance (D-148, 2026-09-12)
 
 - Policy drafts and pending saves do not follow a reused Evidence ID into another project.

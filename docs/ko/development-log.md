@@ -1,5 +1,17 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · D-149 종료 응답·계정 서비스·샘플 snapshot 경계 보완 완료
+
+- 외부 리뷰 7건을 `59174d6` 기준으로 다시 확인했다. 프로젝트 설치의 records↔Explorer 잠금 역전과 종료 직전 SQLite 저장은 D-147에서 이미 회귀와 함께 닫혔다. HANDOFF의 D-145 이전 `#parameter-map`·RouteIconRail·당시 테스트 수치는 역사로 표시돼 있어 현행 모순이 아니었다. D-146의 CORROBORATED 비승격도 정확 참조 없이 인가 경계를 확정하지 않기 위한 의도된 결정으로 유지한다.
+- 실제 잔존 결함은 Request Lab·Explorer 응답의 종료 후 record/raw 추가였다. 두 호출부를 `appendControlledToolRecord`로 통일하고 `records` monitor 안에서 shutdown flag를 재검사한다. 종료가 먼저면 삽입·raw 보존을 거부하고, 삽입이 먼저면 D-147의 최종 재분석·저장에 포함된다. 수정 전 helper 부재 RED 뒤 lifecycle 4건이 통과했다.
+- 다른 서비스로 설정된 등록 계정은 D-146대로 matrix identity/cell/추천에서 제외하되, 계정 label·설정 service·제외 이유를 `configurationWarnings`로 표시한다. operation이 0개면 불일치를 추론하지 않는다. Java 14건, React matrix 3 files/33 tests와 typecheck가 집중 검증을 통과했다.
+- `sample-snapshot.json`이 14건에 머물러 현재 21건 `SampleProject`의 profile/account/posts와 route 후보를 화면 간 회귀에서 누락한 것을 확인했다. 현재 전체 snapshot으로 다시 캡처하고 Java가 route 후보까지 포함한 snapshot 전체 일치를 검사한다. 이 과정에서 `Set.copyOf(EnumSet)`이 JVM마다 source 배열 순서를 바꾸는 결함을 재현해 외부 직렬화 enum 집합을 선언 순서의 불변 EnumSet으로 바꿨다. 처음 추가한 전체 일치 테스트는 기존 fixture에서 실패했고 갱신 뒤 통과했다.
+- HANDOFF §6은 구현 완료된 graph 계층과 제거된 RouteIconRail, 미결정 resource-family 구현을 한 다음 작업으로 섞고 있어 현재 대규모 dataset의 graph 동작·성능 운영 gate로 정정했다.
+- 첫 전체 검증과 `FlowScopeControlTabTest` 단독 실행은 macOS AWT 초기화에서 로그 없이 정지했고, 제가 시작한 Surefire JVM은 TERM/KILL 뒤에도 OS에서 남았다. 같은 테스트가 `java.awt.headless=true`에서 즉시 통과함을 확인해 Maven Surefire의 테스트 JVM만 headless로 고정했다. Swing component 생성·라벨 단언에는 영향이 없고 실제 제품 JAR·Burp UI에 이 속성을 주입하지 않는다.
+- 영향 파일: `FlowScopeExtension`·lifecycle test, `AuthorizationMatrix`/analyzer/test, `SurfaceAnalyzer`, `SampleProjectTest`, current sample snapshot fixture, React matrix type/view/test, Surefire 설정과 D-149 문서.
+- 최종 검증: localhost test server가 필요한 회귀는 샌드박스 밖에서 실행했다. JDK 21.0.12.1 `mvn -o clean verify` BUILD SUCCESS, Java 554 tests(실패·오류 0, opt-in 2 skip), React 59 files/468 tests·typecheck, JAR/bundle release guard 통과. 새 JAR Playwright `--retries=0` 15/15 통과(32.9s). JAR 31,939,756 bytes, SHA-256 `4d547badc47668094ad4a23178208e52c23843302b9b3b501ef41a595ca02db3`.
+- 실패 실행 구분: 첫 전체 실행과 단독 Swing 테스트는 POM 보정 전 macOS AWT 초기화에서 정지했다. 다음 샌드박스 실행은 test용 loopback bind 74건이 `Operation not permitted`로 차단돼 실패했으며, 권한 있는 동일 명령에서 554 tests가 통과했다. E2E의 첫 호출은 잘못된 상대 경로, 둘째는 `java` PATH 부재로 서버 시작 전에 실패했고 JDK 21 PATH를 명시한 최종 실행만 검증 결과로 기록한다. 실제 Burp·Windows·native Linux는 이번 변경에서 실행하지 않았다.
+
 ## 2026-09-12 · D-148 사용자 편집 수명·조회 실패 경계 검증 완료
 
 - `OperationDetail`은 datasetRevision을 editor key에 넣어 동일 Evidence ID를 재사용하는 다른 프로젝트의 정책 초안과 진행 중 저장 응답을 분리한다. 일반 revision은 편집을 보존한다.

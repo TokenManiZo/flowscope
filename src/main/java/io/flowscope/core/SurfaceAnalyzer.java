@@ -901,7 +901,8 @@ public final class SurfaceAnalyzer {
                     row.evidenceId(), row.complete(),
                     row.record().requestPayload == null || row.record().requestPayload.retained(),
                     row.discovery(), row.signature())).toList();
-            return new EndpointFact(key, Set.copyOf(sources), List.copyOf(observations), List.copyOf(declarations),
+            return new EndpointFact(key, immutableEnumSet(Source.class, sources),
+                    List.copyOf(observations), List.copyOf(declarations),
                     parameterFacts, delta(!declarations.isEmpty(), sources), endpointKinds(), contexts);
         }
 
@@ -928,7 +929,7 @@ public final class SurfaceAnalyzer {
                 }
             }
             if (kinds.isEmpty()) kinds.add(SurfaceAnalysis.EndpointKind.UNVERIFIED);
-            return Set.copyOf(kinds);
+            return immutableEnumSet(SurfaceAnalysis.EndpointKind.class, kinds);
         }
     }
 
@@ -1154,10 +1155,18 @@ public final class SurfaceAnalyzer {
             Requirement requirement = requirements.size() == 1 ? requirements.iterator().next() : Requirement.UNKNOWN;
             DeltaState state = resolved ? delta(!declarations.isEmpty(), sources) : DeltaState.UNRESOLVED_COORDINATE;
             return new ParameterFact(location, displayPath(location, canonicalPath, displayName, resolved), displayName,
-                    requirement, Set.copyOf(shapes), Set.copyOf(sources), List.copyOf(evidenceIds),
+                    requirement, immutableEnumSet(ValueShape.class, shapes),
+                    immutableEnumSet(Source.class, sources), List.copyOf(evidenceIds),
                     List.copyOf(observations), List.copyOf(declarations), state, canonicalPath,
-                    Set.copyOf(valueTypes), distinctDigests.size(), resolved, distinctTruncated, profile, links);
+                    immutableEnumSet(ValueType.class, valueTypes), distinctDigests.size(), resolved,
+                    distinctTruncated, profile, links);
         }
+    }
+
+    private static <E extends Enum<E>> Set<E> immutableEnumSet(Class<E> type, Collection<E> values) {
+        EnumSet<E> copy = EnumSet.noneOf(type);
+        copy.addAll(values);
+        return Collections.unmodifiableSet(copy);
     }
 
     // ---- discovery 프로파일과 Gap (PR#11 ParameterProfiler 의미) ----

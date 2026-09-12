@@ -4,6 +4,10 @@ import io.flowscope.core.*;
 import io.flowscope.web.SnapshotJsonWriter;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 final class SampleProjectTest {
@@ -46,5 +50,23 @@ final class SampleProjectTest {
         assertTrue(new com.fasterxml.jackson.databind.ObjectMapper().readTree(
                 new SnapshotJsonWriter().write(1, result, sample.config(), java.util.List.of(), java.util.List.of()))
                 .path("sampleMode").asBoolean());
+    }
+
+    @Test
+    void frontendCrossScreenFixtureMatchesTheCurrentPackagedSample() throws Exception {
+        SampleProject.Data sample = SampleProject.create();
+        Pipeline.Result result = Pipeline.run(sample.records(), sample.config());
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        String services = result.records.stream().map(record -> record.service + "/")
+                .distinct().collect(java.util.stream.Collectors.joining("\n"));
+        List<RouteCandidate> routes = RouteCandidateExtractor.extract(
+                result.records, ScopePolicy.parse(services), List.of());
+        var current = json.readTree(new SnapshotJsonWriter().write(
+                1, 0, result, sample.config(), List.of(), List.of(), List.of(), routes, 0, List.of()));
+        var fixture = json.readTree(Files.readAllBytes(
+                Path.of("frontend/src/test/sample/sample-snapshot.json")));
+
+        assertEquals(current, fixture,
+                "프런트 화면 간 회귀 fixture는 현재 SampleProject snapshot과 함께 갱신해야 한다");
     }
 }

@@ -135,6 +135,14 @@ export interface MatrixRecommendation {
   basisEvidenceIds: readonly string[]
 }
 export interface MatrixIdentity { id: string; label: string; role: string; kind: string }
+/** 등록 계정의 설정 서비스가 현재 관측·정책 작업 서비스와 맞지 않아 matrix 조합에서 제외된 사실. */
+export interface MatrixConfigurationWarning {
+  code: "ACCOUNT_SERVICE_NOT_IN_MATRIX"
+  accountId: string
+  accountLabel: string
+  configuredService: string
+  message: string
+}
 export interface MatrixLegendItem { code: string; title: string; description: string }
 export interface MatrixCellBase {
   id: string
@@ -184,6 +192,7 @@ export interface AuthorizationMatrix {
     humanDismissed: number
   }
   identities: readonly MatrixIdentity[]
+  configurationWarnings?: readonly MatrixConfigurationWarning[]
   functions: readonly MatrixFunctionCell[]
   objects: readonly MatrixObjectCell[]
   evidence: readonly MatrixEvidenceRow[]

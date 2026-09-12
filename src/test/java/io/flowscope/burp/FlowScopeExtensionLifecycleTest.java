@@ -25,6 +25,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -120,6 +121,25 @@ class FlowScopeExtensionLifecycleTest {
                 release.countDown();
                 installation.get(2, TimeUnit.SECONDS);
             }
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
+    void controlledToolRecordIsRejectedAfterShutdownBegins() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        ((AtomicBoolean) field("shuttingDown").get(extension)).set(true);
+        RequestRecord late = new RequestRecord(Source.LLM, "https://api.example.test:443",
+                "GET", "/late-tool-response", 200, "anon");
+        AtomicBoolean retained = new AtomicBoolean(false);
+        try {
+            assertThrows(IllegalStateException.class,
+                    () -> extension.appendControlledToolRecord(late, () -> retained.set(true)));
+            assertTrue(records.isEmpty());
+            assertEquals(false, retained.get());
         } finally {
             ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
         }

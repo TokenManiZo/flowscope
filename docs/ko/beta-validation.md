@@ -1,5 +1,18 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-12 · D-149 종료·서비스·샘플 경계 최종 검증
+
+| 항목 | 실제 결과 |
+|---|---|
+| 회귀 재현 | 종료 flag 뒤 Request Lab/Explorer record·raw 추가, 다른 서비스 등록 계정의 matrix 제외 사유 미표시, 14-record 샘플 fixture와 현재 21-record SampleProject 불일치가 수정 전 회귀에서 실패했다. snapshot 갱신 중 JVM별 Surface enum 배열 순서 차이도 재현했다. |
+| 집중 검증 | `FlowScopeExtensionLifecycleTest` 4/4, `AuthorizationMatrixAnalyzerTest` 14/14, `SampleProjectTest` 2/2, React matrix 3 files/33 tests와 typecheck 통과. |
+| 전체 빌드 | JDK 21.0.12.1, Maven 3.9.16 `mvn -o clean verify` BUILD SUCCESS. Java 554 tests, 실패·오류 0, opt-in 2 skip. React 59 files/468 tests·typecheck, JAR/bundle release guard 통과. localhost test server 때문에 승인된 샌드박스 밖에서 실행했다. |
+| 패키지 브라우저 | 명시적 JDK 21 PATH에서 `npm run e2e -- --retries=0 --reporter=line`: 15/15 passed, 32.9s. 현재 sample·Graph/Matrix·Evidence/Request Lab·계정·ZAP/Explorer 상태·XML·1920/1280/900/600px 동선을 검사했다. 외부 대상 요청은 하지 않았다. |
+| 샘플 계약 | 합성 sample snapshot은 events 21, Surface endpoints 8, route candidates 8. Java가 동일 입력으로 만든 전체 value-free snapshot과 프런트 fixture가 일치한다. 실제 탐지 효능 근거가 아니다. |
+| 산출물 | JAR 31,939,756 bytes, SHA-256 `4d547badc47668094ad4a23178208e52c23843302b9b3b501ef41a595ca02db3`. 최종 문서를 반영해 bundle을 다시 조립했고 ZIP CRC, 중첩 JAR 바이트, D-149 HANDOFF·문서 상태 일치를 확인했다. bundle 자기 hash는 내부 문서에 기록하지 않는다. |
+| 실패 실행 구분 | POM 보정 전 기본 macOS AWT에서 Swing test가 정지했고 headless 고정 뒤 통과했다. 샌드박스 내부 전체 실행은 loopback bind 74건이 `Operation not permitted`로 실패했으며 같은 코드의 승인된 실행은 전부 통과했다. E2E 두 번은 각각 잘못된 Node 상대 경로와 `java` PATH 부재로 서버 시작 전에 실패했고, 위 최종 실행만 성공 결과다. |
+| 실환경 경계 | 실제 Burp는 D-148의 호스트 내부 오류 뒤 이번 변경에서 재시도하지 않았다. Windows·native Linux와 실제 unload 도중 통제 응답 도착, 복수 서비스 계정 경고도 미실행이다. |
+
 ## 2026-09-12 · D-148 최종 사용자 동선·배포 점검
 
 | 항목 | 실제 결과 |

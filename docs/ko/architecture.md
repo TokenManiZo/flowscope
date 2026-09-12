@@ -159,6 +159,8 @@ Proxy request handler가 listener port source를 보존하고 SCANNER/LLM의 범
 
 live HTTP 원문은 별도의 `TransientExchangeVault`에 요청·응답 `byte[]`와 각각의 body offset으로만 둔다. 요청 1MiB, 응답 4MiB, 총 32MiB 기본 상한과 오래된 항목 우선 제거를 적용하고 초기화·샘플 교체·프로젝트 열기·확장 종료 시 지운다. 이 값은 `RequestRecord`, snapshot, SQLite/JSON, 로그로 전달하지 않으며 사용자가 특정 Evidence의 요청 실험실을 열었을 때만 localhost capability API가 표시용 텍스트를 만든다. 헤더는 ISO-8859-1, textual 본문은 명시된 Content-Type charset 또는 기본 UTF-8로 replacement 없이 엄격히 디코딩한다. 바이너리, 알 수 없는 비텍스트, 잘못된 byte sequence는 원문 바이트는 유지하되 Web 텍스트 편집·전송을 차단한다. 수정하지 않은 요청과 Repeater 초안은 원래 바이트를 그대로 사용하며, 실제 편집한 본문만 선언 charset으로 엄격히 재인코딩한다. Java `String`과 HTTP/browser 복사본은 완전한 메모리 소거를 보장하지 못하므로 이를 영구 비밀 저장소로 표현하지 않는다. 가져온 프로젝트/XML/HAR, 상한 초과 Evidence에는 raw가 없어 마스킹 전문만 표시하고 Web 전송은 허용하지 않는다(D-084/D-093).
 
+Request Lab·Explorer처럼 응답을 기다리는 통제 요청은 응답 뒤 `records`에 추가하기 직전에 종료 상태를 다시 검사한다. record 추가·raw vault 보존과 shutdown flag 전이는 같은 `records` monitor로 순서가 정해진다. 통제 응답이 먼저면 종료의 무조건 최종 재분석·SQLite checkpoint에 포함되고, unload가 먼저면 새 Evidence와 raw 보존을 모두 거부한다(D-149).
+
 HUMAN 로그인 캡처 구간은 `SESSION_SETUP`, 명시적 HUMAN pass는 `EXPLORATION`, pass 밖의 일반 HUMAN 관측은 `BASELINE`으로 보존한다. `SESSION_SETUP`/`BASELINE` HUMAN Evidence는 저장과 감사 대상이지만 discovery coverage·3-way gap·그래프 입력은 아니다. 로그인 준비와 우연한 scope 내 이동이 HUMAN 탐색 성과로 계산되지 않게 하려면 사용자가 HUMAN pass를 시작·종료해야 한다. Web은 `/api/human-run`을 다른 실행 상태와 함께 주기적으로 동기화하며, `pass 완료`는 record 수가 아니라 exact exploration run의 조건부 종료 표식으로만 표시한다. pass 중 Repeater·Intruder·Target에서 발생한 HUMAN 요청은 run/phase/account 문맥을 공유하지만 `BURP_REPEATER/BURP_INTRUDER/MANUAL_HTTP` detail과 `BURP` tool을 브라우저로 덮어쓰지 않는다.
 
 Web 요청 실험실은 관측 Evidence의 HTTP 전문을 큰 편집기에서 열고 원래 `HttpService`에만 보낸다. 화면에는 관측 신원과 현재 재사용 가능한 등록 계정 세션을 별도 필드로 표시한다. 요청 path가 현재 exact scope 밖이면 전송 전에 거부하고 redirect는 `NEVER`, upstream TLS 검증과 30초 응답 상한을 유지한다. `ORIGINAL`은 사용자가 편집하지 않았다면 원문 바이트를 그대로 사용하고, 편집했다면 선언 문자셋으로 재구성한다. `ANONYMOUS`는 broker 관리 인증 헤더를 제거하며, `ACCOUNT`는 먼저 동일 헤더를 제거한 뒤 선택한 ACTIVE 계정의 현재 값을 주입한다. 기존 `Content-Length`는 Montoya가 계산한 실제 body byte 길이에 맞춘다. 결과는 `source=HUMAN`, `detail=MANUAL_HTTP`, `tool=BURP`, `phase=VALIDATION`, `executionTrust=CONTROLLED`로 새 Evidence가 되며 immutable discovery gate가 coverage·gap 성과로 계산하지 않는다. 화면 전송 이력은 탭 메모리 10건뿐이고 저장하지 않는다.
@@ -253,7 +255,7 @@ routeCandidates ──▶ provenance·미요청 route ──┘
 
 role/requirement는 자동추정하지 않고 사용자가 지정한다(D-018).
 
-판정 매트릭스의 identity×operation/resource 조합은 서비스별로 만든다(D-146). 등록 계정은 `AccountProfile.service` 하나에만 속하고, 등록되지 않은 익명·관측 신원은 실제 Evidence가 존재하는 서비스 집합에만 속한다. 다른 서비스의 API와 계정을 Cartesian product로 조합하지 않는다.
+판정 매트릭스의 identity×operation/resource 조합은 서비스별로 만든다(D-146). 등록 계정은 `AccountProfile.service` 하나에만 속하고, 등록되지 않은 익명·관측 신원은 실제 Evidence가 존재하는 서비스 집합에만 속한다. 다른 서비스의 API와 계정을 Cartesian product로 조합하지 않는다. 설정 서비스가 현재 관측·정책 operation 서비스와 하나도 맞지 않는 등록 계정은 `configurationWarnings`에 이유를 남기되 matrix identity/cell/추천에는 넣지 않는다. operation 자체가 없으면 불일치를 추론하지 않는다(D-149).
 
 ### 4.6 비교·그래프 F-07~15/F-20~24
 
@@ -309,6 +311,8 @@ D-148: 공통 OperationEditor의 수명은 datasetRevision과 Evidence 좌표에
 | 빠른 시작 | HUMAN run, 결정론적 ZAP 대상·비로그인/메모리 브라우저 로그인 계정 선택·신원별 인증/단계/수집/Alert 상태, LLM Explorer와 Evidence 검토 안내 |
 | 공통 우측 | 선택 API의 지연 로드된 마스킹 Request/Response, Web 요청 실험실, Repeater 미전송 초안 |
 | 상단 탐색·상태 | `WorkspaceNavigation`이 `분석 / 점검 / 기록` 세 그룹으로 모든 route를 제공한다. 상태 popover는 Scope/HUMAN/ZAP/SCANNER의 마지막 서버 상태를 보존하며 `#parameter-map`은 `#graph`로 호환 이동한다. |
+
+`SurfaceAnalysis`에서 snapshot으로 직렬화되는 source·shape·value-type·endpoint-kind enum 집합은 enum 선언 순서의 불변 집합으로 고정한다. 화면 간 샘플 fixture는 현재 `SampleProject`, 동일 route candidate와 전체 snapshot이 일치하는 Java 회귀를 통과해야 한다. 이는 JSON 표시 결정성과 fixture 갱신 누락을 막는 계약이지 샘플을 실제 탐지 결과로 사용하는 계약이 아니다(D-149).
 | Burp 제어판 | exact scope, 세 레인 포트, Web UI 열기, Proxy history, project I/O, sample/reset |
 
 관측 Evidence가 0건이면 분석 패널을 숨기고 `scope → 계정 로그인/HUMAN → ZAP → LLM Explorer → Evidence 검토` 흐름과 빠른 시작·샘플 조작을 먼저 노출한다. Evidence가 생기면 위 분석 작업면으로 전환한다. 이 progressive disclosure는 분석 모델을 줄이지 않고 첫 행동만 분리하며, ADMIN은 BFLA 역할 비교가 필요할 때만 선택적으로 추가한다(D-057/D-128).

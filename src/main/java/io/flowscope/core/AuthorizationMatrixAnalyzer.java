@@ -43,6 +43,7 @@ public final class AuthorizationMatrixAnalyzer {
         Map<String, Set<String>> identityServices = identityServices(result, policy);
         Set<String> matrixServices = operations.stream().map(AuthorizationMatrixAnalyzer::operationService)
                 .filter(value -> !value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<ConfigurationWarning> configurationWarnings = configurationWarnings(policy, matrixServices);
         List<Identity> identities = identities(result, policy).stream()
                 .filter(identity -> identityServices.getOrDefault(identity.id(), Set.of()).stream()
                         .anyMatch(matrixServices::contains))
@@ -82,8 +83,25 @@ public final class AuthorizationMatrixAnalyzer {
 
         List<EvidenceRow> evidence = evidenceRows(result, functions, objects);
         Summary summary = summary(functions, objects);
-        return new AuthorizationMatrix(summary, List.copyOf(identities), List.copyOf(functions),
+        return new AuthorizationMatrix(summary, List.copyOf(identities), configurationWarnings, List.copyOf(functions),
                 List.copyOf(objects), List.copyOf(evidence), policyLegend(), evidenceLegend(), ownershipLegend());
+    }
+
+    private static List<ConfigurationWarning> configurationWarnings(AnalysisConfig config,
+                                                                     Set<String> matrixServices) {
+        if (matrixServices.isEmpty()) return List.of();
+        return config.accounts().values().stream()
+                .filter(account -> !matrixServices.contains(account.service()))
+                .sorted(Comparator.comparing(AccountProfile::label)
+                        .thenComparing(AccountProfile::service)
+                        .thenComparing(AccountProfile::id))
+                .map(account -> new ConfigurationWarning(
+                        "ACCOUNT_SERVICE_NOT_IN_MATRIX",
+                        account.id(),
+                        account.label(),
+                        account.service(),
+                        "현재 판정 매트릭스의 관측·정책 작업 중 설정 서비스와 일치하는 작업이 없어 판정 조합에서 제외했습니다."))
+                .toList();
     }
 
     private static List<Identity> identities(Pipeline.Result result, AnalysisConfig config) {

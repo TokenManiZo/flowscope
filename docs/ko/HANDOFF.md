@@ -1,5 +1,13 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · D-149 잔존 리뷰 보완·전체 검증 완료
+
+- 리뷰 7건 중 프로젝트 설치 교착과 종료 저장은 D-147에서 이미 닫혔고, D-145 이전 route/rail/테스트 수치는 역사로 구분돼 있었다. D-146의 CORROBORATED 비승격은 정확 참조 없는 동시출현을 확정 인가 경계로 과대 표시하지 않기 위해 유지한다.
+- 실제 남은 Request Lab·Explorer 종료 후 record/raw 삽입을 공통 가드로 막았다. 서비스 불일치 등록 계정은 matrix 조합에서 계속 제외하면서 설정 경고에 계정·서비스·이유를 표시한다.
+- 뒤처진 프런트 sample snapshot을 현재 21-record SampleProject와 route 후보까지 포함해 갱신했고 전체 일치 회귀를 추가했다. 갱신 중 발견한 Surface enum JSON 순서 비결정성도 enum 선언 순서로 고정했다.
+- JDK 21 `mvn -o clean verify` BUILD SUCCESS: Java 554 tests(실패·오류 0, opt-in 2 skip), React 59 files/468 tests·typecheck, JAR/bundle release guard 통과. 새 JAR Playwright `--retries=0` 15/15 통과(32.9s).
+- JAR: 31,939,756 bytes, SHA-256 `4d547badc47668094ad4a23178208e52c23843302b9b3b501ef41a595ca02db3`. 실제 Burp는 D-148의 호스트 차단 뒤 다시 실행하지 않았고, Windows·native Linux도 미실행이다.
+
 ## 2026-09-12 · D-148 코드·패키지 검증 완료, Burp 호스트 검증 차단
 
 - 같은 Evidence ID를 가진 프로젝트 간 정책 초안/저장 상태 혼입과, Evidence·Surface·전체 관계 화면의 조회 실패 후 상세/Request Lab 재진입을 수정했다. 새 회귀 6건에서 수정 전 실패와 수정 후 통과를 확인했다.
@@ -31,7 +39,7 @@
 - 최종 산출물 JAR: 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`. 최종 bundle 해시는 모든 내부 문서가 확정된 뒤 외부 결과에서만 식별한다.
 - 실제 Burp 복수 서비스·중첩 API와 대규모 dataset precision/recall은 계속 운영 gate다.
 
-최종 갱신: 2026-09-12. 현재 브랜치는 `codex/react-ui-integration`이며 D-145의 통합 작업면, D-146의 서비스·리소스 관계 보정을 포함한다. 이번 연결부 보완 상태는 맨 위 진행 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 2026-09-11 이식 내역과 단계별 수치는 당시 산출물의 이력이다.
+최종 갱신: 2026-09-12. 현재 브랜치는 `codex/react-ui-integration`이며 D-145의 통합 작업면, D-146의 서비스·리소스 관계 보정, D-147~149의 수명·설명·fixture 연결부 보완을 포함한다. 현행 상태는 맨 위 진행 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 2026-09-11 이식 내역과 단계별 수치는 당시 산출물의 이력이다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -206,7 +214,7 @@ D-128은 발견용 HTML/JavaScript/JSON/XML 응답을 기본 4MiB까지 `FULL` p
 
 1. **프로젝트·Evidence 운영 gate** → 최종 JAR을 실제 Burp에 재로드해 수집→자동 저장→새 진단→이전 프로젝트 재열기, 저장 실패 시 현재 데이터 유지, Surface→Request Lab/Repeater와 HUMAN VALIDATION 귀속을 확인한다.
 2. **Explorer 신원 회귀** → LLM 계정 선택→인증 준비→forced account/lane 귀속→프로젝트 재열기를 통합 테스트로 먼저 고정한다. 실패하면 구현을 추측 수정하지 않고 경계를 다시 판정한다. **2026-09-11 구성요소 계약 회귀만 고정**(`ExplorerFingerprintTest`·`ExplorerIdentityAttributionTest` 4 tests: gateway 요청 조립 + `Fingerprints.of`·`bindSession`·`Pipeline`·`ProjectStore` 공개계약). 이 테스트는 실제 연결부 `FlowScopeExtension.executeExplorerRequest()→recordFrom(forcedAccountId)`를 실행하지 않으므로 그 연결부를 지워도 통과한다 — **실제 연결부 회귀는 여전히 열림**(코덱스 리뷰 정정). 실제 Burp Montoya 귀속은 1의 운영 gate.
-3. **그래프 정보계층 구현** → Surface를 사이트/API 개요로 유지하고, Graph는 기본 Identity→API, API 선택 뒤 resource family, family 선택 뒤 instance로 단계화한다. 노드는 실제 `+18` 증분과 남은 수를 표시하고, desktop 내비는 아이콘만이 아니라 라벨을 기본 제공한다. **2026-09-11 desktop 내비 라벨**(`RouteIconRail` 아이콘+한국어 라벨, 전 route 검사 테스트). jsdom `toBeVisible()`은 Tailwind `hidden/lg:block`을 적용 안 해 데스크톱 실가시성은 증명 못 한다. 코덱스가 packaged Chromium 1280×600에서 마지막 메뉴(`실행 상태`)가 viewport 밖(615px>600px)으로 잘림을 실측 → rail `<nav>`에 `overflow-y-auto` 추가(세로 스크롤). 스크롤 후 1280×600 마지막 메뉴 in-viewport E2E는 브라우저 gate. **2026-09-11 5c 완료:** `#graph`가 Site Overview(Target→API 그룹) → API View(Identity→API) → Object View(Identity→API→Object)로 단계화하고 `API/Object 18개 더 보기 (N개 남음)`·Back(그룹 펼침 유지)·개요로 접기를 제공한다(D-143 5c, 패키지 Chromium 실측·Playwright parity). resource family 접기는 PR#11 계층에 없어 범위 밖이며 별도 설계 없이는 착수하지 않는다(Object View는 선택 API의 객체를 18개 증분으로 표시). Fact Core·판정 key 불변.
+3. **그래프 운영 gate** → 현행 `#graph`는 Site Overview(Target→API 그룹) → API View(Identity→API) → Object View(Identity→API→Object)와 `API/Object 18개 더 보기 (N개 남음)`을 구현했다(D-143 5c). 실제 대규모 dataset에서 단계 전환·증분 표시·선택 Evidence 일치와 interaction latency를 측정한다. resource family→instance 한 단계를 더 넣는 설계는 PR #11 범위에 없고 현재 요구로 확정되지 않았으므로 별도 사용자 결정 전에는 구현하지 않는다. 제거된 `RouteIconRail`의 과거 1280×600 검사는 현행 gate가 아니다. Fact Core·판정 key는 바꾸지 않는다.
 4. **ZAP 실물 운영 gate** → 같은 JAR과 FlowScope Docker Chromium에서 비로그인과 로그인 계정 최소 2개를 실행해 로그인 성공/실패, SCANNER+laneAccountId 귀속, 쿠키 격리, strict Client capture와 0건 실패, Passive/Alert, 정의 import, 취소와 임시 user/Context 정리를 확인한다.
 5. **Release 게시 전 운영 gate** → Windows PowerShell 실기기에서 bundle/doctor/ZAP helper와 프로젝트 경로를 확인하고, Explorer anonymous·HTML form·JSON token, exact-scope, Evidence·선언 귀속, 큰 번들 단일 수집, OPTIONS probe 분리, steer·취소 정리를 확인한다.
 6. **독립 평가** → 승인된 범위와 독립 truth를 확보해 HUMAN·ZAP 대비 추가 endpoint/parameter, 중복·노이즈·요청량·검토시간을 측정한다. 자동 회귀만으로 우월성을 주장하지 않는다.

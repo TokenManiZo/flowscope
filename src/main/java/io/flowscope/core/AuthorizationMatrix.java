@@ -12,6 +12,7 @@ import java.util.Map;
 public record AuthorizationMatrix(
         Summary summary,
         List<Identity> identities,
+        List<ConfigurationWarning> configurationWarnings,
         List<FunctionCell> functions,
         List<ObjectCell> objects,
         List<EvidenceRow> evidence,
@@ -33,6 +34,13 @@ public record AuthorizationMatrix(
             int humanDismissed) {}
 
     public record Identity(String id, String label, String role, String kind) {}
+
+    public record ConfigurationWarning(
+            String code,
+            String accountId,
+            String accountLabel,
+            String configuredService,
+            String message) {}
 
     public record Confidence(String code, int level, String label, String basis) {}
 

@@ -1391,6 +1391,13 @@
 - **설치 문서:** native Linux Docker Engine의 host-gateway는 기본 bridge IP를 가리키므로 loopback-only Burp listener 안내만으로는 충분하지 않다. 실제 bridge IP를 조회해 해당 특정 interface listener를 추가하는 절차와 doctor가 컨테이너 도달성을 증명하지 않는다는 경계를 한·영 가이드에 명시했다. 호스트 설정이나 Docker 격리를 자동 변경하지 않는다. 근거: [Docker host gateway IP](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip).
 - **실환경 경계:** 공식 Burp JAR을 분리된 임시 data-dir에서 JDK 21과 확장 비활성화 JDK 26으로 각각 시작했으나 Burp 내부 ComponentUI·NullPointerException으로 로드 gate에 도달하지 못했다. GUI 제어도 timeout이었다. 자동 테스트·패키지 검증과 이 실행 실패를 별도로 기록한다.
 
+## D-149 · 종료 후 통제 요청·서비스 불일치·샘플 snapshot을 명시적 경계로 만든다 (2026-09-12)
+
+- **문제:** D-147은 일반 capture와 프로젝트 설치의 수명을 보정했지만, 이미 전송돼 응답을 기다리던 Request Lab·Explorer 요청은 unload가 시작된 뒤에도 `records`와 raw vault에 결과를 추가할 수 있었다. 판정 매트릭스는 다른 서비스로 설정된 등록 계정을 안전하게 제외하면서도 그 이유를 화면에 알리지 않았다. 프런트 화면 간 회귀용 snapshot은 `SampleProject` 확장 전 14건에 머물렀고, `Set.copyOf(EnumSet)`으로 복사한 Surface enum 집합은 JVM마다 JSON 배열 순서가 달라질 수 있었다. HANDOFF의 다음 작업에는 이미 제거된 rail과 미결정 resource-family 구현이 함께 남아 있었다.
+- **결정:** Request Lab·Explorer의 record 추가와 raw 보존은 공통 `appendControlledToolRecord`를 사용한다. 이 메서드와 shutdown flag 전이는 같은 `records` monitor 안에서 순서가 정해져, 먼저 들어온 결과는 종료의 최종 재분석·저장 대상이 되고 종료가 먼저면 새 Evidence를 거부한다. 등록 계정의 설정 서비스가 현재 관측·정책 operation 서비스 집합과 하나도 일치하지 않으면 계정을 조합에 다시 넣지 않고 `configurationWarnings`로 계정·설정 서비스·제외 사유만 표시한다. 비교할 operation이 0개면 오타를 추론하지 않아 경고하지 않는다. 샘플 fixture는 현재 SampleProject·route candidate를 포함한 전체 value-free snapshot과 Java 회귀에서 동일해야 하며, 외부 JSON으로 직렬화되는 enum 집합은 enum 선언 순서를 보존하는 불변 `EnumSet`으로 고정한다.
+- **유지:** D-146의 `CONFIRMED_AUTH_BOUNDARY`는 정확한 OBSERVED 참조와 확정 소유자에만 부여한다. PR #11의 CORROBORATED 승격을 복원하지 않는다. 동시출현 link와 `AUTH_VARIANT_UNTESTED`는 삭제하지 않고 사람 검토 대상으로 남기므로 후보 recall을 없애는 결정이 아니다. 다른 서비스 계정을 matrix에 다시 넣는 방식도 실행 불가능한 추천을 만들기 때문에 기각한다.
+- **검증 경계:** 종료 후 삽입 거부, 서비스 불일치/정책 전용/빈 매트릭스, React 경고와 column 비포함, 현재 SampleProject와 fixture 전체 일치를 회귀로 검사한다. macOS WindowServer 상태에 따라 Swing component test가 정지한 재현을 반영해 Surefire JVM만 `java.awt.headless=true`로 고정한다. 이 테스트는 창 상호작용 E2E가 아니며 제품 JAR 실행 속성은 바꾸지 않는다. 샘플은 합성 온보딩 데이터이고 실제 Burp·대상 탐지 성능 근거가 아니다. 실제 unload 중 응답 도착과 복수 서비스 UI는 운영 gate로 남긴다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

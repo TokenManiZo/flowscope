@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import type { ReactElement } from "react"
 import { beforeEach, expect, it, vi } from "vitest"
 
-import type { AuthorizationMatrix, MatrixFunctionCell, MatrixObjectCell, Snapshot } from "@/lib/api/types"
+import type { AuthorizationMatrix, MatrixConfigurationWarning, MatrixFunctionCell, MatrixObjectCell, Snapshot } from "@/lib/api/types"
 import { snapshotFixture } from "@/test/fixtures"
 import { renderWithQueryClient } from "@/test/render"
 import { JudgmentMatrixView } from "./JudgmentMatrixView"
@@ -36,6 +36,7 @@ const recommendation = { type: "BOLA/IDOR", basisIdentity: "a", basisIdentityLab
 const matrix: AuthorizationMatrix = {
   summary: { policyConfirmed: 1, policyReview: 0, bflaCandidates: 0, bolaIdorCandidates: 0, coverageGaps: 1, invalidExperiments: 0, bflaTestRecommendations: 1, bolaIdorTestRecommendations: 1, manualReviewPending: 2, humanConfirmed: 0, humanDismissed: 0 },
   identities: [{ id: "a", label: "A", role: "User", kind: "REGISTERED" }, { id: "b", label: "B", role: "User", kind: "REGISTERED" }],
+  configurationWarnings: [],
   functions: [
     fn("function-a", "a", `${service} GET /api/admin/export`, { status: "EXPECTED_ACCESS", statusLabel: "기대 허용 관측", policy: confidence("P3", 3, "사람 확인 정책"), expected: "ALLOW", actual: "SUCCESS", evidenceIds: ["ev-a"], statusCodes: [200], sourceVerdicts: { HUMAN: "ALLOW" } }),
     fn("function-b", "b", `${service} GET /api/admin/export`, { status: "BFLA_TEST_RECOMMENDED", statusLabel: "BFLA 수동 테스트 추천", policy: confidence("P3", 3, "사람 확인 정책"), expected: "DENY", recommendation: { ...recommendation, type: "BFLA", instruction: "B 세션으로 같은 기능 요청을 Burp Repeater에서 수동 실행하세요." } }),
@@ -76,6 +77,28 @@ it("renders server summary, function rows and P/E/O chips without recomputing st
   expect(cell).toHaveTextContent("기대 차단 → 실제 미실행")
   expect(within(cell).getByText("P3")).toBeVisible()
   expect(within(screen.getByRole("complementary", { name: "분석 필터" })).getByLabelText("정책 신뢰도 P")).toHaveTextContent("P3 사람 확인")
+})
+
+it("shows an unmatched registered account service as a warning without adding a matrix column", () => {
+  const warning: MatrixConfigurationWarning = {
+    code: "ACCOUNT_SERVICE_NOT_IN_MATRIX",
+    accountId: "foreign-user",
+    accountLabel: "Foreign user",
+    configuredService: "https://other.test:443",
+    message: "현재 판정 매트릭스의 관측·정책 작업 중 설정 서비스와 일치하는 작업이 없어 판정 조합에서 제외했습니다.",
+  }
+  current = { ...snapshot, authorizationMatrix: { ...matrix, configurationWarnings: [warning] } }
+
+  renderView(<JudgmentMatrixView />)
+
+  const alert = screen.getByRole("alert", { name: "계정 서비스 설정 경고" })
+  expect(within(alert).getByText("계정 서비스 설정 확인")).toBeVisible()
+  expect(within(alert).getByText("Foreign user")).toBeVisible()
+  expect(within(alert).getByText("https://other.test:443")).toBeVisible()
+  expect(within(alert).getByText(warning.message)).toBeVisible()
+  const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
+  expect(within(table).queryByText("Foreign user")).not.toBeInTheDocument()
+  expect(within(table).getAllByRole("button")).toHaveLength(2)
 })
 
 it("opens the recommendation detail, saves a human review against the server cell id, and shows the server message", async () => {

@@ -248,6 +248,54 @@ class AuthorizationMatrixAnalyzerTest {
                 && cell.status() == AuthorizationMatrix.Status.BOLA_IDOR_TEST_RECOMMENDED));
         assertTrue(matrix.functions().stream().noneMatch(cell -> cell.identity().equals("foreign-user")));
         assertTrue(matrix.objects().stream().noneMatch(cell -> cell.identity().equals("foreign-user")));
+        assertEquals(1, matrix.configurationWarnings().size());
+        AuthorizationMatrix.ConfigurationWarning warning = matrix.configurationWarnings().getFirst();
+        assertAll(
+                () -> assertEquals("ACCOUNT_SERVICE_NOT_IN_MATRIX", warning.code()),
+                () -> assertEquals("foreign-user", warning.accountId()),
+                () -> assertEquals("Foreign user", warning.accountLabel()),
+                () -> assertEquals("https://other.test:443", warning.configuredService()),
+                () -> assertTrue(warning.message().contains("판정 조합에서 제외")));
+        assertTrue(matrix.functions().stream().map(AuthorizationMatrix.FunctionCell::recommendation)
+                .filter(java.util.Objects::nonNull)
+                .noneMatch(value -> value.basisIdentity().equals("foreign-user")
+                        || value.testIdentity().equals("foreign-user")));
+        assertTrue(matrix.objects().stream().map(AuthorizationMatrix.ObjectCell::recommendation)
+                .filter(java.util.Objects::nonNull)
+                .noneMatch(value -> value.basisIdentity().equals("foreign-user")
+                        || value.testIdentity().equals("foreign-user")));
+    }
+
+    @Test
+    void noMatrixOperationsDoNotProduceAccountServiceWarnings() {
+        AnalysisConfig config = new AnalysisConfig().upsertAccount(new AccountProfile(
+                "unobserved", "Unobserved account", "https://unobserved.test:443", AccessRole.USER));
+
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(
+                Pipeline.run(List.of(), config), config, List.of());
+
+        assertTrue(matrix.configurationWarnings().isEmpty(),
+                "비교할 관측·정책 서비스 자체가 없으면 서비스 오타나 불일치를 추론하지 않는다");
+        assertTrue(matrix.identities().isEmpty());
+        assertTrue(matrix.functions().isEmpty());
+        assertTrue(matrix.objects().isEmpty());
+    }
+
+    @Test
+    void policyOnlyOperationMatchesTheRegisteredAccountServiceWithoutWarning() {
+        String operation = "https://policy-only.test:443 GET /api/admin/export";
+        AnalysisConfig config = new AnalysisConfig()
+                .upsertAccount(new AccountProfile("policy-user", "Policy user",
+                        "https://policy-only.test:443", AccessRole.USER))
+                .withEndpointRequirement(operation, AccessRole.ADMIN);
+
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(
+                Pipeline.run(List.of(), config), config, List.of());
+
+        assertTrue(matrix.configurationWarnings().isEmpty());
+        assertTrue(matrix.identities().stream().anyMatch(identity -> identity.id().equals("policy-user")));
+        assertTrue(matrix.functions().stream().anyMatch(cell -> cell.identity().equals("policy-user")
+                && cell.operation().equals(operation)));
     }
 
     @Test
