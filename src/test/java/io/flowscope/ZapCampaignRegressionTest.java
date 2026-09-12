@@ -145,18 +145,11 @@ final class ZapCampaignRegressionTest {
             });
 
             server.startDeterministicZapCampaign(target, List.of(), true);
-            assertEquals("CANCELLED", server.cancelDeterministicZapBaseline().path("status").asText());
+            assertEquals("CLEANUP", server.cancelDeterministicZapBaseline().path("stage").asText());
+            assertEquals("CANCELLED", awaitBaselineState(value ->
+                    !"RUNNING".equals(value.path("status").asText())).path("status").asText());
 
-            JsonNode restarted = null;
-            for (int attempt = 0; attempt < 100 && restarted == null; attempt++) {
-                try {
-                    restarted = server.startDeterministicZapCampaign(target, List.of(), true);
-                } catch (IllegalStateException error) {
-                    assertTrue(error.getMessage().contains("cleanup is still running"), error.getMessage());
-                    Thread.sleep(10);
-                }
-            }
-            assertNotNull(restarted, "cancelled task must eventually release the workflow lifecycle gate");
+            JsonNode restarted = server.startDeterministicZapCampaign(target, List.of(), true);
             assertEquals("RUNNING", restarted.path("status").asText());
             server.cancelDeterministicZapBaseline();
         } finally {
@@ -210,7 +203,9 @@ final class ZapCampaignRegressionTest {
 
             JsonNode cancelled = server.cancelDeterministicZapBaseline();
 
-            assertEquals("CANCELLED", cancelled.path("status").asText(), cancelled.toString());
+            assertEquals("CLEANUP", cancelled.path("stage").asText(), cancelled.toString());
+            assertEquals("CANCELLED", awaitBaselineState(value ->
+                    !"RUNNING".equals(value.path("status").asText())).path("status").asText());
             assertTrue(clientStopped.get());
             assertEquals("", capabilityRun.get());
             assertNull(contexts.current(Source.SCANNER));
@@ -253,12 +248,8 @@ final class ZapCampaignRegressionTest {
             });
 
             server.startDeterministicZapCampaign(target, List.of(), true);
-            JsonNode status = null;
-            for (int i = 0; i < 100; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.path("status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
 
             assertNotNull(status);
             assertEquals("FAILED", status.path("status").asText(), status.toString());
@@ -379,12 +370,8 @@ final class ZapCampaignRegressionTest {
                             + "\"definitions\":[{\"type\":\"OPENAPI\","
                             + "\"url\":\"http://127.0.0.1:8888/openapi.json\"}]}");
 
-            JsonNode status = null;
-            for (int i = 0; i < 100; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
             assertNotNull(status);
             assertEquals("COMPLETED", status.at("/status").asText(), status.toString());
             assertEquals("ALERTS_READY", status.at("/stage").asText());
@@ -445,12 +432,8 @@ final class ZapCampaignRegressionTest {
             JsonNode started = startBaseline(
                     "{\"target\":\"" + target + "\",\"run_id\":\"client-zero-rendered\"}");
 
-            JsonNode status = null;
-            for (int i = 0; i < 100; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
             assertNotNull(status);
             assertFalse(ajaxStarted.get(), status.toString());
             assertEquals("FAILED", status.at("/status").asText(), status.toString());
@@ -527,12 +510,8 @@ final class ZapCampaignRegressionTest {
             JsonNode started = startBaseline(
                     "{\"target\":\"" + target + "\",\"run_id\":\"passive-partial\"}");
 
-            JsonNode status = null;
-            for (int i = 0; i < 100; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
             assertNotNull(status);
             assertEquals("COMPLETED_WITH_WARNINGS",
                     status.at("/status").asText(), status.toString());
@@ -611,12 +590,8 @@ final class ZapCampaignRegressionTest {
                     + "\",\"run_id\":\"isolation-stop\",\"include_anonymous\":true,"
                     + "\"account_ids\":[\"zap-user-a\"]}");
 
-            JsonNode status = null;
-            for (int i = 0; i < 100; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
             assertNotNull(status);
             assertEquals("FAILED", status.at("/status").asText(), status.toString());
             assertEquals("NOT_RUN", status.at("/lanes/1/status").asText());
@@ -684,12 +659,8 @@ final class ZapCampaignRegressionTest {
             JsonNode started = startBaseline(
                     "{\"target\":\"" + target + "\",\"run_id\":\"client-cleanup\"}");
 
-            JsonNode status = null;
-            for (int i = 0; i < 100; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
             assertNotNull(status);
             assertEquals("FAILED",
                     status.at("/status").asText(), status.toString());
@@ -742,12 +713,8 @@ final class ZapCampaignRegressionTest {
             JsonNode started = startBaseline(
                     "{\"target\":\"" + target + "\",\"run_id\":\"raw-gate\"}");
 
-            JsonNode status = null;
-            for (int i = 0; i < 100; i++) {
-                status = server.deterministicZapBaselineStatus();
-                if (!"RUNNING".equals(status.at("/status").asText())) break;
-                Thread.sleep(10);
-            }
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
             assertNotNull(status);
             assertEquals("COMPLETED", status.at("/status").asText(),
                     status.toString());

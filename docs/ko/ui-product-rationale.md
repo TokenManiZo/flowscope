@@ -1,8 +1,10 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-12, D-151 (미출시 beta.46 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. Evidence는 operation별 마스킹 기록과 보존 상태를 페이지로 제공하고, Request Lab raw는 선택한 한 Evidence의 메모리에만 둔다. 모든 Evidence 작업면은 일시 snapshot 실패에서 선택·검토 메모·초안을 보존하고 새 동작을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다. 프로젝트 전환 성공 뒤에만 Request Lab을 폐기하고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
+> **현재 계약: 2026-09-12, D-152 (beta.47 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. Evidence는 operation별 마스킹 기록과 보존 상태를 페이지로 제공하고, Request Lab raw는 선택한 한 Evidence의 메모리에만 둔다. 모든 Evidence 작업면은 일시 snapshot 실패에서 선택·검토 메모·초안을 보존하고 새 동작을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다. 프로젝트 전환 성공 뒤에만 Request Lab을 폐기하고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
 
 ## 1. 한 문장으로 설명하기
+
+D-152의 beta.47 ZAP 화면은 결과 수집과 정리 종료를 구분한다. 정리 중에는 실행 상태 `RUNNING / CLEANUP`·정리 경과시간을 표시하고 새 시작·중복 취소를 비활성화한다. 완료·실패·취소라는 최종 표시는 재시작 잠금이 풀린 뒤에만 나타난다. 활성 run과 취소된 lane도 이 종료 순서에 맞춘다.
 
 FlowScope는 Burp가 수집한 **사람·ZAP·LLM의 실제 요청과 대상 산출물에 선언된 API·입력을 같은 좌표에 정렬**해, 진단자가 아직 보지 못한 endpoint·parameter를 먼저 찾고 선택한 API의 BOLA/IDOR·BFLA 근거를 그래프·매트릭스·원 Evidence로 확인하게 하는 Burp Community 확장이다.
 

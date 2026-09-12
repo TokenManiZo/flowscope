@@ -75,6 +75,8 @@ function scannerStage(stage?: string): string {
     CLIENT_SPIDER: "Client Spider",
     PASSIVE_SCAN_QUEUE: "Passive Scan 대기",
     ALERTS_READY: "Alert 집계 완료",
+    CLEANUP: "종료 처리 · 임시 상태 정리 중",
+    CANCELLED: "검사 취소",
     FAILED: "실패",
   }[stage ?? ""] ?? stage ?? "대기"
 }
@@ -121,6 +123,7 @@ export function InspectionPage() {
   const scannerAccountIds = scannerAccounts.map((account) => account.id)
   const targetInScope = target !== "" && scope.includes(target)
   const scannerRunning = scanner.data?.run.status === "RUNNING"
+  const scannerCleaning = scannerRunning && scanner.data?.run.stage === "CLEANUP"
   const zapCanStart = zap.data?.connected === true && targetInScope && (anonymous || selectedAccounts.length > 0) && !scannerRunning && !scannerMutation.isPending
   const humanCanStart = human.data !== undefined && !human.data.active && !humanMutation.isPending
   const humanCanEnd = human.data?.active === true && human.data.runId.trim() !== "" && !humanMutation.isPending
@@ -272,7 +275,7 @@ export function InspectionPage() {
               {!zapCanStart && <p className="text-sm text-muted-foreground">{scannerDisabledReason}</p>}
               <div className="flex flex-wrap gap-2">
                 <Button disabled={!zapCanStart} onClick={() => scannerMutation.mutate({ target, anonymous, accounts: selectedAccounts.join(","), definitions: zapDefinitions })}>신원별 격리 ZAP 기준선 시작</Button>
-                <Button variant="outline" disabled={!scannerRunning || scannerCancel.isPending} onClick={() => scannerCancel.mutate()}>ZAP 검사 취소</Button>
+                <Button variant="outline" disabled={!scannerRunning || scannerCleaning || scannerCancel.isPending} onClick={() => scannerCancel.mutate()}>ZAP 검사 취소</Button>
               </div>
             </div>}
             status={<section className="grid gap-3" aria-label="ZAP 실행 상태">

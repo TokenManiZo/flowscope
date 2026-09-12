@@ -87,6 +87,8 @@ public final class ZapCampaign implements AutoCloseable {
     private final AtomicBoolean zapCancelRequested = new AtomicBoolean();
     private volatile Future<?> zapWorkflowFuture;
     private volatile boolean zapWorkflowActive;
+    private ZapBaselineRun pendingZapResult;
+    private volatile long zapCleanupStartedAt;
     private volatile String ownedClientScanId = "";
     private volatile String zapCapabilityRunId = "";
     private volatile String zapCapabilityRule = "";
@@ -147,23 +149,22 @@ public final class ZapCampaign implements AutoCloseable {
     public JsonNode deterministicZapBaselineStatus() { return zapBaselineStatus(); }
     public synchronized JsonNode cancelDeterministicZapBaseline() {
         ZapBaselineRun current = zapBaseline;
-        if (current == null || !"RUNNING".equals(current.status())) return zapBaselineStatus();
+        if (current == null || !"RUNNING".equals(current.status()) || pendingZapResult != null) return zapBaselineStatus();
         zapCancelRequested.set(true);
+        deferZapResult(new ZapBaselineRun(current.runId(), current.target(), "CANCELLED", "CANCELLED",
+                "", "", capturedForRun(current.runId()), current.definitionCount(), zapBaselineAlerts.size(), ""));
         Future<?> future = zapWorkflowFuture;
         if (future != null) future.cancel(true);
         RuntimeException cleanupFailure = stopAndAwaitOwnedCrawlers();
         state.scannerDirectAuthentication(current.runId(), false);
-        state.contexts().abort(Source.SCANNER, current.runId());
         RuntimeException capabilityFailure = removeScannerCapability(current.runId());
         if (capabilityFailure != null) {
             cleanupFailure = mergeFailure(cleanupFailure, "scanner capability cleanup failed", capabilityFailure);
         }
         String warning = cleanupFailure == null ? "" : "취소 중 ZAP 정리 실패: " + cleanupFailure.getMessage();
-        zapBaseline = new ZapBaselineRun(current.runId(), current.target(), "CANCELLED", "CANCELLED",
+        pendingZapResult = new ZapBaselineRun(current.runId(), current.target(), "CANCELLED", "CANCELLED",
                 "", warning, capturedForRun(current.runId()), current.definitionCount(),
                 zapBaselineAlerts.size(), "");
-        recordZapProgress("전체", "CANCELLED", cleanupFailure == null ? "DONE" : "ERROR",
-                cleanupFailure == null ? "사용자 요청으로 ZAP 캠페인 취소·정리 완료" : warning);
         return zapBaselineStatus();
     }
     public void resetWorkflow() {
@@ -180,8 +181,13 @@ public final class ZapCampaign implements AutoCloseable {
 
     @Override public void close() {
         if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) cancelDeterministicZapBaseline();
+        // A cancelled FutureTask removed from the queue will never execute its run/finally hook.
+        for (Runnable queued : zapWorkflow.shutdownNow()) {
+            if (queued instanceof Future<?> task) finishZapWorkflowTask(task);
+        }
+        try { zapWorkflow.awaitTermination(10, TimeUnit.SECONDS); }
+        catch (InterruptedException error) { Thread.currentThread().interrupt(); }
         zapLaneRuntime = List.of();
-        zapWorkflow.shutdownNow();
         zapHeartbeat.shutdownNow();
     }
 
@@ -240,6 +246,8 @@ public final class ZapCampaign implements AutoCloseable {
             zapBaseline = new ZapBaselineRun(runId, target, "RUNNING", "INITIALIZING",
                     "", "", 0, definitions.size(), 0, "");
             zapCancelRequested.set(false);
+            pendingZapResult = null;
+            zapCleanupStartedAt = 0;
             ownedClientScanId = "";
             recordZapProgress("전체", "INITIALIZING", "INFO",
                     lanes.size() + "개 신원 격리 검사 대기열 생성");
@@ -278,33 +286,80 @@ public final class ZapCampaign implements AutoCloseable {
             runZapCampaign(runId, target, lanes, definitions);
         } catch (Throwable error) {
             RuntimeException cleanup = stopAndAwaitOwnedCrawlers();
-            state.contexts().abort(Source.SCANNER, runId);
             if (zapCancelRequested.get()) return;
             String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
             if (cleanup != null) detail = appendWarning(detail, "cleanup: " + cleanup.getMessage());
-            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
-                    capturedForRun(runId), definitions.size(), zapBaselineAlerts.size(), detail);
-            recordZapProgress("전체", "FAILED", "ERROR", "ZAP 캠페인 내부 오류 · " + detail);
+            deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                    capturedForRun(runId), definitions.size(), zapBaselineAlerts.size(), detail));
         } finally {
             state.scannerDirectAuthentication(runId, false);
             RuntimeException capabilityFailure = removeScannerCapability(runId);
             if (capabilityFailure != null && zapBaseline != null && runId.equals(zapBaseline.runId())
-                    && !"CANCELLED".equals(zapBaseline.status())) {
-                state.contexts().abort(Source.SCANNER, runId);
-                zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                    && !zapCancelRequested.get()) {
+                deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
                         capturedForRun(runId), definitions.size(), zapBaselineAlerts.size(),
-                        "ZAP scanner capability cleanup failed: " + capabilityFailure.getMessage());
-                recordZapProgress("전체", "FAILED", "ERROR", "ZAP 식별 capability 정리 실패");
+                        "ZAP scanner capability cleanup failed: " + capabilityFailure.getMessage()));
             }
             ownedClientScanId = "";
+            if (pendingZapResult != null && pendingZapResult.status().startsWith("COMPLETED")) {
+                try {
+                    state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, null);
+                    LaneCompletionPolicy.complete(state.contexts(), Source.SCANNER, runId, state.completionSnapshot());
+                } catch (RuntimeException error) {
+                    deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                            capturedForRun(runId), definitions.size(), zapBaselineAlerts.size(), error.getMessage()));
+                }
+            }
         }
     }
 
     private synchronized void finishZapWorkflowTask(Future<?> task) {
         if (zapWorkflowFuture == task) {
-            zapWorkflowFuture = null;
-            zapWorkflowActive = false;
+            if (pendingZapResult != null) {
+                ZapBaselineRun result = pendingZapResult;
+                if (!result.status().startsWith("COMPLETED")) state.contexts().abort(Source.SCANNER, result.runId());
+                if ("CANCELLED".equals(result.status())) finishCancelledLanes(result.runId());
+                pendingZapResult = null;
+                recordZapProgress("전체", result.stage(), "FAILED".equals(result.status()) ? "ERROR"
+                                : result.warning().isBlank() ? "DONE" : "WARN",
+                        "ZAP 캠페인 정리 종료 · " + result.status()
+                                + (result.warning().isBlank() ? "" : " · " + result.warning()));
+                // A caller that observes terminal can acquire the start monitor immediately.
+                zapWorkflowFuture = null;
+                zapWorkflowActive = false;
+                zapBaseline = result;
+            } else {
+                zapWorkflowFuture = null;
+                zapWorkflowActive = false;
+            }
         }
+    }
+
+    private void finishCancelledLanes(String runId) {
+        for (int index = 0; index < zapBaselineLanes.size(); index++) {
+            ZapLaneResult lane = zapBaselineLanes.get(index);
+            if (!Set.of("PENDING", "RUNNING").contains(lane.status())) continue;
+            boolean pending = "PENDING".equals(lane.status());
+            ZapLaneRuntime timing = index < zapLaneRuntime.size() ? zapLaneRuntime.get(index) : null;
+            long captured = pending || timing == null ? lane.capturedRecords()
+                    : Math.max(lane.capturedRecords(), capturedForRun(runId) - timing.capturedAtStart());
+            long client = pending || timing == null ? lane.clientCaptures()
+                    : Math.max(lane.clientCaptures(), capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - timing.clientAtStart());
+            replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(),
+                    pending ? "NOT_RUN" : "CANCELLED", "CANCELLED", captured, client,
+                    lane.definitionImports(), lane.alertCount(), lane.alertSnapshotComplete(), lane.passiveComplete(),
+                    lane.passiveRemaining(), lane.warning(), lane.error()));
+        }
+    }
+
+    private synchronized void deferZapResult(ZapBaselineRun result) {
+        if (pendingZapResult != null && "CANCELLED".equals(pendingZapResult.status())) return;
+        if (pendingZapResult == null) zapCleanupStartedAt = System.currentTimeMillis();
+        pendingZapResult = result;
+        zapBaseline = new ZapBaselineRun(result.runId(), result.target(), "RUNNING", "CLEANUP",
+                "", result.warning(), result.capturedRecords(), result.definitionCount(),
+                result.alertCount(), result.error());
+        recordZapProgress("전체", "CLEANUP", "INFO", "ZAP 캠페인 종료 처리 · 임시 상태 정리 중");
     }
 
     private void installScannerCapability(String target, String runId) {
@@ -395,30 +450,15 @@ public final class ZapCampaign implements AutoCloseable {
         long captured = capturedForRun(runId);
         zapBaselineAlerts = collectedAlerts;
         if (failed) {
-            state.contexts().abort(Source.SCANNER, runId);
-            zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
-                    captured, definitions.size(), collectedAlerts.size(), campaignError);
-            recordZapProgress("전체", "FAILED", "ERROR", "ZAP 캠페인 실패");
+            deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                    captured, definitions.size(), collectedAlerts.size(), campaignError));
         } else {
-            try {
-                state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, null);
-                LaneCompletionPolicy.complete(state.contexts(), Source.SCANNER, runId, state.completionSnapshot());
-            } catch (RuntimeException error) {
-                state.contexts().abort(Source.SCANNER, runId);
-                zapBaseline = new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
-                        captured, definitions.size(), collectedAlerts.size(), error.getMessage());
-                recordZapProgress("전체", "FAILED", "ERROR", "완료 조건 검증 실패");
-                return;
-            }
             String warning = zapBaselineLanes.stream().map(ZapLaneResult::warning)
                     .filter(value -> value != null && !value.isBlank()).distinct()
                     .collect(java.util.stream.Collectors.joining("; "));
             String status = warning.isBlank() ? "COMPLETED" : "COMPLETED_WITH_WARNINGS";
-            zapBaseline = new ZapBaselineRun(runId, target, status, "ALERTS_READY", "", warning,
-                    captured, definitions.size(), collectedAlerts.size(), "");
-            recordZapProgress("전체", "ALERTS_READY",
-                    warning.isBlank() ? "DONE" : "WARN",
-                    "캠페인 종료 · 수집 " + captured + "건 · Alert " + collectedAlerts.size() + "건");
+            deferZapResult(new ZapBaselineRun(runId, target, status, "ALERTS_READY", "", warning,
+                    captured, definitions.size(), collectedAlerts.size(), ""));
         }
     }
 
@@ -554,12 +594,16 @@ public final class ZapCampaign implements AutoCloseable {
             String clientId = "";
             boolean clientFinished = false;
             try {
-                JsonNode client = parseZap(identity == null
-                        ? state.zap().clientSpider(target, contextName)
-                        : state.zap().clientSpider(target, contextName, identity.userName(), identity.browser()));
-                clientId = client.path("scan").asText();
-                if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
-                ownedClientScanId = clientId;
+                synchronized (this) {
+                    // Cancellation must retain the accepted scan ID before it interrupts the worker.
+                    ensureZapNotCancelled();
+                    JsonNode client = parseZap(identity == null
+                            ? state.zap().clientSpider(target, contextName)
+                            : state.zap().clientSpider(target, contextName, identity.userName(), identity.browser()));
+                    clientId = client.path("scan").asText();
+                    if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
+                    ownedClientScanId = clientId;
+                }
                 updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · CLIENT_SPIDER", clientId, warning, "");
                 String finalClientId = clientId;
                 waitForZap(() -> state.zap().clientSpiderStatus(finalClientId), 20 * 60_000L,
@@ -891,7 +935,7 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     private synchronized void replaceZapLane(int index, ZapLaneResult value) {
-        if (zapCancelRequested.get() && zapBaseline != null && "CANCELLED".equals(zapBaseline.status())) return;
+        if (zapCancelRequested.get() && !"CANCELLED".equals(value.stage())) return;
         List<ZapLaneResult> copy = new ArrayList<>(zapBaselineLanes);
         ZapLaneResult previous = copy.get(index);
         copy.set(index, value);
@@ -900,8 +944,8 @@ public final class ZapCampaign implements AutoCloseable {
         long now = System.currentTimeMillis();
         List<ZapLaneRuntime> runtime = new ArrayList<>(zapLaneRuntime);
         ZapLaneRuntime current = runtime.get(index);
-        boolean started = !"PENDING".equals(value.status());
-        boolean terminal = Set.of("COMPLETED", "COMPLETED_WITH_WARNINGS", "FAILED", "NOT_RUN")
+        boolean started = !Set.of("PENDING", "NOT_RUN").contains(value.status());
+        boolean terminal = Set.of("COMPLETED", "COMPLETED_WITH_WARNINGS", "FAILED", "NOT_RUN", "CANCELLED")
                 .contains(value.status());
         boolean stageChanged = !java.util.Objects.equals(previous.stage(), value.stage());
         long startedAt = current.startedAt() == 0 && started ? now : current.startedAt();
@@ -924,13 +968,14 @@ public final class ZapCampaign implements AutoCloseable {
             String level = switch (value.status()) {
                 case "FAILED", "NOT_RUN" -> "ERROR";
                 case "COMPLETED_WITH_WARNINGS" -> "WARN";
-                case "COMPLETED" -> "DONE";
+                case "COMPLETED", "CANCELLED" -> "DONE";
                 default -> "INFO";
             };
             String message = switch (value.status()) {
                 case "FAILED" -> zapStageLabel(value.stage()) + " 실패"
                         + (value.error().isBlank() ? "" : " · " + value.error());
-                case "NOT_RUN" -> "이전 신원 격리 실패로 실행하지 않음";
+                case "NOT_RUN" -> "CANCELLED".equals(value.stage()) ? "사용자 취소로 실행하지 않음" : "이전 신원 격리 실패로 실행하지 않음";
+                case "CANCELLED" -> "사용자 요청으로 신원 검사 취소";
                 case "COMPLETED", "COMPLETED_WITH_WARNINGS" -> "신원 검사 종료 · 수집 "
                         + value.capturedRecords() + "건 · Alert " + value.alertCount() + "건";
                 default -> zapStageLabel(value.stage()) + " 시작";
@@ -1236,7 +1281,7 @@ public final class ZapCampaign implements AutoCloseable {
     private synchronized void updateZapBaseline(String runId, String status, String stage, String scanId,
                                                 String warning, String error) {
         ZapBaselineRun previous = zapBaseline;
-        if (zapCancelRequested.get() && previous != null && "CANCELLED".equals(previous.status())) return;
+        if (zapCancelRequested.get() || pendingZapResult != null) return;
         long captured = capturedForRun(runId);
         int alerts = previous == null ? 0 : previous.alertCount();
         zapBaseline = new ZapBaselineRun(runId, previous == null ? "" : previous.target(), status, stage,
@@ -1246,6 +1291,7 @@ public final class ZapCampaign implements AutoCloseable {
     private ObjectNode zapBaselineNode(ZapBaselineRun value) {
         ObjectNode out = json.createObjectNode();
         long now = System.currentTimeMillis();
+        boolean cleaning = "CLEANUP".equals(value.stage());
         List<ZapLaneRuntime> runtime = zapLaneRuntime;
         long campaignStartedAt = runtime.stream().mapToLong(ZapLaneRuntime::queuedAt).min().orElse(now);
         ZapLaneRuntime activeRuntime = null;
@@ -1277,16 +1323,17 @@ public final class ZapCampaign implements AutoCloseable {
         out.put("campaign_started_at", campaignStartedAt);
         out.put("elapsed_seconds", elapsedSeconds(campaignStartedAt,
                 "RUNNING".equals(value.status()) ? now : latestLaneEnd(runtime, now)));
-        out.put("stage_elapsed_seconds", activeRuntime == null ? 0
+        out.put("stage_elapsed_seconds", cleaning ? elapsedSeconds(zapCleanupStartedAt, now) : activeRuntime == null ? 0
                 : elapsedSeconds(activeRuntime.stageStartedAt(), now));
-        out.put("stage_timeout_seconds", activeRuntime == null ? 0
+        out.put("stage_timeout_seconds", cleaning || activeRuntime == null ? 0
                 : activeRuntime.stageTimeoutMillis() / 1_000L);
         out.put("last_heartbeat_age_seconds", activeRuntime == null
                 ? -1 : ageSeconds(activeRuntime.lastHeartbeatAt(), now));
         out.put("last_progress_age_seconds", activeRuntime == null
                 ? -1 : ageSeconds(activeRuntime.lastProgressAt(), now));
-        out.put("heartbeat_status", activeRuntime == null ? "" : activeRuntime.heartbeatStatus());
-        out.put("activity_state", zapActivityState(value.status(), activeStage, activeRuntime, now));
+        out.put("heartbeat_status", cleaning ? "ZAP 임시 상태 정리 중"
+                : activeRuntime == null ? "" : activeRuntime.heartbeatStatus());
+        out.put("activity_state", cleaning ? "CLEANING_UP" : zapActivityState(value.status(), activeStage, activeRuntime, now));
         ArrayNode lanes = out.putArray("lanes");
         int runningIndex = -1;
         for (int index = 0; index < zapBaselineLanes.size(); index++) {

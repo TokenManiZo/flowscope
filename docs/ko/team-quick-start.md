@@ -1,6 +1,6 @@
-# 팀원용 첫 실행 — FlowScope beta.46
+# 팀원용 첫 실행 — FlowScope beta.47
 
-[테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.46)에서 **`flowscope-1.2.0-beta.46-bundle.zip`**을 받으세요. GitHub가 자동 생성하는 `Source code.zip`은 실행 번들이 아닙니다. 압축을 푼 뒤 JAR·`scripts`·`infra`·`docs`를 같은 폴더 구조로 유지하세요.
+[테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.47)에서 **`flowscope-1.2.0-beta.47-bundle.zip`**을 받으세요. GitHub가 자동 생성하는 `Source code.zip`은 실행 번들이 아닙니다. 압축을 푼 뒤 JAR·`scripts`·`infra`·`docs`를 같은 폴더 구조로 유지하세요.
 
 ## 1. 사용할 기능에 맞춰 준비
 
@@ -43,7 +43,7 @@ helper가 이 PC의 ZAP key를 만들고 Chromium 이미지 빌드·기동과 Bu
 
 ## 4. JAR을 Burp에 로드
 
-Burp **Extensions → Installed → Add → Java**에서 bundle 루트의 `flowscope-1.2.0-beta.46.jar`을 선택하세요. Output/Errors에 오류가 없는지 확인한 뒤 [FlowScope Web](http://127.0.0.1:17777/)을 엽니다.
+Burp **Extensions → Installed → Add → Java**에서 bundle 루트의 `flowscope-1.2.0-beta.47.jar`을 선택하세요. Output/Errors에 오류가 없는지 확인한 뒤 [FlowScope Web](http://127.0.0.1:17777/)을 엽니다.
 
 기존 버전을 교체한다면 현재 진단의 `저장됨` 상태를 확인하고 기존 FlowScope를 먼저 언로드한 뒤 새 JAR을 로드하세요. 여러 FlowScope 버전을 동시에 켜면 포트가 충돌할 수 있습니다. JAR을 로드한 뒤 ZAP key를 처음 만들었다면 FlowScope를 한 번 재로드해야 합니다.
 
@@ -84,6 +84,8 @@ Windows PowerShell 7:
 현재 프로젝트는 기본적으로 사용자 홈의 `.flowscope/projects/` 아래에 저장됩니다. 재로드 후 원문 인증정보와 실행 계정은 다시 준비해야 합니다.
 
 ## 막힐 때 먼저 볼 것
+
+beta.47에서는 ZAP 결과 수집이 끝난 뒤에도 `종료 처리 · 임시 상태 정리 중`이 잠시 표시될 수 있습니다. 최종 상태가 나온 뒤 재실행하세요. 정리 중에는 시작 버튼과 중복 취소가 잠기며, 이미 수집한 Evidence는 유지됩니다.
 
 | 증상 | 확인할 곳 |
 |---|---|

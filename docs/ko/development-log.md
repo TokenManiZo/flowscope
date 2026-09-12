@@ -1,5 +1,15 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · D-152 ZAP terminal 게시와 cleanup 완료 경합 보정
+
+- 최신 원격 CI `34690153265`에서 `ZapCampaignRegressionTest.scannerCampaignResetsZapAndRunsAnonymousThenEachActiveAccount`가 `ZAP campaign cleanup is still running`으로 실패했다. `runZapCampaign`이 terminal 결과를 공개한 뒤 capability cleanup과 `finishZapWorkflowTask`가 별도로 시작 잠금을 해제하므로, 화면과 다음 호출자가 결과를 보고 즉시 시작할 수 없었다.
+- 새 latch 회귀 4건이 기존 코드에서 모두 실패했다. success/failure 결과가 capability cleanup 전에 공개되고, 취소 요청이 수락된 Client 시작 응답을 interrupt해 scan ID를 잃는 것을 재현했다. 후속 run 보호 단언도 수정 전 3건 실패해, 완료/abort로 run을 너무 일찍 해제하는 연결부를 확인했다.
+- `pendingZapResult`에 결과를 보존하고 공개 상태를 `RUNNING / CLEANUP`으로 유지한다. cleanup과 완료 조건 검증 뒤 worker의 마지막 monitor 구간에서 run 마감·취소 lane 상태·시작 잠금 해제·terminal 게시를 끝낸다. Client 시작 API 응답과 scan ID 등록도 취소와 같은 monitor에 둬 수락된 ID를 잃지 않는다. close가 executor queue에서 제거한 미실행 task도 마감한다.
+- React 점검 화면은 정리 경과시간·한국어 설명을 표시하고 시작·중복 취소를 막는다. 기존 테스트의 정리 전 `CANCELLED` 기대는 cleanup 응답→최종 취소→즉시 재시작으로 바꿨으며, 재시작을 예외 retry로 통과시키던 경로는 제거했다. 단순 1초 추측 polling은 10초 상한의 실제 상태 대기로 통일했다. 제품 timeout·검사 범위·판정 규칙은 바꾸지 않았다.
+- 검증: 로컬 JDK 21 전체 Java 574(실패·오류 0, opt-in 2 skip), React 59파일/472건·타입검사·release guard 통과. 패키지 Playwright retry 0으로 15/15(30.2s). JAR 31,942,102 bytes, SHA-256 `80d6e5357b3d73fdcfa274662f5bdfce39d792e3675c24dbbc7b9fa331e38cbe`.
+- 실물: Docker Desktop을 시작한 뒤 별도 Compose project `flowscope-beta47-gate`, API 18889/fixture proxy 18881/전용 임시 key로 테스트했다. ZAP 2.17 기반 Chromium/ChromeDriver 152.0.7977.82, 익명+정상 2계정 Client 완료 63요청, 다음 캠페인 잘못된 비밀번호는 Client 실행 전 거부. opt-in 1/1, 106.6초 통과. Burp hook·Windows 실기기·임의 외부 대상 결과로 확대하지 않는다.
+- 배포: beta.46을 재작성하지 않고 beta.47로 버전과 현행 설치 안내를 올렸다. 코드/회귀/문서 한 작업 단위로 PR·원격 CI 뒤 배포한다. 원본 PR #11·#12의 head가 이식 당시와 같음을 확인했고 현행 Surface·React·Authorization 경로와 대조표를 재확인했다.
+
 ## 2026-09-12 · main 반영·beta.46 팀원 테스트 배포 준비
 
 - 사용자 요청에 따라 `codex/react-ui-integration`에만 올라가 있던 37커밋을 `main`으로 fast-forward했다. 제품 코드 기준은 `8fe8527`이다.

@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.46
+# FlowScope 1.2.0-beta.47
 
 현재 진행상황과 남은 gate는 [팀 인계 정본](docs/ko/HANDOFF.md), 문서 전수 대조 결과는 [문서 정합성·갱신 기준](docs/ko/documentation-status.md)에 기록합니다.
 
@@ -71,7 +71,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.46-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.46 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.47-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.47 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
 2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN용 `127.0.0.1:8080`을 만들고, ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다. Docker Desktop은 이 loopback 경로를 사용합니다. native Linux Docker Engine에서는 [시작 가이드](docs/ko/getting-started.md)의 Docker bridge IP 확인 절차를 따라 해당 IP에만 `8081` listener를 하나 더 추가해야 합니다.
 3. ZAP 기준선을 실행할 때는 압축을 푼 bundle 루트에서 macOS/Linux `./scripts/zap-up.sh`, Windows PowerShell 7 `.\scripts\zap-up.ps1`을 실행합니다. helper가 Chromium·ChromeDriver가 포함된 FlowScope ZAP 이미지를 자동 빌드·기동합니다. HUMAN/Explorer만 쓰면 이 단계가 필요 없습니다. 중지했다면 다음 점검 전에 `zap-up`만 다시 실행하면 됩니다. Burp는 호스트에서 실행합니다.
 
@@ -102,7 +102,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP의 일반 통신 실패 1·2회는 `RETRYING`, 3회 연속 실패는 `UNREACHABLE`로 표시하며 API key 오류는 즉시 확정합니다(D-138). `CONNECTED`는 제어 API와 관리 runtime이 준비됐다는 뜻이지 crawler 완료를 뜻하지 않습니다. 연결이 실제로 끊기면 해당 단계 안에서 운영체제별 Docker helper를 보여 줍니다.
 
-소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-1.2.0-beta.46.jar`와 다운로드용 `target/flowscope-1.2.0-beta.46-bundle.zip`입니다. bundle에는 JAR, ZAP Dockerfile/Compose/helper, macOS·Linux·Windows doctor, 현재 문서가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다. 검증 문서의 SHA-256은 거기에 적힌 환경에서 만든 해당 산출물의 식별값이지, 임의 JDK·운영체제 빌드가 같은 해시를 낸다는 약속이 아닙니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-1.2.0-beta.47.jar`와 다운로드용 `target/flowscope-1.2.0-beta.47-bundle.zip`입니다. bundle에는 JAR, ZAP Dockerfile/Compose/helper, macOS·Linux·Windows doctor, 현재 문서가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다. 검증 문서의 SHA-256은 거기에 적힌 환경에서 만든 해당 산출물의 식별값이지, 임의 JDK·운영체제 빌드가 같은 해시를 낸다는 약속이 아닙니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
@@ -198,6 +198,8 @@ Burp 시작 전에 다음 시스템 속성으로 기본 포트를 바꿀 수 있
 ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 `flowscope.zap.key` → `FLOWSCOPE_ZAP_API_KEY` → `flowscope.zap.keyFile` → 기본 `~/.flowscope/zap-api-key`입니다. 기본 파일은 심볼릭 링크와 group/others 권한을 거부합니다. Java client와 제공 스크립트는 key를 URL query나 프로세스 인자에 넣지 않고 `X-ZAP-API-Key` 헤더로 보냅니다. Docker ZAP API는 기본적으로 loopback, 해석된 `host.docker.internal` 주소와 컨테이너의 default Compose bridge gateway만 exact allowlist로 허용하며 `api.addrs.addr.name=.*`를 사용하지 않습니다. ZAP의 대상 트래픽은 Burp SCANNER listener를 통과하도록 설정해야 합니다. 시스템 캠페인은 run별 capability가 확인된 프록시 요청만 CONTROLLED ZAP Evidence로 받으며 헤더는 대상 전송 전에 제거합니다. capability 누락은 자동으로 허용하지 않고 차단 수를 상태에 남기며 다음 단계 전에 실패시킵니다. Client status `100`만으로 실제 대상 트래픽을 증명하지 않으며, FlowScope는 같은 run의 raw `ZAP_CLIENT_SPIDER` 응답 수집 건수를 확인합니다. 0건이면 성공으로 표시하지 않습니다. `Alert 집계 미완료`는 Passive 정체 시점까지의 snapshot이므로 ZAP이 이후 분석했을 결과 전체를 뜻하지 않습니다.
 
 ## 제품 작업면
+
+beta.47은 ZAP 종료·재시작 경합을 수정한 테스트 배포입니다. ZAP 실행 화면의 `종료 처리 · 임시 상태 정리 중` 동안에는 이전 실행을 정리하므로 시작·중복 취소 버튼이 잠깁니다. 최종 완료·실패·취소가 표시되면 다음 실행을 시작할 수 있습니다. 기존 beta.46 사용자는 현재 진단 저장 후 확장을 교체하십시오.
 
 요청 비교는 분석하지 못한 본문과 UNKNOWN metadata를 불확실한 상태로 남깁니다. 모든 Evidence 작업면의 선택·검토 메모·Request Lab 초안은 해당 프로젝트와 서버 Evidence에 묶입니다. 일시 snapshot 실패는 마지막 성공 데이터와 열린 초안을 유지하면서 새 선택·편집·전송을 잠그고, 실패 전에 시작한 전송은 취소하지 않아 서버 Evidence와 화면 결과가 갈리지 않게 합니다. 새 진단·프로젝트·샘플 전환은 현재 진단 저장이 성공해야 적용됩니다(D-147, D-151).
 
