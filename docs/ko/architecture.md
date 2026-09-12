@@ -293,6 +293,8 @@ Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델
 
 ## 5. UI
 
+D-148: 공통 OperationEditor의 수명은 datasetRevision과 Evidence 좌표에 결박된다. Evidence/Surface/전체 관계 그래프는 snapshot 실패를 렌더에 즉시 반영해 편집 컴포넌트를 제거하고 마지막 성공 데이터·시각·재시도만 유지한다. 세 화면과 Matrix가 같은 실패 경계를 따른다.
+
 | 작업면 | 역할 |
 |---|---|
 | API·입력 차이 | 기본 작업면. 선언/관측 endpoint와 parameter를 source별로 정렬하고 provenance·Evidence 및 산출물 파싱 상태를 연다. `미관측`을 취약점·lane 실패로 표현하지 않으며 전체 퍼센트를 만들지 않는다. |

@@ -1,5 +1,20 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-12 · D-148 최종 사용자 동선·배포 점검
+
+| 항목 | 실제 결과 |
+|---|---|
+| 코드 회귀 | 동일 Evidence ID의 프로젝트 전환 2건, React Query HTTP 503 주입의 Evidence/Surface/관계 목록/관계 canvas 4건이 RED→GREEN. 실제 정책 editor·Request Lab의 폐기/재진입을 검사했다. |
+| 전체 빌드 | JDK 21.0.12.1 `mvn -o clean verify` BUILD SUCCESS. Java 550 tests, 실패·오류 0, opt-in 2 skip. React 59 files/467 tests·typecheck 통과. |
+| 패키지 브라우저 | `npm run e2e -- --retries=0 --reporter=line` 15/15 passed, 33.4s. 임시 SQLite 작업공간·저장된 sample Evidence·제한된 외부 요청 경계에서 실행했다. |
+| 배포물 대조 | 기준 `0774d4c` ZIP/JAR CRC·중첩 JAR 동일성, React 자산, notice/license 9종, helper 8개 mode 0755, Bash 5개 문법/ShellCheck·Compose 구성 통과. 미추적 멘토 보고서·프로젝트·설정·key 파일 비포함. 최종 입력도 같은 packaging 계약을 사용한다. |
+| Linux 안내 | host-gateway의 native Linux bridge 매핑과 loopback listener 차이를 공식 Docker 문서로 확인해 한·영 가이드를 수정했다. 실제 설정 변경이나 native Linux 실측은 수행하지 않았다. |
+| JAR | 31,937,310 bytes, SHA-256 `11a121f37e081494f8c24d103945abdaafb3b75e1d81d21e8676207e9e252a0c`. bundle은 문서 확정 후 조립하며 자기 hash는 내부에 기록하지 않는다. |
+| 실제 Burp | **BLOCKED_HOST_RUNTIME.** GUI 제어 2회 timeout. 설치 JAR build 53343의 분리된 headless JDK 21 실행과 확장 전부 비활성화 JDK 26 기준선에서 모두 `java.lang.Error: no ComponentUI class for burp.Zhxc` 및 `burp.Zsz7`의 NullPointerException 발생. FlowScope 로드/프로젝트 재열기 성공은 확인하지 못했다. |
+| 운영체제 | Darwin 호스트. Windows·native Linux의 실제 실행 검증은 수행하지 않았다. |
+
+Burp의 headless/config/data-dir 옵션은 설치 JAR `--help`와 [공식 실행 안내](https://portswigger.net/burp/documentation/desktop/troubleshooting/launch-from-command-line)로 확인했다. 호스트 측 원본 Burp 프로세스나 사용자의 settings를 초기화하지 않았다. 검증용 headless 프로세스는 종료했고 도움말/버전 프로세스 2개는 TERM/KILL 뒤 OS `UE` 상태로 남은 것을 기록했다. 이 결과는 호스트 복구가 완료됐다는 주장이 아니다.
+
 ## 2026-09-12 · D-147 PR 연결부 최종 검증
 
 | 항목 | 실제 확인 결과 |

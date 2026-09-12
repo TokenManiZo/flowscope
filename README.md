@@ -70,7 +70,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 ### 처음 한 번만 준비
 
 1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.46-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.46 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
-2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN용 `127.0.0.1:8080`을 만들고, ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다.
+2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN용 `127.0.0.1:8080`을 만들고, ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다. Docker Desktop은 이 loopback 경로를 사용합니다. native Linux Docker Engine에서는 [시작 가이드](docs/ko/getting-started.md)의 Docker bridge IP 확인 절차를 따라 해당 IP에만 `8081` listener를 하나 더 추가해야 합니다.
 3. ZAP 기준선을 실행할 때는 압축을 푼 bundle 루트에서 macOS/Linux `./scripts/zap-up.sh`, Windows PowerShell 7 `.\scripts\zap-up.ps1`을 실행합니다. helper가 Chromium·ChromeDriver가 포함된 FlowScope ZAP 이미지를 자동 빌드·기동합니다. HUMAN/Explorer만 쓰면 이 단계가 필요 없습니다. 중지했다면 다음 점검 전에 `zap-up`만 다시 실행하면 됩니다. Burp는 호스트에서 실행합니다.
 
 4. 사용할 기능에 맞는 환경만 확인합니다.
@@ -88,6 +88,8 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 .\scripts\doctor.ps1 -Mode explorer
 .\scripts\doctor.ps1 -Mode full
 ```
+
+현재 doctor는 호스트의 loopback 포트와 ZAP upstream 설정을 검사하므로, native Linux 컨테이너에서 Burp bridge listener까지 연결되는지는 증명하지 않습니다.
 
 ### 점검할 때마다
 
@@ -126,6 +128,8 @@ HUMAN과 SCANNER용 Burp proxy listener를 만드십시오. Montoya는 확장 �
 | `127.0.0.1:8080` | HUMAN | 브라우저 또는 수동 점검자 |
 | `127.0.0.1:8081` | SCANNER | 대상 요청을 보내는 ZAP |
 | `127.0.0.1:8082` | LLM | 선택적 직접 클라이언트 관측 fallback (`UNVERIFIED_RUNTIME`, Evidence 보존만; coverage·완료 불가) |
+
+native Linux Docker Engine의 ZAP은 [Docker의 기본 `host-gateway` 매핑](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip)에 따라 호스트의 default bridge IP로 연결합니다. `127.0.0.1:8081`만 연 상태로는 이 경로를 받을 수 없으므로, [시작 가이드](docs/ko/getting-started.md)대로 특정 bridge IP의 SCANNER listener를 추가합니다.
 
 각 대상 클라이언트에 Burp CA 인증서를 설치하십시오. TLS 검증을 영구적으로 끄지 마십시오.
 

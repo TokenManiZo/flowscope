@@ -1,5 +1,15 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · D-148 사용자 편집 수명·조회 실패 경계 검증 완료
+
+- `OperationDetail`은 datasetRevision을 editor key에 넣어 동일 Evidence ID를 재사용하는 다른 프로젝트의 정책 초안과 진행 중 저장 응답을 분리한다. 일반 revision은 편집을 보존한다.
+- Evidence/Surface/RelationshipGraph의 실제 조회 실패 시 policy·Request Lab을 닫고 상세 재진입을 차단한다. 마지막 확인 데이터·시각·재시도는 보존한다. InspectorLifecycle 2건과 새 SnapshotFailureLifecycle 4건이 수정 전 실패했고 관련 80 tests·타입검사가 통과했다.
+- native Linux의 Docker bridge와 host loopback 차이를 한·영 README/설치 가이드에서 정정했다. 실제 호스트 설정을 변경하지 않았다. 완성된 bundle은 CRC·내부 JAR 바이트·React 자산·notice·실행 권한·Bash 및 링크를 읽기 전용으로 검사했다.
+- Burp GUI는 두 번 timeout, 격리 headless 실행은 FlowScope 사용 여부와 무관하게 vendor 내부 ComponentUI·NullPointerException으로 중단됐다. 사용자 기존 Burp 프로세스는 유지하고 제가 시작한 검증용 프로세스만 종료 신호를 보냈다.
+- 전체 `mvn -o clean verify` BUILD SUCCESS: Java 550 tests(실패·오류 0, opt-in 2 skip), React 59 files/467 tests·typecheck 통과. 새 JAR Playwright `--retries=0` 15/15, 33.4s. JAR 31,937,310 bytes, SHA-256 `11a121f37e081494f8c24d103945abdaafb3b75e1d81d21e8676207e9e252a0c`.
+- 영향 파일: OperationDetail, EvidencePage, SurfacePage, RelationshipGraphView, InspectorLifecycle 2건과 새 SnapshotFailureLifecycle 4건; 한·영 README/설치 안내, D-148·architecture·UI 근거·HANDOFF·검증·변경 이력. 다른 프로젝트의 UI 값을 보존하는 안과 오류 경고만 보이며 전송 조작을 계속 허용하는 안은 잘못된 문맥 사용을 남겨 기각했다.
+- 실환경 시도: 설치 Burp build 53343의 공식 headless CLI를 분리된 data-dir에서 사용했고, 확장을 비활성화한 JDK 26 기준선에서도 `no ComponentUI class`/`NullPointerException`이 재현됐다. GUI 도구도 timeout이므로 이 머신의 Burp gate는 차단 상태다. headless 검증 프로세스는 종료했고, 도움말/버전 조회 중 정지한 2개 프로세스는 TERM/KILL 뒤에도 OS `UE` 상태로 관측됐다. 사용자 기존 Burp 프로세스는 유지했다. 전체 제품의 실환경 완료나 Windows/Linux 실측을 주장하지 않는다.
+
 ## 2026-09-12 · PR 연결부 보완(D-147), 검증 완료
 
 - `b168106`에서 PR #11/#12의 실제 Evidence 비교, Matrix 선택, 프로젝트 종료·샘플 교체를 재검증했다. 미지원 요청의 완료 오표시, UNKNOWN을 변경으로 표시한 diff, Matrix의 늦은 응답 오귀속, 종료 직전 미게시 레코드 누락과 records 잠금 역전을 회귀에서 확인했다.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Evidence editor lifetime and setup guidance (D-148, 2026-09-12)
+
+- Policy drafts and pending saves do not follow a reused Evidence ID into another project.
+- Evidence, Surface, and the relationship graph close detail/Request Lab actions on snapshot failure, retaining last-known data with a retry.
+- Native Linux Docker Engine instructions now distinguish the host bridge listener from host loopback and explain the doctor’s reachability limits.
+
 ## Unreleased — comparison, selection, and persistence integration fixes (D-147, 2026-09-12)
 
 - Unsupported bodies and malformed multipart requests now report incomplete extraction. Unknown metadata no longer produces confirmed type/shape/count changes; Evidence and Surface use the same public form locations.

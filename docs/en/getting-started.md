@@ -33,7 +33,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 1. Download and extract `flowscope-1.2.0-beta.46-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). If the bundle is not published yet, clone the repository and build it using the source-build instructions. HUMAN/Explorer users may download only the JAR.
 2. Keep the extracted directory structure. `scripts/zap-up.*` uses the relative `infra/zap/compose.yaml` path.
-3. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` for HUMAN and add `127.0.0.1:8081` only when using ZAP.
+3. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` for HUMAN and add `127.0.0.1:8081` only when using ZAP. Native Linux Docker Engine also requires the specific bridge-IP listener described below.
 4. Load the bundle-root JAR from **Extensions → Installed → Add → Java**.
 5. Check Extension Output/Errors and confirm the FlowScope tab reports Web `17777`.
 
@@ -52,6 +52,14 @@ FlowScope checks the ZAP API at `127.0.0.1:8089` and verifies that `zapHomePath`
 A generic timeout or transient communication failure is shown as `RETRYING` for the first two consecutive probes and becomes `UNREACHABLE` on the third. An HTTP 401/403 API-key error becomes `AUTH_FAILED` immediately, and a wrong runtime is also reported immediately. `CONNECTED` means that the managed ZAP control API is ready; it does not mean that Client Spider or a campaign has completed.
 
 ### Docker Quick Start on macOS/Linux
+
+Docker Desktop uses the Burp loopback listener above. With default **native Linux Docker Engine** settings, the bundle's `host.docker.internal:host-gateway` mapping resolves to the host's default bridge IP, so a listener bound only to `127.0.0.1:8081` cannot accept that container connection. Start Docker and read the actual bridge IP ([official Docker mapping reference](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip)):
+
+```bash
+docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+In Burp **Proxy listeners**, keep the loopback listener and add another listener on port `8081`, selecting the returned host bridge IP as its **Specific address**. Do not substitute an example address or select **All interfaces / `0.0.0.0`**. If the Docker daemon overrides `host-gateway`, first identify the host interface IP matching that override. Keep HUMAN, FlowScope Web, and the ZAP API on loopback, and retain the authorized target's exact scope. These are native Linux configuration instructions, not a claim that a native Linux target run has been verified.
 
 From the extracted bundle root or repository root:
 
@@ -105,7 +113,7 @@ Run only the checks needed for the selected feature set. `full` is the default a
 
 Windows uses `.\scripts\doctor.ps1 -Mode human|zap|explorer|full`; add `-Build` for source-build checks.
 
-`human` checks HUMAN `8080` and Web; `zap` adds SCANNER `8081`, the loopback ZAP key/API/upstream and required add-ons; `explorer` checks the Codex executable and current OS user's login; `full` checks all of them. An open port does not prove that the process is Burp, so verify the listener table manually. If you changed defaults, set `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT` in the same shell so doctor checks the same contract.
+`human` checks HUMAN `8080` and Web; `zap` adds SCANNER `8081`, the loopback ZAP key/API/upstream and required add-ons; `explorer` checks the Codex executable and current OS user's login; `full` checks all of them. An open port does not prove that the process is Burp, so verify the listener table manually. The current Bash doctor checks host loopback and configured upstream values; it does not prove container reachability to the native Linux bridge listener. If you changed defaults, set `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT` in the same shell so doctor checks the same contract.
 
 Source contributors additionally run:
 

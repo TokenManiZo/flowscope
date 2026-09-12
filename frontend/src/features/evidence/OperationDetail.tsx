@@ -18,7 +18,8 @@ interface Props {
 }
 
 export function OperationDetail(props: Props) {
-  return <OperationEditor key={JSON.stringify([props.event.eventId, props.event.op, props.event.resource, props.event.idn, props.event.source])} {...props} />
+  const datasetRevision = props.snapshot.datasetRevision ?? props.snapshot.identityRevision ?? 0
+  return <OperationEditor key={JSON.stringify([datasetRevision, props.event.eventId, props.event.op, props.event.resource, props.event.idn, props.event.source])} {...props} />
 }
 
 function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = true }: Props) {

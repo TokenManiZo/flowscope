@@ -55,7 +55,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 3. bundle 루트의 `flowscope-1.2.0-beta.46.jar`를 사용한다.
 4. Burp **Settings → Tools → Proxy → Proxy listeners**에서 사용할 기능에 맞는 listener를 만든다.
    - HUMAN을 사용할 때 bind address `127.0.0.1`, port `8080`
-   - ZAP을 사용할 때 bind address `127.0.0.1`, port `8081`
+   - ZAP을 사용할 때 bind address `127.0.0.1`, port `8081`. native Linux Docker Engine에서는 아래 Docker Quick Start의 특정 bridge IP listener도 추가한다.
 5. Burp **Extensions → Installed → Add**를 누른다.
 6. Extension type을 **Java**로 고르고 JAR을 선택한다.
 7. Output/Errors에 로드 오류가 없는지 확인한다.
@@ -76,6 +76,14 @@ FlowScope는 `127.0.0.1:8089`의 ZAP API뿐 아니라 `zapHomePath`가 컨테이
 일반 timeout·일시 통신 실패는 첫 두 번 `RETRYING`으로 자동 재확인하고 세 번 연속 실패할 때만 `UNREACHABLE`로 확정한다. API key 401/403은 즉시 `AUTH_FAILED`, 다른 runtime은 즉시 runtime 오류로 표시한다. `CONNECTED`는 ZAP 제어 API가 준비됐다는 뜻이며 Client Spider나 캠페인이 완료됐다는 뜻이 아니다.
 
 ### Docker Quick Start — macOS/Linux
+
+Docker Desktop은 위의 Burp loopback listener를 사용한다. **native Linux Docker Engine**의 기본 설정에서는 bundle의 `host.docker.internal:host-gateway`가 호스트의 default bridge IP로 해석되므로 `127.0.0.1:8081`만으로는 컨테이너 연결을 받을 수 없다. Docker를 시작한 뒤 실제 bridge IP를 읽는다([Docker 공식 매핑 설명](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip)).
+
+```bash
+docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+Burp **Proxy listeners**에서 기존 loopback listener에 더해, 출력된 호스트 bridge IP를 **Specific address**로 선택하고 port `8081`인 listener를 추가한다. 예시 주소를 복사하거나 **All interfaces / `0.0.0.0`**로 열지 않는다. Docker daemon의 `host-gateway` 주소를 별도로 재정의한 환경은 그 설정에 맞는 호스트 interface IP를 확인해야 한다. HUMAN·FlowScope Web·ZAP API의 loopback 주소와 허가된 대상의 exact scope는 유지한다. 이 안내는 native Linux 네트워크 구성에 대한 것이며, native Linux 실환경 완주 검증을 뜻하지 않는다.
 
 압축을 푼 bundle 루트 또는 저장소 루트에서 실행한다.
 
@@ -184,7 +192,7 @@ mvn clean verify
 
 Windows 소스 빌드는 `.\scripts\doctor.ps1 -Mode full -Build` 후 `mvn clean verify`를 실행한다.
 
-doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명하지 않는다. `8080/8081`이 열렸더라도 Burp listener 표와 FlowScope 포트 분류를 눈으로 대조한다.
+doctor의 포트 검사는 포트를 연 프로세스의 제품 신원을 증명하지 않는다. `8080/8081`이 열렸더라도 Burp listener 표와 FlowScope 포트 분류를 눈으로 대조한다. 현재 Bash doctor는 호스트 loopback과 ZAP에 저장된 upstream 설정만 확인하므로 컨테이너에서 native Linux bridge listener로 연결되는지도 증명하지 않는다.
 기본 포트를 바꿨다면 `FLOWSCOPE_HUMAN_PORT`, `FLOWSCOPE_BURP_SCANNER_PORT`, `FLOWSCOPE_ZAP_PORT`, `FLOWSCOPE_WEB_PORT`를 같은 shell/PowerShell 세션에 지정해 doctor 기준도 맞춘다. Windows doctor는 key ACL 상속과 다른 SID의 허용 규칙도 검사한다.
 
 ## 7. 첫 HUMAN·ZAP·LLM 실행

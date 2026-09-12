@@ -108,8 +108,8 @@ export function SurfacePage() {
     [enabledSources, surface.endpoints],
   )
   const rows = useMemo(() => endpoints.filter((endpoint) => filter === "ALL" || endpoint.deltaState === filter), [endpoints, filter])
-  const selected = endpoints.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
-  const selectedEvent = selectedEvidenceId
+  const selected = snapshot.isError ? null : endpoints.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
+  const selectedEvent = selectedEvidenceId && !snapshot.isError
     ? snapshot.data?.events.find((event) => event.eventId === selectedEvidenceId) ?? null
     : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
@@ -125,11 +125,12 @@ export function SurfacePage() {
   const countKind = (kind: string) => endpoints.filter((endpoint) => endpoint.kinds?.includes(kind as never)).length
 
   useEffect(() => {
+    if (snapshot.isError) { setSelectedId(null); setSelectedEvidenceId(null); setRequestLabContext(null); return }
     if (selectedEvidenceId && !selectedEvent) {
       setSelectedEvidenceId(null)
       setRequestLabOpen(false)
     }
-  }, [selectedEvent, selectedEvidenceId])
+  }, [selectedEvent, selectedEvidenceId, snapshot.isError])
 
   function toggleSource(source: SurfaceSource, checked: boolean) {
     setEnabledSources((current) => {
@@ -182,12 +183,12 @@ export function SurfacePage() {
     <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={context} inspector={inspector} inspectorOpen={selected !== null} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
       <section className="grid gap-4 p-3" aria-labelledby="surface-title">
         <div><h1 id="surface-title" className="text-2xl font-semibold">API·입력 차이</h1><p className="text-sm text-muted-foreground">HUMAN·ZAP·LLM의 실제 HTTP 응답과 OpenAPI·HTML·JavaScript에서 확인한 endpoint·입력 근거를 분리해 정렬합니다.</p></div>
-        {snapshot.isError && <Alert variant="destructive"><AlertTitle>API·입력 차이를 불러오지 못했습니다.</AlertTitle><AlertDescription>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</AlertDescription></Alert>}
+        {snapshot.isError && <Alert variant="destructive"><AlertTitle>API·입력 차이를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>{snapshot.data && <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
         {unresolvedExtractions.length > 0 && <Alert><AlertTitle>일부 산출물을 완전히 해석하지 못했습니다.</AlertTitle><AlertDescription>{unresolvedExtractions.length}건의 부분·실패·상한 상태가 있습니다. 누락 가능성을 숨기지 않고 근거로 보존합니다.</AlertDescription></Alert>}
         {executionRuns.map((run) => <Alert key={run.source + ":" + run.runId} variant={run.quality === "ALL_FAILED" ? "destructive" : "default"}><AlertTitle>{run.source} 실행 · {run.quality}</AlertTitle><AlertDescription>시도 {run.attempted} · 응답 {run.responses} · 실패 {run.failures}{Object.keys(run.outcomes).length ? " · " + Object.entries(run.outcomes).map(([name, count]) => name + " " + count).join(" · ") : ""}</AlertDescription></Alert>)}
         <div className="max-w-full overflow-auto rounded-md border">
           <Table><TableHeader><TableRow><TableHead>비교 상태</TableHead><TableHead>종류</TableHead><TableHead>요청</TableHead><TableHead>실제 source</TableHead><TableHead>응답 status</TableHead><TableHead>산출물 근거</TableHead><TableHead>입력</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
-            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}><TableCell><Badge variant={endpoint.deltaState === "DECLARED_NOT_OBSERVED" || endpoint.deltaState === "ONE_SOURCE_OBSERVED" ? "destructive" : "outline"}>{deltaLabels[endpoint.deltaState]}</Badge></TableCell><TableCell className="min-w-40">{endpointKinds(endpoint)}</TableCell><TableCell className="min-w-72 whitespace-normal"><Badge variant="outline">{endpoint.key.method}</Badge><p className="mt-1 break-all font-mono">{endpoint.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{endpoint.key.service}</p></TableCell><TableCell>{sourceLabel(endpoint.observedSources)}</TableCell><TableCell>{statusLabel(endpoint)}</TableCell><TableCell>{endpoint.declarations.length}</TableCell><TableCell>{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null); setRequestLabOpen(false) }}>상세 보기</Button></TableCell></TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">현재 필터에 해당하는 항목이 없습니다.</TableCell></TableRow>}</TableBody>
+            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}><TableCell><Badge variant={endpoint.deltaState === "DECLARED_NOT_OBSERVED" || endpoint.deltaState === "ONE_SOURCE_OBSERVED" ? "destructive" : "outline"}>{deltaLabels[endpoint.deltaState]}</Badge></TableCell><TableCell className="min-w-40">{endpointKinds(endpoint)}</TableCell><TableCell className="min-w-72 whitespace-normal"><Badge variant="outline">{endpoint.key.method}</Badge><p className="mt-1 break-all font-mono">{endpoint.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{endpoint.key.service}</p></TableCell><TableCell>{sourceLabel(endpoint.observedSources)}</TableCell><TableCell>{statusLabel(endpoint)}</TableCell><TableCell>{endpoint.declarations.length}</TableCell><TableCell>{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null); setRequestLabOpen(false) }}>상세 보기</Button></TableCell></TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">현재 필터에 해당하는 항목이 없습니다.</TableCell></TableRow>}</TableBody>
           </Table>
         </div>
       </section>

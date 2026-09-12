@@ -63,6 +63,38 @@ it("does not invalidate the new policy editor when an old-context save succeeds 
   expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
 })
 
+it.each(["evidence", "graph"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same Evidence in another dataset", async kind => {
+  let finish!: (response: Response) => void
+  const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => String(input) === "/api/requirement"
+    ? new Promise<Response>(resolve => { finish = resolve })
+    : Promise.resolve(json({ success: true })))
+  vi.stubGlobal("fetch", fetch)
+  const view = mount(kind)
+  const invalidate = vi.spyOn(view.client, "invalidateQueries")
+  await openEvidence(kind)
+  await userEvent.clear(screen.getByLabelText("필수 역할"))
+  await userEvent.type(screen.getByLabelText("필수 역할"), "OLD-ROLE")
+  await userEvent.clear(screen.getByLabelText("리소스 소유자"))
+  await userEvent.type(screen.getByLabelText("리소스 소유자"), "OLD-OWNER")
+  await userEvent.selectOptions(screen.getByLabelText("트래픽 재정의"), "EXCLUDE")
+
+  view.change(event, { ...snapshot, revision: 2, datasetRevision: 1 })
+  expect(screen.getByLabelText("필수 역할")).toHaveValue("OLD-ROLE")
+  expect(screen.getByLabelText("리소스 소유자")).toHaveValue("OLD-OWNER")
+  expect(screen.getByLabelText("트래픽 재정의")).toHaveValue("EXCLUDE")
+  await userEvent.click(screen.getByRole("button", { name: "필수 역할 저장" }))
+
+  view.change(event, { ...snapshot, revision: 3, datasetRevision: 2, requiredRoles: { [event.op]: "ADMIN" }, owners: { [event.resource!]: "bob" } })
+  expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
+  expect(screen.getByLabelText("리소스 소유자")).toHaveValue("bob")
+  expect(screen.getByLabelText("트래픽 재정의")).toHaveValue("AUTO")
+  expect(screen.getByRole("button", { name: "필수 역할 저장" })).toBeEnabled()
+  await act(async () => finish(json({ success: true })))
+  expect(invalidate).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole("button", { name: "소유자 저장" }))
+  expect(fetch.mock.calls.map(([, init]) => String(init?.body))).toContain("resource=order%3A1&identity=bob")
+})
+
 it.each(["raw", "session"] as const)("scrubs when revision revalidation loses %s context", async boundary => {
   let currentDraft = draft
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json(currentDraft))))

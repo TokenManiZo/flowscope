@@ -4,6 +4,8 @@
 
 ## 1. 무엇을 어디서 읽는가
 
+D-148 최신 대조: 공통 Evidence 정책 editor·세 화면의 조회 실패 수명, native Linux bridge listener 안내를 갱신했다. 코드/패키지 검증(Java 550·React 467·Playwright 15/15)은 통과했고 실제 Burp는 확장 비활성화 기준선에서도 호스트 오류가 발생해 `BLOCKED_HOST_RUNTIME`으로 기록했다. 현재 상태는 HANDOFF 맨 위와 beta-validation D-148이다.
+
 최신 결과: D-147 전체 Java 550 tests(2 opt-in skip)·React 461 tests·패키지 Playwright 15/15 통과. D-145~146의 개별 기록은 당시 산출물의 이력으로 보존한다.
 
 2026-09-12 D-147 연결부 보완에서는 문서 목록의 현행/이력 구분을 다시 대조했다. HANDOFF·계획서의 D-145 이전 route/기각안, 그래프 설계 문서의 옛 hash, 기능 동등성 표의 초기 PLANNED 상태를 현행으로 오인하지 않게 정리했다. Evidence 비교·Matrix 선택·종료 저장 계약은 D-147을 따르며, `AGENTS.md`의 별도 Explorer 미구현 문구도 이미 있는 D-128/D-139 구현과 맞췄다.

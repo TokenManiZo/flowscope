@@ -4,6 +4,8 @@
 
 ## 현재 우선순위 · PR #11·#12 이식 기능 대조표 (2026-09-11)
 
+**D-148 최종 상태:** 공통 editor의 dataset 경계와 Evidence/Surface/관계 그래프의 조회 실패 동선을 보정해 전체 Java 550(2 skip)·React 467·패키지 Playwright 15/15를 통과했다. 배포 안내의 native Linux bridge 조건도 정정했다. 실제 Burp gate는 GUI timeout 및 확장 없는 기준선의 vendor 내부 오류로 차단됐으며, 미실행을 완료로 바꾸지 않는다. 이번 PR 흡수 범위에서 확인된 코드 결함은 회귀로 수정했고, 호스트 오류는 beta-validation D-148에 증거를 남겼다.
+
 **2026-09-12 최종 연결부 검증(D-147):** 요청 비교의 불완전/UNKNOWN 처리·공개 위치, Matrix 선택/검토 수명, 종료 직전 Evidence 보존·sample 실패 전파를 수정했다. Java 550 tests(2 opt-in skip, 실패·오류 0), React 461 tests·typecheck, packaged Playwright 15/15(`--retries=0`)가 통과했다. 아래 단계별 수치는 각 단계의 이전 결과이며 현재 완료 근거는 `beta-validation.md` D-147이다.
 
 목적: 진단자가 실제 Evidence와 함께 (1) 어떤 API·입력을 HUMAN·ZAP·LLM이 각각 관측했는가, (2) 같은 비교 조건에서 어느 source·계정의 관측이 부족한가, (3) 다음에 확인할 API·파라미터와 추천 근거, (4) 정책·응답·소유자 근거의 확보 정도, (5) 해당 요청·응답 확인과 기존 Request Lab 연결을 확인하게 한다. 전체 사이트를 다 안다고 주장하거나 미관측을 취약점으로 확정하지 않으며, 실행 실패·분석 실패·미실행을 "탐색했지만 발견하지 못함"과 구분한다.

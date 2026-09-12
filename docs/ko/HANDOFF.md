@@ -1,5 +1,12 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · D-148 코드·패키지 검증 완료, Burp 호스트 검증 차단
+
+- 같은 Evidence ID를 가진 프로젝트 간 정책 초안/저장 상태 혼입과, Evidence·Surface·전체 관계 화면의 조회 실패 후 상세/Request Lab 재진입을 수정했다. 새 회귀 6건에서 수정 전 실패와 수정 후 통과를 확인했다.
+- 최종 `mvn -o clean verify`: Java 550 tests(실패·오류 0, opt-in 2 skip), React 59 files/467 tests·typecheck 통과. 패키지 Playwright `--retries=0` 15/15 통과(33.4s).
+- JAR: 31,937,310 bytes, SHA-256 `11a121f37e081494f8c24d103945abdaafb3b75e1d81d21e8676207e9e252a0c`. native Linux bridge listener 안내를 정정했고, bundle의 실행 권한·notice·자산·CRC·문서 연결을 대조했다.
+- **실제 Burp는 차단 상태:** GUI 제어가 두 번 시간 초과됐다. 설치된 Burp JAR(build 53343)을 분리된 data-dir에서 실행했지만, headless JDK 21 + FlowScope와 JDK 26 + `--disable-extensions` 양쪽 모두 Burp 내부 `no ComponentUI class`/`NullPointerException`이 발생했다. 이 실행 조건에서 FlowScope를 제거해도 재현되는 호스트 오류로, 실제 로드/저장/재열기 성공을 기록하지 않는다. 사용자의 기존 Burp를 종료하거나 설정을 초기화하지 않았다.
+
 ## 2026-09-12 · 최종 연결부 보완 완료(D-147)
 
 - 기준 `b168106` 위에서 PR #11·#12의 Evidence 비교·Graph/Matrix·프로젝트 연결부 결함을 회귀로 재현해 수정했다. 미지원 본문/불완전 multipart와 UNKNOWN metadata의 잘못된 확정 표시, Matrix의 이전 저장 응답·dataset/연결 실패 수명을 보정했다.

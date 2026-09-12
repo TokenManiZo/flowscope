@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 전체 Evidence 편집 수명과 설치 안내 보완 (D-148, 2026-09-12)
+
+- 같은 Evidence ID가 다른 프로젝트에 있어도 역할·소유자·분류 편집값과 저장 상태가 옮겨가지 않습니다.
+- Evidence·API 입력 차이·전체 관계 그래프는 조회 실패 시 상세/Request Lab을 닫고 마지막 데이터와 재시도를 제공합니다.
+- native Linux Docker Engine의 특정 bridge IP listener 준비 절차와 doctor의 확인 범위를 한·영 설치 안내에 명시했습니다.
+
 ## 미출시 · PR 연결부의 비교·선택·저장 보완 (D-147, 2026-09-12)
 
 - 지원하지 않는 본문·손상된 multipart를 불완전 분석으로 표시합니다. UNKNOWN metadata를 확정된 타입·구조·발생 수 변경으로 표시하지 않으며, Evidence와 Surface의 FORM/MULTIPART 위치 이름을 통일했습니다.

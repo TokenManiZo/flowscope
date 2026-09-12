@@ -92,6 +92,8 @@ Create the HUMAN and SCANNER Burp proxy listeners. Montoya cannot create them fo
 | `127.0.0.1:8081` | SCANNER | ZAP outgoing target traffic |
 | `127.0.0.1:8082` | LLM | Optional direct-client observation fallback (`UNVERIFIED_RUNTIME`; retained Evidence only, never coverage/completion) |
 
+Docker Desktop uses the loopback SCANNER listener. On native Linux Docker Engine, the bundled `host-gateway` mapping instead resolves to the host's default bridge IP, as described in the [Docker documentation](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip). Follow the [bridge IP setup in the getting-started guide](getting-started.md) to add an `8081` listener bound only to that specific IP alongside the loopback listener. The current doctor checks host loopback and configured ZAP upstream values; it does not prove that the container can reach this bridge listener.
+
 Install Burp's CA certificate in each target client. Do not disable TLS validation as a permanent setup.
 
 Open the **FlowScope** Burp tab, enter one exact authorized scope per line, and click **범위 적용**. A scope includes scheme, host, effective port, and an optional path prefix, for example:

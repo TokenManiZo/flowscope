@@ -30,7 +30,7 @@ export function EvidencePage() {
   const [filters, setFilters] = useState(defaultEvidenceFilters)
   const [selected, setSelected] = useState<EventRecord | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  const selectedEvent = selected ? snapshot.data?.events.find((item) => item.eventId === selected.eventId) ?? null : null
+  const selectedEvent = selected && !snapshot.isError ? snapshot.data?.events.find((item) => item.eventId === selected.eventId) ?? null : null
 
   useEffect(() => {
     if (selected && !selectedEvent) { setSelected(null); setInspectorOpen(false) }
@@ -39,6 +39,7 @@ export function EvidencePage() {
   const rows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], filters), [snapshot.data?.events, filters])
   const hidden = hiddenEvidenceCount(snapshot.data?.events ?? [], filters)
   function selectEvent(event: EventRecord) {
+    if (snapshot.isError) return
     setSelected(event)
     setInspectorOpen(true)
   }
@@ -49,7 +50,8 @@ export function EvidencePage() {
     <ReferenceAnalysisWorkspace ariaLabel="Evidence 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
       <section className="grid gap-4 p-3" aria-labelledby="evidence-title">
       <div><h1 id="evidence-title" className="text-xl font-semibold">Evidence</h1><p className="text-sm text-muted-foreground">파싱된 Evidence를 표시하며 숨김은 삭제가 아닙니다.</p></div>
-      {snapshot.isLoading ? <Skeleton className="h-64" /> : snapshot.isError ? <Alert variant="destructive"><AlertTitle>Evidence를 불러오지 못했습니다.</AlertTitle><AlertDescription>{snapshot.error.message}</AlertDescription></Alert> : <>
+      {snapshot.isError && <Alert variant="destructive"><AlertTitle>Evidence를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
+      {snapshot.isLoading ? <Skeleton className="h-64" /> : snapshot.data && <>
         <p className="text-sm text-muted-foreground">숨김 {hidden}건 · 삭제되지 않았습니다.</p>
         <ScrollArea className="h-[28rem] rounded-md border" aria-label="Evidence 표">
           <Table>
@@ -60,7 +62,7 @@ export function EvidencePage() {
                 <TableCell className="max-w-72 whitespace-normal"><span className="font-mono">{boundedText(event.method, 16)}</span> {boundedText(event.path, 120)} <span className="text-muted-foreground">({event.status})</span></TableCell>
                 <TableCell className="max-w-48 whitespace-normal"><Badge variant="secondary">{boundedText(event.trafficClass, 40)}</Badge><span className="ml-1">{dispositionLabel(event.trafficDisposition)}</span></TableCell>
                 <TableCell>{event.repeatCount}</TableCell><TableCell className="whitespace-normal">최초 {boundedText(event.firstSeen, 32)} · 최종 {boundedText(event.lastSeen, 32)}</TableCell><TableCell className="font-mono">{boundedText(event.eventId, 72)}</TableCell>
-                <TableCell><Button size="sm" variant="outline" onClick={() => selectEvent(event)} aria-label="상세 보기">상세 보기</Button></TableCell>
+                <TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => selectEvent(event)} aria-label="상세 보기">상세 보기</Button></TableCell>
               </TableRow>)}
               {rows.length === 0 && <TableRow><TableCell colSpan={8} className="whitespace-normal text-muted-foreground">현재 필터에 표시할 Evidence가 없습니다. 숨김은 삭제되지 않았습니다.</TableCell></TableRow>}
             </TableBody>

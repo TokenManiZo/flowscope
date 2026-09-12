@@ -1383,6 +1383,14 @@
 - **기각:** 모든 비교를 complete=false로 바꾸는 방식은 정상 지원 요청의 비교 기능을 없앤다. 테스트를 위해 임의 대기 시간을 넣거나 모든 callback을 records monitor로 감싸면 실제 순서를 검증하지 못한다. 기존 단계 완료/미실행 기록을 새 결과로 덮지 않고 현행 계약과 과거 이력을 명시적으로 구분한다.
 - **검증 범위:** 미지원 본문·multipart·공개 좌표의 Surface/Evidence 통합, UNKNOWN/충돌 diff, Matrix 늦은 저장·dataset 교체·연결 실패, 실제 extension 메서드의 SQLite 재열기·설치 중 monitor 가용성·샘플 저장 실패를 회귀로 확인한다. 패키지 UI는 서버 sample Evidence를 조회해 비교 화면에 값 변경이 도달하고 parameter matrix가 렌더되는 동선을 검사한다. 실제 Burp 운영체제별 unload와 외부 대상 성능은 이 결과로 대체하지 않는다.
 
+## D-148 · 모든 Evidence 정책 편집과 상세 조작에 dataset·조회 상태를 적용한다 (2026-09-12)
+
+- **문제:** D-147의 Matrix 보완 뒤에도 공통 `OperationEditor` key에 datasetRevision이 없어 두 프로젝트에 같은 Evidence ID가 있으면 이전 역할·소유자·분류 초안과 저장 상태가 새 프로젝트로 넘어갔다. Evidence·Surface·전체 관계 그래프는 HTTP 503 뒤 이전 snapshot을 유지하면서도 정책 편집과 Request Lab을 열 수 있었다.
+- **결정:** 공통 editor key에 datasetRevision을 추가하고 일반 traffic revision의 초안 보존은 유지한다. 세 화면은 조회 실패를 받는 렌더에서 선택을 해제하고 상세·Request Lab을 닫으며, 상세 재진입도 차단한다. 마지막 성공 데이터와 시각·재시도는 계속 제공하고 복구 후 이전 초안을 자동 부활시키지 않는다.
+- **검증:** 같은 ID의 dataset 교체 2건과 실제 React Query의 HTTP 503을 사용하는 Evidence·Surface·관계 목록·관계 canvas 4건을 RED→GREEN으로 확인했다. 테스트는 실제 OperationDetail/RequestLab 컴포넌트를 사용하며 새로운 HTTP 실행 기능을 만들지 않는다.
+- **설치 문서:** native Linux Docker Engine의 host-gateway는 기본 bridge IP를 가리키므로 loopback-only Burp listener 안내만으로는 충분하지 않다. 실제 bridge IP를 조회해 해당 특정 interface listener를 추가하는 절차와 doctor가 컨테이너 도달성을 증명하지 않는다는 경계를 한·영 가이드에 명시했다. 호스트 설정이나 Docker 격리를 자동 변경하지 않는다. 근거: [Docker host gateway IP](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip).
+- **실환경 경계:** 공식 Burp JAR을 분리된 임시 data-dir에서 JDK 21과 확장 비활성화 JDK 26으로 각각 시작했으나 Burp 내부 ComponentUI·NullPointerException으로 로드 gate에 도달하지 못했다. GUI 제어도 timeout이었다. 자동 테스트·패키지 검증과 이 실행 실패를 별도로 기록한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.
