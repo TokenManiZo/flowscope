@@ -9,6 +9,7 @@ import { ParameterGapInspector } from "./ParameterGapInspector"
 import { ParameterFilterBar } from "./ParameterFilterBar"
 import { ParameterPriorityQueue } from "./ParameterPriorityQueue"
 import { defaultParameterFilters, projectParameterMap, type ParameterFilters, type ParameterMapSelection } from "./parameterProjection"
+import { RunGapHint, runGapCount } from "@/components/RunGapHint"
 
 const reasonLabels: Record<string, string> = {
   CONFIRMED_AUTH_BOUNDARY: "확인된 권한 경계", AUTH_VARIANT_UNTESTED: "권한 변형 미검증", WRITE_METHOD: "쓰기 메서드",
@@ -54,13 +55,16 @@ export function ParameterMapPage() {
   const diagnostic = projection.diagnostics.length > 0
   if (!projection.queue.length && projection.emptyState !== "NO_MATCHING_GAPS") {
     const filtered = filters !== defaultParameterFilters
+    const pendingRunGap = !filtered && !diagnostic ? runGapCount(snapshot.data) : 0
     const message = diagnostic ? "일부 입력을 분석하지 못했습니다. 누락 진단을 확인하세요."
       : projection.emptyState === "DEFINITIONS_ONLY" ? "정의된 입력이 있지만 아직 요청으로 관측되지 않음"
       : "아직 파라미터 관측 근거가 없습니다. 범위를 확인하고 HUMAN Evidence를 수집하세요."
     return <section className="h-full bg-[var(--flowscope-canvas)]">{title}<div role="status" className="m-6 max-w-xl space-y-4 border-l-2 border-emerald-400 pl-4">
-      <p className="text-sm leading-6">{message}</p>
-      {diagnostic && <ul className="space-y-2 text-sm [overflow-wrap:anywhere]">{projection.diagnostics.map(reason => <li key={reason}>{reason}</li>)}</ul>}
-      <Button onClick={filtered ? reset : () => { window.location.hash = diagnostic ? "#evidence" : "#inspection" }}>{filtered ? "필터 초기화" : diagnostic ? "Evidence에서 진단 확인" : "점검 시작으로 이동"}</Button>
+      {pendingRunGap > 0 ? <RunGapHint count={pendingRunGap} /> : <>
+        <p className="text-sm leading-6">{message}</p>
+        {diagnostic && <ul className="space-y-2 text-sm [overflow-wrap:anywhere]">{projection.diagnostics.map(reason => <li key={reason}>{reason}</li>)}</ul>}
+        <Button onClick={filtered ? reset : () => { window.location.hash = diagnostic ? "#evidence" : "#inspection" }}>{filtered ? "필터 초기화" : diagnostic ? "Evidence에서 진단 확인" : "점검 시작으로 이동"}</Button>
+      </>}
     </div></section>
   }
 

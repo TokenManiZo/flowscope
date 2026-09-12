@@ -1,5 +1,13 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
+
+- 실제 대상(OWASP crAPI, `http://localhost:8888`)에 두 계정으로 인증 API를 브라우징해 FlowScope를 현장 검증했다. 핵심 엔진은 작동한다: 신원을 JWT `sub`에서 자동 해석하고, 교차 접근을 하지 않았는데도 `GET /identity/api/v2/vehicle/{id}` 차량 위치의 BOLA/IDOR 후보를 신원별로 생성했다.
+- 실측으로 드러난 실환경 마찰(진단 도구의 최우선 결함)은 **온보딩**이다. HUMAN 탐색(run) 밖에서 브라우징하면 인증 API도 D-071로 전부 제외되고, 화면은 빈 그래프만 보이며 이유·다음 행동을 알려주지 않았다. 최소 경로는 계정·세션 캡처 없이 `HUMAN 탐색 begin → 브라우징 → end` 2동작이고 신원은 자동 해석됨을 확인했다. 계정·세션 캡처는 role과 Request Lab 재전송에만 필요하다.
+- D-155로 첫 증분을 구현했다: snapshot이 run 밖 인증 API 수(`humanApiOutsideRun`)를 세고, 그래프·API·입력 차이 빈 화면이 "탐색을 시작하면 이 요청들이 비교에 포함된다"고 안내한다. D-071 coverage 경계는 그대로다.
+- 검증: 집중 Java `SnapshotTrafficStatsTest` 2건·`TrafficClassifierTest` 18건, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. 전체 `mvn -o clean verify`와 crAPI 재로드 실측은 이어서 수행한다. 남은 실환경 항목: ZAP은 Burp 8081 listener가 있어야 수집됨(실측 확인), role 지정 없이는 BFLA 불가.
+
+
 ## 2026-09-12 · D-154 PR #11 원본 의미 복원(미출시 브랜치 `claude/restore-pr-semantics`)
 
 - 사용자 지시("너무 보수적으로 하지 말 것", "PR이 보존하던 정보를 잃거나 새 제한을 추가하지 말 것")로 D-146 ③ CORROBORATED 비승격과 D-147 ① UNKNOWN 비교 라벨 억제를 PR #11 원본 의미로 되돌렸다. 독립 증인 2건과 확정 소유자는 `CONFIRMED_AUTH_BOUNDARY`를 받고, 한쪽이 UNKNOWN인 shape/type/occurrence 차이는 변경 라벨과 `UNKNOWN`을 함께 표시한다. link·gap 수는 그대로다.

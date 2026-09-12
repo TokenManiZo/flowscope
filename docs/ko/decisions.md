@@ -1437,6 +1437,13 @@
 - **기각:** CORROBORATED를 별도 중간 순위로 두는 절충은 PR에 없던 새 규칙을 만든다. UNKNOWN 라벨을 계속 숨기는 방식은 사용자가 지적한 보수성이다. D-146·D-147 기록은 고쳐 쓰지 않고 이 결정으로 ③·①만 대체한다.
 - **검증:** `SurfaceAuthorizationLinkTest`는 단일 동시출현(INFERRED)이 사람 검토로 남고 독립 2건(CORROBORATED)과 확정 소유자가 확정 경계 우선순위를 받는 것을, `requestDiff`·`ParameterRequestDiff`·`ParameterMapPage` 테스트는 PR 원본 기대값을 검사한다. 패키지 sample에는 CORROBORATED link가 없어 snapshot fixture는 변하지 않는다.
 
+## D-155 · run 밖에서 관측된 인증 API 트래픽을 세어 탐색 시작을 안내한다 (2026-09-13)
+
+- **문제:** crAPI 실측에서 두 계정으로 인증된 API를 브라우징해도 HUMAN 탐색(EXPLORATION run) 밖이면 D-071에 따라 전부 `HUMAN_OUTSIDE_EXPLORATION_RUN`으로 coverage에서 제외돼 그래프·API·입력 차이가 비었다. 화면은 이유를 알려주지 않아, 실제로는 비교 가능한 신호가 관측됐는데도 도구가 아무것도 못 찾은 것처럼 보였다. 신원은 JWT `sub`에서 자동 해석되고 API 분류도 정확했으므로 데이터가 없는 게 아니라 안내가 없는 것이 문제였다.
+- **결정:** snapshot `trafficStats`에 `humanApiOutsideRun`을 추가한다. 이는 source=HUMAN·trafficClass=API·사유 `HUMAN_OUTSIDE_EXPLORATION_RUN`인 records 수이며, coverage로 세지 않는다(D-071 유지). 그래프(점검 우선순위)와 API·입력 차이 빈 화면은 이 값이 0보다 크면 "인증된 API 요청 N건이 HUMAN 탐색 밖에서 관측됨 · 점검에서 탐색을 시작하면 비교에 포함"을 표시하고 점검으로 이동하는 동작을 준다.
+- **기각:** run 밖 HUMAN API를 자동으로 coverage에 넣는 방식은 로그인 준비·배경 이동을 검증된 커버리지로 오염시키던 D-071 이전 결함을 되살린다. 자동으로 EXPLORATION run을 상시 켜는 방식도 같은 이유로 기각한다. 경계는 그대로 두고 "왜 비었고 무엇을 하면 되는지"만 안내한다.
+- **검증:** `SnapshotTrafficStatsTest`가 BASELINE HUMAN API 2건·EXPLORATION 1건에서 `humanApiOutsideRun=2`·coverage=1을, 네비게이션·SCANNER 트래픽 제외를 확인한다. `RunGapHint.test.tsx`와 `ParameterMapPage.test.tsx`가 안내 렌더와 점검 이동을 확인한다. 실측: crAPI(localhost:8888)에 두 계정으로 브라우징 → run 밖에서는 `humanApiOutsideRun`으로 안내, HUMAN 탐색 안에서는 같은 트래픽이 INCLUDE되어 차량 위치 BOLA/IDOR 후보가 생성됨을 확인했다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

@@ -1,5 +1,14 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-155 run 밖 인증 API 안내(crAPI 실측)
+
+- crAPI 실측에서 인증 API 브라우징이 HUMAN 탐색 밖이면 빈 화면만 보이던 문제를 안내로 전환했다. `SnapshotJsonWriter`가 `trafficStats.humanApiOutsideRun`(source=HUMAN·API·사유 HUMAN_OUTSIDE_EXPLORATION_RUN)을 추가한다. coverage 계산은 바꾸지 않는다.
+- 프런트: `components/RunGapHint.tsx`를 그래프(`ParameterMapPage`) 빈 화면과 API·입력 차이(`SurfacePage`) 빈 표에 연결해, 값이 0보다 크면 "인증된 API 요청 N건이 run 밖에서 관측됨 · 점검에서 HUMAN 탐색 시작"을 표시한다.
+- 테스트: `web/SnapshotTrafficStatsTest`(BASELINE 2·EXPLORATION 1 → count 2·coverage 1, 네비게이션·SCANNER 제외), `components/RunGapHint.test.tsx`, `parameter-map/ParameterMapPage.test.tsx` 통합. typecheck 통과.
+- 영향 파일: `SnapshotJsonWriter.java`, `SnapshotTrafficStatsTest.java`, `lib/api/types.ts`, `components/RunGapHint.tsx(+test)`, `features/parameter-map/ParameterMapPage.tsx(+test)`, `features/surface/SurfacePage.tsx`, decisions D-155, HANDOFF, beta-validation, 이 기록.
+- 남은 한계: role 지정 없이는 BFLA 미탐, ZAP은 8081 listener 필요, 온보딩 후속 증분(계정 자동 등록·역할 지정 안내) 예정. 전체 verify와 crAPI 재로드 실측은 이어서 수행.
+
+
 ## 2026-09-12 · D-154 인가 경계 우선순위·요청 비교 라벨 PR 원본 복원
 
 - 사용자 지시에 따라 D-146 ③과 D-147 ①을 PR #11 원본 의미로 되돌렸다. `SurfaceAuthorizationLinker.gap`은 확정 소유자와 OBSERVED 또는 CORROBORATED link가 함께 있으면 `CONFIRMED_AUTH_BOUNDARY`를 부여하고 `HUMAN_REVIEW_REQUIRED`는 INFERRED·UNKNOWN에만 붙인다. `requestDiff.ts`는 shape/type/occurrence가 다르면 라벨을 붙이고 한쪽이 UNKNOWN이면 `UNKNOWN`을 병기한다.

@@ -10,6 +10,18 @@
 - [PR #16 CI 34697738243](https://github.com/choewonwoo1817/testflowscope/actions/runs/34697738243): 전체 build·JAR/ZIP 검사·동일 러너 반복 해시·Bash/Windows 구문 검사 통과(verify 9분 2초). 후속 문서 커밋 `7810f46`의 [CI 34698310197](https://github.com/choewonwoo1817/testflowscope/actions/runs/34698310197)도 같은 검사 통과(verify 8분 8초). 사용자는 이번 PR의 관리자 예외 병합과 main·Release 게시를 명시적으로 승인했다. 최종 main CI·태그·업로드 자산 식별은 [beta.48 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48) 기록을 따른다.
 - 설치된 Burp 번들 Java의 별도 probe는 60초 이상 출력 없이 OS 대기 상태였다. 임시 PID를 재확인해 TERM/KILL을 보냈지만 마지막 확인에서도 남아 있었으며 성공/종료 완료로 기록하지 않는다. 실제 사용자 Burp 새 JAR 재로드·Windows 실기기·ZAP/Explorer 실물 재실행은 미실행이다. 아래 beta.47 결과를 beta.48 실물 결과로 합산하지 않는다.
 
+## 2026-09-13 · crAPI 실측 현장 검증(D-155)
+
+| 검사 | 실제 결과 |
+|---|---|
+| 대상 | OWASP crAPI 로컬 스택(Docker, `http://localhost:8888`). 두 계정(alice/bob) 가입·로그인·차량 등록·자기 리소스 조회를 Burp 프록시(8080) 경유로 실행. 교차 접근은 수행하지 않음. |
+| 핵심 엔진 | HUMAN 탐색 run 안에서 인증 API가 INCLUDE되고 신원이 JWT에서 자동 해석됨. 교차 접근 없이 `GET /identity/api/v2/vehicle/{id}` 차량 위치의 BOLA/IDOR 후보 2건(User A↔User B)과 `AUTH_VARIANT_UNTESTED` gap 생성 확인. |
+| 온보딩 실측 | run 밖 브라우징은 인증 API 36건이 전부 `HUMAN_OUTSIDE_EXPLORATION_RUN`으로 제외(D-071). 최소 경로는 계정·세션 캡처 없이 `HUMAN 탐색 begin→browse→end` 2동작·신원 자동 해석. |
+| ZAP | Burp에 8081 listener가 없어 Client Spider 수집 0건으로 실패 재현. listener 추가 후 naver 대상에서 13건 수집 성공. |
+| D-155 회귀 | `SnapshotTrafficStatsTest` 2, `TrafficClassifierTest` 18, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. 전체 `mvn -o clean verify`와 crAPI 재빌드 재로드는 이어서 수행. |
+| 미실행 | role 지정 기반 BFLA, 대규모 실대상 성능, crAPI 재빌드 JAR의 실제 Burp 재로드. |
+
+
 ## 2026-09-12 · D-154 PR 원본 의미 복원 검증(미출시 브랜치)
 
 | 검사 | 실제 결과 |

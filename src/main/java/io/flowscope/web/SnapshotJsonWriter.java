@@ -106,6 +106,15 @@ public final class SnapshotJsonWriter {
         traffic.put("payloadMetadataOnly", result.records.stream()
                 .flatMap(record -> java.util.stream.Stream.of(record.requestPayload, record.responsePayload))
                 .filter(payload -> payload != null && !payload.retained()).count());
+        // Attributable API traffic captured while no HUMAN pass was active. D-071 keeps it out of coverage;
+        // D-155 surfaces the count so the operator sees a start-a-pass hint instead of an unexplained empty graph.
+        traffic.put("humanApiOutsideRun", result.records.stream()
+                .filter(record -> record.source == Source.HUMAN
+                        && record.trafficClassification != null
+                        && record.trafficClassification.trafficClass()
+                                == io.flowscope.core.TrafficClassification.TrafficClass.API
+                        && record.trafficClassification.reasons().contains("HUMAN_OUTSIDE_EXPLORATION_RUN"))
+                .count());
         root.putArray("replays");
         root.set("flowLinks", flowLinks(result.coverageRecords));
         root.set("roles", roles(result, config));

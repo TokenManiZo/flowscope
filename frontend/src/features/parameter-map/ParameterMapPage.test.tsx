@@ -237,6 +237,16 @@ it.each(["empty", "definitions", "diagnostic"])("gives one next action for %s wi
   if (kind === "definitions") expect(statePanel).toHaveTextContent("아직 요청으로 관측되지 않음")
 })
 
+it("explains an empty graph as run-less traffic and offers to start a HUMAN pass when the server reports it", () => {
+  const base = surfaceSnapshot()
+  state.query = { ...state.query, data: { ...base, trafficStats: { ...base.trafficStats, humanApiOutsideRun: 4 } } }
+  render()
+  const statePanel = screen.getByRole("status", { name: "" })
+  expect(within(statePanel).getByRole("status", { name: "run 밖 API 트래픽 안내" })).toHaveTextContent("인증된 API 요청 4건")
+  expect(within(statePanel).getByRole("button", { name: "점검에서 HUMAN 탐색 시작" })).toBeVisible()
+  expect(statePanel).not.toHaveTextContent("범위를 확인하고 HUMAN Evidence를 수집하세요")
+})
+
 it("identifies each validation row by its own identity and role, including unknown values", async () => {
   const data = parameterSnapshot()
   data.surface!.validationCells = [validationCell({ identity: "alice", role: "USER" }), validationCell({ identity: "bob", role: "ADMIN" }), validationCell({ identity: null, role: "UNKNOWN" })] as never
