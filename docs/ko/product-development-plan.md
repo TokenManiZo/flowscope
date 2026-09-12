@@ -1,6 +1,6 @@
 # FlowScope 1.2.0-beta.48 제품 개발·검증 계획
 
-**D-153 로컬 검증 완료:** SQLite 호스트 선행 JDBC 초기화 결함을 수정했다. 독립 JVM의 실제 저장 경로 RED→GREEN·집중 12/12, 전체 Java 575(2 skip)·React 472·완성 JAR 저장 gate·패키지 UI 15/15를 확인했다. 원격 CI→main→beta.48 Release 순서로 진행한다. ZAP/Explorer 기능·판정 모델 변경은 범위 밖이다. 실제 Burp 새 JAR 재로드는 별도 gate다.
+**D-153 로컬·원격 검증 완료:** SQLite 호스트 선행 JDBC 초기화 결함을 수정했다. 독립 JVM RED→GREEN·집중 12/12, 전체 verify 2회 각각 Java 575(2 skip)·React 472·완성 JAR 저장 gate·패키지 UI 15/15와 원격 PR #16 CI를 확인했다. main은 필수 리뷰 1건 또는 명시적인 관리자 예외 승인을 기다리며 beta.48 Release는 그 뒤다. ZAP/Explorer 기능·판정 모델 변경은 범위 밖이다. 실제 Burp 새 JAR 재로드는 별도 gate다.
 
 > **읽는 법:** PR #11·#12의 관측·선언 공통 좌표, 파라미터 프로파일·Gap, 권한 대상 연결, 통합 Graph/Matrix 작업면과 Evidence 요청 비교는 D-143~146으로 구현됐다. 현재 작업은 이 기능들의 연결부 정확성·선택 수명·최종 저장 보완과 검증이다. 각 행의 예전 수치는 해당 단계의 이력이고 최신 검증은 `beta-validation.md`를 따른다. 실제 Burp·Windows 운영 결과는 자동·패키지 검증과 별도로 기록한다.
 

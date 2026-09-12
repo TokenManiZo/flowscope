@@ -1,11 +1,13 @@
 # FlowScope 팀 인계 정본
 
-## 2026-09-12 · D-153 SQLite 수정·로컬 검증 완료, 원격 배포 진행
+## 2026-09-12 · D-153 SQLite 수정·로컬/원격 검증 완료, main 승인 대기
 
 - 사용자 Burp의 `FlowScope SQLite save failed`를 beta.47 배포 JAR의 실제 저장 경로에서 재현했다. 호스트가 DriverManager를 먼저 초기화하면 `No suitable driver found`가 발생하고, 확장 드라이버를 명시적으로 로드한 대조군은 저장·재열기가 성공했다.
 - 수정 범위는 번들 SQLite 직접 연결, 드라이버 선행 준비 없는 저장·재열기 회귀, 오류 안내, beta.48 배포다. schema·Evidence·ZAP·Explorer 실행 계약은 바꾸지 않는다. 멘토 보고서는 제외한다.
 - 번들 JDBC 직접 연결과 오류 안내를 수정했다. 독립 JVM/SQLite/lifecycle 집중 12/12, JDK 21 전체 verify Java 575(실패·오류 0, opt-in 2 skip)·React 59파일/472건, 완성 fat JAR 실제 저장 경로, 패키지 Playwright 15/15(retry 0, 29.0초)가 통과했다. JAR 31,942,036 bytes, SHA-256 `6405e78207d0d729946aee38518678c22bdef58005fac2e5899585f651f16bfa`.
-- main·beta.48 Release 반영은 진행 중이다. 설치된 Burp Java를 별도로 실행한 추가 probe는 응답 없이 대기해 중단했으며 성공으로 세지 않았다. 실제 Burp 새 JAR 재로드·Windows 실기기·이번 ZAP/Explorer 실물 재실행은 미실행이다. 사용자 Burp·기존 DB는 변경하지 않았다.
+- 수정 커밋 `36a5020`은 원격 `codex/sqlite-driver-release`와 [PR #16](https://github.com/choewonwoo1817/testflowscope/pull/16)에 올라갔다. [CI 34697738243](https://github.com/choewonwoo1817/testflowscope/actions/runs/34697738243)는 전체 build·JAR/bundle·동일 러너 반복 해시·Bash/Windows 구문 검사를 통과했다(verify 9분 2초). 로컬 최종 verify도 2회 같은 JAR SHA-256으로 통과했고 ZIP CRC·내부 JAR 일치를 확인했다.
+- **배포 차단:** main ruleset은 승인 1건을 요구한다. 관리자 예외 병합은 사용자에게 검토 우회 승인을 별도로 받지 않았다는 이유로 실행 권한 검토에서 거부됐다. main 변경·태그 생성·beta.48 Release 게시는 하지 않았다. 팀원 승인 또는 이번 PR에 한정한 명시적 관리자 예외 승인이 필요하다. 다른 API/강제 푸시로 우회하지 않는다.
+- 설치된 Burp Java 별도 probe는 출력 없이 OS 대기 상태에 남았다. 이번 임시 PID임을 재확인하고 TERM/KILL 신호를 보냈으나 마지막 확인에서 잔존했으므로 종료 완료나 성공으로 세지 않는다. 실제 사용자 Burp·기존 DB는 변경하지 않았다. 새 JAR Burp 재로드·Windows 실기기·이번 ZAP/Explorer 실물 재실행은 미실행이다.
 
 ## 2026-09-12 · D-152 beta.47 수정·검증·main 반영 완료
 
