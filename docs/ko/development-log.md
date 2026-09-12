@@ -21,6 +21,26 @@
 
 - 실제 Burp load/unload, disk full/권한 거부, 대규모 operation Evidence 페이지 비용, Windows, 실제 HUMAN/ZAP/Explorer 데이터에서의 UI 검토 시간은 미실측이다. 비민감 SHA-256은 저엔트로피 값 추측을 막는 secret primitive가 아니므로 사용자 선택형 로컬 Evidence 비교 밖으로 확대하지 않는다.
 
+## 2026-09-12 · 미출시 · 인가 추천의 서비스·구조·관계 경계 보정(D-146)
+
+### 원인과 수정
+
+- 기준 `11bb07b`의 PR #11·#12 이식 결과를 합성 대상에 맞춘 단언이 아닌 별도 서비스·중첩 자원·일반 query 입력으로 점검했다. 수정 전 회귀 6건이 (1) 타 서비스 등록 계정의 기능/객체 셀과 BOLA 추천, (2) 부모 PATH ID를 전체 자식 리소스로 연결, (3) 반복 `sort` 동시출현을 `CONFIRMED_AUTH_BOUNDARY`로 표시하는 문제를 재현했다.
+- `AuthorizationMatrixAnalyzer`는 등록 계정을 `AccountProfile.service`, 미등록 신원을 실제 `RequestRecord.service` 집합에 묶고 operation service와 같은 조합만 만든다. 전역 account Cartesian product는 다른 scope의 계정을 실행 가능한 주체처럼 표시하므로 기각했다.
+- `SurfaceAuthorizationLinker`는 원 저장 레코드를 바꾸지 않고 resource reference의 부모 prefix를 호출 범위 색인에만 추가한다. PATH `/segments/N`의 slot ordinal을 정규화 resource chain의 같은 prefix에 대응시켜 부모/자식과 반복 ID를 구조로 구분한다. 마지막 ID 하나만 비교하는 기존 방식은 중첩 자원에서 정보 손실이 있어 기각했다.
+- 정확 스칼라 참조 OBSERVED와 확정 소유자가 함께 있을 때만 `CONFIRMED_AUTH_BOUNDARY`를 준다. CORROBORATED/INFERRED/UNKNOWN 관계는 미탐 방지를 위해 삭제하지 않고 `AUTH_VARIANT_UNTESTED`와 `HUMAN_REVIEW_REQUIRED`로 남긴다. 모든 동시출현 삭제와 모든 반복 동시출현 확정은 각각 recall·precision을 훼손해 기각했다.
+
+### 영향 파일·회귀
+
+- 코드: `core/AuthorizationMatrixAnalyzer.java`, `core/SurfaceAuthorizationLinker.java`.
+- 테스트: `AuthorizationMatrixAnalyzerTest` 3건(타 서비스 등록 계정, 두 서비스 등록 계정, 실제 관측 서비스의 익명 신원), `SurfaceAuthorizationLinkTest` 3건(중첩 부모/자식, 반복 ID, 동시출현과 정확 PATH 경계 분리). 수정 전 6건 RED, 수정 후 focused 35/35 GREEN.
+- 문서: README 한/영, CHANGELOG 한/영, architecture, endpoint-parameter-surface, decisions D-146, product plan, UI rationale, documentation status, HANDOFF, beta validation.
+- D-145 통합 최종 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS. Java 542 tests(실패·오류 0, opt-in 2 skip), React 58 files/452 tests 통과. 패키지 Playwright 14/14 retry 0. JAR 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`; bundle 30,828,562 bytes, SHA-256 `6b13b63f6350f3f2566e6c98ce68a32450be4b0d064a6d324c4fd37bad9d7811`.
+
+### 남은 한계·다음 gate
+
+- 실제 Burp에서 복수 서비스 프로젝트, 중첩 API, 대규모 실제 dataset의 추천 precision/recall은 미검증이다. 통합 첫 E2E에서 이미 fit된 graph의 geometry가 반드시 바뀐다고 가정한 검사가 1회 retry됐고, fit 명령 소비 version을 명시적으로 검사하도록 고친 최종 실행은 14/14 retry 0이다.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 7단계 — 통합 검증(화면 간 선택·Evidence·저장/재열기·좁은 viewport)과 설계 문서 이식, 최종 인계
 
 ### 원인과 수정

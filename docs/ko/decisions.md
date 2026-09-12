@@ -1367,6 +1367,13 @@
 - **기각:** PR의 record-level parameter 영속과 별도 분석 generation은 제2정본을 만들므로 이식하지 않는다. masked preview·민감 digest·HTTP 원문을 query cache에 넣는 방식도 기각한다. dataset 교체 요청 전에 초안을 지우면 저장/열기 실패 때 사용자 작업을 잃는다. 모든 실시간 상태를 한 줄에 펼치는 방식과 route별 중복 icon rail은 좁은 화면과 탐색 밀도를 악화시켜 그룹 탐색과 상태 popover로 대체한다. 레거시 HTML·서버 `FlowGraphBuilder`·PR의 status-only 후보 승격은 계속 이식하지 않는다.
 - **검증·한계:** React 단위 회귀는 전체 route 접근, 세 Graph/Matrix 작업면, Evidence metadata 정제·페이지·비밀 비노출, Request Lab revision/dataset/실패 경계와 stale snapshot action 차단을 검사한다. Java 회귀는 `/api/evidence` metadata와 비밀 제외, raw vault 비영속, 종료/install 원자 경계를 검사한다. 패키지 Playwright는 grouped navigation·Graph/Matrix·Gap workspace·Request Lab·반응형 화면을 실제 JAR에서 검사한다. 실제 Burp unload 중 disk failure, 대규모 Evidence 페이지 비용, 저엔트로피 digest의 운영 노출 위험은 별도 gate다.
 
+## D-146 · 인가 추천은 서비스·구조·관계 신뢰 경계를 넘지 않는다 (2026-09-12)
+
+- **문제:** PR #11·#12 이식 결과를 독립 입력으로 재검증하자 (1) 판정 매트릭스가 모든 등록 계정을 모든 서비스의 operation/resource와 Cartesian product로 조합해 타 진단 대상 계정까지 BOLA/IDOR 추천에 넣고, (2) `/orders/{orderId}/items/{itemId}` 같은 중첩 PATH의 부모 슬롯도 마지막 자식 리소스에 연결하며, (3) 일반 `sort` 입력과 단일 리소스가 두 번 함께 나타났다는 이유만으로 `CONFIRMED_AUTH_BOUNDARY`를 부여했다. 셋 다 실제 Evidence보다 강한 추천 또는 관계 표현이다.
+- **결정:** ① 등록 계정의 매트릭스 범위는 `AccountProfile.service` 하나로, 등록되지 않은 관측 신원은 실제 Evidence가 존재하는 서비스 집합으로 제한한다. operation의 service와 일치하는 identity만 기능·객체 셀과 추천 조합에 넣는다. ② 중첩 PATH 좌표 `/segments/N`은 slot 순서를 이용해 정규화된 resource chain의 같은 순서 prefix에 연결한다. 부모·자식 값이 같아도 값 검색이 아니라 구조 위치로 구분하며 저장된 `RequestRecord.resourceReferences`는 바꾸지 않는다. ③ `CONFIRMED_AUTH_BOUNDARY`는 정확한 스칼라 리소스 참조(`Confidence.OBSERVED`)와 확정 소유자가 함께 있을 때만 부여한다. CORROBORATED/INFERRED/UNKNOWN 동시출현 관계는 recall을 위해 link와 `AUTH_VARIANT_UNTESTED` 후보로 보존하되 `HUMAN_REVIEW_REQUIRED`를 명시한다.
+- **기각:** 모든 등록 계정을 전역 비교하는 방식은 서로 다른 scope의 계정을 실행 가능한 주체처럼 꾸민다. PATH 값의 마지막 일치만 사용하는 방식은 중첩 리소스의 부모·자식을 구분하지 못한다. 반복 동시출현을 인가 경계의 확정 근거로 쓰는 방식은 pagination·sort·검색 조건 같은 일반 입력을 권한 입력으로 과대 해석한다. 반대로 동시출현 관계를 모두 삭제하면 추가 확인 후보의 recall을 잃으므로 사람 검토 대상으로 유지한다.
+- **검증·한계:** 다른 서비스 등록 계정, 두 서비스에 실제 관측된 미등록 신원, 중첩 부모·자식 PATH, 부모·자식 동일 ID, 반복 `sort` 동시출현과 정확 PATH ID를 회귀로 고정했다. 별도 probe에서 세 결함의 수정 전·후 출력을 비교했다. 이는 projection 정확성 자동 검증이며 실제 Burp의 복수 서비스 운영, 대규모 실제 데이터의 추천 precision/recall을 대신하지 않는다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.
@@ -1375,8 +1382,8 @@ PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번�
 |---|---|---|
 | D-093 그래프 의미 방향·탐색 단위 | `identity → operation → resource`, Site/그룹/API/Object 계층, 18개 단위 펼침, 표시 집계는 원 cell·Evidence 보존, candidate·validation·미확정 owner 신뢰 경계 | D-143 5c: React `projectHierarchy`로 동일 계층·경계 구현. 서버 `FlowGraphBuilder` 방향 변경·legacy HTML 교체는 미이식(`GRAPH_IDA_REDESIGN.md` 이식본) |
 | D-094 React 기본 UI = test1 계약 + legacy fallback | `/`·`/app/` React, `/legacy/` 유지, API Group은 표시 projection, snapshot canonical cell은 `perSource`·`evidenceIds` | 이미 현행 구조(D-140~142). 5c는 같은 계약 위에서 계층만 추가 |
-| D-095 선택 문맥 수명·최신 Evidence 유지 | 정책 editor 격리, Request Lab 편집 보존, dataset 교체 감지(`evidenceContext`) | D-140 `datasetRevision` key 계약이 같은 boundary 제공(5a 기각 ④) |
-| D-096 파라미터 분석 = 근거 기반 점검 우선순위 계층 | `ParameterObservation/Definition/Profile`, `AuthorizationTargetLink`, `ParameterValidationCell`, `ParameterGap` additive 계층, 기본 UI는 열린 위험 Gap | D-143 1~5단계: 관측·선언 공통 좌표 위에 `ParameterFact.profile/authorizationTargets`, 최상위 `parameterGaps/validationCells`, `#parameter-map`(제2정본 없음) |
+| D-095 선택 문맥 수명·최신 Evidence 유지 | 정책 editor 격리, Request Lab 편집 보존, dataset 교체 감지(`evidenceContext`) | D-145: `datasetRevision`+성공 후 replacement signal, 좌표/raw/session 재검증으로 흡수 |
+| D-096 파라미터 분석 = 근거 기반 점검 우선순위 계층 | `ParameterObservation/Definition/Profile`, `AuthorizationTargetLink`, `ParameterValidationCell`, `ParameterGap` additive 계층, 기본 UI는 열린 위험 Gap | D-143 1~5단계 Fact와 D-145 `#graph` 점검 우선순위 탭(제2정본 없음) |
 | D-097 PATH 슬롯 구조 정체성 | 단일 슬롯 `/id`, 복수 슬롯 `/segments/N`, `declaredName` metadata | D-143: 항상 `/segments/N`(실제 placeholder 위치만), 표시명은 `displayName` |
-| D-098 그래프 중심 작업면·카드 노드 | 상단 `분석/점검/기록` 그룹 nav, 224×124 SVG 카드, lane 경계 회귀 | 카드·lane·FocusedGraphWorkspace 이식(5a). 상단 드롭다운 nav는 현행 `RouteIconRail`로 대체(5a 기각 ⑤) |
+| D-098 그래프 중심 작업면·카드 노드 | 상단 `분석/점검/기록` 그룹 nav, 224×124 SVG 카드, lane 경계 회귀 | 카드·lane·FocusedGraphWorkspace는 D-143 5a, grouped nav는 D-145로 최종 흡수 |
 | D-099 관계 그래프 공통 카드 문법 | 모든 표시 노드를 SVG 카드로, TARGET/API GROUP/IDENTITY/RESOURCE 아이콘, CANDIDATE·SUPPORT 명시 | 5c `relationshipNodeCard`로 동일 문법 이식 |

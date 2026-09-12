@@ -315,6 +315,9 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
       dismissCardTooltip()
       coreRef.current?.fit(undefined, 36)
       scheduleLaneCorrectionRef.current?.()
+      if (containerRef.current && new URLSearchParams(window.location.search).has("flowscope-e2e-geometry")) {
+        containerRef.current.dataset.appliedFitVersion = String(fitVersion)
+      }
     }
   }, [dismissCardTooltip, fitVersion])
 

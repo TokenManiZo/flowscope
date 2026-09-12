@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-12 D-145 PR #11·#12 최종 작업면·Evidence 비교 흡수. 현재 미출시 beta.46 소스는 상단 `분석 / 점검 / 기록`, 통합 Graph·Matrix 탭, on-demand Evidence parameter 비교, 성공 기반 Request Lab dataset 수명, unload 최종 분석·저장 순서를 제공한다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약은 유지한다. 대상은 현재 checkout의 프로젝트 Markdown이며 별도 worktree·생성물·비공개 미추적 멘토 보고서·역사 문서를 일괄 수정하지 않는다. 자동·패키지 검증 수치와 실제 Burp 미검증 경계는 beta-validation과 인계에 확정했다.
+최종 대조: 2026-09-12 D-143~146 PR #11·#12 최종 흡수와 인가 추천 경계 보정. 현재 미출시 beta.46 소스는 상단 `분석 / 점검 / 기록`, 통합 Graph·Matrix 탭, on-demand Evidence parameter 비교, 성공 기반 Request Lab 수명과 unload 저장을 제공한다. D-146은 계정 추천을 같은 서비스로 제한하고 중첩 PATH를 슬롯별 resource prefix에 연결하며 단순 동시출현을 확정 인가 경계로 표시하지 않는다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약은 유지한다. 자동·패키지 검증과 실제 Burp 미검증 경계는 beta-validation·HANDOFF를 따른다.
 
 ## 1. 무엇을 어디서 읽는가
 
@@ -36,6 +36,8 @@
 22. D-143(슬라이스 1)은 PR#11 파라미터 엔진을 SurfaceAnalyzer 관측 정본으로 이식하고, 관측·선언이 공통 `ParameterCoordinate(canonicalPath)`로 병합하게 했다. 기존 observe*·shape() 제거, 선언 어댑터 canonical화, 값 형식 분류 동등성(scalarType), `coordinateVersion` 영속(SQLite 스키마 무변경), 점 있는 legacy JSON 모호 좌표 미join, snapshot 비밀 비노출을 architecture·Surface·decisions·development-log·CHANGELOG·인계·검증 기록에 반영했다. 자동 회귀(`mvn clean verify`)와 실제 실행 gate를 구분한다. ParameterProfile·Gap·인가 연결·그래프 UI는 슬라이스 2+. 같은 날 후속 수정(리뷰 6건: `UNRESOLVED_COORDINATE`·표시/기계 좌표 분리·contextSignature·Explorer FLOW_V2·distinct 상한·path alignment)과 JS AST 세그먼트 보존 정정(`/a//b` 유효 pointer)을 같은 문서군에 반영했다. PR #11·#12 이식 1단계(네 결함 수정)·2단계(선언 의미 확장)·3단계(discovery 프로파일·Gap을 `ParameterFact.profile`·`parameterGaps`로 이식)·4단계(권한 대상 link·검증 cell·`AUTH_VARIANT_UNTESTED`를 `SurfaceAuthorizationLinker`로 이식, 인가 정본 재사용)·5단계 5a(`#parameter-map` 우선순위 Gap 그래프 화면: README·한영 시작 가이드·architecture·ui-product-rationale·계획·인계·변경 이력·검증 기록)·5b(구조화 요청 비교 탭·`EndpointFact.requestContexts`: architecture·Surface 계약·계획·인계·변경 이력·검증 기록)·5c(계층 관계 그래프 Site→API 그룹→API→Object·`+18`: README 한/영·architecture·ui-product-rationale·decisions D-143 5c(D-142 gate 해소)·계획·인계·변경 이력·검증 기록)·5d(snapshot surface 계약·단일 캐시 회귀, 선언 preview 안정 선택·DEFINED_NOT_OBSERVED 전체 count: architecture·Surface 계약·decisions D-143 5d·계획·인계·변경 이력·검증 기록)·6단계(PR#12 판정 매트릭스 P/E/O·수동 테스트 추천·사람 검토: README 한/영·architecture·ui-product-rationale·decisions D-144·계획·인계·변경 이력·검증 기록)·7단계(통합 검증·설계 문서 이식·최종 인계: `GRAPH_IDA_REDESIGN.md`·`GRAPH_NOISE_FP_FN_REDUCTION.md` 신규, `graph-ux.md` 서문, decisions 부록, HANDOFF §1-1 최종 인계, 계획 7단계 행·변경 이력·검증 기록)와 기능 대조표(product-development-plan)를 반영했다.
 23. D-145는 PR #11의 남은 grouped navigation, Graph/Matrix 통합 탭, Evidence별 요청 비교, Request Lab dataset/raw/session 수명, stale snapshot action 차단과 unload 저장 순서를 현행 정본 위에 흡수한다. main snapshot·프로젝트 digest 비노출과 삭제된 Judge/MCP는 유지하고, 이전 D-143 5a/5b 기각 중 해당 항목은 D-145가 대체했음을 README 한/영·architecture·Surface·UI 근거·결정·계획·인계·변경 이력·검증 기록에 반영한다.
 
+24. D-146은 독립 재검증에서 확인한 타 서비스 계정 추천 혼입, 중첩 PATH 부모/자식 오연결, 동시출현 기반 확정 인가 경계 과대 표시를 보정했다. 서비스별 matrix 분모, 구조 슬롯별 resource prefix, OBSERVED+확정 owner만 확정 경계라는 계약을 README 한/영·architecture·Surface·UI 근거·결정·계획·인계·변경 이력·검증 기록에 반영했다.
+
 ## 3. 전수 목록
 
 “현행화”는 모든 문장을 최신 시제로 고쳤다는 뜻이 아니다. 현행 계약의 모순은 고치고, 역사 문서는 당시 내용을 보존하면서 적용이 끝난 지시를 표시했다. 외부 문헌의 진위·모든 제품 동작을 이번에 전수 실증했다는 주장도 아니다.
@@ -62,10 +64,10 @@
 | [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | D-145 grouped navigation·통합 Graph/Matrix·Evidence 비교 수명과 D-139 Explorer/ZAP 경계 |
 | [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | P20 ZAP, P21/P23 D-128/D-139 Explorer, 폐기 기능 구분 |
 | [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, D-132 Client-only 완료와 실물 gate, 제품 MCP 보류 |
-| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-145 PR 최종 흡수와 D-139 Explorer·D-130~138 ZAP의 완료/남은 gate 분리 |
-| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-145 작업면·Evidence 비교·수명, D-143~144 parameter/matrix, D-139~142, D-130~138 ZAP 결정 |
-| [docs/ko/development-log.md](development-log.md) | 역사 | D-145 최종 PR 흡수·검증과 D-143 슬라이스 1, 이전 nav/Explorer/ZAP 기록 |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-145 536/452·Playwright 14/14, D-139 provider, ZAP 실물/남은 Burp·Windows gate 분리 |
+| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-145 PR 최종 흡수·D-146 인가 추천 보정과 Explorer/ZAP 남은 gate 분리 |
+| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-143~146 parameter·matrix·작업면·인가 추천 경계, D-139~142, D-130~138 ZAP 결정 |
+| [docs/ko/development-log.md](development-log.md) | 역사 | D-145 최종 PR 흡수·D-146 정확성 보정과 이전 nav/Explorer/ZAP 기록 |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-145+D-146 최종 542/452·Playwright 14/14 retry 0, ZAP/Explorer 실물 경계 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |

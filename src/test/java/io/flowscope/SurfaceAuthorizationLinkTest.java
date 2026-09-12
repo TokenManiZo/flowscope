@@ -401,6 +401,55 @@ final class SurfaceAuthorizationLinkTest {
         assertFalse(withoutSignatures.contains("sha256:"));
     }
 
+    @Test
+    void nestedPathSlotsReferenceTheirOwnResourcePrefixes() {
+        assertNestedPathLinks("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222");
+    }
+
+    @Test
+    void repeatedNestedIdsRemainSeparatedByPathPosition() {
+        assertNestedPathLinks("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111");
+    }
+
+    private static void assertNestedPathLinks(String parentId, String childId) {
+        RequestRecord record = pipelineRecord(Source.HUMAN, "anon", "GET",
+                "/api/orders/" + parentId + "/items/" + childId, 200, null);
+        record.body = "{\"id\":\"" + childId + "\"}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(record), new AnalysisConfig());
+        List<io.flowscope.core.ResourceReference> originalReferences = List.copyOf(result.records.getFirst().resourceReferences);
+        SurfaceAnalysis surface = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of(), result.analysis);
+
+        AuthorizationTargetLink parent = link(surface, "/segments/2");
+        AuthorizationTargetLink child = link(surface, "/segments/4");
+        assertEquals(record.service + " orders:" + parentId, parent.resource());
+        assertEquals(parent.resource() + "/items:" + childId, child.resource());
+        assertEquals(Confidence.OBSERVED, parent.confidence());
+        assertEquals(Confidence.OBSERVED, child.confidence());
+        assertEquals(originalReferences, result.records.getFirst().resourceReferences,
+                "Surface linking must not change the stored references or the authorization core");
+    }
+
+    @Test
+    void repeatedCooccurrenceDoesNotConfirmAnAuthorizationBoundary() {
+        RequestRecord first = record(Source.HUMAN, "A", "GET", 200, null);
+        first.query = "sort=asc";
+        RequestRecord second = record(Source.HUMAN, "A", "GET", 200, null);
+        second.query = "sort=desc";
+        List<RequestRecord> records = List.of(first, second);
+        SurfaceAnalysis surface = enrich(records, authorization(records, true));
+
+        assertEquals(Confidence.CORROBORATED, link(surface, "/sort").confidence(),
+                "Cooccurrence remains useful recorded evidence, not an authorization proof");
+        var gaps = surface.parameterGaps().stream().filter(gap -> gap.canonicalPath().equals("/sort")
+                && gap.type() == GapType.AUTH_VARIANT_UNTESTED).toList();
+        assertFalse(gaps.isEmpty());
+        assertTrue(gaps.stream().noneMatch(gap -> gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")));
+        assertTrue(gaps.stream().allMatch(gap -> gap.priorityReasons().contains("HUMAN_REVIEW_REQUIRED")));
+        assertTrue(surface.parameterGaps().stream().anyMatch(gap -> gap.canonicalPath().equals("/segments/2")
+                && gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")),
+                "The confirmed owner's exact resource identifier keeps its established priority");
+    }
+
     private static ParameterValidationCell cell(Verdict verdict, boolean applicable, List<String> ids, List<String> basis, long count) {
         return new ParameterValidationCell(new EndpointKey("https://test:443", "GET", "/orders"), ParameterLocation.QUERY, "/id",
                 "https://test:443 orders:1", SELF, Source.UNKNOWN, null, AccessRole.UNKNOWN, verdict, "test", applicable, ids, basis, count);

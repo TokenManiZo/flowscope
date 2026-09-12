@@ -18,7 +18,8 @@ import static io.flowscope.core.AuthorizationMatrix.*;
  *
  * <p>인가 판정 정본은 {@link AuthorizationAnalysis}다(D-050). 이 projection은 기대 정책(P)·실행 결과(E)·소유권(O)을
  * 독립 축으로 나란히 놓고 수동 테스트 조합을 추천할 뿐, BOLA/BFLA 후보 여부는 정본 cell의 SUSPICIOUS 판정만 따른다.
- * 과거 LLM 검증(ValidationDecision)은 읽기 전용 이력으로만 표시하고 신뢰도·상태를 올리지 않는다.</p>
+ * 과거 LLM 검증(ValidationDecision)은 읽기 전용 이력으로만 표시하고 신뢰도·상태를 올리지 않는다. 계정 조합은
+ * 등록 서비스 또는 실제 관측 서비스 경계 안에서만 만든다(D-146).</p>
  */
 public final class AuthorizationMatrixAnalyzer {
     private AuthorizationMatrixAnalyzer() {}
@@ -37,13 +38,20 @@ public final class AuthorizationMatrixAnalyzer {
         for (RequestRecord record : result.records) recordsByEvidence.put(record.evidenceId, record);
 
         Map<String, ValidationDecision> validationByCell = validationsByCell(result.analysis, history);
-        List<Identity> identities = identities(result, policy);
         Set<String> operations = new LinkedHashSet<>(policy.endpointRequirements().keySet());
         result.analysis.cells().forEach(cell -> operations.add(cell.key().operation()));
+        Map<String, Set<String>> identityServices = identityServices(result, policy);
+        Set<String> matrixServices = operations.stream().map(AuthorizationMatrixAnalyzer::operationService)
+                .filter(value -> !value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<Identity> identities = identities(result, policy).stream()
+                .filter(identity -> identityServices.getOrDefault(identity.id(), Set.of()).stream()
+                        .anyMatch(matrixServices::contains))
+                .toList();
 
         List<FunctionCell> functions = new ArrayList<>();
         for (String operation : operations.stream().sorted().toList()) {
             for (Identity identity : identities) {
+                if (!identityServices.getOrDefault(identity.id(), Set.of()).contains(operationService(operation))) continue;
                 AuthorizationAnalysis.CoverageCell cell = cells.get(key(identity.id(), operation, null));
                 // 기능 인가는 객체와 무관하다. 객체 없는 cell이 없으면 같은 신원·operation의 관측 객체 cell을 모아
                 // 원 Evidence를 바꾸지 않고 집계한다. BFLA 여부는 정본 Decision의 roleViolation만 쓴다(BOLA 의심이 섞이지 않게).
@@ -65,9 +73,12 @@ public final class AuthorizationMatrixAnalyzer {
         List<ObjectCell> objects = new ArrayList<>();
         objectRows.stream().sorted(Comparator.comparing(OperationResource::operation)
                         .thenComparing(OperationResource::resource))
-                .forEach(row -> identities.forEach(identity -> objects.add(objectCell(identity, row,
-                        cells.get(key(identity.id(), row.operation(), row.resource())), result, policy,
-                        validationByCell.get(key(identity.id(), row.operation(), row.resource())), recordsByEvidence))));
+                .forEach(row -> identities.stream()
+                        .filter(identity -> identityServices.getOrDefault(identity.id(), Set.of())
+                                .contains(operationService(row.operation())))
+                        .forEach(identity -> objects.add(objectCell(identity, row,
+                                cells.get(key(identity.id(), row.operation(), row.resource())), result, policy,
+                                validationByCell.get(key(identity.id(), row.operation(), row.resource())), recordsByEvidence))));
 
         List<EvidenceRow> evidence = evidenceRows(result, functions, objects);
         Summary summary = summary(functions, objects);
@@ -88,6 +99,23 @@ public final class AuthorizationMatrixAnalyzer {
             return new Identity(id, label, role.label(), kind);
         }).sorted(Comparator.comparingInt((Identity value) -> roleRank(value.role()))
                 .thenComparing(Identity::label)).toList();
+    }
+
+    /** Registered accounts belong to their configured service; observed-only identities belong to services they actually used. */
+    private static Map<String, Set<String>> identityServices(Pipeline.Result result, AnalysisConfig config) {
+        Map<String, Set<String>> services = new LinkedHashMap<>();
+        config.accounts().forEach((id, account) -> services.put(id, Set.of(account.service())));
+        for (RequestRecord record : result.records) {
+            if (record.idn == null || record.service == null || config.account(record.idn).isPresent()) continue;
+            services.computeIfAbsent(record.idn, ignored -> new LinkedHashSet<>()).add(record.service);
+        }
+        return services;
+    }
+
+    private static String operationService(String operation) {
+        if (operation == null) return "";
+        int separator = operation.indexOf(' ');
+        return separator > 0 ? operation.substring(0, separator) : "";
     }
 
     private static FunctionCell functionCell(Identity identity, String operation,

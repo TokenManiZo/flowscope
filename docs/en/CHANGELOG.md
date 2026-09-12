@@ -6,6 +6,12 @@
 - Opening a Gap comparison lazily derives non-sensitive per-Evidence parameter metadata and SHA-256 equality signals. Sensitive paths and values are omitted, HTTP text is removed before query caching, and the polling snapshot and project schema remain digest-free.
 - Request Lab closes only after a successful dataset replacement or a lost Evidence/raw/session prerequisite. Failed project switching preserves edits, and unload/project installation now share an atomic ordering boundary before the final database checkpoint.
 
+## Unreleased — service-scoped authorization recommendations and nested PATH links (D-146, 2026-09-12)
+
+- Authorization matrix identities are now paired only with operations and resources in their configured service, or with services where an unregistered identity has actual Evidence.
+- Nested PATH parameters map to the corresponding parent or child resource-chain prefix, including when the same ID value occurs at multiple positions.
+- Repeated co-occurrence remains a review lead, but only an exact observed scalar reference with confirmed ownership receives `CONFIRMED_AUTH_BOUNDARY`.
+
 ## Unreleased — packaged Standalone projects and current UI contract (D-142, 2026-09-11)
 
 - Packaged Standalone now implements preserved project creation, saving, selection, and reopening against an actual SQLite workspace. An unavailable Explorer is reported as an explicit status instead of HTTP 500.

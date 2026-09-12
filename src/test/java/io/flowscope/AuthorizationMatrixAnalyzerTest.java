@@ -235,6 +235,58 @@ class AuthorizationMatrixAnalyzerTest {
         assertNotEquals("E3", write.evidence().code());
     }
 
+    @Test
+    void recommendationsStayWithinTheRegisteredAccountService() {
+        AnalysisConfig config = users().upsertAccount(new AccountProfile("foreign-user", "Foreign user",
+                "https://other.test:443", AccessRole.USER));
+        Pipeline.Result result = Pipeline.run(List.of(record(Source.HUMAN, "tok:user-a",
+                "GET", "/api/orders/24", 200, "{\"id\":24}")), config);
+
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
+
+        assertTrue(matrix.objects().stream().anyMatch(cell -> cell.identity().equals("user-b")
+                && cell.status() == AuthorizationMatrix.Status.BOLA_IDOR_TEST_RECOMMENDED));
+        assertTrue(matrix.functions().stream().noneMatch(cell -> cell.identity().equals("foreign-user")));
+        assertTrue(matrix.objects().stream().noneMatch(cell -> cell.identity().equals("foreign-user")));
+    }
+
+    @Test
+    void observedAccountsFromTwoServicesKeepOnlyTheirOwnServiceCells() {
+        String otherService = "https://other.test:443";
+        AnalysisConfig config = users().upsertAccount(new AccountProfile("foreign-user", "Foreign user",
+                otherService, AccessRole.USER)).bindSession(otherService, "tok:foreign", "foreign-user");
+        RequestRecord local = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/24", 200, "{\"id\":24}");
+        RequestRecord foreign = record(otherService, Source.HUMAN, "tok:foreign",
+                "GET", "/api/orders/24", 200, "{\"id\":24}");
+        Pipeline.Result result = Pipeline.run(List.of(local, foreign), config);
+
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
+
+        assertTrue(matrix.objects().stream().anyMatch(cell -> cell.identity().equals("foreign-user")
+                && !cell.evidenceIds().isEmpty()));
+        assertTrue(matrix.functions().stream().allMatch(cell -> cell.operation().startsWith(
+                (cell.identity().equals("foreign-user") ? otherService : SERVICE) + " ")));
+        assertTrue(matrix.objects().stream().allMatch(cell -> cell.operation().startsWith(
+                (cell.identity().equals("foreign-user") ? otherService : SERVICE) + " ")));
+    }
+
+    @Test
+    void unregisteredAnonymousIdentityUsesItsObservedServicesOnly() {
+        RequestRecord local = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/24", 200, "{\"id\":24}");
+        RequestRecord anonymous = record("https://public.test:443", Source.HUMAN, "anon",
+                "GET", "/api/news", 200, "{\"news\":[]}");
+        AnalysisConfig config = users();
+        Pipeline.Result result = Pipeline.run(List.of(local, anonymous), config);
+
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
+
+        assertTrue(matrix.functions().stream().anyMatch(cell -> cell.identity().equals("anon")
+                && !cell.evidenceIds().isEmpty()));
+        assertTrue(matrix.functions().stream().filter(cell -> cell.identity().equals("anon"))
+                .allMatch(cell -> cell.operation().startsWith(anonymous.service + " ")));
+        assertTrue(matrix.objects().stream().noneMatch(cell -> cell.identity().equals("anon")));
+    }
+
     private static AnalysisConfig users() {
         return new AnalysisConfig()
                 .upsertAccount(new AccountProfile("user-a", "USER A", SERVICE, AccessRole.USER))
@@ -253,7 +305,12 @@ class AuthorizationMatrixAnalyzerTest {
 
     private static RequestRecord record(Source source, String fingerprint,
                                         String method, String path, int status, String body) {
-        RequestRecord record = new RequestRecord(source, SERVICE, method, path, status, fingerprint);
+        return record(SERVICE, source, fingerprint, method, path, status, body);
+    }
+
+    private static RequestRecord record(String service, Source source, String fingerprint,
+                                        String method, String path, int status, String body) {
+        RequestRecord record = new RequestRecord(source, service, method, path, status, fingerprint);
         record.body = body;
         record.respText = "HTTP/1.1 " + status + " Test\r\nContent-Type: application/json\r\n\r\n" + body;
         record.responseContentType = "application/json";
