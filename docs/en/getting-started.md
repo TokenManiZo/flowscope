@@ -1,5 +1,7 @@
 # FlowScope installation and first run
 
+This repository is currently private. Sign in with your own GitHub account with collaborator access to download the Release; a 404 while signed out does not indicate a FlowScope or ZAP runtime failure.
+
 Beta.47 keeps ZAP running in a cleanup stage until the previous task has released its restart guard. New starts and duplicate cancellations are disabled while cleanup is pending. Use the beta.47 JAR/bundle; save your assessment before replacing an older extension.
 
 This guide targets the D-128/D-139 standalone Explorer, the D-135 FlowScope Docker Chromium ZAP runtime, and the D-138 connection-state contract. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs.

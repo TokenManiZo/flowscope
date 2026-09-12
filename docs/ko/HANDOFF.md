@@ -2,13 +2,14 @@
 
 ## 2026-09-12 · D-152 beta.47 수정·검증·main 반영 완료
 
-- beta.46 최종 문서 커밋 `15654c2`의 CI가 캠페인 결과 `FAILED` 게시 후 background cleanup이 끝나기 전에 다음 캠페인을 시작하면서 실패했다. `570d576`의 성공 기록과 별개로 이 재현을 현행 미해결로 기록한다.
+- beta.46 최종 문서 커밋 `15654c2`의 CI는 결과 `FAILED` 게시 후 cleanup이 끝나기 전에 다음 캠페인을 시작하면서 실패했다. 이 문제는 D-152 beta.47에서 수정했고, 아래 회귀·실물 검증과 최종 main CI를 통과했다. `570d576`의 이전 성공 기록은 해당 실행의 이력으로 보존한다.
 - 정리 중에는 `RUNNING / CLEANUP`을 공개하고 worker 정리와 시작 잠금 해제가 끝나야 terminal 결과를 게시하도록 보정했다. 활성 run을 정리까지 유지하고, 시작 응답 수신/scan ID 등록과 취소를 직렬화한다. 취소된 lane과 미시작 lane도 마감한다.
 - 새 latch 회귀 4건은 수정 전 모두 실패했다. 로컬 JDK 21 `mvn -o clean verify`: Java 574건(실패·오류 0, opt-in 2 skip), React 59파일·472건, release guard 통과. beta.47 패키지 Playwright는 retry 0으로 15/15 통과(30.2s). JAR은 31,942,102 bytes, SHA-256 `80d6e5357b3d73fdcfa274662f5bdfce39d792e3675c24dbbc7b9fa331e38cbe`.
 - 별도 Docker ZAP(API 18889/fixture proxy 18881)에서 실물 Chromium/ChromeDriver 152.0.7977.82로 익명·정상 두 계정 Client 완료(63요청), 이어 잘못된 비밀번호 계정의 인증 단계 거부를 확인했다. opt-in 하네스 1/1, 106.6초 통과. 사용자 8089 ZAP을 검증 대상으로 쓰지 않았다. 실제 Burp·Windows 실기기와 외부 대상 효능 검증은 이 결과와 다르다.
 - [PR #13 CI](https://github.com/choewonwoo1817/testflowscope/actions/runs/34693083743)가 전체 build·JAR/bundle·동일 러너 재현성·Bash/Windows 구문 검사를 통과했다(verify 9분 10초). 검증 코드 `3f9d107`, main 병합 `43706f1`은 파일 내용이 같다. 저장소의 승인 1건 규칙에 대해 소유자 관리자 예외로 PR을 병합했으며 보호 규칙을 변경하지 않았다.
 - PR #11(`d3d5ed3`)·#12(`4b809b8`)의 원본 head는 이식 당시와 같았다. 현재 Surface/React/Authorization 연결부와 기능 대조표를 확인하고 이식·대체·제외 근거를 댓글로 남겨 두 PR을 종료했다. 직접 merge한 이력으로 표시하지 않았고 원본/팀원 브랜치를 삭제하지 않았다.
 - 팀원용 파일은 [beta.47 테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.47)의 JAR·설치 bundle·SHA256SUMS다. [팀원 첫 실행](team-quick-start.md)을 따른다. beta.46 태그/JAR은 이전 산출물로 보존하며 멘토 보고서는 Git·배포 파일에서 제외한다.
+- 최종 배포 코드·태그는 `60a3291`이고 [main CI 34694001780](https://github.com/choewonwoo1817/testflowscope/actions/runs/34694001780)는 전체 검사·재현성 비교를 통과했다(verify 8분 35초). beta.47 Release가 게시됐으며 인증된 GitHub 경로로 설치 ZIP을 내려받아 원본과 바이트 일치·CRC를 확인했다. 저장소가 비공개이므로 팀원은 협업 권한이 있는 본인 계정으로 로그인해야 한다.
 
 ## 2026-09-12 · main 반영·beta.46 팀원 테스트 배포 기준
 
@@ -72,7 +73,7 @@
 - 최종 산출물 JAR: 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`. 최종 bundle 해시는 모든 내부 문서가 확정된 뒤 외부 결과에서만 식별한다.
 - 실제 Burp 복수 서비스·중첩 API와 대규모 dataset precision/recall은 계속 운영 gate다.
 
-최종 갱신: 2026-09-12. 현재 브랜치는 `codex/react-ui-integration`이며 D-145의 통합 작업면, D-146의 서비스·리소스 관계 보정, D-147~150의 수명·Evidence·검증 연결부 보완을 포함한다. 현행 상태는 맨 위 진행 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 2026-09-11 이식 내역과 단계별 수치는 당시 산출물의 이력이다.
+현재 배포 기준은 beta.47 태그 `60a3291`과 D-152다. 현행 상태는 맨 위 완료 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 날짜별 이식 내역·단계별 수치와 미출시 표현은 당시 산출물의 이력이며, 현재 버전이나 배포 상태를 덮어쓰지 않는다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -84,7 +85,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 - **과거 LLM:** `LegacyAssessment`·`ValidationDecision`은 저장 호환용 읽기 전용 기록이다. 현재 규칙 후보의 결론으로 합치지 않는다.
 - **새 Explorer:** `ExplorerCoordinator`가 메모리 계정 인증과 로그인된 Codex app-server를 연결한다. HTTP 도구는 exact-scope Burp Montoya 전송과 실제 LLM Observation Evidence를 만들고, 선언 도구는 같은 run의 응답 Evidence에서 직접 읽은 endpoint·parameter만 `LLM_ARTIFACT_ANALYSIS` Declaration으로 저장한다. MCP·Judge·브라우저는 없다.
 - **미착수:** FlowScope Evidence·분석용 제품 MCP. 새 Explorer와 무관하며 지금 만들지 않는다.
-- **ZAP beta.46 작업:** 비로그인 또는 별도 메모리 로그인 계정마다 이름 없는 temporary ZAP session/Context를 만들고 `인증 → chrome-headless strict Client → Passive → Alert`를 실행한다. 모든 lane은 bundle의 FlowScope Docker Chromium runtime만 사용한다. D-132 이후 Traditional/AJAX를, D-134 이후 ZAP 2.17 REST에 없는 verification component를 호출하지 않는다.
+- **현재 ZAP:** 비로그인 또는 별도 메모리 로그인 계정마다 이름 없는 temporary ZAP session/Context를 만들고 `인증 → chrome-headless strict Client → Passive → Alert → CLEANUP`을 실행한다. 모든 lane은 bundle의 FlowScope Docker Chromium runtime만 사용한다. D-152는 정리 후 terminal 게시·재시작과 수락된 시작 응답 전 취소를 보정한다. Traditional/AJAX와 지원되지 않는 verification REST 호출은 없다.
 
 사용자 전역 모델 설정·인증 파일, 사용 중인 Burp/ZAP, 다른 Claude worktree와 서드파티 패키지 내부 MCP 파일은 제거 대상이 아니었다. 구버전 확장이 실제로 실행 중이라면 새 소스의 삭제 사실만으로 그 프로세스·포트까지 종료됐다고 판단하지 않는다.
 
@@ -178,13 +179,13 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 | 기존 Judge·하네스 MCP 제거 | 구현·자동 회귀 완료 | `57d1bb4`, 클래스/JAR 부재·폐기 route 404 |
 | 과거 프로젝트 호환 | 구현·자동 회귀 완료 | JSON v4 / SQLite v3, 원 Evidence ID·과거 평가 분리 |
 | 빈 agent-workspace 정리 | 완료 | `962edfe`, 정확한 빈 디렉터리만 제거 |
-| 문서 현행화 | 2026-09-12 D-145~147 계약 대조 | Graph/Matrix 통합과 Evidence 비교·선택·저장 수명을 현행으로 정리, 이전 단계 기록은 이력으로 보존 |
+| 문서 현행화 | beta.47/D-152 기준 정정 | 현행 계약·설치·완료 상태와 과거 수치/미출시 표현을 분리. 검사 범위는 documentation-status 참고 |
 | 독립 LLM Explorer | D-139 구현·집중/provider·전체 자동 검증 완료, Burp gate 대기 | 메모리 인증, exact-scope HTTP Observation, Evidence-bound endpoint/parameter Declaration, 서버 중복 제거·집계, React 작업 피드 |
 | 다운로드 bundle·기능별 doctor | 구현·자동/추출 검증 완료 | JAR+ZAP helper+문서 ZIP, `human/zap/explorer/full`, Explorer 재확인; Windows 실기기 대기 |
 | ZAP 직접 브라우저 인증 | 별도 실물 하네스에서 정상 2계정·오류 비밀번호 차단 통과, 실제 Burp·Windows gate 대기 | 메모리 `ZapAccountVault`, 필수 성공/선택적 로그아웃 정규식, 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence, Chrome Headless, Context/user 지정 Client, 임시 user/Context 정리 |
 | React ZAP 기능 보존 | 구현·집중 회귀 완료 | target별 로그인 계정, 로그인/단계/경과 상태, 명세 정의 입력, 취소 복구 |
-| 새 JAR 실제 Burp/ZAP 검증 | D-137 JAR 익명 lane 완료, D-138 재로드 대기 | 실제 Burp 8081 익명 Client 14건·Alert 29건·거부 0건; 로그인 2계정·Windows·D-138 표시 gate는 남음 |
-| Client 단일 crawler | 코드·전체 자동 회귀·직접 실물 Client 완료 | 관리 Docker `chrome-headless`로 exact Context HTTP 200 수집. capability/로그인·취소·0건 실패의 beta.46 Burp 8081 gate는 남음 |
+| 새 JAR 실제 Burp/ZAP 검증 | beta.47 별도 ZAP fixture 통과; 실제 Burp gate는 별도 | 현재 별도 ZAP에서 63요청·정상 두 계정·오류 비밀번호 차단 확인. D-137의 Burp 8081 결과는 과거 산출물에만 해당 |
+| Client 단일 crawler | beta.47 코드·자동·별도 실물 하네스 통과 | 실제 Burp hook·Windows 실기기·실물 시작 응답 유실/timeout은 beta-validation의 미실행 범위 |
 | Docker Chromium runtime | 구현·실물 preflight 완료 | Chromium/ChromeDriver `152.0.7977.82`, 실제 headless launch, tmpfs home, doctor 0 failure/0 warning, 임의 runtime 차단 |
 | ZAP Docker API 경계 | 실물 daemon/API gate 완료 | 임시 8090에서 bridge gateway allowlist, exact form POST, tmpfs session, Replacer session 유지 확인. target/8081은 미검증 |
 | ZAP verification REST 호환 | 결함 재현·코드/집중 회귀 수정 | 실물 2.17의 `/JSON/verification/...` 400 `no_implementor` 확인. 지원되지 않는 호출 제거; 수정 JAR 실제 로그인 재실행 대기 |
@@ -193,7 +194,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 ## 3. 검증과 배포 상태
 
-[beta-validation의 D-130~138 기록](beta-validation.md)이 현재 ZAP 작업의 자동·실물 검증 정본이며, D-129는 배포 작업, D-128과 D-139는 Explorer 구현·provider 검증의 정본이다.
+[beta-validation의 D-152 기록](beta-validation.md)이 현행 beta.47의 자동·실물 검증 정본이다. 배포 자산과 코드 기준은 위 완료 항목을 따른다. 아래 D-128~142의 결과는 당시 실행·산출물별 이력이며 현재 버전의 재검증으로 계산하지 않는다.
 
 - 같은 최종 D-128 입력에서 `mvn clean verify` 2회: 매회 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 241 tests 통과. JAR SHA-256과 크기가 동일했다.
 - D-129 작업에서 `mvn clean verify` 2회: 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 242 tests 통과. 반복 package의 JAR/bundle 동일성과 clone 없는 clean extraction을 확인했다.
@@ -206,7 +207,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 - D-140~142 최종 입력에서 JDK 21 `mvn clean verify` 2회: 매회 Java 407 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React 38 files / 250 tests와 release JAR/bundle gate 통과. clean fat JAR을 새 임시 project workspace로 기동한 Chromium E2E 8/8도 통과했다. 이 검증은 Standalone Web·SQLite·React 계약이며 실제 Burp/ZAP/Codex 실행이 아니다.
 - 별도 opt-in 실제 Codex app-server 하네스가 dynamic HTTP tool로 응답 Evidence를 만든 뒤 그 ID로 구조화 선언 도구를 호출하는 경로를 확인했다. 이는 Burp Montoya/실제 대상 전체 실행이 아니다.
 - D-126 당시 Chromium E2E는 과거 UI 기준 기록이다. D-142에서 현재 clean JAR 기준 E2E 8/8을 새로 실행했지만, 이를 실제 Burp gate로 재사용하지 않는다.
-- 작업트리 버전 문자열은 `1.2.0-beta.46`이다. D-139 전체 자동 검증과 JAR 식별값은 위와 같이 확정했으며 push·Release는 하지 않았다.
+- D-139 당시 작업트리 버전은 `1.2.0-beta.46`이었고 해당 작업에서는 push·Release를 하지 않았다. 현재 배포 상태는 D-152/beta.47 완료 항목이 우선한다.
 - 실제 Burp load와 ZAP 비로그인 lane은 D-137 JAR에서 확인했다. unload/reload, HUMAN 로그인/캡처, ZAP 복수 로그인 lane, Request Lab 실제 전송, Windows 운영 검증과 최종 D-138 상태 표시는 새 JAR 기준 미실행이다.
 
 ## 4. 현재 구조와 코드 위치

@@ -2,9 +2,9 @@
 
 Current implementation and open gates: [handoff](../ko/HANDOFF.md). Document scope and audit results: [documentation inventory](../ko/documentation-status.md) (Korean).
 
-The standalone Explorer and direct ZAP browser-authentication lane are unreleased source changes. Use a JAR built from this work; older Release assets do not include them.
+The beta.47 test Release includes the standalone Explorer and direct ZAP browser-authentication lane. This repository is currently private: sign in with a GitHub account that has collaborator access before downloading Release assets. Unauthenticated or unauthorized requests can return 404.
 
-**Current source / unreleased:** the old MCP server, Judge and browser harness remain removed. D-128/D-139 add a standalone Codex Explorer through app-server dynamic tools and a Java exact-scope gateway. Real HTTP responses become LLM Observation Evidence; endpoints and value-free parameters read from those response artifacts become separate, current-run Evidence-bound Declarations. HUMAN/ZAP execution and H/S/L Evidence comparison remain; no replacement MCP or automatic verdict path was added. See the [Explorer contract](../ko/llm-explorer.md).
+**Current runtime:** the old MCP server, Judge and browser harness remain removed. D-128/D-139 provide a standalone Codex Explorer through app-server dynamic tools and a Java exact-scope gateway. Real HTTP responses become LLM Observation Evidence; endpoints and value-free parameters read from those response artifacts become separate, current-run Evidence-bound Declarations. HUMAN/ZAP execution and H/S/L Evidence comparison remain; no replacement MCP or automatic verdict path was added. See the [Explorer contract](../ko/llm-explorer.md).
 
 FlowScope is a Burp Suite Community-compatible extension that aligns declared API inputs and real target traffic from three actors—**HUMAN, SCANNER, and LLM**—into a shared endpoint/parameter surface. It shows which source observed each endpoint and parameter before opening the existing identity-aware BOLA/IDOR/BFLA graph as an API-level drill-down. An unobserved declaration is a review item, not a vulnerability or failed lane.
 

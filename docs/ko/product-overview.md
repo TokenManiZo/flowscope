@@ -1,8 +1,8 @@
 # FlowScope 프로젝트 개요 (목표·범위)
 
-> 현재 제품 범위: 2026-09-09 D-138 반영. 초기 Judge·하네스 MCP 구성은 폐기한 상태를 유지하고, 판정 없는 독립 Codex Explorer를 별도 실행기로 구현했다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인을 제공하며, ZAP 계정 lane은 HUMAN Session Broker와 분리된 메모리 자격증명으로 ZAP Browser Based Authentication과 session auto-detect를 수행한다. ZAP API의 `OK`나 인증 시각이 아니라 같은 run·계정에서 관측한 인증 응답 Evidence가 사용자의 필수 로그인 성공 정규식과 일치할 때만 strict Client Spider 하나를 실행한다. 비로그인을 포함한 모든 ZAP lane은 bundle의 FlowScope Docker Chromium runtime과 `chrome-headless`를 사용한다. ZAP 일반 통신 실패는 3회 연속일 때만 `UNREACHABLE`로 확정한다. FlowScope용 제품 MCP는 여전히 구현하지 않았다.
+> 현재 제품 범위: beta.47/D-152. 초기 Judge·하네스 MCP 구성은 폐기한 상태를 유지하고, 판정 없는 독립 Codex Explorer를 별도 실행기로 제공한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인을 제공하며, ZAP 계정 lane은 HUMAN Session Broker와 분리된 메모리 자격증명으로 ZAP Browser Based Authentication과 session auto-detect를 수행한다. ZAP API의 `OK`나 인증 시각이 아니라 같은 run·계정에서 관측한 인증 응답 Evidence가 사용자의 필수 로그인 성공 정규식과 일치할 때만 strict Client Spider 하나를 실행한다. 모든 ZAP lane은 bundle의 FlowScope Docker Chromium runtime과 `chrome-headless`를 사용한다. ZAP 일반 통신 실패는 3회 연속일 때 `UNREACHABLE`로 확정하며, 종료 정리는 `RUNNING / CLEANUP`으로 표시하고 정리가 끝난 뒤 최종 상태를 공개한다. 제품 MCP는 미구현이다.
 
-> **구현 상태(1.2.0-beta.46 미출시 소스):** 값 없는 `Endpoint·Parameter Surface Delta`가 OpenAPI·HTML form·JavaScript AST call-site 선언과 실제 H/S/L HTTP 관측을 분리한다. 새 Explorer는 로그인된 Codex와 exact-scope HTTP tool로 실제 LLM Evidence를 만들며 계정별 응답 차이와 미해결 항목을 남긴다. 취약점 verdict·Judge·LLM assessment는 만들지 않는다. ZAP은 사용자가 Web에 입력한 계정을 메모리 전용으로 보관하고, 관리 Docker의 Chrome Headless Browser Based Authentication 응답 Evidence가 성공 정규식과 일치한 뒤 같은 Chromium의 계정 지정 Client Spider를 실행한다. 별도 임시 Docker/기록 프록시에서 익명·정상 계정 2개·오류 비밀번호 차단을, 실제 macOS Burp 8081에서 익명 Client 완주를 확인했다. 실제 Burp 로그인 2계정과 Windows 실기기는 남았다. 기존 Resource/owner/BOLA·BFLA 그래프와 판정은 `접근 대상 ID` 상세층으로 유지한다.
+> **구현·배포 상태:** beta.47 테스트 Release가 게시됐다. `Endpoint·Parameter Surface Delta`는 OpenAPI·HTML form·JavaScript 선언과 실제 H/S/L 관측을 분리한다. Explorer는 현재 run의 실제 응답과 그 산출물 선언을 수집하며 취약점 verdict를 만들지 않는다. PR #11·#12의 파라미터 프로파일·Gap·관계 그래프·판정 매트릭스를 현재 Surface/Authorization 정본에 연결했다. beta.47은 별도 실제 ZAP fixture에서 익명·정상 두 계정·오류 비밀번호 거부를 확인했으며, 최종 main CI·패키지 UI 회귀도 통과했다. 이전 D-137의 Burp 8081 실행 결과를 새 JAR 검증으로 재사용하지 않는다. 실제 Burp hook·Windows 실기기·외부 대상 효능은 별도 미실측 범위다.
 
 ## 문제의식 (Premise)
 웹/API 모의해킹의 첫 병목은 **수집한 요청 목록만 보고 아직 보지 못한 endpoint와 조건부 parameter를 알아내기 어렵다는 것**이고, 다음 병목은 권한·상태·객체 흐름을 사람이 머릿속으로 재구성해야 한다는 것이다. FlowScope는 선언 산출물과 실제 H/S/L Evidence의 차이를 먼저 작업목록으로 만들고, 선택한 API의 인가 관계를 그래프와 매트릭스로 연다.
@@ -31,7 +31,7 @@
 - **O1. 관측 비교:** HUMAN·SCANNER·LLM은 트래픽 생성 source다. HUMAN, ZAP, 독립 Explorer가 각각 실제 응답 Evidence를 만들며 과거 프로젝트의 LLM Evidence도 보존한다.
 - **O2. 현재 연계:** Burp 수집·메모리 Session Broker·독립 `ZapCampaign`·Explorer account vault·Web·관계형 `.flowscope.db` 및 호환 JSON을 유지한다. MCP 서버와 Judge는 없다.
 - **O3. Explorer 경계:** Explorer는 app-server dynamic HTTP tool을 exact-scope Montoya 전송에 연결해 endpoint·method·parameter·계정별 응답을 수집하며 판정하지 않는다. FlowScope Evidence용 제품 MCP는 별도 미구현 범위다.
-- **ZAP 실행 경계:** 현재 새 캠페인은 FlowScope Docker Chromium의 strict Client Spider → passive queue → Alert만 실행한다. Traditional/AJAX Spider와 자동 fallback은 제거했으며, Client 실패·범위 안 응답 0건을 성공으로 바꾸지 않는다. 별도 실물 하네스에서 공식 ZAP 2.17 이미지의 Authentication Helper 0.41.0과 Client 0.30.0으로 익명·로그인 계정 2개를 실제 탐색했고 오류 비밀번호가 Client 단계 전에 차단됨을 확인했다. beta.46 JAR의 실제 Burp 재로드와 Windows 실기기는 아직 별도 gate다.
+- **ZAP 실행 경계:** FlowScope Docker Chromium의 strict Client Spider → passive queue → Alert → cleanup 순서다. Traditional/AJAX와 자동 fallback은 없으며 Client 실패·범위 안 응답 0건을 성공으로 바꾸지 않는다. D-152는 cleanup 전 최종 상태 공개와 시작 응답 전 취소 경합을 보정했다. beta.47 별도 실물 fixture에서 익명·정상 두 계정 Client 63요청과 오류 비밀번호 거부를 확인했다. 실제 Burp hook과 Windows 실기기는 별도 gate다.
 
 ## 계속 열린 연구 범위
 
