@@ -124,6 +124,32 @@ D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완
 
 현재 Explorer 실행 계약은 [LLM Explorer](llm-explorer.md), 삭제 목록·보존 계약은 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
 
+## 다음 우선순위 · 실행 활동 상세 보기(ZAP·LLM Explorer) (2026-09-13, 계획·미착수)
+
+**목적:** 점검자가 ZAP 캠페인과 LLM Explorer가 지금 무엇을 하고 있는지 화면에서 바로 보게 한다. 현재는 두 실행 모두 상태 한 줄과 숫자만 보이고, 진행 내용은 `/api/scanner-run`·`/api/explorer-run`을 직접 열어야 확인할 수 있다.
+
+**현재 사실 (2026-09-13 실측):**
+- ZAP: 서버는 run별 이벤트 로그(`run.events`: 시각·lane·stage·level·message)와 lane 카운터(수집·client·passive 잔여·heartbeat·alert)를 이미 만든다. React 점검 화면은 이벤트 로그를 렌더하지 않는다. ZAP이 어떤 URL을 방문 중인지는 서버도 가져오지 않는다(ZAP API `core/view/urls`, client spider 진행률, alert 목록은 미사용).
+- Explorer: 서버는 `activities` 피드(TOOL/MODEL/HTTP/SYSTEM/AUTH/DISCOVERY, 상태·소요 시간, 상한 300)를 만든다. 실행 상태 화면은 상태·메시지·`unresolved`만 보인다. 도구 호출 항목은 "FlowScope 도구 호출 · 도구 처리 완료"처럼 어떤 도구를 어떤 인자로 불렀는지 없다. HTTP 항목만 method·URL·상태·Evidence ID를 가진다.
+
+**1단계 (서버 변경 없음):**
+- ZAP lane 카드에 이벤트 타임라인과, 현재 run의 SCANNER Evidence 최근 N건(method·path·status·sourceDetail)을 "지금 수집 중" 목록으로 표시한다. 둘 다 기존 응답과 snapshot에서 클라이언트가 뽑는다.
+- Explorer 카드에 `activities` 타임라인(종류 배지, 상태, 소요 시간, `boundedText`로 자른 상세)과 HTTP 항목의 Evidence ID 링크를 표시한다. 모델 메모는 "비집계" 라벨을 유지한다.
+- 검증: React 단위 회귀(이벤트·피드 렌더, 실패·취소 상태, 좁은 화면), 패키지 Playwright 1건.
+
+**2단계 (서버 보강):**
+- `CodexAppServerProvider`의 dynamicToolCall 이벤트에서 도구 이름과 안전한 인자(method·URL·artifact_id·선언 개수)를 뽑아 활동 제목에 넣는다. 헤더·본문·값은 넣지 않는다.
+- ZAP lane에 scope 안 방문 URL 목록(상한 200), client spider 진행률, 위험도별 alert 수를 폴링해 노출한다.
+- 검증: Java 회귀(마스킹·상한·scope 밖 URL 제외), React·Playwright 갱신.
+
+**경계:** 값·인증정보·API key 비노출, 텍스트 길이 제한, 기존 1초 폴링 재사용, 판정·점수 생성 없음.
+
+### Explorer 현행 플로우 조사와 개선 후보 (2026-09-13, 결정 대기)
+
+- 흐름: 계정 로그인 준비(`ExplorerAuthRuntime`) → Codex app-server 시작(`thread/start`·`turn/start`, sandbox workspaceWrite·networkAccess false, developerInstructions=`explorer-system.md`) → 모델이 dynamic tool(`flowscope_http_request`, `flowscope_artifact_*`, `flowscope_record_discoveries`)만으로 exact scope 요청·산출물 분석·선언 저장 → `turn/completed`의 JSON 결과(summary·unresolved) → `LaneCompletionPolicy`(응답 Evidence 0건이면 실패) → COMPLETED / COMPLETED_WITH_LIMITATIONS.
+- 실측(naver.com, 비로그인): 97초, HTTP 시도 10건 중 응답 2건(시작 페이지·favicon), scope 밖 차단 8건(pstatic.net JS), 도구 호출 43건, 선언 0건. 검색 form·API·정적 JS가 전부 다른 호스트라 exact scope 하나로는 탐색이 시작 페이지에서 끝난다.
+- 개선 후보: ① `unresolved`의 scope 밖 호스트를 사용자가 승인해 scope에 추가하는 UI 흐름(자동 확장 없음). ② 같은 호스트가 한 번 차단되면 후속 요청을 서버가 미리 거부하고 모델에 알려 헛도는 호출을 줄인다. ③ 시도 수에서 정책 차단을 분리해 보고한다(`시도 10 · 차단 8 · 응답 2`). ④ 서버가 저장된 응답에서 scope 안 링크·form·script URL을 뽑아 frontier 원장을 만들고 "남은 frontier"를 완료 조건과 화면에 쓴다. ⑤ favicon·이미지 같은 비산출물 요청을 지침에서 제외한다.
+
 ## 이전 버전별 계획·검증 이력
 
 아래 “현재 상태/완료”는 각 beta 작성 당시의 상태다. 삭제된 MCP·Explorer·Judge의 남은 실행 gate는 현행 작업에서 폐기됐으며, 현재 후속 작업은 위 우선순위와 [HANDOFF](HANDOFF.md)만 따른다. 과거 테스트 결과는 변경하지 않는다.
