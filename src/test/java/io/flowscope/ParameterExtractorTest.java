@@ -135,6 +135,28 @@ class ParameterExtractorTest {
         assertFalse(result.toString().contains("broken"));
     }
 
+    @Test void unsupported_nonempty_bodies_keep_positive_observations_but_report_incomplete_extraction() {
+        for (String contentType : List.of("text/plain", "application/octet-stream", "")) {
+            var result = ParameterExtractor.extract(normalized("/orders", "safe=ok", contentType, "UNPARSED-BODY-SENTINEL"));
+            assertKeys(result, "QUERY:/safe");
+            assertEquals(List.of("UNSUPPORTED_REQUEST_BODY"), result.diagnostics().stream().map(ParameterDiagnostic::reasonCode).toList());
+            assertFalse(result.toString().contains("UNPARSED-BODY-SENTINEL"));
+        }
+    }
+
+    @Test void multipart_unparsed_framing_and_parts_report_incomplete_extraction() {
+        for (String body : List.of(
+                "unparsed multipart body",
+                "--x-invalid\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\ninvalid-boundary\r\n--x--\r\n",
+                "--x\r\nContent-Disposition: form-data; name=\"title\"\r\nmissing-separator\r\n--x--\r\n",
+                "--x\r\nContent-Type: text/plain\r\n\r\nmissing-disposition\r\n--x--\r\n",
+                "--x\r\nContent-Disposition: form-data\r\n\r\nmissing-name\r\n--x--\r\n")) {
+            var result = ParameterExtractor.extract(normalized("/orders", "safe=ok", "multipart/form-data; boundary=x", body));
+            assertKeys(result, "QUERY:/safe");
+            assertEquals(List.of("INVALID_MULTIPART"), result.diagnostics().stream().map(ParameterDiagnostic::reasonCode).toList());
+        }
+    }
+
     @Test void body_input_limit_accepts_exactly_one_million_characters_and_rejects_the_next() {
         var accepted = ParameterExtractor.extract(normalized("/orders", null, "application/json", "{\"x\":\"" + "a".repeat(999_992) + "\"}"));
         assertKeys(accepted, "JSON_BODY:/x");

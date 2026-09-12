@@ -92,7 +92,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 ### 점검할 때마다
 
 1. Web 상단의 **새 진단 시작**에서 프로젝트 이름과 허가된 exact scope를 입력합니다. 기존 진단이 있으면 먼저 로컬 프로젝트 DB에 보존되고, 저장 실패 시 새 scope로 전환되지 않습니다. Burp 탭의 **범위 적용**은 아직 데이터가 없는 첫 진단에서 같은 프로젝트 생성을 수행합니다.
-2. `http://127.0.0.1:17777/`에서 **빠른 시작**을 엽니다.
+2. `http://127.0.0.1:17777/`에서 상단 **점검**을 눌러 점검 시작 화면을 엽니다.
 3. 화면이 자동으로 여는 첫 미완료 단계만 수행합니다: **범위 → HUMAN → ZAP**. 이어 **LLM Explorer 열기**에서 독립 탐색을 실행합니다.
 4. 완료 뒤 **API·입력 차이**에서 HUMAN·ZAP·LLM 선언/관측 차이와 산출물 파싱 상태를 먼저 보고, 선택한 API를 인가 그래프·판정 매트릭스·Evidence에서 검토합니다.
 
@@ -192,6 +192,8 @@ Burp 시작 전에 다음 시스템 속성으로 기본 포트를 바꿀 수 있
 ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 `flowscope.zap.key` → `FLOWSCOPE_ZAP_API_KEY` → `flowscope.zap.keyFile` → 기본 `~/.flowscope/zap-api-key`입니다. 기본 파일은 심볼릭 링크와 group/others 권한을 거부합니다. Java client와 제공 스크립트는 key를 URL query나 프로세스 인자에 넣지 않고 `X-ZAP-API-Key` 헤더로 보냅니다. Docker ZAP API는 기본적으로 loopback, 해석된 `host.docker.internal` 주소와 컨테이너의 default Compose bridge gateway만 exact allowlist로 허용하며 `api.addrs.addr.name=.*`를 사용하지 않습니다. ZAP의 대상 트래픽은 Burp SCANNER listener를 통과하도록 설정해야 합니다. 시스템 캠페인은 run별 capability가 확인된 프록시 요청만 CONTROLLED ZAP Evidence로 받으며 헤더는 대상 전송 전에 제거합니다. capability 누락은 자동으로 허용하지 않고 차단 수를 상태에 남기며 다음 단계 전에 실패시킵니다. Client status `100`만으로 실제 대상 트래픽을 증명하지 않으며, FlowScope는 같은 run의 raw `ZAP_CLIENT_SPIDER` 응답 수집 건수를 확인합니다. 0건이면 성공으로 표시하지 않습니다. `Alert 집계 미완료`는 Passive 정체 시점까지의 snapshot이므로 ZAP이 이후 분석했을 결과 전체를 뜻하지 않습니다.
 
 ## 제품 작업면
+
+요청 비교는 분석하지 못한 본문과 UNKNOWN metadata를 불확실한 상태로 남깁니다. 매트릭스의 선택·검토 초안은 해당 프로젝트와 서버 Evidence에 묶이며, 연결이 끊기면 마지막 성공 시각과 재시도를 표시합니다. 새 진단·프로젝트·샘플 전환은 현재 진단 저장이 성공해야 적용됩니다(D-147).
 
 `http://127.0.0.1:17777/`와 `/app/`는 동일한 React 작업면을 제공하고 `/legacy/`는 전환 기간의 기존 작업면을 제공합니다. 첫 진입은 `API·입력 차이`이며, React가 분석기나 판정 상태 기계를 대체하지 않고 같은 localhost API snapshot을 표시합니다.
 

@@ -1,5 +1,15 @@
 # React Web UI 기능 동등성 인벤토리
 
+## 현행 PR #11·#12 작업면 (D-145~147)
+
+- Graph: 상단 `분석 → 점검 Gap 그래프`에서 점검 우선순위/전체 관계 보기 두 탭을 제공한다.
+- Matrix: P/E/O 판정·파라미터 커버리지·기존 권한 셀 세 탭. dataset 교체·연결 실패·서버 review Evidence 변경 시 선택과 편집 수명을 갱신한다.
+- Evidence: 요청 비교는 기존 서버 Evidence를 페이지로 읽고 같은 추출기의 metadata를 사용한다. 불완전 본문과 UNKNOWN을 확정 부재·변경으로 표시하지 않는다.
+- 프로젝트: 삭제형 초기화(P04)는 제거됐으며 새 진단 시작·프로젝트 재열기로 대체됐다. 현재 작업을 저장한 뒤 전환하고, 샘플도 저장·교체가 성공해야 성공 응답을 반환한다.
+- 최신 자동·패키지 검증은 [beta-validation](beta-validation.md) 맨 위 절을 따른다. 아래 P01~ 표는 React 초기 전환 시점의 이력이며 `PLANNED`를 현재 미구현 목록으로 읽지 않는다.
+
+## 초기 전환 이력
+
 **2026-09-09 D-139:** 현재 UI는 HUMAN/ZAP와 독립 Codex Explorer, 규칙 후보·사람 검토를 제공한다. Explorer는 실제 HTTP 시도·응답 Evidence와 Evidence-bound endpoint/parameter 선언, OPTIONS probe를 분리해 서버 집계로 표시한다. ZAP 영역은 HUMAN Session Broker와 별도인 target별 메모리 로그인 계정, 인증 상태·브라우저·경과, strict Client 단계·수집량, API 정의 입력과 취소를 제공한다. Traditional/AJAX 단계와 합산 rendered 수는 현행 캠페인에서 제거했다. 일반 ZAP probe 실패 1·2회는 `RETRYING`, 3회째는 `UNREACHABLE`이며 API key/runtime 오류는 즉시 확정한다. Explorer가 준비되지 않으면 설치·로그인 원인과 공식 설치 링크, `다시 확인` 동선을 표시한다. Judge·MCP·옛 브라우저 화면은 폐기 상태를 유지하고 과거 LLM 기록은 읽기 전용으로 보존한다. 아래 P21/P23은 D-128/D-139 계약으로 대체됐고 P22/P24/P38/P39는 계속 폐기 상태다. 최신 검증은 [beta-validation](beta-validation.md)의 D-139 절을 따른다.
 
 이 표는 기존 Web UI가 제공하는 동작을 React 전환 전에 고정한 이력과 beta.44 통합 상태를 함께 기록한다. React는 `/`와 `/app/`의 기본 UI이고 legacy는 `/legacy/`에 남아 있다. component/standalone 통과와 실제 Burp runtime 동등성은 분리하며, 런타임 항목은 explicit Burp gate 전에는 완료로 표시하지 않는다.

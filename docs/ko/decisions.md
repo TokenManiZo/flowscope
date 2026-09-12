@@ -1374,6 +1374,15 @@
 - **기각:** 모든 등록 계정을 전역 비교하는 방식은 서로 다른 scope의 계정을 실행 가능한 주체처럼 꾸민다. PATH 값의 마지막 일치만 사용하는 방식은 중첩 리소스의 부모·자식을 구분하지 못한다. 반복 동시출현을 인가 경계의 확정 근거로 쓰는 방식은 pagination·sort·검색 조건 같은 일반 입력을 권한 입력으로 과대 해석한다. 반대로 동시출현 관계를 모두 삭제하면 추가 확인 후보의 recall을 잃으므로 사람 검토 대상으로 유지한다.
 - **검증·한계:** 다른 서비스 등록 계정, 두 서비스에 실제 관측된 미등록 신원, 중첩 부모·자식 PATH, 부모·자식 동일 ID, 반복 `sort` 동시출현과 정확 PATH ID를 회귀로 고정했다. 별도 probe에서 세 결함의 수정 전·후 출력을 비교했다. 이는 projection 정확성 자동 검증이며 실제 Burp의 복수 서비스 운영, 대규모 실제 데이터의 추천 precision/recall을 대신하지 않는다.
 
+## D-147 · 요청 비교의 불확실성과 프로젝트 수명 연결부를 보완한다 (2026-09-12)
+
+- **문제:** D-145/D-146의 연결부 재검증에서 미지원 비어 있지 않은 본문과 손상된 multipart에 추출 진단이 없어 완전한 요청으로 표시됐다. Evidence API의 FORM/MULTIPART 이름도 Surface와 달랐다. 요청 비교는 UNKNOWN과 알려진 metadata의 차이를 확정 변경으로 표시했고, 중복 좌표 충돌 행에 한쪽의 임의 상세값을 붙였다. 판정 매트릭스는 다른 셀/데이터셋 선택 뒤 과거 저장 응답이 남거나 snapshot 실패 뒤 Evidence 상세가 열려 있었다.
+- **비교 결정:** 공통 `ParameterExtractor`가 미지원 본문에 `UNSUPPORTED_REQUEST_BODY`, 불완전 multipart에 `INVALID_MULTIPART` 진단을 남긴다. 정상 지원 형식의 비교는 유지하고 불완전 행은 Surface·Evidence 모두 미확정 문맥으로 취급한다. 공개 location은 `ParameterCoordinates.location`으로 통일한다. shape/type/occurrence의 양쪽 값이 확인된 경우만 해당 변경을 표시하고, UNKNOWN은 UNKNOWN으로 남긴다. 충돌한 중복 좌표에는 임의 길이·신뢰도·문맥을 표시하지 않는다.
+- **선택 결정:** 판정 매트릭스의 선택은 datasetRevision에, 검토 폼은 cell ID와 서버 review Evidence 집합에 결박한다. 교체 시 해당 컴포넌트를 재생성해 이전 pending 상태·저장 응답·초안이 새 셀로 옮겨가지 않게 한다. snapshot 조회 실패 시 마지막 성공 데이터와 시각·재시도를 보이며 상세·저장은 닫는다.
+- **저장 결정:** capture는 records 추가 뒤 rebuild 예약 전에 종료될 수 있으므로 마지막 저장은 published epoch 비교에 의존하지 않고 한 번 재분석한다. 프로젝트 설치와 unload 순서는 별도 lifecycle monitor로 정하고, records monitor는 캡처/복사/교체에만 짧게 쓴다. D-145의 records monitor를 callback 전체에 유지하면 완료 callback과 잠금 순서가 역전되므로 대체했다. Web 샘플 전환은 현재 진단 저장과 교체가 끝나야 성공을 반환한다. Swing 버튼은 비동기를 유지한다.
+- **기각:** 모든 비교를 complete=false로 바꾸는 방식은 정상 지원 요청의 비교 기능을 없앤다. 테스트를 위해 임의 대기 시간을 넣거나 모든 callback을 records monitor로 감싸면 실제 순서를 검증하지 못한다. 기존 단계 완료/미실행 기록을 새 결과로 덮지 않고 현행 계약과 과거 이력을 명시적으로 구분한다.
+- **검증 범위:** 미지원 본문·multipart·공개 좌표의 Surface/Evidence 통합, UNKNOWN/충돌 diff, Matrix 늦은 저장·dataset 교체·연결 실패, 실제 extension 메서드의 SQLite 재열기·설치 중 monitor 가용성·샘플 저장 실패를 회귀로 확인한다. 패키지 UI는 서버 sample Evidence를 조회해 비교 화면에 값 변경이 도달하고 parameter matrix가 렌더되는 동선을 검사한다. 실제 Burp 운영체제별 unload와 외부 대상 성능은 이 결과로 대체하지 않는다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

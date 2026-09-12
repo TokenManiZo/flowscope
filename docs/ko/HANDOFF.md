@@ -1,5 +1,13 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · 최종 연결부 보완 완료(D-147)
+
+- 기준 `b168106` 위에서 PR #11·#12의 Evidence 비교·Graph/Matrix·프로젝트 연결부 결함을 회귀로 재현해 수정했다. 미지원 본문/불완전 multipart와 UNKNOWN metadata의 잘못된 확정 표시, Matrix의 이전 저장 응답·dataset/연결 실패 수명을 보정했다.
+- 실제 extension 종료 메서드 호출 후 SQLite를 재열어 마지막 미게시 Evidence 보존을 확인했다. 설치는 별도 lifecycle monitor를 사용하고, Web 샘플 전환은 현재 진단 저장·교체가 끝나야 성공을 반환한다.
+- 전체 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 550 tests(실패·오류 0, 선택형 ZAP/Codex 하네스 2 skip), React typecheck·58 files/461 tests 통과. 패키지 Playwright `--retries=0` 15/15 통과. 새 브라우저 검사는 서버 sample Evidence API → 값 변경 비교 → 파라미터 Matrix 연결을 확인한다.
+- JAR: `target/flowscope-1.2.0-beta.46.jar`, 31,937,006 bytes, SHA-256 `163072aff44850fb1d968363835c565f34d0b77eea35b0eb01d23f043b6d3232`. bundle hash는 내부 문서에 기록하지 않는다.
+- 현행 PR 기능표·설치 동선·인계와 이전 단계의 기각안을 대조했다. 이번 실제 Burp 재로드·Windows·실대상 효능 평가는 미실행이며 이전 결과를 새 산출물 검증으로 사용하지 않는다. 로컬 커밋·산출물까지만 완료하고 push/Release는 수행하지 않는다.
+
 ## 2026-09-12 · PR #11·#12 최종 흡수(D-145) 완료
 
 - `11bb07b`와 Claude worktree의 미커밋 PR 흡수분을 인수해 상단 그룹 탐색, Gap/관계 그래프 통합, 파라미터 매트릭스, Evidence 단위 요청 비교, Request Lab 수명, 종료 저장을 현행 정본 위에 완성했다. 삭제된 Judge/MCP, 레거시 판정, record-level 제2정본은 복구하지 않았다.
@@ -16,7 +24,7 @@
 - 최종 산출물 JAR: 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`. 최종 bundle 해시는 모든 내부 문서가 확정된 뒤 외부 결과에서만 식별한다.
 - 실제 Burp 복수 서비스·중첩 API와 대규모 dataset precision/recall은 계속 운영 gate다.
 
-최종 갱신: 2026-09-11 PR #11·#12 이식 1~7단계 완료(최종 인계 §1-1; 7단계: JSON·SQLite 재열기·화면 간 Evidence 통합 회귀, Playwright 좁은 viewport, 설계 문서 이식), 6단계(PR#12 판정 매트릭스 P/E/O·BFLA/BOLA 수동 테스트 추천·사람 검토, D-144 정본 재판정 금지 guard; 패키지 Chromium 실측·Playwright) 완료, 5단계(5a: `#parameter-map` 우선순위 Gap 그래프·검증표·Gap 상세→Evidence→Request Lab, 5b: 구조화 요청 비교 탭 + `EndpointFact.requestContexts`, 5c: `#graph` 계층 관계 그래프 Site→API 그룹→API→Object·`+18`, D-142 gate 해소, 5d: snapshot surface 계약·단일 캐시 회귀 + 선언 preview 결정성 수정) 패키지 Chromium 실측 완료, 4단계(권한 대상 link·검증 cell·AUTH_VARIANT_UNTESTED)·3단계(파라미터 프로파일·discovery Gap) 자동 회귀 + 패키지 Standalone snapshot 실측 완료, 2단계(선언 의미 확장) 자동 회귀 완료, 1단계(네 결함 수정·기능 대조표)는 패키지 Chromium 실측 포함; Burp 미실행 — 관측·선언이 공통 ParameterCoordinate로 병합하고 `mvn clean verify` 통과; packaged JAR·실제 실행은 미실행. 이전: D-140~142 자동 회귀와 패키지 Standalone E2E 완료, 운영 gate 대기. 새 진단 시작 시 기존 화면을 삭제하는 대신 현재 상태를 `~/.flowscope/projects/<진단명--scope--시각>/project.flowscope.db`에 먼저 저장하고 새 exact scope의 빈 프로젝트로 전환한다. React 상단 프로젝트 선택기·저장 상태·새 진단 대화상자와 Surface→Evidence/Request Lab/Repeater를 실제 API에 연결하고 삭제형 `/api/clear`는 거부한다. Standalone도 격리된 SQLite workspace로 같은 프로젝트 API를 검증하며 Explorer 사용 불가는 500이 아닌 명시적 상태로 표시한다. JDK 21 전체 verify 2회가 React 250·Java 407 tests와 최종 JAR gate를 통과했고, clean JAR의 Chromium E2E 8/8이 통과했다. 실제 Burp 재로드·프로젝트 재열기·최종 ZAP/Explorer 운영 검증 전이므로 릴리스 완료로 간주하지 않는다. 구현·회귀·문서는 한 작업 단위로 묶되 push·Release는 하지 않는다. 이 문서는 **현재 진행상황과 다음 gate**만 기록한다. 예전 실행법·상세 연혁·리뷰 원문은 [2026-09-04 인계 보존본](handoff-2026-09-04.md)으로 분리했다.
+최종 갱신: 2026-09-12. 현재 브랜치는 `codex/react-ui-integration`이며 D-145의 통합 작업면, D-146의 서비스·리소스 관계 보정을 포함한다. 이번 연결부 보완 상태는 맨 위 진행 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 2026-09-11 이식 내역과 단계별 수치는 당시 산출물의 이력이다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -32,7 +40,9 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 사용자 전역 모델 설정·인증 파일, 사용 중인 Burp/ZAP, 다른 Claude worktree와 서드파티 패키지 내부 MCP 파일은 제거 대상이 아니었다. 구버전 확장이 실제로 실행 중이라면 새 소스의 삭제 사실만으로 그 프로세스·포트까지 종료됐다고 판단하지 않는다.
 
-## 1-1. PR #11·#12 이식 최종 인계 (2026-09-11)
+## 1-1. PR #11·#12 1차 이식 이력 (2026-09-11, D-145 이전)
+
+이 절은 `11bb07b` 당시 이력이다. 별도 `#parameter-map`, `RouteIconRail`, Evidence digest 미이식 판단은 D-145가 대체했다. 현재는 `#graph` 두 탭, 상단 그룹 탐색, on-demand 요청 비교를 제공한다.
 
 **흡수한 기능과 코드 위치** (기능 대조표 전체는 `product-development-plan.md` "PR #11·#12 이식 기능 대조표")
 
@@ -72,7 +82,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 - 브랜치 `claude/explorer-identity-regression`, 커밋 `588de54`~7단계 마지막 커밋(`git log -1`, 이 문서 포함)(push·Release 없음). JAR `target/flowscope-1.2.0-beta.46.jar` 31,930,936 bytes(최종 verify 단일 빌드값).
 
-## 2. 진행상황
+## 2. 이전 단계별 진행 이력
 
 2026-09-11 완료(자동 회귀·패키지 JAR Playwright) · PR #11·#12 이식 7단계 — 통합 검증·설계 문서·최종 인계: JSON·SQLite 재열기 뒤 Gap·검증 cell·link·판정 매트릭스·사람 검토 재계산 동일성(`PortedFeaturesReopenTest`), 패키지 샘플 snapshot 캡처로 네 화면의 동일 Evidence(`crossScreenSelection.test.ts` 4건), Playwright 우선순위 Gap 그래프 1920/1280/600·판정 매트릭스 900/600 추가, PR#11 그래프 설계 문서 2건 이식본과 decisions 부록(D-093~099 대응). `mvn -o clean verify` 533 tests·frontend 47 files/371 tests BUILD SUCCESS, JAR 31,930,936 bytes, Playwright 최종 10/10 passed(20.3s; 1·2회차는 새 e2e 테스트 순서 결함으로 실패해 테스트만 수정, 1회차 graph-lane 검사 1회 flaky 재시도 통과). 최종 인계는 위 1-1.
 
@@ -120,7 +130,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 | 기존 Judge·하네스 MCP 제거 | 구현·자동 회귀 완료 | `57d1bb4`, 클래스/JAR 부재·폐기 route 404 |
 | 과거 프로젝트 호환 | 구현·자동 회귀 완료 | JSON v4 / SQLite v3, 원 Evidence ID·과거 평가 분리 |
 | 빈 agent-workspace 정리 | 완료 | `962edfe`, 정확한 빈 디렉터리만 제거 |
-| 문서 현행화 | 2026-09-11 D-142 계약 갱신 | [전수 목록·확인 범위](documentation-status.md); Standalone 프로젝트 API와 현행 단일 3-lane 그래프를 완료 기능·후속 graph 설계와 구분 |
+| 문서 현행화 | 2026-09-12 D-145~147 계약 대조 | Graph/Matrix 통합과 Evidence 비교·선택·저장 수명을 현행으로 정리, 이전 단계 기록은 이력으로 보존 |
 | 독립 LLM Explorer | D-139 구현·집중/provider·전체 자동 검증 완료, Burp gate 대기 | 메모리 인증, exact-scope HTTP Observation, Evidence-bound endpoint/parameter Declaration, 서버 중복 제거·집계, React 작업 피드 |
 | 다운로드 bundle·기능별 doctor | 구현·자동/추출 검증 완료 | JAR+ZAP helper+문서 ZIP, `human/zap/explorer/full`, Explorer 재확인; Windows 실기기 대기 |
 | ZAP 직접 브라우저 인증 | 별도 실물 하네스에서 정상 2계정·오류 비밀번호 차단 통과, 실제 Burp·Windows gate 대기 | 메모리 `ZapAccountVault`, 필수 성공/선택적 로그아웃 정규식, 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence, Chrome Headless, Context/user 지정 Client, 임시 user/Context 정리 |

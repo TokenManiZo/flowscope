@@ -70,7 +70,7 @@ These guidelines are working when diffs contain fewer unnecessary changes, imple
 - `source` is the traffic generator: `HUMAN`, `SCANNER`, `LLM`. It is not identity or role.
 - `orchestrator` is independent. ZAP started by an LLM remains `source=SCANNER, orchestrator=LLM`.
 - Do not claim a vulnerability from status alone. BOLA/BFLA need stored Evidence plus owner/role policy.
-- The old Explorer/Judge harness and MCP are removed (D-126). Do not recreate them implicitly. A separate Explorer harness and a future FlowScope Evidence MCP are not implemented.
+- The old Explorer/Judge harness and MCP are removed (D-126). Do not recreate them implicitly. The separate Explorer implemented in D-128/D-139 remains in place; the future FlowScope Evidence MCP is not implemented.
 - Historical LLM assessments/verdicts are read-only archive data, never current findings. Preserve their Evidence references and existing human audit records when loading/saving projects.
 - Never persist, export, log, or expose through snapshots raw authorization headers, cookies, passwords, API keys, or provider tokens. Operator-requested live HTTP editing may retain bounded raw text only in current-process memory and must clear it on dataset replacement and unload.
 - Active traffic must be exact-scope guarded. No ZAP Active Scan entry point is currently exposed. Keep existing explicit approval for definition imports and HUMAN Request Lab actions.

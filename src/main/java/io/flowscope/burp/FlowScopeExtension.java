@@ -250,11 +250,11 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
     private final AtomicBoolean databaseSavePending = new AtomicBoolean(false);
     private final AtomicBoolean databaseSaveRunning = new AtomicBoolean(false);
-    /** Set once under the records lock when Burp unloads: later captures, rebuilds and imports are discarded (PR #11). */
+    /** Serializes dataset installation with unload without holding the capture monitor across callbacks. */
+    private final Object lifecycleMonitor = new Object();
+    /** Set once under the lifecycle and records locks when Burp unloads. */
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     private final AnalysisPublicationGate analysisPublication = new AnalysisPublicationGate();
-    /** Epoch of the last published analysis; a newer gate epoch means captures are still waiting for a rebuild. */
-    private volatile long publishedEpoch;
     private volatile Path activeProjectDatabase;
     private volatile ProjectStore.ProjectContext activeProjectContext = ProjectStore.ProjectContext.empty();
     private volatile Instant databaseLastSavedAt;
@@ -299,7 +299,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     @Override public void saveProject(File file) { saveProjectFile(file); }
                     @Override public void loadProject(File file) { loadProjectFile(file); }
                     @Override public void importProxyHistory() { importProxyHistory(); }
-                    @Override public void loadSample() { loadSampleProject(); }
+                    @Override public void loadSample() { enqueueSampleProject(); }
                     @Override public void updateScope(String value) { updateScopeFromUi(value); }
                 };
                 controlTab = new FlowScopeControlTab(actions, webServer.url(), portMappingSummary());
@@ -885,50 +885,57 @@ public final class FlowScopeExtension implements BurpExtension {
         });
     }
 
-    private void loadSampleProject() {
+    private void enqueueSampleProject() {
         worker.execute(() -> {
             try {
-                preserveCurrentProject();
-                long analysisEpoch = analysisPublication.invalidate();
-                clearRunContexts();
-                sessionBroker.close();
-                resetExplorerSecrets();
-                synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
-                synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
-                SampleProject.Data sample = SampleProject.create();
-                JavascriptCallSiteAnalyzer.clearCache();
-                analysisConfig.replaceWith(sample.config());
-                List<RequestRecord> loaded = new ArrayList<>(sample.records());
-                resetPayloadPool();
-                loaded.forEach(record -> {
-                    record.requestPayload = internPayload(record.requestPayload);
-                    record.responsePayload = internPayload(record.responsePayload);
-                });
-                Pipeline.Result result = Pipeline.runIsolated(loaded, analysisConfig);
-                synchronized (records) {
-                    datasetEpoch.incrementAndGet();
-                    records.clear();
-                    records.addAll(loaded);
-                    capacityWarned = false;
-                }
-                rawExchanges.clear();
-                droppedRecords.set(0);
-                publishAnalysis(analysisEpoch, result);
-                archivedAssessments = List.of();
-                archivedValidations = List.of();
-                resetIntegrationWorkflow();
-                resetZapSecrets();
-                activeProjectDatabase = null;
-                activeProjectContext = ProjectStore.ProjectContext.empty();
-                databaseSavedRevision.set(-1);
-                databaseLastSavedAt = null;
-                databaseSaveError = "";
-                api.logging().logToOutput("FlowScope 샘플 프로젝트 열기: " + loaded.size()
-                        + "건 · 실제 네트워크 요청 없음");
+                loadSampleProject();
             } catch (Exception e) {
                 projectError("샘플 프로젝트 열기 실패", e);
             }
         });
+    }
+
+    private void loadSampleProject() throws IOException {
+        synchronized (lifecycleMonitor) {
+            if (shuttingDown.get()) throw new IllegalStateException("FlowScope 종료 중에는 샘플을 열 수 없습니다.");
+            preserveCurrentProject();
+            long analysisEpoch = analysisPublication.invalidate();
+            clearRunContexts();
+            sessionBroker.close();
+            resetExplorerSecrets();
+            synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
+            synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
+            SampleProject.Data sample = SampleProject.create();
+            JavascriptCallSiteAnalyzer.clearCache();
+            analysisConfig.replaceWith(sample.config());
+            List<RequestRecord> loaded = new ArrayList<>(sample.records());
+            resetPayloadPool();
+            loaded.forEach(record -> {
+                record.requestPayload = internPayload(record.requestPayload);
+                record.responsePayload = internPayload(record.responsePayload);
+            });
+            Pipeline.Result result = Pipeline.runIsolated(loaded, analysisConfig);
+            synchronized (records) {
+                datasetEpoch.incrementAndGet();
+                records.clear();
+                records.addAll(loaded);
+                capacityWarned = false;
+            }
+            rawExchanges.clear();
+            droppedRecords.set(0);
+            publishAnalysis(analysisEpoch, result);
+            archivedAssessments = List.of();
+            archivedValidations = List.of();
+            resetIntegrationWorkflow();
+            resetZapSecrets();
+            activeProjectDatabase = null;
+            activeProjectContext = ProjectStore.ProjectContext.empty();
+            databaseSavedRevision.set(-1);
+            databaseLastSavedAt = null;
+            databaseSaveError = "";
+            api.logging().logToOutput("FlowScope 샘플 프로젝트 열기: " + loaded.size()
+                    + "건 · 실제 네트워크 요청 없음");
+        }
     }
 
     private <T> T runProjectTask(java.util.concurrent.Callable<T> task) {
@@ -1201,7 +1208,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private boolean applyLoadedProject(ProjectStore.ProjectData data, List<RequestRecord> loaded,
                                        Pipeline.Result result, ScopePolicy restoredScope,
                                        ProjectStore.ProjectContext context, Path database) {
-        return runBeforeShutdown(records, shuttingDown,
+        return runBeforeShutdown(lifecycleMonitor, shuttingDown,
                 () -> installLoadedProject(data, loaded, result, restoredScope, context, database));
     }
 
@@ -1523,7 +1530,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 return explorer.recheckProvider();
             }
             @Override public void rebuild() { scheduleRebuild(); }
-            @Override public void loadSample() { loadSampleProject(); }
+            @Override public void loadSample() {
+                runProjectTask(() -> { loadSampleProject(); return null; });
+            }
             @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
                 BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
                 BurpXmlParser.retainInScope(parsed, scope);
@@ -1813,8 +1822,10 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void shutdown() {
-        synchronized (records) {
-            if (!shuttingDown.compareAndSet(false, true)) return;
+        synchronized (lifecycleMonitor) {
+            synchronized (records) {
+                if (!shuttingDown.compareAndSet(false, true)) return;
+            }
         }
         if (webServer != null) webServer.close();
         if (explorer != null) explorer.close();
@@ -1827,7 +1838,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 // leaves a partial database behind.
                 java.util.concurrent.Future<?> save = worker.submit(() -> {
                     try {
-                        if (analysisPublication.current() != publishedEpoch) rebuildImmediately();
+                        // A capture can append before unload but reach scheduleRebuild after the flag is set.
+                        // Rebuild once unconditionally so that handoff gap cannot hide unsaved Evidence.
+                        rebuildImmediately();
                         if (databaseSavedRevision.get() != revision.get()) {
                             long savingRevision = revision.get();
                             saveActiveDatabase();
@@ -2120,7 +2133,6 @@ public final class FlowScopeExtension implements BurpExtension {
         boolean published = analysisPublication.publishIfCurrent(analysisEpoch, () -> {
             latest = result;
             routeCandidates = candidates;
-            publishedEpoch = analysisEpoch;
             revision.incrementAndGet();
         });
         if (published) {

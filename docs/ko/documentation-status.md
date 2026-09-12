@@ -4,6 +4,10 @@
 
 ## 1. 무엇을 어디서 읽는가
 
+최신 결과: D-147 전체 Java 550 tests(2 opt-in skip)·React 461 tests·패키지 Playwright 15/15 통과. D-145~146의 개별 기록은 당시 산출물의 이력으로 보존한다.
+
+2026-09-12 D-147 연결부 보완에서는 문서 목록의 현행/이력 구분을 다시 대조했다. HANDOFF·계획서의 D-145 이전 route/기각안, 그래프 설계 문서의 옛 hash, 기능 동등성 표의 초기 PLANNED 상태를 현행으로 오인하지 않게 정리했다. Evidence 비교·Matrix 선택·종료 저장 계약은 D-147을 따르며, `AGENTS.md`의 별도 Explorer 미구현 문구도 이미 있는 D-128/D-139 구현과 맞췄다.
+
 - **지금 상태·다음 작업:** [HANDOFF](HANDOFF.md). 끝난 구현, 자동 회귀, 실제 운영 검증과 미착수를 구분한다.
 - **현재 계약:** README·설치 안내·architecture·Surface·UI 근거. 이전 요구와 충돌하면 코드를 확인하고 해당 계약을 정정한다.
 - **왜/언제 바뀌었는가:** decisions·development-log·CHANGELOG. 과거 항목을 최신 결과로 덮지 않는다.

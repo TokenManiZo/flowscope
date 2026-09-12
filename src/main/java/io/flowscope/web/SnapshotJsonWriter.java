@@ -24,6 +24,7 @@ import io.flowscope.core.SurfaceAnalyzer;
 import io.flowscope.core.Verdict;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
+import io.flowscope.core.parameter.ParameterCoordinates;
 import io.flowscope.core.parameter.ParameterExtraction;
 import io.flowscope.core.parameter.ParameterExtractor;
 import io.flowscope.core.parameter.ParameterKey;
@@ -382,7 +383,7 @@ public final class SnapshotJsonWriter {
         value.put("service", key.service());
         value.put("method", key.method());
         value.put("operation", key.operation());
-        value.put("location", key.location().name());
+        value.put("location", ParameterCoordinates.location(key.location()).name());
         value.put("canonicalPath", key.canonicalPath());
         value.put("stableKey", key.stableKey());
         return value;

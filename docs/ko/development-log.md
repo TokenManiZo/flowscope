@@ -1,5 +1,15 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · PR 연결부 보완(D-147), 검증 완료
+
+- `b168106`에서 PR #11/#12의 실제 Evidence 비교, Matrix 선택, 프로젝트 종료·샘플 교체를 재검증했다. 미지원 요청의 완료 오표시, UNKNOWN을 변경으로 표시한 diff, Matrix의 늦은 응답 오귀속, 종료 직전 미게시 레코드 누락과 records 잠금 역전을 회귀에서 확인했다.
+- `ParameterExtractor` 진단·`SnapshotJsonWriter` 공개 좌표, `requestDiff`/`ParameterRequestDiff`, `JudgmentMatrixView`와 관련 테스트를 보정했다. `FlowScopeExtension`은 별도 lifecycle monitor, 마지막 무조건 재분석, Web 샘플 전환의 성공/실패 전파를 적용했다.
+- 전체 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 550 tests(실패·오류 0, 선택형 하네스 2 skip), React 58 files/461 tests·typecheck 통과. 초기 전체 검사에서 기존 `ParameterMapPage` 테스트가 UNKNOWN을 TYPE_CHANGED로 기대해 실패했다. 동일 fixture를 유지하고 UNKNOWN 기대·TYPE_CHANGED 미표시로 정정한 최종 전체 결과다. 제한 환경의 npm 설치 대기로 중단한 실행은 성공 수치에 포함하지 않는다.
+- 패키지 Playwright `npm run e2e -- --retries=0 --reporter=line`: 15/15 passed(29.4s). 새 검사는 packaged sample의 실제 `/api/evidence`를 소비해 `VALUE_CHANGED`를 표시하고 파라미터 Matrix를 연다. 기존 Graph/Matrix/계정/프로젝트/XML/반응형 동선도 통과했다. 합성 입력·저장된 sample Evidence만 사용하며 외부 대상 성능을 측정하지 않는다.
+- 문서는 현행 PR 기능 대조표·설치 동선·인계와 이전 D-143 기각안의 대체 관계를 정리한다. 전역 불확실성 강등·새 판정 엔진·추측성 기능 추가는 하지 않았다.
+- 영향 파일: 공통 ParameterExtractor·SnapshotJsonWriter와 새 `SnapshotParameterEvidenceTest`, requestDiff/ParameterRequestDiff/ParameterMapPage 회귀, JudgmentMatrixView와 5개 선택 수명 회귀, FlowScopeExtension과 새 `FlowScopeExtensionLifecycleTest` 3건, InspectorLifecycle 실패 전환 회귀, `frontend/e2e/parity.spec.ts`. 문서는 README 한/영·설치 가이드·HANDOFF·architecture·Surface·D-147·UI 근거·PR 대조표·그래프 문서·문서 목록/동등성 표·CHANGELOG를 대조했고 `AGENTS.md`의 이미 구현된 별도 Explorer 설명을 정정했다.
+- JAR 31,937,006 bytes, SHA-256 `163072aff44850fb1d968363835c565f34d0b77eea35b0eb01d23f043b6d3232`. 수정 문서 19개의 로컬 링크 135개가 모두 존재했다. bundle은 최종 문서로 다시 조립하며 자기 hash를 내부에 기록하지 않는다. 실제 Burp/Windows 운영과 multipart 전체 문법 준수·실대상 precision/recall은 이번 검증 범위가 아니다.
+
 ## 2026-09-12 · 미출시 · PR #11·#12 최종 흡수와 수명 경계 보정(D-145)
 
 ### 원인과 수정

@@ -63,7 +63,7 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 Release JAR 사용자는 Maven이 필요하지 않다. Burp를 custom Java로 실행하면 class file 호환을 위해 Java 21 이상을 사용한다.
 
-Web `127.0.0.1:17777`의 **빠른 시작**은 `범위 → HUMAN → ZAP → Evidence 검토` 상태를 표시하고 첫 미완료 단계 하나만 연다. 열린 단계의 입력과 버튼만 처리하면 다음 단계로 이동하며, 완료된 설정을 다시 확인하려면 상단 단계 버튼을 누른다. `현재 단계로`를 누르면 첫 미완료 단계로 돌아온다. 수집 뒤에는 기본 **API·입력 차이**에서 endpoint·parameter별 선언/관측 차이와 산출물 파싱 상태를 먼저 확인하고, 선택한 API의 인가 관계는 **인가 그래프**와 판정 매트릭스에서 확인한다. `미관측`은 취약점이나 lane 실패 판정이 아니다.
+Web `127.0.0.1:17777` 상단의 **점검**을 누르면 `범위 → HUMAN → ZAP → Evidence 검토` 상태와 첫 미완료 단계가 열린다. 완료된 설정은 단계 버튼으로 다시 확인한다. 수집 뒤 **분석 → API·입력 차이**에서 선언/관측과 파싱 상태를 보고, **점검 Gap 그래프**에서 점검 우선순위/전체 관계 보기 탭을 선택한다. **권한 매트릭스**에는 판정·파라미터 커버리지·기존 권한 셀 세 탭이 있다. 미관측은 취약점이나 lane 실패 판정이 아니다.
 
 새 대상을 시작할 때는 상단 **새 진단 시작**에서 프로젝트 이름과 허가된 exact scope를 입력한다. 현재 진단이 있으면 FlowScope가 먼저 `~/.flowscope/projects/<이름--scope--시각>/project.flowscope.db`에 저장하고 새 빈 DB를 만든 뒤에만 화면과 scope를 전환한다. 저장 실패 시 현재 Evidence와 scope를 유지하며 상단에 원인을 표시한다. 상단 프로젝트 선택기에서 이전 DB를 다시 열 수 있다. 프로젝트에는 마스킹 Evidence·설정·완료 run·실행 원장·사람 검토가 들어가지만 raw Authorization/Cookie, 비밀번호, API key, provider token, 현재 메모리 Request Lab 원문은 저장하지 않으므로 재개한 진단의 인증 세션은 다시 준비해야 한다.
 

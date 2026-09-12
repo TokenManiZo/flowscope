@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react"
+import { act, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClientProvider } from "@tanstack/react-query"
 import type { ReactElement } from "react"
@@ -14,11 +14,12 @@ vi.stubGlobal("ResizeObserver", ResizeObserverStub)
 
 let current: Snapshot | undefined
 let queryError = false
+const refetchSnapshot = vi.fn()
 const saveReview = vi.fn(async (itemId: string, status: string, note: string) => ({ success: true, message: `saved ${itemId} ${status} ${note}` }))
 
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
-  useSnapshotQuery: () => ({ data: current, isLoading: current === undefined, isError: queryError, error: new Error("snapshot unavailable"), isStale: false }),
+  useSnapshotQuery: () => ({ data: current, isLoading: current === undefined, isError: queryError, error: new Error("snapshot unavailable"), isStale: false, dataUpdatedAt: 1000, refetch: refetchSnapshot }),
 }))
 vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api/endpoints")>(),
@@ -60,7 +61,7 @@ function renderView(ui: ReactElement) {
   return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={result.client}>{next}</QueryClientProvider>) }
 }
 
-beforeEach(() => { current = snapshot; queryError = false; saveReview.mockClear() })
+beforeEach(() => { current = snapshot; queryError = false; saveReview.mockClear(); refetchSnapshot.mockClear() })
 
 it("renders server summary, function rows and P/E/O chips without recomputing status", async () => {
   renderView(<JudgmentMatrixView />)
@@ -142,4 +143,75 @@ it("states loading, missing matrix, and query error without a local recalculatio
   rerender(<JudgmentMatrixView />)
   expect(screen.getByText("판정 매트릭스를 불러오지 못했습니다.")).toBeVisible()
   expect(screen.getByText("snapshot unavailable")).toBeVisible()
+})
+
+it.each(["success", "failure"])("does not carry a late review %s or pending state to a different cell", async outcome => {
+  const user = userEvent.setup()
+  let resolve!: (value: { success: boolean; message: string }) => void
+  let reject!: (error: Error) => void
+  saveReview.mockImplementationOnce(() => new Promise((accept, fail) => { resolve = accept; reject = fail }))
+  current = { ...snapshot, authorizationMatrix: { ...matrix, functions: [
+    { ...matrix.functions[0], status: "BFLA_REVIEW_REQUIRED", statusLabel: "수동 검토 필요" }, matrix.functions[1],
+  ] } }
+  renderView(<JudgmentMatrixView />)
+  const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
+  await user.click(within(table).getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
+  await user.type(screen.getByLabelText("검증 메모"), "B review")
+  await user.click(screen.getByRole("button", { name: "판정 저장" }))
+  await waitFor(() => expect(saveReview).toHaveBeenCalledWith("function-b", "UNRESOLVED", "B review"))
+  await user.click(within(table).getByRole("button", { name: "수동 검토 필요: A · GET /api/admin/export" }))
+  expect(screen.getByLabelText("검증 메모")).toHaveValue("")
+  expect(screen.getByRole("button", { name: "판정 저장" })).toBeEnabled()
+  await act(async () => { if (outcome === "success") resolve({ success: true, message: "old B saved" }); else reject(new Error("old B failed")) })
+  expect(screen.queryByText(/old B (saved|failed)/)).not.toBeInTheDocument()
+})
+
+it("preserves review drafts on traffic revisions and clears reused ids on dataset replacement", async () => {
+  const user = userEvent.setup()
+  current = { ...snapshot, datasetRevision: 1 }
+  const { rerender } = renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
+  await user.type(screen.getByLabelText("검증 메모"), "unsaved old project")
+  current = { ...current, revision: 5 }
+  rerender(<JudgmentMatrixView />)
+  expect(screen.getByLabelText("검증 메모")).toHaveValue("unsaved old project")
+  await user.click(screen.getByRole("button", { name: "기준 Evidence 상세 열기" }))
+  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  current = { ...current, revision: 6, datasetRevision: 2 }
+  rerender(<JudgmentMatrixView />)
+  expect(screen.queryByText("매트릭스 선택 좌표")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("검증 메모")).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
+  expect(screen.getByLabelText("검증 메모")).toHaveValue("")
+})
+
+it("starts a fresh review when the same cell has different server review Evidence", async () => {
+  const user = userEvent.setup()
+  const { rerender } = renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
+  await user.type(screen.getByLabelText("검증 메모"), "old Evidence note")
+  current = { ...snapshot, revision: 5, authorizationMatrix: { ...matrix, functions: [matrix.functions[0], { ...matrix.functions[1], reviewEvidenceIds: ["ev-new"] }] } }
+  rerender(<JudgmentMatrixView />)
+  expect(screen.getByLabelText("검증 메모")).toHaveValue("")
+  expect(screen.getByRole("region", { name: "사람 최종 판정" })).toHaveTextContent("Evidence 1건")
+})
+
+it("closes stale Evidence actions, retains the last matrix with a retry, and does not restore selection", async () => {
+  const user = userEvent.setup()
+  const { rerender } = renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
+  await user.click(screen.getByRole("button", { name: "기준 Evidence 상세 열기" }))
+  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  queryError = true
+  rerender(<JudgmentMatrixView />)
+  expect(screen.queryByText("매트릭스 선택 좌표")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("검증 메모")).not.toBeInTheDocument()
+  expect(screen.getByText("마지막 성공 데이터 · 현재 상태 아님")).toBeVisible()
+  expect(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" })).toBeDisabled()
+  await user.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
+  expect(refetchSnapshot).toHaveBeenCalledOnce()
+  queryError = false
+  rerender(<JudgmentMatrixView />)
+  expect(screen.queryByText("매트릭스 선택 좌표")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("검증 메모")).not.toBeInTheDocument()
 })

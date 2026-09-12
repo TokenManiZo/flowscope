@@ -1,5 +1,19 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-12 · D-147 PR 연결부 최종 검증
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 기준·회귀 재현 | `b168106`에서 미지원 본문/불완전 multipart, 공개 FORM 좌표, UNKNOWN/충돌 diff, Matrix 늦은 응답·dataset/연결 실패, 종료 직전 Evidence 저장·설치 records 잠금 문제를 실패 회귀로 확인했다. |
+| 전체 검증 | JDK 21.0.12.1 `mvn -o clean verify` BUILD SUCCESS. Java 550 tests, 실패·오류 0, 선택형 ZAP/Codex 하네스 2 skip. React typecheck·58 files/461 tests 통과. |
+| 패키지 브라우저 | `npm run e2e -- --retries=0 --reporter=line`: 15/15 passed, 29.4s. 기존 동선과 실제 sample Evidence API를 읽어 비교·파라미터 Matrix를 여는 새 동선을 검증했다. 외부 origin·능동 대상 요청·page/console error 검사 통과. |
+| 저장 무결성 | 실제 extension shutdown 호출 뒤 임시 SQLite 재열기에서 마지막 Evidence 보존. 실제 프로젝트 설치 메서드의 preparation 중 records monitor 획득 가능. 파일 경로 오류로 sample 보존 실패를 주입해 원 dataset 보존·호출자 실패를 확인했다. |
+| 문서 | 현행/이력 모순 정정, 수정 문서 19개의 로컬 링크 135개 모두 존재, `git diff --check` 통과. 외부 URL/heading anchor 검증이 아니다. |
+| 산출물 | JAR 31,937,006 bytes, SHA-256 `163072aff44850fb1d968363835c565f34d0b77eea35b0eb01d23f043b6d3232`. bundle은 최종 문서와 함께 조립하며 자기 해시를 내부에 기록하지 않는다. |
+| 미실행 | 실제 Burp 재로드·Windows·외부 대상 탐색/정확도 측정. opt-in 하네스 skip을 실환경 통과로 계산하지 않는다. |
+
+전체 검증의 첫 실행은 제한 환경 npm 설치 대기로 중단됐다. 이어진 실행에서 기존 UI 테스트가 UNKNOWN 타입을 확정 TYPE_CHANGED로 기대해 실패했으며, fixture를 바꾸지 않고 기대를 현행 의미로 정정한 뒤 최종 전체 검증이 통과했다. 위 수치는 이 최종 실행만을 가리킨다.
+
 ## 2026-09-12 · 미출시 · PR #11·#12 최종 작업면·Evidence 비교 흡수(D-145) gate
 
 | 항목 | 실제 확인 결과 |

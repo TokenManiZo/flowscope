@@ -63,7 +63,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | 노드 표시 제한 | 대규모 그래프가 털뭉치가 되지 않는가? | API View·Object View는 우선순위(suspicious·충돌·일부 관측·Evidence 수) 순 18개에서 시작해 `18개 더 보기 (N개 남음)`으로만 늘리고, Back은 그룹의 펼침 수를 유지한다. 숨긴 항목의 Evidence는 신원→API 선택에 남는다. | 이 제한을 의미 기반 공격면 클러스터링이나 전체 API 추정으로 설명하지 않는다. |
 | 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | 저장 위치·viewport를 현재 단계의 기본 lane 배치로 복구한다. 저장된 zoom은 0.4~2 범위로 정규화한다. | Evidence와 사용자 정책을 초기화하지 않는다. |
 | 판정·파라미터 매트릭스 | 어떤 신원·기능·객체·입력 좌표를 다음에 확인해야 하는가? | `#matrix`에 P/E/O 판정, 입력×대상×subject×source 파라미터 커버리지, 기존 권한 셀 세 탭을 둔다. 등록 계정은 설정 서비스, 미등록 신원은 실제 관측 서비스 안에서만 조합한다. | 다른 서비스 계정과 API를 조합하거나 status·digest로 후보를 승격하거나 추천 요청을 자동 전송하지 않는다. |
-| 기존 권한 매트릭스 | 같은 조합을 표로 빠르게 비교할 수 있는가? | identity/role × operation × resource cell에 source별 verdict와 갭을 정렬한다(둘째 탭). | 그래프만 보고 놓치기 쉬운 조합 차이를 숨기지 않는다. |
+| 기존 권한 매트릭스 | 같은 조합을 표로 빠르게 비교할 수 있는가? | identity/role × operation × resource cell에 source별 verdict와 갭을 정렬한다(셋째 탭). | 그래프만 보고 놓치기 쉬운 조합 차이를 숨기지 않는다. |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용됐는가? | 실제로 재사용된 ID/token 값의 시간순 의존성만 연결하고 메인 접근 그래프와 분리한다. | 단순히 시간상 앞뒤라는 이유로 관계를 만들거나 접근선 위에 보조 의존선을 겹쳐 출처를 혼동시키지 않는다. |
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 현재 규칙 후보와 사람 검토를 Evidence에 연결하고, 과거 LLM 기록은 별도 읽기 전용으로 분리한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |
 | 파싱 결과 | 어떤 요청이 어떤 좌표와 분류로 정규화됐는가? | source/identity/method/operation/resource/status에 class/disposition/repeat/Evidence ID를 함께 두고 행 선택을 operation 상세로 연결한다. 반복 접기는 표시만 줄이며 모든 Evidence ID는 상세에서 유지한다. | raw 인증정보를 표시하거나 숨긴 행을 저장소에서 삭제하지 않는다. |
@@ -322,6 +322,8 @@ desktop 중앙 영역은 긴 운영 화면의 명시적 scroll owner이고 Graph
 Graph inspector는 빈 안내를 사용자가 직접 열 수 있지만 선택하면 자동으로 열리고 닫으면 선택도 정리된다. Evidence inspector와 Request Lab은 현재 snapshot에 실제로 존재하는 event에만 연결된다. snapshot 교체 직후 effect를 기다리는 한 frame 동안에도 이전 ID나 이전 Request Lab fetch가 살아나지 않게 현재 membership을 render에서 동기적으로 확인한다. standalone Chromium은 이 UI 계약을 검증하지만 실제 Burp/target/HUMAN/ZAP 및 Request Lab 전송은 여전히 별도 runtime gate다.
 
 ## 23. PR #11 최종 작업면 흡수(D-145)
+
+D-147 보완: 서버가 분석하지 못한 본문과 UNKNOWN metadata를 확정 부재·변경으로 표시하지 않는다. Matrix 검토 폼은 cell ID·review Evidence·dataset에 결박되며, 연결 실패 시 마지막 성공 시각·재시도를 보여 주고 이전 상세·저장을 닫는다. 샘플 전환도 저장 성공 뒤에만 현재 작업을 교체한다. 종료 저장은 마지막 미게시 레코드까지 포함하도록 한 번 재분석하며 설치 잠금과 records 잠금을 분리한다.
 
 상단에는 route 11개를 평면 반복하지 않고 `분석 / 점검 / 기록` 세 그룹과 별도 상태 popover를 둔다. `점검`은 바로 실행 화면으로 가고, 분석·기록은 Radix menu로 모든 route를 보존한다. `#parameter-map`은 호환 bookmark만 남기고 `#graph`의 **점검 우선순위 / 전체 관계 보기** 탭으로 통합한다. `#matrix`도 판정/P·E·O, 파라미터 커버리지, 기존 권한 셀을 한 작업면의 세 탭으로 묶되 데이터 정본은 합치지 않는다.
 

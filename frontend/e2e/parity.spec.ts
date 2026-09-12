@@ -421,6 +421,42 @@ test("shows the judgment matrix with server recommendations and a server-bound r
   await expect(inspector).not.toContainText("E3")
 })
 
+test("compares actual packaged Evidence through the Gap inspector and opens the parameter matrix", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.goto(`${origin}/#graph`)
+  // Read the packaged server's sample Evidence. No fabricated snapshot or target request is used by this check.
+  const comparison = await page.evaluate(async () => {
+    const token = document.querySelector<HTMLMetaElement>('meta[name="flowscope-capability"]')!.content
+    const response = await fetch("/api/snapshot", { headers: { "X-FlowScope-Token": token } })
+    const snapshot = await response.json()
+    const gap = snapshot.surface.parameterGaps.find((item: { endpoint: { method: string; pathTemplate: string }; canonicalPath: string }) =>
+      item.endpoint.method === "GET" && item.endpoint.pathTemplate === "/api/orders/{id}" && item.canonicalPath === "/segments/2")
+    if (!gap) throw new Error("Packaged sample is missing its stored PATH comparison")
+    const operation = `${gap.endpoint.service} GET ${gap.endpoint.pathTemplate}`
+    const events = snapshot.events.filter((item: { op: string }) => item.op === operation)
+    const left = events.find((item: { path: string }) => item.path.endsWith("/101"))
+    const right = events.find((item: { path: string }) => item.path.endsWith("/202"))
+    if (!left || !right) throw new Error("Packaged sample is missing two different stored values")
+    return { gapId: gap.id as string, left: left.eventId as string, right: right.eventId as string }
+  })
+  const expand = page.getByRole("button", { name: /^전체 \d+개 보기$/ })
+  if (await expand.count()) await expand.click()
+  await page.getByRole("list", { name: "점검 우선순위 큐" }).locator(`[data-gap-id="${comparison.gapId}"]`).click()
+  const detail = page.getByRole("region", { name: "Parameter Gap 상세" })
+  await detail.getByRole("tab", { name: "요청 비교", exact: true }).click()
+  await expect(detail.getByLabel("기준 요청", { exact: true })).toContainText(comparison.left)
+  await detail.getByLabel("기준 요청", { exact: true }).selectOption(comparison.left)
+  await detail.getByLabel("비교 요청", { exact: true }).selectOption(comparison.right)
+  const diff = detail.getByRole("region", { name: "구조화 요청 비교" })
+  await expect(diff).toContainText("VALUE_CHANGED")
+  await expect(diff.getByRole("region", { name: "요청 비교 표" })).toContainText("/segments/2")
+
+  await navigate(page, "권한 매트릭스", "권한 매트릭스")
+  await page.getByRole("tab", { name: "파라미터 커버리지", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "파라미터 커버리지", exact: true })).toBeVisible()
+  await expect.poll(async () => page.getByRole("table").count()).toBeGreaterThan(0)
+})
+
 test("opens Request Lab as a two-column disabled standalone draft", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await openDashboard(page); await navigate(page, "Evidence", "Evidence")

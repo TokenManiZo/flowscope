@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — comparison, selection, and persistence integration fixes (D-147, 2026-09-12)
+
+- Unsupported bodies and malformed multipart requests now report incomplete extraction. Unknown metadata no longer produces confirmed type/shape/count changes; Evidence and Surface use the same public form locations.
+- Late review responses and pending state stay with their selected cell and dataset. A failed snapshot closes detail actions while preserving the last successful matrix with a retry control.
+- The final SQLite checkpoint includes Evidence accepted immediately before shutdown. Dataset installation avoids holding the capture monitor across callbacks, and a failed sample-preservation operation reaches the Web caller as a failure.
+
 ## Unreleased — final PR #11/#12 workspace and Evidence comparison integration (D-145, 2026-09-12)
 
 - Grouped top navigation now exposes analysis, inspection, and record routes. Graph combines priority Gap and full relationship views; Matrix combines P/E/O judgment, parameter coverage, and existing authorization cells without creating a second server verdict.

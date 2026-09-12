@@ -14,7 +14,7 @@ it("compares structured metadata side by side and never reads HTTP fields", () =
   expect(screen.getByRole("columnheader", { name: "기준 요청 a" })).toBeVisible()
   expect(screen.getByRole("columnheader", { name: "비교 요청 b" })).toBeVisible()
   expect(screen.getByText(/PRESENCE_CHANGED/)).toHaveTextContent("SHAPE_CHANGED")
-  expect(screen.getByText(/PRESENCE_CHANGED/)).toHaveTextContent("TYPE_CHANGED")
+  expect(screen.getByText(/PRESENCE_CHANGED/)).not.toHaveTextContent("TYPE_CHANGED")
   expect(screen.getByText(/200 · UNDECIDED/)).toBeVisible()
   expect(screen.getByText(/403 · DENY/)).toBeVisible()
   expect(screen.getByText(/STATUS_CHANGED/)).toHaveTextContent("VERDICT_CHANGED")
@@ -44,4 +44,15 @@ it("does not turn a missing observation into absence when completeness was not r
   expect(screen.getByText(/REQUEST_NOT_RETAINED · 전체 추출 완전성/)).toBeVisible()
   expect(screen.queryByText("ABSENT_OBSERVED_CONTEXT")).not.toBeInTheDocument()
   expect(screen.queryByText(/PRESENCE_CHANGED/)).not.toBeInTheDocument()
+})
+
+it("withholds details from conflicting duplicate observations instead of selecting the last one", () => {
+  const parameter = { key, presence: "PRESENT" as const, shape: "SCALAR" as const, valueType: "STRING" as const, occurrenceCount: 1, digest: "a".repeat(64), byteLength: 3, confidence: "OBSERVED", contextSignature: "ctx-original" }
+  const context = { eventId: "a", service: key.service, method: "PATCH", operation: key.operation, identity: "A", role: "USER", source: "HUMAN", status: 200, verdict: "UNDECIDED", complete: true, retention: "RETAINED" as const, parameters: [parameter, { ...parameter, digest: "b".repeat(64), byteLength: 999, contextSignature: "ctx-conflict" }] }
+  render(<ParameterRequestDiff left={context} right={{ ...context, eventId: "b", parameters: [parameter] }} />)
+  expect(screen.getByText("CONFLICTING_DUPLICATE_KEY")).toBeVisible()
+  expect(screen.queryByText("길이: 999 bytes")).not.toBeInTheDocument()
+  expect(screen.queryByText("문맥: ctx-conflict")).not.toBeInTheDocument()
+  expect(screen.getByText("길이: UNKNOWN bytes")).toBeVisible()
+  expect(screen.getByText("길이: 3 bytes")).toBeVisible()
 })

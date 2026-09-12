@@ -36,6 +36,8 @@ Explorer의 Evidence-bound 산출물 분석 ─▶ Declaration Fact ─┤
 
 ## 3. 범용 추출 계약
 
+D-147에서 비어 있지 않은 미지원 본문은 `UNSUPPORTED_REQUEST_BODY`, 경계·파트가 손상된 multipart는 `INVALID_MULTIPART`로 남긴다. 이런 요청은 전문을 보존했더라도 complete가 아니므로 빠진 필드를 부재로 확정하지 않는다. 정상적인 지원 본문의 비교는 유지한다. Evidence API와 Surface는 같은 공개 location(`FORM_BODY`, `MULTIPART_BODY` 포함)을 사용한다. 요청 비교에서 UNKNOWN metadata는 확정된 타입·구조·발생 수 변경으로 표시하지 않는다.
+
 ### 실제 HTTP 관측
 
 - query 이름과 값 shape

@@ -103,9 +103,9 @@ export function diffParameterContexts(left: ParameterContext, right: ParameterCo
     else {
       if (ls.presence !== rs.presence) changes.push("PRESENCE_CHANGED")
       if (ls.presence !== "ABSENT_OBSERVED_CONTEXT" && rs.presence !== "ABSENT_OBSERVED_CONTEXT") {
-        if (ls.shape !== rs.shape) changes.push("SHAPE_CHANGED")
-        if (ls.valueType !== rs.valueType) changes.push("TYPE_CHANGED")
-        if (ls.occurrenceCount !== rs.occurrenceCount) changes.push("OCCURRENCE_CHANGED")
+        if (ls.shape !== "UNKNOWN" && rs.shape !== "UNKNOWN" && ls.shape !== rs.shape) changes.push("SHAPE_CHANGED")
+        if (ls.valueType !== "UNKNOWN" && rs.valueType !== "UNKNOWN" && ls.valueType !== rs.valueType) changes.push("TYPE_CHANGED")
+        if (ls.occurrenceCount !== null && rs.occurrenceCount !== null && ls.occurrenceCount !== rs.occurrenceCount) changes.push("OCCURRENCE_CHANGED")
         if (ls.digest && rs.digest && ls.digest !== rs.digest) changes.push("VALUE_CHANGED")
         if (ls.shape === "UNKNOWN" || rs.shape === "UNKNOWN" || ls.valueType === "UNKNOWN" || rs.valueType === "UNKNOWN" || ls.occurrenceCount === null || rs.occurrenceCount === null || !ls.digest || !rs.digest) changes.push("UNKNOWN")
       }

@@ -141,7 +141,7 @@ RunExecutionLedger {
 
 논리 프로젝트 schema v4는 마스킹된 RequestRecord, digest별 한 번 저장되는 GZIP 전문 blob, provenance가 있는 RouteCandidate, 계정·세션 지문 연결, role/requirement/owner 정책, operation별 traffic override, classifier version, 과거 `LegacyAssessment`와 `ValidationDecision`, Evidence-bound 사람 감사 기록, **완료된 정확한 run**과 bounded `RunExecutionLedger`를 저장한다. 실행 원장은 query·header·body·raw exception 없이 method·service·path와 typed outcome만 보존하며 실패를 RequestRecord/Evidence로 승격하지 않는다. 완료 run은 source만 저장하지 않고 `source/runId/detail/orchestrator/tool/phase/account/completedAt/evidenceIds/responseCount/coverageCount`를 묶는다. 기본 내구 저장은 SQLite storage schema v3의 기존 관계형 테이블, `completed_runs`, `run_attempts`이며 JSON schema v4 codec을 공통 검증 경계로 재사용한다. `.flowscope.db`를 처음 저장하거나 열면 이후 revision을 30초 checkpoint로 합쳐 임시 DB에 transaction으로 쓴 뒤 atomic replace하고 정상 unload 직전 마지막 저장을 시도한다. `.flowscope.json` schema v1/v2는 source-only `completed_lanes`를 완료 자격으로 복원하지 않으며 schema v3 exact completed run은 유지한 채 실행 원장은 빈 값으로 마이그레이션한다. v4 내보내기는 exact completed run과 중복 표시용 `completed_lanes`의 일치를 검증한다. raw HUMAN broker, ZAP login, Explorer credential은 어느 형식에도 저장하지 않는다. 복원기는 payload 하나당 최대 64MiB, 서로 다른 복원 전문 합계는 설정값 또는 최소 64MiB 안에서 streaming GZIP 해제하며 digest/size/retention을 검증하고 동일 digest는 한 번만 복원한다. 실제 capture의 `FULL` 상한은 일반 textual 1MiB와 발견용 응답 4MiB로 구분된다. metadata-only 항목은 압축 blob을 허용하지 않는다. 로드한 assessment/validation은 기존 ID와 생성 시각을 유지하는 읽기 전용 기록이며 현재 판정으로 재승인하지 않는다. 분류는 현재 결정론 classifier로 재계산한다. 파일은 100MiB 상한과 가능한 POSIX 0600을 적용한다. 이 SQLite 계층은 현재 20,000건 메모리 pipeline의 내구 snapshot이지 append-only server event store가 아니다(D-049/D-050/D-052/D-054/D-059/D-073/D-075/D-099/D-101/D-116).
 
-D-145의 정상 unload는 새 capture·import·rebuild를 먼저 차단하고, 현재 records가 마지막 게시 분석보다 새로우면 worker에서 한 번 재구축한 뒤 SQLite checkpoint를 시도한다. 프로젝트 설치와 shutdown flag 전환은 같은 records monitor에서 선후를 원자적으로 확정하므로, unload가 먼저 시작한 후보 데이터셋은 적용하지 않고 설치가 먼저 시작했으면 적용 완료 뒤 unload가 저장한다. 10초 안에 끝나지 않거나 저장이 실패하면 기존 원자 저장본을 유지하고 오류를 기록한다. 이를 전원 장애 내구성으로 확대 해석하지 않는다.
+D-147의 정상 unload는 새 수집을 닫은 뒤 마지막 records를 한 번 재분석해 SQLite checkpoint를 시도한다. capture 직후 rebuild 예약 전에 종료돼도 그 레코드를 보존한다. 프로젝트 설치와 shutdown flag 전환은 별도 lifecycle monitor에서 순서를 정하고, records monitor는 짧은 캡처·복사·교체 구간에만 사용해 완료 callback과 잠금 순서가 역전되지 않게 한다. Web 샘플 API는 현재 진단 저장·교체 완료 뒤 성공을 반환하고, Swing 버튼은 비동기 실행을 유지한다. 저장 실패와 전원 장애 내구성은 구분한다.
 
 D-140부터 기본 Web 수명주기는 사용자별 `~/.flowscope/projects/` 아래 진단 디렉터리와 `project.flowscope.db`다. 새 진단은 현재 snapshot 저장과 새 빈 DB 생성이 모두 성공한 뒤에만 exact scope와 메모리 상태를 교체한다. 분석 결과 갱신용 `revision`과 실제 데이터셋 교체용 `datasetRevision`을 분리하며, raw vault·HUMAN/Explorer/ZAP 비밀은 프로젝트에 저장하지 않고 교체 시 폐기한다. 상단의 저장 상태는 마지막 checkpoint 결과를 나타내며 디스크 flush나 운영체제 전원 장애에 대한 하드웨어 내구성 보장은 아니다(D-140).
 
@@ -207,6 +207,8 @@ route inventory는 다음 공통 파이프라인을 사용한다(D-069).
 어댑터는 네트워크를 사용하거나 scope·관측 여부를 결정하지 않는다. 공통 코어만 unsupported scheme과 범위 밖 참조를 버리고, 명시적 method 근거가 없으면 `UNKNOWN`으로 유지하며, `service + method/UNKNOWN + normalized path`로 병합한다. 관측된 `GET`과 같은 path의 미관측 `UNKNOWN`은 서로 다른 후보이고, `UNKNOWN`을 관측으로 승격하지 않는다. HTML은 로컬 HTML5 DOM 파서로 깨진 markup과 `<base>`를 처리하고, OpenAPI는 대상 응답에서 관측한 JSON/YAML만 읽으며, XML은 제품명 없는 명시 URL/method 필드만 XXE 차단 DOM으로 읽는다. 추출된 후보는 관측 분석 파이프라인에 다시 넣지 않는다.
 
 ### 4.4 Endpoint·Parameter Surface Delta
+
+D-147: 공통 추출기의 미지원 본문·불완전 multipart 진단은 Surface와 Evidence API의 complete 판단에 함께 반영한다. on-demand Evidence location은 공통 `ParameterCoordinates.location` 변환을 사용하며, 클라이언트 diff는 알려진 양쪽 metadata만 변경으로 확정한다. Matrix 선택 수명은 datasetRevision, 검토 폼 수명은 cell ID와 review Evidence 집합이다.
 
 `SurfaceAnalyzer`는 Pipeline의 판정 입력을 바꾸지 않는 별도 projection이다.
 

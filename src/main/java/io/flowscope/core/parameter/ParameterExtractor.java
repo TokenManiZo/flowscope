@@ -108,6 +108,7 @@ public final class ParameterExtractor {
                 else if (type.contains("application/x-www-form-urlencoded")) form(body, Location.FORM);
                 else if (type.contains("json") || body.stripLeading().startsWith("{") || body.stripLeading().startsWith("[")) json(body);
                 else if (type.contains("xml") || body.stripLeading().startsWith("<")) xml(body);
+                else diagnostic("UNSUPPORTED_REQUEST_BODY", 1);
             }
             return result();
         }
@@ -217,10 +218,12 @@ public final class ParameterExtractor {
             String boundary = boundaryMatch.group(1) == null ? boundaryMatch.group(2) : boundaryMatch.group(1);
             String delimiter = "--" + boundary;
             int current = body.indexOf(delimiter);
+            if (current < 0) { diagnostic("INVALID_MULTIPART", 1); return; }
             while (current >= 0) {
                 if (!visit()) return;
                 int start = current + delimiter.length();
                 if (body.startsWith("--", start)) return;
+                if (!body.startsWith("\r\n", start)) { diagnostic("INVALID_MULTIPART", 1); return; }
                 int next = body.indexOf("\r\n" + delimiter, start);
                 if (next < 0) { diagnostic("INVALID_MULTIPART", 1); return; }
                 String part = body.substring(start, next);
@@ -234,14 +237,18 @@ public final class ParameterExtractor {
                     }
                     var partType = PART_TYPE.matcher(headers);
                     boolean textField = !partType.find() || partType.group(1).trim().toLowerCase(Locale.ROOT).startsWith("text/");
+                    boolean namedPart = false;
                     for (String header : headers.split("\r\n")) {
                         if (!header.toLowerCase(Locale.ROOT).startsWith("content-disposition:")) continue;
                         var name = NAME.matcher(header);
-                        if (textField && !FILE.matcher(header).find() && name.find()) {
+                        if (!name.find()) continue;
+                        namedPart = true;
+                        if (textField && !FILE.matcher(header).find()) {
                             add(Location.MULTIPART_FIELD, "/" + pointer(name.group(1)), Shape.SCALAR, ValueType.STRING, part.substring(split + 4));
                         }
                     }
-                }
+                    if (!namedPart) diagnostic("INVALID_MULTIPART", 1);
+                } else diagnostic("INVALID_MULTIPART", 1);
                 current = next + 2;
             }
         }

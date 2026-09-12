@@ -7,7 +7,7 @@ import { GraphInspectorPanel } from "@/features/graph/GraphInspectorPanel"
 import { targetSnapshot } from "@/test/fixtures"
 import { createTestQueryClient } from "@/test/render"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
-import { loadSample, openProject } from "@/lib/api/endpoints"
+import { loadSample, openProject, startProject } from "@/lib/api/endpoints"
 
 const event: EventRecord = { eventId: "first", op: "GET /orders/{id}", resource: "order:1", idn: "alice", source: "human", method: "GET", path: "/orders/1", status: 200, fp: "fp", role: "USER", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "first", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["first"], objects: [], verdict: "allow" }
 const second = { ...event, eventId: "second", op: "PATCH /profiles/{id}", resource: "profile:2", clusterEvidenceIds: ["second"] }
@@ -113,7 +113,7 @@ it.each([loadSample, () => openProject("demo")])("scrubs an open editor on an ex
   await waitFor(() => expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument())
 })
 
-it("keeps an open editor when the requested dataset replacement fails", async () => {
+it.each([loadSample, () => openProject("missing"), () => startProject({ name: "next", scope: "https://api.example.test" })])("keeps an open editor when the requested dataset replacement fails", async replace => {
   let replacementSignals = 0
   window.addEventListener("flowscope:dataset-replacing", () => { replacementSignals += 1 }, { once: true })
   vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
@@ -125,7 +125,7 @@ it("keeps an open editor when the requested dataset replacement fails", async ()
   await userEvent.clear(editor)
   await userEvent.type(editor, "unsaved operator edit")
 
-  await expect(openProject("missing")).rejects.toThrow("project switch failed")
+  await expect(replace()).rejects.toThrow("project switch failed")
 
   expect(replacementSignals).toBe(0)
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeVisible()
