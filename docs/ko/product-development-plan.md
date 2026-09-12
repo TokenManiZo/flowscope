@@ -150,6 +150,45 @@ D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완
 - 실측(naver.com, 비로그인): 97초, HTTP 시도 10건 중 응답 2건(시작 페이지·favicon), scope 밖 차단 8건(pstatic.net JS), 도구 호출 43건, 선언 0건. 검색 form·API·정적 JS가 전부 다른 호스트라 exact scope 하나로는 탐색이 시작 페이지에서 끝난다.
 - 개선 후보: ① `unresolved`의 scope 밖 호스트를 사용자가 승인해 scope에 추가하는 UI 흐름(자동 확장 없음). ② 같은 호스트가 한 번 차단되면 후속 요청을 서버가 미리 거부하고 모델에 알려 헛도는 호출을 줄인다. ③ 시도 수에서 정책 차단을 분리해 보고한다(`시도 10 · 차단 8 · 응답 2`). ④ 서버가 저장된 응답에서 scope 안 링크·form·script URL을 뽑아 frontier 원장을 만들고 "남은 frontier"를 완료 조건과 화면에 쓴다. ⑤ favicon·이미지 같은 비산출물 요청을 지침에서 제외한다.
 
+## 다음 우선순위 · LLM Explorer 역량 확장 (2026-09-13, 계획·승인 대기)
+
+**문제의식(사용자):** 현재 Explorer는 도구 3종(`flowscope_http_request`, `flowscope_artifact_*`, `flowscope_record_discoveries`)과 64줄 지침으로 "페이지 fetch + endpoint 나열"만 시킨다. LLM이 잘하는 장문 상관분석·차등추론·계획·설명·구조화 추출을 거의 쓰지 못한다. 실측(naver 비로그인 97초)에서도 시도 10·응답 2·선언 0으로 첫 페이지에서 끝났다.
+
+**대원칙(바꾸지 않음):** 확장은 LLM의 **분석·발견 역량**만 넓히고 **공격 역량**은 넓히지 않는다. D-128 유지 — Explorer는 관측·선언만 하고 취약점 verdict·심각도·확률을 만들지 않는다. PUT/PATCH/DELETE·업로드·brute force·race·exploit payload·외부 callback은 계속 금지. 값·인증정보 비노출, exact-scope 서버 강제, scope 자동 확장 금지도 유지.
+
+**LLM 역량 ↔ FlowScope 매핑**
+| LLM이 잘하는 것 | 현재 | 확장 후 |
+|---|---|---|
+| 장문 상관분석(JS 번들·source map·OpenAPI·GraphQL) | artifact 도구로 부분 사용 | source map·GraphQL introspection·spec 자동 해석 추가 |
+| 차등추론(계정 A·B·비로그인 응답 차이) | 계정별 요청만, 비교 지시 없음 | 서버 계산 diff + 모델 해석(선언, 판정 아님) |
+| 계획·frontier 우선순위 | 전부 모델 기억 | 서버 frontier 원장 + "남은 N건" |
+| 구조화 추출 | endpoint·parameter만 | 시퀀스·workflow·parameter 예시 형식(값 아님) |
+| 자연어 설명 | summary 1줄 | 단계별 근거·계정별 관측 요약(비집계) |
+| 다음 점검 후보 제안 | 없음 | Evidence 결박 candidate 선언(verdict 아님, PR#11 Gap에 연결) |
+
+**Phase 1 — 있는 것에서 더 뽑기(새 대상 요청 권한 없음)**
+- 지침 확장: 계정별 차등 관측 지시, frontier 규율, 로그인→행동 시퀀스 관측, 선언 parameter의 형식·예시(값 아님) 기록.
+- 출력 스키마 확장: 계정별 관측 요약, 시퀀스/workflow 노트, "다음 점검 후보"(Evidence 결박 선언, 명시적 non-verdict), unresolved에 실행 가능한 호스트 목록.
+- `activities` 피드를 프로젝트에 영속하고 화면에 노출(위 "실행 활동 상세 보기" 1단계와 합침).
+- 모델·reasoning effort를 명시해 재현성 확보. 승인 자동응답을 로그로 남김.
+- 완료 gate 보강: 응답 1건이 아니라 frontier 소진·계정 커버리지를 완료 근거에 포함.
+- 검증: React·Java 단위 회귀, 패키지 Playwright, opt-in 실물 provider 1건.
+
+**Phase 2 — 새 분석 도구(대상 변형 권한 없음)**
+- `flowscope_compare_identities`: 서버가 저장된 Evidence로 URL 집합의 계정별 응답 차이(status·크기·구조, 값 아님)를 계산하고 모델이 해석한다.
+- `flowscope_note_candidate`: Evidence에 결박된 "다음 점검 후보"를 기록한다. PR#11 Gap·판정 매트릭스가 소비하며 verdict가 아니다.
+- 저장된 spec 선언: fetch한 OpenAPI/Swagger/GraphQL introspection에서 endpoint·parameter를 선언으로 저장(관측과 분리).
+- scope 확장 요청 도구: 모델이 scope 밖 호스트를 후보로 제안하고 사용자가 UI에서 승인(자동 확장 없음).
+- 차단 호스트 조기 거부: 한 번 scope 밖으로 막힌 호스트는 서버가 즉시 거부·통보해 헛요청을 줄인다.
+- 검증: Java 회귀(마스킹·상한·scope·비집계 경계), React·Playwright.
+
+**Phase 3 — 발견 입력 넓히기**
+- source map 파싱, GraphQL introspection(읽기 POST), `robots.txt`·`sitemap.xml`·`/.well-known/` 수집, OpenAPI/Swagger 자동 탐지.
+- 시도 수에서 정책 차단을 분리 보고(`시도 N · 차단 M · 응답 K`), 비산출물(favicon·이미지) 요청 지침 제외.
+- run 벽시계 상한과 계정별 예산.
+
+**바꾸지 않는 경계(재확인):** verdict·심각도·확률 생성 금지, 위험 method·공격 payload 금지, 값·비밀 비노출, exact-scope 서버 강제, scope 자동 확장 금지, 원문·인증정보 비영속. 이 확장은 이 경계 안에서 관측·선언·설명의 폭과 깊이만 늘린다.
+
 ## 이전 버전별 계획·검증 이력
 
 아래 “현재 상태/완료”는 각 beta 작성 당시의 상태다. 삭제된 MCP·Explorer·Judge의 남은 실행 gate는 현행 작업에서 폐기됐으며, 현재 후속 작업은 위 우선순위와 [HANDOFF](HANDOFF.md)만 따른다. 과거 테스트 결과는 변경하지 않는다.
