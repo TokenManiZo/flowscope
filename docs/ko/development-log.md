@@ -1,13 +1,14 @@
 # FlowScope 개발 기록
 
-## 2026-09-12 · main 반영·beta.46 테스트 Release 게시 준비
+## 2026-09-12 · main 반영·beta.46 팀원 테스트 배포 준비
 
 - 사용자 요청에 따라 `codex/react-ui-integration`에만 올라가 있던 37커밋을 `main`으로 fast-forward했다. 제품 코드 기준은 `8fe8527`이다.
-- D-151에서 검증한 JAR·설치 번들의 바이트를 유지해 beta.46 사전 릴리스 초안에 업로드하고, GitHub asset digest를 로컬 SHA-256과 비교했다. 원격 main CI 완료 뒤 공개한다.
+- D-151에서 검증한 JAR을 beta.46 사전 릴리스 초안에 업로드하고, GitHub asset digest를 로컬 SHA-256과 비교했다. 번들은 후속 검증 기록과 팀원 가이드가 추가돼 재조립한다. JAR 제품 바이트는 유지한다.
 - 배포 기록은 HANDOFF·문서 현황·검증 기록·변경 이력에 남긴다. 멘토 보고서는 소스와 자산에서 제외한다. 실제 Burp/Windows/native Linux 운영 미실측을 배포 완료와 혼동하지 않는다.
 - 첫 원격 CI `34689208640`은 React 471건과 스크립트 검사를 통과했지만 Java 570건 중 `ZapCampaignRegressionTest` 2건이 실패했다. 취소 회귀는 mock handler 진입을 FlowScope scan ID 등록 완료로 간주했고, 계정 순차 실행 회귀는 200회×10ms 뒤 진행 중인 정상 상태를 실패 상태와 비교했다. 테스트가 실제 `scan_id` 게시와 terminal 상태를 monotonic 최대 10초까지 기다리게 바꾸되, stop·capability·run 정리와 lane 순서·결과 단언은 그대로 유지했다. 제품 timeout이나 캠페인 로직을 바꾸지 않았다.
 - 집중 검증 `compiler:testCompile surefire:test -Dtest=ZapCampaignRegressionTest`는 16/16 통과했다. 이 취소 회귀는 소유 scan ID가 확인된 뒤의 취소를 검사한다. 시작 응답/ID를 아직 받지 못한 상태의 실제 취소 경합을 해결했다는 주장은 하지 않는다.
-- 후속 로컬 전체 `mvn -o clean verify`가 2026-09-12 19:53 KST에 통과했다. Java 570건(실패·오류 0, opt-in 2 skip), React 59파일·471건·타입검사, JAR/bundle guard 통과. 원격 재검증은 다음 단계다.
+- 후속 로컬 전체 `mvn -o clean verify`가 2026-09-12 19:53 KST에 통과했다. Java 570건(실패·오류 0, opt-in 2 skip), React 59파일·471건·타입검사, JAR/bundle guard 통과. `570d576`의 원격 CI `34689661662`도 8분 22초의 verify job과 Bash/Windows 구문 검사를 통과했다. 반복 package의 JAR·번들 해시 비교까지 성공했다.
+- 팀원 설치 요청으로 `docs/ko/team-quick-start.md`를 추가하고 README·상세 시작 가이드에서 바로 연결했다. 필요한 도구, OS별 helper/doctor, JAR 교체, key 생성 후 재로드 순서, 첫 진단과 오류별 확인 위치를 기존 코드·스크립트와 대조했다. 자동 설치기나 실행 경로를 추가하지 않았으며 기존 assembly가 `docs/**/*.md`를 포함하므로 가이드도 bundle에 포함된다.
 
 ## 2026-09-12 · D-151 전 작업면 snapshot 초안·전송 수명 통일 완료
 

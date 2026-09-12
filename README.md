@@ -67,6 +67,8 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ## 5분 시작 — 이 순서만 따라 하세요
 
+팀원에게 처음 전달한다면 [팀원용 첫 실행 가이드](docs/ko/team-quick-start.md)를 먼저 보세요. 다운로드 파일 선택, Windows/macOS 준비 순서, 환경 점검과 JAR 교체 방법을 한곳에 정리했습니다.
+
 ### 처음 한 번만 준비
 
 1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.46-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.46 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.

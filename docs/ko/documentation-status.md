@@ -1,5 +1,7 @@
 # 문서 정합성·갱신 기준
 
+팀원 테스트 배포 기준: `570d576`의 원격 CI는 전체 빌드·JAR/번들 검사·동일 러너 재현성·Bash·Windows 구문 검사를 통과했다. [팀원 첫 실행](team-quick-start.md)은 다운로드 bundle 사용자용이며 README와 설치 가이드에서 연결한다. 아래의 미출시 표현과 push/Release 미실행 문장은 각 개발 시점의 이력이다. 공개 상태와 자산은 [beta.46 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.46)에서 확인한다.
+
 최종 대조: 2026-09-12 D-151 전 작업면 snapshot 초안·전송 수명 통일. 현재 미출시 beta.46 소스는 operation별 마스킹 Evidence/retention 페이지, 모든 Evidence 작업면의 일시 snapshot 실패 중 선택·검토 메모·Request Lab 초안 보존, 실패 전 시작 전송의 동일 문맥 결과 귀속, D-149 종료·서비스·샘플 경계를 포함한다. D-146의 같은 서비스 추천·OBSERVED 확정 경계와 D-147의 불확실성 처리를 유지한다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약도 유지한다. 자동·패키지 검증과 실제 Burp 미검증 경계는 beta-validation·HANDOFF를 따른다.
 
 ## 1. 무엇을 어디서 읽는가
@@ -62,6 +64,7 @@ D-151 최신 대조: D-150의 snapshot 실패 draft 보존을 판정·파라미�
 | [README.md](../../README.md) | 현행 계약 | 현재 결과 의미·입력/보존/분석 상한, D-150 operation Evidence page·일시 실패 draft 수명 |
 | [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어 현행 계약과 동일한 operation Evidence page·Request Lab 수명·실행 경계 |
 | [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | D-150 Evidence page·draft 수명, beta.46 bundle/doctor, Docker Chromium ZAP·Codex Explorer 경계 |
+| [docs/ko/team-quick-start.md](team-quick-start.md) | 사용자 가이드 | 팀원용 ZIP 선택·Burp/Docker 준비 순서·OS별 doctor·JAR 교체·첫 진단 |
 | [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Evidence/Request Lab·Explorer·ZAP 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |

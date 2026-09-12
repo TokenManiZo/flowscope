@@ -1,10 +1,11 @@
 # FlowScope 팀 인계 정본
 
-## 2026-09-12 · main 반영 완료·beta.46 테스트 Release 게시 준비
+## 2026-09-12 · main 반영·beta.46 팀원 테스트 배포 기준
 
 - 사용자 요청으로 작업 브랜치의 완료 커밋 37개를 원격 `main`에 fast-forward했다. 배포 코드 기준은 `8fe852729f21c12cdfc27af1b9e35ca8117c46ae`이며 강제 푸시는 하지 않았다.
-- `v1.2.0-beta.46` 사전 릴리스 초안에 검증된 JAR, 설치 번들, `SHA256SUMS.txt`를 업로드했다. GitHub가 반환한 JAR·번들 digest가 로컬 파일과 일치한다. 원격 CI의 전체 검증 완료 뒤 공개한다.
-- 첫 원격 CI는 ZAP mock 회귀 2건의 대기 전제로 실패했다. scan ID 등록·terminal 상태를 최대 10초까지 기다리도록 테스트만 수정했다. 집중 16/16과 로컬 전체 `mvn -o clean verify`(Java 570, 실패·오류 0, opt-in 2 skip / React 471)가 통과했고 원격 재검증을 기다린다. 실제 시작 응답 이전 취소 경합은 이 검증 범위에 포함하지 않는다.
+- `v1.2.0-beta.46` 배포 자산은 검증된 JAR, 설치 번들, `SHA256SUMS.txt`다. 제품 코드는 `8fe8527`, 테스트 보정은 `570d576` 기준이다. JAR SHA-256은 D-151과 같으며, 번들에는 팀원 시작 가이드를 추가한다.
+- 첫 원격 CI는 ZAP mock 회귀 2건의 대기 전제로 실패했다. scan ID 등록·terminal 상태를 최대 10초까지 기다리도록 테스트만 수정했다. 집중 16/16과 로컬 전체 `mvn -o clean verify`(Java 570, 실패·오류 0, opt-in 2 skip / React 471)가 통과했다. `570d576`의 [원격 CI 34689661662](https://github.com/choewonwoo1817/testflowscope/actions/runs/34689661662)는 전체 빌드·JAR/번들·재현성·Bash·Windows 구문 검사까지 성공했다. 실제 시작 응답 이전 취소 경합은 이 검증 범위에 포함하지 않는다.
+- 팀원은 [첫 실행 가이드](team-quick-start.md)에서 ZIP 선택 → Burp listener → 필요한 경우 Docker helper → JAR 로드 → doctor → 진단 시작 순서로 준비한다. 대상 계정과 로컬 도구 로그인은 각 PC에서 준비한다. 가이드는 자동으로 bundle에 포함된다.
 - 멘토 보고서 `mentor-progress-report.md`는 미추적 로컬 파일로 보존하고 Git·JAR·번들·Release 자산에서 제외했다. 아래 D-151 이전의 `push/Release 없음`은 당시 작업 이력이다.
 
 ## 2026-09-12 · D-151 전 작업면 snapshot 초안·전송 수명 통일·전체 검증 완료

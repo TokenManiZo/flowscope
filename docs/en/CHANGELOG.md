@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0-beta.46 team test prerelease — 2026-09-12
+
+- Includes the D-128–151 changes, PR #11/#12 workspace integration, and project/Evidence lifetime fixes listed below.
+- Provides the JAR, Docker/setup bundle, SHA-256 list, and a [Korean teammate quick-start guide](../ko/team-quick-start.md).
+- Remote CI for `570d576` passed the full build, package checks, same-runner reproducibility, and Bash/Windows script checks. Actual Burp outage and Windows/native Linux runtime checks remain separately documented.
+
 ## Unreleased — consistent snapshot draft and send lifetime across workspaces (D-151, 2026-09-12)
 
 - Judgment, parameter, legacy authorization, Gap, scenario, and sequence Evidence details now preserve selections, review notes, and Request Lab drafts during a temporary snapshot failure while disabling new changes and sends.

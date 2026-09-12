@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 1.2.0-beta.46 팀원 테스트 배포 — 2026-09-12
+
+- 아래 D-128~151 개발 기록의 변경을 beta.46 사전 릴리스로 묶습니다. PR #11·#12 통합 작업면·프로젝트/Evidence 수명 보완이 포함됩니다.
+- JAR, ZAP Docker helper·설치 문서를 포함한 bundle과 SHA-256 목록을 제공합니다. [팀원용 첫 실행 가이드](docs/ko/team-quick-start.md)를 README와 bundle에 연결했습니다.
+- 제품 코드 `8fe8527`에 테스트 대기를 보정한 `570d576`의 원격 전체 CI·동일 러너 재현성 검사가 통과했습니다. 실제 Burp 장애와 Windows/native Linux 운영 미실측은 검증 문서에 구분합니다.
+
 ## 미출시 · 전 작업면 snapshot 초안·전송 수명 통일 (D-151, 2026-09-12)
 
 - 판정 매트릭스, 파라미터 커버리지, 기존 권한 매트릭스, 점검 Gap, 시나리오와 흐름 상세도 일시 snapshot 실패에서 선택·검토 메모·Request Lab 초안을 보존하고 변경·전송만 잠급니다.
