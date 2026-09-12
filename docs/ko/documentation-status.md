@@ -1,10 +1,10 @@
 # 문서 정합성·갱신 기준
 
-최종 대조: 2026-09-12 D-150 PR #11 잔존 Evidence·회귀 계약 보완. 현재 미출시 beta.46 소스는 operation별 마스킹 Evidence/retention 페이지, 일시 snapshot 실패 중 Request Lab 초안 보존·전송 잠금, D-149 종료·서비스·샘플 경계를 포함한다. D-146의 같은 서비스 추천·OBSERVED 확정 경계와 D-147의 불확실성 처리를 유지한다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약도 유지한다. 자동·패키지 검증과 실제 Burp 미검증 경계는 beta-validation·HANDOFF를 따른다.
+최종 대조: 2026-09-12 D-151 전 작업면 snapshot 초안·전송 수명 통일. 현재 미출시 beta.46 소스는 operation별 마스킹 Evidence/retention 페이지, 모든 Evidence 작업면의 일시 snapshot 실패 중 선택·검토 메모·Request Lab 초안 보존, 실패 전 시작 전송의 동일 문맥 결과 귀속, D-149 종료·서비스·샘플 경계를 포함한다. D-146의 같은 서비스 추천·OBSERVED 확정 경계와 D-147의 불확실성 처리를 유지한다. main Surface·Authorization 정본, 삭제된 Judge/MCP, D-139 Explorer와 D-138 ZAP 계약도 유지한다. 자동·패키지 검증과 실제 Burp 미검증 경계는 beta-validation·HANDOFF를 따른다.
 
 ## 1. 무엇을 어디서 읽는가
 
-D-150 최신 대조: operation Evidence retention, snapshot 실패 draft 보존, NUL/Masking/model/scale/lifecycle/FatJar 회귀를 보완했다. 코드/패키지 검증(Java 570·React 468·Playwright 15/15)은 통과했고 실제 Burp는 D-148의 호스트 차단 뒤 재실행하지 않았다. 현재 상태는 HANDOFF 맨 위와 beta-validation D-150이다.
+D-151 최신 대조: D-150의 snapshot 실패 draft 보존을 판정·파라미터·기존 권한 매트릭스, Gap, 시나리오, 흐름 상세로 확장하고 진행 중 전송을 일시 실패만으로 abort하지 않게 했다. Java 570·React 471·Playwright 15/15와 release guard가 통과했으며 실제 Burp/Windows/native Linux gate는 열려 있다. 현재 상태는 HANDOFF 맨 위와 beta-validation D-151을 따른다.
 
 이전 결과: D-149 Java 554·React 468·Playwright 15/15, D-148 Java 550·React 467·Playwright 15/15, D-147 Java 550·React 461·Playwright 15/15. D-145~149의 개별 기록은 당시 산출물의 이력으로 보존한다.
 
@@ -47,6 +47,7 @@ D-150 최신 대조: operation Evidence retention, snapshot 실패 draft 보존,
 25. D-149는 리뷰 7건을 현행 코드에 다시 대조해 이미 닫힌 project-install 교착·shutdown checkpoint와 의도된 D-146 신뢰 경계를 분리했다. 실제로 남은 Request Lab/Explorer 종료 뒤 삽입, matrix 서비스 불일치 설명, 뒤처진 sample fixture와 Surface enum 순서 비결정성을 코드·회귀로 보완하고 README 한/영·architecture·UI 근거·결정·계획·인계·변경 이력·검증 기록에 반영했다. HANDOFF §6의 제거된 rail/resource-family 상충 지시도 현행 graph 운영 gate로 정리했다. Java 554·React 468·Playwright 15/15 통과와 실제 Burp/Windows/Linux 미실행을 분리한다.
 
 26. D-150은 PR #11 잔존 목록을 실제 branch와 대조해 operation Evidence page·NUL·Masking/model/authorization-work/persistence/FatJar 회귀를 현행 모델에 맞춰 보완했다. snapshot 실패에서 초안을 제거하던 D-148 현행 동작은 전송 잠금+초안 보존으로 대체했다. attached parameter 제2정본은 D-143 대체 사유를 명시하고, D-146/D-147 신뢰 경계는 유지했다. README 한·영·architecture·UI 근거·결정·계획·인계·변경 이력·검증 기록·Web parity를 함께 갱신한다.
+27. D-151은 일시 snapshot 실패 수명을 모든 Evidence 상세 작업면에 통일하고, 실패 전에 시작한 Request Lab 전송은 동일 dataset·Evidence 결과를 기다리게 한다. PR #11 persistence 9건의 현행 대체와 폐기 전제도 사례별로 기록한다.
 
 ## 3. 전수 목록
 
@@ -77,7 +78,7 @@ D-150 최신 대조: operation Evidence retention, snapshot 실패 draft 보존,
 | [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | D-150 PR 잔존 계약·D-146 인가 추천 보정과 Explorer/ZAP 남은 gate 분리 |
 | [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-143~150 parameter·matrix·Evidence·수명 경계와 D-130~139 ZAP/Explorer 결정 |
 | [docs/ko/development-log.md](development-log.md) | 역사 | D-150 PR 잔존 Evidence·회귀 보완과 이전 nav/Explorer/ZAP 기록 |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-150 Java 570·React 468·Playwright 15/15와 실제 Burp/OS 미실행 경계 |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-151 Java 570·React 471·Playwright 15/15와 실제 Burp/OS 미실행 경계 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 역사 | 미출시 문서 정정·대형 번들 완료 주장 범위 제한 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 미출시 정정과 동일, 옛 결과 보존 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |

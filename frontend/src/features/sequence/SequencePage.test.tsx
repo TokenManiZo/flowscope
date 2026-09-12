@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClientProvider } from "@tanstack/react-query"
 import type { ReactElement } from "react"
-import { expect, it, vi } from "vitest"
+import { beforeEach, expect, it, vi } from "vitest"
 
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { snapshotFixture } from "@/test/fixtures"
@@ -15,6 +15,7 @@ vi.stubGlobal("ResizeObserver", ResizeObserverStub)
 
 let current: Snapshot | undefined
 let queryError = false
+beforeEach(() => { current = undefined; queryError = false })
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
   useSnapshotQuery: () => ({ data: current, isLoading: current === undefined, isError: queryError, error: new Error("snapshot unavailable"), isStale: true }),
@@ -137,6 +138,16 @@ it("keeps a selected server link through presentation rerender and clears it whe
   current = { ...sequenceSnapshot(), revision: 9, events: sequenceSnapshot().events.filter((item) => item.eventId !== "unknown-to") }
   rerender(<SequencePage />)
   await waitFor(() => expect(screen.queryByText("Evidence 상세")).not.toBeInTheDocument())
+})
+
+it("retains an open link detail but suspends its actions during a refresh failure", async () => {
+  current = sequenceSnapshot()
+  const { rerender } = renderPage(<SequencePage />)
+  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 Evidence 열기" }))[0])
+  queryError = true
+  rerender(<SequencePage />)
+  expect(screen.getByText("from: early-from · to: unknown-to")).toBeVisible()
+  expect(screen.getByLabelText("필수 역할")).toBeDisabled()
 })
 
 it("retains a selected link when an unrelated earlier link is inserted and only uses an occurrence among equal link signatures", async () => {

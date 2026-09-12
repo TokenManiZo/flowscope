@@ -20,7 +20,7 @@ const reasonLabels: Record<string, string> = {
 const declarationTypeLabels: Record<string, string> = {
   OPENAPI: "OpenAPI 명세", JAVASCRIPT_LITERAL: "정적 JavaScript", HTML_FORM: "HTML 폼", LLM_ARTIFACT_ANALYSIS: "Explorer 산출물 분석", XML_ROUTE: "XML 라우트",
 }
-interface Props { snapshot: Snapshot; projection: ParameterGraphProjection; onClose(): void }
+interface Props { snapshot: Snapshot; projection: ParameterGraphProjection; suspended?: boolean; onClose(): void }
 
 /** 선택 Gap 상세. 데이터셋 교체(datasetRevision)나 다른 Gap 선택은 열린 초안·선택 셀을 버린다(D-140). */
 export function ParameterGapInspector(props: Props) {
@@ -28,7 +28,7 @@ export function ParameterGapInspector(props: Props) {
   return <InspectorBody key={JSON.stringify([datasetRevision, props.projection.selection?.gapId, props.projection.parameterKey?.stableKey])} {...props} />
 }
 
-function InspectorBody({ snapshot, projection, onClose }: Props) {
+function InspectorBody({ snapshot, projection, suspended = false, onClose }: Props) {
   const gap = projection.queue.find(item => item.id === projection.selection?.gapId)
   const key = projection.parameterKey
   const parameter = projection.parameter
@@ -84,7 +84,7 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
             <span>검증표 {coverageOpen ? "접기" : "펼치기"}</span>
             <span className="text-xs text-muted-foreground">서버 좌표 {cells.length}개 · 미검증 {cells.filter(item => item.applicable && item.verdict === "UNTESTED").length}개 · 적용 불가 {cells.filter(item => !item.applicable).length}개</span>
           </Button></CollapsibleTrigger>
-          <CollapsibleContent><ParameterCoverageMatrix cells={cells} onSelect={selectCell} /></CollapsibleContent>
+          <CollapsibleContent><ParameterCoverageMatrix cells={cells} onSelect={suspended ? undefined : selectCell} /></CollapsibleContent>
         </Collapsible>
       </TabsContent>
       <TabsContent value="evidence" className="space-y-3">
@@ -92,7 +92,7 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
         <EvidenceIdsPreview label="Gap witnesses · 실행 여부 별도" ids={projection.selection.evidenceIds} count={projection.selection.evidenceCount} />
         {parameter && <EvidenceIdsPreview label="파라미터 관측" ids={parameter.observationEvidenceIds} count={parameter.observationEvidenceIds.length} />}
         <p className="text-xs text-muted-foreground">ID는 최대 {PARAMETER_EVIDENCE_PREVIEW_LIMIT}개 미리보기이며 전체 건수와 다릅니다. 근거 ID가 실제 요청이라는 뜻은 아닙니다. 선택 입력의 정확한 operation/key에 연결된 실제 Evidence만 열 수 있습니다. 파라미터 관측과 Gap witness는 선택 셀의 실행 근거가 아닐 수 있습니다.</p>
-        <LinkedEvidenceList key={JSON.stringify([cell?.id, ids, [...eventById.keys()]])} events={events} selectedIds={cell?.evidenceIds ?? []} gapIds={gap.evidenceIds} profileIds={parameter?.observationEvidenceIds ?? []} onOpen={setDetailId} />
+        <LinkedEvidenceList key={JSON.stringify([cell?.id, ids, [...eventById.keys()]])} events={events} selectedIds={cell?.evidenceIds ?? []} gapIds={gap.evidenceIds} profileIds={parameter?.observationEvidenceIds ?? []} suspended={suspended} onOpen={setDetailId} />
       </TabsContent>
       <TabsContent value="diff" className="min-w-0"><EvidenceComparison key={JSON.stringify([gap.id, key.stableKey, gap.type, gap.status, gap.identity, gap.role, gap.source, gap.summary, gap.priorityReasons])} parameterKey={key} evidenceIds={ids} snapshot={snapshot} /></TabsContent>
       <TabsContent value="definitions" className="space-y-3">
@@ -100,10 +100,10 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
         {projection.definitions.map((declaration, index) => <section key={`${declaration.evidenceId}:${index}`} className="space-y-2 border-b py-3"><p>{declarationTypeLabels[declaration.type] ?? declaration.type} · {declaration.adapter} · {declaration.confidence ?? "INFERRED"}</p><p>{declaration.declaredShape ?? "UNKNOWN"} / {declaration.declaredType ?? "UNKNOWN"}{declaration.coordinateResolved === false ? " · 좌표 미확정" : ""}</p><p>{declaration.conditionText || "조건 정의 없음"}</p><p className="text-xs text-muted-foreground">{declaration.reason}</p><EvidenceIdsPreview label="정의 근거" ids={[declaration.evidenceId]} count={1} /><p className="text-xs text-muted-foreground">정의는 실제 요청 관측이나 서버 사용의 증명이 아닙니다.</p></section>)}
       </TabsContent>
     </Tabs>
-    <Button disabled={!representative} onClick={() => setLabOpen(true)}>Request Lab 열기</Button>
+    <Button disabled={!representative || suspended} onClick={() => setLabOpen(true)}>Request Lab 열기</Button>
     <p className="text-xs text-muted-foreground">{representative ? `대표 실제 Evidence: ${representative.eventId}. 원문 요청·응답은 Request Lab에서 함께 확인합니다. 자동 전송하지 않습니다.` : "대표 실제 EventRecord가 없어 Request Lab을 열 수 없습니다."}</p>
-    {detailEvent && <EvidenceSheet event={detailEvent} snapshot={snapshot} onOpenChange={open => { if (!open) setDetailId(null) }} />}
-    {representative && labContext && <RequestLabDialog key={labContext} open={labOpen} onOpenChange={setLabOpen} event={representative} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} />}
+    {detailEvent && <EvidenceSheet event={detailEvent} snapshot={snapshot} disabled={suspended} onOpenChange={open => { if (!open) setDetailId(null) }} />}
+    {representative && labContext && <RequestLabDialog key={labContext} open={labOpen} onOpenChange={setLabOpen} event={representative} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={suspended} />}
   </section>
 }
 
@@ -144,7 +144,7 @@ function EvidenceComparison({ parameterKey, evidenceIds, snapshot }: { parameter
   </section>
 }
 
-function LinkedEvidenceList({ events, selectedIds, gapIds, profileIds, onOpen }: { events: readonly EventRecord[]; selectedIds: readonly string[]; gapIds: readonly string[]; profileIds: readonly string[]; onOpen(id: string): void }) {
+function LinkedEvidenceList({ events, selectedIds, gapIds, profileIds, suspended, onOpen }: { events: readonly EventRecord[]; selectedIds: readonly string[]; gapIds: readonly string[]; profileIds: readonly string[]; suspended: boolean; onOpen(id: string): void }) {
   const [page, setPage] = useState(0)
   const selected = new Set(selectedIds)
   const gap = new Set(gapIds)
@@ -157,7 +157,7 @@ function LinkedEvidenceList({ events, selectedIds, gapIds, profileIds, onOpen }:
     <p role="status">현재 snapshot에 연결된 실제 EventRecord {ordered.length}건 · 페이지 {page + 1}/{pages} · 최대 {PARAMETER_EVIDENCE_PREVIEW_LIMIT}건씩 탐색</p>
     <ul className="space-y-2">{visible.map(event => <li key={event.eventId} className="space-y-1">
       <p className="text-xs text-muted-foreground">{selected.has(event.eventId) ? "선택 셀 실제 Evidence" : [gap.has(event.eventId) && "Gap witness · 선택 셀의 실행 근거 아님", profile.has(event.eventId) && "파라미터 관측 · 선택 셀의 실행 근거 아님", !gap.has(event.eventId) && !profile.has(event.eventId) && "다른 검증 셀 실제 Evidence · 선택 셀의 실행 근거 아님"].filter(Boolean).join(" / ")}</p>
-      <Button variant="outline" size="sm" className="h-auto max-w-full whitespace-normal" onClick={() => onOpen(event.eventId)}>Evidence 상세 {event.eventId}</Button>
+      <Button variant="outline" size="sm" className="h-auto max-w-full whitespace-normal" disabled={suspended} onClick={() => onOpen(event.eventId)}>Evidence 상세 {event.eventId}</Button>
     </li>)}</ul>
     {!ordered.length && <p>연결된 실제 EventRecord 없음 · 상세 열기 불가</p>}
     <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(value => value - 1)}>이전 연결 Evidence 페이지</Button><Button variant="outline" size="sm" disabled={page + 1 >= pages} onClick={() => setPage(value => value + 1)}>다음 연결 Evidence 페이지</Button></div>

@@ -4,7 +4,7 @@
 
 - Graph: 상단 `분석 → 점검 Gap 그래프`에서 점검 우선순위/전체 관계 보기 두 탭을 제공한다.
 - Matrix: P/E/O 판정·파라미터 커버리지·기존 권한 셀 세 탭. dataset 교체·연결 실패·서버 review Evidence 변경 시 선택과 편집 수명을 갱신한다. 설정 서비스가 현재 작업과 맞지 않는 등록 계정은 조합에 넣지 않고 설정 경고로 표시한다(D-149).
-- Evidence: 선택 operation의 마스킹 Request/Response·payload retention을 200건씩 읽고, 요청 비교는 같은 서버 Evidence의 extractor metadata를 사용한다. 불완전 본문과 UNKNOWN을 확정 부재·변경으로 표시하지 않는다. 일시 snapshot 실패는 열린 Request Lab 초안을 보존하고 전송을 잠근다(D-150).
+- Evidence: 선택 operation의 마스킹 Request/Response·payload retention을 200건씩 읽고, 요청 비교는 같은 서버 Evidence의 extractor metadata를 사용한다. 불완전 본문과 UNKNOWN을 확정 부재·변경으로 표시하지 않는다. 일시 snapshot 실패는 모든 Evidence 작업면의 선택·검토 메모·열린 Request Lab 초안을 보존하고 새 전송을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다(D-151).
 - 프로젝트: 삭제형 초기화(P04)는 제거됐으며 새 진단 시작·프로젝트 재열기로 대체됐다. 현재 작업을 저장한 뒤 전환하고, 샘플도 저장·교체가 성공해야 성공 응답을 반환한다.
 - 최신 자동·패키지 검증은 [beta-validation](beta-validation.md) 맨 위 절을 따른다. 아래 P01~ 표는 React 초기 전환 시점의 이력이며 `PLANNED`를 현재 미구현 목록으로 읽지 않는다.
 
@@ -57,7 +57,7 @@
 | P39 | 시나리오 생성 API | 삭제, 요청 시 404 | 버튼·요청 제거 | `RunsPage.test.tsx`, `ScenariosPage.test.tsx` | `FlowScopeWebServerTest`, `RetiredHarnessTest` | D-126 제거 회귀 | 해당 없음 | RETIRED (D-126) |
 | P40 | 현재 규칙 후보와 사람 검토·Evidence | `GET /api/snapshot`, `POST /api/review` | `#scenarios` | `ScenariosPage.test.tsx`, `ScenarioWorkspace.test.tsx` | `FlowScopeWebServerTest`, `LegacyLlmArchiveTest` | D-126 시나리오·Evidence 선택 회귀 | 실제 Burp gate 미실행 | IMPLEMENTED (D-126) |
 | P41 | Evidence 표·operation 페이지 | `GET /api/evidence` | `#evidence` | `EvidencePage.test.tsx` (table/filter/repeat, masked page, retention, dataset/operation cache) | 서버 pagination·bounded evidence 회귀 | packaged sample operation page | 실제 Burp 대규모 page | IMPLEMENTED (D-150) |
-| P42 | 선택 Evidence live 원문 | `GET /api/request-lab?eventId=` | `#evidence`·Surface·Graph | `RequestLabDialog.test.tsx`, `SnapshotFailureLifecycle.test.tsx`(일시 실패 보존·전송 잠금) | Request Lab server lifecycle | packaged disabled draft | active send·실제 장애 gate | IMPLEMENTED (D-150; active send gate open) |
+| P42 | 선택 Evidence live 원문 | `GET /api/request-lab?eventId=` | 모든 Evidence 상세 작업면 | `RequestLabDialog.test.tsx`(진행 중 전송), `SnapshotFailureLifecycle.test.tsx`, Matrix/Gap/Scenario/Sequence tests(일시 실패 보존·잠금) | Request Lab server lifecycle | packaged disabled draft | 실제 Burp 장애 gate | IMPLEMENTED (D-151; Burp gate open) |
 | P43 | 정확한 Evidence 선택 | `GET /api/evidence` eventId selection | `#evidence` | `EvidencePage.test.tsx` (duplicate operation exact clicked eventId) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 7; Burp gate open) |
 | P44 | Request Lab 열기·전송·이력·정리 | `GET/POST /api/request-lab` | `#evidence` | `RequestLabDialog.test.tsx`, `memoryOnlyRawState.test.ts` (mode/form, exact-service ACTIVE account filtering, cache/storage/log exclusion, 1 MiB guard, ten-result cap, close/unmount/event/revision late-send isolation; simulated transport) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 8 + final review; live Request Lab gate open) |
 | P45 | Repeater handoff | `POST /api/replay` | `#evidence` | `RequestLabDialog.test.tsx` (exact form and unsent-draft acknowledgement; simulated transport) | PLANNED | PLANNED | Task 14 explicit Burp runtime parity gate | COMPONENT PASS (Task 8; Burp runtime gate open) |

@@ -101,6 +101,17 @@ it("reports snapshot failure without inventing an empty successful analysis", ()
   expect(screen.queryByText("현재 규칙 후보가 없습니다. 안전하다는 판정은 아닙니다.")).not.toBeInTheDocument()
 })
 
+it("retains an open Evidence detail but suspends its actions during a refresh failure", async () => {
+  const view = renderPage()
+  await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
+  await userEvent.click(screen.getByRole("button", { name: "Evidence 열기" }))
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  snapshotError = true
+  view.refresh()
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  expect(screen.getByLabelText("필수 역할")).toBeDisabled()
+})
+
 it("shows empty rule results as absence of candidates, not safety", () => {
   currentSnapshot = snapshot(1, [])
   renderPage()

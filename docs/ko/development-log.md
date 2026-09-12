@@ -1,5 +1,16 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · D-151 전 작업면 snapshot 초안·전송 수명 통일 완료
+
+- 외부 재검증에서 D-150의 초안 보존이 Evidence·Surface·전체 관계 그래프에만 적용되고 판정 매트릭스·파라미터 커버리지·기존 권한 매트릭스·점검 Gap은 오류 즉시 선택을 지우는 사실을 확인했다. 같은 공통 상세를 쓰는데 부모별 오류 수명이 달라 사용자가 화면에 따라 검토 메모와 Request Lab 초안을 잃는 결함이었다.
+- 각 부모는 마지막 성공 snapshot이 있으면 선택과 상세를 유지하고 `EvidenceSheet.disabled`/`RequestLabDialog.suspended`로 새 작업만 막는다. Gap 상세의 연결 Evidence 열기도 잠금 중 비활성화했다. 시나리오와 흐름 상세도 동일 계약으로 맞췄다.
+- `RequestLabDialog`의 `suspended` effect가 진행 중 controller를 abort하고 generation을 무효화하던 경로를 제거했다. 일시 실패 전에 시작한 전송은 같은 dataset·Evidence generation에서 완료 결과를 반영한다. 닫기, dataset/Evidence 변경, raw/session 전제 상실, unload의 기존 abort는 유지했다. 서버가 이미 Evidence를 만들었는데 Web만 결과를 버리는 상태를 줄이기 위한 선택이며, 새 전송을 허용하는 대안은 stale snapshot에서의 실행 위험 때문에 기각했다.
+- 회귀는 기존의 “오류 시 닫힘” 단언을 “선택·검토 메모·상세 보존+동작 잠금+복구 뒤 재활성”으로 바꾸고, 진행 중 전송이 abort되지 않고 결과를 1회 반영하는 테스트와 시나리오·흐름 상세 잠금 테스트를 추가했다. 집중 React 검증은 59파일·471건 통과했다.
+- PR #11 persistence 9건은 D-151에서 사례별로 현행 대체 또는 미이식 사유를 기록했다. 특히 record-level `parameterObservations`와 attached generation/derived-array 테스트를 현재 모델에 존재하는 것처럼 복구하지 않았다.
+- 최종 검증: JDK 21.0.12.1 `mvn -o clean verify` BUILD SUCCESS, Java 570건(실패·오류 0, opt-in 2 skip), React 59파일·471건·typecheck, JAR/bundle release guard 통과. Node·JDK PATH를 명시한 패키지 Playwright `--retries=0`은 15/15 통과(29.2s). 첫 Playwright 호출은 npm script가 `env node`를 찾지 못해 제품 서버 시작 전에 실패했고 성공 결과에 포함하지 않았다. JAR 31,940,963 bytes, SHA-256 `4620fb37d80aaccc7f7c819100594f8bf5aaa56ce34868db51f40cc46d9c1aef`. 실제 Burp 장애 중 전송 완료와 Windows/native Linux는 미실행이다.
+- 영향 파일: Request Lab, Judgment/Parameter/Legacy Matrix, Parameter Gap, Scenario, Sequence 화면과 관련 React 회귀; README 한·영, architecture, decisions, UI 근거, 시작 가이드, 계획, 인계, 변경 이력, 검증·문서 현황.
+
+
 ## 2026-09-12 · D-150 PR #11 잔존 Evidence·회귀 계약 보완 완료
 
 - PR #11과 `e174a80`을 파일·호출부·테스트 단위로 다시 비교했다. 미커밋 26파일 지적은 D-149 커밋 뒤에는 해당하지 않았지만, operation별 Evidence retention 화면, raw NUL, Masking/model/authorization work/persistence/FatJar 회귀 누락은 확인됐다.

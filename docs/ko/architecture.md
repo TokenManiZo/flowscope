@@ -297,6 +297,8 @@ Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델
 
 D-150: 공통 OperationEditor와 operation Evidence query는 datasetRevision·Evidence/operation 좌표에 결박된다. Evidence/Surface/전체 관계 그래프는 background snapshot 실패를 즉시 표시하고 마지막 성공 데이터·시각·재시도를 유지한다. 열린 Request Lab은 같은 dataset의 미전송 초안을 유지하지만 모든 변경·전송 동작을 잠그며 복구 후 다시 활성화한다. 처음부터 성공 snapshot이 없거나 dataset/Evidence 전제가 바뀌면 상세와 초안을 만들지 않는다.
 
+D-151: 위 수명 계약은 판정 매트릭스·파라미터 커버리지·기존 권한 매트릭스·점검 Gap·시나리오·흐름 순서를 포함한 모든 `EvidenceSheet` 작업면에 적용한다. 일시 실패 전에 이미 시작한 Request Lab 전송은 snapshot 상태 변경만으로 abort하지 않으며, 기존 generation과 dataset/Evidence key가 그대로일 때만 결과를 메모리 기록과 화면에 반영한다. 새 선택·편집·전송은 잠그고 실제 dataset/Evidence 변경·닫기·unload는 기존처럼 진행 중 전송을 취소한다.
+
 | 작업면 | 역할 |
 |---|---|
 | API·입력 차이 | 기본 작업면. 선언/관측 endpoint와 parameter를 source별로 정렬하고 provenance·Evidence 및 산출물 파싱 상태를 연다. `미관측`을 취약점·lane 실패로 표현하지 않으며 전체 퍼센트를 만들지 않는다. |

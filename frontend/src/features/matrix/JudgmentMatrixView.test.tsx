@@ -219,22 +219,25 @@ it("starts a fresh review when the same cell has different server review Evidenc
   expect(screen.getByRole("region", { name: "사람 최종 판정" })).toHaveTextContent("Evidence 1건")
 })
 
-it("closes stale Evidence actions, retains the last matrix with a retry, and does not restore selection", async () => {
+it("retains the selected cell, Evidence detail, and unsaved review note while snapshot actions are suspended", async () => {
   const user = userEvent.setup()
   const { rerender } = renderView(<JudgmentMatrixView />)
   await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
+  await user.type(screen.getByLabelText("검증 메모"), "keep during outage")
   await user.click(screen.getByRole("button", { name: "기준 Evidence 상세 열기" }))
   expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
   queryError = true
   rerender(<JudgmentMatrixView />)
-  expect(screen.queryByText("매트릭스 선택 좌표")).not.toBeInTheDocument()
-  expect(screen.queryByLabelText("검증 메모")).not.toBeInTheDocument()
+  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
+  expect(screen.getByLabelText("검증 메모")).toBeDisabled()
   expect(screen.getByText("마지막 성공 데이터 · 현재 상태 아님")).toBeVisible()
   expect(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" })).toBeDisabled()
   await user.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
   expect(refetchSnapshot).toHaveBeenCalledOnce()
   queryError = false
   rerender(<JudgmentMatrixView />)
-  expect(screen.queryByText("매트릭스 선택 좌표")).not.toBeInTheDocument()
-  expect(screen.queryByLabelText("검증 메모")).not.toBeInTheDocument()
+  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
+  expect(screen.getByLabelText("검증 메모")).toBeEnabled()
 })

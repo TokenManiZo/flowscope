@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-12, D-150 (미출시 beta.46 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. Evidence는 operation별 마스킹 기록과 보존 상태를 페이지로 제공하고, Request Lab raw는 선택한 한 Evidence의 메모리에만 둔다. 일시 snapshot 실패는 초안을 보존하며 전송을 잠근다. 프로젝트 전환 성공 뒤에만 Request Lab을 폐기하고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
+> **현재 계약: 2026-09-12, D-151 (미출시 beta.46 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. Evidence는 operation별 마스킹 기록과 보존 상태를 페이지로 제공하고, Request Lab raw는 선택한 한 Evidence의 메모리에만 둔다. 모든 Evidence 작업면은 일시 snapshot 실패에서 선택·검토 메모·초안을 보존하고 새 동작을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다. 프로젝트 전환 성공 뒤에만 Request Lab을 폐기하고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -323,7 +323,7 @@ Graph inspector는 빈 안내를 사용자가 직접 열 수 있지만 선택하
 
 ## 23. PR #11 최종 작업면 흡수(D-145)
 
-D-148은 공통 정책 editor에도 datasetRevision을 적용해 같은 Evidence ID의 프로젝트 전환을 구분한다. Evidence·Surface·전체 관계 그래프는 조회 실패 시 이전 데이터만 읽기 표시하고 정책 편집·Request Lab을 닫는다. 서버 조회가 복구돼도 이전 초안은 자동으로 되살리지 않는다.
+D-148은 공통 정책 editor에도 datasetRevision을 적용해 같은 Evidence ID의 프로젝트 전환을 구분했다. D-150·151은 일시 조회 실패를 실제 dataset 교체와 구분한다. 마지막 성공 snapshot이 있는 모든 Evidence 작업면은 열린 선택·검토 메모·Request Lab 초안을 메모리에 유지하고 새 선택·편집·전송·Repeater만 잠근다. 실패 전에 시작한 전송은 abort하지 않고 같은 문맥 결과를 표시한다. 실제 dataset/Evidence 전제 변경과 사용자의 닫기에서는 초안과 진행 중 전송을 폐기한다.
 
 D-147 보완: 서버가 분석하지 못한 본문과 UNKNOWN metadata를 확정 부재·변경으로 표시하지 않는다. Matrix 검토 폼은 cell ID·review Evidence·dataset에 결박되며, 연결 실패 시 마지막 성공 시각·재시도를 보여 주고 이전 상세·저장을 닫는다. 샘플 전환도 저장 성공 뒤에만 현재 작업을 교체한다. 종료 저장은 마지막 미게시 레코드까지 포함하도록 한 번 재분석하며 설치 잠금과 records 잠금을 분리한다.
 

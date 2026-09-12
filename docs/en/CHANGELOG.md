@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — consistent snapshot draft and send lifetime across workspaces (D-151, 2026-09-12)
+
+- Judgment, parameter, legacy authorization, Gap, scenario, and sequence Evidence details now preserve selections, review notes, and Request Lab drafts during a temporary snapshot failure while disabling new changes and sends.
+- A Request Lab send already in flight is no longer aborted merely because snapshot actions become suspended; its result stays attached to the same dataset and Evidence context.
+- The nine PR #11 persistence regressions are now mapped explicitly to current lifecycle/Surface replacements or to removed record-level/generation contracts.
+
 ## Unreleased — remaining PR #11 Evidence and regression contracts (D-150, 2026-09-12)
 
 - Evidence selection again opens 200-record pages of masked request/response retention metadata for the same operation, keyed by dataset revision.

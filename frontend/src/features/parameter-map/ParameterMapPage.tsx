@@ -35,16 +35,16 @@ export function ParameterMapPage() {
   const projection = useMemo(() => snapshot.data ? projectParameterMap(snapshot.data, filters, selectedGapId) : null, [snapshot.data, filters, selectedGapId])
   const selected = projection?.queue.find(gap => gap.id === projection.selection?.gapId)
   useEffect(() => {
-    if (selectedGapId && (!projection?.selection || snapshot.isError)) { setSelectedGapId(null); setInspectorOpen(false) }
+    if (selectedGapId && !projection?.selection && !snapshot.isError) { setSelectedGapId(null); setInspectorOpen(false) }
   }, [projection?.selection, selectedGapId, snapshot.isError])
-  const select = (selection: ParameterMapSelection) => { setSelectedGapId(selection.gapId); setFocusVersion(version => version + 1); if (window.matchMedia("(max-width: 899px)").matches) { setQueueOpen(false); setAdvancedOpen(false) } setInspectorOpen(true) }
+  const select = (selection: ParameterMapSelection) => { if (snapshot.isError) return; setSelectedGapId(selection.gapId); setFocusVersion(version => version + 1); if (window.matchMedia("(max-width: 899px)").matches) { setQueueOpen(false); setAdvancedOpen(false) } setInspectorOpen(true) }
   const close = () => { setSelectedGapId(null); setInspectorOpen(false) }
   const reset = () => { setFilters(defaultParameterFilters); close() }
 
   const title = <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-[var(--flowscope-divider)] px-4 py-2"><h1 className="text-base font-semibold">권한·파라미터 Gap 그래프</h1>
     {snapshot.data && !snapshot.isError && <div className="flex min-h-6 flex-wrap gap-x-4 text-xs text-muted-foreground"><span role="status" aria-label="snapshot 갱신 상태" className="inline-block min-w-16">{snapshot.isFetching ? "갱신 중" : "서버 근거"}</span><span>마지막 갱신: {snapshot.dataUpdatedAt ? <time aria-label="마지막 갱신" dateTime={new Date(snapshot.dataUpdatedAt).toISOString()}>{new Date(snapshot.dataUpdatedAt).toLocaleString("ko-KR")}</time> : "없음"}</span></div>}
   </header>
-  if (snapshot.isError) return <section className="h-full bg-[var(--flowscope-canvas)]">{title}<div role="alert" className="m-6 max-w-xl space-y-3 border-l-2 border-red-400 pl-4">
+  if (snapshot.isError && !projection) return <section className="h-full bg-[var(--flowscope-canvas)]">{title}<div role="alert" className="m-6 max-w-xl space-y-3 border-l-2 border-red-400 pl-4">
     <h2 className="font-semibold">점검 우선순위를 불러오지 못했습니다.</h2><p className="text-sm">{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
     <p className="text-sm text-muted-foreground">마지막 갱신: {snapshot.dataUpdatedAt ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "없음"}. 이전 결과는 최신 결과로 표시하지 않습니다.</p>
     <Button onClick={() => { void snapshot.refetch() }}>다시 불러오기</Button>
@@ -66,7 +66,8 @@ export function ParameterMapPage() {
 
   const gapType = filters.gapTypes.length === 1 ? filters.gapTypes[0] : filters.gapTypes.length ? "discovery" : ""
   const activeAdvancedCount = filters.source.length + filters.identity.length + (filters.priorityReasons?.length ?? 0) + (filters.definitionSources?.length ?? 0) + Number(filters.gapTypes.length === 1)
-  const toolbar = <>{title}<div role="toolbar" aria-label="Gap 그래프 필터" className="focused-graph-filters shrink-0 border-b border-[var(--flowscope-divider)] px-4 py-2 text-sm">
+  const failure = snapshot.isError && <div role="alert" className="shrink-0 space-y-2 border-b border-red-400 px-4 py-2 text-sm"><p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p><p className="text-muted-foreground">마지막 성공 데이터 · 현재 상태 아님. 열린 상세와 초안은 유지하며 변경·전송 동작을 잠급니다.</p><Button size="sm" variant="outline" onClick={() => { void snapshot.refetch() }}>다시 불러오기</Button></div>
+  const toolbar = <>{title}{failure}<div role="toolbar" aria-label="Gap 그래프 필터" className="focused-graph-filters shrink-0 border-b border-[var(--flowscope-divider)] px-4 py-2 text-sm">
     <ParameterFilterBar filters={filters} activeAdvancedCount={activeAdvancedCount} advancedOpen={advancedOpen && queueOpen} onChange={setFilters} onOpenAdvanced={() => { setAdvancedOpen(current => !current || !queueOpen); setQueueOpen(true) }} />
   </div></>
   const queue = <div className="space-y-3 p-3 text-sm">
@@ -88,10 +89,10 @@ export function ParameterMapPage() {
       </CollapsibleContent>
     </Collapsible>
     <div><h2 className="font-semibold">점검 우선순위 · {projection.queue.length}건</h2><p className="mt-1 text-muted-foreground">서버 우선순위 근거 순</p></div>
-    <ParameterPriorityQueue gaps={projection.queue} selectedGapId={selected?.id ?? null} onSelect={gapId => { const current = projectParameterMap(snapshot.data!, filters, gapId).selection; if (current) select(current) }} />
+    <ParameterPriorityQueue gaps={projection.queue} selectedGapId={selected?.id ?? null} onSelect={gapId => { if (snapshot.isError) return; const current = projectParameterMap(snapshot.data!, filters, gapId).selection; if (current) select(current) }} />
   </div>
 
-  const inspector = snapshot.data && selected ? <ParameterGapInspector snapshot={snapshot.data} projection={projection} onClose={close} /> : null
+  const inspector = snapshot.data && selected ? <ParameterGapInspector snapshot={snapshot.data} projection={projection} suspended={snapshot.isError} onClose={close} /> : null
 
   return <FocusedGraphWorkspace queue={queue} toolbar={toolbar} queueOpen={queueOpen} onQueueOpenChange={open => { setQueueOpen(open); if (!open) setAdvancedOpen(false) }} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={open => { if (!open) close(); else setInspectorOpen(true) }}>
     {projection.queue.length > 0 ? <section aria-label="우선 점검 이유" className="shrink-0 border-b border-[var(--flowscope-divider)] border-l-2 border-l-sky-400 px-4 py-2 text-sm leading-5 [overflow-wrap:anywhere]"><span className="mr-2 font-semibold">{selected ? "선택한 Gap" : "먼저 확인"}</span>{(selected ?? projection.queue[0]).summary}</section>

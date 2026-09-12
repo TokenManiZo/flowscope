@@ -160,7 +160,7 @@ The ZAP API endpoint is accepted only on a loopback address. Key precedence is `
 
 ## Product workspace
 
-Request comparisons preserve uncertainty for unparsed bodies and unknown metadata. Matrix selections and review drafts belong to the current project and server Evidence; connection failures show the last successful update with a retry. New assessments, project opening, and sample replacement preserve the current assessment before switching (D-147).
+Request comparisons preserve uncertainty for unparsed bodies and unknown metadata. Selections, review notes, and Request Lab drafts in every Evidence workspace belong to the current project and server Evidence. A temporary snapshot failure keeps the last successful data and open draft while disabling new selections, edits, and sends. A send that started before suspension remains attached so a server-side Evidence result is not discarded only by the browser. New assessments, project opening, and sample replacement preserve the current assessment before switching (D-147, D-151).
 
 - **Burp tab** — exact scope, port mapping, live counts, Proxy-history import, project save/load, sample, reset, and a button that opens the canonical local Web workspace.
 - **Grouped top navigation** — `분석 / 점검 / 기록` keeps every current route reachable while scope, HUMAN, ZAP, and SCANNER state lives in a dedicated status popover. API·입력 차이 remains the default route, and the old `#parameter-map` bookmark redirects to the integrated graph workspace.

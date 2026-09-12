@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -493,5 +493,42 @@ describe("RequestLabDialog", () => {
     await waitFor(() => expect(owner.response).toBe("CURRENT-CONTEXT"))
     expect(owner.history[0]?.response).toBe("CURRENT-CONTEXT")
     expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeEnabled()
+  })
+
+  it("keeps an in-flight send attached while snapshot actions are temporarily suspended", async () => {
+    const pending = deferredResponse()
+    const owner = createMemoryOnlyRawState()
+    let sendSignal: AbortSignal | undefined
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/request-lab" && init?.method === "POST") {
+        sendSignal = init.signal ?? undefined
+        return pending.promise
+      }
+      return Promise.resolve(json(requestLabDraft()))
+    }))
+    const user = userEvent.setup()
+    function Harness() {
+      const [suspended, setSuspended] = useState(false)
+      return <><button onClick={() => setSuspended(true)}>suspend snapshot</button><button onClick={() => setSuspended(false)}>resume snapshot</button><RequestLabDialog open suspended={suspended} onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} /></>
+    }
+    renderWithQueryClient(<Harness />)
+    await screen.findByLabelText("Request Lab 요청 원문")
+    const dialog = screen.getByRole("dialog", { name: "Request Lab" })
+    await user.click(within(dialog).getByRole("button", { name: "Request Lab 전송" }))
+    fireEvent.click(screen.getByText("suspend snapshot"))
+    expect(sendSignal?.aborted).toBe(false)
+    expect(within(dialog).getByRole("button", { name: "Request Lab 전송 중" })).toBeDisabled()
+
+    await act(async () => {
+      pending.resolve(json({ success: true, message: "sent", eventId: "event-7", status: 200,
+        response: "COMPLETED-WHILE-SUSPENDED", durationMs: 3, requestBytes: 1, responseBytes: 25 }))
+      await pending.promise
+    })
+
+    expect(owner.response).toBe("COMPLETED-WHILE-SUSPENDED")
+    expect(owner.history).toHaveLength(1)
+    expect(within(dialog).getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
+    fireEvent.click(screen.getByText("resume snapshot"))
+    expect(within(dialog).getByRole("button", { name: "Request Lab 전송" })).toBeEnabled()
   })
 })

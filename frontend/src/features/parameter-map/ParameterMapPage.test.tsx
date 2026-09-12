@@ -204,7 +204,7 @@ it("uses the compact queue sheet and opens the same inspector from a narrow path
   expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toHaveAttribute("data-gap-id", "auth")
 })
 
-it("distinguishes initial loading, initial error and refresh error without stale actions", async () => {
+it("distinguishes initial errors and preserves a selected refresh-error inspector with actions suspended", async () => {
   state.query = { ...state.query, data: undefined, isPending: true }
   const { rerender } = render()
   expect(screen.getByRole("status")).toHaveTextContent("불러오는 중")
@@ -218,7 +218,10 @@ it("distinguishes initial loading, initial error and refresh error without stale
   state.query = { ...state.query, isError: true, error: new Error("refresh failed") }
   rerender()
   expect(screen.getByRole("alert")).toHaveTextContent("refresh failed")
-  expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
+  expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toBeVisible()
+  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
+  expect(screen.getByRole("button", { name: "Evidence 상세 actual-a" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeDisabled()
 })
 
 it.each(["empty", "definitions", "diagnostic"])("gives one next action for %s without fabricated results", (kind) => {

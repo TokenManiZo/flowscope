@@ -82,12 +82,6 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     return () => { controller.abort(); invalidateSend(); raw.current.clear() }
   }, [open, event.eventId, datasetRevision, loadAttempt])
 
-  useEffect(() => {
-    if (!suspended) return
-    invalidateSend()
-    setSending(false)
-  }, [suspended])
-
   // Revalidate retained-raw/session metadata after traffic changes without
   // replacing edited text/history. The response remains outside the query cache.
   useEffect(() => {

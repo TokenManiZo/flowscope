@@ -1407,6 +1407,13 @@
 - **유지:** D-147의 UNKNOWN 비교와 unsupported/malformed body 진단, D-146의 CORROBORATED 비승격은 그대로 둔다. UNKNOWN을 확정 변경으로 만들거나 일반 동시출현을 인가 경계로 승격하는 원 PR 동작은 현재 Evidence 신뢰 계약보다 강한 결론이므로 복원하지 않는다.
 - **검증 경계:** 전체 자동·패키지 검증은 operation Evidence 페이지와 기존 화면 동선, snapshot 실패 중 초안 보존, NUL/Masking/model/10,000 observation/lifecycle/sentinel을 확인한다. 실제 Burp background 장애·프로젝트 import 경합과 대규모 Evidence 페이지의 체감 성능은 운영 gate다.
 
+## D-151 · snapshot 일시 실패의 초안·전송 수명을 모든 Evidence 작업면에서 통일한다 (2026-09-12)
+
+- **문제:** D-150은 Evidence·Surface·전체 관계 그래프만 선택과 Request Lab 초안을 보존했다. 판정 매트릭스, 파라미터 커버리지, 기존 권한 매트릭스, 점검 Gap 그래프는 마지막 성공 snapshot이 있어도 부모가 선택을 지워 상세·검토 메모·Request Lab 초안을 잃었다. 또한 열린 Request Lab은 일시 중지 전 이미 시작한 HTTP 전송까지 abort했다. 서버가 실제 요청을 처리해 Evidence를 만들었는데 Web만 결과를 버릴 수 있었다.
+- **결정:** 마지막 성공 snapshot이 있는 일시 조회 실패는 모든 Evidence 상세 작업면에서 현재 선택·검토 메모·Request Lab 메모리 초안을 유지한다. 새 셀/Evidence 선택, 정책·소유자·분류 편집, 인증 모드 변경, 새 전송과 Repeater는 잠근다. 일시 실패 전에 시작한 전송은 취소하지 않고 동일한 dataset·Evidence generation에 결과를 귀속하며, 완료 결과는 잠금 상태에서 표시한 뒤 복구 시 계속 사용한다. dataset 교체, Evidence 좌표 변경, raw/session 전제 상실, 사용자의 닫기와 unload는 계속 취소·폐기 경계다.
+- **PR #11 persistence 대조:** 원 `FlowScopeExtensionPersistenceTest` 9건을 이름만 복사하지 않았다. 현행 모델에 남는 `shutdownFlushesTheLastCaptureAheadOfTheDelayedRebuild`, `importInvokedAfterShutdownDoesNotQueueOrInstall`, `successfulImportStillInstallsAndSavesTheCandidateSnapshot`은 `FlowScopeExtensionLifecycleTest`와 ProjectStore/SQLite 재열기 회귀로 대체했다. staging/queued import 두 건은 현행 `lifecycleMonitor` 원자 경계·shutdown-winner·late-open 회귀로 대체했다. `failedImportLeavesTheInstalledDatasetImmediatelySaveable`은 새 진단/샘플 교체 실패 시 기존 dataset 보존 회귀로 대체했다. `capturedRecordsReachBothManualSaveFormatsAndCheckpointAfterRebuild`의 record-level `parameterObservations` 단언은 D-143에서 그 필드를 영속 정본에서 제거하고 재열기 뒤 Surface를 재계산하므로 PortedFeaturesReopen·ProjectStore·SQLite 회귀로 대체했다. `concurrentMetadataChangeAbortsCheckpointBeforeOverwrite`와 `pendingRebuildCannotOverwriteAnExistingCheckpointWithStaleDerivedData`의 attached generation/derived-array 모델은 현행 `Pipeline.Result` 게시·atomic store 계약과 구조가 달라 그대로 이식하지 않았다. 이 둘은 원 테스트와 바이트 동일한 회귀가 아니라는 사실을 완료 주장과 분리한다.
+- **검증 경계:** React 회귀는 일시 실패 중 판정 검토 메모, 세 매트릭스/Gap/시나리오/흐름 상세, Request Lab 진행 중 전송을 확인한다. 서버가 요청을 받은 직후 실제 네트워크가 끊기는 Burp 운영 상황과 원 PR의 폐기된 attached-generation 바이트 동일성은 자동 검증 완료로 주장하지 않는다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

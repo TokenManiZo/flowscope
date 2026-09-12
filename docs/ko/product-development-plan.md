@@ -4,6 +4,8 @@
 
 ## 현재 우선순위 · PR #11·#12 이식 기능 대조표 (2026-09-11)
 
+**D-151 완료 상태:** D-150의 일시 snapshot 실패 수명을 판정·파라미터·기존 권한 매트릭스, 점검 Gap, 시나리오, 흐름 상세까지 통일했다. 선택·검토 메모·Request Lab 초안을 보존하고 새 동작만 잠그며, 실패 전에 시작한 전송은 같은 dataset·Evidence 결과를 기다린다. PR #11 persistence 9건은 현행 대체 회귀와 폐기된 record-level/generation 계약을 사례별로 기록했다. 최신 검증 수치는 `beta-validation.md` D-151을 따른다.
+
 **D-150 완료 상태:** PR #11 재대조에서 누락된 operation별 마스킹 Evidence/retention 페이지, 일시 snapshot 실패 중 Request Lab 초안 보존, source NUL·Masking/model/10,000-input/lifecycle/FatJar 회귀를 보완했다. Java 570(2 skip)·React 468·typecheck·Playwright 15/15가 통과했다. attached parameter 제2정본은 D-143 Surface Fact 대체를 유지하고 D-146/D-147 의미 변경도 유지한다.
 
 **D-149 완료 상태:** 종료 뒤 Request Lab·Explorer Evidence 삽입 차단, 서비스 불일치 계정 경고, 현재 SampleProject와 화면 간 snapshot fixture 전체 일치, Surface enum 직렬화 순서 고정을 구현했다. JDK 21 전체 Java 554(2 skip)·React 468·typecheck와 패키지 Playwright 15/15(`--retries=0`)가 통과했다. 실제 Burp·Windows·native Linux는 이번 변경 기준 미실행이다.

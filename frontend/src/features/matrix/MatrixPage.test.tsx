@@ -126,14 +126,14 @@ it("shows only error and retry guidance for an initial parameter snapshot failur
   expect(refetch).toHaveBeenCalledOnce()
 })
 
-it("persistently labels retained parameter data with its real success time and closes actions after failure", async () => {
+it("retains parameter Evidence detail while disabling actions after a refresh failure", async () => {
   current = parameterSnapshot()
   const { rerender } = renderPage(<ParameterMatrixView />)
   await userEvent.click(screen.getByRole("button", { name: "검증 좌표 선택" }))
   expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
   queryError = true
   rerender(<ParameterMatrixView />)
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument())
+  expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
   const banner = screen.getByRole("alert")
   expect(banner).toHaveTextContent("마지막 성공 데이터 · 현재 상태 아님")
   expect(banner.querySelector("time")).toHaveAttribute("dateTime", new Date(lastUpdated).toISOString())
@@ -146,10 +146,10 @@ it("persistently labels retained parameter data with its real success time and c
   queryError = false
   rerender(<ParameterMatrixView />)
   expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-  expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument()
+  expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
 })
 
-it("also labels failed retained legacy data and disables its Evidence actions", async () => {
+it("also retains failed legacy selection while disabling its Evidence actions", async () => {
   current = matrixSnapshot()
   const { rerender } = renderPage(<LegacyMatrixView />)
   await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })[0])
@@ -157,10 +157,13 @@ it("also labels failed retained legacy data and disables its Evidence actions", 
   rerender(<LegacyMatrixView />)
   expect(screen.getByRole("alert")).toHaveTextContent("마지막 성공 데이터 · 현재 상태 아님")
   for (const button of screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })) expect(button).toBeDisabled()
-  expect(screen.getByText("snapshot 갱신 실패 · 상세 열기 비활성화")).toBeVisible()
+  expect(screen.getByText("Evidence 상세")).toBeVisible()
+  expect(screen.getByLabelText("필수 역할")).toBeDisabled()
+  queryError = false
   current = { ...snapshotFixture }
   rerender(<LegacyMatrixView />)
-  expect(screen.queryByText("표시할 서버 권한 셀이 없습니다.")).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByText("Evidence 상세")).not.toBeInTheDocument())
+  expect(screen.getByText("표시할 서버 권한 셀이 없습니다.")).toBeVisible()
 })
 
 it("projects server identity cells with requirement, owner, source text, miss, conflict, gap, and exact Evidence selection", async () => {

@@ -2,6 +2,12 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · 전 작업면 snapshot 초안·전송 수명 통일 (D-151, 2026-09-12)
+
+- 판정 매트릭스, 파라미터 커버리지, 기존 권한 매트릭스, 점검 Gap, 시나리오와 흐름 상세도 일시 snapshot 실패에서 선택·검토 메모·Request Lab 초안을 보존하고 변경·전송만 잠급니다.
+- 실패 전에 시작된 Request Lab 전송은 브라우저가 abort하지 않습니다. 같은 dataset·Evidence에 도착한 결과를 표시해 서버가 만든 Evidence와 화면 결과가 갈리는 경우를 줄였습니다.
+- PR #11 persistence 회귀 9건은 현행 lifecycle/Surface 모델의 대체 회귀와 폐기된 record-level/generation 단언으로 사례별 분류했습니다.
+
 ## 미출시 · PR #11 잔존 Evidence·회귀 계약 보완 (D-150, 2026-09-12)
 
 - Evidence 행에서 같은 operation의 마스킹 Request/Response와 payload 보존 상태를 200건씩 탐색하는 페이지를 복구하고, cache key를 datasetRevision에 결박했습니다.

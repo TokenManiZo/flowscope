@@ -22,7 +22,7 @@ export function ScenariosPage() {
   }, [snapshot.data?.revision])
 
   function evidenceAction(ids: readonly string[], eventId: string) {
-    if (!snapshot.data?.events.some((event) => event.eventId === eventId)) return null
+    if (snapshot.isError || !snapshot.data?.events.some((event) => event.eventId === eventId)) return null
     return () => {
       setSelection({ kind: "scenario", evidenceIds: ids, eventIds: [eventId] })
       setInspectorOpen(true)
@@ -42,7 +42,7 @@ export function ScenariosPage() {
       <p className="text-sm">후보 {scenarios.length}개</p>
     </section>
   )
-  const inspector = <EvidenceSheet inline event={selectedEvent} snapshot={snapshot.data} selection={selection} onOpenChange={() => undefined} />
+  const inspector = <EvidenceSheet inline event={selectedEvent} snapshot={snapshot.data} selection={selection} disabled={snapshot.isError} onOpenChange={() => undefined} />
 
   return (
     <ReferenceAnalysisWorkspace

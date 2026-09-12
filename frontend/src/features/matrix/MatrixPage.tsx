@@ -72,21 +72,21 @@ export function ParameterMatrixView() {
   }, [snapshot.data])
   const currentGroup = selection ? [...groups.values()].find(group => group.cells.some(cell => cell.id === selection)) : undefined
   const current = currentGroup?.cells.find(cell => cell.id === selection)
-  useEffect(() => { if (selection && (!current || snapshot.isError)) setSelection(null) }, [selection, current, snapshot.isError])
+  useEffect(() => { if (selection && !current && !snapshot.isError) setSelection(null) }, [selection, current, snapshot.isError])
   const event = current && currentGroup ? snapshot.data?.events.find(item => current.evidenceIds.includes(item.eventId) && item.op === currentGroup.operation && item.method === current.endpoint.method) ?? null : null
   return <section className="min-w-0 space-y-4 p-4"><h1 className="text-base font-semibold">파라미터 커버리지</h1><p className="text-sm text-muted-foreground">서버가 제공한 입력별 검증 좌표입니다. 먼저 Gap 그래프에서 집중할 입력을 선택할 수 있습니다.</p>
     {snapshot.isLoading && !snapshot.isError && <p role="status">파라미터 커버리지 불러오는 중…</p>}
     {snapshot.isError && <SnapshotFailure title="파라미터 커버리지를 불러오지 못했습니다." retained={!!snapshot.data} updatedAt={snapshot.dataUpdatedAt} retry={() => void snapshot.refetch()} />}
     {!snapshot.isLoading && !snapshot.isError && !groups.size && <p>표시할 서버 파라미터 검증 좌표가 없습니다.</p>}
     {[...groups].map(([key, group]) => <section key={key} className="min-w-0 space-y-3"><h2 className="text-sm font-semibold [overflow-wrap:anywhere]">{group.label}</h2><ParameterCoverageMatrix cells={group.cells} onSelect={snapshot.isError ? undefined : cell => setSelection(cell.id)} /></section>)}
-    {current && currentGroup && snapshot.data && !snapshot.isError && <EvidenceSheet event={event} snapshot={snapshot.data} selection={{ kind: "matrix", identity: current.identity ?? "UNKNOWN", operation: currentGroup.operation, resource: current.targetResource, evidenceIds: current.evidenceIds, eventIds: current.evidenceIds }} onOpenChange={open => { if (!open) setSelection(null) }} />}
+    {current && currentGroup && snapshot.data && <EvidenceSheet event={event} snapshot={snapshot.data} selection={{ kind: "matrix", identity: current.identity ?? "UNKNOWN", operation: currentGroup.operation, resource: current.targetResource, evidenceIds: current.evidenceIds, eventIds: current.evidenceIds }} disabled={snapshot.isError} onOpenChange={open => { if (!open) setSelection(null) }} />}
   </section>
 }
 
 function SnapshotFailure({ title, retained, updatedAt, retry, detail }: { title: string; retained: boolean; updatedAt: number; retry(): void; detail?: string }) {
   return <Alert variant="destructive" className="sticky top-0 z-50 bg-background"><AlertTitle>{title}</AlertTitle><AlertDescription>
     {detail && <p>{detail}</p>}
-    {retained ? <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {updatedAt > 0 && Number.isFinite(updatedAt) ? <time dateTime={new Date(updatedAt).toISOString()}>{new Date(updatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>갱신에 성공할 때까지 Evidence 상세와 Request Lab 열기가 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
+    {retained ? <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {updatedAt > 0 && Number.isFinite(updatedAt) ? <time dateTime={new Date(updatedAt).toISOString()}>{new Date(updatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>열린 상세와 초안은 유지되며 갱신에 성공할 때까지 변경·전송 동작이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
     <Button variant="outline" size="sm" onClick={retry}>snapshot 다시 시도</Button>
   </AlertDescription></Alert>
 }
@@ -100,7 +100,7 @@ export function LegacyMatrixView() {
   const projection = useMemo(() => snapshot.data ? projectMatrix(snapshot.data, mode, gapsOnly) : null, [snapshot.data, mode, gapsOnly])
 
   useEffect(() => {
-    if (snapshot.isError) { setSelection(null); setInspectorOpen(false); return }
+    if (snapshot.isError) return
     if (!selection || !snapshot.data) return
     const current = snapshot.data.cells.find((cell) => cell.idn === selection.identity && cell.op === selection.operation && cell.resource === selection.resource)
     if (!current) { setSelection(null); setInspectorOpen(false); return }
@@ -111,7 +111,7 @@ export function LegacyMatrixView() {
   const selectedEvent = selection ? snapshot.data?.events.find((event) => selection.eventIds.includes(event.eventId)) ?? null : null
 
   const context = <section className="grid gap-3 p-3"><div><h2 className="text-sm font-semibold">표시 제어</h2><p className="text-xs text-muted-foreground">서버 역할과 기존 셀만 표시합니다.</p></div><Tabs value={mode} onValueChange={(value) => setMode(value === "role" ? "role" : "identity")}><TabsList><TabsTrigger value="identity">신원별</TabsTrigger><TabsTrigger value="role">역할별</TabsTrigger></TabsList></Tabs><label className="flex items-center gap-2"><Checkbox checked={gapsOnly} onCheckedChange={(checked) => setGapsOnly(checked === true)} /><span>갭만 표시</span></label></section>
-  const inspector = snapshot.isError ? <p className="p-3 text-sm">snapshot 갱신 실패 · 상세 열기 비활성화</p> : <EvidenceSheet inline event={selectedEvent} snapshot={snapshot.data} selection={selection} onOpenChange={() => undefined} />
+  const inspector = <EvidenceSheet inline event={selectedEvent} snapshot={snapshot.data} selection={selection} disabled={snapshot.isError} onOpenChange={() => undefined} />
   return <TooltipProvider><ReferenceAnalysisWorkspace ariaLabel="권한 매트릭스 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelection(null) }}><section className="grid gap-4 p-3" aria-labelledby="matrix-title">
     <div><h1 id="matrix-title" className="text-2xl font-semibold">권한 매트릭스</h1><p className="text-sm text-muted-foreground">판정·갭·근거는 서버 snapshot을 그대로 표시하며 화면에서 다시 계산하지 않습니다.</p></div>
     {snapshot.isError && <SnapshotFailure title="권한 매트릭스를 불러오지 못했습니다." retained={!!snapshot.data} updatedAt={snapshot.dataUpdatedAt} retry={() => void snapshot.refetch()} detail={snapshot.error instanceof Error ? snapshot.error.message : undefined} />}

@@ -1,5 +1,12 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · D-151 전 작업면 snapshot 초안·전송 수명 통일·전체 검증 완료
+
+- D-150 뒤 남은 판정 매트릭스·파라미터 커버리지·기존 권한 매트릭스·점검 Gap의 일시 snapshot 실패 선택 해제를 제거했다. 시나리오와 흐름 상세도 같은 공통 `EvidenceSheet` 잠금 계약으로 맞췄다. 마지막 성공 데이터·선택·검토 메모·Request Lab 초안은 남고 새 선택·정책 변경·전송·Repeater는 잠긴다.
+- Request Lab은 일시 snapshot 실패가 발생해도 이미 시작한 전송을 abort하지 않는다. 같은 dataset·Evidence generation이면 완료 응답을 현재 메모리 결과에 반영하고, 실제 dataset/Evidence 변경·닫기·unload에서는 계속 취소한다.
+- PR #11 `FlowScopeExtensionPersistenceTest` 9건을 현행 회귀와 대조했다. lifecycle·ProjectStore·SQLite로 대체한 사례와 D-143에서 폐기한 record-level parameter/attached-generation 전제 때문에 그대로 이식하지 않은 사례를 D-151에 명시했다.
+- JDK 21 전체 검증은 Java 570건(실패·오류 0, opt-in 2 skip), React 59파일·471건과 typecheck, release guard를 통과했다. 패키지 Playwright는 retry 0으로 15/15 통과(29.2s)했다. JAR은 31,940,963 bytes, SHA-256 `4620fb37d80aaccc7f7c819100594f8bf5aaa56ce34868db51f40cc46d9c1aef`. 실제 Burp 장애 중 전송 완료와 Windows/native Linux는 미실행이다.
+
 ## 2026-09-12 · D-150 PR #11 잔존 계약 보완·전체 검증 완료
 
 - PR #11 원본과 현행 트리를 다시 대조해 빠졌던 operation별 마스킹 Evidence/retention 200건 페이지를 `#evidence`에 복구했다. query cache는 datasetRevision·operation·offset·limit에 묶이고 화면 이탈 시 폐기된다.

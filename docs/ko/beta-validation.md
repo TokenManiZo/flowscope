@@ -1,5 +1,17 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-12 · D-151 전 작업면 snapshot 초안·전송 수명 최종 검증
+
+| 항목 | 실제 결과 |
+|---|---|
+| 코드 대조 | Evidence·Surface·전체 관계 그래프 외에 판정 매트릭스, 파라미터 커버리지, 기존 권한 매트릭스, 점검 Gap, 시나리오, 흐름 상세가 오류 시 선택을 지우는 경로를 확인했다. `RequestLabDialog`가 `suspended` 전환에서 진행 중 controller를 abort하던 경로도 확인했다. |
+| 전체 빌드 | JDK 21.0.12.1, Maven 3.9.16 `mvn -o clean verify` BUILD SUCCESS. Java 570 tests, 실패·오류 0, opt-in 2 skip. React 59 files/471 tests·typecheck, JAR/bundle release guard 통과. |
+| 추가 회귀 | 판정 검토 메모·Evidence 상세 보존/잠금/복구, 파라미터·기존 권한 매트릭스 상세 보존, Gap 상세와 연결 Evidence·Request Lab 잠금, 시나리오·흐름 상세 잠금, 진행 중 Request Lab 전송의 non-abort·동일 문맥 결과 1회 반영을 확인했다. |
+| PR #11 persistence | 원 9건을 D-151에서 사례별 대조했다. lifecycle·ProjectStore·SQLite로 의미를 옮긴 항목과 D-143에서 제거된 record-level parameter/attached-generation 전제 때문에 그대로 이식하지 않은 항목을 구분했다. 원 테스트와 바이트 동일한 9/9 포팅이라고 주장하지 않는다. |
+| 패키지 브라우저 | Node·JDK 21 PATH를 명시한 `npm run e2e -- --retries=0 --reporter=line`: 15/15 passed, 29.2s. sample의 Graph/Matrix/Evidence/Request Lab/계정/ZAP/Explorer/XML과 1920/1280/900/600px 동선을 검사했다. 첫 시도는 npm script가 `env node`를 찾지 못해 제품 서버 시작 전에 종료됐고 성공 결과에 포함하지 않았다. |
+| 산출물 | JAR 31,940,963 bytes, SHA-256 `4620fb37d80aaccc7f7c819100594f8bf5aaa56ce34868db51f40cc46d9c1aef`. 최종 문서를 반영해 bundle을 다시 조립하고 ZIP CRC·중첩 JAR 바이트·D-151 HANDOFF/검증/문서 상태 일치를 확인했다. bundle 자기 hash는 내부 문서에 기록하지 않는다. |
+| 미실행 | 실제 Burp background 장애 중 전송 완료, Windows/native Linux, 실제 대상 네트워크 단절. 자동 회귀와 Standalone 결과를 이 운영 gate의 통과로 바꾸지 않는다. |
+
 ## 2026-09-12 · D-150 PR #11 잔존 계약 최종 검증
 
 | 항목 | 실제 결과 |
