@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.46
+# FlowScope 1.2.0-beta.47
 
 Current implementation and open gates: [handoff](../ko/HANDOFF.md). Document scope and audit results: [documentation inventory](../ko/documentation-status.md) (Korean).
 
@@ -64,9 +64,9 @@ ZAP is required for the SCANNER campaign and optional for HUMAN-only use. The LL
 
 ## Build and install
 
-Download `flowscope-1.2.0-beta.46-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
+Download `flowscope-1.2.0-beta.47-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
 
-The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.46.jar`, and one download bundle, `target/flowscope-1.2.0-beta.46-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
+The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.47.jar`, and one download bundle, `target/flowscope-1.2.0-beta.47-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 
@@ -177,6 +177,8 @@ Request comparisons preserve uncertainty for unparsed bodies and unknown metadat
 - **Right detail and request comparison** — per-source verdicts, on-demand masked Request/Response, Request Lab, and Burp Repeater remain Evidence-bound. Opening a Gap comparison lazily derives non-sensitive parameter shape/type/length and SHA-256 equality signals from `/api/evidence`; sensitive paths and values are omitted, and these digests never enter the polling snapshot or project file. A digest is not proof that the server used a value or that authorization is vulnerable.
 
 ## Decision rules and trust boundary
+
+Beta.47 fixes the ZAP completion/restart race. During `CLEANUP`, the campaign remains running and the UI disables starting or cancelling again. The final result is published after cleanup and release of the restart guard. Save the current assessment before replacing an older extension.
 
 - A 2xx status is not sufficient by itself.
 - 401/403, login redirects, and soft-deny response text are treated as denial evidence.

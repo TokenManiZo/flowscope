@@ -1,8 +1,10 @@
-# FlowScope 1.2.0-beta.46 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.47 제품 개발·검증 계획
 
 > **읽는 법:** PR #11·#12의 관측·선언 공통 좌표, 파라미터 프로파일·Gap, 권한 대상 연결, 통합 Graph/Matrix 작업면과 Evidence 요청 비교는 D-143~146으로 구현됐다. 현재 작업은 이 기능들의 연결부 정확성·선택 수명·최종 저장 보완과 검증이다. 각 행의 예전 수치는 해당 단계의 이력이고 최신 검증은 `beta-validation.md`를 따른다. 실제 Burp·Windows 운영 결과는 자동·패키지 검증과 별도로 기록한다.
 
 ## 현재 우선순위 · PR #11·#12 이식 기능 대조표 (2026-09-11)
+
+**D-152 진행:** beta.46의 terminal/cleanup 경합을 지연 응답 회귀로 재현하고 제품 상태 게시·활성 run·취소 lane 마감을 보정했다. beta.47 로컬 전체 Java 574(2 skip)·React 472·패키지 Playwright 15/15, 실물 ZAP 하네스 1/1을 통과했다. 원격 CI·수정 PR·새 Release는 진행 중이다. 원 PR #11·#12의 head는 이식 당시와 같으며 대조표·차이 근거를 남기고 종료할 예정이다.
 
 **D-151 완료 상태:** D-150의 일시 snapshot 실패 수명을 판정·파라미터·기존 권한 매트릭스, 점검 Gap, 시나리오, 흐름 상세까지 통일했다. 선택·검토 메모·Request Lab 초안을 보존하고 새 동작만 잠그며, 실패 전에 시작한 전송은 같은 dataset·Evidence 결과를 기다린다. PR #11 persistence 9건은 현행 대체 회귀와 폐기된 record-level/generation 계약을 사례별로 기록했다. 최신 검증 수치는 `beta-validation.md` D-151을 따른다.
 

@@ -1,5 +1,7 @@
 # React Web UI 기능 동등성 인벤토리
 
+D-152 beta.47은 ZAP `RUNNING / CLEANUP` 단계의 설명·경과시간과 시작/중복 취소 잠금을 추가했다. `InspectionPage.test.tsx`는 정리 중 비활성→최종 상태 뒤 시작 재활성을 확인하고, Java latch 회귀는 정리 완료 전 terminal 비공개를 검사한다. 기존 Graph/Matrix/Evidence 작업면은 같은 패키지 Playwright 15/15로 확인했다.
+
 ## 현행 PR #11·#12 작업면 (D-145~147)
 
 - Graph: 상단 `분석 → 점검 Gap 그래프`에서 점검 우선순위/전체 관계 보기 두 탭을 제공한다.

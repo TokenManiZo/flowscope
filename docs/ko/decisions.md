@@ -1414,6 +1414,14 @@
 - **PR #11 persistence 대조:** 원 `FlowScopeExtensionPersistenceTest` 9건을 이름만 복사하지 않았다. 현행 모델에 남는 `shutdownFlushesTheLastCaptureAheadOfTheDelayedRebuild`, `importInvokedAfterShutdownDoesNotQueueOrInstall`, `successfulImportStillInstallsAndSavesTheCandidateSnapshot`은 `FlowScopeExtensionLifecycleTest`와 ProjectStore/SQLite 재열기 회귀로 대체했다. staging/queued import 두 건은 현행 `lifecycleMonitor` 원자 경계·shutdown-winner·late-open 회귀로 대체했다. `failedImportLeavesTheInstalledDatasetImmediatelySaveable`은 새 진단/샘플 교체 실패 시 기존 dataset 보존 회귀로 대체했다. `capturedRecordsReachBothManualSaveFormatsAndCheckpointAfterRebuild`의 record-level `parameterObservations` 단언은 D-143에서 그 필드를 영속 정본에서 제거하고 재열기 뒤 Surface를 재계산하므로 PortedFeaturesReopen·ProjectStore·SQLite 회귀로 대체했다. `concurrentMetadataChangeAbortsCheckpointBeforeOverwrite`와 `pendingRebuildCannotOverwriteAnExistingCheckpointWithStaleDerivedData`의 attached generation/derived-array 모델은 현행 `Pipeline.Result` 게시·atomic store 계약과 구조가 달라 그대로 이식하지 않았다. 이 둘은 원 테스트와 바이트 동일한 회귀가 아니라는 사실을 완료 주장과 분리한다.
 - **검증 경계:** React 회귀는 일시 실패 중 판정 검토 메모, 세 매트릭스/Gap/시나리오/흐름 상세, Request Lab 진행 중 전송을 확인한다. 서버가 요청을 받은 직후 실제 네트워크가 끊기는 Burp 운영 상황과 원 PR의 폐기된 attached-generation 바이트 동일성은 자동 검증 완료로 주장하지 않는다.
 
+## D-152 · ZAP 정리와 재시작 가능 시점 뒤에 최종 상태를 게시한다 (2026-09-12)
+
+- **문제:** beta.46은 캠페인 `FAILED/COMPLETED`를 게시한 다음 capability·worker를 정리했다. 즉시 재시작은 `cleanup is still running`으로 거부돼 원격 CI가 간헐적으로 실패했고, 사용자 화면도 종료와 재시작 가능 여부가 달랐다. ZAP이 Client 시작을 수락한 뒤 응답 ID를 받기 전에 취소하면 worker interrupt로 ID를 잃어 해당 crawler를 중지하지 못하는 경로도 새 latch 회귀에서 재현됐다.
+- **결정:** 최종 결과는 내부 대기값으로 보존하고 외부에는 `RUNNING / CLEANUP`과 정리 경과시간을 게시한다. capability 정리·완료 조건 검증을 끝낸 worker의 마지막 구간에서 시작 잠금 해제와 최종 결과 게시를 함께 수행한다. 정리 중에는 활성 run을 유지해 scope/프로젝트 전환을 막고, 취소된 lane은 `CANCELLED`, 미시작 lane은 `NOT_RUN`으로 마감한다. React는 정리 중 시작·중복 취소를 비활성화한다.
+- **시작/취소 순서:** Client 시작 응답 수신과 소유 scan ID 등록은 취소와 같은 monitor로 보호한다. 취소는 유한 API timeout 안에서 시작 응답/실패가 확정된 뒤 소유 ID를 중지한다. 닫힐 때 executor에서 빠진 미실행 FutureTask도 정리하고 worker 종료를 최대 10초 기다린다. 정리 실패는 원 실패/경고와 남은 Replacer rule 재시도 계약을 유지한다.
+- **기각:** 테스트 retry만 늘려 `FAILED`를 정리 완료처럼 취급하는 방식은 제품의 경합을 유지한다. 이미 배포한 beta.46 태그/JAR을 같은 이름으로 바꾸는 방식도 식별을 어렵게 하므로 beta.47을 새로 게시한다.
+- **검증:** 새 latch 회귀 4건이 기존 코드에서 모두 실패했다. 정상·실패·취소의 cleanup 지연, 종료 직후 재시작, 수락된 시작 응답 전 취소, 정리 중 활성 run 유지와 취소 lane 마감을 검사한다. 관측 가능한 snapshot과 호출 결과를 검사하며 실제 ZAP·운영체제 실측은 별도로 기록한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

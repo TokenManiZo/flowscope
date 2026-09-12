@@ -12,7 +12,9 @@ import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -78,6 +80,97 @@ final class ZapCampaignTest {
         }
     }
 
+    @Test
+    void completedStatusIsPublishedOnlyAfterCleanupAndAllowsImmediateRestart() throws Exception {
+        assertTerminalWaitsForCleanup(true);
+    }
+
+    @Test
+    void failedStatusIsPublishedOnlyAfterCleanupAndAllowsImmediateRestart() throws Exception {
+        assertTerminalWaitsForCleanup(false);
+    }
+
+    private void assertTerminalWaitsForCleanup(boolean capture) throws Exception {
+        try (Fixture fixture = new Fixture(false, capture);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            CountDownLatch cleaning = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            fixture.holdCleanup(cleaning, release);
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            try {
+                assertTrue(cleaning.await(5, TimeUnit.SECONDS));
+                JsonNode status = campaign.deterministicZapBaselineStatus();
+                assertEquals("RUNNING", status.path("status").asText(), status.toString());
+                assertEquals("CLEANUP", status.path("stage").asText());
+                assertNotNull(fixture.contexts.current(Source.SCANNER), "dataset changes must remain blocked until cleanup finishes");
+            } finally { release.countDown(); }
+            assertEquals(capture ? "COMPLETED" : "FAILED", awaitTerminal(campaign).path("status").asText());
+            assertEquals("", fixture.capabilityRun.get());
+            assertDoesNotThrow(() -> campaign.startDeterministicZapCampaign(TARGET, List.of(), true));
+            awaitTerminal(campaign);
+        }
+    }
+
+    @Test
+    void cancellationDoesNotPublishTerminalWhileOwnedCleanupIsBlocked() throws Exception {
+        try (Fixture fixture = new Fixture(true);
+             ZapCampaign campaign = new ZapCampaign(fixture);
+             var callers = Executors.newVirtualThreadPerTaskExecutor()) {
+            CountDownLatch cleaning = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            fixture.holdCleanup(cleaning, release);
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            await(() -> "2".equals(campaign.deterministicZapBaselineStatus().path("scan_id").asText()));
+            var cancellation = callers.submit(campaign::cancelDeterministicZapBaseline);
+            try {
+                assertTrue(cleaning.await(5, TimeUnit.SECONDS));
+                JsonNode status = campaign.deterministicZapBaselineStatus();
+                assertEquals("RUNNING", status.path("status").asText());
+                assertEquals("CLEANUP", status.path("stage").asText());
+                assertNotNull(fixture.contexts.current(Source.SCANNER));
+            } finally { release.countDown(); }
+            cancellation.get(5, TimeUnit.SECONDS);
+            JsonNode terminal = awaitTerminal(campaign);
+            assertEquals("CANCELLED", terminal.path("status").asText());
+            terminal.path("lanes").forEach(lane -> assertFalse(
+                    List.of("RUNNING", "PENDING").contains(lane.path("status").asText())));
+            assertTrue(fixture.stopped.get());
+            assertEquals("", fixture.capabilityRun.get());
+            assertDoesNotThrow(() -> campaign.startDeterministicZapCampaign(TARGET, List.of(), true));
+        }
+    }
+
+    @Test
+    void cancellationWaitsForAcceptedStartReplyAndStopsTheReturnedScan() throws Exception {
+        try (Fixture fixture = new Fixture(true);
+             ZapCampaign campaign = new ZapCampaign(fixture);
+             var callers = Executors.newVirtualThreadPerTaskExecutor()) {
+            CountDownLatch accepted = new CountDownLatch(1);
+            CountDownLatch reply = new CountDownLatch(1);
+            CountDownLatch cancelling = new CountDownLatch(1);
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                accepted.countDown();
+                Fixture.awaitRelease(reply);
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            assertTrue(accepted.await(5, TimeUnit.SECONDS));
+            var cancellation = callers.submit(() -> {
+                cancelling.countDown();
+                return campaign.cancelDeterministicZapBaseline();
+            });
+            try {
+                assertTrue(cancelling.await(5, TimeUnit.SECONDS));
+                assertThrows(TimeoutException.class, () -> cancellation.get(150, TimeUnit.MILLISECONDS));
+            } finally { reply.countDown(); }
+            cancellation.get(5, TimeUnit.SECONDS);
+            assertEquals("CANCELLED", awaitTerminal(campaign).path("status").asText());
+            assertTrue(fixture.stopped.get(), "accepted scan must not be orphaned by interrupting its start reply");
+            assertNull(fixture.contexts.current(Source.SCANNER));
+        }
+    }
+
     private static JsonNode awaitTerminal(ZapCampaign campaign) throws Exception {
         await(() -> !"RUNNING".equals(campaign.deterministicZapBaselineStatus().path("status").asText()));
         return campaign.deterministicZapBaselineStatus();
@@ -99,12 +192,14 @@ final class ZapCampaignTest {
         private final AtomicBoolean stopped = new AtomicBoolean();
         private final AtomicReference<String> capabilityRun = new AtomicReference<>("");
 
-        Fixture(boolean blockClient) throws IOException {
+        Fixture(boolean blockClient) throws IOException { this(blockClient, true); }
+
+        Fixture(boolean blockClient, boolean capture) throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             registerSafeZapEnvironment(server, 0);
             server.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
             server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
-                observe("/client");
+                if (capture) observe("/client");
                 zapReply(exchange, "{\"scan\":\"2\"}");
                 started.countDown();
             });
@@ -117,6 +212,27 @@ final class ZapCampaignTest {
             server.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange, "{\"recordsToScan\":\"0\"}"));
             server.start();
             client = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
+        }
+
+        private void holdCleanup(CountDownLatch entered, CountDownLatch release) {
+            AtomicBoolean first = new AtomicBoolean(true);
+            server.removeContext("/JSON/replacer/action/removeRule/");
+            server.createContext("/JSON/replacer/action/removeRule/", exchange -> {
+                if (first.compareAndSet(true, false)) {
+                    entered.countDown();
+                    awaitRelease(release);
+                }
+                zapReply(exchange, "{\"Result\":\"OK\"}");
+            });
+        }
+
+        private static void awaitRelease(CountDownLatch release) throws IOException {
+            try {
+                if (!release.await(10, TimeUnit.SECONDS)) throw new IOException("test barrier was not released");
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IOException(error);
+            }
         }
 
         private void observe(String path) {

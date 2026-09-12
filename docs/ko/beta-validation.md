@@ -1,4 +1,16 @@
-# FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.47 사전 벤치마크 검증 기록
+
+## 2026-09-12 · D-152 beta.47 ZAP 종료·재시작 보정
+
+| 검사 | 실제 결과 |
+|---|---|
+| 수정 전 재현 | 새 latch 테스트 4건 모두 실패: 정상/실패 결과의 cleanup 전 게시, 취소 시 정리 단계 미표시, 수락된 시작 응답 전 취소로 scan ID 소실. 후속 활성 run 유지 단언도 3건 실패했다. |
+| 수정 후 집중 | ZAP 7+16=23건 통과. cleanup 차단 중 RUNNING/CLEANUP·활성 run 유지, terminal 뒤 즉시 재시작, 취소 lane 마감과 반환된 scan ID의 stop을 확인했다. |
+| 전체 빌드 | JDK 21 `mvn -o clean verify` BUILD SUCCESS. Java 574, 실패·오류 0, opt-in 2 skip. React 59파일/472건·타입검사와 JAR/bundle release guard 통과. |
+| 패키지 브라우저 | beta.47 JAR의 Standalone Playwright `--retries=0`: 15/15, 30.2초. Graph/Matrix/Evidence/Request Lab·계정·실행 상태·반응형 동선 검사. |
+| 실물 ZAP | 사용자 8089와 다른 Compose project `flowscope-beta47-gate`, API 18889, 기록 proxy 18881, 전용 임시 key. Docker Chromium/ChromeDriver 152.0.7977.82. 익명·정상 2계정 Client 63요청 완료 뒤 다음 캠페인의 잘못된 비밀번호 계정은 인증 단계에서 거부됐다. opt-in 1/1, 106.6초, 실패·skip 0. 외부로 전달하지 않는 로컬 fixture다. |
+| JAR | 31,942,102 bytes, SHA-256 `80d6e5357b3d73fdcfa274662f5bdfce39d792e3675c24dbbc7b9fa331e38cbe`. bundle은 최종 문서를 넣어 재조립하며 자신의 hash를 내부에 기록하지 않는다. |
+| 미실행 | 실제 Burp hook과 Windows/native Linux 실기기, 외부 대상의 효능, 실물 ZAP의 시작 API 응답 유실/timeout. 지연 응답·취소의 결정적 회귀는 mock API로 검증했다. |
 
 ## 2026-09-12 · main 배포 CI 첫 실행과 상태 대기 보정
 

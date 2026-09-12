@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0-beta.47 — ZAP cleanup and restart ordering (2026-09-12)
+
+- Publish completed, failed, or cancelled results only after cleanup and release of the restart guard. The UI shows cleanup time and disables new starts and duplicate cancellations while cleaning.
+- Preserve the scan ID when cancelling an accepted Client start before its response arrives. Close cancelled and unstarted lane states consistently.
+- Keep the run active during cleanup to protect dataset changes. Add delayed-response/restart regressions and update the teammate guide; retain beta.46 as a separate historical artifact.
+
 ## 1.2.0-beta.46 team test prerelease — 2026-09-12
 
 - Includes the D-128–151 changes, PR #11/#12 workspace integration, and project/Evidence lifetime fixes listed below.

@@ -173,6 +173,27 @@ describe("four-stage inspection controls", () => {
 
   })
 
+  it("keeps restart and cancel disabled until cleanup finishes", async () => {
+    const user = userEvent.setup()
+    let cleaned = false
+    const { client } = renderInspection({ scanner: () => ({
+      run: cleaned ? { status: "COMPLETED", stage: "ALERTS_READY" }
+        : { status: "RUNNING", stage: "CLEANUP", activity_state: "CLEANING_UP", stage_elapsed_seconds: 3 },
+      scope: [target], accounts: [],
+    }) })
+    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
+    expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "ZAP 검사 취소" })).toBeDisabled()
+    await user.click(screen.getByRole("tab", { name: "실행 상태" }))
+    expect(screen.getByText(/종료 처리 · 임시 상태 정리 중/)).toBeVisible()
+    cleaned = true
+    await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.scannerRun }) })
+    await user.click(screen.getByRole("tab", { name: "실행 설정" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeEnabled())
+  })
+
   it("preserves optional API definitions when starting a ZAP campaign", async () => {
     const user = userEvent.setup()
     const completed = renderInspection()

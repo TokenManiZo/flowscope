@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.46
+# FlowScope 설계서 v1.2.0-beta.47
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
@@ -294,6 +294,8 @@ Codex app-server는 ephemeral thread와 격리 workspace를 사용한다. 모델
 - ZAP `scanOnlyInScope`는 FlowScope 허용목록이 아니라 ZAP Context를 읽는다. 따라서 각 fresh session에 선택 target의 origin·path subtree만 매치하는 Context를 만들고 in-scope로 표시한 뒤 passive rule을 활성화·재확인한다. regex 회귀는 sibling path, subdomain, 다른 scheme/port를 거부한다.
 
 ## 5. UI
+
+D-152: ZAP 캠페인은 수집 결과가 결정돼도 정리가 끝날 때까지 `RUNNING / CLEANUP`으로 게시한다. 정리 중 run은 scope/프로젝트 변경을 막으며, worker 정리 이후 최종 상태와 재시작 가능 시점이 일치한다. Client 시작 API 응답과 scan ID 등록은 취소와 같은 monitor로 보호하고, 취소는 그 ID의 stop 확인을 수행한다. 취소된 lane/미시작 lane도 최종 상태로 마감한다. 화면은 정리 경과시간과 설명을 표시하며 시작·중복 취소를 잠근다.
 
 D-150: 공통 OperationEditor와 operation Evidence query는 datasetRevision·Evidence/operation 좌표에 결박된다. Evidence/Surface/전체 관계 그래프는 background snapshot 실패를 즉시 표시하고 마지막 성공 데이터·시각·재시도를 유지한다. 열린 Request Lab은 같은 dataset의 미전송 초안을 유지하지만 모든 변경·전송 동작을 잠그며 복구 후 다시 활성화한다. 처음부터 성공 snapshot이 없거나 dataset/Evidence 전제가 바뀌면 상세와 초안을 만들지 않는다.
 
