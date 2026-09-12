@@ -1,8 +1,10 @@
 # 문서 정합성·갱신 기준
 
-현재 배포는 [beta.47 테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.47), 배포 코드·태그는 `60a3291`, 변경 계약은 D-152다. ZAP cleanup과 최종 상태 게시·재시작, 수락된 Client 시작 응답 전 취소를 보정했다. 실제 완료 상태와 남은 운영 검증은 [HANDOFF](HANDOFF.md), 설치는 [팀원 첫 실행](team-quick-start.md)을 따른다. 비공개 저장소이므로 협업 권한이 있는 본인 GitHub 계정 로그인이 필요하다.
+현재 기준은 D-153/beta.48 SQLite 연결 수정이다. 호스트가 JDBC를 먼저 초기화해도 번들 드라이버로 직접 저장·재열기하며 DB 형식은 유지한다. 집중 12/12·전체 Java 575(2 skip)·React 472·패키지 UI 15/15와 원격 PR #16 CI가 통과했다. 사용자에게 이번 PR의 관리자 예외 병합·게시 승인을 받았으며 배포 기준은 PR #16 main 병합 커밋과 `v1.2.0-beta.48`이다. 자산·최종 CI는 [Release 기록](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48), 운영 검증은 [HANDOFF](HANDOFF.md), 설치는 [팀원 첫 실행](team-quick-start.md)을 따른다. 비공개 저장소이므로 협업 권한이 있는 본인 GitHub 계정 로그인이 필요하다.
 
-검증 기준: 로컬 Java 574(실패·오류 0, opt-in 2 skip), React 472, 패키지 Playwright 15/15, 별도 실물 ZAP 하네스 1/1. PR #13 및 [최종 main CI 34694001780](https://github.com/choewonwoo1817/testflowscope/actions/runs/34694001780)가 전체 build·패키지·동일 러너 재현성·스크립트 검사를 통과했다. 실제 Burp hook·Windows 실기기·외부 대상 효능은 이 결과로 완료 처리하지 않는다.
+D-153 문서 대조: 관리 문서 39개의 현행/역사 구분과 SQLite·버전·교체 안내 관련성을 확인했다. 로컬 링크 258개와 inventory 누락 0개다. 이전 beta.47 실물 결과·원 명세·연구는 수정본의 새 검증으로 바꾸지 않았다. 코드·회귀·현재 계약/설치/진행/검증 문서를 같은 작업 단위로 반영한다.
+
+직전 beta.47(`60a3291`) 기록: 로컬 Java 574(실패·오류 0, opt-in 2 skip), React 472, 패키지 Playwright 15/15, 별도 실물 ZAP 하네스 1/1. PR #13 및 [당시 main CI 34694001780](https://github.com/choewonwoo1817/testflowscope/actions/runs/34694001780)가 전체 build·패키지·동일 러너 재현성·스크립트 검사를 통과했다. 이 결과는 beta.48 재검증 또는 실제 Burp hook·Windows 실기기·외부 대상 효능으로 재사용하지 않는다.
 
 2026-09-12 문서 정정: 새 결과를 위에 덧붙이면서 아래의 과거 문단이 여전히 `현재`, `최신`, `미해결`, `미출시`를 주장한 누락을 바로잡았다. 문서 목록·현행 안내·완료 상태·로컬 링크를 대조하고, 과거 연구·명세·검증 수치는 각 당시 기록으로 보존한다. 문서 정정은 새 실행 검증이나 새 바이너리 배포를 뜻하지 않는다.
 
@@ -58,31 +60,31 @@
 | 문서 | 지위 | 이번 대조·처리 |
 |---|---|---|
 | [AGENTS.md](../../AGENTS.md) | 개발 지침 | 제품 불변식·작업 범위·코드/검증/문서 기록 규칙 |
-| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | beta.47/D-152 인계 우선과 기존 사용자 지침 보존 |
+| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | beta.48/D-153 인계 우선과 기존 사용자 지침 보존 |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | 개발 지침 | JDK 21 정확히·Maven 3.9.x, 중간 상태 갱신 |
 | [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
-| [README.md](../../README.md) | 현행 계약 | beta.47 배포·비공개 저장소 접근·설치·실행·증거 의미 |
-| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어와 같은 beta.47 배포·접근 조건·실행 계약 |
-| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.47 bundle/doctor·GitHub 접근·Burp/ZAP/Explorer 설치 |
+| [README.md](../../README.md) | 현행 계약 | beta.48 배포·비공개 저장소 접근·설치·실행·증거 의미 |
+| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어와 같은 beta.48 배포·접근 조건·실행 계약 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.48 bundle/doctor·GitHub 접근·Burp/ZAP/Explorer 설치 |
 | [docs/ko/team-quick-start.md](team-quick-start.md) | 사용자 가이드 | 팀원용 ZIP 선택·Burp/Docker 준비 순서·OS별 doctor·JAR 교체·첫 진단 |
 | [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Evidence/Request Lab·Explorer·ZAP 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
 | [docs/en/SECURITY.md](../../docs/en/SECURITY.md) | 현행 계약 | 한국어 운영 안전·제거 경계와 대조 |
 | [docs/ko/README.md](README.md) | 목차 | 현재/역사 문서 목록과 진행 갱신 기준 |
-| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-152 수정·최종 main CI·배포·PR 종료와 남은 운영 gate |
+| [docs/ko/HANDOFF.md](HANDOFF.md) | 진행 | D-153 수정·최종 main CI·배포·PR 종료와 남은 운영 gate |
 | [docs/ko/handoff-2026-09-04.md](handoff-2026-09-04.md) | 역사 | 기존 인계의 이전 기준선 이하 본문 보존, 현행 작업 지시와 분리 |
-| [docs/ko/architecture.md](architecture.md) | 현행 계약 | 현행 데이터 흐름·증거/초안 수명·D-152 종료 및 재시작 경계 |
+| [docs/ko/architecture.md](architecture.md) | 현행 계약 | 현행 데이터 흐름·증거/초안 수명·D-153 SQLite 연결과 기존 종료·재시작 경계 |
 | [docs/ko/endpoint-parameter-surface.md](endpoint-parameter-surface.md) | 현행 계약 | D-143 공통 ParameterCoordinate(canonicalPath), LLM Observation/Declaration/probe, parameter provenance·미실행 실험 구분, D-149 Surface enum 순서·sample fixture 일치 |
 | [docs/ko/llm-explorer.md](llm-explorer.md) | 현행 계약 | 독립 Explorer 실행·인증·HTTP/선언 도구·scope·Evidence·사용자 조작·남은 gate |
-| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | 현행 목적·D-152/beta.47 구현·실측/미실측 범위 |
-| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | 현행 작업면 목적·증거 표현·D-152 정리 단계·과거 UI 이력 |
+| [docs/ko/product-overview.md](product-overview.md) | 현행 계약 | 현행 목적·D-153/beta.48 구현·실측/미실측 범위 |
+| [docs/ko/ui-product-rationale.md](ui-product-rationale.md) | 현행+이력 | 현행 작업면 목적·증거 표현·D-153 정리 단계·과거 UI 이력 |
 | [docs/ko/web-ui-feature-parity.md](web-ui-feature-parity.md) | 현행+이력 | 작업면별 API/회귀/실측 근거와 폐기 기능 구분 |
 | [docs/ko/mcp-judge-removal-plan.md](mcp-judge-removal-plan.md) | 진행 | D-126 제거 유지, D-128 별도 Explorer, D-132 Client-only 완료와 실물 gate, 제품 MCP 보류 |
-| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | PR 이식 대조표·D-152 완료·후속 운영 및 연구 gate |
-| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-152까지의 결정·기각안·원 PR 대비 대체 관계 |
+| [docs/ko/product-development-plan.md](product-development-plan.md) | 진행+이력 | PR 이식 대조표·D-153 완료·후속 운영 및 연구 gate |
+| [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-153까지의 결정·기각안·원 PR 대비 대체 관계 |
 | [docs/ko/development-log.md](development-log.md) | 역사 | 실제 변경·이유·회귀·검증 및 문서 정정의 작업별 이력 |
-| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-152/beta.47의 로컬·원격·실물 검증과 artifact별 과거 결과 |
-| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | beta.47 변경과 과거 버전별 배포/개발 이력 |
+| [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-153/beta.48의 SQLite 자동·패키지 검증과 artifact별 과거 결과 |
+| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | beta.48 변경과 과거 버전별 배포/개발 이력 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 변경 이력과 동일한 버전·변경 범위 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
 | [docs/ko/graph-ux.md](graph-ux.md) | 역사 | 초기 Swing/JGraphX 및 과거 LLM 설명과 현행 UI 분리, 현행 계층 계약은 `GRAPH_IDA_REDESIGN.md`·D-143 5c 우선 |

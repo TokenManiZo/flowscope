@@ -1,5 +1,22 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · beta.48 관리자 예외 승인·배포 인계
+
+- 사용자가 PR #16의 관리자 예외 병합과 main·Release 반영을 명시적으로 승인해 이전 승인 대기 조건을 해소했다. 규칙 변경이나 강제 푸시는 하지 않는다.
+- 문서 커밋 `7810f46`의 CI 34698310197도 verify 8분 8초, 전체 build·JAR/bundle·재현성·Bash/Windows 구문 검사를 통과했다. 제품 코드는 이미 검증한 `36a5020`과 같다.
+- HANDOFF·계획·문서 현황·검증 기록의 승인 대기 표현을 정정하고 배포 기준을 PR #16 main 병합 커밋/태그 `v1.2.0-beta.48`로 지정했다. 최종 문서를 설치 bundle에 다시 넣고, 게시한 파일은 인증된 GitHub 다운로드로 검증한다. 게시 시각·최종 CI·자산 해시는 Release의 외부 기록으로 식별하며 bundle 안에 자신의 해시를 넣지 않는다.
+- 실제 Burp 새 JAR 재로드·Windows 실기기·이번 ZAP/Explorer 실물 gate는 여전히 별도다. 멘토 보고서는 추적/배포하지 않는다.
+
+## 2026-09-12 · D-153 SQLite 호스트 초기화 순서 결함 수정
+
+- 사용자 Burp에서 범위 적용 시 `FlowScope SQLite save failed`가 발생했다. beta.47 JAR의 실제 SqliteProjectStore를 호스트 선행 JDBC 초기화 조건에서 호출해 `No suitable driver found`를 재현했다. 실행 중 Burp의 class hierarchy에도 저장 클래스/DriverManager는 있고 SQLite JDBC는 없었다. 대조군의 명시적 드라이버 로드는 저장·재열기가 성공했다.
+- 새 독립 JVM 회귀는 수정 전 같은 SQLException으로 실패했다. 기존 테스트는 SQLite 드라이버를 직접 로드한 뒤 메모리 DB만 검사해 실제 저장소의 DriverManager 서비스 탐색 공백을 놓쳤다. 테스트 데이터의 임의 Evidence ID가 codec에서 정규화되는 것을 확인해, 저장 전 정본 EvidenceIds가 만든 ID의 보존을 검사하도록 테스트를 정정했다.
+- SqliteProjectStore.connect를 번들 JDBC.createConnection으로 변경했다. Class.forName 뒤 DriverManager 검색을 계속 쓰거나 호스트 context classloader를 교체하는 대안은 불필요한 호스트 전역 탐색 의존을 남기므로 쓰지 않았다. schema·Evidence·파일 권한·atomic replace는 그대로다. 범위 실패는 기존 projectError 경로로 보내 원인 예외를 Errors에 기록한다.
+- 변경 파일: SqliteProjectStore, FlowScopeExtension, SqliteClassLoaderIsolationTest, 신규 SqliteProjectStoreIsolationProbe, FatJarIsolationSmoke와 beta.48 버전 메타데이터. README 한/영·설치·팀원 가이드·아키텍처·UI 근거·결정·계획·인계·변경 이력·검증 기록을 함께 갱신한다.
+- 집중 자동 검증 12/12, JDK 21 전체 verify 2회 각각 Java 575(실패·오류 0, opt-in 2 skip)·React 472, 완성 JAR 저장·재열기와 패키지 UI 15/15(retry 0, 29.0초) 통과. JAR 31,942,036 bytes, SHA-256 `6405e78207d0d729946aee38518678c22bdef58005fac2e5899585f651f16bfa`로 동일했다. 최종 JAR을 독립 JVM에서 다시 호출한 실제 저장·재열기도 통과했다.
+- 원격 `36a5020`/PR #16의 CI 34697738243는 verify 9분 2초 성공, 전체 build·패키지 검사·재현성·스크립트 검사를 통과했다. main 필수 승인 1건에 대한 관리자 예외 요청은 별도 사용자 승인이 없다는 이유로 실행 전에 거부됐다. main/태그/Release 변경은 하지 않고 승인을 기다린다. 보호 규칙은 유지했다.
+- Burp 번들 Java 별도 probe는 출력 없이 OS 대기 상태이며 TERM/KILL 후 마지막 확인에서도 잔존했다. 성공/종료 완료로 기록하지 않는다. 실제 사용자 Burp는 건드리지 않았다. 새 JAR Burp 재로드·Windows 실기기는 별도 gate다.
+
 ## 2026-09-12 · beta.47 현행 문서 정합성 정정
 
 - 문서 업데이트 여부를 재점검하면서 HANDOFF의 해결된 D-152 문제를 `현행 미해결`로 적은 문장, 문서 현황의 중복 `최신/현재 beta.46` 안내, 제품 개요·한영 README·제거 계획의 미출시 표현을 확인했다. 새 완료 문단만 덧붙이고 이전 현행 문단을 정리하지 않은 누락이었다.

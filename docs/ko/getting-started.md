@@ -1,12 +1,14 @@
 # FlowScope 설치·첫 실행 가이드
 
+beta.48은 호스트 JDBC 초기화 순서로 인한 `FlowScope SQLite save failed`를 수정합니다. SQLite를 별도 설치하거나 프로젝트 폴더를 지우지 마세요. 가능하면 진단 저장/JSON 내보내기 후 이전 확장을 내리고 beta.48 JAR 하나만 로드합니다. 범위 적용 실패의 상세 원인은 Burp Extensions의 FlowScope **Errors**에 기록됩니다.
+
 처음 설치하는 팀원은 [짧은 첫 실행 가이드](team-quick-start.md)부터 따라 하고, 이 문서는 설정·문제 해결의 상세 참조로 사용하십시오.
 
 beta.47의 ZAP은 최종 상태를 공개하기 전에 `종료 처리 · 임시 상태 정리 중`을 표시합니다. 이때 시작·중복 취소가 잠기며, 정리가 끝난 뒤 재시작할 수 있습니다. beta.46에서 보이던 종료 직후 `cleanup is still running` 경합을 보정한 동작입니다.
 
 이 가이드는 D-128/D-139 독립 Explorer, D-135 FlowScope Docker Chromium ZAP과 D-138 연결 상태 기준입니다. 이전 JAR과 구분하려면 [현재 인계](HANDOFF.md)와 [산출물 검증 기록](beta-validation.md)을 함께 확인하십시오.
 
-현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server HTTP·선언 dynamic tool과 Java exact-scope gateway를 쓴다(D-128/D-139). ZAP 로그인 lane은 HUMAN Session Broker를 재사용하지 않는다. Browser Based Authentication의 실제 응답 Evidence가 필수 로그인 성공 정규식과 일치한 계정만 계정 지정 crawler에 사용한다(D-136). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 `chrome-headless` Client Spider를 사용한다(D-135). H/S/L 관측 비교와 과거 프로젝트는 보존한다. 사용할 파일은 beta.47 테스트 Release의 JAR 또는 distribution bundle이며, 소스 빌드는 기여자용 대체 경로다.
+현재 소스의 실행 경로는 HUMAN·ZAP·독립 Codex Explorer다. 기존 LLM Judge·MCP·브라우저 하네스는 제거된 상태를 유지하며 새 Explorer는 app-server HTTP·선언 dynamic tool과 Java exact-scope gateway를 쓴다(D-128/D-139). ZAP 로그인 lane은 HUMAN Session Broker를 재사용하지 않는다. Browser Based Authentication의 실제 응답 Evidence가 필수 로그인 성공 정규식과 일치한 계정만 계정 지정 crawler에 사용한다(D-136). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 `chrome-headless` Client Spider를 사용한다(D-135). H/S/L 관측 비교와 과거 프로젝트는 보존한다. 사용할 파일은 beta.48 테스트 Release의 JAR 또는 distribution bundle이며, 소스 빌드는 기여자용 대체 경로다.
 
 ## 1. 지원 경로와 검증 범위
 
@@ -17,7 +19,7 @@ beta.47의 ZAP은 최종 상태를 공개하기 전에 `종료 처리 · 임시 
 | LLM Explorer | 독립 endpoint·parameter·계정별 응답 관측 | Release JAR 또는 bundle, Burp, 공식 Codex CLI와 유효한 Codex 로그인 |
 | 소스 빌드 | 코드 수정·기여 | 위 환경, JDK 21 정확히, Maven 3.9.x |
 
-다운로드 사용자는 Maven·Node.js·npm·호스트 Chrome·ChromeDriver·ZAP Desktop을 설치하지 않는다. `flowscope-1.2.0-beta.47-bundle.zip`을 권장하며, 이 파일에 Burp용 JAR, ZAP Dockerfile·Compose/helper, macOS·Linux·Windows doctor와 현재 문서가 함께 들어간다. JAR 단독 파일은 HUMAN과 Explorer에 충분하지만 ZAP helper는 포함하지 않는다.
+다운로드 사용자는 Maven·Node.js·npm·호스트 Chrome·ChromeDriver·ZAP Desktop을 설치하지 않는다. `flowscope-1.2.0-beta.48-bundle.zip`을 권장하며, 이 파일에 Burp용 JAR, ZAP Dockerfile·Compose/helper, macOS·Linux·Windows doctor와 현재 문서가 함께 들어간다. JAR 단독 파일은 HUMAN과 Explorer에 충분하지만 ZAP helper는 포함하지 않는다.
 
 실제 확인한 기준선은 다음과 같다.
 
@@ -56,9 +58,9 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 현재 저장소는 비공개다. 본인의 협업 권한이 있는 GitHub 계정으로 로그인한 뒤 아래 파일을 받는다. 로그아웃/권한 없음의 404는 ZAP이나 FlowScope 실행 오류가 아니다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.47-bundle.zip`을 받고 압축을 푼다. Release에 bundle이 아직 없다면 저장소를 clone하고 §6의 소스 빌드 절차로 만든다. ZAP을 쓰지 않는 사용자는 `flowscope-1.2.0-beta.47.jar`만 받아도 된다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.48-bundle.zip`을 받고 압축을 푼다. Release에 bundle이 아직 없다면 저장소를 clone하고 §6의 소스 빌드 절차로 만든다. ZAP을 쓰지 않는 사용자는 `flowscope-1.2.0-beta.48.jar`만 받아도 된다.
 2. 압축을 푼 디렉터리 구조를 유지한다. `scripts/zap-up.*`가 상대 경로 `infra/zap/compose.yaml`을 사용하므로 파일 일부만 옮기면 Docker Quick Start가 동작하지 않는다.
-3. bundle 루트의 `flowscope-1.2.0-beta.47.jar`를 사용한다.
+3. bundle 루트의 `flowscope-1.2.0-beta.48.jar`를 사용한다.
 4. Burp **Settings → Tools → Proxy → Proxy listeners**에서 사용할 기능에 맞는 listener를 만든다.
    - HUMAN을 사용할 때 bind address `127.0.0.1`, port `8080`
    - ZAP을 사용할 때 bind address `127.0.0.1`, port `8081`. native Linux Docker Engine에서는 아래 Docker Quick Start의 특정 bridge IP listener도 추가한다.

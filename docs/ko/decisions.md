@@ -1422,6 +1422,13 @@
 - **기각:** 테스트 retry만 늘려 `FAILED`를 정리 완료처럼 취급하는 방식은 제품의 경합을 유지한다. 이미 배포한 beta.46 태그/JAR을 같은 이름으로 바꾸는 방식도 식별을 어렵게 하므로 beta.47을 새로 게시한다.
 - **검증:** 새 latch 회귀 4건이 기존 코드에서 모두 실패했다. 정상·실패·취소의 cleanup 지연, 종료 직후 재시작, 수락된 시작 응답 전 취소, 정리 중 활성 run 유지와 취소 lane 마감을 검사한다. 관측 가능한 snapshot과 호출 결과를 검사하며 실제 ZAP·운영체제 실측은 별도로 기록한다.
 
+## D-153 · SQLite 연결은 호스트 JDBC 서비스 탐색에 의존하지 않는다 (2026-09-12)
+
+- **재현:** beta.47 fat JAR을 격리 로더로 읽되 호스트 DriverManager를 먼저 초기화하면 실제 프로젝트 저장이 `No suitable driver found`로 실패한다. 기존 native/JAR 격리 테스트는 드라이버를 먼저 직접 로드해 이 결함을 가렸다.
+- **결정:** SqliteProjectStore의 저장·불러오기·metadata 조회는 번들 `org.sqlite.JDBC.createConnection`으로 연결한다. context classloader 변경, 호스트 드라이버 목록 순서, ServiceLoader 발견 시점에 의존하지 않는다. sqlite-jdbc JNI 패키지·schema v3·마스킹·atomic replace는 바꾸지 않는다.
+- **기각:** 별도 SQLite 설치/범위 재입력은 원인과 무관하다. 테스트에서만 Class.forName을 넣거나 TCCL을 바꾸면 제품 경로 결함을 숨긴다. 제품에서 Class.forName 후 DriverManager 검색을 유지할 필요도 없다.
+- **검증:** 드라이버 선행 준비 없는 새 JVM에서 실제 저장소 save/load/readContext를 호출하고, 두 독립 확장 로더 사이 Evidence ID·내용 보존과 덮어쓰기를 검사한다. 완성 JAR에도 같은 검사를 적용한다. Burp 범위 실패는 기존 projectError 처리로 상세 원인 기록을 보존한다. 자동/패키지 검증과 실제 Burp 재로드 성공은 별개로 보고한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

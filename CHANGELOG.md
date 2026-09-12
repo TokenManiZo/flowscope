@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 1.2.0-beta.48 — Burp SQLite 프로젝트 저장 연결 수정 (2026-09-12)
+
+- 호스트 JDBC 초기화가 확장 로드보다 먼저인 경우 `No suitable driver found`로 실패하던 저장·불러오기·목록 metadata 연결을 번들 SQLite 직접 연결로 변경했다. DB schema와 마스킹·atomic replace는 유지한다.
+- 격리 테스트와 최종 fat JAR 검사에서 SQLite 드라이버를 미리 준비하지 않고 실제 Evidence 저장·두 확장 간 재열기·덮어쓰기를 검사한다.
+- 범위 적용 중 저장 실패를 공통 프로젝트 오류 처리에 연결해 원인 예외를 Burp Errors에 남긴다. 이전 beta.47 JAR은 재작성하지 않는다.
+
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
 ## 1.2.0-beta.47 — ZAP 종료·재시작 보정 (2026-09-12)

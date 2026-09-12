@@ -1373,8 +1373,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 return null;
             });
         } catch (IllegalArgumentException | IllegalStateException e) {
-            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(controlTab, e.getMessage(),
-                    "FlowScope 범위 오류", JOptionPane.ERROR_MESSAGE));
+            projectError("범위 적용 실패", e);
         }
     }
 
