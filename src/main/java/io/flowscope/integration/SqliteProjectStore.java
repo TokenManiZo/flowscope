@@ -18,7 +18,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -26,6 +25,7 @@ import java.sql.Statement;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
 /** Local relational FlowScope project store. Raw broker credentials are never part of this schema. */
@@ -153,7 +153,10 @@ public final class SqliteProjectStore {
     }
 
     private static Connection connect(Path path) throws SQLException {
-        return DriverManager.getConnection("jdbc:sqlite:" + path.toAbsolutePath().normalize());
+        // Burp may initialize DriverManager before the extension exists. Use our bundled driver,
+        // independent of the host's service discovery, driver ordering and context classloader.
+        return org.sqlite.JDBC.createConnection("jdbc:sqlite:" + path.toAbsolutePath().normalize(),
+                new Properties());
     }
 
     private static void initialize(Connection connection) throws SQLException {

@@ -61,6 +61,12 @@ public final class FatJarIsolationSmoke {
             }
         }
         URL releaseJar = releaseJarPath.toUri().toURL();
+        Path sqliteDirectory = Files.createTempDirectory("flowscope-release-sqlite-");
+        try {
+            SqliteProjectStoreIsolationProbe.verify(new URL[]{releaseJar}, sqliteDirectory);
+        } finally {
+            Files.deleteIfExists(sqliteDirectory);
+        }
         try (URLClassLoader firstLoader = isolatedLoader(releaseJar);
              URLClassLoader secondLoader = isolatedLoader(releaseJar)) {
             assertVersionedClass(firstLoader,

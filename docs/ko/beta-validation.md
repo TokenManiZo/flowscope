@@ -1,4 +1,12 @@
-# FlowScope 1.2.0-beta.47 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.48 사전 벤치마크 검증 기록
+
+## 2026-09-12 · D-153 SQLite 연결 수정 검증
+
+- beta.47 배포 JAR에서 호스트 DriverManager 선행 초기화→격리 확장 SqliteProjectStore.save 경로가 `No suitable driver found`로 실패했다. 명시적 드라이버 초기화 대조군은 저장·재열기가 성공했다.
+- 새 독립 JVM 회귀가 같은 원인으로 RED. 직접 SQLite 연결 수정 뒤 집중 SqliteClassLoaderIsolationTest 2 + SqliteProjectStoreTest 3 + FlowScopeExtensionLifecycleTest 7 = 12/12 통과했다. Evidence ID는 정본 EvidenceIds로 생성해 보존을 확인한다.
+- JDK 21.0.12.1·Maven 3.9.16 `mvn -o clean verify`: Java 575(실패·오류 0, opt-in 2 skip), React 59파일/472건·typecheck·fat JAR/bundle guard 통과. 최초 sandbox 실행은 npm ci에서 진행하지 않아 중단했고, 네트워크/로컬 테스트 서버 허용 실행은 1분 12초에 성공했다.
+- beta.48 JAR의 Standalone(별도 17848/임시 프로젝트) Playwright `--retries=0`: 15/15, 29.0초. JAR 31,942,036 bytes, SHA-256 `6405e78207d0d729946aee38518678c22bdef58005fac2e5899585f651f16bfa`. bundle은 최종 문서 반영 뒤 재조립하며 자기 hash를 내부 문서에 기록하지 않는다.
+- 설치된 Burp 번들 Java의 별도 probe는 60초 이상 출력 없이 대기해 종료 대상으로 확인했다. 이 시도는 성공 검증이 아니다. 실제 Burp 새 JAR 재로드·Windows 실기기·ZAP/Explorer 실물 재실행은 미실행이다. 원격 CI·Release는 진행 중이며, 아래 beta.47 결과를 beta.48 실물 결과로 합산하지 않는다.
 
 ## 2026-09-12 · D-152 beta.47 ZAP 종료·재시작 보정
 

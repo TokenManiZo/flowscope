@@ -1,8 +1,10 @@
-# FlowScope 1.2.0-beta.47
+# FlowScope 1.2.0-beta.48
+
+Beta.48 fixes SQLite project saving when Burp initializes JDBC before the extension. No separate SQLite installation or scope workaround is needed. Save/export the current assessment where possible before replacing the old extension with the new JAR; the database schema is unchanged. See HANDOFF for verification and publication status.
 
 Current implementation and open gates: [handoff](../ko/HANDOFF.md). Document scope and audit results: [documentation inventory](../ko/documentation-status.md) (Korean).
 
-The beta.47 test Release includes the standalone Explorer and direct ZAP browser-authentication lane. This repository is currently private: sign in with a GitHub account that has collaborator access before downloading Release assets. Unauthenticated or unauthorized requests can return 404.
+The current test build includes the standalone Explorer and direct ZAP browser-authentication lane. This repository is currently private: sign in with a GitHub account that has collaborator access before downloading Release assets. Unauthenticated or unauthorized requests can return 404.
 
 **Current runtime:** the old MCP server, Judge and browser harness remain removed. D-128/D-139 provide a standalone Codex Explorer through app-server dynamic tools and a Java exact-scope gateway. Real HTTP responses become LLM Observation Evidence; endpoints and value-free parameters read from those response artifacts become separate, current-run Evidence-bound Declarations. HUMAN/ZAP execution and H/S/L Evidence comparison remain; no replacement MCP or automatic verdict path was added. See the [Explorer contract](../ko/llm-explorer.md).
 
@@ -64,9 +66,9 @@ ZAP is required for the SCANNER campaign and optional for HUMAN-only use. The LL
 
 ## Build and install
 
-Download `flowscope-1.2.0-beta.47-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
+Download `flowscope-1.2.0-beta.48-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
 
-The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.47.jar`, and one download bundle, `target/flowscope-1.2.0-beta.47-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
+The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.48.jar`, and one download bundle, `target/flowscope-1.2.0-beta.48-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

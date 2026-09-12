@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0-beta.48 — SQLite connection in extension classloaders (2026-09-12)
+
+- Connect through the bundled SQLite driver rather than host DriverManager discovery. Preserve the database schema, masking, and atomic replacement.
+- Exercise actual project save/load/metadata/overwrite in two independent extension loaders, including the finished fat JAR, without preloading a driver.
+- Route scope-application failures through the project error handler so Burp Errors retains the underlying exception. Existing beta.47 artifacts remain unchanged.
+
 ## 1.2.0-beta.47 — ZAP cleanup and restart ordering (2026-09-12)
 
 - Publish completed, failed, or cancelled results only after cleanup and release of the restart guard. The UI shows cleanup time and disables new starts and duplicate cancellations while cleaning.

@@ -1,8 +1,10 @@
-# 팀원용 첫 실행 — FlowScope beta.47
+# 팀원용 첫 실행 — FlowScope beta.48
+
+beta.47에서 `FlowScope SQLite save failed`가 나타났다면 beta.48 JAR로 교체하세요. scope 오류가 아니라 호스트의 JDBC 초기화 순서에 따른 저장 연결 결함입니다. SQLite 별도 설치는 필요 없습니다. 가능하면 기존 진단을 저장하거나 JSON으로 내보낸 뒤 이전 확장을 내리고 새 JAR 하나만 로드하세요. 기존 `.flowscope.db`와 프로젝트 디렉터리는 삭제하지 마세요.
 
 현재 저장소는 비공개이므로 **협업 권한이 있는 본인 GitHub 계정으로 로그인**하세요. 로그인하지 않았거나 권한이 없으면 Release 링크가 404로 보입니다. 등록된 협업자는 저장소와 Release에 접근할 수 있습니다.
 
-[테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.47)에서 **`flowscope-1.2.0-beta.47-bundle.zip`**을 받으세요. GitHub가 자동 생성하는 `Source code.zip`은 실행 번들이 아닙니다. 압축을 푼 뒤 JAR·`scripts`·`infra`·`docs`를 같은 폴더 구조로 유지하세요.
+[테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48)에서 **`flowscope-1.2.0-beta.48-bundle.zip`**을 받으세요. GitHub가 자동 생성하는 `Source code.zip`은 실행 번들이 아닙니다. 압축을 푼 뒤 JAR·`scripts`·`infra`·`docs`를 같은 폴더 구조로 유지하세요.
 
 ## 1. 사용할 기능에 맞춰 준비
 
@@ -45,7 +47,7 @@ helper가 이 PC의 ZAP key를 만들고 Chromium 이미지 빌드·기동과 Bu
 
 ## 4. JAR을 Burp에 로드
 
-Burp **Extensions → Installed → Add → Java**에서 bundle 루트의 `flowscope-1.2.0-beta.47.jar`을 선택하세요. Output/Errors에 오류가 없는지 확인한 뒤 [FlowScope Web](http://127.0.0.1:17777/)을 엽니다.
+Burp **Extensions → Installed → Add → Java**에서 bundle 루트의 `flowscope-1.2.0-beta.48.jar`을 선택하세요. Output/Errors에 오류가 없는지 확인한 뒤 [FlowScope Web](http://127.0.0.1:17777/)을 엽니다.
 
 기존 버전을 교체한다면 현재 진단의 `저장됨` 상태를 확인하고 기존 FlowScope를 먼저 언로드한 뒤 새 JAR을 로드하세요. 여러 FlowScope 버전을 동시에 켜면 포트가 충돌할 수 있습니다. JAR을 로드한 뒤 ZAP key를 처음 만들었다면 FlowScope를 한 번 재로드해야 합니다.
 

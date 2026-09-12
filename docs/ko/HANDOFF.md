@@ -1,5 +1,12 @@
 # FlowScope 팀 인계 정본
 
+## 2026-09-12 · D-153 SQLite 수정·로컬 검증 완료, 원격 배포 진행
+
+- 사용자 Burp의 `FlowScope SQLite save failed`를 beta.47 배포 JAR의 실제 저장 경로에서 재현했다. 호스트가 DriverManager를 먼저 초기화하면 `No suitable driver found`가 발생하고, 확장 드라이버를 명시적으로 로드한 대조군은 저장·재열기가 성공했다.
+- 수정 범위는 번들 SQLite 직접 연결, 드라이버 선행 준비 없는 저장·재열기 회귀, 오류 안내, beta.48 배포다. schema·Evidence·ZAP·Explorer 실행 계약은 바꾸지 않는다. 멘토 보고서는 제외한다.
+- 번들 JDBC 직접 연결과 오류 안내를 수정했다. 독립 JVM/SQLite/lifecycle 집중 12/12, JDK 21 전체 verify Java 575(실패·오류 0, opt-in 2 skip)·React 59파일/472건, 완성 fat JAR 실제 저장 경로, 패키지 Playwright 15/15(retry 0, 29.0초)가 통과했다. JAR 31,942,036 bytes, SHA-256 `6405e78207d0d729946aee38518678c22bdef58005fac2e5899585f651f16bfa`.
+- main·beta.48 Release 반영은 진행 중이다. 설치된 Burp Java를 별도로 실행한 추가 probe는 응답 없이 대기해 중단했으며 성공으로 세지 않았다. 실제 Burp 새 JAR 재로드·Windows 실기기·이번 ZAP/Explorer 실물 재실행은 미실행이다. 사용자 Burp·기존 DB는 변경하지 않았다.
+
 ## 2026-09-12 · D-152 beta.47 수정·검증·main 반영 완료
 
 - beta.46 최종 문서 커밋 `15654c2`의 CI는 결과 `FAILED` 게시 후 cleanup이 끝나기 전에 다음 캠페인을 시작하면서 실패했다. 이 문제는 D-152 beta.47에서 수정했고, 아래 회귀·실물 검증과 최종 main CI를 통과했다. `570d576`의 이전 성공 기록은 해당 실행의 이력으로 보존한다.
@@ -73,7 +80,7 @@
 - 최종 산출물 JAR: 31,936,476 bytes, SHA-256 `ca50d8c60dc1054ff6682ffdffa0e0883364da96e98617b787bd95b3ba499b33`. 최종 bundle 해시는 모든 내부 문서가 확정된 뒤 외부 결과에서만 식별한다.
 - 실제 Burp 복수 서비스·중첩 API와 대규모 dataset precision/recall은 계속 운영 gate다.
 
-현재 배포 기준은 beta.47 태그 `60a3291`과 D-152다. 현행 상태는 맨 위 완료 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 날짜별 이식 내역·단계별 수치와 미출시 표현은 당시 산출물의 이력이며, 현재 버전이나 배포 상태를 덮어쓰지 않는다.
+직전 배포 기준은 beta.47 태그 `60a3291`과 D-152다. beta.48 수정·배포 현황은 맨 위 D-153 항목과 `beta-validation.md`의 최신 절을 따른다. 아래 날짜별 이식 내역·단계별 수치와 미출시 표현은 당시 산출물의 이력이며, 현재 버전이나 배포 상태를 덮어쓰지 않는다.
 
 ## 1. 현재 인수인계 상태·목표·범위
 
@@ -179,7 +186,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 | 기존 Judge·하네스 MCP 제거 | 구현·자동 회귀 완료 | `57d1bb4`, 클래스/JAR 부재·폐기 route 404 |
 | 과거 프로젝트 호환 | 구현·자동 회귀 완료 | JSON v4 / SQLite v3, 원 Evidence ID·과거 평가 분리 |
 | 빈 agent-workspace 정리 | 완료 | `962edfe`, 정확한 빈 디렉터리만 제거 |
-| 문서 현행화 | beta.47/D-152 기준 정정 | 현행 계약·설치·완료 상태와 과거 수치/미출시 표현을 분리. 검사 범위는 documentation-status 참고 |
+| 문서 현행화 | beta.48/D-153 기준 정정 | 현행 계약·설치·완료 상태와 과거 수치/미출시 표현을 분리. 검사 범위는 documentation-status 참고 |
 | 독립 LLM Explorer | D-139 구현·집중/provider·전체 자동 검증 완료, Burp gate 대기 | 메모리 인증, exact-scope HTTP Observation, Evidence-bound endpoint/parameter Declaration, 서버 중복 제거·집계, React 작업 피드 |
 | 다운로드 bundle·기능별 doctor | 구현·자동/추출 검증 완료 | JAR+ZAP helper+문서 ZIP, `human/zap/explorer/full`, Explorer 재확인; Windows 실기기 대기 |
 | ZAP 직접 브라우저 인증 | 별도 실물 하네스에서 정상 2계정·오류 비밀번호 차단 통과, 실제 Burp·Windows gate 대기 | 메모리 `ZapAccountVault`, 필수 성공/선택적 로그아웃 정규식, 같은 run·계정의 `ZAP_AUTHENTICATION` Evidence, Chrome Headless, Context/user 지정 Client, 임시 user/Context 정리 |
@@ -194,7 +201,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 
 ## 3. 검증과 배포 상태
 
-[beta-validation의 D-152 기록](beta-validation.md)이 현행 beta.47의 자동·실물 검증 정본이다. 배포 자산과 코드 기준은 위 완료 항목을 따른다. 아래 D-128~142의 결과는 당시 실행·산출물별 이력이며 현재 버전의 재검증으로 계산하지 않는다.
+[beta-validation의 D-153 기록](beta-validation.md)이 beta.48 수정 검증 정본이다. D-152/beta.47 실물 ZAP 결과와 새 SQLite 자동 검증을 합산하지 않는다. 배포 자산과 코드 기준은 위 완료 항목을 따른다. 아래 D-128~142의 결과는 당시 실행·산출물별 이력이며 현재 버전의 재검증으로 계산하지 않는다.
 
 - 같은 최종 D-128 입력에서 `mvn clean verify` 2회: 매회 Java 350 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 241 tests 통과. JAR SHA-256과 크기가 동일했다.
 - D-129 작업에서 `mvn clean verify` 2회: 매회 Java 352 tests(일반 suite의 opt-in provider 1 skip), React 38 files / 242 tests 통과. 반복 package의 JAR/bundle 동일성과 clone 없는 clean extraction을 확인했다.
@@ -207,7 +214,7 @@ FlowScope는 허가된 범위에서 실제 HTTP 관측과 OpenAPI·HTML·JavaScr
 - D-140~142 최종 입력에서 JDK 21 `mvn clean verify` 2회: 매회 Java 407 tests(실패·오류 0, opt-in 실물/provider 하네스 2 skip), React 38 files / 250 tests와 release JAR/bundle gate 통과. clean fat JAR을 새 임시 project workspace로 기동한 Chromium E2E 8/8도 통과했다. 이 검증은 Standalone Web·SQLite·React 계약이며 실제 Burp/ZAP/Codex 실행이 아니다.
 - 별도 opt-in 실제 Codex app-server 하네스가 dynamic HTTP tool로 응답 Evidence를 만든 뒤 그 ID로 구조화 선언 도구를 호출하는 경로를 확인했다. 이는 Burp Montoya/실제 대상 전체 실행이 아니다.
 - D-126 당시 Chromium E2E는 과거 UI 기준 기록이다. D-142에서 현재 clean JAR 기준 E2E 8/8을 새로 실행했지만, 이를 실제 Burp gate로 재사용하지 않는다.
-- D-139 당시 작업트리 버전은 `1.2.0-beta.46`이었고 해당 작업에서는 push·Release를 하지 않았다. 현재 배포 상태는 D-152/beta.47 완료 항목이 우선한다.
+- D-139 당시 작업트리 버전은 `1.2.0-beta.46`이었고 해당 작업에서는 push·Release를 하지 않았다. 현재 배포 상태는 상단 D-153/beta.48 항목이 우선한다.
 - 실제 Burp load와 ZAP 비로그인 lane은 D-137 JAR에서 확인했다. unload/reload, HUMAN 로그인/캡처, ZAP 복수 로그인 lane, Request Lab 실제 전송, Windows 운영 검증과 최종 D-138 상태 표시는 새 JAR 기준 미실행이다.
 
 ## 4. 현재 구조와 코드 위치

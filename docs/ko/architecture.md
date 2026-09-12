@@ -1,8 +1,10 @@
-# FlowScope 설계서 v1.2.0-beta.47
+# FlowScope 설계서 v1.2.0-beta.48
+
+D-153: SQLite 저장·읽기·목록 metadata 조회는 번들 `org.sqlite.JDBC.createConnection`을 직접 사용한다. Burp의 DriverManager 초기화 순서·다른 등록 드라이버·스레드 context classloader에 연결 선택을 맡기지 않는다. schema v3·마스킹·임시 DB 후 atomic replace 계약은 그대로다. 격리 테스트는 드라이버를 미리 로드하지 않고 실제 프로젝트 저장/재열기를 실행한다.
 
 **화이트햇스쿨 2단계 팀 프로젝트, 토큰많이조**
 
-**실행 구조 기준(D-128~152):** 기존 Judge·MCP·브라우저 하네스는 제거한 채, 판정 없는 독립 Codex Explorer를 새 실행 경계로 구현했다(D-128). ZAP 로그인 lane은 별도 메모리 계정과 ZAP Browser Based Authentication으로 직접 구성한다(D-130). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 명시적인 `chrome-headless` Client Spider를 사용하며 임의 ZAP runtime은 거부한다(D-135). ZAP 상태 확인의 일반 통신 실패는 3회 연속일 때만 `UNREACHABLE`로 확정하고, 그 전에는 `RETRYING`으로 구분한다(D-138). D-152는 ZAP 정리 완료 뒤 최종 상태 게시·재시작을 보장하는 순서를 추가했다. HUMAN, 분석 코어와 프로젝트 호환은 유지한다. 제품용 MCP는 미구현이다. 과거 명세와 D-125 이전 실행 설명은 역사 기록이며 현재 LLM 계약은 [Explorer 문서](llm-explorer.md)를 따른다.
+**실행 구조 기준(D-128~153):** 기존 Judge·MCP·브라우저 하네스는 제거한 채, 판정 없는 독립 Codex Explorer를 새 실행 경계로 구현했다(D-128). ZAP 로그인 lane은 별도 메모리 계정과 ZAP Browser Based Authentication으로 직접 구성한다(D-130). 모든 ZAP lane은 distribution bundle의 FlowScope Docker 이미지가 제공하는 Chromium·ChromeDriver와 명시적인 `chrome-headless` Client Spider를 사용하며 임의 ZAP runtime은 거부한다(D-135). ZAP 상태 확인의 일반 통신 실패는 3회 연속일 때만 `UNREACHABLE`로 확정하고, 그 전에는 `RETRYING`으로 구분한다(D-138). D-152는 ZAP 정리 완료 뒤 최종 상태 게시·재시작을 보장하는 순서를 추가했다. HUMAN, 분석 코어와 프로젝트 호환은 유지한다. 제품용 MCP는 미구현이다. 과거 명세와 D-125 이전 실행 설명은 역사 기록이며 현재 LLM 계약은 [Explorer 문서](llm-explorer.md)를 따른다.
 
 사람·스캐너·LLM이 선언·관측한 API와 입력을 같은 범용 좌표에 정렬해 탐색 차이를 먼저 보여 주고, 선택한 API의 BOLA/IDOR·BFLA 후보를 기존 신원 인지 그래프와 Evidence로 검증하는 Burp Suite 확장이다. `docs/ko/specification/functional-spec.md`는 원 요구사항의 이력이다. 현재 범위는 `product-overview.md`·README, 현재 HOW는 이 문서, 선택 이유와 대체 관계는 `decisions.md`, 진행상황은 `HANDOFF.md`를 따른다. 화면별 사용자 질문과 발표 논리는 `ui-product-rationale.md`가 정본이다.
 

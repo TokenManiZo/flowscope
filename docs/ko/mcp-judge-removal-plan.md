@@ -1,6 +1,6 @@
 # LLM Judge·MCP 제거 상태와 후속 계획
 
-구현 이력: `c006679` → ZAP 분리 `5a47af9` → D-126 제거 `57d1bb4` → 빈 디렉터리 정리 `962edfe` → D-128 독립 Explorer → D-132·133 Client-only ZAP `7353144` → D-135 Docker Chromium runtime. 이 경로는 현재 beta.47 배포에 포함돼 있다. 배포 코드·검증 수준은 [현재 인계](HANDOFF.md)와 D-152를 따른다.
+구현 이력: `c006679` → ZAP 분리 `5a47af9` → D-126 제거 `57d1bb4` → 빈 디렉터리 정리 `962edfe` → D-128 독립 Explorer → D-132·133 Client-only ZAP `7353144` → D-135 Docker Chromium runtime. 이 경로는 beta.47 이후 배포에 포함돼 있다. 배포 코드·검증 수준은 [현재 인계](HANDOFF.md)와 D-153을 따른다.
 
 ## 현재 목표
 
