@@ -20,6 +20,21 @@ final class SampleProjectTest {
                 .anyMatch(finding -> finding.type() == AuthorizationAnalysis.FindingType.BOLA));
         assertTrue(result.analysis.findings().stream()
                 .anyMatch(finding -> finding.type() == AuthorizationAnalysis.FindingType.BFLA));
+        // PR #11 sample expansion: identity-bound APIs without a dummy Object and a second object-backed group.
+        assertEquals("acct-demo-user-a", sample.config().resourceOwner(
+                "https://demo.flowscope.test:443 posts:301"));
+        assertEquals("acct-demo-user-b", sample.config().resourceOwner(
+                "https://demo.flowscope.test:443 posts:302"));
+        assertTrue(result.coverageRecords.stream().anyMatch(record -> record.op.endsWith("GET /api/profile")));
+        assertTrue(result.coverageRecords.stream().anyMatch(record -> record.op.endsWith("GET /api/account")));
+        assertTrue(result.coverageRecords.stream().anyMatch(record -> record.op.endsWith("GET /api/posts/{id}")));
+        assertTrue(result.coverageRecords.stream().filter(record ->
+                record.path.equals("/api/profile") || record.path.equals("/api/account"))
+                .allMatch(record -> record.resource == null), "identity-bound API에는 dummy Object를 만들지 않는다");
+        assertTrue(result.coverageRecords.stream().anyMatch(record ->
+                record.resource != null && record.resource.endsWith("posts:301")));
+        assertTrue(result.coverageRecords.stream().anyMatch(record ->
+                record.resource != null && record.resource.endsWith("posts:302")));
         assertTrue(result.records.stream().allMatch(record -> record.reqText.contains("***MASKED***")));
         assertTrue(result.records.stream().anyMatch(record ->
                 record.trafficClassification.trafficClass() == TrafficClassification.TrafficClass.AUTH_SESSION));

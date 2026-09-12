@@ -250,7 +250,11 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
     private final AtomicBoolean databaseSavePending = new AtomicBoolean(false);
     private final AtomicBoolean databaseSaveRunning = new AtomicBoolean(false);
+    /** Set once under the records lock when Burp unloads: later captures, rebuilds and imports are discarded (PR #11). */
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     private final AnalysisPublicationGate analysisPublication = new AnalysisPublicationGate();
+    /** Epoch of the last published analysis; a newer gate epoch means captures are still waiting for a rebuild. */
+    private volatile long publishedEpoch;
     private volatile Path activeProjectDatabase;
     private volatile ProjectStore.ProjectContext activeProjectContext = ProjectStore.ProjectContext.empty();
     private volatile Instant databaseLastSavedAt;
@@ -511,7 +515,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private boolean capture(HttpRequest req, HttpResponse response, PortProfile profile,
                             InFlightRequestTracker.Observation observation) {
-        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) || staleObservation(observation)) return false;
+        if (shuttingDown.get() || !ActiveTrafficGuard.allowsCapture(scope, req.url()) || staleObservation(observation)) return false;
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
                 recordDroppedAtCapacity();
@@ -523,7 +527,7 @@ public final class FlowScopeExtension implements BurpExtension {
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
         synchronized (records) {
             // 초기화/프로젝트 교체가 record 변환 도중 일어났다면 이전 데이터셋의 늦은 응답을 버린다.
-            if (staleObservation(observation)) return false;
+            if (shuttingDown.get() || staleObservation(observation)) return false;
             if (records.size() >= MAX_RECORDS) {
                 recordDroppedAtCapacity();
                 return false;
@@ -644,10 +648,12 @@ public final class FlowScopeExtension implements BurpExtension {
 
     /** 재구성을 워커 스레드에서 수행하고, 대기 중 갱신은 하나로 합친다(EDT·콜백 부하 방지). */
     private void scheduleRebuild() {
+        if (shuttingDown.get()) return;
         analysisPublication.invalidate();
         if (!rebuildPending.compareAndSet(false, true)) return;  // 이미 예약됨 → 합치기
         worker.schedule(() -> {
             rebuildPending.set(false);
+            if (shuttingDown.get()) return; // The ordered shutdown flush owns the final rebuild.
             try {
                 long analysisEpoch = analysisPublication.current();
                 List<RequestRecord> snapshot;
@@ -1124,14 +1130,19 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void loadProjectFile(File file) {
-        worker.execute(() -> {
+        Runnable load = () -> {
+            if (shuttingDown.get()) return;
             try {
                 Path path = file.toPath().toAbsolutePath().normalize();
                 loadProjectPath(path);
             } catch (Exception e) {
                 projectError("프로젝트 열기 실패", e);
             }
-        });
+        };
+        synchronized (records) {
+            // An import requested after unload began is neither queued nor installed (PR #11).
+            if (!shuttingDown.get()) worker.execute(load);
+        }
     }
 
     private void loadProjectPath(Path requestedPath) throws IOException {
@@ -1165,7 +1176,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
 
-        applyLoadedProject(data, loaded, result, restoredScope, context, managedPath);
+        if (!applyLoadedProject(data, loaded, result, restoredScope, context, managedPath)) return;
         api.logging().logToOutput("FlowScope 프로젝트 열기: " + result.records.size() + "건 — " + managedPath);
     }
 
@@ -1186,9 +1197,17 @@ public final class FlowScopeExtension implements BurpExtension {
         catch (IOException ignored) { return Instant.now(); }
     }
 
-    private void applyLoadedProject(ProjectStore.ProjectData data, List<RequestRecord> loaded,
-                                    Pipeline.Result result, ScopePolicy restoredScope,
-                                    ProjectStore.ProjectContext context, Path database) {
+    /** Installs a fully prepared candidate dataset; returns false when unload began first (the candidate is discarded). */
+    private boolean applyLoadedProject(ProjectStore.ProjectData data, List<RequestRecord> loaded,
+                                       Pipeline.Result result, ScopePolicy restoredScope,
+                                       ProjectStore.ProjectContext context, Path database) {
+        return runBeforeShutdown(records, shuttingDown,
+                () -> installLoadedProject(data, loaded, result, restoredScope, context, database));
+    }
+
+    private void installLoadedProject(ProjectStore.ProjectData data, List<RequestRecord> loaded,
+                                      Pipeline.Result result, ScopePolicy restoredScope,
+                                      ProjectStore.ProjectContext context, Path database) {
         long analysisEpoch = analysisPublication.invalidate();
         clearRunContexts();
         sessionBroker.close();
@@ -1235,6 +1254,15 @@ public final class FlowScopeExtension implements BurpExtension {
         if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
     }
 
+    /** The dataset install and shutdown flag transition share the same monitor, so exactly one starts first. */
+    static boolean runBeforeShutdown(Object monitor, AtomicBoolean shuttingDown, Runnable action) {
+        synchronized (monitor) {
+            if (shuttingDown.get()) return false;
+            action.run();
+            return true;
+        }
+    }
+
     private void projectError(String title, Exception error) {
         api.logging().logToError(title, error);
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(controlTab,
@@ -1255,12 +1283,14 @@ public final class FlowScopeExtension implements BurpExtension {
 
     /** DB를 한 번 저장하거나 열면 이후 변경은 같은 파일에 checkpoint 자동 저장한다. */
     private void scheduleDatabaseSave() {
+        if (shuttingDown.get()) return;
         if (activeProjectDatabase == null || databaseSavedRevision.get() == revision.get()) return;
         if (!databaseSavePending.compareAndSet(false, true)) return;
         worker.schedule(() -> {
             long savingRevision = revision.get();
             databaseSaveRunning.set(true);
             try {
+                if (shuttingDown.get()) return; // The shutdown flush performs the final checkpoint.
                 saveActiveDatabase();
                 markDatabaseSaved(savingRevision);
             } catch (Exception error) {
@@ -1783,19 +1813,32 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void shutdown() {
+        synchronized (records) {
+            if (!shuttingDown.compareAndSet(false, true)) return;
+        }
         if (webServer != null) webServer.close();
         if (explorer != null) explorer.close();
         if (zapCampaign != null) zapCampaign.close();
         zapAccounts.close();
-        if (activeProjectDatabase != null && databaseSavedRevision.get() != revision.get()) {
+        if (activeProjectDatabase != null) {
             try {
+                // PR #11: captures still waiting for the delayed rebuild are analyzed and checkpointed once, in order,
+                // on the worker. The store writes a temporary file and moves it atomically, so a timed-out save never
+                // leaves a partial database behind.
                 java.util.concurrent.Future<?> save = worker.submit(() -> {
-                    try { saveActiveDatabase(); }
-                    catch (IOException error) { throw new java.io.UncheckedIOException(error); }
+                    try {
+                        if (analysisPublication.current() != publishedEpoch) rebuildImmediately();
+                        if (databaseSavedRevision.get() != revision.get()) {
+                            long savingRevision = revision.get();
+                            saveActiveDatabase();
+                            markDatabaseSaved(savingRevision);
+                        }
+                    } catch (IOException error) { throw new java.io.UncheckedIOException(error); }
                 });
                 save.get(10, TimeUnit.SECONDS);
             } catch (Exception error) {
-                api.logging().logToError("FlowScope 종료 전 로컬 DB 저장 실패", error);
+                if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+                api.logging().logToError("FlowScope 종료 전 로컬 DB 저장을 완료하지 못해 기존 저장본을 유지했습니다.", error);
             }
         }
         worker.shutdownNow();
@@ -2077,6 +2120,7 @@ public final class FlowScopeExtension implements BurpExtension {
         boolean published = analysisPublication.publishIfCurrent(analysisEpoch, () -> {
             latest = result;
             routeCandidates = candidates;
+            publishedEpoch = analysisEpoch;
             revision.incrementAndGet();
         });
         if (published) {

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react"
 import { expect, it } from "vitest"
-import { actualEvent, demoEndpoint, statusParameter } from "./parameterMapFixtures"
-import { evidenceParameterContext, ParameterRequestDiff } from "./ParameterRequestDiff"
+import { demoEndpoint } from "./parameterMapFixtures"
+import { ParameterRequestDiff } from "./ParameterRequestDiff"
 import { parameterMapKey } from "./parameterProjection"
 
 const key = parameterMapKey(demoEndpoint().key, "JSON_BODY", "/status")
@@ -21,31 +21,27 @@ it("compares structured metadata side by side and never reads HTTP fields", () =
   expect(screen.getAllByText("길이: 3 bytes")).toHaveLength(2)
   expect(screen.getAllByText(/문맥: ctx/)).toHaveLength(2)
   expect(screen.getAllByText("관측 신뢰: OBSERVED")).toHaveLength(2)
+  expect(screen.getAllByText("SHA-256: UNKNOWN · digest 사용 불가")).toHaveLength(2)
   expect(screen.getByText(/불완전.*UNKNOWN/)).toBeVisible()
   expect(screen.getByText(/미관측 ≠ 미존재/)).toBeVisible()
 })
 
-it("does not turn a missing observation into absence when completeness was not recorded", () => {
-  const context = { eventId: "a", service: key.service, method: "PATCH", operation: key.operation, identity: "A", role: "USER", source: "HUMAN", status: 200, verdict: "UNDECIDED", complete: false, retention: "RETAINED" as const, parameters: [{ key, presence: "PRESENT" as const, shape: "SCALAR" as const, valueType: "STRING" as const, occurrenceCount: null, digest: null }] }
-  render(<ParameterRequestDiff left={context} right={{ ...context, eventId: "b", parameters: [] }} />)
-  expect(screen.getByText("INCOMPLETE_CONTEXT")).toBeVisible()
-  expect(screen.queryByText("ABSENT_OBSERVED_CONTEXT")).not.toBeInTheDocument()
-  expect(screen.queryByText(/PRESENCE_CHANGED/)).not.toBeInTheDocument()
+it("reports a value change only from differing server digests and shows the digests it compared", () => {
+  const parameter = { key, presence: "PRESENT" as const, shape: "SCALAR" as const, valueType: "STRING" as const, occurrenceCount: 1, digest: "a".repeat(64), byteLength: 4 }
+  const context = { eventId: "a", service: key.service, method: "PATCH", operation: key.operation, identity: "A", role: "USER", source: "HUMAN", status: 200, verdict: "ALLOW", complete: true, retention: "RETAINED" as const, parameters: [parameter] }
+  render(<ParameterRequestDiff left={context} right={{ ...context, eventId: "b", parameters: [{ ...parameter, digest: "b".repeat(64) }] }} />)
+  expect(screen.getByText(/VALUE_CHANGED/)).toBeVisible()
+  expect(screen.getByText(`SHA-256: ${"a".repeat(64)}`)).toBeVisible()
+  expect(screen.getByText(`SHA-256: ${"b".repeat(64)}`)).toBeVisible()
+  expect(screen.getAllByText("발생 수: 1")).toHaveLength(2)
+  expect(screen.getByText(/구조화된 관측 문맥입니다/)).toBeVisible()
 })
 
-it("builds evidence contexts from Surface facts and endpoint request contexts without values", () => {
-  const endpoint = demoEndpoint([statusParameter({ observations: [
-    { evidenceId: "actual-a", source: "HUMAN", runId: "run", identity: "USER A", status: 200, shape: "INTEGER", presence: "PRESENT", valueType: "STRING", byteLength: 1, contextSignature: "ctx:v1:sha256:aa", confidence: "OBSERVED" },
-    { evidenceId: "actual-b", source: "SCANNER", runId: "run", identity: "USER B", status: 403, shape: "NULL", presence: "EXPLICIT_NULL", valueType: "UNKNOWN", byteLength: 0 },
-  ] })], { requestContexts: [{ evidenceId: "actual-a", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:aa" }, { evidenceId: "actual-c", complete: false, retained: false, discovery: true, contextSignature: "ctx:v1:sha256:cc" }] })
-  const header = (event: ReturnType<typeof actualEvent>) => ({ identity: event.idn, role: event.role, source: event.source.toUpperCase(), status: event.status, verdict: event.verdict.toUpperCase() })
-  const a = evidenceParameterContext(endpoint, "actual-a", header(actualEvent()))
-  expect(a).toMatchObject({ complete: true, retention: "RETAINED", operation: key.operation })
-  expect(a.parameters[0]).toMatchObject({ key, presence: "PRESENT", shape: "SCALAR", displayShape: "INTEGER", valueType: "STRING", digest: null, occurrenceCount: null, byteLength: 1, confidence: "OBSERVED" })
-  const b = evidenceParameterContext(endpoint, "actual-b", header(actualEvent({ eventId: "actual-b" })))
-  expect(b).toMatchObject({ complete: false, retention: "UNKNOWN", completenessReason: "COMPLETENESS_NOT_RECORDED" })
-  expect(b.parameters[0]).toMatchObject({ presence: "EXPLICIT_NULL", shape: "NULL", valueType: "UNKNOWN" })
-  const c = evidenceParameterContext(endpoint, "actual-c", header(actualEvent({ eventId: "actual-c" })))
-  expect(c).toMatchObject({ complete: false, retention: "METADATA_ONLY", parameters: [] })
-  expect(JSON.stringify([a, b, c])).not.toMatch(/READY|digest":"[a-f0-9]/)
+it("does not turn a missing observation into absence when completeness was not recorded", () => {
+  const context = { eventId: "a", service: key.service, method: "PATCH", operation: key.operation, identity: "A", role: "USER", source: "HUMAN", status: 200, verdict: "UNDECIDED", complete: false, retention: "RETAINED" as const, completenessReason: "REQUEST_NOT_RETAINED", parameters: [{ key, presence: "PRESENT" as const, shape: "SCALAR" as const, valueType: "STRING" as const, occurrenceCount: null, digest: null }] }
+  render(<ParameterRequestDiff left={context} right={{ ...context, eventId: "b", parameters: [] }} />)
+  expect(screen.getByText("INCOMPLETE_CONTEXT")).toBeVisible()
+  expect(screen.getByText(/REQUEST_NOT_RETAINED · 전체 추출 완전성/)).toBeVisible()
+  expect(screen.queryByText("ABSENT_OBSERVED_CONTEXT")).not.toBeInTheDocument()
+  expect(screen.queryByText(/PRESENCE_CHANGED/)).not.toBeInTheDocument()
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { demoEndpointKey } from "./parameterMapFixtures"
 import { parameterMapKey } from "./parameterProjection"
-import { diffParameterContexts, structuralShape, type ParameterContext, type StructuredParameterMetadata } from "./requestDiff"
+import { diffParameterContexts, type ParameterContext, type StructuredParameterMetadata } from "./requestDiff"
 
 const key = parameterMapKey(demoEndpointKey, "JSON_BODY", "/status")
 const row = (extra: Partial<StructuredParameterMetadata> = {}): StructuredParameterMetadata => ({ key, presence: "PRESENT", shape: "SCALAR", valueType: "STRING", occurrenceCount: 1, digest: "a".repeat(64), ...extra })
@@ -74,10 +74,5 @@ describe("structured metadata diff", () => {
     expect(result).toHaveLength(2)
     expect(result.every(item => item.change === "UNKNOWN" && item.identityState === "IDENTITY_CONFLICT" && item.parameterKey === null)).toBe(true)
     expect(diffParameterContexts(context([b]), context([a])).map(item => [item.id, item.change, item.identityState])).toEqual(result.map(item => [item.id, item.change, item.identityState]))
-  })
-
-  it("maps display shapes to structural shapes so format signals are not structural changes", () => {
-    expect(["INTEGER", "STRING", "UUID", "DECIMAL", "BOOLEAN", "BINARY", "EMPTY"].map(structuralShape)).toEqual(Array(7).fill("SCALAR"))
-    expect(["ARRAY", "OBJECT", "NULL", "UNKNOWN", undefined].map(structuralShape)).toEqual(["ARRAY", "OBJECT", "NULL", "UNKNOWN", "UNKNOWN"])
   })
 })

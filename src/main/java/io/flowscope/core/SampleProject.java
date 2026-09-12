@@ -25,6 +25,8 @@ public final class SampleProject {
                 .bindSession(SERVICE, "sess:demo-admin", admin.id())
                 .withResourceOwner(SERVICE + " orders:101", userA.id())
                 .withResourceOwner(SERVICE + " orders:202", userB.id())
+                .withResourceOwner(SERVICE + " posts:301", userA.id())
+                .withResourceOwner(SERVICE + " posts:302", userB.id())
                 .withEndpointRequirement(SERVICE + " GET /api/admin/users", AccessRole.ADMIN)
                 .withEndpointRequirement(SERVICE + " POST /api/admin/invites", AccessRole.ADMIN);
 
@@ -51,13 +53,31 @@ public final class SampleProject {
         records.add(record(Source.LLM, "sess:demo-a", "GET", "/api/orders/202", 404, null,
                 "{\"error\":\"not found\"}", 9));
 
+        // API group drill-down examples (PR #11): identity-bound APIs intentionally have no dummy Object.
+        records.add(record(Source.HUMAN, "sess:demo-a", "GET", "/api/profile", 200, null,
+                "{\"displayName\":\"USER A\"}", 10));
+        records.add(record(Source.LLM, "sess:demo-b", "GET", "/api/profile", 200, null,
+                "{\"displayName\":\"USER B\"}", 11));
+        records.add(record(Source.HUMAN, "sess:demo-b", "GET", "/api/account", 200, null,
+                "{\"plan\":\"demo\"}", 12));
+        records.add(record(Source.LLM, "sess:demo-a", "GET", "/api/account", 200, null,
+                "{\"plan\":\"demo\"}", 13));
+
+        // Object-backed group example with two owners and a denied cross-owner scanner request.
+        records.add(record(Source.HUMAN, "sess:demo-a", "GET", "/api/posts/301", 200, null,
+                "{\"id\":301,\"ownerId\":\"acct-demo-user-a\",\"title\":\"First post\"}", 14));
+        records.add(record(Source.HUMAN, "sess:demo-b", "GET", "/api/posts/302", 200, null,
+                "{\"id\":302,\"ownerId\":\"acct-demo-user-b\",\"title\":\"Second post\"}", 15));
+        records.add(record(Source.SCANNER, "sess:demo-b", "GET", "/api/posts/301", 403, null,
+                "{\"error\":\"forbidden\"}", 16));
+
         RequestRecord login = record(Source.HUMAN, "sess:demo-a", "POST", "/login", 302,
-                "{\"username\":\"demo\",\"password\":\"***MASKED***\"}", "", 10);
+                "{\"username\":\"demo\",\"password\":\"***MASKED***\"}", "", 17);
         login.phase = RunPhase.SESSION_SETUP;
         records.add(login);
         for (int i = 0; i < 3; i++) {
             RequestRecord polling = record(Source.HUMAN, "sess:demo-a", "GET", "/session/state", 200,
-                    null, "ready", 11 + i);
+                    null, "ready", 18 + i);
             polling.responseContentType = "text/plain";
             records.add(polling);
         }
@@ -76,6 +96,10 @@ public final class SampleProject {
                 + (responseBody == null ? "" : responseBody);
         record.requestPayload = StoredPayload.capture(Masking.maskHeaders(record.reqText), "", 1024 * 1024);
         record.responsePayload = StoredPayload.capture(Masking.maskHeaders(record.respText), "", 1024 * 1024);
+        // The demo responses are JSON API representations; record the media type the way a live capture would
+        // so identity-bound APIs without an object signal still classify as API traffic.
+        if (requestBody != null) record.requestContentType = "application/json";
+        if (responseBody != null && !responseBody.isEmpty()) record.responseContentType = "application/json";
         record.hasResponse = true;
         record.timestamp = START + offset * 1_000L;
         record.runId = source == Source.HUMAN ? "demo-human"

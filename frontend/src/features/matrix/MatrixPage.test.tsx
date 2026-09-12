@@ -2,13 +2,14 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClientProvider } from "@tanstack/react-query"
 import type { ReactElement } from "react"
-import { expect, it, vi } from "vitest"
+import { beforeEach, expect, it, vi } from "vitest"
 
+import { parameterSnapshot } from "@/features/parameter-map/parameterMapFixtures"
 import type { Snapshot } from "@/lib/api/types"
 import { snapshotFixture } from "@/test/fixtures"
 import { renderWithQueryClient } from "@/test/render"
 import { matrixCellKey } from "./matrixProjection"
-import { LegacyMatrixView, MatrixPage } from "./MatrixPage"
+import { LegacyMatrixView, MatrixPage, ParameterMatrixView } from "./MatrixPage"
 
 class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub)
@@ -16,10 +17,13 @@ vi.stubGlobal("ResizeObserver", ResizeObserverStub)
 let current: Snapshot | undefined
 let queryError = false
 let queryStale = false
+const lastUpdated = Date.parse("2026-09-08T07:00:00Z")
+const refetch = vi.fn()
+beforeEach(() => { queryError = false; queryStale = false; refetch.mockClear() })
 
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
-  useSnapshotQuery: () => ({ data: current, isLoading: current === undefined, isError: queryError, error: new Error("snapshot unavailable"), isStale: queryStale }),
+  useSnapshotQuery: () => ({ data: current, isLoading: current === undefined && !queryError, isError: queryError, error: new Error("snapshot unavailable"), isStale: queryStale, dataUpdatedAt: current ? lastUpdated : 0, refetch }),
 }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: () => null }))
 
@@ -75,6 +79,88 @@ it("defaults to the judgment matrix and keeps the legacy cell matrix behind its 
   await userEvent.click(screen.getByRole("tab", { name: "기존 권한 매트릭스" }))
   expect(await screen.findByRole("region", { name: "권한 매트릭스 표" })).toBeVisible()
   expect(screen.getByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
+})
+
+it("keeps parameter coverage and the legacy matrix behind their own tabs", async () => {
+  current = parameterSnapshot()
+  renderPage(<MatrixPage />)
+  expect(screen.getByRole("tab", { name: "판정 매트릭스" })).toHaveAttribute("aria-selected", "true")
+  await userEvent.click(screen.getByRole("tab", { name: "파라미터 커버리지" }))
+  expect(await screen.findByRole("region", { name: "파라미터 커버리지 표" })).toBeVisible()
+  expect(screen.getByRole("heading", { name: "파라미터 커버리지" })).toBeVisible()
+  await userEvent.click(screen.getByRole("tab", { name: "기존 권한 매트릭스" }))
+  expect(await screen.findByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
+})
+
+it("uses the shared parameter cell semantics and clears its Evidence selection when the server cell disappears", async () => {
+  current = parameterSnapshot()
+  const { rerender } = renderPage(<ParameterMatrixView />)
+  const matrix = screen.getByRole("region", { name: "파라미터 커버리지 표" })
+  expect(matrix).toHaveTextContent("실행 Evidence 0건")
+  expect(matrix).toHaveTextContent("좌표 근거 50건")
+  expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("https://demo.test:443 · PATCH /orders/{id} · JSON /status")
+  const select = within(matrix).getByRole("button", { name: "검증 좌표 선택" })
+  select.focus()
+  await userEvent.keyboard("{Enter}")
+  expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
+  expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
+  current = { ...current, revision: current.revision + 1, surface: { ...current.surface!, validationCells: [] } }
+  rerender(<ParameterMatrixView />)
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument())
+  current = parameterSnapshot()
+  rerender(<ParameterMatrixView />)
+  expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "검증 좌표 선택" }))
+  expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
+})
+
+it("shows only error and retry guidance for an initial parameter snapshot failure", async () => {
+  current = undefined
+  queryError = true
+  renderPage(<ParameterMatrixView />)
+  expect(screen.getByRole("alert")).toHaveTextContent("파라미터 커버리지를 불러오지 못했습니다.")
+  expect(screen.queryByText("표시할 서버 파라미터 검증 좌표가 없습니다.")).not.toBeInTheDocument()
+  expect(screen.queryByRole("status")).not.toBeInTheDocument()
+  expect(screen.queryByRole("region", { name: "파라미터 커버리지 표" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
+  expect(refetch).toHaveBeenCalledOnce()
+})
+
+it("persistently labels retained parameter data with its real success time and closes actions after failure", async () => {
+  current = parameterSnapshot()
+  const { rerender } = renderPage(<ParameterMatrixView />)
+  await userEvent.click(screen.getByRole("button", { name: "검증 좌표 선택" }))
+  expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
+  queryError = true
+  rerender(<ParameterMatrixView />)
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument())
+  const banner = screen.getByRole("alert")
+  expect(banner).toHaveTextContent("마지막 성공 데이터 · 현재 상태 아님")
+  expect(banner.querySelector("time")).toHaveAttribute("dateTime", new Date(lastUpdated).toISOString())
+  expect(screen.getByRole("region", { name: "파라미터 커버리지 표" })).toBeVisible()
+  expect(screen.queryByRole("button", { name: "검증 좌표 선택" })).not.toBeInTheDocument()
+  rerender(<ParameterMatrixView />)
+  expect(screen.getByRole("alert")).toBe(banner)
+  await userEvent.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
+  expect(refetch).toHaveBeenCalledOnce()
+  queryError = false
+  rerender(<ParameterMatrixView />)
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument()
+})
+
+it("also labels failed retained legacy data and disables its Evidence actions", async () => {
+  current = matrixSnapshot()
+  const { rerender } = renderPage(<LegacyMatrixView />)
+  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })[0])
+  queryError = true
+  rerender(<LegacyMatrixView />)
+  expect(screen.getByRole("alert")).toHaveTextContent("마지막 성공 데이터 · 현재 상태 아님")
+  for (const button of screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })) expect(button).toBeDisabled()
+  expect(screen.getByText("snapshot 갱신 실패 · 상세 열기 비활성화")).toBeVisible()
+  current = { ...snapshotFixture }
+  rerender(<LegacyMatrixView />)
+  expect(screen.queryByText("표시할 서버 권한 셀이 없습니다.")).not.toBeInTheDocument()
 })
 
 it("projects server identity cells with requirement, owner, source text, miss, conflict, gap, and exact Evidence selection", async () => {

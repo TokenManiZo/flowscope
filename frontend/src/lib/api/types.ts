@@ -513,7 +513,47 @@ export interface PayloadRetentionMetadata {
   retained: boolean
 }
 
+/** PR#11 Evidence 계약(D-145): record 단위 구조화 파라미터 metadata. 값·preview·HTTP 원문은 없고, 민감 경로는 서버가 제외한다. */
+export interface EvidenceParameterKey {
+  service: string
+  method: string
+  operation: string
+  location: string
+  canonicalPath: string
+  stableKey: string
+}
+
+export interface EvidenceParameterObservation {
+  key: EvidenceParameterKey
+  presence: "PRESENT" | "EXPLICIT_NULL" | "UNKNOWN"
+  shape: "SCALAR" | "ARRAY" | "OBJECT" | "NULL" | "UNKNOWN"
+  valueType: "STRING" | "INTEGER" | "NUMBER" | "BOOLEAN" | "UUID" | "DATE_TIME" | "BINARY" | "UNKNOWN"
+  byteLength: number | null
+  /** SHA-256 hex of a non-sensitive value only; null when the server withholds it. */
+  digest: string | null
+  occurrenceCount: number | null
+  contextSignature: string | null
+  confidence: "OBSERVED" | "CORROBORATED" | "INFERRED" | "UNKNOWN"
+}
+
+export interface EvidenceRecordParameterContext {
+  service: string
+  method: string
+  operation: string
+  identity: string | null
+  role: string
+  source: SurfaceSource
+  status: number
+  /** SurfaceAnalysis.RequestContext와 같은 틀: 추출 진단이 없고 request payload가 온전히 보존된 경우만 true. */
+  complete: boolean
+  completenessReason?: string
+  retention: "RETAINED" | "METADATA_ONLY" | "UNKNOWN"
+}
+
 export interface EvidenceRecord {
+  /** Additive, safe per-record metadata. Missing on older servers, never reconstructed from HTTP text. */
+  parameterObservations?: readonly EvidenceParameterObservation[]
+  parameterContext?: EvidenceRecordParameterContext
   eventId: string
   query: string
   requestBody: string

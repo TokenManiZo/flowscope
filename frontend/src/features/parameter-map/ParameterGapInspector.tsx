@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { X } from "lucide-react"
 import { EvidenceSheet } from "@/components/layout/EvidenceSheet"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
-import type { EventRecord, Snapshot, SurfaceEndpoint } from "@/lib/api/types"
+import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { EvidenceIdsPreview, ParameterCoverageMatrix } from "./ParameterCoverageMatrix"
-import { evidenceParameterContext, ParameterRequestDiff, type EvidenceParameterContext } from "./ParameterRequestDiff"
+import { ParameterRequestDiff } from "./ParameterRequestDiff"
+import { getParameterEvidence, PARAMETER_EVIDENCE_PAGE_SIZE, type SafeParameterEvidence } from "./parameterEvidence"
 import { locationLabel, resourceLabel } from "./parameterNodeCard"
-import { PARAMETER_EVIDENCE_PREVIEW_LIMIT, type ParameterGraphProjection, type ProjectedValidationCell } from "./parameterProjection"
+import { PARAMETER_EVIDENCE_PREVIEW_LIMIT, validationCellId, type ParameterGraphProjection, type ParameterMapKey, type ProjectedValidationCell } from "./parameterProjection"
 
 const reasonLabels: Record<string, string> = {
   CONFIRMED_AUTH_BOUNDARY: "확인된 권한 경계", AUTH_VARIANT_UNTESTED: "권한 변형 미검증", WRITE_METHOD: "쓰기 메서드",
@@ -36,7 +38,10 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
   const [selectedCell, setSelectedCell] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [labOpen, setLabOpen] = useState(false)
-  const cells = projection.validationCells
+  // Graph links are previews (PR#11): resolve only projection-approved cells at the exact key, but keep every
+  // currently available snapshot witness so bounded client navigation can reach all of them.
+  const approvedCells = new Set(projection.validationCells.map(item => item.id))
+  const cells = (snapshot.surface?.validationCells ?? []).map(item => ({ ...item, id: validationCellId(item) })).filter(item => approvedCells.has(item.id))
   const cell = cells.find(item => item.id === selectedCell)
   const actualIds = new Set([...(parameter?.observationEvidenceIds ?? []), ...cells.flatMap(item => item.evidenceIds)])
   const basisIds = new Set([...cells.flatMap(item => item.basisEvidenceIds), ...(parameter?.declarations.map(item => item.evidenceId) ?? [])])
@@ -50,8 +55,9 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
   const events = [...eventById.values()]
   const representative = (cell ? events.find(event => cell.evidenceIds.includes(event.eventId)) : events[0]) ?? null
   const detailEvent = events.find(event => event.eventId === detailId) ?? null
-  const representativeId = representative?.eventId ?? null
-  useEffect(() => { setLabOpen(false) }, [representativeId, datasetRevision])
+  // PR#11 boundary: dataset replacement or any coordinate change of the representative Evidence closes the open draft.
+  const labContext = representative ? JSON.stringify([datasetRevision, representative.eventId, representative.op, representative.resource, representative.idn, representative.source, representative.fp]) : null
+  useEffect(() => { setLabOpen(false) }, [labContext])
   useEffect(() => { if (selectedCell && !cell) { setSelectedCell(null); setDetailId(null); setLabOpen(false) } }, [selectedCell, cell])
   useEffect(() => { if (detailId && !detailEvent) setDetailId(null) }, [detailId, detailEvent])
   if (!gap || !projection.selection || !key) return null
@@ -88,7 +94,7 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
         <p className="text-xs text-muted-foreground">ID는 최대 {PARAMETER_EVIDENCE_PREVIEW_LIMIT}개 미리보기이며 전체 건수와 다릅니다. 근거 ID가 실제 요청이라는 뜻은 아닙니다. 선택 입력의 정확한 operation/key에 연결된 실제 Evidence만 열 수 있습니다. 파라미터 관측과 Gap witness는 선택 셀의 실행 근거가 아닐 수 있습니다.</p>
         <LinkedEvidenceList key={JSON.stringify([cell?.id, ids, [...eventById.keys()]])} events={events} selectedIds={cell?.evidenceIds ?? []} gapIds={gap.evidenceIds} profileIds={parameter?.observationEvidenceIds ?? []} onOpen={setDetailId} />
       </TabsContent>
-      <TabsContent value="diff" className="min-w-0">{projection.endpoint ? <EvidenceComparison key={gap.id} endpoint={projection.endpoint} events={events} /> : <p>연결된 endpoint 사실이 없어 요청을 비교할 수 없습니다.</p>}</TabsContent>
+      <TabsContent value="diff" className="min-w-0"><EvidenceComparison key={JSON.stringify([gap.id, key.stableKey, gap.type, gap.status, gap.identity, gap.role, gap.source, gap.summary, gap.priorityReasons])} parameterKey={key} evidenceIds={ids} snapshot={snapshot} /></TabsContent>
       <TabsContent value="definitions" className="space-y-3">
         {!projection.definitions.length && <p>정의 근거 없음 · UNKNOWN</p>}
         {projection.definitions.map((declaration, index) => <section key={`${declaration.evidenceId}:${index}`} className="space-y-2 border-b py-3"><p>{declarationTypeLabels[declaration.type] ?? declaration.type} · {declaration.adapter} · {declaration.confidence ?? "INFERRED"}</p><p>{declaration.declaredShape ?? "UNKNOWN"} / {declaration.declaredType ?? "UNKNOWN"}{declaration.coordinateResolved === false ? " · 좌표 미확정" : ""}</p><p>{declaration.conditionText || "조건 정의 없음"}</p><p className="text-xs text-muted-foreground">{declaration.reason}</p><EvidenceIdsPreview label="정의 근거" ids={[declaration.evidenceId]} count={1} /><p className="text-xs text-muted-foreground">정의는 실제 요청 관측이나 서버 사용의 증명이 아닙니다.</p></section>)}
@@ -97,24 +103,43 @@ function InspectorBody({ snapshot, projection, onClose }: Props) {
     <Button disabled={!representative} onClick={() => setLabOpen(true)}>Request Lab 열기</Button>
     <p className="text-xs text-muted-foreground">{representative ? `대표 실제 Evidence: ${representative.eventId}. 원문 요청·응답은 Request Lab에서 함께 확인합니다. 자동 전송하지 않습니다.` : "대표 실제 EventRecord가 없어 Request Lab을 열 수 없습니다."}</p>
     {detailEvent && <EvidenceSheet event={detailEvent} snapshot={snapshot} onOpenChange={open => { if (!open) setDetailId(null) }} />}
-    {representative && <RequestLabDialog key={`${representative.eventId}:${datasetRevision}`} open={labOpen} onOpenChange={setLabOpen} event={representative} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} />}
+    {representative && labContext && <RequestLabDialog key={labContext} open={labOpen} onOpenChange={setLabOpen} event={representative} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} />}
   </section>
 }
 
 const selectClass = "min-h-9 min-w-0 max-w-full rounded-md border border-input bg-background px-2 text-xs"
 
-/** 선택 입력에 연결된 실제 Evidence 둘을 Surface 관측 metadata로 비교한다(값·원문 없음, 미실행 basis는 요청이 아니다). */
-function EvidenceComparison({ endpoint, events }: { endpoint: SurfaceEndpoint; events: readonly EventRecord[] }) {
-  const [leftId, setLeftId] = useState("")
-  const [rightId, setRightId] = useState("")
-  const contextFor = (id: string): EvidenceParameterContext | null => {
-    const event = events.find(item => item.eventId === id)
-    return event ? evidenceParameterContext(endpoint, event.eventId, { identity: event.idn, role: event.role, source: event.source.toUpperCase(), status: event.status, verdict: event.verdict.toUpperCase() }) : null
+/**
+ * PR#11 요청 비교: 선택 입력에 연결된 실제 Evidence 둘을 Evidence API의 안전 metadata(값 없음 · digest·길이·형태·완전성)로 비교한다.
+ * 페이지는 20건씩이며 미실행 좌표 근거는 요청으로 만들지 않는다. 선택한 Evidence의 좌표가 바뀌면 선택을 버린다.
+ */
+function EvidenceComparison({ parameterKey, evidenceIds, snapshot }: { parameterKey: ParameterMapKey; evidenceIds: readonly string[]; snapshot: Snapshot }) {
+  const [offset, setOffset] = useState(0)
+  type Pick = { record: SafeParameterEvidence; identity: string }
+  const [leftPick, setLeft] = useState<Pick | null>(null)
+  const [rightPick, setRight] = useState<Pick | null>(null)
+  const eventIdentity = (id: string) => {
+    const event = snapshot.events.find(item => item.eventId === id && item.op === parameterKey.operation && item.method === parameterKey.method)
+    return event && evidenceIds.includes(id) ? JSON.stringify([event.eventId, event.op, event.method, event.resource, event.idn, event.role, event.source, event.fp, event.authState, event.runId, event.phase, event.executionTrust, event.status, event.verdict]) : null
   }
-  const left = contextFor(leftId), right = contextFor(rightId)
+  const left = leftPick && leftPick.identity === eventIdentity(leftPick.record.eventId) ? leftPick.record : null
+  const right = rightPick && rightPick.identity === eventIdentity(rightPick.record.eventId) ? rightPick.record : null
+  useEffect(() => {
+    if ((leftPick && !left) || (rightPick && !right)) { setLeft(null); setRight(null); setOffset(0) }
+  }, [leftPick, rightPick, left, right])
+  const query = useQuery({ queryKey: ["parameter-evidence", parameterKey.service, parameterKey.method, parameterKey.operation, offset, snapshot.revision], queryFn: ({ signal }) => getParameterEvidence(parameterKey.operation, offset, signal), gcTime: 0, retry: false })
+  const linked = query.data?.records.filter(record => record.service === parameterKey.service && record.method === parameterKey.method && record.operation === parameterKey.operation && evidenceIds.includes(record.eventId)) ?? []
+  const withVerdict = (record: SafeParameterEvidence) => {
+    const event: EventRecord | undefined = snapshot.events.find(item => item.eventId === record.eventId && item.op === record.operation && item.method === record.method)
+    const identity = eventIdentity(record.eventId)
+    return identity ? { record: { ...record, verdict: event?.verdict.toUpperCase() ?? "UNKNOWN" }, identity } : null
+  }
+  const current = (i: number) => i === 0 ? left : right
   return <section className="min-w-0 space-y-3" aria-label="비교 Evidence 선택">
-    <p className="text-xs text-muted-foreground">선택 입력의 정확한 operation에 연결된 실제 요청만 고를 수 있으며, 미실행 좌표 근거를 요청으로 만들지 않습니다. 현재 snapshot에 연결된 실제 EventRecord {events.length}건.</p>
-    <div className="grid gap-3">{(["기준 요청", "비교 요청"] as const).map((label, i) => <label key={label} className="grid gap-1"><span>{label}</span><select className={selectClass} aria-label={label} value={i === 0 ? leftId : rightId} onChange={event => (i === 0 ? setLeftId : setRightId)(event.target.value)}><option value="">실제 Evidence 선택</option>{events.map(event => <option key={event.eventId} value={event.eventId}>{event.eventId} · {event.idn} / {event.role} / {event.source.toUpperCase()} / HTTP {event.status}</option>)}</select></label>)}</div>
+    <p className="text-xs text-muted-foreground">한 페이지 최대 {PARAMETER_EVIDENCE_PAGE_SIZE}건입니다. 선택 입력의 정확한 operation에 연결된 실제 요청만 선택할 수 있으며, 미실행 좌표 근거를 요청으로 만들지 않습니다.</p>
+    {query.isPending && <p role="status">안전한 요청 metadata 불러오는 중…</p>}
+    {query.isError && <p role="alert">요청 metadata를 불러오지 못했습니다. <Button size="sm" onClick={() => void query.refetch()}>다시 시도</Button></p>}
+    {query.data && <><p>operation Evidence 전체 {query.data.total}건 · 현재 페이지 {query.data.records.length}건 · 선택 입력 연결 {linked.length}건</p><div className="grid gap-3">{(["기준 요청", "비교 요청"] as const).map((label, i) => <label key={label} className="grid gap-1"><span>{label}</span><select className={selectClass} aria-label={label} value={current(i)?.eventId ?? ""} onChange={event => { const selected = linked.find(record => record.eventId === event.target.value); (i === 0 ? setLeft : setRight)(selected ? withVerdict(selected) : null) }}><option value="">실제 Evidence 선택</option>{current(i) && !linked.some(record => record.eventId === current(i)?.eventId) && <option value={current(i)!.eventId}>{current(i)!.eventId} · 이전 페이지</option>}{linked.map(record => <option key={record.eventId} value={record.eventId}>{record.eventId} · {record.identity} / {record.role} / {record.source}</option>)}</select></label>)}</div><div className="flex gap-2"><Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - PARAMETER_EVIDENCE_PAGE_SIZE))}>이전 Evidence 페이지</Button><Button variant="outline" size="sm" disabled={!query.data.hasMore} onClick={() => setOffset(value => value + PARAMETER_EVIDENCE_PAGE_SIZE)}>다음 Evidence 페이지</Button></div></>}
     {left && right ? <ParameterRequestDiff left={left} right={right} /> : <p>기준 요청과 비교 요청을 각각 선택하세요. 구조화 metadata가 없으면 UNKNOWN으로 남습니다.</p>}
   </section>
 }

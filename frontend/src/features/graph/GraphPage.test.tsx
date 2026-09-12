@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
 import type { Snapshot } from "@/lib/api/types"
+import { GraphPage as CurrentGraphPage } from "./GraphPage"
 
 vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId }: { selectedElementId?: string | null; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => <button type="button" data-testid="cytoscape-graph" data-selected-element={selectedElementId ?? ""} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button> }))
 vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
@@ -16,12 +17,13 @@ const snapshot: Snapshot = {
 
 const hierarchyCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["cell-evidence-not-an-event"] }
 
-it("exposes the hierarchy controls directly on the graph route", async () => {
+it("keeps all relationship controls reachable from the secondary tab", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const { GraphPage } = await import("./GraphPage")
-  render(<GraphPage />)
-  expect(screen.queryByRole("tab", { name: "전체 관계 보기" })).not.toBeInTheDocument()
+  render(<CurrentGraphPage />)
+  expect(screen.getByRole("tab", { name: "점검 우선순위" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.queryByText("Site Overview")).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("tab", { name: "전체 관계 보기" }))
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
@@ -32,7 +34,7 @@ it("refreshes every server-authored field of a stable selected route candidate",
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("900"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const candidate = { service: "https://api.example.test", method: "GET", pathTemplate: "/orders/{id}", observed: false, provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["old-evidence"], provenance: [{ type: "SITE_MAP", evidenceId: "old-evidence", source: "human", runId: "old-run", adapter: "old-adapter", applicability: "REVIEW", reason: "old-reason" }], applicability: "REVIEW", reviewReason: "old-review", priorityReasons: ["old-priority"] }
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, routeCandidates: [candidate] }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("checkbox", { name: "경로 후보 표시" }))
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs.*https:\/\/api.example.test/ }))
@@ -57,7 +59,7 @@ it("reconciles retained aggregate coordinates and Evidence IDs after two current
   const survivor = { ...hierarchyCell, resource: "orders:202", overall: "deny" as const, reasons: { human: "surviving server reason" }, evidenceIds: ["ev-survivor"] }
   const fixture = { ...snapshot, cells: [old, survivor], events: [{ ...snapshot.events[0], idn: old.idn, op: old.op, resource: old.resource, eventId: "ev-old", clusterEvidenceIds: ["ev-old"] }, { ...snapshot.events[0], idn: survivor.idn, op: survivor.op, resource: survivor.resource, eventId: "ev-survivor", clusterEvidenceIds: ["ev-survivor"] }] }
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = fixture
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   await userEvent.click(screen.getByRole("button", { name: "USER A" }))
@@ -76,7 +78,7 @@ it("preserves exact candidate navigation focus after closing the compact inspect
   window.matchMedia = vi.fn((query: string) => ({ matches: true, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const gaps = [202, 404].map(resource => ({ id: `gap-${resource}`, type: "UNCROSSED", idn: "USER B", op: hierarchyCell.op, resource: `orders:${resource}`, risk: 1, summary: "server", missedSources: [] }))
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [hierarchyCell, { ...hierarchyCell, idn: "USER B", resource: "orders:303" }], gaps }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   await userEvent.click(screen.getByRole("button", { name: /미교차 후보 USER B.*orders:202/ }))
@@ -99,7 +101,7 @@ it("offers explicit expansion for a candidate-only group with no observed operat
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("900"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const routeCandidates = Array.from({ length: 19 }, (_, index) => ({ service: "https://api.example.test", method: "UNKNOWN", pathTemplate: `/unseen/${String(index + 1).padStart(2, "0")}`, observed: false, provenanceTypes: [], provenanceEvidenceIds: [], provenance: [], applicability: "REVIEW", reviewReason: "server candidate", priorityReasons: [] }))
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [], events: [], routeCandidates }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   await userEvent.click(screen.getByRole("checkbox", { name: "경로 후보 표시" }))
   await userEvent.click(screen.getByRole("button", { name: /UNSEEN APIs/ }))
@@ -111,7 +113,7 @@ it("offers explicit expansion for a candidate-only group with no observed operat
 it("navigates Site→Group→API→Object and back without leaking objects into overview", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("900"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [hierarchyCell] }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.queryByText("orders:101")).not.toBeInTheDocument()
@@ -132,7 +134,7 @@ it("requires explicit 18-item expansion for APIs and Objects and retains group p
   const cells = Array.from({ length: 19 }, (_, index) => ({ ...hierarchyCell, op: `GET /api/orders/${String(index + 1).padStart(2, "0")}`, resource: `orders:${String(index + 1).padStart(2, "0")}` }))
   cells.push(...Array.from({ length: 18 }, (_, index) => ({ ...hierarchyCell, op: "GET /api/orders/01", resource: `orders:${String(index + 20).padStart(2, "0")}` })))
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   expect(screen.queryByRole("button", { name: /^GET \/api\/orders\/19/ })).not.toBeInTheDocument()
@@ -151,7 +153,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   const media = { matches: false, media: "(max-width: 900px)", onchange: null, addEventListener: (_: string, listener: (event: Event) => void) => listeners.add(listener), removeEventListener: (_: string, listener: (event: Event) => void) => listeners.delete(listener), dispatchEvent: () => true }
   window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   expect(screen.getByRole("complementary", { name: "분석 필터" })).toBeVisible()
   expect(screen.getByText("SOURCES")).toBeVisible()
@@ -200,7 +202,7 @@ it("keeps filter facets aligned with the default support-traffic projection", as
   const media = { matches: false, media: "(max-width: 900px)", onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true }
   window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, events: [...snapshot.events, { ...snapshot.events[0], eventId: "ev-support", source: "scanner", trafficClass: "POLLING", clusterEvidenceIds: ["ev-support"] }] }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
 
   expect(screen.getByRole("checkbox", { name: /SCANNER\s*0/ })).toBeVisible()
@@ -211,7 +213,7 @@ it("keeps filter facets aligned with the default support-traffic projection", as
 it.each([900, 600])("owns compact inspector state independently, opens it on selection, and clears selection on close at %ipx", async (width) => {
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("1279") ? width < 1280 : width <= 900, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
 
   const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
@@ -236,7 +238,7 @@ it.each([900, 600])("owns compact inspector state independently, opens it on sel
 it.each([900, 600])("opens the shared graph filters and keeps every meaningful toggle operable at %ipx", async (width) => {
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("1279") ? width < 1280 : width <= 900, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
 
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
@@ -266,7 +268,7 @@ it("uses exact HUMAN, SCANNER, and LLM source semantics in the canvas legend", a
   const media = { matches: false, media: "(max-width: 900px)", onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true }
   window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
 
   const legend = screen.getByRole("list", { name: "그래프 소스 범례" })
@@ -280,7 +282,7 @@ it("counts Review State facets with the same matching-cell verdict used by filte
     ...snapshot,
     cells: [{ idn: "alice", op: "GET /orders/{id}", resource: "order:1", perSource: { human: "deny" }, reasons: {}, overall: "deny", conflict: false, missedSources: [], evidenceIds: ["ev-1"] }],
   }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
 
   expect(screen.getByRole("checkbox", { name: /ALLOW\s*0/ })).toBeVisible()
@@ -291,7 +293,7 @@ it("retains a selected candidate whose provenance Evidence ID is not an event ID
   const media = { matches: true, media: "(max-width: 900px)", onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true }
   window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, events: [], routeCandidates: [{ service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/unseen/{id}", observed: false, provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["route-evidence"], provenance: [{ type: "SITE_MAP", evidenceId: "route-evidence", source: "human", runId: "r", adapter: "burp", applicability: "REVIEW", reason: "candidate" }], applicability: "REVIEW", reviewReason: "needs review", priorityReasons: ["input"] }] }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   const filters = screen.getByRole("dialog", { name: "분석 필터" })
@@ -313,7 +315,7 @@ it("clears a selected candidate when its snapshot entry disappears even if a pro
   const media = { matches: true, media: "(max-width: 900px)", onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true }
   window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, routeCandidates: [{ service: "https://api.example.test", method: "GET", pathTemplate: "/orders/{id}", observed: true, provenanceTypes: ["OBSERVED"], provenanceEvidenceIds: ["ev-1"], provenance: [{ type: "OBSERVED", evidenceId: "ev-1", source: "human", runId: "r", adapter: "burp", applicability: "INCLUDE", reason: "source event" }], applicability: "INCLUDE", reviewReason: "", priorityReasons: [] }] }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   const filters = screen.getByRole("dialog", { name: "분석 필터" })
@@ -333,7 +335,7 @@ it("enters the exact UNCROSSED operation from Site and falls back to Site when i
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("900"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const fixture: Snapshot = { ...snapshot, cells: [hierarchyCell], gaps: [{ id: "gap-original", type: "UNCROSSED", idn: "USER B", op: hierarchyCell.op, resource: "orders:202", risk: 1, summary: "server candidate", missedSources: [] }] }
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = fixture
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: /미교차 후보 USER B/ }))
   expect(screen.getByText("Object View")).toBeVisible()
@@ -352,7 +354,7 @@ it("retains a selected candidate when a preceding snapshot candidate disappears"
   const precedingCandidate: Snapshot["routeCandidates"][number] = { service: "https://admin.example.test", method: "GET", pathTemplate: "/admin", observed: false, provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["preceding-evidence"], provenance: [{ type: "SITE_MAP", evidenceId: "preceding-evidence", source: "human", runId: "r", adapter: "burp", applicability: "REVIEW", reason: "candidate" }], applicability: "REVIEW", reviewReason: "needs review", priorityReasons: ["input"] }
   const selectedCandidate: Snapshot["routeCandidates"][number] = { service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/selected/{id}", observed: false, provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["selected-evidence"], provenance: [{ type: "SITE_MAP", evidenceId: "selected-evidence", source: "human", runId: "r", adapter: "burp", applicability: "REVIEW", reason: "candidate" }], applicability: "REVIEW", reviewReason: "selected review", priorityReasons: ["input"] }
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, events: [], routeCandidates: [precedingCandidate, selectedCandidate] }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   const filters = screen.getByRole("dialog", { name: "분석 필터" })

@@ -1,5 +1,26 @@
 # FlowScope 개발 기록
 
+## 2026-09-12 · 미출시 · PR #11·#12 최종 흡수와 수명 경계 보정(D-145)
+
+### 원인과 수정
+
+- Claude 미커밋 이식분을 인수해 상단 `분석 / 점검 / 기록`, Graph의 점검 우선순위/전체 관계, Matrix의 P/E/O/파라미터 커버리지/기존 권한 셀, Evidence별 요청 비교와 stale snapshot action 차단을 현행 React·Surface·Authorization 정본에 연결했다. 별도 `#parameter-map` route와 icon rail은 중복이라 제거하되 옛 hash는 `#graph`로 호환한다.
+- 요청 비교는 main snapshot·프로젝트에 digest를 추가하지 않는다. 사용자가 비교를 열면 `/api/evidence`가 같은 ParameterExtractor로 record를 재계산하고 민감 경로·값·preview를 제외한 좌표·형태·타입·길이·비민감 digest를 반환한다. query 함수가 HTTP 전문을 cache 전에 제거하고 `gcTime=0`으로 폐기한다. digest를 Fact·인가 판정·취약점으로 쓰는 안은 기각했다.
+- 프로젝트 전환 성공 전에 `DATASET_REPLACING`을 보내던 문제를 실패 회귀로 재현했다. 서버 200 응답 뒤에만 신호를 보내 실패한 새 진단/열기/샘플 요청은 현재 Request Lab 편집을 보존한다. 일반 snapshot revision도 초안을 보존하되 Evidence 좌표·raw retention·session 전제가 사라지면 닫는다.
+- unload 중 project candidate가 shutdown 확인 직후 상태를 덮을 수 있던 TOCTOU를 수정했다. 설치 전체와 shutdown flag 전환을 records monitor 하나에 두고, 새 capture/import/rebuild 차단 → 필요 시 마지막 rebuild → SQLite checkpoint 순서를 적용했다.
+- 첫 패키지 E2E는 menu 실제 접근성 이름 `분석`을 테스트가 `분석 경로`로 찾고, semantic `dt/dd`를 공백 포함 text로 가정해 각각 후속 serial 검사를 막았다. 실제 accessibility tree와 definition 구조를 조회하도록 테스트를 고쳐 14개 전체를 실행했다.
+
+### 영향 파일·검증
+
+- 코드: React app/navigation/dashboard/graph/matrix/parameter-map/evidence, API types/endpoints/dataset boundary, `SnapshotJsonWriter`, `FlowScopeExtension`, `SampleProject`.
+- 테스트: React 58 files/452 tests, Java 536 tests(실패·오류 0, opt-in 2 skip), focused Request Lab 실패 전환·install/unload 원자성 회귀, 패키지 Playwright 14/14 재시도 없이 통과.
+- 문서: README 한/영, architecture, endpoint Surface, UI rationale, decisions D-145, plan, HANDOFF, CHANGELOG 한/영, documentation status, beta validation.
+- 산출물: JAR 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`; bundle 30,820,681 bytes, SHA-256 `03ba745794b06c114800d49f34371cb512d99ac8f4bd4023e958139942422f67`.
+
+### 남은 한계·다음 gate
+
+- 실제 Burp load/unload, disk full/권한 거부, 대규모 operation Evidence 페이지 비용, Windows, 실제 HUMAN/ZAP/Explorer 데이터에서의 UI 검토 시간은 미실측이다. 비민감 SHA-256은 저엔트로피 값 추측을 막는 secret primitive가 아니므로 사용자 선택형 로컬 Evidence 비교 밖으로 확대하지 않는다.
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 7단계 — 통합 검증(화면 간 선택·Evidence·저장/재열기·좁은 viewport)과 설계 문서 이식, 최종 인계
 
 ### 원인과 수정

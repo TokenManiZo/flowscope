@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.flowscope.core.AccessRole;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AuthorizationAnalysis;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
@@ -23,6 +24,10 @@ import io.flowscope.core.SurfaceAnalyzer;
 import io.flowscope.core.Verdict;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
+import io.flowscope.core.parameter.ParameterExtraction;
+import io.flowscope.core.parameter.ParameterExtractor;
+import io.flowscope.core.parameter.ParameterKey;
+import io.flowscope.core.parameter.ParameterObservation;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
 
@@ -282,6 +287,7 @@ public final class SnapshotJsonWriter {
             ObjectNode value = records.addObject();
             value.put("eventId", record.evidenceId);
             value.put("query", masked(record.query));
+            parameterEvidence(value, record);
             value.put("requestBody", masked(record.requestBodyForAnalysis()));
             value.put("request", Masking.maskHeaders(masked(record.requestTextForEvidence())));
             value.put("responseBody", masked(record.responseBodyForAnalysis()));
@@ -320,6 +326,66 @@ public final class SnapshotJsonWriter {
         out.put("limit", limit);
         out.put("hasMore", (long) offset + page.size() < cluster.evidenceIds().size());
         return json.writeValueAsBytes(out);
+    }
+
+    /**
+     * PR #11 evidence contract (D-145): per-record structured parameter metadata for the request diff.
+     * Derived from the same masked stored record the Surface uses; never values, preview, HTTP text or raw vault.
+     * Sensitive paths are dropped, the digest is a SHA-256 of a non-sensitive value only, and the count is bounded.
+     */
+    private void parameterEvidence(ObjectNode value, RequestRecord record) {
+        ObjectNode context = value.putObject("parameterContext");
+        context.put("service", record.service);
+        context.put("method", record.method);
+        context.put("operation", record.op);
+        context.put("identity", record.idn);
+        context.put("role", record.role == null ? AccessRole.UNKNOWN.name() : record.role.name());
+        context.put("source", record.source.name());
+        context.put("status", record.status);
+        boolean retained = record.requestPayload != null && record.requestPayload.retained();
+        context.put("retention", retained ? "RETAINED" : record.requestPayload == null ? "UNKNOWN" : "METADATA_ONLY");
+        ParameterExtraction extraction = ParameterExtractor.extract(record);
+        // Same framing as SurfaceAnalysis.RequestContext.complete: no extraction diagnostic and a fully retained request.
+        boolean complete = retained && extraction.diagnostics().isEmpty();
+        context.put("complete", complete);
+        if (!complete) context.put("completenessReason", retained ? "EXTRACTION_DIAGNOSTICS" : "REQUEST_NOT_RETAINED");
+        ArrayNode observations = value.putArray("parameterObservations");
+        extraction.observations().stream().limit(10_000).forEach(observation -> {
+            if (Masking.isSensitiveParameterPath(observation.key().canonicalPath())) return;
+            ObjectNode item = observations.addObject();
+            item.set("key", parameterKey(observation.key()));
+            item.put("presence", observation.presence() == null ? "UNKNOWN" : observation.presence().name());
+            item.put("shape", observation.shape() == null ? "UNKNOWN" : observation.shape().name());
+            ParameterObservation.ValueSummary summary = observation.value();
+            item.put("valueType", summary == null ? "UNKNOWN" : summary.type().name());
+            if (summary == null) item.putNull("byteLength"); else item.put("byteLength", summary.byteLength());
+            String digest = summary == null ? null : summary.digest();
+            if (digest != null && digest.matches("(?:sha256:)?[a-fA-F0-9]{64}")) {
+                item.put("digest", digest.replaceFirst("^sha256:", ""));
+            } else {
+                item.putNull("digest");
+            }
+            // Occurrence count is folded into the context signature and is not a stored field.
+            item.putNull("occurrenceCount");
+            String signature = observation.contextSignature();
+            if (signature != null && signature.matches("ctx:v1:sha256:[a-fA-F0-9]{64}")) {
+                item.put("contextSignature", signature);
+            } else {
+                item.putNull("contextSignature");
+            }
+            item.put("confidence", observation.confidence().name());
+        });
+    }
+
+    private ObjectNode parameterKey(ParameterKey key) {
+        ObjectNode value = json.createObjectNode();
+        value.put("service", key.service());
+        value.put("method", key.method());
+        value.put("operation", key.operation());
+        value.put("location", key.location().name());
+        value.put("canonicalPath", key.canonicalPath());
+        value.put("stableKey", key.stableKey());
+        return value;
     }
 
     private void payloadMetadata(ObjectNode out, String field, io.flowscope.core.StoredPayload payload) {

@@ -10,6 +10,10 @@ import io.flowscope.core.ToolKind;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,6 +21,38 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlowScopeExtensionPhaseTest {
+    @Test
+    void 프로젝트_설치와_종료는_같은_원자_경계를_사용한다() throws Exception {
+        Object monitor = new Object();
+        AtomicBoolean shuttingDown = new AtomicBoolean(false);
+        AtomicBoolean installed = new AtomicBoolean(false);
+        CountDownLatch installStarted = new CountDownLatch(1);
+        CountDownLatch releaseInstall = new CountDownLatch(1);
+        CountDownLatch shutdownAttempted = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var install = executor.submit(() -> FlowScopeExtension.runBeforeShutdown(monitor, shuttingDown, () -> {
+                installStarted.countDown();
+                try { releaseInstall.await(); }
+                catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new RuntimeException(error); }
+                installed.set(true);
+            }));
+            assertTrue(installStarted.await(1, TimeUnit.SECONDS));
+            var shutdown = executor.submit(() -> {
+                shutdownAttempted.countDown();
+                synchronized (monitor) { shuttingDown.set(true); }
+            });
+            assertTrue(shutdownAttempted.await(1, TimeUnit.SECONDS));
+            assertFalse(shuttingDown.get(), "shutdown cannot cross an in-progress dataset install");
+            releaseInstall.countDown();
+            assertTrue(install.get(1, TimeUnit.SECONDS));
+            shutdown.get(1, TimeUnit.SECONDS);
+        }
+        assertTrue(installed.get());
+        AtomicBoolean lateInstall = new AtomicBoolean(false);
+        assertFalse(FlowScopeExtension.runBeforeShutdown(monitor, shuttingDown, () -> lateInstall.set(true)));
+        assertFalse(lateInstall.get());
+    }
+
     @Test
     void ZAP_일시_통신_실패는_세_번_연속되기_전까지_UNREACHABLE로_확정하지_않는다() {
         FlowScopeExtension.ZapProbeStatus status = new FlowScopeExtension.ZapProbeStatus();

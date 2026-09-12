@@ -1,8 +1,11 @@
 import { Activity, Database, Radio, ScanSearch, UserRoundCheck, Zap } from "lucide-react"
 
 import { routeHash, type AppRoute } from "@/app/routes"
+import { Button } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useHumanRunQuery, useOpenProjectMutation, useProjectsQuery, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
 import { NewProjectDialog } from "./NewProjectDialog"
+import { WorkspaceNavigation } from "./WorkspaceNavigation"
 
 function humanState(active: boolean | undefined, completed: boolean | undefined) {
   if (active) return "RUNNING"
@@ -18,6 +21,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : ""
 }
 
+/** PR#11 상단 바: 분석/점검/기록 탐색이 앞에 오고, 실시간 상태는 `상태` popover 안에 둔다. 프로젝트 선택·저장 상태·새 진단은 현행(D-140) 그대로다. */
 export function WorkspaceTopBar({ route }: { route: AppRoute }) {
   const snapshot = useSnapshotQuery()
   const human = useHumanRunQuery()
@@ -49,12 +53,20 @@ export function WorkspaceTopBar({ route }: { route: AppRoute }) {
           <span aria-hidden="true" className="grid size-7 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-300"><ScanSearch className="size-4" /></span>
           <span>FlowScope</span>
         </a>
-        <StatusItem icon={Activity} label="SCOPE" value={scope} className="max-w-72" />
-        <StatusItem icon={Activity} label="SCOPE READY" value={scopeReady} />
-        <StatusItem icon={Radio} label="LIVE" value={liveCapture} />
-        <StatusItem icon={UserRoundCheck} label="HUMAN" value={humanRun} />
-        <StatusItem icon={Zap} label="ZAP" value={zapState} />
-        <StatusItem icon={ScanSearch} label="SCANNER" value={scannerState} />
+        <WorkspaceNavigation route={route} />
+        <Popover>
+          <PopoverTrigger asChild><Button variant="outline" size="sm" className="shrink-0">상태</Button></PopoverTrigger>
+          <PopoverContent align="start" className="w-80 p-2">
+            <div aria-label="실시간 분석 상태" className="grid gap-1">
+              <StatusItem icon={Activity} label="SCOPE" value={scope} className="max-w-72" />
+              <StatusItem icon={Activity} label="SCOPE READY" value={scopeReady} />
+              <StatusItem icon={Radio} label="LIVE" value={liveCapture} />
+              <StatusItem icon={UserRoundCheck} label="HUMAN" value={humanRun} />
+              <StatusItem icon={Zap} label="ZAP" value={zapState} />
+              <StatusItem icon={ScanSearch} label="SCANNER" value={scannerState} />
+            </div>
+          </PopoverContent>
+        </Popover>
         <label className="flex min-w-0 shrink-0 items-center gap-1 text-xs text-muted-foreground">PROJECT
           <select aria-label="프로젝트 선택" value={projects.data?.active?.id ?? ""}
             disabled={!projects.data || openProject.isPending}
@@ -69,7 +81,6 @@ export function WorkspaceTopBar({ route }: { route: AppRoute }) {
         <NewProjectDialog defaultScope={scopeData?.join("\n") ?? ""} />
         {projectError && <span role="alert" className="max-w-96 truncate text-xs text-destructive">프로젝트 전환 실패 · {projectError}</span>}
       </div>
-      <a href={routeHash("inspection")} className="ml-auto shrink-0 border border-emerald-300 bg-emerald-400 px-2.5 py-1.5 text-xs font-semibold text-black hover:bg-emerald-300">{route === "inspection" ? "점검 계속" : "빠른 시작"}</a>
     </header>
   )
 }

@@ -27,11 +27,15 @@ beforeEach(() => {
   cytoscapeState.factory.mockClear()
 })
 
-it("renders the hierarchy controls and one Cytoscape canvas on the graph route", async () => {
+it("defaults to priority and exposes the original hierarchy controls and canvas in the relationship tab", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   const { GraphPage } = await import("./GraphPage")
   render(<GraphPage />)
+  expect(screen.getByRole("tab", { name: "점검 우선순위" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.queryByLabelText("공격면 Cytoscape 그래프")).not.toBeInTheDocument()
+  expect(cytoscapeState.factory).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole("tab", { name: "전체 관계 보기" }))
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
@@ -39,6 +43,8 @@ it("renders the hierarchy controls and one Cytoscape canvas on the graph route",
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)
   const siteElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string } }[]
   expect(new Set(siteElements.filter(element => element.data.kind).map(element => element.data.kind))).toEqual(new Set(["target", "api-group"]))
+  await userEvent.click(screen.getByRole("tab", { name: "점검 우선순위" }))
+  expect(cytoscapeState.cores[0].destroy).toHaveBeenCalledTimes(1)
 })
 
 it("destroys the actual Cytoscape instance for canvas→list and creates one replacement for list→canvas", async () => {
@@ -46,7 +52,7 @@ it("destroys the actual Cytoscape instance for canvas→list and creates one rep
   const media = { matches: false, media: "(max-width: 900px)", onchange: null, addEventListener: (_: string, listener: (event: Event) => void) => listeners.add(listener), removeEventListener: (_: string, listener: (event: Event) => void) => listeners.delete(listener), dispatchEvent: () => true }
   window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)
   await screen.findByLabelText("공격면 Cytoscape 그래프")
@@ -67,7 +73,7 @@ it("opens the shared full candidate detail from a desktop Cytoscape tap", async 
     ...snapshot,
     routeCandidates: [{ service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/unseen/{id}", observed: false, provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["route-evidence"], provenance: [{ type: "SITE_MAP", evidenceId: "route-evidence", source: "human", runId: "run-1", adapter: "burp", applicability: "REVIEW", reason: "candidate" }], applicability: "REVIEW", reviewReason: "needs review", priorityReasons: ["input"] }],
   }
-  const { GraphPage } = await import("./GraphPage")
+  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   await userEvent.click(screen.getByRole("checkbox", { name: "경로 후보 표시" }))
   const tap = cytoscapeState.cores[0].on.mock.calls.find(([event]) => event === "tap")?.[2]

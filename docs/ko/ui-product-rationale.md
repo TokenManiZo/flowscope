@@ -1,6 +1,6 @@
 # FlowScope UI·제품 설계 근거 및 발표 가이드
 
-> **현재 계약: 2026-09-11, D-140~142 (미출시 beta.46 변경).** 기존 Judge·MCP 제거와 판정 없는 독립 Codex Explorer, D-139의 Evidence-bound Declaration, D-138의 ZAP 계약을 유지한다. 다른 대상을 시작할 때는 현재 Evidence를 사용자별 프로젝트 DB에 먼저 저장하고 전환하며, 상단은 프로젝트 선택과 실제 저장 상태를 표시한다. API·입력 차이의 실제 Observation에서 exact Evidence·Request Lab·Repeater로 바로 이동하고, 분석 갱신은 편집 초안을 닫지 않으며 데이터셋 교체만 닫는다. 패키지 Standalone도 같은 프로젝트 API를 검증한다. 현행 인가 그래프는 PR#11 이식 5c(2026-09-11)로 Site Overview→API View→Object View 계층과 `+18` 증분을 제공한다. H/S/L은 관측 데이터의 source이고 선언 미관측은 취약점이 아니다. 아래 beta별 과거 부채/검증 기록은 당시 상태이지 현행 사용법이 아니다.
+> **현재 계약: 2026-09-12, D-145 (미출시 beta.46 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. 요청 비교는 사용자가 연 Evidence 페이지에서만 비민감 digest를 사용하며 main snapshot·프로젝트·판정에는 넣지 않는다. 프로젝트 전환 성공 뒤에만 Request Lab을 닫고 정상 unload는 마지막 분석 뒤 저장을 시도한다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
 
 ## 1. 한 문장으로 설명하기
 
@@ -31,10 +31,10 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 
 | 화면 요소 | 사용자가 묻는 질문 | 이렇게 설계한 이유 | 하지 않는 것 |
 |---|---|---|---|
-| 프로젝트·새 진단 | 다른 대상을 시작하면 지금 Evidence는 어디에서 다시 보는가? 저장이 실제 끝났는가? | 상단에서 현재 프로젝트, 이전 프로젝트 선택, `저장 대기/저장 중/저장됨/저장 실패`를 보여 준다. 새 진단은 현재 SQLite 저장과 새 빈 DB 생성을 먼저 끝낸 뒤 exact scope를 전환한다. | 화면을 먼저 비우거나, 저장 실패를 성공으로 표시하거나, raw 세션·비밀번호를 프로젝트에 넣지 않는다. |
+| 프로젝트·새 진단 | 다른 대상을 시작하면 지금 Evidence는 어디에서 다시 보는가? 저장이 실제 끝났는가? | 상단에서 현재 프로젝트, 이전 프로젝트 선택, `저장 대기/저장 중/저장됨/저장 실패`를 보여 준다. 새 진단은 현재 SQLite 저장과 새 빈 DB 생성을 먼저 끝낸 뒤 exact scope를 전환하고, 클라이언트는 서버 성공 뒤에만 열린 Request Lab을 폐기한다. | 전환 요청 전에 화면·편집 초안을 지우거나, 저장 실패를 성공으로 표시하거나, raw 세션·비밀번호를 프로젝트에 넣지 않는다. |
 | API·입력 차이 | 내가 아직 확인하지 못한 endpoint와 parameter는 어디인가? 분석기가 산출물을 실제로 읽었는가? | OpenAPI·HTML form·JavaScript AST의 선언과 실제 H/S/L HTTP Evidence를 분리해 endpoint 행과 입력 badge로 정렬한다. source 필터, Evidence/provenance와 산출물별 정상·부분·실패·상한을 함께 연결한다. | 선언 미관측을 취약점·도달 가능·lane 실패로 부르거나, parser 실패를 빈 결과로 숨기거나, 서버 전용 표면까지 안다는 전체 퍼센트를 만들지 않는다. |
-| Surface Evidence 연결 | 이 차이를 만든 실제 요청·응답을 바로 확인하고 재현할 수 있는가? | Observation의 exact Evidence를 기존 상세 패널로 열어 Request Lab과 Repeater 초안을 같은 선택 계약으로 제공한다. 일반 분석 revision은 열린 draft를 닫지 않고 Evidence/데이터셋 교체만 닫는다. | Declaration-only 항목을 실제 요청으로 꾸미거나 Surface 전용 HTTP 편집기를 중복 구현하지 않는다. |
-| 우선순위 Gap 그래프 | 다음에 무엇을 확인해야 하고 그 근거는 무엇인가? 같은 비교 조건에서 어느 source·계정·권한 변형이 빠졌는가? | 서버가 만든 Gap(source/신원/조건/타입 미관측, 선언 미관측, 권한 변형 미검증)을 서버 우선순위 사유 순 큐로 보이고, 선택 Gap을 조건/사용자→API→입력→권한 대상 카드 경로로 그린다. 상세에는 사유·입력→권한 대상 연결 근거(OBSERVED/CORROBORATED/INFERRED/UNKNOWN)·discovery 프로파일·subject×source 검증표·연결된 실제 Evidence·정의 근거를 두고 대표 Evidence로 Request Lab을 연다. 좁은 화면은 같은 경로를 목록으로 보인다. | 큐·카드에서 판정을 재계산하거나 퍼센트를 만들지 않는다. UNTESTED 좌표를 취약점으로, basis Evidence를 실행 근거로 표시하지 않는다. 선언만 있는 입력에 전송 버튼을 만들지 않는다. |
+| Surface Evidence 연결 | 이 차이를 만든 실제 요청·응답을 바로 확인하고 비교·재현할 수 있는가? | Observation의 exact Evidence를 기존 상세 패널로 열어 Request Lab과 Repeater 초안을 제공한다. Gap 요청 비교는 선택 시에만 안전 parameter metadata를 페이지로 가져와 presence/shape/type/value 차이를 보여 준다. 일반 revision은 편집을 보존하되 Evidence 좌표·raw/session 전제가 바뀌면 닫는다. | Declaration-only를 요청으로 꾸미거나, digest를 서버 사용·인가 판정으로 쓰거나, HTTP 전문을 query cache에 넣지 않는다. |
+| 점검 Gap 그래프 | 다음에 무엇을 확인해야 하고 그 근거는 무엇인가? | `#graph` 첫 탭에서 서버 Gap을 우선순위 큐와 조건/사용자→API→입력→권한 대상 경로로 보인다. 둘째 탭에서 같은 dataset의 Site→API group→API→Object 전체 관계를 본다. | 두 route에 같은 그래프를 중복하거나 큐·카드에서 판정·퍼센트를 만들지 않는다. |
 | 인가 그래프 | 선택한 API의 신원·객체·source 관계는 무엇인가? | 기존 `Identity → API → Object`와 owner/BOLA/BFLA Evidence를 상세층에 보존해 첫 화면의 고카디널리티 노이즈와 판정 근거 손실을 함께 피한다. | Resource를 코어에서 삭제하거나 모든 객체 인스턴스를 첫 화면에 펼치지 않는다. |
 | 빠른 시작 | 지금 바로 무엇을 해야 하는가? | `범위 → HUMAN → ZAP → Evidence 검토` 네 단계 상태를 항상 보이되, 첫 미완료 단계의 설명과 제어만 연다. 사용자가 단계 탭을 누르면 원하는 설정을 확인할 수 있고 `현재 단계로`로 복귀한다. | 여섯 단계 설명과 세 실행기의 모든 입력·버튼을 동시에 펼쳐 사용자가 다음 행동을 찾게 하지 않는다. 수집 건수만으로 단계를 완료 처리하지 않는다. |
 | 실행 상태와 gate | 어느 lane이 끝났고 왜 실행할 수 없는가? | completed lane과 `COMPLETED_WITH_WARNINGS`를 텍스트·수치로 함께 표시하고, scope·연결·pending gate는 비활성 button만이 아니라 바로 옆 설명으로 보인다. ZAP 일반 통신 실패 1·2회는 `RETRYING`, 3회째는 `UNREACHABLE`로 구분한다. polling이 바뀌어도 사용자가 고른 target을 다른 target으로 바꾸지 않는다. | 색만으로 완료·경고를 알리거나, 한 번의 timeout을 영구 단절로 확정하거나, scope 밖 target을 조용히 첫 scope target으로 바꿔 다른 대상으로 실행하지 않는다. |
@@ -62,7 +62,7 @@ FlowScope는 Burp를 대체하지 않는다. Burp의 실제 트래픽을 `Identi
 | 노드 위치 잠금 | 사용자가 정리한 위치를 유지할 수 있는가? | 자동 재배치로 비교 맥락이 흔들리지 않게 한다. | 서버 분석 결과를 고정하거나 dataset을 lock하지 않는다. Judge dataset lock은 제거됐으며 UI 위치 잠금은 유지한다. |
 | 노드 표시 제한 | 대규모 그래프가 털뭉치가 되지 않는가? | API View·Object View는 우선순위(suspicious·충돌·일부 관측·Evidence 수) 순 18개에서 시작해 `18개 더 보기 (N개 남음)`으로만 늘리고, Back은 그룹의 펼침 수를 유지한다. 숨긴 항목의 Evidence는 신원→API 선택에 남는다. | 이 제한을 의미 기반 공격면 클러스터링이나 전체 API 추정으로 설명하지 않는다. |
 | 배치 초기화 | 이동·확대 후 기본 구조로 돌아갈 수 있는가? | 저장 위치·viewport를 현재 단계의 기본 lane 배치로 복구한다. 저장된 zoom은 0.4~2 범위로 정규화한다. | Evidence와 사용자 정책을 초기화하지 않는다. |
-| 판정 매트릭스(P/E/O) | 어떤 신원·기능·객체 조합을 다음에 수동으로 시험해야 하고, 지금 근거는 어느 등급인가? | 정책 P·실행 E·소유권 O를 합산하지 않고 셀마다 나란히 두며, BFLA(역할×기능)·BOLA/IDOR(계정×객체)·실행 Evidence 보기에서 기대→실제, 상태, 추천 조합(상위→하위 역할, 관측 객체→다른 계정), 게이트, 오라클, 사람 최종 판정을 연다. | 후보는 서버 권한 셀의 SUSPICIOUS만 따르고 2xx·소유관계만으로 승격하지 않는다. 과거 LLM 검증 이력은 E3·재현으로 올리지 않는다. 추천 요청을 자동 전송하지 않는다. |
+| 판정·파라미터 매트릭스 | 어떤 신원·기능·객체·입력 좌표를 다음에 확인해야 하는가? | `#matrix`에 P/E/O 판정, 입력×대상×subject×source 파라미터 커버리지, 기존 권한 셀 세 탭을 둔다. 각 탭은 서버 정본을 다른 축으로 표시한다. | status·digest로 후보를 승격하거나 추천 요청을 자동 전송하지 않는다. |
 | 기존 권한 매트릭스 | 같은 조합을 표로 빠르게 비교할 수 있는가? | identity/role × operation × resource cell에 source별 verdict와 갭을 정렬한다(둘째 탭). | 그래프만 보고 놓치기 쉬운 조합 차이를 숨기지 않는다. |
 | 흐름 순서 | 응답 값이 뒤 요청에 사용됐는가? | 실제로 재사용된 ID/token 값의 시간순 의존성만 연결하고 메인 접근 그래프와 분리한다. | 단순히 시간상 앞뒤라는 이유로 관계를 만들거나 접근선 위에 보조 의존선을 겹쳐 출처를 혼동시키지 않는다. |
 | 시나리오 | 어떤 BOLA/BFLA 후보를 왜 봐야 하는가? | 현재 규칙 후보와 사람 검토를 Evidence에 연결하고, 과거 LLM 기록은 별도 읽기 전용으로 분리한다. | LLM 문장이나 ZAP alert만으로 취약점을 확정하지 않는다. |
@@ -311,7 +311,7 @@ Repeater는 검토 가능한 **미전송 초안**을 여는 handoff이다. 이 �
 
 ## 21. Reference analysis shell과 검증 경계
 
-모든 route는 status·rail·context·workbench·inspector를 공유한다. desktop은 persistent pane을 쓰고 compact에서는 같은 node를 accessible Sheet로 옮긴다. 닫힌 route button도 current route 이름과 `aria-current`을 먼저 보여 준다. desktop rail은 각 route를 아이콘과 함께 한국어 라벨로 표시해(아이콘 전용이 아님) 진단자가 화면을 이름으로 찾게 하고, compact 메뉴도 같은 라벨을 제공한다. HUMAN solid blue, SCANNER/ZAP dashed red, LLM dotted gray, REVIEW amber는 text와 line style을 병행한다. Graph의 operation은 ENDPOINT, resource는 OBJECT lane에 놓이며 diagonal drag도 lane X를 넘지 않는다. standalone browser pass는 Burp/target/active Request Lab validation을 대체하지 않는다.
+이 절의 desktop label rail은 D-145가 상단 `분석 / 점검 / 기록` 그룹 탐색으로 대체했다. context·workbench·inspector와 compact Sheet, HUMAN solid blue·SCANNER/ZAP dashed red·LLM dotted gray·REVIEW amber의 중복 부호화, Graph lane 제약은 유지한다. 모든 route는 그룹 메뉴에서 한국어 이름과 `aria-current`로 접근하며 standalone browser pass는 Burp/target/active Request Lab validation을 대체하지 않는다.
 
 ## 22. Reference shell 최종 review의 사실성·조작성 경계
 
@@ -320,3 +320,11 @@ Repeater는 검토 가능한 **미전송 초안**을 여는 handoff이다. 이 �
 desktop 중앙 영역은 긴 운영 화면의 명시적 scroll owner이고 Graph는 그 영역의 남은 높이를 canvas로 사용한다. Graph zoom은 node의 실제 렌더 폭과 lane 폭에서 안전 상한을 계산한다. 지원 상한에서도 node 전체가 자기 lane 안에 남으며, zoom·fit·resize·lock·preference 변경은 semantic inspector 선택뿐 아니라 Cytoscape의 실제 selected element와 테두리도 유지한다.
 
 Graph inspector는 빈 안내를 사용자가 직접 열 수 있지만 선택하면 자동으로 열리고 닫으면 선택도 정리된다. Evidence inspector와 Request Lab은 현재 snapshot에 실제로 존재하는 event에만 연결된다. snapshot 교체 직후 effect를 기다리는 한 frame 동안에도 이전 ID나 이전 Request Lab fetch가 살아나지 않게 현재 membership을 render에서 동기적으로 확인한다. standalone Chromium은 이 UI 계약을 검증하지만 실제 Burp/target/HUMAN/ZAP 및 Request Lab 전송은 여전히 별도 runtime gate다.
+
+## 23. PR #11 최종 작업면 흡수(D-145)
+
+상단에는 route 11개를 평면 반복하지 않고 `분석 / 점검 / 기록` 세 그룹과 별도 상태 popover를 둔다. `점검`은 바로 실행 화면으로 가고, 분석·기록은 Radix menu로 모든 route를 보존한다. `#parameter-map`은 호환 bookmark만 남기고 `#graph`의 **점검 우선순위 / 전체 관계 보기** 탭으로 통합한다. `#matrix`도 판정/P·E·O, 파라미터 커버리지, 기존 권한 셀을 한 작업면의 세 탭으로 묶되 데이터 정본은 합치지 않는다.
+
+요청 비교는 값 원문을 화면 모델이나 main snapshot에 추가하지 않는다. 사용자가 실제 Gap을 선택했을 때만 Evidence 페이지에서 민감 경로·값을 제외한 좌표·shape·type·길이·digest를 가져오고, HTTP 전문을 제거한 새 객체만 query cache에 넣는다. digest는 `VALUE_CHANGED`를 구분하는 제한된 신호이며 취약점·서버 사용·인가 경계 판정이 아니다. 저엔트로피 값 추측 가능성 때문에 이를 비밀 보호 수단으로 설명하지 않는다.
+
+Request Lab은 dataset 교체 API가 성공한 뒤, Evidence 좌표나 raw/session 전제가 사라질 때만 닫는다. 실패한 전환이나 일반 traffic revision은 사용자의 편집·탭 내 전송 이력을 지우지 않는다. stale snapshot에서는 Evidence action을 비활성화하고 마지막 성공 시각과 재시도를 표시한다. unload는 새 작업을 차단한 뒤 마지막 분석과 DB 저장을 순서대로 시도하지만 실제 disk failure·강제 종료 복구는 별도 Burp gate다.

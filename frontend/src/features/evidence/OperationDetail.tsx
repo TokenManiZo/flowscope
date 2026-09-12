@@ -1,13 +1,13 @@
-import { useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useEffect, useRef, useState } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { openReplay } from "@/lib/api/endpoints"
+import { openReplay, saveOwner, saveRequirement, saveTrafficOverride } from "@/lib/api/endpoints"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
-import { queryKeys, useOwnerMutation, useRequirementMutation, useTrafficOverrideMutation } from "@/lib/query/hooks"
+import { queryKeys } from "@/lib/query/hooks"
 import { boundedText } from "./evidenceSelectors"
 
 interface Props {
@@ -17,19 +17,25 @@ interface Props {
   showEvidenceId?: boolean
 }
 
-export function OperationDetail({ event, snapshot, onOpenRequestLab, showEvidenceId = true }: Props) {
+export function OperationDetail(props: Props) {
+  return <OperationEditor key={JSON.stringify([props.event.eventId, props.event.op, props.event.resource, props.event.idn, props.event.source])} {...props} />
+}
+
+function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = true }: Props) {
   const queryClient = useQueryClient()
-  const requirement = useRequirementMutation()
-  const traffic = useTrafficOverrideMutation()
-  const owner = useOwnerMutation()
+  const active = useRef(true)
+  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
+  const requirement = useMutation({ mutationFn: ({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role) })
+  const traffic = useMutation({ mutationFn: ({ operation, value }: { operation: string; value: string }) => saveTrafficOverride(operation, value) })
+  const owner = useMutation({ mutationFn: ({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity) })
   const [role, setRole] = useState(snapshot.requiredRoles[event.op] ?? "")
   const [override, setOverride] = useState<"AUTO" | "INCLUDE" | "EXCLUDE">("AUTO")
-  const [identity, setIdentity] = useState(event.resource ? snapshot.owners[event.resource] ?? event.idn : "")
+  const [identity, setIdentity] = useState(event.resource ? snapshot.owners[event.resource] ?? "" : "")
   const [error, setError] = useState("")
   const [replayMessage, setReplayMessage] = useState("")
   const [replayPending, setReplayPending] = useState(false)
 
-  async function refreshSelection() { await queryClient.invalidateQueries({ queryKey: queryKeys.snapshot }) }
+  async function refreshSelection() { if (active.current) await queryClient.invalidateQueries({ queryKey: queryKeys.snapshot }) }
   async function submitRequirement() { setError(""); try { await requirement.mutateAsync({ operation: event.op, role }); await refreshSelection() } catch (reason) { setError(reason instanceof Error ? reason.message : "필수 역할 저장에 실패했습니다.") } }
   async function submitTraffic() { setError(""); try { await traffic.mutateAsync({ operation: event.op, value: override }); await refreshSelection() } catch (reason) { setError(reason instanceof Error ? reason.message : "트래픽 정책 저장에 실패했습니다.") } }
   async function submitOwner() { if (!event.resource) return; setError(""); try { await owner.mutateAsync({ resource: event.resource, identity }); await refreshSelection() } catch (reason) { setError(reason instanceof Error ? reason.message : "소유자 저장에 실패했습니다.") } }

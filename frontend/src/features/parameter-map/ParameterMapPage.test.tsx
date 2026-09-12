@@ -109,7 +109,7 @@ it("links only actual events of the exact operation and opens Evidence detail an
   expect(await screen.findByRole("region", { name: "Evidence 상세" })).toHaveTextContent("actual-a")
 })
 
-it("compares two linked actual requests from Surface metadata in the diff tab", async () => {
+it("compares two linked actual requests through the Evidence API metadata in the diff tab", async () => {
   const data = parameterSnapshot()
   const parameter = statusParameter({
     observationEvidenceIds: ["actual-a", "actual-b"],
@@ -118,13 +118,16 @@ it("compares two linked actual requests from Surface metadata in the diff tab", 
       { evidenceId: "actual-b", source: "SCANNER", runId: "run", identity: "USER B", status: 403, shape: "NULL", presence: "EXPLICIT_NULL", valueType: "UNKNOWN", byteLength: 0, contextSignature: "ctx:v1:sha256:bb", confidence: "OBSERVED" },
     ],
   })
+  const key = { service: demoEndpoint().key.service, method: "PATCH", operation: actualEvent().op, location: "JSON_BODY", canonicalPath: "/status", stableKey: "pk:v1:status" }
+  const record = (eventId: string, status: number, observation: Record<string, unknown>) => ({ eventId, request: "LEGACY-REQUEST", response: "LEGACY-RESPONSE", parameterContext: { service: key.service, method: "PATCH", operation: key.operation, identity: eventId, role: "USER", source: "HUMAN", status, complete: true, retention: "RETAINED" }, parameterObservations: [{ key, confidence: "OBSERVED", occurrenceCount: null, contextSignature: null, digest: null, ...observation }] })
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ records: [record("actual-a", 200, { presence: "PRESENT", shape: "SCALAR", valueType: "STRING", byteLength: 5 }), record("actual-b", 403, { presence: "EXPLICIT_NULL", shape: "NULL", valueType: "UNKNOWN", byteLength: 0 })], total: 2, offset: 0, limit: 20, hasMore: false }), { headers: { "Content-Type": "application/json" } }))))
   data.surface!.endpoints = [demoEndpoint([parameter], { requestContexts: [{ evidenceId: "actual-a", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:aa" }, { evidenceId: "actual-b", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:bb" }] })] as never
   data.events = [actualEvent(), actualEvent({ eventId: "actual-b", idn: "USER B", source: "scanner", status: 403, verdict: "deny" })]
   state.query = { ...state.query, data }
   render()
   await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])
   await userEvent.click(screen.getByRole("tab", { name: "요청 비교" }))
-  expect(screen.getByRole("region", { name: "비교 Evidence 선택" })).toHaveTextContent("실제 EventRecord 2건")
+  expect(await screen.findByText(/선택 입력 연결 2건/)).toBeVisible()
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "기준 요청" }), "actual-a")
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "비교 요청" }), "actual-b")
   const table = screen.getByRole("region", { name: "요청 비교 표" })
@@ -133,6 +136,7 @@ it("compares two linked actual requests from Surface metadata in the diff tab", 
   expect(table).toHaveTextContent("PRESENCE_CHANGED · SHAPE_CHANGED · TYPE_CHANGED")
   expect(table).toHaveTextContent("길이: 5 bytes")
   expect(table).not.toHaveTextContent("READY")
+  expect(document.body.textContent).not.toContain("LEGACY-")
 })
 
 it("filters only display state and clears a stale selected Gap on refresh", async () => {

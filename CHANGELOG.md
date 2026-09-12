@@ -2,6 +2,13 @@
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
 
+## 미출시 · PR #11·#12 작업면·Evidence 비교 최종 흡수 (D-145, 2026-09-12)
+
+- 상단 탐색을 `분석 / 점검 / 기록`으로 정리하고 `#graph`에 점검 우선순위·전체 관계, `#matrix`에 P/E/O·파라미터 커버리지·기존 권한 셀을 통합했습니다. 기존 Fact와 판정 엔진은 합치거나 재계산하지 않습니다.
+- Gap 요청 비교는 사용자가 열 때만 Evidence별 비민감 parameter metadata와 SHA-256을 가져옵니다. 민감 경로·값과 preview는 제외하고, HTTP 전문은 React Query cache에 넣지 않으며 main snapshot·프로젝트에는 digest를 추가하지 않습니다.
+- Request Lab은 성공한 dataset 교체나 Evidence/raw/session 전제 변경 때만 닫고 실패한 프로젝트 전환에서는 편집을 보존합니다. unload와 프로젝트 설치의 선후를 원자화하고 대기 중 분석 뒤 최종 DB 저장을 시도합니다.
+- 패키지 E2E에서 드러난 grouped-menu 접근성 selector 오류를 수정했습니다. 최종 전체 검증 수치와 남은 실물 gate는 `docs/ko/beta-validation.md`에 기록합니다.
+
 ## 미출시 · 관측·선언 공통 parameter coordinate 통합 (슬라이스 1, D-143, 2026-09-11)
 
 - 7단계 통합 검증·문서: 프로젝트 저장·재열기 뒤에도 파라미터 Gap·검증 좌표·권한 대상 연결·판정 매트릭스와 사람 검토가 같은 Evidence로 다시 계산되는 통합 회귀, 우선순위 Gap 그래프·관계 그래프·판정 매트릭스·기존 매트릭스가 같은 좌표에서 같은 서버 Evidence를 여는 화면 간 회귀, 좁은 화면(1280·900·600px) Playwright 검사가 추가됐습니다. PR#11 그래프 설계 문서(`GRAPH_IDA_REDESIGN.md`, `GRAPH_NOISE_FP_FN_REDUCTION.md`)를 현행 구현 기준으로 이식했습니다.

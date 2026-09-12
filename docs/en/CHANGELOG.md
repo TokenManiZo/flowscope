@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — final PR #11/#12 workspace and Evidence comparison integration (D-145, 2026-09-12)
+
+- Grouped top navigation now exposes analysis, inspection, and record routes. Graph combines priority Gap and full relationship views; Matrix combines P/E/O judgment, parameter coverage, and existing authorization cells without creating a second server verdict.
+- Opening a Gap comparison lazily derives non-sensitive per-Evidence parameter metadata and SHA-256 equality signals. Sensitive paths and values are omitted, HTTP text is removed before query caching, and the polling snapshot and project schema remain digest-free.
+- Request Lab closes only after a successful dataset replacement or a lost Evidence/raw/session prerequisite. Failed project switching preserves edits, and unload/project installation now share an atomic ordering boundary before the final database checkpoint.
+
 ## Unreleased — packaged Standalone projects and current UI contract (D-142, 2026-09-11)
 
 - Packaged Standalone now implements preserved project creation, saving, selection, and reopening against an actual SQLite workspace. An unavailable Explorer is reported as an explicit status instead of HTTP 500.

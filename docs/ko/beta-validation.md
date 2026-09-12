@@ -1,5 +1,15 @@
 # FlowScope 1.2.0-beta.46 사전 벤치마크 검증 기록
 
+## 2026-09-12 · 미출시 · PR #11·#12 최종 작업면·Evidence 비교 흡수(D-145) gate
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| 수정 전 재현 | Claude 미커밋 트리의 Maven 회귀는 통과했지만 패키지 Playwright는 grouped menu 접근성 이름 불일치로 14건 중 1건 실패·9건 미실행. 실패한 프로젝트 열기에도 dataset replacement signal이 발생하는 RED 회귀와 프로젝트 설치/unload TOCTOU를 확인했다. |
+| 자동 회귀 | JDK 21 `mvn -o clean verify` BUILD SUCCESS. Java 536 tests(실패·오류 0, opt-in 2 skip), React typecheck·58 files/452 tests 통과. 실패 전환은 Request Lab 편집과 signal 0회를 보존하고, install/unload 원자 경계 회귀는 15/15를 통과했다. |
+| 패키지 Playwright | `npm run e2e -- --reporter=line`: 14/14 passed(29.3s), retry 0. grouped navigation, Dashboard→Gap, Gap 카드/필터/tooltip/600px Sheet, 관계 그래프, 세 Matrix tab, Request Lab, 계정, ZAP/Explorer, XML, 900/600px shell을 같은 JAR에서 확인했다. 외부 origin·능동 대상 요청·console/page error 0. |
+| 산출물 | JAR 31,934,375 bytes, SHA-256 `7c30e1bc80ff1e3f7933b5914cf31a117c3f758236aa62affdf5ebcda6eaf061`; bundle 30,820,681 bytes, SHA-256 `03ba745794b06c114800d49f34371cb512d99ac8f4bd4023e958139942422f67`. |
+| 미실측 | 실제 Burp load/unload·disk failure·Windows, 대규모 Evidence 비교 비용, 실제 대상의 탐지 precision/recall. |
+
 ## 2026-09-11 · 미출시 · PR #11·#12 이식 7단계(통합 검증·최종 인계) gate
 
 | 항목 | 실제 확인 결과 |

@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { getRequestLabDraft, sendRequestLab } from "@/lib/api/endpoints"
 import type { EventRecord, ManagedSession, RequestLabDraft } from "@/lib/api/types"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
+import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
 import { RequestLabMetadata, type RequestLabCredentialMode } from "./RequestLabMetadata"
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
   event: EventRecord
   sessions: readonly ManagedSession[]
   datasetRevision?: number
+  snapshotRevision?: number
   /** Test-only inspection seam; production always owns a new instance locally. */
   rawState?: MemoryOnlyRawState
 }
@@ -25,17 +27,18 @@ function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   return [...unique.values()]
 }
 
-export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetRevision = 0, rawState }: Props) {
+export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetRevision = 0, snapshotRevision, rawState }: Props) {
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
   const context = useRef<{ generation: number; sendController: AbortController | null }>({ generation: 0, sendController: null })
   const [version, setVersion] = useState(0)
-  const [draft, setDraft] = useState<RequestLabDraft | null>(null)
+  const [draft, setDraft] = useState<Omit<RequestLabDraft, "request" | "response"> | null>(null)
   const [mode, setMode] = useState<RequestLabCredentialMode>("ORIGINAL")
   const [accountId, setAccountId] = useState("")
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState("")
   const [loadAttempt, setLoadAttempt] = useState(0)
+  const draftRef = useRef<Omit<RequestLabDraft, "request" | "response"> | null>(null)
 
   const accounts = useMemo(() => activeAccounts(sessions, draft?.service ?? ""), [draft?.service, sessions])
   const selectedAccountValid = accountId.length > 0 && accounts.some((account) => account.accountId === accountId)
@@ -47,6 +50,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   const release = () => {
     invalidateSend()
     raw.current.clear()
+    draftRef.current = null
     setDraft(null)
     setError("")
     setAccountId("")
@@ -61,20 +65,41 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     setLoading(true)
     setError("")
     release()
+    const generation = context.current.generation
     void getRequestLabDraft(event.eventId, controller.signal).then((next) => {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || context.current.generation !== generation) return
       raw.current.request = next.request ?? ""
       raw.current.response = next.response ?? ""
-      setDraft(next)
+      const { request: _request, response: _response, ...metadata } = next
+      draftRef.current = metadata
+      setDraft(metadata)
       setVersion((value) => value + 1)
     }).catch((reason: unknown) => {
-      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Request Lab 초안을 불러오지 못했습니다.")
-    }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+      if (!controller.signal.aborted && context.current.generation === generation) setError(reason instanceof Error ? reason.message : "Request Lab 초안을 불러오지 못했습니다.")
+    }).finally(() => { if (!controller.signal.aborted && context.current.generation === generation) setLoading(false) })
     return () => { controller.abort(); invalidateSend(); raw.current.clear() }
   }, [open, event.eventId, datasetRevision, loadAttempt])
 
+  // Revalidate retained-raw/session metadata after traffic changes without
+  // replacing edited text/history. The response remains outside the query cache.
+  useEffect(() => {
+    const original = draftRef.current
+    if (!open || !original || snapshotRevision === undefined) return
+    const controller = new AbortController()
+    void getRequestLabDraft(event.eventId, controller.signal).then(next => {
+      if (controller.signal.aborted) return
+      if (next.service !== original.service || next.observedIdentity !== original.observedIdentity
+        || (original.rawRequestRetained && !next.rawRequestRetained)
+        || (original.rawResponseRetained && !next.rawResponseRetained)
+        || (original.requestEditable && !next.requestEditable)
+        || next.reusableSession !== original.reusableSession) close()
+    }).catch(() => { if (!controller.signal.aborted) close() })
+    return () => controller.abort()
+  }, [open, event.eventId, snapshotRevision])
+
   useEffect(() => {
     if (mode === "ACCOUNT") {
+      if (accountId && !selectedAccountValid) { invalidateSend(); raw.current.clear(); setSending(false); setVersion(value => value + 1) }
       if (accounts.length === 0) setMode("ORIGINAL")
       if (!selectedAccountValid) setAccountId("")
     }
@@ -82,8 +107,10 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
 
   useEffect(() => {
     const clearOnUnload = () => { invalidateSend(); raw.current.clear() }
+    const clearOnReplacement = () => close()
     window.addEventListener("beforeunload", clearOnUnload)
-    return () => window.removeEventListener("beforeunload", clearOnUnload)
+    window.addEventListener(DATASET_REPLACING, clearOnReplacement)
+    return () => { window.removeEventListener("beforeunload", clearOnUnload); window.removeEventListener(DATASET_REPLACING, clearOnReplacement) }
   }, [])
 
   function close() {

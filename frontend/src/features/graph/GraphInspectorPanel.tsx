@@ -37,9 +37,12 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
-  const [requestLabOpen, setRequestLabOpen] = useState(false)
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision
-  useEffect(() => { setRequestLabOpen(false) }, [event?.eventId, datasetRevision])
+  // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
+  const contextKey = event ? JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp]) : null
+  const [requestLabContext, setRequestLabContext] = useState<string | null>(null)
+  const setRequestLabOpen = (open: boolean) => setRequestLabContext(open ? contextKey : null)
+  useEffect(() => { setRequestLabContext(null) }, [contextKey])
   // 계층 그래프 선택은 서버 셀의 canonical key를 그대로 들고 온다. 현재 snapshot에서 다시 찾아 판정을 표시하고, 집계 판정은 만들지 않는다.
   const hierarchy = selection as Partial<HierarchySelection>
   const selectedKeys = new Set(hierarchy.cellKeys ?? [])
@@ -77,7 +80,7 @@ export function GraphInspectorPanel({ selection, event, snapshot }: Props) {
       <TabsContent value="evidence" className="mt-0 grid gap-4" aria-label="Evidence">
         <EvidenceIds ids={selection.evidenceIds} />
         {event ? <section className="border-t border-border/70 pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} /></section> : <p className="text-sm text-muted-foreground">선택 좌표와 정확히 연결된 Evidence를 찾지 못했습니다.</p>}
-        {event && <RequestLabDialog key={`${event.eventId}:${datasetRevision}`} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} />}
+        {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} />}
       </TabsContent>
       <TabsContent value="request" className="mt-0 grid gap-3" aria-label="Request">
         <p className="font-mono text-sm">{event ? `${event.method} ${event.path}` : selection.operation ?? "요청 없음"}</p>

@@ -51,14 +51,14 @@ function CellStateBadges({ member }: { member: MatrixMember }) {
   </div>
 }
 
-export function MatrixVerdictCell({ member, mode, onSelect }: { member: MatrixMember; mode: MatrixMode; onSelect(member: MatrixMember): void }) {
+export function MatrixVerdictCell({ member, mode, onSelect, disabled = false }: { member: MatrixMember; mode: MatrixMode; onSelect(member: MatrixMember): void; disabled?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const tone = matrixVerdictTone(member.cell.overall)
   const reasons = Object.values(member.cell.reasons).filter((value): value is string => typeof value === "string" && value.length > 0)
 
   return <article className={`min-w-64 space-y-2 border-l-2 p-3 ${tone.className} ${tone.accentClassName}`}>
     {mode === "role" && <p className="break-all text-xs font-medium">{member.identity}</p>}
-    <Tooltip><TooltipTrigger asChild><button type="button" className="w-full rounded-md border p-2 text-left font-semibold hover:bg-background/50 focus-visible:outline-ring" aria-label="권한 셀 Evidence 열기" onClick={() => onSelect(member)}><span className="block">{tone.label}</span><span className="sr-only">전체 판정: {member.cell.overall}</span><span className="block text-xs font-normal text-muted-foreground">Evidence 상세 열기</span></button></TooltipTrigger><TooltipContent>서버가 제공한 정확한 Evidence 선택을 엽니다.</TooltipContent></Tooltip>
+    <Tooltip><TooltipTrigger asChild><button type="button" disabled={disabled} className="w-full rounded-md border p-2 text-left font-semibold hover:bg-background/50 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50" aria-label="권한 셀 Evidence 열기" onClick={() => onSelect(member)}><span className="block">{tone.label}</span><span className="sr-only">전체 판정: {member.cell.overall}</span><span className="block text-xs font-normal text-muted-foreground">Evidence 상세 열기</span></button></TooltipTrigger><TooltipContent>서버가 제공한 정확한 Evidence 선택을 엽니다.</TooltipContent></Tooltip>
     {sourceOrder.map((source) => <SourceResultRow key={source} source={source} member={member} />)}
     <CellStateBadges member={member} />
     {reasons.length > 1 && <div className="text-xs text-muted-foreground"><p>서버 사유 {reasons.length}건</p>{bounded(reasons, expanded).map((reason, index) => <p className="break-all" key={index}>{boundedText(reason, expanded)}</p>)}{(reasons.length > INITIAL_LIMIT || reasons.some((reason) => reason.length > 180)) && <button type="button" className="underline" onClick={() => setExpanded((value) => !value)}>{expanded ? "사유 접기" : "사유 더 보기"}</button>}</div>}

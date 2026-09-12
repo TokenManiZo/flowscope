@@ -100,7 +100,7 @@ export function SurfacePage() {
   const [filter, setFilter] = useState<DeltaFilter>("ALL")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null)
-  const [requestLabOpen, setRequestLabOpen] = useState(false)
+  const [requestLabContext, setRequestLabContext] = useState<string | null>(null)
   const [enabledSources, setEnabledSources] = useState<ReadonlySet<SurfaceSource>>(() => new Set(["HUMAN", "SCANNER", "LLM"]))
   const surface = snapshot.data?.surface ?? { endpoints: [], extractions: [], probes: [] }
   const endpoints = useMemo(
@@ -113,6 +113,11 @@ export function SurfacePage() {
     ? snapshot.data?.events.find((event) => event.eventId === selectedEvidenceId) ?? null
     : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
+  // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
+  const labContext = selectedEvent ? JSON.stringify([datasetRevision, selectedEvent.eventId, selectedEvent.op, selectedEvent.resource, selectedEvent.idn, selectedEvent.source, selectedEvent.fp]) : null
+  const requestLabOpen = requestLabContext !== null && requestLabContext === labContext
+  const setRequestLabOpen = (open: boolean) => setRequestLabContext(open ? labContext : null)
+  useEffect(() => { setRequestLabContext(null) }, [labContext])
   const extractions = surface.extractions.filter((item) => enabledSources.has(item.source))
   const probes = surface.probes.filter((item) => enabledSources.has(item.source))
   const unresolvedExtractions = extractions.filter((item) => item.status !== "PARSED" || item.issues.length > 0)
@@ -186,7 +191,7 @@ export function SurfacePage() {
           </Table>
         </div>
       </section>
-      {selectedEvent && <RequestLabDialog key={`${selectedEvent.eventId}:${datasetRevision}`} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={selectedEvent} sessions={snapshot.data?.managedSessions ?? []} datasetRevision={datasetRevision} />}
+      {selectedEvent && labContext && <RequestLabDialog key={labContext} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={selectedEvent} sessions={snapshot.data?.managedSessions ?? []} datasetRevision={datasetRevision} snapshotRevision={snapshot.data?.revision} />}
     </ReferenceAnalysisWorkspace>
   )
 }

@@ -1,4 +1,5 @@
 import { apiFetch, postForm } from "./client"
+import { notifyDatasetReplacing } from "@/lib/security/datasetBoundary"
 import type {
   AccountSaveResult,
   ApiSuccess,
@@ -31,13 +32,20 @@ export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
   postForm<RequestLabResult>("/api/request-lab", { action: "send", ...values }, undefined, signal)
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
+// Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
+const confirmedDatasetReplacement = async <T>(request: Promise<T>): Promise<T> => {
+  const result = await request
+  notifyDatasetReplacing()
+  return result
+}
 export const startProject = (values: { name: string; scope: string }) =>
-  postForm<ProjectStatus>("/api/projects", { action: "start", ...values })
-export const openProject = (id: string) => postForm<ProjectStatus>("/api/projects", { action: "open", id })
+  confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
+export const openProject = (id: string) =>
+  confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "open", id }))
 export const getHumanRun = (signal?: AbortSignal) => apiFetch<HumanRun>("/api/human-run", formSignal(signal))
 export const setHumanRun = (values: { action: "begin"; account: string } | { action: "end"; runId: string }) =>
   postForm<HumanRun>("/api/human-run", values)
-export const loadSample = () => postForm<ApiSuccess>("/api/sample", {})
+export const loadSample = () => confirmedDatasetReplacement(postForm<ApiSuccess>("/api/sample", {}))
 export const saveRole = (identity: string, role: string) => postForm<ApiSuccess>("/api/role", { identity, role })
 export const saveRequirement = (operation: string, role: string) => postForm<ApiSuccess>("/api/requirement", { operation, role })
 export const saveReview = (itemId: string, status: ReviewStatus, note: string) => postForm<ApiSuccess>("/api/review", { itemId, status, note })

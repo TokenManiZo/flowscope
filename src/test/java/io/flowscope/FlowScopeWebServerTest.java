@@ -498,6 +498,49 @@ final class FlowScopeWebServerTest {
                 har, "application/json", token).statusCode());
     }
 
+    /** PR #11 evidence contract: derived parameter metadata rides on /api/evidence without values or sensitive paths. */
+    @Test
+    void evidenceExposesDerivedParameterMetadataWithoutValuesOrSensitivePaths() throws Exception {
+        RequestRecord search = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/v1/search", 200, "sess:abcdef123456");
+        search.query = "status=open&password=hunter2";
+        search.reqText = "GET /v1/search?status=open&password=***MASKED*** HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
+        search.respText = "HTTP/1.1 200 OK\r\n\r\n{}";
+        search.requestPayload = StoredPayload.capture(search.reqText, "", 1024 * 1024);
+        search.responsePayload = StoredPayload.capture(search.respText, "", 1024 * 1024);
+        search.body = "{}";
+        search.hasResponse = true;
+        search.timestamp = 2;
+        state.records.add(search);
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        String op = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                .filter(item -> item.path("path").asText().startsWith("/v1/search"))
+                .findFirst().orElseThrow().path("op").asText();
+        HttpResponse<String> response = get("/api/evidence?operation=" + encode(op), token, origin());
+        assertEquals(200, response.statusCode(), response.body());
+        JsonNode record = JSON.readTree(response.body()).path("records").get(0);
+        assertEquals(op, record.at("/parameterContext/operation").asText());
+        assertEquals("HUMAN", record.at("/parameterContext/source").asText());
+        assertEquals("RETAINED", record.at("/parameterContext/retention").asText());
+        assertEquals(200, record.at("/parameterContext/status").asInt());
+        JsonNode observations = record.path("parameterObservations");
+        assertEquals(1, observations.size(), observations.toString());
+        assertEquals("QUERY", observations.at("/0/key/location").asText());
+        assertEquals("/status", observations.at("/0/key/canonicalPath").asText());
+        assertTrue(observations.at("/0/key/stableKey").asText().startsWith("pk:v1:"));
+        assertEquals("PRESENT", observations.at("/0/presence").asText());
+        assertEquals("STRING", observations.at("/0/valueType").asText());
+        assertEquals(4, observations.at("/0/byteLength").asInt());
+        assertTrue(observations.at("/0/digest").asText().matches("[0-9a-f]{64}"), observations.toString());
+        assertTrue(observations.at("/0/contextSignature").asText().startsWith("ctx:v1:sha256:"));
+        assertFalse(response.body().contains("hunter2"));
+        assertFalse(response.body().contains("maskedPreview"));
+        assertFalse(response.body().contains("\"/password\""));
+    }
+
     @Test
     void snapshotSeparatesMainComparisonReviewAndExcludedEvidence() throws Exception {
         RequestRecord review = new RequestRecord(Source.HUMAN, state.record.service,

@@ -153,7 +153,7 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 4. Web **LLM Explorer**에서 시작 URL, 비로그인 및 필요한 계정을 고른 뒤 실행합니다. Explorer 계정의 ID·비밀번호와 live cookie/token은 현재 프로세스 메모리에만 있고 모델에는 opaque handle만 전달됩니다. 로그인 준비 교환은 프로젝트/Evidence/원장에 저장하지 않습니다. 실제 대상 응답과 산출물 선언은 Observation/Declaration으로 분리되며 선언에는 현재 run Evidence ID가 필수입니다. 작업 피드에서 경과시간·HTTP 시도/응답, 선언 endpoint/parameter, OPTIONS probe, 실패·미해결 항목을 확인하고 실행 중 steer·취소할 수 있습니다. 상세한 form/JSON token 설정은 [Explorer 문서](docs/ko/llm-explorer.md)를 따릅니다.
 5. **API·입력 차이**, **Evidence**, 그래프·매트릭스에서 선언/관측과 인가 후보를 확인합니다. 규칙 후보의 사람 검토를 저장할 수 있으며, 자동 LLM 판정은 하지 않습니다.
 6. 과거 프로젝트의 assessment/validation은 React **시나리오 → 과거 LLM 기록 · 읽기 전용**에서 확인합니다. 원 Evidence ID·생성 시각을 보존하되 현재 후보나 새 판정으로 합치지 않습니다.
-7. Burp 탭의 **로컬 DB 저장·연결**로 `.flowscope.db`를 한 번 지정합니다. 이후 그래프·계정·검토·판정 변경은 30초 checkpoint로 합쳐 같은 DB에 원자적으로 자동 저장되고 정상 unload 직전 한 번 더 저장됩니다. 공유·검토용 단일 문서가 필요하면 **JSON 내보내기**를 사용합니다. DB에도 raw broker 또는 Explorer 자격증명은 저장되지 않으므로 Burp를 다시 열면 로그인 연결은 다시 해야 합니다.
+7. Burp 탭의 **로컬 DB 저장·연결**로 `.flowscope.db`를 한 번 지정합니다. 이후 그래프·계정·검토·판정 변경은 30초 checkpoint로 합쳐 같은 DB에 원자적으로 자동 저장됩니다. 정상 unload는 새 수집·가져오기·분석 게시를 먼저 닫고 대기 중 Evidence의 마지막 분석을 반영한 뒤 한 번 더 저장을 시도합니다. 공유·검토용 단일 문서가 필요하면 **JSON 내보내기**를 사용합니다. DB에도 raw broker 또는 Explorer 자격증명은 저장되지 않으므로 Burp를 다시 열면 로그인 연결은 다시 해야 합니다.
 
 > ZAP 로그인 교환은 감사 가능한 `ZAP_AUTHENTICATION / SESSION_SETUP` Evidence로 보존되지만, SCANNER 탐색 성과·crawler 수집 건수·완료 조건에는 포함되지 않습니다. 따라서 로그인만 성공하고 crawler가 응답을 수집하지 못한 lane은 완료로 표시되지 않습니다.
 
@@ -196,18 +196,18 @@ ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 
 `http://127.0.0.1:17777/`와 `/app/`는 동일한 React 작업면을 제공하고 `/legacy/`는 전환 기간의 기존 작업면을 제공합니다. 첫 진입은 `API·입력 차이`이며, React가 분석기나 판정 상태 기계를 대체하지 않고 같은 localhost API snapshot을 표시합니다.
 
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, 새 진단 시작, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 정본 로컬 Web 작업면 열기
-- **Web 상단 모드** — 기본 `API·입력 차이`, `우선순위 Gap 그래프`, 상세 `인가 그래프`, 판정 매트릭스, 흐름 순서, 시나리오, 파싱 결과, 계정·세션
-- **우선순위 Gap 그래프** — 서버가 만든 Gap(source/계정/조건/타입 미관측, 선언 미관측, 권한 변형 미검증)을 우선순위 사유 순 큐와 조건/사용자→API→입력→권한 대상 카드 경로로 보여 주고, 선택 상세에서 연결 근거·관측 프로파일·검증표·실제 Evidence·정의 근거를 확인한 뒤 대표 Evidence로 Request Lab을 엽니다. Gap은 점검 후보이며 취약점 판정이나 퍼센트가 아닙니다.
+- **Web 상단 탐색** — `분석 / 점검 / 기록` 세 그룹이 모든 현행 route를 제공하고, 범위·HUMAN·ZAP·SCANNER 상태는 같은 상단의 상태 popover에서 확인합니다. 기본 진입은 `API·입력 차이`이며 `#parameter-map` 옛 북마크는 통합 `#graph`로 이동합니다.
+- **점검 Gap 그래프** — `#graph`의 첫 탭입니다. 서버가 만든 Gap(source/계정/조건/타입 미관측, 선언 미관측, 권한 변형 미검증)을 우선순위 사유 순 큐와 조건/사용자→API→입력→권한 대상 카드 경로로 보여 주고, 선택 상세에서 연결 근거·관측 프로파일·검증표·실제 Evidence·정의 근거를 확인한 뒤 대표 Evidence로 Request Lab을 엽니다. 둘째 탭 **전체 관계 보기**는 Site→API 그룹→API→Object 계층을 제공합니다. Gap은 점검 후보이며 취약점 판정이나 퍼센트가 아닙니다.
 - **API·입력 차이** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 실제 관측 행의 **Evidence 상세**에서 Request Lab과 Burp Repeater 초안으로 바로 이어지며, 선언만 있고 요청이 없는 항목에는 전송 가능한 Evidence가 있는 것처럼 버튼을 만들지 않습니다. 분석한 HTML/OpenAPI/JavaScript 산출물 수와 부분·실패·상한 상태도 보여 주며, 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
-- **왼쪽 레일** — 허위 퍼센트 없는 수집·메인 비교·기본 숨김·검토 대기 수량, 실제 메인 Evidence 수와 함께 동작하는 HUMAN/SCANNER/LLM 필터, Evidence 처분·class 표시 필터, 읽기 전용 역할 정책 상태, 3-way gap, 그래프 판정 제어
+- **화면별 분석 제어** — 수집·메인 비교·기본 숨김·검토 대기 수량과 HUMAN/SCANNER/LLM, Evidence 처분·class, 역할 정책·3-way gap 필터는 각 작업면의 context panel에서 제공하며 전역 route 탐색과 섞지 않습니다.
 - **인가 그래프** — 세 단계 계층으로 읽습니다. **Site Overview**는 Target→API 그룹(첫 안정 경로 세그먼트, 예 `ORDERS APIs`) 카드에 API 수·H/S/L Evidence 수·Gap·경로 후보 수를 표시하고, 그룹을 열면 **API View**가 신원→API를 suspicious·충돌·일부 관측·Evidence 수 순으로 18개씩 보여 주며, API를 열면 **Object View**가 신원→API→접근 대상 ID를 18개씩 보여 줍니다(`API/Object 18개 더 보기 (N개 남음)`, Back·개요로 접기). HUMAN 파랑·실선 / SCANNER 빨강·파선 / LLM 밝은 점선 overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, 선택 신원·경로 focus+context, 미교차 후보 focus(GAP 목록), 화면 맞춤을 제공합니다. 900px 이하와 `API 목록 보기`는 같은 계층을 키보드 목록으로 제공합니다. 노드 판정은 선택한 서버 셀이 모두 같을 때만 표시하고, 여러 셀이 겹치면 상세에서 원본 셀을 각각 보여 줍니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.
-- **판정 매트릭스** — 기본 탭은 정책 P·실행 E·소유권 O를 합산하지 않고 나란히 두는 판정 매트릭스입니다. BFLA(역할 × 기능)·BOLA/IDOR(계정 × 객체)·실행 Evidence 보기에서 셀마다 기대(허용/차단/미정)→실제(성공/차단/갈림/해석 불가/미실행), P/E/O 등급, 상태(예: `BOLA/IDOR 후보`, `수동 테스트 추천`, `수동 결과 검토`, `교차 실행 공백`)를 보여 주고, 상세에서 상위 역할→하위 역할·관측 객체→다른 계정의 **수동 테스트 추천 조합**, 유효성 게이트, 결과 오라클, Evidence 상세(Request Lab·Repeater 초안)와 **사람 최종 판정**(확정/정상·기각, 메모)을 제공합니다. 후보 여부는 서버 권한 셀의 판정만 따르고 2xx만으로 승격하지 않으며, 과거 LLM 검증 이력은 표시만 합니다. FlowScope는 추천 요청을 자동 전송하지 않습니다. 둘째 탭 **기존 권한 매트릭스**는 관측된 `identity/role × operation × resource` cell, source별 verdict, 미교차 조합, 일부만 발견, 불일치를 그대로 표시합니다.
+- **판정 매트릭스** — 기본 탭은 정책 P·실행 E·소유권 O를 합산하지 않고 나란히 두는 판정 매트릭스입니다. BFLA(역할 × 기능)·BOLA/IDOR(계정 × 객체)·실행 Evidence 보기에서 셀마다 기대(허용/차단/미정)→실제(성공/차단/갈림/해석 불가/미실행), P/E/O 등급, 상태를 보여 주며 상세에 추천 조합·유효성 gate·오라클·Evidence·사람 최종 판정을 둡니다. 후보 여부는 서버 권한 셀만 따르고 2xx만으로 승격하지 않습니다. 둘째 탭 **파라미터 커버리지**는 서버의 입력×권한 대상×subject×source 검증 좌표를, 셋째 탭 **기존 권한 매트릭스**는 `identity/role × operation × resource` cell을 그대로 표시합니다. FlowScope는 추천 요청을 자동 전송하지 않습니다.
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
 - **시나리오** — 현재 결정론적 BOLA/BFLA 규칙 후보와 사람 검토. 이전 LLM 평가·판정은 별도 읽기 전용 기록
 - **시나리오 감사·오버라이드** — Evidence-bound 상태와 마스킹 note를 갖는 사람 감사면. 자동 LLM 판정이 아님
 - **Evidence** — 마스킹된 source, identity, method, 정규화 operation, resource, status, traffic class/disposition, repeat count, stable Evidence ID. 행을 선택하면 snapshot의 정확한 Evidence metadata를 표시하고, 원문은 사용자가 Request Lab을 열 때 해당 Evidence 하나만 메모리로 가져옴
 - **계정·세션** — 비밀값 없는 계정별 카드, `로그인 필요/확인 중/사용 가능/다시 로그인 필요` 행동 안내, 명시적 HUMAN 로그인 캡처, 접힌 내부 인증 단서와 고급 미연결 진단, 연결·해제, 재인증, 메모리 폐기, 계정 삭제
-- **오른쪽 상세** — 선택 API의 source별 verdict, 필요할 때만 가져오는 마스킹 Request/Response, 전체 화면 요청 실험실과 Burp Repeater 초안. polling snapshot은 저장된 모든 message body나 raw 인증값을 전송하지 않음
+- **오른쪽 상세·요청 비교** — 선택 API의 source별 verdict, 필요할 때만 가져오는 마스킹 Request/Response, 전체 화면 요청 실험실과 Burp Repeater 초안을 제공합니다. Gap의 요청 비교는 사용자가 연 시점에만 `/api/evidence`에서 민감 경로·값을 제외한 구조 metadata와 비민감 값 SHA-256을 가져와 presence/shape/type/value 변화를 비교합니다. digest는 값 동일성 신호일 뿐 서버 사용·인가·취약점 증거가 아니며 main polling snapshot·프로젝트에는 들어가지 않습니다.
 
 ## 판정 규칙과 신뢰 경계
 

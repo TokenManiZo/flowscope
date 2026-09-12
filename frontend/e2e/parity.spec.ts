@@ -50,15 +50,21 @@ async function readMatrixStickyGeometry(viewport: Locator): Promise<MatrixSticky
     }
   })
 }
+// PR#11 grouped top navigation: 분석 / 점검 (direct link) / 기록. Route labels map to their group menu.
+const navigationGroupOf: Record<string, string> = {
+  "대시보드": "분석", "점검 Gap 그래프": "분석", "API·입력 차이": "분석", "권한 매트릭스": "분석", "흐름 순서": "분석", "취약점 시나리오": "분석",
+  "Evidence": "기록", "실행 상태": "기록", "LLM Explorer": "기록", "계정·세션": "기록",
+}
+function navigationControl(page: Page, label: string) {
+  const navigation = page.getByRole("navigation", { name: "FlowScope 작업 탐색" })
+  return label === "점검 시작" ? navigation.getByRole("link", { name: "점검", exact: true }) : navigation.getByRole("button", { name: navigationGroupOf[label], exact: true })
+}
 async function navigate(page: Page, label: string, heading: string) {
-  const navigation = page.getByRole("navigation", { name: "주요 분석 탐색" })
-  let link = navigation.getByRole("link", { name: label, exact: true })
-  if (await navigation.count() === 0 || !await link.isVisible()) {
-    await page.locator('button[aria-current="page"][aria-haspopup="dialog"]').click()
-    link = page.getByRole("menu", { name: "분석 경로" }).getByRole("menuitem", { name: label, exact: true })
-  }
-  await link.click()
+  const control = navigationControl(page, label)
+  await control.click()
+  if (label !== "점검 시작") await page.getByRole("menu", { name: navigationGroupOf[label], exact: true }).getByRole("menuitem", { name: label, exact: true }).click()
   if (label === "권한 매트릭스") await page.getByRole("tab", { name: "기존 권한 매트릭스", exact: true }).click()
+  if (label === "점검 Gap 그래프" && heading === "공격면 그래프") await page.getByRole("tab", { name: "전체 관계 보기", exact: true }).click()
   await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible()
 }
 async function closeSheet(page: Page) { await page.keyboard.press("Escape"); await expect(page.getByRole("dialog", { name: "Evidence 상세" })).toBeHidden() }
@@ -133,29 +139,34 @@ test("opens the packaged reference shell, loads the sample, navigates every rout
   await expect(page.getByRole("button", { name: "샘플로 화면 익히기" })).toBeVisible()
   await page.getByRole("button", { name: "샘플로 화면 익히기" }).click()
   await expect(page.getByLabel("샘플 데이터")).toBeVisible()
-  const routes = [["대시보드", "보안 점검 대시보드"], ["점검 시작", "점검 시작"], ["공격면 그래프", "공격면 그래프"], ["권한 매트릭스", "권한 매트릭스"], ["흐름 순서", "흐름 순서"], ["취약점 시나리오", "취약점 시나리오"], ["Evidence", "Evidence"], ["계정·세션", "계정·세션 관리"], ["실행 상태", "실행 상태"]] as const
+  const routes = [["대시보드", "보안 점검 대시보드"], ["점검 시작", "점검 시작"], ["점검 Gap 그래프", "권한·파라미터 Gap 그래프"], ["권한 매트릭스", "권한 매트릭스"], ["흐름 순서", "흐름 순서"], ["취약점 시나리오", "취약점 시나리오"], ["Evidence", "Evidence"], ["계정·세션", "계정·세션 관리"], ["실행 상태", "실행 상태"]] as const
   for (const [label, heading] of routes) await navigate(page, label, heading)
   await page.goto(`${origin}/legacy/`)
   await expect(page.locator("h1", { hasText: "FlowScope" })).toBeVisible()
-  await expect(page.getByRole("navigation", { name: "주요 분석 탐색" })).toHaveCount(0)
+  await expect(page.getByRole("navigation", { name: "FlowScope 작업 탐색" })).toHaveCount(0)
 })
 
-test("keeps dashboard coverage as counts without percentages", async ({ page }) => {
+test("keeps dashboard gap counts without percentages and enters the Gap graph", async ({ page }) => {
   await openDashboard(page)
   const loadSample = page.getByRole("button", { name: "샘플로 화면 익히기" })
   if (await loadSample.count() > 0) await loadSample.click()
   const dashboard = page.locator('section[aria-labelledby="dashboard-title"]')
   await expect(dashboard).not.toContainText("%")
-  await expect(dashboard.getByText("총 Evidence", { exact: true })).toBeVisible()
-  await expect(dashboard.getByText(/^수집 \d+건$/)).toBeVisible()
+  for (const label of ["집중할 API", "미관측 파라미터", "권한 변형 미검증", "검토 필요"]) await expect(dashboard.getByRole("group", { name: label })).toBeVisible()
+  await expect(dashboard.getByRole("group", { name: "집중할 API" }).locator("p").first()).toHaveText(/^\d+$/)
+  const captured = page.getByRole("complementary", { name: "분석 필터" }).getByText("수집", { exact: true }).locator("..")
+  await expect(captured.getByText(/^\d+건$/)).toBeVisible()
   await expect(page.getByRole("complementary", { name: "선택 상세" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "선택 상세 열기" })).toHaveCount(0)
+  await dashboard.getByRole("button", { name: "Gap 그래프에서 확인" }).click()
+  await expect(page.getByRole("tab", { name: "점검 우선순위", exact: true })).toHaveAttribute("aria-selected", "true")
+  await expect(page.getByRole("heading", { name: "권한·파라미터 Gap 그래프", exact: true })).toBeVisible()
 })
 
 test("keeps graph lanes through zoom and fit, then selects real matrix, sequence, scenario, and Evidence items", async ({ page }) => {
   await openDashboard(page)
   await page.setViewportSize({ width: 1440, height: 900 })
-  await navigate(page, "공격면 그래프", "공격면 그래프")
+  await navigate(page, "점검 Gap 그래프", "공격면 그래프")
   await page.getByRole("button", { name: "권한 판정", exact: true }).click()
   const graphWorkspace = page.getByRole("region", { name: "접근 그래프 작업면" })
   const graphCanvas = graphWorkspace.getByLabel("공격면 Cytoscape 그래프")
@@ -350,7 +361,7 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
 test("keeps the priority Gap graph workspace, queue sheet, path list, and detail usable across 1920, 1280 and 600px", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 })
   await openDashboard(page)
-  await page.goto(`${origin}/?flowscope-e2e-geometry=1#parameter-map`)
+  await page.goto(`${origin}/?flowscope-e2e-geometry=1#graph`)
   // Sheet가 열리면 바탕 작업면은 aria-hidden이 되므로 속성 검사는 hidden 포함으로 찾는다(PR#11 spec과 동일).
   const workspace = page.getByRole("region", { name: "그래프 중심 점검 작업면", includeHidden: true })
   await expect(workspace).toBeVisible()
@@ -492,7 +503,7 @@ test("imports an in-memory XML fixture and reports the aggregate without persist
 })
 
 test("keeps the reference frame current-route semantics, Sheets, and layout usable at desktop, 900px, and 600px", async ({ page }) => {
-  const routes = [["대시보드", "보안 점검 대시보드"], ["점검 시작", "점검 시작"], ["공격면 그래프", "공격면 그래프"], ["권한 매트릭스", "권한 매트릭스"], ["흐름 순서", "흐름 순서"], ["취약점 시나리오", "취약점 시나리오"], ["Evidence", "Evidence"], ["계정·세션", "계정·세션 관리"], ["실행 상태", "실행 상태"]] as const
+  const routes = [["대시보드", "보안 점검 대시보드"], ["점검 시작", "점검 시작"], ["점검 Gap 그래프", "권한·파라미터 Gap 그래프"], ["권한 매트릭스", "권한 매트릭스"], ["흐름 순서", "흐름 순서"], ["취약점 시나리오", "취약점 시나리오"], ["Evidence", "Evidence"], ["계정·세션", "계정·세션 관리"], ["실행 상태", "실행 상태"]] as const
   await page.setViewportSize({ width: 1280, height: 720 }); await openDashboard(page)
   await navigate(page, "계정·세션", "계정·세션 관리")
   const longWorkspace = page.getByRole("region", { name: "계정·세션 작업 영역" })
@@ -501,7 +512,7 @@ test("keeps the reference frame current-route semantics, Sheets, and layout usab
   await longWorkspace.focus()
   await page.keyboard.press("End")
   await expect(finalControl).toBeInViewport()
-  await navigate(page, "공격면 그래프", "공격면 그래프")
+  await navigate(page, "점검 Gap 그래프", "공격면 그래프")
   const desktopCanvas = page.getByLabel("공격면 Cytoscape 그래프")
   const desktopCanvasBox = await desktopCanvas.boundingBox()
   expect(desktopCanvasBox).not.toBeNull()
@@ -514,23 +525,21 @@ test("keeps the reference frame current-route semantics, Sheets, and layout usab
     const banner = page.getByRole("banner", { name: "FlowScope 상단 상태" })
     await expect(banner).toBeVisible()
     if (width <= 900) {
-      for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) await expect(banner.getByLabel(`${label} 상태`)).toBeVisible()
+      await banner.getByRole("button", { name: "상태", exact: true }).click()
+      for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) await expect(page.getByLabel(`${label} 상태`)).toBeVisible()
+      await page.keyboard.press("Escape")
+      await expect(page.getByLabel("LIVE 상태")).toHaveCount(0)
       await expect(banner.getByLabel("프로젝트 선택")).toBeVisible()
       await expect(banner.getByText(/^(저장 대기|저장 중|저장됨|저장 실패|새 진단 필요)$/)).toBeVisible()
-      await expect(banner.getByRole("link", { name: /빠른 시작|점검 계속/ })).toBeVisible()
+      await expect(banner.getByRole("link", { name: "점검", exact: true })).toBeVisible()
+      await expect(banner.getByRole("button", { name: "상태", exact: true })).toBeVisible()
       expect(await banner.evaluate((element) => element.scrollWidth <= element.clientWidth), `top bar hidden strip at ${width}px`).toBe(true)
     }
     for (const [label, heading] of routes) {
       await navigate(page, label, heading)
       await expect(page.getByRole("main")).toBeVisible()
-      if (width >= 1024) {
-        await expect(page.getByRole("navigation", { name: "주요 분석 탐색" }).getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page")
-      } else {
-        const closedRoute = page.getByRole("button", { name: label, exact: true })
-        await expect(closedRoute).toBeVisible()
-        await expect(closedRoute).toHaveAttribute("aria-current", "page")
-        await expect(page.getByRole("menu", { name: "분석 경로" })).toHaveCount(0)
-      }
+      await expect(navigationControl(page, label)).toHaveAttribute("aria-current", "page")
+      await expect(page.getByRole("menu")).toHaveCount(0)
       const noOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth && document.body.scrollWidth <= document.body.clientWidth)
       expect(noOverflow, `horizontal overflow at ${width}px for ${label}`).toBe(true)
     }
@@ -548,7 +557,7 @@ test("keeps the reference frame current-route semantics, Sheets, and layout usab
       await page.keyboard.press("Escape")
       await expect(judgmentDetail).toBeHidden()
     }
-    await navigate(page, "공격면 그래프", "공격면 그래프")
+    await navigate(page, "점검 Gap 그래프", "공격면 그래프")
     if (width <= 900) {
       await expect(page.getByRole("region", { name: "공격면 API 목록" })).toBeVisible()
       await expect(page.getByLabel("공격면 Cytoscape 그래프")).toHaveCount(0)

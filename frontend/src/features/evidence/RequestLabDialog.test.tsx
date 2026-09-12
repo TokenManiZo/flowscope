@@ -87,6 +87,13 @@ describe("RequestLabDialog", () => {
     expect(status).not.toHaveTextContent("event-7")
   })
 
+  it("leaves an absent server owner unset instead of proposing the observed requester as owner", () => {
+    installTransport()
+    renderWithQueryClient(<OperationDetail event={event} snapshot={{ ...snapshotFixture, owners: {} }} onOpenRequestLab={vi.fn()} />)
+
+    expect(screen.getByLabelText("리소스 소유자")).toHaveValue("")
+  })
+
   it("submits exact policy forms and only acknowledges an unsent Repeater draft", async () => {
     const fetch = installTransport()
     const user = userEvent.setup()
@@ -380,6 +387,18 @@ describe("RequestLabDialog", () => {
     expect(owner.request).toBe("")
     expect(owner.response).toBe("")
     expect(owner.history).toHaveLength(0)
+  })
+
+  it("does not restore a pending raw draft after beforeunload", async () => {
+    const pending = deferredResponse()
+    const owner = createMemoryOnlyRawState()
+    vi.stubGlobal("fetch", vi.fn(() => pending.promise))
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
+    act(() => window.dispatchEvent(new Event("beforeunload")))
+    await act(async () => { pending.resolve(json(requestLabDraft("event-7", "LATE-RAW-DRAFT"))); await pending.promise })
+    expect(owner.request).toBe("")
+    expect(owner.response).toBe("")
+    expect(screen.queryByText("LATE-RAW-DRAFT")).not.toBeInTheDocument()
   })
 
   it("ignores a late send error after unmount and never repopulates the injected raw owner", async () => {

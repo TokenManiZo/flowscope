@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, it, vi } from "vitest"
 
 import { WorkspaceTopBar } from "./WorkspaceTopBar"
@@ -29,10 +30,12 @@ beforeEach(() => {
   queryState.projects = { data: { directory: "/tmp/projects", active: { id: "app", name: "App", scope: ["https://app.example.test"], readable: true }, projects: [{ id: "app", name: "App", scope: ["https://app.example.test"], readable: true }], saveState: "SAVED", lastSavedAt: "2026-09-10T01:02:03Z", saveError: "" }, isPending: false, isError: false }
 })
 
-it("announces each live analysis status with text as well as an icon", () => {
+it("keeps detailed live analysis statuses inside the accessible 상태 popover", async () => {
   render(<WorkspaceTopBar route="dashboard" />)
 
   expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
+  expect(screen.queryByText("https://app.example.test")).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "상태" }))
   expect(screen.getByText("https://app.example.test")).toBeVisible()
   expect(screen.getByText("LIVE")).toBeVisible()
   expect(screen.getByText("HUMAN")).toBeVisible()
@@ -40,13 +43,14 @@ it("announces each live analysis status with text as well as an icon", () => {
   expect(screen.queryByLabelText("LLM 상태")).not.toBeInTheDocument()
   expect(screen.getByLabelText("SCOPE 상태")).toHaveTextContent("https://app.example.test")
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
-  expect(screen.getByRole("link", { name: "빠른 시작" })).toHaveAttribute("href", "#inspection")
+  expect(screen.getByRole("link", { name: "점검" })).toHaveAttribute("href", "#inspection")
 })
 
-it("reports each query lane as loading without inventing scope, counts, or waiting runs", () => {
+it("reports each query lane as loading without inventing scope, counts, or waiting runs", async () => {
   for (const key of Object.keys(queryState) as Array<keyof typeof queryState>) queryState[key] = { data: undefined, isPending: true, isError: false }
 
   render(<WorkspaceTopBar route="dashboard" />)
+  await userEvent.click(screen.getByRole("button", { name: "상태" }))
 
   for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) {
     expect(screen.getByLabelText(`${label} 상태`)).toHaveTextContent("불러오는 중")
@@ -56,10 +60,11 @@ it("reports each query lane as loading without inventing scope, counts, or waiti
   expect(screen.getByLabelText("LIVE 상태")).not.toHaveTextContent(/\b0\b/)
 })
 
-it("reports unavailable per query lane when no server data exists", () => {
+it("reports unavailable per query lane when no server data exists", async () => {
   for (const key of Object.keys(queryState) as Array<keyof typeof queryState>) queryState[key] = { data: undefined, isPending: false, isError: true }
 
   render(<WorkspaceTopBar route="dashboard" />)
+  await userEvent.click(screen.getByRole("button", { name: "상태" }))
 
   for (const label of ["SCOPE", "SCOPE READY", "LIVE", "HUMAN", "ZAP", "SCANNER"]) {
     expect(screen.getByLabelText(`${label} 상태`)).toHaveTextContent("확인 불가")
@@ -67,10 +72,11 @@ it("reports unavailable per query lane when no server data exists", () => {
   expect(screen.queryByText("WAITING")).not.toBeInTheDocument()
 })
 
-it("keeps cached server values authoritative during refetch failures", () => {
+it("keeps cached server values authoritative during refetch failures", async () => {
   for (const key of Object.keys(queryState) as Array<keyof typeof queryState>) queryState[key] = { ...queryState[key], isFetching: true, isError: true }
 
   render(<WorkspaceTopBar route="dashboard" />)
+  await userEvent.click(screen.getByRole("button", { name: "상태" }))
 
   expect(screen.getByLabelText("LIVE 상태")).toHaveTextContent("7")
   expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("RUNNING")
@@ -80,14 +86,17 @@ it("keeps cached server values authoritative during refetch failures", () => {
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
 })
 
-it("wraps required statuses and keeps the project, DB, and inspection controls discoverable", () => {
+it("keeps grouped navigation, project, DB, and inspection controls discoverable", () => {
   render(<WorkspaceTopBar route="dashboard" />)
 
   const banner = screen.getByRole("banner", { name: "FlowScope 상단 상태" })
   expect(banner).toHaveClass("flex-wrap")
   expect(within(banner).getByLabelText("프로젝트 선택")).toBeVisible()
   expect(within(banner).getByText("저장됨")).toBeVisible()
-  expect(within(banner).getByRole("link", { name: "빠른 시작" })).toBeVisible()
+  expect(within(banner).getByRole("link", { name: "점검" })).toHaveAttribute("href", "#inspection")
+  expect(within(banner).getByRole("button", { name: "분석" })).toBeVisible()
+  expect(within(banner).getByRole("button", { name: "기록" })).toBeVisible()
+  expect(within(banner).queryByRole("link", { name: "빠른 시작" })).not.toBeInTheDocument()
   expect(banner.querySelector(".overflow-x-auto")).toBeNull()
 })
 

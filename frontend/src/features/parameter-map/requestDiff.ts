@@ -1,6 +1,6 @@
 import type { ParameterMapKey } from "./parameterProjection"
 
-/** 관측 metadata만: 값 원문·preview는 없다. digest는 서버가 노출하지 않으므로 production에서는 항상 null이다. */
+/** 관측 metadata만(PR#11): 값 원문·preview는 없다. digest는 Evidence API가 민감하지 않은 값에만 주는 SHA-256이며 값 변경 판단에만 쓴다. */
 export interface StructuredParameterMetadata {
   key: ParameterMapKey | null
   presence: "PRESENT" | "EXPLICIT_NULL" | "ABSENT_OBSERVED_CONTEXT" | "UNKNOWN"
@@ -37,12 +37,6 @@ const choose = <T extends string>(value: unknown, allowed: readonly T[]): T | "U
 const retention = (value: unknown): ParameterRetention => choose(value, ["RETAINED", "METADATA_ONLY", "NOT_RETAINED", "UNKNOWN"])
 const coordinate = (key: ParameterMapKey | null) => key && key.stableKey && key.service && key.method && key.operation && key.location && key.canonicalPath ? JSON.stringify([key.service, key.method, key.operation, key.location, key.canonicalPath]) : "UNKNOWN"
 const unknownSide = (context: ParameterContext, reason: ParameterDiffSide["unknownReason"]): ParameterDiffSide => ({ presence: "UNKNOWN", shape: "UNKNOWN", valueType: "UNKNOWN", occurrenceCount: null, digest: null, retention: retention(context.retention), duplicateCount: 0, unknownReason: reason })
-
-/** 표시 형태(SurfaceObservation.shape)에서 구조 형태를 뽑는다. 값 형식 신호(INTEGER/UUID 등)는 구조 차이가 아니다. */
-export function structuralShape(displayShape: string | undefined): StructuredParameterMetadata["shape"] {
-  if (displayShape === "ARRAY" || displayShape === "OBJECT" || displayShape === "NULL" || displayShape === "UNKNOWN") return displayShape
-  return displayShape ? "SCALAR" : "UNKNOWN"
-}
 
 function indexContext(context: ParameterContext) {
   const rows = new Map<string, { key: ParameterMapKey | null; side: ParameterDiffSide; signature: string }>()
