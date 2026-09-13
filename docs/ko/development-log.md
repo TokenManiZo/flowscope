@@ -1,5 +1,13 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-164 ZAP 로그인 성공 검증 실패 진단성
+
+- crAPI momo가 걸린 "로그인 성공 정규식 일치 Evidence 없음" 게이트가 원인을 안 알려주던 문제를 고쳤다. `ZapBrowserAuthenticator`가 인증 단계 응답 수·상태 코드와 실패 종류(무응답/로그아웃 나중 일치/성공 정규식 0건 일치)를 메시지에 담는다(`LoginEvidence` record). 판정 로직·게이트는 불변. 응답 본문은 노출하지 않는다.
+- 이건 도구 진단성 개선이고, momo 실패의 실제 해결(성공 정규식을 crAPI 토큰 응답에 맞추기, 자격증명, 로그인 페이지 URL)은 설정으로 사용자 몫이다.
+- 테스트: `ZapBrowserAuthenticatorTest` 7건(신규 1: 응답 0건 지목, 기존 테스트에 응답 수·상태 단언 보강).
+- 영향 파일: `integration/ZapBrowserAuthenticator.java`, `integration/ZapBrowserAuthenticatorTest.java`, decisions D-164, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 589건(실패·오류 0, opt-in 2 skip), React 60파일/482건·typecheck, release guard 통과. JAR 31,948,361 bytes, SHA-256 `4d44c286993b2cc417853693e12088898774c4c152f853d2c8427808093d1c34`.
+
 ## 2026-09-13 · D-162/D-163 crAPI Explorer 실측 결함 3건 수정
 
 - 실측 unresolved에서 나온 도구 결함을 고쳤다. **D-162(MASKED_ROUTE):** 비밀 마스킹이 값이 URL 경로면 보존하도록 `secretFieldReplacement`/`isRoutePathValue` 추가 — `LOGIN_TOKEN`·`RESET_PASSWORD` 같은 라우트 상수의 URL을 더 이상 가리지 않되 실제 비밀 값은 계속 가린다. inline 본문·Explorer artifact 양쪽에 적용된다. **D-163(SOURCE_MAP·ZAP scope):** Explorer 요청에 `Accept-Encoding: identity`를 추가해 gzip된 source map·JS가 이진으로 버려지지 않게 하고, `ZapBrowserAuthenticator` scope 실패가 대상/로그인 URL 중 위반 값을 지목한다.

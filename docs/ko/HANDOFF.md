@@ -2,6 +2,7 @@
 
 ## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
 
+- **D-164(ZAP 로그인 진단):** 로그인 성공 검증 실패가 인증 응답 수·상태·실패 종류를 지목한다. momo 성공 정규식·자격증명·로그인 페이지 URL은 설정으로 사용자 몫.
 - **D-162/D-163(Explorer 실측 결함):** 마스킹이 URL 라우트 값을 보존(MASKED_ROUTE), Explorer가 `Accept-Encoding: identity`로 gzip source map을 읽고(SOURCE_MAP), ZAP scope 실패가 위반 값을 지목한다. momo JSON 로그인·ZAP scope는 설정으로 사용자 몫.
 - **D-161(선언 비대칭):** 관측 컨테이너·배열 원소가 선언에 구조적으로 덮이면 미선언 관측으로 내지 않는다. schema 깊이 64, 초과는 `DECLARATION_DEPTH_LIMIT` 진단. 선언 모델·held-out 정답은 불변.
 - **D-160(완전성 1차):** 비밀 이름 생략(`SENSITIVE_PARAMETER_OMITTED`)만 있는 요청은 완전한 것으로 보아 다른 입력의 부재를 증언한다. 위치별 4-상태 모델은 실사례가 나올 때까지 보류.
