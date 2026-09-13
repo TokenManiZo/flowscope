@@ -1,5 +1,12 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-158 확인 재전송 조건 안내(HUMAN run·Request Lab 격리)
+
+- 판정 매트릭스 추천 섹션에 `HumanRunGuidance`를 추가했다. `useHumanRunQuery` 상태로 HUMAN 탐색이 꺼져 있으면 "run 밖 Repeater 재전송은 D-071로 제외" 경고와 `#inspection` 이동 버튼을, 켜져 있으면 "관측으로 반영" 안내를 보이고, Request Lab 재전송은 D-008에 따라 분리 저장됨을 함께 말한다. 서버 변경 없음.
+- 독립 감사가 제기한 D-008↔Repeater-관측 비일관성은 결정으로 정리했다(D-158 유지 항목): 사람이 run 안에서 수행한 Repeater는 HUMAN 관측, 도구의 Request Lab은 격리 재전송. `*_REPRODUCED`는 계속 부여하지 않는다.
+- 테스트: `JudgmentMatrixView.test.tsx` 14건(신규 2), typecheck 통과, 프런트 전체 60파일/482건 통과(Node 25는 `--no-experimental-webstorage`). Java 변경 없음(직전 D-157 verify의 Java 582건 유지).
+- 영향 파일: `features/matrix/JudgmentMatrixView.tsx(+test)`, decisions D-158, HANDOFF, ui-product-rationale, beta-validation, 이 기록.
+
 ## 2026-09-13 · D-157 ZAP listener 사전 점검·0건 원인 구분
 
 - 사용자가 실제로 겪은 ZAP FAILED(원인: Burp 8081 listener 부재)를 도구가 스스로 진단하게 했다. `ZapCampaign.State.scannerListenerOpen()`(기본 true)과 `ZapCampaign.loopbackListenerOpen`을 추가하고 `FlowScopeExtension`의 State가 설정된 SCANNER 포트로 loopback 연결을 검사한다. 캠페인 시작 시 닫혀 있으면 crawler 전에 즉시 실패한다. 0건 실패는 `ZapClient.numberOfMessages(target)`로 "ZAP은 기록했는데 Burp가 못 받음"과 "ZAP이 아무것도 안 냄"을 가른다(view 실패 시 원래 문구).

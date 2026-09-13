@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { AuthorizationMatrix, MatrixLegendItem, ReviewStatus } from "@/lib/api/types"
-import { useRequirementMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useHumanRunQuery, useRequirementMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { actualLabel, confidenceCodes, expectedLabel, findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -60,6 +60,22 @@ function PolicyAssignment({ item, identityKind, identityRole, disabled }: { item
   </section>
 }
 
+/**
+ * 확인 루프의 실제 조건을 그 자리에서 알린다. Repeater 재전송은 활성 HUMAN 탐색(run) 안에서만 관측(정본)으로 들어가고,
+ * run 밖이면 D-071로 제외된다. Request Lab 재전송은 D-008에 따라 관측과 분리 저장되어 셀 status를 바꾸지 않는다.
+ */
+function HumanRunGuidance({ disabled }: { disabled: boolean }) {
+  const humanRun = useHumanRunQuery()
+  const active = humanRun.data?.active
+  if (active === undefined) return null
+  return active
+    ? <p role="status" aria-label="확인 재전송 조건" className="text-xs">HUMAN 탐색 활성: 지금 Repeater로 재전송하면 관측으로 반영돼 이 셀의 판정이 다시 계산됩니다. Request Lab 재전송은 검증 이력으로만 분리 저장됩니다(D-008).</p>
+    : <div role="status" aria-label="확인 재전송 조건" className="grid gap-2 rounded border border-amber-500/60 bg-amber-500/10 p-2 text-xs">
+      <p>HUMAN 탐색이 꺼져 있습니다. run 밖에서 Repeater로 재전송한 요청은 비교에서 제외되어(D-071) 이 셀에 반영되지 않습니다. 점검에서 HUMAN 탐색을 시작한 뒤 재전송하세요.</p>
+      <Button type="button" size="sm" variant="outline" className="w-fit" disabled={disabled} onClick={() => { window.location.hash = "#inspection" }}>점검에서 HUMAN 탐색 시작</Button>
+    </div>
+}
+
 function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: JudgmentItem; matrix: AuthorizationMatrix; disabled: boolean; onOpenEvidence(selection: StructuredEvidenceSelection): void }) {
   const review = useReviewMutation()
   const [confirmed, setConfirmed] = useState(item.reviewStatus === "CONFIRMED")
@@ -90,6 +106,7 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       <p className="text-xs">{item.recommendation.instruction}</p>
       {item.recommendation.stateChanging && <p className="text-xs font-semibold text-amber-300">상태변경 요청: 영향과 복구 방법을 확인한 뒤 직접 전송하세요.</p>}
       <p className="text-xs text-muted-foreground">FlowScope는 요청을 자동 전송하지 않습니다. 기준 Evidence에서 Request Lab 또는 Repeater 초안을 열어 직접 실행하세요.</p>
+      <HumanRunGuidance disabled={disabled} />
       <EvidenceIdList ids={item.recommendation.basisEvidenceIds} />
       {item.recommendation.basisEvidenceIds.length > 0 && <Button type="button" size="sm" variant="outline" className="w-fit" disabled={disabled} onClick={() => onOpenEvidence(evidenceSelection(item.recommendation!.basisEvidenceIds, basisIdentity?.id ?? item.recommendation!.basisIdentity))}>기준 Evidence 상세 열기</Button>}
     </section>}

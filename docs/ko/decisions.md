@@ -1459,6 +1459,14 @@
 - **기각:** ① Montoya 프로젝트 옵션 JSON에서 listener 목록 파싱 — loopback 연결 한 번이 더 단순하고 bind 인터페이스까지 실제로 검증한다. ② 인증 실패·차단·crawler·0건 4-way 분리 — 앞 둘은 이미 별도 처리라 과대 명세. ③ 검사 실패를 경고로만 남기고 진행 — 결과가 반드시 0건이므로 시간 낭비다.
 - **검증:** `ZapCampaignTest`에 listener 닫힘 시 crawler 미시작 실패, ZAP 메시지 7건/0건일 때의 두 원인 문구, loopback probe의 열림/닫힘 단위 테스트를 추가했다. 실제 Burp에서 listener를 제거한 재현은 미실행이다.
 
+## D-158 · 확인 재전송의 실제 조건을 판정 매트릭스에서 알린다 (2026-09-13)
+
+- **문제:** 후보 셀의 추천 문구는 "Repeater에서 수동 실행"만 말한다. 그런데 Repeater 트래픽은 활성 HUMAN 탐색(run) 안에서만 그 phase를 상속해 관측(정본)으로 들어가고(`FlowScopeExtension` capture context), run 밖이면 BASELINE→D-071 제외다. 반대로 FlowScope 자체 Request Lab 재전송은 VALIDATION phase로 기록되어 coverage에서 제외된다. 팀원이 재열기 프로젝트에서 run 없이 Repeater를 쓰면 D-155와 같은 "왜 안 잡히지"가 재발한다.
+- **결정:** 추천 섹션에 `HumanRunGuidance`를 둔다. `/api/human-run` 상태가 비활성이면 "run 밖 재전송은 제외(D-071)" 경고와 "점검에서 HUMAN 탐색 시작" 이동 버튼을, 활성이면 "지금 Repeater 재전송은 관측으로 반영" 안내를 보인다. 두 경우 모두 Request Lab 재전송은 D-008에 따라 검증 이력으로 분리 저장되며 셀 status를 바꾸지 않는다고 명시한다. 상태를 모르면(응답 전) 아무것도 보이지 않는다.
+- **유지(재확인):** Request Lab 결과를 관측/coverage에 병합하지 않는다(D-008 "재전송 결과를 관측에 병합 — 기각: 커버리지/판정이 오염됨"). 사람 확정은 `reviewStatus`(D-144 ⑤)이고 `*_REPRODUCED`는 통제 재현 생산자가 없어(D-126, D-144 ④) 계속 부여하지 않는다. 독립 감사에서 "D-008과 Repeater-관측 규칙의 비일관성"으로 제기됐으나, 사람이 run 안에서 직접 수행한 Repeater는 HUMAN 관측이고 도구가 대신 보낸 Request Lab은 격리 재전송이므로 두 규칙은 양립한다. 이를 결정으로 고정한다.
+- **기각:** ① Request Lab VALIDATION을 coverage에 넣어 셀 status를 바꾸기 — D-008 위반·판정 오염. ② run이 꺼져 있으면 재전송 버튼을 막기 — Repeater는 Burp 안의 사용자 행위라 도구가 막을 수 없고, 안내가 맞다.
+- **검증:** `JudgmentMatrixView.test.tsx`가 비활성 시 경고·D-071 문구·`#inspection` 이동, 활성 시 반영 안내·D-008 문구·버튼 없음을 검사한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

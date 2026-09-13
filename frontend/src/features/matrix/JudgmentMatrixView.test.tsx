@@ -22,7 +22,9 @@ const saveRole = vi.fn(async (identity: string, role: string) => ({ success: tru
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
   useSnapshotQuery: () => ({ data: current, isLoading: current === undefined, isError: queryError, error: new Error("snapshot unavailable"), isStale: false, dataUpdatedAt: 1000, refetch: refetchSnapshot }),
+  useHumanRunQuery: () => ({ data: humanRunActive === undefined ? undefined : { active: humanRunActive, completed: false, runId: "", accountId: "", proxy: "" } }),
 }))
+let humanRunActive: boolean | undefined = false
 vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api/endpoints")>(),
   saveReview: (itemId: string, status: string, note: string) => saveReview(itemId, status, note),
@@ -66,7 +68,7 @@ function renderView(ui: ReactElement) {
   return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={result.client}>{next}</QueryClientProvider>) }
 }
 
-beforeEach(() => { current = snapshot; queryError = false; saveReview.mockClear(); refetchSnapshot.mockClear() })
+beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear() })
 
 it("renders server summary, function rows and P/E/O chips without recomputing status", async () => {
   renderView(<JudgmentMatrixView />)
@@ -267,4 +269,28 @@ it("offers required-role and identity-role assignment on a P0 cell through the e
   // 정책 P3·역할 확인된 셀에는 지정 섹션이 없다.
   await user.click(within(table).getByRole("button", { name: "기대 허용 관측: A · GET /api/admin/export" }))
   expect(screen.queryByRole("region", { name: "정책·역할 지정" })).not.toBeInTheDocument()
+})
+
+it("tells the operator whether a Repeater confirmation will count, and routes to start a HUMAN pass when it is off", async () => {
+  const user = userEvent.setup()
+  renderView(<JudgmentMatrixView />)
+  await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
+  const guidance = screen.getByRole("status", { name: "확인 재전송 조건" })
+  expect(guidance).toHaveTextContent("HUMAN 탐색이 꺼져 있습니다")
+  expect(guidance).toHaveTextContent("D-071")
+  await user.click(within(guidance).getByRole("button", { name: "점검에서 HUMAN 탐색 시작" }))
+  expect(window.location.hash).toBe("#inspection")
+})
+
+it("confirms that a Repeater replay inside an active HUMAN pass feeds the cell and that Request Lab stays isolated", async () => {
+  humanRunActive = true
+  const user = userEvent.setup()
+  renderView(<JudgmentMatrixView />)
+  await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
+  const guidance = screen.getByRole("status", { name: "확인 재전송 조건" })
+  expect(guidance).toHaveTextContent("HUMAN 탐색 활성")
+  expect(guidance).toHaveTextContent("D-008")
+  expect(within(guidance).queryByRole("button")).not.toBeInTheDocument()
 })
