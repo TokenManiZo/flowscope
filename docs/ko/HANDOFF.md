@@ -2,6 +2,8 @@
 
 ## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
 
+- **D-156(BFLA 활성화 증분):** 판정 매트릭스 셀 상세에 필수 역할·신원 역할 지정을 연결했다(기존 API 배선, 추정 없음). 독립 감사 2건 결과 우선순위를 재조정했다: ① ZAP 8081 listener 사전 점검+0건 원인 구분, ② 이 BFLA 배선(완료), ③ Repeater-in-run 안내와 Request Lab VALIDATION 반영 여부 결정, ④ SurfaceAnalyzer 1,024 상한의 기존 key 갱신 차단·무진단 수정(관측·선언 경로), ⑤ `SENSITIVE_PARAMETER_OMITTED`가 행 완전성을 뒤집지 않게, ⑥ OpenAPI 중간 객체·scalar 배열 원소 선언(D-143 ① 대체 결정 동반). 계정 필터의 후보 숨김(D-143 5c)과 ZAP 컨텍스트 subtree(D-132)는 기록된 결정이라 손대지 않는다. `BOLA_REPRODUCED`는 D-126/D-144 ④로 생산자가 사라진 증거 등급이며 삭제·복원 모두 ③ 결정에 종속한다.
+
 - 실제 대상(OWASP crAPI, `http://localhost:8888`)에 두 계정으로 인증 API를 브라우징해 FlowScope를 현장 검증했다. 핵심 엔진은 작동한다: 신원을 JWT `sub`에서 자동 해석하고, 교차 접근을 하지 않았는데도 `GET /identity/api/v2/vehicle/{id}` 차량 위치의 BOLA/IDOR 후보를 신원별로 생성했다.
 - 실측으로 드러난 실환경 마찰(진단 도구의 최우선 결함)은 **온보딩**이다. HUMAN 탐색(run) 밖에서 브라우징하면 인증 API도 D-071로 전부 제외되고, 화면은 빈 그래프만 보이며 이유·다음 행동을 알려주지 않았다. 최소 경로는 계정·세션 캡처 없이 `HUMAN 탐색 begin → 브라우징 → end` 2동작이고 신원은 자동 해석됨을 확인했다. 계정·세션 캡처는 role과 Request Lab 재전송에만 필요하다.
 - D-155로 첫 증분을 구현했다: snapshot이 run 밖 인증 API 수(`humanApiOutsideRun`)를 세고, 그래프·API·입력 차이 빈 화면이 "탐색을 시작하면 이 요청들이 비교에 포함된다"고 안내한다. D-071 coverage 경계는 그대로다.

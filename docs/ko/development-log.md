@@ -1,5 +1,12 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-156 판정 매트릭스 셀에서 필수 역할·신원 역할 지정
+
+- 두 독립 감사(PR 의도·계획 공격)가 crAPI에서 BFLA가 0건인 원인을 "역할 지정 UI가 매트릭스 셀에 연결되지 않음"으로 짚었다. `JudgmentMatrixView`에 `PolicyAssignment` 섹션을 추가해 P0~P2 셀에서 필수 역할, 역할 Unknown인 REGISTERED·OBSERVED 신원에서 신원 역할을 기존 `useRequirementMutation`·`useRoleMutation`으로 저장한다. 서버·API 변경 없음, 역할 추정 없음.
+- 테스트: `JudgmentMatrixView.test.tsx`에 P0·Unknown 셀 시나리오 추가(정확한 endpoint 인자·서버 메시지·P3 셀 비표시). 프런트 전체 480건 통과. 시스템 Node 25로 `npm run test`를 직접 돌리면 Node 내장 localStorage가 jsdom과 충돌해 58건이 실패하며, `NODE_OPTIONS=--no-experimental-webstorage`로 끄거나 Maven이 쓰는 pinned Node 24(`target/frontend-runtime`)로 돌리면 통과한다. 제품 결함이 아니다.
+- 영향 파일: `features/matrix/JudgmentMatrixView.tsx(+test)`, decisions D-156, HANDOFF, ui-product-rationale, beta-validation, 이 기록.
+- 남은 한계: crAPI mechanic/admin 트래픽 수집과 BFLA 후보 생성 실측은 새 JAR 재로드 뒤 수행.
+
 ## 2026-09-13 · D-154/D-155 코드리뷰 후속 수정
 
 - `/code-review high`로 이 브랜치(beta.48 대비 D-154/D-155) 변경분을 리뷰해 5건을 확인하고 정리했다.

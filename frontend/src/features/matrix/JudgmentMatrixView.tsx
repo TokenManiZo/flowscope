@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { AuthorizationMatrix, MatrixLegendItem, ReviewStatus } from "@/lib/api/types"
-import { useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useRequirementMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { actualLabel, confidenceCodes, expectedLabel, findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -29,6 +29,35 @@ function EvidenceIdList({ ids }: { ids: readonly string[] }) {
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? ids : ids.slice(0, VISIBLE_EVIDENCE)
   return <div className="grid gap-1">{visible.length ? visible.map((id) => <p key={id} className="break-all rounded border bg-muted/30 p-1.5 font-mono text-xs">{id}</p>) : <p className="text-xs text-muted-foreground">이 조합은 아직 미실행</p>}{ids.length > VISIBLE_EVIDENCE && <Button type="button" size="sm" variant="ghost" className="w-fit" onClick={() => setExpanded((current) => !current)}>{expanded ? "Evidence 접기" : `Evidence ${ids.length - VISIBLE_EVIDENCE}개 더 보기`}</Button>}</div>
+}
+
+const ROLE_OPTIONS = ["USER", "LV1", "LV2", "ADMIN"] as const
+
+/**
+ * BFLA 판정은 이 작업의 필수 역할(P3)과 신원의 역할이 모두 지정돼야 만들어진다. 역할은 토큰이나 경로에서 추정하지
+ * 않고 사용자가 지정한다(D-018). 기존 /api/requirement·/api/role만 호출하며 판정 자체는 서버가 다시 계산한다.
+ */
+function PolicyAssignment({ item, identityKind, identityRole, disabled }: { item: JudgmentItem; identityKind: string | undefined; identityRole: string | undefined; disabled: boolean }) {
+  const requirement = useRequirementMutation()
+  const roleMutation = useRoleMutation()
+  const [requiredRole, setRequiredRole] = useState<string>("ADMIN")
+  const [role, setRole] = useState<string>("USER")
+  const [message, setMessage] = useState<string | null>(null)
+  const needsRequirement = item.policy.level < 3
+  const needsRole = (identityKind === "REGISTERED" || identityKind === "OBSERVED") && identityRole === "Unknown"
+  if (!needsRequirement && !needsRole) return null
+  const run = async (action: () => Promise<{ message?: string }>, fallback: string) => {
+    setMessage(null)
+    try { setMessage((await action()).message ?? fallback) }
+    catch (error) { setMessage(error instanceof Error ? error.message : "저장 실패") }
+  }
+  return <section aria-label="정책·역할 지정" className="grid gap-2 rounded-md border border-sky-500/50 bg-sky-500/10 p-3">
+    <h3 className="text-sm font-semibold">정책·역할 지정</h3>
+    <p className="text-xs">{needsRequirement ? `정책 ${item.policy.code}: 이 작업의 필수 역할이 지정되지 않아 BFLA 판정을 만들 수 없습니다.` : ""}{needsRequirement && needsRole ? " " : ""}{needsRole ? `${item.identityLabel}의 역할이 Unknown이라 기대 판정을 세울 수 없습니다.` : ""} 역할은 추정하지 않고 사용자가 지정합니다.</p>
+    {needsRequirement && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>필수 역할</span><select aria-label="필수 역할" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" disabled={disabled || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "필수 역할을 저장했습니다.")}>필수 역할 저장</Button></div>}
+    {needsRole && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>{item.identityLabel} 역할</span><select aria-label="신원 역할" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" value={role} disabled={disabled} onChange={(event) => setRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" disabled={disabled || roleMutation.isPending} onClick={() => void run(() => roleMutation.mutateAsync({ identity: item.identity, role }), "신원 역할을 저장했습니다.")}>신원 역할 저장</Button></div>}
+    {message && <p role="status" className="text-xs">{message}</p>}
+  </section>
 }
 
 function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: JudgmentItem; matrix: AuthorizationMatrix; disabled: boolean; onOpenEvidence(selection: StructuredEvidenceSelection): void }) {
@@ -51,6 +80,7 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
   }
   const evidenceSelection = (evidenceIds: readonly string[], identity: string): StructuredEvidenceSelection => ({ kind: "matrix", identity, operation: item.operation, resource, evidenceIds, eventIds: evidenceIds })
   const basisIdentity = matrix.identities.find((identity) => identity.id === item.recommendation?.basisIdentity)
+  const cellIdentity = matrix.identities.find((identity) => identity.id === item.identity)
   return <div className="grid gap-4 p-4 text-sm">
     <div><h2 className="text-base font-semibold">{item.statusLabel}{reviewSuffix(item.reviewStatus)}</h2><p className="break-all text-xs text-muted-foreground">{item.identityLabel} · {withoutService(item.operation)}{resource ? ` · ${resource}` : ""}</p>{"relation" in item && <p className="text-xs text-muted-foreground">관계 {item.relation} · 기법 {item.techniques.join("/")} · 소유자 {item.ownerLabel || "미확정"}</p>}</div>
     {item.recommendation && <section aria-label="테스트 추천 조합" className="grid gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
@@ -73,6 +103,7 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       <h3 className="text-sm font-semibold">독립 신뢰도 축</h3>
       <div className="grid gap-2 sm:grid-cols-3">{[item.policy, item.evidence, ownership].filter((value): value is NonNullable<typeof value> => !!value).map((value) => <div key={value.code} className="rounded border border-border/70 p-2"><p className="font-mono text-xs font-semibold">{value.code} · {value.label}</p><p className="text-xs text-muted-foreground">{value.basis}</p></div>)}</div>
     </section>
+    <PolicyAssignment key={`${item.id}:${item.policy.code}:${cellIdentity?.role ?? ""}`} item={item} identityKind={cellIdentity?.kind} identityRole={cellIdentity?.role} disabled={disabled} />
     <section aria-label="테스트 유효성 게이트" className="grid gap-1">
       <h3 className="text-sm font-semibold">테스트 유효성 게이트</h3>
       <ul className="grid gap-1">{item.gates.map((gate) => <li key={gate.key} className="text-xs"><Badge variant="outline" className="mr-1.5">{gate.state}</Badge><b>{gate.label}</b> <span className="text-muted-foreground">{gate.reason}</span></li>)}</ul>

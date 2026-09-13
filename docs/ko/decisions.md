@@ -1445,6 +1445,13 @@
 - **기각:** run 밖 HUMAN API를 자동으로 coverage에 넣는 방식은 로그인 준비·배경 이동을 검증된 커버리지로 오염시키던 D-071 이전 결함을 되살린다. 자동으로 EXPLORATION run을 상시 켜는 방식도 같은 이유로 기각한다. 경계는 그대로 두고 "왜 비었고 무엇을 하면 되는지"만 안내한다.
 - **검증:** `SnapshotTrafficStatsTest`가 BASELINE HUMAN API 2건·EXPLORATION 1건에서 `humanApiOutsideRun=2`·coverage=1을, 네비게이션·SCANNER 트래픽 제외를 확인한다. `RunGapHint.test.tsx`와 `ParameterMapPage.test.tsx`가 안내 렌더와 점검 이동을 확인한다. 실측: crAPI(localhost:8888)에 두 계정으로 브라우징 → run 밖에서는 `humanApiOutsideRun`으로 안내, HUMAN 탐색 안에서는 같은 트래픽이 INCLUDE되어 차량 위치 BOLA/IDOR 후보가 생성됨을 확인했다.
 
+## D-156 · 판정 매트릭스 셀에서 필수 역할·신원 역할을 지정한다 (2026-09-13)
+
+- **문제:** BFLA 후보는 작업의 필수 역할(P3)과 신원 역할이 모두 지정돼야 만들어지는데(`functionCell` P0/P3, `expected`, 정본 `roleViolation`), 지정 UI는 계정 화면 아코디언(관측 신원 역할)과 Evidence 상세(필수 역할)에 흩어져 있고 매트릭스 셀은 P0인 이유와 다음 행동을 연결하지 않았다. crAPI 실측에서 관측 신원 role이 UNKNOWN이라 BFLA는 0건이었다(HANDOFF "role 지정 없이는 BFLA 불가").
+- **결정:** `JudgmentMatrixView` 셀 상세에 "정책·역할 지정" 섹션을 둔다. `policy.level < 3`이면 필수 역할 select와 저장(`/api/requirement`), 신원 kind가 REGISTERED·OBSERVED이고 역할이 Unknown이면 신원 역할 select와 저장(`/api/role`)을 보인다. 둘 다 아니면 섹션을 숨긴다. 판정은 서버가 snapshot 재계산으로 다시 만든다.
+- **기각:** ① 토큰·경로 문자열에서 역할 자동 추정 — D-018 위반. ② 매트릭스 안에서 기대 판정을 프런트가 계산 — D-050·D-144(Web은 재판정하지 않음) 위반. ③ 새 API 추가 — 기존 두 API로 충분하다.
+- **검증:** `JudgmentMatrixView.test.tsx`가 P0·역할 Unknown 셀에서 두 select·저장이 기존 endpoint에 정확한 인자로 호출되고 서버 메시지가 표시되며, P3·역할 확인 셀에는 섹션이 없음을 검사한다. 실제 crAPI에서 mechanic/admin 계정 트래픽을 수집한 뒤 BFLA 후보가 생기는지는 새 JAR 재로드 후 실측한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

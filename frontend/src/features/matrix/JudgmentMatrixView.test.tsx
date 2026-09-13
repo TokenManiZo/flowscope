@@ -16,6 +16,8 @@ let current: Snapshot | undefined
 let queryError = false
 const refetchSnapshot = vi.fn()
 const saveReview = vi.fn(async (itemId: string, status: string, note: string) => ({ success: true, message: `saved ${itemId} ${status} ${note}` }))
+const saveRequirement = vi.fn(async (operation: string, role: string) => ({ success: true, message: `requirement ${operation} ${role}` }))
+const saveRole = vi.fn(async (identity: string, role: string) => ({ success: true, message: `role ${identity} ${role}` }))
 
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
@@ -24,6 +26,8 @@ vi.mock("@/lib/query/hooks", async (importOriginal) => ({
 vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api/endpoints")>(),
   saveReview: (itemId: string, status: string, note: string) => saveReview(itemId, status, note),
+  saveRequirement: (operation: string, role: string) => saveRequirement(operation, role),
+  saveRole: (identity: string, role: string) => saveRole(identity, role),
 }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: () => null }))
 
@@ -240,4 +244,27 @@ it("retains the selected cell, Evidence detail, and unsaved review note while sn
   expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
   expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
   expect(screen.getByLabelText("검증 메모")).toBeEnabled()
+})
+
+it("offers required-role and identity-role assignment on a P0 cell through the existing APIs and hides it once policy is confirmed", async () => {
+  const user = userEvent.setup()
+  const observed = { id: "c", label: "C", role: "Unknown", kind: "OBSERVED" }
+  const unknownPolicy = fn("function-c", "c", `${service} GET /api/admin/export`, { role: "Unknown", status: "UNKNOWN_POLICY", statusLabel: "정책 미정", policy: confidence("P0", 0, "정책 미정") })
+  current = { ...snapshot, authorizationMatrix: { ...matrix, identities: [...matrix.identities, observed], functions: [...matrix.functions, unknownPolicy] } }
+  renderView(<JudgmentMatrixView />)
+  const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
+  await user.click(within(table).getByRole("button", { name: "정책 미정: C · GET /api/admin/export" }))
+  const assignment = screen.getByRole("region", { name: "정책·역할 지정" })
+  expect(assignment).toHaveTextContent("정책 P0")
+  expect(assignment).toHaveTextContent("C의 역할이 Unknown")
+  await user.selectOptions(within(assignment).getByRole("combobox", { name: "필수 역할" }), "ADMIN")
+  await user.click(within(assignment).getByRole("button", { name: "필수 역할 저장" }))
+  await waitFor(() => expect(saveRequirement).toHaveBeenCalledWith(`${service} GET /api/admin/export`, "ADMIN"))
+  expect(await within(assignment).findByRole("status")).toHaveTextContent(`requirement ${service} GET /api/admin/export ADMIN`)
+  await user.selectOptions(within(assignment).getByRole("combobox", { name: "신원 역할" }), "USER")
+  await user.click(within(assignment).getByRole("button", { name: "신원 역할 저장" }))
+  await waitFor(() => expect(saveRole).toHaveBeenCalledWith("c", "USER"))
+  // 정책 P3·역할 확인된 셀에는 지정 섹션이 없다.
+  await user.click(within(table).getByRole("button", { name: "기대 허용 관측: A · GET /api/admin/export" }))
+  expect(screen.queryByRole("region", { name: "정책·역할 지정" })).not.toBeInTheDocument()
 })
