@@ -1,0 +1,32 @@
+openapi: 3.1.0
+servers:
+  - url: /service/v4
+paths:
+  /exports/{exportKey}:
+    parameters:
+      - name: exportKey
+        in: path
+        required: true
+    get:
+      parameters:
+        - name: format
+          in: query
+          required: false
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [selection]
+              properties:
+                selection:
+                  type: object
+                  required: [ids]
+                  properties:
+                    ids:
+                      type: array
+                      items: {type: string}
+                notify:
+                  type: boolean

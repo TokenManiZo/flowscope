@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.flowscope</groupId>
+  <artifactId>flowscope</artifactId>
+  <version>1.2.0-beta.49</version>
+  <packaging>jar</packaging>
+
+  <name>FlowScope</name>
+  <description>Differential HUMAN/SCANNER/LLM authorization analysis inside Burp Suite</description>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <montoya.version>2026.7</montoya.version>
+    <junit.version>5.11.4</junit.version>
+    <jackson.version>2.22.2</jackson.version>
+    <jsoup.version>1.23.1</jsoup.version>
+    <sqlite.jdbc.version>3.53.1.0</sqlite.jdbc.version>
+    <closure.compiler.version>v20260831</closure.compiler.version>
+    <maven.clean.version>3.5.0</maven.clean.version>
+    <maven.compiler.version>3.15.0</maven.compiler.version>
+    <maven.resources.version>3.4.0</maven.resources.version>
+    <maven.surefire.version>3.5.4</maven.surefire.version>
+    <maven.enforcer.version>3.6.3</maven.enforcer.version>
+    <maven.assembly.version>3.7.1</maven.assembly.version>
+    <project.build.outputTimestamp>2026-08-24T00:00:00Z</project.build.outputTimestamp>
+  </properties>
+
+  <dependencies>
+    <!-- Burp Montoya API: provided by Burp at runtime, compile-only here -->
+    <dependency>
+      <groupId>net.portswigger.burp.extensions</groupId>
+      <artifactId>montoya-api</artifactId>
+      <version>${montoya.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Evidence, project and ZAP JSON serialization. Relocated in the fat JAR to avoid Burp extension conflicts. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+
+    <!-- Standards-compliant local HTML parsing only; FlowScope never uses jsoup networking. -->
+    <dependency>
+      <groupId>org.jsoup</groupId>
+      <artifactId>jsoup</artifactId>
+      <version>${jsoup.version}</version>
+    </dependency>
+
+    <!-- Embedded local project database; the default artifact bundles desktop native libraries. -->
+    <dependency>
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+      <version>${sqlite.jdbc.version}</version>
+    </dependency>
+
+    <!-- Parse target JavaScript without executing it or requiring Node/Chrome on the operator host. -->
+    <dependency>
+      <groupId>com.google.javascript</groupId>
+      <artifactId>closure-compiler</artifactId>
+      <version>${closure.compiler.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>flowscope-${project.version}</finalName>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <directory>${project.build.directory}/generated-resources/react-web</directory>
+        <targetPath>web/app</targetPath>
+      </resource>
+      <resource>
+        <directory>${project.build.directory}/generated-resources/frontend-notices</directory>
+      </resource>
+    </resources>
+    <plugins>
+      <!-- Pin every default-lifecycle plugin used by `clean verify` for reproducible builds. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>${maven.clean.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>${maven.resources.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven.compiler.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.version}</version>
+        <configuration>
+          <!-- Swing component tests must not depend on the developer machine's WindowServer state. -->
+          <systemPropertyVariables>
+            <java.awt.headless>true</java.awt.headless>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>${maven.enforcer.version}</version>
+        <executions>
+          <execution>
+            <id>enforce-release-build-toolchain</id>
+            <goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>[21,22)</version>
+                  <display>true</display>
+                  <message>FlowScope source builds require JDK 21. A newer javac can emit different release-21 bytecode.</message>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[3.9,4.0)</version>
+                  <message>FlowScope source builds require Maven 3.9.x.</message>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.github.eirslett</groupId>
+        <artifactId>frontend-maven-plugin</artifactId>
+        <version>1.15.4</version>
+        <configuration>
+          <installDirectory>${project.build.directory}/frontend-runtime</installDirectory>
+        </configuration>
+        <executions>
+          <execution>
+            <id>install-node-and-npm</id>
+            <phase>generate-resources</phase>
+            <goals><goal>install-node-and-npm</goal></goals>
+            <configuration>
+              <nodeVersion>v24.11.1</nodeVersion>
+              <npmVersion>11.6.2</npmVersion>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-ci</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>ci --prefer-offline --no-audit --fund=false</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-notices</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>run notices</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-verify</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>run verify</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-build</id>
+            <phase>generate-resources</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>run build</arguments>
+              <workingDirectory>frontend</workingDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Shade post-processes this JAR; always recreate the thin input on repeated package runs. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.0</version>
+        <configuration>
+          <forceCreation>true</forceCreation>
+          <archive>
+            <manifest>
+              <addDefaultEntries>false</addDefaultEntries>
+            </manifest>
+            <manifestEntries>
+              <Java-Version>21</Java-Version>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+
+      <!-- Fat JAR: bundle runtime dependencies and web assets (Montoya is provided by Burp). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                    <exclude>META-INF/LICENSE</exclude>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+              <relocations>
+                <relocation>
+                  <pattern>com.fasterxml.jackson</pattern>
+                  <shadedPattern>io.flowscope.shaded.jackson</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.jsoup</pattern>
+                  <shadedPattern>io.flowscope.shaded.jsoup</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.yaml.snakeyaml</pattern>
+                  <shadedPattern>io.flowscope.shaded.snakeyaml</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.google.javascript</pattern>
+                  <shadedPattern>io.flowscope.shaded.closure</shadedPattern>
+                </relocation>
+                <!-- closure-compiler also ships these outside com.google.javascript; relocate so nothing leaks at its original name. -->
+                <relocation>
+                  <pattern>com.google.debugging</pattern>
+                  <shadedPattern>io.flowscope.shaded.sourcemap</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.jspecify</pattern>
+                  <shadedPattern>io.flowscope.shaded.jspecify</shadedPattern>
+                </relocation>
+              </relocations>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                  <projectName>FlowScope</projectName>
+                  <organizationName>FlowScope</organizationName>
+                  <organizationURL>https://github.com/choewonwoo1817/testflowscope</organizationURL>
+                  <inceptionYear>2026</inceptionYear>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <!-- Burp discovers and instantiates the Montoya extension through the JAR entry point. -->
+                  <mainClass>io.flowscope.burp.FlowScopeExtension</mainClass>
+                  <manifestEntries>
+                    <Multi-Release>true</Multi-Release>
+                  </manifestEntries>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Keep the public install surface unambiguous: only the Burp-loadable fat JAR remains. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <id>remove-thin-jar</id>
+            <phase>package</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <delete file="${project.build.directory}/original-${project.build.finalName}.jar"/>
+                <resourcecount property="flowscope.public.jar.count">
+                  <fileset dir="${project.build.directory}" includes="*.jar"/>
+                </resourcecount>
+                <fail message="FlowScope public build must contain exactly one Burp-loadable JAR">
+                  <condition>
+                    <not><equals arg1="${flowscope.public.jar.count}" arg2="1"/></not>
+                  </condition>
+                </fail>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- convenience: `mvn exec:java` runs the standalone local web workspace -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>relocate-multi-release-jar</id>
+            <phase>package</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <!-- MSHADE-406 leaves versioned entry paths unrelocated; scan every MR root after Shade. -->
+              <mainClass>io.flowscope.FatJarIsolationSmoke</mainClass>
+              <classpathScope>test</classpathScope>
+              <arguments>
+                <argument>--relocate-mr-jar</argument>
+                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                <argument>${project.build.outputTimestamp}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-release-jar</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>io.flowscope.FatJarIsolationSmoke</mainClass>
+              <classpathScope>test</classpathScope>
+              <arguments>
+                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+        <configuration>
+          <mainClass>io.flowscope.Standalone</mainClass>
+        </configuration>
+      </plugin>
+
+      <!-- Release users receive the JAR, ZAP helpers and current manuals without cloning the source tree. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>${maven.assembly.version}</version>
+        <executions>
+          <execution>
+            <id>distribution-bundle</id>
+            <phase>package</phase>
+            <goals><goal>single</goal></goals>
+            <configuration>
+              <descriptors>
+                <descriptor>src/assembly/distribution.xml</descriptor>
+              </descriptors>
+              <finalName>${project.build.finalName}</finalName>
+              <appendAssemblyId>true</appendAssemblyId>
+              <attach>false</attach>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

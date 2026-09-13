@@ -1,0 +1,117 @@
+[
+  {
+    "name": "malformed-mpa-html",
+    "scope": "https://fixture.test/app/",
+    "documents": [
+      {
+        "path": "/app/index.html",
+        "mediaType": "text/html",
+        "body": "<!doctype html><base href='/app/v3/'><a href=orders/9>order<form action=search method=post><script>fetch('api/me'); fetch('/app/dynamic/'+id)</script><a href='https://outside.test/x'>outside</a>"
+      }
+    ],
+    "expected": [
+      "UNKNOWN /app/v3/orders/{id}",
+      "POST /app/v3/search",
+      "GET /app/v3/api/me",
+      "GET /app/dynamic/{id}"
+    ]
+  },
+  {
+    "name": "spa-static-call-sites",
+    "scope": "https://fixture.test/app/",
+    "documents": [
+      {
+        "path": "/app/main.js",
+        "mediaType": "application/javascript",
+        "body": "axios.get('/app/api/orders/7'); const x=new XMLHttpRequest(); x.open('PATCH','/app/api/profile'); $.ajax({url:'/app/api/search',method:'POST'}); navigator.sendBeacon('/app/api/audit','x'); fetch('/app/api/dynamic/'+id);"
+      }
+    ],
+    "expected": [
+      "GET /app/api/orders/{id}",
+      "PATCH /app/api/profile",
+      "POST /app/api/search",
+      "POST /app/api/audit",
+      "GET /app/api/dynamic/{id}"
+    ]
+  },
+  {
+    "name": "openapi-json",
+    "scope": "https://fixture.test/service/",
+    "documents": [
+      {
+        "path": "/service/openapi.json",
+        "mediaType": "application/json",
+        "body": "{\"openapi\":\"3.1.0\",\"servers\":[{\"url\":\"/service/v1\"}],\"paths\":{\"/items/{itemId}\":{\"get\":{},\"delete\":{}}}}"
+      }
+    ],
+    "expected": [
+      "GET /service/v1/items/{id}",
+      "DELETE /service/v1/items/{id}"
+    ]
+  },
+  {
+    "name": "openapi-yaml",
+    "scope": "https://fixture.test/service/",
+    "documents": [
+      {
+        "path": "/service/openapi.yaml",
+        "mediaType": "application/yaml",
+        "body": "openapi: 3.1.0\nservers:\n  - url: /service/v2\npaths:\n  /reports/{reportId}:\n    get: {}\n    post: {}\n"
+      }
+    ],
+    "expected": [
+      "GET /service/v2/reports/{id}",
+      "POST /service/v2/reports/{id}"
+    ]
+  },
+  {
+    "name": "standard-metadata",
+    "scope": "https://fixture.test/app/",
+    "documents": [
+      {
+        "path": "/app/robots.txt",
+        "mediaType": "text/plain",
+        "body": "Allow: /app/public\nDisallow: /app/internal\nSitemap: https://fixture.test/app/sitemap.xml\n"
+      },
+      {
+        "path": "/app/site.webmanifest",
+        "mediaType": "application/manifest+json",
+        "body": "{\"start_url\":\"/app/start\",\"shortcuts\":[{\"url\":\"/app/tasks\"}]}"
+      }
+    ],
+    "expected": [
+      "UNKNOWN /app/public",
+      "UNKNOWN /app/internal",
+      "UNKNOWN /app/sitemap.xml",
+      "UNKNOWN /app/start",
+      "UNKNOWN /app/tasks"
+    ]
+  },
+  {
+    "name": "generic-xml-contract",
+    "scope": "https://fixture.test/app/",
+    "documents": [
+      {
+        "path": "/app/view.xml",
+        "mediaType": "application/xml",
+        "body": "<view><request endpoint='/app/api/export' method='POST'/><url>/app/api/profile</url><label>not/a/route value</label></view>"
+      }
+    ],
+    "expected": [
+      "POST /app/api/export",
+      "UNKNOWN /app/api/profile"
+    ]
+  },
+  {
+    "name": "negative-static-document",
+    "scope": "https://fixture.test/app/",
+    "documents": [
+      {
+        "path": "/app/styles.css",
+        "mediaType": "text/css",
+        "body": "body{background:url('/app/images/background.png')}"
+      }
+    ],
+    "expected": []
+  }
+]

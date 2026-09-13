@@ -1,0 +1,1244 @@
+package io.flowscope;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.AccessRole;
+import io.flowscope.core.AccountProfile;
+import io.flowscope.core.BurpXmlParser;
+import io.flowscope.core.ExecutionTrust;
+import io.flowscope.core.HarParser;
+import io.flowscope.core.Orchestrator;
+import io.flowscope.core.Pipeline;
+import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RunContextRegistry;
+import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.RunPhase;
+import io.flowscope.core.ScopePolicy;
+import io.flowscope.core.Source;
+import io.flowscope.core.SourceDetail;
+import io.flowscope.core.StoredPayload;
+import io.flowscope.core.ToolKind;
+import io.flowscope.core.ValidationDecision;
+import io.flowscope.core.LegacyAssessment;
+import io.flowscope.integration.SessionBroker;
+import io.flowscope.integration.ZapAccountVault;
+import io.flowscope.integration.ProjectWorkspace;
+import io.flowscope.web.FlowScopeWebServer;
+import io.flowscope.explorer.ExplorerAccountVault;
+import io.flowscope.explorer.ExplorerCoordinator;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.io.OutputStream;
+import java.net.URI;
+import java.net.Socket;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+final class FlowScopeWebServerTest {
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private final TestState state = new TestState();
+    private FlowScopeWebServer server;
+    private String token;
+
+
+    @AfterEach void stop() {
+        if (server != null) server.close();
+        state.sessions.close();
+        state.zapAccounts.close();
+    }
+
+    @Test
+    void redirectsAppMountToTrailingSlash() throws Exception {
+        start();
+
+        HttpResponse<String> response = get("/app", null, null);
+
+        assertEquals(308, response.statusCode());
+        assertEquals("/app/", response.headers().firstValue("Location").orElseThrow());
+    }
+
+    @Test
+    void startsAndSwitchesProjectsWithoutOfferingDestructiveEvidenceClear() throws Exception {
+        start();
+
+        HttpResponse<String> clear = post("/api/clear", "", token);
+        HttpResponse<String> started = post("/api/projects", "action=start&name=Target+A&scope="
+                + URLEncoder.encode("https://app.example.test/", StandardCharsets.UTF_8), token);
+        HttpResponse<String> listed = get("/api/projects", token, null);
+
+        assertEquals(409, clear.statusCode());
+        assertEquals(1, state.records.size(), "legacy reset must not delete Evidence");
+        assertEquals(200, started.statusCode());
+        assertEquals("Target A", JSON.readTree(started.body()).path("active").path("name").asText());
+        assertEquals("SAVED", JSON.readTree(started.body()).path("saveState").asText());
+        assertEquals("https://app.example.test/", state.startedProjectScope);
+        assertEquals(200, listed.statusCode());
+        assertEquals(1, JSON.readTree(listed.body()).path("projects").size());
+    }
+
+    @Test
+    void servesReactUiAtTheBurpLaunchRootAndKeepsLegacyAtItsExplicitMount() throws Exception {
+        start();
+
+        HttpResponse<String> root = get("/", null, null);
+        HttpResponse<String> legacy = get("/legacy/", null, null);
+
+        assertEquals(200, root.statusCode());
+        assertTrue(root.body().contains("<div id=\"root\"></div>"));
+        assertFalse(root.body().contains("<h1>FlowScope</h1>"));
+        assertTrue(legacy.body().contains("<h1>FlowScope</h1>"));
+    }
+
+    @Test
+    void servesMigratingStaticMountsWithoutLeakingCapabilitiesIntoViteAssets() throws Exception {
+        start();
+
+        HttpResponse<String> root = get("/", null, null);
+        HttpResponse<String> legacy = get("/legacy/", null, null);
+        HttpResponse<String> app = get("/app/", null, null);
+        assertEquals(200, root.statusCode());
+        assertTrue(root.body().contains("<div id=\"root\"></div>"));
+        assertFalse(root.body().contains("<h1>FlowScope</h1>"));
+        assertEquals(200, legacy.statusCode());
+        assertTrue(legacy.body().contains("<h1>FlowScope</h1>"));
+        assertTrue(legacy.body().contains(token));
+        assertEquals(200, app.statusCode());
+        assertTrue(app.body().contains("<div id=\"root\"></div>"));
+        assertTrue(app.body().matches("(?s).*name=\"flowscope-capability\" content=\"[0-9a-f]{64}\".*"));
+
+        List<String> assets = viteAssetUrls(app.body());
+        assertTrue(assets.stream().anyMatch(path -> path.endsWith(".js")));
+        assertTrue(assets.stream().anyMatch(path -> path.endsWith(".css")));
+        for (String asset : assets) {
+            HttpResponse<String> assetResponse = get(asset, null, null);
+            assertEquals(200, assetResponse.statusCode(), asset);
+            assertEquals(asset.endsWith(".css") ? "text/css; charset=utf-8" : "application/javascript; charset=utf-8",
+                    assetResponse.headers().firstValue("Content-Type").orElseThrow());
+            assertFalse(assetResponse.body().contains(token), asset);
+        }
+    }
+
+    @Test
+    void constrainsStaticMountsToSafeMethodsAndPaths() throws Exception {
+        start();
+        HttpResponse<String> app = get("/app/", null, null);
+        String asset = viteAssetUrls(app.body()).getFirst();
+        HttpResponse<String> getResponse = get(asset, null, null);
+        HttpResponse<String> headResponse = head(asset);
+
+        assertEquals(getResponse.statusCode(), headResponse.statusCode());
+        assertEquals(getResponse.headers().map(), headResponse.headers().map());
+        assertEquals("", headResponse.body());
+        HttpResponse<String> postResponse = post(asset, "", token);
+        assertEquals(405, postResponse.statusCode());
+        assertEquals("GET, HEAD", postResponse.headers().firstValue("Allow").orElseThrow());
+        for (String invalidPath : List.of("/app/%2e%2e/index.html", "/app/assets/%5csecret", "/app/assets/%00",
+                "/app/assets/unknown.exe", "/app/assets/not-present.js")) {
+            assertEquals(404, get(invalidPath, null, null).statusCode(), invalidPath);
+        }
+        assertEquals(403, get("/api/snapshot", null, null).statusCode());
+    }
+
+    @Test
+    void staticHeadSuccessTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/");
+    }
+
+    @Test
+    void staticHeadMissingAssetTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/assets/not-present.js");
+    }
+
+    @Test
+    void staticHeadInvalidAssetTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/assets/%5csecret");
+    }
+
+    @Test
+    void staticHeadMalformedAssetTransmitsNoBytesAfterHeaders() throws Exception {
+        start();
+
+        assertStaticHeadMatchesGet("/app/assets/%zz");
+    }
+
+    @Test
+    void retiredLlmAndMcpRoutesAreNotExposed() throws Exception {
+        start();
+        for (String path : List.of("/api/llm-run", "/api/ai-preview", "/api/ai-scenarios", "/mcp")) {
+            assertEquals(404, get(path, token, null).statusCode(), path);
+            assertEquals(404, post(path, "action=start&role=JUDGE", token).statusCode(), path);
+        }
+    }
+
+    @Test
+    void explorerRoutesExposeRunFactsWithoutEchoingCredentials() throws Exception {
+        start();
+
+        JsonNode initial = json(get("/api/explorer-run", token, origin()));
+        assertEquals("IDLE", initial.at("/run/status").asText());
+        assertEquals(0, initial.at("/run/endpointDeclarations").asInt());
+        assertEquals(0, initial.at("/run/parameterDeclarations").asInt());
+        assertEquals(0, initial.at("/run/capabilityProbes").asInt());
+        assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
+
+        HttpResponse<String> saved = post("/api/explorer-accounts",
+                "action=save&label=LLM-A&role=USER&loginUrl=" + encode(state.record.service + "/login")
+                        + "&username=" + encode("alice@example.test") + "&password=" + encode("secret-password")
+                        + "&loginMode=JSON&usernameField=email&passwordField=password"
+                        + "&tokenJsonPath=token&authHeader=Authorization&authPrefix=" + encode("Bearer "), token);
+        assertEquals(200, saved.statusCode());
+        assertFalse(saved.body().contains("secret-password"));
+        assertFalse(saved.body().contains("alice@example.test"));
+        String accountId = JSON.readTree(saved.body()).at("/account/id").asText();
+
+        HttpResponse<String> started = post("/api/explorer-run",
+                "action=start&target=" + encode(state.record.service + "/") + "&anonymous=false&accounts=" + accountId,
+                token);
+        assertEquals(202, started.statusCode());
+        assertEquals("RUNNING", JSON.readTree(started.body()).at("/run/status").asText());
+        assertEquals(accountId, JSON.readTree(started.body()).at("/run/accountIds/0").asText());
+    }
+
+    @Test
+    void explorerReadinessCanBeRecheckedWithoutStartingARun() throws Exception {
+        start();
+
+        HttpResponse<String> response = post("/api/explorer-run", "action=recheck", token);
+
+        assertEquals(200, response.statusCode());
+        assertEquals("READY", JSON.readTree(response.body()).at("/run/providerReadiness").asText());
+        assertEquals(1, state.explorerReadinessChecks);
+    }
+
+    @Test
+    void zapAccountsStayMemoryOnlyAndScannerRunExposesOnlySafeMetadata() throws Exception {
+        start();
+
+        HttpResponse<String> saved = post("/api/zap-accounts",
+                "action=save&label=ZAP-A&role=USER&service=" + encode(state.record.service)
+                        + "&loginUrl=" + encode(state.record.service + "/login")
+                        + "&username=" + encode(" zap-user@example.test ")
+                        + "&password=" + encode("  zap-secret-password  ")
+                        + "&loggedInIndicator=" + encode("My account")
+                        + "&loggedOutIndicator=" + encode("Sign in"), token);
+
+        assertEquals(200, saved.statusCode(), saved.body());
+        assertFalse(saved.body().contains("zap-user@example.test"));
+        assertFalse(saved.body().contains("zap-secret-password"));
+        assertEquals(" zap-user@example.test ", state.lastZapAccountInput.username());
+        assertEquals("  zap-secret-password  ", state.lastZapAccountInput.password());
+        String accountId = JSON.readTree(saved.body()).at("/account/id").asText();
+        JsonNode scanner = json(get("/api/scanner-run", token, origin()));
+        assertEquals(accountId, scanner.at("/accounts/0/id").asText());
+        assertTrue(scanner.at("/accounts/0/hasPassword").asBoolean());
+        assertTrue(scanner.at("/accounts/0/hasLoggedInIndicator").asBoolean());
+        assertTrue(scanner.at("/accounts/0/hasLoggedOutIndicator").asBoolean());
+        assertFalse(scanner.toString().contains("zap-user@example.test"));
+        assertFalse(scanner.toString().contains("zap-secret-password"));
+
+        HttpResponse<String> deleted = post("/api/zap-accounts",
+                "action=delete&id=" + encode(accountId), token);
+        assertEquals(200, deleted.statusCode(), deleted.body());
+        assertEquals(0, json(get("/api/scanner-run", token, origin())).at("/accounts").size());
+    }
+
+    @Test
+    void archivedAssessmentsAreReadOnlyAndDoNotBecomeCurrentCandidates() throws Exception {
+        start();
+        state.archivedAssessments = List.of(new LegacyAssessment("old-1", "BOLA", "LIKELY",
+                "옛 평가", "token=ARCHIVESECRET", List.of(state.record.evidenceId),
+                java.time.Instant.parse("2026-08-24T00:00:00Z")));
+        state.archivedValidations = List.of(new ValidationDecision("old-1",
+                ValidationDecision.FinalVerdict.CONFIRMED, "token=VERDICTSECRET",
+                List.of(state.record.evidenceId), List.of("old-repro"), List.of("old-control"),
+                "old-run", java.time.Instant.parse("2026-08-24T00:01:00Z")));
+        HttpResponse<String> response = get("/api/snapshot", token, null);
+        assertEquals(200, response.statusCode());
+        JsonNode snapshot = JSON.readTree(response.body());
+        assertTrue(snapshot.path("legacyLlm").path("readOnly").asBoolean());
+        assertEquals("2026-08-24T00:00:00Z",
+                snapshot.at("/legacyLlm/assessments/0/createdAt").asText());
+        assertEquals("CONFIRMED", snapshot.at("/legacyLlm/validations/0/verdict").asText());
+        assertFalse(response.body().contains("ARCHIVESECRET"));
+        assertFalse(response.body().contains("VERDICTSECRET"));
+        assertFalse(snapshot.path("scenarios").toString().contains("old-1"));
+        assertEquals(400, post("/api/review", "itemId=old-1&status=CONFIRMED&note=change", token).statusCode());
+    }
+
+    @Test
+    void servesBrandedUiAndProtectsApiWithCapabilityAndOrigin() throws Exception {
+        start();
+        HttpResponse<String> index = get("/legacy/", null, null);
+        assertEquals(200, index.statusCode());
+        assertTrue(index.body().contains("<h1>FlowScope</h1>"));
+        assertTrue(index.body().contains("HUMAN pass 시작"));
+        assertTrue(index.body().contains("Evidence 표시"));
+        assertTrue(index.body().contains("--human:#2563EB; --scanner:#DC2626; --llm:#111827;"));
+        assertTrue(index.body().contains("human:{n:'사람',c:'--human',ab:'H'}"));
+        assertTrue(index.body().contains("scanner:{n:'스캐너',c:'--scanner',ab:'S'}"));
+        assertTrue(index.body().contains("llm:{n:'LLM',c:'--llm',ab:'L'}"));
+        assertTrue(index.body().contains("사람 H (파랑·실선)"));
+        assertTrue(index.body().contains("스캐너 S (빨강·파선)"));
+        assertTrue(index.body().contains("LLM L (검정·점선)"));
+        assertTrue(index.body().contains("검토 대기"));
+        assertTrue(index.body().contains("인증·화면·반복 보조 흐름 표시"));
+        assertTrue(index.body().contains("저장 상한으로 유실"));
+        assertTrue(index.body().contains("샘플 데이터 · 실제 HUMAN/ZAP/LLM 점검 결과가 아님"));
+        assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
+        assertTrue(index.body().contains("첫 점검을 시작하세요"));
+        assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → Evidence 검토"));
+        assertTrue(index.body().contains("완료되지 않은 단계 하나만 엽니다"));
+        assertTrue(index.body().contains("data-setup-stage=\"scope\""));
+        assertTrue(index.body().contains("data-setup-pane=\"scanner\""));
+        assertTrue(index.body().contains("function selectSetupStage(stage,pinned=true)"));
+        assertTrue(index.body().contains("const autoStage=!scopeReady?'scope':!humanReady?'human':!scannerReady?'scanner':'review'"));
+        assertTrue(index.body().contains("pane.hidden=pane.dataset.setupPane!==stage"));
+        assertFalse(index.body().contains("/api/llm-run"));
+        assertFalse(index.body().contains("LLM Explorer 시작"));
+        assertFalse(index.body().contains("Judge 시작"));
+        assertTrue(index.body().contains("executionQualityLabel"));
+        assertTrue(index.body().contains("전송 전부 실패"));
+        assertTrue(index.body().contains("TLS 인증서 검증"));
+        assertTrue(index.body().contains("scannerlane"));
+        assertTrue(index.body().contains("Client "));
+        assertTrue(index.body().contains("scannerstate.completed_with_warnings"));
+        assertTrue(index.body().contains("SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS'"));
+        assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
+        assertTrue(index.body().contains("SCANNER_RUN.elapsed_seconds"));
+        assertTrue(index.body().contains("SCANNER_RUN.last_heartbeat_age_seconds"));
+        assertTrue(index.body().contains("lane.wait_reason"));
+        assertTrue(index.body().contains("RESPONDING_NO_NEW_TRAFFIC"));
+        assertTrue(index.body().contains("STARTING:'실행 준비 중'"));
+        assertTrue(index.body().contains("lane.passive_remaining"));
+        assertTrue(index.body().contains("lane.passive_task"));
+        assertTrue(index.body().contains("Alert 집계 전"));
+        assertFalse(index.body().contains("Traditional Spider"));
+        assertFalse(index.body().contains("AJAX Spider 보완"));
+        assertTrue(index.body().contains("실시간 실행 기록"));
+        assertTrue(index.body().contains("SCANNER_RUN.events"));
+        assertTrue(index.body().contains("id=\"scannerRunCancel\""));
+        assertTrue(index.body().contains("출처 검증 차단"));
+        assertTrue(index.body().contains("WAITING_FOR_ZAP_RESPONSE"));
+        assertTrue(index.body().contains("작업 신호"));
+        assertTrue(index.body().contains("마지막 정상 상태를 유지합니다"));
+        assertTrue(index.body().contains("1초마다 갱신"));
+        assertFalse(index.body().contains("ZAP Desktop 설정"));
+        assertTrue(index.body().contains("Docker Chromium 시작"));
+        assertTrue(index.body().contains("/api/zap-status"));
+        assertTrue(index.body().contains("!ZAP_STATUS.connected"));
+        assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
+        assertTrue(index.body().contains("v1.2.0-beta.49 · 3소스"));
+        assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
+        assertTrue(index.body().contains("ZAP HAR"));
+        assertTrue(index.body().contains("/api/import-har"));
+        assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
+        assertTrue(index.body().contains("<div class=\"graphcanvas\" id=\"graphCanvas\" style=\"display:none\"><div id=\"cy\"></div></div>"));
+        assertTrue(index.body().contains("API·입력 차이 작업목록"));
+        assertTrue(index.body().contains("surfaceExtraction"));
+        assertTrue(index.body().contains("SERVER_SURFACE=data.surface||{endpoints:[],extractions:[]}"));
+        assertTrue(index.body().contains("function renderSurface()"));
+        assertTrue(index.body().contains("function filteredSurface()"));
+        assertTrue(index.body().contains("visibleObservations:observations"));
+        assertTrue(index.body().contains("선언은 대상 산출물에서 읽은 검토 기준이고 관측은 실제 HTTP Evidence"));
+        assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
+        assertTrue(index.body().contains("· 로그인 필요"));
+        assertTrue(index.body().contains("등록 계정과 로그인 상태"));
+        assertTrue(index.body().contains("쿠키·토큰·subject 단서는 같은 로그인 세션의 내부 근거로 묶"));
+        assertTrue(index.body().contains("고급 세션 진단"));
+        assertTrue(index.body().contains("사용 가능"));
+        assertTrue(index.body().contains("다시 로그인 필요"));
+        assertTrue(index.body().contains("동일 인증정보 충돌"));
+        assertTrue(index.body().contains("요청 실험실"));
+        assertTrue(index.body().contains("원문 그대로"));
+        assertTrue(index.body().contains("비로그인으로 전송"));
+        assertTrue(index.body().contains("/api/request-lab"));
+        assertTrue(index.body().contains("REQUEST_LAB_GENERATION"));
+        assertTrue(index.body().contains("REQUEST_LAB_IN_FLIGHT"));
+        assertTrue(index.body().contains("REQUEST_LAB_RETRY"));
+        assertTrue(index.body().contains("sameRetry?REQUEST_LAB_RETRY.operationId:requestLabOperationId()"));
+        assertTrue(index.body().contains("eventId!==REQUEST_LAB_EVENT_ID"));
+        assertTrue(index.body().contains("data-gap=\"'+candidate+'\""));
+        assertTrue(index.body().contains("일반 미검증 조합"));
+        assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
+        assertTrue(index.body().contains("좁은 화면용 API 목록"));
+        assertTrue(index.body().contains("renderGraphList(cellValues,visibleOperations)"));
+        assertTrue(index.body().contains("let GRAPH_LEVEL='api', GRAPH_SELECTED_GROUP=''"));
+        assertTrue(index.body().contains("<button class=\"vbtn on\" data-graph-level=\"api\">API</button>"));
+        assertTrue(index.body().contains("counts:{human:new Set(),scanner:new Set(),llm:new Set()}"));
+        assertTrue(index.body().contains("flowscope.graph-state.v5"));
+        assertTrue(index.body().contains("GRAPH_STATE.viewports[CY_GRAPH_LEVEL||GRAPH_LEVEL]"));
+        assertTrue(index.body().contains("data-detail="));
+        assertTrue(index.body().contains("상세 보기"));
+        assertTrue(index.body().contains("showOperation(item.op,0,item.eventId)"));
+        assertTrue(index.body().contains("text-overflow-wrap':'whitespace'"));
+        assertTrue(index.body().contains("관측 신원과 재사용 가능한 등록 계정 세션은 별도 상태"));
+        assertTrue(index.body().contains("ACTIVE 등록 계정 없음"));
+        assertTrue(index.body().contains("let HUMAN_RUN={active:false,completed:false,runId:''}"));
+        assertTrue(index.body().contains("const humanReady=HUMAN_RUN.completed"));
+        assertTrue(index.body().contains("syncHumanRun();syncExtension();syncScannerRun();"));
+        assertTrue(index.body().contains("setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();},1000)"));
+        assertFalse(index.body().contains("counts.human+'건 완료'"));
+        assertTrue(index.body().contains("data-source-count=\"human\""));
+        assertTrue(index.body().contains("EVENTS.filter(event=>event.coverageEligible)"));
+        assertTrue(index.body().contains("cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;renderSurface();renderGraph();})"));
+        assertTrue(index.body().contains("if(view==='source')cy.edges('[src]').forEach"));
+        assertTrue(index.body().contains("accessByRelation=new Map()"));
+        assertTrue(index.body().contains("function showAccessEdge(edge)"));
+        assertTrue(index.body().contains("taxiTurn:accessTurn(c.idn,s)"));
+        assertTrue(index.body().contains("'label':'data(label)'"));
+        assertTrue(index.body().contains("wrapGraphLabel"));
+        assertTrue(index.body().contains("nodeHeight"));
+        assertFalse(index.body().contains("shortLabel(value.slice(p+1),36)"));
+        assertTrue(index.body().contains("API 요구 권한 0개 · BFLA 비교 비활성"));
+        assertTrue(index.body().contains("identityKindLabel(idn)"));
+        assertFalse(index.body().contains("세션 '+sessions+'개"));
+        assertTrue(index.body().contains("응답 ID가 다음 요청으로 전달된 관계는 메인 접근 그래프와 섞지 않고"));
+        assertFalse(index.body().contains("etype:'flow'"));
+        assertFalse(index.body().contains("cycleRole("));
+        assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
+
+        assertEquals(403, get("/api/snapshot", null, null).statusCode());
+        assertEquals(403, get("/api/snapshot", token, "https://evil.example").statusCode());
+
+        JsonNode zapStatus = json(get("/api/zap-status", token, origin()));
+        assertFalse(zapStatus.path("connected").asBoolean());
+        assertEquals("UNAVAILABLE", zapStatus.path("state").asText());
+
+        HttpResponse<String> snapshot = get("/api/snapshot", token, origin());
+        assertEquals(200, snapshot.statusCode(), snapshot.body());
+        assertEquals("no-store", snapshot.headers().firstValue("Cache-Control").orElse(""));
+        JsonNode body = JSON.readTree(snapshot.body());
+        assertEquals(1, body.path("events").size());
+        assertEquals(1, body.path("cells").size());
+        assertEquals("untested", body.at("/cells/0/overall").asText());
+        assertEquals("untested", body.at("/cells/0/perSource/human").asText());
+        assertEquals("human", body.at("/activeSources/0").asText());
+        assertEquals(1, body.at("/trafficStats/captured").asInt());
+        assertEquals(0, body.at("/trafficStats/dropped").asInt());
+        assertEquals(0, body.at("/trafficStats/payloadMetadataOnly").asInt());
+        assertFalse(body.path("sampleMode").asBoolean());
+        assertTrue(body.at("/events/0/coverageEligible").asBoolean());
+        assertEquals("API", body.at("/events/0/trafficClass").asText());
+        assertFalse(body.at("/events/0/classificationReasons").isEmpty());
+        assertEquals("CORROBORATED", body.at("/events/0/pathTemplateStatus").asText());
+        assertEquals("RESPONSE_ID_MATCH", body.at("/events/0/pathTemplateReasons/0").asText());
+        assertEquals(1, body.at("/events/0/repeatCount").asInt());
+        assertFalse(body.at("/events/0").has("clusterEvidenceIds"));
+        assertEquals("PATH_ID", body.at("/events/0/objects/0/evidence").asText());
+        assertEquals(1, body.path("routeCandidates").size());
+        assertFalse(body.at("/routeCandidates/0/observed").asBoolean());
+        assertEquals(List.of("REVIEW"), JSON.convertValue(
+                body.at("/routeCandidates/0/priorityReasons"),
+                new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
+        assertEquals(1, body.at("/surface/endpoints").size());
+        JsonNode observedSurface = java.util.stream.StreamSupport.stream(
+                        body.at("/surface/endpoints").spliterator(), false)
+                .filter(item -> item.at("/key/pathTemplate").asText().equals("/v1/orders/{id}"))
+                .findFirst().orElseThrow();
+        assertEquals("OBSERVED_NOT_DECLARED", observedSurface.path("deltaState").asText());
+        assertEquals("human", observedSurface.at("/observations/0/source").asText().toLowerCase());
+        assertTrue(body.at("/surface/extractions").isArray());
+        assertTrue(index.body().contains("해석 실패 지점"));
+        assertTrue(index.body().contains("data-rail=\"surface\""));
+        assertTrue(index.body().contains("접근 대상 ID"));
+
+        JsonNode evidence = json(get("/api/evidence?operation="
+                + encode(body.at("/events/0/op").asText()), token, origin()));
+        assertEquals("FULL", evidence.at("/records/0/requestPayload/retention").asText());
+        assertTrue(evidence.at("/records/0/requestPayload/bytes").asInt() > 0);
+        assertEquals(64, evidence.at("/records/0/requestPayload/digest").asText().length());
+        assertTrue(index.body().contains("압축 전문 총량 상한 초과"));
+    }
+
+    @Test
+    void importsZapHarOnlyAsScannerTraffic() throws Exception {
+        start();
+        String har = """
+                {"log":{"version":"1.2","entries":[{
+                  "startedDateTime":"2026-08-30T00:00:00Z",
+                  "request":{"method":"GET","url":"https://api.example.test/v1/har-orders/9","headers":[]},
+                  "response":{"status":200,"statusText":"OK","headers":[{"name":"Content-Type","value":"application/json"}],"content":{"mimeType":"application/json","text":"{\\\"id\\\":9}"}}
+                }]}}
+                """;
+
+        HttpResponse<String> imported = postRaw("/api/import-har?source=scanner&name=zap.har",
+                har, "application/json", token);
+
+        assertEquals(200, imported.statusCode(), imported.body());
+        JsonNode result = JSON.readTree(imported.body());
+        assertEquals(1, result.path("imported").asInt());
+        assertEquals(0, result.path("failed").asInt());
+        JsonNode event = java.util.stream.StreamSupport.stream(
+                        json(get("/api/snapshot", token, origin())).path("events").spliterator(), false)
+                .filter(item -> item.path("path").asText().equals("/v1/har-orders/9"))
+                .findFirst().orElseThrow();
+        assertEquals("scanner", event.path("source").asText());
+
+        assertEquals(400, postRaw("/api/import-har?source=human&name=wrong.har",
+                har, "application/json", token).statusCode());
+    }
+
+    /** PR #11 evidence contract: derived parameter metadata rides on /api/evidence without values or sensitive paths. */
+    @Test
+    void evidenceExposesDerivedParameterMetadataWithoutValuesOrSensitivePaths() throws Exception {
+        RequestRecord search = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/v1/search", 200, "sess:abcdef123456");
+        search.query = "status=open&password=hunter2";
+        search.reqText = "GET /v1/search?status=open&password=***MASKED*** HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
+        search.respText = "HTTP/1.1 200 OK\r\n\r\n{}";
+        search.requestPayload = StoredPayload.capture(search.reqText, "", 1024 * 1024);
+        search.responsePayload = StoredPayload.capture(search.respText, "", 1024 * 1024);
+        search.body = "{}";
+        search.hasResponse = true;
+        search.timestamp = 2;
+        state.records.add(search);
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        String op = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                .filter(item -> item.path("path").asText().startsWith("/v1/search"))
+                .findFirst().orElseThrow().path("op").asText();
+        HttpResponse<String> response = get("/api/evidence?operation=" + encode(op), token, origin());
+        assertEquals(200, response.statusCode(), response.body());
+        JsonNode record = JSON.readTree(response.body()).path("records").get(0);
+        assertEquals(op, record.at("/parameterContext/operation").asText());
+        assertEquals("HUMAN", record.at("/parameterContext/source").asText());
+        assertEquals("RETAINED", record.at("/parameterContext/retention").asText());
+        assertEquals(200, record.at("/parameterContext/status").asInt());
+        JsonNode observations = record.path("parameterObservations");
+        assertEquals(1, observations.size(), observations.toString());
+        assertEquals("QUERY", observations.at("/0/key/location").asText());
+        assertEquals("/status", observations.at("/0/key/canonicalPath").asText());
+        assertTrue(observations.at("/0/key/stableKey").asText().startsWith("pk:v1:"));
+        assertEquals("PRESENT", observations.at("/0/presence").asText());
+        assertEquals("STRING", observations.at("/0/valueType").asText());
+        assertEquals(4, observations.at("/0/byteLength").asInt());
+        assertTrue(observations.at("/0/digest").asText().matches("[0-9a-f]{64}"), observations.toString());
+        assertTrue(observations.at("/0/contextSignature").asText().startsWith("ctx:v1:sha256:"));
+        assertFalse(response.body().contains("hunter2"));
+        assertFalse(response.body().contains("maskedPreview"));
+        assertFalse(response.body().contains("\"/password\""));
+    }
+
+    @Test
+    void snapshotSeparatesMainComparisonReviewAndExcludedEvidence() throws Exception {
+        RequestRecord review = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/status", 200, "anon");
+        review.body = "ok";
+        review.hasResponse = true;
+        RequestRecord excluded = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/static/app.js", 200, "anon");
+        excluded.hasResponse = true;
+        excluded.secFetchDest = "script";
+        excluded.responseContentType = "application/javascript";
+        state.records.add(review);
+        state.records.add(excluded);
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+
+        assertEquals(3, snapshot.at("/trafficStats/captured").asInt());
+        assertEquals(1, snapshot.at("/trafficStats/coverage").asInt());
+        assertEquals(1, snapshot.at("/trafficStats/review").asInt());
+        assertEquals(1, snapshot.at("/trafficStats/excluded").asInt());
+        JsonNode reviewEvent = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                .filter(value -> value.path("path").asText().equals("/status")).findFirst().orElseThrow();
+        assertEquals("REVIEW", reviewEvent.path("trafficDisposition").asText());
+        assertFalse(reviewEvent.path("coverageEligible").asBoolean());
+    }
+
+    @Test
+    void startsAndEndsExactHumanRunWithoutOverlap() throws Exception {
+        start();
+        JsonNode idle = json(get("/api/human-run", token, origin()));
+        assertFalse(idle.path("active").asBoolean());
+        assertFalse(idle.path("completed").asBoolean());
+
+        JsonNode began = json(post("/api/human-run", "action=begin&runId=human-p5-1", token));
+        assertTrue(began.path("active").asBoolean());
+        assertFalse(began.path("completed").asBoolean());
+        assertEquals("human-p5-1", began.path("runId").asText());
+        assertEquals("human-p5-1", state.contexts.current(Source.HUMAN).runId());
+
+        assertEquals(400, post("/api/human-run", "action=begin&runId=human-p5-2", token).statusCode());
+        assertEquals(400, post("/api/human-run", "action=end&runId=wrong", token).statusCode());
+        assertEquals("human-p5-1", state.contexts.current(Source.HUMAN).runId());
+
+        state.addHumanEvidence("human-p5-1", null);
+        JsonNode ended = json(post("/api/human-run", "action=end&runId=human-p5-1", token));
+        assertFalse(ended.path("active").asBoolean());
+        assertTrue(ended.path("completed").asBoolean());
+        assertNull(state.contexts.current(Source.HUMAN));
+
+        JsonNode restarted = json(post("/api/human-run", "action=begin&runId=human-p5-3", token));
+        assertTrue(restarted.path("active").asBoolean());
+        assertFalse(restarted.path("completed").asBoolean());
+    }
+
+    @Test
+    void startsHumanRunWithAnExplicitRegisteredAccount() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+
+        assertEquals(400, post("/api/human-run", "action=begin&runId=human-before-login&account=user-a", token).statusCode());
+        activateSession("user-a", "token-a");
+        JsonNode began = json(post("/api/human-run", "action=begin&runId=human-a&account=user-a", token));
+
+        assertEquals("user-a", began.path("accountId").asText());
+        assertEquals("user-a", state.contexts.current(Source.HUMAN).accountId());
+        state.addHumanEvidence("human-a", "user-a");
+        assertEquals(200, post("/api/human-run", "action=end&runId=human-a", token).statusCode());
+        assertEquals(400, post("/api/human-run", "action=begin&runId=human-b&account=missing", token).statusCode());
+    }
+
+    @Test
+    void capturesManagedSessionWithoutReturningRawCredentials() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+
+        assertEquals(200, post("/api/session-capture", "action=begin&account=user-a", token).statusCode());
+        String handle = state.sessions.handleForAccount("user-a");
+        state.sessions.observeRequest(handle, URI.create(state.record.service + "/login"),
+                Map.of("Authorization", "Bearer raw-access-token", "Cookie", "sid=raw-cookie"),
+                java.time.Instant.now());
+        state.sessions.observeResponse(handle, URI.create(state.record.service + "/account"), 200,
+                null, "{\"id\":\"user-a\"}", List.of(), java.time.Instant.now());
+        var ended = post("/api/session-capture", "action=end&account=user-a", token);
+        assertEquals(200, ended.statusCode());
+        assertTrue(ended.body().contains("HUMAN pass와 요청 실험실"));
+        assertFalse(ended.body().contains("LLM에서"));
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals("ACTIVE", snapshot.at("/managedSessions/0/status").asText());
+        assertEquals("user-a", snapshot.at("/managedSessions/0/accountId").asText());
+        assertFalse(snapshot.toString().contains("raw-access-token"));
+        assertFalse(snapshot.toString().contains("raw-cookie"));
+        JsonNode broker = json(get("/api/session-capture", token, origin()));
+        assertFalse(broker.toString().contains("raw-access-token"));
+        assertFalse(broker.toString().contains("raw-cookie"));
+    }
+
+    @Test
+    void projectsCookieTokenAndSubjectArtifactsAsOneRegisteredAccount() throws Exception {
+        state.records.clear();
+        AccountProfile account = new AccountProfile("test1", "test1", state.record.service, AccessRole.USER);
+        state.config.upsertAccount(account);
+        List<String> fingerprints = List.of("ck:d1acd57ee88d", "tok:710e0dbdd422", "sub:test1@example.test");
+        for (int i = 0; i < fingerprints.size(); i++) {
+            RequestRecord record = new RequestRecord(Source.HUMAN, state.record.service,
+                    "GET", "/account/" + i, 200, fingerprints.get(i));
+            record.hasResponse = true;
+            record.timestamp = i + 1L;
+            state.records.add(record);
+            state.config.bindSession(record.service, record.fp, account.id());
+        }
+        RequestRecord unresolved = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/account/unresolved", 200, "");
+        unresolved.hasResponse = true;
+        state.records.add(unresolved);
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals(1, snapshot.path("accounts").size());
+        assertEquals("test1", snapshot.at("/accounts/0/label").asText());
+        assertEquals(3, snapshot.at("/accounts/0/authArtifactCount").asInt());
+        assertFalse(snapshot.at("/accounts/0").has("boundSessions"));
+        assertEquals(3, snapshot.path("sessions").size());
+        for (JsonNode session : snapshot.path("sessions")) {
+            assertEquals("test1", session.path("accountId").asText());
+            assertTrue(session.path("registered").asBoolean());
+        }
+        assertEquals(Set.of("COOKIE", "AUTHORIZATION", "SUBJECT_HINT"),
+                java.util.stream.StreamSupport.stream(snapshot.path("sessions").spliterator(), false)
+                        .map(value -> value.path("artifactKind").asText()).collect(java.util.stream.Collectors.toSet()));
+    }
+
+    @Test
+    void startsOneServerOwnedScannerCampaignForAnonymousAndSelectedAccounts() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("user-b", "USER B", state.record.service, AccessRole.USER));
+        activateSession("user-a", "token-a");
+        activateSession("user-b", "token-b");
+        state.rebuild();
+        start();
+
+        JsonNode initial = json(get("/api/scanner-run", token, origin()));
+        assertEquals("NOT_STARTED", initial.at("/run/status").asText());
+        assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
+
+        HttpResponse<String> started = post("/api/scanner-run", "target=" + encode(state.record.service + "/")
+                + "&anonymous=true&accounts=user-a%2Cuser-b", token);
+        assertEquals(202, started.statusCode(), started.body());
+        JsonNode body = JSON.readTree(started.body());
+        assertEquals("RUNNING", body.at("/run/status").asText());
+        assertEquals(state.record.service + "/", state.scannerTarget);
+        assertEquals(List.of("user-a", "user-b"), state.scannerAccounts);
+        assertTrue(state.scannerAnonymous);
+    }
+
+    @Test
+    void excludesItsOwnLoopbackControlPlaneFromScannerTargets() throws Exception {
+        start();
+        state.scannerScope = List.of(server.url());
+
+        JsonNode listed = json(get("/api/scanner-run", token, origin()));
+        assertEquals(0, listed.path("scope").size());
+        HttpResponse<String> rejected = post("/api/scanner-run",
+                "target=" + encode(server.url()) + "&anonymous=true", token);
+        assertEquals(400, rejected.statusCode());
+        assertTrue(rejected.body().contains("Web 제어면"));
+    }
+
+    @Test
+    void excludesItsBracketedIpv6LoopbackControlPlaneFromScannerTargets() throws Exception {
+        start();
+        state.scannerScope = List.of("http://[::1]:" + server.port() + "/");
+
+        JsonNode listed = json(get("/api/scanner-run", token, origin()));
+        assertEquals(0, listed.path("scope").size());
+        HttpResponse<String> rejected = post("/api/scanner-run",
+                "target=" + encode("http://[::1]:" + server.port() + "/") + "&anonymous=true", token);
+        assertEquals(400, rejected.statusCode());
+        assertTrue(rejected.body().contains("Web 제어면"));
+    }
+
+    @Test
+    void cancelsTheServerOwnedScannerCampaign() throws Exception {
+        start();
+
+        HttpResponse<String> cancelled = post("/api/scanner-run", "action=cancel", token);
+
+        assertEquals(200, cancelled.statusCode(), cancelled.body());
+        assertTrue(state.scannerCancelled);
+        assertEquals("CANCELLED", JSON.readTree(cancelled.body()).at("/run/status").asText());
+    }
+
+
+    @Test
+    void editsServiceBoundAccountPolicyAndHumanReview() throws Exception {
+        start();
+        JsonNode account = json(post("/api/account-save", "label=USER+A&role=User&target=https%3A%2F%2Fapi.example.test", token));
+        String accountId = account.path("id").asText();
+        assertFalse(accountId.isBlank());
+
+        assertEquals(400, post("/api/session-bind", "fingerprint=" + encode(state.record.fp)
+                + "&account=" + encode(accountId), token).statusCode());
+        JsonNode bound = json(post("/api/session-bind", "service=" + encode(state.record.service)
+                + "&fingerprint=" + encode(state.record.fp) + "&account=" + encode(accountId), token));
+        assertTrue(bound.path("success").asBoolean());
+        assertEquals(accountId, state.config.boundAccount(state.record.service, state.record.fp).orElseThrow().id());
+        JsonNode accountSnapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals(accountId, accountSnapshot.at("/sessions/0/accountId").asText());
+        assertEquals("COOKIE", accountSnapshot.at("/sessions/0/artifactKind").asText());
+
+        String operation = state.snapshot().records.getFirst().op;
+        assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());
+        assertEquals("Admin", state.config.endpointRequirement(operation).label());
+        assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
+                + "&value=EXCLUDE", token).statusCode());
+        assertEquals(io.flowscope.core.TrafficOverride.EXCLUDE, state.config.trafficOverride(operation));
+        assertEquals(0, state.snapshot().coverageRecords.size());
+        assertEquals(1, state.snapshot().records.size());
+        assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
+                + "&value=AUTO", token).statusCode());
+
+        state.config.upsertAccount(new AccountProfile("owner", "OWNER", state.record.service, AccessRole.USER));
+        state.config.withResourceOwner(state.snapshot().records.getFirst().resource, "owner");
+        state.rebuild();
+        String findingId = state.snapshot().analysis.findings().getFirst().id();
+        assertEquals(200, post("/api/review", "itemId=" + encode(findingId)
+                + "&status=CONFIRMED&note=manual+reproduction", token).statusCode());
+        assertEquals("CONFIRMED", state.config.reviews().get(findingId).status().name());
+
+        // 판정 매트릭스 cell도 서버가 정한 Evidence(대상+기준)로만 사람 검토를 받는다(D-144).
+        JsonNode matrixSnapshot = json(get("/api/snapshot", token, origin()));
+        JsonNode matrix = matrixSnapshot.path("authorizationMatrix");
+        assertTrue(matrix.path("summary").has("bolaIdorTestRecommendations"));
+        assertFalse(matrix.path("functions").isEmpty());
+        JsonNode reviewable = null;
+        for (JsonNode cell : matrix.path("objects")) if (!cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull()) { reviewable = cell; break; }
+        assertNotNull(reviewable, "다른 신원에 추천된 객체 cell이 있어야 한다");
+        String cellId = reviewable.path("id").asText();
+        assertEquals("UNRESOLVED", reviewable.path("reviewStatus").asText());
+        assertEquals(200, post("/api/review", "itemId=" + encode(cellId) + "&status=DISMISSED&note=shared+object", token).statusCode());
+        List<String> boundEvidence = new java.util.ArrayList<>();
+        reviewable.path("reviewEvidenceIds").forEach(id -> boundEvidence.add(id.asText()));
+        assertEquals(boundEvidence, state.config.reviews().get(cellId).evidenceIds());
+        JsonNode reviewed = json(get("/api/snapshot", token, origin())).path("authorizationMatrix");
+        boolean dismissed = false;
+        for (JsonNode cell : reviewed.path("objects")) if (cell.path("id").asText().equals(cellId)) dismissed = cell.path("reviewStatus").asText().equals("DISMISSED");
+        assertTrue(dismissed);
+        assertEquals(1, reviewed.path("summary").path("humanDismissed").asInt());
+        assertEquals(400, post("/api/review", "itemId=object-unknown&status=CONFIRMED&note=x", token).statusCode());
+    }
+
+    @Test
+    void opensOnlyStoredEvidenceAsAnUnsentRepeaterDraft() throws Exception {
+        start();
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+        JsonNode response = json(post("/api/replay", "eventId=" + encode(evidenceId), token));
+        assertTrue(response.path("openedDraft").asBoolean());
+        assertTrue(state.opened.get());
+        assertEquals("", response.path("replayId").asText());
+    }
+
+    @Test
+    void opensAndSendsAnExplicitRawRequestLabDraftWithoutPuttingItInSnapshot() throws Exception {
+        start();
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+
+        JsonNode draft = json(get("/api/request-lab?eventId=" + encode(evidenceId), token, origin()));
+        assertEquals(evidenceId, draft.path("eventId").asText());
+        assertEquals(state.record.service, draft.path("service").asText());
+        assertTrue(draft.path("request").asText().contains("raw-session-secret"));
+        assertTrue(draft.path("rawRequestRetained").asBoolean());
+        assertTrue(draft.path("requestEditable").asBoolean());
+        assertEquals("UTF-8", draft.path("requestCharset").asText());
+        assertEquals("USER A", draft.path("observedIdentity").asText());
+        assertEquals("없음", draft.path("reusableSession").asText());
+        assertFalse(json(get("/api/snapshot", token, origin())).toString().contains("raw-session-secret"));
+
+        String editedRequest = "POST /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n"
+                + "Cookie: edited-secret\r\nContent-Type: text/plain\r\n\r\n" + "x".repeat(3_000);
+        String operationId = "request-lab-operation-0001";
+        HttpResponse<String> sent = post("/api/request-lab", "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId)
+                + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode(editedRequest), token);
+        assertEquals(200, sent.statusCode(), sent.body());
+        JsonNode result = JSON.readTree(sent.body());
+        assertEquals(204, result.path("status").asInt());
+        assertEquals("ev-manual", result.path("eventId").asText());
+        assertEquals("ANONYMOUS", state.manualCredentialMode.name());
+        assertTrue(state.manualRequest.contains("edited-secret"));
+        assertEquals(editedRequest, state.manualRequest);
+        assertTrue(result.path("response").asText().contains("204 No Content"));
+
+        HttpResponse<String> duplicate = post("/api/request-lab", "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId) + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode(editedRequest), token);
+        assertEquals(200, duplicate.statusCode());
+        assertEquals(1, state.manualRequestCount.get());
+
+        HttpResponse<String> collision = post("/api/request-lab", "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId) + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode(editedRequest + "changed"), token);
+        assertEquals(400, collision.statusCode());
+        assertEquals(1, state.manualRequestCount.get());
+    }
+
+    @Test
+    void concurrentRequestLabRetriesJoinOneServerExecution() throws Exception {
+        start();
+        state.blockManualRequest = true;
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+        String operationId = "request-lab-concurrent-0001";
+        String body = "action=send&operationId=" + operationId
+                + "&eventId=" + encode(evidenceId)
+                + "&credentialMode=ANONYMOUS&accountId=&request="
+                + encode("POST /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n\r\nx");
+        HttpRequest request = HttpRequest.newBuilder(URI.create(
+                        server.url().substring(0, server.url().length() - 1) + "/api/request-lab"))
+                .header("X-FlowScope-Token", token)
+                .header("Origin", origin())
+                .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+
+        HttpClient client = HttpClient.newHttpClient();
+        java.util.concurrent.CompletableFuture<HttpResponse<String>> first =
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        assertTrue(state.manualRequestEntered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+        java.util.concurrent.CompletableFuture<HttpResponse<String>> duplicate =
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        state.manualRequestRelease.countDown();
+
+        assertEquals(200, first.get(2, java.util.concurrent.TimeUnit.SECONDS).statusCode());
+        assertEquals(200, duplicate.get(2, java.util.concurrent.TimeUnit.SECONDS).statusCode());
+        assertEquals(1, state.manualRequestCount.get());
+    }
+
+    @Test
+    void snapshotIsLightweightAndObjectlessEvidenceLoadsMaskedOnDemand() throws Exception {
+        RequestRecord health = new RequestRecord(Source.HUMAN, state.record.service,
+                "GET", "/health", 200, "sess:health");
+        health.reqText = "GET /health HTTP/1.1\r\nHost: api.example.test\r\nCookie: session=raw-secret";
+        health.respText = "HTTP/1.1 200 OK\r\nSet-Cookie: session=response-secret\r\n\r\n{\"token\":\"body-secret\"}";
+        health.body = "{\"token\":\"body-secret\"}";
+        health.hasResponse = true;
+        state.records.add(health);
+        state.rebuild();
+        start();
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        JsonNode event = snapshot.path("events").findValuesAsText("path").contains("/health")
+                ? java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                        .filter(value -> value.path("path").asText().equals("/health")).findFirst().orElseThrow()
+                : fail("objectless event missing");
+        assertTrue(event.path("resource").isNull());
+        assertFalse(event.has("reqText"));
+        assertFalse(event.has("respText"));
+        assertFalse(snapshot.toString().contains("raw-secret"));
+
+        JsonNode evidence = json(get("/api/evidence?operation=" + encode(event.path("op").asText()), token, origin()));
+        assertEquals(1, evidence.path("total").asInt());
+        assertFalse(evidence.path("hasMore").asBoolean());
+        assertTrue(evidence.at("/records/0/request").asText().contains("session=***"));
+        assertTrue(evidence.at("/records/0/response").asText().contains("session=***"));
+        assertFalse(evidence.toString().contains("body-secret"));
+    }
+
+    @Test
+    void boundsEvidenceDetailAndReportsPaginationHonestly() throws Exception {
+        for (int i = 0; i < 205; i++) {
+            RequestRecord copy = new RequestRecord(Source.HUMAN, state.record.service,
+                    "GET", "/v1/orders/7", 200, "sess:page-" + i);
+            copy.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test";
+            copy.respText = "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}";
+            copy.requestPayload = state.record.requestPayload;
+            copy.responsePayload = state.record.responsePayload;
+            copy.body = "{\"id\":7}";
+            copy.hasResponse = true;
+            copy.timestamp = i + 2L;
+            state.records.add(copy);
+        }
+        state.rebuild();
+        start();
+
+        JsonNode first = json(get("/api/evidence?operation=" + encode(state.record.op), token, origin()));
+        assertEquals(206, first.path("total").asInt());
+        assertEquals(200, first.path("records").size());
+        assertTrue(first.path("hasMore").asBoolean());
+
+        JsonNode second = json(get("/api/evidence?operation=" + encode(state.record.op)
+                + "&offset=200&limit=200", token, origin()));
+        assertEquals(6, second.path("records").size());
+        assertFalse(second.path("hasMore").asBoolean());
+
+        JsonNode snapshot = json(get("/api/snapshot", token, origin()));
+        JsonNode clustered = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
+                .filter(value -> value.path("repeatCount").asInt() == 206).findFirst().orElseThrow();
+        assertFalse(clustered.has("clusterEvidenceIds"));
+        JsonNode clusterFirst = json(get("/api/cluster-evidence?clusterId="
+                + encode(clustered.path("clusterId").asText()), token, origin()));
+        assertEquals(206, clusterFirst.path("total").asInt());
+        assertEquals(200, clusterFirst.path("evidenceIds").size());
+        assertTrue(clusterFirst.path("hasMore").asBoolean());
+        JsonNode clusterSecond = json(get("/api/cluster-evidence?clusterId="
+                + encode(clustered.path("clusterId").asText()) + "&offset=200", token, origin()));
+        assertEquals(6, clusterSecond.path("evidenceIds").size());
+        assertFalse(clusterSecond.path("hasMore").asBoolean());
+    }
+
+    private void start() throws Exception {
+        server = new FlowScopeWebServer(state, 0);
+        server.start();
+        String html = get("/", null, null).body();
+        var matcher = Pattern.compile("name=\"flowscope-capability\" content=\"([0-9a-f]{64})\"").matcher(html);
+        assertTrue(matcher.find());
+        token = matcher.group(1);
+    }
+
+    private void activateSession(String accountId, String token) {
+        AccountProfile account = state.config.account(accountId).orElseThrow();
+        String handle = state.sessions.beginCapture(account, java.time.Instant.EPOCH);
+        state.sessions.observeRequest(handle, URI.create(state.record.service + "/login"),
+                Map.of("Authorization", "Bearer " + token), java.time.Instant.EPOCH);
+        state.sessions.observeResponse(handle, URI.create(state.record.service + "/me"), 200, null,
+                "{\"id\":\"" + accountId + "\"}", List.of(), java.time.Instant.EPOCH);
+        state.sessions.endCapture(handle);
+    }
+
+    private HttpResponse<String> get(String path, String capability, String origin) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path)).GET();
+        if (capability != null) request.header("X-FlowScope-Token", capability);
+        if (origin != null) request.header("Origin", origin);
+        return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> head(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path))
+                .method("HEAD", HttpRequest.BodyPublishers.noBody()).build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private void assertStaticHeadMatchesGet(String path) throws Exception {
+        RawHttpResponse getResponse = rawRequest("GET", path);
+        RawHttpResponse headResponse = rawRequest("HEAD", path);
+
+        assertEquals(getResponse.status(), headResponse.status());
+        assertEquals(getResponse.contentLength(), headResponse.contentLength());
+        assertArrayEquals(new byte[0], headResponse.body());
+    }
+
+    private RawHttpResponse rawRequest(String method, String path) throws Exception {
+        try (Socket socket = new Socket("127.0.0.1", server.port())) {
+            OutputStream output = socket.getOutputStream();
+            output.write((method + " " + path + " HTTP/1.1\r\nHost: 127.0.0.1:" + server.port()
+                    + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            output.flush();
+            byte[] response = socket.getInputStream().readAllBytes();
+            int separator = headerSeparator(response);
+            assertTrue(separator >= 0, "response must contain HTTP headers");
+            String headers = new String(response, 0, separator, StandardCharsets.ISO_8859_1);
+            String[] lines = headers.split("\\r\\n");
+            int status = Integer.parseInt(lines[0].split(" ")[1]);
+            String contentLength = java.util.Arrays.stream(lines)
+                    .filter(line -> line.regionMatches(true, 0, "Content-Length: ", 0, "Content-Length: ".length()))
+                    .findFirst().orElseThrow().substring("Content-Length: ".length());
+            return new RawHttpResponse(status, contentLength,
+                    java.util.Arrays.copyOfRange(response, separator + 4, response.length));
+        }
+    }
+
+    private static int headerSeparator(byte[] response) {
+        for (int i = 0; i <= response.length - 4; i++) {
+            if (response[i] == '\r' && response[i + 1] == '\n' && response[i + 2] == '\r' && response[i + 3] == '\n') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private record RawHttpResponse(int status, String contentLength, byte[] body) {}
+
+    private HttpResponse<String> post(String path, String body, String capability) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path))
+                .header("X-FlowScope-Token", capability)
+                .header("Origin", origin())
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postRaw(String path, String body, String contentType, String capability) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(server.url().substring(0, server.url().length() - 1) + path))
+                .header("X-FlowScope-Token", capability)
+                .header("Origin", origin())
+                .header("Content-Type", contentType)
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String origin() { return server.url().substring(0, server.url().length() - 1); }
+    private static JsonNode json(HttpResponse<String> response) throws Exception {
+        assertEquals(200, response.statusCode(), response.body());
+        return JSON.readTree(response.body());
+    }
+    private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
+
+    private static List<String> viteAssetUrls(String html) {
+        var matcher = Pattern.compile("(?:src|href)=\"\\./assets/([^\"]+)\"").matcher(html);
+        List<String> paths = new ArrayList<>();
+        while (matcher.find()) paths.add("/app/assets/" + matcher.group(1));
+        return paths;
+    }
+
+    private static final class TestState implements FlowScopeWebServer.State {
+        private final AnalysisConfig config = new AnalysisConfig();
+        private final List<RequestRecord> records = new ArrayList<>();
+        private final AtomicLong revision = new AtomicLong();
+        private final AtomicBoolean opened = new AtomicBoolean();
+        private final RunContextRegistry contexts = new RunContextRegistry();
+        private final SessionBroker sessions = new SessionBroker();
+        private final ZapAccountVault zapAccounts = new ZapAccountVault();
+        private final RequestRecord record;
+        private volatile String scannerTarget = "";
+        private volatile List<String> scannerScope;
+        private volatile List<String> scannerAccounts = List.of();
+        private volatile boolean scannerAnonymous;
+        private volatile boolean scannerCancelled;
+        private volatile ZapAccountVault.Input lastZapAccountInput;
+        private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
+        private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
+                ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
+                List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
+        private volatile int explorerReadinessChecks;
+        private volatile String manualRequest = "";
+        private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
+        private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
+                new java.util.concurrent.atomic.AtomicInteger();
+        private volatile boolean blockManualRequest;
+        private final java.util.concurrent.CountDownLatch manualRequestEntered =
+                new java.util.concurrent.CountDownLatch(1);
+        private final java.util.concurrent.CountDownLatch manualRequestRelease =
+                new java.util.concurrent.CountDownLatch(1);
+        private volatile Pipeline.Result result;
+        private volatile String startedProjectScope = "";
+        private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
+                null, List.of());
+        private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
+                "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_LINK,
+                        "ev-route", Source.HUMAN, "human-run", "html-dom")),
+                RouteCandidate.Applicability.REVIEW, "HTML 링크는 method를 증명하지 않음"));
+
+        TestState() {
+            record = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
+                    "GET", "/v1/orders/7", 200, "sess:abcdef123456");
+            record.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: [masked]";
+            record.respText = "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}";
+            record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
+            record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
+            record.body = "{\"id\":7}";
+            record.hasResponse = true;
+            record.timestamp = 1;
+            records.add(record);
+            scannerScope = List.of(record.service + "/");
+            rebuild();
+        }
+
+        @Override public Pipeline.Result snapshot() { return result; }
+        @Override public long revision() { return revision.get(); }
+        @Override public AnalysisConfig config() { return config; }
+        private List<LegacyAssessment> archivedAssessments = List.of();
+        private List<ValidationDecision> archivedValidations = List.of();
+        @Override public List<LegacyAssessment> assessments() { return archivedAssessments; }
+        @Override public List<ValidationDecision> validations() { return archivedValidations; }
+        @Override public RunContextRegistry contexts() { return contexts; }
+        @Override public SessionBroker sessions() { return sessions; }
+        @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
+        @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
+            lastZapAccountInput = input;
+            return zapAccounts.save(input);
+        }
+        @Override public void removeZapAccount(String id) { zapAccounts.remove(id); }
+        @Override public List<String> scopeEntries() { return scannerScope; }
+        @Override public ProjectWorkspace.Status projectStatus() { return projectStatus; }
+        @Override public ProjectWorkspace.Status startProject(String name, String scope) {
+            startedProjectScope = scope;
+            ProjectWorkspace.Entry entry = new ProjectWorkspace.Entry("target-a", name,
+                    List.of(scope), "2026-09-10T00:00:00Z", 1, 100, true, true, true);
+            projectStatus = new ProjectWorkspace.Status("/tmp/projects", entry, List.of(entry));
+            return projectStatus;
+        }
+        @Override public ProjectWorkspace.Status openProject(String id) { return projectStatus; }
+        @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
+        @Override public JsonNode startScanner(String target, List<String> accountIds, boolean includeAnonymous) {
+            scannerTarget = target;
+            scannerAccounts = List.copyOf(accountIds);
+            scannerAnonymous = includeAnonymous;
+            return JSON.createObjectNode().put("status", "RUNNING").put("stage", "CLIENT_SPIDER");
+        }
+        @Override public JsonNode scannerStatus() {
+            return JSON.createObjectNode().put("status", "NOT_STARTED");
+        }
+        @Override public JsonNode cancelScanner() {
+            scannerCancelled = true;
+            return JSON.createObjectNode().put("status", "CANCELLED");
+        }
+        @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
+        @Override public List<ExplorerAccountVault.View> explorerAccounts() { return List.copyOf(explorerAccounts); }
+        @Override public ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View("llm-test", input.label(), input.role(),
+                    input.loginUrl(), input.loginMode(), input.validationUrl(),
+                    ExplorerAccountVault.AuthStatus.UNVERIFIED, "로그인 확인 전",
+                    java.time.Instant.now().toString(), true, 0, false);
+            explorerAccounts.add(value);
+            return value;
+        }
+        @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
+            explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
+                    request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
+                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of());
+            return explorerRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
+            explorerReadinessChecks++;
+            return explorerRun;
+        }
+
+
+
+
+        @Override public void rebuild() { result = Pipeline.run(new ArrayList<>(records), config); revision.incrementAndGet(); }
+        @Override public Pipeline.Result completionSnapshot() { rebuild(); return result; }
+        @Override public void loadSample() { }
+        @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
+            BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
+            records.addAll(parsed.records);
+            rebuild();
+            return parsed;
+        }
+        @Override public BurpXmlParser.ParseResult importHar(byte[] har) {
+            BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
+            BurpXmlParser.retainInScope(parsed, ScopePolicy.parse(String.join("\n", scannerScope)));
+            records.addAll(parsed.records);
+            rebuild();
+            return parsed;
+        }
+        @Override public RequestRecord openInRepeater(String evidenceId) {
+            RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId)).findFirst().orElseThrow();
+            opened.set(true);
+            return value;
+        }
+        @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
+            RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId))
+                    .findFirst().orElseThrow();
+            return new FlowScopeWebServer.RequestLabDraft(value.evidenceId, value.service,
+                    "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
+                    "UTF-8", "UTF-8", "USER A", "없음", "메모리 원문");
+        }
+        @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(String evidenceId, String request,
+                                                                            FlowScopeWebServer.CredentialMode mode,
+                                                                            String accountId) {
+            manualRequest = request;
+            manualCredentialMode = mode;
+            manualRequestCount.incrementAndGet();
+            if (blockManualRequest) {
+                manualRequestEntered.countDown();
+                try {
+                    if (!manualRequestRelease.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("manual request release timeout");
+                    }
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("manual request interrupted", error);
+                }
+            }
+            return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
+                    "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
+        }
+
+        private void addHumanEvidence(String runId, String accountId) {
+            RequestRecord evidence = new RequestRecord(Source.HUMAN, record.service,
+                    "GET", "/v1/human-pass", 200, accountId == null ? "anon" : accountId);
+            evidence.hasResponse = true;
+            evidence.body = "{\"ok\":true}";
+            evidence.sourceDetail = SourceDetail.BROWSER;
+            evidence.orchestrator = Orchestrator.HUMAN;
+            evidence.tool = ToolKind.BROWSER;
+            evidence.phase = RunPhase.EXPLORATION;
+            evidence.runId = runId;
+            evidence.executionTrust = ExecutionTrust.OBSERVED;
+            records.add(evidence);
+            rebuild();
+        }
+    }
+}

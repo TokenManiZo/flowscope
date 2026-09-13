@@ -1,0 +1,37 @@
+services:
+  zap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/bin/bash", "/opt/flowscope/start-zap.sh"]
+    environment:
+      ZAP_PORT: "${FLOWSCOPE_ZAP_PORT:-8089}"
+      ZAP_API_KEY_FILE: "/run/secrets/flowscope-zap-api-key"
+      BURP_PROXY_HOST: "host.docker.internal"
+      BURP_PROXY_PORT: "${FLOWSCOPE_BURP_SCANNER_PORT:-8081}"
+      ZAP_API_ALLOWED_ADDRESS_REGEX: "${FLOWSCOPE_ZAP_API_ALLOWED_ADDRESS_REGEX:-}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${FLOWSCOPE_ZAP_PORT:-8089}:${FLOWSCOPE_ZAP_PORT:-8089}"
+    volumes:
+      - ./start-zap.sh:/opt/flowscope/start-zap.sh:ro
+    tmpfs:
+      - /run/flowscope-zap:rw,nosuid,nodev,noexec,size=1073741824,uid=1000,gid=1000,mode=0700
+      - /tmp:rw,nosuid,nodev,size=1073741824,uid=1000,gid=1000,mode=1777
+    secrets:
+      - source: zap_api_key
+        target: flowscope-zap-api-key
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/flowscope-zap-ready"]
+      interval: 5s
+      timeout: 2s
+      retries: 24
+      start_period: 15s
+    restart: unless-stopped
+    shm_size: 1gb
+    stop_grace_period: 30s
+
+secrets:
+  zap_api_key:
+    file: "${FLOWSCOPE_ZAP_KEY_FILE:-${HOME}/.flowscope/zap-api-key}"

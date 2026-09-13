@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<items burpVersion="sample">
+  <item>
+    <method>GET</method>
+    <path>/api/orders/202</path>
+    <status>200</status>
+    <request base64="false"><![CDATA[GET /api/orders/202 HTTP/1.1
+Host: api.shop.test
+Cookie: session=BBB
+Accept: application/json
+
+]]></request>
+    <response base64="false"><![CDATA[HTTP/1.1 200
+Content-Type: application/json
+
+{"id":202,"owner":"user-b"}]]></response>
+  </item>
+  <item>
+    <method>GET</method>
+    <path>/api/orders/101</path>
+    <status>200</status>
+    <request base64="false"><![CDATA[GET /api/orders/101 HTTP/1.1
+Host: api.shop.test
+Cookie: session=BBB
+Accept: application/json
+
+]]></request>
+    <response base64="false"><![CDATA[HTTP/1.1 200
+Content-Type: application/json
+
+{"id":101,"owner":"user-a"}]]></response>
+  </item>
+  <item>
+    <method>OPTIONS</method>
+    <path>/api/orders/202</path>
+    <status>200</status>
+    <request base64="false"><![CDATA[OPTIONS /api/orders/202 HTTP/1.1
+Host: api.shop.test
+Cookie: session=BBB
+Accept: application/json
+
+]]></request>
+    <response base64="false"><![CDATA[HTTP/1.1 200
+Content-Type: application/json
+
+]]></response>
+  </item>
+  <item>
+    <method>GET</method>
+    <path>/api/products/1</path>
+    <status>200</status>
+    <request base64="false"><![CDATA[GET /api/products/1 HTTP/1.1
+Host: api.shop.test
+Cookie: session=AAA
+Accept: application/json
+
+]]></request>
+    <response base64="false"><![CDATA[HTTP/1.1 200
+Content-Type: application/json
+
+{"id":1}]]></response>
+  </item>
+</items>

@@ -1,0 +1,64 @@
+FlowScope
+Copyright (c) 2026 FlowScope (화이트햇스쿨 토큰많이조)
+Licensed under the MIT License (see LICENSE in the source repository).
+
+This distribution bundles third-party software:
+
+--------------------------------------------------------------------
+Frontend production dependencies
+  Resource : META-INF/NOTICE-frontend.txt
+  Source   : generated from the installed frontend production dependency graph
+  License  : each bundled frontend dependency's complete local license text is
+             preserved in META-INF/NOTICE-frontend.txt
+
+--------------------------------------------------------------------
+Cytoscape.js 3.26.0
+  Resource : web/vendor/cytoscape-3.26.0.min.js
+  Source   : https://github.com/cytoscape/cytoscape.js
+  License  : MIT — full text in META-INF/LICENSE-cytoscape.txt
+  Copyright (c) 2016-2023, The Cytoscape Consortium
+--------------------------------------------------------------------
+Jackson JSON processor 2.22.2
+  Artifacts: com.fasterxml.jackson.core:jackson-databind:2.22.2
+             com.fasterxml.jackson.core:jackson-core:2.22.2
+             com.fasterxml.jackson.core:jackson-annotations:2.22
+             com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2
+  Source   : https://github.com/FasterXML/jackson
+  License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
+  Copyright 2007-, Tatu Saloranta and Jackson contributors
+  Original Apache NOTICE content is merged into META-INF/NOTICE.
+  jackson-core includes FastDoubleParser and Schubfach code. Their complete
+  license and third-party notice texts are preserved in:
+    META-INF/FastDoubleParser-LICENSE
+    META-INF/FastDoubleParser-ThirdParty-LICENSE
+    META-INF/Schubfach-LICENSE
+--------------------------------------------------------------------
+SnakeYAML 2.5
+  Artifact : org.yaml:snakeyaml:2.5
+  Source   : https://bitbucket.org/snakeyaml/snakeyaml
+  License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
+  Project developers include Andrey Somov and Alexander Maslov.
+--------------------------------------------------------------------
+jsoup 1.23.1
+  Artifact : org.jsoup:jsoup:1.23.1
+  Source   : https://github.com/jhy/jsoup
+  License  : MIT — full text in META-INF/LICENSE-jsoup.txt
+  Copyright © 2009-2026 Jonathan Hedley and contributors
+--------------------------------------------------------------------
+Xerial SQLite JDBC 3.53.1.0
+  Artifact : org.xerial:sqlite-jdbc:3.53.1.0
+  Source   : https://github.com/xerial/sqlite-jdbc
+  License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
+             Bundled Zentus-derived code — BSD 2-Clause text in
+             META-INF/LICENSE-sqlite-jdbc-zentus.txt
+  Copyright (c) Xerial Project and contributors
+  Copyright (c) 2006, David Crawshaw
+--------------------------------------------------------------------
+Google Closure Compiler v20260831
+  Artifact : com.google.javascript:closure-compiler:v20260831
+  Source   : https://github.com/google/closure-compiler
+  License  : Apache License 2.0 and bundled third-party terms preserved in
+             META-INF/LICENSE.txt and THIRD_PARTY_NOTICES
+  Copyright 2009-2026 Google LLC and contributors
+  Original Apache NOTICE content is merged into META-INF/NOTICE.
+--------------------------------------------------------------------
