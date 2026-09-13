@@ -1489,6 +1489,20 @@
 - **기각:** ⓐ PR처럼 컨테이너·원소를 선언하고 truth.json을 갱신 — D-143 ①이 기각한 "정답을 구현에 맞추기"다. ⓑ 관측 엔진에서 컨테이너·원소 기록을 없애기 — PR#11 권한 연결(exact scalar 원소 매칭)과 D-143 슬라이스 1의 관측 단일화를 깬다. ⓒ 깊이 20 유지 — 근거가 기록된 적이 없고 원본 테스트는 64를 고정했다.
 - **검증:** `SurfaceAnalyzerTest`가 `criteria`(객체)·`criteria/labels/*`(원소)는 선언 0개인 채 `ONE_SOURCE_OBSERVED`, 정말 미선언인 `extra`는 `OBSERVED_NOT_DECLARED`임을, 깊이 60 체인은 리프를 선언하고 70 체인은 선언 0개 + `DECLARATION_DEPTH_LIMIT`임을 검사한다. `SurfaceHeldOutEvaluationTest`는 변경 없이 통과한다.
 
+## D-162 · 비밀 마스킹은 URL 라우트 값을 가리지 않는다 (2026-09-13)
+
+- **문제:** `SECRET_FIELD` 정규식이 `token|password|secret|...`를 단어 경계 없이 부분일치해, JS 라우트 상수 `LOGIN_TOKEN:"/identity/api/auth/login"`, `RESET_PASSWORD`, `VERIFY_TOKEN`, `VALIDATE_TOKEN`, `FORGOT_PASSWORD`의 **URL 값까지 마스킹**했다. crAPI 실측에서 Explorer가 `MASKED_ROUTE`로 정확한 endpoint를 못 읽었다. 이 마스킹은 inline 응답 본문과 Explorer artifact 양쪽에 적용된다(`ExplorerHttpGateway`가 `Masking.maskSecrets`로 artifact를 저장).
+- **결정:** 키 이름 매칭은 유지하되, 매치된 **값이 URL 경로**(`/`·`http://`·`https://`로 시작)면 원문을 보존하고 그 외에는 계속 가린다(`secretFieldReplacement`, `isRoutePathValue`). 실제 비밀 값(JWT `eyJ…`, `sk-…`, 임의 비밀번호)은 URL 접두로 시작하지 않으므로 마스킹이 유지된다. 단어 경계만 추가하는 대안은 `authToken:"eyJ…"` 같은 실제 비밀을 노출하므로 기각했다(키가 아니라 값으로 구분).
+- **범위:** `maskSecrets`(JS·평문)와 maskJson 파싱 실패 fallback에만 적용. 구조화 JSON은 `maskJson`이 키로 처리하고 source map 키(version/sources/…)는 비밀 이름이 아니라 영향 없음. 헤더(Authorization/Cookie)와 XML 비밀은 그대로 가린다.
+- **검증:** `MaskingTest`가 라우트 상수 4종의 URL 값 보존과 `password=`·`access_token=`·`token:` 실제 비밀 마스킹 유지를 함께 검사한다.
+
+## D-163 · Explorer는 비압축 응답을 요청하고 ZAP scope 실패는 위반 값을 지목한다 (2026-09-13)
+
+- **문제:** ① Explorer 요청이 `Accept-Encoding`을 지정하지 않아 서버가 gzip한 source map·JS가 이진 바이트로 와서 `HttpMessageTextCodec.decode`의 `looksTextual` 검사에서 버려졌다(crAPI `SOURCE_MAP_UNREADABLE`: 200 octet-stream인데 읽을 본문·artifact_id 없음). 압축 해제기는 어디에도 없다. ② `ZapBrowserAuthenticator`의 scope 실패가 대상·로그인 URL 중 무엇이 밖인지, 현재 scope가 무엇인지 알려주지 않아 실측에서 원인 파악이 어려웠다.
+- **결정:** ① Explorer 요청에 `Accept-Encoding: identity`를 기본 추가한다(사용자 헤더에 있으면 존중). 압축 해제기 도입보다 단순하고 안전하며, source map·JS가 텍스트로 디코드된다. ② scope 실패 메시지가 "대상 X" / "로그인 URL Y" / 둘 다 중 어느 것이 scope 밖인지 지목하고, ZAP 브라우저 인증의 로그인 URL은 로그인 **페이지**여야지 로그인 API가 아니라는 점을 덧붙인다.
+- **기각:** gzip/deflate 응답을 확장 안에서 해제하는 방식은 D-157 축소 원칙(작게 고치기)과 어긋나고 실패 모드가 늘어난다. identity 요청이 대상 서버 지원 범위에서 충분하다. scope 텍스트 전체를 메시지에 넣는 것은 Predicate 계약을 바꿔야 해 보류하고 위반 값 지목만 한다.
+- **검증:** `ZapBrowserAuthenticatorTest`가 로그인 URL만 scope 밖일 때 메시지가 "로그인 URL"을 지목하고 "대상"으로 시작하지 않으며 "scope 밖"을 포함함을 검사한다. `Accept-Encoding` 추가는 Burp 결합 transport라 빌드로 검증하고, 실제 crAPI에서 gzip source map이 읽히는지는 새 JAR 재로드 후 실측(미실행)이다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

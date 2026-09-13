@@ -24,6 +24,25 @@ final class MaskingTest {
     }
 
     @Test
+    void routeConstantsNamedLikeSecretsKeepTheirUrlValueButRealSecretsStayMasked() {
+        // D-162: JS 라우트 상수 이름에 TOKEN/PASSWORD가 들어도 값이 URL 경로면 보존한다(Explorer가 endpoint를 읽어야 함).
+        String js = "var R={LOGIN_TOKEN:\"/identity/api/auth/login\",RESET_PASSWORD:\"/identity/api/v2/user/reset-password\","
+                + "VERIFY_TOKEN:\"/identity/api/auth/verify\",BASE:\"https://app.test/api\"};";
+        String masked = Masking.maskSecrets(js);
+        assertTrue(masked.contains("/identity/api/auth/login"), masked);
+        assertTrue(masked.contains("/identity/api/v2/user/reset-password"), masked);
+        assertTrue(masked.contains("/identity/api/auth/verify"), masked);
+        assertTrue(masked.contains("https://app.test/api"), masked);
+
+        // 진짜 비밀 값(URL 아님)은 이름이 같은 키여도 계속 가린다.
+        String secret = Masking.maskSecrets("password=hunter2 access_token=eyJabc.def token: \"sk-live-123\"");
+        assertFalse(secret.contains("hunter2"), secret);
+        assertFalse(secret.contains("eyJabc.def"), secret);
+        assertFalse(secret.contains("sk-live-123"), secret);
+        assertTrue(secret.contains("***MASKED***"), secret);
+    }
+
+    @Test
     void observationsCannotBypassSensitivePathRejection() {
         ParameterKey key = key("/token");
         assertThrows(IllegalArgumentException.class, () -> observation(key, null));

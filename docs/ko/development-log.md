@@ -1,5 +1,14 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-162/D-163 crAPI Explorer 실측 결함 3건 수정
+
+- 실측 unresolved에서 나온 도구 결함을 고쳤다. **D-162(MASKED_ROUTE):** 비밀 마스킹이 값이 URL 경로면 보존하도록 `secretFieldReplacement`/`isRoutePathValue` 추가 — `LOGIN_TOKEN`·`RESET_PASSWORD` 같은 라우트 상수의 URL을 더 이상 가리지 않되 실제 비밀 값은 계속 가린다. inline 본문·Explorer artifact 양쪽에 적용된다. **D-163(SOURCE_MAP·ZAP scope):** Explorer 요청에 `Accept-Encoding: identity`를 추가해 gzip된 source map·JS가 이진으로 버려지지 않게 하고, `ZapBrowserAuthenticator` scope 실패가 대상/로그인 URL 중 위반 값을 지목한다.
+- 설정 항목(momo Explorer JSON 로그인 모드, ZAP scope·로그인 페이지 URL)은 사용자 몫으로 코드에서 손대지 않았다. `SAFETY_RESTRICTED`·`AST_PARSE_RECOVERY`는 정상 동작이라 변경 없음. `DYNAMIC_IDENTIFIER`·`AUTH_STATE`는 인증 설정의 결과라 코드 수정 대상 아님.
+- 테스트: `MaskingTest` 6건(신규 1: 라우트 값 보존·실제 비밀 마스킹), `ZapBrowserAuthenticatorTest` 6건(scope 지목 단언 보강), `MaskingBoundaryTest` 2건 유지. `Accept-Encoding`은 빌드 검증.
+- 영향 파일: `core/Masking.java`, `integration/ZapBrowserAuthenticator.java`, `burp/FlowScopeExtension.java`, `MaskingTest.java`, `integration/ZapBrowserAuthenticatorTest.java`, decisions D-162·D-163, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 588 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,946,297 bytes, SHA-256 `23dc1e0efdc01e70d79c09c45d9a2eadf303abc471dd0e4327444475dc26a39e`.
+- 남은 한계: gzip source map이 실제 crAPI에서 읽히는지, 라우트 보존이 Explorer 발견을 실제로 늘리는지는 새 JAR 재로드 후 실측.
+
 ## 2026-09-13 · D-161 OpenAPI 선언 깊이 64·깊이 진단·구조적 덮임 delta
 
 - 계획 항목 #3. 선언 모델(리프·배열 필드 관례, D-143 ①)과 held-out 정답은 유지하고, 관측 컨테이너·`/*` 원소가 선언에 구조적으로 덮여 있으면 `OBSERVED_NOT_DECLARED`로 내지 않도록 `MutableEndpoint.structurallyDeclared`를 delta에 반영했다. `MAX_SCHEMA_DEPTH` 20→64(원본과 동일), 깊이 초과는 `DECLARATION_DEPTH_LIMIT` 진단.

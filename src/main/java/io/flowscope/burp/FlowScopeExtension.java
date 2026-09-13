@@ -1977,6 +1977,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 .append("Host: ").append(authority).append("\r\n");
         boolean hasAccept = false;
         boolean hasConnection = false;
+        boolean hasAcceptEncoding = false;
         for (Map.Entry<String, String> header : input.headers().entrySet()) {
             if (!safeHeader(header.getKey(), header.getValue())) {
                 throw new IllegalArgumentException("Explorer HTTP 헤더가 올바르지 않습니다.");
@@ -1984,10 +1985,13 @@ public final class FlowScopeExtension implements BurpExtension {
             if (header.getKey().equalsIgnoreCase("Host") || header.getKey().equalsIgnoreCase("Content-Length")) continue;
             hasAccept |= header.getKey().equalsIgnoreCase("Accept");
             hasConnection |= header.getKey().equalsIgnoreCase("Connection");
+            hasAcceptEncoding |= header.getKey().equalsIgnoreCase("Accept-Encoding");
             raw.append(header.getKey()).append(": ").append(header.getValue()).append("\r\n");
         }
         if (!hasAccept) raw.append("Accept: */*\r\n");
         if (!hasConnection) raw.append("Connection: close\r\n");
+        // 압축 해제기가 없으므로 identity를 요청한다. 이게 없으면 gzip된 source map·JS가 이진처럼 보여 텍스트 디코드에서 버려진다(D-163).
+        if (!hasAcceptEncoding) raw.append("Accept-Encoding: identity\r\n");
         if (input.body().length > 0) raw.append("Content-Length: ").append(input.body().length).append("\r\n");
         raw.append("\r\n");
         byte[] prefix = raw.toString().getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);

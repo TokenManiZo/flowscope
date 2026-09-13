@@ -32,8 +32,15 @@ final class ZapBrowserAuthenticator {
 
     Identity authenticate(String runId, String target, int laneIndex, String contextId,
                           String contextName, ZapAccountVault.Secret login) {
-        if (!scopeAllows.test(target) || !scopeAllows.test(login.loginUrl().toString())) {
-            throw new IllegalArgumentException("ZAP 대상과 로그인 URL은 모두 configured exact scope 안이어야 합니다.");
+        boolean targetInScope = scopeAllows.test(target);
+        boolean loginInScope = scopeAllows.test(login.loginUrl().toString());
+        if (!targetInScope || !loginInScope) {
+            String offending = !targetInScope && !loginInScope
+                    ? "대상 " + target + " 과(와) 로그인 URL " + login.loginUrl()
+                    : !targetInScope ? "대상 " + target : "로그인 URL " + login.loginUrl();
+            throw new IllegalArgumentException(offending
+                    + " 이(가) configured exact scope 밖입니다. 두 값을 모두 scope 안으로 맞추거나 scope에 포함하세요"
+                    + " (ZAP 브라우저 인증의 로그인 URL은 폼이 있는 로그인 페이지여야 하며 로그인 API가 아닙니다).");
         }
         String userName = "FlowScope " + login.id() + " " + runId + " " + laneIndex;
         requireOk(zap.includeInContext(contextName,

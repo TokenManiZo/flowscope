@@ -135,8 +135,13 @@ final class ZapBrowserAuthenticatorTest {
             ZapAccountVault vault = accountVault();
             ZapBrowserAuthenticator authenticator = new ZapBrowserAuthenticator(zap, new ObjectMapper(),
                     value -> value.equals("https://app.example.test/"), List::of);
-            assertThrows(IllegalArgumentException.class, () -> vault.withSecret("zap-a", secret ->
-                    authenticator.authenticate("run-1", "https://app.example.test/", 0, "3", "ctx", secret)));
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+                    vault.withSecret("zap-a", secret ->
+                            authenticator.authenticate("run-1", "https://app.example.test/", 0, "3", "ctx", secret)));
+            // D-157/D-163: 어느 값이 scope 밖인지 이름을 붙인다(대상은 scope 안, 로그인 URL이 밖).
+            assertTrue(error.getMessage().contains("로그인 URL"), error.getMessage());
+            assertFalse(error.getMessage().startsWith("대상"), error.getMessage());
+            assertTrue(error.getMessage().contains("scope 밖"), error.getMessage());
         } finally {
             server.stop(0);
         }
