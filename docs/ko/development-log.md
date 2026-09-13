@@ -1,5 +1,12 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-159 endpoint 파라미터 상한: 기존 좌표 갱신 유지·초과 진단
+
+- 계획 항목 #1. `MutableEndpoint.parameter()`가 기존 좌표를 먼저 찾아 돌려주고 신규 좌표에만 1,024 상한을 적용하며 거부 수를 `PARAMETER_LIMIT` 진단으로 남긴다. `declareSchema`의 선행 상한 가드를 제거해 기존 좌표의 선언 손실을 없앴다. `MAX_PARAMETERS_PER_ENDPOINT`는 테스트 참조를 위해 public으로 노출(값 불변).
+- 테스트: `SurfaceAnalyzerTest` 신규 1건(HUMAN·SCANNER 1,024 좌표 양쪽 source 보존·Fact/프로파일 source 일치·1,025번째 진단·순서 무관). 수정 전 코드에서는 SCANNER source 소실과 진단 부재로 실패하는 시나리오다. `SurfaceParameterProfileTest` 18·`SnapshotSurfaceContractTest` 9 유지.
+- 영향 파일: `core/SurfaceAnalyzer.java`, `SurfaceAnalyzerTest.java`, decisions D-159, endpoint-parameter-surface, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 583 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,944,635 bytes, SHA-256 `b7387236ff195b7f01d5b57ed3caf42b897a1c610b5995566c9cd791e7321e7f`.
+
 ## 2026-09-13 · D-158 확인 재전송 조건 안내(HUMAN run·Request Lab 격리)
 
 - 판정 매트릭스 추천 섹션에 `HumanRunGuidance`를 추가했다. `useHumanRunQuery` 상태로 HUMAN 탐색이 꺼져 있으면 "run 밖 Repeater 재전송은 D-071로 제외" 경고와 `#inspection` 이동 버튼을, 켜져 있으면 "관측으로 반영" 안내를 보이고, Request Lab 재전송은 D-008에 따라 분리 저장됨을 함께 말한다. 서버 변경 없음.

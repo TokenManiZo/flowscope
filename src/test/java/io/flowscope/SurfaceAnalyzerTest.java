@@ -964,6 +964,52 @@ final class SurfaceAnalyzerTest {
         return record;
     }
 
+    @Test
+    void 엔드포인트_파라미터_상한에서_기존_좌표는_계속_갱신되고_신규_초과만_진단으로_남는다() {
+        int max = SurfaceAnalyzer.MAX_PARAMETERS_PER_ENDPOINT;
+        String wide = wideJson(max);
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/wide", 200);
+        human.requestContentType = "application/json";
+        human.reqBody = wide;
+        RequestRecord scanner = request(Source.SCANNER, "POST", "/api/wide", 200);
+        scanner.requestContentType = "application/json";
+        scanner.reqBody = wide;
+        RequestRecord overflow = request(Source.HUMAN, "POST", "/api/wide", 200);
+        overflow.requestContentType = "application/json";
+        overflow.reqBody = wideJson(max + 1);
+
+        SurfaceAnalysis forward = analyzeWide(List.of(human, scanner, overflow));
+        SurfaceAnalysis.EndpointFact endpoint = endpoint(forward, "POST", "/api/wide");
+        assertEquals(max, endpoint.parameters().size(), "상한까지는 모두 보존한다");
+        for (String path : List.of("/p0", "/p" + (max - 1))) {
+            SurfaceAnalysis.ParameterFact fact = parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, path);
+            assertEquals(java.util.Set.of(Source.HUMAN, Source.SCANNER), fact.observedSources(),
+                    "상한에 닿은 뒤 도착한 SCANNER 관측도 기존 좌표에는 계속 갱신된다: " + path);
+            assertEquals(fact.observedSources(), fact.profile().sourceCounts().keySet(),
+                    "Fact의 source와 프로파일 집계가 같은 관측 집합을 본다: " + path);
+        }
+        assertTrue(forward.parameterDiagnostics().stream().anyMatch(item -> item.reasonCode().equals("PARAMETER_LIMIT")
+                && item.operation().equals("POST /api/wide") && item.droppedCount() == 1),
+                "1,025번째 신규 좌표는 경고 없이 사라지지 않는다");
+
+        SurfaceAnalysis reversed = analyzeWide(List.of(overflow, scanner, human));
+        assertEquals(endpoint.parameters().stream().map(SurfaceAnalysis.ParameterFact::canonicalPath).sorted().toList(),
+                endpoint(reversed, "POST", "/api/wide").parameters().stream()
+                        .map(SurfaceAnalysis.ParameterFact::canonicalPath).sorted().toList(),
+                "수집 순서를 바꿔도 보존되는 좌표 집합은 같다");
+    }
+
+    private static SurfaceAnalysis analyzeWide(List<RequestRecord> records) {
+        Pipeline.Result result = Pipeline.runIsolated(records, new io.flowscope.core.AnalysisConfig());
+        return SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+    }
+
+    private static String wideJson(int fields) {
+        StringBuilder body = new StringBuilder("{");
+        for (int i = 0; i < fields; i++) body.append(i > 0 ? "," : "").append("\"p").append(i).append("\":1");
+        return body.append("}").toString();
+    }
+
     private static SurfaceAnalysis.EndpointFact endpoint(SurfaceAnalysis analysis, String method, String path) {
         return analysis.endpoints().stream()
                 .filter(item -> item.key().method().equals(method) && item.key().pathTemplate().equals(path))

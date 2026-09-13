@@ -2,6 +2,7 @@
 
 ## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
 
+- **D-159(파라미터 상한):** endpoint 1,024 상한이 기존 좌표 갱신까지 막아 SCANNER 관측을 조용히 버리던 결함을 고쳤다. 신규 좌표만 거부하고 `PARAMETER_LIMIT` 진단으로 센다.
 - **D-158(확인 루프 안내):** 후보 셀 추천에 HUMAN 탐색 활성 여부에 따른 Repeater 재전송 반영 조건(D-071)과 Request Lab 격리(D-008)를 표시한다. Request Lab을 coverage에 넣지 않는 것과 `*_REPRODUCED` 미부여를 결정으로 고정했다.
 - **D-157(ZAP 자기 진단):** 캠페인 시작 전 Burp SCANNER listener를 loopback으로 검사해 닫혀 있으면 즉시 실패하고, 0건 실패는 ZAP 메시지 수로 listener/upstream 문제와 빈 크롤을 구분한다(PR #10 D-094 사전 점검 복원). 실제 Burp listener 제거 재현은 미실행.
 - **D-156(BFLA 활성화 증분):** 판정 매트릭스 셀 상세에 필수 역할·신원 역할 지정을 연결했다(기존 API 배선, 추정 없음). 독립 감사 2건 결과 우선순위를 재조정했다: ① ZAP 8081 listener 사전 점검+0건 원인 구분, ② 이 BFLA 배선(완료), ③ Repeater-in-run 안내와 Request Lab VALIDATION 반영 여부 결정, ④ SurfaceAnalyzer 1,024 상한의 기존 key 갱신 차단·무진단 수정(관측·선언 경로), ⑤ `SENSITIVE_PARAMETER_OMITTED`가 행 완전성을 뒤집지 않게, ⑥ OpenAPI 중간 객체·scalar 배열 원소 선언(D-143 ① 대체 결정 동반). 계정 필터의 후보 숨김(D-143 5c)과 ZAP 컨텍스트 subtree(D-132)는 기록된 결정이라 손대지 않는다. `BOLA_REPRODUCED`는 D-126/D-144 ④로 생산자가 사라진 증거 등급이며 삭제·복원 모두 ③ 결정에 종속한다.

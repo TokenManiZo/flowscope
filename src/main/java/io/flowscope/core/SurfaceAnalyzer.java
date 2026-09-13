@@ -53,7 +53,8 @@ public final class SurfaceAnalyzer {
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "post", "put", "patch", "delete", "options", "head");
-    private static final int MAX_PARAMETERS_PER_ENDPOINT = 1_024;
+    /** endpoint당 파라미터 좌표 상한. 기존 좌표는 상한과 무관하게 계속 갱신되고, 신규 좌표만 거부하며 거부 수는 PARAMETER_LIMIT 진단으로 남긴다. */
+    public static final int MAX_PARAMETERS_PER_ENDPOINT = 1_024;
     private static final int MAX_SCHEMA_DEPTH = 20;
     /** 파라미터별 distinct 값 digest 상한. 넘으면 count를 고정하고 truncated+DISTINCT_VALUE_LIMIT 진단을 남긴다. */
     public static final int MAX_DISTINCT_VALUES = 256;
@@ -170,7 +171,10 @@ public final class SurfaceAnalyzer {
             }
         }
 
-        for (MutableEndpoint endpoint : endpoints.values()) endpoint.declarationDiagnostics(parameterDiagnostics);
+        for (MutableEndpoint endpoint : endpoints.values()) {
+            endpoint.declarationDiagnostics(parameterDiagnostics);
+            endpoint.parameterLimitDiagnostic(parameterDiagnostics);
+        }
         SurfaceAuthorizationLinker linker = new SurfaceAuthorizationLinker(
                 endpoints.values().stream().map(endpoint -> List.copyOf(endpoint.rows.values())).toList(), authorization);
         List<SurfaceAnalysis.ParameterGap> gaps = new ArrayList<>();
@@ -470,8 +474,9 @@ public final class SurfaceAnalyzer {
                                       RouteCandidate.Provenance provenance, Requirement inherited,
                                       ParameterLocation location, int depth, Set<String> refs,
                                       String condition, String displayName) {
+        // endpoint 파라미터 상한은 parameter()가 신규 좌표에만 적용하고 진단으로 센다. 여기서 먼저 끊으면 기존 좌표의 선언까지 조용히 잃는다.
         if (raw == null || raw.isMissingNode() || !raw.isObject() || depth > MAX_SCHEMA_DEPTH
-                || condition.length() > 512 || endpoint.parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) return;
+                || condition.length() > 512) return;
         JsonNode schema = raw;
         if (schema.has("$ref")) {
             String ref = schema.path("$ref").asText();
@@ -758,6 +763,8 @@ public final class SurfaceAnalyzer {
     private static final class MutableEndpoint {
         private final EndpointKey key;
         private final LinkedHashSet<Observation> observations = new LinkedHashSet<>();
+        /** 상한 때문에 만들지 못한 신규 좌표 수(관측·선언 경로 합산). 0보다 크면 PARAMETER_LIMIT 진단으로 남긴다. */
+        private int droppedParameters;
         private final LinkedHashSet<Declaration> declarations = new LinkedHashSet<>();
         private final Map<String, MutableParameter> parameters = new LinkedHashMap<>();
         /** Evidence ID별 요청 행. 같은 ID의 같은 내용은 한 번만, 다른 내용은 둘 다 제외한다(독립 근거 아님, RowLedger). */
@@ -837,6 +844,14 @@ public final class SurfaceAnalyzer {
             }
         }
 
+        /** endpoint 파라미터 상한 때문에 만들지 못한 신규 좌표 수를 진단으로 남긴다(조용히 누락하지 않는다). */
+        private void parameterLimitDiagnostic(List<SurfaceAnalysis.ParameterDiagnostic> out) {
+            if (droppedParameters > 0) {
+                out.add(new SurfaceAnalysis.ParameterDiagnostic(null, key.method() + " " + key.pathTemplate(),
+                        "PARAMETER_LIMIT", droppedParameters));
+            }
+        }
+
         /** 파라미터당 선언 상한을 넘겨 버린 선언 수를 진단으로 남긴다(조용히 누락하지 않는다). */
         private void declarationDiagnostics(List<SurfaceAnalysis.ParameterDiagnostic> out) {
             for (MutableParameter parameter : parameters.values()) {
@@ -861,11 +876,17 @@ public final class SurfaceAnalyzer {
         private MutableParameter parameter(ParameterLocation location, String canonicalPath, String displayName,
                                            boolean resolved) {
             // 인증·비밀 이름의 좌표는 관측(엔진)과 마찬가지로 선언에서도 만들지 않는다(PR#11 sink 규칙).
-            if (canonicalPath == null || canonicalPath.isBlank() || Masking.isSensitiveParameterPath(canonicalPath)
-                    || parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) {
+            if (canonicalPath == null || canonicalPath.isBlank() || Masking.isSensitiveParameterPath(canonicalPath)) {
                 return MutableParameter.IGNORED;
             }
             String key = location + ":" + (resolved ? "" : "?") + canonicalPath;
+            // 기존 좌표는 상한과 무관하게 계속 갱신한다. 상한은 신규 좌표에만 적용하고 거부 수를 센다(PR#11 §8: 상한→진단).
+            MutableParameter existing = parameters.get(key);
+            if (existing != null) return existing;
+            if (parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) {
+                droppedParameters++;
+                return MutableParameter.IGNORED;
+            }
             return parameters.computeIfAbsent(key,
                     ignored -> new MutableParameter(location, canonicalPath, displayName, resolved));
         }

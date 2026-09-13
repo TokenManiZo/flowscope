@@ -1467,6 +1467,13 @@
 - **기각:** ① Request Lab VALIDATION을 coverage에 넣어 셀 status를 바꾸기 — D-008 위반·판정 오염. ② run이 꺼져 있으면 재전송 버튼을 막기 — Repeater는 Burp 안의 사용자 행위라 도구가 막을 수 없고, 안내가 맞다.
 - **검증:** `JudgmentMatrixView.test.tsx`가 비활성 시 경고·D-071 문구·`#inspection` 이동, 활성 시 반영 안내·D-008 문구·버튼 없음을 검사한다.
 
+## D-159 · endpoint 파라미터 상한은 신규 좌표에만 적용하고 진단으로 센다 (2026-09-13)
+
+- **문제:** `SurfaceAnalyzer.MutableEndpoint.parameter()`가 `parameters.size() >= 1,024`를 기존 좌표 조회보다 먼저 검사해, 상한에 닿은 뒤 도착한 관측은 **기존 좌표라도** 버려졌다. HUMAN이 1,024개를 관측한 뒤 SCANNER가 같은 1,024개를 관측하면 SCANNER 관측이 전부 사라져 3-way 비교 축이 조용히 깨졌고, 1,025번째 신규 좌표도 진단 없이 사라졌다. `declareSchema`의 동일 가드는 기존 좌표의 선언까지 잃게 했다. 1,024는 이식 전 소유자 상수이며(PR #11에는 endpoint 상한이 없고 record당 10,000 + `PARAMETER_LIMIT` 진단, 기존 key 갱신 유지) PR 설계서 §8 "상한 초과는 조용히 누락하지 않는다"와 어긋났다.
+- **결정:** 기존 좌표는 상한과 무관하게 먼저 찾아 갱신한다. 상한은 신규 좌표에만 적용하고 거부 수를 `droppedParameters`로 세어 endpoint당 `PARAMETER_LIMIT` 진단(anchor 없음, operation, droppedCount)으로 남긴다. `declareSchema`는 상한을 먼저 검사하지 않고 `parameter()`에 맡긴다(IGNORED의 declare/observe는 no-op). 상한 숫자는 바꾸지 않는다.
+- **기각:** ① 상한을 올려 증상 감추기 — 절벽이 옮겨질 뿐이고 갱신 차단 결함이 남는다. ② 상한 도달 시 오래된 좌표 evict — 관측 순서에 따라 결과가 달라진다. ③ 중복 Evidence 부풀림 방어 추가 — `evidenceIds`·`observations`가 Set이라 이미 dedup된다(검증 테스트만 유지).
+- **검증:** `SurfaceAnalyzerTest`가 1,024개 좌표를 HUMAN·SCANNER가 각각 관측하면 두 source가 모두 남고 Fact source와 프로파일 집계가 일치하며, 1,025번째는 `PARAMETER_LIMIT` droppedCount 1로 남고, 수집 순서를 뒤집어도 보존 좌표 집합이 같음을 검사한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.
