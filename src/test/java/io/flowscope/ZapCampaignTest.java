@@ -183,6 +183,58 @@ final class ZapCampaignTest {
     }
 
 
+    @Test
+    void refusesToStartWhenTheBurpScannerListenerIsClosed() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.listenerOpen = false;
+            String message = assertThrows(IllegalStateException.class,
+                    () -> campaign.startDeterministicZapCampaign(TARGET, List.of(), true)).getMessage();
+            assertTrue(message.contains("127.0.0.1:8081 is closed"), message);
+            assertTrue(message.contains("host.docker.internal:8081"), message);
+            assertEquals(1, fixture.started.getCount(), "a closed listener must fail before any crawler starts");
+        }
+    }
+
+    @Test
+    void explainsZeroCaptureAsTrafficThatNeverReachedBurpWhenZapRecordedMessages() throws Exception {
+        try (Fixture fixture = new Fixture(false, false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.zapMessages("7");
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode terminal = awaitTerminal(campaign);
+            assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
+            String error = terminal.path("error").asText();
+            assertTrue(error.contains("ZAP recorded 7 message(s)"), error);
+            assertTrue(error.contains("none reached Burp SCANNER 127.0.0.1:8081"), error);
+        }
+    }
+
+    @Test
+    void explainsZeroCaptureAsAnEmptyCrawlWhenZapRecordedNothing() throws Exception {
+        try (Fixture fixture = new Fixture(false, false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.zapMessages("0");
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode terminal = awaitTerminal(campaign);
+            assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
+            String error = terminal.path("error").asText();
+            assertTrue(error.contains("ZAP recorded no messages"), error);
+            assertTrue(error.contains("crawler produced nothing"), error);
+        }
+    }
+
+    @Test
+    void loopbackListenerProbeReportsOpenAndClosedPorts() throws Exception {
+        try (java.net.ServerSocket listener = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            int open = listener.getLocalPort();
+            assertTrue(ZapCampaign.loopbackListenerOpen(open, java.time.Duration.ofSeconds(2)));
+            listener.close();
+            assertTrue(!ZapCampaign.loopbackListenerOpen(open, java.time.Duration.ofMillis(500)),
+                    "a closed port must not report an open listener");
+        }
+    }
+
     private static final class Fixture implements ZapCampaign.State, AutoCloseable {
         private final HttpServer server;
         private final ZapClient client;
@@ -256,6 +308,12 @@ final class ZapCampaignTest {
         @Override public ZapClient zap() { return client; }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public boolean approve(String action, String target) { return false; }
+        private volatile boolean listenerOpen = true;
+        @Override public boolean scannerListenerOpen() { return listenerOpen; }
+        /** ZAP core view numberOfMessages를 고정값으로 응답하게 한다(0건 실패 원인 구분 테스트용). */
+        private void zapMessages(String count) {
+            server.createContext("/JSON/core/view/numberOfMessages/", exchange -> zapReply(exchange, "{\"numberOfMessages\":\"" + count + "\"}"));
+        }
         @Override public void scannerCapability(String runId, String capability) { capabilityRun.set(runId); }
         @Override public void clearScannerCapability(String runId) { capabilityRun.compareAndSet(runId, ""); }
         @Override public void close() { server.stop(0); }

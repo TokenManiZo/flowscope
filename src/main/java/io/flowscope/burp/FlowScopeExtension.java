@@ -1754,6 +1754,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 @Override public ScopePolicy scope() { return scope; }
                 @Override public ZapClient zap() { return zapClient; }
                 @Override public int scannerProxyPort() { return configuredScannerProxyPort(); }
+                @Override public boolean scannerListenerOpen() {
+                    return ZapCampaign.loopbackListenerOpen(configuredScannerProxyPort(), java.time.Duration.ofSeconds(2));
+                }
                 @Override public void scannerCapability(String runId, String capability) {
                     scannerCapabilityRunId = runId;
                     scannerCapability = capability;

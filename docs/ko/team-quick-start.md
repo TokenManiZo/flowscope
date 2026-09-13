@@ -96,7 +96,7 @@ beta.47에서는 ZAP 결과 수집이 끝난 뒤에도 `종료 처리 · 임시 
 | Web `17777`이 열리지 않음 | Burp의 FlowScope 로드 상태, Output/Errors, 중복 확장/포트 |
 | ZAP `UNREACHABLE` | Docker 실행, `zap-up` 출력, doctor의 zap mode |
 | ZAP key 오류 | helper로 key 생성 후 FlowScope를 재로드했는지 |
-| ZAP API는 연결되지만 수집이 0건 | `8081` listener, 정확한 대상 URL·scope, 해당 lane의 실행 기록 |
+| ZAP API는 연결되지만 수집이 0건 | `8081` listener, 정확한 대상 URL·scope, 해당 lane의 실행 기록 beta.48 이후 빌드는 캠페인 시작 전에 `8081` listener를 검사해 닫혀 있으면 즉시 실패 메시지를 내고, 0건이면 ZAP이 기록한 메시지 수로 "Burp가 못 받음"과 "ZAP이 아무것도 안 냄"을 구분해 보여 준다. |
 | Explorer 준비 실패 | 같은 OS 사용자에서 Codex CLI 설치·로그인, Explorer 화면의 실제 오류 |
 | 예전 UI가 보임 | 기존 확장 언로드, 새 JAR 로드 후 Web 새로고침 |
 

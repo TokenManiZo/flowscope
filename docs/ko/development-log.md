@@ -1,5 +1,13 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-157 ZAP listener 사전 점검·0건 원인 구분
+
+- 사용자가 실제로 겪은 ZAP FAILED(원인: Burp 8081 listener 부재)를 도구가 스스로 진단하게 했다. `ZapCampaign.State.scannerListenerOpen()`(기본 true)과 `ZapCampaign.loopbackListenerOpen`을 추가하고 `FlowScopeExtension`의 State가 설정된 SCANNER 포트로 loopback 연결을 검사한다. 캠페인 시작 시 닫혀 있으면 crawler 전에 즉시 실패한다. 0건 실패는 `ZapClient.numberOfMessages(target)`로 "ZAP은 기록했는데 Burp가 못 받음"과 "ZAP이 아무것도 안 냄"을 가른다(view 실패 시 원래 문구).
+- 테스트: `ZapCampaignTest` 11건(신규 4: listener 닫힘 즉시 실패·crawler 미시작, ZAP 7건→"none reached Burp", ZAP 0건→"crawler produced nothing", loopback probe 열림/닫힘). `ZapCampaignRegressionTest` 16건 유지. 기존 fixture는 기본 true라 변경 없음.
+- 영향 파일: `integration/ZapCampaign.java`, `integration/ZapClient.java`, `burp/FlowScopeExtension.java`, `ZapCampaignTest.java`, decisions D-157, HANDOFF, README, team-quick-start, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 28초), Java 582건(실패·오류 0, opt-in 2 skip), React 60파일/480건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,944,175 bytes, SHA-256 `a0bb500d1fda7acb97544a03d1471c2c826def15384c40f9834af18445aa6f74`.
+- 남은 한계: 실제 Burp에서 listener를 제거한 재현과 crAPI ZAP lane 재실측은 새 JAR 재로드 뒤 수행.
+
 ## 2026-09-13 · D-156 판정 매트릭스 셀에서 필수 역할·신원 역할 지정
 
 - 두 독립 감사(PR 의도·계획 공격)가 crAPI에서 BFLA가 0건인 원인을 "역할 지정 UI가 매트릭스 셀에 연결되지 않음"으로 짚었다. `JudgmentMatrixView`에 `PolicyAssignment` 섹션을 추가해 P0~P2 셀에서 필수 역할, 역할 Unknown인 REGISTERED·OBSERVED 신원에서 신원 역할을 기존 `useRequirementMutation`·`useRoleMutation`으로 저장한다. 서버·API 변경 없음, 역할 추정 없음.

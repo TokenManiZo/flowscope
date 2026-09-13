@@ -1452,6 +1452,13 @@
 - **기각:** ① 토큰·경로 문자열에서 역할 자동 추정 — D-018 위반. ② 매트릭스 안에서 기대 판정을 프런트가 계산 — D-050·D-144(Web은 재판정하지 않음) 위반. ③ 새 API 추가 — 기존 두 API로 충분하다.
 - **검증:** `JudgmentMatrixView.test.tsx`가 P0·역할 Unknown 셀에서 두 select·저장이 기존 endpoint에 정확한 인자로 호출되고 서버 메시지가 표시되며, P3·역할 확인 셀에는 섹션이 없음을 검사한다. 실제 crAPI에서 mechanic/admin 계정 트래픽을 수집한 뒤 BFLA 후보가 생기는지는 새 JAR 재로드 후 실측한다.
 
+## D-157 · ZAP 캠페인은 Burp SCANNER listener를 먼저 검사하고 0건 실패의 원인을 둘로 가른다 (2026-09-13)
+
+- **문제:** Burp에 8081 listener가 없으면 ZAP 캠페인은 몇 분 뒤 "Client Spider completed without captured in-scope traffic"으로만 끝났다. 인증 실패·capability 차단은 이미 별도 메시지지만, "ZAP은 크롤했는데 Burp가 못 받음"과 "ZAP이 아무것도 안 냄"은 한 문구로 뭉개져 실측에서 컨테이너 포트 조사가 필요했다. PR #10(D-094)의 listener 사전 점검은 이식에서 제품 코드에서 사라지고 `scripts/doctor.sh`에만 남았다.
+- **결정:** ① `ZapCampaign.State.scannerListenerOpen()`(기본 true)을 두고 실제 확장은 `loopbackListenerOpen(port, 2s)`로 127.0.0.1:port TCP 연결만 검사한다. `verifySafeZapEnvironment` 직후 닫혀 있으면 crawler를 시작하지 않고 "listener … is closed: add a Burp Proxy listener on port N bound to all interfaces…"로 즉시 실패한다. ② 0건이면 ZAP `core/view/numberOfMessages(baseurl=target)`를 읽어 N>0이면 "ZAP recorded N message(s) … none reached Burp SCANNER"(listener/upstream), 0이면 "ZAP recorded no messages"(crawler·대상·로그인), view 실패면 원래 문구를 유지한다.
+- **기각:** ① Montoya 프로젝트 옵션 JSON에서 listener 목록 파싱 — loopback 연결 한 번이 더 단순하고 bind 인터페이스까지 실제로 검증한다. ② 인증 실패·차단·crawler·0건 4-way 분리 — 앞 둘은 이미 별도 처리라 과대 명세. ③ 검사 실패를 경고로만 남기고 진행 — 결과가 반드시 0건이므로 시간 낭비다.
+- **검증:** `ZapCampaignTest`에 listener 닫힘 시 crawler 미시작 실패, ZAP 메시지 7건/0건일 때의 두 원인 문구, loopback probe의 열림/닫힘 단위 테스트를 추가했다. 실제 Burp에서 listener를 제거한 재현은 미실행이다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.
