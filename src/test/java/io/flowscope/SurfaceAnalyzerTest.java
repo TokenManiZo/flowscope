@@ -1010,6 +1010,70 @@ final class SurfaceAnalyzerTest {
         return body.append("}").toString();
     }
 
+    @Test
+    void 선언에_구조적으로_덮인_컨테이너와_배열_원소_관측은_미선언_관측이_아니다() {
+        RequestRecord openapi = document("/openapi.json", "application/json", """
+                {"openapi":"3.0.3","paths":{"/api/search":{"post":{"requestBody":{"content":{"application/json":{"schema":{
+                  "type":"object","properties":{"criteria":{"type":"object","properties":{
+                    "status":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}}}}}}}}}}}}}
+                """);
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/search", 200);
+        human.requestContentType = "application/json";
+        human.reqBody = "{\"criteria\":{\"status\":\"open\",\"labels\":[\"a\",\"b\"]},\"extra\":1}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi, human), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/search");
+
+        SurfaceAnalysis.ParameterFact container = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria");
+        assertTrue(container.declarations().isEmpty(), "선언은 리프·배열 필드 관례를 유지한다(D-143 ①)");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, container.deltaState(),
+                "멤버가 선언된 객체 컨테이너 관측은 미선언 관측이 아니다");
+        SurfaceAnalysis.ParameterFact element = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria/labels/*");
+        assertTrue(element.declarations().isEmpty());
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, element.deltaState(),
+                "배열 필드가 선언된 원소 관측은 미선언 관측이 아니다");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria/labels").deltaState());
+        assertEquals(SurfaceAnalysis.DeltaState.OBSERVED_NOT_DECLARED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/extra").deltaState(),
+                "정말 선언되지 않은 리프는 그대로 미선언 관측이다");
+    }
+
+    @Test
+    void schema_깊이_상한은_64이고_넘긴_선언은_진단으로_남는다() {
+        // 선언은 리프만 만들므로(D-143 ①) 깊이 60 체인은 리프 하나를 선언하고, 70 체인은 리프가 상한 밖이라 선언 0개 + 진단이다.
+        RequestRecord openapi = document("/openapi.json", "application/json",
+                "{\"openapi\":\"3.0.3\",\"paths\":{"
+                        + "\"/api/deep60\":{\"post\":{\"requestBody\":{\"content\":{\"application/json\":{\"schema\":" + nestedSchema(60) + "}}}}},"
+                        + "\"/api/deep70\":{\"post\":{\"requestBody\":{\"content\":{\"application/json\":{\"schema\":" + nestedSchema(70) + "}}}}}"
+                        + "}}");
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact deep60 = endpoint(analysis, "POST", "/api/deep60");
+        assertEquals(1, deep60.parameters().size(), "깊이 60의 리프는 선언된다(이전 상한 20에서는 사라졌다)");
+        assertEquals(60, deep60.parameters().getFirst().canonicalPath().split("/").length - 1);
+        assertTrue(analysis.parameterDiagnostics().stream().noneMatch(d -> d.reasonCode().equals("DECLARATION_DEPTH_LIMIT")
+                && d.operation().equals("POST /api/deep60")));
+
+        SurfaceAnalysis.EndpointFact deep70 = endpoint(analysis, "POST", "/api/deep70");
+        assertTrue(deep70.parameters().isEmpty(), "상한 밖 리프는 선언하지 않는다");
+        assertTrue(analysis.parameterDiagnostics().stream().anyMatch(d -> d.reasonCode().equals("DECLARATION_DEPTH_LIMIT")
+                && d.operation().equals("POST /api/deep70") && d.droppedCount() >= 1),
+                "깊이 때문에 끊기면 선언 0개·오류 없음으로 끝나지 않는다");
+    }
+
+    private static String nestedSchema(int depth) {
+        StringBuilder open = new StringBuilder();
+        StringBuilder close = new StringBuilder();
+        for (int i = 0; i < depth; i++) { open.append("{\"type\":\"object\",\"properties\":{\"n").append(i).append("\":"); close.append("}}"); }
+        return open.append("{\"type\":\"string\"}").append(close).toString();
+    }
+
     private static SurfaceAnalysis.EndpointFact endpoint(SurfaceAnalysis analysis, String method, String path) {
         return analysis.endpoints().stream()
                 .filter(item -> item.key().method().equals(method) && item.key().pathTemplate().equals(path))

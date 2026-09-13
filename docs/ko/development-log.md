@@ -1,5 +1,12 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-161 OpenAPI 선언 깊이 64·깊이 진단·구조적 덮임 delta
+
+- 계획 항목 #3. 선언 모델(리프·배열 필드 관례, D-143 ①)과 held-out 정답은 유지하고, 관측 컨테이너·`/*` 원소가 선언에 구조적으로 덮여 있으면 `OBSERVED_NOT_DECLARED`로 내지 않도록 `MutableEndpoint.structurallyDeclared`를 delta에 반영했다. `MAX_SCHEMA_DEPTH` 20→64(원본과 동일), 깊이 초과는 `DECLARATION_DEPTH_LIMIT` 진단.
+- 테스트: `SurfaceAnalyzerTest` 39건(신규 2: 구조적 덮임 delta, 깊이 60/70). `SurfaceHeldOutEvaluationTest` 1·`SnapshotSurfaceContractTest` 9·`FlowScopeWebServerTest` 32 유지.
+- 영향 파일: `core/SurfaceAnalyzer.java`, `SurfaceAnalyzerTest.java`, decisions D-161, endpoint-parameter-surface, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 587 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,945,813 bytes, SHA-256 `6962381b5be98b4a3d704431e5319c11830e8b161f9a037e44ac3b61f5018f63`.
+
 ## 2026-09-13 · D-160 비밀 이름 생략은 불완전이 아니다(완전성 1차 범위)
 
 - 계획 항목 #2의 1차 범위. `ParameterExtraction.parsedCompletely()`(진단이 전부 `SENSITIVE_PARAMETER_OMITTED`면 완전)를 추가하고 `SurfaceAnalyzer` Row.complete와 `SnapshotJsonWriter.parameterEvidence`가 같은 규칙을 쓰게 했다. 비밀 필드가 있는 요청(로그인·재설정·OTP)이 다른 입력의 부재·차이를 증언할 수 있게 된다. 비밀 좌표 미생성과 생략 진단은 유지.

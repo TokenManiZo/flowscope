@@ -1482,6 +1482,13 @@
 - **기각:** ① 생략 진단 자체를 없애기 — 생략 사실을 잃는다. ② 비밀 필드가 있는 요청을 부재 분모에서 제외한 채 두기 — 로그인·재설정 계열 endpoint의 입력 차이가 영영 안 보인다.
 - **검증:** `SurfaceParameterProfileTest`(password만 있는 요청이 `sort` 부재의 증인이 되고 `/password` Fact는 없음), `SnapshotParameterEvidenceTest`(비밀 필드 JSON이 Evidence·Surface 양쪽에서 complete=true, `completenessReason` 없음). 기존 미지원 본문·손상 multipart 불완전 테스트는 그대로 통과한다.
 
+## D-161 · OpenAPI 선언은 리프 관례를 유지하되 깊이 64·깊이 진단·구조적 덮임 delta로 비대칭을 없앤다 (2026-09-13)
+
+- **문제:** 이식본은 PR #11이 선언하던 중간 객체·scalar 배열 원소를 선언하지 않는다(D-143 2단계 기각 ①, held-out 정답의 리프·배열 필드 관례). 그런데 관측 엔진은 OBJECT/ARRAY 컨테이너와 `/x/*` 원소까지 기록하므로, 스펙이 정확히 선언한 `criteria: object`·`labels: string[]`도 관측되면 컨테이너·원소 좌표가 항상 `OBSERVED_NOT_DECLARED`로 떴다(관측·선언 비대칭, 독립 감사 C2). 또 schema 깊이는 원본 64가 기록 없이 20이 됐고, 깊이 때문에 끊기면 선언 0개·오류 없음으로 끝났다.
+- **결정:** ① 선언 모델과 held-out 정답은 그대로 둔다(D-143 ① 유지: 정답을 구현에 맞추지 않는다). ② 비대칭은 delta에서 흡수한다: 선언이 없는 관측 컨테이너(shape OBJECT/ARRAY)에 선언된 하위 좌표가 있거나, `/*` 원소의 부모가 선언돼 있으면 `structurallyDeclared`로 보아 `OBSERVED_NOT_DECLARED`가 아니라 관측 source 수에 따른 delta를 준다. 선언 목록·held-out 파라미터 집합은 늘지 않는다. ③ `MAX_SCHEMA_DEPTH`를 원본과 같은 64로 맞춘다(`$ref` 32·조건 512자·node 상한 유지). ④ 깊이 때문에 끊긴 노드 수를 endpoint당 `DECLARATION_DEPTH_LIMIT` 진단으로 남긴다.
+- **기각:** ⓐ PR처럼 컨테이너·원소를 선언하고 truth.json을 갱신 — D-143 ①이 기각한 "정답을 구현에 맞추기"다. ⓑ 관측 엔진에서 컨테이너·원소 기록을 없애기 — PR#11 권한 연결(exact scalar 원소 매칭)과 D-143 슬라이스 1의 관측 단일화를 깬다. ⓒ 깊이 20 유지 — 근거가 기록된 적이 없고 원본 테스트는 64를 고정했다.
+- **검증:** `SurfaceAnalyzerTest`가 `criteria`(객체)·`criteria/labels/*`(원소)는 선언 0개인 채 `ONE_SOURCE_OBSERVED`, 정말 미선언인 `extra`는 `OBSERVED_NOT_DECLARED`임을, 깊이 60 체인은 리프를 선언하고 70 체인은 선언 0개 + `DECLARATION_DEPTH_LIMIT`임을 검사한다. `SurfaceHeldOutEvaluationTest`는 변경 없이 통과한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

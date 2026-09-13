@@ -112,7 +112,7 @@ Resource/object와 owner는 첫 화면에서 펼치지 않고 선택 API의 인�
 
 - JavaScript parser 입력 4,194,304자, AST 순회 250,000노드, call-site 20,000개, asset 20,000개
 - call-site당 parameter 1,024개, 참조 해석 깊이 12
-- endpoint당 parameter 1,024개(기존 좌표는 상한과 무관하게 계속 갱신, 초과한 신규 좌표 수는 `PARAMETER_LIMIT` 진단, D-159), 관측 JSON 깊이 16, OpenAPI schema 깊이 20
+- endpoint당 parameter 1,024개(기존 좌표는 상한과 무관하게 계속 갱신, 초과한 신규 좌표 수는 `PARAMETER_LIMIT` 진단, D-159), 관측 JSON 깊이 16, OpenAPI schema 깊이 64(초과 노드 수는 `DECLARATION_DEPTH_LIMIT` 진단; 선언은 리프·배열 필드 관례를 유지하고 관측 컨테이너·`/*` 원소는 선언에 구조적으로 덮이면 미선언 관측으로 내지 않음, D-161)
 - JavaScript 분석 cache 128개. key는 원문 대신 SHA-256 digest, value는 추출 결과만 두며 dataset 교체·초기화 시 비운다.
 
 **전달 경계:** D-128은 발견용 HTML/JavaScript/JSON/XML 응답의 `FULL` payload 상한을 기본 4MiB로 맞췄다. `body/respText`는 8,192자 UI preview로 남지만 RouteCandidate/Surface는 보존된 payload 전문을 우선 읽는다. 1.4MiB JavaScript의 뒤쪽 call-site를 capture→record 경로에서 확인하는 회귀가 있다. 4MiB 초과 응답은 metadata-only이므로 전체 분석하지 않으며, parser 입력 상한과 임의 wrapper·런타임 조립의 의미 분석은 별개다.
