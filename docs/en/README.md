@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.48
+# FlowScope 1.2.0-beta.49
 
 Beta.48 fixes SQLite project saving when Burp initializes JDBC before the extension. No separate SQLite installation or scope workaround is needed. Save/export the current assessment where possible before replacing the old extension with the new JAR; the database schema is unchanged. See HANDOFF for verification and publication status.
 
@@ -66,9 +66,9 @@ ZAP is required for the SCANNER campaign and optional for HUMAN-only use. The LL
 
 ## Build and install
 
-Download `flowscope-1.2.0-beta.48-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
+Download `flowscope-1.2.0-beta.49-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
 
-The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.48.jar`, and one download bundle, `target/flowscope-1.2.0-beta.48-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
+The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.49.jar`, and one download bundle, `target/flowscope-1.2.0-beta.49-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

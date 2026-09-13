@@ -60,12 +60,12 @@ D-153 문서 대조: 관리 문서 39개의 현행/역사 구분과 SQLite·버�
 | 문서 | 지위 | 이번 대조·처리 |
 |---|---|---|
 | [AGENTS.md](../../AGENTS.md) | 개발 지침 | 제품 불변식·작업 범위·코드/검증/문서 기록 규칙 |
-| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | beta.48/D-153 인계 우선과 기존 사용자 지침 보존 |
+| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | beta.49/D-154~D-164 인계 우선과 기존 사용자 지침 보존 |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | 개발 지침 | JDK 21 정확히·Maven 3.9.x, 중간 상태 갱신 |
 | [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
-| [README.md](../../README.md) | 현행 계약 | beta.48 배포·비공개 저장소 접근·설치·실행·증거 의미 |
-| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어와 같은 beta.48 배포·접근 조건·실행 계약 |
-| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.48 bundle/doctor·GitHub 접근·Burp/ZAP/Explorer 설치 |
+| [README.md](../../README.md) | 현행 계약 | beta.49 배포·비공개 저장소 접근·설치·실행·증거 의미 |
+| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어와 같은 beta.49 배포·접근 조건·실행 계약 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.49 bundle/doctor·GitHub 접근·Burp/ZAP/Explorer 설치 |
 | [docs/ko/team-quick-start.md](team-quick-start.md) | 사용자 가이드 | 팀원용 ZIP 선택·Burp/Docker 준비 순서·OS별 doctor·JAR 교체·첫 진단 |
 | [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Evidence/Request Lab·Explorer·ZAP 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
@@ -84,7 +84,7 @@ D-153 문서 대조: 관리 문서 39개의 현행/역사 구분과 SQLite·버�
 | [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-153까지의 결정·기각안·원 PR 대비 대체 관계 |
 | [docs/ko/development-log.md](development-log.md) | 역사 | 실제 변경·이유·회귀·검증 및 문서 정정의 작업별 이력 |
 | [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-153/beta.48의 SQLite 자동·패키지 검증과 artifact별 과거 결과 |
-| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | beta.48 변경과 과거 버전별 배포/개발 이력 |
+| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | beta.49 변경과 과거 버전별 배포/개발 이력 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 변경 이력과 동일한 버전·변경 범위 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
 | [docs/ko/graph-ux.md](graph-ux.md) | 역사 | 초기 Swing/JGraphX 및 과거 LLM 설명과 현행 UI 분리, 현행 계층 계약은 `GRAPH_IDA_REDESIGN.md`·D-143 5c 우선 |

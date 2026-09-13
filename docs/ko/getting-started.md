@@ -19,7 +19,7 @@ beta.47의 ZAP은 최종 상태를 공개하기 전에 `종료 처리 · 임시 
 | LLM Explorer | 독립 endpoint·parameter·계정별 응답 관측 | Release JAR 또는 bundle, Burp, 공식 Codex CLI와 유효한 Codex 로그인 |
 | 소스 빌드 | 코드 수정·기여 | 위 환경, JDK 21 정확히, Maven 3.9.x |
 
-다운로드 사용자는 Maven·Node.js·npm·호스트 Chrome·ChromeDriver·ZAP Desktop을 설치하지 않는다. `flowscope-1.2.0-beta.48-bundle.zip`을 권장하며, 이 파일에 Burp용 JAR, ZAP Dockerfile·Compose/helper, macOS·Linux·Windows doctor와 현재 문서가 함께 들어간다. JAR 단독 파일은 HUMAN과 Explorer에 충분하지만 ZAP helper는 포함하지 않는다.
+다운로드 사용자는 Maven·Node.js·npm·호스트 Chrome·ChromeDriver·ZAP Desktop을 설치하지 않는다. `flowscope-1.2.0-beta.49-bundle.zip`을 권장하며, 이 파일에 Burp용 JAR, ZAP Dockerfile·Compose/helper, macOS·Linux·Windows doctor와 현재 문서가 함께 들어간다. JAR 단독 파일은 HUMAN과 Explorer에 충분하지만 ZAP helper는 포함하지 않는다.
 
 실제 확인한 기준선은 다음과 같다.
 
@@ -58,9 +58,9 @@ Windows 실행 경로는 Windows 10/11, Docker Desktop의 Linux container backen
 
 현재 저장소는 비공개다. 본인의 협업 권한이 있는 GitHub 계정으로 로그인한 뒤 아래 파일을 받는다. 로그아웃/권한 없음의 404는 ZAP이나 FlowScope 실행 오류가 아니다.
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.48-bundle.zip`을 받고 압축을 푼다. Release에 bundle이 아직 없다면 저장소를 clone하고 §6의 소스 빌드 절차로 만든다. ZAP을 쓰지 않는 사용자는 `flowscope-1.2.0-beta.48.jar`만 받아도 된다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.49-bundle.zip`을 받고 압축을 푼다. Release에 bundle이 아직 없다면 저장소를 clone하고 §6의 소스 빌드 절차로 만든다. ZAP을 쓰지 않는 사용자는 `flowscope-1.2.0-beta.49.jar`만 받아도 된다.
 2. 압축을 푼 디렉터리 구조를 유지한다. `scripts/zap-up.*`가 상대 경로 `infra/zap/compose.yaml`을 사용하므로 파일 일부만 옮기면 Docker Quick Start가 동작하지 않는다.
-3. bundle 루트의 `flowscope-1.2.0-beta.48.jar`를 사용한다.
+3. bundle 루트의 `flowscope-1.2.0-beta.49.jar`를 사용한다.
 4. Burp **Settings → Tools → Proxy → Proxy listeners**에서 사용할 기능에 맞는 listener를 만든다.
    - HUMAN을 사용할 때 bind address `127.0.0.1`, port `8080`
    - ZAP을 사용할 때 bind address `127.0.0.1`, port `8081`. native Linux Docker Engine에서는 아래 Docker Quick Start의 특정 bridge IP listener도 추가한다.

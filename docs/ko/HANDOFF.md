@@ -1,6 +1,6 @@
 # FlowScope 팀 인계 정본
 
-> **현재 미출시 작업 버전: 1.2.0-beta.49** (이 브랜치 `claude/restore-pr-semantics`, D-154~D-164). 게시된 Release는 beta.48이며 push·release는 하지 않았다. 로컬 빌드 JAR은 `flowscope-1.2.0-beta.49.jar`다.
+> **현재 미출시 작업 버전: 1.2.0-beta.49** (이 브랜치 `claude/restore-pr-semantics`, D-154~D-164). 사용자 승인으로 [PR #17](https://github.com/choewonwoo1817/testflowscope/pull/17)을 통해 main 병합·태그 `v1.2.0-beta.49`·[beta.49 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.49) 게시를 진행한다(main ruleset의 필수 리뷰 1건은 beta.48과 같이 소유자 bypass). 자산은 JAR·bundle·`SHA256SUMS.txt`이며 정확한 해시·게시 시각은 Release 기록을 따르고 bundle 안에 자신의 해시를 넣지 않는다. 실제 Burp 재로드·crAPI 재실측은 미실행.
 
 ## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
 

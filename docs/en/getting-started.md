@@ -4,7 +4,7 @@ Beta.48 fixes `FlowScope SQLite save failed` when host JDBC initialization prece
 
 This repository is currently private. Sign in with your own GitHub account with collaborator access to download the Release; a 404 while signed out does not indicate a FlowScope or ZAP runtime failure.
 
-Beta.47 keeps ZAP running in a cleanup stage until the previous task has released its restart guard. New starts and duplicate cancellations are disabled while cleanup is pending. Use the beta.48 JAR/bundle; save your assessment before replacing an older extension.
+Beta.47 keeps ZAP running in a cleanup stage until the previous task has released its restart guard. New starts and duplicate cancellations are disabled while cleanup is pending. Use the beta.49 JAR/bundle; save your assessment before replacing an older extension.
 
 This guide targets the D-128/D-139 standalone Explorer, the D-135 FlowScope Docker Chromium ZAP runtime, and the D-138 connection-state contract. Check the [handoff](../ko/HANDOFF.md) and [artifact record](../ko/beta-validation.md) to distinguish it from older JARs.
 
@@ -19,7 +19,7 @@ The current source provides HUMAN, ZAP, and a standalone Codex Explorer. The old
 | LLM Explorer | The JAR or bundle, Burp, official Codex CLI, and a valid Codex login |
 | Source build | The runtime above, JDK 21 exactly, and Maven 3.9.x |
 
-Download users do not install Maven, Node.js, npm, host Chrome, ChromeDriver, or ZAP Desktop. Prefer `flowscope-1.2.0-beta.48-bundle.zip`; it contains the Burp JAR, ZAP Dockerfile/Compose/helpers, macOS/Linux/Windows doctors, and current manuals. The JAR alone is sufficient for HUMAN and Explorer, but it does not contain the ZAP helpers.
+Download users do not install Maven, Node.js, npm, host Chrome, ChromeDriver, or ZAP Desktop. Prefer `flowscope-1.2.0-beta.49-bundle.zip`; it contains the Burp JAR, ZAP Dockerfile/Compose/helpers, macOS/Linux/Windows doctors, and current manuals. The JAR alone is sufficient for HUMAN and Explorer, but it does not contain the ZAP helpers.
 
 The measured runtime baseline is Burp Community 2026.7.3, ZAP 2.17.0, JDK 21, and macOS arm64 with Docker Engine/Desktop 29.5.3. Windows 10/11 with Docker Desktop Linux containers and PowerShell 7 is the beta.21 support contract; GitHub `windows-latest` parses all PowerShell helpers, but a real Windows Docker Desktop target run remains an explicit validation gate.
 
@@ -37,7 +37,7 @@ Official references: [PortSwigger extension loading](https://portswigger.net/bur
 
 ## Release bundle installation
 
-1. Download and extract `flowscope-1.2.0-beta.48-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). If the bundle is not published yet, clone the repository and build it using the source-build instructions. HUMAN/Explorer users may download only the JAR.
+1. Download and extract `flowscope-1.2.0-beta.49-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases). If the bundle is not published yet, clone the repository and build it using the source-build instructions. HUMAN/Explorer users may download only the JAR.
 2. Keep the extracted directory structure. `scripts/zap-up.*` uses the relative `infra/zap/compose.yaml` path.
 3. In **Burp Settings → Tools → Proxy → Proxy listeners**, add `127.0.0.1:8080` for HUMAN and add `127.0.0.1:8081` only when using ZAP. Native Linux Docker Engine also requires the specific bridge-IP listener described below.
 4. Load the bundle-root JAR from **Extensions → Installed → Add → Java**.
