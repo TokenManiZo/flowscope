@@ -10,7 +10,7 @@ import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Explorer 신원 귀속 1단계 (HANDOFF §6-2): 실제 Explorer transport는
+ * Explorer 신원 귀속 1단계: 실제 Explorer transport는
  * {@code recordFrom(…, applyRunContext=false, …, forcedAccountId)}로 {@code captureFingerprint(LLM, context=null, …)}를
  * 호출한다. LLM lane에서는 HUMAN/SCANNER 전용 익명 특례가 적용되지 않으므로 이 함수가
  * {@link Fingerprints#of(String, String)}로 정확히 환원되어야 하며, 그 사실을 여기서 고정한다.

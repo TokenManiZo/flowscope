@@ -76,30 +76,13 @@ These guidelines are working when diffs contain fewer unnecessary changes, imple
 - Active traffic must be exact-scope guarded. No ZAP Active Scan entry point is currently exposed. Keep existing explicit approval for definition imports and HUMAN Request Lab actions.
 - Black-box coverage has no knowable denominator; never display a completion percentage.
 
-Read `docs/ko/architecture.md`, `docs/ko/decisions.md`, and `README.md` before changing architecture. Read `docs/ko/ui-product-rationale.md` before changing UI labels, onboarding, graph/matrix behavior, or presentation claims. Append architecture decisions to `docs/ko/decisions.md`.
+Read `README.md` and the affected code and tests before changing architecture or user-visible behavior. Record material design choices and rejected alternatives in the commit or pull-request description.
 
 Build and test from the repository root with `mvn clean verify`.
 
-## Change records and documentation
+## Change records
 
-Read `docs/ko/HANDOFF.md` for current progress and `docs/ko/documentation-status.md` for the document inventory before starting work. Update current status when work starts, a material result or blocker appears, verification finishes, and work is handed off; do not wait until the final response. Separate implementation, automated verification, actual-runtime verification, and unstarted work. Keep historical results attached to their original artifact. Review every document for relevance, but do not rewrite unaffected history just to change its date.
-
-Every code or behavior change must update `docs/ko/development-log.md` in the same work unit with:
-
-- what was developed or fixed;
-- why it was necessary and which alternative was rejected;
-- the code, test, and documentation files affected;
-- the reproducing regression and final verification result;
-- remaining limitations and the next gate.
-
-Also update the document that owns the changed contract:
-
-- `README.md` for installation, operation, and user-visible behavior;
-- `docs/ko/architecture.md` for the current data flow, modules, or invariants;
-- `docs/ko/decisions.md` for material design/security choices and rejected alternatives;
-- `CHANGELOG.md` for release-facing changes;
-- `docs/ko/beta-validation.md` only for checks actually performed on the named artifact;
-- `docs/ko/product-development-plan.md` for phase/gate state.
-- `docs/ko/ui-product-rationale.md` for screen purpose, presentation narrative, and known UX debts.
-
-Do not mechanically edit historical research, proposals, or the original specification when they are unaffected. Do not claim inherited, planned, or assumed validation as completed. If Git is available, keep the implementation, regression test, and matching documentation in one focused commit.
+- Keep each implementation, regression test, and necessary README update in one focused commit.
+- Update `README.md` only when installation, operation, or user-visible behavior changes.
+- In the commit or pull-request description, state the reason, affected area, verification performed, and remaining limitations.
+- Separate automated verification from actual-runtime verification, and never present inherited or planned checks as completed.

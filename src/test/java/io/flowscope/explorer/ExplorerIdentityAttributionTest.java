@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Explorer 신원 귀속 통합 회귀 (HANDOFF §6-2).
+ * Explorer 신원 귀속 통합 회귀.
  *
  * <p>고정하는 경로: LLM 계정 선택·인증 준비({@link ExplorerAccountVault}) → 실제 {@link ExplorerHttpGateway}가
  * vault 토큰을 주입해 transport에 넘기는 요청 → 지문 → {@code bindSession} → {@link Pipeline#run} 계정 신원 →
