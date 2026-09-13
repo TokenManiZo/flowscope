@@ -1,5 +1,7 @@
 # FlowScope 팀 인계 정본
 
+> **현재 미출시 작업 버전: 1.2.0-beta.49** (이 브랜치 `claude/restore-pr-semantics`, D-154~D-164). 게시된 Release는 beta.48이며 push·release는 하지 않았다. 로컬 빌드 JAR은 `flowscope-1.2.0-beta.49.jar`다.
+
 ## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
 
 - **D-164(ZAP 로그인 진단):** 로그인 성공 검증 실패가 인증 응답 수·상태·실패 종류를 지목한다. momo 성공 정규식·자격증명·로그인 페이지 URL은 설정으로 사용자 몫.

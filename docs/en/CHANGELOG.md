@@ -1,13 +1,19 @@
 # Changelog
 
-## Unreleased — explain run-less authenticated API traffic (D-155, 2026-09-13)
+## 1.2.0-beta.49 (unreleased) — crAPI field-test diagnostic hardening (2026-09-13)
 
-- `trafficStats.humanApiOutsideRun` counts HUMAN API requests observed outside an exploration run (excluded by D-071). The empty graph and the empty surface table now say why and offer to start a HUMAN run.
+On top of released beta.48, fixes for PR #10-#13 transplant defects and diagnostic blind spots found using the tool against crAPI. Not pushed or released.
 
-## Unreleased — restore PR #11 boundary priority and diff labels (D-154, 2026-09-12)
-
-- An input observed with the same resource in two independent requests receives the `CONFIRMED_AUTH_BOUNDARY` priority again when the owner is confirmed, as in the original PR. A single co-occurrence still requires human review.
-- Request comparison labels shape, type, and occurrence differences even when one side is UNKNOWN, and marks the row `UNKNOWN` alongside.
+- **Authorization boundary and request diff (D-154):** an input observed with the same resource in two independent requests regains `CONFIRMED_AUTH_BOUNDARY` when the owner is confirmed; request comparison labels shape/type/occurrence differences even when one side is UNKNOWN.
+- **Run-less authenticated API hint (D-155):** `trafficStats.humanApiOutsideRun` counts authenticated API requests captured outside a HUMAN run so empty screens explain and offer to start one.
+- **BFLA enablement (D-156):** assign the required role and identity role directly from a judgment-matrix cell through the existing APIs (no inference).
+- **ZAP self-diagnosis (D-157):** check the Burp SCANNER listener before a campaign and split zero-capture into "never reached Burp" vs "ZAP produced nothing".
+- **Confirm-loop guidance (D-158):** a candidate cell states whether a Repeater replay will count (HUMAN run active) and that Request Lab stays isolated.
+- **Parameter cap (D-159):** existing coordinates keep updating at the per-endpoint cap; overflow is reported as a `PARAMETER_LIMIT` diagnostic.
+- **Completeness (D-160):** a request whose only extraction note is a sensitive-name omission stays complete and can witness the absence of other inputs.
+- **OpenAPI declarations (D-161):** observed containers/array elements covered by a declaration are no longer OBSERVED_NOT_DECLARED; schema depth returns to 64 with a `DECLARATION_DEPTH_LIMIT` diagnostic on truncation.
+- **Masking (D-162):** URL-path values are preserved so route constants (e.g. `LOGIN_TOKEN`) are not masked, while real secrets still are.
+- **Explorer/ZAP diagnostics (D-163/D-164):** the Explorer requests `Accept-Encoding: identity` to read compressed source maps, and ZAP scope / login-success failures name the offending value and what was observed.
 
 ## 1.2.0-beta.48 — SQLite connection in extension classloaders (2026-09-12)
 

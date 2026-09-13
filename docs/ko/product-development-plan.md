@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.48 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.49 제품 개발·검증 계획
 
 **D-153 로컬·원격 검증 완료:** SQLite 호스트 선행 JDBC 초기화 결함을 수정했다. 독립 JVM RED→GREEN·집중 12/12, 전체 verify 2회 각각 Java 575(2 skip)·React 472·완성 JAR 저장 gate·패키지 UI 15/15와 원격 PR #16 CI를 확인했다. 사용자가 이번 PR의 관리자 예외 병합과 beta.48 게시를 승인했다. 배포 기준은 PR #16 main 병합 커밋/태그 `v1.2.0-beta.48`이며 최종 CI·파일 해시는 Release에서 식별한다. ZAP/Explorer 기능·판정 모델 변경은 범위 밖이다. 실제 Burp 새 JAR 재로드는 별도 gate다.
 

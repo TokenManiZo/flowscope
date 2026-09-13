@@ -1,13 +1,19 @@
 # 변경 이력
 
-## 미출시 · run 밖 인증 API 안내 (D-155, 2026-09-13)
+## 1.2.0-beta.49 (미출시) — crAPI 실측 기반 진단 하드닝 (2026-09-13)
 
-- `trafficStats.humanApiOutsideRun`이 HUMAN 탐색(run) 밖에서 관측돼 D-071로 제외된 인증 API 요청 수를 센다. 빈 그래프와 빈 API·입력 차이 표가 그 이유와 "HUMAN 탐색 시작" 다음 행동을 안내한다.
+released beta.48 위에서 PR #10~#13 이식 결함과 crAPI 실측에서 드러난 진단 사각을 수정했다. push·release는 하지 않았다.
 
-## 미출시 · 인가 경계 우선순위·요청 비교 라벨 원본 복원 (D-154, 2026-09-12)
-
-- 독립 요청 2건에서 같은 리소스와 함께 관측된 입력은 확정 소유자가 있으면 PR #11 원본대로 `CONFIRMED_AUTH_BOUNDARY` 우선순위를 받습니다. 단일 동시출현은 계속 사람 검토 대상입니다.
-- 요청 비교는 한쪽 metadata가 UNKNOWN이어도 shape/type/occurrence 차이에 변경 라벨을 붙이고 `UNKNOWN`을 함께 표시합니다.
+- **인가 경계·요청 비교(D-154):** 독립 요청 2건에서 같은 리소스와 관측된 입력은 확정 소유자가 있으면 PR #11 원본대로 `CONFIRMED_AUTH_BOUNDARY`를 받고, 요청 비교는 한쪽이 UNKNOWN이어도 shape/type/occurrence 차이에 라벨을 붙인다.
+- **run 밖 인증 API 안내(D-155):** `trafficStats.humanApiOutsideRun`으로 HUMAN 탐색 밖 인증 API 수를 세어 빈 화면이 "HUMAN 탐색 시작"을 안내한다.
+- **BFLA 활성화(D-156):** 판정 매트릭스 셀에서 필수 역할·신원 역할을 기존 API로 바로 지정한다(추정 없음).
+- **ZAP 자기 진단(D-157):** 캠페인 시작 전 Burp SCANNER listener를 검사하고, 0건 실패를 "Burp 미수신" vs "ZAP 무산출"로 구분한다.
+- **확인 루프 안내(D-158):** 후보 셀이 HUMAN 탐색 활성 여부에 따른 Repeater 재전송 반영 조건과 Request Lab 격리를 안내한다.
+- **파라미터 상한(D-159):** endpoint 1,024 상한이 기존 좌표 갱신을 막던 결함을 고치고 초과분을 `PARAMETER_LIMIT` 진단으로 남긴다.
+- **완전성(D-160):** 비밀 이름 생략만 있는 요청은 완전한 것으로 보아 다른 입력의 부재를 증언한다.
+- **OpenAPI 선언(D-161):** 관측 컨테이너·배열 원소가 선언에 구조적으로 덮이면 미선언 관측으로 내지 않고, schema 깊이를 64로 되돌리며 초과는 `DECLARATION_DEPTH_LIMIT` 진단.
+- **마스킹(D-162):** 값이 URL 경로면 보존해 라우트 상수(`LOGIN_TOKEN` 등)를 가리지 않되 실제 비밀은 계속 가린다.
+- **Explorer·ZAP 진단(D-163/D-164):** Explorer가 `Accept-Encoding: identity`로 압축 source map을 읽고, ZAP scope·로그인 성공 실패가 위반 값과 관측 요약을 지목한다.
 
 ## 1.2.0-beta.48 — Burp SQLite 프로젝트 저장 연결 수정 (2026-09-12)
 

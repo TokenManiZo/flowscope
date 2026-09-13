@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.48
+# FlowScope 1.2.0-beta.49
 
 beta.48은 Burp가 JDBC를 먼저 초기화한 환경에서 프로젝트 저장이 `FlowScope SQLite save failed`로 실패하던 결함을 수정합니다. SQLite를 따로 설치하거나 scope를 바꿀 필요는 없습니다. 기존 진단은 가능한 경우 먼저 저장/JSON 내보내기한 뒤, 이전 확장을 내리고 새 JAR 하나만 로드하십시오. DB 형식은 바뀌지 않습니다. 검증·배포 상태는 아래 인계 정본을 따릅니다.
 

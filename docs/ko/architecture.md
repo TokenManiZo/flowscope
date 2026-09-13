@@ -1,4 +1,4 @@
-# FlowScope 설계서 v1.2.0-beta.48
+# FlowScope 설계서 v1.2.0-beta.49
 
 D-153: SQLite 저장·읽기·목록 metadata 조회는 번들 `org.sqlite.JDBC.createConnection`을 직접 사용한다. Burp의 DriverManager 초기화 순서·다른 등록 드라이버·스레드 context classloader에 연결 선택을 맡기지 않는다. schema v3·마스킹·임시 DB 후 atomic replace 계약은 그대로다. 격리 테스트는 드라이버를 미리 로드하지 않고 실제 프로젝트 저장/재열기를 실행한다.
 

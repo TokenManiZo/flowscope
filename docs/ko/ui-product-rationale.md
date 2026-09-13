@@ -2,7 +2,7 @@
 
 D-153(beta.48): Burp의 범위 적용 중 DB 저장 실패는 잘못된 scope라는 뜻이 아니다. 해당 실패는 공통 프로젝트 오류 창에서 `범위 적용 실패`로 표시하고 원인 예외를 Burp 확장 Errors에 기록한다. 아래 D-152 Web 작업면과 데이터 전환·초안 보존 계약은 그대로다.
 
-> **현재 계약: 2026-09-12, D-153 (beta.48 변경).** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. Evidence는 operation별 마스킹 기록과 보존 상태를 페이지로 제공하고, Request Lab raw는 선택한 한 Evidence의 메모리에만 둔다. 모든 Evidence 작업면은 일시 snapshot 실패에서 선택·검토 메모·초안을 보존하고 새 동작을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다. 프로젝트 전환 성공 뒤에만 Request Lab을 폐기하고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
+> **현재 계약: 2026-09-13, 1.2.0-beta.49 (미출시). D-153/beta.48 계약을 유지하고 D-154~D-164로 하드닝.** 기존 Judge·MCP 제거, 판정 없는 독립 Explorer, D-139 Evidence-bound Declaration과 D-138 ZAP 계약을 유지한다. 상단은 `분석 / 점검 / 기록` 그룹 탐색과 상태 popover를 제공하고, `#graph`는 점검 우선순위와 전체 관계 보기를 함께 둔다. Evidence는 operation별 마스킹 기록과 보존 상태를 페이지로 제공하고, Request Lab raw는 선택한 한 Evidence의 메모리에만 둔다. 모든 Evidence 작업면은 일시 snapshot 실패에서 선택·검토 메모·초안을 보존하고 새 동작을 잠그며, 이미 시작한 전송은 같은 문맥 결과를 기다린다. 프로젝트 전환 성공 뒤에만 Request Lab을 폐기하고 정상 unload는 마지막 분석 뒤 저장을 시도한다. 서비스가 맞지 않아 판정 조합에서 제외된 등록 계정은 설정 경고로 알린다. H/S/L은 관측 source이고 미관측·digest·2xx는 취약점 판정이 아니다. 아래 beta별 기록은 당시 상태다.
 
 ## 1. 한 문장으로 설명하기
 

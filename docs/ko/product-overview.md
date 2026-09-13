@@ -1,6 +1,6 @@
 # FlowScope 프로젝트 개요 (목표·범위)
 
-**현행 유지보수 D-153/beta.48:** 호스트 JDBC 초기화 순서로 프로젝트 저장이 실패하는 결함을 수정한다. 제품의 목적·관측/선언/판정 축·ZAP/Explorer 기능 범위는 바꾸지 않는다. 새 산출물의 검증·게시 현황은 [HANDOFF](HANDOFF.md)를 따르며, 아래 beta.47 실물/배포 결과는 이전 산출물의 근거다.
+**현행 미출시 버전 1.2.0-beta.49(D-154~D-164, released beta.48 기반). 직전 유지보수 D-153/beta.48:** 호스트 JDBC 초기화 순서로 프로젝트 저장이 실패하는 결함을 수정한다. 제품의 목적·관측/선언/판정 축·ZAP/Explorer 기능 범위는 바꾸지 않는다. 새 산출물의 검증·게시 현황은 [HANDOFF](HANDOFF.md)를 따르며, 아래 beta.47 실물/배포 결과는 이전 산출물의 근거다.
 
 > D-152(beta.47)에서 확정한 기능 범위(현행 유지): 초기 Judge·하네스 MCP 구성은 폐기한 상태를 유지하고, 판정 없는 독립 Codex Explorer를 별도 실행기로 제공한다. 다운로드 bundle·기능별 환경 점검·Explorer 준비상태 재확인을 제공하며, ZAP 계정 lane은 HUMAN Session Broker와 분리된 메모리 자격증명으로 ZAP Browser Based Authentication과 session auto-detect를 수행한다. ZAP API의 `OK`나 인증 시각이 아니라 같은 run·계정에서 관측한 인증 응답 Evidence가 사용자의 필수 로그인 성공 정규식과 일치할 때만 strict Client Spider 하나를 실행한다. 모든 ZAP lane은 bundle의 FlowScope Docker Chromium runtime과 `chrome-headless`를 사용한다. ZAP 일반 통신 실패는 3회 연속일 때 `UNREACHABLE`로 확정하며, 종료 정리는 `RUNNING / CLEANUP`으로 표시하고 정리가 끝난 뒤 최종 상태를 공개한다. 제품 MCP는 미구현이다.
 

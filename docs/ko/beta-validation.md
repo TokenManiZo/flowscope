@@ -1,4 +1,11 @@
-# FlowScope 1.2.0-beta.48 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.49 사전 벤치마크 검증 기록
+
+> **버전:** 이 브랜치의 작업 버전은 `1.2.0-beta.49`(미출시)로 올렸다. 아래 D-155~D-164 기록의 `flowscope-1.2.0-beta.48.jar`는 각 항목 검증 당시 pom이 beta.48이었을 때의 파일명이며, beta.49 승격 후 최종 JAR은 `flowscope-1.2.0-beta.49.jar`다(맨 위 항목 참조). 과거 항목별 수치·해시는 그대로 보존한다.
+
+## 2026-09-13 · 1.2.0-beta.49 승격 검증
+
+- pom·UI·문서를 `1.2.0-beta.49`로 올린 뒤 전체 검증. JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 589 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. 최종 JAR `flowscope-1.2.0-beta.49.jar` 31,948,362 bytes, SHA-256 `73460382c76d15e3fdfbbeb1159574a30f9c620ada369f3d217e3f7f3da2d928`.
+- 이 버전은 released beta.48 위의 D-154~D-164를 담은 미출시 브랜치다. push·release는 하지 않았다. 실제 Burp 재로드·crAPI 재실측은 미실행.
 
 ## 2026-09-12 · D-153 SQLite 연결 수정 검증
 
