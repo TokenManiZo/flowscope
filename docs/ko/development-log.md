@@ -6,7 +6,7 @@
 - 프런트: `components/RunGapHint.tsx`를 그래프(`ParameterMapPage`) 빈 화면과 API·입력 차이(`SurfacePage`) 빈 표에 연결해, 값이 0보다 크면 "인증된 API 요청 N건이 run 밖에서 관측됨 · 점검에서 HUMAN 탐색 시작"을 표시한다.
 - 테스트: `web/SnapshotTrafficStatsTest`(BASELINE 2·EXPLORATION 1 → count 2·coverage 1, 네비게이션·SCANNER 제외), `components/RunGapHint.test.tsx`, `parameter-map/ParameterMapPage.test.tsx` 통합. typecheck 통과.
 - 영향 파일: `SnapshotJsonWriter.java`, `SnapshotTrafficStatsTest.java`, `lib/api/types.ts`, `components/RunGapHint.tsx(+test)`, `features/parameter-map/ParameterMapPage.tsx(+test)`, `features/surface/SurfacePage.tsx`, decisions D-155, HANDOFF, beta-validation, 이 기록.
-- 남은 한계: role 지정 없이는 BFLA 미탐, ZAP은 8081 listener 필요, 온보딩 후속 증분(계정 자동 등록·역할 지정 안내) 예정. 전체 verify와 crAPI 재로드 실측은 이어서 수행.
+- 남은 한계: role 지정 없이는 BFLA 미탐, ZAP은 8081 listener 필요, 온보딩 후속 증분(계정 자동 등록·역할 지정 안내) 예정. 브랜치를 beta.48(`30c49bf`) 위로 rebase했고(문서 충돌 5개 파일은 양쪽 기록을 모두 보존), JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 14초), Java 577건(실패·오류 0, opt-in 2 skip), React 60파일/476건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,492 bytes, SHA-256 `c63a3af15eb01cd52f9b12534c622f8d63f22865b6449f13d1ad754114d7a8d3`. 새 JAR의 실제 Burp 재로드는 미실행.
 
 
 ## 2026-09-12 · D-154 인가 경계 우선순위·요청 비교 라벨 PR 원본 복원

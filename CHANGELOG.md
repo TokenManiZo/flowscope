@@ -1,5 +1,14 @@
 # 변경 이력
 
+## 미출시 · run 밖 인증 API 안내 (D-155, 2026-09-13)
+
+- `trafficStats.humanApiOutsideRun`이 HUMAN 탐색(run) 밖에서 관측돼 D-071로 제외된 인증 API 요청 수를 센다. 빈 그래프와 빈 API·입력 차이 표가 그 이유와 "HUMAN 탐색 시작" 다음 행동을 안내한다.
+
+## 미출시 · 인가 경계 우선순위·요청 비교 라벨 원본 복원 (D-154, 2026-09-12)
+
+- 독립 요청 2건에서 같은 리소스와 함께 관측된 입력은 확정 소유자가 있으면 PR #11 원본대로 `CONFIRMED_AUTH_BOUNDARY` 우선순위를 받습니다. 단일 동시출현은 계속 사람 검토 대상입니다.
+- 요청 비교는 한쪽 metadata가 UNKNOWN이어도 shape/type/occurrence 차이에 변경 라벨을 붙이고 `UNKNOWN`을 함께 표시합니다.
+
 ## 1.2.0-beta.48 — Burp SQLite 프로젝트 저장 연결 수정 (2026-09-12)
 
 - 호스트 JDBC 초기화가 확장 로드보다 먼저인 경우 `No suitable driver found`로 실패하던 저장·불러오기·목록 metadata 연결을 번들 SQLite 직접 연결로 변경했다. DB schema와 마스킹·atomic replace는 유지한다.
@@ -7,11 +16,6 @@
 - 범위 적용 중 저장 실패를 공통 프로젝트 오류 처리에 연결해 원인 예외를 Burp Errors에 남긴다. 이전 beta.47 JAR은 재작성하지 않는다.
 
 영문 변경 이력은 [`docs/en/CHANGELOG.md`](docs/en/CHANGELOG.md)에 보존합니다.
-
-## 미출시 · 인가 경계 우선순위·요청 비교 라벨 원본 복원 (D-154, 2026-09-12)
-
-- 독립 요청 2건에서 같은 리소스와 함께 관측된 입력은 확정 소유자가 있으면 PR #11 원본대로 `CONFIRMED_AUTH_BOUNDARY` 우선순위를 받습니다. 단일 동시출현은 계속 사람 검토 대상입니다.
-- 요청 비교는 한쪽 metadata가 UNKNOWN이어도 shape/type/occurrence 차이에 변경 라벨을 붙이고 `UNKNOWN`을 함께 표시합니다.
 
 ## 1.2.0-beta.47 — ZAP 종료·재시작 보정 (2026-09-12)
 

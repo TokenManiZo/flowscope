@@ -5,7 +5,7 @@
 - 실제 대상(OWASP crAPI, `http://localhost:8888`)에 두 계정으로 인증 API를 브라우징해 FlowScope를 현장 검증했다. 핵심 엔진은 작동한다: 신원을 JWT `sub`에서 자동 해석하고, 교차 접근을 하지 않았는데도 `GET /identity/api/v2/vehicle/{id}` 차량 위치의 BOLA/IDOR 후보를 신원별로 생성했다.
 - 실측으로 드러난 실환경 마찰(진단 도구의 최우선 결함)은 **온보딩**이다. HUMAN 탐색(run) 밖에서 브라우징하면 인증 API도 D-071로 전부 제외되고, 화면은 빈 그래프만 보이며 이유·다음 행동을 알려주지 않았다. 최소 경로는 계정·세션 캡처 없이 `HUMAN 탐색 begin → 브라우징 → end` 2동작이고 신원은 자동 해석됨을 확인했다. 계정·세션 캡처는 role과 Request Lab 재전송에만 필요하다.
 - D-155로 첫 증분을 구현했다: snapshot이 run 밖 인증 API 수(`humanApiOutsideRun`)를 세고, 그래프·API·입력 차이 빈 화면이 "탐색을 시작하면 이 요청들이 비교에 포함된다"고 안내한다. D-071 coverage 경계는 그대로다.
-- 검증: 집중 Java `SnapshotTrafficStatsTest` 2건·`TrafficClassifierTest` 18건, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. 전체 `mvn -o clean verify`와 crAPI 재로드 실측은 이어서 수행한다. 남은 실환경 항목: ZAP은 Burp 8081 listener가 있어야 수집됨(실측 확인), role 지정 없이는 BFLA 불가.
+- 검증: 집중 Java `SnapshotTrafficStatsTest` 2건·`TrafficClassifierTest` 18건, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. 브랜치를 origin/main(beta.48, `30c49bf`) 위로 rebase한 뒤 JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 14초), Java 577건(실패·오류 0, opt-in 2 skip), React 60파일/476건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,492 bytes, SHA-256 `c63a3af15eb01cd52f9b12534c622f8d63f22865b6449f13d1ad754114d7a8d3`. 새 JAR의 실제 Burp 재로드·crAPI 재실측은 미실행이다. 남은 실환경 항목: ZAP은 Burp 8081 listener가 있어야 수집됨(실측 확인), role 지정 없이는 BFLA 불가.
 
 
 ## 2026-09-12 · D-154 PR #11 원본 의미 복원(미출시 브랜치 `claude/restore-pr-semantics`)

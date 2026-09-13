@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — explain run-less authenticated API traffic (D-155, 2026-09-13)
+
+- `trafficStats.humanApiOutsideRun` counts HUMAN API requests observed outside an exploration run (excluded by D-071). The empty graph and the empty surface table now say why and offer to start a HUMAN run.
+
 ## Unreleased — restore PR #11 boundary priority and diff labels (D-154, 2026-09-12)
 
 - An input observed with the same resource in two independent requests receives the `CONFIRMED_AUTH_BOUNDARY` priority again when the owner is confirmed, as in the original PR. A single co-occurrence still requires human review.

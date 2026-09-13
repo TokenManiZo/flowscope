@@ -18,7 +18,7 @@
 | 핵심 엔진 | HUMAN 탐색 run 안에서 인증 API가 INCLUDE되고 신원이 JWT에서 자동 해석됨. 교차 접근 없이 `GET /identity/api/v2/vehicle/{id}` 차량 위치의 BOLA/IDOR 후보 2건(User A↔User B)과 `AUTH_VARIANT_UNTESTED` gap 생성 확인. |
 | 온보딩 실측 | run 밖 브라우징은 인증 API 36건이 전부 `HUMAN_OUTSIDE_EXPLORATION_RUN`으로 제외(D-071). 최소 경로는 계정·세션 캡처 없이 `HUMAN 탐색 begin→browse→end` 2동작·신원 자동 해석. |
 | ZAP | Burp에 8081 listener가 없어 Client Spider 수집 0건으로 실패 재현. listener 추가 후 naver 대상에서 13건 수집 성공. |
-| D-155 회귀 | `SnapshotTrafficStatsTest` 2, `TrafficClassifierTest` 18, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. 전체 `mvn -o clean verify`와 crAPI 재빌드 재로드는 이어서 수행. |
+| D-155 회귀 | `SnapshotTrafficStatsTest` 2, `TrafficClassifierTest` 18, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. beta.48 rebase 후 JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 14초), Java 577건(실패·오류 0, opt-in 2 skip), React 60파일/476건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,492 bytes, SHA-256 `c63a3af15eb01cd52f9b12534c622f8d63f22865b6449f13d1ad754114d7a8d3`. 새 JAR의 실제 Burp 재로드는 미실행. |
 | 미실행 | role 지정 기반 BFLA, 대규모 실대상 성능, crAPI 재빌드 JAR의 실제 Burp 재로드. |
 
 
