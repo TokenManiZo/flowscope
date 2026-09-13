@@ -1,6 +1,6 @@
 # FlowScope 팀 인계 정본
 
-> **현재 미출시 작업 버전: 1.2.0-beta.49** (이 브랜치 `claude/restore-pr-semantics`, D-154~D-164). 사용자 승인으로 [PR #17](https://github.com/choewonwoo1817/testflowscope/pull/17)을 통해 main 병합·태그 `v1.2.0-beta.49`·[beta.49 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.49) 게시를 진행한다(main ruleset의 필수 리뷰 1건은 beta.48과 같이 소유자 bypass). 자산은 JAR·bundle·`SHA256SUMS.txt`이며 정확한 해시·게시 시각은 Release 기록을 따르고 bundle 안에 자신의 해시를 넣지 않는다. 실제 Burp 재로드·crAPI 재실측은 미실행.
+> **현재 배포 기준: 1.2.0-beta.49** — 사용자 승인으로 [PR #17](https://github.com/choewonwoo1817/testflowscope/pull/17)을 main에 병합(`be7df1a`, 필수 리뷰 1건은 beta.48과 같이 소유자 bypass; ruleset 변경·강제 푸시·기존 태그 재작성 없음)하고 태그 `v1.2.0-beta.49`를 그 커밋에 붙여 [beta.49 Pre-release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.49)를 2026-09-13T07:02:23Z에 게시했다. PR CI(verify·shell-scripts·windows-scripts) 통과. 자산 `flowscope-1.2.0-beta.49.jar` 31,948,362 bytes SHA-256 `73460382c76d15e3fdfbbeb1159574a30f9c620ada369f3d217e3f7f3da2d928`, `flowscope-1.2.0-beta.49-bundle.zip` 30,906,502 bytes SHA-256 `5b8309c2f60ac59ed0e014f182ba46188c6a808c80732e6eb6f833bbb5ef13e4`, `SHA256SUMS.txt`. 게시 자산을 인증된 GitHub 다운로드로 받아 SHA256SUMS 대조와 로컬 원본 일치를 확인했고 bundle 안 문서가 beta.49 최종본임을 확인했다. 이 후속 문서 커밋은 태그를 옮기지 않는다. **실제 Burp 재로드·crAPI 재실측은 미실행**(다음 gate).
 
 ## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
 
