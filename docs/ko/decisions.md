@@ -1429,6 +1429,87 @@
 - **기각:** 별도 SQLite 설치/범위 재입력은 원인과 무관하다. 테스트에서만 Class.forName을 넣거나 TCCL을 바꾸면 제품 경로 결함을 숨긴다. 제품에서 Class.forName 후 DriverManager 검색을 유지할 필요도 없다.
 - **검증:** 드라이버 선행 준비 없는 새 JVM에서 실제 저장소 save/load/readContext를 호출하고, 두 독립 확장 로더 사이 Evidence ID·내용 보존과 덮어쓰기를 검사한다. 완성 JAR에도 같은 검사를 적용한다. Burp 범위 실패는 기존 projectError 처리로 상세 원인 기록을 보존한다. 자동/패키지 검증과 실제 Burp 재로드 성공은 별개로 보고한다.
 
+## D-154 · 인가 경계 우선순위와 요청 비교 라벨을 PR #11 원본 의미로 되돌린다 (2026-09-12)
+
+- **문제:** D-146 ③은 공개된 독립 증인 2건의 CORROBORATED link를 확정 소유자가 있어도 `HUMAN_REVIEW_REQUIRED`로 두어 점검 큐 하단에 배치했고, D-147 ①은 한쪽이 UNKNOWN인 shape/type/occurrence 차이에 변경 라벨을 붙이지 않았다. 두 규칙은 PR #11 원본(`ParameterAuthorizationAnalyzer.gap`, `requestDiff.ts`)보다 보수적이며, 사용자는 PR이 보존하던 구조 정보를 잃거나 새 제한을 추가하지 말고 너무 보수적으로 가지 말 것을 지시했다.
+- **결정:** ① `SurfaceAuthorizationLinker.gap`은 확정 소유자와 OBSERVED 또는 CORROBORATED link가 함께 있으면 `CONFIRMED_AUTH_BOUNDARY`를 부여하고, `HUMAN_REVIEW_REQUIRED`는 INFERRED·UNKNOWN에만 붙인다. `CORROBORATED_EVIDENCE` 이유와 `REASON_ORDER`는 그대로이며 link·gap 수는 바뀌지 않고 우선순위 순서만 PR 원본으로 돌아간다. ② `requestDiff.ts`는 PR 원본대로 shape/type/occurrence가 다르면 라벨을 붙이고 한쪽이 UNKNOWN이면 `UNKNOWN`을 병기한다. 값은 이전에도 양쪽 다 표시됐으므로 바뀌는 것은 라벨뿐이다.
+- **유지:** D-146 ①(등록 계정의 서비스 경계)·②(중첩 PATH 부모 슬롯)는 실행 불가능한 추천과 잘못된 리소스 연결을 고친 것이라 유지한다. D-147 ②(미지원 본문·불완전 multipart 진단)는 파싱하지 않은 본문으로 부재를 주장하지 않기 위한 것이라 유지한다. 64자 masked preview 노출은 값 조각이 snapshot에 실리는 문제라 계속 결정 대기다.
+- **기각:** CORROBORATED를 별도 중간 순위로 두는 절충은 PR에 없던 새 규칙을 만든다. UNKNOWN 라벨을 계속 숨기는 방식은 사용자가 지적한 보수성이다. D-146·D-147 기록은 고쳐 쓰지 않고 이 결정으로 ③·①만 대체한다.
+- **검증:** `SurfaceAuthorizationLinkTest`는 단일 동시출현(INFERRED)이 사람 검토로 남고 독립 2건(CORROBORATED)과 확정 소유자가 확정 경계 우선순위를 받는 것을, `requestDiff`·`ParameterRequestDiff`·`ParameterMapPage` 테스트는 PR 원본 기대값을 검사한다. 패키지 sample에는 CORROBORATED link가 없어 snapshot fixture는 변하지 않는다.
+- **후속 리뷰(2026-09-13):** 코드리뷰에서 소유자 미확정 CORROBORATED link가 `CONFIRMED_AUTH_BOUNDARY`도 `HUMAN_REVIEW_REQUIRED`도 받지 않는 무플래그 중간 상태를 지적했으나, PR #11 원본(`ParameterAuthorizationAnalyzer.gap`, 커밋 `fc66b42` 257–263줄)과 동일함을 확인해 원본 의미대로 유지한다. 이 경로는 원본·현행 모두 무테스트였으므로 `corroboratedLinkWithoutAConfirmedOwnerIsNeitherPromotedNorFlaggedForReview`로 동작을 고정했다.
+
+## D-155 · run 밖에서 관측된 인증 API 트래픽을 세어 탐색 시작을 안내한다 (2026-09-13)
+
+- **문제:** crAPI 실측에서 두 계정으로 인증된 API를 브라우징해도 HUMAN 탐색(EXPLORATION run) 밖이면 D-071에 따라 전부 `HUMAN_OUTSIDE_EXPLORATION_RUN`으로 coverage에서 제외돼 그래프·API·입력 차이가 비었다. 화면은 이유를 알려주지 않아, 실제로는 비교 가능한 신호가 관측됐는데도 도구가 아무것도 못 찾은 것처럼 보였다. 신원은 JWT `sub`에서 자동 해석되고 API 분류도 정확했으므로 데이터가 없는 게 아니라 안내가 없는 것이 문제였다.
+- **결정:** snapshot `trafficStats`에 `humanApiOutsideRun`을 추가한다. 이는 source=HUMAN·trafficClass=API·사유 `HUMAN_OUTSIDE_EXPLORATION_RUN`인 records 수이며, coverage로 세지 않는다(D-071 유지). 그래프(점검 우선순위)와 API·입력 차이 빈 화면은 이 값이 0보다 크면 "인증된 API 요청 N건이 HUMAN 탐색 밖에서 관측됨 · 점검에서 탐색을 시작하면 비교에 포함"을 표시하고 점검으로 이동하는 동작을 준다.
+- **기각:** run 밖 HUMAN API를 자동으로 coverage에 넣는 방식은 로그인 준비·배경 이동을 검증된 커버리지로 오염시키던 D-071 이전 결함을 되살린다. 자동으로 EXPLORATION run을 상시 켜는 방식도 같은 이유로 기각한다. 경계는 그대로 두고 "왜 비었고 무엇을 하면 되는지"만 안내한다.
+- **검증:** `SnapshotTrafficStatsTest`가 BASELINE HUMAN API 2건·EXPLORATION 1건에서 `humanApiOutsideRun=2`·coverage=1을, 네비게이션·SCANNER 트래픽 제외를 확인한다. `RunGapHint.test.tsx`와 `ParameterMapPage.test.tsx`가 안내 렌더와 점검 이동을 확인한다. 실측: crAPI(localhost:8888)에 두 계정으로 브라우징 → run 밖에서는 `humanApiOutsideRun`으로 안내, HUMAN 탐색 안에서는 같은 트래픽이 INCLUDE되어 차량 위치 BOLA/IDOR 후보가 생성됨을 확인했다.
+
+## D-156 · 판정 매트릭스 셀에서 필수 역할·신원 역할을 지정한다 (2026-09-13)
+
+- **문제:** BFLA 후보는 작업의 필수 역할(P3)과 신원 역할이 모두 지정돼야 만들어지는데(`functionCell` P0/P3, `expected`, 정본 `roleViolation`), 지정 UI는 계정 화면 아코디언(관측 신원 역할)과 Evidence 상세(필수 역할)에 흩어져 있고 매트릭스 셀은 P0인 이유와 다음 행동을 연결하지 않았다. crAPI 실측에서 관측 신원 role이 UNKNOWN이라 BFLA는 0건이었다(HANDOFF "role 지정 없이는 BFLA 불가").
+- **결정:** `JudgmentMatrixView` 셀 상세에 "정책·역할 지정" 섹션을 둔다. `policy.level < 3`이면 필수 역할 select와 저장(`/api/requirement`), 신원 kind가 REGISTERED·OBSERVED이고 역할이 Unknown이면 신원 역할 select와 저장(`/api/role`)을 보인다. 둘 다 아니면 섹션을 숨긴다. 판정은 서버가 snapshot 재계산으로 다시 만든다.
+- **기각:** ① 토큰·경로 문자열에서 역할 자동 추정 — D-018 위반. ② 매트릭스 안에서 기대 판정을 프런트가 계산 — D-050·D-144(Web은 재판정하지 않음) 위반. ③ 새 API 추가 — 기존 두 API로 충분하다.
+- **검증:** `JudgmentMatrixView.test.tsx`가 P0·역할 Unknown 셀에서 두 select·저장이 기존 endpoint에 정확한 인자로 호출되고 서버 메시지가 표시되며, P3·역할 확인 셀에는 섹션이 없음을 검사한다. 실제 crAPI에서 mechanic/admin 계정 트래픽을 수집한 뒤 BFLA 후보가 생기는지는 새 JAR 재로드 후 실측한다.
+
+## D-157 · ZAP 캠페인은 Burp SCANNER listener를 먼저 검사하고 0건 실패의 원인을 둘로 가른다 (2026-09-13)
+
+- **문제:** Burp에 8081 listener가 없으면 ZAP 캠페인은 몇 분 뒤 "Client Spider completed without captured in-scope traffic"으로만 끝났다. 인증 실패·capability 차단은 이미 별도 메시지지만, "ZAP은 크롤했는데 Burp가 못 받음"과 "ZAP이 아무것도 안 냄"은 한 문구로 뭉개져 실측에서 컨테이너 포트 조사가 필요했다. PR #10(D-094)의 listener 사전 점검은 이식에서 제품 코드에서 사라지고 `scripts/doctor.sh`에만 남았다.
+- **결정:** ① `ZapCampaign.State.scannerListenerOpen()`(기본 true)을 두고 실제 확장은 `loopbackListenerOpen(port, 2s)`로 127.0.0.1:port TCP 연결만 검사한다. `verifySafeZapEnvironment` 직후 닫혀 있으면 crawler를 시작하지 않고 "listener … is closed: add a Burp Proxy listener on port N bound to all interfaces…"로 즉시 실패한다. ② 0건이면 ZAP `core/view/numberOfMessages(baseurl=target)`를 읽어 N>0이면 "ZAP recorded N message(s) … none reached Burp SCANNER"(listener/upstream), 0이면 "ZAP recorded no messages"(crawler·대상·로그인), view 실패면 원래 문구를 유지한다.
+- **기각:** ① Montoya 프로젝트 옵션 JSON에서 listener 목록 파싱 — loopback 연결 한 번이 더 단순하고 bind 인터페이스까지 실제로 검증한다. ② 인증 실패·차단·crawler·0건 4-way 분리 — 앞 둘은 이미 별도 처리라 과대 명세. ③ 검사 실패를 경고로만 남기고 진행 — 결과가 반드시 0건이므로 시간 낭비다.
+- **검증:** `ZapCampaignTest`에 listener 닫힘 시 crawler 미시작 실패, ZAP 메시지 7건/0건일 때의 두 원인 문구, loopback probe의 열림/닫힘 단위 테스트를 추가했다. 실제 Burp에서 listener를 제거한 재현은 미실행이다.
+
+## D-158 · 확인 재전송의 실제 조건을 판정 매트릭스에서 알린다 (2026-09-13)
+
+- **문제:** 후보 셀의 추천 문구는 "Repeater에서 수동 실행"만 말한다. 그런데 Repeater 트래픽은 활성 HUMAN 탐색(run) 안에서만 그 phase를 상속해 관측(정본)으로 들어가고(`FlowScopeExtension` capture context), run 밖이면 BASELINE→D-071 제외다. 반대로 FlowScope 자체 Request Lab 재전송은 VALIDATION phase로 기록되어 coverage에서 제외된다. 팀원이 재열기 프로젝트에서 run 없이 Repeater를 쓰면 D-155와 같은 "왜 안 잡히지"가 재발한다.
+- **결정:** 추천 섹션에 `HumanRunGuidance`를 둔다. `/api/human-run` 상태가 비활성이면 "run 밖 재전송은 제외(D-071)" 경고와 "점검에서 HUMAN 탐색 시작" 이동 버튼을, 활성이면 "지금 Repeater 재전송은 관측으로 반영" 안내를 보인다. 두 경우 모두 Request Lab 재전송은 D-008에 따라 검증 이력으로 분리 저장되며 셀 status를 바꾸지 않는다고 명시한다. 상태를 모르면(응답 전) 아무것도 보이지 않는다.
+- **유지(재확인):** Request Lab 결과를 관측/coverage에 병합하지 않는다(D-008 "재전송 결과를 관측에 병합 — 기각: 커버리지/판정이 오염됨"). 사람 확정은 `reviewStatus`(D-144 ⑤)이고 `*_REPRODUCED`는 통제 재현 생산자가 없어(D-126, D-144 ④) 계속 부여하지 않는다. 독립 감사에서 "D-008과 Repeater-관측 규칙의 비일관성"으로 제기됐으나, 사람이 run 안에서 직접 수행한 Repeater는 HUMAN 관측이고 도구가 대신 보낸 Request Lab은 격리 재전송이므로 두 규칙은 양립한다. 이를 결정으로 고정한다.
+- **기각:** ① Request Lab VALIDATION을 coverage에 넣어 셀 status를 바꾸기 — D-008 위반·판정 오염. ② run이 꺼져 있으면 재전송 버튼을 막기 — Repeater는 Burp 안의 사용자 행위라 도구가 막을 수 없고, 안내가 맞다.
+- **검증:** `JudgmentMatrixView.test.tsx`가 비활성 시 경고·D-071 문구·`#inspection` 이동, 활성 시 반영 안내·D-008 문구·버튼 없음을 검사한다.
+
+## D-159 · endpoint 파라미터 상한은 신규 좌표에만 적용하고 진단으로 센다 (2026-09-13)
+
+- **문제:** `SurfaceAnalyzer.MutableEndpoint.parameter()`가 `parameters.size() >= 1,024`를 기존 좌표 조회보다 먼저 검사해, 상한에 닿은 뒤 도착한 관측은 **기존 좌표라도** 버려졌다. HUMAN이 1,024개를 관측한 뒤 SCANNER가 같은 1,024개를 관측하면 SCANNER 관측이 전부 사라져 3-way 비교 축이 조용히 깨졌고, 1,025번째 신규 좌표도 진단 없이 사라졌다. `declareSchema`의 동일 가드는 기존 좌표의 선언까지 잃게 했다. 1,024는 이식 전 소유자 상수이며(PR #11에는 endpoint 상한이 없고 record당 10,000 + `PARAMETER_LIMIT` 진단, 기존 key 갱신 유지) PR 설계서 §8 "상한 초과는 조용히 누락하지 않는다"와 어긋났다.
+- **결정:** 기존 좌표는 상한과 무관하게 먼저 찾아 갱신한다. 상한은 신규 좌표에만 적용하고 거부 수를 `droppedParameters`로 세어 endpoint당 `PARAMETER_LIMIT` 진단(anchor 없음, operation, droppedCount)으로 남긴다. `declareSchema`는 상한을 먼저 검사하지 않고 `parameter()`에 맡긴다(IGNORED의 declare/observe는 no-op). 상한 숫자는 바꾸지 않는다.
+- **기각:** ① 상한을 올려 증상 감추기 — 절벽이 옮겨질 뿐이고 갱신 차단 결함이 남는다. ② 상한 도달 시 오래된 좌표 evict — 관측 순서에 따라 결과가 달라진다. ③ 중복 Evidence 부풀림 방어 추가 — `evidenceIds`·`observations`가 Set이라 이미 dedup된다(검증 테스트만 유지).
+- **검증:** `SurfaceAnalyzerTest`가 1,024개 좌표를 HUMAN·SCANNER가 각각 관측하면 두 source가 모두 남고 Fact source와 프로파일 집계가 일치하며, 1,025번째는 `PARAMETER_LIMIT` droppedCount 1로 남고, 수집 순서를 뒤집어도 보존 좌표 집합이 같음을 검사한다.
+
+## D-160 · 비밀 이름 생략은 요청을 불완전하게 만들지 않는다 (2026-09-13)
+
+- **문제:** 요청 행의 완전성은 "추출 진단 0건 + 원문 보존"이었다(`SurfaceAnalyzer` Row.complete, `SnapshotJsonWriter.parameterEvidence`). 그런데 `password`·`token`류 좌표를 만들지 않는 의도적 생략도 `SENSITIVE_PARAMETER_OMITTED` 진단으로 남아 행 전체가 불완전해졌고, 그 요청은 다른 좌표의 부재를 증언하지 못했다. crAPI의 로그인·비밀번호 재설정·OTP 요청처럼 비밀 필드가 있는 요청은 전부 여기 걸려 `sort` 같은 일반 입력의 부재·차이가 사라졌다(독립 감사 C).
+- **결정:** `ParameterExtraction.parsedCompletely()`를 두어 진단이 전부 `SENSITIVE_PARAMETER_OMITTED`인 요청은 완전한 것으로 본다. 파싱 실패·상한·미지원 형식(`INVALID_*`, `*_LIMIT`, `UNSUPPORTED_REQUEST_BODY`, `MISSING_EVIDENCE`)이 하나라도 있으면 불완전하다. Surface와 Evidence API가 같은 메서드를 쓴다. 생략 사실은 진단으로 계속 남고 비밀 좌표는 여전히 만들지 않는다.
+- **범위:** 계획 항목 #2의 1차 범위다. 위치별(QUERY/PATH/BODY) 4-상태 완전성 모델은 실제 데이터에서 PATH/QUERY 부재 주장이 본문 문제로 막히는 사례가 나올 때만 진행한다. PR #11 원본(`ParameterProfiler`)도 진단 유무로 완전성을 정했으므로 이 결정은 원본보다 덜 보수적이며, 그 이유를 여기 남긴다.
+- **기각:** ① 생략 진단 자체를 없애기 — 생략 사실을 잃는다. ② 비밀 필드가 있는 요청을 부재 분모에서 제외한 채 두기 — 로그인·재설정 계열 endpoint의 입력 차이가 영영 안 보인다.
+- **검증:** `SurfaceParameterProfileTest`(password만 있는 요청이 `sort` 부재의 증인이 되고 `/password` Fact는 없음), `SnapshotParameterEvidenceTest`(비밀 필드 JSON이 Evidence·Surface 양쪽에서 complete=true, `completenessReason` 없음). 기존 미지원 본문·손상 multipart 불완전 테스트는 그대로 통과한다.
+
+## D-161 · OpenAPI 선언은 리프 관례를 유지하되 깊이 64·깊이 진단·구조적 덮임 delta로 비대칭을 없앤다 (2026-09-13)
+
+- **문제:** 이식본은 PR #11이 선언하던 중간 객체·scalar 배열 원소를 선언하지 않는다(D-143 2단계 기각 ①, held-out 정답의 리프·배열 필드 관례). 그런데 관측 엔진은 OBJECT/ARRAY 컨테이너와 `/x/*` 원소까지 기록하므로, 스펙이 정확히 선언한 `criteria: object`·`labels: string[]`도 관측되면 컨테이너·원소 좌표가 항상 `OBSERVED_NOT_DECLARED`로 떴다(관측·선언 비대칭, 독립 감사 C2). 또 schema 깊이는 원본 64가 기록 없이 20이 됐고, 깊이 때문에 끊기면 선언 0개·오류 없음으로 끝났다.
+- **결정:** ① 선언 모델과 held-out 정답은 그대로 둔다(D-143 ① 유지: 정답을 구현에 맞추지 않는다). ② 비대칭은 delta에서 흡수한다: 선언이 없는 관측 컨테이너(shape OBJECT/ARRAY)에 선언된 하위 좌표가 있거나, `/*` 원소의 부모가 선언돼 있으면 `structurallyDeclared`로 보아 `OBSERVED_NOT_DECLARED`가 아니라 관측 source 수에 따른 delta를 준다. 선언 목록·held-out 파라미터 집합은 늘지 않는다. ③ `MAX_SCHEMA_DEPTH`를 원본과 같은 64로 맞춘다(`$ref` 32·조건 512자·node 상한 유지). ④ 깊이 때문에 끊긴 노드 수를 endpoint당 `DECLARATION_DEPTH_LIMIT` 진단으로 남긴다.
+- **기각:** ⓐ PR처럼 컨테이너·원소를 선언하고 truth.json을 갱신 — D-143 ①이 기각한 "정답을 구현에 맞추기"다. ⓑ 관측 엔진에서 컨테이너·원소 기록을 없애기 — PR#11 권한 연결(exact scalar 원소 매칭)과 D-143 슬라이스 1의 관측 단일화를 깬다. ⓒ 깊이 20 유지 — 근거가 기록된 적이 없고 원본 테스트는 64를 고정했다.
+- **검증:** `SurfaceAnalyzerTest`가 `criteria`(객체)·`criteria/labels/*`(원소)는 선언 0개인 채 `ONE_SOURCE_OBSERVED`, 정말 미선언인 `extra`는 `OBSERVED_NOT_DECLARED`임을, 깊이 60 체인은 리프를 선언하고 70 체인은 선언 0개 + `DECLARATION_DEPTH_LIMIT`임을 검사한다. `SurfaceHeldOutEvaluationTest`는 변경 없이 통과한다.
+
+## D-162 · 비밀 마스킹은 URL 라우트 값을 가리지 않는다 (2026-09-13)
+
+- **문제:** `SECRET_FIELD` 정규식이 `token|password|secret|...`를 단어 경계 없이 부분일치해, JS 라우트 상수 `LOGIN_TOKEN:"/identity/api/auth/login"`, `RESET_PASSWORD`, `VERIFY_TOKEN`, `VALIDATE_TOKEN`, `FORGOT_PASSWORD`의 **URL 값까지 마스킹**했다. crAPI 실측에서 Explorer가 `MASKED_ROUTE`로 정확한 endpoint를 못 읽었다. 이 마스킹은 inline 응답 본문과 Explorer artifact 양쪽에 적용된다(`ExplorerHttpGateway`가 `Masking.maskSecrets`로 artifact를 저장).
+- **결정:** 키 이름 매칭은 유지하되, 매치된 **값이 URL 경로**(`/`·`http://`·`https://`로 시작)면 원문을 보존하고 그 외에는 계속 가린다(`secretFieldReplacement`, `isRoutePathValue`). 실제 비밀 값(JWT `eyJ…`, `sk-…`, 임의 비밀번호)은 URL 접두로 시작하지 않으므로 마스킹이 유지된다. 단어 경계만 추가하는 대안은 `authToken:"eyJ…"` 같은 실제 비밀을 노출하므로 기각했다(키가 아니라 값으로 구분).
+- **범위:** `maskSecrets`(JS·평문)와 maskJson 파싱 실패 fallback에만 적용. 구조화 JSON은 `maskJson`이 키로 처리하고 source map 키(version/sources/…)는 비밀 이름이 아니라 영향 없음. 헤더(Authorization/Cookie)와 XML 비밀은 그대로 가린다.
+- **검증:** `MaskingTest`가 라우트 상수 4종의 URL 값 보존과 `password=`·`access_token=`·`token:` 실제 비밀 마스킹 유지를 함께 검사한다.
+
+## D-163 · Explorer는 비압축 응답을 요청하고 ZAP scope 실패는 위반 값을 지목한다 (2026-09-13)
+
+- **문제:** ① Explorer 요청이 `Accept-Encoding`을 지정하지 않아 서버가 gzip한 source map·JS가 이진 바이트로 와서 `HttpMessageTextCodec.decode`의 `looksTextual` 검사에서 버려졌다(crAPI `SOURCE_MAP_UNREADABLE`: 200 octet-stream인데 읽을 본문·artifact_id 없음). 압축 해제기는 어디에도 없다. ② `ZapBrowserAuthenticator`의 scope 실패가 대상·로그인 URL 중 무엇이 밖인지, 현재 scope가 무엇인지 알려주지 않아 실측에서 원인 파악이 어려웠다.
+- **결정:** ① Explorer 요청에 `Accept-Encoding: identity`를 기본 추가한다(사용자 헤더에 있으면 존중). 압축 해제기 도입보다 단순하고 안전하며, source map·JS가 텍스트로 디코드된다. ② scope 실패 메시지가 "대상 X" / "로그인 URL Y" / 둘 다 중 어느 것이 scope 밖인지 지목하고, ZAP 브라우저 인증의 로그인 URL은 로그인 **페이지**여야지 로그인 API가 아니라는 점을 덧붙인다.
+- **기각:** gzip/deflate 응답을 확장 안에서 해제하는 방식은 D-157 축소 원칙(작게 고치기)과 어긋나고 실패 모드가 늘어난다. identity 요청이 대상 서버 지원 범위에서 충분하다. scope 텍스트 전체를 메시지에 넣는 것은 Predicate 계약을 바꿔야 해 보류하고 위반 값 지목만 한다.
+- **검증:** `ZapBrowserAuthenticatorTest`가 로그인 URL만 scope 밖일 때 메시지가 "로그인 URL"을 지목하고 "대상"으로 시작하지 않으며 "scope 밖"을 포함함을 검사한다. `Accept-Encoding` 추가는 Burp 결합 transport라 빌드로 검증하고, 실제 crAPI에서 gzip source map이 읽히는지는 새 JAR 재로드 후 실측(미실행)이다.
+
+## D-164 · ZAP 로그인 성공 검증 실패는 관측한 것을 지목한다 (2026-09-13)
+
+- **문제:** `ZapBrowserAuthenticator`가 로그인 성공 정규식(`loggedInIndicator`)에 맞는 인증 응답 Evidence를 못 찾으면 "URL·자격증명·정규식을 확인하라"고만 했다. crAPI 실측(momo)에서 이 게이트에 걸렸는데, 무응답(폼 미제출)·자격증명 실패(401)·정규식 불일치(200이지만 미매치) 중 무엇인지 알 수 없어 원인 파악이 어려웠다. D-136 게이트 자체는 "COMPLETED만으로 로그인 성공을 인정하지 않는다"는 의도된 것이라 유지한다.
+- **결정:** 실패 메시지에 관측 요약을 붙인다 — 인증 단계 응답 수와 상태 코드, 그리고 (a) 0건이면 "브라우저가 로그인 폼을 제출하지 못했을 수 있음", (b) 로그아웃 정규식이 더 나중에 일치, (c) 응답은 있으나 성공 정규식 일치 0건 중 어느 것인지. 로그인 URL은 폼이 있는 로그인 페이지여야 한다고 덧붙인다. 판정 로직(마지막 로그인 일치가 마지막 로그아웃보다 뒤)은 그대로다.
+- **기각:** 응답 본문을 메시지에 넣는 방식은 비밀·마스킹 노출 위험이 있어 상태 코드와 개수만 넣는다. 게이트를 완화해 200이면 통과시키는 방식은 D-004/D-136(상태 단독 금지)을 어긴다.
+- **검증:** `ZapBrowserAuthenticatorTest`가 응답 1건·상태 200·정규식 불일치일 때 "인증 응답 1건"·"[200]"을, 응답 0건일 때 "인증 단계 응답이 0건"을 메시지에 포함함을 검사한다. 기존 판정 회귀는 그대로 통과한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

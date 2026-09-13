@@ -45,6 +45,12 @@ public final class ZapCampaign implements AutoCloseable {
         ScopePolicy scope();
         ZapClient zap();
         default int scannerProxyPort() { return 8081; }
+        /**
+         * Burp SCANNER proxy listener가 실제로 열려 있는지. ZAP은 host.docker.internal:port로 Burp를 거쳐야만 FlowScope가
+         * 수집하므로, 닫혀 있으면 캠페인은 몇 분 뒤 "0건"으로만 끝난다(PR #10 D-094 사전 점검의 복원). 기본값은 true이며
+         * 실제 확장만 loopback 연결로 검사한다.
+         */
+        default boolean scannerListenerOpen() { return true; }
         default void scannerCapability(String runId, String capability) { }
         default void clearScannerCapability(String runId) { }
         default long scannerCapabilityRejections(String runId) { return 0; }
@@ -212,6 +218,12 @@ public final class ZapCampaign implements AutoCloseable {
                 ? args.path("include_anonymous").asBoolean(false) : requestedAccounts.isEmpty();
         List<ZapDefinition> definitions = validatedZapDefinitions(args.path("definitions"));
         verifySafeZapEnvironment(definitions);
+        if (!state.scannerListenerOpen()) {
+            int port = state.scannerProxyPort();
+            throw new IllegalStateException("Burp SCANNER proxy listener 127.0.0.1:" + port
+                    + " is closed: add a Burp Proxy listener on port " + port
+                    + " bound to all interfaces so Docker ZAP can reach host.docker.internal:" + port);
+        }
         if (!definitions.isEmpty() && !state.approve("ZAP API 정의가 만든 요청 전송", target)) {
             throw new IllegalStateException("API definition import requires explicit Burp approval");
         }
@@ -622,7 +634,7 @@ public final class ZapCampaign implements AutoCloseable {
             ensureZapNotCancelled();
             long clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
             if (clientCaptured == 0) {
-                throw new IllegalStateException("Client Spider completed without captured in-scope traffic");
+                throw zeroCaptureFailure("Client Spider", target);
             }
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
@@ -639,7 +651,7 @@ public final class ZapCampaign implements AutoCloseable {
             long captured = capturedForRun(runId) - capturedBefore;
             if (captured == 0) {
                 ensureScannerCapabilityIntact(runId);
-                throw new IllegalStateException("scanner workflow completed without captured in-scope traffic");
+                throw zeroCaptureFailure("scanner workflow", target);
             }
             ZapAlertCollection alerts = new ZapAlertCollection(0, false);
             try {
@@ -732,6 +744,40 @@ public final class ZapCampaign implements AutoCloseable {
 
     private long capturedForRun(String runId, SourceDetail detail) {
         return state.capturedCount(Source.SCANNER, runId, detail);
+    }
+
+    /** 127.0.0.1:port로 TCP 연결이 되면 true. Burp Proxy listener 존재 여부만 보며 요청은 보내지 않는다. */
+    public static boolean loopbackListenerOpen(int port, java.time.Duration timeout) {
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress("127.0.0.1", port), (int) Math.max(1, timeout.toMillis()));
+            return true;
+        } catch (java.io.IOException error) {
+            return false;
+        }
+    }
+
+    /**
+     * 0건 실패의 원인을 둘로 가른다. ZAP이 대상에 대해 메시지를 기록했는데 Burp에 도착한 것이 없으면 listener/upstream 문제,
+     * ZAP 자체가 아무것도 내지 않았으면 crawler·대상 도달·로그인 문제다. ZAP view를 못 읽으면 원래 문구를 유지한다.
+     */
+    private IllegalStateException zeroCaptureFailure(String phase, String target) {
+        long zapMessages = -1;
+        try {
+            zapMessages = parseZap(state.zap().numberOfMessages(target)).path("numberOfMessages").asLong(-1);
+        } catch (RuntimeException ignored) {
+            // view unavailable: fall through to the generic message
+        }
+        int port = state.scannerProxyPort();
+        if (zapMessages > 0) {
+            return new IllegalStateException(phase + " completed without captured in-scope traffic: ZAP recorded "
+                    + zapMessages + " message(s) for " + target + " but none reached Burp SCANNER 127.0.0.1:" + port
+                    + " (check the Burp Proxy listener on " + port + " and ZAP's upstream proxy)");
+        }
+        if (zapMessages == 0) {
+            return new IllegalStateException(phase + " completed without captured in-scope traffic: ZAP recorded no"
+                    + " messages for " + target + " (crawler produced nothing: target unreachable, blocked, or login failed)");
+        }
+        return new IllegalStateException(phase + " completed without captured in-scope traffic");
     }
 
     private void verifySafeZapEnvironment(List<ZapDefinition> definitions) {

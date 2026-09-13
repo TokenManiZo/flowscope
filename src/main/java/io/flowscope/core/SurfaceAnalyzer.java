@@ -53,8 +53,10 @@ public final class SurfaceAnalyzer {
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "post", "put", "patch", "delete", "options", "head");
-    private static final int MAX_PARAMETERS_PER_ENDPOINT = 1_024;
-    private static final int MAX_SCHEMA_DEPTH = 20;
+    /** endpoint당 파라미터 좌표 상한. 기존 좌표는 상한과 무관하게 계속 갱신되고, 신규 좌표만 거부하며 거부 수는 PARAMETER_LIMIT 진단으로 남긴다. */
+    public static final int MAX_PARAMETERS_PER_ENDPOINT = 1_024;
+    /** OpenAPI schema 순회 깊이 상한(PR#11 원본과 같은 64; `$ref` 32개·조건 512자·node 상한이 함께 막는다). 넘기면 DECLARATION_DEPTH_LIMIT 진단(D-161). */
+    private static final int MAX_SCHEMA_DEPTH = 64;
     /** 파라미터별 distinct 값 digest 상한. 넘으면 count를 고정하고 truncated+DISTINCT_VALUE_LIMIT 진단을 남긴다. */
     public static final int MAX_DISTINCT_VALUES = 256;
     /** 파라미터당 선언 상한(PR#11 definition/provenance 32). 넘으면 DECLARATION_LIMIT 진단. */
@@ -170,7 +172,10 @@ public final class SurfaceAnalyzer {
             }
         }
 
-        for (MutableEndpoint endpoint : endpoints.values()) endpoint.declarationDiagnostics(parameterDiagnostics);
+        for (MutableEndpoint endpoint : endpoints.values()) {
+            endpoint.declarationDiagnostics(parameterDiagnostics);
+            endpoint.parameterLimitDiagnostic(parameterDiagnostics);
+        }
         SurfaceAuthorizationLinker linker = new SurfaceAuthorizationLinker(
                 endpoints.values().stream().map(endpoint -> List.copyOf(endpoint.rows.values())).toList(), authorization);
         List<SurfaceAnalysis.ParameterGap> gaps = new ArrayList<>();
@@ -470,8 +475,12 @@ public final class SurfaceAnalyzer {
                                       RouteCandidate.Provenance provenance, Requirement inherited,
                                       ParameterLocation location, int depth, Set<String> refs,
                                       String condition, String displayName) {
-        if (raw == null || raw.isMissingNode() || !raw.isObject() || depth > MAX_SCHEMA_DEPTH
-                || condition.length() > 512 || endpoint.parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) return;
+        // endpoint 파라미터 상한은 parameter()가 신규 좌표에만 적용하고 진단으로 센다. 여기서 먼저 끊으면 기존 좌표의 선언까지 조용히 잃는다.
+        if (raw == null || raw.isMissingNode() || !raw.isObject() || condition.length() > 512) return;
+        if (depth > MAX_SCHEMA_DEPTH) {
+            endpoint.droppedDeclarationDepth++;
+            return;
+        }
         JsonNode schema = raw;
         if (schema.has("$ref")) {
             String ref = schema.path("$ref").asText();
@@ -758,6 +767,10 @@ public final class SurfaceAnalyzer {
     private static final class MutableEndpoint {
         private final EndpointKey key;
         private final LinkedHashSet<Observation> observations = new LinkedHashSet<>();
+        /** 상한 때문에 만들지 못한 신규 좌표 수(관측·선언 경로 합산). 0보다 크면 PARAMETER_LIMIT 진단으로 남긴다. */
+        private int droppedParameters;
+        /** schema 깊이 상한에서 끊긴 선언 노드 수. 0보다 크면 DECLARATION_DEPTH_LIMIT 진단으로 남긴다(D-161). */
+        private int droppedDeclarationDepth;
         private final LinkedHashSet<Declaration> declarations = new LinkedHashSet<>();
         private final Map<String, MutableParameter> parameters = new LinkedHashMap<>();
         /** Evidence ID별 요청 행. 같은 ID의 같은 내용은 한 번만, 다른 내용은 둘 다 제외한다(독립 근거 아님, RowLedger). */
@@ -783,7 +796,8 @@ public final class SurfaceAnalyzer {
                     ? "ctx:v1:" + digest("ctx:v1;" + record.role + ";" + record.phase + ";")
                     : observed.values().iterator().next().contextSignature();
             boolean retained = record.requestPayload == null || record.requestPayload.retained();
-            Row row = new Row(record, observed, signature, extraction.diagnostics().isEmpty() && retained,
+            // 의도적 생략(비밀 이름)만 있는 요청은 완전하다: 나머지 입력을 다 읽었으므로 부재의 증인이 된다(D-160).
+            Row row = new Row(record, observed, signature, extraction.parsedCompletely() && retained,
                     fact && discovery(record), fact, List.copyOf(extraction.diagnostics()));
             MutableEndpoint owner = ledger.owners.putIfAbsent(record.evidenceId, this);
             if (owner == null) {
@@ -837,6 +851,37 @@ public final class SurfaceAnalyzer {
             }
         }
 
+        /** endpoint 파라미터 상한 때문에 만들지 못한 신규 좌표 수를 진단으로 남긴다(조용히 누락하지 않는다). */
+        private void parameterLimitDiagnostic(List<SurfaceAnalysis.ParameterDiagnostic> out) {
+            if (droppedParameters > 0) {
+                out.add(new SurfaceAnalysis.ParameterDiagnostic(null, key.method() + " " + key.pathTemplate(),
+                        "PARAMETER_LIMIT", droppedParameters));
+            }
+            if (droppedDeclarationDepth > 0) {
+                out.add(new SurfaceAnalysis.ParameterDiagnostic(null, key.method() + " " + key.pathTemplate(),
+                        "DECLARATION_DEPTH_LIMIT", droppedDeclarationDepth));
+            }
+        }
+
+        /**
+         * 관측된 컨테이너(OBJECT/ARRAY)나 배열 원소(`/*`)가 선언 쪽에서 구조적으로 덮여 있는가. 선언은 리프·배열 필드 관례를
+         * 유지하고(D-143 ①) 관측 엔진은 컨테이너·원소까지 기록하므로, 둘의 비대칭을 delta에서 흡수한다(D-161).
+         */
+        private boolean structurallyDeclared(MutableParameter parameter) {
+            if (!parameter.declarations.isEmpty() || !parameter.resolved) return false;
+            String path = parameter.canonicalPath;
+            if (path.endsWith("/" + ParameterCoordinates.ARRAY_WILDCARD)) {
+                MutableParameter parent = parameters.get(parameter.location + ":"
+                        + path.substring(0, path.length() - ParameterCoordinates.ARRAY_WILDCARD.length() - 1));
+                return parent != null && !parent.declarations.isEmpty();
+            }
+            boolean container = parameter.shapes.contains(ValueShape.OBJECT) || parameter.shapes.contains(ValueShape.ARRAY);
+            if (!container) return false;
+            String prefix = parameter.location + ":" + path + "/";
+            return parameters.entrySet().stream()
+                    .anyMatch(entry -> entry.getKey().startsWith(prefix) && !entry.getValue().declarations.isEmpty());
+        }
+
         /** 파라미터당 선언 상한을 넘겨 버린 선언 수를 진단으로 남긴다(조용히 누락하지 않는다). */
         private void declarationDiagnostics(List<SurfaceAnalysis.ParameterDiagnostic> out) {
             for (MutableParameter parameter : parameters.values()) {
@@ -861,11 +906,17 @@ public final class SurfaceAnalyzer {
         private MutableParameter parameter(ParameterLocation location, String canonicalPath, String displayName,
                                            boolean resolved) {
             // 인증·비밀 이름의 좌표는 관측(엔진)과 마찬가지로 선언에서도 만들지 않는다(PR#11 sink 규칙).
-            if (canonicalPath == null || canonicalPath.isBlank() || Masking.isSensitiveParameterPath(canonicalPath)
-                    || parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) {
+            if (canonicalPath == null || canonicalPath.isBlank() || Masking.isSensitiveParameterPath(canonicalPath)) {
                 return MutableParameter.IGNORED;
             }
             String key = location + ":" + (resolved ? "" : "?") + canonicalPath;
+            // 기존 좌표는 상한과 무관하게 계속 갱신한다. 상한은 신규 좌표에만 적용하고 거부 수를 센다(PR#11 §8: 상한→진단).
+            MutableParameter existing = parameters.get(key);
+            if (existing != null) return existing;
+            if (parameters.size() >= MAX_PARAMETERS_PER_ENDPOINT) {
+                droppedParameters++;
+                return MutableParameter.IGNORED;
+            }
             return parameters.computeIfAbsent(key,
                     ignored -> new MutableParameter(location, canonicalPath, displayName, resolved));
         }
@@ -895,7 +946,7 @@ public final class SurfaceAnalyzer {
                     cells.addAll(linked.cells());
                     gaps.addAll(linked.gaps());
                 }
-                parameterFacts.add(parameter.freeze(profile, links));
+                parameterFacts.add(parameter.freeze(profile, links, structurallyDeclared(parameter)));
             }
             List<SurfaceAnalysis.RequestContext> contexts = sortedRows.stream().map(row -> new SurfaceAnalysis.RequestContext(
                     row.evidenceId(), row.complete(),
@@ -1151,9 +1202,11 @@ public final class SurfaceAnalyzer {
         private String mapKey() { return location + ":" + canonicalPath; }
 
         private ParameterFact freeze(SurfaceAnalysis.ParameterProfile profile,
-                                     List<SurfaceAnalysis.AuthorizationTargetLink> links) {
+                                     List<SurfaceAnalysis.AuthorizationTargetLink> links, boolean structurallyDeclared) {
             Requirement requirement = requirements.size() == 1 ? requirements.iterator().next() : Requirement.UNKNOWN;
-            DeltaState state = resolved ? delta(!declarations.isEmpty(), sources) : DeltaState.UNRESOLVED_COORDINATE;
+            // 구조적으로 선언에 덮인 컨테이너·원소 관측은 "미선언 관측"이 아니다(D-161). 선언 목록 자체는 늘리지 않는다.
+            DeltaState state = resolved ? delta(!declarations.isEmpty() || structurallyDeclared, sources)
+                    : DeltaState.UNRESOLVED_COORDINATE;
             return new ParameterFact(location, displayPath(location, canonicalPath, displayName, resolved), displayName,
                     requirement, immutableEnumSet(ValueShape.class, shapes),
                     immutableEnumSet(Source.class, sources), List.copyOf(evidenceIds),

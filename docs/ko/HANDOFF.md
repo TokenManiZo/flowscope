@@ -1,5 +1,31 @@
 # FlowScope 팀 인계 정본
 
+> **현재 미출시 작업 버전: 1.2.0-beta.49** (이 브랜치 `claude/restore-pr-semantics`, D-154~D-164). 사용자 승인으로 [PR #17](https://github.com/choewonwoo1817/testflowscope/pull/17)을 통해 main 병합·태그 `v1.2.0-beta.49`·[beta.49 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.49) 게시를 진행한다(main ruleset의 필수 리뷰 1건은 beta.48과 같이 소유자 bypass). 자산은 JAR·bundle·`SHA256SUMS.txt`이며 정확한 해시·게시 시각은 Release 기록을 따르고 bundle 안에 자신의 해시를 넣지 않는다. 실제 Burp 재로드·crAPI 재실측은 미실행.
+
+## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
+
+- **D-164(ZAP 로그인 진단):** 로그인 성공 검증 실패가 인증 응답 수·상태·실패 종류를 지목한다. momo 성공 정규식·자격증명·로그인 페이지 URL은 설정으로 사용자 몫.
+- **D-162/D-163(Explorer 실측 결함):** 마스킹이 URL 라우트 값을 보존(MASKED_ROUTE), Explorer가 `Accept-Encoding: identity`로 gzip source map을 읽고(SOURCE_MAP), ZAP scope 실패가 위반 값을 지목한다. momo JSON 로그인·ZAP scope는 설정으로 사용자 몫.
+- **D-161(선언 비대칭):** 관측 컨테이너·배열 원소가 선언에 구조적으로 덮이면 미선언 관측으로 내지 않는다. schema 깊이 64, 초과는 `DECLARATION_DEPTH_LIMIT` 진단. 선언 모델·held-out 정답은 불변.
+- **D-160(완전성 1차):** 비밀 이름 생략(`SENSITIVE_PARAMETER_OMITTED`)만 있는 요청은 완전한 것으로 보아 다른 입력의 부재를 증언한다. 위치별 4-상태 모델은 실사례가 나올 때까지 보류.
+- **D-159(파라미터 상한):** endpoint 1,024 상한이 기존 좌표 갱신까지 막아 SCANNER 관측을 조용히 버리던 결함을 고쳤다. 신규 좌표만 거부하고 `PARAMETER_LIMIT` 진단으로 센다.
+- **D-158(확인 루프 안내):** 후보 셀 추천에 HUMAN 탐색 활성 여부에 따른 Repeater 재전송 반영 조건(D-071)과 Request Lab 격리(D-008)를 표시한다. Request Lab을 coverage에 넣지 않는 것과 `*_REPRODUCED` 미부여를 결정으로 고정했다.
+- **D-157(ZAP 자기 진단):** 캠페인 시작 전 Burp SCANNER listener를 loopback으로 검사해 닫혀 있으면 즉시 실패하고, 0건 실패는 ZAP 메시지 수로 listener/upstream 문제와 빈 크롤을 구분한다(PR #10 D-094 사전 점검 복원). 실제 Burp listener 제거 재현은 미실행.
+- **D-156(BFLA 활성화 증분):** 판정 매트릭스 셀 상세에 필수 역할·신원 역할 지정을 연결했다(기존 API 배선, 추정 없음). 독립 감사 2건 결과 우선순위를 재조정했다: ① ZAP 8081 listener 사전 점검+0건 원인 구분, ② 이 BFLA 배선(완료), ③ Repeater-in-run 안내와 Request Lab VALIDATION 반영 여부 결정, ④ SurfaceAnalyzer 1,024 상한의 기존 key 갱신 차단·무진단 수정(관측·선언 경로), ⑤ `SENSITIVE_PARAMETER_OMITTED`가 행 완전성을 뒤집지 않게, ⑥ OpenAPI 중간 객체·scalar 배열 원소 선언(D-143 ① 대체 결정 동반). 계정 필터의 후보 숨김(D-143 5c)과 ZAP 컨텍스트 subtree(D-132)는 기록된 결정이라 손대지 않는다. `BOLA_REPRODUCED`는 D-126/D-144 ④로 생산자가 사라진 증거 등급이며 삭제·복원 모두 ③ 결정에 종속한다.
+
+- 실제 대상(OWASP crAPI, `http://localhost:8888`)에 두 계정으로 인증 API를 브라우징해 FlowScope를 현장 검증했다. 핵심 엔진은 작동한다: 신원을 JWT `sub`에서 자동 해석하고, 교차 접근을 하지 않았는데도 `GET /identity/api/v2/vehicle/{id}` 차량 위치의 BOLA/IDOR 후보를 신원별로 생성했다.
+- 실측으로 드러난 실환경 마찰(진단 도구의 최우선 결함)은 **온보딩**이다. HUMAN 탐색(run) 밖에서 브라우징하면 인증 API도 D-071로 전부 제외되고, 화면은 빈 그래프만 보이며 이유·다음 행동을 알려주지 않았다. 최소 경로는 계정·세션 캡처 없이 `HUMAN 탐색 begin → 브라우징 → end` 2동작이고 신원은 자동 해석됨을 확인했다. 계정·세션 캡처는 role과 Request Lab 재전송에만 필요하다.
+- D-155로 첫 증분을 구현했다: snapshot이 run 밖 인증 API 수(`humanApiOutsideRun`)를 세고, 그래프·API·입력 차이 빈 화면이 "탐색을 시작하면 이 요청들이 비교에 포함된다"고 안내한다. D-071 coverage 경계는 그대로다.
+- 검증: 집중 Java `SnapshotTrafficStatsTest` 2건·`TrafficClassifierTest` 18건, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. 브랜치를 origin/main(beta.48, `30c49bf`) 위로 rebase한 뒤 JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 14초), Java 577건(실패·오류 0, opt-in 2 skip), React 60파일/476건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,492 bytes, SHA-256 `c63a3af15eb01cd52f9b12534c622f8d63f22865b6449f13d1ad754114d7a8d3`. 새 JAR의 실제 Burp 재로드·crAPI 재실측은 미실행이다. 남은 실환경 항목: ZAP은 Burp 8081 listener가 있어야 수집됨(실측 확인), role 지정 없이는 BFLA 불가.
+
+
+## 2026-09-12 · D-154 PR #11 원본 의미 복원(미출시 브랜치 `claude/restore-pr-semantics`)
+
+- 사용자 지시("너무 보수적으로 하지 말 것", "PR이 보존하던 정보를 잃거나 새 제한을 추가하지 말 것")로 D-146 ③ CORROBORATED 비승격과 D-147 ① UNKNOWN 비교 라벨 억제를 PR #11 원본 의미로 되돌렸다. 독립 증인 2건과 확정 소유자는 `CONFIRMED_AUTH_BOUNDARY`를 받고, 한쪽이 UNKNOWN인 shape/type/occurrence 차이는 변경 라벨과 `UNKNOWN`을 함께 표시한다. link·gap 수는 그대로다.
+- D-146 ①②(서비스 경계·중첩 PATH)와 D-147 ②(미지원 본문 진단)는 결함 수정이라 유지했다. 64자 masked preview 노출은 계속 결정 대기다.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 574건(실패·오류 0, opt-in 2 skip), React 59파일/472건·typecheck, release guard 통과. 실행 중인 Burp가 17777을 점유해 같은 JAR의 standalone 서버를 17797에 띄우고 `FLOWSCOPE_E2E_ORIGIN`으로 Playwright `--retries=0` 15/15 통과(29.7s). JAR 31,942,089 bytes, SHA-256 `1a4dcdaef4ebe513f7153477e7d6bfaa15f83cadb648824d0715134b2fb936e0`.
+- main 반영·push·Release는 하지 않았다. 같은 날 실제 Burp에서 범위 적용 시 `FlowScope SQLite save failed` 다이얼로그가 관측됐다. 커널 로그는 Burp 프로세스가 푼 `libsqlitejdbc.dylib`의 서명을 AMFI가 거부했다고 남겼고, `updateScopeFromUi`는 원인을 기록하지 않은 채 "범위 오류" 제목으로 띄운다. 이 결함은 이후 D-153/beta.48이 번들 드라이버 직접 연결로 수정했고, 이 브랜치는 beta.48 위로 rebase돼 그 수정을 포함한다. 실제 Burp 재로드에서의 해소 확인은 별도 gate다.
+
 ## 2026-09-12 · D-153 SQLite 수정·검증·beta.48 배포 기준
 
 - 사용자 Burp의 `FlowScope SQLite save failed`를 beta.47 배포 JAR의 실제 저장 경로에서 재현했다. 호스트가 DriverManager를 먼저 초기화하면 `No suitable driver found`가 발생하고, 확장 드라이버를 명시적으로 로드한 대조군은 저장·재열기가 성공했다.

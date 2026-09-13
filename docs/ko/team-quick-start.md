@@ -1,10 +1,10 @@
-# 팀원용 첫 실행 — FlowScope beta.48
+# 팀원용 첫 실행 — FlowScope beta.49
 
-beta.47에서 `FlowScope SQLite save failed`가 나타났다면 beta.48 JAR로 교체하세요. scope 오류가 아니라 호스트의 JDBC 초기화 순서에 따른 저장 연결 결함입니다. SQLite 별도 설치는 필요 없습니다. 가능하면 기존 진단을 저장하거나 JSON으로 내보낸 뒤 이전 확장을 내리고 새 JAR 하나만 로드하세요. 기존 `.flowscope.db`와 프로젝트 디렉터리는 삭제하지 마세요.
+beta.47에서 `FlowScope SQLite save failed`가 나타났다면 beta.48 이상(현재 beta.49) JAR로 교체하세요. scope 오류가 아니라 호스트의 JDBC 초기화 순서에 따른 저장 연결 결함입니다. SQLite 별도 설치는 필요 없습니다. 가능하면 기존 진단을 저장하거나 JSON으로 내보낸 뒤 이전 확장을 내리고 새 JAR 하나만 로드하세요. 기존 `.flowscope.db`와 프로젝트 디렉터리는 삭제하지 마세요.
 
 현재 저장소는 비공개이므로 **협업 권한이 있는 본인 GitHub 계정으로 로그인**하세요. 로그인하지 않았거나 권한이 없으면 Release 링크가 404로 보입니다. 등록된 협업자는 저장소와 Release에 접근할 수 있습니다.
 
-[테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48)에서 **`flowscope-1.2.0-beta.48-bundle.zip`**을 받으세요. GitHub가 자동 생성하는 `Source code.zip`은 실행 번들이 아닙니다. 압축을 푼 뒤 JAR·`scripts`·`infra`·`docs`를 같은 폴더 구조로 유지하세요.
+[테스트 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.49)에서 **`flowscope-1.2.0-beta.49-bundle.zip`**을 받으세요. GitHub가 자동 생성하는 `Source code.zip`은 실행 번들이 아닙니다. 압축을 푼 뒤 JAR·`scripts`·`infra`·`docs`를 같은 폴더 구조로 유지하세요.
 
 ## 1. 사용할 기능에 맞춰 준비
 
@@ -47,7 +47,7 @@ helper가 이 PC의 ZAP key를 만들고 Chromium 이미지 빌드·기동과 Bu
 
 ## 4. JAR을 Burp에 로드
 
-Burp **Extensions → Installed → Add → Java**에서 bundle 루트의 `flowscope-1.2.0-beta.48.jar`을 선택하세요. Output/Errors에 오류가 없는지 확인한 뒤 [FlowScope Web](http://127.0.0.1:17777/)을 엽니다.
+Burp **Extensions → Installed → Add → Java**에서 bundle 루트의 `flowscope-1.2.0-beta.49.jar`을 선택하세요. Output/Errors에 오류가 없는지 확인한 뒤 [FlowScope Web](http://127.0.0.1:17777/)을 엽니다.
 
 기존 버전을 교체한다면 현재 진단의 `저장됨` 상태를 확인하고 기존 FlowScope를 먼저 언로드한 뒤 새 JAR을 로드하세요. 여러 FlowScope 버전을 동시에 켜면 포트가 충돌할 수 있습니다. JAR을 로드한 뒤 ZAP key를 처음 만들었다면 FlowScope를 한 번 재로드해야 합니다.
 
@@ -96,7 +96,7 @@ beta.47에서는 ZAP 결과 수집이 끝난 뒤에도 `종료 처리 · 임시 
 | Web `17777`이 열리지 않음 | Burp의 FlowScope 로드 상태, Output/Errors, 중복 확장/포트 |
 | ZAP `UNREACHABLE` | Docker 실행, `zap-up` 출력, doctor의 zap mode |
 | ZAP key 오류 | helper로 key 생성 후 FlowScope를 재로드했는지 |
-| ZAP API는 연결되지만 수집이 0건 | `8081` listener, 정확한 대상 URL·scope, 해당 lane의 실행 기록 |
+| ZAP API는 연결되지만 수집이 0건 | `8081` listener, 정확한 대상 URL·scope, 해당 lane의 실행 기록 beta.48 이후 빌드는 캠페인 시작 전에 `8081` listener를 검사해 닫혀 있으면 즉시 실패 메시지를 내고, 0건이면 ZAP이 기록한 메시지 수로 "Burp가 못 받음"과 "ZAP이 아무것도 안 냄"을 구분해 보여 준다. |
 | Explorer 준비 실패 | 같은 OS 사용자에서 Codex CLI 설치·로그인, Explorer 화면의 실제 오류 |
 | 예전 UI가 보임 | 기존 확장 언로드, 새 JAR 로드 후 Web 새로고침 |
 

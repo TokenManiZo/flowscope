@@ -6,6 +6,7 @@ import io.flowscope.core.RequestRecord;
 import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
@@ -32,8 +33,15 @@ final class ZapBrowserAuthenticator {
 
     Identity authenticate(String runId, String target, int laneIndex, String contextId,
                           String contextName, ZapAccountVault.Secret login) {
-        if (!scopeAllows.test(target) || !scopeAllows.test(login.loginUrl().toString())) {
-            throw new IllegalArgumentException("ZAP 대상과 로그인 URL은 모두 configured exact scope 안이어야 합니다.");
+        boolean targetInScope = scopeAllows.test(target);
+        boolean loginInScope = scopeAllows.test(login.loginUrl().toString());
+        if (!targetInScope || !loginInScope) {
+            String offending = !targetInScope && !loginInScope
+                    ? "대상 " + target + " 과(와) 로그인 URL " + login.loginUrl()
+                    : !targetInScope ? "대상 " + target : "로그인 URL " + login.loginUrl();
+            throw new IllegalArgumentException(offending
+                    + " 이(가) configured exact scope 밖입니다. 두 값을 모두 scope 안으로 맞추거나 scope에 포함하세요"
+                    + " (ZAP 브라우저 인증의 로그인 URL은 폼이 있는 로그인 페이지여야 하며 로그인 API가 아닙니다).");
         }
         String userName = "FlowScope " + login.id() + " " + runId + " " + laneIndex;
         requireOk(zap.includeInContext(contextName,
@@ -56,19 +64,38 @@ final class ZapBrowserAuthenticator {
                 new String(login.username()), new String(login.password())), "사용자 자격증명");
         requireOk(zap.setUserEnabled(contextId, userId), "사용자 활성화");
         parse(zap.authenticateAsUser(contextId, userId));
-        if (!hasLoggedInEvidence(runId, login)) {
+        LoginEvidence login2 = loginEvidence(runId, login);
+        if (!login2.confirmed()) {
             throw new IllegalStateException("로그인 성공 정규식과 일치하는 ZAP 인증 응답 Evidence가 없습니다. "
-                    + "로그인 URL·자격증명·인증 검증 정규식을 확인하세요.");
+                    + login2.diagnosis(login.loggedInIndicator())
+                    + " 로그인 URL(폼 있는 로그인 페이지)·자격증명·인증 검증 정규식을 확인하세요.");
         }
         return new Identity(contextId, contextName, userId, userName, BROWSER);
     }
 
-    private boolean hasLoggedInEvidence(String runId, ZapAccountVault.Secret login) {
+    /** 인증 단계에서 관측한 것을 요약해 실패 원인(무응답·자격증명·정규식)을 지목한다(D-164). */
+    private record LoginEvidence(int responses, List<Integer> statuses, boolean matchedLoggedIn, boolean loggedOutLater) {
+        boolean confirmed() { return matchedLoggedIn && !loggedOutLater; }
+        String diagnosis(String indicator) {
+            if (responses == 0) {
+                return "ZAP 인증 단계 응답이 0건입니다(브라우저가 로그인 폼을 제출하지 못했을 수 있음).";
+            }
+            if (loggedOutLater) {
+                return "인증 응답 " + responses + "건(상태 " + statuses + ") 중 로그아웃 정규식이 로그인보다 나중에 일치했습니다.";
+            }
+            return "인증 응답 " + responses + "건(상태 " + statuses + ") 중 로그인 성공 정규식 `"
+                    + indicator + "`과(와) 일치 0건입니다.";
+        }
+    }
+
+    private LoginEvidence loginEvidence(String runId, ZapAccountVault.Secret login) {
         Pattern loggedIn = Pattern.compile(login.loggedInIndicator());
         Pattern loggedOut = login.loggedOutIndicator().isBlank()
                 ? null : Pattern.compile(login.loggedOutIndicator());
         long lastLoggedIn = -1;
         long lastLoggedOut = -1;
+        int responses = 0;
+        List<Integer> statuses = new ArrayList<>();
         for (RequestRecord record : evidence.get()) {
             if (record.source != Source.SCANNER || record.sourceDetail != SourceDetail.ZAP_AUTHENTICATION
                     || !runId.equals(record.runId) || !login.id().equals(record.laneAccountId)
@@ -76,12 +103,14 @@ final class ZapBrowserAuthenticator {
             String response = record.responseTextForEvidence();
             if (response == null) response = record.responseBodyForAnalysis();
             if (response == null) continue;
+            responses++;
+            if (statuses.size() < 8) statuses.add(record.status);
             if (loggedIn.matcher(response).find()) lastLoggedIn = Math.max(lastLoggedIn, record.runtimeId());
             if (loggedOut != null && loggedOut.matcher(response).find()) {
                 lastLoggedOut = Math.max(lastLoggedOut, record.runtimeId());
             }
         }
-        return lastLoggedIn > lastLoggedOut;
+        return new LoginEvidence(responses, statuses, lastLoggedIn >= 0, lastLoggedOut > lastLoggedIn);
     }
 
     private void requireOk(String raw, String step) {

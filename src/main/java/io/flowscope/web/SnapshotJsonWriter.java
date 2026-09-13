@@ -106,6 +106,16 @@ public final class SnapshotJsonWriter {
         traffic.put("payloadMetadataOnly", result.records.stream()
                 .flatMap(record -> java.util.stream.Stream.of(record.requestPayload, record.responsePayload))
                 .filter(payload -> payload != null && !payload.retained()).count());
+        // Attributable API traffic captured while no HUMAN pass was active. D-071 keeps it out of coverage;
+        // D-155 surfaces the count so the operator sees a start-a-pass hint instead of an unexplained empty graph.
+        traffic.put("humanApiOutsideRun", result.records.stream()
+                .filter(record -> record.source == Source.HUMAN
+                        && record.trafficClassification != null
+                        && record.trafficClassification.trafficClass()
+                                == io.flowscope.core.TrafficClassification.TrafficClass.API
+                        && record.trafficClassification.reasons()
+                                .contains(io.flowscope.core.TrafficClassifier.HUMAN_OUTSIDE_EXPLORATION_RUN))
+                .count());
         root.putArray("replays");
         root.set("flowLinks", flowLinks(result.coverageRecords));
         root.set("roles", roles(result, config));
@@ -346,8 +356,9 @@ public final class SnapshotJsonWriter {
         boolean retained = record.requestPayload != null && record.requestPayload.retained();
         context.put("retention", retained ? "RETAINED" : record.requestPayload == null ? "UNKNOWN" : "METADATA_ONLY");
         ParameterExtraction extraction = ParameterExtractor.extract(record);
-        // Same framing as SurfaceAnalysis.RequestContext.complete: no extraction diagnostic and a fully retained request.
-        boolean complete = retained && extraction.diagnostics().isEmpty();
+        // Same framing as SurfaceAnalysis.RequestContext.complete: parsed completely (deliberate sensitive omissions
+        // do not count as failures, D-160) and a fully retained request.
+        boolean complete = retained && extraction.parsedCompletely();
         context.put("complete", complete);
         if (!complete) context.put("completenessReason", retained ? "EXTRACTION_DIAGNOSTICS" : "REQUEST_NOT_RETAINED");
         ArrayNode observations = value.putArray("parameterObservations");

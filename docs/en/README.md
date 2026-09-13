@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.48
+# FlowScope 1.2.0-beta.49
 
 Beta.48 fixes SQLite project saving when Burp initializes JDBC before the extension. No separate SQLite installation or scope workaround is needed. Save/export the current assessment where possible before replacing the old extension with the new JAR; the database schema is unchanged. See HANDOFF for verification and publication status.
 
@@ -31,7 +31,7 @@ HUMAN/SCANNER/LLM observations ┴─▶ endpoint/parameter delta ─▶ authori
 - Explicit path/query/body object references remain primary evidence. Target-neutral semantic fields such as `customerNo`, `documentSeq`, and `accountRef` are promoted only after different values are observed at the same service, method, raw path, and field location; pagination/sort and API/auth/token/session fields remain excluded.
 - Identity × operation × resource coverage matrix, uncrossed combinations, partial discovery, and source conflicts.
 - Matrix cells and manual test recommendations stay within the account's configured service; observed-only identities are compared only with services where their Evidence was captured. A registered account whose configured service matches no current observed or policy operation stays out of the matrix and is listed in a configuration warning instead of disappearing silently.
-- Repeated co-occurrence can support a parameter-to-resource relation, but only an exact scalar resource reference with confirmed ownership receives the `CONFIRMED_AUTH_BOUNDARY` priority reason.
+- A single co-occurrence only supports a parameter-to-resource relation. The `CONFIRMED_AUTH_BOUNDARY` priority reason applies to an exact scalar resource reference with confirmed ownership, or to an input observed with the same resource in two independent requests (D-154); other relations remain for human review.
 - Deterministic BOLA/IDOR and BFLA candidate engine using response taxonomy, explicit owner evidence, and user-supplied role policy.
 - Secret-free test-account registry plus an explicit memory-only session broker for scoped HUMAN login capture, cookie rotation, expiry/suspect detection, and HUMAN Request Lab requests. ZAP login credentials use a separate process-memory vault and are verified by ZAP Browser Based Authentication. Rebinding one service-scoped HUMAN credential fingerprint to a different account fails closed instead of silently moving it.
 - Query, request body, masked request/response, timestamp, redirect, GraphQL operation, and response-to-request data-flow capture. General textual messages are retained up to 1 MiB each, while discovery HTML/JavaScript/JSON/XML responses are retained up to 4 MiB; both share a 48 MiB deduplicated compressed-payload budget. The 8,192-character fields are UI previews, and analysis prefers the retained payload.
@@ -66,9 +66,9 @@ ZAP is required for the SCANNER campaign and optional for HUMAN-only use. The LL
 
 ## Build and install
 
-Download `flowscope-1.2.0-beta.48-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
+Download `flowscope-1.2.0-beta.49-bundle.zip` from [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases) for the JAR, ZAP Dockerfile/Compose/helpers, doctors, and current manuals without cloning the repository. HUMAN/Explorer users may download just the JAR. If the asset has not been published yet, clone this source and build it with `mvn clean verify`; do not infer release availability from the documentation version alone. Published-release users do not need Maven, Node.js, npm, host Chrome/ChromeDriver, or ZAP Desktop.
 
-The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.48.jar`, and one download bundle, `target/flowscope-1.2.0-beta.48-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
+The build leaves one Burp-loadable JAR, `target/flowscope-1.2.0-beta.49.jar`, and one download bundle, `target/flowscope-1.2.0-beta.49-bundle.zip`. Load the JAR in **Burp → Extensions → Installed → Add → Java**. The package phase removes the intermediate thin JAR and fails if the public JAR count is not one; CI also inspects and reproducibility-checks the bundle.
 
 For the reproducible Burp listeners, optional Docker ZAP helper, provider sign-in, preflight checks, and first three-way run, follow the [English getting-started guide](getting-started.md). The canonical Korean guide is [docs/ko/getting-started.md](../ko/getting-started.md).
 

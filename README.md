@@ -1,4 +1,4 @@
-# FlowScope 1.2.0-beta.48
+# FlowScope 1.2.0-beta.49
 
 beta.48은 Burp가 JDBC를 먼저 초기화한 환경에서 프로젝트 저장이 `FlowScope SQLite save failed`로 실패하던 결함을 수정합니다. SQLite를 따로 설치하거나 scope를 바꿀 필요는 없습니다. 기존 진단은 가능한 경우 먼저 저장/JSON 내보내기한 뒤, 이전 확장을 내리고 새 JAR 하나만 로드하십시오. DB 형식은 바뀌지 않습니다. 검증·배포 상태는 아래 인계 정본을 따릅니다.
 
@@ -75,8 +75,8 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 ### 처음 한 번만 준비
 
-1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.48-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.48 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
-2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN용 `127.0.0.1:8080`을 만들고, ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다. Docker Desktop은 이 loopback 경로를 사용합니다. native Linux Docker Engine에서는 [시작 가이드](docs/ko/getting-started.md)의 Docker bridge IP 확인 절차를 따라 해당 IP에만 `8081` listener를 하나 더 추가해야 합니다.
+1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.49-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.48 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
+2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN용 `127.0.0.1:8080`을 만들고, ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다. Docker Desktop은 이 loopback 경로를 사용합니다. native Linux Docker Engine에서는 [시작 가이드](docs/ko/getting-started.md)의 Docker bridge IP 확인 절차를 따라 해당 IP에만 `8081` listener를 하나 더 추가해야 합니다. listener가 없으면 ZAP 캠페인은 시작 전에 "listener … is closed"로 즉시 실패합니다.
 3. ZAP 기준선을 실행할 때는 압축을 푼 bundle 루트에서 macOS/Linux `./scripts/zap-up.sh`, Windows PowerShell 7 `.\scripts\zap-up.ps1`을 실행합니다. helper가 Chromium·ChromeDriver가 포함된 FlowScope ZAP 이미지를 자동 빌드·기동합니다. HUMAN/Explorer만 쓰면 이 단계가 필요 없습니다. 중지했다면 다음 점검 전에 `zap-up`만 다시 실행하면 됩니다. Burp는 호스트에서 실행합니다.
 
 4. 사용할 기능에 맞는 환경만 확인합니다.
@@ -106,7 +106,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 빠른 시작은 한 번에 한 단계의 제어만 보여 주며, 상단 단계 버튼으로 이전·다음 설정을 직접 확인할 수 있습니다. ZAP의 일반 통신 실패 1·2회는 `RETRYING`, 3회 연속 실패는 `UNREACHABLE`로 표시하며 API key 오류는 즉시 확정합니다(D-138). `CONNECTED`는 제어 API와 관리 runtime이 준비됐다는 뜻이지 crawler 완료를 뜻하지 않습니다. 연결이 실제로 끊기면 해당 단계 안에서 운영체제별 Docker helper를 보여 줍니다.
 
-소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-1.2.0-beta.48.jar`와 다운로드용 `target/flowscope-1.2.0-beta.48-bundle.zip`입니다. bundle에는 JAR, ZAP Dockerfile/Compose/helper, macOS·Linux·Windows doctor, 현재 문서가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다. 검증 문서의 SHA-256은 거기에 적힌 환경에서 만든 해당 산출물의 식별값이지, 임의 JDK·운영체제 빌드가 같은 해시를 낸다는 약속이 아닙니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
+소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-1.2.0-beta.49.jar`와 다운로드용 `target/flowscope-1.2.0-beta.49-bundle.zip`입니다. bundle에는 JAR, ZAP Dockerfile/Compose/helper, macOS·Linux·Windows doctor, 현재 문서가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다. 검증 문서의 SHA-256은 거기에 적힌 환경에서 만든 해당 산출물의 식별값이지, 임의 JDK·운영체제 빌드가 같은 해시를 낸다는 약속이 아닙니다. 운영체제별 상세 설치와 문제 해결은 [한국어 시작 가이드](docs/ko/getting-started.md), 영어 사용자는 [English guide](docs/en/getting-started.md)를 따르십시오.
 
 ## 저장소 구조
 
@@ -203,7 +203,7 @@ ZAP API endpoint는 loopback 주소만 허용합니다. API key 우선순위는 
 
 ## 제품 작업면
 
-beta.47에서 수정한 ZAP 종료·재시작 경합 처리는 beta.48에도 유지됩니다. ZAP 실행 화면의 `종료 처리 · 임시 상태 정리 중` 동안에는 이전 실행을 정리하므로 시작·중복 취소 버튼이 잠깁니다. 최종 완료·실패·취소가 표시되면 다음 실행을 시작할 수 있습니다.
+beta.47에서 수정한 ZAP 종료·재시작 경합 처리는 beta.48 이후(현재 beta.49)에도 유지됩니다. ZAP 실행 화면의 `종료 처리 · 임시 상태 정리 중` 동안에는 이전 실행을 정리하므로 시작·중복 취소 버튼이 잠깁니다. 최종 완료·실패·취소가 표시되면 다음 실행을 시작할 수 있습니다.
 
 요청 비교는 분석하지 못한 본문과 UNKNOWN metadata를 불확실한 상태로 남깁니다. 모든 Evidence 작업면의 선택·검토 메모·Request Lab 초안은 해당 프로젝트와 서버 Evidence에 묶입니다. 일시 snapshot 실패는 마지막 성공 데이터와 열린 초안을 유지하면서 새 선택·편집·전송을 잠그고, 실패 전에 시작한 전송은 취소하지 않아 서버 Evidence와 화면 결과가 갈리지 않게 합니다. 새 진단·프로젝트·샘플 전환은 현재 진단 저장이 성공해야 적용됩니다(D-147, D-151).
 
@@ -212,7 +212,7 @@ beta.47에서 수정한 ZAP 종료·재시작 경합 처리는 beta.48에도 유
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, 새 진단 시작, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 정본 로컬 Web 작업면 열기
 - **Web 상단 탐색** — `분석 / 점검 / 기록` 세 그룹이 모든 현행 route를 제공하고, 범위·HUMAN·ZAP·SCANNER 상태는 같은 상단의 상태 popover에서 확인합니다. 기본 진입은 `API·입력 차이`이며 `#parameter-map` 옛 북마크는 통합 `#graph`로 이동합니다.
 - **점검 Gap 그래프** — `#graph`의 첫 탭입니다. 서버가 만든 Gap(source/계정/조건/타입 미관측, 선언 미관측, 권한 변형 미검증)을 우선순위 사유 순 큐와 조건/사용자→API→입력→권한 대상 카드 경로로 보여 주고, 선택 상세에서 연결 근거·관측 프로파일·검증표·실제 Evidence·정의 근거를 확인한 뒤 대표 Evidence로 Request Lab을 엽니다. 둘째 탭 **전체 관계 보기**는 Site→API 그룹→API→Object 계층을 제공합니다. Gap은 점검 후보이며 취약점 판정이나 퍼센트가 아닙니다.
-- 입력과 접근 대상의 반복 동시출현은 관계 근거일 뿐 확인된 인가 경계가 아닙니다. `CONFIRMED_AUTH_BOUNDARY`는 확정 소유자가 있는 리소스를 정확한 입력 값이 참조한 경우에만 사용하며, 그 외 연결은 사람 검토 대상으로 남깁니다.
+- 입력과 접근 대상의 단일 동시출현은 관계 근거일 뿐 확인된 인가 경계가 아닙니다. `CONFIRMED_AUTH_BOUNDARY`는 확정 소유자가 있는 리소스를 정확한 입력 값이 참조하거나, 공개된 독립 요청 2건에서 같은 리소스와 함께 관측된 경우에 사용하며(D-154), 그 외 연결은 사람 검토 대상으로 남깁니다.
 - **API·입력 차이** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 실제 관측 행의 **Evidence 상세**에서 Request Lab과 Burp Repeater 초안으로 바로 이어지며, 선언만 있고 요청이 없는 항목에는 전송 가능한 Evidence가 있는 것처럼 버튼을 만들지 않습니다. 분석한 HTML/OpenAPI/JavaScript 산출물 수와 부분·실패·상한 상태도 보여 주며, 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
 - **화면별 분석 제어** — 수집·메인 비교·기본 숨김·검토 대기 수량과 HUMAN/SCANNER/LLM, Evidence 처분·class, 역할 정책·3-way gap 필터는 각 작업면의 context panel에서 제공하며 전역 route 탐색과 섞지 않습니다.
 - **인가 그래프** — 세 단계 계층으로 읽습니다. **Site Overview**는 Target→API 그룹(첫 안정 경로 세그먼트, 예 `ORDERS APIs`) 카드에 API 수·H/S/L Evidence 수·Gap·경로 후보 수를 표시하고, 그룹을 열면 **API View**가 신원→API를 suspicious·충돌·일부 관측·Evidence 수 순으로 18개씩 보여 주며, API를 열면 **Object View**가 신원→API→접근 대상 ID를 18개씩 보여 줍니다(`API/Object 18개 더 보기 (N개 남음)`, Back·개요로 접기). HUMAN 파랑·실선 / SCANNER 빨강·파선 / LLM 밝은 점선 overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, 선택 신원·경로 focus+context, 미교차 후보 focus(GAP 목록), 화면 맞춤을 제공합니다. 900px 이하와 `API 목록 보기`는 같은 계층을 키보드 목록으로 제공합니다. 노드 판정은 선택한 서버 셀이 모두 같을 때만 표시하고, 여러 셀이 겹치면 상세에서 원본 셀을 각각 보여 줍니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.

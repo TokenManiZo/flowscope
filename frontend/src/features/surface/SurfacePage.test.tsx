@@ -114,3 +114,19 @@ it("keeps a literal dotted key and a nested path distinguishable and never reuse
   expect(errors.mock.calls.flat().map(String).join(" ")).not.toMatch(/same key|two children with the same key/)
   errors.mockRestore()
 })
+
+it("explains an empty surface as run-less traffic when the server reports it", () => {
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, trafficStats: { ...snapshotFixture.trafficStats, humanApiOutsideRun: 2 }, surface: { extractions: [], probes: [], endpoints: [] } }
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  expect(screen.getByRole("status", { name: "run 밖 API 트래픽 안내" })).toHaveTextContent("인증된 API 요청 2건")
+})
+
+it("does not show the run-gap hint when endpoints exist but are only hidden by a source filter", async () => {
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, trafficStats: { ...snapshotFixture.trafficStats, humanApiOutsideRun: 2 }, surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" }, observedSources: ["HUMAN"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }], declarations: [], deltaState: "ONE_SOURCE_OBSERVED", parameters: [] }] } }
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  // 기본 상태(모든 소스 on): endpoint가 있으니 힌트는 뜨지 않는다.
+  expect(screen.queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
+  // HUMAN 소스를 끄면 필터된 목록은 비지만 관측 데이터는 존재한다 → 힌트를 띄우면 오도한다.
+  await userEvent.click(screen.getByRole("checkbox", { name: "H · HUMAN" }))
+  expect(screen.queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
+})

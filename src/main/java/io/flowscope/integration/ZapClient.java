@@ -162,6 +162,10 @@ public final class ZapClient {
     }
     public String installedAddons() { return get("/JSON/autoupdate/view/installedAddons/", ""); }
     public String zapHomePath() { return get("/JSON/core/view/zapHomePath/", ""); }
+    /** ZAP 자신이 기록한 메시지 수(baseurl prefix). 0건 실패의 원인을 "ZAP이 안 냄"과 "Burp가 못 받음"으로 가르는 데 쓴다. */
+    public String numberOfMessages(String baseUrl) {
+        return get("/JSON/core/view/numberOfMessages/", "baseurl=" + enc(baseUrl), Duration.ofSeconds(5));
+    }
     public String httpProxyEnabled() { return get("/JSON/network/view/isHttpProxyEnabled/", ""); }
     public String httpProxy() { return get("/JSON/network/view/getHttpProxy/", ""); }
     public String importOpenApi(String definitionUrl, String hostOverride, String contextId, int maxMessages) {

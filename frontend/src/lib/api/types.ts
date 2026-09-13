@@ -8,6 +8,8 @@ export interface TrafficStats {
   review: number
   dropped: number
   payloadMetadataOnly: number
+  /** Attributable API requests observed while no HUMAN pass was active (D-155). Not counted as coverage. */
+  humanApiOutsideRun?: number
 }
 
 export interface EventObject {

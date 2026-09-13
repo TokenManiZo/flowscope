@@ -431,7 +431,17 @@ final class SurfaceAuthorizationLinkTest {
     }
 
     @Test
-    void repeatedCooccurrenceDoesNotConfirmAnAuthorizationBoundary() {
+    void independentCooccurrenceWithAConfirmedOwnerConfirmsTheAuthorizationBoundary() {
+        RequestRecord only = record(Source.HUMAN, "A", "GET", 200, null);
+        only.query = "sort=asc";
+        SurfaceAnalysis single = enrich(List.of(only), authorization(List.of(only), true));
+        assertEquals(Confidence.INFERRED, link(single, "/sort").confidence());
+        var singleGaps = authorizationGaps(single, "/sort");
+        assertFalse(singleGaps.isEmpty());
+        assertTrue(singleGaps.stream().allMatch(gap -> gap.priorityReasons().contains("HUMAN_REVIEW_REQUIRED")
+                && !gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")),
+                "A single cooccurrence stays a human-review relation");
+
         RequestRecord first = record(Source.HUMAN, "A", "GET", 200, null);
         first.query = "sort=asc";
         RequestRecord second = record(Source.HUMAN, "A", "GET", 200, null);
@@ -439,16 +449,43 @@ final class SurfaceAuthorizationLinkTest {
         List<RequestRecord> records = List.of(first, second);
         SurfaceAnalysis surface = enrich(records, authorization(records, true));
 
-        assertEquals(Confidence.CORROBORATED, link(surface, "/sort").confidence(),
-                "Cooccurrence remains useful recorded evidence, not an authorization proof");
-        var gaps = surface.parameterGaps().stream().filter(gap -> gap.canonicalPath().equals("/sort")
-                && gap.type() == GapType.AUTH_VARIANT_UNTESTED).toList();
+        assertEquals(Confidence.CORROBORATED, link(surface, "/sort").confidence());
+        var gaps = authorizationGaps(surface, "/sort");
         assertFalse(gaps.isEmpty());
-        assertTrue(gaps.stream().noneMatch(gap -> gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")));
-        assertTrue(gaps.stream().allMatch(gap -> gap.priorityReasons().contains("HUMAN_REVIEW_REQUIRED")));
+        // PR #11 원본 의미(D-154): 공개된 독립 증인 2건과 확정 소유자는 확정 인가 경계 우선순위를 받는다.
+        assertTrue(gaps.stream().allMatch(gap -> gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")
+                && gap.priorityReasons().contains("CORROBORATED_EVIDENCE")
+                && !gap.priorityReasons().contains("HUMAN_REVIEW_REQUIRED")),
+                "Two independent witnesses with a confirmed owner confirm the boundary");
         assertTrue(surface.parameterGaps().stream().anyMatch(gap -> gap.canonicalPath().equals("/segments/2")
                 && gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")),
                 "The confirmed owner's exact resource identifier keeps its established priority");
+    }
+
+    @Test
+    void corroboratedLinkWithoutAConfirmedOwnerIsNeitherPromotedNorFlaggedForReview() {
+        // PR #11 원본 의미(D-154): 독립 증인 2건이라도 소유자가 확정되지 않으면 CORROBORATED_EVIDENCE만 남기고
+        // CONFIRMED_AUTH_BOUNDARY로 승격하지 않으며 HUMAN_REVIEW_REQUIRED도 붙지 않는다. 이 경로는 팀원 원본과
+        // 현행 모두 무테스트였으므로 회귀를 막기 위해 동작을 고정한다.
+        RequestRecord first = record(Source.HUMAN, "A", "GET", 200, null);
+        first.query = "sort=asc";
+        RequestRecord second = record(Source.HUMAN, "A", "GET", 200, null);
+        second.query = "sort=asc";
+        List<RequestRecord> records = List.of(first, second);
+        SurfaceAnalysis surface = enrich(records, authorization(records, false));
+
+        assertEquals(Confidence.CORROBORATED, link(surface, "/sort").confidence());
+        var gaps = authorizationGaps(surface, "/sort");
+        assertFalse(gaps.isEmpty(), "An applicable variant still produces an untested gap without a confirmed owner");
+        assertTrue(gaps.stream().allMatch(gap -> gap.priorityReasons().contains("CORROBORATED_EVIDENCE")
+                && !gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")
+                && !gap.priorityReasons().contains("HUMAN_REVIEW_REQUIRED")),
+                "Corroborated evidence without a confirmed owner keeps its middle, unflagged priority");
+    }
+
+    private static List<io.flowscope.core.SurfaceAnalysis.ParameterGap> authorizationGaps(SurfaceAnalysis surface, String path) {
+        return surface.parameterGaps().stream().filter(gap -> gap.canonicalPath().equals(path)
+                && gap.type() == GapType.AUTH_VARIANT_UNTESTED).toList();
     }
 
     @Test

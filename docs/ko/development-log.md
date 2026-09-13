@@ -1,5 +1,93 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-164 ZAP 로그인 성공 검증 실패 진단성
+
+- crAPI momo가 걸린 "로그인 성공 정규식 일치 Evidence 없음" 게이트가 원인을 안 알려주던 문제를 고쳤다. `ZapBrowserAuthenticator`가 인증 단계 응답 수·상태 코드와 실패 종류(무응답/로그아웃 나중 일치/성공 정규식 0건 일치)를 메시지에 담는다(`LoginEvidence` record). 판정 로직·게이트는 불변. 응답 본문은 노출하지 않는다.
+- 이건 도구 진단성 개선이고, momo 실패의 실제 해결(성공 정규식을 crAPI 토큰 응답에 맞추기, 자격증명, 로그인 페이지 URL)은 설정으로 사용자 몫이다.
+- 테스트: `ZapBrowserAuthenticatorTest` 7건(신규 1: 응답 0건 지목, 기존 테스트에 응답 수·상태 단언 보강).
+- 영향 파일: `integration/ZapBrowserAuthenticator.java`, `integration/ZapBrowserAuthenticatorTest.java`, decisions D-164, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 589건(실패·오류 0, opt-in 2 skip), React 60파일/482건·typecheck, release guard 통과. JAR 31,948,361 bytes, SHA-256 `4d44c286993b2cc417853693e12088898774c4c152f853d2c8427808093d1c34`.
+
+## 2026-09-13 · D-162/D-163 crAPI Explorer 실측 결함 3건 수정
+
+- 실측 unresolved에서 나온 도구 결함을 고쳤다. **D-162(MASKED_ROUTE):** 비밀 마스킹이 값이 URL 경로면 보존하도록 `secretFieldReplacement`/`isRoutePathValue` 추가 — `LOGIN_TOKEN`·`RESET_PASSWORD` 같은 라우트 상수의 URL을 더 이상 가리지 않되 실제 비밀 값은 계속 가린다. inline 본문·Explorer artifact 양쪽에 적용된다. **D-163(SOURCE_MAP·ZAP scope):** Explorer 요청에 `Accept-Encoding: identity`를 추가해 gzip된 source map·JS가 이진으로 버려지지 않게 하고, `ZapBrowserAuthenticator` scope 실패가 대상/로그인 URL 중 위반 값을 지목한다.
+- 설정 항목(momo Explorer JSON 로그인 모드, ZAP scope·로그인 페이지 URL)은 사용자 몫으로 코드에서 손대지 않았다. `SAFETY_RESTRICTED`·`AST_PARSE_RECOVERY`는 정상 동작이라 변경 없음. `DYNAMIC_IDENTIFIER`·`AUTH_STATE`는 인증 설정의 결과라 코드 수정 대상 아님.
+- 테스트: `MaskingTest` 6건(신규 1: 라우트 값 보존·실제 비밀 마스킹), `ZapBrowserAuthenticatorTest` 6건(scope 지목 단언 보강), `MaskingBoundaryTest` 2건 유지. `Accept-Encoding`은 빌드 검증.
+- 영향 파일: `core/Masking.java`, `integration/ZapBrowserAuthenticator.java`, `burp/FlowScopeExtension.java`, `MaskingTest.java`, `integration/ZapBrowserAuthenticatorTest.java`, decisions D-162·D-163, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 588 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,946,297 bytes, SHA-256 `23dc1e0efdc01e70d79c09c45d9a2eadf303abc471dd0e4327444475dc26a39e`.
+- 남은 한계: gzip source map이 실제 crAPI에서 읽히는지, 라우트 보존이 Explorer 발견을 실제로 늘리는지는 새 JAR 재로드 후 실측.
+
+## 2026-09-13 · D-161 OpenAPI 선언 깊이 64·깊이 진단·구조적 덮임 delta
+
+- 계획 항목 #3. 선언 모델(리프·배열 필드 관례, D-143 ①)과 held-out 정답은 유지하고, 관측 컨테이너·`/*` 원소가 선언에 구조적으로 덮여 있으면 `OBSERVED_NOT_DECLARED`로 내지 않도록 `MutableEndpoint.structurallyDeclared`를 delta에 반영했다. `MAX_SCHEMA_DEPTH` 20→64(원본과 동일), 깊이 초과는 `DECLARATION_DEPTH_LIMIT` 진단.
+- 테스트: `SurfaceAnalyzerTest` 39건(신규 2: 구조적 덮임 delta, 깊이 60/70). `SurfaceHeldOutEvaluationTest` 1·`SnapshotSurfaceContractTest` 9·`FlowScopeWebServerTest` 32 유지.
+- 영향 파일: `core/SurfaceAnalyzer.java`, `SurfaceAnalyzerTest.java`, decisions D-161, endpoint-parameter-surface, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 587 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,945,813 bytes, SHA-256 `6962381b5be98b4a3d704431e5319c11830e8b161f9a037e44ac3b61f5018f63`.
+
+## 2026-09-13 · D-160 비밀 이름 생략은 불완전이 아니다(완전성 1차 범위)
+
+- 계획 항목 #2의 1차 범위. `ParameterExtraction.parsedCompletely()`(진단이 전부 `SENSITIVE_PARAMETER_OMITTED`면 완전)를 추가하고 `SurfaceAnalyzer` Row.complete와 `SnapshotJsonWriter.parameterEvidence`가 같은 규칙을 쓰게 했다. 비밀 필드가 있는 요청(로그인·재설정·OTP)이 다른 입력의 부재·차이를 증언할 수 있게 된다. 비밀 좌표 미생성과 생략 진단은 유지.
+- 테스트: `SurfaceParameterProfileTest` 19건(신규 1), `SnapshotParameterEvidenceTest` 4건(신규 1), `SurfaceAnalyzerTest` 37건 통과. 수정 전 코드에서는 부재 카운트 0·complete=false로 실패하는 시나리오다.
+- 영향 파일: `core/parameter/ParameterExtraction.java`, `core/SurfaceAnalyzer.java`, `web/SnapshotJsonWriter.java`, 두 테스트, decisions D-160, endpoint-parameter-surface, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 585 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,945,018 bytes, SHA-256 `04c8e6d16ecadaf6f5e8245a4988e0f94408d290fc7a9b28a1c5fa449b8e2eaf`.
+
+## 2026-09-13 · D-159 endpoint 파라미터 상한: 기존 좌표 갱신 유지·초과 진단
+
+- 계획 항목 #1. `MutableEndpoint.parameter()`가 기존 좌표를 먼저 찾아 돌려주고 신규 좌표에만 1,024 상한을 적용하며 거부 수를 `PARAMETER_LIMIT` 진단으로 남긴다. `declareSchema`의 선행 상한 가드를 제거해 기존 좌표의 선언 손실을 없앴다. `MAX_PARAMETERS_PER_ENDPOINT`는 테스트 참조를 위해 public으로 노출(값 불변).
+- 테스트: `SurfaceAnalyzerTest` 신규 1건(HUMAN·SCANNER 1,024 좌표 양쪽 source 보존·Fact/프로파일 source 일치·1,025번째 진단·순서 무관). 수정 전 코드에서는 SCANNER source 소실과 진단 부재로 실패하는 시나리오다. `SurfaceParameterProfileTest` 18·`SnapshotSurfaceContractTest` 9 유지.
+- 영향 파일: `core/SurfaceAnalyzer.java`, `SurfaceAnalyzerTest.java`, decisions D-159, endpoint-parameter-surface, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 583 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,944,635 bytes, SHA-256 `b7387236ff195b7f01d5b57ed3caf42b897a1c610b5995566c9cd791e7321e7f`.
+
+## 2026-09-13 · D-158 확인 재전송 조건 안내(HUMAN run·Request Lab 격리)
+
+- 판정 매트릭스 추천 섹션에 `HumanRunGuidance`를 추가했다. `useHumanRunQuery` 상태로 HUMAN 탐색이 꺼져 있으면 "run 밖 Repeater 재전송은 D-071로 제외" 경고와 `#inspection` 이동 버튼을, 켜져 있으면 "관측으로 반영" 안내를 보이고, Request Lab 재전송은 D-008에 따라 분리 저장됨을 함께 말한다. 서버 변경 없음.
+- 독립 감사가 제기한 D-008↔Repeater-관측 비일관성은 결정으로 정리했다(D-158 유지 항목): 사람이 run 안에서 수행한 Repeater는 HUMAN 관측, 도구의 Request Lab은 격리 재전송. `*_REPRODUCED`는 계속 부여하지 않는다.
+- 테스트: `JudgmentMatrixView.test.tsx` 14건(신규 2), typecheck 통과, 프런트 전체 60파일/482건 통과(Node 25는 `--no-experimental-webstorage`). Java 변경 없음(직전 D-157 verify의 Java 582건 유지).
+- 영향 파일: `features/matrix/JudgmentMatrixView.tsx(+test)`, decisions D-158, HANDOFF, ui-product-rationale, beta-validation, 이 기록.
+
+## 2026-09-13 · D-157 ZAP listener 사전 점검·0건 원인 구분
+
+- 사용자가 실제로 겪은 ZAP FAILED(원인: Burp 8081 listener 부재)를 도구가 스스로 진단하게 했다. `ZapCampaign.State.scannerListenerOpen()`(기본 true)과 `ZapCampaign.loopbackListenerOpen`을 추가하고 `FlowScopeExtension`의 State가 설정된 SCANNER 포트로 loopback 연결을 검사한다. 캠페인 시작 시 닫혀 있으면 crawler 전에 즉시 실패한다. 0건 실패는 `ZapClient.numberOfMessages(target)`로 "ZAP은 기록했는데 Burp가 못 받음"과 "ZAP이 아무것도 안 냄"을 가른다(view 실패 시 원래 문구).
+- 테스트: `ZapCampaignTest` 11건(신규 4: listener 닫힘 즉시 실패·crawler 미시작, ZAP 7건→"none reached Burp", ZAP 0건→"crawler produced nothing", loopback probe 열림/닫힘). `ZapCampaignRegressionTest` 16건 유지. 기존 fixture는 기본 true라 변경 없음.
+- 영향 파일: `integration/ZapCampaign.java`, `integration/ZapClient.java`, `burp/FlowScopeExtension.java`, `ZapCampaignTest.java`, decisions D-157, HANDOFF, README, team-quick-start, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 28초), Java 582건(실패·오류 0, opt-in 2 skip), React 60파일/480건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,944,175 bytes, SHA-256 `a0bb500d1fda7acb97544a03d1471c2c826def15384c40f9834af18445aa6f74`.
+- 남은 한계: 실제 Burp에서 listener를 제거한 재현과 crAPI ZAP lane 재실측은 새 JAR 재로드 뒤 수행.
+
+## 2026-09-13 · D-156 판정 매트릭스 셀에서 필수 역할·신원 역할 지정
+
+- 두 독립 감사(PR 의도·계획 공격)가 crAPI에서 BFLA가 0건인 원인을 "역할 지정 UI가 매트릭스 셀에 연결되지 않음"으로 짚었다. `JudgmentMatrixView`에 `PolicyAssignment` 섹션을 추가해 P0~P2 셀에서 필수 역할, 역할 Unknown인 REGISTERED·OBSERVED 신원에서 신원 역할을 기존 `useRequirementMutation`·`useRoleMutation`으로 저장한다. 서버·API 변경 없음, 역할 추정 없음.
+- 테스트: `JudgmentMatrixView.test.tsx`에 P0·Unknown 셀 시나리오 추가(정확한 endpoint 인자·서버 메시지·P3 셀 비표시). 프런트 전체 480건 통과. 시스템 Node 25로 `npm run test`를 직접 돌리면 Node 내장 localStorage가 jsdom과 충돌해 58건이 실패하며, `NODE_OPTIONS=--no-experimental-webstorage`로 끄거나 Maven이 쓰는 pinned Node 24(`target/frontend-runtime`)로 돌리면 통과한다. 제품 결함이 아니다.
+- 영향 파일: `features/matrix/JudgmentMatrixView.tsx(+test)`, decisions D-156, HANDOFF, ui-product-rationale, beta-validation, 이 기록.
+- 남은 한계: crAPI mechanic/admin 트래픽 수집과 BFLA 후보 생성 실측은 새 JAR 재로드 뒤 수행.
+
+## 2026-09-13 · D-154/D-155 코드리뷰 후속 수정
+
+- `/code-review high`로 이 브랜치(beta.48 대비 D-154/D-155) 변경분을 리뷰해 5건을 확인하고 정리했다.
+- #1 (판단·무변경): `SurfaceAuthorizationLinker.gap`에서 소유자 미확정 CORROBORATED link가 `CONFIRMED_AUTH_BOUNDARY`도 `HUMAN_REVIEW_REQUIRED`도 안 받는 무플래그 중간 상태는 PR #11 원본(`ParameterAuthorizationAnalyzer.gap`, 커밋 `fc66b42` 257–263줄)과 한 줄도 다르지 않음을 확인했다. 팀원 원본 의미를 유지하는 것이 목적이므로 변경하지 않고, 회귀 방지 테스트로 동작만 고정했다.
+- #2 (테스트 추가): `SurfaceAuthorizationLinkTest.corroboratedLinkWithoutAConfirmedOwnerIsNeitherPromotedNorFlaggedForReview`로 위 경로를 단언한다(원본·현행 모두 무테스트였음).
+- #3 (수정): `ParameterMapPage`에서 run 밖 트래픽 힌트가 `DEFINITIONS_ONLY` 빈 상태 메시지를 통째로 가리던 문제를 고쳤다. `emptyState !== "DEFINITIONS_ONLY"`일 때만 힌트로 대체하고, 선언만 존재하는 사실은 그대로 표시한다. 회귀 테스트 추가.
+- #4 (수정): `SurfacePage` 힌트 게이트를 필터된 `endpoints.length`가 아니라 원본 `surface.endpoints.length`로 바꿔, 소스 필터로 목록이 비었을 뿐인데 "HUMAN 탐색 시작"을 잘못 권하던 문제를 없앴다. 긍정·필터차단 회귀 테스트 2건 추가.
+- #5 (정리): `"HUMAN_OUTSIDE_EXPLORATION_RUN"` 리터럴 중복을 `TrafficClassifier.HUMAN_OUTSIDE_EXPLORATION_RUN` 상수로 통일해 분류기·snapshot writer가 함께 참조한다. 값·분류 동작·golden fixture는 불변.
+- 영향 파일: `TrafficClassifier.java`, `SnapshotJsonWriter.java`, `SurfaceAuthorizationLinkTest.java`, `features/parameter-map/ParameterMapPage.tsx(+test)`, `features/surface/SurfacePage.tsx(+test)`, decisions D-154 주석, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 12초), Java 578건(실패·오류 0, opt-in 2 skip), React 60파일/479건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,505 bytes, SHA-256 `45789a21b8b58aae8337c0e48cf76940e83faba01cfb570b4d03d8e67ad7d808`. 새 JAR의 실제 Burp 재로드는 미실행.
+
+## 2026-09-13 · D-155 run 밖 인증 API 안내(crAPI 실측)
+
+- crAPI 실측에서 인증 API 브라우징이 HUMAN 탐색 밖이면 빈 화면만 보이던 문제를 안내로 전환했다. `SnapshotJsonWriter`가 `trafficStats.humanApiOutsideRun`(source=HUMAN·API·사유 HUMAN_OUTSIDE_EXPLORATION_RUN)을 추가한다. coverage 계산은 바꾸지 않는다.
+- 프런트: `components/RunGapHint.tsx`를 그래프(`ParameterMapPage`) 빈 화면과 API·입력 차이(`SurfacePage`) 빈 표에 연결해, 값이 0보다 크면 "인증된 API 요청 N건이 run 밖에서 관측됨 · 점검에서 HUMAN 탐색 시작"을 표시한다.
+- 테스트: `web/SnapshotTrafficStatsTest`(BASELINE 2·EXPLORATION 1 → count 2·coverage 1, 네비게이션·SCANNER 제외), `components/RunGapHint.test.tsx`, `parameter-map/ParameterMapPage.test.tsx` 통합. typecheck 통과.
+- 영향 파일: `SnapshotJsonWriter.java`, `SnapshotTrafficStatsTest.java`, `lib/api/types.ts`, `components/RunGapHint.tsx(+test)`, `features/parameter-map/ParameterMapPage.tsx(+test)`, `features/surface/SurfacePage.tsx`, decisions D-155, HANDOFF, beta-validation, 이 기록.
+- 남은 한계: role 지정 없이는 BFLA 미탐, ZAP은 8081 listener 필요, 온보딩 후속 증분(계정 자동 등록·역할 지정 안내) 예정. 브랜치를 beta.48(`30c49bf`) 위로 rebase했고(문서 충돌 5개 파일은 양쪽 기록을 모두 보존), JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 14초), Java 577건(실패·오류 0, opt-in 2 skip), React 60파일/476건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,492 bytes, SHA-256 `c63a3af15eb01cd52f9b12534c622f8d63f22865b6449f13d1ad754114d7a8d3`. 새 JAR의 실제 Burp 재로드는 미실행.
+
+
+## 2026-09-12 · D-154 인가 경계 우선순위·요청 비교 라벨 PR 원본 복원
+
+- 사용자 지시에 따라 D-146 ③과 D-147 ①을 PR #11 원본 의미로 되돌렸다. `SurfaceAuthorizationLinker.gap`은 확정 소유자와 OBSERVED 또는 CORROBORATED link가 함께 있으면 `CONFIRMED_AUTH_BOUNDARY`를 부여하고 `HUMAN_REVIEW_REQUIRED`는 INFERRED·UNKNOWN에만 붙인다. `requestDiff.ts`는 shape/type/occurrence가 다르면 라벨을 붙이고 한쪽이 UNKNOWN이면 `UNKNOWN`을 병기한다.
+- 회귀: `SurfaceAuthorizationLinkTest`의 D-146 ③ 테스트를 단일 동시출현(INFERRED→사람 검토)과 독립 2건(CORROBORATED+확정 소유자→확정 경계)을 함께 검사하는 테스트로 바꿨다. `requestDiff.test.ts`·`ParameterRequestDiff.test.tsx`·`ParameterMapPage.test.tsx`는 PR 원본 기대값으로 되돌렸다. 패키지 sample에는 CORROBORATED link가 없어 `sample-snapshot.json` 골든 테스트는 그대로 통과한다.
+- 문서: decisions D-154, product-development-plan(대조표·제외 목록·상태), endpoint-parameter-surface, web-ui-feature-parity, ui-product-rationale, README 한·영, CHANGELOG 한·영, documentation-status, HANDOFF, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 13초), Java 574건(실패·오류 0, opt-in 2 skip), React 59파일/472건·typecheck, JAR/bundle release guard 통과. Playwright는 Burp가 17777을 점유해 standalone 서버(17797, 임시 projects dir)와 `FLOWSCOPE_E2E_ORIGIN`으로 `--retries=0` 15/15 통과(29.7s). JAR 31,942,089 bytes, SHA-256 `1a4dcdaef4ebe513f7153477e7d6bfaa15f83cadb648824d0715134b2fb936e0`.
+- 남은 한계: main 미반영·push 없음. 실제 대상에서 pagination·sort 같은 일반 입력의 독립 동시출현이 큐 상단으로 올라오는 것은 PR 원본 설계대로이며 사람 검토가 흡수한다.
+
 ## 2026-09-12 · beta.48 관리자 예외 승인·배포 인계
 
 - 사용자가 PR #16의 관리자 예외 병합과 main·Release 반영을 명시적으로 승인해 이전 승인 대기 조건을 해소했다. 규칙 변경이나 강제 푸시는 하지 않는다.

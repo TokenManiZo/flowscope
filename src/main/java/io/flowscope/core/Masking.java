@@ -99,7 +99,21 @@ public final class Masking {
         String trimmed = s.stripLeading();
         if (trimmed.startsWith("{") || trimmed.startsWith("[")) return maskJson(s);
         String xml = XML_SECRET.matcher(s).replaceAll(m -> m.group(1) + MASK + m.group(4));
-        return SECRET_FIELD.matcher(xml).replaceAll(m -> m.group(1) + MASK);
+        return SECRET_FIELD.matcher(xml).replaceAll(Masking::secretFieldReplacement);
+    }
+
+    /**
+     * SECRET_FIELD 매치의 대체 문자열. 값이 URL 경로면(라우트 상수 `LOGIN_TOKEN:"/x"`, `RESET_PASSWORD:"/y"` 등) 원문을
+     * 보존하고, 그 외에는 값을 가린다. 실제 비밀 값은 `/`·`http(s)://`로 시작하지 않으므로 마스킹이 유지된다(D-162).
+     */
+    private static String secretFieldReplacement(java.util.regex.MatchResult match) {
+        return isRoutePathValue(match.group(2)) ? match.group() : match.group(1) + MASK;
+    }
+
+    /** 값이 절대/상대 URL 경로로 보이는가. 라우트 상수 값 보존용이며 비밀 값 판별이 아니다. */
+    static boolean isRoutePathValue(String value) {
+        if (value == null || value.isEmpty()) return false;
+        return value.charAt(0) == '/' || value.startsWith("http://") || value.startsWith("https://");
     }
 
     /** Content-Type에 따라 구조화된 본문 전체 값을 가린다. 파싱 실패 시 비밀 표식이 있는 본문은 보존하지 않는다. */
@@ -135,7 +149,7 @@ public final class Masking {
             return JSON.writeValueAsString(root);
         } catch (Exception ignored) {
             return containsSecretLabel(value) ? REDACTED : SECRET_FIELD.matcher(value)
-                    .replaceAll(m -> m.group(1) + MASK);
+                    .replaceAll(Masking::secretFieldReplacement);
         }
     }
 
@@ -158,7 +172,7 @@ public final class Masking {
 
     private static String maskPlainText(String value) {
         String xml = XML_SECRET.matcher(value).replaceAll(m -> m.group(1) + MASK + m.group(4));
-        return SECRET_FIELD.matcher(xml).replaceAll(m -> m.group(1) + MASK);
+        return SECRET_FIELD.matcher(xml).replaceAll(Masking::secretFieldReplacement);
     }
 
     private static String maskForm(String body) {

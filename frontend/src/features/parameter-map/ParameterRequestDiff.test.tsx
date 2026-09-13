@@ -14,7 +14,7 @@ it("compares structured metadata side by side and never reads HTTP fields", () =
   expect(screen.getByRole("columnheader", { name: "기준 요청 a" })).toBeVisible()
   expect(screen.getByRole("columnheader", { name: "비교 요청 b" })).toBeVisible()
   expect(screen.getByText(/PRESENCE_CHANGED/)).toHaveTextContent("SHAPE_CHANGED")
-  expect(screen.getByText(/PRESENCE_CHANGED/)).not.toHaveTextContent("TYPE_CHANGED")
+  expect(screen.getByText(/PRESENCE_CHANGED/)).toHaveTextContent("TYPE_CHANGED")
   expect(screen.getByText(/200 · UNDECIDED/)).toBeVisible()
   expect(screen.getByText(/403 · DENY/)).toBeVisible()
   expect(screen.getByText(/STATUS_CHANGED/)).toHaveTextContent("VERDICT_CHANGED")

@@ -133,8 +133,7 @@ it("compares two linked actual requests through the Evidence API metadata in the
   const table = screen.getByRole("region", { name: "요청 비교 표" })
   expect(within(table).getByRole("columnheader", { name: "기준 요청 actual-a" })).toBeVisible()
   expect(table).toHaveTextContent("STATUS_CHANGED VERDICT_CHANGED")
-  expect(table).toHaveTextContent("PRESENCE_CHANGED · SHAPE_CHANGED · UNKNOWN")
-  expect(table).not.toHaveTextContent("TYPE_CHANGED")
+  expect(table).toHaveTextContent("PRESENCE_CHANGED · SHAPE_CHANGED · TYPE_CHANGED · UNKNOWN")
   expect(table).toHaveTextContent("길이: 5 bytes")
   expect(table).not.toHaveTextContent("READY")
   expect(document.body.textContent).not.toContain("LEGACY-")
@@ -236,6 +235,25 @@ it.each(["empty", "definitions", "diagnostic"])("gives one next action for %s wi
   expect(statePanel).not.toHaveTextContent(/%|취약점 확정/)
   if (kind === "diagnostic") expect(statePanel).toHaveTextContent("INPUT_LIMIT (7)")
   if (kind === "definitions") expect(statePanel).toHaveTextContent("아직 요청으로 관측되지 않음")
+})
+
+it("explains an empty graph as run-less traffic and offers to start a HUMAN pass when the server reports it", () => {
+  const base = surfaceSnapshot()
+  state.query = { ...state.query, data: { ...base, trafficStats: { ...base.trafficStats, humanApiOutsideRun: 4 } } }
+  render()
+  const statePanel = screen.getByRole("status", { name: "" })
+  expect(within(statePanel).getByRole("status", { name: "run 밖 API 트래픽 안내" })).toHaveTextContent("인증된 API 요청 4건")
+  expect(within(statePanel).getByRole("button", { name: "점검에서 HUMAN 탐색 시작" })).toBeVisible()
+  expect(statePanel).not.toHaveTextContent("범위를 확인하고 HUMAN Evidence를 수집하세요")
+})
+
+it("keeps the definitions-only message instead of replacing it with the run-gap hint", () => {
+  const base = surfaceSnapshot({ endpoints: [demoEndpoint([statusParameter({ observationEvidenceIds: [], observations: [], declarations: [declaration()], profile: undefined })])] })
+  state.query = { ...state.query, data: { ...base, trafficStats: { ...base.trafficStats, humanApiOutsideRun: 3 } } }
+  render()
+  const statePanel = screen.getByRole("status", { name: "" })
+  expect(statePanel).toHaveTextContent("아직 요청으로 관측되지 않음")
+  expect(within(statePanel).queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
 })
 
 it("identifies each validation row by its own identity and role, including unknown values", async () => {

@@ -1,6 +1,6 @@
 # 문서 정합성·갱신 기준
 
-현재 기준은 D-153/beta.48 SQLite 연결 수정이다. 호스트가 JDBC를 먼저 초기화해도 번들 드라이버로 직접 저장·재열기하며 DB 형식은 유지한다. 집중 12/12·전체 Java 575(2 skip)·React 472·패키지 UI 15/15와 원격 PR #16 CI가 통과했다. 사용자에게 이번 PR의 관리자 예외 병합·게시 승인을 받았으며 배포 기준은 PR #16 main 병합 커밋과 `v1.2.0-beta.48`이다. 자산·최종 CI는 [Release 기록](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48), 운영 검증은 [HANDOFF](HANDOFF.md), 설치는 [팀원 첫 실행](team-quick-start.md)을 따른다. 비공개 저장소이므로 협업 권한이 있는 본인 GitHub 계정 로그인이 필요하다.
+현재 미출시 작업 버전은 1.2.0-beta.49다(이 브랜치의 D-154~D-164, 아래 released beta.48 기반). 마지막으로 게시된 Release는 여전히 beta.48이다. 직전 기준은 D-153/beta.48 SQLite 연결 수정이다. 호스트가 JDBC를 먼저 초기화해도 번들 드라이버로 직접 저장·재열기하며 DB 형식은 유지한다. 집중 12/12·전체 Java 575(2 skip)·React 472·패키지 UI 15/15와 원격 PR #16 CI가 통과했다. 사용자에게 이번 PR의 관리자 예외 병합·게시 승인을 받았으며 배포 기준은 PR #16 main 병합 커밋과 `v1.2.0-beta.48`이다. 자산·최종 CI는 [Release 기록](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48), 운영 검증은 [HANDOFF](HANDOFF.md), 설치는 [팀원 첫 실행](team-quick-start.md)을 따른다. 비공개 저장소이므로 협업 권한이 있는 본인 GitHub 계정 로그인이 필요하다. 미출시 브랜치 `claude/restore-pr-semantics`의 D-154은 인가 경계 우선순위와 요청 비교 라벨을 PR #11 원본 의미로 되돌린다.
 
 D-153 문서 대조: 관리 문서 39개의 현행/역사 구분과 SQLite·버전·교체 안내 관련성을 확인했다. 로컬 링크 258개와 inventory 누락 0개다. 이전 beta.47 실물 결과·원 명세·연구는 수정본의 새 검증으로 바꾸지 않았다. 코드·회귀·현재 계약/설치/진행/검증 문서를 같은 작업 단위로 반영한다.
 
@@ -60,12 +60,12 @@ D-153 문서 대조: 관리 문서 39개의 현행/역사 구분과 SQLite·버�
 | 문서 | 지위 | 이번 대조·처리 |
 |---|---|---|
 | [AGENTS.md](../../AGENTS.md) | 개발 지침 | 제품 불변식·작업 범위·코드/검증/문서 기록 규칙 |
-| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | beta.48/D-153 인계 우선과 기존 사용자 지침 보존 |
+| [CLAUDE.md](../../CLAUDE.md) | 개발 지침 | beta.49/D-154~D-164 인계 우선과 기존 사용자 지침 보존 |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | 개발 지침 | JDK 21 정확히·Maven 3.9.x, 중간 상태 갱신 |
 | [docs/en/CONTRIBUTING.md](../../docs/en/CONTRIBUTING.md) | 개발 지침 | 한국어 기여 계약과 동일한 빌드·기록 규칙 |
-| [README.md](../../README.md) | 현행 계약 | beta.48 배포·비공개 저장소 접근·설치·실행·증거 의미 |
-| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어와 같은 beta.48 배포·접근 조건·실행 계약 |
-| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.48 bundle/doctor·GitHub 접근·Burp/ZAP/Explorer 설치 |
+| [README.md](../../README.md) | 현행 계약 | beta.49 배포·비공개 저장소 접근·설치·실행·증거 의미 |
+| [docs/en/README.md](../../docs/en/README.md) | 현행 계약 | 한국어와 같은 beta.49 배포·접근 조건·실행 계약 |
+| [docs/ko/getting-started.md](getting-started.md) | 현행 계약 | beta.49 bundle/doctor·GitHub 접근·Burp/ZAP/Explorer 설치 |
 | [docs/ko/team-quick-start.md](team-quick-start.md) | 사용자 가이드 | 팀원용 ZIP 선택·Burp/Docker 준비 순서·OS별 doctor·JAR 교체·첫 진단 |
 | [docs/en/getting-started.md](../../docs/en/getting-started.md) | 현행 계약 | 한국어와 동일한 Evidence/Request Lab·Explorer·ZAP 설치·실행 경계 |
 | [SECURITY.md](../../SECURITY.md) | 현행 계약 | 현재 Web 경계·구버전 설정 비삭제 정책 확인, artifact gate 연결 |
@@ -84,7 +84,7 @@ D-153 문서 대조: 관리 문서 39개의 현행/역사 구분과 SQLite·버�
 | [docs/ko/decisions.md](decisions.md) | 결정 이력 | D-153까지의 결정·기각안·원 PR 대비 대체 관계 |
 | [docs/ko/development-log.md](development-log.md) | 역사 | 실제 변경·이유·회귀·검증 및 문서 정정의 작업별 이력 |
 | [docs/ko/beta-validation.md](beta-validation.md) | 검증 증거 | D-153/beta.48의 SQLite 자동·패키지 검증과 artifact별 과거 결과 |
-| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | beta.48 변경과 과거 버전별 배포/개발 이력 |
+| [CHANGELOG.md](../../CHANGELOG.md) | 역사 | beta.49 변경과 과거 버전별 배포/개발 이력 |
 | [docs/en/CHANGELOG.md](../../docs/en/CHANGELOG.md) | 역사 | 한국어 변경 이력과 동일한 버전·변경 범위 |
 | [docs/ko/backend-evidence-architecture-plan.md](backend-evidence-architecture-plan.md) | 역사 | 기존 Judge/MCP/lock 지시 폐기·재착수 기준 확인 |
 | [docs/ko/graph-ux.md](graph-ux.md) | 역사 | 초기 Swing/JGraphX 및 과거 LLM 설명과 현행 UI 분리, 현행 계층 계약은 `GRAPH_IDA_REDESIGN.md`·D-143 5c 우선 |

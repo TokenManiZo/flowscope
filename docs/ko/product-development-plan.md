@@ -1,10 +1,12 @@
-# FlowScope 1.2.0-beta.48 제품 개발·검증 계획
+# FlowScope 1.2.0-beta.49 제품 개발·검증 계획
 
 **D-153 로컬·원격 검증 완료:** SQLite 호스트 선행 JDBC 초기화 결함을 수정했다. 독립 JVM RED→GREEN·집중 12/12, 전체 verify 2회 각각 Java 575(2 skip)·React 472·완성 JAR 저장 gate·패키지 UI 15/15와 원격 PR #16 CI를 확인했다. 사용자가 이번 PR의 관리자 예외 병합과 beta.48 게시를 승인했다. 배포 기준은 PR #16 main 병합 커밋/태그 `v1.2.0-beta.48`이며 최종 CI·파일 해시는 Release에서 식별한다. ZAP/Explorer 기능·판정 모델 변경은 범위 밖이다. 실제 Burp 새 JAR 재로드는 별도 gate다.
 
 > **읽는 법:** PR #11·#12의 관측·선언 공통 좌표, 파라미터 프로파일·Gap, 권한 대상 연결, 통합 Graph/Matrix 작업면과 Evidence 요청 비교는 D-143~146으로 구현됐다. 현재 작업은 이 기능들의 연결부 정확성·선택 수명·최종 저장 보완과 검증이다. 각 행의 예전 수치는 해당 단계의 이력이고 최신 검증은 `beta-validation.md`를 따른다. 실제 Burp·Windows 운영 결과는 자동·패키지 검증과 별도로 기록한다.
 
 ## 현재 우선순위 · PR #11·#12 이식 기능 대조표 (2026-09-11)
+
+**D-154(미출시 브랜치):** 사용자 지시로 D-146 ③의 CORROBORATED 비승격과 D-147 ①의 UNKNOWN 비교 라벨 억제를 PR #11 원본 의미로 되돌렸다. link·gap 수는 그대로이고 우선순위 순서와 비교 라벨만 바뀐다. D-146 ①②와 D-147 ②는 결함 수정이라 유지하며 masked preview 노출은 결정 대기다.
 
 **D-152 완료:** beta.46의 terminal/cleanup 경합을 지연 응답 회귀로 재현하고 제품 상태 게시·활성 run·취소 lane 마감을 보정했다. beta.47 로컬 전체 Java 574(2 skip)·React 472·패키지 Playwright 15/15, 실물 ZAP 하네스 1/1과 PR #13 원격 CI/재현성을 통과해 main에 반영했다. 원 PR #11·#12는 이식·대체 근거와 함께 종료했고, 팀원 배포 파일은 beta.47로 분리한다. 실물 fixture 검증과 실제 Burp/Windows/외부 대상 미실측은 계속 구분한다.
 
@@ -39,7 +41,7 @@
 | #11 Confidence(OBSERVED/CORROBORATED/INFERRED/UNKNOWN) | `ParameterObservation.Confidence`, `ParameterDefinition.confidence` | `SurfaceAnalysis.Confidence`: 관측 OBSERVED(엔진 전달), 선언 INFERRED, link OBSERVED/CORROBORATED/INFERRED/UNKNOWN | 자동 검증 완료 | 2단계 회귀(선언 INFERRED), 4단계 `SurfaceAuthorizationLinkTest`(link 4단계 confidence) | — |
 | #11 ParameterProfile(source/identity/role/run/phase 카운트, contextPresence·`ABSENT_OBSERVED_CONTEXT`, typeConflict, distinct) | `ParameterProfile`, `ParameterProfiler.profile()` | `SurfaceAnalysis.ParameterProfile`(`ParameterFact.profile`), `SurfaceAnalyzer.profile()`: discovery 행(coverage·VALIDATION/COACH_PROBE 제외) 위에서 카운트·presence·구조/타입 충돌·부재·contextPresence(64)·identity/run 64 상한 진단 | 자동 검증 완료 | `SurfaceParameterProfileTest` 17건(PR `ParameterProfilerTest` 동작 이식: 축 카운트·명시 null/부재·타입 충돌·상한·불변성·Pipeline 경로 직렬화) | 화면 소비는 5단계; 실제 Burp 실행 미검증 |
 | #11 discovery Gap 5종 + priority reasons + retention gate + coverage-only 분모 + Evidence ID 충돌 제외 | `ParameterProfiler.gaps()` | `SurfaceAnalysis.ParameterGap`(최상위 `parameterGaps`, `PRIORITY_ORDER`), `SurfaceAnalyzer.gaps/typeVariantGaps/conditionGaps/gap()`: 요청 행(`Row`, complete=추출 진단 없음+payload FULL), `REQUEST_PAYLOAD_NOT_RETAINED`·`CONFLICTING_EVIDENCE` 진단, 미확정 좌표 제외 | 자동 검증 완료 | 같은 테스트(누락 축 증인·optional/미요청 route·타입 변형·enum·wire/format 비교 제외·조건 조합 2근거·retention gate·불완전 긍정·순서 무관·반복 provenance·충돌 제외·미확정 제외), `mvn clean verify` | 5단계 UI, 4단계 `AUTH_VARIANT_UNTESTED` |
-| #11 AuthorizationTargetLink(exact scalar OBSERVED / 독립 2 witness CORROBORATED / 단일 동시출현 INFERRED) | `ParameterAuthorizationAnalyzer.relation/exact/corroborated` | `SurfaceAnalysis.AuthorizationTargetLink`(`ParameterFact.authorizationTargets`), `SurfaceAuthorizationLinker.relation/exact/corroborated`: 중첩 PATH는 슬롯별 resource chain prefix에 연결하고, 그 외는 정본 field→resource 규칙의 스칼라 projection을 재생한다(QUERY_ID / 의미 필드 corroboration). 공개된 완전 증인 2건 안에서만 CORROBORATED하며 이는 확정 인가 경계가 아닌 사람 검토 근거다(D-146). | 자동 검증 완료 | `SurfaceAuthorizationLinkTest` 23건(PR 이식 + 중첩 부모/자식·동일 ID·동시출현 경계 회귀), `mvn clean verify` | 5단계 화면; 실제 Burp 미검증 |
+| #11 AuthorizationTargetLink(exact scalar OBSERVED / 독립 2 witness CORROBORATED / 단일 동시출현 INFERRED) | `ParameterAuthorizationAnalyzer.relation/exact/corroborated` | `SurfaceAnalysis.AuthorizationTargetLink`(`ParameterFact.authorizationTargets`), `SurfaceAuthorizationLinker.relation/exact/corroborated`: 중첩 PATH는 슬롯별 resource chain prefix에 연결하고, 그 외는 정본 field→resource 규칙의 스칼라 projection을 재생한다(QUERY_ID / 의미 필드 corroboration). 공개된 완전 증인 2건 안에서만 CORROBORATED하며, 확정 소유자가 있으면 PR 원본대로 `CONFIRMED_AUTH_BOUNDARY` 우선순위를 받는다(D-154, D-146 ③ 철회). 단일 동시출현 INFERRED와 UNKNOWN만 사람 검토 근거다. | 자동 검증 완료 | `SurfaceAuthorizationLinkTest` 23건(PR 이식 + 중첩 부모/자식·동일 ID·동시출현 경계 회귀), `mvn clean verify` | 5단계 화면; 실제 Burp 미검증 |
 | #11 ParameterValidationCell(SELF/OTHER_OWNER/ANONYMOUS/OTHER_ROLE × source, actual vs basis Evidence) + AUTH_VARIANT_UNTESTED | `ParameterAuthorizationAnalyzer.enrich` | `SurfaceAnalysis.ParameterValidationCell`(최상위 `validationCells`)·`SubjectClass`, `SurfaceAuthorizationLinker.link/decision/matches/gap`: 확인된 소유자·역할 분모로 applicable 결정, 응답 근거로 DENY/UNDECIDED만 직접, 성공 응답은 Evidence에 결박된 정본 Decision만 재사용(source별 입력이 다르면 미결박), VALIDATION 행은 cell·link에만 연결, `pg:auth:` gap은 완전한 operation에서만 | 자동 검증 완료 | 같은 테스트(정본 재사용·SELF ALLOW 금지·metadata/모호 응답·VALIDATION 연결·부분집합 미차용·객체 노출 미차용·미검증 gap·우선순위·충돌 제외·cell 불변식·Pipeline 직렬화) | 5단계 화면, 6단계 매트릭스에서 셀 재사용 |
 | #11 Pipeline attach·record 영속·snapshot 캐시(generation·fingerprint)·additive 5배열·bounded preview | `Pipeline`·`RequestRecord`·`ProjectStore`·`SnapshotJsonWriter` | snapshot `surface`(valueToTree) 하나만; 영속 없이 projection 재계산(제2정본 없음). `SnapshotJsonWriter.surface()` 현재 게시본 단일 캐시(revision·Result·route 목록 동일성, 동기화, `surfaceBuildCount()` seam). 선언 32 상한 preview는 Evidence ID 순 안정 선택, `DEFINED_NOT_OBSERVED` gap은 전체 선언 증인 수 보존 | 자동 검증 완료 | `web/SnapshotSurfaceContractTest` 9건(PR Contract 9·Cache 7 중 적용 항목: 빈 snapshot 가산 배열, 모델 dedupe·count·32 preview·불변, UNTESTED basis/실제 분리·40건 preview·순서 무관, 선언 전용 입력·route 후보·전체 count·안정 preview·순서 무관, 실제 ALLOW 40 vs VALIDATION 전용 UNDECIDED 1, 민감 생략 진단 2·비밀 비노출, 단일 캐시 build count, 동시 poll 1회·동일 바이트, 같은 게시본 원문 변경 무영향·새 revision 재계산) | 미이식: attached generation·record fingerprint·bounded node seam·legacy UNKNOWN shape(설계상 해당 없음, D-143 5d) |
 | #11 우선순위 큐·파라미터 Gap 그래프(4-lane 카드)·커버리지 매트릭스·Gap 인스펙터·Focused workspace | `frontend/src/features/parameter-map/*`(20파일), `e2e/parameter-map.spec.ts` | `frontend/src/features/parameter-map/*`: `parameterProjection`(snapshot.surface 위 machine key `parameterMapKey`, 큐 정렬=서버 REASON_ORDER, 40개 경로+선택 off-page, 20개 증인 preview, 미확정 좌표 제외, cell id 파생), `parameterLanes`·`parameterNodeCard`(SVG 카드, 표시 라벨=fieldPath·리소스 service 접두 제거), `ParameterGapGraph`(Cytoscape 4-lane, 목록 fallback, 키보드 경로 선택), `ParameterPriorityQueue`, `ParameterFilterBar`, `ParameterCoverageMatrix`, `ParameterGapInspector`(핵심 근거·Evidence·정의 근거 탭, 프로파일 요약, EvidenceSheet·RequestLabDialog 연결), `FocusedGraphWorkspace`+CSS, `#graph`의 점검 우선순위 탭(D-145, 옛 `#parameter-map`은 호환 이동) | 실제 UI·운영 검증 완료(UI: 패키지 Chromium / Burp 미실행) | vitest `parameterProjection.test.ts` 13·`ParameterMapPage.test.tsx` 17(RED→GREEN), frontend 298 tests, `mvn clean verify` 514 tests; standalone(17777) 1024/1600px에서 큐 23건·경로 카드·선택 상세 sheet/pane·검증표 4좌표·Evidence 상세·Request Lab 초안·확대/목록 전환, 콘솔 JS 오류 0 | 5c 관계 그래프 계층, 5d snapshot 캐시·계약 테스트는 별도 행 |
@@ -74,7 +76,7 @@
 - D-145가 PR `DATASET_REPLACING`을 현행 `datasetRevision` 보조 신호로 흡수했다. 신호는 서버 전환 성공 뒤에만 보내고 실패한 전환은 열린 편집을 보존한다. `parameterEvidence.ts`도 on-demand `/api/evidence` 안전 projection으로 흡수했지만 record 영속·main snapshot digest·preview는 계속 이식하지 않는다.
 - 상단 `WorkspaceNavigation`과 `GraphPage` 두 탭은 D-145로 흡수했다. 기존 source·identity 필터, 서버 Fact/판정 정본, legacy HTML 미교체는 유지한다. `RouteIconRail`과 별도 `#parameter-map` route는 중복이라 제거하며 옛 hash만 `#graph`로 호환한다.
 - PR#12 판정 매트릭스의 후보 승격(기대 차단 + 2xx → `BOLA_IDOR_CANDIDATE`, 기대 차단 + 2xx + P3 → `BFLA_CANDIDATE`) → 정본 cell의 SUSPICIOUS/`roleViolation`이 있을 때만 후보이고, 본문 미확인 성공은 `BOLA_IDOR_REVIEW_REQUIRED`(D-144, D-004/D-050). PR의 `ValidationDecision` 기반 E3·`*_REPRODUCED`·게이트 PASS·prefix fallback → 이력 표시만(정확 cell). PR `inputCoverage`·`events[].inputs` → 미이식(`snapshot.surface` 파라미터 프로파일). PR legacy `index.html` 매트릭스 UI → React `JudgmentMatrixView`로 이식, legacy 미교체.
-- Request Diff의 `VALUE_CHANGED`는 D-145 on-demand 비민감 digest가 있을 때만 판단한다. digest가 없으면 UNKNOWN이다. `OCCURRENCE_CHANGED`는 엔진이 독립 occurrence 필드를 보존하지 않아 계속 UNKNOWN이며 만들어 내지 않는다. main Surface의 complete/retained와 Evidence API 재추출 문맥은 각각 자기 범위를 명시한다.
+- Request Diff의 `VALUE_CHANGED`는 D-145 on-demand 비민감 digest가 있을 때만 판단한다. digest가 없으면 UNKNOWN이다. `OCCURRENCE_CHANGED`는 엔진이 독립 occurrence 필드를 보존하지 않아 계속 UNKNOWN이며 만들어 내지 않는다. D-154: 한쪽이 UNKNOWN인 shape/type/occurrence 차이는 PR 원본대로 변경 라벨과 `UNKNOWN`을 함께 표시한다. main Surface의 complete/retained와 Evidence API 재추출 문맥은 각각 자기 범위를 명시한다.
 - legacy `index.html` UI(#12) → React `MatrixPage`에 이식.
 
 ## 현재 우선순위 · 보존형 프로젝트와 Evidence 무결성
@@ -121,6 +123,71 @@ D-133에서 별도 8090 Compose project로 daemon/API/session 실물 gate를 완
 10. 다운로드 사용자가 clone 없이 실행하도록 JAR·ZAP helper·문서를 distribution bundle로 만들고, `human|zap|explorer|full` doctor와 Explorer readiness 재확인을 제공한다. JAR/bundle 재현 검사와 Windows parser를 통과한 뒤에만 배포 준비 완료로 표시한다.
 
 현재 Explorer 실행 계약은 [LLM Explorer](llm-explorer.md), 삭제 목록·보존 계약은 [제거 상태](mcp-judge-removal-plan.md)가 정본이다. 아래 beta별 완료 수치·기존 LLM 실행 설명은 당시 이력이지 현재 기능이 아니다.
+
+## 다음 우선순위 · 실행 활동 상세 보기(ZAP·LLM Explorer) (2026-09-13, 계획·미착수)
+
+**목적:** 점검자가 ZAP 캠페인과 LLM Explorer가 지금 무엇을 하고 있는지 화면에서 바로 보게 한다. 현재는 두 실행 모두 상태 한 줄과 숫자만 보이고, 진행 내용은 `/api/scanner-run`·`/api/explorer-run`을 직접 열어야 확인할 수 있다.
+
+**현재 사실 (2026-09-13 실측):**
+- ZAP: 서버는 run별 이벤트 로그(`run.events`: 시각·lane·stage·level·message)와 lane 카운터(수집·client·passive 잔여·heartbeat·alert)를 이미 만든다. React 점검 화면은 이벤트 로그를 렌더하지 않는다. ZAP이 어떤 URL을 방문 중인지는 서버도 가져오지 않는다(ZAP API `core/view/urls`, client spider 진행률, alert 목록은 미사용).
+- Explorer: 서버는 `activities` 피드(TOOL/MODEL/HTTP/SYSTEM/AUTH/DISCOVERY, 상태·소요 시간, 상한 300)를 만든다. 실행 상태 화면은 상태·메시지·`unresolved`만 보인다. 도구 호출 항목은 "FlowScope 도구 호출 · 도구 처리 완료"처럼 어떤 도구를 어떤 인자로 불렀는지 없다. HTTP 항목만 method·URL·상태·Evidence ID를 가진다.
+
+**1단계 (서버 변경 없음):**
+- ZAP lane 카드에 이벤트 타임라인과, 현재 run의 SCANNER Evidence 최근 N건(method·path·status·sourceDetail)을 "지금 수집 중" 목록으로 표시한다. 둘 다 기존 응답과 snapshot에서 클라이언트가 뽑는다.
+- Explorer 카드에 `activities` 타임라인(종류 배지, 상태, 소요 시간, `boundedText`로 자른 상세)과 HTTP 항목의 Evidence ID 링크를 표시한다. 모델 메모는 "비집계" 라벨을 유지한다.
+- 검증: React 단위 회귀(이벤트·피드 렌더, 실패·취소 상태, 좁은 화면), 패키지 Playwright 1건.
+
+**2단계 (서버 보강):**
+- `CodexAppServerProvider`의 dynamicToolCall 이벤트에서 도구 이름과 안전한 인자(method·URL·artifact_id·선언 개수)를 뽑아 활동 제목에 넣는다. 헤더·본문·값은 넣지 않는다.
+- ZAP lane에 scope 안 방문 URL 목록(상한 200), client spider 진행률, 위험도별 alert 수를 폴링해 노출한다.
+- 검증: Java 회귀(마스킹·상한·scope 밖 URL 제외), React·Playwright 갱신.
+
+**경계:** 값·인증정보·API key 비노출, 텍스트 길이 제한, 기존 1초 폴링 재사용, 판정·점수 생성 없음.
+
+### Explorer 현행 플로우 조사와 개선 후보 (2026-09-13, 결정 대기)
+
+- 흐름: 계정 로그인 준비(`ExplorerAuthRuntime`) → Codex app-server 시작(`thread/start`·`turn/start`, sandbox workspaceWrite·networkAccess false, developerInstructions=`explorer-system.md`) → 모델이 dynamic tool(`flowscope_http_request`, `flowscope_artifact_*`, `flowscope_record_discoveries`)만으로 exact scope 요청·산출물 분석·선언 저장 → `turn/completed`의 JSON 결과(summary·unresolved) → `LaneCompletionPolicy`(응답 Evidence 0건이면 실패) → COMPLETED / COMPLETED_WITH_LIMITATIONS.
+- 실측(naver.com, 비로그인): 97초, HTTP 시도 10건 중 응답 2건(시작 페이지·favicon), scope 밖 차단 8건(pstatic.net JS), 도구 호출 43건, 선언 0건. 검색 form·API·정적 JS가 전부 다른 호스트라 exact scope 하나로는 탐색이 시작 페이지에서 끝난다.
+- 개선 후보: ① `unresolved`의 scope 밖 호스트를 사용자가 승인해 scope에 추가하는 UI 흐름(자동 확장 없음). ② 같은 호스트가 한 번 차단되면 후속 요청을 서버가 미리 거부하고 모델에 알려 헛도는 호출을 줄인다. ③ 시도 수에서 정책 차단을 분리해 보고한다(`시도 10 · 차단 8 · 응답 2`). ④ 서버가 저장된 응답에서 scope 안 링크·form·script URL을 뽑아 frontier 원장을 만들고 "남은 frontier"를 완료 조건과 화면에 쓴다. ⑤ favicon·이미지 같은 비산출물 요청을 지침에서 제외한다.
+
+## 다음 우선순위 · LLM Explorer 역량 확장 (2026-09-13, 계획·승인 대기)
+
+**문제의식(사용자):** 현재 Explorer는 도구 3종(`flowscope_http_request`, `flowscope_artifact_*`, `flowscope_record_discoveries`)과 64줄 지침으로 "페이지 fetch + endpoint 나열"만 시킨다. LLM이 잘하는 장문 상관분석·차등추론·계획·설명·구조화 추출을 거의 쓰지 못한다. 실측(naver 비로그인 97초)에서도 시도 10·응답 2·선언 0으로 첫 페이지에서 끝났다.
+
+**대원칙(바꾸지 않음):** 확장은 LLM의 **분석·발견 역량**만 넓히고 **공격 역량**은 넓히지 않는다. D-128 유지 — Explorer는 관측·선언만 하고 취약점 verdict·심각도·확률을 만들지 않는다. PUT/PATCH/DELETE·업로드·brute force·race·exploit payload·외부 callback은 계속 금지. 값·인증정보 비노출, exact-scope 서버 강제, scope 자동 확장 금지도 유지.
+
+**LLM 역량 ↔ FlowScope 매핑**
+| LLM이 잘하는 것 | 현재 | 확장 후 |
+|---|---|---|
+| 장문 상관분석(JS 번들·source map·OpenAPI·GraphQL) | artifact 도구로 부분 사용 | source map·GraphQL introspection·spec 자동 해석 추가 |
+| 차등추론(계정 A·B·비로그인 응답 차이) | 계정별 요청만, 비교 지시 없음 | 서버 계산 diff + 모델 해석(선언, 판정 아님) |
+| 계획·frontier 우선순위 | 전부 모델 기억 | 서버 frontier 원장 + "남은 N건" |
+| 구조화 추출 | endpoint·parameter만 | 시퀀스·workflow·parameter 예시 형식(값 아님) |
+| 자연어 설명 | summary 1줄 | 단계별 근거·계정별 관측 요약(비집계) |
+| 다음 점검 후보 제안 | 없음 | Evidence 결박 candidate 선언(verdict 아님, PR#11 Gap에 연결) |
+
+**Phase 1 — 있는 것에서 더 뽑기(새 대상 요청 권한 없음)**
+- 지침 확장: 계정별 차등 관측 지시, frontier 규율, 로그인→행동 시퀀스 관측, 선언 parameter의 형식·예시(값 아님) 기록.
+- 출력 스키마 확장: 계정별 관측 요약, 시퀀스/workflow 노트, "다음 점검 후보"(Evidence 결박 선언, 명시적 non-verdict), unresolved에 실행 가능한 호스트 목록.
+- `activities` 피드를 프로젝트에 영속하고 화면에 노출(위 "실행 활동 상세 보기" 1단계와 합침).
+- 모델·reasoning effort를 명시해 재현성 확보. 승인 자동응답을 로그로 남김.
+- 완료 gate 보강: 응답 1건이 아니라 frontier 소진·계정 커버리지를 완료 근거에 포함.
+- 검증: React·Java 단위 회귀, 패키지 Playwright, opt-in 실물 provider 1건.
+
+**Phase 2 — 새 분석 도구(대상 변형 권한 없음)**
+- `flowscope_compare_identities`: 서버가 저장된 Evidence로 URL 집합의 계정별 응답 차이(status·크기·구조, 값 아님)를 계산하고 모델이 해석한다.
+- `flowscope_note_candidate`: Evidence에 결박된 "다음 점검 후보"를 기록한다. PR#11 Gap·판정 매트릭스가 소비하며 verdict가 아니다.
+- 저장된 spec 선언: fetch한 OpenAPI/Swagger/GraphQL introspection에서 endpoint·parameter를 선언으로 저장(관측과 분리).
+- scope 확장 요청 도구: 모델이 scope 밖 호스트를 후보로 제안하고 사용자가 UI에서 승인(자동 확장 없음).
+- 차단 호스트 조기 거부: 한 번 scope 밖으로 막힌 호스트는 서버가 즉시 거부·통보해 헛요청을 줄인다.
+- 검증: Java 회귀(마스킹·상한·scope·비집계 경계), React·Playwright.
+
+**Phase 3 — 발견 입력 넓히기**
+- source map 파싱, GraphQL introspection(읽기 POST), `robots.txt`·`sitemap.xml`·`/.well-known/` 수집, OpenAPI/Swagger 자동 탐지.
+- 시도 수에서 정책 차단을 분리 보고(`시도 N · 차단 M · 응답 K`), 비산출물(favicon·이미지) 요청 지침 제외.
+- run 벽시계 상한과 계정별 예산.
+
+**바꾸지 않는 경계(재확인):** verdict·심각도·확률 생성 금지, 위험 method·공격 payload 금지, 값·비밀 비노출, exact-scope 서버 강제, scope 자동 확장 금지, 원문·인증정보 비영속. 이 확장은 이 경계 안에서 관측·선언·설명의 폭과 깊이만 늘린다.
 
 ## 이전 버전별 계획·검증 이력
 

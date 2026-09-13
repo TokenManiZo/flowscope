@@ -1,4 +1,11 @@
-# FlowScope 1.2.0-beta.48 사전 벤치마크 검증 기록
+# FlowScope 1.2.0-beta.49 사전 벤치마크 검증 기록
+
+> **버전:** 이 브랜치의 작업 버전은 `1.2.0-beta.49`(미출시)로 올렸다. 아래 D-155~D-164 기록의 `flowscope-1.2.0-beta.48.jar`는 각 항목 검증 당시 pom이 beta.48이었을 때의 파일명이며, beta.49 승격 후 최종 JAR은 `flowscope-1.2.0-beta.49.jar`다(맨 위 항목 참조). 과거 항목별 수치·해시는 그대로 보존한다.
+
+## 2026-09-13 · 1.2.0-beta.49 승격 검증
+
+- pom·UI·문서를 `1.2.0-beta.49`로 올린 뒤 전체 검증. JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 589 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. 최종 JAR `flowscope-1.2.0-beta.49.jar` 31,948,362 bytes, SHA-256 `73460382c76d15e3fdfbbeb1159574a30f9c620ada369f3d217e3f7f3da2d928`.
+- 이 버전은 released beta.48 위의 D-154~D-164를 담은 미출시 브랜치다. push·release는 하지 않았다. 실제 Burp 재로드·crAPI 재실측은 미실행.
 
 ## 2026-09-12 · D-153 SQLite 연결 수정 검증
 
@@ -9,6 +16,36 @@
 - 최종 커밋 `36a5020`에서 두 번째 `mvn -o clean verify`도 같은 수치로 성공(1분 14초), JAR SHA-256 동일. 최종 JAR의 독립 JVM 저장·재열기 probe, 설치 ZIP CRC와 내부 JAR 바이트 일치도 통과했다.
 - [PR #16 CI 34697738243](https://github.com/choewonwoo1817/testflowscope/actions/runs/34697738243): 전체 build·JAR/ZIP 검사·동일 러너 반복 해시·Bash/Windows 구문 검사 통과(verify 9분 2초). 후속 문서 커밋 `7810f46`의 [CI 34698310197](https://github.com/choewonwoo1817/testflowscope/actions/runs/34698310197)도 같은 검사 통과(verify 8분 8초). 사용자는 이번 PR의 관리자 예외 병합과 main·Release 게시를 명시적으로 승인했다. 최종 main CI·태그·업로드 자산 식별은 [beta.48 Release](https://github.com/choewonwoo1817/testflowscope/releases/tag/v1.2.0-beta.48) 기록을 따른다.
 - 설치된 Burp 번들 Java의 별도 probe는 60초 이상 출력 없이 OS 대기 상태였다. 임시 PID를 재확인해 TERM/KILL을 보냈지만 마지막 확인에서도 남아 있었으며 성공/종료 완료로 기록하지 않는다. 실제 사용자 Burp 새 JAR 재로드·Windows 실기기·ZAP/Explorer 실물 재실행은 미실행이다. 아래 beta.47 결과를 beta.48 실물 결과로 합산하지 않는다.
+
+## 2026-09-13 · crAPI 실측 현장 검증(D-155)
+
+| 검사 | 실제 결과 |
+|---|---|
+| 대상 | OWASP crAPI 로컬 스택(Docker, `http://localhost:8888`). 두 계정(alice/bob) 가입·로그인·차량 등록·자기 리소스 조회를 Burp 프록시(8080) 경유로 실행. 교차 접근은 수행하지 않음. |
+| 핵심 엔진 | HUMAN 탐색 run 안에서 인증 API가 INCLUDE되고 신원이 JWT에서 자동 해석됨. 교차 접근 없이 `GET /identity/api/v2/vehicle/{id}` 차량 위치의 BOLA/IDOR 후보 2건(User A↔User B)과 `AUTH_VARIANT_UNTESTED` gap 생성 확인. |
+| 온보딩 실측 | run 밖 브라우징은 인증 API 36건이 전부 `HUMAN_OUTSIDE_EXPLORATION_RUN`으로 제외(D-071). 최소 경로는 계정·세션 캡처 없이 `HUMAN 탐색 begin→browse→end` 2동작·신원 자동 해석. |
+| ZAP | Burp에 8081 listener가 없어 Client Spider 수집 0건으로 실패 재현. listener 추가 후 naver 대상에서 13건 수집 성공. |
+| D-155 회귀 | `SnapshotTrafficStatsTest` 2, `TrafficClassifierTest` 18, React `RunGapHint`·`ParameterMapPage` 통합, typecheck 통과. beta.48 rebase 후 JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 14초), Java 577건(실패·오류 0, opt-in 2 skip), React 60파일/476건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,492 bytes, SHA-256 `c63a3af15eb01cd52f9b12534c622f8d63f22865b6449f13d1ad754114d7a8d3`. 새 JAR의 실제 Burp 재로드는 미실행. |
+| D-156 회귀 | `JudgmentMatrixView.test.tsx` 12건(신규 1: P0·Unknown 셀에서 `/api/requirement`·`/api/role` 정확 호출·서버 메시지·P3 셀 비표시), typecheck 통과, 프런트 전체 480건(Node 25는 `--no-experimental-webstorage` 필요). 실제 crAPI BFLA 후보 생성은 미실측. |
+| D-164 회귀 | `ZapBrowserAuthenticatorTest` 7건(신규 1: 응답 0건 지목; 기존 테스트에 응답 수·상태 코드 단언 보강). JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 589건(실패·오류 0, opt-in 2 skip), React 60파일/482건·typecheck, release guard 통과. JAR 31,948,361 bytes, SHA-256 `4d44c286993b2cc417853693e12088898774c4c152f853d2c8427808093d1c34`. |
+| D-162/D-163 회귀 | `MaskingTest` 6건(신규 1: 라우트 URL 보존·실제 비밀 마스킹 유지), `ZapBrowserAuthenticatorTest` 6건(scope 위반 값 지목), `MaskingBoundaryTest` 2건 통과. JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 588 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,946,297 bytes, SHA-256 `23dc1e0efdc01e70d79c09c45d9a2eadf303abc471dd0e4327444475dc26a39e`. gzip source map 실독·라우트 보존의 Explorer 효과는 미실측. |
+| D-161 회귀 | `SurfaceAnalyzerTest` 39건(신규 2: 구조적 덮임 delta·깊이 60/70 진단), `SurfaceHeldOutEvaluationTest` 1(정답 불변), `SnapshotSurfaceContractTest` 9, `FlowScopeWebServerTest` 32 통과. D-161 포함 JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 587 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,945,813 bytes, SHA-256 `6962381b5be98b4a3d704431e5319c11830e8b161f9a037e44ac3b61f5018f63`. |
+| D-160 회귀 | `SurfaceParameterProfileTest` 19건(신규 1: password만 있는 요청이 sort 부재 증인), `SnapshotParameterEvidenceTest` 4건(신규 1: 비밀 필드 JSON complete=true), `SurfaceAnalyzerTest` 37건 통과. D-160 포함 JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 585 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,945,018 bytes, SHA-256 `04c8e6d16ecadaf6f5e8245a4988e0f94408d290fc7a9b28a1c5fa449b8e2eaf`. |
+| D-159 회귀 | `SurfaceAnalyzerTest` 37건(신규 1: 1,024 좌표 HUMAN+SCANNER 양쪽 보존·1,025번째 `PARAMETER_LIMIT`·순서 무관), `SurfaceParameterProfileTest` 18, `SnapshotSurfaceContractTest` 9 통과. D-159 포함 JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 583 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,944,635 bytes, SHA-256 `b7387236ff195b7f01d5b57ed3caf42b897a1c610b5995566c9cd791e7321e7f`. |
+| D-158 회귀 | `JudgmentMatrixView.test.tsx` 14건(신규 2: HUMAN run 비활성 경고·`#inspection` 이동, 활성 안내·D-008 문구), typecheck, 프런트 전체 60파일/482건 통과. 실제 Burp에서 run 켜고 Repeater 재전송→셀 반영 실측은 미실행. |
+| D-157 회귀 | `ZapCampaignTest` 11건(신규 4: listener 닫힘 즉시 실패, ZAP 7건/0건 원인 문구, loopback probe), `ZapCampaignRegressionTest` 16건 통과. D-156·D-157 포함 JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 28초), Java 582건(실패·오류 0, opt-in 2 skip), React 60파일/480건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,944,175 bytes, SHA-256 `a0bb500d1fda7acb97544a03d1471c2c826def15384c40f9834af18445aa6f74`. 실제 Burp listener 제거 재현은 미실행. |
+| 미실행 | role 지정 기반 BFLA 실측(mechanic/admin 트래픽 수집 후), 실제 Burp listener 제거 시 ZAP 즉시 실패 재현, 대규모 실대상 성능, crAPI 재빌드 JAR의 실제 Burp 재로드. |
+
+
+## 2026-09-12 · D-154 PR 원본 의미 복원 검증(미출시 브랜치)
+
+| 검사 | 실제 결과 |
+|---|---|
+| 집중 회귀 | `SurfaceAuthorizationLinkTest` 24건·`SurfaceParameterProfileTest` 18건 통과. 새 테스트는 단일 동시출현 INFERRED→`HUMAN_REVIEW_REQUIRED`, 독립 2건 CORROBORATED+확정 소유자→`CONFIRMED_AUTH_BOUNDARY`·`CORROBORATED_EVIDENCE`를 검사한다. Vitest `requestDiff`·`ParameterRequestDiff`·`ParameterMapPage` 3파일 32건 통과. |
+| 전체 빌드 | JDK 21.0.12.1 `mvn -o clean verify` BUILD SUCCESS(1분 13초). Java 574건, 실패·오류 0, opt-in 2 skip. React 59파일/472건·typecheck, JAR/bundle release guard 통과. `SampleProjectTest` 골든 fixture 일치(sample에 CORROBORATED link 없음). |
+| 패키지 브라우저 | 실행 중인 Burp가 17777을 점유해 같은 JAR의 standalone 서버를 17797·임시 projects dir로 띄우고 `FLOWSCOPE_E2E_ORIGIN`으로 Playwright `--retries=0` 15/15 통과(29.7s). |
+| 산출물 | JAR 31,942,089 bytes, SHA-256 `1a4dcdaef4ebe513f7153477e7d6bfaa15f83cadb648824d0715134b2fb936e0`. bundle은 이 검증 기록 이전 문서로 조립됐으며 main 반영 시 재조립한다. |
+| 미실행 | 실제 Burp·Windows·외부 대상. 같은 날 실제 Burp에서 범위 적용 시 `FlowScope SQLite save failed`가 관측됐고(커널 로그 AMFI가 `libsqlitejdbc.dylib` 서명을 거부), 원인 문자열이 기록되지 않는 결함은 별도 항목이다. |
 
 ## 2026-09-12 · D-152 beta.47 ZAP 종료·재시작 보정
 

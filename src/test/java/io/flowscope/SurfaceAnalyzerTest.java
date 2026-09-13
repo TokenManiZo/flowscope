@@ -964,6 +964,116 @@ final class SurfaceAnalyzerTest {
         return record;
     }
 
+    @Test
+    void 엔드포인트_파라미터_상한에서_기존_좌표는_계속_갱신되고_신규_초과만_진단으로_남는다() {
+        int max = SurfaceAnalyzer.MAX_PARAMETERS_PER_ENDPOINT;
+        String wide = wideJson(max);
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/wide", 200);
+        human.requestContentType = "application/json";
+        human.reqBody = wide;
+        RequestRecord scanner = request(Source.SCANNER, "POST", "/api/wide", 200);
+        scanner.requestContentType = "application/json";
+        scanner.reqBody = wide;
+        RequestRecord overflow = request(Source.HUMAN, "POST", "/api/wide", 200);
+        overflow.requestContentType = "application/json";
+        overflow.reqBody = wideJson(max + 1);
+
+        SurfaceAnalysis forward = analyzeWide(List.of(human, scanner, overflow));
+        SurfaceAnalysis.EndpointFact endpoint = endpoint(forward, "POST", "/api/wide");
+        assertEquals(max, endpoint.parameters().size(), "상한까지는 모두 보존한다");
+        for (String path : List.of("/p0", "/p" + (max - 1))) {
+            SurfaceAnalysis.ParameterFact fact = parameter(endpoint, SurfaceAnalysis.ParameterLocation.JSON_BODY, path);
+            assertEquals(java.util.Set.of(Source.HUMAN, Source.SCANNER), fact.observedSources(),
+                    "상한에 닿은 뒤 도착한 SCANNER 관측도 기존 좌표에는 계속 갱신된다: " + path);
+            assertEquals(fact.observedSources(), fact.profile().sourceCounts().keySet(),
+                    "Fact의 source와 프로파일 집계가 같은 관측 집합을 본다: " + path);
+        }
+        assertTrue(forward.parameterDiagnostics().stream().anyMatch(item -> item.reasonCode().equals("PARAMETER_LIMIT")
+                && item.operation().equals("POST /api/wide") && item.droppedCount() == 1),
+                "1,025번째 신규 좌표는 경고 없이 사라지지 않는다");
+
+        SurfaceAnalysis reversed = analyzeWide(List.of(overflow, scanner, human));
+        assertEquals(endpoint.parameters().stream().map(SurfaceAnalysis.ParameterFact::canonicalPath).sorted().toList(),
+                endpoint(reversed, "POST", "/api/wide").parameters().stream()
+                        .map(SurfaceAnalysis.ParameterFact::canonicalPath).sorted().toList(),
+                "수집 순서를 바꿔도 보존되는 좌표 집합은 같다");
+    }
+
+    private static SurfaceAnalysis analyzeWide(List<RequestRecord> records) {
+        Pipeline.Result result = Pipeline.runIsolated(records, new io.flowscope.core.AnalysisConfig());
+        return SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of());
+    }
+
+    private static String wideJson(int fields) {
+        StringBuilder body = new StringBuilder("{");
+        for (int i = 0; i < fields; i++) body.append(i > 0 ? "," : "").append("\"p").append(i).append("\":1");
+        return body.append("}").toString();
+    }
+
+    @Test
+    void 선언에_구조적으로_덮인_컨테이너와_배열_원소_관측은_미선언_관측이_아니다() {
+        RequestRecord openapi = document("/openapi.json", "application/json", """
+                {"openapi":"3.0.3","paths":{"/api/search":{"post":{"requestBody":{"content":{"application/json":{"schema":{
+                  "type":"object","properties":{"criteria":{"type":"object","properties":{
+                    "status":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}}}}}}}}}}}}}
+                """);
+        RequestRecord human = request(Source.HUMAN, "POST", "/api/search", 200);
+        human.requestContentType = "application/json";
+        human.reqBody = "{\"criteria\":{\"status\":\"open\",\"labels\":[\"a\",\"b\"]},\"extra\":1}";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi, human), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+        SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/api/search");
+
+        SurfaceAnalysis.ParameterFact container = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria");
+        assertTrue(container.declarations().isEmpty(), "선언은 리프·배열 필드 관례를 유지한다(D-143 ①)");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, container.deltaState(),
+                "멤버가 선언된 객체 컨테이너 관측은 미선언 관측이 아니다");
+        SurfaceAnalysis.ParameterFact element = parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria/labels/*");
+        assertTrue(element.declarations().isEmpty());
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED, element.deltaState(),
+                "배열 필드가 선언된 원소 관측은 미선언 관측이 아니다");
+        assertEquals(SurfaceAnalysis.DeltaState.ONE_SOURCE_OBSERVED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/criteria/labels").deltaState());
+        assertEquals(SurfaceAnalysis.DeltaState.OBSERVED_NOT_DECLARED,
+                parameter(post, SurfaceAnalysis.ParameterLocation.JSON_BODY, "/extra").deltaState(),
+                "정말 선언되지 않은 리프는 그대로 미선언 관측이다");
+    }
+
+    @Test
+    void schema_깊이_상한은_64이고_넘긴_선언은_진단으로_남는다() {
+        // 선언은 리프만 만들므로(D-143 ①) 깊이 60 체인은 리프 하나를 선언하고, 70 체인은 리프가 상한 밖이라 선언 0개 + 진단이다.
+        RequestRecord openapi = document("/openapi.json", "application/json",
+                "{\"openapi\":\"3.0.3\",\"paths\":{"
+                        + "\"/api/deep60\":{\"post\":{\"requestBody\":{\"content\":{\"application/json\":{\"schema\":" + nestedSchema(60) + "}}}}},"
+                        + "\"/api/deep70\":{\"post\":{\"requestBody\":{\"content\":{\"application/json\":{\"schema\":" + nestedSchema(70) + "}}}}}"
+                        + "}}");
+        Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        SurfaceAnalysis.EndpointFact deep60 = endpoint(analysis, "POST", "/api/deep60");
+        assertEquals(1, deep60.parameters().size(), "깊이 60의 리프는 선언된다(이전 상한 20에서는 사라졌다)");
+        assertEquals(60, deep60.parameters().getFirst().canonicalPath().split("/").length - 1);
+        assertTrue(analysis.parameterDiagnostics().stream().noneMatch(d -> d.reasonCode().equals("DECLARATION_DEPTH_LIMIT")
+                && d.operation().equals("POST /api/deep60")));
+
+        SurfaceAnalysis.EndpointFact deep70 = endpoint(analysis, "POST", "/api/deep70");
+        assertTrue(deep70.parameters().isEmpty(), "상한 밖 리프는 선언하지 않는다");
+        assertTrue(analysis.parameterDiagnostics().stream().anyMatch(d -> d.reasonCode().equals("DECLARATION_DEPTH_LIMIT")
+                && d.operation().equals("POST /api/deep70") && d.droppedCount() >= 1),
+                "깊이 때문에 끊기면 선언 0개·오류 없음으로 끝나지 않는다");
+    }
+
+    private static String nestedSchema(int depth) {
+        StringBuilder open = new StringBuilder();
+        StringBuilder close = new StringBuilder();
+        for (int i = 0; i < depth; i++) { open.append("{\"type\":\"object\",\"properties\":{\"n").append(i).append("\":"); close.append("}}"); }
+        return open.append("{\"type\":\"string\"}").append(close).toString();
+    }
+
     private static SurfaceAnalysis.EndpointFact endpoint(SurfaceAnalysis analysis, String method, String path) {
         return analysis.endpoints().stream()
                 .filter(item -> item.key().method().equals(method) && item.key().pathTemplate().equals(path))
