@@ -1,5 +1,10 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · 1.2.0-beta.49 게시
+
+- 사용자 승인("ㄱㄱ")으로 브랜치 push → PR #17 → CI 통과 → 소유자 bypass 병합(`be7df1a`) → 태그 `v1.2.0-beta.49` → Pre-release(JAR·bundle·SHA256SUMS.txt). 게시 자산 다운로드 검증 완료. 설치 문서(README 한/영·getting-started 한/영·team-quick-start)와 CLAUDE.md 단계·documentation-status를 beta.49로 맞췄고 beta.48이 무엇을 고쳤는지 서술한 역사 문장은 유지했다.
+- 이 문서 커밋은 릴리스 뒤에 main으로 들어가며 태그를 옮기지 않는다(beta.48과 같은 방식). 다음 gate는 실제 Burp 재로드·crAPI 재실측.
+
 ## 2026-09-13 · D-164 ZAP 로그인 성공 검증 실패 진단성
 
 - crAPI momo가 걸린 "로그인 성공 정규식 일치 Evidence 없음" 게이트가 원인을 안 알려주던 문제를 고쳤다. `ZapBrowserAuthenticator`가 인증 단계 응답 수·상태 코드와 실패 종류(무응답/로그아웃 나중 일치/성공 정규식 0건 일치)를 메시지에 담는다(`LoginEvidence` record). 판정 로직·게이트는 불변. 응답 본문은 노출하지 않는다.

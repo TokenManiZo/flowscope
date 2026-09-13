@@ -2,6 +2,12 @@
 
 > **버전:** 이 브랜치의 작업 버전은 `1.2.0-beta.49`(미출시)로 올렸다. 아래 D-155~D-164 기록의 `flowscope-1.2.0-beta.48.jar`는 각 항목 검증 당시 pom이 beta.48이었을 때의 파일명이며, beta.49 승격 후 최종 JAR은 `flowscope-1.2.0-beta.49.jar`다(맨 위 항목 참조). 과거 항목별 수치·해시는 그대로 보존한다.
 
+## 2026-09-13 · 1.2.0-beta.49 Release 게시 검증
+
+- PR #17 CI: verify·shell-scripts·windows-scripts SUCCESS(head `4c52b62`). main 병합 커밋 `be7df1a`, 태그 `v1.2.0-beta.49`, Pre-release 2026-09-13T07:02:23Z.
+- 게시 자산을 `gh release download`로 받아 `shasum -c SHA256SUMS.txt` OK, 로컬 원본과 바이트 동일: JAR `73460382c76d15e3fdfbbeb1159574a30f9c620ada369f3d217e3f7f3da2d928`, bundle `5b8309c2f60ac59ed0e014f182ba46188c6a808c80732e6eb6f833bbb5ef13e4`. bundle 내 `docs/ko/team-quick-start.md`가 beta.49 제목인지 확인.
+- 미실행: 새 JAR 실제 Burp 재로드, crAPI 재실측(BFLA 후보 생성·gzip source map 실독·ZAP listener 즉시 실패 재현), Windows 실기기.
+
 ## 2026-09-13 · 1.2.0-beta.49 승격 검증
 
 - pom·UI·문서를 `1.2.0-beta.49`로 올린 뒤 전체 검증. JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 589 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. 최종 JAR `flowscope-1.2.0-beta.49.jar` 31,948,362 bytes, SHA-256 `73460382c76d15e3fdfbbeb1159574a30f9c620ada369f3d217e3f7f3da2d928`.
