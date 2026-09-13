@@ -790,7 +790,8 @@ public final class SurfaceAnalyzer {
                     ? "ctx:v1:" + digest("ctx:v1;" + record.role + ";" + record.phase + ";")
                     : observed.values().iterator().next().contextSignature();
             boolean retained = record.requestPayload == null || record.requestPayload.retained();
-            Row row = new Row(record, observed, signature, extraction.diagnostics().isEmpty() && retained,
+            // 의도적 생략(비밀 이름)만 있는 요청은 완전하다: 나머지 입력을 다 읽었으므로 부재의 증인이 된다(D-160).
+            Row row = new Row(record, observed, signature, extraction.parsedCompletely() && retained,
                     fact && discovery(record), fact, List.copyOf(extraction.diagnostics()));
             MutableEndpoint owner = ledger.owners.putIfAbsent(record.evidenceId, this);
             if (owner == null) {

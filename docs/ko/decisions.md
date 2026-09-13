@@ -1474,6 +1474,14 @@
 - **기각:** ① 상한을 올려 증상 감추기 — 절벽이 옮겨질 뿐이고 갱신 차단 결함이 남는다. ② 상한 도달 시 오래된 좌표 evict — 관측 순서에 따라 결과가 달라진다. ③ 중복 Evidence 부풀림 방어 추가 — `evidenceIds`·`observations`가 Set이라 이미 dedup된다(검증 테스트만 유지).
 - **검증:** `SurfaceAnalyzerTest`가 1,024개 좌표를 HUMAN·SCANNER가 각각 관측하면 두 source가 모두 남고 Fact source와 프로파일 집계가 일치하며, 1,025번째는 `PARAMETER_LIMIT` droppedCount 1로 남고, 수집 순서를 뒤집어도 보존 좌표 집합이 같음을 검사한다.
 
+## D-160 · 비밀 이름 생략은 요청을 불완전하게 만들지 않는다 (2026-09-13)
+
+- **문제:** 요청 행의 완전성은 "추출 진단 0건 + 원문 보존"이었다(`SurfaceAnalyzer` Row.complete, `SnapshotJsonWriter.parameterEvidence`). 그런데 `password`·`token`류 좌표를 만들지 않는 의도적 생략도 `SENSITIVE_PARAMETER_OMITTED` 진단으로 남아 행 전체가 불완전해졌고, 그 요청은 다른 좌표의 부재를 증언하지 못했다. crAPI의 로그인·비밀번호 재설정·OTP 요청처럼 비밀 필드가 있는 요청은 전부 여기 걸려 `sort` 같은 일반 입력의 부재·차이가 사라졌다(독립 감사 C).
+- **결정:** `ParameterExtraction.parsedCompletely()`를 두어 진단이 전부 `SENSITIVE_PARAMETER_OMITTED`인 요청은 완전한 것으로 본다. 파싱 실패·상한·미지원 형식(`INVALID_*`, `*_LIMIT`, `UNSUPPORTED_REQUEST_BODY`, `MISSING_EVIDENCE`)이 하나라도 있으면 불완전하다. Surface와 Evidence API가 같은 메서드를 쓴다. 생략 사실은 진단으로 계속 남고 비밀 좌표는 여전히 만들지 않는다.
+- **범위:** 계획 항목 #2의 1차 범위다. 위치별(QUERY/PATH/BODY) 4-상태 완전성 모델은 실제 데이터에서 PATH/QUERY 부재 주장이 본문 문제로 막히는 사례가 나올 때만 진행한다. PR #11 원본(`ParameterProfiler`)도 진단 유무로 완전성을 정했으므로 이 결정은 원본보다 덜 보수적이며, 그 이유를 여기 남긴다.
+- **기각:** ① 생략 진단 자체를 없애기 — 생략 사실을 잃는다. ② 비밀 필드가 있는 요청을 부재 분모에서 제외한 채 두기 — 로그인·재설정 계열 endpoint의 입력 차이가 영영 안 보인다.
+- **검증:** `SurfaceParameterProfileTest`(password만 있는 요청이 `sort` 부재의 증인이 되고 `/password` Fact는 없음), `SnapshotParameterEvidenceTest`(비밀 필드 JSON이 Evidence·Surface 양쪽에서 complete=true, `completenessReason` 없음). 기존 미지원 본문·손상 multipart 불완전 테스트는 그대로 통과한다.
+
 ## 부록 · PR#11 원본 결정(D-093~D-099)과 현행 트리의 대응 (2026-09-11)
 
 PR#11은 자체 결정로그에 D-093~D-099를 남겼다. 우리 트리는 번호를 재사용하지 않고 D-143(5a~5d)·D-144에 대응 결정을 두었다. 아래는 원본 결정의 핵심과 이식 결과다.

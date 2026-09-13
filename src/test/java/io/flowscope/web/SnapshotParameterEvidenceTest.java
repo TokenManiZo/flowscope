@@ -91,6 +91,19 @@ final class SnapshotParameterEvidenceTest {
         return json.readTree(writer.evidence(result, result.records.getFirst().op, 0, 20)).path("records").get(0);
     }
 
+    @Test
+    void sensitive_omission_alone_keeps_the_request_complete_in_evidence_and_surface() throws Exception {
+        Pipeline.Result result = Pipeline.run(List.of(request("application/json", "{\"password\":\"x\",\"safe\":\"1\"}")));
+        SnapshotJsonWriter writer = new SnapshotJsonWriter();
+        JsonNode evidence = evidence(writer, result);
+        assertEquals("RETAINED", evidence.at("/parameterContext/retention").asText());
+        assertTrue(evidence.at("/parameterContext/complete").asBoolean(), evidence.toString());
+        assertTrue(evidence.at("/parameterContext/completenessReason").isMissingNode());
+        assertEquals("/safe", evidence.at("/parameterObservations/0/key/canonicalPath").asText());
+        JsonNode surface = json.readTree(writer.write(1, result, new AnalysisConfig(), List.of(), List.of())).path("surface");
+        assertTrue(surface.at("/endpoints/0/requestContexts/0/complete").asBoolean(), surface.toString());
+    }
+
     private static RequestRecord request(String contentType, String body) {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://app.test:443", "POST", "/api/orders", 200, "anon");
         record.evidenceId = "parameter-evidence";

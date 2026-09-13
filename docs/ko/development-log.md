@@ -1,5 +1,12 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-160 비밀 이름 생략은 불완전이 아니다(완전성 1차 범위)
+
+- 계획 항목 #2의 1차 범위. `ParameterExtraction.parsedCompletely()`(진단이 전부 `SENSITIVE_PARAMETER_OMITTED`면 완전)를 추가하고 `SurfaceAnalyzer` Row.complete와 `SnapshotJsonWriter.parameterEvidence`가 같은 규칙을 쓰게 했다. 비밀 필드가 있는 요청(로그인·재설정·OTP)이 다른 입력의 부재·차이를 증언할 수 있게 된다. 비밀 좌표 미생성과 생략 진단은 유지.
+- 테스트: `SurfaceParameterProfileTest` 19건(신규 1), `SnapshotParameterEvidenceTest` 4건(신규 1), `SurfaceAnalyzerTest` 37건 통과. 수정 전 코드에서는 부재 카운트 0·complete=false로 실패하는 시나리오다.
+- 영향 파일: `core/parameter/ParameterExtraction.java`, `core/SurfaceAnalyzer.java`, `web/SnapshotJsonWriter.java`, 두 테스트, decisions D-160, endpoint-parameter-surface, HANDOFF, beta-validation, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS, Java 585 0 0 2건(실패·오류 0, opt-in  skip), React 60파일/482건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,945,018 bytes, SHA-256 `04c8e6d16ecadaf6f5e8245a4988e0f94408d290fc7a9b28a1c5fa449b8e2eaf`.
+
 ## 2026-09-13 · D-159 endpoint 파라미터 상한: 기존 좌표 갱신 유지·초과 진단
 
 - 계획 항목 #1. `MutableEndpoint.parameter()`가 기존 좌표를 먼저 찾아 돌려주고 신규 좌표에만 1,024 상한을 적용하며 거부 수를 `PARAMETER_LIMIT` 진단으로 남긴다. `declareSchema`의 선행 상한 가드를 제거해 기존 좌표의 선언 손실을 없앴다. `MAX_PARAMETERS_PER_ENDPOINT`는 테스트 참조를 위해 public으로 노출(값 불변).

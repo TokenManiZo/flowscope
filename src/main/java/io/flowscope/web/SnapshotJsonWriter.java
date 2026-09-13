@@ -356,8 +356,9 @@ public final class SnapshotJsonWriter {
         boolean retained = record.requestPayload != null && record.requestPayload.retained();
         context.put("retention", retained ? "RETAINED" : record.requestPayload == null ? "UNKNOWN" : "METADATA_ONLY");
         ParameterExtraction extraction = ParameterExtractor.extract(record);
-        // Same framing as SurfaceAnalysis.RequestContext.complete: no extraction diagnostic and a fully retained request.
-        boolean complete = retained && extraction.diagnostics().isEmpty();
+        // Same framing as SurfaceAnalysis.RequestContext.complete: parsed completely (deliberate sensitive omissions
+        // do not count as failures, D-160) and a fully retained request.
+        boolean complete = retained && extraction.parsedCompletely();
         context.put("complete", complete);
         if (!complete) context.put("completenessReason", retained ? "EXTRACTION_DIAGNOSTICS" : "REQUEST_NOT_RETAINED");
         ArrayNode observations = value.putArray("parameterObservations");

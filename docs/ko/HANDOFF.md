@@ -2,6 +2,7 @@
 
 ## 2026-09-13 · crAPI 실측 기반 진단 개발 시작(D-155, 미출시 브랜치 `claude/restore-pr-semantics`)
 
+- **D-160(완전성 1차):** 비밀 이름 생략(`SENSITIVE_PARAMETER_OMITTED`)만 있는 요청은 완전한 것으로 보아 다른 입력의 부재를 증언한다. 위치별 4-상태 모델은 실사례가 나올 때까지 보류.
 - **D-159(파라미터 상한):** endpoint 1,024 상한이 기존 좌표 갱신까지 막아 SCANNER 관측을 조용히 버리던 결함을 고쳤다. 신규 좌표만 거부하고 `PARAMETER_LIMIT` 진단으로 센다.
 - **D-158(확인 루프 안내):** 후보 셀 추천에 HUMAN 탐색 활성 여부에 따른 Repeater 재전송 반영 조건(D-071)과 Request Lab 격리(D-008)를 표시한다. Request Lab을 coverage에 넣지 않는 것과 `*_REPRODUCED` 미부여를 결정으로 고정했다.
 - **D-157(ZAP 자기 진단):** 캠페인 시작 전 Burp SCANNER listener를 loopback으로 검사해 닫혀 있으면 즉시 실패하고, 0건 실패는 ZAP 메시지 수로 listener/upstream 문제와 빈 크롤을 구분한다(PR #10 D-094 사전 점검 복원). 실제 Burp listener 제거 재현은 미실행.
