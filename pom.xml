@@ -18,8 +18,8 @@
     <montoya.version>2026.7</montoya.version>
     <junit.version>5.11.4</junit.version>
     <jackson.version>2.22.2</jackson.version>
-    <jsoup.version>1.23.1</jsoup.version>
-    <sqlite.jdbc.version>3.53.1.0</sqlite.jdbc.version>
+    <jsoup.version>1.23.2</jsoup.version>
+    <sqlite.jdbc.version>3.53.4.0</sqlite.jdbc.version>
     <closure.compiler.version>v20260831</closure.compiler.version>
     <maven.clean.version>3.5.0</maven.clean.version>
     <maven.compiler.version>3.15.0</maven.compiler.version>
