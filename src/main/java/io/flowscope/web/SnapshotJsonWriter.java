@@ -113,7 +113,8 @@ public final class SnapshotJsonWriter {
                         && record.trafficClassification != null
                         && record.trafficClassification.trafficClass()
                                 == io.flowscope.core.TrafficClassification.TrafficClass.API
-                        && record.trafficClassification.reasons().contains("HUMAN_OUTSIDE_EXPLORATION_RUN"))
+                        && record.trafficClassification.reasons()
+                                .contains(io.flowscope.core.TrafficClassifier.HUMAN_OUTSIDE_EXPLORATION_RUN))
                 .count());
         root.putArray("replays");
         root.set("flowLinks", flowLinks(result.coverageRecords));

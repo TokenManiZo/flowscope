@@ -247,6 +247,15 @@ it("explains an empty graph as run-less traffic and offers to start a HUMAN pass
   expect(statePanel).not.toHaveTextContent("범위를 확인하고 HUMAN Evidence를 수집하세요")
 })
 
+it("keeps the definitions-only message instead of replacing it with the run-gap hint", () => {
+  const base = surfaceSnapshot({ endpoints: [demoEndpoint([statusParameter({ observationEvidenceIds: [], observations: [], declarations: [declaration()], profile: undefined })])] })
+  state.query = { ...state.query, data: { ...base, trafficStats: { ...base.trafficStats, humanApiOutsideRun: 3 } } }
+  render()
+  const statePanel = screen.getByRole("status", { name: "" })
+  expect(statePanel).toHaveTextContent("아직 요청으로 관측되지 않음")
+  expect(within(statePanel).queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
+})
+
 it("identifies each validation row by its own identity and role, including unknown values", async () => {
   const data = parameterSnapshot()
   data.surface!.validationCells = [validationCell({ identity: "alice", role: "USER" }), validationCell({ identity: "bob", role: "ADMIN" }), validationCell({ identity: null, role: "UNKNOWN" })] as never

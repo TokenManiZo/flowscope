@@ -1,5 +1,16 @@
 # FlowScope 개발 기록
 
+## 2026-09-13 · D-154/D-155 코드리뷰 후속 수정
+
+- `/code-review high`로 이 브랜치(beta.48 대비 D-154/D-155) 변경분을 리뷰해 5건을 확인하고 정리했다.
+- #1 (판단·무변경): `SurfaceAuthorizationLinker.gap`에서 소유자 미확정 CORROBORATED link가 `CONFIRMED_AUTH_BOUNDARY`도 `HUMAN_REVIEW_REQUIRED`도 안 받는 무플래그 중간 상태는 PR #11 원본(`ParameterAuthorizationAnalyzer.gap`, 커밋 `fc66b42` 257–263줄)과 한 줄도 다르지 않음을 확인했다. 팀원 원본 의미를 유지하는 것이 목적이므로 변경하지 않고, 회귀 방지 테스트로 동작만 고정했다.
+- #2 (테스트 추가): `SurfaceAuthorizationLinkTest.corroboratedLinkWithoutAConfirmedOwnerIsNeitherPromotedNorFlaggedForReview`로 위 경로를 단언한다(원본·현행 모두 무테스트였음).
+- #3 (수정): `ParameterMapPage`에서 run 밖 트래픽 힌트가 `DEFINITIONS_ONLY` 빈 상태 메시지를 통째로 가리던 문제를 고쳤다. `emptyState !== "DEFINITIONS_ONLY"`일 때만 힌트로 대체하고, 선언만 존재하는 사실은 그대로 표시한다. 회귀 테스트 추가.
+- #4 (수정): `SurfacePage` 힌트 게이트를 필터된 `endpoints.length`가 아니라 원본 `surface.endpoints.length`로 바꿔, 소스 필터로 목록이 비었을 뿐인데 "HUMAN 탐색 시작"을 잘못 권하던 문제를 없앴다. 긍정·필터차단 회귀 테스트 2건 추가.
+- #5 (정리): `"HUMAN_OUTSIDE_EXPLORATION_RUN"` 리터럴 중복을 `TrafficClassifier.HUMAN_OUTSIDE_EXPLORATION_RUN` 상수로 통일해 분류기·snapshot writer가 함께 참조한다. 값·분류 동작·golden fixture는 불변.
+- 영향 파일: `TrafficClassifier.java`, `SnapshotJsonWriter.java`, `SurfaceAuthorizationLinkTest.java`, `features/parameter-map/ParameterMapPage.tsx(+test)`, `features/surface/SurfacePage.tsx(+test)`, decisions D-154 주석, 이 기록.
+- 검증: JDK 21 `mvn -o clean verify` BUILD SUCCESS(1분 12초), Java 578건(실패·오류 0, opt-in 2 skip), React 60파일/479건·typecheck, release guard 통과. JAR `flowscope-1.2.0-beta.48.jar` 31,942,505 bytes, SHA-256 `45789a21b8b58aae8337c0e48cf76940e83faba01cfb570b4d03d8e67ad7d808`. 새 JAR의 실제 Burp 재로드는 미실행.
+
 ## 2026-09-13 · D-155 run 밖 인증 API 안내(crAPI 실측)
 
 - crAPI 실측에서 인증 API 브라우징이 HUMAN 탐색 밖이면 빈 화면만 보이던 문제를 안내로 전환했다. `SnapshotJsonWriter`가 `trafficStats.humanApiOutsideRun`(source=HUMAN·API·사유 HUMAN_OUTSIDE_EXPLORATION_RUN)을 추가한다. coverage 계산은 바꾸지 않는다.

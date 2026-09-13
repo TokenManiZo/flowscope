@@ -12,6 +12,9 @@ import static io.flowscope.core.TrafficClassification.TrafficClass;
 public final class TrafficClassifier {
     public static final int VERSION = 6;
 
+    /** Reason set on HUMAN API traffic captured while no exploration pass was active (D-071). The snapshot reads it to guide a pass start (D-155). */
+    public static final String HUMAN_OUTSIDE_EXPLORATION_RUN = "HUMAN_OUTSIDE_EXPLORATION_RUN";
+
     private static final Set<String> ASSET_DESTINATIONS = Set.of(
             "audio", "font", "image", "manifest", "script", "style", "track", "video");
     private static final Set<String> ASSET_EXTENSIONS = Set.of(
@@ -45,7 +48,7 @@ public final class TrafficClassifier {
         }
         if (record.source == Source.HUMAN && record.phase == RunPhase.BASELINE) {
             return result(inferredClass(record), Disposition.EXCLUDE, false,
-                    "HUMAN_OUTSIDE_EXPLORATION_RUN");
+                    HUMAN_OUTSIDE_EXPLORATION_RUN);
         }
         if (record.phase == RunPhase.VALIDATION || record.phase == RunPhase.COACH_PROBE) {
             return result(inferredClass(record), Disposition.EXCLUDE, false, "NON_DISCOVERY_PHASE");

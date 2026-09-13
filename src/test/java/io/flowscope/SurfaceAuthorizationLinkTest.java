@@ -462,6 +462,27 @@ final class SurfaceAuthorizationLinkTest {
                 "The confirmed owner's exact resource identifier keeps its established priority");
     }
 
+    @Test
+    void corroboratedLinkWithoutAConfirmedOwnerIsNeitherPromotedNorFlaggedForReview() {
+        // PR #11 원본 의미(D-154): 독립 증인 2건이라도 소유자가 확정되지 않으면 CORROBORATED_EVIDENCE만 남기고
+        // CONFIRMED_AUTH_BOUNDARY로 승격하지 않으며 HUMAN_REVIEW_REQUIRED도 붙지 않는다. 이 경로는 팀원 원본과
+        // 현행 모두 무테스트였으므로 회귀를 막기 위해 동작을 고정한다.
+        RequestRecord first = record(Source.HUMAN, "A", "GET", 200, null);
+        first.query = "sort=asc";
+        RequestRecord second = record(Source.HUMAN, "A", "GET", 200, null);
+        second.query = "sort=asc";
+        List<RequestRecord> records = List.of(first, second);
+        SurfaceAnalysis surface = enrich(records, authorization(records, false));
+
+        assertEquals(Confidence.CORROBORATED, link(surface, "/sort").confidence());
+        var gaps = authorizationGaps(surface, "/sort");
+        assertFalse(gaps.isEmpty(), "An applicable variant still produces an untested gap without a confirmed owner");
+        assertTrue(gaps.stream().allMatch(gap -> gap.priorityReasons().contains("CORROBORATED_EVIDENCE")
+                && !gap.priorityReasons().contains("CONFIRMED_AUTH_BOUNDARY")
+                && !gap.priorityReasons().contains("HUMAN_REVIEW_REQUIRED")),
+                "Corroborated evidence without a confirmed owner keeps its middle, unflagged priority");
+    }
+
     private static List<io.flowscope.core.SurfaceAnalysis.ParameterGap> authorizationGaps(SurfaceAnalysis surface, String path) {
         return surface.parameterGaps().stream().filter(gap -> gap.canonicalPath().equals(path)
                 && gap.type() == GapType.AUTH_VARIANT_UNTESTED).toList();

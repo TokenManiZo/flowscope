@@ -55,7 +55,10 @@ export function ParameterMapPage() {
   const diagnostic = projection.diagnostics.length > 0
   if (!projection.queue.length && projection.emptyState !== "NO_MATCHING_GAPS") {
     const filtered = filters !== defaultParameterFilters
-    const pendingRunGap = !filtered && !diagnostic ? runGapCount(snapshot.data) : 0
+    // Only substitute the run-gap hint for the truly-empty state; keep the DEFINITIONS_ONLY message,
+    // which reports a distinct fact (declared inputs exist but were never observed). (review #3)
+    const pendingRunGap = !filtered && !diagnostic && projection.emptyState !== "DEFINITIONS_ONLY"
+      ? runGapCount(snapshot.data) : 0
     const message = diagnostic ? "일부 입력을 분석하지 못했습니다. 누락 진단을 확인하세요."
       : projection.emptyState === "DEFINITIONS_ONLY" ? "정의된 입력이 있지만 아직 요청으로 관측되지 않음"
       : "아직 파라미터 관측 근거가 없습니다. 범위를 확인하고 HUMAN Evidence를 수집하세요."

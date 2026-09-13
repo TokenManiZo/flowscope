@@ -1436,6 +1436,7 @@
 - **유지:** D-146 ①(등록 계정의 서비스 경계)·②(중첩 PATH 부모 슬롯)는 실행 불가능한 추천과 잘못된 리소스 연결을 고친 것이라 유지한다. D-147 ②(미지원 본문·불완전 multipart 진단)는 파싱하지 않은 본문으로 부재를 주장하지 않기 위한 것이라 유지한다. 64자 masked preview 노출은 값 조각이 snapshot에 실리는 문제라 계속 결정 대기다.
 - **기각:** CORROBORATED를 별도 중간 순위로 두는 절충은 PR에 없던 새 규칙을 만든다. UNKNOWN 라벨을 계속 숨기는 방식은 사용자가 지적한 보수성이다. D-146·D-147 기록은 고쳐 쓰지 않고 이 결정으로 ③·①만 대체한다.
 - **검증:** `SurfaceAuthorizationLinkTest`는 단일 동시출현(INFERRED)이 사람 검토로 남고 독립 2건(CORROBORATED)과 확정 소유자가 확정 경계 우선순위를 받는 것을, `requestDiff`·`ParameterRequestDiff`·`ParameterMapPage` 테스트는 PR 원본 기대값을 검사한다. 패키지 sample에는 CORROBORATED link가 없어 snapshot fixture는 변하지 않는다.
+- **후속 리뷰(2026-09-13):** 코드리뷰에서 소유자 미확정 CORROBORATED link가 `CONFIRMED_AUTH_BOUNDARY`도 `HUMAN_REVIEW_REQUIRED`도 받지 않는 무플래그 중간 상태를 지적했으나, PR #11 원본(`ParameterAuthorizationAnalyzer.gap`, 커밋 `fc66b42` 257–263줄)과 동일함을 확인해 원본 의미대로 유지한다. 이 경로는 원본·현행 모두 무테스트였으므로 `corroboratedLinkWithoutAConfirmedOwnerIsNeitherPromotedNorFlaggedForReview`로 동작을 고정했다.
 
 ## D-155 · run 밖에서 관측된 인증 API 트래픽을 세어 탐색 시작을 안내한다 (2026-09-13)
 
