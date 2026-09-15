@@ -72,7 +72,7 @@ it("keeps Summary, Evidence, Request, Response, and Policy details in accessible
   expect(evidencePanel).toHaveTextContent("경로/orders/1")
   expect(evidencePanel).toHaveTextContent("HTTP 상태200")
   expect(within(evidencePanel).getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
-  expect(within(evidencePanel).getByRole("button", { name: "Repeater 초안 열기" })).toBeVisible()
+  expect(within(evidencePanel).getByRole("button", { name: "현재 세션으로 Repeater 준비" })).toBeVisible()
 
   await userEvent.click(screen.getByRole("tab", { name: "Request" }))
   expect(screen.getByRole("tabpanel", { name: "Request" })).toHaveTextContent("GET /orders/1")

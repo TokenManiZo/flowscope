@@ -605,6 +605,7 @@ export interface RequestLabDraft {
   responseCharset: string | null
   observedIdentity: string
   reusableSession: string
+  reusableAccountId?: string
   message: string
 }
 

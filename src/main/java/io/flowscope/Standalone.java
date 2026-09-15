@@ -193,7 +193,9 @@ public final class Standalone {
                 throw projectFailure("프로젝트 열기에 실패했습니다.", error);
             }
         }
-        @Override public RequestRecord openInRepeater(String evidenceId) {
+        @Override public RequestRecord openInRepeater(String evidenceId, String request,
+                                                      FlowScopeWebServer.CredentialMode credentialMode,
+                                                      String accountId) {
             throw new IllegalStateException("Repeater 초안은 Burp Extension에서만 열 수 있습니다.");
         }
         @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
@@ -206,7 +208,7 @@ public final class Standalone {
             return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
                     request, response, false, false, false,
                     request == null ? null : "UTF-8", response == null ? null : "UTF-8",
-                    record.idn == null || record.idn.isBlank() ? "미확정" : record.idn, "없음",
+                    record.idn == null || record.idn.isBlank() ? "미확정" : record.idn, "없음", "",
                     "Standalone 데모에서는 마스킹된 읽기 전용 초안만 제공하며 Request Lab 전송을 사용할 수 없습니다.");
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(

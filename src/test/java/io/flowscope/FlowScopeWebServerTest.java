@@ -798,12 +798,20 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void opensOnlyStoredEvidenceAsAnUnsentRepeaterDraft() throws Exception {
+    void opensEditedRequestWithSelectedCredentialsAsAnUnsentRepeaterDraft() throws Exception {
         start();
         String evidenceId = state.snapshot().records.getFirst().evidenceId;
-        JsonNode response = json(post("/api/replay", "eventId=" + encode(evidenceId), token));
+        String edited = "GET /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
+        assertEquals(400, post("/api/replay", "eventId=" + encode(evidenceId)
+                + "&credentialMode=ORIGINAL&accountId=&request=" + encode(edited), token).statusCode());
+        assertFalse(state.opened.get());
+        JsonNode response = json(post("/api/replay", "eventId=" + encode(evidenceId)
+                + "&credentialMode=ACCOUNT&accountId=owner&request=" + encode(edited), token));
         assertTrue(response.path("openedDraft").asBoolean());
         assertTrue(state.opened.get());
+        assertEquals(edited, state.repeaterRequest);
+        assertEquals(FlowScopeWebServer.CredentialMode.ACCOUNT, state.repeaterCredentialMode);
+        assertEquals("owner", state.repeaterAccountId);
         assertEquals("", response.path("replayId").asText());
     }
 
@@ -1081,6 +1089,9 @@ final class FlowScopeWebServerTest {
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
+        private volatile String repeaterRequest = "";
+        private volatile FlowScopeWebServer.CredentialMode repeaterCredentialMode;
+        private volatile String repeaterAccountId = "";
         private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
                 new java.util.concurrent.atomic.AtomicInteger();
         private volatile boolean blockManualRequest;
@@ -1192,9 +1203,14 @@ final class FlowScopeWebServerTest {
             rebuild();
             return parsed;
         }
-        @Override public RequestRecord openInRepeater(String evidenceId) {
+        @Override public RequestRecord openInRepeater(String evidenceId, String request,
+                                                      FlowScopeWebServer.CredentialMode credentialMode,
+                                                      String accountId) {
             RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId)).findFirst().orElseThrow();
             opened.set(true);
+            repeaterRequest = request;
+            repeaterCredentialMode = credentialMode;
+            repeaterAccountId = accountId;
             return value;
         }
         @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
@@ -1203,7 +1219,7 @@ final class FlowScopeWebServerTest {
             return new FlowScopeWebServer.RequestLabDraft(value.evidenceId, value.service,
                     "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
                     "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
-                    "UTF-8", "UTF-8", "USER A", "없음", "메모리 원문");
+                    "UTF-8", "UTF-8", "USER A", "없음", "", "메모리 원문");
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(String evidenceId, String request,
                                                                             FlowScopeWebServer.CredentialMode mode,

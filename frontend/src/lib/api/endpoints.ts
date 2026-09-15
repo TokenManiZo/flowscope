@@ -26,7 +26,8 @@ const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ?
 export const getSnapshot = (signal?: AbortSignal) => apiFetch<Snapshot>("/api/snapshot", formSignal(signal))
 export const getEvidence = (operation: string, offset = 0, limit = 200, signal?: AbortSignal) =>
   apiFetch<EvidencePage>(`/api/evidence?${new URLSearchParams({ operation, offset: String(offset), limit: String(limit) })}` as `/api/${string}`, formSignal(signal))
-export const openReplay = (eventId: string) => postForm<ReplayResult>("/api/replay", { eventId })
+export const openReplay = (values: { eventId: string; request: string; credentialMode: "ANONYMOUS" | "ACCOUNT"; accountId: string }) =>
+  postForm<ReplayResult>("/api/replay", values)
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>

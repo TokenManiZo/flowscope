@@ -286,16 +286,17 @@ Windows PowerShell 7: .\scripts\zap-up.ps1</pre></details>
     <div class="setuphead"><div><h2 id="requestLabTitle">요청 실험실</h2><p>선택한 Evidence를 편집해 원래 서비스에 전송하고 응답을 비교합니다. 전송 결과는 탐색 커버리지와 분리된 HUMAN 검증 Evidence로 기록됩니다.</p></div><span class="spacer"></span><button class="go" id="requestLabClose" aria-label="닫기">닫기</button></div>
     <div class="requestlabmeta"><span>고정 대상</span><span class="service" id="requestLabService">-</span><span id="requestLabRetention"></span><span id="requestLabIdentity"></span><span id="requestLabCharset"></span></div>
     <div class="requestlabgrid">
-      <div class="requestlabpane"><label for="requestLabRequest">편집 가능한 HTTP 요청</label><textarea id="requestLabRequest" spellcheck="false" aria-label="편집 가능한 HTTP 요청"></textarea></div>
+      <div class="requestlabpane"><label for="requestLabRequest">관측 요청 원문 (인증 교체 전)</label><textarea id="requestLabRequest" spellcheck="false" aria-label="편집 가능한 HTTP 요청"></textarea></div>
       <div class="requestlabpane"><label for="requestLabResponse">HTTP 응답</label><textarea id="requestLabResponse" spellcheck="false" readonly aria-label="HTTP 응답"></textarea></div>
     </div>
     <div class="requestlabcontrols">
-      <label>인증값 처리<select id="requestLabCredential"><option value="ORIGINAL">원문 그대로</option><option value="ANONYMOUS">비로그인으로 전송</option><option value="ACCOUNT">등록 계정으로 전송</option></select></label>
+      <label>인증값 처리<select id="requestLabCredential"><option value="ACCOUNT" selected>현재 ACTIVE 계정</option><option value="ANONYMOUS">비로그인으로 전송</option><option value="ORIGINAL">원문 그대로</option></select></label>
       <label>재사용할 등록 계정<select id="requestLabAccount" disabled><option value="">ACTIVE 등록 계정 없음</option></select></label>
       <button class="go primary" id="requestLabSend">명시적으로 전송</button>
-      <button class="go" id="requestLabBurp">Burp Repeater에서 열기</button>
+      <button class="go" id="requestLabBurpAccount">현재 세션 Repeater</button>
+      <button class="go" id="requestLabBurpAnonymous">비로그인 Repeater</button>
     </div>
-    <div class="requestlabstatus" id="requestLabStatus">원문 인증값은 이 Burp 프로세스와 현재 브라우저 탭의 메모리에만 표시되며 프로젝트·JSON·로그로 저장하지 않습니다. 리다이렉트는 따라가지 않고 대상 서비스는 변경할 수 없습니다.</div>
+    <div class="requestlabstatus" id="requestLabStatus">표시된 원문은 관측 당시 요청입니다. 선택 계정 인증값은 전송 또는 Repeater 생성 시 교체하며 화면에는 표시하지 않습니다. 리다이렉트는 따라가지 않고 대상 서비스는 변경할 수 없습니다.</div>
     <div class="requestlabhistory"><h3>이 화면의 전송 기록 · 최대 10건 · 새로고침 시 삭제</h3><div id="requestLabHistory"><span class="requestlabstatus">아직 전송하지 않았습니다.</span></div></div>
   </div>
 </div>
@@ -943,16 +944,19 @@ function payloadStatus(label,payload){
   const reason=payload.retention==='BINARY_METADATA_ONLY'?'바이너리 본문 미보존':payload.retention==='CAPACITY_METADATA_ONLY'?'압축 전문 총량 상한 초과':'메시지별 보존 상한 초과';
   return `<span class="warn">${label} ${Number(payload.bytes||0).toLocaleString()} bytes · ${reason} · 해시만 보존</span>`;
 }
-function renderRequestLabAccounts(){
+function renderRequestLabAccounts(preferredAccountId=''){
   const select=document.getElementById('requestLabAccount');
-  const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&session.service===REQUEST_LAB_SERVICE);
+  const selected=preferredAccountId||select.value;
+  const usable=SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'&&!session.capturing&&!session.credentialConflict&&session.service===REQUEST_LAB_SERVICE);
   select.innerHTML=usable.length?usable.map(session=>{const account=accountById(session.accountId);return `<option value="${esc(session.accountId)}">${esc(account?account.label:session.accountId)} · ACTIVE</option>`;}).join(''):'<option value="">ACTIVE 등록 계정 없음</option>';
+  if(usable.some(session=>session.accountId===selected))select.value=selected;
   const accountMode=document.getElementById('requestLabCredential').value==='ACCOUNT';
   select.disabled=REQUEST_LAB_IN_FLIGHT||!accountMode||!usable.length;
   document.getElementById('requestLabCredential').disabled=REQUEST_LAB_IN_FLIGHT;
   document.getElementById('requestLabRequest').readOnly=REQUEST_LAB_IN_FLIGHT||!REQUEST_LAB_EDITABLE;
   document.getElementById('requestLabSend').disabled=REQUEST_LAB_IN_FLIGHT||!REQUEST_LAB_EDITABLE||(accountMode&&!usable.length);
-  document.getElementById('requestLabBurp').disabled=REQUEST_LAB_IN_FLIGHT;
+  document.getElementById('requestLabBurpAccount').disabled=REQUEST_LAB_IN_FLIGHT||!usable.length;
+  document.getElementById('requestLabBurpAnonymous').disabled=REQUEST_LAB_IN_FLIGHT;
   document.getElementById('requestLabClose').disabled=REQUEST_LAB_IN_FLIGHT;
 }
 function renderRequestLabHistory(){
@@ -970,7 +974,7 @@ async function openRequestLab(eventId){
   try{const response=await fetch('/api/request-lab?eventId='+encodeURIComponent(eventId),{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.message||'요청 실험실 열기 실패');
     if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;
     REQUEST_LAB_SERVICE=data.service||'';REQUEST_LAB_EDITABLE=!!data.requestEditable;document.getElementById('requestLabService').textContent=REQUEST_LAB_SERVICE||'-';document.getElementById('requestLabRequest').value=data.request||'';document.getElementById('requestLabRequest').readOnly=!REQUEST_LAB_EDITABLE;document.getElementById('requestLabResponse').value=data.response||'';
-    document.getElementById('requestLabRetention').textContent=data.rawRequestRetained&&data.rawResponseRetained?'· 메모리 원문':'· 일부 마스킹 전문';document.getElementById('requestLabIdentity').textContent='· 관측 신원 '+(data.observedIdentity||'미확정')+' · 재사용 세션 '+(data.reusableSession||'없음');document.getElementById('requestLabCharset').textContent='· 요청 '+(data.requestCharset||'본문 없음/미확정')+' · 응답 '+(data.responseCharset||'본문 없음/미확정');status.textContent=data.message||'';renderRequestLabAccounts();renderRequestLabHistory();if(REQUEST_LAB_EDITABLE)document.getElementById('requestLabRequest').focus();
+    document.getElementById('requestLabRetention').textContent=data.rawRequestRetained&&data.rawResponseRetained?'· 메모리 원문':'· 일부 마스킹 전문';document.getElementById('requestLabIdentity').textContent='· 관측 신원 '+(data.observedIdentity||'미확정')+' · 재사용 세션 '+(data.reusableSession||'없음');document.getElementById('requestLabCharset').textContent='· 요청 '+(data.requestCharset||'본문 없음/미확정')+' · 응답 '+(data.responseCharset||'본문 없음/미확정');status.textContent=data.message||'';document.getElementById('requestLabCredential').value='ACCOUNT';renderRequestLabAccounts(data.reusableAccountId||'');renderRequestLabHistory();if(REQUEST_LAB_EDITABLE)document.getElementById('requestLabRequest').focus();
   }catch(error){if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;status.className='requestlabstatus fail';status.textContent=error.message;document.getElementById('requestLabSend').disabled=true;}
 }
 function closeRequestLab(){if(REQUEST_LAB_IN_FLIGHT)return;REQUEST_LAB_GENERATION++;document.getElementById('requestLabModal').style.display='none';REQUEST_LAB_EVENT_ID='';REQUEST_LAB_SERVICE='';REQUEST_LAB_EDITABLE=false;REQUEST_LAB_RETRY=null;}
@@ -989,11 +993,13 @@ async function sendRequestLab(){
     REQUEST_LAB_RETRY=null;document.getElementById('requestLabResponse').value=data.response||'';REQUEST_LAB_HISTORY.unshift(data);REQUEST_LAB_HISTORY=REQUEST_LAB_HISTORY.slice(0,10);renderRequestLabHistory();status.className='requestlabstatus ok';status.textContent=`HTTP ${data.status} · ${data.durationMs}ms · ${data.message}`;SERVER_REVISION=-1;try{await syncExtension();}catch(ignored){SERVER_REVISION=-1;}
   }catch(error){if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID){REQUEST_LAB_RETRY=serverResponded?null:{eventId,mode,accountId,request,operationId};status.className='requestlabstatus fail';status.textContent=serverResponded?error.message:error.message+' · 같은 입력으로 다시 누르면 동일 작업 ID로 결과를 확인합니다.';}}finally{if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID){REQUEST_LAB_IN_FLIGHT=false;renderRequestLabAccounts();}}
 }
-async function openRequestLabInBurp(){
+async function openRequestLabInBurp(mode){
   if(REQUEST_LAB_IN_FLIGHT)return;
-  const button=document.getElementById('requestLabBurp'),status=document.getElementById('requestLabStatus'),eventId=REQUEST_LAB_EVENT_ID,generation=REQUEST_LAB_GENERATION;button.disabled=true;
-  try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Repeater 초안 생성 실패');if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;status.className='requestlabstatus ok';status.textContent=data.message;}
-  catch(error){if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID){status.className='requestlabstatus fail';status.textContent=error.message;}}finally{if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID)button.disabled=false;}
+  const buttons=[document.getElementById('requestLabBurpAccount'),document.getElementById('requestLabBurpAnonymous')],status=document.getElementById('requestLabStatus'),eventId=REQUEST_LAB_EVENT_ID,generation=REQUEST_LAB_GENERATION;
+  buttons.forEach(button=>button.disabled=true);
+  const request=document.getElementById('requestLabRequest').value,accountId=mode==='ACCOUNT'?document.getElementById('requestLabAccount').value:'';
+  try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId,request,credentialMode:mode,accountId})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Repeater 초안 생성 실패');if(generation!==REQUEST_LAB_GENERATION||eventId!==REQUEST_LAB_EVENT_ID)return;status.className='requestlabstatus ok';status.textContent=data.message;}
+  catch(error){if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID){status.className='requestlabstatus fail';status.textContent=error.message;}}finally{if(generation===REQUEST_LAB_GENERATION&&eventId===REQUEST_LAB_EVENT_ID)renderRequestLabAccounts();}
 }
 async function showOperation(op,offset=0,preferredEventId=''){
   const evs=EVENTS.filter(e=>e.op===op); if(!evs.length)return;
@@ -1032,7 +1038,7 @@ async function showOperation(op,offset=0,preferredEventId=''){
     `<div class="field"><div class="lbl">엔드포인트 요구 권한 · 사용자 정책</div><select id="requiredRole" class="identityselect">${ACCESS_ROLES.map(role=>`<option ${role===requiredRole?'selected':''}>${esc(role)}</option>`).join('')}</select><button id="requiredRoleSave" class="go" style="margin-top:6px">요구 권한 저장</button><span id="requiredRoleMessage" class="warn" style="margin-left:6px"></span></div>`+
     `<div class="resend"><h4>⟳ 요청 실험실</h4>`+
     `<div class="val" style="font-size:10.5px; color:var(--faint); margin-bottom:6px">현재 첫 Evidence의 메모리 원문을 큰 편집 화면에서 수정·전송하고 응답을 확인합니다. 결과는 탐색과 분리된 HUMAN 검증 Evidence입니다.</div>`+
-    `<div class="row"><button id="requestLabOpen">요청 실험실 열기</button><button id="rsSend">Burp Repeater 열기</button></div>`+
+    `<div class="row"><button id="requestLabOpen">요청 실험실 열기</button><button id="rsSend">현재 세션으로 Repeater 준비</button></div>`+
     `<div class="resendlog" id="rsLog"></div></div>`+
     `<div class="gapbox"><div class="name"><span class="dot" style="background:var(--resend);width:9px;height:9px;border-radius:50%"></span>검증 경계</div><p>FlowScope는 이 화면에서 응답을 만들거나 상태코드만으로 취약점을 확정하지 않습니다. 현재 Evidence와 소유자·역할 정책을 함께 검토해야 합니다. 자동 LLM 판정은 제공하지 않습니다.</p></div>`;
   document.getElementById('evPrev').onclick=()=>showOperation(op,Math.max(0,detailMeta.offset-detailMeta.limit));
@@ -1041,14 +1047,7 @@ async function showOperation(op,offset=0,preferredEventId=''){
   document.getElementById('requiredRoleSave').onclick=async()=>{const button=document.getElementById('requiredRoleSave');button.disabled=true;try{const role=document.getElementById('requiredRole').value;const response=await fetch('/api/requirement',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({operation:op,role})});const data=await response.json();if(!response.ok)throw new Error(data.message||'요구 권한 저장 실패');document.getElementById('requiredRoleMessage').textContent=data.message;SERVER_REVISION=-1;await syncExtension();}catch(error){document.getElementById('requiredRoleMessage').textContent=error.message;button.disabled=false;}};
   document.querySelectorAll('.requestLabEvidence').forEach(button=>button.onclick=event=>{event.preventDefault();openRequestLab(button.dataset.evidence);});
   document.getElementById('requestLabOpen').onclick=()=>openRequestLab(first.eventId);
-  document.getElementById('rsSend').onclick=async()=>{
-    if(!first.eventId){document.getElementById('rsLog').textContent='서버 Evidence ID가 없어 Repeater 초안을 열 수 없습니다.';return;}
-    document.getElementById('rsSend').disabled=true;
-    try{const response=await fetch('/api/replay',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams({eventId:first.eventId})});const result=await response.json();
-      if(!response.ok||!result.success)throw new Error(result.message||'Repeater 초안 생성 실패');
-      const log=document.getElementById('rsLog');log.textContent=result.message;log.style.color=css('--allow');
-    }catch(error){const log=document.getElementById('rsLog');log.textContent=error.message;log.style.color=css('--deny');}finally{document.getElementById('rsSend').disabled=false;}
-  };
+  document.getElementById('rsSend').onclick=()=>openRequestLab(first.eventId);
 }
 function showCell(key){
   const c=MODEL.cells[key]; if(!c)return;
@@ -1557,7 +1556,8 @@ document.getElementById('scannerTarget').addEventListener('change',renderScanner
 document.getElementById('setupModal').addEventListener('click',event=>{if(event.target===setupModal)closeSetup();});
 document.getElementById('requestLabClose').addEventListener('click',closeRequestLab);
 document.getElementById('requestLabSend').addEventListener('click',sendRequestLab);
-document.getElementById('requestLabBurp').addEventListener('click',openRequestLabInBurp);
+document.getElementById('requestLabBurpAccount').addEventListener('click',()=>openRequestLabInBurp('ACCOUNT'));
+document.getElementById('requestLabBurpAnonymous').addEventListener('click',()=>openRequestLabInBurp('ANONYMOUS'));
 document.getElementById('requestLabCredential').addEventListener('change',renderRequestLabAccounts);
 document.getElementById('zapStatusRefresh').addEventListener('click',syncZapStatus);
 document.getElementById('requestLabModal').addEventListener('click',event=>{if(event.target===requestLabModal)closeRequestLab();});

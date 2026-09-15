@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { getRequestLabDraft, sendRequestLab } from "@/lib/api/endpoints"
+import { getRequestLabDraft, openReplay, sendRequestLab } from "@/lib/api/endpoints"
 import type { EventRecord, ManagedSession, RequestLabDraft } from "@/lib/api/types"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
 import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
@@ -25,7 +25,7 @@ interface Props {
 
 function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
-  for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !unique.has(session.accountId)) unique.set(session.accountId, session)
+  for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
   return [...unique.values()]
 }
 
@@ -34,11 +34,13 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   const context = useRef<{ generation: number; sendController: AbortController | null }>({ generation: 0, sendController: null })
   const [version, setVersion] = useState(0)
   const [draft, setDraft] = useState<Omit<RequestLabDraft, "request" | "response"> | null>(null)
-  const [mode, setMode] = useState<RequestLabCredentialMode>("ORIGINAL")
+  const [mode, setMode] = useState<RequestLabCredentialMode>("ACCOUNT")
   const [accountId, setAccountId] = useState("")
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [openingRepeater, setOpeningRepeater] = useState<"ACCOUNT" | "ANONYMOUS" | null>(null)
   const [error, setError] = useState("")
+  const [replayMessage, setReplayMessage] = useState("")
   const [loadAttempt, setLoadAttempt] = useState(0)
   const draftRef = useRef<Omit<RequestLabDraft, "request" | "response"> | null>(null)
 
@@ -55,9 +57,11 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     draftRef.current = null
     setDraft(null)
     setError("")
+    setReplayMessage("")
     setAccountId("")
-    setMode("ORIGINAL")
+    setMode("ACCOUNT")
     setSending(false)
+    setOpeningRepeater(null)
     setVersion((value) => value + 1)
   }
 
@@ -75,6 +79,10 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
       const { request: _request, response: _response, ...metadata } = next
       draftRef.current = metadata
       setDraft(metadata)
+      const eligible = activeAccounts(sessions, next.service)
+      const preferred = eligible.find(session => session.accountId === next.reusableAccountId)
+      setMode(eligible.length ? "ACCOUNT" : "ORIGINAL")
+      setAccountId(preferred?.accountId ?? (eligible.length === 1 ? eligible[0].accountId : ""))
       setVersion((value) => value + 1)
     }).catch((reason: unknown) => {
       if (!controller.signal.aborted && context.current.generation === generation) setError(reason instanceof Error ? reason.message : "Request Lab 초안을 불러오지 못했습니다.")
@@ -148,6 +156,23 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     }
   }
 
+  async function openInRepeater(replayMode: "ACCOUNT" | "ANONYMOUS") {
+    if (suspended || !draft || openingRepeater) return
+    if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
+    if (replayMode === "ACCOUNT" && !selectedAccountValid) { setError("활성 재사용 세션이 있는 계정을 선택하세요."); return }
+    setOpeningRepeater(replayMode)
+    setError("")
+    setReplayMessage("")
+    try {
+      const result = await openReplay({ eventId: event.eventId, request: raw.current.request, credentialMode: replayMode, accountId: replayMode === "ACCOUNT" ? accountId : "" })
+      setReplayMessage(result.openedDraft ? "Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다." : result.message)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Repeater 초안을 열지 못했습니다.")
+    } finally {
+      setOpeningRepeater(null)
+    }
+  }
+
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
     <DialogContent className="max-h-[calc(100svh-2rem)] sm:max-w-[70rem] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0" showCloseButton={false} aria-describedby="request-lab-description">
       <DialogHeader className="border-b p-5"><DialogTitle>Request Lab</DialogTitle><DialogDescription id="request-lab-description">고정된 관측 서비스를 대상으로만 요청을 검토합니다. 브라우저는 리디렉션을 따르거나 대상을 변경하지 않으며 Java 전송기가 최종 권한을 가집니다.</DialogDescription></DialogHeader>
@@ -155,6 +180,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
         {suspended && <Alert className="m-5 mb-0" aria-label="Request Lab 일시 중지"><AlertTitle>서버 상태 확인 중</AlertTitle><AlertDescription>마지막 성공 snapshot의 편집 초안을 메모리에 보존했습니다. 갱신에 성공할 때까지 전송과 인증정보 변경을 잠급니다.</AlertDescription></Alert>}
         {loading && <p className="p-5">Request Lab 초안 불러오는 중…</p>}
         {error && <div className="grid gap-2 p-5"><p role="alert">{error}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt((value) => value + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
+        {replayMessage && <p role="status" className="m-5 mb-0 rounded-md border p-2 text-sm">{replayMessage}</p>}
         {draft && <div className="grid max-h-[85svh] lg:grid-cols-[19rem_minmax(0,1fr)]">
           <RequestLabMetadata
             service={draft.service}
@@ -177,8 +203,8 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
             <p className="text-xs text-muted-foreground">{draft.message}</p>
             <div role="group" aria-label="Request Lab 요청 및 응답" className="grid min-w-0 gap-4 lg:grid-cols-2">
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Request 원문 패널">
-                <Label id="request-lab-request-label" htmlFor="request-lab-request">Request Lab 요청 원문</Label>
-                <Textarea id="request-lab-request" className="min-h-64 resize-y font-mono text-xs leading-relaxed lg:min-h-[28rem]" value={raw.current.request} disabled={suspended || !draft.requestEditable || sending} onChange={(change) => { raw.current.request = change.target.value; setVersion((value) => value + 1) }} />
+                <Label id="request-lab-request-label" htmlFor="request-lab-request">Request Lab 관측 요청 원문 (인증 교체 전)</Label>
+                <Textarea id="request-lab-request" aria-label="Request Lab 요청 원문" className="min-h-64 resize-y font-mono text-xs leading-relaxed lg:min-h-[28rem]" value={raw.current.request} disabled={suspended || !draft.requestEditable || sending} onChange={(change) => { raw.current.request = change.target.value; setVersion((value) => value + 1) }} />
                 <p className="text-xs text-muted-foreground">UTF-8 최대 {REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트</p>
               </section>
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Response 원문 패널">
@@ -190,7 +216,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
           </section>
         </div>}
       </div>
-      <DialogFooter className="sticky bottom-0 mx-0 mb-0 rounded-b-xl"><DialogClose asChild><Button type="button" variant="outline" onClick={close}>닫기</Button></DialogClose><Button type="button" disabled={suspended || !draft || !draft.requestEditable || loading || sending || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}>{sending ? "Request Lab 전송 중" : "Request Lab 전송"}</Button></DialogFooter>
+      <DialogFooter className="sticky bottom-0 mx-0 mb-0 rounded-b-xl"><DialogClose asChild><Button type="button" variant="outline" onClick={close}>닫기</Button></DialogClose><Button type="button" variant="outline" disabled={suspended || !draft || loading || sending || openingRepeater !== null || !selectedAccountValid} onClick={() => void openInRepeater("ACCOUNT")}>{openingRepeater === "ACCOUNT" ? "Repeater 준비 중" : "현재 세션 Repeater"}</Button><Button type="button" variant="outline" disabled={suspended || !draft || loading || sending || openingRepeater !== null} onClick={() => void openInRepeater("ANONYMOUS")}>{openingRepeater === "ANONYMOUS" ? "Repeater 준비 중" : "비로그인 Repeater"}</Button><Button type="button" disabled={suspended || !draft || !draft.requestEditable || loading || sending || openingRepeater !== null || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}>{sending ? "Request Lab 전송 중" : "Request Lab 전송"}</Button></DialogFooter>
     </DialogContent>
   </Dialog>
 }

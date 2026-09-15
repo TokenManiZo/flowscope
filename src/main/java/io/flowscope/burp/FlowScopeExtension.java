@@ -335,8 +335,11 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
+                String requestCaptureAccountId = captureAccountId == null ? null : captureAccountForCredential(
+                        captureAccountId, knownCredentialOwner(request));
+                if (captureAccountId != null && requestCaptureAccountId == null) captureHandle = null;
                 HttpRequest prepared = prepareSession(request, profile, captureHandle, context);
-                rememberObservation(proxyObservations, request.messageId(), context, captureAccountId, "프록시");
+                rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId, "프록시");
                 return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
@@ -392,7 +395,7 @@ public final class FlowScopeExtension implements BurpExtension {
             Map<String, String> sessionHeaders = context.accountId() == null ? Map.of()
                     : sessionBroker.headersForAccount(context.accountId(), target, scope, java.time.Instant.now());
             for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
-                prepared = prepared.withUpdatedHeader(header.getKey(), header.getValue());
+                prepared = prepared.withHeader(header.getKey(), header.getValue());
             }
             return prepared;
         }
@@ -457,6 +460,9 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? sessionBroker.activeCaptureForService(serviceOf(req)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
+                if (captureAccountId != null) {
+                    captureAccountId = captureAccountForCredential(captureAccountId, knownCredentialOwner(req));
+                }
                 rememberObservation(toolObservations, req.messageId(), context, captureAccountId, "Burp 도구");
             }
             return RequestToBeSentAction.continueWith(req);
@@ -712,6 +718,20 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         return contextAccountId != null ? contextAccountId : detectedAccountId;
+    }
+
+    static String captureAccountForCredential(String captureAccountId, String knownAccountId) {
+        return captureAccountId != null && knownAccountId != null && !captureAccountId.equals(knownAccountId)
+                ? null : captureAccountId;
+    }
+
+    private String knownCredentialOwner(HttpRequest request) {
+        URI target = URI.create(request.url());
+        String detected = sessionBroker.accountForRequest(target, headersOf(request.headers()),
+                java.time.Instant.now()).orElse(null);
+        if (detected != null) return detected;
+        String fingerprint = Fingerprints.of(request.headerValue("Authorization"), request.headerValue("Cookie"));
+        return analysisConfig.boundAccount(serviceOf(request), fingerprint).map(account -> account.id()).orElse(null);
     }
 
     static String captureFingerprint(Source source, RunContextRegistry.Context context, String accountId,
@@ -1585,13 +1605,11 @@ public final class FlowScopeExtension implements BurpExtension {
                         + "건 · 건너뜀 " + parsed.skipped.size() + "건");
                 return parsed;
             }
-            @Override public RequestRecord openInRepeater(String evidenceId) {
+            @Override public RequestRecord openInRepeater(String evidenceId, String request,
+                                                          FlowScopeWebServer.CredentialMode credentialMode,
+                                                          String accountId) {
                 RequestRecord record = evidenceRecord(evidenceId);
-                TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
-                boolean rawRequest = raw != null && raw.requestRetained();
-                byte[] request = rawRequest ? raw.request()
-                        : HttpMessageTextCodec.encodeEditedRequest(record.requestTextForEvidence());
-                openDraftInRepeater(record, request, rawRequest);
+                openDraftInRepeater(record, prepareHumanRequest(record, request, credentialMode, accountId));
                 return record;
             }
             @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
@@ -1615,15 +1633,20 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? "응답 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
                         : "원문은 현재 Burp 프로세스 메모리에서만 불러왔으며 저장·내보내기하지 않습니다.";
                 if (rawRequest && !decodedRequest.editable()) message += " " + decodedRequest.note();
-                String observedIdentity = analysisConfig.boundAccount(record.service, record.fp)
-                        .map(io.flowscope.core.AccountProfile::label).orElse(record.idn == null ? "미확정" : record.idn);
-                String reusableSession = analysisConfig.boundAccount(record.service, record.fp)
+                var observedAccount = record.laneAccountId == null
+                        ? analysisConfig.boundAccount(record.service, record.fp)
+                        : analysisConfig.account(record.laneAccountId);
+                String observedIdentity = observedAccount.map(io.flowscope.core.AccountProfile::label)
+                        .orElse(record.idn == null ? "미확정" : record.idn);
+                var reusable = observedAccount
                         .flatMap(account -> sessionBroker.viewForAccount(account.id()))
-                        .filter(view -> view.status() == SessionBroker.Status.ACTIVE)
-                        .map(view -> view.accountLabel() + " · ACTIVE").orElse("없음");
+                        .filter(view -> view.status() == SessionBroker.Status.ACTIVE);
+                String reusableSession = reusable.map(view -> view.accountLabel() + " · ACTIVE").orElse("없음");
+                String reusableAccountId = reusable.map(SessionBroker.SessionView::accountId).orElse("");
                 return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
                         request, response, rawRequest, rawResponse, decodedRequest.editable(),
-                        decodedRequest.charset(), decodedResponse.charset(), observedIdentity, reusableSession, message);
+                        decodedRequest.charset(), decodedResponse.charset(), observedIdentity,
+                        reusableSession, reusableAccountId, message);
             }
             @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
                     String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
@@ -1647,20 +1670,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Evidence ID입니다."));
     }
 
-    private void openDraftInRepeater(RequestRecord record, byte[] requestBytes, boolean raw) {
-        if (requestBytes == null || requestBytes.length == 0) {
-            throw new IllegalArgumentException("저장된 Request 전문이 없습니다.");
-        }
-        URI service = URI.create(record.service);
-        if (service.getHost() == null) throw new IllegalArgumentException("대상 서비스를 확정할 수 없습니다.");
-        boolean secure = "https".equalsIgnoreCase(service.getScheme());
-        int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
-        HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
-        HttpRequest draft = HttpRequest.httpRequest(httpService,
-                burp.api.montoya.core.ByteArray.byteArray(requestBytes));
+    private void openDraftInRepeater(RequestRecord record, HttpRequest draft) {
         api.repeater().sendToRepeater(draft, "FlowScope " + record.evidenceId);
-        api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId
-                + (raw ? " (메모리 원문, 미전송)" : " (마스킹 전문, 미전송)"));
+        api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId + " (미전송)");
     }
 
     private com.fasterxml.jackson.databind.node.ObjectNode zapConnectionStatus() {
@@ -1873,50 +1885,7 @@ public final class FlowScopeExtension implements BurpExtension {
             String evidenceId, String requestText, FlowScopeWebServer.CredentialMode credentialMode,
             String accountId) {
         RequestRecord seed = evidenceRecord(evidenceId);
-        if (requestText == null || requestText.isBlank()) {
-            throw new IllegalArgumentException("전송할 HTTP 요청 전문이 필요합니다.");
-        }
-        URI service = URI.create(seed.service);
-        if (service.getHost() == null) throw new IllegalArgumentException("원본 대상 서비스를 확정할 수 없습니다.");
-        boolean secure = "https".equalsIgnoreCase(service.getScheme());
-        int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
-        HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
-        TransientExchangeVault.Exchange rawSeed = rawExchanges.get(seed).orElse(null);
-        HttpMessageTextCodec.Decoded decodedSeed = rawSeed != null && rawSeed.requestRetained()
-                ? decodeRequest(rawSeed, seed.requestContentType) : null;
-        boolean originalBytesUsed = decodedSeed != null && requestText.equals(decodedSeed.text());
-        byte[] encodedRequestBytes = originalBytesUsed
-                ? rawSeed.request() : HttpMessageTextCodec.encodeEditedRequest(requestText);
-        if (encodedRequestBytes.length > RAW_REQUEST_LIMIT_BYTES) {
-            throw new IllegalArgumentException("편집 요청은 " + RAW_REQUEST_LIMIT_BYTES + "바이트 이하만 허용됩니다.");
-        }
-        HttpRequest request = HttpRequest.httpRequest(httpService,
-                burp.api.montoya.core.ByteArray.byteArray(encodedRequestBytes));
-        if (!scope.allows(request.url())) {
-            throw new IllegalArgumentException("편집 요청 경로가 현재 exact scope 밖입니다.");
-        }
-
-        if (credentialMode != FlowScopeWebServer.CredentialMode.ORIGINAL) {
-            for (String header : SessionBroker.managedHeaderNames()) {
-                request = request.withRemovedHeader(header);
-            }
-        }
-        if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT) {
-            if (accountId == null || accountId.isBlank()) {
-                throw new IllegalArgumentException("등록 계정을 선택하세요.");
-            }
-            Map<String, String> sessionHeaders = sessionBroker.headersForAccount(
-                    accountId, URI.create(request.url()), scope, java.time.Instant.now());
-            for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
-                request = request.withUpdatedHeader(header.getKey(), header.getValue());
-            }
-        }
-        if (!originalBytesUsed && request.hasHeader("Content-Length")) {
-            String actualLength = String.valueOf(request.body().length());
-            if (!actualLength.equals(request.headerValue("Content-Length"))) {
-                request = request.withUpdatedHeader("Content-Length", actualLength);
-            }
-        }
+        HttpRequest request = prepareHumanRequest(seed, requestText, credentialMode, accountId);
 
         var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
                 .withUpstreamTLSVerification().withResponseTimeout(30_000);
@@ -1958,6 +1927,56 @@ public final class FlowScopeExtension implements BurpExtension {
                 : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
         return new FlowScopeWebServer.RequestLabResult(record.evidenceId, record.status, displayResponse,
                 durationMs, requestBytes, responseBytes);
+    }
+
+    private HttpRequest prepareHumanRequest(RequestRecord seed, String requestText,
+                                            FlowScopeWebServer.CredentialMode credentialMode,
+                                            String accountId) {
+        if (requestText == null || requestText.isBlank()) {
+            throw new IllegalArgumentException("HTTP 요청 전문이 필요합니다.");
+        }
+        URI service = URI.create(seed.service);
+        if (service.getHost() == null) throw new IllegalArgumentException("원본 대상 서비스를 확정할 수 없습니다.");
+        boolean secure = "https".equalsIgnoreCase(service.getScheme());
+        int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
+        HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
+        TransientExchangeVault.Exchange rawSeed = rawExchanges.get(seed).orElse(null);
+        HttpMessageTextCodec.Decoded decodedSeed = rawSeed != null && rawSeed.requestRetained()
+                ? decodeRequest(rawSeed, seed.requestContentType) : null;
+        boolean originalBytesUsed = decodedSeed != null && requestText.equals(decodedSeed.text());
+        byte[] encodedRequestBytes = originalBytesUsed
+                ? rawSeed.request() : HttpMessageTextCodec.encodeEditedRequest(requestText);
+        if (encodedRequestBytes.length > RAW_REQUEST_LIMIT_BYTES) {
+            throw new IllegalArgumentException("편집 요청은 " + RAW_REQUEST_LIMIT_BYTES + "바이트 이하만 허용됩니다.");
+        }
+        HttpRequest request = HttpRequest.httpRequest(httpService,
+                burp.api.montoya.core.ByteArray.byteArray(encodedRequestBytes));
+        if (!scope.allows(request.url())) {
+            throw new IllegalArgumentException("편집 요청 경로가 현재 exact scope 밖입니다.");
+        }
+
+        if (credentialMode != FlowScopeWebServer.CredentialMode.ORIGINAL) {
+            for (String header : SessionBroker.managedHeaderNames()) {
+                request = request.withRemovedHeader(header);
+            }
+        }
+        if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT) {
+            if (accountId == null || accountId.isBlank()) {
+                throw new IllegalArgumentException("등록 계정을 선택하세요.");
+            }
+            Map<String, String> sessionHeaders = sessionBroker.headersForAccount(
+                    accountId, URI.create(request.url()), scope, java.time.Instant.now());
+            for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
+                request = request.withHeader(header.getKey(), header.getValue());
+            }
+        }
+        if (!originalBytesUsed && request.hasHeader("Content-Length")) {
+            String actualLength = String.valueOf(request.body().length());
+            if (!actualLength.equals(request.headerValue("Content-Length"))) {
+                request = request.withUpdatedHeader("Content-Length", actualLength);
+            }
+        }
+        return request;
     }
 
     private ExplorerTransport.Response executeExplorerRequest(ExplorerTransport.Request input) throws Exception {

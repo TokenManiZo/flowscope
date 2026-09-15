@@ -97,8 +97,9 @@ describe("RequestLabDialog", () => {
   it("submits exact policy forms and only acknowledges an unsent Repeater draft", async () => {
     const fetch = installTransport()
     const user = userEvent.setup()
+    const openRequestLab = vi.fn()
     const snapshot: Snapshot = { ...snapshotFixture, events: [event], owners: { "order:7": "alice" }, requiredRoles: { [event.op]: "user" } }
-    renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={vi.fn()} />)
+    renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={openRequestLab} />)
 
     await user.clear(screen.getByLabelText("필수 역할"))
     await user.type(screen.getByLabelText("필수 역할"), "admin")
@@ -108,7 +109,7 @@ describe("RequestLabDialog", () => {
     await user.clear(screen.getByLabelText("리소스 소유자"))
     await user.type(screen.getByLabelText("리소스 소유자"), "bob")
     await user.click(screen.getByRole("button", { name: "소유자 저장" }))
-    await user.click(screen.getByRole("button", { name: "Repeater 초안 열기" }))
+    await user.click(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" }))
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/requirement", expect.objectContaining({ method: "POST" })))
     const calls = new Map(fetch.mock.calls.map(([input, init]) => [String(input), init]))
@@ -116,8 +117,7 @@ describe("RequestLabDialog", () => {
     expect(new URLSearchParams(String(calls.get("/api/requirement")?.body))).toEqual(new URLSearchParams({ operation: event.op, role: "admin" }))
     expect(new URLSearchParams(String(calls.get("/api/traffic-override")?.body))).toEqual(new URLSearchParams({ operation: event.op, value: "EXCLUDE" }))
     expect(new URLSearchParams(String(calls.get("/api/owner")?.body))).toEqual(new URLSearchParams({ resource: "order:7", identity: "bob" }))
-    expect(new URLSearchParams(String(calls.get("/api/replay")?.body))).toEqual(new URLSearchParams({ eventId: "event-7" }))
-    expect(await screen.findByText("Burp Repeater에 전송되지 않은 초안을 열었습니다. 아직 요청은 전송되지 않았습니다.")).toBeVisible()
+    expect(openRequestLab).toHaveBeenCalledTimes(1)
   })
 
   it("loads a fresh memory-only draft, sends exact form data for ORIGINAL/ANONYMOUS/ACCOUNT, and excludes inactive or cross-service accounts", async () => {
@@ -223,18 +223,23 @@ describe("RequestLabDialog", () => {
   it("blocks duplicate Repeater handoff while the unsent draft is opening", async () => {
     let resolveReplay!: (response: Response) => void
     const replay = new Promise<Response>((resolve) => { resolveReplay = resolve })
-    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => String(input) === "/api/replay" ? replay : Promise.resolve(json({ success: true, message: "ok" })))
+    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => String(input) === "/api/replay" ? replay : Promise.resolve(json({ ...requestLabDraft(), reusableAccountId: "acct-1" })))
     vi.stubGlobal("fetch", fetch)
-    const snapshot: Snapshot = { ...snapshotFixture, events: [event] }
     const user = userEvent.setup()
-    renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={vi.fn()} />)
-    const handoff = screen.getByRole("button", { name: "Repeater 초안 열기" })
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    const handoff = await screen.findByRole("button", { name: "현재 세션 Repeater" })
     await user.click(handoff)
     expect(handoff).toBeDisabled()
     await user.click(handoff)
-    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay")).toHaveLength(1)
+    const replayCall = fetch.mock.calls.find(([input]) => String(input) === "/api/replay")
+    expect(new URLSearchParams(String(replayCall?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: "ACCOUNT", accountId: "acct-1" }))
     resolveReplay(json({ success: true, message: "draft", openedDraft: true, status: 200, replayId: "r" }))
-    expect(await screen.findByText("Burp Repeater에 전송되지 않은 초안을 열었습니다. 아직 요청은 전송되지 않았습니다.")).toBeVisible()
+    expect(await screen.findByText("Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다.")).toBeVisible()
+    await user.click(screen.getByRole("button", { name: "비로그인 Repeater" }))
+    await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay")).toHaveLength(2))
+    const anonymousCall = fetch.mock.calls.filter(([input]) => String(input) === "/api/replay")[1]
+    expect(new URLSearchParams(String(anonymousCall?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: "ANONYMOUS", accountId: "" }))
   })
 
   it("keeps policy input and selected detail visible when the server rejects a policy", async () => {

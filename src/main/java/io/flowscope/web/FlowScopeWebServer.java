@@ -64,7 +64,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         void loadSample();
         BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception;
         BurpXmlParser.ParseResult importHar(byte[] har) throws Exception;
-        RequestRecord openInRepeater(String evidenceId);
+        RequestRecord openInRepeater(String evidenceId, String request,
+                                     CredentialMode credentialMode, String accountId);
         default RequestLabDraft requestLabDraft(String evidenceId) {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
@@ -146,7 +147,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public record RequestLabDraft(String eventId, String service, String request, String response,
                                   boolean rawRequestRetained, boolean rawResponseRetained, boolean requestEditable,
                                   String requestCharset, String responseCharset, String observedIdentity,
-                                  String reusableSession, String message) {}
+                                  String reusableSession, String reusableAccountId, String message) {}
 
     public record RequestLabResult(String eventId, int status, String response, long durationMs,
                                    int requestBytes, int responseBytes) {}
@@ -351,7 +352,20 @@ public final class FlowScopeWebServer implements AutoCloseable {
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
-            RequestRecord record = state.openInRepeater(form.getOrDefault("eventId", ""));
+            String rawRequest = requiredRaw(form, "request");
+            if (rawRequest.getBytes(StandardCharsets.UTF_8).length > REQUEST_LAB_REQUEST_LIMIT) {
+                throw new IllegalArgumentException("편집 요청은 1MB 이하만 전송할 수 있습니다.");
+            }
+            CredentialMode mode = CredentialMode.valueOf(required(form, "credentialMode")
+                    .toUpperCase(Locale.ROOT));
+            if (mode == CredentialMode.ORIGINAL) {
+                throw new IllegalArgumentException("Repeater는 현재 세션 또는 비로그인 모드만 지원합니다.");
+            }
+            String accountId = form.getOrDefault("accountId", "").trim();
+            if (mode == CredentialMode.ACCOUNT && accountId.isBlank()) {
+                throw new IllegalArgumentException("등록 계정 모드에는 계정 선택이 필요합니다.");
+            }
+            RequestRecord record = state.openInRepeater(required(form, "eventId"), rawRequest, mode, accountId);
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("status", record.status);
@@ -380,6 +394,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 putNullable(body, "responseCharset", draft.responseCharset());
                 body.put("observedIdentity", draft.observedIdentity());
                 body.put("reusableSession", draft.reusableSession());
+                body.put("reusableAccountId", draft.reusableAccountId());
                 body.put("message", draft.message());
                 return json(200, body);
             }
