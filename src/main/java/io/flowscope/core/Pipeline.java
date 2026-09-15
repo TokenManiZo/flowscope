@@ -125,9 +125,10 @@ public final class Pipeline {
     private static void applyIdentityState(List<RequestRecord> records, AnalysisConfig config) {
         config.applyIdentityBindings(records);
         for (RequestRecord record : records) {
-            AccountProfile laneAccount = record.source == Source.SCANNER
-                    && record.executionTrust == ExecutionTrust.CONTROLLED
-                    && record.laneAccountId != null
+            boolean evidenceBoundAccount = record.source == Source.HUMAN
+                    || (record.source == Source.SCANNER
+                    && record.executionTrust == ExecutionTrust.CONTROLLED);
+            AccountProfile laneAccount = evidenceBoundAccount && record.laneAccountId != null
                     ? config.account(record.laneAccountId).orElse(null) : null;
             if (sameService(laneAccount, record.service)) {
                 record.idn = laneAccount.id();

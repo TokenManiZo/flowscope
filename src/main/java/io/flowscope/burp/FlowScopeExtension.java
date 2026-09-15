@@ -610,8 +610,9 @@ public final class FlowScopeExtension implements BurpExtension {
             rec.phase = rec.sourceDetail == SourceDetail.ZAP_AUTHENTICATION
                     ? RunPhase.SESSION_SETUP : context.phase();
             rec.runId = context.runId();
-            rec.laneAccountId = context.accountId();
+            if (profile.source() != Source.HUMAN) rec.laneAccountId = context.accountId();
         }
+        if (profile.source() == Source.HUMAN) rec.laneAccountId = accountId;
         boolean directZapAccount = profile.source() == Source.SCANNER
                 && scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId);
         if (accountId != null && !"anon".equals(fp) && !directZapAccount) {
