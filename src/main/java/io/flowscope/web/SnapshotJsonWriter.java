@@ -228,6 +228,12 @@ public final class SnapshotJsonWriter {
             event.put("runId", record.runId);
             if (record.laneAccountId == null) event.putNull("laneAccountId");
             else event.put("laneAccountId", record.laneAccountId);
+            if (record.replayBasisIdentity != null) {
+                event.put("replayBasisIdentity", record.replayBasisIdentity);
+            }
+            if (record.replayBasisEvidenceId != null) {
+                event.put("replayBasisEvidenceId", record.replayBasisEvidenceId);
+            }
             event.put("authState", record.authState.name());
             event.put("trafficClass", record.trafficClassification.trafficClass().name());
             event.put("trafficDisposition", record.trafficClassification.disposition().name());

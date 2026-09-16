@@ -5,6 +5,7 @@ public enum RunPhase {
     BASELINE,
     SESSION_SETUP,
     EXPLORATION,
+    AUTHORIZATION_REPLAY,
     COACH_PROBE,
     VALIDATION,
     IMPORT,

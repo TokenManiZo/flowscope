@@ -140,6 +140,39 @@ final class ProjectStoreTest {
     }
 
     @Test
+    void controlledReplayPersistsOnlySafeProvenanceMetadata() throws Exception {
+        RequestRecord replay = new RequestRecord(Source.SCANNER, "https://api.test:443",
+                "GET", "/api/orders/19", 200, "raw-replay-secret");
+        replay.sourceDetail = SourceDetail.AUTHORIZATION_REPLAY;
+        replay.orchestrator = Orchestrator.SYSTEM;
+        replay.tool = ToolKind.BURP;
+        replay.phase = RunPhase.AUTHORIZATION_REPLAY;
+        replay.executionTrust = ExecutionTrust.CONTROLLED;
+        replay.runId = "authorization-replay-safe";
+        replay.laneAccountId = "user-b";
+        replay.replayBasisIdentity = "user-a";
+        replay.replayBasisEvidenceId = "ev-basis";
+        replay.reqText = "GET /api/orders/19 HTTP/1.1\r\nAuthorization: Bearer never-persist-this\r\n\r\n";
+        replay.body = "{\"id\":19}";
+        replay.hasResponse = true;
+        replay.timestamp = 1;
+        Pipeline.run(List.of(replay));
+        Path file = temp.resolve("controlled-replay.flowscope.json");
+
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(replay), new AnalysisConfig(), List.of());
+        String raw = Files.readString(file);
+        RequestRecord restored = store.load(file).records().getFirst();
+
+        assertFalse(raw.contains("never-persist-this"));
+        assertFalse(raw.contains("raw-replay-secret"));
+        assertEquals("user-a", restored.replayBasisIdentity);
+        assertEquals("ev-basis", restored.replayBasisEvidenceId);
+        assertEquals("user-b", restored.laneAccountId);
+        assertEquals(ExecutionTrust.CONTROLLED, restored.executionTrust);
+    }
+
+    @Test
     void rejectsUnknownSchema() throws Exception {
         Path file = temp.resolve("bad.json");
         Files.writeString(file, "{\"schema_version\":99,\"records\":[]}");
