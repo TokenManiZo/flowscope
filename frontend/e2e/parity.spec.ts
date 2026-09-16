@@ -156,7 +156,7 @@ test("keeps dashboard gap counts without percentages and enters the Gap graph", 
   await expect(page.getByRole("button", { name: "선택 상세 열기" })).toHaveCount(0)
   await dashboard.getByRole("button", { name: "Gap 그래프에서 확인" }).click()
   await expect(page.getByRole("tab", { name: "점검 우선순위", exact: true })).toHaveAttribute("aria-selected", "true")
-  await expect(page.getByRole("heading", { name: "권한·파라미터 Gap 그래프", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "권한·파라미터 Gap 그래프", exact: true })).toHaveClass(/sr-only/)
 })
 
 test("keeps graph lanes through zoom and fit, then selects real matrix, sequence, scenario, and Evidence items", async ({ page }) => {

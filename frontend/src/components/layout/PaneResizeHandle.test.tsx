@@ -50,3 +50,13 @@ it("turns a collapsed edge rail into an explicit expand control", async () => {
   await userEvent.click(screen.getByRole("button", { name: "분석 필터 패널 열기" }))
   expect(onExpand).toHaveBeenCalledOnce()
 })
+
+it("uses the visible edge control to collapse without a native tooltip", async () => {
+  const onCollapse = vi.fn()
+  render(<PaneResizeHandle side="left" label="점검 우선순위" width={232} min={64} max={800} onWidthChange={vi.fn()} onCollapse={onCollapse} />)
+
+  const button = screen.getByRole("button", { name: "점검 우선순위 패널 접기" })
+  expect(button).not.toHaveAttribute("title")
+  await userEvent.click(button)
+  expect(onCollapse).toHaveBeenCalledOnce()
+})

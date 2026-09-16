@@ -27,6 +27,13 @@ test("keeps the focused graph largest and preserves Gap sheet selection", async 
   await expect(page.getByRole("tab", { name: "점검 우선순위", exact: true })).toHaveAttribute("aria-selected", "true")
   const workspace = page.getByRole("region", { name: "그래프 중심 점검 작업면", includeHidden: true })
   await expect(workspace).toBeVisible()
+  const queueToggle = page.getByRole("button", { name: "점검 큐 접기", exact: true })
+  const selectedTab = page.getByRole("tab", { name: "점검 우선순위", exact: true })
+  const snapshotStatus = page.getByRole("status", { name: "snapshot 갱신 상태" })
+  await expect.poll(async () => {
+    const [tab, toggle, status] = await Promise.all([selectedTab.boundingBox(), queueToggle.boundingBox(), snapshotStatus.boundingBox()])
+    return Boolean(tab && toggle && status && tab.x < toggle.x && toggle.x < status.x)
+  }).toBe(true)
   const queue = page.getByRole("list", { name: "점검 우선순위 큐" })
   await expect(queue.getByRole("button")).toHaveCount(3)
   await expect(page.getByRole("region", { name: "Parameter Gap 상세" })).toHaveCount(0)

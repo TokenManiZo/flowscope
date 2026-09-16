@@ -27,7 +27,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 it("starts graph-first with only open risk paths, compact filters and the server-priority queue", () => {
   render()
-  expect(screen.getByRole("heading", { name: "권한·파라미터 Gap 그래프" })).toBeVisible()
+  expect(screen.getByRole("heading", { name: "권한·파라미터 Gap 그래프" })).toHaveClass("sr-only")
   expect(screen.getByRole("region", { name: "그래프 중심 점검 작업면" })).toHaveAttribute("data-layout", "focused-graph")
   expect(within(screen.getByRole("toolbar", { name: "Gap 그래프 필터" })).getByRole("checkbox", { name: "위험 Gap" })).toBeChecked()
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
@@ -45,7 +45,7 @@ it("collapses the queue and its GAP context while keeping the graph available", 
   render()
   await userEvent.click(screen.getByRole("button", { name: "점검 큐 접기" }))
 
-  expect(screen.getByRole("heading", { name: "권한·파라미터 Gap 그래프" })).toBeVisible()
+  expect(screen.getByRole("heading", { name: "권한·파라미터 Gap 그래프" })).toHaveClass("sr-only")
   expect(screen.queryByRole("toolbar", { name: "Gap 그래프 필터" })).not.toBeInTheDocument()
   expect(screen.queryByRole("region", { name: "우선 점검 이유" })).not.toBeInTheDocument()
   expect(screen.getByRole("list", { name: "Gap 경로 목록" })).toBeVisible()

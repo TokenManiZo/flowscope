@@ -55,8 +55,8 @@ export function PaneResizeHandle({ side, label, width, min, max, collapsed = fal
     {!collapsed ? <div role="separator" aria-label={`${label} 너비 조절`} aria-orientation="vertical" aria-valuemin={Math.round(min)} aria-valuemax={Math.round(max)} aria-valuenow={Math.round(width)} tabIndex={0}
       className="absolute inset-y-0 left-1/2 w-1.5 -translate-x-1/2 cursor-col-resize focus-visible:bg-emerald-400/10 focus-visible:outline-none"
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onKeyDown={onKeyDown} /> : null}
-    <Button type="button" size="icon-sm" variant="outline" aria-label={toggleLabel} title={toggleLabel} onClick={collapsed ? onExpand : onCollapse}
-      className="absolute top-1/2 left-1/2 z-10 size-5 -translate-x-1/2 -translate-y-1/2 rounded-sm p-0 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+    <Button type="button" size="icon-sm" variant="outline" aria-label={toggleLabel} onClick={collapsed ? onExpand : onCollapse}
+      className="absolute top-1/2 left-1/2 z-10 size-7 -translate-x-1/2 -translate-y-1/2 rounded-sm p-0 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
       <ToggleIcon className="size-3" />
     </Button>
   </div>
