@@ -12,6 +12,7 @@ const queryState = vi.hoisted(() => ({
   projects: {} as Record<string, unknown>,
 }))
 const openProjectMutate = vi.hoisted(() => vi.fn())
+const startProjectMutate = vi.hoisted(() => vi.fn())
 const resetTrafficMutate = vi.hoisted(() => vi.fn())
 const deleteProjectMutate = vi.hoisted(() => vi.fn())
 
@@ -24,11 +25,12 @@ vi.mock("@/lib/query/hooks", () => ({
   useOpenProjectMutation: () => ({ mutate: openProjectMutate, isPending: false, error: null }),
   useResetProjectTrafficMutation: () => ({ mutate: resetTrafficMutate, isPending: false, error: null }),
   useDeleteProjectMutation: () => ({ mutate: deleteProjectMutate, isPending: false, error: null }),
-  useStartProjectMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+  useStartProjectMutation: () => ({ mutate: startProjectMutate, isPending: false, error: null }),
 }))
 
 beforeEach(() => {
   openProjectMutate.mockReset()
+  startProjectMutate.mockReset()
   resetTrafficMutate.mockReset()
   deleteProjectMutate.mockReset()
   queryState.snapshot = { data: { trafficStats: { captured: 7 }, sampleMode: false }, isPending: false, isError: false }
@@ -117,6 +119,9 @@ it("keeps grouped navigation, project, DB, and inspection controls discoverable"
   expect(within(dialog).getByRole("option", { name: "App" })).toBeVisible()
   expect(within(dialog).queryByLabelText("새 프로젝트 이름 (선택)")).not.toBeInTheDocument()
   expect(within(dialog).queryByLabelText("Exact scope")).not.toBeInTheDocument()
+  await userEvent.click(within(dialog).getByRole("button", { name: "새 트래픽 진단 시작" }))
+  await userEvent.click(screen.getByRole("button", { name: "새 진단 시작" }))
+  expect(startProjectMutate).toHaveBeenCalledWith({ name: "", scope: "https://app.example.test" }, expect.objectContaining({ onSuccess: expect.any(Function) }))
   await userEvent.selectOptions(within(dialog).getByLabelText("기존 프로젝트 선택"), "archive")
   await userEvent.click(within(dialog).getByRole("button", { name: "열기" }))
   expect(openProjectMutate).toHaveBeenCalledWith("archive", expect.objectContaining({ onSuccess: expect.any(Function) }))

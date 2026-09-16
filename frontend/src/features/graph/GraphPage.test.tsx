@@ -21,7 +21,9 @@ it("opens the graph on the full relationship view", () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
-  expect(screen.getByRole("tab", { name: "전체 관계 보기" })).toHaveAttribute("aria-selected", "true")
+  const toolbar = screen.getByRole("toolbar", { name: "그래프 상단 제어" })
+  expect(within(toolbar).getByRole("tab", { name: "전체 관계 보기" })).toHaveAttribute("aria-selected", "true")
+  expect(within(toolbar).getByText("ACCESS GRAPH")).toBeVisible()
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
@@ -123,7 +125,7 @@ it("navigates Site→Group→API→Object and back without leaking objects into 
   await userEvent.click(screen.getByRole("button", { name: /^orders:101/ }))
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
   expect(screen.getByText("cell-evidence-not-an-event")).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: /Back/ }))
+  await userEvent.click(screen.getByRole("button", { name: "API 목록으로" }))
   expect(screen.getByText("API View")).toBeVisible()
 }, 15_000)
 
@@ -142,7 +144,7 @@ it("requires explicit 18-item expansion for APIs and Objects and retains group p
   expect(screen.queryByRole("button", { name: /^orders:37/ })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /Object 18개 더 보기/ }))
   expect(screen.getByRole("button", { name: /^orders:37/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: /Back/ }))
+  await userEvent.click(screen.getByRole("button", { name: "API 목록으로" }))
   expect(screen.getByRole("button", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
 })
 

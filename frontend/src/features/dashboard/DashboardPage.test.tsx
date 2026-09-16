@@ -183,7 +183,7 @@ describe("dashboard shell", () => {
     expect(screen.queryByText("미실행")).not.toBeInTheDocument()
   })
 
-  it("shows empty onboarding, loads a sample, and keeps project creation in Burp", async () => {
+  it("shows empty onboarding, loads a sample, and requires a Burp scope before project creation", async () => {
     const user = userEvent.setup()
     const fetchStub = renderDashboard(snapshotFixture)
 
@@ -195,7 +195,8 @@ describe("dashboard shell", () => {
 
     await user.click(screen.getByRole("button", { name: "프로젝트 관리" }))
     const dialog = screen.getByRole("dialog", { name: "프로젝트 관리" })
-    expect(dialog).toHaveTextContent("Burp의 FlowScope 탭에 URL을 입력")
+    expect(dialog).toHaveTextContent("Burp의 FlowScope 탭에서 exact scope를 먼저 적용하세요")
+    expect(within(dialog).getByRole("button", { name: "새 트래픽 진단 시작" })).toBeDisabled()
     expect(within(dialog).queryByLabelText("Exact scope")).not.toBeInTheDocument()
     expect(within(dialog).queryByLabelText("새 프로젝트 이름 (선택)")).not.toBeInTheDocument()
   })

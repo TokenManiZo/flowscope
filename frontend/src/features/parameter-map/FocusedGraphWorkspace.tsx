@@ -25,6 +25,7 @@ function useMedia(query: string) {
 
 interface Props {
   queue: ReactNode
+  header?: ReactNode
   toolbar: ReactNode
   children: ReactNode
   inspector: ReactNode
@@ -35,7 +36,7 @@ interface Props {
 }
 
 /** 그래프 중심 3-pane(큐·그래프·상세). 900px 미만은 큐를 sheet로, 1440px 미만은 상세를 sheet로 낸다. */
-export function FocusedGraphWorkspace({ queue, toolbar, children, inspector, queueOpen, inspectorOpen, onQueueOpenChange, onInspectorOpenChange }: Props) {
+export function FocusedGraphWorkspace({ queue, header, toolbar, children, inspector, queueOpen, inspectorOpen, onQueueOpenChange, onInspectorOpenChange }: Props) {
   const narrow = useMedia("(max-width: 899px)")
   const compact = useMedia("(max-width: 1439px)")
   const workspaceRef = useRef<HTMLElement>(null)
@@ -68,7 +69,8 @@ export function FocusedGraphWorkspace({ queue, toolbar, children, inspector, que
   return <section ref={workspaceRef} aria-label="그래프 중심 점검 작업면" data-layout="focused-graph" data-queue-open={showQueue} data-inspector-open={showInspector} className="focused-graph-workspace">
     {!narrow && <>{showQueue ? <aside aria-label="점검 우선순위" className="focused-graph-pane focused-graph-queue shrink-0" style={{ width: queueWidth }}>{queue}</aside> : null}<PaneResizeHandle side="left" label="점검 우선순위" width={queueWidth} min={QUEUE_MIN_WIDTH} max={queueMax()} collapsed={!queueOpen} onWidthChange={setQueueWidth} onCollapse={() => onQueueOpenChange(false)} onExpand={() => onQueueOpenChange(true)} /></>}
     <section aria-label="그래프 작업 영역" className="focused-graph-center">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--flowscope-divider)] px-3 py-2">
+      <div role="toolbar" aria-label="Gap 그래프 상단 제어" className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--flowscope-divider)] px-3 py-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">{header}</div>
         <Button ref={queueTrigger} size="sm" variant="outline" aria-expanded={queueOpen} onClick={() => onQueueOpenChange(!queueOpen)}>{queueOpen ? <PanelLeftClose /> : <PanelLeftOpen />}{queueOpen ? "점검 큐 접기" : "점검 큐 열기"}</Button>
       </div>
       {queueOpen ? toolbar : null}

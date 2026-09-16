@@ -45,7 +45,7 @@ it("collapses the queue and its GAP context while keeping the graph available", 
   render()
   await userEvent.click(screen.getByRole("button", { name: "점검 큐 접기" }))
 
-  expect(screen.queryByRole("heading", { name: "권한·파라미터 Gap 그래프" })).not.toBeInTheDocument()
+  expect(screen.getByRole("heading", { name: "권한·파라미터 Gap 그래프" })).toBeVisible()
   expect(screen.queryByRole("toolbar", { name: "Gap 그래프 필터" })).not.toBeInTheDocument()
   expect(screen.queryByRole("region", { name: "우선 점검 이유" })).not.toBeInTheDocument()
   expect(screen.getByRole("list", { name: "Gap 경로 목록" })).toBeVisible()

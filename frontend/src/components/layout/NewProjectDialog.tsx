@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { useDeleteProjectMutation, useOpenProjectMutation, useProjectsQuery, useResetProjectTrafficMutation } from "@/lib/query/hooks"
+import { useDeleteProjectMutation, useOpenProjectMutation, useProjectsQuery, useResetProjectTrafficMutation, useStartProjectMutation } from "@/lib/query/hooks"
 
 function errorMessage(error: unknown): string | null {
   return error instanceof Error ? error.message : null
@@ -18,17 +18,18 @@ export function NewProjectDialog() {
   const [projectId, setProjectId] = useState("")
   const projects = useProjectsQuery()
   const openProject = useOpenProjectMutation()
+  const startProject = useStartProjectMutation()
   const resetTraffic = useResetProjectTrafficMutation()
   const deleteProject = useDeleteProjectMutation()
   const active = projects.data?.active
   const selected = projects.data?.projects.find((project) => project.id === projectId)
-  const busy = openProject.isPending || resetTraffic.isPending || deleteProject.isPending
+  const busy = openProject.isPending || startProject.isPending || resetTraffic.isPending || deleteProject.isPending
 
   useEffect(() => {
     if (!open) setProjectId(active?.id ?? "")
   }, [active?.id, open])
 
-  const error = errorMessage(openProject.error ?? resetTraffic.error ?? deleteProject.error)
+  const error = errorMessage(openProject.error ?? startProject.error ?? resetTraffic.error ?? deleteProject.error)
 
   return <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next) }}>
     <DialogTrigger asChild><Button variant="outline" size="sm">프로젝트 관리</Button></DialogTrigger>
@@ -72,7 +73,17 @@ export function NewProjectDialog() {
           </AlertDialog>
         </section>
 
-        <section className="rounded-md border p-3"><h3 className="text-sm font-medium">새 트래픽 진단 시작</h3><p className="mt-1 text-xs text-muted-foreground">Burp의 FlowScope 탭에 URL을 입력하고 범위를 적용하거나 새 트래픽 진단 시작을 누르세요. 프로젝트명은 scope host로 자동 생성됩니다.</p></section>
+        <section className="grid gap-3 rounded-md border p-3" aria-labelledby="new-diagnosis-heading">
+          <div><h3 id="new-diagnosis-heading" className="text-sm font-medium">새 트래픽 진단 시작</h3><p className="text-xs text-muted-foreground">현재 Burp exact scope를 유지한 빈 프로젝트를 만듭니다. 프로젝트명은 첫 scope host로 자동 생성됩니다.</p></div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild><Button type="button" disabled={!active?.scope.length || busy}>새 트래픽 진단 시작</Button></AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader><AlertDialogTitle>새 트래픽 진단을 시작할까요?</AlertDialogTitle><AlertDialogDescription>현재 진단은 보존하고, 동일한 exact scope의 빈 프로젝트로 전환합니다.</AlertDialogDescription></AlertDialogHeader>
+              <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction onClick={() => startProject.mutate({ name: "", scope: active!.scope.join("\n") }, { onSuccess: () => setOpen(false) })}>새 진단 시작</AlertDialogAction></AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          {!active?.scope.length && <p className="text-xs text-muted-foreground">Burp의 FlowScope 탭에서 exact scope를 먼저 적용하세요.</p>}
+        </section>
         {error && <Alert variant="destructive" aria-label={error}><AlertDescription>{error}</AlertDescription></Alert>}
       </div>
       <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>닫기</Button></DialogFooter>
