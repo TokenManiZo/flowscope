@@ -1,5 +1,4 @@
 import { render, screen, within } from "@testing-library/react"
-import { useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
@@ -12,79 +11,12 @@ const hierarchyFilters: GraphFilters = { source: ["human", "scanner", "llm"], id
 const operationNavigation: GraphNavigation = { level: "operation", groupId: '["Target","orders"]', operation: "GET /api/orders/{id}", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
 const rawCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["raw-a"] }
 
-it("switches compact path focus from a gap to another candidate and an exact observed source path", async () => {
-  const cells = [rawCell, { ...rawCell, resource: "orders:202", perSource: { human: "allow" as const, scanner: "allow" as const }, evidenceIds: ["raw-two"] }, { ...rawCell, idn: "USER B" }]
-  const gaps = [303, 404].map(resource => ({ id: `gap-${resource}`, type: "UNCROSSED", risk: 1, idn: "USER B", op: rawCell.op, resource: `orders:${resource}`, missedSources: [], summary: "server" }))
-  const hierarchy = projectHierarchy(targetSnapshot({ cells, gaps }), hierarchyFilters, { ...operationNavigation, focusCandidateKey: '["USER B","GET /api/orders/{id}","orders:303"]' })
-  function Interactive() {
-    const [selected, setSelected] = useState<string | null>(null)
-    return <ResponsiveGraphList projection={hierarchy} selectedElementId={selected} onSelect={(_, id) => setSelected(id ?? null)} />
-  }
-  render(<Interactive />)
-  const paths = within(screen.getByLabelText("Source Evidence 경로"))
-  await userEvent.click(paths.getByRole("button", { name: /미교차 후보.*· orders:404/ }))
-  expect(paths.getByRole("button", { name: /미교차 후보.*· orders:404/ })).toHaveAttribute("data-focused", "yes")
-  expect(paths.getByRole("button", { name: /미교차 후보.*· orders:303/ })).toHaveAttribute("data-focused", "no")
-  await userEvent.click(paths.getByRole("button", { name: /SCANNER.*USER A.*· orders:202/ }))
-  expect(paths.getAllByText("포커스 경로")).toHaveLength(2)
-  for (const button of paths.getAllByRole("button")) expect(button).toHaveAttribute("data-focused", button.textContent?.includes("SCANNER") ? "yes" : "no")
-})
-
-it("visibly and accessibly focuses only the selected identity's compact source paths", async () => {
-  const hierarchy = projectHierarchy(targetSnapshot({ cells: [rawCell, { ...rawCell, idn: "USER B", resource: "orders:202", evidenceIds: ["raw-b"] }] }), hierarchyFilters, operationNavigation)
-  function InteractiveList() {
-    const [selected, setSelected] = useState<string | null>(null)
-    return <ResponsiveGraphList projection={hierarchy} selectedElementId={selected} onSelect={(_, id) => setSelected(id ?? null)} />
-  }
-  render(<InteractiveList />)
-  await userEvent.click(screen.getByRole("button", { name: "USER A" }))
-  expect(screen.getByRole("button", { name: "USER A" })).toHaveAttribute("aria-pressed", "true")
-  const paths = within(screen.getByLabelText("Source Evidence 경로"))
-  for (const button of paths.getAllByRole("button")) {
-    expect(button).toHaveAttribute("data-focused", button.textContent?.includes("USER A") ? "yes" : "no")
-    expect(within(button).queryByText("포커스 경로") !== null).toBe(button.textContent?.includes("USER A"))
-  }
-  await userEvent.click(screen.getByRole("button", { name: "USER B" }))
-  for (const button of paths.getAllByRole("button")) expect(button).toHaveAttribute("data-focused", button.textContent?.includes("USER B") ? "yes" : "no")
-})
-
-it("keeps only the exact UNCROSSED coordinate focused in compact mode, including while its Evidence action is selected", async () => {
-  const gaps = [202, 303].map(resource => ({ id: `gap-${resource}`, type: "UNCROSSED", risk: 1, idn: "USER B", op: rawCell.op, resource: `orders:${resource}`, missedSources: [], summary: "server candidate" }))
-  const hierarchy = projectHierarchy(targetSnapshot({ cells: [rawCell], gaps }), hierarchyFilters, { ...operationNavigation, focusCandidateKey: '["USER B","GET /api/orders/{id}","orders:202"]' })
-  const select = vi.fn()
-  const { rerender } = render(<ResponsiveGraphList projection={hierarchy} onSelect={select} />)
-  const paths = within(screen.getByLabelText("Source Evidence 경로"))
-  expect(paths.getAllByText("포커스 경로")).toHaveLength(2)
-  const exactObject = paths.getByRole("button", { name: /미교차 후보.*· orders:202/ })
-  const otherObject = paths.getByRole("button", { name: /미교차 후보.*· orders:303/ })
-  expect(exactObject).toHaveAttribute("data-focused", "yes")
-  expect(otherObject).toHaveAttribute("data-focused", "no")
-  await userEvent.click(exactObject)
-  expect(select).toHaveBeenCalledWith(expect.objectContaining({ identity: "USER B", operation: rawCell.op, resource: "orders:202", source: null, evidenceIds: [], cellKeys: ['["USER B","GET /api/orders/{id}","orders:202"]'], gapIds: ["gap-202"] }), expect.any(String))
-  const selectedId = select.mock.calls[0][1]
-  rerender(<ResponsiveGraphList projection={hierarchy} selectedElementId={selectedId} onSelect={select} />)
-  expect(exactObject).toHaveAttribute("aria-pressed", "true")
-  expect(paths.getAllByText("포커스 경로")).toHaveLength(2)
-  rerender(<ResponsiveGraphList projection={hierarchy} selectedElementId={null} onSelect={select} />)
-  expect(paths.getAllByText("포커스 경로")).toHaveLength(2)
-})
-
-it("distinguishes same-source same-identity group Evidence actions by raw operation and keeps H/S/L styles", async () => {
-  const cells = [rawCell, { ...rawCell, op: "PATCH /api/orders/{id}", evidenceIds: ["patch-raw"], perSource: { human: "allow" as const, scanner: "allow" as const, llm: "allow" as const } }]
-  const hierarchy = projectHierarchy(targetSnapshot({ cells }), hierarchyFilters, { ...operationNavigation, level: "group", operation: "" })
-  const select = vi.fn()
-  render(<ResponsiveGraphList projection={hierarchy} onSelect={select} />)
-  const paths = within(screen.getByLabelText("Source Evidence 경로"))
-  const get = paths.getByRole("button", { name: /HUMAN.*USER A.*GET \/api\/orders\/\{id\}/ })
-  const patch = paths.getByRole("button", { name: /HUMAN.*USER A.*PATCH \/api\/orders\/\{id\}/ })
-  await userEvent.click(get)
-  await userEvent.click(patch)
-  expect(select.mock.calls[0][0]).toMatchObject({ operation: rawCell.op, identity: "USER A", source: "human", cells: [rawCell], cellKeys: ['["USER A","GET /api/orders/{id}","orders:101"]'], evidenceIds: ["raw-a"] })
-  expect(select.mock.calls[1][0]).toMatchObject({ operation: "PATCH /api/orders/{id}", cells: [cells[1]], evidenceIds: ["patch-raw"] })
-  for (const [source, line, color] of [["HUMAN", "solid", "#2563eb"], ["SCANNER", "dashed", "#dc2626"], ["LLM", "dotted", "#e4e4e7"]]) {
-    const marker = within(paths.getByRole("button", { name: new RegExp(`${source}.*PATCH`) })).getByLabelText(`${source} ${line}`)
-    expect(marker).toHaveStyle({ borderTopStyle: line, borderTopColor: color })
-  }
+it("omits the redundant breakpoint notice and source-Evidence path list", () => {
+  const hierarchy = projectHierarchy(targetSnapshot({ cells: [rawCell] }), hierarchyFilters, operationNavigation)
+  render(<ResponsiveGraphList projection={hierarchy} onSelect={vi.fn()} />)
+  expect(screen.queryByText(/900px 이하/)).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("Source Evidence 경로")).not.toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /^orders:101/ })).toBeVisible()
 })
 
 const selection = { operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human" as const, evidenceIds: ["e-1", "e-2"] }
@@ -109,7 +41,7 @@ it("uses the same compact card hierarchy as the relationship graph nodes", () =>
   const operation = screen.getByRole("button", { name: /^GET \/orders\/\{id\}/ })
   expect(within(operation).getByText("GET")).toHaveAttribute("data-node-badge", "GET")
   expect(within(operation).getByText("/orders/{id}")).toBeVisible()
-  expect(within(operation).getByText("2 Evidence")).toBeVisible()
+  expect(within(operation).queryByText("2 Evidence")).not.toBeInTheDocument()
 })
 
 it("keeps candidate Evidence IDs outside the candidate button name while rendering full provenance detail", () => {

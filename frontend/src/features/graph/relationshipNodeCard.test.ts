@@ -32,10 +32,10 @@ describe("relationship graph node cards", () => {
 
     expect(relationshipNodeCard(target, graph)).toMatchObject({ badge: "TARGET", title: service, detail: "Exact-scope target", footer: "1 API group", icon: "globe" })
     expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs · H 7 / S 3 / L 2", footer: "Gap 2 · 경로 후보 1", icon: "network" })
-    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "ALLOW", footer: "2 Evidence", icon: "user" })
-    expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "ALLOW", footer: "2 Evidence", icon: "none" })
+    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "ALLOW", footer: "", icon: "user" })
+    expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "ALLOW", footer: "", icon: "none" })
     expect(relationshipNodeCard(resource, graph)).toMatchObject({ badge: "RESOURCE", title: "orders:101", detail: "ALLOW", footer: "owner: USER B", icon: "box" })
-    expect(relationshipNodeCard(support, graph)).toMatchObject({ badge: "SUPPORT", title: "GET /api/session/poll", detail: "보조 흐름", footer: "1 Evidence", icon: "none" })
+    expect(relationshipNodeCard(support, graph)).toMatchObject({ badge: "SUPPORT", title: "GET /api/session/poll", detail: "보조 흐름", footer: "", icon: "none" })
   })
 
   it("parses a service-prefixed canonical operation and retains its complete coordinate for accessibility", () => {

@@ -5,7 +5,6 @@ import { renderParameterNodeCardSvg } from "@/features/parameter-map/parameterNo
 import type { GraphPreferences } from "./graphPreferences"
 import { clampRenderedPosition, graphLaneForKind, laneGeometry, type GraphLane } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
-import { routeCandidateTone } from "./routeCandidateTone"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
 import { relationshipNodeCard, relationshipRouteCandidateCard } from "./relationshipNodeCard"
@@ -15,6 +14,7 @@ interface Props {
   locked: boolean
   fitVersion: number
   preferences?: GraphPreferences | null
+  confirmedNodeIds?: ReadonlySet<string>
   selectedElementId?: string | null
   onSelect(selection: GraphSelection, elementId: string): void
   onNavigate?(node: HierarchyNode): void
@@ -25,19 +25,27 @@ interface Props {
 
 const minimumZoom = 0.4
 const maximumZoom = 2
+const noConfirmedNodes = new Set<string>()
 
-function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null): ElementDefinition[] {
+export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pick<WheelEvent, "ctrlKey" | "deltaMode" | "deltaX" | "deltaY">): "pan" | "zoom" {
+  if (event.ctrlKey) return "zoom"
+  if (mode !== "auto") return mode === "trackpad" ? "pan" : "zoom"
+  // ponytail: 브라우저는 입력 장치 종류를 주지 않으므로 오판하는 장치는 설정의 명시 모드로 보정한다.
+  return event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && (event.deltaX !== 0 || Math.abs(event.deltaY) < 50 || !Number.isInteger(event.deltaY)) ? "pan" : "zoom"
+}
+
+function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
   const focus = deriveGraphFocus(hierarchy, selectedElementId)
   const nodes = (hierarchy ? hierarchy.nodes.filter(node => node.kind !== "route-candidate") : [...projection.identities, ...projection.operations, ...projection.resources]).map((node) => {
     const card = relationshipNodeCard(node, projection)
-    const image = renderParameterNodeCardSvg(card)
-    return { data: { id: node.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, verdictColor: node.verdictColor, kind: node.kind } }
+    const image = renderParameterNodeCardSvg(card, true)
+    return { data: { id: node.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no" } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
     const card = relationshipRouteCandidateCard(candidate)
-    const image = renderParameterNodeCardSvg(card)
-    return { data: { id: candidate.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, verdictColor: routeCandidateTone(candidate.applicability).color, kind: "route-candidate" } }
+    const image = renderParameterNodeCardSvg(card, true)
+    return { data: { id: candidate.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no" } }
   })
   const edges = projection.edges.map((edge) => {
     const endpointId = edge.selection.operation ? `operation:${edge.selection.operation}` : edge.targetId
@@ -142,7 +150,7 @@ function publishGeometry(container: HTMLDivElement, core: Core) {
   container.dataset.graphGeometry = JSON.stringify({ width: container.clientWidth, height: container.clientHeight, maxZoom: core.maxZoom(), nodes })
 }
 
-export function CytoscapeGraph({ projection, locked, fitVersion, preferences = null, selectedElementId = null, onSelect, onNavigate, onMaxZoomChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onMaxZoomChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -159,6 +167,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
   const selectedElementIdRef = useRef(selectedElementId)
   const maxZoomRef = useRef(onMaxZoomChange)
   const preferenceRef = useRef(onPreferencesChange)
+  const inputModeRef = useRef(preferences?.inputMode ?? "auto")
   const rendererUnavailableRef = useRef(onRendererUnavailable)
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
   projectionRef.current = projection
@@ -167,6 +176,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
   selectedElementIdRef.current = selectedElementId
   maxZoomRef.current = onMaxZoomChange
   preferenceRef.current = onPreferencesChange
+  inputModeRef.current = preferences?.inputMode ?? "auto"
   rendererUnavailableRef.current = onRendererUnavailable
   const cancelTooltipHide = useCallback(() => {
     if (tooltipHideTimerRef.current !== null) window.clearTimeout(tooltipHideTimerRef.current)
@@ -196,10 +206,12 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
       core = cytoscape({
         container: containerRef.current,
         elements: [],
+        userZoomingEnabled: false,
         style: [
-          { selector: "node", style: { "background-color": "#111418", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", label: "data(label)", color: "#e5e7eb", width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "border-width": 1, "border-color": "data(verdictColor)", "border-opacity": 0.85 } },
+          { selector: "node", style: { "background-color": "#111418", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", label: "data(label)", color: "#e5e7eb", width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "border-width": 1, "border-color": "#64748b", "border-opacity": 0.85 } },
+          { selector: 'node[confirmed = "yes"]', style: { "border-width": 2, "border-color": "#ef4444" } },
           { selector: "node:selected", style: { "border-width": 2, "border-color": "#60a5fa", "background-color": "#141a20", "overlay-opacity": 0 } },
-          { selector: 'node[kind = "route-candidate"]', style: { "border-width": 2, "border-style": "dotted", "border-color": "data(verdictColor)", "background-color": "#111418" } },
+          { selector: 'node[kind = "route-candidate"]', style: { "border-width": 2, "border-style": "dotted", "border-color": "#64748b", "background-color": "#111418" } },
           { selector: "edge", style: { width: 1.7, "line-color": "data(color)", "line-style": "data(line)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, label: "data(label)", color: "#d4d4d8", "font-size": "9px", "font-family": "Geist Mono, ui-monospace, monospace", "text-background-color": "#090b0d", "text-background-opacity": 0.86, "text-background-padding": "2px", "text-rotation": "autorotate", "text-margin-y": -7, "curve-style": "bezier", opacity: 0.9 } },
           { selector: "edge:selected", style: { width: 2.6, "line-color": "data(color)", "target-arrow-color": "data(color)" } },
           { selector: 'edge[focused = "yes"]', style: { width: 3, opacity: 1 } },
@@ -245,6 +257,15 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
       preferenceRef.current(readPreferences(core))
     }
     const viewportListener = () => scheduleLaneCorrection()
+    const wheelListener = (event: WheelEvent) => {
+      event.preventDefault()
+      const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? containerRef.current?.clientHeight ?? 600 : 1
+      if (graphWheelIntent(inputModeRef.current, event) === "pan") core.panBy({ x: -event.deltaX * scale, y: -event.deltaY * scale })
+      else {
+        const bounds = containerRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 }
+        core.zoom({ level: Math.max(minimumZoom, Math.min(core.maxZoom(), core.zoom() * Math.exp(-event.deltaY * scale * 0.002))), renderedPosition: { x: event.clientX - bounds.left, y: event.clientY - bounds.top } })
+      }
+    }
     const showCardTooltip = (event: cytoscape.EventObject) => {
       const target = event.target
       const label = String(target.data("accessibleLabel") ?? "")
@@ -264,6 +285,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
     }
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleLaneCorrection)
     resizeObserver?.observe(containerRef.current)
+    containerRef.current.addEventListener("wheel", wheelListener, { passive: false })
     core.on("tap", "node, edge", selectListener)
     core.on("mouseover focus", "node", showCardTooltip)
     core.on("mouseout blur", "node", hideCardTooltip)
@@ -276,6 +298,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
       core.off("dragfree", "node", dragListener)
       core.off("viewport", viewportListener)
       resizeObserver?.disconnect()
+      containerRef.current?.removeEventListener("wheel", wheelListener)
       if (correctionFrame !== null) cancelAnimationFrame(correctionFrame)
       if (scheduleLaneCorrectionRef.current === scheduleLaneCorrection) scheduleLaneCorrectionRef.current = null
       keyboardNodeRef.current = null
@@ -291,7 +314,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
     dismissCardTooltip()
     keyboardNodeRef.current = null
     core.elements().remove()
-    core.add(elementsFor(projection, selectedElementId))
+    core.add(elementsFor(projection, selectedElementId, confirmedNodeIds))
     positionInLanes(core, containerRef.current?.clientWidth ?? 0, containerRef.current?.clientHeight ?? 0, preferences?.positions ?? null, projection)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
@@ -302,7 +325,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
     }
     syncSelection(core, selectedElementIdRef.current)
     scheduleLaneCorrectionRef.current?.()
-  }, [dismissCardTooltip, locked, preferences, projection, selectedElementId])
+  }, [confirmedNodeIds, dismissCardTooltip, locked, preferences, projection, selectedElementId])
 
   useEffect(() => {
     const core = coreRef.current
