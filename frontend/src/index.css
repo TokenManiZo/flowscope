@@ -157,18 +157,15 @@ html.flowscope-density-90 {
   background: var(--focused-surface);
 }
 .focused-graph-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
   height: 100%;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
 }
-.focused-graph-workspace[data-queue-open="true"] { grid-template-columns: var(--focused-queue-width) minmax(0, 1fr); }
-.focused-graph-workspace[data-inspector-open="true"] { grid-template-columns: minmax(0, 1fr) var(--focused-inspector-width); }
-.focused-graph-workspace[data-queue-open="true"][data-inspector-open="true"] { grid-template-columns: var(--focused-queue-width) minmax(0, 1fr) var(--focused-inspector-width); }
 .focused-graph-center {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   min-width: 0;

@@ -54,6 +54,7 @@ const singleNodeCollection = () => ({
 const core = {
   add: vi.fn(),
   destroy: vi.fn(),
+  resize: vi.fn(),
   elements: vi.fn(() => ({ remove, unselect })),
   getElementById: vi.fn(() => node),
   nodes: vi.fn(singleNodeCollection),
@@ -271,6 +272,7 @@ it("reclamps nodes when the graph container is resized", () => {
   resizeListener?.([], {} as ResizeObserver)
   runScheduledFrame()
 
+  expect(core.resize).toHaveBeenCalled()
   expect(node.position).toHaveBeenCalledWith({ x: 0, y: 55 })
 })
 

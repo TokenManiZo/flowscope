@@ -41,6 +41,16 @@ it("starts graph-first with only open risk paths, compact filters and the server
   expect(screen.queryByText("no-risk")).not.toBeInTheDocument()
 })
 
+it("collapses the queue and its GAP context while keeping the graph available", async () => {
+  render()
+  await userEvent.click(screen.getByRole("button", { name: "점검 큐 접기" }))
+
+  expect(screen.queryByRole("heading", { name: "권한·파라미터 Gap 그래프" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("toolbar", { name: "Gap 그래프 필터" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("region", { name: "우선 점검 이유" })).not.toBeInTheDocument()
+  expect(screen.getByRole("list", { name: "Gap 경로 목록" })).toBeVisible()
+})
+
 it("shows the top three projected priorities until expansion without changing their server order", async () => {
   const data = parameterSnapshot()
   data.surface!.parameterGaps = Array.from({ length: 5 }, (_, index) => parameterGap(`priority-${index}`, { summary: `priority ${index}` })) as never

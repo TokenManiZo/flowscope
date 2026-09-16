@@ -215,6 +215,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
     let correctionFrame: number | null = null
     const correctLanes = () => {
       correctionFrame = null
+      if (typeof core.resize === "function") core.resize()
       const width = containerRef.current?.clientWidth ?? 0
       const maxZoom = constrainZoomToLanes(core, width, projectionRef.current)
       core.nodes().forEach((node) => clampNodeToLane(core, node, width, projectionRef.current))

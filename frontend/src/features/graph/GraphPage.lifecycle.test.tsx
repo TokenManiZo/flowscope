@@ -27,15 +27,12 @@ beforeEach(() => {
   cytoscapeState.factory.mockClear()
 })
 
-it("defaults to priority and exposes the original hierarchy controls and canvas in the relationship tab", async () => {
+it("defaults to the relationship hierarchy and disposes its canvas when priority is selected", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   const { GraphPage } = await import("./GraphPage")
   render(<GraphPage />)
-  expect(screen.getByRole("tab", { name: "점검 우선순위" })).toHaveAttribute("aria-selected", "true")
-  expect(screen.queryByLabelText("공격면 Cytoscape 그래프")).not.toBeInTheDocument()
-  expect(cytoscapeState.factory).not.toHaveBeenCalled()
-  await userEvent.click(screen.getByRole("tab", { name: "전체 관계 보기" }))
+  expect(screen.getByRole("tab", { name: "전체 관계 보기" })).toHaveAttribute("aria-selected", "true")
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()

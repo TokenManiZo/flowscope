@@ -36,17 +36,35 @@ it("keeps the flexible graph mounted while independently hiding queue and select
   const graph = screen.getByRole("region", { name: "경로 작업면" })
   expect(workspace).toHaveAttribute("data-layout", "focused-graph")
   expect(screen.getByRole("complementary", { name: "점검 우선순위" })).toBeVisible()
+  expect(screen.getByRole("separator", { name: "점검 우선순위 너비 조절" })).toBeVisible()
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "경로 auth 선택" }))
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
+  expect(screen.getByRole("separator", { name: "선택 상세 너비 조절" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "점검 큐 접기" }))
   expect(screen.queryByRole("complementary", { name: "점검 우선순위" })).not.toBeInTheDocument()
+  expect(screen.queryByText("그래프 제어")).not.toBeInTheDocument()
+  const edgeExpand = screen.getByRole("button", { name: "점검 우선순위 패널 열기" })
+  await userEvent.hover(edgeExpand.parentElement!)
+  expect(edgeExpand).toBeVisible()
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 닫기" }))
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
   expect(screen.getByRole("region", { name: "경로 작업면" })).toBe(graph)
   await userEvent.click(screen.getByRole("button", { name: "점검 큐 열기" }))
   expect(screen.getByRole("complementary", { name: "점검 우선순위" })).toBeVisible()
+})
+
+it("keeps the selected Gap while the desktop inspector is collapsed and restored", async () => {
+  viewport(1920)
+  render(<Workspace />)
+  await userEvent.click(screen.getByRole("button", { name: "경로 auth 선택" }))
+
+  await userEvent.click(screen.getByRole("button", { name: "선택 상세 패널 접기" }))
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "선택 상세 패널 열기" }))
+
+  expect(screen.getByRole("complementary", { name: "선택 상세" }).querySelector("[data-gap-id]")).toHaveAttribute("data-gap-id", "auth")
 })
 
 it.each([900, 1280, 1439])("keeps a persistent compact queue at %ipx and uses a dismissible inspector sheet", async width => {

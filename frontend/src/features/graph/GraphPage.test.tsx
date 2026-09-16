@@ -17,13 +17,11 @@ const snapshot: Snapshot = {
 
 const hierarchyCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["cell-evidence-not-an-event"] }
 
-it("keeps all relationship controls reachable from the secondary tab", async () => {
+it("opens the graph on the full relationship view", () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
-  expect(screen.getByRole("tab", { name: "점검 우선순위" })).toHaveAttribute("aria-selected", "true")
-  expect(screen.queryByText("Site Overview")).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("tab", { name: "전체 관계 보기" }))
+  expect(screen.getByRole("tab", { name: "전체 관계 보기" })).toHaveAttribute("aria-selected", "true")
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
