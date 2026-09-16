@@ -9,9 +9,9 @@ import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { Source, Verdict } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
 import { CytoscapeGraph } from "./CytoscapeGraph"
-import { defaultLaneWidths, GRAPH_MAX_ZOOM, laneBoundaries } from "./graphLanes"
+import { clampLaneWidth, defaultLaneWidths, DEFAULT_LANE_WIDTH, GRAPH_MAX_ZOOM, laneBoundaries, MAX_LANE_WIDTH, MIN_LANE_WIDTH } from "./graphLanes"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
-import { loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, type GraphPreferences } from "./graphPreferences"
+import { defaultGraphLaneWidths, loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, type GraphPreferences } from "./graphPreferences"
 import { graphCellKey, graphCellSelection, graphReviewVerdict, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
 import { GRAPH_PAGE_SIZE, navigateHierarchy, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection } from "./graphHierarchy"
 import { ResponsiveGraphList } from "./ResponsiveGraphList"
@@ -27,7 +27,7 @@ const sourceLines: Record<Source, string> = {
   unknown: "border-dotted border-zinc-500",
 }
 const supportTrafficClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-const defaultPreferences: GraphPreferences = { version: 5, positions: {}, viewport: null, locked: false, inputMode: "auto" }
+const defaultPreferences: GraphPreferences = { version: 6, positions: {}, viewport: null, locked: false, inputMode: "auto", laneWidths: defaultGraphLaneWidths() }
 const initialNavigation: GraphNavigation = { level: "site", groupId: "", operation: "", operationLimit: GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE, focusCandidateKey: "" }
 
 function useCompactGraph() {
@@ -151,10 +151,18 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
   const hiddenCandidates = graph?.kind === "group" ? Math.max(0, (graph.groups.find((group) => group.id === resolvedNavigation.groupId)?.routeCandidateCount ?? 0) - graph.routeCandidates.length) : 0
   const hiddenCount = graph?.kind === "operation" ? graph.hiddenObjectCount : (graph?.hiddenOperationCount ?? 0) + hiddenCandidates
   const lanes = graph?.kind === "site" ? ["TARGET", "API GROUP"] : graph?.kind === "group" ? ["IDENTITY", "API"] : ["IDENTITY", "API", "OBJECT"]
-  const laneWidths = useMemo(() => defaultLaneWidths(lanes.length), [lanes.length])
+  const laneKey = lanes.length === 2 ? "2" : "3"
+  const laneWidths = useMemo(() => preferences.laneWidths[laneKey] ?? defaultLaneWidths(lanes.length), [laneKey, lanes.length, preferences.laneWidths])
   const canvasWidth = useCanvasWidth(canvasShellRef)
   // 레인 경계는 모델 좌표이므로 화면 위치는 현재 viewport로 환산한다.
   const laneScreenX = (index: number) => laneBoundaries(laneWidths)[index] * (preferences.viewport?.zoom ?? 1) + (preferences.viewport?.pan.x ?? 0)
+  const setLaneWidth = (index: number, width: number) => setPreferences((current) => ({ ...current, laneWidths: { ...current.laneWidths, [laneKey]: (current.laneWidths[laneKey] ?? defaultLaneWidths(lanes.length)).map((current, order) => order === index ? clampLaneWidth(width) : current) } }))
+  const dragLaneBoundary = (index: number, clientX: number) => {
+    const bounds = canvasShellRef.current?.getBoundingClientRect()
+    const zoom = preferences.viewport?.zoom ?? 1
+    const modelX = (clientX - (bounds?.left ?? 0) - (preferences.viewport?.pan.x ?? 0)) / (zoom || 1)
+    setLaneWidth(index - 1, modelX - laneBoundaries(laneWidths)[index - 1])
+  }
   const focusGap = (gapId: string) => {
     const gap = snapshot.data?.gaps.find((item) => item.id === gapId)
     const group = gap && graph?.groups.find((item) => item.operations.includes(gap.op))
@@ -198,7 +206,15 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
       {graph && (compact || listMode ? <div className="p-4"><ResponsiveGraphList projection={graph} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
         const left = Math.max(laneScreenX(index), 0), right = Math.min(laneScreenX(index + 1), canvasWidth || laneScreenX(index + 1))
         return right <= left ? null : <span key={lane} className="absolute top-0 flex h-10 items-center justify-center truncate px-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground" style={{ left, width: right - left }}>{lane}</span>
-      })}</div>{lanes.slice(1).map((lane, index) => <div key={lane} aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-[1] border-l border-border/40" style={{ left: laneScreenX(index + 1) }} />)}<CytoscapeGraph projection={graph} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneWidths={laneWidths} preferences={preferences} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dashed border-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dotted border-zinc-300" />LLM</span></div></div>)}
+      })}</div>{lanes.slice(1).map((lane, index) => <div key={lane} aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-[1] border-l border-border/40" style={{ left: laneScreenX(index + 1) }} />)}{lanes.slice(1).map((lane, index) => <div key={`${lane}-resize`} role="separator" aria-orientation="vertical" aria-label={`${lanes[index]} 레인 폭 조절`} aria-valuenow={Math.round(laneWidths[index])} aria-valuemin={MIN_LANE_WIDTH} aria-valuemax={MAX_LANE_WIDTH} tabIndex={0} className="absolute top-0 z-20 h-10 w-3 -translate-x-1/2 cursor-col-resize touch-none border-x border-transparent hover:border-x-sky-400/70 focus-visible:outline-2 focus-visible:outline-ring" style={{ left: laneScreenX(index + 1) }}
+        onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault() }}
+        onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) dragLaneBoundary(index + 1, event.clientX) }}
+        onPointerUp={event => event.currentTarget.releasePointerCapture(event.pointerId)}
+        onKeyDown={event => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home") return
+          event.preventDefault()
+          setLaneWidth(index, event.key === "Home" ? DEFAULT_LANE_WIDTH : laneWidths[index] + (event.key === "ArrowRight" ? 24 : -24))
+        }} />)}<CytoscapeGraph projection={graph} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneWidths={laneWidths} preferences={preferences} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dashed border-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dotted border-zinc-300" />LLM</span></div></div>)}
     </ReferenceAnalysisWorkspace>
   </section>
 }

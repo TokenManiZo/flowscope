@@ -2,6 +2,8 @@ import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
+import { DEFAULT_LANE_WIDTH } from "./graphLanes"
+import { GRAPH_PREFERENCES_KEY, loadGraphPreferences } from "./graphPreferences"
 import type { Snapshot } from "@/lib/api/types"
 import { GraphPage as CurrentGraphPage } from "./GraphPage"
 
@@ -28,6 +30,24 @@ it("opens the graph on the full relationship view", () => {
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
+})
+
+it("resizes a lane by keyboard and keeps the new width in stored preferences", async () => {
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
+  const values = new Map<string, string>()
+  const storage = { get length() { return values.size }, clear: () => values.clear(), getItem: (key: string) => values.get(key) ?? null, key: (index: number) => [...values.keys()][index] ?? null, removeItem: (key: string) => { values.delete(key) }, setItem: (key: string, value: string) => { values.set(key, value) } } as Storage
+  Object.defineProperty(window, "localStorage", { configurable: true, value: storage })
+  render(<CurrentGraphPage />)
+  const handle = screen.getByRole("separator", { name: "TARGET 레인 폭 조절" })
+  expect(handle).toHaveAttribute("aria-valuenow", String(DEFAULT_LANE_WIDTH))
+
+  handle.focus()
+  await userEvent.keyboard("{ArrowRight}")
+
+  expect(screen.getByRole("separator", { name: "TARGET 레인 폭 조절" })).toHaveAttribute("aria-valuenow", String(DEFAULT_LANE_WIDTH + 24))
+  expect(loadGraphPreferences(storage)?.laneWidths[2]).toEqual([DEFAULT_LANE_WIDTH + 24, DEFAULT_LANE_WIDTH])
+  expect(storage.getItem(GRAPH_PREFERENCES_KEY)).toContain("laneWidths")
 })
 
 it("refreshes every server-authored field of a stable selected route candidate", async () => {
