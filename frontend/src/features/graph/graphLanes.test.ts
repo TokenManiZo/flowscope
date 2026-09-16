@@ -1,23 +1,33 @@
 import { describe, expect, it } from "vitest"
 
-import { clampRenderedPosition, graphLaneForKind, laneGeometry } from "./graphLanes"
+import { clampLaneX, DEFAULT_LANE_WIDTH, defaultLaneWidths, laneBoundaries, laneGeometry, laneIndexForKind, MIN_LANE_WIDTH } from "./graphLanes"
 
 describe("graph lanes", () => {
-  it("maps graph node kinds to their fixed semantic lane", () => {
-    expect(graphLaneForKind("identity")).toBe("identity")
-    expect(graphLaneForKind("operation")).toBe("endpoint")
-    expect(graphLaneForKind("resource")).toBe("object")
-    expect(graphLaneForKind("route-candidate")).toBe("endpoint")
+  it("maps node kinds to the lane of the current hierarchy level", () => {
+    expect(laneIndexForKind("identity", 3)).toBe(0)
+    expect(laneIndexForKind("target", 2)).toBe(0)
+    expect(laneIndexForKind("operation", 3)).toBe(1)
+    expect(laneIndexForKind("route-candidate", 3)).toBe(1)
+    expect(laneIndexForKind("resource", 3)).toBe(2)
+    expect(laneIndexForKind("api-group", 2)).toBe(1)
   })
 
-  it("divides a 1200px canvas into IDENTITY, ENDPOINT, and OBJECT thirds", () => {
-    expect(laneGeometry(1200, "identity", 24)).toEqual({ left: 24, right: 376, anchor: 200 })
-    expect(laneGeometry(1200, "endpoint", 24)).toEqual({ left: 424, right: 776, anchor: 600 })
-    expect(laneGeometry(1200, "object", 24)).toEqual({ left: 824, right: 1176, anchor: 1000 })
+  it("lays lane boundaries out in model coordinates so pan and zoom cannot move them", () => {
+    expect(defaultLaneWidths(3)).toEqual([DEFAULT_LANE_WIDTH, DEFAULT_LANE_WIDTH, DEFAULT_LANE_WIDTH])
+    expect(laneBoundaries([360, 480, 360])).toEqual([0, 360, 840, 1200])
+    expect(laneGeometry([360, 480, 360], 1)).toEqual({ left: 384, right: 816, anchor: 600 })
   })
 
-  it("clamps rendered X within a lane without changing Y", () => {
-    expect(clampRenderedPosition({ x: 700, y: 120 }, laneGeometry(900, "identity", 24))).toEqual({ x: 276, y: 120 })
-    expect(clampRenderedPosition({ x: -20, y: 88 }, laneGeometry(900, "endpoint", 24))).toEqual({ x: 324, y: 88 })
+  it("clamps requested widths into the supported lane range", () => {
+    expect(laneBoundaries([10, Number.NaN])).toEqual([0, MIN_LANE_WIDTH, MIN_LANE_WIDTH + DEFAULT_LANE_WIDTH])
+  })
+
+  it("keeps whole nodes inside their lane and centers nodes wider than the lane", () => {
+    const lane = laneGeometry([360, 360], 0)
+    expect(clampLaneX(9999, lane, 226)).toBe(360 - 24 - 113)
+    expect(clampLaneX(-9999, lane, 226)).toBe(24 + 113)
+    expect(clampLaneX(200, lane, 226)).toBe(200)
+    expect(clampLaneX(200, lane, 900)).toBe(lane.anchor)
+    expect(clampLaneX(Number.NaN, lane, 226)).toBe(lane.anchor)
   })
 })
