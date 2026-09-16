@@ -78,7 +78,7 @@ export function WorkspaceTopBar({ route }: { route: AppRoute }) {
           </select>
         </label>
         <span title={persistenceTitle} className={`flex shrink-0 items-center gap-1 text-xs ${projects.data?.saveState === "FAILED" ? "text-destructive" : "text-muted-foreground"}`}><Database className="size-3.5" aria-hidden="true" />{persistenceState}</span>
-        <NewProjectDialog defaultScope={scopeData?.join("\n") ?? ""} />
+        <NewProjectDialog />
         {projectError && <span role="alert" className="max-w-96 truncate text-xs text-destructive">프로젝트 전환 실패 · {projectError}</span>}
       </div>
     </header>

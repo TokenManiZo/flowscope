@@ -91,8 +91,9 @@ it("opens the canonical inspector from queue or graph, preserving reasons and ac
   expect(within(detail).getByRole("region", { name: "입력과 권한 대상" })).toHaveTextContent("orders:101 · OBSERVED")
   expect(within(detail).getByRole("region", { name: "관측 프로파일" })).toHaveTextContent("관측 40건")
   await userEvent.click(within(detail).getByRole("button", { name: /검증표 펼치기/ }))
+  await userEvent.click(within(detail).getByRole("button", { name: "UNTESTED · 미검증 상세 보기" }))
   expect(detail).toHaveTextContent("실행 Evidence 0건")
-  expect(detail).toHaveTextContent("좌표 근거 50건")
+  expect(detail).toHaveTextContent("선택 셀 근거 · 미실행 포함 50건")
   expect(detail).toHaveTextContent("UNTESTED")
   expect(detail).toHaveTextContent("basis-a")
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 닫기" }))
@@ -276,10 +277,9 @@ it("identifies each validation row by its own identity and role, including unkno
   const rows = screen.getByRole("region", { name: "선택 입력 검증 근거" })
   for (const [identity, role] of [["alice", "USER"], ["bob", "ADMIN"], ["UNKNOWN", "UNKNOWN"]]) {
     const row = within(rows).getByRole("group", { name: `검증 좌표 ${identity} / ${role} / SCANNER / OTHER_OWNER / https://demo.test:443 orders:101` })
-    expect(row).toHaveTextContent(`검증 신원: ${identity}`)
-    expect(row).toHaveTextContent(`검증 역할: ${role}`)
-    expect(row).toHaveTextContent("실행 Evidence 0건")
-    expect(row).toHaveTextContent("좌표 근거 50건")
+    expect(within(row).getByRole("button", { name: "UNTESTED · 미검증 상세 보기" })).toBeVisible()
+    expect(row).not.toHaveTextContent("실행 Evidence")
+    expect(row).not.toHaveTextContent("좌표 근거")
   }
 })
 

@@ -15,6 +15,8 @@ const states = {
   UNTESTED: { icon: Clock, label: "미검증", color: "text-orange-300" },
   NOT_APPLICABLE: { icon: CircleMinus, label: "적용 불가", color: "text-muted-foreground" },
 }
+export function validationCellState(cell: ProjectedValidationCell) { return cell.applicable ? cell.verdict : "NOT_APPLICABLE" }
+export function validationStateLabel(state: keyof typeof states) { return states[state].label }
 export function EvidenceIdsPreview({ label, ids, count }: { label: string; ids: readonly string[]; count: number }) {
   const preview = [...new Set(ids)].slice(0, 20)
   return <div className="space-y-1"><p>{label} {count}건 · ID 미리보기 {preview.length}개</p><ul className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{preview.map(id => <li key={id}>{id}</li>)}</ul></div>
@@ -40,14 +42,11 @@ export function ParameterCoverageMatrix({ cells, onSelect }: { cells: readonly P
         <TableHeader><TableRow><TableHead className="sticky left-0 bg-background">{mode === "source" ? "요청 생성 주체" : "신원 / 역할"}</TableHead>{columns.map(([key, label]) => <TableHead key={key}>{label}</TableHead>)}</TableRow></TableHeader>
         <TableBody>{rows.map(row => <TableRow key={row}><TableHead scope="row" className="sticky left-0 max-w-40 whitespace-normal bg-background [overflow-wrap:anywhere]">{mode === "source" ? sourceLabel[row] : row}</TableHead>{columns.map(([subject]) => <TableCell key={subject} className="w-56 whitespace-normal align-top">
           {(grouped.get(JSON.stringify([row, subject])) ?? []).map(cell => {
-            const state = cell.applicable ? cell.verdict : "NOT_APPLICABLE", presentation = states[state], Icon = presentation.icon
+            const state = validationCellState(cell), presentation = states[state], Icon = presentation.icon
             const target = cell.targetResource ? resourceLabel(cell.targetResource, cell.endpoint.service) : "UNKNOWN"
-            return <div role="group" key={cell.id} aria-label={`검증 좌표 ${cell.identity ?? "UNKNOWN"} / ${cell.role ?? "UNKNOWN"} / ${cell.source ?? "UNKNOWN"} / ${cell.subjectClass} / ${cell.targetResource ?? "UNKNOWN"}`} className="mb-3 max-w-64 space-y-2 border-b pb-3 text-xs [overflow-wrap:anywhere]">
-              <span role="img" aria-label={`${state} · ${presentation.label}`} className={`inline-flex items-center gap-1 font-semibold ${presentation.color}`}><Icon aria-hidden="true" className="size-4" />{state}</span>
-              <p>검증 신원: {cell.identity ?? "UNKNOWN"}</p><p>검증 역할: {cell.role ?? "UNKNOWN"}</p><p>{cell.source} · {target}</p><p>{cell.reason}</p>
-              <EvidenceIdsPreview label="실행 Evidence" ids={cell.evidenceIds} count={cell.evidenceCount} />
-              <EvidenceIdsPreview label="좌표 근거" ids={cell.basisEvidenceIds} count={cell.basisEvidenceCount} />
-              {onSelect && <Button size="sm" variant="outline" onClick={() => onSelect(cell)}>검증 좌표 선택</Button>}
+            const label = `${state} · ${presentation.label}`
+            return <div role="group" key={cell.id} aria-label={`검증 좌표 ${cell.identity ?? "UNKNOWN"} / ${cell.role ?? "UNKNOWN"} / ${cell.source ?? "UNKNOWN"} / ${cell.subjectClass} / ${cell.targetResource ?? "UNKNOWN"}`} className="mb-2 max-w-64">
+              <Button type="button" size="sm" variant="outline" disabled={!onSelect} aria-label={`${label} 상세 보기`} className={`h-auto w-full justify-start whitespace-normal py-2 text-left ${presentation.color}`} onClick={() => onSelect?.(cell)}><Icon aria-hidden="true" className="size-4" /><span><b>{state}</b><span className="block text-xs font-normal">{presentation.label}</span><span className="sr-only"> · 검증 신원 {cell.identity ?? "UNKNOWN"} · 검증 역할 {cell.role ?? "UNKNOWN"} · {cell.source} · {target}</span></span></Button>
             </div>
           })}
           {!grouped.has(JSON.stringify([row, subject])) && <span className="text-muted-foreground">— 서버 좌표 없음</span>}

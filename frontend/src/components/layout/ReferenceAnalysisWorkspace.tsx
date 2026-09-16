@@ -50,12 +50,14 @@ export interface ReferenceAnalysisWorkspaceProps {
   inspector: ReactNode
   inspectorOpen?: boolean
   inspectorModal?: boolean
+  contentOverflow?: "auto" | "hidden"
+  inspectorOverflow?: "auto" | "hidden"
   contextOpen?: boolean
   onInspectorOpenChange?(open: boolean): void
   onContextOpenChange?(open: boolean): void
 }
 
-export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorModal = true, contextOpen, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
+export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorModal = true, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
   const compact = useCompactWorkspace()
   const [isContextOpen, setContextOpen] = useOpenState(contextOpen, onContextOpenChange)
   const [isInspectorOpen, setInspectorOpen] = useOpenState(inspectorOpen, onInspectorOpenChange)
@@ -84,7 +86,7 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
 
   return <section ref={workspaceRef} className="relative flex min-h-full min-w-0 flex-col xl:h-full xl:flex-row xl:overflow-hidden">
     {!compact && hasContext ? <>{!contextCollapsed ? <RouteContextPanel title={CONTEXT_TITLE} className="min-h-0 shrink-0 overflow-y-auto" style={{ width: contextWidth }}>{context}</RouteContextPanel> : null}<PaneResizeHandle side="left" label={CONTEXT_TITLE} width={contextWidth} min={CONTEXT_MIN_WIDTH} max={contextMax()} collapsed={contextCollapsed} onWidthChange={setContextWidth} onCollapse={() => setContextCollapsed(true)} onExpand={() => setContextCollapsed(false)} /></> : null}
-    <section aria-label={ariaLabel} tabIndex={0} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400">
+    <section aria-label={ariaLabel} tabIndex={0} className={`relative flex min-h-0 min-w-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${contentOverflow === "hidden" ? "overflow-hidden" : "overflow-y-auto"}`}>
       {compact && (hasContext || hasInspector) ? <div className="flex flex-wrap items-center gap-2 border-b border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] px-3 py-2 xl:hidden">
         {hasContext ? <Sheet open={isContextOpen} onOpenChange={setContextOpen}>
           <SheetTrigger asChild><Button type="button" size="sm" variant="outline">분석 필터 열기</Button></SheetTrigger>
@@ -104,6 +106,6 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
       {toolbar}
       {children}
     </section>
-    {!compact && hasInspector ? <><PaneResizeHandle side="right" label={INSPECTOR_TITLE} width={inspectorWidth} min={INSPECTOR_MIN_WIDTH} max={inspectorMax()} collapsed={inspectorCollapsed} onWidthChange={setInspectorWidth} onCollapse={() => setInspectorCollapsed(true)} onExpand={() => setInspectorCollapsed(false)} />{!inspectorCollapsed ? <aside aria-label={INSPECTOR_TITLE} className="min-h-0 shrink-0 overflow-y-auto border-l border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)]" style={{ width: inspectorWidth }}>{inspector}</aside> : null}</> : null}
+    {!compact && hasInspector ? <><PaneResizeHandle side="right" label={INSPECTOR_TITLE} width={inspectorWidth} min={INSPECTOR_MIN_WIDTH} max={inspectorMax()} collapsed={inspectorCollapsed} onWidthChange={setInspectorWidth} onCollapse={() => setInspectorCollapsed(true)} onExpand={() => setInspectorCollapsed(false)} />{!inspectorCollapsed ? <aside aria-label={INSPECTOR_TITLE} className={`min-h-0 shrink-0 border-l border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] ${inspectorOverflow === "hidden" ? "overflow-hidden" : "overflow-y-auto"}`} style={{ width: inspectorWidth }}>{inspector}</aside> : null}</> : null}
   </section>
 }

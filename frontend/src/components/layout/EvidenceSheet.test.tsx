@@ -39,3 +39,20 @@ it("renders the same detail body inline when the shared workspace owns the Sheet
   expect(screen.getByText("시나리오 Evidence 선택")).toBeVisible()
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
 })
+
+it("keeps an inline contained inspector fixed while only its detail body scrolls", () => {
+  render(
+    <EvidenceSheet
+      inline
+      contained
+      event={null}
+      snapshot={{ revision: 1 } as never}
+      selection={{ kind: "scenario", evidenceIds: [], eventIds: [] }}
+      onOpenChange={() => undefined}
+    />
+  )
+
+  const detail = screen.getByLabelText("Evidence 상세")
+  expect(detail).toHaveClass("overflow-hidden")
+  expect(detail.lastElementChild).toHaveClass("overflow-y-auto")
+})

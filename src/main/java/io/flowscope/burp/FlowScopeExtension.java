@@ -1070,6 +1070,59 @@ public final class FlowScopeExtension implements BurpExtension {
         return currentProjectStatus();
     }
 
+    private ProjectWorkspace.Status resetActiveProjectTraffic() throws IOException {
+        if (scopeMutationBlocked(runContexts)) {
+            throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
+        }
+        if (activeProjectDatabase == null) throw new IllegalStateException("초기화할 현재 프로젝트가 없습니다.");
+
+        AnalysisConfig retainedConfig = analysisConfig.snapshotCopy();
+        retainedConfig.clearSessionBindings();
+        retainedConfig.clearReviews();
+        sqliteProjectStore.save(activeProjectDatabase, List.of(), retainedConfig, List.of(), List.of(),
+                Map.of(), List.of(), List.of(), activeProjectContext);
+
+        long analysisEpoch = analysisPublication.invalidate();
+        clearRunContexts();
+        sessionBroker.close();
+        if (explorer != null) {
+            try { explorer.cancel(); } catch (RuntimeException ignored) { }
+            try { explorer.clear(); } catch (RuntimeException ignored) { }
+        }
+        resetIntegrationWorkflow();
+        analysisConfig.replaceWith(retainedConfig);
+        synchronized (records) {
+            datasetEpoch.incrementAndGet();
+            records.clear();
+            capacityWarned = false;
+        }
+        rawExchanges.clear();
+        proxyObservations.clear();
+        toolObservations.clear();
+        droppedRecords.set(0);
+        resetPayloadPool();
+        synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
+        synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
+        routeCandidates = List.of();
+        JavascriptCallSiteAnalyzer.clearCache();
+        archivedAssessments = List.of();
+        archivedValidations = List.of();
+        scannerCapabilityRunId = "";
+        scannerCapability = "";
+        scannerCapabilityRejectionRunId = "";
+        scannerCapabilityRejections.set(0);
+        scannerDirectAuthenticationRunId = "";
+        publishAnalysis(analysisEpoch, Pipeline.runIsolated(List.of(), analysisConfig));
+        markDatabaseSaved(revision.get());
+        api.logging().logToOutput("FlowScope 트래픽 초기화: " + activeProjectContext.name());
+        return currentProjectStatus();
+    }
+
+    private ProjectWorkspace.Status deleteWorkspaceProject(String id) throws IOException {
+        projectWorkspace.delete(id, activeProjectDatabase);
+        return currentProjectStatus();
+    }
+
     private void activateEmptyProject(ScopePolicy parsed, String requestedScope,
                                       ProjectWorkspace.Allocation next) {
         long analysisEpoch = analysisPublication.invalidate();
@@ -1497,6 +1550,12 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public ProjectWorkspace.Status openProject(String id) {
                 return runProjectTask(() -> openWorkspaceProject(id));
+            }
+            @Override public ProjectWorkspace.Status resetProjectTraffic() {
+                return runProjectTask(FlowScopeExtension.this::resetActiveProjectTraffic);
+            }
+            @Override public ProjectWorkspace.Status deleteProject(String id) {
+                return runProjectTask(() -> deleteWorkspaceProject(id));
             }
             @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
             @Override public List<io.flowscope.integration.RunExecutionLedger.Summary> executionSummaries() {

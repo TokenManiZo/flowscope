@@ -92,6 +92,14 @@ final class StandaloneTest {
         assertEquals(first.active().id(), reopened.active().id());
         assertEquals(sampleRecords, state.snapshot().records.size());
         assertEquals("SAVED", reopened.saveState());
+
+        ProjectWorkspace.Status reset = state.resetProjectTraffic();
+        assertEquals(first.active().id(), reset.active().id());
+        assertTrue(state.snapshot().records.isEmpty());
+
+        state.openProject(second.active().id());
+        state.deleteProject(first.active().id());
+        assertFalse(Files.exists(workspaceRoot.resolve(first.active().id())));
     }
 
     @Test

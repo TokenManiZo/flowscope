@@ -72,17 +72,24 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void startsAndSwitchesProjectsWithoutOfferingDestructiveEvidenceClear() throws Exception {
+    void keepsLegacyClearBlockedAndOffersExplicitProjectResetAndDelete() throws Exception {
         start();
 
         HttpResponse<String> clear = post("/api/clear", "", token);
-        HttpResponse<String> started = post("/api/projects", "action=start&name=Target+A&scope="
-                + URLEncoder.encode("https://app.example.test/", StandardCharsets.UTF_8), token);
-        HttpResponse<String> listed = get("/api/projects", token, null);
-
         assertEquals(409, clear.statusCode());
         assertEquals(1, state.records.size(), "legacy reset must not delete Evidence");
+
+        HttpResponse<String> started = post("/api/projects", "action=start&name=Target+A&scope="
+                + URLEncoder.encode("https://app.example.test/", StandardCharsets.UTF_8), token);
+        HttpResponse<String> reset = post("/api/projects", "action=reset", token);
+        HttpResponse<String> deleted = post("/api/projects", "action=delete&id=old-project", token);
+        HttpResponse<String> listed = get("/api/projects", token, null);
+
         assertEquals(200, started.statusCode());
+        assertEquals(200, reset.statusCode());
+        assertTrue(state.records.isEmpty());
+        assertEquals(200, deleted.statusCode());
+        assertEquals("old-project", state.deletedProjectId);
         assertEquals("Target A", JSON.readTree(started.body()).path("active").path("name").asText());
         assertEquals("SAVED", JSON.readTree(started.body()).path("saveState").asText());
         assertEquals("https://app.example.test/", state.startedProjectScope);
@@ -1101,6 +1108,7 @@ final class FlowScopeWebServerTest {
                 new java.util.concurrent.CountDownLatch(1);
         private volatile Pipeline.Result result;
         private volatile String startedProjectScope = "";
+        private volatile String deletedProjectId = "";
         private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
                 null, List.of());
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
@@ -1149,6 +1157,15 @@ final class FlowScopeWebServerTest {
             return projectStatus;
         }
         @Override public ProjectWorkspace.Status openProject(String id) { return projectStatus; }
+        @Override public ProjectWorkspace.Status resetProjectTraffic() {
+            records.clear();
+            rebuild();
+            return projectStatus;
+        }
+        @Override public ProjectWorkspace.Status deleteProject(String id) {
+            deletedProjectId = id;
+            return projectStatus;
+        }
         @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
         @Override public JsonNode startScanner(String target, List<String> accountIds, boolean includeAnonymous) {
             scannerTarget = target;

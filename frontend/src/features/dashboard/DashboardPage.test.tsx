@@ -183,24 +183,21 @@ describe("dashboard shell", () => {
     expect(screen.queryByText("미실행")).not.toBeInTheDocument()
   })
 
-  it("shows empty onboarding, loads a sample, and starts a preserved project instead of clearing Evidence", async () => {
+  it("shows empty onboarding, loads a sample, and keeps project creation in Burp", async () => {
     const user = userEvent.setup()
     const fetchStub = renderDashboard(snapshotFixture)
 
     await screen.findByText("첫 점검을 시작하세요")
     expect(screen.getByRole("button", { name: "빠른 시작" })).toBeVisible()
     expect(screen.getByRole("button", { name: "샘플로 화면 익히기" })).toBeVisible()
-    expect(screen.queryByText("트래픽 초기화")).not.toBeInTheDocument()
-
     await user.click(screen.getByRole("button", { name: "샘플로 화면 익히기" }))
     await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/sample", expect.objectContaining({ method: "POST" })))
 
-    await user.click(screen.getAllByRole("button", { name: "새 진단 시작" }).at(-1)!)
-    expect(screen.getByRole("dialog", { name: "새 진단 시작" })).toHaveTextContent("기존 Evidence는 삭제하지 않습니다")
-    await user.type(screen.getByLabelText("프로젝트 이름 (선택)"), "다음 진단")
-    await user.click(screen.getByRole("button", { name: "보존하고 시작" }))
-    await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/projects", expect.objectContaining({ method: "POST" })))
-    expect(fetchStub).not.toHaveBeenCalledWith("/api/clear", expect.anything())
+    await user.click(screen.getByRole("button", { name: "프로젝트 관리" }))
+    const dialog = screen.getByRole("dialog", { name: "프로젝트 관리" })
+    expect(dialog).toHaveTextContent("Burp의 FlowScope 탭에 URL을 입력")
+    expect(within(dialog).queryByLabelText("Exact scope")).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText("새 프로젝트 이름 (선택)")).not.toBeInTheDocument()
   })
 
   it("announces loading and lets the user recover from a snapshot error", async () => {

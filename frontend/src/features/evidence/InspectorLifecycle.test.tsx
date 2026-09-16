@@ -7,7 +7,7 @@ import { GraphInspectorPanel } from "@/features/graph/GraphInspectorPanel"
 import { targetSnapshot } from "@/test/fixtures"
 import { createTestQueryClient } from "@/test/render"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
-import { loadSample, openProject, startProject } from "@/lib/api/endpoints"
+import { loadSample, openProject, resetProjectTraffic, startProject } from "@/lib/api/endpoints"
 
 const event: EventRecord = { eventId: "first", op: "GET /orders/{id}", resource: "order:1", idn: "alice", source: "human", method: "GET", path: "/orders/1", status: 200, fp: "fp", role: "USER", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "first", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["first"], objects: [], verdict: "allow" }
 const second = { ...event, eventId: "second", op: "PATCH /profiles/{id}", resource: "profile:2", clusterEvidenceIds: ["second"] }
@@ -136,7 +136,7 @@ it.each(["evidence", "graph"] as const)("preserves %s Request Lab edits/history 
   expect(screen.queryByText("현재 탭 전송 결과 1건 (최대 10건)")).not.toBeInTheDocument()
 })
 
-it.each([loadSample, () => openProject("demo")])("scrubs an open editor on an explicit client dataset replacement", async replace => {
+it.each([loadSample, () => openProject("demo"), resetProjectTraffic])("scrubs an open editor on an explicit client dataset replacement", async replace => {
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json(draft))))
   mount("evidence")
   await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))
@@ -145,7 +145,7 @@ it.each([loadSample, () => openProject("demo")])("scrubs an open editor on an ex
   await waitFor(() => expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument())
 })
 
-it.each([loadSample, () => openProject("missing"), () => startProject({ name: "next", scope: "https://api.example.test" })])("keeps an open editor when the requested dataset replacement fails", async replace => {
+it.each([loadSample, () => openProject("missing"), resetProjectTraffic, () => startProject({ name: "next", scope: "https://api.example.test" })])("keeps an open editor when the requested dataset replacement fails", async replace => {
   let replacementSignals = 0
   window.addEventListener("flowscope:dataset-replacing", () => { replacementSignals += 1 }, { once: true })
   vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"

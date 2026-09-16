@@ -193,6 +193,38 @@ public final class Standalone {
                 throw projectFailure("프로젝트 열기에 실패했습니다.", error);
             }
         }
+        @Override public synchronized ProjectWorkspace.Status resetProjectTraffic() {
+            if (activeProjectDatabase == null) throw new IllegalStateException("초기화할 현재 프로젝트가 없습니다.");
+            try {
+                AnalysisConfig retainedConfig = config.snapshotCopy();
+                retainedConfig.clearSessionBindings();
+                retainedConfig.clearReviews();
+                sqliteProjectStore.save(activeProjectDatabase, List.of(), retainedConfig, List.of(), List.of(),
+                        Map.of(), List.of(), List.of(), activeProjectContext);
+                records.clear();
+                config.replaceWith(retainedConfig);
+                archivedAssessments = List.of();
+                archivedValidations = List.of();
+                contexts.reset();
+                executionLedger.clear();
+                routeCandidates = List.of();
+                JavascriptCallSiteAnalyzer.clearCache();
+                datasetRevision.incrementAndGet();
+                rebuild();
+                markSaved();
+                return projectStatus();
+            } catch (Exception error) {
+                throw projectFailure("트래픽 초기화에 실패했습니다.", error);
+            }
+        }
+        @Override public synchronized ProjectWorkspace.Status deleteProject(String id) {
+            try {
+                projectWorkspace.delete(id, activeProjectDatabase);
+                return projectStatus();
+            } catch (Exception error) {
+                throw projectFailure("프로젝트 삭제에 실패했습니다.", error);
+            }
+        }
         @Override public RequestRecord openInRepeater(String evidenceId, String request,
                                                       FlowScopeWebServer.CredentialMode credentialMode,
                                                       String accountId) {
