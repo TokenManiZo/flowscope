@@ -1,5 +1,9 @@
 package io.flowscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
+import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -10,6 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import static io.flowscope.core.AuthorizationMatrix.*;
 
@@ -22,6 +27,13 @@ import static io.flowscope.core.AuthorizationMatrix.*;
  * 등록 서비스 또는 실제 관측 서비스 경계 안에서만 만든다(D-146).</p>
  */
 public final class AuthorizationMatrixAnalyzer {
+    private static final long BASELINE_OBSERVATION_WINDOW_MS = 30L * 60L * 1_000L;
+    private static final double MIN_STRUCTURE_SIMILARITY = 0.85d;
+    private static final double MIN_NORMALIZED_LENGTH_RATIO = 0.80d;
+    private static final Pattern DYNAMIC_FIELD = Pattern.compile(
+            "(?i)(?:created|updated|modified|requested|generated)?(?:at|time|timestamp)|"
+                    + "(?:access|refresh|csrf|session)?token|nonce|requestid|traceid|correlationid");
+
     private AuthorizationMatrixAnalyzer() {}
 
     public static AuthorizationMatrix analyze(Pipeline.Result result, AnalysisConfig config,
@@ -157,8 +169,9 @@ public final class AuthorizationMatrixAnalyzer {
         List<RequestRecord> records = records(cell, recordsByEvidence);
         Actual actual = actual(cell, records);
         Oracle oracle = oracle(operation, records, false, null, null);
-        Confidence evidence = evidenceConfidence(cell, records, result, oracle, false, null);
-        List<Gate> gates = gates(identity, operation, null, records, result, config, oracle, false, required);
+        BaselineComparison baseline = baselineComparison(cell, records, result, config, oracle, false, null, required);
+        Confidence evidence = evidenceConfidence(cell, records, baseline);
+        List<Gate> gates = gates(identity, operation, records, oracle, baseline);
         Status status = functionStatus(expected, actual, policy, gates, roleViolation);
         TestRecommendation recommendation = functionRecommendation(identity, operation, actual, result, config,
                 recordsByEvidence, required);
@@ -196,9 +209,10 @@ public final class AuthorizationMatrixAnalyzer {
         List<RequestRecord> records = records(cell, recordsByEvidence);
         Actual actual = actual(cell, records);
         Oracle oracle = oracle(row.operation(), records, true, row.resource(), ownerId);
-        Confidence evidence = evidenceConfidence(cell, records, result, oracle, true, ownerId);
-        List<Gate> gates = gates(identity, row.operation(), row.resource(), records, result, config, oracle, true,
+        BaselineComparison baseline = baselineComparison(cell, records, result, config, oracle, true, ownerId,
                 config.endpointRequirement(row.operation()));
+        Confidence evidence = evidenceConfidence(cell, records, baseline);
+        List<Gate> gates = gates(identity, row.operation(), records, oracle, baseline);
         // 객체 권한 우회 후보는 정본 cell의 SUSPICIOUS(roleViolation 아님)만 인정한다(D-050·D-004: 본문 오라클은 정본이 판단).
         boolean authoritySuspicious = cell != null && cell.perSource().values().stream()
                 .anyMatch(decision -> decision.verdict() == Verdict.SUSPICIOUS && !decision.roleViolation());
@@ -394,41 +408,24 @@ public final class AuthorizationMatrixAnalyzer {
     /** E3(통제 재현)은 자동으로 부여하지 않는다: 현재 통제 재현 실행기가 없고 과거 검증 이력은 승격 근거가 아니다. */
     private static Confidence evidenceConfidence(AuthorizationAnalysis.CoverageCell cell,
                                                  List<RequestRecord> records,
-                                                 Pipeline.Result result,
-                                                 Oracle oracle,
-                                                 boolean objectMatrix,
-                                                 String ownerId) {
+                                                 BaselineComparison baseline) {
         if (cell == null || records.isEmpty()) return e(0, "미실행", "대상 조합의 응답 Evidence가 없음");
-        boolean accountBound = records.stream().allMatch(record -> record.authState == AuthState.ACCOUNT_BOUND
-                || record.authState == AuthState.ANONYMOUS);
-        boolean comparison = result.analysis.cells().stream().anyMatch(other ->
-                !other.key().identity().equals(cell.key().identity())
-                        && other.key().operation().equals(cell.key().operation())
-                        && (!objectMatrix || Objects.equals(other.key().resource(), cell.key().resource()))
-                        && (ownerId == null || other.key().identity().equals(ownerId)));
-        if (accountBound && comparison && oracle.satisfied()) {
-            return e(2, "차등 비교", "유효 신원에서 동일 작업의 비교 Evidence와 의미 응답이 있음");
-        }
-        return e(1, "단일 관측", "응답은 있으나 통제 반복·정상 대조·의미 오라클 묶음이 완전하지 않음");
+        if (baseline.matched()) return e(2, "비통제 관측 차등", baseline.basis());
+        return e(1, "단일 관측", baseline.basis());
     }
 
-    private static List<Gate> gates(Identity identity, String operation, String resource,
-                                    List<RequestRecord> records, Pipeline.Result result,
-                                    AnalysisConfig config, Oracle oracle, boolean objectMatrix,
-                                    AccessRole effectiveRequirement) {
+    private static List<Gate> gates(Identity identity, String operation, List<RequestRecord> records,
+                                    Oracle oracle, BaselineComparison baseline) {
         List<Gate> out = new ArrayList<>();
         boolean unresolved = "UNRESOLVED".equals(identity.kind())
                 || records.stream().anyMatch(record -> record.authState == AuthState.UNRESOLVED);
         out.add(new Gate("session", "테스트 신원 유효", unresolved ? GateState.FAIL : GateState.PASS,
                 unresolved ? "등록 계정 또는 비로그인 상태로 귀속되지 않은 세션" : "요청이 등록 계정 또는 비로그인 상태로 귀속됨"));
 
-        boolean baseline = hasBaseline(identity.id(), operation, resource, result, config, objectMatrix,
-                effectiveRequirement);
-        out.add(new Gate("baseline", "정상 기준선", baseline ? GateState.PASS : GateState.UNKNOWN,
-                baseline ? "권한 보유자 또는 객체 소유자의 동일 대상 성공 Evidence가 있음"
-                        : "권한 보유자 또는 객체 소유자의 동일 대상 성공 Evidence가 없음"));
+        out.add(new Gate("baseline", "정상 기준선", baseline.matched() ? GateState.PASS : GateState.UNKNOWN,
+                baseline.basis()));
         out.add(new Gate("controlled", "통제·최소 변경", GateState.UNKNOWN,
-                "일반 탐색 Evidence만으로 인증/객체 외 변경 여부를 증명할 수 없음(통제 재현은 사람이 Repeater로 확인)"));
+                "비통제 관측 차등이며 인증/객체 외 변경 여부는 사람이 Repeater에서 통제 재현해야 함"));
         out.add(new Gate("repeat", "독립 반복", GateState.UNKNOWN, "자동 통제 반복 묶음이 없음"));
         boolean read = Set.of("GET", "HEAD", "OPTIONS").contains(method(operation));
         out.add(new Gate("prerequisite", "동적 전제조건", read ? GateState.NOT_APPLICABLE : GateState.UNKNOWN,
@@ -439,21 +436,178 @@ public final class AuthorizationMatrixAnalyzer {
         return List.copyOf(out);
     }
 
-    private static boolean hasBaseline(String identity, String operation, String resource,
-                                       Pipeline.Result result, AnalysisConfig config, boolean objectMatrix,
-                                       AccessRole effectiveRequirement) {
-        if (objectMatrix) {
-            AuthorizationAnalysis.OwnerInfo owner = result.analysis.owners().get(resource);
-            if (owner == null || !owner.decisionGrade()) return false;
-            return result.coverageRecords.stream().anyMatch(record -> owner.identity().equals(record.idn)
-                    && operation.equals(record.op) && Objects.equals(resource, record.resource)
-                    && ResponseEvidence.successful(record));
+    private static BaselineComparison baselineComparison(AuthorizationAnalysis.CoverageCell cell,
+                                                         List<RequestRecord> targets,
+                                                         Pipeline.Result result,
+                                                         AnalysisConfig config,
+                                                         Oracle oracle,
+                                                         boolean objectMatrix,
+                                                         String ownerId,
+                                                         AccessRole effectiveRequirement) {
+        if (cell == null || targets.isEmpty()) return BaselineComparison.missing("대상 조합의 응답 Evidence가 없음");
+        if (!oracle.satisfied()) {
+            return BaselineComparison.missing("대상 응답의 의미 오라클이 충족되지 않아 정상 기준선과 차등 비교하지 않음");
         }
-        AccessRole required = effectiveRequirement == null ? AccessRole.UNKNOWN : effectiveRequirement;
-        if (required == AccessRole.UNKNOWN) return false;
-        return result.coverageRecords.stream().anyMatch(record -> operation.equals(record.op)
-                && config.identityRole(record.idn).isKnownAndAtLeast(required)
-                && ResponseEvidence.successful(record));
+
+        String provenance;
+        List<RequestRecord> baselines;
+        if (objectMatrix) {
+            AuthorizationAnalysis.OwnerInfo owner = result.analysis.owners().get(cell.key().resource());
+            if (owner == null || !owner.decisionGrade() || ownerId == null) {
+                String grade = owner == null ? "O0" : owner.confidence() <= 20 ? "O1" : "저신뢰 O";
+                return BaselineComparison.missing("정상 기준선 소유권이 " + grade
+                        + "이며 O2/O3 판정 등급에 미달함");
+            }
+            if (ownerId.equals(cell.key().identity())) {
+                return BaselineComparison.missing("소유자 자신의 응답은 교차 신원 차등 기준선으로 중복 사용하지 않음");
+            }
+            provenance = owner.confidence() >= 100 ? "O3 명시 소유자" : "O2 컬렉션 멤버십 소유자";
+            baselines = result.coverageRecords.stream().filter(record -> ownerId.equals(record.idn)
+                    && cell.key().operation().equals(record.op)
+                    && Objects.equals(cell.key().resource(), record.resource)
+                    && ResponseEvidence.successful(record)).toList();
+        } else {
+            AccessRole required = effectiveRequirement == null ? AccessRole.UNKNOWN : effectiveRequirement;
+            if (required == AccessRole.UNKNOWN) {
+                return BaselineComparison.missing("요구 역할이 미정이라 권한 보유자 기준선을 선택할 수 없음");
+            }
+            provenance = required.label() + " 이상 권한 보유자";
+            baselines = result.coverageRecords.stream().filter(record -> !cell.key().identity().equals(record.idn)
+                    && cell.key().operation().equals(record.op)
+                    && config.identityRole(record.idn).isKnownAndAtLeast(required)
+                    && ResponseEvidence.successful(record)).toList();
+        }
+        if (baselines.isEmpty()) {
+            return BaselineComparison.missing(provenance + "의 동일 작업 성공 Evidence가 없음");
+        }
+
+        List<RequestRecord> successfulTargets = targets.stream().filter(ResponseEvidence::successful).toList();
+        boolean hasCurrentPair = false;
+        boolean hasTimedPair = false;
+        for (RequestRecord target : successfulTargets) {
+            for (RequestRecord baseline : baselines) {
+                if (!currentlyAttributed(List.of(target, baseline), config)) continue;
+                hasCurrentPair = true;
+                if (target.timestamp <= 0 || baseline.timestamp <= 0) continue;
+                hasTimedPair = true;
+                long delta = Math.abs(target.timestamp - baseline.timestamp);
+                if (delta > BASELINE_OBSERVATION_WINDOW_MS) continue;
+                ResponseComparison comparison = compareResponses(target, baseline, objectMatrix,
+                        cell.key().resource(), ownerId);
+                if (comparison.matched()) {
+                    return BaselineComparison.matched("비통제 관측 차등 · " + provenance
+                            + " · 현재 계정 결박 및 관측 시각 확인 · 대상 ID·응답 구조·정규화 길이 일치"
+                            + " (구조 " + Math.round(comparison.structureSimilarity() * 100) + "%, 길이 "
+                            + Math.round(comparison.lengthRatio() * 100) + "%)");
+                }
+            }
+        }
+        if (!hasCurrentPair) {
+            return BaselineComparison.missing(provenance + " 기준선의 현재 계정 결박을 확인할 수 없어 강등함");
+        }
+        if (!hasTimedPair) {
+            return BaselineComparison.missing(provenance + " 기준선의 관측 시각이 없어 상대 신선도를 확인할 수 없음");
+        }
+        return BaselineComparison.missing(provenance
+                + " 기준선은 있으나 30분 이내 대상 ID·응답 구조·정규화 길이 차등이 일치하지 않음");
+    }
+
+    private static boolean currentlyAttributed(List<RequestRecord> records, AnalysisConfig config) {
+        return !records.isEmpty() && records.stream().allMatch(record -> {
+            if (record.authState == AuthState.ANONYMOUS) return Fingerprints.ANONYMOUS.equals(record.idn);
+            if (record.authState != AuthState.ACCOUNT_BOUND || record.idn == null) return false;
+            return config.boundAccount(record.service, record.fp)
+                    .map(account -> account.id().equals(record.idn)).orElse(false);
+        });
+    }
+
+    private static ResponseComparison compareResponses(RequestRecord target, RequestRecord baseline,
+                                                       boolean objectMatrix, String resource, String ownerId) {
+        String targetBody = target.responseBodyForAnalysis();
+        String baselineBody = baseline.responseBodyForAnalysis();
+        if (targetBody == null || baselineBody == null) return ResponseComparison.noMatch();
+        if (objectMatrix && (!ResponseEvidence.showsObject(targetBody, resource, ownerId)
+                || !ResponseEvidence.showsObject(baselineBody, resource, ownerId))) {
+            return ResponseComparison.noMatch();
+        }
+        try {
+            JsonNode targetJson = ResponseEvidence.parseBoundedJson(targetBody);
+            JsonNode baselineJson = ResponseEvidence.parseBoundedJson(baselineBody);
+            if (targetJson == null || baselineJson == null) return ResponseComparison.noMatch();
+            Set<String> targetShape = responseShape(targetJson);
+            Set<String> baselineShape = responseShape(baselineJson);
+            Set<String> intersection = new LinkedHashSet<>(targetShape);
+            intersection.retainAll(baselineShape);
+            Set<String> union = new LinkedHashSet<>(targetShape);
+            union.addAll(baselineShape);
+            double structure = union.isEmpty() ? 0d : (double) intersection.size() / union.size();
+            int targetLength = normalizedLength(targetJson, "");
+            int baselineLength = normalizedLength(baselineJson, "");
+            double length = Math.max(targetLength, baselineLength) == 0 ? 0d
+                    : (double) Math.min(targetLength, baselineLength) / Math.max(targetLength, baselineLength);
+            return new ResponseComparison(structure >= MIN_STRUCTURE_SIMILARITY
+                    && length >= MIN_NORMALIZED_LENGTH_RATIO, structure, length);
+        } catch (IOException ignored) {
+            return ResponseComparison.noMatch();
+        }
+    }
+
+    private static Set<String> responseShape(JsonNode root) {
+        Set<String> shape = new LinkedHashSet<>();
+        ArrayDeque<ShapeNode> pending = new ArrayDeque<>();
+        pending.add(new ShapeNode(root, "$"));
+        int visited = 0;
+        while (!pending.isEmpty() && visited++ < ResponseEvidence.MAX_VISITED_NODES) {
+            ShapeNode current = pending.removeFirst();
+            JsonNode node = current.node();
+            if (node.isObject()) {
+                shape.add(current.path() + ":object");
+                var fields = node.fields();
+                while (fields.hasNext()) {
+                    var field = fields.next();
+                    String path = current.path() + "/" + field.getKey();
+                    shape.add(path + ":" + nodeType(field.getValue()));
+                    if (field.getValue().isContainerNode()) pending.addLast(new ShapeNode(field.getValue(), path));
+                }
+            } else if (node.isArray()) {
+                shape.add(current.path() + ":array");
+                node.elements().forEachRemaining(value -> pending.addLast(new ShapeNode(value, current.path() + "/*")));
+            } else {
+                shape.add(current.path() + ":" + nodeType(node));
+            }
+        }
+        return Set.copyOf(shape);
+    }
+
+    private static String nodeType(JsonNode node) {
+        if (node == null || node.isNull()) return "null";
+        if (node.isObject()) return "object";
+        if (node.isArray()) return "array";
+        if (node.isTextual()) return "string";
+        if (node.isNumber()) return "number";
+        if (node.isBoolean()) return "boolean";
+        return "value";
+    }
+
+    private static int normalizedLength(JsonNode node, String fieldName) {
+        if (node == null || node.isNull()) return 4;
+        if (DYNAMIC_FIELD.matcher(fieldName.replace("_", "").replace("-", "")).matches()) return 9;
+        if (node.isObject()) {
+            int length = 2;
+            var fields = node.fields();
+            while (fields.hasNext()) {
+                var field = fields.next();
+                length += field.getKey().length() + 3 + normalizedLength(field.getValue(), field.getKey());
+            }
+            return length;
+        }
+        if (node.isArray()) {
+            int length = 2;
+            var values = node.elements();
+            while (values.hasNext()) length += 1 + normalizedLength(values.next(), fieldName);
+            return length;
+        }
+        return node.toString().length();
     }
 
     private static Oracle oracle(String operation, List<RequestRecord> records,
@@ -817,4 +971,12 @@ public final class AuthorizationMatrixAnalyzer {
 
     private record OperationResource(String operation, String resource) {}
     private record Basis(AuthorizationAnalysis.CoverageCell cell, List<RequestRecord> records) {}
+    private record BaselineComparison(boolean matched, String basis) {
+        private static BaselineComparison matched(String basis) { return new BaselineComparison(true, basis); }
+        private static BaselineComparison missing(String basis) { return new BaselineComparison(false, basis); }
+    }
+    private record ResponseComparison(boolean matched, double structureSimilarity, double lengthRatio) {
+        private static ResponseComparison noMatch() { return new ResponseComparison(false, 0d, 0d); }
+    }
+    private record ShapeNode(JsonNode node, String path) {}
 }
