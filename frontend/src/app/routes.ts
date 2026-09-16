@@ -21,11 +21,12 @@ export interface AppRouteDefinition {
   icon: LucideIcon
 }
 
-export type NavigationGroupId = "analysis" | "inspection" | "records"
+export type NavigationGroupId = "graph" | "inspection" | "accounts" | "analysis" | "records"
 
 export interface NavigationGroup {
   id: NavigationGroupId
   label: string
+  kind: "link" | "menu"
   defaultRoute: AppRoute
   routes: readonly AppRoute[]
 }
@@ -44,11 +45,13 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 
-/** PR#11 상단 탐색: 분석 / 점검 / 기록 세 그룹이 모든 route를 보존한다. 현행 API·입력 차이와 LLM Explorer도 같은 그룹 안에 둔다. */
+/** 자주 쓰는 그래프·점검·계정 화면은 직접 링크로, 나머지 route는 분석·기록 메뉴로 제공한다. */
 export const navigationGroups = [
-  { id: "analysis", label: "분석", defaultRoute: "graph", routes: ["graph", "surface", "dashboard", "matrix", "sequence", "scenarios"] },
-  { id: "inspection", label: "점검", defaultRoute: "inspection", routes: ["inspection"] },
-  { id: "records", label: "기록", defaultRoute: "evidence", routes: ["evidence", "runs", "explorer", "accounts"] },
+  { id: "graph", label: "점검 Gap 그래프", kind: "link", defaultRoute: "graph", routes: ["graph"] },
+  { id: "inspection", label: "점검", kind: "link", defaultRoute: "inspection", routes: ["inspection"] },
+  { id: "accounts", label: "계정·세션", kind: "link", defaultRoute: "accounts", routes: ["accounts"] },
+  { id: "analysis", label: "분석", kind: "menu", defaultRoute: "surface", routes: ["surface", "dashboard", "matrix", "sequence", "scenarios"] },
+  { id: "records", label: "기록", kind: "menu", defaultRoute: "evidence", routes: ["evidence", "runs", "explorer"] },
 ] as const satisfies readonly NavigationGroup[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))

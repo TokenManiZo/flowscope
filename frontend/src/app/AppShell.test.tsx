@@ -13,7 +13,7 @@ for (const route of appRoutes) {
     expect(screen.getByRole("navigation", { name: "FlowScope 작업 탐색" })).toBeVisible()
     expect(screen.getByRole("main")).toBeVisible()
     const group = (navigationGroups as readonly NavigationGroup[]).find((item) => item.routes.includes(route.route))!
-    const activeControl = group.id === "inspection"
+    const activeControl = group.kind === "link"
       ? screen.getByRole("link", { name: group.label })
       : screen.getByRole("button", { name: group.label })
     expect(activeControl).toHaveAttribute("aria-current", "page")

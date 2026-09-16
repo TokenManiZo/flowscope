@@ -132,8 +132,7 @@ describe("dashboard shell", () => {
     expect(screen.getAllByRole("button", { name: "Gap 그래프에서 확인" })).toHaveLength(1)
     await userEvent.click(screen.getByRole("button", { name: "Gap 그래프에서 확인" }))
     expect(window.location.hash).toBe("#graph")
-    await userEvent.click(screen.getByRole("button", { name: "분석" }))
-    expect(screen.getByRole("menuitem", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
+    expect(screen.getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
   })
 
   it("exposes the grouped top-navigation route set and normalizes unsafe hashes to the API delta work surface", async () => {
@@ -144,9 +143,9 @@ describe("dashboard shell", () => {
     expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
     expect(screen.getByRole("navigation", { name: "FlowScope 작업 탐색" })).toBeVisible()
     const routes = [
-      ["대시보드", "dashboard", "분석"], ["점검", "inspection", null], ["점검 Gap 그래프", "graph", "분석"], ["API·입력 차이", "surface", "분석"],
+      ["대시보드", "dashboard", "분석"], ["점검", "inspection", null], ["점검 Gap 그래프", "graph", null], ["API·입력 차이", "surface", "분석"],
       ["권한 매트릭스", "matrix", "분석"], ["흐름 순서", "sequence", "분석"], ["취약점 시나리오", "scenarios", "분석"],
-      ["Evidence", "evidence", "기록"], ["실행 상태", "runs", "기록"], ["LLM Explorer", "explorer", "기록"], ["계정·세션", "accounts", "기록"],
+      ["Evidence", "evidence", "기록"], ["실행 상태", "runs", "기록"], ["LLM Explorer", "explorer", "기록"], ["계정·세션", "accounts", null],
     ] as const
 
     for (const [label, route, group] of routes) {

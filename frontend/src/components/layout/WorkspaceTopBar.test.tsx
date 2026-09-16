@@ -91,6 +91,9 @@ it("keeps grouped navigation, project, DB, and inspection controls discoverable"
 
   const banner = screen.getByRole("banner", { name: "FlowScope 상단 상태" })
   expect(banner).toHaveClass("flex-wrap")
+  expect(within(banner).getByRole("link", { name: "FlowScope" })).toHaveAttribute("href", "#dashboard")
+  expect(within(banner).getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
+  expect(within(banner).getByRole("link", { name: "계정·세션" })).toHaveAttribute("href", "#accounts")
   expect(within(banner).getByLabelText("프로젝트 선택")).toBeVisible()
   expect(within(banner).getByText("저장됨")).toBeVisible()
   expect(within(banner).getByRole("link", { name: "점검" })).toHaveAttribute("href", "#inspection")

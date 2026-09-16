@@ -202,7 +202,7 @@ beta.47에서 수정한 ZAP 종료·재시작 경합 처리는 beta.48 이후(�
 `http://127.0.0.1:17777/`와 `/app/`는 동일한 React 작업면을 제공하고 `/legacy/`는 전환 기간의 기존 작업면을 제공합니다. 첫 진입은 `API·입력 차이`이며, React가 분석기나 판정 상태 기계를 대체하지 않고 같은 localhost API snapshot을 표시합니다.
 
 - **Burp 탭** — exact scope, 포트 분류, 실시간 수량, 새 진단 시작, Proxy history 가져오기, 로컬 SQLite DB 저장·연결/불러오기, JSON 내보내기, 샘플, 정본 로컬 Web 작업면 열기
-- **Web 상단 탐색** — `분석 / 점검 / 기록` 세 그룹이 모든 현행 route를 제공하고, 범위·HUMAN·ZAP·SCANNER 상태는 같은 상단의 상태 popover에서 확인합니다. 기본 진입은 `API·입력 차이`이며 `#parameter-map` 옛 북마크는 통합 `#graph`로 이동합니다.
+- **Web 상단 탐색** — 자주 쓰는 `점검 Gap 그래프 / 점검 / 계정·세션`은 직접 링크로 제공하고 나머지 route는 `분석 / 기록` 메뉴에 둡니다. 범위·HUMAN·ZAP·SCANNER 상태는 같은 상단의 상태 popover에서 확인합니다. 기본 진입은 `API·입력 차이`이며 FlowScope 로고는 대시보드로, `#parameter-map` 옛 북마크는 통합 `#graph`로 이동합니다.
 - **점검 Gap 그래프** — `#graph`의 첫 탭입니다. 서버가 만든 Gap(source/계정/조건/타입 미관측, 선언 미관측, 권한 변형 미검증)을 우선순위 사유 순 큐와 조건/사용자→API→입력→권한 대상 카드 경로로 보여 주고, 선택 상세에서 연결 근거·관측 프로파일·검증표·실제 Evidence·정의 근거를 확인한 뒤 대표 Evidence로 Request Lab을 엽니다. 둘째 탭 **전체 관계 보기**는 Site→API 그룹→API→Object 계층을 제공합니다. Gap은 점검 후보이며 취약점 판정이나 퍼센트가 아닙니다.
 - 입력과 접근 대상의 단일 동시출현은 관계 근거일 뿐 확인된 인가 경계가 아닙니다. `CONFIRMED_AUTH_BOUNDARY`는 확정 소유자가 있는 리소스를 정확한 입력 값이 참조하거나, 공개된 독립 요청 2건에서 같은 리소스와 함께 관측된 경우에 사용하며(D-154), 그 외 연결은 사람 검토 대상으로 남깁니다.
 - **API·입력 차이** — 선언과 실제 관측을 endpoint/parameter 단위로 대조하고 source별 Evidence ID와 provenance를 연다. 실제 관측 행의 **Evidence 상세**에서 Request Lab과 Burp Repeater 초안으로 바로 이어지며, 선언만 있고 요청이 없는 항목에는 전송 가능한 Evidence가 있는 것처럼 버튼을 만들지 않습니다. 분석한 HTML/OpenAPI/JavaScript 산출물 수와 부분·실패·상한 상태도 보여 주며, 블랙박스 전체 퍼센트나 취약점 판정은 만들지 않음
