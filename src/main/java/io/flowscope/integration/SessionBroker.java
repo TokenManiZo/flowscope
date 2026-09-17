@@ -190,6 +190,65 @@ public final class SessionBroker implements AutoCloseable {
         }
     }
 
+    /**
+     * Imports one operator-selected Burp exchange into an account's memory-only reusable slot.
+     * The explicit account selection is the identity assertion; this method only verifies that the
+     * exchange carries reusable credentials, belongs to the same service, and did not receive a
+     * generic unauthenticated response. Existing account slots are replaced only after validation.
+     */
+    public synchronized String captureObservedExchange(AccountProfile account, URI target,
+                                                       Map<String, String> requestHeaders,
+                                                       int status, String location, String body,
+                                                       List<String> setCookieHeaders, Instant now) {
+        if (account == null) throw new IllegalArgumentException("account is required");
+        if (target == null) throw new IllegalArgumentException("target is required");
+        Instant time = now == null ? Instant.now() : now;
+        ManagedSession candidate = new ManagedSession("session-" + UUID.randomUUID(), account, time);
+        if (!sameService(candidate, target)) {
+            candidate.close();
+            throw new IllegalArgumentException("selected request and account services differ");
+        }
+
+        Optional<String> existingOwner = accountForRequest(target, requestHeaders, time);
+        if (existingOwner.isPresent() && !existingOwner.get().equals(account.id())) {
+            candidate.close();
+            throw new IllegalStateException("selected credentials already belong to account: "
+                    + existingOwner.get());
+        }
+
+        String authorization = header(requestHeaders, "Authorization");
+        if (authorization != null && !authorization.isBlank()) {
+            replaceHeader(candidate, "Authorization", authorization);
+        }
+        for (String csrf : List.of("X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken")) {
+            String value = header(requestHeaders, csrf);
+            if (value != null && !value.isBlank()) replaceHeader(candidate, csrf, value);
+        }
+        String cookieHeader = header(requestHeaders, "Cookie");
+        if (cookieHeader != null) captureRequestCookies(candidate, target, cookieHeader, time);
+        for (String value : setCookieHeaders == null ? List.<String>of() : setCookieHeaders) {
+            captureSetCookie(candidate, target, value, time);
+        }
+        if (!hasMaterial(candidate, time)) {
+            candidate.close();
+            throw new IllegalArgumentException("selected request has no reusable authentication material");
+        }
+        if (status == 401 || isLoginRedirect(status, location) || containsInvalidToken(body)
+                || status < 200 || status >= 500) {
+            candidate.close();
+            throw new IllegalStateException("selected response does not confirm a reusable authenticated session");
+        }
+
+        candidate.responseConfirmed = true;
+        candidate.capturing = false;
+        candidate.status = Status.ACTIVE;
+        String previous = handleByAccount.get(account.id());
+        if (previous != null) revoke(previous);
+        byHandle.put(candidate.handle, candidate);
+        handleByAccount.put(account.id(), candidate.handle);
+        return candidate.handle;
+    }
+
     public synchronized Map<String, String> headersForAccount(String accountId, URI target,
                                                               ScopePolicy scope, Instant now) {
         return headers(handleForAccount(accountId), target, scope, now);

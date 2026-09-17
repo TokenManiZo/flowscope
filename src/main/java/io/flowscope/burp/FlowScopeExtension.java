@@ -14,6 +14,7 @@ import burp.api.montoya.http.RequestOptions;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.http.message.HttpHeader;
+import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.proxy.ProxyHttpRequestResponse;
 import burp.api.montoya.proxy.http.InterceptedRequest;
 import burp.api.montoya.proxy.http.InterceptedResponse;
@@ -23,8 +24,11 @@ import burp.api.montoya.proxy.http.ProxyRequestToBeSentAction;
 import burp.api.montoya.proxy.http.ProxyResponseHandler;
 import burp.api.montoya.proxy.http.ProxyResponseReceivedAction;
 import burp.api.montoya.proxy.http.ProxyResponseToBeSentAction;
+import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
+import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 import io.flowscope.core.Fingerprints;
 import io.flowscope.core.ActiveTrafficGuard;
+import io.flowscope.core.AccountProfile;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
@@ -66,8 +70,11 @@ import io.flowscope.explorer.ExplorerTransport;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
 
+import javax.swing.JMenu;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import java.awt.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -338,11 +345,97 @@ public final class FlowScopeExtension implements BurpExtension {
         api.proxy().registerResponseHandler(new ProxyHandler());
         // Repeater/Scanner/다른 확장의 트래픽도 수집 (프록시 리스너를 지나지 않는 경우 대비)
         api.http().registerHttpHandler(new ToolHandler());
+        registerAccountSessionCaptureMenu();
         api.extension().registerUnloadingHandler(this::shutdown);
         startZapIntegration();
         api.logging().logToOutput("FlowScope loaded. 포트 매핑: " + PORT_SOURCE
                 + " (미매핑 포트는 '미상'으로 수집). 변경: "
                 + "-Dflowscope.ports=8080:human:browser,8081:scanner:other_scanner,8082:llm:llm_explorer");
+    }
+
+    /**
+     * Autorize/AuthMatrix처럼 운영자가 확인한 Burp 요청의 자격을 특정 등록 계정 슬롯에 명시적으로 넣는다.
+     * 토큰이나 쿠키에서 계정 신원을 추론하지 않으며 원문 자격은 SessionBroker 밖으로 반환하지 않는다.
+     */
+    private void registerAccountSessionCaptureMenu() {
+        api.userInterface().registerContextMenuItemsProvider(new ContextMenuItemsProvider() {
+            @Override public List<Component> provideMenuItems(ContextMenuEvent event) {
+                HttpRequestResponse exchange = selectedExchange(event);
+                if (exchange == null || !exchange.hasResponse() || exchange.request() == null
+                        || exchange.response() == null || !scope.allows(exchange.request().url())) {
+                    return List.of();
+                }
+                String service = serviceOf(exchange.request());
+                List<AccountProfile> accounts = analysisConfig.accounts().values().stream()
+                        .filter(account -> account.service().equals(service))
+                        .sorted(java.util.Comparator.comparing(AccountProfile::label))
+                        .toList();
+                if (accounts.isEmpty()) return List.of();
+
+                JMenu menu = new JMenu("FlowScope 계정 세션으로 사용");
+                for (io.flowscope.core.AccountProfile account : accounts) {
+                    JMenuItem item = new JMenuItem(account.label() + " · " + account.role());
+                    item.addActionListener(ignored -> captureSelectedAccountSession(account, exchange));
+                    menu.add(item);
+                }
+                return List.of(menu);
+            }
+        });
+    }
+
+    private static HttpRequestResponse selectedExchange(ContextMenuEvent event) {
+        if (event == null) return null;
+        if (event.messageEditorRequestResponse().isPresent()) {
+            return event.messageEditorRequestResponse().orElseThrow().requestResponse();
+        }
+        List<HttpRequestResponse> selected = event.selectedRequestResponses();
+        return selected.size() == 1 ? selected.getFirst() : null;
+    }
+
+    private void captureSelectedAccountSession(AccountProfile account,
+                                               HttpRequestResponse exchange) {
+        try {
+            HttpRequest request = exchange.request();
+            HttpResponse response = exchange.response();
+            if (request == null || response == null || !scope.allows(request.url())) {
+                throw new IllegalArgumentException("선택한 요청이 현재 exact scope 안에 있지 않습니다.");
+            }
+            String service = serviceOf(request);
+            if (!service.equals(account.service())) {
+                throw new IllegalArgumentException("선택한 요청과 등록 계정의 대상 서비스가 다릅니다.");
+            }
+            String fingerprint = Fingerprints.of(request.headerValue("Authorization"),
+                    request.headerValue("Cookie"));
+            if ("anon".equals(fingerprint)) {
+                throw new IllegalArgumentException("선택한 요청에 Cookie 또는 Authorization이 없습니다.");
+            }
+            analysisConfig.boundAccount(service, fingerprint).ifPresent(bound -> {
+                if (!bound.id().equals(account.id())) {
+                    throw new IllegalStateException("이 인증정보는 이미 다른 등록 계정에 연결되어 있습니다: "
+                            + bound.label());
+                }
+            });
+            List<String> setCookies = response.headers().stream()
+                    .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
+                    .map(HttpHeader::value).toList();
+            sessionBroker.captureObservedExchange(account, URI.create(request.url()), headersOf(request.headers()),
+                    response.statusCode(), response.headerValue("Location"), boundedResponseBody(response),
+                    setCookies, java.time.Instant.now());
+            try {
+                analysisConfig.bindSession(service, fingerprint, account.id());
+            } catch (RuntimeException error) {
+                sessionBroker.markCredentialConflict(account.id());
+                throw error;
+            }
+            revision.incrementAndGet();
+            scheduleRebuild();
+            JOptionPane.showMessageDialog(null,
+                    account.label() + " 계정의 재사용 세션을 메모리에 연결했습니다.",
+                    "FlowScope 계정 세션", JOptionPane.INFORMATION_MESSAGE);
+        } catch (RuntimeException error) {
+            JOptionPane.showMessageDialog(null, error.getMessage(),
+                    "FlowScope 계정 세션 연결 실패", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     /** Scanner/LLM 전용 listener의 모든 송신과 redirect 후속 요청을 exact scope에서 강제 차단한다. */

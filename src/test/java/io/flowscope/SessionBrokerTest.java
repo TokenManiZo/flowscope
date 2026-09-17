@@ -205,4 +205,75 @@ final class SessionBrokerTest {
                         "X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken"),
                 SessionBroker.managedHeaderNames());
     }
+
+    @Test
+    void importsExplicitBurpExchangesIntoIndependentReusableAccountSlots() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile accountA = new AccountProfile("acct-a", "USER A",
+                "https://api.test:443", AccessRole.USER);
+        AccountProfile accountB = new AccountProfile("acct-b", "USER B",
+                "https://api.test:443", AccessRole.USER);
+
+        broker.captureObservedExchange(accountA, URI.create("https://api.test/me"),
+                Map.of("Authorization", "Bearer token-a", "Cookie", "session=a"),
+                200, null, "{\"id\":\"acct-a\"}", List.of(), Instant.EPOCH);
+        broker.captureObservedExchange(accountB, URI.create("https://api.test/me"),
+                Map.of("Authorization", "Bearer token-b", "Cookie", "session=b"),
+                200, null, "{\"id\":\"acct-b\"}", List.of(), Instant.ofEpochSecond(1));
+
+        assertEquals(SessionBroker.Status.ACTIVE,
+                broker.viewForAccount("acct-a").orElseThrow().status());
+        assertEquals(SessionBroker.Status.ACTIVE,
+                broker.viewForAccount("acct-b").orElseThrow().status());
+        assertEquals("Bearer token-a", broker.headersForAccount("acct-a",
+                URI.create("https://api.test/orders"), ScopePolicy.parse("https://api.test/"),
+                Instant.ofEpochSecond(2)).get("Authorization"));
+        assertEquals("Bearer token-b", broker.headersForAccount("acct-b",
+                URI.create("https://api.test/orders"), ScopePolicy.parse("https://api.test/"),
+                Instant.ofEpochSecond(2)).get("Authorization"));
+        assertFalse(broker.views().toString().contains("token-a"));
+        assertFalse(broker.views().toString().contains("session=b"));
+    }
+
+    @Test
+    void rejectsCrossAccountCredentialReuseWithoutDestroyingEitherValidSlot() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile accountA = new AccountProfile("acct-a", "USER A",
+                "https://api.test:443", AccessRole.USER);
+        AccountProfile accountB = new AccountProfile("acct-b", "USER B",
+                "https://api.test:443", AccessRole.USER);
+        broker.captureObservedExchange(accountA, URI.create("https://api.test/me"),
+                Map.of("Cookie", "session=a"), 200, null, "ok", List.of(), Instant.EPOCH);
+        broker.captureObservedExchange(accountB, URI.create("https://api.test/me"),
+                Map.of("Cookie", "session=b"), 200, null, "ok", List.of(), Instant.ofEpochSecond(1));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> broker.captureObservedExchange(accountB, URI.create("https://api.test/me"),
+                        Map.of("Cookie", "session=a"), 200, null, "ok", List.of(),
+                        Instant.ofEpochSecond(2)));
+
+        assertTrue(error.getMessage().contains("acct-a"));
+        assertTrue(broker.headersForAccount("acct-a", URI.create("https://api.test/orders"),
+                ScopePolicy.parse("https://api.test/"), Instant.ofEpochSecond(3))
+                .get("Cookie").contains("session=a"));
+        assertTrue(broker.headersForAccount("acct-b", URI.create("https://api.test/orders"),
+                ScopePolicy.parse("https://api.test/"), Instant.ofEpochSecond(3))
+                .get("Cookie").contains("session=b"));
+    }
+
+    @Test
+    void refusesSelectedBurpExchangeWithoutReusableCredentialsOrUsableResponse() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile account = new AccountProfile("acct-a", "USER A",
+                "https://api.test:443", AccessRole.USER);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> broker.captureObservedExchange(account, URI.create("https://api.test/me"),
+                        Map.of("Accept", "application/json"), 200, null, "ok", List.of(), Instant.EPOCH));
+        assertThrows(IllegalStateException.class,
+                () -> broker.captureObservedExchange(account, URI.create("https://api.test/me"),
+                        Map.of("Authorization", "Bearer expired"), 401, null, "unauthorized",
+                        List.of(), Instant.EPOCH));
+        assertTrue(broker.viewForAccount("acct-a").isEmpty());
+    }
 }

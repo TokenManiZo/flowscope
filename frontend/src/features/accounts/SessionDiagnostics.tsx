@@ -46,6 +46,7 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
       <section aria-labelledby="managed-session-title" className="space-y-2">
         <h3 id="managed-session-title" className="font-medium">재사용 관리 세션</h3>
         <p className="text-sm text-muted-foreground">등록 계정과 메모리 broker 상태만 표시합니다. Cookie·Authorization·password 같은 원문은 표시하거나 저장하지 않습니다.</p>
+        <Alert><AlertDescription>권장: Burp Proxy history 또는 Repeater에서 해당 계정으로 인증된 요청 하나를 우클릭한 뒤 <strong>FlowScope 계정 세션으로 사용</strong>에서 계정을 선택하세요. 브라우저의 현재 로그인과 별개로 계정별 세션 슬롯에 보관됩니다.</AlertDescription></Alert>
         <div className="grid gap-3 md:grid-cols-2">
           {accounts.map((account) => {
             const view = sessionState(managedByAccount.get(account.id))

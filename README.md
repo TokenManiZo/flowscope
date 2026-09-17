@@ -28,7 +28,7 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 - 원본 URL은 보존하고, UUID/긴 16진 형식·성공 응답 ID 일치·같은 위치의 복수 값/독립 관측을 근거로 operation 경로를 자동 묶음. `LITERAL/INFERRED/CORROBORATED`와 이유를 상세에 표시
 - `신원 × 작업 × 접근 대상 ID` 커버리지 매트릭스, 미교차 조합, 일부만 발견, source 간 판정 불일치
 - 응답 분류, 명시적 소유자 Evidence, 사용자가 입력한 역할 정책을 이용하는 결정론적 BOLA/IDOR·BFLA 후보 엔진
-- 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 성공 응답 확인 전 `UNVERIFIED`, 쿠키 회전, 만료·의심 상태와 HUMAN Request Lab 요청을 지원. 같은 서비스의 동일 인증 지문을 다른 계정으로 다시 연결하려 하면 자동 이동하지 않고 충돌 상태로 차단. ZAP 로그인 계정은 이 broker와 분리해 ID·비밀번호를 현재 프로세스 메모리에만 두고 ZAP Browser Based Authentication으로 직접 확인
+- 비밀값을 저장하지 않는 테스트 계정 레지스트리와 명시적 메모리 전용 Session Broker. HUMAN 로그인 캡처, 성공 응답 확인 전 `UNVERIFIED`, 쿠키 회전, 만료·의심 상태와 HUMAN Request Lab 요청을 지원. Burp Proxy history·Repeater에서 운영자가 확인한 응답 있는 요청을 우클릭해 등록 계정의 독립 세션 슬롯으로 가져올 수 있어, 브라우저가 다음 계정으로 전환된 뒤에도 이전 계정 자격을 메모리에서 재사용한다. 같은 서비스의 동일 인증정보를 다른 계정으로 다시 연결하려 하면 자동 이동하지 않고 거부하며 기존 슬롯을 보존한다. ZAP 로그인 계정은 이 broker와 분리해 ID·비밀번호를 현재 프로세스 메모리에만 두고 ZAP Browser Based Authentication으로 직접 확인
 - query, 요청 본문, 마스킹된 요청·응답, timestamp, redirect, GraphQL operation, 응답→요청 데이터 흐름 수집. 일반 textual 메시지는 기본 1MiB, route discovery가 읽는 HTML/JavaScript/JSON/XML 응답은 기본 4MiB까지 `FULL` payload로 보존하고, digest 중복 제거 후 압축 총량 48MiB를 적용합니다. 8,192자 `body/reqText/respText`는 UI 미리보기이며 분석기는 보존된 payload 전문을 우선 사용합니다. 발견용 4MiB 초과 응답은 metadata-only가 되어 전체 분석하지 않습니다.
 - Evidence 보존형 트래픽 분류. `INCLUDE`만 메인 3-way 비교에 사용하고, 애매한 `REVIEW`는 별도 검토 대기로 보존하며, 고신뢰 보조 트래픽은 `EXCLUDE`로 기본 숨김
 - classifier v6가 인증 준비를 source와 무관하게 `AUTH_SESSION/EXCLUDE`, 반복 polling을 `POLLING`으로 분리하고, web manifest·source map·service worker를 탐색 메타데이터로 분리한다. API 문맥 없는 401/403 디렉터리 probe는 `REVIEW`로 보존하고, JSON/API 문맥·접근 대상·비안전 메서드 등 독립 근거가 있을 때만 메인 API로 포함한다.
@@ -265,6 +265,7 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 - [Autorize](https://github.com/Quitten/Autorize/blob/master/README.md)의 관측 요청→저권한/비로그인 재전송과 다중 저권한 사용자 지원을 HUMAN 트래픽 fan-out의 기준으로 삼았습니다.
 - [AuthMatrix](https://github.com/SecurityInnovation/AuthMatrix)의 사용자·역할·요청 조합과 응답 기반 성공/실패 규칙을 참고하되, FlowScope에서는 별도 판정기를 만들지 않고 기존 P/E/O 정책·Evidence 오라클을 사용합니다.
 - [ZAP Access Control Testing](https://www.zaproxy.org/docs/desktop/addons/access-control-testing/)의 사용자별 Allowed/Denied/Unknown 기대와 scope 제한을 반영해 등록 계정 상태와 exact scope를 독립 게이트로 둡니다.
+- Burp 계정 세션은 Autorize의 명시적 인증 헤더 교체와 AuthMatrix의 Repeater 기반 사용자별 쿠키·헤더 등록을 따라, 사용자가 확인한 요청을 등록 계정에 직접 결박합니다. 토큰 문자열이나 응답 내용으로 계정 이름·역할을 자동 추론하지 않으며, ZAP의 사용자별 Authentication/Session Management/Verification 분리와 마찬가지로 계정 결박과 세션 유효성은 별도 상태로 취급합니다.
 - [AuthScope (CCS 2017)](https://acmccs.github.io/papers/p799-zuoA.pdf)의 인증 후 요청 필드 치환·응답 차등 관찰을 근거로 삼되, 상태코드 하나만으로 취약점을 확정하지 않습니다.
 - [OWASP API1:2023 BOLA](https://api-security.owasp.org/editions/2023/en/0xa1-broken-object-level-authorization/)와 [OWASP API5:2023 BFLA](https://api-security.owasp.org/editions/2023/en/0xa5-broken-function-level-authorization/)에 따라 객체 소유 관계와 기능별 역할 요구를 별도 정책 축으로 유지합니다.
 
