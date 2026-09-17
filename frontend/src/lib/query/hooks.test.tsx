@@ -96,6 +96,34 @@ describe("centralized FlowScope polling", () => {
     view.unmount()
   })
 
+  it("publishes a managed session status change even when the dataset revision is unchanged", async () => {
+    vi.useFakeTimers()
+    capabilityMeta()
+    const unverified = { ...snapshotFixture, managedSessions: [{
+      handle: "session-a", accountId: "account-a", accountLabel: "USER A", service: "http://127.0.0.1:8888",
+      status: "UNVERIFIED", createdAt: "", lastUsedAt: null, expiresAtHint: null,
+      hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false,
+    }] }
+    const active = { ...unverified, managedSessions: [{ ...unverified.managedSessions[0], status: "ACTIVE" }] }
+    const fetchStub = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(unverified))
+      .mockResolvedValueOnce(jsonResponse(active))
+    vi.stubGlobal("fetch", fetchStub)
+    const client = createTestQueryClient()
+    const view = renderHook(() => useSnapshotQuery(), { wrapper: wrapperFor(client) })
+
+    await flushQuery()
+    expect(view.result.current.data?.managedSessions[0]?.status).toBe("UNVERIFIED")
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    await flushQuery()
+
+    expect(fetchStub).toHaveBeenCalledTimes(2)
+    expect((client.getQueryData(["snapshot"]) as typeof active).managedSessions[0]?.status).toBe("ACTIVE")
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(view.result.current.data?.managedSessions[0]?.status).toBe("ACTIVE")
+    view.unmount()
+  })
+
   it("retains the last successful scanner run when a poll fails", async () => {
     vi.useFakeTimers()
     capabilityMeta()

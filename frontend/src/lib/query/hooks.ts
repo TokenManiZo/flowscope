@@ -63,8 +63,15 @@ function hasRevision(value: unknown): value is Pick<Snapshot, "revision"> {
     && typeof (value as { revision: unknown }).revision === "number"
 }
 
+function sameManagedSessions(previous: unknown, next: unknown): boolean {
+  const before = (previous as Partial<Snapshot>).managedSessions ?? []
+  const after = (next as Partial<Snapshot>).managedSessions ?? []
+  return JSON.stringify(before) === JSON.stringify(after)
+}
+
 function retainSnapshotRevision(previous: unknown, next: unknown): unknown {
-  return hasRevision(previous) && hasRevision(next) && previous.revision === next.revision ? previous : next
+  return hasRevision(previous) && hasRevision(next) && previous.revision === next.revision
+    && sameManagedSessions(previous, next) ? previous : next
 }
 
 export function useSnapshotQuery() {
