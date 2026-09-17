@@ -3,7 +3,7 @@ import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
 import { renderParameterNodeCardSvg } from "@/features/parameter-map/parameterNodeCard"
 import type { GraphPreferences } from "./graphPreferences"
-import { clampLaneX, defaultLaneWidths, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneBoundaries, laneGeometry, laneIndexForKind } from "./graphLanes"
+import { defaultLaneWidths, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneGeometry, laneIndexForKind } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
@@ -61,10 +61,6 @@ function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "view
   return { positions, viewport: { zoom: core.zoom(), pan: core.pan() } }
 }
 
-function modelNodeWidth(core: Core, node: cytoscape.NodeSingular) {
-  return node.renderedOuterWidth() / (core.zoom() || 1)
-}
-
 function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneWidths: readonly number[]) {
   const columns: cytoscape.NodeSingular[][] = laneWidths.map(() => [])
   core.nodes().forEach((node) => { columns[laneIndexForKind(String(node.data("kind")), laneWidths.length)]?.push(node) })
@@ -78,16 +74,6 @@ function positionInLanes(core: Core, height: number, savedPositions: GraphPrefer
       y: savedPositions?.[node.id()]?.y ?? start + order * gap,
     }))
   })
-}
-
-function clampNodeToLane(core: Core, node: cytoscape.NodeSingular, laneWidths: readonly number[]) {
-  const lane = laneGeometry(laneWidths, laneIndexForKind(String(node.data("kind")), laneWidths.length))
-  const x = clampLaneX(node.position().x, lane, modelNodeWidth(core, node))
-  if (x === node.position().x) return
-  const locked = node.locked?.() ?? false
-  if (locked) node.unlock()
-  node.position({ x, y: node.position().y })
-  if (locked) node.lock()
 }
 
 function syncSelection(core: Core, selectedElementId: string | null | undefined) {
@@ -132,11 +118,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
   const laneCount = "kind" in projection && projection.kind !== "operation" ? 2 : 3
   const lanes = useMemo(() => laneWidths?.length === laneCount ? laneWidths : defaultLaneWidths(laneCount), [laneCount, laneWidths])
-  const lanesRef = useRef(lanes)
-  const laneOffsetsRef = useRef(lanes)
   const preferencesRef = useRef(preferences)
   const appliedLayoutRef = useRef(layoutVersion)
-  lanesRef.current = lanes
   preferencesRef.current = preferences
   projectionRef.current = projection
   selectRef.current = onSelect
@@ -195,7 +178,6 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const correctLanes = () => {
       correctionFrame = null
       if (typeof core.resize === "function") core.resize()
-      core.nodes().forEach((node) => clampNodeToLane(core, node, lanesRef.current))
       syncSelection(core, selectedElementIdRef.current)
       if (containerRef.current) publishGeometry(containerRef.current, core)
       preferenceRef.current(readPreferences(core))
@@ -226,8 +208,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       const selection = hierarchy ? node?.selection ?? hierarchy.edges.find(edge => edge.id === id)?.selection : selectGraphItem(current as GraphProjection, id)
       if (selection) selectRef.current(selection, event.target.id())
     }
-    const dragListener = (event: cytoscape.EventObject) => {
-      clampNodeToLane(core, event.target, lanesRef.current)
+    // ponytail: 레인은 초기 배치와 재정렬의 기준일 뿐이라 놓은 자리를 그대로 저장한다. 되돌리려면 `레인 기준 재정렬`을 쓴다.
+    const dragListener = () => {
       if (containerRef.current) publishGeometry(containerRef.current, core)
       preferenceRef.current(readPreferences(core))
     }
@@ -312,26 +294,6 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     syncSelection(core, selectedElementId)
     if (containerRef.current) publishGeometry(containerRef.current, core)
   }, [selectedElementId])
-
-  // ponytail: 레인 폭이 바뀌면 오른쪽 레인이 통째로 이동하므로 그 레인 노드도 같은 만큼 옮겨야 사용자가 잡아둔 배치가 유지된다.
-  useEffect(() => {
-    const core = coreRef.current
-    const previous = laneOffsetsRef.current
-    laneOffsetsRef.current = lanes
-    if (!core || previous === lanes || previous.length !== lanes.length) return
-    const shifts = laneBoundaries(lanes).map((boundary, index) => boundary - laneBoundaries(previous)[index])
-    core.nodes().forEach((node) => {
-      const index = laneIndexForKind(String(node.data("kind")), lanes.length)
-      const shift = shifts[index] ?? 0
-      const locked = node.locked?.() ?? false
-      if (locked) node.unlock()
-      if (shift) node.position({ x: node.position().x + shift, y: node.position().y })
-      if (locked) node.lock()
-      clampNodeToLane(core, node, lanes)
-    })
-    if (containerRef.current) publishGeometry(containerRef.current, core)
-    preferenceRef.current(readPreferences(core))
-  }, [lanes])
 
   // ponytail: 툴바 확대/축소 등 바깥에서 온 viewport만 적용한다. 캔버스가 방금 보고한 값이면 무시해야 팬 중에 되감기지 않는다.
   useEffect(() => {

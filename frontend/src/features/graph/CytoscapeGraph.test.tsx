@@ -137,17 +137,6 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
   }
 }
 
-// 레인은 모델 좌표이므로 노드 위치도 모델 좌표로 검사한다. 노드 모델 폭은 226이다.
-function expectNodesInsideLanes(nodes: Array<ReturnType<typeof createStatefulNode>>, laneCount: number) {
-  const widths = defaultLaneWidths(laneCount)
-  for (const node of nodes) {
-    const lane = laneGeometry(widths, laneIndexForKind(String(node.data("kind")), laneCount))
-    const x = node.position().x
-    expect(x).toBeGreaterThanOrEqual(lane.left + 113 - 0.001)
-    expect(x).toBeLessThanOrEqual(lane.right - 113 + 0.001)
-  }
-}
-
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
@@ -270,13 +259,16 @@ it("anchors nodes in their semantic lane on initial projection", () => {
   expect(node.position).toHaveBeenCalledWith({ x: 540, y: expect.any(Number) })
 })
 
-it("restores both saved coordinates and only clamps X into the model lane", () => {
+it("restores a saved position exactly, including one placed outside its lane", () => {
   vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "operation" : undefined)
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={{ version: 6, inputMode: "auto", laneWidths: defaultGraphLaneWidths(), locked: false, viewport: null, positions: { "identity:alice": { x: -999, y: 222 } } }} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   expect(node.position).toHaveBeenCalledWith({ x: -999, y: 222 })
+  node.position.mockClear()
 
   runScheduledFrame()
-  expect(node.position).toHaveBeenCalledWith({ x: 497, y: 222 })
+
+  expect(node.position.mock.calls.every(([next]) => next === undefined)).toBe(true)
+  expect(modelPosition).toEqual({ x: -999, y: 222 })
 })
 
 it("re-anchors saved positions only when the layout version changes", () => {
@@ -320,17 +312,20 @@ it("keeps node coordinates when the graph container is resized", () => {
   expect(modelPosition).toEqual({ x: 200, y: 55 })
 })
 
-it("keeps dragfree X inside the current lane while preserving the dragged Y", () => {
-  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+it("keeps a node exactly where it was dropped and stores that position", () => {
+  const onPreferencesChange = vi.fn()
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
   modelPosition = { x: 9999, y: 210 }
   node.position.mockClear()
 
   listeners.get("dragfree:node")?.({ target: node })
 
-  expect(node.position).toHaveBeenCalledWith({ x: 223, y: 210 })
+  expect(node.position.mock.calls.every(([next]) => next === undefined)).toBe(true)
+  expect(modelPosition).toEqual({ x: 9999, y: 210 })
+  expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ positions: { "identity:alice": { x: 9999, y: 210 } } }))
 })
 
-it("keeps stateful lane membership through restore, zoom, fit, resize, and diagonal drag", () => {
+it("keeps free placement through restore, zoom, fit, resize, and diagonal drag", () => {
   let viewport = { zoom: 1, pan: { x: 0, y: 0 } }
   const nodes = [
     createStatefulNode("identity:alice", "identity", { x: -999, y: 0 }, () => viewport),
@@ -341,38 +336,55 @@ it("keeps stateful lane membership through restore, zoom, fit, resize, and diago
   vi.mocked(core.nodes).mockImplementation(() => ({ forEach: (callback: (current: never) => void) => nodes.forEach((node) => callback(node as never)) }))
   vi.mocked(core.zoom).mockImplementation(((next?: number) => { if (next !== undefined) viewport = { ...viewport, zoom: next }; return viewport.zoom }) as never)
   vi.mocked(core.pan).mockImplementation(() => viewport.pan)
-  const preferences = { version: 6 as const, inputMode: "auto" as const, laneWidths: defaultGraphLaneWidths(), locked: false, viewport: null, positions: { "identity:alice": { x: -500, y: 110 }, "operation:GET /orders": { x: 5000, y: 220 }, "resource:order:1": { x: 900, y: 330 } } }
+  // 레인 밖(-500)과 레인 한참 오른쪽(5000)을 일부러 섞어 저장한다.
+  const saved = { "identity:alice": { x: -500, y: 110 }, "operation:GET /orders": { x: 5000, y: 220 }, "resource:order:1": { x: 900, y: 330 } }
+  const preferences = { version: 6 as const, inputMode: "auto" as const, laneWidths: defaultGraphLaneWidths(), locked: false, viewport: null, positions: saved }
   const { rerender } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   runScheduledFrame()
-  expectNodesInsideLanes(nodes, 3)
-  expect(nodes.map((node) => node.position().y)).toEqual([110, 220, 330])
-  const restored = nodes.map((node) => node.position().x)
+  const expectSaved = () => expect(nodes.map((node) => node.position())).toEqual(nodes.map((node) => saved[node.id() as keyof typeof saved]))
+  expectSaved()
 
   viewport = { zoom: 1.6, pan: { x: -250, y: 31 } }
   listeners.get("viewport:core")?.({ target: node })
   runScheduledFrame()
-  expect(nodes.map((node) => node.position().x)).toEqual(restored)
+  expectSaved()
 
   viewport = { zoom: 0.7, pan: { x: 84, y: -18 } }
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={1} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   runScheduledFrame()
   expect(core.fit).toHaveBeenCalled()
-  expect(nodes.map((node) => node.position().x)).toEqual(restored)
+  expectSaved()
 
   canvasWidth = 900
   resizeListener?.([], {} as ResizeObserver)
   runScheduledFrame()
-  expect(nodes.map((node) => node.position().x)).toEqual(restored)
+  expectSaved()
 
   const endpoint = nodes[1]
-  const previousY = endpoint.position().y
-  endpoint.position({ x: 5000, y: previousY + 111 })
+  endpoint.position({ x: 7000, y: 500 })
   listeners.get("dragfree:node")?.({ target: endpoint as never })
-  expectNodesInsideLanes(nodes, 3)
-  expect(endpoint.position().y).toBe(previousY + 111)
+  expect(endpoint.position()).toEqual({ x: 7000, y: 500 })
 })
 
-it("moves nodes with their lane when a lane width changes and re-clamps the resized lane", () => {
+it("re-anchors every node into its lane when the layout version changes", () => {
+  const viewport = { zoom: 1, pan: { x: 0, y: 0 } }
+  const nodes = [
+    createStatefulNode("identity:alice", "identity", { x: -500, y: 110 }, () => viewport),
+    createStatefulNode("operation:GET /orders", "operation", { x: 5000, y: 220 }, () => viewport),
+    createStatefulNode("resource:order:1", "resource", { x: 900, y: 330 }, () => viewport),
+  ]
+  vi.mocked(core.nodes).mockImplementation(() => ({ forEach: (callback: (current: never) => void) => nodes.forEach((current) => callback(current as never)) }))
+  vi.mocked(core.zoom).mockReturnValue(1)
+  vi.mocked(core.pan).mockReturnValue(viewport.pan)
+  const preferences = { version: 6 as const, inputMode: "auto" as const, laneWidths: defaultGraphLaneWidths(), locked: false, viewport: null, positions: Object.fromEntries(nodes.map((node) => [node.id(), node.position()])) }
+  const { rerender } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+
+  rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} layoutVersion={1} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+
+  expect(nodes.map((node) => node.position().x)).toEqual([180, 540, 900])
+})
+
+it("leaves free placement untouched when a lane width changes", () => {
   const viewport = { zoom: 1, pan: { x: 0, y: 0 } }
   const nodes = [
     createStatefulNode("identity:alice", "identity", { x: 180, y: 110 }, () => viewport),
@@ -388,10 +400,7 @@ it("moves nodes with their lane when a lane width changes and re-clamps the resi
 
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} laneWidths={[480, 260, 360]} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
 
-  // IDENTITY 레인이 넓어져 뒤 레인이 통째로 밀린다. 노드보다 좁아진 API 레인은 노드를 가운데 세우고, OBJECT 레인은 밀린 뒤 오른쪽 경계로만 다시 가둔다.
-  expect(nodes[0].position()).toEqual({ x: 180, y: 110 })
-  expect(nodes[1].position()).toEqual({ x: 610, y: 220 })
-  expect(nodes[2].position()).toEqual({ x: 963, y: 330 })
+  expect(nodes.map((node) => node.position())).toEqual([{ x: 180, y: 110 }, { x: 600, y: 220 }, { x: 1020, y: 330 }])
 })
 
 it("keeps the full zoom range because lanes scale with the viewport", () => {
@@ -511,7 +520,7 @@ it("marks only the selected identity's source paths and passes the exact raw edg
   expect(select).toHaveBeenCalledWith(expect.objectContaining({ operation: cell.op, identity: "USER A", resource: "orders:101", source: "scanner", cells: [cell], cellKeys: ['["USER A","GET /api/orders/{id}","orders:101"]'], evidenceIds: ["raw-h", "raw-s"], gapIds: [] }), edge.id)
 })
 
-it.each(["site", "group", "operation"] as const)("bounds locked %s node widths inside model lanes across saved viewport, zoom and fit", (level) => {
+it.each(["site", "group", "operation"] as const)("keeps locked %s positions unchanged across saved viewport, zoom and fit", (level) => {
   const cell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["raw"] }
   const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }, { level, groupId: '["Target","orders"]', operation: cell.op, operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
   let viewport = { zoom: 2, pan: { x: -1900, y: 100 } }
@@ -521,23 +530,17 @@ it.each(["site", "group", "operation"] as const)("bounds locked %s node widths i
   vi.mocked(core.pan).mockImplementation(() => viewport.pan)
   vi.mocked(core.viewport).mockImplementation(((next: typeof viewport) => { viewport = next }) as never)
   const preferences = { version: 6 as const, inputMode: "auto" as const, laneWidths: defaultGraphLaneWidths(), locked: true, positions: Object.fromEntries(nodes.map(node => [node.id(), { x: 9999, y: 125 }])), viewport }
-  const laneCount = level === "operation" ? 3 : 2
   const { rerender } = render(<CytoscapeGraph projection={hierarchy} locked fitVersion={0} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  const assertBounds = () => {
-    expectNodesInsideLanes(nodes, laneCount)
-    nodes.forEach(node => {
-      expect(node.position().y).toBe(125)
-      expect(node.locked()).toBe(true)
-    })
-  }
-  runScheduledFrame(); assertBounds()
-  const placed = nodes.map(node => node.position().x)
+  const assertSaved = () => nodes.forEach(node => {
+    expect(node.position()).toEqual({ x: 9999, y: 125 })
+    expect(node.locked()).toBe(true)
+  })
+  runScheduledFrame(); assertSaved()
   viewport = { zoom: 2, pan: { x: 3000, y: 0 } }
-  listeners.get("viewport:core")?.({ target: node }); runScheduledFrame(); assertBounds()
+  listeners.get("viewport:core")?.({ target: node }); runScheduledFrame(); assertSaved()
   viewport = { zoom: 0.7, pan: { x: -3000, y: 0 } }
   rerender(<CytoscapeGraph projection={hierarchy} locked fitVersion={1} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  runScheduledFrame(); assertBounds()
-  expect(nodes.map(node => node.position().x)).toEqual(placed)
+  runScheduledFrame(); assertSaved()
 })
 
 it("focuses only the exact neutral candidate path after direct Gap navigation", () => {

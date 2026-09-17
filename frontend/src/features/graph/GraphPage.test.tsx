@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
-import { DEFAULT_LANE_WIDTH } from "./graphLanes"
+import { DEFAULT_LANE_WIDTH, LANE_ACCENTS } from "./graphLanes"
 import { GRAPH_PREFERENCES_KEY, loadGraphPreferences } from "./graphPreferences"
 import type { Snapshot } from "@/lib/api/types"
 import { GraphPage as CurrentGraphPage } from "./GraphPage"
@@ -17,6 +17,8 @@ const snapshot: Snapshot = {
   events: [{ eventId: "ev-1", method: "GET", path: "/orders/1", status: 200, fp: "fp", idn: "alice", role: "USER", source: "human", op: "GET /orders/{id}", resource: "order:1", timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["ev-1"], objects: [{ resource: "order:1", evidence: "id" }], verdict: "allow" }],
 }
 
+const hexToRgb = (value: string) => `rgba(${[1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16)).join(", ")}, ${(parseInt(value.slice(7, 9), 16) / 255).toFixed(2)})`
+
 const hierarchyCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["cell-evidence-not-an-event"] }
 
 it("opens the graph on the full relationship view", () => {
@@ -30,6 +32,17 @@ it("opens the graph on the full relationship view", () => {
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
+})
+
+it("tints each lane band with the accent its node cards carry", () => {
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
+  const { container } = render(<CurrentGraphPage />)
+
+  const bands = [...container.querySelectorAll<HTMLElement>("div[style*=\"background-color\"]")]
+  // Site Overview는 TARGET·API GROUP 두 레인이므로 앞 두 강조색만 쓴다.
+  expect(bands.map((band) => band.style.backgroundColor)).toEqual(LANE_ACCENTS.slice(0, 2).map((accent) => hexToRgb(`${accent}0f`)))
+  expect(bands.every((band) => band.getAttribute("aria-hidden") === "true")).toBe(true)
 })
 
 it("resizes a lane by keyboard and keeps the new width in stored preferences", async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { clampLaneX, DEFAULT_LANE_WIDTH, defaultLaneWidths, laneBoundaries, laneGeometry, laneIndexForKind, MIN_LANE_WIDTH } from "./graphLanes"
+import { DEFAULT_LANE_WIDTH, defaultLaneWidths, LANE_ACCENTS, laneAccentForKind, laneBoundaries, laneGeometry, laneIndexForKind, MIN_LANE_WIDTH } from "./graphLanes"
 
 describe("graph lanes", () => {
   it("maps node kinds to the lane of the current hierarchy level", () => {
@@ -22,12 +22,13 @@ describe("graph lanes", () => {
     expect(laneBoundaries([10, Number.NaN])).toEqual([0, MIN_LANE_WIDTH, MIN_LANE_WIDTH + DEFAULT_LANE_WIDTH])
   })
 
-  it("keeps whole nodes inside their lane and centers nodes wider than the lane", () => {
-    const lane = laneGeometry([360, 360], 0)
-    expect(clampLaneX(9999, lane, 226)).toBe(360 - 24 - 113)
-    expect(clampLaneX(-9999, lane, 226)).toBe(24 + 113)
-    expect(clampLaneX(200, lane, 226)).toBe(200)
-    expect(clampLaneX(200, lane, 900)).toBe(lane.anchor)
-    expect(clampLaneX(Number.NaN, lane, 226)).toBe(lane.anchor)
+  it("exposes one accent per lane so free-placed nodes still read as their column", () => {
+    expect(LANE_ACCENTS).toHaveLength(3)
+    expect(laneAccentForKind("identity")).toBe(LANE_ACCENTS[0])
+    expect(laneAccentForKind("target")).toBe(LANE_ACCENTS[0])
+    expect(laneAccentForKind("operation")).toBe(LANE_ACCENTS[1])
+    expect(laneAccentForKind("api-group")).toBe(LANE_ACCENTS[1])
+    expect(laneAccentForKind("route-candidate")).toBe(LANE_ACCENTS[1])
+    expect(laneAccentForKind("resource")).toBe(LANE_ACCENTS[2])
   })
 })

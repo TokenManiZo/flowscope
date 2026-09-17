@@ -9,6 +9,8 @@ export interface ParameterNodeCardView {
   detail: string
   footer: string
   icon: "user" | "none" | "box" | "globe" | "network"
+  /** 선택적 레인 강조색. 노드가 레인 밖에 있어도 소속을 읽게 하는 카드 왼쪽 스트립이다. */
+  accent?: string
   accessibleLabel: string
 }
 
@@ -144,6 +146,6 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
   const title = escapeXml(visualLine(card.title, width - titleX - 14, 14, true))
   const detail = escapeXml(visualLine(card.detail, width - 28, 12))
   const footer = escapeXml(visualLine(card.footer, width - 28, 12, true))
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text><text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text>${card.footer ? `<text x="14" y="${height - 14}" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text>` : ""}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/>${card.accent ? `<rect x="5" y="10" width="3" height="${height - 20}" rx="1.5" fill="${escapeXml(card.accent)}"/>` : ""}<g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text><text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text>${card.footer ? `<text x="14" y="${height - 14}" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text>` : ""}</svg>`
   return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width, height }
 }

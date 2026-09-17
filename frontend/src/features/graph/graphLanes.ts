@@ -5,6 +5,14 @@ export const MIN_LANE_WIDTH = 260
 export const MAX_LANE_WIDTH = 1200
 export const DEFAULT_LANE_WIDTH = 360
 
+/** 레인별 강조색: IDENTITY·API·OBJECT 순. 노드가 레인을 벗어나도 소속을 읽을 수 있게 배경 띠와 카드 스트립이 같은 색을 쓴다. */
+export const LANE_ACCENTS = ["#93c5fd", "#5eead4", "#c4b5fd"] as const
+
+export function laneAccentForKind(kind: string): string {
+  if (kind === "identity" || kind === "target") return LANE_ACCENTS[0]
+  return kind === "resource" ? LANE_ACCENTS[2] : LANE_ACCENTS[1]
+}
+
 export interface LaneGeometry {
   left: number
   right: number
@@ -36,11 +44,4 @@ export function laneGeometry(widths: readonly number[], index: number, gutter = 
   const right = boundaries[Math.min(Math.max(index, 0), Math.max(widths.length - 1, 0)) + 1] ?? left + DEFAULT_LANE_WIDTH
   const safeGutter = Math.min(Math.max(0, gutter), (right - left) / 2)
   return { left: left + safeGutter, right: right - safeGutter, anchor: (left + right) / 2 }
-}
-
-/** 노드 폭까지 포함해 레인 안에 가둔다. 레인이 노드보다 좁으면 중앙에 세운다. */
-export function clampLaneX(x: number, lane: LaneGeometry, nodeWidth: number): number {
-  const half = Math.max(0, Number.isFinite(nodeWidth) ? nodeWidth : 0) / 2
-  if (!Number.isFinite(x)) return lane.anchor
-  return lane.right - lane.left < half * 2 ? lane.anchor : Math.min(lane.right - half, Math.max(lane.left + half, x))
 }
