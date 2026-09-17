@@ -595,6 +595,24 @@ export interface ReplayResult extends ApiSuccess {
   openedDraft: boolean
 }
 
+export interface AuthorizationReplayResult extends ApiSuccess {
+  run: {
+    runId: string
+    armed: boolean
+    sent: number
+    drafted: number
+    skipped: number
+    items: readonly {
+      operation: string
+      targetIdentity: string
+      basisIdentity: string
+      basisEvidenceId: string
+      outcome: string
+      reason: string
+    }[]
+  }
+}
+
 export interface RequestLabDraft {
   eventId: string
   service: string

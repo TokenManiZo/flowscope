@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { AuthorizationMatrix, MatrixLegendItem, ReviewStatus } from "@/lib/api/types"
-import { useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useAuthorizationReplayKillMutation, useAuthorizationReplayMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { actualLabel, confidenceCodes, expectedLabel, findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -87,9 +87,13 @@ function HumanRunGuidance({ disabled }: { disabled: boolean }) {
 
 function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: JudgmentItem; matrix: AuthorizationMatrix; disabled: boolean; onOpenEvidence(selection: StructuredEvidenceSelection): void }) {
   const review = useReviewMutation()
+  const replay = useAuthorizationReplayMutation()
+  const stopReplay = useAuthorizationReplayKillMutation()
   const [confirmed, setConfirmed] = useState(item.reviewStatus === "CONFIRMED")
   const [note, setNote] = useState(item.reviewNote)
   const [message, setMessage] = useState<string | null>(null)
+  const [replayArmed, setReplayArmed] = useState(false)
+  const [replayMessage, setReplayMessage] = useState<string | null>(null)
   // 같은 cell·검토 Evidence 안에서 저장된 서버 값을 반영한다. 선택 문맥이 바뀌면 부모 key가 폼과 진행 중 응답을 분리한다.
   useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED"); setNote(item.reviewNote) }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
@@ -103,6 +107,25 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       setMessage(error instanceof Error ? error.message : "판정 저장 실패")
     }
   }
+  const runReplay = async () => {
+    setReplayMessage(null)
+    try {
+      const result = await replay.mutateAsync({ itemId: item.id, armed: replayArmed })
+      setReplayMessage(`${result.message} 전송 ${result.run.sent} · 초안 ${result.run.drafted} · 스킵 ${result.run.skipped}`)
+    } catch (error) {
+      setReplayMessage(error instanceof Error ? error.message : "안전 재전송 실패")
+    } finally {
+      setReplayArmed(false)
+    }
+  }
+  const stop = async () => {
+    try {
+      const result = await stopReplay.mutateAsync()
+      setReplayMessage(result.message)
+    } catch (error) {
+      setReplayMessage(error instanceof Error ? error.message : "재전송 중지 실패")
+    }
+  }
   const evidenceSelection = (evidenceIds: readonly string[], identity: string): StructuredEvidenceSelection => ({ kind: "matrix", identity, operation: item.operation, resource, evidenceIds, eventIds: evidenceIds })
   const basisIdentity = matrix.identities.find((identity) => identity.id === item.recommendation?.basisIdentity)
   const cellIdentity = matrix.identities.find((identity) => identity.id === item.identity)
@@ -114,7 +137,14 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       <p className="text-xs">{item.recommendation.reason}</p>
       <p className="text-xs">{item.recommendation.instruction}</p>
       {item.recommendation.stateChanging && <p className="text-xs font-semibold text-amber-300">상태변경 요청: 영향과 복구 방법을 확인한 뒤 직접 전송하세요.</p>}
-      <p className="text-xs text-muted-foreground">FlowScope는 요청을 자동 전송하지 않습니다. 기준 Evidence에서 Request Lab 또는 Repeater 초안을 열어 직접 실행하세요.</p>
+      <p className="text-xs text-muted-foreground">명시적으로 무장한 GET/HEAD만 자동 재전송합니다. POST/PUT/PATCH/DELETE는 Burp Repeater 초안만 열며 자동 전송하지 않습니다.</p>
+      <section aria-label="안전 능동 재전송" className="grid gap-2 rounded border border-border/70 bg-background/60 p-2">
+        <h4 className="text-xs font-semibold">안전 능동 재전송</h4>
+        <label className="flex items-start gap-2 text-xs"><Checkbox className="mt-0.5" checked={replayArmed} disabled={disabled || replay.isPending} onCheckedChange={(checked) => setReplayArmed(checked === true)} /><span>안전 자동 재전송 허용 (이번 1회)</span></label>
+        <div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={disabled || !replayArmed || replay.isPending} onClick={() => void runReplay()}>선택 추천 실행</Button><Button type="button" size="sm" variant="outline" disabled={disabled || stopReplay.isPending} onClick={() => void stop()}>중지</Button></div>
+        <p className="text-[11px] text-muted-foreground">대상 신원 세션이 ACTIVE이고 요청이 현재 exact scope 안일 때만 실행됩니다. 결과는 CONTROLLED 후보 근거이며 취약점으로 자동 확정되지 않습니다.</p>
+        {replayMessage && <p role="status" className="text-xs">{replayMessage}</p>}
+      </section>
       <HumanRunGuidance disabled={disabled} />
       <EvidenceIdList ids={item.recommendation.basisEvidenceIds} />
       {item.recommendation.basisEvidenceIds.length > 0 && <Button type="button" size="sm" variant="outline" className="w-fit" disabled={disabled} onClick={() => onOpenEvidence(evidenceSelection(item.recommendation!.basisEvidenceIds, basisIdentity?.id ?? item.recommendation!.basisIdentity))}>기준 Evidence 상세 열기</Button>}
@@ -193,7 +223,7 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="grid gap-4 p-3" aria-labelledby="judgment-title">
-      <div><h1 id="judgment-title" className="text-2xl font-semibold">판정 매트릭스</h1><p className="text-sm text-muted-foreground">관측 결과의 신원·기능·객체 공백을 비교해 IDOR/BOLA/BFLA 수동 테스트 조합을 추천합니다. FlowScope는 요청을 자동 전송하지 않으며 점수를 합산하지 않습니다.</p></div>
+      <div><h1 id="judgment-title" className="text-2xl font-semibold">판정 매트릭스</h1><p className="text-sm text-muted-foreground">관측 결과의 신원·기능·객체 공백을 비교해 IDOR/BOLA/BFLA 테스트 조합을 추천합니다. 명시적으로 무장한 안전 재전송 외에는 자동 전송하지 않으며 점수를 합산하지 않습니다.</p></div>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>판정 매트릭스를 불러오지 못했습니다.</AlertTitle><AlertDescription>
         <p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
         {snapshot.data ? <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 && Number.isFinite(snapshot.dataUpdatedAt) ? <time dateTime={new Date(snapshot.dataUpdatedAt).toISOString()}>{new Date(snapshot.dataUpdatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>갱신에 성공할 때까지 Evidence 상세와 사람 판정 저장이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}

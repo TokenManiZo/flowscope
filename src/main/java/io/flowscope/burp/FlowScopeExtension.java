@@ -26,6 +26,8 @@ import burp.api.montoya.proxy.http.ProxyResponseToBeSentAction;
 import io.flowscope.core.Fingerprints;
 import io.flowscope.core.ActiveTrafficGuard;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.AuthorizationMatrix;
+import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.Masking;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RecordMerge;
@@ -1661,6 +1663,11 @@ public final class FlowScopeExtension implements BurpExtension {
                     String accountId) {
                 return executeHumanRequestLab(evidenceId, request, credentialMode, accountId);
             }
+            @Override public CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(
+                    String itemId, boolean armed) {
+                return runCrossIdentityReplay(List.of(authorizationReplayRecommendation(itemId)), armed);
+            }
+            @Override public void killAuthorizationReplay() { killCrossIdentityReplay(); }
         }, port);
         webServer.start();
         api.logging().logToOutput("FlowScope Web UI ready: " + webServer.url());
@@ -1943,6 +1950,47 @@ public final class FlowScopeExtension implements BurpExtension {
             List<CrossIdentityReplayOrchestrator.Recommendation> recommendations, boolean armed) {
         if (crossIdentityReplay == null) throw new IllegalStateException("FlowScope가 아직 초기화되지 않았습니다.");
         return crossIdentityReplay.execute(recommendations, armed);
+    }
+
+    private CrossIdentityReplayOrchestrator.Recommendation authorizationReplayRecommendation(String itemId) {
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(latest, analysisConfig, archivedValidations);
+        AuthorizationMatrix.TestRecommendation recommendation = null;
+        String operation = null;
+        String resource = null;
+        for (AuthorizationMatrix.FunctionCell cell : matrix.functions()) {
+            if (cell.id().equals(itemId)) {
+                recommendation = cell.recommendation();
+                operation = cell.operation();
+                break;
+            }
+        }
+        if (operation == null) {
+            for (AuthorizationMatrix.ObjectCell cell : matrix.objects()) {
+                if (cell.id().equals(itemId)) {
+                    recommendation = cell.recommendation();
+                    operation = cell.operation();
+                    resource = cell.resource();
+                    break;
+                }
+            }
+        }
+        if (operation == null || recommendation == null) {
+            throw new IllegalArgumentException("현재 재전송 추천이 있는 판정 셀을 선택하세요.");
+        }
+        String expectedOperation = operation;
+        String expectedResource = resource;
+        AuthorizationMatrix.TestRecommendation selected = recommendation;
+        RequestRecord seed = selected.basisEvidenceIds().stream()
+                .map(id -> latest.records.stream().filter(record -> id.equals(record.evidenceId)).findFirst().orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .filter(record -> expectedOperation.equals(record.op))
+                .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("현재 추천과 일치하는 기준 Evidence를 찾을 수 없습니다."));
+        HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
+                FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
+        return new CrossIdentityReplayOrchestrator.Recommendation(operation, selected.testIdentity(),
+                selected.basisIdentity(), seed.evidenceId, URI.create(prepared.url()));
     }
 
     void killCrossIdentityReplay() {

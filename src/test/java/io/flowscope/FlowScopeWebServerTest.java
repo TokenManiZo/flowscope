@@ -22,6 +22,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.SessionBroker;
+import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
@@ -829,6 +830,29 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void authorizationReplayForwardsOneRunArmingAndExposesAKillSwitch() throws Exception {
+        start();
+
+        JsonNode unarmed = json(post("/api/authorization-replay",
+                "action=run&itemId=matrix-item&armed=false", token));
+        assertFalse(unarmed.path("run").path("armed").asBoolean());
+        assertEquals(0, unarmed.path("run").path("sent").asInt());
+        assertEquals("matrix-item", state.authorizationReplayItemId);
+        assertFalse(state.authorizationReplayArmed);
+
+        JsonNode armed = json(post("/api/authorization-replay",
+                "action=run&itemId=matrix-item&armed=true", token));
+        assertTrue(armed.path("run").path("armed").asBoolean());
+        assertEquals(1, armed.path("run").path("sent").asInt());
+        assertTrue(state.authorizationReplayArmed);
+        assertFalse(armed.toString().contains("raw-replay-secret"));
+
+        JsonNode killed = json(post("/api/authorization-replay", "action=kill", token));
+        assertTrue(killed.path("success").asBoolean());
+        assertTrue(state.authorizationReplayKilled);
+    }
+
+    @Test
     void opensAndSendsAnExplicitRawRequestLabDraftWithoutPuttingItInSnapshot() throws Exception {
         start();
         String evidenceId = state.snapshot().records.getFirst().evidenceId;
@@ -1105,6 +1129,9 @@ final class FlowScopeWebServerTest {
         private volatile String repeaterRequest = "";
         private volatile FlowScopeWebServer.CredentialMode repeaterCredentialMode;
         private volatile String repeaterAccountId = "";
+        private volatile String authorizationReplayItemId = "";
+        private volatile boolean authorizationReplayArmed;
+        private volatile boolean authorizationReplayKilled;
         private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
                 new java.util.concurrent.atomic.AtomicInteger();
         private volatile boolean blockManualRequest;
@@ -1254,6 +1281,24 @@ final class FlowScopeWebServerTest {
             return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
                     "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
         }
+        @Override public CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(
+                String itemId, boolean armed) {
+            authorizationReplayItemId = itemId;
+            authorizationReplayArmed = armed;
+            int sent = armed ? 1 : 0;
+            int skipped = armed ? 0 : 1;
+            CrossIdentityReplayOrchestrator.Outcome outcome = armed
+                    ? CrossIdentityReplayOrchestrator.Outcome.SENT
+                    : CrossIdentityReplayOrchestrator.Outcome.SKIPPED_UNARMED;
+            FlowScopeWebServer.RequestLabResult rawResult = armed
+                    ? new FlowScopeWebServer.RequestLabResult("ev-replay", 200,
+                    "raw-replay-secret", 1, 1, 1) : null;
+            return new CrossIdentityReplayOrchestrator.RunResult("authorization-replay-test", armed,
+                    sent, 0, skipped, List.of(new CrossIdentityReplayOrchestrator.Item(
+                    "GET /api/orders/{id}", "user-b", "user-a", "ev-basis", outcome,
+                    rawResult, armed ? "CONTROLLED_RESPONSE_RECORDED" : "RUN_NOT_ARMED")));
+        }
+        @Override public void killAuthorizationReplay() { authorizationReplayKilled = true; }
 
         private void addHumanEvidence(String runId, String accountId) {
             RequestRecord evidence = new RequestRecord(Source.HUMAN, record.service,

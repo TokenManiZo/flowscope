@@ -30,6 +30,7 @@ import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
 
@@ -73,6 +74,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default RequestLabResult sendRequestLab(String evidenceId, String request,
                                                 CredentialMode credentialMode, String accountId) {
             throw new UnsupportedOperationException("request lab is unavailable");
+        }
+        default CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(String itemId, boolean armed) {
+            throw new UnsupportedOperationException("authorization replay is unavailable");
+        }
+        default void killAuthorizationReplay() {
+            throw new UnsupportedOperationException("authorization replay is unavailable");
         }
         default SessionBroker sessions() { return null; }
         default List<ZapAccountVault.View> zapAccounts() { return List.of(); }
@@ -213,6 +220,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/cluster-evidence" -> clusterEvidence(request, target);
             case "/api/replay" -> replay(request);
             case "/api/request-lab" -> requestLab(request, target);
+            case "/api/authorization-replay" -> authorizationReplay(request);
             case "/api/clear" -> clear(request);
             case "/api/projects" -> projects(request);
             case "/api/human-run" -> humanRun(request);
@@ -433,6 +441,48 @@ public final class FlowScopeWebServer implements AutoCloseable {
             return json(200, body);
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
             return error(400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response authorizationReplay(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String action = form.getOrDefault("action", "run").trim().toLowerCase(Locale.ROOT);
+            if (action.equals("kill")) {
+                state.killAuthorizationReplay();
+                return success("현재 안전 재전송 런에 중지 요청을 적용했습니다.");
+            }
+            if (!action.equals("run")) throw new IllegalArgumentException("지원하지 않는 재전송 동작입니다.");
+            boolean armed = Boolean.parseBoolean(form.getOrDefault("armed", "false"));
+            CrossIdentityReplayOrchestrator.RunResult result = state.runAuthorizationReplay(
+                    required(form, "itemId"), armed);
+            ObjectNode body = json.createObjectNode();
+            body.put("success", true);
+            body.put("message", result.sent() > 0
+                    ? "안전 재전송 응답을 CONTROLLED Evidence로 기록했습니다."
+                    : result.drafted() > 0
+                    ? "상태 변경 요청을 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다."
+                    : "자동 전송 없이 재전송 런을 종료했습니다.");
+            ObjectNode run = body.putObject("run");
+            run.put("runId", result.runId());
+            run.put("armed", result.armed());
+            run.put("sent", result.sent());
+            run.put("drafted", result.drafted());
+            run.put("skipped", result.skipped());
+            var items = run.putArray("items");
+            for (CrossIdentityReplayOrchestrator.Item item : result.items()) {
+                ObjectNode value = items.addObject();
+                value.put("operation", item.operation());
+                value.put("targetIdentity", item.targetIdentity());
+                value.put("basisIdentity", item.basisIdentity());
+                value.put("basisEvidenceId", item.basisEvidenceId());
+                value.put("outcome", item.outcome().name());
+                value.put("reason", item.reason());
+            }
+            return json(200, body);
+        } catch (RuntimeException error) {
+            return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());
         }
     }
 

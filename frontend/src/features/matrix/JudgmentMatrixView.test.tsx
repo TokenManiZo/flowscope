@@ -19,6 +19,11 @@ const saveReview = vi.fn(async (itemId: string, status: string, note: string) =>
 const saveRequirement = vi.fn(async (operation: string, role: string) => ({ success: true, message: `requirement ${operation} ${role}` }))
 const saveResourcePolicy = vi.fn(async (target: string, policy: string) => ({ success: true, message: `resource ${target} ${policy}` }))
 const saveRole = vi.fn(async (identity: string, role: string) => ({ success: true, message: `role ${identity} ${role}` }))
+const runAuthorizationReplay = vi.fn(async (itemId: string, armed: boolean) => ({
+  success: true, message: "안전 재전송 완료",
+  run: { runId: "authorization-replay-ui", armed, sent: 1, drafted: 0, skipped: 0, items: [{ operation: `${service} GET /api/orders/{id}`, targetIdentity: "b", basisIdentity: "a", basisEvidenceId: "ev-a", outcome: "SENT", reason: "CONTROLLED_RESPONSE_RECORDED" }] },
+}))
+const killAuthorizationReplay = vi.fn(async () => ({ success: true, message: "재전송 중지 요청을 적용했습니다." }))
 
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
@@ -32,6 +37,8 @@ vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   saveRequirement: (operation: string, role: string) => saveRequirement(operation, role),
   saveResourcePolicy: (target: string, policy: string) => saveResourcePolicy(target, policy),
   saveRole: (identity: string, role: string) => saveRole(identity, role),
+  runAuthorizationReplay: (itemId: string, armed: boolean) => runAuthorizationReplay(itemId, armed),
+  killAuthorizationReplay: () => killAuthorizationReplay(),
 }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: () => null }))
 
@@ -70,7 +77,7 @@ function renderView(ui: ReactElement) {
   return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={result.client}>{next}</QueryClientProvider>) }
 }
 
-beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear() })
+beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); killAuthorizationReplay.mockClear() })
 
 it("renders server summary, function rows and P/E/O chips without recomputing status", async () => {
   renderView(<JudgmentMatrixView />)
@@ -131,6 +138,22 @@ it("opens the recommendation detail, saves a human review against the server cel
   expect(await within(review).findByRole("status")).toHaveTextContent("saved object-b CONFIRMED repeater reproduced")
   await user.click(within(review).getByRole("button", { name: "정상·기각" }))
   await waitFor(() => expect(saveReview).toHaveBeenLastCalledWith("object-b", "DISMISSED", "repeater reproduced"))
+})
+
+it("requires explicit one-run arming before replaying the selected recommendation", async () => {
+  const user = userEvent.setup()
+  renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
+  const replay = screen.getByRole("region", { name: "안전 능동 재전송" })
+  const run = within(replay).getByRole("button", { name: "선택 추천 실행" })
+  expect(run).toBeDisabled()
+  await user.click(within(replay).getByRole("checkbox", { name: "안전 자동 재전송 허용 (이번 1회)" }))
+  await user.click(run)
+  await waitFor(() => expect(runAuthorizationReplay).toHaveBeenCalledWith("function-b", true))
+  expect(await within(replay).findByRole("status")).toHaveTextContent("전송 1 · 초안 0 · 스킵 0")
+  expect(within(replay).getByRole("checkbox", { name: "안전 자동 재전송 허용 (이번 1회)" })).not.toBeChecked()
+  await user.click(within(replay).getByRole("button", { name: "중지" }))
+  await waitFor(() => expect(killAuthorizationReplay).toHaveBeenCalledOnce())
 })
 
 it("opens the basis Evidence sheet from a recommendation and keeps non-reviewable cells without a review form", async () => {

@@ -35,6 +35,8 @@ import {
   getProjects,
   startProject,
   openProject,
+  runAuthorizationReplay,
+  killAuthorizationReplay,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -147,3 +149,5 @@ export function useIdentityResetMutation() { return useInvalidatingMutation(rese
 export function useImportXmlMutation() { return useInvalidatingMutation(({ source, name, xml }: { source: "human" | "scanner" | "llm"; name: string; xml: string }) => importXml(source, name, xml), [queryKeys.snapshot]) }
 export function useOwnerMutation() { return useInvalidatingMutation(({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity), [queryKeys.snapshot]) }
 export function useRequestLabSendMutation() { return useInvalidatingMutation(sendRequestLab, [queryKeys.snapshot]) }
+export function useAuthorizationReplayMutation() { return useInvalidatingMutation(({ itemId, armed }: { itemId: string; armed: boolean }) => runAuthorizationReplay(itemId, armed), [queryKeys.snapshot]) }
+export function useAuthorizationReplayKillMutation() { return useInvalidatingMutation(killAuthorizationReplay, []) }
