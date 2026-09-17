@@ -9,7 +9,7 @@ import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { Source, Verdict } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
 import { CytoscapeGraph } from "./CytoscapeGraph"
-import { GRAPH_MAX_ZOOM, type LaneBounds } from "./graphLanes"
+import { GRAPH_MAX_ZOOM, LANE_SPACING, laneAnchor, type LaneBounds } from "./graphLanes"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
 import { loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, type GraphPreferences } from "./graphPreferences"
 import { graphCellKey, graphCellSelection, graphReviewVerdict, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
@@ -154,11 +154,18 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
   const hiddenCount = graph?.kind === "operation" ? graph.hiddenObjectCount : (graph?.hiddenOperationCount ?? 0) + hiddenCandidates
   const lanes = graph?.kind === "site" ? ["TARGET", "API GROUP"] : graph?.kind === "group" ? ["IDENTITY", "API"] : ["IDENTITY", "API", "OBJECT"]
   const canvasWidth = useCanvasWidth(canvasShellRef)
-  // 레인 머리글은 노드가 만든 실제 범위를 따라가고, 범위가 없는 레인은 화면 폭을 균등 분할해 자리만 지킨다.
+  // ponytail: 레인 머리글은 노드가 만든 실제 범위를 따르고, 빈 레인은 화면 균등 분할이 아니라 기준 자리(laneAnchor)를 쓴다.
+  // 균등 분할은 노드가 있는 이웃 레인과 겹쳐 머리글이 포개진다. 앞 레인 오른쪽 끝 뒤로 한 번 더 밀어 겹침을 막는다.
+  const laneHeaders = lanes.reduce<Array<{ left: number; right: number }>>((spans, _lane, index) => {
+    const zoom = preferences.viewport?.zoom ?? 1, panX = preferences.viewport?.pan.x ?? 0
+    const anchor = laneAnchor(index) * zoom + panX, half = LANE_SPACING * zoom / 2
+    const span = laneBounds[index] ?? { left: anchor - half, right: anchor + half }
+    const previous = spans[index - 1]
+    const shift = previous ? Math.max(0, previous.right + 8 - span.left) : 0
+    return [...spans, { left: span.left + shift, right: span.right + shift }]
+  }, [])
   const laneHeader = (index: number) => {
-    const bounds = laneBounds[index]
-    const fallbackWidth = (canvasWidth || 0) / Math.max(lanes.length, 1)
-    const span = bounds ?? { left: index * fallbackWidth, right: (index + 1) * fallbackWidth }
+    const span = laneHeaders[index] ?? { left: 0, right: 0 }
     return { left: Math.max(span.left, 0), right: Math.min(span.right, canvasWidth || span.right) }
   }
   const focusGap = (gapId: string) => {

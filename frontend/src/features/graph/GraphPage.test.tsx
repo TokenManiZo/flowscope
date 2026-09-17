@@ -1,14 +1,14 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react"
 import { useEffect } from "react"
 import userEvent from "@testing-library/user-event"
-import { expect, it, vi } from "vitest"
+import { afterEach, expect, it, vi } from "vitest"
 
 import type { Snapshot } from "@/lib/api/types"
 import { GraphPage as CurrentGraphPage } from "./GraphPage"
 
 vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneBoundsChange }: { selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneBoundsChange?(bounds: ReadonlyArray<{ left: number; right: number } | null>): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
   // 실제 캔버스 대신 레인 범위를 알리고, 받은 레인 정렬 요청을 그대로 노출한다.
-  useEffect(() => { onLaneBoundsChange?.([{ left: 20, right: 300 }, { left: 400, right: 700 }]) }, [onLaneBoundsChange])
+  useEffect(() => { onLaneBoundsChange?.((globalThis as { graphLaneBounds?: ReadonlyArray<{ left: number; right: number } | null> }).graphLaneBounds ?? [{ left: 20, right: 300 }, { left: 400, right: 700 }]) }, [onLaneBoundsChange])
   return <button type="button" data-testid="cytoscape-graph" data-lane-layout={`${laneLayout?.lane ?? -1}:${laneLayout?.version ?? -1}`} data-selected-element={selectedElementId ?? ""} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button>
 } }))
 vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
@@ -19,6 +19,8 @@ const snapshot: Snapshot = {
   revision: 1, identityRevision: 1, sampleMode: true, trafficStats: { captured: 1, coverage: 0, excluded: 0, review: 0, dropped: 0, payloadMetadataOnly: 0 }, replays: [], flowLinks: [], roles: {}, owners: {}, requiredRoles: {}, activeSources: ["human"], cells: [{ idn: "alice", op: "GET /orders/{id}", resource: "order:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["ev-1"] }], verifications: [], gaps: [], scenarios: [], accounts: [], sessions: [], managedSessions: [], routeCandidates: [],
   events: [{ eventId: "ev-1", method: "GET", path: "/orders/1", status: 200, fp: "fp", idn: "alice", role: "USER", source: "human", op: "GET /orders/{id}", resource: "order:1", timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["ev-1"], objects: [{ resource: "order:1", evidence: "id" }], verdict: "allow" }],
 }
+
+afterEach(() => { (globalThis as { graphLaneBounds?: unknown }).graphLaneBounds = undefined })
 
 const hierarchyCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["cell-evidence-not-an-event"] }
 
@@ -33,6 +35,21 @@ it("opens the graph on the full relationship view", () => {
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
+})
+
+it("keeps an empty lane header at its anchor instead of overlapping the neighbour", () => {
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
+  // API GROUP 레인에 노드가 없는 상태. 균등 분할이면 TARGET 노드 범위와 머리글이 겹친다.
+  ;(globalThis as { graphLaneBounds?: ReadonlyArray<{ left: number; right: number } | null> }).graphLaneBounds = [{ left: 200, right: 900 }, null]
+  render(<CurrentGraphPage />)
+
+  const target = screen.getByRole("button", { name: "TARGET 레인 기준 정렬" })
+  const group = screen.getByRole("button", { name: "API GROUP 레인 기준 정렬" })
+  const right = (element: HTMLElement) => Number.parseFloat(element.style.left) + Number.parseFloat(element.style.width)
+  expect(right(target)).toBe(900)
+  expect(Number.parseFloat(group.style.left)).toBeGreaterThanOrEqual(right(target))
+  expect(Number.parseFloat(group.style.width)).toBeGreaterThan(0)
 })
 
 it("re-sorts a single lane from its header placed on the bounds the canvas reports", async () => {
