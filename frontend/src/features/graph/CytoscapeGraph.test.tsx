@@ -140,9 +140,9 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  expect(core.on).toHaveBeenCalledTimes(5)
+  expect(core.on).toHaveBeenCalledTimes(6)
   unmount()
-  expect(core.off).toHaveBeenCalledTimes(5)
+  expect(core.off).toHaveBeenCalledTimes(6)
   expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(1)
   expect(disconnectResizeObserver).toHaveBeenCalledTimes(1)
   expect(Math.max(...core.off.mock.invocationCallOrder)).toBeLessThan(core.destroy.mock.invocationCallOrder[0])
@@ -323,6 +323,49 @@ it("keeps a node exactly where it was dropped and stores that position", () => {
   expect(node.position.mock.calls.every(([next]) => next === undefined)).toBe(true)
   expect(modelPosition).toEqual({ x: 9999, y: 210 })
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ positions: { "identity:alice": { x: 9999, y: 210 } } }))
+})
+
+it("snaps a drop near the lane center, leaves a distant drop alone, and guides the drag", () => {
+  const onPreferencesChange = vi.fn()
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
+  // IDENTITY 레인 중앙은 180이고 스냅 거리는 24다.
+  modelPosition = { x: 196, y: 210 }
+
+  act(() => { listeners.get("drag:node")?.({ target: node }) })
+  expect(screen.getByLabelText("공격면 Cytoscape 그래프").parentElement?.querySelector("div[style*=\"background-color\"]")).not.toBeNull()
+
+  act(() => { listeners.get("dragfree:node")?.({ target: node }) })
+  expect(modelPosition).toEqual({ x: 180, y: 210 })
+
+  modelPosition = { x: 260, y: 300 }
+  act(() => { listeners.get("drag:node")?.({ target: node }) })
+  act(() => { listeners.get("dragfree:node")?.({ target: node }) })
+  expect(modelPosition).toEqual({ x: 260, y: 300 })
+  expect(screen.getByLabelText("공격면 Cytoscape 그래프").parentElement?.querySelector("div[style*=\"background-color\"]")).toBeNull()
+})
+
+it("re-anchors only the requested lane and reports how many nodes sit outside their lane", () => {
+  const viewport = { zoom: 1, pan: { x: 0, y: 0 } }
+  const nodes = [
+    createStatefulNode("identity:alice", "identity", { x: -500, y: 110 }, () => viewport),
+    createStatefulNode("operation:GET /orders", "operation", { x: 5000, y: 220 }, () => viewport),
+    createStatefulNode("resource:order:1", "resource", { x: 900, y: 330 }, () => viewport),
+  ]
+  vi.mocked(core.nodes).mockImplementation(() => ({ forEach: (callback: (current: never) => void) => nodes.forEach((current) => callback(current as never)) }))
+  vi.mocked(core.zoom).mockReturnValue(1)
+  vi.mocked(core.pan).mockReturnValue(viewport.pan)
+  const onLaneStrayCountsChange = vi.fn()
+  const preferences = { version: 6 as const, inputMode: "auto" as const, laneWidths: defaultGraphLaneWidths(), locked: false, viewport: null, positions: Object.fromEntries(nodes.map((node) => [node.id(), node.position()])) }
+  const tree = (laneLayout: { lane: number; version: number }) => <CytoscapeGraph projection={projection} locked={false} fitVersion={0} laneLayout={laneLayout} preferences={preferences} onSelect={vi.fn()} onLaneStrayCountsChange={onLaneStrayCountsChange} onPreferencesChange={vi.fn()} />
+  const { rerender } = render(tree({ lane: 0, version: 0 }))
+  runScheduledFrame()
+  // IDENTITY(-500)와 API(5000)만 레인 밖이고 OBJECT(900)는 레인 안이다.
+  expect(onLaneStrayCountsChange).toHaveBeenLastCalledWith([1, 1, 0])
+
+  rerender(tree({ lane: 1, version: 1 }))
+
+  expect(nodes.map((node) => node.position().x)).toEqual([-500, 540, 900])
+  expect(onLaneStrayCountsChange).toHaveBeenLastCalledWith([1, 0, 0])
 })
 
 it("keeps free placement through restore, zoom, fit, resize, and diagonal drag", () => {

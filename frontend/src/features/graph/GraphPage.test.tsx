@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react"
+import { useEffect } from "react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
@@ -7,7 +8,11 @@ import { GRAPH_PREFERENCES_KEY, loadGraphPreferences } from "./graphPreferences"
 import type { Snapshot } from "@/lib/api/types"
 import { GraphPage as CurrentGraphPage } from "./GraphPage"
 
-vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId }: { selectedElementId?: string | null; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => <button type="button" data-testid="cytoscape-graph" data-selected-element={selectedElementId ?? ""} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button> }))
+vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneStrayCountsChange }: { selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneStrayCountsChange?(counts: readonly number[]): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
+  // 실제 캔버스 대신 레인 이탈 수를 알리고, 받은 레인 정렬 요청을 그대로 노출한다.
+  useEffect(() => { onLaneStrayCountsChange?.([0, 2]) }, [onLaneStrayCountsChange])
+  return <button type="button" data-testid="cytoscape-graph" data-lane-layout={`${laneLayout?.lane ?? -1}:${laneLayout?.version ?? -1}`} data-selected-element={selectedElementId ?? ""} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button>
+} }))
 vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
 vi.mock("@/features/evidence/OperationDetail", () => ({ OperationDetail: () => null }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: () => null }))
@@ -32,6 +37,20 @@ it("opens the graph on the full relationship view", () => {
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
+})
+
+it("re-sorts a single lane from its header and surfaces how many nodes left it", async () => {
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
+  render(<CurrentGraphPage />)
+  const laneButton = screen.getByRole("button", { name: "API GROUP 레인 기준 정렬 · 2개 레인 밖" })
+  expect(laneButton).toHaveTextContent("2 이탈")
+  expect(screen.getByRole("button", { name: "TARGET 레인 기준 정렬" })).toBeVisible()
+  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-lane-layout", "0:0")
+
+  await userEvent.click(laneButton)
+
+  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-lane-layout", "1:1")
 })
 
 it("tints each lane band with the accent its node cards carry", () => {

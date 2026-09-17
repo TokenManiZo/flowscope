@@ -38,6 +38,19 @@ export function laneBoundaries(widths: readonly number[]): number[] {
   return widths.reduce<number[]>((boundaries, width) => [...boundaries, boundaries[boundaries.length - 1] + clampLaneWidth(width)], [0])
 }
 
+/** 드래그를 놓을 때 레인 중앙으로 붙는 거리(모델 좌표). 구속이 아니라 정렬 유도다. */
+export const LANE_SNAP_DISTANCE = 24
+
+export function snapsToLane(x: number, lane: LaneGeometry): boolean {
+  return Number.isFinite(x) && Math.abs(x - lane.anchor) <= LANE_SNAP_DISTANCE
+}
+
+/** 노드 전체가 레인 안에 있는지. 벗어난 노드 수를 레인 헤더에서 알린다. */
+export function isInsideLane(x: number, lane: LaneGeometry, nodeWidth: number): boolean {
+  const half = Math.max(0, Number.isFinite(nodeWidth) ? nodeWidth : 0) / 2
+  return Number.isFinite(x) && x - half >= lane.left && x + half <= lane.right
+}
+
 export function laneGeometry(widths: readonly number[], index: number, gutter = LANE_GUTTER): LaneGeometry {
   const boundaries = laneBoundaries(widths)
   const left = boundaries[Math.min(Math.max(index, 0), Math.max(widths.length - 1, 0))] ?? 0

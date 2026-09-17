@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { DEFAULT_LANE_WIDTH, defaultLaneWidths, LANE_ACCENTS, laneAccentForKind, laneBoundaries, laneGeometry, laneIndexForKind, MIN_LANE_WIDTH } from "./graphLanes"
+import { DEFAULT_LANE_WIDTH, defaultLaneWidths, isInsideLane, LANE_ACCENTS, LANE_SNAP_DISTANCE, laneAccentForKind, laneBoundaries, laneGeometry, laneIndexForKind, MIN_LANE_WIDTH, snapsToLane } from "./graphLanes"
 
 describe("graph lanes", () => {
   it("maps node kinds to the lane of the current hierarchy level", () => {
@@ -30,5 +30,18 @@ describe("graph lanes", () => {
     expect(laneAccentForKind("api-group")).toBe(LANE_ACCENTS[1])
     expect(laneAccentForKind("route-candidate")).toBe(LANE_ACCENTS[1])
     expect(laneAccentForKind("resource")).toBe(LANE_ACCENTS[2])
+  })
+
+  it("snaps only near the lane center and reports nodes that fall outside the lane", () => {
+    const lane = laneGeometry([360, 360], 0)
+    expect(lane.anchor).toBe(180)
+    expect(snapsToLane(180 + LANE_SNAP_DISTANCE, lane)).toBe(true)
+    expect(snapsToLane(180 - LANE_SNAP_DISTANCE, lane)).toBe(true)
+    expect(snapsToLane(180 + LANE_SNAP_DISTANCE + 1, lane)).toBe(false)
+    expect(snapsToLane(Number.NaN, lane)).toBe(false)
+
+    expect(isInsideLane(180, lane, 196)).toBe(true)
+    expect(isInsideLane(180, lane, 400)).toBe(false)
+    expect(isInsideLane(900, lane, 196)).toBe(false)
   })
 })
