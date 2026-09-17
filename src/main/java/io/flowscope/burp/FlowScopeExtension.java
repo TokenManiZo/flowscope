@@ -58,6 +58,7 @@ import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.SqliteProjectStore;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
+import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.explorer.CodexAppServerProvider;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -74,6 +75,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -245,6 +247,14 @@ public final class FlowScopeExtension implements BurpExtension {
     private ExplorerAccountVault explorerAccounts;
     private ExplorerCoordinator explorer;
     private CrossIdentityReplayOrchestrator crossIdentityReplay;
+    private LiveCrossIdentityReplayCoordinator liveCrossIdentityReplay;
+    private final Set<Long> pendingLiveHumanReplays = ConcurrentHashMap.newKeySet();
+    private final ExecutorService authorizationReplayWorker =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "flowscope-authorization-replay");
+                t.setDaemon(true);
+                return t;
+            });
     private final ScheduledExecutorService worker =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "flowscope-rebuild");
@@ -284,6 +294,11 @@ public final class FlowScopeExtension implements BurpExtension {
         crossIdentityReplay = new CrossIdentityReplayOrchestrator(sessionBroker, () -> scope,
                 this::executeCrossIdentityReplay, this::openCrossIdentityReplayDraft,
                 java.time.Clock.systemUTC());
+        liveCrossIdentityReplay = new LiveCrossIdentityReplayCoordinator(
+                crossIdentityReplay::executeContinuousBatch,
+                crossIdentityReplay::beginContinuousRun,
+                crossIdentityReplay::kill,
+                authorizationReplayWorker);
         explorerAccounts = new ExplorerAccountVault();
         explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
                 new CodexAppServerProvider(), runContexts, value -> scope.allows(value),
@@ -547,6 +562,10 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             records.add(rec);
             retainRawExchange(rec, req, response);
+            if (rec.source == Source.HUMAN && liveCrossIdentityReplay != null
+                    && liveCrossIdentityReplay.acceptingCaptures()) {
+                pendingLiveHumanReplays.add(rec.runtimeId());
+            }
         }
         scheduleRebuild();
         return true;
@@ -1668,6 +1687,27 @@ public final class FlowScopeExtension implements BurpExtension {
                 return runCrossIdentityReplay(List.of(authorizationReplayRecommendation(itemId)), armed);
             }
             @Override public void killAuthorizationReplay() { killCrossIdentityReplay(); }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                    List<String> accountIds, boolean anonymous, boolean armed) {
+                for (String accountId : accountIds) {
+                    analysisConfig.account(accountId).orElseThrow(() ->
+                            new IllegalArgumentException("등록되지 않은 대상 계정입니다: " + accountId));
+                    SessionBroker.SessionView session = sessionBroker.viewForAccount(accountId).orElseThrow(() ->
+                            new IllegalStateException("재사용 가능한 관리 세션이 없습니다: " + accountId));
+                    if (session.status() != SessionBroker.Status.ACTIVE || session.credentialConflict()) {
+                        throw new IllegalStateException("ACTIVE 관리 세션만 선택할 수 있습니다: " + accountId);
+                    }
+                }
+                return liveCrossIdentityReplay.start(accountIds, anonymous, armed);
+            }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
+                return liveCrossIdentityReplay.snapshot();
+            }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot stopLiveAuthorizationReplay() {
+                liveCrossIdentityReplay.stop();
+                pendingLiveHumanReplays.clear();
+                return liveCrossIdentityReplay.snapshot();
+            }
         }, port);
         webServer.start();
         api.logging().logToOutput("FlowScope Web UI ready: " + webServer.url());
@@ -1885,6 +1925,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         worker.shutdownNow();
+        authorizationReplayWorker.shutdownNow();
         proxyObservations.clear();
         toolObservations.clear();
         killCrossIdentityReplay();
@@ -1949,6 +1990,10 @@ public final class FlowScopeExtension implements BurpExtension {
     CrossIdentityReplayOrchestrator.RunResult runCrossIdentityReplay(
             List<CrossIdentityReplayOrchestrator.Recommendation> recommendations, boolean armed) {
         if (crossIdentityReplay == null) throw new IllegalStateException("FlowScope가 아직 초기화되지 않았습니다.");
+        if (liveCrossIdentityReplay != null
+                && liveCrossIdentityReplay.snapshot().state() != LiveCrossIdentityReplayCoordinator.State.STOPPED) {
+            throw new IllegalStateException("라이브 교차 재전송을 먼저 중지하세요.");
+        }
         return crossIdentityReplay.execute(recommendations, armed);
     }
 
@@ -1994,6 +2039,8 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     void killCrossIdentityReplay() {
+        pendingLiveHumanReplays.clear();
+        if (liveCrossIdentityReplay != null) liveCrossIdentityReplay.reset();
         if (crossIdentityReplay != null) crossIdentityReplay.kill();
     }
 
@@ -2002,7 +2049,12 @@ public final class FlowScopeExtension implements BurpExtension {
             Map<String, String> credentialHeaders,
             CrossIdentityReplayOrchestrator.ReplayContext context) {
         RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
-        HttpRequest request = prepareReplayRequest(seed, replayRequestText(seed), credentialHeaders);
+        TransientExchangeVault.Exchange raw = rawExchanges.get(seed).orElse(null);
+        if (raw == null || !raw.requestRetained()) {
+            throw new IllegalStateException("자동 재전송에는 현재 프로세스의 원문 요청이 필요합니다.");
+        }
+        HttpRequest request = prepareReplayRequest(seed, decodeRequest(raw, seed.requestContentType).text(),
+                credentialHeaders);
         if (!Set.of("GET", "HEAD").contains(request.method().toUpperCase(Locale.ROOT))) {
             throw new IllegalArgumentException("안전 자동 재전송은 GET/HEAD만 허용됩니다.");
         }
@@ -2317,8 +2369,29 @@ public final class FlowScopeExtension implements BurpExtension {
         if (published) {
             if (controlTab != null) controlTab.render(result);
             scheduleDatabaseSave();
+            dispatchPendingLiveHumanReplays(result);
         }
         return published;
+    }
+
+    private void dispatchPendingLiveHumanReplays(Pipeline.Result result) {
+        if (liveCrossIdentityReplay == null || result == null) return;
+        for (RequestRecord record : result.records) {
+            if (!pendingLiveHumanReplays.remove(record.runtimeId())) continue;
+            TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
+            boolean requestRetained = raw != null && raw.requestRetained();
+            URI target = null;
+            if (requestRetained) {
+                try {
+                    HttpRequest prepared = prepareHumanRequest(record, replayRequestText(record),
+                            FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
+                    target = URI.create(prepared.url());
+                } catch (RuntimeException ignored) {
+                    // No request is sent; the coordinator records this basis as ineligible.
+                }
+            }
+            liveCrossIdentityReplay.offer(record, target, requestRetained);
+        }
     }
 
     private void rebuildRouteCandidates(List<RequestRecord> sourceRecords) {

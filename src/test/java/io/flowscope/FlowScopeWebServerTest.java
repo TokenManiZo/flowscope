@@ -23,6 +23,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
+import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
@@ -853,6 +854,28 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void liveAuthorizationReplayApiRequiresArmingAndReturnsCredentialFreeStatus() throws Exception {
+        start();
+
+        assertEquals(400, post("/api/authorization-replay",
+                "action=start-live&accounts=user-b%2Cadmin&anonymous=true&armed=false", token).statusCode());
+        JsonNode started = json(post("/api/authorization-replay",
+                "action=start-live&accounts=user-b%2Cadmin&anonymous=true&armed=true", token));
+        assertEquals("ACTIVE", started.path("live").path("state").asText());
+        assertEquals(List.of("user-b", "admin"), JSON.convertValue(
+                started.path("live").path("targetAccountIds"),
+                JSON.getTypeFactory().constructCollectionType(List.class, String.class)));
+        assertTrue(started.path("live").path("includeAnonymous").asBoolean());
+        assertFalse(started.toString().contains("raw-live-secret"));
+
+        JsonNode status = json(get("/api/authorization-replay", token, origin()));
+        assertEquals("ACTIVE", status.path("live").path("state").asText());
+        JsonNode stopped = json(post("/api/authorization-replay", "action=stop-live", token));
+        assertEquals("STOPPED", stopped.path("live").path("state").asText());
+        assertTrue(state.liveAuthorizationReplayStopped);
+    }
+
+    @Test
     void opensAndSendsAnExplicitRawRequestLabDraftWithoutPuttingItInSnapshot() throws Exception {
         start();
         String evidenceId = state.snapshot().records.getFirst().evidenceId;
@@ -1132,6 +1155,11 @@ final class FlowScopeWebServerTest {
         private volatile String authorizationReplayItemId = "";
         private volatile boolean authorizationReplayArmed;
         private volatile boolean authorizationReplayKilled;
+        private volatile boolean liveAuthorizationReplayStopped;
+        private volatile LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplay =
+                new LiveCrossIdentityReplayCoordinator.Snapshot("",
+                        LiveCrossIdentityReplayCoordinator.State.STOPPED, false, List.of(), false,
+                        0, 0, 0, 0, 0, 0, "NOT_STARTED");
         private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
                 new java.util.concurrent.atomic.AtomicInteger();
         private volatile boolean blockManualRequest;
@@ -1299,6 +1327,27 @@ final class FlowScopeWebServerTest {
                     rawResult, armed ? "CONTROLLED_RESPONSE_RECORDED" : "RUN_NOT_ARMED")));
         }
         @Override public void killAuthorizationReplay() { authorizationReplayKilled = true; }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                List<String> accountIds, boolean anonymous, boolean armed) {
+            if (!armed) throw new IllegalArgumentException("approval required");
+            liveAuthorizationReplay = new LiveCrossIdentityReplayCoordinator.Snapshot(
+                    "live-test", LiveCrossIdentityReplayCoordinator.State.ACTIVE, true,
+                    accountIds, anonymous, 0, 0, 0, 0, 0, 0, "ARMED");
+            return liveAuthorizationReplay;
+        }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
+            return liveAuthorizationReplay;
+        }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot stopLiveAuthorizationReplay() {
+            liveAuthorizationReplayStopped = true;
+            liveAuthorizationReplay = new LiveCrossIdentityReplayCoordinator.Snapshot(
+                    liveAuthorizationReplay.runId(), LiveCrossIdentityReplayCoordinator.State.STOPPED,
+                    false, liveAuthorizationReplay.targetAccountIds(), liveAuthorizationReplay.includeAnonymous(),
+                    liveAuthorizationReplay.observed(), liveAuthorizationReplay.eligible(),
+                    liveAuthorizationReplay.queued(), liveAuthorizationReplay.sent(),
+                    liveAuthorizationReplay.drafted(), liveAuthorizationReplay.skipped(), "STOPPED_BY_OPERATOR");
+            return liveAuthorizationReplay;
+        }
 
         private void addHumanEvidence(String runId, String accountId) {
             RequestRecord evidence = new RequestRecord(Source.HUMAN, record.service,

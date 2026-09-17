@@ -31,6 +31,7 @@ import java.util.function.Supplier;
  * Credential maps are method-local only and never enter the returned run report.</p>
  */
 public final class CrossIdentityReplayOrchestrator {
+    public static final String ANONYMOUS_IDENTITY = "anon";
     public static final int MAX_CONCURRENT_PER_TARGET = 1;
     private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD");
     private static final Set<String> DRAFT_ONLY_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
@@ -139,11 +140,19 @@ public final class CrossIdentityReplayOrchestrator {
     /** Stops the current run before its next draft or network send. */
     public void kill() { killSwitch.set(true); }
 
+    /** Arms a sequence of live batches. A later kill remains effective until this is called again. */
+    public void beginContinuousRun() { killSwitch.set(false); }
+
     /**
      * Executes one bounded run. The {@code armed} value is consumed by this call and is never retained for a later run.
      */
     public synchronized RunResult execute(List<Recommendation> recommendations, boolean armed) {
-        killSwitch.set(false);
+        beginContinuousRun();
+        return executeContinuousBatch(recommendations, armed);
+    }
+
+    /** Executes one batch without clearing a kill requested for the surrounding live run. */
+    public synchronized RunResult executeContinuousBatch(List<Recommendation> recommendations, boolean armed) {
         String runId = "authorization-replay-" + UUID.randomUUID();
         List<Item> items = new ArrayList<>();
         Set<String> deduplicated = new LinkedHashSet<>();
@@ -172,8 +181,7 @@ public final class CrossIdentityReplayOrchestrator {
                 }
                 Map<String, String> credentials;
                 try {
-                    credentials = sessions.headersForAccount(recommendation.targetIdentity(), recommendation.target(),
-                            scope.get(), clock.instant());
+                    credentials = credentials(recommendation);
                 } catch (RuntimeException error) {
                     items.add(item(recommendation, Outcome.SKIPPED_INELIGIBLE, null,
                             "SESSION_OR_SCOPE_INELIGIBLE"));
@@ -191,12 +199,14 @@ public final class CrossIdentityReplayOrchestrator {
                 try {
                     Exchange exchange = transport.send(recommendation, credentials, context);
                     String reason = "CONTROLLED_RESPONSE_RECORDED";
-                    try {
-                        sessions.observeResponse(sessions.handleForAccount(recommendation.targetIdentity()),
-                                recommendation.target(), exchange.result().status(), exchange.location(), exchange.body(),
-                                exchange.setCookieHeaders(), clock.instant());
-                    } catch (RuntimeException feedbackError) {
-                        reason = "CONTROLLED_RESPONSE_RECORDED_FRESHNESS_FEEDBACK_FAILED";
+                    if (!anonymous(recommendation)) {
+                        try {
+                            sessions.observeResponse(sessions.handleForAccount(recommendation.targetIdentity()),
+                                    recommendation.target(), exchange.result().status(), exchange.location(), exchange.body(),
+                                    exchange.setCookieHeaders(), clock.instant());
+                        } catch (RuntimeException feedbackError) {
+                            reason = "CONTROLLED_RESPONSE_RECORDED_FRESHNESS_FEEDBACK_FAILED";
+                        }
                     }
                     items.add(item(recommendation, Outcome.SENT, exchange.result(), reason));
                     sent++;
@@ -209,8 +219,7 @@ public final class CrossIdentityReplayOrchestrator {
             if (DRAFT_ONLY_METHODS.contains(method)) {
                 Map<String, String> credentials;
                 try {
-                    credentials = sessions.headersForAccount(recommendation.targetIdentity(), recommendation.target(),
-                            scope.get(), clock.instant());
+                    credentials = credentials(recommendation);
                 } catch (RuntimeException error) {
                     items.add(item(recommendation, Outcome.SKIPPED_INELIGIBLE, null,
                             "SESSION_OR_SCOPE_INELIGIBLE"));
@@ -231,6 +240,22 @@ public final class CrossIdentityReplayOrchestrator {
             skipped++;
         }
         return new RunResult(runId, armed, sent, drafted, skipped, items);
+    }
+
+    private Map<String, String> credentials(Recommendation recommendation) {
+        if (anonymous(recommendation)) {
+            ScopePolicy current = scope.get();
+            if (current == null || !current.allows(recommendation.target().toString())) {
+                throw new IllegalStateException("anonymous target is outside exact scope");
+            }
+            return Map.of();
+        }
+        return sessions.headersForAccount(recommendation.targetIdentity(), recommendation.target(),
+                scope.get(), clock.instant());
+    }
+
+    private static boolean anonymous(Recommendation recommendation) {
+        return ANONYMOUS_IDENTITY.equals(recommendation.targetIdentity());
     }
 
     private static Item item(Recommendation value, Outcome outcome,

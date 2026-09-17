@@ -31,6 +31,7 @@ import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
+import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SessionBroker;
 
@@ -80,6 +81,18 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default void killAuthorizationReplay() {
             throw new UnsupportedOperationException("authorization replay is unavailable");
+        }
+        default LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                List<String> accountIds, boolean anonymous, boolean armed) {
+            throw new UnsupportedOperationException("live authorization replay is unavailable");
+        }
+        default LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
+            return new LiveCrossIdentityReplayCoordinator.Snapshot("",
+                    LiveCrossIdentityReplayCoordinator.State.STOPPED, false, List.of(), false,
+                    0, 0, 0, 0, 0, 0, "NOT_AVAILABLE");
+        }
+        default LiveCrossIdentityReplayCoordinator.Snapshot stopLiveAuthorizationReplay() {
+            throw new UnsupportedOperationException("live authorization replay is unavailable");
         }
         default SessionBroker sessions() { return null; }
         default List<ZapAccountVault.View> zapAccounts() { return List.of(); }
@@ -445,10 +458,25 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private LoopbackHttpServer.Response authorizationReplay(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            return liveAuthorizationReplay(state.liveAuthorizationReplayStatus(),
+                    "라이브 교차 재전송 상태입니다.");
+        }
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
             String action = form.getOrDefault("action", "run").trim().toLowerCase(Locale.ROOT);
+            if (action.equals("start-live")) {
+                return liveAuthorizationReplay(state.startLiveAuthorizationReplay(
+                        commaSeparated(form.get("accounts")),
+                        Boolean.parseBoolean(form.getOrDefault("anonymous", "false")),
+                        Boolean.parseBoolean(form.getOrDefault("armed", "false"))),
+                        "라이브 교차 재전송을 시작했습니다.");
+            }
+            if (action.equals("stop-live")) {
+                return liveAuthorizationReplay(state.stopLiveAuthorizationReplay(),
+                        "라이브 교차 재전송을 중지했습니다.");
+            }
             if (action.equals("kill")) {
                 state.killAuthorizationReplay();
                 return success("현재 안전 재전송 런에 중지 요청을 적용했습니다.");
@@ -484,6 +512,34 @@ public final class FlowScopeWebServer implements AutoCloseable {
         } catch (RuntimeException error) {
             return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());
         }
+    }
+
+    private LoopbackHttpServer.Response liveAuthorizationReplay(
+            LiveCrossIdentityReplayCoordinator.Snapshot status, String message) throws IOException {
+        ObjectNode body = json.createObjectNode();
+        body.put("success", true);
+        body.put("message", message);
+        ObjectNode live = body.putObject("live");
+        live.put("runId", status.runId());
+        live.put("state", status.state().name());
+        live.put("armed", status.armed());
+        var targets = live.putArray("targetAccountIds");
+        status.targetAccountIds().forEach(targets::add);
+        live.put("includeAnonymous", status.includeAnonymous());
+        live.put("observed", status.observed());
+        live.put("eligible", status.eligible());
+        live.put("queued", status.queued());
+        live.put("sent", status.sent());
+        live.put("drafted", status.drafted());
+        live.put("skipped", status.skipped());
+        live.put("lastReason", status.lastReason());
+        return json(200, body);
+    }
+
+    private static List<String> commaSeparated(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return java.util.Arrays.stream(value.split(","))
+                .map(String::trim).filter(item -> !item.isBlank()).distinct().toList();
     }
 
     private RequestLabResult executeRequestLabOnce(String operationId, String eventId, String request,

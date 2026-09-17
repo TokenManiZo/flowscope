@@ -139,6 +139,36 @@ final class CrossIdentityReplayOrchestratorTest {
     }
 
     @Test
+    void anonymousReplayStaysInScopeAndUsesNoCredentials() {
+        SessionBroker broker = activeBroker("user-b", "Bearer active");
+        AtomicInteger sends = new AtomicInteger();
+        CrossIdentityReplayOrchestrator orchestrator = orchestrator(broker,
+                (candidate, headers, context) -> {
+                    assertEquals(CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY,
+                            candidate.targetIdentity());
+                    assertTrue(headers.isEmpty());
+                    sends.incrementAndGet();
+                    return response(200, "{\"id\":19}");
+                }, (candidate, headers) -> fail("GET must not open a draft"));
+        CrossIdentityReplayOrchestrator.Recommendation anonymous =
+                new CrossIdentityReplayOrchestrator.Recommendation(
+                        "GET /api/orders/{id}", CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY,
+                        "user-a", "ev-basis", URI.create("https://api.test/api/orders/19"));
+        CrossIdentityReplayOrchestrator.Recommendation outside =
+                new CrossIdentityReplayOrchestrator.Recommendation(
+                        "GET /private/orders/{id}", CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY,
+                        "user-a", "ev-outside", URI.create("https://api.test/private/orders/19"));
+
+        CrossIdentityReplayOrchestrator.RunResult result = orchestrator.execute(
+                List.of(anonymous, outside), true);
+
+        assertEquals(1, sends.get());
+        assertEquals(1, result.sent());
+        assertEquals(CrossIdentityReplayOrchestrator.Outcome.SKIPPED_INELIGIBLE,
+                result.items().get(1).outcome());
+    }
+
+    @Test
     void unauthorizedReplayMakesIdentitySuspectAndSkipsItsNextRequest() {
         SessionBroker broker = activeBroker("user-b", "Bearer active");
         AtomicInteger sends = new AtomicInteger();

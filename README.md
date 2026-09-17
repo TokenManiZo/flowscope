@@ -209,6 +209,7 @@ beta.47에서 수정한 ZAP 종료·재시작 경합 처리는 beta.48 이후(�
 - **화면별 분석 제어** — 수집·메인 비교·기본 숨김·검토 대기 수량과 HUMAN/SCANNER/LLM, Evidence 처분·class, 역할 정책·3-way gap 필터는 각 작업면의 context panel에서 제공하며 전역 route 탐색과 섞지 않습니다.
 - **인가 그래프** — 세 단계 계층으로 읽습니다. **Site Overview**는 Target→API 그룹(첫 안정 경로 세그먼트, 예 `ORDERS APIs`) 카드에 API 수·H/S/L Evidence 수·Gap·경로 후보 수를 표시하고, 그룹을 열면 **API View**가 신원→API를 suspicious·충돌·일부 관측·Evidence 수 순으로 18개씩 보여 주며, API를 열면 **Object View**가 신원→API→접근 대상 ID를 18개씩 보여 줍니다(`API/Object 18개 더 보기 (N개 남음)`, Back·개요로 접기). HUMAN 파랑·실선 / SCANNER 빨강·파선 / LLM 밝은 점선 overlay, 관측과 분리된 미요청 route 후보, 별도 인가 판정 view, 선택 신원·경로 focus+context, 미교차 후보 focus(GAP 목록), 화면 맞춤을 제공합니다. 900px 이하와 `API 목록 보기`는 같은 계층을 키보드 목록으로 제공합니다. 노드 판정은 선택한 서버 셀이 모두 같을 때만 표시하고, 여러 셀이 겹치면 상세에서 원본 셀을 각각 보여 줍니다. HTTP 상태는 관측 outcome일 뿐 인가 판정으로 승격하지 않으며 응답→요청 데이터 의존성은 `흐름 순서`에서 따로 표시합니다.
 - **판정 매트릭스** — 기본 탭은 정책 P·실행 E·소유권 O를 합산하지 않고 나란히 두는 판정 매트릭스입니다. BFLA(역할 × 기능)·BOLA/IDOR(계정 × 객체)·실행 Evidence 보기에서 셀마다 기대(허용/차단/미정)→실제(성공/차단/갈림/해석 불가/미실행), P/E/O 등급, 상태를 보여 주며 상세에 추천 조합·유효성 gate·오라클·Evidence·사람 최종 판정을 둡니다. 상세에서는 객체 정책(소유자 전용·같은 역할 공유·인증 사용자 공유·공개·관리자 전용·미정)을 지정할 수 있고 기능/객체 중 하나라도 차단이면 BFLA/BOLA 차단 층을 표시합니다. 테넌트 축은 사용하지 않습니다. 후보 여부는 서버 권한 셀만 따르고 2xx만으로 승격하지 않습니다. 추천 상세에서 런 1회 승인을 체크하면 exact scope 안의 `ACTIVE` 대상 신원으로 `GET/HEAD`만 CONTROLLED 재전송하고, `POST/PUT/PATCH/DELETE`는 Burp Repeater 미전송 초안만 엽니다. 결과는 기존 판정기에 후보 근거로만 들어가며 사람이 확인하기 전에는 취약점으로 확정하지 않습니다. 둘째 탭 **파라미터 커버리지**는 서버의 입력×권한 대상×subject×source 검증 좌표를, 셋째 탭 **기존 권한 매트릭스**는 `identity/role × operation × resource` cell을 그대로 표시합니다.
+- **HUMAN 라이브 교차 신원 재전송** — 런 1회 승인을 받은 동안 새로 캡처된 HUMAN API 요청을 선택한 다른 `ACTIVE` 등록 계정과 선택적 비로그인 문맥으로 백그라운드 재전송합니다. 기준 요청의 계정은 자동 제외하며, 현재 프로세스에 원문 요청이 남아 있고 분류 결과가 `API/INCLUDE`인 새 Evidence만 사용합니다. `GET/HEAD`만 자동 전송하고 `POST/PUT/PATCH/DELETE`는 Repeater 초안만 생성합니다. 런당 대상 조합은 200건으로 제한하며 중지·프로젝트 전환·확장 unload 시 이후 전송을 차단합니다. 응답은 `SCANNER + AUTHORIZATION_REPLAY + CONTROLLED` Evidence로 기존 판정기에 들어갈 뿐 자동 확정되지 않습니다. 새 화면 구성은 별도 UI 작업으로 남겨 두었으며 localhost API 계약은 `POST /api/authorization-replay`의 `start-live`/`stop-live`, `GET /api/authorization-replay` 상태 조회입니다.
 - 판정 매트릭스의 계정·기능·접근 대상 조합은 서비스 경계 안에서만 생성합니다. 등록 계정은 `AccountProfile.service`, 익명·미등록 관측 신원은 실제 Evidence의 서비스 범위만 사용합니다. 등록 계정의 설정 서비스가 현재 관측·정책 작업과 하나도 맞지 않으면 계정을 조합에 섞지 않고 설정 확인 경고에 계정과 서비스를 표시합니다.
 - **흐름 순서** — timestamp가 있는 관측에서 복원한 응답→요청 ID/token 의존성
 - **시나리오** — 현재 결정론적 BOLA/BFLA 규칙 후보와 사람 검토. 이전 LLM 평가·판정은 별도 읽기 전용 기록
@@ -258,6 +259,14 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 - Explorer는 정적·응답 기반 frontier를 넓게 따라가지만 runtime에서만 로드되는 lazy chunk, CAPTCHA/MFA/WebAuthn, 서버 전용 endpoint와 임의 JavaScript wrapper를 완전 발견하지 못할 수 있습니다. POST의 업무 의미도 범용 블랙박스에서 완전히 판별할 수 없으므로 조회·검색 요청으로 제한하고 승인된 테스트 환경에서만 사용합니다.
 - 그래프의 API 그룹은 경로의 첫 안정 세그먼트(`/api`, `/rest`, `/v1` 접두 제외)로 묶는 표시 단위이지 의미 기반 clustering이나 전체 API 추정이 아닙니다. API·접근 대상 ID의 18개 증분은 정렬 뒤 표시 제한이며 숨긴 항목의 Evidence는 선택·상세에 그대로 남습니다. 20,000건 수집 상한은 별도로 Burp를 보호합니다.
 - Montoya `2026.7`에 맞춰 컴파일했습니다. 실제 engagement에서 사용하는 Burp 버전으로 release JAR을 확인해야 합니다.
+
+## 라이브 교차 신원 재전송 설계 근거
+
+- [Autorize](https://github.com/Quitten/Autorize/blob/master/README.md)의 관측 요청→저권한/비로그인 재전송과 다중 저권한 사용자 지원을 HUMAN 트래픽 fan-out의 기준으로 삼았습니다.
+- [AuthMatrix](https://github.com/SecurityInnovation/AuthMatrix)의 사용자·역할·요청 조합과 응답 기반 성공/실패 규칙을 참고하되, FlowScope에서는 별도 판정기를 만들지 않고 기존 P/E/O 정책·Evidence 오라클을 사용합니다.
+- [ZAP Access Control Testing](https://www.zaproxy.org/docs/desktop/addons/access-control-testing/)의 사용자별 Allowed/Denied/Unknown 기대와 scope 제한을 반영해 등록 계정 상태와 exact scope를 독립 게이트로 둡니다.
+- [AuthScope (CCS 2017)](https://acmccs.github.io/papers/p799-zuoA.pdf)의 인증 후 요청 필드 치환·응답 차등 관찰을 근거로 삼되, 상태코드 하나만으로 취약점을 확정하지 않습니다.
+- [OWASP API1:2023 BOLA](https://api-security.owasp.org/editions/2023/en/0xa1-broken-object-level-authorization/)와 [OWASP API5:2023 BFLA](https://api-security.owasp.org/editions/2023/en/0xa5-broken-function-level-authorization/)에 따라 객체 소유 관계와 기능별 역할 요구를 별도 정책 축으로 유지합니다.
 
 ## Standalone 데모
 
