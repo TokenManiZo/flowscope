@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Crosshair, Expand, Filter, LockKeyhole, Maximize2, Minus, Plus, RotateCcw } from "lucide-react"
+import { AlignVerticalSpaceAround, Crosshair, Expand, Filter, LockKeyhole, Maximize2, Minus, Plus, RotateCcw } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -9,6 +9,7 @@ import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { Source, Verdict } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
 import { CytoscapeGraph } from "./CytoscapeGraph"
+import { GRAPH_MAX_ZOOM, LANE_SPACING, laneAnchor, type LaneBounds } from "./graphLanes"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
 import { loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, type GraphPreferences } from "./graphPreferences"
 import { graphCellKey, graphCellSelection, graphReviewVerdict, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
@@ -26,7 +27,7 @@ const sourceLines: Record<Source, string> = {
   unknown: "border-dotted border-zinc-500",
 }
 const supportTrafficClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-const defaultPreferences: GraphPreferences = { version: 5, positions: {}, viewport: null, locked: false, inputMode: "auto" }
+const defaultPreferences: GraphPreferences = { version: 7, positions: {}, viewport: null, locked: false, inputMode: "auto" }
 const initialNavigation: GraphNavigation = { level: "site", groupId: "", operation: "", operationLimit: GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE, focusCandidateKey: "" }
 
 function useCompactGraph() {
@@ -41,11 +42,25 @@ function useCompactGraph() {
   return compact
 }
 
+function useCanvasWidth(ref: { current: HTMLDivElement | null }) {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return setWidth(0)
+    setWidth(element.clientWidth)
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => setWidth(element.clientWidth))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [ref])
+  return width
+}
+
 function toggle<T extends string>(items: readonly T[], value: T): readonly T[] {
   return items.includes(value) ? items.filter((item) => item !== value) : [...items, value]
 }
 
-function clampZoom(zoom: number, maxZoom: number) { return Math.min(maxZoom, Math.max(0.4, Math.round(zoom * 10) / 10)) }
+function clampZoom(zoom: number) { return Math.min(GRAPH_MAX_ZOOM, Math.max(0.4, Math.round(zoom * 10) / 10)) }
 
 export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNode }) {
   const snapshot = useSnapshotQuery()
@@ -56,8 +71,10 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
   const [selection, setSelection] = useState<GraphSelection | null>(null)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  const [maxZoom, setMaxZoom] = useState(2)
   const [fitVersion, setFitVersion] = useState(0)
+  const [layoutVersion, setLayoutVersion] = useState(0)
+  const [laneLayout, setLaneLayout] = useState({ lane: 0, version: 0 })
+  const [laneBounds, setLaneBounds] = useState<ReadonlyArray<LaneBounds | null>>([])
   const [listMode, setListMode] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [navigation, setNavigation] = useState(initialNavigation)
@@ -136,6 +153,21 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
   const hiddenCandidates = graph?.kind === "group" ? Math.max(0, (graph.groups.find((group) => group.id === resolvedNavigation.groupId)?.routeCandidateCount ?? 0) - graph.routeCandidates.length) : 0
   const hiddenCount = graph?.kind === "operation" ? graph.hiddenObjectCount : (graph?.hiddenOperationCount ?? 0) + hiddenCandidates
   const lanes = graph?.kind === "site" ? ["TARGET", "API GROUP"] : graph?.kind === "group" ? ["IDENTITY", "API"] : ["IDENTITY", "API", "OBJECT"]
+  const canvasWidth = useCanvasWidth(canvasShellRef)
+  // ponytail: 레인 머리글은 노드가 만든 실제 범위를 따르고, 빈 레인은 화면 균등 분할이 아니라 기준 자리(laneAnchor)를 쓴다.
+  // 균등 분할은 노드가 있는 이웃 레인과 겹쳐 머리글이 포개진다. 앞 레인 오른쪽 끝 뒤로 한 번 더 밀어 겹침을 막는다.
+  const laneHeaders = lanes.reduce<Array<{ left: number; right: number }>>((spans, _lane, index) => {
+    const zoom = preferences.viewport?.zoom ?? 1, panX = preferences.viewport?.pan.x ?? 0
+    const anchor = laneAnchor(index) * zoom + panX, half = LANE_SPACING * zoom / 2
+    const span = laneBounds[index] ?? { left: anchor - half, right: anchor + half }
+    const previous = spans[index - 1]
+    const shift = previous ? Math.max(0, previous.right + 8 - span.left) : 0
+    return [...spans, { left: span.left + shift, right: span.right + shift }]
+  }, [])
+  const laneHeader = (index: number) => {
+    const span = laneHeaders[index] ?? { left: 0, right: 0 }
+    return { left: Math.max(span.left, 0), right: Math.min(span.right, canvasWidth || span.right) }
+  }
   const focusGap = (gapId: string) => {
     const gap = snapshot.data?.gaps.find((item) => item.id === gapId)
     const group = gap && graph?.groups.find((item) => item.operations.includes(gap.op))
@@ -147,13 +179,13 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
     setFilterOpen(false)
   }
   const zoom = preferences.viewport?.zoom ?? 1
-  const adjustZoom = (delta: number) => setPreferences((current) => ({ ...current, viewport: { zoom: clampZoom((current.viewport?.zoom ?? 1) + delta, maxZoom), pan: current.viewport?.pan ?? { x: 0, y: 0 } } }))
+  const adjustZoom = (delta: number) => setPreferences((current) => ({ ...current, viewport: { zoom: clampZoom((current.viewport?.zoom ?? 1) + delta), pan: current.viewport?.pan ?? { x: 0, y: 0 } } }))
   const visibleCount = graph?.nodes.length ?? 0
   const groupLabel = graph?.groups.find((group) => group.id === resolvedNavigation.groupId)?.label ?? resolvedNavigation.groupId
   const operationLabel = resolvedNavigation.level === "operation" ? operationParts(resolvedNavigation.operation) : null
 
   const filterRail = <div className="h-full bg-[var(--flowscope-pane)] px-4 py-4 text-[13px] leading-5">
-    <div className="mb-3 flex items-start justify-between border-b border-border/70 pb-3"><div><p className="font-semibold tracking-[0.08em] text-foreground">GRAPH FILTERS</p><p className="mt-1 text-xs text-muted-foreground">{visibleCount}개 그래프 객체</p></div><Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="그래프 저장값 초기화" onClick={() => { resetGraphPreferences(); setPreferences(defaultPreferences) }}><RotateCcw className="size-4" /></Button></div>
+    <div className="mb-3 flex items-start justify-between border-b border-border/70 pb-3"><div><p className="font-semibold tracking-[0.08em] text-foreground">GRAPH FILTERS</p><p className="mt-1 text-xs text-muted-foreground">{visibleCount}개 그래프 객체</p></div><Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="그래프 저장값 초기화" onClick={() => { resetGraphPreferences(); setPreferences(defaultPreferences); setLayoutVersion((current) => current + 1) }}><RotateCcw className="size-4" /></Button></div>
     <fieldset className="border-b border-border/70 py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">SOURCES</legend><div className="grid gap-2.5">{allSources.map((source) => <label className="grid cursor-pointer grid-cols-[1rem_1.5rem_1fr_auto] items-center gap-2" key={source}><Checkbox checked={filters.source.includes(source)} onCheckedChange={() => setFilters((current) => ({ ...current, source: toggle(current.source, source) }))} /><span aria-hidden="true" className={`w-5 border-t-2 ${sourceLines[source]}`} /><span className="font-medium">{sourceNames[source]}</span><span className="tabular-nums text-muted-foreground">{sourceCount(source)}</span></label>)}</div></fieldset>
     <fieldset className="border-b border-border/70 py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">IDENTITIES</legend><div className="grid max-h-40 gap-2.5 overflow-y-auto pr-1">{identities.map((identity) => <label className="grid cursor-pointer grid-cols-[1rem_1fr_auto] items-center gap-2" key={identity}><Checkbox checked={filters.identity.includes(identity)} onCheckedChange={() => setFilters((current) => ({ ...current, identity: toggle(current.identity, identity) }))} /><span className="truncate font-medium">{identity}</span><span className="tabular-nums text-muted-foreground">{identityCount(identity)}</span></label>)}{!identities.length && <span className="text-xs text-muted-foreground">INCLUDE 신원이 없습니다.</span>}</div></fieldset>
     <fieldset className="border-b border-border/70 py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">EVIDENCE</legend><div className="grid gap-2">{reviewStates.map((review) => <label className="grid cursor-pointer grid-cols-[1rem_1fr_auto] items-center gap-2" key={review}><Checkbox checked={filters.reviewStates?.includes(review)} onCheckedChange={() => setFilters((current) => ({ ...current, reviewStates: toggle(current.reviewStates ?? reviewStates, review) }))} /><span>{review.toUpperCase()}</span><span className="tabular-nums text-muted-foreground">{reviewCount(review)}</span></label>)}</div></fieldset>
@@ -161,13 +193,13 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
     <fieldset className="border-b border-border/70 py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">TRAFFIC CLASS</legend><label className="flex cursor-pointer items-start gap-2"><Checkbox className="mt-0.5" checked={filters.includeSupportTraffic} onCheckedChange={(checked) => setFilters((current) => ({ ...current, includeSupportTraffic: checked === true }))} /><span>인증·화면·반복 보조 흐름 표시</span></label></fieldset>
     <fieldset className="border-b border-border/70 py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">ROUTE CANDIDATES</legend><label className="flex cursor-pointer items-center gap-2"><Checkbox checked={filters.includeRouteCandidates} onCheckedChange={(checked) => setFilters((current) => ({ ...current, includeRouteCandidates: checked === true }))} /><span>경로 후보 표시</span></label></fieldset>
     <section className="border-b border-border/70 py-3" aria-label="ROLE - POLICY SUMMARY"><p className="mb-1 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">ROLE - POLICY SUMMARY</p><p className="text-xs text-muted-foreground">역할 {Object.keys(snapshot.data?.requiredRoles ?? {}).length} · 소유자 {Object.keys(snapshot.data?.owners ?? {}).length}</p></section>
-    <fieldset className="border-b border-border/70 py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">GRAPH FOCUS</legend><div className="grid gap-2"><Button size="sm" variant="ghost" className="justify-start px-2" disabled={resolvedNavigation.level === "site"} onClick={() => setNavigation({ ...resolvedNavigation, operationLimit: GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE })}><Expand className="mr-1.5 size-3.5" />18개로 접기</Button><Button size="sm" variant={preferences.locked ? "secondary" : "ghost"} className="justify-start px-2" onClick={() => setPreferences((current) => ({ ...current, locked: !current.locked }))}><LockKeyhole className="mr-1.5 size-3.5" />{preferences.locked ? "위치 잠금 해제" : "위치 잠금"}</Button><label className="grid gap-1 text-xs text-muted-foreground">그래프 입력 방식<select aria-label="그래프 입력 방식" className="h-8 rounded-md border border-border bg-background px-2 text-foreground" value={preferences.inputMode} onChange={event => setPreferences(current => ({ ...current, inputMode: event.target.value as GraphPreferences["inputMode"] }))}><option value="auto">자동</option><option value="trackpad">트랙패드</option><option value="mouse">마우스</option></select></label></div></fieldset>
+    <fieldset className="border-b border-border/70 py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">GRAPH FOCUS</legend><div className="grid gap-2"><Button size="sm" variant="ghost" className="justify-start px-2" disabled={resolvedNavigation.level === "site"} onClick={() => setNavigation({ ...resolvedNavigation, operationLimit: GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE })}><Expand className="mr-1.5 size-3.5" />18개로 접기</Button><Button size="sm" variant="ghost" className="justify-start px-2" onClick={() => setLayoutVersion((current) => current + 1)}><AlignVerticalSpaceAround className="mr-1.5 size-3.5" />레인 기준 재정렬</Button><Button size="sm" variant={preferences.locked ? "secondary" : "ghost"} className="justify-start px-2" onClick={() => setPreferences((current) => ({ ...current, locked: !current.locked }))}><LockKeyhole className="mr-1.5 size-3.5" />{preferences.locked ? "위치 잠금 해제" : "위치 잠금"}</Button><label className="grid gap-1 text-xs text-muted-foreground">그래프 입력 방식<select aria-label="그래프 입력 방식" className="h-8 rounded-md border border-border bg-background px-2 text-foreground" value={preferences.inputMode} onChange={event => setPreferences(current => ({ ...current, inputMode: event.target.value as GraphPreferences["inputMode"] }))}><option value="auto">자동</option><option value="trackpad">트랙패드</option><option value="mouse">마우스</option></select></label></div></fieldset>
     <fieldset className="py-3"><legend className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">VIEW OPTIONS</legend><div className="grid grid-cols-2 gap-2"><Button size="sm" variant={filters.view === "source" ? "default" : "outline"} onClick={() => setFilters((current) => ({ ...current, view: "source" }))}>소스 보기</Button><Button size="sm" variant={filters.view === "authz" ? "default" : "outline"} onClick={() => setFilters((current) => ({ ...current, view: "authz" }))}>권한 판정</Button></div></fieldset>
   </div>
 
   const toolbar = <div role="toolbar" aria-label="그래프 상단 제어" className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-[var(--flowscope-pane)] px-4 py-2.5">
     <div className="flex min-w-0 flex-wrap items-center gap-2.5">{viewSwitcher}{graph && <p className="truncate text-xs text-muted-foreground">{graph.identities.length} identities · {graph.resources.length} resources · {graph.operations.length} operations</p>}</div>
-    <div className="flex flex-wrap items-center gap-1.5"><Button size="sm" variant="outline" className="h-8 px-2.5 text-xs xl:hidden" aria-label="그래프 필터" onClick={() => setFilterOpen(true)}><Filter className="mr-1.5 size-3.5" />필터</Button><Button size="icon-sm" variant="ghost" aria-label="축소" disabled={zoom <= 0.4} onClick={() => adjustZoom(-0.1)}><Minus className="size-3.5" /></Button><span className="w-11 text-center text-xs tabular-nums">{Math.round(zoom * 100)}%</span><Button size="icon-sm" variant="ghost" aria-label="확대" disabled={zoom >= maxZoom - 0.001} onClick={() => adjustZoom(0.1)}><Plus className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="그래프 맞추기" onClick={() => setFitVersion((current) => current + 1)}><Crosshair className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="전체 화면" onClick={() => { void canvasShellRef.current?.requestFullscreen?.() }}><Maximize2 className="size-3.5" /></Button>{!compact && <Button size="sm" variant={listMode ? "secondary" : "ghost"} className="h-8 px-2.5 text-xs" onClick={() => setListMode((current) => !current)}>{listMode ? "그래프 보기" : "API 목록 보기"}</Button>}</div>
+    <div className="flex flex-wrap items-center gap-1.5"><Button size="sm" variant="outline" className="h-8 px-2.5 text-xs xl:hidden" aria-label="그래프 필터" onClick={() => setFilterOpen(true)}><Filter className="mr-1.5 size-3.5" />필터</Button><Button size="icon-sm" variant="ghost" aria-label="축소" disabled={zoom <= 0.4} onClick={() => adjustZoom(-0.1)}><Minus className="size-3.5" /></Button><span className="w-11 text-center text-xs tabular-nums">{Math.round(zoom * 100)}%</span><Button size="icon-sm" variant="ghost" aria-label="확대" disabled={zoom >= GRAPH_MAX_ZOOM - 0.001} onClick={() => adjustZoom(0.1)}><Plus className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="그래프 맞추기" onClick={() => setFitVersion((current) => current + 1)}><Crosshair className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="전체 화면" onClick={() => { void canvasShellRef.current?.requestFullscreen?.() }}><Maximize2 className="size-3.5" /></Button>{!compact && <Button size="sm" variant={listMode ? "secondary" : "ghost"} className="h-8 px-2.5 text-xs" onClick={() => setListMode((current) => !current)}>{listMode ? "그래프 보기" : "API 목록 보기"}</Button>}</div>
   </div>
 
   return <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--flowscope-canvas)]" aria-labelledby="graph-title">
@@ -176,7 +208,10 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
     <ReferenceAnalysisWorkspace context={filterRail} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && snapshot.data ? <GraphInspectorPanel selection={selection} event={selectedEvent} snapshot={snapshot.data} suspended={snapshot.isError} /> : <p className="p-4 text-sm text-muted-foreground">그래프 노드 또는 Evidence를 선택하면 서버 snapshot 상세를 표시합니다.</p>} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) { setSelection(null); setSelectedElementId(null) } }} ariaLabel="접근 그래프 작업면">
       <nav aria-label="그래프 계층" className="flex min-w-0 items-center gap-2 border-b border-border/70 px-4 py-2 text-xs"><ol className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"><li className="shrink-0">{resolvedNavigation.level === "site" ? <span aria-current="page" className="font-semibold">Site Overview</span> : <Button size="sm" variant="link" className="h-auto p-0 text-xs text-sky-300" onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "site"))}>Site Overview</Button>}</li>{resolvedNavigation.level !== "site" && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className={resolvedNavigation.level === "group" ? "min-w-0" : "shrink-0"}>{resolvedNavigation.level === "group" ? <span aria-current="page" className="block truncate font-semibold" title={groupLabel}>{groupLabel}</span> : <Button size="sm" variant="link" className="h-auto max-w-48 justify-start truncate p-0 text-xs text-sky-300" title={groupLabel} onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "group", resolvedNavigation.groupId))}>{groupLabel}</Button>}</li></>}{operationLabel && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className="min-w-0"><span aria-current="page" className="block truncate font-semibold" title={`${operationLabel.method} ${operationLabel.path}`}>{operationLabel.method} {operationLabel.path}</span></li></>}</ol>{hiddenCount > 0 && <Button size="sm" variant="outline" className="shrink-0" onClick={expand}>{resolvedNavigation.level === "operation" ? "Object" : "API"} 18개 더 보기 ({hiddenCount}개 남음)</Button>}</nav>
       {snapshot.isLoading && <p className="m-4 rounded-md border border-border/70 p-6 text-sm text-muted-foreground">공격면을 불러오는 중입니다.</p>}
-      {graph && (compact || listMode ? <div className="p-4"><ResponsiveGraphList projection={graph} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 z-10 grid h-10 ${lanes.length === 2 ? "grid-cols-2" : "grid-cols-3"} border-b border-border/50 bg-[var(--flowscope-canvas)] text-center text-[10px] font-semibold tracking-[0.16em] text-muted-foreground`}>{lanes.map((lane) => <span key={lane} className="border-r border-border/40 py-3">{lane}</span>)}</div>{lanes.slice(1).map((lane, index) => <div key={lane} aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-[1] border-l border-border/40" style={{ left: `${(index + 1) * 100 / lanes.length}%` }} />)}<CytoscapeGraph projection={graph} locked={preferences.locked} fitVersion={fitVersion} preferences={preferences} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onSelect={selectGraph} onMaxZoomChange={setMaxZoom} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dashed border-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dotted border-zinc-300" />LLM</span></div></div>)}
+      {graph && (compact || listMode ? <div className="p-4"><ResponsiveGraphList projection={graph} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
+        const { left, right } = laneHeader(index)
+        return right <= left ? null : <button key={lane} type="button" aria-label={`${lane} 레인 기준 정렬`} className="absolute top-0 flex h-10 items-center justify-center truncate px-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" style={{ left, width: right - left }} onClick={() => setLaneLayout((current) => ({ lane: index, version: current.version + 1 }))}><span className="truncate">{lane}</span></button>
+      })}</div><CytoscapeGraph projection={graph} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={preferences} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dashed border-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dotted border-zinc-300" />LLM</span></div></div>)}
     </ReferenceAnalysisWorkspace>
   </section>
 }

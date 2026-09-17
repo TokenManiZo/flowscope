@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
 import { renderParameterNodeCardSvg } from "@/features/parameter-map/parameterNodeCard"
 import type { GraphPreferences } from "./graphPreferences"
-import { clampRenderedPosition, graphLaneForKind, laneGeometry, type GraphLane } from "./graphLanes"
+import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
@@ -13,19 +13,22 @@ interface Props {
   projection: GraphProjection | HierarchyProjection
   locked: boolean
   fitVersion: number
+  layoutVersion?: number
+  /** 한 레인만 다시 세운다. version이 바뀔 때만 실행한다. */
+  laneLayout?: { lane: number; version: number }
   preferences?: GraphPreferences | null
   confirmedNodeIds?: ReadonlySet<string>
   selectedElementId?: string | null
   onSelect(selection: GraphSelection, elementId: string): void
   onNavigate?(node: HierarchyNode): void
-  onMaxZoomChange?(maxZoom: number): void
+  /** 레인별 화면 좌표 범위. 헤더가 노드가 만든 실제 범위를 따라간다. */
+  onLaneBoundsChange?(bounds: ReadonlyArray<LaneBounds | null>): void
   onPreferencesChange(preferences: Pick<GraphPreferences, "positions" | "viewport">): void
   onRendererUnavailable?(): void
 }
 
-const minimumZoom = 0.4
-const maximumZoom = 2
 const noConfirmedNodes = new Set<string>()
+const noLaneLayout = { lane: 0, version: 0 }
 
 export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pick<WheelEvent, "ctrlKey" | "deltaMode" | "deltaX" | "deltaY">): "pan" | "zoom" {
   if (event.ctrlKey) return "zoom"
@@ -62,71 +65,41 @@ function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "view
   return { positions, viewport: { zoom: core.zoom(), pan: core.pan() } }
 }
 
-function modelXForRenderedX(core: Core, renderedX: number) {
-  const zoom = core.zoom() || 1
-  return (renderedX - core.pan().x) / zoom
+function modelNodeWidth(core: Core, node: cytoscape.NodeSingular) {
+  return node.renderedOuterWidth() / (core.zoom() || 1)
 }
 
-function visualLane(width: number, kind: string, projection: GraphProjection | HierarchyProjection) {
-  if (!("kind" in projection) || projection.kind === "operation") return laneGeometry(width, graphLaneForKind(kind))
-  const index = kind === "identity" || kind === "target" ? 0 : 1
-  const laneWidth = Math.max(0, width) / 2
-  const gutter = Math.min(24, laneWidth / 2)
-  return { left: index * laneWidth + gutter, right: (index + 1) * laneWidth - gutter, anchor: (index + 0.5) * laneWidth }
+function laneColumns(core: Core, laneCount: number) {
+  const columns: cytoscape.NodeSingular[][] = Array.from({ length: laneCount }, () => [])
+  core.nodes().forEach((node) => { columns[laneIndexForKind(String(node.data("kind")), laneCount)]?.push(node) })
+  return columns
 }
 
-function positionInLanes(core: Core, width: number, height: number, savedPositions: GraphPreferences["positions"] | null, projection: GraphProjection | HierarchyProjection) {
-  const columns: Record<GraphLane, cytoscape.NodeSingular[]> = { identity: [], endpoint: [], object: [] }
-  core.nodes().forEach((node) => {
-    const kind = String(node.data("kind"))
-    columns[kind === "target" ? "identity" : graphLaneForKind(kind)].push(node)
-  })
+/** 각 레인이 현재 차지한 모델 범위. 노드가 없는 레인은 범위가 없다. */
+function laneBounds(core: Core, laneCount: number, exclude?: cytoscape.NodeSingular): Array<LaneBounds | null> {
+  return laneColumns(core, laneCount).map((nodes) => nodes.reduce<LaneBounds | null>((bounds, node) => {
+    if (exclude && node.id() === exclude.id()) return bounds
+    const half = modelNodeWidth(core, node) / 2, x = node.position().x
+    return bounds ? { left: Math.min(bounds.left, x - half), right: Math.max(bounds.right, x + half) } : { left: x - half, right: x + half }
+  }, null))
+}
+
+function renderedLaneBounds(core: Core, laneCount: number): Array<LaneBounds | null> {
+  const zoom = core.zoom() || 1, panX = core.pan().x
+  return laneBounds(core, laneCount).map((bounds) => bounds && { left: bounds.left * zoom + panX, right: bounds.right * zoom + panX })
+}
+
+function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneCount: number, onlyLane: number | null = null) {
   const usableHeight = Math.max(height, 620)
-  ;(["identity", "endpoint", "object"] as const).forEach((lane) => {
-    const nodes = columns[lane]
+  laneColumns(core, laneCount).forEach((nodes, index) => {
+    if (onlyLane !== null && onlyLane !== index) return
     const gap = Math.min(128, (usableHeight - 130) / Math.max(nodes.length, 1))
     const start = (usableHeight - gap * Math.max(nodes.length - 1, 0)) / 2
-    const anchor = visualLane(width, lane === "identity" ? "identity" : lane === "object" ? "resource" : "operation", projection).anchor
-    nodes.forEach((node, index) => node.position({
-      x: modelXForRenderedX(core, anchor),
-      y: savedPositions?.[node.id()]?.y ?? start + index * gap,
+    nodes.forEach((node, order) => node.position({
+      x: savedPositions?.[node.id()]?.x ?? laneAnchor(index),
+      y: savedPositions?.[node.id()]?.y ?? start + order * gap,
     }))
   })
-}
-
-function clampNodeToLane(core: Core, node: cytoscape.NodeSingular, width: number, projection: GraphProjection | HierarchyProjection) {
-  const lane = visualLane(width, String(node.data("kind")), projection)
-  const halfWidth = node.renderedOuterWidth() / 2
-  const boundedLane = lane.right - lane.left >= halfWidth * 2
-    ? { ...lane, left: lane.left + halfWidth, right: lane.right - halfWidth }
-    : { ...lane, left: lane.anchor, right: lane.anchor }
-  const rendered = clampRenderedPosition(node.renderedPosition(), boundedLane)
-  const locked = node.locked?.() ?? false
-  if (locked) node.unlock()
-  node.position({ x: modelXForRenderedX(core, rendered.x), y: node.position().y })
-  if (locked) node.lock()
-}
-
-function supportedMaxZoom(core: Core, width: number, projection: GraphProjection | HierarchyProjection) {
-  const currentZoom = core.zoom() || 1
-  let widestModelWidth = 0
-  core.nodes().forEach((node) => {
-    widestModelWidth = Math.max(widestModelWidth, node.renderedOuterWidth() / currentZoom)
-  })
-  if (widestModelWidth <= 0 || width <= 0) return maximumZoom
-  const narrowestLane = (["identity", "operation", "resource"] as const).reduce((available, kind) => {
-    const geometry = visualLane(width, kind, projection)
-    return Math.min(available, geometry.right - geometry.left)
-  }, Number.POSITIVE_INFINITY)
-  const unrounded = narrowestLane / widestModelWidth
-  return Math.max(minimumZoom, Math.min(maximumZoom, Math.floor((unrounded + Number.EPSILON) * 10) / 10))
-}
-
-function constrainZoomToLanes(core: Core, width: number, projection: GraphProjection | HierarchyProjection) {
-  const maxZoom = supportedMaxZoom(core, width, projection)
-  core.maxZoom(maxZoom)
-  if (core.zoom() > maxZoom) core.zoom(maxZoom)
-  return maxZoom
 }
 
 function syncSelection(core: Core, selectedElementId: string | null | undefined) {
@@ -150,7 +123,7 @@ function publishGeometry(container: HTMLDivElement, core: Core) {
   container.dataset.graphGeometry = JSON.stringify({ width: container.clientWidth, height: container.clientHeight, maxZoom: core.maxZoom(), nodes })
 }
 
-export function CytoscapeGraph({ projection, locked, fitVersion, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onMaxZoomChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -165,16 +138,25 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
   const selectRef = useRef(onSelect)
   const navigateRef = useRef(onNavigate)
   const selectedElementIdRef = useRef(selectedElementId)
-  const maxZoomRef = useRef(onMaxZoomChange)
   const preferenceRef = useRef(onPreferencesChange)
   const inputModeRef = useRef(preferences?.inputMode ?? "auto")
   const rendererUnavailableRef = useRef(onRendererUnavailable)
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
+  const publishLayoutRef = useRef<(() => void) | null>(null)
+  const laneCount = "kind" in projection && projection.kind !== "operation" ? 2 : 3
+  const laneCountRef = useRef(laneCount)
+  const preferencesRef = useRef(preferences)
+  const appliedLayoutRef = useRef(layoutVersion)
+  const appliedLaneLayoutRef = useRef(laneLayout.version)
+  const laneBoundsRef = useRef<ReadonlyArray<LaneBounds | null>>([])
+  const laneBoundsListenerRef = useRef(onLaneBoundsChange)
+  laneBoundsListenerRef.current = onLaneBoundsChange
+  laneCountRef.current = laneCount
+  preferencesRef.current = preferences
   projectionRef.current = projection
   selectRef.current = onSelect
   navigateRef.current = onNavigate
   selectedElementIdRef.current = selectedElementId
-  maxZoomRef.current = onMaxZoomChange
   preferenceRef.current = onPreferencesChange
   inputModeRef.current = preferences?.inputMode ?? "auto"
   rendererUnavailableRef.current = onRendererUnavailable
@@ -224,23 +206,44 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
       return
     }
     coreRef.current = core
+    // ponytail: 레인 범위는 모델 좌표지만 헤더는 화면 좌표라 팬·줌마다 환산해 알린다.
+    const publishLaneBounds = () => {
+      const bounds = renderedLaneBounds(core, laneCountRef.current)
+      const previous = laneBoundsRef.current
+      if (bounds.length === previous.length && bounds.every((lane, index) => lane?.left === previous[index]?.left && lane?.right === previous[index]?.right)) return
+      laneBoundsRef.current = bounds
+      laneBoundsListenerRef.current?.(bounds)
+    }
+    const publishLayout = () => {
+      if (containerRef.current) publishGeometry(containerRef.current, core)
+      preferenceRef.current(readPreferences(core))
+      publishLaneBounds()
+    }
+    publishLayoutRef.current = publishLayout
     let correctionFrame: number | null = null
     const correctLanes = () => {
       correctionFrame = null
       if (typeof core.resize === "function") core.resize()
-      const width = containerRef.current?.clientWidth ?? 0
-      const maxZoom = constrainZoomToLanes(core, width, projectionRef.current)
-      core.nodes().forEach((node) => clampNodeToLane(core, node, width, projectionRef.current))
       syncSelection(core, selectedElementIdRef.current)
-      if (containerRef.current) publishGeometry(containerRef.current, core)
-      maxZoomRef.current?.(maxZoom)
-      preferenceRef.current(readPreferences(core))
+      publishLayout()
     }
     const scheduleLaneCorrection = () => {
       if (correctionFrame !== null) return
       correctionFrame = requestAnimationFrame(correctLanes)
     }
     scheduleLaneCorrectionRef.current = scheduleLaneCorrection
+    // ponytail: pan/zoom은 화면 변환만 담당한다. 노드 모델 좌표를 건드리면 확대·축소마다 노드가 화면 기준으로 다시 모여 엣지만 늘어난다.
+    let viewportFrame: number | null = null
+    const publishViewport = () => {
+      viewportFrame = null
+      if (containerRef.current) publishGeometry(containerRef.current, core)
+      preferenceRef.current(readPreferences(core))
+      publishLaneBounds()
+    }
+    const scheduleViewportPublish = () => {
+      if (viewportFrame !== null) return
+      viewportFrame = requestAnimationFrame(publishViewport)
+    }
     const selectListener = (event: cytoscape.EventObject) => {
       const current = projectionRef.current
       const id = event.target.id()
@@ -251,19 +254,29 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
       const selection = hierarchy ? node?.selection ?? hierarchy.edges.find(edge => edge.id === id)?.selection : selectGraphItem(current as GraphProjection, id)
       if (selection) selectRef.current(selection, event.target.id())
     }
-    const dragListener = (event: cytoscape.EventObject) => {
-      clampNodeToLane(core, event.target, containerRef.current?.clientWidth ?? 0, projectionRef.current)
-      if (containerRef.current) publishGeometry(containerRef.current, core)
-      preferenceRef.current(readPreferences(core))
+    // ponytail: 드래그 중이 아니라 놓을 때만 가둔다. 커서를 따라가던 노드를 실시간으로 밀면 조작감이 나빠진다.
+    const clampToNeighbourLanes = (node: cytoscape.NodeSingular) => {
+      const count = laneCountRef.current
+      const index = laneIndexForKind(String(node.data("kind")), count)
+      const x = clampBetweenLanes(node.position().x, laneLimits(laneBounds(core, count, node), index, modelNodeWidth(core, node)))
+      if (x === node.position().x) return
+      const locked = node.locked?.() ?? false
+      if (locked) node.unlock()
+      node.position({ x, y: node.position().y })
+      if (locked) node.lock()
     }
-    const viewportListener = () => scheduleLaneCorrection()
+    const dragListener = (event: cytoscape.EventObject) => {
+      clampToNeighbourLanes(event.target)
+      publishLayout()
+    }
+    const viewportListener = () => scheduleViewportPublish()
     const wheelListener = (event: WheelEvent) => {
       event.preventDefault()
       const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? containerRef.current?.clientHeight ?? 600 : 1
       if (graphWheelIntent(inputModeRef.current, event) === "pan") core.panBy({ x: -event.deltaX * scale, y: -event.deltaY * scale })
       else {
         const bounds = containerRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 }
-        core.zoom({ level: Math.max(minimumZoom, Math.min(core.maxZoom(), core.zoom() * Math.exp(-event.deltaY * scale * 0.002))), renderedPosition: { x: event.clientX - bounds.left, y: event.clientY - bounds.top } })
+        core.zoom({ level: Math.max(GRAPH_MIN_ZOOM, Math.min(GRAPH_MAX_ZOOM, core.zoom() * Math.exp(-event.deltaY * scale * 0.002))), renderedPosition: { x: event.clientX - bounds.left, y: event.clientY - bounds.top } })
       }
     }
     const showCardTooltip = (event: cytoscape.EventObject) => {
@@ -300,7 +313,9 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
       resizeObserver?.disconnect()
       containerRef.current?.removeEventListener("wheel", wheelListener)
       if (correctionFrame !== null) cancelAnimationFrame(correctionFrame)
+      if (viewportFrame !== null) cancelAnimationFrame(viewportFrame)
       if (scheduleLaneCorrectionRef.current === scheduleLaneCorrection) scheduleLaneCorrectionRef.current = null
+      if (publishLayoutRef.current === publishLayout) publishLayoutRef.current = null
       keyboardNodeRef.current = null
       cancelTooltipHide()
       core.destroy()
@@ -313,19 +328,34 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
     if (!core) return
     dismissCardTooltip()
     keyboardNodeRef.current = null
+    const saved = preferencesRef.current
+    const relayout = appliedLayoutRef.current !== layoutVersion
+    appliedLayoutRef.current = layoutVersion
     core.elements().remove()
     core.add(elementsFor(projection, selectedElementId, confirmedNodeIds))
-    positionInLanes(core, containerRef.current?.clientWidth ?? 0, containerRef.current?.clientHeight ?? 0, preferences?.positions ?? null, projection)
+    positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
     })
-    if (preferences?.viewport) core.viewport(preferences.viewport)
+    if (saved?.viewport && !relayout) core.viewport(saved.viewport)
     else {
       core.layout({ name: "preset", fit: true, padding: 52 }).run()
     }
     syncSelection(core, selectedElementIdRef.current)
     scheduleLaneCorrectionRef.current?.()
-  }, [confirmedNodeIds, dismissCardTooltip, locked, preferences, projection, selectedElementId])
+  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, selectedElementId])
+
+  // ponytail: 한 레인만 다시 세운다. 전체 재정렬과 달리 다른 레인에서 잡아둔 배치는 건드리지 않는다.
+  useEffect(() => {
+    const core = coreRef.current
+    if (!core || appliedLaneLayoutRef.current === laneLayout.version) return
+    appliedLaneLayoutRef.current = laneLayout.version
+    if (laneLayout.version === 0) return
+    core.nodes().forEach((node) => { if (node.locked?.()) node.unlock() })
+    positionInLanes(core, containerRef.current?.clientHeight ?? 0, null, laneCount, laneLayout.lane)
+    if (locked) core.nodes().forEach((node) => { node.lock() })
+    publishLayoutRef.current?.()
+  }, [laneCount, laneLayout, locked])
 
   useEffect(() => {
     const core = coreRef.current
@@ -333,6 +363,15 @@ export function CytoscapeGraph({ projection, locked, fitVersion, preferences = n
     syncSelection(core, selectedElementId)
     if (containerRef.current) publishGeometry(containerRef.current, core)
   }, [selectedElementId])
+
+  // ponytail: 툴바 확대/축소 등 바깥에서 온 viewport만 적용한다. 캔버스가 방금 보고한 값이면 무시해야 팬 중에 되감기지 않는다.
+  useEffect(() => {
+    const core = coreRef.current, next = preferences?.viewport
+    if (!core || !next) return
+    const zoom = core.zoom(), pan = core.pan()
+    if (Math.abs(zoom - next.zoom) < 0.001 && Math.abs(pan.x - next.pan.x) < 0.5 && Math.abs(pan.y - next.pan.y) < 0.5) return
+    core.viewport(next)
+  }, [preferences?.viewport])
 
   useEffect(() => {
     if (fitVersion > 0) {
