@@ -3,7 +3,7 @@ import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
 import { renderParameterNodeCardSvg } from "@/features/parameter-map/parameterNodeCard"
 import type { GraphPreferences } from "./graphPreferences"
-import { defaultLaneWidths, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, isInsideLane, LANE_ACCENTS, laneGeometry, laneIndexForKind, snapsToLane } from "./graphLanes"
+import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
@@ -16,13 +16,13 @@ interface Props {
   layoutVersion?: number
   /** 한 레인만 다시 세운다. version이 바뀔 때만 실행한다. */
   laneLayout?: { lane: number; version: number }
-  laneWidths?: readonly number[]
   preferences?: GraphPreferences | null
   confirmedNodeIds?: ReadonlySet<string>
   selectedElementId?: string | null
   onSelect(selection: GraphSelection, elementId: string): void
   onNavigate?(node: HierarchyNode): void
-  onLaneStrayCountsChange?(counts: readonly number[]): void
+  /** 레인별 화면 좌표 범위. 헤더가 노드가 만든 실제 범위를 따라간다. */
+  onLaneBoundsChange?(bounds: ReadonlyArray<LaneBounds | null>): void
   onPreferencesChange(preferences: Pick<GraphPreferences, "positions" | "viewport">): void
   onRendererUnavailable?(): void
 }
@@ -69,26 +69,34 @@ function modelNodeWidth(core: Core, node: cytoscape.NodeSingular) {
   return node.renderedOuterWidth() / (core.zoom() || 1)
 }
 
-function laneStrayCounts(core: Core, laneWidths: readonly number[]): number[] {
-  const counts = laneWidths.map(() => 0)
-  core.nodes().forEach((node) => {
-    const index = laneIndexForKind(String(node.data("kind")), laneWidths.length)
-    if (!isInsideLane(node.position().x, laneGeometry(laneWidths, index), modelNodeWidth(core, node))) counts[index] += 1
-  })
-  return counts
+function laneColumns(core: Core, laneCount: number) {
+  const columns: cytoscape.NodeSingular[][] = Array.from({ length: laneCount }, () => [])
+  core.nodes().forEach((node) => { columns[laneIndexForKind(String(node.data("kind")), laneCount)]?.push(node) })
+  return columns
 }
 
-function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneWidths: readonly number[], onlyLane: number | null = null) {
-  const columns: cytoscape.NodeSingular[][] = laneWidths.map(() => [])
-  core.nodes().forEach((node) => { columns[laneIndexForKind(String(node.data("kind")), laneWidths.length)]?.push(node) })
+/** 각 레인이 현재 차지한 모델 범위. 노드가 없는 레인은 범위가 없다. */
+function laneBounds(core: Core, laneCount: number, exclude?: cytoscape.NodeSingular): Array<LaneBounds | null> {
+  return laneColumns(core, laneCount).map((nodes) => nodes.reduce<LaneBounds | null>((bounds, node) => {
+    if (exclude && node.id() === exclude.id()) return bounds
+    const half = modelNodeWidth(core, node) / 2, x = node.position().x
+    return bounds ? { left: Math.min(bounds.left, x - half), right: Math.max(bounds.right, x + half) } : { left: x - half, right: x + half }
+  }, null))
+}
+
+function renderedLaneBounds(core: Core, laneCount: number): Array<LaneBounds | null> {
+  const zoom = core.zoom() || 1, panX = core.pan().x
+  return laneBounds(core, laneCount).map((bounds) => bounds && { left: bounds.left * zoom + panX, right: bounds.right * zoom + panX })
+}
+
+function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneCount: number, onlyLane: number | null = null) {
   const usableHeight = Math.max(height, 620)
-  columns.forEach((nodes, index) => {
+  laneColumns(core, laneCount).forEach((nodes, index) => {
     if (onlyLane !== null && onlyLane !== index) return
     const gap = Math.min(128, (usableHeight - 130) / Math.max(nodes.length, 1))
     const start = (usableHeight - gap * Math.max(nodes.length - 1, 0)) / 2
-    const anchor = laneGeometry(laneWidths, index).anchor
     nodes.forEach((node, order) => node.position({
-      x: savedPositions?.[node.id()]?.x ?? anchor,
+      x: savedPositions?.[node.id()]?.x ?? laneAnchor(index),
       y: savedPositions?.[node.id()]?.y ?? start + order * gap,
     }))
   })
@@ -115,7 +123,7 @@ function publishGeometry(container: HTMLDivElement, core: Core) {
   container.dataset.graphGeometry = JSON.stringify({ width: container.clientWidth, height: container.clientHeight, maxZoom: core.maxZoom(), nodes })
 }
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, laneWidths, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onLaneStrayCountsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -126,7 +134,6 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const tooltipId = useId()
   const [rendererUnavailable, setRendererUnavailable] = useState(false)
   const [cardTooltip, setCardTooltip] = useState<{ nodeId: string; label: string; x: number; y: number; width: number } | null>(null)
-  const [snapGuide, setSnapGuide] = useState<{ x: number; color: string } | null>(null)
   const projectionRef = useRef(projection)
   const selectRef = useRef(onSelect)
   const navigateRef = useRef(onNavigate)
@@ -137,15 +144,14 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
   const publishLayoutRef = useRef<(() => void) | null>(null)
   const laneCount = "kind" in projection && projection.kind !== "operation" ? 2 : 3
-  const lanes = useMemo(() => laneWidths?.length === laneCount ? laneWidths : defaultLaneWidths(laneCount), [laneCount, laneWidths])
-  const lanesRef = useRef(lanes)
+  const laneCountRef = useRef(laneCount)
   const preferencesRef = useRef(preferences)
   const appliedLayoutRef = useRef(layoutVersion)
   const appliedLaneLayoutRef = useRef(laneLayout.version)
-  const strayCountsRef = useRef<readonly number[]>([])
-  const strayListenerRef = useRef(onLaneStrayCountsChange)
-  strayListenerRef.current = onLaneStrayCountsChange
-  lanesRef.current = lanes
+  const laneBoundsRef = useRef<ReadonlyArray<LaneBounds | null>>([])
+  const laneBoundsListenerRef = useRef(onLaneBoundsChange)
+  laneBoundsListenerRef.current = onLaneBoundsChange
+  laneCountRef.current = laneCount
   preferencesRef.current = preferences
   projectionRef.current = projection
   selectRef.current = onSelect
@@ -200,13 +206,18 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       return
     }
     coreRef.current = core
+    // ponytail: 레인 범위는 모델 좌표지만 헤더는 화면 좌표라 팬·줌마다 환산해 알린다.
+    const publishLaneBounds = () => {
+      const bounds = renderedLaneBounds(core, laneCountRef.current)
+      const previous = laneBoundsRef.current
+      if (bounds.length === previous.length && bounds.every((lane, index) => lane?.left === previous[index]?.left && lane?.right === previous[index]?.right)) return
+      laneBoundsRef.current = bounds
+      laneBoundsListenerRef.current?.(bounds)
+    }
     const publishLayout = () => {
       if (containerRef.current) publishGeometry(containerRef.current, core)
       preferenceRef.current(readPreferences(core))
-      const counts = laneStrayCounts(core, lanesRef.current)
-      if (counts.length === strayCountsRef.current.length && counts.every((count, index) => count === strayCountsRef.current[index])) return
-      strayCountsRef.current = counts
-      strayListenerRef.current?.(counts)
+      publishLaneBounds()
     }
     publishLayoutRef.current = publishLayout
     let correctionFrame: number | null = null
@@ -227,6 +238,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       viewportFrame = null
       if (containerRef.current) publishGeometry(containerRef.current, core)
       preferenceRef.current(readPreferences(core))
+      publishLaneBounds()
     }
     const scheduleViewportPublish = () => {
       if (viewportFrame !== null) return
@@ -242,21 +254,19 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       const selection = hierarchy ? node?.selection ?? hierarchy.edges.find(edge => edge.id === id)?.selection : selectGraphItem(current as GraphProjection, id)
       if (selection) selectRef.current(selection, event.target.id())
     }
-    // ponytail: 레인은 초기 배치와 재정렬의 기준일 뿐이라 놓은 자리를 그대로 저장한다. 중앙 가까이에서만 붙여 정렬을 강제하지 않고 유도한다.
-    const laneFor = (node: cytoscape.NodeSingular) => {
-      const index = laneIndexForKind(String(node.data("kind")), lanesRef.current.length)
-      return { index, geometry: laneGeometry(lanesRef.current, index) }
-    }
-    const dragGuideListener = (event: cytoscape.EventObject) => {
-      const { index, geometry } = laneFor(event.target)
-      if (!snapsToLane(event.target.position().x, geometry)) return setSnapGuide(null)
-      setSnapGuide({ x: geometry.anchor * (core.zoom() || 1) + core.pan().x, color: LANE_ACCENTS[index] ?? LANE_ACCENTS[0] })
+    // ponytail: 드래그 중이 아니라 놓을 때만 가둔다. 커서를 따라가던 노드를 실시간으로 밀면 조작감이 나빠진다.
+    const clampToNeighbourLanes = (node: cytoscape.NodeSingular) => {
+      const count = laneCountRef.current
+      const index = laneIndexForKind(String(node.data("kind")), count)
+      const x = clampBetweenLanes(node.position().x, laneLimits(laneBounds(core, count, node), index, modelNodeWidth(core, node)))
+      if (x === node.position().x) return
+      const locked = node.locked?.() ?? false
+      if (locked) node.unlock()
+      node.position({ x, y: node.position().y })
+      if (locked) node.lock()
     }
     const dragListener = (event: cytoscape.EventObject) => {
-      setSnapGuide(null)
-      const node = event.target
-      const { geometry } = laneFor(node)
-      if (!(node.locked?.() ?? false) && snapsToLane(node.position().x, geometry)) node.position({ x: geometry.anchor, y: node.position().y })
+      clampToNeighbourLanes(event.target)
       publishLayout()
     }
     const viewportListener = () => scheduleViewportPublish()
@@ -292,14 +302,12 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     core.on("tap", "node, edge", selectListener)
     core.on("mouseover focus", "node", showCardTooltip)
     core.on("mouseout blur", "node", hideCardTooltip)
-    core.on("drag", "node", dragGuideListener)
     core.on("dragfree", "node", dragListener)
     core.on("viewport", viewportListener)
     return () => {
       core.off("tap", "node, edge", selectListener)
       core.off("mouseover focus", "node", showCardTooltip)
       core.off("mouseout blur", "node", hideCardTooltip)
-      core.off("drag", "node", dragGuideListener)
       core.off("dragfree", "node", dragListener)
       core.off("viewport", viewportListener)
       resizeObserver?.disconnect()
@@ -319,14 +327,13 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const core = coreRef.current
     if (!core) return
     dismissCardTooltip()
-    setSnapGuide(null)
     keyboardNodeRef.current = null
     const saved = preferencesRef.current
     const relayout = appliedLayoutRef.current !== layoutVersion
     appliedLayoutRef.current = layoutVersion
     core.elements().remove()
     core.add(elementsFor(projection, selectedElementId, confirmedNodeIds))
-    positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, lanes)
+    positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
     })
@@ -336,7 +343,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     syncSelection(core, selectedElementIdRef.current)
     scheduleLaneCorrectionRef.current?.()
-  }, [confirmedNodeIds, dismissCardTooltip, lanes, layoutVersion, locked, projection, selectedElementId])
+  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, selectedElementId])
 
   // ponytail: 한 레인만 다시 세운다. 전체 재정렬과 달리 다른 레인에서 잡아둔 배치는 건드리지 않는다.
   useEffect(() => {
@@ -345,10 +352,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     appliedLaneLayoutRef.current = laneLayout.version
     if (laneLayout.version === 0) return
     core.nodes().forEach((node) => { if (node.locked?.()) node.unlock() })
-    positionInLanes(core, containerRef.current?.clientHeight ?? 0, null, lanes, laneLayout.lane)
+    positionInLanes(core, containerRef.current?.clientHeight ?? 0, null, laneCount, laneLayout.lane)
     if (locked) core.nodes().forEach((node) => { node.lock() })
     publishLayoutRef.current?.()
-  }, [laneLayout, lanes, locked])
+  }, [laneCount, laneLayout, locked])
 
   useEffect(() => {
     const core = coreRef.current
@@ -401,7 +408,6 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (keyboardNodeRef.current) coreRef.current?.getElementById(keyboardNodeRef.current).emit("tap") }
           else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip() }
         }} />
-      {snapGuide && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-10 w-0.5" style={{ left: snapGuide.x, backgroundColor: snapGuide.color }} />}
       {cardTooltip && <div ref={tooltipRef} id={tooltipId} role="tooltip" tabIndex={0} className="pointer-events-auto absolute z-20 max-h-[calc(100%-1rem)] overflow-y-auto overscroll-contain rounded-md border border-slate-500 bg-slate-950 px-3 py-2 text-sm text-slate-100 shadow-lg focus-visible:outline-2 focus-visible:outline-ring [overflow-wrap:anywhere]" style={{ left: cardTooltip.x, top: cardTooltip.y, width: cardTooltip.width }}
         onPointerEnter={() => { tooltipInteractionRef.current.pointer = true; cancelTooltipHide() }}
         onPointerLeave={() => { tooltipInteractionRef.current.pointer = false; scheduleTooltipHide() }}

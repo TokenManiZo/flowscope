@@ -1,22 +1,13 @@
 export const GRAPH_MIN_ZOOM = 0.4
 export const GRAPH_MAX_ZOOM = 2
-export const LANE_GUTTER = 24
-export const MIN_LANE_WIDTH = 260
-export const MAX_LANE_WIDTH = 1200
-export const DEFAULT_LANE_WIDTH = 360
+/** 초기 배치와 레인 정렬이 쓰는 기준 간격(모델 좌표). 레인의 실제 범위는 노드가 만든다. */
+export const LANE_SPACING = 360
+/** 이웃 레인 노드와 최소로 벌리는 간격. */
+export const LANE_GAP = 48
 
-/** 레인별 강조색: IDENTITY·API·OBJECT 순. 노드가 레인을 벗어나도 소속을 읽을 수 있게 배경 띠와 카드 스트립이 같은 색을 쓴다. */
-export const LANE_ACCENTS = ["#93c5fd", "#5eead4", "#c4b5fd"] as const
-
-export function laneAccentForKind(kind: string): string {
-  if (kind === "identity" || kind === "target") return LANE_ACCENTS[0]
-  return kind === "resource" ? LANE_ACCENTS[2] : LANE_ACCENTS[1]
-}
-
-export interface LaneGeometry {
+export interface LaneBounds {
   left: number
   right: number
-  anchor: number
 }
 
 export function laneIndexForKind(kind: string, laneCount: number): number {
@@ -25,36 +16,24 @@ export function laneIndexForKind(kind: string, laneCount: number): number {
   return kind === "resource" ? 2 : 1
 }
 
-export function defaultLaneWidths(laneCount: number): number[] {
-  return Array.from({ length: Math.max(0, laneCount) }, () => DEFAULT_LANE_WIDTH)
+export function laneAnchor(index: number): number {
+  return (index + 0.5) * LANE_SPACING
 }
 
-export function clampLaneWidth(width: number): number {
-  return Number.isFinite(width) ? Math.min(MAX_LANE_WIDTH, Math.max(MIN_LANE_WIDTH, width)) : DEFAULT_LANE_WIDTH
-}
-
-/** 레인 경계는 모델 좌표다. pan·zoom은 화면 변환이므로 경계도 노드도 옮기지 않는다. */
-export function laneBoundaries(widths: readonly number[]): number[] {
-  return widths.reduce<number[]>((boundaries, width) => [...boundaries, boundaries[boundaries.length - 1] + clampLaneWidth(width)], [0])
-}
-
-/** 드래그를 놓을 때 레인 중앙으로 붙는 거리(모델 좌표). 구속이 아니라 정렬 유도다. */
-export const LANE_SNAP_DISTANCE = 24
-
-export function snapsToLane(x: number, lane: LaneGeometry): boolean {
-  return Number.isFinite(x) && Math.abs(x - lane.anchor) <= LANE_SNAP_DISTANCE
-}
-
-/** 노드 전체가 레인 안에 있는지. 벗어난 노드 수를 레인 헤더에서 알린다. */
-export function isInsideLane(x: number, lane: LaneGeometry, nodeWidth: number): boolean {
+/**
+ * ponytail: 레인 폭을 따로 저장하지 않는다. 진실을 노드 위치 하나로 두어야 저장된 폭과 실제 배치가 어긋나지 않고,
+ * 사용자가 노드를 바깥으로 끌면 레인 범위가 그만큼 자연히 넓어진다.
+ */
+export function laneLimits(bounds: ReadonlyArray<LaneBounds | null>, index: number, nodeWidth: number): { left: number; right: number } {
   const half = Math.max(0, Number.isFinite(nodeWidth) ? nodeWidth : 0) / 2
-  return Number.isFinite(x) && x - half >= lane.left && x + half <= lane.right
+  const left = bounds.slice(0, index).reduce((limit, lane) => lane ? Math.max(limit, lane.right + LANE_GAP + half) : limit, Number.NEGATIVE_INFINITY)
+  const right = bounds.slice(index + 1).reduce((limit, lane) => lane ? Math.min(limit, lane.left - LANE_GAP - half) : limit, Number.POSITIVE_INFINITY)
+  return { left, right }
 }
 
-export function laneGeometry(widths: readonly number[], index: number, gutter = LANE_GUTTER): LaneGeometry {
-  const boundaries = laneBoundaries(widths)
-  const left = boundaries[Math.min(Math.max(index, 0), Math.max(widths.length - 1, 0))] ?? 0
-  const right = boundaries[Math.min(Math.max(index, 0), Math.max(widths.length - 1, 0)) + 1] ?? left + DEFAULT_LANE_WIDTH
-  const safeGutter = Math.min(Math.max(0, gutter), (right - left) / 2)
-  return { left: left + safeGutter, right: right - safeGutter, anchor: (left + right) / 2 }
+/** 이웃 레인을 넘지 않도록만 가둔다. 양쪽이 모두 좁으면 남은 가운데로 보낸다. */
+export function clampBetweenLanes(x: number, limits: { left: number; right: number }): number {
+  if (!Number.isFinite(x)) return Number.isFinite(limits.left) ? limits.left : Number.isFinite(limits.right) ? limits.right : 0
+  if (limits.left > limits.right) return (limits.left + limits.right) / 2
+  return Math.min(limits.right, Math.max(limits.left, x))
 }

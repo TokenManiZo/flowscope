@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import { laneAccentForKind } from "./graphLanes"
 
 import type { GraphRouteCandidate } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
@@ -66,7 +65,7 @@ describe("relationship graph node cards", () => {
     }
 
     expect(relationshipRouteCandidateCard(candidate)).toEqual({
-      kind: "operation", accent: laneAccentForKind("route-candidate"), badge: "CANDIDATE", title: "POST /api/orders/search", detail: "미관측 후보 · REVIEW", footer: "정적 참조",
+      kind: "operation", badge: "CANDIDATE", title: "POST /api/orders/search", detail: "미관측 후보 · REVIEW", footer: "정적 참조",
       icon: "none", accessibleLabel: `Route candidate ${service} POST /api/orders/search; 미관측 후보; applicability REVIEW; 정적 참조`,
     })
   })

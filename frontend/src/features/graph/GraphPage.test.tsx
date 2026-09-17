@@ -3,14 +3,12 @@ import { useEffect } from "react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
-import { DEFAULT_LANE_WIDTH, LANE_ACCENTS } from "./graphLanes"
-import { GRAPH_PREFERENCES_KEY, loadGraphPreferences } from "./graphPreferences"
 import type { Snapshot } from "@/lib/api/types"
 import { GraphPage as CurrentGraphPage } from "./GraphPage"
 
-vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneStrayCountsChange }: { selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneStrayCountsChange?(counts: readonly number[]): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
-  // 실제 캔버스 대신 레인 이탈 수를 알리고, 받은 레인 정렬 요청을 그대로 노출한다.
-  useEffect(() => { onLaneStrayCountsChange?.([0, 2]) }, [onLaneStrayCountsChange])
+vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneBoundsChange }: { selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneBoundsChange?(bounds: ReadonlyArray<{ left: number; right: number } | null>): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
+  // 실제 캔버스 대신 레인 범위를 알리고, 받은 레인 정렬 요청을 그대로 노출한다.
+  useEffect(() => { onLaneBoundsChange?.([{ left: 20, right: 300 }, { left: 400, right: 700 }]) }, [onLaneBoundsChange])
   return <button type="button" data-testid="cytoscape-graph" data-lane-layout={`${laneLayout?.lane ?? -1}:${laneLayout?.version ?? -1}`} data-selected-element={selectedElementId ?? ""} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button>
 } }))
 vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
@@ -21,8 +19,6 @@ const snapshot: Snapshot = {
   revision: 1, identityRevision: 1, sampleMode: true, trafficStats: { captured: 1, coverage: 0, excluded: 0, review: 0, dropped: 0, payloadMetadataOnly: 0 }, replays: [], flowLinks: [], roles: {}, owners: {}, requiredRoles: {}, activeSources: ["human"], cells: [{ idn: "alice", op: "GET /orders/{id}", resource: "order:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["ev-1"] }], verifications: [], gaps: [], scenarios: [], accounts: [], sessions: [], managedSessions: [], routeCandidates: [],
   events: [{ eventId: "ev-1", method: "GET", path: "/orders/1", status: 200, fp: "fp", idn: "alice", role: "USER", source: "human", op: "GET /orders/{id}", resource: "order:1", timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["ev-1"], objects: [{ resource: "order:1", evidence: "id" }], verdict: "allow" }],
 }
-
-const hexToRgb = (value: string) => `rgba(${[1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16)).join(", ")}, ${(parseInt(value.slice(7, 9), 16) / 255).toFixed(2)})`
 
 const hierarchyCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["cell-evidence-not-an-event"] }
 
@@ -39,47 +35,19 @@ it("opens the graph on the full relationship view", () => {
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
 })
 
-it("re-sorts a single lane from its header and surfaces how many nodes left it", async () => {
+it("re-sorts a single lane from its header placed on the bounds the canvas reports", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
-  const laneButton = screen.getByRole("button", { name: "API GROUP 레인 기준 정렬 · 2개 레인 밖" })
-  expect(laneButton).toHaveTextContent("2 이탈")
+  const laneButton = screen.getByRole("button", { name: "API GROUP 레인 기준 정렬" })
+  // 캔버스가 알린 범위(mock: 두 번째 레인 400~700)를 그대로 머리글 위치로 쓴다.
+  expect(laneButton).toHaveStyle({ left: "400px", width: "300px" })
   expect(screen.getByRole("button", { name: "TARGET 레인 기준 정렬" })).toBeVisible()
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-lane-layout", "0:0")
 
   await userEvent.click(laneButton)
 
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-lane-layout", "1:1")
-})
-
-it("tints each lane band with the accent its node cards carry", () => {
-  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
-  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const { container } = render(<CurrentGraphPage />)
-
-  const bands = [...container.querySelectorAll<HTMLElement>("div[style*=\"background-color\"]")]
-  // Site Overview는 TARGET·API GROUP 두 레인이므로 앞 두 강조색만 쓴다.
-  expect(bands.map((band) => band.style.backgroundColor)).toEqual(LANE_ACCENTS.slice(0, 2).map((accent) => hexToRgb(`${accent}0f`)))
-  expect(bands.every((band) => band.getAttribute("aria-hidden") === "true")).toBe(true)
-})
-
-it("resizes a lane by keyboard and keeps the new width in stored preferences", async () => {
-  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
-  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
-  const values = new Map<string, string>()
-  const storage = { get length() { return values.size }, clear: () => values.clear(), getItem: (key: string) => values.get(key) ?? null, key: (index: number) => [...values.keys()][index] ?? null, removeItem: (key: string) => { values.delete(key) }, setItem: (key: string, value: string) => { values.set(key, value) } } as Storage
-  Object.defineProperty(window, "localStorage", { configurable: true, value: storage })
-  render(<CurrentGraphPage />)
-  const handle = screen.getByRole("separator", { name: "TARGET 레인 폭 조절" })
-  expect(handle).toHaveAttribute("aria-valuenow", String(DEFAULT_LANE_WIDTH))
-
-  handle.focus()
-  await userEvent.keyboard("{ArrowRight}")
-
-  expect(screen.getByRole("separator", { name: "TARGET 레인 폭 조절" })).toHaveAttribute("aria-valuenow", String(DEFAULT_LANE_WIDTH + 24))
-  expect(loadGraphPreferences(storage)?.laneWidths[2]).toEqual([DEFAULT_LANE_WIDTH + 24, DEFAULT_LANE_WIDTH])
-  expect(storage.getItem(GRAPH_PREFERENCES_KEY)).toContain("laneWidths")
 })
 
 it("refreshes every server-authored field of a stable selected route candidate", async () => {

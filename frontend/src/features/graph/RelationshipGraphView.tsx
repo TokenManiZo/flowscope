@@ -9,9 +9,9 @@ import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { Source, Verdict } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
 import { CytoscapeGraph } from "./CytoscapeGraph"
-import { clampLaneWidth, defaultLaneWidths, DEFAULT_LANE_WIDTH, GRAPH_MAX_ZOOM, LANE_ACCENTS, laneBoundaries, MAX_LANE_WIDTH, MIN_LANE_WIDTH } from "./graphLanes"
+import { GRAPH_MAX_ZOOM, type LaneBounds } from "./graphLanes"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
-import { defaultGraphLaneWidths, loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, type GraphPreferences } from "./graphPreferences"
+import { loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, type GraphPreferences } from "./graphPreferences"
 import { graphCellKey, graphCellSelection, graphReviewVerdict, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
 import { GRAPH_PAGE_SIZE, navigateHierarchy, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection } from "./graphHierarchy"
 import { ResponsiveGraphList } from "./ResponsiveGraphList"
@@ -27,7 +27,7 @@ const sourceLines: Record<Source, string> = {
   unknown: "border-dotted border-zinc-500",
 }
 const supportTrafficClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-const defaultPreferences: GraphPreferences = { version: 6, positions: {}, viewport: null, locked: false, inputMode: "auto", laneWidths: defaultGraphLaneWidths() }
+const defaultPreferences: GraphPreferences = { version: 7, positions: {}, viewport: null, locked: false, inputMode: "auto" }
 const initialNavigation: GraphNavigation = { level: "site", groupId: "", operation: "", operationLimit: GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE, focusCandidateKey: "" }
 
 function useCompactGraph() {
@@ -74,7 +74,7 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
   const [fitVersion, setFitVersion] = useState(0)
   const [layoutVersion, setLayoutVersion] = useState(0)
   const [laneLayout, setLaneLayout] = useState({ lane: 0, version: 0 })
-  const [laneStrayCounts, setLaneStrayCounts] = useState<readonly number[]>([])
+  const [laneBounds, setLaneBounds] = useState<ReadonlyArray<LaneBounds | null>>([])
   const [listMode, setListMode] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [navigation, setNavigation] = useState(initialNavigation)
@@ -153,17 +153,13 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
   const hiddenCandidates = graph?.kind === "group" ? Math.max(0, (graph.groups.find((group) => group.id === resolvedNavigation.groupId)?.routeCandidateCount ?? 0) - graph.routeCandidates.length) : 0
   const hiddenCount = graph?.kind === "operation" ? graph.hiddenObjectCount : (graph?.hiddenOperationCount ?? 0) + hiddenCandidates
   const lanes = graph?.kind === "site" ? ["TARGET", "API GROUP"] : graph?.kind === "group" ? ["IDENTITY", "API"] : ["IDENTITY", "API", "OBJECT"]
-  const laneKey = lanes.length === 2 ? "2" : "3"
-  const laneWidths = useMemo(() => preferences.laneWidths[laneKey] ?? defaultLaneWidths(lanes.length), [laneKey, lanes.length, preferences.laneWidths])
   const canvasWidth = useCanvasWidth(canvasShellRef)
-  // 레인 경계는 모델 좌표이므로 화면 위치는 현재 viewport로 환산한다.
-  const laneScreenX = (index: number) => laneBoundaries(laneWidths)[index] * (preferences.viewport?.zoom ?? 1) + (preferences.viewport?.pan.x ?? 0)
-  const setLaneWidth = (index: number, width: number) => setPreferences((current) => ({ ...current, laneWidths: { ...current.laneWidths, [laneKey]: (current.laneWidths[laneKey] ?? defaultLaneWidths(lanes.length)).map((current, order) => order === index ? clampLaneWidth(width) : current) } }))
-  const dragLaneBoundary = (index: number, clientX: number) => {
-    const bounds = canvasShellRef.current?.getBoundingClientRect()
-    const zoom = preferences.viewport?.zoom ?? 1
-    const modelX = (clientX - (bounds?.left ?? 0) - (preferences.viewport?.pan.x ?? 0)) / (zoom || 1)
-    setLaneWidth(index - 1, modelX - laneBoundaries(laneWidths)[index - 1])
+  // 레인 머리글은 노드가 만든 실제 범위를 따라가고, 범위가 없는 레인은 화면 폭을 균등 분할해 자리만 지킨다.
+  const laneHeader = (index: number) => {
+    const bounds = laneBounds[index]
+    const fallbackWidth = (canvasWidth || 0) / Math.max(lanes.length, 1)
+    const span = bounds ?? { left: index * fallbackWidth, right: (index + 1) * fallbackWidth }
+    return { left: Math.max(span.left, 0), right: Math.min(span.right, canvasWidth || span.right) }
   }
   const focusGap = (gapId: string) => {
     const gap = snapshot.data?.gaps.find((item) => item.id === gapId)
@@ -205,19 +201,10 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
     <ReferenceAnalysisWorkspace context={filterRail} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && snapshot.data ? <GraphInspectorPanel selection={selection} event={selectedEvent} snapshot={snapshot.data} suspended={snapshot.isError} /> : <p className="p-4 text-sm text-muted-foreground">그래프 노드 또는 Evidence를 선택하면 서버 snapshot 상세를 표시합니다.</p>} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) { setSelection(null); setSelectedElementId(null) } }} ariaLabel="접근 그래프 작업면">
       <nav aria-label="그래프 계층" className="flex min-w-0 items-center gap-2 border-b border-border/70 px-4 py-2 text-xs"><ol className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"><li className="shrink-0">{resolvedNavigation.level === "site" ? <span aria-current="page" className="font-semibold">Site Overview</span> : <Button size="sm" variant="link" className="h-auto p-0 text-xs text-sky-300" onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "site"))}>Site Overview</Button>}</li>{resolvedNavigation.level !== "site" && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className={resolvedNavigation.level === "group" ? "min-w-0" : "shrink-0"}>{resolvedNavigation.level === "group" ? <span aria-current="page" className="block truncate font-semibold" title={groupLabel}>{groupLabel}</span> : <Button size="sm" variant="link" className="h-auto max-w-48 justify-start truncate p-0 text-xs text-sky-300" title={groupLabel} onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "group", resolvedNavigation.groupId))}>{groupLabel}</Button>}</li></>}{operationLabel && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className="min-w-0"><span aria-current="page" className="block truncate font-semibold" title={`${operationLabel.method} ${operationLabel.path}`}>{operationLabel.method} {operationLabel.path}</span></li></>}</ol>{hiddenCount > 0 && <Button size="sm" variant="outline" className="shrink-0" onClick={expand}>{resolvedNavigation.level === "operation" ? "Object" : "API"} 18개 더 보기 ({hiddenCount}개 남음)</Button>}</nav>
       {snapshot.isLoading && <p className="m-4 rounded-md border border-border/70 p-6 text-sm text-muted-foreground">공격면을 불러오는 중입니다.</p>}
-      {graph && (compact || listMode ? <div className="p-4"><ResponsiveGraphList projection={graph} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden">{lanes.map((lane, index) => <div key={`${lane}-band`} aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-[1]" style={{ left: laneScreenX(index), width: Math.max(0, laneScreenX(index + 1) - laneScreenX(index)), backgroundColor: `${LANE_ACCENTS[index] ?? LANE_ACCENTS[0]}0f` }} />)}<div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
-        const left = Math.max(laneScreenX(index), 0), right = Math.min(laneScreenX(index + 1), canvasWidth || laneScreenX(index + 1))
-        const stray = laneStrayCounts[index] ?? 0
-        return right <= left ? null : <button key={lane} type="button" aria-label={`${lane} 레인 기준 정렬${stray ? ` · ${stray}개 레인 밖` : ""}`} className="absolute top-0 flex h-10 items-center justify-center gap-1.5 truncate px-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" style={{ left, width: right - left }} onClick={() => setLaneLayout((current) => ({ lane: index, version: current.version + 1 }))}><i aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: LANE_ACCENTS[index] ?? LANE_ACCENTS[0] }} /><span className="truncate">{lane}</span>{stray > 0 && <span className="shrink-0 rounded-sm bg-amber-500/15 px-1 text-amber-300">{stray} 이탈</span>}</button>
-      })}</div>{lanes.slice(1).map((lane, index) => <div key={lane} aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-[1] border-l border-border/40" style={{ left: laneScreenX(index + 1) }} />)}{lanes.slice(1).map((lane, index) => <div key={`${lane}-resize`} role="separator" aria-orientation="vertical" aria-label={`${lanes[index]} 레인 폭 조절`} aria-valuenow={Math.round(laneWidths[index])} aria-valuemin={MIN_LANE_WIDTH} aria-valuemax={MAX_LANE_WIDTH} tabIndex={0} className="absolute top-0 z-20 h-10 w-3 -translate-x-1/2 cursor-col-resize touch-none border-x border-transparent hover:border-x-sky-400/70 focus-visible:outline-2 focus-visible:outline-ring" style={{ left: laneScreenX(index + 1) }}
-        onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault() }}
-        onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) dragLaneBoundary(index + 1, event.clientX) }}
-        onPointerUp={event => event.currentTarget.releasePointerCapture(event.pointerId)}
-        onKeyDown={event => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home") return
-          event.preventDefault()
-          setLaneWidth(index, event.key === "Home" ? DEFAULT_LANE_WIDTH : laneWidths[index] + (event.key === "ArrowRight" ? 24 : -24))
-        }} />)}<CytoscapeGraph projection={graph} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} laneWidths={laneWidths} onLaneStrayCountsChange={setLaneStrayCounts} preferences={preferences} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dashed border-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dotted border-zinc-300" />LLM</span></div></div>)}
+      {graph && (compact || listMode ? <div className="p-4"><ResponsiveGraphList projection={graph} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
+        const { left, right } = laneHeader(index)
+        return right <= left ? null : <button key={lane} type="button" aria-label={`${lane} 레인 기준 정렬`} className="absolute top-0 flex h-10 items-center justify-center truncate px-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" style={{ left, width: right - left }} onClick={() => setLaneLayout((current) => ({ lane: index, version: current.version + 1 }))}><span className="truncate">{lane}</span></button>
+      })}</div><CytoscapeGraph projection={graph} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={preferences} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dashed border-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><i className="w-5 border-t-2 border-dotted border-zinc-300" />LLM</span></div></div>)}
     </ReferenceAnalysisWorkspace>
   </section>
 }

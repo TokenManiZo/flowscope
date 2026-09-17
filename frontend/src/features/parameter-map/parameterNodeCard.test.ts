@@ -15,15 +15,6 @@ describe("parameter node card SVG", () => {
     for (const svg of [user, box]) expect(svg.querySelector("image, use, script, foreignObject, parsererror")).toBeNull()
   })
 
-  it("marks a lane accent as a bounded left strip and omits it when no accent is given", () => {
-    const accented = documentFor(card({ accent: "#5eead4" }))
-    const strip = [...accented.querySelectorAll("rect")].find((rect) => rect.getAttribute("fill") === "#5eead4")
-    expect(strip).toBeDefined()
-    expect(strip?.getAttribute("width")).toBe("3")
-    expect(accented.querySelector("image, use, script, foreignObject, parsererror")).toBeNull()
-    expect([...documentFor(card()).querySelectorAll("rect")].some((rect) => rect.getAttribute("width") === "3")).toBe(false)
-  })
-
   it("draws target and API-group icons as bounded inline geometry", () => {
     const globe = documentFor(card({ kind: "target", badge: "TARGET", icon: "globe" }))
     const network = documentFor(card({ kind: "target", badge: "API GROUP", icon: "network" }))

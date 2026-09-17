@@ -54,7 +54,7 @@ it("destroys the actual Cytoscape instance for canvas→list and creates one rep
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)
   await screen.findByLabelText("공격면 Cytoscape 그래프")
   act(() => { media.matches = true; listeners.forEach((listener) => listener(new Event("change"))) })
-  expect(cytoscapeState.cores[0].off).toHaveBeenCalledTimes(6)
+  expect(cytoscapeState.cores[0].off).toHaveBeenCalledTimes(5)
   expect(cytoscapeState.cores[0].destroy).toHaveBeenCalledTimes(1)
   expect(screen.getByRole("button", { name: /ORDERS APIs/ })).toBeVisible()
   act(() => { media.matches = false; listeners.forEach((listener) => listener(new Event("change"))) })
