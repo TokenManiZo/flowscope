@@ -23,6 +23,7 @@ final class FlowScopeControlTabTest {
             collect(tab, labels);
         });
         assertTrue(labels.contains("프로젝트 열기"));
+        assertTrue(labels.contains("새 트래픽 진단 시작"));
         assertTrue(labels.contains("FlowScope Web UI 열기"));
         assertFalse(labels.stream().anyMatch(value -> value.contains("MCP") || value.contains("연결 문자열")));
     }

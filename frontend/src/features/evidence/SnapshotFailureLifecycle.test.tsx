@@ -44,7 +44,10 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   }
   const select = async () => {
     if (kind === "graph-canvas") await userEvent.click(screen.getByRole("button", { name: "캔버스 Evidence 선택" }))
-    else if (kind === "graph-list") await userEvent.click(screen.getByRole("button", { name: /HUMAN · USER A.*API 접근/ }))
+    else if (kind === "graph-list") {
+      await userEvent.click(screen.getByRole("button", { name: /PATCH \/orders\/\{id\}/ }))
+      await userEvent.click(screen.getByRole("button", { name: /orders:101; Resource/ }))
+    }
     else {
       await userEvent.click(await screen.findByRole("button", { name: "상세 보기" }))
       if (kind === "surface" && screen.queryByRole("button", { name: "Evidence 상세 · H · HTTP 200" })) await userEvent.click(screen.getByRole("button", { name: "Evidence 상세 · H · HTTP 200" }))

@@ -128,6 +128,19 @@ public final class ProjectWorkspace {
         return database;
     }
 
+    public void delete(String id, Path activeDatabase) throws IOException {
+        Path database = resolveDatabase(id).toAbsolutePath().normalize();
+        Path active = activeDatabase == null ? null : activeDatabase.toAbsolutePath().normalize();
+        if (database.equals(active)) throw new IllegalStateException("현재 프로젝트는 삭제할 수 없습니다. 다른 프로젝트를 먼저 여세요.");
+        Path directory = database.getParent();
+        if (directory == null || !root.equals(directory.getParent())) {
+            throw new IllegalArgumentException("관리 프로젝트만 삭제할 수 있습니다.");
+        }
+        try (Stream<Path> paths = Files.walk(directory)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
+        }
+    }
+
     public Status status(Path activeDatabase, ProjectStore.ProjectContext activeContext,
                          SqliteProjectStore store) {
         Path active = activeDatabase == null ? null : activeDatabase.toAbsolutePath().normalize();

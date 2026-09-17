@@ -17,13 +17,13 @@ const snapshot: Snapshot = {
 
 const hierarchyCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["cell-evidence-not-an-event"] }
 
-it("keeps all relationship controls reachable from the secondary tab", async () => {
+it("opens the graph on the full relationship view", () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
-  expect(screen.getByRole("tab", { name: "점검 우선순위" })).toHaveAttribute("aria-selected", "true")
-  expect(screen.queryByText("Site Overview")).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("tab", { name: "전체 관계 보기" }))
+  const toolbar = screen.getByRole("toolbar", { name: "그래프 상단 제어" })
+  expect(within(toolbar).getByRole("tab", { name: "전체 관계 보기" })).toHaveAttribute("aria-selected", "true")
+  expect(within(toolbar).queryByText("ACCESS GRAPH")).not.toBeInTheDocument()
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
@@ -74,7 +74,7 @@ it("reconciles retained aggregate coordinates and Evidence IDs after two current
   expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("ev-old")
 }, 15_000)
 
-it("preserves exact candidate navigation focus after closing the compact inspector", async () => {
+it("opens exact Gap details directly without the removed duplicate source path list", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: true, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const gaps = [202, 404].map(resource => ({ id: `gap-${resource}`, type: "UNCROSSED", idn: "USER B", op: hierarchyCell.op, resource: `orders:${resource}`, risk: 1, summary: "server", missedSources: [] }))
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [hierarchyCell, { ...hierarchyCell, idn: "USER B", resource: "orders:303" }], gaps }
@@ -82,19 +82,12 @@ it("preserves exact candidate navigation focus after closing the compact inspect
   render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   await userEvent.click(screen.getByRole("button", { name: /미교차 후보 USER B.*orders:202/ }))
-  const paths = within(screen.getByLabelText("Source Evidence 경로"))
-  const exact = paths.getByRole("button", { name: /미교차 후보.*· orders:202/ })
-  expect(exact).toHaveAttribute("data-focused", "yes")
-  expect(paths.getByRole("button", { name: /미교차 후보.*· orders:404/ })).toHaveAttribute("data-focused", "no")
-  await userEvent.click(exact)
   const inspector = screen.getByRole("dialog", { name: "선택 상세" })
   expect(inspector).toHaveTextContent("gap-202")
+  expect(screen.queryByLabelText("Source Evidence 경로")).not.toBeInTheDocument()
   await userEvent.click(within(inspector).getByRole("button", { name: "Close" }))
-  expect(paths.getAllByText("포커스 경로")).toHaveLength(2)
-  expect(exact).toHaveAttribute("data-focused", "yes")
   await userEvent.click(screen.getByRole("button", { name: "USER A" }))
   await userEvent.click(within(screen.getByRole("dialog", { name: "선택 상세" })).getByRole("button", { name: "Close" }))
-  expect(exact).toHaveAttribute("data-focused", "yes")
 }, 15_000)
 
 it("offers explicit expansion for a candidate-only group with no observed operations", async () => {
@@ -118,15 +111,19 @@ it("navigates Site→Group→API→Object and back without leaking objects into 
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.queryByText("orders:101")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
-  expect(screen.getByText("API View")).toBeVisible()
+  const breadcrumb = screen.getByRole("navigation", { name: "그래프 계층" })
+  expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
+  expect(within(breadcrumb).getByRole("button", { name: "Site Overview" })).toBeVisible()
   expect(screen.queryByText("orders:101")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /^GET \/api\/orders\/\{id\}/ }))
-  expect(screen.getByText("Object View")).toBeVisible()
+  expect(within(breadcrumb).getByText("GET /api/orders/{id}")).toHaveAttribute("aria-current", "page")
+  expect(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" })).toBeVisible()
+  expect(breadcrumb).not.toHaveTextContent("https://api.example.test")
   await userEvent.click(screen.getByRole("button", { name: /^orders:101/ }))
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
   expect(screen.getByText("cell-evidence-not-an-event")).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: /Back/ }))
-  expect(screen.getByText("API View")).toBeVisible()
+  await userEvent.click(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" }))
+  expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
 }, 15_000)
 
 it("requires explicit 18-item expansion for APIs and Objects and retains group paging on Back", async () => {
@@ -144,7 +141,7 @@ it("requires explicit 18-item expansion for APIs and Objects and retains group p
   expect(screen.queryByRole("button", { name: /^orders:37/ })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /Object 18개 더 보기/ }))
   expect(screen.getByRole("button", { name: /^orders:37/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: /Back/ }))
+  await userEvent.click(within(screen.getByRole("navigation", { name: "그래프 계층" })).getByRole("button", { name: "ORDERS APIs" }))
   expect(screen.getByRole("button", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
 })
 
@@ -169,7 +166,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   expect(screen.getAllByText("API GROUP")).toHaveLength(1)
   expect(screen.queryByText("OBJECT")).not.toBeInTheDocument()
   expect(screen.getByRole("region", { name: "접근 그래프 작업면" })).toContainElement(screen.getByTestId("cytoscape-graph"))
-  expect(screen.getByText("ACCESS GRAPH")).toBeVisible()
+  expect(screen.queryByText("ACCESS GRAPH")).not.toBeInTheDocument()
   expect(screen.getByText("EVIDENCE")).toBeVisible()
   expect(screen.getByRole("button", { name: "축소" })).toBeVisible()
   expect(screen.getByText("100%")).toBeVisible()
@@ -185,7 +182,8 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   expect(screen.queryByTestId("cytoscape-graph")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   expect(screen.getByRole("button", { name: /^GET \/orders\/\{id\}/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: /HUMAN · alice.*API 접근/ }))
+  await userEvent.click(screen.getByRole("button", { name: /^GET \/orders\/\{id\}/ }))
+  await userEvent.click(screen.getByRole("button", { name: /^order:1/ }))
   await userEvent.click(screen.getByRole("button", { name: "그래프 보기" }))
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
   act(() => { media.matches = true; listeners.forEach((listener) => listener(new Event("change"))) })
@@ -193,7 +191,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   const compactInspector = screen.getByRole("dialog", { name: "선택 상세" })
   await userEvent.click(within(compactInspector).getByRole("button", { name: "Close" }))
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "선택 상세" })).not.toBeInTheDocument())
-  expect(screen.getByRole("button", { name: /^GET \/orders\/\{id\}/ })).toBeVisible()
+  expect(screen.getByRole("button", { name: /^order:1/ })).toBeVisible()
   act(() => { media.matches = false; listeners.forEach((listener) => listener(new Event("change"))) })
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
 }, 15_000)
@@ -338,9 +336,7 @@ it("enters the exact UNCROSSED operation from Site and falls back to Site when i
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: /미교차 후보 USER B/ }))
-  expect(screen.getByText("Object View")).toBeVisible()
-  expect(screen.getByRole("button", { name: /미교차 후보 · USER B.*· orders:202/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: /미교차 후보 · USER B.*· orders:202/ }))
+  expect(screen.queryByText("Object View")).not.toBeInTheDocument()
   expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("USER B")
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...fixture, cells: [] }
   rerender(<GraphPage />)

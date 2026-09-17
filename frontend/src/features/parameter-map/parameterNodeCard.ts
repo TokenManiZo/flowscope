@@ -130,17 +130,20 @@ const badgeColors: Record<string, readonly [string, string]> = {
 }
 
 /** Bounded inline display image only; full text remains in DOM tooltips and fallback labels. */
-export function renderParameterNodeCardSvg(card: ParameterNodeCardView): { uri: string; width: number; height: number } {
+export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact = false): { uri: string; width: number; height: number } {
+  const width = compact ? 196 : SVG_WIDTH
+  const height = compact ? card.footer ? 108 : 88 : SVG_HEIGHT
   const titleX = card.icon === "none" ? 14 : 42
-  const badge = visualLine(card.badge, 178, 12)
+  const badge = visualLine(card.badge, width - 46, 12)
+  const badgeWidth = Math.ceil(textWidth(badge, 12) + 18)
   const [background, foreground] = (card.kind === "operation" || card.kind === "input") && Object.hasOwn(badgeColors, card.badge) ? badgeColors[card.badge] : ["#334155", "#cbd5e1"]
   const icon = card.icon === "user" ? '<g fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round"><circle cx="23" cy="40" r="4"/><path d="M15 54v-2a8 8 0 0 1 16 0v2"/></g>'
     : card.icon === "box" ? '<g fill="none" stroke="#c4b5fd" stroke-width="1.8" stroke-linejoin="round"><path d="M14 40l9-5 9 5v10l-9 5-9-5Z"/><path d="m14 40 9 5 9-5M23 45v10m-4.5-17.5 9 5"/></g>' : ""
   const relationshipIcon = card.icon === "globe" ? '<g fill="none" stroke="#5eead4" stroke-width="1.8" stroke-linecap="round"><circle cx="23" cy="45" r="10"/><path d="M13 45h20"/><path d="M23 35c3 3 4.5 6.4 4.5 10S26 52 23 55M23 35c-3 3-4.5 6.4-4.5 10S20 52 23 55"/></g>'
     : card.icon === "network" ? '<g fill="none" stroke="#5eead4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="23" cy="36" r="3"/><circle cx="15" cy="52" r="3"/><circle cx="31" cy="52" r="3"/><path d="m21.5 38.7-5 10.6m8-10.6 5 10.6"/><path d="M18 52h10"/></g>' : ""
-  const title = escapeXml(visualLine(card.title, SVG_WIDTH - titleX - 14, 14, true))
-  const detail = escapeXml(visualLine(card.detail, 196, 12))
-  const footer = escapeXml(visualLine(card.footer, 196, 12, true))
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SVG_WIDTH}" height="${SVG_HEIGHT}" viewBox="0 0 ${SVG_WIDTH} ${SVG_HEIGHT}" aria-hidden="true"><rect width="${SVG_WIDTH}" height="${SVG_HEIGHT}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${Math.ceil(textWidth(badge, 12) + 18)}" height="22" rx="5" fill="${background}"/><text x="23" y="24" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text><text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text><text x="14" y="104" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text></svg>`
-  return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width: SVG_WIDTH, height: SVG_HEIGHT }
+  const title = escapeXml(visualLine(card.title, width - titleX - 14, 14, true))
+  const detail = escapeXml(visualLine(card.detail, width - 28, 12))
+  const footer = escapeXml(visualLine(card.footer, width - 28, 12, true))
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text><text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text>${card.footer ? `<text x="14" y="${height - 14}" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text>` : ""}</svg>`
+  return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width, height }
 }

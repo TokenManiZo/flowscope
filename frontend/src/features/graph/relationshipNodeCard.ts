@@ -7,7 +7,7 @@ type RelationshipProjection = GraphProjection | HierarchyProjection
 
 const methodPattern = /^(?:(https?:\/\/\S+)\s+)?(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD|TRACE|CONNECT|UNKNOWN)\s+(.+)$/i
 
-function operationParts(value: string): { method: string; path: string } {
+export function operationParts(value: string): { method: string; path: string } {
   const match = value.match(methodPattern)
   return match ? { method: match[2].toUpperCase(), path: match[3] } : { method: "UNKNOWN", path: value }
 }
@@ -41,8 +41,8 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "identity") return {
-    kind: "condition", badge: "IDENTITY", title: node.label, detail: node.verdictText, footer: evidenceFooter(node), icon: "user",
-    accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}; ${evidenceFooter(node)}`,
+    kind: "condition", badge: "IDENTITY", title: node.label, detail: node.verdictText, footer: "", icon: "user",
+    accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
   }
 
   if (node.kind === "resource") {
@@ -55,13 +55,13 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
 
   const operation = operationParts(node.label)
   if (node.kind === "support-operation") return {
-    kind: "operation", badge: "SUPPORT", title: `${operation.method} ${operation.path}`, detail: "보조 흐름", footer: evidenceFooter(node), icon: "none",
-    accessibleLabel: `Support operation ${node.label}; ${evidenceFooter(node)}`,
+    kind: "operation", badge: "SUPPORT", title: `${operation.method} ${operation.path}`, detail: "보조 흐름", footer: "", icon: "none",
+    accessibleLabel: `Support operation ${node.label}`,
   }
 
   return {
-    kind: "operation", badge: operation.method, title: operation.path, detail: node.verdictText, footer: evidenceFooter(node), icon: "none",
-    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}; ${evidenceFooter(node)}`,
+    kind: "operation", badge: operation.method, title: operation.path, detail: node.verdictText, footer: "", icon: "none",
+    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}`,
   }
 }
 

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphWheelIntent } from "./CytoscapeGraph"
 import { graphLaneForKind, laneGeometry } from "./graphLanes"
 import type { GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
@@ -54,6 +54,7 @@ const singleNodeCollection = () => ({
 const core = {
   add: vi.fn(),
   destroy: vi.fn(),
+  resize: vi.fn(),
   elements: vi.fn(() => ({ remove, unselect })),
   getElementById: vi.fn(() => node),
   nodes: vi.fn(singleNodeCollection),
@@ -62,8 +63,9 @@ const core = {
     listeners.set(`${event}:${typeof selector === "string" ? selector : "core"}`, typeof selector === "function" ? selector : listener!)
   }),
   maxZoom: vi.fn((next?: number) => { if (next !== undefined) currentMaxZoom = next; return currentMaxZoom }),
-  zoom: vi.fn((next?: number) => { if (next !== undefined) currentZoom = next; return currentZoom }),
+  zoom: vi.fn((next?: number | { level: number }) => { if (next !== undefined) currentZoom = typeof next === "number" ? next : next.level; return currentZoom }),
   pan: vi.fn(() => ({ x: 0, y: 0 })),
+  panBy: vi.fn(),
   viewport: vi.fn(),
   fit: vi.fn(),
   layout: vi.fn(() => ({ run: vi.fn() })),
@@ -91,7 +93,7 @@ beforeEach(() => {
   scheduledFrame = null
   resizeListener = null
   disconnectResizeObserver.mockClear()
-  vi.mocked(core.zoom).mockImplementation((next?: number) => { if (next !== undefined) currentZoom = next; return currentZoom })
+  vi.mocked(core.zoom).mockImplementation((next?: number | { level: number }) => { if (next !== undefined) currentZoom = typeof next === "number" ? next : next.level; return currentZoom })
   vi.mocked(core.maxZoom).mockImplementation((next?: number) => { if (next !== undefined) currentMaxZoom = next; return currentMaxZoom })
   vi.mocked(core.pan).mockReturnValue({ x: 0, y: 0 })
   vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : undefined)
@@ -182,7 +184,7 @@ it("renders approved card images while preserving source edge text and fit behav
   expect(remove).toHaveBeenCalledTimes(1)
   expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ label: "HUMAN ×2" }) })]))
   expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({
-    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW; 1 Evidence", width: 224, height: 124,
+    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW", width: 196, height: 88, confirmed: "no",
   }) })]))
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={1} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   expect(core.fit).toHaveBeenCalledTimes(1)
@@ -227,10 +229,36 @@ it("renders a graph-first canvas with dark compact node styling", () => {
     style: expect.arrayContaining([
       expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-color": "#111418", color: "#e5e7eb" }) }),
       expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-image": "data(cardImage)", width: "data(width)", height: "data(height)" }) }),
+      expect.objectContaining({ selector: 'node[confirmed = "yes"]', style: expect.objectContaining({ "border-color": "#ef4444" }) }),
       expect.objectContaining({ selector: "node:selected" }),
       expect.objectContaining({ selector: "edge", style: expect.objectContaining({ label: "data(label)", "text-rotation": "autorotate" }) }),
     ]),
   }))
+})
+
+it("uses trackpad-like pixel deltas for panning and mouse-like deltas for zooming", () => {
+  expect(graphWheelIntent("auto", { ctrlKey: false, deltaMode: WheelEvent.DOM_DELTA_PIXEL, deltaX: 4, deltaY: 8 })).toBe("pan")
+  expect(graphWheelIntent("auto", { ctrlKey: false, deltaMode: WheelEvent.DOM_DELTA_LINE, deltaX: 0, deltaY: 3 })).toBe("zoom")
+  expect(graphWheelIntent("trackpad", { ctrlKey: false, deltaMode: WheelEvent.DOM_DELTA_LINE, deltaX: 0, deltaY: 3 })).toBe("pan")
+  expect(graphWheelIntent("mouse", { ctrlKey: true, deltaMode: WheelEvent.DOM_DELTA_PIXEL, deltaX: 0, deltaY: 2 })).toBe("zoom")
+})
+
+it("pans for trackpad mode and zooms for mouse mode", () => {
+  const base = { version: 5 as const, locked: false, viewport: null, positions: {} }
+  const { rerender } = render(<CytoscapeGraph projection={projection} preferences={{ ...base, inputMode: "trackpad" }} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const canvas = screen.getByLabelText("공격면 Cytoscape 그래프")
+  fireEvent.wheel(canvas, { deltaX: 5, deltaY: 10, deltaMode: WheelEvent.DOM_DELTA_PIXEL })
+  expect(core.panBy).toHaveBeenCalledWith({ x: -5, y: -10 })
+
+  rerender(<CytoscapeGraph projection={projection} preferences={{ ...base, inputMode: "mouse" }} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  fireEvent.wheel(canvas, { deltaY: 10, deltaMode: WheelEvent.DOM_DELTA_PIXEL, clientX: 50, clientY: 60 })
+  expect(core.zoom).toHaveBeenCalledWith(expect.objectContaining({ level: expect.any(Number), renderedPosition: { x: 50, y: 60 } }))
+})
+
+it("marks only explicitly confirmed node ids for the red border selector", () => {
+  render(<CytoscapeGraph projection={projection} confirmedNodeIds={new Set(["operation:GET /orders"])} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; confirmed?: string } }>
+  expect(added.find(item => item.data.id === "operation:GET /orders")?.data.confirmed).toBe("yes")
 })
 
 it("anchors nodes in their semantic lane on initial projection", () => {
@@ -242,7 +270,7 @@ it("anchors nodes in their semantic lane on initial projection", () => {
 
 it("restores unlocked Y while placing a saved endpoint back in its lane", () => {
   vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "operation" : undefined)
-  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={{ version: 5, locked: false, viewport: null, positions: { "identity:alice": { x: -999, y: 222 } } }} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={{ version: 5, inputMode: "auto", locked: false, viewport: null, positions: { "identity:alice": { x: -999, y: 222 } } }} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
 
   expect(node.position).toHaveBeenCalledWith({ x: 450, y: 222 })
 })
@@ -271,6 +299,7 @@ it("reclamps nodes when the graph container is resized", () => {
   resizeListener?.([], {} as ResizeObserver)
   runScheduledFrame()
 
+  expect(core.resize).toHaveBeenCalled()
   expect(node.position).toHaveBeenCalledWith({ x: 0, y: 55 })
 })
 
@@ -297,7 +326,7 @@ it("keeps stateful identity, endpoint, and object centers in lane through restor
   vi.mocked(core.nodes).mockImplementation(() => ({ forEach: (callback: (current: never) => void) => nodes.forEach((node) => callback(node as never)) }))
   vi.mocked(core.zoom).mockImplementation(((next?: number) => { if (next !== undefined) viewport = { ...viewport, zoom: next }; return viewport.zoom }) as never)
   vi.mocked(core.pan).mockImplementation(() => viewport.pan)
-  const preferences = { version: 5 as const, locked: false, viewport: null, positions: { "identity:alice": { x: -500, y: 110 }, "operation:GET /orders": { x: 5000, y: 220 }, "resource:order:1": { x: 0, y: 330 } } }
+  const preferences = { version: 5 as const, inputMode: "auto" as const, locked: false, viewport: null, positions: { "identity:alice": { x: -500, y: 110 }, "operation:GET /orders": { x: 5000, y: 220 }, "resource:order:1": { x: 0, y: 330 } } }
   const { rerender } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   runScheduledFrame()
   expectNodesInsideLanes(nodes, 1200)
@@ -361,7 +390,7 @@ it("preserves the actual Cytoscape selection through preferences, zoom, fit, res
   node.select()
   expect(node.selected()).toBe(true)
 
-  rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} selectedElementId="identity:alice" preferences={{ version: 5, positions: {}, viewport: { zoom: 1.1, pan: { x: 0, y: 0 } }, locked: false }} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
+  rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} selectedElementId="identity:alice" preferences={{ version: 5, inputMode: "auto", positions: {}, viewport: { zoom: 1.1, pan: { x: 0, y: 0 } }, locked: false }} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
   runScheduledFrame()
   expect(node.selected(), "preferences").toBe(true)
 
@@ -369,7 +398,7 @@ it("preserves the actual Cytoscape selection through preferences, zoom, fit, res
   runScheduledFrame()
   expect(node.selected(), "zoom").toBe(true)
 
-  rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={1} selectedElementId="identity:alice" preferences={{ version: 5, positions: {}, viewport: { zoom: 1.1, pan: { x: 0, y: 0 } }, locked: false }} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
+  rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={1} selectedElementId="identity:alice" preferences={{ version: 5, inputMode: "auto", positions: {}, viewport: { zoom: 1.1, pan: { x: 0, y: 0 } }, locked: false }} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
   runScheduledFrame()
   expect(node.selected(), "fit").toBe(true)
 
@@ -377,7 +406,7 @@ it("preserves the actual Cytoscape selection through preferences, zoom, fit, res
   runScheduledFrame()
   expect(node.selected(), "resize").toBe(true)
 
-  rerender(<CytoscapeGraph projection={projection} locked fitVersion={1} selectedElementId="identity:alice" preferences={{ version: 5, positions: {}, viewport: { zoom: 1.1, pan: { x: 0, y: 0 } }, locked: true }} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
+  rerender(<CytoscapeGraph projection={projection} locked fitVersion={1} selectedElementId="identity:alice" preferences={{ version: 5, inputMode: "auto", positions: {}, viewport: { zoom: 1.1, pan: { x: 0, y: 0 } }, locked: true }} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
   runScheduledFrame()
   expect(node.selected(), "lock").toBe(true)
 })
@@ -407,17 +436,17 @@ it("preserves the light dotted LLM edge color", () => {
   expect(llmEdge?.data.color).toBe("#e4e4e7")
 })
 
-it("uses the shared amber REVIEW color for dotted route candidates", () => {
+it("keeps unconfirmed route candidates neutral and dotted", () => {
   const candidateProjection: GraphProjection = {
     ...projection,
     routeCandidates: [{ id: "route-candidate:review", label: "UNKNOWN /unseen", service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/unseen", observed: false, observedText: "미관측 후보", applicability: "REVIEW", provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: [], provenance: [], reviewReason: "검토 필요", priorityReasons: [], selection: { operation: "UNKNOWN /unseen", resource: null, identity: null, source: "human", evidenceIds: [] } }],
   }
   render(<CytoscapeGraph projection={candidateProjection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
 
-  const addedElements = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; verdictColor?: string } }>
-  expect(addedElements.find((element) => element.data.id === "route-candidate:review")?.data.verdictColor).toBe("#f59e0b")
+  const addedElements = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; confirmed?: string } }>
+  expect(addedElements.find((element) => element.data.id === "route-candidate:review")?.data.confirmed).toBe("no")
   expect(vi.mocked(cytoscape)).toHaveBeenCalledWith(expect.objectContaining({ style: expect.arrayContaining([
-    expect.objectContaining({ selector: 'node[kind = "route-candidate"]', style: expect.objectContaining({ "border-style": "dotted", "border-color": "data(verdictColor)" }) }),
+    expect.objectContaining({ selector: 'node[kind = "route-candidate"]', style: expect.objectContaining({ "border-style": "dotted", "border-color": "#64748b" }) }),
   ]) }))
 })
 
@@ -467,7 +496,7 @@ it.each(["site", "group", "operation"] as const)("bounds locked %s node widths a
   vi.mocked(core.zoom).mockImplementation(((next?: number) => { if (next !== undefined) viewport = { ...viewport, zoom: next }; return viewport.zoom }) as never)
   vi.mocked(core.pan).mockImplementation(() => viewport.pan)
   vi.mocked(core.viewport).mockImplementation(((next: typeof viewport) => { viewport = next }) as never)
-  const preferences = { version: 5 as const, locked: true, positions: Object.fromEntries(nodes.map(node => [node.id(), { x: 9999, y: 125 }])), viewport }
+  const preferences = { version: 5 as const, inputMode: "auto" as const, locked: true, positions: Object.fromEntries(nodes.map(node => [node.id(), { x: 9999, y: 125 }])), viewport }
   const { rerender } = render(<CytoscapeGraph projection={hierarchy} locked fitVersion={0} preferences={preferences} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   const assertBounds = () => {
     nodes.forEach(node => {

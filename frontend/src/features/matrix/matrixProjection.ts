@@ -31,6 +31,13 @@ export interface MatrixProjection {
 export const matrixCellKey = (mode: MatrixMode, group: string, operation: string, resource: string | null) => JSON.stringify([mode, group, operation, resource])
 export const matrixCoordinateKey = (operation: string, resource: string | null) => JSON.stringify([operation, resource])
 
+/** Canonical coordinates retain service internally; matrix labels show only method and API path. */
+export function operationDisplay(operation: string) {
+  const value = operation.replace(/^https?:\/\/\S+\s+/i, "")
+  const match = value.match(/^([A-Z]+)\s+(.+)$/)
+  return match ? { method: match[1], path: match[2] } : { method: null, path: value }
+}
+
 function sameCoordinate(left: Pick<Cell, "idn" | "op" | "resource">, right: Pick<Gap, "idn" | "op" | "resource">) {
   return left.idn === right.idn && left.op === right.op && left.resource === right.resource
 }

@@ -1,19 +1,17 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { NewProjectDialog } from "@/components/layout/NewProjectDialog"
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
-import { useLoadSampleMutation, useScannerRunQuery, useSnapshotQuery } from "@/lib/query/hooks"
+import { useLoadSampleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { dashboardCounts, hasDashboardData } from "./dashboardSelectors"
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : "데이터를 불러오지 못했습니다." }
 
 /**
  * PR#11 대시보드: 서버 Gap 근거의 네 수치와 `Gap 그래프에서 확인` 진입만 제공한다. 퍼센트·추이·추천 문구는 만들지 않는다(D-002).
- * 삭제형 초기화 대신 보존형 새 진단(D-140)을 그대로 둔다.
+ * 프로젝트 생성·초기화·삭제는 상단 프로젝트 관리와 Burp 제어면에서 수행한다.
  */
 export function DashboardPage() {
   const snapshot = useSnapshotQuery()
-  const scanner = useScannerRunQuery()
   const sample = useLoadSampleMutation()
   const data = snapshot.data
   const context = <section className="space-y-3 p-4 text-sm"><h2 className="font-semibold">현재 snapshot 요약</h2><p>서버의 관측·검토 상태만 표시합니다. Gap은 취약점 판정이 아닙니다.</p>{data && <dl className="space-y-2">{[
@@ -21,7 +19,7 @@ export function DashboardPage() {
   ].map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-2"><dt>{label}</dt><dd>{value}건</dd></div>)}</dl>}</section>
   return <ReferenceAnalysisWorkspace ariaLabel="대시보드 분석 영역" context={context} inspector={null}>
     <section className="min-w-0 space-y-6 p-4 sm:p-6" aria-labelledby="dashboard-title">
-      <header className="flex flex-wrap items-start justify-between gap-4"><div className="space-y-3"><h1 id="dashboard-title" className="text-2xl font-semibold">보안 점검 대시보드</h1><p className="max-w-3xl text-base leading-7 text-muted-foreground">FlowScope는 HUMAN·SCANNER·LLM의 관측 범위를 비교해 수동 확인이 필요한 API·파라미터와 권한 변형의 점검 순서를 보여 줍니다.</p></div><NewProjectDialog defaultScope={scanner.data?.scope.join("\n") ?? ""} /></header>
+      <header className="flex flex-wrap items-start justify-between gap-4"><div className="space-y-3"><h1 id="dashboard-title" className="text-2xl font-semibold">보안 점검 대시보드</h1><p className="max-w-3xl text-base leading-7 text-muted-foreground">FlowScope는 HUMAN·SCANNER·LLM의 관측 범위를 비교해 수동 확인이 필요한 API·파라미터와 권한 변형의 점검 순서를 보여 줍니다.</p></div></header>
       {!data && !snapshot.isError && <p role="status" aria-label="데이터를 불러오는 중">서버 점검 근거를 불러오는 중입니다.</p>}
       {snapshot.isError && <Alert variant="destructive" aria-label={errorMessage(snapshot.error)}><AlertTitle>{data ? "마지막 데이터를 표시하고 있습니다." : "데이터를 불러오지 못했습니다."}</AlertTitle><AlertDescription>{errorMessage(snapshot.error)}<span>마지막 갱신: {snapshot.dataUpdatedAt ? new Date(snapshot.dataUpdatedAt).toLocaleString("ko-KR") : "없음"}</span></AlertDescription><Button variant="outline" onClick={() => void snapshot.refetch()}>다시 시도</Button></Alert>}
       {data && <>

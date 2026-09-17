@@ -34,6 +34,8 @@ import {
   getProjects,
   startProject,
   openProject,
+  resetProjectTraffic,
+  deleteProject,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -120,6 +122,8 @@ const projectInvalidations = [queryKeys.projects, queryKeys.snapshot, queryKeys.
   queryKeys.scannerRun, queryKeys.explorerRun] as const
 export function useStartProjectMutation() { return useInvalidatingMutation(startProject, projectInvalidations) }
 export function useOpenProjectMutation() { return useInvalidatingMutation(openProject, projectInvalidations) }
+export function useResetProjectTrafficMutation() { return useInvalidatingMutation(resetProjectTraffic, projectInvalidations) }
+export function useDeleteProjectMutation() { return useInvalidatingMutation(deleteProject, [queryKeys.projects]) }
 export function useLoadSampleMutation() { return useInvalidatingMutation(loadSample, [queryKeys.snapshot]) }
 export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
 export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous, definitions }: { target: string; accounts: string; anonymous: boolean; definitions: string }) => startScannerRun(target, accounts, anonymous, definitions), [queryKeys.scannerRun]) }

@@ -43,6 +43,10 @@ export const startProject = (values: { name: string; scope: string }) =>
   confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
 export const openProject = (id: string) =>
   confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "open", id }))
+export const resetProjectTraffic = () =>
+  confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "reset" }))
+export const deleteProject = (id: string) =>
+  postForm<ProjectStatus>("/api/projects", { action: "delete", id })
 export const getHumanRun = (signal?: AbortSignal) => apiFetch<HumanRun>("/api/human-run", formSignal(signal))
 export const setHumanRun = (values: { action: "begin"; account: string } | { action: "end"; runId: string }) =>
   postForm<HumanRun>("/api/human-run", values)

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 export function WorkspaceNavigation({ route }: { route: AppRoute }) {
   return <nav aria-label="FlowScope 작업 탐색" className="flex shrink-0 items-center gap-1">
-    {navigationGroups.map((group) => group.id === "inspection"
+    {navigationGroups.map((group) => group.kind === "link"
       ? <a key={group.id} href={routeHash(group.defaultRoute)} aria-current={route === group.defaultRoute ? "page" : undefined} title={routeLabel(group.defaultRoute)} className={cn("border border-transparent px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground", route === group.defaultRoute && "bg-emerald-400/10 text-emerald-300")}>{group.label}</a>
       : <NavigationMenu key={group.id} group={group} route={route} />)}
   </nav>

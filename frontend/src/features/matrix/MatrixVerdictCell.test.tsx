@@ -14,7 +14,7 @@ it("maps server verdicts to readable semantic tones", () => {
   expect(matrixVerdictTone("unknown").className).toContain("bg-zinc-500/10")
 })
 
-it("renders unobserved source rows with a readable zinc-neutral badge", () => {
+it("renders unobserved sources as compact neutral miss badges", () => {
   const member: MatrixMember = {
     key: "untested-member",
     identity: "alice",
@@ -24,5 +24,5 @@ it("renders unobserved source rows with a readable zinc-neutral badge", () => {
 
   render(<TooltipProvider><MatrixVerdictCell member={member} mode="identity" onSelect={() => {}} /></TooltipProvider>)
 
-  expect(screen.getByText("H · HUMAN · 미관측 · 실선")).toHaveClass("border-zinc-500/50", "bg-zinc-500/10", "text-zinc-700")
+  expect(screen.getByText("H · 미탐")).toHaveClass("border-zinc-500/50", "bg-transparent", "text-muted-foreground")
 })

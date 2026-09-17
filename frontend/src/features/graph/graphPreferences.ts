@@ -8,6 +8,7 @@ export type GraphPreferences = {
   positions: Record<string, { x: number; y: number }>
   viewport: { zoom: number; pan: { x: number; y: number } } | null
   locked: boolean
+  inputMode: "auto" | "trackpad" | "mouse"
 }
 
 function plainRecord(value: unknown): value is Record<string, unknown> {
@@ -18,7 +19,10 @@ function safeKey(key: string) { return key.length <= MAX_KEY_LENGTH && key !== "
 function point(value: unknown): value is { x: number; y: number } { return plainRecord(value) && typeof value.x === "number" && Number.isFinite(value.x) && typeof value.y === "number" && Number.isFinite(value.y) }
 
 export function validateGraphPreferences(value: unknown): GraphPreferences | null {
-  if (!plainRecord(value) || Object.keys(value).length !== 4 || !["version", "positions", "viewport", "locked"].every((key) => Object.hasOwn(value, key)) || value.version !== 5 || typeof value.locked !== "boolean" || !plainRecord(value.positions)) return null
+  const keys = plainRecord(value) ? Object.keys(value) : []
+  if (!plainRecord(value) || !["version", "positions", "viewport", "locked"].every((key) => Object.hasOwn(value, key)) || keys.some(key => !["version", "positions", "viewport", "locked", "inputMode"].includes(key)) || value.version !== 5 || typeof value.locked !== "boolean" || !plainRecord(value.positions)) return null
+  const inputMode = value.inputMode ?? "auto"
+  if (inputMode !== "auto" && inputMode !== "trackpad" && inputMode !== "mouse") return null
   const entries = Object.entries(value.positions)
   if (entries.length > MAX_POSITIONS || entries.some(([key, position]) => !safeKey(key) || !point(position))) return null
   const viewport = value.viewport
@@ -31,7 +35,7 @@ export function validateGraphPreferences(value: unknown): GraphPreferences | nul
     const validViewport = viewport as { zoom: number; pan: { x: number; y: number } }
     return { zoom: Math.min(2, Math.max(0.4, validViewport.zoom)), pan: { x: validViewport.pan.x, y: validViewport.pan.y } }
   })()
-  return { version: 5, positions, viewport: normalizedViewport, locked: value.locked }
+  return { version: 5, positions, viewport: normalizedViewport, locked: value.locked, inputMode }
 }
 
 export function loadGraphPreferences(storage: Storage = window.localStorage): GraphPreferences | null {

@@ -10,6 +10,8 @@ vi.mock("@/lib/query/hooks", () => ({
   useScannerRunQuery: () => ({ data: undefined }),
   useProjectsQuery: () => ({ data: undefined, isPending: false }),
   useOpenProjectMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useResetProjectTrafficMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteProjectMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useStartProjectMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }))
 

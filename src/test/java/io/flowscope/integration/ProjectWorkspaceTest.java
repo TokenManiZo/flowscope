@@ -61,6 +61,25 @@ class ProjectWorkspaceTest {
     }
 
     @Test
+    void deletesOnlyAnInactiveManagedProject() throws Exception {
+        ProjectStore codec = new ProjectStore();
+        SqliteProjectStore store = new SqliteProjectStore(codec);
+        ProjectWorkspace workspace = new ProjectWorkspace(temporary);
+        ProjectWorkspace.Allocation active = workspace.allocate("", "https://active.example/");
+        ProjectWorkspace.Allocation inactive = workspace.allocate("", "https://old.example/");
+        store.save(active.database(), List.of(), new AnalysisConfig(), List.of(), List.of(),
+                Map.of(), List.of(), List.of(), active.context());
+        store.save(inactive.database(), List.of(), new AnalysisConfig(), List.of(), List.of(),
+                Map.of(), List.of(), List.of(), inactive.context());
+
+        assertThrows(IllegalStateException.class, () -> workspace.delete(active.id(), active.database()));
+        workspace.delete(inactive.id(), active.database());
+
+        assertTrue(active.database().toFile().exists());
+        assertFalse(inactive.directory().toFile().exists());
+    }
+
+    @Test
     void usesWindowsSafeNamesWithoutDiscardingTheDisplayName() throws Exception {
         ProjectWorkspace workspace = new ProjectWorkspace(temporary,
                 Clock.fixed(Instant.parse("2026-09-10T01:02:03Z"), ZoneOffset.UTC));

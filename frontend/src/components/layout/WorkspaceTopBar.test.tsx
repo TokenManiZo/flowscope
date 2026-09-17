@@ -11,6 +11,10 @@ const queryState = vi.hoisted(() => ({
   scanner: {} as Record<string, unknown>,
   projects: {} as Record<string, unknown>,
 }))
+const openProjectMutate = vi.hoisted(() => vi.fn())
+const startProjectMutate = vi.hoisted(() => vi.fn())
+const resetTrafficMutate = vi.hoisted(() => vi.fn())
+const deleteProjectMutate = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/query/hooks", () => ({
   useSnapshotQuery: () => queryState.snapshot,
@@ -18,16 +22,22 @@ vi.mock("@/lib/query/hooks", () => ({
   useZapStatusQuery: () => queryState.zap,
   useScannerRunQuery: () => queryState.scanner,
   useProjectsQuery: () => queryState.projects,
-  useOpenProjectMutation: () => ({ mutate: vi.fn(), isPending: false }),
-  useStartProjectMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+  useOpenProjectMutation: () => ({ mutate: openProjectMutate, isPending: false, error: null }),
+  useResetProjectTrafficMutation: () => ({ mutate: resetTrafficMutate, isPending: false, error: null }),
+  useDeleteProjectMutation: () => ({ mutate: deleteProjectMutate, isPending: false, error: null }),
+  useStartProjectMutation: () => ({ mutate: startProjectMutate, isPending: false, error: null }),
 }))
 
 beforeEach(() => {
+  openProjectMutate.mockReset()
+  startProjectMutate.mockReset()
+  resetTrafficMutate.mockReset()
+  deleteProjectMutate.mockReset()
   queryState.snapshot = { data: { trafficStats: { captured: 7 }, sampleMode: false }, isPending: false, isError: false }
   queryState.human = { data: { active: true, completed: false }, isPending: false, isError: false }
   queryState.zap = { data: { connected: true, state: "READY" }, isPending: false, isError: false }
   queryState.scanner = { data: { run: { status: "RUNNING" }, scope: ["https://app.example.test"] }, isPending: false, isError: false }
-  queryState.projects = { data: { directory: "/tmp/projects", active: { id: "app", name: "App", scope: ["https://app.example.test"], readable: true }, projects: [{ id: "app", name: "App", scope: ["https://app.example.test"], readable: true }], saveState: "SAVED", lastSavedAt: "2026-09-10T01:02:03Z", saveError: "" }, isPending: false, isError: false }
+  queryState.projects = { data: { directory: "/tmp/projects", active: { id: "app", name: "App", scope: ["https://app.example.test"], readable: true, managed: true }, projects: [{ id: "app", name: "App", scope: ["https://app.example.test"], readable: true, managed: true }, { id: "archive", name: "지난 진단", scope: ["https://old.example.test"], readable: true, managed: true }], saveState: "SAVED", lastSavedAt: "2026-09-10T01:02:03Z", saveError: "" }, isPending: false, isError: false }
 })
 
 it("keeps detailed live analysis statuses inside the accessible 상태 popover", async () => {
@@ -86,18 +96,42 @@ it("keeps cached server values authoritative during refetch failures", async () 
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
 })
 
-it("keeps grouped navigation, project, DB, and inspection controls discoverable", () => {
+it("keeps grouped navigation, project, DB, and inspection controls discoverable", async () => {
   render(<WorkspaceTopBar route="dashboard" />)
 
   const banner = screen.getByRole("banner", { name: "FlowScope 상단 상태" })
   expect(banner).toHaveClass("flex-wrap")
+  expect(within(banner).getByRole("link", { name: "FlowScope" })).toHaveAttribute("href", "#dashboard")
+  expect(within(banner).getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
+  expect(within(banner).getByRole("link", { name: "계정·세션" })).toHaveAttribute("href", "#accounts")
   expect(within(banner).getByLabelText("프로젝트 선택")).toBeVisible()
   expect(within(banner).getByText("저장됨")).toBeVisible()
   expect(within(banner).getByRole("link", { name: "점검" })).toHaveAttribute("href", "#inspection")
   expect(within(banner).getByRole("button", { name: "분석" })).toBeVisible()
   expect(within(banner).getByRole("button", { name: "기록" })).toBeVisible()
+  expect(within(banner).getByRole("button", { name: "프로젝트 관리" })).toBeVisible()
   expect(within(banner).queryByRole("link", { name: "빠른 시작" })).not.toBeInTheDocument()
   expect(banner.querySelector(".overflow-x-auto")).toBeNull()
+
+  await userEvent.click(within(banner).getByRole("button", { name: "프로젝트 관리" }))
+  const dialog = screen.getByRole("dialog", { name: "프로젝트 관리" })
+  expect(within(dialog).getByText("현재 프로젝트: App")).toBeVisible()
+  expect(within(dialog).getByRole("option", { name: "App" })).toBeVisible()
+  expect(within(dialog).queryByLabelText("새 프로젝트 이름 (선택)")).not.toBeInTheDocument()
+  expect(within(dialog).queryByLabelText("Exact scope")).not.toBeInTheDocument()
+  await userEvent.click(within(dialog).getByRole("button", { name: "새 트래픽 진단 시작" }))
+  await userEvent.click(screen.getByRole("button", { name: "새 진단 시작" }))
+  expect(startProjectMutate).toHaveBeenCalledWith({ name: "", scope: "https://app.example.test" }, expect.objectContaining({ onSuccess: expect.any(Function) }))
+  await userEvent.selectOptions(within(dialog).getByLabelText("기존 프로젝트 선택"), "archive")
+  await userEvent.click(within(dialog).getByRole("button", { name: "열기" }))
+  expect(openProjectMutate).toHaveBeenCalledWith("archive", expect.objectContaining({ onSuccess: expect.any(Function) }))
+  await userEvent.click(within(dialog).getByRole("button", { name: "선택한 프로젝트 삭제" }))
+  await userEvent.click(screen.getByRole("button", { name: "프로젝트 삭제" }))
+  expect(deleteProjectMutate).toHaveBeenCalledWith("archive", expect.objectContaining({ onSuccess: expect.any(Function) }))
+  await userEvent.selectOptions(within(dialog).getByLabelText("기존 프로젝트 선택"), "app")
+  await userEvent.click(within(dialog).getByRole("button", { name: "현재 프로젝트 트래픽 초기화" }))
+  await userEvent.click(screen.getByRole("button", { name: "트래픽 초기화" }))
+  expect(resetTrafficMutate).toHaveBeenCalled()
 })
 
 it("shows a real persistence failure instead of claiming automatic save", () => {

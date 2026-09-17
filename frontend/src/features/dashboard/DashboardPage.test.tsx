@@ -132,8 +132,7 @@ describe("dashboard shell", () => {
     expect(screen.getAllByRole("button", { name: "Gap 그래프에서 확인" })).toHaveLength(1)
     await userEvent.click(screen.getByRole("button", { name: "Gap 그래프에서 확인" }))
     expect(window.location.hash).toBe("#graph")
-    await userEvent.click(screen.getByRole("button", { name: "분석" }))
-    expect(screen.getByRole("menuitem", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
+    expect(screen.getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
   })
 
   it("exposes the grouped top-navigation route set and normalizes unsafe hashes to the API delta work surface", async () => {
@@ -144,9 +143,9 @@ describe("dashboard shell", () => {
     expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
     expect(screen.getByRole("navigation", { name: "FlowScope 작업 탐색" })).toBeVisible()
     const routes = [
-      ["대시보드", "dashboard", "분석"], ["점검", "inspection", null], ["점검 Gap 그래프", "graph", "분석"], ["API·입력 차이", "surface", "분석"],
+      ["대시보드", "dashboard", "분석"], ["점검", "inspection", null], ["점검 Gap 그래프", "graph", null], ["API·입력 차이", "surface", "분석"],
       ["권한 매트릭스", "matrix", "분석"], ["흐름 순서", "sequence", "분석"], ["취약점 시나리오", "scenarios", "분석"],
-      ["Evidence", "evidence", "기록"], ["실행 상태", "runs", "기록"], ["LLM Explorer", "explorer", "기록"], ["계정·세션", "accounts", "기록"],
+      ["Evidence", "evidence", "기록"], ["실행 상태", "runs", "기록"], ["LLM Explorer", "explorer", "기록"], ["계정·세션", "accounts", null],
     ] as const
 
     for (const [label, route, group] of routes) {
@@ -184,24 +183,22 @@ describe("dashboard shell", () => {
     expect(screen.queryByText("미실행")).not.toBeInTheDocument()
   })
 
-  it("shows empty onboarding, loads a sample, and starts a preserved project instead of clearing Evidence", async () => {
+  it("shows empty onboarding, loads a sample, and requires a Burp scope before project creation", async () => {
     const user = userEvent.setup()
     const fetchStub = renderDashboard(snapshotFixture)
 
     await screen.findByText("첫 점검을 시작하세요")
     expect(screen.getByRole("button", { name: "빠른 시작" })).toBeVisible()
     expect(screen.getByRole("button", { name: "샘플로 화면 익히기" })).toBeVisible()
-    expect(screen.queryByText("트래픽 초기화")).not.toBeInTheDocument()
-
     await user.click(screen.getByRole("button", { name: "샘플로 화면 익히기" }))
     await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/sample", expect.objectContaining({ method: "POST" })))
 
-    await user.click(screen.getAllByRole("button", { name: "새 진단 시작" }).at(-1)!)
-    expect(screen.getByRole("dialog", { name: "새 진단 시작" })).toHaveTextContent("기존 Evidence는 삭제하지 않습니다")
-    await user.type(screen.getByLabelText("프로젝트 이름 (선택)"), "다음 진단")
-    await user.click(screen.getByRole("button", { name: "보존하고 시작" }))
-    await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/projects", expect.objectContaining({ method: "POST" })))
-    expect(fetchStub).not.toHaveBeenCalledWith("/api/clear", expect.anything())
+    await user.click(screen.getByRole("button", { name: "프로젝트 관리" }))
+    const dialog = screen.getByRole("dialog", { name: "프로젝트 관리" })
+    expect(dialog).toHaveTextContent("Burp의 FlowScope 탭에서 exact scope를 먼저 적용하세요")
+    expect(within(dialog).getByRole("button", { name: "새 트래픽 진단 시작" })).toBeDisabled()
+    expect(within(dialog).queryByLabelText("Exact scope")).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText("새 프로젝트 이름 (선택)")).not.toBeInTheDocument()
   })
 
   it("announces loading and lets the user recover from a snapshot error", async () => {

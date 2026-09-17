@@ -132,10 +132,6 @@ test("opens the packaged reference shell, loads the sample, navigates every rout
   expect(Number.parseFloat(density.rootFontSize)).toBeCloseTo(14.4, 1)
   expect(Number.parseFloat(density.bodyFontSize)).toBeCloseTo(14.4, 1)
   expect(Number.parseFloat(density.mainFontSize)).toBeCloseTo(14.4, 1)
-  await page.getByRole("button", { name: "새 진단 시작" }).first().click()
-  await page.getByLabel("프로젝트 이름 (선택)").fill("Playwright 격리 진단")
-  await page.getByLabel("Exact scope").fill("https://e2e.invalid/")
-  await page.getByRole("button", { name: "보존하고 시작" }).click()
   await expect(page.getByRole("button", { name: "샘플로 화면 익히기" })).toBeVisible()
   await page.getByRole("button", { name: "샘플로 화면 익히기" }).click()
   await expect(page.getByLabel("샘플 데이터")).toBeVisible()
@@ -160,7 +156,7 @@ test("keeps dashboard gap counts without percentages and enters the Gap graph", 
   await expect(page.getByRole("button", { name: "선택 상세 열기" })).toHaveCount(0)
   await dashboard.getByRole("button", { name: "Gap 그래프에서 확인" }).click()
   await expect(page.getByRole("tab", { name: "점검 우선순위", exact: true })).toHaveAttribute("aria-selected", "true")
-  await expect(page.getByRole("heading", { name: "권한·파라미터 Gap 그래프", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "권한·파라미터 Gap 그래프", exact: true })).toHaveClass(/sr-only/)
 })
 
 test("keeps graph lanes through zoom and fit, then selects real matrix, sequence, scenario, and Evidence items", async ({ page }) => {

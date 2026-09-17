@@ -28,7 +28,7 @@ function Workspace({ contextOpen, inspectorOpen }: { contextOpen?: boolean; insp
   </ReferenceAnalysisWorkspace>
 }
 
-it("keeps the desktop context, work surface, and inspector as persistent landmarks with the reference grid", () => {
+it("keeps the desktop context, flexible work surface, and inspector as persistent landmarks", () => {
   setViewport(1280)
 
   render(<Workspace />)
@@ -40,12 +40,35 @@ it("keeps the desktop context, work surface, and inspector as persistent landmar
   expect(workbench).toHaveTextContent("도구 모음")
   expect(workbench).toHaveTextContent("분석 결과")
   expect(inspector).toHaveTextContent("선택한 Evidence")
-  expect(workbench.parentElement).toHaveClass("xl:grid-cols-[minmax(15.5rem,17rem)_minmax(0,1fr)_minmax(22rem,25rem)]")
+  expect(workbench.parentElement).toHaveClass("xl:flex-row")
+  expect(context).toHaveStyle({ width: "264px" })
+  expect(inspector).toHaveStyle({ width: "368px" })
+  expect(screen.getByRole("separator", { name: "분석 필터 너비 조절" })).toHaveAttribute("aria-valuenow", "264")
+  expect(screen.getByRole("separator", { name: "선택 상세 너비 조절" })).toHaveAttribute("aria-valuenow", "368")
   expect(workbench).toHaveClass("min-w-0", "overflow-y-auto")
   expect(workbench).toHaveAttribute("tabindex", "0")
   expect(context).toHaveClass("overflow-y-auto")
   expect(inspector).toHaveClass("overflow-y-auto")
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+})
+
+it("collapses and restores desktop panes without unmounting the analysis result", async () => {
+  setViewport(1920)
+  const user = userEvent.setup()
+  render(<Workspace inspectorOpen />)
+  const result = screen.getByText("분석 결과")
+
+  await user.click(screen.getByRole("button", { name: "분석 필터 패널 접기" }))
+  await user.click(screen.getByRole("button", { name: "선택 상세 패널 접기" }))
+  expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+  expect(screen.getByText("분석 결과")).toBe(result)
+
+  expect(screen.queryByRole("separator", { name: "분석 필터 너비 조절" })).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "분석 필터 패널 열기" }))
+  await user.click(screen.getByRole("button", { name: "선택 상세 패널 열기" }))
+  expect(screen.getByRole("complementary", { name: "분석 필터" })).toHaveTextContent("공유 필터")
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("선택한 Evidence")
 })
 
 it.each([900, 600])("renders compact Sheet controls and constrained panel widths at %ipx", async (width) => {

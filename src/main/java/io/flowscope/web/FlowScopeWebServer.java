@@ -91,6 +91,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default ProjectWorkspace.Status openProject(String id) {
             throw new UnsupportedOperationException("project workflow is unavailable");
         }
+        default ProjectWorkspace.Status resetProjectTraffic() {
+            throw new UnsupportedOperationException("project workflow is unavailable");
+        }
+        default ProjectWorkspace.Status deleteProject(String id) {
+            throw new UnsupportedOperationException("project workflow is unavailable");
+        }
         default List<RouteCandidate> routeCandidates() { return List.of(); }
         default List<RunExecutionLedger.Summary> executionSummaries() { return List.of(); }
         default long droppedRecords() { return 0; }
@@ -515,7 +521,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ProjectWorkspace.Status status = switch (action) {
                 case "start" -> state.startProject(form.getOrDefault("name", ""), required(form, "scope"));
                 case "open" -> state.openProject(required(form, "id"));
-                default -> throw new IllegalArgumentException("action은 start 또는 open이어야 합니다.");
+                case "reset" -> state.resetProjectTraffic();
+                case "delete" -> state.deleteProject(required(form, "id"));
+                default -> throw new IllegalArgumentException("지원하지 않는 프로젝트 작업입니다.");
             };
             return projectStatus(status);
         } catch (UnsupportedOperationException error) {
