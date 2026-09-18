@@ -35,9 +35,6 @@ public final class ZapAccountVault implements AutoCloseable {
         if (input == null) throw new IllegalArgumentException("ZAP 계정 입력이 필요합니다.");
         String id = clean(input.id(), 96);
         if (id.isBlank()) id = "zap-" + UUID.randomUUID().toString().substring(0, 8);
-        if (!id.startsWith("zap-") && !entries.containsKey(id)) {
-            throw new IllegalArgumentException("ZAP 계정 ID는 zap- 이름공간을 사용해야 합니다.");
-        }
         if (!entries.containsKey(id) && entries.size() >= MAX_ACCOUNTS) {
             throw new IllegalStateException("ZAP 계정은 최대 " + MAX_ACCOUNTS + "개까지 등록할 수 있습니다.");
         }

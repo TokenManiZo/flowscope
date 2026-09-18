@@ -2,7 +2,9 @@ package io.flowscope;
 
 import io.flowscope.core.ExecutionTrust;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RunPhase;
 import io.flowscope.core.Source;
+import io.flowscope.core.SourceDetail;
 import io.flowscope.core.TrafficClassification;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
@@ -87,6 +89,36 @@ final class LiveCrossIdentityReplayCoordinatorTest {
     }
 
     @Test
+    void acceptsOnlyExplicitlySelectedControlledZapAndLlmExplorationTraffic() {
+        List<CrossIdentityReplayOrchestrator.Recommendation> dispatched = new ArrayList<>();
+        LiveCrossIdentityReplayCoordinator coordinator = coordinator((recommendations, armed) -> {
+            dispatched.addAll(recommendations);
+            return result(recommendations, true);
+        });
+        coordinator.start(List.of("user-b"), false, List.of(Source.SCANNER, Source.LLM), true);
+
+        RequestRecord zap = controlled(Source.SCANNER, SourceDetail.ZAP_CLIENT_SPIDER, "zap-user", "ev-zap");
+        RequestRecord llm = controlled(Source.LLM, SourceDetail.LLM_EXPLORER, "llm-user", "ev-llm");
+        assertTrue(coordinator.offer(zap, TARGET, true));
+        assertTrue(coordinator.offer(llm, TARGET, true));
+
+        RequestRecord human = eligible("GET", "ev-human");
+        assertFalse(coordinator.offer(human, TARGET, true), "unselected HUMAN must not become a basis");
+        RequestRecord replay = controlled(Source.SCANNER, SourceDetail.AUTHORIZATION_REPLAY,
+                "user-b", "ev-replay");
+        replay.phase = RunPhase.AUTHORIZATION_REPLAY;
+        assertFalse(coordinator.offer(replay, TARGET, true), "replay output must never feed itself");
+        RequestRecord login = controlled(Source.SCANNER, SourceDetail.ZAP_AUTHENTICATION,
+                "zap-user", "ev-login");
+        login.phase = RunPhase.SESSION_SETUP;
+        assertFalse(coordinator.offer(login, TARGET, true), "session setup is not an authorization basis");
+
+        assertEquals(List.of("ev-zap", "ev-llm"), dispatched.stream()
+                .map(CrossIdentityReplayOrchestrator.Recommendation::basisEvidenceId).toList());
+        assertEquals(List.of(Source.SCANNER, Source.LLM), coordinator.snapshot().basisSources());
+    }
+
+    @Test
     void stopPreventsSubsequentCapturedRequestsFromDispatching() {
         AtomicInteger dispatched = new AtomicInteger();
         AtomicInteger kills = new AtomicInteger();
@@ -139,6 +171,23 @@ final class LiveCrossIdentityReplayCoordinatorTest {
         record.laneAccountId = "user-a";
         record.evidenceId = evidenceId;
         record.op = method + " /api/orders/{id}";
+        record.trafficClassification = new TrafficClassification(
+                TrafficClassification.TrafficClass.API,
+                TrafficClassification.Disposition.INCLUDE, List.of("API"), false);
+        return record;
+    }
+
+    private static RequestRecord controlled(Source source, SourceDetail detail,
+                                            String accountId, String evidenceId) {
+        RequestRecord record = new RequestRecord(source, "https://api.test:443",
+                "GET", "/api/orders/19", 200, "sub:" + accountId);
+        record.hasResponse = true;
+        record.executionTrust = ExecutionTrust.CONTROLLED;
+        record.sourceDetail = detail;
+        record.phase = RunPhase.EXPLORATION;
+        record.laneAccountId = accountId;
+        record.evidenceId = evidenceId;
+        record.op = "GET /api/orders/{id}";
         record.trafficClassification = new TrafficClassification(
                 TrafficClassification.TrafficClass.API,
                 TrafficClassification.Disposition.INCLUDE, List.of("API"), false);

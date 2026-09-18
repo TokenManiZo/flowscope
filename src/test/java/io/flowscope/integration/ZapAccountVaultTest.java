@@ -38,11 +38,12 @@ final class ZapAccountVaultTest {
     }
 
     @Test
-    void requiresANamespacedIdAndOriginOnlyService() {
+    void acceptsARegisteredAccountIdAndRequiresOriginOnlyService() {
         ZapAccountVault vault = new ZapAccountVault();
-        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+        ZapAccountVault.View linked = vault.save(new ZapAccountVault.Input(
                 "user-a", "A", "USER", "https://app.example.test", "https://app.example.test/login",
-                "a", "pw", "Signed in", "Signed out")));
+                "a", "pw", "Signed in", "Signed out"));
+        assertEquals("user-a", linked.id());
         assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
                 "", "A", "USER", "https://app.example.test/private", "https://app.example.test/login",
                 "a", "pw", "Signed in", "Signed out")));

@@ -55,6 +55,7 @@ public final class ZapCampaign implements AutoCloseable {
         default void clearScannerCapability(String runId) { }
         default long scannerCapabilityRejections(String runId) { return 0; }
         default void scannerDirectAuthentication(String runId, boolean enabled) { }
+        default boolean promoteAuthenticatedSession(String accountId, long evidenceRuntimeId) { return false; }
         RunContextRegistry contexts();
         boolean approve(String action, String target);
         default ZapAccountVault zapAccounts() { return null; }
@@ -153,6 +154,13 @@ public final class ZapCampaign implements AutoCloseable {
         return startZapBaseline(args);
     }
     public JsonNode deterministicZapBaselineStatus() { return zapBaselineStatus(); }
+    public JsonNode startAuthenticationOnly(String accountId) {
+        ZapAccountVault.View account = state.zapAccounts().view(accountId);
+        ObjectNode args = json.createObjectNode().put("target", account.service())
+                .put("include_anonymous", false).put("authentication_only", true);
+        args.putArray("account_ids").add(account.id());
+        return startZapBaseline(args);
+    }
     public synchronized JsonNode cancelDeterministicZapBaseline() {
         ZapBaselineRun current = zapBaseline;
         if (current == null || !"RUNNING".equals(current.status()) || pendingZapResult != null) return zapBaselineStatus();
@@ -216,7 +224,11 @@ public final class ZapCampaign implements AutoCloseable {
         if (!legacyAccount.isBlank()) requestedAccounts.add(legacyAccount);
         boolean includeAnonymous = args.has("include_anonymous")
                 ? args.path("include_anonymous").asBoolean(false) : requestedAccounts.isEmpty();
+        boolean authenticationOnly = args.path("authentication_only").asBoolean(false);
         List<ZapDefinition> definitions = validatedZapDefinitions(args.path("definitions"));
+        if (authenticationOnly && (includeAnonymous || requestedAccounts.size() != 1 || !definitions.isEmpty())) {
+            throw new IllegalArgumentException("세션 갱신은 로그인 계정 하나만 선택해야 합니다.");
+        }
         verifySafeZapEnvironment(definitions);
         if (!state.scannerListenerOpen()) {
             int port = state.scannerProxyPort();
@@ -261,11 +273,13 @@ public final class ZapCampaign implements AutoCloseable {
             pendingZapResult = null;
             zapCleanupStartedAt = 0;
             ownedClientScanId = "";
-            recordZapProgress("전체", "INITIALIZING", "INFO",
-                    lanes.size() + "개 신원 격리 검사 대기열 생성");
+            recordZapProgress("전체", "INITIALIZING", "INFO", authenticationOnly
+                    ? "독립 로그인 세션 갱신 대기열 생성"
+                    : lanes.size() + "개 신원 격리 검사 대기열 생성");
             zapWorkflowActive = true;
             FutureTask<Void> task = new FutureTask<>(() -> {
-                runZapCampaignSafely(runId, target, lanes, definitions);
+                if (authenticationOnly) runAuthenticationOnlySafely(runId, target, lanes.getFirst());
+                else runZapCampaignSafely(runId, target, lanes, definitions);
                 return null;
             }) {
                 @Override public void run() {
@@ -290,6 +304,76 @@ public final class ZapCampaign implements AutoCloseable {
             throw error;
         }
         return zapBaselineNode(zapBaseline);
+    }
+
+    private void runAuthenticationOnlySafely(String runId, String target, ZapLane lane) {
+        String contextName = "flowscope-session-" + runId;
+        String contextId = "";
+        boolean contextCreated = false;
+        ZapBrowserAuthenticator.Identity identity = null;
+        try {
+            state.scannerDirectAuthentication(runId, true);
+            replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                    "AUTHENTICATION", 0, 0, 0, 0, false, false, -1, "", ""));
+            replaceZapAuthentication(0, new ZapAuthenticationResult(
+                    "AUTHENTICATING", ZapClient.CLIENT_BROWSER, "ZAP 브라우저 로그인 실행 중"));
+            state.contexts().transition(Source.SCANNER, runId,
+                    SourceDetail.ZAP_AUTHENTICATION, lane.accountId());
+            state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.AUTHENTICATING,
+                    "ZAP 브라우저 로그인 실행 중");
+
+            requireZapOk(state.zap().newTemporarySession(), "create an isolated session");
+            JsonNode context = parseZap(state.zap().newContext(contextName));
+            contextCreated = true;
+            contextId = context.path("contextId").asText();
+            if (contextId.isBlank()) throw new IllegalStateException("ZAP did not create an isolated target context");
+            requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+                    "include the exact target subtree in context");
+            requireZapOk(state.zap().setContextInScope(contextName), "mark the target context in scope");
+
+            String finalContextId = contextId;
+            identity = state.zapAccounts().withSecret(lane.accountId(), secret ->
+                    new ZapBrowserAuthenticator(state.zap(), json, state.scope()::allows,
+                            () -> state.authenticationEvidence(runId, lane.accountId())).authenticate(
+                            runId, target, 0, finalContextId, contextName, secret));
+            if (!state.promoteAuthenticatedSession(lane.accountId(), identity.verifiedEvidenceRuntimeId())) {
+                throw new IllegalStateException("인증은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다.");
+            }
+            state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
+                    "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다.");
+            replaceZapAuthentication(0, new ZapAuthenticationResult(
+                    "VERIFIED_BY_ZAP", identity.browser(), "독립 계정 세션 갱신 완료"));
+            RuntimeException cleanup = cleanupZapIdentity(identity, contextName, contextCreated);
+            identity = null;
+            contextCreated = false;
+            if (cleanup != null) throw new ZapIsolationException(cleanup.getMessage());
+            long authenticationRecords = state.capturedCount(Source.SCANNER, runId,
+                    SourceDetail.ZAP_AUTHENTICATION);
+            replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "COMPLETED",
+                    "SESSION_READY", authenticationRecords, 0, 0, 0,
+                    true, true, 0, "", ""));
+            deferZapResult(new ZapBaselineRun(runId, target, "COMPLETED", "SESSION_READY",
+                    "", "", authenticationRecords, 0, 0, ""));
+        } catch (Throwable error) {
+            RuntimeException cleanup = cleanupZapIdentity(identity, contextName, contextCreated);
+            String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            if (cleanup != null) detail = appendWarning(detail, "cleanup: " + cleanup.getMessage());
+            state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.FAILED, detail);
+            replaceZapAuthentication(0, new ZapAuthenticationResult(
+                    "FAILED", ZapClient.CLIENT_BROWSER, detail));
+            replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
+                    0, 0, 0, 0, false, false, -1, "", detail));
+            deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED",
+                    "", "", 0, 0, 0, detail));
+        } finally {
+            state.scannerDirectAuthentication(runId, false);
+            RuntimeException capabilityFailure = removeScannerCapability(runId);
+            if (capabilityFailure != null) {
+                deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "", 0, 0, 0,
+                        "ZAP scanner capability cleanup failed: " + capabilityFailure.getMessage()));
+            }
+            state.contexts().abort(Source.SCANNER, runId);
+        }
     }
 
     private void runZapCampaignSafely(String runId, String target, List<ZapLane> lanes,
@@ -592,10 +676,14 @@ public final class ZapCampaign implements AutoCloseable {
                 }
                 state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
                         "ZAP 인증 응답 Evidence가 로그인 성공 정규식과 일치했습니다.");
+                boolean sessionPromoted = state.promoteAuthenticatedSession(
+                        lane.accountId(), identity.verifiedEvidenceRuntimeId());
                 authenticationVerified = true;
                 replaceZapAuthentication(index, new ZapAuthenticationResult(
                         "VERIFIED_BY_ZAP", identity.browser(),
-                        "ZAP 인증 응답 Evidence가 로그인 성공 정규식과 일치했습니다."));
+                        sessionPromoted
+                                ? "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다."
+                                : "ZAP 인증은 확인됐지만 HUMAN 재전송 세션 연결은 생략됐습니다."));
                 recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
                         "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
             }

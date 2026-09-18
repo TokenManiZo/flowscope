@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.flowscope.core.*;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapClient;
+import io.flowscope.integration.ZapAccountVault;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -176,6 +177,39 @@ final class ZapCampaignTest {
         return campaign.deterministicZapBaselineStatus();
     }
 
+    @Test
+    void authenticationOnlyRunPromotesTheVerifiedEvidenceIntoTheIndependentAccountSession() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+
+            campaign.startAuthenticationOnly("user-a");
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", terminal.path("status").asText(), terminal.toString());
+            assertEquals("SESSION_READY", terminal.path("stage").asText());
+            assertTrue(fixture.promotedEvidenceRuntimeId > 0);
+            assertEquals("user-a", fixture.promotedAccountId);
+            assertEquals("VERIFIED_BY_ZAP", fixture.accounts.view("user-a").status().name());
+        }
+    }
+
+    @Test
+    void authenticationOnlyRunFailsWhenTheVerifiedResponseCannotPopulateTheAccountSession() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            fixture.allowSessionPromotion = false;
+
+            campaign.startAuthenticationOnly("user-a");
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
+            assertTrue(terminal.path("error").asText().contains("독립 계정 세션"), terminal.toString());
+            assertEquals("FAILED", fixture.accounts.view("user-a").status().name());
+        }
+    }
+
     private static void await(BooleanSupplier condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);
@@ -239,10 +273,14 @@ final class ZapCampaignTest {
         private final HttpServer server;
         private final ZapClient client;
         private final RunContextRegistry contexts = new RunContextRegistry();
+        private final ZapAccountVault accounts = new ZapAccountVault();
         private final List<RequestRecord> records = new CopyOnWriteArrayList<>();
         private final CountDownLatch started = new CountDownLatch(1);
         private final AtomicBoolean stopped = new AtomicBoolean();
         private final AtomicReference<String> capabilityRun = new AtomicReference<>("");
+        private volatile boolean allowSessionPromotion = true;
+        private volatile String promotedAccountId = "";
+        private volatile long promotedEvidenceRuntimeId = -1;
 
         Fixture(boolean blockClient) throws IOException { this(blockClient, true); }
 
@@ -303,9 +341,37 @@ final class ZapCampaignTest {
             records.add(record);
         }
 
+        private void addAuthenticatedAccount(String id) {
+            accounts.save(new ZapAccountVault.Input(id, "User A", "USER", TARGET,
+                    TARGET + "login", "user-a@example.test", "secret-password",
+                    "Signed in", "Sign in"));
+        }
+
         @Override public Pipeline.Result snapshot() { return Pipeline.run(List.copyOf(records)); }
         @Override public ScopePolicy scope() { return ScopePolicy.parse(TARGET); }
         @Override public ZapClient zap() { return client; }
+        @Override public ZapAccountVault zapAccounts() { return accounts; }
+        @Override public List<RequestRecord> authenticationEvidence(String runId, String accountId) {
+            RequestRecord record = new RequestRecord(Source.SCANNER, "https://fixture.example.test:443",
+                    "POST", "/login", 200, "session:verified");
+            record.hasResponse = true;
+            record.body = "Signed in";
+            record.responseContentType = "text/html";
+            record.sourceDetail = SourceDetail.ZAP_AUTHENTICATION;
+            record.orchestrator = Orchestrator.SYSTEM;
+            record.tool = ToolKind.ZAP;
+            record.phase = RunPhase.EXPLORATION;
+            record.runId = runId;
+            record.laneAccountId = accountId;
+            record.executionTrust = ExecutionTrust.CONTROLLED;
+            records.add(record);
+            return List.of(record);
+        }
+        @Override public boolean promoteAuthenticatedSession(String accountId, long evidenceRuntimeId) {
+            promotedAccountId = accountId;
+            promotedEvidenceRuntimeId = evidenceRuntimeId;
+            return allowSessionPromotion;
+        }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public boolean approve(String action, String target) { return false; }
         private volatile boolean listenerOpen = true;
@@ -316,6 +382,6 @@ final class ZapCampaignTest {
         }
         @Override public void scannerCapability(String runId, String capability) { capabilityRun.set(runId); }
         @Override public void clearScannerCapability(String runId) { capabilityRun.compareAndSet(runId, ""); }
-        @Override public void close() { server.stop(0); }
+        @Override public void close() { accounts.close(); server.stop(0); }
     }
 }

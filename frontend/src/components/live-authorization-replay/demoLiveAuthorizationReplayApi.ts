@@ -18,6 +18,7 @@ function stoppedSnapshot(): LiveReplaySnapshot {
     armed: false,
     targetAccountIds: [],
     includeAnonymous: false,
+    basisSources: ["HUMAN"],
     observed: 0,
     eligible: 0,
     queued: 0,

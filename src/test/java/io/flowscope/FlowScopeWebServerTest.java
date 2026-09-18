@@ -265,6 +265,21 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void zapAccountCanRefreshTheIndependentRegisteredSessionWithoutExposingCredentials() throws Exception {
+        start();
+
+        HttpResponse<String> response = post("/api/zap-accounts",
+                "action=refresh-session&id=user-a", token);
+
+        assertEquals(202, response.statusCode(), response.body());
+        assertEquals("user-a", state.refreshedZapSessionAccountId);
+        assertEquals("RUNNING", JSON.readTree(response.body()).path("status").asText());
+        assertFalse(response.body().contains("password"));
+        assertFalse(response.body().contains("Authorization"));
+        assertFalse(response.body().contains("Cookie"));
+    }
+
+    @Test
     void archivedAssessmentsAreReadOnlyAndDoNotBecomeCurrentCandidates() throws Exception {
         start();
         state.archivedAssessments = List.of(new LegacyAssessment("old-1", "BOLA", "LIKELY",
@@ -860,13 +875,20 @@ final class FlowScopeWebServerTest {
         assertEquals(400, post("/api/authorization-replay",
                 "action=start-live&accounts=user-b%2Cadmin&anonymous=true&armed=false", token).statusCode());
         JsonNode started = json(post("/api/authorization-replay",
-                "action=start-live&accounts=user-b%2Cadmin&anonymous=true&armed=true", token));
+                "action=start-live&accounts=user-b%2Cadmin&anonymous=true&sources=HUMAN%2CZAP%2CLLM&armed=true",
+                token));
         assertEquals("ACTIVE", started.path("live").path("state").asText());
         assertEquals(List.of("user-b", "admin"), JSON.convertValue(
                 started.path("live").path("targetAccountIds"),
                 JSON.getTypeFactory().constructCollectionType(List.class, String.class)));
         assertTrue(started.path("live").path("includeAnonymous").asBoolean());
+        assertEquals(List.of("HUMAN", "SCANNER", "LLM"), JSON.convertValue(
+                started.path("live").path("basisSources"),
+                JSON.getTypeFactory().constructCollectionType(List.class, String.class)));
         assertFalse(started.toString().contains("raw-live-secret"));
+
+        assertEquals(400, post("/api/authorization-replay",
+                "action=start-live&accounts=user-b&sources=IMPORT&armed=true", token).statusCode());
 
         JsonNode status = json(get("/api/authorization-replay", token, origin()));
         assertEquals("ACTIVE", status.path("live").path("state").asText());
@@ -1142,6 +1164,7 @@ final class FlowScopeWebServerTest {
         private volatile boolean scannerAnonymous;
         private volatile boolean scannerCancelled;
         private volatile ZapAccountVault.Input lastZapAccountInput;
+        private volatile String refreshedZapSessionAccountId = "";
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
@@ -1207,6 +1230,10 @@ final class FlowScopeWebServerTest {
             return zapAccounts.save(input);
         }
         @Override public void removeZapAccount(String id) { zapAccounts.remove(id); }
+        @Override public JsonNode refreshAccountSession(String id) {
+            refreshedZapSessionAccountId = id;
+            return JSON.createObjectNode().put("status", "RUNNING").put("stage", "AUTHENTICATION");
+        }
         @Override public List<String> scopeEntries() { return scannerScope; }
         @Override public ProjectWorkspace.Status projectStatus() { return projectStatus; }
         @Override public ProjectWorkspace.Status startProject(String name, String scope) {
@@ -1329,10 +1356,14 @@ final class FlowScopeWebServerTest {
         @Override public void killAuthorizationReplay() { authorizationReplayKilled = true; }
         @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
                 List<String> accountIds, boolean anonymous, boolean armed) {
+            return startLiveAuthorizationReplay(accountIds, anonymous, List.of(Source.HUMAN), armed);
+        }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                List<String> accountIds, boolean anonymous, List<Source> basisSources, boolean armed) {
             if (!armed) throw new IllegalArgumentException("approval required");
             liveAuthorizationReplay = new LiveCrossIdentityReplayCoordinator.Snapshot(
                     "live-test", LiveCrossIdentityReplayCoordinator.State.ACTIVE, true,
-                    accountIds, anonymous, 0, 0, 0, 0, 0, 0, "ARMED");
+                    accountIds, anonymous, 0, 0, 0, 0, 0, 0, "ARMED", basisSources);
             return liveAuthorizationReplay;
         }
         @Override public LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {

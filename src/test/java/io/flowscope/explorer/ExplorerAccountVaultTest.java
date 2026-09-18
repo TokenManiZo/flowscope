@@ -30,10 +30,11 @@ final class ExplorerAccountVaultTest {
     }
 
     @Test
-    void rejectsNewAccountOutsideExplorerNamespace() {
+    void acceptsAnExistingRegisteredAccountId() {
         ExplorerAccountVault vault = new ExplorerAccountVault();
-        assertThrows(IllegalArgumentException.class, () -> vault.save(new ExplorerAccountVault.Input(
+        ExplorerAccountVault.View linked = vault.save(new ExplorerAccountVault.Input(
                 "human-account", "테스터", "USER", "https://app.example.test/login", "alice", "secret",
-                ExplorerAccountVault.LoginMode.AUTO_FORM, "", "", "", "", "", "")));
+                ExplorerAccountVault.LoginMode.AUTO_FORM, "", "", "", "", "", ""));
+        assertEquals("human-account", linked.id());
     }
 }

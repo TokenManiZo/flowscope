@@ -1,5 +1,6 @@
 package io.flowscope.web;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AccessRole;
@@ -86,6 +87,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 List<String> accountIds, boolean anonymous, boolean armed) {
             throw new UnsupportedOperationException("live authorization replay is unavailable");
         }
+        default LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                List<String> accountIds, boolean anonymous, List<Source> basisSources, boolean armed) {
+            return startLiveAuthorizationReplay(accountIds, anonymous, armed);
+        }
         default LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
             return new LiveCrossIdentityReplayCoordinator.Snapshot("",
                     LiveCrossIdentityReplayCoordinator.State.STOPPED, false, List.of(), false,
@@ -101,6 +106,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default void removeZapAccount(String id) {
             throw new UnsupportedOperationException("ZAP account workflow is unavailable");
+        }
+        default JsonNode refreshAccountSession(String id) {
+            throw new UnsupportedOperationException("ZAP account session refresh is unavailable");
         }
         default List<String> scopeEntries() { return List.of(); }
         default ProjectWorkspace.Status projectStatus() {
@@ -470,6 +478,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 return liveAuthorizationReplay(state.startLiveAuthorizationReplay(
                         commaSeparated(form.get("accounts")),
                         Boolean.parseBoolean(form.getOrDefault("anonymous", "false")),
+                        replaySources(form.get("sources")),
                         Boolean.parseBoolean(form.getOrDefault("armed", "false"))),
                         "라이브 교차 재전송을 시작했습니다.");
             }
@@ -526,6 +535,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         var targets = live.putArray("targetAccountIds");
         status.targetAccountIds().forEach(targets::add);
         live.put("includeAnonymous", status.includeAnonymous());
+        var basisSources = live.putArray("basisSources");
+        status.basisSources().forEach(source -> basisSources.add(source.name()));
         live.put("observed", status.observed());
         live.put("eligible", status.eligible());
         live.put("queued", status.queued());
@@ -540,6 +551,25 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (value == null || value.isBlank()) return List.of();
         return java.util.Arrays.stream(value.split(","))
                 .map(String::trim).filter(item -> !item.isBlank()).distinct().toList();
+    }
+
+    private static List<Source> replaySources(String value) {
+        if (value == null) return List.of(Source.HUMAN);
+        List<Source> sources = commaSeparated(value).stream().map(item -> {
+            String normalized = item.equalsIgnoreCase("ZAP") ? "SCANNER" : item.toUpperCase(Locale.ROOT);
+            try {
+                Source source = Source.valueOf(normalized);
+                if (source != Source.HUMAN && source != Source.SCANNER && source != Source.LLM) {
+                    throw new IllegalArgumentException("지원하지 않는 기준 요청 출처입니다: " + item);
+                }
+                return source;
+            }
+            catch (IllegalArgumentException error) {
+                throw new IllegalArgumentException("지원하지 않는 기준 요청 출처입니다: " + item);
+            }
+        }).distinct().toList();
+        if (sources.isEmpty()) throw new IllegalArgumentException("기준 요청 출처를 하나 이상 선택하세요.");
+        return sources;
     }
 
     private RequestLabResult executeRequestLabOnce(String operationId, String eventId, String request,
@@ -993,7 +1023,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 state.removeZapAccount(required(form, "id"));
                 return success("ZAP 로그인 계정의 메모리 자격증명을 폐기했습니다.");
             }
-            if (!action.equals("save")) throw new IllegalArgumentException("action은 save 또는 delete여야 합니다.");
+            if (action.equals("refresh-session")) {
+                return json(202, state.refreshAccountSession(required(form, "id")));
+            }
+            if (!action.equals("save")) {
+                throw new IllegalArgumentException("action은 save, refresh-session 또는 delete여야 합니다.");
+            }
             ZapAccountVault.View saved = state.saveZapAccount(new ZapAccountVault.Input(
                     form.getOrDefault("id", ""), required(form, "label"),
                     form.getOrDefault("role", "UNKNOWN"), required(form, "service"),
@@ -1297,7 +1332,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 .put("message", message == null || message.isBlank() ? "요청을 처리할 수 없습니다." : message));
     }
 
-    private LoopbackHttpServer.Response json(int status, ObjectNode body) throws IOException {
+    private LoopbackHttpServer.Response json(int status, JsonNode body) throws IOException {
         return response(status, "application/json; charset=utf-8", json.writeValueAsBytes(body));
     }
 

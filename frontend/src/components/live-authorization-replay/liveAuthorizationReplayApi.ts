@@ -11,6 +11,7 @@
  */
 
 export type LiveReplayState = "STOPPED" | "ACTIVE" | "LIMIT_REACHED";
+export type LiveReplayBasisSource = "HUMAN" | "SCANNER" | "LLM";
 
 export interface LiveReplaySnapshot {
   runId: string;
@@ -18,6 +19,7 @@ export interface LiveReplaySnapshot {
   armed: boolean;
   targetAccountIds: string[];
   includeAnonymous: boolean;
+  basisSources: LiveReplayBasisSource[];
   observed: number;
   eligible: number;
   queued: number;
@@ -31,6 +33,7 @@ export interface StartLiveReplayRequest {
   accountIds: string[];
   includeAnonymous: boolean;
   armed: boolean;
+  basisSources?: LiveReplayBasisSource[];
 }
 
 export interface LiveAuthorizationReplayApiClient {
@@ -63,6 +66,12 @@ function normalizeSnapshot(raw: unknown): LiveReplaySnapshot {
         )
       : [],
     includeAnonymous: value.includeAnonymous === true,
+    basisSources: Array.isArray(value.basisSources)
+      ? value.basisSources.filter(
+          (source): source is LiveReplayBasisSource =>
+            source === "HUMAN" || source === "SCANNER" || source === "LLM",
+        )
+      : ["HUMAN"],
     observed: num(value.observed),
     eligible: num(value.eligible),
     queued: num(value.queued),
@@ -110,6 +119,7 @@ export function createLiveAuthorizationReplayApiClient(): LiveAuthorizationRepla
       body.set("accounts", request.accountIds.join(","));
       body.set("anonymous", String(request.includeAnonymous));
       body.set("armed", String(request.armed));
+      body.set("sources", (request.basisSources ?? ["HUMAN"]).join(","));
       return post(body, signal);
     },
 

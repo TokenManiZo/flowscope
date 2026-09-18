@@ -3,6 +3,7 @@ package io.flowscope.integration;
 import io.flowscope.core.ExecutionTrust;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.Source;
+import io.flowscope.core.SourceDetail;
 import io.flowscope.core.TrafficClassification;
 
 import java.net.URI;
@@ -28,8 +29,21 @@ public final class LiveCrossIdentityReplayCoordinator {
     public record Snapshot(String runId, State state, boolean armed,
                            List<String> targetAccountIds, boolean includeAnonymous,
                            int observed, int eligible, int queued,
-                           int sent, int drafted, int skipped, String lastReason) {
-        public Snapshot { targetAccountIds = List.copyOf(targetAccountIds); }
+                           int sent, int drafted, int skipped, String lastReason,
+                           List<Source> basisSources) {
+        public Snapshot {
+            targetAccountIds = List.copyOf(targetAccountIds);
+            basisSources = List.copyOf(basisSources);
+        }
+
+        public Snapshot(String runId, State state, boolean armed,
+                        List<String> targetAccountIds, boolean includeAnonymous,
+                        int observed, int eligible, int queued,
+                        int sent, int drafted, int skipped, String lastReason) {
+            this(runId, state, armed, targetAccountIds, includeAnonymous,
+                    observed, eligible, queued, sent, drafted, skipped, lastReason,
+                    List.of(Source.HUMAN));
+        }
     }
 
     @FunctionalInterface
@@ -43,6 +57,7 @@ public final class LiveCrossIdentityReplayCoordinator {
     private final Runnable killRun;
     private final Executor executor;
     private final LinkedHashSet<String> targetAccountIds = new LinkedHashSet<>();
+    private final LinkedHashSet<Source> basisSources = new LinkedHashSet<>();
     private final LinkedHashSet<String> deduplicated = new LinkedHashSet<>();
     private String runId = "";
     private State state = State.STOPPED;
@@ -65,6 +80,11 @@ public final class LiveCrossIdentityReplayCoordinator {
     }
 
     public synchronized Snapshot start(List<String> accountIds, boolean anonymous, boolean approved) {
+        return start(accountIds, anonymous, List.of(Source.HUMAN), approved);
+    }
+
+    public synchronized Snapshot start(List<String> accountIds, boolean anonymous,
+                                       List<Source> sources, boolean approved) {
         if (!approved) throw new IllegalArgumentException("안전 자동 재전송 허용 승인이 필요합니다.");
         if (state != State.STOPPED) throw new IllegalStateException("현재 라이브 재전송을 먼저 중지하세요.");
         LinkedHashSet<String> selected = new LinkedHashSet<>();
@@ -77,6 +97,15 @@ public final class LiveCrossIdentityReplayCoordinator {
         if (selected.isEmpty() && !anonymous) {
             throw new IllegalArgumentException("대상 등록 계정 또는 비로그인을 하나 이상 선택하세요.");
         }
+        LinkedHashSet<Source> selectedSources = new LinkedHashSet<>();
+        if (sources != null) for (Source source : sources) {
+            if (source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM) {
+                selectedSources.add(source);
+            }
+        }
+        if (selectedSources.isEmpty()) {
+            throw new IllegalArgumentException("기준 요청 출처(HUMAN/ZAP/LLM)를 하나 이상 선택하세요.");
+        }
         beginRun.run();
         runId = "live-authorization-replay-" + UUID.randomUUID();
         state = State.ACTIVE;
@@ -84,6 +113,8 @@ public final class LiveCrossIdentityReplayCoordinator {
         includeAnonymous = anonymous;
         targetAccountIds.clear();
         targetAccountIds.addAll(selected);
+        basisSources.clear();
+        basisSources.addAll(selectedSources);
         deduplicated.clear();
         observed = eligible = queued = sent = drafted = skipped = 0;
         lastReason = "ARMED";
@@ -105,6 +136,7 @@ public final class LiveCrossIdentityReplayCoordinator {
         armed = false;
         includeAnonymous = false;
         targetAccountIds.clear();
+        basisSources.clear();
         deduplicated.clear();
         runId = "";
         observed = eligible = queued = sent = drafted = skipped = 0;
@@ -113,6 +145,14 @@ public final class LiveCrossIdentityReplayCoordinator {
     }
 
     public synchronized boolean acceptingCaptures() { return state == State.ACTIVE && armed; }
+
+    public synchronized boolean acceptingCaptures(Source source) {
+        return acceptingCaptures() && basisSources.contains(source);
+    }
+
+    public synchronized boolean acceptingCaptures(RequestRecord record) {
+        return acceptingCaptures() && basisSourceEligible(record);
+    }
 
     /** Offers one newly captured, analyzed HUMAN exchange. Imported or evicted raw exchanges are rejected. */
     public boolean offer(RequestRecord record, URI target, boolean rawRequestRetained) {
@@ -145,7 +185,8 @@ public final class LiveCrossIdentityReplayCoordinator {
 
     public synchronized Snapshot snapshot() {
         return new Snapshot(runId, state, armed, new ArrayList<>(targetAccountIds), includeAnonymous,
-                observed, eligible, queued, sent, drafted, skipped, lastReason);
+                observed, eligible, queued, sent, drafted, skipped, lastReason,
+                new ArrayList<>(basisSources));
     }
 
     private synchronized List<CrossIdentityReplayOrchestrator.Recommendation> recommendations(
@@ -191,10 +232,10 @@ public final class LiveCrossIdentityReplayCoordinator {
         }
     }
 
-    private static String rejection(RequestRecord record, URI target, boolean rawRequestRetained) {
+    private String rejection(RequestRecord record, URI target, boolean rawRequestRetained) {
         if (record == null || target == null || !target.isAbsolute()) return "INVALID_EVIDENCE_TARGET";
-        if (record.source != Source.HUMAN || record.executionTrust != ExecutionTrust.OBSERVED) {
-            return "NOT_OBSERVED_HUMAN_EVIDENCE";
+        if (!basisSourceEligible(record)) {
+            return "SOURCE_NOT_ELIGIBLE";
         }
         if (!record.hasResponse || record.evidenceId == null || record.evidenceId.isBlank()
                 || record.op == null || record.op.isBlank()
@@ -212,5 +253,22 @@ public final class LiveCrossIdentityReplayCoordinator {
             return "METHOD_NOT_SUPPORTED";
         }
         return null;
+    }
+
+    private boolean basisSourceEligible(RequestRecord record) {
+        if (record == null || !basisSources.contains(record.source)) return false;
+        if (record.source == Source.HUMAN) {
+            return record.executionTrust == ExecutionTrust.OBSERVED;
+        }
+        if (record.source == Source.SCANNER) {
+            return record.executionTrust == ExecutionTrust.CONTROLLED
+                    && record.sourceDetail != SourceDetail.AUTHORIZATION_REPLAY
+                    && record.sourceDetail != SourceDetail.ZAP_AUTHENTICATION
+                    && record.phase == io.flowscope.core.RunPhase.EXPLORATION;
+        }
+        return record.source == Source.LLM
+                && record.executionTrust == ExecutionTrust.CONTROLLED
+                && record.sourceDetail == SourceDetail.LLM_EXPLORER
+                && record.phase == io.flowscope.core.RunPhase.EXPLORATION;
     }
 }
