@@ -185,6 +185,7 @@ describe("account and session management", () => {
     const { fetchStub } = renderAccounts()
 
     await screen.findAllByText("ACTIVE")
+    expect(screen.getByText(/계정마다 별도 브라우저 프로필 또는 독립 브라우저 컨텍스트를 사용하세요/)).toBeVisible()
     expect(screen.getAllByText("ACTIVE")[0]).toBeVisible()
     for (const text of ["CAPTURING", "UNVERIFIED", "REVOKED", "credential-conflict"]) expect(screen.getAllByText(text)[0]).toBeVisible()
     await user.click(screen.getByRole("button", { name: "고급 세션 진단 열기" }))

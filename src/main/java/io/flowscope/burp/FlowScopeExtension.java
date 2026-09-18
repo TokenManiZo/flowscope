@@ -452,9 +452,11 @@ public final class FlowScopeExtension implements BurpExtension {
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 String requestCaptureAccountId = captureAccountId == null ? null : captureAccountForCredential(
                         captureAccountId, knownCredentialOwner(request));
-                if (captureAccountId != null && requestCaptureAccountId == null) captureHandle = null;
+                boolean captureSuppressed = captureAccountId != null && requestCaptureAccountId == null;
+                if (captureSuppressed) captureHandle = null;
                 HttpRequest prepared = prepareSession(request, profile, captureHandle, context);
-                rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId, "프록시");
+                rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
+                        captureSuppressed, "프록시");
                 return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
@@ -575,10 +577,13 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? sessionBroker.activeCaptureForService(serviceOf(req)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
+                String requestedCaptureAccountId = captureAccountId;
                 if (captureAccountId != null) {
                     captureAccountId = captureAccountForCredential(captureAccountId, knownCredentialOwner(req));
                 }
-                rememberObservation(toolObservations, req.messageId(), context, captureAccountId, "Burp 도구");
+                boolean captureSuppressed = requestedCaptureAccountId != null && captureAccountId == null;
+                rememberObservation(toolObservations, req.messageId(), context, captureAccountId,
+                        captureSuppressed, "Burp 도구");
             }
             return RequestToBeSentAction.continueWith(req);
         }
@@ -844,6 +849,13 @@ public final class FlowScopeExtension implements BurpExtension {
                 ? null : captureAccountId;
     }
 
+    static String resolveSessionUpdateAccount(Source source, String contextAccountId,
+                                               String humanCaptureAccountId, String detectedAccountId,
+                                               boolean humanCaptureSuppressed) {
+        if (source == Source.HUMAN && humanCaptureSuppressed) return null;
+        return resolveObservedAccount(source, contextAccountId, humanCaptureAccountId, detectedAccountId);
+    }
+
     private String knownCredentialOwner(HttpRequest request) {
         URI target = URI.create(request.url());
         String detected = sessionBroker.accountForRequest(target, headersOf(request.headers()),
@@ -865,9 +877,10 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void rememberObservation(InFlightRequestTracker tracker, int messageId,
                                      RunContextRegistry.Context context, String humanCaptureAccountId,
-                                     String channel) {
+                                     boolean humanCaptureSuppressed, String channel) {
         long now = System.currentTimeMillis();
-        if (!tracker.remember(messageId, context, humanCaptureAccountId, datasetEpoch.get(), now)) {
+        if (!tracker.remember(messageId, context, humanCaptureAccountId,
+                humanCaptureSuppressed, datasetEpoch.get(), now)) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
@@ -891,8 +904,9 @@ public final class FlowScopeExtension implements BurpExtension {
                         : observation.humanCaptureAccountId();
                 String detectedAccountId = sessionBroker.accountForRequest(URI.create(request.url()),
                         headersOf(request.headers()), java.time.Instant.now()).orElse(null);
-                String accountId = resolveObservedAccount(Source.HUMAN,
-                        context == null ? null : context.accountId(), captureAccountId, detectedAccountId);
+                String accountId = resolveSessionUpdateAccount(Source.HUMAN,
+                        context == null ? null : context.accountId(), captureAccountId, detectedAccountId,
+                        observation != null && observation.humanCaptureSuppressed());
                 if (accountId != null) handle = sessionBroker.handleForAccount(accountId);
             } else if (context != null && context.accountId() != null
                     && !scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId)) {

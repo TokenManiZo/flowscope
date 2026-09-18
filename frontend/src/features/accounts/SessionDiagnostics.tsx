@@ -21,10 +21,10 @@ function replayStatus(session: ManagedSession | undefined): ReplayAccount["statu
 function sessionState(session: ManagedSession | undefined) {
   if (!session) return { status: "UNVERIFIED", description: "로그인 캡처를 시작해 재사용할 세션을 확인하세요.", action: "begin" as const }
   if (session.credentialConflict) return { status: "credential-conflict", description: "동일 인증정보 충돌입니다. 기존 연결을 확인하거나 세션을 폐기하세요.", action: "revoke" as const }
-  if (session.capturing || session.status === "CAPTURING") return { status: "CAPTURING", description: "HUMAN 8080 브라우저에서 로그인한 뒤 캡처를 종료하세요.", action: "end" as const }
+  if (session.capturing || session.status === "CAPTURING") return { status: "CAPTURING", description: "계정 전용 HUMAN 8080 브라우저에서 로그인한 뒤 인증된 화면을 한 번 새로고침하고 캡처를 종료하세요.", action: "end" as const }
   if (session.status === "ACTIVE") return { status: "ACTIVE", description: "재사용 가능한 관리 세션입니다.", action: "revoke" as const }
   if (session.status === "REVOKED") return { status: "REVOKED", description: "메모리 세션이 폐기되었습니다. 다시 로그인해야 합니다.", action: "begin" as const }
-  return { status: "UNVERIFIED", description: "자격증명은 관측됐지만 로그인 성공을 확인하지 못했습니다.", action: "begin" as const }
+  return { status: "UNVERIFIED", description: "자격증명은 관측됐지만 인증된 후속 요청·응답을 확인하지 못했습니다. 다시 캡처하거나 확인된 Burp 요청을 가져오세요.", action: "begin" as const }
 }
 
 function SessionStatusIcon({ status }: { status: string }) {
@@ -54,7 +54,7 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
       <section aria-labelledby="managed-session-title" className="space-y-2">
         <h3 id="managed-session-title" className="font-medium">재사용 관리 세션</h3>
         <p className="text-sm text-muted-foreground">등록 계정과 메모리 broker 상태만 표시합니다. Cookie·Authorization·password 같은 원문은 표시하거나 저장하지 않습니다.</p>
-        <Alert><AlertDescription>권장: Burp Proxy history 또는 Repeater에서 해당 계정으로 인증된 요청 하나를 우클릭한 뒤 <strong>FlowScope 계정 세션으로 사용</strong>에서 계정을 선택하세요. 브라우저의 현재 로그인과 별개로 계정별 세션 슬롯에 보관됩니다.</AlertDescription></Alert>
+        <Alert><AlertDescription>계정마다 별도 브라우저 프로필 또는 독립 브라우저 컨텍스트를 사용하세요. 같은 프로필의 로그아웃만으로는 Cookie·브라우저 저장소가 완전히 격리되지 않습니다. 가장 확실한 등록 방법은 Burp Proxy history 또는 Repeater에서 해당 계정으로 인증된 요청 하나를 우클릭한 뒤 <strong>FlowScope 계정 세션으로 사용</strong>에서 계정을 선택하는 것입니다.</AlertDescription></Alert>
         <div className="grid gap-3 md:grid-cols-2">
           {accounts.map((account) => {
             const view = sessionState(managedByAccount.get(account.id))
