@@ -675,15 +675,17 @@ public final class ZapCampaign implements AutoCloseable {
                     authenticationHeartbeat.cancel(false);
                 }
                 state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
-                        "ZAP 인증 응답 Evidence가 로그인 성공 정규식과 일치했습니다.");
+                        "ZAP 인증 성공과 재사용 가능한 인증 Evidence를 확인했습니다.");
                 boolean sessionPromoted = state.promoteAuthenticatedSession(
                         lane.accountId(), identity.verifiedEvidenceRuntimeId());
+                if (!sessionPromoted) {
+                    throw new IllegalStateException("로그인은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다. "
+                            + "ANON으로 대체하지 않고 이 로그인 lane을 중단합니다.");
+                }
                 authenticationVerified = true;
                 replaceZapAuthentication(index, new ZapAuthenticationResult(
                         "VERIFIED_BY_ZAP", identity.browser(),
-                        sessionPromoted
-                                ? "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다."
-                                : "ZAP 인증은 확인됐지만 HUMAN 재전송 세션 연결은 생략됐습니다."));
+                        "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다."));
                 recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
                         "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
             }

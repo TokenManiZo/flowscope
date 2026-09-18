@@ -109,11 +109,14 @@ final class ZapAccountVaultTest {
     }
 
     @Test
-    void requiresAValidLoggedInVerificationIndicator() {
+    void acceptsAutomaticVerificationWithoutUserWrittenIndicators() {
         ZapAccountVault vault = new ZapAccountVault();
-        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+        ZapAccountVault.View saved = vault.save(new ZapAccountVault.Input(
                 "", "A", "USER", "https://app.example.test", "https://app.example.test/login",
-                "a", "pw", "", "")));
+                "a", "pw", "", ""));
+        assertFalse(saved.hasLoggedInIndicator());
+        assertFalse(saved.hasLoggedOutIndicator());
+
         assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
                 "", "A", "USER", "https://app.example.test", "https://app.example.test/login",
                 "a", "pw", "[", "")));

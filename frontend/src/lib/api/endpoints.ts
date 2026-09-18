@@ -75,7 +75,7 @@ export const startScannerRun = (target: string, accounts: string, anonymous: boo
     ...(definitions.trim() ? { definitions } : {}),
   }, [202])
 export const cancelScannerRun = () => postForm<ScannerRunMutationResult>("/api/scanner-run", { action: "cancel" })
-export const saveZapAccount = (values: { id: string; label: string; role: string; service: string; loginUrl: string; username: string; password: string; loggedInIndicator: string; loggedOutIndicator: string }) =>
+export const saveZapAccount = (values: { id: string; label: string; role: string; service: string; loginUrl: string; username: string; password: string }) =>
   postForm<{ success: true; message: string; account: ZapAccount }>("/api/zap-accounts", { action: "save", ...values })
 export const deleteZapAccount = (id: string) => postForm<ApiSuccess>("/api/zap-accounts", { action: "delete", id })
 export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))

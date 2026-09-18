@@ -210,6 +210,23 @@ final class ZapCampaignTest {
         }
     }
 
+    @Test
+    void authenticatedCampaignDoesNotFallBackToAnonymousWhenSessionPromotionFails() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            fixture.allowSessionPromotion = false;
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of("user-a"), false);
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
+            assertTrue(terminal.path("error").asText().contains("ANON으로 대체하지 않고"), terminal.toString());
+            assertEquals("FAILED", terminal.at("/lanes/0/status").asText(), terminal.toString());
+            assertEquals(1L, fixture.started.getCount(), "client spider must not start with an unbound session");
+        }
+    }
+
     private static void await(BooleanSupplier condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);

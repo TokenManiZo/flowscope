@@ -240,9 +240,7 @@ final class FlowScopeWebServerTest {
                 "action=save&label=ZAP-A&role=USER&service=" + encode(state.record.service)
                         + "&loginUrl=" + encode(state.record.service + "/login")
                         + "&username=" + encode(" zap-user@example.test ")
-                        + "&password=" + encode("  zap-secret-password  ")
-                        + "&loggedInIndicator=" + encode("My account")
-                        + "&loggedOutIndicator=" + encode("Sign in"), token);
+                        + "&password=" + encode("  zap-secret-password  "), token);
 
         assertEquals(200, saved.statusCode(), saved.body());
         assertFalse(saved.body().contains("zap-user@example.test"));
@@ -253,8 +251,8 @@ final class FlowScopeWebServerTest {
         JsonNode scanner = json(get("/api/scanner-run", token, origin()));
         assertEquals(accountId, scanner.at("/accounts/0/id").asText());
         assertTrue(scanner.at("/accounts/0/hasPassword").asBoolean());
-        assertTrue(scanner.at("/accounts/0/hasLoggedInIndicator").asBoolean());
-        assertTrue(scanner.at("/accounts/0/hasLoggedOutIndicator").asBoolean());
+        assertFalse(scanner.at("/accounts/0/hasLoggedInIndicator").asBoolean());
+        assertFalse(scanner.at("/accounts/0/hasLoggedOutIndicator").asBoolean());
         assertFalse(scanner.toString().contains("zap-user@example.test"));
         assertFalse(scanner.toString().contains("zap-secret-password"));
 

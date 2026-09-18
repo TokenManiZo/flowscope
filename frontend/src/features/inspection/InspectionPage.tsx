@@ -102,8 +102,6 @@ export function InspectionPage() {
   const [zapLoginUrl, setZapLoginUrl] = useState("")
   const [zapUsername, setZapUsername] = useState("")
   const [zapPassword, setZapPassword] = useState("")
-  const [zapLoggedInIndicator, setZapLoggedInIndicator] = useState("")
-  const [zapLoggedOutIndicator, setZapLoggedOutIndicator] = useState("")
 
   const scope = scanner.data?.scope ?? []
   useEffect(() => {
@@ -248,7 +246,7 @@ export function InspectionPage() {
               {scanner.data?.run.error && <Alert variant="destructive"><AlertDescription>{scanner.data.run.error}</AlertDescription></Alert>}
               <fieldset className="space-y-2"><legend className="text-sm font-medium">실행 신원</legend>
                 <label className="flex items-center gap-2"><Checkbox id="scanner-anonymous" checked={anonymous} onCheckedChange={(checked) => setAnonymous(checked === true)} /><span>비로그인</span></label>
-                {scannerAccounts.map((account) => <div className="flex flex-wrap items-center gap-2" key={account.id}><label className="flex items-center gap-2"><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label} · {account.role} · {account.status}</span></label><Button type="button" size="sm" variant="ghost" disabled={scanner.data?.run.status === "RUNNING" || zapAccountDelete.isPending} onClick={() => zapAccountDelete.mutate(account.id)}>자격증명 폐기</Button>{account.message && <span className="w-full pl-6 text-xs text-muted-foreground">{account.message}</span>}<span className="w-full pl-6 text-xs text-muted-foreground">인증 검증 · 로그인 {account.hasLoggedInIndicator ? "설정" : "미설정"} · 로그아웃 {account.hasLoggedOutIndicator ? "설정" : "미설정"}</span></div>)}
+                {scannerAccounts.map((account) => <div className="flex flex-wrap items-center gap-2" key={account.id}><label className="flex items-center gap-2"><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label} · {account.role} · {account.status}</span></label><Button type="button" size="sm" variant="ghost" disabled={scanner.data?.run.status === "RUNNING" || zapAccountDelete.isPending} onClick={() => zapAccountDelete.mutate(account.id)}>자격증명 폐기</Button>{account.message && <span className="w-full pl-6 text-xs text-muted-foreground">{account.message}</span>}<span className="w-full pl-6 text-xs text-muted-foreground">인증 검증 · ZAP 자동 판정 + 재사용 세션 연결</span></div>)}
                 {!scannerAccounts.length && <p className="text-sm text-muted-foreground">현재 target에 등록된 ZAP 로그인 계정이 없습니다.</p>}
               </fieldset>
               <section className="grid gap-3 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="ZAP 로그인 계정 등록">
@@ -259,11 +257,9 @@ export function InspectionPage() {
                   <label className="grid gap-1 text-sm md:col-span-2">로그인 URL<Input value={zapLoginUrl} onChange={(event) => setZapLoginUrl(event.target.value)} placeholder={target ? `${normalizedOrigin(target)}/login` : "https://target.example/login"} autoComplete="off" /></label>
                   <label className="grid gap-1 text-sm">로그인 ID<Input value={zapUsername} onChange={(event) => setZapUsername(event.target.value)} autoComplete="username" /></label>
                   <label className="grid gap-1 text-sm">비밀번호<Input type="password" value={zapPassword} onChange={(event) => setZapPassword(event.target.value)} autoComplete="new-password" /></label>
-                  <label className="grid gap-1 text-sm">로그인 상태 정규식 (필수)<Input value={zapLoggedInIndicator} onChange={(event) => setZapLoggedInIndicator(event.target.value)} placeholder="예: 로그아웃|내 계정" autoComplete="off" /></label>
-                  <label className="grid gap-1 text-sm">로그아웃 상태 정규식 (선택)<Input value={zapLoggedOutIndicator} onChange={(event) => setZapLoggedOutIndicator(event.target.value)} placeholder="예: 잘못된 비밀번호|로그인 필요" autoComplete="off" /></label>
                 </div>
-                <p className="text-xs text-muted-foreground">로그인 상태 정규식은 필수입니다. 인증 응답에서 로그인 전에는 없고 성공 후에만 나타나는 짧은 문구를 사용하세요. 로그아웃 정규식은 선택이며, 두 상태가 모두 관측되면 마지막으로 관측된 근거를 사용합니다.</p>
-                <Button type="button" variant="outline" disabled={!targetInScope || !zapLabel.trim() || !zapLoginUrl.trim() || !zapUsername || !zapPassword || !zapLoggedInIndicator.trim() || zapAccountSave.isPending || scanner.data?.run.status === "RUNNING"} onClick={() => zapAccountSave.mutate({ id: "", label: zapLabel, role: zapRole, service: normalizedOrigin(target), loginUrl: zapLoginUrl, username: zapUsername, password: zapPassword, loggedInIndicator: zapLoggedInIndicator, loggedOutIndicator: zapLoggedOutIndicator }, { onSuccess: () => { setZapLabel(""); setZapLoginUrl(""); setZapUsername(""); setZapPassword(""); setZapLoggedInIndicator(""); setZapLoggedOutIndicator("") } })}>로그인 계정 등록</Button>
+                <p className="text-xs text-muted-foreground">로그인 성공은 ZAP의 인증 결과와 실제 재사용 세션 연결을 함께 확인합니다. 실패하면 ANON으로 대체하지 않고 해당 계정을 FAILED로 표시하며 검사를 시작하지 않습니다.</p>
+                <Button type="button" variant="outline" disabled={!targetInScope || !zapLabel.trim() || !zapLoginUrl.trim() || !zapUsername || !zapPassword || zapAccountSave.isPending || scanner.data?.run.status === "RUNNING"} onClick={() => zapAccountSave.mutate({ id: "", label: zapLabel, role: zapRole, service: normalizedOrigin(target), loginUrl: zapLoginUrl, username: zapUsername, password: zapPassword }, { onSuccess: () => { setZapLabel(""); setZapLoginUrl(""); setZapUsername(""); setZapPassword("") } })}>로그인 계정 등록</Button>
               </section>
               <details className="rounded-lg border border-border/70 bg-background/30 p-3">
                 <summary className="cursor-pointer text-sm font-medium">명세 기반 탐색 추가 (선택)</summary>

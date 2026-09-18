@@ -47,7 +47,6 @@ public final class ZapAccountVault implements AutoCloseable {
         String password = requiredCredential(input.password(), "비밀번호", 4_096);
         String loggedInIndicator = verificationPattern(input.loggedInIndicator(), "로그인 상태 정규식");
         String loggedOutIndicator = verificationPattern(input.loggedOutIndicator(), "로그아웃 상태 정규식");
-        if (loggedInIndicator.isBlank()) throw new IllegalArgumentException("로그인 상태 정규식이 필요합니다.");
         Entry replacement = new Entry(id, label, role, service, loginUrl,
                 username.toCharArray(), password.toCharArray(), loggedInIndicator, loggedOutIndicator);
         Entry previous = entries.put(id, replacement);
