@@ -3,7 +3,9 @@ import {
   AlertTriangle,
   Ban,
   CircleSlash,
+  Cpu,
   Loader2,
+  RadioTower,
   Radio,
   ShieldCheck,
   Square,
@@ -25,6 +27,7 @@ import { cn } from "@/lib/utils";
 import {
   liveAuthorizationReplayApi,
   type LiveAuthorizationReplayApiClient,
+  type LiveReplayBasisSource,
   type LiveReplaySnapshot,
 } from "./liveAuthorizationReplayApi";
 
@@ -57,6 +60,17 @@ const STATUS_LABEL: Record<ReplayAccount["status"], string> = {
   CONFLICT: "CONFLICT",
 };
 
+const BASIS_SOURCES: Array<{
+  id: LiveReplayBasisSource;
+  label: string;
+  detail: string;
+  icon: typeof UserRound;
+}> = [
+  { id: "HUMAN", label: "HUMAN", detail: "Burp", icon: UserRound },
+  { id: "SCANNER", label: "ZAP", detail: "Scanner", icon: RadioTower },
+  { id: "LLM", label: "LLM", detail: "Explorer", icon: Cpu },
+];
+
 export function isAccountSelectable(account: ReplayAccount): boolean {
   return account.status === "ACTIVE" && account.credentialConflict !== true;
 }
@@ -79,6 +93,9 @@ export function LiveAuthorizationReplayCard({
 }: LiveAuthorizationReplayCardProps) {
   const [snapshot, setSnapshot] = useState<LiveReplaySnapshot | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [basisSources, setBasisSources] = useState<LiveReplayBasisSource[]>([
+    "HUMAN",
+  ]);
   const [includeAnonymous, setIncludeAnonymous] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [pending, setPending] = useState(false);
@@ -132,8 +149,18 @@ export function LiveAuthorizationReplayCard({
 
   const canStart =
     acknowledged &&
+    basisSources.length > 0 &&
     (effectiveSelection.length > 0 || includeAnonymous) &&
-    !pending;
+    !pending &&
+    state === "STOPPED";
+
+  const toggleSource = (source: LiveReplayBasisSource) => {
+    setBasisSources((current) =>
+      current.includes(source)
+        ? current.filter((item) => item !== source)
+        : [...current, source],
+    );
+  };
 
   const toggleAccount = (id: string) => {
     setSelectedIds((prev) =>
@@ -149,6 +176,7 @@ export function LiveAuthorizationReplayCard({
         accountIds: effectiveSelection,
         includeAnonymous,
         armed: true,
+        basisSources,
       });
       if (mounted.current) setSnapshot(next);
     } catch {
@@ -171,7 +199,8 @@ export function LiveAuthorizationReplayCard({
     }
   };
 
-  const isRunning = state === "ACTIVE" || state === "LIMIT_REACHED";
+  const isRunning = state === "ACTIVE";
+  const hasRunResult = snapshot !== null && state !== "STOPPED";
 
   return (
     <Card className={cn("border-border/70 bg-card", className)}>
@@ -183,8 +212,7 @@ export function LiveAuthorizationReplayCard({
               라이브 교차 신원 검증
             </CardTitle>
             <CardDescription>
-              사람이 발생시킨 요청을 선택한 다른 신원으로 안전하게 교차
-              검증합니다.
+              HUMAN·ZAP·LLM에서 관측한 요청을 선택한 신원으로 안전하게 교차 검증합니다.
             </CardDescription>
           </div>
           <Badge
@@ -205,11 +233,39 @@ export function LiveAuthorizationReplayCard({
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {!isRunning && (
+        {!hasRunResult && (
           <>
+            <fieldset className="space-y-2" disabled={pending || isRunning}>
+              <legend className="mb-2 text-xs font-medium text-muted-foreground">
+                1. 기준 요청 출처
+              </legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {BASIS_SOURCES.map((source) => {
+                  const Icon = source.icon;
+                  return (
+                    <label
+                      key={source.id}
+                      className="flex min-w-0 cursor-pointer items-center gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 hover:border-border hover:bg-muted/60"
+                    >
+                      <Checkbox
+                        checked={basisSources.includes(source.id)}
+                        onCheckedChange={() => toggleSource(source.id)}
+                        aria-label={`${source.label} 기준 요청`}
+                      />
+                      <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">{source.label}</span>
+                        <span className="block text-xs text-muted-foreground">{source.detail}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
             <fieldset className="space-y-2">
-              <legend className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                대상 신원
+              <legend className="mb-2 text-xs font-medium text-muted-foreground">
+                2. 교차 검증 대상 신원
               </legend>
               <ul className="space-y-2">
                 {accounts.map((account) => {
@@ -227,7 +283,7 @@ export function LiveAuthorizationReplayCard({
                       >
                         <Checkbox
                           checked={checked}
-                          disabled={!enabled}
+                          disabled={!enabled || pending || isRunning}
                           onCheckedChange={() => toggleAccount(account.id)}
                           aria-label={account.name}
                         />
@@ -265,6 +321,7 @@ export function LiveAuthorizationReplayCard({
                 <Checkbox
                   checked={includeAnonymous}
                   onCheckedChange={(value) => setIncludeAnonymous(value === true)}
+                  disabled={pending || isRunning}
                   aria-label="비로그인(ANON) 포함"
                 />
                 <Ban className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -272,15 +329,19 @@ export function LiveAuthorizationReplayCard({
               </label>
             </fieldset>
 
-            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5">
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-muted-foreground">3. 안전 재전송 승인</legend>
+              <label className="flex cursor-pointer items-start gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5">
               <Checkbox
                 checked={acknowledged}
                 onCheckedChange={(value) => setAcknowledged(value === true)}
                 aria-label="안전 자동 재전송을 허용합니다."
                 className="mt-0.5"
+                disabled={pending || isRunning}
               />
-              <span className="text-sm">안전 자동 재전송을 허용합니다.</span>
-            </label>
+              <span className="text-sm">GET/HEAD 안전 자동 재전송을 허용합니다.</span>
+              </label>
+            </fieldset>
 
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={handleStart} disabled={!canStart}>
@@ -293,7 +354,7 @@ export function LiveAuthorizationReplayCard({
           </>
         )}
 
-        {isRunning && snapshot && (
+        {hasRunResult && snapshot && (
           <>
             <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {METRICS(snapshot).map((metric) => (

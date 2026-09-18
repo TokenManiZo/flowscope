@@ -58,6 +58,7 @@ function makeClient(
         armed: request.armed,
         targetAccountIds: request.accountIds,
         includeAnonymous: request.includeAnonymous,
+        basisSources: request.basisSources,
         observed: 4,
         eligible: 3,
         queued: 6,
@@ -86,7 +87,7 @@ describe("LiveAuthorizationReplayCard", () => {
     expect(await screen.findByText("라이브 교차 신원 검증")).toBeTruthy();
     expect(
       screen.getByText(
-        "사람이 발생시킨 요청을 선택한 다른 신원으로 안전하게 교차 검증합니다.",
+        "HUMAN·ZAP·LLM에서 관측한 요청을 선택한 신원으로 안전하게 교차 검증합니다.",
       ),
     ).toBeTruthy();
     expect(
@@ -97,6 +98,9 @@ describe("LiveAuthorizationReplayCard", () => {
     expect(screen.getByTestId("replay-state-badge").textContent).toContain(
       "중지됨",
     );
+    expect(screen.getByLabelText("HUMAN 기준 요청")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByLabelText("ZAP 기준 요청")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByLabelText("LLM 기준 요청")).toHaveAttribute("aria-checked", "false");
   });
 
   it("only allows ACTIVE accounts without credential conflicts to be selected", async () => {
@@ -142,6 +146,8 @@ describe("LiveAuthorizationReplayCard", () => {
 
     await user.click(await screen.findByLabelText("USER B"));
     await user.click(screen.getByLabelText("ADMIN"));
+    await user.click(screen.getByLabelText("ZAP 기준 요청"));
+    await user.click(screen.getByLabelText("LLM 기준 요청"));
     await user.click(screen.getByLabelText("비로그인(ANON) 포함"));
     await user.click(screen.getByLabelText("안전 자동 재전송을 허용합니다."));
     await user.click(screen.getByRole("button", { name: "라이브 검증 시작" }));
@@ -151,6 +157,7 @@ describe("LiveAuthorizationReplayCard", () => {
         accountIds: ["user-b", "admin"],
         includeAnonymous: true,
         armed: true,
+        basisSources: ["HUMAN", "SCANNER", "LLM"],
       }),
     );
 

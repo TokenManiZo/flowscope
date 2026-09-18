@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { AlertCircle, CheckCircle2, Clock3, Link2Off } from "lucide-react"
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -26,6 +27,13 @@ function sessionState(session: ManagedSession | undefined) {
   return { status: "UNVERIFIED", description: "자격증명은 관측됐지만 로그인 성공을 확인하지 못했습니다.", action: "begin" as const }
 }
 
+function SessionStatusIcon({ status }: { status: string }) {
+  if (status === "ACTIVE") return <CheckCircle2 className="size-4 text-primary" aria-hidden="true" />
+  if (status === "CAPTURING") return <Clock3 className="size-4 text-muted-foreground" aria-hidden="true" />
+  if (status === "credential-conflict") return <AlertCircle className="size-4 text-destructive" aria-hidden="true" />
+  return <Link2Off className="size-4 text-muted-foreground" aria-hidden="true" />
+}
+
 export function SessionDiagnostics({ accounts, sessions, managedSessions, pending, bindError, unbindError, captureError, onBind, onUnbind, onCapture }: {
   accounts: readonly Account[]
   sessions: readonly ObservedSession[]
@@ -51,9 +59,10 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
           {accounts.map((account) => {
             const view = sessionState(managedByAccount.get(account.id))
             const actionLabel = view.action === "begin" ? "로그인 연결 시작" : view.action === "end" ? "로그인 캡처 종료" : "세션 폐기"
-            return <article key={account.id} className="rounded-lg border p-3" aria-label={`${account.label} 관리 세션`}>
-              <div className="flex flex-wrap items-center justify-between gap-2"><strong>{account.label}</strong><Badge>{view.status}</Badge></div>
-              <p className="mt-2 text-sm">등록 계정 · {account.role} · {account.target}</p>
+            const active = view.status === "ACTIVE" || view.status === "CAPTURING"
+            return <article key={account.id} className={`rounded-lg border p-3 ${active ? "" : "opacity-65"}`} aria-label={`${account.label} 관리 세션`}>
+              <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><SessionStatusIcon status={view.status} /><strong className="truncate">{account.label}</strong></div><Badge variant={view.status === "ACTIVE" ? "default" : "secondary"}>{view.status}</Badge></div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm"><dt className="text-muted-foreground">역할</dt><dd className="truncate text-right">{account.role}</dd><dt className="text-muted-foreground">대상 서비스</dt><dd className="truncate text-right">{account.target}</dd></dl>
               <p className="mt-2 text-sm text-muted-foreground">{view.description}</p>
               <Button className="mt-3" variant={view.action === "revoke" ? "destructive" : "outline"} disabled={pending.capture} onClick={() => onCapture({ action: view.action, account: account.id })}>{account.label} {actionLabel}</Button>
             </article>
