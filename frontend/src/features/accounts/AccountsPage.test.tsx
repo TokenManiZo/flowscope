@@ -27,7 +27,7 @@ function snapshot(overrides: Record<string, unknown> = {}) {
       { fingerprint: "ck:bound-fingerprint", idn: "bound-user", accountId: "account-a", artifactKind: "AUTHORIZATION", evidence: "evidence-2", confidence: "MANUAL", firstSeen: 0, lastSeen: 0, registered: true, service },
     ],
     managedSessions: [
-      { handle: "active-handle", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false, credential: rawSecret },
+      { handle: "active-handle", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false, credential: rawSecret },
       { handle: "capturing-handle", accountId: "capturing-account", accountLabel: "캡처 중", service, status: "CAPTURING", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: false, cookieCount: 0, capturing: true, credentialConflict: false },
       { handle: "unverified-handle", accountId: "unverified-account", accountLabel: "확인 필요", service, status: "UNVERIFIED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
       { handle: "revoked-handle", accountId: "revoked-account", accountLabel: "폐기됨", service, status: "REVOKED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: false, cookieCount: 0, capturing: false, credentialConflict: false },
@@ -121,6 +121,13 @@ afterAll(() => {
 })
 
 describe("account and session management", () => {
+  it("shows the verification-source badge on a strongly verified managed session", async () => {
+    renderAccounts()
+    await screen.findByRole("heading", { name: "계정·세션 관리" })
+    // account-a's managed session is ACTIVE + OPERATOR_ASSERTED → operator-confirmed badge.
+    expect(await screen.findByText("운영자 확인")).toBeVisible()
+  })
+
   it("sends exact registered-account save fields and retains an edit on the action-local server error", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderAccounts({ postError: { "/api/account-save": "저장할 수 없습니다." } })

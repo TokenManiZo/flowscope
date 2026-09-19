@@ -47,8 +47,8 @@ public final class ProjectStore {
                               List<RunExecutionLedger.Attempt> runAttempts,
                               ProjectContext context) {}
 
-    private static final int SCHEMA_VERSION = 5;
-    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4);
+    private static final int SCHEMA_VERSION = 6;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -642,6 +642,18 @@ public final class ProjectStore {
             value.put("fingerprint", Fingerprints.safeForStorage(entry.getKey().substring(split + 1)));
             value.put("account_id", entry.getValue());
         });
+        ArrayNode rules = policy.putArray("account_verification_rules");
+        config.accountVerificationRules().values().stream()
+                .sorted(java.util.Comparator.comparing(AccountVerificationRule::accountId))
+                .forEach(rule -> {
+                    // expected_subject is an operator-typed identity indicator (sanitized, never a credential).
+                    ObjectNode value = rules.addObject();
+                    value.put("account_id", rule.accountId());
+                    value.put("method", rule.method());
+                    value.put("origin", rule.origin());
+                    value.put("path", rule.path());
+                    value.put("expected_subject", rule.expectedSubject());
+                });
         return policy;
     }
 
@@ -669,6 +681,16 @@ public final class ProjectStore {
             for (JsonNode binding : bindings) {
                 config.bindSession(required(binding, "service"), required(binding, "fingerprint"),
                         required(binding, "account_id"));
+            }
+        }
+        // Optional since schema 6; a version-5 project simply carries no rules (empty map).
+        JsonNode rules = value.path("account_verification_rules");
+        if (rules.isArray()) {
+            for (JsonNode rule : rules) {
+                config.withAccountVerificationRule(new AccountVerificationRule(
+                        required(rule, "account_id"), required(rule, "method"),
+                        required(rule, "origin"), required(rule, "path"),
+                        required(rule, "expected_subject")));
             }
         }
         return config;

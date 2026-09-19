@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Account, ManagedSession, ObservedSession } from "@/lib/api/types"
-import { LiveAuthorizationReplayCard, type ReplayAccount } from "@/components/live-authorization-replay/LiveAuthorizationReplayCard"
+import { LiveAuthorizationReplayCard, VERIFICATION_SOURCE_LABEL, type ReplayAccount } from "@/components/live-authorization-replay/LiveAuthorizationReplayCard"
 
 function replayStatus(session: ManagedSession | undefined): ReplayAccount["status"] {
   if (!session) return "UNVERIFIED"
@@ -48,7 +48,7 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
 }) {
   const [selection, setSelection] = useState<Record<string, string>>({})
   const managedByAccount = new Map(managedSessions.map((session) => [session.accountId, session]))
-  const replayAccounts: ReplayAccount[] = accounts.map((account) => ({ id: account.id, name: account.label, role: account.role, status: replayStatus(managedByAccount.get(account.id)), credentialConflict: managedByAccount.get(account.id)?.credentialConflict }))
+  const replayAccounts: ReplayAccount[] = accounts.map((account) => ({ id: account.id, name: account.label, role: account.role, status: replayStatus(managedByAccount.get(account.id)), credentialConflict: managedByAccount.get(account.id)?.credentialConflict, verificationSource: managedByAccount.get(account.id)?.verificationSource }))
   return (
     <div className="space-y-4">
       <section aria-labelledby="managed-session-title" className="space-y-2">
@@ -60,8 +60,9 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
             const view = sessionState(managedByAccount.get(account.id))
             const actionLabel = view.action === "begin" ? "로그인 연결 시작" : view.action === "end" ? "로그인 캡처 종료" : "세션 폐기"
             const active = view.status === "ACTIVE" || view.status === "CAPTURING"
+            const verification = view.status === "ACTIVE" ? managedByAccount.get(account.id)?.verificationSource : undefined
             return <article key={account.id} className={`rounded-lg border p-3 ${active ? "" : "opacity-65"}`} aria-label={`${account.label} 관리 세션`}>
-              <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><SessionStatusIcon status={view.status} /><strong className="truncate">{account.label}</strong></div><Badge variant={view.status === "ACTIVE" ? "default" : "secondary"}>{view.status}</Badge></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><SessionStatusIcon status={view.status} /><strong className="truncate">{account.label}</strong></div><div className="flex items-center gap-1"><Badge variant={view.status === "ACTIVE" ? "default" : "secondary"}>{view.status}</Badge>{verification && <Badge variant="outline" aria-label={`검증 출처 ${VERIFICATION_SOURCE_LABEL[verification] ?? verification}`}>{VERIFICATION_SOURCE_LABEL[verification] ?? verification}</Badge>}</div></div>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm"><dt className="text-muted-foreground">역할</dt><dd className="truncate text-right">{account.role}</dd><dt className="text-muted-foreground">대상 서비스</dt><dd className="truncate text-right">{account.target}</dd></dl>
               <p className="mt-2 text-sm text-muted-foreground">{view.description}</p>
               <Button className="mt-3" variant={view.action === "revoke" ? "destructive" : "outline"} disabled={pending.capture} onClick={() => onCapture({ action: view.action, account: account.id })}>{account.label} {actionLabel}</Button>

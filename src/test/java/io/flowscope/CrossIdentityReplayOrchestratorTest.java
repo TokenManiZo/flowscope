@@ -250,6 +250,31 @@ final class CrossIdentityReplayOrchestratorTest {
         assertEquals(1, run.sent());
     }
 
+    @Test
+    void legacyResponseActiveIsRejectedByTheStrongReplayGate() {
+        SessionBroker broker = legacyActiveBroker("user-b", "Bearer legacy");
+        assertEquals(SessionBroker.Status.ACTIVE, broker.viewForAccount("user-b").orElseThrow().status());
+        assertEquals(SessionBroker.VerificationSource.LEGACY_RESPONSE,
+                broker.viewForAccount("user-b").orElseThrow().verificationSource());
+
+        AtomicInteger sends = new AtomicInteger();
+        CrossIdentityReplayOrchestrator orchestrator = orchestrator(broker,
+                (candidate, headers, context) -> {
+                    sends.incrementAndGet();
+                    return response(200, "{}");
+                }, (candidate, headers) -> fail("weak session must not open a draft either"));
+
+        CrossIdentityReplayOrchestrator.RunResult result = orchestrator.execute(List.of(
+                candidate("GET /api/orders/{id}", "https://api.test/api/orders/19"),
+                candidate("DELETE /api/orders/{id}", "https://api.test/api/orders/19")), true);
+
+        assertEquals(0, sends.get());
+        assertEquals(0, result.sent());
+        assertEquals(0, result.drafted());
+        assertTrue(result.items().stream().allMatch(item ->
+                item.outcome() == CrossIdentityReplayOrchestrator.Outcome.SKIPPED_INELIGIBLE));
+    }
+
     private static CrossIdentityReplayOrchestrator orchestrator(
             SessionBroker broker,
             CrossIdentityReplayOrchestrator.Transport transport,
@@ -259,6 +284,17 @@ final class CrossIdentityReplayOrchestratorTest {
     }
 
     private static SessionBroker activeBroker(String accountId, String authorization) {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile account = new AccountProfile(accountId, accountId.toUpperCase(),
+                "https://api.test:443", AccessRole.USER);
+        // Operator-asserted import gives OPERATOR_ASSERTED — the strong proof active replay requires.
+        broker.captureObservedExchange(account, URI.create("https://api.test/me"),
+                Map.of("Authorization", authorization), 200, null,
+                "{\"id\":\"" + accountId + "\"}", List.of(), NOW);
+        return broker;
+    }
+
+    private static SessionBroker legacyActiveBroker(String accountId, String authorization) {
         SessionBroker broker = new SessionBroker();
         AccountProfile account = new AccountProfile(accountId, accountId.toUpperCase(),
                 "https://api.test:443", AccessRole.USER);

@@ -4,6 +4,9 @@ import userEvent from "@testing-library/user-event";
 
 import {
   LiveAuthorizationReplayCard,
+  VERIFICATION_SOURCE_LABEL,
+  isAccountSelectable,
+  isStrongVerification,
   type ReplayAccount,
 } from "./LiveAuthorizationReplayCard";
 import type {
@@ -12,16 +15,19 @@ import type {
 } from "./liveAuthorizationReplayApi";
 
 const accounts: ReplayAccount[] = [
-  { id: "user-b", name: "USER B", role: "일반", status: "ACTIVE" },
-  { id: "admin", name: "ADMIN", role: "관리자", status: "ACTIVE" },
+  { id: "user-b", name: "USER B", role: "일반", status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED" },
+  { id: "admin", name: "ADMIN", role: "관리자", status: "ACTIVE", verificationSource: "RULE_MATCHED" },
   {
     id: "user-c",
     name: "USER C",
     role: "일반",
     status: "ACTIVE",
+    verificationSource: "OPERATOR_ASSERTED",
     credentialConflict: true,
   },
   { id: "user-d", name: "USER D", role: "일반", status: "UNVERIFIED" },
+  // ACTIVE but only weakly verified (legacy 2xx): must not be selectable for active replay.
+  { id: "user-e", name: "USER E", role: "일반", status: "ACTIVE", verificationSource: "LEGACY_RESPONSE" },
 ];
 
 function snapshot(overrides: Partial<LiveReplaySnapshot> = {}): LiveReplaySnapshot {
@@ -103,7 +109,7 @@ describe("LiveAuthorizationReplayCard", () => {
     expect(screen.getByLabelText("LLM 기준 요청")).toHaveAttribute("aria-checked", "false");
   });
 
-  it("only allows ACTIVE accounts without credential conflicts to be selected", async () => {
+  it("only allows strongly verified ACTIVE accounts without credential conflicts to be selected", async () => {
     render(
       <LiveAuthorizationReplayCard
         accounts={accounts}
@@ -111,11 +117,32 @@ describe("LiveAuthorizationReplayCard", () => {
       />,
     );
 
+    // Operator-asserted and rule-matched are selectable.
     expect(
       (await screen.findByLabelText("USER B")).getAttribute("disabled"),
     ).toBeNull();
+    expect(screen.getByLabelText("ADMIN").getAttribute("disabled")).toBeNull();
+    // Credential conflict, unverified, and weak LEGACY_RESPONSE ACTIVE are all rejected.
     expect(screen.getByLabelText("USER C")).toHaveProperty("disabled", true);
     expect(screen.getByLabelText("USER D")).toHaveProperty("disabled", true);
+    expect(screen.getByLabelText("USER E")).toHaveProperty("disabled", true);
+  });
+
+  it("gates selection on strong verification and labels each verification source", () => {
+    expect(isStrongVerification("OPERATOR_ASSERTED")).toBe(true);
+    expect(isStrongVerification("RULE_MATCHED")).toBe(true);
+    expect(isStrongVerification("LEGACY_RESPONSE")).toBe(false);
+    expect(isStrongVerification("NONE")).toBe(false);
+    expect(isStrongVerification(undefined)).toBe(false);
+
+    const legacy: ReplayAccount = { id: "x", name: "X", role: "일반", status: "ACTIVE", verificationSource: "LEGACY_RESPONSE" };
+    expect(isAccountSelectable(legacy)).toBe(false);
+    expect(isAccountSelectable({ ...legacy, verificationSource: "OPERATOR_ASSERTED" })).toBe(true);
+
+    expect(VERIFICATION_SOURCE_LABEL.OPERATOR_ASSERTED).toBe("운영자 확인");
+    expect(VERIFICATION_SOURCE_LABEL.RULE_MATCHED).toBe("규칙 확인");
+    expect(VERIFICATION_SOURCE_LABEL.LEGACY_RESPONSE).toBe("약검증");
+    expect(VERIFICATION_SOURCE_LABEL.NONE).toBe("미검증");
   });
 
   it("keeps the start button disabled until a target and the approval are set", async () => {

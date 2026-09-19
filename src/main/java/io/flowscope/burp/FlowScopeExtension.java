@@ -29,7 +29,9 @@ import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 import io.flowscope.core.Fingerprints;
 import io.flowscope.core.ActiveTrafficGuard;
 import io.flowscope.core.AccountProfile;
+import io.flowscope.core.AccountVerificationRule;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.VerificationOutcome;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.Masking;
@@ -375,7 +377,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 JMenu menu = new JMenu("FlowScope 계정 세션으로 사용");
                 for (io.flowscope.core.AccountProfile account : accounts) {
                     JMenuItem item = new JMenuItem(account.label() + " · " + account.role());
-                    item.addActionListener(ignored -> captureSelectedAccountSession(account, exchange));
+                    item.addActionListener(ignored ->
+                            captureSelectedAccountSession(account, exchange, promptVerificationIndicator(account)));
                     menu.add(item);
                 }
                 return List.of(menu);
@@ -392,8 +395,20 @@ public final class FlowScopeExtension implements BurpExtension {
         return selected.size() == 1 ? selected.getFirst() : null;
     }
 
+    /**
+     * Optional operator-typed login-success indicator. Blank means "no strong rule": the imported
+     * session is still OPERATOR_ASSERTED, but later auto-captures cannot reach RULE_MATCHED.
+     */
+    private String promptVerificationIndicator(AccountProfile account) {
+        Object input = JOptionPane.showInputDialog(null,
+                account.label() + " 로그인 성공을 나타내는 응답 표식(선택). 예: 사용자명, \"id\":\"...\".\n"
+                        + "자격값(쿠키/토큰/비밀번호)은 넣지 마세요. 비우면 이 세션만 확인되고 자동 규칙은 만들지 않습니다.",
+                "FlowScope 검증 표식", JOptionPane.PLAIN_MESSAGE);
+        return input == null ? null : input.toString();
+    }
+
     private void captureSelectedAccountSession(AccountProfile account,
-                                               HttpRequestResponse exchange) {
+                                               HttpRequestResponse exchange, String indicator) {
         try {
             HttpRequest request = exchange.request();
             HttpResponse response = exchange.response();
@@ -418,14 +433,30 @@ public final class FlowScopeExtension implements BurpExtension {
             List<String> setCookies = response.headers().stream()
                     .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
                     .map(HttpHeader::value).toList();
-            sessionBroker.captureObservedExchange(account, URI.create(request.url()), headersOf(request.headers()),
-                    response.statusCode(), response.headerValue("Location"), boundedResponseBody(response),
-                    setCookies, java.time.Instant.now());
+            // Atomic import across two stores: reserve the binding first (reversible), then commit the
+            // session. On session failure roll back only a binding we created; keep any existing same-account
+            // binding. The existing-owner conflict was already rejected above, so bindSession does not fall back.
+            boolean bindingExisted = analysisConfig.boundAccount(service, fingerprint)
+                    .map(bound -> bound.id().equals(account.id())).orElse(false);
+            analysisConfig.bindSession(service, fingerprint, account.id());
             try {
-                analysisConfig.bindSession(service, fingerprint, account.id());
+                sessionBroker.captureObservedExchange(account, URI.create(request.url()), headersOf(request.headers()),
+                        response.statusCode(), response.headerValue("Location"), boundedResponseBody(response),
+                        setCookies, java.time.Instant.now());
             } catch (RuntimeException error) {
-                sessionBroker.markCredentialConflict(account.id());
+                if (!bindingExisted) analysisConfig.unbindSession(service, fingerprint);
                 throw error;
+            }
+            // Session + binding committed as OPERATOR_ASSERTED. Store the optional strong verification rule
+            // from the operator indicator; a bad indicator is reported but never fails the import or falls back.
+            if (indicator != null && !indicator.isBlank()) {
+                try {
+                    AccountVerificationRule.fromExchange(account.id(), request.method(),
+                            URI.create(request.url()), indicator)
+                            .ifPresent(analysisConfig::withAccountVerificationRule);
+                } catch (IllegalArgumentException invalid) {
+                    api.logging().logToError("FlowScope 검증 표식 저장 실패(자격값 형태 등): " + invalid.getMessage());
+                }
             }
             revision.incrementAndGet();
             scheduleRebuild();
@@ -916,8 +947,15 @@ public final class FlowScopeExtension implements BurpExtension {
             List<String> setCookies = headers == null ? List.of() : headers.stream()
                     .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
                     .map(HttpHeader::value).toList();
+            // Evaluate this account's stored verification rule so an auto-capture can reach RULE_MATCHED
+            // only on the verification endpoint with the operator's success indicator.
+            String ruleAccountId = sessionBroker.accountForHandle(handle).orElse(null);
+            VerificationOutcome outcome = ruleAccountId == null ? VerificationOutcome.NO_RULE
+                    : analysisConfig.verificationRule(ruleAccountId)
+                    .map(rule -> rule.evaluate(request.method(), URI.create(request.url()), body))
+                    .orElse(VerificationOutcome.NO_RULE);
             sessionBroker.observeResponse(handle, URI.create(request.url()), status, location, body,
-                    setCookies, java.time.Instant.now());
+                    setCookies, java.time.Instant.now(), outcome);
         } catch (RuntimeException error) {
             api.logging().logToError("FlowScope 세션 응답 갱신 실패", error);
         }

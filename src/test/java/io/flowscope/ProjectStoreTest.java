@@ -112,6 +112,49 @@ final class ProjectStoreTest {
     }
 
     @Test
+    void accountVerificationRuleRoundTripsAndIsOptionalForOlderProjects() throws Exception {
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        AnalysisConfig config = new AnalysisConfig().upsertAccount(account)
+                .withAccountVerificationRule(AccountVerificationRule.fromExchange("acct-a", "GET",
+                        java.net.URI.create("https://api.test/me"), "\"id\":\"acct-a\"").orElseThrow());
+        ProjectStore store = new ProjectStore();
+        Path file = temp.resolve("rules.flowscope.json");
+        store.save(file, List.of(), config, List.of());
+
+        AnalysisConfig loaded = store.load(file).config();
+        AccountVerificationRule rule = loaded.verificationRule("acct-a").orElseThrow();
+        assertEquals("GET", rule.method());
+        assertEquals("https://api.test:443", rule.origin());
+        assertEquals("/me", rule.path());
+        assertEquals("\"id\":\"acct-a\"", rule.expectedSubject());
+
+        // A project saved without any rule loads with an empty rule set (the field is optional since schema 6).
+        Path bare = temp.resolve("bare.flowscope.json");
+        store.save(bare, List.of(), new AnalysisConfig().upsertAccount(account), List.of());
+        assertTrue(store.load(bare).config().verificationRule("acct-a").isEmpty());
+    }
+
+    @Test
+    void loadsAVersionFiveProjectWithoutAnyVerificationRuleField() throws Exception {
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        ProjectStore store = new ProjectStore();
+        Path file = temp.resolve("v5.flowscope.json");
+        store.save(file, List.of(), new AnalysisConfig().upsertAccount(account), List.of());
+
+        // Rewrite the saved project as a genuine pre-schema-6 file: version 5 and no rules field at all.
+        ObjectMapper mapper = new ObjectMapper();
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(Files.readString(file));
+        root.put("schema_version", 5);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root.get("policy")).remove("account_verification_rules");
+        Files.writeString(file, mapper.writeValueAsString(root));
+
+        AnalysisConfig loaded = store.load(file).config();
+        assertEquals("USER A", loaded.account("acct-a").orElseThrow().label());
+        assertTrue(loaded.verificationRule("acct-a").isEmpty());
+        assertTrue(loaded.accountVerificationRules().isEmpty());
+    }
+
+    @Test
     void 재열기가_FLOW_V2_선언좌표버전과_canonical경로와_Evidence를_보존한다() throws Exception {
         Path file = temp.resolve("coordinate-version.flowscope.json");
         RouteCandidate candidate = new RouteCandidate("https://api.test:443", "POST", "/api/orders",
@@ -291,7 +334,7 @@ final class ProjectStoreTest {
         var root = new ObjectMapper().readTree(Files.readString(file));
         ProjectStore.ProjectData loaded = store.load(file);
 
-        assertEquals(5, root.path("schema_version").asInt());
+        assertEquals(6, root.path("schema_version").asInt());
         assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
         assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
         assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());

@@ -233,6 +233,8 @@ export interface ManagedSession {
   accountLabel: string
   service: string
   status: string
+  // NONE | LEGACY_RESPONSE | RULE_MATCHED | OPERATOR_ASSERTED (optional for pre-schema-6 snapshots)
+  verificationSource?: string
   createdAt: string
   lastUsedAt: string | null
   expiresAtHint: string | null

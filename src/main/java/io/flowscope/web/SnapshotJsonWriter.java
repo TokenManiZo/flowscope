@@ -184,6 +184,7 @@ public final class SnapshotJsonWriter {
             session.put("accountLabel", value.accountLabel());
             session.put("service", value.service());
             session.put("status", value.status().name());
+            session.put("verificationSource", value.verificationSource().name());
             session.put("createdAt", value.createdAt().toString());
             if (value.lastUsedAt() == null) session.putNull("lastUsedAt");
             else session.put("lastUsedAt", value.lastUsedAt().toString());

@@ -2,6 +2,7 @@ package io.flowscope.integration;
 
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.ScopePolicy;
+import io.flowscope.core.VerificationOutcome;
 
 import java.net.HttpCookie;
 import java.net.URI;
@@ -24,12 +25,27 @@ import java.util.UUID;
 public final class SessionBroker implements AutoCloseable {
     public enum Status { CAPTURING, ACTIVE, UNVERIFIED, SUSPECT, REAUTH_REQUIRED, REVOKED }
 
+    /**
+     * How strongly the current ACTIVE session proves the account's identity. Meaningful only while
+     * {@code status == ACTIVE}; any non-ACTIVE state exposes {@code NONE}. Active cross-identity
+     * replay requires a {@link #strong()} source; the legacy Request Lab still accepts LEGACY_RESPONSE.
+     */
+    public enum VerificationSource {
+        NONE, LEGACY_RESPONSE, RULE_MATCHED, OPERATOR_ASSERTED;
+
+        int strength() { return ordinal(); }
+
+        /** True for operator-asserted or rule-matched sessions, i.e. usable for active replay. */
+        public boolean strong() { return this == RULE_MATCHED || this == OPERATOR_ASSERTED; }
+    }
+
     private static final Set<String> MANAGED_HEADER_NAMES = Set.of(
             "Authorization", "Cookie", "Proxy-Authorization",
             "X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken");
 
     public record SessionView(String handle, String accountId, String accountLabel, String service,
-                              Status status, Instant createdAt, Instant lastUsedAt, Instant expiresAtHint,
+                              Status status, VerificationSource verificationSource, Instant createdAt,
+                              Instant lastUsedAt, Instant expiresAtHint,
                               boolean hasAuthorization, int cookieCount, boolean capturing,
                               boolean credentialConflict) {}
 
@@ -76,6 +92,8 @@ public final class SessionBroker implements AutoCloseable {
         boolean credentialConflict;
         Status status = Status.CAPTURING;
         boolean capturing = true;
+        VerificationSource verificationSource = VerificationSource.NONE;
+        VerificationSource pendingVerificationSource = VerificationSource.NONE;
 
         ManagedSession(String handle, AccountProfile account, Instant now) {
             this.handle = handle;
@@ -96,6 +114,43 @@ public final class SessionBroker implements AutoCloseable {
 
     private final Map<String, ManagedSession> byHandle = new LinkedHashMap<>();
     private final Map<String, String> handleByAccount = new LinkedHashMap<>();
+
+    // --- status ⊥ verification-source transitions (one place keeps the invariant) ---
+
+    /** Verification source is meaningful only while ACTIVE; every non-ACTIVE state exposes NONE. */
+    private static void toStatus(ManagedSession session, Status status) {
+        session.status = status;
+        session.verificationSource = VerificationSource.NONE;
+    }
+
+    /**
+     * Move to a broken state (SUSPECT/REAUTH/UNVERIFIED) and drop every proof so ACTIVE must be
+     * fully re-earned. Clearing responseConfirmed is essential: otherwise a later observeRequest would
+     * settle() the session straight back to ACTIVE + LEGACY_RESPONSE without a new confirming response.
+     */
+    private static void invalidate(ManagedSession session, Status status) {
+        toStatus(session, status);
+        session.responseConfirmed = false;
+        session.pendingVerificationSource = VerificationSource.NONE;
+    }
+
+    /** Record the strongest proof seen so far; only upgrades, never downgrades. */
+    private static void recordPending(ManagedSession session, VerificationSource proof) {
+        if (proof.strength() > session.pendingVerificationSource.strength()) {
+            session.pendingVerificationSource = proof;
+        }
+    }
+
+    /** Settle a non-capturing session into ACTIVE (with its pending proof) or UNVERIFIED. */
+    private static void settle(ManagedSession session) {
+        if (session.responseConfirmed) {
+            session.status = Status.ACTIVE;
+            session.verificationSource = session.pendingVerificationSource == VerificationSource.NONE
+                    ? VerificationSource.LEGACY_RESPONSE : session.pendingVerificationSource;
+        } else {
+            toStatus(session, Status.UNVERIFIED);
+        }
+    }
 
     public synchronized String beginCapture(AccountProfile account, Instant now) {
         if (account == null) throw new IllegalArgumentException("account is required");
@@ -121,12 +176,9 @@ public final class SessionBroker implements AutoCloseable {
     public synchronized void endCapture(String handle) {
         ManagedSession session = required(handle);
         session.capturing = false;
-        if (session.credentialConflict) {
-            session.status = Status.SUSPECT;
-            return;
-        }
-        if (!hasMaterial(session, Instant.now())) session.status = Status.REAUTH_REQUIRED;
-        else session.status = session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
+        if (session.credentialConflict) { invalidate(session, Status.SUSPECT); return; }
+        if (!hasMaterial(session, Instant.now())) invalidate(session, Status.REAUTH_REQUIRED);
+        else settle(session);
     }
 
     /** 같은 인증 지문이 다른 등록 계정에 이미 묶인 경우 현재 세션을 자동 병합하지 않고 사용 중지한다. */
@@ -136,7 +188,7 @@ public final class SessionBroker implements AutoCloseable {
         if (session == null) return;
         session.credentialConflict = true;
         session.capturing = false;
-        session.status = Status.SUSPECT;
+        invalidate(session, Status.SUSPECT);
     }
 
     public synchronized Optional<String> activeCaptureForService(String service) {
@@ -151,7 +203,7 @@ public final class SessionBroker implements AutoCloseable {
         Instant time = now == null ? Instant.now() : now;
         session.lastUsedAt = time;
         if (session.credentialConflict) {
-            session.status = Status.SUSPECT;
+            invalidate(session, Status.SUSPECT);
             return;
         }
         String authorization = header(requestHeaders, "Authorization");
@@ -163,31 +215,63 @@ public final class SessionBroker implements AutoCloseable {
         String cookieHeader = header(requestHeaders, "Cookie");
         if (cookieHeader != null) captureRequestCookies(session, target, cookieHeader, time);
         if (hasMaterial(session, time)) {
-            session.status = session.capturing ? Status.CAPTURING
-                    : session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
+            if (session.capturing) toStatus(session, Status.CAPTURING);
+            else settle(session);
         }
     }
 
     public synchronized void observeResponse(String handle, URI target, int status, String location, String body,
                                              List<String> setCookieHeaders, Instant now) {
+        observeResponse(handle, target, status, location, body, setCookieHeaders, now, VerificationOutcome.NO_RULE);
+    }
+
+    /**
+     * Same as {@link #observeResponse(String, URI, int, String, String, List, Instant)} but the caller
+     * has evaluated the account's stored verification rule against this response and supplies the
+     * {@link VerificationOutcome}. SessionBroker never inspects the body for identity itself.
+     */
+    public synchronized void observeResponse(String handle, URI target, int status, String location, String body,
+                                             List<String> setCookieHeaders, Instant now, VerificationOutcome outcome) {
         ManagedSession session = requiredForTarget(handle, target);
         Instant time = now == null ? Instant.now() : now;
         session.lastUsedAt = time;
-        if (session.credentialConflict) {
-            session.status = Status.SUSPECT;
-            return;
-        }
+        if (session.credentialConflict) { invalidate(session, Status.SUSPECT); return; }
         for (String value : setCookieHeaders == null ? List.<String>of() : setCookieHeaders) {
             captureSetCookie(session, target, value, time);
         }
         pruneExpired(session, time);
-        if (!hasMaterial(session, time)) session.status = Status.REAUTH_REQUIRED;
-        else if (status == 401 || isLoginRedirect(status, location)
-                || containsInvalidToken(body)) session.status = Status.SUSPECT;
-        else {
-            if (status >= 200 && status < 500) session.responseConfirmed = true;
-            if (!session.capturing) session.status = session.responseConfirmed ? Status.ACTIVE : Status.UNVERIFIED;
+        if (!hasMaterial(session, time)) { invalidate(session, Status.REAUTH_REQUIRED); return; }
+        if (status == 401 || isLoginRedirect(status, location) || containsInvalidToken(body)) {
+            invalidate(session, Status.SUSPECT);
+            return;
         }
+        if (outcome == VerificationOutcome.TARGET_FAILED) {
+            // Explicit success indicator failed on the verification endpoint (e.g. a 200 login page).
+            // This is a login verification failure, not an unrelated 2xx, so it invalidates even a
+            // strongly-verified session. A capturing session only drops its pending proof and settles
+            // to UNVERIFIED at endCapture.
+            if (session.capturing) {
+                session.responseConfirmed = false;
+                session.pendingVerificationSource = VerificationSource.NONE;
+            } else {
+                invalidate(session, Status.UNVERIFIED);
+            }
+            return;
+        }
+        boolean successStatus = status >= 200 && status < 500;
+        if (outcome == VerificationOutcome.MATCHED) {
+            // Only a success status on the verification endpoint proves the login. A 5xx that happens to
+            // echo the subject must not promote an existing (e.g. LEGACY) session to RULE_MATCHED.
+            if (successStatus) {
+                session.responseConfirmed = true;
+                recordPending(session, VerificationSource.RULE_MATCHED);
+            }
+        } else if (outcome == VerificationOutcome.NO_RULE && successStatus) {
+            session.responseConfirmed = true;
+            recordPending(session, VerificationSource.LEGACY_RESPONSE);
+        }
+        // OFF_TARGET: a strong rule exists but this is not the verification endpoint — grants no proof.
+        if (!session.capturing) settle(session);
     }
 
     /**
@@ -242,6 +326,8 @@ public final class SessionBroker implements AutoCloseable {
         candidate.responseConfirmed = true;
         candidate.capturing = false;
         candidate.status = Status.ACTIVE;
+        candidate.verificationSource = VerificationSource.OPERATOR_ASSERTED;
+        candidate.pendingVerificationSource = VerificationSource.OPERATOR_ASSERTED;
         String previous = handleByAccount.get(account.id());
         if (previous != null) revoke(previous);
         byHandle.put(candidate.handle, candidate);
@@ -252,6 +338,22 @@ public final class SessionBroker implements AutoCloseable {
     public synchronized Map<String, String> headersForAccount(String accountId, URI target,
                                                               ScopePolicy scope, Instant now) {
         return headers(handleForAccount(accountId), target, scope, now);
+    }
+
+    /**
+     * Like {@link #headersForAccount} but only for sessions whose identity is strongly verified
+     * (operator-asserted or rule-matched). Active cross-identity replay must use this so that a
+     * weak LEGACY_RESPONSE ACTIVE session is never sent as another identity.
+     */
+    public synchronized Map<String, String> headersForVerifiedAccount(String accountId, URI target,
+                                                                       ScopePolicy scope, Instant now) {
+        String handle = handleForAccount(accountId);
+        ManagedSession session = required(handle);
+        if (!session.verificationSource.strong()) {
+            throw new IllegalStateException("account session is not strongly verified: " + accountId
+                    + " (" + session.verificationSource + ")");
+        }
+        return headers(handle, target, scope, now);
     }
 
     public synchronized Map<String, String> headers(String handle, URI target, ScopePolicy scope, Instant now) {
@@ -371,7 +473,8 @@ public final class SessionBroker implements AutoCloseable {
         Instant expires = session.cookies.values().stream().map(cookie -> cookie.expiresAt)
                 .filter(java.util.Objects::nonNull).min(Instant::compareTo).orElse(null);
         return new SessionView(session.handle, session.account.id(), session.account.label(),
-                session.account.service(), session.status, session.createdAt, session.lastUsedAt, expires,
+                session.account.service(), session.status, session.verificationSource,
+                session.createdAt, session.lastUsedAt, expires,
                 session.headers.containsKey("Authorization"), session.cookies.size(), session.capturing,
                 session.credentialConflict);
     }

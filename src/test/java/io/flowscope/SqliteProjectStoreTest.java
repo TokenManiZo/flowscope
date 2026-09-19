@@ -155,6 +155,24 @@ final class SqliteProjectStoreTest {
     }
 
     @Test
+    void accountVerificationRuleRoundTripsThroughSqlite() throws Exception {
+        Path database = temp.resolve("verification-rules.flowscope.db");
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        AnalysisConfig config = new AnalysisConfig().upsertAccount(account)
+                .withAccountVerificationRule(io.flowscope.core.AccountVerificationRule.fromExchange(
+                        "acct-a", "GET", java.net.URI.create("https://api.test/me"), "\"id\":\"acct-a\"").orElseThrow());
+        SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        store.save(database, List.of(), config, List.of(), List.of(), Set.of(), List.of());
+
+        io.flowscope.core.AccountVerificationRule rule =
+                store.load(database).config().verificationRule("acct-a").orElseThrow();
+        assertEquals("GET", rule.method());
+        assertEquals("https://api.test:443", rule.origin());
+        assertEquals("/me", rule.path());
+        assertEquals("\"id\":\"acct-a\"", rule.expectedSubject());
+    }
+
+    @Test
     void rejectsUnsupportedStorageSchema() throws Exception {
         Path database = temp.resolve("unsupported.flowscope.db");
         SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());

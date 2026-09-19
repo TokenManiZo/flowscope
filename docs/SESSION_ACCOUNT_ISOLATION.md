@@ -66,6 +66,22 @@ UNVERIFIED ── 명시적 로그인 성공/신원 확인 ──▶ ACTIVE
 
 단순히 2xx/3xx 응답을 받았거나 Cookie가 생겼다는 조건만으로는 충분하지 않다. 200 로그인 실패 페이지, 302 로그인 화면 회귀, 403 인증됨/인가 실패를 구분할 수 없기 때문이다.
 
+## 검증 강도 — `VerificationSource` (구현됨)
+
+`ACTIVE`(연결됨)와 **얼마나 믿을 수 있는가**를 분리한다. 세션은 상태와 별개로 검증 출처를 가지며, 이 값은 `ACTIVE`일 때만 의미가 있다(그 외 상태는 항상 `NONE`).
+
+| 출처 | 의미 | UI 라벨 |
+|---|---|---|
+| `OPERATOR_ASSERTED` | 운영자가 확인한 Burp 교환을 직접 계정으로 가져옴 | 운영자 확인 |
+| `RULE_MATCHED` | 저장된 검증 규칙(method+origin+path)과 명시적 성공 표식이 모두 일치 | 규칙 확인 |
+| `LEGACY_RESPONSE` | 기존 2xx~4xx 판정만으로 ACTIVE가 된 하위호환 세션 | 약검증 |
+| `NONE` | 검증 출처 없음(비-ACTIVE) | 미검증 |
+
+- **검증 규칙**은 `AnalysisConfig`에 계정별로 저장한다(`AccountVerificationRule`: accountId, method, 정규화 origin, path, expectedSubject). query·fragment는 저장하지 않고, 표식은 자격값 형태를 거부한다. 운영자가 "FlowScope 계정 세션으로 사용" 시 선택적으로 성공 표식을 입력하며, 표식이 없으면 그 세션은 `OPERATOR_ASSERTED`가 되지만 이후 자동 캡처를 `RULE_MATCHED`로 승격시키는 규칙은 만들지 않는다.
+- **강검증 게이트(6a)**: 능동 교차 신원 재전송은 `OPERATOR_ASSERTED` 또는 `RULE_MATCHED` 세션만 사용한다. 프론트(`isAccountSelectable`)와 백엔드(`SessionBroker.headersForVerifiedAccount`) 모두에서 강제하므로 약검증 `LEGACY_RESPONSE` 세션은 재전송에 쓰이지 않는다. 기존 Request Lab은 하위호환으로 `LEGACY_RESPONSE` ACTIVE 세션을 계속 사용할 수 있다.
+- **무효화**: 401·로그인 redirect·invalid-token·자격 충돌·material 소멸은 물론, 검증 endpoint에서 성공 표식이 불일치하면(로그인 실패 페이지) 강검증 세션도 `NONE`으로 떨어지고, `responseConfirmed`까지 초기화해 다음 요청 관측만으로 다시 ACTIVE로 부활하지 않는다.
+- 프로젝트 저장 스키마는 6으로 올렸고 5를 legacy로 허용한다(규칙 필드가 없는 구버전 프로젝트도 정상 로드).
+
 ## 회귀 테스트 표
 
 | 시나리오 | 기대 결과 |
@@ -81,17 +97,18 @@ UNVERIFIED ── 명시적 로그인 성공/신원 확인 ──▶ ACTIVE
 
 1. **완료**: 충돌로 억제된 요청의 응답이 기존 계정 세션을 갱신하지 못하게 fail-closed 처리한다.
 2. **완료**: UI와 README에서 계정별 브라우저 컨텍스트와 확인된 요청 가져오기를 안내한다.
-3. **다음 후보**: 계정별 검증 URL/성공 indicator 또는 기대 subject를 등록해 `ACTIVE` 승격 oracle을 강화한다.
+3. **완료**: 계정별 검증 규칙(URL+성공 표식)으로 `ACTIVE` 승격 oracle을 강화하고 검증 강도(`VerificationSource`)를 분리했다. 위 "검증 강도" 절 참고.
 4. **다음 후보**: Playwright형 비영속 BrowserContext를 HUMAN 계정별로 생성·폐기하는 로그인 도우미를 제공한다.
 5. **다음 후보**: 만료 시 계정별 재인증 workflow와 세션 유효성 검사 기록을 제공한다.
 
-3~5는 이번 수정에 포함하지 않는다. 대상별 로그인 의미와 운영 UX 결정이 필요하고, 새 브라우저 런타임을 섣불리 추가하면 현재의 명시적 메모리 세션 모델보다 복잡해지기 때문이다.
+4~5는 이번 수정에 포함하지 않는다. 대상별 로그인 의미와 운영 UX 결정이 필요하고, 새 브라우저 런타임을 섣불리 추가하면 현재의 명시적 메모리 세션 모델보다 복잡해지기 때문이다.
 
 ## 남은 코드 한계
 
-- 현재 HUMAN 자동 캡처의 `responseConfirmed`는 401, 로그인 redirect, 명시적 invalid-token 본문을 제외한 2xx~4xx 응답을 넓게 받아들인다. 대상별 로그인 성공 indicator나 기대 subject가 없으므로 `ACTIVE`는 계정 신원을 암호학적으로 증명하는 상태가 아니다.
+- 검증 규칙이 없는 계정의 자동 캡처는 여전히 2xx~4xx를 넓게 받아 `LEGACY_RESPONSE`(약검증) `ACTIVE`가 된다. 이 약검증 세션은 능동 재전송에는 쓰이지 않지만 Request Lab에는 하위호환으로 쓰인다. 강검증(`RULE_MATCHED`)에는 운영자가 성공 표식을 입력한 규칙이 필요하다.
+- `RULE_MATCHED` 판정은 응답 본문에 성공 표식이 **substring으로 포함**되는지로 한다. 정규식·구조적 파싱이 아니므로, 표식 문자열이 무관한 위치에 우연히 나타나는 대상이나 표식을 반환하지 않는 변형 응답에서는 부정확할 수 있다. 표식은 운영자가 대상별로 신중히 골라야 한다.
 - 요청의 Cookie를 인증 Cookie와 분석/추적 Cookie로 분류하지 않는다. 모든 적용 Cookie가 매칭 조건에 들어가므로 추적 Cookie 회전이나 누락이 신원 감지를 불안정하게 만들 수 있다.
-- HTTP 프록시는 localStorage·IndexedDB·Service Worker 내부 상태를 직접 격리하거나 관찰하지 못한다. 이 문제는 계정별 BrowserContext로 해결해야 한다.
+- HTTP 프록시는 localStorage·IndexedDB·Service Worker 내부 상태를 직접 격리하거나 관찰하지 못한다. 계정별 BrowserContext(다음 후보 4)는 아직 구현하지 않았으므로, 계정 격리는 여전히 별도 브라우저 프로필·확인된 요청 가져오기 운영 절차에 의존한다.
 - 같은 이름의 Cookie가 서로 다른 path에 존재하는 복잡한 대상은 요청 `Cookie` 헤더만으로 정확한 원본 path를 복원하기 어렵다.
 
 따라서 이번 변경은 **오귀속을 막는 P0 안전 수정**이고, 완전한 다중 계정 세션 오케스트레이션은 계정별 브라우저 격리와 대상별 신원 검증 oracle을 추가해야 완성된다.

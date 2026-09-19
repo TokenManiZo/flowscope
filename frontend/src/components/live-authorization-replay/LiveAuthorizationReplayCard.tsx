@@ -37,7 +37,23 @@ export interface ReplayAccount {
   role: string;
   status: "ACTIVE" | "SUSPECT" | "UNVERIFIED" | "CONFLICT";
   credentialConflict?: boolean;
+  // NONE | LEGACY_RESPONSE | RULE_MATCHED | OPERATOR_ASSERTED
+  verificationSource?: string;
 }
+
+// A session is strong enough for active cross-identity replay only when the operator asserted it or a
+// stored rule matched. A weak LEGACY_RESPONSE ACTIVE session is intentionally not selectable — the
+// backend enforces the same rule via headersForVerifiedAccount.
+export function isStrongVerification(source: string | undefined): boolean {
+  return source === "OPERATOR_ASSERTED" || source === "RULE_MATCHED";
+}
+
+export const VERIFICATION_SOURCE_LABEL: Record<string, string> = {
+  OPERATOR_ASSERTED: "운영자 확인",
+  RULE_MATCHED: "규칙 확인",
+  LEGACY_RESPONSE: "약검증",
+  NONE: "미검증",
+};
 
 export interface LiveAuthorizationReplayCardProps {
   accounts: ReplayAccount[];
@@ -72,7 +88,8 @@ const BASIS_SOURCES: Array<{
 ];
 
 export function isAccountSelectable(account: ReplayAccount): boolean {
-  return account.status === "ACTIVE" && account.credentialConflict !== true;
+  return account.status === "ACTIVE" && account.credentialConflict !== true
+    && isStrongVerification(account.verificationSource);
 }
 
 function METRICS(snapshot: LiveReplaySnapshot) {

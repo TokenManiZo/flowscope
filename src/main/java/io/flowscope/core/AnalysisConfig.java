@@ -1,5 +1,6 @@
 package io.flowscope.core;
 
+import java.net.URI;
 import java.util.Map;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -35,6 +36,7 @@ public final class AnalysisConfig {
     private final Map<String, String> sessionBindings = new LinkedHashMap<>();
     private final Map<String, ReviewDecision> reviews = new LinkedHashMap<>();
     private final Map<String, TrafficOverride> trafficOverrides = new LinkedHashMap<>();
+    private final Map<String, AccountVerificationRule> accountVerificationRules = new LinkedHashMap<>();
 
     public synchronized AnalysisConfig withIdentityRole(String identity, AccessRole role) {
         if (identity != null && role != null) {
@@ -54,6 +56,10 @@ public final class AnalysisConfig {
         }
         accounts.put(account.id(), account);
         identityRoles.put(account.id(), account.role());
+        if (existing != null && !existing.service().equals(account.service())) {
+            // The verification rule's origin no longer matches the account service; drop it as stale.
+            accountVerificationRules.remove(account.id());
+        }
         return this;
     }
 
@@ -63,7 +69,32 @@ public final class AnalysisConfig {
         identityRoles.remove(accountId);
         sessionBindings.entrySet().removeIf(entry -> accountId.equals(entry.getValue()));
         resourceOwners.entrySet().removeIf(entry -> accountId.equals(entry.getValue()));
+        accountVerificationRules.remove(accountId);
         return this;
+    }
+
+    /** Store the login-success rule that lets later auto-captures reach RULE_MATCHED for this account. */
+    public synchronized AnalysisConfig withAccountVerificationRule(AccountVerificationRule rule) {
+        if (rule == null) return this;
+        AccountProfile account = accounts.get(rule.accountId());
+        if (account == null) {
+            throw new IllegalArgumentException("unknown account for verification rule: " + rule.accountId());
+        }
+        if (!AccountVerificationRule.originOf(URI.create(account.service())).equalsIgnoreCase(rule.origin())) {
+            throw new IllegalArgumentException("verification rule origin does not match account service: "
+                    + rule.origin() + " vs " + account.service());
+        }
+        accountVerificationRules.put(rule.accountId(), rule);
+        return this;
+    }
+
+    public synchronized AnalysisConfig removeAccountVerificationRule(String accountId) {
+        if (accountId != null) accountVerificationRules.remove(accountId);
+        return this;
+    }
+
+    public synchronized Optional<AccountVerificationRule> verificationRule(String accountId) {
+        return Optional.ofNullable(accountId == null ? null : accountVerificationRules.get(accountId));
     }
 
     public synchronized AnalysisConfig bindSession(String service, String fingerprint, String accountId) {
@@ -214,6 +245,9 @@ public final class AnalysisConfig {
     public synchronized Map<String, String> sessionBindings() { return Map.copyOf(sessionBindings); }
     public synchronized Map<String, ReviewDecision> reviews() { return Map.copyOf(reviews); }
     public synchronized Map<String, TrafficOverride> trafficOverrides() { return Map.copyOf(trafficOverrides); }
+    public synchronized Map<String, AccountVerificationRule> accountVerificationRules() {
+        return Map.copyOf(accountVerificationRules);
+    }
 
     public void replaceWith(AnalysisConfig other) {
         ConfigSnapshot replacement = other == null ? ConfigSnapshot.empty() : other.snapshot();
@@ -236,12 +270,13 @@ public final class AnalysisConfig {
         sessionBindings.clear(); sessionBindings.putAll(replacement.sessionBindings());
         reviews.clear(); reviews.putAll(replacement.reviews());
         trafficOverrides.clear(); trafficOverrides.putAll(replacement.trafficOverrides());
+        accountVerificationRules.clear(); accountVerificationRules.putAll(replacement.accountVerificationRules());
     }
 
     private synchronized ConfigSnapshot snapshot() {
         return new ConfigSnapshot(Map.copyOf(identityRoles), Map.copyOf(endpointRequirements),
                 Map.copyOf(resourceOwners), Map.copyOf(resourcePolicies), Map.copyOf(accounts), Map.copyOf(sessionBindings),
-                Map.copyOf(reviews), Map.copyOf(trafficOverrides));
+                Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules));
     }
 
     private record ConfigSnapshot(
@@ -252,9 +287,11 @@ public final class AnalysisConfig {
             Map<String, AccountProfile> accounts,
             Map<String, String> sessionBindings,
             Map<String, ReviewDecision> reviews,
-            Map<String, TrafficOverride> trafficOverrides) {
+            Map<String, TrafficOverride> trafficOverrides,
+            Map<String, AccountVerificationRule> accountVerificationRules) {
         static ConfigSnapshot empty() {
-            return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+            return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                    Map.of());
         }
     }
 

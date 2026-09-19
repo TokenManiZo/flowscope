@@ -250,7 +250,9 @@ public final class CrossIdentityReplayOrchestrator {
             }
             return Map.of();
         }
-        return sessions.headersForAccount(recommendation.targetIdentity(), recommendation.target(),
+        // Active cross-identity replay only uses strongly verified sessions (operator-asserted or
+        // rule-matched). A weak LEGACY_RESPONSE ACTIVE session throws here and is skipped as ineligible.
+        return sessions.headersForVerifiedAccount(recommendation.targetIdentity(), recommendation.target(),
                 scope.get(), clock.instant());
     }
 
