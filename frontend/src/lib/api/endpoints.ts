@@ -60,6 +60,12 @@ export const saveTrafficOverride = (operation: string, value: string) => postFor
 export const mergeIdentity = (from: string, into: string) => postForm<ApiSuccess>("/api/identity-merge", { from, into })
 export const saveAccount = (values: { id: string; label: string; role: string; target: string }) =>
   postForm<AccountSaveResult>("/api/account-save", values)
+export const getAccountSettings = <T>(account: string, signal?: AbortSignal) =>
+  apiFetch<T>(`/api/account-settings?${new URLSearchParams({ account })}` as `/api/${string}`, formSignal(signal))
+export const saveAccountProofRule = <T>(values: { account: string; method: string; path: string; subject: string }) =>
+  postForm<T>("/api/account-settings", { action: "save-proof", ...values })
+export const linkAccountRequestCandidate = <T>(account: string, candidate: string) =>
+  postForm<T>("/api/account-settings", { action: "link-candidate", account, candidate })
 export const deleteAccount = (id: string) => postForm<ApiSuccess>("/api/account-delete", { id })
 export const bindSession = (service: string, fingerprint: string, account: string) => postForm<ApiSuccess>("/api/session-bind", { service, fingerprint, account })
 export const unbindSession = (service: string, fingerprint: string) => postForm<ApiSuccess>("/api/session-unbind", { service, fingerprint })
@@ -91,6 +97,7 @@ export const saveExplorerAccount = (values: {
   tokenJsonPath: string; authHeader: string; authPrefix: string; validationUrl: string
 }) => postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "save", ...values })
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
+export const verifyExplorerAccount = (id: string) => postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "verify", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const importXml = (source: "human" | "scanner" | "llm", name: string, xml: string | ArrayBuffer, signal?: AbortSignal) =>
   apiFetch<ImportXmlResult>(`/api/import-xml?${new URLSearchParams({ source, name })}` as `/api/${string}`, {

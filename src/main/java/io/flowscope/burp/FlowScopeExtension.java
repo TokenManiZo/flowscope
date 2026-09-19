@@ -1648,6 +1648,12 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public RunContextRegistry contexts() { return runContexts; }
             @Override public SessionBroker sessions() { return sessionBroker; }
+            @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
+                return safeAccountRequestCandidates(accountId);
+            }
+            @Override public void linkAccountRequestCandidate(String accountId, String evidenceId) {
+                linkObservedHumanSession(accountId, evidenceId);
+            }
             @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
             @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
                 validateRuntimeAccount(input.id(), input.label(), input.service(), input.role());
@@ -1725,6 +1731,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 explorer.removeAccount(id);
                 if (id != null && id.startsWith("llm-")) analysisConfig.removeAccount(id);
                 scheduleRebuild();
+            }
+            @Override public ExplorerAccountVault.View verifyExplorerAccount(String id) {
+                return explorer.authenticateAccount(id);
             }
             @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
                 return explorer.start(request);
@@ -2026,6 +2035,79 @@ public final class FlowScopeExtension implements BurpExtension {
     private void resetIntegrationWorkflow() {
         if (zapCampaign != null) zapCampaign.resetWorkflow();
         executionLedger.clear();
+    }
+
+    private List<FlowScopeWebServer.AccountRequestCandidate> safeAccountRequestCandidates(String accountId) {
+        AccountProfile account = analysisConfig.account(accountId).orElseThrow(() ->
+                new IllegalArgumentException("존재하지 않는 계정입니다: " + accountId));
+        List<RequestRecord> candidates = latest.records.stream()
+                .filter(record -> record.source == Source.HUMAN && record.hasResponse)
+                .filter(record -> account.service().equals(record.service))
+                .filter(record -> record.evidenceId != null && !record.evidenceId.isBlank())
+                .sorted(java.util.Comparator.comparingLong((RequestRecord record) -> record.timestamp).reversed())
+                .limit(20).toList();
+        AccountVerificationRule rule = analysisConfig.verificationRule(accountId).orElse(null);
+        List<FlowScopeWebServer.AccountRequestCandidate> result = new ArrayList<>();
+        for (RequestRecord record : candidates) {
+            TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
+            boolean retained = raw != null && raw.requestRetained() && raw.responseRetained();
+            Map<String, String> headers = raw != null && raw.requestRetained()
+                    ? rawHeaders(raw.request(), raw.requestBodyOffset()) : Map.of();
+            boolean cookie = !rawHeader(headers, "Cookie").isBlank();
+            boolean authorization = !rawHeader(headers, "Authorization").isBlank();
+            boolean acceptableStatus = record.status >= 200 && record.status < 500 && record.status != 401;
+            boolean eligible = retained && (cookie || authorization) && acceptableStatus;
+            String reason = eligible ? "연결 가능"
+                    : !retained ? "현재 프로세스에 요청·응답 원문이 남아 있지 않습니다."
+                    : !(cookie || authorization) ? "Cookie 또는 Authorization이 관측되지 않았습니다."
+                    : "로그인 성공 응답으로 사용할 수 없는 상태 코드입니다.";
+            boolean matched = false;
+            if (rule != null) {
+                try {
+                    URI uri = URI.create(record.service + (record.path.startsWith("/") ? record.path : "/" + record.path));
+                    matched = rule.evaluate(record.method, uri, record.responseBodyForAnalysis())
+                            == VerificationOutcome.MATCHED;
+                } catch (RuntimeException ignored) { /* malformed metadata is not eligible proof */ }
+            }
+            result.add(new FlowScopeWebServer.AccountRequestCandidate(
+                    record.evidenceId, record.status, record.method, record.path,
+                    record.responseContentType == null ? "" : record.responseContentType,
+                    cookie, authorization, matched, eligible, reason));
+        }
+        return List.copyOf(result);
+    }
+
+    private void linkObservedHumanSession(String accountId, String evidenceId) {
+        AccountProfile account = analysisConfig.account(accountId).orElseThrow(() ->
+                new IllegalArgumentException("존재하지 않는 계정입니다: " + accountId));
+        RequestRecord record = evidenceRecord(evidenceId);
+        if (record.source != Source.HUMAN || !record.hasResponse || !account.service().equals(record.service)) {
+            throw new IllegalArgumentException("같은 대상 서비스의 HUMAN 요청만 계정 세션으로 연결할 수 있습니다.");
+        }
+        TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElseThrow(() ->
+                new IllegalStateException("요청 원문이 메모리 상한 또는 재시작으로 폐기됐습니다."));
+        if (!raw.requestRetained() || !raw.responseRetained()) {
+            throw new IllegalStateException("요청과 응답 원문이 모두 현재 프로세스에 남아 있어야 합니다.");
+        }
+        Map<String, String> requestHeaders = rawHeaders(raw.request(), raw.requestBodyOffset());
+        String fingerprint = Fingerprints.of(rawHeader(requestHeaders, "Authorization"), rawHeader(requestHeaders, "Cookie"));
+        if (Fingerprints.ANONYMOUS.equals(fingerprint)) {
+            throw new IllegalArgumentException("Cookie 또는 Authorization이 없는 요청은 계정 세션으로 연결할 수 없습니다.");
+        }
+        boolean bindingExisted = analysisConfig.boundAccount(account.service(), fingerprint)
+                .map(bound -> bound.id().equals(account.id())).orElse(false);
+        analysisConfig.bindSession(account.service(), fingerprint, account.id());
+        try {
+            List<String> setCookies = rawHeaderValues(raw.response(), raw.responseBodyOffset(), "Set-Cookie");
+            URI target = URI.create(record.service + (record.path.startsWith("/") ? record.path : "/" + record.path));
+            sessionBroker.captureObservedExchange(account, target, requestHeaders, record.status,
+                    record.location, record.responseBodyForAnalysis(), setCookies, Instant.now());
+        } catch (RuntimeException error) {
+            if (!bindingExisted) analysisConfig.unbindSession(account.service(), fingerprint);
+            throw error;
+        }
+        revision.incrementAndGet();
+        scheduleRebuild();
     }
 
     /**

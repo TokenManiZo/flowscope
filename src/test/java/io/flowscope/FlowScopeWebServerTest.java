@@ -826,6 +826,36 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void accountSettingsCombinesSafeRuntimeStateAndPersistsOnlyTheProofRule() throws Exception {
+        start();
+        String accountId = json(post("/api/account-save",
+                "label=USER+A&role=User&target=" + encode(state.record.service), token)).path("id").asText();
+
+        JsonNode initial = json(get("/api/account-settings?account=" + encode(accountId), token, origin()));
+        assertEquals(accountId, initial.path("id").asText());
+        assertEquals("NONE", initial.at("/human/verificationSource").asText());
+        assertFalse(initial.toString().contains("raw-session-secret"));
+        assertEquals("", initial.at("/zap/loginId").asText());
+        assertEquals("", initial.at("/llm/loginId").asText());
+        assertEquals(1, initial.path("candidates").size());
+
+        JsonNode saved = json(post("/api/account-settings", "action=save-proof&account=" + encode(accountId)
+                + "&method=GET&path=" + encode("/v1/orders/7") + "&subject=" + encode("\"id\":7"), token));
+        assertEquals("/v1/orders/7", saved.at("/proofRule/path").asText());
+        assertEquals("\"id\":7", state.config.verificationRule(accountId).orElseThrow().expectedSubject());
+
+        String candidateId = saved.at("/candidates/0/id").asText();
+        assertEquals(200, post("/api/account-settings", "action=link-candidate&account=" + encode(accountId)
+                + "&candidate=" + encode(candidateId), token).statusCode());
+        assertEquals(candidateId, state.linkedCandidateId);
+
+        JsonNode cleared = json(post("/api/account-settings", "action=save-proof&account=" + encode(accountId)
+                + "&method=&path=&subject=", token));
+        assertTrue(cleared.at("/proofRule/path").asText().isBlank());
+        assertTrue(state.config.verificationRule(accountId).isEmpty());
+    }
+
+    @Test
     void opensEditedRequestWithSelectedCredentialsAsAnUnsentRepeaterDraft() throws Exception {
         start();
         String evidenceId = state.snapshot().records.getFirst().evidenceId;
@@ -1163,6 +1193,7 @@ final class FlowScopeWebServerTest {
         private volatile boolean scannerCancelled;
         private volatile ZapAccountVault.Input lastZapAccountInput;
         private volatile String refreshedZapSessionAccountId = "";
+        private volatile String linkedCandidateId = "";
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
@@ -1222,6 +1253,13 @@ final class FlowScopeWebServerTest {
         @Override public List<ValidationDecision> validations() { return archivedValidations; }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public SessionBroker sessions() { return sessions; }
+        @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
+            return List.of(new FlowScopeWebServer.AccountRequestCandidate(record.evidenceId, 200, "GET",
+                    "/v1/orders/7", "application/json", true, false, true, true, "연결 가능"));
+        }
+        @Override public void linkAccountRequestCandidate(String accountId, String evidenceId) {
+            linkedCandidateId = evidenceId;
+        }
         @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
         @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
             lastZapAccountInput = input;

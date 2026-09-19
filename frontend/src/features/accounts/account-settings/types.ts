@@ -10,13 +10,14 @@ export type HumanSessionStatus =
   | "ACTIVE"
   | "CAPTURING"
   | "UNVERIFIED"
+  | "SUSPECT"
   | "REAUTH_REQUIRED"
   | "REVOKED";
 
 export type VerificationSource =
-  | "OPERATOR_CONFIRMED"
-  | "RULE_CONFIRMED"
-  | "WEAK"
+  | "OPERATOR_ASSERTED"
+  | "RULE_MATCHED"
+  | "LEGACY_RESPONSE"
   | "NONE";
 
 export interface HumanSessionState {
@@ -118,8 +119,9 @@ export interface CredentialInput {
 export interface AccountSettingsAdapter {
   load(accountId: string): Promise<AccountSettings>;
   saveBasicInfo(accountId: string, input: BasicInfoInput): Promise<AccountSettings>;
-  saveProofRule(accountId: string, rule: LoginProofRule): Promise<AccountSettings>;
+  saveProofRule(accountId: string, rule: LoginProofRule | null): Promise<AccountSettings>;
   reconnectHumanSession(accountId: string): Promise<AccountSettings>;
+  finishHumanSession(accountId: string): Promise<AccountSettings>;
   revokeHumanSession(accountId: string): Promise<AccountSettings>;
   linkBurpRequest(accountId: string, candidateId: string): Promise<AccountSettings>;
   saveZapLogin(
@@ -147,7 +149,6 @@ const FORBIDDEN_MARK_PATTERNS = [
   /bearer/i,
   /password/i,
   /passwd/i,
-  /token/i,
   /jsessionid/i,
   /api[-_ ]?key/i,
 ];

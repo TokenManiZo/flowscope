@@ -44,14 +44,15 @@ export const HUMAN_STATUS_META: Record<HumanSessionStatus, StatusMeta> = {
   ACTIVE: { label: "ACTIVE", tone: "ok" },
   CAPTURING: { label: "CAPTURING", tone: "warn", icon: Clock3 },
   UNVERIFIED: { label: "UNVERIFIED", tone: "idle" },
+  SUSPECT: { label: "SUSPECT", tone: "warn" },
   REAUTH_REQUIRED: { label: "REAUTH_REQUIRED", tone: "warn" },
   REVOKED: { label: "REVOKED", tone: "bad", icon: Link2Off },
 };
 
 export const VERIFICATION_META: Record<VerificationSource, StatusMeta> = {
-  OPERATOR_CONFIRMED: { label: "운영자 확인", tone: "ok" },
-  RULE_CONFIRMED: { label: "규칙 확인", tone: "ok" },
-  WEAK: { label: "약검증", tone: "warn" },
+  OPERATOR_ASSERTED: { label: "운영자 확인", tone: "ok" },
+  RULE_MATCHED: { label: "규칙 확인", tone: "ok" },
+  LEGACY_RESPONSE: { label: "약검증", tone: "warn" },
   NONE: { label: "미검증", tone: "idle" },
 };
 
