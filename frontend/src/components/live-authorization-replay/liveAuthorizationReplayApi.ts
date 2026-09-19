@@ -84,7 +84,15 @@ function normalizeSnapshot(raw: unknown): LiveReplaySnapshot {
 
 async function readJson(response: Response): Promise<LiveReplaySnapshot> {
   if (!response.ok) {
-    throw new Error(`authorization-replay request failed (${response.status})`);
+    // Surface the server's real reason (e.g. which target session is not ACTIVE) instead of a generic code.
+    let message = `authorization-replay request failed (${response.status})`;
+    try {
+      const body = (await response.json()) as { message?: unknown };
+      if (typeof body?.message === "string" && body.message.trim()) message = body.message;
+    } catch {
+      /* non-JSON body: keep the status-based message */
+    }
+    throw new Error(message);
   }
   return normalizeSnapshot(await response.json());
 }

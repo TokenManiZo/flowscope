@@ -196,8 +196,8 @@ export function LiveAuthorizationReplayCard({
         basisSources,
       });
       if (mounted.current) setSnapshot(next);
-    } catch {
-      if (mounted.current) setError("라이브 검증을 시작할 수 없습니다.");
+    } catch (error) {
+      if (mounted.current) setError(error instanceof Error && error.message ? error.message : "라이브 검증을 시작할 수 없습니다.");
     } finally {
       if (mounted.current) setPending(false);
     }
@@ -209,8 +209,8 @@ export function LiveAuthorizationReplayCard({
     try {
       const next = await apiClient.stopLive();
       if (mounted.current) setSnapshot(next);
-    } catch {
-      if (mounted.current) setError("라이브 검증을 중지할 수 없습니다.");
+    } catch (error) {
+      if (mounted.current) setError(error instanceof Error && error.message ? error.message : "라이브 검증을 중지할 수 없습니다.");
     } finally {
       if (mounted.current) setPending(false);
     }
