@@ -5,7 +5,6 @@ import { EvidenceSheet } from "@/components/layout/EvidenceSheet"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { EvidenceIdsPreview, ParameterCoverageMatrix } from "./ParameterCoverageMatrix"
 import { ParameterRequestDiff } from "./ParameterRequestDiff"
@@ -32,12 +31,10 @@ function InspectorBody({ snapshot, projection, suspended = false, onClose }: Pro
   const gap = projection.queue.find(item => item.id === projection.selection?.gapId)
   const key = projection.parameterKey
   const parameter = projection.parameter
-  const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision ?? 0
   const [tab, setTab] = useState("core")
   const [coverageOpen, setCoverageOpen] = useState(false)
   const [selectedCell, setSelectedCell] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [labOpen, setLabOpen] = useState(false)
   // Graph links are previews (PR#11): resolve only projection-approved cells at the exact key, but keep every
   // currently available snapshot witness so bounded client navigation can reach all of them.
   const approvedCells = new Set(projection.validationCells.map(item => item.id))
@@ -53,17 +50,13 @@ function InspectorBody({ snapshot, projection, suspended = false, onClose }: Pro
     if (linkedIds.has(event.eventId) && event.op === key?.operation && event.method === key?.method && !eventById.has(event.eventId)) eventById.set(event.eventId, event)
   }
   const events = [...eventById.values()]
-  const representative = (cell ? events.find(event => cell.evidenceIds.includes(event.eventId)) : events[0]) ?? null
   const detailEvent = events.find(event => event.eventId === detailId) ?? null
-  // PR#11 boundary: dataset replacement or any coordinate change of the representative Evidence closes the open draft.
-  const labContext = representative ? JSON.stringify([datasetRevision, representative.eventId, representative.op, representative.resource, representative.idn, representative.source, representative.fp]) : null
-  useEffect(() => { setLabOpen(false) }, [labContext])
-  useEffect(() => { if (selectedCell && !cell) { setSelectedCell(null); setDetailId(null); setLabOpen(false) } }, [selectedCell, cell])
+  useEffect(() => { if (selectedCell && !cell) { setSelectedCell(null); setDetailId(null) } }, [selectedCell, cell])
   useEffect(() => { if (detailId && !detailEvent) setDetailId(null) }, [detailId, detailEvent])
   if (!gap || !projection.selection || !key) return null
   const profile = parameter?.profile
   const targets = parameter?.authorizationTargets ?? []
-  function selectCell(next: ProjectedValidationCell) { setSelectedCell(next.id); setDetailId(null); setLabOpen(false); setTab("evidence") }
+  function selectCell(next: ProjectedValidationCell) { setSelectedCell(next.id); setDetailId(null); setTab("evidence") }
   const counts = (record: Readonly<Record<string, number>> | undefined) => Object.entries(record ?? {}).map(([name, count]) => `${name} × ${count}`).join(" · ") || "없음"
   return <section aria-label="Parameter Gap 상세" data-gap-id={gap.id} className="min-w-0 space-y-4 p-4 text-sm [overflow-wrap:anywhere]">
     <p className="leading-6">왜 집중해야 하나요? {gap.summary}</p>
@@ -100,10 +93,8 @@ function InspectorBody({ snapshot, projection, suspended = false, onClose }: Pro
         {projection.definitions.map((declaration, index) => <section key={`${declaration.evidenceId}:${index}`} className="space-y-2 border-b py-3"><p>{declarationTypeLabels[declaration.type] ?? declaration.type} · {declaration.adapter} · {declaration.confidence ?? "INFERRED"}</p><p>{declaration.declaredShape ?? "UNKNOWN"} / {declaration.declaredType ?? "UNKNOWN"}{declaration.coordinateResolved === false ? " · 좌표 미확정" : ""}</p><p>{declaration.conditionText || "조건 정의 없음"}</p><p className="text-xs text-muted-foreground">{declaration.reason}</p><EvidenceIdsPreview label="정의 근거" ids={[declaration.evidenceId]} count={1} /><p className="text-xs text-muted-foreground">정의는 실제 요청 관측이나 서버 사용의 증명이 아닙니다.</p></section>)}
       </TabsContent>
     </Tabs>
-    <Button disabled={!representative || suspended} onClick={() => setLabOpen(true)}>Request Lab 열기</Button>
-    <p className="text-xs text-muted-foreground">{representative ? `대표 실제 Evidence: ${representative.eventId}. 원문 요청·응답은 Request Lab에서 함께 확인합니다. 자동 전송하지 않습니다.` : "대표 실제 EventRecord가 없어 Request Lab을 열 수 없습니다."}</p>
-    {detailEvent && <EvidenceSheet event={detailEvent} snapshot={snapshot} disabled={suspended} onOpenChange={open => { if (!open) setDetailId(null) }} />}
-    {representative && labContext && <RequestLabDialog key={labContext} open={labOpen} onOpenChange={setLabOpen} event={representative} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={suspended} />}
+    <p className="text-xs text-muted-foreground">트래픽을 보거나 수정·전송하려면 Evidence 목록에서 실제 요청을 선택하세요. 다른 대표 요청으로 자동 대체하지 않습니다.</p>
+    {detailEvent && <EvidenceSheet inline event={detailEvent} snapshot={snapshot} disabled={suspended} onOpenChange={open => { if (!open) setDetailId(null) }} />}
   </section>
 }
 

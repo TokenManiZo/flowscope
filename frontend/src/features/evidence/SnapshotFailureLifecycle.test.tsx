@@ -55,7 +55,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     if (kind.startsWith("graph") && screen.queryByRole("tab", { name: "Evidence" })) await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
   }
   await select()
-  await userEvent.click(await screen.findByRole("button", { name: "Request Lab 열기" }))
+  await userEvent.click(await screen.findByRole("button", { name: "요청 수정·전송 (Request Lab)" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   await userEvent.clear(request)
   await userEvent.type(request, "EDITED-DRAFT")
@@ -72,7 +72,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   expect(client.getQueryData(["snapshot"])).toEqual(snapshot)
   if (kind === "evidence") expect(screen.getAllByText("actual-a").length).toBeGreaterThan(0)
   if (kind === "surface") expect(screen.getAllByText("/orders/{id}").length).toBeGreaterThan(0)
-  expect(screen.getByLabelText("필수 역할")).toBeDisabled()
+  expect(screen.getByRole("button", { name: "요청 수정·전송 (Request Lab)", hidden: true })).toBeDisabled()
   expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(1)
 
   failed = false

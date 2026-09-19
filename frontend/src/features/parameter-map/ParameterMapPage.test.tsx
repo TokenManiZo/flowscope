@@ -114,9 +114,9 @@ it("links only actual events of the exact operation and opens Evidence detail an
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
   expect(screen.getByRole("status", { name: "" })).toHaveTextContent("연결된 실제 EventRecord 1건")
   expect(screen.getByText(/파라미터 관측 · 선택 셀의 실행 근거 아님/)).toBeVisible()
-  expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeEnabled()
-  expect(screen.getByText(/대표 실제 Evidence: actual-a/)).toBeVisible()
+  expect(screen.queryByRole("button", { name: "요청 수정·전송 (Request Lab)" })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "Evidence 상세 actual-a" }))
+  expect(screen.getByRole("button", { name: "요청 수정·전송 (Request Lab)" })).toBeEnabled()
   expect(await screen.findByRole("region", { name: "Evidence 상세" })).toHaveTextContent("actual-a")
 })
 
@@ -231,7 +231,7 @@ it("distinguishes initial errors and preserves a selected refresh-error inspecto
   expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toBeVisible()
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
   expect(screen.getByRole("button", { name: "Evidence 상세 actual-a" })).toBeDisabled()
-  expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeDisabled()
+  expect(screen.queryByRole("button", { name: "요청 수정·전송 (Request Lab)" })).not.toBeInTheDocument()
 })
 
 it.each(["empty", "definitions", "diagnostic"])("gives one next action for %s without fabricated results", (kind) => {

@@ -477,6 +477,10 @@ export interface Snapshot {
   flowLinks: readonly FlowLink[]
   roles: Readonly<Record<string, string>>
   owners: Readonly<Record<string, string>>
+  ownerOverrides?: Readonly<Record<string, string>>
+  trafficOverrides?: Readonly<Record<string, string>>
+  manualVerifications?: readonly { eventId: string; originEvidenceId: string; operation: string; resource: string | null; identity: string; identityId: string; timestamp: number; status: number; durationMs: number }[]
+  reviewValidationEvidence?: Readonly<Record<string, readonly string[]>>
   requiredRoles: Readonly<Record<string, string>>
   activeSources: readonly Source[]
   cells: readonly Cell[]

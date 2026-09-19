@@ -9,7 +9,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { OperationDetail } from "@/features/evidence/OperationDetail"
-import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import type { SurfaceDeltaState, SurfaceEndpoint, SurfaceParameter, SurfaceSource } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
 
@@ -101,7 +100,6 @@ export function SurfacePage() {
   const [filter, setFilter] = useState<DeltaFilter>("ALL")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null)
-  const [requestLabContext, setRequestLabContext] = useState<string | null>(null)
   const [enabledSources, setEnabledSources] = useState<ReadonlySet<SurfaceSource>>(() => new Set(["HUMAN", "SCANNER", "LLM"]))
   const surface = snapshot.data?.surface ?? { endpoints: [], extractions: [], probes: [] }
   const endpoints = useMemo(
@@ -113,12 +111,7 @@ export function SurfacePage() {
   const selectedEvent = selectedEvidenceId
     ? snapshot.data?.events.find((event) => event.eventId === selectedEvidenceId) ?? null
     : null
-  const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
-  // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
-  const labContext = selectedEvent ? JSON.stringify([datasetRevision, selectedEvent.eventId, selectedEvent.op, selectedEvent.resource, selectedEvent.idn, selectedEvent.source, selectedEvent.fp]) : null
-  const requestLabOpen = requestLabContext !== null && requestLabContext === labContext
-  const setRequestLabOpen = (open: boolean) => setRequestLabContext(open ? labContext : null)
-  useEffect(() => { setRequestLabContext(null) }, [labContext])
+  useEffect(() => { setSelectedId(null); setSelectedEvidenceId(null) }, [snapshot.data?.datasetRevision])
   const extractions = surface.extractions.filter((item) => enabledSources.has(item.source))
   const probes = surface.probes.filter((item) => enabledSources.has(item.source))
   const unresolvedExtractions = extractions.filter((item) => item.status !== "PARSED" || item.issues.length > 0)
@@ -129,7 +122,6 @@ export function SurfacePage() {
     if (snapshot.isError) return
     if (selectedEvidenceId && !selectedEvent) {
       setSelectedEvidenceId(null)
-      setRequestLabOpen(false)
     }
   }, [selectedEvent, selectedEvidenceId, snapshot.isError])
 
@@ -174,7 +166,7 @@ export function SurfacePage() {
         const source = observation.source === "HUMAN" ? "H" : observation.source === "SCANNER" ? "S" : observation.source === "LLM" ? "L" : "?"
         return <Button type="button" variant={selectedEvidenceId === observation.evidenceId ? "secondary" : "outline"} className="h-auto justify-start whitespace-normal text-left" disabled={!event || snapshot.isError} key={observation.evidenceId} onClick={() => setSelectedEvidenceId(observation.evidenceId)}>Evidence 상세 · {source} · HTTP {observation.status}</Button>
       })}</div>}
-      {selectedEvent && <section className="border-t pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={selectedEvent} snapshot={snapshot.data!} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={snapshot.isError} /></section>}
+      {selectedEvent && <section className="border-t pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={selectedEvent} snapshot={snapshot.data!} disabled={snapshot.isError} /></section>}
       <div><h3 className="mb-2 text-sm font-semibold">입력 필드</h3><div className="grid gap-2">{selected.parameters.map((parameter) => <div className="rounded-md border p-2 text-sm" key={parameter.location + ":" + (parameter.coordinateResolved ? "" : "?") + parameter.canonicalPath}><p className="break-all font-mono">{parameter.location} · {parameter.fieldPath}</p><p className="break-all font-mono text-xs text-muted-foreground">{parameter.canonicalPath}</p><p className="text-xs text-muted-foreground">{deltaLabels[parameter.deltaState]} · {parameter.requirement} · {sourceLabel(parameter.observedSources)} · {parameter.observedShapes.join(" · ") || "형태 응답 없음"}</p></div>)}{selected.parameters.length === 0 && <p className="text-sm text-muted-foreground">확인된 입력 필드가 없습니다.</p>}</div></div>
       <div><h3 className="mb-2 text-sm font-semibold">Evidence ID</h3>{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{id}</p>)}</div>
     </section>
@@ -190,11 +182,10 @@ export function SurfacePage() {
         {executionRuns.map((run) => <Alert key={run.source + ":" + run.runId} variant={run.quality === "ALL_FAILED" ? "destructive" : "default"}><AlertTitle>{run.source} 실행 · {run.quality}</AlertTitle><AlertDescription>시도 {run.attempted} · 응답 {run.responses} · 실패 {run.failures}{Object.keys(run.outcomes).length ? " · " + Object.entries(run.outcomes).map(([name, count]) => name + " " + count).join(" · ") : ""}</AlertDescription></Alert>)}
         <div className="max-w-full overflow-auto rounded-md border">
           <Table><TableHeader><TableRow><TableHead>비교 상태</TableHead><TableHead>종류</TableHead><TableHead>요청</TableHead><TableHead>실제 source</TableHead><TableHead>응답 status</TableHead><TableHead>산출물 근거</TableHead><TableHead>입력</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
-            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}><TableCell><Badge variant={endpoint.deltaState === "DECLARED_NOT_OBSERVED" || endpoint.deltaState === "ONE_SOURCE_OBSERVED" ? "destructive" : "outline"}>{deltaLabels[endpoint.deltaState]}</Badge></TableCell><TableCell className="min-w-40">{endpointKinds(endpoint)}</TableCell><TableCell className="min-w-72 whitespace-normal"><Badge variant="outline">{endpoint.key.method}</Badge><p className="mt-1 break-all font-mono">{endpoint.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{endpoint.key.service}</p></TableCell><TableCell>{sourceLabel(endpoint.observedSources)}</TableCell><TableCell>{statusLabel(endpoint)}</TableCell><TableCell>{endpoint.declarations.length}</TableCell><TableCell>{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null); setRequestLabOpen(false) }}>상세 보기</Button></TableCell></TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">현재 필터에 해당하는 항목이 없습니다.</TableCell></TableRow>}</TableBody>
+            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}><TableCell><Badge variant={endpoint.deltaState === "DECLARED_NOT_OBSERVED" || endpoint.deltaState === "ONE_SOURCE_OBSERVED" ? "destructive" : "outline"}>{deltaLabels[endpoint.deltaState]}</Badge></TableCell><TableCell className="min-w-40">{endpointKinds(endpoint)}</TableCell><TableCell className="min-w-72 whitespace-normal"><Badge variant="outline">{endpoint.key.method}</Badge><p className="mt-1 break-all font-mono">{endpoint.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{endpoint.key.service}</p></TableCell><TableCell>{sourceLabel(endpoint.observedSources)}</TableCell><TableCell>{statusLabel(endpoint)}</TableCell><TableCell>{endpoint.declarations.length}</TableCell><TableCell>{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null) }}>상세 보기</Button></TableCell></TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">현재 필터에 해당하는 항목이 없습니다.</TableCell></TableRow>}</TableBody>
           </Table>
         </div>
       </section>
-      {selectedEvent && labContext && <RequestLabDialog key={labContext} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={selectedEvent} sessions={snapshot.data?.managedSessions ?? []} datasetRevision={datasetRevision} snapshotRevision={snapshot.data?.revision} suspended={snapshot.isError} />}
     </ReferenceAnalysisWorkspace>
   )
 }

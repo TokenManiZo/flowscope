@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/query/hooks"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -30,6 +32,7 @@ function activeAccounts(sessions: readonly ManagedSession[], service: string) {
 }
 
 export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetRevision = 0, snapshotRevision, suspended = false, rawState }: Props) {
+  const queryClient = useQueryClient()
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
   const context = useRef<{ generation: number; sendController: AbortController | null }>({ generation: 0, sendController: null })
   const [version, setVersion] = useState(0)
@@ -142,12 +145,15 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     try {
       const result = await sendRequestLab({ eventId: event.eventId, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "", request: raw.current.request }, controller.signal)
       if (controller.signal.aborted || context.current.generation !== generation) return
-      raw.current.addResult({ response: result.response, status: result.status, durationMs: result.durationMs })
+      raw.current.addResult({ eventId: result.eventId, requestBytes: result.requestBytes, responseBytes: result.responseBytes, response: result.response, status: result.status, durationMs: result.durationMs })
       raw.current.response = result.response
       setVersion((value) => value + 1)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })
+      void queryClient.invalidateQueries({ queryKey: ["manual-attempts"] })
     } catch (reason) {
       if (controller.signal.aborted || context.current.generation !== generation) return
       setError(reason instanceof Error ? reason.message : "Request Lab 전송에 실패했습니다.")
+      void queryClient.invalidateQueries({ queryKey: ["manual-attempts"] })
     } finally {
       if (!controller.signal.aborted && context.current.generation === generation) {
         context.current.sendController = null
@@ -194,13 +200,14 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
             credentialMode={mode}
             eligibleAccounts={accounts}
             selectedAccountId={accountId}
-            disabled={suspended}
+            disabled={suspended || sending || openingRepeater !== null}
             onCredentialModeChange={(nextMode) => { setMode(nextMode); setError("") }}
             onAccountChange={setAccountId}
           />
           <section aria-label="Request Lab 원문 작업면" className="grid min-w-0 content-start gap-4 p-4">
             {(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border border-l-2 bg-muted/40 p-2 text-xs">원문 일부가 미보존 또는 마스킹된 상태입니다. 표시된 내용만 검토할 수 있습니다.</p>}
             <p className="text-xs text-muted-foreground">{draft.message}</p>
+            <p className="text-xs text-muted-foreground">닫아도 이미 전송된 요청은 취소되지 않습니다. 응답이 불명확하면 검증 이력을 확인한 후 재전송하세요.</p>
             <div role="group" aria-label="Request Lab 요청 및 응답" className="grid min-w-0 gap-4 lg:grid-cols-2">
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Request 원문 패널">
                 <Label id="request-lab-request-label" htmlFor="request-lab-request">Request Lab 관측 요청 원문 (인증 교체 전)</Label>
@@ -212,7 +219,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
                 <Textarea id="request-lab-response" className="min-h-64 resize-y font-mono text-xs leading-relaxed lg:min-h-[28rem]" value={raw.current.response} readOnly />
               </section>
             </div>
-            {raw.current.history.length > 0 && <section className="grid gap-2"><h3 className="font-medium">최근 전송 결과</h3><p aria-live="polite">현재 탭 전송 결과 {raw.current.history.length}건 (최대 10건)</p><ol className="grid gap-2">{raw.current.history.map((result, index) => <li key={`${index}-${result.status}-${result.durationMs}`} data-testid="request-lab-history-result" className="rounded border p-2"><p>HTTP {result.status} · {result.durationMs}ms</p><pre className="whitespace-pre-wrap break-words font-mono text-xs">{result.response}</pre></li>)}</ol></section>}
+            {raw.current.history.length > 0 && <section className="grid gap-2"><h3 className="font-medium">최근 전송 결과</h3><p aria-live="polite">현재 탭 전송 결과 {raw.current.history.length}건 (최대 10건)</p><p className="text-xs">응답 수신 · 수동 검증 이력에 저장됩니다. 탐색 그래프의 신규 관측이나 취약점 확정을 의미하지 않습니다.</p><ol className="grid gap-2">{raw.current.history.map((result, index) => <li key={`${index}-${result.status}-${result.durationMs}`} data-testid="request-lab-history-result" className="rounded border p-2"><p>HTTP {result.status} · {result.durationMs}ms</p><p className="break-all text-xs">결과 Evidence: {result.eventId} · 요청 {result.requestBytes} bytes / 응답 {result.responseBytes} bytes</p><pre className="whitespace-pre-wrap break-words font-mono text-xs">{result.response}</pre></li>)}</ol></section>}
           </section>
         </div>}
       </div>

@@ -1,6 +1,9 @@
 export const REQUEST_LAB_MAX_BYTES = 1_048_576
 
 export interface RequestLabHistoryResult {
+  eventId?: string
+  requestBytes?: number
+  responseBytes?: number
   response: string
   status: number
   durationMs: number
@@ -26,7 +29,7 @@ export function createMemoryOnlyRawState(initial: Partial<Pick<MemoryOnlyRawStat
     response: initial.response ?? "",
     history: [],
     addResult(result) {
-      state.history.unshift({ response: result.response, status: result.status, durationMs: result.durationMs })
+      state.history.unshift({ ...result })
       if (state.history.length > 10) {
         const discarded = state.history.pop()
         if (discarded) discarded.response = ""

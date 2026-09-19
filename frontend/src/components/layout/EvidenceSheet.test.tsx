@@ -1,4 +1,6 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
+import { renderWithQueryClient as render } from "@/test/render"
+import { snapshotFixture } from "@/test/fixtures"
 import userEvent from "@testing-library/user-event"
 import { expect, it } from "vitest"
 
@@ -10,7 +12,7 @@ it("keeps selected Evidence IDs bounded in ordinary sheet body content until exp
   render(
     <EvidenceSheet
       event={null}
-      snapshot={{ revision: 1 } as never}
+      snapshot={snapshotFixture}
       selection={{ kind: "scenario", evidenceIds: [longEvidenceId], eventIds: [] }}
       onOpenChange={() => undefined}
     />
@@ -30,7 +32,7 @@ it("renders the same detail body inline when the shared workspace owns the Sheet
     <EvidenceSheet
       inline
       event={null}
-      snapshot={{ revision: 1 } as never}
+      snapshot={snapshotFixture}
       selection={{ kind: "scenario", evidenceIds: [], eventIds: [] }}
       onOpenChange={() => undefined}
     />
@@ -46,7 +48,7 @@ it("keeps an inline contained inspector fixed while only its detail body scrolls
       inline
       contained
       event={null}
-      snapshot={{ revision: 1 } as never}
+      snapshot={snapshotFixture}
       selection={{ kind: "scenario", evidenceIds: [], eventIds: [] }}
       onOpenChange={() => undefined}
     />

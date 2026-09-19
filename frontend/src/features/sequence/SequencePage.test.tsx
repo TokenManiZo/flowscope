@@ -147,7 +147,7 @@ it("retains an open link detail but suspends its actions during a refresh failur
   queryError = true
   rerender(<SequencePage />)
   expect(screen.getByText("from: early-from · to: unknown-to")).toBeVisible()
-  expect(screen.getByLabelText("필수 역할")).toBeDisabled()
+  expect(screen.getByRole("button", { name: "요청 수정·전송 (Request Lab)" })).toBeDisabled()
 })
 
 it("retains a selected link when an unrelated earlier link is inserted and only uses an occurrence among equal link signatures", async () => {
@@ -229,9 +229,9 @@ it("keeps long markup-like endpoint IDs private across the entire Sheet until ex
   expectCompleteValuesAbsent(sheet, [longFrom, longTo])
   expect(sheet.querySelector("sequence-from")).not.toBeInTheDocument()
   expect(sheet.querySelector("sequence-to")).not.toBeInTheDocument()
-  expect(screen.getByText("/safe-from")).toBeVisible()
-  expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" })).toBeVisible()
+  expect(screen.getByRole("tabpanel", { name: "트래픽" })).toHaveTextContent("GET /safe-from")
+  expect(screen.getByRole("button", { name: "요청 수정·전송 (Request Lab)" })).toBeVisible()
+  expect(screen.getByText(/Repeater 열기는 전송이 아닙니다/)).toBeVisible()
 
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 더 보기" }))
   expect(sheet.textContent).toContain(longFrom)

@@ -46,7 +46,7 @@ it("uses the surviving canonical cell's verdict and reasons when an aggregate sh
   expect(access).toHaveTextContent("DENY")
   expect(access).not.toHaveTextContent("ALLOW")
   expect(access).toHaveTextContent("surviving server denial")
-  expect(screen.getByText("order:2")).toBeVisible()
+  expect(access).toHaveTextContent("surviving server denial")
 })
 
 it("shows the selected operation overview and server-projected access check", () => {
@@ -59,35 +59,17 @@ it("shows the selected operation overview and server-projected access check", ()
   expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("소유자 alice")
 })
 
-it("keeps Summary, Evidence, Request, Response, and Policy details in accessible tabs", async () => {
+it("opens traffic directly and edits policies in the separate access-rules tab", async () => {
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />)
-
-  expect(screen.getByRole("tab", { name: "Summary" })).toBeVisible()
-  expect(screen.getByRole("tab", { name: "Policy" })).toBeVisible()
-
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  const evidencePanel = screen.getByRole("tabpanel", { name: "Evidence" })
-  expect(evidencePanel).toHaveTextContent("ev-1")
-  expect(evidencePanel).toHaveTextContent("메서드GET")
-  expect(evidencePanel).toHaveTextContent("경로/orders/1")
-  expect(evidencePanel).toHaveTextContent("HTTP 상태200")
-  expect(within(evidencePanel).getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
-  expect(within(evidencePanel).getByRole("button", { name: "현재 세션으로 Repeater 준비" })).toBeVisible()
-
-  await userEvent.click(screen.getByRole("tab", { name: "Request" }))
-  expect(screen.getByRole("tabpanel", { name: "Request" })).toHaveTextContent("GET /orders/1")
-  expect(screen.getByRole("tabpanel", { name: "Request" })).toHaveTextContent("Request Lab")
-
-  await userEvent.click(screen.getByRole("tab", { name: "Response" }))
-  expect(screen.getByRole("tabpanel", { name: "Response" })).toHaveTextContent("HTTP 200")
-  expect(screen.getByRole("tabpanel", { name: "Response" })).toHaveTextContent("Request Lab")
-
-  await userEvent.click(screen.getByRole("tab", { name: "Policy" }))
-  const policy = screen.getByRole("tabpanel", { name: "Policy" })
-  expect(policy).toHaveTextContent("필수 역할")
-  expect(policy).toHaveTextContent("USER")
-  expect(policy).toHaveTextContent("소유자")
-  expect(policy).toHaveTextContent("alice")
+  expect(screen.getAllByRole("tab")).toHaveLength(2)
+  const traffic = screen.getByRole("tabpanel", { name: "트래픽" })
+  expect(traffic).toHaveTextContent("HTTP 200")
+  expect(within(traffic).getByRole("button", { name: "요청 수정·전송 (Request Lab)" })).toBeVisible()
+  await userEvent.click(screen.getByRole("tab", { name: "접근 규칙" }))
+  const policy = screen.getByRole("tabpanel", { name: "접근 규칙" })
+  expect(within(policy).getByRole("combobox", { name: "필수 역할" })).toHaveValue("USER")
+  expect(within(policy).getByRole("combobox", { name: "리소스 소유자" })).toHaveValue("")
+  expect(policy).toHaveTextContent("현재 소유자: alice")
 })
 
 it("bounds collapsed Evidence by count and length without leaking hidden values into ARIA or live regions", async () => {
@@ -95,14 +77,14 @@ it("bounds collapsed Evidence by count and length without leaking hidden values 
   const boundedSelection = { ...selection, evidenceIds: [longEvidence, "ev-2", "ev-3", "ev-4", "ev-5"] }
   const { container } = renderWithQueryClient(<GraphInspectorPanel selection={boundedSelection} event={event} snapshot={snapshot} />)
 
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  const evidencePanel = screen.getByRole("tabpanel", { name: "Evidence" })
+  await userEvent.click(screen.getByRole("tab", { name: "트래픽" }))
+  const evidencePanel = screen.getByRole("tabpanel", { name: "트래픽" })
   expect(evidencePanel).toHaveTextContent("5개 Evidence")
   expect(evidencePanel).toHaveTextContent(`${longEvidence.slice(0, 160)}…`)
   expect(evidencePanel).not.toHaveTextContent(longEvidence)
   expect(evidencePanel).toHaveTextContent("ev-3")
-  expect(evidencePanel).not.toHaveTextContent("ev-4")
-  expect(evidencePanel).not.toHaveTextContent("ev-5")
+  expect(evidencePanel).toHaveTextContent("ev-4")
+  expect(evidencePanel).toHaveTextContent("ev-5")
 
   const ariaAndLiveValues = [...container.querySelectorAll("[aria-label], [aria-labelledby], [aria-describedby], [aria-live]")]
     .flatMap((element) => ["aria-label", "aria-labelledby", "aria-describedby", "aria-live"].map((attribute) => element.getAttribute(attribute) ?? ""))

@@ -19,7 +19,12 @@ export function ScenariosPage() {
     setSelection(null)
     setInspectorOpen(false)
     setHistoryLimit(30)
-  }, [snapshot.data?.revision])
+  }, [snapshot.data?.datasetRevision])
+  useEffect(() => {
+    if (!snapshot.isError && selectedId && !scenarios.some(item => item.id === selectedId)) {
+      setSelectedId(null); setSelection(null); setInspectorOpen(false)
+    }
+  }, [selectedId, scenarios, snapshot.isError])
 
   function evidenceAction(ids: readonly string[], eventId: string) {
     if (snapshot.isError || !snapshot.data?.events.some((event) => event.eventId === eventId)) return null

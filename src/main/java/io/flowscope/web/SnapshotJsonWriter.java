@@ -120,7 +120,30 @@ public final class SnapshotJsonWriter {
         root.set("flowLinks", flowLinks(result.coverageRecords));
         root.set("roles", roles(result, config));
         root.set("owners", owners(result));
+        root.set("ownerOverrides", json.valueToTree(config.resourceOwners()));
+        if (!config.trafficOverrides().isEmpty()) root.set("trafficOverrides", json.valueToTree(config.trafficOverrides()));
+        ArrayNode manual = root.putArray("manualVerifications");
+        for (RequestRecord record : result.records) {
+            if (record.source == Source.HUMAN && record.phase == io.flowscope.core.RunPhase.VALIDATION
+                    && record.originEvidenceId != null) {
+                ObjectNode value = manual.addObject();
+                value.put("eventId", record.evidenceId);
+                value.put("originEvidenceId", record.originEvidenceId);
+                value.put("operation", record.op);
+                value.put("resource", record.resource);
+                value.put("identity", config.identityLabel(record.idn));
+                value.put("identityId", record.idn);
+                value.put("timestamp", record.timestamp);
+                value.put("status", record.status);
+                value.put("durationMs", record.durationMillis);
+            }
+        }
         root.set("requiredRoles", requiredRoles(config));
+        ObjectNode reviewValidation = json.createObjectNode();
+        config.reviews().forEach((id, decision) -> {
+            if (!decision.validationEvidenceIds().isEmpty()) reviewValidation.set(id, json.valueToTree(decision.validationEvidenceIds()));
+        });
+        if (!reviewValidation.isEmpty()) root.set("reviewValidationEvidence", reviewValidation);
         root.set("activeSources", json.valueToTree(result.analysis.activeSources().stream()
                 .map(SnapshotJsonWriter::wire).sorted().toList()));
         root.set("cells", cells(result.analysis.cells()));
@@ -293,6 +316,16 @@ public final class SnapshotJsonWriter {
     public byte[] evidence(Pipeline.Result result, String operation, int offset, int limit) throws JsonProcessingException {
         List<RequestRecord> matching = result.records.stream()
                 .filter(record -> operation.equals(record.op)).toList();
+        return evidenceRecords(matching, offset, limit);
+    }
+
+    public byte[] evidenceById(Pipeline.Result result, String evidenceId) throws JsonProcessingException {
+        RequestRecord record = result.records.stream().filter(value -> evidenceId.equals(value.evidenceId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("해당 Evidence를 찾을 수 없습니다."));
+        return evidenceRecords(List.of(record), 0, 1);
+    }
+
+    private byte[] evidenceRecords(List<RequestRecord> matching, int offset, int limit) throws JsonProcessingException {
         ArrayNode records = json.createArrayNode();
         matching.stream().skip(offset).limit(limit).forEach(record -> {
             ObjectNode value = records.addObject();

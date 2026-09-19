@@ -26,12 +26,15 @@ const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ?
 export const getSnapshot = (signal?: AbortSignal) => apiFetch<Snapshot>("/api/snapshot", formSignal(signal))
 export const getEvidence = (operation: string, offset = 0, limit = 200, signal?: AbortSignal) =>
   apiFetch<EvidencePage>(`/api/evidence?${new URLSearchParams({ operation, offset: String(offset), limit: String(limit) })}` as `/api/${string}`, formSignal(signal))
+export const getEvidenceById = (eventId: string, signal?: AbortSignal) =>
+  apiFetch<EvidencePage>(`/api/evidence?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
+export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly { sequence: number; originEvidenceId: string; outcome: string; status: number; evidenceId: string | null; durationMillis: number }[]>("/api/manual-attempts", formSignal(signal))
 export const openReplay = (values: { eventId: string; request: string; credentialMode: "ANONYMOUS" | "ACCOUNT"; accountId: string }) =>
   postForm<ReplayResult>("/api/replay", values)
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
-  postForm<RequestLabResult>("/api/request-lab", { action: "send", ...values }, undefined, signal)
+  postForm<RequestLabResult>("/api/request-lab", { action: "send", operationId: crypto.randomUUID(), ...values }, undefined, signal)
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
 const confirmedDatasetReplacement = async <T>(request: Promise<T>): Promise<T> => {
@@ -53,7 +56,7 @@ export const setHumanRun = (values: { action: "begin"; account: string } | { act
 export const loadSample = () => confirmedDatasetReplacement(postForm<ApiSuccess>("/api/sample", {}))
 export const saveRole = (identity: string, role: string) => postForm<ApiSuccess>("/api/role", { identity, role })
 export const saveRequirement = (operation: string, role: string) => postForm<ApiSuccess>("/api/requirement", { operation, role })
-export const saveReview = (itemId: string, status: ReviewStatus, note: string) => postForm<ApiSuccess>("/api/review", { itemId, status, note })
+export const saveReview = (itemId: string, status: ReviewStatus, note: string, validationEvidenceIds: readonly string[] = []) => postForm<ApiSuccess>("/api/review", { itemId, status, note, ...(validationEvidenceIds.length ? { validationEvidenceIds: validationEvidenceIds.join("\n") } : {}) })
 export const saveTrafficOverride = (operation: string, value: string) => postForm<ApiSuccess>("/api/traffic-override", { operation, value })
 export const mergeIdentity = (from: string, into: string) => postForm<ApiSuccess>("/api/identity-merge", { from, into })
 export const saveAccount = (values: { id: string; label: string; role: string; target: string }) =>

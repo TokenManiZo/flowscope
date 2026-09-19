@@ -3,6 +3,11 @@ import { actualEvent, declaration, demoEndpoint, demoOperation, demoResource, pa
 import { defaultParameterFilters, projectParameterMap, validationCellId } from "./parameterProjection"
 
 describe("parameter map projection over snapshot.surface", () => {
+  it("keeps a validation coordinate selected when only its verdict and explanation change", () => {
+    const cell = validationCell()
+    expect(validationCellId({ ...cell, verdict: "ALLOW", reason: "new response", applicable: true })).toBe(validationCellId(cell))
+    expect(validationCellId({ ...cell, identity: "another account" })).not.toBe(validationCellId(cell))
+  })
   it("projects separate display-only cards for all four parameter path lanes", () => {
     const snapshot = surfaceSnapshot({ endpoints: [demoEndpoint()], gaps: [parameterGap("auth", { type: "AUTH_VARIANT_UNTESTED" })], events: [actualEvent()], owners: { [demoResource]: "USER B" } })
     const graph = projectParameterMap(snapshot, defaultParameterFilters, "auth")

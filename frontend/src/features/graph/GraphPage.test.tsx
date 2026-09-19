@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react"
+import { act, screen, waitFor, within } from "@testing-library/react"
+import { renderWithQueryClient as render } from "@/test/render"
 import { useEffect } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
@@ -85,9 +86,8 @@ it("refreshes every server-authored field of a stable selected route candidate",
   for (const value of ["관측됨", "INCLUDE", "OBSERVED", "new-evidence", "scanner", "new-run", "new-adapter", "new-reason", "new-priority"]) expect(inspector).toHaveTextContent(value)
   expect(inspector).not.toHaveTextContent("old-")
   expect(screen.getByRole("button", { name: /경로 후보 https:\/\/api.example.test GET.*관측됨.*INCLUDE/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).toHaveTextContent("new-evidence")
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("old-evidence")
+  expect(inspector).toHaveTextContent("new-evidence")
+  expect(inspector).not.toHaveTextContent("old-evidence")
 })
 
 it("reconciles retained aggregate coordinates and Evidence IDs after two current cells shrink to one", async () => {
@@ -106,9 +106,9 @@ it("reconciles retained aggregate coordinates and Evidence IDs after two current
   expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("DENY")
   expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("surviving server reason")
   expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("orders:202")
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).toHaveTextContent("ev-survivor")
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("ev-old")
+  await userEvent.click(screen.getByRole("tab", { name: "트래픽" }))
+  expect(screen.getByRole("tabpanel", { name: "트래픽" })).toHaveTextContent("ev-survivor")
+  expect(screen.getByRole("tabpanel", { name: "트래픽" })).not.toHaveTextContent("ev-old")
 }, 15_000)
 
 it("opens exact Gap details directly without the removed duplicate source path list", async () => {
@@ -157,8 +157,8 @@ it("navigates Site→Group→API→Object and back without leaking objects into 
   expect(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" })).toBeVisible()
   expect(breadcrumb).not.toHaveTextContent("https://api.example.test")
   await userEvent.click(screen.getByRole("button", { name: /^orders:101/ }))
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByText("cell-evidence-not-an-event")).toBeVisible()
+  await userEvent.click(screen.getByRole("tab", { name: "트래픽" }))
+  expect(screen.getByRole("combobox", { name: "확인할 요청" })).toHaveTextContent("cell-evidence-not-an-event")
   await userEvent.click(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" }))
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
 }, 15_000)

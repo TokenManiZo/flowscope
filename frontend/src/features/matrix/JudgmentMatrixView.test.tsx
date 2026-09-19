@@ -15,7 +15,7 @@ vi.stubGlobal("ResizeObserver", ResizeObserverStub)
 let current: Snapshot | undefined
 let queryError = false
 const refetchSnapshot = vi.fn()
-const saveReview = vi.fn(async (itemId: string, status: string, note: string) => ({ success: true, message: `saved ${itemId} ${status} ${note}` }))
+const saveReview = vi.fn(async (itemId: string, status: string, note: string, _validation?: readonly string[]) => ({ success: true, message: `saved ${itemId} ${status} ${note}` }))
 const saveRequirement = vi.fn(async (operation: string, role: string) => ({ success: true, message: `requirement ${operation} ${role}` }))
 const saveRole = vi.fn(async (identity: string, role: string) => ({ success: true, message: `role ${identity} ${role}` }))
 
@@ -27,7 +27,7 @@ vi.mock("@/lib/query/hooks", async (importOriginal) => ({
 let humanRunActive: boolean | undefined = false
 vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api/endpoints")>(),
-  saveReview: (itemId: string, status: string, note: string) => saveReview(itemId, status, note),
+  saveReview: (itemId: string, status: string, note: string, validation?: readonly string[]) => validation ? saveReview(itemId, status, note, validation) : saveReview(itemId, status, note),
   saveRequirement: (operation: string, role: string) => saveRequirement(operation, role),
   saveRole: (identity: string, role: string) => saveRole(identity, role),
 }))
@@ -139,8 +139,8 @@ it("opens the basis Evidence sheet from a recommendation and keeps non-reviewabl
   await user.click(within(table).getByRole("button", { name: `기대 허용 관측: A · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   expect(within(inspector).queryByRole("region", { name: "사람 최종 판정" })).not.toBeInTheDocument()
-  await user.click(within(inspector).getByRole("button", { name: "Evidence 상세 열기" }))
-  expect(await screen.findByText("매트릭스 선택 좌표")).toBeVisible()
+  await user.click(within(inspector).getByRole("button", { name: "실행 트래픽 보기" }))
+  expect(await screen.findByRole("combobox", { name: "확인할 요청" })).toBeVisible()
 })
 
 it("filters attention rows, lists evidence rows, and clears a selection whose server item disappears", async () => {
@@ -204,11 +204,11 @@ it("preserves review drafts on traffic revisions and clears reused ids on datase
   current = { ...current, revision: 5 }
   rerender(<JudgmentMatrixView />)
   expect(screen.getByLabelText("검증 메모")).toHaveValue("unsaved old project")
-  await user.click(screen.getByRole("button", { name: "기준 Evidence 상세 열기" }))
-  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "기준 요청 보기" }))
+  expect(screen.getByRole("combobox", { name: "확인할 요청" })).toBeVisible()
   current = { ...current, revision: 6, datasetRevision: 2 }
   rerender(<JudgmentMatrixView />)
-  expect(screen.queryByText("매트릭스 선택 좌표")).not.toBeInTheDocument()
+  expect(screen.queryByRole("combobox", { name: "확인할 요청" })).not.toBeInTheDocument()
   expect(screen.queryByLabelText("검증 메모")).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
   expect(screen.getByLabelText("검증 메모")).toHaveValue("")
@@ -230,11 +230,11 @@ it("retains the selected cell, Evidence detail, and unsaved review note while sn
   const { rerender } = renderView(<JudgmentMatrixView />)
   await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
   await user.type(screen.getByLabelText("검증 메모"), "keep during outage")
-  await user.click(screen.getByRole("button", { name: "기준 Evidence 상세 열기" }))
-  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "기준 요청 보기" }))
+  expect(screen.getByRole("combobox", { name: "확인할 요청" })).toBeVisible()
   queryError = true
   rerender(<JudgmentMatrixView />)
-  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  expect(screen.getByRole("combobox", { name: "확인할 요청" })).toBeVisible()
   expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
   expect(screen.getByLabelText("검증 메모")).toBeDisabled()
   expect(screen.getByText("마지막 성공 데이터 · 현재 상태 아님")).toBeVisible()
@@ -243,7 +243,7 @@ it("retains the selected cell, Evidence detail, and unsaved review note while sn
   expect(refetchSnapshot).toHaveBeenCalledOnce()
   queryError = false
   rerender(<JudgmentMatrixView />)
-  expect(screen.getByText("매트릭스 선택 좌표")).toBeVisible()
+  expect(screen.getByRole("combobox", { name: "확인할 요청" })).toBeVisible()
   expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
   expect(screen.getByLabelText("검증 메모")).toBeEnabled()
 })
@@ -256,13 +256,13 @@ it("offers required-role and identity-role assignment on a P0 cell through the e
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
   await user.click(within(table).getByRole("button", { name: "정책 미정: C · GET /api/admin/export" }))
+  await user.click(screen.getByRole("tab", { name: "접근 규칙" }))
   const assignment = screen.getByRole("region", { name: "정책·역할 지정" })
-  expect(assignment).toHaveTextContent("정책 P0")
-  expect(assignment).toHaveTextContent("C의 역할이 Unknown")
-  await user.selectOptions(within(assignment).getByRole("combobox", { name: "필수 역할" }), "ADMIN")
-  await user.click(within(assignment).getByRole("button", { name: "필수 역할 저장" }))
+  expect(assignment).toHaveTextContent("C의 계정 역할")
+  await user.selectOptions(screen.getByRole("combobox", { name: "필수 역할" }), "ADMIN")
+  await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
   await waitFor(() => expect(saveRequirement).toHaveBeenCalledWith(`${service} GET /api/admin/export`, "ADMIN"))
-  expect(await within(assignment).findByRole("status")).toHaveTextContent(`requirement ${service} GET /api/admin/export ADMIN`)
+  expect(await screen.findByRole("status")).toHaveTextContent("저장했습니다.")
   await user.selectOptions(within(assignment).getByRole("combobox", { name: "신원 역할" }), "USER")
   await user.click(within(assignment).getByRole("button", { name: "신원 역할 저장" }))
   await waitFor(() => expect(saveRole).toHaveBeenCalledWith("c", "USER"))
@@ -293,4 +293,23 @@ it("confirms that a Repeater replay inside an active HUMAN pass feeds the cell a
   expect(guidance).toHaveTextContent("HUMAN 탐색 활성")
   expect(guidance).toHaveTextContent("D-008")
   expect(within(guidance).queryByRole("button")).not.toBeInTheDocument()
+})
+
+it("attaches only explicitly checked manual responses and keeps the review note while inspecting basis traffic", async () => {
+  current = { ...snapshot, manualVerifications: [{ eventId: "manual-response", originEvidenceId: "ev-a", operation: `${service} GET /api/orders/{id}`, resource: `${service} orders:101`, identity: "B", identityId: "b", status: 200, durationMs: 12, timestamp: 1 }] }
+  renderView(<JudgmentMatrixView />)
+  await userEvent.click(screen.getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
+  await userEvent.click(screen.getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
+  const confirmation = screen.getByRole("checkbox", { name: "실제 요청·응답과 접근 규칙을 확인했으며 취약점으로 확정" })
+  expect(confirmation).not.toBeChecked()
+  await userEvent.click(screen.getByRole("checkbox", { name: /manual-response/ }))
+  await userEvent.type(screen.getByLabelText("검증 메모"), "checked body")
+  await userEvent.click(screen.getByRole("button", { name: "기준 요청 보기" }))
+  expect(screen.getByRole("tab", { name: "트래픽" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.getByText(/분석 대상 B의 실행 결과가 아닙니다/)).toBeVisible()
+  expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("tab", { name: "판정" }))
+  expect(screen.getByLabelText("검증 메모")).toHaveValue("checked body")
+  await userEvent.click(screen.getByRole("button", { name: "판정 저장" }))
+  await waitFor(() => expect(saveReview).toHaveBeenCalledWith("object-b", "UNRESOLVED", "checked body", ["manual-response"]))
 })

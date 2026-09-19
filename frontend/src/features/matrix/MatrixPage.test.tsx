@@ -112,7 +112,7 @@ it("uses the shared parameter cell semantics and clears its Evidence selection w
   expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
   expect(screen.getByRole("region", { name: "검증 좌표 상세" })).toHaveTextContent("실행 Evidence: 0건")
   expect(screen.getByRole("region", { name: "검증 좌표 상세" })).toHaveTextContent("좌표 근거: 50건")
-  expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: "요청 수정·전송 (Request Lab)" })).not.toBeInTheDocument()
   current = { ...current, revision: current.revision + 1, surface: { ...current.surface!, validationCells: [] } }
   rerender(<ParameterMatrixView />)
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Evidence 상세" })).not.toBeInTheDocument())
@@ -164,9 +164,10 @@ it("also retains failed legacy selection while disabling its Evidence actions", 
   await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })[0])
   queryError = true
   rerender(<LegacyMatrixView />)
-  expect(screen.getByRole("alert")).toHaveTextContent("마지막 성공 데이터 · 현재 상태 아님")
+  expect(screen.getAllByRole("alert").some(alert => alert.textContent?.includes("마지막 성공 데이터 · 현재 상태 아님"))).toBe(true)
   for (const button of screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })) expect(button).toBeDisabled()
   expect(screen.getByText("Evidence 상세")).toBeVisible()
+  await userEvent.click(screen.getByRole("tab", { name: "접근 규칙" }))
   expect(screen.getByLabelText("필수 역할")).toBeDisabled()
   queryError = false
   current = { ...snapshotFixture }

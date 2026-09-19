@@ -40,8 +40,8 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
   expect(screen.getByText("ev-human")).toBeVisible()
   await userEvent.setup().click(screen.getByRole("button", { name: "Evidence 상세 · H · HTTP 200" }))
-  expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "요청 수정·전송 (Request Lab)" })).toBeVisible()
+  expect(screen.getByText(/Repeater 열기는 전송이 아닙니다/)).toBeVisible()
 })
 
 it("recomputes source deltas and exposes controlled-request failure quality without creating Evidence", async () => {

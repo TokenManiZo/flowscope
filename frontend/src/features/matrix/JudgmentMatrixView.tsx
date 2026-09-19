@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 
-import { EvidenceSheet, type StructuredEvidenceSelection } from "@/components/layout/EvidenceSheet"
+import type { StructuredEvidenceSelection } from "@/components/layout/EvidenceSheet"
+import { TrafficWorkspace } from "@/features/evidence/TrafficWorkspace"
+import { AccessRulesEditor } from "@/features/evidence/AccessRulesEditor"
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -8,8 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { AuthorizationMatrix, MatrixLegendItem, ReviewStatus } from "@/lib/api/types"
-import { useHumanRunQuery, useRequirementMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import type { AuthorizationMatrix, MatrixLegendItem, ReviewStatus, Snapshot } from "@/lib/api/types"
+import { useHumanRunQuery, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { actualLabel, confidenceCodes, expectedLabel, findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -31,21 +33,18 @@ function EvidenceIdList({ ids }: { ids: readonly string[] }) {
   return <div className="grid gap-1">{visible.length ? visible.map((id) => <p key={id} className="break-all rounded border bg-muted/30 p-1.5 font-mono text-xs">{id}</p>) : <p className="text-xs text-muted-foreground">이 조합은 아직 미실행</p>}{ids.length > VISIBLE_EVIDENCE && <Button type="button" size="sm" variant="ghost" className="w-fit" onClick={() => setExpanded((current) => !current)}>{expanded ? "Evidence 접기" : `Evidence ${ids.length - VISIBLE_EVIDENCE}개 더 보기`}</Button>}</div>
 }
 
-const ROLE_OPTIONS = ["USER", "LV1", "LV2", "ADMIN"] as const
+const ROLE_OPTIONS = ["UNKNOWN", "USER", "LV1", "LV2", "ADMIN"] as const
 
 /**
  * BFLA 판정은 이 작업의 필수 역할(P3)과 신원의 역할이 모두 지정돼야 만들어진다. 역할은 토큰이나 경로에서 추정하지
  * 않고 사용자가 지정한다(D-018). 기존 /api/requirement·/api/role만 호출하며 판정 자체는 서버가 다시 계산한다.
  */
 function PolicyAssignment({ item, identityKind, identityRole, disabled }: { item: JudgmentItem; identityKind: string | undefined; identityRole: string | undefined; disabled: boolean }) {
-  const requirement = useRequirementMutation()
   const roleMutation = useRoleMutation()
-  const [requiredRole, setRequiredRole] = useState<string>("ADMIN")
-  const [role, setRole] = useState<string>("USER")
+  const [role, setRole] = useState<string>("UNKNOWN")
   const [message, setMessage] = useState<string | null>(null)
-  const needsRequirement = item.policy.level < 3
   const needsRole = (identityKind === "REGISTERED" || identityKind === "OBSERVED") && identityRole === "Unknown"
-  if (!needsRequirement && !needsRole) return null
+  if (!needsRole) return null
   const run = async (action: () => Promise<{ message?: string }>, fallback: string) => {
     setMessage(null)
     try { setMessage((await action()).message ?? fallback) }
@@ -53,8 +52,7 @@ function PolicyAssignment({ item, identityKind, identityRole, disabled }: { item
   }
   return <section aria-label="정책·역할 지정" className="grid gap-2 rounded-md border border-sky-500/50 bg-sky-500/10 p-3">
     <h3 className="text-sm font-semibold">정책·역할 지정</h3>
-    <p className="text-xs">{needsRequirement ? `정책 ${item.policy.code}: 이 작업의 필수 역할이 지정되지 않아 BFLA 판정을 만들 수 없습니다.` : ""}{needsRequirement && needsRole ? " " : ""}{needsRole ? `${item.identityLabel}의 역할이 Unknown이라 기대 판정을 세울 수 없습니다.` : ""} 역할은 추정하지 않고 사용자가 지정합니다.</p>
-    {needsRequirement && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>필수 역할</span><select aria-label="필수 역할" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" disabled={disabled || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "필수 역할을 저장했습니다.")}>필수 역할 저장</Button></div>}
+    <p className="text-xs">{item.identityLabel}의 계정 역할입니다. API 필수 역할과 별개이며, 자동 추정하지 않습니다.</p>
     {needsRole && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>{item.identityLabel} 역할</span><select aria-label="신원 역할" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" value={role} disabled={disabled} onChange={(event) => setRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" disabled={disabled || roleMutation.isPending} onClick={() => void run(() => roleMutation.mutateAsync({ identity: item.identity, role }), "신원 역할을 저장했습니다.")}>신원 역할 저장</Button></div>}
     {message && <p role="status" className="text-xs">{message}</p>}
   </section>
@@ -76,27 +74,29 @@ function HumanRunGuidance({ disabled }: { disabled: boolean }) {
     </div>
 }
 
-function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: JudgmentItem; matrix: AuthorizationMatrix; disabled: boolean; onOpenEvidence(selection: StructuredEvidenceSelection): void }) {
+function JudgmentDetail({ item, matrix, snapshot, disabled, onOpenEvidence }: { item: JudgmentItem; matrix: AuthorizationMatrix; snapshot: Snapshot; disabled: boolean; onOpenEvidence(selection: StructuredEvidenceSelection): void }) {
   const review = useReviewMutation()
   const [confirmed, setConfirmed] = useState(item.reviewStatus === "CONFIRMED")
   const [note, setNote] = useState(item.reviewNote)
   const [message, setMessage] = useState<string | null>(null)
+  const [validationIds, setValidationIds] = useState<readonly string[]>(snapshot.reviewValidationEvidence?.[item.id] ?? [])
   // 같은 cell·검토 Evidence 안에서 저장된 서버 값을 반영한다. 선택 문맥이 바뀌면 부모 key가 폼과 진행 중 응답을 분리한다.
   useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED"); setNote(item.reviewNote) }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
   const ownership = "ownership" in item ? item.ownership : undefined
+  const manualResults = (snapshot.manualVerifications ?? []).filter(result => item.reviewEvidenceIds.includes(result.originEvidenceId)
+    && result.identityId === item.identity && result.operation === item.operation && (!resource || result.resource === resource))
   const submit = async (status: ReviewStatus) => {
     setMessage(null)
     try {
-      const result = await review.mutateAsync({ itemId: item.id, status, note })
+      const result = await review.mutateAsync({ itemId: item.id, status, note, validationEvidenceIds: validationIds })
       setMessage(result.message ?? "판정을 저장했습니다.")
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "판정 저장 실패")
     }
   }
-  const evidenceSelection = (evidenceIds: readonly string[], identity: string): StructuredEvidenceSelection => ({ kind: "matrix", identity, operation: item.operation, resource, evidenceIds, eventIds: evidenceIds })
+  const evidenceSelection = (evidenceIds: readonly string[], identity: string): StructuredEvidenceSelection => ({ kind: "matrix", identity, targetIdentity: item.identity, purpose: identity === item.identity ? "OBSERVED" : "BASIS", operation: item.operation, resource, evidenceIds, eventIds: evidenceIds })
   const basisIdentity = matrix.identities.find((identity) => identity.id === item.recommendation?.basisIdentity)
-  const cellIdentity = matrix.identities.find((identity) => identity.id === item.identity)
   return <div className="grid gap-4 p-4 text-sm">
     <div><h2 className="text-base font-semibold">{item.statusLabel}{reviewSuffix(item.reviewStatus)}</h2><p className="break-all text-xs text-muted-foreground">{item.identityLabel} · {withoutService(item.operation)}{resource ? ` · ${resource}` : ""}</p>{"relation" in item && <p className="text-xs text-muted-foreground">관계 {item.relation} · 기법 {item.techniques.join("/")} · 소유자 {item.ownerLabel || "미확정"}</p>}</div>
     {item.recommendation && <section aria-label="테스트 추천 조합" className="grid gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
@@ -108,7 +108,7 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       <p className="text-xs text-muted-foreground">FlowScope는 요청을 자동 전송하지 않습니다. 기준 Evidence에서 Request Lab 또는 Repeater 초안을 열어 직접 실행하세요.</p>
       <HumanRunGuidance disabled={disabled} />
       <EvidenceIdList ids={item.recommendation.basisEvidenceIds} />
-      {item.recommendation.basisEvidenceIds.length > 0 && <Button type="button" size="sm" variant="outline" className="w-fit" disabled={disabled} onClick={() => onOpenEvidence(evidenceSelection(item.recommendation!.basisEvidenceIds, basisIdentity?.id ?? item.recommendation!.basisIdentity))}>기준 Evidence 상세 열기</Button>}
+      {item.recommendation.basisEvidenceIds.length > 0 && <Button type="button" size="sm" variant="outline" className="w-fit" disabled={disabled} onClick={() => onOpenEvidence(evidenceSelection(item.recommendation!.basisEvidenceIds, basisIdentity?.id ?? item.recommendation!.basisIdentity))}>기준 요청 보기</Button>}
     </section>}
     <section aria-label="기대와 실제" className="grid gap-1">
       <h3 className="text-sm font-semibold">기대와 실제</h3>
@@ -120,7 +120,6 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       <h3 className="text-sm font-semibold">독립 신뢰도 축</h3>
       <div className="grid gap-2 sm:grid-cols-3">{[item.policy, item.evidence, ownership].filter((value): value is NonNullable<typeof value> => !!value).map((value) => <div key={value.code} className="rounded border border-border/70 p-2"><p className="font-mono text-xs font-semibold">{value.code} · {value.label}</p><p className="text-xs text-muted-foreground">{value.basis}</p></div>)}</div>
     </section>
-    <PolicyAssignment key={`${item.id}:${item.policy.code}:${cellIdentity?.role ?? ""}`} item={item} identityKind={cellIdentity?.kind} identityRole={cellIdentity?.role} disabled={disabled} />
     <section aria-label="테스트 유효성 게이트" className="grid gap-1">
       <h3 className="text-sm font-semibold">테스트 유효성 게이트</h3>
       <ul className="grid gap-1">{item.gates.map((gate) => <li key={gate.key} className="text-xs"><Badge variant="outline" className="mr-1.5">{gate.state}</Badge><b>{gate.label}</b> <span className="text-muted-foreground">{gate.reason}</span></li>)}</ul>
@@ -133,11 +132,12 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
     <section aria-label="대상 Evidence" className="grid gap-2">
       <h3 className="text-sm font-semibold">Evidence</h3>
       <EvidenceIdList ids={item.evidenceIds} />
-      {item.evidenceIds.length > 0 && <Button type="button" size="sm" variant="outline" className="w-fit" disabled={disabled} onClick={() => onOpenEvidence(evidenceSelection(item.evidenceIds, item.identity))}>Evidence 상세 열기</Button>}
+      {item.evidenceIds.length > 0 && <Button type="button" size="sm" variant="outline" className="w-fit" disabled={disabled} onClick={() => onOpenEvidence(evidenceSelection(item.evidenceIds, item.identity))}>실행 트래픽 보기</Button>}
     </section>
     {isReviewable(item) && <section aria-label="사람 최종 판정" className="grid gap-2 rounded-md border border-border/70 p-3">
       <h3 className="text-sm font-semibold">사람 최종 판정</h3>
-      <label className="flex items-start gap-2 text-xs"><Checkbox className="mt-0.5" checked={confirmed} disabled={disabled} onCheckedChange={(checked) => setConfirmed(checked === true)} /><span>Burp Repeater 결과를 확인했으며 취약점으로 확정</span></label>
+      {manualResults.length > 0 && <fieldset className="grid gap-1"><legend>검토한 수동 검증 응답 연결 (선택)</legend>{manualResults.map(result => <label key={result.eventId} className="flex gap-2 text-xs"><input type="checkbox" checked={validationIds.includes(result.eventId)} disabled={disabled || (!validationIds.includes(result.eventId) && validationIds.length >= 20)} onChange={event => setValidationIds(ids => event.target.checked ? [...ids, result.eventId] : ids.filter(id => id !== result.eventId))} /><span>{result.eventId} · {result.identity} · HTTP {result.status}</span></label>)}</fieldset>}
+      <label className="flex items-start gap-2 text-xs"><Checkbox className="mt-0.5" checked={confirmed} disabled={disabled} onCheckedChange={(checked) => setConfirmed(checked === true)} /><span>실제 요청·응답과 접근 규칙을 확인했으며 취약점으로 확정</span></label>
       <label className="grid gap-1 text-xs"><span>검증 메모</span><input aria-label="검증 메모" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" maxLength={2000} value={note} disabled={disabled} onChange={(event) => setNote(event.target.value)} /></label>
       <div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={disabled || review.isPending} onClick={() => void submit(confirmed ? "CONFIRMED" : "UNRESOLVED")}>판정 저장</Button><Button type="button" size="sm" variant="outline" disabled={disabled || review.isPending} onClick={() => void submit("DISMISSED")}>정상·기각</Button></div>
       <p className="text-xs text-muted-foreground">검토는 서버가 정한 대상·기준 Evidence {item.reviewEvidenceIds.length}건에 묶여 저장되며 Evidence가 바뀌면 다시 확인합니다.</p>
@@ -157,13 +157,14 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [evidenceSelection, setEvidenceSelection] = useState<StructuredEvidenceSelection | null>(null)
+  const [detailTab, setDetailTab] = useState("judgment")
   const matrix = snapshot.data?.authorizationMatrix ?? null
   const projection = useMemo(() => matrix ? projectJudgmentMatrix(matrix, view, attentionOnly) : null, [matrix, view, attentionOnly])
   const selected = matrix ? findJudgmentItem(matrix, selectedId) : null
   useEffect(() => { if (selectedId && !selected && !snapshot.isError) { setSelectedId(null); setInspectorOpen(false) } }, [selectedId, selected, snapshot.isError])
   useEffect(() => { if (evidenceSelection && (!snapshot.data || !selected) && !snapshot.isError) setEvidenceSelection(null) }, [evidenceSelection, snapshot.data, snapshot.isError, selected])
   const disabled = snapshot.isError
-  const select = (id: string) => { setSelectedId(id); setEvidenceSelection(null); setInspectorOpen(true) }
+  const select = (id: string) => { setSelectedId(id); setEvidenceSelection(null); setDetailTab("judgment"); setInspectorOpen(true) }
   const evidenceEvent = evidenceSelection ? snapshot.data?.events.find((event) => evidenceSelection.eventIds.includes(event.eventId)) ?? null : null
   const summary = matrix?.summary
   const configurationWarnings = matrix?.configurationWarnings ?? []
@@ -179,7 +180,13 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
     <label className="flex items-center gap-2 text-sm"><Checkbox checked={attentionOnly} onCheckedChange={(checked) => setAttentionOnly(checked === true)} /><span>주의 항목만</span></label>
     {matrix && <div className="grid gap-3 border-t border-border/70 pt-3"><Legend title="정책 신뢰도 P" items={matrix.policyLegend} /><Legend title="실행 증거 E" items={matrix.evidenceLegend} /><Legend title="소유권 O" items={matrix.ownershipLegend} /></div>}
   </section>
-  const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} matrix={matrix} disabled={disabled} onOpenEvidence={setEvidenceSelection} /> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하면 추천 조합, Repeater 검증 방법, P/E/O 근거와 사람 판정을 표시합니다.</p>
+  const inspector = selected && matrix && snapshot.data ? <div className="grid gap-3 p-3">
+    <p className="break-all text-xs">분석 대상: {selected.identityLabel} · {selected.operation}{"resource" in selected ? ` · ${selected.resource}` : ""}</p>
+    <Tabs value={detailTab} onValueChange={setDetailTab}><TabsList className="grid w-full grid-cols-3" aria-label="판정 상세 탭"><TabsTrigger value="judgment">판정</TabsTrigger><TabsTrigger value="traffic">트래픽</TabsTrigger><TabsTrigger value="rules">접근 규칙</TabsTrigger></TabsList></Tabs>
+    <div hidden={detailTab !== "judgment"}><JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} matrix={matrix} snapshot={snapshot.data} disabled={disabled} onOpenEvidence={selection => { setEvidenceSelection(selection); setDetailTab("traffic") }} /></div>
+    {detailTab === "traffic" && <TrafficWorkspace snapshot={snapshot.data} evidenceIds={evidenceSelection?.eventIds ?? selected.evidenceIds} initialEvent={evidenceEvent} target={{ operation: selected.operation, resource: "resource" in selected ? selected.resource : null }} trafficOnly disabled={disabled} purpose={evidenceSelection?.purpose === "BASIS" ? `기준 요청 신원: ${evidenceSelection.identity}. 분석 대상 ${selected.identityLabel}의 실행 결과가 아닙니다.` : "분석 대상에 연결된 실행 요청입니다."} />}
+    {detailTab === "rules" && <><AccessRulesEditor snapshot={snapshot.data} target={{ operation: selected.operation, resource: "resource" in selected ? selected.resource : null }} disabled={disabled} /><PolicyAssignment key={selected.id} item={selected} identityKind={matrix.identities.find(identity => identity.id === selected.identity)?.kind} identityRole={matrix.identities.find(identity => identity.id === selected.identity)?.role} disabled={disabled} /></>}
+  </div> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하면 추천 조합, 검증 방법, P/E/O 근거와 사람 판정을 표시합니다.</p>
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="grid gap-4 p-3" aria-labelledby="judgment-title">
@@ -201,7 +208,7 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
       {summary && <ul role="list" aria-label="판정 요약" className="grid gap-2 sm:grid-cols-5">{[
         ["BFLA 테스트 추천", summary.bflaTestRecommendations, "상위 역할 → 하위 역할"],
         ["BOLA/IDOR 테스트 추천", summary.bolaIdorTestRecommendations, "관측 객체 → 다른 계정"],
-        ["수동 검토 대기", summary.manualReviewPending, "Burp Repeater 확인 필요"],
+        ["수동 검토 대기", summary.manualReviewPending, "트래픽·접근 규칙 확인 필요"],
         ["사용자 취약점 확정", summary.humanConfirmed, "사람이 결과를 확인함"],
         ["정상·기각", summary.humanDismissed, "사람이 후보를 종료함"],
       ].map(([label, value, hint]) => <li key={String(label)} className="rounded-md border border-border/70 p-2"><p className="text-[11px] text-muted-foreground">{label}</p><p className="text-xl font-semibold tabular-nums">{value}</p><p className="text-[11px] text-muted-foreground">{hint}</p></li>)}</ul>}
@@ -209,6 +216,5 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
       {projection && view !== "evidence" && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" tabIndex={0} className="max-h-[44rem] max-w-full overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 left-0 z-40 bg-background">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background"><span className="break-all">{identity.label}</span><span className="block text-xs text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="sticky left-0 z-20 min-w-48 whitespace-normal bg-background"><span className="break-all font-mono text-xs">{withoutService(row.operation)}</span><span className="block text-xs text-muted-foreground">{view === "function" ? `${row.policy?.code ?? "P0"} · ${row.policy?.label ?? "정책 미정"}` : `${row.resource} · 소유 ${row.ownerLabel || "미확정"}`}</span></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; return <TableCell key={identity.id} className="whitespace-normal align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${cell.statusLabel}${reviewSuffix(cell.reviewStatus)}: ${cell.identityLabel} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} className={`grid w-full min-w-48 gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className="font-semibold">{cell.statusLabel}{reviewSuffix(cell.reviewStatus)}</span><span className="text-muted-foreground">기대 {expectedLabel[cell.expected]} → 실제 {actualLabel[cell.actual]}</span><span className="flex flex-wrap gap-1">{confidenceCodes(cell).map((code) => <Badge key={code} variant="outline" className="font-mono">{code}</Badge>)}</span></button> : <span className="text-xs text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 Evidence가 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
       {projection && view === "evidence" && (projection.evidenceRows.length ? <ul role="list" aria-label="실행 Evidence 목록" className="grid gap-2">{projection.evidenceRows.map((row) => <li key={row.id}><button type="button" disabled={disabled} data-tone={judgmentTone(row.status)} aria-pressed={row.id === selectedId} className={`grid w-full gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(row.status)]}`} onClick={() => select(row.id)}><span className="font-mono">{withoutService(row.operation)}</span><span className="text-muted-foreground">{row.identityLabel} · {row.resource ?? "객체 없음"} · HTTP {row.statusCodes.join("/") || "-"} · {row.type}</span><span className="font-semibold">{row.statusLabel}{reviewSuffix(row.reviewStatus)}</span><span className="text-muted-foreground">{confidenceCodes(row).join(" · ")}</span></button></li>)}</ul> : <p className="rounded-md border p-6 text-sm text-muted-foreground">현재 필터에 표시할 실행 Evidence가 없습니다.</p>)}
     </section>
-    {evidenceSelection && snapshot.data && selected && <EvidenceSheet event={evidenceEvent} snapshot={snapshot.data} selection={evidenceSelection} disabled={disabled} onOpenChange={(open) => { if (!open) setEvidenceSelection(null) }} />}
   </ReferenceAnalysisWorkspace>
 }

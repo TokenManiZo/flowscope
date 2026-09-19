@@ -137,7 +137,7 @@ export function useExplorerAccountSaveMutation() { return useInvalidatingMutatio
 export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }
-export function useReviewMutation() { return useInvalidatingMutation(({ itemId, status, note }: { itemId: string; status: ReviewStatus; note: string }) => saveReview(itemId, status, note), [queryKeys.snapshot]) }
+export function useReviewMutation() { return useInvalidatingMutation(({ itemId, status, note, validationEvidenceIds }: { itemId: string; status: ReviewStatus; note: string; validationEvidenceIds?: readonly string[] }) => validationEvidenceIds?.length ? saveReview(itemId, status, note, validationEvidenceIds) : saveReview(itemId, status, note), [queryKeys.snapshot]) }
 export function useTrafficOverrideMutation() { return useInvalidatingMutation(({ operation, value }: { operation: string; value: string }) => saveTrafficOverride(operation, value), [queryKeys.snapshot]) }
 export function useIdentityMergeMutation() { return useInvalidatingMutation(({ from, into }: { from: string; into: string }) => mergeIdentity(from, into), [queryKeys.snapshot]) }
 export function useAccountSaveMutation() { return useInvalidatingMutation(saveAccount, [queryKeys.snapshot]) }

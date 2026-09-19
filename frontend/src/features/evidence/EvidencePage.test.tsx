@@ -155,7 +155,7 @@ describe("EvidencePage", () => {
     expect(detail).not.toHaveAccessibleName(/event-2/)
     await userEvent.click(detail)
     expect(await screen.findByText("선택 Evidence: event-2")).toBeVisible()
-    expect(screen.getAllByText("/orders/2")).toHaveLength(2)
+    expect(screen.getByRole("tabpanel", { name: "트래픽" })).toHaveTextContent("GET /orders/2")
   })
 
   it("uses server pagination metadata without exposing Request Lab raw data", async () => {
@@ -221,8 +221,8 @@ describe("EvidencePage", () => {
     const row = (await screen.findByText("restored-event")).closest("tr")
     expect(row).not.toBeNull()
     await user.click(within(row as HTMLTableRowElement).getByRole("button", { name: "상세 보기" }))
-    await user.clear(await screen.findByLabelText("필수 역할"))
-    await user.type(screen.getByLabelText("필수 역할"), "admin")
+    await user.click(screen.getByRole("tab", { name: "접근 규칙" }))
+    await user.selectOptions(await screen.findByLabelText("필수 역할"), "ADMIN")
     await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
     await waitFor(() => expect(snapshots).toBeGreaterThan(1))
     expect(screen.getByText("선택 Evidence: restored-event")).toBeVisible()
@@ -235,14 +235,14 @@ describe("EvidencePage", () => {
     const row = (await screen.findByText("stale-event")).closest("tr")
     expect(row).not.toBeNull()
     await userEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "상세 보기" }))
-    await userEvent.click(await screen.findByRole("button", { name: "Request Lab 열기" }))
+    await userEvent.click(await screen.findByRole("button", { name: "요청 수정·전송 (Request Lab)" }))
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?")).length).toBe(1))
 
     act(() => { client.setQueryData(["snapshot"], { ...snapshot([]), revision: 2 }) })
 
     await waitFor(() => {
       expect(screen.queryByText("선택 Evidence: stale-event")).not.toBeInTheDocument()
-      expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "요청 수정·전송 (Request Lab)" })).not.toBeInTheDocument()
     })
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?")).length).toBe(1))
   })

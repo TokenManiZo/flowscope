@@ -27,10 +27,10 @@ export function parameterMapKey(endpoint: SurfaceEndpoint["key"], location: stri
 export function gapParameterKey(gap: SurfaceParameterGap): ParameterMapKey {
   return parameterMapKey(gap.endpoint, gap.location, gap.canonicalPath)
 }
-/** 서버 cell에는 id가 없다. 좌표·판정 전부로 만든 표시 전용 식별자. */
+/** 서버 cell에는 id가 없다. 변하는 판정·사유를 제외한 좌표로 선택을 유지한다. */
 export type ProjectedValidationCell = SurfaceValidationCell & { id: string }
 export function validationCellId(cell: SurfaceValidationCell): string {
-  return JSON.stringify([cell.endpoint.service, cell.endpoint.method, cell.endpoint.pathTemplate, cell.location, cell.canonicalPath, cell.targetResource, cell.subjectClass, cell.source, cell.identity, cell.role, cell.verdict, cell.reason, cell.applicable])
+  return JSON.stringify([cell.endpoint.service, cell.endpoint.method, cell.endpoint.pathTemplate, cell.location, cell.canonicalPath, cell.targetResource, cell.subjectClass, cell.source, cell.identity, cell.role])
 }
 
 export interface ParameterFilters {

@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { OperationDetail } from "@/features/evidence/OperationDetail"
-import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
+import { TrafficWorkspace } from "@/features/evidence/TrafficWorkspace"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import type { GraphSelection } from "@/features/graph/graphProjection"
 import { RouteCandidateDetail } from "@/features/graph/RouteCandidateDetail"
@@ -18,6 +17,8 @@ export interface StructuredEvidenceSelection extends BaseStructuredEvidenceSelec
   identity: string
   operation: string
   resource?: string | null
+  purpose?: "OBSERVED" | "BASIS"
+  targetIdentity?: string
   validation?: {
     state: string
     stateLabel: string
@@ -80,12 +81,6 @@ export interface EvidenceSheetProps {
 }
 
 export function EvidenceInspectorBody({ event, snapshot, selection = null, disabled = false, contained = false }: Omit<EvidenceSheetProps, "variant" | "inline" | "onOpenChange">) {
-  const datasetRevision = snapshot?.datasetRevision ?? snapshot?.identityRevision ?? 0
-  // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
-  const contextKey = event ? JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp]) : null
-  const [requestLabContext, setRequestLabContext] = useState<string | null>(null)
-  const setRequestLabOpen = (open: boolean) => setRequestLabContext(open ? contextKey : null)
-  useEffect(() => { setRequestLabContext(null) }, [contextKey])
   const structuredSelection = selection !== null && "kind" in selection
   if ((event === null && selection === null) || snapshot === undefined) return <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">분석 결과에서 항목을 선택하면 서버가 제공한 Evidence 상세를 표시합니다.</p></section>
 
@@ -95,8 +90,7 @@ export function EvidenceInspectorBody({ event, snapshot, selection = null, disab
       {selection && "kind" in selection && selection.kind === "matrix" && selection.authorization && <section aria-label="권한 셀 상세" className="grid gap-2 rounded-md border p-3 text-sm"><p className="font-semibold">전체 판정: {selection.authorization.overall}</p><BoundedDetailFields fields={[{ label: "탐지 source", value: selection.authorization.observedSources.join(", ") || "없음" }, { label: "미탐 source", value: selection.authorization.missedSources.join(", ") || "없음" }, { label: "필수 역할", value: selection.authorization.requiredRole }, { label: "소유자", value: selection.authorization.owner }, { label: "서버 상태", value: `${selection.authorization.conflict ? "충돌" : "충돌 없음"} · ${selection.authorization.gap ? "갭" : "갭 없음"}` }, ...selection.authorization.reasons.map((reason, index) => ({ label: `서버 사유 ${index + 1}`, value: reason }))]} /></section>}
       {selection && !("kind" in selection) && !selection.routeCandidate && <section className="grid gap-2 rounded-md border p-3 text-sm"><p className="font-medium">그래프 선택 좌표</p><BoundedDetailFields fields={[{ label: "신원", value: selection.identity ?? "UNKNOWN" }, { label: "리소스", value: selection.resource ?? "객체 없음" }, { label: "작업", value: selection.operation ?? "경로 후보" }, { label: "소스", value: selection.source ?? "UNKNOWN" }]} /><BoundedEvidenceIds ids={selection.evidenceIds} /></section>}
       {selection && !("kind" in selection) && selection.routeCandidate && <RouteCandidateDetail candidate={selection.routeCandidate} />}
-      {event && <OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} showEvidenceId={!structuredSelection} disabled={disabled} />}
-      {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}</div>
+      <TrafficWorkspace policyFollowsEvidence={!!selection && "kind" in selection && selection.kind !== "matrix"} snapshot={snapshot} evidenceIds={selection && "kind" in selection ? selection.eventIds : selection?.evidenceIds ?? (event ? [event.eventId] : [])} initialEvent={event} target={{ operation: selection && "operation" in selection ? selection.operation ?? null : event?.op ?? null, resource: selection && "resource" in selection ? selection.resource ?? null : event?.resource ?? null }} disabled={disabled} purpose={selection && "purpose" in selection && selection.purpose === "BASIS" ? `기준 요청입니다. 분석 대상 신원 ${selection.targetIdentity ?? "미지정"}의 실행 결과가 아닙니다.` : selection && "kind" in selection && selection.kind === "sequence" ? "흐름의 from/to 요청을 선택 목록 순서로 구분합니다." : undefined} /></div>
     </section>
 }
 

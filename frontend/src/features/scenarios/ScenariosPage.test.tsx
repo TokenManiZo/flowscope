@@ -109,7 +109,7 @@ it("retains an open Evidence detail but suspends its actions during a refresh fa
   snapshotError = true
   view.refresh()
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
-  expect(screen.getByLabelText("필수 역할")).toBeDisabled()
+  expect(screen.getByRole("button", { name: "요청 수정·전송 (Request Lab)" })).toBeDisabled()
 })
 
 it("shows empty rule results as absence of candidates, not safety", () => {

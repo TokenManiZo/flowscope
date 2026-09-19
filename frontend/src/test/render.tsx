@@ -12,5 +12,6 @@ export function createTestQueryClient() {
 }
 
 export function renderWithQueryClient(ui: ReactElement, client = createTestQueryClient()) {
-  return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) }
+  const view = render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+  return { client, ...view, rerender: (next: ReactElement) => view.rerender(next.type === QueryClientProvider ? next : <QueryClientProvider client={client}>{next}</QueryClientProvider>) }
 }

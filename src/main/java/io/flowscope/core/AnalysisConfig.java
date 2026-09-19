@@ -121,7 +121,39 @@ public final class AnalysisConfig {
 
     public synchronized Optional<ReviewDecision> review(String itemId, List<String> evidenceIds) {
         ReviewDecision decision = reviews.get(itemId);
-        return decision != null && decision.appliesTo(evidenceIds) ? Optional.of(decision) : Optional.empty();
+        if (decision == null || !decision.appliesTo(evidenceIds)) return Optional.empty();
+        if (decision.policyContext().entrySet().stream().anyMatch(entry -> !entry.getValue().equals(policyValue(entry.getKey())))) {
+            return Optional.of(new ReviewDecision(decision.itemId(), ReviewDecision.Status.UNRESOLVED,
+                    "접근 규칙 변경으로 재검토 필요 · 이전 " + decision.status().label() + ": " + decision.note(),
+                    decision.evidenceIds(), decision.decidedAt(), decision.policyContext(), decision.validationEvidenceIds()));
+        }
+        return Optional.of(decision);
+    }
+
+    /** Capture only the policy coordinates used by this review; unrelated policy edits leave it valid. */
+    public synchronized void bindReviewPolicy(String itemId, String identity, String operation, String resource) {
+        ReviewDecision decision = reviews.get(itemId);
+        if (decision == null) throw new IllegalArgumentException("review not found");
+        Map<String, String> context = new LinkedHashMap<>(decision.policyContext());
+        if (identity != null) context.put("identity:" + identity, identityRole(identity).name());
+        if (operation != null) context.put("operation:" + operation, endpointRequirement(operation).name());
+        if (resource != null) context.put("resource:" + resource, resourceOwners.getOrDefault(resource, ""));
+        reviews.put(itemId, new ReviewDecision(decision.itemId(), decision.status(), decision.note(),
+                decision.evidenceIds(), decision.decidedAt(), context, decision.validationEvidenceIds()));
+    }
+
+    public synchronized void attachReviewValidation(String itemId, List<String> evidenceIds) {
+        ReviewDecision decision = reviews.get(itemId);
+        if (decision == null) throw new IllegalArgumentException("review not found");
+        reviews.put(itemId, new ReviewDecision(itemId, decision.status(), decision.note(), decision.evidenceIds(),
+                decision.decidedAt(), decision.policyContext(), evidenceIds));
+    }
+
+    private String policyValue(String key) {
+        if (key.startsWith("identity:")) return identityRole(key.substring(9)).name();
+        if (key.startsWith("operation:")) return endpointRequirement(key.substring(10)).name();
+        if (key.startsWith("resource:")) return resourceOwners.getOrDefault(key.substring(9), "");
+        return "";
     }
 
     public synchronized ReviewDecision.Status reviewStatus(String itemId, List<String> evidenceIds) {

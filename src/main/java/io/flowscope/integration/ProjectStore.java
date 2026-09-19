@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Set;
 
 /** Versioned, masked FlowScope session file. Model-provider credentials are never part of this schema. */
@@ -354,6 +355,7 @@ public final class ProjectStore {
         out.put("outcome", attempt.outcome().name());
         out.put("status", attempt.status());
         put(out, "evidence_id", attempt.evidenceId());
+        put(out, "origin_evidence_id", attempt.originEvidenceId());
         out.put("attempted_at", attempt.attemptedAt().toString());
         out.put("duration_ms", attempt.durationMillis());
         return out;
@@ -365,7 +367,8 @@ public final class ProjectStore {
                 nullable(value, "account_id"), required(value, "method"), nullable(value, "service"),
                 required(value, "path"), enumValue(RunExecutionLedger.Outcome.class, required(value, "outcome")),
                 value.path("status").asInt(-1), nullable(value, "evidence_id"),
-                Instant.parse(required(value, "attempted_at")), value.path("duration_ms").asLong(-1));
+                Instant.parse(required(value, "attempted_at")), value.path("duration_ms").asLong(-1),
+                masked(value, "origin_evidence_id"));
     }
 
     private ObjectNode writeCompletedRun(RunContextRegistry.CompletedRun run) {
@@ -505,6 +508,8 @@ public final class ProjectStore {
         put(out, "run_id", r.runId);
         put(out, "lane_account_id", r.laneAccountId);
         put(out, "evidence_id", r.evidenceId);
+        put(out, "origin_evidence_id", r.originEvidenceId);
+        out.put("duration_millis", r.durationMillis);
         put(out, "content_digest", r.contentDigest);
         put(out, "query", r.query);
         put(out, "request_body", r.reqBody);
@@ -548,6 +553,8 @@ public final class ProjectStore {
         r.runId = optional(value, "run_id", "project-import");
         r.laneAccountId = nullable(value, "lane_account_id");
         r.evidenceId = nullable(value, "evidence_id");
+        r.originEvidenceId = masked(value, "origin_evidence_id");
+        r.durationMillis = Math.max(0, value.path("duration_millis").asLong());
         r.contentDigest = nullable(value, "content_digest");
         r.query = masked(value, "query");
         r.reqBody = masked(value, "request_body");
@@ -686,6 +693,8 @@ public final class ProjectStore {
         out.put("note", value.note());
         out.set("evidence_ids", json.valueToTree(value.evidenceIds()));
         out.put("decided_at", value.decidedAt().toString());
+        out.set("policy_context", json.valueToTree(value.policyContext()));
+        out.set("manual_validation_evidence_ids", json.valueToTree(value.validationEvidenceIds()));
         return out;
     }
 
@@ -705,10 +714,13 @@ public final class ProjectStore {
     private ReviewDecision readReview(JsonNode value) {
         List<String> evidence = new ArrayList<>();
         value.path("evidence_ids").forEach(id -> evidence.add(id.asText()));
+        Map<String, String> policy = new LinkedHashMap<>();
+        value.path("policy_context").fields().forEachRemaining(entry ->
+                policy.put(Masking.maskSecrets(entry.getKey()), Masking.maskSecrets(entry.getValue().asText())));
         return new ReviewDecision(required(value, "item_id"),
                 enumValue(ReviewDecision.Status.class, required(value, "status")),
                 masked(value, "note"), List.copyOf(evidence),
-                Instant.parse(required(value, "decided_at")));
+                Instant.parse(required(value, "decided_at")), policy, stringList(value, "manual_validation_evidence_ids"));
     }
 
     private LegacyAssessment readAssessment(JsonNode value) {

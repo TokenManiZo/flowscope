@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -14,7 +14,7 @@ const secret = "REQUEST-LAB-SECRET"
 const capability = "CAPABILITY-MUST-NOT-LEAK"
 
 const event: EventRecord = {
-  eventId: "event-7", method: "POST", path: "/orders/7", status: 201, fp: "fp", idn: "alice", role: "user", source: "human", op: "POST /orders/{id}", resource: "order:7", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "run", authState: "AUTHENTICATED", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "cluster", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["event-7"], objects: [], verdict: "allow",
+  eventId: "event-7", method: "POST", path: "/orders/7", status: 201, fp: "fp", idn: "alice", role: "user", source: "human", op: "https://api.example.test POST /orders/{id}", resource: "order:7", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "run", authState: "AUTHENTICATED", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "cluster", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["event-7"], objects: [], verdict: "allow",
 }
 
 const activeSession: ManagedSession = { handle: "opaque", accountId: "acct-1", accountLabel: "관리자", service: "https://api.example.test", status: "ACTIVE", createdAt: "now", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }
@@ -87,9 +87,10 @@ describe("RequestLabDialog", () => {
     expect(status).not.toHaveTextContent("event-7")
   })
 
-  it("leaves an absent server owner unset instead of proposing the observed requester as owner", () => {
+  it("leaves an absent server owner unset instead of proposing the observed requester as owner", async () => {
     installTransport()
-    renderWithQueryClient(<OperationDetail event={event} snapshot={{ ...snapshotFixture, owners: {} }} onOpenRequestLab={vi.fn()} />)
+    renderWithQueryClient(<OperationDetail event={event} snapshot={{ ...snapshotFixture, events: [event], owners: {} }} />)
+    await userEvent.click(screen.getByRole("tab", { name: "접근 규칙" }))
 
     expect(screen.getByLabelText("리소스 소유자")).toHaveValue("")
   })
@@ -97,27 +98,27 @@ describe("RequestLabDialog", () => {
   it("submits exact policy forms and only acknowledges an unsent Repeater draft", async () => {
     const fetch = installTransport()
     const user = userEvent.setup()
-    const openRequestLab = vi.fn()
-    const snapshot: Snapshot = { ...snapshotFixture, events: [event], owners: { "order:7": "alice" }, requiredRoles: { [event.op]: "user" } }
-    renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={openRequestLab} />)
+    const snapshot: Snapshot = { ...snapshotFixture, events: [event], owners: { "order:7": "alice" }, ownerOverrides: { "order:7": "alice" }, accounts: [{ id: "bob", label: "Bob", target: "https://api.example.test", role: "USER", color: "", authArtifactCount: 0 }], requiredRoles: { [event.op]: "user" } }
+    renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} />)
+    await userEvent.click(screen.getByRole("tab", { name: "접근 규칙" }))
 
-    await user.clear(screen.getByLabelText("필수 역할"))
-    await user.type(screen.getByLabelText("필수 역할"), "admin")
+    await user.selectOptions(screen.getByLabelText("필수 역할"), "ADMIN")
     await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
     await user.selectOptions(screen.getByLabelText("트래픽 재정의"), "EXCLUDE")
     await user.click(screen.getByRole("button", { name: "트래픽 정책 저장" }))
-    await user.clear(screen.getByLabelText("리소스 소유자"))
-    await user.type(screen.getByLabelText("리소스 소유자"), "bob")
+    await user.selectOptions(screen.getByLabelText("리소스 소유자"), "bob")
     await user.click(screen.getByRole("button", { name: "소유자 저장" }))
-    await user.click(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" }))
+    await user.click(screen.getByRole("tab", { name: "트래픽" }))
+    await user.click(screen.getByRole("button", { name: "요청 수정·전송 (Request Lab)" }))
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/requirement", expect.objectContaining({ method: "POST" })))
     const calls = new Map(fetch.mock.calls.map(([input, init]) => [String(input), init]))
     expect(new Headers(calls.get("/api/requirement")?.headers).get("Content-Type")).toBe("application/x-www-form-urlencoded;charset=UTF-8")
-    expect(new URLSearchParams(String(calls.get("/api/requirement")?.body))).toEqual(new URLSearchParams({ operation: event.op, role: "admin" }))
+    expect(new URLSearchParams(String(calls.get("/api/requirement")?.body))).toEqual(new URLSearchParams({ operation: event.op, role: "ADMIN" }))
     expect(new URLSearchParams(String(calls.get("/api/traffic-override")?.body))).toEqual(new URLSearchParams({ operation: event.op, value: "EXCLUDE" }))
     expect(new URLSearchParams(String(calls.get("/api/owner")?.body))).toEqual(new URLSearchParams({ resource: "order:7", identity: "bob" }))
-    expect(openRequestLab).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole("dialog", { name: "Request Lab" })).toBeVisible()
+    expect(calls.has("/api/request-lab")).toBe(false)
   })
 
   it("loads a fresh memory-only draft, sends exact form data for ORIGINAL/ANONYMOUS/ACCOUNT, and excludes inactive or cross-service accounts", async () => {
@@ -134,7 +135,10 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
     const call = fetch.mock.calls.find(([input]) => String(input) === "/api/request-lab")
-    expect(new URLSearchParams(String(call?.[1]?.body))).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ORIGINAL", accountId: "", request: secret }))
+    const originalForm = new URLSearchParams(String(call?.[1]?.body))
+    expect(originalForm.get("operationId")).toMatch(/^[A-Za-z0-9_-]{16,120}$/)
+    originalForm.delete("operationId")
+    expect(originalForm).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ORIGINAL", accountId: "", request: secret }))
     await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ANONYMOUS")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
@@ -142,7 +146,10 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     const sends = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")
     expect(new URLSearchParams(String(sends[1]?.[1]?.body)).get("credentialMode")).toBe("ANONYMOUS")
-    expect(new URLSearchParams(String(sends[2]?.[1]?.body))).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ACCOUNT", accountId: "acct-1", request: secret }))
+    const accountForm = new URLSearchParams(String(sends[2]?.[1]?.body))
+    expect(accountForm.get("operationId")).not.toBe(new URLSearchParams(String(call?.[1]?.body)).get("operationId"))
+    accountForm.delete("operationId")
+    expect(accountForm).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ACCOUNT", accountId: "acct-1", request: secret }))
   })
 
   it("keeps a non-editable standalone draft read-only and blocks send in both the button and handler", async () => {
@@ -247,13 +254,13 @@ describe("RequestLabDialog", () => {
     vi.stubGlobal("fetch", fetch)
     const snapshot: Snapshot = { ...snapshotFixture, events: [event], requiredRoles: { [event.op]: "user" } }
     const user = userEvent.setup()
-    renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={vi.fn()} />)
-    await user.clear(screen.getByLabelText("필수 역할"))
-    await user.type(screen.getByLabelText("필수 역할"), "admin")
+    renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} />)
+    await userEvent.click(screen.getByRole("tab", { name: "접근 규칙" }))
+    await user.selectOptions(screen.getByLabelText("필수 역할"), "ADMIN")
     await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
     expect(await screen.findByRole("alert")).toHaveTextContent("역할 정책 오류")
-    expect(screen.getByLabelText("필수 역할")).toHaveValue("admin")
-    expect(screen.getByText(event.eventId)).toBeVisible()
+    expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
+    expect(screen.getByRole("tabpanel", { name: "접근 규칙" })).toBeVisible()
   })
 
   it("blocks an over-1-MiB UTF-8 request in the component and disables duplicate send while pending", async () => {
@@ -327,7 +334,7 @@ describe("RequestLabDialog", () => {
     const owner = createMemoryOnlyRawState()
     const fetch = installTransport()
     const user = userEvent.setup()
-    const view = render(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={7} rawState={owner} />)
+    const view = renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={7} rawState={owner} />)
     const request = await screen.findByLabelText("Request Lab 요청 원문")
     await user.clear(request)
     await user.type(request, "EDITED-WHILE-CAPTURING")
