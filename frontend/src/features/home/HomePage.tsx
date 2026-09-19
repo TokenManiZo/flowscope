@@ -2,6 +2,7 @@ import { ArrowRight, CheckCircle2, Play, ScanSearch } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
+import { useSnapshotQuery } from "@/lib/query/hooks"
 
 export interface HomeSnapshotState {
   observationEvidenceCount: number
@@ -16,8 +17,17 @@ export interface HomePageProps {
  * Home(랜딩): 관측 근거가 없는 빈 상태에서는 점검 시작 hero를, 근거가 생기면 상태 요약을 보여 준다.
  * 하단 본문은 대시보드와 같은 DashboardPage 컴포넌트를 그대로 재사용한다(모의 대시보드를 만들지 않는다).
  */
-export function HomePage({ snapshot = HOME_SNAPSHOT }: HomePageProps) {
-  const isEmpty = snapshot.observationEvidenceCount === 0
+export function HomePage({ snapshot }: HomePageProps) {
+  // 실데이터 배선: 서버 snapshot의 관측 근거(수집 수)로 빈 상태(hero)/상태 요약을 가른다.
+  // 테스트는 snapshot prop으로 상태를 주입해 오버라이드한다.
+  const query = useSnapshotQuery()
+  const captured = query.data?.trafficStats.captured ?? 0
+  const live: HomeSnapshotState = {
+    observationEvidenceCount: captured,
+    phase: captured > 0 ? "complete" : "idle",
+  }
+  const state = snapshot ?? live
+  const isEmpty = state.observationEvidenceCount === 0
 
   return (
     <div className="min-w-0 space-y-7 p-4 sm:p-6">
@@ -66,10 +76,10 @@ export function HomePage({ snapshot = HOME_SNAPSHOT }: HomePageProps) {
             </span>
             <div>
               <p className="text-sm font-medium">
-                {snapshot.phase === "running" ? "점검 진행 중" : "관측 근거 수집됨"}
+                {state.phase === "running" ? "점검 진행 중" : "관측 근거 수집됨"}
               </p>
               <p className="text-xs text-muted-foreground">
-                관측 근거 {snapshot.observationEvidenceCount.toLocaleString("ko-KR")}건
+                관측 근거 {state.observationEvidenceCount.toLocaleString("ko-KR")}건
               </p>
             </div>
           </div>
@@ -82,12 +92,6 @@ export function HomePage({ snapshot = HOME_SNAPSHOT }: HomePageProps) {
       <DashboardPage />
     </div>
   )
-}
-
-// TODO(통합): 서버 snapshot의 관측 근거 수·실행 단계로 교체한다. 그 전까지는 빈 상태(hero)만 표시한다.
-const HOME_SNAPSHOT: HomeSnapshotState = {
-  observationEvidenceCount: 0,
-  phase: "idle",
 }
 
 export default HomePage
