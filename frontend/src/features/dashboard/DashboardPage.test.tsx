@@ -132,43 +132,44 @@ describe("dashboard shell", () => {
     expect(screen.getAllByRole("button", { name: "Gap 그래프에서 확인" })).toHaveLength(1)
     await userEvent.click(screen.getByRole("button", { name: "Gap 그래프에서 확인" }))
     expect(window.location.hash).toBe("#graph")
-    await userEvent.click(screen.getByRole("button", { name: "분석" }))
-    expect(screen.getByRole("menuitem", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
+    expect(screen.getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
   })
 
-  it("exposes the grouped top-navigation route set and normalizes unsafe hashes to the API delta work surface", async () => {
+  it("exposes the grouped sidebar route set and normalizes unsafe hashes to the dashboard", async () => {
     const user = userEvent.setup()
     renderDashboard()
 
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })
     expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
-    expect(screen.getByRole("navigation", { name: "FlowScope 작업 탐색" })).toBeVisible()
+    expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
     const routes = [
-      ["대시보드", "dashboard", "분석"], ["점검", "inspection", null], ["점검 Gap 그래프", "graph", "분석"], ["API·입력 차이", "surface", "분석"],
-      ["권한 매트릭스", "matrix", "분석"], ["흐름 순서", "sequence", "분석"], ["취약점 시나리오", "scenarios", "분석"],
-      ["Evidence", "evidence", "기록"], ["실행 상태", "runs", "기록"], ["LLM Explorer", "explorer", "기록"], ["계정·세션", "accounts", "기록"],
+      ["대시보드", "dashboard", null], ["점검 시작", "inspection", "점검"], ["계정·세션", "accounts", "점검"], ["LLM Explorer", "explorer", "점검"],
+      ["권한 매트릭스", "matrix", "분석"], ["점검 Gap 그래프", "graph", "분석"], ["API·입력 차이", "surface", "분석"], ["취약점 시나리오", "scenarios", "분석"],
+      ["Evidence", "evidence", "기록"], ["실행 상태", "runs", "기록"],
     ] as const
 
     for (const [label, route, group] of routes) {
-      if (group) await user.click(screen.getByRole("button", { name: group }))
-      const link = group ? screen.getByRole("menuitem", { name: label }) : screen.getByRole("link", { name: label })
+      if (group && screen.getByRole("button", { name: group }).getAttribute("aria-expanded") === "false") {
+        await user.click(screen.getByRole("button", { name: group }))
+      }
+      const link = screen.getByRole("link", { name: label })
       expect(link).toHaveAttribute("href", `#${route}`)
       await user.click(link)
       expect(window.location.hash).toBe(`#${route}`)
     }
-    expect(screen.getByRole("link", { name: "점검" })).toHaveAttribute("title", "점검 시작")
+    expect(screen.queryByRole("link", { name: "흐름 순서" })).not.toBeInTheDocument()
 
     for (const unsafeHash of ["#", "#unknown", "#/assets/evil.js", "#%2Fassets%2Fevil.js"]) {
       window.location.hash = unsafeHash
       window.dispatchEvent(new HashChangeEvent("hashchange"))
-      await waitFor(() => expect(window.location.hash).toBe("#surface"))
+      await waitFor(() => expect(window.location.hash).toBe("#dashboard"))
     }
     window.history.pushState(null, "", "#runs")
     window.dispatchEvent(new PopStateEvent("popstate"))
     await waitFor(() => expect(screen.getByRole("heading", { name: "실행 상태" })).toBeVisible())
     window.history.pushState(null, "", "#dashboard")
     window.dispatchEvent(new PopStateEvent("popstate"))
-    await waitFor(() => expect(screen.getByRole("button", { name: "분석" })).toHaveAttribute("aria-current", "page"))
+    await waitFor(() => expect(screen.getByRole("link", { name: "대시보드" })).toHaveAttribute("aria-current", "page"))
     expect(screen.getByRole("heading", { name: "보안 점검 대시보드" })).toBeVisible()
   }, 15_000)
 
@@ -264,7 +265,7 @@ describe("dashboard shell", () => {
     expect(screen.queryByRole("status", { name: "데이터를 불러오는 중" })).not.toBeInTheDocument()
   })
 
-  it("keeps the reference status and grouped top navigation available below 900px", async () => {
+  it("keeps the reference status and mobile sidebar available below 900px", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
       addEventListener: vi.fn(), dispatchEvent: vi.fn(), matches: true, media: "(max-width: 899px)", onchange: null, removeEventListener: vi.fn(),
@@ -272,13 +273,12 @@ describe("dashboard shell", () => {
     renderDashboard()
 
     expect(await screen.findByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
-    expect(screen.getByRole("navigation", { name: "FlowScope 작업 탐색" })).toBeVisible()
-    expect(screen.getByRole("link", { name: /^FlowScope$/ })).toBeVisible()
-    expect(screen.getByRole("button", { name: "분석" })).toHaveAttribute("aria-current", "page")
-    expect(screen.queryByRole("button", { name: "사이드바 전환" })).not.toBeInTheDocument()
-    await user.click(screen.getByRole("link", { name: "점검" }))
+    await user.click(screen.getByRole("button", { name: "메뉴 열기" }))
+    expect(screen.getAllByRole("navigation", { name: "FlowScope 전역 탐색" })).toHaveLength(2)
+    await user.click(screen.getAllByRole("button", { name: "점검" }).at(-1)!)
+    await user.click(screen.getByRole("link", { name: "점검 시작" }))
     expect(window.location.hash).toBe("#inspection")
-    await waitFor(() => expect(screen.getByRole("link", { name: "점검" })).toHaveAttribute("aria-current", "page"))
+    await waitFor(() => expect(screen.getByRole("button", { name: "메뉴 열기" })).toBeVisible())
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 

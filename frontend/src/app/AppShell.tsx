@@ -19,22 +19,19 @@ function RoutePlaceholder({ route }: { route: AppRoute }) {
     <Card>
       <CardHeader>
         <CardTitle>{routeLabel(route)}</CardTitle>
-        <CardDescription>이 작업면은 다음 동등성 작업에서 실제 기능을 연결합니다.</CardDescription>
+        <CardDescription>이 화면은 아직 준비 중이라 자리만 표시하고 있습니다.</CardDescription>
       </CardHeader>
-      <CardContent>현재는 안전한 탐색 자리표시자입니다.</CardContent>
+      <CardContent>백엔드 연결 후 실제 화면이 들어갑니다.</CardContent>
     </Card>
   )
 }
 
-export function AppShell({ route = "surface" }: { route?: AppRoute }) {
+export function AppShell({ route = "dashboard" }: { route?: AppRoute }) {
   useEffect(() => {
     const root = document.documentElement
-    const alreadyDark = root.classList.contains("dark")
     const alreadyDense = root.classList.contains("flowscope-density-90")
-    root.classList.add("dark")
     root.classList.add("flowscope-density-90")
     return () => {
-      if (!alreadyDark) root.classList.remove("dark")
       if (!alreadyDense) root.classList.remove("flowscope-density-90")
     }
   }, [])

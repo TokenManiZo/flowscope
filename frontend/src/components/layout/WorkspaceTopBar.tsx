@@ -1,11 +1,10 @@
-import { Activity, Database, Radio, ScanSearch, UserRoundCheck, Zap } from "lucide-react"
+import { Activity, Database, Menu, Radio, ScanSearch, UserRoundCheck, Zap } from "lucide-react"
 
-import { routeHash, type AppRoute } from "@/app/routes"
+import type { AppRoute } from "@/app/routes"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useHumanRunQuery, useOpenProjectMutation, useProjectsQuery, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
 import { NewProjectDialog } from "./NewProjectDialog"
-import { WorkspaceNavigation } from "./WorkspaceNavigation"
 
 function humanState(active: boolean | undefined, completed: boolean | undefined) {
   if (active) return "RUNNING"
@@ -21,8 +20,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : ""
 }
 
-/** PR#11 상단 바: 분석/점검/기록 탐색이 앞에 오고, 실시간 상태는 `상태` popover 안에 둔다. 프로젝트 선택·저장 상태·새 진단은 현행(D-140) 그대로다. */
-export function WorkspaceTopBar({ route }: { route: AppRoute }) {
+/** 상단 상태 표시줄: 실시간 상태 popover, 프로젝트 선택·저장 상태·새 진단. 화면 탐색은 사이드바로 옮겼고, 여기에는 상태 기능만 남긴다. */
+export function WorkspaceTopBar({ onOpenSidebar }: { route: AppRoute; onOpenSidebar?: () => void }) {
   const snapshot = useSnapshotQuery()
   const human = useHumanRunQuery()
   const zap = useZapStatusQuery()
@@ -48,12 +47,17 @@ export function WorkspaceTopBar({ route }: { route: AppRoute }) {
 
   return (
     <header aria-label="FlowScope 상단 상태" className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] px-3 py-2">
+      {onOpenSidebar && (
+        <button
+          type="button"
+          aria-label="메뉴 열기"
+          onClick={onOpenSidebar}
+          className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+        >
+          <Menu className="size-5" aria-hidden="true" />
+        </button>
+      )}
       <div className="flex min-w-0 flex-[1_1_42rem] flex-wrap items-center gap-x-3 gap-y-1.5">
-        <a href={routeHash("dashboard")} aria-label="FlowScope" className="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
-          <span aria-hidden="true" className="grid size-7 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-300"><ScanSearch className="size-4" /></span>
-          <span>FlowScope</span>
-        </a>
-        <WorkspaceNavigation route={route} />
         <Popover>
           <PopoverTrigger asChild><Button variant="outline" size="sm" className="shrink-0">상태</Button></PopoverTrigger>
           <PopoverContent align="start" className="w-80 p-2">
@@ -86,5 +90,5 @@ export function WorkspaceTopBar({ route }: { route: AppRoute }) {
 }
 
 function StatusItem({ icon: Icon, label, value, className = "" }: { icon: typeof Activity; label: string; value: string; className?: string }) {
-  return <span aria-label={`${label} 상태`} className={`flex min-w-0 shrink-0 items-center gap-1.5 border-l border-[var(--flowscope-divider)] pl-3 text-xs ${className}`}><Icon className="size-3.5 shrink-0 text-emerald-300" aria-hidden="true" /><span className="shrink-0 font-medium">{label}</span><span className="truncate font-medium">{value}</span></span>
+  return <span aria-label={`${label} 상태`} className={`flex min-w-0 shrink-0 items-center gap-1.5 border-l border-[var(--flowscope-divider)] pl-3 text-xs ${className}`}><Icon className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" /><span className="shrink-0 font-medium">{label}</span><span className="truncate font-medium">{value}</span></span>
 }

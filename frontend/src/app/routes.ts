@@ -44,21 +44,21 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 
-/** PR#11 상단 탐색: 분석 / 점검 / 기록 세 그룹이 모든 route를 보존한다. 현행 API·입력 차이와 LLM Explorer도 같은 그룹 안에 둔다. */
+/** 사이드바 탐색 그룹. 순서는 점검 → 분석 → 기록. 흐름 순서(#sequence)는 주소로만 열리고 사이드바에는 표시하지 않는다. */
 export const navigationGroups = [
-  { id: "analysis", label: "분석", defaultRoute: "graph", routes: ["graph", "surface", "dashboard", "matrix", "sequence", "scenarios"] },
-  { id: "inspection", label: "점검", defaultRoute: "inspection", routes: ["inspection"] },
-  { id: "records", label: "기록", defaultRoute: "evidence", routes: ["evidence", "runs", "explorer", "accounts"] },
+  { id: "inspection", label: "점검", defaultRoute: "inspection", routes: ["inspection", "accounts", "explorer"] },
+  { id: "analysis", label: "분석", defaultRoute: "matrix", routes: ["matrix", "graph", "surface", "scenarios"] },
+  { id: "records", label: "기록", defaultRoute: "evidence", routes: ["evidence", "runs"] },
 ] as const satisfies readonly NavigationGroup[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))
 
-/** `#graph`는 PR#11처럼 점검 우선순위(파라미터 맵)와 전체 관계 보기를 함께 담는다. 이식 중 임시 route였던 `#parameter-map`은 같은 화면으로 이어진다. */
+/** 알 수 없는 주소나 빈 주소는 대시보드(첫 화면)로 돌아온다. `#parameter-map`은 예전 그래프 주소 별칭으로 유지한다. */
 export function routeFromHash(hash: string): AppRoute {
-  if (!hash.startsWith("#")) return "surface"
+  if (!hash.startsWith("#")) return "dashboard"
   const candidate = hash.slice(1)
   if (candidate === "parameter-map") return "graph"
-  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "surface"
+  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "dashboard"
 }
 
 export function routeHash(route: AppRoute): string {

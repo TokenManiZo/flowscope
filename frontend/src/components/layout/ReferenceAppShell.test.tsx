@@ -13,11 +13,11 @@ vi.mock("@/lib/query/hooks", () => ({
   useStartProjectMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }))
 
-it("uses the status bar, grouped top navigation, and viewport landmark around route content without the route rail", () => {
+it("uses the status bar, grouped sidebar navigation, and viewport landmark around route content", () => {
   render(<ReferenceAppShell route="evidence"><p>Evidence workspace</p></ReferenceAppShell>)
 
   expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
-  expect(screen.getByRole("navigation", { name: "FlowScope 작업 탐색" })).toBeVisible()
+  expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
   expect(screen.queryByRole("navigation", { name: "주요 분석 탐색" })).not.toBeInTheDocument()
   expect(screen.getByRole("main")).toHaveTextContent("Evidence workspace")
 })
