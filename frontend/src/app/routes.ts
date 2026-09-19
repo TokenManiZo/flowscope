@@ -1,7 +1,8 @@
 import type { LucideIcon } from "lucide-react"
-import { Activity, Bot, Braces, FileSearch, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
+import { Activity, Bot, Braces, FileSearch, House, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
 
 export type AppRoute =
+  | "home"
   | "dashboard"
   | "inspection"
   | "surface"
@@ -31,6 +32,7 @@ export interface NavigationGroup {
 }
 
 export const appRoutes: readonly AppRouteDefinition[] = [
+  { route: "home", label: "홈", group: "overview", icon: House },
   { route: "dashboard", label: "대시보드", group: "overview", icon: LayoutDashboard },
   { route: "inspection", label: "점검 시작", group: "overview", icon: ScanSearch },
   { route: "surface", label: "API·입력 차이", group: "analysis", icon: Braces },
@@ -53,12 +55,12 @@ export const navigationGroups = [
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))
 
-/** 알 수 없는 주소나 빈 주소는 대시보드(첫 화면)로 돌아온다. `#parameter-map`은 예전 그래프 주소 별칭으로 유지한다. */
+/** 알 수 없는 주소나 빈 주소는 Home(첫 화면, #home)으로 돌아온다. `#parameter-map`은 예전 그래프 주소 별칭으로 유지한다. */
 export function routeFromHash(hash: string): AppRoute {
-  if (!hash.startsWith("#")) return "dashboard"
+  if (!hash.startsWith("#")) return "home"
   const candidate = hash.slice(1)
   if (candidate === "parameter-map") return "graph"
-  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "dashboard"
+  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "home"
 }
 
 export function routeHash(route: AppRoute): string {

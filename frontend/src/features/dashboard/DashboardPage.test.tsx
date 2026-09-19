@@ -135,13 +135,14 @@ describe("dashboard shell", () => {
     expect(screen.getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
   })
 
-  it("exposes the grouped sidebar route set and normalizes unsafe hashes to the dashboard", async () => {
+  it("exposes the grouped sidebar route set and normalizes unsafe hashes to home", async () => {
     const user = userEvent.setup()
     renderDashboard()
 
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })
     expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
     expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
+    expect(screen.getByRole("link", { name: "FlowScope 홈으로 이동" })).toHaveAttribute("href", "#home")
     const routes = [
       ["대시보드", "dashboard", null], ["점검 시작", "inspection", "점검"], ["계정·세션", "accounts", "점검"], ["LLM Explorer", "explorer", "점검"],
       ["권한 매트릭스", "matrix", "분석"], ["점검 Gap 그래프", "graph", "분석"], ["API·입력 차이", "surface", "분석"], ["취약점 시나리오", "scenarios", "분석"],
@@ -162,7 +163,7 @@ describe("dashboard shell", () => {
     for (const unsafeHash of ["#", "#unknown", "#/assets/evil.js", "#%2Fassets%2Fevil.js"]) {
       window.location.hash = unsafeHash
       window.dispatchEvent(new HashChangeEvent("hashchange"))
-      await waitFor(() => expect(window.location.hash).toBe("#dashboard"))
+      await waitFor(() => expect(window.location.hash).toBe("#home"))
     }
     window.history.pushState(null, "", "#runs")
     window.dispatchEvent(new PopStateEvent("popstate"))

@@ -28,7 +28,15 @@ for (const route of appRoutes) {
   })
 }
 
-it("opens on the dashboard when the hash is empty", () => {
+it("opens on home with the start hero when the hash is empty", () => {
   render(<AppProviders><AppShell route={undefined} /></AppProviders>)
+  expect(screen.getByRole("heading", { name: "점검을 시작하세요" })).toBeVisible()
+  // Home은 사이드바 항목이 없고, 대시보드 항목은 현재 화면으로 표시하지 않는다.
+  expect(screen.getByRole("link", { name: "대시보드" })).not.toHaveAttribute("aria-current")
+})
+
+it("shows the dashboard without the home hero on #dashboard", () => {
+  render(<AppProviders><AppShell route="dashboard" /></AppProviders>)
   expect(screen.getByRole("link", { name: "대시보드" })).toHaveAttribute("aria-current", "page")
+  expect(screen.queryByRole("heading", { name: "점검을 시작하세요" })).not.toBeInTheDocument()
 })

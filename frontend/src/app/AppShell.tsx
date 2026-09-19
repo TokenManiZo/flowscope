@@ -1,6 +1,7 @@
 import { ReferenceAppShell } from "@/components/layout/ReferenceAppShell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
+import { HomePage } from "@/features/home/HomePage"
 import { InspectionPage } from "@/features/inspection/InspectionPage"
 import { RunsPage } from "@/features/runs/RunsPage"
 import { SurfacePage } from "@/features/surface/SurfacePage"
@@ -26,7 +27,7 @@ function RoutePlaceholder({ route }: { route: AppRoute }) {
   )
 }
 
-export function AppShell({ route = "dashboard" }: { route?: AppRoute }) {
+export function AppShell({ route = "home" }: { route?: AppRoute }) {
   useEffect(() => {
     const root = document.documentElement
     const alreadyDense = root.classList.contains("flowscope-density-90")
@@ -36,7 +37,7 @@ export function AppShell({ route = "dashboard" }: { route?: AppRoute }) {
     }
   }, [])
 
-  const routeContent = route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "surface" ? <SurfacePage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "explorer" ? <ExplorerPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
+  const routeContent = route === "home" ? <HomePage /> : route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "surface" ? <SurfacePage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "explorer" ? <ExplorerPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
 
   return <ReferenceAppShell route={route}>{routeContent}</ReferenceAppShell>
 }
