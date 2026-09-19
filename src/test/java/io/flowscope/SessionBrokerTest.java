@@ -474,6 +474,38 @@ final class SessionBrokerTest {
     }
 
     @Test
+    void registerAssertedSessionInstallsOperatorAssertedWithoutCrossAccountConflict() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile a = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        broker.captureObservedExchange(a, URI.create("https://api.test/me"),
+                Map.of("Cookie", "sess_a=aaa"), 200, null, "{\"id\":\"acct-a\"}", List.of(), Instant.EPOCH);
+
+        // The operator pastes USER B's credential directly. Even with USER A's residual cookie present
+        // (same-browser sequential login), the explicit path has no cross-account block, so it succeeds.
+        AccountProfile b = new AccountProfile("acct-b", "USER B", "https://api.test:443", AccessRole.USER);
+        broker.registerAssertedSession(b, "sess_a=aaa; sess_b=bbb", "Bearer btoken", Instant.ofEpochSecond(1));
+
+        SessionBroker.SessionView view = broker.viewForAccount("acct-b").orElseThrow();
+        assertEquals(SessionBroker.Status.ACTIVE, view.status());
+        assertEquals(SessionBroker.VerificationSource.OPERATOR_ASSERTED, view.verificationSource());
+        assertEquals("Bearer btoken", broker.headersForVerifiedAccount("acct-b",
+                URI.create("https://api.test/orders"), ScopePolicy.parse("https://api.test/"),
+                Instant.ofEpochSecond(2)).get("Authorization"));
+        // Raw material never appears in the safe view, and account A's slot is untouched.
+        assertFalse(broker.views().toString().contains("btoken"));
+        assertFalse(broker.views().toString().contains("bbb"));
+        assertEquals(SessionBroker.Status.ACTIVE, broker.viewForAccount("acct-a").orElseThrow().status());
+    }
+
+    @Test
+    void registerAssertedSessionRejectsEmptyMaterial() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile a = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        assertThrows(IllegalArgumentException.class,
+                () -> broker.registerAssertedSession(a, "  ", "  ", Instant.EPOCH));
+    }
+
+    @Test
     void matchedResponseWithErrorStatusDoesNotPromoteLegacyToRuleMatched() {
         SessionBroker broker = new SessionBroker();
         String handle = captureLegacyActive(broker, "acct-a");

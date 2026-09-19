@@ -71,6 +71,7 @@ export const bindSession = (service: string, fingerprint: string, account: strin
 export const unbindSession = (service: string, fingerprint: string) => postForm<ApiSuccess>("/api/session-unbind", { service, fingerprint })
 export const getManagedSessions = (signal?: AbortSignal) => apiFetch<{ sessions: readonly ManagedSession[] }>("/api/session-capture", formSignal(signal))
 export const manageSessionCapture = (action: "begin" | "end" | "revoke", account: string) => postForm<ApiSuccess>("/api/session-capture", { action, account })
+export const registerSessionCredential = (account: string, cookie: string, authorization: string) => postForm<ApiSuccess>("/api/session-capture", { action: "credential", account, cookie, authorization })
 export const getZapStatus = (signal?: AbortSignal) => apiFetch<ZapStatus>("/api/zap-status", formSignal(signal))
 export const getScannerRun = (signal?: AbortSignal) => apiFetch<ScannerRunEnvelope>("/api/scanner-run", formSignal(signal))
 export const startScannerRun = (target: string, accounts: string, anonymous: boolean, definitions = "") =>

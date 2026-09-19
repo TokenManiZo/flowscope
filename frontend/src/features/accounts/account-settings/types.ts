@@ -124,6 +124,7 @@ export interface AccountSettingsAdapter {
   finishHumanSession(accountId: string): Promise<AccountSettings>;
   revokeHumanSession(accountId: string): Promise<AccountSettings>;
   linkBurpRequest(accountId: string, candidateId: string): Promise<AccountSettings>;
+  registerCredential(accountId: string, input: { cookie: string; authorization: string }): Promise<AccountSettings>;
   saveZapLogin(
     accountId: string,
     input: CredentialInput & { enabled: boolean },

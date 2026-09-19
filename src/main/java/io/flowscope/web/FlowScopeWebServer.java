@@ -1041,6 +1041,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 state.rebuild();
                 return success(account.label() + " 로그인 캡처를 시작했습니다. HUMAN 8080 브라우저에서 로그인하세요.");
             }
+            if (action.equals("credential")) {
+                // Operator-typed reusable credential (memory only, never persisted/logged/snapshotted).
+                broker.registerAssertedSession(account, form.getOrDefault("cookie", ""),
+                        form.getOrDefault("authorization", ""), java.time.Instant.now());
+                state.rebuild();
+                return success(account.label() + " 세션 자격을 메모리에 등록했습니다(ACTIVE · 운영자 확인).");
+            }
             String handle = broker.handleForAccount(accountId);
             if (action.equals("end")) {
                 broker.endCapture(handle);

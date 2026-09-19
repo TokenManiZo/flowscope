@@ -335,6 +335,42 @@ public final class SessionBroker implements AutoCloseable {
         return candidate.handle;
     }
 
+    /**
+     * Register an operator-typed reusable credential directly (Autorize/AuthMatrix style), independent of
+     * live browser capture. The operator explicitly asserts that this Cookie/Authorization belongs to the
+     * account, so there is no cross-account fingerprint block here — a same-browser sequential login can
+     * therefore never poison this path. The material stays in current-process memory only, is never
+     * persisted, logged, or put in snapshots, and the session becomes ACTIVE + OPERATOR_ASSERTED. A stale
+     * token self-corrects: its first replay 401 downgrades the session to SUSPECT via the freshness path.
+     */
+    public synchronized String registerAssertedSession(AccountProfile account, String cookieHeader,
+                                                        String authorization, Instant now) {
+        if (account == null) throw new IllegalArgumentException("account is required");
+        Instant time = now == null ? Instant.now() : now;
+        URI service = URI.create(account.service());
+        ManagedSession candidate = new ManagedSession("session-" + UUID.randomUUID(), account, time);
+        if (authorization != null && !authorization.isBlank()) {
+            replaceHeader(candidate, "Authorization", authorization.trim());
+        }
+        if (cookieHeader != null && !cookieHeader.isBlank()) {
+            captureRequestCookies(candidate, service, cookieHeader, time);
+        }
+        if (!hasMaterial(candidate, time)) {
+            candidate.close();
+            throw new IllegalArgumentException("Cookie 또는 Authorization을 입력하세요.");
+        }
+        candidate.responseConfirmed = true;
+        candidate.capturing = false;
+        candidate.status = Status.ACTIVE;
+        candidate.verificationSource = VerificationSource.OPERATOR_ASSERTED;
+        candidate.pendingVerificationSource = VerificationSource.OPERATOR_ASSERTED;
+        String previous = handleByAccount.get(account.id());
+        if (previous != null) revoke(previous);
+        byHandle.put(candidate.handle, candidate);
+        handleByAccount.put(account.id(), candidate.handle);
+        return candidate.handle;
+    }
+
     public synchronized Map<String, String> headersForAccount(String accountId, URI target,
                                                               ScopePolicy scope, Instant now) {
         return headers(handleForAccount(accountId), target, scope, now);

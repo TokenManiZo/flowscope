@@ -20,6 +20,7 @@ function adapter(): AccountSettingsAdapter {
     saveProofRule: vi.fn().mockResolvedValue(settings), reconnectHumanSession: vi.fn().mockResolvedValue(settings),
     finishHumanSession: vi.fn().mockResolvedValue(settings),
     revokeHumanSession: vi.fn().mockResolvedValue(settings), linkBurpRequest: vi.fn().mockResolvedValue(settings),
+    registerCredential: vi.fn().mockResolvedValue(settings),
     saveZapLogin: vi.fn().mockResolvedValue(settings), verifyZapLogin: vi.fn().mockResolvedValue(settings),
     revokeZapCredentials: vi.fn().mockResolvedValue(settings), saveExplorerLogin: vi.fn().mockResolvedValue(settings),
     verifyExplorerLogin: vi.fn().mockResolvedValue(settings), revokeExplorerCredentials: vi.fn().mockResolvedValue(settings),
@@ -43,4 +44,17 @@ it("shows the real verification source and saves only the dirty tab", async () =
   expect(api.saveProofRule).not.toHaveBeenCalled();
   expect(api.saveZapLogin).not.toHaveBeenCalled();
   expect(api.saveExplorerLogin).not.toHaveBeenCalled();
+});
+
+it("registers a pasted session credential from the HUMAN tab", async () => {
+  const api = adapter();
+  const user = userEvent.setup();
+  render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} />);
+
+  await screen.findByText("운영자 확인");
+  await user.click(screen.getByRole("tab", { name: "HUMAN" }));
+  await user.type(screen.getByLabelText("Authorization"), "Bearer pasted-token");
+  await user.click(screen.getByRole("button", { name: "세션 자격 등록" }));
+
+  await waitFor(() => expect(api.registerCredential).toHaveBeenCalledWith("account-a", { cookie: "", authorization: "Bearer pasted-token" }));
 });

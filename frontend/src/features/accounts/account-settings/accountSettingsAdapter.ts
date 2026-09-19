@@ -5,6 +5,7 @@ import {
   getAccountSettings,
   linkAccountRequestCandidate,
   manageSessionCapture,
+  registerSessionCredential,
   saveAccount,
   saveAccountProofRule,
   saveExplorerAccount,
@@ -46,6 +47,10 @@ export function createAccountSettingsAdapter(): AccountSettingsAdapter {
     },
     async linkBurpRequest(accountId, candidateId) {
       return linkAccountRequestCandidate<AccountSettings>(accountId, candidateId);
+    },
+    async registerCredential(accountId, input) {
+      await registerSessionCredential(accountId, input.cookie, input.authorization);
+      return load(accountId);
     },
     async saveZapLogin(accountId, input) {
       if (!input.enabled) {
