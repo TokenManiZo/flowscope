@@ -2172,9 +2172,9 @@ public final class FlowScopeExtension implements BurpExtension {
         return List.copyOf(values);
     }
 
-    private static String rawHeader(Map<String, String> headers, String name) {
+    static String rawHeader(Map<String, String> headers, String name) {
         return headers.entrySet().stream().filter(entry -> entry.getKey().equalsIgnoreCase(name))
-                .map(Map.Entry::getValue).findFirst().orElse(null);
+                .map(Map.Entry::getValue).filter(java.util.Objects::nonNull).findFirst().orElse("");
     }
 
     private static List<String> rawHeaderLines(byte[] message, int bodyOffset) {
