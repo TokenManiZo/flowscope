@@ -220,7 +220,7 @@ it("renders four labeled lanes, separate source/relation legends and canonical n
   for (const lane of ["조건/사용자", "API 엔드포인트", "입력 파라미터", "권한 대상"]) expect(screen.getByRole("columnheader", { name: lane })).toBeVisible()
   const legend = screen.getByRole("list", { name: "요청 생성 주체 범례" })
   expect(within(legend).getAllByRole("listitem").map(item => item.textContent)).toEqual(["H · HUMAN", "S · SCANNER", "L · LLM", "UNKNOWN"])
-  expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선: 관측·근거붉은 파선: 미검증 Gap점선: 정의·불확실 관계")
+  expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선: 관측·근거주황 파선: 미검증 · Gap붉은 파선: SCANNER 관측점선: 정의·불확실 관계")
   expect(screen.getByRole("button", { name: "Gap 그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Gap 그래프 확대" })).toBeVisible()
   expect(core.nodes().length).toBe(8)

@@ -39,7 +39,8 @@ export function ParameterFilterBar({ filters, activeAdvancedCount, advancedOpen,
       <label className="flex items-center gap-2"><Checkbox checked={authorizationActive} onCheckedChange={() => toggleCategory("authorization")} />권한 검증</label>
       <label className="flex items-center gap-2"><Checkbox checked={discoveryActive} onCheckedChange={() => toggleCategory("discovery")} />발견 범위</label>
     </div>
-    <p className="text-muted-foreground">우선순위 근거가 있는 열린 Gap부터 봅니다.</p>
+    <p className="text-muted-foreground">열린 Gap부터 봅니다.</p>
+
     <Button type="button" variant="ghost" className="w-full justify-between px-0" aria-expanded={advancedOpen} aria-controls="parameter-advanced-filters" onClick={onOpenAdvanced}>{advancedLabel}<span aria-hidden="true">⌄</span></Button>
   </fieldset>
 }

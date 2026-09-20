@@ -1,5 +1,7 @@
 import type { SurfaceParameter, SurfaceParameterGap } from "@/lib/api/types"
+import { stripOrigin } from "@/lib/display/operationLabel"
 import type { ParameterMapKey } from "./parameterProjection"
+
 
 export type ParameterNodeCardKind = "condition" | "operation" | "input" | "target"
 export interface ParameterNodeCardView {
@@ -32,10 +34,12 @@ function known(value: string | undefined, values: Set<string>): string {
   return value && values.has(value) ? value : "UNKNOWN"
 }
 
-/** 표시용 리소스 라벨: endpoint와 같은 service 접두는 뺀다(machine key는 그대로). */
+/** 표시용 리소스 라벨: endpoint와 같은 service 접두와 오리진은 뺀다(machine key는 그대로). */
 export function resourceLabel(resource: string, service: string): string {
-  return resource.startsWith(`${service} `) ? resource.slice(service.length + 1) : resource
+  const withoutService = resource.startsWith(`${service} `) ? resource.slice(service.length + 1) : resource
+  return stripOrigin(withoutService) || withoutService
 }
+
 
 export function conditionNodeCard(gap: SurfaceParameterGap, parameter: SurfaceParameter | undefined): ParameterNodeCardView {
   const identity = gap.identity ?? "UNKNOWN", role = gap.role ?? "UNKNOWN"
@@ -54,8 +58,9 @@ export function operationNodeCard(key: ParameterMapKey, statuses: readonly numbe
   }
   const result = statuses.length ? `HTTP ${[...counts].sort(([left], [right]) => (left || 600) - (right || 600)).map(([status, count]) => `${status || "UNKNOWN"} × ${count}`).join(" · ")}` : "HTTP UNKNOWN · no observations"
   return {
-    kind: "operation", badge: key.method, title: key.pathTemplate, detail: result, footer: `${statuses.length} Evidence`, icon: "none",
-    accessibleLabel: `Operation ${key.operation}; ${result}; ${statuses.length} Evidence`,
+    kind: "operation", badge: key.method, title: stripOrigin(key.pathTemplate) || key.pathTemplate, detail: result, footer: `${statuses.length} Evidence`, icon: "none",
+
+    accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; ${statuses.length} Evidence`,
   }
 }
 
@@ -63,7 +68,8 @@ export function inputNodeCard(key: ParameterMapKey, gap: SurfaceParameterGap, pa
   const shape = known(parameter?.observedShapes[0], shapes), valueType = known(parameter?.observedValueTypes[0], valueTypes)
   const gapType = gapTypeLabels[gap.type]
   const badge = locationLabel(key.location)
-  const title = parameter?.fieldPath || key.canonicalPath
+  const title = stripOrigin(parameter?.fieldPath || key.canonicalPath) || key.canonicalPath
+
   return {
     kind: "input", badge, title, detail: gapType, footer: `${shape} · ${valueType}`, icon: "none",
     accessibleLabel: `Input ${badge} ${key.canonicalPath}; ${gapType}; ${shape} · ${valueType}`,

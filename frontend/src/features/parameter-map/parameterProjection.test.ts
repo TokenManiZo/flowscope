@@ -9,7 +9,8 @@ describe("parameter map projection over snapshot.surface", () => {
     const node = (lane: string) => graph.nodes.find(item => item.lane === lane && item.focused)!
     expect(node("condition").card).toMatchObject({ kind: "condition", badge: "IDENTITY", title: "USER A", detail: "USER", footer: "7 observations", icon: "user" })
     expect(node("operation").card).toMatchObject({ kind: "operation", badge: "PATCH", title: "/orders/{id}", detail: "HTTP 200 × 1", footer: "1 Evidence", icon: "none" })
-    expect(node("operation").card.accessibleLabel).toContain(demoOperation)
+    expect(node("operation").card.accessibleLabel).toContain("PATCH /orders/{id}")
+    expect(node("operation").card.accessibleLabel).not.toContain("https://")
     expect(node("input").card).toMatchObject({ kind: "input", badge: "JSON", title: "status", detail: "Authorization variant untested", footer: "STRING · STRING", icon: "none" })
     expect(node("input").card.accessibleLabel).toContain("/status")
     expect(node("target").card).toMatchObject({ kind: "target", badge: "RESOURCE", title: "orders:101", detail: "OBSERVED", footer: "owner: USER B", icon: "box" })

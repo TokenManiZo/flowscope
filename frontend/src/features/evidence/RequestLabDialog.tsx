@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { getRequestLabDraft, openReplay, sendRequestLab } from "@/lib/api/endpoints"
 import type { EventRecord, ManagedSession, RequestLabDraft } from "@/lib/api/types"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
 import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
+import { RawTextPanel } from "./RawTextPanel"
+import { highlightRaw, rawTokenClass } from "./rawHighlight"
 import { RequestLabMetadata, type RequestLabCredentialMode } from "./RequestLabMetadata"
 
 interface Props {
@@ -204,15 +205,15 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
             <div role="group" aria-label="Request Lab 요청 및 응답" className="grid min-w-0 gap-4 lg:grid-cols-2">
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Request 원문 패널">
                 <Label id="request-lab-request-label" htmlFor="request-lab-request">Request Lab 관측 요청 원문 (인증 교체 전)</Label>
-                <Textarea id="request-lab-request" aria-label="Request Lab 요청 원문" className="min-h-64 resize-y font-mono text-xs leading-relaxed lg:min-h-[28rem]" value={raw.current.request} disabled={suspended || !draft.requestEditable || sending} onChange={(change) => { raw.current.request = change.target.value; setVersion((value) => value + 1) }} />
+                <RawTextPanel id="request-lab-request" label="Request Lab 요청 원문" value={raw.current.request} disabled={suspended || !draft.requestEditable || sending} onChange={(next) => { raw.current.request = next; setVersion((value) => value + 1) }} />
                 <p className="text-xs text-muted-foreground">UTF-8 최대 {REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트</p>
               </section>
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Response 원문 패널">
                 <Label id="request-lab-response-label" htmlFor="request-lab-response">Request Lab 응답 원문</Label>
-                <Textarea id="request-lab-response" className="min-h-64 resize-y font-mono text-xs leading-relaxed lg:min-h-[28rem]" value={raw.current.response} readOnly />
+                <RawTextPanel id="request-lab-response" label="Request Lab 응답 원문" value={raw.current.response} readOnly />
               </section>
             </div>
-            {raw.current.history.length > 0 && <section className="grid gap-2"><h3 className="font-medium">최근 전송 결과</h3><p aria-live="polite">현재 탭 전송 결과 {raw.current.history.length}건 (최대 10건)</p><ol className="grid gap-2">{raw.current.history.map((result, index) => <li key={`${index}-${result.status}-${result.durationMs}`} data-testid="request-lab-history-result" className="rounded border p-2"><p>HTTP {result.status} · {result.durationMs}ms</p><pre className="whitespace-pre-wrap break-words font-mono text-xs">{result.response}</pre></li>)}</ol></section>}
+            {raw.current.history.length > 0 && <section className="grid gap-2"><h3 className="font-medium">최근 전송 결과</h3><p aria-live="polite">현재 탭 전송 결과 {raw.current.history.length}건 (최대 10건)</p><ol className="grid gap-2">{raw.current.history.map((result, index) => <li key={`${index}-${result.status}-${result.durationMs}`} data-testid="request-lab-history-result" className="rounded border p-2"><p>HTTP {result.status} · {result.durationMs}ms</p><pre className="whitespace-pre-wrap break-words font-mono text-xs">{highlightRaw(result.response).map((tokens, line) => <span key={line}>{tokens.map((token, index) => <span key={index} className={rawTokenClass[token.kind]}>{token.text}</span>)}{"\n"}</span>)}</pre></li>)}</ol></section>}
           </section>
         </div>}
       </div>

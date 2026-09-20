@@ -14,8 +14,15 @@ interface Props {
 }
 const laneLabels: Record<ParameterLane, string> = { condition: "조건/사용자", operation: "API 엔드포인트", input: "입력 파라미터", target: "권한 대상" }
 const laneColors: Record<ParameterLane, string> = { condition: "#60a5fa", operation: "#34d399", input: "#fbbf24", target: "#c4b5fd" }
+/** 소스색은 노드·소스 표기 전용. Gap 엣지는 주황(--gap-edge)으로 분리한다. */
 const sourceColors = { HUMAN: "#60a5fa", SCANNER: "#f87171", LLM: "#d4d4d8", UNKNOWN: "#a1a1aa" }
+const GAP_EDGE_FALLBACK = "#e08b2a"
+function gapEdgeColor(): string {
+  if (typeof window === "undefined" || typeof getComputedStyle !== "function") return GAP_EDGE_FALLBACK
+  return getComputedStyle(document.documentElement).getPropertyValue("--gap-edge").trim() || GAP_EDGE_FALLBACK
+}
 const minimumZoom = 0.95 // Keep 13px edge labels at least 12px; narrow views use the list.
+
 
 function relationLabel(edge: ParameterGraphProjection["edges"][number], expanded = false) {
   const sourceLabel = (label: string, source: string) => expanded && source !== "UNKNOWN" ? `${label} · ${source}` : label
@@ -35,8 +42,9 @@ function graphElements(projection: ParameterGraphProjection): ElementDefinition[
       } }
     }),
     ...projection.edges.map(edge => ({ data: {
-      id: edge.id, source: edge.source, target: edge.target, line: edge.line,
-      color: edge.relation === "gap" ? "#f87171" : edge.sourceRole === "OBSERVATION" ? sourceColors[edge.trafficSource] : "#a1a1aa",
+      id: edge.id, source: edge.source, target: edge.target, line: edge.relation === "gap" ? "dashed" : edge.line,
+      color: edge.relation === "gap" ? gapEdgeColor() : edge.sourceRole === "OBSERVATION" ? sourceColors[edge.trafficSource] : "#a1a1aa",
+
       label: relationLabel(edge),
       focused: edge.focused ? "yes" : focus ? "no" : "none",
     } })),
@@ -306,7 +314,8 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0 }: Pr
       <ul aria-label="요청 생성 주체 범례" className="flex flex-wrap gap-x-5 gap-y-2">
         {(["HUMAN", "SCANNER", "LLM", "UNKNOWN"] as const).map((source, index) => <li key={source} className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-sm" style={{ backgroundColor: sourceColors[source] }} />{source === "UNKNOWN" ? "UNKNOWN" : `${["H", "S", "L"][index]} · ${source}`}</li>)}
       </ul>
-      <ul aria-label="관계 선형 범례" className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{([ ["solid", "실선: 관측·근거"], ["dashed", "붉은 파선: 미검증 Gap"], ["dotted", "점선: 정의·불확실 관계"] ] as const).map(([line, label]) => <li key={line} className="flex items-center gap-2"><span aria-hidden="true" className="w-7 border-t-2" style={{ borderStyle: line, borderColor: line === "dashed" ? "#f87171" : "#a1a1aa" }} />{label}</li>)}</ul>
+      <ul aria-label="관계 선형 범례" className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{([ ["solid", "실선: 관측·근거", "#a1a1aa"], ["dashed", "주황 파선: 미검증 · Gap", "var(--gap-edge)"], ["dashed", "붉은 파선: SCANNER 관측", "#f87171"], ["dotted", "점선: 정의·불확실 관계", "#a1a1aa"] ] as const).map(([line, label, color]) => <li key={label} className="flex items-center gap-2"><span aria-hidden="true" className="w-7 border-t-2" style={{ borderStyle: line, borderColor: color }} />{label}</li>)}</ul>
+
       <p className="mt-2">주체 ≠ 관계 · Gap 주체 ≠ 관측 출처 · Gap ≠ 취약점 판정</p>
       <TooltipProvider><p className="mt-2">
         <Tooltip><TooltipTrigger asChild><button type="button" aria-label="UNKNOWN 도움말" className="rounded underline decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">UNKNOWN</button></TooltipTrigger><TooltipContent className="text-sm">UNKNOWN은 근거 부족으로 아직 알 수 없는 상태입니다. Gap을 선택해 정의와 Evidence를 확인하세요.</TooltipContent></Tooltip> · 근거 부족 / {" "}

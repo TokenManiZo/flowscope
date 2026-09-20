@@ -17,6 +17,17 @@ html.flowscope-density-90 {
   --candidate-border: oklch(0.79 0.1 350);
   --candidate-surface: oklch(0.97 0.02 350);
 
+  /* Gap(미검증) 엣지 전용 주황. 소스색(HUMAN/SCANNER/LLM)과 겹치지 않는다. */
+  --gap-edge: oklch(0.63 0.18 52);
+  /* 원문(Burp 유사) 신택스 하이라이트 */
+  --syntax-key: oklch(0.52 0.1 200);
+  --syntax-value: var(--foreground);
+  --syntax-string: oklch(0.52 0.14 150);
+  --syntax-number: oklch(0.6 0.14 75);
+  --syntax-method: oklch(0.5 0.19 300);
+  --syntax-mask: oklch(0.58 0.17 60);
+
+
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);
@@ -61,6 +72,14 @@ html.flowscope-density-90 {
   --color-candidate: var(--candidate);
   --color-candidate-border: var(--candidate-border);
   --color-candidate-surface: var(--candidate-surface);
+  --color-gap-edge: var(--gap-edge);
+  --color-syntax-key: var(--syntax-key);
+  --color-syntax-value: var(--syntax-value);
+  --color-syntax-string: var(--syntax-string);
+  --color-syntax-number: var(--syntax-number);
+  --color-syntax-method: var(--syntax-method);
+  --color-syntax-mask: var(--syntax-mask);
+
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -113,6 +132,15 @@ html.flowscope-density-90 {
   --candidate: oklch(0.8 0.13 350);
   --candidate-border: oklch(0.5 0.13 350);
   --candidate-surface: oklch(0.25 0.05 350);
+
+  --gap-edge: oklch(0.76 0.16 55);
+  --syntax-key: oklch(0.83 0.11 200);
+  --syntax-value: var(--foreground);
+  --syntax-string: oklch(0.8 0.15 150);
+  --syntax-number: oklch(0.84 0.15 80);
+  --syntax-method: oklch(0.79 0.15 300);
+  --syntax-mask: oklch(0.85 0.17 65);
+
 
   --background: oklch(0.129 0.042 264.695);
   --foreground: oklch(0.984 0.003 247.858);

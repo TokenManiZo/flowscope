@@ -3,6 +3,7 @@ import { Check, CircleHelp, CircleMinus, Clock, ShieldAlert, X } from "lucide-re
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { evidenceOrdinalLabel } from "@/lib/display/operationLabel"
 import { resourceLabel } from "./parameterNodeCard"
 import type { ProjectedValidationCell } from "./parameterProjection"
 
@@ -15,13 +16,13 @@ const states = {
   UNTESTED: { icon: Clock, label: "미검증", color: "text-orange-300" },
   NOT_APPLICABLE: { icon: CircleMinus, label: "적용 불가", color: "text-muted-foreground" },
 }
-export function EvidenceIdsPreview({ label, ids, count }: { label: string; ids: readonly string[]; count: number }) {
+export function EvidenceIdsPreview({ label, ids, count, ordinals }: { label: string; ids: readonly string[]; count: number; ordinals?: Readonly<Record<string, number>> }) {
   const preview = [...new Set(ids)].slice(0, 20)
-  return <div className="space-y-1"><p>{label} {count}건 · ID 미리보기 {preview.length}개</p><ul className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{preview.map(id => <li key={id}>{id}</li>)}</ul></div>
+  return <div className="space-y-1"><p>{label} {count}건 · 순번 미리보기 {preview.length}개</p><ul className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{preview.map(id => <li key={id}>{evidenceOrdinalLabel(ordinals, id)}</li>)}</ul></div>
 }
 
 /** 선택 입력의 subject × source 검증 좌표. 빈 칸은 서버 좌표 없음이며 미검증 판정을 만들지 않는다. */
-export function ParameterCoverageMatrix({ cells, onSelect }: { cells: readonly ProjectedValidationCell[]; onSelect?: (cell: ProjectedValidationCell) => void }) {
+export function ParameterCoverageMatrix({ cells, onSelect, ordinals }: { cells: readonly ProjectedValidationCell[]; onSelect?: (cell: ProjectedValidationCell) => void; ordinals?: Readonly<Record<string, number>> }) {
   const [mode, setMode] = useState("source")
   const rowKey = (cell: ProjectedValidationCell) => mode === "source" ? cell.source ?? "UNKNOWN" : `${cell.identity ?? "UNKNOWN"} / ${cell.role ?? "UNKNOWN"}`
   const rows = mode === "source" ? ["HUMAN", "SCANNER", "LLM", ...(cells.some(cell => !cell.source || cell.source === "UNKNOWN") ? ["UNKNOWN"] : [])] : [...new Set(cells.map(rowKey))].sort()
@@ -45,8 +46,8 @@ export function ParameterCoverageMatrix({ cells, onSelect }: { cells: readonly P
             return <div role="group" key={cell.id} aria-label={`검증 좌표 ${cell.identity ?? "UNKNOWN"} / ${cell.role ?? "UNKNOWN"} / ${cell.source ?? "UNKNOWN"} / ${cell.subjectClass} / ${cell.targetResource ?? "UNKNOWN"}`} className="mb-3 max-w-64 space-y-2 border-b pb-3 text-xs [overflow-wrap:anywhere]">
               <span role="img" aria-label={`${state} · ${presentation.label}`} className={`inline-flex items-center gap-1 font-semibold ${presentation.color}`}><Icon aria-hidden="true" className="size-4" />{state}</span>
               <p>검증 신원: {cell.identity ?? "UNKNOWN"}</p><p>검증 역할: {cell.role ?? "UNKNOWN"}</p><p>{cell.source} · {target}</p><p>{cell.reason}</p>
-              <EvidenceIdsPreview label="실행 Evidence" ids={cell.evidenceIds} count={cell.evidenceCount} />
-              <EvidenceIdsPreview label="좌표 근거" ids={cell.basisEvidenceIds} count={cell.basisEvidenceCount} />
+              <EvidenceIdsPreview label="실행 Evidence" ids={cell.evidenceIds} count={cell.evidenceCount} ordinals={ordinals} />
+              <EvidenceIdsPreview label="좌표 근거" ids={cell.basisEvidenceIds} count={cell.basisEvidenceCount} ordinals={ordinals} />
               {onSelect && <Button size="sm" variant="outline" onClick={() => onSelect(cell)}>검증 좌표 선택</Button>}
             </div>
           })}

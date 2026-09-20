@@ -49,8 +49,8 @@ it("refreshes every server-authored field of a stable selected route candidate",
   expect(inspector).not.toHaveTextContent("old-")
   expect(screen.getByRole("button", { name: /경로 후보 https:\/\/api.example.test GET.*관측됨.*INCLUDE/ })).toBeVisible()
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).toHaveTextContent("new-evidence")
   expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("old-evidence")
+  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("new-evidence")
 })
 
 it("reconciles retained aggregate coordinates and Evidence IDs after two current cells shrink to one", async () => {
@@ -70,7 +70,7 @@ it("reconciles retained aggregate coordinates and Evidence IDs after two current
   expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("surviving server reason")
   expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("orders:202")
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).toHaveTextContent("ev-survivor")
+  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("ev-survivor")
   expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("ev-old")
 }, 15_000)
 
@@ -81,11 +81,11 @@ it("preserves exact candidate navigation focus after closing the compact inspect
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
-  await userEvent.click(screen.getByRole("button", { name: /미교차 후보 USER B.*orders:202/ }))
+  await userEvent.click(within(screen.getByLabelText("GAP")).getByRole("button", { name: /USER B[\s\S]*orders:202/ }))
   const paths = within(screen.getByLabelText("Source Evidence 경로"))
-  const exact = paths.getByRole("button", { name: /미교차 후보.*· orders:202/ })
+  const exact = paths.getByRole("button", { name: /미교차 후보 · USER B.*· orders:202/ })
   expect(exact).toHaveAttribute("data-focused", "yes")
-  expect(paths.getByRole("button", { name: /미교차 후보.*· orders:404/ })).toHaveAttribute("data-focused", "no")
+  expect(paths.getByRole("button", { name: /미교차 후보 · USER B.*· orders:404/ })).toHaveAttribute("data-focused", "no")
   await userEvent.click(exact)
   const inspector = screen.getByRole("dialog", { name: "선택 상세" })
   expect(inspector).toHaveTextContent("gap-202")
@@ -124,7 +124,8 @@ it("navigates Site→Group→API→Object and back without leaking objects into 
   expect(screen.getByText("Object View")).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: /^orders:101/ }))
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByText("cell-evidence-not-an-event")).toBeVisible()
+  expect(screen.getByRole("tabpanel", { name: "Evidence" })).toBeVisible()
+  expect(screen.queryByText("cell-evidence-not-an-event")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /Back/ }))
   expect(screen.getByText("API View")).toBeVisible()
 }, 15_000)
@@ -273,6 +274,7 @@ it("uses exact HUMAN, SCANNER, and LLM source semantics in the canvas legend", a
 
   const legend = screen.getByRole("list", { name: "그래프 소스 범례" })
   expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["HUMAN", "SCANNER", "LLM"])
+  expect(within(screen.getByRole("list", { name: "그래프 관계 범례" })).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["미검증 · Gap"])
 })
 
 it("counts Review State facets with the same matching-cell verdict used by filtering", async () => {
@@ -337,10 +339,11 @@ it("enters the exact UNCROSSED operation from Site and falls back to Site when i
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = fixture
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
-  await userEvent.click(screen.getByRole("button", { name: /미교차 후보 USER B/ }))
+  await userEvent.click(within(screen.getByLabelText("GAP")).getByRole("button", { name: /USER B[\s\S]*orders:202/ }))
   expect(screen.getByText("Object View")).toBeVisible()
-  expect(screen.getByRole("button", { name: /미교차 후보 · USER B.*· orders:202/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: /미교차 후보 · USER B.*· orders:202/ }))
+  const paths = within(screen.getByLabelText("Source Evidence 경로"))
+  expect(paths.getByRole("button", { name: /미교차 후보 · USER B.*· orders:202/ })).toBeVisible()
+  await userEvent.click(paths.getByRole("button", { name: /미교차 후보 · USER B.*· orders:202/ }))
   expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("USER B")
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...fixture, cells: [] }
   rerender(<GraphPage />)

@@ -2,11 +2,11 @@ import { useEffect, useState } from "react"
 
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { OperationDetail } from "@/features/evidence/OperationDetail"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
+import { evidenceOrdinalLabel, stripOrigin } from "@/lib/display/operationLabel"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
 import { graphCellKey, type GraphSelection } from "./graphProjection"
 import type { HierarchySelection } from "./graphHierarchy"
@@ -16,21 +16,6 @@ interface Props {
   event: EventRecord | null
   snapshot: Snapshot
   suspended?: boolean
-}
-
-const INITIAL_EVIDENCE_COUNT = 3
-const INITIAL_EVIDENCE_LENGTH = 160
-
-function EvidenceIds({ ids }: { ids: readonly string[] }) {
-  const [expanded, setExpanded] = useState(false)
-  const visible = expanded ? ids : ids.slice(0, INITIAL_EVIDENCE_COUNT)
-  const hasMore = ids.length > INITIAL_EVIDENCE_COUNT || ids.some((id) => id.length > INITIAL_EVIDENCE_LENGTH)
-  const display = (id: string) => !expanded && id.length > INITIAL_EVIDENCE_LENGTH ? `${id.slice(0, INITIAL_EVIDENCE_LENGTH)}…` : id
-  return <div className="grid gap-2">
-    <p className="text-xs text-muted-foreground">{ids.length}개 Evidence</p>
-    {visible.length ? visible.map((id, index) => <p className="break-all rounded border bg-muted/30 p-2 font-mono text-xs" key={`${index}:${id}`}>{display(id)}</p>) : <p className="text-sm text-muted-foreground">연결된 Evidence가 없습니다.</p>}
-    {hasMore && <Button type="button" size="sm" variant="ghost" className="w-fit" onClick={() => setExpanded((current) => !current)}>{expanded ? "Evidence 접기" : "Evidence 더 보기"}</Button>}
-  </div>
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -60,13 +45,13 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
     <InspectorPanel
       title="선택 작업"
       description={description}
-      tabs={<TabsList aria-label="선택 작업 상세 탭" className="mx-4 mt-3 grid h-auto grid-cols-5"><TabsTrigger value="summary">Summary</TabsTrigger><TabsTrigger value="evidence">Evidence</TabsTrigger><TabsTrigger value="request">Request</TabsTrigger><TabsTrigger value="response">Response</TabsTrigger><TabsTrigger value="policy">Policy</TabsTrigger></TabsList>}
+      tabs={<TabsList aria-label="선택 작업 상세 탭" className="mx-4 mt-3 grid h-auto w-auto grid-cols-5 gap-1"><TabsTrigger className="min-w-0 px-1 text-xs" value="summary">Summary</TabsTrigger><TabsTrigger className="min-w-0 px-1 text-xs" value="evidence">Evidence</TabsTrigger><TabsTrigger className="min-w-0 px-1 text-xs" value="request">Request</TabsTrigger><TabsTrigger className="min-w-0 px-1 text-xs" value="response">Response</TabsTrigger><TabsTrigger className="min-w-0 px-1 text-xs" value="policy">Policy</TabsTrigger></TabsList>}
     >
       <TabsContent value="summary" className="mt-0 grid gap-4">
         {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : <dl className="grid gap-3">
-          <DetailRow label="Operation" value={operation ?? "경로 후보"} />
+          <DetailRow label="Operation" value={operation ? stripOrigin(operation) || operation : "경로 후보"} />
           <DetailRow label="Identity" value={cell?.idn ?? selection.identity ?? "UNKNOWN"} />
-          <DetailRow label="Resource" value={resource ?? "객체 없음"} />
+          <DetailRow label="Resource" value={resource ? stripOrigin(resource) || resource : "객체 없음"} />
           <DetailRow label="Source" value={selection.source === null ? "중립 / 소스 집계" : selection.source.toUpperCase()} />
         </dl>}
         <section aria-label="Access Check" className="grid gap-3 rounded-md border border-border/70 bg-background/40 p-3">
@@ -79,12 +64,11 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
         {!!hierarchy.gapIds?.length && <section aria-label="서버 Gap IDs" className="grid gap-1 text-xs">{hierarchy.gapIds.map((id) => <p className="break-all" key={id}>{id}</p>)}</section>}
       </TabsContent>
       <TabsContent value="evidence" className="mt-0 grid gap-4" aria-label="Evidence">
-        <EvidenceIds ids={selection.evidenceIds} />
-        {event ? <section className="border-t border-border/70 pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={suspended} /></section> : <p className="text-sm text-muted-foreground">선택 좌표와 정확히 연결된 Evidence를 찾지 못했습니다.</p>}
+        {event ? <section className="border-t border-border/70 pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={event} snapshot={snapshot} evidenceLabel={evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={suspended} /></section> : <p className="text-sm text-muted-foreground">선택 좌표와 정확히 연결된 Evidence를 찾지 못했습니다.</p>}
         {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={suspended} />}
       </TabsContent>
       <TabsContent value="request" className="mt-0 grid gap-3" aria-label="Request">
-        <p className="font-mono text-sm">{event ? `${event.method} ${event.path}` : selection.operation ?? "요청 없음"}</p>
+        <p className="font-mono text-sm">{event ? `${event.method} ${stripOrigin(event.path) || event.path}` : selection.operation ? stripOrigin(selection.operation) || selection.operation : "요청 없음"}</p>
         <p className="text-sm text-muted-foreground">원문 요청은 Request Lab에서만 현재 탭 메모리로 처리합니다.</p>
       </TabsContent>
       <TabsContent value="response" className="mt-0 grid gap-3" aria-label="Response">
