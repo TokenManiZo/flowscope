@@ -177,8 +177,9 @@ html.flowscope-density-90 {
   --brand: oklch(0.75 0.15 162);
   --brand-foreground: oklch(0.208 0.042 265.755);
   /* FlowScope 3-소스·그래프 전용 색 (Lovable 토큰에 없어 보존) */
-  --flowscope-pane: #090b0d;
-  --flowscope-canvas: #090b0d;
+  /* 그래프 캔버스·페인은 페이지 베이스(--background 네이비)와 같은 색을 공유한다. 사이드바·카드는 한 단계 elevation. */
+  --flowscope-pane: oklch(0.129 0.042 264.695);
+  --flowscope-canvas: oklch(0.129 0.042 264.695);
   --flowscope-divider: #24323d;
   --flowscope-human: #60a5fa;
   --flowscope-scanner: #f87171;
