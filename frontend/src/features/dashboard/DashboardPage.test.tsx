@@ -123,12 +123,12 @@ describe("dashboard shell", () => {
   it("explains first use and offers one graph-first primary action with server gap counts", async () => {
     renderDashboard()
     await screen.findByText("FlowScope는 HUMAN·SCANNER·LLM의 관측 범위를 비교해 수동 확인이 필요한 API·파라미터와 권한 변형의 점검 순서를 보여 줍니다.")
-    await screen.findByRole("group", { name: "집중할 API" })
-    for (const [label, value] of [["집중할 API", "1"], ["미관측 파라미터", "1"], ["권한 변형 미검증", "1"], ["검토 필요", "3"]] as const) {
+    await screen.findByRole("group", { name: "우선 점검 API" })
+    for (const [label, value] of [["우선 점검 API", "1"], ["미관측 파라미터", "1"], ["권한 변형 미검증", "1"], ["검토 필요", "3"]] as const) {
       expect(within(screen.getByRole("group", { name: label })).getByText(value)).toBeVisible()
     }
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
-    expect(screen.queryByText(/%|취약점 확정/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\d+%|취약점 확정/)).not.toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Gap 그래프에서 확인" })).toHaveLength(1)
     await userEvent.click(screen.getByRole("button", { name: "Gap 그래프에서 확인" }))
     expect(window.location.hash).toBe("#graph")
@@ -287,7 +287,8 @@ describe("dashboard shell", () => {
     renderDashboard(representativeSnapshot)
 
     await screen.findByRole("button", { name: "Gap 그래프에서 확인" })
-    expect(await screen.findByRole("complementary", { name: "분석 필터" })).toHaveTextContent("현재 snapshot 요약")
+    expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
+    expect(screen.getByLabelText("현재 snapshot 요약")).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Gap 그래프에서 확인" })).toBeVisible()
@@ -295,16 +296,11 @@ describe("dashboard shell", () => {
 
   it.each([900, 600])("keeps dashboard summary and graph entry reachable without an inspector Sheet at %ipx", async (width) => {
     setCompactViewport(width)
-    const user = userEvent.setup()
     renderDashboard()
 
     await screen.findByRole("button", { name: "Gap 그래프에서 확인" })
-    const contextTrigger = screen.getByRole("button", { name: "분석 필터 열기" })
-    await user.click(contextTrigger)
-    const contextDialog = screen.getByRole("dialog", { name: "분석 필터" })
-    expect(contextDialog).toHaveTextContent("현재 snapshot 요약")
-    await user.click(within(contextDialog).getByRole("button", { name: "Close" }))
-    expect(contextTrigger).toHaveFocus()
+    expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
+    expect(screen.getByLabelText("현재 snapshot 요약")).toBeVisible()
 
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
     expect(screen.queryByRole("dialog", { name: "선택 상세" })).not.toBeInTheDocument()

@@ -3,7 +3,7 @@ import type { Snapshot } from "@/lib/api/types"
 
 /**
  * PR#11 대시보드 수치. 서버 `snapshot.surface.parameterGaps`의 열린 Gap만 세며 퍼센트나 완료율을 만들지 않는다(D-002).
- * 집중할 API는 우선순위 근거가 있는 열린 Gap의 endpoint(service·method·경로) 중복 제외, 미관측 파라미터는 권한 변형이 아닌
+ * 우선 점검 API는 우선순위 근거가 있는 열린 Gap의 endpoint(service·method·경로) 중복 제외, 미관측 파라미터는 권한 변형이 아닌
  * 열린 Gap의 입력 좌표 중복 제외, 권한 변형 미검증은 열린 AUTH_VARIANT_UNTESTED Gap id 중복 제외, 검토 필요는 서버 REVIEW 분류 수다.
  */
 export function dashboardCounts(snapshot: Snapshot) {
@@ -13,7 +13,7 @@ export function dashboardCounts(snapshot: Snapshot) {
   const unobserved = new Set(open.filter(gap => gap.type !== "AUTH_VARIANT_UNTESTED").map(gap => gapParameterKey(gap).stableKey))
   const authorization = new Set(open.filter(gap => gap.type === "AUTH_VARIANT_UNTESTED").map(gap => gap.id))
   return [
-    { label: "집중할 API", value: apis.size, caption: "우선순위 근거가 있는 열린 Gap의 API · 서비스·메서드·경로 중복 제외" },
+    { label: "우선 점검 API", value: apis.size, caption: "우선순위 근거가 있는 열린 Gap의 API · 서비스·메서드·경로 중복 제외" },
     { label: "미관측 파라미터", value: unobserved.size, caption: "주체·신원·정의·조건·타입 미관측 Gap의 입력 · 중복 제외" },
     { label: "권한 변형 미검증", value: authorization.size, caption: "열린 권한 변형 Gap 수 · 같은 Gap 중복 제외" },
     { label: "검토 필요", value: snapshot.trafficStats.review, caption: "서버가 REVIEW로 분류한 트래픽 수" },
