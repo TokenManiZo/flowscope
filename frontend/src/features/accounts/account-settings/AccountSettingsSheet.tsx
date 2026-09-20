@@ -28,12 +28,12 @@ export function toDraft(settings: AccountSettings): AccountSettingsDraft {
 }
 
 export interface AccountSettingsSheetProps {
-  accountId: string | null; adapter: AccountSettingsAdapter; open: boolean;
+  accountId: string | null; adapter: AccountSettingsAdapter; open: boolean; zapRuntimeAvailable?: boolean;
   onOpenChange: (open: boolean) => void; onDeleted?: (accountId: string) => void;
   onSaved?: (settings: AccountSettings) => void;
 }
 
-export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, onDeleted, onSaved }: AccountSettingsSheetProps) {
+export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, onDeleted, onSaved, zapRuntimeAvailable = false }: AccountSettingsSheetProps) {
   const [settings, setSettings] = useState<AccountSettings | null>(null);
   const [draft, setDraft] = useState<AccountSettingsDraft | null>(null);
   const [zapPassword, setZapPassword] = useState("");
@@ -41,10 +41,12 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [tab, setTab] = useState("basic");
   const resetLocal = useCallback(() => { setZapPassword(""); setLlmPassword(""); setError(null); }, []);
 
   useEffect(() => {
     if (!open || !accountId) { setSettings(null); setDraft(null); resetLocal(); return; }
+    setTab("basic");
     let active = true; setPending(true);
     adapter.load(accountId).then((next) => { if (active) { setSettings(next); setDraft(toDraft(next)); } })
       .catch(() => { if (active) setError("계정 설정을 불러올 수 없습니다."); })
@@ -99,10 +101,10 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
   return <>
     <Sheet open={open} onOpenChange={requestClose}><SheetContent side="right" className="flex w-full max-w-none flex-col gap-0 overflow-hidden p-0 lg:max-w-3xl" aria-label={`${settings?.label ?? "등록 계정"} 계정 설정`}>
       <header className="space-y-2 border-b border-border px-4 py-4"><h2 className="text-lg font-semibold">{settings?.label ?? "등록 계정"} 계정 설정</h2>{settings && <><p className="font-mono text-xs text-muted-foreground">{settings.role} · {settings.target}</p><div className="flex flex-wrap items-center gap-2"><StatusBadge meta={HUMAN_STATUS_META[settings.human.status]} /><StatusBadge meta={VERIFICATION_META[settings.human.verificationSource]} />{settings.human.credentialConflict && <ConflictBadge />}</div></>}</header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{!settings || !draft ? <p className="text-sm text-muted-foreground">{error ?? "계정 설정을 불러오는 중…"}</p> : <Tabs defaultValue="basic"><TabsList className="grid w-full grid-cols-4"><TabsTrigger value="basic">기본 정보</TabsTrigger><TabsTrigger value="human">HUMAN</TabsTrigger><TabsTrigger value="zap">ZAP</TabsTrigger><TabsTrigger value="llm">LLM</TabsTrigger></TabsList>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{!settings || !draft ? <p className="text-sm text-muted-foreground">{error ?? "계정 설정을 불러오는 중…"}</p> : <Tabs value={tab} onValueChange={setTab}><TabsList className="grid w-full grid-cols-4"><TabsTrigger value="basic">기본 정보</TabsTrigger><TabsTrigger value="human">HUMAN</TabsTrigger><TabsTrigger value="zap">ZAP</TabsTrigger><TabsTrigger value="llm">LLM</TabsTrigger></TabsList>
         <BasicAccountTab settings={settings} draft={draft} patch={patch} targetError={targetError} pending={pending} onDelete={() => run(async () => { await adapter.deleteAccount(settings.id); onDeleted?.(settings.id); resetLocal(); onOpenChange(false); })} />
         <HumanAccountTab settings={settings} draft={draft} patch={patch} pathError={pathError} markError={markError} pending={pending} run={run} adapter={adapter} />
-        <ZapAccountTab settings={settings} draft={draft} patch={patch} password={zapPassword} setPassword={setZapPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={zapCredentialsMissing} />
+        <ZapAccountTab settings={settings} draft={draft} patch={patch} password={zapPassword} setPassword={setZapPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={zapCredentialsMissing} runtimeAvailable={zapRuntimeAvailable} onGoToHumanTab={() => setTab("human")} />
         <LlmAccountTab settings={settings} draft={draft} patch={patch} password={llmPassword} setPassword={setLlmPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={llmCredentialsMissing} />
       </Tabs>}{error && <p role="alert" className="mt-4 text-xs text-destructive">{error}</p>}</div>
       <footer className="flex items-center justify-end gap-2 border-t border-border px-4 py-3"><Button variant="outline" onClick={() => requestClose(false)} disabled={pending}>취소</Button><Button onClick={() => void handleSave()} disabled={pending || blocked || !dirty}>{pending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}변경사항 저장</Button></footer>

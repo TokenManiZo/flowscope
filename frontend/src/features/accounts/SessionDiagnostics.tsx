@@ -8,15 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Account, ManagedSession, ObservedSession } from "@/lib/api/types"
-import { LiveAuthorizationReplayCard, VERIFICATION_SOURCE_LABEL, type ReplayAccount } from "@/components/live-authorization-replay/LiveAuthorizationReplayCard"
-
-function replayStatus(session: ManagedSession | undefined): ReplayAccount["status"] {
-  if (!session) return "UNVERIFIED"
-  if (session.credentialConflict) return "CONFLICT"
-  if (session.capturing || session.status === "CAPTURING") return "SUSPECT"
-  if (session.status === "ACTIVE") return "ACTIVE"
-  return "UNVERIFIED"
-}
+import { VERIFICATION_SOURCE_LABEL } from "@/components/live-authorization-replay/LiveAuthorizationReplayCard"
 
 function sessionState(session: ManagedSession | undefined) {
   if (!session) return { status: "UNVERIFIED", description: "로그인 캡처를 시작해 재사용할 세션을 확인하세요.", action: "begin" as const }
@@ -48,7 +40,6 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
 }) {
   const [selection, setSelection] = useState<Record<string, string>>({})
   const managedByAccount = new Map(managedSessions.map((session) => [session.accountId, session]))
-  const replayAccounts: ReplayAccount[] = accounts.map((account) => ({ id: account.id, name: account.label, role: account.role, status: replayStatus(managedByAccount.get(account.id)), credentialConflict: managedByAccount.get(account.id)?.credentialConflict, verificationSource: managedByAccount.get(account.id)?.verificationSource }))
   return (
     <div className="space-y-4">
       <section aria-labelledby="managed-session-title" className="space-y-2">
@@ -74,7 +65,6 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
         </div>
         {captureError && <Alert variant="destructive" aria-label={captureError}><AlertDescription>{captureError}</AlertDescription></Alert>}
       </section>
-      <LiveAuthorizationReplayCard accounts={replayAccounts} />
       <Accordion type="single" collapsible>
         <AccordionItem value="diagnostics">
           <AccordionTrigger aria-label="고급 세션 진단 열기">고급 세션 진단</AccordionTrigger>
