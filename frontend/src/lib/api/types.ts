@@ -476,6 +476,8 @@ export interface Snapshot {
   datasetRevision?: number
   sampleMode: boolean
   events: readonly EventRecord[]
+  /** 표시용 순번(#N) 매핑: Evidence ID(원본 `ev-…`) → 프로젝트별 관측순 순번. 원본 ID는 역참조 키로 유지된다. */
+  evidenceOrdinals?: Readonly<Record<string, number>>
   trafficStats: TrafficStats
   replays: readonly never[]
   flowLinks: readonly FlowLink[]
