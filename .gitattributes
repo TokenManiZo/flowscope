@@ -1,0 +1,6 @@
+# Shell scripts run inside the Linux ZAP container and MUST stay LF,
+# otherwise bash reads `set -euo pipefail\r` and every line breaks.
+*.sh text eol=lf
+# Windows helpers stay CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
