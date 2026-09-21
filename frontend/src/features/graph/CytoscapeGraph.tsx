@@ -3,7 +3,7 @@ import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
 import { renderParameterNodeCardSvg } from "@/features/parameter-map/parameterNodeCard"
 import type { GraphPreferences } from "./graphPreferences"
-import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
+import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneAnchor, laneCountForHierarchy, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
@@ -143,10 +143,11 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const rendererUnavailableRef = useRef(onRendererUnavailable)
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
   const publishLayoutRef = useRef<(() => void) | null>(null)
-  const laneCount = "kind" in projection && projection.kind !== "operation" ? 2 : 3
+  const laneCount = laneCountForHierarchy("kind" in projection ? projection.kind : undefined)
   const laneCountRef = useRef(laneCount)
   const preferencesRef = useRef(preferences)
   const appliedLayoutRef = useRef(layoutVersion)
+  const appliedLaneCountRef = useRef(laneCount)
   const appliedLaneLayoutRef = useRef(laneLayout.version)
   const laneBoundsRef = useRef<ReadonlyArray<LaneBounds | null>>([])
   const laneBoundsListenerRef = useRef(onLaneBoundsChange)
@@ -249,7 +250,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       const id = event.target.id()
       const hierarchy = "kind" in current ? current : null
       const node = hierarchy?.nodes.find(node => node.id === id)
-      if (node && (node.kind === "api-group" || node.kind === "operation" && hierarchy?.kind === "group")) { navigateRef.current?.(node); return }
+      if (node && (node.kind === "api-group" || node.kind === "endpoint" && hierarchy?.kind === "group" || node.kind === "operation" && hierarchy?.kind === "group")) { navigateRef.current?.(node); return }
       if (node?.kind === "target" || hierarchy?.edges.some(edge => edge.id === id && edge.structural)) return
       const selection = hierarchy ? node?.selection ?? hierarchy.edges.find(edge => edge.id === id)?.selection : selectGraphItem(current as GraphProjection, id)
       if (selection) selectRef.current(selection, event.target.id())
@@ -329,8 +330,9 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     dismissCardTooltip()
     keyboardNodeRef.current = null
     const saved = preferencesRef.current
-    const relayout = appliedLayoutRef.current !== layoutVersion
+    const relayout = appliedLayoutRef.current !== layoutVersion || appliedLaneCountRef.current !== laneCount
     appliedLayoutRef.current = layoutVersion
+    appliedLaneCountRef.current = laneCount
     core.elements().remove()
     core.add(elementsFor(projection, selectedElementId, confirmedNodeIds))
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)

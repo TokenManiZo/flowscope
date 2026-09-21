@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Cell, EventRecord, RouteCandidate, Snapshot } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
-import { apiGroupDescriptor, GRAPH_PAGE_SIZE, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
+import { apiGroupDescriptor, GRAPH_PAGE_SIZE, navigateHierarchy, operationEndpoint, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
 
 const service = "https://demo.test:443"
@@ -205,6 +205,44 @@ describe("API hierarchy", () => {
     expect(group.edges.filter(edge => edge.relation === "support")).toEqual([expect.objectContaining({ source: "human", selection: expect.objectContaining({ evidenceIds: ["support-1"], cellKeys: [] }) })])
     expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 } })
     expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"], includeSupportTraffic: true }, groupNav()).nodes.some(node => node.kind === "support-operation")).toBe(false)
+  })
+
+  it("collapses query-dispatched operations into a normal API node and opens the combined identity-object view", () => {
+    const base = `${service} GET /modules/profile/profile_function.php`
+    const current = `${base}#mode=reload_current_memberships`
+    const future = `${base}#mode=reload_future_memberships`
+    const former = `${base}#mode=reload_former_memberships`
+    const snapshot = targetSnapshot({ cells: [cell({ op: current }), cell({ op: future, evidenceIds: ["future"] }), cell({ op: former, evidenceIds: ["former"] })] })
+    const profileGroup = apiGroupDescriptor(service, "/modules/profile/profile_function.php").id
+    const grouped = projectHierarchy(snapshot, filters, navigateHierarchy(initial, "group", profileGroup))
+    expect(grouped.operations).toHaveLength(1)
+    expect(grouped.operations[0]).toMatchObject({ kind: "endpoint", label: base })
+    expect(grouped.operations[0].selection.cells).toHaveLength(3)
+    expect(grouped.edges.every(edge => edge.targetId === `endpoint:${base}`)).toBe(true)
+
+    const expanded = projectHierarchy(snapshot, filters, navigateHierarchy(initial, "endpoint", profileGroup, base))
+    expect(expanded.kind).toBe("endpoint")
+    expect(expanded.identities.map(node => node.label)).toEqual(["USER A"])
+    expect(expanded.operations.map(node => [node.kind, node.label])).toEqual([
+      ["operation-variant", current],
+      ["operation-variant", future],
+      ["operation-variant", former],
+    ])
+    expect(expanded.resources.map(node => node.label)).toEqual(["orders:101"])
+    expect(expanded.edges.filter(edge => edge.relation === "identity-operation")).toHaveLength(3)
+    expect(expanded.edges.filter(edge => edge.relation === "operation-resource")).toHaveLength(3)
+    expect(expanded.edges.every(edge => edge.selection.cells.length === 1)).toBe(true)
+    expect(operationEndpoint(future)).toBe(base)
+    expect(stepBack(navigateHierarchy(initial, "endpoint", profileGroup, base))).toEqual(navigateHierarchy(initial, "group", profileGroup))
+  })
+
+  it("keeps ordinary and single-discriminator APIs on the existing direct navigation path", () => {
+    const single = `${service} GET /api/orders#action=list`
+    const snapshot = targetSnapshot({ cells: [cell(), cell({ op: single })] })
+    const group = projectHierarchy(snapshot, filters, groupNav())
+    expect(group.operations.every(node => node.kind === "operation")).toBe(true)
+    expect(group.operations.map(node => node.label)).toContain(single)
+    expect(operationEndpoint(get)).toBe(get)
   })
 
   it("never mutates the input snapshot, filters, or navigation", () => {

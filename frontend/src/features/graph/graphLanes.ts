@@ -10,6 +10,10 @@ export interface LaneBounds {
   right: number
 }
 
+export function laneCountForHierarchy(kind: string | undefined): number {
+  return kind === "site" || kind === "group" ? 2 : 3
+}
+
 export function laneIndexForKind(kind: string, laneCount: number): number {
   if (kind === "identity" || kind === "target") return 0
   if (laneCount <= 2) return 1

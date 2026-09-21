@@ -48,6 +48,10 @@ public final class Normalizer {
     private static final Set<String> CONTROL_FIELDS = Set.of(
             "page", "limit", "offset", "sort", "size", "cursor", "start", "end",
             "from", "to", "timestamp", "time", "debug", "enabled", "active");
+    private static final Set<String> OPERATION_DISCRIMINATOR_FIELDS = Set.of(
+            "mode", "action", "task", "operation", "function", "cmd", "do");
+    private static final Pattern OPERATION_DISCRIMINATOR_VALUE = Pattern.compile(
+            "[A-Za-z][A-Za-z0-9_.:-]{0,79}");
     private static final List<String> SEMANTIC_ID_SUFFIXES = List.of(
             "number", "uuid", "guid", "seq", "key", "ref", "vin", "no");
     private static final Set<String> NON_OBJECT_TYPES = Set.of(
@@ -190,6 +194,9 @@ public final class Normalizer {
             if ("/graphql".equalsIgnoreCase(r.path)) {
                 String operation = graphqlOperation(r.requestBodyForAnalysis());
                 if (operation != null) op += "#" + operation;
+            } else {
+                String discriminator = queryOperationDiscriminator(r.query);
+                if (discriminator != null) op += "#" + discriminator;
             }
             List<ResourceReference> references = resourceReferences(r.path, r.query,
                     r.requestBodyForAnalysis(), lexical.resource,
@@ -211,6 +218,19 @@ public final class Normalizer {
             r.pathTemplateReasons = resolution.reasons();
         }
         assignIdentities(records);
+    }
+
+    private static String queryOperationDiscriminator(String query) {
+        if (query == null || query.isBlank()) return null;
+        for (String pair : query.split("&")) {
+            String[] kv = pair.split("=", 2);
+            if (kv.length != 2) continue;
+            String key = decode(kv[0]).strip().toLowerCase(Locale.ROOT);
+            if (!OPERATION_DISCRIMINATOR_FIELDS.contains(key)) continue;
+            String value = decode(kv[1]).strip();
+            if (OPERATION_DISCRIMINATOR_VALUE.matcher(value).matches()) return key + "=" + value;
+        }
+        return null;
     }
 
     private record TemplateKey(String service, String shape, int position) {}

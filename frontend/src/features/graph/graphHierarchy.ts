@@ -2,7 +2,7 @@ import type { Cell, Snapshot, Source } from "@/lib/api/types"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
 export const GRAPH_PAGE_SIZE = 18
-export type GraphLevel = "site" | "group" | "operation"
+export type GraphLevel = "site" | "group" | "endpoint" | "operation"
 
 export interface GraphNavigation {
   level: GraphLevel
@@ -25,7 +25,7 @@ export interface ApiGroup extends ApiGroupDescriptor {
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation"
+  kind: GraphNode["kind"] | "target" | "api-group" | "endpoint" | "operation-variant" | "support-operation"
   selection: HierarchySelection
   groupId?: string
   service?: string
@@ -62,10 +62,16 @@ export function apiGroupDescriptor(service: string, path: string): ApiGroupDescr
 }
 
 function operationGroup(operation: string): ApiGroupDescriptor {
-  const service = operation.match(/^(https?:\/\/\S+)\s+/i)?.[1] ?? "Target"
-  const plain = operation.replace(/^https?:\/\/\S+\s+/i, "")
+  const endpoint = operationEndpoint(operation)
+  const service = endpoint.match(/^(https?:\/\/\S+)\s+/i)?.[1] ?? "Target"
+  const plain = endpoint.replace(/^https?:\/\/\S+\s+/i, "")
   const space = plain.indexOf(" ")
   return apiGroupDescriptor(service, space > 0 ? plain.slice(space + 1) : plain)
+}
+
+const discriminatorPattern = /#(?:mode|action|task|operation|function|cmd|do)=[A-Za-z][A-Za-z0-9_.:-]{0,79}$/i
+export function operationEndpoint(operation: string): string {
+  return discriminatorPattern.test(operation) ? operation.replace(discriminatorPattern, "") : operation
 }
 
 export function navigateHierarchy(current: GraphNavigation, level: GraphLevel, groupId = "", operation = ""): GraphNavigation {
@@ -74,6 +80,7 @@ export function navigateHierarchy(current: GraphNavigation, level: GraphLevel, g
 
 export function stepBack(current: GraphNavigation): GraphNavigation {
   if (current.level === "operation") return navigateHierarchy(current, "group", current.groupId)
+  if (current.level === "endpoint") return navigateHierarchy(current, "group", current.groupId)
   if (current.level === "group") return navigateHierarchy(current, "site")
   return current
 }
@@ -134,6 +141,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   const group = groupsById.get(navigation.groupId)
   let resolved = navigation
   if (navigation.level !== "site" && !group) resolved = navigateHierarchy(navigation, "site")
+  else if (navigation.level === "endpoint" && !group?.operations.some(operation => operationEndpoint(operation) === navigation.operation)) resolved = navigateHierarchy(navigation, "group", navigation.groupId)
   else if (navigation.level === "operation" && !group?.operations.includes(navigation.operation)) resolved = navigateHierarchy(navigation, "group", navigation.groupId)
 
   const nodes: HierarchyNode[] = []
@@ -183,13 +191,33 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   } else if (group && resolved.level === "group") {
     const scores = new Map<string, number>()
     for (const cell of group.cells) scores.set(cell.op, (scores.get(cell.op) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : isPartial(cell) ? 20 : 1) + cell.evidenceIds.length)
-    const operations = [...group.operations].sort((left, right) => (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
-    const visible = operations.slice(0, resolved.operationLimit)
-    const related = group.cells.filter(cell => visible.includes(cell.op))
+    const endpoints = [...new Set(group.operations.map(operationEndpoint))]
+    const variantsByEndpoint = new Map(endpoints.map(endpoint => [endpoint, group.operations.filter(operation => operationEndpoint(operation) === endpoint)]))
+    const endpointScore = (endpoint: string) => group.operations.filter(operation => operationEndpoint(operation) === endpoint).reduce((sum, operation) => sum + (scores.get(operation) ?? 0), 0)
+    const orderedEndpoints = endpoints.sort((left, right) => endpointScore(right) - endpointScore(left) || compareText(left, right))
+    const visible = orderedEndpoints.slice(0, resolved.operationLimit)
+    const related = group.cells.filter(cell => visible.includes(operationEndpoint(cell.op)))
     for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, selectionFor(related.filter(cell => cell.idn === identity)))
-    listItems = visible.map(op => addNode("operation", op, selectionFor(related.filter(cell => cell.op === op))))
-    addAccess(related)
-    hiddenOperationCount = operations.length - visible.length
+    listItems = visible.map(endpoint => {
+      const endpointCells = related.filter(cell => operationEndpoint(cell.op) === endpoint)
+      const variants = variantsByEndpoint.get(endpoint) ?? []
+      return addNode(variants.length > 1 ? "endpoint" : "operation", variants.length === 1 ? variants[0] : endpoint, selectionFor(endpointCells))
+    })
+    const buckets = new Map<string, Cell[]>()
+    for (const cell of related) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) {
+      const endpoint = operationEndpoint(cell.op)
+      const key = JSON.stringify([cell.idn, endpoint, source])
+      const bucket = buckets.get(key) ?? []
+      bucket.push(cell)
+      buckets.set(key, bucket)
+    }
+    for (const [key, bucket] of buckets) {
+      const [identity, endpoint, source] = JSON.parse(key) as [string, string, Source]
+      const variants = variantsByEndpoint.get(endpoint) ?? []
+      const kind = variants.length > 1 ? "endpoint" : "operation"
+      addEdge("identity-operation", `identity:${identity}`, `${kind}:${variants.length === 1 ? variants[0] : endpoint}`, selectionFor(bucket, source), bucket.reduce((sum, cell) => sum + sourceCount(cell, source), 0))
+    }
+    hiddenOperationCount = orderedEndpoints.length - visible.length
     routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
     if (filters.includeSupportTraffic) {
@@ -206,6 +234,33 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
         addEdge("support", `identity:${event.idn}`, `support-operation:${event.op}`, { ...emptySelection(), identity: event.idn, operation: event.op, source: event.source, evidenceIds: supportEvidence(event) }, 0, event.eventId)
       }
     }
+  } else if (group && resolved.level === "endpoint") {
+    const endpoint = resolved.operation
+    const related = group.cells.filter(cell => operationEndpoint(cell.op) === endpoint)
+    const scores = new Map<string, number>()
+    for (const cell of related) if (cell.resource) scores.set(cell.resource, (scores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
+    const resources = [...new Set(related.map(cell => cell.resource).filter((resource): resource is string => !!resource))]
+      .sort((left, right) => (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
+    const visible = resources.slice(0, resolved.objectLimit)
+    for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
+    for (const operation of new Set(related.map(cell => cell.op))) addNode("operation-variant", operation, selectionFor(related.filter(cell => cell.op === operation)))
+    for (const resource of visible) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), operation: endpoint, resource }, { owner: snapshot.owners[resource] ?? null })
+    const accessBuckets = new Map<string, Cell[]>()
+    for (const cell of related) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) {
+      const key = JSON.stringify([cell.idn, cell.op, source])
+      const bucket = accessBuckets.get(key) ?? []
+      bucket.push(cell)
+      accessBuckets.set(key, bucket)
+    }
+    for (const [key, bucket] of accessBuckets) {
+      const [identity, operation, source] = JSON.parse(key) as [string, string, Source]
+      addEdge("identity-operation", `identity:${identity}`, `operation-variant:${operation}`, selectionFor(bucket, source), bucket.reduce((sum, cell) => sum + sourceCount(cell, source), 0))
+    }
+    for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) {
+      addEdge("operation-resource", `operation-variant:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
+    }
+    hiddenObjectCount = resources.length - visible.length
+    listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? endpoint, wrappedLabel: cell.resource ?? wrapOperationLabel(endpoint), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   } else if (group) {
     const operation = resolved.operation
     const related = group.cells.filter(cell => cell.op === operation)
@@ -232,5 +287,5 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // the narrow-screen list does, without creating extra graph nodes.
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   }
-  return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount }
+  return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation" || node.kind === "endpoint" || node.kind === "operation-variant"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount }
 }

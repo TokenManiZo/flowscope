@@ -3,9 +3,12 @@ import { useEffect, useState } from "react"
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { OperationDetail } from "@/features/evidence/OperationDetail"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
+import { saveOwner } from "@/lib/api/endpoints"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
 import { graphCellKey, type GraphSelection } from "./graphProjection"
@@ -16,6 +19,7 @@ interface Props {
   event: EventRecord | null
   snapshot: Snapshot
   suspended?: boolean
+  onOwnerSaved?(): void | Promise<unknown>
 }
 
 const INITIAL_EVIDENCE_COUNT = 3
@@ -37,7 +41,36 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   return <div className="grid gap-1 border-b border-border/60 pb-2 last:border-b-0"><dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{label}</dt><dd className="break-words text-sm">{value}</dd></div>
 }
 
-export function GraphInspectorPanel({ selection, event, snapshot, suspended = false }: Props) {
+function ResourceOwnerEditor({ resource, owner, disabled, onSaved }: { resource: string; owner: string; disabled: boolean; onSaved?(): void | Promise<unknown> }) {
+  const [identity, setIdentity] = useState(owner)
+  const [error, setError] = useState("")
+  const [pending, setPending] = useState(false)
+
+  async function submit() {
+    setError("")
+    setPending(true)
+    try {
+      await saveOwner(resource, identity)
+      await onSaved?.()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "소유자 저장에 실패했습니다.")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return <section className="grid gap-2 rounded-md border p-3" aria-label="객체 소유자 정책">
+    <h3 className="font-medium">객체 정책</h3>
+    <p className="break-all text-xs text-muted-foreground">{resource}</p>
+    <div className="flex flex-wrap items-end gap-2">
+      <div className="grid gap-1"><Label htmlFor="graph-resource-owner">리소스 소유자</Label><Input id="graph-resource-owner" value={identity} disabled={disabled} onChange={(change) => setIdentity(change.target.value)} /></div>
+      <Button type="button" disabled={disabled || pending} onClick={() => void submit()}>소유자 저장</Button>
+    </div>
+    {error && <p className="text-sm text-destructive">{error}</p>}
+  </section>
+}
+
+export function GraphInspectorPanel({ selection, event, snapshot, suspended = false, onOwnerSaved }: Props) {
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision
   // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
   const contextKey = event ? JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp]) : null
@@ -80,6 +113,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       </TabsContent>
       <TabsContent value="evidence" className="mt-0 grid gap-4" aria-label="Evidence">
         <EvidenceIds ids={selection.evidenceIds} />
+        {!event && resource && <ResourceOwnerEditor key={resource} resource={resource} owner={owner ?? ""} disabled={suspended} onSaved={onOwnerSaved} />}
         {event ? <section className="border-t border-border/70 pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={suspended} /></section> : <p className="text-sm text-muted-foreground">선택 좌표와 정확히 연결된 Evidence를 찾지 못했습니다.</p>}
         {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={suspended} />}
       </TabsContent>

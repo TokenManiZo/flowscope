@@ -1,6 +1,6 @@
 import { screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { expect, it } from "vitest"
+import { expect, it, vi } from "vitest"
 
 import type { Snapshot } from "@/lib/api/types"
 import { renderWithQueryClient } from "@/test/render"
@@ -88,6 +88,25 @@ it("keeps Summary, Evidence, Request, Response, and Policy details in accessible
   expect(policy).toHaveTextContent("USER")
   expect(policy).toHaveTextContent("소유자")
   expect(policy).toHaveTextContent("alice")
+})
+
+it("allows an aggregate resource selection to save its owner without an exact Evidence event", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } }))
+  vi.stubGlobal("fetch", fetch)
+  const cells = [snapshot.cells[0], { ...snapshot.cells[0], op: "GET /orders/{id}#mode=future", evidenceIds: ["ev-2"] }]
+  const aggregate = { ...graphCellSelection(cells), operation: "GET /orders/{id}", resource: "order:1", gapIds: [] }
+  renderWithQueryClient(<GraphInspectorPanel selection={aggregate} event={null} snapshot={{ ...snapshot, cells, events: [event, { ...event, eventId: "ev-2", op: cells[1].op, clusterEvidenceIds: ["ev-2"] }] }} />)
+
+  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
+  const owner = screen.getByLabelText("리소스 소유자")
+  expect(owner).toHaveValue("alice")
+  await userEvent.clear(owner)
+  await userEvent.type(owner, "victim")
+  await userEvent.click(screen.getByRole("button", { name: "소유자 저장" }))
+
+  expect(fetch).toHaveBeenCalledWith("/api/owner", expect.objectContaining({ method: "POST" }))
+  expect(String(fetch.mock.calls[0][1]?.body)).toBe("resource=order%3A1&identity=victim")
+  vi.unstubAllGlobals()
 })
 
 it("bounds collapsed Evidence by count and length without leaking hidden values into ARIA or live regions", async () => {

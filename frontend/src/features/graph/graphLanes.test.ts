@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { clampBetweenLanes, LANE_GAP, LANE_SPACING, laneAnchor, laneIndexForKind, laneLimits } from "./graphLanes"
+import { clampBetweenLanes, LANE_GAP, LANE_SPACING, laneAnchor, laneCountForHierarchy, laneIndexForKind, laneLimits } from "./graphLanes"
 
 describe("graph lanes", () => {
   it("maps node kinds to the lane of the current hierarchy level", () => {
@@ -14,6 +14,14 @@ describe("graph lanes", () => {
 
   it("spaces the initial lane anchors evenly", () => {
     expect([0, 1, 2].map(laneAnchor)).toEqual([LANE_SPACING / 2, LANE_SPACING * 1.5, LANE_SPACING * 2.5])
+  })
+
+  it("uses three lanes for endpoint variants and ordinary operation details", () => {
+    expect(laneCountForHierarchy("site")).toBe(2)
+    expect(laneCountForHierarchy("group")).toBe(2)
+    expect(laneCountForHierarchy("endpoint")).toBe(3)
+    expect(laneCountForHierarchy("operation")).toBe(3)
+    expect(laneCountForHierarchy(undefined)).toBe(3)
   })
 
   it("limits a node to the nearest neighbour lane edges and leaves empty sides open", () => {

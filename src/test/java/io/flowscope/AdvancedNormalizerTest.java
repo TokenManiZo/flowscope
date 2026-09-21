@@ -10,6 +10,43 @@ import static org.junit.jupiter.api.Assertions.*;
 class AdvancedNormalizerTest {
 
     @Test
+    void queryOperationDiscriminatorSeparatesControllerActionsAndKeepsObjectIdentity() {
+        RequestRecord current = new RequestRecord(Source.HUMAN, "http://target:18090", "GET",
+                "/modules/profile/profile_function.php", 200, "A");
+        current.query = "mode=reload_current_memberships&user_uuid=user-a";
+        RequestRecord future = new RequestRecord(Source.HUMAN, "http://target:18090", "GET",
+                "/modules/profile/profile_function.php", 200, "B");
+        future.query = "mode=reload_future_memberships&user_uuid=user-b";
+        RequestRecord former = new RequestRecord(Source.HUMAN, "http://target:18090", "GET",
+                "/modules/profile/profile_function.php", 200, "A");
+        former.query = "mode=reload_former_memberships&user_uuid=user-a";
+
+        Normalizer.normalizeAll(List.of(current, future, former));
+
+        assertEquals("http://target:18090 GET /modules/profile/profile_function.php#mode=reload_current_memberships",
+                current.op);
+        assertEquals("http://target:18090 GET /modules/profile/profile_function.php#mode=reload_future_memberships",
+                future.op);
+        assertEquals("http://target:18090 GET /modules/profile/profile_function.php#mode=reload_former_memberships",
+                former.op);
+        assertEquals("http://target:18090 users:user-a", current.resource);
+        assertEquals("http://target:18090 users:user-b", future.resource);
+        var graph = io.flowscope.core.graph.FlowGraphBuilder.build(List.of(current, future, former));
+        assertEquals(3, graph.nodeCount(io.flowscope.core.graph.FlowGraph.NodeType.OPERATION));
+    }
+
+    @Test
+    void paginationAndObjectParametersDoNotSplitOperations() {
+        RequestRecord record = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/users", 200, "A");
+        record.query = "page=2&limit=20&userId=101";
+
+        Normalizer.normalizeAll(List.of(record));
+
+        assertEquals("https://t:443 GET /users", record.op);
+        assertEquals("https://t:443 users:101", record.resource);
+    }
+
+    @Test
     void 쿼리의_객체ID를_추출하고_제어값은_제외한다() {
         RequestRecord r = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/api/order", 200, "A");
         r.query = "orderId=101&page=2&limit=20";

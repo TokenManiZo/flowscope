@@ -53,10 +53,26 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     }
   }
 
+  if (node.kind === "endpoint") {
+    const operation = operationParts(node.label)
+    return {
+      kind: "operation", badge: operation.method, title: operation.path, detail: node.verdictText, footer: "", icon: "none",
+      accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}`,
+    }
+  }
+
   const operation = operationParts(node.label)
   if (node.kind === "support-operation") return {
     kind: "operation", badge: "SUPPORT", title: `${operation.method} ${operation.path}`, detail: "보조 흐름", footer: "", icon: "none",
     accessibleLabel: `Support operation ${node.label}`,
+  }
+
+  if (node.kind === "operation-variant") {
+    const discriminator = node.label.match(/#(.+)$/)?.[1] ?? operation.path
+    return {
+      kind: "operation", badge: operation.method, title: discriminator, detail: node.verdictText, footer: evidenceFooter(node), icon: "none",
+      accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}; ${evidenceFooter(node)}`,
+    }
   }
 
   return {
