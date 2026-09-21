@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { AuthorizationMatrix, MatrixLegendItem, ReviewStatus } from "@/lib/api/types"
+import type { AuthorizationMatrix, ReviewStatus } from "@/lib/api/types"
 import { useAuthorizationReplayKillMutation, useAuthorizationReplayMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { actualLabel, confidenceCodes, expectedLabel, findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
@@ -21,10 +21,6 @@ const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
 }
 const VISIBLE_EVIDENCE = 5
 
-function Legend({ title, items }: { title: string; items: readonly MatrixLegendItem[] }) {
-  return <section className="grid gap-1" aria-label={title}><h3 className="text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">{title}</h3>{items.map((item) => <p key={item.code} className="text-xs"><b>{item.code}</b> {item.title} — <span className="text-muted-foreground">{item.description}</span></p>)}</section>
-}
-
 function EvidenceIdList({ ids }: { ids: readonly string[] }) {
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? ids : ids.slice(0, VISIBLE_EVIDENCE)
@@ -36,6 +32,22 @@ const RESOURCE_POLICY_OPTIONS = ["UNKNOWN", "OWNER_ONLY", "ROLE_SHARED", "AUTHEN
 const resourcePolicyLabel: Record<(typeof RESOURCE_POLICY_OPTIONS)[number], string> = {
   UNKNOWN: "미정", OWNER_ONLY: "소유자 전용", ROLE_SHARED: "동일 역할 공유",
   AUTHENTICATED_SHARED: "인증 사용자 공유", PUBLIC: "공개", ADMIN_ONLY: "관리자 전용",
+}
+
+const methodTone: Record<string, string> = {
+  GET: "border-observation-human/40 bg-observation-human/10 text-observation-human",
+  POST: "border-observation-scanner/40 bg-observation-scanner/10 text-observation-scanner",
+}
+
+function OperationLabel({ operation }: { operation: string }) {
+  const label = withoutService(operation)
+  const separator = label.indexOf(" ")
+  const method = separator > 0 ? label.slice(0, separator) : label
+  const path = separator > 0 ? label.slice(separator + 1) : ""
+  return <span className="flex min-w-0 items-center gap-2">
+    <Badge variant="outline" className={`shrink-0 font-mono ${methodTone[method] ?? "border-border bg-muted/40 text-foreground"}`}>{method}</Badge>
+    {path && <span className="break-all font-mono text-xs">{path}</span>}
+  </span>
 }
 
 /**
@@ -214,16 +226,15 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
   }
 
   const context = <section className="grid gap-4 p-3">
-    <div><h2 className="text-sm font-semibold">판정 보기</h2><p className="text-xs text-muted-foreground">정책 P·실행 E·소유권 O를 합산하지 않습니다. 후보는 서버 권한 셀의 판정만 따릅니다.</p></div>
+    <h2 className="text-sm font-semibold">판정 보기</h2>
     <Tabs value={view} onValueChange={(value) => { setView(value === "object" ? "object" : value === "evidence" ? "evidence" : "function"); setSelectedId(null); setInspectorOpen(false) }}><TabsList aria-label="판정 매트릭스 보기" className="grid h-auto grid-cols-1"><TabsTrigger value="function">BFLA · 역할 × 기능</TabsTrigger><TabsTrigger value="object">BOLA/IDOR · 계정 × 객체</TabsTrigger><TabsTrigger value="evidence">실행 Evidence</TabsTrigger></TabsList></Tabs>
     <label className="flex items-center gap-2 text-sm"><Checkbox checked={attentionOnly} onCheckedChange={(checked) => setAttentionOnly(checked === true)} /><span>주의 항목만</span></label>
-    {matrix && <div className="grid gap-3 border-t border-border/70 pt-3"><Legend title="정책 신뢰도 P" items={matrix.policyLegend} /><Legend title="실행 증거 E" items={matrix.evidenceLegend} /><Legend title="소유권 O" items={matrix.ownershipLegend} /></div>}
   </section>
   const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} matrix={matrix} disabled={disabled} onOpenEvidence={setEvidenceSelection} /> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하면 추천 조합, Repeater 검증 방법, P/E/O 근거와 사람 판정을 표시합니다.</p>
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="grid gap-4 p-3" aria-labelledby="judgment-title">
-      <div><h1 id="judgment-title" className="text-2xl font-semibold">판정 매트릭스</h1><p className="text-sm text-muted-foreground">관측 결과의 신원·기능·객체 공백을 비교해 IDOR/BOLA/BFLA 테스트 조합을 추천합니다. 명시적으로 무장한 안전 재전송 외에는 자동 전송하지 않으며 점수를 합산하지 않습니다.</p></div>
+      <h1 id="judgment-title" className="text-2xl font-semibold">판정 매트릭스</h1>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>판정 매트릭스를 불러오지 못했습니다.</AlertTitle><AlertDescription>
         <p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
         {snapshot.data ? <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 && Number.isFinite(snapshot.dataUpdatedAt) ? <time dateTime={new Date(snapshot.dataUpdatedAt).toISOString()}>{new Date(snapshot.dataUpdatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>갱신에 성공할 때까지 Evidence 상세와 사람 판정 저장이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
@@ -239,14 +250,14 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
         </li>)}</ul></AlertDescription>
       </Alert>}
       {summary && <ul role="list" aria-label="판정 요약" className="grid gap-2 sm:grid-cols-5">{[
-        ["BFLA 테스트 추천", summary.bflaTestRecommendations, "상위 역할 → 하위 역할"],
-        ["BOLA/IDOR 테스트 추천", summary.bolaIdorTestRecommendations, "관측 객체 → 다른 계정"],
-        ["수동 검토 대기", summary.manualReviewPending, "Burp Repeater 확인 필요"],
-        ["사용자 취약점 확정", summary.humanConfirmed, "사람이 결과를 확인함"],
-        ["정상·기각", summary.humanDismissed, "사람이 후보를 종료함"],
-      ].map(([label, value, hint]) => <li key={String(label)} className="rounded-md border border-border/70 p-2"><p className="text-[11px] text-muted-foreground">{label}</p><p className="text-xl font-semibold tabular-nums">{value}</p><p className="text-[11px] text-muted-foreground">{hint}</p></li>)}</ul>}
+        ["BFLA 테스트 추천", summary.bflaTestRecommendations],
+        ["BOLA/IDOR 테스트 추천", summary.bolaIdorTestRecommendations],
+        ["수동 검토 대기", summary.manualReviewPending],
+        ["사용자 취약점 확정", summary.humanConfirmed],
+        ["정상·기각", summary.humanDismissed],
+      ].map(([label, value]) => <li key={String(label)} className="rounded-md border border-border/70 p-2"><p className="text-[11px] text-muted-foreground">{label}</p><p className="text-xl font-semibold tabular-nums">{value}</p></li>)}</ul>}
       {projection && <p className="text-xs text-muted-foreground">{captions[view]}{projection.hiddenRows > 0 && ` · 주의 필터로 ${projection.hiddenRows}개 숨김`}</p>}
-      {projection && view !== "evidence" && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" tabIndex={0} className="max-h-[44rem] max-w-full overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 left-0 z-40 bg-background">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background"><span className="break-all">{identity.label}</span><span className="block text-xs text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="sticky left-0 z-20 min-w-48 whitespace-normal bg-background"><span className="break-all font-mono text-xs">{withoutService(row.operation)}</span><span className="block text-xs text-muted-foreground">{view === "function" ? `${row.policy?.code ?? "P0"} · ${row.policy?.label ?? "정책 미정"}` : `${row.resource} · 소유 ${row.ownerLabel || "미확정"}`}</span></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; return <TableCell key={identity.id} className="whitespace-normal align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${cell.statusLabel}${reviewSuffix(cell.reviewStatus)}: ${cell.identityLabel} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} className={`grid w-full min-w-48 gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className="font-semibold">{cell.statusLabel}{reviewSuffix(cell.reviewStatus)}</span><span className="text-muted-foreground">기대 {expectedLabel[cell.expected]} → 실제 {actualLabel[cell.actual]}</span>{(cell.blockingLayers?.length ?? 0) > 0 && <span className="flex flex-wrap gap-1">{cell.blockingLayers?.map((layer) => <Badge key={layer} variant="outline">{layer} 차단</Badge>)}</span>}<span className="flex flex-wrap gap-1">{confidenceCodes(cell).map((code) => <Badge key={code} variant="outline" className="font-mono">{code}</Badge>)}</span></button> : <span className="text-xs text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 Evidence가 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
+      {projection && view !== "evidence" && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="max-h-[44rem] max-w-full overflow-x-auto overflow-y-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 left-0 z-40 bg-background">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background"><span className="break-all">{identity.label}</span><span className="block text-xs text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="sticky left-0 z-20 min-w-48 whitespace-normal bg-background"><OperationLabel operation={row.operation} /></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; return <TableCell key={identity.id} className="whitespace-normal align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${cell.statusLabel}${reviewSuffix(cell.reviewStatus)}: ${cell.identityLabel} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} className={`grid w-full min-w-48 gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className="font-semibold">{cell.statusLabel}{reviewSuffix(cell.reviewStatus)}</span><span className="text-muted-foreground">기대 {expectedLabel[cell.expected]} → 실제 {actualLabel[cell.actual]}</span>{(cell.blockingLayers?.length ?? 0) > 0 && <span className="flex flex-wrap gap-1">{cell.blockingLayers?.map((layer) => <Badge key={layer} variant="outline">{layer} 차단</Badge>)}</span>}</button> : <span className="text-xs text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 Evidence가 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
       {projection && view === "evidence" && (projection.evidenceRows.length ? <ul role="list" aria-label="실행 Evidence 목록" className="grid gap-2">{projection.evidenceRows.map((row) => <li key={row.id}><button type="button" disabled={disabled} data-tone={judgmentTone(row.status)} aria-pressed={row.id === selectedId} className={`grid w-full gap-1 rounded-md border p-2 text-left text-xs ${toneClass[judgmentTone(row.status)]}`} onClick={() => select(row.id)}><span className="font-mono">{withoutService(row.operation)}</span><span className="text-muted-foreground">{row.identityLabel} · {row.resource ?? "객체 없음"} · HTTP {row.statusCodes.join("/") || "-"} · {row.type}</span><span className="font-semibold">{row.statusLabel}{reviewSuffix(row.reviewStatus)}</span><span className="text-muted-foreground">{confidenceCodes(row).join(" · ")}</span></button></li>)}</ul> : <p className="rounded-md border p-6 text-sm text-muted-foreground">현재 필터에 표시할 실행 Evidence가 없습니다.</p>)}
     </section>
     {evidenceSelection && snapshot.data && selected && <EvidenceSheet event={evidenceEvent} snapshot={snapshot.data} selection={evidenceSelection} disabled={disabled} onOpenChange={(open) => { if (!open) setEvidenceSelection(null) }} />}

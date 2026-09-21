@@ -79,19 +79,25 @@ function renderView(ui: ReactElement) {
 
 beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); killAuthorizationReplay.mockClear() })
 
-it("renders server summary, function rows and P/E/O chips without recomputing status", async () => {
+it("renders the compact server summary and matrix without row subtitles or P/E/O cell chips", async () => {
   renderView(<JudgmentMatrixView />)
   const summary = screen.getByRole("list", { name: "판정 요약" })
   expect(within(summary).getByText("BFLA 테스트 추천").nextElementSibling).toHaveTextContent("1")
   expect(within(summary).getByText("수동 검토 대기").nextElementSibling).toHaveTextContent("2")
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  expect(within(table).getByText("GET /api/admin/export")).toBeVisible()
-  expect(within(table).getByText("P3 · 사람 확인 정책")).toBeVisible()
+  expect(screen.queryByText("관측 결과의 신원·기능·객체 공백을 비교해 IDOR/BOLA/BFLA 테스트 조합을 추천합니다. 명시적으로 무장한 안전 재전송 외에는 자동 전송하지 않으며 점수를 합산하지 않습니다.")).not.toBeInTheDocument()
+  expect(screen.queryByText("정책 P·실행 E·소유권 O를 합산하지 않습니다. 후보는 서버 권한 셀의 판정만 따릅니다.")).not.toBeInTheDocument()
+  expect(within(table).getByText("GET")).toHaveClass("text-observation-human")
+  expect(within(table).getByText("/api/admin/export")).toBeVisible()
+  expect(within(table).queryByText("P3 · 사람 확인 정책")).not.toBeInTheDocument()
   const cell = within(table).getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" })
   expect(cell).toHaveAttribute("data-tone", "risk")
   expect(cell).toHaveTextContent("기대 차단 → 실제 미실행")
-  expect(within(cell).getByText("P3")).toBeVisible()
-  expect(within(screen.getByRole("complementary", { name: "분석 필터" })).getByLabelText("정책 신뢰도 P")).toHaveTextContent("P3 사람 확인")
+  expect(within(cell).queryByText("P3")).not.toBeInTheDocument()
+  expect(within(screen.getByRole("complementary", { name: "분석 필터" })).queryByLabelText("정책 신뢰도 P")).not.toBeInTheDocument()
+  expect(screen.getByTestId("judgment-matrix-scroll")).toHaveClass("overflow-x-auto")
+  expect(within(summary).queryByText("상위 역할 → 하위 역할")).not.toBeInTheDocument()
+  expect(within(summary).queryByText("Burp Repeater 확인 필요")).not.toBeInTheDocument()
 })
 
 it("shows an unmatched registered account service as a warning without adding a matrix column", () => {
@@ -121,7 +127,7 @@ it("opens the recommendation detail, saves a human review against the server cel
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  expect(within(table).getByText(`${service} orders:101 · 소유 A`)).toBeVisible()
+  expect(within(table).queryByText(`${service} orders:101 · 소유 A`)).not.toBeInTheDocument()
   await user.click(within(table).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   const recommendationSection = within(inspector).getByRole("region", { name: "테스트 추천 조합" })
