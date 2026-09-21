@@ -26,9 +26,6 @@ const stepCopy: Record<InspectionStep, { title: string; message: string }> = {
 
 const ANONYMOUS_HUMAN_ACCOUNT = "__flowscope_anonymous__"
 
-/** HUMAN 작업 피드는 통합 단계에서 Burp proxy history로 교체한다. */
-export const humanFeedPlaceholder: readonly SourceFeedItem[] = []
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "요청을 완료하지 못했습니다."
 }
@@ -80,7 +77,7 @@ function scannerStage(stage?: string): string {
   }[stage ?? ""] ?? stage ?? "대기"
 }
 
-export function InspectionPage({ humanFeedItems = humanFeedPlaceholder }: { humanFeedItems?: readonly SourceFeedItem[] } = {}) {
+export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly SourceFeedItem[] } = {}) {
   const snapshot = useSnapshotQuery()
   const human = useHumanRunQuery()
   const zap = useZapStatusQuery()
@@ -149,6 +146,17 @@ export function InspectionPage({ humanFeedItems = humanFeedPlaceholder }: { huma
       : scanner.isError
         ? { error: scanner.error, hasLastSuccess: scanner.data !== undefined }
         : undefined
+
+  // HUMAN 작업 피드 = Burp proxy history로 기록된 HUMAN 소스 관측(events). 서버 값만 옮기며 최근순으로 상한을 둔다.
+  const humanFeed = useMemo<readonly SourceFeedItem[]>(() => {
+    if (humanFeedItems !== undefined) return humanFeedItems
+    return (snapshot.data?.events ?? [])
+      .filter((event) => event.source === "human")
+      .slice()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 200)
+      .map((event) => ({ id: event.eventId, badge: event.method, title: event.path, status: String(event.status), detail: `${event.idn} · ${event.op}` }))
+  }, [humanFeedItems, snapshot.data?.events])
 
   const scannerFeedItems: readonly SourceFeedItem[] = (scanner.data?.run.lanes ?? []).map((lane) => ({
     id: lane.account_id ?? "anonymous",
@@ -237,7 +245,7 @@ export function InspectionPage({ humanFeedItems = humanFeedPlaceholder }: { huma
               <p className="w-full text-sm text-muted-foreground">{humanCardStatus}</p>
               <OpenRunsButton />
             </div>}
-            feedItems={humanFeedItems}
+            feedItems={humanFeed}
             feedTitle="작업 피드"
             feedDescription="HUMAN pass 중 Burp proxy history로 기록된 요청이 순서대로 표시됩니다."
             emptyHint="HUMAN pass를 시작하면 기록된 요청이 여기에 표시됩니다."
