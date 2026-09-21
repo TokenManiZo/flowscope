@@ -4,7 +4,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $IsWindows) { throw 'zap-key.ps1 is for Windows. Use scripts/zap-key.sh on macOS/Linux.' }
+if ((Test-Path Variable:\IsWindows) -and -not $IsWindows) { throw 'zap-key.ps1 is for Windows. Use scripts/zap-key.sh on macOS/Linux.' }
 
 $configDirectory = if ([string]::IsNullOrWhiteSpace($env:FLOWSCOPE_CONFIG_DIR)) {
     Join-Path $HOME '.flowscope'

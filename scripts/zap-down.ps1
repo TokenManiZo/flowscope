@@ -4,7 +4,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $IsWindows) { throw 'zap-down.ps1 is for Windows. Use scripts/zap-down.sh on macOS/Linux.' }
+if ((Test-Path Variable:\IsWindows) -and -not $IsWindows) { throw 'zap-down.ps1 is for Windows. Use scripts/zap-down.sh on macOS/Linux.' }
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker Desktop is required.' }
 
 $repoDirectory = Split-Path -Parent $PSScriptRoot

@@ -14,7 +14,7 @@ function Get-EnvironmentPort([string] $Name, [int] $DefaultValue) {
     return $parsed
 }
 
-if (-not $IsWindows) { throw 'zap-up.ps1 is for Windows. Use scripts/zap-up.sh on macOS/Linux.' }
+if ((Test-Path Variable:\IsWindows) -and -not $IsWindows) { throw 'zap-up.ps1 is for Windows. Use scripts/zap-up.sh on macOS/Linux.' }
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker Desktop is required.' }
 & docker compose version *> $null
 if ($LASTEXITCODE -ne 0) { throw 'Docker Compose v2 is required.' }
