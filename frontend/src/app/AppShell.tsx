@@ -12,7 +12,6 @@ import { GraphPage } from "@/features/graph/GraphPage"
 import { MatrixPage } from "@/features/matrix/MatrixPage"
 import { SequencePage } from "@/features/sequence/SequencePage"
 import { ScenariosPage } from "@/features/scenarios/ScenariosPage"
-import { ExplorerPage } from "@/features/explorer/ExplorerPage"
 import { routeLabel, type AppRoute } from "./routes"
 import { useEffect } from "react"
 
@@ -38,7 +37,7 @@ export function AppShell({ route = "home" }: { route?: AppRoute }) {
     }
   }, [])
 
-  const routeContent = route === "home" ? <HomePage /> : route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "surface" ? <SurfacePage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "verification" ? <VerificationPage /> : route === "explorer" ? <ExplorerPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
+  const routeContent = route === "home" ? <HomePage /> : route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "surface" ? <SurfacePage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "sequence" ? <SequencePage /> : route === "scenarios" ? <ScenariosPage /> : route === "evidence" ? <EvidencePage /> : route === "accounts" ? <AccountsPage /> : route === "verification" ? <VerificationPage /> : route === "runs" ? <RunsPage /> : <RoutePlaceholder route={route} />
 
   return <ReferenceAppShell route={route}>{routeContent}</ReferenceAppShell>
 }
