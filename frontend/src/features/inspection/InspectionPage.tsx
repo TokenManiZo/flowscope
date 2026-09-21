@@ -13,6 +13,8 @@ import { useHumanRunMutation, useHumanRunQuery, useScannerCancelMutation, useSca
 import { activeManagedAccountIds, automaticInspectionStage, type InspectionStage } from "./inspectionState"
 import { LlmPass } from "./LlmPass"
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
+import { AccountSettingsSheet } from "@/features/accounts/account-settings/AccountSettingsSheet"
+import { createAccountSettingsAdapter } from "@/features/accounts/account-settings/accountSettingsAdapter"
 
 /** 점검 시작 허브의 소스 스텝. 범위는 상단 표시로 대체했다. */
 export type InspectionStep = "human" | "scanner" | "llm" | "review"
@@ -59,10 +61,6 @@ function duration(seconds?: number): string {
   return minutes > 0 ? `${minutes}분 ${remainder}초` : `${remainder}초`
 }
 
-function age(seconds?: number): string {
-  return seconds === undefined || seconds < 0 ? "확인 전" : `${duration(seconds)} 전`
-}
-
 function scannerStage(stage?: string): string {
   return {
     SESSION_SETUP: "격리 세션 설정",
@@ -98,6 +96,9 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const [zapLoginUrl, setZapLoginUrl] = useState("")
   const [zapUsername, setZapUsername] = useState("")
   const [zapPassword, setZapPassword] = useState("")
+  const [showZapAccountForm, setShowZapAccountForm] = useState(false)
+  const [settingsAccountId, setSettingsAccountId] = useState<string | null>(null)
+  const settingsAdapter = useMemo(() => createAccountSettingsAdapter(), [])
 
   const scope = scanner.data?.scope ?? []
   useEffect(() => {
@@ -221,7 +222,6 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
           <SourcePassLayout
             label="HUMAN pass"
             title="HUMAN pass"
-            description="선택은 표시 라벨이 아니라 ACTIVE Session Broker 계정의 검증 조건입니다."
             statusTiles={[
               { label: "상태", value: humanSummary },
               { label: "run", value: human.data?.runId || "없음", mono: true },
@@ -256,7 +256,6 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
           <SourcePassLayout
             label="ZAP 기준선"
             title="ZAP 기준선"
-            description="신원마다 새 ZAP 세션을 사용합니다. 기준선은 크롤링과 Passive 분석이며 Active Scan을 실행하지 않습니다."
             statusTiles={[
               { label: "상태", value: scanner.data?.run.status ?? "NOT_STARTED" },
               { label: "소요 시간", value: duration(scanner.data?.run.elapsed_seconds), mono: true },
@@ -278,14 +277,13 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                 <Button variant="outline" onClick={() => void zap.refetch()} disabled={zap.isFetching}>ZAP 연결 새로 고침</Button>
                 <span className="text-sm">{zap.data?.connected ? "연결됨" : zap.data?.state ?? "UNAVAILABLE"} · {zap.data?.message ?? "연결 상태 확인 중"}</span>
               </div>
-              <p role="status" aria-label="ZAP 기준선 상태">{scanner.data?.run.status ?? "NOT_STARTED"} · 수집 {scanner.data?.run.captured_records ?? "-"}건 · Alert {scanner.data?.run.alert_count ?? "-"}건</p>
-              <p className="text-sm text-muted-foreground">작업 상태 {scanner.data?.run.activity_state ?? "확인 전"} · 신호 {age(scanner.data?.run.last_heartbeat_age_seconds)}{scanner.data?.run.run_id ? ` · run ${scanner.data.run.run_id}` : ""}</p>
-              <fieldset className="space-y-2"><legend className="text-sm font-medium">실행 신원</legend>
+              <fieldset className="space-y-2"><legend className="text-sm font-medium">실행 신원 <span className="font-normal text-muted-foreground">· 계정·세션에서 등록한 계정이 표시됩니다</span></legend>
                 <label className="flex items-center gap-2"><Checkbox id="scanner-anonymous" checked={anonymous} onCheckedChange={(checked) => setAnonymous(checked === true)} /><span>비로그인</span></label>
-                {scannerAccounts.map((account) => <div className="flex flex-wrap items-center gap-2" key={account.id}><label className="flex items-center gap-2"><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label} · {account.role} · {account.status}</span></label><Button type="button" size="sm" variant="ghost" disabled={scannerRunning || zapAccountDelete.isPending} onClick={() => zapAccountDelete.mutate(account.id)}>자격증명 폐기</Button>{account.message && <span className="w-full pl-6 text-xs text-muted-foreground">{account.message}</span>}<span className="w-full pl-6 text-xs text-muted-foreground">인증 검증 · ZAP 자동 판정 + 재사용 세션 연결</span></div>)}
+                {scannerAccounts.map((account) => <div className="flex flex-wrap items-center gap-2" key={account.id}><label className="flex items-center gap-2"><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label} · {account.role} · {account.status}</span></label><Button type="button" size="sm" variant="outline" onClick={() => setSettingsAccountId(account.id)}>계정 수정</Button><Button type="button" size="sm" variant="ghost" disabled={scannerRunning || zapAccountDelete.isPending} onClick={() => zapAccountDelete.mutate(account.id)}>자격증명 폐기</Button>{account.message && <span className="w-full pl-6 text-xs text-muted-foreground">{account.message}</span>}<span className="w-full pl-6 text-xs text-muted-foreground">인증 검증 · ZAP 자동 판정 + 재사용 세션 연결</span></div>)}
                 {!scannerAccounts.length && <p className="text-sm text-muted-foreground">현재 target에 등록된 ZAP 로그인 계정이 없습니다.</p>}
               </fieldset>
-              <section className="grid gap-3 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="ZAP 로그인 계정 등록">
+              <div><Button type="button" variant="outline" size="sm" onClick={() => setShowZapAccountForm((value) => !value)}>{showZapAccountForm ? "임시 계정 폼 닫기" : "임시 계정 생성"}</Button></div>
+              {showZapAccountForm && <section className="grid gap-3 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="ZAP 로그인 계정 등록">
                 <div><p className="font-medium">ZAP 브라우저 로그인 계정</p><p className="text-xs text-muted-foreground">모든 lane은 bundle이 제공하는 Docker Chromium Client Spider로 실행됩니다. ID·비밀번호는 Burp 메모리에서 ZAP의 휘발성 tmpfs 작업공간으로 전송되며 프로젝트·Evidence·로그에는 저장하지 않습니다.</p></div>
                 <div className="grid gap-2 md:grid-cols-2">
                   <label className="grid gap-1 text-sm">계정 이름<Input value={zapLabel} onChange={(event) => setZapLabel(event.target.value)} autoComplete="off" /></label>
@@ -295,8 +293,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   <label className="grid gap-1 text-sm">비밀번호<Input type="password" value={zapPassword} onChange={(event) => setZapPassword(event.target.value)} autoComplete="new-password" /></label>
                 </div>
                 <p className="text-xs text-muted-foreground">로그인 성공은 ZAP의 인증 결과와 실제 재사용 세션 연결을 함께 확인합니다. 실패하면 ANON으로 대체하지 않고 해당 계정을 FAILED로 표시하며 검사를 시작하지 않습니다.</p>
-                <Button type="button" variant="outline" disabled={!targetInScope || !zapLabel.trim() || !zapLoginUrl.trim() || !zapUsername || !zapPassword || zapAccountSave.isPending || scannerRunning} onClick={() => zapAccountSave.mutate({ id: "", label: zapLabel, role: zapRole, service: normalizedOrigin(target), loginUrl: zapLoginUrl, username: zapUsername, password: zapPassword }, { onSuccess: () => { setZapLabel(""); setZapLoginUrl(""); setZapUsername(""); setZapPassword("") } })}>로그인 계정 등록</Button>
-              </section>
+                <Button type="button" variant="outline" disabled={!targetInScope || !zapLabel.trim() || !zapLoginUrl.trim() || !zapUsername || !zapPassword || zapAccountSave.isPending || scannerRunning} onClick={() => zapAccountSave.mutate({ id: "", label: zapLabel, role: zapRole, service: normalizedOrigin(target), loginUrl: zapLoginUrl, username: zapUsername, password: zapPassword }, { onSuccess: () => { setZapLabel(""); setZapLoginUrl(""); setZapUsername(""); setZapPassword(""); setShowZapAccountForm(false) } })}>로그인 계정 등록</Button>
+              </section>}
               <details className="rounded-lg border border-border/70 bg-background/30 p-3">
                 <summary className="cursor-pointer text-sm font-medium">명세 기반 탐색 추가 (선택)</summary>
                 <label className="mt-3 grid gap-1 text-sm" htmlFor="scanner-definitions">exact-scope API 정의
@@ -323,13 +321,23 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
         </TabsContent>
 
         <TabsContent value="review">
-          <Card><CardHeader><CardTitle>Evidence 검토</CardTitle><CardDescription>Judge 없이 실제 HUMAN·ZAP·LLM Evidence를 비교합니다.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button><Button variant="outline" onClick={() => setManualStep("llm")}>LLM 단계 열기</Button></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-xl">Evidence 검토</CardTitle><CardDescription>Judge 없이 실제 HUMAN·ZAP·LLM Evidence를 비교합니다.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button><Button variant="outline" onClick={() => setManualStep("llm")}>LLM 단계 열기</Button></CardContent></Card>
         </TabsContent>
       </Tabs>
 
       <Accordion type="single" collapsible>
         <AccordionItem value="safety"><AccordionTrigger>실행 안전 경계</AccordionTrigger><AccordionContent>대상은 현재 scanner scope와 정확히 같아야 하며, ZAP 연결과 신원 선택을 모두 확인한 뒤에만 기준선을 시작합니다.</AccordionContent></AccordionItem>
       </Accordion>
+
+      <AccountSettingsSheet
+        zapRuntimeAvailable={zap.data ? (zap.data.managedRuntime ?? zap.data.connected) : false}
+        accountId={settingsAccountId}
+        adapter={settingsAdapter}
+        open={settingsAccountId !== null}
+        onOpenChange={(open) => { if (!open) setSettingsAccountId(null) }}
+        onSaved={() => { void snapshot.refetch(); void scanner.refetch() }}
+        onDeleted={() => { setSettingsAccountId(null); void snapshot.refetch(); void scanner.refetch() }}
+      />
     </section></ReferenceAnalysisWorkspace>
   )
 }

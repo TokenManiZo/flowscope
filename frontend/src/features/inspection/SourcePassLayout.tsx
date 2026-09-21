@@ -21,7 +21,6 @@ export interface SourcePassLayoutProps {
   /** 소스 이름(HUMAN·ZAP·LLM). aria-label 접두어로만 쓴다. */
   label: string
   title: string
-  description: string
   statusTiles: readonly SourceStatusTile[]
   control: ReactNode
   controlTitle?: string
@@ -36,15 +35,12 @@ export interface SourcePassLayoutProps {
 
 /** HUMAN·ZAP·LLM 세 소스가 같은 형식(상태 타일 + 실행 컨트롤 + 작업 피드)으로 보이도록 하는 공통 레이아웃. */
 export function SourcePassLayout({
-  label, title, description, statusTiles, control, controlTitle = "실행 설정",
+  label, title, statusTiles, control, controlTitle = "실행 설정",
   feedItems, feedTitle, feedDescription, emptyHint, feedBadge, feedFooter, notices,
 }: SourcePassLayoutProps) {
   return (
     <section className="grid gap-3" aria-label={`${label} 실행 영역`}>
-      <div>
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
+      <h2 className="text-xl font-semibold">{title}</h2>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`${label} 실행 상태`} role="group">
         {statusTiles.map((tile) => (

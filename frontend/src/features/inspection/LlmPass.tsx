@@ -109,7 +109,6 @@ export function LlmPass({ target }: { target: string }) {
   return <SourcePassLayout
     label="LLM"
     title="LLM 탐색"
-    description="실제 HTTP 응답은 LLM Evidence로, 산출물에서 확인한 API·입력은 Evidence-bound 선언으로 분리 저장합니다."
     statusTiles={[
       { label: "상태", value: run?.status ?? "불러오는 중" },
       { label: "소요 시간", value: formatElapsed(run?.elapsedMillis ?? 0), mono: true },

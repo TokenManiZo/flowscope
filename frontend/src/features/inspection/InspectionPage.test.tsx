@@ -233,6 +233,7 @@ describe("unified inspection hub", () => {
 
     await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("button", { name: "임시 계정 생성" }))
     await user.type(screen.getByLabelText("계정 이름"), "새 계정")
     await user.type(screen.getByLabelText("로그인 URL"), `${target}/login`)
     await user.type(screen.getByLabelText("로그인 ID"), "alice@example.test")
@@ -287,12 +288,12 @@ describe("unified inspection hub", () => {
 
     await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    expect(await screen.findByText(/COMPLETED · 수집 9건/)).toBeVisible()
+    expect(await within(await screen.findByRole("group", { name: "ZAP 기준선 실행 상태" })).findByText("9 / -")).toBeVisible()
     const query = client.getQueryCache().find({ queryKey: queryKeys.scannerRun })
     await act(async () => { await client.fetchQuery({ queryKey: queryKeys.scannerRun, queryFn: query?.options.queryFn, retry: false }).catch(() => undefined) })
 
     expect(await screen.findByRole("alert", { name: "ZAP 통신이 끊겼습니다." })).toBeVisible()
-    expect(screen.getByText(/COMPLETED · 수집 9건/)).toBeVisible()
+    expect(within(screen.getByRole("group", { name: "ZAP 기준선 실행 상태" })).getByText("9 / -")).toBeVisible()
   })
 
   it("keeps a manually selected step when polling advances the automatic recommendation", async () => {
@@ -389,12 +390,12 @@ describe("unified inspection hub", () => {
 
     await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    expect(await screen.findByText(/COMPLETED · 수집 9건/)).toBeVisible()
+    expect(await within(await screen.findByRole("group", { name: "ZAP 기준선 실행 상태" })).findByText("9 / -")).toBeVisible()
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
     await user.click(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" }))
 
     expect(await screen.findByRole("alert", { name: "ZAP 기준선을 시작할 수 없습니다." })).toBeVisible()
-    expect(screen.getByText(/COMPLETED · 수집 9건/)).toBeVisible()
+    expect(within(screen.getByRole("group", { name: "ZAP 기준선 실행 상태" })).getByText("9 / -")).toBeVisible()
   })
 
   it.each([
