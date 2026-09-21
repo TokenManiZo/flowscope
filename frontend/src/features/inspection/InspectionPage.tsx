@@ -159,19 +159,15 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       .map((event) => ({ id: event.eventId, badge: event.method, title: event.path, status: String(event.status), detail: `${event.idn} · ${event.op}` }))
   }, [humanFeedItems, snapshot.data?.events])
 
-  const scannerFeedItems: readonly SourceFeedItem[] = (scanner.data?.run.lanes ?? []).map((lane) => ({
-    id: lane.account_id ?? "anonymous",
-    badge: lane.account_id ? "ACCOUNT" : "ANON",
-    title: lane.account_label,
-    status: lane.status,
-    detail: [
-      `${scannerStage(lane.stage)} · 경과 ${duration(lane.elapsed_seconds)} · 수집 ${lane.captured_records}건`,
-      lane.account_id ? `로그인 ${lane.authentication_state ?? "UNKNOWN"}${lane.authentication_browser ? ` · ${lane.authentication_browser}` : ""}` : "",
-      lane.authentication_message,
-      lane.warning ? `주의 · ${lane.warning}` : "",
-      lane.error ? `오류 · ${lane.error}` : "",
-    ].filter(Boolean).join(" · "),
-  }))
+  // ZAP 작업 피드 = SCANNER 소스로 관측된 요청(Burp history처럼). 신원(idn)을 앞 badge에, 상태코드와 메서드·경로를 함께 보인다.
+  // lane 단위 진행은 상태 타일·feed 설명과 전체 실행 상태(#runs)에 남는다.
+  const scannerFeedItems = useMemo<readonly SourceFeedItem[]>(() => (snapshot.data?.events ?? [])
+    .filter((event) => event.source === "scanner")
+    .slice()
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 200)
+    .map((event) => ({ id: event.eventId, badge: event.idn || "ANON", title: `${event.method} ${event.path}`, status: String(event.status), detail: event.op })),
+    [snapshot.data?.events])
 
   return (
     <ReferenceAnalysisWorkspace ariaLabel="점검 시작 작업 영역" context={null} inspector={null}><section className="space-y-4 p-3" aria-labelledby="inspection-title">
@@ -263,6 +259,11 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
               { label: "현재 단계", value: scannerStage(scanner.data?.run.stage) },
             ]}
             notices={<>
+              {(scanner.data?.run.lanes ?? []).map((lane) => (
+                <p key={lane.account_id ?? "anon"} className="text-sm text-muted-foreground">
+                  {lane.account_label} · {scannerStage(lane.stage)}{lane.account_id ? ` · 로그인 ${lane.authentication_state ?? "UNKNOWN"}${lane.authentication_browser ? ` · ${lane.authentication_browser}` : ""}` : ""}{lane.authentication_message ? ` · ${lane.authentication_message}` : ""}{lane.warning ? ` · 주의 ${lane.warning}` : ""}{lane.error ? ` · 오류 ${lane.error}` : ""}
+                </p>
+              ))}
               {scanner.data?.run.warning && <Alert><AlertDescription>주의 · {scanner.data.run.warning}</AlertDescription></Alert>}
               {scanner.data?.run.error && <Alert variant="destructive"><AlertDescription>{scanner.data.run.error}</AlertDescription></Alert>}
             </>}
@@ -312,7 +313,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             feedItems={scannerFeedItems}
             feedTitle="작업 피드"
             feedDescription={`${scannerStage(scanner.data?.run.stage)} · 현재 단계 ${duration(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${duration(scanner.data.run.stage_timeout_seconds)}` : ""}`}
-            emptyHint="기준선을 시작하면 신원별 lane 진행이 여기에 표시됩니다."
+            emptyHint="기준선을 시작하면 ZAP이 관측한 요청이 여기에 표시됩니다."
           />
         </TabsContent>
 
