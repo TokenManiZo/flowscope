@@ -34,17 +34,11 @@ if ($keyItem.PSIsContainer -or ($keyItem.Attributes -band [System.IO.FileAttribu
 }
 
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-# 기존 파일의 보안기술자를 읽어 DACL만 잠근다. 빈 FileSecurity를 새로 만들면 owner·SACL 섹션까지
-# 쓰려다 관리자 권한(SeSecurityPrivilege)을 요구하므로, 파일 생성자(=현재 사용자)가 그대로 소유한
-# 채로 상속을 끊고 현재 사용자 FullControl 하나만 남긴다.
-$acl = Get-Acl -LiteralPath $keyFile
-$acl.SetAccessRuleProtection($true, $false)
-foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
-$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(
-    $identity.User,
-    [System.Security.AccessControl.FileSystemRights]::FullControl,
-    [System.Security.AccessControl.AccessControlType]::Allow))
-Set-Acl -LiteralPath $keyFile -AclObject $acl
+# Windows에서 DACL만 잠근다. Set-Acl cmdlet은 SACL(audit) 섹션까지 쓰려 해서 비관리자에게
+# SeSecurityPrivilege를 요구하므로, 네이티브 icacls로 상속을 끊고 현재 사용자에게만 FullControl을
+# 부여한다(파일 소유자는 관리자 권한 없이 DACL을 바꿀 수 있다).
+& icacls $keyFile /inheritance:r /grant:r "$($identity.Name):(F)" *> $null
+if ($LASTEXITCODE -ne 0) { throw "Could not restrict the ZAP key file ACL: $keyFile" }
 
 $key = [System.IO.File]::ReadAllText($keyFile).Trim()
 if ($key -notmatch '^[A-Za-z0-9._~-]+$' -or $key.Length -lt 32 -or $key.Length -gt 256) {
