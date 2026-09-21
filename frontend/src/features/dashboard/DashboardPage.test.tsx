@@ -186,17 +186,15 @@ describe("dashboard shell", () => {
     expect(screen.queryByText("미실행")).not.toBeInTheDocument()
   })
 
-  it("shows empty onboarding, loads a sample, and starts a preserved project instead of clearing Evidence", async () => {
+  it("starts a preserved project from the top bar instead of clearing Evidence", async () => {
     const user = userEvent.setup()
     const fetchStub = renderDashboard(snapshotFixture)
 
-    await screen.findByText("첫 점검을 시작하세요")
-    expect(screen.getByRole("button", { name: "빠른 시작" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "샘플로 화면 익히기" })).toBeVisible()
+    await screen.findByRole("heading", { name: "보안 점검 대시보드" })
+    // 온보딩·샘플 블록은 제거됐다(빈 상태 안내는 Home hero가 담당).
+    expect(screen.queryByText("첫 점검을 시작하세요")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "샘플로 화면 익히기" })).not.toBeInTheDocument()
     expect(screen.queryByText("트래픽 초기화")).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole("button", { name: "샘플로 화면 익히기" }))
-    await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/sample", expect.objectContaining({ method: "POST" })))
 
     await user.click(screen.getAllByRole("button", { name: "새 진단 시작" }).at(-1)!)
     expect(screen.getByRole("dialog", { name: "새 진단 시작" })).toHaveTextContent("기존 Evidence는 삭제하지 않습니다")

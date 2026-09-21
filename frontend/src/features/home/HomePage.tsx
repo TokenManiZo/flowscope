@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, Play, ScanSearch } from "lucide-react"
+import { CheckCircle2, Play, ScanSearch } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
@@ -54,10 +54,6 @@ export function HomePage({ snapshot }: HomePageProps) {
               <Button onClick={() => { window.location.hash = "#inspection" }}>
                 <Play className="size-4" aria-hidden="true" />
                 빠른 시작
-              </Button>
-              <Button variant="outline" onClick={() => { window.location.hash = "#dashboard" }}>
-                샘플로 화면 익히기
-                <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
             </div>
           </div>
