@@ -32,6 +32,7 @@ import {
   deleteExplorerAccount,
   saveZapAccount,
   deleteZapAccount,
+  refreshZapSession,
   getProjects,
   startProject,
   openProject,
@@ -136,6 +137,7 @@ export function useScannerRunMutation() { return useInvalidatingMutation(({ targ
 export function useScannerCancelMutation() { return useInvalidatingMutation(cancelScannerRun, [queryKeys.scannerRun]) }
 export function useZapAccountSaveMutation() { return useInvalidatingMutation(saveZapAccount, [queryKeys.scannerRun, queryKeys.snapshot]) }
 export function useZapAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteZapAccount(id), [queryKeys.scannerRun, queryKeys.snapshot]) }
+export function useZapSessionRefreshMutation() { return useInvalidatingMutation((id: string) => refreshZapSession(id), [queryKeys.scannerRun, queryKeys.snapshot]) }
 export function useExplorerStartMutation() { return useInvalidatingMutation(startExplorerRun, [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear" | "recheck") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerSteerMutation() { return useInvalidatingMutation((message: string) => steerExplorerRun(message), [queryKeys.explorerRun]) }

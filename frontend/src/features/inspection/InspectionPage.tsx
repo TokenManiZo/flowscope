@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useHumanRunMutation, useHumanRunQuery, useScannerCancelMutation, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapAccountDeleteMutation, useZapAccountSaveMutation, useZapStatusQuery } from "@/lib/query/hooks"
+import { useHumanRunMutation, useHumanRunQuery, useScannerCancelMutation, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapAccountDeleteMutation, useZapAccountSaveMutation, useZapSessionRefreshMutation, useZapStatusQuery } from "@/lib/query/hooks"
 import { activeManagedAccountIds, automaticInspectionStage, type InspectionStage } from "./inspectionState"
 import { LlmPass } from "./LlmPass"
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
@@ -85,6 +85,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const scannerCancel = useScannerCancelMutation()
   const zapAccountSave = useZapAccountSaveMutation()
   const zapAccountDelete = useZapAccountDeleteMutation()
+  const zapSessionRefresh = useZapSessionRefreshMutation()
   const [manualStep, setManualStep] = useState<InspectionStep | null>(null)
   const [target, setTarget] = useState("")
   const [humanAccount, setHumanAccount] = useState(ANONYMOUS_HUMAN_ACCOUNT)
@@ -190,6 +191,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       {scannerMutation.isError && <Alert variant="destructive" aria-label={errorMessage(scannerMutation.error)}><AlertDescription>{errorMessage(scannerMutation.error)}</AlertDescription></Alert>}
       {scannerCancel.isError && <Alert variant="destructive" aria-label={errorMessage(scannerCancel.error)}><AlertDescription>{errorMessage(scannerCancel.error)}</AlertDescription></Alert>}
       {zapAccountSave.isError && <Alert variant="destructive" aria-label={errorMessage(zapAccountSave.error)}><AlertDescription>{errorMessage(zapAccountSave.error)}</AlertDescription></Alert>}
+      {zapSessionRefresh.isError && <Alert variant="destructive" aria-label={errorMessage(zapSessionRefresh.error)}><AlertDescription>{errorMessage(zapSessionRefresh.error)}</AlertDescription></Alert>}
       {zapAccountDelete.isError && <Alert variant="destructive" aria-label={errorMessage(zapAccountDelete.error)}><AlertDescription>{errorMessage(zapAccountDelete.error)}</AlertDescription></Alert>}
 
       <Card>
@@ -280,7 +282,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
               </div>
               <fieldset className="space-y-2"><legend className="text-sm font-medium">실행 신원 <span className="font-normal text-muted-foreground">· 계정·세션에서 등록한 계정이 표시됩니다</span></legend>
                 <label className="flex items-center gap-2"><Checkbox id="scanner-anonymous" checked={anonymous} onCheckedChange={(checked) => setAnonymous(checked === true)} /><span>비로그인</span></label>
-                {scannerAccounts.map((account) => <div className="flex flex-wrap items-center gap-2" key={account.id}><label className="flex items-center gap-2"><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label} · {account.role} · {account.status}</span></label><Button type="button" size="sm" variant="outline" onClick={() => setSettingsAccountId(account.id)}>계정 수정</Button><Button type="button" size="sm" variant="ghost" disabled={scannerRunning || zapAccountDelete.isPending} onClick={() => zapAccountDelete.mutate(account.id)}>자격증명 폐기</Button>{account.message && <span className="w-full pl-6 text-xs text-muted-foreground">{account.message}</span>}<span className="w-full pl-6 text-xs text-muted-foreground">인증 검증 · ZAP 자동 판정 + 재사용 세션 연결</span></div>)}
+                {scannerAccounts.map((account) => <div className="flex flex-wrap items-center gap-2" key={account.id}><label className="flex items-center gap-2"><Checkbox id={`scanner-${account.id}`} checked={selectedAccounts.includes(account.id)} onCheckedChange={(checked) => setSelectedAccounts((current) => checked === true ? [...current, account.id] : current.filter((id) => id !== account.id))} /><span>{account.label} · {account.role} · {account.status}</span></label><Button type="button" size="sm" variant="outline" disabled={scannerRunning || zapSessionRefresh.isPending} title="크롤 없이 ZAP 인증만 실행해 세션을 확보합니다." onClick={() => zapSessionRefresh.mutate(account.id)}>로그인만(세션 확보)</Button><Button type="button" size="sm" variant="outline" onClick={() => setSettingsAccountId(account.id)}>계정 수정</Button><Button type="button" size="sm" variant="ghost" disabled={scannerRunning || zapAccountDelete.isPending} onClick={() => zapAccountDelete.mutate(account.id)}>자격증명 폐기</Button>{account.message && <span className="w-full pl-6 text-xs text-muted-foreground">{account.message}</span>}<span className="w-full pl-6 text-xs text-muted-foreground">인증 검증 · ZAP 자동 판정 + 재사용 세션 연결</span></div>)}
                 {!scannerAccounts.length && <p className="text-sm text-muted-foreground">현재 target에 등록된 ZAP 로그인 계정이 없습니다.</p>}
               </fieldset>
               <div><Button type="button" variant="outline" size="sm" onClick={() => setShowZapAccountForm((value) => !value)}>{showZapAccountForm ? "임시 계정 폼 닫기" : "임시 계정 생성"}</Button></div>

@@ -85,6 +85,8 @@ export const cancelScannerRun = () => postForm<ScannerRunMutationResult>("/api/s
 export const saveZapAccount = (values: { id: string; label: string; role: string; service: string; loginUrl: string; username: string; password: string }) =>
   postForm<{ success: true; message: string; account: ZapAccount }>("/api/zap-accounts", { action: "save", ...values })
 export const deleteZapAccount = (id: string) => postForm<ApiSuccess>("/api/zap-accounts", { action: "delete", id })
+/** 크롤 없이 ZAP 인증만 실행해 이 계정의 세션을 확보(refresh-session → startAuthenticationOnly). 202로 시작을 알린다. */
+export const refreshZapSession = (id: string) => postForm<{ status?: string }>("/api/zap-accounts", { action: "refresh-session", id }, [202])
 export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))
 export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean }) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "start", ...values, anonymous: String(values.anonymous) }, [202])
