@@ -92,9 +92,11 @@ it("renders the compact server summary and matrix without row subtitles or P/E/O
   expect(within(table).queryByText("P3 · 사람 확인 정책")).not.toBeInTheDocument()
   const cell = within(table).getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" })
   expect(cell).toHaveAttribute("data-tone", "risk")
-  expect(cell).toHaveTextContent("기대 차단 → 실제 미실행")
+  expect(cell).not.toHaveTextContent("기대 차단 → 실제 미실행")
   expect(within(cell).queryByText("P3")).not.toBeInTheDocument()
   expect(within(screen.getByRole("complementary", { name: "분석 필터" })).queryByLabelText("정책 신뢰도 P")).not.toBeInTheDocument()
+  expect(screen.queryByRole("tab", { name: "실행 Evidence" })).not.toBeInTheDocument()
+  expect(screen.queryByText(/열=신원·역할/)).not.toBeInTheDocument()
   expect(screen.getByTestId("judgment-matrix-scroll")).toHaveClass("overflow-x-auto")
   expect(within(summary).queryByText("상위 역할 → 하위 역할")).not.toBeInTheDocument()
   expect(within(summary).queryByText("Burp Repeater 확인 필요")).not.toBeInTheDocument()
@@ -134,8 +136,11 @@ it("opens the recommendation detail, saves a human review against the server cel
   expect(recommendationSection).toHaveTextContent("BOLA/IDOR 테스트 추천 조합")
   expect(recommendationSection).toHaveTextContent("A → B")
   expect(recommendationSection).toHaveTextContent("ev-a")
-  expect(within(inspector).getByRole("region", { name: "독립 신뢰도 축" })).toHaveTextContent("O3 · 확정")
-  expect(within(inspector).getByRole("region", { name: "테스트 유효성 게이트" })).toHaveTextContent("독립 반복")
+  expect(within(inspector).queryByRole("region", { name: "독립 신뢰도 축" })).not.toBeInTheDocument()
+  expect(within(inspector).queryByRole("region", { name: "테스트 유효성 게이트" })).not.toBeInTheDocument()
+  expect(within(inspector).queryByRole("region", { name: "기대와 실제" })).not.toBeInTheDocument()
+  expect(within(inspector).queryByRole("region", { name: "결과 오라클" })).not.toBeInTheDocument()
+  expect(within(inspector).queryByRole("region", { name: "대상 Evidence" })).not.toBeInTheDocument()
   const review = within(inspector).getByRole("region", { name: "사람 최종 판정" })
   await user.click(within(review).getByRole("checkbox"))
   await user.type(within(review).getByLabelText("검증 메모"), "repeater reproduced")
@@ -162,7 +167,7 @@ it("requires explicit one-run arming before replaying the selected recommendatio
   await waitFor(() => expect(killAuthorizationReplay).toHaveBeenCalledOnce())
 })
 
-it("opens the basis Evidence sheet from a recommendation and keeps non-reviewable cells without a review form", async () => {
+it("keeps non-reviewable observed cells without the removed Evidence section or a review form", async () => {
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
@@ -170,25 +175,39 @@ it("opens the basis Evidence sheet from a recommendation and keeps non-reviewabl
   await user.click(within(table).getByRole("button", { name: `기대 허용 관측: A · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   expect(within(inspector).queryByRole("region", { name: "사람 최종 판정" })).not.toBeInTheDocument()
-  await user.click(within(inspector).getByRole("button", { name: "Evidence 상세 열기" }))
-  expect(await screen.findByText("매트릭스 선택 좌표")).toBeVisible()
+  expect(within(inspector).queryByRole("region", { name: "대상 Evidence" })).not.toBeInTheDocument()
 })
 
-it("filters attention rows, lists evidence rows, and clears a selection whose server item disappears", async () => {
+it("filters attention rows with a separate switch and clears a selection whose server item disappears", async () => {
   const user = userEvent.setup()
   const { rerender } = renderView(<JudgmentMatrixView />)
-  await user.click(screen.getByRole("checkbox", { name: "주의 항목만" }))
+  const attention = screen.getByRole("switch", { name: "주의 항목만" })
+  expect(attention).toHaveAttribute("aria-checked", "false")
+  await user.click(attention)
+  expect(attention).toHaveAttribute("aria-checked", "true")
   expect(screen.getByRole("region", { name: "판정 매트릭스 표" })).toBeVisible()
-  await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "실행 Evidence" }))
-  expect(screen.getByText("현재 필터에 표시할 실행 Evidence가 없습니다.")).toBeVisible()
-  await user.click(screen.getByRole("checkbox", { name: "주의 항목만" }))
-  const list = screen.getByRole("list", { name: "실행 Evidence 목록" })
-  await user.click(within(list).getByRole("button"))
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("기대 허용 관측")
-  // Evidence 행은 객체 cell과 서버 id를 공유하므로 둘 다 사라져야 선택이 풀린다.
-  current = { ...snapshot, revision: 5, authorizationMatrix: { ...matrix, objects: [matrix.objects[1]], evidence: [] } }
+  await user.click(attention)
+  await user.click(screen.getByRole("button", { name: "기대 허용 관측: A · GET /api/admin/export" }))
+  current = { ...snapshot, revision: 5, authorizationMatrix: { ...matrix, functions: [matrix.functions[1]] } }
   rerender(<JudgmentMatrixView />)
   await waitFor(() => expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("판정 셀을 선택하면"))
+})
+
+it("marks confirmed cells red and keeps gap replay and review actions available", async () => {
+  const user = userEvent.setup()
+  current = { ...snapshot, authorizationMatrix: { ...matrix, functions: [
+    { ...matrix.functions[0], reviewStatus: "CONFIRMED" },
+    fn("function-gap", "b", `${service} GET /api/admin/export`),
+  ] } }
+  renderView(<JudgmentMatrixView />)
+  const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
+  expect(within(table).getByRole("button", { name: "기대 허용 관측 · 사용자 확정: A · GET /api/admin/export" })).toHaveClass("border-red-500/50", "bg-red-500/10")
+  await user.click(within(table).getByRole("button", { name: "교차 실행 공백: B · GET /api/admin/export" }))
+  const inspector = screen.getByRole("complementary", { name: "선택 상세" })
+  expect(within(inspector).getByRole("button", { name: "Burp Repeater로 전송" })).toBeEnabled()
+  const review = within(inspector).getByRole("region", { name: "사람 최종 판정" })
+  expect(within(review).getByRole("checkbox", { name: "Burp Repeater 결과를 확인했으며 취약점으로 확정" })).toBeEnabled()
+  expect(within(review).getByRole("button", { name: "판정 저장" })).toBeEnabled()
 })
 
 it("states loading, missing matrix, and query error without a local recalculation", () => {
@@ -302,7 +321,7 @@ it("offers required-role and identity-role assignment on a P0 cell through the e
   expect(screen.queryByRole("region", { name: "정책·역할 지정" })).not.toBeInTheDocument()
 })
 
-it("shows the blocking layer and saves an object policy from the object cell", async () => {
+it("hides the blocking-layer subtitle and saves an object policy from the object cell", async () => {
   const user = userEvent.setup()
   current = { ...snapshot, authorizationMatrix: { ...matrix, objects: matrix.objects.map((cell) =>
     cell.id === "object-b" ? { ...cell, blockingLayers: ["BOLA"], resourcePolicy: "OWNER_ONLY" } : cell) } }
@@ -310,7 +329,7 @@ it("shows the blocking layer and saves an object policy from the object cell", a
   await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
 
-  expect(screen.getByText("차단층").parentElement).toHaveTextContent("BOLA")
+  expect(screen.queryByText("차단층")).not.toBeInTheDocument()
   expect(screen.getByText(/객체 정책 소유자 전용/)).toBeVisible()
   const assignment = screen.getByRole("region", { name: "정책·역할 지정" })
   await user.selectOptions(within(assignment).getByRole("combobox", { name: "객체 접근 정책" }), "PUBLIC")
