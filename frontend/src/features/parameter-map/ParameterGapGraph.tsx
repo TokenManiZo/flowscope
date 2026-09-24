@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
-import { Crosshair, Minus, Plus } from "lucide-react"
+import { Bot, Crosshair, Minus, Plus, ScanLine, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { clampParameterNode, parameterLaneGeometry } from "./parameterLanes"
@@ -16,8 +16,7 @@ interface Props {
 }
 const laneLabels: Record<ParameterLane, string> = { condition: "조건/사용자", operation: "API 엔드포인트", input: "입력 파라미터", target: "권한 대상" }
 const laneColors: Record<ParameterLane, string> = { condition: "#60a5fa", operation: "#34d399", input: "#fbbf24", target: "#c4b5fd" }
-/** 소스색은 노드·소스 표기 전용. Gap 엣지는 주황(--gap-edge)으로 분리한다. */
-const sourceColors = { HUMAN: "#60a5fa", SCANNER: "#f87171", LLM: "#d4d4d8", UNKNOWN: "#a1a1aa" }
+/** Gap 엣지는 주황(--gap-edge). 요청 주체는 엣지 색이 아니라 노드 카드 아이콘으로 표시한다. */
 const GAP_EDGE_FALLBACK = "#e08b2a"
 function gapEdgeColor(): string {
   if (typeof window === "undefined" || typeof getComputedStyle !== "function") return GAP_EDGE_FALLBACK
@@ -45,9 +44,9 @@ function graphElements(projection: ParameterGraphProjection): ElementDefinition[
     }),
     ...projection.edges.map(edge => ({ data: {
       id: edge.id, source: edge.source, target: edge.target, line: edge.relation === "gap" ? "dashed" : edge.line,
-      color: edge.relation === "gap" ? gapEdgeColor() : edge.sourceRole === "OBSERVATION" ? sourceColors[edge.trafficSource] : "#a1a1aa",
-
-      label: relationLabel(edge),
+      // 주체는 노드 카드 아이콘으로만 표시한다. 엣지는 Gap(주황 파선)과 그 밖의 관계(회색) 두 가지뿐이며 라벨을 그리지 않는다.
+      color: edge.relation === "gap" ? gapEdgeColor() : "#a1a1aa",
+      label: "",
       focused: edge.focused ? "yes" : focus ? "no" : "none",
     } })),
   ]
@@ -276,7 +275,7 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
   }
   return <div ref={hostRef} className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--flowscope-canvas)]">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--flowscope-divider)] px-4 py-2">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground"><p>열린 경로 {projection.visibleGapIds.length}개{hiddenGapCount > 0 ? ` · 나머지 ${hiddenGapCount}개는 큐에서 선택` : ""} · 선택하면 원 Gap 상세</p><ul aria-label="요청 생성 주체 범례" className="flex gap-3">{(["HUMAN", "SCANNER", "LLM"] as const).map((source, index) => <li key={source} className="flex items-center gap-1"><span aria-hidden="true" className="size-2 rounded-sm" style={{ backgroundColor: sourceColors[source] }} />{["H", "S", "L"][index]}</li>)}</ul></div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground"><p>열린 경로 {projection.visibleGapIds.length}개{hiddenGapCount > 0 ? ` · 나머지 ${hiddenGapCount}개는 큐에서 선택` : ""} · 선택하면 원 Gap 상세</p><ul aria-label="요청 생성 주체 범례" className="flex gap-3">{([["HUMAN", UserRound, "text-blue-400"], ["SCANNER", ScanLine, "text-red-400"], ["LLM", Bot, "text-zinc-300"]] as const).map(([source, Icon, color]) => <li key={source} className="flex items-center gap-1"><Icon aria-hidden="true" className={`size-3.5 ${color}`} />{source}</li>)}</ul></div>
       <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon-sm" aria-label="Gap 그래프 축소" disabled={fallback || zoom <= minimumZoom} onClick={() => adjustZoom(0.9)}><Minus /></Button>
         <output aria-label="Gap 그래프 배율" className="min-w-12 text-center text-sm tabular-nums">{Math.round(zoom * 100)}%</output>
@@ -285,7 +284,7 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
         {width >= 900 && !rendererUnavailable && <Button size="sm" variant="ghost" onClick={() => setListMode(value => !value)}>{listMode ? "Gap 그래프 보기" : "Gap 목록 보기"}</Button>}
         {!fallback && <details className="relative text-sm"><summary className="cursor-pointer list-none rounded-md px-3 py-1.5 hover:bg-accent">경로 목록</summary><div className="absolute right-0 top-full z-30 mt-1 max-h-96 w-[min(36rem,80vw)] overflow-y-auto rounded-md border bg-[var(--flowscope-pane)] shadow-xl"><GapPathList projection={projection} onSelect={onSelect} /></div></details>}
         <details className="relative text-sm"><summary className="cursor-pointer list-none rounded-md px-3 py-1.5 hover:bg-accent">범례·도움말</summary><div className="absolute right-0 top-full z-30 mt-1 w-[min(38rem,85vw)] space-y-2 rounded-md border bg-[var(--flowscope-pane)] p-3 text-muted-foreground shadow-xl">
-          <ul aria-label="관계 선형 범례" className="flex flex-wrap gap-x-5 gap-y-2">{([ ["solid", "실선: 관측·근거", "#a1a1aa"], ["dashed", "주황 파선: 미검증 · Gap", "var(--gap-edge)"], ["dashed", "붉은 파선: SCANNER 관측", "#f87171"], ["dotted", "점선: 정의·불확실 관계", "#a1a1aa"] ] as const).map(([line, label, color]) => <li key={label} className="flex items-center gap-2"><span aria-hidden="true" className="w-7 border-t-2" style={{ borderStyle: line, borderColor: color }} />{label}</li>)}</ul>
+          <ul aria-label="관계 선형 범례" className="flex flex-wrap gap-x-5 gap-y-2">{([ ["solid", "실선: 관측·근거", "#a1a1aa"], ["dashed", "주황 파선: 미검증 · Gap", "var(--gap-edge)"], ["dotted", "점선: 정의·불확실 관계", "#a1a1aa"] ] as const).map(([line, label, color]) => <li key={label} className="flex items-center gap-2"><span aria-hidden="true" className="w-7 border-t-2" style={{ borderStyle: line, borderColor: color }} />{label}</li>)}</ul>
           <p>주체 ≠ 관계 · Gap 주체 ≠ 관측 출처 · Gap ≠ 취약점 판정</p>
           <TooltipProvider><p><Tooltip><TooltipTrigger asChild><button type="button" aria-label="UNKNOWN 도움말" className="rounded underline decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">UNKNOWN</button></TooltipTrigger><TooltipContent className="text-sm">UNKNOWN은 근거 부족으로 아직 알 수 없는 상태입니다. Gap을 선택해 정의와 Evidence를 확인하세요.</TooltipContent></Tooltip> · 근거 부족 / {" "}<Tooltip><TooltipTrigger asChild><button type="button" aria-label="INFERRED 도움말" className="rounded underline decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">INFERRED</button></TooltipTrigger><TooltipContent className="text-sm">INFERRED는 정의나 연결에서 추론한 상태이며 실제 관측이 아닙니다. Gap을 선택해 정의와 Evidence를 확인하세요.</TooltipContent></Tooltip> · 추론. Gap 선택 후 근거 확인.</p></TooltipProvider>
         </div></details>

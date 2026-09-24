@@ -181,3 +181,15 @@ describe("parameter map projection over snapshot.surface", () => {
     expect(result.hiddenGapCount).toBe(4_960)
   })
 })
+
+describe("access-source icons on Gap graph cards", () => {
+  it("collects API sources from actual EventRecords of that operation only and leaves identity/input cards without icons", () => {
+    const snapshot = surfaceSnapshot({ endpoints: [demoEndpoint()], gaps: [parameterGap("auth", { type: "AUTH_VARIANT_UNTESTED" })], owners: { [demoResource]: "USER B" },
+      events: [actualEvent(), actualEvent({ eventId: "actual-s", source: "scanner" }), actualEvent({ eventId: "other-op", source: "llm", method: "GET", op: "https://other.test:443 GET /elsewhere" })] })
+    const nodes = projectParameterMap(snapshot).nodes
+    expect(nodes.find(node => node.lane === "operation")?.card.sources).toEqual(["human", "scanner"])
+    expect(nodes.find(node => node.lane === "condition")?.card.sources).toBeUndefined()
+    expect(nodes.find(node => node.lane === "input")?.card.sources).toBeUndefined()
+    expect(nodes.filter(node => node.lane === "target").every(node => Array.isArray(node.card.sources))).toBe(true)
+  })
+})

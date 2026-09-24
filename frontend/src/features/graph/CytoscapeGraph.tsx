@@ -56,7 +56,8 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     for (const id of [data.source, data.target]) nodeSources.set(id, (nodeSources.get(id) ?? new Set<CardSource>()).add(origin))
   }
   const nodes = (hierarchy ? hierarchy.nodes.filter(node => node.kind !== "route-candidate") : [...projection.identities, ...projection.operations, ...projection.resources]).map((node) => {
-    const sources = [...(nodeSources.get(node.id) ?? [])]
+    // 접근 주체 아이콘은 오른쪽 API·Object 노드에만 둔다.
+    const sources = node.kind === "operation" || node.kind === "resource" ? [...(nodeSources.get(node.id) ?? [])] : []
     const base = relationshipNodeCard(node, projection)
     const card = sources.length ? { ...base, sources, accessibleLabel: `${base.accessibleLabel}; 접근 주체 ${sources.map(source => source.toUpperCase()).join(", ")}` } : base
     const image = renderParameterNodeCardSvg(card, true)

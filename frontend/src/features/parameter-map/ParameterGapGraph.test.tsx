@@ -203,15 +203,14 @@ it("shows current graph magnification between the zoom controls and updates with
   expect(magnification).toHaveTextContent("95%")
 })
 
-it("keeps horizontal relationship labels clear of the card interiors at 1440px", () => {
+it("draws unlabeled edges and marks API and target cards with the requesting sources", () => {
   width = 1440
-  render(<ParameterGapGraph projection={projectParameterMap(mixedSnapshot(), defaultParameterFilters, "auth")} onSelect={vi.fn()} />)
-  core.edges().forEach(edge => {
-    const labelBottom = edge.source().renderedPosition().y + (Number.parseFloat(edge.style("text-margin-y")) + Number.parseFloat(edge.style("font-size")) / 2) * core.zoom()
-    const cardTop = edge.source().renderedPosition().y - edge.source().renderedOuterHeight() / 2
-    expect(labelBottom).toBeLessThan(cardTop - 4)
-  })
-  expect(core.edges().map(edge => edge.data("label"))).toContain("관측 H × 40 / L × 40")
+  const mixed = projectParameterMap(mixedSnapshot(), defaultParameterFilters, "auth")
+  render(<ParameterGapGraph projection={mixed} onSelect={vi.fn()} />)
+  expect(core.edges().map(edge => edge.data("label"))).toEqual(core.edges().map(() => ""))
+  expect(core.edges().filter(edge => edge.id().includes('"observation"')).map(edge => edge.data("color"))).not.toContain("#60a5fa")
+  for (const lane of ["operation", "target"] as const) for (const node of mixed.nodes.filter(item => item.lane === lane)) expect(node.card.sources).toBeDefined()
+  for (const lane of ["condition", "input"] as const) for (const node of mixed.nodes.filter(item => item.lane === lane)) expect(node.card.sources).toBeUndefined()
 })
 
 it("renders four labeled lanes, separate source/relation legends and canonical node selection", async () => {
@@ -219,8 +218,8 @@ it("renders four labeled lanes, separate source/relation legends and canonical n
   render(<ParameterGapGraph projection={projection()} onSelect={onSelect} />)
   for (const lane of ["조건/사용자", "API 엔드포인트", "입력 파라미터", "권한 대상"]) expect(screen.getByRole("columnheader", { name: lane })).toBeVisible()
   const legend = screen.getByRole("list", { name: "요청 생성 주체 범례" })
-  expect(within(legend).getAllByRole("listitem").map(item => item.textContent)).toEqual(["H", "S", "L"])
-  expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선: 관측·근거주황 파선: 미검증 · Gap붉은 파선: SCANNER 관측점선: 정의·불확실 관계")
+  expect(within(legend).getAllByRole("listitem").map(item => item.textContent)).toEqual(["HUMAN", "SCANNER", "LLM"])
+  expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선: 관측·근거주황 파선: 미검증 · Gap점선: 정의·불확실 관계")
   expect(screen.getByRole("button", { name: "Gap 그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Gap 그래프 확대" })).toBeVisible()
   expect(core.nodes().length).toBe(8)
@@ -283,7 +282,8 @@ it("labels an input without observation witnesses UNKNOWN rather than as a suppo
   render(<ParameterGapGraph projection={projectParameterMap(snapshot)} onSelect={vi.fn()} />)
   const unknownInputs = core.edges().filter(edge => edge.id().includes("unknown-input"))
   expect(unknownInputs.length).toBe(2)
-  expect(unknownInputs.map(edge => edge.data("label"))).toEqual(["입력 UNKNOWN", "입력 UNKNOWN"])
+  // 캔버스 엣지는 라벨이 없고, 미지원 관계는 점선으로 구분한다. 문장 설명은 경로 목록에 남는다.
+  expect(unknownInputs.map(edge => edge.data("line"))).toEqual(["dotted", "dotted"])
 })
 
 it("focuses Gap 41 and a previously panned existing path without resetting later polling viewport", () => {
