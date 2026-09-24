@@ -106,3 +106,24 @@ describe("parameter node card SVG", () => {
     expect(svg).toContain(`before${"�".repeat(Array.from(malformed).length)}after`)
   })
 })
+
+describe("source icons beside the badge", () => {
+  const card: ParameterNodeCardView = { kind: "operation", badge: "GET", title: "/api/orders/{id}", detail: "", footer: "", icon: "none", accessibleLabel: "op", sources: ["human", "scanner"] }
+  const svg = (view: ParameterNodeCardView, compact = true) => decodeURIComponent(renderParameterNodeCardSvg(view, compact).uri.replace(/^data:image\/svg\+xml,/, ""))
+
+  it("draws the icons on the badge row and drops the detail row height", () => {
+    const text = svg(card)
+    expect(text).toMatch(/translate\(\d+ 12\)/)
+    expect(text).not.toMatch(/translate\(\d+ 65\)/)
+    expect(renderParameterNodeCardSvg(card, true).height).toBe(66)
+    expect(renderParameterNodeCardSvg({ ...card, footer: "owner: A" }, true).height).toBe(86)
+    expect(renderParameterNodeCardSvg(card).height).toBe(99)
+  })
+
+  it("keeps the detail row for cards with detail text and no sources", () => {
+    const plain = { ...card, sources: undefined, detail: "role USER" }
+    expect(renderParameterNodeCardSvg(plain, true).height).toBe(88)
+    expect(renderParameterNodeCardSvg(plain).height).toBe(124)
+    expect(svg(plain)).toContain("role USER")
+  })
+})
