@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react"
-import { Activity, Braces, FileSearch, House, LayoutDashboard, ListTree, Network, Radar, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
+import { Activity, Braces, FileSearch, House, LayoutDashboard, LayoutGrid, ListTree, Network, Radar, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
 
 export type AppRoute =
   | "home"
@@ -22,11 +22,12 @@ export interface AppRouteDefinition {
   icon: LucideIcon
 }
 
-export type NavigationGroupId = "analysis" | "inspection" | "records"
+export type NavigationGroupId = "extras"
 
 export interface NavigationGroup {
   id: NavigationGroupId
   label: string
+  icon: LucideIcon
   defaultRoute: AppRoute
   routes: readonly AppRoute[]
 }
@@ -46,11 +47,12 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 
-/** 사이드바 탐색 그룹. 순서는 점검 → 분석 → 기록. 흐름 순서(#sequence)는 주소로만 열리고 사이드바에는 표시하지 않는다. */
+/** 사이드바 독립 메뉴: 점검 흐름 순서의 핵심 화면 5개. */
+export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "verification", "matrix"] as const satisfies readonly AppRoute[]
+
+/** 핵심 외 화면은 '부가기능' 드롭다운으로 묶는다. 대시보드는 Home 본문으로, 흐름 순서(#sequence)는 주소로만 연다. */
 export const navigationGroups = [
-  { id: "inspection", label: "점검", defaultRoute: "inspection", routes: ["inspection", "accounts", "verification"] },
-  { id: "analysis", label: "분석", defaultRoute: "matrix", routes: ["matrix", "graph", "surface", "scenarios"] },
-  { id: "records", label: "기록", defaultRoute: "evidence", routes: ["evidence", "runs"] },
+  { id: "extras", label: "부가기능", icon: LayoutGrid, defaultRoute: "surface", routes: ["surface", "scenarios", "evidence", "runs"] },
 ] as const satisfies readonly NavigationGroup[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))

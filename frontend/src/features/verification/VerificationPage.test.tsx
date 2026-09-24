@@ -2,7 +2,7 @@ import { screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { VerificationPage } from "./VerificationPage"
-import { appRoutes, navigationGroups, routeFromHash, routeHash } from "@/app/routes"
+import { appRoutes, primaryNavigationRoutes, routeFromHash, routeHash } from "@/app/routes"
 import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
 import { snapshotFixture } from "@/test/fixtures"
 
@@ -26,10 +26,10 @@ function renderVerification() {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("cross-identity verification route", () => {
-  it("keeps #verification in the inspection navigation group", () => {
+  it("keeps #verification as a primary sidebar link", () => {
     expect(routeFromHash("#verification")).toBe("verification")
     expect(routeHash("verification")).toBe("#verification")
-    expect(navigationGroups[0]?.routes).toContain("verification")
+    expect(primaryNavigationRoutes).toContain("verification")
     expect(appRoutes.some((entry) => entry.route === "verification" && entry.label === "교차 신원 검증")).toBe(true)
   })
 
