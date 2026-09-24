@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { clampParameterNode, parameterLaneGeometry } from "./parameterLanes"
 import { renderParameterNodeCardSvg } from "./parameterNodeCard"
+import { graphWheelIntent } from "@/features/graph/CytoscapeGraph"
 import { parameterLaneOrder, type ParameterGraphProjection, type ParameterLane, type ParameterMapSelection } from "./parameterProjection"
 
 interface Props {
@@ -145,7 +146,7 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
     if (fallback || !canvasRef.current) return
     let core: Core
     try {
-      core = cytoscape({ container: canvasRef.current, elements: [], minZoom: minimumZoom, maxZoom: 2, layout: { name: "preset" },
+      core = cytoscape({ container: canvasRef.current, elements: [], minZoom: minimumZoom, maxZoom: 2, userZoomingEnabled: false, layout: { name: "preset" },
         style: [
           { selector: "node", style: { width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", "background-color": "#111418", "border-width": 2, "border-color": "#64748b" } },
           { selector: "edge", style: { label: "data(label)", width: 2, "line-style": "data(line)", "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "curve-style": "bezier", "font-size": 13, color: "#d4d4d8", "text-background-color": "#090b0d", "text-background-opacity": 1, "text-background-padding": "3px", "text-margin-y": -80 } },
@@ -196,7 +197,18 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
     core.on("mouseout blur", "node", hideCardTooltip)
     core.on("drag dragfree", "node", correct)
     core.on("viewport", correct)
+    // 트랙패드 두 손가락 스크롤은 이동, 핀치(ctrl)·마우스 휠은 포인터 기준 확대/축소. 관계 그래프와 같은 판정을 쓴다.
+    const container = canvasRef.current
+    const wheelListener = (event: WheelEvent) => {
+      event.preventDefault()
+      const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? container.clientHeight || 600 : 1
+      if (graphWheelIntent("auto", event) === "pan") { core.panBy({ x: -event.deltaX * scale, y: -event.deltaY * scale }); return }
+      const bounds = container.getBoundingClientRect()
+      core.zoom({ level: Math.max(core.minZoom(), Math.min(core.maxZoom(), core.zoom() * Math.exp(-event.deltaY * scale * 0.002))), renderedPosition: { x: event.clientX - bounds.left, y: event.clientY - bounds.top } })
+    }
+    container.addEventListener("wheel", wheelListener, { passive: false })
     return () => {
+      container.removeEventListener("wheel", wheelListener)
       core.off("tap", "node, edge", select)
       core.off("mouseover focus", "node", showCardTooltip)
       core.off("mouseout blur", "node", hideCardTooltip)

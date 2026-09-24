@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
-import { renderParameterNodeCardSvg } from "@/features/parameter-map/parameterNodeCard"
+import { renderParameterNodeCardSvg, type CardSource } from "@/features/parameter-map/parameterNodeCard"
 import type { GraphPreferences } from "./graphPreferences"
 import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
@@ -28,6 +28,7 @@ interface Props {
 }
 
 const noConfirmedNodes = new Set<string>()
+const EDGE_COLOR = "#94a3b8"
 const noLaneLayout = { lane: 0, version: 0 }
 
 export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pick<WheelEvent, "ctrlKey" | "deltaMode" | "deltaX" | "deltaY">): "pan" | "zoom" {
@@ -40,8 +41,24 @@ export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pic
 function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
   const focus = deriveGraphFocus(hierarchy, selectedElementId)
+  const edges = projection.edges.map((edge) => {
+    const endpointId = edge.selection.operation ? `operation:${edge.selection.operation}` : edge.targetId
+    const source = edge.relation === "resource-operation" ? edge.targetId : edge.sourceId
+    const target = edge.relation === "identity-resource" ? endpointId : edge.relation === "resource-operation" ? edge.sourceId : edge.targetId
+    // 관측 엣지는 주체 구분 없이 한 가지 선으로 그리고 접근 주체는 양 끝 노드 카드의 아이콘으로만 표시한다.
+    // 주체가 없는 구조·경로 후보 엣지는 '미관측' 표시(회색 점선)를 그대로 둔다.
+    const observed = edge.source !== null
+    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR : edge.color, countLabel: edge.countLabel, focused: focus.edgeState(edge.id) }, origin: edge.source }
+  })
+  const nodeSources = new Map<string, Set<CardSource>>()
+  for (const { data, origin } of edges) {
+    if (origin !== "human" && origin !== "scanner" && origin !== "llm") continue
+    for (const id of [data.source, data.target]) nodeSources.set(id, (nodeSources.get(id) ?? new Set<CardSource>()).add(origin))
+  }
   const nodes = (hierarchy ? hierarchy.nodes.filter(node => node.kind !== "route-candidate") : [...projection.identities, ...projection.operations, ...projection.resources]).map((node) => {
-    const card = relationshipNodeCard(node, projection)
+    const sources = [...(nodeSources.get(node.id) ?? [])]
+    const base = relationshipNodeCard(node, projection)
+    const card = sources.length ? { ...base, sources, accessibleLabel: `${base.accessibleLabel}; 접근 주체 ${sources.map(source => source.toUpperCase()).join(", ")}` } : base
     const image = renderParameterNodeCardSvg(card, true)
     return { data: { id: node.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no" } }
   })
@@ -50,13 +67,7 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     const image = renderParameterNodeCardSvg(card, true)
     return { data: { id: candidate.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no" } }
   })
-  const edges = projection.edges.map((edge) => {
-    const endpointId = edge.selection.operation ? `operation:${edge.selection.operation}` : edge.targetId
-    const source = edge.relation === "resource-operation" ? edge.targetId : edge.sourceId
-    const target = edge.relation === "identity-resource" ? endpointId : edge.relation === "resource-operation" ? edge.sourceId : edge.targetId
-    return { data: { id: edge.id, source, target, label: `${edge.sourceText}${edge.countLabel ? ` ${edge.countLabel}` : ""}`, sourceText: edge.sourceText, line: edge.line, color: edge.color, countLabel: edge.countLabel, focused: focus.edgeState(edge.id) } }
-  })
-  return [...nodes, ...candidates, ...edges]
+  return [...nodes, ...candidates, ...edges.map(({ data }) => ({ data }))]
 }
 
 function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "viewport"> {

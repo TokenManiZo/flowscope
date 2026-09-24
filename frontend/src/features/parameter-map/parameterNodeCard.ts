@@ -12,7 +12,19 @@ export interface ParameterNodeCardView {
   footer: string
   icon: "user" | "none" | "box" | "globe" | "network"
   accessibleLabel: string
+  /** 이 노드에 접근한 탐지 주체. 카드 오른쪽 위에 주체별 아이콘으로만 표시한다(관계 그래프 전용). */
+  sources?: readonly CardSource[]
 }
+
+export type CardSource = "human" | "scanner" | "llm"
+
+/** 16px 상자 안의 주체 아이콘: HUMAN 사람, SCANNER 스캐너(조준 틀), LLM 로봇. */
+const sourceIconPaths: Record<CardSource, string> = {
+  human: '<g fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2.5 15v-1.5a5.5 5.5 0 0 1 11 0V15"/></g>',
+  scanner: '<g fill="none" stroke="#f87171" stroke-width="1.6" stroke-linecap="round"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/><path d="M4 8h8"/></g>',
+  llm: '<g fill="none" stroke="#e4e4e7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="12" height="9" rx="2"/><path d="M8 5V2"/><circle cx="8" cy="1.5" r=".6"/><path d="M5.5 9v1M10.5 9v1"/></g>',
+}
+const cardSourceOrder: readonly CardSource[] = ["human", "scanner", "llm"]
 
 const locationLabels: Record<string, string> = {
   PATH: "PATH", QUERY: "QUERY", FORM_BODY: "FORM", JSON_BODY: "JSON",
@@ -140,7 +152,9 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
   const width = compact ? 196 : SVG_WIDTH
   const height = compact ? card.footer ? 108 : 88 : SVG_HEIGHT
   const titleX = card.icon === "none" ? 14 : 42
-  const badge = visualLine(card.badge, width - 46, 12)
+  const sources = cardSourceOrder.filter(source => card.sources?.includes(source))
+  const sourceIcons = sources.map((source, index) => `<g transform="translate(${width - 14 - 16 - (sources.length - 1 - index) * 22} 12)">${sourceIconPaths[source]}</g>`).join("")
+  const badge = visualLine(card.badge, width - 46 - sources.length * 22, 12)
   const badgeWidth = Math.ceil(textWidth(badge, 12) + 18)
   const [background, foreground] = (card.kind === "operation" || card.kind === "input") && Object.hasOwn(badgeColors, card.badge) ? badgeColors[card.badge] : ["#334155", "#cbd5e1"]
   const icon = card.icon === "user" ? '<g fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round"><circle cx="23" cy="40" r="4"/><path d="M15 54v-2a8 8 0 0 1 16 0v2"/></g>'
@@ -150,6 +164,6 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
   const title = escapeXml(visualLine(card.title, width - titleX - 14, 14, true))
   const detail = escapeXml(visualLine(card.detail, width - 28, 12))
   const footer = escapeXml(visualLine(card.footer, width - 28, 12, true))
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text><text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text>${card.footer ? `<text x="14" y="${height - 14}" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text>` : ""}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text><text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text>${card.footer ? `<text x="14" y="${height - 14}" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text>` : ""}</svg>`
   return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width, height }
 }

@@ -355,3 +355,18 @@ it("reserves stroke shapes for relationship meanings, not source attribution", (
   expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선")
   expect(screen.getByText(/주체 ≠ 관계/)).toHaveTextContent("Gap 주체 ≠ 관측 출처 · Gap ≠ 취약점 판정")
 })
+
+it("pans on a two-finger trackpad scroll and zooms only on pinch or mouse wheel", () => {
+  render(<ParameterGapGraph projection={projection()} onSelect={vi.fn()} />)
+  const canvas = screen.getByLabelText("파라미터 Cytoscape 그래프")
+  const zoom = core.zoom(), panY = core.pan().y
+
+  const trackpad = new WheelEvent("wheel", { deltaY: 12.5, deltaMode: WheelEvent.DOM_DELTA_PIXEL, bubbles: true, cancelable: true })
+  act(() => { canvas.dispatchEvent(trackpad) })
+  expect(trackpad.defaultPrevented).toBe(true)
+  expect(core.zoom()).toBe(zoom)
+  expect(core.pan().y).toBeCloseTo(panY - 12.5)
+
+  act(() => { canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 8, ctrlKey: true, deltaMode: WheelEvent.DOM_DELTA_PIXEL, bubbles: true, cancelable: true })) })
+  expect(core.zoom()).toBeLessThan(zoom)
+})
