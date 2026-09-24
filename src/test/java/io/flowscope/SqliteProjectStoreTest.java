@@ -70,7 +70,8 @@ final class SqliteProjectStoreTest {
 
         AccountProfile account = new AccountProfile("acct-test1", "test1", record.service, AccessRole.USER);
         AnalysisConfig config = new AnalysisConfig().upsertAccount(account)
-                .bindSession(record.service, record.fp, account.id());
+                .bindSession(record.service, record.fp, account.id())
+                .withResourcePolicy(record.resource, io.flowscope.core.ResourcePolicy.OWNER_ONLY);
         config.reviewItem("candidate-1", ReviewDecision.Status.UNRESOLVED,
                 "추가 재현 필요", List.of(record.evidenceId));
         LegacyAssessment assessment = new LegacyAssessment("assessment-1", "BOLA", "INCONCLUSIVE",
@@ -116,6 +117,8 @@ final class SqliteProjectStoreTest {
         assertEquals(1, loaded.records().size());
         assertEquals("test1", loaded.config().account(account.id()).orElseThrow().label());
         assertEquals(account.id(), loaded.config().boundAccount(record.service, record.fp).orElseThrow().id());
+        assertEquals(io.flowscope.core.ResourcePolicy.OWNER_ONLY,
+                loaded.config().resourcePolicy(record.op, record.resource));
         assertEquals(Set.of(Source.HUMAN), loaded.completedLanes());
         assertEquals("human-1", loaded.completedRuns().get(Source.HUMAN).runId());
         assertEquals(List.of(route), loaded.routeCandidates());
@@ -149,6 +152,24 @@ final class SqliteProjectStoreTest {
 
         SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(List.of(), List.of(), List.of(restored));
         assertEquals("/product_id", analysis.endpoints().getFirst().parameters().getFirst().canonicalPath());
+    }
+
+    @Test
+    void accountVerificationRuleRoundTripsThroughSqlite() throws Exception {
+        Path database = temp.resolve("verification-rules.flowscope.db");
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        AnalysisConfig config = new AnalysisConfig().upsertAccount(account)
+                .withAccountVerificationRule(io.flowscope.core.AccountVerificationRule.fromExchange(
+                        "acct-a", "GET", java.net.URI.create("https://api.test/me"), "\"id\":\"acct-a\"").orElseThrow());
+        SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        store.save(database, List.of(), config, List.of(), List.of(), Set.of(), List.of());
+
+        io.flowscope.core.AccountVerificationRule rule =
+                store.load(database).config().verificationRule("acct-a").orElseThrow();
+        assertEquals("GET", rule.method());
+        assertEquals("https://api.test:443", rule.origin());
+        assertEquals("/me", rule.path());
+        assertEquals("\"id\":\"acct-a\"", rule.expectedSubject());
     }
 
     @Test

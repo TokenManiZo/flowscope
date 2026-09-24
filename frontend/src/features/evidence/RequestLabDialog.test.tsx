@@ -17,7 +17,9 @@ const event: EventRecord = {
   eventId: "event-7", method: "POST", path: "/orders/7", status: 201, fp: "fp", idn: "alice", role: "user", source: "human", op: "POST /orders/{id}", resource: "order:7", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "run", authState: "AUTHENTICATED", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "cluster", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["event-7"], objects: [], verdict: "allow",
 }
 
-const activeSession: ManagedSession = { handle: "opaque", accountId: "acct-1", accountLabel: "관리자", service: "https://api.example.test", status: "ACTIVE", createdAt: "now", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }
+// Weakly verified (LEGACY_RESPONSE) but ACTIVE: the Request Lab stays backward compatible and can use it,
+// unlike active cross-identity replay which requires a strong (operator-asserted / rule-matched) session.
+const activeSession: ManagedSession = { handle: "opaque", accountId: "acct-1", accountLabel: "관리자", service: "https://api.example.test", status: "ACTIVE", verificationSource: "LEGACY_RESPONSE", createdAt: "now", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }) }
 
@@ -118,6 +120,17 @@ describe("RequestLabDialog", () => {
     expect(new URLSearchParams(String(calls.get("/api/traffic-override")?.body))).toEqual(new URLSearchParams({ operation: event.op, value: "EXCLUDE" }))
     expect(new URLSearchParams(String(calls.get("/api/owner")?.body))).toEqual(new URLSearchParams({ resource: "order:7", identity: "bob" }))
     expect(openRequestLab).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps a weak LEGACY_RESPONSE ACTIVE session usable in the Request Lab for backward compatibility", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+
+    await screen.findByLabelText("Request Lab 요청 원문")
+    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
+    // Active cross-identity replay rejects this LEGACY_RESPONSE session; the Request Lab still offers it.
+    expect(screen.getByRole("option", { name: "관리자" })).toBeVisible()
   })
 
   it("loads a fresh memory-only draft, sends exact form data for ORIGINAL/ANONYMOUS/ACCOUNT, and excludes inactive or cross-service accounts", async () => {

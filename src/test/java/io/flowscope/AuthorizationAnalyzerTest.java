@@ -50,8 +50,87 @@ class AuthorizationAnalyzerTest {
     void 소유자_근거가_없으면_취약으로_단정하지_않는다() {
         RequestRecord r = rec(Source.LLM, "A", "GET", "/api/orders/101", 200, "{\"id\":101}");
         AuthorizationAnalysis a = Pipeline.run(List.of(r)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = a.owners().get(r.resource);
+
+        assertEquals(20, owner.confidence());
+        assertFalse(owner.confirmed(), "첫 성공 접근자 O1은 판정 가능한 소유자가 아니다");
+        assertFalse(owner.decisionGrade(), "첫 성공 접근자 O1은 confidence 게이트를 통과하면 안 된다");
         assertEquals(Verdict.UNTESTED, a.cells().get(0).overall());
         assertTrue(a.findings().isEmpty());
+    }
+
+    @Test
+    void 단일_신원_컬렉션_멤버십은_O2이고_타신원_ID일치_응답은_BOLA다() {
+        RequestRecord ownerCollection = rec(Source.HUMAN, "A", "GET", "/api/orders", 200,
+                "{\"orders\":[{\"id\":701}]}");
+        ownerCollection.responseContentType = "application/json";
+        RequestRecord crossRead = rec(Source.SCANNER, "B", "GET", "/api/orders/701", 200,
+                "{\"id\":701}");
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(ownerCollection, crossRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(crossRead.resource);
+        AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
+                .filter(cell -> cell.key().identity().equals("user-b")
+                        && cell.key().resource().equals(crossRead.resource))
+                .findFirst().orElseThrow();
+
+        assertEquals("user-a", owner.identity());
+        assertEquals(60, owner.confidence());
+        assertFalse(owner.confirmed(), "O2는 명시 소유필드 O3와 구분한다");
+        assertTrue(owner.decisionGrade(), "단일 신원 컬렉션 멤버십 O2는 정본 판정 게이트를 통과한다");
+        assertTrue(owner.basis().contains("컬렉션 멤버십"));
+        assertEquals(Verdict.SUSPICIOUS, cross.overall());
+        assertTrue(analysis.findings().stream().anyMatch(finding ->
+                finding.type() == AuthorizationAnalysis.FindingType.BOLA
+                        && finding.cell().equals(cross.key())));
+    }
+
+    @Test
+    void 둘_이상_신원_컬렉션에_등장한_객체는_O0이며_후보가_아니다() {
+        RequestRecord firstCollection = rec(Source.HUMAN, "A", "GET", "/api/orders", 200,
+                "{\"orders\":[{\"id\":702}]}");
+        firstCollection.responseContentType = "application/json";
+        RequestRecord secondCollection = rec(Source.HUMAN, "B", "GET", "/api/orders", 200,
+                "{\"orders\":[{\"id\":702}]}");
+        secondCollection.responseContentType = "application/json";
+        RequestRecord crossRead = rec(Source.SCANNER, "C", "GET", "/api/orders/702", 200,
+                "{\"id\":702}");
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(firstCollection, secondCollection, crossRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(crossRead.resource);
+        AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
+                .filter(cell -> cell.key().identity().equals("user-c")
+                        && cell.key().resource().equals(crossRead.resource))
+                .findFirst().orElseThrow();
+
+        assertNull(owner.identity());
+        assertEquals(0, owner.confidence());
+        assertFalse(owner.confirmed());
+        assertFalse(owner.decisionGrade());
+        assertTrue(owner.basis().contains("공유/공개"));
+        assertEquals(Verdict.UNTESTED, cross.overall());
+        assertTrue(analysis.findings().stream().noneMatch(finding -> finding.cell().equals(cross.key())));
+        assertTrue(analysis.gaps().stream().noneMatch(gap ->
+                        gap.type() == AuthorizationAnalysis.GapType.UNCROSSED
+                                && gap.resource().equals(crossRead.resource)),
+                "공유/공개 O0 객체는 교차 추천도 만들면 안 된다");
+    }
+
+    @Test
+    void 다른_operation_family의_동일_ID는_컬렉션_소유근거가_아니다() {
+        RequestRecord unrelatedCollection = rec(Source.HUMAN, "A", "GET", "/api/customers", 200,
+                "{\"customers\":[{\"id\":703}]}");
+        unrelatedCollection.responseContentType = "application/json";
+        RequestRecord orderRead = rec(Source.SCANNER, "B", "GET", "/api/orders/703", 200,
+                "{\"id\":703}");
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(unrelatedCollection, orderRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(orderRead.resource);
+
+        assertEquals("user-b", owner.identity());
+        assertEquals(20, owner.confidence());
+        assertFalse(owner.decisionGrade());
+        assertTrue(analysis.findings().isEmpty());
     }
 
     @Test
@@ -95,6 +174,48 @@ class AuthorizationAnalyzerTest {
         AuthorizationAnalysis a = AuthorizationAnalyzer.analyze(records, config);
         assertEquals(Verdict.SUSPICIOUS, a.cells().get(0).overall());
         assertTrue(a.findings().stream().anyMatch(f -> f.type() == AuthorizationAnalysis.FindingType.BFLA));
+    }
+
+    @Test
+    void PUBLIC_자원정책은_타소유자_읽기성공을_BOLA로_승격하지_않는다() {
+        RequestRecord owner = rec(Source.HUMAN, "A", "GET", "/api/catalog/801", 200,
+                "{\"id\":801,\"ownerId\":\"user-a\",\"published\":true}");
+        RequestRecord reader = rec(Source.SCANNER, "B", "GET", "/api/catalog/801", 200,
+                "{\"id\":801,\"ownerId\":\"user-a\",\"published\":true}");
+        Normalizer.normalizeAll(List.of(owner, reader));
+        AnalysisConfig config = new AnalysisConfig()
+                .withIdentityRole("user-a", AccessRole.USER)
+                .withIdentityRole("user-b", AccessRole.USER)
+                .withEndpointRequirement(reader.op, AccessRole.USER)
+                .withResourcePolicy(reader.resource, ResourcePolicy.PUBLIC);
+
+        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(List.of(owner, reader), config);
+        AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
+                .filter(cell -> cell.key().identity().equals("user-b")).findFirst().orElseThrow();
+
+        assertEquals(Verdict.ALLOW, cross.overall());
+        assertTrue(analysis.findings().stream().noneMatch(finding -> finding.cell().equals(cross.key())));
+    }
+
+    @Test
+    void 소유자라도_ADMIN_요구_DELETE에_성공하면_기능층_BFLA다() {
+        RequestRecord ownerRead = rec(Source.HUMAN, "A", "GET", "/api/orders/901", 200,
+                "{\"id\":901,\"ownerId\":\"user-a\"}");
+        RequestRecord ownerDelete = rec(Source.HUMAN, "A", "DELETE", "/api/orders/901", 204, "");
+        Normalizer.normalizeAll(List.of(ownerRead, ownerDelete));
+        AnalysisConfig config = new AnalysisConfig()
+                .withIdentityRole("user-a", AccessRole.USER)
+                .withEndpointRequirement(ownerDelete.op, AccessRole.ADMIN)
+                .withResourcePolicy(ownerDelete.resource, ResourcePolicy.OWNER_ONLY);
+
+        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(List.of(ownerRead, ownerDelete), config);
+        AuthorizationAnalysis.CoverageCell delete = analysis.cells().stream()
+                .filter(cell -> cell.key().operation().equals(ownerDelete.op)).findFirst().orElseThrow();
+
+        assertEquals(Verdict.SUSPICIOUS, delete.overall());
+        assertTrue(delete.perSource().values().stream().anyMatch(AuthorizationAnalysis.Decision::roleViolation));
+        assertTrue(analysis.findings().stream().anyMatch(finding ->
+                finding.type() == AuthorizationAnalysis.FindingType.BFLA && finding.cell().equals(delete.key())));
     }
 
     @Test

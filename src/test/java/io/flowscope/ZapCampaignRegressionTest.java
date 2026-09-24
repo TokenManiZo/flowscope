@@ -583,6 +583,10 @@ final class ZapCampaignRegressionTest {
                 @Override public ZapClient zap() { return zap; }
                 @Override public RunContextRegistry contexts() { return contexts; }
                 @Override public ZapAccountVault zapAccounts() { return accounts; }
+                @Override public boolean promoteAuthenticatedSession(String accountId, long evidenceRuntimeId) {
+                    return accounts.views().stream().anyMatch(account -> account.id().equals(accountId))
+                            && evidenceRuntimeId > 0;
+                }
                 @Override public boolean approve(String action, String value) { return false; }
             });
 
@@ -811,6 +815,10 @@ final class ZapCampaignRegressionTest {
                 @Override public ZapClient zap() { return zap; }
                 @Override public RunContextRegistry contexts() { return contexts; }
                 @Override public ZapAccountVault zapAccounts() { return accounts; }
+                @Override public boolean promoteAuthenticatedSession(String accountId, long evidenceRuntimeId) {
+                    return accounts.views().stream().anyMatch(account -> account.id().equals(accountId))
+                            && evidenceRuntimeId > 0;
+                }
                 @Override public boolean approve(String action, String value) { return false; }
             });
 

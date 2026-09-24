@@ -52,6 +52,7 @@ final class ProjectStoreTest {
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withEndpointRequirement(record.op, AccessRole.LV1)
                 .withResourceOwner(record.resource, "user-a")
+                .withResourcePolicy(record.resource, ResourcePolicy.OWNER_ONLY)
                 .withTrafficOverride(record.op, TrafficOverride.INCLUDE);
         AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
         config.upsertAccount(account).bindSession(record.service, record.fp, account.id());
@@ -98,6 +99,7 @@ final class ProjectStoreTest {
         assertEquals(TrafficOverride.INCLUDE, loaded.config().trafficOverride(record.op));
         assertEquals(AccessRole.USER, loaded.config().identityRole("user-a"));
         assertEquals("user-a", loaded.config().resourceOwner(record.resource));
+        assertEquals(ResourcePolicy.OWNER_ONLY, loaded.config().resourcePolicy(record.op, record.resource));
         assertEquals("USER A", loaded.config().account("acct-a").orElseThrow().label());
         assertEquals("acct-a", loaded.config().boundAccount(record.service, restored.fp).orElseThrow().id());
         assertEquals("LIKELY", loaded.assessments().get(0).verdict());
@@ -107,6 +109,49 @@ final class ProjectStoreTest {
         assertEquals(List.of(routeCandidate), loaded.routeCandidates());
         assertEquals(ReviewDecision.Status.CONFIRMED,
                 loaded.config().review(assessment.id(), assessment.evidenceIds()).orElseThrow().status());
+    }
+
+    @Test
+    void accountVerificationRuleRoundTripsAndIsOptionalForOlderProjects() throws Exception {
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        AnalysisConfig config = new AnalysisConfig().upsertAccount(account)
+                .withAccountVerificationRule(AccountVerificationRule.fromExchange("acct-a", "GET",
+                        java.net.URI.create("https://api.test/me"), "\"id\":\"acct-a\"").orElseThrow());
+        ProjectStore store = new ProjectStore();
+        Path file = temp.resolve("rules.flowscope.json");
+        store.save(file, List.of(), config, List.of());
+
+        AnalysisConfig loaded = store.load(file).config();
+        AccountVerificationRule rule = loaded.verificationRule("acct-a").orElseThrow();
+        assertEquals("GET", rule.method());
+        assertEquals("https://api.test:443", rule.origin());
+        assertEquals("/me", rule.path());
+        assertEquals("\"id\":\"acct-a\"", rule.expectedSubject());
+
+        // A project saved without any rule loads with an empty rule set (the field is optional since schema 6).
+        Path bare = temp.resolve("bare.flowscope.json");
+        store.save(bare, List.of(), new AnalysisConfig().upsertAccount(account), List.of());
+        assertTrue(store.load(bare).config().verificationRule("acct-a").isEmpty());
+    }
+
+    @Test
+    void loadsAVersionFiveProjectWithoutAnyVerificationRuleField() throws Exception {
+        AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        ProjectStore store = new ProjectStore();
+        Path file = temp.resolve("v5.flowscope.json");
+        store.save(file, List.of(), new AnalysisConfig().upsertAccount(account), List.of());
+
+        // Rewrite the saved project as a genuine pre-schema-6 file: version 5 and no rules field at all.
+        ObjectMapper mapper = new ObjectMapper();
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(Files.readString(file));
+        root.put("schema_version", 5);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root.get("policy")).remove("account_verification_rules");
+        Files.writeString(file, mapper.writeValueAsString(root));
+
+        AnalysisConfig loaded = store.load(file).config();
+        assertEquals("USER A", loaded.account("acct-a").orElseThrow().label());
+        assertTrue(loaded.verificationRule("acct-a").isEmpty());
+        assertTrue(loaded.accountVerificationRules().isEmpty());
     }
 
     @Test
@@ -135,6 +180,39 @@ final class ProjectStoreTest {
         SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(List.of(), List.of(), List.of(restored));
         SurfaceAnalysis.ParameterFact fact = analysis.endpoints().getFirst().parameters().getFirst();
         assertEquals("/product_id", fact.canonicalPath(), "재열기 후에도 canonical 좌표로 분석");
+    }
+
+    @Test
+    void controlledReplayPersistsOnlySafeProvenanceMetadata() throws Exception {
+        RequestRecord replay = new RequestRecord(Source.SCANNER, "https://api.test:443",
+                "GET", "/api/orders/19", 200, "raw-replay-secret");
+        replay.sourceDetail = SourceDetail.AUTHORIZATION_REPLAY;
+        replay.orchestrator = Orchestrator.SYSTEM;
+        replay.tool = ToolKind.BURP;
+        replay.phase = RunPhase.AUTHORIZATION_REPLAY;
+        replay.executionTrust = ExecutionTrust.CONTROLLED;
+        replay.runId = "authorization-replay-safe";
+        replay.laneAccountId = "user-b";
+        replay.replayBasisIdentity = "user-a";
+        replay.replayBasisEvidenceId = "ev-basis";
+        replay.reqText = "GET /api/orders/19 HTTP/1.1\r\nAuthorization: Bearer never-persist-this\r\n\r\n";
+        replay.body = "{\"id\":19}";
+        replay.hasResponse = true;
+        replay.timestamp = 1;
+        Pipeline.run(List.of(replay));
+        Path file = temp.resolve("controlled-replay.flowscope.json");
+
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(replay), new AnalysisConfig(), List.of());
+        String raw = Files.readString(file);
+        RequestRecord restored = store.load(file).records().getFirst();
+
+        assertFalse(raw.contains("never-persist-this"));
+        assertFalse(raw.contains("raw-replay-secret"));
+        assertEquals("user-a", restored.replayBasisIdentity);
+        assertEquals("ev-basis", restored.replayBasisEvidenceId);
+        assertEquals("user-b", restored.laneAccountId);
+        assertEquals(ExecutionTrust.CONTROLLED, restored.executionTrust);
     }
 
     @Test
@@ -256,7 +334,7 @@ final class ProjectStoreTest {
         var root = new ObjectMapper().readTree(Files.readString(file));
         ProjectStore.ProjectData loaded = store.load(file);
 
-        assertEquals(5, root.path("schema_version").asInt());
+        assertEquals(6, root.path("schema_version").asInt());
         assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
         assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
         assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());

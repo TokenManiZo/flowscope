@@ -90,24 +90,19 @@ it("keeps Summary, Evidence, Request, Response, and Policy details in accessible
   expect(policy).toHaveTextContent("alice")
 })
 
-it("bounds collapsed Evidence by count and length without leaking hidden values into ARIA or live regions", async () => {
-  const longEvidence = `ev-${"x".repeat(200)}`
-  const boundedSelection = { ...selection, evidenceIds: [longEvidence, "ev-2", "ev-3", "ev-4", "ev-5"] }
-  const { container } = renderWithQueryClient(<GraphInspectorPanel selection={boundedSelection} event={event} snapshot={snapshot} />)
+it("shows the Evidence ordinal only and never the raw event id or a live region", async () => {
+  const boundedSelection = { ...selection, evidenceIds: ["ev-1", "ev-2", "ev-3", "ev-4", "ev-5"] }
+  const { container } = renderWithQueryClient(<GraphInspectorPanel selection={boundedSelection} event={event} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 7 } }} />)
 
   await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
   const evidencePanel = screen.getByRole("tabpanel", { name: "Evidence" })
-  expect(evidencePanel).toHaveTextContent("5개 Evidence")
-  expect(evidencePanel).toHaveTextContent(`${longEvidence.slice(0, 160)}…`)
-  expect(evidencePanel).not.toHaveTextContent(longEvidence)
-  expect(evidencePanel).toHaveTextContent("ev-3")
+  expect(evidencePanel).toHaveTextContent("#7")
+  expect(evidencePanel).not.toHaveTextContent("ev-1")
   expect(evidencePanel).not.toHaveTextContent("ev-4")
-  expect(evidencePanel).not.toHaveTextContent("ev-5")
 
   const ariaAndLiveValues = [...container.querySelectorAll("[aria-label], [aria-labelledby], [aria-describedby], [aria-live]")]
     .flatMap((element) => ["aria-label", "aria-labelledby", "aria-describedby", "aria-live"].map((attribute) => element.getAttribute(attribute) ?? ""))
     .join(" ")
-  expect(ariaAndLiveValues).not.toContain(longEvidence)
   expect(ariaAndLiveValues).not.toContain("ev-4")
   expect(container.querySelector("[aria-live]")).not.toBeInTheDocument()
 })

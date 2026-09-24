@@ -10,6 +10,7 @@ import io.flowscope.core.ExecutionTrust;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.ReviewDecision;
+import io.flowscope.core.ResourcePolicy;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.SampleProject;
 import io.flowscope.core.Source;
@@ -75,7 +76,82 @@ class AuthorizationMatrixAnalyzerTest {
         assertEquals("BFLA", recommendation.recommendation().type());
         assertEquals("admin", recommendation.recommendation().basisIdentity());
         assertEquals("user-a", recommendation.recommendation().testIdentity());
+        assertEquals("P0", recommendation.policy().code(), "성공 관측 하나만으로 요구 역할을 추론하지 않는다");
         assertTrue(matrix.summary().bflaTestRecommendations() >= 1);
+    }
+
+    @Test
+    void 다른_신원들의_성공차단_분포로_대상신원의_요구역할을_P2로_추론한다() {
+        AnalysisConfig config = userAndAdmin()
+                .upsertAccount(new AccountProfile("user-b", "USER B", SERVICE, AccessRole.USER))
+                .bindSession(SERVICE, "tok:user-b", "user-b");
+        List<RequestRecord> records = List.of(
+                record(Source.HUMAN, "tok:admin", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"),
+                record(Source.HUMAN, "tok:user-a", "GET", "/api/reports/quarterly", 403,
+                        "{\"error\":\"forbidden\"}"),
+                record(Source.SCANNER, "tok:user-b", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"));
+
+        Pipeline.Result result = Pipeline.run(records, config);
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
+        AuthorizationMatrix.FunctionCell target = matrix.functions().stream()
+                .filter(cell -> cell.identity().equals("user-b") && !cell.evidenceIds().isEmpty())
+                .findFirst().orElseThrow();
+
+        assertEquals("P2", target.policy().code());
+        assertEquals(AuthorizationMatrix.Expected.DENY, target.expected());
+        assertEquals(AuthorizationMatrix.Status.BFLA_REVIEW_REQUIRED, target.status());
+        assertNotNull(target.recommendation());
+        assertTrue(target.policy().basis().contains("Admin"));
+        assertEquals(0, matrix.summary().bflaCandidates(), "관측 분포 P2만으로 BFLA 후보를 확정하지 않는다");
+        assertTrue(result.analysis.findings().stream().noneMatch(finding ->
+                finding.type() == AuthorizationAnalysis.FindingType.BFLA),
+                "P2 기대는 정본 finding이 아니라 정책 확인 추천으로 남는다");
+    }
+
+    @Test
+    void 사람의_명시_P3는_관측분포_P2보다_우선한다() {
+        AnalysisConfig config = userAndAdmin()
+                .upsertAccount(new AccountProfile("user-b", "USER B", SERVICE, AccessRole.USER))
+                .bindSession(SERVICE, "tok:user-b", "user-b");
+        List<RequestRecord> records = List.of(
+                record(Source.HUMAN, "tok:admin", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"),
+                record(Source.HUMAN, "tok:user-a", "GET", "/api/reports/quarterly", 403,
+                        "{\"error\":\"forbidden\"}"),
+                record(Source.SCANNER, "tok:user-b", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"));
+        Pipeline.run(records, config);
+        config.withEndpointRequirement(records.getFirst().op, AccessRole.USER);
+
+        AuthorizationMatrix.FunctionCell target = AuthorizationMatrixAnalyzer.analyze(
+                        Pipeline.run(records, config), config, List.of()).functions().stream()
+                .filter(cell -> cell.identity().equals("user-b") && !cell.evidenceIds().isEmpty())
+                .findFirst().orElseThrow();
+
+        assertEquals("P3", target.policy().code());
+        assertEquals(AuthorizationMatrix.Expected.ALLOW, target.expected());
+        assertEquals(AuthorizationMatrix.Status.EXPECTED_ACCESS, target.status());
+        assertNull(target.recommendation());
+    }
+
+    @Test
+    void 애매한_응답이_섞인_분포는_P2_요구역할을_유도하지_않는다() {
+        AnalysisConfig config = userAndAdmin()
+                .upsertAccount(new AccountProfile("user-b", "USER B", SERVICE, AccessRole.USER))
+                .bindSession(SERVICE, "tok:user-b", "user-b");
+        List<RequestRecord> records = List.of(
+                record(Source.HUMAN, "tok:admin", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"),
+                record(Source.HUMAN, "tok:user-a", "GET", "/api/reports/quarterly", 403,
+                        "{\"error\":\"forbidden\"}"),
+                record(Source.LLM, "tok:user-a", "GET", "/api/reports/quarterly", 500,
+                        "{\"error\":\"temporary failure\"}"),
+                record(Source.SCANNER, "tok:user-b", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"));
+
+        AuthorizationMatrix.FunctionCell target = AuthorizationMatrixAnalyzer.analyze(
+                        Pipeline.run(records, config), config, List.of()).functions().stream()
+                .filter(cell -> cell.identity().equals("user-b") && !cell.evidenceIds().isEmpty())
+                .findFirst().orElseThrow();
+
+        assertEquals("P0", target.policy().code());
+        assertEquals(AuthorizationMatrix.Expected.UNKNOWN, target.expected());
     }
 
     @Test
@@ -108,9 +184,9 @@ class AuthorizationMatrixAnalyzerTest {
     void 확정소유자_타계정_직접식별자_접근은_O3_BOLA_IDOR후보가_된다() {
         AnalysisConfig config = users();
         RequestRecord owner = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/101", 200,
-                "{\"id\":101,\"ownerId\":\"user-a\"}");
+                "{\"id\":101,\"ownerId\":\"user-a\",\"updatedAt\":\"2026-09-16T01:00:00Z\",\"token\":\"masked-a\"}");
         RequestRecord attacker = record(Source.SCANNER, "tok:user-b", "GET", "/api/orders/101", 200,
-                "{\"id\":101,\"ownerId\":\"user-a\"}");
+                "{\"id\":101,\"ownerId\":\"user-a\",\"updatedAt\":\"2026-09-16T01:00:01Z\",\"token\":\"masked-b\"}");
 
         Pipeline.Result result = Pipeline.run(List.of(owner, attacker), config);
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
@@ -120,6 +196,11 @@ class AuthorizationMatrixAnalyzerTest {
 
         assertEquals("O3", cell.ownership().code());
         assertEquals("E2", cell.evidence().code());
+        assertTrue(cell.evidence().basis().contains("비통제 관측 차등"));
+        assertTrue(cell.evidence().basis().contains("O3"));
+        assertEquals("E1", matrix.objects().stream()
+                .filter(value -> value.identity().equals("user-a") && !value.evidenceIds().isEmpty())
+                .findFirst().orElseThrow().evidence().code(), "소유자 응답을 자기 자신과 비교해 E2로 올리면 안 된다");
         assertTrue(cell.techniques().contains("BOLA"));
         assertTrue(cell.techniques().contains("IDOR"));
         assertEquals(AuthorizationMatrix.Status.BOLA_IDOR_CANDIDATE, cell.status());
@@ -128,6 +209,53 @@ class AuthorizationMatrixAnalyzerTest {
                 "후보는 정본 cell의 SUSPICIOUS와 같은 판단이다");
         assertEquals(0, matrix.summary().bflaCandidates(), "BOLA 의심은 BFLA 후보로 새지 않는다");
         assertTrue(matrix.functions().stream().noneMatch(value -> value.status() == AuthorizationMatrix.Status.BFLA_CANDIDATE));
+    }
+
+    @Test
+    void PUBLIC_정책은_타소유자_성공의_BOLA후보와_추천을_억제한다() {
+        AnalysisConfig config = users();
+        RequestRecord owner = record(Source.HUMAN, "tok:user-a", "GET", "/api/catalog/801", 200,
+                "{\"id\":801,\"ownerId\":\"user-a\",\"published\":true}");
+        RequestRecord reader = record(Source.SCANNER, "tok:user-b", "GET", "/api/catalog/801", 200,
+                "{\"id\":801,\"ownerId\":\"user-a\",\"published\":true}");
+        Pipeline.run(List.of(owner, reader), config);
+        config.withEndpointRequirement(reader.op, AccessRole.USER)
+                .withResourcePolicy(reader.resource, ResourcePolicy.PUBLIC);
+
+        Pipeline.Result result = Pipeline.run(List.of(owner, reader), config);
+        AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
+                .objects().stream().filter(value -> value.identity().equals("user-b")
+                        && value.resource().equals(reader.resource)).findFirst().orElseThrow();
+
+        assertEquals("PUBLIC", cell.resourcePolicy());
+        assertEquals(AuthorizationMatrix.Expected.ALLOW, cell.expected());
+        assertEquals(AuthorizationMatrix.Status.EXPECTED_ACCESS, cell.status());
+        assertTrue(cell.blockingLayers().isEmpty());
+        assertNull(cell.recommendation());
+        assertTrue(result.analysis.findings().stream().noneMatch(finding -> finding.cell().identity().equals("user-b")));
+    }
+
+    @Test
+    void 객체소유자라도_ADMIN요구_DELETE는_기능층이_차단한다() {
+        AnalysisConfig config = users();
+        RequestRecord ownerRead = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/902", 200,
+                "{\"id\":902,\"ownerId\":\"user-a\"}");
+        RequestRecord ownerDelete = record(Source.HUMAN, "tok:user-a", "DELETE", "/api/orders/902", 204, "");
+        Pipeline.run(List.of(ownerRead, ownerDelete), config);
+        config.withEndpointRequirement(ownerDelete.op, AccessRole.ADMIN)
+                .withResourcePolicy(ownerDelete.resource, ResourcePolicy.OWNER_ONLY);
+
+        Pipeline.Result result = Pipeline.run(List.of(ownerRead, ownerDelete), config);
+        AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
+                .objects().stream().filter(value -> value.identity().equals("user-a")
+                        && value.operation().equals(ownerDelete.op)).findFirst().orElseThrow();
+
+        assertEquals(AuthorizationMatrix.Expected.DENY, cell.expected());
+        assertEquals(List.of("BFLA"), cell.blockingLayers());
+        assertEquals(AuthorizationMatrix.Status.BFLA_CANDIDATE, cell.status());
+        assertTrue(result.analysis.findings().stream().anyMatch(finding ->
+                finding.type() == AuthorizationAnalysis.FindingType.BFLA
+                        && finding.cell().operation().equals(ownerDelete.op)));
     }
 
     @Test
@@ -152,6 +280,7 @@ class AuthorizationMatrixAnalyzerTest {
         assertEquals(AuthorizationMatrix.Expected.DENY, cell.expected());
         assertEquals(AuthorizationMatrix.Status.BOLA_IDOR_REVIEW_REQUIRED, cell.status());
         assertFalse(cell.oracle().satisfied());
+        assertEquals("E1", cell.evidence().code(), "구조와 대상 ID가 다른 응답은 정상 기준선과 차등 일치가 아니다");
         assertEquals(0, matrix.summary().bolaIdorCandidates());
         assertTrue(matrix.summary().manualReviewPending() >= 1);
     }
@@ -168,9 +297,48 @@ class AuthorizationMatrixAnalyzerTest {
                 .filter(value -> value.identity().equals("user-b") && !value.evidenceIds().isEmpty())
                 .findFirst().orElseThrow();
         assertEquals(1, cell.ownership().level(), "첫 성공 접근자는 저신뢰 추정(O1)이며 판정 근거가 아니다(D-012)");
+        assertEquals("E1", cell.evidence().code(), "O1 첫 접근자만으로는 E2 정상 기준선을 만들지 않는다");
+        assertEquals(AuthorizationMatrix.GateState.UNKNOWN, cell.gates().stream()
+                .filter(gate -> gate.key().equals("baseline")).findFirst().orElseThrow().state());
         assertEquals(AuthorizationMatrix.Status.BOLA_IDOR_REVIEW_REQUIRED, cell.status());
         assertNotNull(cell.recommendation());
         assertEquals(0, matrix.summary().bolaIdorCandidates());
+    }
+
+    @Test
+    void soft_deny_응답은_소유자_기준선이_있어도_E2_읽기차등으로_올리지_않는다() {
+        AnalysisConfig config = users();
+        RequestRecord owner = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/105", 200,
+                "{\"id\":105,\"ownerId\":\"user-a\"}");
+        RequestRecord denied = record(Source.SCANNER, "tok:user-b", "GET", "/api/orders/105", 200,
+                "{\"error\":\"forbidden\"}");
+
+        Pipeline.Result result = Pipeline.run(List.of(owner, denied), config);
+        AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
+                .objects().stream().filter(value -> value.identity().equals("user-b")
+                        && !value.evidenceIds().isEmpty()).findFirst().orElseThrow();
+
+        assertEquals(AuthorizationMatrix.Actual.DENIED, cell.actual());
+        assertEquals("E1", cell.evidence().code());
+        assertFalse(cell.oracle().satisfied());
+    }
+
+    @Test
+    void 관측시각이_없는_과거기준선은_응답이_같아도_E1로_강등한다() {
+        AnalysisConfig config = users();
+        RequestRecord owner = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/106", 200,
+                "{\"id\":106,\"ownerId\":\"user-a\"}");
+        RequestRecord attacker = record(Source.SCANNER, "tok:user-b", "GET", "/api/orders/106", 200,
+                "{\"id\":106,\"ownerId\":\"user-a\"}");
+        owner.timestamp = 0;
+
+        Pipeline.Result result = Pipeline.run(List.of(owner, attacker), config);
+        AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
+                .objects().stream().filter(value -> value.identity().equals("user-b")
+                        && !value.evidenceIds().isEmpty()).findFirst().orElseThrow();
+
+        assertEquals("E1", cell.evidence().code());
+        assertTrue(cell.evidence().basis().contains("시각"));
     }
 
     @Test

@@ -152,6 +152,7 @@ export interface MatrixCellBase {
   identityLabel: string
   operation: string
   expected: MatrixExpected
+  blockingLayers?: readonly ("BFLA" | "BOLA")[]
   actual: MatrixActual
   status: MatrixStatus
   statusLabel: string
@@ -176,9 +177,10 @@ export interface MatrixObjectCell extends MatrixCellBase {
   ownerLabel: string
   relation: string
   techniques: readonly string[]
+  resourcePolicy?: "UNKNOWN" | "OWNER_ONLY" | "ROLE_SHARED" | "AUTHENTICATED_SHARED" | "PUBLIC" | "ADMIN_ONLY"
   ownership: MatrixConfidence
 }
-export interface MatrixEvidenceRow extends MatrixCellBase { type: string; resource: string | null; ownership: MatrixConfidence }
+export interface MatrixEvidenceRow extends MatrixCellBase { type: string; resource: string | null; resourcePolicy?: MatrixObjectCell["resourcePolicy"]; ownership: MatrixConfidence }
 export interface AuthorizationMatrix {
   summary: {
     policyConfirmed: number
@@ -231,6 +233,8 @@ export interface ManagedSession {
   accountLabel: string
   service: string
   status: string
+  // NONE | LEGACY_RESPONSE | RULE_MATCHED | OPERATOR_ASSERTED (optional for pre-schema-6 snapshots)
+  verificationSource?: string
   createdAt: string
   lastUsedAt: string | null
   expiresAtHint: string | null
@@ -472,6 +476,8 @@ export interface Snapshot {
   datasetRevision?: number
   sampleMode: boolean
   events: readonly EventRecord[]
+  /** 표시용 순번(#N) 매핑: Evidence ID(원본 `ev-…`) → 프로젝트별 관측순 순번. 원본 ID는 역참조 키로 유지된다. */
+  evidenceOrdinals?: Readonly<Record<string, number>>
   trafficStats: TrafficStats
   replays: readonly never[]
   flowLinks: readonly FlowLink[]
@@ -591,6 +597,24 @@ export interface ReplayResult extends ApiSuccess {
   status: number
   replayId: string
   openedDraft: boolean
+}
+
+export interface AuthorizationReplayResult extends ApiSuccess {
+  run: {
+    runId: string
+    armed: boolean
+    sent: number
+    drafted: number
+    skipped: number
+    items: readonly {
+      operation: string
+      targetIdentity: string
+      basisIdentity: string
+      basisEvidenceId: string
+      outcome: string
+      reason: string
+    }[]
+  }
 }
 
 export interface RequestLabDraft {

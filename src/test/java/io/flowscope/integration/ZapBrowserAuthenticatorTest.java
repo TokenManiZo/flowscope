@@ -46,7 +46,7 @@ final class ZapBrowserAuthenticatorTest {
 
     @Test
     void refusesToExploreWithoutMatchingAuthenticationEvidence() throws Exception {
-        HttpServer server = authenticationApi(new ArrayList<>(), "{\"Result\":\"OK\"}");
+        HttpServer server = authenticationApi(new ArrayList<>(), "{\"authSuccessful\":\"true\"}");
         server.start();
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
@@ -58,9 +58,9 @@ final class ZapBrowserAuthenticatorTest {
             IllegalStateException error = assertThrows(IllegalStateException.class, () ->
                     vault.withSecret("zap-a", secret -> authenticator.authenticate(
                             "run-1", "https://app.example.test/", 0, "3", "ctx", secret)));
-            assertTrue(error.getMessage().contains("로그인 성공 정규식"));
+            assertTrue(error.getMessage().contains("재사용 가능한 ZAP 인증 응답"));
             assertFalse(error.getMessage().contains("password-secret"));
-            // D-164: 무엇을 관측했는지 지목한다(응답 1건·상태 200인데 정규식 일치 0건 = 정규식/자격증명 문제).
+            // D-164: 선택적 명시 정규식을 사용한 경우에는 관측 결과를 진단에 남긴다.
             assertTrue(error.getMessage().contains("인증 응답 1건"), error.getMessage());
             assertTrue(error.getMessage().contains("[200]"), error.getMessage());
         } finally {
@@ -70,7 +70,7 @@ final class ZapBrowserAuthenticatorTest {
 
     @Test
     void namesZeroAuthenticationResponsesWhenTheBrowserSubmittedNothing() throws Exception {
-        HttpServer server = authenticationApi(new ArrayList<>(), "{\"Result\":\"OK\"}");
+        HttpServer server = authenticationApi(new ArrayList<>(), "{\"authSuccessful\":\"true\"}");
         server.start();
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
@@ -87,7 +87,7 @@ final class ZapBrowserAuthenticatorTest {
     }
 
     @Test
-    void acceptsObservedLoginEvidenceWhenActionHasNoBooleanResult() throws Exception {
+    void rejectsObservedEvidenceWhenZapDoesNotConfirmAuthentication() throws Exception {
         HttpServer server = authenticationApi(new ArrayList<>(), "{\"Result\":\"OK\"}");
         server.start();
         try {
@@ -97,9 +97,60 @@ final class ZapBrowserAuthenticatorTest {
                     zap, new ObjectMapper(), value -> true,
                     () -> List.of(authenticationEvidence("Signed in")));
 
+            IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+                    vault.withSecret("zap-a", secret -> authenticator.authenticate(
+                            "run-1", "https://app.example.test/", 0, "3", "ctx", secret)));
+            assertTrue(error.getMessage().contains("로그인 실패"), error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void autoVerifiesWithoutRegexAndDoesNotConfigureIndicatorEndpoints() throws Exception {
+        List<String> requests = new ArrayList<>();
+        HttpServer server = authenticationApi(requests, "{\"authSuccessful\":\"true\"}");
+        server.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
+            ZapAccountVault vault = new ZapAccountVault();
+            vault.save(new ZapAccountVault.Input("zap-a", "A", "USER", "https://app.example.test",
+                    "https://app.example.test/login", "alice", "password-secret", "", ""));
+            ZapBrowserAuthenticator authenticator = new ZapBrowserAuthenticator(
+                    zap, new ObjectMapper(), value -> true,
+                    () -> List.of(authenticationEvidence("{\"profile\":\"alice\"}")));
+
             ZapBrowserAuthenticator.Identity identity = vault.withSecret("zap-a", secret ->
                     authenticator.authenticate("run-1", "https://app.example.test/", 0, "3", "ctx", secret));
+
             assertEquals("7", identity.userId());
+            assertTrue(identity.verifiedEvidenceRuntimeId() > 0);
+            assertFalse(requests.stream().anyMatch(value -> value.contains("setLoggedInIndicator")));
+            assertFalse(requests.stream().anyMatch(value -> value.contains("setLoggedOutIndicator")));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void rejectsFailedZapAuthenticationEvenWhenAResponseIsTwoHundred() throws Exception {
+        HttpServer server = authenticationApi(new ArrayList<>(), "{\"authSuccessful\":\"false\"}");
+        server.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
+            ZapAccountVault vault = new ZapAccountVault();
+            vault.save(new ZapAccountVault.Input("zap-a", "A", "USER", "https://app.example.test",
+                    "https://app.example.test/login", "alice", "wrong-password", "", ""));
+            ZapBrowserAuthenticator authenticator = new ZapBrowserAuthenticator(
+                    zap, new ObjectMapper(), value -> true,
+                    () -> List.of(authenticationEvidence("login page")));
+
+            IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+                    vault.withSecret("zap-a", secret -> authenticator.authenticate(
+                            "run-1", "https://app.example.test/", 0, "3", "ctx", secret)));
+
+            assertTrue(error.getMessage().contains("로그인 실패"), error.getMessage());
+            assertFalse(error.getMessage().contains("wrong-password"));
         } finally {
             server.stop(0);
         }
@@ -107,7 +158,7 @@ final class ZapBrowserAuthenticatorTest {
 
     @Test
     void acceptsAStatusHeaderIndicatorFromTheObservedResponse() throws Exception {
-        HttpServer server = authenticationApi(new ArrayList<>(), "{\"Result\":\"OK\"}");
+        HttpServer server = authenticationApi(new ArrayList<>(), "{\"authSuccessful\":\"true\"}");
         server.start();
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
@@ -130,7 +181,7 @@ final class ZapBrowserAuthenticatorTest {
 
     @Test
     void rejectsWhenALoggedOutResponseWasObservedAfterTheLoggedInResponse() throws Exception {
-        HttpServer server = authenticationApi(new ArrayList<>(), "{\"Result\":\"OK\"}");
+        HttpServer server = authenticationApi(new ArrayList<>(), "{\"authSuccessful\":\"true\"}");
         server.start();
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");

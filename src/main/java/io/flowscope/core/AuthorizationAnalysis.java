@@ -40,7 +40,11 @@ public record AuthorizationAnalysis(
             String identity,
             int confidence,
             String basis,
-            boolean confirmed) {}
+            boolean confirmed) {
+        public boolean decisionGrade() {
+            return identity != null && confidence >= 50;
+        }
+    }
 
     public record Decision(
             Verdict verdict,
