@@ -49,7 +49,14 @@ function bodyTokens(line: string): RawToken[] {
 export function highlightRaw(text: string): RawToken[][] {
   const lines = text.split("\n")
   let inBody = false
-  return lines.map(line => {
+  // HTTP 원문은 CRLF다. 줄 끝 \r을 떼고 토큰을 만든 뒤 plain으로 되붙여야 헤더·상태 줄 정규식이 맞는다.
+  return lines.map(raw => {
+    const carriage = raw.endsWith("\r")
+    const tokens = tokenizeLine(carriage ? raw.slice(0, -1) : raw)
+    return carriage ? [...tokens, { text: "\r", kind: "plain" as const }] : tokens
+  })
+
+  function tokenizeLine(line: string): RawToken[] {
     if (!inBody && line.trim() === "") { inBody = true; return [{ text: line, kind: "plain" as const }] }
     if (inBody) return bodyTokens(line)
     const request = REQUEST_LINE.exec(line)
@@ -66,7 +73,7 @@ export function highlightRaw(text: string): RawToken[][] {
     const header = HEADER_LINE.exec(line)
     if (header) return [{ text: header[1], kind: "key" as const }, { text: header[2], kind: "plain" as const }, ...maskAware(header[3], "value")]
     return maskAware(line, "plain")
-  })
+  }
 }
 
 export const rawTokenClass: Record<RawTokenKind, string> = {

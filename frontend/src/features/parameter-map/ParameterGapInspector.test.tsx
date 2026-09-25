@@ -183,7 +183,7 @@ it("opens the exact existing Evidence detail and read-only Request Lab with simu
   expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue("MASKED-REQUEST")
   expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("MASKED-RESPONSE")
   expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
-  expect(screen.getAllByRole("status").map(element => element.textContent).join(" ")).toContain("원문 일부가 미보존")
+  expect(screen.getAllByRole("status").map(element => element.textContent).join(" ")).toContain("원문 일부가 보존되지 않았거나 마스킹됐습니다")
   expect(fetch).toHaveBeenCalledWith("/api/request-lab?eventId=observed-a", expect.not.objectContaining({ method: "POST" }))
   expect(JSON.stringify(client.getQueryCache().getAll())).not.toMatch(/MASKED-REQUEST|MASKED-RESPONSE/)
 })
