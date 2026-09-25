@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
-import { renderParameterNodeCardSvg, type CardSource } from "@/features/parameter-map/parameterNodeCard"
-import type { GraphPreferences } from "./graphPreferences"
-import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
+import { renderParameterNodeCardSvg, type CardSource, type ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
+import { NODE_SIZE_LIMIT, type GraphPreferences, type NodeSize } from "./graphPreferences"
+import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
@@ -23,7 +23,7 @@ interface Props {
   onNavigate?(node: HierarchyNode): void
   /** 레인별 화면 좌표 범위. 헤더가 노드가 만든 실제 범위를 따라간다. */
   onLaneBoundsChange?(bounds: ReadonlyArray<LaneBounds | null>): void
-  onPreferencesChange(preferences: Pick<GraphPreferences, "positions" | "viewport">): void
+  onPreferencesChange(preferences: Pick<GraphPreferences, "positions" | "viewport" | "sizes">): void
   onRendererUnavailable?(): void
 }
 
@@ -38,7 +38,7 @@ export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pic
   return event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && (event.deltaX !== 0 || Math.abs(event.deltaY) < 50 || !Number.isInteger(event.deltaY)) ? "pan" : "zoom"
 }
 
-function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>): ElementDefinition[] {
+function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
   const focus = deriveGraphFocus(hierarchy, selectedElementId)
   const edges = projection.edges.map((edge) => {
@@ -60,21 +60,35 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     const sources = node.kind === "operation" || node.kind === "resource" ? [...(nodeSources.get(node.id) ?? [])] : []
     const base = relationshipNodeCard(node, projection)
     const card = sources.length ? { ...base, sources, accessibleLabel: `${base.accessibleLabel}; 접근 주체 ${sources.map(source => source.toUpperCase()).join(", ")}` } : base
-    const image = renderParameterNodeCardSvg(card, true)
-    return { data: { id: node.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no" } }
+    cards?.set(node.id, card)
+    const size = sizes[node.id]
+    const image = renderParameterNodeCardSvg(card, true, size)
+    return { data: { id: node.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
     const card = relationshipRouteCandidateCard(candidate)
-    const image = renderParameterNodeCardSvg(card, true)
-    return { data: { id: candidate.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no" } }
+    cards?.set(candidate.id, card)
+    const size = sizes[candidate.id]
+    const image = renderParameterNodeCardSvg(card, true, size)
+    return { data: { id: candidate.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   return [...nodes, ...candidates, ...edges.map(({ data }) => ({ data }))]
 }
 
-function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "viewport"> {
+function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "viewport" | "sizes"> {
   const positions: GraphPreferences["positions"] = {}
-  core.nodes().forEach((node) => { const position = node.position(); positions[node.id()] = { x: position.x, y: position.y } })
-  return { positions, viewport: { zoom: core.zoom(), pan: core.pan() } }
+  const sizes: Record<string, NodeSize> = {}
+  core.nodes().forEach((node) => {
+    const position = node.position(); positions[node.id()] = { x: position.x, y: position.y }
+    const width = node.data("customWidth"), height = node.data("customHeight")
+    if (typeof width === "number" && typeof height === "number") sizes[node.id()] = { width, height }
+  })
+  return { positions, viewport: { zoom: core.zoom(), pan: core.pan() }, sizes }
+}
+
+/** 모서리 크기 조절 한계: 기본 카드 크기 이상, 기본의 두 배(저장 한계 이내) 이하. */
+function sizeBounds(base: NodeSize) {
+  return { minWidth: base.width, minHeight: base.height, maxWidth: Math.min(NODE_SIZE_LIMIT.maxWidth, base.width * 2), maxHeight: Math.min(NODE_SIZE_LIMIT.maxHeight, base.height * 2) }
 }
 
 function modelNodeWidth(core: Core, node: cytoscape.NodeSingular) {
@@ -188,6 +202,57 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     tooltipHideTimerRef.current = window.setTimeout(dismissCardTooltip, 150)
   }, [cancelTooltipHide, dismissCardTooltip])
 
+  // 모서리 크기 조절. 커서를 올린 노드(키보드는 포커스한 노드)의 오른쪽 아래에 손잡이를 둔다. 좌상단은 고정하고 오른쪽 아래로 늘린다.
+  const cardsRef = useRef(new Map<string, ParameterNodeCardView>())
+  const lockedRef = useRef(locked)
+  lockedRef.current = locked
+  const [resizeHandle, setResizeHandle] = useState<{ nodeId: string; x: number; y: number } | null>(null)
+  const handleNodeRef = useRef<string | null>(null)
+  const handleHoverRef = useRef(false)
+  const handleHideTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const resizeDragRef = useRef<{ nodeId: string; pointerId: number; clientX: number; clientY: number; width: number; height: number; left: number; top: number; zoom: number } | null>(null)
+  const placeHandle = useCallback((nodeId: string | null) => {
+    const core = coreRef.current
+    const node = nodeId ? core?.getElementById(nodeId) : null
+    if (!core || !node || node.empty() || lockedRef.current) { handleNodeRef.current = null; setResizeHandle(null); return }
+    handleNodeRef.current = nodeId
+    const center = node.renderedPosition()
+    setResizeHandle({ nodeId: nodeId!, x: center.x + node.renderedOuterWidth() / 2, y: center.y + node.renderedOuterHeight() / 2 })
+  }, [])
+  const placeHandleRef = useRef(placeHandle)
+  placeHandleRef.current = placeHandle
+  const cancelHandleHide = () => { if (handleHideTimerRef.current !== null) window.clearTimeout(handleHideTimerRef.current); handleHideTimerRef.current = null }
+  const scheduleHandleHide = useCallback(() => {
+    if (handleHideTimerRef.current !== null) window.clearTimeout(handleHideTimerRef.current)
+    handleHideTimerRef.current = window.setTimeout(() => { if (!handleHoverRef.current && !resizeDragRef.current) placeHandle(null) }, 200)
+  }, [placeHandle])
+  const baseSize = (nodeId: string): NodeSize | null => {
+    const card = cardsRef.current.get(nodeId)
+    if (!card) return null
+    const image = renderParameterNodeCardSvg(card, true)
+    return { width: image.width, height: image.height }
+  }
+  /** 좌상단(anchor)을 고정한 채 크기를 바꾼다. 기본 크기와 같아지면 저장값에서 빠진다. 오른쪽 이웃 레인 직전에서 멈춘다. */
+  const resizeNode = (nodeId: string, width: number, height: number, anchor: { left: number; top: number }) => {
+    const core = coreRef.current, card = cardsRef.current.get(nodeId), base = baseSize(nodeId)
+    const node = core?.getElementById(nodeId)
+    if (!core || !node || node.empty() || !card || !base) return
+    const bounds = sizeBounds(base)
+    const count = laneCountRef.current, index = laneIndexForKind(String(node.data("kind")), count)
+    const rightNeighbour = laneBounds(core, count, node).slice(index + 1).reduce((limit, lane) => lane ? Math.min(limit, lane.left - LANE_GAP) : limit, Number.POSITIVE_INFINITY)
+    const nextWidth = Math.max(bounds.minWidth, Math.min(bounds.maxWidth, width, rightNeighbour - anchor.left))
+    const nextHeight = Math.max(bounds.minHeight, Math.min(bounds.maxHeight, height))
+    const custom = Math.round(nextWidth) !== base.width || Math.round(nextHeight) !== base.height
+    const image = renderParameterNodeCardSvg(card, true, custom ? { width: Math.round(nextWidth), height: Math.round(nextHeight) } : undefined)
+    node.data({ cardImage: image.uri, width: image.width, height: image.height })
+    if (custom) node.data({ customWidth: image.width, customHeight: image.height }); else node.removeData("customWidth customHeight")
+    node.position({ x: anchor.left + image.width / 2, y: anchor.top + image.height / 2 })
+  }
+  const nodeAnchor = (node: cytoscape.NodeSingular) => {
+    const position = node.position(), width = Number(node.data("width")), height = Number(node.data("height"))
+    return { left: position.x - width / 2, top: position.y - height / 2, width, height }
+  }
+
   useLayoutEffect(() => {
     const tooltip = tooltipRef.current, canvas = containerRef.current
     if (tooltip && canvas && cardTooltip) tooltip.style.top = `${Math.max(8, Math.min(cardTooltip.y, canvas.clientHeight - tooltip.offsetHeight - 8))}px`
@@ -281,7 +346,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       clampToNeighbourLanes(event.target)
       publishLayout()
     }
-    const viewportListener = () => scheduleViewportPublish()
+    const viewportListener = () => { scheduleViewportPublish(); if (handleNodeRef.current) placeHandleRef.current(handleNodeRef.current) }
     const wheelListener = (event: WheelEvent) => {
       event.preventDefault()
       const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? containerRef.current?.clientHeight ?? 600 : 1
@@ -308,6 +373,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (String(event.type) === "blur" && !tooltipInteractionRef.current.pointer && !tooltipInteractionRef.current.focus) dismissCardTooltip()
       else scheduleTooltipHide()
     }
+    const showHandle = (event: cytoscape.EventObject) => { cancelHandleHide(); placeHandle(event.target.id()) }
+    const followHandle = () => { if (handleNodeRef.current) placeHandle(handleNodeRef.current) }
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleLaneCorrection)
     resizeObserver?.observe(containerRef.current)
     containerRef.current.addEventListener("wheel", wheelListener, { passive: false })
@@ -316,7 +383,13 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     core.on("mouseout blur", "node", hideCardTooltip)
     core.on("dragfree", "node", dragListener)
     core.on("viewport", viewportListener)
+    core.on("mouseover", "node", showHandle)
+    core.on("mouseout", "node", scheduleHandleHide)
+    core.on("position", "node", followHandle)
     return () => {
+      core.off("mouseover", "node", showHandle)
+      core.off("mouseout", "node", scheduleHandleHide)
+      core.off("position", "node", followHandle)
       core.off("tap", "node, edge", selectListener)
       core.off("mouseover focus", "node", showCardTooltip)
       core.off("mouseout blur", "node", hideCardTooltip)
@@ -333,7 +406,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       core.destroy()
       if (coreRef.current === core) coreRef.current = null
     }
-  }, [cancelTooltipHide, dismissCardTooltip, scheduleTooltipHide])
+  }, [cancelTooltipHide, dismissCardTooltip, placeHandle, scheduleHandleHide, scheduleTooltipHide])
 
   useEffect(() => {
     const core = coreRef.current
@@ -344,7 +417,11 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const relayout = appliedLayoutRef.current !== layoutVersion
     appliedLayoutRef.current = layoutVersion
     core.elements().remove()
-    core.add(elementsFor(projection, selectedElementId, confirmedNodeIds))
+    cardsRef.current = new Map()
+    // 전체 재정렬(layoutVersion 변경)만 사용자가 바꾼 크기를 비운다. 새로고침·필터·이동은 저장된 크기를 그대로 쓴다.
+    core.add(elementsFor(projection, selectedElementId, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current))
+    handleNodeRef.current = null
+    setResizeHandle(null)
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
@@ -364,6 +441,15 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     appliedLaneLayoutRef.current = laneLayout.version
     if (laneLayout.version === 0) return
     core.nodes().forEach((node) => { if (node.locked?.()) node.unlock() })
+    // 레인 머리글 정렬은 그 레인 노드의 크기만 기본으로 되돌린다.
+    laneColumns(core, laneCount)[laneLayout.lane]?.forEach((node) => {
+      if (node.data("customWidth") === undefined) return
+      const card = cardsRef.current.get(node.id())
+      if (!card) return
+      const image = renderParameterNodeCardSvg(card, true)
+      node.data({ cardImage: image.uri, width: image.width, height: image.height })
+      node.removeData("customWidth customHeight")
+    })
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, null, laneCount, laneLayout.lane)
     if (locked) core.nodes().forEach((node) => { node.lock() })
     publishLayoutRef.current?.()
@@ -416,10 +502,49 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           dismissCardTooltip()
         }}
         onKeyDown={event => {
+          // Shift+방향키: 포커스한 노드 크기 조절(오른쪽·아래로 늘리고 왼쪽·위로 줄인다). 마우스 없이 쓰는 모서리 조절 대안이다.
+          if (event.shiftKey && ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key) && keyboardNodeRef.current && !locked) {
+            event.preventDefault()
+            const node = coreRef.current?.getElementById(keyboardNodeRef.current)
+            if (!node || node.empty()) return
+            const current = nodeAnchor(node), step = 16
+            resizeNode(node.id(), current.width + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0), current.height + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0), current)
+            publishLayoutRef.current?.()
+            return
+          }
           if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); focusNode(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1) }
           else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (keyboardNodeRef.current) coreRef.current?.getElementById(keyboardNodeRef.current).emit("tap") }
           else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip() }
         }} />
+      {resizeHandle && !locked && <div aria-hidden="true" data-testid="node-resize-handle" data-node-id={resizeHandle.nodeId} title="끌어서 노드 크기 조절"
+        className="absolute z-20 size-3.5 cursor-nwse-resize touch-none rounded-sm border border-slate-300 bg-slate-700 shadow hover:bg-sky-500"
+        style={{ left: resizeHandle.x - 12, top: resizeHandle.y - 12 }}
+        onPointerEnter={() => { handleHoverRef.current = true; cancelHandleHide() }}
+        onPointerLeave={() => { handleHoverRef.current = false; if (!resizeDragRef.current) scheduleHandleHide() }}
+        onPointerDown={event => {
+          const node = coreRef.current?.getElementById(resizeHandle.nodeId)
+          if (!node || node.empty()) return
+          event.preventDefault()
+          event.stopPropagation()
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+          dismissCardTooltip()
+          const start = nodeAnchor(node)
+          resizeDragRef.current = { nodeId: resizeHandle.nodeId, pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, width: start.width, height: start.height, left: start.left, top: start.top, zoom: coreRef.current?.zoom() || 1 }
+        }}
+        onPointerMove={event => {
+          const drag = resizeDragRef.current
+          if (!drag || drag.pointerId !== event.pointerId) return
+          resizeNode(drag.nodeId, drag.width + (event.clientX - drag.clientX) / drag.zoom, drag.height + (event.clientY - drag.clientY) / drag.zoom, drag)
+          placeHandle(drag.nodeId)
+        }}
+        onPointerUp={event => {
+          const drag = resizeDragRef.current
+          if (!drag || drag.pointerId !== event.pointerId) return
+          resizeDragRef.current = null
+          event.currentTarget.releasePointerCapture?.(event.pointerId)
+          publishLayoutRef.current?.()
+          placeHandle(drag.nodeId)
+        }} />}
       {cardTooltip && <div ref={tooltipRef} id={tooltipId} role="tooltip" tabIndex={0} className="pointer-events-auto absolute z-20 max-h-[calc(100%-1rem)] overflow-y-auto overscroll-contain rounded-md border border-slate-500 bg-slate-950 px-3 py-2 text-sm text-slate-100 shadow-lg focus-visible:outline-2 focus-visible:outline-ring [overflow-wrap:anywhere]" style={{ left: cardTooltip.x, top: cardTooltip.y, width: cardTooltip.width }}
         onPointerEnter={() => { tooltipInteractionRef.current.pointer = true; cancelTooltipHide() }}
         onPointerLeave={() => { tooltipInteractionRef.current.pointer = false; scheduleTooltipHide() }}

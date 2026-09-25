@@ -128,9 +128,12 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
   const identityCount = (identity: string) => identityFacetEvents.filter((event) => event.idn === identity).length
   const reviewCount = (review: Verdict) => includedEvents.filter((event) => snapshot.data && graphReviewVerdict(snapshot.data, event) === review).length
   const selectedEvent = selection ? snapshot.data?.events.find((event) => (selection.source === null || event.source === selection.source) && (selection.identity === null || event.idn === selection.identity) && (selection.operation === null || event.op === selection.operation) && (selection.resource === null || event.resource === selection.resource) && (selection.evidenceIds.includes(event.eventId) || (event.clusterEvidenceIds ?? []).some((id) => selection.evidenceIds.includes(id)))) ?? null : null
-  const updatePreferences = (update: Pick<GraphPreferences, "positions" | "viewport">) => setPreferences((current) => {
-    const next = { ...current, ...update }
-    return JSON.stringify(current.positions) === JSON.stringify(next.positions) && JSON.stringify(current.viewport) === JSON.stringify(next.viewport) ? current : next
+  const updatePreferences = (update: Pick<GraphPreferences, "positions" | "viewport" | "sizes">) => setPreferences((current) => {
+    // 크기 저장값은 비어 있으면 필드를 빼서 기존 저장 형식과 같게 둔다.
+    const { sizes, ...rest } = update
+    const next: GraphPreferences = { ...current, ...rest }
+    if (sizes && Object.keys(sizes).length) next.sizes = sizes; else delete next.sizes
+    return JSON.stringify(current.positions) === JSON.stringify(next.positions) && JSON.stringify(current.viewport) === JSON.stringify(next.viewport) && JSON.stringify(current.sizes ?? {}) === JSON.stringify(next.sizes ?? {}) ? current : next
   })
   const selectGraph = (nextSelection: GraphSelection, elementId: string | null) => {
     if (snapshot.isError) return

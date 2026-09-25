@@ -148,27 +148,39 @@ const badgeColors: Record<string, readonly [string, string]> = {
 }
 
 /** 제목은 최대 두 줄. 경로는 `/` 경계로 나누고 넘치면 앞을 줄여 끝(자원·ID)을 남긴다. 일반 글자는 폭에 맞춰 나눈다. */
-function titleLines(title: string, width: number): string[] {
+function titleLines(title: string, width: number, maxLines = 2): string[] {
   const safe = xmlSafeText(title)
   const fits = (line: string) => textWidth(line, 14) <= width
   if (fits(safe)) return [safe]
-  if (safe.startsWith("/")) return wrapPath(safe, fits).map(line => visualLine(line, width, 14, true))
-  let first = ""
-  for (const character of Array.from(safe)) { if (!fits(first + character)) break; first += character }
-  return [first, visualLine(safe.slice(first.length), width, 14, true)]
+  if (safe.startsWith("/")) return wrapPath(safe, fits, maxLines).map(line => visualLine(line, width, 14, true))
+  const lines: string[] = []
+  let rest = safe
+  while (lines.length < maxLines - 1 && !fits(rest)) {
+    let line = ""
+    for (const character of Array.from(rest)) { if (!fits(line + character)) break; line += character }
+    if (!line) break
+    lines.push(line)
+    rest = rest.slice(line.length)
+  }
+  return [...lines, visualLine(rest, width, 14, true)]
 }
 
 const TITLE_BASELINE = 53, LINE_GAP = 18, ROW_GAP = 22, BOTTOM_PADDING = 14
 
 /** Bounded inline display image only; full text remains in DOM tooltips and fallback labels. */
-export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact = false): { uri: string; width: number; height: number } {
-  const width = compact ? 232 : SVG_WIDTH
+export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact = false, size?: { width: number; height: number }): { uri: string; width: number; height: number } {
+  // size는 사용자가 모서리를 끌어 정한 크기다. 기본보다 작게는 그리지 않고, 늘어난 높이는 제목 줄 수로 쓴다.
+  const width = Math.max(compact ? 232 : SVG_WIDTH, size?.width ?? 0)
   // 모든 카드는 배지·제목 두 줄 자리·보조 줄 수로 높이가 정해진다. 제목이 한 줄이어도 두 줄 자리를 둬 같은 종류의 카드 크기를 맞춘다.
   const rows = [card.detail, card.footer].filter(Boolean)
   const firstRow = TITLE_BASELINE + LINE_GAP + ROW_GAP + 1
   // 점검 우선순위 카드(compact 아님)는 보조 줄이 비어도 한 줄 자리를 둬 모든 카드를 같은 크기로 맞춘다.
   const reservedRows = compact ? rows.length : Math.max(rows.length, 1)
-  const height = (reservedRows ? firstRow + ROW_GAP * (reservedRows - 1) : TITLE_BASELINE + LINE_GAP) + BOTTOM_PADDING
+  const height = Math.max((reservedRows ? firstRow + ROW_GAP * (reservedRows - 1) : TITLE_BASELINE + LINE_GAP) + BOTTOM_PADDING, size?.height ?? 0)
+  // 보조 줄은 카드 아래에 붙이고, 그 위 공간에 들어가는 만큼 제목 줄을 쓴다(기본 크기에서는 두 줄).
+  const rowBaseline = (index: number) => height - BOTTOM_PADDING - ROW_GAP * (rows.length - 1 - index)
+  const titleLimit = rows.length ? rowBaseline(0) - ROW_GAP - 1 : height - BOTTOM_PADDING
+  const maxTitleLines = Math.max(2, Math.floor((titleLimit - TITLE_BASELINE) / LINE_GAP) + 1)
   const titleX = card.icon === "none" ? 14 : 42
   const sources = cardSourceOrder.filter(source => card.sources?.includes(source))
   const badge = visualLine(card.badge, width - 46 - sources.length * 22, 12)
@@ -180,8 +192,8 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
     : card.icon === "box" ? '<g fill="none" stroke="#c4b5fd" stroke-width="1.8" stroke-linejoin="round"><path d="M14 40l9-5 9 5v10l-9 5-9-5Z"/><path d="m14 40 9 5 9-5M23 45v10m-4.5-17.5 9 5"/></g>' : ""
   const relationshipIcon = card.icon === "globe" ? '<g fill="none" stroke="#5eead4" stroke-width="1.8" stroke-linecap="round"><circle cx="23" cy="45" r="10"/><path d="M13 45h20"/><path d="M23 35c3 3 4.5 6.4 4.5 10S26 52 23 55M23 35c-3 3-4.5 6.4-4.5 10S20 52 23 55"/></g>'
     : card.icon === "network" ? '<g fill="none" stroke="#5eead4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="23" cy="36" r="3"/><circle cx="15" cy="52" r="3"/><circle cx="31" cy="52" r="3"/><path d="m21.5 38.7-5 10.6m8-10.6 5 10.6"/><path d="M18 52h10"/></g>' : ""
-  const title = titleLines(card.title, width - titleX - 14).map((line, index) => `<text x="${titleX}" y="${TITLE_BASELINE + index * LINE_GAP}" fill="#f8fafc" font-family="sans-serif" font-size="14">${escapeXml(line)}</text>`).join("")
-  const rowText = rows.map((value, index) => `<text x="14" y="${firstRow + index * ROW_GAP}" fill="${index === 0 && card.detail ? "#cbd5e1" : "#94a3b8"}" font-family="sans-serif" font-size="12">${escapeXml(visualLine(value, width - 28, 12, index > 0 || !card.detail))}</text>`).join("")
+  const title = titleLines(card.title, width - titleX - 14, maxTitleLines).map((line, index) => `<text x="${titleX}" y="${TITLE_BASELINE + index * LINE_GAP}" fill="#f8fafc" font-family="sans-serif" font-size="14">${escapeXml(line)}</text>`).join("")
+  const rowText = rows.map((value, index) => `<text x="14" y="${rowBaseline(index)}" fill="${index === 0 && card.detail ? "#cbd5e1" : "#94a3b8"}" font-family="sans-serif" font-size="12">${escapeXml(visualLine(value, width - 28, 12, index > 0 || !card.detail))}</text>`).join("")
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${icon}${relationshipIcon}${title}${rowText}</svg>`
   return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width, height }
 }
