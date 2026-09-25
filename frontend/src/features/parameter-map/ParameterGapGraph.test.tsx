@@ -218,9 +218,14 @@ it("renders four labeled lanes, separate source/relation legends and canonical n
   const onSelect = vi.fn()
   render(<ParameterGapGraph projection={projection()} onSelect={onSelect} />)
   for (const lane of ["조건/사용자", "API 엔드포인트", "입력 파라미터", "권한 대상"]) expect(screen.getByRole("columnheader", { name: lane })).toBeVisible()
-  const legend = screen.getByRole("list", { name: "요청 생성 주체 범례" })
+  // 범례는 `?` 아이콘 뒤에 숨어 있다가 포커스(또는 마우스 올림)로 펼쳐진다.
+  expect(screen.queryByRole("list", { name: "요청 생성 주체 범례" })).not.toBeInTheDocument()
+  act(() => { screen.getByRole("button", { name: "범례·도움말" }).focus() })
+  const legend = await screen.findByRole("list", { name: "요청 생성 주체 범례" })
   expect(within(legend).getAllByRole("listitem").map(item => item.textContent)).toEqual(["HUMAN", "SCANNER", "LLM"])
   expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선: 관측·근거주황 파선: 미검증 · Gap점선: 정의·불확실 관계")
+  await userEvent.keyboard("{Escape}")
+  await waitFor(() => expect(screen.queryByRole("list", { name: "요청 생성 주체 범례" })).not.toBeInTheDocument())
   expect(screen.getByRole("button", { name: "Gap 그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Gap 그래프 확대" })).toBeVisible()
   expect(core.nodes().length).toBe(8)
@@ -345,16 +350,19 @@ it("exposes mixed observation attribution, Gap subject and separate evidence cou
   expect(onSelect.mock.calls[0][0]).toMatchObject({ gapId: "source", evidenceIds: ["witness-a"], evidenceCount: 31 })
 })
 
-it("reserves stroke shapes for relationship meanings, not source attribution", () => {
+it("reserves stroke shapes for relationship meanings, not source attribution", async () => {
   render(<ParameterGapGraph projection={projection()} onSelect={vi.fn()} />)
-  const sourceLegend = screen.getByRole("list", { name: "요청 생성 주체 범례" })
+  await userEvent.hover(screen.getByRole("button", { name: "범례·도움말" }))
+  const sourceLegend = await screen.findByRole("list", { name: "요청 생성 주체 범례" })
   for (const marker of sourceLegend.querySelectorAll('[aria-hidden="true"]')) {
     expect(marker).not.toHaveStyle({ borderStyle: "dashed" })
     expect(marker).not.toHaveStyle({ borderStyle: "dotted" })
     expect(marker).not.toHaveClass("border-t-2")
   }
   expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선")
-  expect(screen.getByText(/주체 ≠ 관계/)).toHaveTextContent("Gap 주체 ≠ 관측 출처 · Gap ≠ 취약점 판정")
+  expect(screen.getByText("Gap은 점검 후보이며 취약점 판정이 아닙니다.")).toBeVisible()
+  await userEvent.unhover(screen.getByRole("button", { name: "범례·도움말" }))
+  await waitFor(() => expect(screen.queryByRole("list", { name: "요청 생성 주체 범례" })).not.toBeInTheDocument())
 })
 
 it("pans on a two-finger trackpad scroll and zooms only on pinch or mouse wheel", () => {

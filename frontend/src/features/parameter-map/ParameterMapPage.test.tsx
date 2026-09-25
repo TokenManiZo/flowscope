@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query"
-import { screen, within } from "@testing-library/react"
+import { act, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { renderWithQueryClient } from "@/test/render"
@@ -220,10 +220,9 @@ it("keeps the definitions-only message instead of replacing it with the run-gap 
   expect(within(statePanel).queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
 })
 
-it.each(["UNKNOWN", "INFERRED"])("explains %s on keyboard focus without hiding visible state", async (stateName) => {
+it.each([["UNKNOWN", "근거 부족으로 아직 알 수 없음"], ["INFERRED", "정의·연결에서 추론, 실제 관측 아님"]])("explains %s in the help popover opened by keyboard focus", async (stateName, meaning) => {
   render()
-  const help = screen.getByRole("button", { name: `${stateName} 도움말` })
-  expect(help).toHaveTextContent(stateName)
-  help.focus()
-  expect(await screen.findByRole("tooltip")).toHaveTextContent(/Gap을 선택해 정의와 Evidence를 확인/)
+  act(() => { screen.getByRole("button", { name: "범례·도움말" }).focus() })
+  const term = await screen.findByText(stateName, { selector: "dt" })
+  expect(term.nextElementSibling).toHaveTextContent(meaning)
 })
