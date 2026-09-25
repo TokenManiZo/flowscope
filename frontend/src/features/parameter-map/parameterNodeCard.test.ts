@@ -48,23 +48,24 @@ describe("parameter node card SVG", () => {
     expect(label.getAttribute("fill")).toBe(foreground)
   })
 
-  it("keeps distinguishing coordinate suffixes within the visual card width", () => {
+  const titleLines = (svg: Document) => [...svg.querySelectorAll("text")].filter(text => text.getAttribute("font-size") === "15").map(text => text.textContent!)
+
+  it("wraps a long route at slash boundaries into two lines and trims the front to keep the suffix", () => {
     const route = `/api/${"very-long-segment/".repeat(12)}orders/{id}`
-    const svg = documentFor(card({ title: route }))
-    const title = svg.querySelectorAll("text")[1].textContent!
-    expect(title).toContain("…")
-    expect(title.startsWith("/api/")).toBe(true)
-    expect(title.endsWith("orders/{id}")).toBe(true)
-    expect(title.length).toBeLessThan(30)
-    const wide = documentFor(card({ kind: "target", icon: "box", title: `${"W".repeat(100)}:101` })).querySelectorAll("text")[1].textContent!
-    expect(wide.endsWith(":101")).toBe(true)
-    expect(wide.length).toBeLessThan(20)
+    const lines = titleLines(documentFor(card({ title: route })))
+    expect(lines).toHaveLength(2)
+    expect(lines[0].startsWith("…/")).toBe(true)
+    expect(lines[1].endsWith("orders/{id}")).toBe(true)
+    expect(titleLines(documentFor(card({ title: "/api/orders/{id}" })))).toEqual(["/api/orders/{id}"])
+    const wide = titleLines(documentFor(card({ kind: "target", icon: "box", title: `${"W".repeat(100)}:101` })))
+    expect(wide).toHaveLength(2)
+    expect(wide[1].endsWith(":101")).toBe(true)
   })
 
   it("accounts for wide lowercase glyphs when preserving a resource suffix", () => {
-    const title = documentFor(card({ kind: "target", icon: "box", title: `${"m".repeat(100)}:101` })).querySelectorAll("text")[1].textContent!
-    expect(title.endsWith(":101")).toBe(true)
-    expect(title.length).toBeLessThanOrEqual(16)
+    const lines = titleLines(documentFor(card({ kind: "target", icon: "box", title: `${"m".repeat(100)}:101` })))
+    expect(lines[1].endsWith(":101")).toBe(true)
+    expect(lines.every(line => line.length <= 16)).toBe(true)
   })
 
   it("escapes bounded visual text and retains no executable or external data", () => {
@@ -76,16 +77,18 @@ describe("parameter node card SVG", () => {
 
     const image = renderParameterNodeCardSvg(card)
     const svg = decodeURIComponent(image.uri.replace("data:image/svg+xml,", ""))
-    expect(image).toMatchObject({ width: 224, height: 124 })
+    expect(image).toMatchObject({ width: 200, height: 130 })
     expect(svg).toContain("한글 &lt;tag&gt; &amp; &quot;quote&quot;")
     expect(svg).toContain("&lt;/text&gt;")
-    expect(svg).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
+    // 폭 200px 카드에서는 상세 문자열이 잘릴 수 있다. 잘려도 태그는 항상 이스케이프된다.
+    expect(svg).toContain("&lt;script&gt;alert(1)")
     expect(svg).not.toContain("<script")
     expect(svg).not.toMatch(/(?:href|src)=["'][^"']*https?:/i)
     expect(svg).not.toContain("<image")
     expect(svg).not.toContain("the complete safe fallback label")
     expect(svg).not.toContain("x".repeat(100))
-    expect((svg.match(/<text\b/g) ?? []).length).toBe(4)
+    // 배지 1 · 두 줄 제목 2 · 상세 1 · 푸터 1
+    expect((svg.match(/<text\b/g) ?? []).length).toBe(5)
   })
 
   it.each([
@@ -104,5 +107,29 @@ describe("parameter node card SVG", () => {
     const svg = decodeURIComponent(image.uri.replace("data:image/svg+xml,", ""))
     expect(svg).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF]/)
     expect(svg).toContain(`before${"�".repeat(Array.from(malformed).length)}after`)
+  })
+})
+
+describe("source icons beside the badge", () => {
+  const card: ParameterNodeCardView = { kind: "operation", badge: "GET", title: "/api/orders/{id}", detail: "", footer: "", icon: "none", accessibleLabel: "op", sources: ["human", "scanner"] }
+  const svg = (view: ParameterNodeCardView, compact = true) => decodeURIComponent(renderParameterNodeCardSvg(view, compact).uri.replace(/^data:image\/svg\+xml,/, ""))
+
+  it("draws the icons on the badge row and drops the detail row height", () => {
+    const text = svg(card)
+    expect(text).toMatch(/translate\(\d+ 12\)/)
+    expect(text).not.toMatch(/translate\(\d+ 65\)/)
+    // 관계 그래프 카드는 실제 제목 줄 수에 맞춘다(한 줄 67 · 보조 한 줄 추가 89).
+    expect(renderParameterNodeCardSvg(card, true)).toMatchObject({ width: 232, height: 67 })
+    expect(renderParameterNodeCardSvg({ ...card, footer: "owner: A" }, true).height).toBe(89)
+    // 점검 우선순위 카드는 보조 줄이 비어도 한 줄 자리를 둬 같은 크기다.
+    expect(renderParameterNodeCardSvg(card)).toMatchObject({ width: 200, height: 86 })
+  })
+
+  it("draws the detail row when present, grows compact cards by it, and keeps Gap graph cards one size", () => {
+    const withDetail = { ...card, detail: "owner: USER B" }
+    expect(renderParameterNodeCardSvg(withDetail, true).height).toBe(89)
+    expect(renderParameterNodeCardSvg(withDetail).height).toBe(108)
+    expect(renderParameterNodeCardSvg({ ...withDetail, footer: "legacy footer" }).height).toBe(130)
+    expect(svg(withDetail)).toContain("owner: USER B")
   })
 })

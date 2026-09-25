@@ -3,6 +3,7 @@ import { Check, CircleHelp, CircleMinus, Clock, ShieldAlert, X } from "lucide-re
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { evidenceOrdinalLabel } from "@/lib/display/operationLabel"
 import { resourceLabel } from "./parameterNodeCard"
 import type { ProjectedValidationCell } from "./parameterProjection"
 
@@ -17,9 +18,9 @@ const states = {
 }
 export function validationCellState(cell: ProjectedValidationCell) { return cell.applicable ? cell.verdict : "NOT_APPLICABLE" }
 export function validationStateLabel(state: keyof typeof states) { return states[state].label }
-export function EvidenceIdsPreview({ label, ids, count }: { label: string; ids: readonly string[]; count: number }) {
+export function EvidenceIdsPreview({ label, ids, count, ordinals }: { label: string; ids: readonly string[]; count: number; ordinals?: Readonly<Record<string, number>> }) {
   const preview = [...new Set(ids)].slice(0, 20)
-  return <div className="space-y-1"><p>{label} {count}건 · ID 미리보기 {preview.length}개</p><ul className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{preview.map(id => <li key={id}>{id}</li>)}</ul></div>
+  return <div className="space-y-1"><p>{label} {count}건 · 순번 미리보기 {preview.length}개</p><ul className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{preview.map(id => <li key={id}>{evidenceOrdinalLabel(ordinals, id)}</li>)}</ul></div>
 }
 
 /** 선택 입력의 subject × source 검증 좌표. 빈 칸은 서버 좌표 없음이며 미검증 판정을 만들지 않는다. */

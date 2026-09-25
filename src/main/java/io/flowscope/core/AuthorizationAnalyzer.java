@@ -25,6 +25,7 @@ import static io.flowscope.core.AuthorizationAnalysis.*;
  */
 public final class AuthorizationAnalyzer {
 
+    private static final int COLLECTION_MEMBERSHIP_CONFIDENCE = 60;
     private static final Set<String> OWNER_FIELDS = Set.of(
             "owner", "ownerid", "userid", "authorid", "accountid");
     private static final Set<String> PRINCIPAL_OBJECT_FIELDS = Set.of(
@@ -138,6 +139,7 @@ public final class AuthorizationAnalyzer {
                 }
             }
         }
+        Map<String, Set<String>> collectionMembers = collectionMembers(records);
 
         Map<String, OwnerInfo> result = new LinkedHashMap<>();
         Set<String> resources = new LinkedHashSet<>();
@@ -157,6 +159,13 @@ public final class AuthorizationAnalyzer {
             } else if (candidates.size() > 1) {
                 result.put(resource, new OwnerInfo(resource, null, 0,
                         "소유 필드 충돌: " + candidates, false));
+            } else if (collectionMembers.getOrDefault(resource, Set.of()).size() == 1) {
+                String identity = collectionMembers.get(resource).iterator().next();
+                result.put(resource, new OwnerInfo(resource, identity, COLLECTION_MEMBERSHIP_CONFIDENCE,
+                        "단일 신원 컬렉션 멤버십(교차 확인)", false));
+            } else if (collectionMembers.getOrDefault(resource, Set.of()).size() > 1) {
+                result.put(resource, new OwnerInfo(resource, null, 0,
+                        "컬렉션 멤버십 공유/공개: " + collectionMembers.get(resource), false));
             } else if (firstSuccess.containsKey(resource)) {
                 result.put(resource, new OwnerInfo(resource, firstSuccess.get(resource).idn, 20,
                         "첫 성공 접근자(저신뢰 후보, 판정 제외)", false));
@@ -164,6 +173,34 @@ public final class AuthorizationAnalyzer {
         }
         return result;
     }
+
+    private static Map<String, Set<String>> collectionMembers(List<RequestRecord> records) {
+        Map<CollectionFamily, Set<String>> resourcesByFamily = new LinkedHashMap<>();
+        for (RequestRecord detail : records) {
+            if (detail.resource == null || !"GET".equalsIgnoreCase(detail.method)) continue;
+            String detailOperation = Normalizer.normalize(detail.method, detail.path).op;
+            if (!detailOperation.endsWith("/{id}")) continue;
+            String collectionOperation = detailOperation.substring(0, detailOperation.length() - "/{id}".length());
+            resourcesByFamily.computeIfAbsent(new CollectionFamily(detail.service, collectionOperation),
+                    ignored -> new LinkedHashSet<>()).add(detail.resource);
+        }
+
+        Map<String, Set<String>> result = new LinkedHashMap<>();
+        for (RequestRecord collection : records) {
+            if (!"GET".equalsIgnoreCase(collection.method) || !isSuccessful(collection)
+                    || collection.idn == null || Fingerprints.ANONYMOUS.equals(collection.idn)) continue;
+            CollectionFamily family = new CollectionFamily(collection.service,
+                    Normalizer.normalize(collection.method, collection.path).op);
+            for (String resource : resourcesByFamily.getOrDefault(family, Set.of())) {
+                if (ResponseEvidence.showsObject(collection.responseBodyForAnalysis(), resource, collection.idn)) {
+                    result.computeIfAbsent(resource, ignored -> new LinkedHashSet<>()).add(collection.idn);
+                }
+            }
+        }
+        return result;
+    }
+
+    private record CollectionFamily(String service, String operation) {}
 
     private static String subjectOf(String fingerprint) {
         if (fingerprint == null) return null;
@@ -191,24 +228,35 @@ public final class AuthorizationAnalyzer {
                 .filter(role -> role != null && role != AccessRole.UNKNOWN).findFirst()
                 .orElse(config.identityRole(key.identity()));
         AccessRole required = config.endpointRequirement(key.operation());
-        if (actual.isBelow(required)) {
+        AuthorizationPolicy.LayerDecision functionExpected = AuthorizationPolicy.function(actual, required);
+        if (functionExpected == AuthorizationPolicy.LayerDecision.DENY) {
             return new Decision(Verdict.SUSPICIOUS,
-                    actual.label() + " 권한이 " + required.label() + " 요구 엔드포인트에 성공", true);
+                    "기능층(BFLA) 차단 기대: " + actual.label() + " 권한이 "
+                            + required.label() + " 요구 엔드포인트에 성공", true);
         }
         if (key.resource() == null) return new Decision(Verdict.ALLOW, "객체 없는 엔드포인트 성공", false);
-        if (owner == null || !owner.confirmed() || owner.identity() == null) {
-            return new Decision(Verdict.UNTESTED, "소유자 근거 미확정", false);
+        ResourcePolicy resourcePolicy = config.resourcePolicy(key.operation(), key.resource());
+        String ownerId = owner == null ? null : owner.identity();
+        AccessRole ownerRole = ownerId == null ? AccessRole.UNKNOWN : config.identityRole(ownerId);
+        AuthorizationPolicy.LayerDecision objectExpected = AuthorizationPolicy.object(resourcePolicy,
+                key.identity(), actual, ownerId, ownerRole, owner != null && owner.decisionGrade());
+        if (objectExpected == AuthorizationPolicy.LayerDecision.ALLOW) {
+            return new Decision(Verdict.ALLOW, "객체층 허용 기대(" + resourcePolicy.label() + ")", false);
         }
-        if (owner.identity().equals(key.identity())) return new Decision(Verdict.ALLOW, "소유자의 정상 접근", false);
-        if (actual == AccessRole.ADMIN) return new Decision(Verdict.ALLOW, "관리자 접근(별도 분류)", false);
+        if (objectExpected == AuthorizationPolicy.LayerDecision.UNKNOWN) {
+            return new Decision(Verdict.UNTESTED, resourcePolicy == ResourcePolicy.UNKNOWN
+                    ? "소유자 근거 미확정" : "객체층 정책 판정에 필요한 소유자·역할 근거 미확정", false);
+        }
         if (isWrite(successful.get(0).method)) {
-            return new Decision(Verdict.SUSPICIOUS, "비소유자의 상태변경 요청이 성공", false);
+            return new Decision(Verdict.SUSPICIOUS,
+                    "객체층(BOLA) 차단 기대(" + resourcePolicy.label() + ")인데 상태변경 요청이 성공", false);
         }
         if (successful.stream().anyMatch(r -> ResponseEvidence.showsObject(
-                r.responseBodyForAnalysis(), key.resource(), owner.identity()))) {
-            return new Decision(Verdict.SUSPICIOUS, "비소유자의 응답에 타 소유 객체가 포함됨", false);
+                r.responseBodyForAnalysis(), key.resource(), ownerId == null ? key.identity() : ownerId))) {
+            return new Decision(Verdict.SUSPICIOUS,
+                    "객체층(BOLA) 차단 기대(" + resourcePolicy.label() + ")인데 대상 객체 응답이 반환됨", false);
         }
-        return new Decision(Verdict.UNDECIDED, "성공 응답이지만 타 소유 객체 포함 여부를 확인할 수 없음", false);
+        return new Decision(Verdict.UNDECIDED, "차단 기대 성공 응답이지만 대상 객체 포함 여부를 확인할 수 없음", false);
     }
 
     private static void addFindings(CoverageCell cell, List<Finding> findings, AnalysisConfig config) {
@@ -235,7 +283,7 @@ public final class AuthorizationAnalyzer {
             String[] parts = pair.split("\u0000", 2);
             String operation = parts[0], resource = parts[1];
             OwnerInfo owner = owners.get(resource);
-            if (owner == null || !owner.confirmed() || owner.identity() == null) continue;
+            if (owner == null || !owner.decisionGrade()) continue;
             for (String identity : identities) {
                 if (identity.equals(owner.identity())) continue;
                 CellKey key = new CellKey(identity, operation, resource);
@@ -243,7 +291,7 @@ public final class AuthorizationAnalyzer {
                 int risk = isWrite(operationMethod(operation)) ? 100 : 70;
                 gaps.add(new Gap(gapId(GapType.UNCROSSED, key), GapType.UNCROSSED,
                         identity, operation, resource, Set.of(), risk,
-                        "확정 소유자가 아닌 관측 신원이 아직 시도하지 않은 조합"));
+                        "O2/O3 소유자가 아닌 관측 신원이 아직 시도하지 않은 조합"));
             }
         }
     }

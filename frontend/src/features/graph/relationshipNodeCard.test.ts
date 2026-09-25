@@ -32,9 +32,9 @@ describe("relationship graph node cards", () => {
 
     expect(relationshipNodeCard(target, graph)).toMatchObject({ badge: "TARGET", title: service, detail: "Exact-scope target", footer: "1 API group", icon: "globe" })
     expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs · H 7 / S 3 / L 2", footer: "Gap 2 · 경로 후보 1", icon: "network" })
-    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "ALLOW", footer: "", icon: "user" })
-    expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "ALLOW", footer: "", icon: "none" })
-    expect(relationshipNodeCard(resource, graph)).toMatchObject({ badge: "RESOURCE", title: "orders:101", detail: "ALLOW", footer: "owner: USER B", icon: "box" })
+    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "", footer: "", icon: "user" })
+    expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "", footer: "", icon: "none" })
+    expect(relationshipNodeCard(resource, graph)).toMatchObject({ badge: "RESOURCE", title: "orders:101", detail: "", footer: "owner: USER B", icon: "box" })
     expect(relationshipNodeCard(support, graph)).toMatchObject({ badge: "SUPPORT", title: "GET /api/session/poll", detail: "보조 흐름", footer: "", icon: "none" })
   })
 
@@ -43,7 +43,8 @@ describe("relationship graph node cards", () => {
     const card = relationshipNodeCard(api, projection([api]))
 
     expect(card.badge).toBe("DELETE")
-    expect(card.title).toBe(`/api/${"long/".repeat(60)}orders/{id}`)
+    // 그룹(long) 구간까지 생략한다. 전체 좌표는 접근 이름에 남는다.
+    expect(card.title).toBe(`/${"long/".repeat(59)}orders/{id}`)
     expect(card.accessibleLabel).toContain(`${service} DELETE /api/`)
     expect(card.accessibleLabel).toContain("orders/{id}")
   })

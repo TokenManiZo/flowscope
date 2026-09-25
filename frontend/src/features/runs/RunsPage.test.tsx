@@ -32,7 +32,7 @@ it("shows HUMAN, scanner, and independent LLM Explorer status", async () => {
   expect(fetchStub.mock.calls.every(([path]) => !String(path).includes("llm-run"))).toBe(true)
   await userEvent.click(screen.getByRole("tab", { name: "LLM" }))
   expect(screen.getByText("LLM Explorer · IDLE")).toBeVisible()
-  expect(screen.getByRole("button", { name: "LLM Explorer 열기" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "LLM 단계 열기" })).toBeVisible()
   await userEvent.click(screen.getByRole("tab", { name: "HUMAN" }))
   expect(screen.getByText("HUMAN · NOT_STARTED")).toBeVisible()
 })

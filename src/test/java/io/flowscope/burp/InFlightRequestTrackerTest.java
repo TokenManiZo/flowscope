@@ -24,11 +24,12 @@ class InFlightRequestTrackerTest {
         RunContextRegistry.Context pass = new RunContextRegistry.Context(SourceDetail.BURP_REPEATER,
                 Orchestrator.HUMAN, ToolKind.BURP, RunPhase.EXPLORATION, "human-pass", "user-a");
 
-        assertTrue(tracker.remember(42, pass, "user-a", 7, 1_000));
+        assertTrue(tracker.remember(42, pass, "user-a", false, 7, 1_000));
 
         InFlightRequestTracker.Observation observed = tracker.remove(42);
         assertEquals(pass, observed.context());
         assertEquals("user-a", observed.humanCaptureAccountId());
+        assertFalse(observed.humanCaptureSuppressed());
         assertEquals(7, observed.datasetEpoch());
         assertTrue(observed.belongsTo(7));
         assertFalse(observed.belongsTo(8));
@@ -39,8 +40,8 @@ class InFlightRequestTrackerTest {
     void boundsInFlightStateWithoutReplacingAnExistingCorrelation() {
         InFlightRequestTracker tracker = new InFlightRequestTracker(1, 60_000);
 
-        assertTrue(tracker.remember(1, null, null, 1, 1_000));
-        assertFalse(tracker.remember(2, null, null, 1, 1_001));
+        assertTrue(tracker.remember(1, null, null, false, 1, 1_000));
+        assertFalse(tracker.remember(2, null, null, false, 1, 1_001));
         assertEquals(1, tracker.remove(1).datasetEpoch());
     }
 
@@ -48,8 +49,8 @@ class InFlightRequestTrackerTest {
     void removesExpiredCorrelationsBeforeApplyingTheCapacityLimit() {
         InFlightRequestTracker tracker = new InFlightRequestTracker(1, 100);
 
-        assertTrue(tracker.remember(1, null, null, 1, 1_000));
-        assertTrue(tracker.remember(2, null, null, 2, 1_101));
+        assertTrue(tracker.remember(1, null, null, false, 1, 1_000));
+        assertTrue(tracker.remember(2, null, null, false, 2, 1_101));
         assertNull(tracker.remove(1));
         assertEquals(2, tracker.remove(2).datasetEpoch());
     }
@@ -69,7 +70,7 @@ class InFlightRequestTrackerTest {
                 executor.submit(() -> {
                     ready.countDown();
                     start.await();
-                    if (tracker.remember(id, null, null, 1, 1_000)) accepted.incrementAndGet();
+                    if (tracker.remember(id, null, null, false, 1, 1_000)) accepted.incrementAndGet();
                     return null;
                 });
             }
@@ -78,5 +79,16 @@ class InFlightRequestTrackerTest {
         }
 
         assertEquals(capacity, accepted.get());
+    }
+
+    @Test
+    void preservesSuppressedCaptureStateUntilTheMatchingResponseArrives() {
+        InFlightRequestTracker tracker = new InFlightRequestTracker(10, 60_000);
+
+        assertTrue(tracker.remember(7, null, null, true, 3, 1_000));
+
+        InFlightRequestTracker.Observation observed = tracker.remove(7);
+        assertNull(observed.humanCaptureAccountId());
+        assertTrue(observed.humanCaptureSuppressed());
     }
 }

@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { getRequestLabDraft, openReplay, sendRequestLab } from "@/lib/api/endpoints"
 import type { EventRecord, ManagedSession, RequestLabDraft } from "@/lib/api/types"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
 import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
+import { RawTextPanel } from "./RawTextPanel"
+import { highlightRaw, rawTokenClass } from "./rawHighlight"
 import { RequestLabMetadata, type RequestLabCredentialMode } from "./RequestLabMetadata"
 
 interface Props {
@@ -23,7 +24,7 @@ interface Props {
   rawState?: MemoryOnlyRawState
 }
 
-function activeAccounts(sessions: readonly ManagedSession[], service: string) {
+export function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
   for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
   return [...unique.values()]
@@ -175,7 +176,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
 
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
     <DialogContent className="max-h-[calc(100svh-2rem)] sm:max-w-[70rem] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0" showCloseButton={false} aria-describedby="request-lab-description">
-      <DialogHeader className="border-b p-5"><DialogTitle>Request Lab</DialogTitle><DialogDescription id="request-lab-description">고정된 관측 서비스를 대상으로만 요청을 검토합니다. 브라우저는 리디렉션을 따르거나 대상을 변경하지 않으며 Java 전송기가 최종 권한을 가집니다.</DialogDescription></DialogHeader>
+      <DialogHeader className="border-b p-5"><DialogTitle>Request Lab</DialogTitle><DialogDescription id="request-lab-description">관측한 요청·응답 원문을 확인하고 Burp Repeater로 보냅니다.</DialogDescription></DialogHeader>
       <div className="min-h-0 overflow-y-auto overscroll-contain">
         {suspended && <Alert className="m-5 mb-0" aria-label="Request Lab 일시 중지"><AlertTitle>서버 상태 확인 중</AlertTitle><AlertDescription>마지막 성공 snapshot의 편집 초안을 메모리에 보존했습니다. 갱신에 성공할 때까지 전송과 인증정보 변경을 잠급니다.</AlertDescription></Alert>}
         {loading && <p className="p-5">Request Lab 초안 불러오는 중…</p>}
@@ -199,20 +200,19 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
             onAccountChange={setAccountId}
           />
           <section aria-label="Request Lab 원문 작업면" className="grid min-w-0 content-start gap-4 p-4">
-            {(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border border-l-2 bg-muted/40 p-2 text-xs">원문 일부가 미보존 또는 마스킹된 상태입니다. 표시된 내용만 검토할 수 있습니다.</p>}
+            {(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border border-l-2 bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}
             <p className="text-xs text-muted-foreground">{draft.message}</p>
             <div role="group" aria-label="Request Lab 요청 및 응답" className="grid min-w-0 gap-4 lg:grid-cols-2">
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Request 원문 패널">
-                <Label id="request-lab-request-label" htmlFor="request-lab-request">Request Lab 관측 요청 원문 (인증 교체 전)</Label>
-                <Textarea id="request-lab-request" aria-label="Request Lab 요청 원문" className="min-h-64 resize-y font-mono text-xs leading-relaxed lg:min-h-[28rem]" value={raw.current.request} disabled={suspended || !draft.requestEditable || sending} onChange={(change) => { raw.current.request = change.target.value; setVersion((value) => value + 1) }} />
-                <p className="text-xs text-muted-foreground">UTF-8 최대 {REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트</p>
+                <Label id="request-lab-request-label" htmlFor="request-lab-request">요청</Label>
+                <RawTextPanel id="request-lab-request" label="Request Lab 요청 원문" value={raw.current.request} disabled={suspended || !draft.requestEditable || sending} onChange={(next) => { raw.current.request = next; setVersion((value) => value + 1) }} />
               </section>
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Response 원문 패널">
-                <Label id="request-lab-response-label" htmlFor="request-lab-response">Request Lab 응답 원문</Label>
-                <Textarea id="request-lab-response" className="min-h-64 resize-y font-mono text-xs leading-relaxed lg:min-h-[28rem]" value={raw.current.response} readOnly />
+                <Label id="request-lab-response-label" htmlFor="request-lab-response">응답</Label>
+                <RawTextPanel id="request-lab-response" label="Request Lab 응답 원문" value={raw.current.response} readOnly />
               </section>
             </div>
-            {raw.current.history.length > 0 && <section className="grid gap-2"><h3 className="font-medium">최근 전송 결과</h3><p aria-live="polite">현재 탭 전송 결과 {raw.current.history.length}건 (최대 10건)</p><ol className="grid gap-2">{raw.current.history.map((result, index) => <li key={`${index}-${result.status}-${result.durationMs}`} data-testid="request-lab-history-result" className="rounded border p-2"><p>HTTP {result.status} · {result.durationMs}ms</p><pre className="whitespace-pre-wrap break-words font-mono text-xs">{result.response}</pre></li>)}</ol></section>}
+            {raw.current.history.length > 0 && <section className="grid gap-2"><h3 className="font-medium">최근 전송 결과</h3><p aria-live="polite">현재 탭 전송 결과 {raw.current.history.length}건 (최대 10건)</p><ol className="grid gap-2">{raw.current.history.map((result, index) => <li key={`${index}-${result.status}-${result.durationMs}`} data-testid="request-lab-history-result" className="rounded border p-2"><p>HTTP {result.status} · {result.durationMs}ms</p><pre className="whitespace-pre-wrap break-words font-mono text-xs">{highlightRaw(result.response).map((tokens, line) => <span key={line}>{tokens.map((token, index) => <span key={index} className={rawTokenClass[token.kind]}>{token.text}</span>)}{"\n"}</span>)}</pre></li>)}</ol></section>}
           </section>
         </div>}
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 
 import { EvidenceSheet, type StructuredEvidenceSelection } from "@/components/layout/EvidenceSheet"
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
@@ -38,15 +38,16 @@ function BoundedOperation({ value }: { value: string }) {
  * 판정 매트릭스(P/E/O, PR#12 이식)가 기본이다(D-144). PR#11의 파라미터 커버리지와 기존 권한 셀 표는 둘째·셋째 탭으로 그대로 남긴다(D-145).
  */
 export function MatrixPage() {
+  // 그래프 화면처럼 보기 전환 탭을 각 보기의 상단 제어 줄에 둔다. 큰 제목은 화면 읽기용으로만 남긴다.
+  const viewSwitcher = <TabsList aria-label="매트릭스 보기" variant="line" className="h-9 shrink-0 p-0">
+    <TabsTrigger value="judgment" className="pl-0 pr-3">판정 매트릭스</TabsTrigger>
+    <TabsTrigger value="parameters" className="px-3">파라미터 커버리지</TabsTrigger>
+    <TabsTrigger value="legacy" className="px-3">기존 권한 매트릭스</TabsTrigger>
+  </TabsList>
   return <Tabs defaultValue="judgment" className="h-full min-h-0 min-w-0 gap-0 bg-[var(--flowscope-canvas)]">
-    <TabsList aria-label="매트릭스 보기" variant="line" className="mx-4 my-2 shrink-0">
-      <TabsTrigger value="judgment" className="px-3">판정 매트릭스</TabsTrigger>
-      <TabsTrigger value="parameters" className="px-3">파라미터 커버리지</TabsTrigger>
-      <TabsTrigger value="legacy" className="px-3">기존 권한 매트릭스</TabsTrigger>
-    </TabsList>
-    <TabsContent value="judgment" className="min-h-0 min-w-0 flex-1"><JudgmentMatrixView /></TabsContent>
-    <TabsContent value="parameters" className="min-h-0 min-w-0 overflow-auto"><ParameterMatrixView /></TabsContent>
-    <TabsContent value="legacy" className="min-h-0 min-w-0 flex-1"><LegacyMatrixView /></TabsContent>
+    <TabsContent value="judgment" className="min-h-0 min-w-0 flex-1"><JudgmentMatrixView viewSwitcher={viewSwitcher} /></TabsContent>
+    <TabsContent value="parameters" className="min-h-0 min-w-0 overflow-auto"><ParameterMatrixView viewSwitcher={viewSwitcher} /></TabsContent>
+    <TabsContent value="legacy" className="min-h-0 min-w-0 flex-1"><LegacyMatrixView viewSwitcher={viewSwitcher} /></TabsContent>
   </Tabs>
 }
 
@@ -56,7 +57,7 @@ interface ParameterMatrixGroup { service: string; method: string; pathTemplate: 
  * PR#11 파라미터 커버리지: `snapshot.surface.validationCells`를 입력 좌표별로 묶어 subject × source 검증표로 보인다.
  * 셀 id는 좌표·판정 전부로 만든 표시용 파생값이며(validationCellId), 서버 셀이 사라지면 선택도 닫힌다.
  */
-export function ParameterMatrixView() {
+export function ParameterMatrixView({ viewSwitcher }: { viewSwitcher?: ReactNode } = {}) {
   const snapshot = useSnapshotQuery()
   const [selection, setSelection] = useState<string | null>(null)
   const groups = useMemo(() => {
@@ -73,7 +74,7 @@ export function ParameterMatrixView() {
   const current = currentGroup?.cells.find(cell => cell.id === selection)
   useEffect(() => { if (selection && !current && !snapshot.isError) setSelection(null) }, [selection, current, snapshot.isError])
   const event = current && currentGroup ? snapshot.data?.events.find(item => current.evidenceIds.includes(item.eventId) && item.op === currentGroup.operation && item.method === current.endpoint.method) ?? null : null
-  return <section className="min-w-0 space-y-4 p-4"><h1 className="text-base font-semibold">파라미터 커버리지</h1><p className="text-sm text-muted-foreground">서버가 제공한 입력별 검증 좌표입니다. 먼저 Gap 그래프에서 집중할 입력을 선택할 수 있습니다.</p>
+  return <section className="min-w-0 space-y-4 p-4">{viewSwitcher}<h1 className="sr-only">파라미터 커버리지</h1>
     {snapshot.isLoading && !snapshot.isError && <p role="status">파라미터 커버리지 불러오는 중…</p>}
     {snapshot.isError && <SnapshotFailure title="파라미터 커버리지를 불러오지 못했습니다." retained={!!snapshot.data} updatedAt={snapshot.dataUpdatedAt} retry={() => void snapshot.refetch()} />}
     {!snapshot.isLoading && !snapshot.isError && !groups.size && <p>표시할 서버 파라미터 검증 좌표가 없습니다.</p>}
@@ -90,7 +91,7 @@ function SnapshotFailure({ title, retained, updatedAt, retry, detail }: { title:
   </AlertDescription></Alert>
 }
 
-export function LegacyMatrixView() {
+export function LegacyMatrixView({ viewSwitcher }: { viewSwitcher?: ReactNode } = {}) {
   const snapshot = useSnapshotQuery()
   const [mode, setMode] = useState<MatrixMode>("identity")
   const [gapsOnly, setGapsOnly] = useState(false)
@@ -119,10 +120,10 @@ export function LegacyMatrixView() {
   const context = <section className="grid gap-3 p-3"><div><h2 className="text-sm font-semibold">표시 제어</h2><p className="text-xs text-muted-foreground">서버 역할과 기존 셀만 표시합니다.</p></div><Tabs value={mode} onValueChange={(value) => setMode(value === "role" ? "role" : "identity")}><TabsList><TabsTrigger value="identity">신원별</TabsTrigger><TabsTrigger value="role">역할별</TabsTrigger></TabsList></Tabs><label className="flex items-center gap-2"><Checkbox checked={gapsOnly} onCheckedChange={(checked) => setGapsOnly(checked === true)} /><span>갭만 표시</span></label></section>
   const inspector = <EvidenceSheet inline contained event={selectedEvent} snapshot={snapshot.data} selection={selection} disabled={snapshot.isError} onOpenChange={() => undefined} />
   return <TooltipProvider><ReferenceAnalysisWorkspace ariaLabel="권한 매트릭스 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} contentOverflow="hidden" inspectorOverflow="hidden" onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelection(null) }}><section className="flex h-full min-h-0 flex-col gap-3 p-3" aria-labelledby="matrix-title">
-    <div className="shrink-0"><h1 id="matrix-title" className="text-xl font-semibold">권한 매트릭스</h1><p className="text-sm text-muted-foreground">판정·갭·근거는 서버 snapshot을 그대로 표시하며 화면에서 다시 계산하지 않습니다.</p></div>
+    <div className="shrink-0">{viewSwitcher}<h1 id="matrix-title" className="sr-only">권한 매트릭스</h1></div>
     {snapshot.isError && <SnapshotFailure title="권한 매트릭스를 불러오지 못했습니다." retained={!!snapshot.data} updatedAt={snapshot.dataUpdatedAt} retry={() => void snapshot.refetch()} detail={snapshot.error instanceof Error ? snapshot.error.message : undefined} />}
     {snapshot.isLoading && <p className="rounded-md border p-6 text-sm text-muted-foreground">권한 매트릭스를 불러오는 중입니다.</p>}
     {projection && !snapshot.isError && !projection.rows.length && <p className="rounded-md border p-6 text-sm text-muted-foreground">표시할 서버 권한 셀이 없습니다.</p>}
-    {projection && projection.rows.length > 0 && <div role="region" aria-label="권한 매트릭스 표" tabIndex={0} data-testid="matrix-scroll-viewport" className="min-h-48 min-w-0 flex-1 overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 left-0 z-40 w-[1%] min-w-24 max-w-56 whitespace-normal bg-background">신원 / 역할</TableHead>{projection.columns.map((column) => <TableHead className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background" key={column.key}><BoundedOperation value={column.operation} /></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="sticky left-0 z-20 w-[1%] min-w-24 max-w-56 whitespace-normal bg-background"><span className="break-all">{row.label}</span></TableHead>{projection.columns.map((column) => <TableCell className="whitespace-normal" key={column.key}>{row.membersByColumn[column.key]?.length ? <div className="flex gap-2">{row.membersByColumn[column.key].map((member) => <MatrixVerdictCell key={`${member.key}:${member.identity}`} member={member} mode={mode} onSelect={select} disabled={snapshot.isError} />)}</div> : <span className="text-muted-foreground">-</span>}</TableCell>)}</TableRow>)}</TableBody></Table></div>}
+    {projection && projection.rows.length > 0 && <div role="region" aria-label="권한 매트릭스 표" tabIndex={0} data-testid="matrix-scroll-viewport" className="min-h-48 min-w-0 flex-1 overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 left-0 z-40 min-w-24 max-w-56 whitespace-normal bg-background">신원 / 역할</TableHead>{projection.columns.map((column) => <TableHead className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background" key={column.key}><BoundedOperation value={column.operation} /></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="sticky left-0 z-20 min-w-24 max-w-56 whitespace-normal bg-background"><span className="break-all">{row.label}</span></TableHead>{projection.columns.map((column) => <TableCell className="whitespace-normal" key={column.key}>{row.membersByColumn[column.key]?.length ? <div className="flex gap-2">{row.membersByColumn[column.key].map((member) => <MatrixVerdictCell key={`${member.key}:${member.identity}`} member={member} mode={mode} onSelect={select} disabled={snapshot.isError} />)}</div> : <span className="text-muted-foreground">-</span>}</TableCell>)}</TableRow>)}</TableBody></Table></div>}
   </section></ReferenceAnalysisWorkspace></TooltipProvider>
 }

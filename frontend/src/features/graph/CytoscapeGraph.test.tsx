@@ -168,12 +168,12 @@ it("shows a safe status when the canvas renderer cannot initialize", () => {
   expect(onRendererUnavailable).toHaveBeenCalledTimes(1)
 })
 
-it("renders approved card images while preserving source edge text and fit behavior", () => {
+it("renders approved card images with source icons instead of edge text, and keeps fit behavior", () => {
   const { rerender } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   expect(remove).toHaveBeenCalledTimes(1)
-  expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ label: "HUMAN ×2" }) })]))
+  expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ id: "edge", label: "", line: "solid", color: "#94a3b8" }) })]))
   expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({
-    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW", width: 196, height: 88, confirmed: "no",
+    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW; 접근 주체 HUMAN", width: 232, height: 67, confirmed: "no",
   }) })]))
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={1} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   expect(core.fit).toHaveBeenCalledTimes(1)
@@ -490,16 +490,25 @@ it("places route candidates in the ENDPOINT lane", () => {
   expect(node.position).toHaveBeenCalledWith({ x: 540, y: expect.any(Number) })
 })
 
-it("preserves the light dotted LLM edge color", () => {
-  const llmProjection: GraphProjection = {
+it("draws every observed source with one neutral edge and marks the accessing sources on the node cards", () => {
+  const mixed: GraphProjection = {
     ...projection,
-    edges: [{ ...projection.edges[0], id: "llm-edge", source: "llm", sourceText: "LLM", line: "dotted", color: "#e4e4e7" }],
+    edges: [
+      { ...projection.edges[0], id: "human-edge" },
+      { ...projection.edges[0], id: "scanner-edge", source: "scanner", sourceText: "SCANNER", line: "dashed", color: "#dc2626", countLabel: "" },
+      { ...projection.edges[0], id: "llm-edge", source: "llm", sourceText: "LLM", line: "dotted", color: "#e4e4e7", countLabel: "" },
+    ],
   }
-  render(<CytoscapeGraph projection={llmProjection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  render(<CytoscapeGraph projection={mixed} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
 
-  const addedElements = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; color?: string } }>
-  const llmEdge = addedElements.find((element) => element.data.id === "llm-edge")
-  expect(llmEdge?.data.color).toBe("#e4e4e7")
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; color?: string; line?: string; label?: string; accessibleLabel?: string; cardImage?: string } }>
+  for (const id of ["human-edge", "scanner-edge", "llm-edge"]) {
+    expect(added.find((element) => element.data.id === id)?.data).toEqual(expect.objectContaining({ color: "#94a3b8", line: "solid", label: "" }))
+  }
+  const operation = added.find((element) => element.data.id === "operation:GET /orders")!.data
+  expect(operation.accessibleLabel).toContain("접근 주체 HUMAN, SCANNER, LLM")
+  const svg = decodeURIComponent(operation.cardImage!.replace(/^data:image\/svg\+xml,/, ""))
+  for (const color of ["#60a5fa", "#f87171", "#e4e4e7"]) expect(svg).toContain(`stroke="${color}"`)
 })
 
 it("keeps unconfirmed route candidates neutral and dotted", () => {

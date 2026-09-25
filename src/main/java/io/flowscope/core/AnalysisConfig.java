@@ -1,5 +1,6 @@
 package io.flowscope.core;
 
+import java.net.URI;
 import java.util.Map;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -24,16 +25,18 @@ public final class AnalysisConfig {
     }
 
     /*
-     * 이 일곱 맵은 하나의 정책 상태다. 개별 ConcurrentHashMap으로 나누면 replaceWith 중간의
+     * 이 여덟 맵은 하나의 정책 상태다. 개별 ConcurrentHashMap으로 나누면 replaceWith 중간의
      * 비어 있는 조합을 독자가 볼 수 있으므로, 모든 접근을 같은 모니터로 직렬화한다.
      */
     private final Map<String, AccessRole> identityRoles = new LinkedHashMap<>();
     private final Map<String, AccessRole> endpointRequirements = new LinkedHashMap<>();
     private final Map<String, String> resourceOwners = new LinkedHashMap<>();
+    private final Map<String, ResourcePolicy> resourcePolicies = new LinkedHashMap<>();
     private final Map<String, AccountProfile> accounts = new LinkedHashMap<>();
     private final Map<String, String> sessionBindings = new LinkedHashMap<>();
     private final Map<String, ReviewDecision> reviews = new LinkedHashMap<>();
     private final Map<String, TrafficOverride> trafficOverrides = new LinkedHashMap<>();
+    private final Map<String, AccountVerificationRule> accountVerificationRules = new LinkedHashMap<>();
 
     public synchronized AnalysisConfig withIdentityRole(String identity, AccessRole role) {
         if (identity != null && role != null) {
@@ -53,6 +56,10 @@ public final class AnalysisConfig {
         }
         accounts.put(account.id(), account);
         identityRoles.put(account.id(), account.role());
+        if (existing != null && !existing.service().equals(account.service())) {
+            // The verification rule's origin no longer matches the account service; drop it as stale.
+            accountVerificationRules.remove(account.id());
+        }
         return this;
     }
 
@@ -62,7 +69,32 @@ public final class AnalysisConfig {
         identityRoles.remove(accountId);
         sessionBindings.entrySet().removeIf(entry -> accountId.equals(entry.getValue()));
         resourceOwners.entrySet().removeIf(entry -> accountId.equals(entry.getValue()));
+        accountVerificationRules.remove(accountId);
         return this;
+    }
+
+    /** Store the login-success rule that lets later auto-captures reach RULE_MATCHED for this account. */
+    public synchronized AnalysisConfig withAccountVerificationRule(AccountVerificationRule rule) {
+        if (rule == null) return this;
+        AccountProfile account = accounts.get(rule.accountId());
+        if (account == null) {
+            throw new IllegalArgumentException("unknown account for verification rule: " + rule.accountId());
+        }
+        if (!AccountVerificationRule.originOf(URI.create(account.service())).equalsIgnoreCase(rule.origin())) {
+            throw new IllegalArgumentException("verification rule origin does not match account service: "
+                    + rule.origin() + " vs " + account.service());
+        }
+        accountVerificationRules.put(rule.accountId(), rule);
+        return this;
+    }
+
+    public synchronized AnalysisConfig removeAccountVerificationRule(String accountId) {
+        if (accountId != null) accountVerificationRules.remove(accountId);
+        return this;
+    }
+
+    public synchronized Optional<AccountVerificationRule> verificationRule(String accountId) {
+        return Optional.ofNullable(accountId == null ? null : accountVerificationRules.get(accountId));
     }
 
     public synchronized AnalysisConfig bindSession(String service, String fingerprint, String accountId) {
@@ -178,6 +210,14 @@ public final class AnalysisConfig {
         return this;
     }
 
+    public synchronized AnalysisConfig withResourcePolicy(String target, ResourcePolicy policy) {
+        if (target == null || target.isBlank()) throw new IllegalArgumentException("policy target is required");
+        String normalizedTarget = target.trim();
+        if (policy == null || policy == ResourcePolicy.UNKNOWN) resourcePolicies.remove(normalizedTarget);
+        else resourcePolicies.put(normalizedTarget, policy);
+        return this;
+    }
+
     public synchronized AccessRole identityRole(String identity) {
         AccountProfile account = accounts.get(identity);
         if (account != null) return account.role();
@@ -191,13 +231,23 @@ public final class AnalysisConfig {
 
     public synchronized String resourceOwner(String resource) { return resourceOwners.get(resource); }
 
+    /** 객체별 설정이 operation 기본값보다 우선한다. */
+    public synchronized ResourcePolicy resourcePolicy(String operation, String resource) {
+        ResourcePolicy exact = resource == null ? null : resourcePolicies.get(resource);
+        return exact != null ? exact : resourcePolicies.getOrDefault(operation, ResourcePolicy.UNKNOWN);
+    }
+
     public synchronized Map<String, AccessRole> identityRoles() { return Map.copyOf(identityRoles); }
     public synchronized Map<String, AccessRole> endpointRequirements() { return Map.copyOf(endpointRequirements); }
     public synchronized Map<String, String> resourceOwners() { return Map.copyOf(resourceOwners); }
+    public synchronized Map<String, ResourcePolicy> resourcePolicies() { return Map.copyOf(resourcePolicies); }
     public synchronized Map<String, AccountProfile> accounts() { return Map.copyOf(accounts); }
     public synchronized Map<String, String> sessionBindings() { return Map.copyOf(sessionBindings); }
     public synchronized Map<String, ReviewDecision> reviews() { return Map.copyOf(reviews); }
     public synchronized Map<String, TrafficOverride> trafficOverrides() { return Map.copyOf(trafficOverrides); }
+    public synchronized Map<String, AccountVerificationRule> accountVerificationRules() {
+        return Map.copyOf(accountVerificationRules);
+    }
 
     public void replaceWith(AnalysisConfig other) {
         ConfigSnapshot replacement = other == null ? ConfigSnapshot.empty() : other.snapshot();
@@ -215,28 +265,33 @@ public final class AnalysisConfig {
         identityRoles.clear(); identityRoles.putAll(replacement.identityRoles());
         endpointRequirements.clear(); endpointRequirements.putAll(replacement.endpointRequirements());
         resourceOwners.clear(); resourceOwners.putAll(replacement.resourceOwners());
+        resourcePolicies.clear(); resourcePolicies.putAll(replacement.resourcePolicies());
         accounts.clear(); accounts.putAll(replacement.accounts());
         sessionBindings.clear(); sessionBindings.putAll(replacement.sessionBindings());
         reviews.clear(); reviews.putAll(replacement.reviews());
         trafficOverrides.clear(); trafficOverrides.putAll(replacement.trafficOverrides());
+        accountVerificationRules.clear(); accountVerificationRules.putAll(replacement.accountVerificationRules());
     }
 
     private synchronized ConfigSnapshot snapshot() {
         return new ConfigSnapshot(Map.copyOf(identityRoles), Map.copyOf(endpointRequirements),
-                Map.copyOf(resourceOwners), Map.copyOf(accounts), Map.copyOf(sessionBindings),
-                Map.copyOf(reviews), Map.copyOf(trafficOverrides));
+                Map.copyOf(resourceOwners), Map.copyOf(resourcePolicies), Map.copyOf(accounts), Map.copyOf(sessionBindings),
+                Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules));
     }
 
     private record ConfigSnapshot(
             Map<String, AccessRole> identityRoles,
             Map<String, AccessRole> endpointRequirements,
             Map<String, String> resourceOwners,
+            Map<String, ResourcePolicy> resourcePolicies,
             Map<String, AccountProfile> accounts,
             Map<String, String> sessionBindings,
             Map<String, ReviewDecision> reviews,
-            Map<String, TrafficOverride> trafficOverrides) {
+            Map<String, TrafficOverride> trafficOverrides,
+            Map<String, AccountVerificationRule> accountVerificationRules) {
         static ConfigSnapshot empty() {
-            return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+            return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                    Map.of());
         }
     }
 

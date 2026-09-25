@@ -27,7 +27,7 @@ function snapshot(overrides: Record<string, unknown> = {}) {
       { fingerprint: "ck:bound-fingerprint", idn: "bound-user", accountId: "account-a", artifactKind: "AUTHORIZATION", evidence: "evidence-2", confidence: "MANUAL", firstSeen: 0, lastSeen: 0, registered: true, service },
     ],
     managedSessions: [
-      { handle: "active-handle", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false, credential: rawSecret },
+      { handle: "active-handle", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false, credential: rawSecret },
       { handle: "capturing-handle", accountId: "capturing-account", accountLabel: "캡처 중", service, status: "CAPTURING", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: false, cookieCount: 0, capturing: true, credentialConflict: false },
       { handle: "unverified-handle", accountId: "unverified-account", accountLabel: "확인 필요", service, status: "UNVERIFIED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
       { handle: "revoked-handle", accountId: "revoked-account", accountLabel: "폐기됨", service, status: "REVOKED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: false, cookieCount: 0, capturing: false, credentialConflict: false },
@@ -121,23 +121,29 @@ afterAll(() => {
 })
 
 describe("account and session management", () => {
+  it("shows the verification-source badge on a strongly verified managed session", async () => {
+    renderAccounts()
+    await screen.findByRole("heading", { name: "계정·세션 관리" })
+    // account-a's managed session is ACTIVE + OPERATOR_ASSERTED → operator-confirmed badge.
+    expect(await screen.findByText("운영자 확인")).toBeVisible()
+  })
+
   it("sends exact registered-account save fields and retains an edit on the action-local server error", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderAccounts({ postError: { "/api/account-save": "저장할 수 없습니다." } })
 
     await screen.findByRole("heading", { name: "계정·세션 관리" })
-    await user.click(screen.getByRole("button", { name: "계정 A 수정" }))
-    expect(screen.getByLabelText("등록 계정 역할")).toHaveTextContent("User")
-    expect(screen.getByLabelText("등록 계정 대상 서비스")).toHaveValue(service)
-    await user.clear(screen.getByLabelText("등록 계정 표시 이름"))
+    expect(screen.queryByRole("button", { name: "계정 A 수정" })).not.toBeInTheDocument()
     await user.type(screen.getByLabelText("등록 계정 표시 이름"), "변경 계정")
+    await user.type(screen.getByLabelText("등록 계정 대상 서비스"), service)
     await user.click(screen.getByRole("button", { name: "계정 저장" }))
 
-    await waitFor(() => expect(postBodies(fetchStub, "/api/account-save")).toEqual([new URLSearchParams({ id: "account-a", label: "변경 계정", role: "User", target: service }).toString()]))
+    await waitFor(() => expect(postBodies(fetchStub, "/api/account-save")).toEqual([new URLSearchParams({ id: "", label: "변경 계정", role: "User", target: service }).toString()]))
     expect(await screen.findByRole("alert", { name: "저장할 수 없습니다." })).toBeVisible()
     expect(screen.getByLabelText("등록 계정 표시 이름")).toHaveValue("변경 계정")
     expect(screen.getByLabelText("등록 계정 역할")).toHaveTextContent("User")
     expect(screen.getByLabelText("등록 계정 대상 서비스")).toHaveValue(service)
+    expect(screen.getByRole("button", { name: "계정 A 수정 패널" })).toBeVisible()
   })
 
   it("confirmation-gates deletion, blocks bound accounts locally, and sends an unbound deletion only after confirmation", async () => {
@@ -185,6 +191,7 @@ describe("account and session management", () => {
     const { fetchStub } = renderAccounts()
 
     await screen.findAllByText("ACTIVE")
+    expect(screen.getByText(/계정마다 별도 브라우저 프로필 또는 독립 브라우저 컨텍스트를 사용하세요/)).toBeVisible()
     expect(screen.getAllByText("ACTIVE")[0]).toBeVisible()
     for (const text of ["CAPTURING", "UNVERIFIED", "REVOKED", "credential-conflict"]) expect(screen.getAllByText(text)[0]).toBeVisible()
     await user.click(screen.getByRole("button", { name: "고급 세션 진단 열기" }))
@@ -296,9 +303,8 @@ describe("account and session management", () => {
 
     await screen.findByRole("heading", { name: "계정·세션 관리" })
     await expectRefetch(async () => {
-      await user.click(screen.getByRole("button", { name: "계정 A 수정" }))
-      await user.clear(screen.getByLabelText("등록 계정 표시 이름"))
       await user.type(screen.getByLabelText("등록 계정 표시 이름"), "갱신 계정")
+      await user.type(screen.getByLabelText("등록 계정 대상 서비스"), service)
       await user.click(screen.getByRole("button", { name: "계정 저장" }))
     })
 
@@ -380,8 +386,12 @@ describe("account and session management", () => {
     renderAccounts()
 
     await screen.findByRole("heading", { name: "계정·세션 관리" })
-    expect(await screen.findByRole("complementary", { name: "분석 필터" })).toHaveTextContent("계정·세션 요약")
-    expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("선택한 계정이나 세션이 없습니다.")
+    const strip = await screen.findByRole("group", { name: "계정·세션 요약" })
+    expect(strip).toHaveTextContent("등록 계정")
+    expect(strip).toHaveTextContent("관측 세션")
+    expect(strip).toHaveTextContent("관리 세션")
+    expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "세션·신원 매핑 초기화" })).toBeEnabled()
   })
 
@@ -391,19 +401,10 @@ describe("account and session management", () => {
     renderAccounts()
 
     await screen.findByRole("heading", { name: "계정·세션 관리" })
-    const contextTrigger = screen.getByRole("button", { name: "분석 필터 열기" })
-    await user.click(contextTrigger)
-    const contextDialog = screen.getByRole("dialog", { name: "분석 필터" })
-    expect(contextDialog).toHaveTextContent("계정·세션 요약")
-    await user.click(within(contextDialog).getByRole("button", { name: "Close" }))
-    expect(contextTrigger).toHaveFocus()
-
-    const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
-    await user.click(inspectorTrigger)
-    const inspectorDialog = screen.getByRole("dialog", { name: "선택 상세" })
-    expect(inspectorDialog).toHaveTextContent("계정·세션 안내")
-    await user.click(within(inspectorDialog).getByRole("button", { name: "Close" }))
-    await user.click(screen.getByRole("button", { name: "계정 A 수정" }))
+    expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "계정·세션 요약" })).toBeVisible()
     expect(screen.getByRole("button", { name: "계정 저장" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "계정 A 수정 패널" })).toBeEnabled()
   })
 })

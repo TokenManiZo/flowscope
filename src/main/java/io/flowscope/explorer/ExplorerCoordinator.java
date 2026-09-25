@@ -144,6 +144,14 @@ public final class ExplorerCoordinator implements AutoCloseable {
     public void removeAccount(String id) { vault.remove(id); }
     public void clearAccounts() { vault.clear(); }
 
+    /** Authenticate one stored account without starting an Explorer run. Secrets remain in the vault. */
+    public synchronized ExplorerAccountVault.View authenticateAccount(String id) {
+        if (closed) throw new IllegalStateException("Explorer가 종료됐습니다.");
+        if (active(snapshot.status())) throw new IllegalStateException("Explorer 실행 중에는 계정을 확인할 수 없습니다.");
+        return new ExplorerAuthRuntime(vault, transport).authenticate(
+                id, "llm-account-check-" + System.currentTimeMillis());
+    }
+
     public synchronized Snapshot steer(String message) {
         if (snapshot.status() != Status.RUNNING || providerHandle == null) {
             throw new IllegalStateException("진행 중인 Explorer가 없습니다.");

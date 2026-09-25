@@ -53,7 +53,7 @@ it("keeps detailed live analysis statuses inside the accessible 상태 popover",
   expect(screen.queryByLabelText("LLM 상태")).not.toBeInTheDocument()
   expect(screen.getByLabelText("SCOPE 상태")).toHaveTextContent("https://app.example.test")
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
-  expect(screen.getByRole("link", { name: "점검" })).toHaveAttribute("href", "#inspection")
+  expect(screen.queryByRole("navigation")).not.toBeInTheDocument()
 })
 
 it("reports each query lane as loading without inventing scope, counts, or waiting runs", async () => {
@@ -96,19 +96,14 @@ it("keeps cached server values authoritative during refetch failures", async () 
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
 })
 
-it("keeps grouped navigation, project, DB, and inspection controls discoverable", async () => {
+it("keeps project, DB, and inspection controls discoverable without duplicating sidebar navigation", async () => {
   render(<WorkspaceTopBar route="dashboard" />)
 
   const banner = screen.getByRole("banner", { name: "FlowScope 상단 상태" })
   expect(banner).toHaveClass("flex-wrap")
-  expect(within(banner).getByRole("link", { name: "FlowScope" })).toHaveAttribute("href", "#dashboard")
-  expect(within(banner).getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
-  expect(within(banner).getByRole("link", { name: "계정·세션" })).toHaveAttribute("href", "#accounts")
   expect(within(banner).getByLabelText("프로젝트 선택")).toBeVisible()
   expect(within(banner).getByText("저장됨")).toBeVisible()
-  expect(within(banner).getByRole("link", { name: "점검" })).toHaveAttribute("href", "#inspection")
-  expect(within(banner).getByRole("button", { name: "분석" })).toBeVisible()
-  expect(within(banner).getByRole("button", { name: "기록" })).toBeVisible()
+  expect(within(banner).queryByRole("navigation")).not.toBeInTheDocument()
   expect(within(banner).getByRole("button", { name: "프로젝트 관리" })).toBeVisible()
   expect(within(banner).queryByRole("link", { name: "빠른 시작" })).not.toBeInTheDocument()
   expect(banner.querySelector(".overflow-x-auto")).toBeNull()

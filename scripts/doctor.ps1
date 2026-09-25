@@ -58,7 +58,7 @@ function Find-Codex {
     return $null
 }
 
-if (-not $IsWindows) { throw 'doctor.ps1 is for Windows. Use scripts/doctor.sh on macOS/Linux.' }
+if ((Test-Path Variable:\IsWindows) -and -not $IsWindows) { throw 'doctor.ps1 is for Windows. Use scripts/doctor.sh on macOS/Linux.' }
 Write-Host "FlowScope Windows environment check (mode: $Mode)"
 
 $checkHuman = $Mode -in @('human', 'zap', 'full')

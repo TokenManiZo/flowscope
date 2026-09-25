@@ -257,6 +257,7 @@ public final class SqliteProjectStore {
             writePolicyEntries(policy, "identity_roles", policyRoot.path("identity_roles"));
             writePolicyEntries(policy, "endpoint_requirements", policyRoot.path("endpoint_requirements"));
             writePolicyEntries(policy, "resource_owners", policyRoot.path("resource_owners"));
+            writePolicyEntries(policy, "resource_policies", policyRoot.path("resource_policies"));
             writePolicyEntries(policy, "traffic_overrides", policyRoot.path("traffic_overrides"));
             for (JsonNode value : policyRoot.path("accounts")) {
                 account.setString(1, required(value, "id"));
@@ -273,6 +274,13 @@ public final class SqliteProjectStore {
                 binding.addBatch();
             }
             binding.executeBatch();
+            for (JsonNode value : policyRoot.path("account_verification_rules")) {
+                policy.setString(1, "account_verification_rules");
+                policy.setString(2, required(value, "account_id"));
+                policy.setString(3, json.writeValueAsString(value));
+                policy.addBatch();
+            }
+            policy.executeBatch();
             writeDocuments(root.path("reviews"), review, "item_id");
             writeDocuments(root.path("assessments"), assessment, "id");
             writeDocuments(root.path("validations"), validation, "candidate_id");
@@ -342,6 +350,7 @@ public final class SqliteProjectStore {
         readPolicyEntries(connection, policy, "identity_roles");
         readPolicyEntries(connection, policy, "endpoint_requirements");
         readPolicyEntries(connection, policy, "resource_owners");
+        readPolicyEntries(connection, policy, "resource_policies");
         readPolicyEntries(connection, policy, "traffic_overrides");
         ArrayNode accounts = policy.putArray("accounts");
         try (Statement statement = connection.createStatement();
@@ -365,6 +374,12 @@ public final class SqliteProjectStore {
                 binding.put("fingerprint", values.getString(2));
                 binding.put("account_id", values.getString(3));
             }
+        }
+        ArrayNode verificationRules = policy.putArray("account_verification_rules");
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT entry_value FROM policy_entries WHERE kind='account_verification_rules' ORDER BY entry_key");
+             ResultSet values = statement.executeQuery()) {
+            while (values.next()) verificationRules.add(json.readTree(values.getString(1)));
         }
         readDocuments(connection, "SELECT document FROM reviews ORDER BY seq", root.putArray("reviews"));
         readDocuments(connection, "SELECT document FROM assessments ORDER BY seq", root.putArray("assessments"));

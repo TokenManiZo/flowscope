@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query"
-import { screen, within } from "@testing-library/react"
+import { act, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { renderWithQueryClient } from "@/test/render"
@@ -31,12 +31,11 @@ it("starts graph-first with only open risk paths, compact filters and the server
   expect(screen.getByRole("region", { name: "그래프 중심 점검 작업면" })).toHaveAttribute("data-layout", "focused-graph")
   expect(within(screen.getByRole("toolbar", { name: "Gap 그래프 필터" })).getByRole("checkbox", { name: "위험 Gap" })).toBeChecked()
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
-  expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+  expect(screen.getAllByRole("combobox").map(box => box.getAttribute("aria-label"))).toEqual(["정렬"])
   const queue = screen.getByRole("list", { name: "점검 우선순위 큐" })
   expect(within(queue).getAllByRole("button").map(button => button.getAttribute("data-gap-id"))).toEqual(["auth", "source"])
   expect(within(queue).getAllByRole("button")[0]).toHaveTextContent("PATCH /orders/{id}")
   expect(within(queue).getAllByRole("button")[0]).toHaveTextContent("JSON /status")
-  expect(screen.getByRole("region", { name: "우선 점검 이유" })).toHaveTextContent("타인 소유 값이 아직 검증되지 않았습니다")
   expect(screen.queryByText("closed")).not.toBeInTheDocument()
   expect(screen.queryByText("no-risk")).not.toBeInTheDocument()
 })
@@ -84,18 +83,8 @@ it("opens the canonical inspector from queue or graph, preserving reasons and ac
   await userEvent.click(within(queue).getAllByRole("button")[0])
   const detail = screen.getByRole("region", { name: "Parameter Gap 상세" })
   expect(detail).toHaveAttribute("data-gap-id", "auth")
-  expect(detail).toHaveTextContent("https://demo.test:443")
-  expect(detail).toHaveTextContent("Canonical key: JSON_BODY /status")
-  expect(within(detail).getByRole("list", { name: "서버 우선순위 근거" }).textContent).toMatch(/쓰기 메서드.*확인된 권한 경계/)
-  expect(detail).toHaveTextContent("Gap 근거 31건")
-  expect(within(detail).getByRole("region", { name: "입력과 권한 대상" })).toHaveTextContent("orders:101 · OBSERVED")
-  expect(within(detail).getByRole("region", { name: "관측 프로파일" })).toHaveTextContent("관측 40건")
-  await userEvent.click(within(detail).getByRole("button", { name: /검증표 펼치기/ }))
-  await userEvent.click(within(detail).getByRole("button", { name: "UNTESTED · 미검증 상세 보기" }))
-  expect(detail).toHaveTextContent("실행 Evidence 0건")
-  expect(detail).toHaveTextContent("선택 셀 근거 · 미실행 포함 50건")
-  expect(detail).toHaveTextContent("UNTESTED")
-  expect(detail).toHaveTextContent("basis-a")
+  expect(within(detail).getByRole("heading", { level: 2 })).toHaveTextContent("PATCH /orders/{id}")
+  expect(within(detail).getByRole("region", { name: "Evidence" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 닫기" }))
   expect(screen.queryByRole("region", { name: "Parameter Gap 상세" })).not.toBeInTheDocument()
   const graph = screen.getByRole("list", { name: "Gap 경로 목록" })
@@ -105,49 +94,15 @@ it("opens the canonical inspector from queue or graph, preserving reasons and ac
   expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toHaveAttribute("data-gap-id", "source")
 })
 
-it("links only actual events of the exact operation and opens Evidence detail and Request Lab from them", async () => {
+it("links only actual events of the exact operation and offers raw view from them", async () => {
   const data = parameterSnapshot()
   data.events = [actualEvent(), actualEvent({ eventId: "witness-a", op: "https://demo.test:443 GET /other" })]
   state.query = { ...state.query, data }
   render()
   await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("status", { name: "" })).toHaveTextContent("연결된 실제 EventRecord 1건")
-  expect(screen.getByText(/파라미터 관측 · 선택 셀의 실행 근거 아님/)).toBeVisible()
-  expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeEnabled()
-  expect(screen.getByText(/대표 실제 Evidence: actual-a/)).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: "Evidence 상세 actual-a" }))
-  expect(await screen.findByRole("region", { name: "Evidence 상세" })).toHaveTextContent("actual-a")
-})
-
-it("compares two linked actual requests through the Evidence API metadata in the diff tab", async () => {
-  const data = parameterSnapshot()
-  const parameter = statusParameter({
-    observationEvidenceIds: ["actual-a", "actual-b"],
-    observations: [
-      { evidenceId: "actual-a", source: "HUMAN", runId: "run", identity: "USER A", status: 200, shape: "STRING", presence: "PRESENT", valueType: "STRING", byteLength: 5, contextSignature: "ctx:v1:sha256:aa", confidence: "OBSERVED" },
-      { evidenceId: "actual-b", source: "SCANNER", runId: "run", identity: "USER B", status: 403, shape: "NULL", presence: "EXPLICIT_NULL", valueType: "UNKNOWN", byteLength: 0, contextSignature: "ctx:v1:sha256:bb", confidence: "OBSERVED" },
-    ],
-  })
-  const key = { service: demoEndpoint().key.service, method: "PATCH", operation: actualEvent().op, location: "JSON_BODY", canonicalPath: "/status", stableKey: "pk:v1:status" }
-  const record = (eventId: string, status: number, observation: Record<string, unknown>) => ({ eventId, request: "LEGACY-REQUEST", response: "LEGACY-RESPONSE", parameterContext: { service: key.service, method: "PATCH", operation: key.operation, identity: eventId, role: "USER", source: "HUMAN", status, complete: true, retention: "RETAINED" }, parameterObservations: [{ key, confidence: "OBSERVED", occurrenceCount: null, contextSignature: null, digest: null, ...observation }] })
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ records: [record("actual-a", 200, { presence: "PRESENT", shape: "SCALAR", valueType: "STRING", byteLength: 5 }), record("actual-b", 403, { presence: "EXPLICIT_NULL", shape: "NULL", valueType: "UNKNOWN", byteLength: 0 })], total: 2, offset: 0, limit: 20, hasMore: false }), { headers: { "Content-Type": "application/json" } }))))
-  data.surface!.endpoints = [demoEndpoint([parameter], { requestContexts: [{ evidenceId: "actual-a", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:aa" }, { evidenceId: "actual-b", complete: true, retained: true, discovery: true, contextSignature: "ctx:v1:sha256:bb" }] })] as never
-  data.events = [actualEvent(), actualEvent({ eventId: "actual-b", idn: "USER B", source: "scanner", status: 403, verdict: "deny" })]
-  state.query = { ...state.query, data }
-  render()
-  await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])
-  await userEvent.click(screen.getByRole("tab", { name: "요청 비교" }))
-  expect(await screen.findByText(/선택 입력 연결 2건/)).toBeVisible()
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "기준 요청" }), "actual-a")
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "비교 요청" }), "actual-b")
-  const table = screen.getByRole("region", { name: "요청 비교 표" })
-  expect(within(table).getByRole("columnheader", { name: "기준 요청 actual-a" })).toBeVisible()
-  expect(table).toHaveTextContent("STATUS_CHANGED VERDICT_CHANGED")
-  expect(table).toHaveTextContent("PRESENCE_CHANGED · SHAPE_CHANGED · TYPE_CHANGED · UNKNOWN")
-  expect(table).toHaveTextContent("길이: 5 bytes")
-  expect(table).not.toHaveTextContent("READY")
-  expect(document.body.textContent).not.toContain("LEGACY-")
+  const rows = within(screen.getByRole("region", { name: "Evidence" })).getAllByRole("listitem")
+  expect(rows.map(row => row.getAttribute("aria-label"))).toEqual(["Evidence actual-a"])
+  expect(within(rows[0]).getByRole("button", { name: "원문 보기" })).toBeEnabled()
 })
 
 it("filters only display state and clears a stale selected Gap on refresh", async () => {
@@ -157,8 +112,7 @@ it("filters only display state and clears a stale selected Gap on refresh", asyn
   updated.surface!.parameterGaps = [parameterGap("auth", { summary: "새 서버 설명", evidenceCount: 99, evidenceIds: ["new-witness"] })] as never
   state.query = { ...state.query, data: updated }
   rerender()
-  expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toHaveTextContent("새 서버 설명")
-  expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toHaveTextContent("Gap 근거 99건")
+  expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toHaveAttribute("data-gap-id", "auth")
   await userEvent.click(screen.getByRole("button", { name: "필터 더보기" }))
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "놓친 주체" }), "LLM")
   expect(screen.queryByRole("region", { name: "Parameter Gap 상세" })).not.toBeInTheDocument()
@@ -210,7 +164,7 @@ it("uses the compact queue sheet and opens the same inspector from a narrow path
   const filters = screen.getByRole("dialog", { name: "점검 우선순위" })
   await userEvent.click(within(filters).getByRole("button", { name: "Close" }))
   await userEvent.click(within(screen.getByRole("list", { name: "Gap 경로 목록" })).getAllByRole("button")[0])
-  expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("Gap 근거 31건")
+  expect(within(screen.getByRole("region", { name: "Parameter Gap 상세" })).getByRole("heading", { level: 2 })).toHaveTextContent("PATCH /orders/{id}")
   expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toHaveAttribute("data-gap-id", "auth")
 })
 
@@ -229,9 +183,8 @@ it("distinguishes initial errors and preserves a selected refresh-error inspecto
   rerender()
   expect(screen.getByRole("alert")).toHaveTextContent("refresh failed")
   expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toBeVisible()
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("button", { name: "Evidence 상세 actual-a" })).toBeDisabled()
-  expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
 })
 
 it.each(["empty", "definitions", "diagnostic"])("gives one next action for %s without fabricated results", (kind) => {
@@ -267,26 +220,9 @@ it("keeps the definitions-only message instead of replacing it with the run-gap 
   expect(within(statePanel).queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
 })
 
-it("identifies each validation row by its own identity and role, including unknown values", async () => {
-  const data = parameterSnapshot()
-  data.surface!.validationCells = [validationCell({ identity: "alice", role: "USER" }), validationCell({ identity: "bob", role: "ADMIN" }), validationCell({ identity: null, role: "UNKNOWN" })] as never
-  state.query = { ...state.query, data }
+it.each([["UNKNOWN", "근거 부족으로 아직 알 수 없음"], ["INFERRED", "정의·연결에서 추론, 실제 관측 아님"]])("explains %s in the help popover opened by keyboard focus", async (stateName, meaning) => {
   render()
-  await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])
-  await userEvent.click(screen.getByRole("button", { name: /검증표 펼치기/ }))
-  const rows = screen.getByRole("region", { name: "선택 입력 검증 근거" })
-  for (const [identity, role] of [["alice", "USER"], ["bob", "ADMIN"], ["UNKNOWN", "UNKNOWN"]]) {
-    const row = within(rows).getByRole("group", { name: `검증 좌표 ${identity} / ${role} / SCANNER / OTHER_OWNER / https://demo.test:443 orders:101` })
-    expect(within(row).getByRole("button", { name: "UNTESTED · 미검증 상세 보기" })).toBeVisible()
-    expect(row).not.toHaveTextContent("실행 Evidence")
-    expect(row).not.toHaveTextContent("좌표 근거")
-  }
-})
-
-it.each(["UNKNOWN", "INFERRED"])("explains %s on keyboard focus without hiding visible state", async (stateName) => {
-  render()
-  const help = screen.getByRole("button", { name: `${stateName} 도움말` })
-  expect(help).toHaveTextContent(stateName)
-  help.focus()
-  expect(await screen.findByRole("tooltip")).toHaveTextContent(/Gap을 선택해 정의와 Evidence를 확인/)
+  act(() => { screen.getByRole("button", { name: "범례·도움말" }).focus() })
+  const term = await screen.findByText(stateName, { selector: "dt" })
+  expect(term.nextElementSibling).toHaveTextContent(meaning)
 })

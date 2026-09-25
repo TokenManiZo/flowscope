@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { GRAPH_PREFERENCES_KEY, loadGraphPreferences, resetGraphPreferences, saveGraphPreferences } from "./graphPreferences"
+import { GRAPH_PREFERENCES_KEY, loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, validateGraphPreferences } from "./graphPreferences"
 
 let storage: Storage
 beforeEach(() => {
@@ -51,5 +51,24 @@ describe("graph preferences", () => {
     resetGraphPreferences(storage)
     expect(storage.getItem(GRAPH_PREFERENCES_KEY)).toBeNull()
     expect(storage.getItem("unrelated")).toBe("keep")
+  })
+})
+
+describe("resized node sizes", () => {
+  it("round-trips bounded node sizes and keeps older preferences without sizes readable", () => {
+    const store = storage
+    const base = { version: 7 as const, positions: {}, viewport: null, locked: false, inputMode: "auto" as const }
+    expect(saveGraphPreferences({ ...base, sizes: { "operation:GET /orders": { width: 320, height: 140 } } }, store)).toBe(true)
+    expect(loadGraphPreferences(store)?.sizes).toEqual({ "operation:GET /orders": { width: 320, height: 140 } })
+    expect(saveGraphPreferences(base, store)).toBe(true)
+    expect(loadGraphPreferences(store)).toEqual(base)
+  })
+
+  it("rejects sizes outside the allowed range or with unsafe keys", () => {
+    const base = { version: 7, positions: {}, viewport: null, locked: false }
+    expect(validateGraphPreferences({ ...base, sizes: { node: { width: 10, height: 100 } } })).toBeNull()
+    expect(validateGraphPreferences({ ...base, sizes: { node: { width: 300, height: 9999 } } })).toBeNull()
+    expect(validateGraphPreferences({ ...base, sizes: { ["x".repeat(300)]: { width: 300, height: 100 } } })).toBeNull()
+    expect(validateGraphPreferences({ ...base, sizes: [] })).toBeNull()
   })
 })

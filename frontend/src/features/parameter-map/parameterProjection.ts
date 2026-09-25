@@ -1,5 +1,5 @@
 import type { Snapshot, SurfaceAuthorizationTargetLink, SurfaceConfidence, SurfaceDeclaration, SurfaceEndpoint, SurfaceParameter, SurfaceParameterGap, SurfaceSource, SurfaceValidationCell } from "@/lib/api/types"
-import { conditionNodeCard, inputNodeCard, operationNodeCard, targetNodeCard, type ParameterNodeCardView } from "./parameterNodeCard"
+import { conditionNodeCard, inputNodeCard, operationNodeCard, targetNodeCard, type CardSource, type ParameterNodeCardView } from "./parameterNodeCard"
 
 export type ParameterLane = "condition" | "operation" | "input" | "target"
 export const parameterLaneOrder: readonly ParameterLane[] = ["condition", "operation", "input", "target"]
@@ -171,10 +171,16 @@ export function projectParameterMap(snapshot: Snapshot, filters: ParameterFilter
   const actualOperationKey = (method: string, operation: string) => JSON.stringify([method, operation])
   const operationEvents = new Map<string, Map<string, number>>()
   const observedOperations = new Set<string>(), observedIdentities = new Map<string, Set<string>>()
+  // 카드 아이콘용 접근 주체: 실제 EventRecord의 source만 쓴다(Gap 주체·정의는 접근이 아니다).
+  const operationSources = new Map<string, Set<CardSource>>(), eventSources = new Map<string, CardSource>()
   for (const event of snapshot.events) {
     if (!event.eventId) continue
     // op is the server's full canonical coordinate, including service. A cluster is not another EventRecord.
     const operation = actualOperationKey(event.method, event.op)
+    if (event.source === "human" || event.source === "scanner" || event.source === "llm") {
+      eventSources.set(event.eventId, event.source)
+      operationSources.set(operation, (operationSources.get(operation) ?? new Set<CardSource>()).add(event.source))
+    }
     const events = operationEvents.get(operation) ?? new Map<string, number>()
     if (!events.has(event.eventId)) events.set(event.eventId, event.status)
     operationEvents.set(operation, events)
@@ -230,20 +236,20 @@ export function projectParameterMap(snapshot: Snapshot, filters: ParameterFilter
     const identityObserved = Boolean(gap.identity && observedIdentities.get(actualOperationKey(key.method, key.operation))?.has(gap.identity))
     const condition = node("condition", [gap.identity ?? "UNKNOWN", gap.role ?? "UNKNOWN"].join(" · "), "UNKNOWN", identityObserved ? "OBSERVED" : "UNKNOWN", conditionNodeCard(gap, parameter))
     const operationState = operationObserved ? "OBSERVED" : candidate ? "NOT_OBSERVED" : "UNKNOWN"
-    const operation = node("operation", `${key.method} ${key.pathTemplate}`, operationObserved ? "OBSERVED" : candidate ? "INFERRED" : "UNKNOWN", operationState, operationNodeCard(key, [...operationEvents.get(actualOperationKey(key.method, key.operation))?.values() ?? []]))
+    const operation = node("operation", `${key.method} ${key.pathTemplate}`, operationObserved ? "OBSERVED" : candidate ? "INFERRED" : "UNKNOWN", operationState, { ...operationNodeCard(key, [...operationEvents.get(actualOperationKey(key.method, key.operation))?.values() ?? []]), sources: [...operationSources.get(actualOperationKey(key.method, key.operation)) ?? []] })
     const input = node("input", `${key.location} ${key.canonicalPath}`, candidate ? "INFERRED" : observed ? "OBSERVED" : "UNKNOWN", inputState, inputNodeCard(key, gap, parameter))
     edge(condition, operation, candidate ? "definition" : "gap", candidate ? "dotted" : "dashed")
     edge(operation, input, candidate ? "definition" : observed ? "observation" : "unknown-input", observed ? "solid" : "dotted", parameter?.observationEvidenceIds ?? gap.evidenceIds, parameter?.observationEvidenceIds.length ?? gap.evidenceCount)
     const targets = [...uniqueIndex(parameter?.authorizationTargets ?? [], link => link.resource ?? "", "TARGET", diagnostics).values()].sort((a, b) => textOrder(a.resource ?? "", b.resource ?? ""))
     if (!targets.length) {
-      const target = node("target", "UNKNOWN", "UNKNOWN", "UNKNOWN", targetNodeCard(null, "UNKNOWN", null, key.service), "", { resource: null, owner: null })
+      const target = node("target", "UNKNOWN", "UNKNOWN", "UNKNOWN", { ...targetNodeCard(null, "UNKNOWN", null, key.service), sources: [] }, "", { resource: null, owner: null })
       edge(input, target, "unknown-target", "dotted", [], 0)
     }
     for (const link of targets.slice(0, 20)) {
       const resource = link.resource || null, owner = resource ? snapshot.owners[resource] || null : null
       const targetObserved = resource && link.evidenceCount > 0 && link.evidenceIds.length > 0 && (link.confidence === "OBSERVED" || link.confidence === "CORROBORATED")
       const targetConfidence = resource && owner ? link.confidence : "UNKNOWN"
-      const target = node("target", resource ? `${resource} · ${owner ?? "UNKNOWN"}` : "UNKNOWN", targetConfidence, targetObserved ? "OBSERVED" : "UNKNOWN", targetNodeCard(resource, targetConfidence, owner, key.service), resource ?? "", { resource, owner })
+      const target = node("target", resource ? `${resource} · ${owner ?? "UNKNOWN"}` : "UNKNOWN", targetConfidence, targetObserved ? "OBSERVED" : "UNKNOWN", { ...targetNodeCard(resource, targetConfidence, owner, key.service), sources: [...new Set(link.evidenceIds.flatMap(id => eventSources.get(id) ?? []))] }, resource ?? "", { resource, owner })
       edge(input, target, resource ? "authorization-target" : "unknown-target", resource && (link.confidence === "OBSERVED" || link.confidence === "CORROBORATED") ? "solid" : "dotted", link.evidenceIds, link.evidenceCount)
     }
     if (targets.length > 20) diagnostics.push(`TARGET_PREVIEW_LIMIT: ${gap.id} (${targets.length})`)

@@ -28,6 +28,9 @@ public final class RequestRecord {
     public String runId = "default";
     /** 시스템 실행기가 확정한 lane 계정. 일반 관측·미해결 신원에는 null이다. */
     public String laneAccountId;
+    /** 안전 능동 재전송의 기준 신원과 원 Evidence. 자격 원문은 절대 담지 않는다. */
+    public String replayBasisIdentity;
+    public String replayBasisEvidenceId;
     public String evidenceId;     // 관측을 역참조하는 안정 ID(Pipeline 이 부여하고 프로젝트 파일에 보존)
     public String contentDigest;  // 응답·출처까지 포함한 관측 내용 SHA-256. 변경 감지용
     public AuthState authState = AuthState.UNRESOLVED;
@@ -91,6 +94,8 @@ public final class RequestRecord {
         copy.executionTrust = executionTrust;
         copy.runId = runId;
         copy.laneAccountId = laneAccountId;
+        copy.replayBasisIdentity = replayBasisIdentity;
+        copy.replayBasisEvidenceId = replayBasisEvidenceId;
         copy.evidenceId = evidenceId;
         copy.contentDigest = contentDigest;
         copy.authState = authState;

@@ -7,12 +7,21 @@ describe("parameter map projection over snapshot.surface", () => {
     const snapshot = surfaceSnapshot({ endpoints: [demoEndpoint()], gaps: [parameterGap("auth", { type: "AUTH_VARIANT_UNTESTED" })], events: [actualEvent()], owners: { [demoResource]: "USER B" } })
     const graph = projectParameterMap(snapshot, defaultParameterFilters, "auth")
     const node = (lane: string) => graph.nodes.find(item => item.lane === lane && item.focused)!
-    expect(node("condition").card).toMatchObject({ kind: "condition", badge: "IDENTITY", title: "USER A", detail: "USER", footer: "7 observations", icon: "user" })
-    expect(node("operation").card).toMatchObject({ kind: "operation", badge: "PATCH", title: "/orders/{id}", detail: "HTTP 200 × 1", footer: "1 Evidence", icon: "none" })
-    expect(node("operation").card.accessibleLabel).toContain(demoOperation)
-    expect(node("input").card).toMatchObject({ kind: "input", badge: "JSON", title: "status", detail: "Authorization variant untested", footer: "STRING · STRING", icon: "none" })
+    expect(node("condition").card).toMatchObject({ kind: "condition", badge: "IDENTITY", title: "USER A", detail: "", footer: "", icon: "user" })
+    // 점검 우선순위 카드는 배지·제목만 그리고 역할·Gap 종류·owner는 접근 이름(마우스 설명)에 남긴다.
+    expect(node("condition").card.accessibleLabel).toContain("role USER")
+    expect(node("condition").card.accessibleLabel).toContain("7 observations")
+    expect(node("operation").card).toMatchObject({ kind: "operation", badge: "PATCH", title: "/orders/{id}", detail: "", footer: "", icon: "none" })
+    expect(node("operation").card.accessibleLabel).toContain("HTTP 200 × 1; 1 Evidence")
+    expect(node("operation").card.accessibleLabel).toContain("PATCH /orders/{id}")
+    expect(node("operation").card.accessibleLabel).not.toContain("https://")
+    expect(node("input").card).toMatchObject({ kind: "input", badge: "JSON", title: "status", detail: "", footer: "", icon: "none" })
+    expect(node("input").card.accessibleLabel).toContain("Authorization variant untested")
+    expect(node("input").card.accessibleLabel).toContain("STRING · STRING")
     expect(node("input").card.accessibleLabel).toContain("/status")
-    expect(node("target").card).toMatchObject({ kind: "target", badge: "RESOURCE", title: "orders:101", detail: "OBSERVED", footer: "owner: USER B", icon: "box" })
+    expect(node("target").card).toMatchObject({ kind: "target", badge: "RESOURCE", title: "orders:101", detail: "", footer: "", icon: "box" })
+    expect(node("target").card.accessibleLabel).toContain("owner: USER B")
+    expect(node("target").card.accessibleLabel).toContain("OBSERVED")
     expect(node("input").card.accessibleLabel).not.toContain("USER B")
   })
 
@@ -27,16 +36,19 @@ describe("parameter map projection over snapshot.surface", () => {
     })
     const before = JSON.stringify(snapshot)
     const card = projectParameterMap(snapshot).nodes.find(node => node.lane === "operation")!.card
-    expect(card).toMatchObject({ title: "/orders/{id}", detail: "HTTP 200 × 2 · 403 × 1", footer: "3 Evidence" })
+    // HTTP 결과 요약은 카드 면이 아니라 접근 이름(마우스를 올리면 보이는 설명)에 남는다.
+    expect(card).toMatchObject({ title: "/orders/{id}", detail: "", footer: "" })
+    expect(card.accessibleLabel).toContain("HTTP 200 × 2 · 403 × 1; 3 Evidence")
     expect(JSON.stringify(snapshot)).toBe(before)
     const unknown = projectParameterMap(surfaceSnapshot({ gaps: [parameterGap("gap")], events: [actualEvent({ status: 0 }), actualEvent({ eventId: "invalid", status: 900 })] }))
-    expect(unknown.nodes.find(node => node.lane === "operation")?.card).toMatchObject({ detail: "HTTP UNKNOWN × 2", footer: "2 Evidence" })
+    expect(unknown.nodes.find(node => node.lane === "operation")?.card).toMatchObject({ detail: "", footer: "" })
+    expect(unknown.nodes.find(node => node.lane === "operation")?.card.accessibleLabel).toContain("HTTP UNKNOWN × 2; 2 Evidence")
   })
 
   it("keeps a missing parameter fact UNKNOWN and a declared-only fact NOT_OBSERVED without inventing observations", () => {
     const missing = projectParameterMap(surfaceSnapshot({ gaps: [parameterGap("missing")] }))
     expect(missing.nodes.find(node => node.lane === "input")).toMatchObject({ confidence: "UNKNOWN", observationState: "UNKNOWN" })
-    expect(missing.nodes.find(node => node.lane === "input")?.card.footer).toBe("UNKNOWN · UNKNOWN")
+    expect(missing.nodes.find(node => node.lane === "input")?.card.accessibleLabel).toContain("UNKNOWN · UNKNOWN")
     expect(missing.edges.some(edge => edge.relation === "definition")).toBe(false)
     const declaredOnly = statusParameter({ observationEvidenceIds: [], observations: [], observedSources: [], observedShapes: [], observedValueTypes: [], declarations: [declaration()], deltaState: "DECLARED_NOT_OBSERVED", profile: undefined, authorizationTargets: [] })
     const candidate = projectParameterMap(surfaceSnapshot({ endpoints: [demoEndpoint([declaredOnly], { observations: [], observedSources: [] })], gaps: [parameterGap("candidate", { type: "DEFINED_NOT_OBSERVED", source: null })] }), defaultParameterFilters, "candidate")
@@ -178,5 +190,17 @@ describe("parameter map projection over snapshot.surface", () => {
     expect(result.queue).toHaveLength(5_000)
     expect(result.nodes).toHaveLength(160)
     expect(result.hiddenGapCount).toBe(4_960)
+  })
+})
+
+describe("access-source icons on Gap graph cards", () => {
+  it("collects API sources from actual EventRecords of that operation only and leaves identity/input cards without icons", () => {
+    const snapshot = surfaceSnapshot({ endpoints: [demoEndpoint()], gaps: [parameterGap("auth", { type: "AUTH_VARIANT_UNTESTED" })], owners: { [demoResource]: "USER B" },
+      events: [actualEvent(), actualEvent({ eventId: "actual-s", source: "scanner" }), actualEvent({ eventId: "other-op", source: "llm", method: "GET", op: "https://other.test:443 GET /elsewhere" })] })
+    const nodes = projectParameterMap(snapshot).nodes
+    expect(nodes.find(node => node.lane === "operation")?.card.sources).toEqual(["human", "scanner"])
+    expect(nodes.find(node => node.lane === "condition")?.card.sources).toBeUndefined()
+    expect(nodes.find(node => node.lane === "input")?.card.sources).toBeUndefined()
+    expect(nodes.filter(node => node.lane === "target").every(node => Array.isArray(node.card.sources))).toBe(true)
   })
 })

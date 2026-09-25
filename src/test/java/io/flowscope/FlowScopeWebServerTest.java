@@ -22,6 +22,8 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.SessionBroker;
+import io.flowscope.integration.CrossIdentityReplayOrchestrator;
+import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
@@ -245,9 +247,7 @@ final class FlowScopeWebServerTest {
                 "action=save&label=ZAP-A&role=USER&service=" + encode(state.record.service)
                         + "&loginUrl=" + encode(state.record.service + "/login")
                         + "&username=" + encode(" zap-user@example.test ")
-                        + "&password=" + encode("  zap-secret-password  ")
-                        + "&loggedInIndicator=" + encode("My account")
-                        + "&loggedOutIndicator=" + encode("Sign in"), token);
+                        + "&password=" + encode("  zap-secret-password  "), token);
 
         assertEquals(200, saved.statusCode(), saved.body());
         assertFalse(saved.body().contains("zap-user@example.test"));
@@ -258,8 +258,8 @@ final class FlowScopeWebServerTest {
         JsonNode scanner = json(get("/api/scanner-run", token, origin()));
         assertEquals(accountId, scanner.at("/accounts/0/id").asText());
         assertTrue(scanner.at("/accounts/0/hasPassword").asBoolean());
-        assertTrue(scanner.at("/accounts/0/hasLoggedInIndicator").asBoolean());
-        assertTrue(scanner.at("/accounts/0/hasLoggedOutIndicator").asBoolean());
+        assertFalse(scanner.at("/accounts/0/hasLoggedInIndicator").asBoolean());
+        assertFalse(scanner.at("/accounts/0/hasLoggedOutIndicator").asBoolean());
         assertFalse(scanner.toString().contains("zap-user@example.test"));
         assertFalse(scanner.toString().contains("zap-secret-password"));
 
@@ -267,6 +267,21 @@ final class FlowScopeWebServerTest {
                 "action=delete&id=" + encode(accountId), token);
         assertEquals(200, deleted.statusCode(), deleted.body());
         assertEquals(0, json(get("/api/scanner-run", token, origin())).at("/accounts").size());
+    }
+
+    @Test
+    void zapAccountCanRefreshTheIndependentRegisteredSessionWithoutExposingCredentials() throws Exception {
+        start();
+
+        HttpResponse<String> response = post("/api/zap-accounts",
+                "action=refresh-session&id=user-a", token);
+
+        assertEquals(202, response.statusCode(), response.body());
+        assertEquals("user-a", state.refreshedZapSessionAccountId);
+        assertEquals("RUNNING", JSON.readTree(response.body()).path("status").asText());
+        assertFalse(response.body().contains("password"));
+        assertFalse(response.body().contains("Authorization"));
+        assertFalse(response.body().contains("Cookie"));
     }
 
     @Test
@@ -766,6 +781,13 @@ final class FlowScopeWebServerTest {
         String operation = state.snapshot().records.getFirst().op;
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());
         assertEquals("Admin", state.config.endpointRequirement(operation).label());
+        String resource = state.snapshot().records.getFirst().resource;
+        assertEquals(200, post("/api/resource-policy", "target=" + encode(resource)
+                + "&policy=PUBLIC", token).statusCode());
+        assertEquals(io.flowscope.core.ResourcePolicy.PUBLIC, state.config.resourcePolicy(operation, resource));
+        assertEquals(200, post("/api/resource-policy", "target=" + encode(resource)
+                + "&policy=UNKNOWN", token).statusCode());
+        assertEquals(io.flowscope.core.ResourcePolicy.UNKNOWN, state.config.resourcePolicy(operation, resource));
         assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
                 + "&value=EXCLUDE", token).statusCode());
         assertEquals(io.flowscope.core.TrafficOverride.EXCLUDE, state.config.trafficOverride(operation));
@@ -788,8 +810,14 @@ final class FlowScopeWebServerTest {
         assertTrue(matrix.path("summary").has("bolaIdorTestRecommendations"));
         assertFalse(matrix.path("functions").isEmpty());
         JsonNode reviewable = null;
-        for (JsonNode cell : matrix.path("objects")) if (!cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull()) { reviewable = cell; break; }
-        assertNotNull(reviewable, "다른 신원에 추천된 객체 cell이 있어야 한다");
+        // D-166: 확정 소유자 자기추천은 제거됐으므로, 추천 또는 후보/검토 상태인 실제 리뷰 대상 cell로 왕복을 검사한다.
+        java.util.Set<String> reviewableStatus = java.util.Set.of(
+                "BFLA_CANDIDATE", "BFLA_REVIEW_REQUIRED", "BOLA_IDOR_CANDIDATE", "BOLA_IDOR_REVIEW_REQUIRED");
+        for (JsonNode cell : matrix.path("objects")) {
+            boolean hasRec = !cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull();
+            if (hasRec || reviewableStatus.contains(cell.path("status").asText())) { reviewable = cell; break; }
+        }
+        assertNotNull(reviewable, "사람 검토가 가능한(추천 또는 후보) 객체 cell이 있어야 한다");
         String cellId = reviewable.path("id").asText();
         assertEquals("UNRESOLVED", reviewable.path("reviewStatus").asText());
         assertEquals(200, post("/api/review", "itemId=" + encode(cellId) + "&status=DISMISSED&note=shared+object", token).statusCode());
@@ -802,6 +830,36 @@ final class FlowScopeWebServerTest {
         assertTrue(dismissed);
         assertEquals(1, reviewed.path("summary").path("humanDismissed").asInt());
         assertEquals(400, post("/api/review", "itemId=object-unknown&status=CONFIRMED&note=x", token).statusCode());
+    }
+
+    @Test
+    void accountSettingsCombinesSafeRuntimeStateAndPersistsOnlyTheProofRule() throws Exception {
+        start();
+        String accountId = json(post("/api/account-save",
+                "label=USER+A&role=User&target=" + encode(state.record.service), token)).path("id").asText();
+
+        JsonNode initial = json(get("/api/account-settings?account=" + encode(accountId), token, origin()));
+        assertEquals(accountId, initial.path("id").asText());
+        assertEquals("NONE", initial.at("/human/verificationSource").asText());
+        assertFalse(initial.toString().contains("raw-session-secret"));
+        assertEquals("", initial.at("/zap/loginId").asText());
+        assertEquals("", initial.at("/llm/loginId").asText());
+        assertEquals(1, initial.path("candidates").size());
+
+        JsonNode saved = json(post("/api/account-settings", "action=save-proof&account=" + encode(accountId)
+                + "&method=GET&path=" + encode("/v1/orders/7") + "&subject=" + encode("\"id\":7"), token));
+        assertEquals("/v1/orders/7", saved.at("/proofRule/path").asText());
+        assertEquals("\"id\":7", state.config.verificationRule(accountId).orElseThrow().expectedSubject());
+
+        String candidateId = saved.at("/candidates/0/id").asText();
+        assertEquals(200, post("/api/account-settings", "action=link-candidate&account=" + encode(accountId)
+                + "&candidate=" + encode(candidateId), token).statusCode());
+        assertEquals(candidateId, state.linkedCandidateId);
+
+        JsonNode cleared = json(post("/api/account-settings", "action=save-proof&account=" + encode(accountId)
+                + "&method=&path=&subject=", token));
+        assertTrue(cleared.at("/proofRule/path").asText().isBlank());
+        assertTrue(state.config.verificationRule(accountId).isEmpty());
     }
 
     @Test
@@ -820,6 +878,58 @@ final class FlowScopeWebServerTest {
         assertEquals(FlowScopeWebServer.CredentialMode.ACCOUNT, state.repeaterCredentialMode);
         assertEquals("owner", state.repeaterAccountId);
         assertEquals("", response.path("replayId").asText());
+    }
+
+    @Test
+    void authorizationReplayForwardsOneRunArmingAndExposesAKillSwitch() throws Exception {
+        start();
+
+        JsonNode unarmed = json(post("/api/authorization-replay",
+                "action=run&itemId=matrix-item&armed=false", token));
+        assertFalse(unarmed.path("run").path("armed").asBoolean());
+        assertEquals(0, unarmed.path("run").path("sent").asInt());
+        assertEquals("matrix-item", state.authorizationReplayItemId);
+        assertFalse(state.authorizationReplayArmed);
+
+        JsonNode armed = json(post("/api/authorization-replay",
+                "action=run&itemId=matrix-item&armed=true", token));
+        assertTrue(armed.path("run").path("armed").asBoolean());
+        assertEquals(1, armed.path("run").path("sent").asInt());
+        assertTrue(state.authorizationReplayArmed);
+        assertFalse(armed.toString().contains("raw-replay-secret"));
+
+        JsonNode killed = json(post("/api/authorization-replay", "action=kill", token));
+        assertTrue(killed.path("success").asBoolean());
+        assertTrue(state.authorizationReplayKilled);
+    }
+
+    @Test
+    void liveAuthorizationReplayApiRequiresArmingAndReturnsCredentialFreeStatus() throws Exception {
+        start();
+
+        assertEquals(400, post("/api/authorization-replay",
+                "action=start-live&accounts=user-b%2Cadmin&anonymous=true&armed=false", token).statusCode());
+        JsonNode started = json(post("/api/authorization-replay",
+                "action=start-live&accounts=user-b%2Cadmin&anonymous=true&sources=HUMAN%2CZAP%2CLLM&armed=true",
+                token));
+        assertEquals("ACTIVE", started.path("live").path("state").asText());
+        assertEquals(List.of("user-b", "admin"), JSON.convertValue(
+                started.path("live").path("targetAccountIds"),
+                JSON.getTypeFactory().constructCollectionType(List.class, String.class)));
+        assertTrue(started.path("live").path("includeAnonymous").asBoolean());
+        assertEquals(List.of("HUMAN", "SCANNER", "LLM"), JSON.convertValue(
+                started.path("live").path("basisSources"),
+                JSON.getTypeFactory().constructCollectionType(List.class, String.class)));
+        assertFalse(started.toString().contains("raw-live-secret"));
+
+        assertEquals(400, post("/api/authorization-replay",
+                "action=start-live&accounts=user-b&sources=IMPORT&armed=true", token).statusCode());
+
+        JsonNode status = json(get("/api/authorization-replay", token, origin()));
+        assertEquals("ACTIVE", status.path("live").path("state").asText());
+        JsonNode stopped = json(post("/api/authorization-replay", "action=stop-live", token));
+        assertEquals("STOPPED", stopped.path("live").path("state").asText());
+        assertTrue(state.liveAuthorizationReplayStopped);
     }
 
     @Test
@@ -1089,6 +1199,8 @@ final class FlowScopeWebServerTest {
         private volatile boolean scannerAnonymous;
         private volatile boolean scannerCancelled;
         private volatile ZapAccountVault.Input lastZapAccountInput;
+        private volatile String refreshedZapSessionAccountId = "";
+        private volatile String linkedCandidateId = "";
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
@@ -1099,6 +1211,14 @@ final class FlowScopeWebServerTest {
         private volatile String repeaterRequest = "";
         private volatile FlowScopeWebServer.CredentialMode repeaterCredentialMode;
         private volatile String repeaterAccountId = "";
+        private volatile String authorizationReplayItemId = "";
+        private volatile boolean authorizationReplayArmed;
+        private volatile boolean authorizationReplayKilled;
+        private volatile boolean liveAuthorizationReplayStopped;
+        private volatile LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplay =
+                new LiveCrossIdentityReplayCoordinator.Snapshot("",
+                        LiveCrossIdentityReplayCoordinator.State.STOPPED, false, List.of(), false,
+                        0, 0, 0, 0, 0, 0, "NOT_STARTED");
         private final java.util.concurrent.atomic.AtomicInteger manualRequestCount =
                 new java.util.concurrent.atomic.AtomicInteger();
         private volatile boolean blockManualRequest;
@@ -1141,12 +1261,23 @@ final class FlowScopeWebServerTest {
         @Override public List<ValidationDecision> validations() { return archivedValidations; }
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public SessionBroker sessions() { return sessions; }
+        @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
+            return List.of(new FlowScopeWebServer.AccountRequestCandidate(record.evidenceId, 200, "GET",
+                    "/v1/orders/7", "application/json", true, false, true, true, "연결 가능"));
+        }
+        @Override public void linkAccountRequestCandidate(String accountId, String evidenceId) {
+            linkedCandidateId = evidenceId;
+        }
         @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
         @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
             lastZapAccountInput = input;
             return zapAccounts.save(input);
         }
         @Override public void removeZapAccount(String id) { zapAccounts.remove(id); }
+        @Override public JsonNode refreshAccountSession(String id) {
+            refreshedZapSessionAccountId = id;
+            return JSON.createObjectNode().put("status", "RUNNING").put("stage", "AUTHENTICATION");
+        }
         @Override public List<String> scopeEntries() { return scannerScope; }
         @Override public ProjectWorkspace.Status projectStatus() { return projectStatus; }
         @Override public ProjectWorkspace.Status startProject(String name, String scope) {
@@ -1257,6 +1388,49 @@ final class FlowScopeWebServerTest {
             }
             return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
                     "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
+        }
+        @Override public CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(
+                String itemId, boolean armed) {
+            authorizationReplayItemId = itemId;
+            authorizationReplayArmed = armed;
+            int sent = armed ? 1 : 0;
+            int skipped = armed ? 0 : 1;
+            CrossIdentityReplayOrchestrator.Outcome outcome = armed
+                    ? CrossIdentityReplayOrchestrator.Outcome.SENT
+                    : CrossIdentityReplayOrchestrator.Outcome.SKIPPED_UNARMED;
+            FlowScopeWebServer.RequestLabResult rawResult = armed
+                    ? new FlowScopeWebServer.RequestLabResult("ev-replay", 200,
+                    "raw-replay-secret", 1, 1, 1) : null;
+            return new CrossIdentityReplayOrchestrator.RunResult("authorization-replay-test", armed,
+                    sent, 0, skipped, List.of(new CrossIdentityReplayOrchestrator.Item(
+                    "GET /api/orders/{id}", "user-b", "user-a", "ev-basis", outcome,
+                    rawResult, armed ? "CONTROLLED_RESPONSE_RECORDED" : "RUN_NOT_ARMED")));
+        }
+        @Override public void killAuthorizationReplay() { authorizationReplayKilled = true; }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                List<String> accountIds, boolean anonymous, boolean armed) {
+            return startLiveAuthorizationReplay(accountIds, anonymous, List.of(Source.HUMAN), armed);
+        }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                List<String> accountIds, boolean anonymous, List<Source> basisSources, boolean armed) {
+            if (!armed) throw new IllegalArgumentException("approval required");
+            liveAuthorizationReplay = new LiveCrossIdentityReplayCoordinator.Snapshot(
+                    "live-test", LiveCrossIdentityReplayCoordinator.State.ACTIVE, true,
+                    accountIds, anonymous, 0, 0, 0, 0, 0, 0, "ARMED", basisSources);
+            return liveAuthorizationReplay;
+        }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
+            return liveAuthorizationReplay;
+        }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot stopLiveAuthorizationReplay() {
+            liveAuthorizationReplayStopped = true;
+            liveAuthorizationReplay = new LiveCrossIdentityReplayCoordinator.Snapshot(
+                    liveAuthorizationReplay.runId(), LiveCrossIdentityReplayCoordinator.State.STOPPED,
+                    false, liveAuthorizationReplay.targetAccountIds(), liveAuthorizationReplay.includeAnonymous(),
+                    liveAuthorizationReplay.observed(), liveAuthorizationReplay.eligible(),
+                    liveAuthorizationReplay.queued(), liveAuthorizationReplay.sent(),
+                    liveAuthorizationReplay.drafted(), liveAuthorizationReplay.skipped(), "STOPPED_BY_OPERATOR");
+            return liveAuthorizationReplay;
         }
 
         private void addHumanEvidence(String runId, String accountId) {
