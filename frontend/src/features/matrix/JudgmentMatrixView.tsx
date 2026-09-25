@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ReviewStatus } from "@/lib/api/types"
+import { wrapPath } from "@/lib/display/pathLines"
 import { useAuthorizationReplayMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
@@ -30,19 +31,22 @@ const methodTone: Record<string, string> = {
   POST: "border-observation-scanner/40 bg-observation-scanner/10 text-observation-scanner",
 }
 
-/** 긴 경로는 가운데를 줄여 첫 열 폭을 제한한다. 전체 경로는 title과 화면 읽기 텍스트에 남긴다. */
-function shortPath(path: string, max = 44) {
-  return path.length <= max ? path : `${path.slice(0, 18)}…${path.slice(-(max - 19))}`
-}
+/** 경로는 `/` 경계로 최대 두 줄, 넘치면 앞을 줄여 끝(자원·ID)을 남긴다. 폭 제한은 표 칸이 아니라 안쪽 블록에 건다(표 칸의 max-width는 무시된다). */
+const PATH_LINE_CHARS = 40
 
 function OperationLabel({ operation }: { operation: string }) {
   const label = withoutService(operation)
   const separator = label.indexOf(" ")
   const method = separator > 0 ? label.slice(0, separator) : label
   const path = separator > 0 ? label.slice(separator + 1) : ""
-  return <span className="flex min-w-0 items-center gap-2" title={path || undefined}>
+  const lines = path ? wrapPath(path, (line) => line.length <= PATH_LINE_CHARS) : []
+  const trimmed = lines.join("") !== path
+  return <span className="flex min-w-0 items-start gap-2" title={path || undefined}>
     <Badge variant="outline" className={`shrink-0 font-mono ${methodTone[method] ?? "border-border bg-muted/40 text-foreground"}`}>{method}</Badge>
-    {path && (shortPath(path) === path ? <span className="min-w-0 whitespace-nowrap font-mono text-xs">{path}</span> : <><span aria-hidden="true" className="min-w-0 whitespace-nowrap font-mono text-xs">{shortPath(path)}</span><span className="sr-only">{path}</span></>)}
+    {path && <span className="grid min-w-0 max-w-[20rem] font-mono text-xs leading-5">
+      <span aria-hidden={trimmed || undefined} className="grid">{lines.map((line, index) => <span key={index} className="break-all">{line}</span>)}</span>
+      {trimmed && <span className="sr-only">{path}</span>}
+    </span>}
   </span>
 }
 
@@ -137,12 +141,12 @@ function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: Judg
   </div>
 }
 
-export function JudgmentMatrixView() {
+export function JudgmentMatrixView({ viewSwitcher }: { viewSwitcher?: ReactNode } = {}) {
   const snapshot = useSnapshotQuery()
-  return <JudgmentMatrixWorkspace key={snapshot.data?.datasetRevision ?? "legacy"} snapshot={snapshot} />
+  return <JudgmentMatrixWorkspace key={snapshot.data?.datasetRevision ?? "legacy"} snapshot={snapshot} viewSwitcher={viewSwitcher} />
 }
 
-function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof useSnapshotQuery> }) {
+function JudgmentMatrixWorkspace({ snapshot, viewSwitcher }: { snapshot: ReturnType<typeof useSnapshotQuery>; viewSwitcher?: ReactNode }) {
   const [view, setView] = useState<JudgmentView>("function")
   const [attentionOnly, setAttentionOnly] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -155,16 +159,23 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
   const select = (id: string) => { setSelectedId(id); setInspectorOpen(true) }
   const summary = matrix?.summary
   const configurationWarnings = matrix?.configurationWarnings ?? []
-  const context = <section className="grid gap-4 p-3">
-    <h2 className="text-sm font-semibold">판정 보기</h2>
-    <Tabs value={view} onValueChange={(value) => { setView(value === "object" ? "object" : "function"); setSelectedId(null); setInspectorOpen(false) }}><TabsList aria-label="판정 매트릭스 보기" className="grid h-auto grid-cols-1"><TabsTrigger value="function">BFLA · 역할 × 기능</TabsTrigger><TabsTrigger value="object">BOLA/IDOR · 계정 × 객체</TabsTrigger></TabsList></Tabs>
-    <div className="border-t border-border/70 pt-4"><Button type="button" role="switch" aria-checked={attentionOnly} variant="ghost" className="h-auto w-full justify-between px-0 py-1 hover:bg-transparent" onClick={() => setAttentionOnly((current) => !current)}><span className="text-sm font-normal">주의 항목만</span><span aria-hidden="true" className={`relative h-5 w-9 rounded-full border transition-colors ${attentionOnly ? "border-primary bg-primary" : "border-input bg-muted"}`}><span className={`absolute top-0.5 size-3.5 rounded-full bg-background shadow-sm transition-transform ${attentionOnly ? "translate-x-[1.125rem]" : "translate-x-0.5"}`} /></span></Button></div>
+  const label = "text-[11px] font-semibold tracking-[0.12em] text-muted-foreground"
+  // 같은 판정 데이터를 다른 관점으로 바꿔 보는 전환이므로 탭 대신 두 칸 세그먼트로 보여 준다.
+  const context = <section className="grid gap-5 p-3">
+    <div className="grid gap-2">
+      <h2 className={label}>판정 보기</h2>
+      <Tabs value={view} onValueChange={(value) => { setView(value === "object" ? "object" : "function"); setSelectedId(null); setInspectorOpen(false) }}><TabsList aria-label="판정 매트릭스 보기" className="grid h-auto w-full grid-cols-2 gap-1 p-1">{([["function", "BFLA", "역할 × 기능"], ["object", "BOLA/IDOR", "계정 × 객체"]] as const).map(([value, name, axis]) => <TabsTrigger key={value} value={value} aria-label={`${name} · ${axis}`} className="flex h-auto flex-col items-center gap-0.5 whitespace-normal px-2 py-1.5"><span className="text-sm font-semibold">{name}</span><span className="text-[11px] font-normal text-muted-foreground">{axis}</span></TabsTrigger>)}</TabsList></Tabs>
+    </div>
+    <div className="grid gap-2 border-t border-border/70 pt-4">
+      <h2 className={label}>표시</h2>
+      <Button type="button" role="switch" aria-checked={attentionOnly} variant="ghost" className="h-auto w-full justify-between px-0 py-1 hover:bg-transparent" onClick={() => setAttentionOnly((current) => !current)}><span className="text-sm font-normal">주의 항목만</span><span aria-hidden="true" className={`relative h-5 w-9 rounded-full border transition-colors ${attentionOnly ? "border-primary bg-primary" : "border-input bg-muted"}`}><span className={`absolute top-0.5 size-3.5 rounded-full bg-background shadow-sm transition-transform ${attentionOnly ? "translate-x-[1.125rem]" : "translate-x-0.5"}`} /></span></Button>
+    </div>
   </section>
   const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} requiredRole={snapshot.data?.requiredRoles[selected.operation]} identity={matrix.identities.find((identity) => identity.id === selected.identity)} disabled={disabled} /> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하세요.</p>
 
-  return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
+  return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={context} contextTitle={false} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="grid gap-4 p-3" aria-labelledby="judgment-title">
-      <h1 id="judgment-title" className="text-2xl font-semibold">판정 매트릭스</h1>
+      {viewSwitcher}<h1 id="judgment-title" className="sr-only">판정 매트릭스</h1>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>판정 매트릭스를 불러오지 못했습니다.</AlertTitle><AlertDescription>
         <p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
         {snapshot.data ? <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 && Number.isFinite(snapshot.dataUpdatedAt) ? <time dateTime={new Date(snapshot.dataUpdatedAt).toISOString()}>{new Date(snapshot.dataUpdatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>갱신에 성공할 때까지 Evidence 상세와 사람 판정 저장이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
@@ -186,7 +197,7 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
         ["사용자 취약점 확정", summary.humanConfirmed],
         ["정상·기각", summary.humanDismissed],
       ].map(([label, value]) => <li key={String(label)} className="rounded-md border border-border/70 p-2"><p className="text-[11px] text-muted-foreground">{label}</p><p className="text-xl font-semibold tabular-nums">{value}</p></li>)}</ul>}
-      {projection && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="max-h-[44rem] max-w-full overflow-x-auto overflow-y-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 z-40 w-[1%] bg-background">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background"><span className="break-all">{identity.label}</span><span className="block text-xs text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="max-w-[22rem] whitespace-normal bg-background"><OperationLabel operation={row.operation} /></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; return <TableCell key={identity.id} className="whitespace-normal align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${cell.statusLabel}${reviewSuffix(cell.reviewStatus)}: ${cell.identityLabel} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} className={`grid w-full min-w-48 rounded-md border p-2 text-left text-xs ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className="font-semibold">{cell.statusLabel}{reviewSuffix(cell.reviewStatus)}</span></button> : <span className="text-xs text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 Evidence가 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
+      {projection && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="max-h-[44rem] max-w-full overflow-x-auto overflow-y-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 z-40 w-[1%] bg-background">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-56 whitespace-normal bg-background"><span className="break-all">{identity.label}</span><span className="block text-xs text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="whitespace-normal bg-background align-top"><OperationLabel operation={row.operation} /></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; return <TableCell key={identity.id} className="whitespace-normal align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${cell.statusLabel}${reviewSuffix(cell.reviewStatus)}: ${cell.identityLabel} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} className={`grid w-full min-w-48 rounded-md border p-2 text-left text-xs ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className="font-semibold">{cell.statusLabel}{reviewSuffix(cell.reviewStatus)}</span></button> : <span className="text-xs text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 Evidence가 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
     </section>
   </ReferenceAnalysisWorkspace>
 }

@@ -53,11 +53,13 @@ export interface ReferenceAnalysisWorkspaceProps {
   contentOverflow?: "auto" | "hidden"
   inspectorOverflow?: "auto" | "hidden"
   contextOpen?: boolean
+  /** false면 왼쪽 패널의 "분석 필터" 제목 줄을 숨긴다(패널 자체 제목이 있는 화면용). */
+  contextTitle?: boolean
   onInspectorOpenChange?(open: boolean): void
   onContextOpenChange?(open: boolean): void
 }
 
-export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorModal = true, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
+export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorModal = true, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, contextTitle = true, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
   const compact = useCompactWorkspace()
   const [isContextOpen, setContextOpen] = useOpenState(contextOpen, onContextOpenChange)
   const [isInspectorOpen, setInspectorOpen] = useOpenState(inspectorOpen, onInspectorOpenChange)
@@ -85,7 +87,7 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
   }, [compact, contextCollapsed, contextWidth, hasContext, hasInspector, inspectorCollapsed, inspectorWidth])
 
   return <section ref={workspaceRef} className="relative flex min-h-full min-w-0 flex-col xl:h-full xl:flex-row xl:overflow-hidden">
-    {!compact && hasContext ? <>{!contextCollapsed ? <RouteContextPanel title={CONTEXT_TITLE} className="min-h-0 shrink-0 overflow-y-auto" style={{ width: contextWidth }}>{context}</RouteContextPanel> : null}<PaneResizeHandle side="left" label={CONTEXT_TITLE} width={contextWidth} min={CONTEXT_MIN_WIDTH} max={contextMax()} collapsed={contextCollapsed} onWidthChange={setContextWidth} onCollapse={() => setContextCollapsed(true)} onExpand={() => setContextCollapsed(false)} /></> : null}
+    {!compact && hasContext ? <>{!contextCollapsed ? <RouteContextPanel title={CONTEXT_TITLE} showTitle={contextTitle} className="min-h-0 shrink-0 overflow-y-auto" style={{ width: contextWidth }}>{context}</RouteContextPanel> : null}<PaneResizeHandle side="left" label={CONTEXT_TITLE} width={contextWidth} min={CONTEXT_MIN_WIDTH} max={contextMax()} collapsed={contextCollapsed} onWidthChange={setContextWidth} onCollapse={() => setContextCollapsed(true)} onExpand={() => setContextCollapsed(false)} /></> : null}
     <section aria-label={ariaLabel} tabIndex={0} className={`relative flex min-h-0 min-w-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${contentOverflow === "hidden" ? "overflow-hidden" : "overflow-y-auto"}`}>
       {compact && (hasContext || hasInspector) ? <div className="flex flex-wrap items-center gap-2 border-b border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] px-3 py-2 xl:hidden">
         {hasContext ? <Sheet open={isContextOpen} onOpenChange={setContextOpen}>

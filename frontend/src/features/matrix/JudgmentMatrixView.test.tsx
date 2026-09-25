@@ -348,14 +348,35 @@ it("shows no HUMAN-pass notice while a HUMAN pass is active", async () => {
   expect(screen.queryByRole("status", { name: "확인 재전송 조건" })).not.toBeInTheDocument()
 })
 
-it("keeps the operation column unpinned and shortens long paths while keeping the full path available", () => {
-  const long = `${service} GET /community/api/v2/community/posts/7weVqm2Pmn3gC6T2gdzpm4`
-  current = { ...snapshot, authorizationMatrix: { ...matrix, functions: [...matrix.functions, fn("function-long", "b", long)] } }
+it("keeps the operation column unpinned and wraps long paths into two lines inside a bounded block", () => {
+  const full = "/community/api/v2/community/posts/7weVqm2Pmn3gC6T2gdzpm4/comments/0123456789abcdef"
+  current = { ...snapshot, authorizationMatrix: { ...matrix, functions: [...matrix.functions, fn("function-long", "b", `${service} GET ${full}`)] } }
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  const header = within(table).getByTitle("/community/api/v2/community/posts/7weVqm2Pmn3gC6T2gdzpm4").closest("th")!
+  const label = within(table).getByTitle(full)
+  const header = label.closest("th")!
   expect(header).not.toHaveClass("sticky")
-  expect(header).toHaveClass("max-w-[22rem]")
-  expect(header).toHaveTextContent("/community/api/v2/…")
-  expect(within(header).getByText("/community/api/v2/community/posts/7weVqm2Pmn3gC6T2gdzpm4")).toHaveClass("sr-only")
+  // 폭 제한은 표 칸이 아니라 안쪽 블록에 건다.
+  const block = label.querySelector(".max-w-\\[20rem\\]")!
+  expect(block).not.toBeNull()
+  const lines = [...block.querySelectorAll("[aria-hidden] > span")].map((line) => line.textContent)
+  expect(lines).toHaveLength(2)
+  expect(lines[0]!.startsWith("…/")).toBe(true)
+  expect(lines[1]!.endsWith("/0123456789abcdef")).toBe(true)
+  expect(within(header).getByText(full)).toHaveClass("sr-only")
+})
+
+it("puts the view tabs in place of the large title and removes the filter panel caption", async () => {
+  const user = userEvent.setup()
+  const { MatrixPage } = await import("./MatrixPage")
+  renderView(<MatrixPage />)
+  const workspace = screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })
+  expect(within(workspace).getByRole("tablist", { name: "매트릭스 보기" })).toBeVisible()
+  expect(screen.getByRole("heading", { name: "판정 매트릭스", level: 1 })).toHaveClass("sr-only")
+  const filters = screen.getByRole("complementary", { name: "분석 필터" })
+  expect(within(filters).queryByRole("heading", { name: "분석 필터" })).not.toBeInTheDocument()
+  const views = within(filters).getByRole("tablist", { name: "판정 매트릭스 보기" })
+  expect(views).toHaveClass("grid-cols-2")
+  await user.click(within(views).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
+  expect(within(views).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" })).toHaveAttribute("aria-selected", "true")
 })
