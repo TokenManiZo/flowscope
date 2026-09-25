@@ -84,6 +84,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default void killAuthorizationReplay() {
             throw new UnsupportedOperationException("authorization replay is unavailable");
         }
+        default String draftAuthorizationReplay(String itemId) {
+            throw new UnsupportedOperationException("authorization replay is unavailable");
+        }
         default LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
                 List<String> accountIds, boolean anonymous, boolean armed) {
             throw new UnsupportedOperationException("live authorization replay is unavailable");
@@ -503,6 +506,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (action.equals("kill")) {
                 state.killAuthorizationReplay();
                 return success("현재 안전 재전송 런에 중지 요청을 적용했습니다.");
+            }
+            if (action.equals("draft")) {
+                return success(state.draftAuthorizationReplay(required(form, "itemId")));
             }
             if (!action.equals("run")) throw new IllegalArgumentException("지원하지 않는 재전송 동작입니다.");
             boolean armed = Boolean.parseBoolean(form.getOrDefault("armed", "false"));

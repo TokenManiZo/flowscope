@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { AuthorizationMatrix, ReviewStatus } from "@/lib/api/types"
-import { useAuthorizationReplayKillMutation, useAuthorizationReplayMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useAuthorizationReplayDraftMutation, useAuthorizationReplayKillMutation, useAuthorizationReplayMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -101,11 +101,13 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
   const review = useReviewMutation()
   const replay = useAuthorizationReplayMutation()
   const stopReplay = useAuthorizationReplayKillMutation()
+  const draft = useAuthorizationReplayDraftMutation()
   const [confirmed, setConfirmed] = useState(item.reviewStatus === "CONFIRMED")
   const [note, setNote] = useState(item.reviewNote)
   const [message, setMessage] = useState<string | null>(null)
   const [replayArmed, setReplayArmed] = useState(false)
   const [replayMessage, setReplayMessage] = useState<string | null>(null)
+  const [draftMessage, setDraftMessage] = useState<string | null>(null)
   // 같은 cell·검토 Evidence 안에서 저장된 서버 값을 반영한다. 선택 문맥이 바뀌면 부모 key가 폼과 진행 중 응답을 분리한다.
   useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED"); setNote(item.reviewNote) }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
@@ -138,6 +140,15 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
       setReplayMessage(error instanceof Error ? error.message : "재전송 중지 실패")
     }
   }
+  const runDraft = async () => {
+    setDraftMessage(null)
+    try {
+      const result = await draft.mutateAsync(item.id)
+      setDraftMessage(result.message ?? "Burp Repeater 초안을 열었습니다.")
+    } catch (error) {
+      setDraftMessage(error instanceof Error ? error.message : "Repeater 초안 생성 실패")
+    }
+  }
   const evidenceSelection = (evidenceIds: readonly string[], identity: string): StructuredEvidenceSelection => ({ kind: "matrix", identity, operation: item.operation, resource, evidenceIds, eventIds: evidenceIds })
   const basisIdentity = matrix.identities.find((identity) => identity.id === item.recommendation?.basisIdentity)
   const cellIdentity = matrix.identities.find((identity) => identity.id === item.identity)
@@ -163,9 +174,10 @@ function JudgmentDetail({ item, matrix, disabled, onOpenEvidence }: { item: Judg
     </section>}
     <PolicyAssignment key={`${item.id}:${item.policy.code}:${"resourcePolicy" in item ? item.resourcePolicy : ""}:${cellIdentity?.role ?? ""}`} item={item} identityKind={cellIdentity?.kind} identityRole={cellIdentity?.role} disabled={disabled} />
     {isGap && <section aria-label="Burp Repeater 전송" className="grid gap-2 rounded-md border border-border/70 p-3">
-      <Button type="button" size="sm" className="w-fit" disabled={disabled || replay.isPending} onClick={() => void runReplay()}>Burp Repeater로 전송</Button>
+      <Button type="button" size="sm" className="w-fit" disabled={disabled || draft.isPending} onClick={() => void runDraft()}>Burp Repeater로 전송</Button>
+      <p className="text-xs text-muted-foreground">추천 여부와 무관하게 이 조합의 교차 요청을 대상 신원의 검증된 세션 자격으로 Repeater 초안으로 엽니다. 자동 전송하지 않습니다.</p>
       <HumanRunGuidance disabled={disabled} />
-      {replayMessage && <p role="status" className="text-xs">{replayMessage}</p>}
+      {draftMessage && <p role="status" className="text-xs">{draftMessage}</p>}
     </section>}
     {(isReviewable(item) || isGap) && <section aria-label="사람 최종 판정" className="grid gap-2 rounded-md border border-border/70 p-3">
       <h3 className="text-sm font-semibold">사람 최종 판정</h3>

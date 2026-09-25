@@ -1855,6 +1855,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 return runCrossIdentityReplay(List.of(authorizationReplayRecommendation(itemId)), armed);
             }
             @Override public void killAuthorizationReplay() { killCrossIdentityReplay(); }
+            @Override public String draftAuthorizationReplay(String itemId) {
+                return draftCrossIdentityReplay(itemId);
+            }
             @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
                     List<String> accountIds, boolean anonymous, boolean armed) {
                 return startLiveAuthorizationReplay(accountIds, anonymous, List.of(Source.HUMAN), armed);
@@ -2380,6 +2383,105 @@ public final class FlowScopeExtension implements BurpExtension {
                 FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
         return new CrossIdentityReplayOrchestrator.Recommendation(operation, selected.testIdentity(),
                 selected.basisIdentity(), seed.evidenceId, URI.create(prepared.url()));
+    }
+
+    /**
+     * 어떤 판정 셀이든(추천이 없어도) 대상 신원 자격으로 교차 요청을 Burp Repeater 초안으로 연다(D-169). 추천기가
+     * 놓친 조합에서도 사람이 직접 조사할 수 있어야 하므로, 추천 basis가 없으면 같은 대상에서 다른 신원이 관측한
+     * 요청을 basis로 합성한다. 자동 전송하지 않으며 대상 신원의 강검증 세션 자격만 주입한다.
+     */
+    private String draftCrossIdentityReplay(String itemId) {
+        CrossIdentityReplayOrchestrator.Recommendation recommendation = crossIdentityDraftRecommendation(itemId);
+        Map<String, String> credentialHeaders;
+        if (CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY.equals(recommendation.targetIdentity())) {
+            if (!scope.allows(recommendation.target().toString())) {
+                throw new IllegalArgumentException("대상이 현재 exact scope 밖입니다.");
+            }
+            credentialHeaders = Map.of();
+        } else {
+            credentialHeaders = sessionBroker.headersForVerifiedAccount(recommendation.targetIdentity(),
+                    recommendation.target(), scope, java.time.Instant.now());
+        }
+        openCrossIdentityReplayDraftAnyMethod(recommendation, credentialHeaders);
+        return "교차 실행 요청을 대상 신원 자격으로 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.";
+    }
+
+    private CrossIdentityReplayOrchestrator.Recommendation crossIdentityDraftRecommendation(String itemId) {
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(latest, analysisConfig, archivedValidations);
+        String operation = null;
+        String resource = null;
+        String testIdentity = null;
+        boolean hasRecommendation = false;
+        for (AuthorizationMatrix.FunctionCell cell : matrix.functions()) {
+            if (cell.id().equals(itemId)) {
+                operation = cell.operation();
+                testIdentity = cell.identity();
+                hasRecommendation = cell.recommendation() != null;
+                break;
+            }
+        }
+        if (operation == null) {
+            for (AuthorizationMatrix.ObjectCell cell : matrix.objects()) {
+                if (cell.id().equals(itemId)) {
+                    operation = cell.operation();
+                    resource = cell.resource();
+                    testIdentity = cell.identity();
+                    hasRecommendation = cell.recommendation() != null;
+                    break;
+                }
+            }
+        }
+        if (operation == null) throw new IllegalArgumentException("존재하지 않는 판정 셀입니다.");
+        if (hasRecommendation) return authorizationReplayRecommendation(itemId);
+        String expectedOperation = operation;
+        String expectedResource = resource;
+        String selfIdentity = testIdentity;
+        String basisIdentity = null;
+        List<String> basisEvidence = List.of();
+        if (expectedResource == null) {
+            for (AuthorizationMatrix.FunctionCell cell : matrix.functions()) {
+                if (expectedOperation.equals(cell.operation()) && !selfIdentity.equals(cell.identity())
+                        && !cell.evidenceIds().isEmpty()) {
+                    basisIdentity = cell.identity();
+                    basisEvidence = cell.evidenceIds();
+                    break;
+                }
+            }
+        } else {
+            for (AuthorizationMatrix.ObjectCell cell : matrix.objects()) {
+                if (expectedOperation.equals(cell.operation()) && expectedResource.equals(cell.resource())
+                        && !selfIdentity.equals(cell.identity()) && !cell.evidenceIds().isEmpty()) {
+                    basisIdentity = cell.identity();
+                    basisEvidence = cell.evidenceIds();
+                    break;
+                }
+            }
+        }
+        if (basisIdentity == null) {
+            throw new IllegalStateException("같은 대상에서 다른 신원이 관측한 요청이 없어 Burp Repeater 초안을 만들 수 없습니다.");
+        }
+        RequestRecord seed = basisEvidence.stream()
+                .map(id -> latest.records.stream().filter(record -> id.equals(record.evidenceId)).findFirst().orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .filter(record -> expectedOperation.equals(record.op))
+                .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("기준 Evidence 원문을 찾을 수 없습니다."));
+        HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
+                FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
+        return new CrossIdentityReplayOrchestrator.Recommendation(operation, testIdentity,
+                basisIdentity, seed.evidenceId, URI.create(prepared.url()));
+    }
+
+    /** 메서드 제한 없이 교차 신원 요청을 Burp Repeater 초안으로만 연다(운영자가 직접 전송). 자동 전송 없음(D-169). */
+    private void openCrossIdentityReplayDraftAnyMethod(CrossIdentityReplayOrchestrator.Recommendation recommendation,
+                                                       Map<String, String> credentialHeaders) {
+        RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
+        HttpRequest request = prepareReplayRequest(seed, replayRequestText(seed), credentialHeaders);
+        if (!URI.create(request.url()).equals(recommendation.target())) {
+            throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
+        }
+        openDraftInRepeater(seed, request);
     }
 
     void killCrossIdentityReplay() {
