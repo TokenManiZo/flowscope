@@ -243,7 +243,8 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
           rowHeight = Math.max(rowHeight, laneY - rowY)
         })
       }
-      rowY += rowHeight + 52
+      // Gap 경로(행) 사이를 조금 넓혀 카드 묶음을 구분하기 쉽게 한다.
+      rowY += rowHeight + 72
     }
     correctRef.current?.()
   }, [projection, fallback, width, dismissCardTooltip])

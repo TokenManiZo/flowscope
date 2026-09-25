@@ -138,10 +138,9 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  // tap·mouseover/focus·mouseout/blur·dragfree·viewport + 크기 손잡이(mouseover·mouseout·position)
-  expect(core.on).toHaveBeenCalledTimes(8)
+  expect(core.on).toHaveBeenCalledTimes(5)
   unmount()
-  expect(core.off).toHaveBeenCalledTimes(8)
+  expect(core.off).toHaveBeenCalledTimes(5)
   expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(1)
   expect(disconnectResizeObserver).toHaveBeenCalledTimes(1)
   expect(Math.max(...core.off.mock.invocationCallOrder)).toBeLessThan(core.destroy.mock.invocationCallOrder[0])
@@ -174,7 +173,7 @@ it("renders approved card images with source icons instead of edge text, and kee
   expect(remove).toHaveBeenCalledTimes(1)
   expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ id: "edge", label: "", line: "solid", color: "#94a3b8" }) })]))
   expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({
-    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW; 접근 주체 HUMAN", width: 232, height: 85, confirmed: "no",
+    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW; 접근 주체 HUMAN", width: 232, height: 67, confirmed: "no",
   }) })]))
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={1} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   expect(core.fit).toHaveBeenCalledTimes(1)

@@ -41,23 +41,40 @@ const base: GraphPreferences = { version: 7, positions: { "identity:alice": { x:
 const operation = () => core.getElementById("operation:GET /orders")
 const lastSizes = (spy: ReturnType<typeof vi.fn>) => (spy.mock.calls.at(-1)?.[0] as Pick<GraphPreferences, "sizes">).sizes
 
-it("shows a corner handle on hover and grows the node from its top-left corner while dragging", () => {
+const canvas = () => screen.getByLabelText("공격면 Cytoscape 그래프")
+/** 노드 오른쪽 아래 모서리의 화면 좌표(테스트에서는 컨테이너 원점이 0,0). */
+const corner = (id: string) => {
+  const node = core.getElementById(id), center = node.renderedPosition()
+  return { clientX: center.x + node.renderedOuterWidth() / 2, clientY: center.y + node.renderedOuterHeight() / 2 }
+}
+const startResize = (id: string) => {
+  const at = corner(id)
+  fireEvent.pointerMove(canvas(), at)
+  fireEvent.pointerDown(canvas(), { ...at, button: 0 })
+  return at
+}
+
+it("switches to a resize cursor at a node corner and grows the node from its top-left while dragging", () => {
   const onPreferencesChange = vi.fn()
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={base} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
   const node = operation()
   const start = { width: Number(node.data("width")), height: Number(node.data("height")), left: node.position().x - Number(node.data("width")) / 2, top: node.position().y - Number(node.data("height")) / 2 }
-  act(() => { node.emit("mouseover") })
-  const handle = screen.getByTestId("node-resize-handle")
-  expect(handle).toHaveAttribute("data-node-id", "operation:GET /orders")
+  const center = node.renderedPosition()
+  fireEvent.pointerMove(canvas(), { clientX: center.x, clientY: center.y })
+  expect(canvas().style.cursor).toBe("")
+  const at = corner("operation:GET /orders")
+  fireEvent.pointerMove(canvas(), at)
+  expect(canvas().style.cursor).toBe("nwse-resize")
 
-  fireEvent.pointerDown(handle, { clientX: 100, clientY: 100 })
-  fireEvent.pointerMove(handle, { clientX: 160, clientY: 140 })
+  fireEvent.pointerDown(canvas(), { ...at, button: 0 })
+  fireEvent.pointerMove(window, { clientX: at.clientX + 60, clientY: at.clientY + 40 })
   expect(Number(node.data("width"))).toBe(start.width + 60)
   expect(Number(node.data("height"))).toBe(start.height + 40)
   expect(node.position().x - Number(node.data("width")) / 2).toBeCloseTo(start.left)
   expect(node.position().y - Number(node.data("height")) / 2).toBeCloseTo(start.top)
-  fireEvent.pointerUp(handle, { clientX: 160, clientY: 140 })
+  fireEvent.pointerUp(window)
   flushFrames()
+  expect(canvas().style.cursor).toBe("")
   expect(lastSizes(onPreferencesChange)).toEqual({ "operation:GET /orders": { width: start.width + 60, height: start.height + 40 } })
 })
 
@@ -65,21 +82,19 @@ it("never shrinks below the default card and stops before the next lane", () => 
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={{ ...base, positions: { "identity:alice": { x: 200, y: 200 }, "operation:GET /orders": { x: 600, y: 200 } } }} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   const identity = core.getElementById("identity:alice")
   const width = Number(identity.data("width"))
-  act(() => { identity.emit("mouseover") })
-  const handle = screen.getByTestId("node-resize-handle")
-  fireEvent.pointerDown(handle, { clientX: 100, clientY: 100 })
-  fireEvent.pointerMove(handle, { clientX: 0, clientY: 0 })
+  const at = startResize("identity:alice")
+  fireEvent.pointerMove(window, { clientX: at.clientX - 100, clientY: at.clientY - 100 })
   expect(Number(identity.data("width"))).toBe(width)
-  fireEvent.pointerMove(handle, { clientX: 500, clientY: 100 })
+  fireEvent.pointerMove(window, { clientX: at.clientX + 400, clientY: at.clientY })
   const rightEdge = identity.position().x + Number(identity.data("width")) / 2
   const nextLaneLeft = operation().position().x - Number(operation().data("width")) / 2
   // 끌어도 오른쪽 이웃 레인 노드와 48px 간격 직전에서 멈춘다(최대 크기보다 먼저 걸린다).
   expect(rightEdge).toBeCloseTo(nextLaneLeft - 48, 0)
   expect(Number(identity.data("width"))).toBeGreaterThan(width)
-  fireEvent.pointerUp(handle)
+  fireEvent.pointerUp(window)
 })
 
-it("restores saved sizes on reload, clears them only on relayout, and hides the handle while locked", () => {
+it("restores saved sizes on reload, clears them only on relayout, and ignores corners while locked", () => {
   const sized = { ...base, sizes: { "operation:GET /orders": { width: 300, height: 140 } } }
   const onPreferencesChange = vi.fn()
   const { rerender } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={sized} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
@@ -87,8 +102,8 @@ it("restores saved sizes on reload, clears them only on relayout, and hides the 
   expect(Number(operation().data("height"))).toBe(140)
 
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} preferences={sized} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
-  act(() => { operation().emit("mouseover") })
-  expect(screen.queryByTestId("node-resize-handle")).not.toBeInTheDocument()
+  fireEvent.pointerMove(canvas(), corner("operation:GET /orders"))
+  expect(canvas().style.cursor).toBe("")
 
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} layoutVersion={1} preferences={sized} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
   expect(Number(operation().data("width"))).toBe(232)
@@ -103,12 +118,11 @@ it("resets only the re-sorted lane and supports Shift+Arrow resizing for the foc
   expect(Number(operation().data("width"))).toBe(232)
   expect(Number(core.getElementById("identity:alice").data("width"))).toBe(300)
 
-  const canvas = screen.getByLabelText("공격면 Cytoscape 그래프")
-  act(() => { canvas.focus() })
+  act(() => { canvas().focus() })
   const focused = core.nodes(".keyboard-focus")[0]
   const width = Number(focused.data("width"))
-  fireEvent.keyDown(canvas, { key: "ArrowRight", shiftKey: true })
+  fireEvent.keyDown(canvas(), { key: "ArrowRight", shiftKey: true })
   expect(Number(focused.data("width"))).toBe(width + 16)
-  fireEvent.keyDown(canvas, { key: "ArrowLeft", shiftKey: true })
+  fireEvent.keyDown(canvas(), { key: "ArrowLeft", shiftKey: true })
   expect(Number(focused.data("width"))).toBe(width)
 })

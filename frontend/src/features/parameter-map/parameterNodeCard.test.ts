@@ -48,7 +48,7 @@ describe("parameter node card SVG", () => {
     expect(label.getAttribute("fill")).toBe(foreground)
   })
 
-  const titleLines = (svg: Document) => [...svg.querySelectorAll("text")].filter(text => ["53", "71"].includes(text.getAttribute("y") ?? "")).map(text => text.textContent!)
+  const titleLines = (svg: Document) => [...svg.querySelectorAll("text")].filter(text => text.getAttribute("font-size") === "15").map(text => text.textContent!)
 
   it("wraps a long route at slash boundaries into two lines and trims the front to keep the suffix", () => {
     const route = `/api/${"very-long-segment/".repeat(12)}orders/{id}`
@@ -77,10 +77,11 @@ describe("parameter node card SVG", () => {
 
     const image = renderParameterNodeCardSvg(card)
     const svg = decodeURIComponent(image.uri.replace("data:image/svg+xml,", ""))
-    expect(image).toMatchObject({ width: 224, height: 130 })
+    expect(image).toMatchObject({ width: 200, height: 130 })
     expect(svg).toContain("한글 &lt;tag&gt; &amp; &quot;quote&quot;")
     expect(svg).toContain("&lt;/text&gt;")
-    expect(svg).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
+    // 폭 200px 카드에서는 상세 문자열이 잘릴 수 있다. 잘려도 태그는 항상 이스케이프된다.
+    expect(svg).toContain("&lt;script&gt;alert(1)")
     expect(svg).not.toContain("<script")
     expect(svg).not.toMatch(/(?:href|src)=["'][^"']*https?:/i)
     expect(svg).not.toContain("<image")
@@ -117,16 +118,16 @@ describe("source icons beside the badge", () => {
     const text = svg(card)
     expect(text).toMatch(/translate\(\d+ 12\)/)
     expect(text).not.toMatch(/translate\(\d+ 65\)/)
-    // 제목 두 줄 자리를 두므로 보조 줄 수만으로 높이가 정해진다(없음 85 · 한 줄 108).
-    expect(renderParameterNodeCardSvg(card, true)).toMatchObject({ width: 232, height: 85 })
-    expect(renderParameterNodeCardSvg({ ...card, footer: "owner: A" }, true).height).toBe(108)
+    // 관계 그래프 카드는 실제 제목 줄 수에 맞춘다(한 줄 67 · 보조 한 줄 추가 89).
+    expect(renderParameterNodeCardSvg(card, true)).toMatchObject({ width: 232, height: 67 })
+    expect(renderParameterNodeCardSvg({ ...card, footer: "owner: A" }, true).height).toBe(89)
     // 점검 우선순위 카드는 보조 줄이 비어도 한 줄 자리를 둬 같은 크기다.
-    expect(renderParameterNodeCardSvg(card)).toMatchObject({ width: 224, height: 108 })
+    expect(renderParameterNodeCardSvg(card)).toMatchObject({ width: 200, height: 86 })
   })
 
   it("draws the detail row when present, grows compact cards by it, and keeps Gap graph cards one size", () => {
     const withDetail = { ...card, detail: "owner: USER B" }
-    expect(renderParameterNodeCardSvg(withDetail, true).height).toBe(108)
+    expect(renderParameterNodeCardSvg(withDetail, true).height).toBe(89)
     expect(renderParameterNodeCardSvg(withDetail).height).toBe(108)
     expect(renderParameterNodeCardSvg({ ...withDetail, footer: "legacy footer" }).height).toBe(130)
     expect(svg(withDetail)).toContain("owner: USER B")

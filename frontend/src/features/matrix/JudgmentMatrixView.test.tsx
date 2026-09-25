@@ -356,6 +356,8 @@ it("keeps the operation column unpinned and wraps long paths into two lines insi
   const label = within(table).getByTitle(full)
   const header = label.closest("th")!
   expect(header).not.toHaveClass("sticky")
+  // 내용 폭(w-max) 표에서 퍼센트 폭 열은 표를 수만 px로 늘린다(1% 열이 내용을 담으려면 표 = 내용 ÷ 0.01).
+  for (const column of within(table).getAllByRole("columnheader")) expect(column.className).not.toMatch(/w-\[\d+%\]/)
   // 폭 제한은 표 칸이 아니라 안쪽 블록에 건다.
   const block = label.querySelector(".max-w-\\[20rem\\]")!
   expect(block).not.toBeNull()
@@ -376,7 +378,9 @@ it("puts the view tabs in place of the large title and removes the filter panel 
   const filters = screen.getByRole("complementary", { name: "분석 필터" })
   expect(within(filters).queryByRole("heading", { name: "분석 필터" })).not.toBeInTheDocument()
   const views = within(filters).getByRole("tablist", { name: "판정 매트릭스 보기" })
-  expect(views).toHaveClass("grid-cols-2")
+  expect(views).toHaveClass("justify-center")
+  expect(within(filters).queryByText("판정 보기")).not.toBeInTheDocument()
+  expect(within(filters).queryByText("표시")).not.toBeInTheDocument()
   await user.click(within(views).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
   expect(within(views).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" })).toHaveAttribute("aria-selected", "true")
 })
