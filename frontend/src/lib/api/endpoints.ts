@@ -31,8 +31,6 @@ export const openReplay = (values: { eventId: string; request: string; credentia
   postForm<ReplayResult>("/api/replay", values)
 export const runAuthorizationReplay = (itemId: string, armed: boolean) =>
   postForm<AuthorizationReplayResult>("/api/authorization-replay", { action: "run", itemId, armed: String(armed) })
-export const killAuthorizationReplay = () =>
-  postForm<ApiSuccess>("/api/authorization-replay", { action: "kill" })
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
