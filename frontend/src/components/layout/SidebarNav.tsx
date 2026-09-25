@@ -1,7 +1,7 @@
 import { ChevronDown, Moon, ScanSearch, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
 
-import { navigationGroups, routeHash, routeLabel, type AppRoute, type NavigationGroupId } from "@/app/routes"
+import { navigationGroups, primaryNavRoutes, routeHash, routeLabel, type AppRoute, type NavigationGroupId } from "@/app/routes"
 import { cn } from "@/lib/utils"
 import type { Theme } from "@/hooks/useTheme"
 
@@ -31,8 +31,8 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate }: SidebarN
   return (
     <div className="flex h-full min-h-0 flex-col">
       <a
-        href={routeHash("home")}
-        aria-label="FlowScope 홈으로 이동"
+        href={routeHash("dashboard")}
+        aria-label="FlowScope 대시보드로 이동"
         onClick={onNavigate}
         className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-4 font-semibold tracking-tight"
       >
@@ -43,7 +43,11 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate }: SidebarN
       </a>
 
       <nav aria-label="FlowScope 전역 탐색" className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        <NavLink route="dashboard" active={route === "dashboard"} onNavigate={onNavigate} />
+        <div className="grid gap-0.5">
+          {primaryNavRoutes.map((itemRoute) => (
+            <NavLink key={itemRoute} route={itemRoute} active={route === itemRoute} onNavigate={onNavigate} />
+          ))}
+        </div>
 
         {navigationGroups.map((group) => {
           const expanded = openGroups.includes(group.id)

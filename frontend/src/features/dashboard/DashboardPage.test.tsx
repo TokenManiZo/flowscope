@@ -142,11 +142,12 @@ describe("dashboard shell", () => {
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })
     expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
     expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
-    expect(screen.getByRole("link", { name: "FlowScope 홈으로 이동" })).toHaveAttribute("href", "#home")
+    expect(screen.getByRole("link", { name: "FlowScope 대시보드로 이동" })).toHaveAttribute("href", "#dashboard")
     const routes = [
-      ["대시보드", "dashboard", null], ["점검 시작", "inspection", "점검"], ["계정·세션", "accounts", "점검"],
-      ["권한 매트릭스", "matrix", "분석"], ["점검 Gap 그래프", "graph", "분석"], ["API·입력 차이", "surface", "분석"], ["취약점 시나리오", "scenarios", "분석"],
-      ["Evidence", "evidence", "기록"], ["실행 상태", "runs", "기록"],
+      ["점검 시작", "inspection", null], ["계정·세션", "accounts", null],
+      ["권한 매트릭스", "matrix", null], ["점검 Gap 그래프", "graph", null],
+      ["API·입력 차이", "surface", "부가 기능"], ["취약점 시나리오", "scenarios", "부가 기능"],
+      ["Evidence", "evidence", "부가 기능"], ["실행 상태", "runs", "부가 기능"],
     ] as const
 
     for (const [label, route, group] of routes) {
@@ -170,8 +171,7 @@ describe("dashboard shell", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "실행 상태" })).toBeVisible())
     window.history.pushState(null, "", "#dashboard")
     window.dispatchEvent(new PopStateEvent("popstate"))
-    await waitFor(() => expect(screen.getByRole("link", { name: "대시보드" })).toHaveAttribute("aria-current", "page"))
-    expect(screen.getByRole("heading", { name: "보안 점검 대시보드" })).toBeVisible()
+    await waitFor(() => expect(screen.getByRole("heading", { name: "보안 점검 대시보드" })).toBeVisible())
   }, 15_000)
 
   it("does not fabricate operational zero or connected states when HUMAN and scanner queries fail", async () => {
@@ -274,8 +274,7 @@ describe("dashboard shell", () => {
     expect(await screen.findByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
     await user.click(screen.getByRole("button", { name: "메뉴 열기" }))
     expect(screen.getAllByRole("navigation", { name: "FlowScope 전역 탐색" })).toHaveLength(2)
-    await user.click(screen.getAllByRole("button", { name: "점검" }).at(-1)!)
-    await user.click(screen.getByRole("link", { name: "점검 시작" }))
+    await user.click(screen.getAllByRole("link", { name: "점검 시작" }).at(-1)!)
     expect(window.location.hash).toBe("#inspection")
     await waitFor(() => expect(screen.getByRole("button", { name: "메뉴 열기" })).toBeVisible())
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()

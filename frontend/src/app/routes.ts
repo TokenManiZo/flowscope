@@ -22,7 +22,7 @@ export interface AppRouteDefinition {
   icon: LucideIcon
 }
 
-export type NavigationGroupId = "analysis" | "inspection" | "records"
+export type NavigationGroupId = "extras"
 
 export interface NavigationGroup {
   id: NavigationGroupId
@@ -46,11 +46,12 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 
-/** 사이드바 탐색 그룹. 순서는 점검 → 분석 → 기록. 흐름 순서(#sequence)는 주소로만 열리고 사이드바에는 표시하지 않는다. */
+/** 사이드바 최상위에 펼쳐 두는 자주 쓰는 화면. 대시보드는 FlowScope 로고로 진입하므로 여기 두지 않는다. */
+export const primaryNavRoutes = ["inspection", "accounts", "verification", "matrix", "graph"] as const satisfies readonly AppRoute[]
+
+/** 최상위에 두지 않는 부가 화면은 접이식 "부가 기능" 그룹으로 묶는다. 흐름 순서(#sequence)는 주소로만 열리고 표시하지 않는다. */
 export const navigationGroups = [
-  { id: "inspection", label: "점검", defaultRoute: "inspection", routes: ["inspection", "accounts", "verification"] },
-  { id: "analysis", label: "분석", defaultRoute: "matrix", routes: ["matrix", "graph", "surface", "scenarios"] },
-  { id: "records", label: "기록", defaultRoute: "evidence", routes: ["evidence", "runs"] },
+  { id: "extras", label: "부가 기능", defaultRoute: "surface", routes: ["surface", "scenarios", "evidence", "runs"] },
 ] as const satisfies readonly NavigationGroup[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))
