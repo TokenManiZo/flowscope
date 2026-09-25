@@ -24,6 +24,8 @@ const runAuthorizationReplay = vi.fn(async (itemId: string, armed: boolean) => (
   run: { runId: "authorization-replay-ui", armed, sent: 1, drafted: 0, skipped: 0, items: [{ operation: `${service} GET /api/orders/{id}`, targetIdentity: "b", basisIdentity: "a", basisEvidenceId: "ev-a", outcome: "SENT", reason: "CONTROLLED_RESPONSE_RECORDED" }] },
 }))
 
+const draftAuthorizationReplay = vi.fn(async (itemId: string) => ({ success: true, message: `draft ${itemId}` }))
+
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
   useSnapshotQuery: () => ({ data: current, isLoading: current === undefined, isError: queryError, error: new Error("snapshot unavailable"), isStale: false, dataUpdatedAt: 1000, refetch: refetchSnapshot }),
@@ -37,6 +39,7 @@ vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   saveResourcePolicy: (target: string, policy: string) => saveResourcePolicy(target, policy),
   saveRole: (identity: string, role: string) => saveRole(identity, role),
   runAuthorizationReplay: (itemId: string, armed: boolean) => runAuthorizationReplay(itemId, armed),
+  draftAuthorizationReplay: (itemId: string) => draftAuthorizationReplay(itemId),
 }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: () => null }))
 
@@ -75,7 +78,7 @@ function renderView(ui: ReactElement) {
   return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={result.client}>{next}</QueryClientProvider>) }
 }
 
-beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); })
+beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); draftAuthorizationReplay.mockClear(); })
 
 it("renders the compact server summary and matrix without row subtitles or P/E/O cell chips", async () => {
   renderView(<JudgmentMatrixView />)
@@ -157,12 +160,14 @@ it("opens the selected recommendation in Burp Repeater as an unsent draft withou
   expect(screen.queryByRole("checkbox", { name: "안전 자동 재전송 허용 (이번 1회)" })).not.toBeInTheDocument()
   const replay = screen.getByRole("region", { name: "Burp Repeater 전송" })
   await user.click(within(replay).getByRole("button", { name: "Burp Repeater로 전송" }))
-  await waitFor(() => expect(runAuthorizationReplay).toHaveBeenCalledWith("function-b", false))
+  // 추천 여부와 무관하게 초안만 여는 draft API를 쓰고, 자동 재전송(run)은 부르지 않는다.
+  await waitFor(() => expect(draftAuthorizationReplay).toHaveBeenCalledWith("function-b"))
+  expect(runAuthorizationReplay).not.toHaveBeenCalled()
   // HUMAN 탐색이 꺼진 안내와 전송 결과가 함께 보인다.
   expect(await within(replay).findAllByRole("status")).toHaveLength(2)
 })
 
-it("keeps the same sections on non-reviewable observed cells but locks review and Repeater", async () => {
+it("keeps the same sections on non-reviewable observed cells, locks review, and still allows a Repeater draft", async () => {
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
@@ -173,7 +178,8 @@ it("keeps the same sections on non-reviewable observed cells but locks review an
   expect(within(review).getByRole("button", { name: "판정 저장" })).toBeDisabled()
   expect(within(review).getByLabelText("검증 메모")).toBeDisabled()
   expect(review).toHaveTextContent("검토할 추천이 없는 셀입니다.")
-  expect(within(inspector).getByRole("button", { name: "Burp Repeater로 전송" })).toBeDisabled()
+  // 추천이 없는 셀도 대상 신원 자격의 Repeater 초안은 열 수 있다(D-169).
+  expect(within(inspector).getByRole("button", { name: "Burp Repeater로 전송" })).toBeEnabled()
   expect(within(inspector).queryByRole("region", { name: "대상 Evidence" })).not.toBeInTheDocument()
 })
 

@@ -41,7 +41,7 @@ it("shows icons only until hover, then overlays full labels without resizing the
   expect(rail.parentElement).toHaveClass("w-14")
   const graph = within(nav).getByRole("link", { name: "점검 Gap 그래프" })
   expect(within(graph).getByText("점검 Gap 그래프")).toHaveClass("sr-only")
-  // 현재 화면이 부가기능이면 접힌 막대에서도 링크와 현재 위치는 남기되 시각적으로만 숨긴다.
+  // 현재 화면이 부가 기능이면 접힌 막대에서도 링크와 현재 위치는 남기되 시각적으로만 숨긴다.
   expect(within(nav).getByRole("link", { name: "API·입력 차이" }).parentElement).toHaveClass("sr-only")
 
   await user.hover(rail)
@@ -69,14 +69,14 @@ it("expands for keyboard focus and collapses when focus leaves", async () => {
   expect(rail).toHaveAttribute("data-expanded", "false")
 })
 
-it("keeps core screens as direct links and groups the rest under 부가기능", async () => {
+it("keeps core screens as direct links and groups the rest under 부가 기능", async () => {
   const user = userEvent.setup()
   render(<ReferenceAppShell route="inspection"><p>content</p></ReferenceAppShell>)
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
 
   expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#verification", "#matrix"])
   expect(within(nav).queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
-  const extras = within(nav).getByRole("button", { name: "부가기능" })
+  const extras = within(nav).getByRole("button", { name: "부가 기능" })
   expect(extras).toHaveAttribute("aria-expanded", "false")
   await user.click(extras)
   expect(extras).toHaveAttribute("aria-expanded", "true")

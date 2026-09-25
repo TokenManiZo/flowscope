@@ -113,6 +113,20 @@ UNVERIFIED ── 명시적 로그인 성공/신원 확인 ──▶ ACTIVE
 
 따라서 이번 변경은 **오귀속을 막는 P0 안전 수정**이고, 완전한 다중 계정 세션 오케스트레이션은 계정별 브라우저 격리와 대상별 신원 검증 oracle을 추가해야 완성된다.
 
+## D-168: ZAP 로그인 판정을 `authSuccessful` 단독이 아니라 관측 Evidence로
+
+**문제.** crAPI 같은 SPA/JWT 앱에서 ZAP Browser Based Authentication은 격리 브라우저로 실제 로그인에 성공하고 JWT 세션(HeaderBasedSessionManagement)까지 감지하지만, `authenticateAsUser`의 `authSuccessful`이 `false`로 돌아오는 경우가 있다. 기존 `ZapBrowserAuthenticator`는 이 boolean 하나를 hard-gate로 써서, 인증값을 수확하기도 전에 세션 승격을 거부했다.
+
+**결정.** `authSuccessful`을 최종 판정자에서 **하나의 신호로 강등**한다. 판정 권위는 관측 Evidence + 서버 Evidence gate(`SessionBroker.captureObservedExchange`)가 갖는다. 로그인 성공 기준은:
+
+- 운영자가 로그인 성공 표식(logged-in indicator)을 설정했으면 → 그 표식 일치만 성공(운영자 의도 존중).
+- 표식이 없으면 → **성공(2xx·비거부) 응답에서 재사용 인증값(`Authorization`/`Cookie`)이 관측**되었거나, ZAP이 성공을 확인(`authSuccessful=true`)한 경우만 성공.
+- 2xx 응답 단독(재사용 인증값도, ZAP 확인도 없음)은 **소프트 실패로 보고 여전히 거부**한다(D-015 보존). 실패한 로그인이 200 로그인 페이지+쿠키를 반환해도 오탐하지 않는다.
+
+수확 대상 Evidence는 인증값을 실은 레코드를 우선 선택하고, 최종적으로 `captureObservedExchange`가 재사용 인증값 유무·비실패 응답·계정 지문 충돌을 재검증한 뒤에만 `OPERATOR_ASSERTED`로 승격한다. `authSuccessful=false`에서도 잘못된 익명/타 신원 세션이 승격되지 않도록 fail-closed는 유지된다.
+
+**근거.** 이 판정 철학은 "규칙엔진과 서버 Evidence gate가 권위"라는 원칙, 그리고 아래 자료들이 **세션 획득·신원 확인·요청 교체·결과 oracle**을 분리해 다루는 방식과 일치한다. ZAP의 자기신고 boolean은 세션 획득 단계의 보조 신호이지 신원 확인의 최종 근거가 아니다.
+
 ## 공식 자료와 관련 연구
 
 ### 구현·운영 자료

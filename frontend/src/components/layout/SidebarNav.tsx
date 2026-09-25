@@ -14,7 +14,7 @@ interface SidebarNavProps {
   collapsed?: boolean
 }
 
-/** 왼쪽 사이드바 탐색. 핵심 화면은 독립 링크로, 나머지는 '부가기능' 드롭다운으로 묶으며 현재 화면의 그룹은 항상 펼쳐 둔다. */
+/** 왼쪽 사이드바 탐색. 핵심 화면은 독립 링크로, 나머지는 '부가 기능' 드롭다운으로 묶으며 현재 화면의 그룹은 항상 펼쳐 둔다. */
 export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed = false }: SidebarNavProps) {
   const activeGroupId = navigationGroups.find((group) => (group.routes as readonly AppRoute[]).includes(route))?.id
   const [openGroups, setOpenGroups] = useState<readonly NavigationGroupId[]>(() =>

@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ReviewStatus } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
-import { useAuthorizationReplayMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useAuthorizationReplayDraftMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -88,7 +88,7 @@ function HumanRunGuidance({ disabled }: { disabled: boolean }) {
 
 function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: JudgmentItem; requiredRole: string | undefined; identity: { kind: string; role: string } | undefined; disabled: boolean }) {
   const review = useReviewMutation()
-  const replay = useAuthorizationReplayMutation()
+  const replay = useAuthorizationReplayDraftMutation()
   const [confirmed, setConfirmed] = useState(item.reviewStatus === "CONFIRMED")
   const [note, setNote] = useState(item.reviewNote)
   const [message, setMessage] = useState<string | null>(null)
@@ -97,8 +97,7 @@ function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: Judg
   useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED"); setNote(item.reviewNote) }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
   const recommendation = item.recommendation
-  // 서버는 추천 조합이 있는 셀만 재전송한다. 자동 전송 없이 Burp Repeater 초안만 연다(armed=false).
-  const canReplay = recommendation != null || judgmentTone(item.status) === "gap"
+  // 추천 여부와 무관하게 모든 셀을 대상 신원 자격의 Burp Repeater 초안으로 연다(D-169, 자동 전송 없음).
   // 사람 판정은 추천·공백·수동 검토 셀에서만 저장된다. 다른 셀은 같은 자리에 두되 입력을 잠근다.
   const reviewable = isReviewable(item) || judgmentTone(item.status) === "gap"
   const submit = async (status: ReviewStatus) => {
@@ -113,8 +112,8 @@ function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: Judg
   const openRepeater = async () => {
     setReplayMessage(null)
     try {
-      const result = await replay.mutateAsync({ itemId: item.id, armed: false })
-      setReplayMessage(result.run.drafted > 0 ? `Repeater에 초안 ${result.run.drafted}건을 열었습니다. 아직 보내지 않았습니다.` : result.message)
+      const result = await replay.mutateAsync(item.id)
+      setReplayMessage(result.message || "Repeater에 초안을 열었습니다. 아직 보내지 않았습니다.")
     } catch (error) {
       setReplayMessage(error instanceof Error ? error.message : "Repeater로 보내지 못했습니다.")
     }
@@ -125,9 +124,8 @@ function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: Judg
     <section aria-label="Burp Repeater 전송" className="grid gap-2 rounded-md border border-border/70 p-3">
       <h3 className="text-sm font-semibold">Burp Repeater 전송</h3>
       {recommendation && <p className="text-xs">{recommendation.basisIdentityLabel} → {recommendation.testIdentityLabel}{recommendation.stateChanging ? " · 상태 변경 요청, 직접 확인 후 전송" : ""}</p>}
-      <Button type="button" size="sm" className="w-fit" disabled={disabled || !canReplay || replay.isPending} onClick={() => void openRepeater()}>Burp Repeater로 전송</Button>
-      {!canReplay && <p className="text-xs text-muted-foreground">이 셀에는 재전송할 추천 조합이 없습니다.</p>}
-      {canReplay && <HumanRunGuidance disabled={disabled} />}
+      <Button type="button" size="sm" className="w-fit" disabled={disabled || replay.isPending} onClick={() => void openRepeater()}>Burp Repeater로 전송</Button>
+      <HumanRunGuidance disabled={disabled} />
       {replayMessage && <p role="status" className="text-xs">{replayMessage}</p>}
     </section>
     <section aria-label="사람 최종 판정" className="grid gap-2 rounded-md border border-border/70 p-3">

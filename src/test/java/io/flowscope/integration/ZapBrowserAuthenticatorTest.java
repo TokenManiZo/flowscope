@@ -87,7 +87,8 @@ final class ZapBrowserAuthenticatorTest {
     }
 
     @Test
-    void rejectsObservedEvidenceWhenZapDoesNotConfirmAuthentication() throws Exception {
+    void acceptsExplicitLoggedInIndicatorEvenWhenZapDoesNotSelfConfirm() throws Exception {
+        // D-168: authSuccessful이 없어도(=false) 운영자가 지정한 로그인 성공 표식이 일치하면 성공으로 본다.
         HttpServer server = authenticationApi(new ArrayList<>(), "{\"Result\":\"OK\"}");
         server.start();
         try {
@@ -97,10 +98,35 @@ final class ZapBrowserAuthenticatorTest {
                     zap, new ObjectMapper(), value -> true,
                     () -> List.of(authenticationEvidence("Signed in")));
 
-            IllegalStateException error = assertThrows(IllegalStateException.class, () ->
-                    vault.withSecret("zap-a", secret -> authenticator.authenticate(
-                            "run-1", "https://app.example.test/", 0, "3", "ctx", secret)));
-            assertTrue(error.getMessage().contains("로그인 실패"), error.getMessage());
+            ZapBrowserAuthenticator.Identity identity = vault.withSecret("zap-a", secret ->
+                    authenticator.authenticate("run-1", "https://app.example.test/", 0, "3", "ctx", secret));
+            assertEquals("7", identity.userId());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void promotesWhenReusableBearerIsObservedEvenWithoutZapConfirmation() throws Exception {
+        // D-168: ZAP이 성공을 확신 못해도(authSuccessful=false) 성공 응답에서 재사용 인증값(Bearer)이
+        // 관측되면 로그인 성공으로 판정하고 그 Evidence를 세션 승격 후보로 지정한다(crAPI SPA/JWT 케이스).
+        HttpServer server = authenticationApi(new ArrayList<>(), "{\"authSuccessful\":\"false\"}");
+        server.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
+            ZapAccountVault vault = new ZapAccountVault();
+            vault.save(new ZapAccountVault.Input("zap-a", "A", "USER", "https://app.example.test",
+                    "https://app.example.test/login", "alice", "password-secret", "", ""));
+            RequestRecord authenticated = authenticationEvidence("{\"credit\":100}");
+            authenticated.reqText = "GET /dashboard HTTP/1.1\r\nHost: app.example.test\r\n"
+                    + "Authorization: Bearer eyJhbGciOiJSUzI1NiJ9.payload.sig\r\n\r\n";
+            ZapBrowserAuthenticator authenticator = new ZapBrowserAuthenticator(
+                    zap, new ObjectMapper(), value -> true, () -> List.of(authenticated));
+
+            ZapBrowserAuthenticator.Identity identity = vault.withSecret("zap-a", secret ->
+                    authenticator.authenticate("run-1", "https://app.example.test/", 0, "3", "ctx", secret));
+            assertEquals("7", identity.userId());
+            assertEquals(authenticated.runtimeId(), identity.verifiedEvidenceRuntimeId());
         } finally {
             server.stop(0);
         }
