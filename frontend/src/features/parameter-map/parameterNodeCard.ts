@@ -57,7 +57,7 @@ export function conditionNodeCard(gap: SurfaceParameterGap, parameter: SurfacePa
   const identity = gap.identity ?? "UNKNOWN", role = gap.role ?? "UNKNOWN"
   const observations = gap.identity ? parameter?.profile?.identityCounts[gap.identity] ?? 0 : 0
   return {
-    kind: "condition", badge: "IDENTITY", title: identity, detail: role, footer: `${observations} observations`, icon: "user",
+    kind: "condition", badge: "IDENTITY", title: identity, detail: role, footer: "", icon: "user",
     accessibleLabel: `Condition identity ${identity}; role ${role}; ${observations} observations`,
   }
 }
@@ -70,8 +70,7 @@ export function operationNodeCard(key: ParameterMapKey, statuses: readonly numbe
   }
   const result = statuses.length ? `HTTP ${[...counts].sort(([left], [right]) => (left || 600) - (right || 600)).map(([status, count]) => `${status || "UNKNOWN"} × ${count}`).join(" · ")}` : "HTTP UNKNOWN · no observations"
   return {
-    kind: "operation", badge: key.method, title: stripOrigin(key.pathTemplate) || key.pathTemplate, detail: result, footer: `${statuses.length} Evidence`, icon: "none",
-
+    kind: "operation", badge: key.method, title: stripOrigin(key.pathTemplate) || key.pathTemplate, detail: "", footer: "", icon: "none",
     accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; ${statuses.length} Evidence`,
   }
 }
@@ -83,7 +82,7 @@ export function inputNodeCard(key: ParameterMapKey, gap: SurfaceParameterGap, pa
   const title = stripOrigin(parameter?.fieldPath || key.canonicalPath) || key.canonicalPath
 
   return {
-    kind: "input", badge, title, detail: gapType, footer: `${shape} · ${valueType}`, icon: "none",
+    kind: "input", badge, title, detail: gapType, footer: "", icon: "none",
     accessibleLabel: `Input ${badge} ${key.canonicalPath}; ${gapType}; ${shape} · ${valueType}`,
   }
 }
@@ -91,7 +90,7 @@ export function inputNodeCard(key: ParameterMapKey, gap: SurfaceParameterGap, pa
 export function targetNodeCard(resource: string | null, confidence: string, owner: string | null, service = ""): ParameterNodeCardView {
   const title = resource ? resourceLabel(resource, service) : "UNKNOWN", targetOwner = owner ?? "UNKNOWN"
   return {
-    kind: "target", badge: "RESOURCE", title, detail: confidence, footer: `owner: ${targetOwner}`, icon: "box",
+    kind: "target", badge: "RESOURCE", title, detail: `owner: ${targetOwner}`, footer: "", icon: "box",
     accessibleLabel: `Authorization target ${resource ?? "UNKNOWN"}; ${confidence}; owner: ${targetOwner}`,
   }
 }
@@ -150,9 +149,8 @@ const badgeColors: Record<string, readonly [string, string]> = {
 /** Bounded inline display image only; full text remains in DOM tooltips and fallback labels. */
 export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact = false): { uri: string; width: number; height: number } {
   const width = compact ? 196 : SVG_WIDTH
-  // 아이콘 모드(sources)이거나 상세 글자가 없으면 상세 줄을 빼고 그 높이만큼 카드를 줄인다.
-  const detailRow = card.sources || !card.detail ? 0 : compact ? 22 : 25
-  const height = (compact ? card.footer ? 86 : 66 : SVG_HEIGHT - 25) + detailRow
+  // 관계 그래프(compact)는 상세 글자가 없으면 그 줄만큼 낮춘다. 점검 우선순위 카드는 줄 구성과 무관하게 높이를 통일한다.
+  const height = compact ? (card.footer ? 86 : 66) + (card.detail ? 22 : 0) : card.footer ? SVG_HEIGHT : SVG_HEIGHT - 25
   const titleX = card.icon === "none" ? 14 : 42
   const sources = cardSourceOrder.filter(source => card.sources?.includes(source))
   const badge = visualLine(card.badge, width - 46 - sources.length * 22, 12)
@@ -167,6 +165,6 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
   const title = escapeXml(visualLine(card.title, width - titleX - 14, 14, true))
   const detail = escapeXml(visualLine(card.detail, width - 28, 12))
   const footer = escapeXml(visualLine(card.footer, width - 28, 12, true))
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text>${card.sources || !card.detail ? "" : `<text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text>`}${card.footer ? `<text x="14" y="${height - 14}" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text>` : ""}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="#111418" stroke="#64748b"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${icon}${relationshipIcon}<text x="${titleX}" y="53" fill="#f8fafc" font-family="sans-serif" font-size="14">${title}</text>${!card.detail ? "" : `<text x="14" y="78" fill="#cbd5e1" font-family="sans-serif" font-size="12">${detail}</text>`}${card.footer ? `<text x="14" y="${height - 14}" fill="#94a3b8" font-family="sans-serif" font-size="12">${footer}</text>` : ""}</svg>`
   return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width, height }
 }

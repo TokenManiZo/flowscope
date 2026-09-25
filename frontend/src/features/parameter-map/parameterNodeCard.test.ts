@@ -120,10 +120,11 @@ describe("source icons beside the badge", () => {
     expect(renderParameterNodeCardSvg(card).height).toBe(99)
   })
 
-  it("keeps the detail row for cards with detail text and no sources", () => {
-    const plain = { ...card, sources: undefined, detail: "role USER" }
-    expect(renderParameterNodeCardSvg(plain, true).height).toBe(88)
-    expect(renderParameterNodeCardSvg(plain).height).toBe(124)
-    expect(svg(plain)).toContain("role USER")
+  it("draws the detail row when present, grows compact cards by it, and keeps Gap graph cards one size", () => {
+    const withDetail = { ...card, detail: "owner: USER B" }
+    expect(renderParameterNodeCardSvg(withDetail, true).height).toBe(88)
+    expect(renderParameterNodeCardSvg(withDetail).height).toBe(99)
+    expect(renderParameterNodeCardSvg({ ...withDetail, footer: "legacy footer" }).height).toBe(124)
+    expect(svg(withDetail)).toContain("owner: USER B")
   })
 })

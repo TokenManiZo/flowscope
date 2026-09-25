@@ -56,8 +56,8 @@ it("uses approved card images and textual node semantics", () => {
   render(<ParameterGapGraph projection={projection()} onSelect={vi.fn()} />)
   const selected = core.nodes('[focused = "yes"]')
   expect(selected.every(node => String(node.data("cardImage")).startsWith("data:image/svg+xml"))).toBe(true)
-  // API·권한 대상 카드는 주체 아이콘을 배지 옆에 두고 상세 줄을 빼므로 25px 낮다.
-  expect(selected.every(node => node.data("width") === 224 && node.data("height") === (node.data("lane") === "operation" || node.data("lane") === "target" ? 99 : 124))).toBe(true)
+  // 점검 우선순위 카드는 줄 구성과 무관하게 한 가지 크기다.
+  expect(selected.every(node => node.data("width") === 224 && node.data("height") === 99)).toBe(true)
   expect(selected.filter('[lane = "condition"]').first().data("accessibleLabel")).toContain("USER A")
   expect(selected.filter('[lane = "operation"]').first().data("accessibleLabel")).toContain("PATCH")
   expect(selected.filter('[lane = "input"]').first().data("accessibleLabel")).toContain("JSON")

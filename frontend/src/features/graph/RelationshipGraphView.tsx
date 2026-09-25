@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { AlignVerticalSpaceAround, Bot, CircleHelp, Crosshair, Expand, Filter, LockKeyhole, Maximize2, Minus, Plus, RotateCcw, ScanLine, UserRound } from "lucide-react"
+import { AlignVerticalSpaceAround, Bot, Crosshair, Expand, Filter, LockKeyhole, Maximize2, Minus, Plus, RotateCcw, ScanLine, UserRound } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -9,6 +9,7 @@ import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { Source, Verdict } from "@/lib/api/types"
 import { stripOrigin } from "@/lib/display/operationLabel"
 import { useSnapshotQuery } from "@/lib/query/hooks"
+import { SourceIcon } from "@/features/evidence/SourceIcon"
 
 import { CytoscapeGraph } from "./CytoscapeGraph"
 import { GRAPH_MAX_ZOOM, LANE_SPACING, laneAnchor, type LaneBounds } from "./graphLanes"
@@ -22,13 +23,6 @@ import { operationParts } from "./relationshipNodeCard"
 const allSources: readonly Source[] = ["human", "scanner", "llm", "unknown"]
 const reviewStates: readonly Verdict[] = ["allow", "deny", "suspicious", "undecided", "untested"]
 const sourceNames: Record<Source, string> = { human: "HUMAN", scanner: "SCANNER", llm: "LLM", unknown: "UNKNOWN" }
-/** 엣지는 한 가지 선으로 통일하고 주체는 노드 카드와 같은 아이콘으로 구분한다. */
-const sourceIcons: Record<Source, { Icon: typeof UserRound; className: string }> = {
-  human: { Icon: UserRound, className: "text-blue-400" },
-  scanner: { Icon: ScanLine, className: "text-red-400" },
-  llm: { Icon: Bot, className: "text-zinc-300" },
-  unknown: { Icon: CircleHelp, className: "text-zinc-500" },
-}
 const supportTrafficClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
 const defaultPreferences: GraphPreferences = { version: 7, positions: {}, viewport: null, locked: false, inputMode: "auto" }
 const initialNavigation: GraphNavigation = { level: "site", groupId: "", operation: "", operationLimit: GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE, focusCandidateKey: "" }
@@ -218,9 +212,4 @@ export function RelationshipGraphView({ viewSwitcher }: { viewSwitcher?: ReactNo
       })}</div><CytoscapeGraph projection={graph} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={preferences} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 text-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><ScanLine aria-hidden="true" className="size-3.5 text-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><Bot aria-hidden="true" className="size-3.5 text-zinc-300" />LLM</span></div></div>)}
     </ReferenceAnalysisWorkspace>
   </section>
-}
-
-function SourceIcon({ source }: { source: Source }) {
-  const { Icon, className } = sourceIcons[source]
-  return <Icon aria-hidden="true" className={`size-3.5 shrink-0 ${className}`} />
 }
