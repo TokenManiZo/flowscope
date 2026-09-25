@@ -43,7 +43,8 @@ describe("relationship graph node cards", () => {
     const card = relationshipNodeCard(api, projection([api]))
 
     expect(card.badge).toBe("DELETE")
-    expect(card.title).toBe(`/api/${"long/".repeat(60)}orders/{id}`)
+    // 그룹(long) 구간까지 생략한다. 전체 좌표는 접근 이름에 남는다.
+    expect(card.title).toBe(`/${"long/".repeat(59)}orders/{id}`)
     expect(card.accessibleLabel).toContain(`${service} DELETE /api/`)
     expect(card.accessibleLabel).toContain("orders/{id}")
   })

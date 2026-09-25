@@ -1,4 +1,5 @@
 import type { ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
+import { pathAfterGroup } from "@/lib/display/pathLines"
 import type { GraphNode, GraphProjection, GraphRouteCandidate } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 
@@ -61,7 +62,8 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   return {
-    kind: "operation", badge: operation.method, title: operation.path, detail: "", footer: "", icon: "none",
+    // API 카드는 API 그룹 안에서만 보이므로 그룹 구간까지는 생략한다(breadcrumb에 그룹 이름이 있다). 전체 경로는 접근 이름에 남는다.
+    kind: "operation", badge: operation.method, title: pathAfterGroup(operation.path), detail: "", footer: "", icon: "none",
     accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}`,
   }
 }

@@ -57,7 +57,7 @@ it("uses approved card images and textual node semantics", () => {
   const selected = core.nodes('[focused = "yes"]')
   expect(selected.every(node => String(node.data("cardImage")).startsWith("data:image/svg+xml"))).toBe(true)
   // 점검 우선순위 카드는 줄 구성과 무관하게 한 가지 크기다.
-  expect(selected.every(node => node.data("width") === 224 && node.data("height") === 99)).toBe(true)
+  expect(selected.every(node => node.data("width") === 224 && node.data("height") === 108)).toBe(true)
   expect(selected.filter('[lane = "condition"]').first().data("accessibleLabel")).toContain("USER A")
   expect(selected.filter('[lane = "operation"]').first().data("accessibleLabel")).toContain("PATCH")
   expect(selected.filter('[lane = "input"]').first().data("accessibleLabel")).toContain("JSON")

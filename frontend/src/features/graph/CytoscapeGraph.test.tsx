@@ -173,7 +173,7 @@ it("renders approved card images with source icons instead of edge text, and kee
   expect(remove).toHaveBeenCalledTimes(1)
   expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ id: "edge", label: "", line: "solid", color: "#94a3b8" }) })]))
   expect(core.add).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({
-    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW; 접근 주체 HUMAN", width: 196, height: 66, confirmed: "no",
+    id: "operation:GET /orders", cardImage: expect.stringMatching(/^data:image\/svg\+xml,/), accessibleLabel: "GET /orders; Operation; verdict ALLOW; 접근 주체 HUMAN", width: 232, height: 85, confirmed: "no",
   }) })]))
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={1} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   expect(core.fit).toHaveBeenCalledTimes(1)
