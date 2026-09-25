@@ -22,14 +22,14 @@ function mount(kind: "evidence" | "graph") {
   const view = render(tree(event, snapshot))
   return { ...view, client, change: (selected: EventRecord | null, current = snapshot) => view.rerender(tree(selected, current)) }
 }
-async function openEvidence(kind: string) { if (kind === "graph") await userEvent.click(screen.getByRole("tab", { name: "Evidence" })) }
+// 그래프 선택 상세는 Evidence 목록의 "원문 보기"로 Request Lab을 연다. 정책 편집은 Evidence 상세에만 남아 있다.
+const labButton = (kind: string) => kind === "graph" ? "원문 보기" : "Request Lab 열기"
 
-it.each(["evidence", "graph"] as const)("isolates %s policy values, submit targets and late mutation errors across two selections", async kind => {
+it.each(["evidence"] as const)("isolates %s policy values, submit targets and late mutation errors across two selections", async kind => {
   let finish!: (response: Response) => void
   const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => String(input) === "/api/requirement" ? new Promise<Response>(resolve => { finish = resolve }) : Promise.resolve(json({ success: true })))
   vi.stubGlobal("fetch", fetch)
   const view = mount(kind)
-  await openEvidence(kind)
   await userEvent.clear(screen.getByLabelText("필수 역할"))
   await userEvent.type(screen.getByLabelText("필수 역할"), "OLD-ROLE")
   await userEvent.clear(screen.getByLabelText("리소스 소유자"))
@@ -63,7 +63,7 @@ it("does not invalidate the new policy editor when an old-context save succeeds 
   expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
 })
 
-it.each(["evidence", "graph"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same Evidence in another dataset", async kind => {
+it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same Evidence in another dataset", async kind => {
   let finish!: (response: Response) => void
   const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => String(input) === "/api/requirement"
     ? new Promise<Response>(resolve => { finish = resolve })
@@ -71,7 +71,6 @@ it.each(["evidence", "graph"] as const)("preserves %s policy edits on ordinary r
   vi.stubGlobal("fetch", fetch)
   const view = mount(kind)
   const invalidate = vi.spyOn(view.client, "invalidateQueries")
-  await openEvidence(kind)
   await userEvent.clear(screen.getByLabelText("필수 역할"))
   await userEvent.type(screen.getByLabelText("필수 역할"), "OLD-ROLE")
   await userEvent.clear(screen.getByLabelText("리소스 소유자"))
@@ -119,8 +118,7 @@ it.each(["coordinate", "replacement"] as const)("scrubs a surviving Evidence ID 
 it.each(["evidence", "graph"] as const)("preserves %s Request Lab edits/history on traffic revisions but closes on invalidation", async kind => {
   vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => Promise.resolve(json(init?.method === "POST" ? { response: "sent response", status: 200, durationMs: 1 } : draft))))
   const view = mount(kind)
-  await openEvidence(kind)
-  await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))
+  await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
   await userEvent.clear(await screen.findByLabelText("Request Lab 요청 원문"))
   await userEvent.type(screen.getByLabelText("Request Lab 요청 원문"), "edited request")
   await userEvent.click(screen.getByRole("button", { name: "Request Lab 전송" }))
@@ -131,7 +129,7 @@ it.each(["evidence", "graph"] as const)("preserves %s Request Lab edits/history 
   view.change(null, { ...snapshot, revision: 3, events: [] })
   expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument()
   view.change(event)
-  await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))
+  await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
   expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(draft.request)
   expect(screen.queryByText("현재 탭 전송 결과 1건 (최대 10건)")).not.toBeInTheDocument()
 })

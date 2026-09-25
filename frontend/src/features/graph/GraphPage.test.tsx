@@ -85,9 +85,6 @@ it("refreshes every server-authored field of a stable selected route candidate",
   for (const value of ["관측됨", "INCLUDE", "OBSERVED", "new-evidence", "scanner", "new-run", "new-adapter", "new-reason", "new-priority"]) expect(inspector).toHaveTextContent(value)
   expect(inspector).not.toHaveTextContent("old-")
   expect(screen.getByRole("button", { name: /경로 후보 https:\/\/api.example.test GET.*관측됨.*INCLUDE/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("old-evidence")
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("new-evidence")
 })
 
 it("reconciles retained aggregate coordinates and Evidence IDs after two current cells shrink to one", async () => {
@@ -100,15 +97,10 @@ it("reconciles retained aggregate coordinates and Evidence IDs after two current
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   await userEvent.click(screen.getByRole("button", { name: "USER A" }))
-  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("복수 셀")
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...fixture, revision: 2, cells: [survivor] }
   rerender(<GraphPage />)
-  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("DENY")
-  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("surviving server reason")
   expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("orders:202")
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("ev-survivor")
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).not.toHaveTextContent("ev-old")
+  expect(screen.getByRole("complementary", { name: "선택 작업" })).not.toHaveTextContent("orders:101")
 }, 15_000)
 
 it("opens exact Gap details directly without the removed duplicate source path list", async () => {
@@ -120,7 +112,7 @@ it("opens exact Gap details directly without the removed duplicate source path l
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   await userEvent.click(within(screen.getByLabelText("GAP")).getByRole("button", { name: /USER B[\s\S]*orders:202/ }))
   const inspector = screen.getByRole("dialog", { name: "선택 상세" })
-  expect(inspector).toHaveTextContent("gap-202")
+  expect(inspector).toHaveTextContent("USER B · orders:202")
   expect(screen.queryByLabelText("Source Evidence 경로")).not.toBeInTheDocument()
   await userEvent.click(within(inspector).getByRole("button", { name: "Close" }))
   await userEvent.click(screen.getByRole("button", { name: "USER A" }))
@@ -157,8 +149,7 @@ it("navigates Site→Group→API→Object and back without leaking objects into 
   expect(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" })).toBeVisible()
   expect(breadcrumb).not.toHaveTextContent("https://api.example.test")
   await userEvent.click(screen.getByRole("button", { name: /^orders:101/ }))
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  expect(screen.getByRole("tabpanel", { name: "Evidence" })).toBeVisible()
+  expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/Evidence|연결된 Evidence가 없습니다/)).toBeVisible()
   expect(screen.queryByText("cell-evidence-not-an-event")).not.toBeInTheDocument()
   await userEvent.click(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" }))
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")

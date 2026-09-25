@@ -24,7 +24,7 @@ interface Props {
   rawState?: MemoryOnlyRawState
 }
 
-function activeAccounts(sessions: readonly ManagedSession[], service: string) {
+export function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
   for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
   return [...unique.values()]

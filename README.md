@@ -216,7 +216,7 @@ beta.47에서 수정한 ZAP 종료·재시작 경합 처리는 beta.48 이후(�
 - **시나리오 감사·오버라이드** — Evidence-bound 상태와 마스킹 note를 갖는 사람 감사면. 자동 LLM 판정이 아님
 - **Evidence** — 마스킹된 source, identity, method, 정규화 operation, resource, status, traffic class/disposition, repeat count, stable Evidence ID. 행을 선택하면 같은 operation의 마스킹 Request/Response와 payload 보존 상태를 200건씩 페이지로 확인합니다. live 원문은 사용자가 Request Lab을 열 때 해당 Evidence 하나만 메모리로 가져옵니다.
 - **계정·세션** — 등록 계정 카드의 **수정 패널** 하나에서 기본 정보·HUMAN·ZAP·LLM 설정을 탭으로 관리합니다. HUMAN 탭은 같은 exact-origin에서 현재 프로세스 메모리에 남은 인증 요청 후보만 안전한 메타데이터로 보여 주고 선택한 교환을 `SessionBroker`에 연결하며, 로그인 성공 path+응답 표식을 같은 계정의 검증 규칙으로 저장합니다. ZAP·LLM 탭은 동일한 `accountId`를 각 메모리 vault의 키로 사용합니다. 로그인 ID·비밀번호·Cookie·Authorization은 화면 API·snapshot·프로젝트에 반환하거나 저장하지 않고 존재 여부만 표시합니다. `로그인 필요/확인 중/사용 가능/다시 로그인 필요` 행동 안내, 재인증, 메모리 폐기, 계정 삭제도 이 경계 안에서 수행합니다.
-- **오른쪽 상세·요청 비교** — 선택 API의 source별 verdict, 필요할 때만 가져오는 마스킹 Request/Response, 전체 화면 요청 실험실과 Burp Repeater 초안을 제공합니다. Gap의 요청 비교는 사용자가 연 시점에만 `/api/evidence`에서 민감 경로·값을 제외한 구조 metadata와 비민감 값 SHA-256을 가져와 presence/shape/type/value 변화를 비교합니다. digest는 값 동일성 신호일 뿐 서버 사용·인가·취약점 증거가 아니며 main polling snapshot·프로젝트에는 들어가지 않습니다.
+- **오른쪽 선택 상세** — 점검 우선순위의 Gap 상세와 전체 관계 보기의 선택 상세는 선택 좌표에 연결된 실제 Evidence 목록만 보여 줍니다. 행마다 `원문 보기`(필요할 때만 가져오는 마스킹 Request/Response, Request Lab)와 `현재 세션으로 Repeater`(관측 신원의 재사용 가능한 ACTIVE 세션으로 Burp Repeater 초안을 엶, 자동 전송 없음)를 둡니다. 현재 세션이 없으면 Repeater를 열지 않고 원문 보기에서 계정을 고르도록 안내합니다. 원문은 요청하는 동안만 메모리에서 다루며 쿼리 캐시·snapshot·프로젝트에는 넣지 않습니다. 서버의 `/api/evidence` 구조 metadata API는 유지하지만 Web 요청 비교 탭은 제거했습니다.
 
 ## 판정 규칙과 신뢰 경계
 
