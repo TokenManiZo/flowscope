@@ -38,11 +38,15 @@ function installTransport() {
   const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
     if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json({ eventId: "event-7", service: "https://api.example.test", request: secret, response: "observed-response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", message: "draft" }))
     if (String(input) === "/api/request-lab" && init?.method === "POST") return Promise.resolve(json({ success: true, message: "sent", eventId: "event-7", status: 200, response: "sent-response", durationMs: 12, requestBytes: 4, responseBytes: 13 }))
+    if (String(input) === "/api/manual-attempts") return Promise.resolve(json(attempts))
     return Promise.resolve(json({ success: true, message: "draft opened", openedDraft: true, status: 200, replayId: "r-1" }))
   })
   vi.stubGlobal("fetch", fetch)
   return fetch
 }
+
+let attempts: unknown[] = []
+afterEach(() => { attempts = [] })
 
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear() })
 
@@ -100,7 +104,7 @@ describe("RequestLabDialog", () => {
     const fetch = installTransport()
     const user = userEvent.setup()
     const openRequestLab = vi.fn()
-    const snapshot: Snapshot = { ...snapshotFixture, events: [event], owners: { "order:7": "alice" }, requiredRoles: { [event.op]: "user" } }
+    const snapshot: Snapshot = { ...snapshotFixture, events: [event], accounts: [{ id: "bob", label: "Bob", role: "USER", target: "POST", color: "", authArtifactCount: 0 }], owners: { "order:7": "alice" }, requiredRoles: { [event.op]: "user" } }
     renderWithQueryClient(<OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={openRequestLab} />)
 
     await user.clear(screen.getByLabelText("필수 역할"))
@@ -108,8 +112,7 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
     await user.selectOptions(screen.getByLabelText("트래픽 재정의"), "EXCLUDE")
     await user.click(screen.getByRole("button", { name: "트래픽 정책 저장" }))
-    await user.clear(screen.getByLabelText("리소스 소유자"))
-    await user.type(screen.getByLabelText("리소스 소유자"), "bob")
+    await user.selectOptions(screen.getByLabelText("리소스 소유자"), "bob")
     await user.click(screen.getByRole("button", { name: "소유자 저장" }))
     await user.click(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" }))
 
@@ -147,7 +150,11 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
     const call = fetch.mock.calls.find(([input]) => String(input) === "/api/request-lab")
-    expect(new URLSearchParams(String(call?.[1]?.body))).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ORIGINAL", accountId: "", request: secret }))
+    const sent = new URLSearchParams(String(call?.[1]?.body))
+    // 서버는 operationId가 없으면 400으로 거부한다. 누를 때마다 새 값이다.
+    expect(sent.get("operationId")).toMatch(/^[A-Za-z0-9_-]{16,120}$/)
+    sent.delete("operationId")
+    expect(sent).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ORIGINAL", accountId: "", request: secret }))
     await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ANONYMOUS")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
@@ -155,7 +162,10 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     const sends = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")
     expect(new URLSearchParams(String(sends[1]?.[1]?.body)).get("credentialMode")).toBe("ANONYMOUS")
-    expect(new URLSearchParams(String(sends[2]?.[1]?.body))).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ACCOUNT", accountId: "acct-1", request: secret }))
+    const accountSend = new URLSearchParams(String(sends[2]?.[1]?.body))
+    expect(accountSend.get("operationId")).not.toBe(new URLSearchParams(String(sends[1]?.[1]?.body)).get("operationId"))
+    accountSend.delete("operationId")
+    expect(accountSend).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ACCOUNT", accountId: "acct-1", request: secret }))
   })
 
   it("keeps a non-editable standalone draft read-only and blocks send in both the button and handler", async () => {
@@ -340,7 +350,7 @@ describe("RequestLabDialog", () => {
     const owner = createMemoryOnlyRawState()
     const fetch = installTransport()
     const user = userEvent.setup()
-    const view = render(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={7} rawState={owner} />)
+    const view = renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={7} rawState={owner} />)
     const request = await screen.findByLabelText("Request Lab 요청 원문")
     await user.clear(request)
     await user.type(request, "EDITED-WHILE-CAPTURING")
@@ -548,5 +558,49 @@ describe("RequestLabDialog", () => {
     expect(within(dialog).getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
     fireEvent.click(screen.getByText("resume snapshot"))
     expect(within(dialog).getByRole("button", { name: "Request Lab 전송" })).toBeEnabled()
+  })
+
+  it("lists stored verification results and unanswered attempts sent from this Evidence only", async () => {
+    attempts = [
+      { sequence: 1, originEvidenceId: "event-7", outcome: "TIMEOUT", status: 0, evidenceId: null, durationMillis: 30000 },
+      { sequence: 2, originEvidenceId: "event-other", outcome: "NO_RESPONSE", status: 0, evidenceId: null, durationMillis: 5 },
+      { sequence: 3, originEvidenceId: "event-7", outcome: "HTTP_RESPONSE", status: 200, evidenceId: "ev-result", durationMillis: 12 },
+    ]
+    installTransport()
+    const verifications = [
+      { eventId: "ev-result", originEvidenceId: "event-7", operation: event.op, resource: "order:7", identity: "관리자", identityId: "acct-1", timestamp: 2, status: 200, durationMs: 12 },
+      { eventId: "ev-foreign", originEvidenceId: "event-other", operation: event.op, resource: null, identity: "bob", identityId: "bob", timestamp: 3, status: 403, durationMs: 9 },
+    ]
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} verifications={verifications} />)
+
+    const history = await screen.findByRole("region", { name: "검증 이력" })
+    await waitFor(() => expect(history).toHaveTextContent("시간 초과"))
+    expect(history).toHaveTextContent("HTTP 200")
+    expect(history).toHaveTextContent("ev-result")
+    expect(history).not.toHaveTextContent("ev-foreign")
+    expect(history).not.toHaveTextContent("응답 없음")
+    expect(within(history).getAllByRole("listitem")).toHaveLength(2)
+  })
+
+  it("locks the credential choice while a send is pending and refreshes the history afterwards", async () => {
+    const send = deferredResponse()
+    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
+      if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json(requestLabDraft()))
+      if (String(input) === "/api/request-lab" && init?.method === "POST") return send.promise
+      if (String(input) === "/api/manual-attempts") return Promise.resolve(json([]))
+      return Promise.resolve(json({ success: true, message: "ok" }))
+    })
+    vi.stubGlobal("fetch", fetch)
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await screen.findByLabelText("Request Lab 요청 원문")
+    await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
+
+    expect(screen.getByLabelText("자격 증명 모드")).toBeDisabled()
+    const before = fetch.mock.calls.filter(([input]) => String(input) === "/api/manual-attempts").length
+    await act(async () => { send.resolve(json({ success: true, message: "sent", eventId: "ev-new", status: 200, response: "ok", durationMs: 3, requestBytes: 1, responseBytes: 2 })) })
+
+    await waitFor(() => expect(screen.getByLabelText("자격 증명 모드")).toBeEnabled())
+    await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/manual-attempts").length).toBeGreaterThan(before))
   })
 })

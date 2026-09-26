@@ -6,6 +6,7 @@ import type {
   EvidencePage,
   HumanRun,
   ImportXmlResult,
+  ManualAttempt,
   ReplayResult,
   AuthorizationReplayResult,
   RequestLabDraft,
@@ -37,7 +38,9 @@ export const draftAuthorizationReplay = (itemId: string) =>
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
-  postForm<RequestLabResult>("/api/request-lab", { action: "send", ...values }, undefined, signal)
+  // 서버는 operationId로 같은 전송의 중복 실행을 막는다. 누르기마다 새 값을 쓴다.
+  postForm<RequestLabResult>("/api/request-lab", { action: "send", operationId: crypto.randomUUID(), ...values }, undefined, signal)
+export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly ManualAttempt[]>("/api/manual-attempts", formSignal(signal))
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
 const confirmedDatasetReplacement = async <T>(request: Promise<T>): Promise<T> => {

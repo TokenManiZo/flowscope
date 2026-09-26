@@ -483,6 +483,10 @@ export interface Snapshot {
   flowLinks: readonly FlowLink[]
   roles: Readonly<Record<string, string>>
   owners: Readonly<Record<string, string>>
+  /** 사용자가 직접 지정한 소유자. 자동 추정보다 우선한다. */
+  ownerOverrides?: Readonly<Record<string, string>>
+  /** Request Lab로 보낸 HUMAN 검증 응답. 탐색 관측과 분리돼 원본 Evidence에 연결된다. */
+  manualVerifications?: readonly ManualVerification[]
   requiredRoles: Readonly<Record<string, string>>
   activeSources: readonly Source[]
   cells: readonly Cell[]
@@ -631,6 +635,28 @@ export interface RequestLabDraft {
   reusableSession: string
   reusableAccountId?: string
   message: string
+}
+
+export interface ManualVerification {
+  eventId: string
+  originEvidenceId: string
+  operation: string
+  resource: string | null
+  identity: string
+  identityId: string
+  timestamp: number
+  status: number
+  durationMs: number
+}
+
+/** Request Lab 전송 시도 기록. 응답을 받지 못한 시도도 남는다. */
+export interface ManualAttempt {
+  sequence: number
+  originEvidenceId: string
+  outcome: string
+  status: number
+  evidenceId: string | null
+  durationMillis: number
 }
 
 export interface RequestLabResult extends ApiSuccess {

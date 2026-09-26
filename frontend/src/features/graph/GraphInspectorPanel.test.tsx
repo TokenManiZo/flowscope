@@ -47,7 +47,9 @@ it("opens the raw request in Request Lab without sending anything", async () => 
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />)
   await userEvent.click(screen.getByRole("button", { name: "원문 보기" }))
   expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
-  expect(fetch.mock.calls.map(([input]) => String(input))).toEqual(["/api/request-lab?eventId=ev-1"])
+  // 초안과 검증 이력 조회(GET)만 있고 전송(POST)은 없다.
+  expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-1")
+  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([])
 })
 
 it("opens the observed identity's current session in Repeater without keeping raw text in the query cache", async () => {

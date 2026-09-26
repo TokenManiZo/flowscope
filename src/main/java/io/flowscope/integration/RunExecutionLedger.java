@@ -27,6 +27,7 @@ public final class RunExecutionLedger {
         SCOPE_BLOCKED,
         APPROVAL_DENIED,
         INVALID_REQUEST,
+        RECORDING_FAILURE,
         OTHER_FAILURE
     }
 
@@ -34,7 +35,14 @@ public final class RunExecutionLedger {
 
     public record Attempt(long sequence, Source source, String runId, String accountId,
                           String method, String service, String path, Outcome outcome,
-                          int status, String evidenceId, Instant attemptedAt, long durationMillis) {
+                          int status, String evidenceId, Instant attemptedAt, long durationMillis,
+                          String originEvidenceId) {
+        public Attempt(long sequence, Source source, String runId, String accountId, String method,
+                       String service, String path, Outcome outcome, int status, String evidenceId,
+                       Instant attemptedAt, long durationMillis) {
+            this(sequence, source, runId, accountId, method, service, path, outcome, status, evidenceId,
+                    attemptedAt, durationMillis, null);
+        }
         public Attempt {
             if (sequence < 1) throw new IllegalArgumentException("attempt sequence must be positive");
             if (source == null || source == Source.UNKNOWN) {
@@ -53,6 +61,7 @@ public final class RunExecutionLedger {
             if (outcome == null) throw new IllegalArgumentException("attempt outcome is required");
             if (status < 0 || status > 999) throw new IllegalArgumentException("invalid HTTP status");
             evidenceId = bounded(evidenceId, "evidence id", 256, false);
+            originEvidenceId = bounded(originEvidenceId, "origin evidence id", 256, false);
             if (outcome == Outcome.HTTP_RESPONSE && (status < 100 || evidenceId == null)) {
                 throw new IllegalArgumentException("HTTP response attempt needs status and Evidence ID");
             }
@@ -88,10 +97,16 @@ public final class RunExecutionLedger {
     public synchronized Attempt record(Source source, String runId, String accountId, String method,
                                        String target, Outcome outcome, int status, String evidenceId,
                                        Instant attemptedAt, long durationMillis) {
+        return record(source, runId, accountId, method, target, outcome, status, evidenceId, attemptedAt, durationMillis, null);
+    }
+
+    public synchronized Attempt record(Source source, String runId, String accountId, String method,
+                                       String target, Outcome outcome, int status, String evidenceId,
+                                       Instant attemptedAt, long durationMillis, String originEvidenceId) {
         TargetParts targetParts = targetParts(target);
         Attempt attempt = new Attempt(nextSequence++, source, runId, accountId, method,
                 targetParts.service(), targetParts.path(), outcome, status, evidenceId,
-                attemptedAt == null ? Instant.now() : attemptedAt, durationMillis);
+                attemptedAt == null ? Instant.now() : attemptedAt, durationMillis, originEvidenceId);
         attempts.addLast(attempt);
         while (attempts.size() > limit) attempts.removeFirst();
         return attempt;

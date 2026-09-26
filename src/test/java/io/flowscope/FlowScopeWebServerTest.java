@@ -830,6 +830,49 @@ final class FlowScopeWebServerTest {
         assertTrue(dismissed);
         assertEquals(1, reviewed.path("summary").path("humanDismissed").asInt());
         assertEquals(400, post("/api/review", "itemId=object-unknown&status=CONFIRMED&note=x", token).statusCode());
+        assertEquals(400, post("/api/review", "itemId=" + encode(cellId)
+                + "&status=CONFIRMED&validationEvidenceIds=" + encode(state.record.evidenceId), token).statusCode(),
+                "ordinary discovery Evidence cannot be attached as a manual response");
+        assertEquals(io.flowscope.core.ReviewDecision.Status.DISMISSED, state.config.reviews().get(cellId).status());
+        String ownFunction = null;
+        for (JsonNode cell : matrix.path("functions")) if (cell.path("identity").asText().equals(accountId)) {
+            ownFunction = cell.path("id").asText(); break;
+        }
+        assertNotNull(ownFunction);
+        RequestRecord manual = new RequestRecord(Source.HUMAN, state.record.service, state.record.method,
+                state.record.path, 200, state.record.fp);
+        manual.phase = io.flowscope.core.RunPhase.VALIDATION;
+        manual.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
+        manual.originEvidenceId = state.record.evidenceId;
+        manual.body = state.record.body;
+        manual.hasResponse = true;
+        manual.timestamp = 2;
+        state.records.add(manual);
+        state.rebuild();
+        assertEquals(200, post("/api/review", "itemId=" + encode(ownFunction)
+                + "&status=CONFIRMED&validationEvidenceIds=" + encode(manual.evidenceId), token).statusCode());
+        assertEquals(List.of(manual.evidenceId), state.config.reviews().get(ownFunction).validationEvidenceIds());
+        assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=USER", token).statusCode());
+        assertEquals(io.flowscope.core.ReviewDecision.Status.UNRESOLVED,
+                state.config.reviewStatus(ownFunction, state.config.reviews().get(ownFunction).evidenceIds()));
+        assertEquals(io.flowscope.core.ReviewDecision.Status.CONFIRMED, state.config.reviews().get(ownFunction).status());
+    }
+
+    @Test
+    void restrictsOwnersToSameServiceIdentities() throws Exception {
+        start();
+        RequestRecord record = state.snapshot().records.getFirst();
+        state.config.upsertAccount(new AccountProfile("same", "Same", record.service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("foreign", "Foreign", "https://foreign.test", AccessRole.USER));
+        String body = "resource=" + encode(record.resource) + "&identity=";
+        for (String invalid : List.of("public", "other", "foreign", "unknown-owner")) {
+            assertEquals(400, post("/api/owner", body + invalid, token).statusCode());
+        }
+        assertEquals(200, post("/api/owner", body + "same", token).statusCode(), "owner need not have an active login session");
+        assertEquals("same", state.config.resourceOwners().get(record.resource));
+        assertEquals(200, post("/api/owner", body, token).statusCode());
+        assertFalse(state.config.resourceOwners().containsKey(record.resource));
+        assertTrue(json(get("/api/manual-attempts", token, origin())).isArray());
     }
 
     @Test

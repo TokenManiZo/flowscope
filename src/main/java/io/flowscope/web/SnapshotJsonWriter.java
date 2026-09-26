@@ -121,7 +121,29 @@ public final class SnapshotJsonWriter {
         root.set("flowLinks", flowLinks(result.coverageRecords));
         root.set("roles", roles(result, config));
         root.set("owners", owners(result));
+        root.set("ownerOverrides", json.valueToTree(config.resourceOwners()));
+        ArrayNode manual = root.putArray("manualVerifications");
+        for (RequestRecord record : result.records) {
+            if (record.source == Source.HUMAN && record.phase == io.flowscope.core.RunPhase.VALIDATION
+                    && record.originEvidenceId != null) {
+                ObjectNode value = manual.addObject();
+                value.put("eventId", record.evidenceId);
+                value.put("originEvidenceId", record.originEvidenceId);
+                value.put("operation", record.op);
+                value.put("resource", record.resource);
+                value.put("identity", config.identityLabel(record.idn));
+                value.put("identityId", record.idn);
+                value.put("timestamp", record.timestamp);
+                value.put("status", record.status);
+                value.put("durationMs", record.durationMillis);
+            }
+        }
         root.set("requiredRoles", requiredRoles(config));
+        ObjectNode reviewValidation = json.createObjectNode();
+        config.reviews().forEach((id, decision) -> {
+            if (!decision.validationEvidenceIds().isEmpty()) reviewValidation.set(id, json.valueToTree(decision.validationEvidenceIds()));
+        });
+        if (!reviewValidation.isEmpty()) root.set("reviewValidationEvidence", reviewValidation);
         root.set("activeSources", json.valueToTree(result.analysis.activeSources().stream()
                 .map(SnapshotJsonWriter::wire).sorted().toList()));
         root.set("cells", cells(result.analysis.cells()));

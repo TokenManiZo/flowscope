@@ -136,6 +136,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default List<RouteCandidate> routeCandidates() { return List.of(); }
         default List<RunExecutionLedger.Summary> executionSummaries() { return List.of(); }
+        default List<RunExecutionLedger.Attempt> manualAttempts() { return List.of(); }
         default long droppedRecords() { return 0; }
         default com.fasterxml.jackson.databind.JsonNode startScanner(String target, List<String> accountIds,
                                                                      boolean includeAnonymous) {
@@ -260,6 +261,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return switch (path) {
             case "/api/snapshot" -> snapshot(request);
             case "/api/evidence" -> evidence(request, target);
+            case "/api/manual-attempts" -> request.method().equals("GET")
+                    ? response(200, "application/json; charset=utf-8", json.writeValueAsBytes(state.manualAttempts()))
+                    : method("GET");
             case "/api/cluster-evidence" -> clusterEvidence(request, target);
             case "/api/replay" -> replay(request);
             case "/api/request-lab" -> requestLab(request, target);
@@ -820,10 +824,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
         try {
             String itemId = required(form, "itemId");
             List<String> evidenceIds = evidenceForReview(itemId);
+            List<String> validationIds = reviewValidation(itemId, evidenceIds, form.getOrDefault("validationEvidenceIds", ""));
             ReviewDecision.Status status;
             try { status = ReviewDecision.Status.valueOf(required(form, "status").toUpperCase(Locale.ROOT)); }
             catch (IllegalArgumentException error) { throw new IllegalArgumentException("지원하지 않는 최종 판정입니다."); }
             state.config().reviewItem(itemId, status, form.getOrDefault("note", ""), evidenceIds);
+            bindReviewPolicy(itemId, evidenceIds);
+            state.config().attachReviewValidation(itemId, validationIds);
             state.rebuild();
             return success("Evidence에 묶인 사람 감사·오버라이드 기록을 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
@@ -843,6 +850,40 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         matrix.functions().stream().filter(cell -> cell.id().equals(itemId)).map(AuthorizationMatrix.FunctionCell::reviewEvidenceIds),
                         matrix.objects().stream().filter(cell -> cell.id().equals(itemId)).map(AuthorizationMatrix.ObjectCell::reviewEvidenceIds))
                 .findFirst();
+    }
+
+    private void bindReviewPolicy(String itemId, List<String> evidenceIds) {
+        state.snapshot().records.stream().filter(record -> evidenceIds.contains(record.evidenceId))
+                .forEach(record -> state.config().bindReviewPolicy(itemId, record.idn, record.op, record.resource));
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
+        matrix.functions().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell ->
+                state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), null));
+        matrix.objects().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell ->
+                state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), cell.resource()));
+    }
+
+    /** Attach only explicitly selected, stored manual responses for this exact matrix target. */
+    private List<String> reviewValidation(String itemId, List<String> basisIds, String requested) {
+        if (requested.isBlank()) return List.of();
+        List<String> ids = requested.lines().filter(id -> !id.isBlank()).distinct().toList();
+        if (ids.size() > 20) throw new IllegalArgumentException("검증 Evidence는 최대 20건까지 연결할 수 있습니다.");
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
+        for (String id : ids) {
+            RequestRecord record = state.snapshot().records.stream().filter(value -> id.equals(value.evidenceId))
+                    .findFirst().orElseThrow(() -> new IllegalArgumentException("저장된 검증 Evidence가 아닙니다."));
+            boolean target = matrix.functions().stream().anyMatch(cell -> cell.id().equals(itemId)
+                    && cell.identity().equals(record.idn) && cell.operation().equals(record.op))
+                    || matrix.objects().stream().anyMatch(cell -> cell.id().equals(itemId)
+                    && cell.identity().equals(record.idn) && cell.operation().equals(record.op)
+                    && cell.resource().equals(record.resource));
+            if (!target || record.source != io.flowscope.core.Source.HUMAN
+                    || record.phase != io.flowscope.core.RunPhase.VALIDATION
+                    || record.executionTrust != io.flowscope.core.ExecutionTrust.CONTROLLED
+                    || !record.hasResponse || !basisIds.contains(record.originEvidenceId)) {
+                throw new IllegalArgumentException("선택 판정 대상·기준 요청에 연결된 수동 검증 결과만 첨부할 수 있습니다.");
+            }
+        }
+        return ids;
     }
 
     private LoopbackHttpServer.Response identityMerge(LoopbackHttpServer.Request request) throws IOException {
@@ -1363,7 +1404,19 @@ public final class FlowScopeWebServer implements AutoCloseable {
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
-            state.config().withResourceOwner(required(form, "resource"), form.getOrDefault("identity", ""));
+            String resource = required(form, "resource");
+            String identity = form.getOrDefault("identity", "").trim();
+            if (!identity.isEmpty()) {
+                RequestRecord target = state.snapshot().records.stream().filter(record -> resource.equals(record.resource)
+                                || record.resourceReferences.stream().anyMatch(reference -> resource.equals(reference.resource())))
+                        .findFirst().orElseThrow(() -> new IllegalArgumentException("관측된 리소스를 선택하세요."));
+                boolean sameService = state.config().account(identity).map(account -> account.service().equals(target.service))
+                        .orElseGet(() -> state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
+                                && target.service.equals(record.service) && record.authState != io.flowscope.core.AuthState.UNRESOLVED
+                                && record.authState != io.flowscope.core.AuthState.ANONYMOUS));
+                if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정·신원을 선택하세요.");
+            }
+            state.config().withResourceOwner(resource, identity);
             state.rebuild();
             return success("소유자를 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }

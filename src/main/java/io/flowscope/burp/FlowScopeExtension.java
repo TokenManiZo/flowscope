@@ -1751,6 +1751,9 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public List<io.flowscope.integration.RunExecutionLedger.Summary> executionSummaries() {
                 return executionLedger.summaries();
             }
+            @Override public List<RunExecutionLedger.Attempt> manualAttempts() {
+                return executionLedger.attempts().stream().filter(attempt -> attempt.originEvidenceId() != null).toList();
+            }
             @Override public long droppedRecords() { return droppedRecords.get(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
                                                                                    List<String> accountIds,
@@ -2349,48 +2352,84 @@ public final class FlowScopeExtension implements BurpExtension {
             String evidenceId, String requestText, FlowScopeWebServer.CredentialMode credentialMode,
             String accountId) {
         RequestRecord seed = evidenceRecord(evidenceId);
-        HttpRequest request = prepareHumanRequest(seed, requestText, credentialMode, accountId);
-
-        var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
-                .withUpstreamTLSVerification().withResponseTimeout(30_000);
-        burp.api.montoya.http.message.HttpRequestResponse exchange;
+        String runId = "human-request-lab-" + java.util.UUID.randomUUID();
+        // 전송은 분석 워커 밖에서 기다린다. 대신 응답을 기록하는 순간 프로젝트가 그대로인지 확인한다.
+        long epoch = datasetEpoch.get();
         long started = System.nanoTime();
-        controlledRequest.set(true);
-        try { exchange = api.http().sendRequest(request, options); }
-        finally { controlledRequest.remove(); }
-        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-        if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
-            throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
-        }
+        boolean sent = false;
+        boolean received = false;
+        boolean noResponse = false;
+        HttpRequest request = null;
+        try {
+            synchronized (records) {
+                if (shuttingDown.get() || records.size() >= MAX_RECORDS) {
+                    throw new IllegalStateException("전송 전 차단: 종료 중이거나 Evidence 저장 상한에 도달했습니다.");
+                }
+            }
+            request = prepareHumanRequest(seed, requestText, credentialMode, accountId);
 
-        var response = exchange.response();
-        int responseBytes = response.toByteArray().length();
-        String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
-                ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
-                response.headerValue("Content-Type")).text() : null;
-        RequestRecord record = recordFrom(exchange.request(), response,
-                new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP),
-                System.currentTimeMillis(), false, "human-request-lab-" + System.currentTimeMillis(), null);
-        record.phase = RunPhase.VALIDATION;
-        record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
-        record.orchestrator = Orchestrator.HUMAN;
-        record.tool = ToolKind.BURP;
-        if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT && !"anon".equals(record.fp)) {
-            analysisConfig.bindSession(record.service, record.fp, accountId);
-            List<String> setCookies = response.headers().stream()
-                    .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
-                    .map(HttpHeader::value).toList();
-            sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
-                    response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
-                    java.time.Instant.now());
+            var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
+                    .withUpstreamTLSVerification().withResponseTimeout(30_000);
+            burp.api.montoya.http.message.HttpRequestResponse exchange;
+            controlledRequest.set(true);
+            try { sent = true; exchange = api.http().sendRequest(request, options); }
+            finally { controlledRequest.remove(); }
+            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
+                noResponse = true;
+                throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
+            }
+
+            var response = exchange.response();
+            received = true;
+            int responseBytes = response.toByteArray().length();
+            String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
+                    ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
+                    response.headerValue("Content-Type")).text() : null;
+            RequestRecord record = recordFrom(exchange.request(), response,
+                    new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP),
+                    System.currentTimeMillis(), false, runId, null);
+            record.originEvidenceId = evidenceId;
+            record.durationMillis = durationMs;
+            record.phase = RunPhase.VALIDATION;
+            record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
+            record.orchestrator = Orchestrator.HUMAN;
+            record.tool = ToolKind.BURP;
+            appendRequestLabRecord(record, epoch, () -> retainRawExchange(record, exchange.request(), response));
+            if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT && !"anon".equals(record.fp)) {
+                analysisConfig.bindSession(record.service, record.fp, accountId);
+                List<String> setCookies = response.headers().stream()
+                        .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
+                        .map(HttpHeader::value).toList();
+                sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
+                        response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
+                        java.time.Instant.now());
+            }
+            RequestRecord published = analyzedRecord(record);
+            executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
+                    RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
+                    java.time.Instant.now(), durationMs, evidenceId);
+            revision.incrementAndGet();
+            scheduleDatabaseSave();
+            int requestBytes = exchange.request().toByteArray().length();
+            String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
+                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+            return new FlowScopeWebServer.RequestLabResult(published.evidenceId, published.status, displayResponse,
+                    durationMs, requestBytes, responseBytes);
+        } catch (RuntimeException error) {
+            if (error instanceof DatasetReplacedException) throw error;
+            RunExecutionLedger.Outcome outcome = received ? RunExecutionLedger.Outcome.RECORDING_FAILURE
+                    : !sent ? RunExecutionLedger.Outcome.INVALID_REQUEST
+                    : noResponse ? RunExecutionLedger.Outcome.NO_RESPONSE : executionOutcome(error);
+            executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request == null ? seed.method : request.method(),
+                    request == null ? seed.service + seed.path : request.url(), outcome, 0, null,
+                    java.time.Instant.now(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), evidenceId);
+            revision.incrementAndGet();
+            scheduleDatabaseSave();
+            throw new IllegalStateException(received ? "응답 수신 · Evidence 기록 실패. 결과를 확인한 후 재전송을 판단하세요."
+                    : sent ? "응답 미확인 · " + outcome + ". 대상 처리 여부는 확인되지 않았습니다."
+                    : "전송 전 차단 · " + Masking.maskSecrets(error.getMessage()), error);
         }
-        appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
-        rebuildImmediately();
-        int requestBytes = exchange.request().toByteArray().length();
-        String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
-                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
-        return new FlowScopeWebServer.RequestLabResult(record.evidenceId, record.status, displayResponse,
-                durationMs, requestBytes, responseBytes);
     }
 
     /** Backend-only Stage 6a seam. UI arming and recommendation selection are intentionally deferred to Stage 6c. */
@@ -2799,6 +2838,24 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /** Request Lab/Explorer처럼 응답을 기다리는 통제 요청이 unload 뒤 Evidence를 되살리지 않게 한다. */
+    static final class DatasetReplacedException extends IllegalStateException {
+        DatasetReplacedException() { super("전송 중 프로젝트가 바뀌어 응답을 기록하지 않았습니다."); }
+    }
+
+    /** Request Lab 응답을 현재 프로젝트에 추가한다. 전송 중 프로젝트가 바뀌었으면 새 프로젝트에 섞지 않는다. */
+    void appendRequestLabRecord(RequestRecord record, long expectedEpoch, Runnable retainExchange) {
+        synchronized (records) {
+            if (datasetEpoch.get() != expectedEpoch) throw new DatasetReplacedException();
+            appendControlledToolRecord(record, retainExchange);
+        }
+    }
+
+    /** 방금 추가한 레코드의 분석본. 다른 재분석이 먼저 게시돼도 Evidence ID는 내용 해시라 다음 게시와 같다. */
+    RequestRecord analyzedRecord(RequestRecord record) {
+        return rebuildImmediately().records.stream().filter(value -> value.runtimeId() == record.runtimeId())
+                .findFirst().orElseThrow(() -> new IllegalStateException("검증 Evidence를 분석 결과에서 찾지 못했습니다."));
+    }
+
     void appendControlledToolRecord(RequestRecord record, Runnable retainExchange) {
         synchronized (records) {
             if (shuttingDown.get()) {
@@ -2861,12 +2918,13 @@ public final class FlowScopeExtension implements BurpExtension {
         return bodyOffset >= 0 && bodyOffset <= message.length() ? message.substring(bodyOffset) : null;
     }
 
-    private void rebuildImmediately() {
+    private Pipeline.Result rebuildImmediately() {
         long analysisEpoch = analysisPublication.invalidate();
         List<RequestRecord> snapshot;
         synchronized (records) { snapshot = new ArrayList<>(records); }
         Pipeline.Result result = Pipeline.runIsolated(snapshot, analysisConfig);
         publishAnalysis(analysisEpoch, result);
+        return result;
     }
 
     private boolean publishAnalysis(long analysisEpoch, Pipeline.Result result) {
