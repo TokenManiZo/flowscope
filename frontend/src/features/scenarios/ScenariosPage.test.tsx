@@ -72,6 +72,18 @@ it("opens exact candidate Evidence and clears selection when revision changes", 
   expect(screen.getByRole("complementary", { name: "선택 상세" })).not.toHaveTextContent("candidate-event")
 })
 
+it("keeps the open Evidence when new traffic only bumps the revision", async () => {
+  const view = renderPage()
+  await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
+  await userEvent.click(screen.getByRole("button", { name: "Evidence 열기" }))
+  currentSnapshot = snapshot(2)
+  view.refresh()
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  currentSnapshot = { ...snapshot(3), datasetRevision: 9 }
+  view.refresh()
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).not.toHaveTextContent("candidate-event")
+})
+
 it("saves capped human review independently of removed LLM execution", async () => {
   renderPage()
   await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))

@@ -19,7 +19,13 @@ export function ScenariosPage() {
     setSelection(null)
     setInspectorOpen(false)
     setHistoryLimit(30)
-  }, [snapshot.data?.revision])
+  }, [snapshot.data?.datasetRevision])
+  // 트래픽이 들어와 revision만 바뀌면 선택을 유지하고, 선택한 시나리오가 사라졌을 때만 닫는다.
+  useEffect(() => {
+    if (!snapshot.isError && selectedId && !scenarios.some(item => item.id === selectedId)) {
+      setSelectedId(null); setSelection(null); setInspectorOpen(false)
+    }
+  }, [selectedId, scenarios, snapshot.isError])
 
   function evidenceAction(ids: readonly string[], eventId: string) {
     if (snapshot.isError || !snapshot.data?.events.some((event) => event.eventId === eventId)) return null
