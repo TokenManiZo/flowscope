@@ -19,7 +19,7 @@ export function ParameterPriorityQueue({ gaps, selectedGapId, onSelect }: Parame
 
   return <>
     <ol aria-label="점검 우선순위 큐" className="space-y-1">{visibleGaps.map(gap => <li key={gap.id}>
-      <Button variant="ghost" data-gap-id={gap.id} aria-pressed={selectedGapId === gap.id} className={`h-auto w-full justify-start whitespace-normal border-l-2 px-3 py-3 text-left text-sm ${selectedGapId === gap.id ? "border-emerald-400 bg-emerald-400/10" : "border-transparent"}`} onClick={() => onSelect(gap.id)}>
+      <Button variant="ghost" data-gap-id={gap.id} aria-pressed={selectedGapId === gap.id} className={`h-auto w-full justify-start whitespace-normal border px-3 py-3 text-left text-sm ${selectedGapId === gap.id ? "border-border bg-muted" : "border-transparent"}`} onClick={() => onSelect(gap.id)}>
         <span className="min-w-0 [overflow-wrap:anywhere]"><span className="flex flex-wrap items-center gap-1.5"><span className={methodChipClass}>{gap.endpoint.method}</span>{" "}<span className="font-semibold">{stripOrigin(gap.endpoint.pathTemplate) || gap.endpoint.pathTemplate}</span></span><span className="mt-1 block font-mono text-xs">{locationLabel(gap.location)} {stripOrigin(gap.canonicalPath) || gap.canonicalPath}</span><span className="mt-1 block text-muted-foreground">{gap.source ?? "UNKNOWN"} · {gap.identity ?? "UNKNOWN"}</span></span>
       </Button>
     </li>)}</ol>

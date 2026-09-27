@@ -71,7 +71,7 @@ function constrain(core: Core, width: number) {
 
 function GapPathList({ projection, onSelect }: Props) {
   return <ol aria-label="Gap 경로 목록" className="space-y-4 p-4">
-    {projection.visibleGapIds.map(gapId => <li key={gapId} className="min-w-0 border-l-2 border-[var(--flowscope-divider)] pl-3">
+    {projection.visibleGapIds.map(gapId => <li key={gapId} className="min-w-0">
       <section aria-label={`Gap 경로 ${gapId}`}>
       <ol className="space-y-2">{projection.nodes.filter(node => node.selection.gapId === gapId).map(node => <li key={node.id}>
         <Button variant="ghost" data-gap-id={gapId} aria-label={node.card.accessibleLabel} aria-pressed={node.focused} className="h-auto w-full justify-start whitespace-normal px-2 py-2 text-left text-sm" onClick={() => onSelect(node.selection)}>
