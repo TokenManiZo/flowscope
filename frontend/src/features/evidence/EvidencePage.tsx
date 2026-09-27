@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { importXml } from "@/lib/api/endpoints"
 import type { EventRecord, PayloadRetentionMetadata } from "@/lib/api/types"
 import { queryKeys, useEvidenceQuery, useSnapshotQuery } from "@/lib/query/hooks"
-import { evidenceFullLabel, evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
+import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { EvidenceFilters } from "./EvidenceFilters"
 import { ImportXmlDialog } from "./ImportXmlDialog"
 import { boundedText, defaultEvidenceFilters, hiddenEvidenceCount, visibleEvidence } from "./evidenceSelectors"
@@ -91,7 +91,7 @@ export function EvidencePage() {
         {evidence.isError && <p role="alert">{evidence.error.message}</p>}
         {page && page.records.length === 0 && <p>이 페이지에 Evidence가 없습니다.</p>}
         {page?.records.map((record) => <details key={`${datasetRevision}:${page.offset}:${record.eventId}`} open={record.eventId === selectedEvent.eventId} className="min-w-0 rounded border p-3">
-          <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(evidenceFullLabel(snapshot.data?.evidenceOrdinals, record.eventId), 160)}</summary>
+          <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, record.eventId), 160)}</summary>
           <div className="mt-3 grid min-w-0 gap-2">
             <p className="text-xs">{record.trafficClass} · {record.trafficDisposition}</p>
             <p className="break-words text-xs">{record.classificationReasons.join(" · ")}</p>

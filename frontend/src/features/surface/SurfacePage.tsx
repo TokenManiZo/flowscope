@@ -8,7 +8,7 @@ import { RunGapHint, runGapCount } from "@/components/RunGapHint"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { evidenceFullLabel } from "@/lib/display/operationLabel"
+import { evidenceOrdinalLabel } from "@/lib/display/operationLabel"
 import { OperationDetail } from "@/features/evidence/OperationDetail"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import type { SurfaceDeltaState, SurfaceEndpoint, SurfaceParameter, SurfaceSource } from "@/lib/api/types"
@@ -177,7 +177,7 @@ export function SurfacePage() {
     <section className="grid gap-4 p-4">
       <div><h2 className="font-semibold">선택 항목</h2><p className="break-all font-mono text-sm">{selected.key.method} {selected.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{selected.key.service}</p></div>
       <div className="grid gap-1 text-sm"><p>종류 · {endpointKinds(selected)}</p><p>비교 상태 · {deltaLabels[selected.deltaState]}</p><p>실제 요청 source · {sourceLabel(selected.observedSources)}</p><p>실제 응답 status · {statusLabel(selected)}</p><p>응답 Evidence · {selected.observations.length}건</p><p>산출물 근거 · {selected.declarations.length}건</p></div>
-      {selected.declarations.length > 0 && <div><h3 className="mb-2 text-sm font-semibold">산출물 provenance</h3>{selected.declarations.map((item, index) => <p className="break-all text-xs text-muted-foreground" key={item.evidenceId + ":" + index}>{item.type} · {item.adapter} · {item.reason} · {evidenceFullLabel(snapshot.data?.evidenceOrdinals, item.evidenceId)}</p>)}</div>}
+      {selected.declarations.length > 0 && <div><h3 className="mb-2 text-sm font-semibold">산출물 provenance</h3>{selected.declarations.map((item, index) => <p className="break-all text-xs text-muted-foreground" key={item.evidenceId + ":" + index}>{item.type} · {item.adapter} · {item.reason} · {evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, item.evidenceId)}</p>)}</div>}
       {selected.observations.length > 0 && <div className="grid gap-2"><h3 className="text-sm font-semibold">실제 응답 Evidence</h3>{selected.observations.map((observation) => {
         const event = snapshot.data?.events.find((candidate) => candidate.eventId === observation.evidenceId)
         const source = observation.source === "HUMAN" ? "H" : observation.source === "SCANNER" ? "S" : observation.source === "LLM" ? "L" : "?"
@@ -185,7 +185,7 @@ export function SurfacePage() {
       })}</div>}
       {selectedEvent && <section className="border-t pt-4" aria-label="선택 Evidence 작업"><OperationDetail event={selectedEvent} snapshot={snapshot.data!} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={snapshot.isError} /></section>}
       <div><h3 className="mb-2 text-sm font-semibold">입력 필드</h3><div className="grid gap-2">{selected.parameters.map((parameter) => <div className="rounded-md border p-2 text-sm" key={parameter.location + ":" + (parameter.coordinateResolved ? "" : "?") + parameter.canonicalPath}><p className="break-all font-mono">{parameter.location} · {parameter.fieldPath}</p><p className="break-all font-mono text-xs text-muted-foreground">{parameter.canonicalPath}</p><p className="text-xs text-muted-foreground">{deltaLabels[parameter.deltaState]} · {parameter.requirement} · {sourceLabel(parameter.observedSources)} · {parameter.observedShapes.join(" · ") || "형태 응답 없음"}</p></div>)}{selected.parameters.length === 0 && <p className="text-sm text-muted-foreground">확인된 입력 필드가 없습니다.</p>}</div></div>
-      <div><h3 className="mb-2 text-sm font-semibold">Evidence ID</h3>{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{evidenceFullLabel(snapshot.data?.evidenceOrdinals, id)}</p>)}</div>
+      <div><h3 className="mb-2 text-sm font-semibold">Evidence ID</h3>{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, id)}</p>)}</div>
     </section>
   ) : <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">항목을 선택하면 실제 응답과 산출물 근거를 분리해 표시합니다.</p></section>
 

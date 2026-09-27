@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { evidenceFullLabel, evidenceOrdinalLabel, observedTimeLabel } from "./operationLabel"
+import { evidenceOrdinalLabel, observedTimeLabel, withEvidenceOrdinals } from "./operationLabel"
 
 describe("evidence labels", () => {
-  it("shows the server ordinal and keeps the raw id for copy and trace-back", () => {
+  it("shows the server ordinal and falls back to the raw id", () => {
     const ordinals = { "ev-a": 3 }
     expect(evidenceOrdinalLabel(ordinals, "ev-a")).toBe("#3")
-    expect(evidenceFullLabel(ordinals, "ev-a")).toBe("#3 · ev-a")
-    expect(evidenceFullLabel(ordinals, "ev-missing")).toBe("ev-missing")
-    expect(evidenceFullLabel(undefined, "ev-a")).toBe("ev-a")
+    expect(evidenceOrdinalLabel(ordinals, "ev-missing")).toBe("ev-missing")
+    expect(withEvidenceOrdinals("ev-d3fe5b9b48d4a6b1, ev-4a3846a26981c4cc", { "ev-d3fe5b9b48d4a6b1": 4 })).toBe("#4, ev-4a3846a26981c4cc")
   })
 })
 

@@ -35,10 +35,9 @@ export function evidenceOrdinalLabel(ordinals: Readonly<Record<string, number>> 
   return typeof ordinal === "number" && Number.isFinite(ordinal) ? `#${ordinal}` : eventId
 }
 
-/** 상세·목록용: 순번 뒤에 원본 id를 붙여 복사·역추적을 유지한다. 순번이 없으면 원본 id만. */
-export function evidenceFullLabel(ordinals: Readonly<Record<string, number>> | undefined, eventId: string): string {
-  const label = evidenceOrdinalLabel(ordinals, eventId)
-  return label === eventId ? eventId : `${label} · ${eventId}`
+/** 서버가 보낸 문장 안의 Evidence ID(ev-…)를 순번으로 바꿔 보여 준다. 순번이 없으면 원래 ID를 그대로 둔다. */
+export function withEvidenceOrdinals(text: string, ordinals: Readonly<Record<string, number>> | undefined): string {
+  return text.replace(/\bev-[0-9a-f]{8,}\b/g, id => evidenceOrdinalLabel(ordinals, id))
 }
 
 const observedTimeFormat = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "medium" })
