@@ -7,8 +7,9 @@ import sample from "@/test/sample/sample-snapshot.json"
 import { renderWithQueryClient } from "@/test/render"
 import { GraphOwnerControl } from "./GraphOwnerControl"
 
-const snapshot = sample as unknown as Snapshot
 const resource = "https://demo.flowscope.test:443 orders:101"
+// 수동 소유자는 테스트가 직접 정한다. 커밋된 샘플에는 ownerOverrides가 없다.
+const snapshot = { ...(sample as unknown as Snapshot), ownerOverrides: { [resource]: "acct-demo-user-a" } } as Snapshot
 const read = "https://demo.flowscope.test:443 GET /api/orders/{id}"
 
 function installFetch() {
