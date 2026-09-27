@@ -4,9 +4,9 @@ import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { stripOrigin } from "@/lib/display/operationLabel"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
 import type { GraphSelection } from "./graphProjection"
-import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
+import { isPublicRead, type HierarchyNode, type HierarchyProjection } from "./graphHierarchy"
 import { GraphNodeSummary, graphNodeSummary } from "./GraphNodeSummary"
-import { GraphOwnerControl, isPublicRead } from "./GraphOwnerControl"
+import { GraphOwnerControl } from "./GraphOwnerControl"
 
 /** Site View에서만 한 번 보여 주는 이동 안내. 이후 View는 같은 동작이라 반복하지 않는다. */
 export const GRAPH_OPEN_HINT = "노드를 더블클릭하거나 Enter로 열기"

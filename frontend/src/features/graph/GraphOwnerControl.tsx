@@ -4,17 +4,13 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { Snapshot } from "@/lib/api/types"
 import { useOwnerMutation, useResourcePolicyMutation } from "@/lib/query/hooks"
+import { isPublicRead } from "./graphHierarchy"
 
 const PUBLIC = "__public__"
 const READ_METHODS = new Set(["GET", "HEAD"])
 
 interface Props { snapshot: Snapshot; operation: string; resource: string; disabled?: boolean }
 interface Saved { publicRead: boolean; manualOwner: string }
-
-/** 이 조회 API가 공개 정책인지. 소유자 표시를 "공개"로 바꿀 때도 같은 기준을 쓴다. */
-export function isPublicRead(snapshot: Snapshot, operation: string, resource: string): boolean {
-  return snapshot.authorizationMatrix?.objects.some(cell => cell.operation === operation && cell.resource === resource && cell.resourcePolicy === "PUBLIC") ?? false
-}
 
 /**
  * 그래프 객체 패널의 소유자 지정: 목록에서 고르고 [변경]을 눌러야 저장한다.

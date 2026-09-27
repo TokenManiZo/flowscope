@@ -30,6 +30,8 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   groupId?: string
   service?: string
   owner?: string | null
+  /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
+  publicRead?: boolean
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
   relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
@@ -51,6 +53,11 @@ export interface HierarchyProjection {
   listItems: readonly HierarchyNode[]
   hiddenOperationCount: number
   hiddenObjectCount: number
+}
+
+/** 이 조회 API가 이 객체에 대해 공개 정책(PUBLIC)인지. 서버 권한 매트릭스의 객체 칸을 따른다. */
+export function isPublicRead(snapshot: Snapshot, operation: string, resource: string): boolean {
+  return snapshot.authorizationMatrix?.objects.some(cell => cell.operation === operation && cell.resource === resource && cell.resourcePolicy === "PUBLIC") ?? false
 }
 
 export function apiGroupDescriptor(service: string, path: string): ApiGroupDescriptor {
@@ -224,7 +231,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const visible = resources.slice(0, resolved.objectLimit)
     for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addNode("operation", operation, selectionFor(related))
-    for (const resource of visible) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }, { owner: snapshot.owners[resource] ?? null })
+    for (const resource of visible) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }, { owner: snapshot.owners[resource] ?? null, publicRead: isPublicRead(snapshot, operation, resource) })
     addAccess(related)
     for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${operation}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     const visibleCandidates = candidates.filter(gap => gap.resource && visible.includes(gap.resource))
