@@ -72,6 +72,13 @@ export function navigateHierarchy(current: GraphNavigation, level: GraphLevel, g
   return { level, groupId, operation, operationLimit: level === "group" && current.groupId === groupId ? current.operationLimit : GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE, focusCandidateKey: "" }
 }
 
+/** 노드를 여는(더블클릭·Enter) 방향. 오른쪽 레인 노드는 한 단계 안으로, 왼쪽 신원 노드는 한 단계 위로 간다. */
+export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | null {
+  if (kind === "api-group" || (kind === "operation" && level === "group")) return "in"
+  if (kind === "identity" && level !== "site") return "back"
+  return null
+}
+
 export function stepBack(current: GraphNavigation): GraphNavigation {
   if (current.level === "operation") return navigateHierarchy(current, "group", current.groupId)
   if (current.level === "group") return navigateHierarchy(current, "site")

@@ -54,7 +54,7 @@ it("destroys the actual Cytoscape instance for canvas→list and creates one rep
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)
   await screen.findByLabelText("공격면 Cytoscape 그래프")
   act(() => { media.matches = true; listeners.forEach((listener) => listener(new Event("change"))) })
-  expect(cytoscapeState.cores[0].off).toHaveBeenCalledTimes(5)
+  expect(cytoscapeState.cores[0].off).toHaveBeenCalledTimes(6)
   expect(cytoscapeState.cores[0].destroy).toHaveBeenCalledTimes(1)
   expect(screen.getByRole("button", { name: /ORDERS APIs/ })).toBeVisible()
   act(() => { media.matches = false; listeners.forEach((listener) => listener(new Event("change"))) })
@@ -78,7 +78,9 @@ it("opens the shared full candidate detail from a desktop Cytoscape tap", async 
   const siteElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string; accessibleLabel?: string } }[]
   const groupId = siteElements.find(element => element.data.kind === "api-group" && element.data.accessibleLabel?.includes("UNSEEN APIs"))?.data.id
   if (!groupId) throw new Error("candidate group was not rendered")
-  act(() => tap({ target: { id: () => groupId } }))
+  const open = cytoscapeState.cores[0].on.mock.calls.find(([event]) => event === "dbltap")?.[2]
+  if (typeof open !== "function") throw new Error("dbltap listener was not registered")
+  act(() => open({ target: { id: () => groupId } }))
   const addedElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string } }[] | undefined
   const candidateId = addedElements?.find((element) => element.data.kind === "route-candidate")?.data.id
   if (!candidateId) throw new Error("route candidate was not rendered")

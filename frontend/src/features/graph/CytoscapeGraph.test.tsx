@@ -140,9 +140,9 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  expect(core.on).toHaveBeenCalledTimes(5)
+  expect(core.on).toHaveBeenCalledTimes(6)
   unmount()
-  expect(core.off).toHaveBeenCalledTimes(5)
+  expect(core.off).toHaveBeenCalledTimes(6)
   expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(1)
   expect(disconnectResizeObserver).toHaveBeenCalledTimes(1)
   expect(Math.max(...core.off.mock.invocationCallOrder)).toBeLessThan(core.destroy.mock.invocationCallOrder[0])
@@ -526,6 +526,20 @@ it("redraws node cards and edges for the light theme instead of keeping dark car
   expect(svg).not.toContain("#111418")
 })
 
+it("dims everything except the clicked node and its direct neighbours", () => {
+  const cells = ["orders", "posts"].map(key => ({ idn: "USER A", op: `GET /api/${key}/{id}`, resource: `${key}:1`, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: [] }))
+  const hierarchy = projectHierarchy(targetSnapshot({ cells }), { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const [orders, posts] = hierarchy.nodes.filter(item => item.kind === "api-group")
+  render(<CytoscapeGraph projection={hierarchy} selectedElementId={orders.id} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; source?: string; target?: string; focused?: string } }>
+  const focusOf = (id: string) => added.find(element => element.data.id === id)?.data.focused
+  expect(focusOf(orders.id)).toBe("yes")
+  expect(focusOf(hierarchy.nodes.find(item => item.kind === "target")!.id)).toBe("yes")
+  expect(focusOf(posts.id)).toBe("no")
+  expect(added.find(element => element.data.target === orders.id)?.data.focused).toBe("yes")
+  expect(added.find(element => element.data.target === posts.id)?.data.focused).toBe("no")
+})
+
 it("keeps unconfirmed route candidates neutral and dotted", () => {
   const candidateProjection: GraphProjection = {
     ...projection,
@@ -551,18 +565,27 @@ it("publishes a bounded node-kind geometry snapshot only through the explicit br
   expect(snapshot.nodes).toEqual([{ id: "identity:alice", kind: "identity", index: 0, selected: false, center: { x: 700, y: 120 }, bounds: { left: 587, right: 813, top: 57, bottom: 183 } }])
 })
 
-it("renders neutral Target→Group nodes in two lanes and navigates by the original node", () => {
+it("renders neutral Target→Group nodes in two lanes, selects on tap and navigates on double tap", () => {
   const hierarchy = projectHierarchy(targetSnapshot({ cells: [{ idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["raw-evidence"] }] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
   vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "target" : undefined)
   const navigate = vi.fn()
-  render(<CytoscapeGraph projection={hierarchy} locked={false} fitVersion={0} onNavigate={navigate} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const select = vi.fn()
+  render(<CytoscapeGraph projection={hierarchy} locked={false} fitVersion={0} onNavigate={navigate} onSelect={select} onPreferencesChange={vi.fn()} />)
   expect(node.position).toHaveBeenCalledWith({ x: 180, y: expect.any(Number) })
   const elements = core.add.mock.calls.at(-1)?.[0] as Array<{ data: { id: string; label: string; accessibleLabel?: string; kind: string } }>
   expect(elements.find(item => item.data.kind === "api-group")?.data.accessibleLabel).toContain("ORDERS APIs")
   expect(elements.find(item => item.data.kind === "api-group")?.data.accessibleLabel).toContain("1 APIs · H 1 / S 0 / L 0")
   expect(elements.find(item => item.data.id === hierarchy.edges[0].id)?.data.label).toBe("")
+  // 한 번 누르면 정보만 열고 이동하지 않는다.
   listeners.get("tap:node, edge")?.({ target: { id: () => hierarchy.listItems[0].id } as never })
+  expect(select).toHaveBeenCalledWith(hierarchy.listItems[0].selection, hierarchy.listItems[0].id)
+  expect(navigate).not.toHaveBeenCalled()
+  listeners.get("dbltap:node")?.({ target: { id: () => hierarchy.listItems[0].id } as never })
   expect(navigate).toHaveBeenCalledWith(hierarchy.listItems[0])
+  // Target은 열 곳이 없어 더블클릭해도 이동하지 않는다.
+  navigate.mockClear()
+  listeners.get("dbltap:node")?.({ target: { id: () => hierarchy.nodes.find(item => item.kind === "target")!.id } as never })
+  expect(navigate).not.toHaveBeenCalled()
 })
 
 it("marks only the selected identity's source paths and passes the exact raw edge selection", () => {

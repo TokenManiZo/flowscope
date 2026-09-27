@@ -6,7 +6,7 @@ import { useDocumentTheme } from "@/hooks/useTheme"
 import { NODE_SIZE_LIMIT, type GraphPreferences, type NodeSize } from "./graphPreferences"
 import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
-import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
+import { graphOpenAction, type HierarchyNode, type HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
 import { relationshipNodeCard, relationshipRouteCandidateCard } from "./relationshipNodeCard"
 
@@ -22,6 +22,8 @@ interface Props {
   selectedElementId?: string | null
   onSelect(selection: GraphSelection, elementId: string): void
   onNavigate?(node: HierarchyNode): void
+  /** 왼쪽 신원 노드를 열면(더블클릭·Enter) 한 단계 위 View로 간다. */
+  onStepBack?(): void
   /** 레인별 화면 좌표 범위. 헤더가 노드가 만든 실제 범위를 따라간다. */
   onLaneBoundsChange?(bounds: ReadonlyArray<LaneBounds | null>): void
   onPreferencesChange(preferences: Pick<GraphPreferences, "positions" | "viewport" | "sizes">): void
@@ -52,6 +54,14 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     const observed = edge.source !== null
     return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edgeState(edge.id) }, origin: edge.source }
   })
+  // 신원·엣지 강조가 없을 때 노드를 고르면 그 노드와 바로 이어진 엣지만 강조한다.
+  if (hierarchy && selectedElementId && hierarchy.nodes.some(node => node.id === selectedElementId) && edges.every(({ data }) => data.focused === "none")) {
+    for (const { data } of edges) data.focused = data.source === selectedElementId || data.target === selectedElementId ? "yes" : "no"
+  }
+  // 강조가 있으면 강조 엣지에 닿은 노드만 남기고 나머지 노드는 흐린다.
+  const focusedNodeIds = new Set(edges.flatMap(({ data }) => data.focused === "yes" ? [data.source, data.target] : []))
+  const anyFocus = edges.some(({ data }) => data.focused !== "none")
+  const nodeFocus = (id: string) => anyFocus ? focusedNodeIds.has(id) || id === selectedElementId ? "yes" : "no" : "none"
   const nodeSources = new Map<string, Set<CardSource>>()
   for (const { data, origin } of edges) {
     if (origin !== "human" && origin !== "scanner" && origin !== "llm") continue
@@ -65,14 +75,14 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     cards?.set(node.id, card)
     const size = sizes[node.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
-    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
     const card = relationshipRouteCandidateCard(candidate)
     cards?.set(candidate.id, card)
     const size = sizes[candidate.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
-    return { data: { id: candidate.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    return { data: { id: candidate.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(candidate.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   return [...nodes, ...candidates, ...edges.map(({ data }) => ({ data }))]
 }
@@ -154,7 +164,7 @@ function publishGeometry(container: HTMLDivElement, core: Core) {
   container.dataset.graphGeometry = JSON.stringify({ width: container.clientWidth, height: container.clientHeight, maxZoom: core.maxZoom(), nodes })
 }
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onStepBack, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -168,6 +178,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const projectionRef = useRef(projection)
   const selectRef = useRef(onSelect)
   const navigateRef = useRef(onNavigate)
+  const stepBackRef = useRef(onStepBack)
   const selectedElementIdRef = useRef(selectedElementId)
   const preferenceRef = useRef(onPreferencesChange)
   const inputModeRef = useRef(preferences?.inputMode ?? "auto")
@@ -188,6 +199,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   projectionRef.current = projection
   selectRef.current = onSelect
   navigateRef.current = onNavigate
+  stepBackRef.current = onStepBack
   selectedElementIdRef.current = selectedElementId
   preferenceRef.current = onPreferencesChange
   inputModeRef.current = preferences?.inputMode ?? "auto"
@@ -280,6 +292,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: "edge:selected", style: { width: 2.6, "line-color": "data(color)", "target-arrow-color": "data(color)" } },
           { selector: 'edge[focused = "yes"]', style: { width: 3, opacity: 1 } },
           { selector: 'edge[focused = "no"]', style: { opacity: 0.15 } },
+          { selector: 'node[focused = "no"]', style: { opacity: 0.35 } },
         ] as unknown as cytoscape.StylesheetJson,
       })
     } catch {
@@ -331,10 +344,18 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       const id = event.target.id()
       const hierarchy = "kind" in current ? current : null
       const node = hierarchy?.nodes.find(node => node.id === id)
-      if (node && (node.kind === "api-group" || node.kind === "operation" && hierarchy?.kind === "group")) { navigateRef.current?.(node); return }
-      if (node?.kind === "target" || hierarchy?.edges.some(edge => edge.id === id && edge.structural)) return
+      // 한 번 누르면 정보만 연다. 이동은 더블클릭·Enter(openListener)로만 한다.
+      if (hierarchy?.edges.some(edge => edge.id === id && edge.structural)) return
       const selection = hierarchy ? node?.selection ?? hierarchy.edges.find(edge => edge.id === id)?.selection : selectGraphItem(current as GraphProjection, id)
       if (selection) selectRef.current(selection, event.target.id())
+    }
+    const openListener = (event: cytoscape.EventObject) => {
+      const current = projectionRef.current
+      const hierarchy = "kind" in current ? current : null
+      const node = hierarchy?.nodes.find(item => item.id === event.target.id())
+      const action = node && hierarchy ? graphOpenAction(node.kind, hierarchy.kind) : null
+      if (action === "in" && node) navigateRef.current?.(node)
+      else if (action === "back") stepBackRef.current?.()
     }
     // ponytail: 드래그 중이 아니라 놓을 때만 가둔다. 커서를 따라가던 노드를 실시간으로 밀면 조작감이 나빠진다.
     const clampToNeighbourLanes = (node: cytoscape.NodeSingular) => {
@@ -384,12 +405,14 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     resizeObserver?.observe(containerRef.current)
     containerRef.current.addEventListener("wheel", wheelListener, { passive: false })
     core.on("tap", "node, edge", selectListener)
+    core.on("dbltap", "node", openListener)
     core.on("mouseover focus", "node", showCardTooltip)
     core.on("mouseout blur", "node", hideCardTooltip)
     core.on("dragfree", "node", dragListener)
     core.on("viewport", viewportListener)
     return () => {
       core.off("tap", "node, edge", selectListener)
+      core.off("dbltap", "node", openListener)
       core.off("mouseover focus", "node", showCardTooltip)
       core.off("mouseout blur", "node", hideCardTooltip)
       core.off("dragfree", "node", dragListener)
@@ -544,7 +567,17 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
             return
           }
           if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); focusNode(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1) }
-          else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (keyboardNodeRef.current) coreRef.current?.getElementById(keyboardNodeRef.current).emit("tap") }
+          else if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            const id = keyboardNodeRef.current
+            if (!id) return
+            // Enter는 열 수 있는 노드면 더블클릭과 같이 열고, 아니면 선택한다. Space는 항상 선택만 한다.
+            const current = projectionRef.current
+            const hierarchy = "kind" in current ? current : null
+            const node = hierarchy?.nodes.find(item => item.id === id)
+            const openable = event.key === "Enter" && node && hierarchy && graphOpenAction(node.kind, hierarchy.kind)
+            coreRef.current?.getElementById(id).emit(openable ? "dbltap" : "tap")
+          }
           else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip() }
         }} />
       {cardTooltip && <div ref={tooltipRef} id={tooltipId} role="tooltip" tabIndex={0} className="pointer-events-auto absolute z-20 max-h-[calc(100%-1rem)] overflow-y-auto overscroll-contain rounded-md border border-slate-500 bg-slate-950 px-3 py-2 text-sm text-slate-100 shadow-lg focus-visible:outline-2 focus-visible:outline-ring [overflow-wrap:anywhere]" style={{ left: cardTooltip.x, top: cardTooltip.y, width: cardTooltip.width }}
