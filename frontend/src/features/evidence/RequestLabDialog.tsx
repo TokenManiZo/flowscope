@@ -229,7 +229,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
             onAccountChange={setAccountId}
           />
           <section aria-label="Request Lab 원문 작업면" className="grid min-w-0 content-start gap-4 p-4">
-            {(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border border-l-2 bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}
+            {(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}
             <p className="text-xs text-muted-foreground">{draft.message}</p>
             <div role="group" aria-label="Request Lab 요청 및 응답" className="grid min-w-0 gap-4 lg:grid-cols-2">
               <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Request 원문 패널">

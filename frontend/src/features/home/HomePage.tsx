@@ -1,4 +1,4 @@
-import { CheckCircle2, Play, ScanSearch } from "lucide-react"
+import { CheckCircle2, Play } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
@@ -34,16 +34,9 @@ export function HomePage({ snapshot }: HomePageProps) {
       {isEmpty ? (
         <section
           aria-labelledby="home-hero-title"
-          className="relative overflow-hidden rounded-lg border border-emerald-400/30 bg-card px-5 py-7 sm:px-8 sm:py-9"
+          className="rounded-lg border border-border bg-card px-5 py-7 sm:px-8 sm:py-9"
         >
-          <div aria-hidden="true" className="absolute inset-y-0 start-0 w-1 bg-emerald-400" />
           <div className="max-w-2xl">
-            <span
-              aria-hidden="true"
-              className="mb-4 grid size-10 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300"
-            >
-              <ScanSearch className="size-5" />
-            </span>
             <h1 id="home-hero-title" className="text-2xl font-semibold sm:text-3xl">
               점검을 시작하세요
             </h1>
