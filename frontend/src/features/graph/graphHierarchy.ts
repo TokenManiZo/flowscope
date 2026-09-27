@@ -234,3 +234,11 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   }
   return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount }
 }
+
+/** 그래프 상단 카운트. 현재 단계에 실제로 그려진 노드만 센다(사이트 개요에는 신원·API·객체 노드가 없다). */
+export function graphCountLabel(graph: HierarchyProjection): string {
+  if (graph.kind === "site") return `${graph.nodes.filter(node => node.kind === "api-group").length} API groups`
+  const parts = [`${graph.identities.length} identities`, `${graph.operations.length} operations`]
+  if (graph.kind === "operation") parts.push(`${graph.resources.length} resources`)
+  return parts.join(" · ")
+}
