@@ -10,7 +10,11 @@ it("renders observe → compare → judge as three links with source counts insi
   render(<DashboardPipeline values={{ ...EMPTY_DASHBOARD_SUMMARY, trafficStats: { ...EMPTY_DASHBOARD_SUMMARY.trafficStats, captured: 21 }, sourceCounts: { human: 12, scanner: 8, llm: 3 } }} counts={counts} />)
   const observe = screen.getByRole("link", { name: "관측 · Evidence" })
   expect(observe).toHaveAttribute("href", "#evidence")
-  for (const [label, value] of [["HUMAN", "12"], ["SCANNER", "8"], ["LLM", "3"]]) expect(within(within(observe).getByRole("group", { name: label })).getByText(value)).toBeVisible()
+  const stage = observe.parentElement as HTMLElement
+  for (const [label, value] of [["HUMAN", "12"], ["SCANNER", "8"], ["LLM", "3"]]) expect(within(within(stage).getByRole("group", { name: label })).getByText(value)).toBeVisible()
+  // 검토 필요 트래픽은 칸 링크와 따로 Evidence 검토 탭으로 바로 간다(링크 안에 링크를 넣지 않는다).
+  expect(within(stage).getByRole("link", { name: "검토 필요 트래픽" })).toHaveAttribute("href", "#evidence-review")
+  expect(observe.querySelector("a")).toBeNull()
   expect(screen.getByRole("link", { name: "비교 · Gap 그래프" })).toHaveAttribute("href", "#graph")
   expect(screen.getByRole("link", { name: "판정 · 권한 매트릭스" })).toHaveAttribute("href", "#matrix")
   expect(screen.queryByRole("button")).not.toBeInTheDocument()

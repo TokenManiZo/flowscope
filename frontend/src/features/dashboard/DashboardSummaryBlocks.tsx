@@ -21,23 +21,25 @@ export interface PipelineCounts { openGaps: number; priorityApis: number; authVa
 
 const format = (value: number) => value.toLocaleString("ko-KR")
 
-type Row = { label: ReactNode; name: string; value: string; tone?: "candidate" | "zero" }
+type Row = { label: ReactNode; name: string; value: string; tone?: "candidate" | "zero"; href?: string }
 
 function StageRows({ rows }: { rows: readonly (Row | "divider")[] }) {
   return <div className="grid content-start gap-1.5 text-sm">{rows.map((row, index) => row === "divider"
     ? <hr key={`divider-${index}`} className="my-0.5 border-border/70" />
-    : <div role="group" aria-label={row.name} key={row.name} className="flex items-center justify-between gap-3"><span>{row.label}</span><span className={cn("font-semibold tabular-nums", row.tone === "candidate" && "text-candidate", row.tone === "zero" && "font-normal text-muted-foreground")}>{row.value}</span></div>)}</div>
+    : <div role="group" aria-label={row.name} key={row.name} className="flex items-center justify-between gap-3">{row.href ? <a href={row.href} className="relative z-10 underline decoration-border underline-offset-4 hover:decoration-foreground">{row.label}</a> : <span>{row.label}</span>}<span className={cn("font-semibold tabular-nums", row.tone === "candidate" && "text-candidate", row.tone === "zero" && "font-normal text-muted-foreground")}>{row.value}</span></div>)}</div>
 }
 
+// 칸 전체를 덮는 링크(오버레이) 위에 행 링크를 따로 올린다. 링크 안에 링크를 넣지 않기 위한 구조다.
 function Stage({ step, href, go, value, unit, hot, rows, notch }: { step: string; href: string; go: string; value: number; unit: string; hot?: boolean; rows: readonly (Row | "divider")[]; notch?: boolean }) {
-  return <a href={href} aria-label={`${step} · ${go}`} className={cn(
-    "group relative grid grid-rows-[auto_auto_1fr] gap-3.5 p-5 text-foreground transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
+  return <div className={cn(
+    "group relative grid grid-rows-[auto_auto_1fr] gap-3.5 p-5 transition-colors hover:bg-muted/50 has-[a[data-stage]:focus-visible]:bg-muted/50",
     notch && "border-t border-border lg:border-t-0 lg:border-l lg:before:absolute lg:before:-left-[9px] lg:before:top-6 lg:before:z-10 lg:before:size-4 lg:before:rotate-45 lg:before:rounded-tr-[3px] lg:before:border-t lg:before:border-r lg:before:border-border lg:before:bg-card lg:before:content-['']",
   )}>
-    <div className="flex items-center justify-between text-sm font-semibold text-muted-foreground"><span>{step}</span><span aria-hidden="true" className="text-xs font-medium text-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{go} →</span></div>
-    <p className={cn("text-4xl font-bold leading-none tabular-nums", hot && "text-candidate")}>{format(value)}<span className="ml-1.5 text-sm font-medium text-muted-foreground">{unit}</span></p>
-    <StageRows rows={rows} />
-  </a>
+    <a data-stage href={href} aria-label={`${step} · ${go}`} className="absolute inset-0 focus-visible:outline-none" />
+    <div className="flex items-center justify-between text-sm font-semibold text-muted-foreground"><span>{step}</span><span aria-hidden="true" className="text-xs font-medium text-foreground opacity-0 transition-opacity group-hover:opacity-100 group-has-[a[data-stage]:focus-visible]:opacity-100">{go} →</span></div>
+    <p className={cn("pointer-events-none text-4xl font-bold leading-none tabular-nums", hot && "text-candidate")}>{format(value)}<span className="ml-1.5 text-sm font-medium text-muted-foreground">{unit}</span></p>
+    <div className="pointer-events-none [&_a]:pointer-events-auto"><StageRows rows={rows} /></div>
+  </div>
 }
 
 const sourceDot = (className: string, label: string) => <><span aria-hidden="true" className={cn("mr-2 inline-block size-1.5 rounded-full align-middle", className)} />{label}</>
@@ -53,7 +55,7 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
       { name: "SCANNER", label: sourceDot("bg-observation-scanner", "SCANNER"), value: format(values.sourceCounts.scanner) },
       { name: "LLM", label: sourceDot("bg-observation-llm", "LLM"), value: format(values.sourceCounts.llm) },
       "divider",
-      { name: "검토 필요 트래픽", label: "검토 필요 트래픽", value: format(counts.review), tone: zero(counts.review) },
+      { name: "검토 필요 트래픽", label: "검토 필요 트래픽", value: format(counts.review), tone: zero(counts.review), href: counts.review > 0 ? "#evidence-review" : undefined },
     ]} />
     <Stage notch step="비교" href="#graph" go="Gap 그래프" value={counts.openGaps} unit="열린 Gap" rows={[
       { name: "우선 점검 API", label: "우선 점검 API", value: format(counts.priorityApis), tone: zero(counts.priorityApis) },

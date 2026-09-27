@@ -18,11 +18,13 @@ export type EvidenceFiltersState = {
   dispositions: Record<"INCLUDE" | "REVIEW" | "EXCLUDE", boolean>
   trafficClasses: Record<string, boolean>
   expandRepeats: boolean
+  /** 경로·메서드·신원 부분 일치 검색. 비어 있으면 거르지 않는다. */
+  query?: string
 }
 
 export const defaultEvidenceFilters = (): EvidenceFiltersState => ({
   sources: { human: true, scanner: true, llm: true },
-  dispositions: { INCLUDE: true, REVIEW: true, EXCLUDE: false },
+  dispositions: { INCLUDE: true, REVIEW: false, EXCLUDE: false },
   trafficClasses: { ...trafficClassDefaults },
   expandRepeats: false,
 })
@@ -32,7 +34,9 @@ export function visibleEvidence(events: readonly EventRecord[], filters: Evidenc
     const sourceVisible = item.source === "unknown" || filters.sources[item.source]
     const dispositionVisible = filters.dispositions[item.trafficDisposition as keyof typeof filters.dispositions] === true
     const trafficVisible = !(item.trafficClass in trafficClassDefaults) || filters.trafficClasses[item.trafficClass] === true
-    return sourceVisible && dispositionVisible && trafficVisible
+    const query = filters.query?.trim().toLowerCase()
+    const queryVisible = !query || `${item.method} ${item.path} ${item.idn}`.toLowerCase().includes(query)
+    return sourceVisible && dispositionVisible && trafficVisible && queryVisible
   })
   if (filters.expandRepeats) return visible
 
@@ -51,4 +55,17 @@ export function hiddenEvidenceCount(events: readonly EventRecord[], filters: Evi
 export function boundedText(value: unknown, maximum = 160): string {
   const text = String(value ?? "-")
   return text.length <= maximum ? text : `${text.slice(0, maximum - 1)}…`
+}
+
+export type EvidenceTab = "INCLUDE" | "REVIEW" | "EXCLUDE" | "ALL"
+
+/** 탭은 판정 체크박스를 대신한다. ALL은 세 판정을 모두 켠다. */
+export function tabDispositions(tab: EvidenceTab): EvidenceFiltersState["dispositions"] {
+  return { INCLUDE: tab === "INCLUDE" || tab === "ALL", REVIEW: tab === "REVIEW" || tab === "ALL", EXCLUDE: tab === "EXCLUDE" || tab === "ALL" }
+}
+
+export function dispositionCounts(events: readonly EventRecord[]): Record<EvidenceTab, number> {
+  const counts = { INCLUDE: 0, REVIEW: 0, EXCLUDE: 0, ALL: events.length }
+  for (const event of events) if (event.trafficDisposition === "INCLUDE" || event.trafficDisposition === "REVIEW" || event.trafficDisposition === "EXCLUDE") counts[event.trafficDisposition] += 1
+  return counts
 }

@@ -49,7 +49,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
       await userEvent.click(screen.getByRole("button", { name: /orders:101; Resource/ }))
     }
     else {
-      await userEvent.click(await screen.findByRole("button", { name: "상세 보기" }))
+      await userEvent.click(await screen.findByRole("button", { name: /상세 보기$/ }))
       if (kind === "surface" && screen.queryByRole("button", { name: "Evidence 상세 · H · HTTP 200" })) await userEvent.click(screen.getByRole("button", { name: "Evidence 상세 · H · HTTP 200" }))
     }
   }

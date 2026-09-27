@@ -1,17 +1,17 @@
-import { render, screen, within } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
 import { EvidenceFilters } from "./EvidenceFilters"
 import { defaultEvidenceFilters } from "./evidenceSelectors"
 
-it("keeps long Korean Evidence filter labels readable inside the narrow analysis rail", () => {
-  render(<EvidenceFilters value={defaultEvidenceFilters()} onChange={vi.fn()} />)
-
-  const trafficGroup = screen.getByRole("group", { name: "트래픽 분류" })
-  expect(trafficGroup).toHaveClass("grid-cols-1")
-  for (const label of ["인증·세션 준비", "반복 백그라운드 후보", "탐색 메타데이터", "CORS 사전 요청"]) {
-    const text = within(trafficGroup).getByText(label)
-    expect(text).toHaveClass("break-keep")
-    expect(text.closest("label")).toHaveClass("min-w-0")
-  }
+it("keeps sources, search and repeat inline and tucks the ten traffic classes into one menu", async () => {
+  const onChange = vi.fn()
+  render(<EvidenceFilters value={defaultEvidenceFilters()} onChange={onChange} />)
+  for (const label of ["사람 H", "스캐너 S", "LLM L", "반복 Evidence 펼치기"]) expect(screen.getByRole("checkbox", { name: label })).toBeVisible()
+  expect(screen.queryByRole("checkbox", { name: "정적 자원" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "분류 5/10" }))
+  for (const label of ["인증·세션 준비", "반복 백그라운드", "탐색 메타데이터", "CORS 사전 요청"]) expect(screen.getByRole("checkbox", { name: label })).toBeVisible()
+  await userEvent.type(screen.getByRole("searchbox", { name: "경로·신원 검색" }), "a")
+  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ query: "a" }))
 })
