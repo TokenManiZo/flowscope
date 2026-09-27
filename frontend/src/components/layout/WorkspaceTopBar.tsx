@@ -4,11 +4,11 @@ import type { AppRoute } from "@/app/routes"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useHumanRunQuery, useOpenProjectMutation, useProjectsQuery, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
+import { runStatusLabel } from "@/lib/display/runStatus"
 import { NewProjectDialog } from "./NewProjectDialog"
 
 function humanState(active: boolean | undefined, completed: boolean | undefined) {
-  if (active) return "RUNNING"
-  return completed ? "DONE" : "WAITING"
+  return runStatusLabel(active ? "RUNNING" : completed ? "COMPLETED" : "NOT_STARTED")
 }
 
 function queryValue<T>(query: { data: T | undefined; isPending: boolean }, render: (data: T) => string) {
@@ -34,8 +34,8 @@ export function WorkspaceTopBar({ onOpenSidebar }: { route: AppRoute; onOpenSide
   const scopeReady = scopeData !== undefined ? scopeData.length > 0 ? "준비됨" : "미준비" : scopePending ? "불러오는 중" : "확인 불가"
   const liveCapture = queryValue(snapshot, (data) => String(data.trafficStats.captured))
   const humanRun = queryValue(human, (data) => humanState(data.active, data.completed))
-  const zapState = queryValue(zap, (data) => data.state ?? (data.connected ? "READY" : "연결 안 됨"))
-  const scannerState = queryValue(scanner, (data) => data.run.status)
+  const zapState = queryValue(zap, (data) => runStatusLabel(data.state ?? (data.connected ? "READY" : "UNAVAILABLE")))
+  const scannerState = queryValue(scanner, (data) => runStatusLabel(data.run.status))
   const persistenceState = projects.data?.active
     ? projects.data.saveState === "SAVING" ? "저장 중"
       : projects.data.saveState === "PENDING" ? "저장 대기"

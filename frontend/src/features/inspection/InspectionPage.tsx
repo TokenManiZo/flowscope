@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useHumanRunMutation, useHumanRunQuery, useScannerCancelMutation, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapAccountDeleteMutation, useZapAccountSaveMutation, useZapSessionRefreshMutation, useZapStatusQuery } from "@/lib/query/hooks"
 import { activeManagedAccountIds, automaticInspectionStage, type InspectionStage } from "./inspectionState"
 import { LlmPass } from "./LlmPass"
+import { durationLabel, runStatusLabel, scannerStageLabel } from "@/lib/display/runStatus"
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
 import { AccountSettingsSheet } from "@/features/accounts/account-settings/AccountSettingsSheet"
 import { createAccountSettingsAdapter } from "@/features/accounts/account-settings/accountSettingsAdapter"
@@ -48,27 +49,6 @@ function normalizedOrigin(value: string): string {
   } catch {
     return ""
   }
-}
-
-function duration(seconds?: number): string {
-  if (seconds === undefined || seconds < 0) return "확인 전"
-  const minutes = Math.floor(seconds / 60)
-  const remainder = seconds % 60
-  return minutes > 0 ? `${minutes}분 ${remainder}초` : `${remainder}초`
-}
-
-function scannerStage(stage?: string): string {
-  return {
-    SESSION_SETUP: "격리 세션 설정",
-    API_DEFINITION_IMPORT: "API 정의 가져오기",
-    AUTHENTICATION: "ZAP 브라우저 로그인",
-    CLIENT_SPIDER: "Client Spider",
-    PASSIVE_SCAN_QUEUE: "Passive Scan 대기",
-    ALERTS_READY: "Alert 집계 완료",
-    CLEANUP: "종료 처리 · 임시 상태 정리 중",
-    CANCELLED: "검사 취소",
-    FAILED: "실패",
-  }[stage ?? ""] ?? stage ?? "대기"
 }
 
 export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly SourceFeedItem[] } = {}) {
@@ -233,15 +213,15 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             label="ZAP 기준선"
             title="ZAP 기준선"
             statusTiles={[
-              { label: "상태", value: scanner.data?.run.status ?? "NOT_STARTED" },
-              { label: "소요 시간", value: duration(scanner.data?.run.elapsed_seconds), mono: true },
+              { label: "상태", value: runStatusLabel(scanner.data?.run.status ?? "NOT_STARTED") },
+              { label: "소요 시간", value: durationLabel(scanner.data?.run.elapsed_seconds), mono: true },
               { label: "수집 / Alert", value: `${scanner.data?.run.captured_records ?? "-"} / ${scanner.data?.run.alert_count ?? "-"}` },
-              { label: "현재 단계", value: scannerStage(scanner.data?.run.stage) },
+              { label: "현재 단계", value: scannerStageLabel(scanner.data?.run.stage) },
             ]}
             notices={<>
               {(scanner.data?.run.lanes ?? []).map((lane) => (
                 <p key={lane.account_id ?? "anon"} className="text-sm text-muted-foreground">
-                  {lane.account_label} · {scannerStage(lane.stage)}{lane.account_id ? ` · 로그인 ${lane.authentication_state ?? "UNKNOWN"}${lane.authentication_browser ? ` · ${lane.authentication_browser}` : ""}` : ""}{lane.authentication_message ? ` · ${lane.authentication_message}` : ""}{lane.warning ? ` · 주의 ${lane.warning}` : ""}{lane.error ? ` · 오류 ${lane.error}` : ""}
+                  {lane.account_label} · {scannerStageLabel(lane.stage)}{lane.account_id ? ` · 로그인 ${lane.authentication_state ?? "UNKNOWN"}${lane.authentication_browser ? ` · ${lane.authentication_browser}` : ""}` : ""}{lane.authentication_message ? ` · ${lane.authentication_message}` : ""}{lane.warning ? ` · 주의 ${lane.warning}` : ""}{lane.error ? ` · 오류 ${lane.error}` : ""}
                 </p>
               ))}
               {scanner.data?.run.warning && <Alert><AlertDescription>주의 · {scanner.data.run.warning}</AlertDescription></Alert>}
@@ -256,7 +236,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   </Select>
                 </label>
                 <Button variant="outline" onClick={() => void zap.refetch()} disabled={zap.isFetching}>ZAP 연결 새로 고침</Button>
-                <span className="text-sm">{zap.data?.connected ? "연결됨" : zap.data?.state ?? "UNAVAILABLE"} · {zap.data?.message ?? "연결 상태 확인 중"}</span>
+                <span className="text-sm">{zap.data?.connected ? "연결됨" : runStatusLabel(zap.data?.state || "UNAVAILABLE")} · {zap.data?.message ?? "연결 상태 확인 중"}</span>
               </div>
               <fieldset className="space-y-2"><legend className="text-sm font-medium">실행 신원 <span className="font-normal text-muted-foreground">· 계정·세션에서 등록한 계정이 표시됩니다</span></legend>
                 <label className="flex items-center gap-2"><Checkbox id="scanner-anonymous" checked={anonymous} onCheckedChange={(checked) => setAnonymous(checked === true)} /><span>비로그인</span></label>
@@ -292,7 +272,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             </div>}
             feedItems={scannerFeedItems}
             feedTitle="작업 피드"
-            feedDescription={`${scannerStage(scanner.data?.run.stage)} · 현재 단계 ${duration(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${duration(scanner.data.run.stage_timeout_seconds)}` : ""}`}
+            feedDescription={`${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}`}
             emptyHint="기준선을 시작하면 ZAP이 관측한 요청이 여기에 표시됩니다."
           />
         </TabsContent>
