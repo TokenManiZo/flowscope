@@ -34,7 +34,10 @@ function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = t
   const traffic = useMutation({ mutationFn: ({ operation, value }: { operation: string; value: string }) => saveTrafficOverride(operation, value) })
   const owner = useMutation({ mutationFn: ({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity) })
   const [role, setRole] = useState(snapshot.requiredRoles[event.op] ?? "")
-  const [override, setOverride] = useState<"AUTO" | "INCLUDE" | "EXCLUDE">("AUTO")
+  // 서버는 사용자 재정의를 분류 이유(USER_INCLUDE/USER_EXCLUDE)로 돌려준다. 저장 뒤 새 snapshot이 오면 다시 맞춘다.
+  const savedOverride = event.classificationReasons.includes("USER_INCLUDE") ? "INCLUDE" : event.classificationReasons.includes("USER_EXCLUDE") ? "EXCLUDE" : "AUTO"
+  const [override, setOverride] = useState<"AUTO" | "INCLUDE" | "EXCLUDE">(savedOverride)
+  useEffect(() => setOverride(savedOverride), [savedOverride])
   // 자동 추정값을 초기값으로 쓰면 저장 한 번에 수동 지정으로 굳는다. 수동 지정만 채운다.
   const [identity, setIdentity] = useState(event.resource ? snapshot.ownerOverrides?.[event.resource] ?? "" : "")
   const [error, setError] = useState("")

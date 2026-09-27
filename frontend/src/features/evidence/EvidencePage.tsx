@@ -67,6 +67,13 @@ export function EvidencePage() {
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
   const evidence = useEvidenceQuery(selectedEvent?.op ?? null, offset, evidencePageLimit, datasetRevision)
 
+  // 같은 화면 안에서 #evidence ↔ #evidence-review로 주소만 바뀌면 화면이 다시 만들어지지 않으므로 탭을 직접 맞춘다.
+  useEffect(() => {
+    const syncTab = () => selectTab(initialTab())
+    window.addEventListener("hashchange", syncTab)
+    return () => window.removeEventListener("hashchange", syncTab)
+  }, [])
+
   useEffect(() => {
     if (selected && !selectedEvent && !snapshot.isError) { setSelected(null); setInspectorOpen(false) }
   }, [selected, selectedEvent, snapshot.isError])
@@ -74,8 +81,13 @@ export function EvidencePage() {
   const rows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], filters), [snapshot.data?.events, filters])
   const counts = useMemo(() => dispositionCounts(snapshot.data?.events ?? []), [snapshot.data?.events])
   // 탭(판정)으로 나뉜 것은 숨김이 아니다. 지금 탭 안에서 소스·분류·검색 필터로 가린 것만 센다.
-  const hidden = hiddenEvidenceCount((snapshot.data?.events ?? []).filter((event) => filters.dispositions[event.trafficDisposition as keyof typeof filters.dispositions]), filters)
+  const tabEvents = (snapshot.data?.events ?? []).filter((event) => filters.dispositions[event.trafficDisposition as keyof typeof filters.dispositions])
+  const hidden = hiddenEvidenceCount(tabEvents, filters)
+  // 탭 숫자는 요청 수다. 반복 요청을 한 줄로 묶으면 행 수가 줄어드니 그 차이를 함께 알린다.
+  const folded = tabEvents.length - hidden - rows.length
   function selectTab(next: EvidenceTab) {
+    // 검토 탭 별칭 주소에 머문 채 다른 탭을 보면 새로고침·뒤로가기가 엉뚱한 탭을 연다.
+    if (window.location.hash === "#evidence-review" && next !== "REVIEW") window.history.replaceState(null, "", "#evidence")
     setTab(next)
     setFilters((current) => ({ ...current, dispositions: tabDispositions(next) }))
   }
@@ -109,7 +121,7 @@ export function EvidencePage() {
     {page && (page.offset > 0 || page.hasMore) && <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">총 {page.total}건 · {page.offset + 1}번째부터</span><Button variant="outline" size="sm" aria-label="이전 Evidence 페이지" disabled={page.offset <= 0 || evidence.isFetching || snapshot.isError} onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>이전</Button><Button variant="outline" size="sm" aria-label="다음 Evidence 페이지" disabled={!page.hasMore || evidence.isFetching || snapshot.isError} onClick={() => setOffset(page.offset + page.limit)}>다음</Button></div>}
   </section>
   const inspector = <div className="grid min-w-0">
-    {selectedEvent?.trafficDisposition === "REVIEW" && <ReviewDecision event={selectedEvent} disabled={snapshot.isError} />}
+    {selectedEvent?.trafficDisposition === "REVIEW" && <ReviewDecision key={selectedEvent.eventId} event={selectedEvent} disabled={snapshot.isError} />}
     <EvidenceSheet inline event={selectedEvent} snapshot={snapshot.data} disabled={snapshot.isError} onOpenChange={() => undefined} />
     {records}
   </div>
@@ -124,7 +136,7 @@ export function EvidencePage() {
       </button>)}</div>
       <EvidenceFilters value={filters} onChange={setFilters} />
       {snapshot.isLoading ? <Skeleton className="h-64" /> : snapshot.data && <>
-        {hidden > 0 && <p className="text-xs text-muted-foreground">필터로 가린 {hidden}건</p>}
+        {(hidden > 0 || folded > 0) && <p className="text-xs text-muted-foreground">{[hidden > 0 && `필터로 가린 ${hidden}건`, folded > 0 && `반복 요청 ${folded}건은 한 줄로 묶음`].filter(Boolean).join(" · ")}</p>}
         <ScrollArea className="h-[32rem] rounded-md border" aria-label="Evidence 표">
           <Table>
             <TableHeader><TableRow><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead>요청</TableHead><TableHead>신원</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead></TableRow></TableHeader>

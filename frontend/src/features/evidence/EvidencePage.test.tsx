@@ -157,9 +157,21 @@ describe("EvidencePage", () => {
       await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/traffic-override", expect.objectContaining({ method: "POST" })))
       const body = String(fetch.mock.calls.find(([path]) => path === "/api/traffic-override")?.[1]?.body)
       expect(body).toContain("value=INCLUDE")
+      // 같은 화면에서 주소만 #evidence로 바뀌어도 탭이 따라간다.
+      window.location.hash = "#evidence"
+      window.dispatchEvent(new HashChangeEvent("hashchange"))
+      await waitFor(() => expect(screen.getByRole("tab", { name: "메인 비교 0" })).toHaveAttribute("aria-selected", "true"))
     } finally {
       window.location.hash = ""
     }
+  })
+
+  it("shows a saved traffic override instead of AUTO", async () => {
+    installFetch([event({ eventId: "kept", trafficDisposition: "INCLUDE", classificationReasons: ["USER_INCLUDE"] })])
+    const user = userEvent.setup()
+    renderWithQueryClient(<EvidencePage />)
+    await user.click(await screen.findByRole("button", { name: /상세 보기$/ }))
+    expect(await screen.findByLabelText("트래픽 재정의")).toHaveValue("INCLUDE")
   })
 
   it("collapses stable repeat clusters with first/last observations and selects the exact visible row", async () => {
@@ -172,6 +184,7 @@ describe("EvidencePage", () => {
 
     expect(await screen.findByText("event-1")).toBeVisible()
     expect(screen.queryByText("event-2")).not.toBeInTheDocument()
+    expect(screen.getByText("반복 요청 1건은 한 줄로 묶음")).toBeVisible()
     expect(within(screen.getByText("event-1").closest("tr") as HTMLTableRowElement).getByTitle(observedTimeLabel(101, 202))).toBeVisible()
     await userEvent.click(screen.getByRole("checkbox", { name: "반복 Evidence 펼치기" }))
     expect(await screen.findByText("event-2")).toBeVisible()
