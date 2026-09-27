@@ -37,3 +37,20 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
     </InspectorPanel>
   </div>
 }
+
+/** 아무것도 선택하지 않았을 때의 상세 패널: 지금 보고 있는 범위(사이트·API 그룹·API)의 요약. 패널을 닫지 않아 캔버스가 다시 그려지지 않는다. */
+export function GraphViewOverview({ projection }: { projection: HierarchyProjection }) {
+  const context = projection.kind === "site"
+    ? projection.nodes.find(node => node.kind === "target")
+    : projection.kind === "group"
+      ? { kind: "api-group", groupId: projection.navigation.groupId, label: projection.groups.find(group => group.id === projection.navigation.groupId)?.label ?? "API 그룹" } as HierarchyNode
+      : projection.operations[0]
+  const summary = context ? graphNodeSummary(context, projection) : null
+  const title = !context ? "현재 보기" : context.kind === "operation" && context.selection.operation ? stripOrigin(context.selection.operation) || context.selection.operation : context.label
+  return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
+    <InspectorPanel title="현재 보기" description={<span className="block break-all font-mono text-foreground">{title}</span>} tabs={null}>
+      {summary ? <GraphNodeSummary summary={summary} hint={projection.kind === "site" ? GRAPH_OPEN_HINT : undefined} /> : null}
+      <p className="p-4 text-xs text-muted-foreground">노드를 누르면 그 노드의 정보가 여기에 나옵니다. 빈 곳을 누르면 이 요약으로 돌아옵니다.</p>
+    </InspectorPanel>
+  </div>
+}

@@ -185,7 +185,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   expect(screen.getByText("Sources")).toBeVisible()
   expect(screen.getByText("Identities")).toBeVisible()
   expect(screen.getByText("Verdict")).toBeVisible()
-  expect(screen.getByText("Gap")).toBeVisible()
+  expect(within(screen.getByRole("complementary", { name: "분석 필터" })).getByText("Gap")).toBeVisible()
   expect(screen.getByText("Traffic class")).toBeVisible()
   expect(screen.getByText("Route candidates")).toBeVisible()
   expect(screen.getByText("Role · policy")).toBeVisible()
@@ -246,7 +246,7 @@ it.each([900, 600])("owns compact inspector state independently, opens it on sel
   const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
   await userEvent.click(inspectorTrigger)
   const emptyInspector = screen.getByRole("dialog", { name: "선택 상세" })
-  expect(emptyInspector).toHaveTextContent("그래프 노드 또는 Evidence를 선택하면")
+  expect(emptyInspector).toHaveTextContent("현재 보기")
   await userEvent.click(within(emptyInspector).getByRole("button", { name: "Close" }))
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   await userEvent.click(screen.getByRole("button", { name: /^GET \/orders\/\{id\}/ }))
@@ -259,7 +259,7 @@ it.each([900, 600])("owns compact inspector state independently, opens it on sel
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "선택 상세" })).not.toBeInTheDocument())
   expect(inspectorTrigger).toHaveFocus()
   await userEvent.click(inspectorTrigger)
-  expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("그래프 노드 또는 Evidence를 선택하면")
+  expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("현재 보기")
 })
 
 it.each([900, 600])("opens the shared graph filters and keeps every meaningful toggle operable at %ipx", async (width) => {

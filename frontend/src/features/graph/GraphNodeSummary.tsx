@@ -55,7 +55,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity === owner ? `${identity} (소유자)` : identity, mostUrgent(items)]),
     }
   }
-  if (node.kind === "operation" && projection.kind === "group") {
+  if (node.kind === "operation") {
     const byIdentity = groupBy(cells, cell => cell.idn)
     return {
       stats: [["신원", byIdentity.size], ["객체", new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
