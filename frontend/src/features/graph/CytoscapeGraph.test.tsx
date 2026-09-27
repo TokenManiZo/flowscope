@@ -140,9 +140,9 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  expect(core.on).toHaveBeenCalledTimes(6)
+  expect(core.on).toHaveBeenCalledTimes(7)
   unmount()
-  expect(core.off).toHaveBeenCalledTimes(6)
+  expect(core.off).toHaveBeenCalledTimes(7)
   expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(1)
   expect(disconnectResizeObserver).toHaveBeenCalledTimes(1)
   expect(Math.max(...core.off.mock.invocationCallOrder)).toBeLessThan(core.destroy.mock.invocationCallOrder[0])
@@ -524,6 +524,17 @@ it("redraws node cards and edges for the light theme instead of keeping dark car
   const svg = decodeURIComponent(operation.cardImage!.replace(/^data:image\/svg\+xml,/, ""))
   expect(svg).toContain('fill="#ffffff" stroke="#94a3b8"')
   expect(svg).not.toContain("#111418")
+})
+
+it("clears the selection when the empty canvas is tapped or Esc is pressed, not when a node is tapped", () => {
+  const clear = vi.fn()
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onClearSelection={clear} onPreferencesChange={vi.fn()} />)
+  listeners.get("tap:core")?.({ target: node })
+  expect(clear).not.toHaveBeenCalled()
+  listeners.get("tap:core")?.({ target: core as never })
+  expect(clear).toHaveBeenCalledTimes(1)
+  fireEvent.keyDown(screen.getByLabelText("공격면 Cytoscape 그래프"), { key: "Escape" })
+  expect(clear).toHaveBeenCalledTimes(2)
 })
 
 it("dims everything except the clicked node and its direct neighbours", () => {

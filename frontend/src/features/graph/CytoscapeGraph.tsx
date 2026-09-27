@@ -24,6 +24,8 @@ interface Props {
   onNavigate?(node: HierarchyNode): void
   /** 왼쪽 신원 노드를 열면(더블클릭·Enter) 한 단계 위 View로 간다. */
   onStepBack?(): void
+  /** 빈 캔버스를 누르거나 Esc를 누르면 선택과 강조를 푼다. */
+  onClearSelection?(): void
   /** 레인별 화면 좌표 범위. 헤더가 노드가 만든 실제 범위를 따라간다. */
   onLaneBoundsChange?(bounds: ReadonlyArray<LaneBounds | null>): void
   onPreferencesChange(preferences: Pick<GraphPreferences, "positions" | "viewport" | "sizes">): void
@@ -164,7 +166,7 @@ function publishGeometry(container: HTMLDivElement, core: Core) {
   container.dataset.graphGeometry = JSON.stringify({ width: container.clientWidth, height: container.clientHeight, maxZoom: core.maxZoom(), nodes })
 }
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onStepBack, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -179,6 +181,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const selectRef = useRef(onSelect)
   const navigateRef = useRef(onNavigate)
   const stepBackRef = useRef(onStepBack)
+  const clearSelectionRef = useRef(onClearSelection)
   const selectedElementIdRef = useRef(selectedElementId)
   const preferenceRef = useRef(onPreferencesChange)
   const inputModeRef = useRef(preferences?.inputMode ?? "auto")
@@ -200,6 +203,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   selectRef.current = onSelect
   navigateRef.current = onNavigate
   stepBackRef.current = onStepBack
+  clearSelectionRef.current = onClearSelection
   selectedElementIdRef.current = selectedElementId
   preferenceRef.current = onPreferencesChange
   inputModeRef.current = preferences?.inputMode ?? "auto"
@@ -357,6 +361,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (action === "in" && node) navigateRef.current?.(node)
       else if (action === "back") stepBackRef.current?.()
     }
+    const backgroundListener = (event: cytoscape.EventObject) => { if (event.target === core) clearSelectionRef.current?.() }
     // ponytail: 드래그 중이 아니라 놓을 때만 가둔다. 커서를 따라가던 노드를 실시간으로 밀면 조작감이 나빠진다.
     const clampToNeighbourLanes = (node: cytoscape.NodeSingular) => {
       const count = laneCountRef.current
@@ -406,6 +411,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     containerRef.current.addEventListener("wheel", wheelListener, { passive: false })
     core.on("tap", "node, edge", selectListener)
     core.on("dbltap", "node", openListener)
+    core.on("tap", backgroundListener)
     core.on("mouseover focus", "node", showCardTooltip)
     core.on("mouseout blur", "node", hideCardTooltip)
     core.on("dragfree", "node", dragListener)
@@ -413,6 +419,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     return () => {
       core.off("tap", "node, edge", selectListener)
       core.off("dbltap", "node", openListener)
+      core.off("tap", backgroundListener)
       core.off("mouseover focus", "node", showCardTooltip)
       core.off("mouseout blur", "node", hideCardTooltip)
       core.off("dragfree", "node", dragListener)
@@ -578,7 +585,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
             const openable = event.key === "Enter" && node && hierarchy && graphOpenAction(node.kind, hierarchy.kind)
             coreRef.current?.getElementById(id).emit(openable ? "dbltap" : "tap")
           }
-          else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip() }
+          else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip(); clearSelectionRef.current?.() }
         }} />
       {cardTooltip && <div ref={tooltipRef} id={tooltipId} role="tooltip" tabIndex={0} className="pointer-events-auto absolute z-20 max-h-[calc(100%-1rem)] overflow-y-auto overscroll-contain rounded-md border border-slate-500 bg-slate-950 px-3 py-2 text-sm text-slate-100 shadow-lg focus-visible:outline-2 focus-visible:outline-ring [overflow-wrap:anywhere]" style={{ left: cardTooltip.x, top: cardTooltip.y, width: cardTooltip.width }}
         onPointerEnter={() => { tooltipInteractionRef.current.pointer = true; cancelTooltipHide() }}
