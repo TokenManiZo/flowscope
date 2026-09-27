@@ -73,7 +73,6 @@ export function EvidenceFilters({ value, onChange }: Props) {
         checked={value.expandRepeats}
         onCheckedChange={(expandRepeats) => onChange({ ...value, expandRepeats })}
       />
-      <p className="text-sm text-muted-foreground">이 필터는 표시에만 적용됩니다. 숨김 Evidence는 삭제되지 않습니다.</p>
     </fieldset>
   )
 }

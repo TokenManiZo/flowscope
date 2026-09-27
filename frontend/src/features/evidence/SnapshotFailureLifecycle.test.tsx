@@ -67,7 +67,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeDisabled()
   expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
-  expect(screen.getByText("마지막 성공 데이터 · 현재 상태 아님")).toBeVisible()
+  expect(screen.getByText("마지막으로 불러온 데이터를 표시하고 있습니다.")).toBeVisible()
   expect(client.getQueryData(["snapshot"])).toEqual(snapshot)
   if (kind === "evidence") expect(screen.getAllByText("actual-a").length).toBeGreaterThan(0)
   if (kind === "surface") expect(screen.getAllByText("/orders/{id}").length).toBeGreaterThan(0)

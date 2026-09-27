@@ -64,7 +64,7 @@ export function RequestLabMetadata({
         <option value="">계정 선택</option>
         {eligibleAccounts.map((account) => <option key={account.handle} value={account.accountId}>{account.accountLabel}</option>)}
       </select>
-      <p className="text-xs text-muted-foreground">표시된 원문은 관측 당시 요청입니다. 선택 계정의 인증값은 전송 또는 Repeater 생성 시 교체하며 화면에는 표시하지 않습니다.</p>
+      <p className="text-xs text-muted-foreground">관측 당시 원문입니다. 보낼 때 선택 계정의 인증값으로 바뀝니다.</p>
     </div>}
   </section>
 }

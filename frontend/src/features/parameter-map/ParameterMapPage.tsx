@@ -45,7 +45,7 @@ export function ParameterMapPage({ viewSwitcher }: { viewSwitcher?: ReactNode })
   const title = <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-[var(--flowscope-divider)] px-4 py-2"><div className="flex items-center">{titleContent}</div>{titleMeta}</header>
   if (snapshot.isError && !projection) return <section className="h-full bg-[var(--flowscope-canvas)]">{title}<div role="alert" className="m-6 max-w-xl space-y-3 border-l-2 border-red-400 pl-4">
     <h2 className="font-semibold">점검 우선순위를 불러오지 못했습니다.</h2><p className="text-sm">{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
-    <p className="text-sm text-muted-foreground">마지막 갱신: {snapshot.dataUpdatedAt ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "없음"}. 이전 결과는 최신 결과로 표시하지 않습니다.</p>
+    <p className="text-sm text-muted-foreground">마지막 갱신: {snapshot.dataUpdatedAt ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "없음"}.</p>
     <Button onClick={() => { void snapshot.refetch() }}>다시 불러오기</Button>
   </div></section>
   if (!projection) return <section>{title}<p role="status" className="p-6 text-sm">서버 점검 근거를 불러오는 중입니다.</p></section>
@@ -74,7 +74,7 @@ export function ParameterMapPage({ viewSwitcher }: { viewSwitcher?: ReactNode })
   const availableGapTypes = [...new Set((snapshot.data?.surface?.parameterGaps ?? []).map(gap => gap.type))].filter(type => Object.hasOwn(gapTypeLabels, type)).sort()
   const activeAdvancedCount = filters.source.length + filters.identity.length + Number(filters.gapTypes.length === 1)
 
-  const failure = snapshot.isError && <div role="alert" className="shrink-0 space-y-2 border-b border-red-400 px-4 py-2 text-sm"><p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p><p className="text-muted-foreground">마지막 성공 데이터 · 현재 상태 아님. 열린 상세와 초안은 유지하며 변경·전송 동작을 잠급니다.</p><Button size="sm" variant="outline" onClick={() => { void snapshot.refetch() }}>다시 불러오기</Button></div>
+  const failure = snapshot.isError && <div role="alert" className="shrink-0 space-y-2 border-b border-red-400 px-4 py-2 text-sm"><p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p><p className="text-muted-foreground">마지막으로 불러온 데이터를 표시하고 있습니다. 복구될 때까지 변경·전송을 잠급니다.</p><Button size="sm" variant="outline" onClick={() => { void snapshot.refetch() }}>다시 불러오기</Button></div>
   const toolbar = <>{failure}<div role="toolbar" aria-label="Gap 그래프 필터" className="focused-graph-filters shrink-0 border-b border-[var(--flowscope-divider)] px-4 py-2 text-sm">
     <ParameterFilterBar filters={filters} activeAdvancedCount={activeAdvancedCount} advancedOpen={advancedOpen && queueOpen} onChange={setFilters} onOpenAdvanced={() => { setAdvancedOpen(current => !current || !queueOpen); setQueueOpen(true) }} />
   </div></>
@@ -105,7 +105,7 @@ export function ParameterMapPage({ viewSwitcher }: { viewSwitcher?: ReactNode })
 
   return <FocusedGraphWorkspace queue={queue} header={titleContent} headerMeta={titleMeta} toolbar={toolbar} queueOpen={queueOpen} onQueueOpenChange={open => { setQueueOpen(open); if (!open) setAdvancedOpen(false) }} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={open => { if (!open) close(); else setInspectorOpen(true) }}>
     {queueOpen && (projection.queue.length > 0 ? <section aria-label="우선 점검 이유" className="shrink-0 border-b border-[var(--flowscope-divider)] border-l-2 border-l-sky-400 px-4 py-2 text-sm leading-5 [overflow-wrap:anywhere]"><span className="mr-2 font-semibold">{selected ? "선택한 Gap" : "먼저 확인"}</span>{(selected ?? projection.queue[0]).summary}</section>
-      : <div role="status" className="shrink-0 space-y-3 border-b border-[var(--flowscope-divider)] p-4 text-sm"><p>현재 조건에 맞는 열린 위험 Gap이 없습니다. 전체 검증 완료를 의미하지 않습니다.</p>{filters.riskOnly ? <Button onClick={() => setFilters(current => ({ ...current, riskOnly: false }))}>다른 열린 Gap 보기</Button> : <p>분석 필터에서 고급 조건을 조정하거나 초기화하세요.</p>}</div>)}
+      : <div role="status" className="shrink-0 space-y-3 border-b border-[var(--flowscope-divider)] p-4 text-sm"><p>현재 조건에 맞는 열린 위험 Gap이 없습니다.</p>{filters.riskOnly ? <Button onClick={() => setFilters(current => ({ ...current, riskOnly: false }))}>다른 열린 Gap 보기</Button> : <p>분석 필터에서 고급 조건을 조정하거나 초기화하세요.</p>}</div>)}
     {queueOpen && diagnostic && <details className="shrink-0 border-b border-[var(--flowscope-divider)] px-4 py-2 text-sm"><summary className="cursor-pointer text-amber-700 dark:text-amber-300">분석 진단 {projection.diagnostics.length}건 · 누락 근거 확인</summary><ul className="my-2 space-y-2 [overflow-wrap:anywhere]">{projection.diagnostics.map(reason => <li key={reason}>{reason}</li>)}</ul><Button size="sm" variant="outline" onClick={() => { window.location.hash = "#evidence" }}>Evidence에서 진단 확인</Button></details>}
     <ParameterGapGraph projection={projection} onSelect={select} focusVersion={focusVersion} hiddenGapCount={projection.hiddenGapCount} />
   </FocusedGraphWorkspace>

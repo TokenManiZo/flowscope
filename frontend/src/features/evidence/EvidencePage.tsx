@@ -57,16 +57,16 @@ export function EvidencePage() {
     setOffset(0)
   }
 
-  const context = <section className="grid gap-4 p-3"><div><h2 className="text-sm font-semibold">Evidence 표시</h2><p className="text-xs text-muted-foreground">필터는 현재 표시에만 적용되며 Evidence를 삭제하지 않습니다.</p></div><EvidenceFilters value={filters} onChange={setFilters} /><div className="border-t pt-3"><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div></section>
+  const context = <section className="grid gap-4 p-3"><div><h2 className="text-sm font-semibold">Evidence 표시</h2></div><EvidenceFilters value={filters} onChange={setFilters} /><div className="border-t pt-3"><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div></section>
   const inspector = <EvidenceSheet inline event={selectedEvent} snapshot={snapshot.data} disabled={snapshot.isError} onOpenChange={() => undefined} />
   const page = evidence.data
   return (
     <ReferenceAnalysisWorkspace ariaLabel="Evidence 분석 영역" context={context} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
       <section className="grid gap-4 p-3" aria-labelledby="evidence-title">
-      <div><h1 id="evidence-title" className="text-xl font-semibold">Evidence</h1><p className="text-sm text-muted-foreground">파싱된 Evidence를 표시하며 숨김은 삭제가 아닙니다.</p></div>
-      {snapshot.isError && <Alert variant="destructive"><AlertTitle>Evidence를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
+      <div><h1 id="evidence-title" className="text-xl font-semibold">Evidence</h1></div>
+      {snapshot.isError && <Alert variant="destructive"><AlertTitle>Evidence를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
       {snapshot.isLoading ? <Skeleton className="h-64" /> : snapshot.data && <>
-        <p className="text-sm text-muted-foreground">숨김 {hidden}건 · 삭제되지 않았습니다.</p>
+        <p className="text-sm text-muted-foreground">숨김 {hidden}건</p>
         <ScrollArea className="h-[28rem] rounded-md border" aria-label="Evidence 표">
           <Table>
             <TableHeader><TableRow><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead>신원</TableHead><TableHead>요청</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
@@ -78,7 +78,7 @@ export function EvidencePage() {
                 <TableCell>{event.repeatCount}</TableCell><TableCell className="whitespace-normal">{observedTimeLabel(event.firstSeen, event.lastSeen)}</TableCell>
                 <TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => selectEvent(event)} aria-label="상세 보기">상세 보기</Button></TableCell>
               </TableRow>)}
-              {rows.length === 0 && <TableRow><TableCell colSpan={8} className="whitespace-normal text-muted-foreground">현재 필터에 표시할 Evidence가 없습니다. 숨김은 삭제되지 않았습니다.</TableCell></TableRow>}
+              {rows.length === 0 && <TableRow><TableCell colSpan={8} className="whitespace-normal text-muted-foreground">현재 필터에 맞는 Evidence가 없습니다.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </ScrollArea>

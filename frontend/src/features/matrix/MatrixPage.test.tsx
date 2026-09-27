@@ -144,7 +144,7 @@ it("retains parameter Evidence detail while disabling actions after a refresh fa
   rerender(<ParameterMatrixView />)
   expect(screen.getByRole("dialog", { name: "Evidence 상세" })).toBeVisible()
   const banner = screen.getByRole("alert")
-  expect(banner).toHaveTextContent("마지막 성공 데이터 · 현재 상태 아님")
+  expect(banner).toHaveTextContent("마지막으로 불러온 데이터를 표시하고 있습니다.")
   expect(banner.querySelector("time")).toHaveAttribute("dateTime", new Date(lastUpdated).toISOString())
   expect(screen.getByRole("region", { name: "파라미터 커버리지 표" })).toBeVisible()
   for (const button of screen.getAllByRole("button", { name: /상세 보기$/ })) expect(button).toBeDisabled()
@@ -164,7 +164,7 @@ it("also retains failed legacy selection while disabling its Evidence actions", 
   await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })[0])
   queryError = true
   rerender(<LegacyMatrixView />)
-  expect(screen.getByRole("alert")).toHaveTextContent("마지막 성공 데이터 · 현재 상태 아님")
+  expect(screen.getByRole("alert")).toHaveTextContent("마지막으로 불러온 데이터를 표시하고 있습니다.")
   for (const button of screen.getAllByRole("button", { name: "권한 셀 Evidence 열기" })) expect(button).toBeDisabled()
   expect(screen.getByText("Evidence 상세")).toBeVisible()
   expect(screen.getByLabelText("필수 역할")).toBeDisabled()

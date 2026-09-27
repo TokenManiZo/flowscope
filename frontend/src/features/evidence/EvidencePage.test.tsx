@@ -123,7 +123,7 @@ describe("EvidencePage", () => {
     expect(screen.getByRole("checkbox", { name: "사람 H" })).toBeChecked()
     expect(screen.getByRole("checkbox", { name: "스캐너 S" })).toBeChecked()
     expect(screen.getByRole("checkbox", { name: "LLM L" })).toBeChecked()
-    expect(screen.getByText("숨김 1건 · 삭제되지 않았습니다.")).toBeVisible()
+    expect(screen.getByText("숨김 1건")).toBeVisible()
 
     await userEvent.click(screen.getByRole("checkbox", { name: "스캐너 S" }))
     expect(screen.queryByText("scanner-review")).not.toBeInTheDocument()
@@ -330,7 +330,7 @@ describe("EvidencePage", () => {
     await user.click(contextTrigger)
     const context = screen.getByRole("dialog", { name: "분석 필터" })
     await user.click(within(context).getByRole("checkbox", { name: "사람 H" }))
-    expect(await screen.findByText("현재 필터에 표시할 Evidence가 없습니다. 숨김은 삭제되지 않았습니다.")).toBeVisible()
+    expect(await screen.findByText("현재 필터에 맞는 Evidence가 없습니다.")).toBeVisible()
     await user.click(within(context).getByRole("button", { name: "Close" }))
     expect(contextTrigger).toHaveFocus()
 

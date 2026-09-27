@@ -86,7 +86,7 @@ export function ParameterMatrixView({ viewSwitcher }: { viewSwitcher?: ReactNode
 function SnapshotFailure({ title, retained, updatedAt, retry, detail }: { title: string; retained: boolean; updatedAt: number; retry(): void; detail?: string }) {
   return <Alert variant="destructive" className="sticky top-0 z-50 bg-background"><AlertTitle>{title}</AlertTitle><AlertDescription>
     {detail && <p>{detail}</p>}
-    {retained ? <><p>마지막 성공 데이터 · 현재 상태 아님</p><p>마지막 성공 시각: {updatedAt > 0 && Number.isFinite(updatedAt) ? <time dateTime={new Date(updatedAt).toISOString()}>{new Date(updatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>열린 상세와 초안은 유지되며 갱신에 성공할 때까지 변경·전송 동작이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
+    {retained ? <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {updatedAt > 0 && Number.isFinite(updatedAt) ? <time dateTime={new Date(updatedAt).toISOString()}>{new Date(updatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>열린 상세와 초안은 유지되며 갱신에 성공할 때까지 변경·전송 동작이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
     <Button variant="outline" size="sm" onClick={retry}>snapshot 다시 시도</Button>
   </AlertDescription></Alert>
 }

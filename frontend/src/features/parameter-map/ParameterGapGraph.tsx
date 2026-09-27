@@ -344,8 +344,8 @@ function LegendHelp() {
     <PopoverContent align="end" className="w-[min(34rem,85vw)] space-y-3 bg-[var(--flowscope-pane)] p-3 text-muted-foreground" onPointerEnter={show} onPointerLeave={hide} onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()}>
       <ul aria-label="요청 생성 주체 범례" className="flex flex-wrap gap-x-4 gap-y-2">{([["HUMAN", UserRound, "text-blue-600 dark:text-blue-400"], ["SCANNER", ScanLine, "text-red-600 dark:text-red-400"], ["LLM", Bot, "text-zinc-700 dark:text-zinc-300"]] as const).map(([source, Icon, color]) => <li key={source} className="flex items-center gap-1.5"><Icon aria-hidden="true" className={`size-3.5 ${color}`} />{source}</li>)}</ul>
       <ul aria-label="관계 선형 범례" className="flex flex-wrap gap-x-5 gap-y-2">{([ ["solid", "실선: 관측·근거", "#a1a1aa"], ["dashed", "주황 파선: 미검증 · Gap", "var(--gap-edge)"], ["dotted", "점선: 정의·불확실 관계", "#a1a1aa"] ] as const).map(([line, label, color]) => <li key={label} className="flex items-center gap-2"><span aria-hidden="true" className="w-7 border-t-2" style={{ borderStyle: line, borderColor: color }} />{label}</li>)}</ul>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1"><dt className="font-medium text-foreground">UNKNOWN</dt><dd>근거 부족으로 아직 알 수 없음</dd><dt className="font-medium text-foreground">INFERRED</dt><dd>정의·연결에서 추론, 실제 관측 아님</dd></dl>
-      <p>Gap은 점검 후보이며 취약점 판정이 아닙니다.</p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1"><dt className="font-medium text-foreground">UNKNOWN</dt><dd>근거 부족으로 아직 알 수 없음</dd><dt className="font-medium text-foreground">INFERRED</dt><dd>추론 (미관측)</dd></dl>
+      <p>Gap = 점검 후보</p>
     </PopoverContent>
   </Popover>
 }

@@ -220,7 +220,7 @@ it("keeps the definitions-only message instead of replacing it with the run-gap 
   expect(within(statePanel).queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
 })
 
-it.each([["UNKNOWN", "근거 부족으로 아직 알 수 없음"], ["INFERRED", "정의·연결에서 추론, 실제 관측 아님"]])("explains %s in the help popover opened by keyboard focus", async (stateName, meaning) => {
+it.each([["UNKNOWN", "근거 부족으로 아직 알 수 없음"], ["INFERRED", "추론 (미관측)"]])("explains %s in the help popover opened by keyboard focus", async (stateName, meaning) => {
   render()
   act(() => { screen.getByRole("button", { name: "범례·도움말" }).focus() })
   const term = await screen.findByText(stateName, { selector: "dt" })

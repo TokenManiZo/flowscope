@@ -285,7 +285,7 @@ it("retains the selected cell and unsaved review note while snapshot actions are
   rerender(<JudgmentMatrixView />)
   expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
   expect(screen.getByLabelText("검증 메모")).toBeDisabled()
-  expect(screen.getByText("마지막 성공 데이터 · 현재 상태 아님")).toBeVisible()
+  expect(screen.getByText("마지막으로 불러온 데이터를 표시하고 있습니다.")).toBeVisible()
   expect(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" })).toBeDisabled()
   await user.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
   expect(refetchSnapshot).toHaveBeenCalledOnce()

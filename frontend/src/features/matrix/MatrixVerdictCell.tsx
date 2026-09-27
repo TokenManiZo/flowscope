@@ -17,7 +17,7 @@ function SourceDetectionBadge({ member, source }: { member: MatrixMember; source
   const verdict = member.cell.perSource[source]
   const reason = member.cell.reasons[source]
   const detected = verdict !== undefined
-  const detail = detected ? `${presentation.label} 관측 · 서버 판정 ${verdict}${reason ? ` · ${reason}` : ""}` : `${presentation.label} 관측 없음 · 취약점 판정 아님`
+  const detail = detected ? `${presentation.label} 관측 · 서버 판정 ${verdict}${reason ? ` · ${reason}` : ""}` : `${presentation.label} 관측 없음`
   return <Tooltip><TooltipTrigger asChild><Badge variant="outline" className={detected ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-zinc-500/50 bg-transparent text-muted-foreground"}>{presentation.short} · {detected ? "탐지" : "미탐"}</Badge></TooltipTrigger><TooltipContent>{detail}</TooltipContent></Tooltip>
 }
 

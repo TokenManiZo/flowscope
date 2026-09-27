@@ -64,7 +64,7 @@ export function ScenariosPage() {
       <section className="grid gap-4 p-3" aria-labelledby="scenarios-title">
         <div>
           <h1 id="scenarios-title" className="text-2xl font-semibold">취약점 시나리오</h1>
-          <p className="text-sm text-muted-foreground">규칙 후보와 사람 검토를 표시합니다. 자동 LLM 판정은 제공하지 않습니다.</p>
+          <p className="text-sm text-muted-foreground">규칙 후보와 사람 검토를 표시합니다.</p>
         </div>
         {snapshot.isLoading && <p>시나리오 데이터를 불러오는 중입니다.</p>}
         {snapshot.isError && (
@@ -74,7 +74,7 @@ export function ScenariosPage() {
           </Alert>
         )}
         {!snapshot.isLoading && !snapshot.isError && scenarios.length === 0 && (
-          <p>현재 규칙 후보가 없습니다. 안전하다는 판정은 아닙니다.</p>
+          <p>규칙에 해당하는 후보가 없습니다.</p>
         )}
         {scenarios.length > 0 && (
           <ScenarioWorkspace
@@ -92,7 +92,7 @@ export function ScenariosPage() {
         {historicalEntries.length > 0 && (
           <details className="rounded-md border p-3">
             <summary>과거 LLM 기록 · 읽기 전용 ({historicalEntries.length}개)</summary>
-            <p className="my-3 text-sm text-muted-foreground">이전 프로젝트에서 복원한 기록입니다. 현재 코드가 재검증하거나 승인한 판정이 아니며, 현재 규칙 후보·사람 검토와 합치지 않습니다.</p>
+            <p className="my-3 text-sm text-muted-foreground">이전 프로젝트에서 가져온 읽기 전용 기록입니다.</p>
             <div className="grid gap-3">
               {historicalEntries.slice(0, historyLimit).map((entry) => (
                 <article key={entry.key} className="grid gap-2 rounded-md border p-3 text-sm">

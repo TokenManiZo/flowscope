@@ -109,7 +109,7 @@ it("assigns equal-signature links distinct occurrence keys that survive unrelate
 it("renders only server flow links with source/operation/masked values, auxiliary notice, and exact structured Evidence selection", async () => {
   current = sequenceSnapshot()
   renderPage(<SequencePage />)
-  expect(await screen.findByText("데이터 의존 링크는 보조 정보이며 coverage 또는 IDOR/권한 판정을 변경하지 않습니다.")).toBeVisible()
+  expect(await screen.findByText("데이터 의존 링크는 참고용입니다.")).toBeVisible()
   const aliceTimeline = screen.getAllByRole("region", { name: "데이터 의존 타임라인" })[0]
   expect(within(aliceTimeline).getAllByText("1. 생산")).toHaveLength(2)
   expect(within(aliceTimeline).getAllByText("2. 전달 값")).toHaveLength(2)

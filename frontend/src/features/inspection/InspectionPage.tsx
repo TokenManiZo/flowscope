@@ -265,7 +265,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
               </fieldset>
               <div><Button type="button" variant="outline" size="sm" onClick={() => setShowZapAccountForm((value) => !value)}>{showZapAccountForm ? "임시 계정 폼 닫기" : "임시 계정 생성"}</Button></div>
               {showZapAccountForm && <section className="grid gap-3 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="ZAP 로그인 계정 등록">
-                <div><p className="font-medium">ZAP 브라우저 로그인 계정</p><p className="text-xs text-muted-foreground">모든 lane은 bundle이 제공하는 Docker Chromium Client Spider로 실행됩니다. ID·비밀번호는 Burp 메모리에서 ZAP의 휘발성 tmpfs 작업공간으로 전송되며 프로젝트·Evidence·로그에는 저장하지 않습니다.</p></div>
+                <div><p className="font-medium">ZAP 브라우저 로그인 계정</p><p className="text-xs text-muted-foreground">모든 lane은 bundle이 제공하는 Docker Chromium Client Spider로 실행됩니다. ID·비밀번호는 메모리에만 두며 프로젝트·로그에 저장하지 않습니다.</p></div>
                 <div className="grid gap-2 md:grid-cols-2">
                   <label className="grid gap-1 text-sm">계정 이름<Input value={zapLabel} onChange={(event) => setZapLabel(event.target.value)} autoComplete="off" /></label>
                   <label className="grid gap-1 text-sm">역할<Select value={zapRole} onValueChange={setZapRole}><SelectTrigger aria-label="ZAP 계정 역할"><SelectValue /></SelectTrigger><SelectContent>{["USER", "LV1", "LV2", "ADMIN", "UNKNOWN"].map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></label>
@@ -273,7 +273,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   <label className="grid gap-1 text-sm">로그인 ID<Input value={zapUsername} onChange={(event) => setZapUsername(event.target.value)} autoComplete="username" /></label>
                   <label className="grid gap-1 text-sm">비밀번호<Input type="password" value={zapPassword} onChange={(event) => setZapPassword(event.target.value)} autoComplete="new-password" /></label>
                 </div>
-                <p className="text-xs text-muted-foreground">로그인 성공은 ZAP의 인증 결과와 실제 재사용 세션 연결을 함께 확인합니다. 실패하면 ANON으로 대체하지 않고 해당 계정을 FAILED로 표시하며 검사를 시작하지 않습니다.</p>
+                <p className="text-xs text-muted-foreground">로그인에 실패한 계정은 FAILED로 멈추며 비로그인으로 대신 실행하지 않습니다.</p>
                 <Button type="button" variant="outline" disabled={!targetInScope || !zapLabel.trim() || !zapLoginUrl.trim() || !zapUsername || !zapPassword || zapAccountSave.isPending || scannerRunning} onClick={() => zapAccountSave.mutate({ id: "", label: zapLabel, role: zapRole, service: normalizedOrigin(target), loginUrl: zapLoginUrl, username: zapUsername, password: zapPassword }, { onSuccess: () => { setZapLabel(""); setZapLoginUrl(""); setZapUsername(""); setZapPassword(""); setShowZapAccountForm(false) } })}>로그인 계정 등록</Button>
               </section>}
               <details className="rounded-lg border border-border/70 bg-background/30 p-3">

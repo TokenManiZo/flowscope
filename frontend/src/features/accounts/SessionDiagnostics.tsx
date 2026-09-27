@@ -44,8 +44,7 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
     <div className="space-y-4">
       <section aria-labelledby="managed-session-title" className="space-y-2">
         <h3 id="managed-session-title" className="font-medium">재사용 관리 세션</h3>
-        <p className="text-sm text-muted-foreground">등록 계정과 메모리 broker 상태만 표시합니다. Cookie·Authorization·password 같은 원문은 표시하거나 저장하지 않습니다.</p>
-        <Alert><AlertDescription>계정마다 별도 브라우저 프로필 또는 독립 브라우저 컨텍스트를 사용하세요. 같은 프로필의 로그아웃만으로는 Cookie·브라우저 저장소가 완전히 격리되지 않습니다. 가장 확실한 등록 방법은 Burp Proxy history 또는 Repeater에서 해당 계정으로 인증된 요청 하나를 우클릭한 뒤 <strong>FlowScope 계정 세션으로 사용</strong>에서 계정을 선택하는 것입니다.</AlertDescription></Alert>
+        <Alert><AlertDescription>계정마다 별도 브라우저 프로필을 쓰세요. 같은 프로필에서 로그아웃만 하면 쿠키가 섞일 수 있습니다. 가장 확실한 등록 방법은 Burp Proxy history 또는 Repeater에서 해당 계정으로 인증된 요청 하나를 우클릭한 뒤 <strong>FlowScope 계정 세션으로 사용</strong>에서 계정을 선택하는 것입니다.</AlertDescription></Alert>
         <div className="grid gap-3 md:grid-cols-2">
           {accounts.map((account) => {
             const view = sessionState(managedByAccount.get(account.id))
@@ -69,7 +68,7 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
         <AccordionItem value="diagnostics">
           <AccordionTrigger aria-label="고급 세션 진단 열기">고급 세션 진단</AccordionTrigger>
           <AccordionContent>
-            <p className="mb-3 text-sm text-muted-foreground">관측 신원·서비스·비가역 지문을 등록 계정에 연결합니다. 지문은 재사용 자격증명이 아닙니다.</p>
+            <p className="mb-3 text-sm text-muted-foreground">관측 신원·서비스·비가역 지문을 등록 계정에 연결합니다.</p>
             <Table>
               <TableHeader><TableRow><TableHead>관측 신원</TableHead><TableHead>비가역 지문</TableHead><TableHead>대상 서비스</TableHead><TableHead>연결</TableHead></TableRow></TableHeader>
               <TableBody>{sessions.map((session, index) => {
