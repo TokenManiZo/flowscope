@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Cell, EventRecord, RouteCandidate, Snapshot } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
-import { apiGroupDescriptor, GRAPH_PAGE_SIZE, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
+import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphCountLabel, graphOpenAction, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
 
 const service = "https://demo.test:443"
@@ -41,6 +41,26 @@ describe("API hierarchy", () => {
     const filtered = projectHierarchy(data(), { ...filters, identity: ["USER B"], source: ["human"] }, initial)
     expect(filtered.groups[0]).toMatchObject({ endpointCount: 1, sourceCounts: { human: 1, scanner: 0, llm: 0 }, gapCount: 0 })
     expect(projectHierarchy(data(), { ...filters, reviewStates: ["deny"] }, initial).groups).toHaveLength(0)
+  })
+
+  it("opens right-lane nodes inward and left identity nodes back up, never the target or objects", () => {
+    expect(graphOpenAction("api-group", "site")).toBe("in")
+    expect(graphOpenAction("operation", "group")).toBe("in")
+    expect(graphOpenAction("identity", "group")).toBe("back")
+    expect(graphOpenAction("identity", "operation")).toBe("back")
+    expect(graphOpenAction("target", "site")).toBeNull()
+    expect(graphOpenAction("resource", "operation")).toBeNull()
+    expect(graphOpenAction("operation", "operation")).toBeNull()
+  })
+
+  it("counts only the nodes drawn at each level instead of zero identities at site level", () => {
+    const site = projectHierarchy(data(), filters, initial)
+    expect(graphCountLabel(site)).toBe(`${site.groups.length} API groups`)
+    const group = projectHierarchy(data(), filters, groupNav())
+    expect(graphCountLabel(group)).toBe(`${group.identities.length} identities · ${group.operations.length} operations`)
+    expect(graphCountLabel(group)).not.toContain("resources")
+    const operation = projectHierarchy(data(), filters, operationNav())
+    expect(graphCountLabel(operation)).toBe(`${operation.identities.length} identities · ${operation.operations.length} operations · ${operation.resources.length} resources`)
   })
 
   it("renders Identity→API with separate source buckets and no Objects in group view", () => {

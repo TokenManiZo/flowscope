@@ -14,6 +14,7 @@ import burp.api.montoya.http.RequestOptions;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.http.message.HttpHeader;
+import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.proxy.ProxyHttpRequestResponse;
 import burp.api.montoya.proxy.http.InterceptedRequest;
 import burp.api.montoya.proxy.http.InterceptedResponse;
@@ -23,9 +24,16 @@ import burp.api.montoya.proxy.http.ProxyRequestToBeSentAction;
 import burp.api.montoya.proxy.http.ProxyResponseHandler;
 import burp.api.montoya.proxy.http.ProxyResponseReceivedAction;
 import burp.api.montoya.proxy.http.ProxyResponseToBeSentAction;
+import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
+import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 import io.flowscope.core.Fingerprints;
 import io.flowscope.core.ActiveTrafficGuard;
+import io.flowscope.core.AccountProfile;
+import io.flowscope.core.AccountVerificationRule;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.VerificationOutcome;
+import io.flowscope.core.AuthorizationMatrix;
+import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.Masking;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RecordMerge;
@@ -55,6 +63,8 @@ import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.integration.SqliteProjectStore;
 import io.flowscope.integration.RunExecutionLedger;
+import io.flowscope.integration.CrossIdentityReplayOrchestrator;
+import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.explorer.CodexAppServerProvider;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -62,8 +72,11 @@ import io.flowscope.explorer.ExplorerTransport;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
 
+import javax.swing.JMenu;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import java.awt.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -71,6 +84,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -241,6 +255,15 @@ public final class FlowScopeExtension implements BurpExtension {
     private final ZapProbeStatus zapProbeStatus = new ZapProbeStatus();
     private ExplorerAccountVault explorerAccounts;
     private ExplorerCoordinator explorer;
+    private CrossIdentityReplayOrchestrator crossIdentityReplay;
+    private LiveCrossIdentityReplayCoordinator liveCrossIdentityReplay;
+    private final Set<Long> pendingLiveReplays = ConcurrentHashMap.newKeySet();
+    private final ExecutorService authorizationReplayWorker =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "flowscope-authorization-replay");
+                t.setDaemon(true);
+                return t;
+            });
     private final ScheduledExecutorService worker =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "flowscope-rebuild");
@@ -277,6 +300,14 @@ public final class FlowScopeExtension implements BurpExtension {
         this.api = api;
         api.extension().setName("FlowScope");
         configureInitialScope();
+        crossIdentityReplay = new CrossIdentityReplayOrchestrator(sessionBroker, () -> scope,
+                this::executeCrossIdentityReplay, this::openCrossIdentityReplayDraft,
+                java.time.Clock.systemUTC());
+        liveCrossIdentityReplay = new LiveCrossIdentityReplayCoordinator(
+                crossIdentityReplay::executeContinuousBatch,
+                crossIdentityReplay::beginContinuousRun,
+                crossIdentityReplay::kill,
+                authorizationReplayWorker);
         explorerAccounts = new ExplorerAccountVault();
         explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
                 new CodexAppServerProvider(), runContexts, value -> scope.allows(value),
@@ -316,11 +347,126 @@ public final class FlowScopeExtension implements BurpExtension {
         api.proxy().registerResponseHandler(new ProxyHandler());
         // Repeater/Scanner/다른 확장의 트래픽도 수집 (프록시 리스너를 지나지 않는 경우 대비)
         api.http().registerHttpHandler(new ToolHandler());
+        registerAccountSessionCaptureMenu();
         api.extension().registerUnloadingHandler(this::shutdown);
         startZapIntegration();
         api.logging().logToOutput("FlowScope loaded. 포트 매핑: " + PORT_SOURCE
                 + " (미매핑 포트는 '미상'으로 수집). 변경: "
                 + "-Dflowscope.ports=8080:human:browser,8081:scanner:other_scanner,8082:llm:llm_explorer");
+    }
+
+    /**
+     * Autorize/AuthMatrix처럼 운영자가 확인한 Burp 요청의 자격을 특정 등록 계정 슬롯에 명시적으로 넣는다.
+     * 토큰이나 쿠키에서 계정 신원을 추론하지 않으며 원문 자격은 SessionBroker 밖으로 반환하지 않는다.
+     */
+    private void registerAccountSessionCaptureMenu() {
+        api.userInterface().registerContextMenuItemsProvider(new ContextMenuItemsProvider() {
+            @Override public List<Component> provideMenuItems(ContextMenuEvent event) {
+                HttpRequestResponse exchange = selectedExchange(event);
+                if (exchange == null || !exchange.hasResponse() || exchange.request() == null
+                        || exchange.response() == null || !scope.allows(exchange.request().url())) {
+                    return List.of();
+                }
+                String service = serviceOf(exchange.request());
+                List<AccountProfile> accounts = analysisConfig.accounts().values().stream()
+                        .filter(account -> account.service().equals(service))
+                        .sorted(java.util.Comparator.comparing(AccountProfile::label))
+                        .toList();
+                if (accounts.isEmpty()) return List.of();
+
+                JMenu menu = new JMenu("FlowScope 계정 세션으로 사용");
+                for (io.flowscope.core.AccountProfile account : accounts) {
+                    JMenuItem item = new JMenuItem(account.label() + " · " + account.role());
+                    item.addActionListener(ignored ->
+                            captureSelectedAccountSession(account, exchange, promptVerificationIndicator(account)));
+                    menu.add(item);
+                }
+                return List.of(menu);
+            }
+        });
+    }
+
+    private static HttpRequestResponse selectedExchange(ContextMenuEvent event) {
+        if (event == null) return null;
+        if (event.messageEditorRequestResponse().isPresent()) {
+            return event.messageEditorRequestResponse().orElseThrow().requestResponse();
+        }
+        List<HttpRequestResponse> selected = event.selectedRequestResponses();
+        return selected.size() == 1 ? selected.getFirst() : null;
+    }
+
+    /**
+     * Optional operator-typed login-success indicator. Blank means "no strong rule": the imported
+     * session is still OPERATOR_ASSERTED, but later auto-captures cannot reach RULE_MATCHED.
+     */
+    private String promptVerificationIndicator(AccountProfile account) {
+        Object input = JOptionPane.showInputDialog(null,
+                account.label() + " 로그인 성공을 나타내는 응답 표식(선택). 예: 사용자명, \"id\":\"...\".\n"
+                        + "자격값(쿠키/토큰/비밀번호)은 넣지 마세요. 비우면 이 세션만 확인되고 자동 규칙은 만들지 않습니다.",
+                "FlowScope 검증 표식", JOptionPane.PLAIN_MESSAGE);
+        return input == null ? null : input.toString();
+    }
+
+    private void captureSelectedAccountSession(AccountProfile account,
+                                               HttpRequestResponse exchange, String indicator) {
+        try {
+            HttpRequest request = exchange.request();
+            HttpResponse response = exchange.response();
+            if (request == null || response == null || !scope.allows(request.url())) {
+                throw new IllegalArgumentException("선택한 요청이 현재 exact scope 안에 있지 않습니다.");
+            }
+            String service = serviceOf(request);
+            if (!service.equals(account.service())) {
+                throw new IllegalArgumentException("선택한 요청과 등록 계정의 대상 서비스가 다릅니다.");
+            }
+            String fingerprint = Fingerprints.of(request.headerValue("Authorization"),
+                    request.headerValue("Cookie"));
+            if ("anon".equals(fingerprint)) {
+                throw new IllegalArgumentException("선택한 요청에 Cookie 또는 Authorization이 없습니다.");
+            }
+            analysisConfig.boundAccount(service, fingerprint).ifPresent(bound -> {
+                if (!bound.id().equals(account.id())) {
+                    throw new IllegalStateException("이 인증정보는 이미 다른 등록 계정에 연결되어 있습니다: "
+                            + bound.label());
+                }
+            });
+            List<String> setCookies = response.headers().stream()
+                    .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
+                    .map(HttpHeader::value).toList();
+            // Atomic import across two stores: reserve the binding first (reversible), then commit the
+            // session. On session failure roll back only a binding we created; keep any existing same-account
+            // binding. The existing-owner conflict was already rejected above, so bindSession does not fall back.
+            boolean bindingExisted = analysisConfig.boundAccount(service, fingerprint)
+                    .map(bound -> bound.id().equals(account.id())).orElse(false);
+            analysisConfig.bindSession(service, fingerprint, account.id());
+            try {
+                sessionBroker.captureObservedExchange(account, URI.create(request.url()), headersOf(request.headers()),
+                        response.statusCode(), response.headerValue("Location"), boundedResponseBody(response),
+                        setCookies, java.time.Instant.now());
+            } catch (RuntimeException error) {
+                if (!bindingExisted) analysisConfig.unbindSession(service, fingerprint);
+                throw error;
+            }
+            // Session + binding committed as OPERATOR_ASSERTED. Store the optional strong verification rule
+            // from the operator indicator; a bad indicator is reported but never fails the import or falls back.
+            if (indicator != null && !indicator.isBlank()) {
+                try {
+                    AccountVerificationRule.fromExchange(account.id(), request.method(),
+                            URI.create(request.url()), indicator)
+                            .ifPresent(analysisConfig::withAccountVerificationRule);
+                } catch (IllegalArgumentException invalid) {
+                    api.logging().logToError("FlowScope 검증 표식 저장 실패(자격값 형태 등): " + invalid.getMessage());
+                }
+            }
+            revision.incrementAndGet();
+            scheduleRebuild();
+            JOptionPane.showMessageDialog(null,
+                    account.label() + " 계정의 재사용 세션을 메모리에 연결했습니다.",
+                    "FlowScope 계정 세션", JOptionPane.INFORMATION_MESSAGE);
+        } catch (RuntimeException error) {
+            JOptionPane.showMessageDialog(null, error.getMessage(),
+                    "FlowScope 계정 세션 연결 실패", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     /** Scanner/LLM 전용 listener의 모든 송신과 redirect 후속 요청을 exact scope에서 강제 차단한다. */
@@ -335,8 +481,13 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
+                String requestCaptureAccountId = captureAccountId == null ? null : captureAccountForCredential(
+                        captureAccountId, knownCredentialOwner(request));
+                boolean captureSuppressed = captureAccountId != null && requestCaptureAccountId == null;
+                if (captureSuppressed) captureHandle = null;
                 HttpRequest prepared = prepareSession(request, profile, captureHandle, context);
-                rememberObservation(proxyObservations, request.messageId(), context, captureAccountId, "프록시");
+                rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
+                        captureSuppressed, "프록시");
                 return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
@@ -392,7 +543,7 @@ public final class FlowScopeExtension implements BurpExtension {
             Map<String, String> sessionHeaders = context.accountId() == null ? Map.of()
                     : sessionBroker.headersForAccount(context.accountId(), target, scope, java.time.Instant.now());
             for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
-                prepared = prepared.withUpdatedHeader(header.getKey(), header.getValue());
+                prepared = prepared.withHeader(header.getKey(), header.getValue());
             }
             return prepared;
         }
@@ -457,7 +608,13 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? sessionBroker.activeCaptureForService(serviceOf(req)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
-                rememberObservation(toolObservations, req.messageId(), context, captureAccountId, "Burp 도구");
+                String requestedCaptureAccountId = captureAccountId;
+                if (captureAccountId != null) {
+                    captureAccountId = captureAccountForCredential(captureAccountId, knownCredentialOwner(req));
+                }
+                boolean captureSuppressed = requestedCaptureAccountId != null && captureAccountId == null;
+                rememberObservation(toolObservations, req.messageId(), context, captureAccountId,
+                        captureSuppressed, "Burp 도구");
             }
             return RequestToBeSentAction.continueWith(req);
         }
@@ -534,6 +691,10 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             records.add(rec);
             retainRawExchange(rec, req, response);
+            if (liveCrossIdentityReplay != null
+                    && liveCrossIdentityReplay.acceptingCaptures(rec)) {
+                pendingLiveReplays.add(rec.runtimeId());
+            }
         }
         scheduleRebuild();
         return true;
@@ -610,8 +771,9 @@ public final class FlowScopeExtension implements BurpExtension {
             rec.phase = rec.sourceDetail == SourceDetail.ZAP_AUTHENTICATION
                     ? RunPhase.SESSION_SETUP : context.phase();
             rec.runId = context.runId();
-            rec.laneAccountId = context.accountId();
+            if (profile.source() != Source.HUMAN) rec.laneAccountId = context.accountId();
         }
+        if (profile.source() == Source.HUMAN) rec.laneAccountId = accountId;
         boolean directZapAccount = profile.source() == Source.SCANNER
                 && scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId);
         if (accountId != null && !"anon".equals(fp) && !directZapAccount) {
@@ -713,6 +875,27 @@ public final class FlowScopeExtension implements BurpExtension {
         return contextAccountId != null ? contextAccountId : detectedAccountId;
     }
 
+    static String captureAccountForCredential(String captureAccountId, String knownAccountId) {
+        return captureAccountId != null && knownAccountId != null && !captureAccountId.equals(knownAccountId)
+                ? null : captureAccountId;
+    }
+
+    static String resolveSessionUpdateAccount(Source source, String contextAccountId,
+                                               String humanCaptureAccountId, String detectedAccountId,
+                                               boolean humanCaptureSuppressed) {
+        if (source == Source.HUMAN && humanCaptureSuppressed) return null;
+        return resolveObservedAccount(source, contextAccountId, humanCaptureAccountId, detectedAccountId);
+    }
+
+    private String knownCredentialOwner(HttpRequest request) {
+        URI target = URI.create(request.url());
+        String detected = sessionBroker.accountForRequest(target, headersOf(request.headers()),
+                java.time.Instant.now()).orElse(null);
+        if (detected != null) return detected;
+        String fingerprint = Fingerprints.of(request.headerValue("Authorization"), request.headerValue("Cookie"));
+        return analysisConfig.boundAccount(serviceOf(request), fingerprint).map(account -> account.id()).orElse(null);
+    }
+
     static String captureFingerprint(Source source, RunContextRegistry.Context context, String accountId,
                                      String authorization, String cookie) {
         boolean explicitAnonymousHumanPass = source == Source.HUMAN && context != null && accountId == null
@@ -725,9 +908,10 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void rememberObservation(InFlightRequestTracker tracker, int messageId,
                                      RunContextRegistry.Context context, String humanCaptureAccountId,
-                                     String channel) {
+                                     boolean humanCaptureSuppressed, String channel) {
         long now = System.currentTimeMillis();
-        if (!tracker.remember(messageId, context, humanCaptureAccountId, datasetEpoch.get(), now)) {
+        if (!tracker.remember(messageId, context, humanCaptureAccountId,
+                humanCaptureSuppressed, datasetEpoch.get(), now)) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
@@ -751,8 +935,9 @@ public final class FlowScopeExtension implements BurpExtension {
                         : observation.humanCaptureAccountId();
                 String detectedAccountId = sessionBroker.accountForRequest(URI.create(request.url()),
                         headersOf(request.headers()), java.time.Instant.now()).orElse(null);
-                String accountId = resolveObservedAccount(Source.HUMAN,
-                        context == null ? null : context.accountId(), captureAccountId, detectedAccountId);
+                String accountId = resolveSessionUpdateAccount(Source.HUMAN,
+                        context == null ? null : context.accountId(), captureAccountId, detectedAccountId,
+                        observation != null && observation.humanCaptureSuppressed());
                 if (accountId != null) handle = sessionBroker.handleForAccount(accountId);
             } else if (context != null && context.accountId() != null
                     && !scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId)) {
@@ -762,8 +947,15 @@ public final class FlowScopeExtension implements BurpExtension {
             List<String> setCookies = headers == null ? List.of() : headers.stream()
                     .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
                     .map(HttpHeader::value).toList();
+            // Evaluate this account's stored verification rule so an auto-capture can reach RULE_MATCHED
+            // only on the verification endpoint with the operator's success indicator.
+            String ruleAccountId = sessionBroker.accountForHandle(handle).orElse(null);
+            VerificationOutcome outcome = ruleAccountId == null ? VerificationOutcome.NO_RULE
+                    : analysisConfig.verificationRule(ruleAccountId)
+                    .map(rule -> rule.evaluate(request.method(), URI.create(request.url()), body))
+                    .orElse(VerificationOutcome.NO_RULE);
             sessionBroker.observeResponse(handle, URI.create(request.url()), status, location, body,
-                    setCookies, java.time.Instant.now());
+                    setCookies, java.time.Instant.now(), outcome);
         } catch (RuntimeException error) {
             api.logging().logToError("FlowScope 세션 응답 갱신 실패", error);
         }
@@ -901,6 +1093,7 @@ public final class FlowScopeExtension implements BurpExtension {
             preserveCurrentProject();
             long analysisEpoch = analysisPublication.invalidate();
             clearRunContexts();
+            killCrossIdentityReplay();
             sessionBroker.close();
             resetExplorerSecrets();
             synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
@@ -1049,10 +1242,65 @@ public final class FlowScopeExtension implements BurpExtension {
         return currentProjectStatus();
     }
 
+    private ProjectWorkspace.Status resetActiveProjectTraffic() throws IOException {
+        if (scopeMutationBlocked(runContexts)) {
+            throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
+        }
+        if (activeProjectDatabase == null) throw new IllegalStateException("초기화할 현재 프로젝트가 없습니다.");
+
+        AnalysisConfig retainedConfig = analysisConfig.snapshotCopy();
+        retainedConfig.clearSessionBindings();
+        retainedConfig.clearReviews();
+        sqliteProjectStore.save(activeProjectDatabase, List.of(), retainedConfig, List.of(), List.of(),
+                Map.of(), List.of(), List.of(), activeProjectContext);
+
+        long analysisEpoch = analysisPublication.invalidate();
+        clearRunContexts();
+        killCrossIdentityReplay();
+        sessionBroker.close();
+        if (explorer != null) {
+            try { explorer.cancel(); } catch (RuntimeException ignored) { }
+            try { explorer.clear(); } catch (RuntimeException ignored) { }
+        }
+        resetIntegrationWorkflow();
+        analysisConfig.replaceWith(retainedConfig);
+        synchronized (records) {
+            datasetEpoch.incrementAndGet();
+            records.clear();
+            capacityWarned = false;
+        }
+        rawExchanges.clear();
+        proxyObservations.clear();
+        toolObservations.clear();
+        droppedRecords.set(0);
+        resetPayloadPool();
+        synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
+        synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
+        routeCandidates = List.of();
+        JavascriptCallSiteAnalyzer.clearCache();
+        archivedAssessments = List.of();
+        archivedValidations = List.of();
+        scannerCapabilityRunId = "";
+        scannerCapability = "";
+        scannerCapabilityRejectionRunId = "";
+        scannerCapabilityRejections.set(0);
+        scannerDirectAuthenticationRunId = "";
+        publishAnalysis(analysisEpoch, Pipeline.runIsolated(List.of(), analysisConfig));
+        markDatabaseSaved(revision.get());
+        api.logging().logToOutput("FlowScope 트래픽 초기화: " + activeProjectContext.name());
+        return currentProjectStatus();
+    }
+
+    private ProjectWorkspace.Status deleteWorkspaceProject(String id) throws IOException {
+        projectWorkspace.delete(id, activeProjectDatabase);
+        return currentProjectStatus();
+    }
+
     private void activateEmptyProject(ScopePolicy parsed, String requestedScope,
                                       ProjectWorkspace.Allocation next) {
         long analysisEpoch = analysisPublication.invalidate();
         clearRunContexts();
+        killCrossIdentityReplay();
         sessionBroker.close();
         resetExplorerSecrets();
         resetZapSecrets();
@@ -1217,6 +1465,7 @@ public final class FlowScopeExtension implements BurpExtension {
                                       ProjectStore.ProjectContext context, Path database) {
         long analysisEpoch = analysisPublication.invalidate();
         clearRunContexts();
+        killCrossIdentityReplay();
         sessionBroker.close();
         resetExplorerSecrets();
         resetZapSecrets();
@@ -1453,19 +1702,34 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public RunContextRegistry contexts() { return runContexts; }
             @Override public SessionBroker sessions() { return sessionBroker; }
+            @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
+                return safeAccountRequestCandidates(accountId);
+            }
+            @Override public void linkAccountRequestCandidate(String accountId, String evidenceId) {
+                linkObservedHumanSession(accountId, evidenceId);
+            }
             @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
             @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
+                validateRuntimeAccount(input.id(), input.label(), input.service(), input.role());
                 ZapAccountVault.View saved = zapAccounts.save(input);
                 io.flowscope.core.AccessRole role = io.flowscope.core.AccessRole.valueOf(saved.role());
-                analysisConfig.upsertAccount(new io.flowscope.core.AccountProfile(
-                        saved.id(), saved.label(), saved.service(), role));
+                if (analysisConfig.account(saved.id()).isEmpty()) {
+                    analysisConfig.upsertAccount(new io.flowscope.core.AccountProfile(
+                            saved.id(), saved.label(), saved.service(), role));
+                }
                 scheduleRebuild();
                 return saved;
             }
             @Override public void removeZapAccount(String id) {
                 zapAccounts.remove(id);
-                analysisConfig.removeAccount(id);
+                if (id != null && id.startsWith("zap-")) analysisConfig.removeAccount(id);
                 scheduleRebuild();
+            }
+            @Override public com.fasterxml.jackson.databind.JsonNode refreshAccountSession(String id) {
+                if (zapCampaign == null) throw new IllegalStateException("ZAP 로그인이 아직 준비되지 않았습니다.");
+                analysisConfig.account(id).orElseThrow(() ->
+                        new IllegalArgumentException("등록되지 않은 계정입니다: " + id));
+                return zapCampaign.startAuthenticationOnly(id);
             }
             @Override public List<String> scopeEntries() { return scope.entries(); }
             @Override public ProjectWorkspace.Status projectStatus() {
@@ -1477,9 +1741,18 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public ProjectWorkspace.Status openProject(String id) {
                 return runProjectTask(() -> openWorkspaceProject(id));
             }
+            @Override public ProjectWorkspace.Status resetProjectTraffic() {
+                return runProjectTask(FlowScopeExtension.this::resetActiveProjectTraffic);
+            }
+            @Override public ProjectWorkspace.Status deleteProject(String id) {
+                return runProjectTask(() -> deleteWorkspaceProject(id));
+            }
             @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
             @Override public List<io.flowscope.integration.RunExecutionLedger.Summary> executionSummaries() {
                 return executionLedger.summaries();
+            }
+            @Override public List<RunExecutionLedger.Attempt> manualAttempts() {
+                return executionLedger.attempts().stream().filter(attempt -> attempt.originEvidenceId() != null).toList();
             }
             @Override public long droppedRecords() { return droppedRecords.get(); }
             @Override public com.fasterxml.jackson.databind.JsonNode startScanner(String target,
@@ -1502,20 +1775,28 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorer.current(); }
             @Override public List<ExplorerAccountVault.View> explorerAccounts() { return explorer.accounts(); }
             @Override public ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
+                URI requestedLogin = URI.create(input.loginUrl());
+                String requestedService = requestedLogin.getScheme() + "://" + requestedLogin.getAuthority();
+                validateRuntimeAccount(input.id(), input.label(), requestedService, input.role());
                 ExplorerAccountVault.View saved = explorer.saveAccount(input);
                 URI login = URI.create(saved.loginUrl());
                 io.flowscope.core.AccessRole role;
                 try { role = io.flowscope.core.AccessRole.valueOf(saved.role().toUpperCase(Locale.ROOT)); }
                 catch (RuntimeException ignored) { role = io.flowscope.core.AccessRole.UNKNOWN; }
-                analysisConfig.upsertAccount(new io.flowscope.core.AccountProfile(
-                        saved.id(), saved.label(), login.getScheme() + "://" + login.getAuthority(), role));
+                if (analysisConfig.account(saved.id()).isEmpty()) {
+                    analysisConfig.upsertAccount(new io.flowscope.core.AccountProfile(
+                            saved.id(), saved.label(), login.getScheme() + "://" + login.getAuthority(), role));
+                }
                 scheduleRebuild();
                 return saved;
             }
             @Override public void removeExplorerAccount(String id) {
                 explorer.removeAccount(id);
-                analysisConfig.removeAccount(id);
+                if (id != null && id.startsWith("llm-")) analysisConfig.removeAccount(id);
                 scheduleRebuild();
+            }
+            @Override public ExplorerAccountVault.View verifyExplorerAccount(String id) {
+                return explorer.authenticateAccount(id);
             }
             @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
                 return explorer.start(request);
@@ -1584,13 +1865,11 @@ public final class FlowScopeExtension implements BurpExtension {
                         + "건 · 건너뜀 " + parsed.skipped.size() + "건");
                 return parsed;
             }
-            @Override public RequestRecord openInRepeater(String evidenceId) {
+            @Override public RequestRecord openInRepeater(String evidenceId, String request,
+                                                          FlowScopeWebServer.CredentialMode credentialMode,
+                                                          String accountId) {
                 RequestRecord record = evidenceRecord(evidenceId);
-                TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
-                boolean rawRequest = raw != null && raw.requestRetained();
-                byte[] request = rawRequest ? raw.request()
-                        : HttpMessageTextCodec.encodeEditedRequest(record.requestTextForEvidence());
-                openDraftInRepeater(record, request, rawRequest);
+                openDraftInRepeater(record, prepareHumanRequest(record, request, credentialMode, accountId));
                 return record;
             }
             @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
@@ -1614,20 +1893,58 @@ public final class FlowScopeExtension implements BurpExtension {
                         ? "응답 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
                         : "원문은 현재 Burp 프로세스 메모리에서만 불러왔으며 저장·내보내기하지 않습니다.";
                 if (rawRequest && !decodedRequest.editable()) message += " " + decodedRequest.note();
-                String observedIdentity = analysisConfig.boundAccount(record.service, record.fp)
-                        .map(io.flowscope.core.AccountProfile::label).orElse(record.idn == null ? "미확정" : record.idn);
-                String reusableSession = analysisConfig.boundAccount(record.service, record.fp)
+                var observedAccount = record.laneAccountId == null
+                        ? analysisConfig.boundAccount(record.service, record.fp)
+                        : analysisConfig.account(record.laneAccountId);
+                String observedIdentity = observedAccount.map(io.flowscope.core.AccountProfile::label)
+                        .orElse(record.idn == null ? "미확정" : record.idn);
+                var reusable = observedAccount
                         .flatMap(account -> sessionBroker.viewForAccount(account.id()))
-                        .filter(view -> view.status() == SessionBroker.Status.ACTIVE)
-                        .map(view -> view.accountLabel() + " · ACTIVE").orElse("없음");
+                        .filter(view -> view.status() == SessionBroker.Status.ACTIVE);
+                String reusableSession = reusable.map(view -> view.accountLabel() + " · ACTIVE").orElse("없음");
+                String reusableAccountId = reusable.map(SessionBroker.SessionView::accountId).orElse("");
                 return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
                         request, response, rawRequest, rawResponse, decodedRequest.editable(),
-                        decodedRequest.charset(), decodedResponse.charset(), observedIdentity, reusableSession, message);
+                        decodedRequest.charset(), decodedResponse.charset(), observedIdentity,
+                        reusableSession, reusableAccountId, message);
             }
             @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
                     String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
                     String accountId) {
                 return executeHumanRequestLab(evidenceId, request, credentialMode, accountId);
+            }
+            @Override public CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(
+                    String itemId, boolean armed) {
+                return runCrossIdentityReplay(List.of(authorizationReplayRecommendation(itemId)), armed);
+            }
+            @Override public void killAuthorizationReplay() { killCrossIdentityReplay(); }
+            @Override public String draftAuthorizationReplay(String itemId) {
+                return draftCrossIdentityReplay(itemId);
+            }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                    List<String> accountIds, boolean anonymous, boolean armed) {
+                return startLiveAuthorizationReplay(accountIds, anonymous, List.of(Source.HUMAN), armed);
+            }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
+                    List<String> accountIds, boolean anonymous, List<Source> basisSources, boolean armed) {
+                for (String accountId : accountIds) {
+                    analysisConfig.account(accountId).orElseThrow(() ->
+                            new IllegalArgumentException("등록되지 않은 대상 계정입니다: " + accountId));
+                    SessionBroker.SessionView session = sessionBroker.viewForAccount(accountId).orElseThrow(() ->
+                            new IllegalStateException("재사용 가능한 관리 세션이 없습니다: " + accountId));
+                    if (session.status() != SessionBroker.Status.ACTIVE || session.credentialConflict()) {
+                        throw new IllegalStateException("ACTIVE 관리 세션만 선택할 수 있습니다: " + accountId);
+                    }
+                }
+                return liveCrossIdentityReplay.start(accountIds, anonymous, basisSources, armed);
+            }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
+                return liveCrossIdentityReplay.snapshot();
+            }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot stopLiveAuthorizationReplay() {
+                liveCrossIdentityReplay.stop();
+                pendingLiveReplays.clear();
+                return liveCrossIdentityReplay.snapshot();
             }
         }, port);
         webServer.start();
@@ -1646,20 +1963,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Evidence ID입니다."));
     }
 
-    private void openDraftInRepeater(RequestRecord record, byte[] requestBytes, boolean raw) {
-        if (requestBytes == null || requestBytes.length == 0) {
-            throw new IllegalArgumentException("저장된 Request 전문이 없습니다.");
-        }
-        URI service = URI.create(record.service);
-        if (service.getHost() == null) throw new IllegalArgumentException("대상 서비스를 확정할 수 없습니다.");
-        boolean secure = "https".equalsIgnoreCase(service.getScheme());
-        int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
-        HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
-        HttpRequest draft = HttpRequest.httpRequest(httpService,
-                burp.api.montoya.core.ByteArray.byteArray(requestBytes));
+    private void openDraftInRepeater(RequestRecord record, HttpRequest draft) {
         api.repeater().sendToRepeater(draft, "FlowScope " + record.evidenceId);
-        api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId
-                + (raw ? " (메모리 원문, 미전송)" : " (마스킹 전문, 미전송)"));
+        api.logging().logToOutput("FlowScope Repeater 초안 생성: " + record.evidenceId + " (미전송)");
     }
 
     private com.fasterxml.jackson.databind.node.ObjectNode zapConnectionStatus() {
@@ -1778,6 +2084,9 @@ public final class FlowScopeExtension implements BurpExtension {
                         scannerDirectAuthenticationRunId = "";
                     }
                 }
+                @Override public boolean promoteAuthenticatedSession(String accountId, long evidenceRuntimeId) {
+                    return promoteZapAuthenticatedSession(accountId, evidenceRuntimeId);
+                }
                 @Override public RunContextRegistry contexts() { return runContexts; }
                 @Override public ZapAccountVault zapAccounts() { return zapAccounts; }
                 @Override public boolean approve(String action, String target) {
@@ -1792,6 +2101,175 @@ public final class FlowScopeExtension implements BurpExtension {
     private void resetIntegrationWorkflow() {
         if (zapCampaign != null) zapCampaign.resetWorkflow();
         executionLedger.clear();
+    }
+
+    private List<FlowScopeWebServer.AccountRequestCandidate> safeAccountRequestCandidates(String accountId) {
+        AccountProfile account = analysisConfig.account(accountId).orElseThrow(() ->
+                new IllegalArgumentException("존재하지 않는 계정입니다: " + accountId));
+        List<RequestRecord> candidates = latest.records.stream()
+                .filter(record -> record.source == Source.HUMAN && record.hasResponse)
+                .filter(record -> account.service().equals(record.service))
+                .filter(record -> record.evidenceId != null && !record.evidenceId.isBlank())
+                .sorted(java.util.Comparator.comparingLong((RequestRecord record) -> record.timestamp).reversed())
+                .limit(20).toList();
+        AccountVerificationRule rule = analysisConfig.verificationRule(accountId).orElse(null);
+        List<FlowScopeWebServer.AccountRequestCandidate> result = new ArrayList<>();
+        for (RequestRecord record : candidates) {
+            TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
+            boolean retained = raw != null && raw.requestRetained() && raw.responseRetained();
+            Map<String, String> headers = raw != null && raw.requestRetained()
+                    ? rawHeaders(raw.request(), raw.requestBodyOffset()) : Map.of();
+            boolean cookie = !rawHeader(headers, "Cookie").isBlank();
+            boolean authorization = !rawHeader(headers, "Authorization").isBlank();
+            boolean acceptableStatus = record.status >= 200 && record.status < 500 && record.status != 401;
+            boolean eligible = retained && (cookie || authorization) && acceptableStatus;
+            String reason = eligible ? "연결 가능"
+                    : !retained ? "현재 프로세스에 요청·응답 원문이 남아 있지 않습니다."
+                    : !(cookie || authorization) ? "Cookie 또는 Authorization이 관측되지 않았습니다."
+                    : "로그인 성공 응답으로 사용할 수 없는 상태 코드입니다.";
+            boolean matched = false;
+            if (rule != null) {
+                try {
+                    URI uri = URI.create(record.service + (record.path.startsWith("/") ? record.path : "/" + record.path));
+                    matched = rule.evaluate(record.method, uri, record.responseBodyForAnalysis())
+                            == VerificationOutcome.MATCHED;
+                } catch (RuntimeException ignored) { /* malformed metadata is not eligible proof */ }
+            }
+            result.add(new FlowScopeWebServer.AccountRequestCandidate(
+                    record.evidenceId, record.status, record.method, record.path,
+                    record.responseContentType == null ? "" : record.responseContentType,
+                    cookie, authorization, matched, eligible, reason));
+        }
+        return List.copyOf(result);
+    }
+
+    private void linkObservedHumanSession(String accountId, String evidenceId) {
+        AccountProfile account = analysisConfig.account(accountId).orElseThrow(() ->
+                new IllegalArgumentException("존재하지 않는 계정입니다: " + accountId));
+        RequestRecord record = evidenceRecord(evidenceId);
+        if (record.source != Source.HUMAN || !record.hasResponse || !account.service().equals(record.service)) {
+            throw new IllegalArgumentException("같은 대상 서비스의 HUMAN 요청만 계정 세션으로 연결할 수 있습니다.");
+        }
+        TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElseThrow(() ->
+                new IllegalStateException("요청 원문이 메모리 상한 또는 재시작으로 폐기됐습니다."));
+        if (!raw.requestRetained() || !raw.responseRetained()) {
+            throw new IllegalStateException("요청과 응답 원문이 모두 현재 프로세스에 남아 있어야 합니다.");
+        }
+        Map<String, String> requestHeaders = rawHeaders(raw.request(), raw.requestBodyOffset());
+        String fingerprint = Fingerprints.of(rawHeader(requestHeaders, "Authorization"), rawHeader(requestHeaders, "Cookie"));
+        if (Fingerprints.ANONYMOUS.equals(fingerprint)) {
+            throw new IllegalArgumentException("Cookie 또는 Authorization이 없는 요청은 계정 세션으로 연결할 수 없습니다.");
+        }
+        boolean bindingExisted = analysisConfig.boundAccount(account.service(), fingerprint)
+                .map(bound -> bound.id().equals(account.id())).orElse(false);
+        analysisConfig.bindSession(account.service(), fingerprint, account.id());
+        try {
+            List<String> setCookies = rawHeaderValues(raw.response(), raw.responseBodyOffset(), "Set-Cookie");
+            URI target = URI.create(record.service + (record.path.startsWith("/") ? record.path : "/" + record.path));
+            sessionBroker.captureObservedExchange(account, target, requestHeaders, record.status,
+                    record.location, record.responseBodyForAnalysis(), setCookies, Instant.now());
+        } catch (RuntimeException error) {
+            if (!bindingExisted) analysisConfig.unbindSession(account.service(), fingerprint);
+            throw error;
+        }
+        revision.incrementAndGet();
+        scheduleRebuild();
+    }
+
+    /**
+     * Copies the one ZAP response that satisfied the configured login proof into the registered
+     * account's independent HUMAN replay slot. Raw headers remain inside the process-memory vault.
+     */
+    private boolean promoteZapAuthenticatedSession(String accountId, long evidenceRuntimeId) {
+        try {
+            AccountProfile account = analysisConfig.account(accountId).orElseThrow(() ->
+                    new IllegalArgumentException("등록되지 않은 ZAP 계정입니다: " + accountId));
+            RequestRecord record;
+            synchronized (records) {
+                record = records.stream().filter(value -> value.runtimeId() == evidenceRuntimeId)
+                        .findFirst().orElseThrow(() ->
+                                new IllegalStateException("ZAP 로그인 Evidence 원문을 찾을 수 없습니다."));
+            }
+            TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElseThrow(() ->
+                    new IllegalStateException("ZAP 로그인 Evidence 원문이 메모리 상한으로 폐기됐습니다."));
+            if (!raw.requestRetained()) {
+                throw new IllegalStateException("ZAP 로그인 요청 원문이 메모리 상한으로 폐기됐습니다.");
+            }
+            Map<String, String> requestHeaders = rawHeaders(raw.request(), raw.requestBodyOffset());
+            List<String> setCookies = raw.responseRetained()
+                    ? rawHeaderValues(raw.response(), raw.responseBodyOffset(), "Set-Cookie") : List.of();
+            URI target = URI.create(record.service + (record.path.startsWith("/") ? record.path : "/" + record.path));
+            sessionBroker.captureObservedExchange(account, target, requestHeaders, record.status,
+                    record.location, record.responseBodyForAnalysis(), setCookies, Instant.now());
+            String fingerprint = Fingerprints.of(rawHeader(requestHeaders, "Authorization"),
+                    rawHeader(requestHeaders, "Cookie"));
+            if (!Fingerprints.ANONYMOUS.equals(fingerprint)) {
+                analysisConfig.bindSession(account.service(), fingerprint, account.id());
+            }
+            revision.incrementAndGet();
+            scheduleRebuild();
+            return true;
+        } catch (RuntimeException error) {
+            api.logging().logToOutput("FlowScope ZAP 로그인 세션의 계정 슬롯 연결 생략: "
+                    + Masking.maskSecrets(error.getMessage() == null ? error.getClass().getSimpleName()
+                    : error.getMessage()));
+            return false;
+        }
+    }
+
+    private static Map<String, String> rawHeaders(byte[] message, int bodyOffset) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        for (String line : rawHeaderLines(message, bodyOffset)) {
+            int colon = line.indexOf(':');
+            if (colon <= 0) continue;
+            headers.put(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
+        }
+        return headers;
+    }
+
+    private static List<String> rawHeaderValues(byte[] message, int bodyOffset, String name) {
+        List<String> values = new ArrayList<>();
+        for (String line : rawHeaderLines(message, bodyOffset)) {
+            int colon = line.indexOf(':');
+            if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase(name)) {
+                values.add(line.substring(colon + 1).trim());
+            }
+        }
+        return List.copyOf(values);
+    }
+
+    static String rawHeader(Map<String, String> headers, String name) {
+        return headers.entrySet().stream().filter(entry -> entry.getKey().equalsIgnoreCase(name))
+                .map(Map.Entry::getValue).filter(java.util.Objects::nonNull).findFirst().orElse("");
+    }
+
+    private static List<String> rawHeaderLines(byte[] message, int bodyOffset) {
+        if (message == null || message.length == 0) return List.of();
+        int length = Math.max(0, Math.min(bodyOffset, message.length));
+        String head = new String(message, 0, length, java.nio.charset.StandardCharsets.ISO_8859_1);
+        String[] lines = head.split("\\r?\\n");
+        return lines.length <= 1 ? List.of() : java.util.Arrays.asList(lines).subList(1, lines.length);
+    }
+
+    private void validateRuntimeAccount(String id, String label, String service, String roleValue) {
+        if (id == null || id.isBlank()) return;
+        analysisConfig.account(id.trim()).ifPresent(existing -> {
+            io.flowscope.core.AccessRole role;
+            try {
+                String normalized = roleValue == null || roleValue.isBlank()
+                        ? io.flowscope.core.AccessRole.UNKNOWN.name() : roleValue.trim().toUpperCase(Locale.ROOT);
+                role = io.flowscope.core.AccessRole.valueOf(normalized);
+            } catch (IllegalArgumentException error) {
+                throw new IllegalArgumentException("지원하지 않는 계정 역할입니다.");
+            }
+            AccountProfile requested = new AccountProfile(existing.id(),
+                    label == null || label.isBlank() ? existing.label() : label,
+                    service, role);
+            if (!existing.service().equals(requested.service()) || existing.role() != requested.role()) {
+                throw new IllegalArgumentException("등록 계정과 실행기 로그인 설정의 서비스·역할이 다릅니다: "
+                        + existing.label());
+            }
+        });
     }
 
     private void resetExplorerSecrets() {
@@ -1857,8 +2335,10 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         worker.shutdownNow();
+        authorizationReplayWorker.shutdownNow();
         proxyObservations.clear();
         toolObservations.clear();
+        killCrossIdentityReplay();
         sessionBroker.close();
         rawExchanges.clear();
         clearRunContexts();
@@ -1872,8 +2352,334 @@ public final class FlowScopeExtension implements BurpExtension {
             String evidenceId, String requestText, FlowScopeWebServer.CredentialMode credentialMode,
             String accountId) {
         RequestRecord seed = evidenceRecord(evidenceId);
+        String runId = "human-request-lab-" + java.util.UUID.randomUUID();
+        // 전송은 분석 워커 밖에서 기다린다. 대신 응답을 기록하는 순간 프로젝트가 그대로인지 확인한다.
+        long epoch = datasetEpoch.get();
+        long started = System.nanoTime();
+        boolean sent = false;
+        boolean received = false;
+        boolean noResponse = false;
+        HttpRequest request = null;
+        try {
+            synchronized (records) {
+                if (shuttingDown.get() || records.size() >= MAX_RECORDS) {
+                    throw new IllegalStateException("전송 전 차단: 종료 중이거나 Evidence 저장 상한에 도달했습니다.");
+                }
+            }
+            request = prepareHumanRequest(seed, requestText, credentialMode, accountId);
+
+            var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
+                    .withUpstreamTLSVerification().withResponseTimeout(30_000);
+            burp.api.montoya.http.message.HttpRequestResponse exchange;
+            controlledRequest.set(true);
+            try { sent = true; exchange = api.http().sendRequest(request, options); }
+            finally { controlledRequest.remove(); }
+            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
+                noResponse = true;
+                throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
+            }
+
+            var response = exchange.response();
+            received = true;
+            int responseBytes = response.toByteArray().length();
+            String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
+                    ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
+                    response.headerValue("Content-Type")).text() : null;
+            RequestRecord record = recordFrom(exchange.request(), response,
+                    new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP),
+                    System.currentTimeMillis(), false, runId, null);
+            record.originEvidenceId = evidenceId;
+            record.durationMillis = durationMs;
+            record.phase = RunPhase.VALIDATION;
+            record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
+            record.orchestrator = Orchestrator.HUMAN;
+            record.tool = ToolKind.BURP;
+            appendRequestLabRecord(record, epoch, () -> retainRawExchange(record, exchange.request(), response));
+            if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT && !"anon".equals(record.fp)) {
+                analysisConfig.bindSession(record.service, record.fp, accountId);
+                List<String> setCookies = response.headers().stream()
+                        .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
+                        .map(HttpHeader::value).toList();
+                sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
+                        response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
+                        java.time.Instant.now());
+            }
+            RequestRecord published = analyzedRecord(record);
+            executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
+                    RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
+                    java.time.Instant.now(), durationMs, evidenceId);
+            revision.incrementAndGet();
+            scheduleDatabaseSave();
+            int requestBytes = exchange.request().toByteArray().length();
+            String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
+                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+            return new FlowScopeWebServer.RequestLabResult(published.evidenceId, published.status, displayResponse,
+                    durationMs, requestBytes, responseBytes);
+        } catch (RuntimeException error) {
+            if (error instanceof DatasetReplacedException) throw error;
+            RunExecutionLedger.Outcome outcome = received ? RunExecutionLedger.Outcome.RECORDING_FAILURE
+                    : !sent ? RunExecutionLedger.Outcome.INVALID_REQUEST
+                    : noResponse ? RunExecutionLedger.Outcome.NO_RESPONSE : executionOutcome(error);
+            executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request == null ? seed.method : request.method(),
+                    request == null ? seed.service + seed.path : request.url(), outcome, 0, null,
+                    java.time.Instant.now(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), evidenceId);
+            revision.incrementAndGet();
+            scheduleDatabaseSave();
+            throw new IllegalStateException(received ? "응답 수신 · Evidence 기록 실패. 결과를 확인한 후 재전송을 판단하세요."
+                    : sent ? "응답 미확인 · " + outcome + ". 대상 처리 여부는 확인되지 않았습니다."
+                    : "전송 전 차단 · " + Masking.maskSecrets(error.getMessage()), error);
+        }
+    }
+
+    /** Backend-only Stage 6a seam. UI arming and recommendation selection are intentionally deferred to Stage 6c. */
+    CrossIdentityReplayOrchestrator.RunResult runCrossIdentityReplay(
+            List<CrossIdentityReplayOrchestrator.Recommendation> recommendations, boolean armed) {
+        if (crossIdentityReplay == null) throw new IllegalStateException("FlowScope가 아직 초기화되지 않았습니다.");
+        if (liveCrossIdentityReplay != null
+                && liveCrossIdentityReplay.snapshot().state() != LiveCrossIdentityReplayCoordinator.State.STOPPED) {
+            throw new IllegalStateException("라이브 교차 재전송을 먼저 중지하세요.");
+        }
+        return crossIdentityReplay.execute(recommendations, armed);
+    }
+
+    private CrossIdentityReplayOrchestrator.Recommendation authorizationReplayRecommendation(String itemId) {
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(latest, analysisConfig, archivedValidations);
+        AuthorizationMatrix.TestRecommendation recommendation = null;
+        String operation = null;
+        String resource = null;
+        for (AuthorizationMatrix.FunctionCell cell : matrix.functions()) {
+            if (cell.id().equals(itemId)) {
+                recommendation = cell.recommendation();
+                operation = cell.operation();
+                break;
+            }
+        }
+        if (operation == null) {
+            for (AuthorizationMatrix.ObjectCell cell : matrix.objects()) {
+                if (cell.id().equals(itemId)) {
+                    recommendation = cell.recommendation();
+                    operation = cell.operation();
+                    resource = cell.resource();
+                    break;
+                }
+            }
+        }
+        if (operation == null || recommendation == null) {
+            throw new IllegalArgumentException("현재 재전송 추천이 있는 판정 셀을 선택하세요.");
+        }
+        String expectedOperation = operation;
+        String expectedResource = resource;
+        AuthorizationMatrix.TestRecommendation selected = recommendation;
+        RequestRecord seed = selected.basisEvidenceIds().stream()
+                .map(id -> latest.records.stream().filter(record -> id.equals(record.evidenceId)).findFirst().orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .filter(record -> expectedOperation.equals(record.op))
+                .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("현재 추천과 일치하는 기준 Evidence를 찾을 수 없습니다."));
+        HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
+                FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
+        return new CrossIdentityReplayOrchestrator.Recommendation(operation, selected.testIdentity(),
+                selected.basisIdentity(), seed.evidenceId, URI.create(prepared.url()));
+    }
+
+    /**
+     * 어떤 판정 셀이든(추천이 없어도) 대상 신원 자격으로 교차 요청을 Burp Repeater 초안으로 연다(D-169). 추천기가
+     * 놓친 조합에서도 사람이 직접 조사할 수 있어야 하므로, 추천 basis가 없으면 같은 대상에서 다른 신원이 관측한
+     * 요청을 basis로 합성한다. 자동 전송하지 않으며 대상 신원의 강검증 세션 자격만 주입한다.
+     */
+    private String draftCrossIdentityReplay(String itemId) {
+        CrossIdentityReplayOrchestrator.Recommendation recommendation = crossIdentityDraftRecommendation(itemId);
+        Map<String, String> credentialHeaders;
+        if (CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY.equals(recommendation.targetIdentity())) {
+            if (!scope.allows(recommendation.target().toString())) {
+                throw new IllegalArgumentException("대상이 현재 exact scope 밖입니다.");
+            }
+            credentialHeaders = Map.of();
+        } else {
+            credentialHeaders = sessionBroker.headersForVerifiedAccount(recommendation.targetIdentity(),
+                    recommendation.target(), scope, java.time.Instant.now());
+        }
+        openCrossIdentityReplayDraftAnyMethod(recommendation, credentialHeaders);
+        return "교차 실행 요청을 대상 신원 자격으로 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.";
+    }
+
+    private CrossIdentityReplayOrchestrator.Recommendation crossIdentityDraftRecommendation(String itemId) {
+        AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(latest, analysisConfig, archivedValidations);
+        String operation = null;
+        String resource = null;
+        String testIdentity = null;
+        boolean hasRecommendation = false;
+        for (AuthorizationMatrix.FunctionCell cell : matrix.functions()) {
+            if (cell.id().equals(itemId)) {
+                operation = cell.operation();
+                testIdentity = cell.identity();
+                hasRecommendation = cell.recommendation() != null;
+                break;
+            }
+        }
+        if (operation == null) {
+            for (AuthorizationMatrix.ObjectCell cell : matrix.objects()) {
+                if (cell.id().equals(itemId)) {
+                    operation = cell.operation();
+                    resource = cell.resource();
+                    testIdentity = cell.identity();
+                    hasRecommendation = cell.recommendation() != null;
+                    break;
+                }
+            }
+        }
+        if (operation == null) throw new IllegalArgumentException("존재하지 않는 판정 셀입니다.");
+        if (hasRecommendation) return authorizationReplayRecommendation(itemId);
+        String expectedOperation = operation;
+        String expectedResource = resource;
+        String selfIdentity = testIdentity;
+        String basisIdentity = null;
+        List<String> basisEvidence = List.of();
+        if (expectedResource == null) {
+            for (AuthorizationMatrix.FunctionCell cell : matrix.functions()) {
+                if (expectedOperation.equals(cell.operation()) && !selfIdentity.equals(cell.identity())
+                        && !cell.evidenceIds().isEmpty()) {
+                    basisIdentity = cell.identity();
+                    basisEvidence = cell.evidenceIds();
+                    break;
+                }
+            }
+        } else {
+            for (AuthorizationMatrix.ObjectCell cell : matrix.objects()) {
+                if (expectedOperation.equals(cell.operation()) && expectedResource.equals(cell.resource())
+                        && !selfIdentity.equals(cell.identity()) && !cell.evidenceIds().isEmpty()) {
+                    basisIdentity = cell.identity();
+                    basisEvidence = cell.evidenceIds();
+                    break;
+                }
+            }
+        }
+        if (basisIdentity == null) {
+            throw new IllegalStateException("같은 대상에서 다른 신원이 관측한 요청이 없어 Burp Repeater 초안을 만들 수 없습니다.");
+        }
+        RequestRecord seed = basisEvidence.stream()
+                .map(id -> latest.records.stream().filter(record -> id.equals(record.evidenceId)).findFirst().orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .filter(record -> expectedOperation.equals(record.op))
+                .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("기준 Evidence 원문을 찾을 수 없습니다."));
+        HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
+                FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
+        return new CrossIdentityReplayOrchestrator.Recommendation(operation, testIdentity,
+                basisIdentity, seed.evidenceId, URI.create(prepared.url()));
+    }
+
+    /** 메서드 제한 없이 교차 신원 요청을 Burp Repeater 초안으로만 연다(운영자가 직접 전송). 자동 전송 없음(D-169). */
+    private void openCrossIdentityReplayDraftAnyMethod(CrossIdentityReplayOrchestrator.Recommendation recommendation,
+                                                       Map<String, String> credentialHeaders) {
+        RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
+        HttpRequest request = prepareReplayRequest(seed, replayRequestText(seed), credentialHeaders);
+        if (!URI.create(request.url()).equals(recommendation.target())) {
+            throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
+        }
+        openDraftInRepeater(seed, request);
+    }
+
+    void killCrossIdentityReplay() {
+        pendingLiveReplays.clear();
+        if (liveCrossIdentityReplay != null) liveCrossIdentityReplay.reset();
+        if (crossIdentityReplay != null) crossIdentityReplay.kill();
+    }
+
+    private CrossIdentityReplayOrchestrator.Exchange executeCrossIdentityReplay(
+            CrossIdentityReplayOrchestrator.Recommendation recommendation,
+            Map<String, String> credentialHeaders,
+            CrossIdentityReplayOrchestrator.ReplayContext context) {
+        RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
+        TransientExchangeVault.Exchange raw = rawExchanges.get(seed).orElse(null);
+        if (raw == null || !raw.requestRetained()) {
+            throw new IllegalStateException("자동 재전송에는 현재 프로세스의 원문 요청이 필요합니다.");
+        }
+        HttpRequest request = prepareReplayRequest(seed, decodeRequest(raw, seed.requestContentType).text(),
+                credentialHeaders);
+        if (!Set.of("GET", "HEAD").contains(request.method().toUpperCase(Locale.ROOT))) {
+            throw new IllegalArgumentException("안전 자동 재전송은 GET/HEAD만 허용됩니다.");
+        }
+        if (!URI.create(request.url()).equals(recommendation.target())) {
+            throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
+        }
+
+        var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
+                .withUpstreamTLSVerification().withResponseTimeout(30_000);
+        burp.api.montoya.http.message.HttpRequestResponse exchange;
+        long started = System.nanoTime();
+        controlledRequest.set(true);
+        try { exchange = api.http().sendRequest(request, options); }
+        finally { controlledRequest.remove(); }
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
+            throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
+        }
+
+        HttpResponse response = exchange.response();
+        RequestRecord record = recordFrom(exchange.request(), response,
+                new PortProfile(Source.SCANNER, SourceDetail.AUTHORIZATION_REPLAY),
+                System.currentTimeMillis(), false, context.runId(), null,
+                recommendation.targetIdentity());
+        context.applyTo(record);
+        appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
+        rebuildImmediately();
+        RequestRecord published = latest.records.stream()
+                .filter(value -> value.runtimeId() == record.runtimeId()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("재전송 Evidence 게시에 실패했습니다."));
+        int requestBytes = exchange.request().toByteArray().length();
+        int responseBytes = response.toByteArray().length();
+        String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
+                ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
+                response.headerValue("Content-Type")).text()
+                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+        FlowScopeWebServer.RequestLabResult result = new FlowScopeWebServer.RequestLabResult(
+                published.evidenceId, response.statusCode(), responseText, durationMs, requestBytes, responseBytes);
+        List<String> setCookies = response.headers().stream()
+                .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
+                .map(HttpHeader::value).toList();
+        return new CrossIdentityReplayOrchestrator.Exchange(result, response.headerValue("Location"),
+                boundedResponseBody(response), setCookies);
+    }
+
+    private void openCrossIdentityReplayDraft(CrossIdentityReplayOrchestrator.Recommendation recommendation,
+                                               Map<String, String> credentialHeaders) {
+        RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
+        HttpRequest request = prepareReplayRequest(seed, replayRequestText(seed), credentialHeaders);
+        if (!Set.of("POST", "PUT", "PATCH", "DELETE").contains(request.method().toUpperCase(Locale.ROOT))) {
+            throw new IllegalArgumentException("파괴적 요청 초안은 POST/PUT/PATCH/DELETE만 지원합니다.");
+        }
+        if (!URI.create(request.url()).equals(recommendation.target())) {
+            throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
+        }
+        openDraftInRepeater(seed, request);
+    }
+
+    private String replayRequestText(RequestRecord seed) {
+        TransientExchangeVault.Exchange raw = rawExchanges.get(seed).orElse(null);
+        return raw != null && raw.requestRetained()
+                ? decodeRequest(raw, seed.requestContentType).text()
+                : seed.requestTextForEvidence();
+    }
+
+    private HttpRequest prepareReplayRequest(RequestRecord seed, String requestText,
+                                             Map<String, String> credentialHeaders) {
+        HttpRequest request = prepareHumanRequest(seed, requestText,
+                FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
+        for (Map.Entry<String, String> header : credentialHeaders.entrySet()) {
+            request = request.withHeader(header.getKey(), header.getValue());
+        }
+        return request;
+    }
+
+    private HttpRequest prepareHumanRequest(RequestRecord seed, String requestText,
+                                            FlowScopeWebServer.CredentialMode credentialMode,
+                                            String accountId) {
         if (requestText == null || requestText.isBlank()) {
-            throw new IllegalArgumentException("전송할 HTTP 요청 전문이 필요합니다.");
+            throw new IllegalArgumentException("HTTP 요청 전문이 필요합니다.");
         }
         URI service = URI.create(seed.service);
         if (service.getHost() == null) throw new IllegalArgumentException("원본 대상 서비스를 확정할 수 없습니다.");
@@ -1907,7 +2713,7 @@ public final class FlowScopeExtension implements BurpExtension {
             Map<String, String> sessionHeaders = sessionBroker.headersForAccount(
                     accountId, URI.create(request.url()), scope, java.time.Instant.now());
             for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
-                request = request.withUpdatedHeader(header.getKey(), header.getValue());
+                request = request.withHeader(header.getKey(), header.getValue());
             }
         }
         if (!originalBytesUsed && request.hasHeader("Content-Length")) {
@@ -1916,47 +2722,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 request = request.withUpdatedHeader("Content-Length", actualLength);
             }
         }
-
-        var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
-                .withUpstreamTLSVerification().withResponseTimeout(30_000);
-        burp.api.montoya.http.message.HttpRequestResponse exchange;
-        long started = System.nanoTime();
-        controlledRequest.set(true);
-        try { exchange = api.http().sendRequest(request, options); }
-        finally { controlledRequest.remove(); }
-        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-        if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
-            throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
-        }
-
-        var response = exchange.response();
-        int responseBytes = response.toByteArray().length();
-        String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
-                ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
-                response.headerValue("Content-Type")).text() : null;
-        RequestRecord record = recordFrom(exchange.request(), response,
-                new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP),
-                System.currentTimeMillis(), false, "human-request-lab-" + System.currentTimeMillis(), null);
-        record.phase = RunPhase.VALIDATION;
-        record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
-        record.orchestrator = Orchestrator.HUMAN;
-        record.tool = ToolKind.BURP;
-        if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT && !"anon".equals(record.fp)) {
-            analysisConfig.bindSession(record.service, record.fp, accountId);
-            List<String> setCookies = response.headers().stream()
-                    .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
-                    .map(HttpHeader::value).toList();
-            sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
-                    response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
-                    java.time.Instant.now());
-        }
-        appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
-        rebuildImmediately();
-        int requestBytes = exchange.request().toByteArray().length();
-        String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
-                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
-        return new FlowScopeWebServer.RequestLabResult(record.evidenceId, record.status, displayResponse,
-                durationMs, requestBytes, responseBytes);
+        return request;
     }
 
     private ExplorerTransport.Response executeExplorerRequest(ExplorerTransport.Request input) throws Exception {
@@ -2072,6 +2838,24 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /** Request Lab/Explorer처럼 응답을 기다리는 통제 요청이 unload 뒤 Evidence를 되살리지 않게 한다. */
+    static final class DatasetReplacedException extends IllegalStateException {
+        DatasetReplacedException() { super("전송 중 프로젝트가 바뀌어 응답을 기록하지 않았습니다."); }
+    }
+
+    /** Request Lab 응답을 현재 프로젝트에 추가한다. 전송 중 프로젝트가 바뀌었으면 새 프로젝트에 섞지 않는다. */
+    void appendRequestLabRecord(RequestRecord record, long expectedEpoch, Runnable retainExchange) {
+        synchronized (records) {
+            if (datasetEpoch.get() != expectedEpoch) throw new DatasetReplacedException();
+            appendControlledToolRecord(record, retainExchange);
+        }
+    }
+
+    /** 방금 추가한 레코드의 분석본. 다른 재분석이 먼저 게시돼도 Evidence ID는 내용 해시라 다음 게시와 같다. */
+    RequestRecord analyzedRecord(RequestRecord record) {
+        return rebuildImmediately().records.stream().filter(value -> value.runtimeId() == record.runtimeId())
+                .findFirst().orElseThrow(() -> new IllegalStateException("검증 Evidence를 분석 결과에서 찾지 못했습니다."));
+    }
+
     void appendControlledToolRecord(RequestRecord record, Runnable retainExchange) {
         synchronized (records) {
             if (shuttingDown.get()) {
@@ -2080,6 +2864,10 @@ public final class FlowScopeExtension implements BurpExtension {
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
             records.add(record);
             retainExchange.run();
+            if (liveCrossIdentityReplay != null
+                    && liveCrossIdentityReplay.acceptingCaptures(record)) {
+                pendingLiveReplays.add(record.runtimeId());
+            }
         }
     }
 
@@ -2130,12 +2918,13 @@ public final class FlowScopeExtension implements BurpExtension {
         return bodyOffset >= 0 && bodyOffset <= message.length() ? message.substring(bodyOffset) : null;
     }
 
-    private void rebuildImmediately() {
+    private Pipeline.Result rebuildImmediately() {
         long analysisEpoch = analysisPublication.invalidate();
         List<RequestRecord> snapshot;
         synchronized (records) { snapshot = new ArrayList<>(records); }
         Pipeline.Result result = Pipeline.runIsolated(snapshot, analysisConfig);
         publishAnalysis(analysisEpoch, result);
+        return result;
     }
 
     private boolean publishAnalysis(long analysisEpoch, Pipeline.Result result) {
@@ -2148,8 +2937,29 @@ public final class FlowScopeExtension implements BurpExtension {
         if (published) {
             if (controlTab != null) controlTab.render(result);
             scheduleDatabaseSave();
+            dispatchPendingLiveHumanReplays(result);
         }
         return published;
+    }
+
+    private void dispatchPendingLiveHumanReplays(Pipeline.Result result) {
+        if (liveCrossIdentityReplay == null || result == null) return;
+        for (RequestRecord record : result.records) {
+            if (!pendingLiveReplays.remove(record.runtimeId())) continue;
+            TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
+            boolean requestRetained = raw != null && raw.requestRetained();
+            URI target = null;
+            if (requestRetained) {
+                try {
+                    HttpRequest prepared = prepareHumanRequest(record, replayRequestText(record),
+                            FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
+                    target = URI.create(prepared.url());
+                } catch (RuntimeException ignored) {
+                    // No request is sent; the coordinator records this basis as ineligible.
+                }
+            }
+            liveCrossIdentityReplay.offer(record, target, requestRetained);
+        }
     }
 
     private void rebuildRouteCandidates(List<RequestRecord> sourceRecords) {

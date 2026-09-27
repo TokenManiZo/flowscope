@@ -97,7 +97,7 @@ public final class FlowScopeControlTab extends JPanel {
         actionsPanel.add(button("프로젝트 열기", this::chooseLoad));
         actionsPanel.add(button("로컬 DB 저장·연결", this::chooseSave));
         actionsPanel.add(button("JSON 내보내기", this::chooseJsonExport));
-        actionsPanel.add(button("새 진단 시작", this::confirmNewProject));
+        actionsPanel.add(button("새 트래픽 진단 시작", this::confirmNewProject));
         root.add(settings, BorderLayout.NORTH);
         root.add(actionsPanel, BorderLayout.CENTER);
         return root;
@@ -154,14 +154,10 @@ public final class FlowScopeControlTab extends JPanel {
                     "FlowScope", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        String name = JOptionPane.showInputDialog(this,
-                "프로젝트 이름(선택)\n비우면 scope의 host를 사용합니다.", "새 진단 시작",
-                JOptionPane.QUESTION_MESSAGE);
-        if (name == null) return;
         if (JOptionPane.showConfirmDialog(this,
-                "현재 진단을 로컬 프로젝트 DB에 보존하고 새 진단을 시작할까요?\n기존 Evidence는 삭제하지 않습니다.",
+                "현재 진단을 로컬 프로젝트 DB에 보존하고 새 진단을 시작할까요?\n프로젝트명은 scope host로 자동 생성됩니다.",
                 "FlowScope", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
-            actions.startProject(name, scope.getText());
+            actions.startProject("", scope.getText());
         }
     }
 

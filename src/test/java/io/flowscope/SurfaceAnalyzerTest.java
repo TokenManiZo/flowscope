@@ -678,7 +678,7 @@ final class SurfaceAnalyzerTest {
         Pipeline.Result result = Pipeline.runIsolated(List.of(openapi), new io.flowscope.core.AnalysisConfig());
         String evidenceId = result.records.getFirst().evidenceId;
         // mounted prefix가 placeholder를 하나 더 가진 후보: schema slot 1개 vs template slot 2개 → 정렬 불가
-        RouteCandidate mounted = new RouteCandidate("https://app.test:443", "GET", "/tenants/{id}/orders/{id}",
+        RouteCandidate mounted = new RouteCandidate("https://app.test:443", "GET", "/catalogs/{id}/orders/{id}",
                 List.of(), false, false,
                 List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.OPENAPI, evidenceId,
                         Source.HUMAN, "human-run", "openapi", RouteCandidate.Applicability.REVIEW, "mounted")),
@@ -686,7 +686,7 @@ final class SurfaceAnalyzerTest {
 
         SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of(mounted));
 
-        SurfaceAnalysis.EndpointFact get = endpoint(analysis, "GET", "/tenants/{id}/orders/{id}");
+        SurfaceAnalysis.EndpointFact get = endpoint(analysis, "GET", "/catalogs/{id}/orders/{id}");
         assertTrue(get.parameters().stream().noneMatch(item -> item.location() == SurfaceAnalysis.ParameterLocation.PATH),
                 "정렬할 수 없는 PATH slot을 임의로 선언하지 않는다");
         assertTrue(analysis.parameterDiagnostics().stream()

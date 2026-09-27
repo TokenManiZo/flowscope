@@ -25,6 +25,9 @@ export function judgmentTone(status: MatrixStatus): JudgmentTone {
   return "unknown"
 }
 
+/** 판단할 것이 없는 흔한 상태는 칸에 짧은 회색 글자로만 둔다(전체 문구는 aria-label·툴팁·상세에 유지). */
+export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "정책 미정", COVERAGE_GAP: "공백", UNTESTED: "미검증" }
+
 export function reviewSuffix(status: ReviewStatus): string {
   return status === "CONFIRMED" ? " · 사용자 확정" : status === "DISMISSED" ? " · 정상/기각" : ""
 }

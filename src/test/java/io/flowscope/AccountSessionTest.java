@@ -52,6 +52,24 @@ final class AccountSessionTest {
     }
 
     @Test
+    void humanEvidenceKeepsItsCapturedAccountAfterFingerprintIsRebound() {
+        AnalysisConfig config = new AnalysisConfig()
+                .upsertAccount(new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER))
+                .upsertAccount(new AccountProfile("acct-b", "USER B", "https://api.test:443", AccessRole.USER))
+                .bindSession("https://api.test:443", "sess:same", "acct-a");
+        RequestRecord record = record("https://api.test:443", "sess:same", "/orders/1");
+        record.laneAccountId = "acct-a";
+
+        config.unbindSession("https://api.test:443", "sess:same");
+        config.bindSession("https://api.test:443", "sess:same", "acct-b");
+
+        Pipeline.Result result = Pipeline.run(List.of(record), config);
+        assertEquals("acct-a", result.records.getFirst().idn);
+        assertEquals("USER A", result.graph.node("I:acct-a").label);
+        assertNull(result.graph.node("I:acct-b"));
+    }
+
+    @Test
     void removingAccountUnbindsSessionsAndOwnerPolicy() {
         AnalysisConfig config = new AnalysisConfig().upsertAccount(
                 new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER));

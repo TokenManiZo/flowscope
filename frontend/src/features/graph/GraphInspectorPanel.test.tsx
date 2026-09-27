@@ -1,11 +1,11 @@
 import { screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { expect, it } from "vitest"
+import { afterEach, expect, it, vi } from "vitest"
 
-import type { Snapshot } from "@/lib/api/types"
+import type { ManagedSession, Snapshot } from "@/lib/api/types"
 import { renderWithQueryClient } from "@/test/render"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
-import { graphCellSelection, type GraphSelection } from "./graphProjection"
+import type { GraphSelection } from "./graphProjection"
 
 const event: Snapshot["events"][number] = {
   eventId: "ev-1", method: "GET", path: "/orders/1", status: 200, fp: "fp", idn: "alice", role: "USER", source: "human", op: "GET /orders/{id}", resource: "order:1", timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["ev-1"], objects: [{ resource: "order:1", evidence: "id" }], verdict: "allow",
@@ -17,97 +17,61 @@ const snapshot: Snapshot = {
 
 const selection: GraphSelection = { operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }
 
-it("keeps collapsed raw cells and gaps distinct without inventing an aggregate verdict or UNKNOWN source", () => {
-  const cells = [snapshot.cells[0], { ...snapshot.cells[0], resource: "order:2", overall: "deny" as const, evidenceIds: ["raw-2"] }]
-  const aggregated = { ...graphCellSelection(cells), gapIds: ["gap-raw"] }
-  renderWithQueryClient(<GraphInspectorPanel selection={aggregated} event={event} snapshot={{ ...snapshot, cells }} />)
-  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("복수 셀")
-  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("order:1")
-  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("order:2")
-  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("DENY")
-  expect(screen.getByText("gap-raw")).toBeVisible()
-  expect(screen.queryByText("UNKNOWN")).not.toBeInTheDocument()
+const secret = "GET /orders/1 HTTP/1.1\nCookie: SECRET-RAW"
+const session: ManagedSession = { handle: "opaque", accountId: "acct-1", accountLabel: "alice", service: "https://api.example.test", status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "now", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }
+const draft = (extra: Record<string, unknown> = {}) => ({ eventId: "ev-1", service: "https://api.example.test", request: secret, response: "RAW-RESPONSE", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", reusableAccountId: "acct-1", message: "draft", ...extra })
+const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
+function stubFetch(body = draft()) {
+  const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json(String(input) === "/api/replay" ? { success: true, message: "", status: 200, replayId: "r-1", openedDraft: true } : body)))
+  vi.stubGlobal("fetch", fetch)
+  return fetch
+}
+
+afterEach(() => vi.unstubAllGlobals())
+
+it("shows only the selected operation and its Evidence rows, without verdict panels or raw event ids", () => {
+  renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 7 } }} />)
+  const panel = screen.getByRole("complementary", { name: "선택 작업" })
+  expect(panel).toHaveTextContent("GET /orders/{id}")
+  const row = within(panel).getByRole("listitem", { name: "Evidence #7" })
+  expect(row).toHaveTextContent("alice")
+  expect(row).toHaveTextContent("200")
+  expect(within(row).getByRole("img", { name: "HUMAN" })).toBeInTheDocument()
+  expect(panel).not.toHaveTextContent("ev-1")
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+  expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
 })
 
-it("refreshes collapsed cell verdicts from the current snapshot using canonical keys", () => {
-  const cells = [snapshot.cells[0], { ...snapshot.cells[0], resource: "order:2", overall: "deny" as const, evidenceIds: ["raw-2"] }]
-  const aggregated = { ...graphCellSelection(cells), gapIds: [] }
-  renderWithQueryClient(<GraphInspectorPanel selection={aggregated} event={event} snapshot={{ ...snapshot, revision: 2, cells: [cells[0], { ...cells[1], overall: "suspicious" }] }} />)
-  expect(screen.getByRole("region", { name: "서버 원본 셀" })).toHaveTextContent("SUSPICIOUS")
-  expect(screen.getByRole("region", { name: "서버 원본 셀" })).not.toHaveTextContent("DENY")
-})
-
-it("uses the surviving canonical cell's verdict and reasons when an aggregate shrinks to one cell", () => {
-  const survivor = { ...snapshot.cells[0], resource: "order:2", overall: "deny" as const, reasons: { human: "surviving server denial" }, evidenceIds: ["raw-survivor"] }
-  const aggregate = { ...graphCellSelection([snapshot.cells[0], survivor]), gapIds: [] }
-  const { rerender } = renderWithQueryClient(<GraphInspectorPanel selection={aggregate} event={event} snapshot={{ ...snapshot, cells: [snapshot.cells[0], survivor] }} />)
-  rerender(<GraphInspectorPanel selection={aggregate} event={event} snapshot={{ ...snapshot, revision: 2, cells: [survivor] }} />)
-  const access = screen.getByRole("region", { name: "Access Check" })
-  expect(access).toHaveTextContent("DENY")
-  expect(access).not.toHaveTextContent("ALLOW")
-  expect(access).toHaveTextContent("surviving server denial")
-  expect(screen.getByText("order:2")).toBeVisible()
-})
-
-it("shows the selected operation overview and server-projected access check", () => {
+it("opens the raw request in Request Lab without sending anything", async () => {
+  const fetch = stubFetch()
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />)
-
-  expect(screen.getByRole("complementary", { name: "선택 작업" })).toBeVisible()
-  expect(screen.getAllByText("GET /orders/{id}").length).toBeGreaterThan(0)
-  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("ALLOW")
-  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("필수 역할 USER")
-  expect(screen.getByRole("region", { name: "Access Check" })).toHaveTextContent("소유자 alice")
+  await userEvent.click(screen.getByRole("button", { name: "원문 보기" }))
+  expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
+  // 초안과 검증 이력 조회(GET)만 있고 전송(POST)은 없다.
+  expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-1")
+  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([])
 })
 
-it("keeps Summary, Evidence, Request, Response, and Policy details in accessible tabs", async () => {
-  renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />)
-
-  expect(screen.getByRole("tab", { name: "Summary" })).toBeVisible()
-  expect(screen.getByRole("tab", { name: "Policy" })).toBeVisible()
-
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  const evidencePanel = screen.getByRole("tabpanel", { name: "Evidence" })
-  expect(evidencePanel).toHaveTextContent("ev-1")
-  expect(evidencePanel).toHaveTextContent("메서드GET")
-  expect(evidencePanel).toHaveTextContent("경로/orders/1")
-  expect(evidencePanel).toHaveTextContent("HTTP 상태200")
-  expect(within(evidencePanel).getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
-  expect(within(evidencePanel).getByRole("button", { name: "Repeater 초안 열기" })).toBeVisible()
-
-  await userEvent.click(screen.getByRole("tab", { name: "Request" }))
-  expect(screen.getByRole("tabpanel", { name: "Request" })).toHaveTextContent("GET /orders/1")
-  expect(screen.getByRole("tabpanel", { name: "Request" })).toHaveTextContent("Request Lab")
-
-  await userEvent.click(screen.getByRole("tab", { name: "Response" }))
-  expect(screen.getByRole("tabpanel", { name: "Response" })).toHaveTextContent("HTTP 200")
-  expect(screen.getByRole("tabpanel", { name: "Response" })).toHaveTextContent("Request Lab")
-
-  await userEvent.click(screen.getByRole("tab", { name: "Policy" }))
-  const policy = screen.getByRole("tabpanel", { name: "Policy" })
-  expect(policy).toHaveTextContent("필수 역할")
-  expect(policy).toHaveTextContent("USER")
-  expect(policy).toHaveTextContent("소유자")
-  expect(policy).toHaveTextContent("alice")
+it("opens the observed identity's current session in Repeater without keeping raw text in the query cache", async () => {
+  const fetch = stubFetch()
+  const { client } = renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, managedSessions: [session] }} />)
+  await userEvent.click(screen.getByRole("button", { name: "현재 세션으로 Repeater" }))
+  expect(await screen.findByRole("status")).toHaveTextContent("Repeater에 열었습니다")
+  const replay = fetch.mock.calls.find(([input]) => String(input) === "/api/replay")
+  expect(new URLSearchParams(String(replay?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "ev-1", request: secret, credentialMode: "ACCOUNT", accountId: "acct-1" }))
+  expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain("SECRET-RAW")
 })
 
-it("bounds collapsed Evidence by count and length without leaking hidden values into ARIA or live regions", async () => {
-  const longEvidence = `ev-${"x".repeat(200)}`
-  const boundedSelection = { ...selection, evidenceIds: [longEvidence, "ev-2", "ev-3", "ev-4", "ev-5"] }
-  const { container } = renderWithQueryClient(<GraphInspectorPanel selection={boundedSelection} event={event} snapshot={snapshot} />)
+it("explains a missing current session instead of opening Repeater", async () => {
+  const fetch = stubFetch(draft({ reusableAccountId: undefined }))
+  renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, managedSessions: [session] }} />)
+  await userEvent.click(screen.getByRole("button", { name: "현재 세션으로 Repeater" }))
+  expect(await screen.findByRole("status")).toHaveTextContent("현재 세션이 없습니다")
+  expect(fetch.mock.calls.some(([input]) => String(input) === "/api/replay")).toBe(false)
+})
 
-  await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
-  const evidencePanel = screen.getByRole("tabpanel", { name: "Evidence" })
-  expect(evidencePanel).toHaveTextContent("5개 Evidence")
-  expect(evidencePanel).toHaveTextContent(`${longEvidence.slice(0, 160)}…`)
-  expect(evidencePanel).not.toHaveTextContent(longEvidence)
-  expect(evidencePanel).toHaveTextContent("ev-3")
-  expect(evidencePanel).not.toHaveTextContent("ev-4")
-  expect(evidencePanel).not.toHaveTextContent("ev-5")
-
-  const ariaAndLiveValues = [...container.querySelectorAll("[aria-label], [aria-labelledby], [aria-describedby], [aria-live]")]
-    .flatMap((element) => ["aria-label", "aria-labelledby", "aria-describedby", "aria-live"].map((attribute) => element.getAttribute(attribute) ?? ""))
-    .join(" ")
-  expect(ariaAndLiveValues).not.toContain(longEvidence)
-  expect(ariaAndLiveValues).not.toContain("ev-4")
-  expect(container.querySelector("[aria-live]")).not.toBeInTheDocument()
+it("locks Evidence actions while the snapshot is suspended", () => {
+  renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} suspended />)
+  expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
 })

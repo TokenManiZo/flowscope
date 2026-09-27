@@ -39,12 +39,6 @@
   </files>
   <fileSets>
     <fileSet>
-      <directory>docs</directory>
-      <outputDirectory>docs</outputDirectory>
-      <includes><include>**/*.md</include></includes>
-      <fileMode>0644</fileMode>
-    </fileSet>
-    <fileSet>
       <directory>scripts</directory>
       <outputDirectory>scripts</outputDirectory>
       <includes>

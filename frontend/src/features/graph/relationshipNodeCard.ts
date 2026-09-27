@@ -1,4 +1,5 @@
 import type { ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
+import { pathAfterGroup } from "@/lib/display/pathLines"
 import type { GraphNode, GraphProjection, GraphRouteCandidate } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 
@@ -7,7 +8,7 @@ type RelationshipProjection = GraphProjection | HierarchyProjection
 
 const methodPattern = /^(?:(https?:\/\/\S+)\s+)?(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD|TRACE|CONNECT|UNKNOWN)\s+(.+)$/i
 
-function operationParts(value: string): { method: string; path: string } {
+export function operationParts(value: string): { method: string; path: string } {
   const match = value.match(methodPattern)
   return match ? { method: match[2].toUpperCase(), path: match[3] } : { method: "UNKNOWN", path: value }
 }
@@ -16,6 +17,7 @@ function evidenceFooter(node: RelationshipNode) {
   return `${node.selection.evidenceIds.length} Evidence`
 }
 
+/** 카드에는 판정 글자를 그리지 않는다(판정은 상세·접근 이름·확정 테두리). API·Object 카드의 상세 줄은 접근 주체 아이콘 자리다. */
 export function relationshipNodeCard(node: RelationshipNode, projection: RelationshipProjection): ParameterNodeCardView {
   if (node.kind === "target") {
     const service = node.service ?? node.label
@@ -41,27 +43,28 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "identity") return {
-    kind: "condition", badge: "IDENTITY", title: node.label, detail: node.verdictText, footer: evidenceFooter(node), icon: "user",
-    accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}; ${evidenceFooter(node)}`,
+    kind: "condition", badge: "IDENTITY", title: node.label, detail: "", footer: "", icon: "user",
+    accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
   }
 
   if (node.kind === "resource") {
-    const owner = "owner" in node ? node.owner ?? "UNKNOWN" : "UNKNOWN"
+    const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? node.owner ?? "UNKNOWN" : "UNKNOWN"
     return {
-      kind: "target", badge: "RESOURCE", title: node.label, detail: node.verdictText, footer: `owner: ${owner}`, icon: "box",
+      kind: "target", badge: "RESOURCE", title: node.label, detail: "", footer: `owner: ${owner}`, icon: "box",
       accessibleLabel: `${node.label}; Resource; verdict ${node.verdictText}; owner: ${owner}; ${evidenceFooter(node)}`,
     }
   }
 
   const operation = operationParts(node.label)
   if (node.kind === "support-operation") return {
-    kind: "operation", badge: "SUPPORT", title: `${operation.method} ${operation.path}`, detail: "보조 흐름", footer: evidenceFooter(node), icon: "none",
-    accessibleLabel: `Support operation ${node.label}; ${evidenceFooter(node)}`,
+    kind: "operation", badge: "SUPPORT", title: `${operation.method} ${operation.path}`, detail: "보조 흐름", footer: "", icon: "none",
+    accessibleLabel: `Support operation ${node.label}`,
   }
 
   return {
-    kind: "operation", badge: operation.method, title: operation.path, detail: node.verdictText, footer: evidenceFooter(node), icon: "none",
-    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}; ${evidenceFooter(node)}`,
+    // API 카드는 API 그룹 안에서만 보이므로 그룹 구간까지는 생략한다(breadcrumb에 그룹 이름이 있다). 전체 경로는 접근 이름에 남는다.
+    kind: "operation", badge: operation.method, title: pathAfterGroup(operation.path), detail: "", footer: "", icon: "none",
+    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}`,
   }
 }
 

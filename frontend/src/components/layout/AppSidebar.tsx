@@ -37,12 +37,12 @@ export function AppSidebar({ currentRoute }: { currentRoute: AppRoute }) {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border/80">
       <SidebarHeader className="gap-4 border-b border-sidebar-border/70 px-3 py-4">
         <div className="flex items-center gap-3 px-1">
-          <div className="grid size-9 shrink-0 place-items-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 shadow-[0_0_24px_-12px_rgba(16,185,129,0.8)]"><Radar className="size-5" aria-hidden="true" /></div>
+          <div className="grid size-9 shrink-0 place-items-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shadow-[0_0_24px_-12px_rgba(16,185,129,0.8)]"><Radar className="size-5" aria-hidden="true" /></div>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden"><p className="font-heading text-base font-semibold tracking-tight">FlowScope</p><p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Access analysis</p></div>
         </div>
         <div className="space-y-2 px-1 group-data-[collapsible=icon]:hidden">
           <p className="text-[10px] font-medium tracking-[0.15em] text-muted-foreground">LOCAL SECURITY LAB</p>
-          <div className="flex min-w-0 items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent/50 px-3 py-2 text-xs"><ShieldCheck className="size-4 shrink-0 text-emerald-400" aria-hidden="true" /><span className="truncate" title={scope ?? "등록된 범위 없음"}>{scope ?? "등록된 범위 없음"}</span></div>
+          <div className="flex min-w-0 items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent/50 px-3 py-2 text-xs"><ShieldCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /><span className="truncate" title={scope ?? "등록된 범위 없음"}>{scope ?? "등록된 범위 없음"}</span></div>
         </div>
       </SidebarHeader>
       <SidebarContent className="py-2">

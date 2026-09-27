@@ -1,39 +1,74 @@
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 
-import { GRAPH_PREFERENCES_KEY, loadGraphPreferences, resetGraphPreferences, saveGraphPreferences } from "./graphPreferences"
+import { GRAPH_PREFERENCES_KEY, loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, validateGraphPreferences } from "./graphPreferences"
+
+let storage: Storage
+beforeEach(() => {
+  const values = new Map<string, string>()
+  storage = { get length() { return values.size }, clear: () => values.clear(), getItem: key => values.get(key) ?? null, key: index => [...values.keys()][index] ?? null, removeItem: key => { values.delete(key) }, setItem: (key, value) => { values.set(key, value) } }
+})
 
 describe("graph preferences", () => {
   it("normalizes out-of-range restored viewport zoom while retaining semantic hierarchy positions", () => {
     for (const [zoom, expected] of [[0, 0.4], [100, 2]]) {
-      localStorage.setItem(GRAPH_PREFERENCES_KEY, JSON.stringify({ version: 5, positions: { 'api-group:["Target","orders"]': { x: -999, y: 125 } }, viewport: { zoom, pan: { x: -1000, y: 50 } }, locked: true }))
-      expect(loadGraphPreferences()).toEqual({ version: 5, positions: { 'api-group:["Target","orders"]': { x: -999, y: 125 } }, viewport: { zoom: expected, pan: { x: -1000, y: 50 } }, locked: true })
+      storage.setItem(GRAPH_PREFERENCES_KEY, JSON.stringify({ version: 7, positions: { 'api-group:["Target","orders"]': { x: -999, y: 125 } }, viewport: { zoom, pan: { x: -1000, y: 50 } }, locked: true }))
+      expect(loadGraphPreferences(storage)).toEqual({ version: 7, positions: { 'api-group:["Target","orders"]': { x: -999, y: 125 } }, viewport: { zoom: expected, pan: { x: -1000, y: 50 } }, locked: true, inputMode: "auto" })
     }
   })
+
   it("round-trips only the versioned layout preference shape", () => {
-    saveGraphPreferences({ version: 5, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: { zoom: 1.2, pan: { x: 5, y: -4 } }, locked: true })
-    expect(loadGraphPreferences()).toEqual({ version: 5, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: { zoom: 1.2, pan: { x: 5, y: -4 } }, locked: true })
-    expect(localStorage.getItem(GRAPH_PREFERENCES_KEY)).not.toContain("evidence")
+    saveGraphPreferences({ version: 7, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: { zoom: 1.2, pan: { x: 5, y: -4 } }, locked: true, inputMode: "trackpad" }, storage)
+    expect(loadGraphPreferences(storage)).toEqual({ version: 7, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: { zoom: 1.2, pan: { x: 5, y: -4 } }, locked: true, inputMode: "trackpad" })
+    expect(storage.getItem(GRAPH_PREFERENCES_KEY)).not.toContain("evidence")
+  })
+
+  it("carries older layouts forward and drops the retired lane widths", () => {
+    for (const version of [5, 6]) {
+      storage.setItem(GRAPH_PREFERENCES_KEY, JSON.stringify({ version, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: null, locked: false, ...(version === 6 ? { laneWidths: { 2: [300, 420], 3: [360, 480, 360] } } : {}) }))
+      expect(loadGraphPreferences(storage)).toEqual({ version: 7, positions: { "operation:GET /orders": { x: 12, y: 24 } }, viewport: null, locked: false, inputMode: "auto" })
+    }
   })
 
   it("rejects malformed, wrong-version, oversized, non-finite, and prototype-polluting values", () => {
     for (const value of [
       '{"version":4,"positions":{},"viewport":null,"locked":false}',
-      '{"version":5,"positions":{"node":{"x":null,"y":2}},"viewport":null,"locked":false}',
-      '{"version":5,"positions":{"__proto__":{"x":1,"y":2}},"viewport":null,"locked":false}',
-      JSON.stringify({ version: 5, positions: Object.fromEntries(Array.from({ length: 501 }, (_, index) => [`node-${index}`, { x: index, y: index }])), viewport: null, locked: false }),
-      JSON.stringify({ version: 5, positions: {}, viewport: null, locked: false, padding: "x".repeat(300_000) }),
+      '{"version":8,"positions":{},"viewport":null,"locked":false}',
+      '{"version":7,"positions":{"node":{"x":null,"y":2}},"viewport":null,"locked":false}',
+      '{"version":7,"positions":{"__proto__":{"x":1,"y":2}},"viewport":null,"locked":false}',
+      '{"version":7,"positions":{},"viewport":null,"locked":false,"inputMode":"touch"}',
+      JSON.stringify({ version: 7, positions: Object.fromEntries(Array.from({ length: 501 }, (_, index) => [`node-${index}`, { x: index, y: index }])), viewport: null, locked: false }),
+      JSON.stringify({ version: 7, positions: {}, viewport: null, locked: false, padding: "x".repeat(300_000) }),
       "not-json",
     ]) {
-      localStorage.setItem(GRAPH_PREFERENCES_KEY, value)
-      expect(loadGraphPreferences()).toBeNull()
+      storage.setItem(GRAPH_PREFERENCES_KEY, value)
+      expect(loadGraphPreferences(storage)).toBeNull()
     }
   })
 
   it("reset removes only the namespaced graph value", () => {
-    localStorage.setItem(GRAPH_PREFERENCES_KEY, "value")
-    localStorage.setItem("unrelated", "keep")
-    resetGraphPreferences()
-    expect(localStorage.getItem(GRAPH_PREFERENCES_KEY)).toBeNull()
-    expect(localStorage.getItem("unrelated")).toBe("keep")
+    storage.setItem(GRAPH_PREFERENCES_KEY, "value")
+    storage.setItem("unrelated", "keep")
+    resetGraphPreferences(storage)
+    expect(storage.getItem(GRAPH_PREFERENCES_KEY)).toBeNull()
+    expect(storage.getItem("unrelated")).toBe("keep")
+  })
+})
+
+describe("resized node sizes", () => {
+  it("round-trips bounded node sizes and keeps older preferences without sizes readable", () => {
+    const store = storage
+    const base = { version: 7 as const, positions: {}, viewport: null, locked: false, inputMode: "auto" as const }
+    expect(saveGraphPreferences({ ...base, sizes: { "operation:GET /orders": { width: 320, height: 140 } } }, store)).toBe(true)
+    expect(loadGraphPreferences(store)?.sizes).toEqual({ "operation:GET /orders": { width: 320, height: 140 } })
+    expect(saveGraphPreferences(base, store)).toBe(true)
+    expect(loadGraphPreferences(store)).toEqual(base)
+  })
+
+  it("rejects sizes outside the allowed range or with unsafe keys", () => {
+    const base = { version: 7, positions: {}, viewport: null, locked: false }
+    expect(validateGraphPreferences({ ...base, sizes: { node: { width: 10, height: 100 } } })).toBeNull()
+    expect(validateGraphPreferences({ ...base, sizes: { node: { width: 300, height: 9999 } } })).toBeNull()
+    expect(validateGraphPreferences({ ...base, sizes: { ["x".repeat(300)]: { width: 300, height: 100 } } })).toBeNull()
+    expect(validateGraphPreferences({ ...base, sizes: [] })).toBeNull()
   })
 })

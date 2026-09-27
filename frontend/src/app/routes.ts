@@ -1,7 +1,8 @@
 import type { LucideIcon } from "lucide-react"
-import { Activity, Bot, Braces, FileSearch, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
+import { Activity, Braces, FileSearch, House, LayoutDashboard, LayoutGrid, ListTree, Network, Radar, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
 
 export type AppRoute =
+  | "home"
   | "dashboard"
   | "inspection"
   | "surface"
@@ -11,7 +12,7 @@ export type AppRoute =
   | "scenarios"
   | "evidence"
   | "accounts"
-  | "explorer"
+  | "verification"
   | "runs"
 
 export interface AppRouteDefinition {
@@ -21,16 +22,18 @@ export interface AppRouteDefinition {
   icon: LucideIcon
 }
 
-export type NavigationGroupId = "analysis" | "inspection" | "records"
+export type NavigationGroupId = "extras"
 
 export interface NavigationGroup {
   id: NavigationGroupId
   label: string
+  icon: LucideIcon
   defaultRoute: AppRoute
   routes: readonly AppRoute[]
 }
 
 export const appRoutes: readonly AppRouteDefinition[] = [
+  { route: "home", label: "홈", group: "overview", icon: House },
   { route: "dashboard", label: "대시보드", group: "overview", icon: LayoutDashboard },
   { route: "inspection", label: "점검 시작", group: "overview", icon: ScanSearch },
   { route: "surface", label: "API·입력 차이", group: "analysis", icon: Braces },
@@ -40,25 +43,33 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "scenarios", label: "취약점 시나리오", group: "analysis", icon: ShieldAlert },
   { route: "evidence", label: "Evidence", group: "evidence", icon: FileSearch },
   { route: "accounts", label: "계정·세션", group: "operations", icon: UsersRound },
-  { route: "explorer", label: "LLM Explorer", group: "operations", icon: Bot },
+  { route: "verification", label: "교차 신원 검증", group: "operations", icon: Radar },
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 
-/** PR#11 상단 탐색: 분석 / 점검 / 기록 세 그룹이 모든 route를 보존한다. 현행 API·입력 차이와 LLM Explorer도 같은 그룹 안에 둔다. */
+/** 사이드바 독립 메뉴: 점검 흐름 순서의 핵심 화면 5개. */
+export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "verification", "matrix"] as const satisfies readonly AppRoute[]
+
+/** 핵심 외 화면은 "부가 기능" 드롭다운으로 묶는다. 대시보드는 Home 본문으로, 흐름 순서(#sequence)는 주소로만 연다. */
 export const navigationGroups = [
-  { id: "analysis", label: "분석", defaultRoute: "graph", routes: ["graph", "surface", "dashboard", "matrix", "sequence", "scenarios"] },
-  { id: "inspection", label: "점검", defaultRoute: "inspection", routes: ["inspection"] },
-  { id: "records", label: "기록", defaultRoute: "evidence", routes: ["evidence", "runs", "explorer", "accounts"] },
+  { id: "extras", label: "부가 기능", icon: LayoutGrid, defaultRoute: "surface", routes: ["surface", "scenarios", "evidence", "runs"] },
 ] as const satisfies readonly NavigationGroup[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))
 
-/** `#graph`는 PR#11처럼 점검 우선순위(파라미터 맵)와 전체 관계 보기를 함께 담는다. 이식 중 임시 route였던 `#parameter-map`은 같은 화면으로 이어진다. */
+/** 알 수 없는 주소나 빈 주소는 Home(첫 화면, #home)으로 돌아온다. `#parameter-map`은 예전 그래프, `#explorer`는 점검 시작 LLM 스텝, `#evidence-review`는 Evidence 검토 탭 별칭이다. */
 export function routeFromHash(hash: string): AppRoute {
-  if (!hash.startsWith("#")) return "surface"
+  if (!hash.startsWith("#")) return "home"
   const candidate = hash.slice(1)
   if (candidate === "parameter-map") return "graph"
-  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "surface"
+  if (candidate === "explorer") return "inspection"
+  if (candidate === "evidence-review") return "evidence"
+  return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "home"
+}
+
+/** 주소창에 남길 hash. 화면 안의 상태를 여는 별칭(#evidence-review)은 그 화면이 읽을 수 있게 지우지 않는다. */
+export function canonicalHash(hash: string): string {
+  return hash === "#evidence-review" ? hash : routeHash(routeFromHash(hash))
 }
 
 export function routeHash(route: AppRoute): string {

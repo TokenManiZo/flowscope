@@ -91,6 +91,9 @@ public final class Standalone {
         @Override public List<RunExecutionLedger.Summary> executionSummaries() {
             return executionLedger.summaries();
         }
+        @Override public List<RunExecutionLedger.Attempt> manualAttempts() {
+            return executionLedger.attempts().stream().filter(attempt -> attempt.originEvidenceId() != null).toList();
+        }
         @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() {
             return new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.IDLE, "", "", null, null,
@@ -193,7 +196,41 @@ public final class Standalone {
                 throw projectFailure("프로젝트 열기에 실패했습니다.", error);
             }
         }
-        @Override public RequestRecord openInRepeater(String evidenceId) {
+        @Override public synchronized ProjectWorkspace.Status resetProjectTraffic() {
+            if (activeProjectDatabase == null) throw new IllegalStateException("초기화할 현재 프로젝트가 없습니다.");
+            try {
+                AnalysisConfig retainedConfig = config.snapshotCopy();
+                retainedConfig.clearSessionBindings();
+                retainedConfig.clearReviews();
+                sqliteProjectStore.save(activeProjectDatabase, List.of(), retainedConfig, List.of(), List.of(),
+                        Map.of(), List.of(), List.of(), activeProjectContext);
+                records.clear();
+                config.replaceWith(retainedConfig);
+                archivedAssessments = List.of();
+                archivedValidations = List.of();
+                contexts.reset();
+                executionLedger.clear();
+                routeCandidates = List.of();
+                JavascriptCallSiteAnalyzer.clearCache();
+                datasetRevision.incrementAndGet();
+                rebuild();
+                markSaved();
+                return projectStatus();
+            } catch (Exception error) {
+                throw projectFailure("트래픽 초기화에 실패했습니다.", error);
+            }
+        }
+        @Override public synchronized ProjectWorkspace.Status deleteProject(String id) {
+            try {
+                projectWorkspace.delete(id, activeProjectDatabase);
+                return projectStatus();
+            } catch (Exception error) {
+                throw projectFailure("프로젝트 삭제에 실패했습니다.", error);
+            }
+        }
+        @Override public RequestRecord openInRepeater(String evidenceId, String request,
+                                                      FlowScopeWebServer.CredentialMode credentialMode,
+                                                      String accountId) {
             throw new IllegalStateException("Repeater 초안은 Burp Extension에서만 열 수 있습니다.");
         }
         @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
@@ -206,7 +243,7 @@ public final class Standalone {
             return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
                     request, response, false, false, false,
                     request == null ? null : "UTF-8", response == null ? null : "UTF-8",
-                    record.idn == null || record.idn.isBlank() ? "미확정" : record.idn, "없음",
+                    record.idn == null || record.idn.isBlank() ? "미확정" : record.idn, "없음", "",
                     "Standalone 데모에서는 마스킹된 읽기 전용 초안만 제공하며 Request Lab 전송을 사용할 수 없습니다.");
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(

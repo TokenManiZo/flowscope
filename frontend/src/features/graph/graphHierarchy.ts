@@ -30,6 +30,8 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   groupId?: string
   service?: string
   owner?: string | null
+  /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
+  publicRead?: boolean
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
   relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
@@ -53,6 +55,11 @@ export interface HierarchyProjection {
   hiddenObjectCount: number
 }
 
+/** 이 조회 API가 이 객체에 대해 공개 정책(PUBLIC)인지. 서버 권한 매트릭스의 객체 칸을 따른다. */
+export function isPublicRead(snapshot: Snapshot, operation: string, resource: string): boolean {
+  return snapshot.authorizationMatrix?.objects.some(cell => cell.operation === operation && cell.resource === resource && cell.resourcePolicy === "PUBLIC") ?? false
+}
+
 export function apiGroupDescriptor(service: string, path: string): ApiGroupDescriptor {
   const parts = (path || "/").split("/").filter(Boolean)
   let index = 0
@@ -70,6 +77,13 @@ function operationGroup(operation: string): ApiGroupDescriptor {
 
 export function navigateHierarchy(current: GraphNavigation, level: GraphLevel, groupId = "", operation = ""): GraphNavigation {
   return { level, groupId, operation, operationLimit: level === "group" && current.groupId === groupId ? current.operationLimit : GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE, focusCandidateKey: "" }
+}
+
+/** 노드를 여는(더블클릭·Enter) 방향. 오른쪽 레인 노드는 한 단계 안으로, 왼쪽 신원 노드는 한 단계 위로 간다. */
+export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | null {
+  if (kind === "api-group" || (kind === "operation" && level === "group")) return "in"
+  if (kind === "identity" && level !== "site") return "back"
+  return null
 }
 
 export function stepBack(current: GraphNavigation): GraphNavigation {
@@ -217,7 +231,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const visible = resources.slice(0, resolved.objectLimit)
     for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addNode("operation", operation, selectionFor(related))
-    for (const resource of visible) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }, { owner: snapshot.owners[resource] ?? null })
+    for (const resource of visible) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }, { owner: snapshot.owners[resource] ?? null, publicRead: isPublicRead(snapshot, operation, resource) })
     addAccess(related)
     for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${operation}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     const visibleCandidates = candidates.filter(gap => gap.resource && visible.includes(gap.resource))
@@ -233,4 +247,12 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   }
   return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount }
+}
+
+/** 그래프 상단 카운트. 현재 단계에 실제로 그려진 노드만 센다(사이트 개요에는 신원·API·객체 노드가 없다). */
+export function graphCountLabel(graph: HierarchyProjection): string {
+  if (graph.kind === "site") return `${graph.nodes.filter(node => node.kind === "api-group").length} API groups`
+  const parts = [`${graph.identities.length} identities`, `${graph.operations.length} operations`]
+  if (graph.kind === "operation") parts.push(`${graph.resources.length} resources`)
+  return parts.join(" · ")
 }

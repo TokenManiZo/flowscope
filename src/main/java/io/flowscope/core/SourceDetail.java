@@ -14,6 +14,7 @@ public enum SourceDetail {
     ZAP_PASSIVE_SCAN(Source.SCANNER, "ZAP Passive Scan"),
     ZAP_ACTIVE_SCAN(Source.SCANNER, "ZAP Active Scan"),
     OTHER_SCANNER(Source.SCANNER, "기타 스캐너"),
+    AUTHORIZATION_REPLAY(Source.SCANNER, "인가 교차 재전송"),
     LLM_EXPLORER(Source.LLM, "LLM Explorer"),
     LLM_COACH_PROBE(Source.LLM, "LLM Judge Probe"),
     LLM_VALIDATION(Source.LLM, "LLM Validation"),

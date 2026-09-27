@@ -63,8 +63,6 @@ jobs:
           bundle="${bundles[0]}"
           test -s "$bundle"
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/flowscope-[^/]+\.jar$'
-          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/docs/ko/getting-started\.md$'
-          unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/docs/en/getting-started\.md$'
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/doctor\.sh$'
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/doctor\.ps1$'
           unzip -Z1 "$bundle" | grep -Eq '^flowscope-[^/]+/scripts/zap-up\.sh$'

@@ -95,6 +95,7 @@ public final class SnapshotJsonWriter {
                 "https://demo.flowscope.test:443".equals(record.service)
                         && record.runId != null && record.runId.startsWith("demo-")));
         root.set("events", events(result));
+        root.set("evidenceOrdinals", evidenceOrdinals(result));
         root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()
                 .map(GraphObservationFact::from).toList()));
         ObjectNode traffic = root.putObject("trafficStats");
@@ -120,7 +121,29 @@ public final class SnapshotJsonWriter {
         root.set("flowLinks", flowLinks(result.coverageRecords));
         root.set("roles", roles(result, config));
         root.set("owners", owners(result));
+        root.set("ownerOverrides", json.valueToTree(config.resourceOwners()));
+        ArrayNode manual = root.putArray("manualVerifications");
+        for (RequestRecord record : result.records) {
+            if (record.source == Source.HUMAN && record.phase == io.flowscope.core.RunPhase.VALIDATION
+                    && record.originEvidenceId != null) {
+                ObjectNode value = manual.addObject();
+                value.put("eventId", record.evidenceId);
+                value.put("originEvidenceId", record.originEvidenceId);
+                value.put("operation", record.op);
+                value.put("resource", record.resource);
+                value.put("identity", config.identityLabel(record.idn));
+                value.put("identityId", record.idn);
+                value.put("timestamp", record.timestamp);
+                value.put("status", record.status);
+                value.put("durationMs", record.durationMillis);
+            }
+        }
         root.set("requiredRoles", requiredRoles(config));
+        ObjectNode reviewValidation = json.createObjectNode();
+        config.reviews().forEach((id, decision) -> {
+            if (!decision.validationEvidenceIds().isEmpty()) reviewValidation.set(id, json.valueToTree(decision.validationEvidenceIds()));
+        });
+        if (!reviewValidation.isEmpty()) root.set("reviewValidationEvidence", reviewValidation);
         root.set("activeSources", json.valueToTree(result.analysis.activeSources().stream()
                 .map(SnapshotJsonWriter::wire).sorted().toList()));
         root.set("cells", cells(result.analysis.cells()));
@@ -184,6 +207,7 @@ public final class SnapshotJsonWriter {
             session.put("accountLabel", value.accountLabel());
             session.put("service", value.service());
             session.put("status", value.status().name());
+            session.put("verificationSource", value.verificationSource().name());
             session.put("createdAt", value.createdAt().toString());
             if (value.lastUsedAt() == null) session.putNull("lastUsedAt");
             else session.put("lastUsedAt", value.lastUsedAt().toString());
@@ -228,6 +252,12 @@ public final class SnapshotJsonWriter {
             event.put("runId", record.runId);
             if (record.laneAccountId == null) event.putNull("laneAccountId");
             else event.put("laneAccountId", record.laneAccountId);
+            if (record.replayBasisIdentity != null) {
+                event.put("replayBasisIdentity", record.replayBasisIdentity);
+            }
+            if (record.replayBasisEvidenceId != null) {
+                event.put("replayBasisEvidenceId", record.replayBasisEvidenceId);
+            }
             event.put("authState", record.authState.name());
             event.put("trafficClass", record.trafficClassification.trafficClass().name());
             event.put("trafficDisposition", record.trafficClassification.disposition().name());
@@ -257,6 +287,22 @@ public final class SnapshotJsonWriter {
                     record.idn, record.op, record.resource).stableKey() + "\u0000" + record.source;
             event.put("verdict", wire(verdicts.getOrDefault(key, Verdict.UNTESTED)));
         }
+        return out;
+    }
+
+    /**
+     * 사람이 보기 쉬운 표시용 순번(#1, #2 …)을 Evidence ID(내용 해시 `ev-…`)에 얹는 매핑이다. 원본 ID는 역참조·중복제거 키로 유지한다.
+     * 활성 프로젝트 스냅샷 단위라 프로젝트별 순번이 되며, 최초 관측(firstSeen) 순으로 정렬해 새로고침·증분 관측에도 번호가 흔들리지 않는다.
+     */
+    private ObjectNode evidenceOrdinals(Pipeline.Result result) {
+        Map<String, ObservationCollapser.Group> clusters = ObservationCollapser.byEvidence(result.records);
+        List<String> ordered = result.records.stream().map(record -> record.evidenceId).distinct()
+                .sorted(Comparator.comparingLong((String id) -> clusters.get(id).firstSeen())
+                        .thenComparing(Comparator.naturalOrder()))
+                .toList();
+        ObjectNode out = json.createObjectNode();
+        int ordinal = 1;
+        for (String id : ordered) out.put(id, ordinal++);
         return out;
     }
 

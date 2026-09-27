@@ -56,7 +56,8 @@ it("uses approved card images and textual node semantics", () => {
   render(<ParameterGapGraph projection={projection()} onSelect={vi.fn()} />)
   const selected = core.nodes('[focused = "yes"]')
   expect(selected.every(node => String(node.data("cardImage")).startsWith("data:image/svg+xml"))).toBe(true)
-  expect(selected.every(node => node.data("width") === 224 && node.data("height") === 124)).toBe(true)
+  // 점검 우선순위 카드는 줄 구성과 무관하게 한 가지 크기다.
+  expect(selected.every(node => node.data("width") === 200 && node.data("height") === 86)).toBe(true)
   expect(selected.filter('[lane = "condition"]').first().data("accessibleLabel")).toContain("USER A")
   expect(selected.filter('[lane = "operation"]').first().data("accessibleLabel")).toContain("PATCH")
   expect(selected.filter('[lane = "input"]').first().data("accessibleLabel")).toContain("JSON")
@@ -203,24 +204,28 @@ it("shows current graph magnification between the zoom controls and updates with
   expect(magnification).toHaveTextContent("95%")
 })
 
-it("keeps horizontal relationship labels clear of the card interiors at 1440px", () => {
+it("draws unlabeled edges and marks API and target cards with the requesting sources", () => {
   width = 1440
-  render(<ParameterGapGraph projection={projectParameterMap(mixedSnapshot(), defaultParameterFilters, "auth")} onSelect={vi.fn()} />)
-  core.edges().forEach(edge => {
-    const labelBottom = edge.source().renderedPosition().y + (Number.parseFloat(edge.style("text-margin-y")) + Number.parseFloat(edge.style("font-size")) / 2) * core.zoom()
-    const cardTop = edge.source().renderedPosition().y - edge.source().renderedOuterHeight() / 2
-    expect(labelBottom).toBeLessThan(cardTop - 4)
-  })
-  expect(core.edges().map(edge => edge.data("label"))).toContain("관측 H × 40 / L × 40")
+  const mixed = projectParameterMap(mixedSnapshot(), defaultParameterFilters, "auth")
+  render(<ParameterGapGraph projection={mixed} onSelect={vi.fn()} />)
+  expect(core.edges().map(edge => edge.data("label"))).toEqual(core.edges().map(() => ""))
+  expect(core.edges().filter(edge => edge.id().includes('"observation"')).map(edge => edge.data("color"))).not.toContain("#60a5fa")
+  for (const lane of ["operation", "target"] as const) for (const node of mixed.nodes.filter(item => item.lane === lane)) expect(node.card.sources).toBeDefined()
+  for (const lane of ["condition", "input"] as const) for (const node of mixed.nodes.filter(item => item.lane === lane)) expect(node.card.sources).toBeUndefined()
 })
 
 it("renders four labeled lanes, separate source/relation legends and canonical node selection", async () => {
   const onSelect = vi.fn()
   render(<ParameterGapGraph projection={projection()} onSelect={onSelect} />)
   for (const lane of ["조건/사용자", "API 엔드포인트", "입력 파라미터", "권한 대상"]) expect(screen.getByRole("columnheader", { name: lane })).toBeVisible()
-  const legend = screen.getByRole("list", { name: "요청 생성 주체 범례" })
-  expect(within(legend).getAllByRole("listitem").map(item => item.textContent)).toEqual(["H · HUMAN", "S · SCANNER", "L · LLM", "UNKNOWN"])
-  expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선: 관측·근거붉은 파선: 미검증 Gap점선: 정의·불확실 관계")
+  // 범례는 `?` 아이콘 뒤에 숨어 있다가 포커스(또는 마우스 올림)로 펼쳐진다.
+  expect(screen.queryByRole("list", { name: "요청 생성 주체 범례" })).not.toBeInTheDocument()
+  act(() => { screen.getByRole("button", { name: "범례·도움말" }).focus() })
+  const legend = await screen.findByRole("list", { name: "요청 생성 주체 범례" })
+  expect(within(legend).getAllByRole("listitem").map(item => item.textContent)).toEqual(["HUMAN", "SCANNER", "LLM"])
+  expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선: 관측·근거주황 파선: 미검증 · Gap점선: 정의·불확실 관계")
+  await userEvent.keyboard("{Escape}")
+  await waitFor(() => expect(screen.queryByRole("list", { name: "요청 생성 주체 범례" })).not.toBeInTheDocument())
   expect(screen.getByRole("button", { name: "Gap 그래프 맞추기" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Gap 그래프 확대" })).toBeVisible()
   expect(core.nodes().length).toBe(8)
@@ -229,7 +234,7 @@ it("renders four labeled lanes, separate source/relation legends and canonical n
   act(() => { input.emit("tap") })
   expect(onSelect).toHaveBeenCalledWith(projection().selection)
   expect(onSelect.mock.calls[0][0]).toMatchObject({ gapId: "auth", evidenceIds: ["witness-a"], evidenceCount: 31 })
-  await userEvent.click(screen.getByText("키보드로 경로 선택"))
+  await userEvent.click(screen.getByText("경로 목록"))
   const button = within(screen.getByRole("list", { name: "Gap 경로 목록" })).getAllByRole("button")[0]
   button.focus()
   await userEvent.keyboard("{Enter}")
@@ -283,7 +288,8 @@ it("labels an input without observation witnesses UNKNOWN rather than as a suppo
   render(<ParameterGapGraph projection={projectParameterMap(snapshot)} onSelect={vi.fn()} />)
   const unknownInputs = core.edges().filter(edge => edge.id().includes("unknown-input"))
   expect(unknownInputs.length).toBe(2)
-  expect(unknownInputs.map(edge => edge.data("label"))).toEqual(["입력 UNKNOWN", "입력 UNKNOWN"])
+  // 캔버스 엣지는 라벨이 없고, 미지원 관계는 점선으로 구분한다. 문장 설명은 경로 목록에 남는다.
+  expect(unknownInputs.map(edge => edge.data("line"))).toEqual(["dotted", "dotted"])
 })
 
 it("focuses Gap 41 and a previously panned existing path without resetting later polling viewport", () => {
@@ -344,14 +350,32 @@ it("exposes mixed observation attribution, Gap subject and separate evidence cou
   expect(onSelect.mock.calls[0][0]).toMatchObject({ gapId: "source", evidenceIds: ["witness-a"], evidenceCount: 31 })
 })
 
-it("reserves stroke shapes for relationship meanings, not source attribution", () => {
+it("reserves stroke shapes for relationship meanings, not source attribution", async () => {
   render(<ParameterGapGraph projection={projection()} onSelect={vi.fn()} />)
-  const sourceLegend = screen.getByRole("list", { name: "요청 생성 주체 범례" })
+  await userEvent.hover(screen.getByRole("button", { name: "범례·도움말" }))
+  const sourceLegend = await screen.findByRole("list", { name: "요청 생성 주체 범례" })
   for (const marker of sourceLegend.querySelectorAll('[aria-hidden="true"]')) {
     expect(marker).not.toHaveStyle({ borderStyle: "dashed" })
     expect(marker).not.toHaveStyle({ borderStyle: "dotted" })
     expect(marker).not.toHaveClass("border-t-2")
   }
   expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선")
-  expect(screen.getByText(/주체 ≠ 관계/)).toHaveTextContent("Gap 주체 ≠ 관측 출처 · Gap ≠ 취약점 판정")
+  expect(screen.getByText("Gap = 점검 후보")).toBeVisible()
+  await userEvent.unhover(screen.getByRole("button", { name: "범례·도움말" }))
+  await waitFor(() => expect(screen.queryByRole("list", { name: "요청 생성 주체 범례" })).not.toBeInTheDocument())
+})
+
+it("pans on a two-finger trackpad scroll and zooms only on pinch or mouse wheel", () => {
+  render(<ParameterGapGraph projection={projection()} onSelect={vi.fn()} />)
+  const canvas = screen.getByLabelText("파라미터 Cytoscape 그래프")
+  const zoom = core.zoom(), panY = core.pan().y
+
+  const trackpad = new WheelEvent("wheel", { deltaY: 12.5, deltaMode: WheelEvent.DOM_DELTA_PIXEL, bubbles: true, cancelable: true })
+  act(() => { canvas.dispatchEvent(trackpad) })
+  expect(trackpad.defaultPrevented).toBe(true)
+  expect(core.zoom()).toBe(zoom)
+  expect(core.pan().y).toBeCloseTo(panY - 12.5)
+
+  act(() => { canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 8, ctrlKey: true, deltaMode: WheelEvent.DOM_DELTA_PIXEL, bubbles: true, cancelable: true })) })
+  expect(core.zoom()).toBeLessThan(zoom)
 })

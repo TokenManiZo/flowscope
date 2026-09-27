@@ -57,7 +57,7 @@ it("keeps restored LLM verdicts in a read-only archive, never in the current can
   const list = screen.getByRole("region", { name: "시나리오 후보 목록" })
   expect(within(list).queryByText(/옛 평가|CONFIRMED/)).not.toBeInTheDocument()
   await userEvent.click(screen.getByText("과거 LLM 기록 · 읽기 전용 (2개)"))
-  expect(screen.getByText(/현재 코드가 재검증하거나 승인한 판정이 아니며/)).toBeVisible()
+  expect(screen.getByText("이전 프로젝트에서 가져온 읽기 전용 기록입니다.")).toBeVisible()
   expect(document.querySelector("img")).toBeNull()
   expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()
 })
@@ -69,7 +69,19 @@ it("opens exact candidate Evidence and clears selection when revision changes", 
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
   currentSnapshot = snapshot(2, [])
   view.refresh()
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).not.toHaveTextContent("candidate-event")
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+})
+
+it("keeps the open Evidence when new traffic only bumps the revision", async () => {
+  const view = renderPage()
+  await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
+  await userEvent.click(screen.getByRole("button", { name: "Evidence 열기" }))
+  currentSnapshot = snapshot(2)
+  view.refresh()
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  currentSnapshot = { ...snapshot(3), datasetRevision: 9 }
+  view.refresh()
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
 })
 
 it("saves capped human review independently of removed LLM execution", async () => {
@@ -98,7 +110,7 @@ it("reports snapshot failure without inventing an empty successful analysis", ()
   currentSnapshot = undefined
   renderPage()
   expect(screen.getByText("snapshot unavailable")).toBeVisible()
-  expect(screen.queryByText("현재 규칙 후보가 없습니다. 안전하다는 판정은 아닙니다.")).not.toBeInTheDocument()
+  expect(screen.queryByText("규칙에 해당하는 후보가 없습니다.")).not.toBeInTheDocument()
 })
 
 it("retains an open Evidence detail but suspends its actions during a refresh failure", async () => {
@@ -115,5 +127,5 @@ it("retains an open Evidence detail but suspends its actions during a refresh fa
 it("shows empty rule results as absence of candidates, not safety", () => {
   currentSnapshot = snapshot(1, [])
   renderPage()
-  expect(screen.getByText("현재 규칙 후보가 없습니다. 안전하다는 판정은 아닙니다.")).toBeVisible()
+  expect(screen.getByText("규칙에 해당하는 후보가 없습니다.")).toBeVisible()
 })

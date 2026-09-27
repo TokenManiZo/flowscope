@@ -1,5 +1,12 @@
+import { ChevronDown } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import type { EvidenceFiltersState } from "./evidenceSelectors"
+import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { trafficClassLabels } from "@/lib/display/traffic"
+import { cn } from "@/lib/utils"
+import { trafficClassDefaults, type EvidenceFiltersState } from "./evidenceSelectors"
 
 const sourceLabels = {
   human: "사람 H",
@@ -7,73 +14,48 @@ const sourceLabels = {
   llm: "LLM L",
 } as const
 
-const trafficLabels: Record<string, string> = {
-  API: "API",
-  AUTH_SESSION: "인증·세션 준비",
-  UNKNOWN: "판단 보류",
-  TELEMETRY_CANDIDATE: "텔레메트리 후보",
-  POLLING: "반복 polling 후보",
-  BACKGROUND: "반복 백그라운드 후보",
-  NAVIGATION: "화면 이동",
-  STATIC_ASSET: "정적 자원",
-  DISCOVERY_METADATA: "탐색 메타데이터",
-  PREFLIGHT: "CORS 사전 요청",
-}
-
 type Props = {
   value: EvidenceFiltersState
   onChange: (next: EvidenceFiltersState) => void
 }
 
-function FilterCheckbox({ checked, label, onCheckedChange }: { checked: boolean; label: string; onCheckedChange: (next: boolean) => void }) {
+function ChipCheckbox({ checked, label, onCheckedChange }: { checked: boolean; label: string; onCheckedChange: (next: boolean) => void }) {
   return (
-    <label className="flex min-w-0 items-start gap-2 text-sm leading-5">
-      <Checkbox checked={checked} onCheckedChange={(next) => onCheckedChange(next === true)} aria-label={label} />
-      <span className="min-w-0 break-keep">{label}</span>
+    <label className={cn("flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs", checked ? "border-border bg-card" : "border-dashed text-muted-foreground")}>
+      <Checkbox className="size-3.5" checked={checked} onCheckedChange={(next) => onCheckedChange(next === true)} aria-label={label} />
+      {label}
     </label>
   )
 }
 
+/** 표 위 한 줄 도구 모음: 소스, 검색, 분류(팝오버), 반복 펼치기. 판정은 탭이 맡는다. */
 export function EvidenceFilters({ value, onChange }: Props) {
+  const classes = Object.keys(trafficClassDefaults)
+  const shown = classes.filter((trafficClass) => value.trafficClasses[trafficClass] === true).length
   return (
-    <fieldset className="grid gap-3 rounded-lg border p-3" aria-label="Evidence 표시 필터">
-      <legend className="px-1 font-medium">Evidence 표시 필터</legend>
-      <div className="grid grid-cols-2 gap-2" role="group" aria-label="수집 소스">
-        {(Object.keys(sourceLabels) as (keyof typeof sourceLabels)[]).map((source) => (
-          <FilterCheckbox
-            key={source}
-            label={sourceLabels[source]}
-            checked={value.sources[source]}
-            onCheckedChange={(checked) => onChange({ ...value, sources: { ...value.sources, [source]: checked } })}
-          />
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-2" role="group" aria-label="트래픽 판정">
-        {(["INCLUDE", "REVIEW", "EXCLUDE"] as const).map((disposition) => (
-          <FilterCheckbox
-            key={disposition}
-            label={disposition}
-            checked={value.dispositions[disposition]}
-            onCheckedChange={(checked) => onChange({ ...value, dispositions: { ...value.dispositions, [disposition]: checked } })}
-          />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 gap-2" role="group" aria-label="트래픽 분류">
-        {Object.entries(trafficLabels).map(([trafficClass, label]) => (
-          <FilterCheckbox
-            key={trafficClass}
-            label={label}
-            checked={value.trafficClasses[trafficClass] === true}
-            onCheckedChange={(checked) => onChange({ ...value, trafficClasses: { ...value.trafficClasses, [trafficClass]: checked } })}
-          />
-        ))}
-      </div>
-      <FilterCheckbox
-        label="반복 Evidence 펼치기"
-        checked={value.expandRepeats}
-        onCheckedChange={(expandRepeats) => onChange({ ...value, expandRepeats })}
-      />
-      <p className="text-sm text-muted-foreground">이 필터는 표시에만 적용됩니다. 숨김 Evidence는 삭제되지 않습니다.</p>
-    </fieldset>
+    <div role="group" aria-label="Evidence 표시 필터" className="flex flex-wrap items-center gap-2">
+      {(Object.keys(sourceLabels) as (keyof typeof sourceLabels)[]).map((source) => (
+        <ChipCheckbox key={source} label={sourceLabels[source]} checked={value.sources[source]}
+          onCheckedChange={(checked) => onChange({ ...value, sources: { ...value.sources, [source]: checked } })} />
+      ))}
+      <Input type="search" aria-label="경로·신원 검색" placeholder="경로·신원 검색" value={value.query ?? ""} className="h-8 w-56 text-sm"
+        onChange={(event) => onChange({ ...value, query: event.target.value })} />
+      <Popover>
+        <PopoverTrigger asChild><Button type="button" variant="outline" size="sm" className="h-8 gap-1">분류 {shown}/{classes.length}<ChevronDown className="size-3.5" /></Button></PopoverTrigger>
+        <PopoverContent align="start" className="grid w-56 gap-2 p-3" aria-label="트래픽 분류">
+          {classes.map((trafficClass) => (
+            <label key={trafficClass} className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox checked={value.trafficClasses[trafficClass] === true} aria-label={trafficClassLabels[trafficClass]}
+                onCheckedChange={(checked) => onChange({ ...value, trafficClasses: { ...value.trafficClasses, [trafficClass]: checked === true } })} />
+              {trafficClassLabels[trafficClass]}
+            </label>
+          ))}
+        </PopoverContent>
+      </Popover>
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+        <Checkbox checked={value.expandRepeats} aria-label="반복 Evidence 펼치기" onCheckedChange={(next) => onChange({ ...value, expandRepeats: next === true })} />
+        반복 펼치기
+      </label>
+    </div>
   )
 }

@@ -149,6 +149,56 @@ class FlowScopeExtensionLifecycleTest {
     }
 
     @Test
+    void requestLabResponseIsNotRecordedIntoAProjectOpenedDuringTheSend() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        long epochAtSend = ((AtomicLong) field("datasetEpoch").get(extension)).get();
+        ((AtomicLong) field("datasetEpoch").get(extension)).incrementAndGet();
+        RequestRecord late = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
+                "GET", "/orders/7", 200, "anon");
+        AtomicBoolean retained = new AtomicBoolean(false);
+        try {
+            assertThrows(FlowScopeExtension.DatasetReplacedException.class,
+                    () -> extension.appendRequestLabRecord(late, epochAtSend, () -> retained.set(true)));
+            assertTrue(records.isEmpty());
+            assertEquals(false, retained.get());
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
+    void requestLabEvidenceIdSurvivesLosingThePublicationRace() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        AnalysisPublicationGate gate = (AnalysisPublicationGate) field("analysisPublication").get(extension);
+        // A proxy capture lands while the Request Lab rebuild copies the records: its epoch bump wins publication.
+        List<RequestRecord> racing = new ArrayList<>() {
+            private boolean raced;
+            @Override public Object[] toArray() {
+                if (!raced) { raced = true; gate.invalidate(); }
+                return super.toArray();
+            }
+        };
+        field("records").set(extension, racing);
+        RequestRecord manual = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
+                "GET", "/orders/7", 200, "anon");
+        manual.hasResponse = true;
+        try {
+            extension.appendRequestLabRecord(manual, 0, () -> {});
+            RequestRecord analyzed = extension.analyzedRecord(manual);
+            assertTrue(analyzed.evidenceId != null && !analyzed.evidenceId.isBlank());
+            assertTrue(((Pipeline.Result) field("latest").get(extension)).records.isEmpty(), "the racing rebuild owns publication");
+            RequestRecord republished = extension.analyzedRecord(manual);
+            assertEquals(analyzed.evidenceId, republished.evidenceId);
+            assertEquals(List.of(analyzed.evidenceId),
+                    ((Pipeline.Result) field("latest").get(extension)).records.stream().map(record -> record.evidenceId).toList());
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
     void projectOpenRequestedAfterShutdownIsNotQueued() throws Exception {
         FlowScopeExtension extension = new FlowScopeExtension();
         try {

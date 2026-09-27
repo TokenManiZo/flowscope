@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react"
 
 import { AppShell } from "./AppShell"
-import { routeFromHash, routeHash } from "./routes"
+import { canonicalHash, routeFromHash } from "./routes"
 
 export function App() {
   const [route, setRoute] = useState(() => routeFromHash(window.location.hash))
 
   useEffect(() => {
     const synchronizeRoute = () => {
-      const normalized = routeFromHash(window.location.hash)
-      if (window.location.hash !== routeHash(normalized)) {
-        window.history.replaceState(null, "", routeHash(normalized))
+      const canonical = canonicalHash(window.location.hash)
+      if (window.location.hash !== canonical) {
+        window.history.replaceState(null, "", canonical)
       }
-      setRoute(normalized)
+      setRoute(routeFromHash(canonical))
     }
     synchronizeRoute()
     window.addEventListener("hashchange", synchronizeRoute)

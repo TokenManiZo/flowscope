@@ -16,6 +16,8 @@ import {
   saveAccount,
   saveOwner,
   saveRequirement,
+  saveResourcePolicy,
+  saveOperationObjectPolicy,
   saveReview,
   saveRole,
   saveTrafficOverride,
@@ -31,9 +33,14 @@ import {
   deleteExplorerAccount,
   saveZapAccount,
   deleteZapAccount,
+  refreshZapSession,
   getProjects,
   startProject,
   openProject,
+  resetProjectTraffic,
+  deleteProject,
+  runAuthorizationReplay,
+  draftAuthorizationReplay,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -60,8 +67,15 @@ function hasRevision(value: unknown): value is Pick<Snapshot, "revision"> {
     && typeof (value as { revision: unknown }).revision === "number"
 }
 
+function sameManagedSessions(previous: unknown, next: unknown): boolean {
+  const before = (previous as Partial<Snapshot>).managedSessions ?? []
+  const after = (next as Partial<Snapshot>).managedSessions ?? []
+  return JSON.stringify(before) === JSON.stringify(after)
+}
+
 function retainSnapshotRevision(previous: unknown, next: unknown): unknown {
-  return hasRevision(previous) && hasRevision(next) && previous.revision === next.revision ? previous : next
+  return hasRevision(previous) && hasRevision(next) && previous.revision === next.revision
+    && sameManagedSessions(previous, next) ? previous : next
 }
 
 export function useSnapshotQuery() {
@@ -120,12 +134,15 @@ const projectInvalidations = [queryKeys.projects, queryKeys.snapshot, queryKeys.
   queryKeys.scannerRun, queryKeys.explorerRun] as const
 export function useStartProjectMutation() { return useInvalidatingMutation(startProject, projectInvalidations) }
 export function useOpenProjectMutation() { return useInvalidatingMutation(openProject, projectInvalidations) }
+export function useResetProjectTrafficMutation() { return useInvalidatingMutation(resetProjectTraffic, projectInvalidations) }
+export function useDeleteProjectMutation() { return useInvalidatingMutation(deleteProject, [queryKeys.projects]) }
 export function useLoadSampleMutation() { return useInvalidatingMutation(loadSample, [queryKeys.snapshot]) }
 export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
 export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous, definitions }: { target: string; accounts: string; anonymous: boolean; definitions: string }) => startScannerRun(target, accounts, anonymous, definitions), [queryKeys.scannerRun]) }
 export function useScannerCancelMutation() { return useInvalidatingMutation(cancelScannerRun, [queryKeys.scannerRun]) }
 export function useZapAccountSaveMutation() { return useInvalidatingMutation(saveZapAccount, [queryKeys.scannerRun, queryKeys.snapshot]) }
 export function useZapAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteZapAccount(id), [queryKeys.scannerRun, queryKeys.snapshot]) }
+export function useZapSessionRefreshMutation() { return useInvalidatingMutation((id: string) => refreshZapSession(id), [queryKeys.scannerRun, queryKeys.snapshot]) }
 export function useExplorerStartMutation() { return useInvalidatingMutation(startExplorerRun, [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear" | "recheck") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerSteerMutation() { return useInvalidatingMutation((message: string) => steerExplorerRun(message), [queryKeys.explorerRun]) }
@@ -133,6 +150,8 @@ export function useExplorerAccountSaveMutation() { return useInvalidatingMutatio
 export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }
+export function useOperationObjectPolicyMutation() { return useInvalidatingMutation(({ operation, resource, policy }: { operation: string; resource: string; policy: string }) => saveOperationObjectPolicy(operation, resource, policy), [queryKeys.snapshot]) }
+export function useResourcePolicyMutation() { return useInvalidatingMutation(({ target, policy }: { target: string; policy: string }) => saveResourcePolicy(target, policy), [queryKeys.snapshot]) }
 export function useReviewMutation() { return useInvalidatingMutation(({ itemId, status, note }: { itemId: string; status: ReviewStatus; note: string }) => saveReview(itemId, status, note), [queryKeys.snapshot]) }
 export function useTrafficOverrideMutation() { return useInvalidatingMutation(({ operation, value }: { operation: string; value: string }) => saveTrafficOverride(operation, value), [queryKeys.snapshot]) }
 export function useIdentityMergeMutation() { return useInvalidatingMutation(({ from, into }: { from: string; into: string }) => mergeIdentity(from, into), [queryKeys.snapshot]) }
@@ -145,3 +164,5 @@ export function useIdentityResetMutation() { return useInvalidatingMutation(rese
 export function useImportXmlMutation() { return useInvalidatingMutation(({ source, name, xml }: { source: "human" | "scanner" | "llm"; name: string; xml: string }) => importXml(source, name, xml), [queryKeys.snapshot]) }
 export function useOwnerMutation() { return useInvalidatingMutation(({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity), [queryKeys.snapshot]) }
 export function useRequestLabSendMutation() { return useInvalidatingMutation(sendRequestLab, [queryKeys.snapshot]) }
+export function useAuthorizationReplayMutation() { return useInvalidatingMutation(({ itemId, armed }: { itemId: string; armed: boolean }) => runAuthorizationReplay(itemId, armed), [queryKeys.snapshot]) }
+export function useAuthorizationReplayDraftMutation() { return useInvalidatingMutation((itemId: string) => draftAuthorizationReplay(itemId), [queryKeys.snapshot]) }

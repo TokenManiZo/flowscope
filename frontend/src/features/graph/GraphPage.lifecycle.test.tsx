@@ -7,7 +7,7 @@ import type { Snapshot } from "@/lib/api/types"
 const cytoscapeState = vi.hoisted(() => {
   const cores: { add: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; elements: ReturnType<typeof vi.fn>; fit: ReturnType<typeof vi.fn>; getElementById: ReturnType<typeof vi.fn>; layout: ReturnType<typeof vi.fn>; maxZoom: ReturnType<typeof vi.fn>; nodes: ReturnType<typeof vi.fn>; off: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn>; pan: ReturnType<typeof vi.fn>; viewport: ReturnType<typeof vi.fn>; zoom: ReturnType<typeof vi.fn> }[] = []
   const factory = vi.fn(() => {
-    const core = { add: vi.fn(), destroy: vi.fn(), elements: vi.fn(() => ({ remove: vi.fn(), unselect: vi.fn() })), fit: vi.fn(), getElementById: vi.fn(() => ({ select: vi.fn() })), layout: vi.fn(() => ({ run: vi.fn() })), maxZoom: vi.fn(() => 2), nodes: vi.fn(() => ({ forEach: vi.fn(), toArray: () => [] })), off: vi.fn(), on: vi.fn(), pan: vi.fn(() => ({ x: 0, y: 0 })), viewport: vi.fn(), zoom: vi.fn(() => 1) }
+    const core = { add: vi.fn(), destroy: vi.fn(), elements: vi.fn(() => ({ remove: vi.fn(), unselect: vi.fn(), forEach: vi.fn() })), fit: vi.fn(), getElementById: vi.fn(() => ({ select: vi.fn() })), layout: vi.fn(() => ({ run: vi.fn() })), maxZoom: vi.fn(() => 2), nodes: vi.fn(() => ({ forEach: vi.fn(), toArray: () => [] })), off: vi.fn(), on: vi.fn(), pan: vi.fn(() => ({ x: 0, y: 0 })), viewport: vi.fn(), zoom: vi.fn(() => 1) }
     cores.push(core)
     return core
   })
@@ -27,15 +27,12 @@ beforeEach(() => {
   cytoscapeState.factory.mockClear()
 })
 
-it("defaults to priority and exposes the original hierarchy controls and canvas in the relationship tab", async () => {
+it("defaults to the relationship hierarchy and disposes its canvas when priority is selected", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   const { GraphPage } = await import("./GraphPage")
   render(<GraphPage />)
-  expect(screen.getByRole("tab", { name: "점검 우선순위" })).toHaveAttribute("aria-selected", "true")
-  expect(screen.queryByLabelText("공격면 Cytoscape 그래프")).not.toBeInTheDocument()
-  expect(cytoscapeState.factory).not.toHaveBeenCalled()
-  await userEvent.click(screen.getByRole("tab", { name: "전체 관계 보기" }))
+  expect(screen.getByRole("tab", { name: "전체 관계 보기" })).toHaveAttribute("aria-selected", "true")
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
@@ -57,7 +54,7 @@ it("destroys the actual Cytoscape instance for canvas→list and creates one rep
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)
   await screen.findByLabelText("공격면 Cytoscape 그래프")
   act(() => { media.matches = true; listeners.forEach((listener) => listener(new Event("change"))) })
-  expect(cytoscapeState.cores[0].off).toHaveBeenCalledTimes(5)
+  expect(cytoscapeState.cores[0].off).toHaveBeenCalledTimes(7)
   expect(cytoscapeState.cores[0].destroy).toHaveBeenCalledTimes(1)
   expect(screen.getByRole("button", { name: /ORDERS APIs/ })).toBeVisible()
   act(() => { media.matches = false; listeners.forEach((listener) => listener(new Event("change"))) })
@@ -81,7 +78,9 @@ it("opens the shared full candidate detail from a desktop Cytoscape tap", async 
   const siteElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string; accessibleLabel?: string } }[]
   const groupId = siteElements.find(element => element.data.kind === "api-group" && element.data.accessibleLabel?.includes("UNSEEN APIs"))?.data.id
   if (!groupId) throw new Error("candidate group was not rendered")
-  act(() => tap({ target: { id: () => groupId } }))
+  const open = cytoscapeState.cores[0].on.mock.calls.find(([event]) => event === "dbltap")?.[2]
+  if (typeof open !== "function") throw new Error("dbltap listener was not registered")
+  act(() => open({ target: { id: () => groupId } }))
   const addedElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string } }[] | undefined
   const candidateId = addedElements?.find((element) => element.data.kind === "route-candidate")?.data.id
   if (!candidateId) throw new Error("route candidate was not rendered")

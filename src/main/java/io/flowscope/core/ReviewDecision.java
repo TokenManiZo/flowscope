@@ -6,7 +6,15 @@ import java.util.List;
 
 /** 현재 규칙 후보의 사람 검토 상태. 구버전 LLM 평가의 검토 기록도 저장 호환을 위해 보존한다. */
 public record ReviewDecision(String itemId, Status status, String note,
-                             List<String> evidenceIds, Instant decidedAt) {
+                             List<String> evidenceIds, Instant decidedAt,
+                             java.util.Map<String, String> policyContext, List<String> validationEvidenceIds) {
+    public ReviewDecision(String itemId, Status status, String note, List<String> evidenceIds, Instant decidedAt) {
+        this(itemId, status, note, evidenceIds, decidedAt, java.util.Map.of(), List.of());
+    }
+    public ReviewDecision(String itemId, Status status, String note, List<String> evidenceIds, Instant decidedAt,
+                          java.util.Map<String, String> policyContext) {
+        this(itemId, status, note, evidenceIds, decidedAt, policyContext, List.of());
+    }
     public enum Status {
         UNRESOLVED("미확정"),
         CONFIRMED("확정"),
@@ -26,6 +34,9 @@ public record ReviewDecision(String itemId, Status status, String note,
                 .distinct().sorted().forEach(normalized::add);
         evidenceIds = List.copyOf(normalized);
         decidedAt = decidedAt == null ? Instant.now() : decidedAt;
+        policyContext = java.util.Map.copyOf(policyContext == null ? java.util.Map.of() : policyContext);
+        validationEvidenceIds = validationEvidenceIds == null ? List.of() : validationEvidenceIds.stream()
+                .filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
     }
 
     public boolean appliesTo(List<String> currentEvidenceIds) {

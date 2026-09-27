@@ -132,6 +132,21 @@ class FlowScopeExtensionPhaseTest {
     }
 
     @Test
+    void A_잔여_인증은_B_캡처에서_건너뛰고_B_로그인은_계속_받는다() {
+        assertNull(FlowScopeExtension.captureAccountForCredential("user-b", "user-a"));
+        assertEquals("user-b", FlowScopeExtension.captureAccountForCredential("user-b", "user-b"));
+        assertEquals("user-b", FlowScopeExtension.captureAccountForCredential("user-b", null));
+    }
+
+    @Test
+    void A_잔여_인증으로_B_캡처가_억제된_응답은_A나_B_세션을_갱신하지_않는다() {
+        assertNull(FlowScopeExtension.resolveSessionUpdateAccount(
+                Source.HUMAN, null, null, "user-a", true));
+        assertEquals("user-a", FlowScopeExtension.resolveSessionUpdateAccount(
+                Source.HUMAN, null, null, "user-a", false));
+    }
+
+    @Test
     void fresh_SYSTEM_ZAP_익명_lane의_서버_발급_cookie는_새_신원을_만들지_않는다() {
         RunContextRegistry.Context anonymousLane = new RunContextRegistry.Context(SourceDetail.ZAP_SPIDER,
                 Orchestrator.SYSTEM, ToolKind.ZAP, RunPhase.EXPLORATION, "zap-anon", null);

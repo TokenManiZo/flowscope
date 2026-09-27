@@ -21,6 +21,8 @@ dependency-reduced-pom.xml
 *.flowscope.db
 *.flowscope.db-*
 .flowscope-*.db.tmp
+.serena
+references
 
 /frontend/node_modules/
 /frontend/playwright-report/

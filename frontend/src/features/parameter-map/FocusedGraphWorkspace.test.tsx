@@ -23,6 +23,8 @@ function Workspace({ queueInitiallyOpen = true, graphTriggerState = "enabled" }:
   return <FocusedGraphWorkspace queueOpen={queueOpen} onQueueOpenChange={setQueueOpen}
     inspectorOpen={selected !== null} onInspectorOpenChange={open => { if (!open) setSelected(null) }}
     queue={<button onClick={() => { setSelected("auth"); setQueueOpen(false) }}>큐에서 auth 선택</button>}
+    header={<span>점검 우선순위</span>}
+    headerMeta={<span>서버 근거</span>}
     toolbar={<span>그래프 제어</span>}
     inspector={selected && <section data-gap-id={selected}><button onClick={() => setSelected(null)}>선택 상세 닫기</button></section>}>
     <section aria-label="경로 작업면">{graphTriggerState !== "removed" && <button disabled={graphTriggerState === "disabled"} onClick={() => setSelected("auth")}>경로 auth 선택</button>}</section>
@@ -35,18 +37,50 @@ it("keeps the flexible graph mounted while independently hiding queue and select
   const workspace = screen.getByRole("region", { name: "그래프 중심 점검 작업면" })
   const graph = screen.getByRole("region", { name: "경로 작업면" })
   expect(workspace).toHaveAttribute("data-layout", "focused-graph")
+  const toolbar = screen.getByRole("toolbar", { name: "Gap 그래프 상단 제어" })
+  expect(within(toolbar).getByText("점검 우선순위")).toBeVisible()
+  expect(within(toolbar).getByRole("button", { name: "점검 큐 접기" })).toBeVisible()
+  expect(within(toolbar).getByText("서버 근거")).toBeVisible()
   expect(screen.getByRole("complementary", { name: "점검 우선순위" })).toBeVisible()
+  expect(screen.getByRole("separator", { name: "점검 우선순위 너비 조절" })).toBeVisible()
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "경로 auth 선택" }))
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
+  expect(screen.getByRole("separator", { name: "선택 상세 너비 조절" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "점검 큐 접기" }))
   expect(screen.queryByRole("complementary", { name: "점검 우선순위" })).not.toBeInTheDocument()
+  expect(screen.queryByText("그래프 제어")).not.toBeInTheDocument()
+  const edgeExpand = screen.getByRole("button", { name: "점검 우선순위 패널 열기" })
+  await userEvent.hover(edgeExpand.parentElement!)
+  expect(edgeExpand).toBeVisible()
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 닫기" }))
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
   expect(screen.getByRole("region", { name: "경로 작업면" })).toBe(graph)
   await userEvent.click(screen.getByRole("button", { name: "점검 큐 열기" }))
   expect(screen.getByRole("complementary", { name: "점검 우선순위" })).toBeVisible()
+})
+
+it("collapses and restores the queue from its edge control", async () => {
+  viewport(1920)
+  render(<Workspace />)
+
+  await userEvent.click(screen.getByRole("button", { name: "점검 우선순위 패널 접기" }))
+  expect(screen.queryByRole("complementary", { name: "점검 우선순위" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "점검 우선순위 패널 열기" }))
+  expect(screen.getByRole("complementary", { name: "점검 우선순위" })).toBeVisible()
+})
+
+it("keeps the selected Gap while the desktop inspector is collapsed and restored", async () => {
+  viewport(1920)
+  render(<Workspace />)
+  await userEvent.click(screen.getByRole("button", { name: "경로 auth 선택" }))
+
+  await userEvent.click(screen.getByRole("button", { name: "선택 상세 패널 접기" }))
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "선택 상세 패널 열기" }))
+
+  expect(screen.getByRole("complementary", { name: "선택 상세" }).querySelector("[data-gap-id]")).toHaveAttribute("data-gap-id", "auth")
 })
 
 it.each([900, 1280, 1439])("keeps a persistent compact queue at %ipx and uses a dismissible inspector sheet", async width => {
