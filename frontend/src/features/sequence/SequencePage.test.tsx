@@ -70,13 +70,14 @@ it("orders known producer timestamps chronologically while retaining stable link
   expect(projection.groups.flatMap((group) => group.links).map((link) => link.link.values)).not.toContain("must-not-render")
 })
 
-it("keeps deterministic server links in the reference workspace and reserves an inspector", async () => {
+it("keeps deterministic server links in the reference workspace and collapses the empty inspector", async () => {
   current = sequenceSnapshot()
   renderPage(<SequencePage />)
 
   expect(await screen.findByRole("complementary", { name: "분석 필터" })).toBeVisible()
   expect(screen.getByRole("region", { name: "흐름 순서 분석 영역" })).toBeVisible()
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "선택 상세 패널 열기" })).toBeVisible()
 })
 
 it("uses a total timestamp order: known producers first, then ascending time, then stable original order for equal and unknown timestamps", () => {

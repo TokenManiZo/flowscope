@@ -251,7 +251,8 @@ it("keeps matrix controls and the bounded server matrix inside one reference wor
 
   expect(await screen.findByRole("complementary", { name: "분석 필터" })).toBeVisible()
   expect(screen.getByRole("region", { name: "권한 매트릭스 분석 영역" })).toBeVisible()
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "선택 상세 패널 열기" }))
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveClass("overflow-hidden")
   expect(screen.getByRole("checkbox", { name: "갭만 표시" })).toBeVisible()
   expect(screen.getByTestId("matrix-scroll-viewport")).toHaveClass("overflow-auto")

@@ -25,6 +25,14 @@ const deltaLabels: Record<SurfaceDeltaState, string> = {
   OBSERVED_NOT_DECLARED: "실제 응답 있음 · 산출물 근거 없음",
 }
 
+/** 표에서 흔한 관측 상태는 짧은 회색 글자로 둔다. 미요청·한 source만 관측은 기존처럼 배지로 강조한다. */
+const quietDeltaLabels: Partial<Record<SurfaceDeltaState, string>> = {
+  UNRESOLVED_COORDINATE: "좌표 미확정",
+  MULTI_SOURCE_OBSERVED: "관측 · 2개 source",
+  ALL_SOURCES_OBSERVED: "관측 · 3개 source",
+  OBSERVED_NOT_DECLARED: "관측",
+}
+
 const kindLabels: Record<string, string> = {
   OBSERVED_API: "실제 API",
   ARTIFACT_API: "산출물 API 후보",
@@ -191,7 +199,7 @@ export function SurfacePage() {
         {executionRuns.map((run) => <Alert key={run.source + ":" + run.runId} variant={run.quality === "ALL_FAILED" ? "destructive" : "default"}><AlertTitle>{run.source} 실행 · {run.quality}</AlertTitle><AlertDescription>시도 {run.attempted} · 응답 {run.responses} · 실패 {run.failures}{Object.keys(run.outcomes).length ? " · " + Object.entries(run.outcomes).map(([name, count]) => name + " " + count).join(" · ") : ""}</AlertDescription></Alert>)}
         <div className="max-w-full overflow-auto rounded-md border">
           <Table><TableHeader><TableRow><TableHead>비교 상태</TableHead><TableHead>종류</TableHead><TableHead>요청</TableHead><TableHead>실제 source</TableHead><TableHead>응답 status</TableHead><TableHead>산출물 근거</TableHead><TableHead>입력</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
-            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}><TableCell><Badge variant={endpoint.deltaState === "DECLARED_NOT_OBSERVED" || endpoint.deltaState === "ONE_SOURCE_OBSERVED" ? "destructive" : "outline"}>{deltaLabels[endpoint.deltaState]}</Badge></TableCell><TableCell className="min-w-40">{endpointKinds(endpoint)}</TableCell><TableCell className="min-w-72 whitespace-normal"><Badge variant="outline">{endpoint.key.method}</Badge><p className="mt-1 break-all font-mono">{endpoint.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{endpoint.key.service}</p></TableCell><TableCell>{sourceLabel(endpoint.observedSources)}</TableCell><TableCell>{statusLabel(endpoint)}</TableCell><TableCell>{endpoint.declarations.length}</TableCell><TableCell>{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null); setRequestLabOpen(false) }}>상세 보기</Button></TableCell></TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">현재 필터에 해당하는 항목이 없습니다.</TableCell></TableRow>}</TableBody>
+            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}><TableCell>{quietDeltaLabels[endpoint.deltaState] ? <span className="text-xs text-muted-foreground" title={deltaLabels[endpoint.deltaState]}>{quietDeltaLabels[endpoint.deltaState]}</span> : <Badge variant="destructive">{deltaLabels[endpoint.deltaState]}</Badge>}</TableCell><TableCell className="min-w-40">{endpointKinds(endpoint)}</TableCell><TableCell className="min-w-72 whitespace-normal"><Badge variant="outline">{endpoint.key.method}</Badge><p className="mt-1 break-all font-mono">{endpoint.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{endpoint.key.service}</p></TableCell><TableCell>{sourceLabel(endpoint.observedSources)}</TableCell><TableCell>{statusLabel(endpoint)}</TableCell><TableCell>{endpoint.declarations.length}</TableCell><TableCell>{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null); setRequestLabOpen(false) }}>상세 보기</Button></TableCell></TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">현재 필터에 해당하는 항목이 없습니다.</TableCell></TableRow>}</TableBody>
           </Table>
         </div>
       </section>

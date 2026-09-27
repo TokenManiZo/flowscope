@@ -69,7 +69,7 @@ it("opens exact candidate Evidence and clears selection when revision changes", 
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
   currentSnapshot = snapshot(2, [])
   view.refresh()
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).not.toHaveTextContent("candidate-event")
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
 })
 
 it("keeps the open Evidence when new traffic only bumps the revision", async () => {
@@ -81,7 +81,7 @@ it("keeps the open Evidence when new traffic only bumps the revision", async () 
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
   currentSnapshot = { ...snapshot(3), datasetRevision: 9 }
   view.refresh()
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).not.toHaveTextContent("candidate-event")
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
 })
 
 it("saves capped human review independently of removed LLM execution", async () => {

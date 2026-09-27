@@ -26,10 +26,9 @@ export function RunsPage() {
           ? { error: explorer.error, hasLastSuccess: explorer.data !== undefined }
         : undefined
   const context = <section className="grid gap-3 p-3"><div><h2 className="text-sm font-semibold">현재 실행 상태</h2><p className="text-xs text-muted-foreground">각 lane의 서버 상태를 그대로 표시합니다.</p></div><dl className="grid gap-2 text-sm"><div className="flex justify-between gap-2"><dt>HUMAN</dt><dd>{humanSummary}</dd></div><div className="flex justify-between gap-2"><dt>ZAP</dt><dd>{scanner.data?.run.status ?? zap.data?.state ?? "상태 없음"}</dd></div><div className="flex justify-between gap-2"><dt>LLM</dt><dd>{explorer.data?.run.status ?? "상태 없음"}</dd></div><div className="flex justify-between gap-2"><dt>scope</dt><dd className="font-mono">{scanner.data?.scope.length ?? 0}</dd></div></dl></section>
-  const inspector = <section className="grid gap-3 p-3"><div><h2 className="text-sm font-semibold">실행 레인 안내</h2><p className="text-sm text-muted-foreground">선택한 실행 항목이 없습니다.</p></div><p className="text-xs text-muted-foreground">HUMAN 상태 · {humanSummary}</p><p className="text-xs text-muted-foreground">HUMAN·ZAP은 점검 시작, LLM은 Explorer 화면에서 제어합니다.</p></section>
 
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="실행 상태 작업 영역" context={context} inspector={inspector}><section className="space-y-4 p-3" aria-labelledby="runs-title">
+    <ReferenceAnalysisWorkspace ariaLabel="실행 상태 작업 영역" context={context} inspector={null}><section className="space-y-4 p-3" aria-labelledby="runs-title">
       <div><h1 id="runs-title" className="text-2xl font-semibold">실행 상태</h1><p className="text-sm text-muted-foreground">HUMAN·ZAP·LLM Explorer의 실행 상태와 저장된 요청 기록을 확인합니다.</p></div>
       {queryError && <Alert variant="destructive" aria-label={errorMessage(queryError.error)}><AlertTitle>{queryError.hasLastSuccess ? "마지막 성공 상태를 표시하고 있습니다." : "상태를 가져오지 못했습니다. 확인이 필요합니다."}</AlertTitle><AlertDescription>{errorMessage(queryError.error)}</AlertDescription></Alert>}
 
