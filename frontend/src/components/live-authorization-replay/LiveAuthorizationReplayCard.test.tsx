@@ -215,3 +215,32 @@ describe("LiveAuthorizationReplayCard", () => {
     ).toBeTruthy();
   });
 });
+
+describe("unavailable identities and start guidance", () => {
+  it("says why an identity cannot be chosen, links to session capture, and names what the start needs", async () => {
+    const client = makeClient(snapshot())
+    render(<LiveAuthorizationReplayCard accounts={accounts} apiClient={client} />)
+    expect(await screen.findByText("세션 없음")).toBeVisible()
+    expect(screen.getByText("자격 충돌")).toBeVisible()
+    expect(screen.getByText("세션 확인 필요")).toBeVisible()
+    expect(screen.queryByText("UNVERIFIED")).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "계정·세션에서 세션 캡처 →" })).toHaveAttribute("href", "#accounts")
+    expect(screen.getByText(/사용 가능 2 \/ 5/)).toBeVisible()
+    expect(screen.getByText("대상 신원을 1개 이상 선택하세요.")).toBeVisible()
+    await userEvent.click(screen.getByRole("checkbox", { name: "USER B" }))
+    expect(screen.getByText("3번 안전 재전송을 허용하세요.")).toBeVisible()
+    await userEvent.click(screen.getByRole("checkbox", { name: "안전 자동 재전송을 허용합니다." }))
+    expect(screen.getByText("켜짐")).toBeVisible()
+    expect(screen.queryByText("3번 안전 재전송을 허용하세요.")).not.toBeInTheDocument()
+  })
+
+  it("offers a retry when the run state cannot be loaded", async () => {
+    const client = makeClient(snapshot())
+    vi.mocked(client.getSnapshot).mockRejectedValueOnce(new Error("offline"))
+    render(<LiveAuthorizationReplayCard accounts={accounts} apiClient={client} />)
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("실행 상태를 불러오지 못했습니다.")
+    await userEvent.click(screen.getByRole("button", { name: "다시 시도" }))
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument())
+  })
+})
