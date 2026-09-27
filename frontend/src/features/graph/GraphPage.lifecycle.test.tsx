@@ -7,7 +7,7 @@ import type { Snapshot } from "@/lib/api/types"
 const cytoscapeState = vi.hoisted(() => {
   const cores: { add: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; elements: ReturnType<typeof vi.fn>; fit: ReturnType<typeof vi.fn>; getElementById: ReturnType<typeof vi.fn>; layout: ReturnType<typeof vi.fn>; maxZoom: ReturnType<typeof vi.fn>; nodes: ReturnType<typeof vi.fn>; off: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn>; pan: ReturnType<typeof vi.fn>; viewport: ReturnType<typeof vi.fn>; zoom: ReturnType<typeof vi.fn> }[] = []
   const factory = vi.fn(() => {
-    const core = { add: vi.fn(), destroy: vi.fn(), elements: vi.fn(() => ({ remove: vi.fn(), unselect: vi.fn() })), fit: vi.fn(), getElementById: vi.fn(() => ({ select: vi.fn() })), layout: vi.fn(() => ({ run: vi.fn() })), maxZoom: vi.fn(() => 2), nodes: vi.fn(() => ({ forEach: vi.fn(), toArray: () => [] })), off: vi.fn(), on: vi.fn(), pan: vi.fn(() => ({ x: 0, y: 0 })), viewport: vi.fn(), zoom: vi.fn(() => 1) }
+    const core = { add: vi.fn(), destroy: vi.fn(), elements: vi.fn(() => ({ remove: vi.fn(), unselect: vi.fn(), forEach: vi.fn() })), fit: vi.fn(), getElementById: vi.fn(() => ({ select: vi.fn() })), layout: vi.fn(() => ({ run: vi.fn() })), maxZoom: vi.fn(() => 2), nodes: vi.fn(() => ({ forEach: vi.fn(), toArray: () => [] })), off: vi.fn(), on: vi.fn(), pan: vi.fn(() => ({ x: 0, y: 0 })), viewport: vi.fn(), zoom: vi.fn(() => 1) }
     cores.push(core)
     return core
   })

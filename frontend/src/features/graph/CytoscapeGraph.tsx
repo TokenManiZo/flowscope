@@ -44,34 +44,54 @@ export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pic
   return event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && (event.deltaX !== 0 || Math.abs(event.deltaY) < 50 || !Number.isInteger(event.deltaY)) ? "pan" : "zoom"
 }
 
-function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark"): ElementDefinition[] {
+type FocusState = "yes" | "no" | "none"
+type GraphEdgeLike = (GraphProjection | HierarchyProjection)["edges"][number]
+
+function edgeEndpoints(edge: GraphEdgeLike) {
+  const endpointId = edge.selection.operation ? `operation:${edge.selection.operation}` : edge.targetId
+  const source = edge.relation === "resource-operation" ? edge.targetId : edge.sourceId
+  const target = edge.relation === "identity-resource" ? endpointId : edge.relation === "resource-operation" ? edge.sourceId : edge.targetId
+  return { source, target }
+}
+
+/** 선택에 따른 강조 상태. 요소를 다시 만들지 않고 이 값만 갱신해 클릭마다 그래프가 깜빡이지 않게 한다. */
+function graphFocusStates(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null) {
   const hierarchy = "kind" in projection ? projection : null
   const focus = deriveGraphFocus(hierarchy, selectedElementId)
-  const edges = projection.edges.map((edge) => {
-    const endpointId = edge.selection.operation ? `operation:${edge.selection.operation}` : edge.targetId
-    const source = edge.relation === "resource-operation" ? edge.targetId : edge.sourceId
-    const target = edge.relation === "identity-resource" ? endpointId : edge.relation === "resource-operation" ? edge.sourceId : edge.targetId
-    // 관측 엣지는 주체 구분 없이 한 가지 선으로 그리고 접근 주체는 양 끝 노드 카드의 아이콘으로만 표시한다.
-    // 주체가 없는 구조·경로 후보 엣지는 '미관측' 표시(회색 점선)를 그대로 둔다.
-    const observed = edge.source !== null
-    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edgeState(edge.id) }, origin: edge.source }
-  })
+  const edges = projection.edges.map(edge => ({ id: edge.id, ...edgeEndpoints(edge), focused: focus.edgeState(edge.id) as FocusState }))
   // 신원·엣지 강조가 없을 때 노드를 고르면 그 노드에 닿은 엣지와, 같은 서버 셀(신원·API·객체)을 가진 엣지를 강조한다.
   // 그래서 객체를 누르면 API↔객체 선뿐 아니라 그 객체에 접근한 신원→API 선까지 이어져 보인다.
   const selectedNode = hierarchy && selectedElementId ? hierarchy.nodes.find(node => node.id === selectedElementId) : undefined
-  if (hierarchy && selectedNode && edges.every(({ data }) => data.focused === "none")) {
+  if (hierarchy && selectedNode && edges.every(edge => edge.focused === "none")) {
     const keys = new Set(selectedNode.selection.cellKeys)
     const edgeKeys = new Map(hierarchy.edges.map(edge => [edge.id, edge.selection.cellKeys]))
-    for (const { data } of edges) {
-      const touches = data.source === selectedNode.id || data.target === selectedNode.id
-      const sharesCell = keys.size > 0 && (edgeKeys.get(data.id) ?? []).some(key => keys.has(key))
-      data.focused = touches || sharesCell ? "yes" : "no"
+    for (const edge of edges) {
+      const touches = edge.source === selectedNode.id || edge.target === selectedNode.id
+      const sharesCell = keys.size > 0 && (edgeKeys.get(edge.id) ?? []).some(key => keys.has(key))
+      edge.focused = touches || sharesCell ? "yes" : "no"
     }
   }
   // 강조가 있으면 강조 엣지에 닿은 노드만 남기고 나머지 노드는 흐린다.
-  const focusedNodeIds = new Set(edges.flatMap(({ data }) => data.focused === "yes" ? [data.source, data.target] : []))
-  const anyFocus = edges.some(({ data }) => data.focused !== "none")
-  const nodeFocus = (id: string) => anyFocus ? focusedNodeIds.has(id) || id === selectedElementId ? "yes" : "no" : "none"
+  const edgeState = new Map(edges.map(edge => [edge.id, edge.focused]))
+  const focusedNodeIds = new Set(edges.flatMap(edge => edge.focused === "yes" ? [edge.source, edge.target] : []))
+  const anyFocus = edges.some(edge => edge.focused !== "none")
+  return {
+    edge: (id: string): FocusState => edgeState.get(id) ?? "none",
+    node: (id: string): FocusState => anyFocus ? focusedNodeIds.has(id) || id === selectedElementId ? "yes" : "no" : "none",
+  }
+}
+
+function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark"): ElementDefinition[] {
+  const hierarchy = "kind" in projection ? projection : null
+  const focus = graphFocusStates(projection, selectedElementId)
+  const edges = projection.edges.map((edge) => {
+    const { source, target } = edgeEndpoints(edge)
+    // 관측 엣지는 주체 구분 없이 한 가지 선으로 그리고 접근 주체는 양 끝 노드 카드의 아이콘으로만 표시한다.
+    // 주체가 없는 구조·경로 후보 엣지는 '미관측' 표시(회색 점선)를 그대로 둔다.
+    const observed = edge.source !== null
+    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edge(edge.id) }, origin: edge.source }
+  })
+  const nodeFocus = focus.node
   const nodeSources = new Map<string, Set<CardSource>>()
   for (const { data, origin } of edges) {
     if (origin !== "human" && origin !== "scanner" && origin !== "llm") continue
@@ -468,7 +488,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     core.elements().remove()
     cardsRef.current = new Map()
     // 전체 재정렬(layoutVersion 변경)만 사용자가 바꾼 크기를 비운다. 새로고침·필터·이동은 저장된 크기를 그대로 쓴다.
-    core.add(elementsFor(projection, selectedElementId, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current, theme))
+    // 선택은 여기서 다시 만들지 않는다(아래 effect가 강조 값만 바꾼다). 클릭마다 전체를 지우고 다시 그리면 깜빡인다.
+    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current, theme))
     setCornerCursor(null)
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)
     core.nodes().forEach((node) => {
@@ -480,7 +501,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     syncSelection(core, selectedElementIdRef.current)
     scheduleLaneCorrectionRef.current?.()
-  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, selectedElementId, theme])
+  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, theme])
 
   // ponytail: 한 레인만 다시 세운다. 전체 재정렬과 달리 다른 레인에서 잡아둔 배치는 건드리지 않는다.
   useEffect(() => {
@@ -506,6 +527,13 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   useEffect(() => {
     const core = coreRef.current
     if (!core) return
+    const focus = graphFocusStates(projectionRef.current, selectedElementId)
+    const apply = () => core.elements().forEach((element: cytoscape.SingularElementReturnValue) => {
+      const id = element.id()
+      const next = element.isEdge() ? focus.edge(id) : focus.node(id)
+      if (element.data("focused") !== next) element.data("focused", next)
+    })
+    if (typeof core.batch === "function") core.batch(apply); else apply()
     syncSelection(core, selectedElementId)
     if (containerRef.current) publishGeometry(containerRef.current, core)
   }, [selectedElementId])

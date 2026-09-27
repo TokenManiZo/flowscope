@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
@@ -54,7 +54,7 @@ const core = {
   add: vi.fn(),
   destroy: vi.fn(),
   resize: vi.fn(),
-  elements: vi.fn(() => ({ remove, unselect })),
+  elements: vi.fn(() => ({ remove, unselect, forEach: vi.fn() })),
   getElementById: vi.fn(() => node),
   nodes: vi.fn(singleNodeCollection),
   off: vi.fn(),
@@ -697,7 +697,12 @@ it("gives selected canvas edges priority over candidate navigation and matches c
   expect(focused.every(edge => edge.source === "scanner" && edge.selection.identity === "USER A")).toBe(true)
   expect(focused.some(edge => edge.id === observed.id)).toBe(true)
   const candidate = hierarchy.edges.find(edge => edge.relation === "candidate" && edge.selection.resource === "orders:404")!
+  // 선택이 바뀌어도 요소를 다시 만들지 않는다(깜빡임 방지). 강조 결과는 새로 그린 상태로 확인한다.
+  const adds = core.add.mock.calls.length
   rerender(tree(candidate.id))
+  expect(core.add.mock.calls.length).toBe(adds)
+  cleanup()
+  render(tree(candidate.id))
   elements = core.add.mock.calls.at(-1)?.[0] as Array<{ data: { id: string; focused: string } }>
   for (const edge of hierarchy.edges) expect(elements.find(item => item.data.id === edge.id)?.data.focused).toBe(edge.relation === "candidate" && edge.selection.resource === "orders:404" ? "yes" : "no")
 })
