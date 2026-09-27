@@ -132,7 +132,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       .slice()
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 200)
-      .map((event) => ({ id: event.eventId, badge: event.method, title: event.path, status: String(event.status), detail: `${event.idn} · ${event.op}` }))
+      .map((event) => ({ id: event.eventId, badge: event.method, title: event.path, status: String(event.status), detail: event.idn || "비로그인" }))
   }, [humanFeedItems, snapshot.data?.events])
 
   // ZAP 작업 피드 = SCANNER 소스로 관측된 요청(Burp history처럼). 신원(idn)을 앞 badge에, 상태코드와 메서드·경로를 함께 보인다.
