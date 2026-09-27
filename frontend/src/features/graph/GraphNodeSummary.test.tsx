@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react"
+import { screen, within } from "@testing-library/react"
 import { expect, it } from "vitest"
 
 import type { Cell } from "@/lib/api/types"
@@ -6,6 +6,7 @@ import { targetSnapshot } from "@/test/fixtures"
 import { GraphInspectorPanel, GRAPH_OPEN_HINT } from "./GraphInspectorPanel"
 import { navigateHierarchy, projectHierarchy, type GraphNavigation } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
+import { renderWithQueryClient } from "@/test/render"
 
 const service = "https://demo.test:443"
 const cell = (overrides: Partial<Cell>): Cell => ({ idn: "USER A", op: `${service} GET /api/orders/{id}`, resource: "orders:101", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: [], ...overrides })
@@ -16,7 +17,7 @@ const site: GraphNavigation = { level: "site", groupId: "", operation: "", opera
 it("summarises an API group on a single click and shows the open hint only in Site view", () => {
   const projection = projectHierarchy(snapshot, filters, site)
   const group = projection.nodes.find(node => node.kind === "api-group")!
-  render(<GraphInspectorPanel selection={group.selection} event={null} snapshot={snapshot} node={group} projection={projection} />)
+  renderWithQueryClient(<GraphInspectorPanel selection={group.selection} event={null} snapshot={snapshot} node={group} projection={projection} />)
   const summary = screen.getByRole("region", { name: "노드 요약" })
   expect(within(summary).getByText("API").nextElementSibling).toHaveTextContent("2")
   expect(within(summary).getByText("GET /api/orders/{id}")).toBeVisible()
@@ -27,7 +28,7 @@ it("summarises an API group on a single click and shows the open hint only in Si
 it("summarises an identity inside a group without repeating the open hint", () => {
   const projection = projectHierarchy(snapshot, filters, navigateHierarchy(site, "group", group()))
   const identity = projection.identities.find(node => node.selection.identity === "USER A")!
-  render(<GraphInspectorPanel selection={identity.selection} event={null} snapshot={snapshot} node={identity} projection={projection} />)
+  renderWithQueryClient(<GraphInspectorPanel selection={identity.selection} event={null} snapshot={snapshot} node={identity} projection={projection} />)
   const summary = screen.getByRole("region", { name: "노드 요약" })
   expect(within(summary).getByText("접근 API").nextElementSibling).toHaveTextContent("2")
   expect(screen.queryByText(GRAPH_OPEN_HINT)).not.toBeInTheDocument()
@@ -40,7 +41,7 @@ it("lists who accessed an object, marking the owner", () => {
   const operation = navigateHierarchy(navigateHierarchy(site, "group", group()), "operation", group(), `${service} GET /api/orders/{id}`)
   const projection = projectHierarchy(withOwner, filters, operation)
   const object = projection.resources.find(node => node.selection.resource === "orders:101")!
-  render(<GraphInspectorPanel selection={object.selection} event={null} snapshot={withOwner} node={object} projection={projection} />)
+  renderWithQueryClient(<GraphInspectorPanel selection={object.selection} event={null} snapshot={withOwner} node={object} projection={projection} />)
   const summary = screen.getByRole("region", { name: "노드 요약" })
   expect(within(summary).getByText("접근 신원").nextElementSibling).toHaveTextContent("1")
   expect(within(summary).getByText(/접근한 신원/)).toBeVisible()
