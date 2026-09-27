@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Account, ManagedSession, ObservedSession } from "@/lib/api/types"
+import { HUMAN_STATUS_META } from "./account-settings/statusMeta"
 import { VERIFICATION_SOURCE_LABEL } from "@/components/live-authorization-replay/LiveAuthorizationReplayCard"
+
+const humanStatusLabel = (status: string) => HUMAN_STATUS_META[status as keyof typeof HUMAN_STATUS_META]?.label ?? status
 
 function sessionState(session: ManagedSession | undefined) {
   if (!session) return { status: "UNVERIFIED", description: "로그인 캡처를 시작해 재사용할 세션을 확인하세요.", action: "begin" as const }
@@ -52,7 +55,7 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
             const active = view.status === "ACTIVE" || view.status === "CAPTURING"
             const verification = view.status === "ACTIVE" ? managedByAccount.get(account.id)?.verificationSource : undefined
             return <article key={account.id} className={`rounded-lg border p-3 ${active ? "" : "opacity-65"}`} aria-label={`${account.label} 관리 세션`}>
-              <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><SessionStatusIcon status={view.status} /><strong className="truncate">{account.label}</strong></div><div className="flex items-center gap-1"><Badge variant={view.status === "ACTIVE" ? "default" : "secondary"}>{view.status}</Badge>{verification && <Badge variant="outline" aria-label={`검증 출처 ${VERIFICATION_SOURCE_LABEL[verification] ?? verification}`}>{VERIFICATION_SOURCE_LABEL[verification] ?? verification}</Badge>}</div></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><SessionStatusIcon status={view.status} /><strong className="truncate">{account.label}</strong></div><div className="flex items-center gap-1"><Badge variant={view.status === "ACTIVE" ? "default" : "secondary"} title={view.status}>{humanStatusLabel(view.status)}</Badge>{verification && <Badge variant="outline" aria-label={`검증 출처 ${VERIFICATION_SOURCE_LABEL[verification] ?? verification}`}>{VERIFICATION_SOURCE_LABEL[verification] ?? verification}</Badge>}</div></div>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm"><dt className="text-muted-foreground">역할</dt><dd className="truncate text-right">{account.role}</dd><dt className="text-muted-foreground">대상 서비스</dt><dd className="truncate text-right">{account.target}</dd></dl>
               <p className="mt-2 text-sm text-muted-foreground">{view.description}</p>
               <Button className="mt-3" variant={view.action === "revoke" ? "destructive" : "outline"} disabled={pending.capture} onClick={() => onCapture({ action: view.action, account: account.id })}>{account.label} {actionLabel}</Button>
@@ -60,7 +63,7 @@ export function SessionDiagnostics({ accounts, sessions, managedSessions, pendin
           })}
         </div>
         <div className="flex flex-wrap gap-2" aria-label="관리 세션 진단 상태">
-          {managedSessions.map((session) => <Badge key={session.handle}>{session.credentialConflict ? "credential-conflict" : session.capturing ? "CAPTURING" : session.status}</Badge>)}
+          {managedSessions.map((session) => <Badge key={session.handle}>{session.credentialConflict ? "credential-conflict" : humanStatusLabel(session.capturing ? "CAPTURING" : session.status)}</Badge>)}
         </div>
         {captureError && <Alert variant="destructive" aria-label={captureError}><AlertDescription>{captureError}</AlertDescription></Alert>}
       </section>

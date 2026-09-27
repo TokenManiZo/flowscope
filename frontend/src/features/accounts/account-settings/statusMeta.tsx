@@ -41,12 +41,12 @@ export interface StatusMeta {
 }
 
 export const HUMAN_STATUS_META: Record<HumanSessionStatus, StatusMeta> = {
-  ACTIVE: { label: "ACTIVE", tone: "ok" },
-  CAPTURING: { label: "CAPTURING", tone: "warn", icon: Clock3 },
-  UNVERIFIED: { label: "UNVERIFIED", tone: "idle" },
-  SUSPECT: { label: "SUSPECT", tone: "warn" },
-  REAUTH_REQUIRED: { label: "REAUTH_REQUIRED", tone: "warn" },
-  REVOKED: { label: "REVOKED", tone: "bad", icon: Link2Off },
+  ACTIVE: { label: "활성", tone: "ok" },
+  CAPTURING: { label: "캡처 중", tone: "warn", icon: Clock3 },
+  UNVERIFIED: { label: "미확인", tone: "idle" },
+  SUSPECT: { label: "의심", tone: "warn" },
+  REAUTH_REQUIRED: { label: "재로그인 필요", tone: "warn" },
+  REVOKED: { label: "폐기됨", tone: "bad", icon: Link2Off },
 };
 
 export const VERIFICATION_META: Record<VerificationSource, StatusMeta> = {
@@ -57,18 +57,18 @@ export const VERIFICATION_META: Record<VerificationSource, StatusMeta> = {
 };
 
 export const ZAP_STATUS_META: Record<ZapLoginStatus, StatusMeta> = {
-  UNVERIFIED: { label: "UNVERIFIED", tone: "idle" },
-  AUTHENTICATING: { label: "AUTHENTICATING", tone: "warn", icon: Clock3 },
-  VERIFIED_BY_ZAP: { label: "VERIFIED_BY_ZAP", tone: "ok" },
-  FAILED: { label: "FAILED", tone: "bad" },
+  UNVERIFIED: { label: "미확인", tone: "idle" },
+  AUTHENTICATING: { label: "로그인 중", tone: "warn", icon: Clock3 },
+  VERIFIED_BY_ZAP: { label: "ZAP 확인됨", tone: "ok" },
+  FAILED: { label: "실패", tone: "bad" },
 };
 
 export const EXPLORER_STATUS_META: Record<ExplorerLoginStatus, StatusMeta> = {
-  UNVERIFIED: { label: "UNVERIFIED", tone: "idle" },
-  READY: { label: "READY", tone: "ok" },
-  NEEDS_INPUT: { label: "NEEDS_INPUT", tone: "warn" },
-  EXPIRED: { label: "EXPIRED", tone: "warn", icon: Clock3 },
-  FAILED: { label: "FAILED", tone: "bad" },
+  UNVERIFIED: { label: "미확인", tone: "idle" },
+  READY: { label: "준비됨", tone: "ok" },
+  NEEDS_INPUT: { label: "입력 필요", tone: "warn" },
+  EXPIRED: { label: "만료", tone: "warn", icon: Clock3 },
+  FAILED: { label: "실패", tone: "bad" },
 };
 
 /** 색상만으로 상태를 구분하지 않도록 텍스트와 아이콘을 함께 표시한다. */

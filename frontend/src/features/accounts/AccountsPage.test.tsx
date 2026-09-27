@@ -190,10 +190,10 @@ describe("account and session management", () => {
     const user = userEvent.setup()
     const { fetchStub } = renderAccounts()
 
-    await screen.findAllByText("ACTIVE")
+    await screen.findAllByText("활성")
     expect(screen.getByText(/계정마다 별도 브라우저 프로필을 쓰세요/)).toBeVisible()
-    expect(screen.getAllByText("ACTIVE")[0]).toBeVisible()
-    for (const text of ["CAPTURING", "UNVERIFIED", "REVOKED", "credential-conflict"]) expect(screen.getAllByText(text)[0]).toBeVisible()
+    expect(screen.getAllByText("활성")[0]).toBeVisible()
+    for (const text of ["캡처 중", "미확인", "폐기됨", "credential-conflict"]) expect(screen.getAllByText(text)[0]).toBeVisible()
     await user.click(screen.getByRole("button", { name: "고급 세션 진단 열기" }))
     await choose(user, "관측 세션 1 연결 계정", "계정 A")
     await user.click(screen.getByRole("button", { name: "관측 세션 1 연결" }))
@@ -208,7 +208,7 @@ describe("account and session management", () => {
     const user = userEvent.setup()
     const { fetchStub } = renderAccounts()
 
-    await screen.findAllByText("ACTIVE")
+    await screen.findAllByText("활성")
     await user.click(screen.getByRole("button", { name: "계정 A 세션 폐기" }))
     await waitFor(() => expect(postBodies(fetchStub, "/api/session-capture")).toEqual(["action=revoke&account=account-a"]))
     await user.click(screen.getByRole("button", { name: "세션·신원 매핑 초기화" }))
