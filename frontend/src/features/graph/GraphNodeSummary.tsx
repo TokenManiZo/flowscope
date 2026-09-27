@@ -71,7 +71,7 @@ const verdicts = new Set<string>(severity)
 
 /** children은 통계 상자 바로 아래에 둔다(예: 객체 소유자 지정). */
 export function GraphNodeSummary({ summary, hint, children }: { summary: Summary; hint?: string; children?: ReactNode }) {
-  return <section aria-label="노드 요약" className="grid gap-3 border-b p-4 text-sm">
+  return <section aria-label="노드 요약" className="mb-4 grid gap-3 border-b pb-4 text-sm">
     <dl className="grid grid-cols-3 gap-2">{summary.stats.map(([label, value]) => <div key={label} className="rounded-md border border-border/70 px-2 py-1.5"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-base font-semibold tabular-nums">{value}</dd></div>)}</dl>
     {children}
     {summary.sources && <p className="flex flex-wrap gap-x-3 text-xs"><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-human align-middle" />HUMAN {summary.sources.human}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-scanner align-middle" />SCANNER {summary.sources.scanner}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-llm align-middle" />LLM {summary.sources.llm}</span></p>}
