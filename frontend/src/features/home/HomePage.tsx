@@ -1,4 +1,4 @@
-import { CheckCircle2, Play } from "lucide-react"
+import { Play } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
@@ -51,32 +51,7 @@ export function HomePage({ snapshot }: HomePageProps) {
             </div>
           </div>
         </section>
-      ) : (
-        <section
-          aria-label="최근 점검 상태"
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4"
-        >
-          <div className="flex items-center gap-3">
-            <span
-              aria-hidden="true"
-              className="grid size-8 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300"
-            >
-              <CheckCircle2 className="size-4" />
-            </span>
-            <div>
-              <p className="text-sm font-medium">
-                {state.phase === "running" ? "점검 진행 중" : "관측 근거 수집됨"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                관측 근거 {state.observationEvidenceCount.toLocaleString("ko-KR")}건
-              </p>
-            </div>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => { window.location.hash = "#runs" }}>
-            실행 상태
-          </Button>
-        </section>
-      )}
+      ) : null}
 
       <DashboardPage />
     </div>

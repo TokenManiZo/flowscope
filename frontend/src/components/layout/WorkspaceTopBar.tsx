@@ -81,6 +81,7 @@ export function WorkspaceTopBar({ onOpenSidebar }: { route: AppRoute; onOpenSide
               disabled={!project.readable || !project.managed}>{project.name}{project.managed ? "" : " · 수동 DB"}</option>)}
           </select>
         </label>
+        {snapshot.data?.sampleMode && <span role="note" aria-label="샘플 데이터" title="HUMAN·SCANNER·LLM 표시는 실제 점검 결과가 아니며 네트워크 요청을 만들지 않습니다." className="shrink-0 rounded-full border border-amber-500/50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">샘플 데이터 · 실제 점검 결과 아님</span>}
         <span title={persistenceTitle} className={`flex shrink-0 items-center gap-1 text-xs ${projects.data?.saveState === "FAILED" ? "text-destructive" : "text-muted-foreground"}`}><Database className="size-3.5" aria-hidden="true" />{persistenceState}</span>
         <NewProjectDialog />
         {projectError && <span role="alert" className="max-w-96 truncate text-xs text-destructive">프로젝트 전환 실패 · {projectError}</span>}
