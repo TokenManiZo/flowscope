@@ -6,7 +6,7 @@ import { RouteCandidateDetail } from "./RouteCandidateDetail"
 import type { GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { GraphNodeSummary, graphNodeSummary } from "./GraphNodeSummary"
-import { GraphOwnerControl } from "./GraphOwnerControl"
+import { GraphOwnerControl, isPublicRead } from "./GraphOwnerControl"
 
 /** Site View에서만 한 번 보여 주는 이동 안내. 이후 View는 같은 동작이라 반복하지 않는다. */
 export const GRAPH_OPEN_HINT = "노드를 더블클릭하거나 Enter로 열기"
@@ -23,7 +23,10 @@ interface Props {
 
 /** 선택 상세: 선택 좌표에 연결된 실제 Evidence 목록과 원문 보기·현재 세션 Repeater만 둔다. 경로 후보는 관측 Evidence가 없어 후보 근거를 보여 준다. */
 export function GraphInspectorPanel({ selection, event, snapshot, suspended = false, node = null, projection = null }: Props) {
-  const summary = node && projection ? graphNodeSummary(node, projection) : null
+  const baseSummary = node && projection ? graphNodeSummary(node, projection) : null
+  // 조회가 공개면 소유자 대신 "공개"로 보여 준다. 저장된 소유자는 쓰기 판정에 계속 쓰인다.
+  const publicObject = node?.kind === "resource" && node.selection.operation && node.selection.resource ? isPublicRead(snapshot, node.selection.operation, node.selection.resource) : false
+  const summary = baseSummary && publicObject ? { ...baseSummary, listTitle: "접근한 신원 · 조회 공개", list: baseSummary.list.map(([label, value]) => [label.replace(/ \(소유자\)$/, ""), value] as [string, string]) } : baseSummary
   const structural = node?.kind === "target" || node?.kind === "api-group"
   const ids = new Set(selection.evidenceIds)
   const listed = snapshot.events.filter(item => ids.has(item.eventId))

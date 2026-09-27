@@ -47,3 +47,14 @@ it("lists who accessed an object, marking the owner", () => {
   expect(within(summary).getByText(/접근한 신원/)).toBeVisible()
   expect(within(summary).getByText("SUSPICIOUS")).toBeVisible()
 })
+
+it("shows a publicly readable object as 공개 instead of naming an owner", () => {
+  const operationKey = `${service} GET /api/orders/{id}`
+  const publicSnapshot = { ...snapshot, owners: { ...snapshot.owners, "orders:101": "USER A" }, authorizationMatrix: { objects: [{ operation: operationKey, resource: "orders:101", resourcePolicy: "PUBLIC" }] } } as unknown as typeof snapshot
+  const projection = projectHierarchy(publicSnapshot, filters, navigateHierarchy(navigateHierarchy(site, "group", group()), "operation", group(), operationKey))
+  const object = projection.resources.find(node => node.selection.resource === "orders:101")!
+  renderWithQueryClient(<GraphInspectorPanel selection={object.selection} event={null} snapshot={publicSnapshot} node={object} projection={projection} />)
+  const summary = screen.getByRole("region", { name: "노드 요약" })
+  expect(within(summary).getByText("접근한 신원 · 조회 공개")).toBeVisible()
+  expect(within(summary).queryByText(/소유자 USER A|\(소유자\)/)).not.toBeInTheDocument()
+})

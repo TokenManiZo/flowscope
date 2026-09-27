@@ -11,6 +11,11 @@ const READ_METHODS = new Set(["GET", "HEAD"])
 interface Props { snapshot: Snapshot; operation: string; resource: string; disabled?: boolean }
 interface Saved { publicRead: boolean; manualOwner: string }
 
+/** 이 조회 API가 공개 정책인지. 소유자 표시를 "공개"로 바꿀 때도 같은 기준을 쓴다. */
+export function isPublicRead(snapshot: Snapshot, operation: string, resource: string): boolean {
+  return snapshot.authorizationMatrix?.objects.some(cell => cell.operation === operation && cell.resource === resource && cell.resourcePolicy === "PUBLIC") ?? false
+}
+
 /**
  * 그래프 객체 패널의 소유자 지정: 목록에서 고르고 [변경]을 눌러야 저장한다.
  * Public은 객체 소유자가 아니라 이 API 조회의 공개 정책(PUBLIC)으로 저장한다.
@@ -21,7 +26,7 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
   const policy = useResourcePolicyMutation()
   const service = resource.split(" ")[0]
   const readable = READ_METHODS.has(operation.split(" ")[1] ?? "")
-  const publicRead = snapshot.authorizationMatrix?.objects.some(cell => cell.operation === operation && cell.resource === resource && cell.resourcePolicy === "PUBLIC") ?? false
+  const publicRead = isPublicRead(snapshot, operation, resource)
   const currentOwner = snapshot.owners[resource] ?? ""
   const manualOwner = snapshot.ownerOverrides?.[resource] ?? ""
   const current = publicRead ? PUBLIC : currentOwner
