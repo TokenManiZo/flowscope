@@ -17,6 +17,7 @@ import {
   saveOwner,
   saveRequirement,
   saveResourcePolicy,
+  saveOperationObjectPolicy,
   saveReview,
   saveRole,
   saveTrafficOverride,
@@ -149,6 +150,7 @@ export function useExplorerAccountSaveMutation() { return useInvalidatingMutatio
 export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }
+export function useOperationObjectPolicyMutation() { return useInvalidatingMutation(({ operation, resource, policy }: { operation: string; resource: string; policy: string }) => saveOperationObjectPolicy(operation, resource, policy), [queryKeys.snapshot]) }
 export function useResourcePolicyMutation() { return useInvalidatingMutation(({ target, policy }: { target: string; policy: string }) => saveResourcePolicy(target, policy), [queryKeys.snapshot]) }
 export function useReviewMutation() { return useInvalidatingMutation(({ itemId, status, note }: { itemId: string; status: ReviewStatus; note: string }) => saveReview(itemId, status, note), [queryKeys.snapshot]) }
 export function useTrafficOverrideMutation() { return useInvalidatingMutation(({ operation, value }: { operation: string; value: string }) => saveTrafficOverride(operation, value), [queryKeys.snapshot]) }

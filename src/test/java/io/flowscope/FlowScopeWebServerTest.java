@@ -788,6 +788,14 @@ final class FlowScopeWebServerTest {
         assertEquals(200, post("/api/resource-policy", "target=" + encode(resource)
                 + "&policy=UNKNOWN", token).statusCode());
         assertEquals(io.flowscope.core.ResourcePolicy.UNKNOWN, state.config.resourcePolicy(operation, resource));
+        // operation+resource를 주면 그 API로 그 객체를 다룰 때만 공개한다.
+        assertEquals(200, post("/api/resource-policy", "operation=" + encode(operation) + "&resource=" + encode(resource)
+                + "&policy=PUBLIC", token).statusCode());
+        assertEquals(io.flowscope.core.ResourcePolicy.PUBLIC, state.config.resourcePolicy(operation, resource));
+        assertEquals(io.flowscope.core.ResourcePolicy.UNKNOWN, state.config.resourcePolicy(operation, resource + "-other"));
+        assertEquals(200, post("/api/resource-policy", "operation=" + encode(operation) + "&resource=" + encode(resource)
+                + "&policy=UNKNOWN", token).statusCode());
+        assertEquals(io.flowscope.core.ResourcePolicy.UNKNOWN, state.config.resourcePolicy(operation, resource));
         assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
                 + "&value=EXCLUDE", token).statusCode());
         assertEquals(io.flowscope.core.TrafficOverride.EXCLUDE, state.config.trafficOverride(operation));

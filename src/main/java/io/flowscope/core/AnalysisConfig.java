@@ -263,8 +263,20 @@ public final class AnalysisConfig {
 
     public synchronized String resourceOwner(String resource) { return resourceOwners.get(resource); }
 
-    /** 객체별 설정이 operation 기본값보다 우선한다. */
+    /**
+     * API 한 개와 객체 한 개 쌍의 정책 키. 그 API로 그 객체를 다룰 때만 적용된다
+     * (예: 이 객체 조회만 공개 — 같은 객체의 수정·삭제와 같은 API의 다른 객체는 그대로 판정).
+     */
+    public static String operationObjectPolicyKey(String operation, String resource) {
+        return operation.trim() + " @ " + resource.trim();
+    }
+
+    /** 가장 구체적인 설정이 이긴다: API+객체 쌍 > 객체 > operation 기본값. */
     public synchronized ResourcePolicy resourcePolicy(String operation, String resource) {
+        if (operation != null && resource != null) {
+            ResourcePolicy pair = resourcePolicies.get(operationObjectPolicyKey(operation, resource));
+            if (pair != null) return pair;
+        }
         ResourcePolicy exact = resource == null ? null : resourcePolicies.get(resource);
         return exact != null ? exact : resourcePolicies.getOrDefault(operation, ResourcePolicy.UNKNOWN);
     }

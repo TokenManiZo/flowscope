@@ -28,6 +28,25 @@ class AuthorizationPolicyTest {
     }
 
     @Test
+    void API와_객체_쌍_정책은_그_쌍에만_적용된다() {
+        String read = "https://api.test:443 GET /api/orders/{id}";
+        String write = "https://api.test:443 PATCH /api/orders/{id}";
+        String first = "https://api.test:443 orders:101";
+        String second = "https://api.test:443 orders:202";
+        AnalysisConfig config = new AnalysisConfig()
+                .withResourcePolicy(first, ResourcePolicy.OWNER_ONLY)
+                .withResourcePolicy(AnalysisConfig.operationObjectPolicyKey(read, first), ResourcePolicy.PUBLIC);
+
+        assertEquals(ResourcePolicy.PUBLIC, config.resourcePolicy(read, first));
+        // 같은 API의 다른 객체와 같은 객체의 쓰기 요청은 그대로다(D-013).
+        assertEquals(ResourcePolicy.UNKNOWN, config.resourcePolicy(read, second));
+        assertEquals(ResourcePolicy.OWNER_ONLY, config.resourcePolicy(write, first));
+
+        config.withResourcePolicy(AnalysisConfig.operationObjectPolicyKey(read, first), ResourcePolicy.UNKNOWN);
+        assertEquals(ResourcePolicy.OWNER_ONLY, config.resourcePolicy(read, first));
+    }
+
+    @Test
     void 객체정책_여섯종류를_평가한다() {
         assertEquals(AuthorizationPolicy.LayerDecision.ALLOW,
                 object(ResourcePolicy.PUBLIC, "user-b", AccessRole.USER, "user-a", AccessRole.USER, true));

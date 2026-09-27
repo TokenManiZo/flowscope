@@ -53,7 +53,7 @@ it("stores Public as a read-API policy and offers it only for read requests", as
   await user.click(screen.getByRole("combobox", { name: "소유자 선택" }))
   await user.click(await screen.findByRole("option", { name: "Public" }))
   await user.click(screen.getByRole("button", { name: "변경" }))
-  await waitFor(() => expect(posts(fetch, "/api/resource-policy")).toEqual([String(new URLSearchParams({ target: read, policy: "PUBLIC" }))]))
+  await waitFor(() => expect(posts(fetch, "/api/resource-policy")).toEqual([String(new URLSearchParams({ operation: read, resource, policy: "PUBLIC" }))]))
   expect(posts(fetch, "/api/owner")).toEqual([])
   unmount()
 
@@ -68,4 +68,16 @@ it("follows the saved owner when the snapshot changes elsewhere", async () => {
   expect(screen.getByRole("combobox", { name: "소유자 선택" })).toHaveTextContent("USER A")
   rerender(<GraphOwnerControl snapshot={{ ...snapshot, owners: { ...snapshot.owners, [resource]: "acct-demo-user-b" }, ownerOverrides: { ...snapshot.ownerOverrides, [resource]: "acct-demo-user-b" } }} operation={read} resource={resource} />)
   expect(screen.getByRole("combobox", { name: "소유자 선택" })).toHaveTextContent("USER B")
+})
+
+it("says where to change it when a broader matrix policy keeps the object public", async () => {
+  installFetch()
+  const user = userEvent.setup()
+  const publicSnapshot = { ...snapshot, authorizationMatrix: { ...snapshot.authorizationMatrix, objects: [{ operation: read, resource, resourcePolicy: "PUBLIC" }] } } as unknown as Snapshot
+  renderWithQueryClient(<GraphOwnerControl snapshot={publicSnapshot} operation={read} resource={resource} />)
+  expect(screen.getByRole("combobox", { name: "소유자 선택" })).toHaveTextContent("Public")
+  await user.click(screen.getByRole("combobox", { name: "소유자 선택" }))
+  await user.click(await screen.findByRole("option", { name: "USER A" }))
+  await user.click(screen.getByRole("button", { name: "변경" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent("권한 매트릭스에서 바꾸세요")
 })

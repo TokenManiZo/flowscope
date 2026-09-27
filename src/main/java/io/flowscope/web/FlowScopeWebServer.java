@@ -809,7 +809,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
-            String target = required(form, "target");
+            // operation+resource를 주면 그 쌍에만 적용한다. 키 형식은 서버 한 곳(AnalysisConfig)에서 만든다.
+            String operation = form.getOrDefault("operation", "").trim();
+            String resource = form.getOrDefault("resource", "").trim();
+            String target = !operation.isEmpty() && !resource.isEmpty()
+                    ? AnalysisConfig.operationObjectPolicyKey(operation, resource) : required(form, "target");
             ResourcePolicy policy = ResourcePolicy.valueOf(required(form, "policy").toUpperCase(Locale.ROOT));
             state.config().withResourcePolicy(target, policy);
             state.rebuild();
