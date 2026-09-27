@@ -17,7 +17,7 @@ const plain = (value: string) => stripOrigin(value) || value
 
 interface Summary { stats: readonly [string, number][]; sources?: HierarchyProjection["groups"][number]["sourceCounts"]; listTitle: string; list: readonly [string, string | Verdict][] }
 
-/** 한 번 클릭한 노드의 요약. 맨 끝(객체) 노드는 기존 Evidence 목록만 쓰므로 null. */
+/** 한 번 클릭한 노드의 요약. 객체는 접근한 신원과 소유자를, 나머지는 통계와 하위 목록을 보여 준다. */
 export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProjection): Summary | null {
   if (node.kind === "target") {
     const groups = projection.groups
@@ -44,6 +44,15 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
       stats: [[projection.kind === "operation" ? "접근 객체" : "접근 API", byTarget.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["허용", cells.filter(cell => cell.overall === "allow").length]],
       listTitle: projection.kind === "operation" ? "접근한 객체" : "이 신원이 접근한 API",
       list: [...byTarget].slice(0, 8).map(([target, items]) => [plain(target), mostUrgent(items)]),
+    }
+  }
+  if (node.kind === "resource") {
+    const byIdentity = groupBy(cells, cell => cell.idn)
+    const owner = node.owner ?? null
+    return {
+      stats: [["접근 신원", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["Evidence", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
+      listTitle: owner ? `접근한 신원 · 소유자 ${owner}` : "접근한 신원",
+      list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity === owner ? `${identity} (소유자)` : identity, mostUrgent(items)]),
     }
   }
   if (node.kind === "operation" && projection.kind === "group") {

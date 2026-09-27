@@ -34,3 +34,15 @@ it("summarises an identity inside a group without repeating the open hint", () =
 })
 
 function group() { return projectHierarchy(snapshot, filters, site).nodes.find(node => node.kind === "api-group")!.groupId! }
+
+it("lists who accessed an object, marking the owner", () => {
+  const withOwner = { ...snapshot, owners: { ...snapshot.owners, [`orders:101`]: "USER A" } }
+  const operation = navigateHierarchy(navigateHierarchy(site, "group", group()), "operation", group(), `${service} GET /api/orders/{id}`)
+  const projection = projectHierarchy(withOwner, filters, operation)
+  const object = projection.resources.find(node => node.selection.resource === "orders:101")!
+  render(<GraphInspectorPanel selection={object.selection} event={null} snapshot={withOwner} node={object} projection={projection} />)
+  const summary = screen.getByRole("region", { name: "노드 요약" })
+  expect(within(summary).getByText("접근 신원").nextElementSibling).toHaveTextContent("1")
+  expect(within(summary).getByText(/접근한 신원/)).toBeVisible()
+  expect(within(summary).getByText("SUSPICIOUS")).toBeVisible()
+})

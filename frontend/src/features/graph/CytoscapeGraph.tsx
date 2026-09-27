@@ -56,9 +56,17 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     const observed = edge.source !== null
     return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edgeState(edge.id) }, origin: edge.source }
   })
-  // 신원·엣지 강조가 없을 때 노드를 고르면 그 노드와 바로 이어진 엣지만 강조한다.
-  if (hierarchy && selectedElementId && hierarchy.nodes.some(node => node.id === selectedElementId) && edges.every(({ data }) => data.focused === "none")) {
-    for (const { data } of edges) data.focused = data.source === selectedElementId || data.target === selectedElementId ? "yes" : "no"
+  // 신원·엣지 강조가 없을 때 노드를 고르면 그 노드에 닿은 엣지와, 같은 서버 셀(신원·API·객체)을 가진 엣지를 강조한다.
+  // 그래서 객체를 누르면 API↔객체 선뿐 아니라 그 객체에 접근한 신원→API 선까지 이어져 보인다.
+  const selectedNode = hierarchy && selectedElementId ? hierarchy.nodes.find(node => node.id === selectedElementId) : undefined
+  if (hierarchy && selectedNode && edges.every(({ data }) => data.focused === "none")) {
+    const keys = new Set(selectedNode.selection.cellKeys)
+    const edgeKeys = new Map(hierarchy.edges.map(edge => [edge.id, edge.selection.cellKeys]))
+    for (const { data } of edges) {
+      const touches = data.source === selectedNode.id || data.target === selectedNode.id
+      const sharesCell = keys.size > 0 && (edgeKeys.get(data.id) ?? []).some(key => keys.has(key))
+      data.focused = touches || sharesCell ? "yes" : "no"
+    }
   }
   // 강조가 있으면 강조 엣지에 닿은 노드만 남기고 나머지 노드는 흐린다.
   const focusedNodeIds = new Set(edges.flatMap(({ data }) => data.focused === "yes" ? [data.source, data.target] : []))
@@ -320,10 +328,22 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     publishLayoutRef.current = publishLayout
     let correctionFrame: number | null = null
+    // 상세 패널이 열리며 캔버스가 좁아지면 이전 pan 그대로라 선택 노드가 화면 밖으로 밀린다. 필요한 만큼만 옮긴다(확대율 유지).
+    const keepSelectionVisible = () => {
+      const id = selectedElementIdRef.current
+      if (!id || typeof core.panBy !== "function") return
+      const element = core.getElementById(id)
+      if (!element || typeof element.renderedBoundingBox !== "function" || element.empty?.()) return
+      const box = element.renderedBoundingBox(), width = core.width(), height = core.height(), margin = 24
+      const dx = box.x2 > width ? width - margin - box.x2 : box.x1 < 0 ? margin - box.x1 : 0
+      const dy = box.y2 > height ? height - margin - box.y2 : box.y1 < 0 ? margin - box.y1 : 0
+      if (dx || dy) core.panBy({ x: dx, y: dy })
+    }
     const correctLanes = () => {
       correctionFrame = null
       if (typeof core.resize === "function") core.resize()
       syncSelection(core, selectedElementIdRef.current)
+      keepSelectionVisible()
       publishLayout()
     }
     const scheduleLaneCorrection = () => {

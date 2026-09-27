@@ -3,7 +3,7 @@ import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import { CytoscapeGraph, graphWheelIntent } from "./CytoscapeGraph"
-import type { GraphProjection } from "./graphProjection"
+import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
 
@@ -312,6 +312,26 @@ it("keeps node coordinates when the graph container is resized", () => {
   expect(modelPosition).toEqual({ x: 200, y: 55 })
 })
 
+it("pans the selected node back into view when the canvas narrows, without changing zoom", () => {
+  const extra = node as unknown as { renderedBoundingBox?: () => { x1: number; x2: number; y1: number; y2: number } }
+  const sized = core as unknown as { width?: () => number; height?: () => number }
+  extra.renderedBoundingBox = () => ({ x1: 820, x2: 1040, y1: 100, y2: 160 })
+  sized.width = () => 600
+  sized.height = () => 500
+  try {
+    render(<CytoscapeGraph projection={projection} selectedElementId="identity:alice" locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+    runScheduledFrame()
+    vi.mocked(core.panBy).mockClear()
+    resizeListener?.([], {} as ResizeObserver)
+    runScheduledFrame()
+    expect(core.panBy).toHaveBeenCalledWith({ x: 600 - 24 - 1040, y: 0 })
+  } finally {
+    delete extra.renderedBoundingBox
+    delete sized.width
+    delete sized.height
+  }
+})
+
 it("keeps a node exactly where it was dropped and stores that position", () => {
   const onPreferencesChange = vi.fn()
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
@@ -549,6 +569,22 @@ it("dims everything except the clicked node and its direct neighbours", () => {
   expect(focusOf(posts.id)).toBe("no")
   expect(added.find(element => element.data.target === orders.id)?.data.focused).toBe("yes")
   expect(added.find(element => element.data.target === posts.id)?.data.focused).toBe("no")
+})
+
+it("highlights every identity that reached a clicked object, not only its API edge", () => {
+  const cell = (idn: string, resource: string) => ({ idn, op: "GET /api/orders/{id}", resource, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: [] })
+  const snapshot = targetSnapshot({ cells: [cell("USER A", "orders:101"), cell("USER B", "orders:101"), cell("USER C", "orders:202")] })
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+  const site = { level: "site" as const, groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
+  const groupId = projectHierarchy(snapshot, filters, site).nodes.find(item => item.kind === "api-group")!.groupId!
+  const hierarchy = projectHierarchy(snapshot, filters, { ...site, level: "operation", groupId, operation: "GET /api/orders/{id}" })
+  const object = hierarchy.resources.find(item => item.selection.resource === "orders:101")!
+  render(<CytoscapeGraph projection={hierarchy} selectedElementId={object.id} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; focused?: string } }>
+  const focusOf = (identity: string) => added.find(element => element.data.id === hierarchy.identities.find(item => item.selection.identity === identity)?.id)?.data.focused
+  expect(focusOf("USER A")).toBe("yes")
+  expect(focusOf("USER B")).toBe("yes")
+  expect(focusOf("USER C")).toBe("no")
 })
 
 it("keeps unconfirmed route candidates neutral and dotted", () => {
