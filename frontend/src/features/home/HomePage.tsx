@@ -30,9 +30,10 @@ export function HomePage({ snapshot }: HomePageProps) {
   const isEmpty = state.observationEvidenceCount === 0
 
   return (
-    <div className="min-w-0 space-y-7 p-4 sm:p-6">
+    // 대시보드 본문(DashboardPage)이 자기 여백을 갖는다. 시작 박스도 같은 여백 안에 둬야 좌우 가장자리가 맞는다.
+    <div className="min-w-0">
       {isEmpty ? (
-        <section
+        <div className="px-4 pt-4 sm:px-6 sm:pt-6"><section
           aria-labelledby="home-hero-title"
           className="rounded-lg border border-border bg-card px-5 py-7 sm:px-8 sm:py-9"
         >
@@ -50,7 +51,7 @@ export function HomePage({ snapshot }: HomePageProps) {
               </Button>
             </div>
           </div>
-        </section>
+        </section></div>
       ) : null}
 
       <DashboardPage />
