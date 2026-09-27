@@ -23,11 +23,11 @@ function openInspection() { window.location.hash = "#inspection" }
 function SourceRunCard({ title, status, facts, children, message, failed, action }: { title: string; status: string; facts: readonly [string, ReactNode][]; children?: ReactNode; message?: string; failed?: boolean; action: ReactNode }) {
   return <Card className="gap-3">
     <CardHeader><CardTitle className="flex flex-wrap items-center gap-2 text-base">{title}<RunStatusBadge status={status} /></CardTitle></CardHeader>
-    <CardContent className="grid gap-3 text-sm">
+    <CardContent className="flex flex-1 flex-col gap-3 text-sm">
       <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-1">{facts.map(([name, value]) => <div className="contents" key={name}><dt className="text-muted-foreground">{name}</dt><dd className="min-w-0 break-words">{value}</dd></div>)}</dl>
       {children}
       {message && <p className={failed ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>{message}</p>}
-      <div>{action}</div>
+      <div className="mt-auto pt-1">{action}</div>
     </CardContent>
   </Card>
 }
@@ -62,7 +62,7 @@ export function RunsPage() {
       <div><h1 id="runs-title" className="text-2xl font-semibold">실행 상태</h1><p className="text-sm text-muted-foreground">HUMAN·ZAP·LLM Explorer의 실행 상태와 저장된 요청 기록을 확인합니다.</p></div>
       {queryError && <Alert variant="destructive" aria-label={errorMessage(queryError.error)}><AlertTitle>{queryError.hasLastSuccess ? "마지막 성공 상태를 표시하고 있습니다." : "상태를 가져오지 못했습니다. 확인이 필요합니다."}</AlertTitle><AlertDescription>{errorMessage(queryError.error)}</AlertDescription></Alert>}
 
-      <div className="grid items-start gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <SourceRunCard title="HUMAN" status={humanStatus}
           facts={[["계정", human.data?.active ? human.data.accountId || "비로그인" : "—"], ["run", human.data?.runId ? <span className="font-mono text-xs">{human.data.runId}</span> : "—"], ["Proxy", human.data?.proxy ? <span className="font-mono text-xs">{human.data.proxy}</span> : "—"]]}
           action={<Button variant="outline" size="sm" onClick={openInspection}>점검 시작에서 제어</Button>} />
