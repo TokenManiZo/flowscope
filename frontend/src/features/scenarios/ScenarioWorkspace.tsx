@@ -15,10 +15,11 @@ interface Props {
   scenarios: readonly Scenario[]
   selectedId: string | null
   onSelect(id: string): void
+  ordinals?: Readonly<Record<string, number>>
   onOpenEvidence: ScenarioEvidenceAction
 }
 
-export function ScenarioWorkspace({ scenarios, selectedId, onSelect, onOpenEvidence }: Props) {
+export function ScenarioWorkspace({ scenarios, selectedId, onSelect, ordinals, onOpenEvidence }: Props) {
   const [expanded, setExpanded] = useState(false)
   useEffect(() => setExpanded(false), [scenarios])
   const visible = expanded ? scenarios : scenarios.slice(0, SCENARIO_LIST_LIMIT)
@@ -29,6 +30,6 @@ export function ScenarioWorkspace({ scenarios, selectedId, onSelect, onOpenEvide
       const risk = scenarioRiskTone(scenario.risk)
       return <li key={scenario.id}><Button type="button" variant={scenario.id === selectedId ? "secondary" : "outline"} aria-pressed={scenario.id === selectedId} className="h-auto w-full justify-start whitespace-normal p-3 text-left" onClick={() => onSelect(scenario.id)}><span className="grid min-w-0 gap-2"><span className="break-all font-medium">{bounded(scenario.title)}</span><span className="flex flex-wrap gap-2"><Badge variant={risk.variant} className={risk.className}>{bounded(scenario.risk)}</Badge><Badge variant="outline">규칙 후보</Badge></span></span></Button></li>
     })}</ul>{scenarios.length > SCENARIO_LIST_LIMIT && <Button type="button" variant="link" size="sm" className="h-auto w-fit p-0" onClick={() => setExpanded((current) => !current)}>{expanded ? "시나리오 목록 접기" : "시나리오 목록 더 보기"}</Button>}</CardContent></Card></section>
-    <section aria-label="선택한 시나리오 상세">{selected ? <ScenarioCard key={selected.id} scenario={selected} onOpenEvidence={onOpenEvidence} /> : <p className="rounded-md border p-6 text-sm text-muted-foreground">상세에서 확인할 후보를 선택하세요.</p>}</section>
+    <section aria-label="선택한 시나리오 상세">{selected ? <ScenarioCard key={selected.id} scenario={selected} ordinals={ordinals} onOpenEvidence={onOpenEvidence} /> : <p className="rounded-md border p-6 text-sm text-muted-foreground">상세에서 확인할 후보를 선택하세요.</p>}</section>
   </div>
 }

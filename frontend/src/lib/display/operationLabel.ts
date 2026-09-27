@@ -34,3 +34,18 @@ export function evidenceOrdinalLabel(ordinals: Readonly<Record<string, number>> 
   const ordinal = ordinals?.[eventId]
   return typeof ordinal === "number" && Number.isFinite(ordinal) ? `#${ordinal}` : eventId
 }
+
+/** 상세·목록용: 순번 뒤에 원본 id를 붙여 복사·역추적을 유지한다. 순번이 없으면 원본 id만. */
+export function evidenceFullLabel(ordinals: Readonly<Record<string, number>> | undefined, eventId: string): string {
+  const label = evidenceOrdinalLabel(ordinals, eventId)
+  return label === eventId ? eventId : `${label} · ${eventId}`
+}
+
+const observedTimeFormat = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "medium" })
+
+/** 관측 시각(epoch ms). 최초=최종이면 한 번, 반복이면 범위. 0·음수는 가져오기에서 시각을 읽지 못한 값이다. */
+export function observedTimeLabel(firstSeen: number, lastSeen: number): string {
+  if (!(firstSeen > 0)) return "시각 미상"
+  const first = observedTimeFormat.format(firstSeen)
+  return lastSeen > firstSeen ? `${first} ~ ${observedTimeFormat.format(lastSeen)}` : first
+}

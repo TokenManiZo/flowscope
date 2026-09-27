@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { EvidencePage } from "./EvidencePage"
 import { ImportXmlDialog } from "./ImportXmlDialog"
 import { renderWithQueryClient } from "@/test/render"
+import { observedTimeLabel } from "@/lib/display/operationLabel"
 import type { EvidencePage as EvidencePageData, EventRecord, Snapshot } from "@/lib/api/types"
 
 const rawSentinel = "RAW-REQUEST-SECRET-DO-NOT-RENDER"
@@ -146,7 +147,7 @@ describe("EvidencePage", () => {
 
     expect(await screen.findByText("event-1")).toBeVisible()
     expect(screen.queryByText("event-2")).not.toBeInTheDocument()
-    expect(screen.getByText("최초 101 · 최종 202")).toBeVisible()
+    expect(within(screen.getByText("event-1").closest("tr") as HTMLTableRowElement).getByText(observedTimeLabel(101, 202))).toBeVisible()
     await userEvent.click(screen.getByRole("checkbox", { name: "반복 Evidence 펼치기" }))
     expect(await screen.findByText("event-2")).toBeVisible()
     const eventTwoRow = screen.getByText("event-2").closest("tr")

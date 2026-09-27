@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { importXml } from "@/lib/api/endpoints"
 import type { EventRecord, PayloadRetentionMetadata } from "@/lib/api/types"
 import { queryKeys, useEvidenceQuery, useSnapshotQuery } from "@/lib/query/hooks"
+import { evidenceFullLabel, evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { EvidenceFilters } from "./EvidenceFilters"
 import { ImportXmlDialog } from "./ImportXmlDialog"
 import { boundedText, defaultEvidenceFilters, hiddenEvidenceCount, visibleEvidence } from "./evidenceSelectors"
@@ -68,13 +69,13 @@ export function EvidencePage() {
         <p className="text-sm text-muted-foreground">숨김 {hidden}건 · 삭제되지 않았습니다.</p>
         <ScrollArea className="h-[28rem] rounded-md border" aria-label="Evidence 표">
           <Table>
-            <TableHeader><TableRow><TableHead>소스</TableHead><TableHead>신원</TableHead><TableHead>요청</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측</TableHead><TableHead>Evidence ID</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead>신원</TableHead><TableHead>요청</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((event) => <TableRow key={event.eventId} data-state={selected?.eventId === event.eventId ? "selected" : undefined}>
-                <TableCell><Badge variant="outline">{sourceLabel(event.source)}</Badge></TableCell><TableCell>{boundedText(event.idn, 48)}</TableCell>
+                <TableCell className="font-mono text-muted-foreground" title={event.eventId}>{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)}</TableCell><TableCell><Badge variant="outline">{sourceLabel(event.source)}</Badge></TableCell><TableCell>{boundedText(event.idn, 48)}</TableCell>
                 <TableCell className="max-w-72 whitespace-normal"><span className="font-mono">{boundedText(event.method, 16)}</span> {boundedText(event.path, 120)} <span className="text-muted-foreground">({event.status})</span></TableCell>
                 <TableCell className="max-w-48 whitespace-normal"><Badge variant="secondary">{boundedText(event.trafficClass, 40)}</Badge><span className="ml-1">{dispositionLabel(event.trafficDisposition)}</span></TableCell>
-                <TableCell>{event.repeatCount}</TableCell><TableCell className="whitespace-normal">최초 {boundedText(event.firstSeen, 32)} · 최종 {boundedText(event.lastSeen, 32)}</TableCell><TableCell className="font-mono">{boundedText(event.eventId, 72)}</TableCell>
+                <TableCell>{event.repeatCount}</TableCell><TableCell className="whitespace-normal">{observedTimeLabel(event.firstSeen, event.lastSeen)}</TableCell>
                 <TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => selectEvent(event)} aria-label="상세 보기">상세 보기</Button></TableCell>
               </TableRow>)}
               {rows.length === 0 && <TableRow><TableCell colSpan={8} className="whitespace-normal text-muted-foreground">현재 필터에 표시할 Evidence가 없습니다. 숨김은 삭제되지 않았습니다.</TableCell></TableRow>}
@@ -90,7 +91,7 @@ export function EvidencePage() {
         {evidence.isError && <p role="alert">{evidence.error.message}</p>}
         {page && page.records.length === 0 && <p>이 페이지에 Evidence가 없습니다.</p>}
         {page?.records.map((record) => <details key={`${datasetRevision}:${page.offset}:${record.eventId}`} open={record.eventId === selectedEvent.eventId} className="min-w-0 rounded border p-3">
-          <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(record.eventId, 160)}</summary>
+          <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(evidenceFullLabel(snapshot.data?.evidenceOrdinals, record.eventId), 160)}</summary>
           <div className="mt-3 grid min-w-0 gap-2">
             <p className="text-xs">{record.trafficClass} · {record.trafficDisposition}</p>
             <p className="break-words text-xs">{record.classificationReasons.join(" · ")}</p>

@@ -85,6 +85,7 @@ export function ScenariosPage() {
               setSelection(null)
               setInspectorOpen(false)
             }}
+            ordinals={snapshot.data?.evidenceOrdinals}
             onOpenEvidence={evidenceAction}
           />
         )}

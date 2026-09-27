@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { saveOwner, saveRequirement, saveTrafficOverride } from "@/lib/api/endpoints"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
-import { stripOrigin } from "@/lib/display/operationLabel"
+import { evidenceFullLabel, stripOrigin } from "@/lib/display/operationLabel"
 import { boundedText } from "./evidenceSelectors"
 
 interface Props {
@@ -51,7 +51,7 @@ function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = t
   const relatedCell = snapshot.cells.find((cell) => cell.idn === event.idn && cell.op === event.op && cell.resource === event.resource)
   const relatedScenarios = snapshot.scenarios.filter((scenario) => scenario.evidenceIds.includes(event.eventId))
   const metadata: [string, string][] = [["메서드", event.method], ["경로", stripOrigin(event.path) || event.path], ["HTTP 상태", String(event.status)], ["신원 / 역할", `${event.idn} / ${event.role}`], ["리소스", event.resource ?? "-"], ["분류", `${event.trafficClass} / ${event.trafficDisposition}`], ["실행", `${event.orchestrator} / ${event.tool} / ${event.phase}`]]
-  if (showEvidenceId) metadata.unshift(["Evidence ID", evidenceLabel ?? event.eventId])
+  if (showEvidenceId) metadata.unshift(["Evidence ID", evidenceLabel ?? evidenceFullLabel(snapshot.evidenceOrdinals, event.eventId)])
 
   return <div className="grid gap-4">
     <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-[9rem_1fr]">{metadata.map(([name, value]) => <div className="contents" key={name}><dt className="font-medium">{name}</dt><dd className="break-words">{boundedText(value, 320)}</dd></div>)}</dl>
