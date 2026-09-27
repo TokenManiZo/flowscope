@@ -555,6 +555,9 @@ it("clears the selection when the empty canvas is tapped or Esc is pressed, not 
   expect(clear).toHaveBeenCalledTimes(1)
   fireEvent.keyDown(screen.getByLabelText("공격면 Cytoscape 그래프"), { key: "Escape" })
   expect(clear).toHaveBeenCalledTimes(2)
+  // 마우스로 고른 뒤 포커스가 body에 있어도 Esc가 선택을 푼다.
+  fireEvent.keyDown(document.body, { key: "Escape" })
+  expect(clear).toHaveBeenCalledTimes(3)
 })
 
 it("dims everything except the clicked node and its direct neighbours", () => {

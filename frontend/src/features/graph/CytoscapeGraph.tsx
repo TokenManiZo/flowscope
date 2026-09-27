@@ -402,6 +402,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       else if (action === "back") stepBackRef.current?.()
     }
     const backgroundListener = (event: cytoscape.EventObject) => { if (event.target === core) clearSelectionRef.current?.() }
+    // 마우스로 고른 뒤에는 포커스가 body에 남아 캔버스의 keydown이 오지 않는다. 이때의 Esc도 선택을 푼다.
+    const escapeListener = (event: KeyboardEvent) => { if (event.key === "Escape" && event.target === document.body) clearSelectionRef.current?.() }
     // ponytail: 드래그 중이 아니라 놓을 때만 가둔다. 커서를 따라가던 노드를 실시간으로 밀면 조작감이 나빠진다.
     const clampToNeighbourLanes = (node: cytoscape.NodeSingular) => {
       const count = laneCountRef.current
@@ -452,6 +454,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     core.on("tap", "node, edge", selectListener)
     core.on("dbltap", "node", openListener)
     core.on("tap", backgroundListener)
+    window.addEventListener("keydown", escapeListener)
     core.on("mouseover focus", "node", showCardTooltip)
     core.on("mouseout blur", "node", hideCardTooltip)
     core.on("dragfree", "node", dragListener)
@@ -460,6 +463,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       core.off("tap", "node, edge", selectListener)
       core.off("dbltap", "node", openListener)
       core.off("tap", backgroundListener)
+      window.removeEventListener("keydown", escapeListener)
       core.off("mouseover focus", "node", showCardTooltip)
       core.off("mouseout blur", "node", hideCardTooltip)
       core.off("dragfree", "node", dragListener)
