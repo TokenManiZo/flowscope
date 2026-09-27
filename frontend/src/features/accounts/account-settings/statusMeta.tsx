@@ -21,8 +21,8 @@ import type {
 type Tone = "ok" | "warn" | "bad" | "idle";
 
 const TONE_CLASS: Record<Tone, string> = {
-  ok: "border-emerald-500/40 text-emerald-400",
-  warn: "border-amber-500/40 text-amber-400",
+  ok: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+  warn: "border-amber-500/40 text-amber-600 dark:text-amber-400",
   bad: "border-destructive/50 text-destructive",
   idle: "border-border text-muted-foreground",
 };

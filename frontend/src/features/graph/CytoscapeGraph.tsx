@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
-import { renderParameterNodeCardSvg, type CardSource, type ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
+import { cardSurface, renderParameterNodeCardSvg, type CardSource, type CardTheme, type ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
+import { useDocumentTheme } from "@/hooks/useTheme"
 import { NODE_SIZE_LIMIT, type GraphPreferences, type NodeSize } from "./graphPreferences"
 import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
@@ -28,7 +29,8 @@ interface Props {
 }
 
 const noConfirmedNodes = new Set<string>()
-const EDGE_COLOR = "#94a3b8"
+/** 관측 엣지 색. 라이트는 흰 캔버스에서 선이 보이도록 한 단계 진하게 둔다. */
+const EDGE_COLOR: Record<CardTheme, string> = { dark: "#94a3b8", light: "#64748b" }
 const noLaneLayout = { lane: 0, version: 0 }
 
 export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pick<WheelEvent, "ctrlKey" | "deltaMode" | "deltaX" | "deltaY">): "pan" | "zoom" {
@@ -38,7 +40,7 @@ export function graphWheelIntent(mode: GraphPreferences["inputMode"], event: Pic
   return event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && (event.deltaX !== 0 || Math.abs(event.deltaY) < 50 || !Number.isInteger(event.deltaY)) ? "pan" : "zoom"
 }
 
-function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>): ElementDefinition[] {
+function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark"): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
   const focus = deriveGraphFocus(hierarchy, selectedElementId)
   const edges = projection.edges.map((edge) => {
@@ -48,7 +50,7 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     // 관측 엣지는 주체 구분 없이 한 가지 선으로 그리고 접근 주체는 양 끝 노드 카드의 아이콘으로만 표시한다.
     // 주체가 없는 구조·경로 후보 엣지는 '미관측' 표시(회색 점선)를 그대로 둔다.
     const observed = edge.source !== null
-    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR : edge.color, countLabel: edge.countLabel, focused: focus.edgeState(edge.id) }, origin: edge.source }
+    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edgeState(edge.id) }, origin: edge.source }
   })
   const nodeSources = new Map<string, Set<CardSource>>()
   for (const { data, origin } of edges) {
@@ -62,15 +64,15 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     const card = sources.length ? { ...base, sources, accessibleLabel: `${base.accessibleLabel}; 접근 주체 ${sources.map(source => source.toUpperCase()).join(", ")}` } : base
     cards?.set(node.id, card)
     const size = sizes[node.id]
-    const image = renderParameterNodeCardSvg(card, true, size)
-    return { data: { id: node.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    const image = renderParameterNodeCardSvg(card, true, size, theme)
+    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
     const card = relationshipRouteCandidateCard(candidate)
     cards?.set(candidate.id, card)
     const size = sizes[candidate.id]
-    const image = renderParameterNodeCardSvg(card, true, size)
-    return { data: { id: candidate.id, label: "", cardImage: image.uri, accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    const image = renderParameterNodeCardSvg(card, true, size, theme)
+    return { data: { id: candidate.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   return [...nodes, ...candidates, ...edges.map(({ data }) => ({ data }))]
 }
@@ -173,6 +175,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
   const publishLayoutRef = useRef<(() => void) | null>(null)
   const laneCount = "kind" in projection && projection.kind !== "operation" ? 2 : 3
+  const theme = useDocumentTheme()
   const laneCountRef = useRef(laneCount)
   const preferencesRef = useRef(preferences)
   const appliedLayoutRef = useRef(layoutVersion)
@@ -231,7 +234,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const baseSize = (nodeId: string): NodeSize | null => {
     const card = cardsRef.current.get(nodeId)
     if (!card) return null
-    const image = renderParameterNodeCardSvg(card, true)
+    const image = renderParameterNodeCardSvg(card, true, undefined, theme)
     return { width: image.width, height: image.height }
   }
   /** 좌상단(anchor)을 고정한 채 크기를 바꾼다. 기본 크기와 같아지면 저장값에서 빠진다. 오른쪽 이웃 레인 직전에서 멈춘다. */
@@ -245,7 +248,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const nextWidth = Math.max(bounds.minWidth, Math.min(bounds.maxWidth, width, rightNeighbour - anchor.left))
     const nextHeight = Math.max(bounds.minHeight, Math.min(bounds.maxHeight, height))
     const custom = Math.round(nextWidth) !== base.width || Math.round(nextHeight) !== base.height
-    const image = renderParameterNodeCardSvg(card, true, custom ? { width: Math.round(nextWidth), height: Math.round(nextHeight) } : undefined)
+    const image = renderParameterNodeCardSvg(card, true, custom ? { width: Math.round(nextWidth), height: Math.round(nextHeight) } : undefined, theme)
     node.data({ cardImage: image.uri, width: image.width, height: image.height })
     if (custom) node.data({ customWidth: image.width, customHeight: image.height }); else node.removeData("customWidth customHeight")
     node.position({ x: anchor.left + image.width / 2, y: anchor.top + image.height / 2 })
@@ -269,10 +272,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
         elements: [],
         userZoomingEnabled: false,
         style: [
-          { selector: "node", style: { "background-color": "#111418", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", label: "data(label)", color: "#e5e7eb", width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "border-width": 1, "border-color": "#64748b", "border-opacity": 0.85 } },
+          { selector: "node", style: { "background-color": "data(cardColor)", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", label: "data(label)", color: "#e5e7eb", width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "border-width": 1, "border-color": "#64748b", "border-opacity": 0.85 } },
           { selector: 'node[confirmed = "yes"]', style: { "border-width": 2, "border-color": "#ef4444" } },
-          { selector: "node:selected", style: { "border-width": 2, "border-color": "#60a5fa", "background-color": "#141a20", "overlay-opacity": 0 } },
-          { selector: 'node[kind = "route-candidate"]', style: { "border-width": 2, "border-style": "dotted", "border-color": "#64748b", "background-color": "#111418" } },
+          { selector: "node:selected", style: { "border-width": 2, "border-color": "#60a5fa", "overlay-opacity": 0 } },
+          { selector: 'node[kind = "route-candidate"]', style: { "border-width": 2, "border-style": "dotted", "border-color": "#64748b" } },
           { selector: "edge", style: { width: 1.7, "line-color": "data(color)", "line-style": "data(line)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, label: "data(label)", color: "#d4d4d8", "font-size": "9px", "font-family": "Geist Mono, ui-monospace, monospace", "text-background-color": "#090b0d", "text-background-opacity": 0.86, "text-background-padding": "2px", "text-rotation": "autorotate", "text-margin-y": -7, "curve-style": "bezier", opacity: 0.9 } },
           { selector: "edge:selected", style: { width: 2.6, "line-color": "data(color)", "target-arrow-color": "data(color)" } },
           { selector: 'edge[focused = "yes"]', style: { width: 3, opacity: 1 } },
@@ -415,7 +418,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     core.elements().remove()
     cardsRef.current = new Map()
     // 전체 재정렬(layoutVersion 변경)만 사용자가 바꾼 크기를 비운다. 새로고침·필터·이동은 저장된 크기를 그대로 쓴다.
-    core.add(elementsFor(projection, selectedElementId, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current))
+    core.add(elementsFor(projection, selectedElementId, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current, theme))
     setCornerCursor(null)
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)
     core.nodes().forEach((node) => {
@@ -427,7 +430,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     syncSelection(core, selectedElementIdRef.current)
     scheduleLaneCorrectionRef.current?.()
-  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, selectedElementId])
+  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, selectedElementId, theme])
 
   // ponytail: 한 레인만 다시 세운다. 전체 재정렬과 달리 다른 레인에서 잡아둔 배치는 건드리지 않는다.
   useEffect(() => {
@@ -441,14 +444,14 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (node.data("customWidth") === undefined) return
       const card = cardsRef.current.get(node.id())
       if (!card) return
-      const image = renderParameterNodeCardSvg(card, true)
+      const image = renderParameterNodeCardSvg(card, true, undefined, theme)
       node.data({ cardImage: image.uri, width: image.width, height: image.height })
       node.removeData("customWidth customHeight")
     })
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, null, laneCount, laneLayout.lane)
     if (locked) core.nodes().forEach((node) => { node.lock() })
     publishLayoutRef.current?.()
-  }, [laneCount, laneLayout, locked])
+  }, [laneCount, laneLayout, locked, theme])
 
   useEffect(() => {
     const core = coreRef.current

@@ -77,6 +77,8 @@ const projection: GraphProjection = {
 }
 
 beforeEach(() => {
+  // 앱 기본 테마는 다크다. 라이트 전용 기대값은 해당 테스트에서 따로 확인한다.
+  document.documentElement.classList.add("dark")
   window.history.replaceState({}, "", "/")
   Object.values(core).forEach((value) => { if (typeof value === "function" && "mockClear" in value) value.mockClear() })
   Object.values(node).forEach((value) => { if (typeof value === "function" && "mockClear" in value) value.mockClear() })
@@ -108,7 +110,7 @@ beforeEach(() => {
   }
 })
 
-afterEach(() => { vi.mocked(core.nodes).mockImplementation(singleNodeCollection) })
+afterEach(() => { vi.mocked(core.nodes).mockImplementation(singleNodeCollection); document.documentElement.classList.remove("dark") })
 
 function runScheduledFrame() {
   const callback = scheduledFrame
@@ -216,7 +218,7 @@ it("renders a graph-first canvas with dark compact node styling", () => {
   expect(screen.getByLabelText("공격면 Cytoscape 그래프")).toHaveClass("h-full", "min-h-[28rem]")
   expect(vi.mocked(cytoscape)).toHaveBeenCalledWith(expect.objectContaining({
     style: expect.arrayContaining([
-      expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-color": "#111418", color: "#e5e7eb" }) }),
+      expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-color": "data(cardColor)", color: "#e5e7eb" }) }),
       expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-image": "data(cardImage)", width: "data(width)", height: "data(height)" }) }),
       expect.objectContaining({ selector: 'node[confirmed = "yes"]', style: expect.objectContaining({ "border-color": "#ef4444" }) }),
       expect.objectContaining({ selector: "node:selected" }),
@@ -509,6 +511,19 @@ it("draws every observed source with one neutral edge and marks the accessing so
   expect(operation.accessibleLabel).toContain("접근 주체 HUMAN, SCANNER, LLM")
   const svg = decodeURIComponent(operation.cardImage!.replace(/^data:image\/svg\+xml,/, ""))
   for (const color of ["#60a5fa", "#f87171", "#e4e4e7"]) expect(svg).toContain(`stroke="${color}"`)
+})
+
+it("redraws node cards and edges for the light theme instead of keeping dark cards on a white canvas", () => {
+  document.documentElement.classList.remove("dark")
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; color?: string; cardColor?: string; cardImage?: string } }>
+  expect(added.find((element) => element.data.id === "edge")?.data.color).toBe("#64748b")
+  const operation = added.find((element) => element.data.id === "operation:GET /orders")!.data
+  expect(operation.cardColor).toBe("#ffffff")
+  const svg = decodeURIComponent(operation.cardImage!.replace(/^data:image\/svg\+xml,/, ""))
+  expect(svg).toContain('fill="#ffffff" stroke="#94a3b8"')
+  expect(svg).not.toContain("#111418")
 })
 
 it("keeps unconfirmed route candidates neutral and dotted", () => {

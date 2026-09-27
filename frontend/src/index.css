@@ -29,7 +29,8 @@ html.flowscope-density-90 {
 
 
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  /* 라이트: 페이지를 한 단계 회색으로 두어 흰 카드가 다크 모드처럼 한 단계 떠 보이게 한다. */
+  --background: oklch(0.975 0.004 250);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
@@ -45,8 +46,8 @@ html.flowscope-density-90 {
   --accent-foreground: oklch(0.208 0.042 265.755);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
+  --border: oklch(0.9 0.014 255);
+  --input: oklch(0.9 0.014 255);
   --ring: oklch(0.704 0.04 256.788);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -63,6 +64,10 @@ html.flowscope-density-90 {
   --sidebar-ring: oklch(0.704 0.04 256.788);
   --brand: oklch(0.52 0.13 162);
   --brand-foreground: oklch(0.984 0.003 247.858);
+  /* 그래프 캔버스·페인·구분선. 다크에만 있으면 라이트에서 값이 비어 경계와 바탕이 사라진다. */
+  --flowscope-pane: var(--background);
+  --flowscope-canvas: var(--background);
+  --flowscope-divider: var(--border);
 }
 
 @theme inline {

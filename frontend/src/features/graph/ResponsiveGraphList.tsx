@@ -7,7 +7,7 @@ import { relationshipNodeCard } from "./relationshipNodeCard"
 function CompactNodeCard({ badge, title, detail, footer, meta = [] }: { badge: string; title: string; detail: string; footer: string; meta?: readonly string[] }) {
   return <span className="grid w-full min-w-0 gap-2">
     <span className="flex min-w-0 items-center gap-2">
-      <span data-node-badge={badge} className="shrink-0 rounded border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-300">{badge}</span>
+      <span data-node-badge={badge} className="shrink-0 rounded border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">{badge}</span>
       <span className="min-w-0 break-all font-mono text-sm font-semibold text-foreground">{title}</span>
     </span>
     <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">

@@ -27,5 +27,5 @@ it("uses the shared amber REVIEW semantic while retaining explicit applicability
   render(<RouteCandidateDetail candidate={candidate} />)
 
   expect(screen.getByTestId("route-candidate-applicability")).toHaveTextContent("미관측 후보 · REVIEW")
-  expect(screen.getByTestId("route-candidate-applicability")).toHaveClass("text-amber-300")
+  expect(screen.getByTestId("route-candidate-applicability")).toHaveClass("text-amber-700", "dark:text-amber-300")
 })
