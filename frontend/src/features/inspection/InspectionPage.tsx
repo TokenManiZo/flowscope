@@ -19,21 +19,17 @@ import { createAccountSettingsAdapter } from "@/features/accounts/account-settin
 /** 점검 시작 허브의 소스 스텝. 범위는 상단 표시로 대체했다. */
 export type InspectionStep = "human" | "scanner" | "llm" | "review"
 
-const stepCopy: Record<InspectionStep, { title: string; message: string }> = {
-  human: { title: "HUMAN pass", message: "HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요." },
-  scanner: { title: "ZAP 기준선", message: "연결된 ZAP으로 범위 안의 신원별 기준선을 실행하세요." },
-  llm: { title: "LLM 탐색", message: "Codex 준비를 확인한 뒤 LLM 탐색을 실행하세요." },
-  review: { title: "Evidence 검토", message: "HUMAN·ZAP·LLM 기록과 API·입력 차이를 확인하세요. 전체 탐색 완료를 뜻하지 않습니다." },
-}
+const inspectionSteps: readonly { step: InspectionStep; label: string }[] = [
+  { step: "human", label: "1 · HUMAN" },
+  { step: "scanner", label: "2 · ZAP" },
+  { step: "llm", label: "3 · LLM" },
+  { step: "review", label: "4 · Evidence 검토" },
+]
 
 const ANONYMOUS_HUMAN_ACCOUNT = "__flowscope_anonymous__"
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "요청을 완료하지 못했습니다."
-}
-
-function stepNumber(step: InspectionStep): number {
-  return { human: 1, scanner: 2, llm: 3, review: 4 }[step]
 }
 
 function stepFromStage(stage: InspectionStage): InspectionStep {
@@ -140,7 +136,6 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   }, [scannerAccountIds.join(","), humanAccountIds.join(","), humanAccount])
 
   const humanSummary = human.data ? human.data.active ? "진행 중" : human.data.completed ? "완료" : "대기" : human.isPending ? "불러오는 중" : "상태 확인 필요"
-  const humanCardStatus = human.data ? human.data.active ? `실행 중 · ${human.data.accountId || "비로그인"}` : human.data.completed ? "COMPLETED · HUMAN lane 완료" : "NOT_STARTED · HUMAN pass 대기" : `HUMAN 상태 · ${humanSummary}`
   const queryError = human.isError
     ? { error: human.error, hasLastSuccess: human.data !== undefined }
     : zap.isError
@@ -194,27 +189,13 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       {zapSessionRefresh.isError && <Alert variant="destructive" aria-label={errorMessage(zapSessionRefresh.error)}><AlertDescription>{errorMessage(zapSessionRefresh.error)}</AlertDescription></Alert>}
       {zapAccountDelete.isError && <Alert variant="destructive" aria-label={errorMessage(zapAccountDelete.error)}><AlertDescription>{errorMessage(zapAccountDelete.error)}</AlertDescription></Alert>}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{stepCopy[automaticStep].title}</CardTitle>
-          <CardDescription>{stepCopy[automaticStep].message}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground" role="status">현재 단계 {stepNumber(automaticStep)}/4 · 단계 번호는 완료율이 아닙니다.</p>
-          <div className="flex flex-wrap items-center justify-between gap-2" role="status">
-            <p>{stepCopy[selectedStep].message}</p>
-            <Button variant="outline" onClick={() => setManualStep(null)}>현재 단계로</Button>
-          </div>
-        </CardContent>
-      </Card>
-
       <Tabs value={selectedStep} onValueChange={(value) => setManualStep(value as InspectionStep)}>
-        <TabsList aria-label="점검 진행 단계" className="h-auto flex-wrap">
-          <TabsTrigger value="human">1 · HUMAN</TabsTrigger>
-          <TabsTrigger value="scanner">2 · ZAP</TabsTrigger>
-          <TabsTrigger value="llm">3 · LLM</TabsTrigger>
-          <TabsTrigger value="review">4 · Evidence 검토</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center gap-2">
+          <TabsList aria-label="점검 진행 단계" className="h-auto flex-wrap">
+            {inspectionSteps.map(({ step, label }) => <TabsTrigger key={step} value={step}>{label}{step === automaticStep && <><span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" /><span className="sr-only">현재 단계</span></>}</TabsTrigger>)}
+          </TabsList>
+          {selectedStep !== automaticStep && <Button variant="outline" size="sm" onClick={() => setManualStep(null)}>현재 단계로</Button>}
+        </div>
 
         <TabsContent value="human">
           <SourcePassLayout
@@ -227,20 +208,17 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
               { label: "Proxy", value: human.data?.proxy || "확인 전", mono: true },
             ]}
             control={<div className="flex flex-wrap items-end gap-2">
-              <label className="grid gap-1 text-sm" htmlFor="human-account">HUMAN pass 계정
-                <Select value={humanAccount} onValueChange={setHumanAccount} disabled={!humanCanStart}>
-                  <SelectTrigger id="human-account" aria-label="HUMAN pass 계정"><SelectValue placeholder="비로그인 pass" /></SelectTrigger>
-                  <SelectContent><SelectItem value={ANONYMOUS_HUMAN_ACCOUNT}>비로그인 pass</SelectItem>{humanAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </label>
+              <Select value={humanAccount} onValueChange={setHumanAccount} disabled={!humanCanStart}>
+                <SelectTrigger id="human-account" aria-label="HUMAN pass 계정"><SelectValue placeholder="비로그인" /></SelectTrigger>
+                <SelectContent><SelectItem value={ANONYMOUS_HUMAN_ACCOUNT}>비로그인</SelectItem>{humanAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.label}</SelectItem>)}</SelectContent>
+              </Select>
               <Button disabled={!humanCanStart} onClick={() => humanMutation.mutate({
                 action: "begin",
                 account: humanAccount === ANONYMOUS_HUMAN_ACCOUNT ? "" : humanAccount,
-              })}>HUMAN pass 시작</Button>
+              })} aria-label="HUMAN pass 시작">시작</Button>
               <Button variant="outline" disabled={!humanCanEnd} title={!humanCanEnd ? "현재 HUMAN run ID가 있을 때만 종료할 수 있습니다." : undefined} onClick={() => {
                 if (human.data?.runId.trim()) humanMutation.mutate({ action: "end", runId: human.data.runId })
-              }}>HUMAN pass 종료</Button>
-              <p className="w-full text-sm text-muted-foreground">{humanCardStatus}</p>
+              }} aria-label="HUMAN pass 종료">종료</Button>
               <OpenRunsButton />
             </div>}
             feedItems={humanFeed}
