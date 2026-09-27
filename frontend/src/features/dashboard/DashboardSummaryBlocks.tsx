@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import type { EventRecord, ReviewStatus, Scenario } from "@/lib/api/types"
 import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { cn } from "@/lib/utils"
+import { scenarioTitleParts } from "@/features/scenarios/ScenarioCard"
 import type { PriorityApiRow, SourceCoverageRow } from "./dashboardSelectors"
 
 export interface DashboardSummaryValues {
@@ -99,12 +100,10 @@ export function PriorityApiList({ rows }: { rows: readonly PriorityApiRow[] }) {
 
 const reviewLabels: Record<ReviewStatus, string> = { UNRESOLVED: "검토 전", CONFIRMED: "확인됨", DISMISSED: "기각" }
 
-/** 규칙 후보 목록. 제목의 "후보: 요청" 형식은 두 줄로 나눠 경로가 단어 중간에서 끊기지 않게 한다. */
+/** 규칙 후보 목록. 제목은 이름과 요청 두 줄로 나눈다. */
 export function CandidateList({ scenarios }: { scenarios: readonly Scenario[] }) {
   return <ListCard title="인가 후보" href="#scenarios" linkLabel="시나리오 보기" empty="규칙에 해당하는 후보가 없습니다.">{scenarios.slice(0, 5).map(scenario => {
-    const split = scenario.title.indexOf(": ")
-    const name = split > 0 ? scenario.title.slice(0, split) : scenario.title
-    const target = split > 0 ? scenario.title.slice(split + 2) : ""
+    const { name, target } = scenarioTitleParts(scenario.title)
     return <li key={scenario.id} className="border-t border-border first:border-t-0"><a href="#scenarios" className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
       <span className="rounded border border-candidate-border px-1.5 text-[11px] font-semibold text-candidate">{scenario.risk}</span>
       <span className="min-w-0"><span className="block">{name}</span>{target && <span className="block break-all font-mono text-xs text-muted-foreground">{target}</span>}</span>

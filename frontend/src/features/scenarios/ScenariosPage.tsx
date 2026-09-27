@@ -79,7 +79,7 @@ export function ScenariosPage() {
         {scenarios.length > 0 && (
           <ScenarioWorkspace
             scenarios={scenarios}
-            selectedId={selectedId}
+            selectedId={selectedId ?? scenarios[0].id}
             onSelect={(id) => {
               setSelectedId(id)
               setSelection(null)
