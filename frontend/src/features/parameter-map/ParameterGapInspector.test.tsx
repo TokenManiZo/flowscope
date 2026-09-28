@@ -40,13 +40,15 @@ it("shows the selected input and lists only actual Evidence of that exact operat
 })
 
 it("opens the read-only raw request from a row without sending anything", async () => {
-  const fetch = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json({ eventId: "observed-a", service: demoEndpointKey.service, request: "MASKED-REQUEST", response: "MASKED-RESPONSE", rawRequestRetained: true, rawResponseRetained: true, requestEditable: false, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "observed-a", reusableSession: "none", message: "draft" })))
+  const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json(String(input) === "/api/manual-attempts" ? [] : { eventId: "observed-a", service: demoEndpointKey.service, request: "MASKED-REQUEST", response: "MASKED-RESPONSE", rawRequestRetained: true, rawResponseRetained: true, requestEditable: false, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "observed-a", reusableSession: "none", message: "draft" })))
   vi.stubGlobal("fetch", fetch)
   const { client } = renderWithQueryClient(<ParameterGapInspector {...propsFor(actualSnapshot(["observed-a"]))} />)
   await userEvent.click(screen.getByRole("button", { name: "원문 보기" }))
   expect(await screen.findByLabelText("Request Lab 응답 원문")).toHaveValue("MASKED-RESPONSE")
   expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
-  expect(fetch.mock.calls.map(([input]) => String(input))).toEqual(["/api/request-lab?eventId=observed-a"])
+  // 초안과 검증 이력 조회(GET)만 있고 전송(POST)은 없다.
+  expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=observed-a")
+  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([])
   expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain("MASKED-RESPONSE")
 })
 

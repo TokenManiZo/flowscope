@@ -49,6 +49,8 @@ export interface ReferenceAnalysisWorkspaceProps {
   children: ReactNode
   inspector: ReactNode
   inspectorOpen?: boolean
+  /** 데스크톱에서 선택과 무관하게 상세 패널을 계속 열어 둔다. 캔버스 폭이 바뀌면 다시 그려지며 깜빡이는 그래프 화면용. */
+  inspectorPersistent?: boolean
   inspectorModal?: boolean
   contentOverflow?: "auto" | "hidden"
   inspectorOverflow?: "auto" | "hidden"
@@ -59,13 +61,14 @@ export interface ReferenceAnalysisWorkspaceProps {
   onContextOpenChange?(open: boolean): void
 }
 
-export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorModal = true, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, contextTitle = true, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
+export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorPersistent = false, inspectorModal = true, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, contextTitle = true, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
   const compact = useCompactWorkspace()
   const [isContextOpen, setContextOpen] = useOpenState(contextOpen, onContextOpenChange)
   const [isInspectorOpen, setInspectorOpen] = useOpenState(inspectorOpen, onInspectorOpenChange)
   const workspaceRef = useRef<HTMLElement>(null)
   const [contextCollapsed, setContextCollapsed] = useState(false)
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
+  // 선택을 관리하는 화면(inspectorOpen 전달)은 선택이 없을 때 빈 상세 패널을 접어 표·그래프에 폭을 준다.
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(!inspectorPersistent && inspectorOpen === false)
   const [contextWidth, setContextWidth] = useState(CONTEXT_DEFAULT_WIDTH)
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH)
   const hasContext = context != null
@@ -74,8 +77,8 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
   const contextMax = () => Math.max(CONTEXT_MIN_WIDTH, workspaceWidth() - (hasInspector && !inspectorCollapsed ? inspectorWidth + HANDLE_WIDTH : 0) - CENTER_MIN_WIDTH - HANDLE_WIDTH)
   const inspectorMax = () => Math.max(INSPECTOR_MIN_WIDTH, workspaceWidth() - (hasContext && !contextCollapsed ? contextWidth + HANDLE_WIDTH : 0) - CENTER_MIN_WIDTH - HANDLE_WIDTH)
   useEffect(() => {
-    if (inspectorOpen) setInspectorCollapsed(false)
-  }, [inspectorOpen])
+    if (inspectorOpen !== undefined && !inspectorPersistent) setInspectorCollapsed(!inspectorOpen)
+  }, [inspectorOpen, inspectorPersistent])
   useEffect(() => {
     if (compact || typeof ResizeObserver === "undefined") return
     const observer = new ResizeObserver(() => {

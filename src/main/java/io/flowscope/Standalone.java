@@ -91,6 +91,9 @@ public final class Standalone {
         @Override public List<RunExecutionLedger.Summary> executionSummaries() {
             return executionLedger.summaries();
         }
+        @Override public List<RunExecutionLedger.Attempt> manualAttempts() {
+            return executionLedger.attempts().stream().filter(attempt -> attempt.originEvidenceId() != null).toList();
+        }
         @Override public List<RouteCandidate> routeCandidates() { return routeCandidates; }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() {
             return new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.IDLE, "", "", null, null,

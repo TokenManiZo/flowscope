@@ -25,22 +25,26 @@ function setup() {
   const view = renderWithQueryClient(<RunsPage />)
   return { ...view, fetchStub, goOffline: () => { offline = true } }
 }
-it("shows HUMAN, scanner, and independent LLM Explorer status", async () => {
+it("shows HUMAN, ZAP, and LLM Explorer side by side with plain status words", async () => {
   const { fetchStub } = setup()
-  expect(await screen.findByText("현재 단계 CLIENT_SPIDER · 수집 8건 · Alert 2건")).toBeVisible()
-  expect(screen.getByRole("tab", { name: "LLM" })).toBeVisible()
+  expect(await screen.findByText("8건 · Alert 2건")).toBeVisible()
+  expect(screen.getByText("Client Spider")).toBeVisible()
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+  expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
   expect(fetchStub.mock.calls.every(([path]) => !String(path).includes("llm-run"))).toBe(true)
-  await userEvent.click(screen.getByRole("tab", { name: "LLM" }))
-  expect(screen.getByText("LLM Explorer · IDLE")).toBeVisible()
+  // 서버 원래 값은 배지 title로만 남고 화면에는 한국어 상태가 보인다.
+  expect(screen.getByTitle("RUNNING")).toHaveTextContent("진행 중")
+  expect(screen.getByTitle("IDLE")).toHaveTextContent("대기")
+  expect(screen.queryByText(/NOT_STARTED|IDLE|UNAVAILABLE/)).not.toBeInTheDocument()
   expect(screen.getByRole("button", { name: "LLM 단계 열기" })).toBeVisible()
-  await userEvent.click(screen.getByRole("tab", { name: "HUMAN" }))
-  expect(screen.getByText("HUMAN · NOT_STARTED")).toBeVisible()
+  await userEvent.click(screen.getAllByRole("button", { name: "점검 시작에서 제어" })[0])
+  expect(window.location.hash).toBe("#inspection")
 })
 it("retains the scanner result when polling fails", async () => {
   const { client, goOffline } = setup()
-  await screen.findByText("현재 단계 CLIENT_SPIDER · 수집 8건 · Alert 2건")
+  await screen.findByText("8건 · Alert 2건")
   goOffline()
   await act(async () => { await client.refetchQueries({ queryKey: queryKeys.scannerRun }) })
   await waitFor(() => expect(screen.getByText("마지막 성공 상태를 표시하고 있습니다.")).toBeVisible())
-  expect(screen.getByText("현재 단계 CLIENT_SPIDER · 수집 8건 · Alert 2건")).toBeVisible()
+  expect(screen.getByText("8건 · Alert 2건")).toBeVisible()
 })

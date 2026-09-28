@@ -4,7 +4,8 @@ import { Bot, CircleHelp, Crosshair, Minus, Plus, ScanLine, UserRound } from "lu
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { clampParameterNode, parameterLaneGeometry } from "./parameterLanes"
-import { renderParameterNodeCardSvg } from "./parameterNodeCard"
+import { cardSurface, renderParameterNodeCardSvg, type CardTheme } from "./parameterNodeCard"
+import { useDocumentTheme } from "@/hooks/useTheme"
 import { graphWheelIntent } from "@/features/graph/CytoscapeGraph"
 import { parameterLaneOrder, type ParameterGraphProjection, type ParameterLane, type ParameterMapSelection } from "./parameterProjection"
 
@@ -31,13 +32,13 @@ function relationLabel(edge: ParameterGraphProjection["edges"][number], expanded
     : edge.sourceRole === "GAP_SUBJECT" ? `Gap 주체 ${sourceLabel(edge.sourceLabel, edge.trafficSource)}` : edge.relation === "definition" ? "정의 · 미관측" : edge.relation === "unknown-target" ? "연결 UNKNOWN" : edge.relation === "unknown-input" ? "입력 UNKNOWN" : "관계 근거"
 }
 
-function graphElements(projection: ParameterGraphProjection): ElementDefinition[] {
+function graphElements(projection: ParameterGraphProjection, theme: CardTheme = "dark"): ElementDefinition[] {
   const focus = projection.selection !== undefined
   return [
     ...projection.nodes.map(node => {
-      const cardImage = renderParameterNodeCardSvg(node.card)
+      const cardImage = renderParameterNodeCardSvg(node.card, false, undefined, theme)
       return { data: {
-        id: node.id, cardImage: cardImage.uri, accessibleLabel: node.card.accessibleLabel,
+        id: node.id, cardImage: cardImage.uri, cardColor: cardSurface(theme), accessibleLabel: node.card.accessibleLabel,
         width: cardImage.width, height: cardImage.height, lane: node.lane,
         focused: node.focused ? "yes" : focus ? "no" : "none",
       } }
@@ -70,7 +71,7 @@ function constrain(core: Core, width: number) {
 
 function GapPathList({ projection, onSelect }: Props) {
   return <ol aria-label="Gap 경로 목록" className="space-y-4 p-4">
-    {projection.visibleGapIds.map(gapId => <li key={gapId} className="min-w-0 border-l-2 border-[var(--flowscope-divider)] pl-3">
+    {projection.visibleGapIds.map(gapId => <li key={gapId} className="min-w-0">
       <section aria-label={`Gap 경로 ${gapId}`}>
       <ol className="space-y-2">{projection.nodes.filter(node => node.selection.gapId === gapId).map(node => <li key={node.id}>
         <Button variant="ghost" data-gap-id={gapId} aria-label={node.card.accessibleLabel} aria-pressed={node.focused} className="h-auto w-full justify-start whitespace-normal px-2 py-2 text-left text-sm" onClick={() => onSelect(node.selection)}>
@@ -91,6 +92,7 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
   const hostRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const coreRef = useRef<Core | null>(null)
+  const theme = useDocumentTheme()
   const keyboardNodeRef = useRef<string | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const tooltipNodeRef = useRef<string | null>(null)
@@ -147,7 +149,7 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
     try {
       core = cytoscape({ container: canvasRef.current, elements: [], minZoom: minimumZoom, maxZoom: 2, userZoomingEnabled: false, layout: { name: "preset" },
         style: [
-          { selector: "node", style: { width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", "background-color": "#111418", "border-width": 2, "border-color": "#64748b" } },
+          { selector: "node", style: { width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", "background-color": "data(cardColor)", "border-width": 2, "border-color": "#64748b" } },
           { selector: "edge", style: { label: "data(label)", width: 2, "line-style": "data(line)", "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "curve-style": "bezier", "font-size": 13, color: "#d4d4d8", "text-background-color": "#090b0d", "text-background-opacity": 1, "text-background-padding": "3px", "text-margin-y": -80 } },
           { selector: 'node[focused = "yes"]', style: { "border-color": "#38bdf8", "underlay-color": "#0ea5e9", "underlay-opacity": 0.35, "underlay-padding": 6 } },
           { selector: "node.keyboard-focus", style: { "underlay-color": "#f8fafc", "underlay-opacity": 0.55, "underlay-padding": 9 } },
@@ -228,7 +230,7 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
     keyboardNodeRef.current = null
     const previous = new Map(core.nodes().map(node => [node.id(), { ...node.position() }] as const))
     core.elements().remove()
-    core.add(graphElements(projection))
+    core.add(graphElements(projection, theme))
     let rowY = 110
     for (const gapId of projection.visibleGapIds) {
       let rowHeight = 120
@@ -247,7 +249,7 @@ export function ParameterGapGraph({ projection, onSelect, focusVersion = 0, hidd
       rowY += rowHeight + 72
     }
     correctRef.current?.()
-  }, [projection, fallback, width, dismissCardTooltip])
+  }, [projection, fallback, width, dismissCardTooltip, theme])
 
   // Focus explicit selections, not snapshot refreshes: retain intentional pan during polling.
   const selectedGapId = projection.selection?.gapId
@@ -340,10 +342,10 @@ function LegendHelp() {
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="범례·도움말" onPointerEnter={event => { if (event.pointerType === "mouse") show() }} onPointerLeave={event => { if (event.pointerType === "mouse") hide() }} onFocus={show} onBlur={hide} onClick={event => { if (!["touch", "pen"].includes((event.nativeEvent as PointerEvent).pointerType ?? "")) event.preventDefault() }}><CircleHelp /></Button></PopoverTrigger>
     <PopoverContent align="end" className="w-[min(34rem,85vw)] space-y-3 bg-[var(--flowscope-pane)] p-3 text-muted-foreground" onPointerEnter={show} onPointerLeave={hide} onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()}>
-      <ul aria-label="요청 생성 주체 범례" className="flex flex-wrap gap-x-4 gap-y-2">{([["HUMAN", UserRound, "text-blue-400"], ["SCANNER", ScanLine, "text-red-400"], ["LLM", Bot, "text-zinc-300"]] as const).map(([source, Icon, color]) => <li key={source} className="flex items-center gap-1.5"><Icon aria-hidden="true" className={`size-3.5 ${color}`} />{source}</li>)}</ul>
+      <ul aria-label="요청 생성 주체 범례" className="flex flex-wrap gap-x-4 gap-y-2">{([["HUMAN", UserRound, "text-blue-600 dark:text-blue-400"], ["SCANNER", ScanLine, "text-red-600 dark:text-red-400"], ["LLM", Bot, "text-zinc-700 dark:text-zinc-300"]] as const).map(([source, Icon, color]) => <li key={source} className="flex items-center gap-1.5"><Icon aria-hidden="true" className={`size-3.5 ${color}`} />{source}</li>)}</ul>
       <ul aria-label="관계 선형 범례" className="flex flex-wrap gap-x-5 gap-y-2">{([ ["solid", "실선: 관측·근거", "#a1a1aa"], ["dashed", "주황 파선: 미검증 · Gap", "var(--gap-edge)"], ["dotted", "점선: 정의·불확실 관계", "#a1a1aa"] ] as const).map(([line, label, color]) => <li key={label} className="flex items-center gap-2"><span aria-hidden="true" className="w-7 border-t-2" style={{ borderStyle: line, borderColor: color }} />{label}</li>)}</ul>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1"><dt className="font-medium text-foreground">UNKNOWN</dt><dd>근거 부족으로 아직 알 수 없음</dd><dt className="font-medium text-foreground">INFERRED</dt><dd>정의·연결에서 추론, 실제 관측 아님</dd></dl>
-      <p>Gap은 점검 후보이며 취약점 판정이 아닙니다.</p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1"><dt className="font-medium text-foreground">UNKNOWN</dt><dd>근거 부족으로 아직 알 수 없음</dd><dt className="font-medium text-foreground">INFERRED</dt><dd>추론 (미관측)</dd></dl>
+      <p>Gap = 점검 후보</p>
     </PopoverContent>
   </Popover>
 }

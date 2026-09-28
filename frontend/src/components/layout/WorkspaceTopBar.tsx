@@ -4,11 +4,11 @@ import type { AppRoute } from "@/app/routes"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useHumanRunQuery, useOpenProjectMutation, useProjectsQuery, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
+import { runStatusLabel } from "@/lib/display/runStatus"
 import { NewProjectDialog } from "./NewProjectDialog"
 
 function humanState(active: boolean | undefined, completed: boolean | undefined) {
-  if (active) return "RUNNING"
-  return completed ? "DONE" : "WAITING"
+  return runStatusLabel(active ? "RUNNING" : completed ? "COMPLETED" : "NOT_STARTED")
 }
 
 function queryValue<T>(query: { data: T | undefined; isPending: boolean }, render: (data: T) => string) {
@@ -34,8 +34,8 @@ export function WorkspaceTopBar({ onOpenSidebar }: { route: AppRoute; onOpenSide
   const scopeReady = scopeData !== undefined ? scopeData.length > 0 ? "준비됨" : "미준비" : scopePending ? "불러오는 중" : "확인 불가"
   const liveCapture = queryValue(snapshot, (data) => String(data.trafficStats.captured))
   const humanRun = queryValue(human, (data) => humanState(data.active, data.completed))
-  const zapState = queryValue(zap, (data) => data.state ?? (data.connected ? "READY" : "연결 안 됨"))
-  const scannerState = queryValue(scanner, (data) => data.run.status)
+  const zapState = queryValue(zap, (data) => runStatusLabel(data.state ?? (data.connected ? "READY" : "UNAVAILABLE")))
+  const scannerState = queryValue(scanner, (data) => runStatusLabel(data.run.status))
   const persistenceState = projects.data?.active
     ? projects.data.saveState === "SAVING" ? "저장 중"
       : projects.data.saveState === "PENDING" ? "저장 대기"
@@ -81,6 +81,7 @@ export function WorkspaceTopBar({ onOpenSidebar }: { route: AppRoute; onOpenSide
               disabled={!project.readable || !project.managed}>{project.name}{project.managed ? "" : " · 수동 DB"}</option>)}
           </select>
         </label>
+        {snapshot.data?.sampleMode && <span role="note" aria-label="샘플 데이터" title="HUMAN·SCANNER·LLM 표시는 실제 점검 결과가 아니며 네트워크 요청을 만들지 않습니다." className="shrink-0 rounded-full border border-amber-500/50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">샘플 데이터 · 실제 점검 결과 아님</span>}
         <span title={persistenceTitle} className={`flex shrink-0 items-center gap-1 text-xs ${projects.data?.saveState === "FAILED" ? "text-destructive" : "text-muted-foreground"}`}><Database className="size-3.5" aria-hidden="true" />{persistenceState}</span>
         <NewProjectDialog />
         {projectError && <span role="alert" className="max-w-96 truncate text-xs text-destructive">프로젝트 전환 실패 · {projectError}</span>}

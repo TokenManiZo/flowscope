@@ -64,6 +64,6 @@ export function EvidenceActionList({ events, snapshot, disabled = false }: Props
       </div>
       {messages[event.eventId] && <p role="status" className="text-xs text-muted-foreground">{messages[event.eventId]}</p>}
     </li>)}</ul>
-    {labEvent && <RequestLabDialog key={labContext} open onOpenChange={open => { if (!open) setLabContext(null) }} event={labEvent} sessions={snapshot.managedSessions} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}
+    {labEvent && <RequestLabDialog key={labContext} open onOpenChange={open => { if (!open) setLabContext(null) }} event={labEvent} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}
   </section>
 }

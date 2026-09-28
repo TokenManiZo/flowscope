@@ -89,9 +89,9 @@ it("keeps cached server values authoritative during refetch failures", async () 
   await userEvent.click(screen.getByRole("button", { name: "상태" }))
 
   expect(screen.getByLabelText("LIVE 상태")).toHaveTextContent("7")
-  expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("RUNNING")
-  expect(screen.getByLabelText("ZAP 상태")).toHaveTextContent("READY")
-  expect(screen.getByLabelText("SCANNER 상태")).toHaveTextContent("RUNNING")
+  expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("진행 중")
+  expect(screen.getByLabelText("ZAP 상태")).toHaveTextContent("준비됨")
+  expect(screen.getByLabelText("SCANNER 상태")).toHaveTextContent("진행 중")
   expect(screen.getByLabelText("SCOPE 상태")).toHaveTextContent("https://app.example.test")
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
 })
@@ -137,4 +137,12 @@ it("shows a real persistence failure instead of claiming automatic save", () => 
   expect(screen.getByText("저장 실패")).toBeVisible()
   expect(screen.getByText("저장 실패")).toHaveAttribute("title", "disk full")
   expect(screen.queryByText("자동 저장")).not.toBeInTheDocument()
+})
+
+it("marks sample data in the top bar on every screen instead of a dashboard banner", () => {
+  const { rerender } = render(<WorkspaceTopBar route="graph" />)
+  expect(screen.queryByRole("note", { name: "샘플 데이터" })).not.toBeInTheDocument()
+  queryState.snapshot = { data: { trafficStats: { captured: 7 }, sampleMode: true }, isPending: false, isError: false }
+  rerender(<WorkspaceTopBar route="graph" />)
+  expect(screen.getByRole("note", { name: "샘플 데이터" })).toHaveTextContent("실제 점검 결과 아님")
 })

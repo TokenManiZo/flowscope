@@ -1,8 +1,8 @@
-import { expect, it } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import { actualEvent, demoEndpoint, demoEndpointKey, parameterGap, surfaceSnapshot } from "@/features/parameter-map/parameterMapFixtures"
-import type { AuthorizationMatrix } from "@/lib/api/types"
-import { dashboardCounts, dashboardSummary, hasDashboardData } from "./dashboardSelectors"
+import type { AuthorizationMatrix, Snapshot } from "@/lib/api/types"
+import { dashboardCounts, dashboardSummary, hasDashboardData, openGapCount, priorityApiRows } from "./dashboardSelectors"
 
 it("counts distinct prioritized API coordinates, open unobserved keys, open auth gaps and server review only", () => {
   const base = surfaceSnapshot({
@@ -42,4 +42,17 @@ it("treats declared or observed surface facts as dashboard data without inventin
   expect(hasDashboardData(surfaceSnapshot())).toBe(false)
   expect(hasDashboardData(surfaceSnapshot({ gaps: [parameterGap("source")] }))).toBe(true)
   expect(hasDashboardData(surfaceSnapshot({ endpoints: [demoEndpoint()] }))).toBe(true)
+})
+
+describe("priorityApiRows", () => {
+  it("groups prioritized open gaps by API, strongest reason first, then by gap count", () => {
+    const gap = (method: string, path: string, reasons: string[], status = "OPEN") => ({ status, priorityReasons: reasons, endpoint: { service: "https://a.test:443", method, pathTemplate: path } })
+    const snapshot = { surface: { parameterGaps: [
+      gap("GET", "/orders/{id}", ["AUTH_VARIANT_UNTESTED"]), gap("GET", "/orders/{id}", ["AUTH_VARIANT_UNTESTED"]),
+      gap("PATCH", "/orders/{id}", ["AUTH_VARIANT_UNTESTED", "WRITE_METHOD"]),
+      gap("GET", "/posts/{id}", ["AUTH_VARIANT_UNTESTED"]), gap("GET", "/closed", ["WRITE_METHOD"], "RESOLVED"), gap("GET", "/plain", []),
+    ] } } as unknown as Snapshot
+    expect(priorityApiRows(snapshot).map(row => `${row.method} ${row.path} ${row.gapCount}`)).toEqual(["PATCH /orders/{id} 1", "GET /orders/{id} 2", "GET /posts/{id} 1"])
+    expect(openGapCount(snapshot)).toBe(5)
+  })
 })

@@ -49,6 +49,11 @@ describe("relationship graph node cards", () => {
     expect(card.accessibleLabel).toContain("orders/{id}")
   })
 
+  it("shows a publicly readable object as Public instead of its stored owner", () => {
+    const resource = node("resource", "orders:101", { owner: "USER A", publicRead: true })
+    expect(relationshipNodeCard(resource, projection([resource])).footer).toBe("owner: Public")
+  })
+
   it("never infers a resource owner from the requesting identity", () => {
     const resource = node("resource", "orders:404", { owner: null, selection: { ...selection(["ev-owner-unknown"]), identity: "USER A", resource: "orders:404" } })
     const card = relationshipNodeCard(resource, projection([resource]))

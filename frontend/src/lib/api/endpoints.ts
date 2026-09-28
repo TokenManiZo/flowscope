@@ -6,6 +6,7 @@ import type {
   EvidencePage,
   HumanRun,
   ImportXmlResult,
+  ManualAttempt,
   ReplayResult,
   AuthorizationReplayResult,
   RequestLabDraft,
@@ -37,7 +38,9 @@ export const draftAuthorizationReplay = (itemId: string) =>
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
-  postForm<RequestLabResult>("/api/request-lab", { action: "send", ...values }, undefined, signal)
+  // 서버는 operationId로 같은 전송의 중복 실행을 막는다. 누르기마다 새 값을 쓴다.
+  postForm<RequestLabResult>("/api/request-lab", { action: "send", operationId: crypto.randomUUID(), ...values }, undefined, signal)
+export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly ManualAttempt[]>("/api/manual-attempts", formSignal(signal))
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
 const confirmedDatasetReplacement = async <T>(request: Promise<T>): Promise<T> => {
@@ -60,6 +63,8 @@ export const loadSample = () => confirmedDatasetReplacement(postForm<ApiSuccess>
 export const saveRole = (identity: string, role: string) => postForm<ApiSuccess>("/api/role", { identity, role })
 export const saveRequirement = (operation: string, role: string) => postForm<ApiSuccess>("/api/requirement", { operation, role })
 export const saveResourcePolicy = (target: string, policy: string) => postForm<ApiSuccess>("/api/resource-policy", { target, policy })
+/** 이 API로 이 객체를 다룰 때만 적용하는 정책(예: 이 객체 조회만 공개). 키는 서버가 만든다. */
+export const saveOperationObjectPolicy = (operation: string, resource: string, policy: string) => postForm<ApiSuccess>("/api/resource-policy", { operation, resource, policy })
 export const saveReview = (itemId: string, status: ReviewStatus, note: string) => postForm<ApiSuccess>("/api/review", { itemId, status, note })
 export const saveTrafficOverride = (operation: string, value: string) => postForm<ApiSuccess>("/api/traffic-override", { operation, value })
 export const mergeIdentity = (from: string, into: string) => postForm<ApiSuccess>("/api/identity-merge", { from, into })

@@ -32,6 +32,9 @@ public final class RequestRecord {
     public String replayBasisIdentity;
     public String replayBasisEvidenceId;
     public String evidenceId;     // 관측을 역참조하는 안정 ID(Pipeline 이 부여하고 프로젝트 파일에 보존)
+    /** Original Evidence for an explicitly requested HUMAN validation; never request text or credentials. */
+    public String originEvidenceId;
+    public long durationMillis;
     public String contentDigest;  // 응답·출처까지 포함한 관측 내용 SHA-256. 변경 감지용
     public AuthState authState = AuthState.UNRESOLVED;
     public TrafficClassification trafficClassification = TrafficClassification.unresolved("NOT_CLASSIFIED");
@@ -97,6 +100,8 @@ public final class RequestRecord {
         copy.replayBasisIdentity = replayBasisIdentity;
         copy.replayBasisEvidenceId = replayBasisEvidenceId;
         copy.evidenceId = evidenceId;
+        copy.originEvidenceId = originEvidenceId;
+        copy.durationMillis = durationMillis;
         copy.contentDigest = contentDigest;
         copy.authState = authState;
         copy.trafficClassification = trafficClassification;

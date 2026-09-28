@@ -1,0 +1,10 @@
+import { expect, it } from "vitest"
+
+import { canonicalHash, routeFromHash } from "./routes"
+
+it("keeps the Evidence review alias in the address so the page can open its review tab", () => {
+  expect(routeFromHash("#evidence-review")).toBe("evidence")
+  expect(canonicalHash("#evidence-review")).toBe("#evidence-review")
+  expect(canonicalHash("#parameter-map")).toBe("#graph")
+  expect(canonicalHash("#nope")).toBe("#home")
+})

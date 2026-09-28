@@ -70,11 +70,18 @@ const STATE_LABEL: Record<LiveReplaySnapshot["state"], string> = {
 };
 
 const STATUS_LABEL: Record<ReplayAccount["status"], string> = {
-  ACTIVE: "ACTIVE",
-  SUSPECT: "SUSPECT",
-  UNVERIFIED: "UNVERIFIED",
-  CONFLICT: "CONFLICT",
+  ACTIVE: "활성",
+  SUSPECT: "의심",
+  UNVERIFIED: "미확인",
+  CONFLICT: "충돌",
 };
+
+/** 고를 수 없는 계정의 이유. 상태 값 대신 사용자가 해야 할 일을 짧게 말한다. */
+function unavailableReason(account: ReplayAccount): string {
+  if (account.credentialConflict) return "자격 충돌";
+  if (account.status !== "ACTIVE") return "세션 없음";
+  return "세션 확인 필요";
+}
 
 const BASIS_SOURCES: Array<{
   id: LiveReplayBasisSource;
@@ -117,6 +124,7 @@ export function LiveAuthorizationReplayCard({
   const [acknowledged, setAcknowledged] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -131,11 +139,10 @@ export function LiveAuthorizationReplayCard({
       const next = await apiClient.getSnapshot();
       if (mounted.current) {
         setSnapshot(next);
+        setLoadFailed(false);
       }
     } catch {
-      if (mounted.current) {
-        setError("실행 상태를 불러올 수 없습니다.");
-      }
+      if (mounted.current) setLoadFailed(true);
     }
   }, [apiClient]);
 
@@ -170,6 +177,11 @@ export function LiveAuthorizationReplayCard({
     (effectiveSelection.length > 0 || includeAnonymous) &&
     !pending &&
     state === "STOPPED";
+  // 시작 버튼이 꺼져 있을 때 무엇이 빠졌는지 한 줄로 알려 준다.
+  const startHint = pending || state !== "STOPPED" ? null
+    : basisSources.length === 0 ? "기준 요청 출처를 1개 이상 선택하세요."
+      : effectiveSelection.length === 0 && !includeAnonymous ? "대상 신원을 1개 이상 선택하세요."
+        : !acknowledged ? "3번 안전 재전송을 허용하세요." : null;
 
   const toggleSource = (source: LiveReplayBasisSource) => {
     setBasisSources((current) =>
@@ -281,9 +293,17 @@ export function LiveAuthorizationReplayCard({
             </fieldset>
 
             <fieldset className="space-y-2">
-              <legend className="mb-2 text-xs font-medium text-muted-foreground">
-                2. 교차 검증 대상 신원
-              </legend>
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                <legend className="text-xs font-medium text-muted-foreground">
+                  2. 교차 검증 대상 신원
+                </legend>
+                {selectable.length < accounts.length && (
+                  <span className="text-xs text-muted-foreground">
+                    사용 가능 {selectable.length} / {accounts.length} ·{" "}
+                    <a href="#accounts" className="text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground">계정·세션에서 세션 캡처 →</a>
+                  </span>
+                )}
+              </div>
               <ul className="space-y-2">
                 {accounts.map((account) => {
                   const enabled = isAccountSelectable(account);
@@ -314,18 +334,14 @@ export function LiveAuthorizationReplayCard({
                         <span className="font-mono text-xs text-muted-foreground">
                           {account.role}
                         </span>
-                        <Badge
-                          variant={
-                            account.status === "ACTIVE" ? "outline" : "secondary"
-                          }
-                          className="font-mono text-[10px]"
-                        >
-                          {STATUS_LABEL[account.status]}
-                        </Badge>
-                        {account.credentialConflict && (
-                          <span className="flex items-center gap-1 font-mono text-[10px] text-destructive">
-                            <CircleSlash className="size-3" aria-hidden="true" />
-                            자격 충돌
+                        {enabled ? (
+                          <Badge variant="outline" className="text-[10px]" title={account.status}>
+                            {STATUS_LABEL[account.status]}
+                          </Badge>
+                        ) : (
+                          <span className={cn("flex items-center gap-1 text-xs", account.credentialConflict ? "text-destructive" : "text-muted-foreground")} title={account.status}>
+                            {account.credentialConflict && <CircleSlash className="size-3" aria-hidden="true" />}
+                            {unavailableReason(account)}
                           </span>
                         )}
                       </label>
@@ -348,15 +364,15 @@ export function LiveAuthorizationReplayCard({
 
             <fieldset className="space-y-2">
               <legend className="text-xs font-medium text-muted-foreground">3. 안전 재전송 승인</legend>
-              <label className="flex cursor-pointer items-start gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5">
+              <label className={cn("flex cursor-pointer items-center gap-3 rounded-md border bg-muted/30 px-3 py-2.5 hover:bg-muted/60", acknowledged ? "border-border" : "border-border/60")}>
               <Checkbox
                 checked={acknowledged}
                 onCheckedChange={(value) => setAcknowledged(value === true)}
                 aria-label="안전 자동 재전송을 허용합니다."
-                className="mt-0.5"
                 disabled={pending || isRunning}
               />
-              <span className="text-sm">GET/HEAD 안전 자동 재전송을 허용합니다.</span>
+              <span className="flex-1 text-sm">GET/HEAD 안전 자동 재전송을 허용합니다.</span>
+              <span className={cn("text-xs", acknowledged ? "font-medium text-foreground" : "text-muted-foreground")}>{acknowledged ? "켜짐" : "꺼짐"}</span>
               </label>
             </fieldset>
 
@@ -367,6 +383,7 @@ export function LiveAuthorizationReplayCard({
                 )}
                 라이브 검증 시작
               </Button>
+              {startHint && <span className="text-xs text-muted-foreground">{startHint}</span>}
             </div>
           </>
         )}
@@ -427,6 +444,12 @@ export function LiveAuthorizationReplayCard({
           초안으로만 생성됩니다.
         </p>
 
+        {loadFailed && (
+          <p role="alert" className="text-xs text-destructive">
+            실행 상태를 불러오지 못했습니다.{" "}
+            <button type="button" className="underline underline-offset-4" onClick={() => void refresh()}>다시 시도</button>
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-xs text-destructive">
             {error}

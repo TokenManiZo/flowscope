@@ -48,7 +48,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "resource") {
-    const owner = "owner" in node ? node.owner ?? "UNKNOWN" : "UNKNOWN"
+    const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? node.owner ?? "UNKNOWN" : "UNKNOWN"
     return {
       kind: "target", badge: "RESOURCE", title: node.label, detail: "", footer: `owner: ${owner}`, icon: "box",
       accessibleLabel: `${node.label}; Resource; verdict ${node.verdictText}; owner: ${owner}; ${evidenceFooter(node)}`,

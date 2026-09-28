@@ -82,7 +82,7 @@ export const rawTokenClass: Record<RawTokenKind, string> = {
   value: "text-syntax-value",
   string: "text-syntax-string",
   number: "text-syntax-number",
-  method: "font-semibold text-syntax-method",
+  method: "text-syntax-method",
   status: "text-syntax-string",
-  mask: "font-semibold text-syntax-mask",
+  mask: "text-syntax-mask",
 }

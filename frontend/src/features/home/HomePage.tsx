@@ -1,4 +1,4 @@
-import { CheckCircle2, Play, ScanSearch } from "lucide-react"
+import { Play } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
@@ -30,20 +30,14 @@ export function HomePage({ snapshot }: HomePageProps) {
   const isEmpty = state.observationEvidenceCount === 0
 
   return (
-    <div className="min-w-0 space-y-7 p-4 sm:p-6">
+    // 대시보드 본문(DashboardPage)이 자기 여백을 갖는다. 시작 박스도 같은 여백 안에 둬야 좌우 가장자리가 맞는다.
+    <div className="min-w-0">
       {isEmpty ? (
-        <section
+        <div className="px-4 pt-4 sm:px-6 sm:pt-6"><section
           aria-labelledby="home-hero-title"
-          className="relative overflow-hidden rounded-lg border border-emerald-400/30 bg-card px-5 py-7 sm:px-8 sm:py-9"
+          className="rounded-lg border border-border bg-card px-5 py-7 sm:px-8 sm:py-9"
         >
-          <div aria-hidden="true" className="absolute inset-y-0 start-0 w-1 bg-emerald-400" />
           <div className="max-w-2xl">
-            <span
-              aria-hidden="true"
-              className="mb-4 grid size-10 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300"
-            >
-              <ScanSearch className="size-5" />
-            </span>
             <h1 id="home-hero-title" className="text-2xl font-semibold sm:text-3xl">
               점검을 시작하세요
             </h1>
@@ -57,33 +51,8 @@ export function HomePage({ snapshot }: HomePageProps) {
               </Button>
             </div>
           </div>
-        </section>
-      ) : (
-        <section
-          aria-label="최근 점검 상태"
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4"
-        >
-          <div className="flex items-center gap-3">
-            <span
-              aria-hidden="true"
-              className="grid size-8 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300"
-            >
-              <CheckCircle2 className="size-4" />
-            </span>
-            <div>
-              <p className="text-sm font-medium">
-                {state.phase === "running" ? "점검 진행 중" : "관측 근거 수집됨"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                관측 근거 {state.observationEvidenceCount.toLocaleString("ko-KR")}건
-              </p>
-            </div>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => { window.location.hash = "#runs" }}>
-            실행 상태
-          </Button>
-        </section>
-      )}
+        </section></div>
+      ) : null}
 
       <DashboardPage />
     </div>

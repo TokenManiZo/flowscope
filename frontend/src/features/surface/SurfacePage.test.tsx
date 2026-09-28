@@ -49,7 +49,7 @@ it("recomputes source deltas and exposes controlled-request failure quality with
 
   render(<AppProviders><SurfacePage /></AppProviders>)
 
-  expect(screen.getByText("실제 응답 있음 · 두 source")).toBeVisible()
+  expect(screen.getByTitle("실제 응답 있음 · 두 source")).toBeVisible()
   expect(screen.getByText(/LLM 실행 · ALL_FAILED/)).toBeVisible()
   expect(screen.getByText(/시도 3 · 응답 0 · 실패 3 · TLS_FAILURE 3/)).toBeVisible()
   await userEvent.setup().click(screen.getByRole("checkbox", { name: "L · LLM" }))

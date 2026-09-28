@@ -69,7 +69,7 @@ export function ImportXmlDialog({ importFile, afterImport }: Props) {
       <DialogContent aria-describedby="xml-import-description">
         <DialogHeader>
           <DialogTitle>XML 가져오기</DialogTitle>
-          <DialogDescription id="xml-import-description">파일마다 별도 요청으로 처리하며 XML 전문은 저장하지 않습니다.</DialogDescription>
+          <DialogDescription id="xml-import-description">XML 원문은 저장하지 않습니다.</DialogDescription>
         </DialogHeader>
         <label className="grid gap-1" htmlFor="xml-source">가져올 소스
           <select id="xml-source" aria-label="가져올 소스" value={source} onChange={(event) => setSource(event.target.value as ImportSource)} disabled={active}>

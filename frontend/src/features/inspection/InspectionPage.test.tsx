@@ -125,12 +125,14 @@ describe("unified inspection hub", () => {
     const user = userEvent.setup()
     renderInspection()
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
-    expect(screen.getByRole("tab", { name: /HUMAN/ })).toHaveAttribute("data-state", "active")
+    expect(await screen.findByRole("tab", { name: /HUMAN.*현재 단계/ })).toHaveAttribute("data-state", "active")
+    expect(screen.queryByRole("button", { name: "현재 단계로" })).not.toBeInTheDocument()
+    expect(screen.queryByText(/단계 번호는 완료율이 아닙니다/)).not.toBeInTheDocument()
     await user.click(screen.getByRole("tab", { name: /LLM/ }))
-    expect(screen.getByText("Codex 준비를 확인한 뒤 LLM 탐색을 실행하세요.")).toBeVisible()
+    expect(screen.getByRole("tab", { name: /LLM/ })).toHaveAttribute("data-state", "active")
     await user.click(screen.getByRole("button", { name: "현재 단계로" }))
-    expect(screen.getAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")[0]).toBeVisible()
+    expect(screen.getByRole("tab", { name: /HUMAN/ })).toHaveAttribute("data-state", "active")
+    expect(screen.queryByRole("button", { name: "현재 단계로" })).not.toBeInTheDocument()
   })
 
   it("sends exact HUMAN begin and current-run end forms without offering observed or inactive credentials", async () => {
@@ -153,11 +155,11 @@ describe("unified inspection hub", () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection()
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
     await user.click(screen.getByRole("option", { name: "활성 계정" }))
     await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
-    await user.click(screen.getByRole("option", { name: "비로그인 pass" }))
+    await user.click(screen.getByRole("option", { name: "비로그인" }))
     await user.click(screen.getByRole("button", { name: "HUMAN pass 시작" }))
     await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/human-run" && (init as RequestInit).body?.toString() === "action=begin&account=")).toBe(true))
   })
@@ -166,7 +168,7 @@ describe("unified inspection hub", () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection()
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     const start = screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })
     expect(start).toBeDisabled()
@@ -185,7 +187,7 @@ describe("unified inspection hub", () => {
       scope: [target], accounts: [],
     } })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
     await user.click(screen.getByRole("button", { name: "ZAP 검사 취소" }))
@@ -202,7 +204,7 @@ describe("unified inspection hub", () => {
         : { status: "RUNNING", stage: "CLEANUP", activity_state: "CLEANING_UP", stage_elapsed_seconds: 3 },
       scope: [target], accounts: [],
     }) })
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
     expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
@@ -216,7 +218,7 @@ describe("unified inspection hub", () => {
   it("preserves optional API definitions when starting a ZAP campaign", async () => {
     const user = userEvent.setup()
     const completed = renderInspection()
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
     await user.click(screen.getByText("명세 기반 탐색 추가 (선택)"))
@@ -231,7 +233,7 @@ describe("unified inspection hub", () => {
     const account = { id: "zap-a", label: "ZAP A", role: "USER", service: "https://demo.flowscope.test:443", loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true, hasLoggedInIndicator: false, hasLoggedOutIndicator: false }
     const { fetchStub } = renderInspection({ scannerAccounts: [account] })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     await user.click(screen.getByRole("button", { name: "임시 계정 생성" }))
     await user.type(screen.getByLabelText("계정 이름"), "새 계정")
@@ -270,7 +272,7 @@ describe("unified inspection hub", () => {
       accounts: [], scope: [target],
     } })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
 
     expect(screen.getAllByText(/ZAP 브라우저 로그인 · 현재 단계 11초 \/ 최대 2분 0초/)[0]).toBeVisible()
@@ -286,7 +288,7 @@ describe("unified inspection hub", () => {
       scannerPollError: { status: 503, message: "ZAP 통신이 끊겼습니다." },
     })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     expect(await within(await screen.findByRole("group", { name: "ZAP 기준선 실행 상태" })).findByText("9 / -")).toBeVisible()
     const query = client.getQueryCache().find({ queryKey: queryKeys.scannerRun })
@@ -305,10 +307,10 @@ describe("unified inspection hub", () => {
       ],
     })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /LLM/ }))
     await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.humanRun }) })
-    await screen.findByText("연결된 ZAP으로 범위 안의 신원별 기준선을 실행하세요.")
+    await screen.findByRole("tab", { name: /ZAP.*현재 단계/ })
 
     expect(screen.getByRole("tab", { name: /LLM/ })).toHaveAttribute("data-state", "active")
     await user.click(screen.getByRole("button", { name: "현재 단계로" }))
@@ -321,7 +323,7 @@ describe("unified inspection hub", () => {
     let currentScope = [target]
     const { client } = renderInspection({ scanner: () => ({ run: { status: "NOT_STARTED" }, scope: currentScope }) })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
     expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeEnabled()
@@ -335,7 +337,7 @@ describe("unified inspection hub", () => {
     const user = userEvent.setup()
     renderInspection({ zap: { connected: false, state: "DISCONNECTED", message: "ZAP 연결 대기" } })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
 
@@ -355,7 +357,7 @@ describe("unified inspection hub", () => {
       ],
     })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
     expect(await screen.findByRole("option", { name: "사용 가능 계정" })).toBeVisible()
     expect(screen.queryByRole("option", { name: "캡처 중 계정" })).not.toBeInTheDocument()
@@ -388,7 +390,7 @@ describe("unified inspection hub", () => {
       scannerPost: { status: 503, message: "ZAP 기준선을 시작할 수 없습니다." },
     })
 
-    await screen.findAllByText("HUMAN pass를 시작해 실제 브라우저 탐색을 기록하세요.")
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /ZAP/ }))
     expect(await within(await screen.findByRole("group", { name: "ZAP 기준선 실행 상태" })).findByText("9 / -")).toBeVisible()
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
@@ -401,7 +403,7 @@ describe("unified inspection hub", () => {
   it.each([
     ["불러오는 중", { humanPending: true }],
     ["상태 확인 필요", { humanError: { message: "HUMAN 상태를 읽을 수 없습니다.", status: 503 } }],
-  ])("keeps HUMAN %s in the status tiles and inline control status when the initial query has no data", async (expected, options) => {
+  ])("keeps HUMAN %s in the status tile without repeating it under the controls when the initial query has no data", async (expected, options) => {
     renderInspection(options)
 
     await waitFor(
@@ -410,7 +412,7 @@ describe("unified inspection hub", () => {
     )
     const humanPanel = screen.getByRole("tabpanel", { name: /HUMAN/ })
     expect(within(humanPanel).getByRole("button", { name: "HUMAN pass 시작" })).toBeDisabled()
-    expect(within(humanPanel).getByText(`HUMAN 상태 · ${expected}`)).toBeVisible()
+    expect(within(humanPanel).queryByText(`HUMAN 상태 · ${expected}`)).not.toBeInTheDocument()
     expect(screen.queryByText("NOT_STARTED · HUMAN pass 대기")).not.toBeInTheDocument()
   })
 

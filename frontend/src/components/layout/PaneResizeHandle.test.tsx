@@ -60,3 +60,13 @@ it("uses the visible edge control to collapse without a native tooltip", async (
   await userEvent.click(button)
   expect(onCollapse).toHaveBeenCalledOnce()
 })
+
+it("keeps the toggle button clickable across its whole area and draws no colored boundary", () => {
+  render(<PaneResizeHandle side="right" label="선택 상세" width={368} min={288} max={500} onWidthChange={vi.fn()} onCollapse={vi.fn()} />)
+  const toggle = screen.getByRole("button", { name: "선택 상세 패널 접기" })
+  // Button의 active:translate-y-px가 translate 가운데 정렬을 덮으면 누르는 순간 버튼이 튀어 클릭이 사라진다.
+  expect(toggle.className).not.toMatch(/-translate-[xy]-1\/2/)
+  const handle = toggle.parentElement as HTMLElement
+  expect(handle.className).not.toMatch(/emerald/)
+  expect(screen.getByRole("separator", { name: "선택 상세 너비 조절" })).toHaveClass("cursor-col-resize", "inset-0")
+})

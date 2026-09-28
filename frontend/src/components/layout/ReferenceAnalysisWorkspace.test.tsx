@@ -129,3 +129,15 @@ it("uses exact Sheet descriptions and restores focus to compact triggers after c
   await user.click(within(contextDialog).getByRole("button", { name: "Close" }))
   expect(contextTrigger).toHaveFocus()
 })
+
+it("keeps a persistent desktop inspector open when the selection clears, so the canvas width never changes", () => {
+  setViewport(1440)
+  const tree = (open: boolean, persistent: boolean) => <ReferenceAnalysisWorkspace ariaLabel="그래프" context={null} inspector={<p>요약</p>} inspectorOpen={open} inspectorPersistent={persistent}><p>캔버스</p></ReferenceAnalysisWorkspace>
+  const { rerender } = render(tree(false, true))
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
+  rerender(tree(true, true))
+  rerender(tree(false, true))
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
+  rerender(tree(false, false))
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+})

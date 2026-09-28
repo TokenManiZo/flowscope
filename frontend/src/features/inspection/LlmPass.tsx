@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { runStatusLabel } from "@/lib/display/runStatus"
 import {
   useExplorerControlMutation,
   useExplorerRunQuery,
@@ -110,7 +111,7 @@ export function LlmPass({ target }: { target: string }) {
     label="LLM"
     title="LLM 탐색"
     statusTiles={[
-      { label: "상태", value: run?.status ?? "불러오는 중" },
+      { label: "상태", value: run ? runStatusLabel(run.status) : "불러오는 중" },
       { label: "소요 시간", value: formatElapsed(run?.elapsedMillis ?? 0), mono: true },
       { label: "HTTP 시도 / 응답", value: `${run?.attempts ?? 0} / ${run?.responses ?? 0}` },
       { label: "선언 Endpoint / Parameter", value: `${run?.endpointDeclarations ?? 0} / ${run?.parameterDeclarations ?? 0}` },

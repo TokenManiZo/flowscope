@@ -360,7 +360,7 @@ it("reserves stroke shapes for relationship meanings, not source attribution", a
     expect(marker).not.toHaveClass("border-t-2")
   }
   expect(screen.getByRole("list", { name: "관계 선형 범례" })).toHaveTextContent("실선")
-  expect(screen.getByText("Gap은 점검 후보이며 취약점 판정이 아닙니다.")).toBeVisible()
+  expect(screen.getByText("Gap = 점검 후보")).toBeVisible()
   await userEvent.unhover(screen.getByRole("button", { name: "범례·도움말" }))
   await waitFor(() => expect(screen.queryByRole("list", { name: "요청 생성 주체 범례" })).not.toBeInTheDocument())
 })

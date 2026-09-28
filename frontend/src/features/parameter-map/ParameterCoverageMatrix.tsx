@@ -9,11 +9,11 @@ import type { ProjectedValidationCell } from "./parameterProjection"
 
 const columns = [["SELF", "자기 값"], ["OTHER_OWNER", "타인 값"], ["ANONYMOUS", "미인증"], ["OTHER_ROLE", "다른 역할"]] as const
 const states = {
-  ALLOW: { icon: Check, label: "허용", color: "text-emerald-300" },
-  DENY: { icon: X, label: "거부", color: "text-blue-300" },
-  SUSPICIOUS: { icon: ShieldAlert, label: "의심 · 확정 아님", color: "text-red-300" },
-  UNDECIDED: { icon: CircleHelp, label: "판정 보류", color: "text-amber-300" },
-  UNTESTED: { icon: Clock, label: "미검증", color: "text-orange-300" },
+  ALLOW: { icon: Check, label: "허용", color: "text-emerald-700 dark:text-emerald-300" },
+  DENY: { icon: X, label: "거부", color: "text-blue-700 dark:text-blue-300" },
+  SUSPICIOUS: { icon: ShieldAlert, label: "의심", color: "text-red-700 dark:text-red-300" },
+  UNDECIDED: { icon: CircleHelp, label: "판정 보류", color: "text-amber-700 dark:text-amber-300" },
+  UNTESTED: { icon: Clock, label: "미검증", color: "text-orange-700 dark:text-orange-300" },
   NOT_APPLICABLE: { icon: CircleMinus, label: "적용 불가", color: "text-muted-foreground" },
 }
 export function validationCellState(cell: ProjectedValidationCell) { return cell.applicable ? cell.verdict : "NOT_APPLICABLE" }
@@ -37,7 +37,7 @@ export function ParameterCoverageMatrix({ cells, onSelect }: { cells: readonly P
   }
   return <section aria-label="선택 입력 검증 근거" className="min-w-0 space-y-3">
     <Tabs value={mode} onValueChange={setMode}><TabsList aria-label="파라미터 행 기준"><TabsTrigger value="source">H / S / L</TabsTrigger><TabsTrigger value="identity">신원 / 역할</TabsTrigger></TabsList></Tabs>
-    <p className="text-xs text-muted-foreground">생성 주체와 신원은 별개입니다. 빈 칸은 서버 좌표 없음이며 미검증 판정을 만들지 않습니다.</p>
+    <p className="text-xs text-muted-foreground">빈 칸 = 서버 좌표 없음</p>
     <div role="region" aria-label="파라미터 커버리지 표" tabIndex={0} className="max-h-[36rem] min-w-0 max-w-full overflow-auto overscroll-contain rounded-md border">
       <Table containerClassName="w-max min-w-full overflow-visible" className="min-w-[48rem]">
         <TableHeader><TableRow><TableHead className="sticky left-0 bg-background">{mode === "source" ? "요청 생성 주체" : "신원 / 역할"}</TableHead>{columns.map(([key, label]) => <TableHead key={key}>{label}</TableHead>)}</TableRow></TableHeader>

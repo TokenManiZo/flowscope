@@ -483,7 +483,7 @@ final class SessionBrokerTest {
         // The operator pastes USER B's credential directly. Even with USER A's residual cookie present
         // (same-browser sequential login), the explicit path has no cross-account block, so it succeeds.
         AccountProfile b = new AccountProfile("acct-b", "USER B", "https://api.test:443", AccessRole.USER);
-        broker.registerAssertedSession(b, "sess_a=aaa; sess_b=bbb", "Bearer btoken", Instant.ofEpochSecond(1));
+        broker.registerAssertedSession(b, "sess_a=aaa; sess_b=zzz-secret", "Bearer btoken", Instant.ofEpochSecond(1));
 
         SessionBroker.SessionView view = broker.viewForAccount("acct-b").orElseThrow();
         assertEquals(SessionBroker.Status.ACTIVE, view.status());
@@ -493,7 +493,8 @@ final class SessionBrokerTest {
                 Instant.ofEpochSecond(2)).get("Authorization"));
         // Raw material never appears in the safe view, and account A's slot is untouched.
         assertFalse(broker.views().toString().contains("btoken"));
-        assertFalse(broker.views().toString().contains("bbb"));
+        // 세션 handle은 무작위 UUID(16진수)라 16진수 문자만으로 된 값은 우연히 겹칠 수 있다. 16진수 밖의 값으로 검사한다.
+        assertFalse(broker.views().toString().contains("zzz-secret"));
         assertEquals(SessionBroker.Status.ACTIVE, broker.viewForAccount("acct-a").orElseThrow().status());
     }
 

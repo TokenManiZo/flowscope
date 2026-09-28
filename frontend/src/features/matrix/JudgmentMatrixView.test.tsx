@@ -195,7 +195,7 @@ it("filters attention rows with a separate switch and clears a selection whose s
   await user.click(screen.getByRole("button", { name: "기대 허용 관측: A · GET /api/admin/export" }))
   current = { ...snapshot, revision: 5, authorizationMatrix: { ...matrix, functions: [matrix.functions[1]] } }
   rerender(<JudgmentMatrixView />)
-  await waitFor(() => expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("판정 셀을 선택하세요."))
+  await waitFor(() => expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument())
 })
 
 it("marks confirmed cells red and keeps gap replay and review actions available", async () => {
@@ -285,7 +285,7 @@ it("retains the selected cell and unsaved review note while snapshot actions are
   rerender(<JudgmentMatrixView />)
   expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
   expect(screen.getByLabelText("검증 메모")).toBeDisabled()
-  expect(screen.getByText("마지막 성공 데이터 · 현재 상태 아님")).toBeVisible()
+  expect(screen.getByText("마지막으로 불러온 데이터를 표시하고 있습니다.")).toBeVisible()
   expect(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" })).toBeDisabled()
   await user.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
   expect(refetchSnapshot).toHaveBeenCalledOnce()
@@ -302,7 +302,12 @@ it("offers required-role and identity-role assignment on a P0 cell through the e
   current = { ...snapshot, authorizationMatrix: { ...matrix, identities: [...matrix.identities, observed], functions: [...matrix.functions, unknownPolicy] } }
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  await user.click(within(table).getByRole("button", { name: "정책 미정: C · GET /api/admin/export" }))
+  // 판단할 것 없는 흔한 상태는 짧은 회색 글자로만 보이고 서버 문구는 이름·툴팁에 남는다.
+  const quiet = within(table).getByRole("button", { name: "정책 미정: C · GET /api/admin/export" })
+  expect(quiet).toHaveTextContent(/^정책 미정$/)
+  expect(quiet).toHaveAttribute("title", "정책 미정")
+  expect(quiet).toHaveClass("text-muted-foreground")
+  await user.click(quiet)
   const assignment = screen.getByRole("region", { name: "정책·역할 지정" })
   await user.selectOptions(within(assignment).getByRole("combobox", { name: "필수 역할" }), "ADMIN")
   await user.click(within(assignment).getByRole("button", { name: "필수 역할 저장" }))

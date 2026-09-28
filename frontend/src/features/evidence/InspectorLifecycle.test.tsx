@@ -11,7 +11,9 @@ import { loadSample, openProject, resetProjectTraffic, startProject } from "@/li
 
 const event: EventRecord = { eventId: "first", op: "GET /orders/{id}", resource: "order:1", idn: "alice", source: "human", method: "GET", path: "/orders/1", status: 200, fp: "fp", role: "USER", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "first", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["first"], objects: [], verdict: "allow" }
 const second = { ...event, eventId: "second", op: "PATCH /profiles/{id}", resource: "profile:2", clusterEvidenceIds: ["second"] }
-const snapshot = targetSnapshot({ events: [event, second], requiredRoles: { [event.op]: "USER", [second.op]: "ADMIN" }, owners: { "order:1": "alice", "profile:2": "bob" } })
+// 소유자는 계정·세션에 등록한 같은 서비스 계정 중에서만 고른다. 테스트 op의 서비스 자리는 method다.
+const account = (id: string, target: string) => ({ id, label: id, role: "USER", target, color: "", authArtifactCount: 0 })
+const snapshot = targetSnapshot({ events: [event, second], accounts: [account("alice", "GET"), account("bob", "GET"), account("carol", "GET"), account("dave", "PATCH")], requiredRoles: { [event.op]: "USER", [second.op]: "ADMIN" }, owners: { "order:1": "alice", "profile:2": "dave" }, ownerOverrides: { "order:1": "alice", "profile:2": "dave" } })
 const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } })
 const draft = { eventId: "first", service: "https://api.example.test", request: "GET /original HTTP/1.1", response: "original response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "NONE", message: "draft" }
 afterEach(() => vi.unstubAllGlobals())
@@ -32,23 +34,22 @@ it.each(["evidence"] as const)("isolates %s policy values, submit targets and la
   const view = mount(kind)
   await userEvent.clear(screen.getByLabelText("필수 역할"))
   await userEvent.type(screen.getByLabelText("필수 역할"), "OLD-ROLE")
-  await userEvent.clear(screen.getByLabelText("리소스 소유자"))
-  await userEvent.type(screen.getByLabelText("리소스 소유자"), "OLD-OWNER")
+  await userEvent.selectOptions(screen.getByLabelText("리소스 소유자"), "carol")
   await userEvent.selectOptions(screen.getByLabelText("트래픽 재정의"), "EXCLUDE")
   await userEvent.click(screen.getByRole("button", { name: "필수 역할 저장" }))
   view.change(second)
   expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
-  expect(screen.getByLabelText("리소스 소유자")).toHaveValue("bob")
+  expect(screen.getByLabelText("리소스 소유자")).toHaveValue("dave")
   expect(screen.getByLabelText("트래픽 재정의")).toHaveValue("AUTO")
   await act(async () => finish(new Response(JSON.stringify({ success: false, message: "old context failure" }), { status: 400 })))
   expect(screen.queryByText("old context failure")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "소유자 저장" }))
   await userEvent.click(screen.getByRole("button", { name: "트래픽 정책 저장" }))
   const bodies = fetch.mock.calls.map(([, init]) => String(init?.body))
-  expect(bodies).toContain("resource=profile%3A2&identity=bob")
+  expect(bodies).toContain("resource=profile%3A2&identity=dave")
   expect(bodies).toContain("operation=PATCH+%2Fprofiles%2F%7Bid%7D&value=AUTO")
   expect(bodies).toContain("operation=GET+%2Forders%2F%7Bid%7D&role=OLD-ROLE")
-  expect(bodies.join(" ")).not.toContain("OLD-OWNER")
+  expect(bodies.join(" ")).not.toContain("identity=carol")
 })
 
 it("does not invalidate the new policy editor when an old-context save succeeds late", async () => {
@@ -73,17 +74,16 @@ it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions 
   const invalidate = vi.spyOn(view.client, "invalidateQueries")
   await userEvent.clear(screen.getByLabelText("필수 역할"))
   await userEvent.type(screen.getByLabelText("필수 역할"), "OLD-ROLE")
-  await userEvent.clear(screen.getByLabelText("리소스 소유자"))
-  await userEvent.type(screen.getByLabelText("리소스 소유자"), "OLD-OWNER")
+  await userEvent.selectOptions(screen.getByLabelText("리소스 소유자"), "carol")
   await userEvent.selectOptions(screen.getByLabelText("트래픽 재정의"), "EXCLUDE")
 
   view.change(event, { ...snapshot, revision: 2, datasetRevision: 1 })
   expect(screen.getByLabelText("필수 역할")).toHaveValue("OLD-ROLE")
-  expect(screen.getByLabelText("리소스 소유자")).toHaveValue("OLD-OWNER")
+  expect(screen.getByLabelText("리소스 소유자")).toHaveValue("carol")
   expect(screen.getByLabelText("트래픽 재정의")).toHaveValue("EXCLUDE")
   await userEvent.click(screen.getByRole("button", { name: "필수 역할 저장" }))
 
-  view.change(event, { ...snapshot, revision: 3, datasetRevision: 2, requiredRoles: { [event.op]: "ADMIN" }, owners: { [event.resource!]: "bob" } })
+  view.change(event, { ...snapshot, revision: 3, datasetRevision: 2, requiredRoles: { [event.op]: "ADMIN" }, owners: { [event.resource!]: "bob" }, ownerOverrides: { [event.resource!]: "bob" } })
   expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
   expect(screen.getByLabelText("리소스 소유자")).toHaveValue("bob")
   expect(screen.getByLabelText("트래픽 재정의")).toHaveValue("AUTO")
