@@ -16,6 +16,7 @@ import { durationLabel, runStatusLabel, scannerStageLabel } from "@/lib/display/
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
 import { AccountSettingsSheet } from "@/features/accounts/account-settings/AccountSettingsSheet"
 import { createAccountSettingsAdapter } from "@/features/accounts/account-settings/accountSettingsAdapter"
+import { HumanRequestFeed } from "./HumanRequestFeed"
 
 /** 점검 시작 허브의 소스 스텝. 범위는 상단 표시로 대체했다. */
 export type InspectionStep = "human" | "scanner" | "llm" | "review"
@@ -203,8 +204,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             </div>}
             feedItems={humanFeed}
             feedTitle="작업 피드"
-            feedDescription="HUMAN pass 중 Burp proxy history로 기록된 요청이 순서대로 표시됩니다."
             emptyHint="HUMAN pass를 시작하면 기록된 요청이 여기에 표시됩니다."
+            feedContent={<HumanRequestFeed items={humanFeed} description="HUMAN pass 중 Burp proxy history로 기록된 요청이 순서대로 표시됩니다." emptyHint="HUMAN pass를 시작하면 기록된 요청이 여기에 표시됩니다." />}
           />
         </TabsContent>
 

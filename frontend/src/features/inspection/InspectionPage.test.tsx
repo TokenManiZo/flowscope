@@ -6,6 +6,7 @@ import { InspectionPage } from "./InspectionPage"
 import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
 import { snapshotFixture } from "@/test/fixtures"
 import { queryKeys } from "@/lib/query/hooks"
+import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
 
 const target = "https://demo.flowscope.test"
 
@@ -25,7 +26,7 @@ function response(body: unknown, status = 200) {
 
 type PollResponse = unknown | readonly unknown[] | ((read: number) => unknown)
 
-function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; zap?: unknown; scanner?: PollResponse; scannerAccounts?: readonly unknown[]; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; managedSessions?: readonly unknown[]; explorer?: unknown } = {}) {
+function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; humanEvents?: readonly unknown[]; requestDraft?: unknown; zap?: unknown; scanner?: PollResponse; scannerAccounts?: readonly unknown[]; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; managedSessions?: readonly unknown[]; explorer?: unknown } = {}) {
   let humanReads = 0
   let scannerReads = 0
   const next = (value: PollResponse | undefined, reads: number, fallback: unknown) => typeof value === "function" ? value(reads) : Array.isArray(value) ? value[Math.min(reads, value.length - 1)] : value ?? fallback
@@ -33,6 +34,7 @@ function installTransport(options: { human?: PollResponse; humanPending?: boolea
     if (path === "/api/snapshot") {
       return Promise.resolve(response({
         ...snapshotFixture,
+        events: options.humanEvents ?? [],
         accounts: [{ id: "active-account", label: "활성 계정", role: "USER", target, color: "", authArtifactCount: 1 }],
         sessions: [{ fingerprint: "observed-secret", idn: "관측 신원", accountId: null, artifactKind: "COOKIE", evidence: "e-1", confidence: "LOW", firstSeen: 0, lastSeen: 0, registered: false, service: target }],
         managedSessions: options.managedSessions ?? [
@@ -46,6 +48,12 @@ function installTransport(options: { human?: PollResponse; humanPending?: boolea
       if (options.humanError) return Promise.resolve(response({ success: false, message: options.humanError.message }, options.humanError.status))
       return Promise.resolve(response(next(options.human, humanReads++, { active: false, completed: false, runId: "", accountId: "", proxy: "http://127.0.0.1:8080" })))
     }
+    if (path.startsWith("/api/request-lab?")) return Promise.resolve(response(options.requestDraft ?? {
+      eventId: "event-human-1", service: target, request: null, response: null,
+      rawRequestRetained: false, rawResponseRetained: false, requestEditable: false,
+      requestCharset: null, responseCharset: null, observedIdentity: "관측 신원",
+      reusableSession: "", message: "원문 보존 안 됨",
+    }))
     if (path === "/api/zap-status") return Promise.resolve(response(options.zap ?? { connected: true, state: "READY", message: "ZAP 연결됨" }))
     if (path === "/api/explorer-run") return Promise.resolve(response(options.explorer ?? explorerIdle))
     if (path === "/api/scanner-run") {
@@ -110,6 +118,54 @@ afterAll(() => {
 })
 
 describe("unified inspection hub", () => {
+  const humanEvent = {
+    eventId: "event-human-1", method: "POST", path: "/api/orders", status: 201,
+    fp: "not-rendered", idn: "alice", role: "USER", source: "human", op: "POST /api/orders",
+    resource: null, timestamp: 10, sourceDetail: "BURP", orchestrator: "human", tool: "burp",
+    phase: "OBSERVED", executionTrust: "OBSERVED", runId: "human-run", authState: "AUTHENTICATED",
+    trafficClass: "API", trafficDisposition: "INCLUDED", coverageEligible: true,
+    classificationOverride: false, classificationReasons: [], pathTemplateStatus: "RESOLVED",
+    pathTemplateReasons: [], clusterId: "cluster-1", repeatCount: 1, firstSeen: 10, lastSeen: 10,
+    objects: [], verdict: "undecided",
+  }
+
+  it("filters and collapses the bounded HUMAN request feed without loading raw data", async () => {
+    const user = userEvent.setup()
+    const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }] })
+    await screen.findByRole("button", { name: /POST \/api\/orders alice HTTP 201 원문 보기/ })
+    expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
+    await user.type(screen.getByLabelText("HUMAN 작업 피드 검색"), "bob")
+    expect(screen.getByRole("button", { name: /GET \/api\/profile bob HTTP 403 원문 보기/ })).toBeVisible()
+    expect(screen.queryByRole("button", { name: /POST \/api\/orders/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "작업 피드 접기" }))
+    expect(screen.queryByRole("button", { name: /GET \/api\/profile/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "작업 피드 펼치기" })).toBeVisible()
+  })
+
+  it("loads masked raw data only on row click and clears it when closed or the dataset changes", async () => {
+    const user = userEvent.setup()
+    const maskedRequest = "POST /api/orders HTTP/1.1\nAuthorization: ***MASKED***"
+    const { client, fetchStub } = renderInspection({ humanEvents: [humanEvent], requestDraft: {
+      eventId: humanEvent.eventId, service: target, request: maskedRequest, response: null,
+      rawRequestRetained: true, rawResponseRetained: false, requestEditable: false,
+      requestCharset: "UTF-8", responseCharset: null, observedIdentity: "alice",
+      reusableSession: "", message: "응답 원문은 보존되지 않았습니다.",
+    } })
+    expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
+    await user.click(await screen.findByRole("button", { name: /POST \/api\/orders alice HTTP 201 원문 보기/ }))
+    expect(await screen.findByLabelText("요청 원문")).toHaveTextContent("Authorization: ***MASKED***")
+    expect(screen.getByLabelText("응답 원문 패널")).toHaveTextContent("이 원문은 보존되지 않아 사용할 수 없습니다.")
+    expect(within(screen.getByRole("dialog")).getByText("alice")).toBeVisible()
+    expect(screen.queryByRole("button", { name: /전송|Repeater|편집/ })).not.toBeInTheDocument()
+    expect(client.getQueryCache().findAll().some((query) => JSON.stringify(query.queryKey).includes("request-lab"))).toBe(false)
+    await user.click(screen.getByRole("button", { name: "닫기" }))
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /POST \/api\/orders alice HTTP 201 원문 보기/ }))
+    await screen.findByLabelText("요청 원문")
+    expect(fetchStub.mock.calls.filter(([path]) => String(path).startsWith("/api/request-lab?")).length).toBe(2)
+    window.dispatchEvent(new Event(DATASET_REPLACING))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  })
   it("shows the read-only scope strip instead of a scope step and a filter rail", async () => {
     renderInspection()
 

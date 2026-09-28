@@ -4,6 +4,7 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { ObservedSession } from "@/lib/api/types";
 import { BasicAccountTab } from "./BasicAccountTab";
 import { HumanAccountTab } from "./HumanAccountTab";
 import { LlmAccountTab } from "./LlmAccountTab";
@@ -31,9 +32,11 @@ export interface AccountSettingsSheetProps {
   accountId: string | null; adapter: AccountSettingsAdapter; open: boolean; zapRuntimeAvailable?: boolean;
   onOpenChange: (open: boolean) => void; onDeleted?: (accountId: string) => void;
   onSaved?: (settings: AccountSettings) => void;
+  observedSessions?: readonly ObservedSession[];
+  onMergeIdentity?: (values: { from: string; into: string }) => Promise<unknown>;
 }
 
-export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, onDeleted, onSaved, zapRuntimeAvailable = false }: AccountSettingsSheetProps) {
+export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, onDeleted, onSaved, observedSessions = [], onMergeIdentity, zapRuntimeAvailable = false }: AccountSettingsSheetProps) {
   const [settings, setSettings] = useState<AccountSettings | null>(null);
   const [draft, setDraft] = useState<AccountSettingsDraft | null>(null);
   const [zapPassword, setZapPassword] = useState("");
@@ -42,7 +45,9 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [tab, setTab] = useState("basic");
-  const resetLocal = useCallback(() => { setZapPassword(""); setLlmPassword(""); setError(null); }, []);
+  const [identity, setIdentity] = useState("__none__");
+  const [mergePending, setMergePending] = useState(false);
+  const resetLocal = useCallback(() => { setZapPassword(""); setLlmPassword(""); setIdentity("__none__"); setError(null); }, []);
 
   useEffect(() => {
     if (!open || !accountId) { setSettings(null); setDraft(null); resetLocal(); return; }
@@ -97,12 +102,19 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
       setZapPassword(""); setLlmPassword(""); onSaved?.(next); return next;
     });
   };
+  const handleMergeIdentity = async () => {
+    if (!settings || !onMergeIdentity || identity === "__none__") return;
+    setMergePending(true); setError(null);
+    try { await onMergeIdentity({ from: identity, into: settings.id }); setIdentity("__none__"); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "관측 신원을 연결할 수 없습니다."); }
+    finally { setMergePending(false); }
+  };
 
   return <>
     <Sheet open={open} onOpenChange={requestClose}><SheetContent side="right" className="flex w-full max-w-none flex-col gap-0 overflow-hidden p-0 lg:max-w-3xl" aria-label={`${settings?.label ?? "등록 계정"} 계정 설정`}>
       <header className="space-y-2 border-b border-border px-4 py-4"><h2 className="text-lg font-semibold">{settings?.label ?? "등록 계정"} 계정 설정</h2>{settings && <><p className="font-mono text-xs text-muted-foreground">{settings.role} · {settings.target}</p><div className="flex flex-wrap items-center gap-2"><StatusBadge meta={HUMAN_STATUS_META[settings.human.status]} /><StatusBadge meta={VERIFICATION_META[settings.human.verificationSource]} />{settings.human.credentialConflict && <ConflictBadge />}</div></>}</header>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{!settings || !draft ? <p className="text-sm text-muted-foreground">{error ?? "계정 설정을 불러오는 중…"}</p> : <Tabs value={tab} onValueChange={setTab}><TabsList className="grid w-full grid-cols-4"><TabsTrigger value="basic">기본 정보</TabsTrigger><TabsTrigger value="human">HUMAN</TabsTrigger><TabsTrigger value="zap">ZAP</TabsTrigger><TabsTrigger value="llm">LLM</TabsTrigger></TabsList>
-        <BasicAccountTab settings={settings} draft={draft} patch={patch} targetError={targetError} pending={pending} onDelete={() => run(async () => { await adapter.deleteAccount(settings.id); onDeleted?.(settings.id); resetLocal(); onOpenChange(false); })} />
+        <BasicAccountTab settings={settings} draft={draft} patch={patch} targetError={targetError} pending={pending} observedSessions={observedSessions} identity={identity} onIdentityChange={setIdentity} onMergeIdentity={onMergeIdentity ? handleMergeIdentity : undefined} mergePending={mergePending} onDelete={() => run(async () => { await adapter.deleteAccount(settings.id); onDeleted?.(settings.id); resetLocal(); onOpenChange(false); })} />
         <HumanAccountTab settings={settings} draft={draft} patch={patch} pathError={pathError} markError={markError} pending={pending} run={run} adapter={adapter} />
         <ZapAccountTab settings={settings} draft={draft} patch={patch} password={zapPassword} setPassword={setZapPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={zapCredentialsMissing} runtimeAvailable={zapRuntimeAvailable} onGoToHumanTab={() => setTab("human")} />
         <LlmAccountTab settings={settings} draft={draft} patch={patch} password={llmPassword} setPassword={setLlmPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={llmCredentialsMissing} />
