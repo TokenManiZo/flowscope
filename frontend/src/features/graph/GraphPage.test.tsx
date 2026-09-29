@@ -78,14 +78,14 @@ it("reconciles retained aggregate coordinates and Evidence IDs after two current
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
-  await userEvent.click(screen.getByRole("button", { name: "USER A" }))
+  await userEvent.click(screen.getByRole("row", { name: /^GET \/api\/orders\/\{id\}/ }))
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...fixture, revision: 2, cells: [survivor] }
   rerender(<GraphPage />)
   expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("orders:202")
   expect(screen.getByRole("complementary", { name: "선택 작업" })).not.toHaveTextContent("orders:101")
 }, 15_000)
 
-it("navigates Site→Group→API→Object and back without leaking objects into overview", async () => {
+it("navigates Site→Group and selects API and Object in the list without leaving the group", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("900"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [hierarchyCell] }
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
@@ -97,18 +97,18 @@ it("navigates Site→Group→API→Object and back without leaking objects into 
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
   expect(within(breadcrumb).getByRole("button", { name: "Site Overview" })).toBeVisible()
   expect(screen.queryByText("orders:101")).not.toBeInTheDocument()
+  // 목록 표에서 API를 눌러도 화면은 그룹에 머물고 선택만 바뀐다. 객체는 객체 칩으로 줄 아래에 펼친다.
   await userEvent.click(screen.getByRole("row", { name: /^GET \/api\/orders\/\{id\}/ }))
-  expect(within(breadcrumb).getByText("GET /api/orders/{id}")).toHaveAttribute("aria-current", "page")
-  expect(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" })).toBeVisible()
+  expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
   expect(breadcrumb).not.toHaveTextContent("https://api.example.test")
-  await userEvent.click(screen.getByRole("button", { name: /^orders:101/ }))
+  await userEvent.click(screen.getByRole("button", { name: /^orders 객체 1개 펼치기/ }))
+  await userEvent.click(screen.getByRole("row", { name: "orders:101" }))
   expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/Evidence|연결된 Evidence가 없습니다/)).toBeVisible()
   expect(screen.queryByText("cell-evidence-not-an-event")).not.toBeInTheDocument()
-  await userEvent.click(within(breadcrumb).getByRole("button", { name: "ORDERS APIs" }))
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
 }, 15_000)
 
-it("requires explicit 18-item expansion for APIs and Objects and retains group paging on Back", async () => {
+it("requires explicit 18-item expansion for APIs and retains group paging on Back", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("900"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const cells = Array.from({ length: 19 }, (_, index) => ({ ...hierarchyCell, op: `GET /api/orders/${String(index + 1).padStart(2, "0")}`, resource: `orders:${String(index + 1).padStart(2, "0")}` }))
   cells.push(...Array.from({ length: 18 }, (_, index) => ({ ...hierarchyCell, op: "GET /api/orders/01", resource: `orders:${String(index + 20).padStart(2, "0")}` })))
@@ -125,11 +125,9 @@ it("requires explicit 18-item expansion for APIs and Objects and retains group p
   }
   await openAllOrders()
   expect(screen.getByRole("row", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("row", { name: /^GET \/api\/orders\/01/ }))
-  expect(screen.queryByRole("button", { name: /^orders:37/ })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: /객체 18개 더 보기/ }))
-  expect(screen.getByRole("button", { name: /^orders:37/ })).toBeVisible()
-  await userEvent.click(within(screen.getByRole("navigation", { name: "그래프 계층" })).getByRole("button", { name: "ORDERS APIs" }))
+  // 목록에서는 API로 들어가지 않으므로, 사이트로 나갔다가 뒤로 돌아와도 그룹 페이지 수가 유지되는지 본다.
+  await userEvent.click(within(screen.getByRole("navigation", { name: "그래프 계층" })).getByRole("button", { name: "Site Overview" }))
+  await userEvent.click(screen.getByRole("button", { name: "뒤로" }))
   await openAllOrders()
   expect(screen.getByRole("row", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
 })
@@ -165,8 +163,8 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   expect(screen.queryByTestId("cytoscape-graph")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   expect(screen.getByRole("row", { name: /^GET \/orders\/\{id\}/ })).toBeVisible()
-  await userEvent.click(screen.getByRole("row", { name: /^GET \/orders\/\{id\}/ }))
-  await userEvent.click(screen.getByRole("button", { name: /^order:1/ }))
+  await userEvent.click(screen.getByRole("button", { name: /^order 객체 1개 펼치기/ }))
+  await userEvent.click(screen.getByRole("row", { name: "order:1" }))
   await userEvent.click(screen.getByRole("button", { name: "그래프 보기" }))
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
   act(() => { media.matches = true; listeners.forEach((listener) => listener(new Event("change"))) })
@@ -174,7 +172,8 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   const compactInspector = screen.getByRole("dialog", { name: "선택 상세" })
   await userEvent.click(within(compactInspector).getByRole("button", { name: "Close" }))
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "선택 상세" })).not.toBeInTheDocument())
-  expect(screen.getByRole("button", { name: /^order:1/ })).toBeVisible()
+  // 목록이 다시 그려지면 객체 목록은 접힌 상태로 돌아온다.
+  expect(screen.getByRole("button", { name: /^order 객체 1개 펼치기/ })).toBeVisible()
   act(() => { media.matches = false; listeners.forEach((listener) => listener(new Event("change"))) })
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
 }, 15_000)
@@ -191,8 +190,9 @@ it.each([900, 600])("owns compact inspector state independently, opens it on sel
   expect(emptyInspector).toHaveTextContent("현재 보기")
   await userEvent.click(within(emptyInspector).getByRole("button", { name: "Close" }))
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
-  await userEvent.click(screen.getByRole("row", { name: /^GET \/orders\/\{id\}/ }))
-  await userEvent.click(screen.getByRole("button", { name: /^order:1/ }))
+  // 좁은 화면에서는 선택하면 상세 대화상자가 열리므로, 객체 목록을 먼저 펼친 뒤 객체를 고른다.
+  await userEvent.click(screen.getByRole("button", { name: /^order 객체 1개 펼치기/ }))
+  await userEvent.click(screen.getByRole("row", { name: "order:1" }))
   const inspector = screen.getByRole("dialog", { name: "선택 상세" })
   expect(inspector).toBeVisible()
   expect(screen.queryByRole("button", { name: "축소" })).not.toBeInTheDocument()

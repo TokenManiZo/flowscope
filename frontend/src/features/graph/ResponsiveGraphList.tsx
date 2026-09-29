@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button"
-import type { EventRecord } from "@/lib/api/types"
+import type { Snapshot } from "@/lib/api/types"
 import { ApiListTable } from "./ApiListTable"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
-import type { GraphProjection, GraphSelection } from "./graphProjection"
+import { graphCellSelection, type GraphProjection, type GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { relationshipNodeCard } from "./relationshipNodeCard"
 
@@ -19,14 +19,13 @@ function CompactNodeCard({ badge, title, detail, footer, meta = [] }: { badge: s
   </span>
 }
 
-export function ResponsiveGraphList({ projection, events, onSelect, onNavigate }: { projection: GraphProjection | HierarchyProjection; events?: readonly EventRecord[]; onSelect(selection: GraphSelection, elementId?: string): void; onNavigate?(node: HierarchyNode): void }) {
+export function ResponsiveGraphList({ projection, snapshot, selectedId = null, onSelect, onNavigate }: { projection: GraphProjection | HierarchyProjection; snapshot?: Pick<Snapshot, "events" | "cells" | "owners">; selectedId?: string | null; onSelect(selection: GraphSelection, elementId?: string): void; onNavigate?(node: HierarchyNode): void }) {
   const hierarchy = "kind" in projection ? projection : null
   const items = hierarchy?.kind === "operation" ? hierarchy.listItems.filter(item => !item.selection.resource || hierarchy.resources.some(resource => resource.selection.resource === item.selection.resource)) : projection.listItems
   return <section className="grid gap-2" aria-label="공격면 API 목록">
-    {hierarchy && hierarchy.kind !== "site" && <div className="flex flex-wrap gap-2" aria-label="Identity focus">{hierarchy.identities.map(node => <Button variant="outline" key={node.id} onClick={() => onSelect(node.selection, node.id)}>{node.label}</Button>)}</div>}
-    {/* 그룹 화면의 API는 표로 보여준다(경로 형식 묶음). 요청 기록이 없으면 카드로 둔다. */}
-    {hierarchy?.kind === "group" && events && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation")} events={events} onOpen={node => onNavigate?.(node)} />}
-    {!(hierarchy?.kind === "group" && events) && items.map((item) => {
+    {/* 그룹 화면의 API는 표로 보여준다(경로 형식 묶음). 줄을 누르면 화면을 옮기지 않고 선택만 한다. 요청 기록이 없으면 카드로 둔다. */}
+    {hierarchy?.kind === "group" && snapshot && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation")} snapshot={snapshot} selectedId={selectedId} onSelectApi={node => onSelect(node.selection, node.id)} onSelectObject={(resource, cells) => { if (cells.length) onSelect(graphCellSelection(cells), `resource:${resource}`) }} />}
+    {!(hierarchy?.kind === "group" && snapshot) && items.map((item) => {
       if (hierarchy && item.kind === "api-group") {
         const group = hierarchy.groups.find(group => group.id === (item as HierarchyNode).groupId)
         const card = relationshipNodeCard(item, hierarchy)
