@@ -165,6 +165,20 @@ class RouteCandidateExtractorTest {
     }
 
     @Test
+    void 과거_UNKNOWN_외부_자산은_API_선언의_출처로_승격하지않는다() {
+        RequestRecord script = new RequestRecord(Source.UNKNOWN, "https://cdn.test:443",
+                "GET", "/main.js", 200, "anon");
+        script.hasResponse = true;
+        script.responseContentType = "application/javascript";
+        script.body = "fetch('/api/private')";
+        script.supportingPageUrl = "https://app.test:443/";
+        Pipeline.Result result = Pipeline.run(List.of(script));
+
+        assertTrue(RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of()).isEmpty());
+    }
+
+    @Test
     void 실제_관측_operation과_미응답_SiteMap후보를_분리하고_분석수를_오염시키지_않는다() {
         RequestRecord observed = new RequestRecord(Source.HUMAN, "https://app.test:443",
                 "GET", "/app/api/orders/1", 200, "anon");

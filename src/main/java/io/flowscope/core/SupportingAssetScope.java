@@ -30,7 +30,8 @@ public final class SupportingAssetScope {
 
     public synchronized List<String> observeHtml(Source source, String runId, Predicate<String> scope,
                                                  String pageUrl, String body) {
-        if (scope == null || !scope.test(pageUrl) || body == null || body.isBlank()) return List.of();
+        if (source == null || source == Source.UNKNOWN || scope == null || !scope.test(pageUrl)
+                || body == null || body.isBlank()) return List.of();
         String page = documentUrl(pageUrl);
         if (page == null) return List.of();
         Document html = Jsoup.parse(body, pageUrl);
@@ -53,7 +54,7 @@ public final class SupportingAssetScope {
 
     public synchronized List<String> observeJavascript(Source source, String runId, Predicate<String> scope,
                                                        String scriptUrl, String pageUrl, String body) {
-        if (scope == null || pageUrl == null || !scope.test(pageUrl)
+        if (source == null || source == Source.UNKNOWN || scope == null || pageUrl == null || !scope.test(pageUrl)
                 || scriptUrl == null || body == null || body.isBlank()) return List.of();
         String page = documentUrl(pageUrl);
         if (page == null) return List.of();
@@ -70,7 +71,8 @@ public final class SupportingAssetScope {
     /** Returns the original document URL only for a passive resource in the same run. */
     public synchronized String pageUrlFor(Source source, String runId, Predicate<String> scope, String method,
                                              String url, String referrer, String fetchDestination) {
-        if (scope == null || scope.test(url) || (!"GET".equalsIgnoreCase(method)
+        if (source == null || source == Source.UNKNOWN || scope == null || scope.test(url)
+                || (!"GET".equalsIgnoreCase(method)
                 && !"HEAD".equalsIgnoreCase(method))) return null;
         String assetOrigin = origin(url);
         if (assetOrigin == null) return null;

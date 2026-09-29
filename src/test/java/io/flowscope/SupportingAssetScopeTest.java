@@ -72,4 +72,13 @@ final class SupportingAssetScopeTest {
         assertEquals("https://shop.example.test:443/", assets.pageUrlFor(Source.LLM, "llm-js",
                 scope::allows, "GET", "https://cdn.example.test/js/main.js.map", null, ""));
     }
+
+    @Test
+    void unknownSourceCannotStorePageLinkedExternalAssets() {
+        assertTrue(assets.observeHtml(Source.UNKNOWN, "live-unknown", scope::allows,
+                "https://shop.example.test/", "<script src='https://cdn.example.test/main.js'></script>")
+                .isEmpty());
+        assertNull(assets.pageUrlFor(Source.UNKNOWN, "live-unknown", scope::allows, "GET",
+                "https://cdn.example.test/main.js", "https://shop.example.test/", "script"));
+    }
 }

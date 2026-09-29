@@ -64,7 +64,8 @@ public final class RouteCandidateExtractor {
         for (RequestRecord record : safeRecords) {
             if (!record.hasResponse) continue;
             boolean inScope = scope.allows(record.service + record.path);
-            boolean supportingScript = !inScope && record.supportingPageUrl != null
+            boolean supportingScript = !inScope && record.source != Source.UNKNOWN
+                    && record.supportingPageUrl != null
                     && scope.allows(record.supportingPageUrl)
                     && JAVASCRIPT_ADAPTER.supports(RouteDiscoveryDocument.from(record));
             if (!inScope && !supportingScript) continue;

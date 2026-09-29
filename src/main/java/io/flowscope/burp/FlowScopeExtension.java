@@ -152,14 +152,22 @@ public final class FlowScopeExtension implements BurpExtension {
 
         synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
                                          RunContextRegistry.Context humanRun) {
-            return resolve(listenerInterface, target, scope, humanRun, null);
+            return resolve(listenerInterface, target, scope, humanRun, null, false);
         }
 
         synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
                                          RunContextRegistry.Context humanRun, String captureHandle) {
+            return resolve(listenerInterface, target, scope, humanRun, captureHandle, false);
+        }
+
+        synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
+                                         RunContextRegistry.Context humanRun, String captureHandle,
+                                         boolean supportingHumanAsset) {
             int observedPort = listenerPort(listenerInterface);
             PortProfile explicit = configured.get(observedPort);
             if (explicit != null && explicit.source() != Source.HUMAN) return explicit;
+            if (supportingHumanAsset && humanRun != null && humanRun.runId().equals(runId)
+                    && (port == observedPort || configuredHumanPort == observedPort)) return HUMAN;
             boolean inScope = scope != null && scope.allows(target) && observedPort > 0;
             if (humanRun != null && humanRun.phase() == RunPhase.EXPLORATION && inScope) {
                 sessionCapturePort = -1;
@@ -561,8 +569,14 @@ public final class FlowScopeExtension implements BurpExtension {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
             String loginCaptureHandle = sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null);
+            RunContextRegistry.Context humanRun = runContexts.current(Source.HUMAN);
+            boolean linkedHumanAsset = humanRun != null
+                    && humanListeners.boundPort(humanRun.runId()) == listenerPort(request.listenerInterface())
+                    && supportingAssets.pageUrlFor(Source.HUMAN, humanRun.runId(), scope::allows,
+                    request.method(), request.url(), request.headerValue("Referer"),
+                    request.headerValue("Sec-Fetch-Dest")) != null;
             PortProfile profile = humanListeners.resolve(request.listenerInterface(), request.url(), scope,
-                    runContexts.current(Source.HUMAN), loginCaptureHandle);
+                    humanRun, loginCaptureHandle, linkedHumanAsset);
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
             try {
                 RunContextRegistry.Context context = runContexts.current(profile.source());
