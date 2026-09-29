@@ -187,6 +187,9 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
               { label: "신원", value: human.data?.active ? human.data.accountId || "비로그인" : "대기" },
               { label: "Proxy", value: human.data?.proxy || "확인 전", mono: true },
             ]}
+            notices={human.data?.otherListenerRequests ? <Alert><AlertDescription>
+              현재 HUMAN 리스너와 다른 포트 {human.data.otherListenerPort}에서 범위 내 요청 {human.data.otherListenerRequests}건이 관측됐습니다. 해당 요청은 HUMAN run에 합치지 않았습니다.
+            </AlertDescription></Alert> : undefined}
             control={<div className="flex flex-wrap items-end gap-2">
               <Select value={humanAccount} onValueChange={setHumanAccount} disabled={!humanCanStart}>
                 <SelectTrigger id="human-account" aria-label="HUMAN pass 계정"><SelectValue placeholder="비로그인" /></SelectTrigger>

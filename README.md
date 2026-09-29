@@ -72,7 +72,7 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 ### 처음 한 번만 준비
 
 1. [GitHub Releases](https://github.com/choewonwoo1817/testflowscope/releases)에서 `flowscope-1.2.0-beta.49-bundle.zip`을 받아 압축을 풀고, bundle 루트의 JAR을 Burp **Extensions → Installed → Add → Java**에서 불러옵니다. ZAP을 쓰지 않으면 JAR만 받아도 됩니다. 해당 자산이 아직 없으면 저장소의 beta.48 소스를 clone한 뒤 아래 소스 빌드 절차로 만듭니다.
-2. Burp **Settings → Tools → Proxy → Proxy listeners**에 HUMAN용 `127.0.0.1:8080`을 만들고, ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다. Docker Desktop은 이 loopback 경로를 사용합니다. native Linux Docker Engine에서는 Docker bridge IP에만 `8081` listener를 하나 더 추가해야 합니다. listener가 없으면 ZAP 캠페인은 시작 전에 "listener … is closed"로 즉시 실패합니다.
+2. Burp **Settings → Tools → Proxy → Proxy listeners**에서 Burp Browser가 사용할 프록시 리스너 하나가 실행 중인지 확인합니다. HUMAN pass는 그 리스너에서 처음 들어온 범위 내 요청에 연결되므로 `8080`을 따로 만들 필요는 없습니다. ZAP을 사용할 때만 SCANNER용 `127.0.0.1:8081`을 추가합니다. Docker Desktop은 이 loopback 경로를 사용합니다. native Linux Docker Engine에서는 Docker bridge IP에만 `8081` listener를 하나 더 추가해야 합니다. listener가 없으면 ZAP 캠페인은 시작 전에 "listener … is closed"로 즉시 실패합니다.
 3. ZAP 기준선을 실행할 때는 압축을 푼 bundle 루트에서 macOS/Linux `./scripts/zap-up.sh`, Windows PowerShell 7 `.\scripts\zap-up.ps1`을 실행합니다. helper가 Chromium·ChromeDriver가 포함된 FlowScope ZAP 이미지를 자동 빌드·기동합니다. HUMAN/Explorer만 쓰면 이 단계가 필요 없습니다. 중지했다면 다음 점검 전에 `zap-up`만 다시 실행하면 됩니다. Burp는 호스트에서 실행합니다.
 
 4. 사용할 기능에 맞는 환경만 확인합니다.
@@ -119,13 +119,15 @@ FlowScope는 블랙박스 공격면 전체를 알 수 없으므로 오해를 만
 
 처음 실행하는 사용자는 위 **5분 시작**만 따르면 됩니다. 아래 내용은 세션·수집·판정이 어떤 조건에서 유효한지 확인할 때 사용하는 상세 참조입니다.
 
-HUMAN과 SCANNER용 Burp proxy listener를 만드십시오. Montoya는 확장 프로그램에서 listener를 생성할 수 없습니다. 8082 source 분류는 과거 직접 클라이언트 관측 호환용이며, 새 Explorer는 이 listener가 아니라 Montoya 전송을 사용합니다.
+Burp Browser에 연결된 프록시 리스너와 ZAP용 SCANNER 리스너를 구분합니다. Montoya는 확장 프로그램에서 listener를 생성할 수 없습니다. 8082 source 분류는 과거 직접 클라이언트 관측 호환용이며, 새 Explorer는 이 listener가 아니라 Montoya 전송을 사용합니다.
 
 | Listener | Source | 사용 클라이언트 |
 |---|---|---|
-| `127.0.0.1:8080` | HUMAN | 브라우저 또는 수동 점검자 |
+| Burp Browser가 실제 사용 중인 리스너 (`8080` 또는 다른 포트) | HUMAN | 활성 pass의 첫 범위 내 요청에서 연결 |
 | `127.0.0.1:8081` | SCANNER | 대상 요청을 보내는 ZAP |
 | `127.0.0.1:8082` | LLM | 선택적 직접 클라이언트 관측 fallback (`UNVERIFIED_RUNTIME`, Evidence 보존만; coverage·완료 불가) |
+
+HUMAN pass는 기존 명시 HUMAN 포트뿐 아니라 첫 범위 내 요청이 들어온 미매핑 리스너도 그 run에 연결합니다. 요청 시점 리스너 포트를 Evidence에 남기고 화면의 Proxy 상태를 실제 포트로 갱신합니다. 같은 run의 다른 미매핑 포트는 자동으로 합치지 않고 건수·포트를 경고로 표시하며, ZAP `8081`과 LLM 예약 포트는 HUMAN으로 바꾸지 않습니다. 이전 버전에서 이미 `UNKNOWN`으로 저장된 요청은 리스너 근거가 없어 소급 귀속하지 않습니다.
 
 native Linux Docker Engine의 ZAP은 [Docker의 기본 `host-gateway` 매핑](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip)에 따라 호스트의 default bridge IP로 연결합니다. `127.0.0.1:8081`만 연 상태로는 이 경로를 받을 수 없으므로, 해당 bridge IP에 SCANNER listener를 추가합니다.
 
@@ -147,7 +149,7 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 ## 일반적인 점검 흐름
 
 1. exact scope를 설정하고 익명 또는 최소 권한 테스트 계정을 사용합니다. 기본 제어면은 Burp 탭입니다. ADMIN 계정은 필수가 아니며 명시적 역할 비교가 필요한 경우에만 사용합니다.
-2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 표시 이름을 한 번 등록합니다. HUMAN은 계정마다 **별도 브라우저 프로필 또는 독립 브라우저 컨텍스트**에서 **로그인 연결**을 시작하고 HUMAN 8080을 통해 로그인한 뒤 인증된 페이지의 성공 응답까지 확인하고 캡처를 종료하거나, Proxy history·Repeater의 확인된 요청을 해당 계정 슬롯으로 직접 가져옵니다. 같은 브라우저 프로필에서 A를 로그아웃한 뒤 B로 로그인하는 방식은 Cookie·localStorage·IndexedDB 잔여 상태를 격리하지 못합니다. 다른 등록 계정의 자격증명이 B 캡처 요청에서 감지되면 그 교환은 어느 계정의 재사용 세션도 갱신하지 않으며 B는 성공 응답이 별도로 확인될 때까지 `로그인 확인 필요`로 남습니다. 같은 등록 계정에 ZAP 또는 LLM 로그인 설정을 추가할 수 있으며 이를 별도 신원으로 만들지 않습니다. ZAP 설정이 있는 계정은 전체 크롤링 없이 **세션 갱신**만 실행해 ZAP Browser Based Authentication의 검증된 응답을 독립 HUMAN 재전송 세션으로 연결할 수 있습니다. 기본 화면에는 계정 하나가 카드 하나로 보이며 Cookie·Authorization·subject 지문은 계정 수를 늘리지 않고 접힌 **기술 정보**에만 묶입니다. 자격증명만 있고 성공 응답이 관측되지 않은 세션은 `로그인 확인 필요`로 남아 HUMAN pass와 Request Lab에 재사용되지 않습니다. 빠른 시작의 HUMAN 계정 선택에는 실제 broker 상태가 `ACTIVE`인 계정만 나오며, 선택한 계정과 실제 요청 자격증명이 정확히 일치할 때만 그 계정으로 기록됩니다. 불일치 요청을 선택 계정으로 강제 표시하지 않습니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. Web의 `pass 완료`는 수집 건수가 아니라 해당 run의 정확한 종료가 확인됐을 때만 표시됩니다. pass 중 Repeater·Intruder로 만든 요청은 같은 run에 속하되 실제 Burp 도구 detail을 유지합니다. Proxy·Repeater·Intruder 응답은 Montoya `messageId`로 요청 시점 pass/account에 연결되며, 데이터셋·프로젝트 교체 이전의 늦은 응답이나 상관관계를 잃은 응답은 현재 pass로 추측하지 않고 제외됩니다. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다. 구현 근거와 도구·연구 비교는 [`docs/SESSION_ACCOUNT_ISOLATION.md`](docs/SESSION_ACCOUNT_ISOLATION.md)에 정리되어 있습니다.
+2. **계정·세션**에서 USER A/USER B처럼 비밀값이 없는 표시 이름을 한 번 등록합니다. HUMAN은 계정마다 **별도 브라우저 프로필 또는 독립 브라우저 컨텍스트**에서 **로그인 연결**을 시작하고 실제로 연결된 HUMAN 프록시 리스너를 통해 로그인한 뒤 인증된 페이지의 성공 응답까지 확인하고 캡처를 종료하거나, Proxy history·Repeater의 확인된 요청을 해당 계정 슬롯으로 직접 가져옵니다. 같은 브라우저 프로필에서 A를 로그아웃한 뒤 B로 로그인하는 방식은 Cookie·localStorage·IndexedDB 잔여 상태를 격리하지 못합니다. 다른 등록 계정의 자격증명이 B 캡처 요청에서 감지되면 그 교환은 어느 계정의 재사용 세션도 갱신하지 않으며 B는 성공 응답이 별도로 확인될 때까지 `로그인 확인 필요`로 남습니다. 같은 등록 계정에 ZAP 또는 LLM 로그인 설정을 추가할 수 있으며 이를 별도 신원으로 만들지 않습니다. ZAP 설정이 있는 계정은 전체 크롤링 없이 **세션 갱신**만 실행해 ZAP Browser Based Authentication의 검증된 응답을 독립 HUMAN 재전송 세션으로 연결할 수 있습니다. 기본 화면에는 계정 하나가 카드 하나로 보이며 Cookie·Authorization·subject 지문은 계정 수를 늘리지 않고 접힌 **기술 정보**에만 묶입니다. 자격증명만 있고 성공 응답이 관측되지 않은 세션은 `로그인 확인 필요`로 남아 HUMAN pass와 Request Lab에 재사용되지 않습니다. 빠른 시작의 HUMAN 계정 선택에는 실제 broker 상태가 `ACTIVE`인 계정만 나오며, 선택한 계정과 실제 요청 자격증명이 정확히 일치할 때만 그 계정으로 기록됩니다. 불일치 요청을 선택 계정으로 강제 표시하지 않습니다. raw 세션 값은 확장 메모리에만 남으며 LLM에 반환하거나 프로젝트에 저장하지 않습니다. 로그인 준비 트래픽과 HUMAN pass 밖에서 발생한 같은 scope 트래픽도 Evidence로는 보존하지만 3-way 비교와 갭에서는 제외합니다. **HUMAN pass 시작** 후 허가된 기능을 탐색하고 같은 run을 종료하십시오. Web의 `pass 완료`는 수집 건수가 아니라 해당 run의 정확한 종료가 확인됐을 때만 표시됩니다. pass 중 Repeater·Intruder로 만든 요청은 같은 run에 속하되 실제 Burp 도구 detail을 유지합니다. Proxy·Repeater·Intruder 응답은 Montoya `messageId`로 요청 시점 pass/account에 연결되며, 데이터셋·프로젝트 교체 이전의 늦은 응답이나 상관관계를 잃은 응답은 현재 pass로 추측하지 않고 제외됩니다. 대상 동작만으로 알 수 없는 신원 역할, endpoint 요구 역할, 확인된 객체 소유자는 사용자가 지정합니다. BOLA 비교에는 서로 다른 최소 권한 계정 2개를 권장합니다. 구현 근거와 도구·연구 비교는 [`docs/SESSION_ACCOUNT_ISOLATION.md`](docs/SESSION_ACCOUNT_ISOLATION.md)에 정리되어 있습니다.
 
 - 선택적 수동 검증: 그래프에서 API를 누르고 Evidence의 **요청 실험실**을 엽니다. 화면은 인증 교체 전 관측 원문을 표시하고 선택 계정 인증값은 노출하지 않으며, Web 전송 또는 Burp Repeater 초안 생성 시 서버에서 교체합니다. Web 전송은 `현재 ACTIVE 계정`·`비로그인`·`원문 그대로`를 지원하며, Burp Repeater 초안은 원본 인증값 대신 `현재 세션` 또는 `비로그인`으로만 엽니다. path/query/header/body를 편집해도 네트워크 목적지는 원 Evidence 서비스로 고정되고 redirect는 따라가지 않습니다. 응답과 시간·크기를 확인할 수 있으며 전송 결과는 HUMAN `VALIDATION` Evidence가 되어 탐색 커버리지를 늘리지 않습니다. live 원문은 기본 요청 1MiB·응답 4MiB·총 32MiB의 Burp 프로세스 메모리에서만 유지되고 프로젝트·샘플 교체와 unload 때 폐기됩니다. 프로젝트/XML/HAR에서 가져온 항목이나 상한 초과 항목은 마스킹 전문만 사용할 수 있습니다.
 
