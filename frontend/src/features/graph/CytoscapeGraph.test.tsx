@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphWheelIntent, readMinimap, separateLaneNodes } from "./CytoscapeGraph"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
@@ -518,7 +518,7 @@ it("draws every observed source with one neutral edge and marks the accessing so
     edges: [
       { ...projection.edges[0], id: "human-edge" },
       { ...projection.edges[0], id: "scanner-edge", source: "scanner", sourceText: "SCANNER", line: "dashed", color: "#dc2626", countLabel: "" },
-      { ...projection.edges[0], id: "llm-edge", source: "llm", sourceText: "LLM", line: "dotted", color: "#e4e4e7", countLabel: "" },
+      { ...projection.edges[0], id: "llm-edge", source: "llm", sourceText: "LLM", line: "dotted", color: "#facc15", countLabel: "" },
     ],
   }
   render(<CytoscapeGraph projection={mixed} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
@@ -530,7 +530,7 @@ it("draws every observed source with one neutral edge and marks the accessing so
   const operation = added.find((element) => element.data.id === "operation:GET /orders")!.data
   expect(operation.accessibleLabel).toContain("접근 주체 HUMAN, SCANNER, LLM")
   const svg = decodeURIComponent(operation.cardImage!.replace(/^data:image\/svg\+xml,/, ""))
-  for (const color of ["#60a5fa", "#f87171", "#e4e4e7"]) expect(svg).toContain(`stroke="${color}"`)
+  for (const color of ["#60a5fa", "#f87171", "#facc15"]) expect(svg).toContain(`stroke="${color}"`)
 })
 
 it("redraws node cards and edges for the light theme instead of keeping dark cards on a white canvas", () => {
@@ -709,3 +709,55 @@ it("gives selected canvas edges priority over candidate navigation and matches c
   elements = core.add.mock.calls.at(-1)?.[0] as Array<{ data: { id: string; focused: string } }>
   for (const edge of hierarchy.edges) expect(elements.find(item => item.data.id === edge.id)?.data.focused).toBe(edge.relation === "candidate" && edge.selection.resource === "orders:404" ? "yes" : "no")
 })
+
+it("pushes overlapping nodes in one lane apart by their real height while keeping order", () => {
+  const fake = (id: string, y: number, height: number) => {
+    let position = { x: 100, y }
+    return { id: () => id, data: (key: string) => key === "height" ? height : undefined, position: (next?: { x: number; y: number }) => { if (next) position = next; return position } }
+  }
+  // 캔버스 높이로 간격을 나누던 배치처럼 노드가 서로 겹쳐 있는 상태.
+  const nodes = [fake("b", 110, 95), fake("a", 100, 67), fake("c", 115, 95)]
+  separateLaneNodes(nodes as unknown as Parameters<typeof separateLaneNodes>[0])
+  const [b, a, c] = nodes.map(node => node.position().y)
+  expect(a).toBe(100)
+  // a 아래 끝(100+33.5)부터 20 간격 뒤에 b(높이 95)의 위 끝이 온다.
+  expect(b).toBeCloseTo(100 + 67 / 2 + 20 + 95 / 2)
+  expect(c).toBeCloseTo(b + 95 / 2 + 20 + 95 / 2)
+  // 이미 충분히 떨어진 노드는 움직이지 않는다.
+  const apart = [fake("x", 0, 60), fake("y", 500, 60)]
+  separateLaneNodes(apart as unknown as Parameters<typeof separateLaneNodes>[0])
+  expect(apart.map(node => node.position().y)).toEqual([0, 500])
+})
+
+it("draws every edge as a rightward orthogonal (taxi) line", () => {
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const options = vi.mocked(cytoscape).mock.calls.at(-1)?.[0] as unknown as { style: Array<{ selector: string; style: Record<string, unknown> }> }
+  const edge = options.style.find(rule => rule.selector === "edge")
+  expect(edge?.style).toMatchObject({ "curve-style": "taxi", "taxi-direction": "rightward" })
+  expect(options.style.some(rule => rule.style["curve-style"] === "bezier")).toBe(false)
+})
+
+it("reads minimap boxes in model space with the current viewport and dims filtered-out nodes", () => {
+  const fakeNode = (id: string, x: number, y: number, hl?: string) => ({ id: () => id, position: () => ({ x, y }), data: (key: string) => key === "width" ? 200 : key === "height" ? 60 : key === "hl" ? hl : undefined })
+  const nodes = [fakeNode("a", 100, 100), fakeNode("b", 500, 300, "no")]
+  const core = { extent: () => ({ x1: 0, y1: 0, w: 400, h: 200 }), nodes: () => ({ forEach: (callback: (node: ReturnType<typeof fakeNode>) => void) => nodes.forEach(callback) }) }
+  const view = readMinimap(core as unknown as Parameters<typeof readMinimap>[0])!
+  expect(view.nodes.map(node => [node.id, node.x, node.y, node.dim])).toEqual([["a", 0, 70, false], ["b", 400, 270, true]])
+  expect(view.box).toEqual({ x: -40, y: 30, w: 680, h: 340 })
+  expect(view.view).toEqual({ x: 0, y: 0, w: 400, h: 200 })
+  expect(readMinimap({ nodes: () => ({ forEach: () => undefined }) } as unknown as Parameters<typeof readMinimap>[0])).toBeNull()
+})
+
+it("opens and closes an object group from a double click or Enter instead of navigating", () => {
+  const snapshot = targetSnapshot({ cells: [{ idn: "alice", op: "https://api.example.test GET /orders/{id}", resource: "orders:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+  const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  const groupNode = group.nodes.find(node => node.kind === "object-group")!
+  const onToggleObjectGroup = vi.fn(), onNavigate = vi.fn()
+  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onNavigate={onNavigate} onToggleObjectGroup={onToggleObjectGroup} onPreferencesChange={vi.fn()} />)
+  act(() => listeners.get("dbltap:node")?.({ target: { ...node, id: vi.fn(() => groupNode.id) } }))
+  expect(onToggleObjectGroup).toHaveBeenCalledWith(groupNode.id)
+  expect(onNavigate).not.toHaveBeenCalled()
+})
+

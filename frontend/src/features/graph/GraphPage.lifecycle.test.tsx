@@ -1,5 +1,4 @@
 import { act, render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, it, vi } from "vitest"
 
 import type { Snapshot } from "@/lib/api/types"
@@ -27,21 +26,18 @@ beforeEach(() => {
   cytoscapeState.factory.mockClear()
 })
 
-it("defaults to the relationship hierarchy and disposes its canvas when priority is selected", async () => {
+it("opens only the relationship hierarchy, without the removed priority tab", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   const { GraphPage } = await import("./GraphPage")
   render(<GraphPage />)
-  expect(screen.getByRole("tab", { name: "전체 관계 보기" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.queryByRole("tab", { name: "점검 우선순위" })).not.toBeInTheDocument()
   expect(screen.getByText("Site Overview")).toBeVisible()
-  expect(screen.getByRole("checkbox", { name: "경로 후보 표시" })).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByLabelText("공격면 Cytoscape 그래프")).toBeVisible()
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)
   const siteElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string } }[]
   expect(new Set(siteElements.filter(element => element.data.kind).map(element => element.data.kind))).toEqual(new Set(["target", "api-group"]))
-  await userEvent.click(screen.getByRole("tab", { name: "점검 우선순위" }))
-  expect(cytoscapeState.cores[0].destroy).toHaveBeenCalledTimes(1)
 })
 
 it("destroys the actual Cytoscape instance for canvas→list and creates one replacement for list→canvas", async () => {
@@ -62,36 +58,3 @@ it("destroys the actual Cytoscape instance for canvas→list and creates one rep
   expect(cytoscapeState.cores).toHaveLength(2)
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
 }, 15_000)
-
-it("opens the shared full candidate detail from a desktop Cytoscape tap", async () => {
-  const media = { matches: false, media: "(max-width: 900px)", onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true }
-  window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
-  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = {
-    ...snapshot,
-    routeCandidates: [{ service: "https://api.example.test", method: "UNKNOWN", pathTemplate: "/unseen/{id}", observed: false, provenanceTypes: ["SITE_MAP"], provenanceEvidenceIds: ["route-evidence"], provenance: [{ type: "SITE_MAP", evidenceId: "route-evidence", source: "human", runId: "run-1", adapter: "burp", applicability: "REVIEW", reason: "candidate" }], applicability: "REVIEW", reviewReason: "needs review", priorityReasons: ["input"] }],
-  }
-  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
-  render(<GraphPage />)
-  await userEvent.click(screen.getByRole("checkbox", { name: "경로 후보 표시" }))
-  const tap = cytoscapeState.cores[0].on.mock.calls.find(([event]) => event === "tap")?.[2]
-  if (typeof tap !== "function") throw new Error("tap listener was not registered")
-  const siteElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string; accessibleLabel?: string } }[]
-  const groupId = siteElements.find(element => element.data.kind === "api-group" && element.data.accessibleLabel?.includes("UNSEEN APIs"))?.data.id
-  if (!groupId) throw new Error("candidate group was not rendered")
-  const open = cytoscapeState.cores[0].on.mock.calls.find(([event]) => event === "dbltap")?.[2]
-  if (typeof open !== "function") throw new Error("dbltap listener was not registered")
-  act(() => open({ target: { id: () => groupId } }))
-  const addedElements = cytoscapeState.cores[0].add.mock.calls.at(-1)?.[0] as { data: { id: string; kind?: string } }[] | undefined
-  const candidateId = addedElements?.find((element) => element.data.kind === "route-candidate")?.data.id
-  if (!candidateId) throw new Error("route candidate was not rendered")
-  act(() => tap({ target: { id: () => candidateId } }))
-  const detail = screen.getByRole("region", { name: "경로 후보 상세" })
-  expect(detail).toHaveTextContent("https://api.example.test")
-  expect(detail).toHaveTextContent("UNKNOWN /unseen/{id}")
-  expect(detail).toHaveTextContent("미관측 후보 · REVIEW")
-  expect(detail).toHaveTextContent("SITE_MAP")
-  expect(detail).toHaveTextContent("route-evidence")
-  expect(detail).toHaveTextContent("human · run-1 · burp · REVIEW · candidate")
-  expect(detail).toHaveTextContent("needs review")
-  expect(detail).toHaveTextContent("input")
-})

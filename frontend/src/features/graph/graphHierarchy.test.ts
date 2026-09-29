@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Cell, EventRecord, RouteCandidate, Snapshot } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
-import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphCountLabel, graphOpenAction, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
+import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphOpenAction, objectGroupKey, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
 
 const service = "https://demo.test:443"
@@ -53,24 +53,44 @@ describe("API hierarchy", () => {
     expect(graphOpenAction("operation", "operation")).toBeNull()
   })
 
-  it("counts only the nodes drawn at each level instead of zero identities at site level", () => {
-    const site = projectHierarchy(data(), filters, initial)
-    expect(graphCountLabel(site)).toBe(`${site.groups.length} API groups`)
-    const group = projectHierarchy(data(), filters, groupNav())
-    const groupObjects = group.resources.length ? ` · ${group.resources.length} objects` : ""
-    expect(graphCountLabel(group)).toBe(`${group.identities.length} identities · ${group.operations.length} operations${groupObjects}`)
-    const operation = projectHierarchy(data(), filters, operationNav())
-    expect(graphCountLabel(operation)).toBe(`${operation.identities.length} identities · ${operation.operations.length} operations · ${operation.resources.length} objects`)
-  })
-
   it("renders Identity→API→Object with separate source buckets in group view", () => {
-    const group = projectHierarchy(data(), filters, groupNav())
+    const group = projectHierarchy(data(), { ...filters, expandedObjectGroups: ["object-group:|orders"] }, groupNav())
     expect(group.kind).toBe("group")
     expect(group.nodes.some(node => node.kind === "resource")).toBe(true)
     expect(group.edges.every(edge => edge.relation === "identity-operation" || edge.relation === "operation-resource")).toBe(true)
     expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "HUMAN"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "SCANNER"]])
     expect(group.operations[0].selection.cells[0].overall).toBe("undecided")
     expect(group.listItems).toEqual(group.operations)
+  })
+
+  it("folds objects of the same kind into one collapsed group node with one edge per API and source", () => {
+    const snapshot = data()
+    snapshot.cells = [...snapshot.cells, cell({ resource: "receipt-latest", evidenceIds: ["h-receipt"] })]
+    const group = projectHierarchy(snapshot, filters, groupNav())
+    const orders = group.nodes.find(node => node.kind === "object-group")
+    expect(orders).toMatchObject({ id: "object-group:|orders", label: "orders", objectGroup: { key: "orders", members: ["orders:101", "orders:202"], expanded: false } })
+    expect(orders?.objectGroup?.owners).toEqual({ "orders:101": "USER A", "orders:202": "USER B" })
+    // 접힌 묶음의 객체는 개별 노드로 그리지 않고, ":"이 없는 객체만 따로 그린다.
+    expect(group.resources.map(node => node.label)).toEqual(["receipt-latest"])
+    const toGroup = group.edges.filter(edge => edge.targetId === "object-group:|orders")
+    expect(toGroup.map(edge => [edge.sourceId, edge.source]).sort()).toEqual([[`operation:${get}`, "human"], [`operation:${get}`, "llm"], [`operation:${get}`, "scanner"], [`operation:${patch}`, "human"]])
+    expect(group.hiddenObjectCount).toBe(0)
+  })
+
+  it("expands one group into its objects right after the group node", () => {
+    const group = projectHierarchy(data(), { ...filters, expandedObjectGroups: ["object-group:|orders"] }, groupNav())
+    const lane = group.nodes.filter(node => node.kind === "object-group" || node.kind === "resource").map(node => node.id)
+    expect(lane).toEqual(["object-group:|orders", "resource:orders:101", "resource:orders:202"])
+    expect(group.nodes.find(node => node.kind === "object-group")?.objectGroup?.expanded).toBe(true)
+    expect(group.edges.some(edge => edge.targetId === "object-group:|orders")).toBe(false)
+    expect(group.edges.filter(edge => edge.relation === "operation-resource").every(edge => edge.targetId.startsWith("resource:"))).toBe(true)
+  })
+
+  it("groups objects by the part before ':' after the service address and leaves others ungrouped", () => {
+    expect(objectGroupKey("http://127.0.0.1:8888 orders:13")).toEqual({ id: "http://127.0.0.1:8888|orders", key: "orders" })
+    expect(objectGroupKey("products:1")).toEqual({ id: "|products", key: "products" })
+    expect(objectGroupKey("http://127.0.0.1:8888 receipt-latest")).toBeNull()
+    expect(graphOpenAction("object-group", "group")).toBe("toggle")
   })
 
   it("renders only selected API Objects, preserves server owners, and ends objectless requests at API", () => {

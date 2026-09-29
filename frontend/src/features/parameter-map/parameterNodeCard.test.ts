@@ -133,3 +133,30 @@ describe("source icons beside the badge", () => {
     expect(svg(withDetail)).toContain("owner: USER B")
   })
 })
+
+describe("status code badges on API cards", () => {
+  const card: ParameterNodeCardView = { kind: "operation", badge: "GET", title: "/api/orders/{id}", detail: "", footer: "", icon: "none", accessibleLabel: "op", statuses: [200, 302, 401] }
+  const svg = (view: ParameterNodeCardView, colors?: ReadonlyMap<number, string>) => decodeURIComponent(renderParameterNodeCardSvg(view, true, undefined, "dark", colors).uri.replace(/^data:image\/svg\+xml,/, ""))
+
+  it("draws codes only, adds one badge row of height, and never draws counts", () => {
+    const text = svg(card)
+    for (const code of ["200", "302", "401"]) expect(text).toContain(`>${code}</text>`)
+    expect(text).not.toContain("×")
+    // 한 줄 제목 카드(67)에 뱃지 줄 28을 더한다.
+    expect(renderParameterNodeCardSvg(card, true).height).toBe(95)
+    expect(renderParameterNodeCardSvg({ ...card, statuses: undefined }, true).height).toBe(67)
+  })
+
+  it("keeps badges neutral until a code is chosen, then colours only that code", () => {
+    expect(svg(card)).not.toContain("#60a5fa")
+    const chosen = svg(card, new Map([[302, "#60a5fa"]]))
+    expect(chosen.match(/#60a5fa/g)).toHaveLength(3)
+    expect(chosen).toContain('fill-opacity="0.15"')
+  })
+
+  it("shows four codes and +N when there are more than five", () => {
+    const text = svg({ ...card, statuses: [200, 201, 204, 302, 400, 401] })
+    expect(text).toContain(">+2</text>")
+    expect(text).not.toContain(">400</text>")
+  })
+})

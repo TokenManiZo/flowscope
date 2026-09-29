@@ -25,13 +25,15 @@ export interface ApiGroup extends ApiGroupDescriptor {
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation"
+  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "object-group"
   selection: HierarchySelection
   groupId?: string
   service?: string
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
   publicRead?: boolean
+  /** 객체 묶음 노드: 묶음 이름, 묶인 객체 ID, 객체별 서버 소유자, 펼침 여부. */
+  objectGroup?: { key: string; members: readonly string[]; owners: Readonly<Record<string, string | null>>; expanded: boolean }
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
   relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
@@ -80,7 +82,17 @@ export function navigateHierarchy(current: GraphNavigation, level: GraphLevel, g
 }
 
 /** 노드를 여는(더블클릭·Enter) 방향. 오른쪽 레인 노드는 한 단계 안으로, 왼쪽 신원 노드는 한 단계 위로 간다. */
-export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | null {
+/** 객체 묶음 기준: 객체 ID에서 서비스 주소를 뺀 뒤 ":" 앞부분. ":"이 없으면 묶지 않는다(예: "https://a.test orders:13" → orders). */
+export function objectGroupKey(resource: string): { id: string; key: string } | null {
+  const space = resource.lastIndexOf(" ")
+  const local = resource.slice(space + 1), colon = local.indexOf(":")
+  if (colon <= 0) return null
+  const key = local.slice(0, colon)
+  return { id: `${space >= 0 ? resource.slice(0, space) : ""}|${key}`, key }
+}
+
+export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | "toggle" | null {
+  if (kind === "object-group") return "toggle"
   if (kind === "api-group" || (kind === "operation" && level === "group")) return "in"
   if (kind === "identity" && level !== "site") return "back"
   return null
@@ -187,6 +199,48 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
   }
 
+  // 그룹 화면에서는 객체를 종류별 묶음으로 둔다. 접힌 묶음은 노드 하나와 API→묶음 엣지(출처별)만, 펼친 묶음은 머리 노드 바로 아래에 개별 객체를 둔다.
+  // 묶이지 않는 객체(":" 없음)만 objectLimit로 접고 "더 보기"로 펼친다. API 하나를 연 화면(grouped=false)은 객체를 하나씩 그린다(목록 모드에도 펼칠 버튼이 없다).
+  // 반환값은 개별 객체 노드로 그린 객체다.
+  const expandedGroups = new Set(filters.expandedObjectGroups ?? [])
+  const addObjects = (resources: readonly string[], related: readonly Cell[], resourceSelection: (resource: string) => HierarchySelection, resourceExtra: (resource: string) => Partial<HierarchyNode>, grouped: boolean) => {
+    const groupOf = (resource: string) => grouped ? objectGroupKey(resource) : null
+    const members = new Map<string, string[]>()
+    for (const resource of resources) {
+      const group = groupOf(resource)
+      if (group) members.set(group.id, [...(members.get(group.id) ?? []), resource])
+    }
+    const drawn: string[] = [], placed = new Set<string>()
+    let singles = 0
+    for (const resource of resources) {
+      const group = groupOf(resource)
+      if (!group) {
+        singles++
+        if (singles <= resolved.objectLimit) { addNode("resource", resource, resourceSelection(resource), resourceExtra(resource)); drawn.push(resource) }
+        continue
+      }
+      if (placed.has(group.id)) continue
+      placed.add(group.id)
+      const items = members.get(group.id) ?? [], open = expandedGroups.has(`object-group:${group.id}`)
+      const cells = related.filter(cell => cell.resource && items.includes(cell.resource))
+      addNode("object-group", group.id, selectionFor(cells), { label: group.key, wrappedLabel: group.key, objectGroup: { key: group.key, members: items, owners: Object.fromEntries(items.map(item => [item, snapshot.owners[item] ?? null])), expanded: open } })
+      if (open) {
+        for (const item of items) { addNode("resource", item, resourceSelection(item), resourceExtra(item)); drawn.push(item) }
+        continue
+      }
+      const buckets = new Map<string, Cell[]>()
+      for (const cell of cells) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) {
+        const bucketKey = JSON.stringify([cell.op, source])
+        buckets.set(bucketKey, [...(buckets.get(bucketKey) ?? []), cell])
+      }
+      for (const [bucketKey, bucket] of buckets) {
+        const [op, source] = JSON.parse(bucketKey) as [string, Source]
+        addEdge("operation-resource", `operation:${op}`, `object-group:${group.id}`, selectionFor(bucket, source), bucket.reduce((sum, cell) => sum + sourceCount(cell, source), 0))
+      }
+    }
+    return { drawn, hidden: Math.max(0, singles - resolved.objectLimit) }
+  }
+
   if (resolved.level === "site") {
     for (const item of groups) {
       const target = addNode("target", item.service, emptySelection(), { service: item.service })
@@ -208,10 +262,10 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const resourceScores = new Map<string, number>()
     for (const cell of related) if (cell.resource) resourceScores.set(cell.resource, (resourceScores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
     const groupResources = [...new Set(related.map(cell => cell.resource).filter((resource): resource is string => !!resource))].sort((left, right) => (resourceScores.get(right) ?? 0) - (resourceScores.get(left) ?? 0) || compareText(left, right))
-    const visibleResources = groupResources.slice(0, resolved.objectLimit)
-    for (const resource of visibleResources) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), resource }, { owner: snapshot.owners[resource] ?? null })
+    const objects = addObjects(groupResources, related, resource => ({ ...selectionFor(related.filter(cell => cell.resource === resource)), resource }), resource => ({ owner: snapshot.owners[resource] ?? null }), true)
+    const visibleResources = objects.drawn
     for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
-    hiddenObjectCount = groupResources.length - visibleResources.length
+    hiddenObjectCount = objects.hidden
     hiddenOperationCount = operations.length - visible.length
     routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
@@ -237,10 +291,10 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const cell of related) if (cell.resource) scores.set(cell.resource, (scores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
     const focusedResource = candidates.find(gap => graphCellKey(gap) === resolved.focusCandidateKey)?.resource
     const resources = [...new Set([...related.map(cell => cell.resource), ...candidates.map(gap => gap.resource)].filter((resource): resource is string => !!resource))].sort((left, right) => Number(right === focusedResource) - Number(left === focusedResource) || (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
-    const visible = resources.slice(0, resolved.objectLimit)
-    for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addNode("operation", operation, selectionFor(related))
-    for (const resource of visible) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }, { owner: snapshot.owners[resource] ?? null, publicRead: isPublicRead(snapshot, operation, resource) })
+    const objects = addObjects(resources, related, resource => ({ ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }), resource => ({ owner: snapshot.owners[resource] ?? null, publicRead: isPublicRead(snapshot, operation, resource) }), false)
+    const visible = objects.drawn
+    for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addAccess(related)
     for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${operation}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     const visibleCandidates = candidates.filter(gap => gap.resource && visible.includes(gap.resource))
@@ -250,18 +304,10 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       addEdge("candidate", `identity:${gap.idn}`, `operation:${operation}`, selection)
       addEdge("candidate", `operation:${operation}`, `resource:${gap.resource}`, selection)
     }
-    hiddenObjectCount = resources.length - visible.length
+    hiddenObjectCount = objects.hidden
     // Per-cell list entries retain identity and objectless selections, just as
     // the narrow-screen list does, without creating extra graph nodes.
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   }
   return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount }
-}
-
-/** 그래프 상단 카운트. 현재 단계에 실제로 그려진 노드만 센다(사이트 개요에는 신원·API·객체 노드가 없다). */
-export function graphCountLabel(graph: HierarchyProjection): string {
-  if (graph.kind === "site") return `${graph.nodes.filter(node => node.kind === "api-group").length} API groups`
-  const parts = [`${graph.identities.length} identities`, `${graph.operations.length} operations`]
-  if (graph.resources.length) parts.push(`${graph.resources.length} objects`)
-  return parts.join(" · ")
 }

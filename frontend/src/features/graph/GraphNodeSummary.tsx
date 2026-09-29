@@ -47,6 +47,14 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
       list: [...byTarget].slice(0, 8).map(([target, items]) => [plain(target), mostUrgent(items)]),
     }
   }
+  if (node.kind === "object-group" && node.objectGroup) {
+    // 묶음 안 객체 목록과 소유자. 펼치지 않아도 어떤 객체가 묶였는지 확인할 수 있다.
+    return {
+      stats: [["객체", node.objectGroup.members.length], ["접근 신원", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
+      listTitle: "묶음 객체 · 소유자",
+      list: node.objectGroup.members.map(member => [stripOrigin(member) || member, node.objectGroup?.owners[member] ?? "소유자 미확정"] as [string, string]),
+    }
+  }
   if (node.kind === "resource") {
     const byIdentity = groupBy(cells, cell => cell.idn)
     const owner = node.owner ?? null

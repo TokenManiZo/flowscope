@@ -13,7 +13,7 @@ export interface LaneBounds {
 export function laneIndexForKind(kind: string, laneCount: number): number {
   if (kind === "identity" || kind === "target") return 0
   if (laneCount <= 2) return 1
-  return kind === "resource" ? 2 : 1
+  return kind === "resource" || kind === "object-group" ? 2 : 1
 }
 
 export function laneAnchor(index: number): number {
