@@ -93,7 +93,7 @@ export function operationNodeCard(key: ParameterMapKey, statuses: readonly numbe
   const result = statuses.length ? `HTTP ${[...counts].sort(([left], [right]) => (left || 600) - (right || 600)).map(([status, count]) => `${status || "UNKNOWN"} × ${count}`).join(" · ")}` : "HTTP UNKNOWN · no observations"
   return {
     kind: "operation", badge: key.method, title: stripOrigin(key.pathTemplate) || key.pathTemplate, detail: "", footer: "", icon: "none",
-    accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; ${statuses.length} Evidence`,
+    accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; 관측 기록 ${statuses.length}건`,
   }
 }
 

@@ -186,12 +186,12 @@ it("shows complete card text from pointer and keyboard focus and selects the foc
   const identity = { id: "identity:alice", kind: "identity" as const, label: longLabel, wrappedLabel: longLabel, verdict: "allow" as const, verdictText: "ALLOW", verdictColor: "#15803d", selection: { operation: "GET /orders", resource: null, identity: longLabel, source: "human" as const, evidenceIds: ["e-1"] } }
   const graph: GraphProjection = { ...projection, identities: [identity], operations: [], edges: [] }
   const onSelect = vi.fn()
-  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? `Identity ${longLabel}; verdict ALLOW; 1 Evidence` : undefined)
+  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? `Identity ${longLabel}; verdict ALLOW; 1 관측 기록` : undefined)
   render(<CytoscapeGraph projection={graph} locked={false} fitVersion={0} onSelect={onSelect} onPreferencesChange={vi.fn()} />)
 
   act(() => { listeners.get("mouseover focus:node")?.({ target: node, type: "mouseover" }) })
   expect(screen.getByRole("tooltip")).toHaveTextContent(longLabel)
-  expect(screen.getByRole("tooltip")).toHaveTextContent("1 Evidence")
+  expect(screen.getByRole("tooltip")).toHaveTextContent("1 관측 기록")
 
   const canvas = screen.getByLabelText("공격면 Cytoscape 그래프")
   fireEvent.focus(canvas)
@@ -203,7 +203,7 @@ it("shows complete card text from pointer and keyboard focus and selects the foc
 it("dismisses an open full-text card tooltip when the projection changes", () => {
   const identity = { id: "identity:alice", kind: "identity" as const, label: "alice", wrappedLabel: "alice", verdict: "allow" as const, verdictText: "ALLOW", verdictColor: "#15803d", selection: { operation: "GET /orders", resource: null, identity: "alice", source: "human" as const, evidenceIds: ["e-1"] } }
   const graph: GraphProjection = { ...projection, identities: [identity], operations: [], edges: [] }
-  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? "Identity alice; verdict ALLOW; 1 Evidence" : undefined)
+  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? "Identity alice; verdict ALLOW; 1 관측 기록" : undefined)
   const { rerender } = render(<CytoscapeGraph projection={graph} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   act(() => { listeners.get("mouseover focus:node")?.({ target: node, type: "mouseover" }) })
   expect(screen.getByRole("tooltip")).toBeInTheDocument()

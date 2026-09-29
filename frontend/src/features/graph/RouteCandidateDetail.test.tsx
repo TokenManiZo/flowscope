@@ -11,7 +11,7 @@ const candidate = {
 
 it("bounds initial candidate IDs and provenance strings, then exposes and collapses the full escaped payload", async () => {
   render(<RouteCandidateDetail candidate={candidate} />)
-  expect(screen.getByText(/근거 Evidence IDs \(12\)/)).toBeVisible()
+  expect(screen.getByText(/근거 기록 번호 \(12\)/)).toBeVisible()
   expect(screen.queryByText(longId)).not.toBeInTheDocument()
   expect(screen.getAllByText(/…/).length).toBeGreaterThan(0)
   expect(screen.queryByText(/provenance-11/)).not.toBeInTheDocument()

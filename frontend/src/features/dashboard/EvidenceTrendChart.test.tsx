@@ -14,7 +14,7 @@ function event(eventId: string, timestamp: number, source: "human" | "scanner" |
   }
 }
 
-it("keeps tightly clustered early Evidence early and a late event late on the elapsed-time domain", () => {
+it("keeps tightly clustered early 관측 기록 early and a late event late on the elapsed-time domain", () => {
   const points = buildEvidenceTrend([
     event("h-1", 1, "human"), event("h-2", 2, "human"), event("s-1", 3, "scanner"), event("l-1", 4, "llm"), event("h-3", 1_000_000, "human"),
   ])

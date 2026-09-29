@@ -33,7 +33,7 @@ it("renders each projected link as an ordered producer, masked value, and consum
   expect(within(timeline).getAllByText("2. 전달 값")).toHaveLength(2)
   expect(within(timeline).getAllByText("3. 소비")).toHaveLength(2)
 
-  await userEvent.click(within(rows[1]).getByRole("button", { name: "흐름 링크 Evidence 열기" }))
+  await userEvent.click(within(rows[1]).getByRole("button", { name: "흐름 링크 관측 기록 열기" }))
   expect(onSelect).toHaveBeenCalledWith(group.links[1])
 })
 

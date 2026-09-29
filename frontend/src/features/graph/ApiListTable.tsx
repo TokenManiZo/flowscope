@@ -4,8 +4,9 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import type { Cell, Snapshot } from "@/lib/api/types"
 import { apiRowStats, groupApiRows, objectRows, shortPath, type ApiRowStats } from "./graphApiRows"
-import { HIGHLIGHT_SOURCE_COLOR, STATUS_CLASS_COLOR, statusClass } from "./graphHighlight"
+import { HIGHLIGHT_SOURCE_COLOR } from "./graphHighlight"
 import type { HierarchyNode } from "./graphHierarchy"
+import { MethodBadge as Method, StatusBadge } from "./httpBadges"
 import { operationParts } from "./relationshipNodeCard"
 
 const SOURCE_LETTERS = [["human", "H"], ["scanner", "S"], ["llm", "L"]] as const
@@ -14,22 +15,9 @@ const OBJECT_PREVIEW = 10
 
 const activate = (action: () => void) => (event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); action() } }
 
-/** 메서드 색은 Swagger UI 관례(GET 파랑·POST 초록·PUT 주황·PATCH 보라·DELETE 빨강)를 따른다. */
-const METHOD_COLOR: Record<string, string> = { GET: "#378ADD", POST: "#1D9E75", PUT: "#BA7517", PATCH: "#7F77DD", DELETE: "#E24B4A" }
-
-function Method({ method }: { method: string }) {
-  const color = METHOD_COLOR[method] ?? "#94a3b8"
-  return <span className="inline-block whitespace-nowrap rounded border px-1.5 py-0.5 font-mono text-[13px] font-semibold" style={{ color, background: `${color}24`, borderColor: `${color}80` }}>{method}</span>
-}
-
-function Code({ code }: { code: number }) {
-  const color = STATUS_CLASS_COLOR[statusClass(code)]
-  return <span className="rounded px-1 font-mono text-[13px]" style={{ color, background: `${color}22` }}>{code}</span>
-}
-
 function StatCells({ stats, rowKey, openObjects, onObject }: { stats: ApiRowStats; rowKey: string; openObjects: readonly string[]; onObject(key: string): void }) {
   return <>
-    <td className="px-2"><div className="flex gap-1">{stats.codes.slice(0, 4).map(code => <Code key={code} code={code} />)}{stats.codes.length > 4 && <span className="rounded bg-muted px-1 font-mono text-[13px] text-muted-foreground">+{stats.codes.length - 4}</span>}</div></td>
+    <td className="px-2"><div className="flex gap-1">{stats.codes.slice(0, 4).map(code => <StatusBadge key={code} code={code} />)}{stats.codes.length > 4 && <span className="rounded bg-muted px-1 font-mono text-[13px] text-muted-foreground">+{stats.codes.length - 4}</span>}</div></td>
     {/* H·S·L은 자리를 고정해 없는 출처는 빈칸으로 둔다. 줄마다 같은 출처가 같은 세로 위치에 온다. */}
     <td className="px-2"><span className="grid w-12 grid-cols-3 font-mono text-sm font-semibold">{SOURCE_LETTERS.map(([source, letter]) => <span key={source} style={{ color: HIGHLIGHT_SOURCE_COLOR[source] }}>{stats.sources.has(source) ? letter : ""}</span>)}</span></td>
     <td className="px-2 font-mono text-[15px]">{stats.identities.size}</td>
@@ -55,7 +43,7 @@ function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: 
         {shown.map(row => <tr key={row.resource} tabIndex={0} aria-label={row.label} aria-selected={selectedId === `resource:${row.resource}`} onClick={() => onSelectObject(row.resource, row.cells)} onKeyDown={activate(() => onSelectObject(row.resource, row.cells))} className={cn("h-10 cursor-pointer border-b border-border/70 last:border-0 hover:bg-muted/40", selectedId === `resource:${row.resource}` && "bg-sky-500/10")}>
           <td className="truncate px-2 font-mono text-sm" title={row.resource}>{row.label}</td>
           <td className="truncate px-2">{row.owner ?? <span className="text-muted-foreground/70">미확정</span>}</td>
-          <td className="px-2"><div className="flex flex-wrap gap-x-3 gap-y-1">{row.identities.map(identity => <span key={identity.name} className="inline-flex items-center gap-1 whitespace-nowrap">{identity.name}{identity.codes.map(code => <Code key={code} code={code} />)}{identity.suspicious && <span className="rounded border border-red-500/50 bg-red-500/15 px-1 text-[11px] font-semibold text-red-600 dark:text-red-300">IDOR 후보</span>}</span>)}</div></td>
+          <td className="px-2"><div className="flex flex-wrap gap-x-3 gap-y-1">{row.identities.map(identity => <span key={identity.name} className="inline-flex items-center gap-1 whitespace-nowrap">{identity.name}{identity.codes.map(code => <StatusBadge key={code} code={code} />)}{identity.suspicious && <span className="rounded border border-red-500/50 bg-red-500/15 px-1 text-[11px] font-semibold text-red-600 dark:text-red-300">IDOR 후보</span>}</span>)}</div></td>
         </tr>)}
         {!all && rows.length > OBJECT_PREVIEW && <tr tabIndex={0} className="h-10 cursor-pointer text-muted-foreground hover:bg-muted/40" onClick={() => setAll(true)} onKeyDown={activate(() => setAll(true))}><td colSpan={3} className="px-2 font-mono">… {rows.length - OBJECT_PREVIEW}개 더</td></tr>}
       </tbody>

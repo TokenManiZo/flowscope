@@ -62,20 +62,20 @@ it("keeps restored LLM verdicts in a read-only archive, never in the current can
   expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()
 })
 
-it("opens exact candidate Evidence and clears selection when revision changes", async () => {
+it("opens exact candidate 관측 기록 and clears selection when revision changes", async () => {
   const view = renderPage()
   await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
-  await userEvent.click(screen.getByRole("button", { name: "Evidence 열기" }))
+  await userEvent.click(screen.getByRole("button", { name: "관측 기록 열기" }))
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
   currentSnapshot = snapshot(2, [])
   view.refresh()
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
 })
 
-it("keeps the open Evidence when new traffic only bumps the revision", async () => {
+it("keeps the open 관측 기록 when new traffic only bumps the revision", async () => {
   const view = renderPage()
   await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
-  await userEvent.click(screen.getByRole("button", { name: "Evidence 열기" }))
+  await userEvent.click(screen.getByRole("button", { name: "관측 기록 열기" }))
   currentSnapshot = snapshot(2)
   view.refresh()
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
@@ -113,10 +113,10 @@ it("reports snapshot failure without inventing an empty successful analysis", ()
   expect(screen.queryByText("규칙에 해당하는 후보가 없습니다.")).not.toBeInTheDocument()
 })
 
-it("retains an open Evidence detail but suspends its actions during a refresh failure", async () => {
+it("retains an open 관측 기록 detail but suspends its actions during a refresh failure", async () => {
   const view = renderPage()
   await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
-  await userEvent.click(screen.getByRole("button", { name: "Evidence 열기" }))
+  await userEvent.click(screen.getByRole("button", { name: "관측 기록 열기" }))
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
   snapshotError = true
   view.refresh()

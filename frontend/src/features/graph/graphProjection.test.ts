@@ -18,7 +18,7 @@ function snapshot(events: readonly EventRecord[], routeCandidates: Snapshot["rou
 }
 
 describe("projectGraph", () => {
-  it("preserves canonical cell keys and all Evidence when collapsing different resources", () => {
+  it("preserves canonical cell keys and all 관측 기록 when collapsing different resources", () => {
     const first = snapshot([]).cells[0]
     const second = { ...first, resource: null, evidenceIds: ["objectless", "ev-human-1"] }
     expect(graphCellKey(first)).toBe('["alice","GET /orders/{id}","order:101"]')
@@ -56,7 +56,7 @@ describe("projectGraph", () => {
     expect(graphRouteCandidateId(first)).not.toBe(graphRouteCandidateId(delimiterCollision))
   })
 
-  it("keeps INCLUDE identity-resource-operation paths, preserves source semantics, verdict text, repeat labels, and exact Evidence selection", () => {
+  it("keeps INCLUDE identity-resource-operation paths, preserves source semantics, verdict text, repeat labels, and exact 관측 기록 selection", () => {
     const data = snapshot([
       event({ eventId: "ev-human-1", source: "human", repeatCount: 2, clusterEvidenceIds: ["ev-human-1", "ev-human-2"] }),
       event({ eventId: "ev-scanner-1", source: "scanner", idn: "alice", verdict: "deny", repeatCount: 1 }),
@@ -104,7 +104,7 @@ describe("projectGraph", () => {
     expect(new Set(identityEdges.map((edge) => edge.id)).size).toBe(2)
   })
 
-  it("uses the representative Evidence ID when the bounded snapshot omits cluster members", () => {
+  it("uses the representative 기록 번호 when the bounded snapshot omits cluster members", () => {
     const withoutClusterMembers = { ...event(), clusterEvidenceIds: undefined }
     const graph = projectGraph(snapshot([withoutClusterMembers]), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: true })
 

@@ -40,6 +40,6 @@ export function ResponsiveGraphList({ projection, snapshot, selectedId = null, o
       </Button>
     })}
     {projection.routeCandidates.map((candidate) => <article className="grid gap-2 rounded-md border border-dashed p-3 text-sm" key={candidate.id}><Button variant="outline" className="h-auto justify-start whitespace-normal p-3 text-left" aria-label={`경로 후보 ${candidate.service} ${candidate.method} ${candidate.pathTemplate} ${candidate.observedText} ${candidate.applicability}`} onClick={() => onSelect(candidate.selection)}><span className="grid gap-1"><span className="font-mono break-all">{candidate.service}</span><span className="font-mono break-all">{candidate.method} {candidate.pathTemplate}</span><span>{candidate.observedText} · {candidate.applicability}</span></span></Button><RouteCandidateDetail candidate={candidate.selection.routeCandidate ?? candidate} /></article>)}
-    {!projection.listItems.length && !projection.routeCandidates.length && <p className="rounded-md border p-3 text-sm text-muted-foreground">현재 필터에 표시할 INCLUDE 공격면이 없습니다. Evidence의 REVIEW/EXCLUDE는 그대로 유지됩니다.</p>}
+    {!projection.listItems.length && !projection.routeCandidates.length && <p className="rounded-md border p-3 text-sm text-muted-foreground">현재 필터에 표시할 INCLUDE 공격면이 없습니다. 관측 기록의 REVIEW/EXCLUDE는 그대로 유지됩니다.</p>}
   </section>
 }

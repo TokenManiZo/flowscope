@@ -20,7 +20,7 @@ function Workspace({ contextOpen, inspectorOpen }: { contextOpen?: boolean; insp
     ariaLabel="공유 분석 작업면"
     context={<button type="button">공유 필터</button>}
     toolbar={<p>도구 모음</p>}
-    inspector={<p>선택한 Evidence</p>}
+    inspector={<p>선택한 관측 기록</p>}
     contextOpen={contextOpen}
     inspectorOpen={inspectorOpen}
   >
@@ -39,7 +39,7 @@ it("keeps the desktop context, flexible work surface, and inspector as persisten
   expect(context).toHaveTextContent("공유 필터")
   expect(workbench).toHaveTextContent("도구 모음")
   expect(workbench).toHaveTextContent("분석 결과")
-  expect(inspector).toHaveTextContent("선택한 Evidence")
+  expect(inspector).toHaveTextContent("선택한 관측 기록")
   expect(workbench.parentElement).toHaveClass("xl:flex-row")
   expect(context).toHaveStyle({ width: "264px" })
   expect(inspector).toHaveStyle({ width: "368px" })
@@ -68,7 +68,7 @@ it("collapses and restores desktop panes without unmounting the analysis result"
   await user.click(screen.getByRole("button", { name: "분석 필터 패널 열기" }))
   await user.click(screen.getByRole("button", { name: "선택 상세 패널 열기" }))
   expect(screen.getByRole("complementary", { name: "분석 필터" })).toHaveTextContent("공유 필터")
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("선택한 Evidence")
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("선택한 관측 기록")
 })
 
 it.each([900, 600])("renders compact Sheet controls and constrained panel widths at %ipx", async (width) => {
@@ -80,7 +80,7 @@ it.each([900, 600])("renders compact Sheet controls and constrained panel widths
     ariaLabel="공유 분석 작업면"
     context={<button type="button">공유 필터</button>}
     toolbar={<p>도구 모음</p>}
-    inspector={<p>선택한 Evidence</p>}
+    inspector={<p>선택한 관측 기록</p>}
     onContextOpenChange={onContextOpenChange}
     onInspectorOpenChange={onInspectorOpenChange}
   >

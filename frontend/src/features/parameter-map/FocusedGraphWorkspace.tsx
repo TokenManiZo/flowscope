@@ -98,7 +98,7 @@ export function FocusedGraphWorkspace({ queue, header, headerMeta, toolbar, chil
           }
           queueTrigger.current?.focus()
         }}>
-        <SheetHeader className="sr-only"><SheetTitle>선택 상세</SheetTitle><SheetDescription>선택한 Gap의 근거, Evidence와 정의를 확인합니다.</SheetDescription></SheetHeader>
+        <SheetHeader className="sr-only"><SheetTitle>선택 상세</SheetTitle><SheetDescription>선택한 Gap의 근거, 관측 기록과 정의를 확인합니다.</SheetDescription></SheetHeader>
         {inspector}
       </SheetContent>
     </Sheet>}

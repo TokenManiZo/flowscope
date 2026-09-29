@@ -14,7 +14,7 @@ export function operationParts(value: string): { method: string; path: string } 
 }
 
 function evidenceFooter(node: RelationshipNode) {
-  return `${node.selection.evidenceIds.length} Evidence`
+  return `관측 기록 ${node.selection.evidenceIds.length}건`
 }
 
 /**

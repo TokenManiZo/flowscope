@@ -39,12 +39,12 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   screen.getByRole("button", { name: "상세 보기" }).click()
   expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
   expect(screen.getByText("ev-human")).toBeVisible()
-  await userEvent.setup().click(screen.getByRole("button", { name: "Evidence 상세 · H · HTTP 200" }))
+  await userEvent.setup().click(screen.getByRole("button", { name: "관측 기록 상세 · H · HTTP 200" }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" })).toBeVisible()
 })
 
-it("recomputes source deltas and exposes controlled-request failure quality without creating Evidence", async () => {
+it("recomputes source deltas and exposes controlled-request failure quality without creating 관측 기록", async () => {
   ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, runExecutions: [{ source: "LLM", runId: "llm-failed", attempted: 3, responses: 0, failures: 3, quality: "ALL_FAILED", outcomes: { TLS_FAILURE: 3 } }], surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "GET", pathTemplate: "/api/orders/{id}" }, observedSources: ["HUMAN", "LLM"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }, { evidenceId: "ev-llm", source: "LLM", runId: "llm-1", identity: "user-a", status: 404 }], declarations: [{ evidenceId: "ev-js", source: "HUMAN", runId: "human-1", type: "JAVASCRIPT", adapter: "fetch", reason: "static call" }], deltaState: "MULTI_SOURCE_OBSERVED", parameters: [] }] } }
 
   render(<AppProviders><SurfacePage /></AppProviders>)

@@ -69,7 +69,7 @@ it("re-sorts a single lane from its header placed on the bounds the canvas repor
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-lane-layout", "1:1")
 })
 
-it("reconciles retained aggregate coordinates and Evidence IDs after two current cells shrink to one", async () => {
+it("reconciles retained aggregate coordinates and 기록 번호 after two current cells shrink to one", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("900"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const old = { ...hierarchyCell, evidenceIds: ["ev-old"] }
   const survivor = { ...hierarchyCell, resource: "orders:202", overall: "deny" as const, reasons: { human: "surviving server reason" }, evidenceIds: ["ev-survivor"] }
@@ -103,7 +103,7 @@ it("navigates Site→Group and selects API and Object in the list without leavin
   expect(breadcrumb).not.toHaveTextContent("https://api.example.test")
   await userEvent.click(screen.getByRole("button", { name: /^orders 객체 1개 펼치기/ }))
   await userEvent.click(screen.getByRole("row", { name: "orders:101" }))
-  expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/Evidence|연결된 Evidence가 없습니다/)).toBeVisible()
+  expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/관측 기록|연결된 관측 기록이 없습니다/)).toBeVisible()
   expect(screen.queryByText("cell-evidence-not-an-event")).not.toBeInTheDocument()
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
 }, 15_000)
@@ -159,13 +159,13 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toBeVisible()
   expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("GET /orders/{id}")
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "API 목록 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "목록" }))
   expect(screen.queryByTestId("cytoscape-graph")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   expect(screen.getByRole("row", { name: /^GET \/orders\/\{id\}/ })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: /^order 객체 1개 펼치기/ }))
   await userEvent.click(screen.getByRole("row", { name: "order:1" }))
-  await userEvent.click(screen.getByRole("button", { name: "그래프 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "그래프" }))
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
   act(() => { media.matches = true; listeners.forEach((listener) => listener(new Event("change"))) })
   expect(screen.queryByTestId("cytoscape-graph")).not.toBeInTheDocument()
@@ -245,7 +245,7 @@ it("moves back and forward through graph levels from the toolbar", async () => {
   const back = within(toolbar).getByRole("button", { name: "뒤로" }), forward = within(toolbar).getByRole("button", { name: "앞으로" })
   expect(back).toBeDisabled()
   expect(forward).toBeDisabled()
-  await userEvent.click(screen.getByRole("button", { name: "API 목록 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "목록" }))
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
   await userEvent.click(back)

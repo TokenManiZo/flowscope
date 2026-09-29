@@ -33,7 +33,7 @@ export function EvidenceFilters({ value, onChange }: Props) {
   const classes = Object.keys(trafficClassDefaults)
   const shown = classes.filter((trafficClass) => value.trafficClasses[trafficClass] === true).length
   return (
-    <div role="group" aria-label="Evidence 표시 필터" className="flex flex-wrap items-center gap-2">
+    <div role="group" aria-label="관측 기록 표시 필터" className="flex flex-wrap items-center gap-2">
       {(Object.keys(sourceLabels) as (keyof typeof sourceLabels)[]).map((source) => (
         <ChipCheckbox key={source} label={sourceLabels[source]} checked={value.sources[source]}
           onCheckedChange={(checked) => onChange({ ...value, sources: { ...value.sources, [source]: checked } })} />
@@ -53,7 +53,7 @@ export function EvidenceFilters({ value, onChange }: Props) {
         </PopoverContent>
       </Popover>
       <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-        <Checkbox checked={value.expandRepeats} aria-label="반복 Evidence 펼치기" onCheckedChange={(next) => onChange({ ...value, expandRepeats: next === true })} />
+        <Checkbox checked={value.expandRepeats} aria-label="반복 관측 기록 펼치기" onCheckedChange={(next) => onChange({ ...value, expandRepeats: next === true })} />
         반복 펼치기
       </label>
     </div>

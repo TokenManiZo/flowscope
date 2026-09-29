@@ -59,7 +59,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     const byIdentity = groupBy(cells, cell => cell.idn)
     const owner = node.owner ?? null
     return {
-      stats: [["접근 신원", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["Evidence", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
+      stats: [["접근 신원", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["관측 기록", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
       listTitle: owner ? `접근한 신원 · 소유자 ${owner}` : "접근한 신원",
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity === owner ? `${identity} (소유자)` : identity, mostUrgent(items)]),
     }
@@ -83,9 +83,9 @@ export function GraphNodeSummary({ summary, hint, children }: { summary: Summary
     <dl className="grid grid-cols-3 gap-2">{summary.stats.map(([label, value]) => <div key={label} className="rounded-md border border-border/70 px-2 py-1.5"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-base font-semibold tabular-nums">{value}</dd></div>)}</dl>
     {children}
     {summary.sources && <p className="flex flex-wrap gap-x-3 text-xs"><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-human align-middle" />HUMAN {summary.sources.human}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-scanner align-middle" />SCANNER {summary.sources.scanner}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-llm align-middle" />LLM {summary.sources.llm}</span></p>}
-    {summary.list.length > 0 && <div><h3 className="mb-1 text-xs font-semibold text-muted-foreground">{summary.listTitle}</h3><ul className="grid">{summary.list.map(([label, value]) => {
+    {summary.list.length > 0 && <div><h3 className="mb-1 text-sm font-semibold text-muted-foreground">{summary.listTitle}</h3><ul className="grid">{summary.list.map(([label, value]) => {
       const tone = verdicts.has(value) ? matrixVerdictTone(value as Verdict) : null
-      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-1.5 first:border-t-0"><span className="min-w-0 break-all font-mono text-xs">{label}</span>{tone ? <span className={`shrink-0 rounded px-1.5 text-[11px] font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-xs text-muted-foreground">{value}</span>}</li>
+      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 break-all font-mono text-sm">{label}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
     })}</ul></div>}
     {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
   </section>

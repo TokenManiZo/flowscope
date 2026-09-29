@@ -147,7 +147,7 @@ describe("dashboard shell", () => {
     const routes = [
       ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 Gap 그래프", "graph", null],
       ["교차 신원 검증", "verification", null], ["권한 매트릭스", "matrix", null],
-      ["API·입력 차이", "surface", "부가 기능"], ["취약점 시나리오", "scenarios", "부가 기능"], ["Evidence", "evidence", "부가 기능"], ["실행 상태", "runs", "부가 기능"],
+      ["API·입력 차이", "surface", "부가 기능"], ["취약점 시나리오", "scenarios", "부가 기능"], ["관측 기록", "evidence", "부가 기능"], ["실행 상태", "runs", "부가 기능"],
     ] as const
 
     for (const [label, route, group] of routes) {

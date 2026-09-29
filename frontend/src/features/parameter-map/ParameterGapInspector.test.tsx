@@ -22,9 +22,9 @@ function actualSnapshot(observed: readonly string[] = ["observed-a", "observed-b
 }
 const propsFor = (snapshot: Snapshot, gapId = "auth") => ({ snapshot, projection: projectParameterMap(snapshot, defaultParameterFilters, gapId), onClose: () => undefined })
 
-const rowIds = () => within(screen.getByRole("region", { name: "Evidence" })).getAllByRole("listitem").map(row => row.getAttribute("aria-label"))
+const rowIds = () => within(screen.getByRole("region", { name: "관측 기록" })).getAllByRole("listitem").map(row => row.getAttribute("aria-label"))
 
-it("shows the selected input and lists only actual Evidence of that exact operation", () => {
+it("shows the selected input and lists only actual 관측 기록 of that exact operation", () => {
   const cell = validationCell({ evidenceIds: ["cell-actual"], basisEvidenceIds: ["basis-only"] })
   const snapshot = actualSnapshot(["observed-a", "observed-b"], { cells: [cell], events: [
     event("observed-a", { timestamp: 1 }), event("observed-b", { timestamp: 3 }), event("cell-actual", { timestamp: 2 }), event("basis-only"),
@@ -36,7 +36,8 @@ it("shows the selected input and lists only actual Evidence of that exact operat
   expect(panel).not.toHaveTextContent("왜 집중해야 하나요?")
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()
   // 최신 Evidence가 먼저 오고, 좌표 근거만 있는 ID·다른 operation·연결되지 않은 이벤트는 목록에 없다.
-  expect(rowIds()).toEqual(["Evidence observed-b", "Evidence cell-actual", "Evidence observed-a"])
+  // 관측 기록은 신원·출처별 카드로 묶인다. 이 픽스처는 요청마다 신원이 달라 카드도 요청 수만큼 나온다.
+  expect(rowIds()).toEqual(["observed-b · HUMAN 관측 기록 1건", "cell-actual · HUMAN 관측 기록 1건", "observed-a · HUMAN 관측 기록 1건"])
 })
 
 it("opens the read-only raw request from a row without sending anything", async () => {
@@ -52,11 +53,11 @@ it("opens the read-only raw request from a row without sending anything", async 
   expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain("MASKED-RESPONSE")
 })
 
-it("locks row actions while the snapshot is suspended and shows an empty state without actual Evidence", () => {
+it("locks row actions while the snapshot is suspended and shows an empty state without actual 관측 기록", () => {
   const { unmount } = renderWithQueryClient(<ParameterGapInspector {...propsFor(actualSnapshot(["observed-a"]))} suspended />)
   expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
   expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
   unmount()
   renderWithQueryClient(<ParameterGapInspector {...propsFor(actualSnapshot([], { events: [] }))} />)
-  expect(screen.getByText("연결된 Evidence가 없습니다.")).toBeVisible()
+  expect(screen.getByText("연결된 관측 기록이 없습니다.")).toBeVisible()
 })
