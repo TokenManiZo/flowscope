@@ -206,7 +206,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             }
             var supporting = result.putArray("supporting_assets");
             linkedAssets.forEach(supporting::add);
-            String safeBody = Masking.maskSecrets(response.body());
+            String safeBody = Masking.maskBody(response.body(), response.contentType());
             byte[] encoded = safeBody.getBytes(StandardCharsets.UTF_8);
             if (encoded.length > INLINE_BODY_LIMIT) {
                 result.put("body", utf8Prefix(safeBody, INLINE_BODY_LIMIT));
