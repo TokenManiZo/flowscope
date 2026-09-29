@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.core.SurfaceAnalysis;
 import io.flowscope.core.parameter.ParameterCoordinates;
@@ -31,20 +32,26 @@ final class ExplorerHttpGatewayTest {
         ExplorerTransport transport = request -> {
             captured.set(request);
             boolean html = request.url().equals("https://shop.example.test/");
+            boolean sourceMap = request.url().endsWith(".map");
             return new ExplorerTransport.Response(200, request.url(), "",
-                    html ? "text/html" : "application/javascript", Map.of(),
+                    html ? "text/html" : sourceMap ? "application/json" : "application/javascript", Map.of(),
                     html ? "<script src='https://cdn.example.test/main.js'></script>"
-                            : "fetch('/api/orders/42')", false, html ? "ev-page" : "ev-script", 1, Instant.now());
+                            : sourceMap ? "{\"version\":3}" : "import('./chunk.js'); fetch('/api/orders/42');\n//# sourceMappingURL=main.js.map",
+                    false, html ? "ev-page" : "ev-script", 1, Instant.now());
         };
         try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
-                url -> url.startsWith("https://shop.example.test/"), "run-cdn", ignored -> {})) {
+                ScopePolicy.parse("https://shop.example.test/")::allows, "run-cdn", ignored -> {})) {
             JsonNode page = JSON.readTree(post(gateway, """
                     {"account":"","method":"GET","url":"https://shop.example.test/","headers":{},"body":""}
                     """).body());
             assertEquals("https://cdn.example.test/main.js",
                     page.path("supporting_assets").get(0).asText());
-            assertEquals(200, post(gateway, """
+            JsonNode script = JSON.readTree(post(gateway, """
                     {"account":"","method":"GET","url":"https://cdn.example.test/main.js","headers":{},"body":""}
+                    """).body());
+            assertTrue(script.path("supporting_assets").toString().contains("main.js.map"));
+            assertEquals(200, post(gateway, """
+                    {"account":"","method":"GET","url":"https://cdn.example.test/main.js.map","headers":{},"body":""}
                     """).statusCode());
             assertEquals("https://shop.example.test:443/", captured.get().supportingPageUrl());
             assertEquals(403, post(gateway, """

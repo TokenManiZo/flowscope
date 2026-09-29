@@ -56,4 +56,20 @@ final class SupportingAssetScopeTest {
         assertEquals("https://shop.example.test:443/", assets.pageUrlFor(Source.LLM, "llm-1",
                 scope::allows, "GET", "https://cdn.example.test/app.webmanifest", null, ""));
     }
+
+    @Test
+    void javascriptImportsAndSourceMapBecomeFollowUpAssets() {
+        assets.observeHtml(Source.LLM, "llm-js", scope::allows, "https://shop.example.test/", """
+                <script src='https://cdn.example.test/js/main.js'></script>
+                """);
+        var references = assets.observeJavascript(Source.LLM, "llm-js", scope::allows,
+                "https://cdn.example.test/js/main.js", "https://shop.example.test/", """
+                import('./chunk.js');
+                //# sourceMappingURL=main.js.map
+                """);
+        assertTrue(references.contains("https://cdn.example.test/js/chunk.js"));
+        assertTrue(references.contains("https://cdn.example.test/js/main.js.map"));
+        assertEquals("https://shop.example.test:443/", assets.pageUrlFor(Source.LLM, "llm-js",
+                scope::allows, "GET", "https://cdn.example.test/js/main.js.map", null, ""));
+    }
 }

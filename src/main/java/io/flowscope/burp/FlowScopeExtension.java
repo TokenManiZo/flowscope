@@ -2851,7 +2851,8 @@ public final class FlowScopeExtension implements BurpExtension {
         boolean supportingAsset = input.supportingPageUrl() != null;
         if (!scope.allows(input.url()) && !(supportingAsset
                 && scope.allows(input.supportingPageUrl())
-                && SupportingAssetScope.passiveResource(input.method(), input.url(), "")
+                // Only the run-local gateway can set supportingPageUrl after checking a linked asset.
+                && ("GET".equals(input.method()) || "HEAD".equals(input.method()))
                 && (input.accountId() == null || input.accountId().isBlank())
                 && input.headers().isEmpty() && input.body().length == 0)) {
             throw new IllegalArgumentException("Explorer 요청이 exact scope 밖입니다.");

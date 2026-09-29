@@ -1,5 +1,6 @@
 package io.flowscope.core;
 
+import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -11,7 +12,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** In-scope documents may load passive resources from other origins without making those origins scan targets. */
 public final class SupportingAssetScope {
@@ -20,6 +24,7 @@ public final class SupportingAssetScope {
     private static final Set<String> PASSIVE_DESTINATIONS = Set.of("script", "style", "image", "font", "manifest");
     private static final int MAX_ORIGINS_PER_RUN = 128;
     private static final int MAX_LINKS_PER_RUN = 20_000;
+    private static final Pattern SOURCE_MAP = Pattern.compile("(?m)(?:\\/\\/|\\/\\*)[#@]\\s*sourceMappingURL\\s*=\\s*([^\\s*]+)");
     private final Map<String, Map<String, String>> originsByRun = new HashMap<>();
     private final Map<String, Map<String, String>> linksByRun = new HashMap<>();
 
@@ -42,6 +47,22 @@ public final class SupportingAssetScope {
                 if (destination.equals("script") || destination.equals("manifest")
                         || resolved.matches("(?i).*\\.(?:js|mjs|cjs|map)(?:\\?.*)?")) links.add(resolved);
             }
+        }
+        return List.copyOf(links);
+    }
+
+    public synchronized List<String> observeJavascript(Source source, String runId, Predicate<String> scope,
+                                                       String scriptUrl, String pageUrl, String body) {
+        if (scope == null || pageUrl == null || !scope.test(pageUrl)
+                || scriptUrl == null || body == null || body.isBlank()) return List.of();
+        String page = documentUrl(pageUrl);
+        if (page == null) return List.of();
+        LinkedHashSet<String> links = new LinkedHashSet<>();
+        JavascriptCallSiteAnalyzer.analyze(body).assets().forEach(asset ->
+                addScriptReference(source, runId, scope, scriptUrl, page, asset.reference(), links));
+        Matcher sourceMap = SOURCE_MAP.matcher(body);
+        while (sourceMap.find()) {
+            addScriptReference(source, runId, scope, scriptUrl, page, sourceMap.group(1), links);
         }
         return List.copyOf(links);
     }
@@ -70,6 +91,22 @@ public final class SupportingAssetScope {
     }
 
     public synchronized void clear() { originsByRun.clear(); linksByRun.clear(); }
+
+    private void addScriptReference(Source source, String runId, Predicate<String> scope, String scriptUrl,
+                                    String pageUrl, String reference, Set<String> links) {
+        try {
+            String resolved = URI.create(scriptUrl).resolve(reference).toString();
+            if (!passiveResource("GET", resolved, "script")) return;
+            if (!scope.test(resolved)) {
+                register(source, runId, resolved, pageUrl);
+                Map<String, String> knownLinks = linksByRun.computeIfAbsent(key(source, runId), ignored -> new HashMap<>());
+                if (knownLinks.size() < MAX_LINKS_PER_RUN) knownLinks.putIfAbsent(resolved, pageUrl);
+            }
+            links.add(resolved);
+        } catch (RuntimeException ignored) {
+            // Dynamic or malformed import is not an executable frontier URL.
+        }
+    }
 
     private void register(Source source, String runId, String url, String pageUrl) {
         String assetOrigin = origin(url);

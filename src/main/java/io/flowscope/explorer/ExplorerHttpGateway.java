@@ -192,11 +192,18 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             result.put("content_type", response.contentType() == null ? "" : response.contentType());
             result.put("evidence_id", response.evidenceId());
             result.put("duration_ms", response.durationMillis());
-            List<String> linkedAssets = inScope && response.status() >= 200 && response.status() < 300
-                    && response.contentType() != null && response.contentType().toLowerCase(Locale.ROOT)
-                    .contains("text/html")
-                    ? supportingAssets.observeHtml(Source.LLM, runId, exactScope, response.url(), response.body())
-                    : List.of();
+            List<String> linkedAssets = List.of();
+            if (response.status() >= 200 && response.status() < 300 && response.contentType() != null) {
+                String mediaType = response.contentType().toLowerCase(Locale.ROOT);
+                if (inScope && mediaType.contains("text/html")) {
+                    linkedAssets = supportingAssets.observeHtml(Source.LLM, runId, exactScope,
+                            response.url(), response.body());
+                } else if ((mediaType.contains("javascript") || response.url().matches("(?i).*\\.(?:js|mjs|cjs)(?:\\?.*)?"))) {
+                    linkedAssets = supportingAssets.observeJavascript(Source.LLM, runId, exactScope,
+                            response.url(), supportingPage == null ? response.url() : supportingPage,
+                            response.body());
+                }
+            }
             var supporting = result.putArray("supporting_assets");
             linkedAssets.forEach(supporting::add);
             String safeBody = Masking.maskSecrets(response.body());
