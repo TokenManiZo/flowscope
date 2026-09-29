@@ -119,7 +119,7 @@ public final class FlowScopeExtension implements BurpExtension {
     record PortProfile(Source source, SourceDetail detail) {}
     private static final Map<Integer, PortProfile> PORT_SOURCE = loadPortMapping();
 
-    /** Binds one observed proxy listener to one explicitly started HUMAN exploration run. */
+    /** Binds one observed proxy listener to an active HUMAN run or one login capture. */
     static final class HumanListenerBinding {
         private static final PortProfile UNKNOWN = new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN);
         private static final PortProfile HUMAN = new PortProfile(Source.HUMAN, SourceDetail.BROWSER);
@@ -129,6 +129,8 @@ public final class FlowScopeExtension implements BurpExtension {
         private int configuredHumanPort = -1;
         private int otherPort = -1;
         private long otherPortCount;
+        private String sessionCaptureHandle = "";
+        private int sessionCapturePort = -1;
 
         HumanListenerBinding(Map<Integer, PortProfile> configured) {
             this.configured = Map.copyOf(configured);
@@ -142,29 +144,48 @@ public final class FlowScopeExtension implements BurpExtension {
             otherPortCount = 0;
         }
 
-        synchronized void clear() { start(""); }
+        synchronized void clear() {
+            start("");
+            sessionCaptureHandle = "";
+            sessionCapturePort = -1;
+        }
 
         synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
                                          RunContextRegistry.Context humanRun) {
+            return resolve(listenerInterface, target, scope, humanRun, null);
+        }
+
+        synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
+                                         RunContextRegistry.Context humanRun, String captureHandle) {
             int observedPort = listenerPort(listenerInterface);
             PortProfile explicit = configured.get(observedPort);
             if (explicit != null && explicit.source() != Source.HUMAN) return explicit;
-            if (humanRun == null || humanRun.phase() != RunPhase.EXPLORATION
-                    || scope == null || !scope.allows(target) || observedPort < 1) {
+            boolean inScope = scope != null && scope.allows(target) && observedPort > 0;
+            if (humanRun != null && humanRun.phase() == RunPhase.EXPLORATION && inScope) {
+                sessionCapturePort = -1;
+                if (!humanRun.runId().equals(runId)) start(humanRun.runId());
+                if (explicit != null) {
+                    configuredHumanPort = observedPort;
+                    return explicit;
+                }
+                if (port < 1) port = observedPort;
+                if (port == observedPort) return HUMAN;
+                otherPort = observedPort;
+                otherPortCount++;
+                return UNKNOWN;
+            }
+            if (captureHandle == null || captureHandle.isBlank()) {
+                sessionCaptureHandle = "";
+                sessionCapturePort = -1;
                 return explicit == null ? UNKNOWN : explicit;
             }
-            if (!humanRun.runId().equals(runId)) {
-                start(humanRun.runId());
+            if (!captureHandle.equals(sessionCaptureHandle)) {
+                sessionCaptureHandle = captureHandle;
+                sessionCapturePort = -1;
             }
-            if (explicit != null) {
-                configuredHumanPort = observedPort;
-                return explicit;
-            }
-            if (port < 1) port = observedPort;
-            if (port == observedPort) return HUMAN;
-            otherPort = observedPort;
-            otherPortCount++;
-            return UNKNOWN;
+            if (!inScope) return explicit == null ? UNKNOWN : explicit;
+            if (sessionCapturePort < 1) sessionCapturePort = observedPort;
+            return sessionCapturePort == observedPort ? explicit == null ? HUMAN : explicit : UNKNOWN;
         }
 
         synchronized int boundPort(String activeRunId) {
@@ -539,13 +560,13 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyScopeHandler implements ProxyRequestHandler {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
+            String loginCaptureHandle = sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null);
             PortProfile profile = humanListeners.resolve(request.listenerInterface(), request.url(), scope,
-                    runContexts.current(Source.HUMAN));
+                    runContexts.current(Source.HUMAN), loginCaptureHandle);
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
             try {
                 RunContextRegistry.Context context = runContexts.current(profile.source());
-                String captureHandle = profile.source() == Source.HUMAN
-                        ? sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null) : null;
+                String captureHandle = profile.source() == Source.HUMAN ? loginCaptureHandle : null;
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 String requestCaptureAccountId = captureAccountId == null ? null : captureAccountForCredential(

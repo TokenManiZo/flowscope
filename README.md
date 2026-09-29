@@ -127,7 +127,7 @@ Burp Browser에 연결된 프록시 리스너와 ZAP용 SCANNER 리스너를 구
 | `127.0.0.1:8081` | SCANNER | 대상 요청을 보내는 ZAP |
 | `127.0.0.1:8082` | LLM | 선택적 직접 클라이언트 관측 fallback (`UNVERIFIED_RUNTIME`, Evidence 보존만; coverage·완료 불가) |
 
-HUMAN pass는 기존 명시 HUMAN 포트뿐 아니라 첫 범위 내 요청이 들어온 미매핑 리스너도 그 run에 연결합니다. 요청 시점 리스너 포트를 Evidence에 남기고 화면의 Proxy 상태를 실제 포트로 갱신합니다. 같은 run의 다른 미매핑 포트는 자동으로 합치지 않고 건수·포트를 경고로 표시하며, ZAP `8081`과 LLM 예약 포트는 HUMAN으로 바꾸지 않습니다. 이전 버전에서 이미 `UNKNOWN`으로 저장된 요청은 리스너 근거가 없어 소급 귀속하지 않습니다.
+HUMAN pass는 기존 명시 HUMAN 포트뿐 아니라 첫 범위 내 요청이 들어온 미매핑 리스너도 그 run에 연결합니다. 계정의 로그인 연결 캡처만 시작한 경우에도 해당 캡처의 첫 범위 내 요청 리스너를 HUMAN으로 연결해 인증 후속 응답을 확인합니다. 요청 시점 리스너 포트를 Evidence에 남기고 화면의 Proxy 상태를 실제 포트로 갱신합니다. 같은 run 또는 로그인 캡처의 다른 미매핑 포트는 자동으로 합치지 않으며, ZAP `8081`과 LLM 예약 포트는 HUMAN으로 바꾸지 않습니다. 이전 버전에서 이미 `UNKNOWN`으로 저장된 요청은 리스너 근거가 없어 소급 귀속하지 않습니다.
 
 native Linux Docker Engine의 ZAP은 [Docker의 기본 `host-gateway` 매핑](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip)에 따라 호스트의 default bridge IP로 연결합니다. `127.0.0.1:8081`만 연 상태로는 이 경로를 받을 수 없으므로, 해당 bridge IP에 SCANNER listener를 추가합니다.
 
