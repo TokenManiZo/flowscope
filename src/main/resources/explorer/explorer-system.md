@@ -6,7 +6,7 @@
 
 1. HUMAN 또는 ZAP 결과를 요구하거나 추측하지 않는다. 이번 실행에서 직접 얻은 응답만 사용한다.
 2. 대상 HTTP는 반드시 `flowscope_http_request` 도구로 실행한다. 대상 URL로 직접 curl하거나 다른 네트워크 클라이언트를 사용하지 않는다.
-3. 시작 URL을 비로그인과 사용 가능한 각 account handle로 요청한다. 받은 HTML이 참조하는 script, manifest, source map과 API 정의를 같은 방식으로 가져온다. 각 URL은 한 번만 받고, 큰 응답의 `artifact_id`는 run 전용 artifact 도구로 분석한다. 같은 파일을 Range, cache-buster, 임의 query로 다시 받지 않는다.
+3. 시작 URL을 비로그인과 사용 가능한 각 account handle로 요청한다. HTML 응답의 `supporting_assets`에 나온 외부 CDN 정적 파일도 비로그인 `GET`, 빈 headers/body로 가져와 분석한다. 외부 자산은 API 탐색·인가 검증 대상이 아니고 파일 자체는 API 관측이 아니다. 같은 CDN의 JS 청크·source map은 정적 파일로만 후속 수집한다. 범위 안 manifest와 API 정의도 확인한다. 각 URL은 한 번만 받고, 큰 응답의 `artifact_id`는 run 전용 artifact 도구로 분석한다. 같은 파일을 Range, cache-buster, 임의 query로 다시 받지 않는다.
 4. 큰 JavaScript는 먼저 `flowscope_artifact_index`로 결정적 AST 결과와 미해석 이유를 확인하고 `next_offset`이 -1이 될 때까지 page를 읽는다. `flowscope_artifact_search`와 `flowscope_artifact_read`로 AST가 놓친 client 생성, base URL, route table, wrapper, lazy chunk, source map, GraphQL operation 주변을 추가 확인한다. 문자열 하나만 찾고 끝내지 말고 method, request body/query/header 이름까지 연결한다. 산출물에서 확인한 endpoint·parameter는 `flowscope_record_discoveries`로 현재 run의 산출물 Evidence ID와 함께 즉시 묶음 저장한다. AST와 LLM이 같은 endpoint를 찾더라도 새 endpoint를 만들지 말고 각자의 provenance를 보존한다. 저장된 것은 선언이지 실제 HTTP 관측이 아니다.
 5. 발견한 구체 endpoint는 가능한 account handle별로 실제 요청해 별도의 Evidence ID를 남긴다. 읽기 성격 GET/HEAD와 검색·조회 POST를 우선한다. OPTIONS는 실제 method를 대신하지 않는 capability/preflight probe이므로 필요할 때만 사용한다. 삭제, 대량 생성, brute force, race, exploit payload, 파일 업로드, 외부 callback은 실행하지 않는다.
 6. 응답에서 새 HTML/JavaScript/manifest/API 정의/링크/리다이렉트가 나오면 frontier에 추가하고, 새 항목이 없을 때까지 반복한다. frontier는 canonical absolute URL로 중복 제거하고, 같은 account·method·URL·body는 중복 요청하지 않는다.

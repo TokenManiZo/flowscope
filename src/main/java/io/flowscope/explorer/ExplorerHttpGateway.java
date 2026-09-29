@@ -8,6 +8,7 @@ import io.flowscope.core.Normalizer;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
 import io.flowscope.core.SurfaceAnalysis;
+import io.flowscope.core.SupportingAssetScope;
 import io.flowscope.core.parameter.ParameterCoordinates;
 import io.flowscope.core.discovery.JavascriptAnalysis;
 import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
@@ -69,6 +70,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredParameterKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
     private final ExplorerArtifactStore artifacts;
+    private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
 
     public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
                                Predicate<String> exactScope, String runId,
@@ -138,7 +140,10 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 || !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))) {
             return error(400, "대상은 절대 HTTP(S) URL이어야 합니다.");
         }
-        if (!exactScope.test(target)) {
+        boolean inScope = exactScope.test(target);
+        String supportingPage = inScope ? null : supportingAssets.pageUrlFor(
+                Source.LLM, runId, exactScope, method, target, null, "");
+        if (!inScope && supportingPage == null) {
             emit("SCOPE_BLOCKED", accountId, method, target, 0, "", 0, "exact scope 밖 요청 차단");
             return error(403, "현재 FlowScope exact scope 밖입니다.");
         }
@@ -161,6 +166,10 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 .filter(value -> value.getKey().equalsIgnoreCase("Content-Type"))
                 .map(Map.Entry::getValue).findFirst().orElse("");
         byte[] requestBody = body.path("body").asText("").getBytes(StandardCharsets.UTF_8);
+        if (supportingPage != null && (!accountId.isBlank() || !headers.isEmpty()
+                || requestBody.length > 0)) {
+            return error(400, "외부 정적 자산은 비로그인 GET/HEAD와 빈 헤더·본문만 허용됩니다.");
+        }
         String requestKey = accountId + "\0" + method + "\0" + target + "\0" + sha256(requestBody);
         synchronized (this) {
             if (requestKeys.size() >= MAX_REQUESTS) return error(429, "Explorer run 요청 상한에 도달했습니다.");
@@ -169,7 +178,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         long started = System.nanoTime();
         try {
             ExplorerTransport.Response response = transport.send(new ExplorerTransport.Request(
-                    accountId, method, target, headers, requestBody, contentType, runId, false));
+                    accountId, method, target, headers, requestBody, contentType, runId, false, supportingPage));
             if (!accountId.isBlank()) vault.acceptResponse(accountId, uri, response.headers());
             if (response.evidenceId() != null && !response.evidenceId().isBlank()) {
                 synchronized (this) { responseEvidenceIds.add(response.evidenceId()); }
@@ -183,6 +192,13 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             result.put("content_type", response.contentType() == null ? "" : response.contentType());
             result.put("evidence_id", response.evidenceId());
             result.put("duration_ms", response.durationMillis());
+            List<String> linkedAssets = inScope && response.status() >= 200 && response.status() < 300
+                    && response.contentType() != null && response.contentType().toLowerCase(Locale.ROOT)
+                    .contains("text/html")
+                    ? supportingAssets.observeHtml(Source.LLM, runId, exactScope, response.url(), response.body())
+                    : List.of();
+            var supporting = result.putArray("supporting_assets");
+            linkedAssets.forEach(supporting::add);
             String safeBody = Masking.maskSecrets(response.body());
             byte[] encoded = safeBody.getBytes(StandardCharsets.UTF_8);
             if (encoded.length > INLINE_BODY_LIMIT) {

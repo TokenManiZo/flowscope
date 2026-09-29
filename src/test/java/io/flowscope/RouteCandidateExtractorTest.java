@@ -144,6 +144,27 @@ class RouteCandidateExtractorTest {
     }
 
     @Test
+    void 외부_CDN_스크립트는_페이지_기준_API_선언을_만들되_자체를_API_관측으로_세지않는다() {
+        RequestRecord script = new RequestRecord(Source.SCANNER, "https://cdn.test:443",
+                "GET", "/assets/main.js", 200, "anon");
+        script.hasResponse = true;
+        script.responseContentType = "application/javascript";
+        script.body = "fetch('/api/orders/42'); fetch('api/search?keyword=test');";
+        script.supportingPageUrl = "https://app.test:443/shop/";
+        Pipeline.Result result = Pipeline.run(List.of(script));
+
+        assertTrue(result.coverageRecords.isEmpty());
+        List<RouteCandidate> routes = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        assertTrue(routes.stream().anyMatch(route -> route.service().equals("https://app.test:443")
+                && route.pathTemplate().equals("/api/orders/{id}") && !route.observed()));
+        assertTrue(routes.stream().anyMatch(route -> route.service().equals("https://app.test:443")
+                && route.pathTemplate().equals("/shop/api/search") && !route.observed()));
+        assertFalse(routes.stream().anyMatch(route -> route.service().contains("cdn.test")));
+        assertTrue(routes.stream().allMatch(route -> route.provenanceEvidenceIds().contains(script.evidenceId)));
+    }
+
+    @Test
     void 실제_관측_operation과_미응답_SiteMap후보를_분리하고_분석수를_오염시키지_않는다() {
         RequestRecord observed = new RequestRecord(Source.HUMAN, "https://app.test:443",
                 "GET", "/app/api/orders/1", 200, "anon");

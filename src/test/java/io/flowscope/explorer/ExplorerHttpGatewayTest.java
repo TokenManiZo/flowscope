@@ -25,6 +25,38 @@ final class ExplorerHttpGatewayTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
+    void followsPageLinkedCdnJavascriptButNeverTreatsTheCdnAsAnApiTarget() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();
+        ExplorerTransport transport = request -> {
+            captured.set(request);
+            boolean html = request.url().equals("https://shop.example.test/");
+            return new ExplorerTransport.Response(200, request.url(), "",
+                    html ? "text/html" : "application/javascript", Map.of(),
+                    html ? "<script src='https://cdn.example.test/main.js'></script>"
+                            : "fetch('/api/orders/42')", false, html ? "ev-page" : "ev-script", 1, Instant.now());
+        };
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
+                url -> url.startsWith("https://shop.example.test/"), "run-cdn", ignored -> {})) {
+            JsonNode page = JSON.readTree(post(gateway, """
+                    {"account":"","method":"GET","url":"https://shop.example.test/","headers":{},"body":""}
+                    """).body());
+            assertEquals("https://cdn.example.test/main.js",
+                    page.path("supporting_assets").get(0).asText());
+            assertEquals(200, post(gateway, """
+                    {"account":"","method":"GET","url":"https://cdn.example.test/main.js","headers":{},"body":""}
+                    """).statusCode());
+            assertEquals("https://shop.example.test:443/", captured.get().supportingPageUrl());
+            assertEquals(403, post(gateway, """
+                    {"account":"","method":"GET","url":"https://cdn.example.test/api/private","headers":{},"body":""}
+                    """).statusCode());
+            assertEquals(400, post(gateway, """
+                    {"account":"account-a","method":"GET","url":"https://cdn.example.test/chunk.js","headers":{},"body":""}
+                    """).statusCode());
+        }
+    }
+
+    @Test
     void injectsOpaqueAccountAuthAndBlocksDuplicateAndScopeEscape() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerAccountVault.View account = vault.save(new ExplorerAccountVault.Input("", "A", "USER",

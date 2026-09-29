@@ -402,7 +402,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode httpTool() {
             ObjectNode tool = JSON.createObjectNode().put("type", "function")
                     .put("name", "flowscope_http_request")
-                    .put("description", "Send one exact-scope HTTP request through FlowScope and store its response as LLM Evidence.");
+                    .put("description", "Send one exact-scope HTTP request or a page-linked passive CDN asset through FlowScope; CDN assets are not API observations.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object").put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
             properties.putObject("account").put("type", "string")

@@ -48,6 +48,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
+import io.flowscope.core.SupportingAssetScope;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.HarParser;
@@ -286,6 +287,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
     private final HumanListenerBinding humanListeners = new HumanListenerBinding(PORT_SOURCE);
+    private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private final SessionBroker sessionBroker = new SessionBroker();
     private final ZapAccountVault zapAccounts = new ZapAccountVault();
     private final TransientExchangeVault rawExchanges = new TransientExchangeVault(
@@ -568,7 +570,12 @@ public final class FlowScopeExtension implements BurpExtension {
         }
 
         private boolean allowed(InterceptedRequest request, PortProfile profile) {
-            boolean allowed = ActiveTrafficGuard.allows(profile.source(), scope, request.url());
+            RunContextRegistry.Context context = runContexts.current(profile.source());
+            String runId = context == null ? "live-" + profile.source().name().toLowerCase(Locale.ROOT)
+                    : context.runId();
+            boolean allowed = ActiveTrafficGuard.allows(profile.source(), scope, request.url())
+                    || supportingAssets.pageUrlFor(profile.source(), runId, scope::allows, request.method(), request.url(),
+                    request.headerValue("Referer"), request.headerValue("Sec-Fetch-Dest")) != null;
             if (!allowed) {
                 api.logging().logToOutput("FlowScope exact-scope 차단: " + profile.source() + " " + request.url());
             }
@@ -584,6 +591,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 return request;
             }
             if (context == null) return request;
+            if (profile.source() == Source.SCANNER && !scope.allows(request.url())) {
+                // FLEXIBLE Client Spider may load linked static resources. They are not ZAP campaign
+                // Evidence and never receive a Session Broker credential or a capability header.
+                return request.withRemovedHeader("X-FlowScope-Scanner-Capability")
+                        .withRemovedHeader("Proxy-Authorization");
+            }
             HttpRequest prepared = request;
             if (profile.source() == Source.SCANNER && context.orchestrator() == Orchestrator.SYSTEM) {
                 String expected = context.runId().equals(scannerCapabilityRunId) ? scannerCapability : "";
@@ -737,7 +750,15 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private boolean capture(HttpRequest req, HttpResponse response, PortProfile profile,
                             InFlightRequestTracker.Observation observation) {
-        if (shuttingDown.get() || !ActiveTrafficGuard.allowsCapture(scope, req.url()) || staleObservation(observation)) return false;
+        if (shuttingDown.get() || staleObservation(observation)) return false;
+        RunContextRegistry.Context context = observation == null ? null : observation.context();
+        String runId = context == null ? "live-" + profile.source().name().toLowerCase(Locale.ROOT)
+                : context.runId();
+        String supportingPage = scope.allows(req.url()) ? null : supportingAssets.pageUrlFor(
+                profile.source(), runId, scope::allows, req.method(), req.url(), req.headerValue("Referer"),
+                req.headerValue("Sec-Fetch-Dest"));
+        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) && supportingPage == null) return false;
+        if (supportingPage != null && profile.source() == Source.SCANNER) return false;
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
                 recordDroppedAtCapacity();
@@ -745,6 +766,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         RequestRecord rec = recordFrom(req, response, profile, System.currentTimeMillis(), true, null, observation);
+        rec.supportingPageUrl = supportingPage;
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
         synchronized (records) {
@@ -760,6 +782,11 @@ public final class FlowScopeExtension implements BurpExtension {
                     && liveCrossIdentityReplay.acceptingCaptures(rec)) {
                 pendingLiveReplays.add(rec.runtimeId());
             }
+        }
+        if (supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
+                && String.valueOf(response.headerValue("Content-Type")).toLowerCase(Locale.ROOT)
+                .contains("text/html")) {
+            supportingAssets.observeHtml(profile.source(), rec.runId, scope::allows, req.url(), rec.responseBodyForAnalysis());
         }
         scheduleRebuild();
         return true;
@@ -1354,6 +1381,7 @@ public final class FlowScopeExtension implements BurpExtension {
         rawExchanges.clear();
         proxyObservations.clear();
         toolObservations.clear();
+        supportingAssets.clear();
         droppedRecords.set(0);
         resetPayloadPool();
         synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
@@ -1750,6 +1778,7 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         scope = parsed;
         scopeText = value == null ? "" : value.trim();
+        supportingAssets.clear();
         synchronized (siteMapSeeds) { siteMapSeeds.removeIf(seed -> !parsed.allows(seed.url())); }
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         rebuildRouteCandidates(latest.records);
@@ -2361,6 +2390,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void resetExplorerSecrets() {
+        supportingAssets.clear();
         if (explorer == null) return;
         try { explorer.cancel(); } catch (RuntimeException ignored) { }
         explorer.accounts().forEach(account -> analysisConfig.removeAccount(account.id()));
@@ -2818,7 +2848,14 @@ public final class FlowScopeExtension implements BurpExtension {
         URI target;
         try { target = URI.create(input.url()); }
         catch (RuntimeException error) { throw new IllegalArgumentException("Explorer 대상 URL이 올바르지 않습니다."); }
-        if (!scope.allows(input.url())) throw new IllegalArgumentException("Explorer 요청이 exact scope 밖입니다.");
+        boolean supportingAsset = input.supportingPageUrl() != null;
+        if (!scope.allows(input.url()) && !(supportingAsset
+                && scope.allows(input.supportingPageUrl())
+                && SupportingAssetScope.passiveResource(input.method(), input.url(), "")
+                && (input.accountId() == null || input.accountId().isBlank())
+                && input.headers().isEmpty() && input.body().length == 0)) {
+            throw new IllegalArgumentException("Explorer 요청이 exact scope 밖입니다.");
+        }
         boolean secure = "https".equalsIgnoreCase(target.getScheme());
         int port = target.getPort() >= 0 ? target.getPort() : secure ? 443 : 80;
         String host = target.getHost();
@@ -2897,6 +2934,7 @@ public final class FlowScopeExtension implements BurpExtension {
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
             record.runId = input.runId();
             record.laneAccountId = emptyToNull(input.accountId());
+            record.supportingPageUrl = input.supportingPageUrl();
             appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
             rebuildImmediately();
             RequestRecord published = latest.records.stream().filter(value -> value.runtimeId() == record.runtimeId())
