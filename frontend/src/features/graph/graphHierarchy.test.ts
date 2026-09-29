@@ -57,18 +57,18 @@ describe("API hierarchy", () => {
     const site = projectHierarchy(data(), filters, initial)
     expect(graphCountLabel(site)).toBe(`${site.groups.length} API groups`)
     const group = projectHierarchy(data(), filters, groupNav())
-    expect(graphCountLabel(group)).toBe(`${group.identities.length} identities · ${group.operations.length} operations`)
-    expect(graphCountLabel(group)).not.toContain("resources")
+    const groupObjects = group.resources.length ? ` · ${group.resources.length} objects` : ""
+    expect(graphCountLabel(group)).toBe(`${group.identities.length} identities · ${group.operations.length} operations${groupObjects}`)
     const operation = projectHierarchy(data(), filters, operationNav())
-    expect(graphCountLabel(operation)).toBe(`${operation.identities.length} identities · ${operation.operations.length} operations · ${operation.resources.length} resources`)
+    expect(graphCountLabel(operation)).toBe(`${operation.identities.length} identities · ${operation.operations.length} operations · ${operation.resources.length} objects`)
   })
 
-  it("renders Identity→API with separate source buckets and no Objects in group view", () => {
+  it("renders Identity→API→Object with separate source buckets in group view", () => {
     const group = projectHierarchy(data(), filters, groupNav())
     expect(group.kind).toBe("group")
-    expect(group.nodes.some(node => node.kind === "resource")).toBe(false)
-    expect(group.edges.every(edge => edge.relation === "identity-operation")).toBe(true)
-    expect(group.edges.filter(edge => edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "HUMAN"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "SCANNER"]])
+    expect(group.nodes.some(node => node.kind === "resource")).toBe(true)
+    expect(group.edges.every(edge => edge.relation === "identity-operation" || edge.relation === "operation-resource")).toBe(true)
+    expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "HUMAN"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "SCANNER"]])
     expect(group.operations[0].selection.cells[0].overall).toBe("undecided")
     expect(group.listItems).toEqual(group.operations)
   })
@@ -202,8 +202,9 @@ describe("API hierarchy", () => {
     const snapshot = targetSnapshot({ cells: [cell({ perSource: { human: "allow", scanner: "allow" }, evidenceIds: ["h-1", "h-2", "s-1"] })], events: [event({ eventId: "h-1", op: get, clusterEvidenceIds: ["h-1", "h-2"], repeatCount: 99 }), event({ eventId: "s-1", op: get, source: "scanner", clusterEvidenceIds: ["s-1"] })] })
     const group = projectHierarchy(snapshot, { ...filters, source: ["human"] }, groupNav())
     expect(group.groups[0].sourceCounts).toEqual({ human: 2, scanner: 1, llm: 0 })
-    expect(group.edges).toHaveLength(1)
-    expect(group.edges[0]).toMatchObject({ source: "human", count: 2, countLabel: "×2" })
+    const accessEdges = group.edges.filter((edge) => edge.relation === "identity-operation")
+    expect(accessEdges).toHaveLength(1)
+    expect(accessEdges[0]).toMatchObject({ source: "human", count: 2, countLabel: "×2" })
   })
 
   it("attributes bounded snapshot events without cluster members by their representative Evidence ID", () => {

@@ -220,7 +220,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const rendererUnavailableRef = useRef(onRendererUnavailable)
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
   const publishLayoutRef = useRef<(() => void) | null>(null)
-  const laneCount = "kind" in projection && projection.kind !== "operation" ? 2 : 3
+  const laneCount = "kind" in projection && projection.kind === "site" ? 2 : 3
   const theme = useDocumentTheme()
   const laneCountRef = useRef(laneCount)
   const preferencesRef = useRef(preferences)
