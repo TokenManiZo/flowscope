@@ -270,16 +270,10 @@ function applyHighlight(core: Core, projection: GraphProjection | HierarchyProje
     if (element.data("hl") !== state) element.data("hl", state)
     if (color && element.data("hlColor") !== color) element.data("hlColor", color)
     if (edge) {
-      // 출처를 두 개 이상 고르면 강조된 엣지를 출처 순서대로 몇 px씩 벌려 나란히 그린다. 그 밖에는 같은 두 노드 사이 엣지가 겹쳐 한 줄로 보인다.
+      // 출처를 두 개 이상 고르면 강조된 엣지를 출처 순서대로 나란히 그린다(간격은 routeEdges). 그 밖에는 같은 두 노드 사이 엣지가 겹쳐 한 줄로 보인다.
       const index = color && splitSources.length > 1 ? splitSources.indexOf(String(element.data("src"))) : -1
-      const split = index >= 0 ? String(index) : ""
-      if (element.data("split") !== split) {
-        element.data("split", split)
-        if (index >= 0) {
-          const offset = (index - (splitSources.length - 1) / 2) * 7
-          element.style({ "source-endpoint": `0px ${offset}px`, "target-endpoint": `0px ${offset}px`, "taxi-turn": `${50 + offset / 2}%` })
-        } else element.removeStyle("source-endpoint target-endpoint taxi-turn")
-      }
+      const split = index >= 0 ? String(index - (splitSources.length - 1) / 2) : ""
+      if (element.data("split") !== split) element.data("split", split)
     }
     const card = edge ? undefined : cards.get(id)
     if (!card?.statuses?.length) return
@@ -288,6 +282,77 @@ function applyHighlight(core: Core, projection: GraphProjection | HierarchyProje
     if (element.data("cardImage") !== image.uri) element.data("cardImage", image.uri)
   })
   if (typeof core.batch === "function") core.batch(apply); else apply()
+}
+
+export interface RouteNode { x: number; y: number; width: number; height: number; lane: number }
+export interface RouteEdge { id: string; source: string; target: string; split: number | null }
+export type EdgeRoute = Record<string, string> | null
+
+const ROUTE_SPLIT = 6
+const ROUTE_MIN_RUN = 12
+
+/**
+ * 직교 엣지 경로. cytoscape의 taxi는 노드 중심을 기준으로 꺾어 연결점을 옮기면 끝이 비스듬해지므로, 꺾는 점을 직접 계산해 round-segments로 그린다.
+ * - 묶음: 노드마다 옆면 가운데 한 점으로 나가고 들어온다. 한 출발 노드의 엣지는 한 세로 줄기를 함께 타고 가다 목표별로 갈라지고,
+ *   한 목표로 들어오는 엣지는 마지막 가로 구간에서 합쳐진다.
+ * - 꺾는 세로 줄기: 같은 레인으로 들어가는 엣지는 출발 노드마다 레인 사이 빈 공간의 30~70% 중 다른 x를 써서 다른 출발 노드의 줄기와 겹치지 않는다.
+ * - 출처 나란히 그리기(split): 연결점과 줄기를 함께 6px씩 옮겨 평행을 유지한다.
+ * 목표가 출발 노드 오른쪽에 충분히 떨어져 있지 않으면 null(기본 round-taxi로 그린다).
+ */
+export function routeEdges(nodes: ReadonlyMap<string, RouteNode>, edges: readonly RouteEdge[]): Map<string, EdgeRoute> {
+  const trunks = new Map<number, Set<string>>(), laneLeft = new Map<number, number>()
+  for (const edge of edges) {
+    const target = nodes.get(edge.target)
+    if (!nodes.has(edge.source) || !target) continue
+    trunks.set(target.lane, (trunks.get(target.lane) ?? new Set()).add(edge.source))
+    laneLeft.set(target.lane, Math.min(laneLeft.get(target.lane) ?? Infinity, target.x - target.width / 2))
+  }
+  const byY = (ids: Set<string> | undefined) => [...(ids ?? [])].sort((left, right) => nodes.get(left)!.y - nodes.get(right)!.y || left.localeCompare(right))
+  const routes = new Map<string, EdgeRoute>()
+  for (const edge of edges) {
+    const source = nodes.get(edge.source), target = nodes.get(edge.target)
+    if (!source || !target) continue
+    const offset = (edge.split ?? 0) * ROUTE_SPLIT
+    const start = { x: source.x + source.width / 2, y: source.y + offset }
+    const end = { x: target.x - target.width / 2, y: target.y + offset }
+    const gap = end.x - start.x
+    if (gap < ROUTE_MIN_RUN * 2) { routes.set(edge.id, null); continue }
+    const sources = byY(trunks.get(target.lane))
+    const share = sources.length < 2 ? 0.5 : 0.3 + 0.4 * sources.indexOf(edge.source) / (sources.length - 1)
+    // 줄기 x는 목표 카드 폭과 무관하게 레인의 가장 왼쪽 경계를 기준으로 잡아, 한 출발 노드의 줄기가 한 x에 모인다.
+    const trunkGap = Math.max(0, Math.min(end.x, laneLeft.get(target.lane) ?? end.x) - start.x)
+    const turn = start.x + Math.max(ROUTE_MIN_RUN, Math.min(gap - ROUTE_MIN_RUN, trunkGap * share + offset))
+    const endpoints = { "source-endpoint": `${source.width / 2}px ${start.y - source.y}px`, "target-endpoint": `${-target.width / 2}px ${end.y - target.y}px` }
+    if (Math.abs(end.y - start.y) < 0.5) { routes.set(edge.id, { "curve-style": "straight", ...endpoints }); continue }
+    // segment 점은 두 연결점을 잇는 선 기준 (비율, 수직 거리)로 적는다.
+    const dx = end.x - start.x, dy = end.y - start.y, length = Math.hypot(dx, dy)
+    const along = (x: number, y: number) => ((x - start.x) * dx + (y - start.y) * dy) / (length * length)
+    const across = (x: number, y: number) => ((x - start.x) * -dy + (y - start.y) * dx) / length
+    routes.set(edge.id, {
+      "curve-style": "round-segments", "edge-distances": "endpoints", "segment-radii": "4", ...endpoints,
+      "segment-weights": `${along(turn, start.y)} ${along(turn, end.y)}`,
+      "segment-distances": `${across(turn, start.y)} ${across(turn, end.y)}`,
+    })
+  }
+  return routes
+}
+
+const ROUTE_STYLE_KEYS = "curve-style edge-distances segment-radii segment-weights segment-distances source-endpoint target-endpoint"
+
+function applyEdgeRoutes(core: Core, laneCount: number) {
+  if (typeof core.edges !== "function") return
+  const nodes = new Map<string, RouteNode>()
+  core.nodes().forEach((node) => { nodes.set(node.id(), { ...node.position(), width: node.width(), height: node.height(), lane: laneIndexForKind(String(node.data("kind")), laneCount) }) })
+  const edges: RouteEdge[] = []
+  core.edges().forEach((edge) => {
+    const split = String(edge.data("split") ?? "")
+    edges.push({ id: edge.id(), source: edge.source().id(), target: edge.target().id(), split: split ? Number(split) : null })
+  })
+  const routes = routeEdges(nodes, edges)
+  core.batch(() => core.edges().forEach((edge) => {
+    const route = routes.get(edge.id())
+    if (route) edge.style(route); else edge.removeStyle(ROUTE_STYLE_KEYS)
+  }))
 }
 
 const noStatusColors: ReadonlyMap<number, string> = new Map()
@@ -429,7 +494,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: "node:selected", style: { "border-width": 2, "border-color": "#60a5fa", "overlay-opacity": 0 } },
           { selector: 'node[kind = "route-candidate"]', style: { "border-width": 2, "border-style": "dotted", "border-color": "#64748b" } },
           { selector: 'node[groupState = "closed"]', style: { "border-width": 1.5, "border-style": "dashed", "border-color": "#94a3b8" } },
-          { selector: "edge", style: { width: 1.7, "line-color": "data(color)", "line-style": "data(line)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, label: "data(label)", color: "#d4d4d8", "font-size": "9px", "font-family": "Geist Mono, ui-monospace, monospace", "text-background-color": "#090b0d", "text-background-opacity": 0.86, "text-background-padding": "2px", "text-rotation": "autorotate", "text-margin-y": -7, "curve-style": "taxi", "taxi-direction": "rightward", opacity: 0.9 } },
+          { selector: "edge", style: { width: 1.7, "line-color": "data(color)", "line-style": "data(line)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, label: "data(label)", color: "#d4d4d8", "font-size": "9px", "font-family": "Geist Mono, ui-monospace, monospace", "text-background-color": "#090b0d", "text-background-opacity": 0.86, "text-background-padding": "2px", "text-rotation": "autorotate", "text-margin-y": -7, "curve-style": "round-taxi", "taxi-direction": "rightward", "taxi-radius": 4, opacity: 0.9 } },
           { selector: "edge:selected", style: { width: 2.6, "line-color": "data(color)", "target-arrow-color": "data(color)" } },
           // 강조 필터에 맞는 엣지만 색을 입힌다. 선택 강조(focused)는 그 위에 한 번 더 적용되고, 필터에서 빠진 요소는 마지막 규칙으로 늘 흐리게 둔다.
           { selector: 'edge[hl = "yes"]', style: { "line-color": "data(hlColor)", "target-arrow-color": "data(hlColor)", width: 2.6, opacity: 1 } },
@@ -575,7 +640,16 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     core.on("mouseout blur", "node", hideCardTooltip)
     core.on("dragfree", "node", dragListener)
     core.on("viewport", viewportListener)
+    // 노드 위치·크기(재배치, 끌기, 크기 조절)나 강조(split)가 바뀌면 다음 프레임에 엣지 경로를 한 번 다시 계산한다.
+    let routeFrame: number | null = null
+    const routeListener = () => {
+      if (routeFrame !== null) return
+      routeFrame = requestAnimationFrame(() => { routeFrame = null; applyEdgeRoutes(core, laneCountRef.current) })
+    }
+    core.on("position data add remove", routeListener)
     return () => {
+      core.off("position data add remove", routeListener)
+      if (routeFrame !== null) cancelAnimationFrame(routeFrame)
       core.off("tap", "node, edge", selectListener)
       core.off("dbltap", "node", openListener)
       core.off("tap", backgroundListener)

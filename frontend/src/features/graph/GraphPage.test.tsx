@@ -229,12 +229,13 @@ it.each([900, 600])("opens the shared graph filters and keeps every meaningful t
   expect(success).not.toBeChecked()
 })
 
-it("moves back and forward through graph levels from the breadcrumb", async () => {
+it("moves back and forward through graph levels from the toolbar", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
   const breadcrumb = screen.getByRole("navigation", { name: "그래프 계층" })
-  const back = within(breadcrumb).getByRole("button", { name: "뒤로" }), forward = within(breadcrumb).getByRole("button", { name: "앞으로" })
+  const toolbar = screen.getByRole("toolbar", { name: "그래프 상단 제어" })
+  const back = within(toolbar).getByRole("button", { name: "뒤로" }), forward = within(toolbar).getByRole("button", { name: "앞으로" })
   expect(back).toBeDisabled()
   expect(forward).toBeDisabled()
   await userEvent.click(screen.getByRole("button", { name: "API 목록 보기" }))

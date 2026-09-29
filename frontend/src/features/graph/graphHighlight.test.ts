@@ -81,10 +81,10 @@ describe("graph highlight", () => {
     expect(statusHighlightColors(EMPTY_HIGHLIGHT).size).toBe(0)
   })
 
-  it("always lists 2xx to 5xx and adds other codes only when observed", () => {
+  it("always lists only 2xx to 5xx, leaving other codes out of the rail", () => {
     expect(statusGroups([]).map((group) => group.cls)).toEqual(["2xx", "3xx", "4xx", "5xx"])
     const groups = statusGroups([...events, event("e6", "human", "user-1", 0)])
-    expect(groups.map((group) => group.cls)).toEqual(["2xx", "3xx", "4xx", "5xx", "other"])
+    expect(groups.map((group) => group.cls)).toEqual(["2xx", "3xx", "4xx", "5xx"])
     expect(groups.find((group) => group.cls === "4xx")).toEqual({ cls: "4xx", codes: [{ status: 401, count: 1 }, { status: 403, count: 1 }], total: 2 })
     expect(statusClass(302)).toBe("3xx")
   })

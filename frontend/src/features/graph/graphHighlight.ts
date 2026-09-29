@@ -109,13 +109,12 @@ export function statusHighlightColors(highlight: GraphHighlight): ReadonlyMap<nu
   return new Map(highlight.statuses.map((status) => [status, STATUS_CLASS_COLOR[statusClass(status)]]))
 }
 
-/** 레일에 보여줄 응답 코드 묶음. 2xx~5xx는 관측이 없어도 항상 보이고, 그 밖의 코드는 있을 때만 "기타"로 묶는다. */
-export function statusGroups(events: readonly EventRecord[]): Array<{ cls: StatusClass; codes: Array<{ status: number; count: number }>; total: number }> {
+/** 레일에 보여줄 응답 코드 묶음. 2xx~5xx는 관측이 없어도 항상 보이고, 그 밖의 코드(0 등)는 레일에 두지 않는다. */
+export function statusGroups(events: readonly EventRecord[]): Array<{ cls: (typeof STATUS_CLASSES)[number]; codes: Array<{ status: number; count: number }>; total: number }> {
   const counts = new Map<number, number>()
   for (const event of events) counts.set(event.status, (counts.get(event.status) ?? 0) + 1)
-  const groups = [...STATUS_CLASSES, "other" as const].map((cls) => {
+  return STATUS_CLASSES.map((cls) => {
     const codes = [...counts].filter(([status]) => statusClass(status) === cls).sort(([left], [right]) => left - right).map(([status, count]) => ({ status, count }))
     return { cls, codes, total: codes.reduce((sum, code) => sum + code.count, 0) }
   })
-  return groups.filter((group) => group.cls !== "other" || group.codes.length > 0)
 }

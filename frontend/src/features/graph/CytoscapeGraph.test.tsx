@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent, readMinimap, separateLaneNodes } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphWheelIntent, readMinimap, routeEdges, separateLaneNodes, type RouteNode } from "./CytoscapeGraph"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
@@ -140,9 +140,9 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  expect(core.on).toHaveBeenCalledTimes(7)
+  expect(core.on).toHaveBeenCalledTimes(8)
   unmount()
-  expect(core.off).toHaveBeenCalledTimes(7)
+  expect(core.off).toHaveBeenCalledTimes(8)
   expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(1)
   expect(disconnectResizeObserver).toHaveBeenCalledTimes(1)
   expect(Math.max(...core.off.mock.invocationCallOrder)).toBeLessThan(core.destroy.mock.invocationCallOrder[0])
@@ -729,12 +729,70 @@ it("pushes overlapping nodes in one lane apart by their real height while keepin
   expect(apart.map(node => node.position().y)).toEqual([0, 500])
 })
 
-it("draws every edge as a rightward orthogonal (taxi) line", () => {
+it("draws every edge as a rightward orthogonal line with slightly rounded corners", () => {
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   const options = vi.mocked(cytoscape).mock.calls.at(-1)?.[0] as unknown as { style: Array<{ selector: string; style: Record<string, unknown> }> }
   const edge = options.style.find(rule => rule.selector === "edge")
-  expect(edge?.style).toMatchObject({ "curve-style": "taxi", "taxi-direction": "rightward" })
+  expect(edge?.style).toMatchObject({ "curve-style": "round-taxi", "taxi-direction": "rightward", "taxi-radius": 4 })
   expect(options.style.some(rule => rule.style["curve-style"] === "bezier")).toBe(false)
+})
+
+/** routeEdges 결과를 절대 좌표 꺾은선(시작점, 꺾는 점들, 끝점)으로 되돌린다. */
+function routePoints(nodes: ReadonlyMap<string, RouteNode>, edge: { source: string; target: string }, route: Record<string, string>) {
+  const endpoint = (node: RouteNode, value: string) => { const [x, y] = value.split(" ").map(parseFloat); return { x: node.x + x, y: node.y + y } }
+  const start = endpoint(nodes.get(edge.source)!, route["source-endpoint"]), end = endpoint(nodes.get(edge.target)!, route["target-endpoint"])
+  if (route["curve-style"] === "straight") return [start, end]
+  const dx = end.x - start.x, dy = end.y - start.y, length = Math.hypot(dx, dy)
+  const weights = route["segment-weights"].split(" ").map(Number), distances = route["segment-distances"].split(" ").map(Number)
+  return [start, ...weights.map((w, i) => ({ x: start.x + w * dx - distances[i] * dy / length, y: start.y + w * dy + distances[i] * dx / length })), end]
+}
+
+it("bundles edges: one port per node, one trunk per source, separate trunks for different sources", () => {
+  const nodes = new Map<string, RouteNode>([
+    ["alice", { x: 0, y: 0, width: 100, height: 40, lane: 0 }],
+    ["bob", { x: 0, y: 200, width: 100, height: 40, lane: 0 }],
+    ["orders", { x: 400, y: 100, width: 200, height: 80, lane: 1 }],
+    ["users", { x: 400, y: 300, width: 120, height: 80, lane: 1 }],
+  ])
+  const edges = [
+    { id: "a-o", source: "alice", target: "orders", split: null },
+    { id: "a-u", source: "alice", target: "users", split: null },
+    { id: "b-o", source: "bob", target: "orders", split: null },
+  ]
+  const routes = routeEdges(nodes, edges)
+  const lines = new Map(edges.map(edge => [edge.id, routePoints(nodes, edge, routes.get(edge.id)!)]))
+  for (const points of lines.values()) for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]]
+    expect(Math.abs(a.x - b.x) < 1e-6 || Math.abs(a.y - b.y) < 1e-6).toBe(true)
+  }
+  // alice의 두 엣지는 옆면 가운데 한 점에서 나가고, orders로 들어오는 두 엣지는 옆면 가운데 한 점에서 합쳐진다.
+  expect(lines.get("a-o")![0]).toEqual(lines.get("a-u")![0])
+  expect(lines.get("a-o")![0].y).toBeCloseTo(0)
+  expect(lines.get("a-o")!.at(-1)).toEqual(lines.get("b-o")!.at(-1))
+  expect(lines.get("a-o")!.at(-1)!.y).toBeCloseTo(100)
+  // 같은 레인으로 들어가는 alice·bob의 세로 줄기는 서로 다른 x에 선다.
+  expect(lines.get("a-o")![1].x).not.toBeCloseTo(lines.get("b-o")![1].x)
+  expect(lines.get("a-o")![1].x).toBeCloseTo(lines.get("a-u")![1].x)
+})
+
+it("shifts endpoints and trunk together when parallel sources split, and falls back when nodes are too close", () => {
+  const nodes = new Map<string, RouteNode>([
+    ["alice", { x: 0, y: 0, width: 100, height: 40, lane: 0 }],
+    ["orders", { x: 400, y: 100, width: 200, height: 80, lane: 1 }],
+    ["near", { x: 90, y: 0, width: 60, height: 40, lane: 2 }],
+  ])
+  const edges = [
+    { id: "human", source: "alice", target: "orders", split: -0.5 },
+    { id: "scanner", source: "alice", target: "orders", split: 0.5 },
+    { id: "near", source: "alice", target: "near", split: null },
+  ]
+  const routes = routeEdges(nodes, edges)
+  const human = routePoints(nodes, edges[0], routes.get("human")!), scanner = routePoints(nodes, edges[1], routes.get("scanner")!)
+  human.forEach((point, index) => {
+    expect(scanner[index].y - point.y).toBeCloseTo(6)
+    if (index > 0 && index < human.length - 1) expect(scanner[index].x - point.x).toBeCloseTo(6)
+  })
+  expect(routes.get("near")).toBeNull()
 })
 
 it("reads minimap boxes in model space with the current viewport and dims filtered-out nodes", () => {
