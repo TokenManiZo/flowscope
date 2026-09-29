@@ -203,6 +203,15 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, selectionFor(related.filter(cell => cell.idn === identity)))
     listItems = visible.map(op => addNode("operation", op, selectionFor(related.filter(cell => cell.op === op))))
     addAccess(related)
+    // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 신원 → API → 객체를 한 화면에서 보되,
+    // 객체가 많으면 objectLimit로 접고 "더 보기"로 펼친다(오퍼레이션 레벨과 같은 접기/펼치기).
+    const resourceScores = new Map<string, number>()
+    for (const cell of related) if (cell.resource) resourceScores.set(cell.resource, (resourceScores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
+    const groupResources = [...new Set(related.map(cell => cell.resource).filter((resource): resource is string => !!resource))].sort((left, right) => (resourceScores.get(right) ?? 0) - (resourceScores.get(left) ?? 0) || compareText(left, right))
+    const visibleResources = groupResources.slice(0, resolved.objectLimit)
+    for (const resource of visibleResources) addNode("resource", resource, { ...selectionFor(related.filter(cell => cell.resource === resource)), resource }, { owner: snapshot.owners[resource] ?? null })
+    for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
+    hiddenObjectCount = groupResources.length - visibleResources.length
     hiddenOperationCount = operations.length - visible.length
     routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
@@ -253,6 +262,6 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
 export function graphCountLabel(graph: HierarchyProjection): string {
   if (graph.kind === "site") return `${graph.nodes.filter(node => node.kind === "api-group").length} API groups`
   const parts = [`${graph.identities.length} identities`, `${graph.operations.length} operations`]
-  if (graph.kind === "operation") parts.push(`${graph.resources.length} resources`)
+  if (graph.resources.length) parts.push(`${graph.resources.length} objects`)
   return parts.join(" · ")
 }

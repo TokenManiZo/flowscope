@@ -370,7 +370,7 @@ it("keeps the operation column unpinned and wraps long paths into two lines insi
   // 내용 폭(w-max) 표에서 퍼센트 폭 열은 표를 수만 px로 늘린다(1% 열이 내용을 담으려면 표 = 내용 ÷ 0.01).
   for (const column of within(table).getAllByRole("columnheader")) expect(column.className).not.toMatch(/w-\[\d+%\]/)
   // 폭 제한은 표 칸이 아니라 안쪽 블록에 건다.
-  const block = label.querySelector(".max-w-\\[20rem\\]")!
+  const block = label.querySelector(".max-w-\\[24rem\\]")!
   expect(block).not.toBeNull()
   const lines = [...block.querySelectorAll("[aria-hidden] > span")].map((line) => line.textContent)
   expect(lines).toHaveLength(2)

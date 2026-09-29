@@ -15,6 +15,8 @@ interface Props {
   locked: boolean
   fitVersion: number
   layoutVersion?: number
+  /** 그래프 디자인: current(bezier 곡선) 또는 legacy(taxi 직각 꺾은선). 다크 테마는 유지한다. */
+  design?: "current" | "legacy"
   /** 한 레인만 다시 세운다. version이 바뀔 때만 실행한다. */
   laneLayout?: { lane: number; version: number }
   preferences?: GraphPreferences | null
@@ -81,15 +83,17 @@ function graphFocusStates(projection: GraphProjection | HierarchyProjection, sel
   }
 }
 
-function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark"): ElementDefinition[] {
+function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark", design: "current" | "legacy" = "current"): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
   const focus = graphFocusStates(projection, selectedElementId)
   const edges = projection.edges.map((edge) => {
     const { source, target } = edgeEndpoints(edge)
-    // 관측 엣지는 주체 구분 없이 한 가지 선으로 그리고 접근 주체는 양 끝 노드 카드의 아이콘으로만 표시한다.
-    // 주체가 없는 구조·경로 후보 엣지는 '미관측' 표시(회색 점선)를 그대로 둔다.
+    // current 디자인: 관측 엣지는 주체 구분 없이 한 가지 회색 선으로 그리고 접근 주체는 양 끝 노드 카드 아이콘으로만 표시한다.
+    // legacy(예전 · taxi) 디자인: 옛 그래프처럼 관측 엣지를 소스별 색·선종(사람 파랑 실선·스캐너 빨강 파선·LLM 점선)으로 되살린다.
+    // 어느 쪽이든 주체가 없는 구조·경로 후보 엣지는 '미관측' 표시(회색 점선)를 그대로 둔다.
     const observed = edge.source !== null
-    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edge(edge.id) }, origin: edge.source }
+    const legacy = design === "legacy"
+    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: legacy || !observed ? edge.line : "solid", color: legacy || !observed ? edge.color : EDGE_COLOR[theme], countLabel: edge.countLabel, focused: focus.edge(edge.id) }, origin: edge.source }
   })
   const nodeFocus = focus.node
   const nodeSources = new Map<string, Set<CardSource>>()
@@ -194,7 +198,7 @@ function publishGeometry(container: HTMLDivElement, core: Core) {
   container.dataset.graphGeometry = JSON.stringify({ width: container.clientWidth, height: container.clientHeight, maxZoom: core.maxZoom(), nodes })
 }
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, design = "current", laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -216,7 +220,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const rendererUnavailableRef = useRef(onRendererUnavailable)
   const scheduleLaneCorrectionRef = useRef<(() => void) | null>(null)
   const publishLayoutRef = useRef<(() => void) | null>(null)
-  const laneCount = "kind" in projection && projection.kind !== "operation" ? 2 : 3
+  const laneCount = "kind" in projection && projection.kind === "site" ? 2 : 3
   const theme = useDocumentTheme()
   const laneCountRef = useRef(laneCount)
   const preferencesRef = useRef(preferences)
@@ -493,7 +497,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     cardsRef.current = new Map()
     // 전체 재정렬(layoutVersion 변경)만 사용자가 바꾼 크기를 비운다. 새로고침·필터·이동은 저장된 크기를 그대로 쓴다.
     // 선택은 여기서 다시 만들지 않는다(아래 effect가 강조 값만 바꾼다). 클릭마다 전체를 지우고 다시 그리면 깜빡인다.
-    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current, theme))
+    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current, theme, design))
     setCornerCursor(null)
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)
     core.nodes().forEach((node) => {
@@ -505,7 +509,17 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     syncSelection(core, selectedElementIdRef.current)
     scheduleLaneCorrectionRef.current?.()
-  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, theme])
+  }, [confirmedNodeIds, design, dismissCardTooltip, laneCount, layoutVersion, locked, projection, theme])
+
+  // legacy 디자인은 엣지를 taxi(직각 꺾은선)로, current는 bezier로. projection 갱신 후에도 다시 적용한다.
+  useEffect(() => {
+    const core = coreRef.current
+    if (!core) return
+    try {
+      core.edges().style("curve-style", design === "legacy" ? "taxi" : "bezier")
+      if (design === "legacy") core.edges().style("taxi-direction", "rightward")
+    } catch { /* 렌더러 미지원(테스트 목 등)에서는 무시한다. */ }
+  }, [design, projection, layoutVersion])
 
   // ponytail: 한 레인만 다시 세운다. 전체 재정렬과 달리 다른 레인에서 잡아둔 배치는 건드리지 않는다.
   useEffect(() => {

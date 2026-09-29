@@ -30,13 +30,14 @@ export interface SourcePassLayoutProps {
   emptyHint: string
   feedBadge?: ReactNode
   feedFooter?: ReactNode
+  feedContent?: ReactNode
   notices?: ReactNode
 }
 
 /** HUMAN·ZAP·LLM 세 소스가 같은 형식(상태 타일 + 실행 컨트롤 + 작업 피드)으로 보이도록 하는 공통 레이아웃. */
 export function SourcePassLayout({
   label, title, statusTiles, control, controlTitle = "실행 설정",
-  feedItems, feedTitle, feedDescription, emptyHint, feedBadge, feedFooter, notices,
+  feedItems, feedTitle, feedDescription, emptyHint, feedBadge, feedFooter, feedContent, notices,
 }: SourcePassLayoutProps) {
   return (
     <section className="grid gap-3" aria-label={`${label} 실행 영역`}>
@@ -60,7 +61,7 @@ export function SourcePassLayout({
         <CardContent>{control}</CardContent>
       </Card>
 
-      <Card className="flex min-h-[20rem] flex-col overflow-hidden">
+      {feedContent ?? <Card className="flex min-h-[20rem] flex-col overflow-hidden">
         <CardHeader className="border-b">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -87,7 +88,7 @@ export function SourcePassLayout({
           </div>
           {feedFooter}
         </CardContent>
-      </Card>
+      </Card>}
     </section>
   )
 }
