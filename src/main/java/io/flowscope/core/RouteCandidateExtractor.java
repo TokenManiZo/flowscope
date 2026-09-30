@@ -42,11 +42,12 @@ public final class RouteCandidateExtractor {
                            Set<RouteCandidate.Provenance> provenance, boolean observed,
                            RouteCandidate.Applicability applicability, String reviewReason) {}
 
+    private static final JavascriptRouteDiscoveryAdapter JAVASCRIPT_ADAPTER = new JavascriptRouteDiscoveryAdapter();
     private static final List<RouteDiscoveryAdapter> ADAPTERS = List.of(
             new MetadataRouteDiscoveryAdapter(),
             new HtmlRouteDiscoveryAdapter(),
             new NextBuildManifestDiscoveryAdapter(),
-            new JavascriptRouteDiscoveryAdapter(),
+            JAVASCRIPT_ADAPTER,
             new OpenApiRouteDiscoveryAdapter(),
             new XmlRouteDiscoveryAdapter());
     private static final Set<String> STATE_CHANGING = Set.of("POST", "PUT", "PATCH", "DELETE");
@@ -61,8 +62,14 @@ public final class RouteCandidateExtractor {
         Map<String, Mutable> candidates = new LinkedHashMap<>();
         List<RequestRecord> safeRecords = records == null ? List.of() : records;
         for (RequestRecord record : safeRecords) {
-            if (!record.hasResponse || !scope.allows(record.service + record.path)) continue;
-            if (record.trafficClassification.coverageEligible()) {
+            if (!record.hasResponse) continue;
+            boolean inScope = scope.allows(record.service + record.path);
+            boolean supportingScript = !inScope && record.source != Source.UNKNOWN
+                    && record.supportingPageUrl != null
+                    && scope.allows(record.supportingPageUrl)
+                    && JAVASCRIPT_ADAPTER.supports(RouteDiscoveryDocument.from(record));
+            if (!inScope && !supportingScript) continue;
+            if (inScope && record.trafficClassification.coverageEligible()) {
                 addObserved(candidates, scope, record,
                         provenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST, record.evidenceId,
                                 record.source, record.runId, "observed-request",
@@ -70,12 +77,16 @@ public final class RouteCandidateExtractor {
             }
             RouteDiscoveryDocument document = RouteDiscoveryDocument.from(record);
             for (RouteDiscoveryAdapter adapter : ADAPTERS) {
+                if (supportingScript && !(adapter instanceof JavascriptRouteDiscoveryAdapter)) continue;
                 if (!adapter.supports(document)) continue;
                 List<DiscoveredRoute> discovered;
                 try { discovered = adapter.discover(document); }
                 catch (RuntimeException ignored) { continue; }
                 for (DiscoveredRoute route : discovered) {
-                    add(candidates, scope, resolve(document.baseUrl(), route.reference()), route.method(),
+                    String base = supportingScript
+                            && route.provenanceType() != RouteCandidate.ProvenanceType.SCRIPT_DEPENDENCY
+                            ? record.supportingPageUrl : document.baseUrl();
+                    add(candidates, scope, resolve(base, route.reference()), route.method(),
                             provenance(route.provenanceType(), document.evidenceId(), document.source(),
                                     document.runId(), route.adapter(), route.applicability(), route.reason()),
                             false, route.applicability(), route.reason());

@@ -121,14 +121,14 @@ public final class ZapClient {
     }
     public String clientSpider(String target, String contextName) {
         String query = "browser=" + enc(CLIENT_BROWSER) + "&url=" + enc(target)
-                + "&subtreeOnly=true&scopeCheck=STRICT&maxCrawlDepth=5"
+                + "&subtreeOnly=true&scopeCheck=FLEXIBLE&maxCrawlDepth=5"
                 + "&numberOfBrowsers=1&logoutAvoidance=true";
         if (contextName != null && !contextName.isBlank()) query += "&contextName=" + enc(contextName);
         return get("/JSON/clientSpider/action/scan/", query);
     }
     public String clientSpider(String target, String contextName, String userName, String browser) {
         return get("/JSON/clientSpider/action/scan/", "url=" + enc(target)
-                + "&subtreeOnly=true&scopeCheck=STRICT&contextName=" + enc(contextName)
+                + "&subtreeOnly=true&scopeCheck=FLEXIBLE&contextName=" + enc(contextName)
                 + "&maxCrawlDepth=5&numberOfBrowsers=1&logoutAvoidance=true"
                 + "&userName=" + enc(userName) + "&browser=" + enc(browser));
     }

@@ -90,4 +90,47 @@ class FlowScopeExtensionListenerTest {
                 "https://example.test/api", SCOPE, human("human-1")).source());
         assertEquals(9999, listeners.boundPort("human-1"));
     }
+
+    @Test
+    void loginCaptureWithoutHumanPassClaimsItsOwnBrowserListener() {
+        var listeners = new FlowScopeExtension.HumanListenerBinding(PORTS);
+
+        assertEquals(Source.HUMAN, listeners.resolve("127.0.0.1:8888",
+                "https://example.test/login", SCOPE, null, "session-a").source());
+        assertEquals(Source.UNKNOWN, listeners.resolve("127.0.0.1:9999",
+                "https://example.test/api/me", SCOPE, null, "session-a").source());
+        assertEquals(Source.UNKNOWN, listeners.resolve("127.0.0.1:8080",
+                "https://example.test/api/me", SCOPE, null, "session-a").source());
+        assertEquals(Source.SCANNER, listeners.resolve("127.0.0.1:8081",
+                "https://example.test/api/me", SCOPE, null, "session-a").source());
+        assertEquals(Source.HUMAN, listeners.resolve("127.0.0.1:9999",
+                "https://example.test/api/me", SCOPE, null, "session-b").source());
+        assertEquals(Source.UNKNOWN, listeners.resolve("127.0.0.1:9999",
+                "https://example.test/api/me", SCOPE, null, null).source());
+        assertEquals(Source.HUMAN, listeners.resolve("127.0.0.1:8080",
+                "https://example.test/api/me", SCOPE, null, null).source());
+    }
+
+    @Test
+    void activeHumanRunDoesNotChangeItsListenerWhenLoginCaptureUsesAnotherPort() {
+        var listeners = new FlowScopeExtension.HumanListenerBinding(PORTS);
+        assertEquals(Source.HUMAN, listeners.resolve("127.0.0.1:8888",
+                "https://example.test/", SCOPE, human("human-1"), "session-a").source());
+        assertEquals(Source.UNKNOWN, listeners.resolve("127.0.0.1:9999",
+                "https://example.test/api/me", SCOPE, human("human-1"), "session-a").source());
+        assertEquals(8888, listeners.boundPort("human-1"));
+    }
+
+    @Test
+    void pageLinkedExternalScriptKeepsHumanSourceOnlyOnTheBoundListener() {
+        var listeners = new FlowScopeExtension.HumanListenerBinding(PORTS);
+        listeners.resolve("127.0.0.1:8888", "https://example.test/", SCOPE, human("human-1"));
+
+        assertEquals(Source.HUMAN, listeners.resolve("127.0.0.1:8888",
+                "https://cdn.example.test/main.js", SCOPE, human("human-1"), null, true).source());
+        assertEquals(Source.UNKNOWN, listeners.resolve("127.0.0.1:9999",
+                "https://cdn.example.test/main.js", SCOPE, human("human-1"), null, true).source());
+        assertEquals(Source.UNKNOWN, listeners.resolve("127.0.0.1:8888",
+                "https://other.example.test/api/private", SCOPE, human("human-1"), null, false).source());
+    }
 }

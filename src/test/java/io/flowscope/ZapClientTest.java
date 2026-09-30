@@ -62,7 +62,7 @@ class ZapClientTest {
     }
 
     @Test
-    void clientSpiderUsesStrictSubtreeAndPassiveAndAlertApisAreAvailable() throws Exception {
+    void clientSpiderPassesSupportingResourcesWithoutCrawlingOutsideSubtree() throws Exception {
         AtomicReference<String> clientQuery = new AtomicReference<>();
         AtomicReference<String> stoppedClient = new AtomicReference<>();
         AtomicReference<String> scopeQuery = new AtomicReference<>();
@@ -100,7 +100,7 @@ class ZapClientTest {
             assertEquals("{\"scan\":\"3\"}", client.clientSpider("http://127.0.0.1:8888/app"));
             assertTrue(clientQuery.get().contains("browser=chrome-headless"));
             assertTrue(clientQuery.get().contains("subtreeOnly=true"));
-            assertTrue(clientQuery.get().contains("scopeCheck=STRICT"));
+            assertTrue(clientQuery.get().contains("scopeCheck=FLEXIBLE"));
             assertTrue(clientQuery.get().contains("maxCrawlDepth=5"));
             assertTrue(clientQuery.get().contains("numberOfBrowsers=1"));
             assertTrue(clientQuery.get().contains("logoutAvoidance=true"));
@@ -310,7 +310,7 @@ class ZapClientTest {
             assertTrue(clientSpider.get().contains("contextName=ctx"));
             assertTrue(clientSpider.get().contains("userName=FlowScope+user+A"));
             assertTrue(clientSpider.get().contains("browser=chrome-headless"));
-            assertTrue(clientSpider.get().contains("scopeCheck=STRICT"));
+            assertTrue(clientSpider.get().contains("scopeCheck=FLEXIBLE"));
             assertTrue(clientSpider.get().contains("maxCrawlDepth=5"));
             assertTrue(clientSpider.get().contains("numberOfBrowsers=1"));
             assertTrue(clientSpider.get().contains("logoutAvoidance=true"));
