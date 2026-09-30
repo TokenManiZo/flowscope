@@ -117,6 +117,18 @@ public final class AnalysisConfig {
         return this;
     }
 
+    /** Bind like {@link #bindSession} but replace an existing binding: an explicit operator capture wins over history. */
+    public synchronized AnalysisConfig rebindSession(String service, String fingerprint, String accountId) {
+        String key = sessionKey(AccountProfile.normalizeService(service), Fingerprints.safeForStorage(fingerprint));
+        String previous = sessionBindings.remove(key);
+        try {
+            return bindSession(service, fingerprint, accountId);
+        } catch (RuntimeException error) {
+            if (previous != null) sessionBindings.put(key, previous);
+            throw error;
+        }
+    }
+
     public synchronized AnalysisConfig unbindSession(String service, String fingerprint) {
         sessionBindings.remove(sessionKey(AccountProfile.normalizeService(service), fingerprint));
         return this;

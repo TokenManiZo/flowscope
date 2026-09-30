@@ -15,15 +15,23 @@ export interface SourceFeedItem {
   title: string
   status: string
   detail?: string
+  /** 표 형태 피드의 오른쪽 시각 열(HH:MM:SS). */
+  time?: string
+  /** 계정 열을 회색으로(비로그인·미등록 로그인). */
+  mutedDetail?: boolean
 }
 
 export interface SourcePassLayoutProps {
   /** 소스 이름(HUMAN·ZAP·LLM). aria-label 접두어로만 쓴다. */
   label: string
   title: string
-  statusTiles: readonly SourceStatusTile[]
+  /** 이 단계가 무엇을 하는지 한 문장. */
+  description?: string
+  /** 실행 중일 때만 넘긴다. 비어 있으면 타일 줄을 그리지 않는다. */
+  statusTiles?: readonly SourceStatusTile[]
   control: ReactNode
-  controlTitle?: string
+  /** 오른쪽 좁은 카드(예: 계정별 수집 표). */
+  aside?: ReactNode
   feedItems: readonly SourceFeedItem[]
   feedTitle: string
   feedDescription?: string
@@ -34,32 +42,35 @@ export interface SourcePassLayoutProps {
   notices?: ReactNode
 }
 
-/** HUMAN·ZAP·LLM 세 소스가 같은 형식(상태 타일 + 실행 컨트롤 + 작업 피드)으로 보이도록 하는 공통 레이아웃. */
+/**
+ * HUMAN·ZAP·LLM 세 단계가 같은 틀(제목·한 문장 카드 + 선택적 오른쪽 카드 + 작업 피드)로 보이게 하는 공통 레이아웃.
+ * 카드 안 모든 줄은 같은 왼쪽 선과 16px 간격을 쓴다.
+ */
 export function SourcePassLayout({
-  label, title, statusTiles, control, controlTitle = "실행 설정",
+  label, title, description, statusTiles = [], control, aside,
   feedItems, feedTitle, feedDescription, emptyHint, feedBadge, feedFooter, feedContent, notices,
 }: SourcePassLayoutProps) {
   return (
-    <section className="grid gap-3" aria-label={`${label} 실행 영역`}>
-      <h2 className="text-xl font-semibold">{title}</h2>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`${label} 실행 상태`} role="group">
-        {statusTiles.map((tile) => (
-          <Card key={tile.label}>
-            <CardHeader className="pb-2">
-              <CardDescription>{tile.label}</CardDescription>
-              <CardTitle className={tile.mono ? "font-mono text-base break-all" : "text-base"}>{tile.value}</CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
-
+    <section className="grid gap-4" aria-label={`${label} 실행 영역`}>
       {notices}
 
-      <Card className="border-border/70 bg-card/70">
-        <CardHeader className="pb-3"><CardTitle className="text-base">{controlTitle}</CardTitle></CardHeader>
-        <CardContent>{control}</CardContent>
-      </Card>
+      <div className={aside ? "grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" : "grid gap-4"}>
+        <Card className="gap-0 py-0">
+          <CardContent className="grid gap-4 p-5">
+            <div><h2 className="text-base font-semibold">{title}</h2>{description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}</div>
+            {statusTiles.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`${label} 실행 상태`} role="group">
+              {statusTiles.map((tile) => (
+                <div key={tile.label} className="rounded-lg bg-muted px-3 py-2.5">
+                  <p className="text-xs text-muted-foreground">{tile.label}</p>
+                  <p className={tile.mono ? "font-mono text-sm font-medium break-all" : "font-semibold"}>{tile.value}</p>
+                </div>
+              ))}
+            </div>}
+            {control}
+          </CardContent>
+        </Card>
+        {aside}
+      </div>
 
       {feedContent ?? <Card className="flex min-h-[20rem] flex-col overflow-hidden">
         <CardHeader className="border-b">

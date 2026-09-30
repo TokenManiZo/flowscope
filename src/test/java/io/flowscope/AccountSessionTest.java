@@ -52,6 +52,20 @@ final class AccountSessionTest {
     }
 
     @Test
+    void anOperatorCaptureRebindsCredentialsThatAnOlderMistakeBoundToAnotherAccount() {
+        AnalysisConfig config = new AnalysisConfig()
+                .upsertAccount(new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER))
+                .upsertAccount(new AccountProfile("acct-b", "USER B", "https://api.test:443", AccessRole.USER))
+                .bindSession("https://api.test:443", "sub:b@b.com", "acct-a");
+
+        config.rebindSession("https://api.test:443", "sub:b@b.com", "acct-b");
+
+        assertEquals("acct-b", config.boundAccount("https://api.test:443", "sub:b@b.com").orElseThrow().id());
+        assertThrows(IllegalArgumentException.class, () -> config.rebindSession("https://api.test:443", "sub:b@b.com", "missing"));
+        assertEquals("acct-b", config.boundAccount("https://api.test:443", "sub:b@b.com").orElseThrow().id());
+    }
+
+    @Test
     void humanEvidenceKeepsItsCapturedAccountAfterFingerprintIsRebound() {
         AnalysisConfig config = new AnalysisConfig()
                 .upsertAccount(new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER))

@@ -63,6 +63,18 @@ it("stores Public as a read-API policy and offers it only for read requests", as
   expect(await screen.findByRole("option", { name: "Public" })).toHaveAttribute("aria-disabled", "true")
 })
 
+it("lets a group-view object (no single API) set its owner but not the per-API Public policy", async () => {
+  const fetch = installFetch()
+  const user = userEvent.setup()
+  renderWithQueryClient(<GraphOwnerControl snapshot={snapshot} operation={null} resource={resource} />)
+  await user.click(screen.getByRole("combobox", { name: "소유자 선택" }))
+  expect(await screen.findByRole("option", { name: "Public" })).toHaveAttribute("aria-disabled", "true")
+  await user.click(await screen.findByRole("option", { name: "USER B" }))
+  await user.click(screen.getByRole("button", { name: "변경" }))
+  await waitFor(() => expect(posts(fetch, "/api/owner")).toEqual([String(new URLSearchParams({ resource, identity: "acct-demo-user-b" }))]))
+  expect(posts(fetch, "/api/resource-policy")).toEqual([])
+})
+
 it("follows the saved owner when the snapshot changes elsewhere", async () => {
   installFetch()
   const { rerender } = renderWithQueryClient(<GraphOwnerControl snapshot={snapshot} operation={read} resource={resource} />)

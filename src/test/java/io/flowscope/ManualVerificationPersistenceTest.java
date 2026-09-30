@@ -20,6 +20,49 @@ class ManualVerificationPersistenceTest {
     @TempDir Path temp;
 
     @Test
+    void reviewsSavedBeforeManualVerificationStillOpen() throws Exception {
+        AnalysisConfig config = new AnalysisConfig();
+        config.reviewItem("cell", ReviewDecision.Status.CONFIRMED, "checked", List.of("ev-1"));
+        ProjectStore codec = new ProjectStore();
+        Path file = temp.resolve("older.json");
+        codec.save(file, List.of(), config, List.of(), List.of(), Map.of(), List.of(), List.of());
+        var json = new ObjectMapper();
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(file.toFile());
+        for (var review : root.withArray("reviews")) {
+            ((com.fasterxml.jackson.databind.node.ObjectNode) review).remove(List.of("policy_context", "manual_validation_evidence_ids"));
+        }
+        json.writeValue(file.toFile(), root);
+
+        ReviewDecision restored = codec.load(file).config().reviews().get("cell");
+        assertEquals(ReviewDecision.Status.CONFIRMED, restored.status());
+        assertEquals(List.of(), restored.validationEvidenceIds());
+        assertEquals(Map.of(), restored.policyContext());
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root.withArray("reviews").get(0))
+                .put("manual_validation_evidence_ids", "not-an-array");
+        json.writeValue(file.toFile(), root);
+        assertThrows(Exception.class, () -> codec.load(file), "a present but malformed field is still rejected");
+    }
+
+    @Test
+    void sqliteProjectsWithOlderReviewsStillOpen() throws Exception {
+        AnalysisConfig config = new AnalysisConfig();
+        config.reviewItem("cell", ReviewDecision.Status.DISMISSED, "normal", List.of("ev-1"));
+        SqliteProjectStore database = new SqliteProjectStore(new ProjectStore());
+        Path file = temp.resolve("older.flowscope.db");
+        database.save(file, List.of(), config, List.of(), List.of(), Map.of(), List.of(), List.of());
+        // Burp에서 열던 기존 .flowscope.db의 판정 문서에는 두 필드가 없다.
+        try (var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + file);
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE reviews SET document = json_remove(document, '$.policy_context', '$.manual_validation_evidence_ids')");
+        }
+
+        ReviewDecision restored = database.load(file).config().reviews().get("cell");
+        assertEquals(ReviewDecision.Status.DISMISSED, restored.status());
+        assertEquals(List.of(), restored.validationEvidenceIds());
+    }
+
+    @Test
     void manualResponsesAndFailedAttemptsRoundTripWithoutBecomingDiscovery() throws Exception {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/orders/7", 200, "anon");
         record.phase = RunPhase.VALIDATION;

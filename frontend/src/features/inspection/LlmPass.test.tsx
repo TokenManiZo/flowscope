@@ -29,14 +29,18 @@ it("starts an anonymous LLM pass against the scope target from the hub", async (
     throw new Error(`unexpected API ${path}`)
   })
   vi.stubGlobal("fetch", fetchStub)
-  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  const openSettings = vi.fn()
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} onOpenSettings={openSettings} />)
 
-  expect(await screen.findByText("https://app.example.test/")).toBeVisible()
+  // LLM 로그인이 없는 계정은 고를 수 없고 [설정]으로 관리 창을 연다.
+  expect(await screen.findByRole("checkbox", { name: "USER A" })).toBeDisabled()
+  await user.click(screen.getByRole("button", { name: "USER A LLM 로그인 설정" }))
+  expect(openSettings).toHaveBeenCalledWith("user-a")
   // 계정 등록 패널은 계정·세션 화면으로 옮겼다.
   expect(screen.queryByLabelText("표시 이름")).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: "메모리에 계정 등록" })).not.toBeInTheDocument()
 
-  await user.click(screen.getByRole("button", { name: /Explorer 시작/ }))
+  await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
   await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")).toBe(true))
   const startCall = fetchStub.mock.calls.find(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")
   expect(String((startCall?.[1] as RequestInit).body)).toContain("anonymous=true")
@@ -62,7 +66,7 @@ it("shows actionable setup help and rechecks Codex readiness", async () => {
   expect(screen.getByRole("link", { name: /공식 설치 안내/ })).toHaveAttribute(
     "href", "https://learn.chatgpt.com/docs/codex/cli",
   )
-  expect(screen.getByRole("button", { name: /Explorer 시작/ })).toBeDisabled()
+  expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeDisabled()
   await user.click(screen.getByRole("button", { name: /다시 확인/ }))
   await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) =>
     String(path) === "/api/explorer-run" && String((init as RequestInit)?.body).includes("action=recheck"),

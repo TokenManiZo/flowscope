@@ -25,6 +25,11 @@ export interface HumanSessionState {
   verificationSource: VerificationSource;
   lastCheckedLabel: string;
   credentialConflict: boolean;
+  /** ISO instant and "METHOD /path" of the last request recorded for this account; empty when none. */
+  lastRecordedAt?: string;
+  lastRecordedApi?: string;
+  /** 저장된 인증 헤더 이름과 앞부분만 남긴 값(예 "Bearer eyJh••••"). 원문은 오지 않는다. */
+  credentials?: { name: string; preview: string }[];
 }
 
 export interface LoginProofRule {
@@ -44,6 +49,9 @@ export interface BurpRequestCandidate {
   markMatched: boolean;
   eligible: boolean;
   reason: string;
+  /** 서버가 저장한 마스킹 요청·응답 전문. */
+  request?: string;
+  response?: string;
 }
 
 export type ZapLoginStatus =
@@ -124,7 +132,8 @@ export interface AccountSettingsAdapter {
   finishHumanSession(accountId: string): Promise<AccountSettings>;
   revokeHumanSession(accountId: string): Promise<AccountSettings>;
   linkBurpRequest(accountId: string, candidateId: string): Promise<AccountSettings>;
-  registerCredential(accountId: string, input: { cookie: string; authorization: string }): Promise<AccountSettings>;
+  /** 붙여넣은 헤더 블록에서 서버가 Cookie·Authorization·CSRF 헤더만 골라 저장한다. */
+  registerCredential(accountId: string, headers: string): Promise<AccountSettings>;
   saveZapLogin(
     accountId: string,
     input: CredentialInput & { enabled: boolean },
@@ -175,9 +184,14 @@ export function validateProofPath(value: string): string | null {
 }
 
 /** exact origin 형식만 허용한다. */
+/** Scope entries are stored as `http://host:port/`; account services are the bare origin. */
+export function originOf(value: string): string {
+  try { return new URL(value.trim()).origin; } catch { return value.trim(); }
+}
+
 export function validateTarget(value: string): string | null {
   const trimmed = value.trim();
-  if (!/^https?:\/\/[^/\s?#]+$/.test(trimmed)) {
+  if (!/^https?:\/\/[^/\s?#]+\/?$/.test(trimmed)) {
     return "exact origin 형식으로 입력하세요. 예: http://127.0.0.1:8888";
   }
   return null;

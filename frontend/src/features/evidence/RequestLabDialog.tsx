@@ -5,14 +5,15 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { getManualAttempts, getRequestLabDraft, openReplay, sendRequestLab } from "@/lib/api/endpoints"
+import type { AccountSettings } from "@/features/accounts/account-settings/types"
+import { getAccountSettings, getManualAttempts, getRequestLabDraft, openReplay, sendRequestLab } from "@/lib/api/endpoints"
 import type { EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
 import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
 import { RawTextPanel } from "./RawTextPanel"
 import { highlightRaw, rawTokenClass } from "./rawHighlight"
-import { RequestLabMetadata, type RequestLabCredentialMode } from "./RequestLabMetadata"
+import { RequestLabMetadata, requestCredentialPreview, type RequestLabCredentialMode } from "./RequestLabMetadata"
 
 interface Props {
   open: boolean
@@ -49,6 +50,18 @@ function VerificationHistory({ eventId, verifications, snapshotRevision, enabled
   </section>
 }
 
+/**
+ * 현재 세션 = 지금 수집 중이거나 가장 최근에 트래픽이 기록된 신원의 세션.
+ * 원 요청을 보낸 계정과 다를 수 있다(그게 목적). 교차 신원 검증은 이 규칙과 별개다.
+ */
+export function currentSessionFor(sessions: readonly ManagedSession[], service: string): ManagedSession | null {
+  const usable = sessions.filter(session => session.service === service
+    && (session.replayReady ?? (session.status === "ACTIVE" && !session.capturing && !session.credentialConflict)))
+  const recency = (session: ManagedSession) => Date.parse(session.lastRecordedAt ?? session.lastUsedAt ?? session.createdAt) || 0
+  return usable.reduce<ManagedSession | null>((best, session) => !best || recency(session) > recency(best)
+    || (recency(session) === recency(best) && session.capturing && !best.capturing) ? session : best, null)
+}
+
 export function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
   for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
@@ -62,17 +75,20 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   const [version, setVersion] = useState(0)
   const [draft, setDraft] = useState<Omit<RequestLabDraft, "request" | "response"> | null>(null)
   const [mode, setMode] = useState<RequestLabCredentialMode>("ACCOUNT")
-  const [accountId, setAccountId] = useState("")
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
-  const [openingRepeater, setOpeningRepeater] = useState<"ACCOUNT" | "ANONYMOUS" | null>(null)
+  const [openingRepeater, setOpeningRepeater] = useState(false)
   const [error, setError] = useState("")
   const [replayMessage, setReplayMessage] = useState("")
   const [loadAttempt, setLoadAttempt] = useState(0)
   const draftRef = useRef<Omit<RequestLabDraft, "request" | "response"> | null>(null)
 
-  const accounts = useMemo(() => activeAccounts(sessions, draft?.service ?? ""), [draft?.service, sessions])
-  const selectedAccountValid = accountId.length > 0 && accounts.some((account) => account.accountId === accountId)
+  const currentSession = useMemo(() => currentSessionFor(sessions, draft?.service ?? ""), [draft?.service, sessions])
+  const accountId = currentSession?.accountId ?? ""
+  const selectedAccountValid = currentSession !== null
+  const currentSettings = useQuery({ queryKey: ["account-settings", accountId], queryFn: () => getAccountSettings<AccountSettings>(accountId), enabled: open && selectedAccountValid, retry: false })
+  const currentCredentials = currentSettings.data?.human?.credentials ?? []
+  const currentCredential = currentCredentials.find((item) => item.name === "Authorization") ?? currentCredentials[0]
   const invalidateSend = () => {
     context.current.generation += 1
     context.current.sendController?.abort()
@@ -85,10 +101,9 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     setDraft(null)
     setError("")
     setReplayMessage("")
-    setAccountId("")
     setMode("ACCOUNT")
     setSending(false)
-    setOpeningRepeater(null)
+    setOpeningRepeater(false)
     setVersion((value) => value + 1)
   }
 
@@ -106,10 +121,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
       const { request: _request, response: _response, ...metadata } = next
       draftRef.current = metadata
       setDraft(metadata)
-      const eligible = activeAccounts(sessions, next.service)
-      const preferred = eligible.find(session => session.accountId === next.reusableAccountId)
-      setMode(eligible.length ? "ACCOUNT" : "ORIGINAL")
-      setAccountId(preferred?.accountId ?? (eligible.length === 1 ? eligible[0].accountId : ""))
+      setMode(currentSessionFor(sessions, next.service) ? "ACCOUNT" : "ORIGINAL")
       setVersion((value) => value + 1)
     }).catch((reason: unknown) => {
       if (!controller.signal.aborted && context.current.generation === generation) setError(reason instanceof Error ? reason.message : "Request Lab 초안을 불러오지 못했습니다.")
@@ -134,13 +146,10 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     return () => controller.abort()
   }, [open, event.eventId, snapshotRevision, suspended])
 
+  // 세션이 사라지면 진행 중 전송을 끊고 전송을 잠근다. 다른 방식으로 조용히 바꾸지 않는다.
   useEffect(() => {
-    if (mode === "ACCOUNT") {
-      if (accountId && !selectedAccountValid) { invalidateSend(); raw.current.clear(); setSending(false); setVersion(value => value + 1) }
-      if (accounts.length === 0) setMode("ORIGINAL")
-      if (!selectedAccountValid) setAccountId("")
-    }
-  }, [accounts.length, mode, selectedAccountValid])
+    if (mode === "ACCOUNT" && draft && !selectedAccountValid) { invalidateSend(); setSending(false) }
+  }, [draft, mode, selectedAccountValid])
 
   useEffect(() => {
     const clearOnUnload = () => { invalidateSend(); raw.current.clear() }
@@ -158,7 +167,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   async function send() {
     if (suspended || !draft || !draft.requestEditable || sending) return
     if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
-    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("활성 재사용 세션이 있는 계정을 선택하세요."); return }
+    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
     const controller = new AbortController()
     const generation = context.current.generation + 1
     context.current.generation = generation
@@ -186,20 +195,20 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     }
   }
 
-  async function openInRepeater(replayMode: "ACCOUNT" | "ANONYMOUS") {
+  async function openInRepeater() {
     if (suspended || !draft || openingRepeater) return
     if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
-    if (replayMode === "ACCOUNT" && !selectedAccountValid) { setError("활성 재사용 세션이 있는 계정을 선택하세요."); return }
-    setOpeningRepeater(replayMode)
+    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
+    setOpeningRepeater(true)
     setError("")
     setReplayMessage("")
     try {
-      const result = await openReplay({ eventId: event.eventId, request: raw.current.request, credentialMode: replayMode, accountId: replayMode === "ACCOUNT" ? accountId : "" })
+      const result = await openReplay({ eventId: event.eventId, request: raw.current.request, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "" })
       setReplayMessage(result.openedDraft ? "Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다." : result.message)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Repeater 초안을 열지 못했습니다.")
     } finally {
-      setOpeningRepeater(null)
+      setOpeningRepeater(false)
     }
   }
 
@@ -215,18 +224,13 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
           <RequestLabMetadata
             service={draft.service}
             identity={draft.observedIdentity}
+            observedCredential={requestCredentialPreview(raw.current.request)}
             requestRetained={draft.rawRequestRetained}
             responseRetained={draft.rawResponseRetained}
-            requestCharset={draft.requestCharset}
-            responseCharset={draft.responseCharset}
-            requestEditable={draft.requestEditable}
-            sessionStatus={draft.reusableSession}
+            currentSession={currentSession && { label: currentSession.accountLabel, credential: currentCredential ? `${currentCredential.name}: ${currentCredential.preview}` : null }}
             credentialMode={mode}
-            eligibleAccounts={accounts}
-            selectedAccountId={accountId}
-            disabled={suspended || sending || openingRepeater !== null}
+            disabled={suspended || sending || openingRepeater}
             onCredentialModeChange={(nextMode) => { setMode(nextMode); setError("") }}
-            onAccountChange={setAccountId}
           />
           <section aria-label="Request Lab 원문 작업면" className="grid min-w-0 content-start gap-4 p-4">
             {(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}
@@ -246,7 +250,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
           </section>
         </div>}
       </div>
-      <DialogFooter className="sticky bottom-0 mx-0 mb-0 rounded-b-xl"><DialogClose asChild><Button type="button" variant="outline" onClick={close}>닫기</Button></DialogClose><Button type="button" variant="outline" disabled={suspended || !draft || loading || sending || openingRepeater !== null || !selectedAccountValid} onClick={() => void openInRepeater("ACCOUNT")}>{openingRepeater === "ACCOUNT" ? "Repeater 준비 중" : "현재 세션 Repeater"}</Button><Button type="button" variant="outline" disabled={suspended || !draft || loading || sending || openingRepeater !== null} onClick={() => void openInRepeater("ANONYMOUS")}>{openingRepeater === "ANONYMOUS" ? "Repeater 준비 중" : "비로그인 Repeater"}</Button><Button type="button" disabled={suspended || !draft || !draft.requestEditable || loading || sending || openingRepeater !== null || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}>{sending ? "Request Lab 전송 중" : "Request Lab 전송"}</Button></DialogFooter>
+      <DialogFooter className="sticky bottom-0 mx-0 mb-0 rounded-b-xl"><DialogClose asChild><Button type="button" variant="outline" onClick={close}>닫기</Button></DialogClose><Button type="button" variant="outline" disabled={suspended || !draft || loading || sending || openingRepeater || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void openInRepeater()}>{openingRepeater ? "Repeater 준비 중" : "Repeater로 보내기"}</Button><Button type="button" disabled={suspended || !draft || !draft.requestEditable || loading || sending || openingRepeater || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}>{sending ? "Request Lab 전송 중" : "Request Lab 전송"}</Button></DialogFooter>
     </DialogContent>
   </Dialog>
 }

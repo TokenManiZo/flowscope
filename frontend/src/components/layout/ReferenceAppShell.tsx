@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
 import type { AppRoute } from "@/app/routes"
 import { useTheme } from "@/hooks/useTheme"
@@ -10,48 +10,50 @@ export interface ReferenceAppShellProps {
   children: ReactNode
 }
 
+const SIDEBAR_KEY = "flowscope.sidebar"
+
+function readSidebarOpen(): boolean {
+  try { return localStorage.getItem(SIDEBAR_KEY) === "open" } catch { return false }
+}
+
+function typingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+}
+
 /**
- * 사이드바 셸: 데스크톱은 아이콘 막대(56px)만 자리를 차지하고, 커서를 올리거나 키보드로 들어오면 본문 위에 겹쳐 펼친다.
- * 본문 폭이 바뀌지 않아 그래프 캔버스가 다시 그려지지 않는다. 좁은 화면은 햄버거로 여는 오버레이를 쓴다.
+ * 사이드바 셸: 데스크톱은 버튼(또는 ⌘B/Ctrl+B)으로만 펼치고 접으며, 펼치면 본문을 옆으로 밀어낸다(덮지 않음).
+ * 펼침 상태는 브라우저에 기억한다. 그래프 캔버스는 ResizeObserver로 폭 변화를 따라간다. 좁은 화면은 햄버거로 여는 오버레이를 쓴다.
  */
 export function ReferenceAppShell({ route, children }: ReferenceAppShellProps) {
   const { theme, setTheme } = useTheme()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [hovered, setHovered] = useState(false)
-  const [focused, setFocused] = useState(false)
-  const railRef = useRef<HTMLDivElement>(null)
-  const expanded = hovered || focused
+  const [expanded, setExpanded] = useState(readSidebarOpen)
 
   useEffect(() => {
     setMobileOpen(false)
   }, [route])
 
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_KEY, expanded ? "open" : "closed") } catch { /* 저장소가 막힌 환경은 기억하지 않는다. */ }
+  }, [expanded])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "b" && !typingTarget(event.target)) {
+        event.preventDefault()
+        setExpanded((value) => !value)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark")
-  // 마우스로 누른 링크·버튼에 남은 포커스가 사이드바를 펼친 채로 붙잡지 않도록, 커서가 떠나면 포커스도 놓는다.
-  const leaveRail = () => {
-    setHovered(false)
-    const active = document.activeElement
-    if (active instanceof HTMLElement && railRef.current?.contains(active)) active.blur()
-    setFocused(false)
-  }
-  const blurRail = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false)
-  }
 
   return (
     <div className="flex h-svh min-h-svh min-w-0 overflow-x-hidden bg-background text-foreground">
-      <aside className="relative hidden w-14 shrink-0 lg:block">
-        <div
-          ref={railRef}
-          data-expanded={expanded}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={leaveRail}
-          onFocus={() => setFocused(true)}
-          onBlur={blurRail}
-          className={`absolute inset-y-0 start-0 z-50 overflow-hidden border-e border-border bg-card transition-[width,box-shadow] duration-150 ${expanded ? "w-60 shadow-xl" : "w-14"}`}
-        >
-          <SidebarNav route={route} theme={theme} onToggleTheme={toggleTheme} collapsed={!expanded} />
-        </div>
+      <aside data-expanded={expanded} className={`hidden shrink-0 overflow-hidden border-e border-border bg-card transition-[width] duration-150 lg:block ${expanded ? "w-60" : "w-14"}`}>
+        <SidebarNav route={route} theme={theme} onToggleTheme={toggleTheme} collapsed={!expanded} onToggleSidebar={() => setExpanded((value) => !value)} />
       </aside>
 
       {mobileOpen && (

@@ -1,70 +1,77 @@
-import { Label } from "@/components/ui/label"
-import type { ManagedSession } from "@/lib/api/types"
+import type { ReactNode } from "react"
+
+import { InfoHint } from "@/components/ui/info-hint"
+import { cn } from "@/lib/utils"
 
 export type RequestLabCredentialMode = "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+
+/** 인증 방식 단어(Bearer 등)와 앞 4자만 남긴다. 서버 SessionBroker.preview와 같은 규칙. */
+export function credentialPreview(value: string): string {
+  const trimmed = value.trim()
+  const space = trimmed.indexOf(" ")
+  const scheme = space > 0 && space < 16 ? trimmed.slice(0, space + 1) : ""
+  const secret = trimmed.slice(scheme.length).trim()
+  return `${scheme}${secret.length >= 12 ? secret.slice(0, 4) : ""}••••`
+}
+
+/** 원 요청에서 인증값 하나를 골라 가린 미리보기를 만든다(Authorization 우선). */
+export function requestCredentialPreview(request: string): string | null {
+  const headers = request.split(/\r?\n/)
+  for (const name of ["authorization", "cookie"]) {
+    const line = headers.find((header) => header.toLowerCase().startsWith(`${name}:`))
+    if (line) return `${line.slice(0, line.indexOf(":"))}: ${credentialPreview(line.slice(line.indexOf(":") + 1))}`
+  }
+  return null
+}
+
+const MODES: ReadonlyArray<{ mode: RequestLabCredentialMode; label: string; description: string }> = [
+  { mode: "ORIGINAL", label: "원문", description: "기록된 요청을 한 글자도 바꾸지 않고 그대로 보내요." },
+  { mode: "ANONYMOUS", label: "비로그인", description: "인증값(쿠키·토큰)을 빼고 보내요. 로그인 없이도 열리는지 볼 때 써요." },
+  { mode: "ACCOUNT", label: "현재 세션", description: "원 요청의 인증값을 현재 세션의 최신 인증값으로 바꿔서 보내요." },
+]
+
+function IdentityBox({ title, info, name, badge, detail }: { title: string; info: string; name: string; badge?: ReactNode; detail: string }) {
+  return <div className="grid min-w-0 gap-1 rounded-lg bg-muted/60 px-3 py-2.5">
+    <p className="flex items-center gap-1 text-xs text-muted-foreground">{title}<InfoHint label={title}>{info}</InfoHint></p>
+    <p className="flex min-w-0 items-center gap-1.5 font-medium"><span className="truncate">{name}</span>{badge}</p>
+    <p className="truncate font-mono text-xs text-muted-foreground" title={detail}>{detail}</p>
+  </div>
+}
 
 interface Props {
   service: string
   identity: string
+  observedCredential: string | null
   requestRetained: boolean
   responseRetained: boolean
-  requestCharset: string | null
-  responseCharset: string | null
-  requestEditable: boolean
-  sessionStatus: string
+  /** 지금 수집 중이거나 가장 최근에 기록된 신원의 세션. 없으면 "현재 세션"을 고를 수 없다. */
+  currentSession: { label: string; credential: string | null } | null
   credentialMode: RequestLabCredentialMode
-  eligibleAccounts: readonly ManagedSession[]
-  selectedAccountId: string
   disabled?: boolean
   onCredentialModeChange(mode: RequestLabCredentialMode): void
-  onAccountChange(accountId: string): void
 }
 
-const selectClassName = "h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-
-export function RequestLabMetadata({
-  service,
-  identity,
-  requestRetained,
-  responseRetained,
-  requestCharset,
-  responseCharset,
-  requestEditable,
-  sessionStatus,
-  credentialMode,
-  eligibleAccounts,
-  selectedAccountId,
-  disabled = false,
-  onCredentialModeChange,
-  onAccountChange,
-}: Props) {
-  return <section aria-label="Request Lab 메타데이터" className="grid content-start gap-5 border-b bg-muted/20 p-4 lg:border-r lg:border-b-0">
-    <dl className="grid gap-3 text-sm">
-      <div className="grid gap-1"><dt className="text-xs font-medium text-muted-foreground">서비스</dt><dd className="break-all">서비스: {service}</dd></div>
-      <div className="grid gap-1"><dt className="text-xs font-medium text-muted-foreground">관측 신원</dt><dd className="break-all">{identity}</dd></div>
-      <div className="grid gap-1"><dt className="text-xs font-medium text-muted-foreground">보존</dt><dd>요청 {requestRetained ? "보존" : "미보존"} · 응답 {responseRetained ? "보존" : "미보존"}</dd></div>
-      <div className="grid gap-1"><dt className="text-xs font-medium text-muted-foreground">문자셋</dt><dd>{requestCharset ?? "알 수 없음"} / {responseCharset ?? "알 수 없음"}</dd></div>
-      <div className="grid gap-1"><dt className="text-xs font-medium text-muted-foreground">편집</dt><dd>{requestEditable ? "요청 편집 가능" : "요청 편집 불가"}</dd></div>
-      <div className="grid gap-1"><dt className="text-xs font-medium text-muted-foreground">관측 신원의 재사용 세션</dt><dd>{sessionStatus}</dd></div>
+export function RequestLabMetadata({ service, identity, observedCredential, requestRetained, responseRetained, currentSession, credentialMode, disabled = false, onCredentialModeChange }: Props) {
+  const selected = MODES.find((item) => item.mode === credentialMode) ?? MODES[0]
+  return <section aria-label="Request Lab 메타데이터" className="grid content-start gap-4 border-b bg-muted/20 p-4 lg:border-r lg:border-b-0">
+    <dl className="grid gap-1 text-sm">
+      <dt className="text-xs text-muted-foreground">서비스</dt><dd className="break-all">서비스: {service}</dd>
+      {(!requestRetained || !responseRetained) && <dd className="text-xs text-muted-foreground">요청 {requestRetained ? "보존" : "미보존"} · 응답 {responseRetained ? "보존" : "미보존"}</dd>}
     </dl>
-
     <div className="grid gap-2">
-      <Label htmlFor="request-lab-mode">자격 증명 모드</Label>
-      <select id="request-lab-mode" aria-label="자격 증명 모드" className={selectClassName} value={credentialMode} disabled={disabled} onChange={(change) => onCredentialModeChange(change.target.value as RequestLabCredentialMode)}>
-        <option value="ACCOUNT" disabled={eligibleAccounts.length === 0}>ACCOUNT</option>
-        <option value="ANONYMOUS">ANONYMOUS</option>
-        <option value="ORIGINAL">ORIGINAL</option>
-      </select>
-      {eligibleAccounts.length === 0 && <p className="text-xs text-muted-foreground">이 서비스에 ACTIVE 재사용 세션이 있는 계정이 없어 ACCOUNT 모드를 사용할 수 없습니다.</p>}
+      <IdentityBox title="트래픽 신원" info="이 요청을 보낸 계정의 당시 인증값이에요." name={identity} detail={observedCredential ?? "인증값 없음"} />
+      <IdentityBox title="현재 세션" info="지금 수집 중인 계정의 최신 인증값이에요."
+        name={currentSession?.label ?? "없음"}
+        detail={currentSession ? currentSession.credential ?? "확인 중" : "아직 저장된 최신 인증값이 없어요."} />
     </div>
-
-    {credentialMode === "ACCOUNT" && <div className="grid gap-2">
-      <Label htmlFor="request-lab-account">계정</Label>
-      <select id="request-lab-account" aria-label="계정" className={selectClassName} value={selectedAccountId} disabled={disabled} onChange={(change) => onAccountChange(change.target.value)}>
-        <option value="">계정 선택</option>
-        {eligibleAccounts.map((account) => <option key={account.handle} value={account.accountId}>{account.accountLabel}</option>)}
-      </select>
-      <p className="text-xs text-muted-foreground">관측 당시 원문입니다. 보낼 때 선택 계정의 인증값으로 바뀝니다.</p>
-    </div>}
+    <div className="grid gap-2">
+      <p id="request-lab-mode-label" className="text-sm font-medium">어떤 인증값으로 보낼까요?</p>
+      <div role="radiogroup" aria-labelledby="request-lab-mode-label" className="grid grid-cols-3 overflow-hidden rounded-lg border border-border">
+        {MODES.map(({ mode, label }) => <button key={mode} type="button" role="radio" aria-checked={credentialMode === mode}
+          disabled={disabled || (mode === "ACCOUNT" && !currentSession)} onClick={() => onCredentialModeChange(mode)}
+          className={cn("border-r border-border px-2 py-1.5 text-sm last:border-r-0 disabled:cursor-not-allowed disabled:opacity-50", credentialMode === mode ? "bg-primary font-medium text-primary-foreground" : "hover:bg-muted")}>{label}</button>)}
+      </div>
+      <p className="text-xs text-muted-foreground">{selected.description}</p>
+    </div>
   </section>
 }

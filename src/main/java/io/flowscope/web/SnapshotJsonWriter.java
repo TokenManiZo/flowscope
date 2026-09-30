@@ -217,6 +217,9 @@ public final class SnapshotJsonWriter {
             session.put("cookieCount", value.cookieCount());
             session.put("capturing", value.capturing());
             session.put("credentialConflict", value.credentialConflict());
+            session.put("replayReady", value.replayReady());
+            if (value.lastRecordedAt() == null) session.putNull("lastRecordedAt");
+            else session.put("lastRecordedAt", value.lastRecordedAt().toString());
         }
         return out;
     }

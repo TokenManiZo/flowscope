@@ -1,4 +1,4 @@
-import { ChevronDown, Moon, ScanSearch, Sun } from "lucide-react"
+import { ChevronDown, Moon, PanelLeft, ScanSearch, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { appRoutes, navigationGroups, primaryNavigationRoutes, routeHash, routeLabel, type AppRoute, type NavigationGroupId } from "@/app/routes"
@@ -12,10 +12,12 @@ interface SidebarNavProps {
   onNavigate?: () => void
   /** 아이콘만 보이는 접힌 상태. 글자는 화면 읽기 이름으로만 남긴다. */
   collapsed?: boolean
+  /** 데스크톱 사이드바를 펼치고 접는 버튼. 좁은 화면 오버레이에서는 넘기지 않는다. */
+  onToggleSidebar?: () => void
 }
 
 /** 왼쪽 사이드바 탐색. 핵심 화면은 독립 링크로, 나머지는 '부가 기능' 드롭다운으로 묶으며 현재 화면의 그룹은 항상 펼쳐 둔다. */
-export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed = false }: SidebarNavProps) {
+export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed = false, onToggleSidebar }: SidebarNavProps) {
   const activeGroupId = navigationGroups.find((group) => (group.routes as readonly AppRoute[]).includes(route))?.id
   const [openGroups, setOpenGroups] = useState<readonly NavigationGroupId[]>(() =>
     activeGroupId ? [activeGroupId] : [],
@@ -33,17 +35,23 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <a
-        href={routeHash("home")}
-        aria-label="FlowScope 홈으로 이동"
-        onClick={onNavigate}
-        className="flex h-15 shrink-0 items-center gap-2 border-b border-border px-3.5 font-semibold tracking-tight"
-      >
-        <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300">
-          <ScanSearch className="size-4" />
-        </span>
-        <span className={label}>FlowScope</span>
-      </a>
+      <div className={cn("flex shrink-0 border-b border-border", collapsed ? "flex-col items-center gap-2 py-3" : "h-15 items-center justify-between pe-2")}>
+        <a
+          href={routeHash("home")}
+          aria-label="FlowScope 홈으로 이동"
+          onClick={onNavigate}
+          className={cn("flex items-center gap-2 font-semibold tracking-tight", !collapsed && "px-3.5")}
+        >
+          <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center border border-emerald-400/50 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300">
+            <ScanSearch className="size-4" />
+          </span>
+          <span className={label}>FlowScope</span>
+        </a>
+        {onToggleSidebar && <button type="button" onClick={onToggleSidebar} aria-label={collapsed ? "사이드바 펼치기" : "사이드바 접기"} title={`${collapsed ? "사이드바 펼치기" : "사이드바 접기"} (⌘B)`}
+          className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+          <PanelLeft className="size-4" aria-hidden="true" />
+        </button>}
+      </div>
 
       <nav aria-label="FlowScope 전역 탐색" className="grid min-h-0 flex-1 content-start gap-0.5 overflow-x-hidden overflow-y-auto px-2 py-3">
         {primaryNavigationRoutes.map((itemRoute) => (
@@ -101,6 +109,7 @@ function NavLink({ route, active, collapsed, onNavigate }: { route: AppRoute; ac
   return (
     <a
       href={routeHash(route)}
+      title={collapsed ? routeLabel(route) : undefined}
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(

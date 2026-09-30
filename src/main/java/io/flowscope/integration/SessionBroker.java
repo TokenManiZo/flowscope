@@ -1,6 +1,7 @@
 package io.flowscope.integration;
 
 import io.flowscope.core.AccountProfile;
+import io.flowscope.core.Fingerprints;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.VerificationOutcome;
 
@@ -47,7 +48,8 @@ public final class SessionBroker implements AutoCloseable {
                               Status status, VerificationSource verificationSource, Instant createdAt,
                               Instant lastUsedAt, Instant expiresAtHint,
                               boolean hasAuthorization, int cookieCount, boolean capturing,
-                              boolean credentialConflict) {}
+                              boolean credentialConflict, String lastRecordedApi, Instant lastRecordedAt,
+                              boolean replayReady) {}
 
     private record CookieKey(String domain, String path, String name) {}
 
@@ -94,6 +96,11 @@ public final class SessionBroker implements AutoCloseable {
         boolean capturing = true;
         VerificationSource verificationSource = VerificationSource.NONE;
         VerificationSource pendingVerificationSource = VerificationSource.NONE;
+        /** "METHOD /path" of the last request attributed to this capture (no query, no credentials). */
+        String lastRecordedApi;
+        Instant lastRecordedAt;
+        /** Latest JWT subject the browser sent during this capture; only tells Burp tool traffic apart. */
+        String recordingIdentity;
 
         ManagedSession(String handle, AccountProfile account, Instant now) {
             this.handle = handle;
@@ -197,6 +204,34 @@ public final class SessionBroker implements AutoCloseable {
                 .map(session -> session.handle).findFirst();
     }
 
+    public synchronized void noteRecordedRequest(String handle, String api) {
+        ManagedSession session = required(handle);
+        session.lastRecordedApi = api;
+        session.lastRecordedAt = Instant.now();
+    }
+
+    /**
+     * True when a Burp tool request (e.g. Repeater with a swapped token) carries the same JWT subject the browser is
+     * using in this capture. A different subject is deliberate testing and is not attributed to the capture.
+     */
+    public synchronized boolean matchesRecordingIdentity(String handle, Map<String, String> requestHeaders) {
+        ManagedSession session = required(handle);
+        String authorization = header(requestHeaders, "Authorization");
+        String subject = jwtSubject(authorization);
+        return subject == null || session.recordingIdentity == null || session.recordingIdentity.equals(subject);
+    }
+
+    /** Only a JWT subject is a reliable "who is logged in" signal; token refreshes and cookies are not compared. */
+    private static String jwtSubject(String authorization) {
+        if (authorization == null || authorization.isBlank()) return null;
+        String identity = Fingerprints.of(authorization, null);
+        return identity.startsWith("tok:") ? null : identity;
+    }
+
+    /**
+     * Learns the latest credentials from a capture request. The operator's account choice is authoritative while the
+     * capture runs: a changed login (new JWT subject, rotated cookies) is followed, never treated as a different account.
+     */
     public synchronized void observeRequest(String handle, URI target, Map<String, String> requestHeaders,
                                             Instant now) {
         ManagedSession session = requiredForTarget(handle, target);
@@ -207,6 +242,8 @@ public final class SessionBroker implements AutoCloseable {
             return;
         }
         String authorization = header(requestHeaders, "Authorization");
+        String subject = session.capturing ? jwtSubject(authorization) : null;
+        if (subject != null) session.recordingIdentity = subject;
         if (authorization != null && !authorization.isBlank()) replaceHeader(session, "Authorization", authorization);
         for (String csrf : List.of("X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken")) {
             String value = header(requestHeaders, csrf);
@@ -345,13 +382,24 @@ public final class SessionBroker implements AutoCloseable {
      */
     public synchronized String registerAssertedSession(AccountProfile account, String cookieHeader,
                                                         String authorization, Instant now) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (cookieHeader != null) headers.put("Cookie", cookieHeader);
+        if (authorization != null) headers.put("Authorization", authorization);
+        return registerAssertedSession(account, headers, now);
+    }
+
+    /** Same as the Cookie/Authorization form, but takes a pasted header block's managed headers (CSRF included). */
+    public synchronized String registerAssertedSession(AccountProfile account, Map<String, String> requestHeaders,
+                                                        Instant now) {
         if (account == null) throw new IllegalArgumentException("account is required");
         Instant time = now == null ? Instant.now() : now;
         URI service = URI.create(account.service());
         ManagedSession candidate = new ManagedSession("session-" + UUID.randomUUID(), account, time);
-        if (authorization != null && !authorization.isBlank()) {
-            replaceHeader(candidate, "Authorization", authorization.trim());
+        for (String name : List.of("Authorization", "X-CSRF-Token", "X-XSRF-Token", "X-CSRFToken")) {
+            String value = header(requestHeaders, name);
+            if (value != null && !value.isBlank()) replaceHeader(candidate, name, value.trim());
         }
+        String cookieHeader = header(requestHeaders, "Cookie");
         if (cookieHeader != null && !cookieHeader.isBlank()) {
             captureRequestCookies(candidate, service, cookieHeader, time);
         }
@@ -403,7 +451,9 @@ public final class SessionBroker implements AutoCloseable {
             session.status = Status.REAUTH_REQUIRED;
             throw new IllegalStateException("account session requires reauthentication: " + session.account.id());
         }
-        if (session.status != Status.ACTIVE) {
+        // A running capture that already saw an accepted response replays its latest credentials.
+        boolean capturingReady = session.capturing && session.responseConfirmed;
+        if (session.status != Status.ACTIVE && !capturingReady) {
             throw new IllegalStateException("account session is not active: " + session.account.id()
                     + " (" + session.status + ")");
         }
@@ -418,6 +468,17 @@ public final class SessionBroker implements AutoCloseable {
         if (!cookies.isEmpty()) result.put("Cookie", String.join("; ", cookies));
         session.lastUsedAt = time;
         return Map.copyOf(result);
+    }
+
+    /** Exact Authorization owner among managed sessions; cookie-only sessions never claim a request here. */
+    public synchronized Optional<String> accountForAuthorization(URI target, String authorization) {
+        if (authorization == null || authorization.isBlank()) return Optional.empty();
+        List<String> matches = byHandle.values().stream()
+                .filter(session -> !session.credentialConflict && sameService(session, target))
+                .filter(session -> session.headers.containsKey("Authorization")
+                        && authorization.equals(session.headers.get("Authorization").reveal()))
+                .map(session -> session.account.id()).toList();
+        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
     }
 
     public synchronized String handleForAccount(String accountId) {
@@ -468,6 +529,32 @@ public final class SessionBroker implements AutoCloseable {
         return handle == null ? Optional.empty() : Optional.ofNullable(byHandle.get(handle)).map(this::view);
     }
 
+    /** Header name + short masked value (e.g. "Bearer eyJh••••"); raw credentials never leave the broker. */
+    public record CredentialPreview(String name, String preview) {}
+
+    public synchronized List<CredentialPreview> credentialPreviews(String accountId) {
+        String handle = handleByAccount.get(accountId);
+        ManagedSession session = handle == null ? null : byHandle.get(handle);
+        if (session == null) return List.of();
+        List<CredentialPreview> result = new ArrayList<>();
+        session.headers.forEach((name, value) -> {
+            if (!value.isEmpty()) result.add(new CredentialPreview(name, preview(value.reveal())));
+        });
+        List<String> cookies = session.cookies.values().stream()
+                .map(cookie -> cookie.key.name() + "=" + preview(cookie.value.reveal())).toList();
+        if (!cookies.isEmpty()) result.add(new CredentialPreview("Cookie", String.join("; ", cookies)));
+        return List.copyOf(result);
+    }
+
+    /** Keeps an auth scheme word and at most 4 leading characters; short secrets show nothing. */
+    static String preview(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        int space = trimmed.indexOf(' ');
+        String scheme = space > 0 && space < 16 ? trimmed.substring(0, space + 1) : "";
+        String secret = trimmed.substring(scheme.length()).trim();
+        return scheme + (secret.length() >= 12 ? secret.substring(0, 4) : "") + "••••";
+    }
+
     public synchronized List<SessionView> views() {
         return byHandle.values().stream().map(this::view).toList();
     }
@@ -512,7 +599,10 @@ public final class SessionBroker implements AutoCloseable {
                 session.account.service(), session.status, session.verificationSource,
                 session.createdAt, session.lastUsedAt, expires,
                 session.headers.containsKey("Authorization"), session.cookies.size(), session.capturing,
-                session.credentialConflict);
+                session.credentialConflict, session.lastRecordedApi, session.lastRecordedAt,
+                // Same acceptance as headers(): ACTIVE, or a running capture that already saw an accepted response.
+                !session.credentialConflict && (session.status == Status.ACTIVE
+                        || (session.capturing && session.responseConfirmed)));
     }
 
     private static void replaceHeader(ManagedSession session, String name, String value) {

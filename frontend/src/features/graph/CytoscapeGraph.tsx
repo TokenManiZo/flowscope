@@ -141,6 +141,9 @@ function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "view
   return { positions, viewport: { zoom: core.zoom(), pan: core.pan() }, sizes }
 }
 
+/** 컨테이너 크기 변화가 이만큼 멈춘 뒤에 캔버스 크기를 맞춘다. */
+const RESIZE_SETTLE_MS = 120
+
 /** 모서리 인식 범위(화면 px). 카드 모서리 안팎 12px을 잡는다. */
 const CORNER_HIT = 12
 
@@ -362,6 +365,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
+  const imageSwapRef = useRef(0)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
   const tooltipNodeRef = useRef<string | null>(null)
   const tooltipInteractionRef = useRef({ pointer: false, focus: false })
@@ -454,6 +458,17 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const image = renderParameterNodeCardSvg(card, true, undefined, theme)
     return { width: image.width, height: image.height }
   }
+  /**
+   * 새 카드 그림은 디코드가 끝난 뒤에 바꿔 끼운다. Cytoscape는 처음 보는 이미지 URL을 로드하는 동안 빈 카드를 그리므로,
+   * 끄는 동안 매번 바로 바꾸면 카드가 깜빡인다. 그 사이에는 이전 그림이 새 크기 안에 그려진다. 마지막 요청만 적용한다.
+   */
+  const swapCardImage = (node: cytoscape.NodeSingular, uri: string) => {
+    const token = ++imageSwapRef.current
+    const apply = () => { if (token === imageSwapRef.current && !node.removed()) node.data("cardImage", uri) }
+    const image = new Image()
+    image.src = uri
+    if (typeof image.decode === "function") image.decode().then(apply, apply); else apply()
+  }
   /** 좌상단(anchor)을 고정한 채 크기를 바꾼다. 기본 크기와 같아지면 저장값에서 빠진다. 오른쪽 이웃 레인 직전에서 멈춘다. */
   const resizeNode = (nodeId: string, width: number, height: number, anchor: { left: number; top: number }) => {
     const core = coreRef.current, card = cardsRef.current.get(nodeId), base = baseSize(nodeId)
@@ -466,7 +481,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const nextHeight = Math.max(bounds.minHeight, Math.min(bounds.maxHeight, height))
     const custom = Math.round(nextWidth) !== base.width || Math.round(nextHeight) !== base.height
     const image = renderParameterNodeCardSvg(card, true, custom ? { width: Math.round(nextWidth), height: Math.round(nextHeight) } : undefined, theme, statusColorsRef.current)
-    node.data({ cardImage: image.uri, width: image.width, height: image.height })
+    node.data({ width: image.width, height: image.height })
+    swapCardImage(node, image.uri)
     if (custom) node.data({ customWidth: image.width, customHeight: image.height }); else node.removeData("customWidth customHeight")
     node.position({ x: anchor.left + image.width / 2, y: anchor.top + image.height / 2 })
   }
@@ -629,7 +645,13 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (String(event.type) === "blur" && !tooltipInteractionRef.current.pointer && !tooltipInteractionRef.current.focus) dismissCardTooltip()
       else scheduleTooltipHide()
     }
-    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleLaneCorrection)
+    // core.resize()는 캔버스를 지우므로 크기를 바꾸는 동안 매 프레임 부르면 깜빡인다. 조절이 멈춘 뒤 한 번만 맞춘다.
+    let resizeTimer: number | null = null
+    const scheduleResize = () => {
+      if (resizeTimer !== null) window.clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => { resizeTimer = null; scheduleLaneCorrection() }, RESIZE_SETTLE_MS)
+    }
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleResize)
     resizeObserver?.observe(containerRef.current)
     containerRef.current.addEventListener("wheel", wheelListener, { passive: false })
     core.on("tap", "node, edge", selectListener)
@@ -659,6 +681,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       core.off("dragfree", "node", dragListener)
       core.off("viewport", viewportListener)
       resizeObserver?.disconnect()
+      if (resizeTimer !== null) window.clearTimeout(resizeTimer)
       containerRef.current?.removeEventListener("wheel", wheelListener)
       if (correctionFrame !== null) cancelAnimationFrame(correctionFrame)
       if (viewportFrame !== null) cancelAnimationFrame(viewportFrame)

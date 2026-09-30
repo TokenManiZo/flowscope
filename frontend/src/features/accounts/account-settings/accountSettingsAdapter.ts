@@ -48,8 +48,8 @@ export function createAccountSettingsAdapter(): AccountSettingsAdapter {
     async linkBurpRequest(accountId, candidateId) {
       return linkAccountRequestCandidate<AccountSettings>(accountId, candidateId);
     },
-    async registerCredential(accountId, input) {
-      await registerSessionCredential(accountId, input.cookie, input.authorization);
+    async registerCredential(accountId, headers) {
+      await registerSessionCredential(accountId, headers);
       return load(accountId);
     },
     async saveZapLogin(accountId, input) {

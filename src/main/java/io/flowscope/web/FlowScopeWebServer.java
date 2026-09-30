@@ -195,10 +195,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
 
     public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT }
 
-    /** Safe metadata only. Raw request headers and credential values never cross the local API. */
+    /** Safe metadata plus the stored masked request/response text. Raw credential values never cross the local API. */
     public record AccountRequestCandidate(String id, int status, String method, String path, String mime,
                                           boolean hasCookie, boolean hasAuthorization, boolean markMatched,
-                                          boolean eligible, String reason) {}
+                                          boolean eligible, String reason, String request, String response) {}
 
     public record RequestLabDraft(String eventId, String service, String request, String response,
                                   boolean rawRequestRetained, boolean rawResponseRetained, boolean requestEditable,
@@ -420,9 +420,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
             }
             CredentialMode mode = CredentialMode.valueOf(required(form, "credentialMode")
                     .toUpperCase(Locale.ROOT));
-            if (mode == CredentialMode.ORIGINAL) {
-                throw new IllegalArgumentException("Repeater는 현재 세션 또는 비로그인 모드만 지원합니다.");
-            }
             String accountId = form.getOrDefault("accountId", "").trim();
             if (mode == CredentialMode.ACCOUNT && accountId.isBlank()) {
                 throw new IllegalArgumentException("등록 계정 모드에는 계정 선택이 필요합니다.");
@@ -737,16 +734,17 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (action.equals("begin")) {
                 String runId = validatedRunId(form.getOrDefault("runId", "human-" + System.currentTimeMillis()));
                 String accountId = form.getOrDefault("account", "").trim();
+                if (state.contexts().current(Source.HUMAN) != null) {
+                    throw new IllegalStateException("HUMAN run이 이미 진행 중입니다.");
+                }
                 if (!accountId.isBlank()) {
-                    state.config().account(accountId)
+                    AccountProfile account = state.config().account(accountId)
                             .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 HUMAN 계정입니다."));
                     SessionBroker broker = state.sessions();
                     if (broker == null) throw new IllegalStateException("세션 브로커를 사용할 수 없습니다.");
-                    SessionBroker.SessionView session = broker.viewForAccount(accountId)
-                            .orElseThrow(() -> new IllegalArgumentException("HUMAN 계정의 로그인 세션을 먼저 캡처하세요."));
-                    if (session.status() != SessionBroker.Status.ACTIVE) {
-                        throw new IllegalStateException("HUMAN 계정 세션이 ACTIVE가 아닙니다: " + session.status());
-                    }
+                    // The pass itself is the account's capture: credentialed traffic from here on is this
+                    // account's, and its latest credentials become the reusable session. No prior login capture.
+                    broker.beginCapture(account, java.time.Instant.now());
                 }
                 state.contexts().activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
                         Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, runId,
@@ -754,8 +752,17 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 state.humanRunStarted(runId);
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
-                LaneCompletionPolicy.complete(state.contexts(), Source.HUMAN, runId,
-                        state.completionSnapshot());
+                RunContextRegistry.Context active = state.contexts().current(Source.HUMAN);
+                Pipeline.Result snapshot = state.completionSnapshot();
+                // A pass ended before any trusted response Evidence is aborted (not completed) instead of
+                // staying stuck on an error; completion still requires Evidence.
+                if (LaneCompletionPolicy.evaluate(Source.HUMAN, runId, snapshot).eligible()) {
+                    LaneCompletionPolicy.complete(state.contexts(), Source.HUMAN, runId, snapshot);
+                } else if (!state.contexts().abort(Source.HUMAN, runId)) {
+                    throw new IllegalArgumentException("run_id가 활성 exploration run과 일치하지 않습니다.");
+                }
+                String handle = humanCaptureHandle(active);
+                if (handle != null) state.sessions().endCapture(handle);
             } else {
                 throw new IllegalArgumentException("action은 begin 또는 end여야 합니다.");
             }
@@ -767,6 +774,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
 
     private LoopbackHttpServer.Response humanRunState() throws IOException {
         RunContextRegistry.Context context = state.contexts().current(Source.HUMAN);
+        SessionBroker.SessionView capture = humanCapture(context).orElse(null);
         ObjectNode body = json.createObjectNode();
         body.put("active", context != null);
         body.put("completed", state.contexts().completedExplorations().contains(Source.HUMAN));
@@ -778,6 +786,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("otherListenerPort", context == null ? -1 : state.otherHumanListenerPort(context.runId()));
         body.put("otherListenerRequests", context == null ? 0 : state.otherHumanListenerRequests(context.runId()));
         return json(200, body);
+    }
+
+    /** The account capture that belongs to the running HUMAN pass, if it is still capturing. */
+    private java.util.Optional<SessionBroker.SessionView> humanCapture(RunContextRegistry.Context context) {
+        if (context == null || context.accountId() == null || state.sessions() == null) return java.util.Optional.empty();
+        return state.sessions().viewForAccount(context.accountId()).filter(SessionBroker.SessionView::capturing);
+    }
+
+    private String humanCaptureHandle(RunContextRegistry.Context context) {
+        return humanCapture(context).map(SessionBroker.SessionView::handle).orElse(null);
     }
 
     private static String validatedRunId(String value) {
@@ -991,6 +1009,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
         human.put("lastCheckedLabel", session == null ? "기록 없음"
                 : (session.lastUsedAt() == null ? session.createdAt() : session.lastUsedAt()).toString());
         human.put("credentialConflict", session != null && session.credentialConflict());
+        human.put("lastRecordedAt", session == null || session.lastRecordedAt() == null ? "" : session.lastRecordedAt().toString());
+        human.put("lastRecordedApi", session == null || session.lastRecordedApi() == null ? "" : session.lastRecordedApi());
+        human.set("credentials", json.valueToTree(state.sessions() == null ? List.of()
+                : state.sessions().credentialPreviews(accountId)));
 
         ObjectNode proof = body.putObject("proofRule");
         AccountVerificationRule rule = state.config().verificationRule(accountId).orElse(null);
@@ -1041,7 +1063,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (form == null) return invalidForm(request);
         try {
             String id = required(form, "id");
-            if (state.config().sessionBindings().containsValue(id)) throw new IllegalArgumentException("연결된 세션을 먼저 해제하세요.");
+            // removeAccount also drops this account's session bindings; records fall back to unresolved identities.
             if (state.config().account(id).isEmpty()) throw new IllegalArgumentException("존재하지 않는 계정입니다.");
             if (state.sessions() != null) state.sessions().viewForAccount(id)
                     .ifPresent(view -> state.sessions().revoke(view.handle()));
@@ -1111,8 +1133,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
             }
             if (action.equals("credential")) {
                 // Operator-typed reusable credential (memory only, never persisted/logged/snapshotted).
-                broker.registerAssertedSession(account, form.getOrDefault("cookie", ""),
-                        form.getOrDefault("authorization", ""), java.time.Instant.now());
+                String block = form.getOrDefault("headers", "");
+                if (block.isBlank()) {
+                    broker.registerAssertedSession(account, form.getOrDefault("cookie", ""),
+                            form.getOrDefault("authorization", ""), java.time.Instant.now());
+                } else {
+                    broker.registerAssertedSession(account, headerBlock(block), java.time.Instant.now());
+                }
                 state.rebuild();
                 return success(account.label() + " 세션 자격을 메모리에 등록했습니다(ACTIVE · 운영자 확인).");
             }
@@ -1134,6 +1161,19 @@ public final class FlowScopeWebServer implements AutoCloseable {
             }
             throw new IllegalArgumentException("action은 begin, end 또는 revoke여야 합니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    /** Pasted "Name: value" lines; a request line or anything without a header name is skipped. */
+    static Map<String, String> headerBlock(String block) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        for (String line : block.split("\\r?\\n")) {
+            int colon = line.indexOf(':');
+            if (colon <= 0) continue;
+            String name = line.substring(0, colon).trim();
+            if (name.isEmpty() || name.chars().anyMatch(Character::isWhitespace)) continue;
+            headers.put(name, line.substring(colon + 1).trim());
+        }
+        return headers;
     }
 
     private LoopbackHttpServer.Response scannerRun(LoopbackHttpServer.Request request) throws IOException {

@@ -139,8 +139,25 @@ function xmlSafeText(value: string): string {
   }
   return safe
 }
-// Conservative glyph widths keep wide Latin/CJK characters inside the card without measuring fonts.
-const glyphWidth = (character: string, fontSize: number) => fontSize * (/[MWmw@#%&]|[^ -~]/u.test(character) ? 1 : /[A-Z]/.test(character) ? 0.8 : 0.65)
+// Conservative glyph widths keep wide Latin/CJK characters inside the card when fonts cannot be measured.
+const estimatedGlyphWidth = (character: string, fontSize: number) => fontSize * (/[MWmw@#%&]|[^ -~]/u.test(character) ? 1 : /[A-Z]/.test(character) ? 0.8 : 0.65)
+/**
+ * 브라우저에서는 카드 SVG와 같은 sans-serif로 글자 폭을 실제로 잰다. 어림값은 실제보다 25~30% 넓어서
+ * 카드 오른쪽이 비어 있는데도 제목이 일찍 다음 줄로 넘어갔다. 렌더러 차이로 잘리지 않게 5%만 여유를 둔다.
+ */
+const measureContext = typeof OffscreenCanvas === "undefined" ? null : new OffscreenCanvas(1, 1).getContext("2d")
+const measuredGlyphs = new Map<string, number>()
+const glyphWidth = (character: string, fontSize: number) => {
+  if (!measureContext) return estimatedGlyphWidth(character, fontSize)
+  const key = `${fontSize}\u0000${character}`
+  let width = measuredGlyphs.get(key)
+  if (width === undefined) {
+    measureContext.font = `${fontSize}px sans-serif`
+    width = measureContext.measureText(character).width * 1.05
+    measuredGlyphs.set(key, width)
+  }
+  return width
+}
 const textWidth = (value: string, fontSize: number) => Array.from(value).reduce((width, character) => width + glyphWidth(character, fontSize), 0)
 const visualLine = (value: string, width: number, fontSize: number, preserveEnd = false) => {
   const safe = xmlSafeText(value), codePoints = Array.from(safe)
@@ -188,7 +205,10 @@ function titleLines(title: string, width: number, maxLines = 2): string[] {
     let line = ""
     for (const character of Array.from(rest)) { if (!fits(line + character)) break; line += character }
     if (!line) break
-    lines.push(line)
+    // 단어 중간이 아니라 마지막 공백에서 나눈다. 공백이 없을 때만 글자 단위로 자른다.
+    const space = line.lastIndexOf(" ")
+    if (space > 0) line = line.slice(0, space + 1)
+    lines.push(line.trimEnd())
     rest = rest.slice(line.length)
   }
   return [...lines, visualLine(rest, width, TITLE_FONT, true)]

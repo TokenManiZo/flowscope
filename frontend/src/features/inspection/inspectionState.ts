@@ -17,10 +17,23 @@ export function isCompletedScannerRun(status: string | undefined): boolean {
   return status === "COMPLETED" || status === "COMPLETED_WITH_WARNINGS"
 }
 
-export function activeManagedAccountIds(target: string, sessions: readonly { accountId: string; service: string; status: string; capturing: boolean; credentialConflict: boolean }[]): readonly string[] {
-  return sessions
-    .filter((session) => session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && targetMatchesService(target, session.service))
-    .map((session) => session.accountId)
+/** sessionStorage key: the accounts page hands the account to preselect for the next HUMAN pass. */
+export const HUMAN_ACCOUNT_HANDOFF = "flowscope.humanAccount"
+
+/** Local wall-clock HH:MM:SS for a server instant. */
+export function clockTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return [date.getHours(), date.getMinutes(), date.getSeconds()].map((part) => String(part).padStart(2, "0")).join(":")
+}
+
+/**
+ * HUMAN pass learns the account session itself, so any registered account can start one. With a scope,
+ * only accounts of an in-scope service are offered; without one (HUMAN needs no scope) all are offered.
+ */
+export function humanPassAccounts<T extends { target: string }>(scope: readonly string[], accounts: readonly T[]): readonly T[] {
+  if (scope.length === 0) return accounts
+  return accounts.filter((account) => scope.some((entry) => targetMatchesService(entry, account.target)))
 }
 
 function targetMatchesService(target: string, service: string): boolean {

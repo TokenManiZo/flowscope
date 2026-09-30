@@ -580,14 +580,19 @@ public final class FlowScopeExtension implements BurpExtension {
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
             try {
                 RunContextRegistry.Context context = runContexts.current(profile.source());
-                String captureHandle = profile.source() == Source.HUMAN ? loginCaptureHandle : null;
-                String captureAccountId = captureHandle == null ? null
+                // Operator choice is authoritative: between 시작 and 종료 every credentialed browser request belongs to
+                // the selected account, even if an older binding said otherwise. Requests without credentials stay anonymous.
+                // The handle is resolved before profile selection so the bound Burp listener (e.g. 8888) also counts (#30).
+                String captureHandle = profile.source() == Source.HUMAN && hasCredentials(request) ? loginCaptureHandle : null;
+                String requestCaptureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
-                String requestCaptureAccountId = captureAccountId == null ? null : captureAccountForCredential(
-                        captureAccountId, knownCredentialOwner(request));
-                boolean captureSuppressed = captureAccountId != null && requestCaptureAccountId == null;
-                if (captureSuppressed) captureHandle = null;
-                HttpRequest prepared = prepareSession(request, profile, captureHandle, context);
+                boolean captureSuppressed = false;
+                if (captureHandle != null) {
+                    sessionBroker.observeRequest(captureHandle, URI.create(request.url()), headersOf(request.headers()),
+                            java.time.Instant.now());
+                    sessionBroker.noteRecordedRequest(captureHandle, request.method() + " " + request.pathWithoutQuery());
+                }
+                HttpRequest prepared = prepareSession(request, profile, context);
                 rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
                         captureSuppressed, "프록시", profile, listenerPort(request.listenerInterface()));
                 return ProxyRequestReceivedAction.continueWith(prepared);
@@ -618,13 +623,9 @@ public final class FlowScopeExtension implements BurpExtension {
         }
 
         private HttpRequest prepareSession(InterceptedRequest request, PortProfile profile,
-                                           String humanCaptureHandle, RunContextRegistry.Context context) {
+                                           RunContextRegistry.Context context) {
             URI target = URI.create(request.url());
-            if (profile.source() == Source.HUMAN) {
-                if (humanCaptureHandle != null) sessionBroker.observeRequest(humanCaptureHandle, target,
-                        headersOf(request.headers()), java.time.Instant.now());
-                return request;
-            }
+            if (profile.source() == Source.HUMAN) return request;
             if (context == null) return request;
             if (profile.source() == Source.SCANNER && !scope.allows(request.url())) {
                 // FLEXIBLE Client Spider may load linked static resources. They are not ZAP campaign
@@ -717,13 +718,19 @@ public final class FlowScopeExtension implements BurpExtension {
             if (tool != ToolType.PROXY && !controlledRequest.get()) {
                 Source source = sourceOfTool(tool);
                 RunContextRegistry.Context context = toolRunContext(detailOfTool(tool), runContexts.current(source));
-                String captureHandle = source == Source.HUMAN
+                String captureHandle = source == Source.HUMAN && hasCredentials(req)
                         ? sessionBroker.activeCaptureForService(serviceOf(req)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 String requestedCaptureAccountId = captureAccountId;
                 if (captureAccountId != null) {
                     captureAccountId = captureAccountForCredential(captureAccountId, knownCredentialOwner(req));
+                }
+                // Repeater/Intruder with a swapped token is deliberate testing: never attribute it to the
+                // recording account and never let it pause or teach the capture.
+                if (captureAccountId != null
+                        && !sessionBroker.matchesRecordingIdentity(captureHandle, headersOf(req.headers()))) {
+                    captureAccountId = null;
                 }
                 boolean captureSuppressed = requestedCaptureAccountId != null && captureAccountId == null;
                 rememberObservation(toolObservations, req.messageId(), context, captureAccountId,
@@ -904,7 +911,11 @@ public final class FlowScopeExtension implements BurpExtension {
         if (profile.source() == Source.HUMAN) rec.laneAccountId = accountId;
         boolean directZapAccount = profile.source() == Source.SCANNER
                 && scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId);
-        if (accountId != null && !"anon".equals(fp) && !directZapAccount) {
+        if (accountId != null && !"anon".equals(fp) && !directZapAccount && accountId.equals(humanCaptureAccountId)) {
+            // The operator's running capture overrides an older (possibly mistaken) binding of the same credentials.
+            try { analysisConfig.rebindSession(rec.service, fp, accountId); }
+            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
+        } else if (accountId != null && !"anon".equals(fp) && !directZapAccount) {
             try { analysisConfig.bindSession(rec.service, fp, accountId); }
             catch (AnalysisConfig.SessionBindingConflictException error) {
                 sessionBroker.markCredentialConflict(accountId);
@@ -1015,10 +1026,18 @@ public final class FlowScopeExtension implements BurpExtension {
         return resolveObservedAccount(source, contextAccountId, humanCaptureAccountId, detectedAccountId);
     }
 
+    private static boolean hasCredentials(HttpRequest request) {
+        return emptyToNull(request.headerValue("Authorization")) != null
+                || emptyToNull(request.headerValue("Cookie")) != null;
+    }
+
+    /**
+     * Another account's exact credentials. Cookie subset matching is deliberately not used: a logged-out
+     * session keeps only browser-wide tracker cookies, which would otherwise claim every later login.
+     */
     private String knownCredentialOwner(HttpRequest request) {
-        URI target = URI.create(request.url());
-        String detected = sessionBroker.accountForRequest(target, headersOf(request.headers()),
-                java.time.Instant.now()).orElse(null);
+        String detected = sessionBroker.accountForAuthorization(URI.create(request.url()),
+                request.headerValue("Authorization")).orElse(null);
         if (detected != null) return detected;
         String fingerprint = Fingerprints.of(request.headerValue("Authorization"), request.headerValue("Cookie"));
         return analysisConfig.boundAccount(serviceOf(request), fingerprint).map(account -> account.id()).orElse(null);
@@ -2290,7 +2309,8 @@ public final class FlowScopeExtension implements BurpExtension {
             result.add(new FlowScopeWebServer.AccountRequestCandidate(
                     record.evidenceId, record.status, record.method, record.path,
                     record.responseContentType == null ? "" : record.responseContentType,
-                    cookie, authorization, matched, eligible, reason));
+                    cookie, authorization, matched, eligible, reason,
+                    record.requestTextForEvidence(), record.responseTextForEvidence()));
         }
         return List.copyOf(result);
     }
