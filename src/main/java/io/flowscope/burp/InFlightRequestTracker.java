@@ -1,6 +1,8 @@
 package io.flowscope.burp;
 
 import io.flowscope.core.RunContextRegistry;
+import io.flowscope.core.Source;
+import io.flowscope.core.SourceDetail;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -8,7 +10,8 @@ import java.util.Map;
 /** 요청과 응답 사이에서 요청 시점의 run/account 문맥과 데이터셋 세대를 보존한다. */
 final class InFlightRequestTracker {
     record Observation(RunContextRegistry.Context context, String humanCaptureAccountId,
-                       boolean humanCaptureSuppressed, long datasetEpoch, long startedAt) {
+                       boolean humanCaptureSuppressed, long datasetEpoch, long startedAt,
+                       Source source, SourceDetail detail, int listenerPort) {
         boolean belongsTo(long currentDatasetEpoch) {
             return datasetEpoch == currentDatasetEpoch;
         }
@@ -27,12 +30,19 @@ final class InFlightRequestTracker {
 
     synchronized boolean remember(int messageId, RunContextRegistry.Context context, String humanCaptureAccountId,
                                   boolean humanCaptureSuppressed, long datasetEpoch, long now) {
+        return remember(messageId, context, humanCaptureAccountId, humanCaptureSuppressed,
+                datasetEpoch, now, Source.UNKNOWN, SourceDetail.UNKNOWN, -1);
+    }
+
+    synchronized boolean remember(int messageId, RunContextRegistry.Context context, String humanCaptureAccountId,
+                                  boolean humanCaptureSuppressed, long datasetEpoch, long now,
+                                  Source source, SourceDetail detail, int listenerPort) {
         if (observations.size() >= capacity) {
             observations.entrySet().removeIf(entry -> now - entry.getValue().startedAt() > ttlMillis);
         }
         if (observations.size() >= capacity) return false;
         observations.put(messageId, new Observation(context, humanCaptureAccountId,
-                humanCaptureSuppressed, datasetEpoch, now));
+                humanCaptureSuppressed, datasetEpoch, now, source, detail, listenerPort));
         return true;
     }
 

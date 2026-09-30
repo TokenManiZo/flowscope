@@ -500,6 +500,7 @@ public final class ProjectStore {
         out.put("tool", r.tool.name());
         out.put("phase", r.phase.name());
         out.put("execution_trust", r.executionTrust.name());
+        if (r.proxyListenerPort > 0) out.put("proxy_listener_port", r.proxyListenerPort);
         out.put("auth_state", r.authState.name());
         out.put("traffic_class", r.trafficClassification.trafficClass().name());
         out.put("traffic_disposition", r.trafficClassification.disposition().name());
@@ -542,6 +543,8 @@ public final class ProjectStore {
         r.tool = enumValue(ToolKind.class, required(value, "tool"));
         r.phase = enumValue(RunPhase.class, required(value, "phase"));
         r.executionTrust = enumValue(ExecutionTrust.class, optional(value, "execution_trust", "UNKNOWN"));
+        int listenerPort = value.path("proxy_listener_port").asInt(-1);
+        r.proxyListenerPort = listenerPort > 0 && listenerPort <= 65535 ? listenerPort : -1;
         r.authState = enumValue(AuthState.class, optional(value, "auth_state", "UNRESOLVED"));
         List<String> reasons = new ArrayList<>();
         JsonNode reasonNodes = value.path("classification_reasons");

@@ -29,6 +29,7 @@ final class ProjectStoreTest {
         record.tool = ToolKind.CODEX;
         record.phase = RunPhase.VALIDATION;
         record.runId = "validation-1";
+        record.proxyListenerPort = 8888;
         record.laneAccountId = "acct-a";
         record.query = "token=QUERYSECRET&id=7";
         record.reqBody = "{\"password\":\"BODYSECRET\",\"orderId\":7}";
@@ -88,6 +89,7 @@ final class ProjectStoreTest {
         RequestRecord restored = loaded.records().get(0);
         assertEquals(SourceDetail.LLM_VALIDATION, restored.sourceDetail);
         assertEquals("validation-1", restored.runId);
+        assertEquals(8888, restored.proxyListenerPort);
         assertEquals("acct-a", restored.laneAccountId);
         assertEquals(record.evidenceId, restored.evidenceId);
         assertEquals(record.contentDigest, restored.contentDigest);
@@ -213,6 +215,7 @@ final class ProjectStoreTest {
         assertEquals("ev-basis", restored.replayBasisEvidenceId);
         assertEquals("user-b", restored.laneAccountId);
         assertEquals(ExecutionTrust.CONTROLLED, restored.executionTrust);
+        assertEquals(-1, restored.proxyListenerPort, "older records have no listener metadata");
     }
 
     @Test

@@ -207,6 +207,15 @@ describe("unified inspection hub", () => {
     expect((endCall?.[1] as RequestInit).body?.toString()).toBe("action=end&runId=human-current")
   })
 
+  it("shows the listener actually bound to the HUMAN run and names conflicting traffic", async () => {
+    renderInspection({ human: { active: true, completed: false, runId: "human-current",
+      accountId: "", proxy: "http://127.0.0.1:8888", listenerPort: 8888,
+      otherListenerPort: 9999, otherListenerRequests: 2 } })
+
+    expect(await screen.findByText("http://127.0.0.1:8888")).toBeVisible()
+    expect(screen.getByText(/다른 포트 9999에서 범위 내 요청 2건/)).toBeVisible()
+  })
+
   it("sends only the action and anonymous account for a HUMAN begin", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection()

@@ -26,6 +26,8 @@ public final class RequestRecord {
     public RunPhase phase = RunPhase.UNKNOWN;
     public ExecutionTrust executionTrust = ExecutionTrust.UNKNOWN;
     public String runId = "default";
+    /** Burp Proxy listener port observed at request time; -1 for non-proxy and legacy records. */
+    public int proxyListenerPort = -1;
     /** 시스템 실행기가 확정한 lane 계정. 일반 관측·미해결 신원에는 null이다. */
     public String laneAccountId;
     /** 안전 능동 재전송의 기준 신원과 원 Evidence. 자격 원문은 절대 담지 않는다. */
@@ -96,6 +98,7 @@ public final class RequestRecord {
         copy.phase = phase;
         copy.executionTrust = executionTrust;
         copy.runId = runId;
+        copy.proxyListenerPort = proxyListenerPort;
         copy.laneAccountId = laneAccountId;
         copy.replayBasisIdentity = replayBasisIdentity;
         copy.replayBasisEvidenceId = replayBasisEvidenceId;
