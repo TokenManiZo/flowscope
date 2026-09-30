@@ -48,6 +48,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
+import io.flowscope.core.SupportingAssetScope;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.HarParser;
@@ -102,9 +103,9 @@ import java.time.Instant;
  * FlowScope Burp 확장 진입점 (Montoya). 프록시 트래픽을 포트별 소스로 수집하고
  * Burp 제어판에서 localhost Web 분석 작업면을 연다 (F-01/F-08/F-20).
  *
- * 소스 구분(F-01): 리스너 포트 → 소스. 기본 8080=사람, 8081=스캐너.
+ * 소스 구분(F-01): 예약 리스너 포트 → 소스. 기본 8080=사람, 8081=스캐너.
  * Montoya 는 리스너를 코드로 생성하지 못하므로(D-023 리스크) 포트는 Burp Proxy 설정에서
- * 사용자가 구성해야 한다. 미매핑 포트는 제외한다.
+ * 사용자가 구성해야 한다. 활성 HUMAN run은 첫 범위 내 미매핑 리스너에도 결박한다.
  */
 public final class FlowScopeExtension implements BurpExtension {
 
@@ -112,10 +113,102 @@ public final class FlowScopeExtension implements BurpExtension {
      * 리스너 포트 → 소스 매핑 (F-01: 사용자가 수정 가능해야 함).
      * 기본값은 8080=사람 / 8081=스캐너이며, 확장 로드 전에 시스템 속성으로 덮어쓸 수 있다:
      *   -Dflowscope.ports=8080:human:browser,8081:scanner:other_scanner,8082:llm:llm_explorer
-     * 매핑에 없는 포트는 버리지 않고 '미상'으로 수집한다.
+     * 매핑에 없는 포트는 활성 HUMAN run의 첫 범위 내 리스너일 때만 HUMAN으로 결박하고,
+     * 그 외에는 버리지 않고 '미상'으로 수집한다.
      */
-    private record PortProfile(Source source, SourceDetail detail) {}
+    record PortProfile(Source source, SourceDetail detail) {}
     private static final Map<Integer, PortProfile> PORT_SOURCE = loadPortMapping();
+
+    /** Binds one observed proxy listener to an active HUMAN run or one login capture. */
+    static final class HumanListenerBinding {
+        private static final PortProfile UNKNOWN = new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN);
+        private static final PortProfile HUMAN = new PortProfile(Source.HUMAN, SourceDetail.BROWSER);
+        private final Map<Integer, PortProfile> configured;
+        private String runId = "";
+        private int port = -1;
+        private int configuredHumanPort = -1;
+        private int otherPort = -1;
+        private long otherPortCount;
+        private String sessionCaptureHandle = "";
+        private int sessionCapturePort = -1;
+
+        HumanListenerBinding(Map<Integer, PortProfile> configured) {
+            this.configured = Map.copyOf(configured);
+        }
+
+        synchronized void start(String newRunId) {
+            runId = newRunId;
+            port = -1;
+            configuredHumanPort = -1;
+            otherPort = -1;
+            otherPortCount = 0;
+        }
+
+        synchronized void clear() {
+            start("");
+            sessionCaptureHandle = "";
+            sessionCapturePort = -1;
+        }
+
+        synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
+                                         RunContextRegistry.Context humanRun) {
+            return resolve(listenerInterface, target, scope, humanRun, null, false);
+        }
+
+        synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
+                                         RunContextRegistry.Context humanRun, String captureHandle) {
+            return resolve(listenerInterface, target, scope, humanRun, captureHandle, false);
+        }
+
+        synchronized PortProfile resolve(String listenerInterface, String target, ScopePolicy scope,
+                                         RunContextRegistry.Context humanRun, String captureHandle,
+                                         boolean supportingHumanAsset) {
+            int observedPort = listenerPort(listenerInterface);
+            PortProfile explicit = configured.get(observedPort);
+            if (explicit != null && explicit.source() != Source.HUMAN) return explicit;
+            if (supportingHumanAsset && humanRun != null && humanRun.runId().equals(runId)
+                    && (port == observedPort || configuredHumanPort == observedPort)) return HUMAN;
+            boolean inScope = scope != null && scope.allows(target) && observedPort > 0;
+            if (humanRun != null && humanRun.phase() == RunPhase.EXPLORATION && inScope) {
+                sessionCapturePort = -1;
+                if (!humanRun.runId().equals(runId)) start(humanRun.runId());
+                if (explicit != null) {
+                    configuredHumanPort = observedPort;
+                    return explicit;
+                }
+                if (port < 1) port = observedPort;
+                if (port == observedPort) return HUMAN;
+                otherPort = observedPort;
+                otherPortCount++;
+                return UNKNOWN;
+            }
+            if (captureHandle == null || captureHandle.isBlank()) {
+                sessionCaptureHandle = "";
+                sessionCapturePort = -1;
+                return explicit == null ? UNKNOWN : explicit;
+            }
+            if (!captureHandle.equals(sessionCaptureHandle)) {
+                sessionCaptureHandle = captureHandle;
+                sessionCapturePort = -1;
+            }
+            if (!inScope) return explicit == null ? UNKNOWN : explicit;
+            if (sessionCapturePort < 1) sessionCapturePort = observedPort;
+            return sessionCapturePort == observedPort ? explicit == null ? HUMAN : explicit : UNKNOWN;
+        }
+
+        synchronized int boundPort(String activeRunId) {
+            return activeRunId != null && activeRunId.equals(runId)
+                    ? (port > 0 ? port : configuredHumanPort) : -1;
+        }
+
+        synchronized long otherPortCount(String activeRunId) {
+            return activeRunId != null && activeRunId.equals(runId) ? otherPortCount : 0;
+        }
+
+        synchronized int otherPort(String activeRunId) {
+            return activeRunId != null && activeRunId.equals(runId) ? otherPort : -1;
+        }
+    }
 
     private static Map<Integer, PortProfile> loadPortMapping() {
         Map<Integer, PortProfile> m = new LinkedHashMap<>();
@@ -222,6 +315,8 @@ public final class FlowScopeExtension implements BurpExtension {
     private final List<RequestRecord> records = new ArrayList<>();
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
+    private final HumanListenerBinding humanListeners = new HumanListenerBinding(PORT_SOURCE);
+    private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private final SessionBroker sessionBroker = new SessionBroker();
     private final ZapAccountVault zapAccounts = new ZapAccountVault();
     private final TransientExchangeVault rawExchanges = new TransientExchangeVault(
@@ -473,14 +568,22 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyScopeHandler implements ProxyRequestHandler {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
-            PortProfile profile = profileOf(request.listenerInterface());
+            String loginCaptureHandle = sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null);
+            RunContextRegistry.Context humanRun = runContexts.current(Source.HUMAN);
+            boolean linkedHumanAsset = humanRun != null
+                    && humanListeners.boundPort(humanRun.runId()) == listenerPort(request.listenerInterface())
+                    && supportingAssets.pageUrlFor(Source.HUMAN, humanRun.runId(), scope::allows,
+                    request.method(), request.url(), request.headerValue("Referer"),
+                    request.headerValue("Sec-Fetch-Dest")) != null;
+            PortProfile profile = humanListeners.resolve(request.listenerInterface(), request.url(), scope,
+                    humanRun, loginCaptureHandle, linkedHumanAsset);
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
             try {
                 RunContextRegistry.Context context = runContexts.current(profile.source());
                 // Operator choice is authoritative: between 시작 and 종료 every credentialed browser request belongs to
                 // the selected account, even if an older binding said otherwise. Requests without credentials stay anonymous.
-                String captureHandle = profile.source() == Source.HUMAN && hasCredentials(request)
-                        ? sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null) : null;
+                // The handle is resolved before profile selection so the bound Burp listener (e.g. 8888) also counts (#30).
+                String captureHandle = profile.source() == Source.HUMAN && hasCredentials(request) ? loginCaptureHandle : null;
                 String requestCaptureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 boolean captureSuppressed = false;
@@ -491,7 +594,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 HttpRequest prepared = prepareSession(request, profile, context);
                 rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
-                        captureSuppressed, "프록시");
+                        captureSuppressed, "프록시", profile, listenerPort(request.listenerInterface()));
                 return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
@@ -507,7 +610,12 @@ public final class FlowScopeExtension implements BurpExtension {
         }
 
         private boolean allowed(InterceptedRequest request, PortProfile profile) {
-            boolean allowed = ActiveTrafficGuard.allows(profile.source(), scope, request.url());
+            RunContextRegistry.Context context = runContexts.current(profile.source());
+            String runId = context == null ? "live-" + profile.source().name().toLowerCase(Locale.ROOT)
+                    : context.runId();
+            boolean allowed = ActiveTrafficGuard.allows(profile.source(), scope, request.url())
+                    || supportingAssets.pageUrlFor(profile.source(), runId, scope::allows, request.method(), request.url(),
+                    request.headerValue("Referer"), request.headerValue("Sec-Fetch-Dest")) != null;
             if (!allowed) {
                 api.logging().logToOutput("FlowScope exact-scope 차단: " + profile.source() + " " + request.url());
             }
@@ -519,6 +627,12 @@ public final class FlowScopeExtension implements BurpExtension {
             URI target = URI.create(request.url());
             if (profile.source() == Source.HUMAN) return request;
             if (context == null) return request;
+            if (profile.source() == Source.SCANNER && !scope.allows(request.url())) {
+                // FLEXIBLE Client Spider may load linked static resources. They are not ZAP campaign
+                // Evidence and never receive a Session Broker credential or a capability header.
+                return request.withRemovedHeader("X-FlowScope-Scanner-Capability")
+                        .withRemovedHeader("Proxy-Authorization");
+            }
             HttpRequest prepared = request;
             if (profile.source() == Source.SCANNER && context.orchestrator() == Orchestrator.SYSTEM) {
                 String expected = context.runId().equals(scannerCapabilityRunId) ? scannerCapability : "";
@@ -568,7 +682,6 @@ public final class FlowScopeExtension implements BurpExtension {
         @Override
         public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse response) {
             try {
-                PortProfile profile = profileOf(response.listenerInterface());
                 InFlightRequestTracker.Observation observation = proxyObservations.remove(response.messageId());
                 if (observation == null) {
                     api.logging().logToOutput("FlowScope: 요청 시점 프록시 문맥이 없는 응답 제외 — messageId="
@@ -576,6 +689,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     return ProxyResponseReceivedAction.continueWith(response);
                 }
                 if (staleObservation(observation)) return ProxyResponseReceivedAction.continueWith(response);
+                PortProfile profile = new PortProfile(observation.source(), observation.detail());
                 boolean captured = capture(response.initiatingRequest(), response, profile, observation);
                 if (captured) {
                     observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
@@ -678,7 +792,15 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private boolean capture(HttpRequest req, HttpResponse response, PortProfile profile,
                             InFlightRequestTracker.Observation observation) {
-        if (shuttingDown.get() || !ActiveTrafficGuard.allowsCapture(scope, req.url()) || staleObservation(observation)) return false;
+        if (shuttingDown.get() || staleObservation(observation)) return false;
+        RunContextRegistry.Context context = observation == null ? null : observation.context();
+        String runId = context == null ? "live-" + profile.source().name().toLowerCase(Locale.ROOT)
+                : context.runId();
+        String supportingPage = scope.allows(req.url()) ? null : supportingAssets.pageUrlFor(
+                profile.source(), runId, scope::allows, req.method(), req.url(), req.headerValue("Referer"),
+                req.headerValue("Sec-Fetch-Dest"));
+        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) && supportingPage == null) return false;
+        if (supportingPage != null && profile.source() == Source.SCANNER) return false;
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
                 recordDroppedAtCapacity();
@@ -686,6 +808,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         RequestRecord rec = recordFrom(req, response, profile, System.currentTimeMillis(), true, null, observation);
+        rec.supportingPageUrl = supportingPage;
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
         synchronized (records) {
@@ -701,6 +824,11 @@ public final class FlowScopeExtension implements BurpExtension {
                     && liveCrossIdentityReplay.acceptingCaptures(rec)) {
                 pendingLiveReplays.add(rec.runtimeId());
             }
+        }
+        if (supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
+                && String.valueOf(response.headerValue("Content-Type")).toLowerCase(Locale.ROOT)
+                .contains("text/html")) {
+            supportingAssets.observeHtml(profile.source(), rec.runId, scope::allows, req.url(), rec.responseBodyForAnalysis());
         }
         scheduleRebuild();
         return true;
@@ -770,6 +898,7 @@ public final class FlowScopeExtension implements BurpExtension {
         };
         rec.runId = runId == null
                 ? "live-" + profile.source().name().toLowerCase(Locale.ROOT) : runId;
+        if (observation != null) rec.proxyListenerPort = observation.listenerPort();
         if (context != null) {
             rec.sourceDetail = effectiveDetail(profile.source(), profile.detail(), context);
             rec.orchestrator = context.orchestrator();
@@ -927,9 +1056,19 @@ public final class FlowScopeExtension implements BurpExtension {
     private void rememberObservation(InFlightRequestTracker tracker, int messageId,
                                      RunContextRegistry.Context context, String humanCaptureAccountId,
                                      boolean humanCaptureSuppressed, String channel) {
+        rememberObservation(tracker, messageId, context, humanCaptureAccountId,
+                humanCaptureSuppressed, channel, null, -1);
+    }
+
+    private void rememberObservation(InFlightRequestTracker tracker, int messageId,
+                                     RunContextRegistry.Context context, String humanCaptureAccountId,
+                                     boolean humanCaptureSuppressed, String channel,
+                                     PortProfile profile, int listenerPort) {
         long now = System.currentTimeMillis();
         if (!tracker.remember(messageId, context, humanCaptureAccountId,
-                humanCaptureSuppressed, datasetEpoch.get(), now)) {
+                humanCaptureSuppressed, datasetEpoch.get(), now,
+                profile == null ? Source.UNKNOWN : profile.source(),
+                profile == null ? SourceDetail.UNKNOWN : profile.detail(), listenerPort)) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
@@ -992,11 +1131,17 @@ public final class FlowScopeExtension implements BurpExtension {
 
     /** 리스너 포트 → 소스. 매핑이 없으면 UNKNOWN(미상)으로 보존한다 (F-01/F-03). */
     private static PortProfile profileOf(String listenerInterface) {
-        if (listenerInterface == null) return new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN);
-        Matcher m = PORT.matcher(listenerInterface.trim());
-        if (!m.find()) return new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN);
-        return PORT_SOURCE.getOrDefault(Integer.parseInt(m.group(1)),
+        int port = listenerPort(listenerInterface);
+        return PORT_SOURCE.getOrDefault(port,
                 new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN));
+    }
+
+    private static int listenerPort(String listenerInterface) {
+        if (listenerInterface == null) return -1;
+        Matcher match = PORT.matcher(listenerInterface.trim());
+        if (!match.find()) return -1;
+        try { return Integer.parseInt(match.group(1)); }
+        catch (NumberFormatException ignored) { return -1; }
     }
 
     private static PortProfile profileOf(int listenerPort) {
@@ -1290,6 +1435,7 @@ public final class FlowScopeExtension implements BurpExtension {
         rawExchanges.clear();
         proxyObservations.clear();
         toolObservations.clear();
+        supportingAssets.clear();
         droppedRecords.set(0);
         resetPayloadPool();
         synchronized (siteMapSeeds) { siteMapSeeds.clear(); }
@@ -1686,6 +1832,7 @@ public final class FlowScopeExtension implements BurpExtension {
         }
         scope = parsed;
         scopeText = value == null ? "" : value.trim();
+        supportingAssets.clear();
         synchronized (siteMapSeeds) { siteMapSeeds.removeIf(seed -> !parsed.allows(seed.url())); }
         synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
         rebuildRouteCandidates(latest.records);
@@ -1719,6 +1866,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 return archivedValidations;
             }
             @Override public RunContextRegistry contexts() { return runContexts; }
+            @Override public void humanRunStarted(String runId) { humanListeners.start(runId); }
+            @Override public int humanListenerPort(String runId) { return humanListeners.boundPort(runId); }
+            @Override public int otherHumanListenerPort(String runId) { return humanListeners.otherPort(runId); }
+            @Override public long otherHumanListenerRequests(String runId) {
+                return humanListeners.otherPortCount(runId);
+            }
             @Override public SessionBroker sessions() { return sessionBroker; }
             @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
                 return safeAccountRequestCandidates(accountId);
@@ -2292,6 +2445,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void resetExplorerSecrets() {
+        supportingAssets.clear();
         if (explorer == null) return;
         try { explorer.cancel(); } catch (RuntimeException ignored) { }
         explorer.accounts().forEach(account -> analysisConfig.removeAccount(account.id()));
@@ -2365,6 +2519,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void clearRunContexts() {
         runContexts.reset();
+        humanListeners.clear();
     }
 
     private FlowScopeWebServer.RequestLabResult executeHumanRequestLab(
@@ -2748,7 +2903,15 @@ public final class FlowScopeExtension implements BurpExtension {
         URI target;
         try { target = URI.create(input.url()); }
         catch (RuntimeException error) { throw new IllegalArgumentException("Explorer 대상 URL이 올바르지 않습니다."); }
-        if (!scope.allows(input.url())) throw new IllegalArgumentException("Explorer 요청이 exact scope 밖입니다.");
+        boolean supportingAsset = input.supportingPageUrl() != null;
+        if (!scope.allows(input.url()) && !(supportingAsset
+                && scope.allows(input.supportingPageUrl())
+                // Only the run-local gateway can set supportingPageUrl after checking a linked asset.
+                && ("GET".equals(input.method()) || "HEAD".equals(input.method()))
+                && (input.accountId() == null || input.accountId().isBlank())
+                && input.headers().isEmpty() && input.body().length == 0)) {
+            throw new IllegalArgumentException("Explorer 요청이 exact scope 밖입니다.");
+        }
         boolean secure = "https".equalsIgnoreCase(target.getScheme());
         int port = target.getPort() >= 0 ? target.getPort() : secure ? 443 : 80;
         String host = target.getHost();
@@ -2827,6 +2990,7 @@ public final class FlowScopeExtension implements BurpExtension {
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
             record.runId = input.runId();
             record.laneAccountId = emptyToNull(input.accountId());
+            record.supportingPageUrl = input.supportingPageUrl();
             appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
             rebuildImmediately();
             RequestRecord published = latest.records.stream().filter(value -> value.runtimeId() == record.runtimeId())

@@ -678,6 +678,9 @@ export interface HumanRun {
   runId: string
   accountId: string
   proxy: string
+  listenerPort?: number
+  otherListenerPort?: number
+  otherListenerRequests?: number
 }
 
 export interface ZapStatus {

@@ -10,6 +10,8 @@ export interface GraphFilters {
   includeRouteCandidates: boolean
   includeSupportTraffic: boolean
   expanded: boolean
+  /** 펼친 객체 묶음 노드 id("object-group:…"). 없으면 모든 묶음이 접힌 상태다. */
+  expandedObjectGroups?: readonly string[]
 }
 
 export interface GraphSelection {

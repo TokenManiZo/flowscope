@@ -339,7 +339,7 @@ it("exposes mixed observation attribution, Gap subject and separate evidence cou
   const path = screen.getByRole("region", { name: "Gap 경로 source" })
   expect(path).toHaveTextContent("Gap 주체 S · SCANNER")
   expect(path).toHaveTextContent("관측 H · HUMAN × 40 / L · LLM × 40")
-  expect(path).toHaveTextContent("관측 Evidence 40건")
+  expect(path).toHaveTextContent("관측 기록 40건")
   expect(path).toHaveTextContent("Gap 근거 31건")
   expect(path).toHaveTextContent("관계 근거 0건")
   expect(path).toHaveTextContent("연결 UNKNOWN")

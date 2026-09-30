@@ -96,7 +96,7 @@ it("renders the compact server summary and matrix without row subtitles or P/E/O
   expect(cell).not.toHaveTextContent("기대 차단 → 실제 미실행")
   expect(within(cell).queryByText("P3")).not.toBeInTheDocument()
   expect(within(screen.getByRole("complementary", { name: "분석 필터" })).queryByLabelText("정책 신뢰도 P")).not.toBeInTheDocument()
-  expect(screen.queryByRole("tab", { name: "실행 Evidence" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("tab", { name: "실행 관측 기록" })).not.toBeInTheDocument()
   expect(screen.queryByText(/열=신원·역할/)).not.toBeInTheDocument()
   expect(screen.getByTestId("judgment-matrix-scroll")).toHaveClass("overflow-x-auto")
   expect(within(summary).queryByText("상위 역할 → 하위 역할")).not.toBeInTheDocument()
@@ -141,7 +141,7 @@ it("opens the recommendation detail, saves a human review against the server cel
   expect(within(inspector).queryByRole("region", { name: "테스트 유효성 게이트" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "기대와 실제" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "결과 오라클" })).not.toBeInTheDocument()
-  expect(within(inspector).queryByRole("region", { name: "대상 Evidence" })).not.toBeInTheDocument()
+  expect(within(inspector).queryByRole("region", { name: "대상 관측 기록" })).not.toBeInTheDocument()
   const review = within(inspector).getByRole("region", { name: "사람 최종 판정" })
   await user.click(within(review).getByRole("checkbox"))
   await user.type(within(review).getByLabelText("검증 메모"), "repeater reproduced")
@@ -180,7 +180,7 @@ it("keeps the same sections on non-reviewable observed cells, locks review, and 
   expect(review).toHaveTextContent("검토할 추천이 없는 셀입니다.")
   // 추천이 없는 셀도 대상 신원 자격의 Repeater 초안은 열 수 있다(D-169).
   expect(within(inspector).getByRole("button", { name: "Burp Repeater로 전송" })).toBeEnabled()
-  expect(within(inspector).queryByRole("region", { name: "대상 Evidence" })).not.toBeInTheDocument()
+  expect(within(inspector).queryByRole("region", { name: "대상 관측 기록" })).not.toBeInTheDocument()
 })
 
 it("filters attention rows with a separate switch and clears a selection whose server item disappears", async () => {
@@ -266,11 +266,11 @@ it("preserves review drafts on traffic revisions and clears reused ids on datase
   expect(screen.getByLabelText("검증 메모")).toHaveValue("")
 })
 
-it("starts a fresh review when the same cell has different server review Evidence", async () => {
+it("starts a fresh review when the same cell has different server review 관측 기록", async () => {
   const user = userEvent.setup()
   const { rerender } = renderView(<JudgmentMatrixView />)
   await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
-  await user.type(screen.getByLabelText("검증 메모"), "old Evidence note")
+  await user.type(screen.getByLabelText("검증 메모"), "old 관측 기록 note")
   current = { ...snapshot, revision: 5, authorizationMatrix: { ...matrix, functions: [matrix.functions[0], { ...matrix.functions[1], reviewEvidenceIds: ["ev-new"] }] } }
   rerender(<JudgmentMatrixView />)
   expect(screen.getByLabelText("검증 메모")).toHaveValue("")

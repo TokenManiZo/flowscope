@@ -1,6 +1,8 @@
 package io.flowscope;
 
 import io.flowscope.core.Masking;
+import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
+import io.flowscope.core.discovery.JavascriptAnalysis;
 import io.flowscope.core.parameter.ParameterKey;
 import io.flowscope.core.parameter.ParameterObservation;
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,97 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class MaskingTest {
+    @Test
+    void javascriptMaskingPreservesHttpCallsAndHidesLiteralSecrets() {
+        String script = "const password=readInput();fetch('/api/catalog');"
+                + "const config={apiKey:'sk-synthetic',authorization:readHeader()};"
+                + "const message='token=synthetic.jwt.value';";
+
+        String masked = Masking.maskBody(script, "application/javascript");
+
+        assertFalse(masked.contains("sk-synthetic"));
+        assertFalse(masked.contains("synthetic.jwt.value"));
+        assertTrue(masked.contains("readInput();fetch('/api/catalog')"));
+        assertTrue(masked.contains("authorization:readHeader()"));
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(masked);
+        assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis.detail());
+        assertTrue(analysis.callSites().stream().anyMatch(call -> "/api/catalog".equals(call.reference())));
+    }
+
+    @Test
+    void javascriptDestructuringAndNumericCredentialRemainSyntacticallyValid() {
+        String script = "const {authorization:auth}=config;const apiKey=123456;"
+                + "const flags={token:!0};fetch('/api/summary');";
+
+        String masked = Masking.maskBody(script, "application/javascript");
+
+        assertTrue(masked.contains("authorization:auth"));
+        assertFalse(masked.contains("123456"));
+        assertEquals(JavascriptAnalysis.Status.PARSED,
+                JavascriptCallSiteAnalyzer.analyze(masked).status());
+    }
+
+    @Test
+    void javascriptBareTokenIsRedactedWithoutRemovingFollowingCode() {
+        String script = "const token=secret-value;fetch('/api/summary');";
+
+        String masked = Masking.maskBody(script, "application/javascript");
+
+        assertFalse(masked.contains("secret-value"));
+        assertEquals(JavascriptAnalysis.Status.PARSED,
+                JavascriptCallSiteAnalyzer.analyze(masked).status());
+        assertTrue(masked.contains("fetch('/api/summary')"));
+    }
+
+    @Test
+    void javascriptTemplateLiteralAndExpressionKeepTheirDelimiters() {
+        String script = "const note=`token=synthetic.jwt.value`;"
+                + "const active=`${token=readInput()}`;fetch('/api/items');";
+
+        String masked = Masking.maskBody(script, "application/javascript");
+
+        assertFalse(masked.contains("synthetic.jwt.value"));
+        assertTrue(masked.contains("readInput()"));
+        assertEquals(JavascriptAnalysis.Status.PARSED,
+                JavascriptCallSiteAnalyzer.analyze(masked).status());
+    }
+
+    @Test
+    void javascriptTemplateLiteralSecretValueIsMaskedButInterpolationIsKept() {
+        String script = "const config={apiKey:`sk-synthetic`};const token=`jwt.synthetic`;"
+                + "const auth={authorization:`Bearer ${readToken()}`};fetch('/api/items');";
+
+        String masked = Masking.maskBody(script, "application/javascript");
+
+        assertFalse(masked.contains("sk-synthetic"));
+        assertFalse(masked.contains("jwt.synthetic"));
+        assertTrue(masked.contains("${readToken()}"));
+        assertEquals(JavascriptAnalysis.Status.PARSED,
+                JavascriptCallSiteAnalyzer.analyze(masked).status());
+    }
+
+    @Test
+    void javascriptRegexSecretKeepsRegexAndFollowingCall() {
+        String script = "const matcher=/token=synthetic/;fetch('/api/catalog');";
+
+        String masked = Masking.maskBody(script, "application/javascript");
+
+        assertFalse(masked.contains("synthetic"));
+        assertEquals(JavascriptAnalysis.Status.PARSED,
+                JavascriptCallSiteAnalyzer.analyze(masked).status());
+        assertTrue(masked.contains("fetch('/api/catalog')"));
+    }
+
+    @Test
+    void javascriptMediaTypeTakesPrecedenceOverJsonLookingFirstCharacter() {
+        String script = "[{password:'sk-synthetic'}].map(x=>x.password);fetch('/api/items');";
+
+        String masked = Masking.maskBody(script, "text/javascript");
+
+        assertFalse(masked.contains("sk-synthetic"));
+        assertEquals(JavascriptAnalysis.Status.PARSED,
+                JavascriptCallSiteAnalyzer.analyze(masked).status());
+    }
     @Test
     void sensitiveParameterSegmentsMatchCaseEncodingAndCompoundNames() {
         for (String path : new String[]{"/Authorization", "/Cookie", "/proxy-authorization", "/password", "/passwd",

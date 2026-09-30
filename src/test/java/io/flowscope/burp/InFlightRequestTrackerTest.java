@@ -3,6 +3,7 @@ package io.flowscope.burp;
 import io.flowscope.core.Orchestrator;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RunPhase;
+import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
 import io.flowscope.core.ToolKind;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,22 @@ class InFlightRequestTrackerTest {
         assertTrue(observed.belongsTo(7));
         assertFalse(observed.belongsTo(8));
         assertNull(tracker.remove(42));
+    }
+
+    @Test
+    void preservesTheRequestTimeProxySourceWhenTheRunOrListenerChanges() {
+        InFlightRequestTracker tracker = new InFlightRequestTracker(10, 60_000);
+        RunContextRegistry.Context pass = new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "human-1", null);
+
+        assertTrue(tracker.remember(12, pass, null, false, 1, 1_000,
+                Source.HUMAN, SourceDetail.BROWSER, 8888));
+
+        InFlightRequestTracker.Observation response = tracker.remove(12);
+        assertEquals(Source.HUMAN, response.source());
+        assertEquals(SourceDetail.BROWSER, response.detail());
+        assertEquals(8888, response.listenerPort());
+        assertEquals("human-1", response.context().runId());
     }
 
     @Test

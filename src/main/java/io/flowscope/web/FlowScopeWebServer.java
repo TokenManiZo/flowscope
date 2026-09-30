@@ -65,6 +65,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
         RunContextRegistry contexts();
+        default void humanRunStarted(String runId) {}
+        default int humanListenerPort(String runId) { return -1; }
+        default int otherHumanListenerPort(String runId) { return -1; }
+        default long otherHumanListenerRequests(String runId) { return 0; }
         void rebuild();
         void loadSample();
         BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception;
@@ -745,6 +749,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 state.contexts().activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
                         Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, runId,
                         accountId.isBlank() ? null : accountId));
+                state.humanRunStarted(runId);
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
                 RunContextRegistry.Context active = state.contexts().current(Source.HUMAN);
@@ -775,7 +780,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("completed", state.contexts().completedExplorations().contains(Source.HUMAN));
         body.put("runId", context == null ? "" : context.runId());
         body.put("accountId", context == null || context.accountId() == null ? "" : context.accountId());
-        body.put("proxy", "http://127.0.0.1:8080");
+        int port = context == null ? -1 : state.humanListenerPort(context.runId());
+        body.put("proxy", port > 0 ? "http://127.0.0.1:" + port : "실제 리스너 감지 대기");
+        body.put("listenerPort", port);
+        body.put("otherListenerPort", context == null ? -1 : state.otherHumanListenerPort(context.runId()));
+        body.put("otherListenerRequests", context == null ? 0 : state.otherHumanListenerRequests(context.runId()));
         return json(200, body);
     }
 

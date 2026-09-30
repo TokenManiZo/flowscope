@@ -21,6 +21,26 @@ final class ProjectStoreTest {
     @TempDir Path temp;
 
     @Test
+    void supportingCdnScriptKeepsItsPageProvenanceAndNeverBecomesCoverageAfterReopen() throws Exception {
+        RequestRecord script = new RequestRecord(Source.HUMAN, "https://cdn.example.test:443",
+                "GET", "/app.js", 200, "anon");
+        script.hasResponse = true;
+        script.responseContentType = "application/javascript";
+        script.body = "fetch('/api/orders/42')";
+        script.supportingPageUrl = "https://shop.example.test:443/";
+        Path file = temp.resolve("supporting-asset.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(script), new AnalysisConfig(), List.of());
+
+        RequestRecord loaded = store.load(file).records().getFirst();
+        assertEquals(script.supportingPageUrl, loaded.supportingPageUrl);
+        Pipeline.Result analysis = Pipeline.run(List.of(loaded));
+        assertTrue(analysis.coverageRecords.isEmpty());
+        assertEquals("SUPPORTING_CROSS_ORIGIN_ASSET",
+                analysis.records.getFirst().trafficClassification.reasons().getFirst());
+    }
+
+    @Test
     void maskedSessionRoundTripsWithPolicyAndAssessment() throws Exception {
         RequestRecord record = new RequestRecord(Source.LLM, "https://api.test:443",
                 "POST", "/orders/7", 200, "raw-session-value");
@@ -29,6 +49,7 @@ final class ProjectStoreTest {
         record.tool = ToolKind.CODEX;
         record.phase = RunPhase.VALIDATION;
         record.runId = "validation-1";
+        record.proxyListenerPort = 8888;
         record.laneAccountId = "acct-a";
         record.query = "token=QUERYSECRET&id=7";
         record.reqBody = "{\"password\":\"BODYSECRET\",\"orderId\":7}";
@@ -88,6 +109,7 @@ final class ProjectStoreTest {
         RequestRecord restored = loaded.records().get(0);
         assertEquals(SourceDetail.LLM_VALIDATION, restored.sourceDetail);
         assertEquals("validation-1", restored.runId);
+        assertEquals(8888, restored.proxyListenerPort);
         assertEquals("acct-a", restored.laneAccountId);
         assertEquals(record.evidenceId, restored.evidenceId);
         assertEquals(record.contentDigest, restored.contentDigest);
@@ -213,6 +235,7 @@ final class ProjectStoreTest {
         assertEquals("ev-basis", restored.replayBasisEvidenceId);
         assertEquals("user-b", restored.laneAccountId);
         assertEquals(ExecutionTrust.CONTROLLED, restored.executionTrust);
+        assertEquals(-1, restored.proxyListenerPort, "older records have no listener metadata");
     }
 
     @Test

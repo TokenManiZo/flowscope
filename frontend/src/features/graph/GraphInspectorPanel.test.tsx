@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest"
 
 import type { ManagedSession, Snapshot } from "@/lib/api/types"
 import { renderWithQueryClient } from "@/test/render"
+import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
 import type { GraphSelection } from "./graphProjection"
 
@@ -29,14 +30,14 @@ function stubFetch(body = draft()) {
 
 afterEach(() => vi.unstubAllGlobals())
 
-it("shows only the selected operation and its Evidence rows, without verdict panels or raw event ids", () => {
+it("shows only the selected operation and its 관측 기록 rows, without verdict panels or raw event ids", () => {
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 7 } }} />)
   const panel = screen.getByRole("complementary", { name: "선택 작업" })
   expect(panel).toHaveTextContent("GET /orders/{id}")
-  const row = within(panel).getByRole("listitem", { name: "Evidence #7" })
+  const row = within(panel).getByRole("listitem", { name: "alice · HUMAN 관측 기록 1건" })
   expect(row).toHaveTextContent("alice")
   expect(row).toHaveTextContent("200")
-  expect(within(row).getByRole("img", { name: "HUMAN" })).toBeInTheDocument()
+  expect(within(row).getByText("HUMAN")).toBeVisible()
   expect(panel).not.toHaveTextContent("ev-1")
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()
   expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
@@ -70,8 +71,36 @@ it("explains a missing current session instead of opening Repeater", async () =>
   expect(fetch.mock.calls.some(([input]) => String(input) === "/api/replay")).toBe(false)
 })
 
-it("locks Evidence actions while the snapshot is suspended", () => {
+it("locks 관측 기록 actions while the snapshot is suspended", () => {
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} suspended />)
   expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
   expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
+})
+
+it("groups 관측 기록 by identity and source, acting on the latest request and listing each request when expanded", async () => {
+  const fetch = stubFetch()
+  const events = [
+    { ...event, eventId: "ev-1", timestamp: 1 },
+    { ...event, eventId: "ev-2", timestamp: 3, status: 404, path: "/orders/2" },
+    { ...event, eventId: "ev-3", timestamp: 2, idn: "bob", source: "llm" as const, status: 401 },
+  ]
+  renderWithQueryClient(<EvidenceActionList events={events} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 1, "ev-2": 2, "ev-3": 3 } }} />)
+  const section = screen.getByRole("region", { name: "관측 기록" })
+  // 제목 옆에 총 건수·신원 수 부제는 두지 않는다.
+  expect(within(section).getByRole("heading", { name: "관측 기록" })).toBeVisible()
+  const cards = within(section).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))
+  expect(cards).toEqual(["alice · HUMAN 관측 기록 2건", "bob · LLM 관측 기록 1건"])
+  const alice = within(section).getByRole("listitem", { name: "alice · HUMAN 관측 기록 2건" })
+  expect(within(alice).getByText("200")).toBeVisible()
+  expect(within(alice).getByText("404")).toBeVisible()
+  expect(within(alice).queryByRole("listitem", { name: "관측 기록 #1" })).not.toBeInTheDocument()
+
+  await userEvent.click(within(alice).getByRole("button", { name: "요청 2건 펼치기" }))
+  const requests = within(alice).getByRole("list", { name: "alice · HUMAN 요청 목록" })
+  expect(within(requests).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["관측 기록 #2", "관측 기록 #1"])
+  expect(within(requests).getByRole("button", { name: "#1 원문 보기" })).toBeVisible()
+
+  // 카드의 원문 보기는 묶음의 가장 최근 요청(ev-2)을 연다.
+  await userEvent.click(within(alice).getByRole("button", { name: "원문 보기" }))
+  expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
 })

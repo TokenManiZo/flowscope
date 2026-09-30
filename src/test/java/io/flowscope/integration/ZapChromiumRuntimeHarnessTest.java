@@ -25,6 +25,19 @@ final class ZapChromiumRuntimeHarnessTest {
     private static final String TARGET = "http://flowscope-runtime.test/";
 
     @Test
+    void clientSpiderLoadsExternalScriptAndObservesItsInScopeApiCall() throws Exception {
+        try (Fixture fixture = new Fixture(); ZapCampaign campaign = new ZapCampaign(fixture)) {
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+            assertTrue(result.path("status").asText().startsWith("COMPLETED"), result.toString());
+            assertTrue(fixture.assetHits.get() > 0, "Client Spider must load the page-linked external script");
+            assertTrue(fixture.observations.stream().anyMatch(value -> value.path().equals("/api/public-probe")
+                    && value.detail() == SourceDetail.ZAP_CLIENT_SPIDER),
+                    "the external script must be able to call the in-scope API: " + fixture.observations);
+        }
+    }
+
+    @Test
     void crawlsAnonymousAndTwoAuthenticatedUsersAndRejectsWrongPassword() throws Exception {
         try (Fixture fixture = new Fixture(); ZapCampaign campaign = new ZapCampaign(fixture)) {
             fixture.account("zap-a", "alice", "test-password-a");
@@ -91,6 +104,7 @@ final class ZapChromiumRuntimeHarnessTest {
         private final List<Observation> observations = new CopyOnWriteArrayList<>();
         private final Map<String, String> sessions = new ConcurrentHashMap<>();
         private final AtomicLong rejections = new AtomicLong();
+        private final AtomicLong assetHits = new AtomicLong();
         private volatile String capability = "";
 
         Fixture() throws IOException {
@@ -116,6 +130,11 @@ final class ZapChromiumRuntimeHarnessTest {
 
         private void serve(HttpExchange exchange) throws IOException {
             URI uri = exchange.getRequestURI();
+            if ("flowscope-assets.test".equals(uri.getHost()) && uri.getPath().equals("/main.js")) {
+                assetHits.incrementAndGet();
+                reply(exchange, 200, "application/javascript", "fetch('/api/public-probe')");
+                return;
+            }
             if (!"flowscope-runtime.test".equals(uri.getHost())) {
                 reply(exchange, 403, "text/plain", "fixture origin only");
                 return;
@@ -162,6 +181,9 @@ final class ZapChromiumRuntimeHarnessTest {
                 status = user.equals("anonymous") ? 401 : 200;
                 type = "application/json";
                 body = "{\"username\":\"" + user + "\"}";
+            } else if (path.equals("/api/public-probe")) {
+                type = "application/json";
+                body = "{\"available\":true}";
             } else if (path.equals("/dashboard") || path.equals("/details")) {
                 if (user.equals("anonymous")) {
                     exchange.getResponseHeaders().add("Location", "/login");
@@ -173,7 +195,9 @@ final class ZapChromiumRuntimeHarnessTest {
                             + "<script>fetch('/api/me').then(r=>r.json()).then(u=>document.title=u.username)</script>";
                 }
             } else {
-                body = "<!doctype html><title>Runtime fixture</title><a href='/login'>Log in</a><a href='/public'>Public page</a>";
+                body = "<!doctype html><title>Runtime fixture</title><a href='/login'>Log in</a>"
+                        + "<a href='/public'>Public page</a>"
+                        + "<script src='http://flowscope-assets.test/main.js'></script>";
             }
             if (current != null) {
                 observations.add(new Observation(path, current.accountId(), user, current.detail()));

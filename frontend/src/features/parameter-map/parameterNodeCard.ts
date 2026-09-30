@@ -15,6 +15,8 @@ export interface ParameterNodeCardView {
   accessibleLabel: string
   /** 이 노드에 접근한 탐지 주체. 있으면 배지 옆에 주체별 아이콘을 그리고 상세 줄은 빼서 카드를 낮춘다(API·Object 노드). */
   sources?: readonly CardSource[]
+  /** 관측된 응답 코드(API 노드). 카드 아래에 코드만 뱃지로 그린다. 개수는 그리지 않는다. */
+  statuses?: readonly number[]
 }
 
 export type CardSource = "human" | "scanner" | "llm"
@@ -26,12 +28,12 @@ const cardPalettes = {
   dark: {
     card: "#111418", stroke: "#64748b", title: "#f8fafc", detail: "#cbd5e1", footer: "#94a3b8",
     user: "#93c5fd", box: "#c4b5fd", relation: "#5eead4", badge: ["#334155", "#cbd5e1"] as const,
-    source: { human: "#60a5fa", scanner: "#f87171", llm: "#e4e4e7" } as Record<CardSource, string>,
+    source: { human: "#60a5fa", scanner: "#f87171", llm: "#facc15" } as Record<CardSource, string>,
   },
   light: {
     card: "#ffffff", stroke: "#94a3b8", title: "#0f172a", detail: "#334155", footer: "#64748b",
     user: "#2563eb", box: "#7c3aed", relation: "#0d9488", badge: ["#e2e8f0", "#334155"] as const,
-    source: { human: "#2563eb", scanner: "#dc2626", llm: "#52525b" } as Record<CardSource, string>,
+    source: { human: "#2563eb", scanner: "#dc2626", llm: "#ca8a04" } as Record<CardSource, string>,
   },
 }
 
@@ -91,7 +93,7 @@ export function operationNodeCard(key: ParameterMapKey, statuses: readonly numbe
   const result = statuses.length ? `HTTP ${[...counts].sort(([left], [right]) => (left || 600) - (right || 600)).map(([status, count]) => `${status || "UNKNOWN"} × ${count}`).join(" · ")}` : "HTTP UNKNOWN · no observations"
   return {
     kind: "operation", badge: key.method, title: stripOrigin(key.pathTemplate) || key.pathTemplate, detail: "", footer: "", icon: "none",
-    accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; ${statuses.length} Evidence`,
+    accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; 관측 기록 ${statuses.length}건`,
   }
 }
 
@@ -213,23 +215,42 @@ function titleLines(title: string, width: number, maxLines = 2): string[] {
 }
 
 const TITLE_BASELINE = 53, TITLE_FONT = 15, LINE_GAP = 19, ROW_GAP = 22, BOTTOM_PADDING = 14
+/** 응답 코드 뱃지 줄: 높이 18 뱃지 + 제목과의 간격. 5개를 넘으면 4개와 "+N"만 그린다. */
+const STATUS_ROW = 28, STATUS_BADGE_HEIGHT = 18, STATUS_FONT = 11, STATUS_LIMIT = 5
+const statusNeutral: Record<CardTheme, { stroke: string; text: string }> = { dark: { stroke: "#334155", text: "#94a3b8" }, light: { stroke: "#cbd5e1", text: "#64748b" } }
+
+/** 응답 코드 뱃지. 평소에는 무채색이고, statusColors에 있는(필터로 고른) 코드만 그 색으로 칠한다. */
+function statusBadges(statuses: readonly number[], top: number, theme: CardTheme, statusColors?: ReadonlyMap<number, string>): string {
+  const shown = statuses.length > STATUS_LIMIT ? statuses.slice(0, STATUS_LIMIT - 1) : statuses
+  const labels = [...shown.map(String), ...(statuses.length > STATUS_LIMIT ? [`+${statuses.length - shown.length}`] : [])]
+  let x = 14
+  return labels.map((label, index) => {
+    const color = index < shown.length ? statusColors?.get(shown[index]) : undefined
+    const badgeWidth = Math.ceil(textWidth(label, STATUS_FONT) + 12)
+    const fill = color ? `fill="${color}" fill-opacity="0.15"` : 'fill="none"'
+    const badge = `<rect x="${x}" y="${top}" width="${badgeWidth}" height="${STATUS_BADGE_HEIGHT}" rx="5" ${fill} stroke="${color ?? statusNeutral[theme].stroke}"/><text x="${x + badgeWidth / 2}" y="${top + 13}" text-anchor="middle" fill="${color ?? statusNeutral[theme].text}" font-family="monospace" font-size="${STATUS_FONT}">${escapeXml(label)}</text>`
+    x += badgeWidth + 6
+    return badge
+  }).join("")
+}
 
 /** Bounded inline display image only; full text remains in DOM tooltips and fallback labels. */
-export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact = false, size?: { width: number; height: number }, theme: CardTheme = "dark"): { uri: string; width: number; height: number } {
+export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact = false, size?: { width: number; height: number }, theme: CardTheme = "dark", statusColors?: ReadonlyMap<number, string>): { uri: string; width: number; height: number } {
   const palette = cardPalettes[theme]
   // size는 사용자가 모서리를 끌어 정한 크기다. 기본보다 작게는 그리지 않고, 늘어난 높이는 제목 줄 수로 쓴다.
   const width = Math.max(compact ? 232 : SVG_WIDTH, size?.width ?? 0)
   const rows = [card.detail, card.footer].filter(Boolean)
+  const statusRow = card.statuses?.length ? STATUS_ROW : 0
   const titleX = card.icon === "none" ? 14 : 38
   const titleWidth = width - titleX - 14
   // 기본 높이: 관계 그래프(compact)는 실제 제목 줄 수에 맞추고, 점검 우선순위 카드는 두 줄 자리를 고정해 모두 같은 크기로 둔다.
   const titleSlots = compact ? titleLines(card.title, titleWidth).length : 2
   const lastTitleBaseline = TITLE_BASELINE + LINE_GAP * (titleSlots - 1)
-  const defaultHeight = (rows.length ? lastTitleBaseline + ROW_GAP * rows.length : lastTitleBaseline) + BOTTOM_PADDING
+  const defaultHeight = (rows.length ? lastTitleBaseline + ROW_GAP * rows.length : lastTitleBaseline) + statusRow + BOTTOM_PADDING
   const height = Math.max(defaultHeight, size?.height ?? 0)
-  // 보조 줄은 카드 아래에 붙이고, 그 위 공간에 들어가는 만큼 제목 줄을 쓴다(사용자가 키운 카드는 더 많은 줄).
-  const rowBaseline = (index: number) => height - BOTTOM_PADDING - ROW_GAP * (rows.length - 1 - index)
-  const titleLimit = rows.length ? rowBaseline(0) - ROW_GAP : height - BOTTOM_PADDING
+  // 보조 줄과 응답 코드 뱃지 줄은 카드 아래에 붙이고, 그 위 공간에 들어가는 만큼 제목 줄을 쓴다(사용자가 키운 카드는 더 많은 줄).
+  const rowBaseline = (index: number) => height - BOTTOM_PADDING - statusRow - ROW_GAP * (rows.length - 1 - index)
+  const titleLimit = rows.length ? rowBaseline(0) - ROW_GAP : height - BOTTOM_PADDING - statusRow
   const maxTitleLines = Math.max(titleSlots, Math.floor((titleLimit - TITLE_BASELINE) / LINE_GAP) + 1)
   const lines = titleLines(card.title, titleWidth, maxTitleLines)
   // 두 줄 자리를 고정한 카드에서 한 줄 제목은 그 자리의 세로 가운데에 둔다.
@@ -248,6 +269,6 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
     : card.icon === "network" ? `<g fill="none" stroke="${palette.relation}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="` + iconTransform + '"><circle cx="23" cy="36" r="3"/><circle cx="15" cy="52" r="3"/><circle cx="31" cy="52" r="3"/><path d="m21.5 38.7-5 10.6m8-10.6 5 10.6"/><path d="M18 52h10"/></g>' : ""
   const title = lines.map((line, index) => `<text x="${titleX}" y="${TITLE_BASELINE + titleOffset + index * LINE_GAP}" fill="${palette.title}" font-family="sans-serif" font-size="${TITLE_FONT}">${escapeXml(line)}</text>`).join("")
   const rowText = rows.map((value, index) => `<text x="14" y="${rowBaseline(index)}" fill="${index === 0 && card.detail ? palette.detail : palette.footer}" font-family="sans-serif" font-size="12">${escapeXml(visualLine(value, width - 28, 12, index > 0 || !card.detail))}</text>`).join("")
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="${palette.card}" stroke="${palette.stroke}"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${icon}${relationshipIcon}${title}${rowText}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="${palette.card}" stroke="${palette.stroke}"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${icon}${relationshipIcon}${title}${rowText}${statusRow ? statusBadges(card.statuses ?? [], height - BOTTOM_PADDING - STATUS_BADGE_HEIGHT, theme, statusColors) : ""}</svg>`
   return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width, height }
 }

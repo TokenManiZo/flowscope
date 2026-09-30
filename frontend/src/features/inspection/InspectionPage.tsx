@@ -193,6 +193,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
     [events, identityLabel])
 
 
+  // 서버는 실제 Burp 리스너를 찾기 전에는 주소 대신 안내 문구를 보낸다(#25). 그때는 주소를 지어내지 않는다.
+  const humanProxyLabel = /^https?:\/\//.test(human.data?.proxy ?? "") ? `프록시 ${human.data!.proxy.replace(/^https?:\/\//, "")}` : "Burp 프록시"
   const humanStatus = !human.data ? human.isPending ? "불러오는 중" : "상태 확인 필요"
     : human.data.active ? `${humanAccountLabel || "비로그인"} 기록 중`
       : human.data.completed ? "완료" : "대기 중"
@@ -223,7 +225,10 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
           <SourcePassLayout
             label="HUMAN"
             title="직접 둘러보기"
-            description={`계정을 고르고 시작한 뒤, 프록시 ${(human.data?.proxy || "http://127.0.0.1:8080").replace(/^https?:\/\//, "")} 브라우저로 서비스를 사용하세요.`}
+            description={`계정을 고르고 시작한 뒤, ${humanProxyLabel} 브라우저로 서비스를 사용하세요.`}
+            notices={human.data?.otherListenerRequests ? <Alert><AlertDescription>
+              다른 포트 {human.data.otherListenerPort}에서 범위 안 요청 {human.data.otherListenerRequests}건이 들어왔어요. 이 요청은 이번 수집에 넣지 않았어요.
+            </AlertDescription></Alert> : undefined}
             control={<div className="grid gap-4">
               <div className="grid gap-1.5">
                 <span className="text-xs text-muted-foreground" id="human-account-label">수집할 계정</span>

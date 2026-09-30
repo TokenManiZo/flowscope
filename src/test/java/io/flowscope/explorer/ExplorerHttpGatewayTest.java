@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.flowscope.core.RouteCandidate;
+import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.core.SurfaceAnalysis;
 import io.flowscope.core.parameter.ParameterCoordinates;
@@ -23,6 +24,44 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerHttpGatewayTest {
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    @Test
+    void followsPageLinkedCdnJavascriptButNeverTreatsTheCdnAsAnApiTarget() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();
+        ExplorerTransport transport = request -> {
+            captured.set(request);
+            boolean html = request.url().equals("https://shop.example.test/");
+            boolean sourceMap = request.url().endsWith(".map");
+            return new ExplorerTransport.Response(200, request.url(), "",
+                    html ? "text/html" : sourceMap ? "application/json" : "application/javascript", Map.of(),
+                    html ? "<script src='https://cdn.example.test/main.js'></script>"
+                            : sourceMap ? "{\"version\":3}" : "import('./chunk.js'); fetch('/api/orders/42');\n//# sourceMappingURL=main.js.map",
+                    false, html ? "ev-page" : "ev-script", 1, Instant.now());
+        };
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
+                ScopePolicy.parse("https://shop.example.test/")::allows, "run-cdn", ignored -> {})) {
+            JsonNode page = JSON.readTree(post(gateway, """
+                    {"account":"","method":"GET","url":"https://shop.example.test/","headers":{},"body":""}
+                    """).body());
+            assertEquals("https://cdn.example.test/main.js",
+                    page.path("supporting_assets").get(0).asText());
+            JsonNode script = JSON.readTree(post(gateway, """
+                    {"account":"","method":"GET","url":"https://cdn.example.test/main.js","headers":{},"body":""}
+                    """).body());
+            assertTrue(script.path("supporting_assets").toString().contains("main.js.map"));
+            assertEquals(200, post(gateway, """
+                    {"account":"","method":"GET","url":"https://cdn.example.test/main.js.map","headers":{},"body":""}
+                    """).statusCode());
+            assertEquals("https://shop.example.test:443/", captured.get().supportingPageUrl());
+            assertEquals(403, post(gateway, """
+                    {"account":"","method":"GET","url":"https://cdn.example.test/api/private","headers":{},"body":""}
+                    """).statusCode());
+            assertEquals(400, post(gateway, """
+                    {"account":"account-a","method":"GET","url":"https://cdn.example.test/chunk.js","headers":{},"body":""}
+                    """).statusCode());
+        }
+    }
 
     @Test
     void injectsOpaqueAccountAuthAndBlocksDuplicateAndScopeEscape() throws Exception {

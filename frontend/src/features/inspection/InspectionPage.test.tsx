@@ -176,7 +176,7 @@ describe("unified inspection hub", () => {
     expect(screen.queryByRole("tab", { name: /범위/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
-    expect(screen.queryByText("범위 → HUMAN → ZAP → Evidence 검토 순서로 각각의 Evidence를 분리합니다.")).not.toBeInTheDocument()
+    expect(screen.queryByText("범위 → HUMAN → ZAP → 관측 기록 검토 순서로 각각의 관측 기록을 분리합니다.")).not.toBeInTheDocument()
   })
 
   it("opens on the current step without a current-step button or dot", async () => {
@@ -204,6 +204,22 @@ describe("unified inspection hub", () => {
 
     const endCall = fetchStub.mock.calls.find(([path, init]) => path === "/api/human-run" && (init as RequestInit).method === "POST")
     expect((endCall?.[1] as RequestInit).body?.toString()).toBe("action=end&runId=human-current")
+  })
+
+  it("shows the listener actually bound to the HUMAN run and names conflicting traffic", async () => {
+    renderInspection({ human: { active: true, completed: false, runId: "human-current",
+      accountId: "", proxy: "http://127.0.0.1:8888", listenerPort: 8888,
+      otherListenerPort: 9999, otherListenerRequests: 2 } })
+
+    expect(await screen.findByText(/프록시 127\.0\.0\.1:8888 브라우저로/)).toBeVisible()
+    expect(screen.getByText(/다른 포트 9999에서 범위 안 요청 2건/)).toBeVisible()
+  })
+
+  it("does not invent a proxy address before the real Burp listener is detected", async () => {
+    renderInspection({ human: { active: true, completed: false, runId: "human-current", accountId: "", proxy: "실제 리스너 감지 대기" } })
+
+    expect(await screen.findByText(/Burp 프록시 브라우저로/)).toBeVisible()
+    expect(screen.queryByText(/실제 리스너 감지 대기 브라우저로/)).not.toBeInTheDocument()
   })
 
   it("sends only the action and anonymous account for a HUMAN begin", async () => {

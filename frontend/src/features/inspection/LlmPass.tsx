@@ -121,7 +121,7 @@ export function LlmPass({ target, accounts = [], onOpenSettings }: {
     feedTitle="진행 기록"
     feedDescription={run?.message ?? "Explorer 상태를 불러오는 중입니다."}
     feedBadge={<Badge variant={providerReady ? "outline" : "destructive"}>Codex {run?.providerReadiness ?? "확인 중"}</Badge>}
-    emptyHint="실행하면 인증 준비·HTTP 요청·Evidence ID가 여기에 순서대로 표시됩니다."
+    emptyHint="실행하면 인증 준비·HTTP 요청·기록 번호가 여기에 순서대로 표시됩니다."
     feedFooter={feedFooter}
   />
 }

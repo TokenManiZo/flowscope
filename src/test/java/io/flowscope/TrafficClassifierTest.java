@@ -187,6 +187,30 @@ class TrafficClassifierTest {
     }
 
     @Test
+    void 중첩_manifest_json도_PWA_구조가_확인되면_LLM_API로_세지_않는다() {
+        RequestRecord manifest = record("GET", "/assets/manifest.json", null, "application/json");
+        manifest.body = "{\"name\":\"Shop\",\"short_name\":\"Shop\",\"icons\":[{\"src\":\"/logo.png\"}],\"start_url\":\"/\"}";
+        manifest.sourceDetail = SourceDetail.LLM_EXPLORER;
+
+        RequestRecord result = classified(manifest);
+
+        assertEquals(TrafficClassification.TrafficClass.DISCOVERY_METADATA,
+                result.trafficClassification.trafficClass());
+        assertEquals(TrafficClassification.Disposition.EXCLUDE,
+                result.trafficClassification.disposition());
+        assertEquals(List.of("WEB_APP_MANIFEST_BODY"), result.trafficClassification.reasons());
+    }
+
+    @Test
+    void manifest_json_경로지만_PWA_본문이_아닌_business_API는_보존한다() {
+        RequestRecord api = record("GET", "/assets/manifest.json", null, "application/json");
+        api.body = "{\"id\":42,\"status\":\"ready\"}";
+
+        assertEquals(TrafficClassification.TrafficClass.API,
+                classified(api).trafficClassification.trafficClass());
+    }
+
+    @Test
     void 권한응답_하나만으로_경로를_business_API로_확정하지_않는다() {
         RequestRecord directoryProbe = new RequestRecord(Source.HUMAN, "https://t:443",
                 "GET", "/static/js/", 403, "anon");

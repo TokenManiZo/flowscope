@@ -8,9 +8,11 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * 인증정보 마스킹 (기능명세서 F-05 "원문 토큰은 저장하지 않는다", F-22 "인증 정보는 가린 상태로 표시").
@@ -35,8 +37,16 @@ public final class Masking {
     private static final Pattern PART_NAME =
             Pattern.compile("(?i)\\bname=\"([^\"]+)\"");
     /** 일반 텍스트/쿼리의 비밀 값. 구조화 본문은 maskBody가 우선 처리한다. */
+    private static final String SECRET_NAME =
+            "(?:pass(?:word|wd)?|pwd|token|secret|client[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|authorization)";
+    private static final String SECRET_PREFIX = "[\"']?" + SECRET_NAME + "[\"']?\\s*[:=]\\s*[\"']?";
     private static final Pattern SECRET_FIELD = Pattern.compile(
-            "(?i)([\"']?(?:pass(?:word|wd)?|pwd|token|secret|client[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|authorization)[\"']?\\s*[:=]\\s*[\"']?)([^\"'&,}\\s]+)");
+            "(?i)(" + SECRET_PREFIX + ")([^\"'&,}\\s]+)");
+    private static final Pattern JAVASCRIPT_SECRET_FIELD = Pattern.compile(
+            "(?i)(" + SECRET_PREFIX + ")([^\"'`&,}\\s]+)");
+    /** Template literal value without `${...}`; interpolation stays an expression. */
+    private static final Pattern JAVASCRIPT_TEMPLATE_SECRET = Pattern.compile(
+            "(?i)([\"']?" + SECRET_NAME + "[\"']?\\s*[:=]\\s*`)((?:[^`$\\\\]|\\\\.|\\$(?!\\{))+)(?=`)");
     private static final Pattern XML_SECRET = Pattern.compile(
             "(?is)(<\\s*(password|passwd|pwd|token|secret|client_secret|api_key|access_token|refresh_token|id_token|session_token|authorization)\\b[^>]*>)(.*?)(</\\s*\\2\\s*>)");
 
@@ -120,12 +130,145 @@ public final class Masking {
     public static String maskBody(String body, String contentType) {
         if (body == null) return null;
         String type = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        if (type.contains("javascript") || type.contains("ecmascript")) return maskJavascript(body);
         String trimmed = body.stripLeading();
         if (type.contains("json") || trimmed.startsWith("{") || trimmed.startsWith("[")) return maskJson(body);
         if (type.contains("application/x-www-form-urlencoded")) return maskForm(body);
         if (type.contains("multipart/form-data")) return maskMultipart(body, contentType);
         if (type.contains("xml") || trimmed.startsWith("<")) return maskSecrets(body);
         return maskSecrets(body);
+    }
+
+    /** Redact JavaScript literals without replacing a dynamic expression or the next statement. */
+    private static String maskJavascript(String script) {
+        String xml = XML_SECRET.matcher(script).replaceAll(m -> m.group(1) + MASK + m.group(4));
+        xml = JAVASCRIPT_TEMPLATE_SECRET.matcher(xml).replaceAll(m -> Matcher.quoteReplacement(m.group(1) + MASK));
+        Matcher matcher = JAVASCRIPT_SECRET_FIELD.matcher(xml);
+        StringBuilder result = new StringBuilder(xml.length());
+        JavascriptLexState state = new JavascriptLexState();
+        int copied = 0;
+        int scanned = 0;
+        while (matcher.find()) {
+            state.advance(xml, scanned, matcher.start());
+            scanned = matcher.start();
+            result.append(xml, copied, matcher.start());
+            String prefix = matcher.group(1);
+            String value = matcher.group(2);
+            if (isRoutePathValue(value)) {
+                result.append(matcher.group());
+            } else if (!state.quotedOrCommented() && matcher.start() > 0
+                    && xml.charAt(matcher.start() - 1) == '/') {
+                int closingSlash = javascriptRegexEnd(value);
+                if (closingSlash < 0) return REDACTED;
+                result.append(prefix).append(MASK).append(value.substring(closingSlash));
+            } else if (state.quotedOrCommented()
+                    || prefix.endsWith("\"") || prefix.endsWith("'")
+                    || javascriptQuotedPrefix(prefix)) {
+                result.append(prefix).append(MASK);
+            } else {
+                String number = maskJavascriptNumber(value);
+                if (number != null) result.append(prefix).append(number);
+                else {
+                    String bare = maskJavascriptBareValue(prefix, value);
+                    result.append(bare == null ? matcher.group() : prefix + bare);
+                }
+            }
+            copied = matcher.end();
+        }
+        return result.append(xml, copied, xml.length()).toString();
+    }
+
+    private static String maskJavascriptNumber(String value) {
+        int start = value.startsWith("-") || value.startsWith("+") ? 1 : 0;
+        if (start >= value.length() || !Character.isDigit(value.charAt(start))) return null;
+        int end = start;
+        if (value.regionMatches(true, start, "0x", 0, 2)) {
+            end += 2;
+            while (end < value.length() && Character.digit(value.charAt(end), 16) >= 0) end++;
+        } else {
+            while (end < value.length() && Character.isDigit(value.charAt(end))) end++;
+            if (end + 1 < value.length() && value.charAt(end) == '.'
+                    && Character.isDigit(value.charAt(end + 1))) {
+                end++;
+                while (end < value.length() && Character.isDigit(value.charAt(end))) end++;
+            }
+        }
+        return "0" + value.substring(end);
+    }
+
+    private static String maskJavascriptBareValue(String prefix, String value) {
+        int terminator = value.indexOf(';');
+        String head = terminator < 0 ? value : value.substring(0, terminator);
+        if (head.isBlank() || List.of("new", "await", "yield", "typeof", "delete", "void").contains(head)) {
+            return null;
+        }
+        for (int i = 0; i < head.length(); i++) {
+            if ("(){}[]?:+*/\\.,=".indexOf(head.charAt(i)) >= 0) return null;
+        }
+        boolean colon = prefix.lastIndexOf(':') > prefix.lastIndexOf('=');
+        if (colon && head.matches("[A-Za-z_$][A-Za-z0-9_$]*")) return null;
+        return "null" + (terminator < 0 ? "" : value.substring(terminator));
+    }
+
+    private static int javascriptRegexEnd(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) == '/' && (i == 0 || value.charAt(i - 1) != '\\')) return i;
+        }
+        return -1;
+    }
+
+    private static boolean javascriptQuotedPrefix(String prefix) {
+        if (prefix.isEmpty()) return false;
+        char quote = prefix.charAt(0);
+        if (quote != '\'' && quote != '"') return false;
+        int count = 0;
+        for (int i = 0; i < prefix.length(); i++) if (prefix.charAt(i) == quote) count++;
+        return (count & 1) != 0;
+    }
+
+    private static final class JavascriptLexState {
+        private char quote;
+        private boolean escaped;
+        private boolean lineComment;
+        private boolean blockComment;
+        private final ArrayDeque<Integer> templateDepths = new ArrayDeque<>();
+
+        boolean quotedOrCommented() { return quote != 0 || lineComment || blockComment; }
+
+        void advance(String value, int from, int to) {
+            for (int i = from; i < to; i++) {
+                char c = value.charAt(i);
+                char next = i + 1 < to ? value.charAt(i + 1) : 0;
+                if (lineComment) {
+                    if (c == '\n' || c == '\r') lineComment = false;
+                } else if (blockComment) {
+                    if (c == '*' && next == '/') { blockComment = false; i++; }
+                } else if (quote != 0) {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (quote == '`' && c == '$' && next == '{') {
+                        quote = 0;
+                        templateDepths.push(1);
+                        i++;
+                    }
+                    else if (c == quote) quote = 0;
+                } else if (c == '/' && next == '/') {
+                    lineComment = true;
+                    i++;
+                } else if (c == '/' && next == '*') {
+                    blockComment = true;
+                    i++;
+                } else if (!templateDepths.isEmpty() && c == '{') {
+                    templateDepths.push(templateDepths.pop() + 1);
+                } else if (!templateDepths.isEmpty() && c == '}') {
+                    int depth = templateDepths.pop() - 1;
+                    if (depth == 0) quote = '`';
+                    else templateDepths.push(depth);
+                } else if (c == '\'' || c == '"' || c == '`') {
+                    quote = c;
+                }
+            }
+        }
     }
 
     /** 쿠키는 이름만 남기고 값을 가린다(세션 식별은 fp 해시가 담당). */

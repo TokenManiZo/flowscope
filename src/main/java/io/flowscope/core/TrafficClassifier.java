@@ -1,5 +1,8 @@
 package io.flowscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -10,7 +13,7 @@ import static io.flowscope.core.TrafficClassification.TrafficClass;
 
 /** 표준 요청 문맥과 저장된 Evidence만 사용하는 보수적 비파괴 분류기. */
 public final class TrafficClassifier {
-    public static final int VERSION = 6;
+    public static final int VERSION = 8;
 
     /** Reason set on HUMAN API traffic captured while no exploration pass was active (D-071). The snapshot reads it to guide a pass start (D-155). */
     public static final String HUMAN_OUTSIDE_EXPLORATION_RUN = "HUMAN_OUTSIDE_EXPLORATION_RUN";
@@ -39,6 +42,9 @@ public final class TrafficClassifier {
     public static TrafficClassification classify(RequestRecord record, AnalysisConfig config) {
         if (!record.hasResponse) {
             return result(inferredClass(record), Disposition.EXCLUDE, false, "NO_RESPONSE");
+        }
+        if (record.supportingPageUrl != null) {
+            return result(TrafficClass.STATIC_ASSET, Disposition.EXCLUDE, false, "SUPPORTING_CROSS_ORIGIN_ASSET");
         }
         if (record.source == Source.UNKNOWN) {
             return result(inferredClass(record), Disposition.EXCLUDE, false, "UNKNOWN_SOURCE");
@@ -135,10 +141,25 @@ public final class TrafficClassifier {
         if (dest.equals("manifest") || path.endsWith(".webmanifest")
                 || mime.equals("application/manifest+json")) return "WEB_APP_MANIFEST";
         if (path.equals("/manifest.json")) return "WEB_APP_MANIFEST_PATH";
+        if (path.endsWith("/manifest.json") && mime.equals("application/json")
+                && webAppManifestBody(record.responseBodyForAnalysis())) return "WEB_APP_MANIFEST_BODY";
         if (path.endsWith(".map") && mime.equals("application/json")) return "SOURCE_MAP";
         if ((dest.equals("serviceworker") || dest.equals("worker"))
                 && (mime.contains("javascript") || path.endsWith(".js"))) return "SERVICE_WORKER";
         return null;
+    }
+
+    private static boolean webAppManifestBody(String body) {
+        if (body == null || body.isBlank() || body.length() > 64 * 1024) return false;
+        try {
+            JsonNode root = ResponseEvidence.parseBoundedJson(body);
+            return root.isObject()
+                    && (root.path("name").isTextual() || root.path("short_name").isTextual())
+                    && (root.path("icons").isArray() || root.path("start_url").isTextual()
+                    || root.path("display").isTextual());
+        } catch (IOException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static boolean isStaticAsset(RequestRecord record) {

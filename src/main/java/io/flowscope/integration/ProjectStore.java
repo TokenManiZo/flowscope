@@ -500,6 +500,7 @@ public final class ProjectStore {
         out.put("tool", r.tool.name());
         out.put("phase", r.phase.name());
         out.put("execution_trust", r.executionTrust.name());
+        if (r.proxyListenerPort > 0) out.put("proxy_listener_port", r.proxyListenerPort);
         out.put("auth_state", r.authState.name());
         out.put("traffic_class", r.trafficClassification.trafficClass().name());
         out.put("traffic_disposition", r.trafficClassification.disposition().name());
@@ -507,6 +508,7 @@ public final class ProjectStore {
         out.set("classification_reasons", json.valueToTree(r.trafficClassification.reasons()));
         put(out, "run_id", r.runId);
         put(out, "lane_account_id", r.laneAccountId);
+        put(out, "supporting_page_url", r.supportingPageUrl);
         put(out, "replay_basis_identity", r.replayBasisIdentity);
         put(out, "replay_basis_evidence_id", r.replayBasisEvidenceId);
         put(out, "evidence_id", r.evidenceId);
@@ -542,6 +544,8 @@ public final class ProjectStore {
         r.tool = enumValue(ToolKind.class, required(value, "tool"));
         r.phase = enumValue(RunPhase.class, required(value, "phase"));
         r.executionTrust = enumValue(ExecutionTrust.class, optional(value, "execution_trust", "UNKNOWN"));
+        int listenerPort = value.path("proxy_listener_port").asInt(-1);
+        r.proxyListenerPort = listenerPort > 0 && listenerPort <= 65535 ? listenerPort : -1;
         r.authState = enumValue(AuthState.class, optional(value, "auth_state", "UNRESOLVED"));
         List<String> reasons = new ArrayList<>();
         JsonNode reasonNodes = value.path("classification_reasons");
@@ -554,6 +558,7 @@ public final class ProjectStore {
                 reasons, value.path("traffic_user_override").asBoolean(false));
         r.runId = optional(value, "run_id", "project-import");
         r.laneAccountId = nullable(value, "lane_account_id");
+        r.supportingPageUrl = nullable(value, "supporting_page_url");
         r.replayBasisIdentity = nullable(value, "replay_basis_identity");
         r.replayBasisEvidenceId = nullable(value, "replay_basis_evidence_id");
         r.evidenceId = nullable(value, "evidence_id");

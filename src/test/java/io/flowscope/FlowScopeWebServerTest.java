@@ -602,7 +602,16 @@ final class FlowScopeWebServerTest {
         assertTrue(began.path("active").asBoolean());
         assertFalse(began.path("completed").asBoolean());
         assertEquals("human-p5-1", began.path("runId").asText());
+        assertEquals("실제 리스너 감지 대기", began.path("proxy").asText());
         assertEquals("human-p5-1", state.contexts.current(Source.HUMAN).runId());
+
+        state.observedHumanPort = 8888;
+        state.otherHumanPort = 9999;
+        state.otherHumanRequests = 2;
+        JsonNode bound = json(get("/api/human-run", token, origin()));
+        assertEquals("http://127.0.0.1:8888", bound.path("proxy").asText());
+        assertEquals(2, bound.path("otherListenerRequests").asInt());
+        assertEquals(9999, bound.path("otherListenerPort").asInt());
 
         assertEquals(400, post("/api/human-run", "action=begin&runId=human-p5-2", token).statusCode());
         assertEquals(400, post("/api/human-run", "action=end&runId=wrong", token).statusCode());
@@ -1299,6 +1308,9 @@ final class FlowScopeWebServerTest {
         private volatile List<String> scannerScope;
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
+        private volatile int observedHumanPort = -1;
+        private volatile int otherHumanPort = -1;
+        private volatile long otherHumanRequests;
         private volatile boolean scannerCancelled;
         private volatile ZapAccountVault.Input lastZapAccountInput;
         private volatile String refreshedZapSessionAccountId = "";
@@ -1362,6 +1374,9 @@ final class FlowScopeWebServerTest {
         @Override public List<LegacyAssessment> assessments() { return archivedAssessments; }
         @Override public List<ValidationDecision> validations() { return archivedValidations; }
         @Override public RunContextRegistry contexts() { return contexts; }
+        @Override public int humanListenerPort(String runId) { return observedHumanPort; }
+        @Override public int otherHumanListenerPort(String runId) { return otherHumanPort; }
+        @Override public long otherHumanListenerRequests(String runId) { return otherHumanRequests; }
         @Override public SessionBroker sessions() { return sessions; }
         @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
             return List.of(new FlowScopeWebServer.AccountRequestCandidate(record.evidenceId, 200, "GET",

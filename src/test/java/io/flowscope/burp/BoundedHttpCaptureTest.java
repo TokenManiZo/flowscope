@@ -1,6 +1,8 @@
 package io.flowscope.burp;
 
 import io.flowscope.core.StoredPayload;
+import io.flowscope.core.discovery.JavascriptAnalysis;
+import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -8,6 +10,27 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 final class BoundedHttpCaptureTest {
+    @Test
+    void maskedJavascriptRetainedFromHttpResponseStillYieldsItsCallSite() {
+        String headers = "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n"
+                + "Set-Cookie: sid=synthetic-secret\r\n\r\n";
+        String script = "const token=readToken();const config={apiKey:'sk-synthetic'};"
+                + "fetch('/api/catalog');";
+        byte[] message = (headers + script).getBytes(StandardCharsets.UTF_8);
+
+        BoundedHttpCapture.Result captured = BoundedHttpCapture.capture(message,
+                headers.getBytes(StandardCharsets.UTF_8).length, "application/javascript",
+                1024 * 1024, 64 * 1024);
+
+        String retained = captured.payload().text();
+        assertFalse(retained.contains("synthetic-secret"));
+        assertFalse(retained.contains("sk-synthetic"));
+        String body = retained.substring(retained.indexOf("\r\n\r\n") + 4);
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(body);
+        assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis.detail());
+        assertTrue(analysis.callSites().stream().anyMatch(site -> "/api/catalog".equals(site.reference())));
+    }
+
     @Test
     void oversizedTextCopiesOnlyPreviewAndKeepsSizeMetadata() {
         String headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"

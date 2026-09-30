@@ -1,11 +1,31 @@
 import { useEffect, useState } from "react"
+import { Bot, ChevronDown, ChevronRight, CircleHelp, FileText, ScanLine, Send, UserRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { MethodBadge, StatusBadge } from "@/features/graph/httpBadges"
 import { getRequestLabDraft, openReplay } from "@/lib/api/endpoints"
-import type { EventRecord, Snapshot } from "@/lib/api/types"
+import type { EventRecord, Snapshot, Source } from "@/lib/api/types"
 import { evidenceOrdinalLabel, stripOrigin } from "@/lib/display/operationLabel"
 import { activeAccounts, RequestLabDialog } from "./RequestLabDialog"
-import { SourceIcon } from "./SourceIcon"
+
+/** 출처 칩. 색은 그래프 강조색과 같은 계열(HUMAN 파랑·SCANNER 빨강·LLM 노랑)이다. */
+const SOURCE_CHIP: Record<Source, { Icon: typeof UserRound; label: string; className: string }> = {
+  human: { Icon: UserRound, label: "HUMAN", className: "border-blue-500/50 bg-blue-500/10 text-blue-600 dark:text-blue-300" },
+  scanner: { Icon: ScanLine, label: "SCANNER", className: "border-red-500/50 bg-red-500/10 text-red-600 dark:text-red-300" },
+  llm: { Icon: Bot, label: "LLM", className: "border-yellow-500/50 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300" },
+  unknown: { Icon: CircleHelp, label: "UNKNOWN", className: "border-border bg-muted text-muted-foreground" },
+}
+
+/** 같은 신원·출처의 요청을 한 묶음으로 모은다. 묶음과 묶음 안 요청 모두 최신순이다. */
+function groupByIdentitySource(events: readonly EventRecord[]) {
+  const groups = new Map<string, EventRecord[]>()
+  for (const event of [...events].sort((left, right) => right.timestamp - left.timestamp)) {
+    const key = `${event.idn}|${event.source}`
+    const group = groups.get(key)
+    if (group) group.push(event); else groups.set(key, [event])
+  }
+  return [...groups].map(([key, items]) => ({ key, idn: items[0].idn, source: items[0].source, events: items }))
+}
 
 interface Props {
   events: readonly EventRecord[]
@@ -14,13 +34,15 @@ interface Props {
 }
 
 /**
- * 선택 항목에 연결된 실제 Evidence 목록. 행마다 원문 보기(Request Lab)와 현재 세션 Repeater만 둔다.
+ * 선택 항목에 연결된 실제 관측 기록. 같은 신원·출처의 요청은 카드 하나로 묶고, 카드의 원문 보기(Request Lab)·현재 세션 Repeater는
+ * 그 묶음의 가장 최근 요청을 대상으로 한다. 요청이 여럿이면 펼쳐서 요청마다 같은 작업을 할 수 있다.
  * 현재 세션은 관측 신원의 재사용 가능한 ACTIVE 세션이며, 원문은 요청 동안만 지역 변수로 다루고 캐시에 두지 않는다.
  */
 export function EvidenceActionList({ events, snapshot, disabled = false }: Props) {
   const [labContext, setLabContext] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Readonly<Record<string, string>>>({})
+  const [openGroups, setOpenGroups] = useState<readonly string[]>([])
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision ?? 0
   // 데이터셋 교체나 Evidence 좌표 변경은 열린 초안을 닫는다(D-140). 사라졌다 돌아온 Evidence도 다시 열리지 않는다.
   const contextOf = (event: EventRecord) => JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp])
@@ -47,23 +69,41 @@ export function EvidenceActionList({ events, snapshot, disabled = false }: Props
     }
   }
 
-  if (!sorted.length) return <p className="text-sm text-muted-foreground">연결된 Evidence가 없습니다.</p>
-  return <section aria-label="Evidence" className="grid gap-2">
-    <h3 className="text-sm font-semibold">Evidence <span className="font-normal text-muted-foreground">{sorted.length}</span></h3>
-    <ul className="grid gap-2">{sorted.map(event => <li key={event.eventId} aria-label={`Evidence ${evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)}`} className="grid gap-2 rounded-md border border-border/70 p-3 text-sm">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="font-mono text-xs text-muted-foreground">{evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)}</span>
-        <SourceIcon source={event.source} labelled />
-        <span className="truncate font-medium">{event.idn}</span>
-        <span className="ms-auto shrink-0 font-mono text-xs">{event.status}</span>
-      </div>
-      <p className="truncate font-mono text-xs" title={`${event.method} ${stripOrigin(event.path) || event.path}`}>{event.method} {stripOrigin(event.path) || event.path}</p>
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => setLabContext(contextOf(event))}>원문 보기</Button>
-        <Button type="button" size="sm" disabled={disabled || pendingId !== null} onClick={() => void sendToRepeater(event)}>{pendingId === event.eventId ? "여는 중…" : "현재 세션으로 Repeater"}</Button>
-      </div>
-      {messages[event.eventId] && <p role="status" className="text-xs text-muted-foreground">{messages[event.eventId]}</p>}
-    </li>)}</ul>
+  if (!sorted.length) return <p className="text-sm text-muted-foreground">연결된 관측 기록이 없습니다.</p>
+  const groups = groupByIdentitySource(sorted)
+  const ordinal = (event: EventRecord) => evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)
+  const pathOf = (event: EventRecord) => stripOrigin(event.path) || event.path
+  const toggle = (key: string) => setOpenGroups(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
+  return <section aria-label="관측 기록" className="grid gap-3">
+    <h3 className="text-lg font-semibold">관측 기록</h3>
+    <ul className="grid gap-4">{groups.map(group => {
+      const latest = group.events[0], chip = SOURCE_CHIP[group.source] ?? SOURCE_CHIP.unknown, open = openGroups.includes(group.key)
+      const methods = [...new Set(group.events.map(event => event.method))], codes = [...new Set(group.events.map(event => event.status))].sort((left, right) => left - right)
+      return <li key={group.key} aria-label={`${group.idn} · ${chip.label} 관측 기록 ${group.events.length}건`} className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[17px] font-semibold">{group.idn}</span>
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[13px] font-semibold ${chip.className}`}><chip.Icon className="size-3.5" aria-hidden="true" />{chip.label}</span>
+          {group.events.length > 1
+            ? <button type="button" aria-expanded={open} aria-label={`요청 ${group.events.length}건 ${open ? "접기" : "펼치기"}`} onClick={() => toggle(group.key)} className="ms-auto inline-flex shrink-0 items-center gap-0.5 rounded px-1 text-[13px] text-muted-foreground hover:bg-muted">{group.events.length}건{open ? <ChevronDown className="size-4" aria-hidden="true" /> : <ChevronRight className="size-4" aria-hidden="true" />}</button>
+            : <span className="ms-auto shrink-0 text-[13px] text-muted-foreground">1건</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">{methods.map(method => <MethodBadge key={method} method={method} />)}{codes.map(code => <StatusBadge key={code} code={code} />)}</div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="outline" className="h-8 text-[13px]" disabled={disabled} onClick={() => setLabContext(contextOf(latest))}>원문 보기</Button>
+          <Button type="button" size="sm" variant="outline" className="h-8 text-[13px]" disabled={disabled || pendingId !== null} onClick={() => void sendToRepeater(latest)}>{pendingId === latest.eventId ? "여는 중…" : "현재 세션으로 Repeater"}</Button>
+        </div>
+        {open && <ul aria-label={`${group.idn} · ${chip.label} 요청 목록`} className="grid border-t border-border/70">{group.events.map(event => <li key={event.eventId} aria-label={`관측 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/50 py-2 text-[13px] last:border-0">
+          <span className="font-mono text-xs text-muted-foreground">{ordinal(event)}</span>
+          <StatusBadge code={event.status} />
+          <span className="truncate font-mono text-xs text-muted-foreground" title={`${event.method} ${pathOf(event)}`}>{pathOf(event)}</span>
+          <span className="flex gap-0.5">
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} 원문 보기`} disabled={disabled} onClick={() => setLabContext(contextOf(event))}><FileText className="size-4" /></Button>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} 현재 세션으로 Repeater`} disabled={disabled || pendingId !== null} onClick={() => void sendToRepeater(event)}><Send className="size-4" /></Button>
+          </span>
+        </li>)}</ul>}
+        {group.events.filter(event => messages[event.eventId]).map(event => <p key={event.eventId} role="status" className="text-xs text-muted-foreground">{group.events.length > 1 ? `${ordinal(event)} · ` : ""}{messages[event.eventId]}</p>)}
+      </li>
+    })}</ul>
     {labEvent && <RequestLabDialog key={labContext} open onOpenChange={open => { if (!open) setLabContext(null) }} event={labEvent} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}
   </section>
 }
