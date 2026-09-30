@@ -141,3 +141,17 @@ it("keeps a persistent desktop inspector open when the selection clears, so the 
   rerender(tree(false, false))
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
 })
+
+it("leaves a visible filter strip with the active filter count after the left pane is collapsed, and reopens from it", async () => {
+  setViewport(1920)
+  const user = userEvent.setup()
+  render(<ReferenceAnalysisWorkspace ariaLabel="공유 분석 작업면" context={<button type="button">공유 필터</button>} contextBadge={2} inspector={<p>상세</p>}><p>분석 결과</p></ReferenceAnalysisWorkspace>)
+  // 접기 버튼은 마우스를 올리지 않아도 보인다.
+  expect(screen.getByRole("button", { name: "분석 필터 패널 접기" })).not.toHaveClass("opacity-0")
+  await user.click(screen.getByRole("button", { name: "분석 필터 패널 접기" }))
+  expect(screen.queryByRole("button", { name: "공유 필터" })).not.toBeInTheDocument()
+  const reopen = screen.getByRole("button", { name: /분석 필터 패널 열기/ })
+  expect(within(reopen).getByLabelText("켜 둔 필터 2개")).toHaveTextContent("2")
+  await user.click(reopen)
+  expect(screen.getByRole("button", { name: "공유 필터" })).toBeVisible()
+})

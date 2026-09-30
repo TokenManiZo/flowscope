@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent, readMinimap, routeEdges, separateLaneNodes, type RouteNode } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphWheelIntent, readGroupBands, readMinimap, routeEdges, separateLaneNodes, type RouteNode } from "./CytoscapeGraph"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
@@ -839,3 +839,18 @@ it("opens and closes an object group from a double click or Enter instead of nav
   expect(onNavigate).not.toHaveBeenCalled()
 })
 
+
+it("wraps each expanded object group and its members in one screen-space band for the fold controls", () => {
+  const fakeNode = (id: string, data: Record<string, string>, box: { x1: number; y1: number; x2: number; y2: number }) => ({ id: () => id, data: (key: string) => data[key], renderedBoundingBox: () => box })
+  const nodes = [
+    fakeNode("object-group:svc|summary", { groupState: "open", groupKey: "summary" }, { x1: 100, y1: 50, x2: 300, y2: 110 }),
+    fakeNode("resource:summary:1", { memberOf: "object-group:svc|summary" }, { x1: 100, y1: 130, x2: 320, y2: 190 }),
+    fakeNode("resource:summary:2", { memberOf: "object-group:svc|summary" }, { x1: 100, y1: 210, x2: 300, y2: 270 }),
+    fakeNode("object-group:svc|stms", { groupState: "closed", groupKey: "stms" }, { x1: 100, y1: 300, x2: 300, y2: 360 }),
+    fakeNode("resource:other:1", {}, { x1: 100, y1: 380, x2: 300, y2: 440 }),
+  ]
+  const core = { nodes: () => ({ toArray: () => nodes }) }
+  expect(readGroupBands(core as unknown as Parameters<typeof readGroupBands>[0])).toEqual([
+    { id: "object-group:svc|summary", label: "summary", count: 2, x1: 100, y1: 50, x2: 320, y2: 270 },
+  ])
+})

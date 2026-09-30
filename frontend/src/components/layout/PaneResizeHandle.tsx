@@ -53,12 +53,13 @@ export function PaneResizeHandle({ side, label, width, min, max, collapsed = fal
 
   // 경계는 색·선 없이 커서만 바뀐다. 버튼은 translate로 가운데 두지 않는다: Button의 active:translate-y-px가
   // 가운데 정렬 translate를 덮어 누르는 순간 버튼이 아래로 튀고, 손을 떼는 곳이 경계가 되어 클릭이 사라졌다.
-  return <div className="group relative z-20 flex w-4 shrink-0 select-none items-center justify-center">
+  // 버튼은 패널 제목 줄 높이(위쪽)에 항상 보이게 둔다. 마우스를 올려야만 보이면 접기·펼치기를 찾기 어렵다.
+  return <div className="group relative z-20 flex w-4 shrink-0 select-none items-start justify-center pt-3">
     {!collapsed ? <div role="separator" aria-label={`${label} 너비 조절`} aria-orientation="vertical" aria-valuemin={Math.round(min)} aria-valuemax={Math.round(max)} aria-valuenow={Math.round(width)} tabIndex={0}
       className="absolute inset-0 cursor-col-resize focus-visible:bg-ring/20 focus-visible:outline-none"
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onKeyDown={onKeyDown} /> : null}
     <Button type="button" size="icon-sm" variant="outline" aria-label={toggleLabel} onClick={collapsed ? onExpand : onCollapse}
-      className="relative z-10 size-7 shrink-0 rounded-sm p-0 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
+      className="relative z-10 size-7 shrink-0 rounded-sm p-0 opacity-70 shadow-sm transition-opacity hover:opacity-100 focus-visible:opacity-100">
       <ToggleIcon className="size-3" />
     </Button>
   </div>

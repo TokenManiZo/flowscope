@@ -36,8 +36,8 @@ it("shows the selected input and lists only actual 관측 기록 of that exact o
   expect(panel).not.toHaveTextContent("왜 집중해야 하나요?")
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()
   // 최신 Evidence가 먼저 오고, 좌표 근거만 있는 ID·다른 operation·연결되지 않은 이벤트는 목록에 없다.
-  // 관측 기록은 신원·출처별 카드로 묶인다. 이 픽스처는 요청마다 신원이 달라 카드도 요청 수만큼 나온다.
-  expect(rowIds()).toEqual(["observed-b · HUMAN 관측 기록 1건", "cell-actual · HUMAN 관측 기록 1건", "observed-a · HUMAN 관측 기록 1건"])
+  // 관측 기록은 신원별 카드로 묶인다. 이 픽스처는 요청마다 신원이 달라 카드도 요청 수만큼 나온다.
+  expect(rowIds()).toEqual(["observed-b 관측 기록 1건", "cell-actual 관측 기록 1건", "observed-a 관측 기록 1건"])
 })
 
 it("opens the read-only raw request from a row without sending anything", async () => {

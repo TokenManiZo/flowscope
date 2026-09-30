@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
+import { ChevronUp } from "lucide-react"
 
 import { cardSurface, renderParameterNodeCardSvg, type CardSource, type CardTheme, type ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
 import { useDocumentTheme } from "@/hooks/useTheme"
@@ -110,6 +111,9 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     if (origin !== "human" && origin !== "scanner" && origin !== "llm") continue
     for (const id of [data.source, data.target]) nodeSources.set(id, (nodeSources.get(id) ?? new Set<CardSource>()).add(origin))
   }
+  // 펼친 객체 묶음의 멤버 노드는 어느 묶음에서 나왔는지 표시한다(배경 띠·강조 테두리).
+  const memberOf = new Map<string, string>()
+  for (const node of hierarchy?.nodes ?? []) if (node.objectGroup?.expanded) for (const member of node.objectGroup.members) memberOf.set(`resource:${member}`, node.id)
   const nodes = (hierarchy ? hierarchy.nodes.filter(node => node.kind !== "route-candidate") : [...projection.identities, ...projection.operations, ...projection.resources]).map((node) => {
     // 접근 주체 아이콘은 오른쪽 API·Object 노드에만 둔다.
     const sources = node.kind === "operation" || node.kind === "resource" ? [...(nodeSources.get(node.id) ?? [])] : []
@@ -118,7 +122,7 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     cards?.set(node.id, card)
     const size = sizes[node.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
-    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...("objectGroup" in node && node.objectGroup ? { groupState: node.objectGroup.expanded ? "open" : "closed" } : {}), ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...("objectGroup" in node && node.objectGroup ? { groupState: node.objectGroup.expanded ? "open" : "closed", groupKey: node.objectGroup.key } : {}), ...(memberOf.has(node.id) ? { memberOf: memberOf.get(node.id) } : {}), ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
     const card = relationshipRouteCandidateCard(candidate)
@@ -238,6 +242,27 @@ export interface MinimapView {
 }
 
 /** 미니맵에 그릴 노드 상자와 화면 범위를 읽는다. 노드가 없거나 렌더러가 범위를 주지 않으면 null. */
+export interface GroupBand { id: string; label: string; count: number; x1: number; y1: number; x2: number; y2: number }
+
+/** 펼친 객체 묶음마다 묶음 노드와 멤버 노드를 감싸는 화면 좌표 상자. 캔버스 위에 배경 띠와 접기 버튼을 그리는 데 쓴다. */
+export function readGroupBands(core: Core): GroupBand[] {
+  if (typeof core.nodes !== "function") return []
+  const bands: GroupBand[] = []
+  try {
+    const nodes = core.nodes().toArray()
+    for (const group of nodes.filter(node => node.data("groupState") === "open")) {
+      const members = nodes.filter(node => node.data("memberOf") === group.id())
+      const boxes = [group, ...members].map(node => node.renderedBoundingBox())
+      bands.push({
+        id: group.id(), label: String(group.data("groupKey") ?? ""), count: members.length,
+        x1: Math.min(...boxes.map(box => box.x1)), y1: Math.min(...boxes.map(box => box.y1)),
+        x2: Math.max(...boxes.map(box => box.x2)), y2: Math.max(...boxes.map(box => box.y2)),
+      })
+    }
+  } catch { return [] }
+  return bands
+}
+
 export function readMinimap(core: Core): MinimapView | null {
   if (typeof core.extent !== "function") return null
   const nodes: MinimapView["nodes"] = []
@@ -374,6 +399,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const [rendererUnavailable, setRendererUnavailable] = useState(false)
   const [cardTooltip, setCardTooltip] = useState<{ nodeId: string; label: string; x: number; y: number; width: number } | null>(null)
   const [minimap, setMinimap] = useState<MinimapView | null>(null)
+  const [bands, setBands] = useState<GroupBand[]>([])
   const projectionRef = useRef(projection)
   const selectRef = useRef(onSelect)
   const navigateRef = useRef(onNavigate)
@@ -510,6 +536,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: "node:selected", style: { "border-width": 2, "border-color": "#60a5fa", "overlay-opacity": 0 } },
           { selector: 'node[kind = "route-candidate"]', style: { "border-width": 2, "border-style": "dotted", "border-color": "#64748b" } },
           { selector: 'node[groupState = "closed"]', style: { "border-width": 1.5, "border-style": "dashed", "border-color": "#94a3b8" } },
+          { selector: 'node[groupState = "open"]', style: { "border-width": 2, "border-style": "solid", "border-color": "#0ea5e9" } },
+          { selector: "node[memberOf]", style: { "border-width": 1.5, "border-color": "#38bdf8" } },
           { selector: "edge", style: { width: 1.7, "line-color": "data(color)", "line-style": "data(line)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, label: "data(label)", color: "#d4d4d8", "font-size": "9px", "font-family": "Geist Mono, ui-monospace, monospace", "text-background-color": "#090b0d", "text-background-opacity": 0.86, "text-background-padding": "2px", "text-rotation": "autorotate", "text-margin-y": -7, "curve-style": "round-taxi", "taxi-direction": "rightward", "taxi-radius": 4, opacity: 0.9 } },
           { selector: "edge:selected", style: { width: 2.6, "line-color": "data(color)", "target-arrow-color": "data(color)" } },
           // 강조 필터에 맞는 엣지만 색을 입힌다. 선택 강조(focused)는 그 위에 한 번 더 적용되고, 필터에서 빠진 요소는 마지막 규칙으로 늘 흐리게 둔다.
@@ -539,7 +567,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (containerRef.current) publishGeometry(containerRef.current, core)
       preferenceRef.current(readPreferences(core))
       publishLaneBounds()
-      setMinimap(readMinimap(core))
+      setMinimap(readMinimap(core)); setBands(readGroupBands(core))
     }
     publishLayoutRef.current = publishLayout
     let correctionFrame: number | null = null
@@ -573,7 +601,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (containerRef.current) publishGeometry(containerRef.current, core)
       preferenceRef.current(readPreferences(core))
       publishLaneBounds()
-      setMinimap(readMinimap(core))
+      setMinimap(readMinimap(core)); setBands(readGroupBands(core))
     }
     const scheduleViewportPublish = () => {
       if (viewportFrame !== null) return
@@ -666,7 +694,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     let routeFrame: number | null = null
     const routeListener = () => {
       if (routeFrame !== null) return
-      routeFrame = requestAnimationFrame(() => { routeFrame = null; applyEdgeRoutes(core, laneCountRef.current) })
+      routeFrame = requestAnimationFrame(() => { routeFrame = null; applyEdgeRoutes(core, laneCountRef.current); setBands(readGroupBands(core)) })
     }
     core.on("position data add remove", routeListener)
     return () => {
@@ -726,7 +754,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const core = coreRef.current
     if (!core) return
     applyHighlight(core, projectionRef.current, highlight, cardsRef.current, theme, statusColors, splitSources)
-    setMinimap(readMinimap(core))
+    setMinimap(readMinimap(core)); setBands(readGroupBands(core))
   }, [highlight, splitSources, statusColors, theme])
 
 
@@ -862,6 +890,15 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           }
           else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip(); clearSelectionRef.current?.() }
         }} />
+      {/* 펼친 객체 묶음: 멤버를 감싸는 배경 띠와, 띠 오른쪽 위·아래의 접기 버튼. 띠는 클릭을 가로채지 않는다. */}
+      {bands.map(band => {
+        const fold = (edge: "top" | "bottom") => <button key={edge} type="button" aria-label={`${band.label} 묶음 접기${edge === "bottom" ? " (아래)" : ""}`} onClick={() => toggleGroupRef.current?.(band.id)}
+          className="pointer-events-auto absolute left-[calc(100%+8px)] inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-sky-500/60 bg-[var(--flowscope-pane)] px-2.5 py-0.5 text-xs text-sky-600 shadow-sm hover:bg-sky-500/10 dark:text-sky-300"
+          style={edge === "top" ? { top: 0 } : { bottom: 0 }}><ChevronUp className="size-3.5" aria-hidden="true" />{band.label} {band.count}개 접기</button>
+        return <div key={band.id} className="pointer-events-none absolute z-10 rounded-r-xl border-l-[3px] border-sky-500 bg-sky-500/[0.06]" style={{ left: band.x1 - 10, top: band.y1 - 8, width: band.x2 - band.x1 + 18, height: band.y2 - band.y1 + 16 }}>
+          {fold("top")}{band.count > 3 && fold("bottom")}
+        </div>
+      })}
       {minimap && <Minimap view={minimap} onCenter={(point) => {
         const core = coreRef.current
         if (!core) return

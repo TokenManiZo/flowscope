@@ -1,6 +1,6 @@
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
-import type { EventRecord, Snapshot } from "@/lib/api/types"
+import type { EventRecord, Snapshot, Verdict } from "@/lib/api/types"
 import { stripOrigin } from "@/lib/display/operationLabel"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
 import type { GraphSelection } from "./graphProjection"
@@ -28,6 +28,9 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const publicObject = node?.kind === "resource" && node.selection.operation && node.selection.resource ? isPublicRead(snapshot, node.selection.operation, node.selection.resource) : false
   const summary = baseSummary && publicObject ? { ...baseSummary, listTitle: "접근한 신원 · 조회 공개", list: baseSummary.list.map(([label, value]) => [label.replace(/ \(소유자\)$/, ""), value] as [string, string]) } : baseSummary
   const structural = node?.kind === "target" || node?.kind === "api-group"
+  // API를 고르면 "접근한 신원" 목록을 관측 기록 카드와 합친다(신원이 두 번 나오지 않게). 판정은 카드 제목 옆에 보여 준다.
+  const merged = node?.kind === "operation" && !selection.routeCandidate && !!summary
+  const identityVerdicts = merged ? new Map(summary.list.map(([identity, verdict]) => [identity, verdict as Verdict])) : undefined
   const ids = new Set(selection.evidenceIds)
   const listed = snapshot.events.filter(item => ids.has(item.eventId))
   // 그래프가 정확히 해석한 선택 Evidence는 목록에 반드시 포함한다.
@@ -36,10 +39,10 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const subtitle = [selection.identity, selection.resource ? stripOrigin(selection.resource) || selection.resource : null].filter(Boolean).join(" · ")
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="선택 작업" description={<><span className="block break-all font-mono text-foreground">{title}</span>{subtitle && <span className="block break-all">{subtitle}</span>}</>} tabs={null}>
-      {summary && <GraphNodeSummary summary={summary} hint={projection?.kind === "site" && node?.kind === "api-group" ? GRAPH_OPEN_HINT : undefined}>
-        {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
-      </GraphNodeSummary>}
-      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList events={events} snapshot={snapshot} disabled={suspended} />}
+      {/* 소유자를 모르면 이 객체의 판정이 보류되므로 패널 맨 위에서 먼저 묻는다. */}
+      {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
+      {summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} hint={projection?.kind === "site" && node?.kind === "api-group" ? GRAPH_OPEN_HINT : undefined} />}
+      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
     </InspectorPanel>
   </div>
 }

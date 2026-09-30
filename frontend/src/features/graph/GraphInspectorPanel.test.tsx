@@ -34,10 +34,10 @@ it("shows only the selected operation and its 관측 기록 rows, without verdic
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 7 } }} />)
   const panel = screen.getByRole("complementary", { name: "선택 작업" })
   expect(panel).toHaveTextContent("GET /orders/{id}")
-  const row = within(panel).getByRole("listitem", { name: "alice · HUMAN 관측 기록 1건" })
+  const row = within(panel).getByRole("listitem", { name: "alice 관측 기록 1건" })
   expect(row).toHaveTextContent("alice")
   expect(row).toHaveTextContent("200")
-  expect(within(row).getByText("HUMAN")).toBeVisible()
+  expect(within(row).getByRole("img", { name: "HUMAN" })).toBeInTheDocument()
   expect(panel).not.toHaveTextContent("ev-1")
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()
   expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
@@ -77,30 +77,34 @@ it("locks 관측 기록 actions while the snapshot is suspended", () => {
   expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
 })
 
-it("groups 관측 기록 by identity and source, acting on the latest request and listing each request when expanded", async () => {
+it("groups 관측 기록 into one card per identity with a row per source, acting on each row's latest request", async () => {
   const fetch = stubFetch()
   const events = [
     { ...event, eventId: "ev-1", timestamp: 1 },
     { ...event, eventId: "ev-2", timestamp: 3, status: 404, path: "/orders/2" },
-    { ...event, eventId: "ev-3", timestamp: 2, idn: "bob", source: "llm" as const, status: 401 },
+    { ...event, eventId: "ev-4", timestamp: 0, source: "llm" as const },
+    { ...event, eventId: "ev-3", timestamp: 2, idn: "bob", source: "scanner" as const, status: 401 },
   ]
-  renderWithQueryClient(<EvidenceActionList events={events} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 1, "ev-2": 2, "ev-3": 3 } }} />)
+  const verdicts = new Map([["alice", "allow"], ["bob", "deny"], ["carol", "deny"]] as const)
+  renderWithQueryClient(<EvidenceActionList events={events} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 1, "ev-2": 2, "ev-3": 3, "ev-4": 4 } }} identityVerdicts={verdicts} />)
   const section = screen.getByRole("region", { name: "관측 기록" })
-  // 제목 옆에 총 건수·신원 수 부제는 두지 않는다.
   expect(within(section).getByRole("heading", { name: "관측 기록" })).toBeVisible()
-  const cards = within(section).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))
-  expect(cards).toEqual(["alice · HUMAN 관측 기록 2건", "bob · LLM 관측 기록 1건"])
-  const alice = within(section).getByRole("listitem", { name: "alice · HUMAN 관측 기록 2건" })
-  expect(within(alice).getByText("200")).toBeVisible()
-  expect(within(alice).getByText("404")).toBeVisible()
-  expect(within(alice).queryByRole("listitem", { name: "관측 기록 #1" })).not.toBeInTheDocument()
+  // 신원마다 카드 하나. 요청 기록이 없어도 판정이 있는 신원(carol)은 카드로 남는다.
+  expect(within(section).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["alice 관측 기록 3건", "bob 관측 기록 1건", "carol 관측 기록 0건"])
+  const alice = within(section).getByRole("listitem", { name: "alice 관측 기록 3건" })
+  expect(within(alice).getByText("ALLOW")).toBeVisible()
+  expect(within(alice).getAllByRole("group").map(group => group.getAttribute("aria-label"))).toEqual(["alice · HUMAN 2건", "alice · LLM 1건"])
+  const human = within(alice).getByRole("group", { name: "alice · HUMAN 2건" })
+  expect(within(human).getByRole("img", { name: "HUMAN" })).toBeInTheDocument()
+  expect(within(human).getByText("404")).toBeVisible()
+  expect(within(screen.getByRole("listitem", { name: "carol 관측 기록 0건" })).getByText("연결된 요청 기록이 없습니다.")).toBeVisible()
 
-  await userEvent.click(within(alice).getByRole("button", { name: "요청 2건 펼치기" }))
-  const requests = within(alice).getByRole("list", { name: "alice · HUMAN 요청 목록" })
+  await userEvent.click(within(human).getByRole("button", { name: "요청 2건 펼치기" }))
+  const requests = within(human).getByRole("list", { name: "alice · HUMAN 요청 목록" })
   expect(within(requests).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["관측 기록 #2", "관측 기록 #1"])
   expect(within(requests).getByRole("button", { name: "#1 원문 보기" })).toBeVisible()
 
-  // 카드의 원문 보기는 묶음의 가장 최근 요청(ev-2)을 연다.
-  await userEvent.click(within(alice).getByRole("button", { name: "원문 보기" }))
+  // 줄의 원문 보기는 그 출처의 가장 최근 요청(ev-2)을 연다.
+  await userEvent.click(within(human).getByRole("button", { name: "원문 보기" }))
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
 })
