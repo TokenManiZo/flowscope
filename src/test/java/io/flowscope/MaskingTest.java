@@ -69,6 +69,20 @@ final class MaskingTest {
     }
 
     @Test
+    void javascriptTemplateLiteralSecretValueIsMaskedButInterpolationIsKept() {
+        String script = "const config={apiKey:`sk-synthetic`};const token=`jwt.synthetic`;"
+                + "const auth={authorization:`Bearer ${readToken()}`};fetch('/api/items');";
+
+        String masked = Masking.maskBody(script, "application/javascript");
+
+        assertFalse(masked.contains("sk-synthetic"));
+        assertFalse(masked.contains("jwt.synthetic"));
+        assertTrue(masked.contains("${readToken()}"));
+        assertEquals(JavascriptAnalysis.Status.PARSED,
+                JavascriptCallSiteAnalyzer.analyze(masked).status());
+    }
+
+    @Test
     void javascriptRegexSecretKeepsRegexAndFollowingCall() {
         String script = "const matcher=/token=synthetic/;fetch('/api/catalog');";
 

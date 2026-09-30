@@ -44,6 +44,9 @@ public final class Masking {
             "(?i)(" + SECRET_PREFIX + ")([^\"'&,}\\s]+)");
     private static final Pattern JAVASCRIPT_SECRET_FIELD = Pattern.compile(
             "(?i)(" + SECRET_PREFIX + ")([^\"'`&,}\\s]+)");
+    /** Template literal value without `${...}`; interpolation stays an expression. */
+    private static final Pattern JAVASCRIPT_TEMPLATE_SECRET = Pattern.compile(
+            "(?i)([\"']?" + SECRET_NAME + "[\"']?\\s*[:=]\\s*`)((?:[^`$\\\\]|\\\\.|\\$(?!\\{))+)(?=`)");
     private static final Pattern XML_SECRET = Pattern.compile(
             "(?is)(<\\s*(password|passwd|pwd|token|secret|client_secret|api_key|access_token|refresh_token|id_token|session_token|authorization)\\b[^>]*>)(.*?)(</\\s*\\2\\s*>)");
 
@@ -139,6 +142,7 @@ public final class Masking {
     /** Redact JavaScript literals without replacing a dynamic expression or the next statement. */
     private static String maskJavascript(String script) {
         String xml = XML_SECRET.matcher(script).replaceAll(m -> m.group(1) + MASK + m.group(4));
+        xml = JAVASCRIPT_TEMPLATE_SECRET.matcher(xml).replaceAll(m -> Matcher.quoteReplacement(m.group(1) + MASK));
         Matcher matcher = JAVASCRIPT_SECRET_FIELD.matcher(xml);
         StringBuilder result = new StringBuilder(xml.length());
         JavascriptLexState state = new JavascriptLexState();
