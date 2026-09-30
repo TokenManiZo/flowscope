@@ -9,7 +9,8 @@ import { isPublicRead } from "./graphHierarchy"
 const PUBLIC = "__public__"
 const READ_METHODS = new Set(["GET", "HEAD"])
 
-interface Props { snapshot: Snapshot; operation: string; resource: string; disabled?: boolean }
+/** operation이 없으면(그룹 화면 객체: 여러 API가 합쳐짐) 소유자만 고를 수 있고 API별 Public은 고를 수 없다. */
+interface Props { snapshot: Snapshot; operation?: string | null; resource: string; disabled?: boolean }
 interface Saved { publicRead: boolean; manualOwner: string }
 
 /**
@@ -22,8 +23,8 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
   const owner = useOwnerMutation()
   const policy = useOperationObjectPolicyMutation()
   const service = resource.split(" ")[0]
-  const readable = READ_METHODS.has(operation.split(" ")[1] ?? "")
-  const publicRead = isPublicRead(snapshot, operation, resource)
+  const readable = !!operation && READ_METHODS.has(operation.split(" ")[1] ?? "")
+  const publicRead = !!operation && isPublicRead(snapshot, operation, resource)
   const currentOwner = snapshot.owners[resource] ?? ""
   const manualOwner = snapshot.ownerOverrides?.[resource] ?? ""
   const current = publicRead ? PUBLIC : currentOwner
@@ -42,7 +43,7 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
 
   // from은 방금 저장된 값이다. 되돌리기를 snapshot 갱신 전에 눌러도 비교 기준이 어긋나지 않는다.
   async function save(next: Saved, from: Saved) {
-    if (next.publicRead !== from.publicRead) await policy.mutateAsync({ operation, resource, policy: next.publicRead ? "PUBLIC" : "UNKNOWN" })
+    if (operation && next.publicRead !== from.publicRead) await policy.mutateAsync({ operation, resource, policy: next.publicRead ? "PUBLIC" : "UNKNOWN" })
     if (!next.publicRead && next.manualOwner !== from.manualOwner) await owner.mutateAsync({ resource, identity: next.manualOwner })
   }
   async function apply() {

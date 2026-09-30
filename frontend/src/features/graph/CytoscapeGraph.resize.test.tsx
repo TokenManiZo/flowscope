@@ -78,6 +78,26 @@ it("switches to a resize cursor at a node corner and grows the node from its top
   expect(lastSizes(onPreferencesChange)).toEqual({ "operation:GET /orders": { width: start.width + 60, height: start.height + 40 } })
 })
 
+it("keeps the previous card image until the resized one is decoded so the card never blanks", async () => {
+  let decoded!: () => void
+  const decode = vi.fn(() => new Promise<void>((resolve) => { decoded = resolve }))
+  Object.defineProperty(HTMLImageElement.prototype, "decode", { configurable: true, value: decode })
+  try {
+    render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={base} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+    const node = operation(), before = String(node.data("cardImage")), width = Number(node.data("width"))
+    const at = startResize("operation:GET /orders")
+    fireEvent.pointerMove(window, { clientX: at.clientX + 60, clientY: at.clientY })
+
+    expect(Number(node.data("width"))).toBe(width + 60)
+    expect(node.data("cardImage")).toBe(before)
+    await act(async () => { decoded() })
+    expect(node.data("cardImage")).not.toBe(before)
+    fireEvent.pointerUp(window)
+  } finally {
+    delete (HTMLImageElement.prototype as { decode?: unknown }).decode
+  }
+})
+
 it("never shrinks below the default card and stops before the next lane", () => {
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={{ ...base, positions: { "identity:alice": { x: 200, y: 200 }, "operation:GET /orders": { x: 600, y: 200 } } }} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   const identity = core.getElementById("identity:alice")

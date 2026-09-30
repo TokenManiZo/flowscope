@@ -749,7 +749,9 @@ public final class ProjectStore {
         return new ReviewDecision(required(value, "item_id"),
                 enumValue(ReviewDecision.Status.class, required(value, "status")),
                 masked(value, "note"), List.copyOf(evidence),
-                Instant.parse(required(value, "decided_at")), policy, stringList(value, "manual_validation_evidence_ids"));
+                Instant.parse(required(value, "decided_at")), policy,
+                // 수동 검증 연결 이전에 저장한 판정에는 이 필드가 없다.
+                value.has("manual_validation_evidence_ids") ? stringList(value, "manual_validation_evidence_ids") : List.of());
     }
 
     private LegacyAssessment readAssessment(JsonNode value) {

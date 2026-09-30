@@ -146,3 +146,10 @@ it("marks sample data in the top bar on every screen instead of a dashboard bann
   rerender(<WorkspaceTopBar route="graph" />)
   expect(screen.getByRole("note", { name: "샘플 데이터" })).toHaveTextContent("실제 점검 결과 아님")
 })
+
+it("shows the HUMAN pass recording account while a pass runs", () => {
+  queryState.snapshot = { data: { trafficStats: { captured: 7 }, sampleMode: false, accounts: [{ id: "user-a", label: "USER A" }] }, isPending: false, isError: false }
+  queryState.human = { data: { active: true, completed: false, accountId: "user-a" }, isPending: false, isError: false }
+  render(<WorkspaceTopBar route="dashboard" />)
+  expect(screen.getByRole("status", { name: "HUMAN 기록 계정" })).toHaveTextContent("기록 중: USER A")
+})

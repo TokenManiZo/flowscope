@@ -45,6 +45,19 @@ function installTransport() {
   return fetch
 }
 
+/** Draft whose observed account (acct-1) has a reusable session, plus that account's masked credential preview. */
+function installReusableTransport(request = secret) {
+  const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
+    if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json({ ...requestLabDraft("event-7", request), reusableAccountId: "acct-1" }))
+    if (String(input).startsWith("/api/account-settings")) return Promise.resolve(json({ human: { credentials: [{ name: "Authorization", preview: "Bearer eyJk••••" }] } }))
+    if (String(input) === "/api/request-lab" && init?.method === "POST") return Promise.resolve(json({ success: true, message: "sent", eventId: "event-7", status: 200, response: "sent-response", durationMs: 12, requestBytes: 4, responseBytes: 13 }))
+    if (String(input) === "/api/manual-attempts") return Promise.resolve(json([]))
+    return Promise.resolve(json({ success: true, message: "draft opened", openedDraft: true, status: 200, replayId: "r-1" }))
+  })
+  vi.stubGlobal("fetch", fetch)
+  return fetch
+}
+
 let attempts: unknown[] = []
 afterEach(() => { attempts = [] })
 
@@ -114,7 +127,7 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "트래픽 정책 저장" }))
     await user.selectOptions(screen.getByLabelText("리소스 소유자"), "bob")
     await user.click(screen.getByRole("button", { name: "소유자 저장" }))
-    await user.click(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" }))
+    await user.click(screen.getByRole("button", { name: "Request Lab 열기" }))
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/requirement", expect.objectContaining({ method: "POST" })))
     const calls = new Map(fetch.mock.calls.map(([input, init]) => [String(input), init]))
@@ -125,28 +138,36 @@ describe("RequestLabDialog", () => {
     expect(openRequestLab).toHaveBeenCalledTimes(1)
   })
 
-  it("keeps a weak LEGACY_RESPONSE ACTIVE session usable in the Request Lab for backward compatibility", async () => {
-    installTransport()
-    const user = userEvent.setup()
+  it("keeps a weak LEGACY_RESPONSE ACTIVE session usable as the current session for backward compatibility", async () => {
+    installReusableTransport()
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
 
     await screen.findByLabelText("Request Lab 요청 원문")
-    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
     // Active cross-identity replay rejects this LEGACY_RESPONSE session; the Request Lab still offers it.
-    expect(screen.getByRole("option", { name: "관리자" })).toBeVisible()
+    expect(screen.getByRole("radio", { name: "현재 세션" })).toHaveAttribute("aria-checked", "true")
+    expect(screen.queryByLabelText("계정")).not.toBeInTheDocument()
   })
 
-  it("loads a fresh memory-only draft, sends exact form data for ORIGINAL/ANONYMOUS/ACCOUNT, and excludes inactive or cross-service accounts", async () => {
-    const fetch = installTransport()
+  it("shows the observed and current credentials side by side, masked", async () => {
+    installReusableTransport("GET /orders/7 HTTP/1.1\r\nAuthorization: Bearer observed-original-token\r\n\r\n")
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+
+    const metadata = await screen.findByRole("region", { name: "Request Lab 메타데이터" })
+    await waitFor(() => expect(metadata).toHaveTextContent("Authorization: Bearer eyJk••••"))
+    expect(metadata).toHaveTextContent("Authorization: Bearer obse••••")
+    expect(metadata).toHaveTextContent("관리자")
+    expect(metadata).not.toHaveTextContent("observed-original-token")
+  })
+
+  it("loads a fresh memory-only draft, sends exact form data for ORIGINAL/ANONYMOUS/ACCOUNT, and never offers another account", async () => {
+    const fetch = installReusableTransport()
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession, { ...activeSession, accountId: "inactive", accountLabel: "비활성", status: "EXPIRED" }, { ...activeSession, accountId: "other", service: "https://other.example.test" }]} />)
 
     expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
     expect(screen.getByText("서비스: https://api.example.test")).toBeVisible()
-    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
-    expect(screen.getByRole("option", { name: "관리자" })).toBeVisible()
-    expect(screen.queryByRole("option", { name: "비활성" })).not.toBeInTheDocument()
-    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ORIGINAL")
+    expect(screen.queryByText("비활성")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("radio", { name: "원문" }))
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
     const call = fetch.mock.calls.find(([input]) => String(input) === "/api/request-lab")
@@ -155,10 +176,9 @@ describe("RequestLabDialog", () => {
     expect(sent.get("operationId")).toMatch(/^[A-Za-z0-9_-]{16,120}$/)
     sent.delete("operationId")
     expect(sent).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ORIGINAL", accountId: "", request: secret }))
-    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ANONYMOUS")
+    await user.click(screen.getByRole("radio", { name: "비로그인" }))
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
-    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
-    await user.selectOptions(screen.getByLabelText("계정"), "acct-1")
+    await user.click(screen.getByRole("radio", { name: "현재 세션" }))
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     const sends = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")
     expect(new URLSearchParams(String(sends[1]?.[1]?.body)).get("credentialMode")).toBe("ANONYMOUS")
@@ -209,16 +229,22 @@ describe("RequestLabDialog", () => {
     expect(fetch).toHaveBeenCalledWith("/api/request-lab?eventId=event-7", expect.any(Object))
   })
 
-  it("disables ACCOUNT when no eligible exact-service session exists and recovers if eligibility disappears", async () => {
-    const user = userEvent.setup()
+  it("disables the current session without a reusable session and locks sending if it disappears", async () => {
     installTransport()
+    const { unmount } = renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[]} />)
+    await screen.findByLabelText("Request Lab 요청 원문")
+    expect(screen.getByRole("radio", { name: "현재 세션" })).toBeDisabled()
+    expect(screen.getByRole("radio", { name: "원문" })).toHaveAttribute("aria-checked", "true")
+    unmount()
+
+    installReusableTransport()
     const { rerender } = renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
     await screen.findByLabelText("Request Lab 요청 원문")
-    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
-    expect(screen.getByLabelText("계정")).toBeVisible()
+    expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeEnabled()
     rerender(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[]} />)
-    await waitFor(() => expect(screen.getByRole("option", { name: "ACCOUNT" })).toBeDisabled())
-    expect(screen.queryByLabelText("계정")).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeDisabled())
+    expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
+    expect(screen.getByRole("radio", { name: "현재 세션" })).toHaveAttribute("aria-checked", "true")
   })
 
   it("shows a retry after a draft server error and renders bounded recent results newest first", async () => {
@@ -250,19 +276,22 @@ describe("RequestLabDialog", () => {
     vi.stubGlobal("fetch", fetch)
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
-    const handoff = await screen.findByRole("button", { name: "현재 세션 Repeater" })
+    const handoff = await screen.findByRole("button", { name: "Repeater로 보내기" })
     await user.click(handoff)
-    expect(handoff).toBeDisabled()
-    await user.click(handoff)
+    expect(screen.getByRole("button", { name: "Repeater 준비 중" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "Repeater 준비 중" }))
     expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay")).toHaveLength(1)
     const replayCall = fetch.mock.calls.find(([input]) => String(input) === "/api/replay")
     expect(new URLSearchParams(String(replayCall?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: "ACCOUNT", accountId: "acct-1" }))
     resolveReplay(json({ success: true, message: "draft", openedDraft: true, status: 200, replayId: "r" }))
     expect(await screen.findByText("Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다.")).toBeVisible()
-    await user.click(screen.getByRole("button", { name: "비로그인 Repeater" }))
-    await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay")).toHaveLength(2))
-    const anonymousCall = fetch.mock.calls.filter(([input]) => String(input) === "/api/replay")[1]
-    expect(new URLSearchParams(String(anonymousCall?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: "ANONYMOUS", accountId: "" }))
+    for (const [label, mode] of [["비로그인", "ANONYMOUS"], ["원문", "ORIGINAL"]] as const) {
+      await user.click(screen.getByRole("radio", { name: label }))
+      await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
+      await waitFor(() => expect(new URLSearchParams(String(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay").at(-1)?.[1]?.body)).get("credentialMode")).toBe(mode))
+      const call = fetch.mock.calls.filter(([input]) => String(input) === "/api/replay").at(-1)
+      expect(new URLSearchParams(String(call?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: mode, accountId: "" }))
+    }
   })
 
   it("keeps policy input and selected detail visible when the server rejects a policy", async () => {
@@ -304,23 +333,21 @@ describe("RequestLabDialog", () => {
     expect(await screen.findByText("최근 전송 결과")).toBeVisible()
   })
 
-  it("clears a revoked selected ACCOUNT while keeping another eligible account and requires an explicit replacement", async () => {
-    const backup: ManagedSession = { ...activeSession, handle: "backup-handle", accountId: "acct-2", accountLabel: "백업 관리자" }
-    function Harness() {
-      const [sessions, setSessions] = useState<readonly ManagedSession[]>([activeSession, backup])
-      return <><button type="button" onClick={() => setSessions([backup])}>선택 계정 해제</button><RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={sessions} /></>
-    }
+  it("uses the identity being collected now (latest recorded session), not the request's original account", async () => {
+    const older: ManagedSession = { ...activeSession, lastRecordedAt: "2026-09-30T05:00:00Z" }
+    const collecting: ManagedSession = { ...activeSession, handle: "b-handle", accountId: "acct-2", accountLabel: "USER B", status: "CAPTURING", capturing: true, replayReady: true, lastRecordedAt: "2026-09-30T05:10:00Z" }
+    const notReady: ManagedSession = { ...collecting, handle: "c-handle", accountId: "acct-3", accountLabel: "USER C", replayReady: false, lastRecordedAt: "2026-09-30T05:20:00Z" }
+    const fetch = installReusableTransport()
     const user = userEvent.setup()
-    installTransport()
-    renderWithQueryClient(<Harness />)
-    await screen.findByLabelText("Request Lab 요청 원문")
-    await user.selectOptions(screen.getByLabelText("자격 증명 모드"), "ACCOUNT")
-    await user.selectOptions(screen.getByLabelText("계정"), "acct-1")
-    fireEvent.click(screen.getByText("선택 계정 해제", { selector: "button" }))
-    await waitFor(() => expect(screen.getByLabelText("계정")).toHaveValue(""))
-    expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
-    await user.selectOptions(screen.getByLabelText("계정"), "acct-2")
-    expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeEnabled()
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[older, collecting, notReady]} />)
+
+    const metadata = await screen.findByRole("region", { name: "Request Lab 메타데이터" })
+    expect(metadata).toHaveTextContent("USER B")
+    expect(metadata).not.toHaveTextContent("USER C")
+    await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
+    await waitFor(() => expect(fetch.mock.calls.some(([input]) => String(input) === "/api/replay")).toBe(true))
+    const call = fetch.mock.calls.find(([input]) => String(input) === "/api/replay")
+    expect(new URLSearchParams(String(call?.[1]?.body)).get("accountId")).toBe("acct-2")
   })
 
   it("scrubs injected raw owner strings and history on dataset revision", async () => {
@@ -596,11 +623,11 @@ describe("RequestLabDialog", () => {
     await screen.findByLabelText("Request Lab 요청 원문")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
 
-    expect(screen.getByLabelText("자격 증명 모드")).toBeDisabled()
+    expect(screen.getByRole("radio", { name: "비로그인" })).toBeDisabled()
     const before = fetch.mock.calls.filter(([input]) => String(input) === "/api/manual-attempts").length
     await act(async () => { send.resolve(json({ success: true, message: "sent", eventId: "ev-new", status: 200, response: "ok", durationMs: 3, requestBytes: 1, responseBytes: 2 })) })
 
-    await waitFor(() => expect(screen.getByLabelText("자격 증명 모드")).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("radio", { name: "비로그인" })).toBeEnabled())
     await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/manual-attempts").length).toBeGreaterThan(before))
   })
 })

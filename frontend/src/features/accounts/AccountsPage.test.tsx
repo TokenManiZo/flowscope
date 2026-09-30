@@ -29,6 +29,7 @@ function renderAccounts(errors: Partial<Record<string, string>> = {}) {
   const meta = document.createElement("meta"); meta.name = "flowscope-capability"; meta.content = rawSecret; document.head.append(meta)
   const fetchStub = vi.fn((path: string, init?: RequestInit) => {
     if (path === "/api/snapshot") return Promise.resolve(response(snapshot()))
+    if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "NOT_STARTED" }, accounts: [], scope: ["http://127.0.0.1:9000/"] }))
     if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, managedRuntime: true, state: "READY", message: "ready" }))
     if (path.startsWith("/api/account-settings?")) { const id = new URL(path, "http://local").searchParams.get("account") ?? ""; return Promise.resolve(response(settings(id, id === "account-a" ? "계정 A" : "다른 서비스", id === "account-a" ? service : otherService))) }
     if (init?.method === "POST") { const message = errors[path]; return Promise.resolve(message ? response({ success: false, message }, 400) : response({ success: true, message: "완료", id: "saved-account", rebound: 0 })) }
@@ -55,12 +56,11 @@ afterEach(() => { document.head.querySelector('meta[name="flowscope-capability"]
 describe("account and session management", () => {
   it("shows a compact account overview and removes diagnostics and the permanent form", async () => {
     renderAccounts()
-    expect(await screen.findByRole("heading", { name: "계정·세션 관리" })).toBeVisible()
-    const summary = screen.getByRole("group", { name: "계정·세션 요약" })
-    expect(summary).toHaveTextContent("등록 계정")
-    expect(summary).toHaveTextContent("관측된 세션")
-    expect(summary).toHaveTextContent("확보한 세션")
-    expect(await screen.findByLabelText("계정 A 연결 상태")).toHaveTextContent("HUMAN")
+    expect(await screen.findByRole("heading", { name: "계정·세션" })).toBeVisible()
+    expect(screen.queryByText("관측된 세션")).not.toBeInTheDocument()
+    const lanes = await screen.findByLabelText("계정 A 연결 상태")
+    await waitFor(() => expect(lanes).toHaveTextContent(/HUMAN\s*인증값 있음\s*0건/))
+    expect(lanes).toHaveTextContent(/LLM\s*사용 안 함/)
     expect(screen.queryByLabelText("등록 계정 표시 이름")).not.toBeInTheDocument()
     expect(screen.queryByText("고급 세션 진단")).not.toBeInTheDocument()
     expect(screen.queryByText("세션·신원 매핑 초기화")).not.toBeInTheDocument()
@@ -68,57 +68,50 @@ describe("account and session management", () => {
     expect(document.body.textContent).not.toContain("never-render-this")
   })
 
-  it("creates an account and links only a same-origin observed identity through existing APIs", async () => {
+  it("hands the account to the inspection page when collecting as that account", async () => {
+    const user = userEvent.setup(); renderAccounts()
+    const card = await screen.findByRole("article", { name: "계정 A 계정" })
+    await user.click(within(card).getByRole("button", { name: "이 계정으로 수집" }))
+    expect(sessionStorage.getItem("flowscope.humanAccount")).toBe("account-a")
+    expect(window.location.hash).toBe("#inspection")
+    window.location.hash = ""
+  })
+
+  it("registers an account from three fields in a centered dialog prefilled from the scope", async () => {
     const user = userEvent.setup(); const fetchStub = renderAccounts()
     await user.click(await screen.findByRole("button", { name: "계정 등록" }))
-    await user.type(screen.getByLabelText("표시 이름"), "새 계정")
-    await user.type(screen.getByLabelText("대상 서비스 (exact origin)"), service)
-    expect(screen.getByLabelText("대상 서비스 (exact origin)")).toHaveValue(service)
-    expect(screen.getByRole("combobox", { name: "같은 서비스 관측 신원" })).not.toBeDisabled()
-    await user.click(screen.getByRole("combobox", { name: "같은 서비스 관측 신원" }))
-    expect(await screen.findByRole("option", { name: "observed-user" })).toBeVisible()
-    expect(screen.queryByRole("option", { name: "bound-user" })).not.toBeInTheDocument()
-    await user.click(screen.getByRole("option", { name: "observed-user" }))
-    await user.click(screen.getByRole("button", { name: "등록하고 설정 계속" }))
-    await waitFor(() => expect(postBodies(fetchStub, "/api/account-save")).toEqual([new URLSearchParams({ id: "", label: "새 계정", role: "User", target: service }).toString()]))
-    await waitFor(() => expect(postBodies(fetchStub, "/api/identity-merge")).toEqual(["from=observed-user&into=saved-account"]))
-  })
+    const dialog = await screen.findByRole("dialog", { name: "계정 등록" })
+    // Scope entries end with "/"; the form fills the bare origin so it validates without editing.
+    await waitFor(() => expect(within(dialog).getByLabelText("대상 서비스")).toHaveValue("http://127.0.0.1:9000"))
+    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole("combobox", { name: "같은 서비스 관측 신원" })).not.toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText("표시 이름"), "새 계정")
+    await user.click(within(dialog).getByRole("button", { name: "LV1" }))
+    await user.click(within(dialog).getByRole("button", { name: "등록" }))
+    await waitFor(() => expect(postBodies(fetchStub, "/api/account-save")).toEqual([new URLSearchParams({ id: "", label: "새 계정", role: "LV1", target: "http://127.0.0.1:9000" }).toString()]))
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "계정 등록" })).not.toBeInTheDocument())
+    expect(postBodies(fetchStub, "/api/identity-merge")).toEqual([])
 
-  it("starts a fresh registration after continuing to the new account settings", async () => {
-    const user = userEvent.setup(); renderAccounts()
-    await user.click(await screen.findByRole("button", { name: "계정 등록" }))
-    await user.type(screen.getByLabelText("표시 이름"), "첫 계정")
-    await user.type(screen.getByLabelText("대상 서비스 (exact origin)"), service)
-    await user.click(screen.getByRole("button", { name: "등록하고 설정 계속" }))
-    await screen.findByRole("tab", { name: "HUMAN" })
-    await user.click(screen.getByRole("button", { name: "취소" }))
     await user.click(screen.getByRole("button", { name: "계정 등록" }))
-    expect(screen.getByLabelText("표시 이름")).toHaveValue("")
-    expect(screen.getByLabelText("대상 서비스 (exact origin)")).toHaveValue("")
-    expect(screen.getByRole("button", { name: "등록하고 설정 계속" })).toBeDisabled()
+    expect(await screen.findByLabelText("표시 이름")).toHaveValue("")
+    expect(screen.getByRole("button", { name: "등록" })).toBeDisabled()
   })
 
-  it("reports partial success without claiming identity merge succeeded and allows retry", async () => {
-    const user = userEvent.setup(); const fetchStub = renderAccounts({ "/api/identity-merge": "병합 오류" })
-    await user.click(await screen.findByRole("button", { name: "계정 등록" }))
-    await user.type(screen.getByLabelText("표시 이름"), "부분 성공")
-    await user.type(screen.getByLabelText("대상 서비스 (exact origin)"), service)
-    await user.click(screen.getByRole("combobox", { name: "같은 서비스 관측 신원" }))
-    await user.click(await screen.findByRole("option", { name: "observed-user" }))
-    await user.click(screen.getByRole("button", { name: "등록하고 설정 계속" }))
-    expect(await screen.findByRole("alert", { name: "계정 등록 부분 성공" })).toHaveTextContent("계정은 등록됐지만 관측 신원 연결은 완료되지 않았습니다")
-    expect(screen.getByRole("button", { name: "신원 연결 다시 시도" })).toBeEnabled()
-    expect(postBodies(fetchStub, "/api/account-save")).toHaveLength(1)
+  it("opens existing accounts in the wide settings dialog with a left menu and no identity merge", async () => {
+    const user = userEvent.setup(); renderAccounts()
+    await user.click(await screen.findByRole("button", { name: "계정 A 관리" }))
+    const sheet = await screen.findByLabelText("계정 A 계정 설정")
+    for (const tab of [/^기본 정보/, /^HUMAN/, /^ZAP 로그인/, /^LLM 로그인/]) expect(await within(sheet).findByRole("tab", { name: tab })).toBeVisible()
+    expect(within(sheet).queryByRole("button", { name: /관측 신원 연결/ })).not.toBeInTheDocument()
   })
 
-  it("opens existing accounts in the four-tab settings sheet and links same-origin identities", async () => {
+  it("deletes an account only after the confirmation dialog", async () => {
     const user = userEvent.setup(); const fetchStub = renderAccounts()
     await user.click(await screen.findByRole("button", { name: "계정 A 관리" }))
     const sheet = await screen.findByLabelText("계정 A 계정 설정")
-    for (const tab of ["기본 정보", "HUMAN", "ZAP", "LLM"]) expect(within(sheet).getByRole("tab", { name: tab })).toBeVisible()
-    await user.click(within(sheet).getByRole("combobox", { name: "같은 서비스 관측 신원" }))
-    await user.click(await screen.findByRole("option", { name: "observed-user" }))
-    await user.click(within(sheet).getByRole("button", { name: "관측 신원 연결" }))
-    await waitFor(() => expect(postBodies(fetchStub, "/api/identity-merge")).toEqual(["from=observed-user&into=account-a"]))
+    await user.click(await within(sheet).findByRole("button", { name: "계정 삭제" }))
+    expect(postBodies(fetchStub, "/api/account-delete")).toEqual([])
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "삭제" }))
+    await waitFor(() => expect(postBodies(fetchStub, "/api/account-delete")).toEqual(["id=account-a"]))
   })
 })

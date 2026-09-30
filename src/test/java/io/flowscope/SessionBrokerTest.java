@@ -54,6 +54,24 @@ final class SessionBrokerTest {
     }
 
     @Test
+    void runningCaptureIsReplayReadyOnlyAfterAnAcceptedResponseLikeHeaders() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile account = new AccountProfile("acct-b", "USER B", "https://api.test:443", AccessRole.USER);
+        String handle = broker.beginCapture(account, Instant.EPOCH);
+        broker.observeRequest(handle, URI.create("https://api.test/me"), Map.of("Authorization", "Bearer b-token"), Instant.EPOCH);
+        assertFalse(broker.viewForAccount("acct-b").orElseThrow().replayReady());
+
+        broker.observeResponse(handle, URI.create("https://api.test/me"), 200, null, "{}", List.of(), Instant.EPOCH);
+        broker.noteRecordedRequest(handle, "GET /me");
+        SessionBroker.SessionView view = broker.viewForAccount("acct-b").orElseThrow();
+        assertTrue(view.capturing());
+        assertTrue(view.replayReady());
+        assertNotNull(view.lastRecordedAt());
+        assertEquals("Bearer b-token", broker.headersForAccount("acct-b", URI.create("https://api.test/orders"),
+                ScopePolicy.parse("https://api.test/"), Instant.ofEpochSecond(1)).get("Authorization"));
+    }
+
+    @Test
     void treatsUnauthorizedAsSuspectButNotRoleDenialAndRequiresReauthenticationAfterDeletion() {
         SessionBroker broker = new SessionBroker();
         AccountProfile account = new AccountProfile("acct-a", "USER A",
@@ -499,6 +517,28 @@ final class SessionBrokerTest {
     }
 
     @Test
+    void pastedHeaderMapStoresManagedHeadersAndPreviewsOnlyAShortPrefix() {
+        SessionBroker broker = new SessionBroker();
+        AccountProfile a = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+        broker.registerAssertedSession(a, Map.of("authorization", "Bearer eyJhbGciOiJzecret-tail",
+                "Cookie", "sid=abcdefghijklmn-secret; x=1", "X-XSRF-Token", "csrf-value-long-enough",
+                "Accept", "application/json"), Instant.EPOCH);
+
+        Map<String, String> replay = broker.headersForAccount("acct-a", URI.create("https://api.test/orders"),
+                ScopePolicy.parse("https://api.test/"), Instant.ofEpochSecond(1));
+        assertEquals("Bearer eyJhbGciOiJzecret-tail", replay.get("Authorization"));
+        assertEquals("csrf-value-long-enough", replay.get("X-XSRF-Token"));
+        assertFalse(replay.containsKey("Accept"));
+
+        String previews = broker.credentialPreviews("acct-a").toString();
+        assertTrue(previews.contains("Bearer eyJh••••"));
+        assertTrue(previews.contains("sid=abcd••••"));
+        assertTrue(previews.contains("x=••••"));
+        assertFalse(previews.contains("secret"));
+        assertEquals(List.of(), broker.credentialPreviews("missing"));
+    }
+
+    @Test
     void registerAssertedSessionRejectsEmptyMaterial() {
         SessionBroker broker = new SessionBroker();
         AccountProfile a = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
@@ -518,5 +558,92 @@ final class SessionBrokerTest {
                 List.of(), Instant.ofEpochSecond(1), VerificationOutcome.MATCHED);
         assertEquals(SessionBroker.VerificationSource.LEGACY_RESPONSE,
                 broker.viewForAccount("acct-a").orElseThrow().verificationSource());
+    }
+
+    // --- HUMAN pass recording: the operator's account choice wins, credentials follow the latest login ---
+
+    private static final URI API = URI.create("https://api.test/v1/orders");
+    private static final ScopePolicy SCOPE = ScopePolicy.parse("https://api.test/");
+
+    private static String jwt(String sub) { return jwt(sub, 1); }
+
+    private static String jwt(String sub, int iat) {
+        java.util.Base64.Encoder encoder = java.util.Base64.getUrlEncoder().withoutPadding();
+        return "Bearer " + encoder.encodeToString("{\"alg\":\"none\"}".getBytes())
+                + "." + encoder.encodeToString(("{\"sub\":\"" + sub + "\",\"iat\":" + iat + "}").getBytes())
+                + ".sig";
+    }
+
+    private static String beginRecording(SessionBroker broker, String accountId) {
+        return broker.beginCapture(new AccountProfile(accountId, accountId, "https://api.test:443", AccessRole.USER),
+                Instant.EPOCH);
+    }
+
+    @Test
+    void recordingFollowsRotatingCookiesAndReplaysTheLatestValuesWhileStillCapturing() {
+        SessionBroker broker = new SessionBroker();
+        String handle = beginRecording(broker, "acct-a");
+        broker.observeRequest(handle, API, Map.of("Cookie", "NNB=t; NID_SES=s1"), Instant.EPOCH);
+        broker.observeResponse(handle, API, 200, null, "ok", List.of(), Instant.EPOCH);
+        broker.observeRequest(handle, API, Map.of("Cookie", "NNB=t; NID_SES=s2"), Instant.ofEpochSecond(1));
+
+        assertEquals(handle, broker.activeCaptureForService("https://api.test:443").orElseThrow());
+        String cookie = broker.headersForAccount("acct-a", API, SCOPE, Instant.ofEpochSecond(2)).get("Cookie");
+        assertTrue(cookie.contains("NID_SES=s2"));
+        assertFalse(cookie.contains("NID_SES=s1"));
+    }
+
+    @Test
+    void theOperatorsCaptureFollowsANewLoginInsteadOfPausing() {
+        SessionBroker broker = new SessionBroker();
+        String handle = beginRecording(broker, "acct-b");
+        // Leftover traffic of the previous account, then the operator logs in as B: both stay in B's capture.
+        broker.observeRequest(handle, API, Map.of("Authorization", jwt("alice")), Instant.EPOCH);
+        broker.observeRequest(handle, API, Map.of("Authorization", jwt("bob")), Instant.ofEpochSecond(1));
+        broker.observeResponse(handle, API, 200, null, "{\"error\":\"token expired\"}", List.of(), Instant.ofEpochSecond(1));
+        broker.observeResponse(handle, API, 200, null, "ok", List.of(), Instant.ofEpochSecond(2));
+
+        assertEquals(handle, broker.activeCaptureForService("https://api.test:443").orElseThrow());
+        assertEquals(jwt("bob"), broker.headersForAccount("acct-b", API, SCOPE, Instant.ofEpochSecond(3)).get("Authorization"));
+        // Burp tool traffic compares against the browser's latest login.
+        assertTrue(broker.matchesRecordingIdentity(handle, Map.of("Authorization", jwt("bob", 9))));
+        assertFalse(broker.matchesRecordingIdentity(handle, Map.of("Authorization", jwt("alice"))));
+        broker.noteRecordedRequest(handle, "GET /v1/orders");
+        assertEquals("GET /v1/orders", broker.viewForAccount("acct-b").orElseThrow().lastRecordedApi());
+        assertNotNull(broker.viewForAccount("acct-b").orElseThrow().lastRecordedAt());
+    }
+
+    @Test
+    void toolRequestsWithAnotherAuthorizationIdentityAreNotAttributedToTheRecording() {
+        SessionBroker broker = new SessionBroker();
+        String handle = beginRecording(broker, "acct-a");
+        assertTrue(broker.matchesRecordingIdentity(handle, Map.of("Authorization", jwt("alice"))));
+        broker.observeRequest(handle, API, Map.of("Authorization", jwt("alice")), Instant.EPOCH);
+
+        assertTrue(broker.matchesRecordingIdentity(handle, Map.of("Authorization", jwt("alice"))));
+        assertTrue(broker.matchesRecordingIdentity(handle, Map.of("Cookie", "sid=1")));
+        assertFalse(broker.matchesRecordingIdentity(handle, Map.of("Authorization", jwt("bob"))));
+    }
+
+    @Test
+    void authorizationOwnerIgnoresCookieOnlySessionsLeftWithSharedTrackerCookies() {
+        SessionBroker broker = new SessionBroker();
+        String b = beginRecording(broker, "acct-b");
+        broker.observeRequest(b, API, Map.of("Cookie", "NNB=t; NID_AUT=b"), Instant.EPOCH);
+        broker.observeResponse(b, API, 200, null, "ok", List.of("NID_AUT=; Max-Age=0; Path=/"), Instant.EPOCH);
+        broker.endCapture(b);
+        Map<String, String> aliceRequest = Map.of("Cookie", "NNB=t; NID_AUT=a");
+
+        // The strict cookie matcher sees B's leftover tracker cookie as "all stored cookies present".
+        assertEquals("acct-b", broker.accountForRequest(API, aliceRequest, Instant.EPOCH).orElseThrow());
+        // Recording ownership checks therefore use only exact Authorization ownership.
+        assertTrue(broker.accountForAuthorization(API, null).isEmpty());
+
+        String c = beginRecording(broker, "acct-c");
+        broker.observeRequest(c, API, Map.of("Authorization", jwt("carol")), Instant.EPOCH);
+        broker.observeResponse(c, API, 200, null, "ok", List.of(), Instant.EPOCH);
+        broker.endCapture(c);
+        assertEquals("acct-c", broker.accountForAuthorization(API, jwt("carol")).orElseThrow());
+        assertTrue(broker.accountForAuthorization(API, jwt("dave")).isEmpty());
     }
 }

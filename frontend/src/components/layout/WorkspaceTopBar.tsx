@@ -34,6 +34,8 @@ export function WorkspaceTopBar({ onOpenSidebar }: { route: AppRoute; onOpenSide
   const scopeReady = scopeData !== undefined ? scopeData.length > 0 ? "준비됨" : "미준비" : scopePending ? "불러오는 중" : "확인 불가"
   const liveCapture = queryValue(snapshot, (data) => String(data.trafficStats.captured))
   const humanRun = queryValue(human, (data) => humanState(data.active, data.completed))
+  const recordingAccount = human.data?.active && human.data.accountId
+    ? snapshot.data?.accounts.find((account) => account.id === human.data?.accountId)?.label ?? human.data.accountId : null
   const zapState = queryValue(zap, (data) => runStatusLabel(data.state ?? (data.connected ? "READY" : "UNAVAILABLE")))
   const scannerState = queryValue(scanner, (data) => runStatusLabel(data.run.status))
   const persistenceState = projects.data?.active
@@ -83,6 +85,7 @@ export function WorkspaceTopBar({ onOpenSidebar }: { route: AppRoute; onOpenSide
         </label>
         {snapshot.data?.sampleMode && <span role="note" aria-label="샘플 데이터" title="HUMAN·SCANNER·LLM 표시는 실제 점검 결과가 아니며 네트워크 요청을 만들지 않습니다." className="shrink-0 rounded-full border border-amber-500/50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">샘플 데이터 · 실제 점검 결과 아님</span>}
         <span title={persistenceTitle} className={`flex shrink-0 items-center gap-1 text-xs ${projects.data?.saveState === "FAILED" ? "text-destructive" : "text-muted-foreground"}`}><Database className="size-3.5" aria-hidden="true" />{persistenceState}</span>
+        {recordingAccount && <span role="status" aria-label="HUMAN 기록 계정" className="flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-600/50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300"><span className="size-1.5 rounded-full bg-current" aria-hidden="true" />기록 중: {recordingAccount}</span>}
         <NewProjectDialog />
         {projectError && <span role="alert" className="max-w-96 truncate text-xs text-destructive">프로젝트 전환 실패 · {projectError}</span>}
       </div>

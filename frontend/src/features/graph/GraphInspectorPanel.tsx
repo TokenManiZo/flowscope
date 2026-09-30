@@ -37,7 +37,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="선택 작업" description={<><span className="block break-all font-mono text-foreground">{title}</span>{subtitle && <span className="block break-all">{subtitle}</span>}</>} tabs={null}>
       {summary && <GraphNodeSummary summary={summary} hint={projection?.kind === "site" && node?.kind === "api-group" ? GRAPH_OPEN_HINT : undefined}>
-        {node?.kind === "resource" && node.selection.operation && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
+        {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
       </GraphNodeSummary>}
       {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList events={events} snapshot={snapshot} disabled={suspended} />}
     </InspectorPanel>

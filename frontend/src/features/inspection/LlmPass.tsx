@@ -4,7 +4,6 @@ import { CircleStop, ExternalLink, Play, RefreshCw, Send } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { runStatusLabel } from "@/lib/display/runStatus"
 import {
@@ -14,6 +13,7 @@ import {
   useExplorerSteerMutation,
 } from "@/lib/query/hooks"
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
+import { AccountLaneTable } from "./AccountLaneTable"
 
 const activeStates = new Set(["AUTHENTICATING", "RUNNING"])
 
@@ -28,7 +28,12 @@ function message(error: unknown): string {
 }
 
 /** 점검 시작의 LLM 스텝. 기존 Explorer 실행·제어 훅과 작업 피드를 그대로 사용한다. */
-export function LlmPass({ target }: { target: string }) {
+export function LlmPass({ target, accounts = [], onOpenSettings }: {
+  target: string
+  /** 대상 서비스의 등록 계정. LLM 로그인이 없는 계정은 [설정]으로 바로 추가한다. */
+  accounts?: readonly { id: string; label: string }[]
+  onOpenSettings?: (accountId: string) => void
+}) {
   const query = useExplorerRunQuery()
   const start = useExplorerStartMutation()
   const control = useExplorerControlMutation()
@@ -68,28 +73,21 @@ export function LlmPass({ target }: { target: string }) {
     </AlertDescription></Alert> : null}
   </>
 
-  const control_ = <div className="space-y-3">
-    <p className="text-sm text-muted-foreground">대상은 상단 범위 값을 사용합니다 · <span className="font-mono break-all">{target || "적용된 scope 없음"}</span></p>
-    <fieldset className="space-y-2">
-      <legend className="text-sm font-medium">실행 신원</legend>
-      <label className="flex items-center gap-2 text-sm"><Checkbox checked={anonymous} onCheckedChange={(value) => setAnonymous(value === true)} disabled={active} />비로그인</label>
-      {data?.accounts.map((item) => (
-        <label className="flex items-center justify-between gap-2 text-sm" key={item.id}>
-          <span className="flex items-center gap-2">
-            <Checkbox checked={selected.includes(item.id)} onCheckedChange={(value) => setSelected((current) => value === true ? [...new Set([...current, item.id])] : current.filter((id) => id !== item.id))} disabled={active} />
-            {item.label}
-          </span>
-          <Badge variant="outline">{item.status}</Badge>
-        </label>
-      ))}
-      {!data?.accounts.length && <p className="text-sm text-muted-foreground">등록된 LLM 로그인 계정이 없습니다. 계정·세션 화면에서 등록하세요.</p>}
-    </fieldset>
-    <div className="flex flex-wrap gap-2">
-      <Button disabled={!providerReady || active || start.isPending || !target || (!anonymous && selected.length === 0)} onClick={() => start.mutate({ target, accounts: selected.join(","), anonymous })}><Play className="size-4" />Explorer 시작</Button>
+  const configured = new Set((data?.accounts ?? []).map((item) => item.id))
+  const control_ = <div className="grid gap-4">
+    {providerReady && <div className="flex min-h-10 items-center gap-2 rounded-lg bg-emerald-500/10 px-3 text-sm" aria-label="Codex 상태"><span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />Codex 준비됨</div>}
+    <div className="grid gap-1.5"><span className="text-xs text-muted-foreground">탐색할 계정</span>
+      <AccountLaneTable lane="LLM" rows={accounts.map((account) => ({ id: account.id, label: account.label, configured: configured.has(account.id) }))}
+        anonymous={anonymous} onAnonymousChange={setAnonymous} selected={selected}
+        onToggle={(id, value) => setSelected((current) => value ? [...new Set([...current, id])] : current.filter((item) => item !== id))}
+        onSettings={(id) => onOpenSettings?.(id)} disabled={active} />
+    </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button disabled={!providerReady || active || start.isPending || !target || (!anonymous && selected.length === 0)} onClick={() => start.mutate({ target, accounts: selected.join(","), anonymous })}><Play className="size-4" />탐색 시작</Button>
       {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />중단</Button>
         : run && run.status !== "IDLE" ? <Button variant="outline" onClick={() => control.mutate("clear")}>실행 표시 지우기</Button> : null}
+      <span className="text-sm text-muted-foreground">{(anonymous ? 1 : 0) + selected.length}개 선택됨</span>
     </div>
-    <p className="text-xs text-muted-foreground">OPTIONS probe {run?.capabilityProbes ?? 0}건은 API 기능 관측 수와 분리됩니다. 완료 요약 수치는 FlowScope 서버가 계산합니다.</p>
   </div>
 
   const feedFooter = <>
@@ -110,7 +108,8 @@ export function LlmPass({ target }: { target: string }) {
   return <SourcePassLayout
     label="LLM"
     title="LLM 탐색"
-    statusTiles={[
+    description="LLM이 사람처럼 서비스를 둘러보며 요청을 만듭니다."
+    statusTiles={!run || run.status === "IDLE" ? [] : [
       { label: "상태", value: run ? runStatusLabel(run.status) : "불러오는 중" },
       { label: "소요 시간", value: formatElapsed(run?.elapsedMillis ?? 0), mono: true },
       { label: "HTTP 시도 / 응답", value: `${run?.attempts ?? 0} / ${run?.responses ?? 0}` },
@@ -119,7 +118,7 @@ export function LlmPass({ target }: { target: string }) {
     control={control_}
     notices={notices}
     feedItems={feedItems}
-    feedTitle="작업 피드"
+    feedTitle="진행 기록"
     feedDescription={run?.message ?? "Explorer 상태를 불러오는 중입니다."}
     feedBadge={<Badge variant={providerReady ? "outline" : "destructive"}>Codex {run?.providerReadiness ?? "확인 중"}</Badge>}
     emptyHint="실행하면 인증 준비·HTTP 요청·Evidence ID가 여기에 순서대로 표시됩니다."

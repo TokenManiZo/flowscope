@@ -26,7 +26,7 @@ function response(body: unknown, status = 200) {
 
 type PollResponse = unknown | readonly unknown[] | ((read: number) => unknown)
 
-function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; humanEvents?: readonly unknown[]; requestDraft?: unknown; zap?: unknown; scanner?: PollResponse; scannerAccounts?: readonly unknown[]; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; managedSessions?: readonly unknown[]; explorer?: unknown } = {}) {
+function installTransport(options: { human?: PollResponse; humanPending?: boolean; humanError?: { message: string; status: number }; humanEvents?: readonly unknown[]; requestDraft?: unknown; zap?: unknown; scanner?: PollResponse; scannerAccounts?: readonly unknown[]; scannerPollError?: { message: string; status: number }; scannerPost?: { message: string; status: number }; managedSessions?: readonly unknown[]; accounts?: readonly unknown[]; explorer?: unknown } = {}) {
   let humanReads = 0
   let scannerReads = 0
   const next = (value: PollResponse | undefined, reads: number, fallback: unknown) => typeof value === "function" ? value(reads) : Array.isArray(value) ? value[Math.min(reads, value.length - 1)] : value ?? fallback
@@ -35,7 +35,7 @@ function installTransport(options: { human?: PollResponse; humanPending?: boolea
       return Promise.resolve(response({
         ...snapshotFixture,
         events: options.humanEvents ?? [],
-        accounts: [{ id: "active-account", label: "활성 계정", role: "USER", target, color: "", authArtifactCount: 1 }],
+        accounts: options.accounts ?? [{ id: "active-account", label: "활성 계정", role: "USER", target, color: "", authArtifactCount: 1 }],
         sessions: [{ fingerprint: "observed-secret", idn: "관측 신원", accountId: null, artifactKind: "COOKIE", evidence: "e-1", confidence: "LOW", firstSeen: 0, lastSeen: 0, registered: false, service: target }],
         managedSessions: options.managedSessions ?? [
           { handle: "active", accountId: "active-account", accountLabel: "활성 계정", service: target, status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
@@ -131,11 +131,13 @@ describe("unified inspection hub", () => {
 
   it("filters and collapses the bounded HUMAN request feed without loading raw data", async () => {
     const user = userEvent.setup()
-    const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }] })
-    await screen.findByRole("button", { name: /POST \/api\/orders alice HTTP 201 원문 보기/ })
+    const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }, { ...humanEvent, eventId: "event-human-3", method: "GET", path: "/api/me", status: 200, idn: "active-account" }] })
+    // 등록 계정은 표시 이름으로, 연결되지 않은 서버 임시 신원은 "미등록 로그인 N"으로 보인다.
+    expect(await screen.findByRole("button", { name: /GET \/api\/me 활성 계정 HTTP 200 원문 보기/ })).toBeVisible()
+    await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ })
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
-    await user.type(screen.getByLabelText("HUMAN 작업 피드 검색"), "bob")
-    expect(screen.getByRole("button", { name: /GET \/api\/profile bob HTTP 403 원문 보기/ })).toBeVisible()
+    await user.type(screen.getByLabelText("HUMAN 작업 피드 검색"), "profile")
+    expect(screen.getByRole("button", { name: /GET \/api\/profile 미등록 로그인 2 HTTP 403 원문 보기/ })).toBeVisible()
     expect(screen.queryByRole("button", { name: /POST \/api\/orders/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "작업 피드 접기" }))
     expect(screen.queryByRole("button", { name: /GET \/api\/profile/ })).not.toBeInTheDocument()
@@ -152,7 +154,7 @@ describe("unified inspection hub", () => {
       reusableSession: "", message: "응답 원문은 보존되지 않았습니다.",
     } })
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
-    await user.click(await screen.findByRole("button", { name: /POST \/api\/orders alice HTTP 201 원문 보기/ }))
+    await user.click(await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ }))
     expect(await screen.findByLabelText("요청 원문")).toHaveTextContent("Authorization: ***MASKED***")
     expect(screen.getByLabelText("응답 원문 패널")).toHaveTextContent("이 원문은 보존되지 않아 사용할 수 없습니다.")
     expect(within(screen.getByRole("dialog")).getByText("alice")).toBeVisible()
@@ -160,7 +162,7 @@ describe("unified inspection hub", () => {
     expect(client.getQueryCache().findAll().some((query) => JSON.stringify(query.queryKey).includes("request-lab"))).toBe(false)
     await user.click(screen.getByRole("button", { name: "닫기" }))
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: /POST \/api\/orders alice HTTP 201 원문 보기/ }))
+    await user.click(screen.getByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ }))
     await screen.findByLabelText("요청 원문")
     expect(fetchStub.mock.calls.filter(([path]) => String(path).startsWith("/api/request-lab?")).length).toBe(2)
     window.dispatchEvent(new Event(DATASET_REPLACING))
@@ -177,18 +179,15 @@ describe("unified inspection hub", () => {
     expect(screen.queryByText("범위 → HUMAN → ZAP → Evidence 검토 순서로 각각의 Evidence를 분리합니다.")).not.toBeInTheDocument()
   })
 
-  it("preserves a manual step until the current-step action restores the automatic recommendation", async () => {
+  it("opens on the current step without a current-step button or dot", async () => {
     const user = userEvent.setup()
     renderInspection()
 
-    expect(await screen.findByRole("tab", { name: /HUMAN.*현재 단계/ })).toHaveAttribute("data-state", "active")
+    await waitFor(() => expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).toHaveAttribute("data-state", "active"))
     expect(screen.queryByRole("button", { name: "현재 단계로" })).not.toBeInTheDocument()
-    expect(screen.queryByText(/단계 번호는 완료율이 아닙니다/)).not.toBeInTheDocument()
-    await user.click(screen.getByRole("tab", { name: /LLM/ }))
-    expect(screen.getByRole("tab", { name: /LLM/ })).toHaveAttribute("data-state", "active")
-    await user.click(screen.getByRole("button", { name: "현재 단계로" }))
-    expect(screen.getByRole("tab", { name: /HUMAN/ })).toHaveAttribute("data-state", "active")
-    expect(screen.queryByRole("button", { name: "현재 단계로" })).not.toBeInTheDocument()
+    expect(screen.queryByText("현재 단계")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: /LLM 탐색/ }))
+    expect(screen.getByRole("tab", { name: /LLM 탐색/ })).toHaveAttribute("data-state", "active")
   })
 
   it("sends exact HUMAN begin and current-run end forms without offering observed or inactive credentials", async () => {
@@ -225,8 +224,8 @@ describe("unified inspection hub", () => {
     const { fetchStub } = renderInspection()
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    const start = screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    const start = screen.getByRole("button", { name: "스캔 시작" })
     expect(start).toBeDisabled()
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
     expect(start).toBeEnabled()
@@ -244,9 +243,9 @@ describe("unified inspection hub", () => {
     } })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
-    await user.click(screen.getByRole("button", { name: "ZAP 검사 취소" }))
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    expect(screen.getByRole("button", { name: "스캔 시작" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "스캔 취소" }))
 
     await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/scanner-run"
       && (init as RequestInit).body?.toString() === "action=cancel")).toBe(true))
@@ -261,52 +260,54 @@ describe("unified inspection hub", () => {
       scope: [target], accounts: [],
     }) })
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
-    expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "ZAP 검사 취소" })).toBeDisabled()
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    // 실행 중에는 계정 선택도 잠근다.
+    expect(screen.getByRole("checkbox", { name: "비로그인" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "스캔 시작" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "스캔 취소" })).toBeDisabled()
     expect(screen.getAllByText(/종료 처리 · 임시 상태 정리 중/)[0]).toBeVisible()
     cleaned = true
     await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.scannerRun }) })
-    await waitFor(() => expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "비로그인" })).toBeEnabled())
+    await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "스캔 시작" })).toBeEnabled())
   })
 
   it("preserves optional API definitions when starting a ZAP campaign", async () => {
     const user = userEvent.setup()
     const completed = renderInspection()
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
-    await user.click(screen.getByText("명세 기반 탐색 추가 (선택)"))
-    await user.type(screen.getByLabelText("exact-scope API 정의"), "OPENAPI https://demo.flowscope.test/openapi.json")
-    await user.click(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" }))
+    await user.click(screen.getByText(/명세로 API 추가/))
+    await user.type(screen.getByLabelText("API 정의"), "OPENAPI https://demo.flowscope.test/openapi.json")
+    await user.click(screen.getByRole("button", { name: "스캔 시작" }))
     await waitFor(() => expect(completed.fetchStub.mock.calls.some(([path, init]) => path === "/api/scanner-run"
       && (init as RequestInit).body?.toString().includes("definitions=OPENAPI+") === true)).toBe(true))
   })
 
-  it("registers a memory-only ZAP login account and starts the authenticated lane by its dedicated id", async () => {
+  it("lists registered accounts, lets only ZAP-configured ones be scanned, and opens settings for the rest", async () => {
     const user = userEvent.setup()
-    const account = { id: "zap-a", label: "ZAP A", role: "USER", service: "https://demo.flowscope.test:443", loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true, hasLoggedInIndicator: false, hasLoggedOutIndicator: false }
-    const { fetchStub } = renderInspection({ scannerAccounts: [account] })
+    const account = { id: "active-account", label: "활성 계정", role: "USER", service: "https://demo.flowscope.test:443", loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true, hasLoggedInIndicator: false, hasLoggedOutIndicator: false }
+    const { fetchStub } = renderInspection({
+      scannerAccounts: [account],
+      accounts: [
+        { id: "active-account", label: "활성 계정", role: "USER", target, color: "", authArtifactCount: 1 },
+        { id: "no-zap", label: "ZAP 없음", role: "USER", target, color: "", authArtifactCount: 0 },
+      ],
+    })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    await user.click(screen.getByRole("button", { name: "임시 계정 생성" }))
-    await user.type(screen.getByLabelText("계정 이름"), "새 계정")
-    await user.type(screen.getByLabelText("로그인 URL"), `${target}/login`)
-    await user.type(screen.getByLabelText("로그인 ID"), "alice@example.test")
-    await user.type(screen.getByLabelText("비밀번호"), "memory-secret")
-    await user.click(screen.getByRole("button", { name: "로그인 계정 등록" }))
-    await waitFor(() => expect(fetchStub.mock.calls.some(([path]) => path === "/api/zap-accounts")).toBe(true))
-    const saved = fetchStub.mock.calls.find(([path]) => path === "/api/zap-accounts")
-    expect((saved?.[1] as RequestInit).body?.toString()).toContain("password=memory-secret")
-    expect((saved?.[1] as RequestInit).body?.toString()).not.toContain("loggedInIndicator")
-    expect((saved?.[1] as RequestInit).body?.toString()).not.toContain("loggedOutIndicator")
-
-    await user.click(screen.getByRole("checkbox", { name: /ZAP A/ }))
-    await user.click(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" }))
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    expect(screen.queryByRole("button", { name: "임시 계정 생성" })).not.toBeInTheDocument()
+    expect(await screen.findByRole("checkbox", { name: "ZAP 없음" })).toBeDisabled()
+    await user.click(screen.getByRole("checkbox", { name: "활성 계정" }))
+    await user.click(screen.getByRole("button", { name: "스캔 시작" }))
     const started = fetchStub.mock.calls.find(([path, init]) => path === "/api/scanner-run" && (init as RequestInit).method === "POST")
-    expect((started?.[1] as RequestInit).body?.toString()).toBe(`target=${encodeURIComponent(target)}&accounts=zap-a&anonymous=false`)
+    expect((started?.[1] as RequestInit).body?.toString()).toBe(`target=${encodeURIComponent(target)}&accounts=active-account&anonymous=false`)
+
+    await user.click(screen.getByRole("button", { name: "ZAP 없음 ZAP 로그인 설정" }))
+    await waitFor(() => expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/account-settings?"))).toBe(true))
   })
 
   it("shows the live authentication stage and its per-account result in the ZAP work feed", async () => {
@@ -329,10 +330,10 @@ describe("unified inspection hub", () => {
     } })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
 
     expect(screen.getAllByText(/ZAP 브라우저 로그인 · 현재 단계 11초 \/ 최대 2분 0초/)[0]).toBeVisible()
-    expect(screen.getByRole("group", { name: "ZAP 기준선 실행 상태" })).toHaveTextContent("1분 11초")
+    expect(screen.getByRole("group", { name: "ZAP 실행 상태" })).toHaveTextContent("1분 11초")
     expect(screen.getByText(/로그인 AUTHENTICATING · chrome-headless/)).toBeVisible()
     expect(screen.getByText(/ZAP 브라우저 로그인 실행 중/)).toBeVisible()
   })
@@ -345,13 +346,13 @@ describe("unified inspection hub", () => {
     })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    expect(await within(await screen.findByRole("group", { name: "ZAP 기준선 실행 상태" })).findByText("9 / -")).toBeVisible()
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    expect(await within(await screen.findByRole("group", { name: "ZAP 실행 상태" })).findByText("9 / -")).toBeVisible()
     const query = client.getQueryCache().find({ queryKey: queryKeys.scannerRun })
     await act(async () => { await client.fetchQuery({ queryKey: queryKeys.scannerRun, queryFn: query?.options.queryFn, retry: false }).catch(() => undefined) })
 
     expect(await screen.findByRole("alert", { name: "ZAP 통신이 끊겼습니다." })).toBeVisible()
-    expect(within(screen.getByRole("group", { name: "ZAP 기준선 실행 상태" })).getByText("9 / -")).toBeVisible()
+    expect(within(screen.getByRole("group", { name: "ZAP 실행 상태" })).getByText("9 / -")).toBeVisible()
   })
 
   it("keeps a manually selected step when polling advances the automatic recommendation", async () => {
@@ -364,13 +365,28 @@ describe("unified inspection hub", () => {
     })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /LLM/ }))
+    await user.click(screen.getByRole("tab", { name: /LLM 탐색/ }))
     await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.humanRun }) })
-    await screen.findByRole("tab", { name: /ZAP.*현재 단계/ })
+    await waitFor(() => expect(client.getQueryData(queryKeys.humanRun)).toMatchObject({ completed: true }))
 
-    expect(screen.getByRole("tab", { name: /LLM/ })).toHaveAttribute("data-state", "active")
-    await user.click(screen.getByRole("button", { name: "현재 단계로" }))
-    expect(screen.getByRole("tab", { name: /ZAP/ })).toHaveAttribute("data-state", "active")
+    expect(screen.getByRole("tab", { name: /LLM 탐색/ })).toHaveAttribute("data-state", "active")
+    expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).not.toHaveTextContent("✓")
+  })
+
+  it("stays on the HUMAN tab when the pass completes instead of jumping to ZAP", async () => {
+    const { client } = renderInspection({
+      human: [
+        { active: true, completed: false, runId: "human-1", accountId: "", proxy: "" },
+        { active: false, completed: true, runId: "", accountId: "", proxy: "" },
+      ],
+    })
+
+    await screen.findByText(target, { exact: false })
+    await waitFor(() => expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).toHaveAttribute("data-state", "active"))
+    await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.humanRun }) })
+    await waitFor(() => expect(client.getQueryData(queryKeys.humanRun)).toMatchObject({ completed: true }))
+
+    expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).toHaveAttribute("data-state", "active")
   })
 
   it("keeps an out-of-scope selected target disabled instead of silently starting another target", async () => {
@@ -380,47 +396,65 @@ describe("unified inspection hub", () => {
     const { client } = renderInspection({ scanner: () => ({ run: { status: "NOT_STARTED" }, scope: currentScope }) })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
-    expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "스캔 시작" })).toBeEnabled()
     currentScope = [otherTarget]
     await act(async () => { await client.refetchQueries({ queryKey: queryKeys.scannerRun }) })
-    await waitFor(() => expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled())
-    expect(screen.getByText("현재 scanner scope에 정확히 포함된 대상을 선택하세요.")).toBeVisible()
+    await waitFor(() => expect(screen.getByRole("button", { name: "스캔 시작" })).toBeDisabled())
+    expect(screen.getByText("scope에 포함된 대상이 없습니다.")).toBeVisible()
   })
 
-  it("disables ZAP start with the connection reason when ZAP is disconnected", async () => {
+  it("disables ZAP start and explains how to turn ZAP on when it is disconnected", async () => {
     const user = userEvent.setup()
     renderInspection({ zap: { connected: false, state: "DISCONNECTED", message: "ZAP 연결 대기" } })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
+    expect(await screen.findByRole("tab", { name: /ZAP 스캔$/ })).toBeVisible()
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
 
-    expect(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
-    expect(screen.getByText("ZAP 연결을 먼저 확인하세요.")).toBeVisible()
+    expect(screen.getByLabelText("ZAP 상태")).toHaveTextContent("ZAP이 꺼져 있습니다")
+    expect(screen.getByRole("checkbox", { name: "비로그인" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "스캔 시작" })).toBeDisabled()
+    expect(screen.getByText("ZAP을 켜면 시작할 수 있습니다.")).toBeVisible()
+    await user.click(screen.getByRole("button", { name: "켜는 방법" }))
+    const howTo = screen.getByLabelText("ZAP 켜는 방법")
+    expect(howTo).toHaveTextContent("FlowScope 폴더에서 실행")
+    expect(howTo).toHaveTextContent("./scripts/zap-up.sh")
+    expect(howTo).toHaveTextContent(".\\scripts\\zap-up.ps1")
+    expect(within(howTo).getByRole("link", { name: "전체 파일 받기" })).toHaveAttribute("href", expect.stringContaining("/releases"))
   })
 
-  it("offers only an eligible managed ACTIVE account after opening the credential Select", async () => {
+  it("offers every registered account of the target because the HUMAN pass captures the session itself", async () => {
     const user = userEvent.setup()
     renderInspection({
-      managedSessions: [
-        { handle: "active", accountId: "active-account", accountLabel: "사용 가능 계정", service: target, status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
-        { handle: "capturing", accountId: "capturing-account", accountLabel: "캡처 중 계정", service: target, status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: true, credentialConflict: false },
-        { handle: "conflicted", accountId: "conflicted-account", accountLabel: "충돌 계정", service: target, status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: true },
-        { handle: "inactive", accountId: "inactive-account", accountLabel: "만료 계정", service: target, status: "REAUTH_REQUIRED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
-        { handle: "other", accountId: "other-account", accountLabel: "다른 서비스 계정", service: "https://other.flowscope.test", status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
+      accounts: [
+        { id: "no-session", label: "세션 없는 계정", role: "USER", target, color: "", authArtifactCount: 0 },
+        { id: "active-account", label: "사용 가능 계정", role: "USER", target, color: "", authArtifactCount: 1 },
+        { id: "other-account", label: "다른 서비스 계정", role: "USER", target: "https://other.flowscope.test", color: "", authArtifactCount: 1 },
       ],
+      managedSessions: [],
     })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
-    expect(await screen.findByRole("option", { name: "사용 가능 계정" })).toBeVisible()
-    expect(screen.queryByRole("option", { name: "캡처 중 계정" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("option", { name: "충돌 계정" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("option", { name: "만료 계정" })).not.toBeInTheDocument()
+    expect(await screen.findByRole("option", { name: "세션 없는 계정" })).toBeVisible()
+    expect(screen.getByRole("option", { name: "사용 가능 계정" })).toBeVisible()
     expect(screen.queryByRole("option", { name: "다른 서비스 계정" })).not.toBeInTheDocument()
     expect(screen.queryByText("관측 신원")).not.toBeInTheDocument()
+  })
+
+  it("offers every registered account when no scope is configured yet", async () => {
+    const user = userEvent.setup()
+    renderInspection({
+      scanner: { run: { status: "NOT_STARTED" }, accounts: [], scope: [] },
+      accounts: [{ id: "user-a", label: "USER A", role: "USER", target: "http://127.0.0.1:9000", color: "", authArtifactCount: 0 }],
+      managedSessions: [],
+    })
+
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
+    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
+    expect(await screen.findByRole("option", { name: "USER A" })).toBeVisible()
   })
 
   it("refuses blank and stale HUMAN run IDs before any end request", async () => {
@@ -435,7 +469,7 @@ describe("unified inspection hub", () => {
 
     await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.humanRun }) })
     expect(screen.getByRole("button", { name: "HUMAN pass 종료" })).toBeDisabled()
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
     expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/human-run" && (init as RequestInit).method === "POST")).toBe(false)
   })
 
@@ -447,29 +481,24 @@ describe("unified inspection hub", () => {
     })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("tab", { name: /ZAP/ }))
-    expect(await within(await screen.findByRole("group", { name: "ZAP 기준선 실행 상태" })).findByText("9 / -")).toBeVisible()
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    expect(await within(await screen.findByRole("group", { name: "ZAP 실행 상태" })).findByText("9 / -")).toBeVisible()
     await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
-    await user.click(screen.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" }))
+    await user.click(screen.getByRole("button", { name: "스캔 시작" }))
 
     expect(await screen.findByRole("alert", { name: "ZAP 기준선을 시작할 수 없습니다." })).toBeVisible()
-    expect(within(screen.getByRole("group", { name: "ZAP 기준선 실행 상태" })).getByText("9 / -")).toBeVisible()
+    expect(within(screen.getByRole("group", { name: "ZAP 실행 상태" })).getByText("9 / -")).toBeVisible()
   })
 
   it.each([
     ["불러오는 중", { humanPending: true }],
     ["상태 확인 필요", { humanError: { message: "HUMAN 상태를 읽을 수 없습니다.", status: 503 } }],
-  ])("keeps HUMAN %s in the status tile without repeating it under the controls when the initial query has no data", async (expected, options) => {
+  ])("shows HUMAN %s in the status line when the initial query has no data", async (expected, options) => {
     renderInspection(options)
 
-    await waitFor(
-      () => expect(screen.getByRole("group", { name: "HUMAN pass 실행 상태" })).toHaveTextContent(expected),
-      { timeout: 3_000 },
-    )
-    const humanPanel = screen.getByRole("tabpanel", { name: /HUMAN/ })
-    expect(within(humanPanel).getByRole("button", { name: "HUMAN pass 시작" })).toBeDisabled()
-    expect(within(humanPanel).queryByText(`HUMAN 상태 · ${expected}`)).not.toBeInTheDocument()
-    expect(screen.queryByText("NOT_STARTED · HUMAN pass 대기")).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent(expected), { timeout: 3_000 })
+    expect(screen.getByRole("button", { name: "HUMAN pass 시작" })).toBeDisabled()
+    expect(screen.queryByText("대기 중")).not.toBeInTheDocument()
   })
 
   it("does not claim an initial HUMAN error has a last successful state", async () => {
@@ -491,31 +520,31 @@ describe("unified inspection hub", () => {
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
     expect(screen.getByRole("group", { name: "점검 범위" })).toBeVisible()
-    await user.click(screen.getByRole("tab", { name: /HUMAN/ }))
+    await user.click(screen.getByRole("tab", { name: /직접 둘러보기/ }))
     expect(screen.getByRole("button", { name: "HUMAN pass 시작" })).toBeEnabled()
   })
 
-  it("gives HUMAN, ZAP, and LLM the same status tiles, control, and work feed", async () => {
+  it("gives HUMAN, ZAP, and LLM the same card layout and request feed", async () => {
     const user = userEvent.setup()
     renderInspection({
       scanner: { run: { status: "COMPLETED", captured_records: 9, alert_count: 2 }, scope: [target] },
     })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    for (const [stepName, groupName] of [[/HUMAN/, "HUMAN pass 실행 상태"], [/ZAP/, "ZAP 기준선 실행 상태"], [/LLM/, "LLM 실행 상태"]] as const) {
+    for (const [stepName, heading] of [[/직접 둘러보기/, "직접 둘러보기"], [/ZAP 스캔/, "ZAP 스캔"], [/LLM 탐색/, "LLM 탐색"]] as const) {
       await user.click(screen.getByRole("tab", { name: stepName }))
       const panel = screen.getByRole("tabpanel", { name: stepName })
-      expect(within(panel).getByRole("group", { name: groupName })).toBeVisible()
-      expect(within(panel).getByText("실행 설정")).toBeVisible()
-      expect(within(panel).getAllByText("작업 피드")[0]).toBeVisible()
+      expect(within(panel).getByRole("heading", { name: heading })).toBeVisible()
+      expect(within(panel).queryByText("실행 설정")).not.toBeInTheDocument()
     }
 
-    expect(screen.getByRole("button", { name: /Explorer 시작/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeVisible()
     expect(screen.getByLabelText("Explorer에게 추가 지시")).toBeVisible()
 
-    await user.click(screen.getByRole("tab", { name: /Evidence 검토/ }))
+    await user.click(screen.getByRole("tab", { name: /결과 비교/ }))
     await user.click(screen.getByRole("button", { name: "API·입력 차이 보기" }))
     expect(window.location.hash).toBe("#surface")
     expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()
   })
+
 })

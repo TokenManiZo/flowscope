@@ -620,19 +620,38 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void endingAHumanRunWithoutEvidenceAbortsItInsteadOfFailing() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+        json(post("/api/human-run", "action=begin&runId=human-empty&account=user-a", token));
+
+        HttpResponse<String> ended = post("/api/human-run", "action=end&runId=human-empty", token);
+
+        assertEquals(200, ended.statusCode());
+        JsonNode body = json(ended);
+        assertFalse(body.path("active").asBoolean());
+        assertFalse(body.path("completed").asBoolean());
+        assertNull(state.contexts.current(Source.HUMAN));
+        assertFalse(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
+        assertEquals(400, post("/api/human-run", "action=end&runId=human-empty", token).statusCode());
+    }
+
+    @Test
     void startsHumanRunWithAnExplicitRegisteredAccount() throws Exception {
         state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
         state.rebuild();
         start();
 
-        assertEquals(400, post("/api/human-run", "action=begin&runId=human-before-login&account=user-a", token).statusCode());
-        activateSession("user-a", "token-a");
+        // No prior login capture: the pass itself captures the account session.
         JsonNode began = json(post("/api/human-run", "action=begin&runId=human-a&account=user-a", token));
 
         assertEquals("user-a", began.path("accountId").asText());
         assertEquals("user-a", state.contexts.current(Source.HUMAN).accountId());
+        assertTrue(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
         state.addHumanEvidence("human-a", "user-a");
         assertEquals(200, post("/api/human-run", "action=end&runId=human-a", token).statusCode());
+        assertFalse(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
         assertEquals(400, post("/api/human-run", "action=begin&runId=human-b&account=missing", token).statusCode());
     }
 
@@ -662,6 +681,38 @@ final class FlowScopeWebServerTest {
         JsonNode broker = json(get("/api/session-capture", token, origin()));
         assertFalse(broker.toString().contains("raw-access-token"));
         assertFalse(broker.toString().contains("raw-cookie"));
+    }
+
+    @Test
+    void pastedHeaderBlockRegistersCredentialsAndSettingsShowOnlyMaskedPreviews() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+
+        String block = "GET /me HTTP/1.1\nHost: api.example.test\nAuthorization: Bearer raw-access-token-value\n"
+                + "Cookie: sid=raw-cookie-value-long\nAccept: */*";
+        assertEquals(200, post("/api/session-capture", "action=credential&account=user-a&headers="
+                + encode(block), token).statusCode());
+
+        JsonNode settings = json(get("/api/account-settings?account=user-a", token, origin()));
+        assertEquals("ACTIVE", settings.at("/human/status").asText());
+        String credentials = settings.at("/human/credentials").toString();
+        assertTrue(credentials.contains("Bearer raw-••••"), credentials);
+        assertTrue(credentials.contains("sid=raw-••••"), credentials);
+        assertFalse(settings.toString().contains("access-token-value"));
+        assertFalse(settings.toString().contains("cookie-value-long"));
+    }
+
+    @Test
+    void deletesAnAccountEvenWhenObservedSessionsAreStillBoundToIt() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
+        state.config.bindSession(state.record.service, state.record.fp, "user-a");
+        state.rebuild();
+        start();
+
+        assertEquals(200, post("/api/account-delete", "id=user-a", token).statusCode());
+        assertTrue(state.config.account("user-a").isEmpty());
+        assertFalse(state.config.sessionBindings().containsValue("user-a"));
     }
 
     @Test
@@ -918,9 +969,9 @@ final class FlowScopeWebServerTest {
         start();
         String evidenceId = state.snapshot().records.getFirst().evidenceId;
         String edited = "GET /v1/orders/8 HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
-        assertEquals(400, post("/api/replay", "eventId=" + encode(evidenceId)
+        assertEquals(200, post("/api/replay", "eventId=" + encode(evidenceId)
                 + "&credentialMode=ORIGINAL&accountId=&request=" + encode(edited), token).statusCode());
-        assertFalse(state.opened.get());
+        assertEquals(FlowScopeWebServer.CredentialMode.ORIGINAL, state.repeaterCredentialMode);
         JsonNode response = json(post("/api/replay", "eventId=" + encode(evidenceId)
                 + "&credentialMode=ACCOUNT&accountId=owner&request=" + encode(edited), token));
         assertTrue(response.path("openedDraft").asBoolean());
@@ -1314,7 +1365,8 @@ final class FlowScopeWebServerTest {
         @Override public SessionBroker sessions() { return sessions; }
         @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
             return List.of(new FlowScopeWebServer.AccountRequestCandidate(record.evidenceId, 200, "GET",
-                    "/v1/orders/7", "application/json", true, false, true, true, "연결 가능"));
+                    "/v1/orders/7", "application/json", true, false, true, true, "연결 가능",
+                    "GET /v1/orders/7 HTTP/1.1\r\nCookie: ***MASKED***", "HTTP/1.1 200 OK"));
         }
         @Override public void linkAccountRequestCandidate(String accountId, String evidenceId) {
             linkedCandidateId = evidenceId;

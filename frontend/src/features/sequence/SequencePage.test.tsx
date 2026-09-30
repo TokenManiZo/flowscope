@@ -232,7 +232,7 @@ it("keeps long markup-like endpoint IDs private across the entire Sheet until ex
   expect(sheet.querySelector("sequence-to")).not.toBeInTheDocument()
   expect(screen.getByText("/safe-from")).toBeVisible()
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater 준비" })).toBeVisible()
+  expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
 
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 더 보기" }))
   expect(sheet.textContent).toContain(longFrom)

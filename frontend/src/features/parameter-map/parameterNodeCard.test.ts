@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { ParameterNodeCardView } from "./parameterNodeCard"
 import { renderParameterNodeCardSvg } from "./parameterNodeCard"
 
@@ -60,6 +60,29 @@ describe("parameter node card SVG", () => {
     const wide = titleLines(documentFor(card({ kind: "target", icon: "box", title: `${"W".repeat(100)}:101` })))
     expect(wide).toHaveLength(2)
     expect(wide[1].endsWith(":101")).toBe(true)
+  })
+
+  it("uses measured font widths so a title that fits the card is not wrapped early", async () => {
+    class MeasuringCanvas { getContext() { return { font: "", measureText: (text: string) => ({ width: text.length * 7 }) } } }
+    vi.stubGlobal("OffscreenCanvas", MeasuringCanvas)
+    vi.resetModules()
+    try {
+      const measured = await import("./parameterNodeCard")
+      const title = "abcdefghijklmnopqrstuv"
+      const compact = (render: typeof renderParameterNodeCardSvg) => new DOMParser().parseFromString(decodeURIComponent(render(card({ kind: "target", icon: "box", title }), true).uri.replace("data:image/svg+xml,", "")), "image/svg+xml")
+      expect(titleLines(compact(measured.renderParameterNodeCardSvg))).toEqual([title])
+      expect(titleLines(compact(renderParameterNodeCardSvg))).toHaveLength(2)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
+  })
+
+  it("breaks a plain title at a space instead of mid-word", () => {
+    const words = ["orders", "items", "coupon", "refund"]
+    const lines = titleLines(documentFor(card({ kind: "target", icon: "box", title: words.join(" ") })))
+    expect(lines.length).toBe(2)
+    expect(lines.flatMap(line => line.split(" "))).toEqual(words)
   })
 
   it("accounts for wide lowercase glyphs when preserving a resource suffix", () => {

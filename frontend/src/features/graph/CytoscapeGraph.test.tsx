@@ -18,6 +18,11 @@ let canvasWidth = 900
 let canvasHeight = 600
 let scheduledFrame: FrameRequestCallback | null = null
 let resizeListener: ResizeObserverCallback | null = null
+/** 캔버스 크기 맞춤은 크기 변화가 멈춘 뒤 한 번만 일어난다. */
+function settleResize() {
+  vi.useFakeTimers()
+  try { resizeListener?.([], {} as ResizeObserver); vi.advanceTimersByTime(200) } finally { vi.useRealTimers() }
+}
 const disconnectResizeObserver = vi.fn()
 const listeners = new Map<string, (event: { target: typeof node; type?: string }) => void>()
 const node = {
@@ -298,6 +303,21 @@ it("never rewrites node coordinates while panning or zooming", () => {
   expect(modelPosition).toEqual({ x: 350, y: 55 })
 })
 
+it("resizes the canvas once after the container stops changing instead of every frame", () => {
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  runScheduledFrame()
+  vi.mocked(core.resize).mockClear()
+  vi.useFakeTimers()
+  try {
+    for (let step = 0; step < 5; step += 1) { resizeListener?.([], {} as ResizeObserver); vi.advanceTimersByTime(50) }
+    runScheduledFrame()
+    expect(core.resize).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(200)
+  } finally { vi.useRealTimers() }
+  runScheduledFrame()
+  expect(core.resize).toHaveBeenCalledTimes(1)
+})
+
 it("keeps node coordinates when the graph container is resized", () => {
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   runScheduledFrame()
@@ -305,7 +325,7 @@ it("keeps node coordinates when the graph container is resized", () => {
   node.position.mockClear()
   canvasWidth = 600
 
-  resizeListener?.([], {} as ResizeObserver)
+  settleResize()
   runScheduledFrame()
 
   expect(core.resize).toHaveBeenCalled()
@@ -322,7 +342,7 @@ it("pans the selected node back into view when the canvas narrows, without chang
     render(<CytoscapeGraph projection={projection} selectedElementId="identity:alice" locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
     runScheduledFrame()
     vi.mocked(core.panBy).mockClear()
-    resizeListener?.([], {} as ResizeObserver)
+    settleResize()
     runScheduledFrame()
     expect(core.panBy).toHaveBeenCalledWith({ x: 600 - 24 - 1040, y: 0 })
   } finally {
@@ -430,7 +450,7 @@ it("keeps free placement through restore, zoom, fit, resize, and diagonal drag",
   expectSaved()
 
   canvasWidth = 900
-  resizeListener?.([], {} as ResizeObserver)
+  settleResize()
   runScheduledFrame()
   expectSaved()
 
@@ -496,7 +516,7 @@ it("preserves the actual Cytoscape selection through preferences, zoom, fit, res
   runScheduledFrame()
   expect(node.selected(), "fit").toBe(true)
 
-  resizeListener?.([], {} as ResizeObserver)
+  settleResize()
   runScheduledFrame()
   expect(node.selected(), "resize").toBe(true)
 

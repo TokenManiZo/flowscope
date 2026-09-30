@@ -45,7 +45,8 @@ export function HomePage({ snapshot }: HomePageProps) {
               요청을 관측하고 계정별 권한 차이를 확인합니다.
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
-              <Button onClick={() => { window.location.hash = "#inspection" }}>
+              {/* 트래픽이 없으면 먼저 비교할 계정을 등록하도록 계정·세션으로 보낸다. */}
+              <Button onClick={() => { window.location.hash = "#accounts" }}>
                 <Play className="size-4" aria-hidden="true" />
                 빠른 시작
               </Button>

@@ -4,7 +4,6 @@ import {
   CircleSlash,
   Clock3,
   HelpCircle,
-  Link2Off,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -41,12 +40,12 @@ export interface StatusMeta {
 }
 
 export const HUMAN_STATUS_META: Record<HumanSessionStatus, StatusMeta> = {
-  ACTIVE: { label: "활성", tone: "ok" },
-  CAPTURING: { label: "캡처 중", tone: "warn", icon: Clock3 },
-  UNVERIFIED: { label: "미확인", tone: "idle" },
-  SUSPECT: { label: "의심", tone: "warn" },
-  REAUTH_REQUIRED: { label: "재로그인 필요", tone: "warn" },
-  REVOKED: { label: "폐기됨", tone: "bad", icon: Link2Off },
+  ACTIVE: { label: "인증값 있음", tone: "ok" },
+  CAPTURING: { label: "수집 중", tone: "warn", icon: Clock3 },
+  UNVERIFIED: { label: "인증값 없음", tone: "idle" },
+  SUSPECT: { label: "인증값 만료", tone: "warn" },
+  REAUTH_REQUIRED: { label: "인증값 만료", tone: "warn" },
+  REVOKED: { label: "인증값 없음", tone: "idle" },
 };
 
 export const VERIFICATION_META: Record<VerificationSource, StatusMeta> = {

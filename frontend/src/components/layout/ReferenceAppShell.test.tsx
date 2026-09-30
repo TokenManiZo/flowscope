@@ -31,42 +31,50 @@ it("keeps route content in the main landmark", () => {
   expect(screen.getByRole("main")).toHaveTextContent("권한 매트릭스 workspace")
 })
 
-it("shows icons only until hover, then overlays full labels without resizing the content", async () => {
+it("stays an icon rail on hover and expands only through the toggle button, pushing the content", async () => {
+  localStorage.clear()
   const user = userEvent.setup()
   render(<ReferenceAppShell route="surface"><p>content</p></ReferenceAppShell>)
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
   const rail = nav.closest("[data-expanded]") as HTMLElement
+  const graph = within(nav).getByRole("link", { name: "점검 Gap 그래프" })
 
   expect(rail).toHaveAttribute("data-expanded", "false")
-  expect(rail.parentElement).toHaveClass("w-14")
-  const graph = within(nav).getByRole("link", { name: "점검 Gap 그래프" })
+  expect(rail).toHaveClass("w-14")
+  expect(rail).not.toHaveClass("absolute")
   expect(within(graph).getByText("점검 Gap 그래프")).toHaveClass("sr-only")
+  expect(graph).toHaveAttribute("title", "점검 Gap 그래프")
   // 현재 화면이 부가 기능이면 접힌 막대에서도 링크와 현재 위치는 남기되 시각적으로만 숨긴다.
   expect(within(nav).getByRole("link", { name: "API·입력 차이" }).parentElement).toHaveClass("sr-only")
 
   await user.hover(rail)
+  expect(rail).toHaveAttribute("data-expanded", "false")
+
+  await user.click(screen.getByRole("button", { name: "사이드바 펼치기" }))
   expect(rail).toHaveAttribute("data-expanded", "true")
-  expect(rail).toHaveClass("absolute", "w-60")
-  expect(rail.parentElement).toHaveClass("w-14")
+  expect(rail).toHaveClass("w-60")
   expect(within(graph).getByText("점검 Gap 그래프")).not.toHaveClass("sr-only")
   expect(within(nav).getByRole("link", { name: "API·입력 차이" })).toHaveAttribute("aria-current", "page")
-  expect(within(nav).getByRole("link", { name: "API·입력 차이" }).parentElement).not.toHaveClass("sr-only")
+  expect(localStorage.getItem("flowscope.sidebar")).toBe("open")
 
-  await user.click(graph)
-  await user.unhover(rail)
+  await user.click(screen.getByRole("button", { name: "사이드바 접기" }))
   expect(rail).toHaveAttribute("data-expanded", "false")
-  expect(graph).not.toHaveFocus()
+  expect(localStorage.getItem("flowscope.sidebar")).toBe("closed")
 })
 
-it("expands for keyboard focus and collapses when focus leaves", async () => {
+it("remembers the expanded sidebar and toggles it with Cmd/Ctrl+B outside text fields", async () => {
+  localStorage.setItem("flowscope.sidebar", "open")
   const user = userEvent.setup()
-  render(<ReferenceAppShell route="matrix"><button type="button">본문 버튼</button></ReferenceAppShell>)
+  render(<ReferenceAppShell route="matrix"><input aria-label="검색" /></ReferenceAppShell>)
   const rail = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" }).closest("[data-expanded]") as HTMLElement
 
-  await user.tab()
   expect(rail).toHaveAttribute("data-expanded", "true")
-  act(() => screen.getByRole("button", { name: "본문 버튼" }).focus())
+  await user.keyboard("{Control>}b{/Control}")
   expect(rail).toHaveAttribute("data-expanded", "false")
+  await user.click(screen.getByRole("textbox", { name: "검색" }))
+  await user.keyboard("{Control>}b{/Control}")
+  expect(rail).toHaveAttribute("data-expanded", "false")
+  localStorage.clear()
 })
 
 it("keeps core screens as direct links and groups the rest under 부가 기능", async () => {

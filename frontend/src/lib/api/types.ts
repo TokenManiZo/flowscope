@@ -242,6 +242,10 @@ export interface ManagedSession {
   cookieCount: number
   capturing: boolean
   credentialConflict: boolean
+  /** 서버가 이 세션의 인증값으로 재전송할 수 있는지(ACTIVE 또는 응답 확인된 수집 중). 옛 snapshot에는 없다. */
+  replayReady?: boolean
+  /** 이 세션으로 마지막 요청이 기록된 시각(ISO). */
+  lastRecordedAt?: string | null
 }
 
 export interface RouteProvenance {

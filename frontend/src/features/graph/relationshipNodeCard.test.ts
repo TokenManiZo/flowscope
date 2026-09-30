@@ -54,6 +54,13 @@ describe("relationship graph node cards", () => {
     expect(relationshipNodeCard(resource, projection([resource])).footer).toBe("owner: Public")
   })
 
+  it("drops the service origin from a resource card title but keeps it in the accessible label", () => {
+    const resource = node("resource", "http://127.0.0.1:9000 orders:6", { owner: "user-a" })
+    const card = relationshipNodeCard(resource, projection([resource]))
+    expect(card.title).toBe("orders:6")
+    expect(card.accessibleLabel).toContain("http://127.0.0.1:9000 orders:6")
+  })
+
   it("never infers a resource owner from the requesting identity", () => {
     const resource = node("resource", "orders:404", { owner: null, selection: { ...selection(["ev-owner-unknown"]), identity: "USER A", resource: "orders:404" } })
     const card = relationshipNodeCard(resource, projection([resource]))
