@@ -52,11 +52,11 @@ export function NewProjectDialog() {
         </section>
 
         <section className="grid gap-3 rounded-md border p-3" aria-labelledby="traffic-reset-heading">
-          <div><h3 id="traffic-reset-heading" className="text-sm font-medium">트래픽 초기화</h3><p className="text-xs text-muted-foreground">현재 프로젝트와 scope·계정·정책은 유지하고 Evidence와 실행 기록을 비웁니다.</p></div>
+          <div><h3 id="traffic-reset-heading" className="text-sm font-medium">트래픽 초기화</h3><p className="text-xs text-muted-foreground">현재 프로젝트와 scope·계정·정책은 유지하고 관측 기록과 실행 기록을 비웁니다.</p></div>
           <AlertDialog>
             <AlertDialogTrigger asChild><Button type="button" variant="outline" disabled={!active || busy}>현재 프로젝트 트래픽 초기화</Button></AlertDialogTrigger>
             <AlertDialogContent>
-              <AlertDialogHeader><AlertDialogTitle>현재 트래픽을 초기화할까요?</AlertDialogTitle><AlertDialogDescription>수집된 Evidence와 실행 기록은 복구할 수 없습니다. 프로젝트, scope, 계정과 정책은 유지됩니다.</AlertDialogDescription></AlertDialogHeader>
+              <AlertDialogHeader><AlertDialogTitle>현재 트래픽을 초기화할까요?</AlertDialogTitle><AlertDialogDescription>수집된 관측 기록과 실행 기록은 복구할 수 없습니다. 프로젝트, scope, 계정과 정책은 유지됩니다.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetTraffic.mutate()}>트래픽 초기화</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -67,7 +67,7 @@ export function NewProjectDialog() {
           <AlertDialog>
             <AlertDialogTrigger asChild><Button type="button" variant="destructive" disabled={!selected?.managed || selected.id === active?.id || busy}>선택한 프로젝트 삭제</Button></AlertDialogTrigger>
             <AlertDialogContent>
-              <AlertDialogHeader><AlertDialogTitle>{selected?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 Evidence가 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
+              <AlertDialogHeader><AlertDialogTitle>{selected?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 관측 기록이 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => deleteProject.mutate(projectId, { onSuccess: () => setProjectId(active?.id ?? "") })}>프로젝트 삭제</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

@@ -174,7 +174,7 @@ describe("unified inspection hub", () => {
     expect(screen.queryByRole("tab", { name: /범위/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
-    expect(screen.queryByText("범위 → HUMAN → ZAP → Evidence 검토 순서로 각각의 Evidence를 분리합니다.")).not.toBeInTheDocument()
+    expect(screen.queryByText("범위 → HUMAN → ZAP → 관측 기록 검토 순서로 각각의 관측 기록을 분리합니다.")).not.toBeInTheDocument()
   })
 
   it("preserves a manual step until the current-step action restores the automatic recommendation", async () => {
@@ -522,7 +522,7 @@ describe("unified inspection hub", () => {
     expect(screen.getByRole("button", { name: /Explorer 시작/ })).toBeVisible()
     expect(screen.getByLabelText("Explorer에게 추가 지시")).toBeVisible()
 
-    await user.click(screen.getByRole("tab", { name: /Evidence 검토/ }))
+    await user.click(screen.getByRole("tab", { name: /관측 기록 검토/ }))
     await user.click(screen.getByRole("button", { name: "API·입력 차이 보기" }))
     expect(window.location.hash).toBe("#surface")
     expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Cell, EventRecord, RouteCandidate, Snapshot } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
-import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphCountLabel, graphOpenAction, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
+import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphOpenAction, objectGroupKey, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
 
 const service = "https://demo.test:443"
@@ -53,24 +53,44 @@ describe("API hierarchy", () => {
     expect(graphOpenAction("operation", "operation")).toBeNull()
   })
 
-  it("counts only the nodes drawn at each level instead of zero identities at site level", () => {
-    const site = projectHierarchy(data(), filters, initial)
-    expect(graphCountLabel(site)).toBe(`${site.groups.length} API groups`)
-    const group = projectHierarchy(data(), filters, groupNav())
-    const groupObjects = group.resources.length ? ` · ${group.resources.length} objects` : ""
-    expect(graphCountLabel(group)).toBe(`${group.identities.length} identities · ${group.operations.length} operations${groupObjects}`)
-    const operation = projectHierarchy(data(), filters, operationNav())
-    expect(graphCountLabel(operation)).toBe(`${operation.identities.length} identities · ${operation.operations.length} operations · ${operation.resources.length} objects`)
-  })
-
   it("renders Identity→API→Object with separate source buckets in group view", () => {
-    const group = projectHierarchy(data(), filters, groupNav())
+    const group = projectHierarchy(data(), { ...filters, expandedObjectGroups: ["object-group:|orders"] }, groupNav())
     expect(group.kind).toBe("group")
     expect(group.nodes.some(node => node.kind === "resource")).toBe(true)
     expect(group.edges.every(edge => edge.relation === "identity-operation" || edge.relation === "operation-resource")).toBe(true)
     expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "HUMAN"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "SCANNER"]])
     expect(group.operations[0].selection.cells[0].overall).toBe("undecided")
     expect(group.listItems).toEqual(group.operations)
+  })
+
+  it("folds objects of the same kind into one collapsed group node with one edge per API and source", () => {
+    const snapshot = data()
+    snapshot.cells = [...snapshot.cells, cell({ resource: "receipt-latest", evidenceIds: ["h-receipt"] })]
+    const group = projectHierarchy(snapshot, filters, groupNav())
+    const orders = group.nodes.find(node => node.kind === "object-group")
+    expect(orders).toMatchObject({ id: "object-group:|orders", label: "orders", objectGroup: { key: "orders", members: ["orders:101", "orders:202"], expanded: false } })
+    expect(orders?.objectGroup?.owners).toEqual({ "orders:101": "USER A", "orders:202": "USER B" })
+    // 접힌 묶음의 객체는 개별 노드로 그리지 않고, ":"이 없는 객체만 따로 그린다.
+    expect(group.resources.map(node => node.label)).toEqual(["receipt-latest"])
+    const toGroup = group.edges.filter(edge => edge.targetId === "object-group:|orders")
+    expect(toGroup.map(edge => [edge.sourceId, edge.source]).sort()).toEqual([[`operation:${get}`, "human"], [`operation:${get}`, "llm"], [`operation:${get}`, "scanner"], [`operation:${patch}`, "human"]])
+    expect(group.hiddenObjectCount).toBe(0)
+  })
+
+  it("expands one group into its objects right after the group node", () => {
+    const group = projectHierarchy(data(), { ...filters, expandedObjectGroups: ["object-group:|orders"] }, groupNav())
+    const lane = group.nodes.filter(node => node.kind === "object-group" || node.kind === "resource").map(node => node.id)
+    expect(lane).toEqual(["object-group:|orders", "resource:orders:101", "resource:orders:202"])
+    expect(group.nodes.find(node => node.kind === "object-group")?.objectGroup?.expanded).toBe(true)
+    expect(group.edges.some(edge => edge.targetId === "object-group:|orders")).toBe(false)
+    expect(group.edges.filter(edge => edge.relation === "operation-resource").every(edge => edge.targetId.startsWith("resource:"))).toBe(true)
+  })
+
+  it("groups objects by the part before ':' after the service address and leaves others ungrouped", () => {
+    expect(objectGroupKey("http://127.0.0.1:8888 orders:13")).toEqual({ id: "http://127.0.0.1:8888|orders", key: "orders" })
+    expect(objectGroupKey("products:1")).toEqual({ id: "|products", key: "products" })
+    expect(objectGroupKey("http://127.0.0.1:8888 receipt-latest")).toBeNull()
+    expect(graphOpenAction("object-group", "group")).toBe("toggle")
   })
 
   it("renders only selected API Objects, preserves server owners, and ends objectless requests at API", () => {
@@ -86,7 +106,7 @@ describe("API hierarchy", () => {
     expect(operation.listItems.some(node => node.selection.resource === null)).toBe(true)
   })
 
-  it("retains every collapsed raw cell key and Evidence ID without crossing identity/source paths", () => {
+  it("retains every collapsed raw cell key and 기록 번호 without crossing identity/source paths", () => {
     const snapshot = data()
     snapshot.cells = [...snapshot.cells, cell({ resource: "orders:202", evidenceIds: ["h-get-202", "retained-without-event"] }), cell({ idn: "USER B", evidenceIds: ["b-get-101"] })]
     const group = projectHierarchy(snapshot, filters, groupNav())
@@ -99,7 +119,7 @@ describe("API hierarchy", () => {
     expect(operation.edges.filter(item => item.relation === "operation-resource" && item.selection.resource === "orders:101" && item.source === "human").map(item => item.selection.identity).sort()).toEqual(["USER A", "USER B"])
   })
 
-  it("pages 18 APIs/Objects and keeps all access Evidence when Object nodes are hidden", () => {
+  it("pages 18 APIs/Objects and keeps all access 관측 기록 when Object nodes are hidden", () => {
     const operations = targetSnapshot({ cells: Array.from({ length: 19 }, (_, index) => cell({ op: `${service} GET /api/orders/${index}`, evidenceIds: [`ev-${index}`] })) })
     expect(projectHierarchy(operations, filters, groupNav()).operations).toHaveLength(18)
     expect(projectHierarchy(operations, filters, groupNav()).hiddenOperationCount).toBe(1)
@@ -113,7 +133,7 @@ describe("API hierarchy", () => {
     expect(projectHierarchy(objects, { ...filters, expanded: true }, operationNav()).resources).toHaveLength(18)
   })
 
-  it("prioritizes suspicious, conflict, partial, then Evidence count without changing verdicts", () => {
+  it("prioritizes suspicious, conflict, partial, then 관측 기록 count without changing verdicts", () => {
     const snapshot = targetSnapshot({ cells: [cell({ op: `${service} GET /api/orders/a` }), cell({ op: `${service} GET /api/orders/z`, overall: "suspicious" }), cell({ op: `${service} GET /api/orders/y`, conflict: true }), cell({ op: `${service} GET /api/orders/x`, missedSources: ["scanner"] })] })
     expect(projectHierarchy(snapshot, filters, groupNav()).operations.map(node => node.selection.operation)).toEqual([`${service} GET /api/orders/z`, `${service} GET /api/orders/y`, `${service} GET /api/orders/x`, `${service} GET /api/orders/a`])
   })
@@ -160,7 +180,7 @@ describe("API hierarchy", () => {
     expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, identity: ["USER A"] }, initial).groups.map(group => group.id)).not.toContain('["https://other.test:443","declared"]')
   })
 
-  it("uses server UNCROSSED gaps for focused unobserved paths without inventing Evidence or verdicts", () => {
+  it("uses server UNCROSSED gaps for focused unobserved paths without inventing 관측 기록 or verdicts", () => {
     const snapshot = data()
     snapshot.gaps = [{ id: "gap-b", type: "UNCROSSED", risk: 2, idn: "USER B", op: get, resource: "orders:303", missedSources: ["human", "scanner", "llm"], summary: "unobserved combination" }]
     const focusCandidateKey = '["USER B","https://demo.test:443 GET /api/orders/{id}","orders:303"]'
@@ -198,7 +218,7 @@ describe("API hierarchy", () => {
     expect(JSON.stringify(snapshot.gaps)).toBe(originalGaps)
   })
 
-  it("counts Evidence by server event source without merging H/S/L or inflating by repeat metadata", () => {
+  it("counts 관측 기록 by server event source without merging H/S/L or inflating by repeat metadata", () => {
     const snapshot = targetSnapshot({ cells: [cell({ perSource: { human: "allow", scanner: "allow" }, evidenceIds: ["h-1", "h-2", "s-1"] })], events: [event({ eventId: "h-1", op: get, clusterEvidenceIds: ["h-1", "h-2"], repeatCount: 99 }), event({ eventId: "s-1", op: get, source: "scanner", clusterEvidenceIds: ["s-1"] })] })
     const group = projectHierarchy(snapshot, { ...filters, source: ["human"] }, groupNav())
     expect(group.groups[0].sourceCounts).toEqual({ human: 2, scanner: 1, llm: 0 })
@@ -207,7 +227,7 @@ describe("API hierarchy", () => {
     expect(accessEdges[0]).toMatchObject({ source: "human", count: 2, countLabel: "×2" })
   })
 
-  it("attributes bounded snapshot events without cluster members by their representative Evidence ID", () => {
+  it("attributes bounded snapshot events without cluster members by their representative 기록 번호", () => {
     const snapshot = targetSnapshot({ cells: [cell({ perSource: { human: "allow", scanner: "allow" }, evidenceIds: ["h-1", "s-1"] })], events: [{ ...event({ eventId: "h-1", op: get }), clusterEvidenceIds: undefined }, { ...event({ eventId: "s-1", op: get, source: "scanner" }), clusterEvidenceIds: undefined }] })
     expect(projectHierarchy(snapshot, filters, initial).groups[0].sourceCounts).toEqual({ human: 1, scanner: 1, llm: 0 })
   })
@@ -235,7 +255,7 @@ describe("API hierarchy", () => {
     expect(JSON.stringify({ snapshot, filters, initial })).toBe(before)
   })
 
-  it("keeps repeated support edges independently selectable by their original Evidence", () => {
+  it("keeps repeated support edges independently selectable by their original 관측 기록", () => {
     const snapshot = { ...data(), events: [event(), event({ eventId: "support-2", clusterEvidenceIds: ["support-2"] })] }
     const edges = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav()).edges.filter(edge => edge.relation === "support")
     expect(edges).toHaveLength(2)

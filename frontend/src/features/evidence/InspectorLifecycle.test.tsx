@@ -64,7 +64,7 @@ it("does not invalidate the new policy editor when an old-context save succeeds 
   expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
 })
 
-it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same Evidence in another dataset", async kind => {
+it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same 관측 기록 in another dataset", async kind => {
   let finish!: (response: Response) => void
   const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => String(input) === "/api/requirement"
     ? new Promise<Response>(resolve => { finish = resolve })
@@ -106,7 +106,7 @@ it.each(["raw", "session"] as const)("scrubs when revision revalidation loses %s
 })
 
 // A coordinate change keeps the Evidence ID but is a new context; a dataset replacement is signalled by the server datasetRevision (D-140).
-it.each(["coordinate", "replacement"] as const)("scrubs a surviving Evidence ID on %s change", async boundary => {
+it.each(["coordinate", "replacement"] as const)("scrubs a surviving 기록 번호 on %s change", async boundary => {
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json(draft))))
   const view = mount("evidence")
   await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))

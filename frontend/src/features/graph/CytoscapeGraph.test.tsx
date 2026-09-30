@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphWheelIntent, readMinimap, routeEdges, separateLaneNodes, type RouteNode } from "./CytoscapeGraph"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
@@ -140,9 +140,9 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  expect(core.on).toHaveBeenCalledTimes(7)
+  expect(core.on).toHaveBeenCalledTimes(8)
   unmount()
-  expect(core.off).toHaveBeenCalledTimes(7)
+  expect(core.off).toHaveBeenCalledTimes(8)
   expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(1)
   expect(disconnectResizeObserver).toHaveBeenCalledTimes(1)
   expect(Math.max(...core.off.mock.invocationCallOrder)).toBeLessThan(core.destroy.mock.invocationCallOrder[0])
@@ -186,12 +186,12 @@ it("shows complete card text from pointer and keyboard focus and selects the foc
   const identity = { id: "identity:alice", kind: "identity" as const, label: longLabel, wrappedLabel: longLabel, verdict: "allow" as const, verdictText: "ALLOW", verdictColor: "#15803d", selection: { operation: "GET /orders", resource: null, identity: longLabel, source: "human" as const, evidenceIds: ["e-1"] } }
   const graph: GraphProjection = { ...projection, identities: [identity], operations: [], edges: [] }
   const onSelect = vi.fn()
-  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? `Identity ${longLabel}; verdict ALLOW; 1 Evidence` : undefined)
+  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? `Identity ${longLabel}; verdict ALLOW; 1 관측 기록` : undefined)
   render(<CytoscapeGraph projection={graph} locked={false} fitVersion={0} onSelect={onSelect} onPreferencesChange={vi.fn()} />)
 
   act(() => { listeners.get("mouseover focus:node")?.({ target: node, type: "mouseover" }) })
   expect(screen.getByRole("tooltip")).toHaveTextContent(longLabel)
-  expect(screen.getByRole("tooltip")).toHaveTextContent("1 Evidence")
+  expect(screen.getByRole("tooltip")).toHaveTextContent("1 관측 기록")
 
   const canvas = screen.getByLabelText("공격면 Cytoscape 그래프")
   fireEvent.focus(canvas)
@@ -203,7 +203,7 @@ it("shows complete card text from pointer and keyboard focus and selects the foc
 it("dismisses an open full-text card tooltip when the projection changes", () => {
   const identity = { id: "identity:alice", kind: "identity" as const, label: "alice", wrappedLabel: "alice", verdict: "allow" as const, verdictText: "ALLOW", verdictColor: "#15803d", selection: { operation: "GET /orders", resource: null, identity: "alice", source: "human" as const, evidenceIds: ["e-1"] } }
   const graph: GraphProjection = { ...projection, identities: [identity], operations: [], edges: [] }
-  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? "Identity alice; verdict ALLOW; 1 Evidence" : undefined)
+  vi.mocked(node.data).mockImplementation((key: string) => key === "kind" ? "identity" : key === "accessibleLabel" ? "Identity alice; verdict ALLOW; 1 관측 기록" : undefined)
   const { rerender } = render(<CytoscapeGraph projection={graph} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   act(() => { listeners.get("mouseover focus:node")?.({ target: node, type: "mouseover" }) })
   expect(screen.getByRole("tooltip")).toBeInTheDocument()
@@ -518,7 +518,7 @@ it("draws every observed source with one neutral edge and marks the accessing so
     edges: [
       { ...projection.edges[0], id: "human-edge" },
       { ...projection.edges[0], id: "scanner-edge", source: "scanner", sourceText: "SCANNER", line: "dashed", color: "#dc2626", countLabel: "" },
-      { ...projection.edges[0], id: "llm-edge", source: "llm", sourceText: "LLM", line: "dotted", color: "#e4e4e7", countLabel: "" },
+      { ...projection.edges[0], id: "llm-edge", source: "llm", sourceText: "LLM", line: "dotted", color: "#facc15", countLabel: "" },
     ],
   }
   render(<CytoscapeGraph projection={mixed} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
@@ -530,7 +530,7 @@ it("draws every observed source with one neutral edge and marks the accessing so
   const operation = added.find((element) => element.data.id === "operation:GET /orders")!.data
   expect(operation.accessibleLabel).toContain("접근 주체 HUMAN, SCANNER, LLM")
   const svg = decodeURIComponent(operation.cardImage!.replace(/^data:image\/svg\+xml,/, ""))
-  for (const color of ["#60a5fa", "#f87171", "#e4e4e7"]) expect(svg).toContain(`stroke="${color}"`)
+  for (const color of ["#60a5fa", "#f87171", "#facc15"]) expect(svg).toContain(`stroke="${color}"`)
 })
 
 it("redraws node cards and edges for the light theme instead of keeping dark cards on a white canvas", () => {
@@ -709,3 +709,113 @@ it("gives selected canvas edges priority over candidate navigation and matches c
   elements = core.add.mock.calls.at(-1)?.[0] as Array<{ data: { id: string; focused: string } }>
   for (const edge of hierarchy.edges) expect(elements.find(item => item.data.id === edge.id)?.data.focused).toBe(edge.relation === "candidate" && edge.selection.resource === "orders:404" ? "yes" : "no")
 })
+
+it("pushes overlapping nodes in one lane apart by their real height while keeping order", () => {
+  const fake = (id: string, y: number, height: number) => {
+    let position = { x: 100, y }
+    return { id: () => id, data: (key: string) => key === "height" ? height : undefined, position: (next?: { x: number; y: number }) => { if (next) position = next; return position } }
+  }
+  // 캔버스 높이로 간격을 나누던 배치처럼 노드가 서로 겹쳐 있는 상태.
+  const nodes = [fake("b", 110, 95), fake("a", 100, 67), fake("c", 115, 95)]
+  separateLaneNodes(nodes as unknown as Parameters<typeof separateLaneNodes>[0])
+  const [b, a, c] = nodes.map(node => node.position().y)
+  expect(a).toBe(100)
+  // a 아래 끝(100+33.5)부터 20 간격 뒤에 b(높이 95)의 위 끝이 온다.
+  expect(b).toBeCloseTo(100 + 67 / 2 + 20 + 95 / 2)
+  expect(c).toBeCloseTo(b + 95 / 2 + 20 + 95 / 2)
+  // 이미 충분히 떨어진 노드는 움직이지 않는다.
+  const apart = [fake("x", 0, 60), fake("y", 500, 60)]
+  separateLaneNodes(apart as unknown as Parameters<typeof separateLaneNodes>[0])
+  expect(apart.map(node => node.position().y)).toEqual([0, 500])
+})
+
+it("draws every edge as a rightward orthogonal line with slightly rounded corners", () => {
+  render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const options = vi.mocked(cytoscape).mock.calls.at(-1)?.[0] as unknown as { style: Array<{ selector: string; style: Record<string, unknown> }> }
+  const edge = options.style.find(rule => rule.selector === "edge")
+  expect(edge?.style).toMatchObject({ "curve-style": "round-taxi", "taxi-direction": "rightward", "taxi-radius": 4 })
+  expect(options.style.some(rule => rule.style["curve-style"] === "bezier")).toBe(false)
+})
+
+/** routeEdges 결과를 절대 좌표 꺾은선(시작점, 꺾는 점들, 끝점)으로 되돌린다. */
+function routePoints(nodes: ReadonlyMap<string, RouteNode>, edge: { source: string; target: string }, route: Record<string, string>) {
+  const endpoint = (node: RouteNode, value: string) => { const [x, y] = value.split(" ").map(parseFloat); return { x: node.x + x, y: node.y + y } }
+  const start = endpoint(nodes.get(edge.source)!, route["source-endpoint"]), end = endpoint(nodes.get(edge.target)!, route["target-endpoint"])
+  if (route["curve-style"] === "straight") return [start, end]
+  const dx = end.x - start.x, dy = end.y - start.y, length = Math.hypot(dx, dy)
+  const weights = route["segment-weights"].split(" ").map(Number), distances = route["segment-distances"].split(" ").map(Number)
+  return [start, ...weights.map((w, i) => ({ x: start.x + w * dx - distances[i] * dy / length, y: start.y + w * dy + distances[i] * dx / length })), end]
+}
+
+it("bundles edges: one port per node, one trunk per source, separate trunks for different sources", () => {
+  const nodes = new Map<string, RouteNode>([
+    ["alice", { x: 0, y: 0, width: 100, height: 40, lane: 0 }],
+    ["bob", { x: 0, y: 200, width: 100, height: 40, lane: 0 }],
+    ["orders", { x: 400, y: 100, width: 200, height: 80, lane: 1 }],
+    ["users", { x: 400, y: 300, width: 120, height: 80, lane: 1 }],
+  ])
+  const edges = [
+    { id: "a-o", source: "alice", target: "orders", split: null },
+    { id: "a-u", source: "alice", target: "users", split: null },
+    { id: "b-o", source: "bob", target: "orders", split: null },
+  ]
+  const routes = routeEdges(nodes, edges)
+  const lines = new Map(edges.map(edge => [edge.id, routePoints(nodes, edge, routes.get(edge.id)!)]))
+  for (const points of lines.values()) for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]]
+    expect(Math.abs(a.x - b.x) < 1e-6 || Math.abs(a.y - b.y) < 1e-6).toBe(true)
+  }
+  // alice의 두 엣지는 옆면 가운데 한 점에서 나가고, orders로 들어오는 두 엣지는 옆면 가운데 한 점에서 합쳐진다.
+  expect(lines.get("a-o")![0]).toEqual(lines.get("a-u")![0])
+  expect(lines.get("a-o")![0].y).toBeCloseTo(0)
+  expect(lines.get("a-o")!.at(-1)).toEqual(lines.get("b-o")!.at(-1))
+  expect(lines.get("a-o")!.at(-1)!.y).toBeCloseTo(100)
+  // 같은 레인으로 들어가는 alice·bob의 세로 줄기는 서로 다른 x에 선다.
+  expect(lines.get("a-o")![1].x).not.toBeCloseTo(lines.get("b-o")![1].x)
+  expect(lines.get("a-o")![1].x).toBeCloseTo(lines.get("a-u")![1].x)
+})
+
+it("shifts endpoints and trunk together when parallel sources split, and falls back when nodes are too close", () => {
+  const nodes = new Map<string, RouteNode>([
+    ["alice", { x: 0, y: 0, width: 100, height: 40, lane: 0 }],
+    ["orders", { x: 400, y: 100, width: 200, height: 80, lane: 1 }],
+    ["near", { x: 90, y: 0, width: 60, height: 40, lane: 2 }],
+  ])
+  const edges = [
+    { id: "human", source: "alice", target: "orders", split: -0.5 },
+    { id: "scanner", source: "alice", target: "orders", split: 0.5 },
+    { id: "near", source: "alice", target: "near", split: null },
+  ]
+  const routes = routeEdges(nodes, edges)
+  const human = routePoints(nodes, edges[0], routes.get("human")!), scanner = routePoints(nodes, edges[1], routes.get("scanner")!)
+  human.forEach((point, index) => {
+    expect(scanner[index].y - point.y).toBeCloseTo(6)
+    if (index > 0 && index < human.length - 1) expect(scanner[index].x - point.x).toBeCloseTo(6)
+  })
+  expect(routes.get("near")).toBeNull()
+})
+
+it("reads minimap boxes in model space with the current viewport and dims filtered-out nodes", () => {
+  const fakeNode = (id: string, x: number, y: number, hl?: string) => ({ id: () => id, position: () => ({ x, y }), data: (key: string) => key === "width" ? 200 : key === "height" ? 60 : key === "hl" ? hl : undefined })
+  const nodes = [fakeNode("a", 100, 100), fakeNode("b", 500, 300, "no")]
+  const core = { extent: () => ({ x1: 0, y1: 0, w: 400, h: 200 }), nodes: () => ({ forEach: (callback: (node: ReturnType<typeof fakeNode>) => void) => nodes.forEach(callback) }) }
+  const view = readMinimap(core as unknown as Parameters<typeof readMinimap>[0])!
+  expect(view.nodes.map(node => [node.id, node.x, node.y, node.dim])).toEqual([["a", 0, 70, false], ["b", 400, 270, true]])
+  expect(view.box).toEqual({ x: -40, y: 30, w: 680, h: 340 })
+  expect(view.view).toEqual({ x: 0, y: 0, w: 400, h: 200 })
+  expect(readMinimap({ nodes: () => ({ forEach: () => undefined }) } as unknown as Parameters<typeof readMinimap>[0])).toBeNull()
+})
+
+it("opens and closes an object group from a double click or Enter instead of navigating", () => {
+  const snapshot = targetSnapshot({ cells: [{ idn: "alice", op: "https://api.example.test GET /orders/{id}", resource: "orders:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+  const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  const groupNode = group.nodes.find(node => node.kind === "object-group")!
+  const onToggleObjectGroup = vi.fn(), onNavigate = vi.fn()
+  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onNavigate={onNavigate} onToggleObjectGroup={onToggleObjectGroup} onPreferencesChange={vi.fn()} />)
+  act(() => listeners.get("dbltap:node")?.({ target: { ...node, id: vi.fn(() => groupNode.id) } }))
+  expect(onToggleObjectGroup).toHaveBeenCalledWith(groupNode.id)
+  expect(onNavigate).not.toHaveBeenCalled()
+})
+

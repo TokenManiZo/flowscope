@@ -17,12 +17,12 @@ vi.mock("@/lib/query/hooks", () => ({
 }))
 
 it("uses the status bar, grouped sidebar navigation, and viewport landmark around route content", () => {
-  render(<ReferenceAppShell route="evidence"><p>Evidence workspace</p></ReferenceAppShell>)
+  render(<ReferenceAppShell route="evidence"><p>관측 기록 workspace</p></ReferenceAppShell>)
 
   expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
   expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
   expect(screen.queryByRole("navigation", { name: "주요 분석 탐색" })).not.toBeInTheDocument()
-  expect(screen.getByRole("main")).toHaveTextContent("Evidence workspace")
+  expect(screen.getByRole("main")).toHaveTextContent("관측 기록 workspace")
 })
 
 it("keeps route content in the main landmark", () => {

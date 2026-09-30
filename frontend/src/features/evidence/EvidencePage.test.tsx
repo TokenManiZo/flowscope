@@ -95,17 +95,17 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
 
     // 필터는 왼쪽 패널이 아니라 표 위 한 줄 도구 모음이다.
-    const context = await screen.findByRole("group", { name: "Evidence 표시 필터" })
+    const context = await screen.findByRole("group", { name: "관측 기록 표시 필터" })
     expect(within(context).getByRole("checkbox", { name: "사람 H" })).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
-    expect(screen.getByRole("region", { name: "Evidence 분석 영역" })).toBeVisible()
+    expect(screen.getByRole("region", { name: "관측 기록 분석 영역" })).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "선택 상세 패널 열기" })).toBeVisible()
     await userEvent.click(within(context).getByRole("checkbox", { name: "사람 H" }))
     expect(screen.queryByText("workspace-evidence")).not.toBeInTheDocument()
   })
 
-  it("splits Evidence into main, review and hidden tabs with counts, and filters by source, class and search", async () => {
+  it("splits 관측 기록 into main, review and hidden tabs with counts, and filters by source, class and search", async () => {
     installFetch([
       event({ eventId: "human-api", source: "human", trafficClass: "API" }),
       event({ eventId: "scanner-review", source: "scanner", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", clusterId: "scanner-cluster", classificationReasons: ["AMBIGUOUS_KEEP"] }),
@@ -186,14 +186,14 @@ describe("EvidencePage", () => {
     expect(screen.queryByText("event-2")).not.toBeInTheDocument()
     expect(screen.getByText("반복 요청 1건은 한 줄로 묶음")).toBeVisible()
     expect(within(screen.getByText("event-1").closest("tr") as HTMLTableRowElement).getByTitle(observedTimeLabel(101, 202))).toBeVisible()
-    await userEvent.click(screen.getByRole("checkbox", { name: "반복 Evidence 펼치기" }))
+    await userEvent.click(screen.getByRole("checkbox", { name: "반복 관측 기록 펼치기" }))
     expect(await screen.findByText("event-2")).toBeVisible()
     const eventTwoRow = screen.getByText("event-2").closest("tr")
     expect(eventTwoRow).not.toBeNull()
     const detail = within(eventTwoRow as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ })
     expect(detail).not.toHaveAccessibleName(/event-2/)
     await userEvent.click(detail)
-    expect(await screen.findByText("선택 Evidence: event-2")).toBeVisible()
+    expect(await screen.findByText("선택 관측 기록: event-2")).toBeVisible()
     // 표의 요청 칸과 상세의 경로 칸 모두 선택한 행(/orders/2)을 가리킨다.
     expect(screen.getAllByText(/\/orders\/2$/).length).toBeGreaterThanOrEqual(2)
   })
@@ -236,18 +236,18 @@ describe("EvidencePage", () => {
     expect(client.getQueryCache().findAll({ queryKey: ["evidence"] })).toHaveLength(1)
   })
 
-  it("uses generic Korean live status without placing the selected Evidence ID in ARIA", async () => {
+  it("uses generic Korean live status without placing the selected 기록 번호 in ARIA", async () => {
     installFetch([event({ eventId: "private-selected-id" })])
     renderWithQueryClient(<EvidencePage />)
     const row = (await screen.findByText("private-selected-id")).closest("tr")
     expect(row).not.toBeNull()
     await userEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ }))
     const live = document.querySelector("[aria-live='polite']")
-    expect(live).toHaveTextContent("선택한 Evidence 상세를")
+    expect(live).toHaveTextContent("선택한 관측 기록 상세를")
     expect(live).not.toHaveTextContent("private-selected-id")
   })
 
-  it("restores the same selected Evidence after a successful policy invalidates the snapshot", async () => {
+  it("restores the same selected 관측 기록 after a successful policy invalidates the snapshot", async () => {
     let snapshots = 0
     const selected = event({ eventId: "restored-event" })
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => {
@@ -265,7 +265,7 @@ describe("EvidencePage", () => {
     await user.type(screen.getByLabelText("필수 역할"), "admin")
     await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
     await waitFor(() => expect(snapshots).toBeGreaterThan(1))
-    expect(screen.getByText("선택 Evidence: restored-event")).toBeVisible()
+    expect(screen.getByText("선택 관측 기록: restored-event")).toBeVisible()
   })
 
   it("removes stale selected detail synchronously and does not refetch its Request Lab draft after dataset replacement", async () => {
@@ -281,7 +281,7 @@ describe("EvidencePage", () => {
     act(() => { client.setQueryData(["snapshot"], { ...snapshot([]), revision: 2 }) })
 
     await waitFor(() => {
-      expect(screen.queryByText("선택 Evidence: stale-event")).not.toBeInTheDocument()
+      expect(screen.queryByText("선택 관측 기록: stale-event")).not.toBeInTheDocument()
       expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
     })
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?")).length).toBe(1))
@@ -357,7 +357,7 @@ describe("EvidencePage", () => {
     expect(await screen.findByRole("button", { name: "XML 가져오기 실행" })).toBeEnabled()
   })
 
-  it.each([900, 600])("keeps Evidence filters and selected detail functional at compact %ipx", async (width) => {
+  it.each([900, 600])("keeps 관측 기록 filters and selected detail functional at compact %ipx", async (width) => {
     const previousMatchMedia = window.matchMedia
     window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("1279") && width < 1280, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
     installFetch([event({ eventId: "compact-evidence" })])
@@ -367,7 +367,7 @@ describe("EvidencePage", () => {
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
     const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
     await user.click(screen.getByRole("checkbox", { name: "사람 H" }))
-    expect(await screen.findByText("현재 필터에 맞는 Evidence가 없습니다.")).toBeVisible()
+    expect(await screen.findByText("현재 필터에 맞는 관측 기록이 없습니다.")).toBeVisible()
     await user.click(inspectorTrigger)
     expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("분석 결과에서 항목을 선택하면")
     await user.click(within(screen.getByRole("dialog", { name: "선택 상세" })).getByRole("button", { name: "Close" }))
@@ -376,9 +376,9 @@ describe("EvidencePage", () => {
     expect(row).not.toBeNull()
     await user.click(within(row as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ }))
     const inspector = await screen.findByRole("dialog", { name: "선택 상세" })
-    expect(within(inspector).getByText("선택 Evidence: compact-evidence")).toBeVisible()
+    expect(within(inspector).getByText("선택 관측 기록: compact-evidence")).toBeVisible()
     await user.click(within(inspector).getByRole("button", { name: "Close" }))
-    expect(screen.queryByText("선택 Evidence: compact-evidence")).not.toBeInTheDocument()
+    expect(screen.queryByText("선택 관측 기록: compact-evidence")).not.toBeInTheDocument()
     expect(inspectorTrigger).toHaveFocus()
     window.matchMedia = previousMatchMedia
   })

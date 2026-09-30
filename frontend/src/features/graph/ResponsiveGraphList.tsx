@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button"
+import type { Snapshot } from "@/lib/api/types"
+import { ApiListTable } from "./ApiListTable"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
-import type { GraphProjection, GraphSelection } from "./graphProjection"
+import { graphCellSelection, type GraphProjection, type GraphSelection } from "./graphProjection"
 import type { HierarchyNode, HierarchyProjection } from "./graphHierarchy"
 import { relationshipNodeCard } from "./relationshipNodeCard"
 
@@ -17,12 +19,13 @@ function CompactNodeCard({ badge, title, detail, footer, meta = [] }: { badge: s
   </span>
 }
 
-export function ResponsiveGraphList({ projection, onSelect, onNavigate }: { projection: GraphProjection | HierarchyProjection; onSelect(selection: GraphSelection, elementId?: string): void; onNavigate?(node: HierarchyNode): void }) {
+export function ResponsiveGraphList({ projection, snapshot, selectedId = null, onSelect, onNavigate }: { projection: GraphProjection | HierarchyProjection; snapshot?: Pick<Snapshot, "events" | "cells" | "owners">; selectedId?: string | null; onSelect(selection: GraphSelection, elementId?: string): void; onNavigate?(node: HierarchyNode): void }) {
   const hierarchy = "kind" in projection ? projection : null
   const items = hierarchy?.kind === "operation" ? hierarchy.listItems.filter(item => !item.selection.resource || hierarchy.resources.some(resource => resource.selection.resource === item.selection.resource)) : projection.listItems
   return <section className="grid gap-2" aria-label="공격면 API 목록">
-    {hierarchy && hierarchy.kind !== "site" && <div className="flex flex-wrap gap-2" aria-label="Identity focus">{hierarchy.identities.map(node => <Button variant="outline" key={node.id} onClick={() => onSelect(node.selection, node.id)}>{node.label}</Button>)}</div>}
-    {items.map((item) => {
+    {/* 그룹 화면의 API는 표로 보여준다(경로 형식 묶음). 줄을 누르면 화면을 옮기지 않고 선택만 한다. 요청 기록이 없으면 카드로 둔다. */}
+    {hierarchy?.kind === "group" && snapshot && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation")} snapshot={snapshot} selectedId={selectedId} onSelectApi={node => onSelect(node.selection, node.id)} onSelectObject={(resource, cells) => { if (cells.length) onSelect(graphCellSelection(cells), `resource:${resource}`) }} />}
+    {!(hierarchy?.kind === "group" && snapshot) && items.map((item) => {
       if (hierarchy && item.kind === "api-group") {
         const group = hierarchy.groups.find(group => group.id === (item as HierarchyNode).groupId)
         const card = relationshipNodeCard(item, hierarchy)
@@ -37,6 +40,6 @@ export function ResponsiveGraphList({ projection, onSelect, onNavigate }: { proj
       </Button>
     })}
     {projection.routeCandidates.map((candidate) => <article className="grid gap-2 rounded-md border border-dashed p-3 text-sm" key={candidate.id}><Button variant="outline" className="h-auto justify-start whitespace-normal p-3 text-left" aria-label={`경로 후보 ${candidate.service} ${candidate.method} ${candidate.pathTemplate} ${candidate.observedText} ${candidate.applicability}`} onClick={() => onSelect(candidate.selection)}><span className="grid gap-1"><span className="font-mono break-all">{candidate.service}</span><span className="font-mono break-all">{candidate.method} {candidate.pathTemplate}</span><span>{candidate.observedText} · {candidate.applicability}</span></span></Button><RouteCandidateDetail candidate={candidate.selection.routeCandidate ?? candidate} /></article>)}
-    {!projection.listItems.length && !projection.routeCandidates.length && <p className="rounded-md border p-3 text-sm text-muted-foreground">현재 필터에 표시할 INCLUDE 공격면이 없습니다. Evidence의 REVIEW/EXCLUDE는 그대로 유지됩니다.</p>}
+    {!projection.listItems.length && !projection.routeCandidates.length && <p className="rounded-md border p-3 text-sm text-muted-foreground">현재 필터에 표시할 INCLUDE 공격면이 없습니다. 관측 기록의 REVIEW/EXCLUDE는 그대로 유지됩니다.</p>}
   </section>
 }

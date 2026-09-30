@@ -24,7 +24,7 @@ function TimelineRow({ entry, onSelect }: { entry: SequenceLink; onSelect(entry:
     <article className="grid gap-3 rounded-md bg-muted/30 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Badge variant="outline" className={source.lineClass}>{source.short} · {source.label} · {source.line}</Badge>
-        <Tooltip><TooltipTrigger asChild><button type="button" className="rounded-md border bg-background px-3 py-2 text-sm hover:bg-muted" aria-label="흐름 링크 Evidence 열기" onClick={() => onSelect(entry)}>연결 Evidence 상세</button></TooltipTrigger><TooltipContent>생산·소비 Evidence의 구조화된 선택을 엽니다.</TooltipContent></Tooltip>
+        <Tooltip><TooltipTrigger asChild><button type="button" className="rounded-md border bg-background px-3 py-2 text-sm hover:bg-muted" aria-label="흐름 링크 관측 기록 열기" onClick={() => onSelect(entry)}>연결 관측 기록 상세</button></TooltipTrigger><TooltipContent>생산·소비 관측 기록의 구조화된 선택을 엽니다.</TooltipContent></Tooltip>
       </div>
       <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
         <section className="min-w-0"><h3 className="text-xs font-medium text-muted-foreground">1. 생산</h3><p className="break-all font-medium">{boundedOperation(entry.link.fromOp, operationExpanded)}</p></section>

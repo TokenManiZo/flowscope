@@ -80,7 +80,7 @@ function GapPathList({ projection, onSelect }: Props) {
       </li>)}</ol>
       <ul aria-label={`Gap ${gapId} 관계 근거`} className="mt-3 space-y-2">{projection.edges.filter(edge => edge.selection.gapId === gapId).map(edge => <li key={edge.id}>
         <Button variant="ghost" aria-pressed={edge.focused} className="h-auto w-full justify-start whitespace-normal px-2 py-2 text-left text-sm" onClick={() => onSelect(edge.selection)}>
-          <span className="min-w-0 [overflow-wrap:anywhere]"><span className="block">{relationLabel(edge, true)}</span><span className="block text-muted-foreground">{edge.sourceRole === "OBSERVATION" ? "관측 Evidence" : edge.sourceRole === "GAP_SUBJECT" ? "Gap 근거" : "관계 근거"} {edge.evidenceCount}건 · {edge.line === "solid" ? "실선" : edge.line === "dashed" ? "파선" : "점선"}</span></span>
+          <span className="min-w-0 [overflow-wrap:anywhere]"><span className="block">{relationLabel(edge, true)}</span><span className="block text-muted-foreground">{edge.sourceRole === "OBSERVATION" ? "관측 기록" : edge.sourceRole === "GAP_SUBJECT" ? "Gap 근거" : "관계 근거"} {edge.evidenceCount}건 · {edge.line === "solid" ? "실선" : edge.line === "dashed" ? "파선" : "점선"}</span></span>
         </Button>
       </li>)}</ul>
       </section>

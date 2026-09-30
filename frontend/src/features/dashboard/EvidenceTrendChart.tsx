@@ -72,8 +72,8 @@ export function EvidenceTrendChart({ events }: { events: readonly EventRecord[] 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-5 text-xs text-muted-foreground"><span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded-full bg-zinc-100" />HUMAN</span><span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded-full bg-emerald-400" />ZAP</span><span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded-full bg-sky-400" />LLM</span></div>
-      <svg role="img" aria-label="HUMAN, ZAP, LLM Evidence 수집 추이" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" className="h-[260px] w-full overflow-visible sm:h-[320px]">
-        <title>HUMAN, ZAP, LLM Evidence 수집 추이</title>
+      <svg role="img" aria-label="HUMAN, ZAP, LLM 관측 기록 수집 추이" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" className="h-[260px] w-full overflow-visible sm:h-[320px]">
+        <title>HUMAN, ZAP, LLM 관측 기록 수집 추이</title>
         {[0, 1, 2, 3, 4].map((line) => { const y = TOP + ((HEIGHT - TOP - BOTTOM) * line) / 4; return <line key={line} x1="0" x2={WIDTH} y1={y} y2={y} stroke="currentColor" className="text-white/[0.07]" strokeDasharray="3 6" vectorEffect="non-scaling-stroke" /> })}
         <path d={areaPath(human)} fill="rgb(244 244 245 / 0.08)" />
         <path d={areaPath(scanner)} fill="rgb(52 211 153 / 0.08)" />

@@ -196,6 +196,9 @@ html.flowscope-density-90 {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* 기본 브라우저 스크롤바 대신 얇고 옅은 스크롤바. 트랙은 투명하게 두고 막대만 보인다. */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
   }
   body {
     min-width: 320px;

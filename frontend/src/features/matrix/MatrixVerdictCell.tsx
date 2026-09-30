@@ -26,7 +26,7 @@ export function MatrixVerdictCell({ member, mode, onSelect, disabled = false }: 
 
   return <article className={`min-w-48 space-y-2 rounded-md p-2 ${tone.className}`}>
     {mode === "role" && <p className="break-all text-xs font-medium">{member.identity}</p>}
-    <Tooltip><TooltipTrigger asChild><button type="button" disabled={disabled} className="w-full rounded-md border p-2 text-left font-semibold hover:bg-background/50 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50" aria-label="권한 셀 Evidence 열기" onClick={() => onSelect(member)}><span className="block">{tone.label}</span><span className="sr-only">전체 판정: {member.cell.overall}. 상세 열기</span></button></TooltipTrigger><TooltipContent>서버 판정, 사유와 정확한 Evidence를 엽니다.</TooltipContent></Tooltip>
+    <Tooltip><TooltipTrigger asChild><button type="button" disabled={disabled} className="w-full rounded-md border p-2 text-left font-semibold hover:bg-background/50 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50" aria-label="권한 셀 관측 기록 열기" onClick={() => onSelect(member)}><span className="block">{tone.label}</span><span className="sr-only">전체 판정: {member.cell.overall}. 상세 열기</span></button></TooltipTrigger><TooltipContent>서버 판정, 사유와 정확한 관측 기록을 엽니다.</TooltipContent></Tooltip>
     <div className="flex flex-wrap gap-1">{sourceOrder.filter((source) => source !== "unknown").map((source) => <SourceDetectionBadge key={source} source={source} member={member} />)}</div>
   </article>
 }

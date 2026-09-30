@@ -14,11 +14,14 @@ export function operationParts(value: string): { method: string; path: string } 
 }
 
 function evidenceFooter(node: RelationshipNode) {
-  return `${node.selection.evidenceIds.length} Evidence`
+  return `관측 기록 ${node.selection.evidenceIds.length}건`
 }
 
-/** 카드에는 판정 글자를 그리지 않는다(판정은 상세·접근 이름·확정 테두리). API·Object 카드의 상세 줄은 접근 주체 아이콘 자리다. */
-export function relationshipNodeCard(node: RelationshipNode, projection: RelationshipProjection): ParameterNodeCardView {
+/**
+ * 카드에는 판정 글자를 그리지 않는다(판정은 상세·접근 이름·확정 테두리). API·Object 카드의 상세 줄은 접근 주체 아이콘 자리다.
+ * statuses는 API 카드에 그릴 관측 응답 코드다. 응답 코드는 관측 결과일 뿐 판정이 아니다.
+ */
+export function relationshipNodeCard(node: RelationshipNode, projection: RelationshipProjection, statuses: readonly number[] = []): ParameterNodeCardView {
   if (node.kind === "target") {
     const service = node.service ?? node.label
     const groupCount = "kind" in projection ? projection.groups.filter(group => group.service === service).length : 0
@@ -47,6 +50,14 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
   }
 
+  if (node.kind === "object-group" && "objectGroup" in node && node.objectGroup) {
+    const { key, members, expanded } = node.objectGroup
+    return {
+      kind: "target", badge: "OBJECTS", title: `${expanded ? "▾" : "▸"} ${key}`, detail: "", footer: `${members.length}개`, icon: "box",
+      accessibleLabel: `${key} 객체 묶음; ${members.length}개; ${expanded ? "펼침" : "접힘"}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
+    }
+  }
+
   if (node.kind === "resource") {
     const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? node.owner ?? "UNKNOWN" : "UNKNOWN"
     return {
@@ -64,7 +75,8 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   return {
     // API 카드는 API 그룹 안에서만 보이므로 그룹 구간까지는 생략한다(breadcrumb에 그룹 이름이 있다). 전체 경로는 접근 이름에 남는다.
     kind: "operation", badge: operation.method, title: pathAfterGroup(operation.path), detail: "", footer: "", icon: "none",
-    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}`,
+    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}${statuses.length ? `; HTTP ${statuses.join(", ")}` : ""}`,
+    ...(statuses.length ? { statuses } : {}),
   }
 }
 

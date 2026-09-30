@@ -84,7 +84,7 @@ it("opens the canonical inspector from queue or graph, preserving reasons and ac
   const detail = screen.getByRole("region", { name: "Parameter Gap 상세" })
   expect(detail).toHaveAttribute("data-gap-id", "auth")
   expect(within(detail).getByRole("heading", { level: 2 })).toHaveTextContent("PATCH /orders/{id}")
-  expect(within(detail).getByRole("region", { name: "Evidence" })).toBeVisible()
+  expect(within(detail).getByRole("region", { name: "관측 기록" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 닫기" }))
   expect(screen.queryByRole("region", { name: "Parameter Gap 상세" })).not.toBeInTheDocument()
   const graph = screen.getByRole("list", { name: "Gap 경로 목록" })
@@ -100,8 +100,9 @@ it("links only actual events of the exact operation and offers raw view from the
   state.query = { ...state.query, data }
   render()
   await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])
-  const rows = within(screen.getByRole("region", { name: "Evidence" })).getAllByRole("listitem")
-  expect(rows.map(row => row.getAttribute("aria-label"))).toEqual(["Evidence actual-a"])
+  const rows = within(screen.getByRole("region", { name: "관측 기록" })).getAllByRole("listitem")
+  // 관측 기록은 신원·출처별 카드로 묶인다. 다른 operation의 witness-a는 목록에 없다.
+  expect(rows.map(row => row.getAttribute("aria-label"))).toEqual(["USER A · HUMAN 관측 기록 1건"])
   expect(within(rows[0]).getByRole("button", { name: "원문 보기" })).toBeEnabled()
 })
 
@@ -208,7 +209,7 @@ it("explains an empty graph as run-less traffic and offers to start a HUMAN pass
   const statePanel = screen.getByRole("status", { name: "" })
   expect(within(statePanel).getByRole("status", { name: "run 밖 API 트래픽 안내" })).toHaveTextContent("인증된 API 요청 4건")
   expect(within(statePanel).getByRole("button", { name: "점검에서 HUMAN 탐색 시작" })).toBeVisible()
-  expect(statePanel).not.toHaveTextContent("범위를 확인하고 HUMAN Evidence를 수집하세요")
+  expect(statePanel).not.toHaveTextContent("범위를 확인하고 HUMAN 관측 기록을 수집하세요")
 })
 
 it("keeps the definitions-only message instead of replacing it with the run-gap hint", () => {

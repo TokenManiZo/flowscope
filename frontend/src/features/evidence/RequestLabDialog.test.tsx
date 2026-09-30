@@ -454,7 +454,7 @@ describe("RequestLabDialog", () => {
     expect(owner.history).toHaveLength(0)
   })
 
-  it("isolates a late send completion when the selected Evidence changes", async () => {
+  it("isolates a late send completion when the selected 관측 기록 changes", async () => {
     const pending = deferredResponse()
     const owner = createMemoryOnlyRawState()
     const nextEvent = { ...event, eventId: "event-8" }
@@ -560,7 +560,7 @@ describe("RequestLabDialog", () => {
     expect(within(dialog).getByRole("button", { name: "Request Lab 전송" })).toBeEnabled()
   })
 
-  it("lists stored verification results and unanswered attempts sent from this Evidence only", async () => {
+  it("lists stored verification results and unanswered attempts sent from this 관측 기록 only", async () => {
     attempts = [
       { sequence: 1, originEvidenceId: "event-7", outcome: "TIMEOUT", status: 0, evidenceId: null, durationMillis: 30000 },
       { sequence: 2, originEvidenceId: "event-other", outcome: "NO_RESPONSE", status: 0, evidenceId: null, durationMillis: 5 },

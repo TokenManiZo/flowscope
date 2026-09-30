@@ -25,7 +25,7 @@ const inspectionSteps: readonly { step: InspectionStep; label: string }[] = [
   { step: "human", label: "1 · HUMAN" },
   { step: "scanner", label: "2 · ZAP" },
   { step: "llm", label: "3 · LLM" },
-  { step: "review", label: "4 · Evidence 검토" },
+  { step: "review", label: "4 · 관측 기록 검토" },
 ]
 
 const ANONYMOUS_HUMAN_ACCOUNT = "__flowscope_anonymous__"
@@ -286,7 +286,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
         </TabsContent>
 
         <TabsContent value="review">
-          <Card><CardHeader><CardTitle className="text-xl">Evidence 검토</CardTitle><CardDescription>Judge 없이 실제 HUMAN·ZAP·LLM Evidence를 비교합니다.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button><Button variant="outline" onClick={() => setManualStep("llm")}>LLM 단계 열기</Button></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-xl">관측 기록 검토</CardTitle><CardDescription>Judge 없이 실제 HUMAN·ZAP·LLM 관측 기록을 비교합니다.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button><Button variant="outline" onClick={() => setManualStep("llm")}>LLM 단계 열기</Button></CardContent></Card>
         </TabsContent>
       </Tabs>
 
