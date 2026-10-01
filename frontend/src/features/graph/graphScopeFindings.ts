@@ -1,4 +1,4 @@
-import type { AuthorizationMatrix, Cell, MatrixCellBase, Source, Verdict } from "@/lib/api/types"
+import type { Cell, Source, Verdict } from "@/lib/api/types"
 import { operationParts } from "./relationshipNodeCard"
 
 /**
@@ -13,8 +13,7 @@ export interface ScopeCandidate { key: string; op: string; method: string; path:
 export interface ScopeUndecided { key: string; op: string; method: string; path: string; resource: string | null; idn: string; reason: UndecidedReason }
 /** 신원별 요약. counts는 API마다 그 신원의 가장 급한 판정 하나로 센 값이라, 모두 더하면 apis와 같다. */
 export interface ScopeIdentity { idn: string; sources: readonly Source[]; apis: number; counts: Readonly<Partial<Record<Verdict, number>>> }
-export type RecommendationType = "BFLA" | "BOLA/IDOR"
-export interface ScopeRecommendation { id: string; op: string; method: string; path: string; resource: string | null; type: RecommendationType; basis: string; test: string }
+
 
 const WRITE = new Set(["POST", "PUT", "PATCH", "DELETE"])
 /** 한 API 안에서 셀 판정이 여럿이면 가장 급한 것 하나로 센다. */
@@ -64,18 +63,3 @@ export function scopeFindings(cells: readonly Cell[]) {
   }
 }
 
-/**
- * 판정 매트릭스의 테스트 추천(아직 해 보지 않은 교차 조합) 중 주어진 API에 속한 것. 매트릭스와 같은 셀·상태를 그대로 쓴다.
- * 기능층은 BFLA_TEST_RECOMMENDED, 객체층은 BOLA_IDOR_TEST_RECOMMENDED만 센다. 상태를 바꾸는 요청이 먼저 온다.
- */
-export function scopeRecommendations(matrix: AuthorizationMatrix | null | undefined, operations: ReadonlySet<string>): ScopeRecommendation[] {
-  if (!matrix) return []
-  const pick = (cells: readonly (MatrixCellBase & { resource?: string | null })[], status: string, type: RecommendationType) => cells
-    .filter(cell => cell.status === status && cell.recommendation && operations.has(cell.operation))
-    .map((cell): ScopeRecommendation => {
-      const { method, path } = operationParts(cell.operation)
-      return { id: cell.id, op: cell.operation, method, path, resource: cell.resource ?? null, type, basis: cell.recommendation!.basisIdentityLabel, test: cell.recommendation!.testIdentityLabel }
-    })
-  return [...pick(matrix.functions, "BFLA_TEST_RECOMMENDED", "BFLA"), ...pick(matrix.objects, "BOLA_IDOR_TEST_RECOMMENDED", "BOLA/IDOR")]
-    .sort((left, right) => Number(WRITE.has(right.method)) - Number(WRITE.has(left.method)) || left.path.localeCompare(right.path) || left.id.localeCompare(right.id))
-}

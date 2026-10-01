@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
-import type { AuthorizationMatrix, Cell } from "@/lib/api/types"
+import type { Cell } from "@/lib/api/types"
 import type { ApiGroup } from "./graphHierarchy"
 import { GraphScopeSummary } from "./GraphScopeSummary"
 import { scopeFindings, undecidedReason } from "./graphScopeFindings"
@@ -54,27 +54,7 @@ it("orders site groups by candidates, then undecided, and marks clean groups", (
     group("c", "HOT APIs", [cell({ overall: "suspicious", reasons: { human: "객체층(BOLA)" } })]),
   ]} />)
   const rows = within(screen.getByRole("list", { name: "API 그룹 목록" })).getAllByRole("button")
-  // 모두 0이어도 "문제 없음"이 아니라 관측한 범위에서 의심이 없다는 사실만 적는다.
-  expect(rows.map(row => row.textContent)).toEqual(["HOT APIs· 1후보 1", "WARN APIs· 1확인 1", "CLEAN APIs· 1관측된 의심 없음"])
-})
-
-it("shows the judgment matrix's test recommendations for the scope, same values as the matrix, with a link to it", async () => {
-  const onRevealOperation = vi.fn()
-  const op = `${svc} GET /orders/{id}`, other = `${svc} GET /elsewhere`
-  const rec = (id: string, operation: string, status: string, extra = {}) => ({ id, operation, status, recommendation: { type: "", basisIdentity: "a", basisIdentityLabel: "USER 1", testIdentity: "anon", testIdentityLabel: "ANONYMOUS", reason: "" }, ...extra })
-  const matrix = {
-    functions: [rec("f1", op, "BFLA_TEST_RECOMMENDED"), rec("f2", other, "BFLA_TEST_RECOMMENDED"), rec("f3", op, "POLICY_ENFORCED", { recommendation: null })],
-    objects: [rec("o1", op, "BOLA_IDOR_TEST_RECOMMENDED", { resource: "orders:7" }), rec("o2", op, "BOLA_IDOR_CANDIDATE", { resource: "orders:8" })],
-  } as unknown as AuthorizationMatrix
-  render(<GraphScopeSummary scope="group" groups={[group("g1", "ORDERS APIs", [cell({})])]} matrix={matrix} onRevealOperation={onRevealOperation} />)
-  const stat = screen.getByText("테스트 추천", { selector: "dt" }).parentElement!
-  expect(stat).toHaveTextContent("2")
-  expect(stat).toHaveTextContent("BFLA 1 · BOLA/IDOR 1")
-  const list = screen.getByRole("list", { name: "테스트 추천 목록" })
-  expect(within(list).getByText("USER 1 요청 → ANONYMOUS 세션으로 · orders:7")).toBeVisible()
-  expect(screen.getByRole("link", { name: "판정 매트릭스에서 2개 모두 보기 →" })).toHaveAttribute("href", "#matrix")
-  await userEvent.click(within(list).getAllByRole("button")[0])
-  expect(onRevealOperation).toHaveBeenCalledWith("g1", op)
+  expect(rows.map(row => row.textContent)).toEqual(["HOT APIs· 1후보 1", "WARN APIs· 1확인 필요 1", "CLEAN APIs· 1문제 없음"])
 })
 
 it("counts each identity's APIs by their most urgent verdict so the parts add up to the API count", () => {
@@ -82,5 +62,5 @@ it("counts each identity's APIs by their most urgent verdict so the parts add up
     cell({ resource: "orders:1", overall: "allow" }), cell({ resource: "orders:2", overall: "untested" }),
     cell({ op: `${svc} GET /me`, overall: "allow" }),
   ])]} />)
-  expect(screen.getByRole("listitem", { name: "user-1 접근 요약" })).toHaveTextContent("API 2개에 접근 — 허용 1 · 판정 보류 1")
+  expect(screen.getByRole("listitem", { name: "user-1 접근 요약" })).toHaveTextContent("API 2허용 1보류 1")
 })

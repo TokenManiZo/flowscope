@@ -51,7 +51,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {/* 소유자를 모르면 이 객체의 판정이 보류되므로 패널 맨 위에서 먼저 묻는다. */}
       {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
       {/* 대상·API 그룹은 후보·확인 필요·신원별 접근으로 정리한 요약을 보여 준다. */}
-      {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} matrix={snapshot.authorizationMatrix} {...actions} />
+      {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
         : summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} />}
       {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
     </InspectorPanel>
@@ -59,7 +59,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
 }
 
 /** 아무것도 선택하지 않았을 때의 상세 패널: 지금 보고 있는 범위(사이트·API 그룹·API)의 요약. 패널을 닫지 않아 캔버스가 다시 그려지지 않는다. */
-export function GraphViewOverview({ projection, owners, matrix, actions = {} }: { projection: HierarchyProjection; owners?: Readonly<Record<string, string>>; matrix?: Snapshot["authorizationMatrix"]; actions?: ScopeActions }) {
+export function GraphViewOverview({ projection, owners, actions = {} }: { projection: HierarchyProjection; owners?: Readonly<Record<string, string>>; actions?: ScopeActions }) {
   const context = projection.kind === "site"
     ? projection.nodes.find(node => node.kind === "target")
     : projection.kind === "group"
@@ -70,7 +70,7 @@ export function GraphViewOverview({ projection, owners, matrix, actions = {} }: 
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="현재 보기" description={<span className="block break-all font-mono text-foreground">{title}</span>} tabs={null}>
       {projection.kind === "operation" ? summary ? <GraphNodeSummary summary={summary} /> : null
-        : <GraphScopeSummary scope={projection.kind === "site" ? "site" : "group"} groups={projection.kind === "site" ? projection.groups : projection.groups.filter(group => group.id === projection.navigation.groupId)} owners={owners} matrix={matrix} {...actions} onOpenGroup={undefined} />}
+        : <GraphScopeSummary scope={projection.kind === "site" ? "site" : "group"} groups={projection.kind === "site" ? projection.groups : projection.groups.filter(group => group.id === projection.navigation.groupId)} owners={owners} {...actions} onOpenGroup={undefined} />}
       <p className="p-4 text-xs text-muted-foreground">노드를 누르면 그 노드의 정보가 여기에 나옵니다. 빈 곳을 누르면 이 요약으로 돌아옵니다.</p>
     </InspectorPanel>
   </div>

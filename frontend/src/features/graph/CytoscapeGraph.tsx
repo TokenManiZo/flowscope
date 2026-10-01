@@ -890,12 +890,12 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           }
           else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip(); clearSelectionRef.current?.() }
         }} />
-      {/* 펼친 객체 묶음: 멤버를 감싸는 배경 띠와, 띠 오른쪽 위·아래의 접기 버튼. 띠는 클릭을 가로채지 않는다. */}
+      {/* 펼친 묶음: 대표 카드와 멤버 왼쪽의 파란 선과, 오른쪽 위·아래의 접기 버튼. 선 영역은 클릭을 가로채지 않는다. */}
       {bands.map(band => {
         const fold = (edge: "top" | "bottom") => <button key={edge} type="button" aria-label={`${band.label} 묶음 접기${edge === "bottom" ? " (아래)" : ""}`} onClick={() => toggleGroupRef.current?.(band.id)}
           className="pointer-events-auto absolute left-[calc(100%+8px)] inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-sky-500/60 bg-[var(--flowscope-pane)] px-2.5 py-0.5 text-xs text-sky-600 shadow-sm hover:bg-sky-500/10 dark:text-sky-300"
           style={edge === "top" ? { top: 0 } : { bottom: 0 }}><ChevronUp className="size-3.5" aria-hidden="true" />{band.label} {band.count}개 접기</button>
-        return <div key={band.id} className="pointer-events-none absolute z-10 rounded-r-xl border-l-[3px] border-sky-500 bg-sky-500/[0.06]" style={{ left: band.x1 - 10, top: band.y1 - 8, width: band.x2 - band.x1 + 18, height: band.y2 - band.y1 + 16 }}>
+        return <div key={band.id} className="pointer-events-none absolute z-10 border-l-[3px] border-sky-500" style={{ left: band.x1 - 10, top: band.y1 - 8, width: band.x2 - band.x1 + 18, height: band.y2 - band.y1 + 16 }}>
           {fold("top")}{band.count > 3 && fold("bottom")}
         </div>
       })}
