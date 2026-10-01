@@ -140,7 +140,7 @@ describe("dashboard shell", () => {
     renderDashboard()
 
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })
-    expect(screen.getByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
+    expect(screen.queryByRole("banner", { name: "FlowScope 상단 상태" })).not.toBeInTheDocument()
     expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
     expect(screen.getByRole("link", { name: "FlowScope 홈으로 이동" })).toHaveAttribute("href", "#home")
     expect(screen.queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
@@ -178,7 +178,7 @@ describe("dashboard shell", () => {
     renderDashboard(representativeSnapshot, false, false, true)
 
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })
-    await userEvent.click(screen.getByRole("button", { name: "상태" }))
+    await userEvent.click(screen.getByRole("button", { name: "실시간 상태" }))
     await waitFor(() => {
       expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("확인 불가")
       expect(screen.getByLabelText("SCANNER 상태")).toHaveTextContent("확인 불가")
@@ -212,12 +212,12 @@ describe("dashboard shell", () => {
     expect(await screen.findByRole("group", { name: "검토 필요 트래픽" })).toBeVisible()
   })
 
-  it("shows Korean top-bar loading and terminal-unavailable states", async () => {
+  it("shows Korean live-status loading and terminal-unavailable states", async () => {
     capabilityMeta()
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})))
     const loadingView = renderWithQueryClient(<App />, createTestQueryClient())
 
-    await userEvent.click(screen.getByRole("button", { name: "상태" }))
+    await userEvent.click(screen.getByRole("button", { name: "실시간 상태" }))
     expect(screen.getByLabelText("LIVE 상태")).toHaveTextContent("불러오는 중")
     expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("불러오는 중")
 
@@ -225,11 +225,11 @@ describe("dashboard shell", () => {
     document.head.querySelector('meta[name="flowscope-capability"]')?.remove()
     vi.unstubAllGlobals()
     renderDashboard(representativeSnapshot, true)
-    await userEvent.click(screen.getByRole("button", { name: "상태" }))
+    await userEvent.click(screen.getByRole("button", { name: "실시간 상태" }))
     await waitFor(() => expect(screen.getByLabelText("LIVE 상태")).toHaveTextContent("확인 불가"), { timeout: 3_000 })
   })
 
-  it("shows both terminal-unavailable and still-pending top-bar query states", async () => {
+  it("shows both terminal-unavailable and still-pending live-status query states", async () => {
     capabilityMeta()
     vi.stubGlobal("fetch", vi.fn((path: string) => {
       if (path === "/api/snapshot") return Promise.resolve(response({ success: false, message: "스냅샷을 가져올 수 없습니다." }, 503))
@@ -241,7 +241,7 @@ describe("dashboard shell", () => {
     }))
     renderWithQueryClient(<App />, createTestQueryClient())
 
-    await userEvent.click(screen.getByRole("button", { name: "상태" }))
+    await userEvent.click(screen.getByRole("button", { name: "실시간 상태" }))
     await waitFor(() => expect(screen.getByLabelText("LIVE 상태")).toHaveTextContent("확인 불가"), { timeout: 3_000 })
     expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("불러오는 중")
   })
@@ -268,8 +268,7 @@ describe("dashboard shell", () => {
     }))
     renderDashboard()
 
-    expect(await screen.findByRole("banner", { name: "FlowScope 상단 상태" })).toBeVisible()
-    await user.click(screen.getByRole("button", { name: "메뉴 열기" }))
+    await user.click(await screen.findByRole("button", { name: "메뉴 열기" }))
     expect(screen.getAllByRole("navigation", { name: "FlowScope 전역 탐색" })).toHaveLength(2)
     await user.click(within(screen.getAllByRole("navigation", { name: "FlowScope 전역 탐색" }).at(-1)!).getByRole("link", { name: "점검 시작" }))
     expect(window.location.hash).toBe("#inspection")

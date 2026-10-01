@@ -1,9 +1,9 @@
+import { Menu } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 
 import type { AppRoute } from "@/app/routes"
 import { useTheme } from "@/hooks/useTheme"
 import { SidebarNav } from "./SidebarNav"
-import { WorkspaceTopBar } from "./WorkspaceTopBar"
 
 export interface ReferenceAppShellProps {
   route: AppRoute
@@ -71,7 +71,13 @@ export function ReferenceAppShell({ route, children }: ReferenceAppShellProps) {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <WorkspaceTopBar route={route} onOpenSidebar={() => setMobileOpen(true)} />
+        {/* 상단 상태 표시줄은 없앴다(상태는 사이드바 프로젝트 블록). 좁은 화면에서만 사이드바를 여는 줄을 남긴다. */}
+        <div className="flex shrink-0 items-center border-b border-border px-2 py-1.5 lg:hidden">
+          <button type="button" aria-label="메뉴 열기" onClick={() => setMobileOpen(true)}
+            className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+            <Menu className="size-5" aria-hidden="true" />
+          </button>
+        </div>
         <main className="min-h-0 min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
     </div>

@@ -10,6 +10,10 @@ const mutate = vi.hoisted(() => ({ open: vi.fn(), start: vi.fn(), update: vi.fn(
 const pending = { isPending: false, error: null }
 
 vi.mock("@/lib/query/hooks", () => ({
+  useSnapshotQuery: () => ({ data: undefined, isPending: false }),
+  useHumanRunQuery: () => ({ data: undefined, isPending: false }),
+  useZapStatusQuery: () => ({ data: undefined, isPending: false }),
+  useScannerRunQuery: () => ({ data: undefined, isPending: false }),
   useProjectsQuery: () => state.projects,
   useOpenProjectMutation: () => ({ mutate: mutate.open, ...pending }),
   useStartProjectMutation: () => ({ mutate: mutate.start, ...pending }),
@@ -18,8 +22,8 @@ vi.mock("@/lib/query/hooks", () => ({
   useDeleteProjectMutation: () => ({ mutate: mutate.remove, ...pending }),
 }))
 
-const app = { id: "app", name: "App", scope: ["https://app.example.test:443"], readable: true, managed: true }
-const archive = { id: "archive", name: "지난 진단", scope: ["https://old.example.test:443"], readable: true, managed: true }
+const app = { id: "app", name: "App", scope: ["https://app.example.test:443"], createdAt: "2026-09-21T01:00:00Z", sizeBytes: 40960, readable: true, managed: true }
+const archive = { id: "archive", name: "지난 진단", scope: ["https://old.example.test:443"], createdAt: "2026-09-18T01:00:00Z", sizeBytes: 2097152, readable: true, managed: true }
 
 beforeEach(() => {
   Object.values(mutate).forEach(fn => fn.mockReset())
@@ -32,12 +36,18 @@ const openDialog = async () => {
   return screen.getByRole("dialog", { name: "프로젝트 관리" })
 }
 
-it("shows the current project and its save state at the bottom of the sidebar, keeping save failures visible", () => {
+it("shows the current project at the bottom of the sidebar, hiding routine save state but keeping save failures visible", () => {
   state.projects = { data: { directory: "/tmp/projects", active: app, projects: [app], saveState: "FAILED", saveError: "disk full" }, isPending: false, isError: false }
   render(<SidebarNav route="dashboard" theme="dark" onToggleTheme={vi.fn()} />)
   const block = screen.getByRole("group", { name: "현재 프로젝트" })
   expect(block).toHaveTextContent("App")
   expect(within(block).getByText("저장 실패")).toHaveAttribute("title", "disk full")
+  expect(block).not.toHaveTextContent("https://app.example.test:443")
+})
+
+it("hides routine save state in the sidebar block", () => {
+  render(<SidebarNav route="dashboard" theme="dark" onToggleTheme={vi.fn()} />)
+  expect(screen.getByRole("group", { name: "현재 프로젝트" })).not.toHaveTextContent("저장됨")
 })
 
 it("normalizes typed scope entries to scheme://host:port[/path]", () => {
@@ -74,17 +84,32 @@ it("edits the current project's name and scope, and resets its traffic after con
   expect(mutate.reset).toHaveBeenCalled()
 })
 
-it("switches after confirmation and deletes another project", async () => {
+it("lists other projects with scope and date, switches after confirmation, and deletes another project", async () => {
   const dialog = await openDialog()
-  expect(within(dialog).getByLabelText("기존 프로젝트 선택")).toHaveValue("archive")
-  await userEvent.click(within(dialog).getByRole("button", { name: "열기" }))
+  expect(within(dialog).queryByRole("combobox", { name: "기존 프로젝트 선택" })).not.toBeInTheDocument()
+  const list = within(dialog).getByRole("list", { name: "프로젝트 목록" })
+  expect(within(list).getAllByRole("listitem")).toHaveLength(1)
+  expect(list).toHaveTextContent("지난 진단")
+  expect(list).toHaveTextContent("https://old.example.test:443")
+
+  await userEvent.click(within(list).getByRole("button", { name: "지난 진단 열기" }))
   expect(mutate.open).not.toHaveBeenCalled()
   await userEvent.click(within(dialog).getByRole("button", { name: "전환" }))
   expect(mutate.open).toHaveBeenCalledWith("archive", expect.objectContaining({ onSuccess: expect.any(Function) }))
 
-  await userEvent.click(within(dialog).getByRole("button", { name: "삭제" }))
+  await userEvent.click(within(list).getByRole("button", { name: "지난 진단 삭제" }))
   await userEvent.click(screen.getByRole("button", { name: "프로젝트 삭제" }))
   expect(mutate.remove).toHaveBeenCalledWith("archive", expect.objectContaining({ onSuccess: expect.any(Function) }))
+})
+
+it("filters the project list by name or address", async () => {
+  const dialog = await openDialog()
+  await userEvent.type(within(dialog).getByLabelText("프로젝트 검색"), "nothing-matches")
+  expect(within(dialog).queryByRole("list", { name: "프로젝트 목록" })).not.toBeInTheDocument()
+  expect(dialog).toHaveTextContent("검색과 일치하는 프로젝트가 없습니다.")
+  await userEvent.clear(within(dialog).getByLabelText("프로젝트 검색"))
+  await userEvent.type(within(dialog).getByLabelText("프로젝트 검색"), "old.example")
+  expect(within(dialog).getByRole("list", { name: "프로젝트 목록" })).toHaveTextContent("지난 진단")
 })
 
 it("deletes the open project by switching to the chosen project first, then deleting it", async () => {

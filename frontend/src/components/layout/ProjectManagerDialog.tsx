@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Check, FolderOpen, Pencil, Plus, RotateCcw, Save, Trash2, X } from "lucide-react"
+import { Check, Folder, FolderOpen, Pencil, Plus, RotateCcw, Save, Search, Trash2, X } from "lucide-react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { ProjectEntry } from "@/lib/api/types"
 import { useDeleteProjectMutation, useOpenProjectMutation, useProjectsQuery, useResetProjectTrafficMutation, useStartProjectMutation, useUpdateProjectMutation } from "@/lib/query/hooks"
 import { cn } from "@/lib/utils"
 
@@ -43,6 +42,16 @@ function suggestName(scopes: readonly string[]): string {
 }
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : null
+
+function projectDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" })
+}
+
+function projectSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return ""
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
 const selectClass = "h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs"
 
 /**
@@ -65,8 +74,9 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
 
   const [tab, setTab] = useState("manage")
   const [notice, setNotice] = useState<string | null>(null)
-  const [pickedId, setPickedId] = useState("")
-  const [confirmSwitch, setConfirmSwitch] = useState(false)
+  const [query, setQuery] = useState("")
+  const [switchId, setSwitchId] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [editName, setEditName] = useState("")
   const [editScopes, setEditScopes] = useState<string[]>([])
@@ -80,11 +90,15 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   const [name, setName] = useState("")
   const [nameTouched, setNameTouched] = useState(false)
 
-  useEffect(() => { if (!open) { setNotice(null); setEditOpen(false); setConfirmSwitch(false) } }, [open])
-  useEffect(() => { if (!pickedId || !list.some(project => project.id === pickedId)) setPickedId(others[0]?.id ?? "") }, [list, others, pickedId])
+  useEffect(() => { if (!open) { setNotice(null); setEditOpen(false); setSwitchId(null); setQuery("") } }, [open])
   useEffect(() => { if (!others.some(project => project.id === fallbackId)) setFallbackId(others[0]?.id ?? "") }, [others, fallbackId])
 
-  const picked = list.find(project => project.id === pickedId)
+  const deleteTarget = list.find(project => project.id === deleteId)
+  const needle = query.trim().toLowerCase()
+  const listed = list
+    .filter(project => project.id !== active?.id)
+    .filter(project => !needle || project.name.toLowerCase().includes(needle) || project.scope.some(scope => scope.toLowerCase().includes(needle)))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   const suggested = useMemo(() => suggestName(scopes), [scopes])
   const effectiveName = (nameTouched ? name : suggested).trim()
   const nameTaken = (value: string, except?: string) => list.some(project => project.id !== except && project.name.toLowerCase() === value.toLowerCase())
@@ -127,9 +141,9 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   }
 
   return <Dialog open={open} onOpenChange={next => { if (!busy) onOpenChange(next) }}>
-    <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl" aria-describedby="project-manager-description">
+    <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl sm:p-7" aria-describedby="project-manager-description">
       <DialogHeader>
-        <DialogTitle>프로젝트 관리</DialogTitle>
+        <DialogTitle className="text-lg">프로젝트 관리</DialogTitle>
         <DialogDescription id="project-manager-description">점검 대상 주소 범위를 직접 정하고 프로젝트를 만들 수 있습니다.</DialogDescription>
       </DialogHeader>
 
@@ -159,9 +173,9 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
             <div className="mt-2 flex items-start gap-3">
               <span className="grid size-9 shrink-0 place-items-center rounded-md border border-border bg-background"><FolderOpen className="size-4 text-emerald-600 dark:text-emerald-300" aria-hidden="true" /></span>
               <div className="min-w-0">
-                <h3 className="truncate text-sm font-semibold">{active?.name ?? (projects.isPending ? "불러오는 중" : "미저장 진단")}</h3>
+                <h3 className="truncate font-mono text-base font-semibold">{active?.name ?? (projects.isPending ? "불러오는 중" : "미저장 진단")}</h3>
                 <ul className="mt-2 space-y-1.5" aria-label="현재 점검 범위">
-                  {(active?.scope ?? []).map(scope => <li key={scope} className="flex items-center gap-2 font-mono text-xs text-muted-foreground"><Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" /><span className="break-all">{scope}</span></li>)}
+                  {(active?.scope ?? []).map(scope => <li key={scope} className="flex items-center gap-2 font-mono text-sm text-muted-foreground"><Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" /><span className="break-all">{scope}</span></li>)}
                 </ul>
               </div>
             </div>
@@ -205,29 +219,46 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
             </div>}
           </section>
 
-          <section aria-label="프로젝트 전환" className="space-y-2 rounded-lg border border-border p-3">
-            <h3 className="text-sm font-semibold">프로젝트 전환</h3>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <select aria-label="기존 프로젝트 선택" className={selectClass} value={pickedId} disabled={!others.length || busy} onChange={event => { setPickedId(event.target.value); setConfirmSwitch(false) }}>
-                {!others.length && <option value="">다른 프로젝트 없음</option>}
-                {list.filter(project => project.id !== active?.id).map((project: ProjectEntry) => <option key={project.id} value={project.id} disabled={!project.readable || !project.managed}>{project.name}{project.managed ? "" : " · 수동 DB"}</option>)}
-              </select>
-              <Button variant="secondary" disabled={!picked || busy} onClick={() => setConfirmSwitch(true)}><FolderOpen className="me-1 size-3.5" aria-hidden="true" />열기</Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild><Button variant="outline" className="text-destructive hover:text-destructive" disabled={!picked?.managed || busy}><Trash2 className="me-1 size-3.5" aria-hidden="true" />삭제</Button></AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader><AlertDialogTitle>{picked?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 관측 기록이 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
-                  <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { const target = picked; if (target) deleteProject.mutate(target.id, { onSuccess: () => setNotice(`"${target.name}" 프로젝트를 삭제했습니다.`) }) }}>프로젝트 삭제</AlertDialogAction></AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-            {confirmSwitch && picked && <div className="flex flex-col gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs">"{picked.name}" 프로젝트로 전환할까요? 현재 프로젝트는 저장된 채로 닫힙니다.</p>
-              <div className="flex shrink-0 gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setConfirmSwitch(false)}>취소</Button>
-                <Button size="sm" disabled={busy} onClick={() => { const target = picked; openProject.mutate(target.id, { onSuccess: () => { setNotice(`"${target.name}" 프로젝트로 전환했습니다.`); setConfirmSwitch(false) } }) }}>전환</Button>
+          <section aria-label="프로젝트 전환" className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold">다른 프로젝트 <span className="font-normal text-muted-foreground">{list.length - (active ? 1 : 0)}</span></h3>
+              <div className="relative w-full sm:w-60">
+                <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <Input aria-label="프로젝트 검색" value={query} onChange={event => setQuery(event.target.value)} placeholder="이름·주소 검색" className="h-8 ps-8 text-xs" />
               </div>
-            </div>}
+            </div>
+            {listed.length ? <ul aria-label="프로젝트 목록" className="max-h-80 overflow-y-auto rounded-lg border border-border">
+              {listed.map(project => {
+                const usable = project.readable && project.managed
+                const meta = [project.scope[0], projectDate(project.createdAt), projectSize(project.sizeBytes)].filter(Boolean).join(" · ")
+                return <li key={project.id} className="group border-b border-border last:border-b-0">
+                  <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+                    <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-sm font-medium">{project.name}</p>
+                      <p className="truncate font-mono text-xs text-muted-foreground" title={project.scope.join("\n")}>{meta}{project.scope.length > 1 ? ` 외 ${project.scope.length - 1}개` : ""}</p>
+                    </div>
+                    {usable ? <div className="flex shrink-0 gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                      <Button size="sm" variant="secondary" aria-label={`${project.name} 열기`} disabled={busy} onClick={() => setSwitchId(project.id)}><FolderOpen className="me-1 size-3.5" aria-hidden="true" />열기</Button>
+                      <Button size="sm" variant="outline" aria-label={`${project.name} 삭제`} className="text-destructive hover:text-destructive" disabled={busy} onClick={() => setDeleteId(project.id)}><Trash2 className="size-3.5" aria-hidden="true" /></Button>
+                    </div> : <span className="shrink-0 text-xs text-muted-foreground">{project.managed ? "읽을 수 없음" : "수동 DB"}</span>}
+                  </div>
+                  {switchId === project.id && <div className="mx-3 mb-2.5 flex flex-col gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs">"{project.name}" 프로젝트로 전환할까요? 현재 프로젝트는 저장된 채로 닫힙니다.</p>
+                    <div className="flex shrink-0 gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setSwitchId(null)}>취소</Button>
+                      <Button size="sm" disabled={busy} onClick={() => openProject.mutate(project.id, { onSuccess: () => { setNotice(`"${project.name}" 프로젝트로 전환했습니다.`); setSwitchId(null) } })}>전환</Button>
+                    </div>
+                  </div>}
+                </li>
+              })}
+            </ul> : <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">{needle ? "검색과 일치하는 프로젝트가 없습니다." : "다른 프로젝트가 없습니다. \"새 프로젝트\" 탭에서 만들 수 있습니다."}</p>}
+            <AlertDialog open={Boolean(deleteTarget)} onOpenChange={next => { if (!next) setDeleteId(null) }}>
+              <AlertDialogContent>
+                <AlertDialogHeader><AlertDialogTitle>{deleteTarget?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 관측 기록이 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
+                <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { const target = deleteTarget; if (target) deleteProject.mutate(target.id, { onSuccess: () => setNotice(`"${target.name}" 프로젝트를 삭제했습니다.`) }) }}>프로젝트 삭제</AlertDialogAction></AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </section>
         </TabsContent>
 
