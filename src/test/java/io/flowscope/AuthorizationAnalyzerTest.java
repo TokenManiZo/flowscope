@@ -86,6 +86,71 @@ class AuthorizationAnalyzerTest {
     }
 
     @Test
+    void 생성_응답이_ID를_돌려준_POST_요청자는_O2_소유자이고_타신원_조회는_BOLA다() {
+        RequestRecord create = rec(Source.HUMAN, "A", "POST", "/api/orders", 201, "{\"id\":801,\"status\":\"CREATED\"}");
+        create.responseContentType = "application/json";
+        RequestRecord crossRead = rec(Source.SCANNER, "B", "GET", "/api/orders/801", 200, "{\"id\":801}");
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(create, crossRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(crossRead.resource);
+        AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
+                .filter(cell -> cell.key().identity().equals("user-b") && crossRead.resource.equals(cell.key().resource()))
+                .findFirst().orElseThrow();
+
+        assertEquals("user-a", owner.identity());
+        assertEquals(80, owner.confidence());
+        assertFalse(owner.confirmed(), "생성 요청자는 명시 소유필드 O3가 아니라 O2다");
+        assertTrue(owner.decisionGrade());
+        assertTrue(owner.basis().contains("생성 요청자"));
+        assertEquals(Verdict.SUSPICIOUS, cross.overall());
+    }
+
+    @Test
+    void 중첩_컬렉션_생성과_한_단계_아래_id도_생성자로_잇는다() {
+        RequestRecord create = rec(Source.HUMAN, "A", "POST", "/api/users/5/orders", 200, "{\"order\":{\"id\":\"ab12\"}}");
+        create.responseContentType = "application/json";
+        RequestRecord read = rec(Source.HUMAN, "B", "GET", "/api/users/5/orders/ab12", 200, "{\"id\":\"ab12\"}");
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(create, read)).analysis;
+
+        assertEquals("user-a", analysis.owners().get(read.resource).identity());
+    }
+
+    @Test
+    void 비로그인_생성과_두_신원이_같은_ID를_돌려받은_생성은_소유_근거가_아니다() {
+        RequestRecord anonymousCreate = rec(Source.HUMAN, Fingerprints.ANONYMOUS, "POST", "/api/tickets", 201, "{\"id\":901}");
+        anonymousCreate.responseContentType = "application/json";
+        RequestRecord ticketRead = rec(Source.HUMAN, "B", "GET", "/api/tickets/901", 200, "{\"id\":901}");
+        RequestRecord firstCreate = rec(Source.HUMAN, "A", "POST", "/api/carts", 201, "{\"id\":902}");
+        firstCreate.responseContentType = "application/json";
+        RequestRecord secondCreate = rec(Source.HUMAN, "B", "POST", "/api/carts", 201, "{\"id\":902}");
+        secondCreate.responseContentType = "application/json";
+        RequestRecord cartRead = rec(Source.SCANNER, "C", "GET", "/api/carts/902", 200, "{\"id\":902}");
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(anonymousCreate, ticketRead, firstCreate, secondCreate, cartRead)).analysis;
+
+        assertFalse(analysis.owners().get(ticketRead.resource).basis().contains("생성 요청자"));
+        AuthorizationAnalysis.OwnerInfo cart = analysis.owners().get(cartRead.resource);
+        assertNull(cart.identity());
+        assertFalse(cart.decisionGrade());
+        assertTrue(cart.basis().contains("생성 응답 충돌"));
+    }
+
+    @Test
+    void 응답의_명시적_소유필드는_생성_요청자보다_우선한다() {
+        RequestRecord create = rec(Source.HUMAN, "A", "POST", "/api/notes", 201, "{\"id\":903}");
+        create.responseContentType = "application/json";
+        RequestRecord ownerRead = rec(Source.HUMAN, "B", "GET", "/api/notes/903", 200, "{\"id\":903,\"owner\":\"user-b\"}");
+        ownerRead.responseContentType = "application/json";
+
+        AuthorizationAnalysis analysis = Pipeline.run(List.of(create, ownerRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(ownerRead.resource);
+
+        assertEquals("user-b", owner.identity());
+        assertTrue(owner.confirmed(), "명시 소유필드 O3가 생성 요청자 O2를 이긴다");
+    }
+
+    @Test
     void 둘_이상_신원_컬렉션에_등장한_객체는_O0이며_후보가_아니다() {
         RequestRecord firstCollection = rec(Source.HUMAN, "A", "GET", "/api/orders", 200,
                 "{\"orders\":[{\"id\":702}]}");

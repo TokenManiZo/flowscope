@@ -461,7 +461,7 @@ public final class AuthorizationMatrixAnalyzer {
             if (ownerId.equals(cell.key().identity())) {
                 return BaselineComparison.missing("소유자 자신의 응답은 교차 신원 차등 기준선으로 중복 사용하지 않음");
             }
-            provenance = owner.confidence() >= 100 ? "O3 명시 소유자" : "O2 컬렉션 멤버십 소유자";
+            provenance = owner.confidence() >= 100 ? "O3 명시 소유자" : "O2 " + owner.basis();
             baselines = result.coverageRecords.stream().filter(record -> ownerId.equals(record.idn)
                     && cell.key().operation().equals(record.op)
                     && Objects.equals(cell.key().resource(), record.resource)

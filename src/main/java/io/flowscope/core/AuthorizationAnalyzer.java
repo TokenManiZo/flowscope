@@ -26,6 +26,8 @@ import static io.flowscope.core.AuthorizationAnalysis.*;
 public final class AuthorizationAnalyzer {
 
     private static final int COLLECTION_MEMBERSHIP_CONFIDENCE = 60;
+    /** 생성 요청자: POST 성공 응답이 돌려준 새 객체 ID를 나중에 관측된 객체와 이어 붙인 O2 근거. 공격자가 먼저 만들 수 없는 신호다. */
+    private static final int CREATION_CONFIDENCE = 80;
     private static final Set<String> OWNER_FIELDS = Set.of(
             "owner", "ownerid", "userid", "authorid", "accountid");
     private static final Set<String> PRINCIPAL_OBJECT_FIELDS = Set.of(
@@ -140,6 +142,7 @@ public final class AuthorizationAnalyzer {
             }
         }
         Map<String, Set<String>> collectionMembers = collectionMembers(records);
+        Map<String, Set<String>> creators = creators(records);
 
         Map<String, OwnerInfo> result = new LinkedHashMap<>();
         Set<String> resources = new LinkedHashSet<>();
@@ -159,6 +162,13 @@ public final class AuthorizationAnalyzer {
             } else if (candidates.size() > 1) {
                 result.put(resource, new OwnerInfo(resource, null, 0,
                         "소유 필드 충돌: " + candidates, false));
+            } else if (creators.getOrDefault(resource, Set.of()).size() == 1) {
+                String identity = creators.get(resource).iterator().next();
+                result.put(resource, new OwnerInfo(resource, identity, CREATION_CONFIDENCE,
+                        "생성 요청자(생성 응답이 이 객체 ID를 반환)", false));
+            } else if (creators.getOrDefault(resource, Set.of()).size() > 1) {
+                result.put(resource, new OwnerInfo(resource, null, 0,
+                        "생성 응답 충돌: " + creators.get(resource), false));
             } else if (collectionMembers.getOrDefault(resource, Set.of()).size() == 1) {
                 String identity = collectionMembers.get(resource).iterator().next();
                 result.put(resource, new OwnerInfo(resource, identity, COLLECTION_MEMBERSHIP_CONFIDENCE,
@@ -172,6 +182,49 @@ public final class AuthorizationAnalyzer {
             }
         }
         return result;
+    }
+
+    /**
+     * 생성 요청자 추정(RESTler식 "만든 사람 = 소유자"). 로그인된 신원의 POST가 성공하고 그 응답이 새 객체 ID(최상위 또는
+     * 한 단계 아래 객체의 "id")를 돌려주면, 같은 서비스에서 {@code [부모 체인/]컬렉션:ID}로 관측된 객체의 생성자로 본다.
+     * 경로 끝이 객체 ID인 POST(기존 객체에 대한 동작)와 비로그인·신원 불명 요청은 쓰지 않는다.
+     */
+    private static Map<String, Set<String>> creators(List<RequestRecord> records) {
+        Set<String> observed = new LinkedHashSet<>();
+        records.stream().map(r -> r.resource).filter(java.util.Objects::nonNull).forEach(observed::add);
+        Map<String, Set<String>> result = new LinkedHashMap<>();
+        for (RequestRecord create : records) {
+            if (!"POST".equalsIgnoreCase(create.method) || !isSuccessful(create) || create.idn == null
+                    || Fingerprints.ANONYMOUS.equals(create.fp) || Fingerprints.UNRESOLVED.equals(create.fp)) continue;
+            Normalizer.Normalized normalized = Normalizer.normalize(create.method, create.path);
+            String opPath = normalized.op.substring(normalized.op.indexOf(' ') + 1);
+            String collection = opPath.substring(opPath.lastIndexOf('/') + 1);
+            if (collection.isBlank() || "{id}".equals(collection)) continue;
+            String prefix = create.service + " " + (normalized.resource == null ? "" : normalized.resource + "/") + collection + ":";
+            for (String id : createdIds(create.responseBodyForAnalysis())) {
+                String resource = prefix + id;
+                if (observed.contains(resource)) result.computeIfAbsent(resource, ignored -> new LinkedHashSet<>()).add(create.idn);
+            }
+        }
+        return result;
+    }
+
+    private static Set<String> createdIds(String body) {
+        if (body == null || body.isBlank() || body.length() > ResponseEvidence.MAX_ANALYSIS_CHARS) return Set.of();
+        try {
+            JsonNode root = ResponseEvidence.parseBoundedJson(body);
+            if (root == null || !root.isObject()) return Set.of();
+            Set<String> ids = new LinkedHashSet<>();
+            addId(root.get("id"), ids);
+            root.elements().forEachRemaining(child -> { if (child.isObject()) addId(child.get("id"), ids); });
+            return ids;
+        } catch (Exception unreadable) {
+            return Set.of();
+        }
+    }
+
+    private static void addId(JsonNode value, Set<String> ids) {
+        if (value != null && (value.isTextual() || value.isIntegralNumber()) && !value.asText().isBlank()) ids.add(value.asText());
     }
 
     private static Map<String, Set<String>> collectionMembers(List<RequestRecord> records) {
