@@ -65,7 +65,11 @@ export interface ZapLoginSettings {
   status: ZapLoginStatus;
   loginUrl: string;
   loginId: string;
+  /** 저장된 비밀번호. 계정 설정 화면에서 다시 입력하지 않도록 그대로 보여 준다. */
+  password: string;
   hasPassword: boolean;
+  /** ZAP이 실제로 연결돼 있는지. 끊겼을 때만 connectionLabel을 보여 준다. */
+  connected?: boolean;
   connectionLabel: string;
   failureReason: string;
 }

@@ -57,7 +57,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
     if (!open || !accountId) { setSettings(null); setDraft(null); resetLocal(); return; }
     setTab(initialTab);
     let active = true; setPending(true);
-    adapter.load(accountId).then((next) => { if (active) { setSettings(next); setDraft(toDraft(next)); } })
+    adapter.load(accountId).then((next) => { if (active) { setSettings(next); setDraft(toDraft(next)); setZapPassword(next.zap.password ?? ""); } })
       .catch(() => { if (active) setError("계정 설정을 불러올 수 없습니다."); })
       .finally(() => { if (active) setPending(false); });
     return () => { active = false; };
@@ -70,13 +70,14 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
     if (!open || !accountId || !loaded) return;
     const timer = window.setInterval(() => {
       adapter.load(accountId).then((next) => setSettings((previous) => previous && previous.id === next.id
-        ? { ...previous, human: next.human, candidates: next.candidates, candidateBlockReasons: next.candidateBlockReasons } : previous))
+        ? { ...previous, human: next.human, candidates: next.candidates, candidateBlockReasons: next.candidateBlockReasons,
+          zap: { ...previous.zap, status: next.zap.status, failureReason: next.zap.failureReason, connected: next.zap.connected, connectionLabel: next.zap.connectionLabel } } : previous))
         .catch(() => undefined);
     }, SETTINGS_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [open, accountId, adapter, loaded]);
 
-  const apply = (next: AccountSettings) => { setSettings(next); setDraft(toDraft(next)); };
+  const apply = (next: AccountSettings) => { setSettings(next); setDraft(toDraft(next)); setZapPassword(next.zap.password ?? ""); };
   const run = async (task: () => Promise<AccountSettings | void>) => {
     setPending(true); setError(null);
     try { const next = await task(); if (next) apply(next); }
@@ -90,7 +91,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
     return {
       basic: draft.label !== original.label || draft.role !== original.role || draft.target !== original.target,
       proof: JSON.stringify(draft.proof) !== JSON.stringify(original.proof),
-      zap: draft.zapEnabled !== original.zapEnabled || draft.zapLoginUrl !== original.zapLoginUrl || draft.zapLoginId !== original.zapLoginId || zapPassword !== "",
+      zap: draft.zapEnabled !== original.zapEnabled || draft.zapLoginUrl !== original.zapLoginUrl || draft.zapLoginId !== original.zapLoginId || zapPassword !== (settings.zap.password ?? ""),
       llm: draft.llmEnabled !== original.llmEnabled || draft.llmMode !== original.llmMode || draft.llmLoginUrl !== original.llmLoginUrl || draft.llmLoginId !== original.llmLoginId || JSON.stringify(draft.llmAdvanced) !== JSON.stringify(original.llmAdvanced) || llmPassword !== "",
     };
   }, [settings, draft, zapPassword, llmPassword]);
@@ -116,7 +117,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
       if (changes.proof) next = await adapter.saveProofRule(settings.id, proofConfigured ? draft.proof : null);
       if (changes.zap) next = await adapter.saveZapLogin(settings.id, { enabled: draft.zapEnabled, loginUrl: draft.zapLoginUrl, loginId: draft.zapLoginId, password: zapPassword || undefined });
       if (changes.llm) next = await adapter.saveExplorerLogin(settings.id, { enabled: draft.llmEnabled, loginMode: draft.llmMode, loginUrl: draft.llmLoginUrl, loginId: draft.llmLoginId, password: llmPassword || undefined, advanced: draft.llmAdvanced });
-      setZapPassword(""); setLlmPassword(""); onSaved?.(next); return next;
+      setLlmPassword(""); onSaved?.(next); return next;
     });
   };
   const boundSessions = settings ? observedSessions.filter((session) => session.accountId === settings.id).length : 0;
@@ -140,7 +141,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <BasicAccountTab settings={settings} draft={draft} patch={patch} targetError={targetError} pending={pending} />
         <HumanAccountTab settings={settings} draft={draft} patch={patch} pathError={pathError} markError={markError} pending={pending} run={run} adapter={adapter} />
-        <ZapAccountTab settings={settings} draft={draft} patch={patch} password={zapPassword} setPassword={setZapPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={zapCredentialsMissing} runtimeAvailable={zapRuntimeAvailable} onGoToHumanTab={() => setTab("human")} />
+        <ZapAccountTab settings={settings} draft={draft} patch={patch} password={zapPassword} setPassword={setZapPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={zapCredentialsMissing} unsaved={changes.zap} runtimeAvailable={zapRuntimeAvailable} onGoToHumanTab={() => setTab("human")} />
         <LlmAccountTab settings={settings} draft={draft} patch={patch} password={llmPassword} setPassword={setLlmPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={llmCredentialsMissing} />
         {error && <p role="alert" className="mt-4 text-xs text-destructive">{error}</p>}
         </div>

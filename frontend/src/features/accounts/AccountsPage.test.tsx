@@ -14,7 +14,7 @@ const settings = (id: string, label: string, target: string) => ({
   id, label, role: id === "account-a" ? "User" : "Admin", target,
   human: { status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", lastCheckedLabel: "방금", credentialConflict: false },
   proofRule: { method: "GET", path: "/api/me", responseMark: label }, candidates: [], candidateBlockReasons: ["관측 요청 없음"],
-  zap: { enabled: true, status: "VERIFIED_BY_ZAP", loginUrl: `${target}/login`, loginId: "", hasPassword: true, connectionLabel: "ZAP 연결됨", failureReason: "" },
+  zap: { enabled: true, status: "VERIFIED_BY_ZAP", loginUrl: `${target}/login`, loginId: "zap-user@example.test", password: "zap-secret", hasPassword: true, connected: true, connectionLabel: "", failureReason: "" },
   llm: { enabled: false, status: "UNVERIFIED", loginMode: "HTML_FORM", loginUrl: "", loginId: "", hasPassword: false, failureReason: "", advanced: { idField: "", passwordField: "", tokenJsonPath: "", authHeaderName: "", authPrefix: "", validationUrl: "" } },
 })
 

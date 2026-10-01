@@ -9,7 +9,7 @@ const settings: AccountSettings = {
   human: { status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", lastCheckedLabel: "방금", credentialConflict: false, lastRecordedAt: "2026-09-29T06:56:41Z", lastRecordedApi: "GET /identity/api/v2/vehicle/vehicles" },
   proofRule: { method: "GET", path: "/api/me", responseMark: "USER A" },
   candidates: [], candidateBlockReasons: ["관측 요청 없음"],
-  zap: { enabled: true, status: "VERIFIED_BY_ZAP", loginUrl: "https://app.example.test/login", loginId: "", hasPassword: true, connectionLabel: "ZAP 연결됨", failureReason: "" },
+  zap: { enabled: true, status: "VERIFIED_BY_ZAP", loginUrl: "https://app.example.test/login", loginId: "zap-user@example.test", password: "zap-secret", hasPassword: true, connected: true, connectionLabel: "", failureReason: "" },
   llm: { enabled: false, status: "UNVERIFIED", loginMode: "HTML_FORM", loginUrl: "", loginId: "", hasPassword: false, failureReason: "", advanced: { idField: "", passwordField: "", tokenJsonPath: "", authHeaderName: "", authPrefix: "", validationUrl: "" } },
 };
 
@@ -139,4 +139,55 @@ it("lists what an account delete also clears", async () => {
   expect(effects).toHaveTextContent("저장된 인증값");
   expect(effects).toHaveTextContent("ZAP 로그인 설정");
   expect(effects).not.toHaveTextContent("LLM");
+});
+
+it("shows the saved ZAP login ID and password as plain text so they never have to be re-entered", async () => {
+  render(<AccountSettingsSheet accountId="account-a" adapter={adapter()} open onOpenChange={vi.fn()} zapRuntimeAvailable initialTab="zap" />);
+
+  expect(await screen.findByLabelText("로그인 ID")).toHaveValue("zap-user@example.test");
+  const password = screen.getByLabelText("비밀번호");
+  expect(password).toHaveValue("zap-secret");
+  expect(password).toHaveAttribute("type", "text");
+  expect(screen.getByRole("button", { name: "로그인 검증" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+});
+
+it("saves edited ZAP credentials and verifies them from one button without pressing 저장", async () => {
+  const api = adapter();
+  const user = userEvent.setup();
+  render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} zapRuntimeAvailable initialTab="zap" />);
+
+  const password = await screen.findByLabelText("비밀번호");
+  await user.clear(password);
+  await user.type(password, "fixed-secret");
+  await user.click(screen.getByRole("button", { name: "저장하고 로그인 검증" }));
+
+  await waitFor(() => expect(api.verifyZapLogin).toHaveBeenCalledWith("account-a"));
+  expect(api.saveZapLogin).toHaveBeenCalledWith("account-a", { enabled: true, loginUrl: "https://app.example.test/login", loginId: "zap-user@example.test", password: "fixed-secret" });
+  expect(vi.mocked(api.saveZapLogin).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.verifyZapLogin).mock.invocationCallOrder[0]);
+});
+
+it("needs a login URL, ID, and password before verifying, and verifies unchanged values without saving", async () => {
+  const api = adapter();
+  const user = userEvent.setup();
+  render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} zapRuntimeAvailable initialTab="zap" />);
+
+  await user.click(await screen.findByRole("button", { name: "로그인 검증" }));
+  await waitFor(() => expect(api.verifyZapLogin).toHaveBeenCalledOnce());
+  expect(api.saveZapLogin).not.toHaveBeenCalled();
+
+  await user.clear(screen.getByLabelText("로그인 ID"));
+  expect(screen.getByRole("button", { name: "저장하고 로그인 검증" })).toBeDisabled();
+});
+
+it("keeps the ZAP connection notice apart from the login result and hides it while ZAP is connected", async () => {
+  const api = adapter();
+  const { unmount } = render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} zapRuntimeAvailable initialTab="zap" />);
+  await screen.findByLabelText("비밀번호");
+  expect(screen.queryByRole("status", { name: "ZAP 연결 상태" })).not.toBeInTheDocument();
+  unmount();
+
+  vi.mocked(api.load).mockResolvedValue({ ...settings, zap: { ...settings.zap, connected: false, connectionLabel: "127.0.0.1의 FlowScope Docker ZAP에 3회 연속 연결하지 못했습니다." } });
+  render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} zapRuntimeAvailable initialTab="zap" />);
+  expect(await screen.findByRole("status", { name: "ZAP 연결 상태" })).toHaveTextContent("ZAP 연결 · 127.0.0.1의 FlowScope Docker ZAP에 3회 연속 연결하지 못했습니다.");
 });

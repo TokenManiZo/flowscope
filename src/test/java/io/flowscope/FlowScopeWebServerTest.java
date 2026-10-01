@@ -274,6 +274,27 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void accountSettingsShowTheSavedZapLoginIdAndPasswordOnlyToTheSettingsPanel() throws Exception {
+        start();
+        String accountId = json(post("/api/account-save",
+                "label=USER+A&role=User&target=" + encode(state.record.service), token)).path("id").asText();
+        assertEquals(200, post("/api/zap-accounts", "action=save&id=" + encode(accountId)
+                + "&label=USER+A&role=USER&service=" + encode(state.record.service)
+                + "&loginUrl=" + encode(state.record.service + "/login")
+                + "&username=" + encode("zap-user@example.test") + "&password=" + encode("zap-secret-password"),
+                token).statusCode());
+
+        JsonNode settings = json(get("/api/account-settings?account=" + encode(accountId), token, origin()));
+        assertEquals("zap-user@example.test", settings.at("/zap/loginId").asText());
+        assertEquals("zap-secret-password", settings.at("/zap/password").asText());
+        assertFalse(settings.at("/zap/connected").asBoolean(), "the stub ZAP is unavailable");
+        assertFalse(settings.at("/zap/connectionLabel").asText().isBlank(), "a real disconnection is shown");
+        JsonNode scanner = json(get("/api/scanner-run", token, origin()));
+        assertFalse(scanner.toString().contains("zap-secret-password"), "the account list stays metadata-only");
+        assertFalse(get("/api/snapshot", token, origin()).body().contains("zap-secret-password"));
+    }
+
+    @Test
     void zapAccountCanRefreshTheIndependentRegisteredSessionWithoutExposingCredentials() throws Exception {
         start();
 
@@ -1392,6 +1413,9 @@ final class FlowScopeWebServerTest {
             linkedCandidateId = evidenceId;
         }
         @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
+        @Override public java.util.Optional<ZapAccountVault.Credentials> zapCredentials(String accountId) {
+            return zapAccounts.credentials(accountId);
+        }
         @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
             lastZapAccountInput = input;
             return zapAccounts.save(input);
