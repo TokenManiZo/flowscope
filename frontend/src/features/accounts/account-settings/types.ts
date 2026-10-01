@@ -77,24 +77,11 @@ export type ExplorerLoginStatus =
   | "EXPIRED"
   | "FAILED";
 
-export interface ExplorerAdvancedSettings {
-  idField: string;
-  passwordField: string;
-  tokenJsonPath: string;
-  authHeaderName: string;
-  authPrefix: string;
-  validationUrl: string;
-}
-
+/** LLM sessions are made by browser login in the LLM step; account settings only show their state. */
 export interface ExplorerLoginSettings {
   enabled: boolean;
   status: ExplorerLoginStatus;
-  loginMode: "HTML_FORM" | "JSON_API";
-  loginUrl: string;
-  loginId: string;
-  hasPassword: boolean;
   failureReason: string;
-  advanced: ExplorerAdvancedSettings;
 }
 
 export interface AccountSettings {
@@ -140,16 +127,6 @@ export interface AccountSettingsAdapter {
   ): Promise<AccountSettings>;
   verifyZapLogin(accountId: string): Promise<AccountSettings>;
   revokeZapCredentials(accountId: string): Promise<AccountSettings>;
-  saveExplorerLogin(
-    accountId: string,
-    input: CredentialInput & {
-      enabled: boolean;
-      loginMode: ExplorerLoginSettings["loginMode"];
-      advanced: ExplorerAdvancedSettings;
-    },
-  ): Promise<AccountSettings>;
-  verifyExplorerLogin(accountId: string): Promise<AccountSettings>;
-  revokeExplorerCredentials(accountId: string): Promise<AccountSettings>;
   deleteAccount(accountId: string): Promise<void>;
 }
 

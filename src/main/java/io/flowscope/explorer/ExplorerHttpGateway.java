@@ -2,6 +2,7 @@ package io.flowscope.explorer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.Masking;
 import io.flowscope.core.Normalizer;
@@ -71,6 +72,17 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
     private final ExplorerArtifactStore artifacts;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
+    private volatile BrowserDriver browser;
+
+    /** Drives the window the operator logged in to. Scope, budget and the stop switch live on the coordinator. */
+    public interface BrowserDriver {
+        LoginBrowser.Page act(String accountId, String action, String url, String ref, String text) throws Exception;
+    }
+
+    /** Wired right after construction; until then /browser answers 409 instead of driving nothing. */
+    public void browserDriver(BrowserDriver driver) { this.browser = driver; }
+
+    public String browserUrl() { return "http://127.0.0.1:" + server.port() + "/browser"; }
 
     public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
                                Predicate<String> exactScope, String runId,
@@ -118,6 +130,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         }
         if (!request.method().equals("POST")
                 || !(requestUri.getPath().equals("/request") || requestUri.getPath().equals("/discoveries")
+                || requestUri.getPath().equals("/browser")
                 || requestUri.getPath().startsWith("/artifacts/"))) {
             return error(405, "지원하지 않는 Explorer gateway 작업입니다.");
         }
@@ -126,6 +139,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         try { body = JSON.readTree(request.body()); }
         catch (Exception error) { return error(400, "요청 JSON을 읽을 수 없습니다."); }
         if (requestUri.getPath().equals("/discoveries")) return handleDiscoveries(body);
+        if (requestUri.getPath().equals("/browser")) return handleBrowser(body);
         if (requestUri.getPath().startsWith("/artifacts/")) {
             return handleArtifacts(requestUri.getPath().substring("/artifacts/".length()), body);
         }
@@ -249,6 +263,45 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     ? error.getClass().getSimpleName() : error.getMessage()), 500);
             emit("FAILED", accountId, method, target, 0, "", duration, safe);
             return error(502, safe);
+        }
+    }
+
+    private LoopbackHttpServer.Response handleBrowser(JsonNode body) {
+        BrowserDriver driver = browser;
+        if (driver == null) return error(409, "이 실행에는 브라우저 로그인으로 준비된 계정이 없습니다.");
+        String account;
+        String action;
+        String url;
+        String ref;
+        String text;
+        try {
+            requireOnlyFields(body, Set.of("account", "action", "url", "ref", "text"), "browser 요청");
+            account = requiredText(body, "account", 96);
+            action = requiredText(body, "action", 32);
+            url = body.path("url").asText("").trim();
+            ref = body.path("ref").asText("").trim();
+            text = body.path("text").asText("");
+        } catch (IllegalArgumentException error) {
+            return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 500));
+        }
+        try {
+            LoginBrowser.Page page = driver.act(account, action, url, ref, text);
+            ObjectNode result = JSON.createObjectNode().put("success", true)
+                    .put("url", page.url()).put("title", page.title()).put("text", page.text());
+            ArrayNode elements = result.putArray("elements");
+            for (LoginBrowser.Element element : page.elements()) {
+                elements.addObject().put("ref", element.ref()).put("role", element.role())
+                        .put("name", element.name());
+            }
+            return json(200, result);
+        } catch (IllegalArgumentException error) {
+            return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 500));
+        } catch (IllegalStateException error) {
+            // Window closed, budget spent, run over: the turn must stop driving, not retry.
+            return error(409, Masking.truncate(Masking.maskSecrets(error.getMessage()), 500));
+        } catch (Exception error) {
+            return error(502, Masking.truncate(Masking.maskSecrets(error.getMessage() == null
+                    ? error.getClass().getSimpleName() : error.getMessage()), 500));
         }
     }
 

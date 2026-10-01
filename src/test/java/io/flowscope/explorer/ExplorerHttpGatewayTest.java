@@ -66,11 +66,9 @@ final class ExplorerHttpGatewayTest {
     @Test
     void injectsOpaqueAccountAuthAndBlocksDuplicateAndScopeEscape() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
-        ExplorerAccountVault.View account = vault.save(new ExplorerAccountVault.Input("", "A", "USER",
-                "https://app.example.test/login", "alice", "pw", ExplorerAccountVault.LoginMode.JSON,
-                "", "", "", "", "", ""));
-        vault.setToken(account.id(), "Authorization", "Bearer ", "secret-token");
-        vault.status(account.id(), ExplorerAccountVault.AuthStatus.READY, "ready");
+        ExplorerAccountVault.View account = vault.register("llm-a", "A", "USER");
+        vault.adoptSession(account.id(), java.net.URI.create("https://app.example.test/"), List.of(),
+                Map.of("Authorization", "Bearer secret-token"));
         AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();
         ExplorerTransport transport = request -> {
             captured.set(request);
@@ -292,6 +290,79 @@ final class ExplorerHttpGatewayTest {
             String rightSlot = declaration.replace("\"field_path\":\"path[3]\"", "\"field_path\":\"/segments/2\"");
             HttpResponse<String> slotOk = post(gateway, gateway.discoveriesUrl(), rightSlot);
             assertEquals(200, slotOk.statusCode(), slotOk.body());
+        }
+    }
+
+    /** Without a driven window the tool must refuse, not silently do nothing the model will keep retrying. */
+    @Test
+    void browserToolRefusesUntilAWindowIsWired() throws Exception {
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no transport"); },
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-browser", ignored -> {})) {
+            HttpResponse<String> refused = post(gateway, gateway.browserUrl(),
+                    """
+                    {"account":"usera","action":"snapshot","url":"","ref":"","text":""}
+                    """);
+            assertEquals(409, refused.statusCode());
+            assertFalse(JSON.readTree(refused.body()).path("success").asBoolean());
+        }
+    }
+
+    @Test
+    void browserToolReturnsThePageAndMapsRefusalsToStatusTheModelCanActOn() throws Exception {
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no transport"); },
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-browser", ignored -> {})) {
+            gateway.browserDriver((account, action, url, ref, text) -> switch (action) {
+                case "snapshot" -> new LoginBrowser.Page("https://app.example.test/issues", "이슈",
+                        List.of(new LoginBrowser.Element("e1", "button", "열기")), "본문");
+                case "navigate" -> throw new IllegalArgumentException("이동할 URL이 exact scope 밖입니다.");
+                case "click" -> throw new IllegalStateException("브라우저 창이 닫혀 탐색을 계속할 수 없습니다.");
+                default -> throw new java.io.IOException("devtools 연결이 끊어졌습니다.");
+            });
+
+            JsonNode page = JSON.readTree(post(gateway, gateway.browserUrl(), """
+                    {"account":"usera","action":"snapshot","url":"","ref":"","text":""}
+                    """).body());
+            assertTrue(page.path("success").asBoolean());
+            assertEquals("https://app.example.test/issues", page.path("url").asText());
+            assertEquals("이슈", page.path("title").asText());
+            assertEquals("e1", page.path("elements").get(0).path("ref").asText());
+            assertEquals("열기", page.path("elements").get(0).path("name").asText());
+
+            // Out of scope is the model's mistake to correct; a closed window or a spent budget is not.
+            assertEquals(400, post(gateway, gateway.browserUrl(), """
+                    {"account":"usera","action":"navigate","url":"https://evil.example.test/","ref":"","text":""}
+                    """).statusCode());
+            assertEquals(409, post(gateway, gateway.browserUrl(), """
+                    {"account":"usera","action":"click","url":"","ref":"e1","text":""}
+                    """).statusCode());
+            assertEquals(502, post(gateway, gateway.browserUrl(), """
+                    {"account":"usera","action":"back","url":"","ref":"","text":""}
+                    """).statusCode());
+
+            // An unknown field is a contract drift the model must see, not something to guess past.
+            assertEquals(400, post(gateway, gateway.browserUrl(), """
+                    {"account":"usera","action":"snapshot","url":"","ref":"","text":"","extra":1}
+                    """).statusCode());
+        }
+    }
+
+    @Test
+    void browserToolStillNeedsTheRunCapability() throws Exception {
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no transport"); },
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-browser", ignored -> {})) {
+            gateway.browserDriver((account, action, url, ref, text) -> {
+                throw new AssertionError("must not be driven without the capability");
+            });
+            HttpRequest request = HttpRequest.newBuilder(URI.create(gateway.browserUrl()))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("""
+                            {"account":"usera","action":"snapshot","url":"","ref":"","text":""}
+                            """)).build();
+            assertEquals(403, HttpClient.newHttpClient()
+                    .send(request, HttpResponse.BodyHandlers.ofString()).statusCode());
         }
     }
 

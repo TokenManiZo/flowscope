@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
 
@@ -29,13 +29,11 @@ it("starts an anonymous LLM pass against the scope target from the hub", async (
     throw new Error(`unexpected API ${path}`)
   })
   vi.stubGlobal("fetch", fetchStub)
-  const openSettings = vi.fn()
-  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} onOpenSettings={openSettings} />)
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
 
-  // LLM 로그인이 없는 계정은 고를 수 없고 [설정]으로 관리 창을 연다.
+  // 브라우저 로그인 세션이 없는 계정은 고를 수 없다.
   expect(await screen.findByRole("checkbox", { name: "USER A" })).toBeDisabled()
-  await user.click(screen.getByRole("button", { name: "USER A LLM 로그인 설정" }))
-  expect(openSettings).toHaveBeenCalledWith("user-a")
+  expect(screen.getByRole("button", { name: "USER A 브라우저 로그인" })).toBeEnabled()
   // 계정 등록 패널은 계정·세션 화면으로 옮겼다.
   expect(screen.queryByLabelText("표시 이름")).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: "메모리에 계정 등록" })).not.toBeInTheDocument()
@@ -71,4 +69,86 @@ it("shows actionable setup help and rechecks Codex readiness", async () => {
   await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) =>
     String(path) === "/api/explorer-run" && String((init as RequestInit)?.body).includes("action=recheck"),
   )).toBe(true))
+})
+
+it("opens a login window for a registered account and adopts its session on [로그인 완료]", async () => {
+  const user = userEvent.setup()
+  let session: Record<string, unknown> | null = null
+  const posts: string[] = []
+  const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === "/api/explorer-run" && (!init?.method || init.method === "GET")) {
+      return new Response(JSON.stringify({ ...idle, accounts: session ? [session] : [] }), { headers: { "Content-Type": "application/json" } })
+    }
+    if (path === "/api/explorer-accounts" && init?.method === "POST") {
+      const body = String(init.body)
+      posts.push(body)
+      session = { id: "user-a", label: "USER A", role: "USER", loginUrl: "https://app.example.test/", message: "",
+        updatedAt: "", cookieCount: body.includes("browser-complete") ? 2 : 0, headerNames: [], browserOpen: true,
+        status: body.includes("browser-complete") ? "READY" : "NEEDS_INPUT" }
+      return new Response(JSON.stringify({ success: true, message: "ok", account: session }), { headers: { "Content-Type": "application/json" } })
+    }
+    throw new Error(`unexpected API ${path}`)
+  })
+  vi.stubGlobal("fetch", fetchStub)
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
+
+  await user.click(await screen.findByRole("button", { name: "USER A 브라우저 로그인" }))
+  expect(posts[0]).toContain("action=browser-open")
+  expect(posts[0]).toContain("id=user-a")
+  await user.click(await screen.findByRole("button", { name: "USER A 로그인 완료" }))
+  expect(posts[1]).toContain("action=browser-complete")
+
+  expect(await screen.findByText("세션 있음")).toBeVisible()
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "USER A" })).toBeEnabled())
+})
+
+it("shows the browser budget as a ceiling and keeps the stop switch visible while a window is driven", async () => {
+  const driving = {
+    ...idle,
+    run: { ...idle.run, status: "RUNNING", runId: "llm-run-2", accountIds: ["user-a"], elapsedMillis: 252_000 },
+    browser: { actions: 84, maxActions: 300, snapshots: 31, endpoints: 19, elapsedMillis: 252_000, minutes: 15 },
+    accounts: [{ id: "user-a", label: "USER A", role: "LV1", loginUrl: "https://app.example.test/",
+      status: "READY", message: "브라우저 로그인 세션 (사용자 확인)", updatedAt: "2026-10-01T00:00:00Z",
+      cookieCount: 4, headerNames: [], browserOpen: true }],
+  }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/explorer-run") {
+      return new Response(JSON.stringify(driving), { headers: { "Content-Type": "application/json" } })
+    }
+    throw new Error(`unexpected API ${String(input)}`)
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
+
+  const card = within(await screen.findByRole("group", { name: "브라우저 탐색 진행" }))
+  expect(card.getByText("브라우저 탐색 중")).toBeInTheDocument()
+  // 경과는 사실, 15분은 상한일 뿐이다.
+  expect(card.getByText("04:12")).toBeInTheDocument()
+  expect(card.getByText("15분")).toBeInTheDocument()
+  expect(card.getByText(/먼저 도달하면 끝납니다/)).toBeInTheDocument()
+  expect(card.getByRole("progressbar", { name: "브라우저 동작 진행률" })).toHaveAttribute("aria-valuenow", "84")
+  expect(card.getByText("19")).toBeInTheDocument()
+  // 둘러보기만 한 실행이 "아무것도 안 함"으로 읽히면 안 된다.
+  expect(card.getByText("31")).toBeInTheDocument()
+  // 빨간 경고 박스 대신 카드 안 한 줄로 남긴다.
+  expect(card.getByText(/창을 닫으면 그 자리에서 끝납니다/)).toBeInTheDocument()
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  // 다른 화면에 갔다 와도 실행이 들고 있는 선택이 그대로 보여야 한다.
+  expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
+  expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
+  expect(screen.getByText("1개 선택됨")).toBeInTheDocument()
+})
+
+it("hides the browser card when no window is being driven", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/explorer-run") {
+      return new Response(JSON.stringify({ ...idle, browser: null }), { headers: { "Content-Type": "application/json" } })
+    }
+    throw new Error(`unexpected API ${String(input)}`)
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[]} />)
+
+  expect(await screen.findByRole("button", { name: /탐색 시작/ })).toBeInTheDocument()
+  expect(screen.queryByRole("group", { name: "브라우저 탐색 진행" })).not.toBeInTheDocument()
+  expect(screen.queryByText("브라우저 창을 닫으면 즉시 끝납니다")).not.toBeInTheDocument()
 })

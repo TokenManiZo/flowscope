@@ -4,63 +4,41 @@ import io.flowscope.core.Masking;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
+import java.net.HttpCookie;
 import java.net.URI;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
-import java.util.function.Function;
 
-/** Explorer 전용 계정·세션 저장소. 비밀번호와 live 인증값은 현재 프로세스 메모리에만 둔다. */
+/**
+ * Explorer 세션 저장소. 계정은 계정·세션에 등록된 계정을 그대로 쓰고, 세션은 사용자가 FlowScope가 띄운 브라우저에서
+ * 직접 로그인한 결과(쿠키·인증 헤더)만 받는다. 비밀번호는 받지 않으며 live 인증값은 현재 프로세스 메모리에만 둔다.
+ */
 public final class ExplorerAccountVault implements AutoCloseable {
-    public enum LoginMode { AUTO_FORM, JSON }
     public enum AuthStatus { UNVERIFIED, READY, NEEDS_INPUT, EXPIRED, FAILED }
 
-    public record Input(String id, String label, String role, String loginUrl,
-                        String username, String password, LoginMode loginMode,
-                        String usernameField, String passwordField,
-                        String tokenJsonPath, String authHeader, String authPrefix,
-                        String validationUrl) {}
-
-    public record View(String id, String label, String role, String loginUrl, LoginMode loginMode,
-                       String validationUrl, AuthStatus status, String message,
-                       String updatedAt, boolean hasPassword, int cookieCount,
-                       boolean hasTokenHeader) {}
-
-    /** Package-private secret view; callers must not retain it or include it in logs/snapshots. */
-    record Secret(String id, String label, String role, URI loginUrl, char[] username, char[] password,
-                  LoginMode loginMode, String usernameField, String passwordField,
-                  String tokenJsonPath, String authHeader, String authPrefix, URI validationUrl) {}
+    /** Values only names: cookie values and header values never leave the vault. */
+    public record View(String id, String label, String role, String loginUrl, AuthStatus status, String message,
+                       String updatedAt, int cookieCount, List<String> headerNames, boolean browserOpen) {}
 
     private static final int MAX_ACCOUNTS = 16;
     private final Map<String, Entry> entries = new LinkedHashMap<>();
 
-    public synchronized View save(Input input) {
-        if (input == null) throw new IllegalArgumentException("계정 입력이 필요합니다.");
-        String id = clean(input.id(), 96);
-        if (id.isBlank()) id = "llm-" + UUID.randomUUID().toString().substring(0, 8);
-        if (!entries.containsKey(id) && entries.size() >= MAX_ACCOUNTS) {
-            throw new IllegalStateException("Explorer 계정은 최대 " + MAX_ACCOUNTS + "개까지 등록할 수 있습니다.");
+    /** Creates the session slot for a registered account, or refreshes its label and role. */
+    public synchronized View register(String id, String label, String role) {
+        String key = required(id, "계정 ID", 96);
+        Entry entry = entries.get(key);
+        if (entry == null) {
+            if (entries.size() >= MAX_ACCOUNTS) {
+                throw new IllegalStateException("Explorer 계정은 최대 " + MAX_ACCOUNTS + "개까지 사용할 수 있습니다.");
+            }
+            entry = new Entry(key);
+            entries.put(key, entry);
         }
-        String label = required(input.label(), "계정 이름", 96);
-        String role = clean(input.role(), 64);
-        URI loginUrl = absoluteHttp(input.loginUrl(), "로그인 URL");
-        String username = required(input.username(), "로그인 ID", 512);
-        String password = required(input.password(), "비밀번호", 4_096);
-        LoginMode mode = input.loginMode() == null ? LoginMode.AUTO_FORM : input.loginMode();
-        URI validationUrl = optionalHttp(input.validationUrl(), "검증 URL");
-        Entry replacement = new Entry(id, label, role, loginUrl,
-                username.toCharArray(), password.toCharArray(), mode,
-                clean(input.usernameField(), 128), clean(input.passwordField(), 128),
-                clean(input.tokenJsonPath(), 256), clean(input.authHeader(), 128),
-                cleanPrefix(input.authPrefix(), 128), validationUrl);
-        Entry previous = entries.put(id, replacement);
-        if (previous != null) previous.clear();
-        return replacement.view();
+        entry.label = required(label, "계정 이름", 96);
+        entry.role = clean(role, 64);
+        return entry.view();
     }
 
     public synchronized List<View> views() {
@@ -71,8 +49,12 @@ public final class ExplorerAccountVault implements AutoCloseable {
         return entry(id).view();
     }
 
+    public synchronized boolean contains(String id) {
+        return id != null && entries.containsKey(id.trim());
+    }
+
     public synchronized void remove(String id) {
-        Entry entry = entries.remove(id);
+        Entry entry = entries.remove(id == null ? "" : id.trim());
         if (entry == null) throw new IllegalArgumentException("존재하지 않는 Explorer 계정입니다.");
         entry.clear();
     }
@@ -82,14 +64,43 @@ public final class ExplorerAccountVault implements AutoCloseable {
         entries.clear();
     }
 
-    synchronized <T> T withSecret(String id, Function<Secret, T> action) {
+    /** The login window is open; the account waits for the operator to finish and press complete. */
+    synchronized void awaitBrowserLogin(String id, URI loginUrl) {
         Entry entry = entry(id);
-        Secret secret = entry.secret();
-        try { return action.apply(secret); }
-        finally {
-            Arrays.fill(secret.username(), '\0');
-            Arrays.fill(secret.password(), '\0');
+        entry.loginUrl = loginUrl;
+        entry.browserOpen = true;
+        setStatus(entry, AuthStatus.NEEDS_INPUT, "브라우저에서 로그인한 뒤 [로그인 완료]를 누르세요.");
+    }
+
+    synchronized void browserClosed(String id) {
+        Entry entry = entries.get(id == null ? "" : id.trim());
+        if (entry == null) return;
+        entry.browserOpen = false;
+        entry.updatedAt = Instant.now();
+    }
+
+    /**
+     * Adopts what the login window holds for {@code target}: its cookies and the auth headers its own requests carried
+     * (token SPAs keep the session in an Authorization header, not a cookie). The operator asserts the identity.
+     */
+    synchronized View adoptSession(String id, URI target, List<HttpCookie> cookies, Map<String, String> headers) {
+        Entry entry = entry(id);
+        entry.cookies.getCookieStore().removeAll();
+        URI origin = URI.create(target.getScheme() + "://" + target.getRawAuthority() + "/");
+        for (HttpCookie cookie : cookies) {
+            // Browser cookies are Netscape-style. HttpCookie defaults to RFC 2965, which makes CookieManager emit
+            // `$Version="1"` as the first Cookie value and the real pairs after it, so the session never went out.
+            cookie.setVersion(0);
+            entry.cookies.getCookieStore().add(origin, cookie);
         }
+        entry.headers.clear();
+        headers.forEach((name, value) -> {
+            if (value != null && !value.isBlank() && value.indexOf('\r') < 0 && value.indexOf('\n') < 0) {
+                entry.headers.put(name, value);
+            }
+        });
+        setStatus(entry, AuthStatus.READY, "브라우저 로그인 세션 (사용자 확인)");
+        return entry.view();
     }
 
     synchronized Map<String, String> authenticationHeaders(String id, URI target) {
@@ -97,7 +108,7 @@ public final class ExplorerAccountVault implements AutoCloseable {
         if (entry.status != AuthStatus.READY) {
             throw new IllegalStateException(entry.label + " 인증 상태가 READY가 아닙니다: " + entry.status);
         }
-        Map<String, String> headers = new LinkedHashMap<>();
+        Map<String, String> headers = new LinkedHashMap<>(entry.headers);
         Map<String, List<String>> cookieHeaders;
         try { cookieHeaders = entry.cookies.get(target, Map.of()); }
         catch (java.io.IOException error) { cookieHeaders = Map.of(); }
@@ -105,25 +116,6 @@ public final class ExplorerAccountVault implements AutoCloseable {
                 .filter(value -> value.getKey().equalsIgnoreCase("Cookie"))
                 .flatMap(value -> value.getValue().stream()).findFirst().orElse("");
         if (!cookie.isBlank()) headers.put("Cookie", cookie);
-        if (entry.authValue != null && !entry.authValue.isBlank()) {
-            headers.put(entry.authHeader.isBlank() ? "Authorization" : entry.authHeader, entry.authValue);
-        }
-        return Map.copyOf(headers);
-    }
-
-    synchronized Map<String, String> authenticationHeadersOrEmpty(String id, URI target) {
-        Entry entry = entry(id);
-        if (entry.status != AuthStatus.READY && entry.status != AuthStatus.UNVERIFIED) return Map.of();
-        Map<String, String> headers = new LinkedHashMap<>();
-        Map<String, List<String>> cookieHeaders;
-        try { cookieHeaders = entry.cookies.get(target, Map.of()); }
-        catch (java.io.IOException error) { cookieHeaders = Map.of(); }
-        cookieHeaders.entrySet().stream().filter(value -> value.getKey().equalsIgnoreCase("Cookie"))
-                .flatMap(value -> value.getValue().stream()).findFirst()
-                .ifPresent(value -> headers.put("Cookie", value));
-        if (entry.authValue != null && !entry.authValue.isBlank()) {
-            headers.put(entry.authHeader.isBlank() ? "Authorization" : entry.authHeader, entry.authValue);
-        }
         return Map.copyOf(headers);
     }
 
@@ -134,47 +126,24 @@ public final class ExplorerAccountVault implements AutoCloseable {
         entry.updatedAt = Instant.now();
     }
 
-    synchronized void setToken(String id, String header, String prefix, String token) {
-        Entry entry = entry(id);
-        if (token == null || token.isBlank()) return;
-        entry.authHeader = header == null || header.isBlank() ? "Authorization" : header.trim();
-        entry.authValue = (prefix == null ? "" : prefix) + token;
-        entry.updatedAt = Instant.now();
-    }
-
     synchronized void status(String id, AuthStatus status, String message) {
-        Entry entry = entry(id);
-        entry.status = status == null ? AuthStatus.FAILED : status;
-        entry.message = Masking.truncate(Masking.maskSecrets(message == null ? "" : message), 500);
-        entry.updatedAt = Instant.now();
+        setStatus(entry(id), status, message);
     }
 
     @Override public synchronized void close() {
         clear();
     }
 
+    private static void setStatus(Entry entry, AuthStatus status, String message) {
+        entry.status = status == null ? AuthStatus.FAILED : status;
+        entry.message = Masking.truncate(Masking.maskSecrets(message == null ? "" : message), 500);
+        entry.updatedAt = Instant.now();
+    }
+
     private Entry entry(String id) {
         Entry entry = entries.get(id == null ? "" : id.trim());
         if (entry == null) throw new IllegalArgumentException("존재하지 않는 Explorer 계정입니다.");
         return entry;
-    }
-
-    private static URI absoluteHttp(String value, String label) {
-        String clean = required(value, label, 2_048);
-        try {
-            URI uri = URI.create(clean);
-            if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null) {
-                throw new IllegalArgumentException(label + "은 절대 HTTP(S) URL이어야 합니다.");
-            }
-            return uri;
-        } catch (IllegalArgumentException error) {
-            throw new IllegalArgumentException(label + "이 올바르지 않습니다.");
-        }
-    }
-
-    private static URI optionalHttp(String value, String label) {
-        return value == null || value.isBlank() ? null : absoluteHttp(value, label);
     }
 
     private static String required(String value, String label, int max) {
@@ -189,69 +158,30 @@ public final class ExplorerAccountVault implements AutoCloseable {
         return clean;
     }
 
-    private static String cleanPrefix(String value, int max) {
-        String clean = value == null ? "" : value;
-        if (clean.length() > max || clean.indexOf('\r') >= 0 || clean.indexOf('\n') >= 0) {
-            throw new IllegalArgumentException("인증 접두사가 올바르지 않습니다.");
-        }
-        return clean;
-    }
-
     private static final class Entry {
         private final String id;
-        private final String label;
-        private final String role;
-        private final URI loginUrl;
-        private final char[] username;
-        private final char[] password;
-        private final LoginMode loginMode;
-        private final String usernameField;
-        private final String passwordField;
-        private final String tokenJsonPath;
-        private String authHeader;
-        private final String authPrefix;
-        private final URI validationUrl;
+        private String label = "";
+        private String role = "";
+        private URI loginUrl;
         private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
-        private String authValue;
+        private final Map<String, String> headers = new LinkedHashMap<>();
+        private boolean browserOpen;
         private AuthStatus status = AuthStatus.UNVERIFIED;
-        private String message = "로그인 확인 전";
+        private String message = "브라우저 로그인 전";
         private Instant updatedAt = Instant.now();
 
-        private Entry(String id, String label, String role, URI loginUrl, char[] username, char[] password,
-                      LoginMode loginMode, String usernameField, String passwordField,
-                      String tokenJsonPath, String authHeader, String authPrefix, URI validationUrl) {
-            this.id = id;
-            this.label = label;
-            this.role = role;
-            this.loginUrl = loginUrl;
-            this.username = username;
-            this.password = password;
-            this.loginMode = loginMode;
-            this.usernameField = usernameField;
-            this.passwordField = passwordField;
-            this.tokenJsonPath = tokenJsonPath;
-            this.authHeader = authHeader;
-            this.authPrefix = authPrefix;
-            this.validationUrl = validationUrl;
-        }
-
-        private Secret secret() {
-            return new Secret(id, label, role, loginUrl, username.clone(), password.clone(), loginMode,
-                    usernameField, passwordField, tokenJsonPath, authHeader, authPrefix, validationUrl);
-        }
+        private Entry(String id) { this.id = id; }
 
         private View view() {
-            return new View(id, label, role, loginUrl.toString(), loginMode,
-                    validationUrl == null ? "" : validationUrl.toString(), status, message, updatedAt.toString(),
-                    password.length > 0, cookies.getCookieStore().getCookies().size(),
-                    authValue != null && !authValue.isBlank());
+            return new View(id, label, role, loginUrl == null ? "" : loginUrl.toString(), status, message,
+                    updatedAt.toString(), cookies.getCookieStore().getCookies().size(),
+                    List.copyOf(headers.keySet()), browserOpen);
         }
 
         private void clear() {
-            Arrays.fill(username, '\0');
-            Arrays.fill(password, '\0');
-            authValue = null;
+            headers.clear();
             cookies.getCookieStore().removeAll();
+            browserOpen = false;
             status = AuthStatus.EXPIRED;
             message = "메모리 인증값 폐기";
             updatedAt = Instant.now();

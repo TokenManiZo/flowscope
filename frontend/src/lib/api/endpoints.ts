@@ -104,13 +104,13 @@ export const controlExplorerRun = (action: "cancel" | "clear" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
 export const steerExplorerRun = (message: string) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })
-export const saveExplorerAccount = (values: {
-  id: string; label: string; role: string; loginUrl: string; username: string; password: string;
-  loginMode: "AUTO_FORM" | "JSON"; usernameField: string; passwordField: string;
-  tokenJsonPath: string; authHeader: string; authPrefix: string; validationUrl: string
-}) => postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "save", ...values })
+/** Opens a FlowScope-launched login window (no proxy) for a registered account; the operator logs in there. */
+export const openExplorerBrowserLogin = (id: string, url: string) =>
+  postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-open", id, url })
+/** Adopts the login window's session once the operator says the login is done. */
+export const completeExplorerBrowserLogin = (id: string) =>
+  postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-complete", id })
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
-export const verifyExplorerAccount = (id: string) => postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "verify", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const importXml = (source: "human" | "scanner" | "llm", name: string, xml: string | ArrayBuffer, signal?: AbortSignal) =>
   apiFetch<ImportXmlResult>(`/api/import-xml?${new URLSearchParams({ source, name })}` as `/api/${string}`, {

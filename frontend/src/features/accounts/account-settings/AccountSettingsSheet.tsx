@@ -8,27 +8,21 @@ import { cn } from "@/lib/utils";
 import type { ObservedSession } from "@/lib/api/types";
 import { BasicAccountTab } from "./BasicAccountTab";
 import { HumanAccountTab } from "./HumanAccountTab";
-import { LlmAccountTab } from "./LlmAccountTab";
 import { ZapAccountTab } from "./ZapAccountTab";
-import { EXPLORER_STATUS_META, HUMAN_STATUS_META, ZAP_STATUS_META, type StatusMeta } from "./statusMeta";
-import { validateProofPath, validateResponseMark, validateTarget, type AccountRole, type AccountSettings, type AccountSettingsAdapter, type ExplorerAdvancedSettings, type ExplorerLoginSettings, type LoginProofRule } from "./types";
+import { HUMAN_STATUS_META, ZAP_STATUS_META, type StatusMeta } from "./statusMeta";
+import { validateProofPath, validateResponseMark, validateTarget, type AccountRole, type AccountSettings, type AccountSettingsAdapter, type LoginProofRule } from "./types";
 
 const SETTINGS_REFRESH_MS = 3000;
 
 export interface AccountSettingsDraft {
   label: string; role: AccountRole; target: string; proof: LoginProofRule;
   zapEnabled: boolean; zapLoginUrl: string; zapLoginId: string;
-  llmEnabled: boolean; llmMode: ExplorerLoginSettings["loginMode"];
-  llmLoginUrl: string; llmLoginId: string; llmAdvanced: ExplorerAdvancedSettings;
 }
 
 export function toDraft(settings: AccountSettings): AccountSettingsDraft {
   return { label: settings.label, role: settings.role, target: settings.target,
     proof: { ...settings.proofRule }, zapEnabled: settings.zap.enabled,
-    zapLoginUrl: settings.zap.loginUrl, zapLoginId: settings.zap.loginId,
-    llmEnabled: settings.llm.enabled, llmMode: settings.llm.loginMode,
-    llmLoginUrl: settings.llm.loginUrl, llmLoginId: settings.llm.loginId,
-    llmAdvanced: { ...settings.llm.advanced } };
+    zapLoginUrl: settings.zap.loginUrl, zapLoginId: settings.zap.loginId };
 }
 
 export interface AccountSettingsSheetProps {
@@ -37,21 +31,20 @@ export interface AccountSettingsSheetProps {
   onSaved?: (settings: AccountSettings) => void;
   /** 삭제 확인창에서 함께 해제될 세션 연결 수를 셀 때만 쓴다. */
   observedSessions?: readonly ObservedSession[];
-  /** 처음 열 메뉴. 점검의 ZAP·LLM [설정]은 해당 로그인 메뉴로 바로 연다. */
-  initialTab?: "basic" | "human" | "zap" | "llm";
+  /** 처음 열 메뉴. 점검의 ZAP [설정]은 ZAP 로그인 메뉴로 바로 연다. */
+  initialTab?: "basic" | "human" | "zap";
 }
 
 export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, onDeleted, onSaved, observedSessions = [], zapRuntimeAvailable = false, initialTab = "basic" }: AccountSettingsSheetProps) {
   const [settings, setSettings] = useState<AccountSettings | null>(null);
   const [draft, setDraft] = useState<AccountSettingsDraft | null>(null);
   const [zapPassword, setZapPassword] = useState("");
-  const [llmPassword, setLlmPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [tab, setTab] = useState("basic");
-  const resetLocal = useCallback(() => { setZapPassword(""); setLlmPassword(""); setError(null); }, []);
+  const resetLocal = useCallback(() => { setZapPassword(""); setError(null); }, []);
 
   useEffect(() => {
     if (!open || !accountId) { setSettings(null); setDraft(null); resetLocal(); return; }
@@ -85,23 +78,21 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
   };
   const patch = (partial: Partial<AccountSettingsDraft>) => setDraft((previous) => previous ? { ...previous, ...partial } : previous);
   const changes = useMemo(() => {
-    if (!settings || !draft) return { basic: false, proof: false, zap: false, llm: false };
+    if (!settings || !draft) return { basic: false, proof: false, zap: false };
     const original = toDraft(settings);
     return {
       basic: draft.label !== original.label || draft.role !== original.role || draft.target !== original.target,
       proof: JSON.stringify(draft.proof) !== JSON.stringify(original.proof),
       zap: draft.zapEnabled !== original.zapEnabled || draft.zapLoginUrl !== original.zapLoginUrl || draft.zapLoginId !== original.zapLoginId || zapPassword !== "",
-      llm: draft.llmEnabled !== original.llmEnabled || draft.llmMode !== original.llmMode || draft.llmLoginUrl !== original.llmLoginUrl || draft.llmLoginId !== original.llmLoginId || JSON.stringify(draft.llmAdvanced) !== JSON.stringify(original.llmAdvanced) || llmPassword !== "",
     };
-  }, [settings, draft, zapPassword, llmPassword]);
+  }, [settings, draft, zapPassword]);
   const dirty = Object.values(changes).some(Boolean);
   const proofConfigured = Boolean(draft && (draft.proof.path.trim() || draft.proof.responseMark.trim()));
   const targetError = draft ? validateTarget(draft.target) : null;
   const pathError = draft && proofConfigured ? validateProofPath(draft.proof.path) : null;
   const markError = draft && proofConfigured ? validateResponseMark(draft.proof.responseMark) : null;
   const zapCredentialsMissing = Boolean(draft && changes.zap && draft.zapEnabled && (!draft.zapLoginUrl.trim() || !draft.zapLoginId.trim() || !zapPassword));
-  const llmCredentialsMissing = Boolean(draft && changes.llm && draft.llmEnabled && (!draft.llmLoginUrl.trim() || !draft.llmLoginId.trim() || !llmPassword));
-  const blocked = Boolean(targetError || pathError || markError || zapCredentialsMissing || llmCredentialsMissing);
+  const blocked = Boolean(targetError || pathError || markError || zapCredentialsMissing);
 
   const requestClose = (nextOpen: boolean) => {
     if (nextOpen) return onOpenChange(true);
@@ -115,8 +106,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
       if (changes.basic) next = await adapter.saveBasicInfo(settings.id, { label: draft.label, role: draft.role, target: draft.target });
       if (changes.proof) next = await adapter.saveProofRule(settings.id, proofConfigured ? draft.proof : null);
       if (changes.zap) next = await adapter.saveZapLogin(settings.id, { enabled: draft.zapEnabled, loginUrl: draft.zapLoginUrl, loginId: draft.zapLoginId, password: zapPassword || undefined });
-      if (changes.llm) next = await adapter.saveExplorerLogin(settings.id, { enabled: draft.llmEnabled, loginMode: draft.llmMode, loginUrl: draft.llmLoginUrl, loginId: draft.llmLoginId, password: llmPassword || undefined, advanced: draft.llmAdvanced });
-      setZapPassword(""); setLlmPassword(""); onSaved?.(next); return next;
+      setZapPassword(""); onSaved?.(next); return next;
     });
   };
   const boundSessions = settings ? observedSessions.filter((session) => session.accountId === settings.id).length : 0;
@@ -124,7 +114,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
     boundSessions ? `세션 연결 ${boundSessions}건` : "",
     settings.human.status !== "UNVERIFIED" && settings.human.status !== "REVOKED" ? "저장된 인증값" : "",
     settings.zap.enabled ? "ZAP 로그인 설정" : "",
-    settings.llm.enabled ? "LLM 로그인 설정" : "",
+    settings.llm.enabled ? "LLM 브라우저 로그인 세션" : "",
   ].filter(Boolean) : [];
 
   return <>
@@ -141,7 +131,6 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
         <BasicAccountTab settings={settings} draft={draft} patch={patch} targetError={targetError} pending={pending} />
         <HumanAccountTab settings={settings} draft={draft} patch={patch} pathError={pathError} markError={markError} pending={pending} run={run} adapter={adapter} />
         <ZapAccountTab settings={settings} draft={draft} patch={patch} password={zapPassword} setPassword={setZapPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={zapCredentialsMissing} runtimeAvailable={zapRuntimeAvailable} onGoToHumanTab={() => setTab("human")} />
-        <LlmAccountTab settings={settings} draft={draft} patch={patch} password={llmPassword} setPassword={setLlmPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={llmCredentialsMissing} />
         {error && <p role="alert" className="mt-4 text-xs text-destructive">{error}</p>}
         </div>
       </Tabs>}
@@ -159,7 +148,6 @@ function navItems(settings: AccountSettings): Array<[string, string, StatusMeta 
     ["basic", "기본 정보", null],
     ["human", "HUMAN", HUMAN_STATUS_META[settings.human.status]],
     ["zap", "ZAP 로그인", settings.zap.enabled ? ZAP_STATUS_META[settings.zap.status] : off],
-    ["llm", "LLM 로그인", settings.llm.enabled ? EXPLORER_STATUS_META[settings.llm.status] : off],
   ];
 }
 

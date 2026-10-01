@@ -3,38 +3,42 @@ package io.flowscope.explorer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.net.HttpCookie;
 import java.net.URI;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerAccountVaultTest {
     @Test
-    void credentialsAndLiveAuthNeverAppearInViews() {
+    void adoptedBrowserSessionIsSentButNeverAppearsInViews() {
         ExplorerAccountVault vault = new ExplorerAccountVault();
-        ExplorerAccountVault.View view = vault.save(new ExplorerAccountVault.Input("", "테스터", "USER",
-                "https://app.example.test/login", "alice@example.test", "password-secret",
-                ExplorerAccountVault.LoginMode.JSON, "email", "password", "token",
-                "Authorization", "Bearer ", "https://app.example.test/me"));
+        vault.register("human-a", "테스터", "USER");
+        assertThrows(IllegalStateException.class,
+                () -> vault.authenticationHeaders("human-a", URI.create("https://app.example.test/api")));
+        HttpCookie cookie = new HttpCookie("session-id", "cookie-secret");
+        cookie.setPath("/");
 
-        vault.setToken(view.id(), "Authorization", "Bearer ", "token-secret");
-        vault.status(view.id(), ExplorerAccountVault.AuthStatus.READY, "로그인 준비 완료");
+        vault.adoptSession("human-a", URI.create("https://app.example.test/"), List.of(cookie),
+                Map.of("Authorization", "Bearer token-secret"));
         String serialized = assertDoesNotThrow(() -> new ObjectMapper().writeValueAsString(vault.views()));
 
-        assertTrue(view.id().startsWith("llm-"));
-        assertFalse(serialized.contains("password-secret"));
+        assertFalse(serialized.contains("cookie-secret"));
         assertFalse(serialized.contains("token-secret"));
-        assertEquals("Bearer token-secret",
-                vault.authenticationHeaders(view.id(), URI.create("https://app.example.test/api")).get("Authorization"));
+        assertTrue(serialized.contains("Authorization"), "header names are shown");
+        Map<String, String> headers = vault.authenticationHeaders("human-a", URI.create("https://app.example.test/api"));
+        assertEquals("Bearer token-secret", headers.get("Authorization"));
+        // Netscape-style pair, not RFC 2965 `$Version="1"` which would hide the real cookie.
+        assertEquals("session-id=cookie-secret", headers.get("Cookie"));
         vault.clear();
         assertTrue(vault.views().isEmpty());
     }
 
     @Test
-    void acceptsAnExistingRegisteredAccountId() {
+    void reusesTheRegisteredAccountId() {
         ExplorerAccountVault vault = new ExplorerAccountVault();
-        ExplorerAccountVault.View linked = vault.save(new ExplorerAccountVault.Input(
-                "human-account", "테스터", "USER", "https://app.example.test/login", "alice", "secret",
-                ExplorerAccountVault.LoginMode.AUTO_FORM, "", "", "", "", "", ""));
-        assertEquals("human-account", linked.id());
+        assertEquals("human-account", vault.register("human-account", "테스터", "USER").id());
+        assertThrows(IllegalArgumentException.class, () -> vault.register("", "테스터", "USER"));
     }
 }
