@@ -7,7 +7,7 @@ export function matrixVerdictTone(verdict: Verdict | "unknown") {
   if (verdict === "allow") return { label: "ALLOW", className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" }
   if (verdict === "deny") return { label: "DENY", className: "bg-red-500/10 text-red-700 dark:text-red-300" }
   if (verdict === "suspicious") return { label: "SUSPICIOUS", className: "bg-amber-500/10 text-amber-800 dark:text-amber-200" }
-  if (verdict === "undecided") return { label: "UNDECIDED", className: "bg-violet-500/10 text-violet-800 dark:text-violet-200" }
+  if (verdict === "undecided") return { label: "확인 필요", className: "bg-violet-500/10 text-violet-800 dark:text-violet-200" }
   if (verdict === "untested") return { label: "UNTESTED", className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300" }
   return { label: "UNKNOWN", className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300" }
 }

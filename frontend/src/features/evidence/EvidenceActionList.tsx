@@ -10,7 +10,7 @@ import { evidenceOrdinalLabel, stripOrigin } from "@/lib/display/operationLabel"
 import { activeAccounts, RequestLabDialog } from "./RequestLabDialog"
 
 /** 출처 아이콘. 색은 그래프 강조색과 같은 계열(HUMAN 파랑·SCANNER 빨강·LLM 노랑)이고, 이름은 툴팁과 접근 이름으로 준다. */
-const SOURCE_MARK: Record<Source, { Icon: typeof UserRound; label: string; className: string }> = {
+export const SOURCE_MARK: Record<Source, { Icon: typeof UserRound; label: string; className: string }> = {
   human: { Icon: UserRound, label: "HUMAN", className: "border-blue-500/50 bg-blue-500/10 text-blue-600 dark:text-blue-300" },
   scanner: { Icon: ScanLine, label: "SCANNER", className: "border-red-500/50 bg-red-500/10 text-red-600 dark:text-red-300" },
   llm: { Icon: Bot, label: "LLM", className: "border-yellow-500/50 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300" },

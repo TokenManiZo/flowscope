@@ -644,7 +644,7 @@ it("renders neutral Target→Group nodes in two lanes, selects on tap and naviga
   expect(node.position).toHaveBeenCalledWith({ x: 180, y: expect.any(Number) })
   const elements = core.add.mock.calls.at(-1)?.[0] as Array<{ data: { id: string; label: string; accessibleLabel?: string; kind: string } }>
   expect(elements.find(item => item.data.kind === "api-group")?.data.accessibleLabel).toContain("ORDERS APIs")
-  expect(elements.find(item => item.data.kind === "api-group")?.data.accessibleLabel).toContain("1 APIs · H 1 / S 0 / L 0")
+  expect(elements.find(item => item.data.kind === "api-group")?.data.accessibleLabel).toContain("1 APIs")
   expect(elements.find(item => item.data.id === hierarchy.edges[0].id)?.data.label).toBe("")
   // 한 번 누르면 정보만 열고 이동하지 않는다.
   listeners.get("tap:node, edge")?.({ target: { id: () => hierarchy.listItems[0].id } as never })

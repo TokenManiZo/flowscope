@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react"
+import { act, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
@@ -40,7 +40,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
 
   if (kind === "graph-list") {
     await userEvent.click(screen.getByRole("button", { name: "목록" }))
-    await userEvent.click(await screen.findByRole("button", { name: /ORDERS APIs/ }))
+    await userEvent.click(within(await screen.findByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   }
   const select = async () => {
     if (kind === "graph-canvas") await userEvent.click(screen.getByRole("button", { name: "캔버스 관측 기록 선택" }))

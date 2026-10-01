@@ -262,4 +262,28 @@ describe("API hierarchy", () => {
     expect(new Set(edges.map(edge => edge.id)).size).toBe(2)
     expect(edges.map(edge => edge.selection.evidenceIds)).toEqual([["support-1"], ["support-2"]])
   })
+
+  it("folds same-shape APIs into one API group node, hides members in the graph and merges their edges into it", () => {
+    const one = `${service} GET /api/orders/101`, two = `${service} GET /api/orders/202`
+    const snapshot = targetSnapshot({ activeSources: ["human"], cells: [cell({ op: one, resource: null, evidenceIds: ["e1"] }), cell({ op: two, resource: null, evidenceIds: ["e2"] }), cell({ idn: "USER B", op: two, resource: null, evidenceIds: ["e3"] })] })
+    const group = projectHierarchy(snapshot, filters, groupNav())
+    const shape = `${service} GET /api/orders/{id}`
+    const folded = group.nodes.find(node => node.id === `operation-group:${shape}`)!
+    expect(folded).toMatchObject({ kind: "operation-group", objectGroup: { expanded: false } })
+    expect([...folded.objectGroup!.members].sort()).toEqual([one, two].sort())
+    expect(graphOpenAction("operation-group", "group")).toBe("toggle")
+    // 멤버 노드는 목록·선택 상세를 위해 남지만 그래프에서는 숨는다.
+    expect(group.nodes.filter(node => node.kind === "operation" && node.hiddenInGraph).map(node => node.label).sort()).toEqual([one, two].sort())
+    expect(group.listItems.map(node => node.label).sort()).toEqual([one, two].sort())
+    const toGroup = group.edges.filter(edge => edge.targetId === folded.id)
+    expect(toGroup.map(edge => edge.selection.identity).sort()).toEqual(["USER A", "USER B"])
+    expect(toGroup.find(edge => edge.selection.identity === "USER A")?.selection.cells).toHaveLength(2)
+    expect(group.edges.some(edge => edge.targetId === `operation:${one}` || edge.targetId === `operation:${two}`)).toBe(false)
+
+    const open = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [folded.id] }, groupNav())
+    const order = open.nodes.filter(node => node.kind === "operation" || node.kind === "operation-group").map(node => node.id)
+    expect(order[0]).toBe(folded.id)
+    expect(open.nodes.some(node => node.hiddenInGraph)).toBe(false)
+    expect(open.edges.some(edge => edge.targetId === `operation:${one}`)).toBe(true)
+  })
 })

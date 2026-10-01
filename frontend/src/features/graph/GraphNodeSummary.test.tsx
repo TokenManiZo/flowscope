@@ -1,5 +1,6 @@
 import { screen, within } from "@testing-library/react"
-import { expect, it } from "vitest"
+import userEvent from "@testing-library/user-event"
+import { expect, it, vi } from "vitest"
 
 import type { Cell } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
@@ -14,15 +15,21 @@ const snapshot = targetSnapshot({ activeSources: ["human"], cells: [cell({ overa
 const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
 const site: GraphNavigation = { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
 
-it("summarises an API group on a single click and shows the open hint only in Site view", () => {
+it("summarises an API group with candidates first and opens the group from the button", async () => {
   const projection = projectHierarchy(snapshot, filters, site)
   const group = projection.nodes.find(node => node.kind === "api-group")!
-  renderWithQueryClient(<GraphInspectorPanel selection={group.selection} event={null} snapshot={snapshot} node={group} projection={projection} />)
-  const summary = screen.getByRole("region", { name: "노드 요약" })
+  const onOpenGroup = vi.fn(), onRevealOperation = vi.fn()
+  renderWithQueryClient(<GraphInspectorPanel selection={group.selection} event={null} snapshot={snapshot} node={group} projection={projection} actions={{ onOpenGroup, onRevealOperation }} />)
+  const summary = screen.getByRole("region", { name: "API 그룹 요약" })
   expect(within(summary).getByText("API").nextElementSibling).toHaveTextContent("2")
-  expect(within(summary).getByText("GET /api/orders/{id}")).toBeVisible()
-  expect(within(summary).getByText("SUSPICIOUS")).toBeVisible()
-  expect(within(summary).getByText(GRAPH_OPEN_HINT)).toBeVisible()
+  const candidates = within(summary).getByRole("list", { name: "IDOR·BFLA 후보 목록" })
+  expect(within(candidates).getByText("/api/orders/{id}")).toBeVisible()
+  expect(within(candidates).getByText(/후보$/)).toBeVisible()
+  await userEvent.click(within(candidates).getAllByRole("button")[0])
+  expect(onRevealOperation).toHaveBeenCalledWith(group.groupId, expect.stringContaining("GET /api/orders/{id}"))
+  expect(screen.queryByText(GRAPH_OPEN_HINT)).not.toBeInTheDocument()
+  await userEvent.click(within(summary).getByRole("button", { name: "이 그룹 열기 →" }))
+  expect(onOpenGroup).toHaveBeenCalledWith(group.groupId)
 })
 
 it("summarises an identity inside a group without repeating the open hint", () => {

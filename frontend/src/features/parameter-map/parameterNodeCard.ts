@@ -17,6 +17,8 @@ export interface ParameterNodeCardView {
   sources?: readonly CardSource[]
   /** 관측된 응답 코드(API 노드). 카드 아래에 코드만 뱃지로 그린다. 개수는 그리지 않는다. */
   statuses?: readonly number[]
+  /** 서버 판정이 IDOR·BFLA 후보(SUSPICIOUS)인 셀 수. 0보다 크면 카드 오른쪽 위에 빨간 점과 "후보 N"을 그린다. */
+  candidates?: number
 }
 
 export type CardSource = "human" | "scanner" | "llm"
@@ -258,7 +260,9 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
   // 왼쪽 아이콘은 80%로 줄여 제목 첫 줄 높이에 맞춘다.
   const iconTransform = `translate(23 ${TITLE_BASELINE + titleOffset - 5}) scale(0.8) translate(-23 -45)`
   const sources = cardSourceOrder.filter(source => card.sources?.includes(source))
-  const badge = visualLine(card.badge, width - 46 - sources.length * 22, 12)
+  const alertLabel = card.candidates ? `후보 ${card.candidates}` : ""
+  const alertWidth = alertLabel ? Math.ceil(textWidth(alertLabel, 11) + 26) : 0
+  const badge = visualLine(card.badge, width - 46 - sources.length * 22 - (alertWidth ? alertWidth + 8 : 0), 12)
   const badgeWidth = Math.ceil(textWidth(badge, 12) + 18)
   // 주체 아이콘은 배지(METHOD) 오른쪽에 나란히 둔다.
   const sourceIcons = sources.map((source, index) => `<g transform="translate(${14 + badgeWidth + 8 + index * 22} 12)"><g fill="none" stroke="${palette.source[source]}" stroke-width="1.6" stroke-linecap="round">${sourceIconPaths[source]}</g></g>`).join("")
@@ -269,6 +273,6 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
     : card.icon === "network" ? `<g fill="none" stroke="${palette.relation}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="` + iconTransform + '"><circle cx="23" cy="36" r="3"/><circle cx="15" cy="52" r="3"/><circle cx="31" cy="52" r="3"/><path d="m21.5 38.7-5 10.6m8-10.6 5 10.6"/><path d="M18 52h10"/></g>' : ""
   const title = lines.map((line, index) => `<text x="${titleX}" y="${TITLE_BASELINE + titleOffset + index * LINE_GAP}" fill="${palette.title}" font-family="sans-serif" font-size="${TITLE_FONT}">${escapeXml(line)}</text>`).join("")
   const rowText = rows.map((value, index) => `<text x="14" y="${rowBaseline(index)}" fill="${index === 0 && card.detail ? palette.detail : palette.footer}" font-family="sans-serif" font-size="12">${escapeXml(visualLine(value, width - 28, 12, index > 0 || !card.detail))}</text>`).join("")
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="${palette.card}" stroke="${palette.stroke}"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${icon}${relationshipIcon}${title}${rowText}${statusRow ? statusBadges(card.statuses ?? [], height - BOTTOM_PADDING - STATUS_BADGE_HEIGHT, theme, statusColors) : ""}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><rect width="${width}" height="${height}" rx="10" fill="${palette.card}" stroke="${palette.stroke}"/><g><rect x="14" y="9" width="${badgeWidth}" height="22" rx="5" fill="${background}"/><text x="${14 + badgeWidth / 2}" y="24" text-anchor="middle" fill="${foreground}" font-family="sans-serif" font-size="12">${escapeXml(badge)}</text></g>${sourceIcons}${alertLabel ? `<g><rect x="${width - 12 - alertWidth}" y="9" width="${alertWidth}" height="22" rx="11" fill="${theme === "dark" ? "#450a0a" : "#fee2e2"}" stroke="#ef4444"/><circle cx="${width - 12 - alertWidth + 11}" cy="20" r="3" fill="${theme === "dark" ? "#fca5a5" : "#b91c1c"}"/><text x="${width - 12 - alertWidth + 19}" y="24" fill="${theme === "dark" ? "#fca5a5" : "#b91c1c"}" font-family="sans-serif" font-size="11" font-weight="600">${escapeXml(alertLabel)}</text></g>` : ""}${icon}${relationshipIcon}${title}${rowText}${statusRow ? statusBadges(card.statuses ?? [], height - BOTTOM_PADDING - STATUS_BADGE_HEIGHT, theme, statusColors) : ""}</svg>`
   return { uri: `data:image/svg+xml,${encodeURIComponent(svg)}`, width, height }
 }
