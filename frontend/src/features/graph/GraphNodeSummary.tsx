@@ -47,6 +47,14 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
       list: [...byTarget].slice(0, 8).map(([target, items]) => [plain(target), mostUrgent(items)]),
     }
   }
+  if (node.kind === "operation-group" && node.objectGroup) {
+    // API 묶음: 묶인 API와 그 API의 가장 급한 판정.
+    return {
+      stats: [["API", node.objectGroup.members.length], ["접근 신원", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
+      listTitle: "묶음 API",
+      list: node.objectGroup.members.map(member => [plain(member), mostUrgent(cells.filter(cell => cell.op === member))] as [string, string]),
+    }
+  }
   if (node.kind === "object-group" && node.objectGroup) {
     // 묶음 안 객체 목록과 소유자. 펼치지 않아도 어떤 객체가 묶였는지 확인할 수 있다.
     return {

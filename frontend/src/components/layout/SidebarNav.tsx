@@ -1,9 +1,12 @@
-import { ChevronDown, Moon, PanelLeft, ScanSearch, Sun } from "lucide-react"
+import { ChevronDown, FolderCog, Moon, PanelLeft, ScanSearch, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { appRoutes, navigationGroups, primaryNavigationRoutes, routeHash, routeLabel, type AppRoute, type NavigationGroupId } from "@/app/routes"
 import { cn } from "@/lib/utils"
 import type { Theme } from "@/hooks/useTheme"
+import { useProjectsQuery } from "@/lib/query/hooks"
+import { SidebarLiveStatus } from "./LiveStatus"
+import { ProjectManagerDialog } from "./ProjectManagerDialog"
 
 interface SidebarNavProps {
   route: AppRoute
@@ -89,6 +92,7 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
         })}
       </nav>
 
+      <SidebarProject collapsed={collapsed} onNavigate={onNavigate} />
       <div className="shrink-0 border-t border-border p-2">
         <button
           type="button"
@@ -102,6 +106,33 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
       </div>
     </div>
   )
+}
+
+/**
+ * 사이드바 맨 아래 현재 프로젝트 블록: 이름, [프로젝트 관리], 실시간 상태(상단 상태 표시줄에서 옮김)를 한 카드에 둔다.
+ * 평소 저장 상태는 숨기고, 저장 실패만 빨간색으로 남긴다.
+ */
+function SidebarProject({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+  const projects = useProjectsQuery()
+  const [open, setOpen] = useState(false)
+  const active = projects.data?.active
+  const failed = Boolean(active) && projects.data?.saveState === "FAILED"
+  return <div className="shrink-0 border-t border-border p-2">
+    <div aria-label="현재 프로젝트" role="group" className={cn("rounded-lg border border-emerald-500/40 bg-emerald-500/10", collapsed ? "grid gap-1 p-1" : "p-2.5")}>
+      {!collapsed && <div className="mb-2 grid gap-0.5">
+        <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">현재 프로젝트</span>
+        <span className="truncate font-mono text-sm font-semibold" title={active?.name}>{active?.name ?? (projects.isPending ? "불러오는 중" : "미저장 진단")}</span>
+        {failed && <span title={projects.data?.saveError || undefined} className="text-[11px] font-medium text-destructive">저장 실패</span>}
+      </div>}
+      <button type="button" onClick={() => { setOpen(true); onNavigate?.() }} aria-label="프로젝트 관리" title={collapsed ? "프로젝트 관리" : undefined}
+        className={cn("flex h-9 w-full items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-muted", failed && collapsed && "border-destructive")}>
+        <FolderCog className="size-4 shrink-0" aria-hidden="true" />
+        <span className={collapsed ? "sr-only" : "truncate"}>프로젝트 관리</span>
+      </button>
+      <SidebarLiveStatus collapsed={collapsed} />
+    </div>
+    <ProjectManagerDialog open={open} onOpenChange={setOpen} />
+  </div>
 }
 
 function NavLink({ route, active, collapsed, onNavigate }: { route: AppRoute; active: boolean; collapsed: boolean; onNavigate?: () => void }) {

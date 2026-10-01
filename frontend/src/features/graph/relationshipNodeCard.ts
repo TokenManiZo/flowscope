@@ -13,6 +13,9 @@ export function operationParts(value: string): { method: string; path: string } 
   return match ? { method: match[2].toUpperCase(), path: match[3] } : { method: "UNKNOWN", path: value }
 }
 
+/** 서버 판정이 IDOR·BFLA 후보(SUSPICIOUS)인 셀 수. 카드의 빨간 점 숫자로 쓴다. */
+const candidateCount = (cells: readonly { overall: string }[]) => cells.filter(cell => cell.overall === "suspicious").length
+
 function evidenceFooter(node: RelationshipNode) {
   return `관측 기록 ${node.selection.evidenceIds.length}건`
 }
@@ -26,28 +29,39 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     const service = node.service ?? node.label
     const groupCount = "kind" in projection ? projection.groups.filter(group => group.service === service).length : 0
     return {
-      kind: "target", badge: "TARGET", title: service, detail: "Exact-scope target", footer: `${groupCount} API group${groupCount === 1 ? "" : "s"}`, icon: "globe",
-      accessibleLabel: `Target ${service}; exact-scope target; ${groupCount} API group${groupCount === 1 ? "" : "s"}`,
+      kind: "target", badge: "TARGET", title: service, detail: "", footer: `${groupCount} API group${groupCount === 1 ? "" : "s"}`, icon: "globe",
+      accessibleLabel: `Target ${service}; ${groupCount} API group${groupCount === 1 ? "" : "s"}`,
     }
   }
 
   if (node.kind === "api-group") {
     const group = "kind" in projection ? projection.groups.find(item => item.id === node.groupId) : undefined
+    // 카드는 이름과 API 수만 둔다. 출처 수·Gap은 선택했을 때 오른쪽 패널에서 본다.
     const endpointCount = group?.endpointCount ?? 0
-    const counts = group?.sourceCounts ?? { human: 0, scanner: 0, llm: 0 }
-    const gapCount = group?.gapCount ?? 0
-    const routeCandidateCount = group?.routeCandidateCount ?? 0
-    const detail = `${endpointCount} APIs · H ${counts.human} / S ${counts.scanner} / L ${counts.llm}`
-    const footer = `Gap ${gapCount} · 경로 후보 ${routeCandidateCount}`
+    const candidates = candidateCount(group?.cells ?? [])
     return {
-      kind: "target", badge: "API GROUP", title: node.label, detail, footer, icon: "network",
-      accessibleLabel: `${node.label}; ${node.service ?? "Target"}; API group; ${detail}; ${footer}`,
+      kind: "target", badge: "API GROUP", title: node.label, detail: `${endpointCount} APIs`, footer: "", icon: "network",
+      accessibleLabel: `${node.label}; ${node.service ?? "Target"}; API group; ${endpointCount} APIs${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}`,
+      ...(candidates ? { candidates } : {}),
     }
   }
 
   if (node.kind === "identity") return {
     kind: "condition", badge: "IDENTITY", title: node.label, detail: "", footer: "", icon: "user",
     accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
+  }
+
+  if (node.kind === "operation-group" && "objectGroup" in node && node.objectGroup) {
+    // API 묶음: 같은 경로 형식의 API들. 메서드 뱃지, 그룹 구간을 뺀 경로 형식, 멤버 수. 후보 빨간 점은 멤버 합계다.
+    const { members, expanded } = node.objectGroup
+    const shape = operationParts(node.label)
+    const candidates = candidateCount(node.selection.cells ?? [])
+    return {
+      kind: "operation", badge: shape.method, title: `${expanded ? "▾" : "▸"} ${pathAfterGroup(shape.path)}`, detail: "", footer: `${members.length}개`, icon: "none",
+      accessibleLabel: `${node.label} API 묶음; ${members.length}개; ${expanded ? "펼침" : "접힘"}${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
+      ...(statuses.length ? { statuses } : {}),
+      ...(candidates ? { candidates } : {}),
+    }
   }
 
   if (node.kind === "object-group" && "objectGroup" in node && node.objectGroup) {
@@ -73,11 +87,13 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     accessibleLabel: `Support operation ${node.label}`,
   }
 
+  const candidates = "kind" in projection ? candidateCount((node as HierarchyNode).selection.cells ?? []) : 0
   return {
     // API 카드는 API 그룹 안에서만 보이므로 그룹 구간까지는 생략한다(breadcrumb에 그룹 이름이 있다). 전체 경로는 접근 이름에 남는다.
     kind: "operation", badge: operation.method, title: pathAfterGroup(operation.path), detail: "", footer: "", icon: "none",
-    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}${statuses.length ? `; HTTP ${statuses.join(", ")}` : ""}`,
+    accessibleLabel: `${node.label}; Operation; verdict ${node.verdictText}${statuses.length ? `; HTTP ${statuses.join(", ")}` : ""}${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}`,
     ...(statuses.length ? { statuses } : {}),
+    ...(candidates ? { candidates } : {}),
   }
 }
 

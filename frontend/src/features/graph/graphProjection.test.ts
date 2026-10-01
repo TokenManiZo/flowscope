@@ -35,7 +35,7 @@ describe("projectGraph", () => {
     const graph = projectGraph(snapshot(serverEvents), { source: ["human"], identity: [], view: "authz", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false })
 
     expect(graph.operations.find((item) => item.label === "DELETE /orders/{id}")).toMatchObject({ verdict: "suspicious", verdictText: "SUSPICIOUS", verdictColor: "#c2410c" })
-    expect(graph.operations.find((item) => item.label === "GET /health")).toMatchObject({ verdict: "undecided", verdictText: "UNDECIDED", verdictColor: "#7c3aed" })
+    expect(graph.operations.find((item) => item.label === "GET /health")).toMatchObject({ verdict: "undecided", verdictText: "확인 필요", verdictColor: "#7c3aed" })
   })
 
   it("does not assign one event verdict to an aggregate operation node with mixed outcomes", () => {
@@ -76,7 +76,7 @@ describe("projectGraph", () => {
       expect.objectContaining({ relation: "identity-operation", source: "unknown", sourceText: "UNKNOWN" }),
     ]))
     expect(graph.operations.find((item) => item.label === "GET /orders/{id}")).toMatchObject({ verdict: "allow", verdictText: "ALLOW", verdictColor: "#15803d" })
-    expect(graph.operations.find((item) => item.label === "POST /login")).toMatchObject({ verdict: "undecided", verdictText: "UNDECIDED" })
+    expect(graph.operations.find((item) => item.label === "POST /login")).toMatchObject({ verdict: "undecided", verdictText: "확인 필요" })
     expect(graph.operations.map((item) => item.label)).not.toContain("GET /review-only")
     expect(graph.operations.map((item) => item.label)).not.toContain("GET /poll")
     expect(selectGraphItem(graph, "operation:GET /orders/{id}")).toEqual({ operation: "GET /orders/{id}", resource: null, identity: null, source: null, evidenceIds: ["ev-human-1", "ev-human-2", "ev-llm-1", "ev-scanner-1"] })

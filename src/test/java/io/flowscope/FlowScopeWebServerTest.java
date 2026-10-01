@@ -83,11 +83,15 @@ final class FlowScopeWebServerTest {
 
         HttpResponse<String> started = post("/api/projects", "action=start&name=Target+A&scope="
                 + URLEncoder.encode("https://app.example.test/", StandardCharsets.UTF_8), token);
+        HttpResponse<String> updated = post("/api/projects", "action=update&name=Renamed&scope="
+                + URLEncoder.encode("https://app.example.test/\nhttps://auth.example.test/", StandardCharsets.UTF_8), token);
         HttpResponse<String> reset = post("/api/projects", "action=reset", token);
         HttpResponse<String> deleted = post("/api/projects", "action=delete&id=old-project", token);
         HttpResponse<String> listed = get("/api/projects", token, null);
 
         assertEquals(200, started.statusCode());
+        assertEquals(200, updated.statusCode());
+        assertEquals("Renamed|https://app.example.test/\nhttps://auth.example.test/", state.updatedProject);
         assertEquals(200, reset.statusCode());
         assertTrue(state.records.isEmpty());
         assertEquals(200, deleted.statusCode());
@@ -1343,6 +1347,7 @@ final class FlowScopeWebServerTest {
         private volatile Pipeline.Result result;
         private volatile String startedProjectScope = "";
         private volatile String deletedProjectId = "";
+        private volatile String updatedProject = "";
         private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
                 null, List.of());
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
@@ -1406,6 +1411,10 @@ final class FlowScopeWebServerTest {
             return projectStatus;
         }
         @Override public ProjectWorkspace.Status openProject(String id) { return projectStatus; }
+        @Override public ProjectWorkspace.Status updateProject(String name, String scope) {
+            updatedProject = name + "|" + scope;
+            return projectStatus;
+        }
         @Override public ProjectWorkspace.Status resetProjectTraffic() {
             records.clear();
             rebuild();

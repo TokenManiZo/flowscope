@@ -101,8 +101,8 @@ it("links only actual events of the exact operation and offers raw view from the
   render()
   await userEvent.click(within(screen.getByRole("list", { name: "점검 우선순위 큐" })).getAllByRole("button")[0])
   const rows = within(screen.getByRole("region", { name: "관측 기록" })).getAllByRole("listitem")
-  // 관측 기록은 신원·출처별 카드로 묶인다. 다른 operation의 witness-a는 목록에 없다.
-  expect(rows.map(row => row.getAttribute("aria-label"))).toEqual(["USER A · HUMAN 관측 기록 1건"])
+  // 관측 기록은 신원별 카드로 묶인다. 다른 operation의 witness-a는 목록에 없다.
+  expect(rows.map(row => row.getAttribute("aria-label"))).toEqual(["USER A 관측 기록 1건"])
   expect(within(rows[0]).getByRole("button", { name: "원문 보기" })).toBeEnabled()
 })
 

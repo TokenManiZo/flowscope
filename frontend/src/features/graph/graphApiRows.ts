@@ -1,6 +1,7 @@
 import type { Cell, Snapshot, Source } from "@/lib/api/types"
 import { indexEventsByEvidence } from "./graphHighlight"
 import { objectGroupKey } from "./graphHierarchy"
+import { pathShape } from "./graphPathShape"
 import { operationParts } from "./relationshipNodeCard"
 
 /** API 목록 표 한 줄의 관측 요약. 응답 코드·출처·신원·객체는 노드의 Evidence에 묶인 요청에서 모은다. */
@@ -38,15 +39,7 @@ export function apiRowStats(nodes: readonly StatsNode[], snapshot: Pick<Snapshot
   }
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-function isIdSegment(segment: string) {
-  return /^\d+$/.test(segment) || UUID.test(segment) || (segment.length >= 16 && /^[a-z0-9]+$/i.test(segment) && /[a-z]/i.test(segment) && /\d/.test(segment))
-}
-
-/** 숫자·UUID·16자 이상 영문+숫자 토큰 구간을 `{id}`로 바꾼 경로 형식. */
-export function pathShape(path: string) {
-  return path.split("/").map(segment => isIdSegment(segment) ? "{id}" : segment).join("/")
-}
+export { pathShape } from "./graphPathShape"
 
 /** 펼친 줄에 쓰는 짧은 경로: 뒤 세 구간만 남기고 긴 토큰은 가운데를 줄인다. */
 export function shortPath(path: string) {

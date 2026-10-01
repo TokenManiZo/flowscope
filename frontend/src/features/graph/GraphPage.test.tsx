@@ -6,10 +6,10 @@ import { afterEach, expect, it, vi } from "vitest"
 import type { Snapshot } from "@/lib/api/types"
 import { GraphPage as CurrentGraphPage } from "./GraphPage"
 
-vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneBoundsChange }: { selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneBoundsChange?(bounds: ReadonlyArray<{ left: number; right: number } | null>): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
+vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneBoundsChange, highlight }: { highlight?: ReadonlyMap<string, string> | null; selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneBoundsChange?(bounds: ReadonlyArray<{ left: number; right: number } | null>): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
   // 실제 캔버스 대신 레인 범위를 알리고, 받은 레인 정렬 요청을 그대로 노출한다.
   useEffect(() => { onLaneBoundsChange?.((globalThis as { graphLaneBounds?: ReadonlyArray<{ left: number; right: number } | null> }).graphLaneBounds ?? [{ left: 20, right: 300 }, { left: 400, right: 700 }]) }, [onLaneBoundsChange])
-  return <button type="button" data-testid="cytoscape-graph" data-lane-layout={`${laneLayout?.lane ?? -1}:${laneLayout?.version ?? -1}`} data-selected-element={selectedElementId ?? ""} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button>
+  return <button type="button" data-testid="cytoscape-graph" data-lane-layout={`${laneLayout?.lane ?? -1}:${laneLayout?.version ?? -1}`} data-selected-element={selectedElementId ?? ""} data-highlight={highlight ? "on" : "off"} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button>
 } }))
 vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
 vi.mock("@/features/evidence/OperationDetail", () => ({ OperationDetail: () => null }))
@@ -77,7 +77,7 @@ it("reconciles retained aggregate coordinates and 기록 번호 after two curren
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = fixture
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   const { rerender } = render(<GraphPage />)
-  await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   await userEvent.click(screen.getByRole("row", { name: /^GET \/api\/orders\/\{id\}/ }))
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...fixture, revision: 2, cells: [survivor] }
   rerender(<GraphPage />)
@@ -92,7 +92,7 @@ it("navigates Site→Group and selects API and Object in the list without leavin
   render(<GraphPage />)
   expect(screen.getByText("Site Overview")).toBeVisible()
   expect(screen.queryByText("orders:101")).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   const breadcrumb = screen.getByRole("navigation", { name: "그래프 계층" })
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
   expect(within(breadcrumb).getByRole("button", { name: "Site Overview" })).toBeVisible()
@@ -115,7 +115,7 @@ it("requires explicit 18-item expansion for APIs and retains group paging on Bac
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells }
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
-  await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   expect(screen.queryByRole("row", { name: /^GET \/api\/orders\/19/ })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: /노드 18개 더 보기/ }))
   // 목록 표는 숫자 ID만 다른 API를 /api/orders/{id} 한 줄로 묶어 접어 두므로, 펼치고 나머지까지 연다.
@@ -161,7 +161,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "목록" }))
   expect(screen.queryByTestId("cytoscape-graph")).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   expect(screen.getByRole("row", { name: /^GET \/orders\/\{id\}/ })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: /^order 객체 1개 펼치기/ }))
   await userEvent.click(screen.getByRole("row", { name: "order:1" }))
@@ -189,7 +189,7 @@ it.each([900, 600])("owns compact inspector state independently, opens it on sel
   const emptyInspector = screen.getByRole("dialog", { name: "선택 상세" })
   expect(emptyInspector).toHaveTextContent("현재 보기")
   await userEvent.click(within(emptyInspector).getByRole("button", { name: "Close" }))
-  await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   // 좁은 화면에서는 선택하면 상세 대화상자가 열리므로, 객체 목록을 먼저 펼친 뒤 객체를 고른다.
   await userEvent.click(screen.getByRole("button", { name: /^order 객체 1개 펼치기/ }))
   await userEvent.click(screen.getByRole("row", { name: "order:1" }))
@@ -236,6 +236,20 @@ it.each([900, 600])("opens the shared graph filters and keeps every meaningful t
   expect(success).not.toBeChecked()
 })
 
+it("ignores highlight filters on Site Overview and applies them inside an API group", async () => {
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
+  render(<CurrentGraphPage />)
+  const filters = screen.getByRole("complementary", { name: "분석 필터" })
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  // Site Overview(대상 → API 묶음)에는 필터와 맞는 엣지가 없어, 강조를 켜면 전부 흐려진다.
+  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "off")
+  await userEvent.click(screen.getByRole("button", { name: "목록" }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(screen.getByRole("button", { name: "그래프" }))
+  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "on")
+})
+
 it("moves back and forward through graph levels from the toolbar", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
@@ -246,7 +260,7 @@ it("moves back and forward through graph levels from the toolbar", async () => {
   expect(back).toBeDisabled()
   expect(forward).toBeDisabled()
   await userEvent.click(screen.getByRole("button", { name: "목록" }))
-  await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
   await userEvent.click(back)
   expect(within(breadcrumb).getByText("Site Overview")).toHaveAttribute("aria-current", "page")

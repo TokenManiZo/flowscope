@@ -114,7 +114,7 @@ export const verdictStyles: Record<Verdict | "unknown", { text: string; color: s
   allow: { text: "ALLOW", color: "#15803d" },
   deny: { text: "DENY", color: "#b91c1c" },
   suspicious: { text: "SUSPICIOUS", color: "#c2410c" },
-  undecided: { text: "UNDECIDED", color: "#7c3aed" },
+  undecided: { text: "확인 필요", color: "#7c3aed" },
   untested: { text: "UNTESTED", color: "#6b7280" },
   unknown: { text: "UNKNOWN", color: "#6b7280" },
 }

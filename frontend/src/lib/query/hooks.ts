@@ -35,7 +35,7 @@ import {
   deleteZapAccount,
   refreshZapSession,
   getProjects,
-  startProject,
+  startProject, updateProject,
   openProject,
   resetProjectTraffic,
   deleteProject,
@@ -133,6 +133,7 @@ function useInvalidatingMutation<TData, TVariables>(
 const projectInvalidations = [queryKeys.projects, queryKeys.snapshot, queryKeys.humanRun,
   queryKeys.scannerRun, queryKeys.explorerRun] as const
 export function useStartProjectMutation() { return useInvalidatingMutation(startProject, projectInvalidations) }
+export function useUpdateProjectMutation() { return useInvalidatingMutation(updateProject, projectInvalidations) }
 export function useOpenProjectMutation() { return useInvalidatingMutation(openProject, projectInvalidations) }
 export function useResetProjectTrafficMutation() { return useInvalidatingMutation(resetProjectTraffic, projectInvalidations) }
 export function useDeleteProjectMutation() { return useInvalidatingMutation(deleteProject, [queryKeys.projects]) }

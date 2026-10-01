@@ -196,6 +196,18 @@ public final class Standalone {
                 throw projectFailure("프로젝트 열기에 실패했습니다.", error);
             }
         }
+        @Override public synchronized ProjectWorkspace.Status updateProject(String name, String scope) {
+            if (activeProjectDatabase == null) throw new IllegalStateException("수정할 현재 프로젝트가 없습니다.");
+            ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, scope);
+            try {
+                activeProjectContext = next;
+                saveProject(activeProjectDatabase, activeProjectContext);
+                markSaved();
+                return projectStatus();
+            } catch (Exception error) {
+                throw projectFailure("프로젝트 수정에 실패했습니다.", error);
+            }
+        }
         @Override public synchronized ProjectWorkspace.Status resetProjectTraffic() {
             if (activeProjectDatabase == null) throw new IllegalStateException("초기화할 현재 프로젝트가 없습니다.");
             try {

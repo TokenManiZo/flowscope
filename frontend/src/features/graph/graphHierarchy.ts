@@ -1,3 +1,4 @@
+import { operationShapeKey } from "./graphPathShape"
 import type { Cell, Snapshot, Source } from "@/lib/api/types"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
@@ -25,7 +26,7 @@ export interface ApiGroup extends ApiGroupDescriptor {
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "object-group"
+  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "object-group" | "operation-group"
   selection: HierarchySelection
   groupId?: string
   service?: string
@@ -34,6 +35,8 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   publicRead?: boolean
   /** 객체 묶음 노드: 묶음 이름, 묶인 객체 ID, 객체별 서버 소유자, 펼침 여부. */
   objectGroup?: { key: string; members: readonly string[]; owners: Readonly<Record<string, string | null>>; expanded: boolean }
+  /** 접힌 API 묶음의 멤버. 그래프에서는 그리지 않고 목록·선택 상세에서만 쓴다. */
+  hiddenInGraph?: boolean
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
   relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
@@ -92,7 +95,7 @@ export function objectGroupKey(resource: string): { id: string; key: string } | 
 }
 
 export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | "toggle" | null {
-  if (kind === "object-group") return "toggle"
+  if (kind === "object-group" || kind === "operation-group") return "toggle"
   if (kind === "api-group" || (kind === "operation" && level === "group")) return "in"
   if (kind === "identity" && level !== "site") return "back"
   return null
@@ -241,6 +244,38 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     return { drawn, hidden: Math.max(0, singles - resolved.objectLimit) }
   }
 
+  // 같은 경로 형식(숫자·UUID·긴 토큰 → {id})의 API가 둘 이상이면 객체 묶음처럼 API 묶음 노드로 접는다(API 목록 표와 같은 기준).
+  // 묶음 노드는 첫 멤버 자리에 두고 멤버를 바로 아래로 모은다. 접힌 묶음은 멤버 API 노드를 그래프에서만 숨기고(목록·선택 상세에는
+  // 남는다) 신원→API·API→객체 엣지를 묶음 노드로 모아 같은 출처·신원 엣지를 하나로 합친다.
+  const groupOperations = (visible: readonly string[], related: readonly Cell[]) => {
+    const shapes = new Map<string, string[]>()
+    for (const op of visible) { const shape = operationShapeKey(op); shapes.set(shape, [...(shapes.get(shape) ?? []), op]) }
+    const collapsed = new Map<string, string>()
+    for (const [shape, ops] of shapes) {
+      if (ops.length < 2) continue
+      const id = `operation-group:${shape}`, open = expandedGroups.has(id)
+      const groupNode = addNode("operation-group", shape, selectionFor(related.filter(cell => ops.includes(cell.op))), { label: shape, wrappedLabel: wrapOperationLabel(shape), objectGroup: { key: shape, members: ops, owners: {}, expanded: open } })
+      const members = ops.map(op => nodes.find(node => node.id === `operation:${op}`)).filter((node): node is HierarchyNode => !!node)
+      const at = Math.min(...members.map(member => nodes.indexOf(member)))
+      for (const node of [groupNode, ...members]) nodes.splice(nodes.indexOf(node), 1)
+      nodes.splice(Math.min(at, nodes.length), 0, groupNode, ...members)
+      if (open) continue
+      for (const member of members) { member.hiddenInGraph = true; collapsed.set(member.id, id) }
+    }
+    if (!collapsed.size) return
+    const merged = new Map<string, HierarchyEdge[]>()
+    for (const edge of edges.splice(0)) {
+      const sourceId = collapsed.get(edge.sourceId) ?? edge.sourceId, targetId = collapsed.get(edge.targetId) ?? edge.targetId
+      if (sourceId === edge.sourceId && targetId === edge.targetId) { edges.push(edge); continue }
+      const key = JSON.stringify([edge.relation, sourceId, targetId, edge.source, edge.selection.identity])
+      merged.set(key, [...(merged.get(key) ?? []), { ...edge, sourceId, targetId }])
+    }
+    for (const parts of merged.values()) {
+      const cells = [...new Set(parts.flatMap(edge => edge.selection.cells))]
+      addEdge(parts[0].relation, parts[0].sourceId, parts[0].targetId, selectionFor(cells, parts[0].source), parts.reduce((sum, edge) => sum + edge.count, 0))
+    }
+  }
+
   if (resolved.level === "site") {
     for (const item of groups) {
       const target = addNode("target", item.service, emptySelection(), { service: item.service })
@@ -267,6 +302,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     hiddenObjectCount = objects.hidden
     hiddenOperationCount = operations.length - visible.length
+    groupOperations(visible, related)
     routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
     if (filters.includeSupportTraffic) {

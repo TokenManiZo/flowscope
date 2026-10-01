@@ -13,6 +13,7 @@ import { SourceIcon } from "@/features/evidence/SourceIcon"
 import { CytoscapeGraph } from "./CytoscapeGraph"
 import { GRAPH_MAX_ZOOM, LANE_SPACING, laneAnchor, type LaneBounds } from "./graphLanes"
 import { GraphInspectorPanel, GraphViewOverview } from "./GraphInspectorPanel"
+import { operationShapeKey } from "./graphPathShape"
 import { loadGraphPreferences, resetGraphPreferences, saveGraphPreferences, type GraphPreferences } from "./graphPreferences"
 import { EMPTY_HIGHLIGHT, nodeStatusCodes, projectHighlight, statusGroups, statusHighlightColors, type GraphHighlight } from "./graphHighlight"
 import { graphCellKey, graphCellSelection, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
@@ -136,14 +137,15 @@ export function RelationshipGraphView() {
   const sourceCount = (source: Source) => includedEvents.filter((event) => event.source === source).length
   const identityCount = (identity: string) => includedEvents.filter((event) => event.idn === identity).length
   const statusGroupList = statusGroups(includedEvents)
-  const edgeHighlight = useMemo(() => graph && snapshot.data ? projectHighlight(graph.edges, snapshot.data.events, highlight) : null, [graph, snapshot.data, highlight])
+  // Site Overview(대상 → API 묶음)에는 출처·신원·응답 코드별 엣지가 없어 필터를 대면 전부 흐려진다. 그 단계에서는 강조를 쓰지 않는다.
+  const edgeHighlight = useMemo(() => graph && graph.kind !== "site" && snapshot.data ? projectHighlight(graph.edges, snapshot.data.events, highlight) : null, [graph, snapshot.data, highlight])
   const statusesByNode = useMemo(() => graph && snapshot.data ? nodeStatusCodes(graph.nodes, snapshot.data.events) : undefined, [graph, snapshot.data])
   const statusColors = useMemo(() => statusHighlightColors(highlight), [highlight])
   const splitSources = useMemo(() => highlight.sources.length > 1 ? allSources.filter((source) => highlight.sources.includes(source)) : [], [highlight.sources])
-  // 묶음을 펼치거나 접으면 객체 레인만 다시 세워, 펼친 객체가 묶음 노드 바로 아래에 겹치지 않고 놓이게 한다.
+  // 묶음을 펼치거나 접으면 그 묶음의 레인(API 묶음은 API 레인, 객체 묶음은 객체 레인)만 다시 세워, 펼친 멤버가 묶음 노드 바로 아래에 겹치지 않고 놓이게 한다.
   const toggleObjectGroup = (id: string) => {
     setExpandedGroups((current) => toggle(current, id))
-    setLaneLayout((current) => ({ lane: 2, version: current.version + 1 }))
+    setLaneLayout((current) => ({ lane: id.startsWith("operation-group:") ? 1 : 2, version: current.version + 1 }))
   }
   // 초기화: 고른 필터·펼친 묶음·저장된 배치(위치·확대 비율·잠금)를 모두 처음 상태로 되돌린다.
   const resetGraph = () => {
@@ -191,6 +193,29 @@ export function RelationshipGraphView() {
     setHistory({ past: [...history.past, resolvedNavigation], future: history.future.slice(1) })
     setNavigation(next)
     clearGraphSelection()
+  }
+  // 요약 패널의 후보·확인 필요 줄은 그 API가 있는 그룹을 연 뒤 API 카드를 고른다. 그룹이 그려진 다음에 고르므로 대기값으로 둔다.
+  const [pendingSelect, setPendingSelect] = useState<string | null>(null)
+  useEffect(() => {
+    if (!pendingSelect || !graph || !("navigation" in graph)) return
+    const target = graph.nodes.find(node => node.id === pendingSelect)
+    if (!target) return
+    setPendingSelect(null)
+    selectGraph(target.selection, target.id)
+  }, [graph, pendingSelect])
+  const scopeActions = {
+    onRevealOperation: (groupId: string, operation: string) => {
+      if (resolvedNavigation.level !== "group" || resolvedNavigation.groupId !== groupId) changeNavigation(navigateHierarchy(resolvedNavigation, "group", groupId))
+      // 접힌 API 묶음 안의 API면 묶음을 펼쳐 그 카드가 보이게 한다.
+      const shapeGroup = `operation-group:${operationShapeKey(operation)}`
+      setExpandedGroups((current) => current.includes(shapeGroup) ? current : [...current, shapeGroup])
+      setPendingSelect(`operation:${operation}`)
+    },
+    onSelectGroup: (groupId: string) => {
+      const target = graph && "navigation" in graph ? graph.nodes.find(node => node.kind === "api-group" && node.groupId === groupId) : undefined
+      if (target) selectGraph(target.selection, target.id)
+    },
+    onOpenGroup: (groupId: string) => changeNavigation(navigateHierarchy(resolvedNavigation, "group", groupId)),
   }
   const navigateNode = (node: HierarchyNode) => {
     if (node.kind === "api-group" && node.groupId) changeNavigation(navigateHierarchy(resolvedNavigation, "group", node.groupId))
@@ -244,7 +269,7 @@ export function RelationshipGraphView() {
   return <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--flowscope-canvas)]" aria-labelledby="graph-title">
     <h1 id="graph-title" className="sr-only">공격면 그래프</h1>
     {snapshot.isError && <Alert variant="destructive" className="m-4"><AlertTitle>그래프를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
-    <ReferenceAnalysisWorkspace context={filterRail} contextTitle={false} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && snapshot.data ? <GraphInspectorPanel selection={selection} event={selectedEvent} snapshot={snapshot.data} suspended={snapshot.isError} node={graph?.nodes.find(node => node.id === selectedElementId) ?? null} projection={graph} /> : graph && "navigation" in graph ? <GraphViewOverview projection={graph} /> : <p className="p-4 text-sm text-muted-foreground">노드를 누르면 정보가 여기에 나옵니다.</p>} inspectorOpen={inspectorOpen} inspectorPersistent onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) { setSelection(null); setSelectedElementId(null) } }} ariaLabel="접근 그래프 작업면">
+    <ReferenceAnalysisWorkspace context={filterRail} contextTitle={false} contextBadge={highlight.sources.length + highlight.identities.length + highlight.statuses.length} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && snapshot.data ? <GraphInspectorPanel selection={selection} event={selectedEvent} snapshot={snapshot.data} suspended={snapshot.isError} node={graph?.nodes.find(node => node.id === selectedElementId) ?? null} projection={graph} actions={scopeActions} /> : graph && "navigation" in graph ? <GraphViewOverview projection={graph} owners={snapshot.data?.owners} actions={scopeActions} /> : <p className="p-4 text-sm text-muted-foreground">노드를 누르면 정보가 여기에 나옵니다.</p>} inspectorOpen={inspectorOpen} inspectorPersistent onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) { setSelection(null); setSelectedElementId(null) } }} ariaLabel="접근 그래프 작업면">
       <nav aria-label="그래프 계층" className="flex min-w-0 items-center gap-2 border-b border-border/70 px-4 py-2 text-xs"><ol className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"><li className="shrink-0">{resolvedNavigation.level === "site" ? <span aria-current="page" className="font-semibold">Site Overview</span> : <Button size="sm" variant="link" className="h-auto p-0 text-xs text-sky-700 dark:text-sky-300" onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "site"))}>Site Overview</Button>}</li>{resolvedNavigation.level !== "site" && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className={resolvedNavigation.level === "group" ? "min-w-0" : "shrink-0"}>{resolvedNavigation.level === "group" ? <span aria-current="page" className="block truncate font-semibold" title={groupLabel}>{groupLabel}</span> : <Button size="sm" variant="link" className="h-auto max-w-48 justify-start truncate p-0 text-xs text-sky-700 dark:text-sky-300" title={groupLabel} onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "group", resolvedNavigation.groupId))}>{groupLabel}</Button>}</li></>}{operationLabel && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className="min-w-0"><span aria-current="page" className="block truncate font-semibold" title={`${operationLabel.method} ${operationLabel.path}`}>{operationLabel.method} {operationLabel.path}</span></li></>}</ol>{hiddenCount > 0 && <Button size="sm" variant="outline" className="shrink-0" onClick={expand}>{resolvedNavigation.level === "operation" ? "객체" : "노드"} 18개 더 보기 ({hiddenCount}개 남음)</Button>}</nav>
       {snapshot.isLoading && <p className="m-4 rounded-md border border-border/70 p-6 text-sm text-muted-foreground">공격면을 불러오는 중입니다.</p>}
       {graph && (compact || listMode ? <div className="p-4" onClick={(event) => { if (!(event.target as HTMLElement).closest("table, input, button, a")) clearGraphSelection() }}><ResponsiveGraphList projection={graph} snapshot={snapshot.data} selectedId={selectedElementId} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {

@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react"
+import { act, render, screen, within } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 
 import type { Snapshot } from "@/lib/api/types"
@@ -52,7 +52,7 @@ it("destroys the actual Cytoscape instance for canvas→list and creates one rep
   act(() => { media.matches = true; listeners.forEach((listener) => listener(new Event("change"))) })
   expect(cytoscapeState.cores[0].off).toHaveBeenCalledTimes(8)
   expect(cytoscapeState.cores[0].destroy).toHaveBeenCalledTimes(1)
-  expect(screen.getByRole("button", { name: /ORDERS APIs/ })).toBeVisible()
+  expect(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ })).toBeVisible()
   act(() => { media.matches = false; listeners.forEach((listener) => listener(new Event("change"))) })
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(2)
   expect(cytoscapeState.cores).toHaveLength(2)

@@ -96,7 +96,7 @@ export function nodeStatusCodes(nodes: readonly { id: string; kind: string; sele
   const index = indexEventsByEvidence(events)
   const codes = new Map<string, readonly number[]>()
   for (const node of nodes) {
-    if (node.kind !== "operation") continue
+    if (node.kind !== "operation" && node.kind !== "operation-group") continue
     const statuses = new Set<number>()
     for (const id of node.selection.evidenceIds) for (const event of index.get(id) ?? []) statuses.add(event.status)
     if (statuses.size) codes.set(node.id, [...statuses].sort((left, right) => left - right))

@@ -112,6 +112,20 @@ public final class ProjectWorkspace {
                 directory.resolve(DATABASE_NAME), context);
     }
 
+    /**
+     * 현재 프로젝트의 이름·점검 범위 수정. 범위는 새 진단과 같은 규칙(exact scope 한 개 이상)으로 검사하고, 생성 시각은 유지한다.
+     * 이름을 비우면 기존 이름을 그대로 쓴다. 이미 모은 기록은 그대로 두고, 이후 수집만 새 범위를 따른다.
+     */
+    public static ProjectStore.ProjectContext updatedContext(ProjectStore.ProjectContext current, String requestedName,
+                                                             String rawScope) {
+        ScopePolicy parsed = ScopePolicy.parse(rawScope);
+        if (parsed.isEmpty()) throw new IllegalArgumentException("점검 대상 주소가 한 개 이상 필요합니다.");
+        String displayName = requestedName == null ? "" : requestedName.trim();
+        if (displayName.length() > 120) throw new IllegalArgumentException("프로젝트 이름은 120자 이하여야 합니다.");
+        if (displayName.isBlank()) displayName = current.name().isBlank() ? defaultName(parsed.entries().getFirst()) : current.name();
+        return new ProjectStore.ProjectContext(displayName, parsed.entries(), current.createdAt());
+    }
+
     public Path resolveDatabase(String id) {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("프로젝트 ID가 필요합니다.");
         Path relative = Path.of(id);

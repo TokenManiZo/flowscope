@@ -30,8 +30,8 @@ describe("relationship graph node cards", () => {
     const support = node("support-operation", `${service} GET /api/session/poll`, { selection: { ...selection(["support-1"]), operation: `${service} GET /api/session/poll`, resource: null } })
     const graph = projection([target, group, identity, api, resource, support])
 
-    expect(relationshipNodeCard(target, graph)).toMatchObject({ badge: "TARGET", title: service, detail: "Exact-scope target", footer: "1 API group", icon: "globe" })
-    expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs · H 7 / S 3 / L 2", footer: "Gap 2 · 경로 후보 1", icon: "network" })
+    expect(relationshipNodeCard(target, graph)).toMatchObject({ badge: "TARGET", title: service, detail: "", footer: "1 API group", icon: "globe" })
+    expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs", footer: "", icon: "network" })
     expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "", footer: "", icon: "user" })
     expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "", footer: "", icon: "none" })
     expect(relationshipNodeCard(resource, graph)).toMatchObject({ badge: "RESOURCE", title: "orders:101", detail: "", footer: "owner: USER B", icon: "box" })
