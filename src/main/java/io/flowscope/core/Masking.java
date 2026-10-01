@@ -120,6 +120,23 @@ public final class Masking {
         return isRoutePathValue(match.group(2)) ? match.group() : match.group(1) + MASK;
     }
 
+    private static final Pattern RELATIVE_ROUTE_LITERAL =
+            Pattern.compile("[a-z0-9][a-z0-9._~-]*(?:/[a-z0-9._~-]+){2,}/?");
+
+    /**
+     * JS 문자열 상수의 상대 API 경로(`RESET_PASSWORD:"api/v2/user/reset-password"`). 키 이름에 password·token이
+     * 들어가도 값이 소문자 경로 세 단계 이상이면 비밀값이 아니라 라우트 상수다(D-162를 상대 경로로 확장, 실측: crAPI 5건).
+     * 대소문자가 섞이거나 길고 무작위인 조각(JWT·base64·16진 토큰)은 해당하지 않아 계속 가린다.
+     */
+    static boolean isRelativeRouteLiteral(String value) {
+        if (value == null || value.length() > 256 || !RELATIVE_ROUTE_LITERAL.matcher(value).matches()) return false;
+        for (String segment : value.split("/")) {
+            if (segment.length() > 40) return false;
+            if (segment.length() >= 16 && segment.chars().allMatch(c -> Character.digit(c, 16) >= 0)) return false;
+        }
+        return true;
+    }
+
     /** 값이 절대/상대 URL 경로로 보이는가. 라우트 상수 값 보존용이며 비밀 값 판별이 아니다. */
     static boolean isRoutePathValue(String value) {
         if (value == null || value.isEmpty()) return false;
@@ -154,9 +171,12 @@ public final class Masking {
             result.append(xml, copied, matcher.start());
             String prefix = matcher.group(1);
             String value = matcher.group(2);
-            if (isRoutePathValue(value)) {
+            boolean wholeStringLiteral = !state.quotedOrCommented() && !prefix.isEmpty()
+                    && (prefix.endsWith("\"") || prefix.endsWith("'")) && matcher.end() < xml.length()
+                    && xml.charAt(matcher.end()) == prefix.charAt(prefix.length() - 1);
+            if (isRoutePathValue(value) || wholeStringLiteral && isRelativeRouteLiteral(value)) {
                 result.append(matcher.group());
-            } else if (!state.quotedOrCommented() && matcher.start() > 0
+            } else if (state.inRegex() || !state.quotedOrCommented() && matcher.start() > 0
                     && xml.charAt(matcher.start() - 1) == '/') {
                 int closingSlash = javascriptRegexEnd(value);
                 if (closingSlash < 0) return REDACTED;
@@ -169,7 +189,8 @@ public final class Masking {
                 String number = maskJavascriptNumber(value);
                 if (number != null) result.append(prefix).append(number);
                 else {
-                    String bare = maskJavascriptBareValue(prefix, value);
+                    String bare = maskJavascriptBareValue(prefix, value,
+                            matcher.end() < xml.length() ? xml.charAt(matcher.end()) : 0);
                     result.append(bare == null ? matcher.group() : prefix + bare);
                 }
             }
@@ -196,14 +217,19 @@ public final class Masking {
         return "0" + value.substring(end);
     }
 
-    private static String maskJavascriptBareValue(String prefix, String value) {
+    /**
+     * 따옴표 없는 값을 가린다. 값이 식의 일부이면(연산자가 있거나 바로 뒤에 문자열이 이어지면) 비밀값이 아니라 코드이므로
+     * 그대로 둔다. `accessToken:t||""`를 `null""`로 바꾸면 문법이 깨진다(실측: crAPI 번들).
+     */
+    private static String maskJavascriptBareValue(String prefix, String value, char next) {
         int terminator = value.indexOf(';');
+        if (terminator < 0 && (next == '"' || next == '\'' || next == '`')) return null;
         String head = terminator < 0 ? value : value.substring(0, terminator);
         if (head.isBlank() || List.of("new", "await", "yield", "typeof", "delete", "void").contains(head)) {
             return null;
         }
         for (int i = 0; i < head.length(); i++) {
-            if ("(){}[]?:+*/\\.,=".indexOf(head.charAt(i)) >= 0) return null;
+            if ("(){}[]?:+*/\\.,=|&!<>%^~".indexOf(head.charAt(i)) >= 0) return null;
         }
         boolean colon = prefix.lastIndexOf(':') > prefix.lastIndexOf('=');
         if (colon && head.matches("[A-Za-z_$][A-Za-z0-9_$]*")) return null;
@@ -226,48 +252,121 @@ public final class Masking {
         return (count & 1) != 0;
     }
 
+    /**
+     * 마스킹 위치가 문자열·주석·정규식 리터럴 안인지 추적하는 가벼운 어휘 상태.
+     * `/`는 앞 문맥에 따라 나눗셈이거나 정규식 리터럴이다(ECMA-262 어휘 문법의 InputElementDiv/InputElementRegExp).
+     * 정규식을 모르면 `/["']/g` 안의 따옴표를 문자열 시작으로 오인해 이후 코드 전체를 문자열로 보고, `{token:n}` 같은
+     * 코드까지 가려 문법을 깨뜨린다(실측: crAPI 번들 276곳 오마스킹 → JS 경로 분석 0건). 그래서 직전의 의미 있는
+     * 기호·키워드로 정규식 시작을 판정한다(토크나이저들이 쓰는 표준 휴리스틱).
+     */
     private static final class JavascriptLexState {
+        private static final java.util.Set<String> REGEX_PRECEDING_KEYWORDS = java.util.Set.of(
+                "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do",
+                "else", "yield", "await");
         private char quote;
         private boolean escaped;
         private boolean lineComment;
         private boolean blockComment;
+        private boolean regex;
+        private boolean regexClass;
+        private boolean regexEscaped;
+        private boolean regexFlags;
+        /** 문자열·주석 밖의 직전 의미 있는 문자. 0이면 시작 위치. */
+        private char previous;
+        private final StringBuilder word = new StringBuilder();
+        private String previousWord = "";
         private final ArrayDeque<Integer> templateDepths = new ArrayDeque<>();
 
-        boolean quotedOrCommented() { return quote != 0 || lineComment || blockComment; }
+        boolean quotedOrCommented() { return quote != 0 || lineComment || blockComment || regex; }
+
+        boolean inRegex() { return regex; }
 
         void advance(String value, int from, int to) {
             for (int i = from; i < to; i++) {
                 char c = value.charAt(i);
                 char next = i + 1 < to ? value.charAt(i + 1) : 0;
+                if (regexFlags) {
+                    if (Character.isLetter(c)) continue;
+                    regexFlags = false;
+                }
                 if (lineComment) {
                     if (c == '\n' || c == '\r') lineComment = false;
                 } else if (blockComment) {
                     if (c == '*' && next == '/') { blockComment = false; i++; }
+                } else if (regex) {
+                    if (c == '\n' || c == '\r') { regex = false; regexClass = false; regexEscaped = false; }
+                    else if (regexEscaped) regexEscaped = false;
+                    else if (c == '\\') regexEscaped = true;
+                    else if (c == '[') regexClass = true;
+                    else if (c == ']') regexClass = false;
+                    else if (c == '/' && !regexClass) {
+                        regex = false;
+                        regexFlags = true;
+                        previous = 'a';
+                        previousWord = "";
+                    }
                 } else if (quote != 0) {
                     if (escaped) escaped = false;
                     else if (c == '\\') escaped = true;
                     else if (quote == '`' && c == '$' && next == '{') {
                         quote = 0;
                         templateDepths.push(1);
+                        markSignificant('{');
                         i++;
                     }
-                    else if (c == quote) quote = 0;
+                    else if (c == quote) { quote = 0; previous = 'a'; previousWord = ""; }
                 } else if (c == '/' && next == '/') {
+                    finishWord();
                     lineComment = true;
                     i++;
                 } else if (c == '/' && next == '*') {
+                    finishWord();
                     blockComment = true;
                     i++;
+                } else if (c == '/') {
+                    finishWord();
+                    if (regexAllowed()) regex = true;
+                    else markSignificant('/');
                 } else if (!templateDepths.isEmpty() && c == '{') {
+                    finishWord();
                     templateDepths.push(templateDepths.pop() + 1);
+                    markSignificant(c);
                 } else if (!templateDepths.isEmpty() && c == '}') {
+                    finishWord();
                     int depth = templateDepths.pop() - 1;
                     if (depth == 0) quote = '`';
-                    else templateDepths.push(depth);
+                    else { templateDepths.push(depth); markSignificant(c); }
                 } else if (c == '\'' || c == '"' || c == '`') {
+                    finishWord();
                     quote = c;
+                } else if (Character.isLetterOrDigit(c) || c == '_' || c == '$') {
+                    word.append(c);
+                    previous = 'a';
+                } else if (!Character.isWhitespace(c)) {
+                    finishWord();
+                    markSignificant(c);
+                } else {
+                    finishWord();
                 }
             }
+        }
+
+        private boolean regexAllowed() {
+            if (previous == 0) return true;
+            if (previous == 'a') return REGEX_PRECEDING_KEYWORDS.contains(previousWord);
+            return "(,=:[!&|?{};~+-*%<>^}".indexOf(previous) >= 0;
+        }
+
+        private void finishWord() {
+            if (word.length() > 0) {
+                previousWord = word.toString();
+                word.setLength(0);
+            }
+        }
+
+        private void markSignificant(char c) {
+            previous = c;
+            if (c != 'a') previousWord = "";
         }
     }
 

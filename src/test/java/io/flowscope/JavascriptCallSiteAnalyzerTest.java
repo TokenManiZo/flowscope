@@ -187,6 +187,8 @@ final class JavascriptCallSiteAnalyzerTest {
 
     @Test
     void 재할당된_URL과_객체_멤버는_초기값으로_거짓_endpoint를_만들지_않는다() {
+        // 사용 직전에 직선으로 대입된 값('/api/runtime')은 실제 요청 경로다. 오래된 초기값('/api/initial')과
+        // 속성 변경으로 바뀐 객체 멤버는 여전히 풀지 않는다.
         JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
                 let route = '/api/initial';
                 route = '/api/runtime';
@@ -196,8 +198,39 @@ final class JavascriptCallSiteAnalyzerTest {
                 fetch(routes.list);
                 """);
 
-        assertTrue(analysis.callSites().isEmpty());
-        assertEquals(2, analysis.issues().size());
+        assertEquals(List.of("/api/runtime"), analysis.callSites().stream().map(call -> call.reference()).toList());
+        assertEquals(1, analysis.issues().size());
+    }
+
+    @Test
+    void 분기_안의_재할당은_순서를_단정할_수_없어_풀지_않고_긴_한줄_번들에서도_순서를_구조로_판단한다() {
+        StringBuilder minified = new StringBuilder();
+        for (int i = 0; i < 600; i++) minified.append("var p").append(i).append('=').append(i).append(';');
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(minified
+                + "function*load(e){let t;e=\"api/v2/items\";t=yield fetch(\"/svc/\"+e,{headers:{}});return t}"
+                + "function save(u){let r='/api/a';if(u)r='/api/b';fetch(r)}");
+
+        assertTrue(analysis.callSites().stream()
+                .anyMatch(call -> "/svc/api/v2/items".equals(call.reference()) && "GET".equals(call.method())),
+                analysis.callSites().toString());
+        assertTrue(analysis.callSites().stream().anyMatch(call -> "/api/a".equals(call.reference())),
+                "the dominating declaration is used; the conditional branch is not assumed");
+        assertFalse(analysis.callSites().stream().anyMatch(call -> "/api/b".equals(call.reference())));
+    }
+
+    @Test
+    void 경로_변수를_replace로_채우거나_쿼리_템플릿을_이어붙인_URL을_푼다() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const base = 'workshop/', api = {POST_BY_ID:'api/v2/posts/<postId>', LIST:'api/shop/products'};
+                function* byId(id) { const e = base + api.POST_BY_ID; yield fetch(e.replace('<postId>', id)); }
+                function* list(page) { const e = base + api.LIST + `?limit=30&offset=${page}`; yield fetch(e, {headers:{}}); }
+                """);
+
+        assertTrue(analysis.callSites().stream()
+                .anyMatch(call -> call.reference().equals("workshop/api/v2/posts/{expr}")), analysis.callSites().toString());
+        assertTrue(analysis.callSites().stream()
+                .anyMatch(call -> call.reference().startsWith("workshop/api/shop/products?limit=30") && "GET".equals(call.method())),
+                analysis.callSites().toString());
     }
 
     @Test
