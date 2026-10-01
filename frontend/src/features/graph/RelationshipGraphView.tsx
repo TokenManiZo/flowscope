@@ -137,7 +137,8 @@ export function RelationshipGraphView() {
   const sourceCount = (source: Source) => includedEvents.filter((event) => event.source === source).length
   const identityCount = (identity: string) => includedEvents.filter((event) => event.idn === identity).length
   const statusGroupList = statusGroups(includedEvents)
-  const edgeHighlight = useMemo(() => graph && snapshot.data ? projectHighlight(graph.edges, snapshot.data.events, highlight) : null, [graph, snapshot.data, highlight])
+  // Site Overview(대상 → API 묶음)에는 출처·신원·응답 코드별 엣지가 없어 필터를 대면 전부 흐려진다. 그 단계에서는 강조를 쓰지 않는다.
+  const edgeHighlight = useMemo(() => graph && graph.kind !== "site" && snapshot.data ? projectHighlight(graph.edges, snapshot.data.events, highlight) : null, [graph, snapshot.data, highlight])
   const statusesByNode = useMemo(() => graph && snapshot.data ? nodeStatusCodes(graph.nodes, snapshot.data.events) : undefined, [graph, snapshot.data])
   const statusColors = useMemo(() => statusHighlightColors(highlight), [highlight])
   const splitSources = useMemo(() => highlight.sources.length > 1 ? allSources.filter((source) => highlight.sources.includes(source)) : [], [highlight.sources])

@@ -6,10 +6,10 @@ import { afterEach, expect, it, vi } from "vitest"
 import type { Snapshot } from "@/lib/api/types"
 import { GraphPage as CurrentGraphPage } from "./GraphPage"
 
-vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneBoundsChange }: { selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneBoundsChange?(bounds: ReadonlyArray<{ left: number; right: number } | null>): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
+vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ onSelect, selectedElementId, laneLayout, onLaneBoundsChange, highlight }: { highlight?: ReadonlyMap<string, string> | null; selectedElementId?: string | null; laneLayout?: { lane: number; version: number }; onLaneBoundsChange?(bounds: ReadonlyArray<{ left: number; right: number } | null>): void; onSelect(selection: { operation: string; resource: string; identity: string; source: "human"; evidenceIds: string[] }, elementId: string): void }) => {
   // 실제 캔버스 대신 레인 범위를 알리고, 받은 레인 정렬 요청을 그대로 노출한다.
   useEffect(() => { onLaneBoundsChange?.((globalThis as { graphLaneBounds?: ReadonlyArray<{ left: number; right: number } | null> }).graphLaneBounds ?? [{ left: 20, right: 300 }, { left: 400, right: 700 }]) }, [onLaneBoundsChange])
-  return <button type="button" data-testid="cytoscape-graph" data-lane-layout={`${laneLayout?.lane ?? -1}:${laneLayout?.version ?? -1}`} data-selected-element={selectedElementId ?? ""} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button>
+  return <button type="button" data-testid="cytoscape-graph" data-lane-layout={`${laneLayout?.lane ?? -1}:${laneLayout?.version ?? -1}`} data-selected-element={selectedElementId ?? ""} data-highlight={highlight ? "on" : "off"} onClick={() => onSelect({ operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }, "operation:GET /orders/{id}")}>그래프 작업 선택</button>
 } }))
 vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
 vi.mock("@/features/evidence/OperationDetail", () => ({ OperationDetail: () => null }))
@@ -234,6 +234,20 @@ it.each([900, 600])("opens the shared graph filters and keeps every meaningful t
   expect(scanner).not.toBeChecked()
   expect(identity).not.toBeChecked()
   expect(success).not.toBeChecked()
+})
+
+it("ignores highlight filters on Site Overview and applies them inside an API group", async () => {
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
+  render(<CurrentGraphPage />)
+  const filters = screen.getByRole("complementary", { name: "분석 필터" })
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  // Site Overview(대상 → API 묶음)에는 필터와 맞는 엣지가 없어, 강조를 켜면 전부 흐려진다.
+  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "off")
+  await userEvent.click(screen.getByRole("button", { name: "목록" }))
+  await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
+  await userEvent.click(screen.getByRole("button", { name: "그래프" }))
+  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "on")
 })
 
 it("moves back and forward through graph levels from the toolbar", async () => {
