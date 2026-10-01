@@ -227,6 +227,106 @@ final class ZapCampaignTest {
         }
     }
 
+    @Test
+    void runsTheTraditionalSpiderAfterTheClientSpiderWithGetOnlyOptions() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            List<String> calls = new CopyOnWriteArrayList<>();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                calls.add("client");
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+            for (String path : List.of("/JSON/spider/action/setOptionPostForm/", "/JSON/spider/action/excludeFromScan/")) {
+                fixture.server.removeContext(path);
+                fixture.server.createContext(path, exchange -> {
+                    calls.add(path + "?" + java.net.URLDecoder.decode(exchange.getRequestURI().getRawQuery(), java.nio.charset.StandardCharsets.UTF_8));
+                    zapReply(exchange, "{\"Result\":\"OK\"}");
+                });
+            }
+            fixture.server.removeContext("/JSON/replacer/action/addRule/");
+            fixture.server.createContext("/JSON/replacer/action/addRule/", exchange -> {
+                calls.add("capability " + java.net.URLDecoder.decode(new String(exchange.getRequestBody().readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8), java.nio.charset.StandardCharsets.UTF_8));
+                zapReply(exchange, "{\"Result\":\"OK\"}");
+            });
+            fixture.server.removeContext("/JSON/spider/action/scan/");
+            fixture.server.createContext("/JSON/spider/action/scan/", exchange -> {
+                calls.add("spider?" + exchange.getRequestURI().getRawQuery());
+                fixture.observe("/robots-only");
+                zapReply(exchange, "{\"scan\":\"3\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertTrue(calls.stream().anyMatch(call -> call.startsWith("capability ") && call.contains("initiators=3,5,6,14,15,18")),
+                    "the Spider initiator (3) must carry the run capability: " + calls);
+            assertEquals("client", calls.stream().filter(call -> !call.startsWith("capability ")).findFirst().orElseThrow());
+            assertTrue(calls.contains("/JSON/spider/action/setOptionPostForm/?Boolean=false"), calls.toString());
+            assertTrue(calls.stream().anyMatch(call -> call.startsWith("/JSON/spider/action/excludeFromScan/?regex=")
+                    && call.contains("log-?out")), calls.toString());
+            String spider = calls.stream().filter(call -> call.startsWith("spider?")).findFirst().orElseThrow();
+            assertTrue(spider.contains("subtreeOnly=true") && spider.contains("contextName=flowscope-"), spider);
+            assertEquals(2, result.path("captured_records").asInt(), result.toString());
+            assertTrue(fixture.records.stream().anyMatch(record -> record.sourceDetail == SourceDetail.ZAP_SPIDER
+                    && "/robots-only".equals(record.path)));
+        }
+    }
+
+    @Test
+    void logsInTheTraditionalSpiderAsTheVerifiedZapUser() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            AtomicReference<String> query = new AtomicReference<>("");
+            fixture.server.removeContext("/JSON/spider/action/scanAsUser/");
+            fixture.server.createContext("/JSON/spider/action/scanAsUser/", exchange -> {
+                query.set(exchange.getRequestURI().getRawQuery());
+                zapReply(exchange, "{\"scanAsUser\":\"3\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of("user-a"), false);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertTrue(query.get().contains("contextId=1") && query.get().contains("userId=7")
+                    && query.get().contains("subtreeOnly=true"), query.get());
+        }
+    }
+
+    @Test
+    void aFailedTraditionalSpiderIsAWarningNotALaneFailure() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.server.removeContext("/JSON/spider/action/scan/");
+            fixture.server.createContext("/JSON/spider/action/scan/", exchange -> zapReply(exchange,
+                    "{\"code\":\"bad_view\",\"message\":\"spider unavailable\"}"));
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED_WITH_WARNINGS", result.path("status").asText(), result.toString());
+            assertEquals(1, result.at("/lanes/0/client_captures").asInt(), "the Client Spider result is kept");
+            assertTrue(result.at("/lanes/0/warning").asText().contains("일반 Spider 생략"), result.toString());
+        }
+    }
+
+    @Test
+    void theSpiderExclusionKeepsSessionEndingAndDeletingLinksOut() {
+        java.util.regex.Pattern exclude = java.util.regex.Pattern.compile(ZapCampaign.SPIDER_EXCLUDE_REGEX);
+        for (String url : List.of("https://app.test/logout", "https://app.test/users/sign-out?next=/",
+                "https://app.test/api/v1/posts/7/delete", "https://app.test/LogOff")) {
+            assertTrue(exclude.matcher(url).matches(), url);
+        }
+        for (String url : List.of("https://app.test/api/v1/posts", "https://app.test/login",
+                "https://app.test/search?q=logout")) {
+            assertFalse(exclude.matcher(url).matches(), url);
+        }
+    }
+
     private static void await(BooleanSupplier condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);

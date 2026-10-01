@@ -29,6 +29,7 @@ const stages: Record<string, string> = {
   API_DEFINITION_IMPORT: "API 정의 가져오기",
   AUTHENTICATION: "ZAP 브라우저 로그인",
   CLIENT_SPIDER: "Client Spider",
+  SPIDER: "일반 Spider",
   PASSIVE_SCAN_QUEUE: "Passive Scan 대기",
   ALERTS_READY: "Alert 집계 완료",
   CLEANUP: "종료 처리 · 임시 상태 정리 중",

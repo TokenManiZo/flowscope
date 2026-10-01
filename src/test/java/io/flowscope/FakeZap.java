@@ -20,7 +20,7 @@ final class FakeZap {
                 "{\"zapHomePath\":\"/run/flowscope-zap/test/home/\"}"));
         server.createContext("/JSON/autoupdate/view/installedAddons/", exchange -> zapReply(exchange,
                 "{\"installedAddons\":["
-                        + "{\"id\":\"client\"},"
+                        + "{\"id\":\"client\"},{\"id\":\"spider\"},"
                         + "{\"id\":\"pscan\"},{\"id\":\"pscanrules\"},{\"id\":\"selenium\"},"
                         + "{\"id\":\"openapi\"},{\"id\":\"websocket\"},{\"id\":\"network\"},"
                         + "{\"id\":\"replacer\"},{\"id\":\"authhelper\"}]}"));
@@ -72,6 +72,23 @@ final class FakeZap {
                 "{\"scanners\":[{\"id\":\"10020\",\"enabled\":\"true\"}]}"));
         server.createContext("/JSON/alert/view/numberOfAlerts/", exchange -> zapReply(exchange,
                 "{\"numberOfAlerts\":\"" + alertCount + "\"}"));
+        registerTraditionalSpider(server);
+    }
+
+    /** 일반 Spider: 옵션 설정은 모두 OK, 시작하면 곧바로 완료(100)로 응답한다. 테스트가 필요하면 context를 바꿔 끼운다. */
+    static void registerTraditionalSpider(HttpServer server) {
+        for (String option : new String[] {"MaxDepth", "MaxDuration", "PostForm", "ProcessForm", "ParseRobotsTxt", "ParseSitemapXml"}) {
+            server.createContext("/JSON/spider/action/setOption" + option + "/", exchange -> zapReply(exchange,
+                    "{\"Result\":\"OK\"}"));
+        }
+        server.createContext("/JSON/spider/action/clearExcludedFromScan/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/spider/action/excludeFromScan/", exchange -> zapReply(exchange,
+                "{\"Result\":\"OK\"}"));
+        server.createContext("/JSON/spider/action/scan/", exchange -> zapReply(exchange, "{\"scan\":\"3\"}"));
+        server.createContext("/JSON/spider/action/scanAsUser/", exchange -> zapReply(exchange, "{\"scanAsUser\":\"3\"}"));
+        server.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
+        server.createContext("/JSON/spider/action/stop/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
     }
 
 }

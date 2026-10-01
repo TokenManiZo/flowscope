@@ -67,11 +67,16 @@ public final class ZapCampaign implements AutoCloseable {
     private static final int MAX_ZAP_ALERT_SNAPSHOT = 20_000;
     private static final int MAX_ZAP_LANES = 20;
     private static final int MAX_ZAP_PROGRESS_EVENTS = 120;
-    // ZAP 2.17 HttpSender: auth=5, import/manual=6, Authentication Helper=14,
+    // ZAP 2.17 HttpSender: Spider=3, auth=5, import/manual=6, Authentication Helper=14,
     // auth poll=15, Client Spider=18.
-    private static final List<Integer> CAPABILITY_INITIATORS = List.of(5, 6, 14, 15, 18);
+    private static final List<Integer> CAPABILITY_INITIATORS = List.of(3, 5, 6, 14, 15, 18);
+    // 일반 Spider: 원문(HTML·헤더·robots·sitemap·JS 문자열)에서 주소를 뽑아 GET으로 따라간다. Client Spider와 찾는 범위가 달라
+    // 함께 돌린다(ZAP 권고). 쓰기 요청을 만들지 않도록 POST 폼 제출은 끄고, 로그인 세션을 끊거나 지우는 경로는 제외한다.
+    private static final int SPIDER_MAX_DEPTH = 5;
+    private static final int SPIDER_MAX_DURATION_MINUTES = 10;
+    public static final String SPIDER_EXCLUDE_REGEX = "(?i)^[^?#]*(log-?out|sign-?out|log-?off|delete|destroy).*$";
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
-            "client", "pscan", "pscanrules", "selenium", "openapi", "websocket",
+            "client", "spider", "pscan", "pscanrules", "selenium", "openapi", "websocket",
             "network", "replacer", "authhelper");
     private final ObjectMapper json = new ObjectMapper();
     private final State state;
@@ -97,6 +102,7 @@ public final class ZapCampaign implements AutoCloseable {
     private ZapBaselineRun pendingZapResult;
     private volatile long zapCleanupStartedAt;
     private volatile String ownedClientScanId = "";
+    private volatile String ownedSpiderScanId = "";
     private volatile String zapCapabilityRunId = "";
     private volatile String zapCapabilityRule = "";
 
@@ -273,6 +279,7 @@ public final class ZapCampaign implements AutoCloseable {
             pendingZapResult = null;
             zapCleanupStartedAt = 0;
             ownedClientScanId = "";
+            ownedSpiderScanId = "";
             recordZapProgress("전체", "INITIALIZING", "INFO", authenticationOnly
                     ? "독립 로그인 세션 갱신 대기열 생성"
                     : lanes.size() + "개 신원 격리 검사 대기열 생성");
@@ -397,6 +404,7 @@ public final class ZapCampaign implements AutoCloseable {
                         "ZAP scanner capability cleanup failed: " + capabilityFailure.getMessage()));
             }
             ownedClientScanId = "";
+            ownedSpiderScanId = "";
             if (pendingZapResult != null && pendingZapResult.status().startsWith("COMPLETED")) {
                 try {
                     state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, null);
@@ -726,6 +734,8 @@ public final class ZapCampaign implements AutoCloseable {
             if (clientCaptured == 0) {
                 throw zeroCaptureFailure("Client Spider", target);
             }
+            warning = runTraditionalSpider(runId, target, lane, index, contextName, identity,
+                    definitionImports, clientCaptured, warning);
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "PASSIVE_SCAN_QUEUE", clientCaptured, clientCaptured, definitionImports, 0,
@@ -1032,15 +1042,104 @@ public final class ZapCampaign implements AutoCloseable {
     private RuntimeException stopAndAwaitOwnedCrawlers() {
         RuntimeException failure = null;
         String client;
+        String spider;
         synchronized (this) {
             client = ownedClientScanId;
             ownedClientScanId = "";
+            spider = ownedSpiderScanId;
+            ownedSpiderScanId = "";
         }
         if (!client.isBlank()) {
             try { stopOwnedClientSpider(client); }
             catch (RuntimeException error) { failure = mergeFailure(failure, "Client Spider cleanup failed", error); }
         }
+        if (!spider.isBlank()) {
+            try { stopOwnedSpider(spider); }
+            catch (RuntimeException error) { failure = mergeFailure(failure, "Spider cleanup failed", error); }
+        }
         return failure;
+    }
+
+    /**
+     * Client Spider 다음 단계로 같은 Context와 신원으로 일반 Spider를 돌린다. 로그인 레인은 ZAP 사용자로(scanAsUser) 돌린다.
+     * 일반 Spider는 보조 탐색이라 실패하거나 0건이어도 레인을 실패시키지 않고 경고로 남긴다. 단 취소, capability 위반,
+     * 정리 실패는 그대로 올려 격리를 지킨다.
+     */
+    private String runTraditionalSpider(String runId, String target, ZapLane lane, int index, String contextName,
+                                        ZapBrowserAuthenticator.Identity identity, int definitionImports,
+                                        long clientCaptured, String warning) {
+        long spiderBefore = capturedForRun(runId, SourceDetail.ZAP_SPIDER);
+        state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_SPIDER, lane.accountId());
+        replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                "SPIDER", clientCaptured, clientCaptured, definitionImports, 0,
+                false, false, -1, warning, ""));
+        updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · SPIDER", "", warning, "");
+        String spiderId = "";
+        boolean spiderFinished = false;
+        try {
+            requireZapOk(state.zap().setSpiderOption("MaxDepth", SPIDER_MAX_DEPTH), "set Spider max depth");
+            requireZapOk(state.zap().setSpiderOption("MaxDuration", SPIDER_MAX_DURATION_MINUTES), "set Spider max duration");
+            requireZapOk(state.zap().setSpiderOption("PostForm", false), "disable Spider POST form submission");
+            requireZapOk(state.zap().setSpiderOption("ProcessForm", true), "enable Spider GET form processing");
+            requireZapOk(state.zap().setSpiderOption("ParseRobotsTxt", true), "enable Spider robots.txt parsing");
+            requireZapOk(state.zap().setSpiderOption("ParseSitemapXml", true), "enable Spider sitemap.xml parsing");
+            requireZapOk(state.zap().clearSpiderExclusions(), "clear Spider exclusions");
+            requireZapOk(state.zap().excludeFromSpider(SPIDER_EXCLUDE_REGEX), "exclude session-ending Spider paths");
+            synchronized (this) {
+                ensureZapNotCancelled();
+                JsonNode started = parseZap(identity == null
+                        ? state.zap().spider(target, contextName)
+                        : state.zap().spiderAsUser(target, identity.contextId(), identity.userId()));
+                spiderId = started.path(identity == null ? "scan" : "scanAsUser").asText();
+                if (spiderId.isBlank()) throw new IllegalStateException("Spider did not return a scan id");
+                ownedSpiderScanId = spiderId;
+            }
+            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · SPIDER", spiderId, warning, "");
+            String finalSpiderId = spiderId;
+            waitForZap(() -> state.zap().spiderStatus(finalSpiderId), (SPIDER_MAX_DURATION_MINUTES + 2) * 60_000L,
+                    "Spider", runId, index);
+            spiderFinished = true;
+            releaseSpider(spiderId);
+        } catch (ZapIsolationException error) {
+            throw error;
+        } catch (RuntimeException error) {
+            ensureZapNotCancelled();
+            ensureScannerCapabilityIntact(runId);
+            return appendWarning(warning, "일반 Spider 생략: " + error.getMessage());
+        } finally {
+            if (!spiderFinished && !spiderId.isBlank() && claimSpider(spiderId)) {
+                try { stopOwnedSpider(spiderId); }
+                catch (RuntimeException cleanupError) {
+                    throw new ZapIsolationException("Spider cleanup failed: " + cleanupError.getMessage());
+                }
+            }
+        }
+        ensureScannerCapabilityIntact(runId);
+        ensureZapNotCancelled();
+        // 0건은 실패가 아니다(Client Spider가 이미 다 찾았거나 원문에 새 주소가 없음). 진행 기록에만 남긴다.
+        recordZapProgress(lane.accountLabel(), "SPIDER", "DONE",
+                "일반 Spider 기록 " + (capturedForRun(runId, SourceDetail.ZAP_SPIDER) - spiderBefore) + "건");
+        return warning;
+    }
+
+    private void stopOwnedSpider(String scanId) {
+        boolean interrupted = Thread.interrupted();
+        try {
+            requireZapOk(state.zap().stopSpider(scanId), "stop its unfinished Spider");
+            awaitZapTerminal(() -> state.zap().spiderStatus(scanId), "Spider");
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    private synchronized boolean claimSpider(String scanId) {
+        if (!scanId.equals(ownedSpiderScanId)) return false;
+        ownedSpiderScanId = "";
+        return true;
+    }
+
+    private synchronized void releaseSpider(String scanId) {
+        if (scanId.equals(ownedSpiderScanId)) ownedSpiderScanId = "";
     }
 
     private synchronized boolean claimClientSpider(String scanId) {
@@ -1365,6 +1464,7 @@ public final class ZapCampaign implements AutoCloseable {
             case "SESSION_SETUP" -> "격리 세션 설정";
             case "AUTHENTICATION" -> "ZAP 브라우저 로그인";
             case "CLIENT_SPIDER" -> "Client Spider";
+            case "SPIDER" -> "일반 Spider";
             case "PASSIVE_SCAN_QUEUE" -> "Passive Scan";
             case "ALERTS_READY" -> "Alert 집계";
             case "FAILED" -> "현재 단계";
@@ -1379,6 +1479,7 @@ public final class ZapCampaign implements AutoCloseable {
             case "API_DEFINITION_IMPORT" -> Math.max(1, zapBaseline == null
                     ? 1 : zapBaseline.definitionCount()) * 2 * 60_000L;
             case "CLIENT_SPIDER" -> 20 * 60_000L;
+            case "SPIDER" -> (SPIDER_MAX_DURATION_MINUTES + 2) * 60_000L;
             case "PASSIVE_SCAN_QUEUE" -> passiveAbsoluteTimeoutMillis();
             default -> 0L;
         };

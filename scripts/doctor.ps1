@@ -110,7 +110,7 @@ if ($checkZap) {
 
             $addOns = Invoke-ZapApi '/JSON/autoupdate/view/installedAddons/' $key $zapPort
             $installedIds = @($addOns.installedAddons | ForEach-Object { $_.id })
-            $missing = @(@('client', 'pscan', 'pscanrules', 'selenium', 'openapi', 'websocket', 'network', 'replacer', 'authhelper') | Where-Object { $_ -notin $installedIds })
+            $missing = @(@('client', 'spider', 'pscan', 'pscanrules', 'selenium', 'openapi', 'websocket', 'network', 'replacer', 'authhelper') | Where-Object { $_ -notin $installedIds })
             if ($missing.Count -eq 0) { Write-Ok 'required ZAP crawler/passive/API/WebSocket/Network add-ons are installed' }
             else { Write-Failure "missing required ZAP add-on(s): $($missing -join ', ')" }
         } catch { Write-Failure "ZAP API is not reachable at 127.0.0.1:$zapPort" }
