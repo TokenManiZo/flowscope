@@ -1397,6 +1397,32 @@ public final class FlowScopeExtension implements BurpExtension {
         return currentProjectStatus();
     }
 
+    /**
+     * 프로젝트 관리 창의 "수정": 현재 프로젝트의 이름과 exact scope를 바꾼다. Burp 탭의 범위 적용(applyScope)은 진행 중인
+     * 프로젝트의 scope 변경을 막지만, 이 경로는 사용자가 프로젝트를 명시적으로 고치는 것이라 허용한다. 이미 모은 기록은
+     * 그대로 두고 이후 수집만 새 범위를 따르며, 바뀐 이름·범위를 바로 저장한다. 실행 중인 작업이 있으면 막는다.
+     */
+    private ProjectWorkspace.Status updateActiveProject(String name, String requestedScope) throws IOException {
+        if (scopeMutationBlocked(runContexts)) {
+            throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
+        }
+        if (activeProjectDatabase == null) throw new IllegalStateException("수정할 현재 프로젝트가 없습니다.");
+        ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, requestedScope);
+        ScopePolicy parsed = ScopePolicy.parse(requestedScope);
+        activeProjectContext = next;
+        scope = parsed;
+        scopeText = String.join("\n", next.scope());
+        supportingAssets.clear();
+        synchronized (siteMapSeeds) { siteMapSeeds.removeIf(seed -> !parsed.allows(seed.url())); }
+        synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
+        rebuildRouteCandidates(latest.records);
+        saveActiveDatabase();
+        markDatabaseSaved(revision.get());
+        if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
+        api.logging().logToOutput("FlowScope 프로젝트 수정: " + next.name() + " · " + next.scope());
+        return currentProjectStatus();
+    }
+
     private ProjectWorkspace.Status openWorkspaceProject(String id) throws IOException {
         if (scopeMutationBlocked(runContexts)) {
             throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
@@ -1911,6 +1937,9 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public ProjectWorkspace.Status openProject(String id) {
                 return runProjectTask(() -> openWorkspaceProject(id));
+            }
+            @Override public ProjectWorkspace.Status updateProject(String name, String projectScope) {
+                return runProjectTask(() -> updateActiveProject(name, projectScope));
             }
             @Override public ProjectWorkspace.Status resetProjectTraffic() {
                 return runProjectTask(FlowScopeExtension.this::resetActiveProjectTraffic);

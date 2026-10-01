@@ -14,6 +14,7 @@ vi.mock("@/lib/query/hooks", () => ({
   useResetProjectTrafficMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteProjectMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useStartProjectMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+  useUpdateProjectMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }))
 
 it("uses the status bar, grouped sidebar navigation, and viewport landmark around route content", () => {

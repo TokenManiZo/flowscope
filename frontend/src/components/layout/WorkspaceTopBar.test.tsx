@@ -96,47 +96,16 @@ it("keeps cached server values authoritative during refetch failures", async () 
   expect(screen.getByLabelText("SCOPE READY 상태")).toHaveTextContent("준비됨")
 })
 
-it("keeps project, DB, and inspection controls discoverable without duplicating sidebar navigation", async () => {
+it("keeps only live status in the top bar: the project area moved to the sidebar", () => {
   render(<WorkspaceTopBar route="dashboard" />)
 
   const banner = screen.getByRole("banner", { name: "FlowScope 상단 상태" })
   expect(banner).toHaveClass("flex-wrap")
-  expect(within(banner).getByLabelText("프로젝트 선택")).toBeVisible()
-  expect(within(banner).getByText("저장됨")).toBeVisible()
   expect(within(banner).queryByRole("navigation")).not.toBeInTheDocument()
-  expect(within(banner).getByRole("button", { name: "프로젝트 관리" })).toBeVisible()
-  expect(within(banner).queryByRole("link", { name: "빠른 시작" })).not.toBeInTheDocument()
-  expect(banner.querySelector(".overflow-x-auto")).toBeNull()
-
-  await userEvent.click(within(banner).getByRole("button", { name: "프로젝트 관리" }))
-  const dialog = screen.getByRole("dialog", { name: "프로젝트 관리" })
-  expect(within(dialog).getByText("현재 프로젝트: App")).toBeVisible()
-  expect(within(dialog).getByRole("option", { name: "App" })).toBeVisible()
-  expect(within(dialog).queryByLabelText("새 프로젝트 이름 (선택)")).not.toBeInTheDocument()
-  expect(within(dialog).queryByLabelText("Exact scope")).not.toBeInTheDocument()
-  await userEvent.click(within(dialog).getByRole("button", { name: "새 트래픽 진단 시작" }))
-  await userEvent.click(screen.getByRole("button", { name: "새 진단 시작" }))
-  expect(startProjectMutate).toHaveBeenCalledWith({ name: "", scope: "https://app.example.test" }, expect.objectContaining({ onSuccess: expect.any(Function) }))
-  await userEvent.selectOptions(within(dialog).getByLabelText("기존 프로젝트 선택"), "archive")
-  await userEvent.click(within(dialog).getByRole("button", { name: "열기" }))
-  expect(openProjectMutate).toHaveBeenCalledWith("archive", expect.objectContaining({ onSuccess: expect.any(Function) }))
-  await userEvent.click(within(dialog).getByRole("button", { name: "선택한 프로젝트 삭제" }))
-  await userEvent.click(screen.getByRole("button", { name: "프로젝트 삭제" }))
-  expect(deleteProjectMutate).toHaveBeenCalledWith("archive", expect.objectContaining({ onSuccess: expect.any(Function) }))
-  await userEvent.selectOptions(within(dialog).getByLabelText("기존 프로젝트 선택"), "app")
-  await userEvent.click(within(dialog).getByRole("button", { name: "현재 프로젝트 트래픽 초기화" }))
-  await userEvent.click(screen.getByRole("button", { name: "트래픽 초기화" }))
-  expect(resetTrafficMutate).toHaveBeenCalled()
-})
-
-it("shows a real persistence failure instead of claiming automatic save", () => {
-  queryState.projects = { ...queryState.projects, data: { ...(queryState.projects.data as Record<string, unknown>), saveState: "FAILED", saveError: "disk full" } }
-
-  render(<WorkspaceTopBar route="dashboard" />)
-
-  expect(screen.getByText("저장 실패")).toBeVisible()
-  expect(screen.getByText("저장 실패")).toHaveAttribute("title", "disk full")
-  expect(screen.queryByText("자동 저장")).not.toBeInTheDocument()
+  expect(within(banner).queryByLabelText("프로젝트 선택")).not.toBeInTheDocument()
+  expect(within(banner).queryByRole("button", { name: "프로젝트 관리" })).not.toBeInTheDocument()
+  expect(within(banner).queryByText("저장됨")).not.toBeInTheDocument()
+  expect(within(banner).getByRole("button", { name: "상태" })).toBeVisible()
 })
 
 it("marks sample data in the top bar on every screen instead of a dashboard banner", () => {

@@ -52,6 +52,9 @@ export const startProject = (values: { name: string; scope: string }) =>
   confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
 export const openProject = (id: string) =>
   confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "open", id }))
+/** 현재 프로젝트의 이름·점검 범위 수정. 이미 모은 기록은 그대로 두고 이후 수집만 새 범위를 따른다. */
+export const updateProject = (values: { name: string; scope: string }) =>
+  postForm<ProjectStatus>("/api/projects", { action: "update", ...values })
 export const resetProjectTraffic = () =>
   confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "reset" }))
 export const deleteProject = (id: string) =>

@@ -93,6 +93,13 @@ final class StandaloneTest {
         assertEquals(sampleRecords, state.snapshot().records.size());
         assertEquals("SAVED", reopened.saveState());
 
+        ProjectWorkspace.Status updated = state.updateProject("이름 바꾼 진단", "https://first.example/api/\nhttps://auth.example/");
+        assertEquals("이름 바꾼 진단", updated.active().name());
+        assertEquals(List.of("https://first.example:443/api", "https://auth.example:443/"), updated.active().scope());
+        assertEquals(sampleRecords, state.snapshot().records.size(), "수정은 이미 모은 기록을 지우지 않는다");
+        assertEquals("이름 바꾼 진단", state.openProject(first.active().id()).active().name(), "수정한 이름·범위는 저장된다");
+        assertThrows(IllegalArgumentException.class, () -> state.updateProject("", " "));
+
         ProjectWorkspace.Status reset = state.resetProjectTraffic();
         assertEquals(first.active().id(), reset.active().id());
         assertTrue(state.snapshot().records.isEmpty());
