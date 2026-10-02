@@ -116,6 +116,7 @@ public final class JavascriptCallSiteAnalyzer {
     }
 
     public static void clearCache() {
+        JavascriptAnalysisProcess.closeWorker();
         CACHE.clear();
     }
 

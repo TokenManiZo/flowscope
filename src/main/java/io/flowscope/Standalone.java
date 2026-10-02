@@ -43,6 +43,8 @@ public final class Standalone {
             System.out.println("FlowScope Web UI: " + server.url());
             if (Desktop.isDesktopSupported()) Desktop.getDesktop().browse(URI.create(server.url()));
             new CountDownLatch(1).await();
+        } finally {
+            JavascriptCallSiteAnalyzer.clearCache();
         }
     }
 

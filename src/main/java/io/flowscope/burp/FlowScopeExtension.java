@@ -2576,6 +2576,7 @@ public final class FlowScopeExtension implements BurpExtension {
         sessionBroker.close();
         rawExchanges.clear();
         clearRunContexts();
+        JavascriptCallSiteAnalyzer.clearCache();
     }
 
     private void clearRunContexts() {
