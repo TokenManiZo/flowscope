@@ -79,9 +79,12 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const humanMutation = useHumanRunMutation()
   const scannerMutation = useScannerRunMutation()
   const scannerCancel = useScannerCancelMutation()
-  const [manualStep, setManualStep] = useState<InspectionStep | null>(null)
+  const [entryAccount] = useState(() => {
+    try { return sessionStorage.getItem(HUMAN_ACCOUNT_HANDOFF) || null } catch { return null }
+  })
+  const [manualStep, setManualStep] = useState<InspectionStep | null>(entryAccount ? "human" : null)
   const [target, setTarget] = useState("")
-  const [humanAccount, setHumanAccount] = useState(ANONYMOUS_HUMAN_ACCOUNT)
+  const [humanAccount, setHumanAccount] = useState(entryAccount ?? ANONYMOUS_HUMAN_ACCOUNT)
   const [anonymous, setAnonymous] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
   const [zapDefinitions, setZapDefinitions] = useState("")
@@ -96,10 +99,9 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
 
   // 계정·세션의 [이 계정으로 수집]이 넘긴 계정을 한 번만 받아 HUMAN 단계에 미리 고른다.
   useEffect(() => {
-    let handoff: string | null = null
-    try { handoff = sessionStorage.getItem(HUMAN_ACCOUNT_HANDOFF); sessionStorage.removeItem(HUMAN_ACCOUNT_HANDOFF) } catch { /* 저장소가 막히면 미리 선택을 생략한다. */ }
-    if (handoff) { setHumanAccount(handoff); setManualStep("human") }
-  }, [])
+    if (!entryAccount) return
+    try { sessionStorage.removeItem(HUMAN_ACCOUNT_HANDOFF) } catch { /* 저장소가 막히면 다음 진입 때 다시 확인한다. */ }
+  }, [entryAccount])
 
   const automaticStep = stepFromStage(automaticInspectionStage(scope, human.data, scanner.data))
   const selectedStep = manualStep ?? automaticStep

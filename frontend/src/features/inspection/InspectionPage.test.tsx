@@ -129,6 +129,24 @@ describe("unified inspection hub", () => {
     objects: [], verdict: "undecided",
   }
 
+  it("account collection handoff overrides cached completed passes and opens HUMAN without starting traffic", async () => {
+    const human = { active: false, completed: true, runId: "prior-human", accountId: "active-account", proxy: "http://127.0.0.1:8080" }
+    const scanner = { run: { status: "COMPLETED" }, accounts: [], scope: [target] }
+    const explorer = { ...explorerIdle, run: { ...explorerIdle.run, status: "COMPLETED", runId: "prior-llm" } }
+    const fetchStub = installTransport({ human, scanner, explorer })
+    const client = createTestQueryClient()
+    client.setQueryData(queryKeys.humanRun, human)
+    client.setQueryData(queryKeys.scannerRun, scanner)
+    client.setQueryData(queryKeys.explorerRun, explorer)
+    sessionStorage.setItem("flowscope.humanAccount", "active-account")
+    renderWithQueryClient(<InspectionPage />, client)
+    await waitFor(() => expect(screen.getByRole("tab", { name: "1 · 직접 둘러보기" })).toHaveAttribute("aria-selected", "true"))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "HUMAN pass 계정" })).toHaveTextContent("활성 계정"))
+    expect(screen.getByRole("tab", { name: "4 · 결과 비교" })).toHaveAttribute("aria-selected", "false")
+    expect(sessionStorage.getItem("flowscope.humanAccount")).toBeNull()
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+  })
+
   it("filters and collapses the bounded HUMAN request feed without loading raw data", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }, { ...humanEvent, eventId: "event-human-3", method: "GET", path: "/api/me", status: 200, idn: "active-account" }] })
