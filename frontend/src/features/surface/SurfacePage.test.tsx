@@ -39,7 +39,7 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   screen.getByRole("button", { name: "상세 보기" }).click()
   expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
   expect(screen.getByText("ev-human")).toBeVisible()
-  await userEvent.setup().click(screen.getByRole("button", { name: "관측 기록 상세 · H · HTTP 200" }))
+  await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
 })
@@ -49,11 +49,12 @@ it("recomputes source deltas and exposes controlled-request failure quality with
 
   render(<AppProviders><SurfacePage /></AppProviders>)
 
-  expect(screen.getByTitle("실제 응답 있음 · 두 source")).toBeVisible()
+  expect(screen.getByTitle("2개 출처 관측")).toBeVisible()
   expect(screen.getByText(/LLM 실행 · ALL_FAILED/)).toBeVisible()
   expect(screen.getByText(/시도 3 · 응답 0 · 실패 3 · TLS_FAILURE 3/)).toBeVisible()
   await userEvent.setup().click(screen.getByRole("checkbox", { name: "L · LLM" }))
-  expect(screen.getByText("실제 응답 있음 · 한 source")).toBeVisible()
+  expect(screen.getByTitle("1개 출처 관측")).toBeVisible()
+  expect(screen.queryByText("404")).not.toBeInTheDocument()
   expect(screen.queryByText(/LLM 실행 · ALL_FAILED/)).not.toBeInTheDocument()
 })
 

@@ -1,3 +1,4 @@
+import { HttpStatusBadge, MethodBadge, SourceMarks } from "@/components/TrafficBadges"
 import { useEffect, useMemo, useState } from "react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
@@ -19,18 +20,10 @@ type DeltaFilter = "ALL" | SurfaceDeltaState
 const deltaLabels: Record<SurfaceDeltaState, string> = {
   DECLARED_NOT_OBSERVED: "산출물에서 발견 · 아직 요청 없음",
   UNRESOLVED_COORDINATE: "선언 좌표 미확정 · 관측 비교 제외",
-  ONE_SOURCE_OBSERVED: "실제 응답 있음 · 한 source",
-  MULTI_SOURCE_OBSERVED: "실제 응답 있음 · 두 source",
-  ALL_SOURCES_OBSERVED: "실제 응답 있음 · 세 source",
-  OBSERVED_NOT_DECLARED: "실제 응답 있음 · 산출물 근거 없음",
-}
-
-/** 표에서 흔한 관측 상태는 짧은 회색 글자로 둔다. 미요청·한 source만 관측은 기존처럼 배지로 강조한다. */
-const quietDeltaLabels: Partial<Record<SurfaceDeltaState, string>> = {
-  UNRESOLVED_COORDINATE: "좌표 미확정",
-  MULTI_SOURCE_OBSERVED: "관측 · 2개 source",
-  ALL_SOURCES_OBSERVED: "관측 · 3개 source",
-  OBSERVED_NOT_DECLARED: "관측",
+  ONE_SOURCE_OBSERVED: "1개 출처 관측",
+  MULTI_SOURCE_OBSERVED: "2개 출처 관측",
+  ALL_SOURCES_OBSERVED: "3개 출처 관측",
+  OBSERVED_NOT_DECLARED: "선언 근거 없음",
 }
 
 const kindLabels: Record<string, string> = {
@@ -100,11 +93,6 @@ function endpointKinds(endpoint: SurfaceEndpoint): string {
   return (endpoint.kinds ?? ["UNVERIFIED"]).map((value) => kindLabels[value] ?? value).join(" · ")
 }
 
-function statusLabel(endpoint: SurfaceEndpoint): string {
-  const values = [...new Set(endpoint.observations.map((item) => item.status))].sort((left, right) => left - right)
-  return values.length ? values.join(" · ") : "응답 없음"
-}
-
 export function SurfacePage() {
   const snapshot = useSnapshotQuery()
   const [filter, setFilter] = useState<DeltaFilter>("ALL")
@@ -118,8 +106,8 @@ export function SurfacePage() {
     [enabledSources, surface.endpoints],
   )
   const rows = useMemo(() => endpoints.filter((endpoint) => filter === "ALL" || endpoint.deltaState === filter), [endpoints, filter])
-  const selected = endpoints.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
-  const selectedEvent = selectedEvidenceId
+  const selected = rows.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
+  const selectedEvent = selected && selectedEvidenceId && selected.observations.some((item) => item.evidenceId === selectedEvidenceId)
     ? snapshot.data?.events.find((event) => event.eventId === selectedEvidenceId) ?? null
     : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
@@ -151,15 +139,15 @@ export function SurfacePage() {
     })
   }
 
-  const context = (
-    <section className="grid gap-4 p-3">
-      <div><h2 className="text-sm font-semibold">차이 필터</h2><p className="text-xs text-muted-foreground">산출물 근거와 실제 HTTP 응답을 섞지 않고 비교합니다.</p></div>
-      <fieldset className="grid gap-2 text-sm">
-        <legend className="mb-1 font-medium">실제 요청 source</legend>
+  const filters = (
+    <section className="flex flex-wrap items-center gap-4 rounded-md border bg-card p-3">
+      
+      <fieldset className="flex items-center gap-3 text-xs">
+        <legend className="sr-only">실제 요청 source</legend>
         {sourceOptions.map((source) => <label className="flex items-center gap-2" key={source.value}><Checkbox checked={enabledSources.has(source.value)} onCheckedChange={(checked) => toggleSource(source.value, checked === true)} />{source.label}</label>)}
       </fieldset>
       <label className="grid gap-1 text-sm" htmlFor="surface-delta">비교 상태<Select value={filter} onValueChange={(value) => setFilter(value as DeltaFilter)}><SelectTrigger id="surface-delta" aria-label="API·입력 차이 상태"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">전체</SelectItem>{Object.entries(deltaLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></label>
-      <dl className="grid gap-2 text-sm">
+      <details className="ml-auto text-xs"><summary className="cursor-pointer">전체 {endpoints.length} · 입력 {endpoints.reduce((sum, endpoint) => sum + endpoint.parameters.length, 0)} · 집계 펼치기</summary><dl className="mt-3 grid min-w-52 gap-2 text-xs">
         <div className="flex justify-between"><dt>전체 항목</dt><dd>{endpoints.length}</dd></div>
         <div className="flex justify-between"><dt>실제 API</dt><dd>{countKind("OBSERVED_API")}</dd></div>
         <div className="flex justify-between"><dt>산출물 API 후보</dt><dd>{countKind("ARTIFACT_API")}</dd></div>
@@ -168,39 +156,50 @@ export function SurfacePage() {
         <div className="flex justify-between"><dt>입력 필드</dt><dd>{endpoints.reduce((sum, endpoint) => sum + endpoint.parameters.length, 0)}</dd></div>
         <div className="flex justify-between"><dt>OPTIONS probe</dt><dd>{probes.length}</dd></div>
         <div className="flex justify-between"><dt>부분·실패 파싱</dt><dd>{unresolvedExtractions.length}</dd></div>
-      </dl>
-      <p className="text-xs text-muted-foreground">실제 API는 응답이 있는 API 요청만 셉니다.</p>
+      </dl><p className="mt-2 text-muted-foreground">실제 API는 응답이 있는 API 요청만 셉니다.</p></details>
     </section>
   )
 
   const inspector = selected ? (
     <section className="grid gap-4 p-4">
       <div><h2 className="font-semibold">선택 항목</h2><p className="break-all font-mono text-sm">{selected.key.method} {selected.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{selected.key.service}</p></div>
-      <div className="grid gap-1 text-sm"><p>종류 · {endpointKinds(selected)}</p><p>비교 상태 · {deltaLabels[selected.deltaState]}</p><p>실제 요청 source · {sourceLabel(selected.observedSources)}</p><p>실제 응답 status · {statusLabel(selected)}</p><p>응답 관측 기록 · {selected.observations.length}건</p><p>산출물 근거 · {selected.declarations.length}건</p></div>
+      <div className="flex flex-wrap items-center gap-3 text-xs"><SourceMarks sources={selected.observedSources} /><span>관측 {selected.observations.length}</span><span>선언 {selected.declarations.length}</span><span>입력 {selected.parameters.length}</span></div>
+      <section aria-label="API 입력 필드 비교"><h3 className="mb-2 text-sm font-semibold">입력 필드 비교</h3>
+        <div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>위치 / 필드</TableHead><TableHead>H S L</TableHead><TableHead>선언</TableHead><TableHead>형태</TableHead></TableRow></TableHeader><TableBody>{selected.parameters.map((parameter) => <TableRow key={parameter.location + ":" + (parameter.coordinateResolved ? "" : "?") + parameter.canonicalPath}>
+          <TableCell className="whitespace-normal"><p className="font-mono text-xs">{parameter.location} · {parameter.fieldPath}</p><p className="break-all font-mono text-[11px] text-muted-foreground">{parameter.canonicalPath}</p>{parameter.coordinateResolved === false && <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">{deltaLabels.UNRESOLVED_COORDINATE}</p>}<span className="text-[11px] text-muted-foreground">{parameter.requirement}</span></TableCell>
+          <TableCell><SourceMarks sources={parameter.observedSources} /></TableCell><TableCell className="tabular-nums">{parameter.declarations.length}</TableCell><TableCell className="whitespace-normal text-xs">{parameter.observedShapes.join(" · ") || "—"}</TableCell>
+        </TableRow>)}{selected.parameters.length === 0 && <TableRow><TableCell colSpan={4} className="text-xs text-muted-foreground">확인된 입력 필드가 없습니다.</TableCell></TableRow>}</TableBody></Table></div>
+      </section>
       {selected.declarations.length > 0 && <div><h3 className="mb-2 text-sm font-semibold">산출물 provenance</h3>{selected.declarations.map((item, index) => <p className="break-all text-xs text-muted-foreground" key={item.evidenceId + ":" + index}>{item.type} · {item.adapter} · {item.reason} · {evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, item.evidenceId)}</p>)}</div>}
       {selected.observations.length > 0 && <div className="grid gap-2"><h3 className="text-sm font-semibold">실제 응답 관측 기록</h3>{selected.observations.map((observation) => {
         const event = snapshot.data?.events.find((candidate) => candidate.eventId === observation.evidenceId)
-        const source = observation.source === "HUMAN" ? "H" : observation.source === "SCANNER" ? "S" : observation.source === "LLM" ? "L" : "?"
-        return <Button type="button" variant={selectedEvidenceId === observation.evidenceId ? "secondary" : "outline"} className="h-auto justify-start whitespace-normal text-left" disabled={!event || snapshot.isError} key={observation.evidenceId} onClick={() => setSelectedEvidenceId(observation.evidenceId)}>관측 기록 상세 · {source} · HTTP {observation.status}</Button>
+        const source = sourceLabel([observation.source])
+        const ordinal = evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, observation.evidenceId)
+        const accountId = event?.laneAccountId?.trim() || event?.idn || observation.identity
+        const account = snapshot.data?.accounts.find((item) => item.id === accountId)?.label ?? accountId
+        return <Button type="button" variant={selectedEvidenceId === observation.evidenceId ? "secondary" : "outline"} aria-label={`관측 기록 상세 · ${ordinal} · ${source} · ${account} · HTTP ${observation.status}`} className="h-auto justify-start whitespace-normal text-left" disabled={!event || snapshot.isError} key={observation.evidenceId} onClick={() => setSelectedEvidenceId(observation.evidenceId)}><span className="grid min-w-0 gap-1"><span className="text-xs">{ordinal} · {source} · {account} · HTTP {observation.status}</span><span className="break-all font-mono text-[11px] text-muted-foreground">{event?.path ?? selected.key.pathTemplate}</span></span></Button>
       })}</div>}
       {selectedEvent && <section className="border-t pt-4" aria-label="선택 관측 기록 작업"><OperationDetail event={selectedEvent} snapshot={snapshot.data!} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={snapshot.isError} /></section>}
-      <div><h3 className="mb-2 text-sm font-semibold">입력 필드</h3><div className="grid gap-2">{selected.parameters.map((parameter) => <div className="rounded-md border p-2 text-sm" key={parameter.location + ":" + (parameter.coordinateResolved ? "" : "?") + parameter.canonicalPath}><p className="break-all font-mono">{parameter.location} · {parameter.fieldPath}</p><p className="break-all font-mono text-xs text-muted-foreground">{parameter.canonicalPath}</p><p className="text-xs text-muted-foreground">{deltaLabels[parameter.deltaState]} · {parameter.requirement} · {sourceLabel(parameter.observedSources)} · {parameter.observedShapes.join(" · ") || "형태 응답 없음"}</p></div>)}{selected.parameters.length === 0 && <p className="text-sm text-muted-foreground">확인된 입력 필드가 없습니다.</p>}</div></div>
       <div><h3 className="mb-2 text-sm font-semibold">기록 번호</h3>{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, id)}</p>)}</div>
     </section>
   ) : <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">항목을 선택하면 실제 응답과 산출물 근거를 분리해 표시합니다.</p></section>
 
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={context} inspector={inspector} inspectorOpen={selected !== null} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
+    <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={null} inspector={inspector} inspectorOpen={selected !== null} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
       <section className="grid gap-4 p-3" aria-labelledby="surface-title">
         <div><h1 id="surface-title" className="text-2xl font-semibold">API·입력 차이</h1><p className="text-sm text-muted-foreground">HUMAN·ZAP·LLM의 실제 HTTP 응답과 OpenAPI·HTML·JavaScript에서 확인한 endpoint·입력 근거를 분리해 정렬합니다.</p></div>
         {!snapshot.isError && surface.endpoints.length === 0 && runGapCount(snapshot.data) > 0 && <RunGapHint count={runGapCount(snapshot.data)} />}
         {snapshot.isError && <Alert variant="destructive"><AlertTitle>API·입력 차이를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
         {unresolvedExtractions.length > 0 && <Alert><AlertTitle>일부 산출물을 완전히 해석하지 못했습니다.</AlertTitle><AlertDescription>{unresolvedExtractions.length}건의 부분·실패·상한 상태가 있습니다. 누락 가능성을 숨기지 않고 근거로 보존합니다.</AlertDescription></Alert>}
         {executionRuns.map((run) => <Alert key={run.source + ":" + run.runId} variant={run.quality === "ALL_FAILED" ? "destructive" : "default"}><AlertTitle>{run.source} 실행 · {run.quality}</AlertTitle><AlertDescription>시도 {run.attempted} · 응답 {run.responses} · 실패 {run.failures}{Object.keys(run.outcomes).length ? " · " + Object.entries(run.outcomes).map(([name, count]) => name + " " + count).join(" · ") : ""}</AlertDescription></Alert>)}
+        {filters}
         <div className="max-w-full overflow-auto rounded-md border">
-          <Table><TableHeader><TableRow><TableHead>비교 상태</TableHead><TableHead>종류</TableHead><TableHead>요청</TableHead><TableHead>실제 source</TableHead><TableHead>응답 status</TableHead><TableHead>산출물 근거</TableHead><TableHead>입력</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
-            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}><TableCell>{quietDeltaLabels[endpoint.deltaState] ? <span className="text-xs text-muted-foreground" title={deltaLabels[endpoint.deltaState]}>{quietDeltaLabels[endpoint.deltaState]}</span> : <Badge variant="destructive">{deltaLabels[endpoint.deltaState]}</Badge>}</TableCell><TableCell className="min-w-40">{endpointKinds(endpoint)}</TableCell><TableCell className="min-w-72 whitespace-normal"><Badge variant="outline">{endpoint.key.method}</Badge><p className="mt-1 break-all font-mono">{endpoint.key.pathTemplate}</p><p className="break-all text-xs text-muted-foreground">{endpoint.key.service}</p></TableCell><TableCell>{sourceLabel(endpoint.observedSources)}</TableCell><TableCell>{statusLabel(endpoint)}</TableCell><TableCell>{endpoint.declarations.length}</TableCell><TableCell>{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" disabled={snapshot.isError} onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null); setRequestLabOpen(false) }}>상세 보기</Button></TableCell></TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">현재 필터에 해당하는 항목이 없습니다.</TableCell></TableRow>}</TableBody>
-          </Table>
+          <Table><TableHeader><TableRow><TableHead className="w-20 text-center">Method</TableHead><TableHead>API</TableHead><TableHead>H S L</TableHead><TableHead>HTTP</TableHead><TableHead>관측</TableHead><TableHead>선언</TableHead><TableHead>입력</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
+            <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}>
+              <TableCell className="text-center"><MethodBadge method={endpoint.key.method} /></TableCell><TableCell className="max-w-[32rem] whitespace-normal"><p className="break-words font-mono text-xs">{endpoint.key.pathTemplate}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={endpoint.key.service}>{endpoint.key.service} · {endpointKinds(endpoint)}</p>{endpoint.observations.length === 0 && <Badge variant="destructive" className="mt-1 text-[11px]">{deltaLabels[endpoint.deltaState]}</Badge>}</TableCell>
+              <TableCell><span title={deltaLabels[endpoint.deltaState]}><SourceMarks sources={endpoint.observedSources} /></span></TableCell><TableCell><div className="flex flex-wrap gap-1">{[...new Set(endpoint.observations.map((item) => item.status))].sort((a, b) => a - b).map((status) => <HttpStatusBadge status={status} key={status} />)}{endpoint.observations.length === 0 && <span className="text-muted-foreground">—</span>}</div></TableCell>
+              <TableCell className="tabular-nums">{endpoint.observations.length}</TableCell><TableCell className="tabular-nums">{endpoint.declarations.length}</TableCell><TableCell className="tabular-nums">{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null) }}>상세 보기</Button></TableCell>
+            </TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">현재 필터에 맞는 API·입력 근거가 없습니다.</TableCell></TableRow>}</TableBody></Table>
         </div>
       </section>
       {selectedEvent && labContext && <RequestLabDialog key={labContext} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={selectedEvent} sessions={snapshot.data?.managedSessions ?? []} verifications={snapshot.data?.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.data?.revision} suspended={snapshot.isError} />}
