@@ -371,6 +371,68 @@ final class ZapCampaignTest {
     }
 
     @Test
+    void aFollowUpPassOpensDetailScreensWithIdsCollectedDuringTheFirstPass() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", """
+                    jsx(Route, {path: "/forum", element: jsx(Forum, {})});
+                    navigate(`/post?post_id=${n}`);
+                    """);
+            java.util.Map<String, String> vars = new java.util.concurrent.ConcurrentHashMap<>();
+            List<String> seedsPerPass = new CopyOnWriteArrayList<>();
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> seedsPerPass.add(vars.get("flowscope.clientMap.seeds")), vars);
+            java.util.concurrent.atomic.AtomicInteger passes = new java.util.concurrent.atomic.AtomicInteger();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                // 1차 패스가 Forum을 열면서 목록 응답(실제 글 ID)을 처음 수집한다.
+                if (passes.incrementAndGet() == 1) {
+                    fixture.observe("/community/api/v2/community/posts/recent", "{\"posts\":[{\"id\":\"abcPOST1\"}]}");
+                } else {
+                    fixture.observe("/community/api/v2/community/posts/abcPOST1");
+                }
+                zapReply(exchange, "{\"scan\":\"" + (1 + passes.get()) + "\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(2, passes.get(), "새 상세 주소가 생겼으므로 후속 패스를 한 번 돈다");
+            assertEquals(2, seedsPerPass.size(), seedsPerPass.toString());
+            assertFalse(seedsPerPass.get(0).contains("post_id=abcPOST1"), "1차 패스 전에는 글 ID를 모른다");
+            // 후속 패스는 시작 주소 + 새로 생긴 상세 주소만 넣는다(1차에 넣은 /forum은 다시 넣지 않는다).
+            assertEquals(String.join("\n", TARGET, "https://fixture.example.test/post?post_id=abcPOST1"),
+                    seedsPerPass.get(1));
+            assertTrue(result.path("events").toString().contains("후속 패스"), result.toString());
+        }
+    }
+
+    @Test
+    void theFollowUpPassIsSkippedWhenNoNewStartUrlsAppear() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            java.util.concurrent.atomic.AtomicInteger passes = new java.util.concurrent.atomic.AtomicInteger();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                passes.incrementAndGet();
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(1, passes.get());
+            assertTrue(result.path("events").toString().contains("후속 패스 생략"), result.toString());
+        }
+    }
+
+    @Test
     void anOriginTargetGetsTheRootPathSoTheClientSpiderQueuesTheSeededRoutes() throws Exception {
         try (Fixture fixture = new Fixture(false);
              ZapCampaign campaign = new ZapCampaign(fixture)) {
@@ -583,11 +645,15 @@ final class ZapCampaignTest {
         }
 
         private void observe(String path) {
+            observe(path, "{\"ok\":true}");
+        }
+
+        private void observe(String path, String json) {
             RunContextRegistry.Context current = contexts.current(Source.SCANNER);
             RequestRecord record = new RequestRecord(Source.SCANNER, "https://fixture.example.test:443",
                     "GET", path, 200, "anon");
             record.hasResponse = true;
-            record.body = "{\"ok\":true}";
+            record.body = json;
             record.responseContentType = "application/json";
             record.sourceDetail = current.detail();
             record.orchestrator = current.orchestrator();

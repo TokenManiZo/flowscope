@@ -91,6 +91,9 @@ public final class ZapCampaign implements AutoCloseable {
             "(?i).*(log-?(in|out|off)|sign-?(in|up|out)|register|password|unlock|change-|delete|destroy|remove).*";
     private static final java.util.regex.Pattern ROUTE_SEED_EXCLUDE = java.util.regex.Pattern.compile(ROUTE_SEED_EXCLUDE_REGEX);
     private static final int MAX_ROUTE_SEEDS = 100;
+    private static final long CLIENT_SPIDER_TIMEOUT_MILLIS = 20 * 60_000L;
+    // 후속 패스는 1차 패스가 수집한 목록 응답에서 새로 생긴 상세 주소만 연다. 끝없이 늘지 않도록 한 번만, 시간 상한을 둔다.
+    private static final long FOLLOW_UP_CLIENT_SPIDER_MILLIS = 8 * 60_000L;
     private static final long CLIENT_MAP_RESET_CONFIRM_MILLIS = 5_000L;
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
             "client", "spider", "pscan", "pscanrules", "selenium", "openapi", "websocket",
@@ -714,44 +717,22 @@ public final class ZapCampaign implements AutoCloseable {
                 recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
                         "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
             }
-            warning = resetClientMap(runId, target, lane, warning);
+            SeedResult firstSeeds = routeSeeds(target, warning);
+            warning = resetClientMap(runId, target, lane, firstSeeds.warning(), firstSeeds.urls(), "");
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "CLIENT_SPIDER", 0, 0, definitionImports, 0,
                     false, false, -1, warning, ""));
-            String clientId = "";
-            boolean clientFinished = false;
-            try {
-                synchronized (this) {
-                    // Cancellation must retain the accepted scan ID before it interrupts the worker.
-                    ensureZapNotCancelled();
-                    JsonNode client = parseZap(identity == null
-                            ? state.zap().clientSpider(target, contextName)
-                            : state.zap().clientSpider(target, contextName, identity.userName(), identity.browser()));
-                    clientId = client.path("scan").asText();
-                    if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
-                    ownedClientScanId = clientId;
-                }
-                updateZapBaseline(runId, "RUNNING", "CLIENT_SPIDER", clientId, warning, "");
-                String finalClientId = clientId;
-                waitForZap(() -> state.zap().clientSpiderStatus(finalClientId), 20 * 60_000L,
-                        "Client Spider", runId, index);
-                clientFinished = true;
-                releaseClientSpider(clientId);
-            } finally {
-                if (!clientFinished && !clientId.isBlank() && claimClientSpider(clientId)) {
-                    try { stopOwnedClientSpider(clientId); }
-                    catch (RuntimeException cleanupError) {
-                        throw new ZapIsolationException("Client Spider cleanup failed: " + cleanupError.getMessage());
-                    }
-                }
-            }
+            runClientSpiderPass(runId, target, index, contextName, identity, warning, CLIENT_SPIDER_TIMEOUT_MILLIS);
             ensureScannerCapabilityIntact(runId);
             ensureZapNotCancelled();
             long clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
             if (clientCaptured == 0) {
                 throw zeroCaptureFailure("Client Spider", target);
             }
+            warning = runFollowUpClientSpider(runId, target, lane, index, contextName, identity,
+                    firstSeeds.urls(), warning);
+            clientCaptured = capturedForRun(runId, SourceDetail.ZAP_CLIENT_SPIDER) - clientBefore;
             warning = runTraditionalSpider(runId, target, lane, index, contextName, identity,
                     definitionImports, clientCaptured, warning);
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_PASSIVE_SCAN, lane.accountId());
@@ -1100,15 +1081,21 @@ public final class ZapCampaign implements AutoCloseable {
         return target;
     }
 
-    private String resetClientMap(String runId, String target, ZapLane lane, String warning) {
-        String request = runId + "-" + System.nanoTime();
-        List<String> routes = List.of();
+    private record SeedResult(List<String> urls, String warning) {}
+
+    /** 지금까지 수집한 기록에서 Client Spider 시작 주소를 만든다. 실패해도 Map 비우기는 진행하도록 경고로만 남긴다. */
+    private SeedResult routeSeeds(String target, String warning) {
         try {
-            routes = ClientRouteSeeds.from(state.snapshot().records, state.scope(), target,
-                    ROUTE_SEED_EXCLUDE, MAX_ROUTE_SEEDS);
+            return new SeedResult(ClientRouteSeeds.from(state.snapshot().records, state.scope(), target,
+                    ROUTE_SEED_EXCLUDE, MAX_ROUTE_SEEDS), warning);
         } catch (RuntimeException error) {
-            warning = appendWarning(warning, "클라이언트 라우트 추출 실패: " + error.getMessage());
+            return new SeedResult(List.of(), appendWarning(warning, "클라이언트 라우트 추출 실패: " + error.getMessage()));
         }
+    }
+
+    private String resetClientMap(String runId, String target, ZapLane lane, String warning,
+                                  List<String> routes, String phase) {
+        String request = runId + "-" + System.nanoTime();
         try {
             List<String> nodes = new ArrayList<>();
             nodes.add(target);
@@ -1133,7 +1120,7 @@ public final class ZapCampaign implements AutoCloseable {
                 warning = appendWarning(warning, "클라이언트 라우트 시작 주소 미등록(ZAP을 새 start-zap.sh로 다시 시작해야 함)");
             }
             recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "INFO",
-                    "Client Map 초기화 · 클라이언트 라우트 " + routes.size() + "개를 시작 주소로 등록");
+                    phase + "Client Map 초기화 · 클라이언트 라우트 " + routes.size() + "개를 시작 주소로 등록");
             return warning;
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
@@ -1143,6 +1130,73 @@ public final class ZapCampaign implements AutoCloseable {
             return appendWarning(warning, "Client Map 초기화 생략(이미 본 화면의 메뉴·버튼을 다시 누르지 않을 수 있음): "
                     + error.getMessage());
         }
+    }
+
+    /** Client Spider 한 번을 시작·대기·정리한다. 끝나지 않은 채 빠져나가면 소유한 scan을 멈춘다. */
+    private void runClientSpiderPass(String runId, String target, int index, String contextName,
+                                     ZapBrowserAuthenticator.Identity identity, String warning, long timeoutMillis) {
+        String clientId = "";
+        boolean clientFinished = false;
+        try {
+            synchronized (this) {
+                // Cancellation must retain the accepted scan ID before it interrupts the worker.
+                ensureZapNotCancelled();
+                JsonNode client = parseZap(identity == null
+                        ? state.zap().clientSpider(target, contextName)
+                        : state.zap().clientSpider(target, contextName, identity.userName(), identity.browser()));
+                clientId = client.path("scan").asText();
+                if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
+                ownedClientScanId = clientId;
+            }
+            updateZapBaseline(runId, "RUNNING", "CLIENT_SPIDER", clientId, warning, "");
+            String finalClientId = clientId;
+            waitForZap(() -> state.zap().clientSpiderStatus(finalClientId), timeoutMillis,
+                    "Client Spider", runId, index);
+            clientFinished = true;
+            releaseClientSpider(clientId);
+        } finally {
+            if (!clientFinished && !clientId.isBlank() && claimClientSpider(clientId)) {
+                try { stopOwnedClientSpider(clientId); }
+                catch (RuntimeException cleanupError) {
+                    throw new ZapIsolationException("Client Spider cleanup failed: " + cleanupError.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * 상세 화면 ID는 목록 응답(`posts/recent` 등)에 있는데, 그 응답은 1차 Client Spider가 돌면서 처음 수집된다.
+     * 그래서 1차 패스 뒤 시작 주소를 다시 계산하고, 새로 생긴 주소가 있으면 그것만 넣어 한 번 더 돈다(Black Widow의
+     * 상태 간 데이터 의존성 추적을 한 단계로 제한한 형태). 후속 패스 실패·시간 초과는 1차 결과를 지우지 않고 경고로 남긴다.
+     */
+    private String runFollowUpClientSpider(String runId, String target, ZapLane lane, int index, String contextName,
+                                           ZapBrowserAuthenticator.Identity identity, List<String> firstSeeds,
+                                           String warning) {
+        SeedResult again = routeSeeds(target, warning);
+        warning = again.warning();
+        Set<String> seen = new java.util.HashSet<>(firstSeeds);
+        List<String> fresh = again.urls().stream().filter(url -> !seen.contains(url)).toList();
+        if (fresh.isEmpty()) {
+            recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "INFO", "후속 패스 생략 · 새 상세 시작 주소 없음");
+            return warning;
+        }
+        warning = resetClientMap(runId, target, lane, warning, fresh, "후속 패스 · ");
+        try {
+            runClientSpiderPass(runId, target, index, contextName, identity, warning, FOLLOW_UP_CLIENT_SPIDER_MILLIS);
+        } catch (ZapIsolationException error) {
+            throw error;
+        } catch (RuntimeException error) {
+            ensureZapNotCancelled();
+            ensureScannerCapabilityIntact(runId);
+            String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            if (message.endsWith("timed out")) {
+                recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "WARN",
+                        "후속 패스 시간 상한 " + FOLLOW_UP_CLIENT_SPIDER_MILLIS / 60_000 + "분 도달 · 수집분은 유지");
+                return warning;
+            }
+            return appendWarning(warning, "후속 Client Spider 생략: " + message);
+        }
+        return warning;
     }
 
     /**
