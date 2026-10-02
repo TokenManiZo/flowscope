@@ -40,8 +40,14 @@ public final class ExplorerCoordinator implements AutoCloseable {
         FAILED, CANCELLED, FAILED_CLEANUP
     }
 
-    public record StartRequest(String target, List<String> accountIds, boolean includeAnonymous) {
-        public StartRequest { accountIds = List.copyOf(accountIds == null ? List.of() : accountIds); }
+    public record StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model) {
+        public StartRequest {
+            accountIds = List.copyOf(accountIds == null ? List.of() : accountIds);
+            model = model == null ? "" : model.trim();
+        }
+        public StartRequest(String target, List<String> accountIds, boolean includeAnonymous) {
+            this(target, accountIds, includeAnonymous, "");
+        }
     }
 
     public record Activity(long sequence, Instant at, String kind, String title, String detail,
@@ -51,11 +57,21 @@ public final class ExplorerCoordinator implements AutoCloseable {
                            long elapsedMillis, String message, String providerReadiness,
                            List<String> accountIds, boolean anonymous, long attempts, long responses,
                            long endpointDeclarations, long parameterDeclarations, long capabilityProbes,
-                           List<ExplorerProvider.Unresolved> unresolved, List<Activity> activities) {
+                           List<ExplorerProvider.Unresolved> unresolved, List<Activity> activities, String model) {
         public Snapshot {
             accountIds = List.copyOf(accountIds == null ? List.of() : accountIds);
             unresolved = List.copyOf(unresolved == null ? List.of() : unresolved);
             activities = List.copyOf(activities == null ? List.of() : activities);
+            model = model == null ? "" : model;
+        }
+        public Snapshot(Status status, String runId, String target, Instant startedAt, Instant endedAt,
+                        long elapsedMillis, String message, String providerReadiness,
+                        List<String> accountIds, boolean anonymous, long attempts, long responses,
+                        long endpointDeclarations, long parameterDeclarations, long capabilityProbes,
+                        List<ExplorerProvider.Unresolved> unresolved, List<Activity> activities) {
+            this(status, runId, target, startedAt, endedAt, elapsedMillis, message, providerReadiness,
+                    accountIds, anonymous, attempts, responses, endpointDeclarations, parameterDeclarations,
+                    capabilityProbes, unresolved, activities, "");
         }
     }
 
@@ -137,6 +153,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
         String readiness = provider.readiness();
         if (!"READY".equals(readiness)) throw new IllegalStateException(readiness);
         if (contexts.hasActiveRuns()) throw new IllegalStateException("활성 HUMAN/ZAP/LLM 실행을 먼저 종료하세요.");
+        if (!request.model().isBlank() && provider.models().models().stream()
+                .noneMatch(option -> option.id().equals(request.model()))) {
+            throw new IllegalArgumentException("선택한 Codex 모델은 현재 계정의 사용 가능 목록에 없습니다.");
+        }
         String runId = "llm-explorer-" + System.currentTimeMillis() + "-"
                 + UUID.randomUUID().toString().substring(0, 8);
         contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
@@ -151,7 +171,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         browserDeadline = 0;
         snapshot = new Snapshot(Status.AUTHENTICATING, runId, request.target(), Instant.now(), null,
                 0, "Explorer 계정과 세션을 준비하는 중입니다.", readiness,
-                request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of());
+                request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model());
         addActivity("SYSTEM", "Explorer 준비", "exact scope와 Codex 로그인을 확인했습니다.", "RUNNING", null);
         worker.execute(() -> prepareAndStart(request, runId));
         return current();
@@ -165,8 +185,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
         return new Snapshot(value.status(), value.runId(), value.target(), value.startedAt(), value.endedAt(),
                 elapsed, value.message(), provider.readiness(), value.accountIds(), value.anonymous(),
                 value.attempts(), value.responses(), value.endpointDeclarations(),
-                value.parameterDeclarations(), value.capabilityProbes(), value.unresolved(), value.activities());
+                value.parameterDeclarations(), value.capabilityProbes(), value.unresolved(), value.activities(), value.model());
     }
+
+    public ExplorerProvider.ModelCatalog models() { return provider.models(); }
 
     public List<ExplorerAccountVault.View> accounts() { return vault.views(); }
 
@@ -415,7 +437,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                         limitations, null);
                 providerHandle = provider.start(new ExplorerProvider.Request(runId, request.target(),
                         List.of(request.target()), readyAccounts, gateway.url(), gateway.discoveriesUrl(),
-                        gateway.token(), prompt),
+                        gateway.token(), prompt, request.model()),
                         providerListener(runId, limitations));
             }
         } catch (Exception error) {
@@ -527,7 +549,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.endedAt(), snapshot.elapsedMillis(), snapshot.message(), snapshot.providerReadiness(),
                 snapshot.accountIds(), snapshot.anonymous(), attempts, responses,
                 snapshot.endpointDeclarations(), snapshot.parameterDeclarations(), probes,
-                snapshot.unresolved(), snapshot.activities());
+                snapshot.unresolved(), snapshot.activities(), snapshot.model());
         String account = event.accountId() == null || event.accountId().isBlank() ? "비로그인" : event.accountId();
         addActivity("HTTP", event.method() + " " + event.url(),
                 account + (event.httpStatus() > 0 ? " · HTTP " + event.httpStatus() + " · " + event.evidenceId()
@@ -552,7 +574,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.accountIds(), snapshot.anonymous(), snapshot.attempts(), snapshot.responses(),
                 snapshot.endpointDeclarations() + newEndpoints,
                 snapshot.parameterDeclarations() + newParameters, snapshot.capabilityProbes(),
-                snapshot.unresolved(), snapshot.activities());
+                snapshot.unresolved(), snapshot.activities(), snapshot.model());
         addActivity("DISCOVERY", "산출물 선언 저장",
                 "endpoint " + newEndpoints + "건 · parameter " + newParameters
                         + "건을 현재 run Evidence에 연결했습니다.", "COMPLETED", null);
@@ -570,7 +592,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.endedAt(), snapshot.elapsedMillis(), snapshot.message(), snapshot.providerReadiness(),
                 snapshot.accountIds(), snapshot.anonymous(), snapshot.attempts(), snapshot.responses(),
                 snapshot.endpointDeclarations(), snapshot.parameterDeclarations(), snapshot.capabilityProbes(),
-                snapshot.unresolved(), List.copyOf(next));
+                snapshot.unresolved(), List.copyOf(next), snapshot.model());
     }
 
     private Snapshot update(Status status, String message, List<ExplorerProvider.Unresolved> unresolved,
@@ -579,7 +601,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.elapsedMillis(), message, snapshot.providerReadiness(), snapshot.accountIds(),
                 snapshot.anonymous(), snapshot.attempts(), snapshot.responses(),
                 snapshot.endpointDeclarations(), snapshot.parameterDeclarations(), snapshot.capabilityProbes(),
-                unresolved, snapshot.activities());
+                unresolved, snapshot.activities(), snapshot.model());
     }
 
     private Snapshot terminal(Status status, String message, List<ExplorerProvider.Unresolved> unresolved) {

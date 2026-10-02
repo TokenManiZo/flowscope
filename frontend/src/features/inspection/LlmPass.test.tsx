@@ -9,19 +9,24 @@ afterEach(() => vi.unstubAllGlobals())
 
 const idle = {
   run: { status: "IDLE", runId: "", target: "", startedAt: null, endedAt: null, elapsedMillis: 0,
-    message: "Explorer 실행 대기", providerReadiness: "READY", accountIds: [], anonymous: false,
+    message: "Explorer 실행 대기", providerReadiness: "READY", model: "", accountIds: [], anonymous: false,
     attempts: 0, responses: 0, unresolved: [], activities: [] },
   accounts: [],
   scope: ["https://app.example.test/"],
 }
+const catalogResponse = () => new Response(JSON.stringify({ configuredModel: "gpt-5.6-sol", models: [
+  { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", recommended: false },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", recommended: true },
+] }), { headers: { "Content-Type": "application/json" } })
 
-it("starts an anonymous LLM pass against the scope target from the hub", async () => {
+it("offers account models and sends the chosen one with the anonymous run", async () => {
   const user = userEvent.setup()
   const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     if (path === "/api/explorer-run" && (!init?.method || init.method === "GET")) {
       return new Response(JSON.stringify(idle), { headers: { "Content-Type": "application/json" } })
     }
+    if (path === "/api/explorer-models") return catalogResponse()
     if (path === "/api/explorer-run" && init?.method === "POST") {
       return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "llm-run-1" } }),
         { status: 202, headers: { "Content-Type": "application/json" } })
@@ -38,10 +43,38 @@ it("starts an anonymous LLM pass against the scope target from the hub", async (
   expect(screen.queryByLabelText("표시 이름")).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: "메모리에 계정 등록" })).not.toBeInTheDocument()
 
+  const model = await screen.findByRole("combobox", { name: "Codex 모델" })
+  await waitFor(() => expect(model).toHaveValue("gpt-5.6-sol"))
+  await user.selectOptions(model, "gpt-6.1-sol")
   await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
   await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")).toBe(true))
   const startCall = fetchStub.mock.calls.find(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")
   expect(String((startCall?.[1] as RequestInit).body)).toContain("anonymous=true")
+  expect(String((startCall?.[1] as RequestInit).body)).toContain("model=gpt-6.1-sol")
+})
+
+it("keeps the previous Codex-default start path when the model catalog is unavailable", async () => {
+  const user = userEvent.setup()
+  const posts: string[] = []
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/explorer-models") {
+      return new Response(JSON.stringify({ error: "catalog unavailable" }), { status: 503,
+        headers: { "Content-Type": "application/json" } })
+    }
+    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+      posts.push(String(init.body))
+      return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING" } }), { status: 202,
+        headers: { "Content-Type": "application/json" } })
+    }
+    if (String(input) === "/api/explorer-run") {
+      return new Response(JSON.stringify(idle), { headers: { "Content-Type": "application/json" } })
+    }
+    throw new Error(`unexpected API ${String(input)}`)
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  expect(await screen.findByText(/모델 목록을 확인하지 못했습니다/)).toBeVisible()
+  await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
+  await waitFor(() => expect(posts[0]).toContain("model="))
 })
 
 it("shows actionable setup help and rechecks Codex readiness", async () => {
@@ -80,6 +113,7 @@ it("opens a login window for a registered account and adopts its session on [로
     if (path === "/api/explorer-run" && (!init?.method || init.method === "GET")) {
       return new Response(JSON.stringify({ ...idle, accounts: session ? [session] : [] }), { headers: { "Content-Type": "application/json" } })
     }
+    if (path === "/api/explorer-models") return catalogResponse()
     if (path === "/api/explorer-accounts" && init?.method === "POST") {
       const body = String(init.body)
       posts.push(body)
@@ -106,7 +140,7 @@ it("opens a login window for a registered account and adopts its session on [로
 it("shows the browser budget as a ceiling and keeps the stop switch visible while a window is driven", async () => {
   const driving = {
     ...idle,
-    run: { ...idle.run, status: "RUNNING", runId: "llm-run-2", accountIds: ["user-a"], elapsedMillis: 252_000 },
+    run: { ...idle.run, status: "RUNNING", runId: "llm-run-2", model: "gpt-6.1-sol", accountIds: ["user-a"], elapsedMillis: 252_000 },
     browser: { actions: 84, maxActions: 300, snapshots: 31, endpoints: 19, elapsedMillis: 252_000, minutes: 15 },
     accounts: [{ id: "user-a", label: "USER A", role: "LV1", loginUrl: "https://app.example.test/",
       status: "READY", message: "브라우저 로그인 세션 (사용자 확인)", updatedAt: "2026-10-01T00:00:00Z",
@@ -137,6 +171,7 @@ it("shows the browser budget as a ceiling and keeps the stop switch visible whil
   expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
   expect(screen.getByText("1개 선택됨")).toBeInTheDocument()
+  expect(screen.getAllByText("gpt-6.1-sol").length).toBeGreaterThan(0)
 })
 
 it("hides the browser card when no window is being driven", async () => {
@@ -144,6 +179,7 @@ it("hides the browser card when no window is being driven", async () => {
     if (String(input) === "/api/explorer-run") {
       return new Response(JSON.stringify({ ...idle, browser: null }), { headers: { "Content-Type": "application/json" } })
     }
+    if (String(input) === "/api/explorer-models") return catalogResponse()
     throw new Error(`unexpected API ${String(input)}`)
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[]} />)

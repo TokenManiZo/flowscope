@@ -15,6 +15,26 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerCoordinatorTest {
     @Test
+    void selectedModelIsValidatedBeforeTheRunAndPreservedInRunStatus() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        RunContextRegistry contexts = new RunContextRegistry();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("gateway transport should not be called"); }, provider,
+                contexts, value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            assertThrows(IllegalArgumentException.class, () -> coordinator.start(
+                    new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true, "unlisted-model")));
+            assertNull(contexts.current(Source.LLM));
+
+            ExplorerCoordinator.Snapshot started = coordinator.start(new ExplorerCoordinator.StartRequest(
+                    "https://app.example.test/", List.of(), true, "gpt-6.1-sol"));
+            assertEquals("gpt-6.1-sol", started.model());
+            await(() -> provider.request.get() != null);
+            assertEquals("gpt-6.1-sol", provider.request.get().model());
+        }
+    }
+
+    @Test
     void completesOnlyAfterTrustedResponseEvidenceExists() throws Exception {
         FakeProvider provider = new FakeProvider();
         AtomicReference<Pipeline.Result> published = new AtomicReference<>(Pipeline.run(List.of()));
@@ -361,6 +381,11 @@ final class ExplorerCoordinatorTest {
         private final AtomicReference<Listener> listener = new AtomicReference<>();
         private int invalidations;
         @Override public String readiness() { return "READY"; }
+        @Override public ModelCatalog models() {
+            return new ModelCatalog("gpt-5.6-sol", List.of(
+                    new ModelOption("gpt-5.6-sol", "GPT-5.6 Sol", false),
+                    new ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true)));
+        }
         @Override public void invalidateReadiness() { invalidations++; }
         @Override public Handle start(Request request, Listener listener) {
             this.request.set(request);

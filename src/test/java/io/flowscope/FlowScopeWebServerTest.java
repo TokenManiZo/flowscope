@@ -213,6 +213,9 @@ final class FlowScopeWebServerTest {
         assertEquals(0, initial.at("/run/parameterDeclarations").asInt());
         assertEquals(0, initial.at("/run/capabilityProbes").asInt());
         assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
+        JsonNode catalog = json(get("/api/explorer-models", token, origin()));
+        assertEquals("gpt-5.6-sol", catalog.path("configuredModel").asText());
+        assertEquals("gpt-6.1-sol", catalog.at("/models/1/id").asText());
 
         assertEquals(400, post("/api/explorer-accounts", "action=save&id=human-a&loginUrl=x", token).statusCode());
         HttpResponse<String> opened = post("/api/explorer-accounts",
@@ -227,11 +230,13 @@ final class FlowScopeWebServerTest {
         String accountId = JSON.readTree(completed.body()).at("/account/id").asText();
 
         HttpResponse<String> started = post("/api/explorer-run",
-                "action=start&target=" + encode(state.record.service + "/") + "&anonymous=false&accounts=" + accountId,
+                "action=start&target=" + encode(state.record.service + "/")
+                        + "&anonymous=false&accounts=" + accountId + "&model=gpt-6.1-sol",
                 token);
         assertEquals(202, started.statusCode());
         assertEquals("RUNNING", JSON.readTree(started.body()).at("/run/status").asText());
         assertEquals(accountId, JSON.readTree(started.body()).at("/run/accountIds/0").asText());
+        assertEquals("gpt-6.1-sol", JSON.readTree(started.body()).at("/run/model").asText());
     }
 
     @Test
@@ -1461,8 +1466,13 @@ final class FlowScopeWebServerTest {
         @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
-                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of());
+                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model());
             return explorerRun;
+        }
+        @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
+            return new io.flowscope.explorer.ExplorerProvider.ModelCatalog("gpt-5.6-sol", List.of(
+                    new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-5.6-sol", "GPT-5.6 Sol", false),
+                    new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true)));
         }
         @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
             explorerReadinessChecks++;

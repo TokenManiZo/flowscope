@@ -18,6 +18,7 @@ import type {
   ZapAccount,
   ManagedSession,
   ExplorerRunEnvelope,
+  ExplorerModelCatalog,
   ExplorerAccountSaveResult,
   ReviewStatus,
   ProjectStatus,
@@ -101,7 +102,8 @@ export const deleteZapAccount = (id: string) => postForm<ApiSuccess>("/api/zap-a
 /** 크롤 없이 ZAP 인증만 실행해 이 계정의 세션을 확보(refresh-session → startAuthenticationOnly). 202로 시작을 알린다. */
 export const refreshZapSession = (id: string) => postForm<{ status?: string }>("/api/zap-accounts", { action: "refresh-session", id }, [202])
 export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))
-export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean }) =>
+export const getExplorerModels = (signal?: AbortSignal) => apiFetch<ExplorerModelCatalog>("/api/explorer-models", formSignal(signal))
+export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean; model: string }) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "start", ...values, anonymous: String(values.anonymous) }, [202])
 export const controlExplorerRun = (action: "cancel" | "clear" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })

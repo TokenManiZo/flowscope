@@ -18,6 +18,18 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfSystemProperty(named = "flowscope.harness", matches = "true")
 final class CodexAppServerProviderHarnessTest {
     @Test
+    void loggedInCodexListsItsOwnSelectableModels() {
+        try (CodexAppServerProvider provider = new CodexAppServerProvider()) {
+            assertEquals("READY", provider.readiness());
+            ExplorerProvider.ModelCatalog catalog = provider.models();
+            assertFalse(catalog.models().isEmpty());
+            if (!catalog.configuredModel().isBlank()) {
+                assertTrue(catalog.models().stream().anyMatch(model -> model.id().equals(catalog.configuredModel())));
+            }
+        }
+    }
+
+    @Test
     void loggedInCodexInvokesDynamicHttpToolAndReturnsStructuredResult() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         AtomicReference<ExplorerTransport.Request> requestSeen = new AtomicReference<>();
