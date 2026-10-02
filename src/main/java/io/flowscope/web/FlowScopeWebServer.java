@@ -174,14 +174,18 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
         default List<ExplorerAccountVault.View> explorerAccounts() { return List.of(); }
-        default ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
-            throw new UnsupportedOperationException("Explorer account workflow is unavailable");
+        /** Null when no window is being driven, so the UI shows the browser card only while one is. */
+        default ExplorerCoordinator.BrowserBudget explorerBrowserBudget() { return null; }
+        /** Opens a FlowScope-launched login window for a registered account; the operator logs in there. */
+        default ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
+            throw new UnsupportedOperationException("Explorer browser login is unavailable");
+        }
+        /** The operator finished logging in: adopt the window's session for that account. */
+        default ExplorerAccountVault.View completeExplorerBrowserLogin(String id) {
+            throw new UnsupportedOperationException("Explorer browser login is unavailable");
         }
         default void removeExplorerAccount(String id) {
             throw new UnsupportedOperationException("Explorer account workflow is unavailable");
-        }
-        default ExplorerAccountVault.View verifyExplorerAccount(String id) {
-            throw new UnsupportedOperationException("Explorer account verification is unavailable");
         }
         default ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
@@ -1053,24 +1057,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
         zapNode.put("connectionLabel", zapConnected ? "" : zapConnection.path("message").asText(""));
         zapNode.put("failureReason", zap == null ? "" : zap.message());
 
+        // LLM sessions come from browser login in the LLM step; the account only shows their state.
         ExplorerAccountVault.View explorer = state.explorerAccounts().stream()
                 .filter(value -> value.id().equals(accountId)).findFirst().orElse(null);
         ObjectNode llm = body.putObject("llm");
         llm.put("enabled", explorer != null);
         llm.put("status", explorer == null ? "UNVERIFIED" : explorer.status().name());
-        llm.put("loginMode", explorer != null && explorer.loginMode() == ExplorerAccountVault.LoginMode.JSON
-                ? "JSON_API" : "HTML_FORM");
-        llm.put("loginUrl", explorer == null ? "" : explorer.loginUrl());
-        llm.put("loginId", "");
-        llm.put("hasPassword", explorer != null && explorer.hasPassword());
         llm.put("failureReason", explorer == null ? "" : explorer.message());
-        ObjectNode advanced = llm.putObject("advanced");
-        advanced.put("idField", "");
-        advanced.put("passwordField", "");
-        advanced.put("tokenJsonPath", "");
-        advanced.put("authHeaderName", "");
-        advanced.put("authPrefix", "");
-        advanced.put("validationUrl", explorer == null || explorer.validationUrl() == null ? "" : explorer.validationUrl());
         return body;
     }
 
@@ -1299,6 +1292,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (request.method().equals("GET")) {
             ObjectNode body = json.createObjectNode();
             body.set("run", explorerSnapshot(state.explorerStatus()));
+            ExplorerCoordinator.BrowserBudget budget = state.explorerBrowserBudget();
+            if (budget == null) body.putNull("browser");
+            else {
+                body.putObject("browser")
+                        .put("actions", budget.actions()).put("maxActions", budget.maxActions())
+                        .put("snapshots", budget.snapshots())
+                        .put("endpoints", budget.endpoints()).put("elapsedMillis", budget.elapsedMillis())
+                        .put("minutes", budget.minutes());
+            }
             body.set("accounts", json.valueToTree(state.explorerAccounts()));
             body.set("scope", json.valueToTree(state.scopeEntries()));
             return json(200, body);
@@ -1342,30 +1344,23 @@ public final class FlowScopeWebServer implements AutoCloseable {
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
-            String action = form.getOrDefault("action", "save").trim().toLowerCase(Locale.ROOT);
+            String action = form.getOrDefault("action", "").trim().toLowerCase(Locale.ROOT);
             if (action.equals("delete")) {
                 state.removeExplorerAccount(required(form, "id"));
-                return success("Explorer 메모리 계정과 인증값을 폐기했습니다.");
+                return success("Explorer 세션을 폐기하고 로그인 브라우저를 닫았습니다.");
             }
-            if (action.equals("verify")) {
-                ObjectNode body = json.createObjectNode().put("success", true)
-                        .put("message", "Explorer 로그인을 확인했습니다.");
-                body.set("account", json.valueToTree(state.verifyExplorerAccount(required(form, "id"))));
-                return json(200, body);
+            ExplorerAccountVault.View account;
+            String message;
+            if (action.equals("browser-open")) {
+                account = state.openExplorerBrowserLogin(required(form, "id"), required(form, "url"));
+                message = "브라우저 창에서 로그인한 뒤 [로그인 완료]를 누르세요.";
+            } else if (action.equals("browser-complete")) {
+                account = state.completeExplorerBrowserLogin(required(form, "id"));
+                message = "브라우저 로그인 세션을 가져왔습니다.";
+            } else {
+                throw new IllegalArgumentException("지원하지 않는 계정 동작입니다.");
             }
-            if (!action.equals("save")) throw new IllegalArgumentException("지원하지 않는 계정 동작입니다.");
-            ExplorerAccountVault.LoginMode mode;
-            try { mode = ExplorerAccountVault.LoginMode.valueOf(
-                    form.getOrDefault("loginMode", "AUTO_FORM").toUpperCase(Locale.ROOT)); }
-            catch (RuntimeException error) { throw new IllegalArgumentException("로그인 방식은 AUTO_FORM 또는 JSON이어야 합니다."); }
-            ExplorerAccountVault.View account = state.saveExplorerAccount(new ExplorerAccountVault.Input(
-                    form.getOrDefault("id", ""), required(form, "label"), form.getOrDefault("role", "UNKNOWN"),
-                    required(form, "loginUrl"), required(form, "username"), required(form, "password"), mode,
-                    form.getOrDefault("usernameField", ""), form.getOrDefault("passwordField", ""),
-                    form.getOrDefault("tokenJsonPath", ""), form.getOrDefault("authHeader", ""),
-                    form.getOrDefault("authPrefix", ""), form.getOrDefault("validationUrl", "")));
-            ObjectNode body = json.createObjectNode().put("success", true)
-                    .put("message", "Explorer 계정을 현재 프로세스 메모리에 등록했습니다.");
+            ObjectNode body = json.createObjectNode().put("success", true).put("message", message);
             body.set("account", json.valueToTree(account));
             return json(200, body);
         } catch (RuntimeException error) {

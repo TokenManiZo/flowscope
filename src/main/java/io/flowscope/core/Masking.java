@@ -40,10 +40,12 @@ public final class Masking {
     private static final String SECRET_NAME =
             "(?:pass(?:word|wd)?|pwd|token|secret|client[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|authorization)";
     private static final String SECRET_PREFIX = "[\"']?" + SECRET_NAME + "[\"']?\\s*[:=]\\s*[\"']?";
+    // ';' ends a value (cookie pairs, header parameters, JS statements). Consuming it would merge the next cookie on a
+    // second pass, making maskHeaders non-idempotent and making project saves reject every record.
     private static final Pattern SECRET_FIELD = Pattern.compile(
-            "(?i)(" + SECRET_PREFIX + ")([^\"'&,}\\s]+)");
+            "(?i)(" + SECRET_PREFIX + ")([^\"'&,};\\s]+)");
     private static final Pattern JAVASCRIPT_SECRET_FIELD = Pattern.compile(
-            "(?i)(" + SECRET_PREFIX + ")([^\"'`&,}\\s]+)");
+            "(?i)(" + SECRET_PREFIX + ")([^\"'`&,};\\s]+)");
     /** Template literal value without `${...}`; interpolation stays an expression. */
     private static final Pattern JAVASCRIPT_TEMPLATE_SECRET = Pattern.compile(
             "(?i)([\"']?" + SECRET_NAME + "[\"']?\\s*[:=]\\s*`)((?:[^`$\\\\]|\\\\.|\\$(?!\\{))+)(?=`)");

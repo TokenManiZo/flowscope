@@ -84,7 +84,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
   const [zapDefinitions, setZapDefinitions] = useState("")
   const [showZapHowTo, setShowZapHowTo] = useState(false)
-  const [settings, setSettings] = useState<{ id: string; tab: "zap" | "llm" } | null>(null)
+  const [settings, setSettings] = useState<{ id: string; tab: "zap" } | null>(null)
   const settingsAdapter = useMemo(() => createAccountSettingsAdapter(), [])
 
   const scope = scanner.data?.scope ?? []
@@ -330,7 +330,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
         </TabsContent>
 
         <TabsContent value="llm" className="mt-2">
-          <LlmPass target={target} accounts={targetAccounts} onOpenSettings={(id) => setSettings({ id, tab: "llm" })} />
+          <LlmPass target={target} accounts={targetAccounts} />
         </TabsContent>
 
         <TabsContent value="review" className="mt-2">

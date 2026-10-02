@@ -29,7 +29,8 @@ import {
   startExplorerRun,
   controlExplorerRun,
   steerExplorerRun,
-  saveExplorerAccount,
+  openExplorerBrowserLogin,
+  completeExplorerBrowserLogin,
   deleteExplorerAccount,
   saveZapAccount,
   deleteZapAccount,
@@ -147,7 +148,8 @@ export function useZapSessionRefreshMutation() { return useInvalidatingMutation(
 export function useExplorerStartMutation() { return useInvalidatingMutation(startExplorerRun, [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear" | "recheck") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerSteerMutation() { return useInvalidatingMutation((message: string) => steerExplorerRun(message), [queryKeys.explorerRun]) }
-export function useExplorerAccountSaveMutation() { return useInvalidatingMutation(saveExplorerAccount, [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useExplorerBrowserLoginMutation() { return useInvalidatingMutation(({ id, url }: { id: string; url: string }) => openExplorerBrowserLogin(id, url), [queryKeys.explorerRun]) }
+export function useExplorerBrowserCompleteMutation() { return useInvalidatingMutation((id: string) => completeExplorerBrowserLogin(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }

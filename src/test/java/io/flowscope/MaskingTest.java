@@ -14,6 +14,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class MaskingTest {
     @Test
+    void cookieMaskingIsIdempotentForTokenNamedCookiesSoProjectSavesAccept() {
+        // Plane(Django) sends csrftoken next to session-id; masking twice must not merge the two cookies.
+        String request = "GET /api/users/me/ HTTP/2\r\nHost: plane.localhost:8900\r\n"
+                + "Cookie: csrftoken=abcDEF123; session-id=xyz789abc\r\nX-CSRFToken: abcDEF123\r\n\r\n";
+        String response = "HTTP/2 200 OK\r\nSet-Cookie: csrftoken=abcDEF123; Path=/\r\n"
+                + "Content-Type: text/plain\r\n\r\nok";
+
+        for (String message : new String[] {request, response}) {
+            String once = Masking.maskHeaders(message);
+            assertEquals(once, Masking.maskHeaders(once));
+            assertFalse(once.contains("abcDEF123"));
+            assertFalse(once.contains("xyz789abc"));
+        }
+        assertTrue(Masking.maskHeaders(request).contains("session-id="));
+    }
+
+    @Test
     void javascriptMaskingPreservesHttpCallsAndHidesLiteralSecrets() {
         String script = "const password=readInput();fetch('/api/catalog');"
                 + "const config={apiKey:'sk-synthetic',authorization:readHeader()};"

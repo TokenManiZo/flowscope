@@ -405,9 +405,10 @@ public final class FlowScopeExtension implements BurpExtension {
                 authorizationReplayWorker);
         explorerAccounts = new ExplorerAccountVault();
         explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
-                new CodexAppServerProvider(), runContexts, value -> scope.allows(value),
+                new CodexAppServerProvider(api.logging()::logToOutput), runContexts, value -> scope.allows(value),
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput);
+        explorer.browserRecorder(this::recordBrowserExchange);
         try {
             startWebUi();
         } catch (Exception e) {
@@ -830,7 +831,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 .contains("text/html")) {
             supportingAssets.observeHtml(profile.source(), rec.runId, scope::allows, req.url(), rec.responseBodyForAnalysis());
         }
-        scheduleRebuild();
+        scheduleRebuildForNewRecords();
         return true;
     }
 
@@ -951,6 +952,20 @@ public final class FlowScopeExtension implements BurpExtension {
     private void scheduleRebuild() {
         if (shuttingDown.get()) return;
         analysisPublication.invalidate();
+        queueRebuild();
+    }
+
+    /**
+     * 프록시 기록 추가 전용. 레코드가 늘어난 것만으로는 진행 중인 분석이 틀리지 않으므로 그 결과를 버리지 않고,
+     * 다음 재구성을 예약해 새 기록을 이어서 반영한다. 끊임없이 요청하는 대상(알림 폴링 등)에서 매 결과가 버려져
+     * 화면이 멈추던 문제를 막는다. 데이터셋 교체·설정 변경은 기존 scheduleRebuild가 계속 무효화한다.
+     */
+    private void scheduleRebuildForNewRecords() {
+        if (shuttingDown.get()) return;
+        queueRebuild();
+    }
+
+    private void queueRebuild() {
         if (!rebuildPending.compareAndSet(false, true)) return;  // 이미 예약됨 → 합치기
         worker.schedule(() -> {
             rebuildPending.set(false);
@@ -1976,30 +1991,33 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public com.fasterxml.jackson.databind.node.ObjectNode zapStatus() { return zapConnectionStatus(); }
             @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorer.current(); }
+            @Override public ExplorerCoordinator.BrowserBudget explorerBrowserBudget() {
+                return explorer.browserDriven() ? explorer.browserBudget() : null;
+            }
             @Override public List<ExplorerAccountVault.View> explorerAccounts() { return explorer.accounts(); }
-            @Override public ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
-                URI requestedLogin = URI.create(input.loginUrl());
-                String requestedService = requestedLogin.getScheme() + "://" + requestedLogin.getAuthority();
-                validateRuntimeAccount(input.id(), input.label(), requestedService, input.role());
-                ExplorerAccountVault.View saved = explorer.saveAccount(input);
-                URI login = URI.create(saved.loginUrl());
-                io.flowscope.core.AccessRole role;
-                try { role = io.flowscope.core.AccessRole.valueOf(saved.role().toUpperCase(Locale.ROOT)); }
-                catch (RuntimeException ignored) { role = io.flowscope.core.AccessRole.UNKNOWN; }
-                if (analysisConfig.account(saved.id()).isEmpty()) {
-                    analysisConfig.upsertAccount(new io.flowscope.core.AccountProfile(
-                            saved.id(), saved.label(), login.getScheme() + "://" + login.getAuthority(), role));
+            @Override public ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
+                // LLM sessions belong to accounts registered under 계정·세션; the login URL must be that account's service.
+                AccountProfile account = analysisConfig.account(id == null ? "" : id.trim()).orElseThrow(() ->
+                        new IllegalArgumentException("등록되지 않은 계정입니다. 계정·세션에서 먼저 등록하세요."));
+                URI login = URI.create(url.trim());
+                validateRuntimeAccount(account.id(), account.label(),
+                        login.getScheme() + "://" + login.getAuthority(), account.role().name());
+                try {
+                    return explorer.openBrowserLogin(account.id(), account.label(), account.role().name(), url);
+                } catch (java.io.IOException error) {
+                    throw new IllegalStateException(error.getMessage());
                 }
-                scheduleRebuild();
-                return saved;
+            }
+            @Override public ExplorerAccountVault.View completeExplorerBrowserLogin(String id) {
+                try {
+                    return explorer.completeBrowserLogin(id);
+                } catch (java.io.IOException error) {
+                    throw new IllegalStateException("브라우저 세션을 읽지 못했습니다: " + error.getMessage());
+                }
             }
             @Override public void removeExplorerAccount(String id) {
                 explorer.removeAccount(id);
-                if (id != null && id.startsWith("llm-")) analysisConfig.removeAccount(id);
                 scheduleRebuild();
-            }
-            @Override public ExplorerAccountVault.View verifyExplorerAccount(String id) {
-                return explorer.authenticateAccount(id);
             }
             @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
                 return explorer.start(request);
@@ -2491,7 +2509,7 @@ public final class FlowScopeExtension implements BurpExtension {
         supportingAssets.clear();
         if (explorer == null) return;
         try { explorer.cancel(); } catch (RuntimeException ignored) { }
-        explorer.accounts().forEach(account -> analysisConfig.removeAccount(account.id()));
+        // Explorer sessions belong to registered accounts now; resetting secrets must not delete those accounts.
         explorer.clearAccounts();
         try { explorer.clear(); } catch (RuntimeException ignored) { }
     }
@@ -2586,7 +2604,7 @@ public final class FlowScopeExtension implements BurpExtension {
             request = prepareHumanRequest(seed, requestText, credentialMode, accountId);
 
             var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
-                    .withUpstreamTLSVerification().withResponseTimeout(30_000);
+                    .withResponseTimeout(30_000);
             burp.api.montoya.http.message.HttpRequestResponse exchange;
             controlledRequest.set(true);
             try { sent = true; exchange = api.http().sendRequest(request, options); }
@@ -2825,7 +2843,7 @@ public final class FlowScopeExtension implements BurpExtension {
         }
 
         var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
-                .withUpstreamTLSVerification().withResponseTimeout(30_000);
+                .withResponseTimeout(30_000);
         burp.api.montoya.http.message.HttpRequestResponse exchange;
         long started = System.nanoTime();
         controlledRequest.set(true);
@@ -2990,7 +3008,7 @@ public final class FlowScopeExtension implements BurpExtension {
         System.arraycopy(input.body(), 0, bytes, prefix.length, input.body().length);
         HttpRequest request = HttpRequest.httpRequest(service, burp.api.montoya.core.ByteArray.byteArray(bytes));
         RequestOptions options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
-                .withUpstreamTLSVerification().withResponseTimeout(30_000);
+                .withResponseTimeout(30_000);
         long startedAt = System.nanoTime();
         Instant attemptedAt = Instant.now();
         try {
@@ -3056,6 +3074,99 @@ public final class FlowScopeExtension implements BurpExtension {
         } finally {
             controlledRequest.remove();
         }
+    }
+
+    /**
+     * Stores what the driven login window did. The window reaches no Burp listener, so nothing else would record it;
+     * this is the only path from CDP observation to Evidence, and it asserts the lane the same way the gateway does.
+     */
+    private void recordBrowserExchange(ExplorerCoordinator.BrowserExchange exchange) {
+        if (shuttingDown.get()) return;
+        synchronized (records) {
+            if (records.size() >= MAX_RECORDS) {
+                recordDroppedAtCapacity();
+                return;
+            }
+        }
+        try {
+            HttpRequest request = browserRequest(exchange);
+            HttpResponse response = browserResponse(exchange);
+            RequestRecord record = recordFrom(request, response,
+                    new PortProfile(Source.LLM, SourceDetail.LLM_EXPLORER), System.currentTimeMillis(),
+                    false, exchange.runId(), null, emptyToNull(exchange.accountId()));
+            record.sourceDetail = SourceDetail.LLM_EXPLORER;
+            record.orchestrator = Orchestrator.LLM;
+            record.tool = ToolKind.CODEX;
+            record.phase = RunPhase.EXPLORATION;
+            // The window is FlowScope's own, driven within this run's scope and budget: a controlled execution.
+            record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
+            record.runId = exchange.runId();
+            record.laneAccountId = emptyToNull(exchange.accountId());
+            appendControlledToolRecord(record, () -> retainRawExchange(record, request, response));
+            scheduleRebuildForNewRecords();
+        } catch (Exception error) {
+            api.logging().logToError("FlowScope 브라우저 탐색 수집 실패: " + exchange.method() + " "
+                    + Masking.maskSecrets(exchange.url()), error);
+        }
+    }
+
+    private static HttpRequest browserRequest(ExplorerCoordinator.BrowserExchange exchange) {
+        URI target = URI.create(exchange.url());
+        boolean secure = "https".equalsIgnoreCase(target.getScheme());
+        int port = target.getPort() >= 0 ? target.getPort() : secure ? 443 : 80;
+        String host = target.getHost();
+        if (host == null) throw new IllegalArgumentException("브라우저 요청 host를 확인할 수 없습니다.");
+        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
+        return HttpRequest.httpRequest(HttpService.httpService(host, port, secure),
+                burp.api.montoya.core.ByteArray.byteArray(browserRequestBytes(exchange)));
+    }
+
+    static byte[] browserRequestBytes(ExplorerCoordinator.BrowserExchange exchange) {
+        URI target = URI.create(exchange.url());
+        String path = target.getRawPath() == null || target.getRawPath().isBlank() ? "/" : target.getRawPath();
+        if (target.getRawQuery() != null) path += "?" + target.getRawQuery();
+        byte[] body = exchange.requestBody() == null ? new byte[0]
+                : exchange.requestBody().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        StringBuilder raw = new StringBuilder(exchange.method()).append(' ').append(path).append(" HTTP/1.1\r\n");
+        if (exchange.requestHeaders().keySet().stream().noneMatch(name -> name.equalsIgnoreCase("Host"))) {
+            raw.append("Host: ").append(target.getRawAuthority()).append("\r\n");
+        }
+        appendHeaders(raw, exchange.requestHeaders(), body.length);
+        return concat(raw.toString(), body);
+    }
+
+    private static HttpResponse browserResponse(ExplorerCoordinator.BrowserExchange exchange) {
+        return HttpResponse.httpResponse(burp.api.montoya.core.ByteArray.byteArray(browserResponseBytes(exchange)));
+    }
+
+    static byte[] browserResponseBytes(ExplorerCoordinator.BrowserExchange exchange) {
+        byte[] body = exchange.responseBody() == null ? new byte[0]
+                : exchange.responseBody().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        StringBuilder raw = new StringBuilder("HTTP/1.1 ").append(exchange.status()).append(" \r\n");
+        appendHeaders(raw, exchange.responseHeaders(), body.length);
+        return concat(raw.toString(), body);
+    }
+
+    /**
+     * CDP hands back decoded bodies, so the hop's own framing headers describe bytes that no longer exist. Dropping
+     * them and writing one Content-Length is what keeps Burp's parser and FlowScope's decoder on the same bytes.
+     */
+    private static void appendHeaders(StringBuilder raw, Map<String, String> headers, int bodyLength) {
+        for (Map.Entry<String, String> header : headers.entrySet()) {
+            String name = header.getKey();
+            if (!safeHeader(name, header.getValue())) continue;
+            if (name.equalsIgnoreCase("Content-Length") || name.equalsIgnoreCase("Content-Encoding")
+                    || name.equalsIgnoreCase("Transfer-Encoding") || name.startsWith(":")) continue;
+            raw.append(name).append(": ").append(header.getValue()).append("\r\n");
+        }
+        raw.append("Content-Length: ").append(bodyLength).append("\r\n\r\n");
+    }
+
+    private static byte[] concat(String head, byte[] body) {
+        byte[] prefix = head.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+        byte[] bytes = java.util.Arrays.copyOf(prefix, prefix.length + body.length);
+        System.arraycopy(body, 0, bytes, prefix.length, body.length);
+        return bytes;
     }
 
     private static boolean safeHeader(String name, String value) {
@@ -3197,7 +3308,9 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (restoredRouteCandidates) {
             restoredRouteCandidates.addAll(discoveries);
         }
-        scheduleRebuild();
+        // Route candidates only grow while an LLM run explores; like new proxy records they must not discard the
+        // analysis already running, or frequent discoveries would keep the snapshot from ever publishing.
+        scheduleRebuildForNewRecords();
     }
 
     private List<RouteCandidate> routeCandidatesFor(List<RequestRecord> sourceRecords) {

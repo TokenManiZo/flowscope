@@ -214,15 +214,17 @@ final class FlowScopeWebServerTest {
         assertEquals(0, initial.at("/run/capabilityProbes").asInt());
         assertEquals(state.record.service + "/", initial.at("/scope/0").asText());
 
-        HttpResponse<String> saved = post("/api/explorer-accounts",
-                "action=save&label=LLM-A&role=USER&loginUrl=" + encode(state.record.service + "/login")
-                        + "&username=" + encode("alice@example.test") + "&password=" + encode("secret-password")
-                        + "&loginMode=JSON&usernameField=email&passwordField=password"
-                        + "&tokenJsonPath=token&authHeader=Authorization&authPrefix=" + encode("Bearer "), token);
-        assertEquals(200, saved.statusCode());
-        assertFalse(saved.body().contains("secret-password"));
-        assertFalse(saved.body().contains("alice@example.test"));
-        String accountId = JSON.readTree(saved.body()).at("/account/id").asText();
+        assertEquals(400, post("/api/explorer-accounts", "action=save&id=human-a&loginUrl=x", token).statusCode());
+        HttpResponse<String> opened = post("/api/explorer-accounts",
+                "action=browser-open&id=human-a&url=" + encode(state.record.service + "/"), token);
+        assertEquals(200, opened.statusCode());
+        assertEquals("NEEDS_INPUT", JSON.readTree(opened.body()).at("/account/status").asText());
+        HttpResponse<String> completed = post("/api/explorer-accounts", "action=browser-complete&id=human-a", token);
+        assertEquals(200, completed.statusCode());
+        assertFalse(completed.body().contains("session-secret"));
+        assertEquals("Authorization", JSON.readTree(completed.body()).at("/account/headerNames/0").asText(""),
+                "only header names may be exposed");
+        String accountId = JSON.readTree(completed.body()).at("/account/id").asText();
 
         HttpResponse<String> started = post("/api/explorer-run",
                 "action=start&target=" + encode(state.record.service + "/") + "&anonymous=false&accounts=" + accountId,
@@ -1464,11 +1466,19 @@ final class FlowScopeWebServerTest {
         }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
         @Override public List<ExplorerAccountVault.View> explorerAccounts() { return List.copyOf(explorerAccounts); }
-        @Override public ExplorerAccountVault.View saveExplorerAccount(ExplorerAccountVault.Input input) {
-            ExplorerAccountVault.View value = new ExplorerAccountVault.View("llm-test", input.label(), input.role(),
-                    input.loginUrl(), input.loginMode(), input.validationUrl(),
-                    ExplorerAccountVault.AuthStatus.UNVERIFIED, "로그인 확인 전",
-                    java.time.Instant.now().toString(), true, 0, false);
+        @Override public ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", url,
+                    ExplorerAccountVault.AuthStatus.NEEDS_INPUT, "로그인 대기",
+                    java.time.Instant.now().toString(), 0, List.of(), true);
+            explorerAccounts.add(value);
+            return value;
+        }
+        @Override public ExplorerAccountVault.View completeExplorerBrowserLogin(String id) {
+            // The real vault exposes header names only; "session-secret" stands for a value that must not leak.
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", "",
+                    ExplorerAccountVault.AuthStatus.READY, "브라우저 로그인 세션 (사용자 확인)",
+                    java.time.Instant.now().toString(), 1, List.of("Authorization"), true);
+            explorerAccounts.clear();
             explorerAccounts.add(value);
             return value;
         }

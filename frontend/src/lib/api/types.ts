@@ -767,14 +767,13 @@ export interface ExplorerAccount {
   label: string
   role: string
   loginUrl: string
-  loginMode: "AUTO_FORM" | "JSON"
-  validationUrl: string
   status: "UNVERIFIED" | "READY" | "NEEDS_INPUT" | "EXPIRED" | "FAILED"
   message: string
   updatedAt: string
-  hasPassword: boolean
   cookieCount: number
-  hasTokenHeader: boolean
+  /** Names only; header values never leave the server. */
+  headerNames: readonly string[]
+  browserOpen: boolean
 }
 
 export interface ExplorerActivity {
@@ -809,8 +808,20 @@ export interface ExplorerRun {
   activities: readonly ExplorerActivity[]
 }
 
+/** `minutes` is a ceiling, not a duration: an exploration that finishes stops well before it. */
+export interface ExplorerBrowserBudget {
+  actions: number
+  maxActions: number
+  snapshots: number
+  endpoints: number
+  elapsedMillis: number
+  minutes: number
+}
+
 export interface ExplorerRunEnvelope {
   run: ExplorerRun
+  /** Present only while a login window is being driven. */
+  browser: ExplorerBrowserBudget | null
   accounts: readonly ExplorerAccount[]
   scope: readonly string[]
 }
