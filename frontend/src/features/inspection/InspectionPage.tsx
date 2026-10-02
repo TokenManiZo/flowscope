@@ -1,3 +1,5 @@
+import { accountObservations } from "@/lib/display/accountObservations"
+import { evidenceOrdinalLabel } from "@/lib/display/operationLabel"
 import { useEffect, useMemo, useState } from "react"
 import { Check, Copy } from "lucide-react"
 
@@ -149,7 +151,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   // 등록 계정 ID와 헷갈리지 않게 "미등록 로그인 N"으로 바꾼다.
   const identityLabel = useMemo(() => {
     const labels = new Map((snapshot.data?.accounts ?? []).map((account) => [account.id, account.label]))
-    const unregistered = [...new Set(events.map((event) => event.idn).filter((idn) => idn && idn !== "anon" && !labels.has(idn)))].sort()
+    const unregistered = [...new Set(events.map((event) => event.laneAccountId?.trim() || event.idn).filter((idn) => idn && idn !== "anon" && !labels.has(idn)))].sort()
     return (idn: string): { label: string; muted: boolean } => {
       if (!idn || idn === "anon") return { label: "비로그인", muted: true }
       const label = labels.get(idn)
@@ -157,8 +159,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
     }
   }, [snapshot.data?.accounts, events])
   const feedItem = (event: (typeof events)[number]): SourceFeedItem => {
-    const who = identityLabel(event.idn)
-    return { id: event.eventId, badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
+    const who = identityLabel(event.laneAccountId?.trim() || event.idn)
+    return { id: event.eventId, ordinal: evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId), badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
       time: event.timestamp ? clockTime(new Date(event.timestamp).toISOString()) : undefined }
   }
 
@@ -171,15 +173,16 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 200)
       .map(feedItem)
-  }, [humanFeedItems, events, identityLabel])
+  }, [humanFeedItems, events, identityLabel, snapshot.data?.evidenceOrdinals])
 
   // 계정별 HUMAN 수집 건수와 마지막 기록 시각. 비로그인 기록은 anon 신원으로 모인다.
   const humanProgress = useMemo(() => {
     const rows = [...humanAccounts.map((account) => ({ id: account.id, label: account.label })), { id: "anon", label: "비로그인" }]
+    const totals = accountObservations(events, rows.map((row) => row.id))
     return rows.map((row) => {
-      const mine = events.filter((event) => event.source === "human" && event.idn === row.id)
-      const last = mine.reduce((latest, event) => Math.max(latest, event.timestamp), 0)
-      return { ...row, count: mine.length, last: last ? clockTime(new Date(last).toISOString()) : "—" }
+      const observations = totals.get(row.id)!
+      const last = observations.last.human
+      return { ...row, count: observations.counts.human, last: last ? clockTime(new Date(last).toISOString()) : "—" }
     })
   }, [humanAccounts, events])
 
@@ -190,7 +193,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 200)
     .map(feedItem),
-    [events, identityLabel])
+    [events, identityLabel, snapshot.data?.evidenceOrdinals])
 
 
   // 서버는 실제 Burp 리스너를 찾기 전에는 주소 대신 안내 문구를 보낸다(#25). 그때는 주소를 지어내지 않는다.
@@ -246,6 +249,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   }} aria-label="HUMAN pass 종료">종료</Button>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">계정 선택 → 시작 → 서비스 탐색 → 종료. 계정을 바꾸기 전에 종료하세요.</p>
               <p className="flex items-center gap-2 text-sm" aria-label="HUMAN 상태"><span aria-hidden="true" className={cn("size-1.5 rounded-full", human.data?.active ? "bg-emerald-500" : "bg-muted-foreground/40")} /><span className="font-medium">{humanStatus}</span><span className="text-muted-foreground">· 다른 계정은 종료 후 다시 시작</span></p>
             </div>}
             aside={<section className="rounded-xl bg-card p-5 ring-1 ring-foreground/10" aria-label="계정별 수집">

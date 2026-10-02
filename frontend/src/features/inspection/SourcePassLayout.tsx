@@ -12,6 +12,7 @@ export interface SourceStatusTile {
 export interface SourceFeedItem {
   id: string
   badge: string
+  ordinal?: string
   title: string
   status: string
   detail?: string

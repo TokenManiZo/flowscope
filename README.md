@@ -289,3 +289,5 @@ Standalone은 패키지 React·로컬 HTTP·프로젝트 저장/재열기·XML �
 FlowScope는 MIT License를 사용합니다. fat JAR에 포함된 Cytoscape.js는 MIT, Jackson은 Apache-2.0이며 전체 고지는 `META-INF/`에 포함됩니다.
 
 소유하거나 명시적으로 점검 허가를 받은 시스템에만 사용하십시오. 비공개 취약점 신고와 운영 안전 지침은 [`SECURITY.md`](SECURITY.md)를 참조하십시오.
+
+계정·세션의 HUMAN·ZAP·LLM 건수는 현재 프로젝트에 저장된 HTTP 응답 관측을 출처별로 각각 한 번 집계합니다. 연결 해제 후에도 누적 건수는 유지하며 반복 요청은 별도 관측으로 세고 repeatCount를 중복 합산하지 않습니다. 수집 계정(laneAccountId)을 우선 사용하고 과거 데이터는 등록 계정과 일치하는 idn을 사용합니다. 점검 시작의 요청 표에는 기록 번호와 Method별 색을 표시합니다.
