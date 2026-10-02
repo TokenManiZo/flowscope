@@ -13,6 +13,9 @@ import java.time.Duration;
 /** 로컬 OWASP ZAP daemon API 어댑터. 대상 트래픽은 별도 Burp 리스너를 통과시켜야 한다. */
 public final class ZapClient {
     static final String CLIENT_BROWSER = "chrome-headless";
+    private static final java.util.Set<String> SPIDER_INTEGER_OPTIONS = java.util.Set.of("MaxDepth", "MaxDuration");
+    private static final java.util.Set<String> SPIDER_BOOLEAN_OPTIONS = java.util.Set.of(
+            "PostForm", "ProcessForm", "ParseRobotsTxt", "ParseSitemapXml");
     private final URI baseUri;
     private final String apiKey;
     private final HttpClient client;
@@ -137,6 +140,43 @@ public final class ZapClient {
     }
     public String stopClientSpider(String scanId) {
         return get("/JSON/clientSpider/action/stop/", "scanId=" + enc(scanId));
+    }
+    /** start-zap.sh가 등록한 standalone 스크립트를 실행한다. 스크립트 내용은 API로 보내지 않는다. */
+    public String runStandAloneScript(String scriptName) {
+        return get("/JSON/script/action/runStandAloneScript/", "scriptName=" + enc(scriptName));
+    }
+    public String setScriptGlobalVar(String key, String value) {
+        return get("/JSON/script/action/setGlobalVar/", "varKey=" + enc(key) + "&varValue=" + enc(value));
+    }
+    public String scriptGlobalVar(String key) {
+        return get("/JSON/script/view/globalVar/", "varKey=" + enc(key));
+    }
+    /** 일반(traditional) Spider 전역 옵션. 허용한 옵션 이름만 보낸다. */
+    public String setSpiderOption(String option, int value) {
+        if (!SPIDER_INTEGER_OPTIONS.contains(option)) throw new IllegalArgumentException("unsupported Spider option: " + option);
+        return get("/JSON/spider/action/setOption" + option + "/", "Integer=" + value);
+    }
+    public String setSpiderOption(String option, boolean value) {
+        if (!SPIDER_BOOLEAN_OPTIONS.contains(option)) throw new IllegalArgumentException("unsupported Spider option: " + option);
+        return get("/JSON/spider/action/setOption" + option + "/", "Boolean=" + value);
+    }
+    public String clearSpiderExclusions() { return get("/JSON/spider/action/clearExcludedFromScan/", ""); }
+    public String excludeFromSpider(String regex) {
+        return get("/JSON/spider/action/excludeFromScan/", "regex=" + enc(regex));
+    }
+    public String spider(String target, String contextName) {
+        return get("/JSON/spider/action/scan/", "url=" + enc(target)
+                + "&maxChildren=0&recurse=true&subtreeOnly=true&contextName=" + enc(contextName));
+    }
+    public String spiderAsUser(String target, String contextId, String userId) {
+        return get("/JSON/spider/action/scanAsUser/", "contextId=" + enc(contextId) + "&userId=" + enc(userId)
+                + "&url=" + enc(target) + "&maxChildren=0&recurse=true&subtreeOnly=true");
+    }
+    public String spiderStatus(String scanId) {
+        return get("/JSON/spider/view/status/", "scanId=" + enc(scanId));
+    }
+    public String stopSpider(String scanId) {
+        return get("/JSON/spider/action/stop/", "scanId=" + enc(scanId));
     }
     public String passiveRecordsToScan() { return get("/JSON/pscan/view/recordsToScan/", ""); }
     public String passiveTasks() { return get("/JSON/pscan/view/currentTasks/", ""); }

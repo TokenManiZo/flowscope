@@ -4,7 +4,8 @@ import java.util.List;
 
 /** JavaScript를 실행하지 않고 AST에서 직접 확인한 HTTP call-site와 파싱 상태. */
 public record JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> assets,
-                                 List<ResolutionIssue> issues, Status status, String detail) {
+                                 List<ResolutionIssue> issues, Status status, String detail,
+                                 List<ClientRoute> clientRoutes) {
     public enum Status { PARSED, PARTIAL, PARSE_FAILED, LIMIT_EXCEEDED }
 
     public enum ParameterKind { QUERY, JSON_BODY, FORM_BODY }
@@ -45,6 +46,9 @@ public record JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> 
 
     public record AssetReference(String reference, String reason, int line, int column) {}
 
+    /** 라우터 설정 객체(`{path:"/shop", element:...}`)에 정적으로 적힌 클라이언트 화면 경로. 요청이 아니라 화면 주소다. */
+    public record ClientRoute(String path, int line, int column) {}
+
     public record ResolutionIssue(ResolutionIssueKind kind, String adapter, String detail,
                                   int line, int column) {
         public ResolutionIssue {
@@ -69,10 +73,16 @@ public record JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> 
         issues = issues == null ? List.of() : List.copyOf(issues);
         status = status == null ? Status.PARSE_FAILED : status;
         detail = detail == null ? "" : detail;
+        clientRoutes = clientRoutes == null ? List.of() : List.copyOf(clientRoutes);
+    }
+
+    public JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> assets,
+                              List<ResolutionIssue> issues, Status status, String detail) {
+        this(callSites, assets, issues, status, detail, List.of());
     }
 
     public JavascriptAnalysis(List<CallSite> callSites, List<AssetReference> assets,
                               Status status, String detail) {
-        this(callSites, assets, List.of(), status, detail);
+        this(callSites, assets, List.of(), status, detail, List.of());
     }
 }

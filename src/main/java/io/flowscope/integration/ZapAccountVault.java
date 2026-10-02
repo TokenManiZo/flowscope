@@ -28,6 +28,9 @@ public final class ZapAccountVault implements AutoCloseable {
                   char[] username, char[] password, String loggedInIndicator,
                   String loggedOutIndicator) {}
 
+    /** 계정 설정 화면에 그대로 보여 줄 로그인 ID·비밀번호. 프로젝트·Evidence·로그·LLM으로는 내보내지 않는다. */
+    public record Credentials(String username, String password) {}
+
     private static final int MAX_ACCOUNTS = 16;
     private final Map<String, Entry> entries = new LinkedHashMap<>();
 
@@ -60,6 +63,12 @@ public final class ZapAccountVault implements AutoCloseable {
 
     public synchronized View view(String id) {
         return entry(id).view();
+    }
+
+    public synchronized java.util.Optional<Credentials> credentials(String id) {
+        Entry entry = entries.get(id == null ? "" : id.trim());
+        return entry == null ? java.util.Optional.empty()
+                : java.util.Optional.of(new Credentials(new String(entry.username), new String(entry.password)));
     }
 
     public synchronized void remove(String id) {

@@ -22,6 +22,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,6 +47,21 @@ public final class JavascriptCallSiteAnalyzer {
             "flowscope.javascript.maxParametersPerCall", 4_096);
     private static final int MAX_RESOLUTION_DEPTH = Integer.getInteger(
             "flowscope.javascript.maxResolutionDepth", 32);
+    private static final int MAX_CLIENT_ROUTES = 1_000;
+    /**
+     * 라우터 설정 객체를 알아보는 이웃 키. `path`만으로는 일반 데이터 객체와 구분되지 않아 화면을 정의하는 키가 함께 있어야 한다.
+     * React Router(element·Component·lazy·index), Vue Router(component·components·children·redirect),
+     * Angular(component·loadChildren·loadComponent·redirectTo)의 공식 route 객체 키다.
+     */
+    private static final Set<String> ROUTE_DEFINITION_KEYS = Set.of(
+            "element", "Component", "component", "components", "lazy", "index", "exact", "render",
+            "children", "redirect", "redirectTo", "loadChildren", "loadComponent");
+    /**
+     * 클라이언트 화면 경로. 정적 경로(`/shop`)와 경로 매개변수(`/post/:id`, React·Vue·Angular 공통)를 받는다.
+     * `:name` 세그먼트는 뒤에서 실제 ID를 채운다. 쿼리·fragment·공백(SVG path 등)이 붙은 값은 제외한다.
+     */
+    private static final java.util.regex.Pattern CLIENT_ROUTE =
+            java.util.regex.Pattern.compile("/[A-Za-z0-9._~/:-]{0,200}");
     private static final JavascriptAnalysisCache CACHE = new JavascriptAnalysisCache(
             Integer.getInteger("flowscope.javascript.cacheEntries", 4_096),
             Long.getLong("flowscope.javascript.cacheItems", 1_000_000L));
@@ -137,7 +153,8 @@ public final class JavascriptCallSiteAnalyzer {
                         JavascriptAnalysis.Status.LIMIT_EXCEEDED,
                         "AST exceeds " + MAX_NODES + " node traversal limit");
             }
-            Analyzer analyzer = new Analyzer(mutationCollector.mutatedDeclarations);
+            Analyzer analyzer = new Analyzer(mutationCollector.mutatedDeclarations,
+                    mutationCollector.simpleAssignments, mutationCollector.complexMutations);
             NodeTraversal.traverse(compiler, root, analyzer);
             JavascriptAnalysis.Status status = analyzer.limited ? JavascriptAnalysis.Status.LIMIT_EXCEEDED
                     : compiler.getErrorCount() == 0 ? JavascriptAnalysis.Status.PARSED
@@ -145,7 +162,8 @@ public final class JavascriptCallSiteAnalyzer {
             String detail = compiler.getErrorCount() == 0 ? ""
                     : "parser recovered with " + compiler.getErrorCount() + " syntax error(s)";
             if (analyzer.limited) detail = "AST or extracted facts exceed configured worker budget";
-            return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, analyzer.issues, status, detail);
+            return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, analyzer.issues, status, detail,
+                    analyzer.clientRoutes);
         } catch (RuntimeException | LinkageError | StackOverflowError exception) {
             return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSE_FAILED,
                     exception.getClass().getSimpleName());
@@ -154,6 +172,10 @@ public final class JavascriptCallSiteAnalyzer {
 
     private static final class MutationCollector implements NodeTraversal.Callback {
         private final Set<Node> mutatedDeclarations = Collections.newSetFromMap(new IdentityHashMap<>());
+        /** 단순 대입(`name = expr`)만으로 바뀐 변수의 대입 노드. 압축기가 짧은 변수명을 재사용하는 번들에서 흔하다. */
+        private final Map<Node, List<Node>> simpleAssignments = new IdentityHashMap<>();
+        /** `+=`·증감·속성 변경처럼 단순 대입이 아닌 방식으로 바뀐 변수. 위치 기반 해석을 하지 않는다. */
+        private final Set<Node> complexMutations = Collections.newSetFromMap(new IdentityHashMap<>());
         private int nodes;
         private boolean limited;
 
@@ -177,21 +199,32 @@ public final class JavascriptCallSiteAnalyzer {
             Var variable = traversal.getScope().getVar(target.getString());
             if (variable != null && variable.getNameNode() != null) {
                 mutatedDeclarations.add(variable.getNameNode());
+                if (node.isAssign() && node.getFirstChild() == target) {
+                    simpleAssignments.computeIfAbsent(variable.getNameNode(), ignored -> new ArrayList<>()).add(node);
+                } else {
+                    complexMutations.add(variable.getNameNode());
+                }
             }
         }
     }
 
     private static final class Analyzer implements NodeTraversal.Callback {
         private final Set<Node> mutatedDeclarations;
+        private final Map<Node, List<Node>> simpleAssignments;
+        private final Set<Node> complexMutations;
         private final Set<Var> axiosImports = Collections.newSetFromMap(new IdentityHashMap<>());
         private final List<JavascriptAnalysis.CallSite> callSites = new ArrayList<>();
         private final List<JavascriptAnalysis.AssetReference> assets = new ArrayList<>();
         private final List<JavascriptAnalysis.ResolutionIssue> issues = new ArrayList<>();
+        private final List<JavascriptAnalysis.ClientRoute> clientRoutes = new ArrayList<>();
         private int nodes;
         private boolean limited;
 
-        private Analyzer(Set<Node> mutatedDeclarations) {
+        private Analyzer(Set<Node> mutatedDeclarations, Map<Node, List<Node>> simpleAssignments,
+                         Set<Node> complexMutations) {
             this.mutatedDeclarations = mutatedDeclarations;
+            this.simpleAssignments = simpleAssignments;
+            this.complexMutations = complexMutations;
         }
 
         @Override
@@ -211,6 +244,25 @@ public final class JavascriptCallSiteAnalyzer {
             if (node.isCall()) inspectCall(node, scope);
             if (node.isImport()) inspectStaticImport(node);
             if (node.getToken() == Token.DYNAMIC_IMPORT) inspectDynamicImport(node, scope);
+            if (node.isObjectLit()) inspectRouteDefinition(node, scope);
+        }
+
+        /** `{path:"/shop", element:...}` 같은 라우터 설정 객체의 정적 경로를 화면 주소로 남긴다. */
+        private void inspectRouteDefinition(Node object, Scope scope) {
+            if (clientRoutes.size() >= MAX_CLIENT_ROUTES) return;
+            Node path = null;
+            boolean routeKey = false;
+            for (Node child : object.children()) {
+                if (!child.isStringKey() && !child.isMemberFunctionDef()) continue;
+                String key = child.getString();
+                if ("path".equals(key) && child.isStringKey()) path = child.getFirstChild();
+                else if (ROUTE_DEFINITION_KEYS.contains(key)) routeKey = true;
+            }
+            if (path == null || !routeKey) return;
+            String value = staticString(path, scope, 0);
+            if (value == null || !CLIENT_ROUTE.matcher(value).matches()) return;
+            if (clientRoutes.stream().anyMatch(route -> route.path().equals(value))) return;
+            clientRoutes.add(new JavascriptAnalysis.ClientRoute(value, object.getLineno(), object.getCharno()));
         }
 
         private void inspectStaticImport(Node node) {
@@ -263,7 +315,8 @@ public final class JavascriptCallSiteAnalyzer {
             }
             Node options = args.size() > 1 ? resolve(args.get(1), scope, 0) : null;
             String method = stringProperty(options, "method", scope);
-            if (method == null) method = args.size() == 1 ? "GET" : "UNKNOWN";
+            // Fetch 표준: RequestInit에 method가 없으면 GET이다. 옵션이 spread 없는 객체 리터럴이고 method 키가 없으면 GET으로 확정한다.
+            if (method == null) method = args.size() == 1 || closedObjectWithout(options, "method") ? "GET" : "UNKNOWN";
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
             Node body = property(options, "body", scope);
             addBodyParameters(parameters, body, bodyKind(body, options, scope), scope);
@@ -480,8 +533,13 @@ public final class JavascriptCallSiteAnalyzer {
             if (node == null || depth >= MAX_RESOLUTION_DEPTH) return node;
             if (node.isName()) {
                 Var variable = scope.getVar(node.getString());
-                if (variable != null && mutatedDeclarations.contains(variable.getNameNode())) return node;
-                Node value = variable == null ? null : variable.getInitialValue();
+                Node value;
+                if (variable != null && mutatedDeclarations.contains(variable.getNameNode())) {
+                    value = reachingAssignment(variable, node);
+                    if (value == null) return node;
+                } else {
+                    value = variable == null ? null : variable.getInitialValue();
+                }
                 return value == null || value == node ? node : resolve(value, scope, depth + 1);
             }
             if (node.isGetProp() || node.isGetElem()) {
@@ -491,6 +549,77 @@ public final class JavascriptCallSiteAnalyzer {
                 return value == null ? node : resolve(value, scope, depth + 1);
             }
             return node;
+        }
+
+        /**
+         * 다시 대입된 변수의 사용 지점 값. 같은 함수 안에서 사용 지점보다 앞서고, 그 대입문이 놓인 블록이 사용 지점을
+         * 감싸는(조건 분기 안이 아닌) 마지막 단순 대입을 고른다. 선언 초기값도 같은 조건의 후보다.
+         * `+=`·증감·속성 변경이 하나라도 있으면 값을 단정할 수 없으므로 풀지 않는다.
+         * 순서는 소스 위치가 아니라 AST 구조(같은 블록의 형제 순서)로 판단한다. Closure는 열 번호를 4095까지만 담아,
+         * 한 줄짜리 압축 번들에서는 그 뒤의 위치가 모두 같아진다(실측: 7,580자 뒤 같은 코드가 풀리지 않음).
+         */
+        private Node reachingAssignment(Var variable, Node use) {
+            Node declaration = variable.getNameNode();
+            if (declaration == null || complexMutations.contains(declaration)) return null;
+            Node function = NodeUtil.getEnclosingFunction(use);
+            Node best = null;
+            Node bestStatement = null;
+            Node initial = variable.getInitialValue();
+            if (initial != null) {
+                Node statement = precedingStatement(declaration, use, function);
+                if (statement != null) {
+                    best = initial;
+                    bestStatement = statement;
+                }
+            }
+            for (Node assignment : simpleAssignments.getOrDefault(declaration, List.of())) {
+                Node statement = precedingStatement(assignment, use, function);
+                if (statement == null) continue;
+                if (bestStatement == null || later(statement, bestStatement)) {
+                    best = assignment.getLastChild();
+                    bestStatement = statement;
+                }
+            }
+            return best;
+        }
+
+        /**
+         * 정의가 든 statement가 사용 지점과 같은 함수에 있고, 사용 지점을 감싸는 블록에서 사용 지점보다 먼저 나오면
+         * 그 statement를 돌려준다. 분기·반복 안의 정의나 같은 statement 안의 정의는 순서를 단정할 수 없어 제외한다.
+         */
+        private static Node precedingStatement(Node definition, Node use, Node function) {
+            if (NodeUtil.getEnclosingFunction(definition) != function) return null;
+            Node statement = NodeUtil.getEnclosingStatement(definition);
+            Node block = statement == null ? null : statement.getParent();
+            if (block == null) return null;
+            Node current = use;
+            while (current != null && current.getParent() != block) {
+                if (current == function) return null;
+                current = current.getParent();
+            }
+            if (current == null || current == statement) return null;
+            for (Node child = block.getFirstChild(); child != null; child = child.getNext()) {
+                if (child == statement) return statement;
+                if (child == current) return null;
+            }
+            return null;
+        }
+
+        /** 둘 다 사용 지점보다 앞선 statement일 때 a가 b보다 나중인지: 같은 블록이면 뒤의 것, 아니면 더 안쪽 블록의 것. */
+        private static boolean later(Node a, Node b) {
+            Node blockA = a.getParent();
+            Node blockB = b.getParent();
+            if (blockA == blockB) {
+                for (Node child = blockA.getFirstChild(); child != null; child = child.getNext()) {
+                    if (child == b) return true;
+                    if (child == a) return false;
+                }
+                return false;
+            }
+            for (Node current = blockA; current != null; current = current.getParent()) {
+                if (current == blockB) return true;
+            }
+            return false;
         }
 
         private String staticReference(Node node, Scope scope, int depth) {
@@ -505,7 +634,36 @@ public final class JavascriptCallSiteAnalyzer {
                 String joined = left + right;
                 return hasStaticRouteShape(joined) ? collapsePlaceholders(joined) : null;
             }
+            String replaced = replacedReference(value, scope, depth + 1);
+            if (replaced != null) {
+                return hasStaticRouteShape(replaced) ? collapsePlaceholders(replaced) : null;
+            }
             return null;
+        }
+
+        /**
+         * `path.replace("<id>", id)`·`replaceAll(":id", id)`처럼 경로 변수를 채우는 호출. 바꿀 대상이 문자열 리터럴이고
+         * 받는 쪽이 정적으로 풀리면, 채우는 값은 정적이면 그 값, 아니면 {expr}로 둔다.
+         */
+        private String replacedReference(Node value, Scope scope, int depth) {
+            if (value == null || depth >= MAX_RESOLUTION_DEPTH || !value.isCall()) return null;
+            Node callee = value.getFirstChild();
+            if (callee == null || !callee.isGetProp()) return null;
+            String operation = callee.getString();
+            if (!"replace".equals(operation) && !"replaceAll".equals(operation)) return null;
+            List<Node> args = arguments(value);
+            if (args.size() != 2) return null;
+            Node pattern = resolve(args.get(0), scope, depth + 1);
+            if (pattern == null || !pattern.isStringLit() || pattern.getString().isEmpty()) return null;
+            String receiver = referencePart(callee.getFirstChild(), scope, depth + 1);
+            if (receiver == null || "{expr}".equals(receiver)) return null;
+            String replacement = staticString(args.get(1), scope, depth + 1);
+            String filler = replacement == null ? "{expr}" : replacement;
+            String target = pattern.getString();
+            return "replace".equals(operation)
+                    ? receiver.replaceFirst(java.util.regex.Pattern.quote(target),
+                            java.util.regex.Matcher.quoteReplacement(filler))
+                    : receiver.replace(target, filler);
         }
 
         private String referencePart(Node node, Scope scope, int depth) {
@@ -513,9 +671,27 @@ public final class JavascriptCallSiteAnalyzer {
             Node value = resolve(node, scope, depth);
             String exact = staticString(value, scope, depth + 1);
             if (exact != null) return exact;
-            if (value.isTemplateLit()) return templateReference(value, scope, depth + 1);
-            if (value.isAdd()) return staticReference(value, scope, depth + 1);
-            return "{expr}";
+            // 조각은 경로 모양을 따지지 않는다(`?limit=${n}` 같은 쿼리 조각). 모양 검사는 이어 붙인 전체에만 한다.
+            if (value.isTemplateLit()) return templateText(value, scope, depth + 1);
+            if (value.isAdd()) {
+                String left = referencePart(value.getFirstChild(), scope, depth + 1);
+                String right = referencePart(value.getLastChild(), scope, depth + 1);
+                return left == null || right == null ? "{expr}" : left + right;
+            }
+            String replaced = replacedReference(value, scope, depth + 1);
+            return replaced == null ? "{expr}" : replaced;
+        }
+
+        private String templateText(Node template, Scope scope, int depth) {
+            StringBuilder out = new StringBuilder();
+            for (Node part : template.children()) {
+                if (part.isTemplateLitString()) out.append(part.getCookedString());
+                else if (part.isTemplateLitSub()) {
+                    String exact = staticString(part.getFirstChild(), scope, depth + 1);
+                    out.append(exact == null ? "{expr}" : exact);
+                }
+            }
+            return out.toString();
         }
 
         private String templateReference(Node template, Scope scope, int depth) {
@@ -554,6 +730,16 @@ public final class JavascriptCallSiteAnalyzer {
                 return left == null || right == null ? null : left + right;
             }
             return null;
+        }
+
+        /** 옵션 객체가 spread·계산된 키 없이 닫힌 리터럴이고 주어진 키가 없는지. */
+        private static boolean closedObjectWithout(Node object, String key) {
+            if (object == null || !object.isObjectLit()) return false;
+            for (Node child : object.children()) {
+                if (!child.isStringKey() && !child.isMemberFunctionDef()) return false;
+                if (child.getString().equals(key)) return false;
+            }
+            return true;
         }
 
         private Node property(Node object, String name, Scope scope) {

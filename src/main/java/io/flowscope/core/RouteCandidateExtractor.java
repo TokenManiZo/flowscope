@@ -82,10 +82,13 @@ public final class RouteCandidateExtractor {
                 List<DiscoveredRoute> discovered;
                 try { discovered = adapter.discover(document); }
                 catch (RuntimeException ignored) { continue; }
+                boolean script = adapter instanceof JavascriptRouteDiscoveryAdapter;
                 for (DiscoveredRoute route : discovered) {
-                    String base = supportingScript
-                            && route.provenanceType() != RouteCandidate.ProvenanceType.SCRIPT_DEPENDENCY
-                            ? record.supportingPageUrl : document.baseUrl();
+                    // fetch·XHR·axios의 상대 URL은 스크립트 파일이 아니라 그 스크립트를 실행한 문서의 base URL로 풀린다
+                    // (MDN fetch: "relative to the document's baseURI"). import()만 모듈 스크립트 기준이다.
+                    String base = script && route.provenanceType() != RouteCandidate.ProvenanceType.SCRIPT_DEPENDENCY
+                            ? (supportingScript ? record.supportingPageUrl : documentPageUrl(record, scope))
+                            : document.baseUrl();
                     add(candidates, scope, resolve(base, route.reference()), route.method(),
                             provenance(route.provenanceType(), document.evidenceId(), document.source(),
                                     document.runId(), route.adapter(), route.applicability(), route.reason()),
@@ -254,6 +257,32 @@ public final class RouteCandidateExtractor {
                                                         RouteCandidate.Applicability applicability, String reason) {
         if (type == null || evidenceId == null || evidenceId.isBlank()) return null;
         return new RouteCandidate.Provenance(type, evidenceId, source, runId, adapter, applicability, reason);
+    }
+
+    private static final Pattern REFERER = Pattern.compile("(?im)^Referer:\\s*(\\S+)\\s*$");
+
+    /**
+     * 범위 안 스크립트를 실행한 문서 주소. 스크립트 요청의 Referer가 같은 서비스의 문서(스크립트 자신이 아닌)면 그것을,
+     * 아니면 서비스 루트를 쓴다. SPA 번들은 대개 루트 문서에서 실행되고, 스크립트 디렉터리 기준 해석은 항상 틀린다.
+     */
+    private static String documentPageUrl(RequestRecord record, ScopePolicy scope) {
+        String root = record.service + "/";
+        String request = record.requestTextForEvidence();
+        if (request == null) return root;
+        java.util.regex.Matcher matcher = REFERER.matcher(request);
+        if (!matcher.find()) return root;
+        String referer = matcher.group(1);
+        int fragment = referer.indexOf('#');
+        if (fragment >= 0) referer = referer.substring(0, fragment);
+        try {
+            URI uri = URI.create(referer);
+            String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
+            boolean scriptReferer = path.endsWith(".js") || path.endsWith(".mjs") || path.endsWith(".cjs");
+            if (!scriptReferer && scope.allows(referer) && root.equals(service(uri) + "/")) return referer;
+        } catch (RuntimeException ignored) {
+            // 잘못된 Referer는 무시하고 루트를 쓴다.
+        }
+        return root;
     }
 
     private static String resolve(String base, String reference) {

@@ -1921,6 +1921,9 @@ public final class FlowScopeExtension implements BurpExtension {
                 linkObservedHumanSession(accountId, evidenceId);
             }
             @Override public List<ZapAccountVault.View> zapAccounts() { return zapAccounts.views(); }
+            @Override public java.util.Optional<ZapAccountVault.Credentials> zapCredentials(String accountId) {
+                return zapAccounts.credentials(accountId);
+            }
             @Override public ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
                 validateRuntimeAccount(input.id(), input.label(), input.service(), input.role());
                 ZapAccountVault.View saved = zapAccounts.save(input);
@@ -2217,6 +2220,12 @@ public final class FlowScopeExtension implements BurpExtension {
         } catch (Exception error) {
             String detail = error.getMessage() == null ? "" : error.getMessage();
             boolean auth = detail.contains("HTTP 401") || detail.contains("HTTP 403");
+            // 검사 중(브라우저 로그인·Client Spider)에는 ZAP이 바빠 3초 상태 확인이 늦을 수 있다. 검사 자체가 ZAP 응답을
+            // 계속 확인하므로 이때의 지연은 연결 실패로 세지 않는다.
+            if (!auth && zapCampaignRunning()) {
+                return body.put("connected", true).put("state", "BUSY")
+                        .put("message", "ZAP이 검사 중이라 상태 응답이 늦습니다. 검사는 계속 진행 중입니다.");
+            }
             String state = zapProbeStatus.failure(auth);
             body.put("connected", false).put("state", state)
                     .put("message", auth
@@ -2227,6 +2236,11 @@ public final class FlowScopeExtension implements BurpExtension {
                                     : "127.0.0.1의 FlowScope Docker ZAP에 3회 연속 연결하지 못했습니다. bundle의 zap-up helper를 실행하세요.");
         }
         return body;
+    }
+
+    private boolean zapCampaignRunning() {
+        ZapCampaign campaign = zapCampaign;
+        return campaign != null && "RUNNING".equals(campaign.deterministicZapBaselineStatus().path("status").asText());
     }
 
     static final class ZapProbeStatus {
