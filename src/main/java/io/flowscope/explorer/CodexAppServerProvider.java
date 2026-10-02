@@ -45,6 +45,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     private static final int DETAIL_LIMIT = 4_000;
     private static final long STOP_TIMEOUT_MS = 2_000;
     private final ProcessLauncher launcher;
+    private final java.util.function.Supplier<String> executable;
     /** Where Codex's own diagnostics go. Without it a turn that refuses or stalls explains itself to nobody. */
     private final Consumer<String> diagnostics;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
@@ -60,12 +61,19 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     public CodexAppServerProvider() { this(ignored -> { }); }
 
     public CodexAppServerProvider(Consumer<String> diagnostics) {
-        this(CodexAppServerProvider::launchAppServer, diagnostics);
+        this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable);
     }
 
     CodexAppServerProvider(ProcessLauncher launcher) { this(launcher, ignored -> { }); }
 
+    /** An injected launcher never runs the real binary, so it must not require one to be installed (CI has none). */
     CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics) {
+        this(launcher, diagnostics, () -> "codex");
+    }
+
+    private CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
+                                   java.util.function.Supplier<String> executable) {
+        this.executable = executable;
         this.launcher = launcher;
         this.diagnostics = diagnostics == null ? ignored -> { } : diagnostics;
     }
@@ -112,7 +120,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     @Override public synchronized Handle start(Request request, Listener listener) {
         if (closed.get()) throw new IllegalStateException("Codex 공급자가 종료됐습니다.");
         if (active != null) throw new IllegalStateException("Codex Explorer가 이미 실행 중입니다.");
-        String executable = resolveExecutable();
+        String executable = this.executable.get();
         if (executable == null) throw new IllegalStateException(readiness());
         Session session = new Session(request, listener, executable);
         active = session;
