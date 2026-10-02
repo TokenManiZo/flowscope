@@ -128,7 +128,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
       statusText: ready ? "세션 있음" : waiting ? "로그인 대기" : "로그인 필요",
       action: waiting
         ? <Button type="button" size="sm" disabled={active || loginBusy} aria-label={`${account.label} 로그인 완료`} onClick={() => completeLogin.mutate(account.id)}>로그인 완료</Button>
-        : <Button type="button" size="sm" variant="outline" className="grid h-6 w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-3" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
+        : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
     }
   })
   const control_ = <div className="grid gap-2">
@@ -171,7 +171,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
   const feed = <Card className="gap-0 overflow-hidden py-0">
     <CardHeader className="border-b py-3"><div className="flex items-center justify-between gap-3"><CardTitle className="text-base">진행 기록 <span className="ml-2 text-sm font-normal text-muted-foreground">{runStatusLabel(run?.status ?? "IDLE")}</span></CardTitle><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div><p className="break-words text-sm font-medium" aria-live="polite">{run?.message ?? "Explorer 상태를 불러오는 중입니다."}</p></CardHeader>
     <CardContent className="p-0">
-      {feedOpen && <div className="max-h-[min(24rem,32vh)] overflow-y-auto" aria-label="LLM 진행 메시지 및 수집 트래픽">
+      {feedOpen && <div className="max-h-[min(24rem,24vh)] overflow-y-auto" aria-label="LLM 진행 메시지 및 수집 트래픽">
         {feedItems.length ? feedItems.slice().reverse().map((item) => {
           const http = item.badge === "HTTP" ? item.detail?.match(/\bHTTP (\d{3})/)?.[1] : undefined
           const method = item.title.split(" ")[0]
