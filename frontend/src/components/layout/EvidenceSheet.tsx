@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { OperationDetail } from "@/features/evidence/OperationDetail"
@@ -77,10 +77,12 @@ export interface EvidenceSheetProps {
   inline?: boolean
   contained?: boolean
   disabled?: boolean
+  detailContent?: ReactNode
+  compactPolicy?: boolean
   onOpenChange(open: boolean): void
 }
 
-export function EvidenceInspectorBody({ event, snapshot, selection = null, disabled = false, contained = false }: Omit<EvidenceSheetProps, "variant" | "inline" | "onOpenChange">) {
+export function EvidenceInspectorBody({ event, snapshot, selection = null, disabled = false, contained = false, detailContent, compactPolicy = false }: Omit<EvidenceSheetProps, "variant" | "inline" | "onOpenChange">) {
   const datasetRevision = snapshot?.datasetRevision ?? snapshot?.identityRevision ?? 0
   // PR#11 boundary: dataset replacement (server datasetRevision, D-140) or any coordinate change of the selected Evidence closes the draft.
   const contextKey = event ? JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp]) : null
@@ -96,18 +98,18 @@ export function EvidenceInspectorBody({ event, snapshot, selection = null, disab
       {selection && "kind" in selection && selection.kind === "matrix" && selection.authorization && <section aria-label="권한 셀 상세" className="grid gap-2 rounded-md border p-3 text-sm"><p className="font-semibold">전체 판정: {selection.authorization.overall}</p><BoundedDetailFields fields={[{ label: "탐지 source", value: selection.authorization.observedSources.join(", ") || "없음" }, { label: "미탐 source", value: selection.authorization.missedSources.join(", ") || "없음" }, { label: "필수 역할", value: selection.authorization.requiredRole }, { label: "소유자", value: selection.authorization.owner }, { label: "서버 상태", value: `${selection.authorization.conflict ? "충돌" : "충돌 없음"} · ${selection.authorization.gap ? "갭" : "갭 없음"}` }, ...selection.authorization.reasons.map((reason, index) => ({ label: `서버 사유 ${index + 1}`, value: reason }))]} /></section>}
       {selection && !("kind" in selection) && !selection.routeCandidate && <section className="grid gap-2 rounded-md border p-3 text-sm"><p className="font-medium">그래프 선택 좌표</p><BoundedDetailFields fields={[{ label: "신원", value: selection.identity ?? "UNKNOWN" }, { label: "리소스", value: selection.resource ?? "객체 없음" }, { label: "작업", value: selection.operation ?? "경로 후보" }, { label: "소스", value: selection.source ?? "UNKNOWN" }]} /><BoundedEvidenceIds ids={selection.evidenceIds} ordinals={snapshot.evidenceOrdinals} /></section>}
       {selection && !("kind" in selection) && selection.routeCandidate && <RouteCandidateDetail candidate={selection.routeCandidate} />}
-      {event && <OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} showEvidenceId={!structuredSelection} disabled={disabled} />}
+      {event && <OperationDetail event={event} snapshot={snapshot} onOpenRequestLab={() => setRequestLabOpen(true)} showEvidenceId={!structuredSelection} evidenceLabel={compactPolicy ? evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId) : undefined} disabled={disabled} detailContent={detailContent} compactPolicy={compactPolicy} />}
       {event && contextKey && <RequestLabDialog key={contextKey} open={requestLabContext === contextKey} onOpenChange={setRequestLabOpen} event={event} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}</div>
     </section>
 }
 
-export function EvidenceSheet({ event, snapshot, selection = null, variant = "default", inline = false, contained = false, disabled = false, onOpenChange }: EvidenceSheetProps) {
-  if (inline) return <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} contained={contained} disabled={disabled} />
+export function EvidenceSheet({ event, snapshot, selection = null, variant = "default", inline = false, contained = false, disabled = false, detailContent, compactPolicy = false, onOpenChange }: EvidenceSheetProps) {
+  if (inline) return <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} contained={contained} disabled={disabled} detailContent={detailContent} compactPolicy={compactPolicy} />
   const open = (event !== null || selection !== null) && snapshot !== undefined
   return <Sheet modal={false} open={open} onOpenChange={onOpenChange}>
     <SheetContent className={variant === "graph" ? "w-full overflow-y-auto border-l border-border/80 bg-[var(--flowscope-pane)] p-4 text-[13px] leading-5 sm:max-w-[26rem]" : "w-full overflow-y-auto sm:max-w-xl"} aria-describedby="evidence-sheet-description" onPointerDownOutside={(event) => { if (selection && ("kind" in selection || selection.routeCandidate)) event.preventDefault() }}>
       <SheetHeader className="sr-only"><SheetTitle>관측 기록 상세</SheetTitle><SheetDescription id="evidence-sheet-description">선택한 관측 기록, 연결 셀 및 시나리오의 정책을 확인합니다.</SheetDescription></SheetHeader>
-      <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} disabled={disabled} />
+      <EvidenceInspectorBody event={event} snapshot={snapshot} selection={selection} disabled={disabled} detailContent={detailContent} compactPolicy={compactPolicy} />
     </SheetContent>
   </Sheet>
 }

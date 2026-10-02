@@ -185,7 +185,7 @@ export function SurfacePage() {
   ) : <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">항목을 선택하면 실제 응답과 산출물 근거를 분리해 표시합니다.</p></section>
 
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={null} inspector={inspector} inspectorOpen={selected !== null} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
+    <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={420} inspectorOpen={selected !== null} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
       <section className="grid gap-4 p-3" aria-labelledby="surface-title">
         <div><h1 id="surface-title" className="text-2xl font-semibold">API·입력 차이</h1><p className="text-sm text-muted-foreground">HUMAN·ZAP·LLM의 실제 HTTP 응답과 OpenAPI·HTML·JavaScript에서 확인한 endpoint·입력 근거를 분리해 정렬합니다.</p></div>
         {!snapshot.isError && surface.endpoints.length === 0 && runGapCount(snapshot.data) > 0 && <RunGapHint count={runGapCount(snapshot.data)} />}
