@@ -8,11 +8,9 @@ import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -28,8 +26,8 @@ public final class ClientRouteSeeds {
     /** `/post?post_id=${`처럼 쿼리 매개변수 하나로 상세 화면을 여는 템플릿. prefix=경로, key=매개변수 이름. */
     private static final Pattern DETAIL_TEMPLATE =
             Pattern.compile("[`\"](/[A-Za-z0-9/_-]+)[?]([A-Za-z0-9_]+)=[$][{]");
-    /** 상세 화면 매개변수에 넣을 수 있는 응답 ID의 JSON 키. id/uuid는 번호·식별자, vin은 차량 식별자. */
-    private static final Set<String> ID_KEYS = Set.of("id", "uuid", "vin");
+    /** 응답에서 뽑아 상세 화면에 넣을 식별자 JSON 키. 범용 관례(id·_id·uuid·guid·slug)와 차량 식별자 vin. */
+    private static final Set<String> ID_KEYS = Set.of("id", "_id", "uuid", "guid", "slug", "vin");
     /** URL에 바로 넣을 수 있는 안전한 ID 값만. 공백·슬래시·특수문자가 있으면 식별자가 아니다. */
     private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._~-]{1,64}");
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -57,34 +55,34 @@ public final class ClientRouteSeeds {
 
         List<RequestRecord> safe = records == null ? List.of() : records;
         LinkedHashSet<String> seeds = new LinkedHashSet<>();
-        // ① 라우터 설정의 정적 경로
+        // ① 라우터 설정의 경로. 정적 경로는 바로 열고, 경로 매개변수(/post/:id)는 상세 라우트로 모은다.
         Set<String> analyzed = new HashSet<>();
-        Map<String, String> detailTemplates = new LinkedHashMap<>();
+        LinkedHashSet<DetailRoute> details = new LinkedHashSet<>();
         for (RequestRecord record : safe) {
             if (!record.hasResponse || !scope.allows(record.service + record.path) || !script(record)) continue;
             String body = record.responseBodyForAnalysis();
             if (body == null || body.isBlank() || !analyzed.add(body)) continue;
             for (JavascriptAnalysis.ClientRoute route : JavascriptCallSiteAnalyzer.analyze(body).clientRoutes()) {
-                addSeed(seeds, origin, route.path(), null, scope, subtree, exclude, target, limit);
+                DetailRoute pathParam = pathParamRoute(route.path());
+                if (pathParam == null) addSeed(seeds, origin, route.path(), null, scope, subtree, exclude, target, limit);
+                else details.add(pathParam);
             }
-            collectDetailTemplates(body, detailTemplates);
+            collectQueryTemplates(body, details);
         }
-        // ② 상세 화면 템플릿 + 목록 응답의 실제 ID
-        if (!detailTemplates.isEmpty()) {
+        // ② 상세 라우트(쿼리·경로 매개변수) + 목록 응답의 실제 ID
+        if (!details.isEmpty()) {
             Set<String> jsonPaths = new HashSet<>();
             List<IdValue> ids = collectIds(safe, scope, jsonPaths);
             int detail = 0;
-            for (Map.Entry<String, String> template : detailTemplates.entrySet()) {
+            for (DetailRoute route : details) {
                 if (detail >= MAX_DETAIL_SEEDS) break;
-                String path = template.getKey();
-                String param = template.getValue();
-                if (exclude.matcher(path).matches()) continue;
-                Candidates candidates = valuesFor(path, param, ids, jsonPaths);
+                if (exclude.matcher(route.matchPath()).matches()) continue;
+                Candidates candidates = valuesFor(route.matchPath(), route.param(), ids, jsonPaths);
                 int cap = candidates.fallback() ? MAX_FALLBACK_IDS_PER_ROUTE : MAX_IDS_PER_ROUTE;
                 int used = 0;
                 for (String value : candidates.values()) {
                     if (used >= cap || detail >= MAX_DETAIL_SEEDS) break;
-                    if (addSeed(seeds, origin, path + "?" + param + "=" + value, path, scope, subtree,
+                    if (addSeed(seeds, origin, route.url(value), route.matchPath(), scope, subtree,
                             exclude, target, Integer.MAX_VALUE)) {
                         used++;
                         detail++;
@@ -100,6 +98,32 @@ public final class ClientRouteSeeds {
 
     /** 상세 라우트에 넣을 값. fallback이면 그 엔티티의 응답을 보지 못해 다른 응답의 ID로 넓힌 추측이다. */
     private record Candidates(List<String> values, boolean fallback) {}
+
+    /**
+     * ID 하나를 채워 여는 상세 화면. 쿼리 방식(`/post?post_id=<v>`)과 경로 방식(`/post/<v>`)을 한 형태로 다룬다.
+     * matchPath=엔티티 판별·제외·범위 검사에 쓰는 정적 경로, param=ID 종류 판별용 매개변수 이름.
+     */
+    private record DetailRoute(String matchPath, String param, String prefix, String suffix, boolean query) {
+        String url(String value) {
+            return query ? prefix + "?" + param + "=" + value : prefix + "/" + value + suffix;
+        }
+    }
+
+    private static final Pattern PATH_PARAM = Pattern.compile("/:([A-Za-z_][A-Za-z0-9_]*)");
+
+    /**
+     * 경로 매개변수 라우트(`/post/:id`)를 상세 라우트로 바꾼다. `:param`이 정확히 하나일 때만 다룬다(둘 이상은 어느 값을
+     * 어디에 넣을지 단정할 수 없어 건너뛴다). 정적 경로면 null을 돌려줘 호출부가 바로 열게 한다.
+     */
+    private static DetailRoute pathParamRoute(String routePath) {
+        Matcher m = PATH_PARAM.matcher(routePath);
+        if (!m.find()) return null;
+        String prefix = routePath.substring(0, m.start());
+        String param = m.group(1);
+        String suffix = routePath.substring(m.end());
+        if (prefix.isEmpty() || suffix.contains("/:")) return null;
+        return new DetailRoute(prefix, param, prefix, suffix, false);
+    }
 
     private static boolean addSeed(LinkedHashSet<String> seeds, String origin, String pathAndQuery,
                                    String matchPath, ScopePolicy scope, String subtree, Pattern exclude,
@@ -156,10 +180,13 @@ public final class ClientRouteSeeds {
         }
     }
 
+    /** id 계열 매개변수에 넣는 식별자 키. 범용 관례: id, _id(MongoDB), uuid, guid, slug. */
+    private static final Set<String> GENERIC_ID_KEYS = Set.of("id", "_id", "uuid", "guid", "slug");
+
     /**
      * 상세 라우트에 넣을 ID. vin 매개변수는 vin 값만 쓴다. id 계열은 라우트 경로가 가리키는 엔티티(예: `/post`→posts 응답)의
-     * id·uuid를 쓴다. 그 엔티티 응답을 봤는데 항목이 없으면 열 객체가 없는 것이므로 비운다. 엔티티 응답을 한 번도
-     * 보지 못했을 때만 전체 id·uuid로 넓힌다(재현율 유지, 추측이므로 적게 시도).
+     * 식별자를 쓴다. 그 엔티티 응답을 봤는데 항목이 없으면 열 객체가 없는 것이므로 비운다. 엔티티 응답을 한 번도
+     * 보지 못했을 때만 전체 식별자로 넓힌다(재현율 유지, 추측이므로 적게 시도).
      */
     private static Candidates valuesFor(String routePath, String param, List<IdValue> ids, Set<String> jsonPaths) {
         String normalized = param.toLowerCase(Locale.ROOT);
@@ -168,20 +195,20 @@ public final class ClientRouteSeeds {
             for (IdValue id : ids) if (id.key().equals("vin")) values.add(id.value());
             return new Candidates(List.copyOf(values), false);
         }
-        if (!(normalized.equals("id") || normalized.endsWith("_id") || normalized.endsWith("id"))) {
+        if (!(normalized.equals("id") || normalized.endsWith("_id") || normalized.endsWith("id")
+                || normalized.equals("slug") || normalized.equals("uuid"))) {
             return new Candidates(List.of(), false);
         }
         Set<String> entities = entityTokens(routePath);
         for (IdValue id : ids) {
-            if ((id.key().equals("id") || id.key().equals("uuid"))
-                    && entities.stream().anyMatch(id.responsePath()::contains)) {
+            if (GENERIC_ID_KEYS.contains(id.key()) && entities.stream().anyMatch(id.responsePath()::contains)) {
                 values.add(id.value());
             }
         }
         if (!values.isEmpty()) return new Candidates(List.copyOf(values), false);
         boolean entityObserved = jsonPaths.stream().anyMatch(path -> entities.stream().anyMatch(path::contains));
         if (entityObserved) return new Candidates(List.of(), false);
-        for (IdValue id : ids) if (id.key().equals("id") || id.key().equals("uuid")) values.add(id.value());
+        for (IdValue id : ids) if (GENERIC_ID_KEYS.contains(id.key())) values.add(id.value());
         return new Candidates(List.copyOf(values), true);
     }
 
@@ -194,10 +221,13 @@ public final class ClientRouteSeeds {
         return tokens;
     }
 
-    private static void collectDetailTemplates(String body, Map<String, String> templates) {
+    /** 쿼리 방식 상세 템플릿(`/post?post_id=${}`)을 모은다. 경로 방식은 라우트 정의에서 이미 모았다. */
+    private static void collectQueryTemplates(String body, LinkedHashSet<DetailRoute> details) {
         Matcher matcher = DETAIL_TEMPLATE.matcher(body);
-        while (matcher.find() && templates.size() < 200) {
-            templates.putIfAbsent(matcher.group(1), matcher.group(2));
+        while (matcher.find() && details.size() < 400) {
+            String path = matcher.group(1);
+            String param = matcher.group(2);
+            details.add(new DetailRoute(path, param, path, "", true));
         }
     }
 

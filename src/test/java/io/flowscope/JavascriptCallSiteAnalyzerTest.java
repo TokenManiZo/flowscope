@@ -52,7 +52,8 @@ final class JavascriptCallSiteAnalyzerTest {
                 """);
 
         assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis::detail);
-        assertEquals(List.of("/shop", "/service-report", "/forum", "/orders", "/mechanic-dashboard"),
+        // 정적 경로와 경로 매개변수(/post/:id)는 받고, 와일드카드(*)와 SVG path 데이터는 제외한다.
+        assertEquals(List.of("/shop", "/service-report", "/post/:id", "/forum", "/orders", "/mechanic-dashboard"),
                 analysis.clientRoutes().stream().map(JavascriptAnalysis.ClientRoute::path).toList());
     }
 

@@ -54,8 +54,12 @@ public final class JavascriptCallSiteAnalyzer {
     private static final Set<String> ROUTE_DEFINITION_KEYS = Set.of(
             "element", "Component", "component", "components", "lazy", "index", "exact", "render",
             "children", "redirect", "redirectTo", "loadChildren", "loadComponent");
-    /** 바로 열 수 있는 절대 화면 경로만. `:id`·`*` 같은 매개변수 경로와 쿼리·fragment가 붙은 값은 제외한다. */
-    private static final java.util.regex.Pattern CLIENT_ROUTE = java.util.regex.Pattern.compile("/[A-Za-z0-9._~/-]{0,200}");
+    /**
+     * 클라이언트 화면 경로. 정적 경로(`/shop`)와 경로 매개변수(`/post/:id`, React·Vue·Angular 공통)를 받는다.
+     * `:name` 세그먼트는 뒤에서 실제 ID를 채운다. 쿼리·fragment·공백(SVG path 등)이 붙은 값은 제외한다.
+     */
+    private static final java.util.regex.Pattern CLIENT_ROUTE =
+            java.util.regex.Pattern.compile("/[A-Za-z0-9._~/:-]{0,200}");
     private static final int MAX_CACHE_ENTRIES = 128;
     private static final Map<String, JavascriptAnalysis> CACHE = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
