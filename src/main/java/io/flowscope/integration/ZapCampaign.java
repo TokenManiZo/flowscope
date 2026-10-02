@@ -75,6 +75,23 @@ public final class ZapCampaign implements AutoCloseable {
     private static final int SPIDER_MAX_DEPTH = 5;
     private static final int SPIDER_MAX_DURATION_MINUTES = 10;
     public static final String SPIDER_EXCLUDE_REGEX = "(?i)^[^?#]*(log-?out|sign-?out|log-?off|delete|destroy).*$";
+    // Client Spider는 Client Map에 새로 추가된 요소만 클릭한다(ZAP client add-on ClientMap.addComponentToNode).
+    // headless ZAP은 새 세션에서도 Map을 비우지 않고(GUI 패널만 비움), 로그인 단계도 /dashboard 같은 화면을 먼저 열어
+    // 메뉴·버튼을 Map에 등록한다. 그래서 Client Spider 직전에 비운다(실측: crAPI 클릭 0건, Shop·Community 미진입).
+    // 공개 API가 없어 start-zap.sh가 등록한 스크립트로 비우고, 요청 번호를 돌려받아 이번 요청의 성공만 인정한다.
+    static final String CLIENT_MAP_RESET_SCRIPT = "flowscope-clear-client-map";
+    static final String CLIENT_MAP_RESET_REQUEST = "flowscope.clientMap.request";
+    static final String CLIENT_MAP_RESET_DONE = "flowscope.clientMap.cleared";
+    // 비운 Map에 시작 주소와 번들의 클라이언트 라우트를 미방문 노드로 넣는다. Client Spider는 시작할 때 Map의 미방문 주소를
+    // 모두 탐색 작업으로 추가한다(ClientSpider.getUnvisitedUrls). 클릭으로 닿지 못하는 SPA 화면을 직접 연다(Katana -jc 방식).
+    static final String CLIENT_MAP_SEEDS = "flowscope.clientMap.seeds";
+    // 시작 주소로 주지 않는 화면: 로그인·로그아웃과 계정 정보를 바꾸는 화면. Client Spider는 연 화면의 폼을 제출하므로
+    // 일부러 열어 주면 점검 계정의 이메일·비밀번호가 바뀌어 다음 로그인이 깨질 수 있다.
+    static final String ROUTE_SEED_EXCLUDE_REGEX =
+            "(?i).*(log-?(in|out|off)|sign-?(in|up|out)|register|password|unlock|change-|delete|destroy|remove).*";
+    private static final java.util.regex.Pattern ROUTE_SEED_EXCLUDE = java.util.regex.Pattern.compile(ROUTE_SEED_EXCLUDE_REGEX);
+    private static final int MAX_ROUTE_SEEDS = 100;
+    private static final long CLIENT_MAP_RESET_CONFIRM_MILLIS = 5_000L;
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
             "client", "spider", "pscan", "pscanrules", "selenium", "openapi", "websocket",
             "network", "replacer", "authhelper");
@@ -218,7 +235,7 @@ public final class ZapCampaign implements AutoCloseable {
         if (zapBaseline != null && "RUNNING".equals(zapBaseline.status())) {
             throw new IllegalStateException("ZAP baseline is already running: " + zapBaseline.runId());
         }
-        String target = required(args, "target");
+        String target = withRootPath(required(args, "target"));
         if (!state.scope().allows(target)) throw new IllegalArgumentException("target is outside configured scope");
         LinkedHashSet<String> requestedAccounts = new LinkedHashSet<>();
         if (args.path("account_ids").isArray()) {
@@ -597,7 +614,7 @@ public final class ZapCampaign implements AutoCloseable {
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "SESSION_SETUP", 0, 0, 0, 0,
                     false, false, -1, "", ""));
-            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · SESSION_SETUP", "", "", "");
+            updateZapBaseline(runId, "RUNNING", "SESSION_SETUP", "", "", "");
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, null);
             JsonNode context;
             ScheduledFuture<?> setupHeartbeat = startZapWorkerHeartbeat(runId, index, "SESSION_SETUP",
@@ -632,7 +649,7 @@ public final class ZapCampaign implements AutoCloseable {
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                         "API_DEFINITION_IMPORT", 0, 0, 0, 0,
                         false, false, -1, "", ""));
-                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · API_DEFINITION_IMPORT", "", warning, "");
+                updateZapBaseline(runId, "RUNNING", "API_DEFINITION_IMPORT", "", warning, "");
                 ScheduledFuture<?> importHeartbeat = startZapWorkerHeartbeat(runId, index,
                         "API_DEFINITION_IMPORT",
                         "API 정의 가져오기 · ZAP API 응답 대기");
@@ -665,7 +682,7 @@ public final class ZapCampaign implements AutoCloseable {
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                         "AUTHENTICATION", 0, 0, definitionImports, 0,
                         false, false, -1, warning, ""));
-                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · AUTHENTICATION", "", warning, "");
+                updateZapBaseline(runId, "RUNNING", "AUTHENTICATION", "", warning, "");
                 recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "INFO",
                         "ZAP Browser Based Authentication · Chrome Headless 시작");
                 state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.AUTHENTICATING,
@@ -697,6 +714,7 @@ public final class ZapCampaign implements AutoCloseable {
                 recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
                         "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
             }
+            warning = resetClientMap(runId, target, lane, warning);
             state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_CLIENT_SPIDER, lane.accountId());
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "CLIENT_SPIDER", 0, 0, definitionImports, 0,
@@ -714,7 +732,7 @@ public final class ZapCampaign implements AutoCloseable {
                     if (clientId.isBlank()) throw new IllegalStateException("Client Spider did not return a scan id");
                     ownedClientScanId = clientId;
                 }
-                updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · CLIENT_SPIDER", clientId, warning, "");
+                updateZapBaseline(runId, "RUNNING", "CLIENT_SPIDER", clientId, warning, "");
                 String finalClientId = clientId;
                 waitForZap(() -> state.zap().clientSpiderStatus(finalClientId), 20 * 60_000L,
                         "Client Spider", runId, index);
@@ -740,7 +758,7 @@ public final class ZapCampaign implements AutoCloseable {
             replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "PASSIVE_SCAN_QUEUE", clientCaptured, clientCaptured, definitionImports, 0,
                     false, false, -1, warning, ""));
-            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · PASSIVE_SCAN_QUEUE", "", warning, "");
+            updateZapBaseline(runId, "RUNNING", "PASSIVE_SCAN_QUEUE", "", warning, "");
             PassiveDrainResult passive = waitForPassive(runId, index);
             passiveComplete = passive.complete();
             passiveRemaining = passive.remaining();
@@ -1061,6 +1079,73 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     /**
+     * 로그인 검증 뒤, Client Spider 직전에 ZAP Client Map을 비운다. 로그인 세션(쿠키·토큰)은 Map과 별개라 유지된다.
+     * 비우지 못해도 Client Spider는 돌릴 수 있으므로 레인을 실패시키지 않고 경고로 남긴다. 취소는 그대로 올린다.
+     */
+    /**
+     * 경로 없는 origin(`http://host`)에 루트 `/`를 붙인다. 같은 자원이지만 Client Spider는 시작 주소가 `/`로 끝날 때만
+     * Map의 미방문 주소를 작업으로 넣는다(ClientSpider.getUnvisitedUrls). 경로가 있는 주소는 그대로 둔다.
+     */
+    public static String withRootPath(String target) {
+        try {
+            URI uri = URI.create(target);
+            if (uri.getScheme() != null && uri.getRawAuthority() != null
+                    && (uri.getRawPath() == null || uri.getRawPath().isEmpty())) {
+                return uri.getScheme() + "://" + uri.getRawAuthority() + "/"
+                        + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+            }
+        } catch (RuntimeException ignored) {
+            // 잘못된 주소는 아래 scope 검사가 거른다.
+        }
+        return target;
+    }
+
+    private String resetClientMap(String runId, String target, ZapLane lane, String warning) {
+        String request = runId + "-" + System.nanoTime();
+        List<String> routes = List.of();
+        try {
+            routes = ClientRouteSeeds.from(state.snapshot().records, state.scope(), target,
+                    ROUTE_SEED_EXCLUDE, MAX_ROUTE_SEEDS);
+        } catch (RuntimeException error) {
+            warning = appendWarning(warning, "클라이언트 라우트 추출 실패: " + error.getMessage());
+        }
+        try {
+            List<String> nodes = new ArrayList<>();
+            nodes.add(target);
+            nodes.addAll(routes);
+            requireZapOk(state.zap().setScriptGlobalVar(CLIENT_MAP_SEEDS, String.join("\n", nodes)),
+                    "pass the Client Spider start URLs");
+            requireZapOk(state.zap().setScriptGlobalVar(CLIENT_MAP_RESET_REQUEST, request),
+                    "request a Client Map reset");
+            requireZapOk(state.zap().runStandAloneScript(CLIENT_MAP_RESET_SCRIPT), "run the Client Map reset script");
+            long deadline = System.currentTimeMillis() + CLIENT_MAP_RESET_CONFIRM_MILLIS;
+            String done;
+            while (!(done = parseZap(state.zap().scriptGlobalVar(CLIENT_MAP_RESET_DONE)).path("globalVar").asText())
+                    .equals(request) && !done.startsWith(request + ":")) {
+                ensureZapNotCancelled();
+                if (System.currentTimeMillis() >= deadline) {
+                    throw new IllegalStateException("reset script did not confirm this request");
+                }
+                Thread.sleep(100);
+            }
+            // 스크립트는 "요청번호:등록한 노드 수"를 돌려준다. 요청번호만 오면 라우트를 모르는 이전 start-zap.sh다.
+            if (!done.equals(request + ":" + nodes.size())) {
+                warning = appendWarning(warning, "클라이언트 라우트 시작 주소 미등록(ZAP을 새 start-zap.sh로 다시 시작해야 함)");
+            }
+            recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "INFO",
+                    "Client Map 초기화 · 클라이언트 라우트 " + routes.size() + "개를 시작 주소로 등록");
+            return warning;
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("ZAP baseline cancelled");
+        } catch (RuntimeException error) {
+            ensureZapNotCancelled();
+            return appendWarning(warning, "Client Map 초기화 생략(이미 본 화면의 메뉴·버튼을 다시 누르지 않을 수 있음): "
+                    + error.getMessage());
+        }
+    }
+
+    /**
      * Client Spider 다음 단계로 같은 Context와 신원으로 일반 Spider를 돌린다. 로그인 레인은 ZAP 사용자로(scanAsUser) 돌린다.
      * 일반 Spider는 보조 탐색이라 실패하거나 0건이어도 레인을 실패시키지 않고 경고로 남긴다. 단 취소, capability 위반,
      * 정리 실패는 그대로 올려 격리를 지킨다.
@@ -1073,7 +1158,7 @@ public final class ZapCampaign implements AutoCloseable {
         replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                 "SPIDER", clientCaptured, clientCaptured, definitionImports, 0,
                 false, false, -1, warning, ""));
-        updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · SPIDER", "", warning, "");
+        updateZapBaseline(runId, "RUNNING", "SPIDER", "", warning, "");
         String spiderId = "";
         boolean spiderFinished = false;
         try {
@@ -1094,7 +1179,7 @@ public final class ZapCampaign implements AutoCloseable {
                 if (spiderId.isBlank()) throw new IllegalStateException("Spider did not return a scan id");
                 ownedSpiderScanId = spiderId;
             }
-            updateZapBaseline(runId, "RUNNING", lane.accountLabel() + " · SPIDER", spiderId, warning, "");
+            updateZapBaseline(runId, "RUNNING", "SPIDER", spiderId, warning, "");
             String finalSpiderId = spiderId;
             waitForZap(() -> state.zap().spiderStatus(finalSpiderId), (SPIDER_MAX_DURATION_MINUTES + 2) * 60_000L,
                     "Spider", runId, index);

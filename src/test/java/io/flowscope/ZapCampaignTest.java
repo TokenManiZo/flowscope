@@ -70,6 +70,18 @@ final class ZapCampaignTest {
     }
 
     @Test
+    void runStageIsTheBareStageKeySoTheUiCanTranslateIt() throws Exception {
+        try (Fixture fixture = new Fixture(true);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            assertTrue(fixture.started.await(3, TimeUnit.SECONDS));
+            await(() -> !campaign.deterministicZapBaselineStatus().path("scan_id").asText().isEmpty());
+            // 계정 이름은 lanes[].account_label에 있다. run.stage에 붙이면 화면이 "test2 · PASSIVE_SCAN_QUEUE"를 그대로 보인다.
+            assertEquals("CLIENT_SPIDER", campaign.deterministicZapBaselineStatus().path("stage").asText());
+        }
+    }
+
+    @Test
     void preservesScopeGuard() throws Exception {
         try (Fixture fixture = new Fixture(false);
              ZapCampaign campaign = new ZapCampaign(fixture)) {
@@ -298,6 +310,134 @@ final class ZapCampaignTest {
     }
 
     @Test
+    void clearsTheClientMapAfterLoginAndRightBeforeTheClientSpider() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            List<String> calls = new CopyOnWriteArrayList<>();
+            fixture.server.removeContext("/JSON/users/action/authenticateAsUser/");
+            fixture.server.createContext("/JSON/users/action/authenticateAsUser/", exchange -> {
+                calls.add("login");
+                zapReply(exchange, "{\"authSuccessful\":true}");
+            });
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> calls.add("reset " + script));
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                calls.add("client");
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of("user-a"), false);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            // 로그인이 화면을 먼저 열어 Map에 등록한 메뉴·버튼을 Client Spider가 새 요소로 다시 보도록, 둘 사이에서 비운다.
+            assertEquals(List.of("login", "reset flowscope-clear-client-map", "client"), calls);
+        }
+    }
+
+    @Test
+    void seedsTheClientSpiderWithClientRoutesFromTheRecordedBundle() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", """
+                    jsx(Route, {path: "/shop", element: jsx(Shop, {})});
+                    jsx(Route, {path: "/service-report", element: jsx(Report, {})});
+                    jsx(Route, {path: "/login", element: jsx(Login, {})});
+                    jsx(Route, {path: "/change-email", element: jsx(ChangeEmail, {})});
+                    jsx(Route, {path: "/post/:id", element: jsx(Post, {})});
+                    """);
+            java.util.Map<String, String> vars = new java.util.concurrent.ConcurrentHashMap<>();
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> { }, vars);
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            // 시작 주소 + 바로 열 수 있는 화면. 로그인·계정 변경 화면과 매개변수 경로는 넣지 않는다.
+            assertEquals(String.join("\n", TARGET, "https://fixture.example.test/shop",
+                    "https://fixture.example.test/service-report"), vars.get("flowscope.clientMap.seeds"));
+            assertTrue(result.path("events").toString().contains("클라이언트 라우트 2개"), result.toString());
+        }
+    }
+
+    @Test
+    void anOriginTargetGetsTheRootPathSoTheClientSpiderQueuesTheSeededRoutes() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            AtomicReference<String> url = new AtomicReference<>("");
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                url.set(FakeZap.query(exchange).get("url"));
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+
+            // 화면 입력은 보통 끝 슬래시가 없다(실측 run target: http://127.0.0.1:8888).
+            campaign.startDeterministicZapCampaign("https://fixture.example.test", List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(TARGET, url.get());
+            assertEquals(TARGET, result.path("target").asText());
+        }
+        assertEquals("https://app.test/app", ZapCampaign.withRootPath("https://app.test/app"));
+        assertEquals("https://app.test/?a=1", ZapCampaign.withRootPath("https://app.test?a=1"));
+    }
+
+    @Test
+    void anOlderResetScriptThatIgnoresRoutesIsReportedAsAWarning() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", "jsx(Route, {path: \"/shop\", element: jsx(Shop, {})});");
+            java.util.Map<String, String> vars = new java.util.concurrent.ConcurrentHashMap<>();
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> { }, vars);
+            fixture.server.removeContext("/JSON/script/action/runStandAloneScript/");
+            fixture.server.createContext("/JSON/script/action/runStandAloneScript/", exchange -> {
+                vars.put("flowscope.clientMap.cleared", vars.get("flowscope.clientMap.request"));
+                zapReply(exchange, "{\"Result\":\"OK\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED_WITH_WARNINGS", result.path("status").asText(), result.toString());
+            assertTrue(result.at("/lanes/0/warning").asText().contains("클라이언트 라우트 시작 주소 미등록"), result.toString());
+        }
+    }
+
+    @Test
+    void anUnconfirmedClientMapResetIsAWarningAndTheClientSpiderStillRuns() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            // 옛 start-zap.sh로 띄운 ZAP: 스크립트가 등록돼 있지 않다.
+            fixture.server.removeContext("/JSON/script/action/runStandAloneScript/");
+            fixture.server.createContext("/JSON/script/action/runStandAloneScript/", exchange -> zapReply(exchange,
+                    "{\"code\":\"does_not_exist\",\"message\":\"Does Not Exist\"}"));
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED_WITH_WARNINGS", result.path("status").asText(), result.toString());
+            assertEquals(1, result.at("/lanes/0/client_captures").asInt(), "the Client Spider still runs");
+            assertTrue(result.at("/lanes/0/warning").asText().contains("Client Map 초기화 생략"), result.toString());
+        }
+    }
+
+    @Test
     void aFailedTraditionalSpiderIsAWarningNotALaneFailure() throws Exception {
         try (Fixture fixture = new Fixture(false);
              ZapCampaign campaign = new ZapCampaign(fixture)) {
@@ -455,6 +595,16 @@ final class ZapCampaignTest {
             record.phase = current.phase();
             record.runId = current.runId();
             record.executionTrust = ExecutionTrust.CONTROLLED;
+            records.add(record);
+        }
+
+        /** 이전 탐색에서 이미 받아 둔 범위 안 스크립트 응답. 캠페인은 이 기록만 읽고 요청을 새로 보내지 않는다. */
+        private void observeScript(String path, String script) {
+            RequestRecord record = new RequestRecord(Source.HUMAN, "https://fixture.example.test:443",
+                    "GET", path, 200, "anon");
+            record.hasResponse = true;
+            record.body = script;
+            record.responseContentType = "application/javascript";
             records.add(record);
         }
 

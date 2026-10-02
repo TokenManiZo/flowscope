@@ -150,6 +150,43 @@ enabled_state="$(curl --config "$curl_config" --silent --show-error --fail --get
   exit 1
 }
 
+# Headless ZAP never clears the Client Map (the client add-on only clears it from its GUI panel), and the
+# Client Spider only clicks components that are new to the Map. FlowScope runs this script right before each
+# Client Spider. After clearing, it adds the start URL and the client-side routes FlowScope found in the
+# app's bundle as unvisited nodes; the Client Spider queues every unvisited node when it starts. It echoes
+# "request:node count" so FlowScope accepts only its own reset. Without it FlowScope still crawls and
+# reports a warning, so a registration failure does not stop ZAP.
+client_map_script="$runtime_dir/flowscope-clear-client-map.js"
+cat > "$client_map_script" <<'JS'
+var ScriptVars = Java.type("org.zaproxy.zap.extension.script.ScriptVars");
+var request = ScriptVars.getGlobalVar("flowscope.clientMap.request");
+var seeds = ScriptVars.getGlobalVar("flowscope.clientMap.seeds");
+var extension = control.getExtensionLoader().getExtension("ExtensionClientIntegration");
+var clientTree = extension.getClass().getDeclaredField("clientTree");
+clientTree.setAccessible(true);
+var map = clientTree.get(extension);
+map.clear();
+var added = 0;
+if (seeds) {
+  seeds.split("\n").forEach(function (url) {
+    if (url) {
+      map.getOrAddNode(url, false, false);
+      added++;
+    }
+  });
+}
+ScriptVars.setGlobalVar("flowscope.clientMap.cleared", request + ":" + added);
+JS
+chmod 600 "$client_map_script"
+if ! curl --config "$curl_config" --silent --show-error --fail --get \
+    --data-urlencode 'scriptName=flowscope-clear-client-map' \
+    --data-urlencode 'scriptType=standalone' \
+    --data-urlencode 'scriptEngine=Graal.js' \
+    --data-urlencode "fileName=$client_map_script" \
+    "$api/JSON/script/action/load/" >/dev/null; then
+  echo "Could not register the Client Map reset script; Client Spider may skip pages seen earlier." >&2
+fi
+
 touch /tmp/flowscope-zap-ready
 wait "$zap_pid"
 rm -rf "$runtime_dir"

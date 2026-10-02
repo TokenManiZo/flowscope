@@ -45,6 +45,17 @@ public final class JavascriptCallSiteAnalyzer {
             "flowscope.javascript.maxParametersPerCall", 4_096);
     private static final int MAX_RESOLUTION_DEPTH = Integer.getInteger(
             "flowscope.javascript.maxResolutionDepth", 32);
+    private static final int MAX_CLIENT_ROUTES = 1_000;
+    /**
+     * 라우터 설정 객체를 알아보는 이웃 키. `path`만으로는 일반 데이터 객체와 구분되지 않아 화면을 정의하는 키가 함께 있어야 한다.
+     * React Router(element·Component·lazy·index), Vue Router(component·components·children·redirect),
+     * Angular(component·loadChildren·loadComponent·redirectTo)의 공식 route 객체 키다.
+     */
+    private static final Set<String> ROUTE_DEFINITION_KEYS = Set.of(
+            "element", "Component", "component", "components", "lazy", "index", "exact", "render",
+            "children", "redirect", "redirectTo", "loadChildren", "loadComponent");
+    /** 바로 열 수 있는 절대 화면 경로만. `:id`·`*` 같은 매개변수 경로와 쿼리·fragment가 붙은 값은 제외한다. */
+    private static final java.util.regex.Pattern CLIENT_ROUTE = java.util.regex.Pattern.compile("/[A-Za-z0-9._~/-]{0,200}");
     private static final int MAX_CACHE_ENTRIES = 128;
     private static final Map<String, JavascriptAnalysis> CACHE = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
@@ -118,7 +129,8 @@ public final class JavascriptCallSiteAnalyzer {
             String detail = compiler.getErrorCount() == 0 ? ""
                     : "parser recovered with " + compiler.getErrorCount() + " syntax error(s)";
             if (analyzer.limited) detail = "AST or extracted facts exceed configured worker budget";
-            return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, analyzer.issues, status, detail);
+            return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, analyzer.issues, status, detail,
+                    analyzer.clientRoutes);
         } catch (RuntimeException | LinkageError | StackOverflowError exception) {
             return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSE_FAILED,
                     exception.getClass().getSimpleName());
@@ -171,6 +183,7 @@ public final class JavascriptCallSiteAnalyzer {
         private final List<JavascriptAnalysis.CallSite> callSites = new ArrayList<>();
         private final List<JavascriptAnalysis.AssetReference> assets = new ArrayList<>();
         private final List<JavascriptAnalysis.ResolutionIssue> issues = new ArrayList<>();
+        private final List<JavascriptAnalysis.ClientRoute> clientRoutes = new ArrayList<>();
         private int nodes;
         private boolean limited;
 
@@ -198,6 +211,25 @@ public final class JavascriptCallSiteAnalyzer {
             if (node.isCall()) inspectCall(node, scope);
             if (node.isImport()) inspectStaticImport(node);
             if (node.getToken() == Token.DYNAMIC_IMPORT) inspectDynamicImport(node, scope);
+            if (node.isObjectLit()) inspectRouteDefinition(node, scope);
+        }
+
+        /** `{path:"/shop", element:...}` 같은 라우터 설정 객체의 정적 경로를 화면 주소로 남긴다. */
+        private void inspectRouteDefinition(Node object, Scope scope) {
+            if (clientRoutes.size() >= MAX_CLIENT_ROUTES) return;
+            Node path = null;
+            boolean routeKey = false;
+            for (Node child : object.children()) {
+                if (!child.isStringKey() && !child.isMemberFunctionDef()) continue;
+                String key = child.getString();
+                if ("path".equals(key) && child.isStringKey()) path = child.getFirstChild();
+                else if (ROUTE_DEFINITION_KEYS.contains(key)) routeKey = true;
+            }
+            if (path == null || !routeKey) return;
+            String value = staticString(path, scope, 0);
+            if (value == null || !CLIENT_ROUTE.matcher(value).matches()) return;
+            if (clientRoutes.stream().anyMatch(route -> route.path().equals(value))) return;
+            clientRoutes.add(new JavascriptAnalysis.ClientRoute(value, object.getLineno(), object.getCharno()));
         }
 
         private void inspectStaticImport(Node node) {

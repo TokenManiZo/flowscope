@@ -73,6 +73,50 @@ final class FakeZap {
         server.createContext("/JSON/alert/view/numberOfAlerts/", exchange -> zapReply(exchange,
                 "{\"numberOfAlerts\":\"" + alertCount + "\"}"));
         registerTraditionalSpider(server);
+        registerClientMapReset(server);
+    }
+
+    /** start-zap.sh가 등록한 Client Map 비우기 스크립트: 실행하면 "요청번호:등록한 노드 수"를 완료 변수로 돌려준다. */
+    static void registerClientMapReset(HttpServer server) {
+        registerClientMapReset(server, script -> { });
+    }
+
+    static void registerClientMapReset(HttpServer server, java.util.function.Consumer<String> onRun) {
+        registerClientMapReset(server, onRun, new java.util.concurrent.ConcurrentHashMap<>());
+    }
+
+    static void registerClientMapReset(HttpServer server, java.util.function.Consumer<String> onRun,
+                                       java.util.Map<String, String> vars) {
+        server.createContext("/JSON/script/action/setGlobalVar/", exchange -> {
+            java.util.Map<String, String> query = query(exchange);
+            vars.put(query.get("varKey"), query.get("varValue"));
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.createContext("/JSON/script/action/runStandAloneScript/", exchange -> {
+            onRun.accept(query(exchange).get("scriptName"));
+            String seeds = vars.getOrDefault("flowscope.clientMap.seeds", "");
+            long added = seeds.lines().filter(line -> !line.isBlank()).count();
+            vars.put("flowscope.clientMap.cleared", vars.getOrDefault("flowscope.clientMap.request", "") + ":" + added);
+            zapReply(exchange, "{\"Result\":\"OK\"}");
+        });
+        server.createContext("/JSON/script/view/globalVar/", exchange -> {
+            String value = vars.get(query(exchange).get("varKey"));
+            zapReply(exchange, value == null ? "{\"code\":\"does_not_exist\",\"message\":\"Does Not Exist\"}"
+                    : "{\"globalVar\":\"" + value + "\"}");
+        });
+    }
+
+    static java.util.Map<String, String> query(com.sun.net.httpserver.HttpExchange exchange) {
+        java.util.Map<String, String> values = new java.util.HashMap<>();
+        String raw = exchange.getRequestURI().getRawQuery();
+        if (raw == null) return values;
+        for (String pair : raw.split("&")) {
+            int equals = pair.indexOf('=');
+            if (equals < 0) continue;
+            values.put(java.net.URLDecoder.decode(pair.substring(0, equals), java.nio.charset.StandardCharsets.UTF_8),
+                    java.net.URLDecoder.decode(pair.substring(equals + 1), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return values;
     }
 
     /** 일반 Spider: 옵션 설정은 모두 OK, 시작하면 곧바로 완료(100)로 응답한다. 테스트가 필요하면 context를 바꿔 끼운다. */

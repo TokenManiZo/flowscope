@@ -141,6 +141,16 @@ public final class ZapClient {
     public String stopClientSpider(String scanId) {
         return get("/JSON/clientSpider/action/stop/", "scanId=" + enc(scanId));
     }
+    /** start-zap.sh가 등록한 standalone 스크립트를 실행한다. 스크립트 내용은 API로 보내지 않는다. */
+    public String runStandAloneScript(String scriptName) {
+        return get("/JSON/script/action/runStandAloneScript/", "scriptName=" + enc(scriptName));
+    }
+    public String setScriptGlobalVar(String key, String value) {
+        return get("/JSON/script/action/setGlobalVar/", "varKey=" + enc(key) + "&varValue=" + enc(value));
+    }
+    public String scriptGlobalVar(String key) {
+        return get("/JSON/script/view/globalVar/", "varKey=" + enc(key));
+    }
     /** 일반(traditional) Spider 전역 옵션. 허용한 옵션 이름만 보낸다. */
     public String setSpiderOption(String option, int value) {
         if (!SPIDER_INTEGER_OPTIONS.contains(option)) throw new IllegalArgumentException("unsupported Spider option: " + option);

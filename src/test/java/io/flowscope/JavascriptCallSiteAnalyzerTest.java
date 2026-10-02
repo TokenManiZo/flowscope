@@ -37,6 +37,26 @@ final class JavascriptCallSiteAnalyzerTest {
     }
 
     @Test
+    void 라우터_설정_객체의_정적_화면_경로를_찾는다() {
+        // crAPI 번들의 React Router v6 형태(실측)와 Vue Router·Angular의 공식 route 객체.
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const SHOP = "/shop";
+                jsx(Route, {path: SHOP, element: jsx(Guard, {component: Shop})});
+                jsx(Route, {path: "/service-report", element: jsx(Report, {})});
+                jsx(Route, {path: "/post/:id", element: jsx(Post, {})});
+                jsx(Route, {path: "*", element: jsx(NotFound, {})});
+                const vue = [{path: '/forum', component: Forum}, {path: '/orders', children: []}];
+                const angular = [{path: '/mechanic-dashboard', loadComponent: () => import('./m.js')}];
+                const data = {path: '/not-a-route', size: 3};
+                const svg = {path: 'M0 0L10 10', element: 'path'};
+                """);
+
+        assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis::detail);
+        assertEquals(List.of("/shop", "/service-report", "/forum", "/orders", "/mechanic-dashboard"),
+                analysis.clientRoutes().stream().map(JavascriptAnalysis.ClientRoute::path).toList());
+    }
+
+    @Test
     void 임의함수와_문자열은_HTTP_call_site로_오인하지_않는다() {
         JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
                 const route = '/api/not-called';
