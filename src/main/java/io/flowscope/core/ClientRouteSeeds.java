@@ -33,8 +33,11 @@ public final class ClientRouteSeeds {
     /** URL에 바로 넣을 수 있는 안전한 ID 값만. 공백·슬래시·특수문자가 있으면 식별자가 아니다. */
     private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._~-]{1,64}");
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final int MAX_IDS_PER_ROUTE = 8;
-    private static final int MAX_DETAIL_SEEDS = 40;
+    // 취약점 탐색은 놓치는 객체가 없을수록 좋다. 목록에 보인 객체는 상세 화면을 모두 연다(사이트가 커져도 끝나도록 상한만 둔다).
+    private static final int MAX_IDS_PER_ROUTE = 200;
+    // 엔티티 목록을 한 번도 보지 못했을 때만 다른 응답의 ID로 넓힌다. 이때는 추측이므로 적게 시도한다.
+    private static final int MAX_FALLBACK_IDS_PER_ROUTE = 30;
+    private static final int MAX_DETAIL_SEEDS = 500;
 
     private ClientRouteSeeds() {}
 
@@ -68,16 +71,19 @@ public final class ClientRouteSeeds {
         }
         // ② 상세 화면 템플릿 + 목록 응답의 실제 ID
         if (!detailTemplates.isEmpty()) {
-            List<IdValue> ids = collectIds(safe, scope);
+            Set<String> jsonPaths = new HashSet<>();
+            List<IdValue> ids = collectIds(safe, scope, jsonPaths);
             int detail = 0;
             for (Map.Entry<String, String> template : detailTemplates.entrySet()) {
                 if (detail >= MAX_DETAIL_SEEDS) break;
                 String path = template.getKey();
                 String param = template.getValue();
                 if (exclude.matcher(path).matches()) continue;
+                Candidates candidates = valuesFor(path, param, ids, jsonPaths);
+                int cap = candidates.fallback() ? MAX_FALLBACK_IDS_PER_ROUTE : MAX_IDS_PER_ROUTE;
                 int used = 0;
-                for (String value : valuesFor(path, param, ids)) {
-                    if (used >= MAX_IDS_PER_ROUTE || detail >= MAX_DETAIL_SEEDS) break;
+                for (String value : candidates.values()) {
+                    if (used >= cap || detail >= MAX_DETAIL_SEEDS) break;
                     if (addSeed(seeds, origin, path + "?" + param + "=" + value, path, scope, subtree,
                             exclude, target, Integer.MAX_VALUE)) {
                         used++;
@@ -91,6 +97,9 @@ public final class ClientRouteSeeds {
 
     /** 응답 경로·JSON 키·값. 엔티티별로 ID를 가르기 위해 어느 응답에서 나왔는지 함께 둔다. */
     private record IdValue(String responsePath, String key, String value) {}
+
+    /** 상세 라우트에 넣을 값. fallback이면 그 엔티티의 응답을 보지 못해 다른 응답의 ID로 넓힌 추측이다. */
+    private record Candidates(List<String> values, boolean fallback) {}
 
     private static boolean addSeed(LinkedHashSet<String> seeds, String origin, String pathAndQuery,
                                    String matchPath, ScopePolicy scope, String subtree, Pattern exclude,
@@ -107,7 +116,7 @@ public final class ClientRouteSeeds {
      * 응답 JSON에서 상세 화면에 넣을 ID 값을 모은다. 목록 항목의 식별자만 쓰려고 루트나 배열 원소의 바로 아래(엔티티 레벨)
      * id/uuid/vin만 담고, 중첩 객체(`order.product.id` 등)의 id는 담지 않는다.
      */
-    private static List<IdValue> collectIds(List<RequestRecord> records, ScopePolicy scope) {
+    private static List<IdValue> collectIds(List<RequestRecord> records, ScopePolicy scope, Set<String> jsonPaths) {
         List<IdValue> ids = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (RequestRecord record : records) {
@@ -117,6 +126,7 @@ public final class ClientRouteSeeds {
             String body = record.responseBodyForAnalysis();
             if (body == null || body.isBlank()) continue;
             String path = record.path == null ? "" : record.path.toLowerCase(Locale.ROOT);
+            jsonPaths.add(path);
             try { collectIds(JSON.readTree(body), path, true, ids, seen, 0); }
             catch (RuntimeException ignored) { /* 잘못된 JSON은 건너뛴다 */ }
             catch (Exception ignored) { /* 파싱 실패는 건너뛴다 */ }
@@ -126,7 +136,7 @@ public final class ClientRouteSeeds {
 
     private static void collectIds(JsonNode node, String path, boolean entityLevel,
                                    List<IdValue> ids, Set<String> seen, int depth) {
-        if (node == null || depth > 12 || ids.size() >= 500) return;
+        if (node == null || depth > 12 || ids.size() >= 5_000) return;
         if (node.isObject()) {
             node.fields().forEachRemaining(entry -> {
                 String key = entry.getKey().toLowerCase(Locale.ROOT);
@@ -148,16 +158,19 @@ public final class ClientRouteSeeds {
 
     /**
      * 상세 라우트에 넣을 ID. vin 매개변수는 vin 값만 쓴다. id 계열은 라우트 경로가 가리키는 엔티티(예: `/post`→posts 응답)의
-     * id·uuid를 먼저 쓰고, 맞는 응답이 없을 때만 전체 id·uuid로 넓힌다(재현율 유지).
+     * id·uuid를 쓴다. 그 엔티티 응답을 봤는데 항목이 없으면 열 객체가 없는 것이므로 비운다. 엔티티 응답을 한 번도
+     * 보지 못했을 때만 전체 id·uuid로 넓힌다(재현율 유지, 추측이므로 적게 시도).
      */
-    private static List<String> valuesFor(String routePath, String param, List<IdValue> ids) {
+    private static Candidates valuesFor(String routePath, String param, List<IdValue> ids, Set<String> jsonPaths) {
         String normalized = param.toLowerCase(Locale.ROOT);
         LinkedHashSet<String> values = new LinkedHashSet<>();
         if (normalized.equals("vin")) {
             for (IdValue id : ids) if (id.key().equals("vin")) values.add(id.value());
-            return List.copyOf(values);
+            return new Candidates(List.copyOf(values), false);
         }
-        if (!(normalized.equals("id") || normalized.endsWith("_id") || normalized.endsWith("id"))) return List.of();
+        if (!(normalized.equals("id") || normalized.endsWith("_id") || normalized.endsWith("id"))) {
+            return new Candidates(List.of(), false);
+        }
         Set<String> entities = entityTokens(routePath);
         for (IdValue id : ids) {
             if ((id.key().equals("id") || id.key().equals("uuid"))
@@ -165,10 +178,11 @@ public final class ClientRouteSeeds {
                 values.add(id.value());
             }
         }
-        if (values.isEmpty()) {
-            for (IdValue id : ids) if (id.key().equals("id") || id.key().equals("uuid")) values.add(id.value());
-        }
-        return List.copyOf(values);
+        if (!values.isEmpty()) return new Candidates(List.copyOf(values), false);
+        boolean entityObserved = jsonPaths.stream().anyMatch(path -> entities.stream().anyMatch(path::contains));
+        if (entityObserved) return new Candidates(List.of(), false);
+        for (IdValue id : ids) if (id.key().equals("id") || id.key().equals("uuid")) values.add(id.value());
+        return new Candidates(List.copyOf(values), true);
     }
 
     /** 라우트 경로에서 엔티티 이름 후보. `/service-report`→{service,report}. 복수형 매칭을 위해 끝 s는 떼지 않고 contains로 본다. */

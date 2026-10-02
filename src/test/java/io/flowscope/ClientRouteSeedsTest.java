@@ -63,6 +63,39 @@ final class ClientRouteSeedsTest {
     }
 
     @Test
+    void 목록에_보인_객체는_상세_화면을_모두_연다() {
+        RequestRecord bundle = response("/static/js/main.js", "application/javascript",
+                "navigate(`/post?post_id=${n}`);");
+        StringBuilder posts = new StringBuilder("{\"posts\":[");
+        for (int i = 1; i <= 12; i++) posts.append(i > 1 ? "," : "").append("{\"id\":\"P").append(i).append("\"}");
+        posts.append("]}");
+        RequestRecord list = response("/community/api/v2/community/posts/recent", "application/json", posts.toString());
+
+        List<String> seeds = ClientRouteSeeds.from(List.of(bundle, list), ScopePolicy.parse(TARGET), TARGET, EXCLUDE, 600);
+
+        assertEquals(12, seeds.stream().filter(s -> s.contains("post_id=")).count(), seeds.toString());
+    }
+
+    @Test
+    void 엔티티_목록을_봤는데_비어_있으면_다른_객체의_ID로_채우지_않는다() {
+        RequestRecord bundle = response("/static/js/main.js", "application/javascript", """
+                navigate(`/service-report?id=${n}`);
+                navigate(`/orders?order_id=${n}`);
+                """);
+        RequestRecord emptyServices = response("/workshop/api/merchant/service_requests", "application/json",
+                "{\"service_requests\":[],\"count\":0}");
+        RequestRecord posts = response("/community/api/v2/community/posts/recent", "application/json",
+                "{\"posts\":[{\"id\":\"P1\"}]}");
+
+        List<String> seeds = ClientRouteSeeds.from(List.of(bundle, emptyServices, posts),
+                ScopePolicy.parse(TARGET), TARGET, EXCLUDE, 600);
+
+        // 정비 요청 목록은 봤지만 비어 있다 → 열 리포트가 없다. 주문 목록은 본 적이 없다 → 다른 응답 ID로 추측해 본다.
+        assertTrue(seeds.stream().noneMatch(s -> s.contains("service-report?id=")), seeds.toString());
+        assertTrue(seeds.contains("http://127.0.0.1:8888/orders?order_id=P1"), seeds.toString());
+    }
+
+    @Test
     void 범위_밖이나_하위경로_밖_응답은_무시한다() {
         RequestRecord outside = new RequestRecord(Source.SCANNER, "http://evil.test", "GET",
                 "/static/js/main.js", 200, "anon");

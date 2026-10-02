@@ -405,10 +405,49 @@ final class ZapCampaignTest {
             assertEquals(2, seedsPerPass.size(), seedsPerPass.toString());
             assertFalse(seedsPerPass.get(0).contains("post_id=abcPOST1"), "1차 패스 전에는 글 ID를 모른다");
             // 후속 패스는 시작 주소 + 새로 생긴 상세 주소만 넣는다(1차에 넣은 /forum은 다시 넣지 않는다).
-            assertEquals(String.join("\n", TARGET, "https://fixture.example.test/post?post_id=abcPOST1"),
+            // 쿼리 주소에는 Client Map 노드를 나누는 fragment가 붙는다(서버로는 가지 않는다).
+            assertEquals(String.join("\n", TARGET, "https://fixture.example.test/post?post_id=abcPOST1#flowscope-1"),
                     seedsPerPass.get(1));
-            assertTrue(result.path("events").toString().contains("후속 패스"), result.toString());
+            assertTrue(result.path("events").toString().contains("후속 패스 1"), result.toString());
+            assertTrue(result.path("events").toString().contains("후속 패스 종료"), result.toString());
         }
+    }
+
+    @Test
+    void followUpPassesGoDeeperWhileDetailScreensRevealNewIds() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", """
+                    navigate(`/post?post_id=${n}`);
+                    navigate(`/user?user_id=${n}`);
+                    """);
+            java.util.concurrent.atomic.AtomicInteger passes = new java.util.concurrent.atomic.AtomicInteger();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                switch (passes.incrementAndGet()) {
+                    // 1차: 글 목록 → 글 ID, 후속 1: 글 상세가 작성자 목록을 보여 줌 → 사용자 ID, 후속 2: 사용자 상세
+                    case 1 -> fixture.observe("/api/posts/recent", "{\"posts\":[{\"id\":\"p1\"}]}");
+                    case 2 -> fixture.observe("/api/users/recent", "{\"users\":[{\"id\":\"u1\"}]}");
+                    default -> fixture.observe("/api/users/u1");
+                }
+                zapReply(exchange, "{\"scan\":\"" + (1 + passes.get()) + "\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(3, passes.get(), "글 상세가 새 사용자 ID를 드러냈으므로 한 단계 더 들어간다");
+            assertTrue(result.path("events").toString().contains("후속 패스 2"), result.toString());
+        }
+    }
+
+    @Test
+    void queryStartUrlsGetDistinctFragmentsSoZapKeepsOneNodePerObject() {
+        assertEquals(List.of("https://a.test/shop", "https://a.test/post?post_id=A#flowscope-1",
+                        "https://a.test/post?post_id=B#flowscope-2", "https://a.test/x?y=1#keep"),
+                ZapCampaign.distinctClientMapUrls(List.of("https://a.test/shop", "https://a.test/post?post_id=A",
+                        "https://a.test/post?post_id=B", "https://a.test/x?y=1#keep")));
     }
 
     @Test

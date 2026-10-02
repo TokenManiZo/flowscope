@@ -90,10 +90,12 @@ public final class ZapCampaign implements AutoCloseable {
     static final String ROUTE_SEED_EXCLUDE_REGEX =
             "(?i).*(log-?(in|out|off)|sign-?(in|up|out)|register|password|unlock|change-|delete|destroy|remove).*";
     private static final java.util.regex.Pattern ROUTE_SEED_EXCLUDE = java.util.regex.Pattern.compile(ROUTE_SEED_EXCLUDE_REGEX);
-    private static final int MAX_ROUTE_SEEDS = 100;
+    private static final int MAX_ROUTE_SEEDS = 600;
     private static final long CLIENT_SPIDER_TIMEOUT_MILLIS = 20 * 60_000L;
-    // 후속 패스는 1차 패스가 수집한 목록 응답에서 새로 생긴 상세 주소만 연다. 끝없이 늘지 않도록 한 번만, 시간 상한을 둔다.
-    private static final long FOLLOW_UP_CLIENT_SPIDER_MILLIS = 8 * 60_000L;
+    // 후속 패스는 직전 패스가 수집한 응답에서 새로 생긴 상세 주소만 연다. 상세 화면에서 또 다른 ID가 나오면 다음 패스가
+    // 그것을 연다(깊이). 끝없이 늘지 않도록 패스 수와 패스마다 시간 상한을 둔다.
+    private static final int MAX_FOLLOW_UP_PASSES = 3;
+    private static final long FOLLOW_UP_CLIENT_SPIDER_MILLIS = 10 * 60_000L;
     private static final long CLIENT_MAP_RESET_CONFIRM_MILLIS = 5_000L;
     private static final Set<String> SAFE_ZAP_ADDONS = Set.of(
             "client", "spider", "pscan", "pscanrules", "selenium", "openapi", "websocket",
@@ -1093,13 +1095,29 @@ public final class ZapCampaign implements AutoCloseable {
         }
     }
 
+    /**
+     * ZAP Client Map은 쿼리를 값이 아니라 매개변수 이름으로만 노드화한다(ClientUtils.paramsToNodeName). 그래서
+     * `post?post_id=A`와 `post?post_id=B`가 한 노드로 합쳐져 첫 객체만 열린다(crAPI 실측: 글 8개 중 1개).
+     * 쿼리가 있는 주소마다 서로 다른 fragment를 붙여 별도 노드로 만든다. fragment는 서버로 보내지 않으므로(RFC 3986 §3.5)
+     * 서버가 받는 요청은 바뀌지 않는다(실측: 글·주문 상세 API가 같은 경로로 호출됨).
+     */
+    public static List<String> distinctClientMapUrls(List<String> urls) {
+        List<String> distinct = new ArrayList<>(urls.size());
+        int index = 0;
+        for (String url : urls) {
+            boolean query = url.indexOf('?') >= 0 && url.indexOf('#') < 0;
+            distinct.add(query ? url + "#flowscope-" + (++index) : url);
+        }
+        return distinct;
+    }
+
     private String resetClientMap(String runId, String target, ZapLane lane, String warning,
                                   List<String> routes, String phase) {
         String request = runId + "-" + System.nanoTime();
         try {
             List<String> nodes = new ArrayList<>();
             nodes.add(target);
-            nodes.addAll(routes);
+            nodes.addAll(distinctClientMapUrls(routes));
             requireZapOk(state.zap().setScriptGlobalVar(CLIENT_MAP_SEEDS, String.join("\n", nodes)),
                     "pass the Client Spider start URLs");
             requireZapOk(state.zap().setScriptGlobalVar(CLIENT_MAP_RESET_REQUEST, request),
@@ -1165,37 +1183,43 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     /**
-     * 상세 화면 ID는 목록 응답(`posts/recent` 등)에 있는데, 그 응답은 1차 Client Spider가 돌면서 처음 수집된다.
-     * 그래서 1차 패스 뒤 시작 주소를 다시 계산하고, 새로 생긴 주소가 있으면 그것만 넣어 한 번 더 돈다(Black Widow의
-     * 상태 간 데이터 의존성 추적을 한 단계로 제한한 형태). 후속 패스 실패·시간 초과는 1차 결과를 지우지 않고 경고로 남긴다.
+     * 상세 화면 ID는 목록 응답(`posts/recent` 등)에 있는데, 그 응답은 Client Spider가 돌면서 처음 수집된다. 상세 화면이
+     * 다시 다른 객체의 ID를 보여 줄 수도 있다. 그래서 패스가 끝날 때마다 시작 주소를 다시 계산하고, 아직 넣지 않은 주소가
+     * 있으면 그것만 넣어 다시 돈다(Black Widow의 상태 간 데이터 의존성 추적). 최대 MAX_FOLLOW_UP_PASSES번까지다.
+     * 후속 패스 실패·시간 초과는 앞선 결과를 지우지 않고 진행 기록·경고로 남긴다.
      */
     private String runFollowUpClientSpider(String runId, String target, ZapLane lane, int index, String contextName,
                                            ZapBrowserAuthenticator.Identity identity, List<String> firstSeeds,
                                            String warning) {
-        SeedResult again = routeSeeds(target, warning);
-        warning = again.warning();
         Set<String> seen = new java.util.HashSet<>(firstSeeds);
-        List<String> fresh = again.urls().stream().filter(url -> !seen.contains(url)).toList();
-        if (fresh.isEmpty()) {
-            recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "INFO", "후속 패스 생략 · 새 상세 시작 주소 없음");
-            return warning;
-        }
-        warning = resetClientMap(runId, target, lane, warning, fresh, "후속 패스 · ");
-        try {
-            runClientSpiderPass(runId, target, index, contextName, identity, warning, FOLLOW_UP_CLIENT_SPIDER_MILLIS);
-        } catch (ZapIsolationException error) {
-            throw error;
-        } catch (RuntimeException error) {
+        for (int pass = 1; pass <= MAX_FOLLOW_UP_PASSES; pass++) {
             ensureZapNotCancelled();
-            ensureScannerCapabilityIntact(runId);
-            String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            if (message.endsWith("timed out")) {
-                recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "WARN",
-                        "후속 패스 시간 상한 " + FOLLOW_UP_CLIENT_SPIDER_MILLIS / 60_000 + "분 도달 · 수집분은 유지");
+            SeedResult again = routeSeeds(target, warning);
+            warning = again.warning();
+            List<String> fresh = again.urls().stream().filter(url -> !seen.contains(url)).toList();
+            if (fresh.isEmpty()) {
+                recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "INFO",
+                        pass == 1 ? "후속 패스 생략 · 새 상세 시작 주소 없음"
+                                : "후속 패스 종료 · " + (pass - 1) + "회 뒤 새 상세 시작 주소 없음");
                 return warning;
             }
-            return appendWarning(warning, "후속 Client Spider 생략: " + message);
+            seen.addAll(fresh);
+            warning = resetClientMap(runId, target, lane, warning, fresh, "후속 패스 " + pass + " · ");
+            try {
+                runClientSpiderPass(runId, target, index, contextName, identity, warning, FOLLOW_UP_CLIENT_SPIDER_MILLIS);
+            } catch (ZapIsolationException error) {
+                throw error;
+            } catch (RuntimeException error) {
+                ensureZapNotCancelled();
+                ensureScannerCapabilityIntact(runId);
+                String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+                if (!message.endsWith("timed out")) return appendWarning(warning, "후속 Client Spider 생략: " + message);
+                recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "WARN", "후속 패스 " + pass + " 시간 상한 "
+                        + FOLLOW_UP_CLIENT_SPIDER_MILLIS / 60_000 + "분 도달 · 수집분은 유지");
+            }
         }
+        recordZapProgress(lane.accountLabel(), "CLIENT_SPIDER", "INFO",
+                "후속 패스 상한 " + MAX_FOLLOW_UP_PASSES + "회 도달");
         return warning;
     }
 
