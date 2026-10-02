@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FlowScope · QA_TEMP 기준 검토</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="review.css"></head>
+<body>
+<header class="review-header"><div><h1>FlowScope UI/UX 기준 검토</h1><p>QA_TEMP <code>2ed0b7f</code> · <code>codex/ux-accounts-evidence</code> · 승인 목업 · 최신 QA 기준</p></div><span class="review-note">예시 데이터 · 실제 점검 결과 아님</span></header>
+<main>
+  <nav id="screens" aria-label="검토 화면"></nav>
+  <section class="brief" aria-label="변경 이유"><div><h2 id="brief-title"></h2><p id="brief-problem"></p></div><div><strong>어떻게 바꾸나</strong><p id="brief-change"></p></div><div><strong>왜 이렇게 바꾸나</strong><p id="brief-why"></p></div></section>
+  <div class="review-controls"><label>작업 화면 <select id="size"><option value="1280">1280 × 720</option><option value="1920">1920 × 1080</option></select></label><label>설계 상태 <select id="state"><option value="normal">기본 결과</option><option value="empty">수집 없음</option><option value="running">실행 중</option><option value="failed">조회·전송 실패</option><option value="disabled">사용 해제</option><option value="steer-failed">추가 지시 전송 실패</option></select></label><span id="capture-note">개선 전은 고정된 기본 결과 캡처입니다.</span><button id="solo">개선 후 크게 보기</button></div>
+  <section id="comparison" class="comparison" aria-label="다크·라이트 개선 전후">
+    <article class="capture-pane"><header><h2>개선 전 · 라이트</h2><a class="baseline-live" data-theme="light" href="baseline-live.html?screen=accounts&theme=light" target="_blank" rel="noopener">원본 조작</a></header><div class="capture-frame"><img id="before-light" alt="QA_TEMP 라이트 기준 화면"></div></article>
+    <article class="proposal-pane"><header><h2>개선 후 · 라이트</h2><span>방향 확인용 목업</span></header><div class="preview-holder"><iframe id="after-light" title="개선 후 라이트 웹 목업"></iframe></div></article>
+    <article class="capture-pane"><header><h2>개선 전 · 다크</h2><a class="baseline-live" data-theme="dark" href="baseline-live.html?screen=accounts&theme=dark" target="_blank" rel="noopener">원본 조작</a></header><div class="capture-frame"><img id="before-dark" alt="QA_TEMP 다크 기준 화면"></div></article>
+    <article class="proposal-pane"><header><h2>개선 후 · 다크</h2><span>방향 확인용 목업</span></header><div class="preview-holder"><iframe id="after-dark" title="개선 후 다크 웹 목업"></iframe></div></article>
+  </section>
+  <details class="workflow" open><summary>검토 순서와 승인 경계</summary><p>최신 QA_TEMP에서 만든 단일 브랜치에서 작업별 커밋으로 진행합니다. UI 배치·표시·기존 데이터 연결은 승인되었으며 실제 기능 변경은 별도 확인합니다. QA_TEMP 병합 승인은 별개입니다.</p><ol><li>계정·수집: 출처별 누적 수집 건수와 시작·종료 안내</li><li>LLM: 진행과 종료 결과 분리, 추가 지시 접수 확인</li><li>API·입력 차이: 출처별 차이와 관측·선언 근거</li><li>관측 기록: 메서드·경로·상태 열 분리, 원문 우선</li><li>그래프: 사용자 요청으로 보류</li><li>통합 검증: 승인한 화면과 실행 흐름 확인</li></ol><p>모바일 버전은 만들지 않습니다. 목업의 시작·전송·저장 동작은 브라우저 안의 시뮬레이션입니다.</p></details>
+</main>
+<script type="module" src="review.mjs"></script></body></html>

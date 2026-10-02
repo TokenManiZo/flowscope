@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>QA_TEMP · 개선 전 조작</title><style>body{margin:0}iframe{width:100vw;height:calc(100vh - 32px);border:0}p{margin:0;padding:7px 12px;height:32px;box-sizing:border-box;background:#edf5f2;color:#184c40;font:12px Arial,sans-serif}</style></head>
+<body><p>QA_TEMP 0f8189d · 고정 예시 데이터 · 조회와 화면 선택만 가능합니다. 실제 실행·저장은 연결하지 않았습니다.</p><iframe title="QA_TEMP 개선 전 화면"></iframe><script type="module">
+const query=new URLSearchParams(location.search),screen=query.get('screen')??'accounts',theme=query.get('theme')??'light';
+const routes={accounts:'accounts',human:'inspection',llm:'inspection',surface:'surface',evidence:'evidence',graph:'graph'};
+localStorage.setItem('flowscope-theme',theme);
+const frame=document.querySelector('iframe');
+frame.onload=()=>{
+ let attempts=0;
+ const ready=setInterval(()=>{
+  const doc=frame.contentDocument;
+  doc.documentElement.classList.toggle('dark',theme==='dark');
+  const step=screen==='llm'?'3 · LLM 탐색':screen==='human'?'1 · 직접 둘러보기':null;
+  const button=step&&[...doc.querySelectorAll('[role=tab]')].find(b=>b.textContent===step);
+  if(button)button.click();
+  if(button||!step||++attempts===20)clearInterval(ready);
+ },100);
+};
+frame.src='/baseline/#'+(routes[screen]??'accounts');
+</script></body></html>

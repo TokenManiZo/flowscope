@@ -1,0 +1,40 @@
+{
+  "baselineRef": "QA_TEMP",
+  "baselineCommit": "2ed0b7f",
+  "workBranch": "codex/ux-accounts-evidence",
+  "dataKind": "BUILT_IN_FICTIONAL_SAMPLE",
+  "viewports": [
+    [
+      1280,
+      720
+    ],
+    [
+      1920,
+      1080
+    ]
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "screens": [
+    "accounts",
+    "human",
+    "llm",
+    "surface",
+    "evidence"
+  ],
+  "implementationApproved": true,
+  "mergeApproved": false,
+  "sha256": {
+    "snapshot.json": "4c26ed43d2d1ba282ec508e1530ceb6d9de2f1d97403fa8e182e3eceaaede41a",
+    "server.mjs": "b0998aa90f4bedf6601acd6ff660838ebfd49c990cd5a6fa830daf2c7a47e089",
+    "tokens.css": "243a4337d00d65820663bfa307d839f66ba98abe374ea75d9ca1ab5cbda31a0b"
+  },
+  "reviewRevision": 6,
+  "heldScreens": [
+    "graph"
+  ],
+  "directionApproved": true,
+  "approvalNote": "2026-10-03 사용자: Method별 색 구분, LLM 세부내용 펼치기 가시성·정렬 보완 후 일단 진행. QA_TEMP 병합은 별도 승인 대기."
+}
