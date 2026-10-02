@@ -334,7 +334,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
         </TabsContent>
 
         <TabsContent value="llm" className="mt-2">
-          <LlmPass target={target} accounts={targetAccounts} />
+          <LlmPass datasetRevision={snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0} target={target} accounts={targetAccounts} />
         </TabsContent>
 
         <TabsContent value="review" className="mt-2">

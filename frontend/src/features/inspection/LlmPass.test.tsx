@@ -2,7 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
 
-import { renderWithQueryClient } from "@/test/render"
+import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
+import { queryKeys } from "@/lib/query/hooks"
 import { LlmPass } from "./LlmPass"
 
 afterEach(() => vi.unstubAllGlobals())
@@ -32,6 +33,7 @@ it("starts an anonymous LLM pass against the scope target from the hub", async (
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
 
   // 브라우저 로그인 세션이 없는 계정은 고를 수 없다.
+  await user.click(await screen.findByRole("button", { name: /^탐색할 계정/ }))
   expect(await screen.findByRole("checkbox", { name: "USER A" })).toBeDisabled()
   expect(screen.getByRole("button", { name: "USER A 브라우저 로그인" })).toBeEnabled()
   // 계정 등록 패널은 계정·세션 화면으로 옮겼다.
@@ -93,6 +95,7 @@ it("opens a login window for a registered account and adopts its session on [로
   vi.stubGlobal("fetch", fetchStub)
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
 
+  await user.click(await screen.findByRole("button", { name: /^탐색할 계정/ }))
   await user.click(await screen.findByRole("button", { name: "USER A 브라우저 로그인" }))
   expect(posts[0]).toContain("action=browser-open")
   expect(posts[0]).toContain("id=user-a")
@@ -120,13 +123,16 @@ it("shows the browser budget as a ceiling and keeps the stop switch visible whil
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
 
+  await userEvent.setup().click(await screen.findByRole("button", { name: /^실행 세부정보/ }))
+  await userEvent.setup().click(screen.getByRole("button", { name: /^탐색할 계정/ }))
   const card = within(await screen.findByRole("group", { name: "브라우저 탐색 진행" }))
   expect(card.getByText("브라우저 탐색 중")).toBeInTheDocument()
   // 경과는 사실, 15분은 상한일 뿐이다.
   expect(card.getByText("04:12")).toBeInTheDocument()
   expect(card.getByText("15분")).toBeInTheDocument()
   expect(card.getByText(/먼저 도달하면 끝납니다/)).toBeInTheDocument()
-  expect(card.getByRole("progressbar", { name: "브라우저 동작 진행률" })).toHaveAttribute("aria-valuenow", "84")
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
+  expect(card.getByText("84 / 상한 300회")).toBeVisible()
   expect(card.getByText("19")).toBeInTheDocument()
   // 둘러보기만 한 실행이 "아무것도 안 함"으로 읽히면 안 된다.
   expect(card.getByText("31")).toBeInTheDocument()
@@ -151,4 +157,51 @@ it("hides the browser card when no window is being driven", async () => {
   expect(await screen.findByRole("button", { name: /탐색 시작/ })).toBeInTheDocument()
   expect(screen.queryByRole("group", { name: "브라우저 탐색 진행" })).not.toBeInTheDocument()
   expect(screen.queryByText("브라우저 창을 닫으면 즉시 끝납니다")).not.toBeInTheDocument()
+})
+
+it("freezes completed values across polling and navigation, resetting on dataset change", async () => {
+  const data = { ...idle, run: { ...idle.run, status: "COMPLETED", runId: "finished", elapsedMillis: 10000 }, browser: { actions: 8, maxActions: 300, snapshots: 4, endpoints: 2, elapsedMillis: 10000, minutes: 15 } }
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(data))))
+  const client = createTestQueryClient()
+  const view = renderWithQueryClient(<LlmPass target="https://app.example.test/" datasetRevision={1} />, client)
+  await userEvent.setup().click(await screen.findByRole("button", { name: /^실행 세부정보/ }))
+  expect(screen.queryByText("브라우저 탐색 중")).not.toBeInTheDocument()
+  expect(within(screen.getByRole("group", { name: "브라우저 탐색 진행" })).getByText("00:10")).toBeVisible()
+  const next = { ...data, browser: { ...data.browser, elapsedMillis: 30000 }, run: { ...data.run, elapsedMillis: 30000 } }
+  client.setQueryData(queryKeys.explorerRun, next)
+  await waitFor(() => expect(screen.queryByText("00:30")).not.toBeInTheDocument())
+  view.rerender(<div />)
+  view.rerender(<LlmPass target="https://app.example.test/" datasetRevision={1} />)
+  await userEvent.setup().click(await screen.findByRole("button", { name: /^실행 세부정보/ }))
+  expect(within(screen.getByRole("group", { name: "브라우저 탐색 진행" })).getByText("00:10")).toBeVisible()
+  client.setQueryData(queryKeys.explorerRun, next)
+  view.rerender(<LlmPass target="https://app.example.test/" datasetRevision={2} />)
+  await waitFor(() => expect(within(screen.getByRole("group", { name: "브라우저 탐색 진행" })).getByText("00:30")).toBeVisible())
+})
+
+it("keeps work messages and reports transmission success and retryable failure", async () => {
+  const user = userEvent.setup()
+  let reject = true
+  const running = { ...idle, run: { ...idle.run, status: "RUNNING", runId: "steer-run", message: "프로젝트 상세 탐색 중", activities: [{ sequence: 1, kind: "MODEL", title: "프로젝트 확인", detail: "현재 프로젝트 상세에서 항목을 읽습니다.", status: "RUNNING" }] } }
+  const posts: string[] = []
+  vi.stubGlobal("fetch", vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") { posts.push(String(init.body)); return new Response(JSON.stringify(reject ? { message: "전송 실패" } : { run: running.run }), { status: reject ? 400 : 200 }) }
+    return new Response(JSON.stringify(running))
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  expect(await screen.findByText("프로젝트 상세 탐색 중")).toBeVisible()
+  expect(screen.getByText("현재 프로젝트 상세에서 항목을 읽습니다.")).toBeVisible()
+  await user.type(screen.getByLabelText("Explorer에게 추가 지시"), "다음 화면 확인")
+  await user.click(screen.getByRole("button", { name: "메시지 전송" }))
+  expect(await screen.findByText(/전송 실패 · 내용을/)).toBeVisible()
+  expect(screen.getByLabelText("Explorer에게 추가 지시")).toHaveValue("다음 화면 확인")
+  reject = false
+  await user.click(screen.getByRole("button", { name: "메시지 전송" }))
+  expect(await screen.findByText("서버 전송 완료")).toBeVisible()
+  expect(screen.getByLabelText("Explorer에게 추가 지시")).toHaveValue("")
+  expect(posts).toHaveLength(2)
+  expect(posts[0]).toContain("action=steer")
+  await user.click(screen.getByRole("button", { name: "진행 기록 접기" }))
+  expect(screen.queryByText("현재 프로젝트 상세에서 항목을 읽습니다.")).not.toBeInTheDocument()
+  expect(screen.getByText("프로젝트 상세 탐색 중")).toBeVisible()
 })
