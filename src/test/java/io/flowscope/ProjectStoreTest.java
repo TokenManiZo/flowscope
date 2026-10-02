@@ -364,6 +364,23 @@ final class ProjectStoreTest {
     }
 
     @Test
+    void unmaskedRetainedPayloadIsReMaskedInsteadOfFailingTheWholeSave() throws Exception {
+        RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/", 200, "anon");
+        record.requestPayload = StoredPayload.capture(
+                "GET / HTTP/1.1\r\nAuthorization: Bearer raw-secret\r\n\r\n", "text/plain", Integer.MAX_VALUE);
+        Path file = temp.resolve("remask.flowscope.json");
+
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(record), new AnalysisConfig(), List.of());
+
+        assertFalse(Files.readString(file).contains("raw-secret"));
+        StoredPayload restored = store.load(file).records().getFirst().requestPayload;
+        assertTrue(restored.retained());
+        assertFalse(restored.text().contains("raw-secret"));
+        assertEquals(Masking.maskHeaders(restored.text()), restored.text());
+    }
+
+    @Test
     void projectContextRoundTripsWithoutBreakingLegacyVersionFour() throws Exception {
         ProjectStore store = new ProjectStore();
         Path file = temp.resolve("context.flowscope.json");

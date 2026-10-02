@@ -83,17 +83,20 @@ export function SourcePassLayout({
           </div>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-0">
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          {/* The card had a floor and no ceiling, so overflow-y-auto never fired and the card grew without end,
+              pushing the footer off screen. The cap is what makes this list actually scroll. */}
+          <div className="max-h-[34rem] flex-1 space-y-3 overflow-y-auto p-4">
             {feedItems.length ? feedItems.map((item) => (
-              <article className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 border-b border-border/60 pb-3" key={item.id}>
-                <Badge variant="outline" className="h-fit">{item.badge}</Badge>
+              /* Three real columns: the status used to share a wrapping flex row with the title, so it landed in a
+                 different place on every line. */
+              <article className="grid grid-cols-[4.5rem_minmax(0,1fr)_6rem] items-start gap-3 border-b border-border/60 pb-3" key={item.id}>
+                {/* Fixed width: badges vary from AUTH to WARNING, and a shrink-to-fit column ragged the titles. */}
+                <Badge variant="outline" className="h-fit w-full justify-center">{item.badge}</Badge>
                 <div className="min-w-0">
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <p className="font-medium">{item.title}</p>
-                    <span className="font-mono text-xs text-muted-foreground">{item.status}</span>
-                  </div>
+                  <p className="font-medium">{item.title}</p>
                   {item.detail && <p className="break-all text-sm text-muted-foreground">{item.detail}</p>}
                 </div>
+                <span className="text-center font-mono text-xs break-words text-muted-foreground">{item.status}</span>
               </article>
             )) : <p className="py-10 text-center text-sm text-muted-foreground">{emptyHint}</p>}
           </div>

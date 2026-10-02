@@ -19,12 +19,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 
 import static io.flowscope.core.discovery.JavascriptAnalysis.ParameterKind.FORM_BODY;
 import static io.flowscope.core.discovery.JavascriptAnalysis.ParameterKind.JSON_BODY;
@@ -45,13 +46,17 @@ public final class JavascriptCallSiteAnalyzer {
             "flowscope.javascript.maxParametersPerCall", 4_096);
     private static final int MAX_RESOLUTION_DEPTH = Integer.getInteger(
             "flowscope.javascript.maxResolutionDepth", 32);
-    private static final int MAX_CACHE_ENTRIES = 128;
-    private static final Map<String, JavascriptAnalysis> CACHE = new LinkedHashMap<>(16, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, JavascriptAnalysis> eldest) {
-            return size() > MAX_CACHE_ENTRIES;
-        }
-    };
+    private static final JavascriptAnalysisCache CACHE = new JavascriptAnalysisCache(
+            Integer.getInteger("flowscope.javascript.cacheEntries", 4_096),
+            Long.getLong("flowscope.javascript.cacheItems", 1_000_000L));
+    /*
+     * The rebuild worker, the snapshot request, and the LLM gateway analyse the same scripts at the same time. Without
+     * these, each caller started its own parser JVM (up to 1.5 GiB heap) for the same script: one in-flight analysis
+     * per script, and one parser process at a time so concurrent callers cannot multiply memory and CPU.
+     */
+    private static final ConcurrentHashMap<String, CompletableFuture<JavascriptAnalysis>> IN_FLIGHT =
+            new ConcurrentHashMap<>();
+    private static final Semaphore PARSER_PROCESSES = new Semaphore(1, true);
 
     private JavascriptCallSiteAnalyzer() {}
 
@@ -60,19 +65,42 @@ public final class JavascriptCallSiteAnalyzer {
             return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSED, "empty script");
         }
         String cacheKey = cacheKey(script);
-        synchronized (CACHE) {
-            JavascriptAnalysis cached = CACHE.get(cacheKey);
-            if (cached != null) return cached;
+        JavascriptAnalysis cached = CACHE.get(cacheKey);
+        if (cached != null) return cached;
+        CompletableFuture<JavascriptAnalysis> mine = new CompletableFuture<>();
+        CompletableFuture<JavascriptAnalysis> running = IN_FLIGHT.putIfAbsent(cacheKey, mine);
+        if (running != null) return running.join();
+        try {
+            JavascriptAnalysis analysis = CACHE.get(cacheKey);  // finished between the first lookup and putIfAbsent
+            if (analysis == null) {
+                try {
+                    PARSER_PROCESSES.acquire();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    analysis = new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSE_FAILED,
+                            "isolated JavaScript parser interrupted");
+                    mine.complete(analysis);
+                    return analysis;  // not cached: a later rebuild retries
+                }
+                try {
+                    analysis = JavascriptAnalysisProcess.analyze(script);
+                } finally {
+                    PARSER_PROCESSES.release();
+                }
+                CACHE.put(cacheKey, analysis);
+            }
+            mine.complete(analysis);
+            return analysis;
+        } catch (RuntimeException | Error error) {
+            mine.completeExceptionally(error);
+            throw error;
+        } finally {
+            IN_FLIGHT.remove(cacheKey, mine);
         }
-        JavascriptAnalysis analysis = JavascriptAnalysisProcess.analyze(script);
-        synchronized (CACHE) {
-            CACHE.put(cacheKey, analysis);
-        }
-        return analysis;
     }
 
     public static void clearCache() {
-        synchronized (CACHE) { CACHE.clear(); }
+        CACHE.clear();
     }
 
     static JavascriptAnalysis analyzeInWorker(String script) {

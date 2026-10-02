@@ -585,14 +585,9 @@ public final class ProjectStore {
         return r;
     }
 
-    private void writePayload(ObjectNode record, String field, StoredPayload payload, ObjectNode payloads) {
-        if (payload == null) { record.putNull(field); return; }
-        if (payload.retained()) {
-            String masked = Masking.maskHeaders(payload.text());
-            if (!masked.equals(payload.text())) {
-                throw new IllegalArgumentException("unmasked stored payload rejected");
-            }
-        }
+    private void writePayload(ObjectNode record, String field, StoredPayload stored, ObjectNode payloads) {
+        if (stored == null) { record.putNull(field); return; }
+        StoredPayload payload = diskSafe(stored);
         ObjectNode reference = record.putObject(field);
         reference.put("digest", payload.digest());
         reference.put("original_bytes", payload.originalBytes());
@@ -600,6 +595,24 @@ public final class ProjectStore {
         if (payload.retained() && !payloads.has(payload.digest())) {
             payloads.put(payload.digest(), payload.gzipBase64());
         }
+    }
+
+    /**
+     * A retained payload must already be a masking fixed point. If it is not (a capture-time masking gap), one record
+     * must not make the whole project unsavable: store the re-masked text, which is never less masked, or only the
+     * metadata when masking does not settle. Either way no unmasked text reaches the disk.
+     */
+    static StoredPayload diskSafe(StoredPayload payload) {
+        if (!payload.retained()) return payload;
+        String text = payload.text();
+        for (int pass = 0; pass < 3; pass++) {
+            String masked = Masking.maskHeaders(text);
+            if (masked.equals(text)) {
+                return pass == 0 ? payload : StoredPayload.capture(text, "text/plain", Integer.MAX_VALUE);
+            }
+            text = masked;
+        }
+        return payload.metadataOnly(StoredPayload.Retention.CAPACITY_METADATA_ONLY);
     }
 
     private StoredPayload readPayload(JsonNode reference, JsonNode payloads,

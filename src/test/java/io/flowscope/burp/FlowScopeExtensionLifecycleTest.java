@@ -169,6 +169,27 @@ class FlowScopeExtensionLifecycleTest {
     }
 
     @Test
+    void newProxyRecordsDoNotDiscardTheAnalysisAlreadyRunningButConfigChangesDo() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        AnalysisPublicationGate gate = (AnalysisPublicationGate) field("analysisPublication").get(extension);
+        try {
+            long running = gate.current();
+            java.lang.reflect.Method forRecords = FlowScopeExtension.class.getDeclaredMethod("scheduleRebuildForNewRecords");
+            forRecords.setAccessible(true);
+            forRecords.invoke(extension);
+            // Continuous traffic (e.g. notification polling) must not keep throwing away every finished analysis.
+            assertEquals(running, gate.current());
+
+            java.lang.reflect.Method rebuild = FlowScopeExtension.class.getDeclaredMethod("scheduleRebuild");
+            rebuild.setAccessible(true);
+            rebuild.invoke(extension);
+            assertTrue(gate.current() > running);
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
     void requestLabEvidenceIdSurvivesLosingThePublicationRace() throws Exception {
         FlowScopeExtension extension = new FlowScopeExtension();
         AnalysisPublicationGate gate = (AnalysisPublicationGate) field("analysisPublication").get(extension);

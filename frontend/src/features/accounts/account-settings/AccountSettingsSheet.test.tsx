@@ -10,7 +10,7 @@ const settings: AccountSettings = {
   proofRule: { method: "GET", path: "/api/me", responseMark: "USER A" },
   candidates: [], candidateBlockReasons: ["관측 요청 없음"],
   zap: { enabled: true, status: "VERIFIED_BY_ZAP", loginUrl: "https://app.example.test/login", loginId: "", hasPassword: true, connectionLabel: "ZAP 연결됨", failureReason: "" },
-  llm: { enabled: false, status: "UNVERIFIED", loginMode: "HTML_FORM", loginUrl: "", loginId: "", hasPassword: false, failureReason: "", advanced: { idField: "", passwordField: "", tokenJsonPath: "", authHeaderName: "", authPrefix: "", validationUrl: "" } },
+  llm: { enabled: false, status: "UNVERIFIED", failureReason: "" },
 };
 
 function adapter(): AccountSettingsAdapter {
@@ -22,8 +22,7 @@ function adapter(): AccountSettingsAdapter {
     revokeHumanSession: vi.fn().mockResolvedValue(settings), linkBurpRequest: vi.fn().mockResolvedValue(settings),
     registerCredential: vi.fn().mockResolvedValue(settings),
     saveZapLogin: vi.fn().mockResolvedValue(settings), verifyZapLogin: vi.fn().mockResolvedValue(settings),
-    revokeZapCredentials: vi.fn().mockResolvedValue(settings), saveExplorerLogin: vi.fn().mockResolvedValue(settings),
-    verifyExplorerLogin: vi.fn().mockResolvedValue(settings), revokeExplorerCredentials: vi.fn().mockResolvedValue(settings),
+    revokeZapCredentials: vi.fn().mockResolvedValue(settings),
     deleteAccount: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -43,7 +42,6 @@ it("shows the real verification source and saves only the dirty section", async 
   await waitFor(() => expect(api.saveBasicInfo).toHaveBeenCalledOnce());
   expect(api.saveProofRule).not.toHaveBeenCalled();
   expect(api.saveZapLogin).not.toHaveBeenCalled();
-  expect(api.saveExplorerLogin).not.toHaveBeenCalled();
 });
 
 it("shows masked stored credentials and replaces them from a pasted header block", async () => {
@@ -139,4 +137,10 @@ it("lists what an account delete also clears", async () => {
   expect(effects).toHaveTextContent("저장된 인증값");
   expect(effects).toHaveTextContent("ZAP 로그인 설정");
   expect(effects).not.toHaveTextContent("LLM");
+});
+
+it("has no LLM login menu: LLM sessions come from browser login in the LLM step", async () => {
+  render(<AccountSettingsSheet accountId="account-a" adapter={adapter()} open onOpenChange={vi.fn()} />);
+  expect(await screen.findByRole("tab", { name: /^ZAP/ })).toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: /^LLM/ })).not.toBeInTheDocument();
 });

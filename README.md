@@ -131,7 +131,7 @@ HUMAN pass는 기존 명시 HUMAN 포트뿐 아니라 첫 범위 내 요청이 �
 
 native Linux Docker Engine의 ZAP은 [Docker의 기본 `host-gateway` 매핑](https://docs.docker.com/reference/cli/dockerd/#configure-host-gateway-ip)에 따라 호스트의 default bridge IP로 연결합니다. `127.0.0.1:8081`만 연 상태로는 이 경로를 받을 수 없으므로, 해당 bridge IP에 SCANNER listener를 추가합니다.
 
-각 대상 클라이언트에 Burp CA 인증서를 설치하십시오. TLS 검증을 영구적으로 끄지 마십시오.
+각 대상 클라이언트에 Burp CA 인증서를 설치하십시오. TLS 검증을 영구적으로 끄지 마십시오. FlowScope가 직접 보내는 Request Lab·교차 신원 재전송·LLM Explorer 요청은 Burp Repeater와 같이 대상 서버 인증서를 검증하지 않으므로 자체 서명·사설 CA 실험실 대상에도 동작합니다. 전송은 exact scope로 제한되며, 테스트 계정만 사용한다는 전제입니다.
 
 Burp의 **FlowScope** 탭을 열고 한 줄에 하나의 허가된 exact scope를 입력한 다음 **범위 적용**을 누릅니다. scope는 scheme, host, effective port, 선택적 path prefix를 포함합니다.
 
@@ -240,6 +240,7 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 
 - 명시적 HUMAN 로그인 캡처와 Explorer 계정의 raw Authorization/Cookie/CSRF·ID·비밀번호는 각각의 메모리 전용 vault에만 존재합니다. ZAP 계정의 ID·비밀번호도 FlowScope에서는 메모리 vault에만 두지만, 로그인 구성 시 로컬 ZAP API의 `POST` body로 전달되며 ZAP 2.17은 Context를 임시 session DB에 기록합니다. 따라서 인증 lane은 FlowScope Docker의 1GiB tmpfs ZAP home과 tmpfs `/tmp`에서만 허용하고 container 종료 시 폐기합니다. Web snapshot·프로젝트·Evidence·FlowScope 로그에는 저장하지 않습니다. Java·HTTP library와 ZAP이 만드는 일시적 메모리 사본까지 물리적으로 지우는 hardware vault는 아닙니다.
 - Authorization, Cookie, Set-Cookie, password, token, secret, API key는 Evidence 저장 전에 마스킹합니다.
+- FlowScope는 허가된 테스트 환경 전용입니다. 계정 등록과 로그인에는 **테스트 계정만** 사용하고 실제·운영 자격증명은 쓰지 마십시오. 마스킹은 위의 잘 알려진 인증 헤더·필드에만 적용되며, 캡처 트래픽은 로컬 프로젝트 파일에 남고 LLM Explorer로 전달될 수 있습니다. 저장된 기록 하나가 일관되게 마스킹되지 않더라도 프로젝트 저장 전체가 실패하지 않으며, 그 기록은 다시 마스킹하거나 metadata-only로 저장합니다.
 - 인증 grouping은 subject 또는 짧은 단방향 fingerprint를 사용하며 raw opaque token은 보존하지 않습니다. Cookie 존재만으로 로그인 사용자를 확정하지 않습니다. 연결되지 않은 fingerprint는 감사·binding 후보로 남지만 broker exact match 또는 명시적 account binding 전에는 서비스별 `UNRESOLVED` graph identity 하나로 표시합니다.
 - 트래픽 분류는 저장 Evidence를 삭제하지 않습니다. operation별 `include/exclude/auto` override도 응답 없음, unknown source, 비탐색 validation 트래픽을 discovery coverage로 만들 수 없습니다. 반복 관측은 화면에서만 접고 모든 Evidence ID·count·first/last timestamp를 유지합니다.
 - body와 message preview는 필드별 8,192자입니다. 마스킹된 일반 textual 전문은 기본 1MiB, 발견용 HTML/JavaScript/JSON/XML 응답은 기본 4MiB, digest 중복 제거 후 압축 총량은 48MiB까지 보존하며, 실시간 수집은 20,000건에서 멈춥니다.

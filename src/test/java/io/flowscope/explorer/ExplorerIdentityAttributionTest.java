@@ -42,11 +42,9 @@ final class ExplorerIdentityAttributionTest {
     @Test
     void selectedExplorerAccountBindsThroughFingerprintAndSurvivesProjectReopen() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
-        ExplorerAccountVault.View account = vault.save(new ExplorerAccountVault.Input("", "A", "USER",
-                "https://app.example.test/login", "alice", "pw", ExplorerAccountVault.LoginMode.JSON,
-                "", "", "", "", "", ""));
-        vault.setToken(account.id(), "Authorization", "Bearer ", "secret-token");
-        vault.status(account.id(), ExplorerAccountVault.AuthStatus.READY, "ready");
+        ExplorerAccountVault.View account = vault.register("llm-a", "A", "USER");
+        vault.adoptSession(account.id(), java.net.URI.create("https://app.example.test/"), List.of(),
+                Map.of("Authorization", "Bearer secret-token"));
 
         // 1) 계정 선택·인증 준비: 실제 gateway가 선택 계정과 주입 토큰을 transport 요청으로 넘긴다.
         AtomicReference<ExplorerTransport.Request> outgoing = new AtomicReference<>();
