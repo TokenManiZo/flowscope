@@ -43,12 +43,18 @@ function api(url) {
     case '/api/scanner-run': return {run:{status:'COMPLETED'},accounts:[],scope:[target+'/']};
     case '/api/explorer-run': return explorer;
     case '/api/account-settings': return accountSettings(url.searchParams.get('account'));
+    case '/api/request-lab': {
+      const event=snapshot.events.find(e=>e.eventId===url.searchParams.get('eventId'));
+      if(!event)return {success:false,message:'예시 기록 없음'};
+      return {eventId:event.eventId,service:target,request:`${event.method} ${event.path} HTTP/1.1\nHost: demo.flowscope.test\nAuthorization: ***MASKED***\n`,response:`HTTP/1.1 ${event.status}\nContent-Type: application/json\n\n{"example":true}`,observedIdentity:event.idn,rawRequestRetained:true,rawResponseRetained:true,message:'합성된 마스킹 예시 · 실제 점검 결과 아님'};
+    }
     case '/api/evidence': {
       const records=snapshot.events.filter(e=>e.op===url.searchParams.get('operation')).map(e=>({...e,
         request:`${e.method} ${e.path} HTTP/1.1\nHost: demo.flowscope.test\nAuthorization: ***MASKED***\n`,
         response:`HTTP/1.1 ${e.status}\nContent-Type: application/json\n\n{"example":true}`,classificationReasons:e.classificationReasons,
         requestBody:'',responseBody:'',requestPayload:null,responsePayload:null}));
-      return {records,total:records.length,offset:0,limit:200,hasMore:false};
+      const offset=Number(url.searchParams.get("offset")??0),limit=Number(url.searchParams.get("limit")??200);
+      return {records:records.slice(offset,offset+limit),total:records.length,offset,limit,hasMore:offset+limit<records.length};
     }
     default:return {success:false,message:'목업에 없는 조회입니다.'};
   }

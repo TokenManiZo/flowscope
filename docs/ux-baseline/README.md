@@ -36,6 +36,8 @@
 
 ## 다시 실행
 
+최종 제품 검증은 [IMPLEMENTATION_VERIFICATION.md](IMPLEMENTATION_VERIFICATION.md)에 기록했습니다. 비교 페이지의 “구현 화면 열기”에서 제품 빌드를 확인할 수 있습니다. 제품 캡처는 `actual-captures/`, 검증 결과는 `actual-verification.json`입니다.
+
 루트에서 설치된 Maven으로 제품을 빌드합니다. 생성 경로는 `target/generated-resources/react-web`입니다. Node로 `docs/ux-baseline/server.mjs`를 실행하면 로컬 18843에서 검토할 수 있습니다. `BASELINE_APP`은 별도로 보존한 QA_TEMP 빌드 경로입니다. `capture.mjs`는 설치된 Chrome과 Playwright로 목업 캡처를 생성합니다.
 
 ## 확정할 화면 방향 (사용자 피드백 반영)

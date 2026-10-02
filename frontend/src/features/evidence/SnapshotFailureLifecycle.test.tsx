@@ -51,7 +51,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     }
     else {
       await userEvent.click(await screen.findByRole("button", { name: /상세 보기$/ }))
-      if (kind === "surface" && screen.queryByRole("button", { name: "관측 기록 상세 · H · HTTP 200" })) await userEvent.click(screen.getByRole("button", { name: "관측 기록 상세 · H · HTTP 200" }))
+      if (kind === "surface") await userEvent.click(await screen.findByRole("button", { name: /관측 기록 상세 .* H .* HTTP 200/ }))
     }
   }
   await select()

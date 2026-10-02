@@ -219,7 +219,8 @@ describe("EvidencePage", () => {
   })
 
   it("opens the page containing the selected record and places masked payloads before policy", async () => {
-    const events = Array.from({ length: 205 }, (_, index) => event({ eventId: `e-${index}`, clusterId: `c-${index}`, repeatCount: 1 }))
+    // Keep all 205 stored records for pagination, but fold repeated rows to avoid rendering 205 controls.
+    const events = Array.from({ length: 205 }, (_, index) => event({ eventId: `e-${index}`, clusterId: index < 200 ? "repeated" : `c-${index}`, repeatCount: 1 }))
     const record = { eventId: "e-204", query: "", requestBody: "", request: "GET /orders/1 HTTP/1.1", responseBody: "", response: "HTTP/1.1 200", location: "", requestPayload: null, responsePayload: null, trafficClass: "API", trafficDisposition: "INCLUDE", classificationReasons: [] }
     const fetch = installFetch(events, { records: [record], total: 205, offset: 200, limit: 200, hasMore: false })
     renderWithQueryClient(<EvidencePage />)

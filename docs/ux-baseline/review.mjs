@@ -17,6 +17,7 @@ function update(){
  ['problem','change','why'].forEach((key,i)=>document.querySelector('#brief-'+key).textContent=data[i+1]);
  for(const b of nav.children)b.setAttribute('aria-selected',String(b.dataset.screen===screen));
  const width=Number(document.querySelector('#size').value),height=width*9/16,state=document.querySelector('#state').value;
+ document.querySelector('#actual-live').href='/actual/#'+({human:'inspection',llm:'inspection'}[screen]??screen);
  document.querySelector('#capture-note').textContent=state==='normal'?'전·후에 같은 고정 예시 데이터를 사용합니다.':'개선 전은 기본 결과 캡처입니다. 선택 상태는 개선 후 시뮬레이션에만 적용합니다.';
  for(const theme of ['light','dark']){
   document.querySelector(`.baseline-live[data-theme=${theme}]`).href=`baseline-live.html?screen=${screen}&theme=${theme}`;

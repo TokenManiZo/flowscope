@@ -1,0 +1,53 @@
+{
+  "viewports": [
+    [
+      1280,
+      720
+    ],
+    [
+      1920,
+      1080
+    ]
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "captures": [
+    "accounts-light-1280.png",
+    "human-light-1280.png",
+    "llm-light-1280.png",
+    "surface-light-1280.png",
+    "evidence-light-1280.png",
+    "accounts-dark-1280.png",
+    "human-dark-1280.png",
+    "llm-dark-1280.png",
+    "surface-dark-1280.png",
+    "evidence-dark-1280.png",
+    "accounts-light-1920.png",
+    "human-light-1920.png",
+    "llm-light-1920.png",
+    "surface-light-1920.png",
+    "evidence-light-1920.png",
+    "accounts-dark-1920.png",
+    "human-dark-1920.png",
+    "llm-dark-1920.png",
+    "surface-dark-1920.png",
+    "evidence-dark-1920.png"
+  ],
+  "checks": [
+    "1280 light: completed-run account handoff opens HUMAN",
+    "1280 light: counts, layouts, terminal LLM, disclosures, icons, API inputs, masked Evidence, role choice",
+    "1280 dark: completed-run account handoff opens HUMAN",
+    "1280 dark: counts, layouts, terminal LLM, disclosures, icons, API inputs, masked Evidence, role choice",
+    "1920 light: completed-run account handoff opens HUMAN",
+    "1920 light: counts, layouts, terminal LLM, disclosures, icons, API inputs, masked Evidence, role choice",
+    "1920 dark: completed-run account handoff opens HUMAN",
+    "1920 dark: counts, layouts, terminal LLM, disclosures, icons, API inputs, masked Evidence, role choice",
+    "Running messages, failed transmission retention, retry success, collapse without losing current state (mocked HTTP)",
+    "No browser errors, external requests or real mutations"
+  ],
+  "errors": [],
+  "external": [],
+  "mutations": []
+}
