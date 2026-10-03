@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { CircleStop, ExternalLink, Globe, LogIn, Play, RefreshCw, Send } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -47,27 +47,24 @@ export function LlmPass({ target, accounts = [] }: {
   const completeLogin = useExplorerBrowserCompleteMutation()
   const [anonymous, setAnonymous] = useState(true)
   const [selected, setSelected] = useState<string[]>([])
-  const [selectedModel, setSelectedModel] = useState("")
-  const [modelTouched, setModelTouched] = useState(false)
+  const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [operatorMessage, setOperatorMessage] = useState("")
 
   const data = query.data
   const run = data?.run
   const active = run ? activeStates.has(run.status) : false
-  // Local state is lost when this tab unmounts (graph page, other step), which showed "비로그인" while USERA was
-  // actually running. Once a run exists it is the authority on what was picked.
-  const settingUp = !run || run.status === "IDLE"
-  const shownAnonymous = settingUp ? anonymous : run.anonymous
-  const shownSelected = settingUp ? selected : run.accountIds
+  // Active runs show their fixed selection. Terminal runs return to editable next-run controls.
+  const settingUp = !active
+  const shownAnonymous = settingUp ? anonymous : (run?.anonymous ?? anonymous)
+  const shownSelected = settingUp ? selected : (run?.accountIds ?? selected)
   const providerReady = run?.providerReadiness === "READY"
   const models = useExplorerModelsQuery(providerReady && settingUp)
   const modelLoading = providerReady && settingUp && models.isPending
-  const modelUnavailable = Boolean(selectedModel && models.data
-    && !models.data.models.some((item) => item.id === selectedModel))
-  useEffect(() => {
-    if (modelTouched || !models.data) return
-    setSelectedModel(models.data.configuredModel)
-  }, [models.data, modelTouched])
+  const catalog = models.isError ? undefined : models.data
+  const nextModel = catalog ? (selectedModel ?? (run && run.status !== "IDLE"
+    ? run.model : catalog.configuredModel)) : ""
+  const modelUnavailable = Boolean(nextModel && catalog
+    && !catalog.models.some((item) => item.id === nextModel))
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
 
   const feedItems: readonly SourceFeedItem[] = (run?.activities ?? []).map((item) => ({
@@ -134,10 +131,10 @@ export function LlmPass({ target, accounts = [] }: {
     <div className="grid max-w-sm gap-1.5">
       <label className="text-xs text-muted-foreground" htmlFor="explorer-model">Codex 모델</label>
       {settingUp ? <select id="explorer-model" className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-        value={selectedModel} disabled={!providerReady || !models.data?.models.length}
-        onChange={(event) => { setSelectedModel(event.target.value); setModelTouched(true) }}>
-        <option value="">Codex 기본 설정{models.data?.configuredModel ? ` (${models.data.configuredModel})` : ""}</option>
-        {(models.data?.models ?? []).map((option) => <option key={option.id} value={option.id}>{option.label}{option.recommended ? " · Codex 추천" : ""}</option>)}
+        value={nextModel} disabled={!providerReady || !catalog?.models.length}
+        onChange={(event) => setSelectedModel(event.target.value)}>
+        <option value="">Codex 기본 설정{catalog?.configuredModel ? ` (${catalog.configuredModel})` : ""}</option>
+        {(catalog?.models ?? []).map((option) => <option key={option.id} value={option.id}>{option.label}{option.recommended ? " · Codex 추천" : ""}</option>)}
       </select> : <p className="font-mono text-sm" id="explorer-model">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</p>}
       {models.isError && settingUp && <p className="text-xs text-amber-600">모델 목록을 확인하지 못했습니다. Codex 기본 설정으로는 실행할 수 있습니다.</p>}
       {modelLoading && <p className="text-xs text-muted-foreground">현재 계정의 모델 목록을 확인 중입니다.</p>}
@@ -153,7 +150,7 @@ export function LlmPass({ target, accounts = [] }: {
     </div>
     {browserCard}
     <div className="flex flex-wrap items-center gap-2">
-      <Button disabled={!providerReady || active || start.isPending || modelLoading || modelUnavailable || !target || (!anonymous && selected.length === 0)} onClick={() => start.mutate({ target, accounts: selected.join(","), anonymous, model: selectedModel })}><Play className="size-4" />탐색 시작</Button>
+      <Button disabled={!providerReady || active || start.isPending || modelLoading || modelUnavailable || !target || (!anonymous && selected.length === 0)} onClick={() => start.mutate({ target, accounts: selected.join(","), anonymous, model: nextModel })}><Play className="size-4" />탐색 시작</Button>
       {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />중단</Button>
         : run && run.status !== "IDLE" ? <Button variant="outline" onClick={() => control.mutate("clear")}>실행 표시 지우기</Button> : null}
       <span className="text-sm text-muted-foreground">{(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>
@@ -181,7 +178,7 @@ export function LlmPass({ target, accounts = [] }: {
     description="LLM이 사람처럼 서비스를 둘러보며 요청을 만듭니다."
     statusTiles={!run || run.status === "IDLE" ? [] : [
       { label: "상태", value: run ? runStatusLabel(run.status) : "불러오는 중" },
-      { label: "선택 모델", value: run.model || "Codex 기본 설정" },
+      { label: active ? "실행 모델" : "마지막 실행 모델", value: run.model || "Codex 기본 설정" },
       { label: "소요 시간", value: formatElapsed(run?.elapsedMillis ?? 0), mono: true },
       { label: "HTTP 시도 / 응답", value: `${run?.attempts ?? 0} / ${run?.responses ?? 0}` },
       { label: "선언 Endpoint / Parameter", value: `${run?.endpointDeclarations ?? 0} / ${run?.parameterDeclarations ?? 0}` },

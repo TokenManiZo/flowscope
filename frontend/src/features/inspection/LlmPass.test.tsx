@@ -53,7 +53,42 @@ it("offers account models and sends the chosen one with the anonymous run", asyn
   expect(String((startCall?.[1] as RequestInit).body)).toContain("model=gpt-6.1-sol")
 })
 
-it("keeps the previous Codex-default start path when the model catalog is unavailable", async () => {
+it("restores the completed run model for the next editable run after returning to this page", async () => {
+  const user = userEvent.setup()
+  let status = "RUNNING"
+  const posts: string[] = []
+  const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/explorer-models") return catalogResponse()
+    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+      posts.push(String(init.body))
+      return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", model: "gpt-6.1-sol" } }),
+        { status: 202, headers: { "Content-Type": "application/json" } })
+    }
+    if (String(input) === "/api/explorer-run") {
+      return new Response(JSON.stringify({ ...idle, run: { ...idle.run, status, runId: "llm-old-run",
+        model: "gpt-6.1-sol", anonymous: true } }), { headers: { "Content-Type": "application/json" } })
+    }
+    throw new Error(`unexpected API ${String(input)}`)
+  })
+  vi.stubGlobal("fetch", fetchStub)
+
+  const first = renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  expect((await screen.findAllByText("gpt-6.1-sol"))[0]).toBeVisible()
+  first.unmount()
+  status = "COMPLETED"
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+
+  await screen.findByText("완료")
+  const model = screen.getByRole("combobox", { name: "Codex 모델" })
+  await waitFor(() => expect(model).toHaveValue("gpt-6.1-sol"))
+  await user.selectOptions(model, "gpt-5.6-sol")
+  expect(model).toHaveValue("gpt-5.6-sol")
+  await user.selectOptions(model, "gpt-6.1-sol")
+  await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
+  await waitFor(() => expect(posts[0]).toContain("model=gpt-6.1-sol"))
+})
+
+it("uses the visible Codex default after a completed run when the model catalog is unavailable", async () => {
   const user = userEvent.setup()
   const posts: string[] = []
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -67,12 +102,15 @@ it("keeps the previous Codex-default start path when the model catalog is unavai
         headers: { "Content-Type": "application/json" } })
     }
     if (String(input) === "/api/explorer-run") {
-      return new Response(JSON.stringify(idle), { headers: { "Content-Type": "application/json" } })
+      return new Response(JSON.stringify({ ...idle, run: { ...idle.run, status: "COMPLETED",
+        runId: "previous-run", model: "gpt-6.1-sol", anonymous: true } }),
+        { headers: { "Content-Type": "application/json" } })
     }
     throw new Error(`unexpected API ${String(input)}`)
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
   expect(await screen.findByText(/모델 목록을 확인하지 못했습니다/)).toBeVisible()
+  expect(screen.getByRole("combobox", { name: "Codex 모델" })).toHaveValue("")
   await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
   await waitFor(() => expect(posts[0]).toContain("model="))
 })
