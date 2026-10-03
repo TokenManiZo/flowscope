@@ -24,6 +24,8 @@ export interface EventRecord {
   status: number
   fp: string
   idn: string
+  /** Registered collection lane; independent of observed identity and role. */
+  laneAccountId?: string | null
   role: string
   source: Source
   op: string

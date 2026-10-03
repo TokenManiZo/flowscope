@@ -218,6 +218,25 @@ describe("EvidencePage", () => {
     expect(Object.values(sessionStorage)).not.toContain(rawSentinel)
   })
 
+  it("opens the page containing the selected record and places masked payloads before policy", async () => {
+    // Keep all 205 stored records for pagination, but fold repeated rows to avoid rendering 205 controls.
+    const events = Array.from({ length: 205 }, (_, index) => event({ eventId: `e-${index}`, clusterId: index < 200 ? "repeated" : `c-${index}`, repeatCount: 1 }))
+    const record = { eventId: "e-204", query: "", requestBody: "", request: "GET /orders/1 HTTP/1.1", responseBody: "", response: "HTTP/1.1 200", location: "", requestPayload: null, responsePayload: null, trafficClass: "API", trafficDisposition: "INCLUDE", classificationReasons: [] }
+    const fetch = installFetch(events, { records: [record], total: 205, offset: 200, limit: 200, hasMore: false })
+    renderWithQueryClient(<EvidencePage />)
+    await userEvent.click((await screen.findByText("e-204")).closest("tr")!)
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/evidence?operation=GET+%2Forders%2F%7Bid%7D&offset=200&limit=200", expect.any(Object)))
+    const request = await screen.findByText("GET /orders/1 HTTP/1.1")
+    const policy = screen.getByText("정책 편집 · 펼치기/접기")
+    expect(request.compareDocumentPosition(policy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(policy.closest("details")).not.toHaveAttribute("open")
+    await userEvent.click(policy)
+    await userEvent.selectOptions(screen.getByLabelText("필수 역할 지정"), "LV2")
+    expect(screen.getByLabelText("필수 역할 지정")).toHaveValue("LV2")
+    expect(screen.getByText("user-a / User")).toBeVisible()
+    expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+  })
+
   it("discards the prior operation page when selecting a different operation", async () => {
     const fetch = installFetch([
       event({ eventId: "first", op: "GET /first", clusterId: "first" }),
@@ -261,11 +280,41 @@ describe("EvidencePage", () => {
     const row = (await screen.findByText("restored-event")).closest("tr")
     expect(row).not.toBeNull()
     await user.click(within(row as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ }))
-    await user.clear(await screen.findByLabelText("필수 역할"))
-    await user.type(screen.getByLabelText("필수 역할"), "admin")
+    await user.click(await screen.findByText("정책 편집 · 펼치기/접기"))
+    await user.selectOptions(await screen.findByLabelText("필수 역할 지정"), "Admin")
     await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
     await waitFor(() => expect(snapshots).toBeGreaterThan(1))
     expect(screen.getByText("선택 관측 기록: restored-event")).toBeVisible()
+  })
+
+  it("preserves stored role casing and registered custom roles until explicitly saved", async () => {
+    const selected = event({ eventId: "custom-role-event" })
+    const data = { ...snapshot([selected]), requiredRoles: { [selected.op]: "admin" }, accounts: [{ id: "operator", label: "Operator", role: "PowerUser", target: "https://example.test:443", color: "", authArtifactCount: 0 }] }
+    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => Promise.resolve(json(String(input) === "/api/snapshot" ? data : String(input).startsWith("/api/evidence?") ? { records: [], total: 0, offset: 0, limit: 200, hasMore: false } : { success: true })))
+    vi.stubGlobal("fetch", fetch)
+    renderWithQueryClient(<EvidencePage />)
+    const user = userEvent.setup()
+    await user.click((await screen.findByText(selected.eventId)).closest("tr")!)
+    await user.click(screen.getByText("정책 편집 · 펼치기/접기"))
+    const role = screen.getByRole("combobox", { name: "필수 역할 지정" })
+    expect(role).toHaveValue("admin")
+    expect(within(role).getByRole("option", { name: /^Admin$/ })).toHaveValue("Admin")
+    await user.selectOptions(role, "PowerUser")
+    expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+    await user.click(screen.getByText("정책 편집 · 펼치기/접기"))
+    await user.click(screen.getByText("정책 편집 · 펼치기/접기"))
+    expect(role).toHaveValue("PowerUser")
+    await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
+    await waitFor(() => expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/requirement" && new URLSearchParams(String(init?.body)).get("role") === "PowerUser")).toBe(true))
+  })
+
+  it("shows a missing API coordinate without leaving an unresolved payload count", async () => {
+    const fetch = installFetch([event({ eventId: "no-coordinate", op: "" })])
+    renderWithQueryClient(<EvidencePage />)
+    await userEvent.click((await screen.findByText("no-coordinate")).closest("tr")!)
+    expect(screen.getByText("선택 기록의 API 좌표가 없습니다.")).toBeVisible()
+    expect(screen.queryByText(/같은 API …건/)).not.toBeInTheDocument()
+    expect(fetch.mock.calls.some(([input]) => String(input).startsWith("/api/evidence?"))).toBe(false)
   })
 
   it("removes stale selected detail synchronously and does not refetch its Request Lab draft after dataset replacement", async () => {

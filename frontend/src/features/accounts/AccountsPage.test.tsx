@@ -25,10 +25,10 @@ function snapshot() { return { ...snapshotFixture,
   managedSessions: [{ handle: "active", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }],
 } }
 function postBodies(fetchStub: ReturnType<typeof vi.fn>, path: string) { return fetchStub.mock.calls.filter(([called, init]) => called === path && (init as RequestInit).method === "POST").map(([, init]) => ((init as RequestInit).body as URLSearchParams).toString()) }
-function renderAccounts(errors: Partial<Record<string, string>> = {}) {
+function renderAccounts(errors: Partial<Record<string, string>> = {}, data = snapshot()) {
   const meta = document.createElement("meta"); meta.name = "flowscope-capability"; meta.content = rawSecret; document.head.append(meta)
   const fetchStub = vi.fn((path: string, init?: RequestInit) => {
-    if (path === "/api/snapshot") return Promise.resolve(response(snapshot()))
+    if (path === "/api/snapshot") return Promise.resolve(response(data))
     if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "NOT_STARTED" }, accounts: [], scope: ["http://127.0.0.1:9000/"] }))
     if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, managedRuntime: true, state: "READY", message: "ready" }))
     if (path.startsWith("/api/account-settings?")) { const id = new URL(path, "http://local").searchParams.get("account") ?? ""; return Promise.resolve(response(settings(id, id === "account-a" ? "계정 A" : "다른 서비스", id === "account-a" ? service : otherService))) }
@@ -66,6 +66,21 @@ describe("account and session management", () => {
     expect(screen.queryByText("세션·신원 매핑 초기화")).not.toBeInTheDocument()
     expect(document.body.textContent).not.toContain(rawSecret)
     expect(document.body.textContent).not.toContain("never-render-this")
+  })
+
+  it("shows stored counts even when LLM is disabled, independent of lane identity and repeatCount", async () => {
+    const data = snapshot()
+    data.events = [
+      { ...snapshotFixture.events[0], idn: "account-a", source: "human", status: 200, repeatCount: 12 },
+      { ...snapshotFixture.events[0], laneAccountId: "account-a", idn: "anon", source: "scanner", status: 302, orchestrator: "LLM" },
+      { ...snapshotFixture.events[0], laneAccountId: "account-a", idn: "unknown", source: "llm", status: 401 },
+      { ...snapshotFixture.events[0], idn: "account-a", source: "llm", status: 0 },
+    ]
+    renderAccounts({}, data)
+    const lanes = await screen.findByLabelText("계정 A 연결 상태")
+    await waitFor(() => expect(lanes).toHaveTextContent(/LLM\s*사용 안 함\s*1건/))
+    expect(lanes).toHaveTextContent(/HUMAN\s*인증값 있음\s*1건/)
+    expect(lanes).toHaveTextContent(/ZAP[\s\S]*1건/)
   })
 
   it("hands the account to the inspection page when collecting as that account", async () => {

@@ -1,0 +1,52 @@
+{
+  "mockServer": true,
+  "actualProductBuild": true,
+  "viewports": [
+    1280,
+    1920
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "checks": [
+    "1280/light: neutral declaration row, integrated controls, API panel, inputs, exact Evidence selection, no document overflow",
+    "1280/light: selected masked payload, role dropdown, selection across fold, controls aligned at 32px, help inside viewport, no API mutations",
+    "1280/light: payload query failure and explicit retry recovery",
+    "1280/dark: neutral declaration row, integrated controls, API panel, inputs, exact Evidence selection, no document overflow",
+    "1280/dark: selected masked payload, role dropdown, selection across fold, controls aligned at 32px, help inside viewport, no API mutations",
+    "1280/dark: payload query failure and explicit retry recovery",
+    "1920/light: neutral declaration row, integrated controls, API panel, inputs, exact Evidence selection, no document overflow",
+    "1920/light: selected masked payload, role dropdown, selection across fold, controls aligned at 32px, help inside viewport, no API mutations",
+    "1920/light: payload query failure and explicit retry recovery",
+    "1920/dark: neutral declaration row, integrated controls, API panel, inputs, exact Evidence selection, no document overflow",
+    "1920/dark: selected masked payload, role dropdown, selection across fold, controls aligned at 32px, help inside viewport, no API mutations",
+    "1920/dark: payload query failure and explicit retry recovery"
+  ],
+  "captures": [
+    "surface-light-1280.png",
+    "api-detail-light-1280.png",
+    "api-record-light-1280.png",
+    "evidence-policy-light-1280.png",
+    "help-light-1280.png",
+    "surface-dark-1280.png",
+    "api-detail-dark-1280.png",
+    "api-record-dark-1280.png",
+    "evidence-policy-dark-1280.png",
+    "help-dark-1280.png",
+    "surface-light-1920.png",
+    "api-detail-light-1920.png",
+    "api-record-light-1920.png",
+    "evidence-policy-light-1920.png",
+    "help-light-1920.png",
+    "surface-dark-1920.png",
+    "api-detail-dark-1920.png",
+    "api-record-dark-1920.png",
+    "evidence-policy-dark-1920.png",
+    "help-dark-1920.png"
+  ],
+  "errors": [],
+  "external": [],
+  "mutations": [],
+  "passed": true
+}

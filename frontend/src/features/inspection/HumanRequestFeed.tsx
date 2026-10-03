@@ -1,3 +1,5 @@
+export { statusTone } from "@/components/TrafficBadges"
+import { HttpStatusBadge, MethodBadge } from "@/components/TrafficBadges"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronUp, Search } from "lucide-react"
 
@@ -87,16 +89,7 @@ function HumanRawDialog({ eventId, open, onOpenChange }: { eventId: string | nul
   </Dialog>
 }
 
-const FEED_COLUMNS = "grid grid-cols-[4.5rem_minmax(0,1fr)_8.5rem_3.5rem_5rem] items-center gap-3"
-
-export function statusTone(status: string): string {
-  const code = Number.parseInt(status, 10)
-  if (code >= 500) return "bg-destructive/15 text-destructive"
-  if (code >= 400) return "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-  if (code >= 300) return "bg-sky-500/15 text-sky-700 dark:text-sky-300"
-  if (code >= 200) return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-  return "bg-muted text-muted-foreground"
-}
+const FEED_COLUMNS = "grid grid-cols-[3.5rem_4.5rem_minmax(0,1fr)_7rem_3.5rem_5rem] items-center gap-3"
 
 /** 기록된 요청을 열이 고정된 표로 보여 준다(메서드·경로·계정·상태·시각). 행을 누르면 마스킹 원문을 연다. */
 export function HumanRequestFeed({ items, description, emptyHint, title = "기록된 요청", searchLabel = "HUMAN 작업 피드 검색" }: { items: readonly SourceFeedItem[]; description?: string; emptyHint: string; title?: string; searchLabel?: string }) {
@@ -106,7 +99,7 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
     if (!normalized) return items
-    return items.filter((item) => [item.badge, item.title, item.detail ?? "", item.status].some((value) => value.toLocaleLowerCase().includes(normalized)))
+    return items.filter((item) => [item.ordinal ?? item.id, item.badge, item.title, item.detail ?? "", item.status].some((value) => value.toLocaleLowerCase().includes(normalized)))
   }, [items, query])
 
   return <>
@@ -115,20 +108,21 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><CardTitle className="text-base">{title}</CardTitle>{description && <CardDescription>{description}</CardDescription>}</div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
-            <div className="relative min-w-0 flex-1 sm:w-64"><Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input aria-label={searchLabel} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="메서드·경로·계정·상태 검색" className="pl-8" /></div>
+            <div className="relative min-w-0 flex-1 sm:w-64"><Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input aria-label={searchLabel} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="번호·메서드·경로·계정·상태 검색" className="pl-8" /></div>
             <Button type="button" variant="outline" size="icon" aria-label={expanded ? "작업 피드 접기" : "작업 피드 펼치기"} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp /> : <ChevronDown />}</Button>
           </div>
         </div>
       </CardHeader>
       {expanded && <CardContent className="p-0">
-        <div className={`${FEED_COLUMNS} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>메서드</span><span>경로</span><span>계정</span><span>상태</span><span className="text-right">시각</span></div>
+        <div className={`${FEED_COLUMNS} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span><span>계정</span><span>상태</span><span className="text-right">시각</span></div>
         <div className="max-h-96 overflow-y-auto">
           {filtered.length ? filtered.map((item) => <button key={item.id} type="button" onClick={() => setSelectedEventId(item.id)} aria-label={`${item.badge} ${item.title} ${item.detail ?? ""} HTTP ${item.status} 원문 보기`}
             className={`${FEED_COLUMNS} w-full border-t border-border px-4 py-2 text-left text-sm first:border-t-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none`}>
-            <span><span className="inline-block min-w-12 rounded border border-border px-1.5 text-center font-mono text-[11px]">{item.badge}</span></span>
+            <span className="truncate font-mono text-xs text-muted-foreground" title={item.id}>{item.ordinal ?? "—"}</span>
+            <MethodBadge method={item.badge} />
             <span className="truncate font-mono text-xs" title={item.title}>{item.title}</span>
             <span className={`truncate ${item.mutedDetail ? "text-muted-foreground" : ""}`} title={item.detail}>{item.detail}</span>
-            <span><span className={`rounded-full px-2 py-0.5 font-mono text-xs ${statusTone(item.status)}`}>{item.status}</span></span>
+            <HttpStatusBadge status={item.status} />
             <span className="text-right font-mono text-xs tabular-nums text-muted-foreground">{item.time ?? ""}</span>
           </button>) : <p className="py-10 text-center text-sm text-muted-foreground">{items.length ? "검색 결과가 없습니다." : emptyHint}</p>}
         </div>
