@@ -2,6 +2,7 @@ import { act, render, screen, within } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 
 import type { Snapshot } from "@/lib/api/types"
+vi.mock("./useGraphWorkspace", async () => ({ useGraphWorkspace: (await import("@/test/graphWorkspace")).useMemoryGraphWorkspace }))
 
 const cytoscapeState = vi.hoisted(() => {
   const cores: { add: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; elements: ReturnType<typeof vi.fn>; fit: ReturnType<typeof vi.fn>; getElementById: ReturnType<typeof vi.fn>; layout: ReturnType<typeof vi.fn>; maxZoom: ReturnType<typeof vi.fn>; nodes: ReturnType<typeof vi.fn>; off: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn>; pan: ReturnType<typeof vi.fn>; viewport: ReturnType<typeof vi.fn>; zoom: ReturnType<typeof vi.fn> }[] = []

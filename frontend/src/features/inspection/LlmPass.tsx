@@ -20,6 +20,7 @@ import {
   useExplorerSteerMutation,
 } from "@/lib/query/hooks"
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
+import { RecordViewButton, type RecordView } from "./RecordView"
 import { AccountLaneTable } from "./AccountLaneTable"
 
 const activeStates = new Set(["AUTHENTICATING", "RUNNING"])
@@ -34,11 +35,25 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : "요청을 처리하지 못했습니다."
 }
 
+function DeclarationCounts({ endpoints, parameters }: { endpoints: number; parameters: number }) {
+  const help = (label: string, text: string) => <Tooltip><TooltipTrigger asChild>
+    <button type="button" aria-label={`${label} 도움말`} className="inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-2"><CircleHelp className="size-3.5" aria-hidden="true" /></button>
+  </TooltipTrigger><TooltipContent className="max-w-72 text-xs leading-relaxed">{text}</TooltipContent></Tooltip>
+  return <div><dt className="text-muted-foreground">근거로 등록한 항목</dt><dd className="mt-1 flex items-center gap-1 font-medium tabular-nums">
+    <TooltipProvider delayDuration={200}>
+      <span>API {endpoints}</span>{help("근거로 등록한 API", "LLM이 화면 코드나 API 문서에서 찾아, 근거와 함께 등록한 API 수입니다. API는 기능을 요청하는 주소입니다. 실제 요청으로 관측한 API와 별도로 세며, 같은 항목은 한 번만 셉니다.")}
+      <span className="mx-1 text-muted-foreground">/</span>
+      <span>입력 필드 {parameters}</span>{help("근거로 등록한 입력 필드", "등록한 API에 보낼 수 있는 입력 항목 수입니다. 예: 검색어, 페이지 번호, ID. 같은 API의 같은 입력 항목은 한 번만 셉니다.")}
+    </TooltipProvider>
+  </dd></div>
+}
+
 /**
  * 점검 시작의 LLM 스텝. 계정은 계정·세션의 등록 계정을 고르고, 세션은 FlowScope가 띄운 브라우저 창에서 사용자가
  * 직접 로그인한 뒤 [로그인 완료]로 가져온다. 그 창은 Burp를 거치지 않아 HUMAN 수집에 섞이지 않는다.
  */
-export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
+export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFocusChange }: {
+  onRecordFocusChange?(focused: boolean): void
   datasetRevision?: number
   target: string
   /** 대상 서비스의 등록 계정. */
@@ -126,10 +141,10 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
           <div><dt>브라우저 동작</dt><dd>{browser.actions}회</dd></div>
           <div><dt className="flex items-center gap-1">화면 상태 조회 횟수<TooltipProvider delayDuration={200}><Tooltip><TooltipTrigger asChild><button type="button" aria-label="화면 상태 조회 횟수 도움말" className="inline-flex size-5 items-center justify-center rounded hover:bg-muted focus-visible:outline-2"><CircleHelp className="size-3.5" aria-hidden="true" /></button></TooltipTrigger><TooltipContent>브라우저 화면 상태를 읽은 횟수입니다.</TooltipContent></Tooltip></TooltipProvider></dt><dd>{browser.snapshots}회</dd></div>
           <div><dt>관측 엔드포인트</dt><dd>{browser.endpoints}개</dd></div>
-          <div><dt>선언 Endpoint / Parameter</dt><dd>{run?.endpointDeclarations ?? 0} / {run?.parameterDeclarations ?? 0}</dd></div>
+          <DeclarationCounts endpoints={run?.endpointDeclarations ?? 0} parameters={run?.parameterDeclarations ?? 0} />
           <div><dt>종료 기준</dt><dd title="동작 또는 시간 상한 중 먼저 도달하면 종료합니다. 창을 닫아도 종료합니다.">{browser.maxActions}회 · {browser.minutes}분</dd></div>
         </dl>
-      </div> : <dl><dt className="text-muted-foreground">선언 Endpoint / Parameter</dt><dd className="mt-1 tabular-nums">{run?.endpointDeclarations ?? 0} / {run?.parameterDeclarations ?? 0}</dd></dl>}
+      </div> : <dl><DeclarationCounts endpoints={run?.endpointDeclarations ?? 0} parameters={run?.parameterDeclarations ?? 0} /></dl>}
     </div>}
   </section> : null
 
@@ -147,20 +162,20 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
         : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
     }
   })
-  const control_ = <div className="grid gap-2">
-    <div className="flex min-h-8 items-center justify-between gap-4">
-      {providerReady && <div className="flex items-center gap-2 text-xs text-muted-foreground" aria-label="Codex 상태"><span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />Codex 준비됨</div>}
-      <div className="ml-auto flex min-w-0 items-center gap-2 text-xs">
-        <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? "Codex 모델" : "요청 모델"}</label>
-        {canConfigure ? <select id="explorer-model" className="h-8 w-[230px] rounded-md border border-input bg-background px-2 text-xs"
+  const modelControl = <div className="flex shrink-0 items-center gap-2 text-sm">
+        <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
+        {canConfigure ? <select id="explorer-model" className="h-9 w-[250px] rounded-md border border-input bg-background px-3 text-sm"
           value={nextModel} disabled={!providerReady || !catalog?.models.length}
           onChange={(event) => setSelectedModel(event.target.value)}>
           <option value="">Codex 기본 설정{catalog?.configuredModel ? ` (${catalog.configuredModel})` : ""}</option>
           {modelUnavailable && <option value={nextModel} disabled>{nextModel} · 현재 사용 불가</option>}
           {(catalog?.models ?? []).map((option) => <option key={option.id} value={option.id}>{option.label}{option.recommended ? " · Codex 추천" : ""}</option>)}
-        </select> : <p className="font-mono text-xs" id="explorer-model">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</p>}
-        {providerReady && canConfigure && <Button type="button" variant="outline" size="icon" className="size-8" disabled={control.isPending || modelLoading} aria-label="모델 목록 다시 확인" title="모델 목록 다시 확인" onClick={() => control.mutate("recheck", { onSuccess: () => void models.refetch() })}><RefreshCw className="size-3.5" /></Button>}
+        </select> : <p className="font-mono text-sm" id="explorer-model">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</p>}
+        {providerReady && canConfigure && <Button type="button" variant="outline" size="icon" className="size-9" disabled={control.isPending || modelLoading} aria-label="모델 목록 다시 확인" title="모델 목록 다시 확인" onClick={() => control.mutate("recheck", { onSuccess: () => void models.refetch() })}><RefreshCw className="size-3.5" /></Button>}
       </div>
+  const control_ = <div className="grid gap-2">
+    <div className="flex min-h-8 items-center justify-between gap-4">
+      {providerReady && <div className="flex items-center gap-2 text-xs text-muted-foreground" aria-label="Codex 상태"><span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />Codex 준비됨</div>}
     </div>
     {models.isError && canConfigure && <p className="text-xs text-amber-800 dark:text-amber-300">모델 목록을 확인하지 못했습니다. Codex 기본 설정으로는 실행할 수 있습니다.</p>}
     {modelLoading && <p className="text-xs text-muted-foreground">현재 계정의 모델 목록을 확인 중입니다.</p>}
@@ -202,10 +217,10 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
       <p role="status" className="text-xs text-muted-foreground">{steer.isPending ? "추가 지시 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : ""}</p>
     </form>
   </>
-  const feed = <Card className="gap-0 overflow-hidden py-0">
-    <CardHeader className="border-b py-3"><div className="flex items-center justify-between gap-3"><CardTitle className="text-base">진행 기록 <span className="ml-2 text-sm font-normal text-muted-foreground">{runStatusLabel(run?.status ?? "IDLE")}</span></CardTitle><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div><p className="break-words text-sm font-medium" aria-live="polite">{run?.message ?? "Explorer 상태를 불러오는 중입니다."}</p></CardHeader>
-    <CardContent className="p-0">
-      {feedOpen && <div className="max-h-[min(24rem,24vh)] overflow-y-auto" aria-label="LLM 진행 메시지 및 수집 트래픽">
+  const feed = (view: RecordView) => <Card className={view.focused ? "flex min-h-0 flex-1 flex-col gap-0 overflow-hidden py-0" : "gap-0 overflow-hidden py-0"}>
+    <CardHeader className="border-b py-3"><div className="flex items-center justify-between gap-3"><CardTitle className="text-base">진행 기록 <span className="ml-2 text-sm font-normal text-muted-foreground">{runStatusLabel(run?.status ?? "IDLE")}</span></CardTitle><div className="flex shrink-0 items-center gap-2"><RecordViewButton view={view} onExpand={() => setFeedOpen(true)} /><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div></div>{view.focused && <p className="text-xs text-muted-foreground">LLM 탐색 · {target} · 실행 모델 {run?.model || "Codex 기본 설정"}</p>}<p className="break-words text-sm font-medium" aria-live="polite">{run?.message ?? "Explorer 상태를 불러오는 중입니다."}</p></CardHeader>
+    <CardContent className={view.focused ? "flex min-h-0 flex-1 flex-col p-0" : "p-0"}>
+      {feedOpen && <div data-record-list className={view.focused ? "min-h-0 flex-1 overflow-y-auto" : "max-h-[min(24rem,24vh)] overflow-y-auto"} style={!view.focused && view.height ? { height: view.height, maxHeight: view.height } : undefined} aria-label="LLM 진행 메시지 및 수집 트래픽">
         {feedItems.length ? feedItems.slice().reverse().map((item) => {
           const http = item.badge === "HTTP" ? item.detail?.match(/\bHTTP (\d{3})/)?.[1] : undefined
           const method = item.title.split(" ")[0]
@@ -216,10 +231,10 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
           </article>
         }) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">실행하면 인증 준비·HTTP 요청·기록 번호가 여기에 순서대로 표시됩니다.</p>}
       </div>}
-      {feedFooter}
+      <div className={view.focused ? "max-h-[40%] shrink-0 overflow-y-auto" : undefined}>{feedFooter}</div>
     </CardContent>
   </Card>
 
-  return <SourcePassLayout label="LLM" title="LLM 탐색" description="LLM이 사람처럼 서비스를 둘러보며 요청을 만듭니다." control={control_} notices={notices}
+  return <SourcePassLayout label="LLM" title="LLM 탐색" titleControl={modelControl} onRecordFocusChange={onRecordFocusChange} description="LLM이 서비스를 둘러보며 API 요청과 응답을 기록합니다." control={control_} notices={notices}
     feedItems={feedItems} feedTitle="진행 기록" emptyHint="" feedContent={feed} />
 }

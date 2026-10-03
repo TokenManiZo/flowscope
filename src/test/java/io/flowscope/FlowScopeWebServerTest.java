@@ -2,6 +2,7 @@ package io.flowscope;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
@@ -26,6 +27,7 @@ import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ProjectWorkspace;
+import io.flowscope.integration.GraphWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -61,6 +63,97 @@ final class FlowScopeWebServerTest {
         if (server != null) server.close();
         state.sessions.close();
         state.zapAccounts.close();
+    }
+
+    @Test void graphWorkspaceApiChecksRevisionsAndAcknowledgesWithoutResendingAllViews() throws Exception {
+        start();
+        long dataset = state.datasetRevision(), analysisRevision = state.revision();
+        JsonNode initial = JSON.readTree(get("/api/graph-workspace", token, null).body());
+        assertEquals(dataset, initial.path("datasetRevision").asLong());
+        var view = new GraphWorkspace.View(Map.of("operation:GET /orders", new GraphWorkspace.Point(700, 125)),
+                Map.of(), new GraphWorkspace.Viewport(1, new GraphWorkspace.Point(5, -2)), List.of());
+        String changes = URLEncoder.encode(JSON.writeValueAsString(new GraphWorkspace.Change(null,
+                Map.of("[\"site\",\"\",\"\"]", view), List.of(), null, null)), StandardCharsets.UTF_8);
+        String body = "datasetRevision=" + dataset + "&revision=0&changes=" + changes;
+        HttpResponse<String> saved = post("/api/graph-workspace", body, token);
+        assertEquals(200, saved.statusCode());
+        JsonNode acknowledgement = JSON.readTree(saved.body());
+        assertEquals(1, acknowledgement.path("revision").asLong());
+        assertFalse(acknowledgement.has("workspace"));
+        assertEquals(analysisRevision, state.revision());
+        assertEquals(409, post("/api/graph-workspace", body, token).statusCode());
+        assertEquals(409, post("/api/graph-workspace", "datasetRevision=" + (dataset + 1) + "&revision=1&changes=" + changes, token).statusCode());
+        assertEquals(1, JSON.readTree(get("/api/graph-workspace", token, null).body()).at("/workspace/views").size());
+        assertEquals(400, post("/api/graph-workspace", "datasetRevision=" + dataset + "&revision=1&changes=null", token).statusCode());
+    }
+
+    @Test void graphWorkspaceAcceptsLongKeysAndAppliesGeometryPatchesAtomically() throws Exception {
+        start();
+        long dataset = state.datasetRevision();
+        String operation = "https://api.test:443 GET /" + "segment/".repeat(300);
+        String node = "operation:" + operation;
+        String viewKey = JSON.writeValueAsString(List.of("operation", "orders", operation));
+        var view = new GraphWorkspace.View(Map.of(node, new GraphWorkspace.Point(540, 200),
+                "hidden", new GraphWorkspace.Point(540, 600)), Map.of(), null, List.of());
+        var change = new GraphWorkspace.Change(new GraphWorkspace.Navigation("operation", "orders", operation, 18, 18, ""),
+                Map.of(viewKey, view), List.of(), null, null);
+        assertEquals(200, post("/api/graph-workspace", "datasetRevision=" + dataset + "&revision=0&changes="
+                + encode(JSON.writeValueAsString(change)), token).statusCode());
+        // Sparse JSON fields use defaults; the omitted viewport must preserve the current viewport.
+        var patch = JSON.createObjectNode();
+        patch.putObject("views");
+        patch.putObject("viewPatches").putObject(viewKey).putObject("positions")
+                .putObject(node).put("x", 650).put("y", 250);
+        String body = "datasetRevision=" + dataset + "&revision=1&changes=" + encode(patch.toString());
+        assertEquals(200, post("/api/graph-workspace", body, token).statusCode());
+        JsonNode saved = JSON.readTree(get("/api/graph-workspace", token, null).body());
+        assertEquals(operation, saved.at("/workspace/navigation/operation").asText());
+        JsonNode positions = saved.at("/workspace/views").get(viewKey).get("positions");
+        assertEquals(650, positions.get(node).get("x").asDouble());
+        assertEquals(600, positions.get("hidden").get("y").asDouble());
+        // Invalid geometry cannot install any portion of the patch or advance the revision.
+        ((ObjectNode) patch.get("viewPatches").get(viewKey).get("positions").get(node)).put("x", 10_000_001);
+        assertEquals(400, post("/api/graph-workspace", "datasetRevision=" + dataset + "&revision=2&changes="
+                + encode(patch.toString()), token).statusCode());
+        assertEquals(2, JSON.readTree(get("/api/graph-workspace", token, null).body()).path("revision").asLong());
+    }
+
+    @Test void graphWorkspaceSavesLargerLayoutsWithOrdinaryShortKeys() throws Exception {
+        start();
+        var changes = JSON.createObjectNode();
+        var view = changes.putObject("views").putObject("site");
+        var positions = view.putObject("positions");
+        for (int index = 0; index < 80; index++) {
+            positions.putObject("operation:GET /orders/" + index).put("x", 540).put("y", index * 100);
+        }
+        view.putObject("sizes");
+        view.putArray("expandedGroups");
+        String encoded = changes.toString();
+        assertTrue(encoded.length() > 2_000);
+        assertEquals(200, post("/api/graph-workspace", "datasetRevision=" + state.datasetRevision()
+                + "&revision=0&changes=" + encode(encoded), token).statusCode());
+        JsonNode saved = JSON.readTree(get("/api/graph-workspace", token, null).body());
+        JsonNode restored = saved.at("/workspace/views/site/positions");
+        assertEquals(80, restored.size());
+        for (int index = 0; index < 80; index++) {
+            JsonNode point = restored.get("operation:GET /orders/" + index);
+            assertEquals(540.0, point.path("x").asDouble());
+            assertEquals(index * 100.0, point.path("y").asDouble());
+        }
+        assertEquals(1, saved.path("revision").asLong());
+    }
+
+    @Test void graphWorkspaceJsonLimitCountsUtf8BytesBeforeParsing() throws Exception {
+        start();
+        String oversized = "{\"views\":{},\"unused\":\"" + "a".repeat(2 * 1024 * 1024 - 2_000) + "한".repeat(1_000) + "\"}";
+        assertTrue(oversized.length() < 2 * 1024 * 1024);
+        assertTrue(oversized.getBytes(StandardCharsets.UTF_8).length > 2 * 1024 * 1024);
+        String body = "datasetRevision=" + state.datasetRevision() + "&revision=0&changes=" + encode(oversized);
+        assertTrue(body.getBytes(StandardCharsets.UTF_8).length < 4 * 1024 * 1024);
+        HttpResponse<String> response = post("/api/graph-workspace", body, token);
+        assertEquals(413, response.statusCode());
+        assertEquals("그래프 작업 상태가 너무 큽니다.", JSON.readTree(response.body()).path("message").asText());
+        assertEquals(0, JSON.readTree(get("/api/graph-workspace", token, null).body()).path("revision").asLong());
     }
 
     @Test
@@ -1378,6 +1471,8 @@ final class FlowScopeWebServerTest {
         private volatile String updatedProject = "";
         private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
                 null, List.of());
+        private GraphWorkspace graphWorkspace = GraphWorkspace.empty();
+        private long graphRevision;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
                 List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_LINK,
@@ -1401,6 +1496,15 @@ final class FlowScopeWebServerTest {
 
         @Override public Pipeline.Result snapshot() { return result; }
         @Override public long revision() { return revision.get(); }
+        @Override public GraphWorkspace.State graphWorkspace() {
+            return new GraphWorkspace.State(datasetRevision(), graphRevision, graphWorkspace);
+        }
+        @Override public GraphWorkspace.State updateGraphWorkspace(long dataset, long expectedRevision, GraphWorkspace.Change change) {
+            if (dataset != datasetRevision() || expectedRevision != graphRevision) throw new IllegalStateException("stale graph workspace");
+            graphWorkspace = change.apply(graphWorkspace);
+            graphRevision++;
+            return graphWorkspace();
+        }
         @Override public AnalysisConfig config() { return config; }
         private List<LegacyAssessment> archivedAssessments = List.of();
         private List<ValidationDecision> archivedValidations = List.of();

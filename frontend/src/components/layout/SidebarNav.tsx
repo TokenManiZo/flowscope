@@ -19,7 +19,7 @@ interface SidebarNavProps {
   onToggleSidebar?: () => void
 }
 
-/** 왼쪽 사이드바 탐색. 핵심 화면은 독립 링크로, 나머지는 '부가 기능' 드롭다운으로 묶으며 현재 화면의 그룹은 항상 펼쳐 둔다. */
+/** 왼쪽 사이드바 탐색. 펼친 상태에서는 부가 기능을 묶고, 접힌 상태에서는 각 아이콘 링크를 바로 표시한다. */
 export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed = false, onToggleSidebar }: SidebarNavProps) {
   const activeGroupId = navigationGroups.find((group) => (group.routes as readonly AppRoute[]).includes(route))?.id
   const [openGroups, setOpenGroups] = useState<readonly NavigationGroupId[]>(() =>
@@ -66,22 +66,18 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
           const Icon = group.icon
           return (
             <div key={group.id} className="mt-2 border-t border-border pt-2">
-              <button
+              {!collapsed && <button
                 type="button"
                 aria-expanded={expanded}
                 onClick={() => toggleGroup(group.id)}
-                className={cn(
-                  "flex h-9 w-full items-center gap-3 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
-                  collapsed && activeGroupId === group.id && "bg-emerald-400/10 text-emerald-600 dark:text-emerald-300",
-                )}
+                className="flex h-9 w-full items-center gap-3 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 <Icon className="size-4 shrink-0" aria-hidden="true" />
                 <span className={cn(label, "flex-1 text-left")}>{group.label}</span>
-                {!collapsed && <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", expanded && "rotate-180")} aria-hidden="true" />}
-              </button>
-              {expanded && (
-                // 접힌 막대에서는 시각적으로만 숨긴다. 링크와 현재 위치는 화면 읽기·키보드 탐색에 그대로 남고, 포커스가 들어오면 막대가 펼쳐진다.
-                <div className={collapsed ? "sr-only" : "ms-4 grid gap-0.5 border-s border-border ps-2"}>
+                <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
+              </button>}
+              {(collapsed || expanded) && (
+                <div className={collapsed ? "grid gap-0.5" : "ms-4 grid gap-0.5 border-s border-border ps-2"}>
                   {group.routes.map((itemRoute) => (
                     <NavLink key={itemRoute} route={itemRoute} active={route === itemRoute} collapsed={collapsed} onNavigate={onNavigate} />
                   ))}

@@ -78,9 +78,18 @@ public final class SqliteProjectStore {
                      List<RouteCandidate> routeCandidates,
                      List<RunExecutionLedger.Attempt> runAttempts,
                      ProjectStore.ProjectContext context) throws IOException {
+        save(target, records, config, assessments, validations, completedRuns, routeCandidates,
+                runAttempts, context, GraphWorkspace.empty());
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
+                     ProjectStore.ProjectContext context, GraphWorkspace graphWorkspace) throws IOException {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = codec.toDocument(records, config, assessments, validations,
-                runs.keySet(), runs, routeCandidates, runAttempts, context);
+                runs.keySet(), runs, routeCandidates, runAttempts, context, graphWorkspace);
         saveDocument(target, root);
     }
 
@@ -129,6 +138,34 @@ public final class SqliteProjectStore {
         } catch (SQLException error) {
             throw new IOException("FlowScope SQLite load failed", error);
         }
+    }
+
+    /** Layout-only checkpoint: transactionally update metadata without re-encoding traffic/payloads. */
+    public void saveGraphWorkspace(Path target, GraphWorkspace workspace) throws IOException {
+        Path absolute = target.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(absolute)) throw new IOException("project database is missing");
+        try (Connection connection = connect(absolute)) {
+            int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
+            if (version < 1 || version > STORAGE_SCHEMA_VERSION) throw new IllegalArgumentException("unsupported project database schema");
+            connection.setAutoCommit(false);
+            try (PreparedStatement metadata = connection.prepareStatement(
+                    "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)")) {
+                putMetadata(metadata, "graph_workspace", json.writeValueAsString(workspace));
+                putMetadata(metadata, "saved_at", java.time.Instant.now().toString());
+                long pages, pageSize;
+                try (Statement statement = connection.createStatement(); ResultSet count = statement.executeQuery("PRAGMA page_count")) {
+                    count.next(); pages = count.getLong(1);
+                }
+                try (Statement statement = connection.createStatement(); ResultSet size = statement.executeQuery("PRAGMA page_size")) {
+                    size.next(); pageSize = size.getLong(1);
+                }
+                if (pages * pageSize > MAX_FILE_BYTES) throw new IllegalArgumentException("project database exceeds 100 MiB");
+                connection.commit();
+            } catch (SQLException | IOException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            }
+        } catch (SQLException error) { throw new IOException("FlowScope graph workspace save failed", error); }
     }
 
     /** Reads only non-secret project metadata for the workspace picker. */
@@ -223,6 +260,7 @@ public final class SqliteProjectStore {
             putMetadata(metadata, "traffic_classifier_version", root.path("traffic_classifier_version").asText());
             putMetadata(metadata, "saved_at", root.path("saved_at").asText());
             putMetadata(metadata, "project_context", json.writeValueAsString(root.path("project")));
+            putMetadata(metadata, "graph_workspace", json.writeValueAsString(root.path("graphWorkspace")));
 
             int index = 0;
             for (JsonNode value : root.path("records")) {
@@ -339,6 +377,8 @@ public final class SqliteProjectStore {
         root.put("saved_at", readMetadata(connection, "saved_at"));
         String projectContext = readOptionalMetadata(connection, "project_context");
         if (projectContext != null) root.set("project", json.readTree(projectContext));
+        String graphWorkspace = readOptionalMetadata(connection, "graph_workspace");
+        if (graphWorkspace != null) root.set("graphWorkspace", json.readTree(graphWorkspace));
         ArrayNode records = root.putArray("records");
         readDocuments(connection, "SELECT document FROM records ORDER BY seq", records);
         ObjectNode payloads = root.putObject("payloads");

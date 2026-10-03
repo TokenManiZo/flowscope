@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react"
+import { act, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
@@ -46,7 +46,7 @@ it("offers account models and sends the chosen one with the anonymous run", asyn
   expect(screen.queryByLabelText("표시 이름")).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: "메모리에 계정 등록" })).not.toBeInTheDocument()
 
-  const model = await screen.findByRole("combobox", { name: "Codex 모델" })
+  const model = await screen.findByRole("combobox", { name: /탐색 모델/ })
   await waitFor(() => expect(model).toHaveValue("gpt-5.6-sol"))
   await user.selectOptions(model, "gpt-6.1-sol")
   await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
@@ -82,7 +82,7 @@ it("restores the completed run model for the next editable run after returning t
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
 
   await screen.findByText("완료")
-  const model = screen.getByRole("combobox", { name: "Codex 모델" })
+  const model = screen.getByRole("combobox", { name: /탐색 모델/ })
   await waitFor(() => expect(model).toHaveValue("gpt-6.1-sol"))
   await user.selectOptions(model, "gpt-5.6-sol")
   expect(model).toHaveValue("gpt-5.6-sol")
@@ -113,7 +113,7 @@ it("reuses only visible ready account choices when restarting a completed run", 
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
 
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "Codex 모델" })).toHaveValue("gpt-6.1-sol"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: /탐색 모델/ })).toHaveValue("gpt-6.1-sol"))
   await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
   expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
@@ -138,7 +138,7 @@ it("does not silently resend an expired account from a completed run", async () 
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
 
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "Codex 모델" })).toHaveValue("gpt-6.1-sol"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: /탐색 모델/ })).toHaveValue("gpt-6.1-sol"))
   await userEvent.setup().click(screen.getByRole("button", { name: /^탐색할 계정/ }))
   expect(screen.getByRole("checkbox", { name: "USER A" })).toBeDisabled()
   expect(screen.getByRole("checkbox", { name: "USER A" })).not.toBeChecked()
@@ -172,7 +172,7 @@ it("names an unavailable previous model and requires a new visible choice", asyn
   expect(await screen.findByText(/선택 모델이 현재 목록에 없습니다/)).toBeVisible()
   expect(screen.getByRole("option", { name: /gpt-6.1-sol.*사용 불가/ })).toBeDisabled()
   expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeDisabled()
-  await user.selectOptions(screen.getByRole("combobox", { name: "Codex 모델" }), "gpt-5.6-sol")
+  await user.selectOptions(screen.getByRole("combobox", { name: /탐색 모델/ }), "gpt-5.6-sol")
   await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
   await waitFor(() => expect(posts[0]).toContain("model=gpt-5.6-sol"))
 })
@@ -199,7 +199,7 @@ it("uses the visible Codex default after a completed run when the model catalog 
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
   expect(await screen.findByText(/모델 목록을 확인하지 못했습니다/)).toBeVisible()
-  expect(screen.getByRole("combobox", { name: "Codex 모델" })).toHaveValue("")
+  expect(screen.getByRole("combobox", { name: /탐색 모델/ })).toHaveValue("")
   await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
   await waitFor(() => expect(posts[0]).toContain("model="))
 })
@@ -359,9 +359,9 @@ it("keeps the completed run details when choosing a different model for the next
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
 
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "Codex 모델" })).toHaveValue("gpt-6.1-sol"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: /탐색 모델/ })).toHaveValue("gpt-6.1-sol"))
   await user.click(screen.getByRole("button", { name: /^실행 세부정보/ }))
-  await user.selectOptions(screen.getByRole("combobox", { name: "Codex 모델" }), "gpt-5.6-sol")
+  await user.selectOptions(screen.getByRole("combobox", { name: /탐색 모델/ }), "gpt-5.6-sol")
   expect(screen.getByLabelText("지난 실행 요청 모델")).toHaveTextContent("gpt-6.1-sol")
   expect(within(screen.getByRole("group", { name: "브라우저 탐색 진행" })).getByText("00:10")).toBeVisible()
   await user.click(screen.getByRole("button", { name: /탐색 시작/ }))
@@ -393,4 +393,47 @@ it("keeps work messages and reports transmission success and retryable failure",
   await user.click(screen.getByRole("button", { name: "진행 기록 접기" }))
   expect(screen.queryByText("현재 프로젝트 상세에서 항목을 읽습니다.")).not.toBeInTheDocument()
   expect(screen.getByText("프로젝트 상세 탐색 중")).toBeVisible()
+})
+
+it.each([true, false])("explains API and input counts independently, with browser metrics=%s", async (hasBrowser) => {
+  const user = userEvent.setup()
+  const terminal = { ...idle, run: { ...idle.run, status: "COMPLETED", runId: "help-run",
+    endpointDeclarations: 12, parameterDeclarations: 24 },
+    ...(hasBrowser ? { browser: { actions: 8, maxActions: 300, snapshots: 4, endpoints: 2, elapsedMillis: 10000, minutes: 15 } } : {}) }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/explorer-models"
+    ? catalogResponse() : new Response(JSON.stringify(terminal))))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  await user.click(await screen.findByRole("button", { name: /^실행 세부정보/ }))
+  expect(screen.getByText("API 12")).toBeVisible()
+  expect(screen.getByText("입력 필드 24")).toBeVisible()
+  await user.hover(screen.getByRole("button", { name: "근거로 등록한 API 도움말" }))
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("실제 요청으로 관측한 API와 별도로")
+  await user.keyboard("{Escape}")
+  act(() => screen.getByRole("button", { name: "근거로 등록한 입력 필드 도움말" }).focus())
+  await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent("검색어, 페이지 번호, ID"))
+})
+
+it("enlarges LLM messages without losing the instruction draft or changing the active run", async () => {
+  const user = userEvent.setup()
+  const running = { ...idle, run: { ...idle.run, status: "RUNNING", runId: "reading-run", model: "gpt-6.1-sol",
+    message: "프로젝트 화면 탐색 중", activities: [{ sequence: 1, kind: "MODEL", title: "프로젝트 확인", detail: "멤버 목록을 확인합니다.", status: "RUNNING" }] } }
+  const fetchStub = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(running)))
+  vi.stubGlobal("fetch", fetchStub)
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  await screen.findByRole("button", { name: /중단/ })
+  await user.type(await screen.findByRole("textbox", { name: "Explorer에게 추가 지시" }), "프로필 확인")
+  const list = screen.getByLabelText("LLM 진행 메시지 및 수집 트래픽")
+  list.scrollTop = 42
+  await user.click(screen.getByRole("button", { name: "크게 보기" }))
+  expect(screen.getByText("프로젝트 화면 탐색 중")).toBeVisible()
+  expect(screen.getByText("멤버 목록을 확인합니다.")).toBeVisible()
+  expect(screen.getByRole("textbox", { name: "Explorer에게 추가 지시" })).toHaveValue("프로필 확인")
+  expect(screen.getByLabelText("LLM 진행 메시지 및 수집 트래픽")).toBe(list)
+  expect(list.scrollTop).toBe(42)
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+  await user.keyboard("{Escape}")
+  expect(screen.getByRole("button", { name: "크게 보기" })).toHaveFocus()
+  expect(screen.getByRole("textbox", { name: "Explorer에게 추가 지시" })).toHaveValue("프로필 확인")
+  expect(screen.getByRole("button", { name: /중단/ })).toBeEnabled()
+  expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
 })
