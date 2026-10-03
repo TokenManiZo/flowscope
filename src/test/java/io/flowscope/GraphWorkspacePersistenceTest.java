@@ -85,4 +85,65 @@ final class GraphWorkspacePersistenceTest {
         assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Size(700, 100));
         assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Change(null, Map.of("token=SECRET", site), List.of(), null, null));
     }
+
+    @Test void longOperationKeysRoundTripWithoutTruncatingOrMergingPaths() throws Exception {
+        String first = "https://api.test:443 GET /" + "segment/".repeat(300) + "a";
+        String second = first.substring(0, first.length() - 1) + "b";
+        var navigation = new GraphWorkspace.Navigation("operation", "orders", first, 18, 18, "");
+        String key = new ObjectMapper().writeValueAsString(List.of("operation", "orders", first));
+        var view = new GraphWorkspace.View(Map.of("operation:" + first, new GraphWorkspace.Point(540, 200),
+                "operation:" + second, new GraphWorkspace.Point(540, 400)),
+                Map.of("operation:" + first, new GraphWorkspace.Size(300, 140)), null, List.of("operation-group:" + first));
+        var workspace = new GraphWorkspace(1, navigation, Map.of(key, view), false, "auto");
+        var codec = new ProjectStore();
+        var sqlite = new SqliteProjectStore(codec);
+        Path file = temp.resolve("long.json"), database = temp.resolve("long.db");
+        codec.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(),
+                ProjectStore.ProjectContext.empty(), workspace);
+        sqlite.save(database, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(),
+                ProjectStore.ProjectContext.empty(), workspace);
+        assertEquals(workspace, codec.load(file).graphWorkspace());
+        assertEquals(workspace, sqlite.load(database).graphWorkspace());
+        sqlite.saveGraphWorkspace(database, workspace);
+        assertEquals(workspace, sqlite.load(database).graphWorkspace());
+    }
+
+    @Test void graphTextLimitCountsUtf8BytesAndStillRejectsSecrets() {
+        String boundary = "x".repeat(64 * 1024);
+        assertDoesNotThrow(() -> new GraphWorkspace.Navigation("operation", "", boundary, 18, 18, ""));
+        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Navigation("operation", "", boundary + "x", 18, 18, ""));
+        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Navigation("operation", "", "한".repeat(22_000), 18, 18, ""));
+        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Navigation("operation", "", "GET /orders?token=SECRET", 18, 18, ""));
+    }
+
+    @Test void viewPatchMovesOneNodeAndPreservesHiddenNodesAndOtherViews() {
+        var original = layout();
+        var view = original.views().get(VIEW);
+        var hidden = new GraphWorkspace.Point(700, 800);
+        var withHidden = new GraphWorkspace.View(Map.of("visible", new GraphWorkspace.Point(700, 200), "hidden", hidden),
+                Map.of("hidden", new GraphWorkspace.Size(300, 180)), view.viewport(), List.of("object-group:orders"));
+        var workspace = new GraphWorkspace(1, original.navigation(), Map.of(VIEW, withHidden, "other", view), false, "auto");
+        var patch = new GraphWorkspace.ViewPatch(Map.of("visible", new GraphWorkspace.Point(750, 250)), List.of(),
+                Map.of(), List.of(), null, false, null);
+        var changed = new GraphWorkspace.Change(null, Map.of(), List.of(), null, null, Map.of(VIEW, patch)).apply(workspace);
+        assertEquals(new GraphWorkspace.Point(750, 250), changed.views().get(VIEW).positions().get("visible"));
+        assertEquals(hidden, changed.views().get(VIEW).positions().get("hidden"));
+        assertEquals(withHidden.sizes(), changed.views().get(VIEW).sizes());
+        assertEquals(withHidden.viewport(), changed.views().get(VIEW).viewport());
+        assertEquals(withHidden.expandedGroups(), changed.views().get(VIEW).expandedGroups());
+        assertEquals(view, changed.views().get("other"));
+        assertEquals(new GraphWorkspace.Point(700, 200), workspace.views().get(VIEW).positions().get("visible"));
+    }
+
+    @Test void viewPatchCanClearGeometryAndRejectsConflictingInstructions() {
+        var original = layout();
+        var patch = new GraphWorkspace.ViewPatch(Map.of(), List.of("operation:GET /orders"), Map.of(),
+                List.of("operation:GET /orders"), null, true, List.of());
+        var changed = new GraphWorkspace.Change(null, Map.of(), List.of(), null, null, Map.of(VIEW, patch)).apply(original);
+        assertEquals(new GraphWorkspace.View(Map.of(), Map.of(), null, List.of()), changed.views().get(VIEW));
+        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Change(null, original.views(), List.of(), null, null, Map.of(VIEW, patch)));
+        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Change(null, Map.of(), List.of(VIEW), null, null, Map.of(VIEW, patch)));
+        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.ViewPatch(Map.of("a", new GraphWorkspace.Point(1, 2)), List.of("a"), Map.of(), List.of(), null, false, null));
+        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.ViewPatch(Map.of("__proto__", new GraphWorkspace.Point(1, 2)), List.of(), Map.of(), List.of(), null, false, null));
+    }
 }

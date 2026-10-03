@@ -27,6 +27,7 @@ HUMAN·SCANNER·LLM 관측 ─┴─▶ Endpoint·Parameter Delta ─▶ 인가 
 - 모든 source에 대한 exact scope Evidence 수집. HUMAN은 Burp로 다른 사이트를 방문할 수 있지만 범위 밖 응답은 FlowScope에 저장하거나 그래프로 만들지 않음
 - HUMAN/SCANNER/LLM 필터와 직교 edge를 지원하는 인가 그래프. React 화면은 사이트 개요(Target→API 그룹) → API 보기(신원→API) → 객체 보기(신원→API→접근 대상 ID) 세 단계로 내려가며, API·접근 대상 ID는 18개씩 `18개 더 보기 (N개 남음)`으로 늘립니다. 표시 노드는 서버 권한 셀과 Evidence ID를 그대로 들고 있어 Fact Core의 `Evidence × Identity × API × Resource × Source × Run × HTTP outcome` 관계를 삭제하거나 합치지 않습니다. 미교차 후보는 중립 점선 경로로만 표시하고 Evidence로 만들지 않습니다.
 - 그래프의 프로젝트·보기별 노드 위치·크기, 확대율·화면 위치, 자동 묶음 펼침과 위치 잠금을 SQLite·JSON에 저장합니다. 다른 화면·계층을 다녀오거나 snapshot이 갱신되어도 기존 좌표를 유지하고 새 노드만 배치합니다. 레인 제목 클릭은 해당 레인만, 기존 필터의 재정렬은 전체 레인을 정렬하며 카드 크기와 viewport를 유지합니다. 화면 맞추기는 viewport만 변경합니다. 배치만 변경한 checkpoint는 트래픽·payload를 다시 쓰지 않습니다. 이전 브라우저 배치는 처음 열린 빈 그래프 workspace에 한 번 이관됩니다.
+- 신규 카드 배치는 접힘·표시 제한 밖의 저장 좌표도 예약하며 숨긴 카드에는 허용 높이 상한을 적용합니다. 기존 보기의 저장은 변경된 좌표·크기·viewport만 전송하고, 이동·크기 변경은 즉시 전송합니다. 연속 viewport 변경은 250ms 모으되 최대 1초 안에 전송을 시작합니다. 긴 그래프 키는 UTF-8 64KiB까지 허용하며 변경 JSON의 2MiB 제한은 유지합니다. 저장 실패 시 `다시 저장`은 현재 배치를 유지하고 재시도하며, `저장된 배치 다시 불러오기`는 미저장 변경을 버립니다. 서버가 아직 수락하지 않은 배치가 있으면 브라우저 종료 안내를 요청합니다. 종료 안내·keepalive는 강제 종료에 대한 저장 보장이 아니며, Burp의 API 수락과 30초 DB checkpoint 완료는 별개입니다.
 - 원본 URL은 보존하고, UUID/긴 16진 형식·성공 응답 ID 일치·같은 위치의 복수 값/독립 관측을 근거로 operation 경로를 자동 묶음. `LITERAL/INFERRED/CORROBORATED`와 이유를 상세에 표시
 - `신원 × 작업 × 접근 대상 ID` 커버리지 매트릭스, 미교차 조합, 일부만 발견, source 간 판정 불일치
 - 응답 분류, 명시적 소유자 Evidence, 사용자가 입력한 역할 정책을 이용하는 결정론적 BOLA/IDOR·BFLA 후보 엔진

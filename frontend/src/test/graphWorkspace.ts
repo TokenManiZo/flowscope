@@ -4,5 +4,5 @@ import { emptyGraphWorkspace, type GraphWorkspace } from "@/features/graph/graph
 /** Screen-only fixtures; persistence is covered separately by workspace and API regressions. */
 export function useMemoryGraphWorkspace() {
   const [workspace, update] = useState<GraphWorkspace>(emptyGraphWorkspace)
-  return { workspace, update, error: "", saving: false, reload: async () => {} }
+  return { workspace, update, error: "", saving: false, reload: async () => {}, retry: async () => {} }
 }

@@ -86,6 +86,46 @@ final class FlowScopeWebServerTest {
         assertEquals(400, post("/api/graph-workspace", "datasetRevision=" + dataset + "&revision=1&changes=null", token).statusCode());
     }
 
+    @Test void graphWorkspaceAcceptsLongKeysAndAppliesGeometryPatchesAtomically() throws Exception {
+        start();
+        long dataset = state.datasetRevision();
+        String operation = "https://api.test:443 GET /" + "segment/".repeat(300);
+        String node = "operation:" + operation;
+        String viewKey = JSON.writeValueAsString(List.of("operation", "orders", operation));
+        var view = new GraphWorkspace.View(Map.of(node, new GraphWorkspace.Point(540, 200),
+                "hidden", new GraphWorkspace.Point(540, 600)), Map.of(), null, List.of());
+        var change = new GraphWorkspace.Change(new GraphWorkspace.Navigation("operation", "orders", operation, 18, 18, ""),
+                Map.of(viewKey, view), List.of(), null, null);
+        assertEquals(200, post("/api/graph-workspace", "datasetRevision=" + dataset + "&revision=0&changes="
+                + encode(JSON.writeValueAsString(change)), token).statusCode());
+        // Sparse JSON fields use defaults; the omitted viewport must preserve the current viewport.
+        var patch = JSON.createObjectNode();
+        patch.putObject("views");
+        patch.putObject("viewPatches").putObject(viewKey).putObject("positions")
+                .putObject(node).put("x", 650).put("y", 250);
+        String body = "datasetRevision=" + dataset + "&revision=1&changes=" + encode(patch.toString());
+        assertEquals(200, post("/api/graph-workspace", body, token).statusCode());
+        JsonNode saved = JSON.readTree(get("/api/graph-workspace", token, null).body());
+        assertEquals(operation, saved.at("/workspace/navigation/operation").asText());
+        JsonNode positions = saved.at("/workspace/views").get(viewKey).get("positions");
+        assertEquals(650, positions.get(node).get("x").asDouble());
+        assertEquals(600, positions.get("hidden").get("y").asDouble());
+        // Invalid geometry cannot install any portion of the patch or advance the revision.
+        ((ObjectNode) patch.get("viewPatches").get(viewKey).get("positions").get(node)).put("x", 10_000_001);
+        assertEquals(400, post("/api/graph-workspace", "datasetRevision=" + dataset + "&revision=2&changes="
+                + encode(patch.toString()), token).statusCode());
+        assertEquals(2, JSON.readTree(get("/api/graph-workspace", token, null).body()).path("revision").asLong());
+    }
+
+    @Test void graphWorkspaceJsonLimitCountsUtf8BytesBeforeParsing() throws Exception {
+        start();
+        String oversized = "{\"views\":{},\"unused\":\"" + "한".repeat(700_000) + "\"}";
+        assertTrue(oversized.length() < 2 * 1024 * 1024);
+        assertEquals(413, post("/api/graph-workspace", "datasetRevision=" + state.datasetRevision()
+                + "&revision=0&changes=" + encode(oversized), token).statusCode());
+        assertEquals(0, JSON.readTree(get("/api/graph-workspace", token, null).body()).path("revision").asLong());
+    }
+
     @Test
     void redirectsAppMountToTrailingSlash() throws Exception {
         start();
