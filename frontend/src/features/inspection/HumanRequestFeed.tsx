@@ -84,7 +84,7 @@ function HumanRawDialog({ eventId, open, onOpenChange }: { eventId: string | nul
           </div>
         </div>}
       </div>
-      <DialogFooter><Button type="button" variant="outline" onClick={close}>닫기</Button></DialogFooter>
+      <DialogFooter className="mx-0 mb-0 px-5"><Button type="button" variant="outline" onClick={close}>닫기</Button></DialogFooter>
     </DialogContent>
   </Dialog>
 }

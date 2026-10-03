@@ -591,6 +591,8 @@ it("keeps the existing ZAP settings table and selection when accounts are folded
   await user.click(account)
   expect(screen.getAllByRole("button", { name: /설정/ }).length).toBeGreaterThan(0)
   await user.click(screen.getByRole("button", { name: "ZAP 계정 접기" }))
+  expect(screen.getByRole("button", { name: "ZAP 계정 펼치기" })).toHaveTextContent("스캔할 계정")
+  expect(screen.getByRole("button", { name: "ZAP 계정 펼치기" })).toHaveTextContent("활성 계정")
   expect(screen.queryByRole("checkbox", { name: "활성 계정" })).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "ZAP 계정 펼치기" }))
   expect(screen.getByRole("checkbox", { name: "활성 계정" })).toBeChecked()
