@@ -60,6 +60,12 @@ final class CodexAppServerProtocolTest {
                         String method = message.path("method").asText("");
                         switch (method) {
                             case "initialize" -> reply(message, "{}");
+                            case "config/read" -> reply(message, "{\"config\":{\"model\":\"gpt-5.6-sol\"}}");
+                            case "model/list" -> reply(message, "{\"data\":["
+                                    + "{\"id\":\"gpt-6.1-sol\",\"model\":\"gpt-6.1-sol\","
+                                    + "\"displayName\":\"GPT-6.1 Sol\",\"isDefault\":true},"
+                                    + "{\"id\":\"gpt-5.6-sol\",\"model\":\"gpt-5.6-sol\","
+                                    + "\"displayName\":\"GPT-5.6 Sol\",\"isDefault\":false}],\"nextCursor\":null}");
                             case "thread/start" -> reply(message, "{\"thread\":{\"id\":\"t1\"}}");
                             case "thread/delete" -> reply(message, "{}");
                             case "turn/start" -> {
@@ -127,6 +133,43 @@ final class CodexAppServerProtocolTest {
         return new ExplorerProvider.Request("run-1", "https://app.example.test/",
                 List.of("https://app.example.test/"), List.of(),
                 "http://127.0.0.1:1/request", "http://127.0.0.1:1/discoveries", "token", "prompt");
+    }
+
+    @Test
+    void listsAccountModelsAndSendsTheChosenModelWithoutChangingCodexDefaults() throws Exception {
+        AtomicReference<FakeCodex> runProcess = new AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger launches = new java.util.concurrent.atomic.AtomicInteger();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    launches.incrementAndGet();
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        try { self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}"); }
+                        catch (IOException ignored) { }
+                    });
+                    runProcess.set(fake);
+                    return fake;
+                }, ignored -> { })) {
+            ExplorerProvider.ModelCatalog catalog = provider.models();
+            assertEquals("gpt-5.6-sol", catalog.configuredModel());
+            assertEquals(List.of("gpt-6.1-sol", "gpt-5.6-sol"),
+                    catalog.models().stream().map(ExplorerProvider.ModelOption::id).toList());
+            assertTrue(catalog.models().getFirst().recommended());
+            assertEquals(catalog, provider.models());
+            assertEquals(1, launches.get(), "polling must not start another app-server process");
+
+            ExplorerProvider.Request base = request();
+            FakeCodex catalogProcess = runProcess.get();
+            provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
+                    base.accountHandles(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(),
+                    base.prompt(), "gpt-6.1-sol"), listener(capture));
+            for (int tries = 0; tries < 100 && runProcess.get() == catalogProcess; tries++) Thread.sleep(20);
+            FakeCodex active = runProcess.get();
+            assertNotSame(catalogProcess, active);
+            JsonNode thread = active.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
+            assertEquals("gpt-6.1-sol", thread.path("params").path("model").asText());
+            assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+        }
     }
 
     private record Capture(CountDownLatch done, AtomicReference<ExplorerProvider.Result> result,

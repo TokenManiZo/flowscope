@@ -10,6 +10,7 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -20,6 +21,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -27,7 +29,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -57,6 +62,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     private volatile Session active;
     private volatile String cachedReadiness = "확인 전";
     private volatile long readinessCheckedAt;
+    private volatile ModelCatalog cachedModels;
+    private volatile long modelsCheckedAt;
 
     public CodexAppServerProvider() { this(ignored -> { }); }
 
@@ -115,6 +122,97 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     @Override public synchronized void invalidateReadiness() {
         cachedReadiness = "확인 전";
         readinessCheckedAt = 0;
+        cachedModels = null;
+        modelsCheckedAt = 0;
+    }
+
+    @Override public synchronized ModelCatalog models() {
+        if (closed.get()) throw new IllegalStateException("Codex 공급자가 종료됐습니다.");
+        long now = System.currentTimeMillis();
+        if (cachedModels != null && now - modelsCheckedAt < 60_000) return cachedModels;
+        String path = executable.get();
+        if (path == null) throw new IllegalStateException("Codex CLI를 찾지 못했습니다.");
+        Process process = null;
+        FutureTask<ModelCatalog> task = null;
+        try {
+            process = launcher.start(List.of(path, "app-server"), Path.of(System.getProperty("java.io.tmpdir")), Map.of());
+            Process running = process;
+            Thread.ofVirtual().name("flowscope-codex-model-errors").start(() -> {
+                try { running.getErrorStream().transferTo(OutputStream.nullOutputStream()); }
+                catch (IOException ignored) { }
+            });
+            task = new FutureTask<>(() -> readModelCatalog(running));
+            Thread.ofVirtual().name("flowscope-codex-model-list").start(task);
+            ModelCatalog catalog = task.get(15, TimeUnit.SECONDS);
+            cachedModels = catalog;
+            modelsCheckedAt = now;
+            return catalog;
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Codex 모델 목록 확인이 중단됐습니다.");
+        } catch (ExecutionException | TimeoutException | IOException error) {
+            throw new IllegalStateException("Codex 모델 목록을 가져오지 못했습니다. CLI 로그인과 app-server 호환성을 확인하세요.");
+        } finally {
+            if (task != null) task.cancel(true);
+            terminate(process);
+        }
+    }
+
+    private static ModelCatalog readModelCatalog(Process process) throws IOException {
+        try (BufferedWriter output = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+             BufferedReader input = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            ObjectNode init = JSON.createObjectNode().put("method", "initialize").put("id", 1);
+            init.putObject("params").putObject("clientInfo")
+                    .put("name", "flowscope").put("title", "FlowScope Explorer").put("version", "1.2.0");
+            writeCatalogMessage(output, init);
+            readCatalogResponse(input, 1);
+            writeCatalogMessage(output, JSON.createObjectNode().put("method", "initialized")
+                    .set("params", JSON.createObjectNode()));
+            ObjectNode config = JSON.createObjectNode().put("method", "config/read").put("id", 2);
+            config.putObject("params").put("includeLayers", false);
+            writeCatalogMessage(output, config);
+            JsonNode configResponse = readCatalogResponse(input, 2);
+            String configured = configResponse.path("result").path("config").path("model").asText("");
+
+            Map<String, ModelOption> found = new LinkedHashMap<>();
+            String cursor = "";
+            for (int page = 0; page < 20; page++) {
+                ObjectNode list = JSON.createObjectNode().put("method", "model/list").put("id", 3 + page);
+                ObjectNode params = list.putObject("params").put("limit", 100).put("includeHidden", false);
+                if (!cursor.isBlank()) params.put("cursor", cursor);
+                writeCatalogMessage(output, list);
+                JsonNode response = readCatalogResponse(input, 3 + page);
+                if (response.has("error")) throw new IOException("Codex model/list 요청이 거부됐습니다.");
+                for (JsonNode item : response.path("result").path("data")) {
+                    String id = item.path("model").asText("");
+                    if (id.isBlank() || item.path("hidden").asBoolean(false)) continue;
+                    String label = item.path("displayName").asText(id);
+                    found.putIfAbsent(id, new ModelOption(id, label, item.path("isDefault").asBoolean(false)));
+                }
+                cursor = response.path("result").path("nextCursor").asText("");
+                if (cursor.isBlank()) {
+                    if (found.isEmpty()) throw new IOException("Codex 계정에 표시 가능한 모델이 없습니다.");
+                    return new ModelCatalog(found.containsKey(configured) ? configured : "", List.copyOf(found.values()));
+                }
+            }
+            throw new IOException("Codex 모델 목록 페이지 상한에 도달했습니다.");
+        }
+    }
+
+    private static void writeCatalogMessage(BufferedWriter output, JsonNode message) throws IOException {
+        output.write(message.toString());
+        output.newLine();
+        output.flush();
+    }
+
+    private static JsonNode readCatalogResponse(BufferedReader input, long id) throws IOException {
+        String line;
+        while ((line = input.readLine()) != null) {
+            if (line.length() > LINE_LIMIT) throw new IOException("Codex 모델 응답 크기 상한을 넘었습니다.");
+            JsonNode message = JSON.readTree(line);
+            if (message.path("id").asLong(-1) == id) return message;
+        }
+        throw new IOException("Codex 모델 응답 전에 연결이 종료됐습니다.");
     }
 
     @Override public synchronized Handle start(Request request, Listener listener) {
@@ -444,6 +542,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
                     .put("serviceName", "flowscope_explorer").put("ephemeral", true)
                     .put("developerInstructions", request.prompt());
+            if (!request.model().isBlank()) params.put("model", request.model());
             params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(artifactListTool())
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
@@ -764,6 +863,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         ProcessBuilder builder = new ProcessBuilder(command).directory(cwd.toFile()).redirectError(error);
         Map<String, String> environment = builder.environment();
         environment.remove("OPENAI_API_KEY");
+        // 다른 공급자 자격증명이 Codex 자식 프로세스로 새지 않게 한다. Claude 실행 경로는 없다.
         environment.remove("ANTHROPIC_API_KEY");
         environment.putAll(required);
         Path executable = Path.of(command.getFirst()).toAbsolutePath().normalize();

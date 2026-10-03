@@ -6,8 +6,21 @@ import java.util.List;
 /** LLM 공급자와 Explorer 코어 사이의 streaming 계약. */
 public interface ExplorerProvider extends AutoCloseable {
     record Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
-                   String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt) {
-        public Request { exactScope = List.copyOf(exactScope); accountHandles = List.copyOf(accountHandles); }
+                   String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model) {
+        public Request {
+            exactScope = List.copyOf(exactScope);
+            accountHandles = List.copyOf(accountHandles);
+            model = model == null ? "" : model;
+        }
+        public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
+                       String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt) {
+            this(runId, target, exactScope, accountHandles, gatewayUrl, discoveryUrl, gatewayToken, prompt, "");
+        }
+    }
+
+    record ModelOption(String id, String label, boolean recommended) {}
+    record ModelCatalog(String configuredModel, List<ModelOption> models) {
+        public ModelCatalog { models = List.copyOf(models); }
     }
 
     record Activity(Instant at, String kind, String title, String detail, String status,
@@ -31,6 +44,7 @@ public interface ExplorerProvider extends AutoCloseable {
     }
 
     String readiness();
+    default ModelCatalog models() { return new ModelCatalog("", List.of()); }
     default void invalidateReadiness() {}
     Handle start(Request request, Listener listener);
     @Override void close();

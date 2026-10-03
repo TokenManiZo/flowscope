@@ -26,6 +26,7 @@ import {
   startScannerRun,
   unbindSession,
   getExplorerRun,
+  getExplorerModels,
   startExplorerRun,
   controlExplorerRun,
   steerExplorerRun,
@@ -53,6 +54,7 @@ export const queryKeys = {
   zapStatus: ["zap-status"] as const,
   scannerRun: ["scanner-run"] as const,
   explorerRun: ["explorer-run"] as const,
+  explorerModels: ["explorer-models"] as const,
   projects: ["projects"] as const,
 }
 
@@ -117,6 +119,10 @@ export function useScannerRunQuery() {
 }
 export function useExplorerRunQuery() {
   return useQuery({ queryKey: queryKeys.explorerRun, queryFn: ({ signal }) => getExplorerRun(signal), ...pollingOptions })
+}
+export function useExplorerModelsQuery(enabled: boolean) {
+  return useQuery({ queryKey: queryKeys.explorerModels, queryFn: ({ signal }) => getExplorerModels(signal),
+    enabled, staleTime: 60_000, retry: false, refetchOnWindowFocus: false })
 }
 
 function useInvalidatingMutation<TData, TVariables>(

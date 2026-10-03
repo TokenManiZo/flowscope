@@ -32,6 +32,7 @@ import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.explorer.ExplorerProvider;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.RunExecutionLedger;
@@ -173,6 +174,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default ExplorerCoordinator.Snapshot explorerStatus() {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
+        default ExplorerProvider.ModelCatalog explorerModels() {
+            throw new UnsupportedOperationException("Explorer model list is unavailable");
+        }
         default List<ExplorerAccountVault.View> explorerAccounts() { return List.of(); }
         /** Null when no window is being driven, so the UI shows the browser card only while one is. */
         default ExplorerCoordinator.BrowserBudget explorerBrowserBudget() { return null; }
@@ -303,6 +307,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/zap-accounts" -> zapAccounts(request);
             case "/api/scanner-run" -> scannerRun(request);
             case "/api/explorer-run" -> explorerRun(request);
+            case "/api/explorer-models" -> explorerModels(request);
             case "/api/explorer-accounts" -> explorerAccounts(request);
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-xml" -> importXml(request, target);
@@ -1318,7 +1323,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     List<String> accounts = java.util.Arrays.stream(form.getOrDefault("accounts", "").split(","))
                             .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
                     boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous", "true"));
-                    snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous));
+                    snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous,
+                            form.getOrDefault("model", "")));
                     status = 202;
                 }
                 case "steer" -> snapshot = state.steerExplorer(required(form, "message"));
@@ -1332,6 +1338,18 @@ public final class FlowScopeWebServer implements AutoCloseable {
             return json(status, body);
         } catch (RuntimeException error) {
             return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response explorerModels(LoopbackHttpServer.Request request) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        try {
+            return response(200, "application/json; charset=utf-8",
+                    json.writeValueAsBytes(state.explorerModels()));
+        } catch (UnsupportedOperationException error) {
+            return error(501, error.getMessage());
+        } catch (IllegalStateException error) {
+            return error(503, error.getMessage());
         }
     }
 
@@ -1380,6 +1398,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("elapsedMillis", value.elapsedMillis());
         body.put("message", value.message());
         body.put("providerReadiness", value.providerReadiness());
+        body.put("model", value.model());
         body.set("accountIds", json.valueToTree(value.accountIds()));
         body.put("anonymous", value.anonymous());
         body.put("attempts", value.attempts());

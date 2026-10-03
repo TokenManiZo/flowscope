@@ -1991,6 +1991,9 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public com.fasterxml.jackson.databind.node.ObjectNode zapStatus() { return zapConnectionStatus(); }
             @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorer.current(); }
+            @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
+                return explorer.models();
+            }
             @Override public ExplorerCoordinator.BrowserBudget explorerBrowserBudget() {
                 return explorer.browserDriven() ? explorer.browserBudget() : null;
             }

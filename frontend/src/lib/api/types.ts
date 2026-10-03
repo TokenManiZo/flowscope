@@ -797,6 +797,7 @@ export interface ExplorerRun {
   elapsedMillis: number
   message: string
   providerReadiness: string
+  model: string
   accountIds: readonly string[]
   anonymous: boolean
   attempts: number
@@ -806,6 +807,11 @@ export interface ExplorerRun {
   capabilityProbes: number
   unresolved: readonly ExplorerUnresolved[]
   activities: readonly ExplorerActivity[]
+}
+
+export interface ExplorerModelCatalog {
+  configuredModel: string
+  models: readonly { id: string; label: string; recommended: boolean }[]
 }
 
 /** `minutes` is a ceiling, not a duration: an exploration that finishes stops well before it. */
