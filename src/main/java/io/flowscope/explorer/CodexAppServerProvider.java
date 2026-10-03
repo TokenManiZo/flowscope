@@ -863,6 +863,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         ProcessBuilder builder = new ProcessBuilder(command).directory(cwd.toFile()).redirectError(error);
         Map<String, String> environment = builder.environment();
         environment.remove("OPENAI_API_KEY");
+        // 다른 공급자 자격증명이 Codex 자식 프로세스로 새지 않게 한다. Claude 실행 경로는 없다.
         environment.remove("ANTHROPIC_API_KEY");
         environment.putAll(required);
         Path executable = Path.of(command.getFirst()).toAbsolutePath().normalize();

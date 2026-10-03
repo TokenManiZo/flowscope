@@ -237,7 +237,7 @@ describe("dashboard shell", () => {
       if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, state: "READY", message: "ZAP 연결됨" }))
       if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "IDLE" }, scope: [] }))
       if (path === "/api/projects") return Promise.resolve(response({ directory: "/tmp/projects", active: null, projects: [] }))
-      return Promise.resolve(response({ run: { status: "IDLE", providers: { CODEX: true, CLAUDE: true } }, scope: [], completed_lanes: [] }))
+      return Promise.resolve(response({ run: { status: "IDLE", providerReadiness: "READY", model: "" }, accounts: [], scope: [] }))
     }))
     renderWithQueryClient(<App />, createTestQueryClient())
 

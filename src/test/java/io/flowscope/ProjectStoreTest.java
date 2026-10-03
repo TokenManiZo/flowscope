@@ -21,6 +21,21 @@ final class ProjectStoreTest {
     @TempDir Path temp;
 
     @Test
+    void historicalClaudeToolRemainsReadableWithoutReenablingItsExecutor() throws Exception {
+        RequestRecord old = new RequestRecord(Source.LLM, "https://api.test:443",
+                "GET", "/archive", 200, "legacy");
+        old.hasResponse = true;
+        old.body = "{}";
+        old.tool = ToolKind.CLAUDE;
+        Path file = temp.resolve("old-llm.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(old), new AnalysisConfig(), List.of());
+
+        assertEquals(ToolKind.CLAUDE, store.load(file).records().getFirst().tool,
+                "old provenance must survive even though new LLM runs use Codex only");
+    }
+
+    @Test
     void supportingCdnScriptKeepsItsPageProvenanceAndNeverBecomesCoverageAfterReopen() throws Exception {
         RequestRecord script = new RequestRecord(Source.HUMAN, "https://cdn.example.test:443",
                 "GET", "/app.js", 200, "anon");
