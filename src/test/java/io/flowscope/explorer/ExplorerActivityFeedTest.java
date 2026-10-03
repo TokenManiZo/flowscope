@@ -64,6 +64,16 @@ final class ExplorerActivityFeedTest {
                 "{\"method\":\"error\",\"params\":{\"error\":{\"message\":\"boom\"}}}")).kind());
     }
 
+    @Test
+    void serviceModelRerouteIsNotMistakenForTheRequestedModel() {
+        ExplorerProvider.Activity reroute = CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"model/rerouted\",\"params\":{\"fromModel\":\"gpt-6.1-sol\","
+                        + "\"toModel\":\"gpt-6-sol\",\"reason\":\"capacity\"}}"));
+        assertNotNull(reroute);
+        assertEquals("실제 모델 전환", reroute.title());
+        assertTrue(reroute.detail().contains("gpt-6.1-sol → gpt-6-sol"));
+    }
+
     /** One HTTP request used to produce three lines; only the gateway's own entry carries anything. */
     @Test
     void oneToolCallNoLongerCostsTheFeedThreeLines() {
