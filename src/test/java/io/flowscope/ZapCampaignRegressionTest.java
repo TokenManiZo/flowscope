@@ -275,10 +275,6 @@ final class ZapCampaignRegressionTest {
             catch (InterruptedException error) { Thread.currentThread().interrupt(); }
             zapReply(exchange, "{\"Result\":\"OK\"}");
         });
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> zapReply(exchange,
-                "{\"scan\":\"1\"}"));
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange,
-                "{\"status\":\"100\"}"));
         zapServer.start();
         String previousHeartbeat = System.getProperty("flowscope.zap.workerHeartbeat.ms");
         try {
@@ -310,7 +306,7 @@ final class ZapCampaignRegressionTest {
     }
 
     @Test
-    void deterministicZapBaselineImportsExplicitDefinitionRunsOnlyClientSpiderAndPublishesAlerts() throws Exception {
+    void deterministicZapBaselineImportsExplicitDefinitionRunsClientThenTraditionalSpiderAndPublishesAlerts() throws Exception {
         RunContextRegistry contexts = new RunContextRegistry();
         AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
                 laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
@@ -326,9 +322,10 @@ final class ZapCampaignRegressionTest {
             zapReply(exchange, "{\"Result\":\"OK\"}");
         });
         AtomicBoolean traditionalStarted = new AtomicBoolean();
+        zapServer.removeContext("/JSON/spider/action/scan/");
         zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
             traditionalStarted.set(true);
-            zapReply(exchange, "{\"scan\":\"unexpected\"}");
+            zapReply(exchange, "{\"scan\":\"3\"}");
         });
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
@@ -380,8 +377,8 @@ final class ZapCampaignRegressionTest {
             assertTrue(definitionQuery.get().contains("contextId="));
             assertEquals(501, status.at("/alert_count").asInt());
             assertEquals(1, status.at("/lanes/0/client_captures").asInt());
-            assertFalse(traditionalStarted.get(), "Traditional Spider must not be used by the Client-only campaign");
-            assertFalse(ajaxStarted.get(), "AJAX Spider must not be used by the Client-only campaign");
+            assertTrue(traditionalStarted.get(), "Traditional Spider runs after the Client Spider");
+            assertFalse(ajaxStarted.get(), "AJAX Spider is not part of the campaign");
             assertTrue(contexts.completedExplorations().contains(Source.SCANNER));
             assertFalse(status.toString().contains("raw-alert-secret"));
         } finally {
@@ -454,15 +451,6 @@ final class ZapCampaignRegressionTest {
         HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         registerSafeZapEnvironment(zapServer, 1);
         zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
-        zapServer.createContext("/JSON/spider/action/scan/", exchange -> {
-            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
-            List<RequestRecord> copy = new ArrayList<>(records.get());
-            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
-                    SourceDetail.ZAP_SPIDER, RunPhase.EXPLORATION, context.runId()));
-            records.set(copy);
-            zapReply(exchange, "{\"scan\":\"1\"}");
-        });
-        zapServer.createContext("/JSON/spider/view/status/", exchange -> zapReply(exchange, "{\"status\":\"100\"}"));
         zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
             RunContextRegistry.Context context = contexts.current(Source.SCANNER);
             List<RequestRecord> copy = new ArrayList<>(records.get());

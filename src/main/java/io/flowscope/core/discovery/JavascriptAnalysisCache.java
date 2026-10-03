@@ -49,9 +49,10 @@ final class JavascriptAnalysisCache {
 
     synchronized long items() { return items; }
 
-    /** Retained objects grow with the call sites, assets, and issues a script yields; one is the floor per entry. */
+    /** Retained objects grow with the call sites, assets, issues, and client routes a script yields; one is the floor per entry. */
     static long weight(JavascriptAnalysis analysis) {
         if (analysis == null) return 1;
-        return 1L + analysis.callSites().size() + analysis.assets().size() + analysis.issues().size();
+        return 1L + analysis.callSites().size() + analysis.assets().size() + analysis.issues().size()
+                + analysis.clientRoutes().size();
     }
 }

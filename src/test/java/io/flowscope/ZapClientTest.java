@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -42,6 +43,14 @@ class ZapClientTest {
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void spiderOptionsAreLimitedToTheGetOnlyCampaignSettings() {
+        ZapClient client = new ZapClient("http://127.0.0.1:1", "");
+        assertThrows(IllegalArgumentException.class, () -> client.setSpiderOption("HandleODataParametersVisited", true));
+        assertThrows(IllegalArgumentException.class, () -> client.setSpiderOption("PostForm", 1));
+        assertThrows(IllegalArgumentException.class, () -> client.setSpiderOption("MaxDepth", false));
     }
 
     @Test

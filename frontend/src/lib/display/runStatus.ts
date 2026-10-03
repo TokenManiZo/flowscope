@@ -25,12 +25,15 @@ export function runStatusTone(status: string): RunStatusTone {
 }
 
 const stages: Record<string, string> = {
+  INITIALIZING: "준비 중",
   SESSION_SETUP: "격리 세션 설정",
   API_DEFINITION_IMPORT: "API 정의 가져오기",
   AUTHENTICATION: "ZAP 브라우저 로그인",
   CLIENT_SPIDER: "Client Spider",
+  SPIDER: "일반 Spider",
   PASSIVE_SCAN_QUEUE: "Passive Scan 대기",
   ALERTS_READY: "Alert 집계 완료",
+  SESSION_READY: "로그인 세션 준비 완료",
   CLEANUP: "종료 처리 · 임시 상태 정리 중",
   CANCELLED: "검사 취소",
   FAILED: "실패",

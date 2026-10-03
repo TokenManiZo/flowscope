@@ -144,6 +144,37 @@ class RouteCandidateExtractorTest {
     }
 
     @Test
+    void 범위_안_스크립트의_상대_API_경로는_스크립트_위치가_아니라_실행한_문서를_기준으로_푼다() {
+        // 실측(crAPI): 서비스 접두("identity/")와 상대 경로("api/auth/login")를 합쳐 fetch한다. 브라우저는 이를 문서 기준으로
+        // 풀므로 /identity/api/auth/login이 맞고, 스크립트 디렉터리 기준(/static/js/identity/...)은 존재하지 않는 경로다.
+        String bundle = "const og=\"identity/\",sg={LOGIN:\"api/auth/login\",DASH:\"api/v2/user/dashboard\"};"
+                + "function*login(){const e=og+sg.LOGIN;yield fetch(e,{method:\"POST\"})}"
+                + "function*dash(){yield fetch(og+sg.DASH)}";
+        RequestRecord withReferer = new RequestRecord(Source.SCANNER, "http://127.0.0.1:8888",
+                "GET", "/static/js/main.js", 200, "anon");
+        withReferer.hasResponse = true;
+        withReferer.responseContentType = "application/javascript";
+        withReferer.reqText = "GET /static/js/main.js HTTP/1.1\r\nHost: 127.0.0.1:8888\r\n"
+                + "Referer: http://127.0.0.1:8888/login\r\n\r\n";
+        withReferer.body = bundle;
+        RequestRecord withoutReferer = new RequestRecord(Source.SCANNER, "http://127.0.0.1:8888",
+                "GET", "/static/js/other.js", 200, "anon");
+        withoutReferer.hasResponse = true;
+        withoutReferer.responseContentType = "application/javascript";
+        withoutReferer.body = bundle.replace("LOGIN", "SIGNUP").replace("api/auth/login", "api/auth/signup");
+
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(
+                Pipeline.run(List.of(withReferer, withoutReferer)).records,
+                ScopePolicy.parse("http://127.0.0.1:8888/"), List.of());
+
+        find(candidates, "POST", "/identity/api/auth/login");
+        find(candidates, "GET", "/identity/api/v2/user/dashboard");
+        find(candidates, "POST", "/identity/api/auth/signup");
+        assertFalse(candidates.stream().anyMatch(value -> value.pathTemplate().startsWith("/static/js/identity")),
+                candidates.toString());
+    }
+
+    @Test
     void 외부_CDN_스크립트는_페이지_기준_API_선언을_만들되_자체를_API_관측으로_세지않는다() {
         RequestRecord script = new RequestRecord(Source.SCANNER, "https://cdn.test:443",
                 "GET", "/assets/main.js", 200, "anon");

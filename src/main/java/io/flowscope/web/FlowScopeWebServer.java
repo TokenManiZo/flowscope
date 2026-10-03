@@ -114,6 +114,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("HUMAN request linking is unavailable");
         }
         default List<ZapAccountVault.View> zapAccounts() { return List.of(); }
+        /** 계정 설정 화면에만 쓰는 저장된 ZAP 로그인 ID·비밀번호. */
+        default java.util.Optional<ZapAccountVault.Credentials> zapCredentials(String accountId) {
+            return java.util.Optional.empty();
+        }
         default ZapAccountVault.View saveZapAccount(ZapAccountVault.Input input) {
             throw new UnsupportedOperationException("ZAP account workflow is unavailable");
         }
@@ -1045,9 +1049,17 @@ public final class FlowScopeWebServer implements AutoCloseable {
         zapNode.put("enabled", zap != null);
         zapNode.put("status", zap == null ? "UNVERIFIED" : zap.status().name());
         zapNode.put("loginUrl", zap == null ? "" : zap.loginUrl());
-        zapNode.put("loginId", "");
+        // 사용자 결정: 같은 로컬 UI에서 다시 입력하지 않도록 저장된 ID·비밀번호를 그대로 보여 준다.
+        // 이 값은 이 응답(인증된 loopback UI)에만 실리고 프로젝트·snapshot·Evidence·로그·LLM에는 넣지 않는다.
+        ZapAccountVault.Credentials credentials = zap == null ? null : state.zapCredentials(accountId).orElse(null);
+        zapNode.put("loginId", credentials == null ? "" : credentials.username());
+        zapNode.put("password", credentials == null ? "" : credentials.password());
         zapNode.put("hasPassword", zap != null && zap.hasPassword());
-        zapNode.put("connectionLabel", state.zapStatus().path("message").asText(""));
+        // ZAP 연결 문구는 로그인 결과가 아니다. 연결이 실제로 끊겼을 때만 보여 주고, 로그인 상태와 따로 표시한다.
+        JsonNode zapConnection = state.zapStatus();
+        boolean zapConnected = zapConnection.path("connected").asBoolean(false);
+        zapNode.put("connected", zapConnected);
+        zapNode.put("connectionLabel", zapConnected ? "" : zapConnection.path("message").asText(""));
         zapNode.put("failureReason", zap == null ? "" : zap.message());
 
         // LLM sessions come from browser login in the LLM step; the account only shows their state.

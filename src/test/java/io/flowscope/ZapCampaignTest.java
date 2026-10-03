@@ -70,6 +70,18 @@ final class ZapCampaignTest {
     }
 
     @Test
+    void runStageIsTheBareStageKeySoTheUiCanTranslateIt() throws Exception {
+        try (Fixture fixture = new Fixture(true);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            assertTrue(fixture.started.await(3, TimeUnit.SECONDS));
+            await(() -> !campaign.deterministicZapBaselineStatus().path("scan_id").asText().isEmpty());
+            // 계정 이름은 lanes[].account_label에 있다. run.stage에 붙이면 화면이 "test2 · PASSIVE_SCAN_QUEUE"를 그대로 보인다.
+            assertEquals("CLIENT_SPIDER", campaign.deterministicZapBaselineStatus().path("stage").asText());
+        }
+    }
+
+    @Test
     void preservesScopeGuard() throws Exception {
         try (Fixture fixture = new Fixture(false);
              ZapCampaign campaign = new ZapCampaign(fixture)) {
@@ -227,6 +239,335 @@ final class ZapCampaignTest {
         }
     }
 
+    @Test
+    void runsTheTraditionalSpiderAfterTheClientSpiderWithGetOnlyOptions() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            List<String> calls = new CopyOnWriteArrayList<>();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                calls.add("client");
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+            for (String path : List.of("/JSON/spider/action/setOptionPostForm/", "/JSON/spider/action/excludeFromScan/")) {
+                fixture.server.removeContext(path);
+                fixture.server.createContext(path, exchange -> {
+                    calls.add(path + "?" + java.net.URLDecoder.decode(exchange.getRequestURI().getRawQuery(), java.nio.charset.StandardCharsets.UTF_8));
+                    zapReply(exchange, "{\"Result\":\"OK\"}");
+                });
+            }
+            fixture.server.removeContext("/JSON/replacer/action/addRule/");
+            fixture.server.createContext("/JSON/replacer/action/addRule/", exchange -> {
+                calls.add("capability " + java.net.URLDecoder.decode(new String(exchange.getRequestBody().readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8), java.nio.charset.StandardCharsets.UTF_8));
+                zapReply(exchange, "{\"Result\":\"OK\"}");
+            });
+            fixture.server.removeContext("/JSON/spider/action/scan/");
+            fixture.server.createContext("/JSON/spider/action/scan/", exchange -> {
+                calls.add("spider?" + exchange.getRequestURI().getRawQuery());
+                fixture.observe("/robots-only");
+                zapReply(exchange, "{\"scan\":\"3\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertTrue(calls.stream().anyMatch(call -> call.startsWith("capability ") && call.contains("initiators=3,5,6,14,15,18")),
+                    "the Spider initiator (3) must carry the run capability: " + calls);
+            assertEquals("client", calls.stream().filter(call -> !call.startsWith("capability ")).findFirst().orElseThrow());
+            assertTrue(calls.contains("/JSON/spider/action/setOptionPostForm/?Boolean=false"), calls.toString());
+            assertTrue(calls.stream().anyMatch(call -> call.startsWith("/JSON/spider/action/excludeFromScan/?regex=")
+                    && call.contains("log-?out")), calls.toString());
+            String spider = calls.stream().filter(call -> call.startsWith("spider?")).findFirst().orElseThrow();
+            assertTrue(spider.contains("subtreeOnly=true") && spider.contains("contextName=flowscope-"), spider);
+            assertEquals(2, result.path("captured_records").asInt(), result.toString());
+            assertTrue(fixture.records.stream().anyMatch(record -> record.sourceDetail == SourceDetail.ZAP_SPIDER
+                    && "/robots-only".equals(record.path)));
+        }
+    }
+
+    @Test
+    void logsInTheTraditionalSpiderAsTheVerifiedZapUser() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            AtomicReference<String> query = new AtomicReference<>("");
+            fixture.server.removeContext("/JSON/spider/action/scanAsUser/");
+            fixture.server.createContext("/JSON/spider/action/scanAsUser/", exchange -> {
+                query.set(exchange.getRequestURI().getRawQuery());
+                zapReply(exchange, "{\"scanAsUser\":\"3\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of("user-a"), false);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertTrue(query.get().contains("contextId=1") && query.get().contains("userId=7")
+                    && query.get().contains("subtreeOnly=true"), query.get());
+        }
+    }
+
+    @Test
+    void clearsTheClientMapAfterLoginAndRightBeforeTheClientSpider() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            List<String> calls = new CopyOnWriteArrayList<>();
+            fixture.server.removeContext("/JSON/users/action/authenticateAsUser/");
+            fixture.server.createContext("/JSON/users/action/authenticateAsUser/", exchange -> {
+                calls.add("login");
+                zapReply(exchange, "{\"authSuccessful\":true}");
+            });
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> calls.add("reset " + script));
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                calls.add("client");
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of("user-a"), false);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            // 로그인이 화면을 먼저 열어 Map에 등록한 메뉴·버튼을 Client Spider가 새 요소로 다시 보도록, 둘 사이에서 비운다.
+            assertEquals(List.of("login", "reset flowscope-clear-client-map", "client"), calls);
+        }
+    }
+
+    @Test
+    void seedsTheClientSpiderWithClientRoutesFromTheRecordedBundle() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", """
+                    jsx(Route, {path: "/shop", element: jsx(Shop, {})});
+                    jsx(Route, {path: "/service-report", element: jsx(Report, {})});
+                    jsx(Route, {path: "/login", element: jsx(Login, {})});
+                    jsx(Route, {path: "/change-email", element: jsx(ChangeEmail, {})});
+                    jsx(Route, {path: "/post/:id", element: jsx(Post, {})});
+                    """);
+            java.util.Map<String, String> vars = new java.util.concurrent.ConcurrentHashMap<>();
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> { }, vars);
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            // 시작 주소 + 바로 열 수 있는 화면. 로그인·계정 변경 화면과 매개변수 경로는 넣지 않는다.
+            assertEquals(String.join("\n", TARGET, "https://fixture.example.test/shop",
+                    "https://fixture.example.test/service-report"), vars.get("flowscope.clientMap.seeds"));
+            assertTrue(result.path("events").toString().contains("클라이언트 라우트 2개"), result.toString());
+        }
+    }
+
+    @Test
+    void aFollowUpPassOpensDetailScreensWithIdsCollectedDuringTheFirstPass() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", """
+                    jsx(Route, {path: "/forum", element: jsx(Forum, {})});
+                    navigate(`/post?post_id=${n}`);
+                    """);
+            java.util.Map<String, String> vars = new java.util.concurrent.ConcurrentHashMap<>();
+            List<String> seedsPerPass = new CopyOnWriteArrayList<>();
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> seedsPerPass.add(vars.get("flowscope.clientMap.seeds")), vars);
+            java.util.concurrent.atomic.AtomicInteger passes = new java.util.concurrent.atomic.AtomicInteger();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                // 1차 패스가 Forum을 열면서 목록 응답(실제 글 ID)을 처음 수집한다.
+                if (passes.incrementAndGet() == 1) {
+                    fixture.observe("/community/api/v2/community/posts/recent", "{\"posts\":[{\"id\":\"abcPOST1\"}]}");
+                } else {
+                    fixture.observe("/community/api/v2/community/posts/abcPOST1");
+                }
+                zapReply(exchange, "{\"scan\":\"" + (1 + passes.get()) + "\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(2, passes.get(), "새 상세 주소가 생겼으므로 후속 패스를 한 번 돈다");
+            assertEquals(2, seedsPerPass.size(), seedsPerPass.toString());
+            assertFalse(seedsPerPass.get(0).contains("post_id=abcPOST1"), "1차 패스 전에는 글 ID를 모른다");
+            // 후속 패스는 시작 주소 + 새로 생긴 상세 주소만 넣는다(1차에 넣은 /forum은 다시 넣지 않는다).
+            // 쿼리 주소에는 Client Map 노드를 나누는 fragment가 붙는다(서버로는 가지 않는다).
+            assertEquals(String.join("\n", TARGET, "https://fixture.example.test/post?post_id=abcPOST1#flowscope-1"),
+                    seedsPerPass.get(1));
+            assertTrue(result.path("events").toString().contains("후속 패스 1"), result.toString());
+            assertTrue(result.path("events").toString().contains("후속 패스 종료"), result.toString());
+        }
+    }
+
+    @Test
+    void followUpPassesGoDeeperWhileDetailScreensRevealNewIds() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", """
+                    navigate(`/post?post_id=${n}`);
+                    navigate(`/user?user_id=${n}`);
+                    """);
+            java.util.concurrent.atomic.AtomicInteger passes = new java.util.concurrent.atomic.AtomicInteger();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                switch (passes.incrementAndGet()) {
+                    // 1차: 글 목록 → 글 ID, 후속 1: 글 상세가 작성자 목록을 보여 줌 → 사용자 ID, 후속 2: 사용자 상세
+                    case 1 -> fixture.observe("/api/posts/recent", "{\"posts\":[{\"id\":\"p1\"}]}");
+                    case 2 -> fixture.observe("/api/users/recent", "{\"users\":[{\"id\":\"u1\"}]}");
+                    default -> fixture.observe("/api/users/u1");
+                }
+                zapReply(exchange, "{\"scan\":\"" + (1 + passes.get()) + "\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(3, passes.get(), "글 상세가 새 사용자 ID를 드러냈으므로 한 단계 더 들어간다");
+            assertTrue(result.path("events").toString().contains("후속 패스 2"), result.toString());
+        }
+    }
+
+    @Test
+    void queryStartUrlsGetDistinctFragmentsSoZapKeepsOneNodePerObject() {
+        assertEquals(List.of("https://a.test/shop", "https://a.test/post?post_id=A#flowscope-1",
+                        "https://a.test/post?post_id=B#flowscope-2", "https://a.test/x?y=1#keep"),
+                ZapCampaign.distinctClientMapUrls(List.of("https://a.test/shop", "https://a.test/post?post_id=A",
+                        "https://a.test/post?post_id=B", "https://a.test/x?y=1#keep")));
+    }
+
+    @Test
+    void theFollowUpPassIsSkippedWhenNoNewStartUrlsAppear() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            java.util.concurrent.atomic.AtomicInteger passes = new java.util.concurrent.atomic.AtomicInteger();
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                passes.incrementAndGet();
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(1, passes.get());
+            assertTrue(result.path("events").toString().contains("후속 패스 생략"), result.toString());
+        }
+    }
+
+    @Test
+    void anOriginTargetGetsTheRootPathSoTheClientSpiderQueuesTheSeededRoutes() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            AtomicReference<String> url = new AtomicReference<>("");
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                url.set(FakeZap.query(exchange).get("url"));
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+
+            // 화면 입력은 보통 끝 슬래시가 없다(실측 run target: http://127.0.0.1:8888).
+            campaign.startDeterministicZapCampaign("https://fixture.example.test", List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", result.path("status").asText(), result.toString());
+            assertEquals(TARGET, url.get());
+            assertEquals(TARGET, result.path("target").asText());
+        }
+        assertEquals("https://app.test/app", ZapCampaign.withRootPath("https://app.test/app"));
+        assertEquals("https://app.test/?a=1", ZapCampaign.withRootPath("https://app.test?a=1"));
+    }
+
+    @Test
+    void anOlderResetScriptThatIgnoresRoutesIsReportedAsAWarning() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.observeScript("/static/js/main.js", "jsx(Route, {path: \"/shop\", element: jsx(Shop, {})});");
+            java.util.Map<String, String> vars = new java.util.concurrent.ConcurrentHashMap<>();
+            for (String path : List.of("/JSON/script/action/setGlobalVar/", "/JSON/script/action/runStandAloneScript/",
+                    "/JSON/script/view/globalVar/")) {
+                fixture.server.removeContext(path);
+            }
+            FakeZap.registerClientMapReset(fixture.server, script -> { }, vars);
+            fixture.server.removeContext("/JSON/script/action/runStandAloneScript/");
+            fixture.server.createContext("/JSON/script/action/runStandAloneScript/", exchange -> {
+                vars.put("flowscope.clientMap.cleared", vars.get("flowscope.clientMap.request"));
+                zapReply(exchange, "{\"Result\":\"OK\"}");
+            });
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED_WITH_WARNINGS", result.path("status").asText(), result.toString());
+            assertTrue(result.at("/lanes/0/warning").asText().contains("클라이언트 라우트 시작 주소 미등록"), result.toString());
+        }
+    }
+
+    @Test
+    void anUnconfirmedClientMapResetIsAWarningAndTheClientSpiderStillRuns() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            // 옛 start-zap.sh로 띄운 ZAP: 스크립트가 등록돼 있지 않다.
+            fixture.server.removeContext("/JSON/script/action/runStandAloneScript/");
+            fixture.server.createContext("/JSON/script/action/runStandAloneScript/", exchange -> zapReply(exchange,
+                    "{\"code\":\"does_not_exist\",\"message\":\"Does Not Exist\"}"));
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED_WITH_WARNINGS", result.path("status").asText(), result.toString());
+            assertEquals(1, result.at("/lanes/0/client_captures").asInt(), "the Client Spider still runs");
+            assertTrue(result.at("/lanes/0/warning").asText().contains("Client Map 초기화 생략"), result.toString());
+        }
+    }
+
+    @Test
+    void aFailedTraditionalSpiderIsAWarningNotALaneFailure() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.server.removeContext("/JSON/spider/action/scan/");
+            fixture.server.createContext("/JSON/spider/action/scan/", exchange -> zapReply(exchange,
+                    "{\"code\":\"bad_view\",\"message\":\"spider unavailable\"}"));
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            JsonNode result = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED_WITH_WARNINGS", result.path("status").asText(), result.toString());
+            assertEquals(1, result.at("/lanes/0/client_captures").asInt(), "the Client Spider result is kept");
+            assertTrue(result.at("/lanes/0/warning").asText().contains("일반 Spider 생략"), result.toString());
+        }
+    }
+
+    @Test
+    void theSpiderExclusionKeepsSessionEndingAndDeletingLinksOut() {
+        java.util.regex.Pattern exclude = java.util.regex.Pattern.compile(ZapCampaign.SPIDER_EXCLUDE_REGEX);
+        for (String url : List.of("https://app.test/logout", "https://app.test/users/sign-out?next=/",
+                "https://app.test/api/v1/posts/7/delete", "https://app.test/LogOff")) {
+            assertTrue(exclude.matcher(url).matches(), url);
+        }
+        for (String url : List.of("https://app.test/api/v1/posts", "https://app.test/login",
+                "https://app.test/search?q=logout")) {
+            assertFalse(exclude.matcher(url).matches(), url);
+        }
+    }
+
     private static void await(BooleanSupplier condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);
@@ -343,11 +684,15 @@ final class ZapCampaignTest {
         }
 
         private void observe(String path) {
+            observe(path, "{\"ok\":true}");
+        }
+
+        private void observe(String path, String json) {
             RunContextRegistry.Context current = contexts.current(Source.SCANNER);
             RequestRecord record = new RequestRecord(Source.SCANNER, "https://fixture.example.test:443",
                     "GET", path, 200, "anon");
             record.hasResponse = true;
-            record.body = "{\"ok\":true}";
+            record.body = json;
             record.responseContentType = "application/json";
             record.sourceDetail = current.detail();
             record.orchestrator = current.orchestrator();
@@ -355,6 +700,16 @@ final class ZapCampaignTest {
             record.phase = current.phase();
             record.runId = current.runId();
             record.executionTrust = ExecutionTrust.CONTROLLED;
+            records.add(record);
+        }
+
+        /** 이전 탐색에서 이미 받아 둔 범위 안 스크립트 응답. 캠페인은 이 기록만 읽고 요청을 새로 보내지 않는다. */
+        private void observeScript(String path, String script) {
+            RequestRecord record = new RequestRecord(Source.HUMAN, "https://fixture.example.test:443",
+                    "GET", path, 200, "anon");
+            record.hasResponse = true;
+            record.body = script;
+            record.responseContentType = "application/javascript";
             records.add(record);
         }
 

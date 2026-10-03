@@ -41,6 +41,21 @@ class JavascriptAnalysisCacheTest {
     }
 
     @Test
+    void clientRoutesCountTowardsTheMemoryBudget() {
+        JavascriptAnalysisCache cache = new JavascriptAnalysisCache(4_096, 3);
+        JavascriptAnalysis routes = new JavascriptAnalysis(List.of(), List.of(), List.of(),
+                JavascriptAnalysis.Status.PARSED, "", List.of(
+                new JavascriptAnalysis.ClientRoute("/shop", 1, 0),
+                new JavascriptAnalysis.ClientRoute("/orders", 2, 0)));
+        cache.put("routes", routes);
+        assertEquals(3, cache.items());
+        cache.put("new", analysis(0));
+        assertNull(cache.get("routes"));
+        assertNotNull(cache.get("new"));
+        assertEquals(1, cache.items());
+    }
+
+    @Test
     void anOversizedAnalysisIsStillKeptAloneAndClearResetsTheBudget() {
         JavascriptAnalysisCache cache = new JavascriptAnalysisCache(4_096, 10);
         cache.put("small", analysis(1));
