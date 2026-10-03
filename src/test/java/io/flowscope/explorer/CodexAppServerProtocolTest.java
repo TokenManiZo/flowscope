@@ -2,6 +2,7 @@ package io.flowscope.explorer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.flowscope.integration.LoopbackHttpServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
@@ -15,6 +16,7 @@ import java.io.Writer;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -168,6 +170,16 @@ final class CodexAppServerProtocolTest {
             assertNotSame(catalogProcess, active);
             JsonNode thread = active.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
             assertEquals("gpt-6.1-sol", thread.path("params").path("model").asText());
+            JsonNode discovery = null;
+            for (JsonNode tool : thread.path("params").path("dynamicTools")) {
+                if ("flowscope_record_discoveries".equals(tool.path("name").asText())) discovery = tool;
+            }
+            assertNotNull(discovery);
+            String fieldPathHelp = discovery.path("inputSchema").path("properties").path("discoveries")
+                    .path("items").path("properties").path("parameters").path("items")
+                    .path("properties").path("field_path").path("description").asText();
+            assertTrue(fieldPathHelp.contains("/segments/2"), fieldPathHelp);
+            assertTrue(fieldPathHelp.contains("{orderId}"), fieldPathHelp);
             assertTrue(capture.done().await(10, TimeUnit.SECONDS));
         }
     }
@@ -273,6 +285,41 @@ final class CodexAppServerProtocolTest {
                 .findFirst().orElseThrow(() -> new AssertionError("no refusal in " + activities));
         assertTrue(refusal.title().contains("브라우저 조작"), refusal.title());
         assertFalse(refusal.detail().isBlank(), "the reason must reach the operator");
+    }
+
+    @Test
+    void partialDiscoveryIsVisibleToTheOperatorForCorrection() throws Exception {
+        List<ExplorerProvider.Activity> activities = new CopyOnWriteArrayList<>();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        ExplorerProvider.Listener listener = new ExplorerProvider.Listener() {
+            @Override public void activity(ExplorerProvider.Activity value) { activities.add(value); }
+            @Override public void completed(ExplorerProvider.Result value) { capture.done().countDown(); }
+            @Override public void failed(String message) { capture.done().countDown(); }
+        };
+        try (LoopbackHttpServer gateway = new LoopbackHttpServer(0, request -> new LoopbackHttpServer.Response(
+                200, Map.of("Content-Type", "application/json"),
+                "{\"success\":true,\"accepted_endpoints\":2,\"rejected_discoveries\":[{\"index\":1,\"reason\":\"Evidence ID invalid\"}],\"rejected_parameters\":[{\"discovery_index\":2,\"parameter_index\":0,\"reason\":\"PATH field_path invalid\"}]}"
+                        .getBytes(StandardCharsets.UTF_8)))) {
+            gateway.start();
+            try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                    (command, cwd, environment) -> new FakeCodex((self, turn) -> {
+                        try {
+                            self.emit("{\"id\":78,\"method\":\"item/tool/call\",\"params\":{"
+                                    + "\"tool\":\"flowscope_record_discoveries\",\"arguments\":{}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    }), ignored -> { })) {
+                ExplorerProvider.Request base = request();
+                provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
+                        base.accountHandles(), "http://127.0.0.1:" + gateway.port() + "/request",
+                        "http://127.0.0.1:" + gateway.port() + "/discoveries", base.gatewayToken(),
+                        base.prompt()), listener);
+                assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+                assertNull(capture.failure().get(), capture.failure().get());
+            }
+        }
+        assertTrue(activities.stream().anyMatch(value -> "WARNING".equals(value.kind())
+                && value.detail().contains("거부 2건")), activities.toString());
     }
 
     /** turn/completed carries every item of the turn, so a long run can overflow after all its work is done. */

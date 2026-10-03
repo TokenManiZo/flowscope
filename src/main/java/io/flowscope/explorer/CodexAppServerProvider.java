@@ -440,6 +440,18 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     default -> throw new IllegalArgumentException("지원하지 않는 Explorer 도구입니다.");
                 };
                 String gatewayResponse = callGateway(endpoint, params.path("arguments"));
+                if ("flowscope_record_discoveries".equals(tool)) {
+                    JsonNode outcome = JSON.readTree(gatewayResponse);
+                    JsonNode rejected = outcome.path("rejected_discoveries");
+                    JsonNode rejectedParameters = outcome.path("rejected_parameters");
+                    int rejectedCount = rejected.size() + rejectedParameters.size();
+                    if (rejectedCount > 0) {
+                        JsonNode first = !rejected.isEmpty() ? rejected.get(0) : rejectedParameters.get(0);
+                        listener.activity(activity("WARNING", "발견 일부 저장 거부",
+                                "정상 항목은 저장됨 · 거부 " + rejectedCount + "건 · "
+                                        + first.path("reason").asText(), "WARNING", null));
+                    }
+                }
                 result.put("success", true).putArray("contentItems").addObject()
                         .put("type", "inputText").put("text", gatewayResponse);
             } catch (Exception error) {
@@ -655,7 +667,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode discoveryTool() {
             ObjectNode tool = JSON.createObjectNode().put("type", "function")
                     .put("name", "flowscope_record_discoveries")
-                    .put("description", "Store Evidence-bound endpoint and parameter declarations found in a response artifact. This records declarations, not HTTP observations or vulnerability verdicts.");
+                    .put("description", "Store Evidence-bound endpoint and parameter declarations found in a response artifact. This records declarations, not HTTP observations or vulnerability verdicts. Inspect rejected_discoveries and rejected_parameters; retry only corrected entries.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
                     .put("additionalProperties", false);
             ObjectNode discoveries = schema.putObject("properties").putObject("discoveries")
@@ -683,7 +695,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             parameterProperties.putObject("location").put("type", "string").putArray("enum")
                     .add("PATH").add("QUERY").add("JSON_BODY").add("FORM_BODY")
                     .add("MULTIPART_BODY").add("HEADER").add("GRAPHQL_VARIABLE");
-            parameterProperties.putObject("field_path").put("type", "string");
+            parameterProperties.putObject("field_path").put("type", "string")
+                    .put("description", "PATH: use the URL template's unique placeholder name, such as orderId or {orderId} in /api/orders/{orderId}, or its zero-based segment coordinate /segments/2. For repeated placeholder names use the exact /segments/N coordinate; rejected_parameters returns the allowed positions. Legacy path[3] is also accepted. JSON_BODY and GRAPHQL_VARIABLE: use a JSON pointer such as /criteria/status; QUERY, FORM_BODY, MULTIPART_BODY, and HEADER: use the field name.");
             parameterProperties.putObject("display_name").put("type", "string");
             parameterProperties.putObject("requirement").put("type", "string").putArray("enum")
                     .add("REQUIRED").add("OPTIONAL").add("UNKNOWN");

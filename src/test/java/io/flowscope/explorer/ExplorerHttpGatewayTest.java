@@ -258,13 +258,16 @@ final class ExplorerHttpGatewayTest {
             assertEquals(400, post(gateway, gateway.discoveriesUrl(), inventedEvidence).statusCode());
             String secretHeader = declaration.replace("\"PATH\",\"field_path\":\"path[3]\"",
                     "\"HEADER\",\"field_path\":\"Authorization\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), secretHeader).statusCode());
+            JsonNode secretRejected = JSON.readTree(post(gateway, gateway.discoveriesUrl(), secretHeader).body());
+            assertEquals(1, secretRejected.path("rejected_parameters").size());
+            assertEquals(0, secretRejected.path("accepted_parameters").asInt());
             String unknownRootField = declaration.replaceFirst("\\{", "{\"unexpected\":true,");
             assertEquals(400, post(gateway, gateway.discoveriesUrl(), unknownRootField).statusCode());
             String ambiguousJson = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"criteria.status\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), ambiguousJson).statusCode(),
-                    "점 표기 JSON 경로는 canonical pointer가 아니면 추정 없이 거부");
+            JsonNode ambiguousRejected = JSON.readTree(post(gateway, gateway.discoveriesUrl(), ambiguousJson).body());
+            assertEquals(1, ambiguousRejected.path("rejected_parameters").size(),
+                    "점 표기 JSON 경로는 canonical pointer가 아니면 추정 없이 보류");
             // RFC 6901: 빈 참조 토큰(빈 문자열 키)은 유효하다. 엔진도 {"a":{"":{"b":1}}}에서 /a//b를 만든다.
             String emptyKeyPointer = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"/a//b\"");
@@ -276,7 +279,8 @@ final class ExplorerHttpGatewayTest {
                     "빈 키 pointer를 새 제한 없이 FLOW_V2로 보존");
             String malformedEscape = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"/a~x\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), malformedEscape).statusCode(),
+            assertEquals(1, JSON.readTree(post(gateway, gateway.discoveriesUrl(), malformedEscape).body())
+                    .path("rejected_parameters").size(),
                     "~ 뒤에 0/1/2가 아니면 pointer 이스케이프 계약 위반");
             String canonicalPointer = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"/criteria/status\"");
@@ -285,11 +289,101 @@ final class ExplorerHttpGatewayTest {
             assertEquals(1, JSON.readTree(accepted.body()).path("accepted_parameters").asInt());
             // PATH 위치는 변수 개수가 아니라 실제 placeholder 위치여야 한다: /api/orders/{id}는 /segments/2만 유효.
             String wrongSlot = declaration.replace("\"field_path\":\"path[3]\"", "\"field_path\":\"/segments/0\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), wrongSlot).statusCode(),
+            JsonNode wrongSlotResult = JSON.readTree(post(gateway, gateway.discoveriesUrl(), wrongSlot).body());
+            assertEquals(1, wrongSlotResult.path("rejected_parameters").size(),
                     "/segments/0은 'api' 세그먼트이지 placeholder가 아니다");
+            assertEquals("/segments/2", wrongSlotResult.path("rejected_parameters").get(0)
+                    .path("candidate_field_paths").get(0).asText());
             String rightSlot = declaration.replace("\"field_path\":\"path[3]\"", "\"field_path\":\"/segments/2\"");
             HttpResponse<String> slotOk = post(gateway, gateway.discoveriesUrl(), rightSlot);
             assertEquals(200, slotOk.statusCode(), slotOk.body());
+        }
+    }
+
+    @Test
+    void oneInvalidDiscoveryDoesNotDiscardOtherEvidenceBoundDiscoveries() throws Exception {
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), "const routes = {};", false,
+                "ev-artifact", 1, Instant.now());
+        AtomicReference<List<RouteCandidate>> stored = new AtomicReference<>(List.of());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                value -> value.startsWith("https://app.example.test/"), "run-partial", ignored -> {},
+                stored::set)) {
+            assertEquals(200, post(gateway, JSON.createObjectNode().put("method", "GET")
+                    .put("url", "https://app.example.test/main.js").toString()).statusCode());
+            String batch = """
+                    {"discoveries":[
+                      {"method":"GET","url":"https://app.example.test/api/orders/{orderId}",
+                       "evidence_ids":["ev-artifact"],"artifact_kind":"JAVASCRIPT","locator":"main.js:1",
+                       "reason":"route","parameters":[{"location":"PATH","field_path":"orderId",
+                       "display_name":"orderId","requirement":"REQUIRED"}]},
+                      {"method":"GET","url":"https://app.example.test/api/orders/{orderId}/items/{itemId}",
+                       "evidence_ids":["ev-invented"],"artifact_kind":"JAVASCRIPT","locator":"main.js:2",
+                       "reason":"route","parameters":[{"location":"PATH","field_path":"unknownId",
+                       "display_name":"unknownId","requirement":"REQUIRED"}]},
+                      {"method":"GET","url":"https://app.example.test/api/users/{userId}",
+                       "evidence_ids":["ev-artifact"],"artifact_kind":"JAVASCRIPT","locator":"main.js:3",
+                       "reason":"route","parameters":[{"location":"PATH","field_path":"{userId}",
+                       "display_name":"userId","requirement":"REQUIRED"}]}
+                    ]}
+                    """;
+            HttpResponse<String> response = post(gateway, gateway.discoveriesUrl(), batch);
+            assertEquals(200, response.statusCode(), response.body());
+            JsonNode result = JSON.readTree(response.body());
+            assertEquals(2, result.path("accepted_endpoints").asInt());
+            assertEquals(2, result.path("accepted_parameters").asInt());
+            assertEquals(1, result.path("rejected_discoveries").size());
+            assertEquals(1, result.path("rejected_discoveries").get(0).path("index").asInt());
+            assertTrue(result.path("rejected_discoveries").get(0).path("reason").asText()
+                    .contains("Evidence ID"));
+            assertEquals(2, stored.get().size());
+            assertEquals("/segments/2", stored.get().get(0).declaredParameters().getFirst().fieldPath());
+            assertEquals("/segments/2", stored.get().get(1).declaredParameters().getFirst().fieldPath());
+
+            String corrected = batch.replace("ev-invented", "ev-artifact").replace("unknownId", "itemId");
+            JsonNode retry = JSON.readTree(post(gateway, gateway.discoveriesUrl(), corrected).body());
+            assertEquals(1, retry.path("accepted_endpoints").asInt());
+            assertEquals(0, retry.path("rejected_discoveries").size());
+        }
+    }
+
+    @Test
+    void duplicatePathNamesKeepTheEndpointAndValidParametersWhileOfferingExactSlots() throws Exception {
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), "const routes = {};", false,
+                "ev-artifact", 1, Instant.now());
+        AtomicReference<List<RouteCandidate>> stored = new AtomicReference<>(List.of());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                value -> value.startsWith("https://app.example.test/"), "run-duplicate-slot", ignored -> {},
+                stored::set)) {
+            assertEquals(200, post(gateway, JSON.createObjectNode().put("method", "GET")
+                    .put("url", "https://app.example.test/main.js").toString()).statusCode());
+            String batch = """
+                    {"discoveries":[{"method":"GET","url":"https://app.example.test/api/{id}/orders/{id}",
+                      "evidence_ids":["ev-artifact"],"artifact_kind":"JAVASCRIPT","locator":"main.js:1",
+                      "reason":"route","parameters":[
+                        {"location":"PATH","field_path":"id","display_name":"id","requirement":"UNKNOWN"},
+                        {"location":"QUERY","field_path":"sort","display_name":"sort","requirement":"OPTIONAL"}
+                      ]}]}
+                    """;
+            JsonNode result = JSON.readTree(post(gateway, gateway.discoveriesUrl(), batch).body());
+            assertEquals(1, result.path("accepted_endpoints").asInt());
+            assertEquals(1, result.path("accepted_parameters").asInt());
+            assertEquals(1, result.path("rejected_parameters").size());
+            JsonNode rejection = result.path("rejected_parameters").get(0);
+            assertEquals(0, rejection.path("discovery_index").asInt());
+            assertEquals(0, rejection.path("parameter_index").asInt());
+            assertEquals(List.of("/segments/1", "/segments/3"),
+                    JSON.convertValue(rejection.path("candidate_field_paths"),
+                            new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
+            assertEquals(List.of("/sort"), stored.get().getFirst().declaredParameters().stream()
+                    .map(RouteCandidate.DeclaredParameter::fieldPath).toList());
+
+            String corrected = batch.replace("\"field_path\":\"id\"", "\"field_path\":\"/segments/3\"");
+            JsonNode retry = JSON.readTree(post(gateway, gateway.discoveriesUrl(), corrected).body());
+            assertEquals(0, retry.path("accepted_endpoints").asInt());
+            assertEquals(1, retry.path("accepted_parameters").asInt());
+            assertEquals(0, retry.path("rejected_parameters").size());
         }
     }
 

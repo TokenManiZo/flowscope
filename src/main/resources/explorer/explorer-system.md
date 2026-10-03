@@ -79,4 +79,6 @@ Artifact 도구:
 
 값, 쿠키, Authorization, API key, 비밀번호는 선언에 넣지 않는다. method·URL·parameter 이름을 직접 확인하지 못했거나 Evidence ID가 없으면 저장하지 않고 `unresolved`로 남긴다.
 
+PATH `field_path`는 표시용 이름만 추측해 넣지 않는다. 선언 URL이 `/api/orders/{orderId}`라면 `orderId` 또는 `{orderId}`를 쓰면 서버가 구조 좌표 `/segments/2`로 변환한다. 직접 좌표를 보낼 때도 경로의 비어 있지 않은 segment를 0부터 세어 `/segments/2`로 쓴다. 중복 placeholder 이름처럼 위치가 모호하면 `rejected_parameters[].candidate_field_paths`의 위치 중 근거 있는 하나를 골라 명시한다. 고를 근거가 없다면 임의로 선언하지 않는다. `rejected_discoveries`에는 저장되지 않은 발견 항목의 index·이유가, `rejected_parameters`에는 보류된 파라미터의 발견 항목 index·파라미터 index·이유·선택 가능한 PATH 위치가 담긴다. 정상 endpoint·파라미터는 같은 호출에서 저장되므로 거부된 부분만 고쳐 재전송하고, 성공했다고 전체가 저장됐다고 가정하지 않는다.
+
 마지막 출력은 지정된 JSON schema만 사용한다. 서버가 HTTP·선언·probe 수치를 계산하므로 `summary`에는 개수를 쓰지 말고 수행 내용과 주요 미해결 범위만 정성적으로 쓴다. `unresolved`에는 실행하지 못했거나 동적으로만 남은 표면만 쓴다.

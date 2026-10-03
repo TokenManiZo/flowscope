@@ -11,6 +11,7 @@ import io.flowscope.core.Source;
 import io.flowscope.core.SurfaceAnalysis;
 import io.flowscope.core.SupportingAssetScope;
 import io.flowscope.core.parameter.ParameterCoordinates;
+import io.flowscope.core.parameter.PathSlotCanonicalizer;
 import io.flowscope.core.discovery.JavascriptAnalysis;
 import io.flowscope.core.discovery.JavascriptCallSiteAnalyzer;
 import io.flowscope.integration.LoopbackHttpServer;
@@ -35,6 +36,9 @@ import java.util.function.Predicate;
 public final class ExplorerHttpGateway implements AutoCloseable {
     public record Event(Instant at, String status, String accountId, String method, String url,
                         int httpStatus, String evidenceId, long durationMillis, String message) {}
+
+    private record DiscoveryParameter(SurfaceAnalysis.ParameterLocation location, String fieldPath,
+                                      String displayName, SurfaceAnalysis.Requirement requirement) {}
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
@@ -438,101 +442,153 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         Set<String> newEndpointKeys = new LinkedHashSet<>();
         Set<String> newParameterKeys = new LinkedHashSet<>();
         Set<String> newParameterProvenanceKeys = new LinkedHashSet<>();
+        ArrayNode rejected = JSON.createArrayNode();
+        ArrayNode rejectedParameters = JSON.createArrayNode();
         int duplicateEndpoints = 0;
         int duplicateParameters = 0;
         try {
             requireOnlyFields(root, Set.of("discoveries"), "요청 본문");
-            for (JsonNode value : values) {
-                requireOnlyFields(value, DISCOVERY_FIELDS, "discovery");
-                String method = requiredToken(value, "method", 16).toUpperCase(Locale.ROOT);
-                if (!DECLARATION_METHODS.contains(method)) {
-                    throw new IllegalArgumentException("지원하지 않는 선언 HTTP method입니다: " + method);
-                }
-                String target = requiredText(value, "url", 4_096);
-                String scopeTarget = target.replaceAll("\\{[^/{}]+}", "1");
-                URI uri = absoluteHttpUri(scopeTarget);
-                if (!exactScope.test(scopeTarget)) {
-                    throw new IllegalArgumentException("선언 URL이 현재 FlowScope exact scope 밖입니다.");
-                }
-                URI templateUri = absoluteHttpUri(target.replace("{", "%7B").replace("}", "%7D"));
-                String path = templateUri.getRawPath() == null || templateUri.getRawPath().isBlank()
-                        ? "/" : templateUri.getRawPath().replace("%7B", "{").replace("%7D", "}")
-                        .replace("%7b", "{").replace("%7d", "}");
-                String pathTemplate = path.matches(".*\\{[^/{}]+}.*")
-                        ? path.replaceAll("\\{[^/{}]+}", "{id}")
-                        : operationPath(method, path);
-                String service = service(uri);
-                String endpointKey = service + "\0" + method + "\0" + pathTemplate;
-                String artifactKind = requiredToken(value, "artifact_kind", 32).toUpperCase(Locale.ROOT);
-                if (!Set.of("JAVASCRIPT", "HTML", "OPENAPI", "GRAPHQL", "SOURCE_MAP", "MANIFEST", "OTHER")
-                        .contains(artifactKind)) {
-                    throw new IllegalArgumentException("artifact_kind가 지원 목록에 없습니다.");
-                }
-                String locator = optionalText(value, "locator", 1_000);
-                String suppliedReason = optionalText(value, "reason", 1_000);
-                String reason = Masking.truncate(Masking.maskSecrets((locator.isBlank() ? "" : locator + " · ")
-                        + (suppliedReason.isBlank() ? "Explorer 산출물 분석" : suppliedReason)), 1_500);
-                String adapter = "llm-" + artifactKind.toLowerCase(Locale.ROOT).replace('_', '-');
-                List<String> evidenceIds = evidenceIds(value.path("evidence_ids"));
-                JsonNode parameterValues = value.path("parameters");
-                if (!parameterValues.isMissingNode() && (!parameterValues.isArray()
-                        || parameterValues.size() > MAX_PARAMETERS_PER_DISCOVERY)) {
-                    throw new IllegalArgumentException("parameters는 최대 " + MAX_PARAMETERS_PER_DISCOVERY + "개 배열이어야 합니다.");
-                }
-
-                List<RouteCandidate.Provenance> provenance = new ArrayList<>();
-                List<RouteCandidate.DeclaredParameter> parameters = new ArrayList<>();
-                boolean endpointWasKnown = declaredEndpointKeys.contains(endpointKey)
-                        || newEndpointKeys.contains(endpointKey);
-                for (String evidenceId : evidenceIds) {
-                    String provenanceKey = endpointKey + "\0" + evidenceId;
-                    boolean newProvenance = !discoveryProvenanceKeys.contains(provenanceKey)
-                            && newProvenanceKeys.add(provenanceKey);
-                    if (newProvenance) provenance.add(new RouteCandidate.Provenance(
-                            RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS, evidenceId, Source.LLM,
-                            runId, adapter, RouteCandidate.Applicability.REVIEW, reason));
-                    if (parameterValues.isArray()) for (JsonNode parameter : parameterValues) {
-                        requireOnlyFields(parameter, PARAMETER_FIELDS, "parameter");
-                        SurfaceAnalysis.ParameterLocation location = enumValue(
-                                SurfaceAnalysis.ParameterLocation.class,
-                                requiredToken(parameter, "location", 32));
-                        String rawFieldPath = requiredText(parameter, "field_path", 512);
-                        String headerName = rawFieldPath.startsWith("/") ? rawFieldPath.substring(1) : rawFieldPath;
-                        if (location == SurfaceAnalysis.ParameterLocation.HEADER
-                                && FORBIDDEN_HEADERS.contains(headerName.toLowerCase(Locale.ROOT))) {
-                            throw new IllegalArgumentException("인증·세션 header는 parameter 선언으로 저장하지 않습니다.");
-                        }
-                        String fieldPath = canonicalFieldPath(location, rawFieldPath, pathTemplate);
-                        String displayName = optionalText(parameter, "display_name", 512);
-                        SurfaceAnalysis.Requirement requirement = enumValue(SurfaceAnalysis.Requirement.class,
-                                parameter.path("requirement").asText("UNKNOWN"));
-                        String parameterKey = endpointKey + "\0" + location + "\0" + fieldPath;
-                        String parameterProvenanceKey = parameterKey + "\0" + evidenceId;
-                        if (declaredParameterProvenanceKeys.contains(parameterProvenanceKey)
-                                || !newParameterProvenanceKeys.add(parameterProvenanceKey)) {
-                            duplicateParameters++;
-                            continue;
-                        }
-                        if (!declaredParameterKeys.contains(parameterKey)) newParameterKeys.add(parameterKey);
-                        parameters.add(new RouteCandidate.DeclaredParameter(location, fieldPath,
-                                displayName, requirement, evidenceId, Source.LLM, runId, adapter, reason,
-                                ParameterCoordinates.CoordinateVersion.FLOW_V2));
+            for (int index = 0; index < values.size(); index++) {
+                JsonNode value = values.get(index);
+                try {
+                    requireOnlyFields(value, DISCOVERY_FIELDS, "discovery");
+                    String method = requiredToken(value, "method", 16).toUpperCase(Locale.ROOT);
+                    if (!DECLARATION_METHODS.contains(method)) {
+                        throw new IllegalArgumentException("지원하지 않는 선언 HTTP method입니다: " + method);
                     }
+                    String target = requiredText(value, "url", 4_096);
+                    String scopeTarget = target.replaceAll("\\{[^/{}]+}", "1");
+                    URI uri = absoluteHttpUri(scopeTarget);
+                    if (!exactScope.test(scopeTarget)) {
+                        throw new IllegalArgumentException("선언 URL이 현재 FlowScope exact scope 밖입니다.");
+                    }
+                    URI templateUri = absoluteHttpUri(target.replace("{", "%7B").replace("}", "%7D"));
+                    String path = templateUri.getRawPath() == null || templateUri.getRawPath().isBlank()
+                            ? "/" : templateUri.getRawPath().replace("%7B", "{").replace("%7D", "}")
+                            .replace("%7b", "{").replace("%7d", "}");
+                    String pathTemplate = path.matches(".*\\{[^/{}]+}.*")
+                            ? path.replaceAll("\\{[^/{}]+}", "{id}")
+                            : operationPath(method, path);
+                    String service = service(uri);
+                    String endpointKey = service + "\0" + method + "\0" + pathTemplate;
+                    String artifactKind = requiredToken(value, "artifact_kind", 32).toUpperCase(Locale.ROOT);
+                    if (!Set.of("JAVASCRIPT", "HTML", "OPENAPI", "GRAPHQL", "SOURCE_MAP", "MANIFEST", "OTHER")
+                            .contains(artifactKind)) {
+                        throw new IllegalArgumentException("artifact_kind가 지원 목록에 없습니다.");
+                    }
+                    String locator = optionalText(value, "locator", 1_000);
+                    String suppliedReason = optionalText(value, "reason", 1_000);
+                    String reason = Masking.truncate(Masking.maskSecrets((locator.isBlank() ? "" : locator + " · ")
+                            + (suppliedReason.isBlank() ? "Explorer 산출물 분석" : suppliedReason)), 1_500);
+                    String adapter = "llm-" + artifactKind.toLowerCase(Locale.ROOT).replace('_', '-');
+                    List<String> evidenceIds = evidenceIds(value.path("evidence_ids"));
+                    JsonNode parameterValues = value.path("parameters");
+                    if (!parameterValues.isMissingNode() && (!parameterValues.isArray()
+                            || parameterValues.size() > MAX_PARAMETERS_PER_DISCOVERY)) {
+                        throw new IllegalArgumentException("parameters는 최대 " + MAX_PARAMETERS_PER_DISCOVERY + "개 배열이어야 합니다.");
+                    }
+                    List<DiscoveryParameter> validParameters = new ArrayList<>();
+                    ArrayNode itemRejectedParameters = JSON.createArrayNode();
+                    if (parameterValues.isArray()) for (int parameterIndex = 0;
+                            parameterIndex < parameterValues.size(); parameterIndex++) {
+                        JsonNode parameter = parameterValues.get(parameterIndex);
+                        try {
+                            requireOnlyFields(parameter, PARAMETER_FIELDS, "parameter");
+                            SurfaceAnalysis.ParameterLocation location = enumValue(
+                                    SurfaceAnalysis.ParameterLocation.class,
+                                    requiredToken(parameter, "location", 32));
+                            String rawFieldPath = requiredText(parameter, "field_path", 512);
+                            String headerName = rawFieldPath.startsWith("/") ? rawFieldPath.substring(1) : rawFieldPath;
+                            if (location == SurfaceAnalysis.ParameterLocation.HEADER
+                                    && FORBIDDEN_HEADERS.contains(headerName.toLowerCase(Locale.ROOT))) {
+                                throw new IllegalArgumentException("인증·세션 header는 parameter 선언으로 저장하지 않습니다.");
+                            }
+                            String fieldPath = canonicalFieldPath(location, rawFieldPath, pathTemplate, path);
+                            validParameters.add(new DiscoveryParameter(location, fieldPath,
+                                    optionalText(parameter, "display_name", 512),
+                                    enumValue(SurfaceAnalysis.Requirement.class,
+                                            parameter.path("requirement").asText("UNKNOWN"))));
+                        } catch (IllegalArgumentException error) {
+                            ObjectNode issue = itemRejectedParameters.addObject()
+                                    .put("discovery_index", index).put("parameter_index", parameterIndex)
+                                    .put("reason", Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
+                            ArrayNode choices = issue.putArray("candidate_field_paths");
+                            if ("PATH".equalsIgnoreCase(parameter.path("location").asText())) {
+                                ParameterCoordinates.pathSlots(path).stream()
+                                        .map(PathSlotCanonicalizer.Slot::canonicalPath).distinct()
+                                        .forEach(choices::add);
+                            }
+                        }
+                    }
+
+                    List<RouteCandidate.Provenance> provenance = new ArrayList<>();
+                    List<RouteCandidate.DeclaredParameter> parameters = new ArrayList<>();
+                    Set<String> itemProvenanceKeys = new LinkedHashSet<>();
+                    Set<String> itemEndpointKeys = new LinkedHashSet<>();
+                    Set<String> itemParameterKeys = new LinkedHashSet<>();
+                    Set<String> itemParameterProvenanceKeys = new LinkedHashSet<>();
+                    int itemDuplicateParameters = 0;
+                    boolean endpointWasKnown = declaredEndpointKeys.contains(endpointKey)
+                            || newEndpointKeys.contains(endpointKey);
+                    for (String evidenceId : evidenceIds) {
+                        String provenanceKey = endpointKey + "\0" + evidenceId;
+                        boolean newProvenance = !discoveryProvenanceKeys.contains(provenanceKey)
+                                && !newProvenanceKeys.contains(provenanceKey)
+                                && itemProvenanceKeys.add(provenanceKey);
+                        if (newProvenance) provenance.add(new RouteCandidate.Provenance(
+                                RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS, evidenceId, Source.LLM,
+                                runId, adapter, RouteCandidate.Applicability.REVIEW, reason));
+                        for (DiscoveryParameter parameter : validParameters) {
+                            String parameterKey = endpointKey + "\0" + parameter.location() + "\0" + parameter.fieldPath();
+                            String parameterProvenanceKey = parameterKey + "\0" + evidenceId;
+                            if (declaredParameterProvenanceKeys.contains(parameterProvenanceKey)
+                                    || newParameterProvenanceKeys.contains(parameterProvenanceKey)
+                                    || !itemParameterProvenanceKeys.add(parameterProvenanceKey)) {
+                                itemDuplicateParameters++;
+                                continue;
+                            }
+                            if (!declaredParameterKeys.contains(parameterKey)
+                                    && !newParameterKeys.contains(parameterKey)) itemParameterKeys.add(parameterKey);
+                            parameters.add(new RouteCandidate.DeclaredParameter(parameter.location(),
+                                    parameter.fieldPath(), parameter.displayName(), parameter.requirement(),
+                                    evidenceId, Source.LLM, runId, adapter, reason,
+                                    ParameterCoordinates.CoordinateVersion.FLOW_V2));
+                        }
+                    }
+                    if (provenance.isEmpty() && parameters.isEmpty()) {
+                        duplicateEndpoints++;
+                        duplicateParameters += itemDuplicateParameters;
+                        rejectedParameters.addAll(itemRejectedParameters);
+                        continue;
+                    }
+                    if (!endpointWasKnown) itemEndpointKeys.add(endpointKey);
+                    if (provenance.isEmpty()) {
+                        String evidenceId = evidenceIds.getFirst();
+                        provenance.add(new RouteCandidate.Provenance(
+                                RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS, evidenceId, Source.LLM,
+                                runId, adapter, RouteCandidate.Applicability.REVIEW, reason));
+                    }
+                    List<String> concretePaths = path.contains("{") ? List.of() : List.of(path);
+                    accepted.add(new RouteCandidate(service, method, pathTemplate, concretePaths, false, false,
+                            provenance, RouteCandidate.Applicability.REVIEW, reason, parameters));
+                    newProvenanceKeys.addAll(itemProvenanceKeys);
+                    newEndpointKeys.addAll(itemEndpointKeys);
+                    newParameterKeys.addAll(itemParameterKeys);
+                    newParameterProvenanceKeys.addAll(itemParameterProvenanceKeys);
+                    duplicateParameters += itemDuplicateParameters;
+                    rejectedParameters.addAll(itemRejectedParameters);
+                } catch (IllegalArgumentException error) {
+                    rejected.addObject().put("index", index).put("reason",
+                            Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
                 }
-                if (provenance.isEmpty() && parameters.isEmpty()) {
-                    duplicateEndpoints++;
-                    continue;
-                }
-                if (!endpointWasKnown) newEndpointKeys.add(endpointKey);
-                if (provenance.isEmpty()) {
-                    String evidenceId = evidenceIds.getFirst();
-                    provenance.add(new RouteCandidate.Provenance(
-                            RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS, evidenceId, Source.LLM,
-                            runId, adapter, RouteCandidate.Applicability.REVIEW, reason));
-                }
-                List<String> concretePaths = path.contains("{") ? List.of() : List.of(path);
-                accepted.add(new RouteCandidate(service, method, pathTemplate, concretePaths, false, false,
-                        provenance, RouteCandidate.Applicability.REVIEW, reason, parameters));
+            }
+            if (accepted.isEmpty() && !rejected.isEmpty()) {
+                ObjectNode result = JSON.createObjectNode().put("success", false)
+                        .put("error", "발견을 저장하지 못했습니다: 항목 " + rejected.get(0).path("index").asInt()
+                                + " · " + rejected.get(0).path("reason").asText());
+                result.set("rejected_discoveries", rejected);
+                result.set("rejected_parameters", rejectedParameters);
+                return json(400, result);
             }
             if (discoveryProvenanceKeys.size() + newProvenanceKeys.size() > MAX_DISCOVERIES) {
                 return error(429, "Explorer run 선언 상한에 도달했습니다.");
@@ -553,6 +609,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     .put("duplicate_parameters", duplicateParameters)
                     .put("run_endpoint_total", declaredEndpointKeys.size())
                     .put("run_parameter_total", declaredParameterKeys.size());
+            result.set("rejected_discoveries", rejected);
+            result.set("rejected_parameters", rejectedParameters);
             return json(200, result);
         } catch (IllegalArgumentException error) {
             return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
@@ -604,7 +662,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
      * 추정해야 하는 입력은 거부해 모델이 canonical pointer로 다시 보내게 한다(추정 join 없음).
      */
     private static String canonicalFieldPath(SurfaceAnalysis.ParameterLocation location, String raw,
-                                             String pathTemplate) {
+                                             String pathTemplate, String declaredPath) {
         switch (location) {
             case PATH -> {
                 if (raw.matches("/segments/\\d+")) {
@@ -613,8 +671,22 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     }
                     return raw;
                 }
+                List<PathSlotCanonicalizer.Slot> namedSlots =
+                        ParameterCoordinates.pathSlots(declaredPath).stream()
+                                .filter(slot -> raw.equals(slot.declaredName())
+                                        || raw.equals("{" + slot.declaredName() + "}"))
+                                .toList();
+                if (namedSlots.size() == 1
+                        && ParameterCoordinates.pathSlotPosition(pathTemplate,
+                        namedSlots.getFirst().canonicalPath())) {
+                    return namedSlots.getFirst().canonicalPath();
+                }
+                if (namedSlots.size() > 1) {
+                    throw new IllegalArgumentException("PATH 이름이 여러 위치에 있으므로 /segments/N 위치를 명시해야 합니다.");
+                }
                 return ParameterCoordinates.legacyToCanonical(location, raw, pathTemplate).orElseThrow(() ->
-                        new IllegalArgumentException("PATH field_path는 /segments/N 또는 template 위치의 path[i] 형식이어야 합니다."));
+                        new IllegalArgumentException("PATH field_path는 선언 URL의 유일한 {이름}, "
+                                + "/segments/N 또는 template 위치의 path[i]여야 합니다."));
             }
             case JSON_BODY, GRAPHQL_VARIABLE, XML_PATH -> {
                 if (raw.startsWith("/")) {
