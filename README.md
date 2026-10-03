@@ -176,7 +176,7 @@ Explorer 모델은 `flowscope_observations`로 해당 run의 HTTP·브라우저 
 
 기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 옛 브라우저 하네스, Judge, agent-workspace는 없습니다. 별도 구현된 Explorer 로그인 창은 Chromium을 사용합니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
 
-공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright/Chrome 또는 MCP 설정은 필요하지 않습니다. FlowScope는 Codex 실행 파일과 로그인 상태를 확인하고, 모델에는 인증 비밀 대신 opaque account handle과 HTTP/선언 dynamic tool만 제공합니다. 모델 목록의 `isDefault`는 Codex의 추천 기본값이지 이 PC의 `config.toml` 선택값이 아니므로 두 값을 혼동하지 않습니다. 명시적으로 고른 모델은 실행 상태에 남지만, 모델을 지정하지 않고 Codex 기본값으로 실행한 경우에는 모델 ID를 추측하지 않습니다. Claude 공급자는 제품 지원 대상이 아니며, Explorer는 Codex 전용입니다. app-server dynamic tools는 현재 experimental API이므로 실제 설치된 CLI 호환성은 readiness와 opt-in 실물 provider gate로 확인합니다. LLM 응답 Evidence 0건은 완료가 아니라 실패로 남고, 모델의 자유서술 개수는 완료 집계로 사용하지 않습니다.
+공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright 또는 MCP 설정은 필요하지 않습니다. 브라우저 탐색에는 실행 가능한 Chromium이 필요하며 FlowScope는 Burp 내장 브라우저를 먼저 찾고, 없으면 시스템 Chrome/Chromium을 찾습니다. 둘 다 없으면 브라우저를 실행한 척하지 않고 시작 실패를 표시합니다. FlowScope는 Codex 실행 파일과 로그인 상태를 확인하고, 모델에는 인증 비밀 대신 opaque account handle과 HTTP/선언 dynamic tool만 제공합니다. 모델 목록의 `isDefault`는 Codex의 추천 기본값이지 이 PC의 `config.toml` 선택값이 아니므로 두 값을 혼동하지 않습니다. 명시적으로 고른 모델은 실행 상태에 남지만, 모델을 지정하지 않고 Codex 기본값으로 실행한 경우에는 모델 ID를 추측하지 않습니다. Claude 공급자는 제품 지원 대상이 아니며, Explorer는 Codex 전용입니다. app-server dynamic tools는 현재 experimental API이므로 실제 설치된 CLI 호환성은 readiness와 opt-in 실물 provider gate로 확인합니다. LLM 응답 Evidence 0건은 완료가 아니라 실패로 남고, 모델의 자유서술 개수는 완료 집계로 사용하지 않습니다.
 
 ## Provenance 모델
 
