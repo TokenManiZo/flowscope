@@ -2,6 +2,7 @@ package io.flowscope.ui;
 
 import io.flowscope.core.Pipeline;
 import javax.swing.BorderFactory;
+import javax.swing.AbstractButton;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
@@ -12,12 +13,15 @@ import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.plaf.basic.BasicButtonUI;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.io.File;
@@ -77,12 +81,14 @@ public final class FlowScopeControlTab extends JPanel {
         title.setFont(title.getFont().deriveFont(Font.BOLD, 20f));
         panel.add(title, BorderLayout.NORTH);
         JPanel launch = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        JButton open = new JButton("FlowScope Web UI 열기");
+        JButton open = new JButton("FlowScope Web UI 열기") {
+            @Override public void updateUI() { setUI(new ControlButtonUI()); }
+        };
         open.setName("web.open");
         open.setFont(open.getFont().deriveFont(Font.BOLD, 14f));
         open.setBackground(new Color(0xc64a17));
         open.setForeground(Color.WHITE);
-        open.setContentAreaFilled(false);
+        open.setContentAreaFilled(true);
         open.setOpaque(true);
         open.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(open.getBackground()),
@@ -95,7 +101,10 @@ public final class FlowScopeControlTab extends JPanel {
         address.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
         launch.add(address);
         launch.add(Box.createHorizontalStrut(12));
-        JButton copy = button("주소 복사", this::copyWebAddress);
+        JButton copy = new JButton("주소 복사") {
+            @Override public void updateUI() { setUI(new ControlButtonUI()); }
+        };
+        copy.addActionListener(ignored -> copyWebAddress());
         copy.setName("web.copy");
         copy.setContentAreaFilled(false);
         copy.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
@@ -147,7 +156,9 @@ public final class FlowScopeControlTab extends JPanel {
         collection.setAlignmentX(LEFT_ALIGNMENT);
         details.add(Box.createVerticalStrut(12));
         details.add(collection);
-        JToggleButton toggle = new JToggleButton("프로젝트 도구", UIManager.getIcon("Tree.collapsedIcon"));
+        JToggleButton toggle = new JToggleButton("프로젝트 도구", UIManager.getIcon("Tree.collapsedIcon")) {
+            @Override public void updateUI() { setUI(new ControlButtonUI()); }
+        };
         toggle.setName("project.tools.toggle");
         toggle.setContentAreaFilled(false);
         toggle.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
@@ -163,6 +174,27 @@ public final class FlowScopeControlTab extends JPanel {
         root.add(toggleRow, BorderLayout.NORTH);
         root.add(details, BorderLayout.CENTER);
         return root;
+    }
+
+    /** Keep the three custom controls readable when Burp skips transparent backgrounds or changes selected text. */
+    private static final class ControlButtonUI extends BasicButtonUI {
+        @Override protected void installDefaults(AbstractButton button) {
+            super.installDefaults(button);
+            button.setForeground("web.open".equals(button.getName()) ? Color.WHITE : UIManager.getColor("Label.foreground"));
+        }
+
+        @Override protected void paintButtonPressed(Graphics graphics, AbstractButton button) {
+            if (button.isContentAreaFilled()) {
+                graphics.setColor(button.getBackground().darker());
+                graphics.fillRect(0, 0, button.getWidth(), button.getHeight());
+            }
+        }
+
+        @Override protected void paintFocus(Graphics graphics, AbstractButton button,
+                Rectangle viewRect, Rectangle textRect, Rectangle iconRect) {
+            graphics.setColor(button.getForeground());
+            graphics.drawRect(3, 3, button.getWidth() - 7, button.getHeight() - 7);
+        }
     }
 
     private static JButton button(String label, Runnable action) {
