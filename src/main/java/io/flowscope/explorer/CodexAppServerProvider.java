@@ -270,14 +270,30 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     JsonNode threadResponse = waitForResponse(reader, threadIdRequest);
                     threadId = threadResponse.path("result").path("thread").path("id").asText("");
                     if (threadId.isBlank()) throw new IOException("Codex thread ID를 받지 못했습니다.");
-                    long turnRequest = send("turn/start", turnParams());
-                    JsonNode turnResponse = waitForResponse(reader, turnRequest);
-                    turnId = turnResponse.path("result").path("turn").path("id").asText("");
-                    readTurn(reader);
-                    if (cancelled.get()) return;
-                    Result result = parseResult(finalMessage, threadId);
-                    deleteThread(reader);
-                    listener.completed(result);
+                    String instruction = "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요.";
+                    for (int completedTurns = 1; completedTurns <= 3; completedTurns++) {
+                        finalMessage = "";
+                        turnId = "";
+                        long turnRequest = send("turn/start", turnParams(instruction));
+                        JsonNode turnResponse = waitForResponse(reader, turnRequest);
+                        turnId = turnResponse.path("result").path("turn").path("id").asText("");
+                        readTurn(reader);
+                        if (cancelled.get()) return;
+                        Result result = parseResult(finalMessage, threadId);
+                        String repair = listener.review(result, completedTurns);
+                        if (repair == null || repair.isBlank()) {
+                            deleteThread(reader);
+                            listener.completed(result);
+                            return;
+                        }
+                        if (completedTurns == 3) {
+                            listener.failed("Explorer의 저장 거부 항목이 정정되거나 차단 이유로 보고되지 않아 완료할 수 없습니다.");
+                            return;
+                        }
+                        listener.activity(activity("WARNING", "탐색 보완 요청",
+                                "미해결 저장 거부 항목을 같은 Codex 대화에서 다시 확인합니다.", "RUNNING", null));
+                        instruction = repair;
+                    }
                 }
             } catch (Exception error) {
                 if (!cancelled.get()) listener.failed("Codex Explorer 실패: " + safe(error.getMessage()));
@@ -433,6 +449,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     case "flowscope_http_request" -> request.gatewayUrl();
                     case "flowscope_browser" -> request.gatewayUrl().replaceFirst("/request$", "/browser");
                     case "flowscope_observations" -> request.gatewayUrl().replaceFirst("/request$", "/observations");
+                    case "flowscope_worklist" -> request.gatewayUrl().replaceFirst("/request$", "/worklist");
                     case "flowscope_record_discoveries" -> request.discoveryUrl();
                     case "flowscope_artifact_list" -> artifactBase + "/list";
                     case "flowscope_artifact_search" -> artifactBase + "/search";
@@ -440,7 +457,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     case "flowscope_artifact_index" -> artifactBase + "/index";
                     default -> throw new IllegalArgumentException("지원하지 않는 Explorer 도구입니다.");
                 };
-                String gatewayResponse = callGateway(endpoint, params.path("arguments"));
+                String gatewayResponse = callGateway(endpoint, params.path("arguments"),
+                        "flowscope_record_discoveries".equals(tool));
                 if ("flowscope_record_discoveries".equals(tool)) {
                     JsonNode outcome = JSON.readTree(gatewayResponse);
                     JsonNode rejected = outcome.path("rejected_discoveries");
@@ -453,7 +471,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                                         + first.path("reason").asText(), "WARNING", null));
                     }
                 }
-                result.put("success", true).putArray("contentItems").addObject()
+                result.put("success", JSON.readTree(gatewayResponse).path("success").asBoolean(true))
+                        .putArray("contentItems").addObject()
                         .put("type", "inputText").put("text", gatewayResponse);
             } catch (Exception error) {
                 String reason = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
@@ -467,7 +486,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             write(response);
         }
 
-        private String callGateway(String endpoint, JsonNode arguments) throws Exception {
+        private String callGateway(String endpoint, JsonNode arguments, boolean structuredDiscovery) throws Exception {
             HttpRequest gatewayRequest = HttpRequest.newBuilder(URI.create(endpoint))
                     .header("Authorization", "Bearer " + request.gatewayToken())
                     .header("Content-Type", "application/json")
@@ -477,7 +496,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             HttpResponse<String> gatewayResponse = gateway.send(
                     gatewayRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             JsonNode parsed = JSON.readTree(gatewayResponse.body());
-            if (gatewayResponse.statusCode() >= 400) {
+            if (gatewayResponse.statusCode() >= 400 && !(structuredDiscovery
+                    && parsed.has("rejected_discoveries") && parsed.has("rejected_parameters"))) {
                 throw new IOException(parsed.path("error").asText("FlowScope HTTP 요청이 거부됐습니다."));
             }
             return parsed.toString();
@@ -556,17 +576,18 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .put("serviceName", "flowscope_explorer").put("ephemeral", true)
                     .put("developerInstructions", request.prompt());
             if (!request.model().isBlank()) params.put("model", request.model());
-            params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(observationsTool()).add(artifactListTool())
+            params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(observationsTool())
+                    .add(worklistTool()).add(artifactListTool())
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
             return params;
         }
 
-        private ObjectNode turnParams() {
+        private ObjectNode turnParams(String instruction) {
             ObjectNode params = JSON.createObjectNode();
             params.put("threadId", threadId).put("cwd", workspace.toString()).put("approvalPolicy", "on-request");
             params.putArray("input").addObject().put("type", "text")
-                    .put("text", "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요.");
+                    .put("text", instruction);
             ObjectNode sandbox = params.putObject("sandboxPolicy").put("type", "workspaceWrite")
                     .put("networkAccess", false);
             sandbox.putArray("writableRoots").add(workspace.toString());
@@ -620,6 +641,17 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             properties.putObject("after_sequence").put("type", "integer").put("minimum", 0);
             properties.putObject("limit").put("type", "integer").put("minimum", 1).put("maximum", 100);
             schema.putArray("required").add("after_sequence").add("limit");
+            return tool;
+        }
+
+        private ObjectNode worklistTool() {
+            ObjectNode tool = dynamicTool("flowscope_worklist",
+                    "Read this run's Evidence-linked endpoint declarations and pending rejected discoveries. States distinguish observed, unrequested, failed, and templates needing a concrete resource ID. There is no knowable global coverage denominator. Retry a corrected item with replaces_issue_id, or report its issue ID and specific blocker in final unresolved.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode properties = schema.putObject("properties");
+            properties.putObject("offset").put("type", "integer").put("minimum", 0);
+            properties.putObject("limit").put("type", "integer").put("minimum", 1).put("maximum", 100);
             return tool;
         }
 
@@ -700,6 +732,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             properties.putObject("locator").put("type", "string")
                     .put("description", "Non-secret location such as artifact file and line or JSON pointer.");
             properties.putObject("reason").put("type", "string");
+            properties.putObject("replaces_issue_id").put("type", "string")
+                    .put("description", "Optional issue ID from rejected_discoveries when this corrected Evidence-linked discovery retries the rejected item.");
             ObjectNode parameters = properties.putObject("parameters").put("type", "array")
                     .put("maxItems", 256);
             ObjectNode parameter = parameters.putObject("items").put("type", "object")
@@ -711,6 +745,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             parameterProperties.putObject("field_path").put("type", "string")
                     .put("description", "PATH: use the URL template's unique placeholder name, such as orderId or {orderId} in /api/orders/{orderId}, or its zero-based segment coordinate /segments/2. For repeated placeholder names use the exact /segments/N coordinate; rejected_parameters returns the allowed positions. Legacy path[3] is also accepted. JSON_BODY and GRAPHQL_VARIABLE: use a JSON pointer such as /criteria/status; QUERY, FORM_BODY, MULTIPART_BODY, and HEADER: use the field name.");
             parameterProperties.putObject("display_name").put("type", "string");
+            parameterProperties.putObject("replaces_issue_id").put("type", "string")
+                    .put("description", "Optional issue ID from rejected_parameters when this corrected parameter retries the same endpoint and artifact locator.");
             parameterProperties.putObject("requirement").put("type", "string").putArray("enum")
                     .add("REQUIRED").add("OPTIONAL").add("UNKNOWN");
             parameter.putArray("required").add("location").add("field_path")
@@ -827,6 +863,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             case "flowscope_http_request" -> "HTTP 요청";
             case "flowscope_browser" -> "브라우저 조작";
             case "flowscope_observations" -> "탐색 관측 조회";
+            case "flowscope_worklist" -> "탐색 작업 목록";
             case "flowscope_record_discoveries" -> "발견 저장";
             case "flowscope_artifact_list", "flowscope_artifact_search",
                  "flowscope_artifact_read", "flowscope_artifact_index" -> "산출물 분석";

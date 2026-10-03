@@ -465,6 +465,16 @@ public final class ExplorerCoordinator implements AutoCloseable {
                     browserDeadline = System.currentTimeMillis() + browserMinutes() * 60_000;
                     startBrowserWatch(runId);
                 }
+            }
+            if (request.includeAnonymous()) {
+                LoginBrowser.Session window = anonymousWindow;
+                if (window == null || !sameActiveRun(runId)) return;
+                window.navigate(request.target());
+                if (sameActiveRun(runId)) addActivity("BROWSER", "비로그인 시작 페이지",
+                        request.target(), "COMPLETED", null);
+            }
+            synchronized (this) {
+                if (!sameActiveRun(runId)) return;
                 providerHandle = provider.start(new ExplorerProvider.Request(runId, request.target(),
                         List.of(request.target()), readyAccounts, gateway.url(), gateway.discoveriesUrl(),
                         gateway.token(), prompt, request.model()),
@@ -522,9 +532,34 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private ExplorerProvider.Listener providerListener(String runId,
                                                         List<ExplorerProvider.Unresolved> initialLimitations) {
         return new ExplorerProvider.Listener() {
+            private long worklistReadsAtReview;
+
             @Override public void activity(ExplorerProvider.Activity event) {
                 if (sameActiveRun(runId)) addActivity(event.kind(), event.title(), event.detail(),
                         event.status(), event.durationMillis());
+            }
+
+            @Override public String review(ExplorerProvider.Result result, int completedTurns) {
+                ExplorerHttpGateway currentGateway = gateway;
+                if (!sameActiveRun(runId) || currentGateway == null) return "";
+                List<ExplorerHttpGateway.PendingIssue> pending = currentGateway.pendingIssues();
+                if (pending.isEmpty()) return "";
+                boolean inspectedSinceReview = currentGateway.worklistReads() > worklistReadsAtReview;
+                worklistReadsAtReview = currentGateway.worklistReads();
+                if (completedTurns > 1 && inspectedSinceReview && pending.stream().allMatch(issue ->
+                        result.unresolved().stream().anyMatch(value -> "DISCOVERY_BLOCKED".equals(value.kind())
+                                && issue.id().equals(value.target()) && !value.reason().isBlank()))) {
+                    return "";
+                }
+                String first = pending.stream().limit(10)
+                        .map(issue -> issue.id() + " " + issue.kind() + " " + issue.target() + " · " + issue.reason())
+                        .collect(java.util.stream.Collectors.joining("\n"));
+                return "FlowScope 완료 검토에서 저장 거부 " + pending.size() + "건이 남았습니다. "
+                        + "flowscope_worklist({offset:0,limit:100})를 다시 읽고, 원본 Evidence를 확인한 뒤 "
+                        + "수정된 항목에 replaces_issue_id를 넣어 재전송하세요. 해결할 근거가 없으면 "
+                        + "각 issue ID를 final unresolved의 kind=DISCOVERY_BLOCKED, target=issue ID, "
+                        + "reason=구체적 차단 이유로 남기세요. 무시한 채 완료하면 실패합니다.\n"
+                        + first;
             }
 
             @Override public void completed(ExplorerProvider.Result result) {
@@ -543,6 +578,12 @@ public final class ExplorerCoordinator implements AutoCloseable {
         stopBrowserWatch();
         stopBrowserRecording();
         try {
+            ExplorerHttpGateway currentGateway = gateway;
+            if (currentGateway != null && currentGateway.pendingIssues().stream().anyMatch(issue ->
+                    limitations.stream().noneMatch(value -> "DISCOVERY_BLOCKED".equals(value.kind())
+                            && issue.id().equals(value.target()) && !value.reason().isBlank()))) {
+                throw new IllegalStateException("발견 저장 거부 항목이 해결되거나 이유와 함께 보고되지 않았습니다.");
+            }
             LaneCompletionPolicy.complete(contexts, Source.LLM, runId, completionSnapshot.get());
             closeGateway();
             Status status = limitations.isEmpty() ? Status.COMPLETED : Status.COMPLETED_WITH_LIMITATIONS;
@@ -557,9 +598,13 @@ public final class ExplorerCoordinator implements AutoCloseable {
                     : "응답 Evidence를 보존하고 미해결 항목을 함께 남겼습니다.", status.name(), null);
         } catch (Exception error) {
             contexts.abort(Source.LLM, runId);
+            List<ExplorerProvider.Unresolved> reported = new ArrayList<>(limitations);
+            ExplorerHttpGateway currentGateway = gateway;
+            if (currentGateway != null) currentGateway.pendingIssues().forEach(issue ->
+                    reported.add(new ExplorerProvider.Unresolved("DISCOVERY_REJECTED", issue.id(), issue.reason())));
             closeGateway();
             snapshot = terminal(Status.FAILED,
-                    "Explorer 완료 gate 실패: " + safe(error.getMessage()), limitations);
+                    "Explorer 완료 gate 실패: " + safe(error.getMessage()), reported);
             addActivity("ERROR", "완료 gate 실패", snapshot.message(), "FAILED", null);
         }
     }
@@ -570,8 +615,12 @@ public final class ExplorerCoordinator implements AutoCloseable {
         stopBrowserWatch();
         stopBrowserRecording();
         contexts.abort(Source.LLM, runId);
+        List<ExplorerProvider.Unresolved> reported = new ArrayList<>(limitations);
+        ExplorerHttpGateway currentGateway = gateway;
+        if (currentGateway != null) currentGateway.pendingIssues().forEach(issue ->
+                reported.add(new ExplorerProvider.Unresolved("DISCOVERY_REJECTED", issue.id(), issue.reason())));
         closeGateway();
-        snapshot = terminal(Status.FAILED, safe(message), limitations);
+        snapshot = terminal(Status.FAILED, safe(message), reported);
         addActivity("ERROR", "Explorer 실패", snapshot.message(), "FAILED", null);
         logger.accept("FlowScope Explorer 실패: " + snapshot.message());
     }

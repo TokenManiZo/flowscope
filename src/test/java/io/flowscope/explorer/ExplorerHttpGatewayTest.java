@@ -48,6 +48,35 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
+    void worklistChangesConcreteDeclarationOnlyAfterStoredResponse() throws Exception {
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), "fetch('/api/search')", false,
+                request.url().endsWith("main.js") ? "ev-source" : "ev-search", 1, Instant.now());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-worklist", ignored -> {})) {
+            post(gateway, """
+                    {"account":"","method":"GET","url":"https://app.example.test/main.js","headers":{},"body":""}
+                    """);
+            assertEquals(200, post(gateway, gateway.discoveriesUrl(), """
+                    {"discoveries":[{"method":"GET","url":"https://app.example.test/api/search",
+                      "evidence_ids":["ev-source"],"artifact_kind":"JAVASCRIPT","locator":"main.js:1",
+                      "reason":"fetch call","parameters":[]}]}
+                    """).statusCode());
+            JsonNode before = JSON.readTree(post(gateway, gateway.worklistUrl(), "{}").body());
+            assertEquals("UNREQUESTED", before.path("declared_endpoints").get(0).path("state").asText());
+            assertEquals("ev-source", before.path("declared_endpoints").get(0)
+                    .path("declaration_evidence_ids").get(0).asText());
+            post(gateway, """
+                    {"account":"","method":"GET","url":"https://app.example.test/api/search","headers":{},"body":""}
+                    """);
+            JsonNode after = JSON.readTree(post(gateway, gateway.worklistUrl(), "{}").body());
+            assertEquals("OBSERVED", after.path("declared_endpoints").get(0).path("state").asText());
+            assertEquals("", after.path("declared_endpoints").get(0)
+                    .path("observed_accounts").get(0).asText());
+        }
+    }
+
+    @Test
     void browserGatewayAcceptsExplicitAnonymousHandleButNotMissingAccount() throws Exception {
         try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
                 request -> { throw new AssertionError("browser action must not use HTTP transport"); },
@@ -413,17 +442,24 @@ final class ExplorerHttpGatewayTest {
             JsonNode rejection = result.path("rejected_parameters").get(0);
             assertEquals(0, rejection.path("discovery_index").asInt());
             assertEquals(0, rejection.path("parameter_index").asInt());
+            String issueId = rejection.path("issue_id").asText();
+            assertFalse(issueId.isBlank());
+            assertEquals(issueId, JSON.readTree(post(gateway, gateway.worklistUrl(), "{}").body())
+                    .path("pending_issues").get(0).path("issue_id").asText());
             assertEquals(List.of("/segments/1", "/segments/3"),
                     JSON.convertValue(rejection.path("candidate_field_paths"),
                             new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
             assertEquals(List.of("/sort"), stored.get().getFirst().declaredParameters().stream()
                     .map(RouteCandidate.DeclaredParameter::fieldPath).toList());
 
-            String corrected = batch.replace("\"field_path\":\"id\"", "\"field_path\":\"/segments/3\"");
+            String corrected = batch.replace("\"field_path\":\"id\"",
+                    "\"field_path\":\"/segments/3\",\"replaces_issue_id\":\"" + issueId + "\"");
             JsonNode retry = JSON.readTree(post(gateway, gateway.discoveriesUrl(), corrected).body());
             assertEquals(0, retry.path("accepted_endpoints").asInt());
             assertEquals(1, retry.path("accepted_parameters").asInt());
             assertEquals(0, retry.path("rejected_parameters").size());
+            assertEquals(0, JSON.readTree(post(gateway, gateway.worklistUrl(), "{}").body())
+                    .path("pending_issues").size());
         }
     }
 

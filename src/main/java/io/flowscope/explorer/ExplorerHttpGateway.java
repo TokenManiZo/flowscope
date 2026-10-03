@@ -41,7 +41,11 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                                int httpStatus, String evidenceId, String recordState) {}
 
     private record DiscoveryParameter(SurfaceAnalysis.ParameterLocation location, String fieldPath,
-                                      String displayName, SurfaceAnalysis.Requirement requirement) {}
+                                      String displayName, SurfaceAnalysis.Requirement requirement,
+                                      String replacesIssueId) {}
+    record PendingIssue(String id, String kind, String target, String reason,
+                        String endpointKey, String sourceKey) {}
+    private record DeclaredTarget(String method, String url, List<String> evidenceIds) {}
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
@@ -50,9 +54,10 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private static final Set<String> DECLARATION_METHODS = Set.of(
             "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE");
     private static final Set<String> DISCOVERY_FIELDS = Set.of(
-            "method", "url", "evidence_ids", "artifact_kind", "locator", "reason", "parameters");
+            "method", "url", "evidence_ids", "artifact_kind", "locator", "reason", "parameters",
+            "replaces_issue_id");
     private static final Set<String> PARAMETER_FIELDS = Set.of(
-            "location", "field_path", "display_name", "requirement");
+            "location", "field_path", "display_name", "requirement", "replaces_issue_id");
     private static final int REQUEST_LIMIT = 1024 * 1024;
     private static final int INLINE_BODY_LIMIT = 64 * 1024;
     private static final int MAX_REQUESTS = Integer.getInteger("flowscope.explorer.maxRequests", 500);
@@ -62,6 +67,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private static final int MAX_DISCOVERIES = 5_000;
     private static final int MAX_PARAMETERS_PER_DISCOVERY = 256;
     private static final int MAX_DECLARED_PARAMETERS = 50_000;
+    private static final int MAX_PENDING_ISSUES = 200;
 
     private final ExplorerAccountVault vault;
     private final ExplorerTransport transport;
@@ -77,6 +83,10 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredEndpointKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
+    private final Map<String, PendingIssue> pendingIssues = new LinkedHashMap<>();
+    private final Map<String, DeclaredTarget> declaredTargets = new LinkedHashMap<>();
+    private long nextIssueId;
+    private long worklistReads;
     private final List<Observation> observations = new ArrayList<>();
     private long observationSequence;
     private final ExplorerArtifactStore artifacts;
@@ -93,6 +103,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
 
     public String browserUrl() { return "http://127.0.0.1:" + server.port() + "/browser"; }
     public String observationsUrl() { return "http://127.0.0.1:" + server.port() + "/observations"; }
+    public String worklistUrl() { return "http://127.0.0.1:" + server.port() + "/worklist"; }
+    public synchronized List<PendingIssue> pendingIssues() { return List.copyOf(pendingIssues.values()); }
+    public synchronized long worklistReads() { return worklistReads; }
 
     /** CDP saw a response, but Evidence publication is asynchronous and must not be claimed here. */
     public synchronized void browserObserved(String observedRunId, String accountId, String method,
@@ -149,6 +162,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 || !(requestUri.getPath().equals("/request") || requestUri.getPath().equals("/discoveries")
                 || requestUri.getPath().equals("/browser")
                 || requestUri.getPath().equals("/observations")
+                || requestUri.getPath().equals("/worklist")
                 || requestUri.getPath().startsWith("/artifacts/"))) {
             return error(405, "지원하지 않는 Explorer gateway 작업입니다.");
         }
@@ -159,6 +173,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         if (requestUri.getPath().equals("/discoveries")) return handleDiscoveries(body);
         if (requestUri.getPath().equals("/browser")) return handleBrowser(body);
         if (requestUri.getPath().equals("/observations")) return handleObservations(body);
+        if (requestUri.getPath().equals("/worklist")) return handleWorklist(body);
         if (requestUri.getPath().startsWith("/artifacts/")) {
             return handleArtifacts(requestUri.getPath().substring("/artifacts/".length()), body);
         }
@@ -360,6 +375,49 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         }
     }
 
+    private synchronized LoopbackHttpServer.Response handleWorklist(JsonNode body) {
+        try {
+            requireOnlyFields(body, Set.of("offset", "limit"), "worklist 요청");
+            int offset = body.path("offset").isMissingNode() ? 0 : body.path("offset").asInt(-1);
+            int limit = body.path("limit").isMissingNode() ? 100 : body.path("limit").asInt(-1);
+            if (offset < 0 || limit < 1 || limit > 100) return error(400, "offset은 0 이상, limit는 1~100이어야 합니다.");
+            worklistReads++;
+            ObjectNode result = JSON.createObjectNode().put("run_id", runId)
+                    .put("declared_total", declaredTargets.size()).put("pending_total", pendingIssues.size());
+            ArrayNode declared = result.putArray("declared_endpoints");
+            int index = 0;
+            for (DeclaredTarget target : declaredTargets.values()) {
+                if (index++ < offset) continue;
+                if (declared.size() == limit) break;
+                boolean concrete = !target.url().contains("{");
+                List<Observation> attempts = concrete ? observations.stream()
+                        .filter(item -> item.method().equals(target.method()) && item.url().equals(target.url()))
+                        .toList() : List.of();
+                String state = !concrete ? "NEEDS_CONCRETE_URL" : attempts.stream()
+                        .anyMatch(item -> item.recordState().equals("EVIDENCE_STORED")) ? "OBSERVED"
+                        : attempts.isEmpty() ? "UNREQUESTED" : "ATTEMPTED_NO_EVIDENCE";
+                ObjectNode item = declared.addObject().put("method", target.method())
+                        .put("url", Masking.truncate(Masking.maskSecrets(target.url()), 2_048))
+                        .put("state", state);
+                ArrayNode evidence = item.putArray("declaration_evidence_ids");
+                target.evidenceIds().forEach(evidence::add);
+                ArrayNode accounts = item.putArray("observed_accounts");
+                attempts.stream().filter(attempt -> attempt.recordState().equals("EVIDENCE_STORED"))
+                        .map(Observation::accountId).distinct().forEach(accounts::add);
+            }
+            result.put("next_offset", offset + declared.size() < declaredTargets.size()
+                    ? offset + declared.size() : -1);
+            ArrayNode issues = result.putArray("pending_issues");
+            for (PendingIssue issue : pendingIssues.values()) {
+                issues.addObject().put("issue_id", issue.id()).put("kind", issue.kind())
+                        .put("target", issue.target()).put("reason", issue.reason());
+            }
+            return json(200, result);
+        } catch (IllegalArgumentException error) {
+            return error(400, error.getMessage());
+        }
+    }
+
     private LoopbackHttpServer.Response handleArtifacts(String operation, JsonNode body) {
         try {
             return switch (operation) {
@@ -493,6 +551,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         Set<String> newEndpointKeys = new LinkedHashSet<>();
         Set<String> newParameterKeys = new LinkedHashSet<>();
         Set<String> newParameterProvenanceKeys = new LinkedHashSet<>();
+        Set<String> resolvedIssueIds = new LinkedHashSet<>();
+        Map<String, DeclaredTarget> newTargets = new LinkedHashMap<>();
         ArrayNode rejected = JSON.createArrayNode();
         ArrayNode rejectedParameters = JSON.createArrayNode();
         int duplicateEndpoints = 0;
@@ -501,6 +561,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             requireOnlyFields(root, Set.of("discoveries"), "요청 본문");
             for (int index = 0; index < values.size(); index++) {
                 JsonNode value = values.get(index);
+                String sourceKey = sourceKey(value);
                 try {
                     requireOnlyFields(value, DISCOVERY_FIELDS, "discovery");
                     String method = requiredToken(value, "method", 16).toUpperCase(Locale.ROOT);
@@ -522,6 +583,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                             : operationPath(method, path);
                     String service = service(uri);
                     String endpointKey = service + "\0" + method + "\0" + pathTemplate;
+                    String replacesIssueId = optionalText(value, "replaces_issue_id", 64);
+                    validateReplacement(replacesIssueId, "DISCOVERY", "", sourceKey);
                     String artifactKind = requiredToken(value, "artifact_kind", 32).toUpperCase(Locale.ROOT);
                     if (!Set.of("JAVASCRIPT", "HTML", "OPENAPI", "GRAPHQL", "SOURCE_MAP", "MANIFEST", "OTHER")
                             .contains(artifactKind)) {
@@ -555,13 +618,19 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                                 throw new IllegalArgumentException("인증·세션 header는 parameter 선언으로 저장하지 않습니다.");
                             }
                             String fieldPath = canonicalFieldPath(location, rawFieldPath, pathTemplate, path);
+                            String parameterIssueId = optionalText(parameter, "replaces_issue_id", 64);
+                            validateReplacement(parameterIssueId, "PARAMETER", endpointKey, sourceKey);
                             validParameters.add(new DiscoveryParameter(location, fieldPath,
                                     optionalText(parameter, "display_name", 512),
                                     enumValue(SurfaceAnalysis.Requirement.class,
-                                            parameter.path("requirement").asText("UNKNOWN"))));
+                                            parameter.path("requirement").asText("UNKNOWN")), parameterIssueId));
                         } catch (IllegalArgumentException error) {
+                            String issueId = registerIssue("PARAMETER", method + " " + target + " · "
+                                    + parameter.path("field_path").asText(""), error.getMessage(),
+                                    endpointKey, sourceKey);
                             ObjectNode issue = itemRejectedParameters.addObject()
                                     .put("discovery_index", index).put("parameter_index", parameterIndex)
+                                    .put("issue_id", issueId)
                                     .put("reason", Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
                             ArrayNode choices = issue.putArray("candidate_field_paths");
                             if ("PATH".equalsIgnoreCase(parameter.path("location").asText())) {
@@ -610,6 +679,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                         duplicateEndpoints++;
                         duplicateParameters += itemDuplicateParameters;
                         rejectedParameters.addAll(itemRejectedParameters);
+                        if (!replacesIssueId.isBlank()) resolvedIssueIds.add(replacesIssueId);
+                        validParameters.stream().map(DiscoveryParameter::replacesIssueId)
+                                .filter(id -> !id.isBlank()).forEach(resolvedIssueIds::add);
                         continue;
                     }
                     if (!endpointWasKnown) itemEndpointKeys.add(endpointKey);
@@ -622,6 +694,12 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     List<String> concretePaths = path.contains("{") ? List.of() : List.of(path);
                     accepted.add(new RouteCandidate(service, method, pathTemplate, concretePaths, false, false,
                             provenance, RouteCandidate.Applicability.REVIEW, reason, parameters));
+                    newTargets.merge(endpointKey, new DeclaredTarget(method,
+                            Masking.truncate(Masking.maskSecrets(target), 2_048), evidenceIds),
+                            ExplorerHttpGateway::mergeTarget);
+                    if (!replacesIssueId.isBlank()) resolvedIssueIds.add(replacesIssueId);
+                    validParameters.stream().map(DiscoveryParameter::replacesIssueId)
+                            .filter(id -> !id.isBlank()).forEach(resolvedIssueIds::add);
                     newProvenanceKeys.addAll(itemProvenanceKeys);
                     newEndpointKeys.addAll(itemEndpointKeys);
                     newParameterKeys.addAll(itemParameterKeys);
@@ -629,7 +707,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     duplicateParameters += itemDuplicateParameters;
                     rejectedParameters.addAll(itemRejectedParameters);
                 } catch (IllegalArgumentException error) {
-                    rejected.addObject().put("index", index).put("reason",
+                    String issueId = registerIssue("DISCOVERY", value.path("method").asText("") + " "
+                            + value.path("url").asText(""), error.getMessage(), "", sourceKey);
+                    rejected.addObject().put("index", index).put("issue_id", issueId).put("reason",
                             Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
                 }
             }
@@ -653,6 +733,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             declaredEndpointKeys.addAll(newEndpointKeys);
             declaredParameterKeys.addAll(newParameterKeys);
             declaredParameterProvenanceKeys.addAll(newParameterProvenanceKeys);
+            newTargets.forEach((key, target) -> declaredTargets.merge(key, target,
+                    ExplorerHttpGateway::mergeTarget));
+            resolvedIssueIds.forEach(pendingIssues::remove);
             ObjectNode result = JSON.createObjectNode().put("success", true)
                     .put("accepted_endpoints", newEndpointKeys.size())
                     .put("accepted_parameters", newParameterKeys.size())
@@ -683,6 +766,43 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             if (!result.contains(evidenceId)) result.add(evidenceId);
         }
         return result;
+    }
+
+    private String registerIssue(String kind, String target, String reason,
+                                 String endpointKey, String sourceKey) {
+        if (pendingIssues.size() >= MAX_PENDING_ISSUES) {
+            throw new IllegalArgumentException("Explorer 발견 거부 상한에 도달했습니다. 현재 worklist를 확인하세요.");
+        }
+        String id = "issue-" + ++nextIssueId;
+        pendingIssues.put(id, new PendingIssue(id, kind,
+                Masking.truncate(Masking.maskSecrets(target), 500),
+                Masking.truncate(Masking.maskSecrets(reason), 1_000), endpointKey, sourceKey));
+        return id;
+    }
+
+    private void validateReplacement(String id, String kind, String endpointKey, String sourceKey) {
+        if (id.isBlank()) return;
+        PendingIssue issue = pendingIssues.get(id);
+        String originalLocator = issue == null ? "" : issue.sourceKey().substring(issue.sourceKey().indexOf('\0') + 1);
+        String currentLocator = sourceKey.substring(sourceKey.indexOf('\0') + 1);
+        if (issue == null || !issue.kind().equals(kind)
+                || !issue.endpointKey().equals(endpointKey)
+                || ("PARAMETER".equals(kind) && !issue.sourceKey().equals(sourceKey))
+                || ("DISCOVERY".equals(kind) && !originalLocator.isBlank()
+                        && !originalLocator.equals(currentLocator))) {
+            throw new IllegalArgumentException("replaces_issue_id가 현재 run의 해당 거부 항목과 맞지 않습니다.");
+        }
+    }
+
+    private static String sourceKey(JsonNode value) {
+        return value.path("artifact_kind").asText("").trim().toUpperCase(Locale.ROOT)
+                + "\0" + value.path("locator").asText("").trim();
+    }
+
+    private static DeclaredTarget mergeTarget(DeclaredTarget first, DeclaredTarget second) {
+        Set<String> evidence = new LinkedHashSet<>(first.evidenceIds());
+        evidence.addAll(second.evidenceIds());
+        return new DeclaredTarget(first.method(), first.url(), List.copyOf(evidence));
     }
 
     private static URI absoluteHttpUri(String value) {
@@ -881,6 +1001,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         declaredEndpointKeys.clear();
         declaredParameterKeys.clear();
         declaredParameterProvenanceKeys.clear();
+        pendingIssues.clear();
+        declaredTargets.clear();
         observations.clear();
         server.close();
     }

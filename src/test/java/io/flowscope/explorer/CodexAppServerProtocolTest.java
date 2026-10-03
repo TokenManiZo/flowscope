@@ -172,12 +172,15 @@ final class CodexAppServerProtocolTest {
             assertEquals("gpt-6.1-sol", thread.path("params").path("model").asText());
             JsonNode discovery = null;
             JsonNode observations = null;
+            JsonNode worklist = null;
             for (JsonNode tool : thread.path("params").path("dynamicTools")) {
                 if ("flowscope_record_discoveries".equals(tool.path("name").asText())) discovery = tool;
                 if ("flowscope_observations".equals(tool.path("name").asText())) observations = tool;
+                if ("flowscope_worklist".equals(tool.path("name").asText())) worklist = tool;
             }
             assertNotNull(discovery);
             assertNotNull(observations);
+            assertNotNull(worklist);
             assertTrue(observations.path("inputSchema").path("required").toString().contains("after_sequence"));
             String fieldPathHelp = discovery.path("inputSchema").path("properties").path("discoveries")
                     .path("items").path("properties").path("parameters").path("items")
@@ -324,6 +327,118 @@ final class CodexAppServerProtocolTest {
         }
         assertTrue(activities.stream().anyMatch(value -> "WARNING".equals(value.kind())
                 && value.detail().contains("거부 2건")), activities.toString());
+    }
+
+    @Test
+    void fullyRejectedDiscoveryStillReturnsStructuredIssueToTheModel() throws Exception {
+        AtomicReference<FakeCodex> codex = new AtomicReference<>();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (LoopbackHttpServer gateway = new LoopbackHttpServer(0, request -> new LoopbackHttpServer.Response(
+                400, Map.of("Content-Type", "application/json"),
+                "{\"success\":false,\"rejected_discoveries\":[{\"index\":0,\"issue_id\":\"issue-1\",\"reason\":\"invalid URL\"}],\"rejected_parameters\":[]}"
+                        .getBytes(StandardCharsets.UTF_8)))) {
+            gateway.start();
+            try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                    (command, cwd, environment) -> {
+                        FakeCodex fake = new FakeCodex((self, turn) -> {
+                            try {
+                                self.emit("{\"id\":79,\"method\":\"item/tool/call\",\"params\":{"
+                                        + "\"tool\":\"flowscope_record_discoveries\",\"arguments\":{}}}");
+                                self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                            } catch (IOException ignored) { }
+                        });
+                        codex.set(fake);
+                        return fake;
+                    }, ignored -> { })) {
+                ExplorerProvider.Request base = request();
+                provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
+                        base.accountHandles(), "http://127.0.0.1:" + gateway.port() + "/request",
+                        "http://127.0.0.1:" + gateway.port() + "/discoveries", base.gatewayToken(),
+                        base.prompt()), listener(capture));
+                for (int tries = 0; tries < 100 && codex.get() == null; tries++) Thread.sleep(20);
+                JsonNode reply = codex.get().awaitWritten(value -> value.path("id").asLong() == 79);
+                assertFalse(reply.path("result").path("success").asBoolean());
+                assertTrue(reply.path("result").path("contentItems").get(0).path("text").asText()
+                        .contains("issue-1"));
+                assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    @Test
+    void completionReviewStartsBoundedRepairTurnInSameThread() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger turns = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicReference<FakeCodex> codex = new AtomicReference<>();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        ExplorerProvider.Listener reviewing = new ExplorerProvider.Listener() {
+            @Override public void activity(ExplorerProvider.Activity activity) { }
+            @Override public String review(ExplorerProvider.Result result, int completedTurns) {
+                return completedTurns == 1 ? "issue-1을 수정해서 다시 저장하세요." : "";
+            }
+            @Override public void completed(ExplorerProvider.Result result) {
+                capture.result().set(result);
+                capture.done().countDown();
+            }
+            @Override public void failed(String message) {
+                capture.failure().set(message);
+                capture.done().countDown();
+            }
+        };
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        int number = turns.incrementAndGet();
+                        try {
+                            self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\","
+                                    + "\"text\":\"{\\\"summary\\\":\\\"turn " + number
+                                    + "\\\",\\\"unresolved\\\":[]}\"}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    });
+                    codex.set(fake);
+                    return fake;
+                }, ignored -> { })) {
+            provider.start(request(), reviewing);
+            assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            assertNull(capture.failure().get());
+            assertEquals(2, turns.get());
+            assertEquals("turn 2", capture.result().get().summary());
+            JsonNode repairTurn = codex.get().awaitWritten(value -> "turn/start".equals(value.path("method").asText())
+                    && value.path("params").path("input").toString().contains("issue-1"));
+            assertEquals("t1", repairTurn.path("params").path("threadId").asText());
+        }
+    }
+
+    @Test
+    void ignoredReviewStopsAfterThreeTurnsInsteadOfLoopingForever() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger turns = new java.util.concurrent.atomic.AtomicInteger();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        ExplorerProvider.Listener reviewing = new ExplorerProvider.Listener() {
+            @Override public void activity(ExplorerProvider.Activity activity) { }
+            @Override public String review(ExplorerProvider.Result result, int completedTurns) {
+                return "issue-1 remains unresolved";
+            }
+            @Override public void completed(ExplorerProvider.Result result) {
+                capture.result().set(result);
+                capture.done().countDown();
+            }
+            @Override public void failed(String message) {
+                capture.failure().set(message);
+                capture.done().countDown();
+            }
+        };
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> new FakeCodex((self, turn) -> {
+                    turns.incrementAndGet();
+                    try { self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}"); }
+                    catch (IOException ignored) { }
+                }), ignored -> { })) {
+            provider.start(request(), reviewing);
+            assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+        }
+        assertEquals(3, turns.get());
+        assertNull(capture.result().get());
+        assertTrue(capture.failure().get().contains("저장 거부"));
     }
 
     /** turn/completed carries every item of the turn, so a long run can overflow after all its work is done. */

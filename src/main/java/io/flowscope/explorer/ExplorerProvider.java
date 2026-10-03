@@ -34,6 +34,8 @@ public interface ExplorerProvider extends AutoCloseable {
 
     interface Listener {
         void activity(Activity activity);
+        /** Empty accepts the turn; otherwise start one bounded repair turn in the same provider thread. */
+        default String review(Result result, int completedTurns) { return ""; }
         void completed(Result result);
         void failed(String message);
     }

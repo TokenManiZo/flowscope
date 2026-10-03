@@ -343,17 +343,95 @@ final class ExplorerCoordinatorTest {
             coordinator.browserRecorder(recorded::add);
             coordinator.start(new ExplorerCoordinator.StartRequest(
                     "https://app.example.test/", List.of(), true));
-            await(() -> coordinator.current().status() == ExplorerCoordinator.Status.RUNNING);
+            await(() -> provider.request.get() != null);
             assertEquals(1, window.opened);
             assertTrue(window.recording);
+            assertEquals(1, recorded.size(), "anonymous browser must load the target before the model starts");
+            assertEquals("https://app.example.test/", recorded.getFirst().url());
             coordinator.browserAction("", "navigate", "https://app.example.test/area", "", "");
-            assertEquals(1, recorded.size());
-            assertEquals("", recorded.getFirst().accountId());
-            assertEquals(coordinator.current().runId(), recorded.getFirst().runId());
+            assertEquals(2, recorded.size());
+            assertEquals("", recorded.getLast().accountId());
+            assertEquals(coordinator.current().runId(), recorded.getLast().runId());
             coordinator.cancel();
             assertTrue(window.closed);
             assertFalse(window.recording);
         }
+    }
+
+    @Test
+    void rejectedDiscoveryCannotFinishUntilReviewedAndExplicitlyReported() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        AtomicReference<Pipeline.Result> published = new AtomicReference<>(Pipeline.run(List.of()));
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> new ExplorerTransport.Response(200, request.url(), "", "application/javascript",
+                        java.util.Map.of(), "const route='/api/{id}/{id}'", false,
+                        "ev-artifact", 1, java.time.Instant.now()),
+                provider, new RunContextRegistry(), value -> value.startsWith("https://app.example.test/"),
+                published::get, ignored -> {})) {
+            coordinator.loginBrowser(new FakeWindow());
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true));
+            await(() -> provider.request.get() != null);
+            ExplorerProvider.Request run = provider.request.get();
+            String response = explorerPost(run.gatewayUrl(), run.gatewayToken(),
+                    "{\"account\":\"\",\"method\":\"GET\",\"url\":\"https://app.example.test/main.js\",\"headers\":{},\"body\":\"\"}");
+            assertTrue(response.contains("ev-artifact"));
+            String issue = explorerPost(run.discoveryUrl(), run.gatewayToken(), """
+                    {"discoveries":[{"method":"GET","url":"https://app.example.test/api/{id}/{id}",
+                      "evidence_ids":["ev-artifact"],"artifact_kind":"JAVASCRIPT","locator":"main.js:1",
+                      "reason":"route","parameters":[{"location":"PATH","field_path":"id",
+                      "display_name":"id","requirement":"UNKNOWN"}]}]}
+                    """);
+            String issueId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(issue)
+                    .path("rejected_parameters").get(0).path("issue_id").asText();
+            assertFalse(issueId.isBlank());
+            ExplorerProvider.Result ignored = new ExplorerProvider.Result("done", List.of(), "t1");
+            assertFalse(provider.listener.get().review(ignored, 1).isBlank());
+            explorerPost(run.gatewayUrl().replace("/request", "/worklist"), run.gatewayToken(), "{}");
+            ExplorerProvider.Result blocked = new ExplorerProvider.Result("limited",
+                    List.of(new ExplorerProvider.Unresolved("DISCOVERY_BLOCKED", issueId,
+                            "같은 이름의 두 PATH 위치를 산출물에서 구별할 근거가 없습니다.")), "t1");
+            assertEquals("", provider.listener.get().review(blocked, 2));
+            RequestRecord evidence = new RequestRecord(Source.LLM, "https://app.example.test:443",
+                    "GET", "/main.js", 200, "anon");
+            evidence.hasResponse = true;
+            evidence.phase = RunPhase.EXPLORATION;
+            evidence.runId = run.runId();
+            evidence.executionTrust = ExecutionTrust.CONTROLLED;
+            published.set(Pipeline.run(List.of(evidence)));
+            provider.listener.get().completed(blocked);
+            assertEquals(ExplorerCoordinator.Status.COMPLETED_WITH_LIMITATIONS, coordinator.current().status());
+        }
+    }
+
+    @Test
+    void ignoredDiscoveryRejectionFailsTheCompletionGate() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no HTTP request expected"); }, provider,
+                new RunContextRegistry(), value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.loginBrowser(new FakeWindow());
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true));
+            await(() -> provider.request.get() != null);
+            ExplorerProvider.Request run = provider.request.get();
+            String rejected = explorerPost(run.discoveryUrl(), run.gatewayToken(), """
+                    {"discoveries":[{"method":"GET","url":"https://app.example.test/api/hidden",
+                      "evidence_ids":["ev-invented"],"artifact_kind":"JAVASCRIPT","locator":"main.js:1",
+                      "reason":"route","parameters":[]}]}
+                    """);
+            assertTrue(rejected.contains("issue_id"));
+            provider.listener.get().completed(new ExplorerProvider.Result("done", List.of(), "t1"));
+            assertEquals(ExplorerCoordinator.Status.FAILED, coordinator.current().status());
+            assertTrue(coordinator.current().message().contains("저장 거부"));
+        }
+    }
+
+    private static String explorerPost(String url, String token, String body) throws Exception {
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                .header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build();
+        return java.net.http.HttpClient.newHttpClient()
+                .send(request, java.net.http.HttpResponse.BodyHandlers.ofString()).body();
     }
 
     /** One page load fires dozens of requests; without a ceiling a single run can eat the whole project. */

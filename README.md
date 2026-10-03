@@ -164,13 +164,15 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 
 ## LLM Explorer 상태
 
-Explorer의 `flowscope_record_discoveries`는 URL template의 유일한 PATH 이름을 구조 좌표로 변환합니다. 이름이 중복되거나 한 파라미터가 잘못되면 정상 endpoint·파라미터는 보존하고, 보류된 부분의 index·이유·가능한 PATH 위치를 모델에 반환합니다. 작업 피드에도 부분 거부를 표시하며, 모델에는 보류된 부분만 근거를 확인해 다시 보내도록 지시합니다. 이 반환만으로 자동 재시도를 강제하지는 않으며 완료 게이트는 별도 작업입니다.
+Explorer의 `flowscope_record_discoveries`는 URL template의 유일한 PATH 이름을 구조 좌표로 변환합니다. 이름이 중복되거나 한 파라미터가 잘못되면 정상 endpoint·파라미터는 보존하고, 보류된 부분의 index·이유·가능한 PATH 위치·`issue_id`를 모델에 반환합니다. 작업 피드에도 부분 거부를 표시하며, 모델에는 보류된 부분만 근거를 확인해 다시 보내도록 지시합니다. 완료 게이트는 이 거부 항목이 정정·재저장되었거나 구체적 차단 이유와 함께 보고됐는지 확인합니다.
 
 LLM 로그인 브라우저의 로그인·실행 사이 트래픽은 탐색 Evidence로 기록하지 않습니다. 실행 중에는 선택한 창의 교환을 해당 run ID에 결박해 저장하고, 종료·취소 시 기록을 끕니다. 같은 창을 재사용해도 이전 실행에서 늦게 도착한 응답은 다음 실행에 넣지 않습니다. Explorer가 받은 `.map` 응답이 `application/octet-stream`이어도 UTF-8 및 source map JSON 구조가 확인되면 마스킹한 산출물로 분석하며, 일반 바이너리는 계속 텍스트로 열지 않습니다.
 
 비로그인을 선택하면 Explorer는 계정 로그인 창과 별도로 임시 Chromium 창을 `about:blank`에서 열고, 요청 전 exact-scope 차단을 설치한 다음 대상 시작 URL로 이동합니다. 이 창의 JavaScript/XHR 응답도 현재 LLM run으로 기록하며 종료·취소 때 창과 프로필을 닫습니다. 범위 밖 페이지 이동·XHR은 전송 전에 차단하고, 범위 안 페이지가 참조한 비인증 GET/HEAD 정적 자산만 보조 자료로 허용합니다. 브라우저를 열 수 없거나 차단기를 설치할 수 없으면 비로그인 브라우저가 실행된 척하지 않고 Explorer 시작을 실패로 표시합니다. 이 경계는 로컬 Chromium 하네스에서 확인했지만, 모든 사이트의 새 탭·서비스 워커 동작까지 검증했다는 뜻은 아닙니다.
 
 Explorer 모델은 `flowscope_observations`로 해당 run의 HTTP·브라우저 응답을 sequence별 조회합니다. 저장된 요청은 Evidence ID와 `EVIDENCE_STORED`, 브라우저에서 막 수신한 응답은 `BROWSER_CAPTURED`로 구분합니다. 후자는 저장 완료를 뜻하지 않으며, 화면 동작에서 나온 API를 다음 HTTP 검증 대상으로 찾는 데 사용합니다. 요청 실패는 `REQUEST_FAILED`로 남아 미관측과 구분됩니다.
+
+`flowscope_worklist`는 이번 run에서 Evidence에 연결해 선언한 endpoint와 실제 HTTP 응답의 차이, 저장이 거부된 발견의 `issue_id`를 보여 줍니다. URL template처럼 구체 식별자가 필요한 항목은 `NEEDS_CONCRETE_URL`이며, 전체 사이트 커버리지 비율은 뜻하지 않습니다. 저장 거부는 정정 항목의 `replaces_issue_id`로 해결하거나, 모델이 worklist를 다시 확인한 뒤 해당 issue ID와 구체적 차단 이유를 최종 미해결 목록에 남겨야 합니다. 무시하고 종료하면 같은 Codex 대화에서 최대 두 번 보완을 요청하며, 그래도 처리되지 않으면 run은 실패로 남고 이미 수집한 Evidence는 보존됩니다. 미해결을 보고한 실행은 완료가 아닌 `COMPLETED_WITH_LIMITATIONS`로 구분합니다. 이 보완 루프는 로컬 프로토콜 회귀로 확인했으며 실제 대상에서 모든 발견을 해결한다는 보장은 아닙니다.
 
 기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 옛 브라우저 하네스, Judge, agent-workspace는 없습니다. 별도 구현된 Explorer 로그인 창은 Chromium을 사용합니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
 
