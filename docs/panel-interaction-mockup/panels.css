@@ -27,3 +27,19 @@
 .dialog-reopen{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none}
 .dialog-reopen button{pointer-events:auto}
 #dialog-feedback{font-size:12px;line-height:1.5;color:var(--muted-foreground)}
+.zap-new .zap-title{height:32px;padding:8px 12px;background:var(--card);font-size:12px;line-height:16px}
+.zap-new .zap-title:hover{background:color-mix(in srgb,var(--muted) 50%,var(--card))}
+.zap-new .zap-title strong{font-weight:500}
+.zap-new .zap-title .selection,.zap-new .zap-title .chevron{font-size:12px;line-height:16px}
+.zap-new .zap-title .icon{width:14px;height:14px}
+.zap-body{border-top:1px solid var(--border);padding:12px}
+.zap-inner-table{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.zap-new .zap-table{width:100%;table-layout:fixed}
+.zap-new .zap-table th{height:36px;padding:0 16px;font-size:12px;font-weight:400}
+.zap-new .zap-table td{height:48px;padding:0 16px;font-size:14px}
+.zap-new .zap-table th:nth-child(2),.zap-new .zap-table th:last-child{width:152px}
+.zap-new .zap-table .statuscell{width:152px}
+.zap-new .zap-table th:first-child{padding-left:44px}
+.zap-new .zap-table input{width:16px;height:16px}
+.zap-new .zap-table .account-cell{gap:12px}
+.zap-new .zap-table .actioncell button{height:28px;width:128px;font-size:12.8px}
