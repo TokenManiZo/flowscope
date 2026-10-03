@@ -186,18 +186,7 @@ function nodeModelHeight(node: cytoscape.NodeSingular) {
   return Number.isFinite(height) && height > 0 ? height : 60
 }
 
-/** 같은 레인에서 위아래로 겹친 노드를 순서를 유지한 채 아래로 밀어 최소 간격을 둔다. 저장된 배치도 겹침만 풀린다. */
-export function separateLaneNodes(nodes: readonly cytoscape.NodeSingular[], gap = LANE_NODE_GAP) {
-  let bottom = Number.NEGATIVE_INFINITY
-  for (const node of [...nodes].sort((left, right) => left.position().y - right.position().y)) {
-    const half = nodeModelHeight(node) / 2, position = node.position()
-    const y = Math.max(position.y, bottom + gap + half)
-    if (y !== position.y) node.position({ x: position.x, y })
-    bottom = y + half
-  }
-}
-
-function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneCount: number, onlyLane: number | null = null) {
+export function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneCount: number, onlyLane: number | null = null) {
   const usableHeight = Math.max(height, 620)
   laneColumns(core, laneCount).forEach((nodes, index) => {
     if (onlyLane !== null && onlyLane !== index) return
@@ -205,12 +194,14 @@ function positionInLanes(core: Core, height: number, savedPositions: GraphPrefer
     const heights = nodes.map(nodeModelHeight)
     const total = heights.reduce((sum, value) => sum + value, 0) + LANE_NODE_GAP * Math.max(nodes.length - 1, 0)
     let cursor = Math.max(LANE_TOP, (usableHeight - total) / 2)
+    const restored = nodes.filter(node => savedPositions?.[node.id()])
+    if (restored.length) cursor = Math.max(...restored.map(node => savedPositions![node.id()].y + nodeModelHeight(node) / 2)) + LANE_NODE_GAP
+    const x = restored.length ? restored.reduce((sum, node) => sum + savedPositions![node.id()].x, 0) / restored.length : laneAnchor(index)
     nodes.forEach((node, order) => {
       const saved = savedPositions?.[node.id()]
-      node.position({ x: saved?.x ?? laneAnchor(index), y: saved?.y ?? cursor + heights[order] / 2 })
-      cursor += heights[order] + LANE_NODE_GAP
+      node.position(saved ?? { x, y: cursor + heights[order] / 2 })
+      if (!saved) cursor += heights[order] + LANE_NODE_GAP
     })
-    separateLaneNodes(nodes)
   })
 }
 
@@ -417,6 +408,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const laneCountRef = useRef(laneCount)
   const preferencesRef = useRef(preferences)
   const appliedLayoutRef = useRef(layoutVersion)
+  const hasProjectionRef = useRef(false)
+  const appliedFitRef = useRef(fitVersion)
   const appliedLaneLayoutRef = useRef(laneLayout.version)
   const laneBoundsRef = useRef<ReadonlyArray<LaneBounds | null>>([])
   const laneBoundsListenerRef = useRef(onLaneBoundsChange)
@@ -555,6 +548,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       return
     }
     coreRef.current = core
+    hasProjectionRef.current = false
     // ponytail: 레인 범위는 모델 좌표지만 헤더는 화면 좌표라 팬·줌마다 환산해 알린다.
     const publishLaneBounds = () => {
       const bounds = renderedLaneBounds(core, laneCountRef.current)
@@ -571,22 +565,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     publishLayoutRef.current = publishLayout
     let correctionFrame: number | null = null
-    // 상세 패널이 열리며 캔버스가 좁아지면 이전 pan 그대로라 선택 노드가 화면 밖으로 밀린다. 필요한 만큼만 옮긴다(확대율 유지).
-    const keepSelectionVisible = () => {
-      const id = selectedElementIdRef.current
-      if (!id || typeof core.panBy !== "function") return
-      const element = core.getElementById(id)
-      if (!element || typeof element.renderedBoundingBox !== "function" || element.empty?.()) return
-      const box = element.renderedBoundingBox(), width = core.width(), height = core.height(), margin = 24
-      const dx = box.x2 > width ? width - margin - box.x2 : box.x1 < 0 ? margin - box.x1 : 0
-      const dy = box.y2 > height ? height - margin - box.y2 : box.y1 < 0 ? margin - box.y1 : 0
-      if (dx || dy) core.panBy({ x: dx, y: dy })
-    }
     const correctLanes = () => {
       correctionFrame = null
       if (typeof core.resize === "function") core.resize()
       syncSelection(core, selectedElementIdRef.current)
-      keepSelectionVisible()
       publishLayout()
     }
     const scheduleLaneCorrection = () => {
@@ -717,6 +699,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (publishLayoutRef.current === publishLayout) publishLayoutRef.current = null
       keyboardNodeRef.current = null
       cancelTooltipHide()
+      preferenceRef.current(readPreferences(core))
       core.destroy()
       if (coreRef.current === core) coreRef.current = null
     }
@@ -728,21 +711,24 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     dismissCardTooltip()
     keyboardNodeRef.current = null
     const saved = preferencesRef.current
+    const live = hasProjectionRef.current ? readPreferences(core) : { positions: {}, sizes: {}, viewport: null }
+    hasProjectionRef.current = true
     const relayout = appliedLayoutRef.current !== layoutVersion
     appliedLayoutRef.current = layoutVersion
     core.elements().remove()
     cardsRef.current = new Map()
-    // 전체 재정렬(layoutVersion 변경)만 사용자가 바꾼 크기를 비운다. 새로고침·필터·이동은 저장된 크기를 그대로 쓴다.
+    // 정렬은 위치만 바꾼다. 크기·viewport는 명시적 초기화 때만 비운다.
     // 선택은 여기서 다시 만들지 않는다(아래 effect가 강조 값만 바꾼다). 클릭마다 전체를 지우고 다시 그리면 깜빡인다.
-    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? {} : saved?.sizes ?? {}, cardsRef.current, theme, statusesByNode))
+    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? saved?.sizes ?? {} : { ...saved?.sizes, ...live.sizes }, cardsRef.current, theme, statusesByNode))
     applyHighlight(core, projection, highlightRef.current, cardsRef.current, theme, statusColorsRef.current, splitSourcesRef.current)
     setCornerCursor(null)
-    positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : saved?.positions ?? null, laneCount)
+    positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : { ...saved?.positions, ...live.positions }, laneCount)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
     })
-    if (saved?.viewport && !relayout) core.viewport(saved.viewport)
-    else {
+    if (Object.keys(live.positions).length) core.viewport(live.viewport!)
+    else if (saved?.viewport) core.viewport(saved.viewport)
+    else if (!relayout) {
       core.layout({ name: "preset", fit: true, padding: 52 }).run()
     }
     syncSelection(core, selectedElementIdRef.current)
@@ -765,15 +751,6 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     appliedLaneLayoutRef.current = laneLayout.version
     if (laneLayout.version === 0) return
     core.nodes().forEach((node) => { if (node.locked?.()) node.unlock() })
-    // 레인 머리글 정렬은 그 레인 노드의 크기만 기본으로 되돌린다.
-    laneColumns(core, laneCount)[laneLayout.lane]?.forEach((node) => {
-      if (node.data("customWidth") === undefined) return
-      const card = cardsRef.current.get(node.id())
-      if (!card) return
-      const image = renderParameterNodeCardSvg(card, true, undefined, theme, statusColorsRef.current)
-      node.data({ cardImage: image.uri, width: image.width, height: image.height })
-      node.removeData("customWidth customHeight")
-    })
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, null, laneCount, laneLayout.lane)
     if (locked) core.nodes().forEach((node) => { node.lock() })
     publishLayoutRef.current?.()
@@ -803,7 +780,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   }, [preferences?.viewport])
 
   useEffect(() => {
-    if (fitVersion > 0) {
+    if (appliedFitRef.current !== fitVersion) {
+      appliedFitRef.current = fitVersion
       dismissCardTooltip()
       coreRef.current?.fit(undefined, 36)
       scheduleLaneCorrectionRef.current?.()

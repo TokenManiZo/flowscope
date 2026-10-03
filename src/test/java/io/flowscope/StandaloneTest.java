@@ -3,6 +3,7 @@ package io.flowscope;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.integration.ProjectWorkspace;
+import io.flowscope.integration.GraphWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -107,6 +109,36 @@ final class StandaloneTest {
         state.openProject(second.active().id());
         state.deleteProject(first.active().id());
         assertFalse(Files.exists(workspaceRoot.resolve(first.active().id())));
+    }
+
+    @Test
+    void persistsGraphSeparatelyAndRejectsStaleEditsAfterProjectReplacement() throws Exception {
+        var state = new Standalone.DemoState(new String[0], new ProjectWorkspace(temporaryDirectory));
+        var first = state.startProject("첫 진단", "https://first.example/");
+        state.loadSample();
+        var before = state.graphWorkspace();
+        long analysisRevision = state.revision();
+        var view = new GraphWorkspace.View(Map.of("operation:GET /orders", new GraphWorkspace.Point(700, 200)),
+                Map.of(), new GraphWorkspace.Viewport(1.2, new GraphWorkspace.Point(-20, 30)), List.of());
+        var change = new GraphWorkspace.Change(null, Map.of("site", view), List.of(), true, null);
+        var saved = state.updateGraphWorkspace(before.datasetRevision(), before.revision(), change);
+        assertEquals(analysisRevision, state.revision(), "배치 변경은 트래픽 snapshot revision을 바꾸지 않는다");
+        assertEquals(view, saved.workspace().views().get("site"));
+        assertThrows(IllegalStateException.class,
+                () -> state.updateGraphWorkspace(before.datasetRevision(), before.revision(), change));
+
+        state.startProject("둘째 진단", "https://second.example/");
+        assertEquals(GraphWorkspace.empty(), state.graphWorkspace().workspace());
+        assertThrows(IllegalStateException.class,
+                () -> state.updateGraphWorkspace(saved.datasetRevision(), saved.revision(), change));
+        state.openProject(first.active().id());
+        assertEquals(saved.workspace(), state.graphWorkspace().workspace());
+        state.openProject(first.active().id());
+        assertEquals(saved.workspace(), state.graphWorkspace().workspace());
+        state.resetProjectTraffic();
+        assertEquals(GraphWorkspace.empty(), state.graphWorkspace().workspace());
+        state.openProject(first.active().id());
+        assertEquals(GraphWorkspace.empty(), state.graphWorkspace().workspace());
     }
 
     @Test

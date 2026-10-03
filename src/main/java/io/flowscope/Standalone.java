@@ -15,6 +15,7 @@ import io.flowscope.core.Source;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ProjectStore;
+import io.flowscope.integration.GraphWorkspace;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SqliteProjectStore;
@@ -65,6 +66,8 @@ public final class Standalone {
         private volatile Path activeProjectDatabase;
         private volatile ProjectStore.ProjectContext activeProjectContext = ProjectStore.ProjectContext.empty();
         private volatile long savedRevision = -1;
+        private GraphWorkspace graphWorkspace = GraphWorkspace.empty();
+        private long graphWorkspaceRevision;
         private volatile Instant lastSavedAt;
 
         DemoState(String[] args) throws Exception {
@@ -86,6 +89,27 @@ public final class Standalone {
         @Override public Pipeline.Result snapshot() { return result; }
         @Override public long revision() { return revision.get(); }
         @Override public long datasetRevision() { return datasetRevision.get(); }
+        @Override public synchronized GraphWorkspace.State graphWorkspace() {
+            return new GraphWorkspace.State(datasetRevision.get(), graphWorkspaceRevision, graphWorkspace);
+        }
+        @Override public synchronized GraphWorkspace.State updateGraphWorkspace(
+                long expectedDataset, long expectedRevision, GraphWorkspace.Change change) {
+            if (expectedDataset != datasetRevision.get() || expectedRevision != graphWorkspaceRevision) {
+                throw new IllegalStateException("프로젝트 또는 그래프 배치가 변경되었습니다. 다시 불러와 주세요.");
+            }
+            GraphWorkspace next = change.apply(graphWorkspace);
+            if (activeProjectDatabase != null) {
+                try {
+                    sqliteProjectStore.saveGraphWorkspace(activeProjectDatabase, next);
+                    lastSavedAt = Instant.now();
+                } catch (Exception error) {
+                    throw projectFailure("그래프 배치 저장에 실패했습니다.", error);
+                }
+            }
+            graphWorkspace = next;
+            graphWorkspaceRevision++;
+            return graphWorkspace();
+        }
         @Override public AnalysisConfig config() { return config; }
         @Override public List<LegacyAssessment> assessments() { return archivedAssessments; }
         @Override public List<ValidationDecision> validations() { return archivedValidations; }
@@ -112,6 +136,7 @@ public final class Standalone {
         }
         @Override public synchronized void loadSample() {
             replaceWithSample();
+            replaceGraphWorkspace(GraphWorkspace.empty());
             archivedAssessments = List.of();
             archivedValidations = List.of();
             contexts.reset();
@@ -121,14 +146,14 @@ public final class Standalone {
             rebuild();
             saveActive();
         }
-        @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
+        @Override public synchronized BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
             BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
             records.addAll(parsed.records);
             rebuild();
             saveActive();
             return parsed;
         }
-        @Override public BurpXmlParser.ParseResult importHar(byte[] har) {
+        @Override public synchronized BurpXmlParser.ParseResult importHar(byte[] har) {
             BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
             records.addAll(parsed.records);
             rebuild();
@@ -166,6 +191,7 @@ public final class Standalone {
                 routeCandidates = List.of();
                 activeProjectDatabase = next.database();
                 activeProjectContext = next.context();
+                replaceGraphWorkspace(GraphWorkspace.empty());
                 datasetRevision.incrementAndGet();
                 rebuild();
                 markSaved();
@@ -177,8 +203,9 @@ public final class Standalone {
         @Override public synchronized ProjectWorkspace.Status openProject(String id) {
             try {
                 Path database = projectWorkspace.resolveDatabase(id);
+                if (database.equals(activeProjectDatabase)) preserveCurrentProject();
                 ProjectStore.ProjectData loaded = sqliteProjectStore.load(database);
-                preserveCurrentProject();
+                if (!database.equals(activeProjectDatabase)) preserveCurrentProject();
                 records.clear();
                 records.addAll(loaded.records());
                 config.replaceWith(loaded.config());
@@ -188,6 +215,7 @@ public final class Standalone {
                 executionLedger.replace(loaded.runAttempts());
                 activeProjectDatabase = database;
                 activeProjectContext = loaded.context();
+                replaceGraphWorkspace(loaded.graphWorkspace());
                 result = Pipeline.runIsolated(new ArrayList<>(records), config);
                 routeCandidates = List.copyOf(loaded.routeCandidates());
                 datasetRevision.incrementAndGet();
@@ -226,6 +254,7 @@ public final class Standalone {
                 executionLedger.clear();
                 routeCandidates = List.of();
                 JavascriptCallSiteAnalyzer.clearCache();
+                replaceGraphWorkspace(GraphWorkspace.empty());
                 datasetRevision.incrementAndGet();
                 rebuild();
                 markSaved();
@@ -299,13 +328,18 @@ public final class Standalone {
         private void saveProject(Path database, ProjectStore.ProjectContext context) throws Exception {
             sqliteProjectStore.save(database, new ArrayList<>(records), config,
                     archivedAssessments, archivedValidations, contexts.completedRuns(),
-                    routeCandidates, executionLedger.attempts(), context);
+                    routeCandidates, executionLedger.attempts(), context, graphWorkspace);
             markSaved();
         }
 
         private void markSaved() {
             savedRevision = revision.get();
             lastSavedAt = Instant.now();
+        }
+
+        private void replaceGraphWorkspace(GraphWorkspace workspace) {
+            graphWorkspace = workspace;
+            graphWorkspaceRevision++;
         }
 
         private boolean isSampleDataset() {

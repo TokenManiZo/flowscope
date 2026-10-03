@@ -10,7 +10,7 @@ export type GraphPreferences = {
   viewport: { zoom: number; pan: { x: number; y: number } } | null
   locked: boolean
   inputMode: "auto" | "trackpad" | "mouse"
-  /** 사용자가 모서리를 끌어 바꾼 노드 크기(모델 좌표). 재정렬 때만 비운다. 선택 필드라 v5~v7 저장값을 그대로 읽는다. */
+  /** 사용자가 모서리를 끌어 바꾼 노드 크기(모델 좌표). 구버전 이관용으로 v5~v7 저장값을 읽는다. */
   sizes?: Record<string, NodeSize>
 }
 

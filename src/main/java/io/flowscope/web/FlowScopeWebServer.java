@@ -27,6 +27,7 @@ import io.flowscope.core.TrafficOverride;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.integration.ProjectWorkspace;
+import io.flowscope.integration.GraphWorkspace;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapAccountVault;
@@ -62,6 +63,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default Pipeline.Result completionSnapshot() { return snapshot(); }
         long revision();
         default long datasetRevision() { return revision(); }
+        default GraphWorkspace.State graphWorkspace() {
+            return new GraphWorkspace.State(datasetRevision(), 0, GraphWorkspace.empty());
+        }
+        default GraphWorkspace.State updateGraphWorkspace(long dataset, long revision, GraphWorkspace.Change change) {
+            throw new UnsupportedOperationException("graph workspace is unavailable");
+        }
         AnalysisConfig config();
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
@@ -289,6 +296,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/authorization-replay" -> authorizationReplay(request);
             case "/api/clear" -> clear(request);
             case "/api/projects" -> projects(request);
+            case "/api/graph-workspace" -> graphWorkspace(request);
             case "/api/human-run" -> humanRun(request);
             case "/api/sample" -> sample(request);
             case "/api/role" -> role(request);
@@ -689,6 +697,28 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response clear(LoopbackHttpServer.Request request) throws IOException {
         if (postForm(request) == null) return invalidForm(request);
         return error(409, "Evidence 삭제형 초기화는 지원하지 않습니다. 새 진단 시작으로 현재 프로젝트를 보존하세요.");
+    }
+
+    private LoopbackHttpServer.Response graphWorkspace(LoopbackHttpServer.Request request) throws IOException {
+        try {
+            if (request.method().equals("GET")) return json(200, json.valueToTree(state.graphWorkspace()));
+            Map<String, String> form = postForm(request);
+            if (form == null) return invalidForm(request);
+            String encoded = required(form, "changes");
+            if (encoded.length() > 2 * 1024 * 1024) return error(413, "그래프 작업 상태가 너무 큽니다.");
+            GraphWorkspace.Change change;
+            try { change = json.readValue(encoded, GraphWorkspace.Change.class); }
+            catch (IOException | IllegalArgumentException error) { return error(400, "잘못된 그래프 작업 상태입니다."); }
+            if (change == null) return error(400, "잘못된 그래프 작업 상태입니다.");
+            GraphWorkspace.State saved = state.updateGraphWorkspace(
+                    Long.parseLong(required(form, "datasetRevision")), Long.parseLong(required(form, "revision")), change);
+            ObjectNode acknowledgement = json.createObjectNode();
+            acknowledgement.put("datasetRevision", saved.datasetRevision());
+            acknowledgement.put("revision", saved.revision());
+            return json(200, acknowledgement);
+        } catch (UnsupportedOperationException error) { return error(501, error.getMessage()); }
+        catch (IllegalStateException error) { return error(409, error.getMessage()); }
+        catch (IllegalArgumentException error) { return error(400, "잘못된 그래프 작업 상태입니다."); }
     }
 
     private LoopbackHttpServer.Response projects(LoopbackHttpServer.Request request) throws IOException {
