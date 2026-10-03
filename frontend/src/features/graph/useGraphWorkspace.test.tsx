@@ -68,7 +68,7 @@ it("flushes a viewport change when the tab becomes hidden", async () => {
   vi.stubGlobal("fetch", fetch)
   const { result } = renderHook(() => useGraphWorkspace(805))
   await waitFor(() => expect(result.current.workspace).not.toBeNull())
-  act(() => result.current.update(current => ({ ...current, views: { site: { ...emptyGraphView, viewport: { zoom: 1, pan: { x: 40, y: 60 } } } } })))
+  act(() => result.current.update(current => ({ ...current, views: { site: { ...current.views.site, viewport: { zoom: 1, pan: { x: 40, y: 60 } } } } })))
   expect(fetch).toHaveBeenCalledTimes(1)
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
   act(() => document.dispatchEvent(new Event("visibilitychange")))
@@ -101,7 +101,7 @@ it("does not let continuous viewport updates postpone saving beyond one second",
   await waitFor(() => expect(result.current.workspace).not.toBeNull())
   vi.useFakeTimers()
   for (let index = 0; index < 5; index++) {
-    act(() => result.current.update(current => ({ ...current, views: { site: { ...emptyGraphView, viewport: { zoom: 1, pan: { x: index + 1, y: 0 } } } } })))
+    act(() => result.current.update(current => ({ ...current, views: { site: { ...current.views.site, viewport: { zoom: 1, pan: { x: index + 1, y: 0 } } } } })))
     expect(fetch).toHaveBeenCalledTimes(1)
     await act(async () => { await vi.advanceTimersByTimeAsync(200) })
   }

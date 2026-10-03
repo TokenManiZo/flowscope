@@ -2,6 +2,7 @@ package io.flowscope;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
@@ -117,12 +118,41 @@ final class FlowScopeWebServerTest {
         assertEquals(2, JSON.readTree(get("/api/graph-workspace", token, null).body()).path("revision").asLong());
     }
 
+    @Test void graphWorkspaceSavesLargerLayoutsWithOrdinaryShortKeys() throws Exception {
+        start();
+        var changes = JSON.createObjectNode();
+        var view = changes.putObject("views").putObject("site");
+        var positions = view.putObject("positions");
+        for (int index = 0; index < 80; index++) {
+            positions.putObject("operation:GET /orders/" + index).put("x", 540).put("y", index * 100);
+        }
+        view.putObject("sizes");
+        view.putArray("expandedGroups");
+        String encoded = changes.toString();
+        assertTrue(encoded.length() > 2_000);
+        assertEquals(200, post("/api/graph-workspace", "datasetRevision=" + state.datasetRevision()
+                + "&revision=0&changes=" + encode(encoded), token).statusCode());
+        JsonNode saved = JSON.readTree(get("/api/graph-workspace", token, null).body());
+        JsonNode restored = saved.at("/workspace/views/site/positions");
+        assertEquals(80, restored.size());
+        for (int index = 0; index < 80; index++) {
+            JsonNode point = restored.get("operation:GET /orders/" + index);
+            assertEquals(540.0, point.path("x").asDouble());
+            assertEquals(index * 100.0, point.path("y").asDouble());
+        }
+        assertEquals(1, saved.path("revision").asLong());
+    }
+
     @Test void graphWorkspaceJsonLimitCountsUtf8BytesBeforeParsing() throws Exception {
         start();
-        String oversized = "{\"views\":{},\"unused\":\"" + "한".repeat(700_000) + "\"}";
+        String oversized = "{\"views\":{},\"unused\":\"" + "a".repeat(2 * 1024 * 1024 - 2_000) + "한".repeat(1_000) + "\"}";
         assertTrue(oversized.length() < 2 * 1024 * 1024);
-        assertEquals(413, post("/api/graph-workspace", "datasetRevision=" + state.datasetRevision()
-                + "&revision=0&changes=" + encode(oversized), token).statusCode());
+        assertTrue(oversized.getBytes(StandardCharsets.UTF_8).length > 2 * 1024 * 1024);
+        String body = "datasetRevision=" + state.datasetRevision() + "&revision=0&changes=" + encode(oversized);
+        assertTrue(body.getBytes(StandardCharsets.UTF_8).length < 4 * 1024 * 1024);
+        HttpResponse<String> response = post("/api/graph-workspace", body, token);
+        assertEquals(413, response.statusCode());
+        assertEquals("그래프 작업 상태가 너무 큽니다.", JSON.readTree(response.body()).path("message").asText());
         assertEquals(0, JSON.readTree(get("/api/graph-workspace", token, null).body()).path("revision").asLong());
     }
 

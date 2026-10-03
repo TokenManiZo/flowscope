@@ -28,3 +28,11 @@
 Fetch 표준의 keepalive 제한은 같은 fetch group의 진행 중 본문을 합쳐 64KiB다. 32KiB 이하라도 다른 요청과 quota를 공유하므로 실패할 수 있다. [Fetch Standard](https://fetch.spec.whatwg.org/#http-network-or-cache-fetch). 종료 이벤트·안내·전송이 생략되는 브라우저/프로세스 강제 종료는 보장하지 않는다. 안정된 프로젝트 식별자와 secret-free 복구 초안 저장은 별도 설계가 필요하다.
 
 원격 push/PR 게시/merge는 수행하지 않는다. 수정만 focused commit으로 남기며 기존 `.gitignore`, `AGENTS.md`, `CLAUDE.md`, 다른 미커밋 문서 변경은 포함하지 않는다.
+
+## f0e0060 검증 보고 이후 보완
+
+사용자 검증에서 HTTP 입력의 `required()`가 changes JSON을 2,000자로 잘라 실제 저장을 거부하는 경로가 확인되었다. `requiredRaw()`로 JSON을 변형 없이 읽고 기존 UTF-8 2MiB 검사와 typed GraphWorkspace 검증을 유지한다. 일반 form의 encoded body 4MiB 제한도 유지한다. 긴 키뿐 아니라 짧은 키로 구성된 2,000자 초과 배치의 HTTP 저장·조회 회귀 테스트를 추가한다.
+
+viewport 전용 테스트 두 곳은 decoded 서버 상태의 positions/sizes 참조를 보존하도록 `current.views.site`를 펼쳐 사용한다. Java API 테스트에 누락된 ObjectNode import를 추가한다. UTF-8 크기 테스트는 decoded JSON이 2MiB를 초과하되 encoded form은 4MiB 미만인 입력으로 바꾸고, 그래프 전용 오류 메시지까지 검사해 일반 form 제한으로 인한 413과 구분한다.
+
+사용자 전달 결과는 원본 frontend 183/185 통과·Java testCompile 실패, 임시 테스트 수정 후 frontend 645건 통과, 임시 requiredRaw 수정까지 포함한 targeted Java 64건 통과다. 임시 수정은 원복되었으므로 이 보완 커밋의 검증 결과로 간주하지 않는다. 이번 보완도 빌드·테스트·패키징·실제 Burp 검증을 실행하지 않고 사용자에게 맡긴다.
