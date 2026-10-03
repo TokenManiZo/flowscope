@@ -144,6 +144,70 @@ final class FlowScopeControlTabTest {
         });
     }
 
+    @Test void toolsArrowSurvivesInvisibleHostIconsAndMouseDoesNotRequestFocus() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            Object collapsed = UIManager.get("Tree.collapsedIcon");
+            Object expanded = UIManager.get("Tree.expandedIcon");
+            Icon invisible = new Icon() {
+                public int getIconWidth() { return 12; }
+                public int getIconHeight() { return 12; }
+                public void paintIcon(Component component, Graphics graphics, int x, int y) {}
+            };
+            try {
+                UIManager.put("Tree.collapsedIcon", invisible);
+                UIManager.put("Tree.expandedIcon", invisible);
+                FlowScopeControlTab tab = tab(new TestActions());
+                JToggleButton toggle = (JToggleButton) named(tab, "project.tools.toggle");
+                for (int refresh = 0; refresh < 2; refresh++) {
+                    if (refresh > 0) SwingUtilities.updateComponentTreeUI(tab);
+                    int width = toggle.getPreferredSize().width;
+                    assertFalse(toggle.isRequestFocusEnabled(), "mouse clicks must not leave a persistent focus rectangle");
+                    assertTrue(toggle.isFocusable(), "keyboard traversal must remain available");
+                    assertTrue(toggle.isFocusPainted(), "keyboard focus must remain visible");
+                    for (Color foreground : new Color[] {Color.BLACK, Color.WHITE}) {
+                        toggle.setForeground(foreground);
+                        Color surface = foreground.equals(Color.BLACK) ? Color.WHITE : Color.BLACK;
+                        BufferedImage[] arrows = new BufferedImage[2];
+                        for (int state = 0; state < 2; state++) {
+                            assertEquals(state == 1, toggle.isSelected());
+                            assertEquals(state == 1, named(tab, "project.tools").isVisible());
+                            Icon icon = toggle.getIcon();
+                            assertNotNull(icon);
+                            arrows[state] = new BufferedImage(icon.getIconWidth(), icon.getIconHeight(), BufferedImage.TYPE_INT_RGB);
+                            Graphics2D graphics = arrows[state].createGraphics();
+                            graphics.setColor(surface);
+                            graphics.fillRect(0, 0, icon.getIconWidth(), icon.getIconHeight());
+                            icon.paintIcon(toggle, graphics, 0, 0);
+                            graphics.dispose();
+                            assertTrue(hasDifferentPixel(arrows[state], surface), "disclosure arrow must be visible in both states");
+                            toggle.doClick(0);
+                            assertEquals(width, toggle.getPreferredSize().width);
+                        }
+                        boolean changed = false;
+                        for (int y = 0; y < arrows[0].getHeight(); y++) {
+                            for (int x = 0; x < arrows[0].getWidth(); x++) {
+                                changed |= arrows[0].getRGB(x, y) != arrows[1].getRGB(x, y);
+                            }
+                        }
+                        assertTrue(changed, "expanded arrow must have a different direction");
+                    }
+                }
+            } finally {
+                UIManager.put("Tree.collapsedIcon", collapsed);
+                UIManager.put("Tree.expandedIcon", expanded);
+            }
+        });
+    }
+
+    private static boolean hasDifferentPixel(BufferedImage image, Color surface) {
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                if (image.getRGB(x, y) != surface.getRGB()) return true;
+            }
+        }
+        return false;
+    }
+
     public static final class TransparentHostButtonUI extends BasicButtonUI {
         public static ComponentUI createUI(JComponent component) { return new TransparentHostButtonUI(); }
         @Override public void update(Graphics graphics, JComponent component) {

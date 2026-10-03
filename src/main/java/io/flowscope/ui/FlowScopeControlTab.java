@@ -8,6 +8,7 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.Icon;
 import javax.swing.JPanel;
 import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
@@ -15,13 +16,17 @@ import javax.swing.UIManager;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.plaf.basic.BasicButtonUI;
 import java.awt.BorderLayout;
+import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.io.File;
@@ -156,16 +161,16 @@ public final class FlowScopeControlTab extends JPanel {
         collection.setAlignmentX(LEFT_ALIGNMENT);
         details.add(Box.createVerticalStrut(12));
         details.add(collection);
-        JToggleButton toggle = new JToggleButton("프로젝트 도구", UIManager.getIcon("Tree.collapsedIcon")) {
+        JToggleButton toggle = new JToggleButton("프로젝트 도구", new DisclosureIcon()) {
             @Override public void updateUI() { setUI(new ControlButtonUI()); }
         };
         toggle.setName("project.tools.toggle");
         toggle.setContentAreaFilled(false);
+        toggle.setRequestFocusEnabled(false);
         toggle.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
         toggle.getAccessibleContext().setAccessibleDescription("파일 작업과 범위·수집 요약을 펼치거나 접습니다.");
         toggle.addActionListener(ignored -> {
             details.setVisible(toggle.isSelected());
-            toggle.setIcon(UIManager.getIcon(toggle.isSelected() ? "Tree.expandedIcon" : "Tree.collapsedIcon"));
             revalidate();
             repaint();
         });
@@ -174,6 +179,24 @@ public final class FlowScopeControlTab extends JPanel {
         root.add(toggleRow, BorderLayout.NORTH);
         root.add(details, BorderLayout.CENTER);
         return root;
+    }
+
+    private static final class DisclosureIcon implements Icon {
+        public int getIconWidth() { return 12; }
+        public int getIconHeight() { return 12; }
+        public void paintIcon(Component component, Graphics graphics, int x, int y) {
+            Graphics2D arrow = (Graphics2D) graphics.create();
+            arrow.translate(x, y);
+            arrow.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            arrow.setColor(component.getForeground());
+            arrow.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            if (((AbstractButton) component).isSelected()) {
+                arrow.drawPolyline(new int[] {3, 6, 9}, new int[] {4, 7, 4}, 3);
+            } else {
+                arrow.drawPolyline(new int[] {4, 7, 4}, new int[] {3, 6, 9}, 3);
+            }
+            arrow.dispose();
+        }
     }
 
     /** Keep the three custom controls readable when Burp skips transparent backgrounds or changes selected text. */
