@@ -161,6 +161,8 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 6. 과거 프로젝트의 assessment/validation은 React **시나리오 → 과거 LLM 기록 · 읽기 전용**에서 확인합니다. 원 Evidence ID·생성 시각을 보존하되 현재 후보나 새 판정으로 합치지 않습니다.
 7. Burp 탭의 **프로젝트 도구**를 펼친 뒤 **로컬 DB 저장·연결**로 `.flowscope.db`를 한 번 지정합니다. 이후 그래프·계정·검토·판정 변경은 30초 checkpoint로 합쳐 같은 DB에 원자적으로 자동 저장됩니다. 정상 unload는 새 수집·가져오기·분석 게시를 먼저 닫고 대기 중 Evidence의 마지막 분석을 반영한 뒤 한 번 더 저장을 시도합니다. 공유·검토용 단일 문서가 필요하면 **JSON 내보내기**를 사용합니다. DB에도 raw broker 또는 Explorer 자격증명은 저장되지 않으므로 Burp를 다시 열면 로그인 연결은 다시 해야 합니다.
 
+프로젝트 형식이나 DB 구조의 버전 오류가 나오면 안내된 파일 버전과 현재 지원 범위를 확인하고, 해당 형식을 지원하는 JAR로 다시 열어 주세요. 파일의 버전 번호를 직접 바꾸면 데이터가 누락될 수 있습니다.
+
 > ZAP 로그인 교환은 감사 가능한 `ZAP_AUTHENTICATION / SESSION_SETUP` Evidence로 보존되지만, SCANNER 탐색 성과·crawler 수집 건수·완료 조건에는 포함되지 않습니다. 따라서 로그인만 성공하고 crawler가 응답을 수집하지 못한 lane은 완료로 표시되지 않습니다.
 
 ## LLM Explorer 상태

@@ -146,7 +146,11 @@ public final class SqliteProjectStore {
         if (!Files.isRegularFile(absolute)) throw new IOException("project database is missing");
         try (Connection connection = connect(absolute)) {
             int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
-            if (version < 1 || version > STORAGE_SCHEMA_VERSION) throw new IllegalArgumentException("unsupported project database schema");
+            if (version < 1 || version > STORAGE_SCHEMA_VERSION) {
+                throw new IllegalArgumentException("지원하지 않는 DB 구조입니다(파일 버전: " + version
+                        + ", 현재 지원: 1~" + STORAGE_SCHEMA_VERSION
+                        + "). 이 형식을 지원하는 JAR로 다시 열어 주세요. 버전 번호를 직접 바꾸면 데이터가 누락될 수 있습니다.");
+            }
             connection.setAutoCommit(false);
             try (PreparedStatement metadata = connection.prepareStatement(
                     "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)")) {
@@ -363,7 +367,9 @@ public final class SqliteProjectStore {
     private ObjectNode read(Connection connection) throws SQLException, IOException {
         int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
         if (version != STORAGE_SCHEMA_VERSION && version != 1 && version != 2) {
-            throw new IllegalArgumentException("unsupported FlowScope SQLite schema version: " + version);
+            throw new IllegalArgumentException("지원하지 않는 DB 구조입니다(파일 버전: " + version
+                    + ", 현재 지원: 1~" + STORAGE_SCHEMA_VERSION
+                    + "). 이 형식을 지원하는 JAR로 다시 열어 주세요. 버전 번호를 직접 바꾸면 데이터가 누락될 수 있습니다.");
         }
         try (Statement statement = connection.createStatement();
              ResultSet migrations = statement.executeQuery("SELECT MAX(version) FROM schema_migrations")) {

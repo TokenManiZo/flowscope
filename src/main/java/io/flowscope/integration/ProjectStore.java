@@ -282,7 +282,9 @@ public final class ProjectStore {
     ProjectData fromDocument(JsonNode root) {
         int schemaVersion = root.path("schema_version").asInt(-1);
         if (schemaVersion != SCHEMA_VERSION && !LEGACY_SCHEMA_VERSIONS.contains(schemaVersion)) {
-            throw new IllegalArgumentException("unsupported FlowScope schema version");
+            throw new IllegalArgumentException("지원하지 않는 프로젝트 형식입니다(파일 버전: "
+                    + (schemaVersion == -1 ? "확인 불가" : schemaVersion) + ", 현재 지원: 1~" + SCHEMA_VERSION
+                    + "). 이 형식을 지원하는 JAR로 다시 열어 주세요. 버전 번호를 직접 바꾸면 데이터가 누락될 수 있습니다.");
         }
         JsonNode recordNodes = root.path("records");
         if (!recordNodes.isArray() || recordNodes.size() > MAX_RECORDS) {
