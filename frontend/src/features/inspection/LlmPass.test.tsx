@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
 import { queryKeys } from "@/lib/query/hooks"
 import { LlmPass } from "./LlmPass"
 
+beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }))
 afterEach(() => vi.unstubAllGlobals())
 
 const idle = {
@@ -129,15 +130,16 @@ it("shows the browser budget as a ceiling and keeps the stop switch visible whil
   expect(card.getByText("브라우저 탐색 중")).toBeInTheDocument()
   // 경과는 사실, 15분은 상한일 뿐이다.
   expect(card.getByText("04:12")).toBeInTheDocument()
-  expect(card.getByText("15분")).toBeInTheDocument()
-  expect(card.getByText(/먼저 도달하면 끝납니다/)).toBeInTheDocument()
+  expect(card.getByText("300회 · 15분")).toBeInTheDocument()
+  expect(card.getByTitle(/먼저 도달하면 종료/)).toHaveAttribute("title", expect.stringContaining("창을 닫아도 종료"))
   expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
-  expect(card.getByText("84 / 상한 300회")).toBeVisible()
-  expect(card.getByText("19")).toBeInTheDocument()
+  expect(card.getByText("84회")).toBeVisible()
+  expect(card.getByText("19개")).toBeInTheDocument()
   // 둘러보기만 한 실행이 "아무것도 안 함"으로 읽히면 안 된다.
-  expect(card.getByText("31")).toBeInTheDocument()
-  // 빨간 경고 박스 대신 카드 안 한 줄로 남긴다.
-  expect(card.getByText(/창을 닫으면 그 자리에서 끝납니다/)).toBeInTheDocument()
+  expect(card.getByText("31회")).toBeInTheDocument()
+  expect(screen.queryByText("브라우저 화면 상태를 읽은 횟수입니다.")).not.toBeInTheDocument()
+  await userEvent.hover(card.getByRole("button", { name: "화면 상태 조회 횟수 도움말" }))
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("브라우저 화면 상태를 읽은 횟수입니다.")
   expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   // 다른 화면에 갔다 와도 실행이 들고 있는 선택이 그대로 보여야 한다.
   expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()

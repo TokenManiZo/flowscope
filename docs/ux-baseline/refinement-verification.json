@@ -1,0 +1,43 @@
+{
+  "mockupOnly": true,
+  "checks": [
+    "1280 light: 3x2 metrics, help, ZAP fold/selection, floating aggregate",
+    "1280 dark: 3x2 metrics, help, ZAP fold/selection, floating aggregate",
+    "1920 light: 3x2 metrics, help, ZAP fold/selection, floating aggregate",
+    "1920 dark: 3x2 metrics, help, ZAP fold/selection, floating aggregate"
+  ],
+  "screenshots": [
+    "before-llm-light-1280.png",
+    "after-llm-light-1280.png",
+    "before-zap-light-1280.png",
+    "after-zap-light-1280.png",
+    "before-surface-light-1280.png",
+    "after-surface-light-1280.png",
+    "before-evidence-light-1280.png",
+    "after-evidence-light-1280.png",
+    "before-llm-dark-1280.png",
+    "after-llm-dark-1280.png",
+    "before-zap-dark-1280.png",
+    "after-zap-dark-1280.png",
+    "before-surface-dark-1280.png",
+    "after-surface-dark-1280.png",
+    "before-evidence-dark-1280.png",
+    "after-evidence-dark-1280.png",
+    "before-llm-light-1920.png",
+    "after-llm-light-1920.png",
+    "before-zap-light-1920.png",
+    "after-zap-light-1920.png",
+    "before-surface-light-1920.png",
+    "after-surface-light-1920.png",
+    "before-evidence-light-1920.png",
+    "after-evidence-light-1920.png",
+    "before-llm-dark-1920.png",
+    "after-llm-dark-1920.png",
+    "before-zap-dark-1920.png",
+    "after-zap-dark-1920.png",
+    "before-surface-dark-1920.png",
+    "after-surface-dark-1920.png",
+    "before-evidence-dark-1920.png",
+    "after-evidence-dark-1920.png"
+  ]
+}

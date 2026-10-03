@@ -582,3 +582,18 @@ describe("unified inspection hub", () => {
   })
 
 })
+
+it("keeps the existing ZAP settings table and selection when accounts are folded", async () => {
+  const { fetchStub } = renderInspection({ scannerAccounts: [{ id: "active-account", label: "활성 계정", role: "USER", service: "https://demo.flowscope.test:443", loginUrl: `${target}/login`, status: "UNVERIFIED", message: "확인 전", updatedAt: "", hasPassword: true }] })
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole("tab", { name: /ZAP 스캔/ }))
+  const account = await screen.findByRole("checkbox", { name: "활성 계정" })
+  await user.click(account)
+  expect(screen.getAllByRole("button", { name: /설정/ }).length).toBeGreaterThan(0)
+  await user.click(screen.getByRole("button", { name: "ZAP 계정 접기" }))
+  expect(screen.queryByRole("checkbox", { name: "활성 계정" })).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "ZAP 계정 펼치기" }))
+  expect(screen.getByRole("checkbox", { name: "활성 계정" })).toBeChecked()
+  expect(screen.getAllByRole("button", { name: /설정/ }).length).toBeGreaterThan(0)
+  expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+})

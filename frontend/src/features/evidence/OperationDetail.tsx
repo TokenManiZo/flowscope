@@ -69,7 +69,7 @@ function OperationEditor({ event, snapshot, onOpenRequestLab, showEvidenceId = t
   </>
 
   return <div className="grid gap-4">
-    <dl className={compactPolicy ? "grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-xs" : "grid gap-x-4 gap-y-2 sm:grid-cols-[9rem_1fr]"}>{metadata.map(([name, value]) => <div className="contents" key={name}><dt className="font-medium">{name}</dt><dd className="min-w-0 break-words">{compactPolicy && name === "메서드" ? <MethodBadge method={value} /> : compactPolicy && name === "HTTP 상태" ? <HttpStatusBadge status={value} /> : compactPolicy && name === "경로" ? <span className="break-all font-mono text-xs">{value}</span> : boundedText(value, 320)}</dd></div>)}</dl>
+    <dl className={compactPolicy ? "grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-x-4 gap-y-2 rounded-md border bg-muted/20 p-3 text-xs" : "grid gap-x-4 gap-y-2 sm:grid-cols-[9rem_1fr]"}>{metadata.map(([name, value]) => <div className="contents" key={name}><dt className={compactPolicy ? "text-muted-foreground" : "font-medium"}>{name}</dt><dd className="min-w-0 break-words">{compactPolicy && name === "메서드" ? <MethodBadge method={value} /> : compactPolicy && name === "HTTP 상태" ? <HttpStatusBadge status={value} /> : compactPolicy && name === "경로" ? <span className="break-all font-mono text-xs">{value}</span> : boundedText(value, 320)}</dd></div>)}</dl>
     {detailContent}
     {relatedCell && <p className="text-sm">연결 셀: {relatedCell.idn} · {relatedCell.op} · {relatedCell.overall}</p>}
     {relatedScenarios.length > 0 && <p className="text-sm">연결 시나리오: {relatedScenarios.map((scenario) => boundedText(scenario.title, 80)).join(" · ")}</p>}

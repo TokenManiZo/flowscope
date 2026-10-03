@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
@@ -38,7 +38,8 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   expect(screen.queryByText(/%/)).not.toBeInTheDocument()
   screen.getByRole("button", { name: "상세 보기" }).click()
   expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
-  expect(screen.getByText("ev-human")).toBeVisible()
+  await userEvent.click(screen.getByText("기록 연결 정보"))
+  expect(screen.getByText("기록 연결 정보").parentElement).toHaveTextContent("ev-human")
   await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
@@ -52,6 +53,7 @@ it("recomputes source deltas and exposes controlled-request failure quality with
   expect(screen.getByTitle("2개 출처 관측")).toBeVisible()
   expect(screen.getByText(/LLM 실행 · ALL_FAILED/)).toBeVisible()
   expect(screen.getByText(/시도 3 · 응답 0 · 실패 3 · TLS_FAILURE 3/)).toBeVisible()
+  await userEvent.click(screen.getByRole("button", { name: "필터" }))
   await userEvent.setup().click(screen.getByRole("checkbox", { name: "L · LLM" }))
   expect(screen.getByTitle("1개 출처 관측")).toBeVisible()
   expect(screen.queryByText("404")).not.toBeInTheDocument()
@@ -79,9 +81,14 @@ it("filters LLM-only declarations and probes without turning them into observati
 
   expect(screen.getByText("/api/declared")).toBeVisible()
   expect(screen.getByText("산출물에서 발견 · 아직 요청 없음")).toBeVisible()
+  await userEvent.click(screen.getByRole("button", { name: "집계" }))
   expect(screen.getByText("OPTIONS probe").parentElement).toHaveTextContent("1")
+  await userEvent.keyboard("{Escape}")
+  await userEvent.click(screen.getByRole("button", { name: "필터" }))
   await userEvent.setup().click(screen.getByRole("checkbox", { name: "L · LLM" }))
   expect(screen.queryByText("/api/declared")).not.toBeInTheDocument()
+  await userEvent.keyboard("{Escape}")
+  await userEvent.click(screen.getByRole("button", { name: "집계" }))
   expect(screen.getByText("OPTIONS probe").parentElement).toHaveTextContent("0")
 })
 
@@ -128,6 +135,25 @@ it("does not show the run-gap hint when endpoints exist but are only hidden by a
   // 기본 상태(모든 소스 on): endpoint가 있으니 힌트는 뜨지 않는다.
   expect(screen.queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
   // HUMAN 소스를 끄면 필터된 목록은 비지만 관측 데이터는 존재한다 → 힌트를 띄우면 오도한다.
+  await userEvent.click(screen.getByRole("button", { name: "필터" }))
   await userEvent.click(screen.getByRole("checkbox", { name: "H · HUMAN" }))
   expect(screen.queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
 })
+
+ it("keeps comparison conditions in one dropdown and restores focus on dismissal", async () => {
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = snapshotFixture
+  const user = userEvent.setup()
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  expect(screen.queryByRole("combobox", { name: "API·입력 차이 상태" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("checkbox", { name: "L · LLM" })).not.toBeInTheDocument()
+  const comparison = screen.getByRole("region", { name: "API 비교" })
+  const button = within(comparison).getByRole("button", { name: "필터" })
+  expect(within(comparison).getByRole("button", { name: "집계" })).toBeVisible()
+  await user.click(button)
+  expect(screen.getByRole("combobox", { name: "API·입력 차이 상태" })).toBeVisible()
+  await user.click(screen.getByRole("checkbox", { name: "L · LLM" }))
+  await user.keyboard("{Escape}")
+  expect(button).toHaveFocus()
+  await user.click(button)
+  expect(screen.getByRole("checkbox", { name: "L · LLM" })).not.toBeChecked()
+ })

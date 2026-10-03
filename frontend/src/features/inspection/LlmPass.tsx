@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ChevronDown, CircleStop, ExternalLink, LogIn, Play, RefreshCw, Send } from "lucide-react"
+import { ChevronDown, CircleHelp, CircleStop, ExternalLink, LogIn, Play, RefreshCw, Send } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { HttpStatusBadge, MethodBadge } from "@/components/TrafficBadges"
 import { useExplorerDisplay } from "./useExplorerDisplay"
 import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { runStatusLabel } from "@/lib/display/runStatus"
 import {
   useExplorerBrowserCompleteMutation,
@@ -100,20 +101,18 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
       <span>실행 세부정보 <span className="ml-2 text-muted-foreground">{formatElapsed(display.elapsedMillis)} · HTTP {run?.attempts ?? 0} / {run?.responses ?? 0}</span></span>
       <span className="flex items-center gap-1 font-medium">{detailsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${detailsOpen ? "rotate-180" : ""}`} /></span>
     </button>
-    {detailsOpen && <div className="grid gap-2 border-t px-3 py-3 text-xs">
-      <dl className="grid grid-cols-[10rem_1fr] gap-x-4 gap-y-2"><dt className="text-muted-foreground">선언 Endpoint / Parameter</dt><dd className="tabular-nums">{run?.endpointDeclarations ?? 0} / {run?.parameterDeclarations ?? 0}</dd></dl>
-      {browser && <div role="group" aria-label="브라우저 탐색 진행" className="grid gap-2 border-t pt-2">
+    {detailsOpen && <div className="border-t px-3 py-3 text-xs">
+      {browser ? <div role="group" aria-label="브라우저 탐색 진행" className="grid gap-3">
         <p className="font-medium">{active ? "브라우저 탐색 중" : runStatusLabel(run?.status ?? "IDLE")}</p>
-        <dl className="grid grid-cols-[10rem_1fr] gap-x-4 gap-y-2">
-          <dt className="text-muted-foreground">경과</dt><dd className="font-mono">{formatElapsed(browser.elapsedMillis)}</dd>
-          <dt className="text-muted-foreground">브라우저 동작</dt><dd>{browser.actions} / 상한 {browser.maxActions}회</dd>
-          <dt className="text-muted-foreground" title="브라우저 화면 상태를 조회한 횟수">화면 상태 조회 횟수</dt><dd>{browser.snapshots}</dd>
-          <dt className="text-muted-foreground">관측 엔드포인트</dt><dd>{browser.endpoints}</dd>
-          <dt className="text-muted-foreground">시간 상한</dt><dd>{browser.minutes}분</dd>
+        <dl className="grid grid-cols-3 gap-x-6 gap-y-3 [&_dt]:text-[11px] [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:font-medium [&_dd]:tabular-nums" aria-label="브라우저 실행 수치">
+          <div><dt>경과</dt><dd className="font-mono">{formatElapsed(browser.elapsedMillis)}</dd></div>
+          <div><dt>브라우저 동작</dt><dd>{browser.actions}회</dd></div>
+          <div><dt className="flex items-center gap-1">화면 상태 조회 횟수<TooltipProvider delayDuration={200}><Tooltip><TooltipTrigger asChild><button type="button" aria-label="화면 상태 조회 횟수 도움말" className="inline-flex size-5 items-center justify-center rounded hover:bg-muted focus-visible:outline-2"><CircleHelp className="size-3.5" aria-hidden="true" /></button></TooltipTrigger><TooltipContent>브라우저 화면 상태를 읽은 횟수입니다.</TooltipContent></Tooltip></TooltipProvider></dt><dd>{browser.snapshots}회</dd></div>
+          <div><dt>관측 엔드포인트</dt><dd>{browser.endpoints}개</dd></div>
+          <div><dt>선언 Endpoint / Parameter</dt><dd>{run?.endpointDeclarations ?? 0} / {run?.parameterDeclarations ?? 0}</dd></div>
+          <div><dt>종료 기준</dt><dd title="동작 또는 시간 상한 중 먼저 도달하면 종료합니다. 창을 닫아도 종료합니다.">{browser.maxActions}회 · {browser.minutes}분</dd></div>
         </dl>
-        <p className="text-muted-foreground">화면 상태 조회 횟수는 브라우저 화면을 읽은 횟수입니다.</p>
-        <p className="text-muted-foreground">동작 {browser.maxActions}회 또는 {browser.minutes}분 중 먼저 도달하면 끝납니다. 창을 닫으면 그 자리에서 끝납니다.</p>
-      </div>}
+      </div> : <dl><dt className="text-muted-foreground">선언 Endpoint / Parameter</dt><dd className="mt-1 tabular-nums">{run?.endpointDeclarations ?? 0} / {run?.parameterDeclarations ?? 0}</dd></dl>}
     </div>}
   </section> : null
 

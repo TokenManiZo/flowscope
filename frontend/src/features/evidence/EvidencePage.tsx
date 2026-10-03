@@ -104,7 +104,7 @@ export function EvidencePage() {
   }
 
   const page = evidence.data
-  const records = selectedEvent && <section aria-label="작업 관측 기록 페이지" className="grid min-w-0 gap-3 border-t p-4">
+  const records = selectedEvent && <section aria-label="작업 관측 기록 페이지" className="grid min-w-0 gap-3 border-t pt-4">
     <h2 className="text-sm font-semibold">요청 · 응답 <span className="font-normal text-muted-foreground">마스킹됨 · 같은 API {page?.total ?? "…"}건</span></h2>
     {evidence.isLoading && <p className="text-sm text-muted-foreground">불러오는 중…</p>}
     {evidence.isError && <p role="alert" className="text-sm text-destructive">{evidence.error.message}</p>}
@@ -112,13 +112,15 @@ export function EvidencePage() {
     {page?.records.slice().sort((a, b) => Number(b.eventId === selectedEvent.eventId) - Number(a.eventId === selectedEvent.eventId)).map((record) => <details key={`${datasetRevision}:${page.offset}:${record.eventId}`} open={record.eventId === selectedEvent.eventId} className="min-w-0 rounded-md border p-3">
       <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, record.eventId), 160)}</summary>
       <div className="mt-3 grid min-w-0 gap-2">
-        <p className="break-words text-xs text-muted-foreground">{record.classificationReasons.map(trafficReasonLabel).join(" · ")}</p>
-        <h3 className="text-xs font-medium">Request</h3>
-        <Retention label="보존" value={record.requestPayload} />
+        <h3 className="text-xs font-medium">요청</h3>
         <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 text-xs">{record.request || record.requestBody || "요청 전문 없음"}</pre>
-        <h3 className="text-xs font-medium">Response</h3>
-        <Retention label="보존" value={record.responsePayload} />
+        <h3 className="mt-2 text-xs font-medium">응답</h3>
         <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 text-xs">{record.response || record.responseBody || "응답 전문 없음"}</pre>
+        <details className="mt-2 border-t pt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">분류 · 보존 정보</summary><div className="mt-2 grid gap-2">
+          <p className="break-words">{record.classificationReasons.map(trafficReasonLabel).join(" · ")}</p>
+          <Retention label="요청 보존" value={record.requestPayload} />
+          <Retention label="응답 보존" value={record.responsePayload} />
+        </div></details>
       </div>
     </details>)}
     {page && (page.offset > 0 || page.hasMore) && <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">총 {page.total}건 · {page.offset + 1}번째부터</span><Button variant="outline" size="sm" aria-label="이전 관측 기록 페이지" disabled={page.offset <= 0 || evidence.isFetching || snapshot.isError} onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>이전</Button><Button variant="outline" size="sm" aria-label="다음 관측 기록 페이지" disabled={!page.hasMore || evidence.isFetching || snapshot.isError} onClick={() => setOffset(page.offset + page.limit)}>다음</Button></div>}

@@ -1,7 +1,7 @@
 import { accountObservations } from "@/lib/display/accountObservations"
 import { evidenceOrdinalLabel } from "@/lib/display/operationLabel"
 import { useEffect, useMemo, useState } from "react"
-import { Check, Copy } from "lucide-react"
+import { Check, ChevronDown, Copy } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -89,6 +89,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
   const [zapDefinitions, setZapDefinitions] = useState("")
   const [showZapHowTo, setShowZapHowTo] = useState(false)
+  const [zapAccountsOpen, setZapAccountsOpen] = useState(true)
   const [settings, setSettings] = useState<{ id: string; tab: "zap" } | null>(null)
   const settingsAdapter = useMemo(() => createAccountSettingsAdapter(), [])
 
@@ -310,12 +311,13 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   <SelectTrigger id="scanner-target" aria-label="ZAP 대상" className="w-72"><SelectValue /></SelectTrigger>
                   <SelectContent>{scope.map((value) => <SelectItem key={value} value={value}>{displayOrigin(value)}</SelectItem>)}</SelectContent>
                 </Select></div>}
-              <div className="grid gap-1.5"><span className="text-xs text-muted-foreground">스캔할 계정</span>
-                <AccountLaneTable lane="ZAP" rows={targetAccounts.map((account) => ({ id: account.id, label: account.label, configured: scannerAccountIds.includes(account.id) }))}
+              <section className="grid gap-1.5">
+                <div className="flex items-center justify-between gap-3 text-xs"><span className="text-muted-foreground">스캔할 계정{!zapAccountsOpen && <span className="ml-2">{[...(anonymous ? ["비로그인"] : []), ...selectedAccounts.map((id) => targetAccounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span>}</span><button type="button" aria-label={`ZAP 계정 ${zapAccountsOpen ? "접기" : "펼치기"}`} aria-expanded={zapAccountsOpen} onClick={() => setZapAccountsOpen((value) => !value)} className="flex items-center gap-1 rounded px-2 py-1 font-medium hover:bg-muted">{zapAccountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${zapAccountsOpen ? "rotate-180" : ""}`} /></button></div>
+                {zapAccountsOpen && <AccountLaneTable lane="ZAP" rows={targetAccounts.map((account) => ({ id: account.id, label: account.label, configured: scannerAccountIds.includes(account.id) }))}
                   anonymous={anonymous} onAnonymousChange={setAnonymous} selected={selectedAccounts}
                   onToggle={(id, value) => setSelectedAccounts((current) => value ? [...current, id] : current.filter((item) => item !== id))}
-                  onSettings={(id) => setSettings({ id, tab: "zap" })} disabled={!zapConnected || scannerRunning} />
-              </div>
+                  onSettings={(id) => setSettings({ id, tab: "zap" })} disabled={!zapConnected || scannerRunning} />}
+              </section>
               <details className="rounded-lg border border-border px-3 py-2.5 text-sm">
                 <summary className="cursor-pointer">명세로 API 추가 <span className="text-xs text-muted-foreground">OpenAPI · GraphQL · 선택</span></summary>
                 <textarea id="scanner-definitions" aria-label="API 정의" className="mt-3 min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" value={zapDefinitions} onChange={(event) => setZapDefinitions(event.target.value)} spellCheck={false} placeholder={"OPENAPI https://target/openapi.json\nGRAPHQL https://target/graphql [schema URL]"} />
