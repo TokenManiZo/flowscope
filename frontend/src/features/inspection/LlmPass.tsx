@@ -45,8 +45,8 @@ export function LlmPass({ target, accounts = [] }: {
   const steer = useExplorerSteerMutation()
   const openLogin = useExplorerBrowserLoginMutation()
   const completeLogin = useExplorerBrowserCompleteMutation()
-  const [anonymous, setAnonymous] = useState(true)
-  const [selected, setSelected] = useState<string[]>([])
+  const [anonymous, setAnonymous] = useState<boolean | null>(null)
+  const [selected, setSelected] = useState<string[] | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [operatorMessage, setOperatorMessage] = useState("")
 
@@ -55,8 +55,13 @@ export function LlmPass({ target, accounts = [] }: {
   const active = run ? activeStates.has(run.status) : false
   // Active runs show their fixed selection. Terminal runs return to editable next-run controls.
   const settingUp = !active
-  const shownAnonymous = settingUp ? anonymous : (run?.anonymous ?? anonymous)
-  const shownSelected = settingUp ? selected : (run?.accountIds ?? selected)
+  const readyAccounts = new Set((data?.accounts ?? []).filter((item) => item.status === "READY").map((item) => item.id))
+  const availableAccounts = new Set(accounts.map((item) => item.id))
+  const nextAnonymous = anonymous ?? (run && run.status !== "IDLE" ? run.anonymous : true)
+  const nextSelected = (selected ?? (run && run.status !== "IDLE" ? run.accountIds : []))
+    .filter((id) => readyAccounts.has(id) && availableAccounts.has(id))
+  const shownAnonymous = settingUp ? nextAnonymous : (run?.anonymous ?? nextAnonymous)
+  const shownSelected = settingUp ? nextSelected : (run?.accountIds ?? nextSelected)
   const providerReady = run?.providerReadiness === "READY"
   const models = useExplorerModelsQuery(providerReady && settingUp)
   const modelLoading = providerReady && settingUp && models.isPending
@@ -134,6 +139,7 @@ export function LlmPass({ target, accounts = [] }: {
         value={nextModel} disabled={!providerReady || !catalog?.models.length}
         onChange={(event) => setSelectedModel(event.target.value)}>
         <option value="">Codex 기본 설정{catalog?.configuredModel ? ` (${catalog.configuredModel})` : ""}</option>
+        {modelUnavailable && <option value={nextModel} disabled>{nextModel} · 현재 사용 불가</option>}
         {(catalog?.models ?? []).map((option) => <option key={option.id} value={option.id}>{option.label}{option.recommended ? " · Codex 추천" : ""}</option>)}
       </select> : <p className="font-mono text-sm" id="explorer-model">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</p>}
       {models.isError && settingUp && <p className="text-xs text-amber-600">모델 목록을 확인하지 못했습니다. Codex 기본 설정으로는 실행할 수 있습니다.</p>}
@@ -144,13 +150,15 @@ export function LlmPass({ target, accounts = [] }: {
     <div className="grid gap-1.5"><span className="text-xs text-muted-foreground">탐색할 계정</span>
       <AccountLaneTable lane="LLM" rows={rows}
         anonymous={shownAnonymous} onAnonymousChange={setAnonymous} selected={shownSelected}
-        onToggle={(id, value) => setSelected((current) => value ? [...new Set([...current, id])] : current.filter((item) => item !== id))}
+        onToggle={(id, value) => setSelected((current) => value
+          ? [...new Set([...(current ?? nextSelected), id])]
+          : (current ?? nextSelected).filter((item) => item !== id))}
         disabled={active} />
       <p className="text-xs text-muted-foreground">[브라우저 로그인] → 열린 창에서 로그인 → [로그인 완료]. 이 창의 기록은 직접 둘러보기와 섞이지 않습니다.</p>
     </div>
     {browserCard}
     <div className="flex flex-wrap items-center gap-2">
-      <Button disabled={!providerReady || active || start.isPending || modelLoading || modelUnavailable || !target || (!anonymous && selected.length === 0)} onClick={() => start.mutate({ target, accounts: selected.join(","), anonymous, model: nextModel })}><Play className="size-4" />탐색 시작</Button>
+      <Button disabled={!providerReady || active || start.isPending || modelLoading || modelUnavailable || !target || (!nextAnonymous && nextSelected.length === 0)} onClick={() => start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous, model: nextModel })}><Play className="size-4" />탐색 시작</Button>
       {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />중단</Button>
         : run && run.status !== "IDLE" ? <Button variant="outline" onClick={() => control.mutate("clear")}>실행 표시 지우기</Button> : null}
       <span className="text-sm text-muted-foreground">{(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>
@@ -178,7 +186,7 @@ export function LlmPass({ target, accounts = [] }: {
     description="LLM이 사람처럼 서비스를 둘러보며 요청을 만듭니다."
     statusTiles={!run || run.status === "IDLE" ? [] : [
       { label: "상태", value: run ? runStatusLabel(run.status) : "불러오는 중" },
-      { label: active ? "실행 모델" : "마지막 실행 모델", value: run.model || "Codex 기본 설정" },
+      { label: active ? "요청 모델" : "마지막 요청 모델", value: run.model || "Codex 기본 설정" },
       { label: "소요 시간", value: formatElapsed(run?.elapsedMillis ?? 0), mono: true },
       { label: "HTTP 시도 / 응답", value: `${run?.attempts ?? 0} / ${run?.responses ?? 0}` },
       { label: "선언 Endpoint / Parameter", value: `${run?.endpointDeclarations ?? 0} / ${run?.parameterDeclarations ?? 0}` },

@@ -764,6 +764,13 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             return activity("WARNING", "Codex 경고", firstText(message.path("params"), "message", "summary"),
                     "WARNING", null);
         }
+        if (method.equals("model/rerouted")) {
+            JsonNode params = message.path("params");
+            String from = params.path("fromModel").asText("");
+            String to = params.path("toModel").asText("");
+            if (to.isBlank()) return null;
+            return activity("WARNING", "실제 모델 전환", from + " → " + to, "WARNING", null);
+        }
         if (method.equals("error")) {
             return activity("ERROR", "Codex 오류",
                     message.path("params").path("error").path("message").asText("오류"), "FAILED", null);

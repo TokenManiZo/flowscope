@@ -44,6 +44,9 @@ final class CodexAppServerProviderHarnessTest {
                 discoveries::set);
              CodexAppServerProvider provider = new CodexAppServerProvider()) {
             assertEquals("READY", provider.readiness());
+            String selectedModel = "gpt-6.1-sol";
+            org.junit.jupiter.api.Assumptions.assumeTrue(provider.models().models().stream()
+                    .anyMatch(model -> model.id().equals(selectedModel)), "non-default test model unavailable");
             CountDownLatch completed = new CountDownLatch(1);
             AtomicReference<ExplorerProvider.Result> result = new AtomicReference<>();
             AtomicReference<String> failure = new AtomicReference<>();
@@ -55,7 +58,8 @@ final class CodexAppServerProviderHarnessTest {
                     + "reason provider harness, parameters 빈 배열입니다. 그 뒤 summary와 빈 unresolved 배열로 끝내세요.";
             provider.start(new ExplorerProvider.Request("run-provider-harness",
                             "https://provider-harness.invalid/", List.of("https://provider-harness.invalid/"),
-                            List.of(), gateway.url(), gateway.discoveriesUrl(), gateway.token(), prompt),
+                            List.of(), gateway.url(), gateway.discoveriesUrl(), gateway.token(), prompt,
+                            selectedModel),
                     new ExplorerProvider.Listener() {
                         @Override public void activity(ExplorerProvider.Activity activity) { activities.add(activity); }
                         @Override public void completed(ExplorerProvider.Result value) {
