@@ -419,17 +419,12 @@ public final class FlowScopeExtension implements BurpExtension {
         try {
             SwingUtilities.invokeAndWait(() -> {
                 FlowScopeControlTab.Actions actions = new FlowScopeControlTab.Actions() {
-                    @Override public void startProject(String name, String projectScope) {
-                        try { runProjectTask(() -> beginNewProject(name, projectScope)); }
-                        catch (RuntimeException error) { projectError("새 진단 시작 실패", error); }
-                    }
                     @Override public void saveProject(File file) { saveProjectFile(file); }
                     @Override public void loadProject(File file) { loadProjectFile(file); }
                     @Override public void importProxyHistory() { importProxyHistory(); }
                     @Override public void loadSample() { enqueueSampleProject(); }
-                    @Override public void updateScope(String value) { updateScopeFromUi(value); }
                 };
-                controlTab = new FlowScopeControlTab(actions, webServer.url(), portMappingSummary());
+                controlTab = new FlowScopeControlTab(actions, webServer.url());
                 controlTab.setScopeText(scopeText);
                 controlTab.render(latest);
                 api.userInterface().registerSuiteTab("FlowScope", controlTab);
@@ -1164,13 +1159,6 @@ public final class FlowScopeExtension implements BurpExtension {
                 new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN));
     }
 
-    private static String portMappingSummary() {
-        return PORT_SOURCE.entrySet().stream()
-                .map(entry -> entry.getKey() + "=" + entry.getValue().source().name()
-                        + "/" + entry.getValue().detail().name())
-                .collect(java.util.stream.Collectors.joining(", "));
-    }
-
     private static int configuredScannerProxyPort() {
         return PORT_SOURCE.entrySet().stream()
                 .filter(entry -> entry.getValue().source() == Source.SCANNER)
@@ -1413,9 +1401,8 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /**
-     * 프로젝트 관리 창의 "수정": 현재 프로젝트의 이름과 exact scope를 바꾼다. Burp 탭의 범위 적용(applyScope)은 진행 중인
-     * 프로젝트의 scope 변경을 막지만, 이 경로는 사용자가 프로젝트를 명시적으로 고치는 것이라 허용한다. 이미 모은 기록은
-     * 그대로 두고 이후 수집만 새 범위를 따르며, 바뀐 이름·범위를 바로 저장한다. 실행 중인 작업이 있으면 막는다.
+     * 프로젝트 관리 창의 "수정": 현재 프로젝트의 이름과 exact scope를 바꾼다. 이미 모은 기록은 그대로 두고 이후 수집만
+     * 새 범위를 따르며, 바뀐 이름·범위를 바로 저장한다. 실행 중인 작업이 있으면 막는다.
      */
     private ProjectWorkspace.Status updateActiveProject(String name, String requestedScope) throws IOException {
         if (scopeMutationBlocked(runContexts)) {
@@ -1818,67 +1805,6 @@ public final class FlowScopeExtension implements BurpExtension {
             scopeText = "";
             api.logging().logToError("FlowScope scope 설정이 잘못되어 빈 범위로 시작합니다: " + e.getMessage());
         }
-    }
-
-    private void updateScopeFromUi(String value) {
-        try {
-            runProjectTask(() -> {
-                applyScope(value);
-                return null;
-            });
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            projectError("범위 적용 실패", e);
-        }
-    }
-
-    private void applyScope(String value) throws IOException {
-        if (scopeMutationBlocked(runContexts)) {
-            throw new IllegalStateException("활성 실행이 있습니다. "
-                    + "실행을 종료한 뒤 범위를 변경하세요.");
-        }
-        ScopePolicy parsed = ScopePolicy.parse(value);
-        if (activeProjectDatabase != null && !activeProjectContext.scope().equals(parsed.entries())) {
-            throw new IllegalStateException("진행 중인 프로젝트의 scope는 바꿀 수 없습니다. "
-                    + "새 진단 시작을 사용하면 현재 Evidence를 보존하고 다른 scope로 전환합니다.");
-        }
-        if (activeProjectDatabase == null && !parsed.isEmpty()) {
-            if (isSampleDataset()) {
-                ProjectWorkspace.Allocation allocation = projectWorkspace.allocate("", value);
-                try {
-                    sqliteProjectStore.save(allocation.database(), List.of(), new AnalysisConfig(),
-                            List.of(), List.of(), Map.of(), List.of(), List.of(), allocation.context());
-                } catch (IOException | RuntimeException error) {
-                    projectWorkspace.removeEmptyAllocation(allocation);
-                    throw error;
-                }
-                activateEmptyProject(parsed, value, allocation);
-                api.logging().logToOutput("FlowScope 샘플을 닫고 새 진단 시작: "
-                        + allocation.context().name() + " · " + allocation.context().scope());
-                return;
-            }
-            if (hasPersistableProjectState() && !scope.entries().equals(parsed.entries())) {
-                throw new IllegalStateException("저장되지 않은 기존 진단 데이터와 새 scope를 섞을 수 없습니다. "
-                        + "새 진단 시작을 사용해 기존 Evidence를 먼저 보존하세요.");
-            }
-            ProjectWorkspace.Allocation allocation = projectWorkspace.allocate("", value);
-            try {
-                saveProjectSnapshot(allocation.database(), allocation.context());
-            } catch (IOException | RuntimeException error) {
-                projectWorkspace.removeEmptyAllocation(allocation);
-                throw error;
-            }
-            activeProjectDatabase = allocation.database();
-            activeProjectContext = allocation.context();
-            markDatabaseSaved(revision.get());
-        }
-        scope = parsed;
-        scopeText = value == null ? "" : value.trim();
-        supportingAssets.clear();
-        synchronized (siteMapSeeds) { siteMapSeeds.removeIf(seed -> !parsed.allows(seed.url())); }
-        synchronized (restoredRouteCandidates) { restoredRouteCandidates.clear(); }
-        rebuildRouteCandidates(latest.records);
-        if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
-        api.logging().logToOutput("FlowScope 허용 범위 갱신: " + parsed.entries());
     }
 
     static boolean scopeMutationBlocked(RunContextRegistry contexts) {
