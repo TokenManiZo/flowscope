@@ -171,10 +171,14 @@ final class CodexAppServerProtocolTest {
             JsonNode thread = active.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
             assertEquals("gpt-6.1-sol", thread.path("params").path("model").asText());
             JsonNode discovery = null;
+            JsonNode observations = null;
             for (JsonNode tool : thread.path("params").path("dynamicTools")) {
                 if ("flowscope_record_discoveries".equals(tool.path("name").asText())) discovery = tool;
+                if ("flowscope_observations".equals(tool.path("name").asText())) observations = tool;
             }
             assertNotNull(discovery);
+            assertNotNull(observations);
+            assertTrue(observations.path("inputSchema").path("required").toString().contains("after_sequence"));
             String fieldPathHelp = discovery.path("inputSchema").path("properties").path("discoveries")
                     .path("items").path("properties").path("parameters").path("items")
                     .path("properties").path("field_path").path("description").asText();

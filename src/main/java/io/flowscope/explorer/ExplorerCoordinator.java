@@ -288,6 +288,9 @@ public final class ExplorerCoordinator implements AutoCloseable {
         browserSink.accept(new BrowserExchange(runId, accountId, exchange.method(), exchange.url(),
                 exchange.requestHeaders(), exchange.requestBody(), exchange.status(),
                 exchange.responseHeaders(), exchange.responseBody()));
+        ExplorerHttpGateway activeGateway = gateway;
+        if (activeGateway != null) activeGateway.browserObserved(runId, accountId, exchange.method(),
+                exchange.url(), exchange.status());
         if (browserEndpoints.size() < MAX_BROWSER_ENDPOINTS) {
             browserEndpoints.add(exchange.method() + " " + exchange.url());
         }

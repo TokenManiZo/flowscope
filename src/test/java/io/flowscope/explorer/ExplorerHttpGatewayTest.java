@@ -26,6 +26,28 @@ final class ExplorerHttpGatewayTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
+    void observationsSeparateBrowserCaptureFromPublishedHttpEvidence() throws Exception {
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/json", Map.of(), "{}", false, "ev-http", 2, Instant.now());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-observations", ignored -> {})) {
+            gateway.browserObserved("run-observations", "", "GET", "https://app.example.test/api/browser", 200);
+            post(gateway, """
+                    {"account":"","method":"GET","url":"https://app.example.test/api/http","headers":{},"body":""}
+                    """);
+            JsonNode response = JSON.readTree(post(gateway, gateway.observationsUrl(),
+                    "{\"after_sequence\":0,\"limit\":100}").body());
+            assertEquals(2, response.path("observations").size());
+            assertEquals("BROWSER_CAPTURED", response.path("observations").get(0).path("record_state").asText());
+            assertEquals("", response.path("observations").get(0).path("evidence_id").asText());
+            assertEquals("EVIDENCE_STORED", response.path("observations").get(1).path("record_state").asText());
+            assertEquals("ev-http", response.path("observations").get(1).path("evidence_id").asText());
+            assertEquals(1, JSON.readTree(post(gateway, gateway.observationsUrl(),
+                    "{\"after_sequence\":1,\"limit\":100}").body()).path("observations").size());
+        }
+    }
+
+    @Test
     void browserGatewayAcceptsExplicitAnonymousHandleButNotMissingAccount() throws Exception {
         try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
                 request -> { throw new AssertionError("browser action must not use HTTP transport"); },

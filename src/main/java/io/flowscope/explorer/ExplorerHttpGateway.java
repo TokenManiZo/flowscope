@@ -37,6 +37,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     public record Event(Instant at, String status, String accountId, String method, String url,
                         int httpStatus, String evidenceId, long durationMillis, String message) {}
 
+    private record Observation(long sequence, String accountId, String method, String url,
+                               int httpStatus, String evidenceId, String recordState) {}
+
     private record DiscoveryParameter(SurfaceAnalysis.ParameterLocation location, String fieldPath,
                                       String displayName, SurfaceAnalysis.Requirement requirement) {}
 
@@ -74,6 +77,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredEndpointKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
+    private final List<Observation> observations = new ArrayList<>();
+    private long observationSequence;
     private final ExplorerArtifactStore artifacts;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private volatile BrowserDriver browser;
@@ -87,6 +92,14 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     public void browserDriver(BrowserDriver driver) { this.browser = driver; }
 
     public String browserUrl() { return "http://127.0.0.1:" + server.port() + "/browser"; }
+    public String observationsUrl() { return "http://127.0.0.1:" + server.port() + "/observations"; }
+
+    /** CDP saw a response, but Evidence publication is asynchronous and must not be claimed here. */
+    public synchronized void browserObserved(String observedRunId, String accountId, String method,
+                                             String url, int status) {
+        if (!runId.equals(observedRunId)) return;
+        addObservation(accountId, method, url, status, "", "BROWSER_CAPTURED");
+    }
 
     public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
                                Predicate<String> exactScope, String runId,
@@ -135,6 +148,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         if (!request.method().equals("POST")
                 || !(requestUri.getPath().equals("/request") || requestUri.getPath().equals("/discoveries")
                 || requestUri.getPath().equals("/browser")
+                || requestUri.getPath().equals("/observations")
                 || requestUri.getPath().startsWith("/artifacts/"))) {
             return error(405, "지원하지 않는 Explorer gateway 작업입니다.");
         }
@@ -144,6 +158,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         catch (Exception error) { return error(400, "요청 JSON을 읽을 수 없습니다."); }
         if (requestUri.getPath().equals("/discoveries")) return handleDiscoveries(body);
         if (requestUri.getPath().equals("/browser")) return handleBrowser(body);
+        if (requestUri.getPath().equals("/observations")) return handleObservations(body);
         if (requestUri.getPath().startsWith("/artifacts/")) {
             return handleArtifacts(requestUri.getPath().substring("/artifacts/".length()), body);
         }
@@ -308,6 +323,40 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         } catch (Exception error) {
             return error(502, Masking.truncate(Masking.maskSecrets(error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage()), 500));
+        }
+    }
+
+    private synchronized LoopbackHttpServer.Response handleObservations(JsonNode body) {
+        try {
+            requireOnlyFields(body, Set.of("after_sequence", "limit"), "observations 요청");
+            JsonNode after = body.path("after_sequence");
+            JsonNode requestedLimit = body.path("limit");
+            if (!after.isIntegralNumber() || after.asLong() < 0
+                    || !requestedLimit.isIntegralNumber() || requestedLimit.asInt() < 1
+                    || requestedLimit.asInt() > 100) {
+                return error(400, "after_sequence는 0 이상, limit는 1~100이어야 합니다.");
+            }
+            ObjectNode result = JSON.createObjectNode().put("run_id", runId);
+            ArrayNode items = result.putArray("observations");
+            long cursor = after.asLong();
+            for (Observation observation : observations) {
+                if (observation.sequence() <= after.asLong()) continue;
+                if (items.size() >= requestedLimit.asInt()) break;
+                items.addObject().put("sequence", observation.sequence())
+                        .put("account", observation.accountId()).put("method", observation.method())
+                        .put("url", observation.url()).put("status", observation.httpStatus())
+                        .put("evidence_id", observation.evidenceId())
+                        .put("record_state", observation.recordState());
+                cursor = observation.sequence();
+            }
+            result.put("next_sequence", cursor);
+            result.put("oldest_sequence", observations.isEmpty() ? observationSequence + 1
+                    : observations.getFirst().sequence());
+            result.put("truncated_before_cursor", !observations.isEmpty()
+                    && after.asLong() + 1 < observations.getFirst().sequence());
+            return json(200, result);
+        } catch (IllegalArgumentException error) {
+            return error(400, error.getMessage());
         }
     }
 
@@ -764,10 +813,22 @@ public final class ExplorerHttpGateway implements AutoCloseable {
 
     private void emit(String status, String accountId, String method, String url, int httpStatus,
                       String evidenceId, long duration, String message) {
+        String safeUrl = Masking.truncate(Masking.maskSecrets(url), 2_048);
+        String storedId = evidenceId == null ? "" : evidenceId;
+        synchronized (this) {
+            addObservation(accountId, method, safeUrl, httpStatus, storedId,
+                    storedId.isBlank() ? "REQUEST_FAILED" : "EVIDENCE_STORED");
+        }
         events.accept(new Event(Instant.now(), status, accountId, method,
-                Masking.truncate(Masking.maskSecrets(url), 2_048), httpStatus,
-                evidenceId == null ? "" : evidenceId, duration,
+                safeUrl, httpStatus, storedId, duration,
                 Masking.truncate(Masking.maskSecrets(message), 500)));
+    }
+
+    private void addObservation(String accountId, String method, String url, int status,
+                                String evidenceId, String state) {
+        if (observations.size() == 4_000) observations.removeFirst();
+        observations.add(new Observation(++observationSequence, accountId == null ? "" : accountId,
+                method, Masking.truncate(Masking.maskSecrets(url), 2_048), status, evidenceId, state));
     }
 
     private boolean authorized(String header) {
@@ -820,6 +881,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         declaredEndpointKeys.clear();
         declaredParameterKeys.clear();
         declaredParameterProvenanceKeys.clear();
+        observations.clear();
         server.close();
     }
 }

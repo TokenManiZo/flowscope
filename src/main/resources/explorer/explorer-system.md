@@ -11,7 +11,7 @@
    1. `snapshot`으로 현재 화면의 `elements`를 받는다.
    2. 아직 들어가 보지 않은 것을 하나 고른다. **목록에서 개별 항목 상세로 들어가는 것을 가장 먼저 고른다** — 자원 식별자가 붙은 요청이 거기서 나오고, 그게 인가 비교의 재료다.
    3. `click`(또는 필요하면 `type` 뒤 `click`)으로 들어간다.
-   4. 다시 `snapshot`으로 무엇이 생겼는지 본다. 새 목록·상세·탭·필터가 있으면 1로 돌아간다.
+   4. 다시 `snapshot`으로 무엇이 생겼는지 보고 `flowscope_observations`로 방금 발생한 요청·응답을 확인한다. 새 목록·상세·탭·필터가 있으면 1로 돌아간다.
    5. 막다른 곳이면 `back`으로 올라가 형제 항목을 고른다. 같은 화면만 반복하지 말고 아직 안 본 영역으로 넓힌다.
 2-3. **`snapshot`은 행동 상한을 소모하지 않는다.** 지금 무엇이 보이는지 확인하는 데 아끼지 말고 쓴다. 상한을 쓰는 것은 `navigate`·`click`·`type`·`back`뿐이다.
 2-4. 브라우저 동작의 상한, 시간 초과, 창 종료는 409로 돌아오며 **재시도 대상이 아니다.** 그때는 지금까지의 관측으로 마무리한다. 사용자는 언제든 창을 닫아 수집을 끝낼 수 있다.
@@ -46,6 +46,8 @@
 ```
 
 응답은 창의 현재 `url`, `title`, 클릭·입력 가능한 `elements`(각 `ref`·`role`·`name`), 마스킹된 `text`다. 창이 보낸 요청·응답은 FlowScope가 자동으로 Evidence에 기록하므로 따로 저장하지 않는다.
+
+`flowscope_observations({"after_sequence":0,"limit":100})`은 이번 run에서 확인한 HTTP·브라우저 응답을 sequence 순서로 반환한다. 다음 호출에는 `next_sequence`를 넘긴다. `EVIDENCE_STORED`에만 저장된 Evidence ID가 있다. `BROWSER_CAPTURED`는 브라우저가 응답을 봤다는 뜻이고 Evidence 게시 완료를 뜻하지 않는다. `REQUEST_FAILED`는 응답 Evidence가 없는 시도다. 페이지가 실제로 호출한 URL을 여기서 확인하고, 인증 비교에 필요한 범위 안 요청은 `flowscope_http_request`로 다시 확인한다.
 
 Artifact 도구:
 

@@ -170,6 +170,8 @@ LLM 로그인 브라우저의 로그인·실행 사이 트래픽은 탐색 Evide
 
 비로그인을 선택하면 Explorer는 계정 로그인 창과 별도로 임시 Chromium 창을 `about:blank`에서 열고, 요청 전 exact-scope 차단을 설치한 다음 대상 시작 URL로 이동합니다. 이 창의 JavaScript/XHR 응답도 현재 LLM run으로 기록하며 종료·취소 때 창과 프로필을 닫습니다. 범위 밖 페이지 이동·XHR은 전송 전에 차단하고, 범위 안 페이지가 참조한 비인증 GET/HEAD 정적 자산만 보조 자료로 허용합니다. 브라우저를 열 수 없거나 차단기를 설치할 수 없으면 비로그인 브라우저가 실행된 척하지 않고 Explorer 시작을 실패로 표시합니다. 이 경계는 로컬 Chromium 하네스에서 확인했지만, 모든 사이트의 새 탭·서비스 워커 동작까지 검증했다는 뜻은 아닙니다.
 
+Explorer 모델은 `flowscope_observations`로 해당 run의 HTTP·브라우저 응답을 sequence별 조회합니다. 저장된 요청은 Evidence ID와 `EVIDENCE_STORED`, 브라우저에서 막 수신한 응답은 `BROWSER_CAPTURED`로 구분합니다. 후자는 저장 완료를 뜻하지 않으며, 화면 동작에서 나온 API를 다음 HTTP 검증 대상으로 찾는 데 사용합니다. 요청 실패는 `REQUEST_FAILED`로 남아 미관측과 구분됩니다.
+
 기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 옛 브라우저 하네스, Judge, agent-workspace는 없습니다. 별도 구현된 Explorer 로그인 창은 Chromium을 사용합니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
 
 공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright/Chrome 또는 MCP 설정은 필요하지 않습니다. FlowScope는 Codex 실행 파일과 로그인 상태를 확인하고, 모델에는 인증 비밀 대신 opaque account handle과 HTTP/선언 dynamic tool만 제공합니다. 모델 목록의 `isDefault`는 Codex의 추천 기본값이지 이 PC의 `config.toml` 선택값이 아니므로 두 값을 혼동하지 않습니다. 명시적으로 고른 모델은 실행 상태에 남지만, 모델을 지정하지 않고 Codex 기본값으로 실행한 경우에는 모델 ID를 추측하지 않습니다. Claude 공급자는 제품 지원 대상이 아니며, Explorer는 Codex 전용입니다. app-server dynamic tools는 현재 experimental API이므로 실제 설치된 CLI 호환성은 readiness와 opt-in 실물 provider gate로 확인합니다. LLM 응답 Evidence 0건은 완료가 아니라 실패로 남고, 모델의 자유서술 개수는 완료 집계로 사용하지 않습니다.

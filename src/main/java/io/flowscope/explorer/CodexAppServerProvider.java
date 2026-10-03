@@ -432,6 +432,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 String endpoint = switch (tool) {
                     case "flowscope_http_request" -> request.gatewayUrl();
                     case "flowscope_browser" -> request.gatewayUrl().replaceFirst("/request$", "/browser");
+                    case "flowscope_observations" -> request.gatewayUrl().replaceFirst("/request$", "/observations");
                     case "flowscope_record_discoveries" -> request.discoveryUrl();
                     case "flowscope_artifact_list" -> artifactBase + "/list";
                     case "flowscope_artifact_search" -> artifactBase + "/search";
@@ -555,7 +556,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .put("serviceName", "flowscope_explorer").put("ephemeral", true)
                     .put("developerInstructions", request.prompt());
             if (!request.model().isBlank()) params.put("model", request.model());
-            params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(artifactListTool())
+            params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(observationsTool()).add(artifactListTool())
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
             return params;
@@ -607,6 +608,18 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             properties.putObject("text").put("type", "string")
                     .put("description", "Text to type. Never a password: the operator has already logged in.");
             schema.putArray("required").add("account").add("action").add("url").add("ref").add("text");
+            return tool;
+        }
+
+        private ObjectNode observationsTool() {
+            ObjectNode tool = dynamicTool("flowscope_observations",
+                    "Page through this run's HTTP and driven-browser response observations. EVIDENCE_STORED has an Evidence ID; BROWSER_CAPTURED only means CDP saw the response, not that Evidence publication succeeded. Use it after browser actions to find the page's actual XHRs.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode properties = schema.putObject("properties");
+            properties.putObject("after_sequence").put("type", "integer").put("minimum", 0);
+            properties.putObject("limit").put("type", "integer").put("minimum", 1).put("maximum", 100);
+            schema.putArray("required").add("after_sequence").add("limit");
             return tool;
         }
 
@@ -813,6 +826,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         return switch (tool) {
             case "flowscope_http_request" -> "HTTP 요청";
             case "flowscope_browser" -> "브라우저 조작";
+            case "flowscope_observations" -> "탐색 관측 조회";
             case "flowscope_record_discoveries" -> "발견 저장";
             case "flowscope_artifact_list", "flowscope_artifact_search",
                  "flowscope_artifact_read", "flowscope_artifact_index" -> "산출물 분석";
