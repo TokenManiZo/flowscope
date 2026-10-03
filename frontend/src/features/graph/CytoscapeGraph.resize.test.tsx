@@ -114,7 +114,7 @@ it("never shrinks below the default card and stops before the next lane", () => 
   fireEvent.pointerUp(window)
 })
 
-it("restores saved sizes on reload, clears them only on relayout, and ignores corners while locked", () => {
+it("restores saved sizes, retains them on relayout, and ignores corners while locked", () => {
   const sized = { ...base, sizes: { "operation:GET /orders": { width: 300, height: 140 } } }
   const onPreferencesChange = vi.fn()
   const { rerender } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={sized} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
@@ -126,16 +126,16 @@ it("restores saved sizes on reload, clears them only on relayout, and ignores co
   expect(canvas().style.cursor).toBe("")
 
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} layoutVersion={1} preferences={sized} onSelect={vi.fn()} onPreferencesChange={onPreferencesChange} />)
-  expect(Number(operation().data("width"))).toBe(232)
+  expect(Number(operation().data("width"))).toBe(300)
   flushFrames()
-  expect(lastSizes(onPreferencesChange)).toEqual({})
+  expect(lastSizes(onPreferencesChange)).toEqual(sized.sizes)
 })
 
-it("resets only the re-sorted lane and supports Shift+Arrow resizing for the focused node", () => {
+it("retains card sizes on single-lane sorting and supports Shift+Arrow resizing", () => {
   const sized = { ...base, sizes: { "identity:alice": { width: 300, height: 120 }, "operation:GET /orders": { width: 300, height: 140 } } }
   const { rerender } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} preferences={sized} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} laneLayout={{ lane: 1, version: 1 }} preferences={sized} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  expect(Number(operation().data("width"))).toBe(232)
+  expect(Number(operation().data("width"))).toBe(300)
   expect(Number(core.getElementById("identity:alice").data("width"))).toBe(300)
 
   act(() => { canvas().focus() })

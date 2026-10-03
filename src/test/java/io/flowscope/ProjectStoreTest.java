@@ -372,7 +372,7 @@ final class ProjectStoreTest {
         var root = new ObjectMapper().readTree(Files.readString(file));
         ProjectStore.ProjectData loaded = store.load(file);
 
-        assertEquals(6, root.path("schema_version").asInt());
+        assertEquals(7, root.path("schema_version").asInt());
         assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
         assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
         assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());

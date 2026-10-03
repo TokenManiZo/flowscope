@@ -16,6 +16,7 @@ import { flowScopeQueryClient } from '@/lib/query/client'
 import type { Snapshot } from '@/lib/api/types'
 import { projectHierarchy, navigateHierarchy, type GraphNavigation, type HierarchyProjection } from '@/features/graph/graphHierarchy'
 import { graphWheelIntent } from '@/features/graph/CytoscapeGraph'
+import { emptyGraphWorkspace, type GraphWorkspaceChange, type GraphWorkspaceState } from '@/features/graph/graphWorkspace'
 import { relationshipNodeCard } from '@/features/graph/relationshipNodeCard'
 import { renderParameterNodeCardSvg } from '@/features/parameter-map/parameterNodeCard'
 import sample from '@/test/sample/sample-snapshot.json'
@@ -42,6 +43,7 @@ function dataset(): Snapshot {
   const snapshot = structuredClone(sample) as unknown as Snapshot
   const count = book.current.projects[book.current.active].extra
   snapshot.revision = datasetGeneration
+  snapshot.datasetRevision = datasetGeneration
   for (let index = 0; index < count; index++) {
     const op = `https://demo.flowscope.test:443 GET /api/orders/recent-${index + 1}`
     const evidenceId = `stage01-synthetic-${index + 1}`
@@ -52,12 +54,35 @@ function dataset(): Snapshot {
   return snapshot
 }
 
-// All API responses are synthetic, local, and read-only. Mutating requests fail closed.
+// Product UI preview stores only synthetic layout state in this browser. Other writes stay blocked.
 const originalFetch = window.fetch.bind(window)
 window.fetch = async (input, init) => {
   const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href)
   if (!url.pathname.startsWith('/api/')) return originalFetch(input, init)
-  if (url.origin !== location.origin || (init?.method ?? (input instanceof Request ? input.method : 'GET')) !== 'GET') return Response.json({ success: false, message: '이 목업은 제품 데이터를 변경하지 않습니다.' }, { status: 405 })
+  const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
+  if (url.origin !== location.origin) return Response.json({ success: false, message: '목업 외부 요청은 지원하지 않습니다.' }, { status: 405 })
+  if (url.pathname === '/api/graph-workspace') {
+    const key = `${storeKey}.product.${book.current.active}`
+    let saved: GraphWorkspaceState
+    try { saved = JSON.parse(localStorage.getItem(key)!) ?? { revision: 0, workspace: emptyGraphWorkspace, datasetRevision: datasetGeneration } }
+    catch { saved = { revision: 0, workspace: emptyGraphWorkspace, datasetRevision: datasetGeneration } }
+    saved.datasetRevision = datasetGeneration
+    if (method === 'GET') return Response.json(saved)
+    if (method === 'POST') {
+      const form = new URLSearchParams(String(init?.body ?? ''))
+      if (Number(form.get('datasetRevision')) !== saved.datasetRevision || Number(form.get('revision')) !== saved.revision) return Response.json({ success: false, message: '예시 배치가 변경되었습니다.' }, { status: 409 })
+      const change = JSON.parse(form.get('changes')!) as GraphWorkspaceChange
+      const views = { ...saved.workspace.views }
+      change.deletedViews.forEach(key => delete views[key])
+      Object.assign(views, change.views)
+      saved = { ...saved, revision: saved.revision + 1, workspace: { ...saved.workspace, views,
+        navigation: change.navigation ?? saved.workspace.navigation,
+        locked: change.locked ?? saved.workspace.locked, inputMode: change.inputMode ?? saved.workspace.inputMode } }
+      localStorage.setItem(key, JSON.stringify(saved))
+      return Response.json({ revision: saved.revision, datasetRevision: saved.datasetRevision })
+    }
+  }
+  if (method !== 'GET') return Response.json({ success: false, message: '이 목업은 제품 데이터를 변경하지 않습니다.' }, { status: 405 })
   let value: unknown
   switch (url.pathname) {
     case '/api/snapshot': value = dataset(); break
@@ -114,7 +139,7 @@ function GraphCanvas({ projection, saved, locked, onSave, onSelect, onOpen, onZo
       const { action, delta } = (event as CustomEvent).detail
       if (action === 'fit') core.fit(core.elements(), 54)
       if (action === 'zoom') core.zoom(Math.max(0.4, Math.min(2, core.zoom() + delta)))
-      if (action === 'sort') { syncing.current = true; core.nodes().forEach(node => { node.unlock(); node.data('newNode', true) }); positionNewNodes(core); if (lockedRef.current) core.nodes().lock(); syncing.current = false }
+      if (action === 'sort' || action === 'sort-lane') { syncing.current = true; core.nodes().filter(node => action === 'sort' || node.data('lane') === delta).forEach(node => { node.unlock(); node.data('newNode', true) }); positionNewNodes(core); if (lockedRef.current) core.nodes().lock(); syncing.current = false }
       capture()
     }
     const wheel = (event: WheelEvent) => {
@@ -172,7 +197,7 @@ function GraphCanvas({ projection, saved, locked, onSave, onSelect, onOpen, onZo
     syncing.current = false; capture()
   }, [projection, theme])
   useEffect(() => { if (locked) coreRef.current?.nodes().lock(); else coreRef.current?.nodes().unlock() }, [locked])
-  return <div className="stage-canvas-shell"><div ref={host} className="stage-canvas" tabIndex={0} aria-label="1단계 배치 유지 목업 그래프" /><div className="stage-lanes" style={{ gridTemplateColumns: `repeat(${projection.kind === 'site' ? 2 : 3}, 1fr)` }}>{(projection.kind === 'site' ? ['Target', 'API Groups'] : ['Identity', 'API', 'Object']).map(label => <span key={label}>{label}</span>)}</div><div className="stage-legend"><span><UserRound size={13} />HUMAN</span><span><ScanLine size={13} />SCANNER</span><span><Bot size={13} />LLM</span></div></div>
+  return <div className="stage-canvas-shell"><div ref={host} className="stage-canvas" tabIndex={0} aria-label="1단계 배치 유지 목업 그래프" /><div className="stage-lanes" style={{ gridTemplateColumns: `repeat(${projection.kind === 'site' ? 2 : 3}, 1fr)` }}>{(projection.kind === 'site' ? ['Target', 'API Groups'] : ['Identity', 'API', 'Object']).map((label, index) => <button key={label} onClick={() => command('sort-lane', index)} aria-label={`${label} 정렬`}>{label}</button>)}</div><div className="stage-legend"><span><UserRound size={13} />HUMAN</span><span><ScanLine size={13} />SCANNER</span><span><Bot size={13} />LLM</span></div></div>
 }
 
 const command = (action: string, delta = 0) => window.dispatchEvent(new CustomEvent('stage01-command', { detail: { action, delta } }))
@@ -195,7 +220,7 @@ function Proposed({ revision }: { revision: number }) {
   const save = (layout: Layout) => { const before = project.views[key]; project.views[key] = { ...layout, positions: { ...before?.positions, ...layout.positions }, sizes: { ...before?.sizes, ...layout.sizes } }; persist() }
   const filterRail = <div className="stage-panel"><h2>Graph filters</h2><h3>출처</h3>{['HUMAN', 'SCANNER', 'LLM'].map(source => <label key={source}><Checkbox defaultChecked disabled /><span>{source}</span></label>)}<h3>신원</h3>{['ADMIN', 'USER A', 'USER B'].map(identity => <label key={identity}><Checkbox disabled /><span>{identity}</span></label>)}<h3>그래프 조작</h3><div className="panel-actions"><Button variant="ghost" className="justify-start" onClick={() => command('sort')}><AlignVerticalSpaceAround size={14} />레인 기준 정렬</Button><Button variant={project.locked ? 'secondary' : 'ghost'} className="justify-start" onClick={() => { project.locked = !project.locked; persist(); setTick(value => value + 1) }}><LockKeyhole size={14} />{project.locked ? '위치 잠금 해제' : '위치 잠금'}</Button></div></div>
   const inspector = <div className="stage-panel"><h2>{node ? '선택 상세' : '현재 보기'}</h2><p className="break-path">{node?.label ?? (projection.kind === 'site' ? 'Site Overview' : projection.kind === 'group' ? 'ORDERS APIs' : navigation.operation)}</p>{node && <><h3>관측 기록</h3><p>{node.selection.evidenceIds.length}건 · 기존 Evidence 연결 유지</p></>}<h3>프로젝트 배치</h3><dl><div><dt>프로젝트</dt><dd>예시 {projectId.toUpperCase()}</dd></div><div><dt>보관된 보기</dt><dd>{Object.keys(project.views).length}개</dd></div><div><dt>현재 위치</dt><dd>{project.locked ? '잠금' : '이동 가능'}</dd></div></dl><h3>배치 조작</h3><p>노드를 드래그해 이동합니다. 오른쪽 아래 모서리를 끌면 크기를 바꿀 수 있습니다.</p><p className="mt-3 text-muted-foreground">화면에 맞추기는 확대율과 화면 위치만 조절합니다. 정렬할 때도 카드 크기는 유지합니다.</p></div>
-  const toolbar = <div className="stage-toolbar"><Button variant="outline" size="icon" aria-label="상위 계층으로" disabled={navigation.level === 'site'} onClick={() => navigate(navigateHierarchy(navigation, navigation.level === 'operation' ? 'group' : 'site', navigation.groupId))}><ChevronLeft size={18} /></Button><Button variant={list ? 'ghost' : 'secondary'} onClick={() => setList(false)}>그래프</Button><Button variant={list ? 'secondary' : 'ghost'} onClick={() => setList(true)}>목록</Button><div className="toolbar-end"><Button variant="outline" aria-label="그래프 필터" className="xl:hidden" onClick={() => setFilterOpen(true)}><Filter size={14} />필터</Button><Button variant="ghost" size="icon" aria-label="축소" disabled={zoom <= 0.4} onClick={() => command('zoom', -0.1)}><Minus size={15} /></Button><span className="zoom-label">{Math.round(zoom * 100)}%</span><Button variant="ghost" size="icon" aria-label="확대" disabled={zoom >= 2} onClick={() => command('zoom', 0.1)}><Plus size={15} /></Button><Button variant="outline" onClick={() => command('fit')}><Crosshair size={14} />화면에 맞추기</Button><Button variant="outline" onClick={() => command('sort')}><AlignVerticalSpaceAround size={14} />레인 기준 정렬</Button></div></div>
+  const toolbar = <div className="stage-toolbar"><Button variant="outline" size="icon" aria-label="상위 계층으로" disabled={navigation.level === 'site'} onClick={() => navigate(navigateHierarchy(navigation, navigation.level === 'operation' ? 'group' : 'site', navigation.groupId))}><ChevronLeft size={18} /></Button><Button variant={list ? 'ghost' : 'secondary'} onClick={() => setList(false)}>그래프</Button><Button variant={list ? 'secondary' : 'ghost'} onClick={() => setList(true)}>목록</Button><div className="toolbar-end"><Button variant="outline" aria-label="그래프 필터" className="xl:hidden" onClick={() => setFilterOpen(true)}><Filter size={14} />필터</Button><Button variant="ghost" size="icon" aria-label="축소" disabled={zoom <= 0.4} onClick={() => command('zoom', -0.1)}><Minus size={15} /></Button><span className="zoom-label">{Math.round(zoom * 100)}%</span><Button variant="ghost" size="icon" aria-label="확대" disabled={zoom >= 2} onClick={() => command('zoom', 0.1)}><Plus size={15} /></Button><Button variant="outline" onClick={() => command('fit')}><Crosshair size={14} />화면에 맞추기</Button></div></div>
   return <ReferenceAppShell route={route}>{route === 'graph' ? <ReferenceAnalysisWorkspace ariaLabel="1단계 그래프 작업면" context={filterRail} contextTitle={false} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={inspector} inspectorOpen={inspectorOpen} inspectorPersistent onInspectorOpenChange={setInspectorOpen}>
     <nav className="stage-breadcrumb" aria-label="그래프 계층"><Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => navigate(emptyNavigation)}>Site Overview</Button>{navigation.level !== 'site' && <><ChevronRight size={12} /><Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => navigate(navigateHierarchy(navigation, 'group', ordersGroup.id))}>ORDERS APIs</Button></>}{navigation.level === 'operation' && <><ChevronRight size={12} /><span>{navigation.operation.replace(/^https?:\/\/\S+\s+/, '')}</span></>}</nav>
     {list ? <div className="stage-list">{projection.nodes.filter(item => !item.hiddenInGraph).map(item => <button key={item.id} onClick={() => { setList(false); openNode(item.id) }}>{item.label}</button>)}</div> : <GraphCanvas key={`${projectId}:${key}`} projection={projection} saved={project.views[key]} locked={project.locked} onSave={save} onSelect={setSelected} onOpen={openNode} onZoom={setZoom} />}
@@ -212,7 +237,7 @@ function Review() {
     (window as any).stage01 = { inspect: () => ({ mode, project: book.current.active, state: structuredClone(book.current), nodes: visibleCore?.nodes().map(node => ({ id: node.id(), position: node.position(), center: node.renderedPosition(), bounds: node.renderedBoundingBox(), width: node.width(), height: node.height() })), viewport: visibleCore ? { zoom: visibleCore.zoom(), pan: visibleCore.pan() } : null }) }
     return () => { delete (window as any).stage01 }
   }, [])
-  return <div className="review-shell"><header className="review-header"><div className="review-heading"><h1>1단계 · 배치 유지와 프로젝트 저장</h1><Button size="sm" variant={mode === 'proposed' ? 'secondary' : 'outline'} asChild><a href="?mode=proposed#graph">목업 보기</a></Button><Button size="sm" variant={mode === 'baseline' ? 'secondary' : 'outline'} asChild><a href="?mode=baseline&flowscope-e2e-geometry=1#graph">현행 QA_TEMP</a></Button></div><p className="review-copy">QA_TEMP 8bc618f · 합성 샘플 · 목업 저장은 이 브라우저에서만 시뮬레이션합니다. 승인 후 제품의 프로젝트 DB·JSON 저장에 연결합니다.</p>{mode === 'proposed' ? <div className="review-tools"><label className="text-xs" htmlFor="review-project">프로젝트</label><select id="review-project" aria-label="목업 프로젝트" value={book.current.active} onChange={event => switchProject(event.target.value as 'a' | 'b')}><option value="a">예시 A · 주문 서비스</option><option value="b">예시 B · 별도 배치</option></select><Button size="sm" variant="outline" onClick={() => { book.current = readBook(); setRemount(value => value + 1); setNotice('저장된 배치를 다시 열었습니다. 위치·크기·확대율이 유지됩니다.') }}>프로젝트 다시 열기</Button><Button size="sm" variant="outline" onClick={() => { book.current.projects[book.current.active].extra++; persist(); update(); setNotice('합성 신규 노드 1개를 추가했습니다. 기존 노드 위치는 유지합니다.') }}>신규 노드 추가</Button><Button size="sm" variant="ghost" onClick={() => { book.current.projects[book.current.active] = newProject(); persist(); update(); setRemount(value => value + 1); location.hash = '#graph'; setNotice('목업 예시 배치를 초기 상태로 되돌렸습니다.') }}>예시 초기화</Button></div> : null}<p className="review-copy" role="status">{mode === 'baseline' ? '수정하지 않은 QA_TEMP 화면입니다. 같은 레인 노드를 겹치게 이동한 뒤 다른 화면을 다녀오면 위치 변화를 비교할 수 있습니다.' : notice}</p></header><div className="stage-frame"><AppProviders>{mode === 'baseline' ? <App /> : <Proposed key={`${book.current.active}:${remount}`} revision={revision} />}</AppProviders></div></div>
+  return <div className="review-shell"><header className="review-header"><div className="review-heading"><h1>1단계 · 배치 유지와 프로젝트 저장</h1><Button size="sm" variant={mode === 'proposed' ? 'secondary' : 'outline'} asChild><a href="?mode=proposed#graph">목업 보기</a></Button><Button size="sm" variant={mode === 'baseline' ? 'secondary' : 'outline'} asChild><a href="?mode=baseline&flowscope-e2e-geometry=1#graph">제품 UI 미리보기</a></Button></div><p className="review-copy">QA_TEMP 8357e20 기준 · 1단계 구현 · 합성 샘플의 배치는 이 브라우저에서만 저장합니다. 실제 DB 저장 검증은 제품 실행에서 진행합니다.</p>{mode === 'proposed' ? <div className="review-tools"><label className="text-xs" htmlFor="review-project">프로젝트</label><select id="review-project" aria-label="목업 프로젝트" value={book.current.active} onChange={event => switchProject(event.target.value as 'a' | 'b')}><option value="a">예시 A · 주문 서비스</option><option value="b">예시 B · 별도 배치</option></select><Button size="sm" variant="outline" onClick={() => { book.current = readBook(); setRemount(value => value + 1); setNotice('저장된 배치를 다시 열었습니다. 위치·크기·확대율이 유지됩니다.') }}>프로젝트 다시 열기</Button><Button size="sm" variant="outline" onClick={() => { book.current.projects[book.current.active].extra++; persist(); update(); setNotice('합성 신규 노드 1개를 추가했습니다. 기존 노드 위치는 유지합니다.') }}>신규 노드 추가</Button><Button size="sm" variant="ghost" onClick={() => { book.current.projects[book.current.active] = newProject(); persist(); update(); setRemount(value => value + 1); location.hash = '#graph'; setNotice('목업 예시 배치를 초기 상태로 되돌렸습니다.') }}>예시 초기화</Button></div> : null}<p className="review-copy" role="status">{mode === 'baseline' ? '이 브랜치의 제품 UI와 합성 배치 API를 사용합니다. Burp·SQLite·JSON 저장을 검증하는 환경은 아닙니다.' : notice}</p></header><div className="stage-frame"><AppProviders>{mode === 'baseline' ? <App /> : <Proposed key={`${book.current.active}:${remount}`} revision={revision} />}</AppProviders></div></div>
 }
 
 if (!location.hash) location.hash = '#graph'

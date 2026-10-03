@@ -26,6 +26,7 @@ import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ProjectWorkspace;
+import io.flowscope.integration.GraphWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -61,6 +62,28 @@ final class FlowScopeWebServerTest {
         if (server != null) server.close();
         state.sessions.close();
         state.zapAccounts.close();
+    }
+
+    @Test void graphWorkspaceApiChecksRevisionsAndAcknowledgesWithoutResendingAllViews() throws Exception {
+        start();
+        long dataset = state.datasetRevision(), analysisRevision = state.revision();
+        JsonNode initial = JSON.readTree(get("/api/graph-workspace", token, null).body());
+        assertEquals(dataset, initial.path("datasetRevision").asLong());
+        var view = new GraphWorkspace.View(Map.of("operation:GET /orders", new GraphWorkspace.Point(700, 125)),
+                Map.of(), new GraphWorkspace.Viewport(1, new GraphWorkspace.Point(5, -2)), List.of());
+        String changes = URLEncoder.encode(JSON.writeValueAsString(new GraphWorkspace.Change(null,
+                Map.of("[\"site\",\"\",\"\"]", view), List.of(), null, null)), StandardCharsets.UTF_8);
+        String body = "datasetRevision=" + dataset + "&revision=0&changes=" + changes;
+        HttpResponse<String> saved = post("/api/graph-workspace", body, token);
+        assertEquals(200, saved.statusCode());
+        JsonNode acknowledgement = JSON.readTree(saved.body());
+        assertEquals(1, acknowledgement.path("revision").asLong());
+        assertFalse(acknowledgement.has("workspace"));
+        assertEquals(analysisRevision, state.revision());
+        assertEquals(409, post("/api/graph-workspace", body, token).statusCode());
+        assertEquals(409, post("/api/graph-workspace", "datasetRevision=" + (dataset + 1) + "&revision=1&changes=" + changes, token).statusCode());
+        assertEquals(1, JSON.readTree(get("/api/graph-workspace", token, null).body()).at("/workspace/views").size());
+        assertEquals(400, post("/api/graph-workspace", "datasetRevision=" + dataset + "&revision=1&changes=null", token).statusCode());
     }
 
     @Test
@@ -1378,6 +1401,8 @@ final class FlowScopeWebServerTest {
         private volatile String updatedProject = "";
         private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
                 null, List.of());
+        private GraphWorkspace graphWorkspace = GraphWorkspace.empty();
+        private long graphRevision;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
                 List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_LINK,
@@ -1401,6 +1426,15 @@ final class FlowScopeWebServerTest {
 
         @Override public Pipeline.Result snapshot() { return result; }
         @Override public long revision() { return revision.get(); }
+        @Override public GraphWorkspace.State graphWorkspace() {
+            return new GraphWorkspace.State(datasetRevision(), graphRevision, graphWorkspace);
+        }
+        @Override public GraphWorkspace.State updateGraphWorkspace(long dataset, long expectedRevision, GraphWorkspace.Change change) {
+            if (dataset != datasetRevision() || expectedRevision != graphRevision) throw new IllegalStateException("stale graph workspace");
+            graphWorkspace = change.apply(graphWorkspace);
+            graphRevision++;
+            return graphWorkspace();
+        }
         @Override public AnalysisConfig config() { return config; }
         private List<LegacyAssessment> archivedAssessments = List.of();
         private List<ValidationDecision> archivedValidations = List.of();

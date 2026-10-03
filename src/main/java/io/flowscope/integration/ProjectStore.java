@@ -46,10 +46,20 @@ public final class ProjectStore {
                               Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                               List<RouteCandidate> routeCandidates,
                               List<RunExecutionLedger.Attempt> runAttempts,
-                              ProjectContext context) {}
+                              ProjectContext context, GraphWorkspace graphWorkspace) {
+        public ProjectData { graphWorkspace = graphWorkspace == null ? GraphWorkspace.empty() : graphWorkspace; }
+        public ProjectData(List<RequestRecord> records, AnalysisConfig config,
+                           List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                           Set<Source> completedLanes, Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                           List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
+                           ProjectContext context) {
+            this(records, config, assessments, validations, completedLanes, completedRuns,
+                    routeCandidates, runAttempts, context, GraphWorkspace.empty());
+        }
+    }
 
-    private static final int SCHEMA_VERSION = 6;
-    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5);
+    private static final int SCHEMA_VERSION = 7;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -126,9 +136,18 @@ public final class ProjectStore {
                      List<RouteCandidate> routeCandidates,
                      List<RunExecutionLedger.Attempt> runAttempts,
                      ProjectContext context) throws IOException {
+        save(target, records, config, assessments, validations, completedRuns, routeCandidates,
+                runAttempts, context, GraphWorkspace.empty());
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
+                     ProjectContext context, GraphWorkspace graphWorkspace) throws IOException {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = toDocument(records, config, assessments, validations,
-                runs.keySet(), runs, routeCandidates, runAttempts, context);
+                runs.keySet(), runs, routeCandidates, runAttempts, context, graphWorkspace);
         saveDocument(target, root);
     }
 
@@ -191,6 +210,15 @@ public final class ProjectStore {
                           List<RouteCandidate> routeCandidates,
                           List<RunExecutionLedger.Attempt> runAttempts,
                           ProjectContext context) {
+        return toDocument(records, config, assessments, validations, completedLanes, completedRuns,
+                routeCandidates, runAttempts, context, GraphWorkspace.empty());
+    }
+
+    ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
+                          List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                          Set<Source> completedLanes, Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                          List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
+                          ProjectContext context, GraphWorkspace graphWorkspace) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         assessments = assessments == null ? List.of() : List.copyOf(assessments);
         LegacyAssessment.validateSet(assessments);
@@ -198,6 +226,7 @@ public final class ProjectStore {
         EvidenceIds.assign(records);
         ObjectNode root = json.createObjectNode();
         root.put("schema_version", SCHEMA_VERSION);
+        root.set("graphWorkspace", json.valueToTree(graphWorkspace == null ? GraphWorkspace.empty() : graphWorkspace));
         root.put("traffic_classifier_version", TrafficClassifier.VERSION);
         root.put("saved_at", Instant.now().toString());
         ProjectContext safeContext = context == null ? ProjectContext.empty() : context;
@@ -340,7 +369,8 @@ public final class ProjectStore {
         }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
                 Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates),
-                List.copyOf(runAttempts), context);
+                List.copyOf(runAttempts), context, root.hasNonNull("graphWorkspace")
+                        ? json.convertValue(root.get("graphWorkspace"), GraphWorkspace.class) : GraphWorkspace.empty());
     }
 
     private ObjectNode writeRunAttempt(RunExecutionLedger.Attempt attempt) {
