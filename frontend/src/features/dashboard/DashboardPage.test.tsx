@@ -146,8 +146,8 @@ describe("dashboard shell", () => {
     expect(screen.queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
     const routes = [
       ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 Gap 그래프", "graph", null],
-      ["교차 신원 검증", "verification", null], ["권한 매트릭스", "matrix", null],
-      ["API·입력 차이", "surface", "부가 기능"], ["취약점 시나리오", "scenarios", "부가 기능"], ["관측 기록", "evidence", "부가 기능"], ["실행 상태", "runs", "부가 기능"],
+      ["권한 매트릭스", "matrix", null],
+      ["API·입력 차이", "surface", "부가 기능"], ["교차 신원 검증", "verification", "부가 기능"], ["관측 기록", "evidence", "부가 기능"],
     ] as const
 
     for (const [label, route, group] of routes) {
@@ -159,6 +159,9 @@ describe("dashboard shell", () => {
       await user.click(link)
       expect(window.location.hash).toBe(`#${route}`)
     }
+    const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
+    expect(within(nav).queryByRole("link", { name: "취약점 시나리오" })).not.toBeInTheDocument()
+    expect(within(nav).queryByRole("link", { name: "실행 상태" })).not.toBeInTheDocument()
     expect(screen.queryByRole("link", { name: "흐름 순서" })).not.toBeInTheDocument()
 
     for (const unsafeHash of ["#", "#unknown", "#/assets/evil.js", "#%2Fassets%2Fevil.js"]) {

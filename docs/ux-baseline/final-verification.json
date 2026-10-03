@@ -1,0 +1,161 @@
+{
+  "mockupOnly": true,
+  "productCodeChanged": false,
+  "checks": [
+    "1280/light: API notices removed, filter results, aggregate anchored, Escape focus, row detail",
+    "1280/light: role dropdown, explicit save, fold selection preserved, record reset, long paths contained, control heights 32px",
+    "1280/light: loading, empty, payload unavailable, masked body, retry states",
+    "1280/dark: API notices removed, filter results, aggregate anchored, Escape focus, row detail",
+    "1280/dark: role dropdown, explicit save, fold selection preserved, record reset, long paths contained, control heights 32px",
+    "1280/dark: loading, empty, payload unavailable, masked body, retry states",
+    "1920/light: API notices removed, filter results, aggregate anchored, Escape focus, row detail",
+    "1920/light: role dropdown, explicit save, fold selection preserved, record reset, long paths contained, control heights 32px",
+    "1920/light: loading, empty, payload unavailable, masked body, retry states",
+    "1920/dark: API notices removed, filter results, aggregate anchored, Escape focus, row detail",
+    "1920/dark: role dropdown, explicit save, fold selection preserved, record reset, long paths contained, control heights 32px",
+    "1920/dark: loading, empty, payload unavailable, masked body, retry states"
+  ],
+  "captures": [
+    "docs/ux-baseline/final-captures/before-surface-light-1280.png",
+    "docs/ux-baseline/final-captures/after-surface-light-1280.png",
+    "docs/ux-baseline/final-captures/before-evidence-light-1280.png",
+    "docs/ux-baseline/final-captures/after-evidence-light-1280.png",
+    "docs/ux-baseline/final-captures/before-surface-dark-1280.png",
+    "docs/ux-baseline/final-captures/after-surface-dark-1280.png",
+    "docs/ux-baseline/final-captures/before-evidence-dark-1280.png",
+    "docs/ux-baseline/final-captures/after-evidence-dark-1280.png",
+    "docs/ux-baseline/final-captures/before-surface-light-1920.png",
+    "docs/ux-baseline/final-captures/after-surface-light-1920.png",
+    "docs/ux-baseline/final-captures/before-evidence-light-1920.png",
+    "docs/ux-baseline/final-captures/after-evidence-light-1920.png",
+    "docs/ux-baseline/final-captures/before-surface-dark-1920.png",
+    "docs/ux-baseline/final-captures/after-surface-dark-1920.png",
+    "docs/ux-baseline/final-captures/before-evidence-dark-1920.png",
+    "docs/ux-baseline/final-captures/after-evidence-dark-1920.png"
+  ],
+  "errors": [],
+  "unexpectedRequests": [],
+  "measurements": [
+    {
+      "width": 1280,
+      "theme": "light",
+      "rows": [
+        {
+          "y": 286.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 326.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 366.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "rows": [
+        {
+          "y": 286.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 326.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 366.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "width": 1920,
+      "theme": "light",
+      "rows": [
+        {
+          "y": 542.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 582.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 622.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "width": 1920,
+      "theme": "dark",
+      "rows": [
+        {
+          "y": 542.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 582.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        },
+        {
+          "y": 622.96875,
+          "width": 403,
+          "heights": [
+            32,
+            32
+          ]
+        }
+      ]
+    }
+  ],
+  "passed": true
+}

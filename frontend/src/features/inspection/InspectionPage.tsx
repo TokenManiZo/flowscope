@@ -1,5 +1,7 @@
+import { accountObservations } from "@/lib/display/accountObservations"
+import { evidenceOrdinalLabel } from "@/lib/display/operationLabel"
 import { useEffect, useMemo, useState } from "react"
-import { Check, Copy } from "lucide-react"
+import { Check, ChevronDown, Copy } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -77,13 +79,17 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const humanMutation = useHumanRunMutation()
   const scannerMutation = useScannerRunMutation()
   const scannerCancel = useScannerCancelMutation()
-  const [manualStep, setManualStep] = useState<InspectionStep | null>(null)
+  const [entryAccount] = useState(() => {
+    try { return sessionStorage.getItem(HUMAN_ACCOUNT_HANDOFF) || null } catch { return null }
+  })
+  const [manualStep, setManualStep] = useState<InspectionStep | null>(entryAccount ? "human" : null)
   const [target, setTarget] = useState("")
-  const [humanAccount, setHumanAccount] = useState(ANONYMOUS_HUMAN_ACCOUNT)
+  const [humanAccount, setHumanAccount] = useState(entryAccount ?? ANONYMOUS_HUMAN_ACCOUNT)
   const [anonymous, setAnonymous] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
   const [zapDefinitions, setZapDefinitions] = useState("")
   const [showZapHowTo, setShowZapHowTo] = useState(false)
+  const [zapAccountsOpen, setZapAccountsOpen] = useState(true)
   const [settings, setSettings] = useState<{ id: string; tab: "zap" } | null>(null)
   const settingsAdapter = useMemo(() => createAccountSettingsAdapter(), [])
 
@@ -94,10 +100,9 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
 
   // 계정·세션의 [이 계정으로 수집]이 넘긴 계정을 한 번만 받아 HUMAN 단계에 미리 고른다.
   useEffect(() => {
-    let handoff: string | null = null
-    try { handoff = sessionStorage.getItem(HUMAN_ACCOUNT_HANDOFF); sessionStorage.removeItem(HUMAN_ACCOUNT_HANDOFF) } catch { /* 저장소가 막히면 미리 선택을 생략한다. */ }
-    if (handoff) { setHumanAccount(handoff); setManualStep("human") }
-  }, [])
+    if (!entryAccount) return
+    try { sessionStorage.removeItem(HUMAN_ACCOUNT_HANDOFF) } catch { /* 저장소가 막히면 다음 진입 때 다시 확인한다. */ }
+  }, [entryAccount])
 
   const automaticStep = stepFromStage(automaticInspectionStage(scope, human.data, scanner.data))
   const selectedStep = manualStep ?? automaticStep
@@ -149,7 +154,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   // 등록 계정 ID와 헷갈리지 않게 "미등록 로그인 N"으로 바꾼다.
   const identityLabel = useMemo(() => {
     const labels = new Map((snapshot.data?.accounts ?? []).map((account) => [account.id, account.label]))
-    const unregistered = [...new Set(events.map((event) => event.idn).filter((idn) => idn && idn !== "anon" && !labels.has(idn)))].sort()
+    const unregistered = [...new Set(events.map((event) => event.laneAccountId?.trim() || event.idn).filter((idn) => idn && idn !== "anon" && !labels.has(idn)))].sort()
     return (idn: string): { label: string; muted: boolean } => {
       if (!idn || idn === "anon") return { label: "비로그인", muted: true }
       const label = labels.get(idn)
@@ -157,8 +162,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
     }
   }, [snapshot.data?.accounts, events])
   const feedItem = (event: (typeof events)[number]): SourceFeedItem => {
-    const who = identityLabel(event.idn)
-    return { id: event.eventId, badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
+    const who = identityLabel(event.laneAccountId?.trim() || event.idn)
+    return { id: event.eventId, ordinal: evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId), badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
       time: event.timestamp ? clockTime(new Date(event.timestamp).toISOString()) : undefined }
   }
 
@@ -171,15 +176,16 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 200)
       .map(feedItem)
-  }, [humanFeedItems, events, identityLabel])
+  }, [humanFeedItems, events, identityLabel, snapshot.data?.evidenceOrdinals])
 
   // 계정별 HUMAN 수집 건수와 마지막 기록 시각. 비로그인 기록은 anon 신원으로 모인다.
   const humanProgress = useMemo(() => {
     const rows = [...humanAccounts.map((account) => ({ id: account.id, label: account.label })), { id: "anon", label: "비로그인" }]
+    const totals = accountObservations(events, rows.map((row) => row.id))
     return rows.map((row) => {
-      const mine = events.filter((event) => event.source === "human" && event.idn === row.id)
-      const last = mine.reduce((latest, event) => Math.max(latest, event.timestamp), 0)
-      return { ...row, count: mine.length, last: last ? clockTime(new Date(last).toISOString()) : "—" }
+      const observations = totals.get(row.id)!
+      const last = observations.last.human
+      return { ...row, count: observations.counts.human, last: last ? clockTime(new Date(last).toISOString()) : "—" }
     })
   }, [humanAccounts, events])
 
@@ -190,7 +196,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 200)
     .map(feedItem),
-    [events, identityLabel])
+    [events, identityLabel, snapshot.data?.evidenceOrdinals])
 
 
   // 서버는 실제 Burp 리스너를 찾기 전에는 주소 대신 안내 문구를 보낸다(#25). 그때는 주소를 지어내지 않는다.
@@ -246,6 +252,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   }} aria-label="HUMAN pass 종료">종료</Button>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">계정 선택 → 시작 → 서비스 탐색 → 종료. 계정을 바꾸기 전에 종료하세요.</p>
               <p className="flex items-center gap-2 text-sm" aria-label="HUMAN 상태"><span aria-hidden="true" className={cn("size-1.5 rounded-full", human.data?.active ? "bg-emerald-500" : "bg-muted-foreground/40")} /><span className="font-medium">{humanStatus}</span><span className="text-muted-foreground">· 다른 계정은 종료 후 다시 시작</span></p>
             </div>}
             aside={<section className="rounded-xl bg-card p-5 ring-1 ring-foreground/10" aria-label="계정별 수집">
@@ -304,12 +311,13 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   <SelectTrigger id="scanner-target" aria-label="ZAP 대상" className="w-72"><SelectValue /></SelectTrigger>
                   <SelectContent>{scope.map((value) => <SelectItem key={value} value={value}>{displayOrigin(value)}</SelectItem>)}</SelectContent>
                 </Select></div>}
-              <div className="grid gap-1.5"><span className="text-xs text-muted-foreground">스캔할 계정</span>
-                <AccountLaneTable lane="ZAP" rows={targetAccounts.map((account) => ({ id: account.id, label: account.label, configured: scannerAccountIds.includes(account.id) }))}
+              <section className="grid gap-1.5">
+                <div className="flex items-center justify-between gap-3 text-xs"><span className="text-muted-foreground">스캔할 계정{!zapAccountsOpen && <span className="ml-2">{[...(anonymous ? ["비로그인"] : []), ...selectedAccounts.map((id) => targetAccounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span>}</span><button type="button" aria-label={`ZAP 계정 ${zapAccountsOpen ? "접기" : "펼치기"}`} aria-expanded={zapAccountsOpen} onClick={() => setZapAccountsOpen((value) => !value)} className="flex items-center gap-1 rounded px-2 py-1 font-medium hover:bg-muted">{zapAccountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${zapAccountsOpen ? "rotate-180" : ""}`} /></button></div>
+                {zapAccountsOpen && <AccountLaneTable lane="ZAP" rows={targetAccounts.map((account) => ({ id: account.id, label: account.label, configured: scannerAccountIds.includes(account.id) }))}
                   anonymous={anonymous} onAnonymousChange={setAnonymous} selected={selectedAccounts}
                   onToggle={(id, value) => setSelectedAccounts((current) => value ? [...current, id] : current.filter((item) => item !== id))}
-                  onSettings={(id) => setSettings({ id, tab: "zap" })} disabled={!zapConnected || scannerRunning} />
-              </div>
+                  onSettings={(id) => setSettings({ id, tab: "zap" })} disabled={!zapConnected || scannerRunning} />}
+              </section>
               <details className="rounded-lg border border-border px-3 py-2.5 text-sm">
                 <summary className="cursor-pointer">명세로 API 추가 <span className="text-xs text-muted-foreground">OpenAPI · GraphQL · 선택</span></summary>
                 <textarea id="scanner-definitions" aria-label="API 정의" className="mt-3 min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" value={zapDefinitions} onChange={(event) => setZapDefinitions(event.target.value)} spellCheck={false} placeholder={"OPENAPI https://target/openapi.json\nGRAPHQL https://target/graphql [schema URL]"} />
@@ -330,7 +338,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
         </TabsContent>
 
         <TabsContent value="llm" className="mt-2">
-          <LlmPass target={target} accounts={targetAccounts} />
+          <LlmPass datasetRevision={snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0} target={target} accounts={targetAccounts} />
         </TabsContent>
 
         <TabsContent value="review" className="mt-2">

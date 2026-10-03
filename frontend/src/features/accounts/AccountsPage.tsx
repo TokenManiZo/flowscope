@@ -14,6 +14,8 @@ import { AccountRegistrationSheet } from "./AccountRegistrationSheet"
 import { originOf } from "./account-settings/types"
 import { clockTime, HUMAN_ACCOUNT_HANDOFF } from "@/features/inspection/inspectionState"
 
+import { accountObservations } from "@/lib/display/accountObservations"
+
 function errorMessage(error: unknown): string | null {
   return error instanceof Error ? error.message : null
 }
@@ -42,7 +44,7 @@ export function AccountsPage() {
   if (snapshot.isLoading) return unavailableWorkspace(<section className="p-3" aria-label="계정·세션 콘텐츠">불러오는 중…</section>)
   if (snapshot.isError) return unavailableWorkspace(<Alert className="m-3" variant="destructive" aria-label={errorMessage(snapshot.error) ?? "계정·세션을 불러오지 못했습니다."}><AlertDescription>{errorMessage(snapshot.error) ?? "계정·세션을 불러오지 못했습니다."}</AlertDescription></Alert>)
 
-  const events = snapshot.data?.events ?? []
+  const totals = accountObservations(snapshot.data?.events ?? [], accounts.map((account) => account.id))
   const collectAs = (accountId: string) => {
     try { sessionStorage.setItem(HUMAN_ACCOUNT_HANDOFF, accountId) } catch { /* 저장소가 막히면 계정 미리 선택만 생략한다. */ }
     window.location.hash = "#inspection"
@@ -50,15 +52,17 @@ export function AccountsPage() {
 
   return <ReferenceAnalysisWorkspace ariaLabel="계정·세션 작업 영역" context={null} inspector={null}><section className="space-y-5 p-3" aria-labelledby="accounts-title">
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 id="accounts-title" className="text-2xl font-semibold">계정·세션</h1><p className="mt-1 text-sm text-muted-foreground">권한 비교에 쓸 테스트 계정입니다. 2개 이상 등록하세요.</p></div><Button className="bg-brand text-brand-foreground hover:bg-brand/90" onClick={() => setRegistrationOpen(true)}><Plus aria-hidden="true" />계정 등록</Button></div>
+    <p className="text-xs text-muted-foreground">현재 프로젝트의 저장 HTTP 응답 관측 · 반복 요청 포함 · 연결 상태와 별도로 집계</p>
     <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3" aria-label="등록 계정 목록">
       {accounts.map((account) => {
         const settings = accountSettings[account.id]
-        const requests = events.filter((event) => event.source === "human" && event.idn === account.id).length
-        const lastRecorded = settings?.human.lastRecordedAt ? clockTime(settings.human.lastRecordedAt) : "—"
+        const observations = totals.get(account.id)!
+        const last = Math.max(...Object.values(observations.last))
+        const lastRecorded = last ? clockTime(new Date(last).toISOString()) : "—"
         const lanes: Array<[string, StatusMeta | null, string]> = [
-          ["HUMAN", settings ? HUMAN_STATUS_META[settings.human.status] : null, `${requests.toLocaleString("ko-KR")}건`],
-          ["ZAP", settings ? settings.zap.enabled ? ZAP_STATUS_META[settings.zap.status] : NOT_USED : null, "—"],
-          ["LLM", settings ? settings.llm.enabled ? EXPLORER_STATUS_META[settings.llm.status] : NOT_USED : null, "—"],
+          ["HUMAN", settings ? HUMAN_STATUS_META[settings.human.status] : null, `${observations.counts.human.toLocaleString("ko-KR")}건`],
+          ["ZAP", settings ? settings.zap.enabled ? ZAP_STATUS_META[settings.zap.status] : NOT_USED : null, `${observations.counts.scanner.toLocaleString("ko-KR")}건`],
+          ["LLM", settings ? settings.llm.enabled ? EXPLORER_STATUS_META[settings.llm.status] : NOT_USED : null, `${observations.counts.llm.toLocaleString("ko-KR")}건`],
         ]
         return <article key={account.id} aria-label={`${account.label} 계정`} className="flex flex-col rounded-xl border border-border bg-card">
           <header className="flex items-center gap-3 px-4 pt-4 pb-3">
