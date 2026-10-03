@@ -74,11 +74,12 @@ final class ExplorerCoordinatorTest {
         int acted;
         boolean closed;
         boolean recording;
+        String recordingRunId;
         java.util.function.Consumer<Exchange> sink = exchange -> { };
 
         /** Replays what the page itself fetched, without the Explorer having asked for it. */
         void emit(String url) {
-            sink.accept(new Exchange("GET", url, java.util.Map.of(), "", 200,
+            if (recording) sink.accept(new Exchange(recordingRunId, "GET", url, java.util.Map.of(), "", 200,
                     java.util.Map.of("Content-Type", "application/json"), "{}"));
         }
         @Override public Session open(java.net.URI loginUrl,
@@ -90,7 +91,10 @@ final class ExplorerCoordinatorTest {
                 @Override public java.util.Map<java.lang.String, java.lang.String> authHeaders(java.net.URI target) {
                     return java.util.Map.copyOf(headers);
                 }
-                @Override public void recording(boolean on) { recording = on; }
+                @Override public void recording(String runId) {
+                    recordingRunId = runId;
+                    recording = runId != null;
+                }
                 @Override public Page navigate(java.lang.String url) { return page(url); }
                 @Override public Page snapshot() { return page("https://app.example.test/"); }
                 @Override public Page click(java.lang.String ref) { return page("https://app.example.test/" + ref); }
@@ -100,7 +104,7 @@ final class ExplorerCoordinatorTest {
                 @Override public Page back() { return page("https://app.example.test/"); }
                 private Page page(java.lang.String url) {
                     acted++;
-                    recorder.accept(new Exchange("GET", url, java.util.Map.of(), "", 200,
+                    if (recording) recorder.accept(new Exchange(recordingRunId, "GET", url, java.util.Map.of(), "", 200,
                             java.util.Map.of("Content-Type", "text/html"), "<html></html>"));
                     return new Page(url, "title", List.of(new Element("e1", "button", "열기")), "text");
                 }
@@ -278,6 +282,35 @@ final class ExplorerCoordinatorTest {
             // The operator keeps using the window: none of it belongs to the finished run.
             window.emit("https://app.example.test/api/after");
             assertEquals(1, recorded.size(), recorded.toString());
+        }
+    }
+
+    @Test
+    void aReusedLoginWindowRecordsOnlyTheNewRunAfterCancellation() throws Exception {
+        FakeWindow window = new FakeWindow();
+        FakeProvider provider = new FakeProvider();
+        java.util.List<ExplorerCoordinator.BrowserExchange> recorded =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        try (ExplorerCoordinator coordinator = running(window, provider, recorded)) {
+            String firstRun = coordinator.current().runId();
+            window.emit("https://app.example.test/api/first");
+            assertEquals(1, recorded.size());
+            assertEquals(firstRun, recorded.getFirst().runId());
+
+            coordinator.cancel();
+            assertFalse(window.recording);
+            window.emit("https://app.example.test/api/between");
+            assertEquals(1, recorded.size(), "idle browsing is not LLM run Evidence");
+
+            coordinator.start(new ExplorerCoordinator.StartRequest(
+                    "https://app.example.test/", List.of("usera"), false));
+            await(() -> coordinator.current().status() == ExplorerCoordinator.Status.RUNNING);
+            String secondRun = coordinator.current().runId();
+            assertNotEquals(firstRun, secondRun);
+            assertTrue(window.recording, "the selected window must resume CDP recording for the new run");
+            window.emit("https://app.example.test/api/second");
+            assertEquals(2, recorded.size());
+            assertEquals(secondRun, recorded.get(1).runId());
         }
     }
 

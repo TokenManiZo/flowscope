@@ -254,8 +254,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
             window = loginBrowser.open(target, exchange -> record(accountId, exchange));
             loginWindows.put(accountId, window);
         }
-        // Nothing is recorded until the operator says the login is done, so the password never becomes Evidence.
-        window.recording(false);
+        // Login and idle browsing are never Explorer Evidence; recording starts only with a run ID.
+        window.recording(null);
         vault.awaitBrowserLogin(accountId, target);
         return vault.view(accountId);
     }
@@ -268,7 +268,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
             throw new IllegalStateException("로그인 브라우저가 열려 있지 않습니다. [브라우저 로그인]으로 다시 여세요.");
         }
         ExplorerAccountVault.View adopted = adoptWindowSession(accountId, window);
-        window.recording(true);
+        window.recording(null);
         return adopted;
     }
 
@@ -277,7 +277,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
         String runId = current.runId();
         // The window outlives the run and keeps its runId, so without the status check everything the operator
         // does in it afterwards would be filed as this run's LLM Evidence.
-        if (!active(current.status()) || runId == null || runId.isBlank()) return;
+        if (!active(current.status()) || runId == null || runId.isBlank()
+                || !runId.equals(exchange.runId())) return;
         if (!exactScope.test(exchange.url())) return;
         if (browserExchanges.incrementAndGet() > maxBrowserExchanges()) return;
         browserSink.accept(new BrowserExchange(runId, accountId, exchange.method(), exchange.url(),
@@ -425,16 +426,21 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 fail(runId, "선택한 계정 중 로그인 가능한 계정이 없습니다.", limitations);
                 return;
             }
-            List<String> browserHandles = readyAccounts.stream().filter(loginWindows::containsKey).toList();
+            List<String> browserHandles = readyAccounts.stream()
+                    .filter(accountId -> {
+                        LoginBrowser.Session window = loginWindows.get(accountId);
+                        return window != null && window.alive();
+                    }).toList();
             String prompt = prompt(request.target(), readyAccounts, request.includeAnonymous(), browserHandles);
             synchronized (this) {
                 if (!sameActiveRun(runId)) return;
+                snapshot = update(Status.RUNNING, "Codex Explorer가 독립적으로 대상 산출물과 API를 탐색 중입니다.",
+                        limitations, null);
                 if (!browserHandles.isEmpty()) {
+                    browserHandles.forEach(accountId -> loginWindows.get(accountId).recording(runId));
                     browserDeadline = System.currentTimeMillis() + browserMinutes() * 60_000;
                     startBrowserWatch(runId);
                 }
-                snapshot = update(Status.RUNNING, "Codex Explorer가 독립적으로 대상 산출물과 API를 탐색 중입니다.",
-                        limitations, null);
                 providerHandle = provider.start(new ExplorerProvider.Request(runId, request.target(),
                         List.of(request.target()), readyAccounts, gateway.url(), gateway.discoveriesUrl(),
                         gateway.token(), prompt, request.model()),
@@ -469,7 +475,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     /** The run is over: the window stays open for the next run, but nothing it does now is this run's Evidence. */
     private void stopBrowserRecording() {
         loginWindows.values().forEach(window -> {
-            try { window.recording(false); }
+            try { window.recording(null); }
             catch (RuntimeException ignored) { /* a dead window records nothing anyway */ }
         });
     }

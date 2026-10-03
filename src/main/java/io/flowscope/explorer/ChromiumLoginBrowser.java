@@ -27,7 +27,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.function.Consumer;
@@ -213,10 +212,7 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             return Map.copyOf(cdp.authHeaders.getOrDefault(origin(target), Map.of()));
         }
 
-        @Override public void recording(boolean on) {
-            cdp.recording.set(on);
-            if (!on) cdp.inFlight.clear();
-        }
+        @Override public void recording(String runId) { cdp.setRecording(runId); }
 
         @Override public Page navigate(String url) throws IOException {
             cdp.onPage("Page.navigate", JSON.createObjectNode().put("url", url));
@@ -328,7 +324,7 @@ final class ChromiumLoginBrowser implements LoginBrowser {
          * It may arrive before or after {@code requestWillBeSent}, so what arrives first waits here.
          */
         private final Map<String, Map<String, String>> extraRequestHeaders = new ConcurrentHashMap<>();
-        final AtomicBoolean recording = new AtomicBoolean();
+        private final AtomicReference<String> recordingRunId = new AtomicReference<>();
         /** Response bodies are fetched off the WebSocket thread; replying there would deadlock the read loop. */
         private final ExecutorService bodies = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "flowscope-browser-bodies");
@@ -342,11 +338,17 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         static Cdp forEvents(Consumer<Exchange> recorder) {
             Cdp cdp = new Cdp();
             if (recorder != null) cdp.recorder = recorder;
-            cdp.recording.set(true);
+            cdp.setRecording("test-run");
             return cdp;
         }
 
         void event(JsonNode message) { onEvent(message); }
+
+        void setRecording(String runId) {
+            recordingRunId.set(runId);
+            inFlight.clear();
+            extraRequestHeaders.clear();
+        }
 
         int pendingCookieHeaders() { return extraRequestHeaders.size(); }
 
@@ -440,7 +442,7 @@ final class ChromiumLoginBrowser implements LoginBrowser {
                 case "Network.requestWillBeSentExtraInfo" -> {
                     // The only event carrying Cookie: requestWillBeSent reports the headers the page asked for,
                     // not the ones the network stack added. Without this merge every record loses its identity.
-                    if (!recording.get()) return;
+                    if (recordingRunId.get() == null) return;
                     String requestId = params.path("requestId").asText();
                     Map<String, String> extra = headers(params.path("headers"));
                     PendingExchange pending = inFlight.get(requestId);
@@ -469,11 +471,12 @@ final class ChromiumLoginBrowser implements LoginBrowser {
                         previous.responseHeaders = headers(redirect.path("headers"));
                         emitExchange(previous, "");
                     }
-                    if (!recording.get() || inFlight.size() >= MAX_IN_FLIGHT) return;
+                    String runId = recordingRunId.get();
+                    if (runId == null || inFlight.size() >= MAX_IN_FLIGHT) return;
                     PendingExchange hop = new PendingExchange(
                             message.path("sessionId").asText(null),
                             request.path("method").asText("GET"), url.toString(),
-                            headers(request.path("headers")), request.path("postData").asText(""));
+                            headers(request.path("headers")), request.path("postData").asText(""), runId);
                     Map<String, String> waiting = extraRequestHeaders.remove(requestId);
                     if (waiting != null) hop.requestHeaders.putAll(waiting);
                     inFlight.put(requestId, hop);
@@ -517,13 +520,15 @@ final class ChromiumLoginBrowser implements LoginBrowser {
          * {@code Network.getResponseBody} hands back the decoded body, so the hop's own Content-Encoding and
          * Content-Length describe bytes FlowScope never sees. Keeping them makes every consumer decode garbage.
          */
-        private void emitExchange(PendingExchange pending, String body) {
+        void emitExchange(PendingExchange pending, String body) {
+            if (pending == null || !pending.runId.equals(recordingRunId.get())) return;
             Map<String, String> responseHeaders = new java.util.LinkedHashMap<>();
             pending.responseHeaders.forEach((name, value) -> {
                 if (!DECODED_AWAY.contains(name.toLowerCase(Locale.ROOT))) responseHeaders.put(name, value);
             });
             try {
-                recorder.accept(new Exchange(pending.method, pending.url, Map.copyOf(pending.requestHeaders),
+                recorder.accept(new Exchange(pending.runId, pending.method, pending.url,
+                        Map.copyOf(pending.requestHeaders),
                         pending.requestBody, pending.status, responseHeaders, body));
             } catch (RuntimeException ignored) {
                 // One bad record must not stop the browser from being driven.
@@ -556,23 +561,25 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             java.util.Set.of("content-encoding", "content-length", "transfer-encoding");
 
     /** Mutable while the browser reports a request, a response, and finally the end of the body. */
-    private static final class PendingExchange {
+    static final class PendingExchange {
         private final String sessionId;
         private final String method;
         private final String url;
         /** Mutable: Cookie arrives in a separate event and is merged in after construction. */
         private final Map<String, String> requestHeaders;
         private final String requestBody;
+        private final String runId;
         private volatile int status;
         private volatile Map<String, String> responseHeaders = Map.of();
 
         private PendingExchange(String sessionId, String method, String url,
-                                Map<String, String> requestHeaders, String requestBody) {
+                                Map<String, String> requestHeaders, String requestBody, String runId) {
             this.sessionId = sessionId;
             this.method = method;
             this.url = url;
             this.requestHeaders = new java.util.concurrent.ConcurrentHashMap<>(requestHeaders);
             this.requestBody = requestBody;
+            this.runId = runId;
         }
     }
 }

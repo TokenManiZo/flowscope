@@ -166,7 +166,9 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 
 Explorer의 `flowscope_record_discoveries`는 URL template의 유일한 PATH 이름을 구조 좌표로 변환합니다. 이름이 중복되거나 한 파라미터가 잘못되면 정상 endpoint·파라미터는 보존하고, 보류된 부분의 index·이유·가능한 PATH 위치를 모델에 반환합니다. 작업 피드에도 부분 거부를 표시하며, 모델에는 보류된 부분만 근거를 확인해 다시 보내도록 지시합니다. 이 반환만으로 자동 재시도를 강제하지는 않으며 완료 게이트는 별도 작업입니다.
 
-기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 격리 브라우저, Judge, agent-workspace는 없습니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
+LLM 로그인 브라우저의 로그인·실행 사이 트래픽은 탐색 Evidence로 기록하지 않습니다. 실행 중에는 선택한 창의 교환을 해당 run ID에 결박해 저장하고, 종료·취소 시 기록을 끕니다. 같은 창을 재사용해도 이전 실행에서 늦게 도착한 응답은 다음 실행에 넣지 않습니다. Explorer가 받은 `.map` 응답이 `application/octet-stream`이어도 UTF-8 및 source map JSON 구조가 확인되면 마스킹한 산출물로 분석하며, 일반 바이너리는 계속 텍스트로 열지 않습니다.
+
+기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 옛 브라우저 하네스, Judge, agent-workspace는 없습니다. 별도 구현된 Explorer 로그인 창은 Chromium을 사용합니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
 
 공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright/Chrome 또는 MCP 설정은 필요하지 않습니다. FlowScope는 Codex 실행 파일과 로그인 상태를 확인하고, 모델에는 인증 비밀 대신 opaque account handle과 HTTP/선언 dynamic tool만 제공합니다. 모델 목록의 `isDefault`는 Codex의 추천 기본값이지 이 PC의 `config.toml` 선택값이 아니므로 두 값을 혼동하지 않습니다. 명시적으로 고른 모델은 실행 상태에 남지만, 모델을 지정하지 않고 Codex 기본값으로 실행한 경우에는 모델 ID를 추측하지 않습니다. Claude 공급자는 제품 지원 대상이 아니며, Explorer는 Codex 전용입니다. app-server dynamic tools는 현재 experimental API이므로 실제 설치된 CLI 호환성은 readiness와 opt-in 실물 provider gate로 확인합니다. LLM 응답 Evidence 0건은 완료가 아니라 실패로 남고, 모델의 자유서술 개수는 완료 집계로 사용하지 않습니다.
 

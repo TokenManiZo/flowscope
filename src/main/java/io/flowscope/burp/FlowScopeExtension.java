@@ -3035,8 +3035,8 @@ public final class FlowScopeExtension implements BurpExtension {
             int copiedBody = Math.min(responseBody.length(), EXPLORER_RESPONSE_BYTES);
             byte[] responseBodyBytes = copiedBody == responseBody.length()
                     ? responseBody.getBytes() : responseBody.subArray(0, copiedBody).getBytes();
-            String decoded = HttpMessageTextCodec.decode(responseBodyBytes, 0,
-                    response.headerValue("Content-Type")).text();
+            String decoded = HttpMessageTextCodec.decodeExplorerBody(responseBodyBytes,
+                    response.headerValue("Content-Type"), input.url()).text();
             // Login requests may use target-specific password field names and token response shapes.
             // They are consumed only by the in-memory vault and never become records, payloads, ledger
             // entries, snapshots, or project data.

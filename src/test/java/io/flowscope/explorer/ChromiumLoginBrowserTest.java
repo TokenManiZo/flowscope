@@ -164,4 +164,24 @@ final class ChromiumLoginBrowserTest {
         assertTrue(cdp.inFlight.isEmpty());
         assertEquals(0, cdp.pendingCookieHeaders());
     }
+
+    @Test
+    void lateResponseFromPreviousRecordingGenerationCannotEnterNextRun() {
+        List<LoginBrowser.Exchange> recorded = new ArrayList<>();
+        ChromiumLoginBrowser.Cdp cdp = ChromiumLoginBrowser.Cdp.forEvents(recorded::add);
+        cdp.event(willBeSent("old", "https://app.example.test/old", null));
+        cdp.event(responseReceived("old", 200, ""));
+        var old = cdp.inFlight.get("old");
+
+        cdp.setRecording(null);
+        cdp.setRecording("next-run");
+        cdp.emitExchange(old, "{}");
+        assertTrue(recorded.isEmpty(), "late body from the previous run must be discarded");
+
+        cdp.event(willBeSent("new", "https://app.example.test/new", null));
+        cdp.event(responseReceived("new", 200, ""));
+        cdp.emitExchange(cdp.inFlight.get("new"), "{}");
+        assertEquals(List.of("https://app.example.test/new"),
+                recorded.stream().map(LoginBrowser.Exchange::url).toList());
+    }
 }

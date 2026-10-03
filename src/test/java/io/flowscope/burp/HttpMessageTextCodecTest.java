@@ -1,5 +1,6 @@
 package io.flowscope.burp;
 
+import io.flowscope.core.Masking;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.Charset;
@@ -59,6 +60,28 @@ final class HttpMessageTextCodecTest {
 
         assertFalse(decoded.editable());
         assertTrue(decoded.note().contains("바이너리"));
+    }
+
+    @Test
+    void explorerAcceptsOnlyValidUtf8SourceMapJsonFromOctetStream() {
+        String map = "{\"version\":3,\"sources\":[\"app.js\"],\"mappings\":\"AAAA\","
+                + "\"sourcesContent\":[\"const token='private-value-123';\"]}";
+        byte[] bytes = map.getBytes(StandardCharsets.UTF_8);
+        String decoded = HttpMessageTextCodec.decodeExplorerBody(bytes,
+                "application/octet-stream", "https://app.example.test/main.js.map").text();
+        assertEquals(map, decoded);
+        assertFalse(Masking.maskBody(decoded, "application/octet-stream").contains("private-value-123"),
+                "source map code must be masked before it becomes an Explorer artifact");
+        assertFalse(HttpMessageTextCodec.decodeExplorerBody(bytes,
+                "application/octet-stream", "https://app.example.test/download.bin").editable());
+        assertFalse(HttpMessageTextCodec.decodeExplorerBody(new byte[]{0, 1, 2, 3},
+                "application/octet-stream", "https://app.example.test/main.js.map").editable());
+        assertFalse(HttpMessageTextCodec.decodeExplorerBody("{\"version\":3}".getBytes(StandardCharsets.UTF_8),
+                "application/octet-stream", "https://app.example.test/main.js.map").editable());
+        assertFalse(HttpMessageTextCodec.decodeExplorerBody(new byte[]{(byte) 0xC3, 0x28},
+                "application/octet-stream", "https://app.example.test/main.js.map").editable());
+        assertFalse(HttpMessageTextCodec.decode(bytes, 0, "application/octet-stream").editable(),
+                "Request Lab's binary editor contract must stay unchanged");
     }
 
     @Test

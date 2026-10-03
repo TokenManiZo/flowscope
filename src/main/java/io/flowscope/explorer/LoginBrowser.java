@@ -16,7 +16,7 @@ interface LoginBrowser {
     Session open(URI loginUrl, Consumer<Exchange> recorder) throws IOException;
 
     /** One request/response the window performed, as the browser saw it. */
-    record Exchange(String method, String url, Map<String, String> requestHeaders, String requestBody,
+    record Exchange(String runId, String method, String url, Map<String, String> requestHeaders, String requestBody,
                     int status, Map<String, String> responseHeaders, String responseBody) {}
 
     /** One interactive element the Explorer may click or type into. */
@@ -32,8 +32,8 @@ interface LoginBrowser {
         /** The latest auth headers (Authorization, CSRF) the window's own requests sent to {@code target}'s origin. */
         Map<String, String> authHeaders(URI target);
 
-        /** Off while the operator logs in, so no password or login exchange is ever recorded. */
-        void recording(boolean on);
+        /** Null while the operator logs in or between runs; a run ID binds late exchanges to their origin. */
+        void recording(String runId);
 
         Page navigate(String url) throws IOException;
 

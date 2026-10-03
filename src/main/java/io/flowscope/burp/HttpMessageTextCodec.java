@@ -1,6 +1,12 @@
 package io.flowscope.burp;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -17,6 +23,7 @@ final class HttpMessageTextCodec {
 
     private static final Pattern CHARSET = Pattern.compile("(?i)(?:^|;)\\s*charset\\s*=\\s*(?:\"([^\"]+)\"|'([^']+)'|([^;\\s]+))");
     private static final String UNAVAILABLE = "[본문을 텍스트로 안전하게 표시할 수 없습니다]";
+    private static final JsonFactory JSON = new JsonFactory();
 
     private HttpMessageTextCodec() {}
 
@@ -47,6 +54,56 @@ final class HttpMessageTextCodec {
         } catch (CharacterCodingException error) {
             String note = charset.name() + " 디코딩 오류로 원문 바이트를 보존하고 텍스트 편집을 차단했습니다.";
             return new Decoded(headers + UNAVAILABLE, false, charset.name(), note);
+        }
+    }
+
+    /** Source maps are JSON even when a server labels them application/octet-stream; Request Lab stays binary-only. */
+    static Decoded decodeExplorerBody(byte[] body, String contentType, String url) {
+        if (body != null && isOctetStream(contentType) && sourceMapUrl(url) && sourceMapJson(body)) {
+            try {
+                return new Decoded(decodeStrict(body, 0, body.length, StandardCharsets.UTF_8), true,
+                        "UTF-8", "구조가 확인된 source map JSON입니다.");
+            } catch (CharacterCodingException ignored) {
+                // Invalid UTF-8 must never become model-visible replacement characters.
+            }
+        }
+        return decode(body, 0, contentType);
+    }
+
+    private static boolean isOctetStream(String contentType) {
+        return contentType != null && contentType.split(";", 2)[0].trim()
+                .equalsIgnoreCase("application/octet-stream");
+    }
+
+    private static boolean sourceMapUrl(String url) {
+        try {
+            String path = URI.create(url).getPath();
+            return path != null && path.toLowerCase(Locale.ROOT).endsWith(".map");
+        } catch (RuntimeException error) {
+            return false;
+        }
+    }
+
+    private static boolean sourceMapJson(byte[] body) {
+        try (JsonParser parser = JSON.createParser(body)) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) return false;
+            boolean version = false;
+            boolean sources = false;
+            boolean mappings = false;
+            boolean sections = false;
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String field = parser.currentName();
+                JsonToken value = parser.nextToken();
+                if ("version".equals(field)) version = value == JsonToken.VALUE_NUMBER_INT && parser.getIntValue() == 3;
+                if ("sources".equals(field)) sources = value == JsonToken.START_ARRAY;
+                if ("mappings".equals(field)) mappings = value == JsonToken.VALUE_STRING;
+                if ("sections".equals(field)) sections = value == JsonToken.START_ARRAY;
+                parser.skipChildren();
+            }
+            return parser.currentToken() == JsonToken.END_OBJECT && parser.nextToken() == null
+                    && version && (sections || sources && mappings);
+        } catch (IOException error) {
+            return false;
         }
     }
 
