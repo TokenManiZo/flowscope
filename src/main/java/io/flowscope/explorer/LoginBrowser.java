@@ -6,14 +6,19 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
- * The one browser window FlowScope opens: the operator logs in there, and afterwards the Explorer drives the same
- * window so the operator can watch. The window reaches no Burp listener, so its traffic can never be mistaken for
- * HUMAN collection; FlowScope records it from the browser itself, and only while {@link Session#recording} is on.
+ * Explorer browser session: a registered-account window keeps the operator's login, while an anonymous run opens a
+ * separate throwaway window. Neither reaches a Burp listener; FlowScope records traffic directly from DevTools only
+ * while {@link Session#recording} is on.
  */
 interface LoginBrowser {
     Session open(URI loginUrl, Consumer<Exchange> recorder) throws IOException;
+
+    /** Metadata available before Chromium sends a request; values are never exposed to the model. */
+    record BrowserRequest(String method, String url, String resourceType, String initiatorUrl,
+                          boolean credentialed) {}
 
     /** One request/response the window performed, as the browser saw it. */
     record Exchange(String runId, String method, String url, Map<String, String> requestHeaders, String requestBody,
@@ -32,8 +37,8 @@ interface LoginBrowser {
         /** The latest auth headers (Authorization, CSRF) the window's own requests sent to {@code target}'s origin. */
         Map<String, String> authHeaders(URI target);
 
-        /** Null while the operator logs in or between runs; a run ID binds late exchanges to their origin. */
-        void recording(String runId);
+        /** Null while the operator logs in or between runs; active capture requires a pre-dispatch scope guard. */
+        void recording(String runId, Predicate<BrowserRequest> requestAllowed) throws IOException;
 
         Page navigate(String url) throws IOException;
 

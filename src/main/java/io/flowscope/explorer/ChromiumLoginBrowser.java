@@ -32,6 +32,7 @@ import java.util.regex.Matcher;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import java.util.function.Predicate;
 
 /**
  * Launches Burp's bundled Chromium (or a system Chrome) with a throwaway profile and DevTools enabled: the operator
@@ -81,6 +82,7 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             Cdp cdp = Cdp.connect(URI.create(line.group(1)), line.group(2), recorder);
             // Discover every tab (including ones the operator opens) to watch requests and to drive the page.
             cdp.call("Target.setDiscoverTargets", JSON.createObjectNode().put("discover", true));
+            cdp.awaitPage();
             return new ChromiumSession(process, profile, cdp);
         } catch (Exception error) {
             stop(process, profile);
@@ -212,7 +214,9 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             return Map.copyOf(cdp.authHeaders.getOrDefault(origin(target), Map.of()));
         }
 
-        @Override public void recording(String runId) { cdp.setRecording(runId); }
+        @Override public void recording(String runId, Predicate<BrowserRequest> requestAllowed) throws IOException {
+            cdp.setRecording(runId, requestAllowed, runId == null ? "" : evaluate("location.href"));
+        }
 
         @Override public Page navigate(String url) throws IOException {
             cdp.onPage("Page.navigate", JSON.createObjectNode().put("url", url));
@@ -313,6 +317,8 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         /** origin → header name (as sent) → latest value. */
         final Map<String, Map<String, String>> authHeaders = new ConcurrentHashMap<>();
         private final java.util.Set<String> attached = ConcurrentHashMap.newKeySet();
+        private final java.util.Set<String> pageSessions = ConcurrentHashMap.newKeySet();
+        private final Map<String, String> frameUrls = new ConcurrentHashMap<>();
         /** The page the Explorer drives: the most recently attached tab. */
         private final AtomicReference<String> pageSession = new AtomicReference<>();
         private final AtomicInteger ids = new AtomicInteger();
@@ -325,6 +331,8 @@ final class ChromiumLoginBrowser implements LoginBrowser {
          */
         private final Map<String, Map<String, String>> extraRequestHeaders = new ConcurrentHashMap<>();
         private final AtomicReference<String> recordingRunId = new AtomicReference<>();
+        private final AtomicReference<Predicate<BrowserRequest>> requestAllowed = new AtomicReference<>();
+        private volatile String activePageUrl = "";
         /** Response bodies are fetched off the WebSocket thread; replying there would deadlock the read loop. */
         private final ExecutorService bodies = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "flowscope-browser-bodies");
@@ -338,16 +346,29 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         static Cdp forEvents(Consumer<Exchange> recorder) {
             Cdp cdp = new Cdp();
             if (recorder != null) cdp.recorder = recorder;
-            cdp.setRecording("test-run");
+            cdp.recordingRunId.set("test-run");
+            cdp.requestAllowed.set(request -> true);
             return cdp;
         }
 
         void event(JsonNode message) { onEvent(message); }
 
-        void setRecording(String runId) {
-            recordingRunId.set(runId);
+        void setRecording(String runId, Predicate<BrowserRequest> allowed, String pageUrl) throws IOException {
+            if (runId != null && allowed == null) throw new IllegalArgumentException("브라우저 범위 정책이 필요합니다.");
+            if (runId == null) recordingRunId.set(null);
+            requestAllowed.set(allowed);
+            activePageUrl = pageUrl == null ? "" : pageUrl;
             inFlight.clear();
             extraRequestHeaders.clear();
+            if (socket != null) {
+                if (runId != null && pageSessions.isEmpty()) {
+                    throw new IOException("브라우저 페이지에 요청 전 범위 차단을 설치하지 못했습니다.");
+                }
+                for (String session : pageSessions) {
+                    send(session, runId == null ? "Fetch.disable" : "Fetch.enable", JSON.createObjectNode());
+                }
+            }
+            if (runId != null) recordingRunId.set(runId);
         }
 
         int pendingCookieHeaders() { return extraRequestHeaders.size(); }
@@ -367,6 +388,19 @@ final class ChromiumLoginBrowser implements LoginBrowser {
 
         JsonNode call(String method, ObjectNode params) throws IOException {
             return send(null, method, params);
+        }
+
+        /** Target attachment is asynchronous, especially for a fresh about:blank anonymous window. */
+        void awaitPage() throws IOException {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (pageSession.get() == null && System.nanoTime() < deadline) {
+                try { Thread.sleep(25); }
+                catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("브라우저 페이지 연결이 중단됐습니다.", error);
+                }
+            }
+            if (pageSession.get() == null) throw new IOException("브라우저 페이지에 연결하지 못했습니다.");
         }
 
         /** Same call, addressed to the page tab rather than the browser. */
@@ -434,11 +468,44 @@ final class ChromiumLoginBrowser implements LoginBrowser {
                 case "Target.attachedToTarget" -> {
                     String session = params.path("sessionId").asText();
                     if (!"page".equals(params.path("targetInfo").path("type").asText())) return;
+                    pageSessions.add(session);
                     pageSession.set(session);
                     fireAndForget(session, "Network.enable", JSON.createObjectNode());
                     fireAndForget(session, "Page.enable", JSON.createObjectNode());
+                    if (recordingRunId.get() != null) fireAndForget(session, "Fetch.enable", JSON.createObjectNode());
                 }
-                case "Target.detachedFromSession" -> pageSession.compareAndSet(params.path("sessionId").asText(), null);
+                case "Target.detachedFromSession" -> {
+                    String session = params.path("sessionId").asText();
+                    pageSessions.remove(session);
+                    pageSession.compareAndSet(session, null);
+                }
+                case "Page.frameNavigated" -> {
+                    JsonNode frame = params.path("frame");
+                    String id = frame.path("id").asText("");
+                    if (!id.isBlank()) frameUrls.put(id, frame.path("url").asText(""));
+                }
+                case "Fetch.requestPaused" -> {
+                    JsonNode request = params.path("request");
+                    String frameId = params.path("frameId").asText("");
+                    Map<String, String> requestHeaders = headers(request.path("headers"));
+                    String referrer = requestHeaders.entrySet().stream()
+                            .filter(value -> value.getKey().equalsIgnoreCase("Referer"))
+                            .map(Map.Entry::getValue).findFirst().orElse("");
+                    String initiator = frameUrls.getOrDefault(frameId, referrer.isBlank() ? activePageUrl : referrer);
+                    boolean credentialed = requestHeaders.keySet().stream().anyMatch(name ->
+                            name.equalsIgnoreCase("Cookie") || name.equalsIgnoreCase("Authorization")
+                                    || name.equalsIgnoreCase("Proxy-Authorization"));
+                    BrowserRequest pending = new BrowserRequest(request.path("method").asText(""),
+                            request.path("url").asText(""), params.path("resourceType").asText(""),
+                            initiator, credentialed);
+                    Predicate<BrowserRequest> guard = requestAllowed.get();
+                    boolean permitted = guard != null && guard.test(pending);
+                    fireAndForget(message.path("sessionId").asText(null),
+                            permitted ? "Fetch.continueRequest" : "Fetch.failRequest",
+                            permitted ? JSON.createObjectNode().put("requestId", params.path("requestId").asText())
+                                    : JSON.createObjectNode().put("requestId", params.path("requestId").asText())
+                                    .put("errorReason", "BlockedByClient"));
+                }
                 case "Network.requestWillBeSentExtraInfo" -> {
                     // The only event carrying Cookie: requestWillBeSent reports the headers the page asked for,
                     // not the ones the network stack added. Without this merge every record loses its identity.

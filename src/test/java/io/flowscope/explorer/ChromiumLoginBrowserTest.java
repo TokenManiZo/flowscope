@@ -166,15 +166,15 @@ final class ChromiumLoginBrowserTest {
     }
 
     @Test
-    void lateResponseFromPreviousRecordingGenerationCannotEnterNextRun() {
+    void lateResponseFromPreviousRecordingGenerationCannotEnterNextRun() throws Exception {
         List<LoginBrowser.Exchange> recorded = new ArrayList<>();
         ChromiumLoginBrowser.Cdp cdp = ChromiumLoginBrowser.Cdp.forEvents(recorded::add);
         cdp.event(willBeSent("old", "https://app.example.test/old", null));
         cdp.event(responseReceived("old", 200, ""));
         var old = cdp.inFlight.get("old");
 
-        cdp.setRecording(null);
-        cdp.setRecording("next-run");
+        cdp.setRecording(null, null, "");
+        cdp.setRecording("next-run", request -> true, "https://app.example.test/");
         cdp.emitExchange(old, "{}");
         assertTrue(recorded.isEmpty(), "late body from the previous run must be discarded");
 

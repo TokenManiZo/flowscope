@@ -26,6 +26,24 @@ final class ExplorerHttpGatewayTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
+    void browserGatewayAcceptsExplicitAnonymousHandleButNotMissingAccount() throws Exception {
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("browser action must not use HTTP transport"); },
+                value -> true, "run-anon-browser", ignored -> {})) {
+            AtomicReference<String> driven = new AtomicReference<>();
+            gateway.browserDriver((account, action, url, ref, text) -> {
+                driven.set(account);
+                return new LoginBrowser.Page("https://app.example.test/", "Home", List.of(), "");
+            });
+            assertEquals(200, post(gateway, gateway.browserUrl(),
+                    "{\"account\":\"\",\"action\":\"snapshot\",\"url\":\"\",\"ref\":\"\",\"text\":\"\"}").statusCode());
+            assertEquals("", driven.get());
+            assertEquals(400, post(gateway, gateway.browserUrl(),
+                    "{\"action\":\"snapshot\",\"url\":\"\",\"ref\":\"\",\"text\":\"\"}").statusCode());
+        }
+    }
+
+    @Test
     void followsPageLinkedCdnJavascriptButNeverTreatsTheCdnAsAnApiTarget() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();

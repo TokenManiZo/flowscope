@@ -99,6 +99,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private LoginBrowser loginBrowser = new ChromiumLoginBrowser();
     /** Login windows stay open after [로그인 완료]: the Explorer drives the same window the operator logged in to. */
     private final Map<String, LoginBrowser.Session> loginWindows = new ConcurrentHashMap<>();
+    /** Fresh, uncredentialed window for this run only; never shared with a registered account or later run. */
+    private volatile LoginBrowser.Session anonymousWindow;
     private volatile Consumer<BrowserExchange> browserSink = exchange -> { };
     /** Distinct method+url the window produced this run, shown as the operator's endpoint counter. */
     private final Set<String> browserEndpoints = ConcurrentHashMap.newKeySet();
@@ -231,7 +233,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
 
     /** True when any selected account is explored through its own window. */
     public boolean browserDriven() {
-        return snapshot.accountIds().stream().anyMatch(loginWindows::containsKey);
+        return anonymousWindow != null || snapshot.accountIds().stream().anyMatch(loginWindows::containsKey);
     }
 
     /**
@@ -241,6 +243,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     public ExplorerAccountVault.View openBrowserLogin(String accountId, String label, String role, String url)
             throws IOException {
         if (closed) throw new IllegalStateException("Explorer가 종료됐습니다.");
+        if (active(snapshot.status())) throw new IllegalStateException("Explorer 실행 중에는 로그인 창을 바꿀 수 없습니다.");
         URI target;
         try { target = URI.create(url == null ? "" : url.trim()); }
         catch (IllegalArgumentException error) { throw new IllegalArgumentException("로그인 URL이 올바르지 않습니다."); }
@@ -255,20 +258,21 @@ public final class ExplorerCoordinator implements AutoCloseable {
             loginWindows.put(accountId, window);
         }
         // Login and idle browsing are never Explorer Evidence; recording starts only with a run ID.
-        window.recording(null);
+        window.recording(null, null);
         vault.awaitBrowserLogin(accountId, target);
         return vault.view(accountId);
     }
 
     /** The operator says the login is done: adopt the window's cookies and auth headers for the login URL's origin. */
     public ExplorerAccountVault.View completeBrowserLogin(String accountId) throws IOException {
+        if (active(snapshot.status())) throw new IllegalStateException("Explorer 실행 중에는 로그인 세션을 바꿀 수 없습니다.");
         LoginBrowser.Session window = loginWindows.get(accountId);
         if (window == null || !window.alive()) {
             closeLoginWindow(accountId);
             throw new IllegalStateException("로그인 브라우저가 열려 있지 않습니다. [브라우저 로그인]으로 다시 여세요.");
         }
         ExplorerAccountVault.View adopted = adoptWindowSession(accountId, window);
-        window.recording(null);
+        window.recording(null, null);
         return adopted;
     }
 
@@ -292,10 +296,11 @@ public final class ExplorerCoordinator implements AutoCloseable {
     /** What the Explorer may do to the window, with the run's scope and budget enforced here. */
     public LoginBrowser.Page browserAction(String accountId, String action, String url, String ref, String text)
             throws IOException {
-        LoginBrowser.Session window = loginWindows.get(accountId);
-        if (window == null) throw new IllegalArgumentException("이 계정은 브라우저 로그인으로 준비되지 않았습니다.");
-        if (!window.alive()) throw new IllegalStateException("브라우저 창이 닫혀 탐색을 계속할 수 없습니다.");
         if (!active(snapshot.status())) throw new IllegalStateException("진행 중인 Explorer가 없습니다.");
+        LoginBrowser.Session window = accountId.isBlank() && snapshot.anonymous()
+                ? anonymousWindow : loginWindows.get(accountId);
+        if (window == null) throw new IllegalArgumentException("이 신원에 탐색 브라우저가 준비되지 않았습니다.");
+        if (!window.alive()) throw new IllegalStateException("브라우저 창이 닫혀 탐색을 계속할 수 없습니다.");
         if (!"snapshot".equals(action)) {
             if (browserActions.incrementAndGet() > maxBrowserActions()) {
                 throw new IllegalStateException("브라우저 행동 상한에 도달했습니다. 지금까지의 관측으로 마무리하세요.");
@@ -431,13 +436,29 @@ public final class ExplorerCoordinator implements AutoCloseable {
                         LoginBrowser.Session window = loginWindows.get(accountId);
                         return window != null && window.alive();
                     }).toList();
+            if (request.includeAnonymous()) {
+                LoginBrowser.Session opened = loginBrowser.open(URI.create("about:blank"),
+                        exchange -> record("", exchange));
+                synchronized (this) {
+                    if (!sameActiveRun(runId)) { opened.close(); return; }
+                    anonymousWindow = opened;
+                }
+            }
+            if (request.includeAnonymous()) {
+                browserHandles = new ArrayList<>(browserHandles);
+                browserHandles.add("");
+            }
             String prompt = prompt(request.target(), readyAccounts, request.includeAnonymous(), browserHandles);
             synchronized (this) {
                 if (!sameActiveRun(runId)) return;
                 snapshot = update(Status.RUNNING, "Codex Explorer가 독립적으로 대상 산출물과 API를 탐색 중입니다.",
                         limitations, null);
                 if (!browserHandles.isEmpty()) {
-                    browserHandles.forEach(accountId -> loginWindows.get(accountId).recording(runId));
+                    BrowserScopePolicy browserScope = new BrowserScopePolicy(exactScope);
+                    for (String accountId : browserHandles) {
+                        LoginBrowser.Session window = accountId.isBlank() ? anonymousWindow : loginWindows.get(accountId);
+                        window.recording(runId, browserScope::allows);
+                    }
                     browserDeadline = System.currentTimeMillis() + browserMinutes() * 60_000;
                     startBrowserWatch(runId);
                 }
@@ -463,6 +484,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 boolean closedWindow = snapshot.accountIds().stream()
                         .map(loginWindows::get).filter(java.util.Objects::nonNull)
                         .anyMatch(window -> !window.alive());
+                LoginBrowser.Session anonymous = anonymousWindow;
+                closedWindow |= anonymous != null && !anonymous.alive();
                 if (!closedWindow) return;
                 addActivity("SYSTEM", "브라우저 창 종료", "사용자가 창을 닫아 탐색과 수집을 끝냈습니다.", "CANCELLED", null);
                 cancel();
@@ -475,9 +498,16 @@ public final class ExplorerCoordinator implements AutoCloseable {
     /** The run is over: the window stays open for the next run, but nothing it does now is this run's Evidence. */
     private void stopBrowserRecording() {
         loginWindows.values().forEach(window -> {
-            try { window.recording(null); }
-            catch (RuntimeException ignored) { /* a dead window records nothing anyway */ }
+            try { window.recording(null, null); }
+            catch (Exception ignored) { /* a dead window records nothing anyway */ }
         });
+        LoginBrowser.Session anonymous = anonymousWindow;
+        anonymousWindow = null;
+        if (anonymous != null) {
+            try { anonymous.recording(null, null); }
+            catch (Exception ignored) { /* closing the run-owned window still stops collection */ }
+            anonymous.close();
+        }
     }
 
     private void stopBrowserWatch() {
@@ -643,7 +673,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
         }
         String handles = accounts.isEmpty() ? "- 없음" : String.join("\n", accounts.stream().map(value -> "- " + value).toList());
         String windows = browserHandles.isEmpty() ? "- 없음"
-                : String.join("\n", browserHandles.stream().map(value -> "- " + value).toList());
+                : String.join("\n", browserHandles.stream()
+                        .map(value -> value.isBlank() ? "- 비로그인: 빈 문자열" : "- " + value).toList());
         return instructions + "\n\n# 실행 입력\n"
                 + "대상 시작 URL: " + target + "\n"
                 + "사용 가능한 인증 계정 handle:\n" + handles + "\n"

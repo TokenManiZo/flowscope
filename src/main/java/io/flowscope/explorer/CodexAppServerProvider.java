@@ -593,11 +593,11 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode browserTool() {
             ObjectNode tool = JSON.createObjectNode().put("type", "function")
                     .put("name", "flowscope_browser")
-                    .put("description", "Drive the browser window the operator logged in to: the window performs the real requests, so JavaScript runs and a single-page app's own XHRs are observed. Returns the page's URL, title, clickable elements, and masked text. Use it to discover what the application actually does; use flowscope_http_request to verify authorization on what it found.");
+                    .put("description", "Drive an isolated Explorer browser window (empty account for anonymous, or an operator-prepared login handle). JavaScript and SPA XHRs run in that window. Returns URL, title, clickable elements, and masked text; use flowscope_http_request for independent response comparison.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object").put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
             properties.putObject("account").put("type", "string")
-                    .put("description", "Account handle whose window to drive. Only handles prepared by browser login can be driven.");
+                    .put("description", "Empty string drives the run's anonymous window when enabled; a registered handle drives its prepared login window.");
             properties.putObject("action").put("type", "string").putArray("enum")
                     .add("navigate").add("click").add("type").add("back").add("snapshot");
             properties.putObject("url").put("type", "string")

@@ -6,7 +6,7 @@
 
 1. HUMAN 또는 ZAP 결과를 요구하거나 추측하지 않는다. 이번 실행에서 직접 얻은 응답만 사용한다.
 2. 대상 HTTP는 반드시 `flowscope_http_request` 또는 `flowscope_browser` 도구로 실행한다. 대상 URL로 직접 curl하거나 다른 네트워크 클라이언트를 사용하지 않는다.
-2-1. **브라우저 창이 열려 있는 handle이 하나라도 있으면 `flowscope_browser`가 기본 탐색 수단이다.** 그 창이 실제 요청을 보내므로 JavaScript가 실행되고 SPA가 스스로 보내는 XHR까지 관측된다. URL을 추측하지 말고 화면에 실제로 있는 것을 따라간다. 역할을 나눈다: **브라우저는 발견, `flowscope_http_request`는 account handle별 인가 검증.** 창이 없으면(`브라우저 창이 열려 있는 handle: - 없음`) `flowscope_browser`는 409를 주므로 호출하지 않고 바로 규칙 3으로 간다.
+2-1. **브라우저 창이 열려 있는 handle이 하나라도 있으면 `flowscope_browser`가 기본 탐색 수단이다.** 비로그인을 선택했다면 빈 문자열 handle의 별도 브라우저도 열린다. 그 창이 실제 요청을 보내므로 JavaScript가 실행되고 SPA가 스스로 보내는 XHR까지 관측된다. URL을 추측하지 말고 화면에 실제로 있는 것을 따라간다. 역할을 나눈다: **브라우저는 발견, `flowscope_http_request`는 account handle별 인가 검증.** 창이 없으면(`브라우저 창이 열려 있는 handle: - 없음`) `flowscope_browser`는 409를 주므로 호출하지 않고 바로 규칙 3으로 간다.
 2-2. 브라우저 탐색은 이 루프를 반복한다. 소극적으로 몇 번 보고 끝내지 말고 **화면에 남은 길이 없을 때까지** 돈다.
    1. `snapshot`으로 현재 화면의 `elements`를 받는다.
    2. 아직 들어가 보지 않은 것을 하나 고른다. **목록에서 개별 항목 상세로 들어가는 것을 가장 먼저 고른다** — 자원 식별자가 붙은 요청이 거기서 나오고, 그게 인가 비교의 재료다.

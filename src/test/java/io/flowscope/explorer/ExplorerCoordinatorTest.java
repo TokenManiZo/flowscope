@@ -22,6 +22,7 @@ final class ExplorerCoordinatorTest {
                 request -> { throw new AssertionError("gateway transport should not be called"); }, provider,
                 contexts, value -> value.startsWith("https://app.example.test/"),
                 () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.loginBrowser(new FakeWindow());
             assertThrows(IllegalArgumentException.class, () -> coordinator.start(
                     new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true, "unlisted-model")));
             assertNull(contexts.current(Source.LLM));
@@ -42,6 +43,7 @@ final class ExplorerCoordinatorTest {
         try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
                 request -> { throw new AssertionError("gateway transport should not be called"); }, provider, contexts,
                 value -> value.startsWith("https://app.example.test/"), published::get, ignored -> {})) {
+            coordinator.loginBrowser(new FakeWindow());
             ExplorerCoordinator.Snapshot started = coordinator.start(new ExplorerCoordinator.StartRequest(
                     "https://app.example.test/", List.of(), true));
             await(() -> provider.request.get() != null);
@@ -91,7 +93,8 @@ final class ExplorerCoordinatorTest {
                 @Override public java.util.Map<java.lang.String, java.lang.String> authHeaders(java.net.URI target) {
                     return java.util.Map.copyOf(headers);
                 }
-                @Override public void recording(String runId) {
+                @Override public void recording(String runId,
+                        java.util.function.Predicate<BrowserRequest> requestAllowed) {
                     recordingRunId = runId;
                     recording = runId != null;
                 }
@@ -181,6 +184,7 @@ final class ExplorerCoordinatorTest {
                 request -> { throw new AssertionError("gateway transport should not be called"); }, provider, contexts,
                 value -> value.startsWith("https://app.example.test/"),
                 () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.loginBrowser(new FakeWindow());
             coordinator.start(new ExplorerCoordinator.StartRequest(
                     "https://app.example.test/", List.of(), true));
             await(() -> provider.listener.get() != null);
@@ -311,6 +315,44 @@ final class ExplorerCoordinatorTest {
             window.emit("https://app.example.test/api/second");
             assertEquals(2, recorded.size());
             assertEquals(secondRun, recorded.get(1).runId());
+        }
+    }
+
+    @Test
+    void loginControlsCannotTurnOffRecordingDuringAnActiveRun() throws Exception {
+        FakeWindow window = new FakeWindow();
+        try (ExplorerCoordinator coordinator = running(window, new FakeProvider(), null)) {
+            assertThrows(IllegalStateException.class, () -> coordinator.openBrowserLogin(
+                    "usera", "USER A", "USER", "https://app.example.test/"));
+            assertThrows(IllegalStateException.class, () -> coordinator.completeBrowserLogin("usera"));
+            assertTrue(window.recording);
+        }
+    }
+
+    @Test
+    void anonymousRunOpensGuardedBrowserAndClosesItWhenCancelled() throws Exception {
+        FakeWindow window = new FakeWindow();
+        FakeProvider provider = new FakeProvider();
+        java.util.List<ExplorerCoordinator.BrowserExchange> recorded =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no gateway transport in this test"); }, provider,
+                new RunContextRegistry(), value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.loginBrowser(window);
+            coordinator.browserRecorder(recorded::add);
+            coordinator.start(new ExplorerCoordinator.StartRequest(
+                    "https://app.example.test/", List.of(), true));
+            await(() -> coordinator.current().status() == ExplorerCoordinator.Status.RUNNING);
+            assertEquals(1, window.opened);
+            assertTrue(window.recording);
+            coordinator.browserAction("", "navigate", "https://app.example.test/area", "", "");
+            assertEquals(1, recorded.size());
+            assertEquals("", recorded.getFirst().accountId());
+            assertEquals(coordinator.current().runId(), recorded.getFirst().runId());
+            coordinator.cancel();
+            assertTrue(window.closed);
+            assertFalse(window.recording);
         }
     }
 

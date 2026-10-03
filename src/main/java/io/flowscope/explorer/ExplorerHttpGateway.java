@@ -280,7 +280,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         String text;
         try {
             requireOnlyFields(body, Set.of("account", "action", "url", "ref", "text"), "browser 요청");
-            account = requiredText(body, "account", 96);
+            if (!body.path("account").isTextual()) throw new IllegalArgumentException("browser account가 필요합니다.");
+            account = body.path("account").asText().trim();
+            if (account.length() > 96) throw new IllegalArgumentException("browser account가 너무 깁니다.");
             action = requiredText(body, "action", 32);
             url = body.path("url").asText("").trim();
             ref = body.path("ref").asText("").trim();
