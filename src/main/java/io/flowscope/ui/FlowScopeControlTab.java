@@ -1,105 +1,167 @@
 package io.flowscope.ui;
 
 import io.flowscope.core.Pipeline;
-import io.flowscope.core.Source;
-
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
+import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Desktop;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.GridLayout;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.io.File;
 import java.net.URI;
 
-/** Burp 안에는 상태·설정만 두고 실제 분석 작업면은 동일한 localhost Web UI로 연다. */
+/** Burp에서는 Web UI를 열고, 파일 작업과 수집 요약은 필요할 때만 펼친다. */
 public final class FlowScopeControlTab extends JPanel {
     public interface Actions {
         void importProxyHistory();
         void loadSample();
-        void startProject(String name, String scope);
         void saveProject(File file);
         void loadProject(File file);
-        void updateScope(String value);
     }
 
     private final Actions actions;
     private final String webUrl;
-    private final JTextArea scope = new JTextArea(6, 56);
-    private final JLabel collection = new JLabel("관측 0건 · HUMAN 0 · SCANNER 0 · LLM 0");
-    public FlowScopeControlTab(Actions actions, String webUrl, String portMapping) {
-        super(new BorderLayout(14, 14));
+    private final JLabel scope = new JLabel("설정된 범위 없음");
+    private final JLabel collection = new JLabel("수집 0건 · HUMAN 0 · SCANNER 0 · LLM 0");
+    private final JLabel webStatus = new JLabel();
+    public FlowScopeControlTab(Actions actions, String webUrl) {
+        super(new BorderLayout());
         this.actions = actions;
         this.webUrl = webUrl;
-        setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
-        add(header(), BorderLayout.NORTH);
-        add(content(portMapping), BorderLayout.CENTER);
-        add(collection, BorderLayout.SOUTH);
+        setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.add(header());
+        content.add(Box.createVerticalStrut(20));
+        content.add(projectTools());
+        add(content, BorderLayout.NORTH);
     }
 
-    public void setScopeText(String value) { scope.setText(value == null ? "" : value); }
+    public void setScopeText(String value) {
+        scope.setText(value == null || value.isBlank() ? "설정된 범위 없음"
+                : value.strip().replace("\r", "").replace("\n", " · "));
+    }
 
     public void render(Pipeline.Result result) {
-        long human = result.records.stream().filter(record -> record.source == Source.HUMAN).count();
-        long scanner = result.records.stream().filter(record -> record.source == Source.SCANNER).count();
-        long llm = result.records.stream().filter(record -> record.source == Source.LLM).count();
-        SwingUtilities.invokeLater(() -> collection.setText("수집 " + result.records.size() + "건 · 분석 "
-                + result.coverageRecords.size() + " · 기본 숨김 " + result.excludedCount + " · 검토 "
-                + result.reviewCount + " · HUMAN "
-                + human + " · SCANNER " + scanner + " · LLM " + llm + " · 후보 "
-                + result.analysis.findings().size() + " · 갭 " + result.analysis.gaps().size()));
+        int human = 0, scanner = 0, llm = 0;
+        for (var record : result.records) {
+            switch (record.source) {
+                case HUMAN -> human++;
+                case SCANNER -> scanner++;
+                case LLM -> llm++;
+                default -> { }
+            }
+        }
+        String summary = "수집 " + result.records.size() + "건 · HUMAN " + human
+                + " · SCANNER " + scanner + " · LLM " + llm;
+        SwingUtilities.invokeLater(() -> collection.setText(summary));
     }
 
     private JPanel header() {
-        JPanel panel = new JPanel(new BorderLayout(12, 6));
-        JLabel title = new JLabel("FlowScope · Burp Traffic Control");
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 21f));
-        JLabel detail = new JLabel("그래프·매트릭스·요청/응답 분석은 동일한 로컬 Web UI에서 제공합니다: " + webUrl);
-        JPanel labels = new JPanel(new GridLayout(2, 1, 0, 4));
-        labels.add(title);
-        labels.add(detail);
-        panel.add(labels, BorderLayout.CENTER);
+        JPanel panel = new JPanel(new BorderLayout(0, 16));
+        panel.setAlignmentX(LEFT_ALIGNMENT);
+        JLabel title = new JLabel("FlowScope");
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 20f));
+        panel.add(title, BorderLayout.NORTH);
+        JPanel launch = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         JButton open = new JButton("FlowScope Web UI 열기");
         open.setName("web.open");
+        open.setFont(open.getFont().deriveFont(Font.BOLD, 14f));
+        open.setBackground(new Color(0xc64a17));
+        open.setForeground(Color.WHITE);
+        open.setContentAreaFilled(false);
+        open.setOpaque(true);
+        open.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(open.getBackground()),
+                BorderFactory.createEmptyBorder(8, 14, 8, 14)));
         open.addActionListener(ignored -> openWeb());
-        panel.add(open, BorderLayout.EAST);
+        launch.add(open);
+        launch.add(Box.createHorizontalStrut(16));
+        JLabel address = new JLabel(webUrl);
+        address.setName("web.address");
+        address.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
+        launch.add(address);
+        launch.add(Box.createHorizontalStrut(12));
+        JButton copy = button("주소 복사", this::copyWebAddress);
+        copy.setName("web.copy");
+        copy.setContentAreaFilled(false);
+        copy.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
+        launch.add(copy);
+        panel.add(launch, BorderLayout.CENTER);
+        webStatus.setName("web.status");
+        webStatus.setVisible(false);
+        panel.add(webStatus, BorderLayout.SOUTH);
         return panel;
     }
 
-    private JPanel content(String portMapping) {
+    private JPanel projectTools() {
         JPanel root = new JPanel(new BorderLayout(0, 12));
-        JPanel settings = new JPanel(new BorderLayout(8, 8));
-        settings.setBorder(BorderFactory.createTitledBorder("진단 범위 · 세 소스 연결"));
-        scope.setLineWrap(true);
-        scope.setWrapStyleWord(false);
-        scope.setName("scope.input");
-        settings.add(new JScrollPane(scope), BorderLayout.CENTER);
-        JLabel help = new JLabel("한 줄에 하나의 http(s)://host[:port]/path-prefix · 빈 범위는 대상 요청·수집 차단 · 포트 분류: " + portMapping);
-        settings.add(help, BorderLayout.NORTH);
-        JButton apply = new JButton("범위 적용");
-        apply.setName("scope.apply");
-        apply.addActionListener(ignored -> actions.updateScope(scope.getText()));
-        settings.add(apply, BorderLayout.EAST);
-
-        JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        actionsPanel.setBorder(BorderFactory.createTitledBorder("프로젝트"));
-        actionsPanel.add(button("Proxy History 가져오기", actions::importProxyHistory));
-        actionsPanel.add(button("샘플 프로젝트", actions::loadSample));
-        actionsPanel.add(button("프로젝트 열기", this::chooseLoad));
-        actionsPanel.add(button("로컬 DB 저장·연결", this::chooseSave));
-        actionsPanel.add(button("JSON 내보내기", this::chooseJsonExport));
-        actionsPanel.add(button("새 트래픽 진단 시작", this::confirmNewProject));
-        root.add(settings, BorderLayout.NORTH);
-        root.add(actionsPanel, BorderLayout.CENTER);
+        root.setAlignmentX(LEFT_ALIGNMENT);
+        JPanel details = new JPanel();
+        details.setName("project.tools");
+        details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
+        details.setVisible(false);
+        JLabel note = new JLabel("새 프로젝트와 범위 설정은 Web UI에서 합니다.");
+        note.setAlignmentX(LEFT_ALIGNMENT);
+        details.add(note);
+        details.add(Box.createVerticalStrut(12));
+        JPanel files = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        files.setAlignmentX(LEFT_ALIGNMENT);
+        files.add(button("프로젝트 열기", this::chooseLoad));
+        files.add(Box.createHorizontalStrut(8));
+        files.add(button("로컬 DB 저장·연결", this::chooseSave));
+        files.add(Box.createHorizontalStrut(8));
+        files.add(button("JSON 내보내기", this::chooseJsonExport));
+        details.add(files);
+        details.add(Box.createVerticalStrut(8));
+        JPanel data = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        data.setAlignmentX(LEFT_ALIGNMENT);
+        data.add(button("Proxy History 가져오기", actions::importProxyHistory));
+        data.add(Box.createHorizontalStrut(8));
+        data.add(button("샘플 프로젝트", actions::loadSample));
+        details.add(data);
+        details.add(Box.createVerticalStrut(20));
+        scope.setName("scope.summary");
+        scope.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
+        JPanel currentScope = new JPanel(new BorderLayout(12, 0));
+        currentScope.setAlignmentX(LEFT_ALIGNMENT);
+        JLabel scopeLabel = new JLabel("현재 범위");
+        scopeLabel.setPreferredSize(new Dimension(80, scopeLabel.getPreferredSize().height));
+        currentScope.add(scopeLabel, BorderLayout.WEST);
+        currentScope.add(scope, BorderLayout.CENTER);
+        details.add(currentScope);
+        collection.setName("collection.summary");
+        collection.setAlignmentX(LEFT_ALIGNMENT);
+        details.add(Box.createVerticalStrut(12));
+        details.add(collection);
+        JToggleButton toggle = new JToggleButton("프로젝트 도구", UIManager.getIcon("Tree.collapsedIcon"));
+        toggle.setName("project.tools.toggle");
+        toggle.setContentAreaFilled(false);
+        toggle.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
+        toggle.getAccessibleContext().setAccessibleDescription("파일 작업과 범위·수집 요약을 펼치거나 접습니다.");
+        toggle.addActionListener(ignored -> {
+            details.setVisible(toggle.isSelected());
+            toggle.setIcon(UIManager.getIcon(toggle.isSelected() ? "Tree.expandedIcon" : "Tree.collapsedIcon"));
+            revalidate();
+            repaint();
+        });
+        JPanel toggleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        toggleRow.add(toggle);
+        root.add(toggleRow, BorderLayout.NORTH);
+        root.add(details, BorderLayout.CENTER);
         return root;
     }
 
@@ -148,25 +210,29 @@ public final class FlowScopeControlTab extends JPanel {
         return chooser;
     }
 
-    private void confirmNewProject() {
-        if (scope.getText().isBlank()) {
-            JOptionPane.showMessageDialog(this, "새 진단의 exact scope를 먼저 입력하세요.",
-                    "FlowScope", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        if (JOptionPane.showConfirmDialog(this,
-                "현재 진단을 로컬 프로젝트 DB에 보존하고 새 진단을 시작할까요?\n프로젝트명은 scope host로 자동 생성됩니다.",
-                "FlowScope", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
-            actions.startProject("", scope.getText());
+    private void copyWebAddress() {
+        try {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(webUrl), null);
+            showWebStatus("Web UI 주소를 복사했습니다.");
+        } catch (RuntimeException error) {
+            showWebStatus("주소를 복사하지 못했습니다. 위 주소를 브라우저 주소창에 입력해 주세요.");
         }
     }
 
+    private void showWebStatus(String message) {
+        webStatus.setText(message);
+        webStatus.setVisible(true);
+        revalidate();
+        repaint();
+    }
+
     private void openWeb() {
+        webStatus.setVisible(false);
         try {
             if (!Desktop.isDesktopSupported()) throw new IllegalStateException("Desktop browse unavailable");
             Desktop.getDesktop().browse(URI.create(webUrl));
         } catch (Exception error) {
-            JOptionPane.showMessageDialog(this, webUrl, "브라우저에서 이 주소를 여세요", JOptionPane.INFORMATION_MESSAGE);
+            showWebStatus("브라우저를 열지 못했습니다. 주소를 복사해 브라우저 주소창에 붙여넣어 주세요.");
         }
     }
 
