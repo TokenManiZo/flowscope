@@ -7,7 +7,10 @@ import io.flowscope.core.Source;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
 import javax.swing.*;
+import javax.swing.plaf.ComponentUI;
+import javax.swing.plaf.basic.BasicButtonUI;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -91,6 +94,75 @@ final class FlowScopeControlTabTest {
             assertEquals("수집 4건 · HUMAN 1 · SCANNER 1 · LLM 1",
                     ((JLabel) named(tab[0], "collection.summary")).getText());
         });
+    }
+
+    @Test void hostThemeKeepsPrimaryAndSelectedToolsReadableAfterUiRefresh() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            Object buttonUi = UIManager.get("ButtonUI");
+            Object toggleUi = UIManager.get("ToggleButtonUI");
+            Object labelColor = UIManager.get("Label.foreground");
+            try {
+                UIManager.put("ButtonUI", TransparentHostButtonUI.class.getName());
+                UIManager.put("ToggleButtonUI", TransparentHostButtonUI.class.getName());
+                for (Color surface : new Color[] {Color.WHITE, new Color(0x292929)}) {
+                    Color text = surface.equals(Color.WHITE) ? Color.BLACK : Color.WHITE;
+                    UIManager.put("Label.foreground", text);
+                    FlowScopeControlTab tab = tab(new TestActions());
+                    JButton open = (JButton) named(tab, "web.open");
+                    JToggleButton toggle = (JToggleButton) named(tab, "project.tools.toggle");
+                    JButton copy = (JButton) named(tab, "web.copy");
+                    toggle.setSelected(true);
+                    SwingUtilities.updateComponentTreeUI(tab);
+                    for (AbstractButton button : new AbstractButton[] {open, toggle, copy}) {
+                        button.setSize(button.getPreferredSize());
+                        for (int state = 0; state < 3; state++) {
+                            boolean pressed = state == 2;
+                            button.getModel().setRollover(state > 0);
+                            button.getModel().setArmed(pressed);
+                            button.getModel().setPressed(pressed);
+                            BufferedImage image = new BufferedImage(button.getWidth(), button.getHeight(), BufferedImage.TYPE_INT_RGB);
+                            Graphics2D graphics = image.createGraphics();
+                            graphics.setColor(surface);
+                            graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+                            button.paint(graphics);
+                            graphics.dispose();
+                            if (button == open) {
+                                Color fill = pressed ? new Color(0xc64a17).darker() : new Color(0xc64a17);
+                                assertEquals(fill.getRGB(), image.getRGB(4, 4), "primary background must be painted");
+                            }
+                            Color foreground = button == open ? Color.WHITE : text;
+                            assertEquals(foreground, button.getForeground(), "host interaction colors must not hide text");
+                            assertTrue(hasPixel(image, foreground), "button text must contrast with its surface");
+                        }
+                    }
+                }
+            } finally {
+                UIManager.put("ButtonUI", buttonUi);
+                UIManager.put("ToggleButtonUI", toggleUi);
+                UIManager.put("Label.foreground", labelColor);
+            }
+        });
+    }
+
+    public static final class TransparentHostButtonUI extends BasicButtonUI {
+        public static ComponentUI createUI(JComponent component) { return new TransparentHostButtonUI(); }
+        @Override public void update(Graphics graphics, JComponent component) {
+            if (((AbstractButton) component).isContentAreaFilled()) super.update(graphics, component);
+            else paint(graphics, component);
+        }
+        @Override protected void paintText(Graphics graphics, AbstractButton button, Rectangle textRect, String text) {
+            if (button.isSelected() || button.getModel().isRollover()) button.setForeground(Color.WHITE);
+            super.paintText(graphics, button, textRect, text);
+        }
+    }
+
+    private static boolean hasPixel(BufferedImage image, Color color) {
+        for (int y = 6; y < image.getHeight() - 6; y++) {
+            for (int x = 6; x < image.getWidth() - 6; x++) {
+                if (image.getRGB(x, y) == color.getRGB()) return true;
+            }
+        }
+        return false;
     }
 
     @Test void unavailableDesktopShowsInlineRecoveryWithoutOpeningADialog() throws Exception {
