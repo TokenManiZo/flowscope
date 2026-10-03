@@ -162,6 +162,49 @@ describe("unified inspection hub", () => {
     expect(screen.getByRole("button", { name: "작업 피드 펼치기" })).toBeVisible()
   })
 
+  it.each(["human", "scanner"])("enlarges %s records in place, preserves search and scroll, and leaves traffic untouched", async (source) => {
+    const user = userEvent.setup()
+    const { fetchStub } = renderInspection({ humanEvents: [
+      { ...humanEvent, source }, { ...humanEvent, source, eventId: "profile-event", path: "/api/profile" },
+    ] })
+    if (source === "scanner") await user.click(await screen.findByRole("tab", { name: "2 · ZAP 스캔" }))
+    const search = await screen.findByRole("textbox", { name: source === "human" ? "HUMAN 작업 피드 검색" : "ZAP 작업 피드 검색" })
+    await user.type(search, "profile")
+    const list = screen.getByLabelText("기록된 요청 목록")
+    list.scrollTop = 35
+    const workspace = screen.getByLabelText("점검 시작 작업 영역")
+    workspace.scrollTop = 90
+    await user.click(screen.getByRole("button", { name: "크게 보기" }))
+    expect(screen.getByLabelText("점검 기록 크게 보기")).toBeVisible()
+    expect(search).toHaveValue("profile")
+    expect(screen.getByLabelText("기록된 요청 목록")).toBe(list)
+    expect(list.scrollTop).toBe(35)
+    expect(screen.queryByRole("tab", { name: "1 · 직접 둘러보기" })).not.toBeInTheDocument()
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+    expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
+    await user.keyboard("{Escape}")
+    expect(screen.getByRole("button", { name: "크게 보기" })).toHaveFocus()
+    expect(workspace.scrollTop).toBe(90)
+    expect(search).toHaveValue("profile")
+    expect(screen.getByRole("tab", { name: "1 · 직접 둘러보기" })).toBeVisible()
+    const resize = screen.getByRole("separator", { name: "기록된 요청 높이 조절" })
+    vi.spyOn(list, "clientHeight", "get").mockReturnValue(240)
+    resize.focus()
+    await user.keyboard("{ArrowDown}{ArrowDown}")
+    expect(list).toHaveStyle({ height: "320px" })
+    await user.keyboard("{ArrowDown}")
+    expect(list).toHaveStyle({ height: "360px" })
+    await user.click(screen.getByRole("button", { name: "크게 보기" }))
+    await user.click(screen.getByRole("button", { name: /POST \/api\/profile.*원문 보기/ }))
+    expect(await screen.findByRole("dialog")).toBeVisible()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(screen.getByRole("button", { name: "원래 크기" })).toBeVisible()
+    act(() => window.dispatchEvent(new Event(DATASET_REPLACING)))
+    expect(screen.getByRole("button", { name: "크게 보기" })).toBeVisible()
+    expect(list.style.height).toBe("")
+  })
+
   it("loads masked raw data only on row click and clears it when closed or the dataset changes", async () => {
     const user = userEvent.setup()
     const maskedRequest = "POST /api/orders HTTP/1.1\nAuthorization: ***MASKED***"
