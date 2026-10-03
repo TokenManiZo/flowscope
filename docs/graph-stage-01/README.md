@@ -1,8 +1,8 @@
 # 1단계: 배치 유지와 프로젝트 저장
 
 - 기준: 업데이트된 `QA_TEMP` (`8357e20`, 2026-10-03 원격 조회 기준). 미커밋 구현까지 포함한 임시 병합으로 충돌이 없음을 확인한 뒤 목업 커밋을 rebase하고 구현을 복원했다.
-- 브랜치: `FEAT/graph-stage-01`. 원본 로컬 저장소와 브랜치를 공유하는 별도 worktree에서 작업한다. `codex/` 접두사는 사용하지 않는다.
-- 작업 공간: `/Users/gwangwon/.codex/worktrees/graph-stage-01-mockup/flowscope`.
+- 브랜치: `FEAT/graph-stage-01`. 현재 원본 프로젝트 폴더에서 사용한다. 이전 별도 worktree는 detached HEAD로 전환해 브랜치 점유를 해제했다. `codex/` 접두사는 사용하지 않는다.
+- 작업 공간: `/Users/gwangwon/development/flow/flowscope`. 최신 Burp 시작 화면·테마 수정과 그래프 1단계 작업을 합쳤으며, 원본 폴더의 미커밋 변경은 유지했다.
 - 상태: **1단계 목업 승인 후 구현. 사용자 빌드·테스트 대기.** 후속 단계 개발은 진행하지 않았다.
 - UI 대상: 데스크톱. 모바일은 이번 작업에서 제외한다.
 
@@ -42,7 +42,7 @@ JSON 프로젝트 schema는 7이며 1~6을 읽는다. SQLite 테이블 schema는
 node frontend/node_modules/vite/bin/vite.js --config docs/graph-stage-01/vite.config.mjs --configLoader native
 ```
 
-이 worktree는 이미 설치된 프런트엔드 의존성을 symlink로 연결했다. 의존성·Vite 캐시·로컬 graphify 출력은 커밋하지 않는다.
+이전 별도 worktree의 의존성 symlink는 개발 편의용이다. 원본 폴더에서 제품 빌드할 때는 기존 Maven 절차로 의존성을 구성한다. 의존성·Vite 캐시·로컬 graphify 출력은 커밋하지 않는다.
 
 ## 사용자가 진행할 검증
 
@@ -50,7 +50,7 @@ node frontend/node_modules/vite/bin/vite.js --config docs/graph-stage-01/vite.co
 
 추가·수정한 회귀 테스트는 좌표 겹침 복원, 신규 노드 배치, 숨긴 노드 보존, 보기 구분, 정렬 시 크기·viewport 유지, 전송 직렬화, stale revision 거부, 전환 전 flush, JSON·SQLite 호환과 metadata checkpoint를 다룬다. Standalone의 프로젝트 전환·재열기·초기화도 테스트 코드에 포함했다. 테스트 통과 여부는 미확인이다.
 
-1. 이 worktree 루트에서 `mvn clean verify`를 실행한다.
+1. 원본 프로젝트 루트(`/Users/gwangwon/development/flow/flowscope`)에서 `mvn clean verify`를 실행한다.
 2. 제품에서 노드를 일부 겹쳐 이동·크기 변경한 뒤 계정 화면 왕복, 계층 왕복, 목록 왕복을 확인한다.
 3. 레인 제목 정렬과 필터 전체 정렬이 크기·viewport를 유지하는지 확인한다.
 4. snapshot 갱신·신규 노드·자동 묶음 접힘·펼침에서 기존 모델 좌표를 비교한다.
