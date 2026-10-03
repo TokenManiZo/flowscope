@@ -47,12 +47,12 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 
-/** 사이드바 독립 메뉴: 점검 흐름 순서의 핵심 화면 5개. */
-export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "verification", "matrix"] as const satisfies readonly AppRoute[]
+/** 사이드바 독립 메뉴: 점검 흐름 순서의 핵심 화면 4개. */
+export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "matrix"] as const satisfies readonly AppRoute[]
 
 /** 핵심 외 화면은 "부가 기능" 드롭다운으로 묶는다. 대시보드는 Home 본문으로, 흐름 순서(#sequence)는 주소로만 연다. */
 export const navigationGroups = [
-  { id: "extras", label: "부가 기능", icon: LayoutGrid, defaultRoute: "surface", routes: ["surface", "scenarios", "evidence", "runs"] },
+  { id: "extras", label: "부가 기능", icon: LayoutGrid, defaultRoute: "surface", routes: ["surface", "verification", "evidence"] },
 ] as const satisfies readonly NavigationGroup[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))

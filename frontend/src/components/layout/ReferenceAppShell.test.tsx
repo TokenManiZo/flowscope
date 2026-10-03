@@ -84,11 +84,11 @@ it("keeps core screens as direct links and groups the rest under 부가 기능",
   render(<ReferenceAppShell route="inspection"><p>content</p></ReferenceAppShell>)
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
 
-  expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#verification", "#matrix"])
+  expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#matrix"])
   expect(within(nav).queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
   const extras = within(nav).getByRole("button", { name: "부가 기능" })
   expect(extras).toHaveAttribute("aria-expanded", "false")
   await user.click(extras)
   expect(extras).toHaveAttribute("aria-expanded", "true")
-  expect(within(nav).getAllByRole("link").slice(5).map((link) => link.getAttribute("href"))).toEqual(["#surface", "#scenarios", "#evidence", "#runs"])
+  expect(within(nav).getAllByRole("link").slice(4).map((link) => link.getAttribute("href"))).toEqual(["#surface", "#verification", "#evidence"])
 })
