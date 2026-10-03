@@ -36,3 +36,15 @@ Fetch 표준의 keepalive 제한은 같은 fetch group의 진행 중 본문을 �
 viewport 전용 테스트 두 곳은 decoded 서버 상태의 positions/sizes 참조를 보존하도록 `current.views.site`를 펼쳐 사용한다. Java API 테스트에 누락된 ObjectNode import를 추가한다. UTF-8 크기 테스트는 decoded JSON이 2MiB를 초과하되 encoded form은 4MiB 미만인 입력으로 바꾸고, 그래프 전용 오류 메시지까지 검사해 일반 form 제한으로 인한 413과 구분한다.
 
 사용자 전달 결과는 원본 frontend 183/185 통과·Java testCompile 실패, 임시 테스트 수정 후 frontend 645건 통과, 임시 requiredRaw 수정까지 포함한 targeted Java 64건 통과다. 임시 수정은 원복되었으므로 이 보완 커밋의 검증 결과로 간주하지 않는다. 이번 보완도 빌드·테스트·패키징·실제 Burp 검증을 실행하지 않고 사용자에게 맡긴다.
+
+## PR #42 기록 UI 통합 검증 — 2026-10-03
+
+FEAT/graph-stage-01의2178b7d에 FIX/LLM_RECORD_VIEW의3761395를 병합했다. 그래프 보완f0e0060/2178b7d와 모델 배치·개별 도움말·HUMAN/ZAP/LLM 기록 확대 및 높이 조절을 기존 PR #42에서 함께 검토하기 위한 통합이다. README는 자동 병합됐고 코드 충돌이 없다. 원본 체크아웃의 미커밋 그래프 검색2단계 작업은 포함하지 않았다.
+
+통합된 소스로 새로 수행한 검사:
+- TypeScript `tsc -b frontend --pretty false`: 통과.
+- 기존 프런트엔드 전체 Vitest:81파일650건, 실패0.
+- JDK21에서 `mvn -o compiler:compile compiler:testCompile surefire:test -Dtest=GraphWorkspacePersistenceTest,FlowScopeWebServerTest,StandaloneTest,FlowScopeControlTabTest`:65건, 실패/오류/skip0. HTTP JSON 절단 회귀·2MiB 그래프 검사·긴 키·JSON/SQLite 보존·metadata checkpoint를 포함한다.
+- `git diff --cached --check`: 통과. `graphify update .`: AST 갱신 완료.
+
+`mvn verify`, clean 전체 lifecycle, JAR 패키징, 통합 상태의 실제 브라우저 종료·Burp/ZAP/Codex 운영 검증은 실행하지 않았다. 개별 브랜치의 이전 빌드·데스크톱 검사 결과를 이 통합 검증으로 인용하지 않는다.
