@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent, readGroupBands, readMinimap, routeEdges, separateLaneNodes, type RouteNode } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphWheelIntent, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
@@ -332,7 +332,7 @@ it("keeps node coordinates when the graph container is resized", () => {
   expect(modelPosition).toEqual({ x: 200, y: 55 })
 })
 
-it("pans the selected node back into view when the canvas narrows, without changing zoom", () => {
+it("preserves viewport and node coordinates when the detail panel narrows the canvas", () => {
   const extra = node as unknown as { renderedBoundingBox?: () => { x1: number; x2: number; y1: number; y2: number } }
   const sized = core as unknown as { width?: () => number; height?: () => number }
   extra.renderedBoundingBox = () => ({ x1: 820, x2: 1040, y1: 100, y2: 160 })
@@ -342,9 +342,13 @@ it("pans the selected node back into view when the canvas narrows, without chang
     render(<CytoscapeGraph projection={projection} selectedElementId="identity:alice" locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
     runScheduledFrame()
     vi.mocked(core.panBy).mockClear()
+    vi.mocked(node.position).mockClear()
+    const zoom = currentZoom
     settleResize()
     runScheduledFrame()
-    expect(core.panBy).toHaveBeenCalledWith({ x: 600 - 24 - 1040, y: 0 })
+    expect(core.panBy).not.toHaveBeenCalled()
+    expect(node.position.mock.calls.every(call => call.length === 0)).toBe(true)
+    expect(currentZoom).toBe(zoom)
   } finally {
     delete extra.renderedBoundingBox
     delete sized.width
@@ -728,25 +732,6 @@ it("gives selected canvas edges priority over candidate navigation and matches c
   render(tree(candidate.id))
   elements = core.add.mock.calls.at(-1)?.[0] as Array<{ data: { id: string; focused: string } }>
   for (const edge of hierarchy.edges) expect(elements.find(item => item.data.id === edge.id)?.data.focused).toBe(edge.relation === "candidate" && edge.selection.resource === "orders:404" ? "yes" : "no")
-})
-
-it("pushes overlapping nodes in one lane apart by their real height while keeping order", () => {
-  const fake = (id: string, y: number, height: number) => {
-    let position = { x: 100, y }
-    return { id: () => id, data: (key: string) => key === "height" ? height : undefined, position: (next?: { x: number; y: number }) => { if (next) position = next; return position } }
-  }
-  // 캔버스 높이로 간격을 나누던 배치처럼 노드가 서로 겹쳐 있는 상태.
-  const nodes = [fake("b", 110, 95), fake("a", 100, 67), fake("c", 115, 95)]
-  separateLaneNodes(nodes as unknown as Parameters<typeof separateLaneNodes>[0])
-  const [b, a, c] = nodes.map(node => node.position().y)
-  expect(a).toBe(100)
-  // a 아래 끝(100+33.5)부터 20 간격 뒤에 b(높이 95)의 위 끝이 온다.
-  expect(b).toBeCloseTo(100 + 67 / 2 + 20 + 95 / 2)
-  expect(c).toBeCloseTo(b + 95 / 2 + 20 + 95 / 2)
-  // 이미 충분히 떨어진 노드는 움직이지 않는다.
-  const apart = [fake("x", 0, 60), fake("y", 500, 60)]
-  separateLaneNodes(apart as unknown as Parameters<typeof separateLaneNodes>[0])
-  expect(apart.map(node => node.position().y)).toEqual([0, 500])
 })
 
 it("draws every edge as a rightward orthogonal line with slightly rounded corners", () => {

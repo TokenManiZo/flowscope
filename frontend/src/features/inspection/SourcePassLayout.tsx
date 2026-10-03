@@ -1,7 +1,8 @@
-import type { ReactNode } from "react"
+import { useRef, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { RecordResizeHandle, useRecordView, type RecordView } from "./RecordView"
 
 export interface SourceStatusTile {
   label: string
@@ -26,6 +27,8 @@ export interface SourcePassLayoutProps {
   /** 소스 이름(HUMAN·ZAP·LLM). aria-label 접두어로만 쓴다. */
   label: string
   title: string
+  titleControl?: ReactNode
+  onRecordFocusChange?(focused: boolean): void
   /** 이 단계가 무엇을 하는지 한 문장. */
   description?: string
   /** 실행 중일 때만 넘긴다. 비어 있으면 타일 줄을 그리지 않는다. */
@@ -39,7 +42,7 @@ export interface SourcePassLayoutProps {
   emptyHint: string
   feedBadge?: ReactNode
   feedFooter?: ReactNode
-  feedContent?: ReactNode
+  feedContent?: ReactNode | ((view: RecordView) => ReactNode)
   notices?: ReactNode
 }
 
@@ -48,17 +51,20 @@ export interface SourcePassLayoutProps {
  * 카드 안 모든 줄은 같은 왼쪽 선과 16px 간격을 쓴다.
  */
 export function SourcePassLayout({
-  label, title, description, statusTiles = [], control, aside,
+  label, title, titleControl, onRecordFocusChange, description, statusTiles = [], control, aside,
   feedItems, feedTitle, feedDescription, emptyHint, feedBadge, feedFooter, feedContent, notices,
 }: SourcePassLayoutProps) {
+  const root = useRef<HTMLElement>(null)
+  const view = useRecordView(root, onRecordFocusChange)
+  const resizable = typeof feedContent === "function"
   return (
-    <section className="grid gap-4" aria-label={`${label} 실행 영역`}>
+    <section ref={root} onKeyDown={view.onKeyDown} className={view.focused ? "flex h-full min-h-0 flex-col gap-3" : "grid gap-2"} aria-label={`${label} 실행 영역`}>
       {notices}
 
-      <div className={aside ? "grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" : "grid gap-4"}>
+      <div hidden={view.focused} className={view.focused ? "hidden" : aside ? "grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" : "grid gap-4"}>
         <Card className="gap-0 py-0">
           <CardContent className="grid gap-4 p-5">
-            <div><h2 className="text-base font-semibold">{title}</h2>{description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}</div>
+            <div className="flex items-start justify-between gap-6"><div><h2 className="text-base font-semibold">{title}</h2>{description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}</div>{titleControl}</div>
             {statusTiles.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`${label} 실행 상태`} role="group">
               {statusTiles.map((tile) => (
                 <div key={tile.label} className="rounded-lg bg-muted px-3 py-2.5">
@@ -73,7 +79,8 @@ export function SourcePassLayout({
         {aside}
       </div>
 
-      {feedContent ?? <Card className="flex min-h-[20rem] flex-col overflow-hidden">
+      {resizable && !view.focused && <RecordResizeHandle label={feedTitle} height={view.height} onHeightChange={view.setHeight} />}
+      {(typeof feedContent === "function" ? feedContent(view) : feedContent) ?? <Card className="flex min-h-[20rem] flex-col overflow-hidden">
         <CardHeader className="border-b">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>

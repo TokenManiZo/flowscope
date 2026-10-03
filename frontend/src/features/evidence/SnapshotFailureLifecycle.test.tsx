@@ -8,6 +8,7 @@ import { actualEvent, demoEndpoint, surfaceSnapshot } from "@/features/parameter
 import { SurfacePage } from "@/features/surface/SurfacePage"
 import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
 import { EvidencePage } from "./EvidencePage"
+vi.mock("@/features/graph/useGraphWorkspace", async () => ({ useGraphWorkspace: (await import("@/test/graphWorkspace")).useMemoryGraphWorkspace }))
 
 vi.mock("@/features/graph/CytoscapeGraph", () => ({
   CytoscapeGraph: ({ onSelect }: { onSelect(selection: GraphSelection, id: string): void }) => <button onClick={() => onSelect({ operation: "https://demo.test:443 PATCH /orders/{id}", resource: "https://demo.test:443 orders:101", identity: "USER A", source: "human", evidenceIds: ["actual-a"] }, "selected-evidence")}>캔버스 관측 기록 선택</button>,
