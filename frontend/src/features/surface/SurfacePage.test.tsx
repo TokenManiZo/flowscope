@@ -45,14 +45,14 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
 })
 
-it("recomputes source deltas and exposes controlled-request failure quality without creating 관측 기록", async () => {
+it("recomputes source deltas without mixing run summaries into the API sheet", async () => {
   ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, runExecutions: [{ source: "LLM", runId: "llm-failed", attempted: 3, responses: 0, failures: 3, quality: "ALL_FAILED", outcomes: { TLS_FAILURE: 3 } }], surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "GET", pathTemplate: "/api/orders/{id}" }, observedSources: ["HUMAN", "LLM"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }, { evidenceId: "ev-llm", source: "LLM", runId: "llm-1", identity: "user-a", status: 404 }], declarations: [{ evidenceId: "ev-js", source: "HUMAN", runId: "human-1", type: "JAVASCRIPT", adapter: "fetch", reason: "static call" }], deltaState: "MULTI_SOURCE_OBSERVED", parameters: [] }] } }
 
   render(<AppProviders><SurfacePage /></AppProviders>)
 
   expect(screen.getByTitle("2개 출처 관측")).toBeVisible()
-  expect(screen.getByText(/LLM 실행 · ALL_FAILED/)).toBeVisible()
-  expect(screen.getByText(/시도 3 · 응답 0 · 실패 3 · TLS_FAILURE 3/)).toBeVisible()
+  expect(screen.queryByText(/LLM 실행 · ALL_FAILED/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/시도 3 · 응답 0 · 실패 3 · TLS_FAILURE 3/)).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "필터" }))
   await userEvent.setup().click(screen.getByRole("checkbox", { name: "L · LLM" }))
   expect(screen.getByTitle("1개 출처 관측")).toBeVisible()
@@ -80,7 +80,8 @@ it("filters LLM-only declarations and probes without turning them into observati
   render(<AppProviders><SurfacePage /></AppProviders>)
 
   expect(screen.getByText("/api/declared")).toBeVisible()
-  expect(screen.getByText("산출물에서 발견 · 아직 요청 없음")).toBeVisible()
+  expect(screen.queryByText("산출물에서 발견 · 아직 요청 없음")).not.toBeInTheDocument()
+  expect(screen.getByText("/api/declared").closest("tr")).toHaveTextContent("—")
   await userEvent.click(screen.getByRole("button", { name: "집계" }))
   expect(screen.getByText("OPTIONS probe").parentElement).toHaveTextContent("1")
   await userEvent.keyboard("{Escape}")

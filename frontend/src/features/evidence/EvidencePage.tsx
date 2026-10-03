@@ -105,9 +105,10 @@ export function EvidencePage() {
 
   const page = evidence.data
   const records = selectedEvent && <section aria-label="작업 관측 기록 페이지" className="grid min-w-0 gap-3 border-t pt-4">
-    <h2 className="text-sm font-semibold">요청 · 응답 <span className="font-normal text-muted-foreground">마스킹됨 · 같은 API {page?.total ?? "…"}건</span></h2>
-    {evidence.isLoading && <p className="text-sm text-muted-foreground">불러오는 중…</p>}
-    {evidence.isError && <p role="alert" className="text-sm text-destructive">{evidence.error.message}</p>}
+    <h2 className="text-sm font-semibold">요청 · 응답 <span className="ml-1 text-xs font-normal text-muted-foreground">마스킹됨{page ? ` · 같은 API ${page.total}건` : ""}</span></h2>
+    {!selectedEvent.op && <p className="text-xs text-muted-foreground">선택 기록의 API 좌표가 없습니다.</p>}
+    {selectedEvent.op && evidence.isLoading && <p className="text-xs text-muted-foreground">불러오는 중…</p>}
+    {evidence.isError && <div className="flex items-start justify-between gap-2"><p role="alert" className="min-w-0 break-words text-xs text-destructive">{evidence.error.message}</p><Button variant="outline" size="sm" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}>다시 시도</Button></div>}
     {page && page.records.length === 0 && <p className="text-sm text-muted-foreground">이 페이지에 관측 기록이 없습니다.</p>}
     {page?.records.slice().sort((a, b) => Number(b.eventId === selectedEvent.eventId) - Number(a.eventId === selectedEvent.eventId)).map((record) => <details key={`${datasetRevision}:${page.offset}:${record.eventId}`} open={record.eventId === selectedEvent.eventId} className="min-w-0 rounded-md border p-3">
       <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, record.eventId), 160)}</summary>
@@ -151,7 +152,7 @@ export function EvidencePage() {
                   <TableCell className="font-mono text-muted-foreground">{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)}</TableCell>
                   <TableCell><Badge variant="outline" className={sourceTone[event.source]}>{sourceLabel(event.source)}</Badge></TableCell>
                   <TableCell className="text-center"><MethodBadge method={event.method} /></TableCell>
-                  <TableCell className="max-w-96 whitespace-normal"><button type="button" disabled={snapshot.isError} aria-label={`${event.method} ${boundedText(event.path, 120)} 상세 보기`} className="text-left font-mono text-sm hover:underline disabled:cursor-not-allowed" onClick={(click) => { click.stopPropagation(); selectEvent(event) }}>{boundedText(event.path, 120)}</button></TableCell>
+                  <TableCell className="max-w-96 whitespace-normal"><button type="button" disabled={snapshot.isError} aria-label={`${event.method} ${boundedText(event.path, 120)} 상세 보기`} className="min-w-0 break-all text-left font-mono text-sm hover:underline disabled:cursor-not-allowed" onClick={(click) => { click.stopPropagation(); selectEvent(event) }}>{boundedText(event.path, 120)}</button></TableCell>
                   <TableCell><HttpStatusBadge status={event.status} /></TableCell>
                   <TableCell className="text-sm">{boundedText(snapshot.data?.accounts.find((account) => account.id === (event.laneAccountId?.trim() || event.idn))?.label ?? (event.laneAccountId?.trim() || event.idn), 48)}</TableCell>
                   <TableCell className="max-w-72 whitespace-normal text-sm">{review

@@ -73,7 +73,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   if (kind === "evidence") expect(screen.getAllByText("actual-a").length).toBeGreaterThan(0)
   if (kind === "surface") expect(screen.getAllByText("/orders/{id}").length).toBeGreaterThan(0)
   if (kind.startsWith("graph")) expect(screen.getByRole("button", { name: "현재 세션으로 Repeater", hidden: true })).toBeDisabled()
-  else expect(screen.getByLabelText("필수 역할")).toBeDisabled()
+  else expect(screen.getByLabelText("필수 역할 지정")).toBeDisabled()
   expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(1)
 
   failed = false
