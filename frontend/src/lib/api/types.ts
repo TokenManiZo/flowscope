@@ -627,7 +627,28 @@ export interface AuthorizationReplayResult extends ApiSuccess {
   }
 }
 
+export interface SavedRequestLabEntry {
+  name: string
+  request: string
+  credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+  result: { response: string; status: number; durationMs: number; requestBytes: number; responseBytes: number } | null
+  dirty: boolean
+}
+export interface RequestLabWorkspaceState {
+  datasetRevision: number
+  revision: number
+  persisted: boolean
+  tab: { nextId: number; selectedId: number; entries: Record<string, SavedRequestLabEntry> }
+}
+export interface RequestLabWorkspaceChange extends Partial<SavedRequestLabEntry> {
+  action: "create" | "update" | "delete" | "select"
+  id: number
+  clearResult?: boolean
+  selectedId?: number
+}
+
 export interface RequestLabDraft {
+  workspace?: RequestLabWorkspaceState
   eventId: string
   service: string
   request: string | null

@@ -28,6 +28,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.integration.GraphWorkspace;
+import io.flowscope.integration.RequestLabWorkspace;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapAccountVault;
@@ -68,6 +69,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default GraphWorkspace.State updateGraphWorkspace(long dataset, long revision, GraphWorkspace.Change change) {
             throw new UnsupportedOperationException("graph workspace is unavailable");
+        }
+        default RequestLabWorkspace.State requestLabWorkspace(String evidenceId) {
+            return new RequestLabWorkspace.State(datasetRevision(), 0, false, RequestLabWorkspace.Tab.empty());
+        }
+        default RequestLabWorkspace.State updateRequestLabWorkspace(String evidenceId, long dataset, long revision,
+                                                                    RequestLabWorkspace.Change change) {
+            throw new UnsupportedOperationException("Request Lab 저장을 사용할 수 없습니다.");
         }
         AnalysisConfig config();
         List<LegacyAssessment> assessments();
@@ -301,6 +309,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/replay" -> replay(request);
             case "/api/request-lab" -> requestLab(request, target);
             case "/api/request-lab/credentials" -> requestLabCredentials(request);
+            case "/api/request-lab/workspace" -> requestLabWorkspace(request);
             case "/api/authorization-replay" -> authorizationReplay(request);
             case "/api/clear" -> clear(request);
             case "/api/projects" -> projects(request);
@@ -487,6 +496,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 body.put("reusableSession", draft.reusableSession());
                 body.put("reusableAccountId", draft.reusableAccountId());
                 body.put("message", draft.message());
+                if (!"exclude".equals(form(target.getRawQuery()).get("workspace"))) {
+                    body.set("workspace", json.valueToTree(state.requestLabWorkspace(draft.eventId())));
+                }
                 return json(200, body);
             }
             Map<String, String> values = postForm(request);
@@ -523,6 +535,26 @@ public final class FlowScopeWebServer implements AutoCloseable {
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
             return error(400, error.getMessage());
         }
+    }
+
+    private LoopbackHttpServer.Response requestLabWorkspace(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> values = postForm(request);
+        if (values == null) return invalidForm(request);
+        try {
+            String encoded = requiredRaw(values, "change");
+            if (encoded.length() > 12 * 1024 * 1024) return error(413, "Request Lab 저장 내용이 너무 큽니다.");
+            RequestLabWorkspace.Change change = json.readValue(encoded, RequestLabWorkspace.Change.class);
+            if (change == null) throw new IllegalArgumentException("missing change");
+            RequestLabWorkspace.State saved = state.updateRequestLabWorkspace(required(values, "eventId"),
+                    Long.parseLong(required(values, "datasetRevision")), Long.parseLong(required(values, "revision")), change);
+            ObjectNode body = json.createObjectNode();
+            body.put("datasetRevision", saved.datasetRevision());
+            body.put("revision", saved.revision());
+            body.put("persisted", saved.persisted());
+            return json(200, body);
+        } catch (IllegalStateException error) { return error(409, "저장하지 못했습니다. 프로젝트 연결·다른 창의 변경을 확인하고 다시 열어 주세요."); }
+        catch (UnsupportedOperationException error) { return error(501, "Request Lab 저장을 사용할 수 없습니다."); }
+        catch (IOException | IllegalArgumentException error) { return error(400, "Request Lab 저장 내용이나 크기를 확인해 주세요."); }
     }
 
     private LoopbackHttpServer.Response requestLabCredentials(LoopbackHttpServer.Request request) throws IOException {

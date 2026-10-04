@@ -9,6 +9,7 @@ import { renderWithQueryClient } from "@/test/render"
 import { snapshotFixture } from "@/test/fixtures"
 import type { EventRecord, ManagedSession, Snapshot } from "@/lib/api/types"
 import { createMemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
+import { prepareDatasetReplacement } from "@/lib/security/datasetBoundary"
 
 const secret = "POST /orders HTTP/1.1\nHost: api.example.test\n\nREQUEST-LAB-SECRET"
 const capability = "CAPABILITY-MUST-NOT-LEAK"
@@ -1031,6 +1032,86 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "닫기" }))
     expect(formatted.text).toBe("")
     expect(owner.jsonViews.request).toBeNull()
+  })
+
+  it("restores saved editable names/REQ/latest RES without a live Original and requires fresh credentials", async () => {
+    let revision = 3
+    const savedRequest = "POST /orders HTTP/1.1\nCookie: ***MASKED***\n\n{}"
+    const workspace = { datasetRevision: 7, revision, persisted: true, tab: { nextId: 5, selectedId: 4, entries: {
+      "4": { name: "저장한 주문", request: savedRequest, credentialMode: "ACCOUNT", result: { response: "last-response", status: 200, durationMs: 3, requestBytes: 50, responseBytes: 13 }, dirty: true },
+    } } }
+    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
+      if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
+      if (String(input) === "/api/request-lab/workspace") return Promise.resolve(json({ datasetRevision: 7, revision: ++revision, persisted: true }))
+      if (String(input) === "/api/request-lab" && init?.method === "POST") return Promise.resolve(json({ response: "latest-response", status: 201, durationMs: 2, requestBytes: 10, responseBytes: 15 }))
+      return Promise.resolve(json({ ...requestLabDraft(), rawRequestRetained: false, rawResponseRetained: false, requestEditable: false, workspace }))
+    })
+    vi.stubGlobal("fetch", fetch)
+    const owner = createMemoryOnlyRawState(), onOpenChange = vi.fn(), user = userEvent.setup()
+    const { client } = renderWithQueryClient(<RequestLabDialog open onOpenChange={onOpenChange} event={event} sessions={[activeSession]} rawState={owner} datasetRevision={7} />)
+    await waitFor(() => expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(savedRequest))
+    expect(screen.getByRole("option", { name: "저장한 주문" })).toBeInTheDocument()
+    expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly")
+    expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("last-response")
+    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ANONYMOUS")
+    await waitFor(() => expect(owner.request).not.toContain("Cookie:"))
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    await waitFor(() => expect(owner.response).toBe("latest-response"))
+    await user.click(screen.getByRole("button", { name: "닫기" }))
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    const changes = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab/workspace").map(([, init]) => JSON.parse(new URLSearchParams(String(init?.body)).get("change")!))
+    expect(changes.some(change => change.result?.response === "latest-response")).toBe(true)
+    expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain("latest-response")
+    expect(owner.requests).toHaveLength(0)
+  })
+
+  it("keeps a request visible until delete commits, and preserves it after DB failure", async () => {
+    const pending = deferredResponse()
+    let fail = true
+    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
+      if (String(input) === "/api/request-lab/workspace") {
+        const change = JSON.parse(new URLSearchParams(String(init?.body)).get("change")!)
+        if (change.action === "delete") return fail ? Promise.resolve(json({ success: false, message: "DB locked" }, 409)) : pending.promise
+        return Promise.resolve(json({ datasetRevision: 7, revision: 2, persisted: true }))
+      }
+      return Promise.resolve(json({ ...requestLabDraft(), workspace: { datasetRevision: 7, revision: 1, persisted: true,
+        tab: { nextId: 2, selectedId: 1, entries: { "1": { name: "saved", request: "editable", credentialMode: "ANONYMOUS", result: null, dirty: false } } } } }))
+    })
+    vi.stubGlobal("fetch", fetch)
+    const owner = createMemoryOnlyRawState(), user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[]} rawState={owner} datasetRevision={7} />)
+    await waitFor(() => expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("editable"))
+    await user.click(screen.getByRole("button", { name: "saved 삭제" }))
+    expect(await screen.findByText(/삭제하지 못했습니다/)).toBeVisible()
+    expect(owner.requests).toHaveLength(1)
+    fail = false
+    await user.click(screen.getByRole("button", { name: "saved 삭제" }))
+    expect(owner.request).toBe("editable")
+    expect(screen.getByRole("button", { name: "saved 삭제" })).toBeDisabled()
+    await act(async () => { pending.resolve(json({ datasetRevision: 7, revision: 2, persisted: true })); await pending.promise })
+    await waitFor(() => expect(owner.requests).toHaveLength(0))
+    expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("keeps unsaved changes open when closing fails and flushes before dataset replacement", async () => {
+    const owner = createMemoryOnlyRawState(), onOpenChange = vi.fn(), user = userEvent.setup()
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input) === "/api/request-lab/workspace"
+      ? Promise.resolve(json({ success: false, message: "disk full" }, 409))
+      : Promise.resolve(json({ ...requestLabDraft(), workspace: { datasetRevision: 7, revision: 0, persisted: true, tab: { nextId: 1, selectedId: 0, entries: {} } } }))))
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={onOpenChange} event={event} sessions={[]} rawState={owner} datasetRevision={7} />)
+    await waitFor(() => expect(screen.getByRole("button", { name: "새 요청 추가" })).toBeEnabled())
+    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
+    fireEvent.change(screen.getByLabelText("Request Lab 요청 원문"), { target: { value: "KEEP-UNSAVED" } })
+    await user.click(screen.getByRole("button", { name: "닫기" }))
+    expect(await screen.findByText("disk full")).toBeVisible()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(owner.request).toBe("KEEP-UNSAVED")
+    await act(async () => { await expect(prepareDatasetReplacement()).rejects.toThrow("disk full") })
+    expect(onOpenChange).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: "변경 버리고 닫기" }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(owner.request).toBe("")
   })
 
 })

@@ -17,6 +17,7 @@ export interface RequestLabEntry {
   request: string
   credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
   result: RequestLabResult | null
+  restored?: boolean
   dirty: boolean
   editRejected: boolean
   position: { start: number; end: number; top: number; left: number; responseTop: number; responseLeft: number }
@@ -33,6 +34,7 @@ export interface MemoryOnlyRawState {
   addRequest(request: string, credentialMode: RequestLabEntry["credentialMode"]): RequestLabEntry | null
   editRequest(entry: RequestLabEntry, request: string): boolean
   replaceResult(entry: RequestLabEntry, result: RequestLabResult | null): boolean
+  restoreRequests(entries: (Pick<RequestLabEntry, "id" | "name" | "request" | "credentialMode" | "result" | "dirty">)[], nextId: number, selectedId: number): boolean
   removeRequest(entry: RequestLabEntry): void
   clearJson(pane?: "request" | "response"): void
   canSend(request: string): boolean
@@ -61,6 +63,18 @@ export function createMemoryOnlyRawState(initial: { request?: string; response?:
       const entry: RequestLabEntry = { id, name: `요청 ${id}`, request, credentialMode, result: null, dirty: false, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }
       state.requests.push(entry)
       return entry
+    },
+    restoreRequests(entries, nextId, selectedId) {
+      if (entries.length > REQUEST_LAB_MAX_REQUESTS || !Number.isSafeInteger(nextId) || nextId < 1
+        || entries.some(entry => !Number.isSafeInteger(entry.id) || entry.id < 1 || entry.id >= nextId || entry.request.length > REQUEST_LAB_MAX_BYTES)
+        || new Set(entries.map(entry => entry.id)).size !== entries.length
+        || selectedId !== 0 && !entries.some(entry => entry.id === selectedId)
+        || bytes() + 2 * entries.reduce((size, entry) => size + entry.request.length + (entry.result?.response.length ?? 0), 0) > REQUEST_LAB_WORKSPACE_BYTES) return false
+      for (const entry of state.requests) scrubEntry(entry)
+      state.requests = entries.map(entry => ({ ...entry, result: entry.result ? { ...entry.result } : null, restored: true, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }))
+      state.selectedId = selectedId || null
+      sequence = nextId - 1
+      return true
     },
     editRequest(entry, request) {
       if (!state.requests.includes(entry) || request.length > REQUEST_LAB_MAX_BYTES || bytes() + 2 * (request.length - entry.request.length) > REQUEST_LAB_WORKSPACE_BYTES) return false

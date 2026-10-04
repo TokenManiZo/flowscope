@@ -1,9 +1,10 @@
 # Request Lab 프로젝트 저장 목업
 
-**설계·목업만 추가했다. 제품 저장 기능은 미구현이며 승인 후 개발한다.**
+**승인 후 제품 저장·복원·DB 삭제 경로와 회귀 테스트를 추가했다. 빌드·제품 테스트·Burp 검증은 사용자가 실행할 예정이다. 이 페이지 자체는 계속 합성 목업이다.**
 
 - [인터랙티브 목업](index.html)
 - [저장·복원 설계](DESIGN.md)
+- [구현과 검증 인계](IMPLEMENTATION.md)
 - [다크 복원 화면](captures/restored-dark.jpg)
 - [라이트 복원 화면](captures/restored-light.jpg)
 

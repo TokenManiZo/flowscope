@@ -37,13 +37,17 @@ export const runAuthorizationReplay = (itemId: string, armed: boolean) =>
 /** 추천 여부와 무관하게 이 셀의 교차 요청을 대상 신원 자격으로 Burp Repeater 초안으로 연다(자동 전송 없음). */
 export const draftAuthorizationReplay = (itemId: string) =>
   postForm<ApiSuccess>("/api/authorization-replay", { action: "draft", itemId })
-export const getRequestLabDraft = (eventId: string, signal?: AbortSignal) =>
-  apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams({ eventId })}` as `/api/${string}`, formSignal(signal))
+export const getRequestLabDraft = (eventId: string, signal?: AbortSignal, includeWorkspace = true) =>
+  apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams(includeWorkspace ? { eventId } : { eventId, workspace: "exclude" })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
   // 서버는 operationId로 같은 전송의 중복 실행을 막는다. 누르기마다 새 값을 쓴다.
   postForm<RequestLabResult>("/api/request-lab", { action: "send", operationId: crypto.randomUUID(), ...values }, undefined, signal)
 export const previewRequestLabCredentials = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string; datasetRevision: number }, signal?: AbortSignal) =>
   postForm<{ headers: RequestLabCredentialHeader[] }>("/api/request-lab/credentials", { ...values, datasetRevision: String(values.datasetRevision) }, undefined, signal)
+export const saveRequestLabWorkspace = (values: { eventId: string; datasetRevision: number; revision: number; change: import("./types").RequestLabWorkspaceChange }, signal?: AbortSignal) =>
+  postForm<{ datasetRevision: number; revision: number; persisted: boolean }>("/api/request-lab/workspace", {
+    eventId: values.eventId, datasetRevision: String(values.datasetRevision), revision: String(values.revision), change: JSON.stringify(values.change),
+  }, undefined, signal)
 export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly ManualAttempt[]>("/api/manual-attempts", formSignal(signal))
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.

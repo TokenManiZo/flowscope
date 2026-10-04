@@ -28,6 +28,7 @@ import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.integration.GraphWorkspace;
+import io.flowscope.integration.RequestLabWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -63,6 +64,33 @@ final class FlowScopeWebServerTest {
         if (server != null) server.close();
         state.sessions.close();
         state.zapAccounts.close();
+    }
+
+    @Test void requestLabWorkspacePersistsMaskedStateChecksRevisionsAndNeverSendsTraffic() throws Exception {
+        start();
+        long dataset = state.datasetRevision();
+        String evidence = state.record.evidenceId;
+        var change = new RequestLabWorkspace.Change("create", 1, "saved", "GET / HTTP/1.1\r\nCookie: TOP-SECRET\r\n\r\n",
+                "ORIGINAL", null, false, false, 1);
+        String body = "eventId=" + encode(evidence) + "&datasetRevision=" + dataset + "&revision=0&change=" + encode(JSON.writeValueAsString(change));
+        assertEquals(403, post("/api/request-lab/workspace", body, "wrong-token").statusCode());
+        HttpResponse<String> saved = post("/api/request-lab/workspace", body, token);
+        assertEquals(200, saved.statusCode());
+        assertEquals(1, json(saved).path("revision").asLong());
+        assertFalse(json(saved).has("tab"));
+        assertEquals(0, state.manualRequestCount.get());
+        JsonNode draft = json(get("/api/request-lab?eventId=" + encode(evidence), token, null));
+        assertFalse(draft.path("workspace").toString().contains("TOP-SECRET"));
+        assertEquals("saved", draft.at("/workspace/tab/entries/1/name").asText());
+        assertFalse(json(get("/api/request-lab?eventId=" + encode(evidence) + "&workspace=exclude", token, null)).has("workspace"));
+        assertEquals(409, post("/api/request-lab/workspace", body, token).statusCode());
+        assertEquals(409, post("/api/request-lab/workspace", body.replace("datasetRevision=" + dataset, "datasetRevision=" + (dataset + 1)), token).statusCode());
+        String deletion = "eventId=" + encode(evidence) + "&datasetRevision=" + dataset + "&revision=1&change="
+                + encode(JSON.writeValueAsString(new RequestLabWorkspace.Change("delete", 1, null, null, null, null, false, null, 0)));
+        assertEquals(200, post("/api/request-lab/workspace", deletion, token).statusCode());
+        assertTrue(state.requestLabWorkspace.tab(evidence).entries().isEmpty());
+        assertEquals(2, state.requestLabWorkspace.tab(evidence).nextId());
+        assertFalse(json(get("/api/snapshot", token, null)).toString().contains("requestLabWorkspace"));
     }
 
     @Test void graphWorkspaceApiChecksRevisionsAndAcknowledgesWithoutResendingAllViews() throws Exception {
@@ -1510,6 +1538,7 @@ final class FlowScopeWebServerTest {
         private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
                 null, List.of());
         private GraphWorkspace graphWorkspace = GraphWorkspace.empty();
+        private RequestLabWorkspace requestLabWorkspace = RequestLabWorkspace.empty();
         private long graphRevision;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
@@ -1542,6 +1571,14 @@ final class FlowScopeWebServerTest {
             graphWorkspace = change.apply(graphWorkspace);
             graphRevision++;
             return graphWorkspace();
+        }
+        @Override public RequestLabWorkspace.State requestLabWorkspace(String evidenceId) {
+            return new RequestLabWorkspace.State(datasetRevision(), requestLabWorkspace.revision(), true, requestLabWorkspace.tab(evidenceId));
+        }
+        @Override public RequestLabWorkspace.State updateRequestLabWorkspace(String evidenceId, long dataset, long expectedRevision, RequestLabWorkspace.Change change) {
+            if (dataset != datasetRevision() || expectedRevision != requestLabWorkspace.revision()) throw new IllegalStateException("stale Request Lab workspace");
+            requestLabWorkspace = change.apply(requestLabWorkspace, evidenceId);
+            return requestLabWorkspace(evidenceId);
         }
         @Override public AnalysisConfig config() { return config; }
         private List<LegacyAssessment> archivedAssessments = List.of();

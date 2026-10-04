@@ -58,6 +58,7 @@ import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.LocalZapApiKey;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.GraphWorkspace;
+import io.flowscope.integration.RequestLabWorkspace;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.integration.ZapClient;
 import io.flowscope.integration.ZapCampaign;
@@ -334,6 +335,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicLong revision = new AtomicLong();
     private final AtomicLong databaseSavedRevision = new AtomicLong(-1);
     private volatile GraphWorkspace graphWorkspace = GraphWorkspace.empty();
+    private volatile RequestLabWorkspace requestLabWorkspace = RequestLabWorkspace.empty();
     private volatile long graphWorkspaceRevision;
     private volatile long databaseSavedGraphRevision = -1;
     private final AtomicLong droppedRecords = new AtomicLong();
@@ -1285,6 +1287,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 capacityWarned = false;
             }
             graphWorkspace = GraphWorkspace.empty();
+            requestLabWorkspace = RequestLabWorkspace.empty();
             graphWorkspaceRevision++;
             rawExchanges.clear();
             droppedRecords.set(0);
@@ -1485,6 +1488,7 @@ public final class FlowScopeExtension implements BurpExtension {
         scannerDirectAuthenticationRunId = "";
         publishAnalysis(analysisEpoch, Pipeline.runIsolated(List.of(), analysisConfig));
         graphWorkspace = GraphWorkspace.empty();
+        requestLabWorkspace = RequestLabWorkspace.empty();
         graphWorkspaceRevision++;
         markDatabaseSaved(revision.get());
         api.logging().logToOutput("FlowScope 트래픽 초기화: " + activeProjectContext.name());
@@ -1534,6 +1538,7 @@ public final class FlowScopeExtension implements BurpExtension {
         activeProjectDatabase = next.database();
         activeProjectContext = next.context();
         graphWorkspace = GraphWorkspace.empty();
+        requestLabWorkspace = RequestLabWorkspace.empty();
         graphWorkspaceRevision++;
         markDatabaseSaved(revision.get());
         if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
@@ -1543,7 +1548,7 @@ public final class FlowScopeExtension implements BurpExtension {
         List<RequestRecord> snapshot;
         synchronized (records) { snapshot = new ArrayList<>(records); }
         sqliteProjectStore.save(target, snapshot, analysisConfig, archivedAssessments, archivedValidations,
-                runContexts.completedRuns(), routeCandidates, executionLedger.attempts(), context, graphWorkspace);
+                runContexts.completedRuns(), routeCandidates, executionLedger.attempts(), context, graphWorkspace, requestLabWorkspace);
     }
 
     private ProjectStore.ProjectContext currentProjectContext(String fallbackName) {
@@ -1568,11 +1573,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (database) {
                     sqliteProjectStore.save(path, snapshot, analysisConfig, assessments, validations,
                             runContexts.completedRuns(), routeCandidates,
-                            executionLedger.attempts(), context, graphWorkspace);
+                            executionLedger.attempts(), context, graphWorkspace, requestLabWorkspace);
                 } else {
                     projectStore.save(path, snapshot, analysisConfig, assessments, validations,
                             runContexts.completedRuns(), routeCandidates,
-                            executionLedger.attempts(), context, graphWorkspace);
+                            executionLedger.attempts(), context, graphWorkspace, requestLabWorkspace);
                 }
                 if (database) {
                     activeProjectDatabase = path;
@@ -1625,7 +1630,7 @@ public final class FlowScopeExtension implements BurpExtension {
             context = migrated.context();
             try {
                 sqliteProjectStore.save(migrated.database(), loaded, data.config(), data.assessments(),
-                        data.validations(), data.completedRuns(), data.routeCandidates(), data.runAttempts(), context, data.graphWorkspace());
+                        data.validations(), data.completedRuns(), data.routeCandidates(), data.runAttempts(), context, data.graphWorkspace(), data.requestLabWorkspace());
                 managedPath = migrated.database();
             } catch (IOException | RuntimeException error) {
                 projectWorkspace.removeEmptyAllocation(migrated);
@@ -1709,6 +1714,7 @@ public final class FlowScopeExtension implements BurpExtension {
         activeProjectDatabase = database;
         activeProjectContext = context;
         graphWorkspace = data.graphWorkspace();
+        requestLabWorkspace = data.requestLabWorkspace();
         graphWorkspaceRevision++;
         markDatabaseSaved(revision.get());
         if (controlTab != null) SwingUtilities.invokeLater(() -> controlTab.setScopeText(scopeText));
@@ -1782,7 +1788,7 @@ public final class FlowScopeExtension implements BurpExtension {
         sqliteProjectStore.save(database, snapshot, analysisConfig, assessments, validations,
                 runContexts.completedRuns(), routeCandidates,
                 executionLedger.attempts(), currentProjectContext(database.getParent() == null
-                        ? database.getFileName().toString() : database.getParent().getFileName().toString()), graphWorkspace);
+                        ? database.getFileName().toString() : database.getParent().getFileName().toString()), graphWorkspace, requestLabWorkspace);
     }
 
     private void markDatabaseSaved(long savedRevision) {
@@ -1856,6 +1862,28 @@ public final class FlowScopeExtension implements BurpExtension {
                     graphWorkspaceRevision++;
                     scheduleDatabaseSave();
                     return new GraphWorkspace.State(datasetEpoch.get(), graphWorkspaceRevision, graphWorkspace);
+                });
+            }
+            @Override public RequestLabWorkspace.State requestLabWorkspace(String evidenceId) {
+                return runProjectTask(() -> {
+                    evidenceRecord(evidenceId);
+                    return new RequestLabWorkspace.State(datasetEpoch.get(), requestLabWorkspace.revision(),
+                            activeProjectDatabase != null, requestLabWorkspace.tab(evidenceId));
+                });
+            }
+            @Override public RequestLabWorkspace.State updateRequestLabWorkspace(String evidenceId, long dataset,
+                    long expectedRevision, RequestLabWorkspace.Change change) {
+                return runProjectTask(() -> {
+                    if (shuttingDown.get() || dataset != datasetEpoch.get() || expectedRevision != requestLabWorkspace.revision()) {
+                        throw new IllegalStateException("프로젝트 또는 Request Lab이 변경되었습니다.");
+                    }
+                    evidenceRecord(evidenceId);
+                    if (activeProjectDatabase == null) throw new IllegalStateException("먼저 프로젝트를 DB에 저장해 주세요.");
+                    RequestLabWorkspace next = change.apply(requestLabWorkspace, evidenceId);
+                    sqliteProjectStore.saveRequestLabWorkspace(activeProjectDatabase, evidenceId, requestLabWorkspace, next);
+                    requestLabWorkspace = next;
+                    databaseLastSavedAt = Instant.now();
+                    return new RequestLabWorkspace.State(datasetEpoch.get(), next.revision(), true, next.tab(evidenceId));
                 });
             }
             @Override public AnalysisConfig config() { return analysisConfig; }
@@ -2099,16 +2127,16 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
                     String evidenceId, String requestText, FlowScopeWebServer.CredentialMode mode, String accountId) {
                 RequestRecord seed = evidenceRecord(evidenceId);
-                TransientExchangeVault.Exchange original = rawExchanges.get(seed).orElseThrow(() ->
-                        new IllegalStateException("편집 가능한 원문이 없습니다."));
-                if (!original.requestRetained() || !decodeRequest(original, seed.requestContentType).editable()) {
+                TransientExchangeVault.Exchange original = rawExchanges.get(seed).orElse(null);
+                if (mode == FlowScopeWebServer.CredentialMode.ORIGINAL && (original == null
+                        || !original.requestRetained() || !decodeRequest(original, seed.requestContentType).editable())) {
                     throw new IllegalStateException("편집 가능한 원문이 없습니다.");
                 }
                 // Same URL/scope/session rules as send, without sending or recording an attempt.
-                HttpRequest prepared = prepareHumanRequest(seed, requestText, mode, accountId);
-                if (mode == FlowScopeWebServer.CredentialMode.ORIGINAL) {
-                    prepared = prepareHumanRequest(seed, decodeRequest(original, seed.requestContentType).text(), mode, null);
-                }
+                HttpRequest prepared = prepareHumanRequest(seed,
+                        mode == FlowScopeWebServer.CredentialMode.ORIGINAL
+                                ? decodeRequest(original, seed.requestContentType).text() : requestText,
+                        mode, accountId);
                 if (prepared.toByteArray().length() > RAW_REQUEST_LIMIT_BYTES) {
                     throw new IllegalArgumentException("인증 적용 요청이 너무 큽니다.");
                 }
@@ -2935,6 +2963,9 @@ public final class FlowScopeExtension implements BurpExtension {
             for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
                 request = request.withHeader(header.getKey(), header.getValue());
             }
+        }
+        if (request.toString().contains("***MASKED***") || request.toString().contains("[BODY REDACTED:")) {
+            throw new IllegalArgumentException("마스킹된 값이 남아 있습니다. 인증을 다시 선택하고 필요한 내용을 채워 주세요.");
         }
         if (!originalBytesUsed && request.hasHeader("Content-Length")) {
             String actualLength = String.valueOf(request.body().length());
