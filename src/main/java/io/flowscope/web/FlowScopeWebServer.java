@@ -7,6 +7,7 @@ import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.AccountVerificationRule;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.CollectionProgress;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.BurpXmlParser;
@@ -289,6 +290,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (!authorized(request)) return error(403, "FlowScope 로컬 API 인증에 실패했습니다. UI를 다시 여세요.");
         return switch (path) {
             case "/api/snapshot" -> snapshot(request);
+            case "/api/collection-diff" -> collectionDiff(request, target);
             case "/api/evidence" -> evidence(request, target);
             case "/api/manual-attempts" -> request.method().equals("GET")
                     ? response(200, "application/json; charset=utf-8", json.writeValueAsBytes(state.manualAttempts()))
@@ -403,6 +405,30 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     1, EVIDENCE_PAGE_LIMIT, "limit");
             return response(200, "application/json; charset=utf-8",
                     snapshots.evidence(state.snapshot(), operation, offset, limit));
+        } catch (RuntimeException error) {
+            return error(400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response collectionDiff(LoopbackHttpServer.Request request, URI target) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        try {
+            Map<String, String> query = form(target.getRawQuery());
+            long dataset = Long.parseLong(required(query, "datasetRevision"));
+            if (dataset != state.datasetRevision()) return error(409, "프로젝트가 바뀌었습니다. 다시 불러오세요.");
+            String before = required(query, "before"), after = required(query, "after");
+            if (before.equals(after)) throw new IllegalArgumentException("서로 다른 두 LLM run을 선택하세요.");
+            Pipeline.Result current = state.snapshot();
+            List<RouteCandidate> candidates = state.routeCandidates();
+            var reports = CollectionProgress.reports(current.records, candidates, List.of(), state.executionSummaries().stream()
+                    .filter(summary -> summary.source() == Source.LLM).map(RunExecutionLedger.Summary::runId).toList());
+            var known = reports.stream().map(CollectionProgress.RunReport::runId).collect(java.util.stream.Collectors.toSet());
+            if (!known.contains(before) || !known.contains(after))
+                throw new IllegalArgumentException("현재 프로젝트에 없는 LLM run입니다.");
+            var diff = CollectionProgress.compare(before, CollectionProgress.forRun(candidates, Source.LLM, before),
+                    after, CollectionProgress.forRun(candidates, Source.LLM, after));
+            if (dataset != state.datasetRevision()) return error(409, "프로젝트가 바뀌었습니다. 다시 불러오세요.");
+            return response(200, "application/json; charset=utf-8", json.writeValueAsBytes(diff));
         } catch (RuntimeException error) {
             return error(400, error.getMessage());
         }

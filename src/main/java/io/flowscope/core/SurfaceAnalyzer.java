@@ -82,6 +82,8 @@ public final class SurfaceAnalyzer {
         Map<String, RequestRecord> recordsByEvidence = new LinkedHashMap<>();
         Map<String, JavascriptAnalysis> javascriptByEvidence = new LinkedHashMap<>();
         List<ExtractionReport> extractionReports = new ArrayList<>();
+        Map<String, SurfaceAnalysis.RouteHint> routeHints = new LinkedHashMap<>();
+        boolean routeHintsTruncated = false;
         List<ProbeObservation> probes = new ArrayList<>();
         List<SurfaceAnalysis.ParameterDiagnostic> parameterDiagnostics = new ArrayList<>();
         for (RequestRecord record : allRecords == null ? List.<RequestRecord>of() : allRecords) {
@@ -91,6 +93,15 @@ public final class SurfaceAnalyzer {
             if (javascriptArtifact(record)) {
                 JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(record.responseBodyForAnalysis());
                 if (record.evidenceId != null) javascriptByEvidence.put(record.evidenceId, analysis);
+                routeHintsTruncated |= analysis.routeHintsTruncated();
+                for (JavascriptAnalysis.RouteHint hint : analysis.routeHints()) {
+                    if (record.evidenceId == null || record.evidenceId.isBlank()) continue;
+                    String key = record.evidenceId + "\0" + hint.value();
+                    if (routeHints.containsKey(key)) continue;
+                    if (routeHints.size() >= 10_000) { routeHintsTruncated = true; break; }
+                    routeHints.put(key, new SurfaceAnalysis.RouteHint(hint.value(), hint.kind().name(),
+                            record.evidenceId, record.source, record.runId, hint.line(), hint.column()));
+                }
                 extractionReports.add(new ExtractionReport(record.evidenceId, record.source, record.runId,
                         "JAVASCRIPT", "javascript-ast", extractionStatus(analysis.status()),
                         extractionFailure(analysis), analysis.detail(),
@@ -188,7 +199,8 @@ public final class SurfaceAnalyzer {
                 .toList();
         gaps.sort(SurfaceAnalysis.ParameterGap.PRIORITY_ORDER);
         cells.sort(Comparator.comparing(SurfaceAuthorizationLinker::cellKey));
-        return new SurfaceAnalysis(facts, extractionReports, probes, parameterDiagnostics, gaps, cells);
+        return new SurfaceAnalysis(facts, extractionReports, probes, parameterDiagnostics, gaps, cells,
+                List.copyOf(routeHints.values()), routeHintsTruncated);
     }
 
     /** 분석 전체에서 Evidence ID는 유일하다. 같은 ID의 다른 내용은 operation이 달라도 둘 다 제외한다. */
@@ -264,11 +276,7 @@ public final class SurfaceAnalyzer {
     }
 
     private static boolean surfaceDeclaration(RouteCandidate candidate, RouteCandidate.ProvenanceType type) {
-        return type == RouteCandidate.ProvenanceType.OPENAPI
-                || type == RouteCandidate.ProvenanceType.HTML_FORM
-                || type == RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL
-                || type == RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS
-                || (type == RouteCandidate.ProvenanceType.XML_ROUTE && !candidate.method().equals("UNKNOWN"));
+        return CollectionProgress.endpointDeclaration(candidate.method(), type);
     }
 
     private static EndpointKey observedKey(RequestRecord record) {

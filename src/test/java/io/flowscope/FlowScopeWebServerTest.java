@@ -65,6 +65,28 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
+    @Test void collectionDiffRequiresTwoCurrentProjectRunsAndTheCurrentDataset() throws Exception {
+        for (String id : List.of("llm-before", "llm-after")) {
+            RequestRecord record = new RequestRecord(Source.LLM, "https://api.example.test:443", "GET", "/api/items", 200, "anon");
+            record.runId = id;
+            record.phase = RunPhase.EXPLORATION;
+            record.hasResponse = true;
+            record.body = "{}";
+            record.responseContentType = "application/json";
+            state.records.add(record);
+        }
+        state.rebuild();
+        start();
+        String query = "/api/collection-diff?before=llm-before&after=llm-after&datasetRevision=" + state.datasetRevision();
+        HttpResponse<String> response = get(query, token, null);
+        assertEquals(200, response.statusCode());
+        assertEquals("llm-after", JSON.readTree(response.body()).path("afterRunId").asText());
+        assertEquals(1, JSON.readTree(response.body()).path("unitVersion").asInt());
+        assertEquals(409, get(query.replace("datasetRevision=" + state.datasetRevision(), "datasetRevision=999999"), token, null).statusCode());
+        assertEquals(400, get(query.replace("llm-after", "missing-run"), token, null).statusCode());
+        assertEquals(400, get(query.replace("llm-after", "llm-before"), token, null).statusCode());
+    }
+
     @Test void graphWorkspaceApiChecksRevisionsAndAcknowledgesWithoutResendingAllViews() throws Exception {
         start();
         long dataset = state.datasetRevision(), analysisRevision = state.revision();

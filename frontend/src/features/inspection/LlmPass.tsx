@@ -207,7 +207,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
       <summary className="cursor-pointer font-medium text-amber-800 dark:text-amber-300">확인하지 못한 항목 {run.unresolved.length}건 · 펼치기</summary>
       <div className="mt-2 grid gap-3">{run.unresolved.map((item, index) => <div key={`${item.kind}-${index}`}><p className="break-words">{item.reason}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{item.kind} · {item.target}</p></div>)}</div>
     </details> : null}
-    <p className="border-t px-3 py-2 text-xs text-muted-foreground">선언된 경로와 실제 응답은 <a className="underline underline-offset-2" href="#surface">API·입력 차이</a>에서 근거·상태를 구분해 확인할 수 있습니다.</p>
+    <p className="border-t px-3 py-2 text-xs text-muted-foreground">선언과 응답 근거는 <a className="underline underline-offset-2" href="#surface">API·입력 차이</a>에서, run 간 변화는 <a className="underline underline-offset-2" href="#runs">수집 결과 비교</a>에서 확인할 수 있습니다.</p>
     <form className="grid gap-1.5 border-t p-3" onSubmit={(event) => {
       event.preventDefault()
       if (!operatorMessage.trim() || steer.isPending) return

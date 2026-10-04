@@ -7,6 +7,7 @@ import {
   getHumanRun,
   getScannerRun,
   getSnapshot,
+  getCollectionDiff,
   getZapStatus,
   importXml,
   loadSample,
@@ -49,6 +50,7 @@ import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
 
 export const queryKeys = {
   snapshot: ["snapshot"] as const,
+  collectionDiff: (datasetRevision: number, before: string, after: string) => ["collection-diff", datasetRevision, before, after] as const,
   evidence: (datasetRevision: number, operation: string, offset: number, limit: number) => ["evidence", datasetRevision, operation, offset, limit] as const,
   humanRun: ["human-run"] as const,
   zapStatus: ["zap-status"] as const,
@@ -86,6 +88,15 @@ export function useSnapshotQuery() {
     queryKey: queryKeys.snapshot,
     queryFn: ({ signal }) => getSnapshot(signal),
     structuralSharing: retainSnapshotRevision,
+    ...pollingOptions,
+  })
+}
+
+export function useCollectionDiffQuery(before: string, after: string, datasetRevision: number) {
+  return useQuery({
+    queryKey: queryKeys.collectionDiff(datasetRevision, before, after),
+    queryFn: ({ signal }) => getCollectionDiff(before, after, datasetRevision, signal),
+    enabled: Boolean(before && after && before !== after),
     ...pollingOptions,
   })
 }

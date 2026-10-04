@@ -18,6 +18,45 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfSystemProperty(named = "flowscope.harness", matches = "true")
 final class CodexAppServerProviderHarnessTest {
     @Test
+    void loggedInCodexReadsUnboundArtifactHintsAndItsOwnProgress() throws Exception {
+        var candidateReads = new java.util.concurrent.atomic.AtomicInteger();
+        var requests = new java.util.concurrent.atomic.AtomicInteger();
+        CountDownLatch paused = new CountDownLatch(1);
+        AtomicReference<String> failure = new AtomicReference<>();
+        ExplorerTransport transport = request -> {
+            requests.incrementAndGet();
+            return new ExplorerTransport.Response(200, request.url(), "", "application/javascript", Map.of(),
+                    " ".repeat(70_000) + "const prefix='inventory/'; const routes={DETAIL:'api/items/<itemId>'};",
+                    false, "ev-hint-provider", 1, Instant.now());
+        };
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                url -> url.startsWith("https://provider-harness.invalid/"), "run-hint-provider", ignored -> {});
+             CodexAppServerProvider provider = new CodexAppServerProvider()) {
+            gateway.candidateSource(() -> { candidateReads.incrementAndGet(); return List.of(); });
+            assertEquals("READY", provider.readiness());
+            provider.start(new ExplorerProvider.Request("run-hint-provider", "https://provider-harness.invalid/",
+                    List.of("https://provider-harness.invalid/"), List.of(), gateway.url(), gateway.discoveriesUrl(),
+                    gateway.token(), "Do not access any target directly. Call flowscope_http_request exactly once: "
+                            + "account empty, GET https://provider-harness.invalid/app.js, empty headers and body. "
+                            + "Use the returned artifact_id to call flowscope_artifact_index with offset 0 and max_items 500. "
+                            + "Then call flowscope_progress with an empty object. Do not store hints as discoveries. "
+                            + "After these calls return a short JSON summary and empty unresolved array."),
+                    new ExplorerProvider.Listener() {
+                        @Override public void activity(ExplorerProvider.Activity value) { }
+                        @Override public void paused(ExplorerProvider.Result value) { paused.countDown(); }
+                        @Override public void completed(ExplorerProvider.Result value) { paused.countDown(); }
+                        @Override public void failed(String message) { failure.set(message); paused.countDown(); }
+                    });
+            assertTrue(paused.await(3, TimeUnit.MINUTES), "Codex artifact/progress tool harness timed out");
+            assertNull(failure.get(), failure.get());
+            assertEquals(1, requests.get());
+            assertTrue(candidateReads.get() > 0, "model did not pull its run progress");
+            assertTrue(gateway.pendingReviewTasks().stream().noneMatch(task -> task.kind().equals("JS_ARTIFACT_UNINDEXED")),
+                    "model did not read the artifact index");
+        }
+    }
+
+    @Test
     void loggedInCodexListsItsOwnSelectableModels() {
         try (CodexAppServerProvider provider = new CodexAppServerProvider()) {
             assertEquals("READY", provider.readiness());

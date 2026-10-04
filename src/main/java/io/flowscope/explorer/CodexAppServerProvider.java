@@ -464,6 +464,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     case "flowscope_browser" -> request.gatewayUrl().replaceFirst("/request$", "/browser");
                     case "flowscope_observations" -> request.gatewayUrl().replaceFirst("/request$", "/observations");
                     case "flowscope_worklist" -> request.gatewayUrl().replaceFirst("/request$", "/worklist");
+                    case "flowscope_progress" -> request.gatewayUrl().replaceFirst("/request$", "/progress");
                     case "flowscope_record_discoveries" -> request.discoveryUrl();
                     case "flowscope_artifact_list" -> artifactBase + "/list";
                     case "flowscope_artifact_search" -> artifactBase + "/search";
@@ -607,7 +608,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .put("developerInstructions", request.prompt());
             if (!request.model().isBlank()) params.put("model", request.model());
             params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(observationsTool())
-                    .add(worklistTool()).add(artifactListTool())
+                    .add(worklistTool()).add(progressTool()).add(artifactListTool())
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
             return params;
@@ -685,6 +686,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             return tool;
         }
 
+        private ObjectNode progressTool() {
+            ObjectNode tool = dynamicTool("flowscope_progress",
+                    "Read this Explorer run's distinct observed service+method+template operations, known-method declarations not observed, and UNKNOWN-method path-only candidates. No HUMAN or SCANNER data and no site-wide completion percentage.");
+            tool.putObject("inputSchema").put("type", "object").put("additionalProperties", false)
+                    .putObject("properties");
+            return tool;
+        }
+
         private ObjectNode artifactListTool() {
             ObjectNode tool = dynamicTool("flowscope_artifact_list",
                     "List masked response artifacts retained for the active Explorer run, including Evidence ID, URL, media type, size, completeness, and SHA-256.");
@@ -723,7 +732,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private ObjectNode artifactIndexTool() {
             ObjectNode tool = dynamicTool("flowscope_artifact_index",
-                    "Return FlowScope's deterministic JavaScript AST call-site, parameter, chunk, client screen route, and unresolved-construct index for one active-run JavaScript artifact. Visit unexamined in-scope client_routes in the browser; this index is evidence, not a verdict.");
+                    "Return FlowScope's JavaScript call-site, parameter, chunk, client screen route, unbound route-shaped hints, and unresolved-construct index for one active-run artifact. Hints are not endpoint declarations. Visit unexamined in-scope client_routes in the browser.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
                     .put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
@@ -894,6 +903,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             case "flowscope_browser" -> "브라우저 조작";
             case "flowscope_observations" -> "탐색 관측 조회";
             case "flowscope_worklist" -> "탐색 작업 목록";
+            case "flowscope_progress" -> "수집 진행 조회";
             case "flowscope_record_discoveries" -> "발견 저장";
             case "flowscope_artifact_list", "flowscope_artifact_search",
                  "flowscope_artifact_read", "flowscope_artifact_index" -> "산출물 분석";

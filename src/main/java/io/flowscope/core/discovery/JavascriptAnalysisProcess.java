@@ -129,6 +129,7 @@ final class JavascriptAnalysisProcess {
             copyProperty(command, "flowscope.javascript.maxIssues");
             copyProperty(command, "flowscope.javascript.maxParametersPerCall");
             copyProperty(command, "flowscope.javascript.maxResolutionDepth");
+            copyProperty(command, "flowscope.javascript.maxRouteHints");
             command.add("-cp");
             command.add(workerClasspath());
             command.add(workerClass);

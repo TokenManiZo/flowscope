@@ -121,6 +121,10 @@ export function SurfacePage() {
   useEffect(() => { setRequestLabContext(null) }, [labContext])
   const extractions = surface.extractions.filter((item) => enabledSources.has(item.source))
   const probes = surface.probes.filter((item) => enabledSources.has(item.source))
+  const routeHints = (surface.routeHints ?? []).filter((item) => enabledSources.has(item.source))
+  const [visibleHints, setVisibleHints] = useState(100)
+  const artifactsByEvidence = useMemo(() => new Map((snapshot.data?.events ?? []).map(event => [event.eventId, event])), [snapshot.data?.events])
+  useEffect(() => { setVisibleHints(100) }, [datasetRevision])
   const unresolvedExtractions = extractions.filter((item) => item.status !== "PARSED" || item.issues.length > 0)
   const countKind = (kind: string) => endpoints.filter((endpoint) => endpoint.kinds?.includes(kind as never)).length
 
@@ -207,6 +211,19 @@ export function SurfacePage() {
             </TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">현재 필터에 맞는 API·입력 근거가 없습니다.</TableCell></TableRow>}</TableBody></Table>
           </div>
         </section>
+        {routeHints.length > 0 && <details className="rounded-md border bg-card p-3 text-sm" aria-label="미결합 JavaScript 경로 조각">
+          <summary className="cursor-pointer font-medium">미결합 조각 {surface.routeHintsTruncated ? "최소 " : ""}{routeHints.length}개 — 확인 필요</summary>
+          <p className="mt-2 text-xs text-muted-foreground">JavaScript에서 찾았지만 HTTP 메서드·완성 경로와 연결하지 못한 문자열입니다. API 관측·선언·판정 수에 포함하지 않습니다.</p>
+          <p className="mt-1 text-xs text-muted-foreground">같은 원본 기록의 같은 문자열은 한 번만 셉니다. 원본 기록 번호와 위치를 보고 Explorer에 추가 지시할 수 있습니다.</p>
+          <ul className="mt-3 grid gap-2">{routeHints.slice(0, visibleHints).map((hint) => {
+            const artifact = artifactsByEvidence.get(hint.evidenceId)
+            return <li className="rounded-md border px-3 py-2" key={`${hint.evidenceId}:${hint.kind}:${hint.value}`}>
+              <p className="break-all font-mono text-xs">{hint.value}</p>
+              <p className="mt-1 break-all text-[11px] text-muted-foreground">{hint.kind === "PREFIX" ? "접두사" : "경로 조각"} · {hint.source} · {artifact?.path ?? evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, hint.evidenceId)}:{hint.line}:{hint.column} · {evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, hint.evidenceId)}</p>
+            </li>
+          })}</ul>
+          {routeHints.length > visibleHints && <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => setVisibleHints((count) => count + 100)}>조각 100개 더 보기</Button>}
+        </details>}
       </section>
       {selectedEvent && labContext && <RequestLabDialog key={labContext} open={requestLabOpen} onOpenChange={setRequestLabOpen} event={selectedEvent} sessions={snapshot.data?.managedSessions ?? []} verifications={snapshot.data?.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.data?.revision} suspended={snapshot.isError} />}
     </ReferenceAnalysisWorkspace>

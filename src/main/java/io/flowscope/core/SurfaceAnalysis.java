@@ -14,7 +14,11 @@ import java.util.Set;
  */
 public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
                               List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics,
-                              List<ParameterGap> parameterGaps, List<ParameterValidationCell> validationCells) {
+                              List<ParameterGap> parameterGaps, List<ParameterValidationCell> validationCells,
+                              List<RouteHint> routeHints, boolean routeHintsTruncated) {
+    /** Path-shaped JS fragment with source location, not a method-bound endpoint or an HTTP observation. */
+    public record RouteHint(String value, String kind, String evidenceId, Source source,
+                            String runId, int line, int column) {}
     public enum ParameterLocation { PATH, QUERY, JSON_BODY, FORM_BODY, MULTIPART_BODY, HEADER, GRAPHQL_VARIABLE, XML_PATH }
     public enum ValueShape { EMPTY, STRING, INTEGER, DECIMAL, BOOLEAN, UUID, ARRAY, OBJECT, NULL, BINARY, UNKNOWN }
     public enum Requirement { REQUIRED, OPTIONAL, CONDITIONAL, UNKNOWN }
@@ -344,6 +348,14 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
         parameterDiagnostics = parameterDiagnostics == null ? List.of() : List.copyOf(parameterDiagnostics);
         parameterGaps = parameterGaps == null ? List.of() : List.copyOf(parameterGaps);
         validationCells = validationCells == null ? List.of() : List.copyOf(validationCells);
+        routeHints = routeHints == null ? List.of() : List.copyOf(routeHints);
+    }
+
+    public SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionReport> extractions,
+                           List<ProbeObservation> probes, List<ParameterDiagnostic> parameterDiagnostics,
+                           List<ParameterGap> parameterGaps, List<ParameterValidationCell> validationCells) {
+        this(endpoints, extractions, probes, parameterDiagnostics, parameterGaps, validationCells,
+                List.of(), false);
     }
 
     public SurfaceAnalysis(List<EndpointFact> endpoints) { this(endpoints, List.of(), List.of(), List.of(), List.of(), List.of()); }

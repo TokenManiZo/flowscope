@@ -26,6 +26,41 @@ final class ExplorerHttpGatewayTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
+    void progressCountsKnownOperationsAndUnknownMethodPathsSeparatelyForThisRunOnly() throws Exception {
+        String service = "https://app.example.test:443";
+        RouteCandidate get = new RouteCandidate(service, "GET", "/api/items", true,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST,
+                        "ev-get", Source.LLM, "run-progress", "observed-request")),
+                RouteCandidate.Applicability.APPLICABLE, "response");
+        RouteCandidate post = new RouteCandidate(service, "POST", "/api/items", false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL,
+                        "ev-js", Source.LLM, "run-progress", "javascript-ast")),
+                RouteCandidate.Applicability.REVIEW, "declaration");
+        RouteCandidate unknown = new RouteCandidate(service, "UNKNOWN", "/api/other", false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL,
+                        "ev-js-unknown", Source.LLM, "run-progress", "javascript-ast")),
+                RouteCandidate.Applicability.REVIEW, "path only");
+        RouteCandidate asset = new RouteCandidate(service, "GET", "/main.js", false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_SCRIPT,
+                        "ev-html", Source.LLM, "run-progress", "html-dom")),
+                RouteCandidate.Applicability.REVIEW, "script asset");
+        RouteCandidate foreign = new RouteCandidate(service, "DELETE", "/api/private", false,
+                List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL,
+                        "ev-human", Source.HUMAN, "human-run", "javascript-ast")),
+                RouteCandidate.Applicability.REVIEW, "foreign");
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("progress must not send HTTP"); },
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-progress", ignored -> {})) {
+            gateway.candidateSource(() -> List.of(get, post, unknown, foreign, asset));
+            JsonNode progress = JSON.readTree(post(gateway, gateway.progressUrl(), "{}").body());
+            assertEquals(1, progress.path("observed_operations").asInt());
+            assertEquals(1, progress.path("declared_unobserved_operations").asInt());
+            assertEquals(1, progress.path("unknown_method_paths").asInt());
+            assertEquals("SERVICE_METHOD_TEMPLATE", progress.path("operation_unit").asText());
+        }
+    }
+
+    @Test
     void observationsSeparateBrowserCaptureFromPublishedHttpEvidence() throws Exception {
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
                 "application/json", Map.of(), "{}", false, "ev-http", 2, Instant.now());
@@ -294,6 +329,7 @@ final class ExplorerHttpGatewayTest {
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
                 "application/javascript", Map.of(), " ".repeat(70_000) +
                 "const routes=[{path:'/reports',element:Home},{path:'/reports/:id',element:Detail}];"
+                        + "const unresolved={DETAIL:'api/items/<itemId>'};"
                         + "fetch('/api/search?keyword=', {method:'POST', body: JSON.stringify({product_id: 1})});",
                 false, "ev-index", 2, Instant.now());
         try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
@@ -307,6 +343,8 @@ final class ExplorerHttpGatewayTest {
             JsonNode index = JSON.readTree(post(gateway, gateway.artifactsUrl() + "/index", request).body());
             assertEquals("PARSED", index.path("status").asText());
             assertEquals("/api/search?keyword=", index.path("call_sites").get(0).path("reference").asText());
+            assertEquals(1, index.path("route_hint_total").asInt());
+            assertEquals("api/items/<itemId>", index.path("route_hints").get(0).path("value").asText());
             assertEquals(2, index.path("client_routes").size());
             assertEquals("/reports/:id", index.path("client_routes").get(1).path("path").asText());
             assertTrue(gateway.pendingReviewTasks().isEmpty());

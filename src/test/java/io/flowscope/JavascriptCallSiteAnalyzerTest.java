@@ -13,6 +13,57 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class JavascriptCallSiteAnalyzerTest {
     @Test
+    void unboundRouteMapStringsWithoutLeadingSlashRemainHintsNotHttpCallSites() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const base = 'billing/';
+                const routes = {LIST: 'api/orders', DETAIL: 'api/orders/<orderId>'};
+                const unrelated = 'token=do-not-expose';
+                fetch('/api/known');
+                """);
+
+        assertEquals(List.of("/api/known"), analysis.callSites().stream()
+                .map(JavascriptAnalysis.CallSite::reference).toList());
+        assertTrue(analysis.routeHints().stream().anyMatch(hint -> hint.value().equals("billing/")
+                && hint.kind() == JavascriptAnalysis.RouteHintKind.PREFIX && hint.line() > 0));
+        assertTrue(analysis.routeHints().stream().anyMatch(hint -> hint.value().equals("api/orders/<orderId>")
+                && hint.kind() == JavascriptAnalysis.RouteHintKind.PATH_FRAGMENT));
+        assertTrue(analysis.routeHints().stream().noneMatch(hint -> hint.value().contains("do-not-expose")));
+        assertTrue(analysis.routeHints().stream().noneMatch(hint -> hint.value().equals("/api/known")));
+    }
+
+    @Test
+    void hintBindingUsesTheActualLiteralOccurrenceRatherThanPathSubstrings() {
+        JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
+                const base = 'catalog/';
+                const routes = {LIST: 'api/items'};
+                fetch(base + routes.LIST);
+                fetch('/api/shared/detail');
+                const unused = '/api/shared';
+                const anotherUnusedOccurrence = 'api/items';
+                """);
+        assertTrue(analysis.routeHints().stream().anyMatch(hint -> hint.value().equals("/api/shared")));
+        assertTrue(analysis.routeHints().stream().anyMatch(hint -> hint.value().equals("api/items") && hint.line() == 6));
+        assertTrue(analysis.routeHints().stream().noneMatch(hint -> hint.value().equals("catalog/")));
+    }
+
+    @Test
+    void boundOccurrencesDoNotConsumeTheUniqueUnboundHintBudget() {
+        JavascriptCallSiteAnalyzer.clearCache();
+        System.setProperty("flowscope.javascript.maxRouteHints", "2");
+        try {
+            JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(
+                    "fetch('/api/bound');".repeat(12)
+                            + "const a='api/unbound-a',b='api/unbound-b',c='api/unbound-c';");
+            assertEquals(List.of("api/unbound-a", "api/unbound-b"), analysis.routeHints().stream()
+                    .map(JavascriptAnalysis.RouteHint::value).toList());
+            assertTrue(analysis.routeHintsTruncated());
+        } finally {
+            System.clearProperty("flowscope.javascript.maxRouteHints");
+            JavascriptCallSiteAnalyzer.clearCache();
+        }
+    }
+
+    @Test
     void modern_module_async_optional_syntax를_실행하지_않고_AST로_분석한다() {
         JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze("""
                 import http from 'axios';

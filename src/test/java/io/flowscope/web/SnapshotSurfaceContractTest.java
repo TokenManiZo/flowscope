@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 final class SnapshotSurfaceContractTest {
     private static final List<String> SURFACE_ARRAYS = List.of("endpoints", "extractions", "probes",
-            "parameterDiagnostics", "parameterGaps", "validationCells");
+            "parameterDiagnostics", "parameterGaps", "validationCells", "routeHints");
     private static final int PREVIEW = ParameterGap.MAX_EVIDENCE_IDS;
     private final ObjectMapper json = new ObjectMapper();
 
@@ -56,6 +56,9 @@ final class SnapshotSurfaceContractTest {
         assertTrue(root.path("cells").isArray());
         assertTrue(root.path("routeCandidates").isArray());
         assertEquals(0, root.path("trafficStats").path("coverage").asInt());
+        assertEquals(1, root.path("collectionProgress").path("unitVersion").asInt());
+        assertEquals("SERVICE_METHOD_TEMPLATE", root.path("collectionProgress").path("operationUnit").asText());
+        assertTrue(root.path("collectionProgress").path("runs").isArray());
     }
 
     @Test

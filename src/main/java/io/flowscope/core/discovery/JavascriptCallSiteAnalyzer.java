@@ -9,6 +9,7 @@ import com.google.javascript.jscomp.SourceFile;
 import com.google.javascript.jscomp.Var;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
+import io.flowscope.core.Masking;
 
 import java.net.URI;
 import java.net.URLDecoder;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -48,6 +50,7 @@ public final class JavascriptCallSiteAnalyzer {
     private static final int MAX_RESOLUTION_DEPTH = Integer.getInteger(
             "flowscope.javascript.maxResolutionDepth", 32);
     private static final int MAX_CLIENT_ROUTES = 1_000;
+    private static final int MAX_ROUTE_HINTS = Integer.getInteger("flowscope.javascript.maxRouteHints", 5_000);
     /**
      * 라우터 설정 객체를 알아보는 이웃 키. `path`만으로는 일반 데이터 객체와 구분되지 않아 화면을 정의하는 키가 함께 있어야 한다.
      * React Router(element·Component·lazy·index), Vue Router(component·components·children·redirect),
@@ -164,7 +167,7 @@ public final class JavascriptCallSiteAnalyzer {
                     : "parser recovered with " + compiler.getErrorCount() + " syntax error(s)";
             if (analyzer.limited) detail = "AST or extracted facts exceed configured worker budget";
             return new JavascriptAnalysis(analyzer.callSites, analyzer.assets, analyzer.issues, status, detail,
-                    analyzer.clientRoutes);
+                    analyzer.clientRoutes, analyzer.unboundRouteHints(compiler, root), analyzer.routeHintsTruncated);
         } catch (RuntimeException | LinkageError | StackOverflowError exception) {
             return new JavascriptAnalysis(List.of(), List.of(), JavascriptAnalysis.Status.PARSE_FAILED,
                     exception.getClass().getSimpleName());
@@ -218,6 +221,9 @@ public final class JavascriptCallSiteAnalyzer {
         private final List<JavascriptAnalysis.AssetReference> assets = new ArrayList<>();
         private final List<JavascriptAnalysis.ResolutionIssue> issues = new ArrayList<>();
         private final List<JavascriptAnalysis.ClientRoute> clientRoutes = new ArrayList<>();
+        private final Map<String, JavascriptAnalysis.RouteHint> routeHints = new LinkedHashMap<>();
+        private final Set<Node> boundHintNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+        private boolean routeHintsTruncated;
         private int nodes;
         private boolean limited;
 
@@ -248,6 +254,55 @@ public final class JavascriptCallSiteAnalyzer {
             if (node.isObjectLit()) inspectRouteDefinition(node, scope);
         }
 
+        private void inspectRouteHint(Node node, Scope scope) {
+            if (boundHintNodes.contains(node)) return;
+            String value = node.isStringLit() ? node.getString() : templateText(node, scope, 0);
+            JavascriptAnalysis.RouteHintKind kind = hintKind(value);
+            if (kind == null || routeHints.containsKey(value)) return;
+            if (routeHints.size() >= MAX_ROUTE_HINTS) { routeHintsTruncated = true; return; }
+            routeHints.put(value, new JavascriptAnalysis.RouteHint(
+                    Masking.maskSecrets(value), kind, node.getLineno(), node.getCharno()));
+        }
+
+        private List<JavascriptAnalysis.RouteHint> unboundRouteHints(com.google.javascript.jscomp.Compiler compiler,
+                                                                   Node root) {
+            // Bindings are complete before collecting hints. Repeated bound strings never consume the hint budget.
+            NodeTraversal.traverse(compiler, root, new NodeTraversal.Callback() {
+                @Override public boolean shouldTraverse(NodeTraversal traversal, Node node, Node parent) { return true; }
+                @Override public void visit(NodeTraversal traversal, Node node, Node parent) {
+                    if (node.isStringLit() || node.isTemplateLit()) inspectRouteHint(node, traversal.getScope());
+                }
+            });
+            return List.copyOf(routeHints.values());
+        }
+
+        private void bindRouteLiterals(Node raw, Scope scope, int depth) {
+            if (raw == null || depth >= MAX_RESOLUTION_DEPTH) return;
+            Node value = resolve(raw, scope, depth);
+            if (value == null) return;
+            if (value.isStringLit() || value.isTemplateLit()) boundHintNodes.add(value);
+            if (value.isAdd() || value.isTemplateLit() || value.isTemplateLitSub()) {
+                for (Node child : value.children()) bindRouteLiterals(child, scope, depth + 1);
+            } else if (value.isCall()) {
+                Node callee = value.getFirstChild();
+                if (callee != null && callee.isGetProp()
+                        && Set.of("replace", "replaceAll").contains(callee.getString())) {
+                    bindRouteLiterals(callee.getFirstChild(), scope, depth + 1);
+                }
+            }
+        }
+
+        private static JavascriptAnalysis.RouteHintKind hintKind(String value) {
+            if (value == null || value.length() < 3 || value.length() > 256
+                    || value.contains("://") || value.startsWith("//")
+                    || value.indexOf('?') >= 0 || value.indexOf('=') >= 0
+                    || !value.matches("[A-Za-z0-9_./~:{}<>$-]+")) return null;
+            if (value.matches("[A-Za-z0-9_.-]{2,32}/")) return JavascriptAnalysis.RouteHintKind.PREFIX;
+            String path = value.replaceFirst("^/", "");
+            return path.indexOf('/') > 0 && !path.endsWith("/")
+                    ? JavascriptAnalysis.RouteHintKind.PATH_FRAGMENT : null;
+        }
+
         /** `{path:"/shop", element:...}` 같은 라우터 설정 객체의 정적 경로를 화면 주소로 남긴다. */
         private void inspectRouteDefinition(Node object, Scope scope) {
             if (clientRoutes.size() >= MAX_CLIENT_ROUTES) return;
@@ -262,6 +317,7 @@ public final class JavascriptCallSiteAnalyzer {
             if (path == null || !routeKey) return;
             String value = staticString(path, scope, 0);
             if (value == null || !CLIENT_ROUTE.matcher(value).matches()) return;
+            bindRouteLiterals(path, scope, 0);
             if (clientRoutes.stream().anyMatch(route -> route.path().equals(value))) return;
             clientRoutes.add(new JavascriptAnalysis.ClientRoute(value, object.getLineno(), object.getCharno()));
         }
@@ -270,10 +326,13 @@ public final class JavascriptCallSiteAnalyzer {
             Node module = node.getLastChild();
             if (module == null || !module.isStringLit()) return;
             addAsset(module.getString(), "ECMAScript static import", node);
+            boundHintNodes.add(module);
         }
 
         private void inspectDynamicImport(Node node, Scope scope) {
-            addAsset(staticReference(node.getFirstChild(), scope, 0), "ECMAScript dynamic import", node);
+            String reference = staticReference(node.getFirstChild(), scope, 0);
+            addAsset(reference, "ECMAScript dynamic import", node);
+            if (scriptReference(reference)) bindRouteLiterals(node.getFirstChild(), scope, 0);
         }
 
         private void addAsset(String reference, String reason, Node node) {
@@ -321,6 +380,7 @@ public final class JavascriptCallSiteAnalyzer {
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
             Node body = property(options, "body", scope);
             addBodyParameters(parameters, body, bodyKind(body, options, scope), scope);
+            bindRouteLiterals(args.get(0), scope, 0);
             add(reference, method, parameters, "fetch AST call-site", call);
         }
 
@@ -342,6 +402,8 @@ public final class JavascriptCallSiteAnalyzer {
                 List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
                 addObjectParameters(parameters, property(config, "params", scope), QUERY, List.of(), scope);
                 addObjectParameters(parameters, property(config, "data", scope), JSON_BODY, List.of(), scope);
+                bindRouteLiterals(url, scope, 0);
+                bindAxiosBase(receiver, config, scope, 0);
                 add(reference, method, parameters, "axios config AST call-site", call);
                 return true;
             }
@@ -357,6 +419,8 @@ public final class JavascriptCallSiteAnalyzer {
                 addObjectParameters(parameters, args.get(1), JSON_BODY, List.of(), scope);
             }
             addObjectParameters(parameters, property(resolvedConfig, "params", scope), QUERY, List.of(), scope);
+            bindRouteLiterals(args.get(0), scope, 0);
+            bindAxiosBase(receiver, resolvedConfig, scope, 0);
             add(reference, method, parameters, "axios verb AST call-site", call);
             return true;
         }
@@ -370,8 +434,10 @@ public final class JavascriptCallSiteAnalyzer {
             if (args.size() < 2) return;
             String method = staticString(args.get(0), scope, 0);
             String reference = staticReference(args.get(1), scope, 0);
-            if (routeLike(reference)) add(reference, method, queryParameters(reference),
-                    "XMLHttpRequest.open AST call-site", call);
+            if (routeLike(reference)) {
+                bindRouteLiterals(args.get(1), scope, 0);
+                add(reference, method, queryParameters(reference), "XMLHttpRequest.open AST call-site", call);
+            }
         }
 
         private void inspectJquery(Node call, String operation, Scope scope) {
@@ -386,6 +452,7 @@ public final class JavascriptCallSiteAnalyzer {
                 List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
                 JavascriptAnalysis.ParameterKind kind = "GET".equalsIgnoreCase(method) ? QUERY : FORM_BODY;
                 addObjectParameters(parameters, property(config, "data", scope), kind, List.of(), scope);
+                bindRouteLiterals(property(config, "url", scope), scope, 0);
                 add(reference, method, parameters, "jQuery.ajax AST call-site", call);
                 return;
             }
@@ -395,6 +462,7 @@ public final class JavascriptCallSiteAnalyzer {
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
             if (args.size() > 1) addObjectParameters(parameters, args.get(1),
                     operation.equals("get") ? QUERY : FORM_BODY, List.of(), scope);
+            bindRouteLiterals(args.get(0), scope, 0);
             add(reference, operation, parameters, "jQuery verb AST call-site", call);
         }
 
@@ -405,6 +473,7 @@ public final class JavascriptCallSiteAnalyzer {
             if (!routeLike(reference)) return;
             List<JavascriptAnalysis.Parameter> parameters = new ArrayList<>(queryParameters(reference));
             if (args.size() > 1) addObjectParameters(parameters, args.get(1), FORM_BODY, List.of(), scope);
+            bindRouteLiterals(args.get(0), scope, 0);
             add(reference, "POST", parameters, "sendBeacon AST call-site", call);
         }
 
@@ -801,6 +870,21 @@ public final class JavascriptCallSiteAnalyzer {
             List<Node> args = arguments(initial);
             Node config = args.isEmpty() ? null : resolve(args.get(0), scope, depth + 1);
             return axiosConfig(AxiosDefaults.library(), config, scope);
+        }
+
+        private void bindAxiosBase(String receiver, Node requestConfig, Scope scope, int depth) {
+            if (depth >= MAX_RESOLUTION_DEPTH) return;
+            Node requestBase = property(resolve(requestConfig, scope, depth), "baseURL", scope);
+            if (requestBase != null) { bindRouteLiterals(requestBase, scope, depth); return; }
+            Var variable = scope.getVar(receiver);
+            Node initial = variable == null ? null : variable.getInitialValue();
+            if (initial != null && initial.isName()) {
+                bindAxiosBase(initial.getString(), null, scope, depth + 1);
+            } else if (initial != null && initial.isCall()) {
+                List<Node> args = arguments(initial);
+                if (!args.isEmpty()) bindRouteLiterals(property(resolve(args.getFirst(), scope, depth), "baseURL", scope),
+                        scope, depth + 1);
+            }
         }
 
         private AxiosDefaults axiosConfig(AxiosDefaults defaults, Node config, Scope scope) {

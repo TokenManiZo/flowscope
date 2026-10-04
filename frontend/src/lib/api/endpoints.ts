@@ -22,11 +22,14 @@ import type {
   ExplorerAccountSaveResult,
   ReviewStatus,
   ProjectStatus,
+  CollectionDiff,
 } from "./types"
 
 const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
 
 export const getSnapshot = (signal?: AbortSignal) => apiFetch<Snapshot>("/api/snapshot", formSignal(signal))
+export const getCollectionDiff = (before: string, after: string, datasetRevision: number, signal?: AbortSignal) =>
+  apiFetch<CollectionDiff>(`/api/collection-diff?${new URLSearchParams({ before, after, datasetRevision: String(datasetRevision) })}` as `/api/${string}`, formSignal(signal))
 export const getEvidence = (operation: string, offset = 0, limit = 200, signal?: AbortSignal) =>
   apiFetch<EvidencePage>(`/api/evidence?${new URLSearchParams({ operation, offset: String(offset), limit: String(limit) })}` as `/api/${string}`, formSignal(signal))
 export const openReplay = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }) =>

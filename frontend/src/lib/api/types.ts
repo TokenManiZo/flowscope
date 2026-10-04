@@ -504,17 +504,56 @@ export interface Snapshot {
   managedSessions: readonly ManagedSession[]
   routeCandidates: readonly RouteCandidate[]
   runExecutions?: readonly RunExecutionSummary[]
+  collectionProgress?: {
+    unitVersion: number
+    operationUnit: "SERVICE_METHOD_TEMPLATE"
+    runs: readonly CollectionRunReport[]
+  }
   authorizationMatrix?: AuthorizationMatrix
   surface?: {
     endpoints: readonly SurfaceEndpoint[]
     extractions: readonly SurfaceExtraction[]
     probes: readonly SurfaceProbe[]
+    routeHints?: readonly SurfaceRouteHint[]
+    routeHintsTruncated?: boolean
     parameterDiagnostics?: readonly SurfaceParameterDiagnostic[]
     /** priority 순으로 정렬된 discovery·권한 Gap(PR#11). 표시 라벨은 endpoints[].parameters에서 machine key로 찾는다. */
     parameterGaps?: readonly SurfaceParameterGap[]
     /** 입력×권한 대상×subject×source 검증 cell(PR#11). UNTESTED는 basis Evidence만 갖는다. */
     validationCells?: readonly SurfaceValidationCell[]
   }
+}
+
+export interface SurfaceRouteHint {
+  value: string
+  kind: "PREFIX" | "PATH_FRAGMENT"
+  evidenceId: string
+  source: SurfaceSource
+  runId: string
+  line: number
+  column: number
+}
+
+export interface CollectionRunReport {
+  runId: string
+  firstSeenMillis: number
+  observedOperations: number
+  declaredUnobservedOperations: number
+  unknownMethodPaths: number
+  retainedHints: number
+}
+export interface CollectionChange<T> { count: number; items: readonly T[]; truncated: boolean }
+export interface CollectionDiff {
+  unitVersion: number
+  operationUnit: "SERVICE_METHOD_TEMPLATE"
+  beforeRunId: string
+  afterRunId: string
+  observedAdded: CollectionChange<SurfaceEndpoint["key"]>
+  observedRemoved: CollectionChange<SurfaceEndpoint["key"]>
+  declaredUnobservedAdded: CollectionChange<SurfaceEndpoint["key"]>
+  declaredUnobservedRemoved: CollectionChange<SurfaceEndpoint["key"]>
+  unknownMethodAdded: CollectionChange<{ service: string; pathTemplate: string }>
+  unknownMethodRemoved: CollectionChange<{ service: string; pathTemplate: string }>
 }
 
 export interface SurfaceParameterDiagnostic {

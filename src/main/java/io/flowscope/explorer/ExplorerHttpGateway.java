@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.Masking;
+import io.flowscope.core.CollectionProgress;
 import io.flowscope.core.Normalizer;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
@@ -91,6 +92,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Map<String, DeclaredTarget> declaredTargets = new LinkedHashMap<>();
     private final Set<String> reviewedTargetKeys = new LinkedHashSet<>();
     private final Set<String> indexedJavascriptArtifacts = new LinkedHashSet<>();
+    private final Map<String, Integer> indexedRouteHintCounts = new LinkedHashMap<>();
     private final Map<String, Integer> nextIndexOffsets = new LinkedHashMap<>();
     private long nextIssueId;
     private long worklistReads;
@@ -112,6 +114,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     public String browserUrl() { return "http://127.0.0.1:" + server.port() + "/browser"; }
     public String observationsUrl() { return "http://127.0.0.1:" + server.port() + "/observations"; }
     public String worklistUrl() { return "http://127.0.0.1:" + server.port() + "/worklist"; }
+    public String progressUrl() { return "http://127.0.0.1:" + server.port() + "/progress"; }
     public synchronized List<PendingIssue> pendingIssues() { return List.copyOf(pendingIssues.values()); }
     public synchronized long worklistReads() { return worklistReads; }
     synchronized List<ReviewTask> pendingReviewTasks() {
@@ -203,6 +206,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 || requestUri.getPath().equals("/browser")
                 || requestUri.getPath().equals("/observations")
                 || requestUri.getPath().equals("/worklist")
+                || requestUri.getPath().equals("/progress")
                 || requestUri.getPath().startsWith("/artifacts/"))) {
             return error(405, "지원하지 않는 Explorer gateway 작업입니다.");
         }
@@ -214,6 +218,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         if (requestUri.getPath().equals("/browser")) return handleBrowser(body);
         if (requestUri.getPath().equals("/observations")) return handleObservations(body);
         if (requestUri.getPath().equals("/worklist")) return handleWorklist(body);
+        if (requestUri.getPath().equals("/progress")) return handleProgress(body);
         if (requestUri.getPath().startsWith("/artifacts/")) {
             return handleArtifacts(requestUri.getPath().substring("/artifacts/".length()), body);
         }
@@ -472,6 +477,35 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         }
     }
 
+    private synchronized LoopbackHttpServer.Response handleProgress(JsonNode body) {
+        try {
+            requireOnlyFields(body, Set.of(), "progress 요청");
+            List<CollectionProgress.Fact> facts = new ArrayList<>();
+            for (DeclaredTarget target : currentTargets().values()) {
+                URI url = URI.create(target.url().replace("{", "%7B").replace("}", "%7D"));
+                String path = url.getPath();
+                facts.add(new CollectionProgress.Fact(new SurfaceAnalysis.EndpointKey(service(url), target.method(), path),
+                        !target.observationEvidenceIds().isEmpty(), target.provenance().stream()
+                        .anyMatch(origin -> CollectionProgress.endpointDeclaration(target.method(), origin.type()))));
+            }
+            CollectionProgress.Inventory progress = CollectionProgress.fromFacts(facts);
+            int unindexedScripts = (int) artifacts.list().stream()
+                    .filter(artifact -> javascript(artifact.contentType(), artifact.url()))
+                    .filter(artifact -> !indexedJavascriptArtifacts.contains(artifact.id())).count();
+            return json(200, JSON.createObjectNode().put("run_id", runId)
+                    .put("unit_version", CollectionProgress.UNIT_VERSION)
+                    .put("operation_unit", CollectionProgress.OPERATION_UNIT)
+                    .put("observed_operations", progress.observedOperations().size())
+                    .put("declared_unobserved_operations", progress.declaredUnobservedOperations().size())
+                    .put("unknown_method_paths", progress.unknownMethodPaths().size())
+                    .put("indexed_route_hints", indexedRouteHintCounts.values().stream()
+                            .mapToInt(Integer::intValue).sum())
+                    .put("unindexed_javascript_artifacts", unindexedScripts));
+        } catch (IllegalArgumentException error) {
+            return error(400, error.getMessage());
+        }
+    }
+
     private Map<String, DeclaredTarget> currentTargets() {
         Map<String, DeclaredTarget> targets = new LinkedHashMap<>(declaredTargets);
         for (RouteCandidate candidate : candidateSource.get()) {
@@ -564,6 +598,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 .put("call_site_total", analysis.callSites().size())
                 .put("asset_total", analysis.assets().size()).put("issue_total", analysis.issues().size());
         result.put("client_route_total", analysis.clientRoutes().size());
+        result.put("route_hint_total", analysis.routeHints().size());
+        result.put("route_hints_truncated", analysis.routeHintsTruncated());
         var calls = result.putArray("call_sites");
         for (JavascriptAnalysis.CallSite call : slice(analysis.callSites(), offset, maxItems)) {
             ObjectNode value = calls.addObject().put("reference", call.reference()).put("method", call.method())
@@ -589,15 +625,22 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             routes.addObject().put("path", route.path()).put("line", route.line())
                     .put("column", route.column());
         }
+        var hints = result.putArray("route_hints");
+        for (JavascriptAnalysis.RouteHint hint : slice(analysis.routeHints(), offset, maxItems)) {
+            hints.addObject().put("value", hint.value()).put("kind", hint.kind().name())
+                    .put("line", hint.line()).put("column", hint.column());
+        }
         boolean more = analysis.callSites().size() > offset + maxItems
                 || analysis.assets().size() > offset + maxItems || analysis.issues().size() > offset + maxItems
-                || analysis.clientRoutes().size() > offset + maxItems;
+                || analysis.clientRoutes().size() > offset + maxItems
+                || analysis.routeHints().size() > offset + maxItems;
         int nextOffset = more ? offset + maxItems : -1;
         result.put("next_offset", nextOffset);
         synchronized (this) {
             if (offset == nextIndexOffsets.getOrDefault(artifactId, 0)) {
                 if (nextOffset < 0) {
                     indexedJavascriptArtifacts.add(artifactId);
+                    indexedRouteHintCounts.put(artifactId, analysis.routeHints().size());
                     nextIndexOffsets.remove(artifactId);
                 } else nextIndexOffsets.put(artifactId, nextOffset);
             }
@@ -1102,6 +1145,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         declaredTargets.clear();
         reviewedTargetKeys.clear();
         indexedJavascriptArtifacts.clear();
+        indexedRouteHintCounts.clear();
         nextIndexOffsets.clear();
         observations.clear();
         server.close();

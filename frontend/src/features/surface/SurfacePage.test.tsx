@@ -27,6 +27,26 @@ const surfaceEvent: EventRecord = {
   objects: [{ resource: "products:1", evidence: "BODY_ID" }], verdict: "untested",
 }
 
+it("shows Evidence-bound unjoined JS fragments without counting them as APIs", async () => {
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = {
+    ...snapshotFixture,
+    surface: { endpoints: [], extractions: [], probes: [], routeHints: [
+      { value: "orders/", kind: "PREFIX", evidenceId: "ev-js-1", source: "LLM", runId: "llm-1", line: 2, column: 3 },
+      { value: "api/items/<id>", kind: "PATH_FRAGMENT", evidenceId: "ev-js-1", source: "LLM", runId: "llm-1", line: 3, column: 5 },
+    ] },
+  }
+  const user = userEvent.setup()
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  expect(screen.getByText("전체 0 · 입력 0")).toBeVisible()
+  await user.click(screen.getByText("미결합 조각 2개 — 확인 필요"))
+  expect(screen.getByText("orders/")).toBeVisible()
+  expect(screen.getByText("api/items/<id>")).toBeVisible()
+  expect(screen.getByText(/HTTP 메서드·완성 경로와 연결하지 못한/)).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "필터" }))
+  await user.click(screen.getByRole("checkbox", { name: "L · LLM" }))
+  expect(screen.queryByText("미결합 조각 2개 — 확인 필요")).not.toBeInTheDocument()
+})
+
 it("opens API details on every click, including the same row after collapsing the desktop pane", async () => {
   const originalMatchMedia = window.matchMedia
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true }))

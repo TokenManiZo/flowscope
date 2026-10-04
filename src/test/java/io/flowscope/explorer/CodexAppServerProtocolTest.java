@@ -173,14 +173,17 @@ final class CodexAppServerProtocolTest {
             JsonNode discovery = null;
             JsonNode observations = null;
             JsonNode worklist = null;
+            JsonNode progress = null;
             for (JsonNode tool : thread.path("params").path("dynamicTools")) {
                 if ("flowscope_record_discoveries".equals(tool.path("name").asText())) discovery = tool;
                 if ("flowscope_observations".equals(tool.path("name").asText())) observations = tool;
                 if ("flowscope_worklist".equals(tool.path("name").asText())) worklist = tool;
+                if ("flowscope_progress".equals(tool.path("name").asText())) progress = tool;
             }
             assertNotNull(discovery);
             assertNotNull(observations);
             assertNotNull(worklist);
+            assertNotNull(progress);
             assertTrue(observations.path("inputSchema").path("required").toString().contains("after_sequence"));
             String fieldPathHelp = discovery.path("inputSchema").path("properties").path("discoveries")
                     .path("items").path("properties").path("parameters").path("items")

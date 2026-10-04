@@ -18,6 +18,50 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class SurfaceAnalyzerTest {
     @Test
+    void unresolvedJavascriptFragmentsKeepEvidenceAndDoNotBecomeEndpointDeclarations() {
+        RequestRecord script = request(Source.LLM, "GET", "/main.js", 200);
+        script.responseContentType = "application/javascript";
+        script.body = "const base='catalog/'; const routes={DETAIL:'api/items/<itemId>'};";
+        Pipeline.Result result = Pipeline.runIsolated(List.of(script), new io.flowscope.core.AnalysisConfig());
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(result.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
+
+        assertTrue(analysis.routeHints().stream().anyMatch(hint -> hint.value().equals("api/items/<itemId>")
+                && hint.evidenceId().equals(result.records.getFirst().evidenceId)
+                && hint.source() == Source.LLM && hint.line() > 0));
+        assertTrue(analysis.endpoints().stream().noneMatch(endpoint -> endpoint.key().pathTemplate().contains("api/items")));
+    }
+
+    @Test
+    void routeHintsRecomputeWithTheSameEvidenceAfterJsonAndSqliteReopen(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        RequestRecord script = request(Source.LLM, "GET", "/main.js", 200);
+        script.responseContentType = "application/javascript";
+        script.body = "const prefix='inventory/'; const paths={DETAIL:'api/items/<itemId>'};";
+        io.flowscope.core.AnalysisConfig config = new io.flowscope.core.AnalysisConfig();
+        Pipeline.Result before = Pipeline.runIsolated(List.of(script), config);
+        List<RouteCandidate> candidates = RouteCandidateExtractor.extract(before.records,
+                ScopePolicy.parse("https://app.test/"), List.of());
+        SurfaceAnalysis expected = SurfaceAnalyzer.analyze(before.records, before.coverageRecords, candidates);
+        var projectStore = new io.flowscope.integration.ProjectStore();
+        var sqlite = new io.flowscope.integration.SqliteProjectStore(projectStore);
+        java.nio.file.Path json = directory.resolve("hints.flowscope.json");
+        java.nio.file.Path database = directory.resolve("hints.flowscope.db");
+        projectStore.save(json, before.records, config, List.of(), List.of(), Set.of(), candidates);
+        sqlite.save(database, before.records, config, List.of(), List.of(), Set.of(), candidates);
+        for (var loaded : List.of(projectStore.load(json), sqlite.load(database))) {
+            Pipeline.Result reopened = Pipeline.runIsolated(loaded.records(), loaded.config());
+            SurfaceAnalysis actual = SurfaceAnalyzer.analyze(reopened.records, reopened.coverageRecords,
+                    loaded.routeCandidates());
+            assertEquals(expected.routeHints(), actual.routeHints());
+            assertEquals(expected.routeHintsTruncated(), actual.routeHintsTruncated());
+            assertEquals(io.flowscope.core.CollectionProgress.reports(before.records, candidates, expected.routeHints(), List.of()),
+                    io.flowscope.core.CollectionProgress.reports(reopened.records, loaded.routeCandidates(), actual.routeHints(), List.of()));
+        }
+    }
+
+    @Test
     void 관측값은_저장하지_않고_위치_필드경로_형태와_소스만_데이터화한다() {
         RequestRecord human = request(Source.HUMAN, "POST", "/api/order/search", 200);
         human.query = "sort=DESC&page=2";

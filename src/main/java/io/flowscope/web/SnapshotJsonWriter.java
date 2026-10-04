@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.CollectionProgress;
 import io.flowscope.core.AuthorizationAnalysis;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.DataFlowAnalyzer;
@@ -169,7 +170,14 @@ public final class SnapshotJsonWriter {
         root.set("managedSessions", managedSessions(managedSessions));
         root.set("routeCandidates", routeCandidates(routeCandidates));
         root.set("runExecutions", json.valueToTree(executionSummaries == null ? List.of() : executionSummaries));
-        root.set("surface", json.valueToTree(surface(revision, result, routeCandidates)));
+        SurfaceAnalysis surfaceFacts = surface(revision, result, routeCandidates);
+        root.set("surface", json.valueToTree(surfaceFacts));
+        ObjectNode collection = root.putObject("collectionProgress")
+                .put("unitVersion", CollectionProgress.UNIT_VERSION)
+                .put("operationUnit", CollectionProgress.OPERATION_UNIT);
+        collection.set("runs", json.valueToTree(CollectionProgress.reports(result.records, routeCandidates,
+                surfaceFacts.routeHints(), executionSummaries == null ? List.of() : executionSummaries.stream()
+                        .filter(summary -> summary.source() == Source.LLM).map(RunExecutionLedger.Summary::runId).toList())));
         return json.writeValueAsBytes(root);
     }
 
