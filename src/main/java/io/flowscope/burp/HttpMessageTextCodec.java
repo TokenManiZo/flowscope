@@ -62,7 +62,7 @@ final class HttpMessageTextCodec {
         }
         String headerText = separator < 0 ? requestText : requestText.substring(0, separator + separatorLength);
         String bodyText = separator < 0 ? "" : requestText.substring(separator + separatorLength);
-        byte[] headers = encodeHeaders(headerText);
+        byte[] headers = encodeHeaders(headerText.replace("\r\n", "\n").replace("\n", "\r\n"));
         if (bodyText.isEmpty()) return headers;
         String contentType = contentType(headerText);
         if (isBinary(contentType)) {
