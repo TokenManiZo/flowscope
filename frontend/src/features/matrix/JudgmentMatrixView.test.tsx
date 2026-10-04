@@ -343,10 +343,10 @@ it("tells the operator whether a Repeater confirmation will count, and routes to
   await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
   const guidance = screen.getByRole("status", { name: "확인 재전송 조건" })
-  expect(guidance).toHaveTextContent("브라우저 수집이 꺼져 있어 결과가 이 셀에 반영되지 않습니다.")
+  expect(guidance).toHaveTextContent("HUMAN 탐색이 꺼져 있어 결과가 이 셀에 반영되지 않습니다.")
   expect(guidance).not.toHaveTextContent("D-071")
-  await user.click(within(guidance).getByRole("button", { name: "브라우저 열기" }))
-  expect(window.location.hash).toBe("#accounts")
+  await user.click(within(guidance).getByRole("button", { name: "탐색 시작" }))
+  expect(window.location.hash).toBe("#inspection")
 })
 
 it("shows no HUMAN-pass notice while a HUMAN pass is active", async () => {

@@ -60,7 +60,7 @@ describe("account and session management", () => {
     expect(await screen.findByRole("heading", { name: "계정·세션" })).toBeVisible()
     expect(screen.queryByText("관측된 세션")).not.toBeInTheDocument()
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
-    await waitFor(() => expect(lanes).toHaveTextContent(/브라우저\s*인증값 있음\s*0건/))
+    await waitFor(() => expect(lanes).toHaveTextContent(/HUMAN\s*인증값 있음\s*0건/))
     expect(lanes).toHaveTextContent(/LLM\s*사용 안 함/)
     expect(screen.queryByLabelText("등록 계정 표시 이름")).not.toBeInTheDocument()
     expect(screen.queryByText("고급 세션 진단")).not.toBeInTheDocument()
@@ -80,7 +80,7 @@ describe("account and session management", () => {
     renderAccounts({}, data)
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
     await waitFor(() => expect(lanes).toHaveTextContent(/LLM\s*사용 안 함\s*1건/))
-    expect(lanes).toHaveTextContent(/브라우저\s*인증값 있음\s*1건/)
+    expect(lanes).toHaveTextContent(/HUMAN\s*인증값 있음\s*1건/)
     expect(lanes).toHaveTextContent(/ZAP[\s\S]*1건/)
   })
 
@@ -114,29 +114,6 @@ describe("account and session management", () => {
     await user.click(await within(card).findByRole("button", { name: "수집 보기" }))
     expect(postBodies(fetchStub, "/api/human-run")).toEqual([])
     expect(window.location.hash).toBe("#inspection")
-    expect(sessionStorage.getItem("flowscope.inspectionRecords")).toBe("true")
-  })
-
-  it("opens anonymous collection and stops only the matching browser run", async () => {
-    const user = userEvent.setup()
-    const fetchStub = renderAccounts({}, snapshot(), [{ runId: "run-a", accountId: "account-a", proxy: "" }, { runId: "run-anon", accountId: "", proxy: "" }])
-    const anonymous = await screen.findByRole("region", { name: "비로그인 브라우저 수집" })
-    await user.click(await within(anonymous).findByRole("button", { name: "비로그인 수집 종료" }))
-    await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=end&runId=run-anon"]))
-    const account = screen.getByRole("article", { name: "계정 A 계정" })
-    expect(within(account).getByLabelText("계정 A 연결 상태")).toHaveTextContent("수집 중")
-    await user.click(within(account).getByRole("button", { name: "계정 A 수집 종료" }))
-    await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=end&runId=run-anon", "action=end&runId=run-a"]))
-  })
-
-  it("opens a fresh anonymous browser without enabling automatic verification", async () => {
-    const user = userEvent.setup()
-    const fetchStub = renderAccounts()
-    const button = await screen.findByRole("button", { name: "비로그인 브라우저 열기" })
-    await waitFor(() => expect(button).toBeEnabled())
-    await user.click(button)
-    await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=begin&account="]))
-    expect(postBodies(fetchStub, "/api/authorization-replay")).toEqual([])
   })
 
   it("registers an account from three fields in a centered dialog prefilled from the scope", async () => {

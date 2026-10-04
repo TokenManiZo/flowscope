@@ -21,6 +21,6 @@ it("renders nothing when no attributable traffic is waiting", () => {
 it("names the waiting request count and routes the operator to start a HUMAN pass", async () => {
   render(<RunGapHint count={5} />)
   expect(screen.getByRole("status", { name: "run 밖 API 트래픽 안내" })).toHaveTextContent("인증된 API 요청 5건")
-  await userEvent.click(screen.getByRole("button", { name: "계정·세션에서 브라우저 열기" }))
-  expect(window.location.hash).toBe("#accounts")
+  await userEvent.click(screen.getByRole("button", { name: "점검에서 HUMAN 탐색 시작" }))
+  expect(window.location.hash).toBe("#inspection")
 })

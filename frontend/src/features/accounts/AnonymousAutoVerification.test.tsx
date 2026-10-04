@@ -44,7 +44,6 @@ it("starts explicitly armed anonymous GET verification from the account session 
   const post = fetch.mock.calls.find(([, init]) => init?.method === "POST")
   expect(post?.[0]).toBe("/api/authorization-replay")
   expect(String(post?.[1]?.body)).toBe("action=start-anonymous-get&armed=true")
-  await user.click(screen.getByText("검증 상세"))
   expect(screen.getByText(/전송 예약 0건.*비로그인 응답 0건.*제외 0건.*실패 0건/)).toBeVisible()
 
   await user.click(toggle)
@@ -62,8 +61,6 @@ it("keeps polling and separates exclusions from execution failures", async () =>
   vi.stubGlobal("fetch", fetch)
   renderWithQueryClient(<AnonymousAutoVerification />)
 
-  await screen.findByLabelText("자동 검증 요약")
-  await userEvent.click(screen.getByText("검증 상세"))
   expect(await screen.findByText(/전송 예약 250건.*비로그인 응답 249건.*제외 2건.*실패 1건/)).toBeVisible()
   expect(screen.getByText("최근 제외/실패 사유: 대상 연결 또는 HTTP 전송 실패")).toBeVisible()
   await waitFor(() => expect(fetch.mock.calls.length).toBeGreaterThan(1), { timeout: 2_500 })
