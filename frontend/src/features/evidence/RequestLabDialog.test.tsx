@@ -652,7 +652,7 @@ describe("RequestLabDialog", () => {
     expect(request).not.toBeVisible()
     expect(owner.request).toBe(original)
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
-    await user.click(within(pane).getByRole("button", { name: "Raw", exact: true }))
+    await user.click(within(pane).getByRole("button", { name: "Raw" }))
     expect(screen.getByLabelText("Request Lab 요청 원문")).toBe(request)
     expect(request).toHaveValue(original)
     await user.click(screen.getByRole("button", { name: "닫기" }))

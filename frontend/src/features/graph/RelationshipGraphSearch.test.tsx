@@ -88,7 +88,7 @@ it("keeps object expansion transient and folds it on background, outside selecti
   await userEvent.click(screen.getByRole("button", { name: "clear canvas" }))
   expect(canvas()).toHaveAttribute("data-open-object", "")
   await open()
-  await userEvent.click(screen.getByRole("button", { name: "select " + `operation:${cells[0].op}`, exact: true }))
+  await userEvent.click(screen.getByRole("button", { name: "select " + `operation:${cells[0].op}` }))
   expect(canvas()).toHaveAttribute("data-open-object", "")
   await open()
   await userEvent.click(screen.getByRole("button", { name: "open lab" }))
