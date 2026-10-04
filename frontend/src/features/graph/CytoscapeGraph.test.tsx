@@ -123,6 +123,33 @@ function runScheduledFrame() {
   callback?.(0)
 }
 
+it("updates search rings without recreating graph elements", () => {
+  const props = { projection, locked: false, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn() }
+  const { rerender } = render(<CytoscapeGraph {...props} />)
+  remove.mockClear(); vi.mocked(core.add).mockClear()
+  rerender(<CytoscapeGraph {...props} searchMatches={new Map([["identity:alice", "member"]])} />)
+  expect(remove).not.toHaveBeenCalled()
+  expect(core.add).not.toHaveBeenCalled()
+  expect(screen.getByText("멤버 일치")).toBeInTheDocument()
+  rerender(<CytoscapeGraph {...props} searchMatches={new Map()} />)
+  expect(screen.queryByText("멤버 일치")).not.toBeInTheDocument()
+  expect(remove).not.toHaveBeenCalled()
+})
+
+it("reveals a search selection with a viewport change while preserving model coordinates", () => {
+  const done = vi.fn()
+  const props = { projection, locked: true, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn(), onRevealed: done }
+  const { rerender } = render(<CytoscapeGraph {...props} />)
+  modelPosition = { x: 1100, y: 20 }
+  vi.mocked(node.data).mockImplementation(key => key === "width" ? "200" : key === "height" ? "100" : key === "kind" ? "identity" : undefined)
+  vi.mocked(core.viewport).mockClear()
+  rerender(<CytoscapeGraph {...props} revealRequest={{ nodeId: "identity:alice", requestId: 7 }} />)
+  act(runScheduledFrame)
+  expect(core.viewport).toHaveBeenCalledWith({ zoom: 1, pan: { x: -316, y: 86 } })
+  expect(modelPosition).toEqual({ x: 1100, y: 20 })
+  expect(done).toHaveBeenCalledWith(7)
+})
+
 function createStatefulNode(id: string, kind: string, initial: { x: number; y: number }, viewport: () => { zoom: number; pan: { x: number; y: number } }) {
   let model = { ...initial }
   let locked = false

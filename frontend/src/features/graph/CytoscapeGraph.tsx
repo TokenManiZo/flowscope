@@ -9,6 +9,7 @@ import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import { graphOpenAction, type HierarchyNode, type HierarchyProjection } from "./graphHierarchy"
 import { deriveGraphFocus } from "./graphFocus"
+import { graphSearchViewport } from "./graphSearch"
 import { relationshipNodeCard, relationshipRouteCandidateCard } from "./relationshipNodeCard"
 
 interface Props {
@@ -31,6 +32,10 @@ interface Props {
   preferences?: GraphPreferences | null
   confirmedNodeIds?: ReadonlySet<string>
   selectedElementId?: string | null
+  searchMatches?: ReadonlyMap<string, "direct" | "member">
+  revealRequest?: { nodeId: string; requestId: number } | null
+  onRevealed?(requestId: number): void
+  onInteraction?(): void
   onSelect(selection: GraphSelection, elementId: string): void
   onNavigate?(node: HierarchyNode): void
   /** 왼쪽 신원 노드를 열면(더블클릭·Enter) 한 단계 위 View로 간다. */
@@ -45,6 +50,8 @@ interface Props {
 
 const noConfirmedNodes = new Set<string>()
 const noStatuses: ReadonlyMap<string, readonly number[]> = new Map()
+const noSearchMatches: ReadonlyMap<string, "direct" | "member"> = new Map()
+interface SearchRing { id: string; left: number; top: number; width: number; height: number; member: boolean }
 /** 레인 안 노드 사이 최소 세로 간격(모델 좌표)과 위쪽 여백. */
 const LANE_NODE_GAP = 20, LANE_TOP = 64
 /** 관측 엣지 색. 라이트는 흰 캔버스에서 선이 보이도록 한 단계 진하게 둔다. */
@@ -389,7 +396,7 @@ function applyEdgeRoutes(core: Core, laneCount: number) {
 const noStatusColors: ReadonlyMap<number, string> = new Map()
 const noSplitSources: readonly string[] = []
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -403,6 +410,23 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const [cardTooltip, setCardTooltip] = useState<{ nodeId: string; label: string; x: number; y: number; width: number } | null>(null)
   const [minimap, setMinimap] = useState<MinimapView | null>(null)
   const [bands, setBands] = useState<GroupBand[]>([])
+  const [searchRings, setSearchRings] = useState<SearchRing[]>([])
+  const searchMatchesRef = useRef(searchMatches)
+  searchMatchesRef.current = searchMatches
+  const interactionRef = useRef(onInteraction)
+  interactionRef.current = onInteraction
+  const onRevealedRef = useRef(onRevealed)
+  onRevealedRef.current = onRevealed
+  const updateSearchRings = useCallback((core: Core) => {
+    const rings: SearchRing[] = []
+    for (const [id, match] of searchMatchesRef.current) {
+      const node = core.getElementById(id)
+      if (node.empty?.()) continue
+      const position = node.renderedPosition(), width = node.renderedOuterWidth(), height = node.renderedOuterHeight()
+      rings.push({ id, left: position.x - width / 2 - 4, top: position.y - height / 2 - 4, width: width + 8, height: height + 8, member: match === "member" })
+    }
+    setSearchRings(previous => previous.length === rings.length && previous.every((ring, index) => Object.entries(ring).every(([key, value]) => value === rings[index][key as keyof SearchRing])) ? previous : rings)
+  }, [])
   const projectionRef = useRef(projection)
   const selectRef = useRef(onSelect)
   const navigateRef = useRef(onNavigate)
@@ -551,6 +575,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: 'node[focused = "no"]', style: { opacity: 0.35 } },
           { selector: 'edge[hl = "no"]', style: { opacity: 0.12 } },
           { selector: 'node[hl = "no"]', style: { opacity: 0.3 } },
+          { selector: 'node[searchMatch = "yes"]', style: { opacity: 1 } },
         ] as unknown as cytoscape.StylesheetJson,
       })
     } catch {
@@ -573,6 +598,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       preferenceRef.current(readPreferences(core))
       publishLaneBounds()
       setMinimap(readMinimap(core)); setBands(readGroupBands(core))
+      updateSearchRings(core)
     }
     publishLayoutRef.current = publishLayout
     let correctionFrame: number | null = null
@@ -595,6 +621,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       preferenceRef.current(readPreferences(core))
       publishLaneBounds()
       setMinimap(readMinimap(core)); setBands(readGroupBands(core))
+      updateSearchRings(core)
     }
     const scheduleViewportPublish = () => {
       if (viewportFrame !== null) return
@@ -639,6 +666,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     const viewportListener = () => scheduleViewportPublish()
     const wheelListener = (event: WheelEvent) => {
+      interactionRef.current?.()
       event.preventDefault()
       const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? containerRef.current?.clientHeight ?? 600 : 1
       if (graphWheelIntent(inputModeRef.current, event) === "pan") core.panBy({ x: -event.deltaX * scale, y: -event.deltaY * scale })
@@ -687,7 +715,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     let routeFrame: number | null = null
     const routeListener = () => {
       if (routeFrame !== null) return
-      routeFrame = requestAnimationFrame(() => { routeFrame = null; applyEdgeRoutes(core, laneCountRef.current); setBands(readGroupBands(core)) })
+      routeFrame = requestAnimationFrame(() => { routeFrame = null; applyEdgeRoutes(core, laneCountRef.current); setBands(readGroupBands(core)); updateSearchRings(core) })
     }
     core.on("position data add remove", routeListener)
     return () => {
@@ -714,7 +742,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       core.destroy()
       if (coreRef.current === core) coreRef.current = null
     }
-  }, [cancelTooltipHide, dismissCardTooltip, scheduleTooltipHide])
+  }, [cancelTooltipHide, dismissCardTooltip, scheduleTooltipHide, updateSearchRings])
 
   useEffect(() => {
     const core = coreRef.current
@@ -753,6 +781,39 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     applyHighlight(core, projectionRef.current, highlight, cardsRef.current, theme, statusColors, splitSources)
     setMinimap(readMinimap(core)); setBands(readGroupBands(core))
   }, [highlight, splitSources, statusColors, theme])
+
+  // 검색 외곽선은 카드·위험 테두리와 분리한다. 입력마다 projection을 다시 만들지 않는다.
+  useEffect(() => {
+    const core = coreRef.current
+    if (!core) return
+    const apply = () => core.nodes().forEach(node => {
+      const value = searchMatches.has(node.id()) ? "yes" : "no"
+      if (node.data("searchMatch") !== value) node.data("searchMatch", value)
+    })
+    if (typeof core.batch === "function") core.batch(apply); else apply()
+    updateSearchRings(core)
+  }, [projection, searchMatches, theme, updateSearchRings])
+
+  useEffect(() => {
+    if (!revealRequest) return
+    const frame = requestAnimationFrame(() => {
+      const core = coreRef.current, canvas = containerRef.current
+      if (!core || !canvas) return
+      const node = core.getElementById(revealRequest.nodeId)
+      if (!node.empty?.()) {
+        core.resize()
+        const position = node.position()
+        const next = graphSearchViewport({ ...position, width: Number(node.data("width")), height: Number(node.data("height")) }, { zoom: core.zoom(), pan: core.pan() }, { width: canvas.clientWidth, height: canvas.clientHeight })
+        const pan = core.pan()
+        if (Math.abs(next.zoom - core.zoom()) > 0.001 || Math.abs(next.pan.x - pan.x) > 0.5 || Math.abs(next.pan.y - pan.y) > 0.5) {
+          core.viewport(next)
+          publishLayoutRef.current?.()
+        }
+      }
+      onRevealedRef.current?.(revealRequest.requestId)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [revealRequest])
 
 
   // ponytail: 한 레인만 다시 세운다. 전체 재정렬과 달리 다른 레인에서 잡아둔 배치는 건드리지 않는다.
@@ -822,6 +883,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
         }}
         onPointerLeave={() => { if (!resizeDragRef.current) setCornerCursor(null) }}
         onPointerDownCapture={event => {
+          interactionRef.current?.()
           const nodeId = cornerNodeRef.current ?? cornerNodeAt(event.clientX, event.clientY)
           const node = nodeId ? coreRef.current?.getElementById(nodeId) : null
           if (!nodeId || !node || node.empty() || event.button !== 0) return
@@ -855,6 +917,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           dismissCardTooltip()
         }}
         onKeyDown={event => {
+          interactionRef.current?.()
           // Shift+방향키: 포커스한 노드 크기 조절(오른쪽·아래로 늘리고 왼쪽·위로 줄인다). 마우스 없이 쓰는 모서리 조절 대안이다.
           if (event.shiftKey && ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key) && keyboardNodeRef.current && !locked) {
             event.preventDefault()
@@ -879,6 +942,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           }
           else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip(); clearSelectionRef.current?.() }
         }} />
+      {searchRings.map(ring => <div key={ring.id} aria-hidden="true" className="pointer-events-none absolute rounded-lg border-2 border-dashed border-emerald-600 dark:border-emerald-300" style={{ left: ring.left, top: ring.top, width: ring.width, height: ring.height }}>{ring.member && <span className="absolute bottom-full left-0 mb-1 whitespace-nowrap rounded bg-[var(--flowscope-pane)] px-1 text-[10px] text-emerald-700 dark:text-emerald-300">멤버 일치</span>}</div>)}
       {/* 펼친 묶음: 대표 카드와 멤버 왼쪽의 파란 선과, 오른쪽 위·아래의 접기 버튼. 선 영역은 클릭을 가로채지 않는다. */}
       {bands.map(band => {
         const fold = (edge: "top" | "bottom") => <button key={edge} type="button" aria-label={`${band.label} 묶음 접기${edge === "bottom" ? " (아래)" : ""}`} onClick={() => toggleGroupRef.current?.(band.id)}

@@ -8,6 +8,7 @@ import { HIGHLIGHT_SOURCE_COLOR } from "./graphHighlight"
 import type { HierarchyNode } from "./graphHierarchy"
 import { MethodBadge as Method, StatusBadge } from "./httpBadges"
 import { operationParts } from "./relationshipNodeCard"
+import { operationShapeKey } from "./graphPathShape"
 
 const SOURCE_LETTERS = [["human", "H"], ["scanner", "S"], ["llm", "L"]] as const
 const GROUP_PREVIEW = 5
@@ -55,7 +56,7 @@ function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: 
  * 그룹 화면의 API 목록 표. 메서드 + 경로 형식이 같은 API는 한 줄로 묶어 접어 두고, 펼치면 실제 경로가 들여 써져 나온다.
  * 줄을 누르면 화면을 옮기지 않고 그 API를 선택한다(상세는 오른쪽 패널). 객체 칩은 그 줄 아래에 객체 목록을 펼친다.
  */
-export function ApiListTable({ operations, snapshot, selectedId, onSelectApi, onSelectObject }: { operations: readonly HierarchyNode[]; snapshot: TableSnapshot; selectedId: string | null; onSelectApi(node: HierarchyNode): void; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
+export function ApiListTable({ operations, snapshot, selectedId, revealNodeId, searchMatches, onRevealDismiss, onSelectApi, onSelectObject }: { operations: readonly HierarchyNode[]; snapshot: TableSnapshot; selectedId: string | null; revealNodeId?: string; searchMatches?: ReadonlyMap<string, "direct" | "member">; onRevealDismiss?(): void; onSelectApi(node: HierarchyNode): void; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState<readonly string[]>([])
   const [showAll, setShowAll] = useState<readonly string[]>([])
@@ -66,12 +67,16 @@ export function ApiListTable({ operations, snapshot, selectedId, onSelectApi, on
   const hit = (path: string) => path.toLowerCase().includes(needle)
   const pathOf = (node: HierarchyNode) => operationParts(node.label).path
   const opsOf = (nodes: readonly HierarchyNode[]) => nodes.flatMap(node => node.selection.operation ? [node.selection.operation] : [])
-  const toggle = (key: string) => setOpen(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
+  const toggle = (key: string) => {
+    const revealed = groups.find(group => group.key === key)?.items.some(node => node.id === revealNodeId)
+    onRevealDismiss?.()
+    setOpen(current => current.includes(key) ? current.filter(item => item !== key) : revealed ? current : [...current, key])
+  }
   // 객체 목록은 칩마다 따로 열고 닫는다(여러 개를 동시에 펼칠 수 있다).
   const toggleObject = (key: string) => setOpenObjects(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
   const objectRow = (rowKey: string, nodes: readonly HierarchyNode[]) => openObjects.filter(key => key.startsWith(`${rowKey}|`)).map(key => <ObjectRows key={key} operations={opsOf(nodes)} type={key.slice(rowKey.length + 1)} snapshot={snapshot} selectedId={selectedId} onSelectObject={onSelectObject} />)
   const apiRow = (node: HierarchyNode, child: boolean) => <Fragment key={node.id}>
-    <tr title={pathOf(node)} tabIndex={0} aria-label={node.label} aria-selected={selectedId === node.id} className={cn("cursor-pointer border-b border-border/70 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none", child ? "h-10" : "h-12", selectedId === node.id && "bg-sky-500/10 shadow-[inset_3px_0_0_rgb(14_165_233)]")} onClick={() => onSelectApi(node)} onKeyDown={activate(() => onSelectApi(node))}>
+    <tr data-graph-node-id={node.id} title={pathOf(node)} tabIndex={0} aria-label={node.label} aria-selected={selectedId === node.id} className={cn("cursor-pointer border-b border-border/70 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none", child ? "h-10" : "h-12", selectedId === node.id && "bg-sky-500/10 shadow-[inset_3px_0_0_rgb(14_165_233)]", searchMatches?.has(node.id) && "outline-2 outline-dashed -outline-offset-2 outline-emerald-600 dark:outline-emerald-300")} onClick={() => onSelectApi(node)} onKeyDown={activate(() => onSelectApi(node))}>
       <td />
       <td className="px-2">{!child && <Method method={operationParts(node.label).method} />}</td>
       <td className={cn("truncate px-2 font-mono", child ? "pl-6 text-sm" : "text-[15px]")}>{child ? shortPath(pathOf(node)) : pathOf(node)}</td>
@@ -87,14 +92,17 @@ export function ApiListTable({ operations, snapshot, selectedId, onSelectApi, on
         <colgroup><col className="w-6" /><col className="w-[80px]" /><col /><col className="w-[140px]" /><col className="w-[76px]" /><col className="w-14" /><col className="w-[160px]" /></colgroup>
         <thead className="sticky top-0 z-10 bg-card text-muted-foreground"><tr className="h-12 border-b border-border"><th /><th className="px-2 font-normal">메서드</th><th className="px-2 font-normal">경로</th><th className="px-2 font-normal">응답</th><th className="px-2 font-normal">출처</th><th className="px-2 font-normal">신원</th><th className="px-2 font-normal">객체</th></tr></thead>
         <tbody>{groups.map(group => {
-          if (group.items.length === 1) return hit(pathOf(group.items[0])) ? apiRow(group.items[0], false) : null
+          if (group.items.length === 1) return hit(pathOf(group.items[0])) || group.items[0].id === revealNodeId ? apiRow(group.items[0], false) : null
           const shapeHit = needle !== "" && hit(group.path)
-          const shown = needle && !shapeHit ? group.items.filter(node => hit(pathOf(node))) : group.items
+          const shown = needle && !shapeHit ? group.items.filter(node => hit(pathOf(node)) || node.id === revealNodeId) : group.items
           if (!shown.length) return null
-          const expanded = open.includes(group.key)
+          const expanded = open.includes(group.key) || shown.some(node => node.id === revealNodeId)
           const visible = showAll.includes(group.key) ? shown : shown.slice(0, GROUP_PREVIEW)
+          const target = shown.find(node => node.id === revealNodeId)
+          if (target && !visible.includes(target)) visible.push(target)
+          const nodeId = `operation-group:${operationShapeKey(group.items[0].label)}`
           return <Fragment key={group.key}>
-            <tr tabIndex={0} aria-expanded={expanded} aria-label={`${group.method} ${group.path} 묶음`} className="h-12 cursor-pointer border-b border-border/70 bg-muted/30 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none" onClick={() => toggle(group.key)} onKeyDown={activate(() => toggle(group.key))}>
+            <tr data-graph-node-id={nodeId} tabIndex={0} aria-expanded={expanded} aria-label={`${group.method} ${group.path} 묶음`} className={cn("h-12 cursor-pointer border-b border-border/70 bg-muted/30 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none", searchMatches?.has(nodeId) && "outline-2 outline-dashed -outline-offset-2 outline-emerald-600 dark:outline-emerald-300")} onClick={() => toggle(group.key)} onKeyDown={activate(() => toggle(group.key))}>
               <td className="pl-1">{expanded ? <ChevronDown className="size-4" aria-hidden="true" /> : <ChevronRight className="size-4" aria-hidden="true" />}</td>
               <td className="px-2"><Method method={group.method} /></td>
               <td className="truncate px-2 font-mono text-[15px]">{group.path}</td>

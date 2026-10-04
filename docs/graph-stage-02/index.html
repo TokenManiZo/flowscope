@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FlowScope · 2단계 검색 설계 목업</title>
+  <style>
+    :root { color-scheme: dark; --bg:#020617; --fg:#e2e8f0; --muted:#94a3b8; --border:#24323d; --pane:#0f172a; --accent:#34d399; }
+    :root[data-theme="light"] { color-scheme:light; --bg:#f7f9fc; --fg:#162033; --muted:#506176; --border:#dbe3ec; --pane:#fff; --accent:#047857; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:14px/1.6 'Geist Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif; color:var(--fg); background:var(--bg); }
+    header { padding:18px 24px; border-bottom:1px solid var(--border); }
+    h1 { margin:0; font-size:18px; font-weight:600; }
+    p { margin:7px 0; color:var(--muted); max-width:90ch; }
+    nav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:14px; }
+    button,select { font:inherit; color:inherit; border:1px solid var(--border); background:var(--pane); border-radius:6px; padding:6px 11px; cursor:pointer; }
+    button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }
+    button:hover { border-color:var(--muted); }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    a { color:var(--accent); text-underline-offset:3px; }
+    .options { margin-left:auto; display:flex; gap:12px; align-items:center; }
+    .options label { display:flex; gap:6px; align-items:center; font-size:12px; }
+    main { overflow:auto; padding:20px 24px 32px; }
+    figure { margin:0; width:var(--frame-width,1280px); max-width:100%; }
+    img { display:block; width:100%; height:auto; border:1px solid var(--border); }
+    figcaption { margin-top:12px; font-size:13px; color:var(--muted); max-width:90ch; }
+    .note { margin-top:18px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>2단계 · 프로젝트 전체 관계 노드 검색</h1>
+    <p>승인된 상태별 화면 목업 · 기존 1단계 디자인과 배치 유지 동작을 기준으로 구성했습니다. 예시 도메인·숫자·기록은 모두 합성입니다.</p>
+    <nav aria-label="목업 상태">
+      <button data-state="results" aria-pressed="true">검색 결과</button>
+      <button data-state="api" aria-pressed="false">API 선택 후</button>
+      <button data-state="object" aria-pressed="false">객체 선택 후</button>
+      <button data-state="empty" aria-pressed="false">결과 없음</button>
+      <div class="options">
+        <label>테마 <select id="theme"><option value="dark">다크</option><option value="light">라이트</option></select></label>
+        <label>화면 <select id="width"><option value="1280">1280px</option><option value="1920">1920px</option></select></label>
+      </div>
+    </nav>
+  </header>
+  <main>
+    <figure>
+      <img id="screen" src="captures/results-dark-1280.svg" alt="검색 결과: 같은 API의 서비스와 접힌 묶음, 표시 제한 밖 결과를 구분하는 제안 화면">
+      <figcaption id="caption"></figcaption>
+    </figure>
+    <p class="note">위 상태 버튼으로 흐름을 비교하세요. 그림 안의 입력·노드·필터는 정적 예시입니다. 실제 검색, 저장, HTTP 전송과 연결하지 않았습니다. <a href="README.md">상세 설계 문서</a></p>
+  </main>
+  <script>
+    const descriptions = {
+      results: '검색어를 입력하면 종류·서비스·소속 경로와 함께 결과를 보여 줍니다. 입력만으로 현재 계층이나 배치를 바꾸지 않습니다. 예시의 같은 API 두 개는 서로 다른 서비스입니다.',
+      api: '첫 API 결과를 선택한 상태입니다. 기본 18개 제한을 유지하며 대상 한 개를 추가로 표시하고 필요한 API 형식 묶음을 엽니다. 기존 좌표·크기를 유지하며 대상이 화면 밖이면 viewport만 이동합니다.',
+      object: '접힌 객체 묶음의 멤버를 선택한 상태입니다. 관련 개별 API 보기에서 객체를 찾아 보여 줍니다. 전체 객체 묶음을 자동으로 펼치지 않습니다. 대상이 여러 API에 연결된 경우 실제 선택한 API 경로를 표시합니다.',
+      empty: '결과가 없을 때 검색어 수정을 안내합니다. 데이터 갱신으로 사라진 대상도 결과에서 제외하며, 일치 항목이 남지 않으면 같은 화면을 사용합니다. 다른 결과로 자동 이동하지 않습니다.'
+    };
+    let state = 'results';
+    const theme = document.getElementById('theme'), width = document.getElementById('width');
+    function render() {
+      document.documentElement.dataset.theme = theme.value;
+      document.getElementById('screen').src = `captures/${state}-${theme.value}-${width.value}.svg`;
+      document.getElementById('screen').alt = descriptions[state];
+      document.getElementById('caption').textContent = descriptions[state];
+      document.querySelector('figure').style.setProperty('--frame-width', `${width.value}px`);
+      document.querySelectorAll('[data-state]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.state === state)));
+    }
+    document.querySelectorAll('[data-state]').forEach(button => button.addEventListener('click', () => { state = button.dataset.state; render(); }));
+    theme.addEventListener('change', render); width.addEventListener('change', render); render();
+  </script>
+</body>
+</html>
