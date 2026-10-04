@@ -70,7 +70,7 @@ export function buildGraphSearchIndex(cells: readonly Cell[]): GraphSearchIndex 
   return { entries: result, byKey: new Map(result.map(entry => [entry.key, entry])) }
 }
 
-export interface GraphSearchResults { entries: readonly GraphSearchEntry[]; keys: ReadonlySet<string>; total: number }
+export interface GraphSearchResults { entries: readonly GraphSearchEntry[]; keys: ReadonlySet<string>; total: number; hosts?: ReadonlyMap<string, string> }
 const kinds: readonly SearchKind[] = ["target", "api-group", "operation", "resource", "identity", "operation-group", "object-group"]
 export function searchGraph(index: GraphSearchIndex, query: string, navigation: GraphNavigation, limit = 30): GraphSearchResults {
   const needle = query.trim().toLowerCase(), tokens = needle.split(/\s+/)
@@ -81,15 +81,35 @@ export function searchGraph(index: GraphSearchIndex, query: string, navigation: 
     || Number(b.entry.service === service) - Number(a.entry.service === service) || Number(b.local) - Number(a.local)
     || kinds.indexOf(a.entry.kind) - kinds.indexOf(b.entry.kind) || compare(a.entry.title, b.entry.title) || compare(a.entry.key, b.entry.key)
   const best: Ranked[] = [], keys = new Set<string>()
+  const servicesByName = new Map<string, Set<string>>()
+  const nameKey = (entry: GraphSearchEntry) => JSON.stringify([entry.kind, entry.title])
+  const shortHost = (service: string) => { try { const url = new URL(service); return `${url.hostname}:${url.port || (url.protocol === "https:" ? "443" : "80")}` } catch { return service } }
   for (const entry of index.entries) {
     if (!tokens.every(token => entry.text.includes(token))) continue
     keys.add(entry.key)
+    const name = nameKey(entry)
+    const services = servicesByName.get(name) ?? new Set<string>()
+    services.add(entry.service); servicesByName.set(name, services)
     const item = { entry, rank: entry.name === needle ? 0 : entry.name.startsWith(needle) ? 1 : entry.name.includes(needle) ? 2 : 3, local: entry.contexts.some(context => context.groupId === navigation.groupId) }
     let low = 0, high = best.length
     while (low < high) { const middle = (low + high) >>> 1; if (order(item, best[middle]) < 0) high = middle; else low = middle + 1 }
     if (low < limit) { best.splice(low, 0, item); if (best.length > limit) best.pop() }
   }
-  return { entries: best.map(item => item.entry), keys, total: keys.size }
+  const hosts = new Map<string, string>(), labelsByName = new Map<string, Map<string, string>>()
+  for (const { entry } of best) {
+    const name = nameKey(entry), services = servicesByName.get(name)!
+    if (services.size < 2) continue
+    let labels = labelsByName.get(name)
+    if (!labels) {
+      labels = new Map([...services].map(service => [service, shortHost(service)]))
+      const counts = new Map<string, number>()
+      for (const host of labels.values()) counts.set(host, (counts.get(host) ?? 0) + 1)
+      for (const [service, host] of labels) if (counts.get(host)! > 1) labels.set(service, service)
+      labelsByName.set(name, labels)
+    }
+    hosts.set(entry.key, labels.get(entry.service)!)
+  }
+  return { entries: best.map(item => item.entry), keys, total: keys.size, hosts }
 }
 
 export interface SearchDestination { navigation: GraphNavigation; nodeId: string; reveal: GraphReveal; expand: readonly string[] }

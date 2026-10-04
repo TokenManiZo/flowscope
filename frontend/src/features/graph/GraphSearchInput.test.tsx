@@ -57,3 +57,18 @@ it("uses the ordinary empty state when refreshed results disappear", async () =>
   expect(screen.getByText("검색 결과가 없습니다. 검색어를 바꿔 보세요.")).toBeVisible()
   expect(screen.queryByText(/소멸|없어졌/)).not.toBeInTheDocument()
 })
+
+it("shows a host only for duplicate names across the full match set, beyond the display limit", async () => {
+  const cells = ["https://first.example.test:8900", "https://second.example.test:8900"].map(service => ({ idn: "USER A", op: `${service} GET /orders/101`, resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["e-1"] }))
+  const all = buildGraphSearchIndex(cells)
+  const limited = searchGraph(all, "GET /orders/101", initialGraphNavigation, 1)
+  expect(limited.entries).toHaveLength(1)
+  expect(limited.hosts?.get(limited.entries[0].key)).toBe("first.example.test:8900")
+  render(<GraphSearchInput query="GET /orders/101" results={limited} disabled={false} searching={false} canvas={canvas} onQuery={vi.fn()} onMore={vi.fn()} onChoose={vi.fn()} />)
+  await userEvent.click(screen.getByRole("combobox"))
+  const option = screen.getByRole("option")
+  expect(option).toHaveAttribute("aria-label", "API GET /orders/101 first.example.test:8900")
+  expect(option.textContent).not.toContain("https://")
+  expect(option).toHaveAttribute("aria-description", expect.stringContaining("https://first.example.test:8900"))
+  expect(results.hosts?.size ?? 0).toBe(0)
+})

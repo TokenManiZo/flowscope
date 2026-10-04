@@ -129,3 +129,10 @@ describe("search viewport", () => {
     expect(viewport.zoom).toBeCloseTo(0.868)
   })
 })
+
+it("distinguishes same host and port with different schemes without affecting result ranking", () => {
+  const index = buildGraphSearchIndex([cell({ op: "http://same.test:8900 GET /api/orders/101" }), cell({ op: "https://same.test:8900 GET /api/orders/101" })])
+  const matches = searchGraph(index, "GET /api/orders/101", initial)
+  expect(matches.entries).toHaveLength(2)
+  expect([...matches.hosts!.values()]).toEqual(["http://same.test:8900", "https://same.test:8900"])
+})

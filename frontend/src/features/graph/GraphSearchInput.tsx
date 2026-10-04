@@ -78,12 +78,11 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
       <p role="status" className="border-b border-border px-3 py-2 text-xs text-muted-foreground">{disabled ? "마지막 조회 결과 · 데이터 조회 후 이동할 수 있습니다." : searching ? "검색 중…" : `검색 결과 ${results.total}개`}</p>
       <div role="listbox" id={`${id}-results`} aria-label="노드 검색 결과" className="overflow-y-auto" style={{ maxHeight: bounds.height }}>
         {!searching && !entries.length && <p className="px-3 py-5 text-sm text-muted-foreground">검색 결과가 없습니다. 검색어를 바꿔 보세요.</p>}
-        {entries.map((entry, index) => <div key={entry.key} role="option" id={`${id}-result-${index}`} aria-selected={activeKey === entry.key} aria-disabled={disabled || searching} data-search-active={activeKey === entry.key}
-          className={`grid cursor-pointer gap-1 border-b border-border/60 px-3 py-2.5 last:border-0 hover:bg-muted/50 ${activeKey === entry.key ? "bg-muted" : ""} ${disabled || searching ? "cursor-default opacity-60" : ""}`}
+        {entries.map((entry, index) => <div key={entry.key} role="option" id={`${id}-result-${index}`} aria-selected={activeKey === entry.key} aria-disabled={disabled || searching} data-search-active={activeKey === entry.key} aria-label={`${searchKindNames[entry.kind]} ${entry.title}${results.hosts?.get(entry.key) ? ` ${results.hosts.get(entry.key)}` : ""}`} aria-description={`${entry.service}; ${entry.contexts.map(context => `${context.groupLabel}: ${context.operation}`).join("; ")}`} title={`${entry.service} · ${entry.contexts[0]?.operation ?? ""}`}
+          className={`flex min-h-12 cursor-pointer items-center gap-2 border-b border-border px-3 py-2.5 last:border-0 hover:bg-muted/50 ${activeKey === entry.key ? "bg-muted" : ""} ${disabled || searching ? "cursor-default opacity-60" : ""}`}
           onMouseDown={event => event.preventDefault()} onClick={() => choose(entry)}>
-          <span className="flex min-w-0 items-center gap-2"><span className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300">{searchKindNames[entry.kind]}</span><span className="truncate font-mono text-sm" title={entry.title}>{entry.title}</span></span>
-          <span className="truncate text-xs text-muted-foreground" title={entry.service}>{entry.service}</span>
-          <span className="truncate text-xs text-muted-foreground" title={entry.contexts[0]?.operation}>{entry.contexts[0]?.groupLabel} · {entry.contexts[0]?.operation}{entry.contexts.length > 1 ? ` 외 ${entry.contexts.length - 1}개 API` : ""}</span>
+          <span className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300">{searchKindNames[entry.kind]}</span><span className="min-w-0 flex-1 truncate font-mono text-sm">{entry.title}</span>
+          {results.hosts?.get(entry.key) && <span className="shrink-0 rounded border px-1.5 py-0.5 text-xs text-muted-foreground">{results.hosts.get(entry.key)}</span>}
         </div>)}
       </div>
       {entries.length < results.total && <Button type="button" variant="ghost" size="sm" className="w-full rounded-none" disabled={searching} onClick={onMore}>결과 30개 더 보기</Button>}
