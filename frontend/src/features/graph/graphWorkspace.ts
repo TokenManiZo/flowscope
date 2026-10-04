@@ -16,9 +16,40 @@ export type GraphWorkspace = {
   inputMode: GraphPreferences["inputMode"]
 }
 export type GraphWorkspaceState = { datasetRevision: number; revision: number; workspace: GraphWorkspace }
-export type GraphWorkspaceChange = { navigation?: GraphNavigation; views: GraphWorkspace["views"]; deletedViews: string[]; locked?: boolean; inputMode?: GraphWorkspace["inputMode"] }
+export type GraphWorkspaceViewPatch = {
+  positions?: GraphWorkspaceView["positions"]; deletedPositions?: string[]
+  sizes?: GraphWorkspaceView["sizes"]; deletedSizes?: string[]
+  viewport?: NonNullable<GraphWorkspaceView["viewport"]>; clearViewport?: boolean
+  expandedGroups?: readonly string[]
+}
+export type GraphWorkspaceChange = { navigation?: GraphNavigation; views: GraphWorkspace["views"]; viewPatches: Record<string, GraphWorkspaceViewPatch>; deletedViews: string[]; locked?: boolean; inputMode?: GraphWorkspace["inputMode"] }
 export function graphWorkspaceChanges(before: GraphWorkspace, after: GraphWorkspace): GraphWorkspaceChange {
-  return { views: Object.fromEntries(Object.entries(after.views).filter(([key, view]) => view !== before.views[key])),
+  const views: GraphWorkspace["views"] = {}, viewPatches: GraphWorkspaceChange["viewPatches"] = {}
+  for (const [key, view] of Object.entries(after.views)) {
+    const previous = before.views[key]
+    if (view === previous) continue
+    if (!previous) { views[key] = view; continue }
+    const patch: GraphWorkspaceViewPatch = {}
+    if (view.positions !== previous.positions) {
+      const positions = Object.fromEntries(Object.entries(view.positions).filter(([id, point]) => point.x !== previous.positions[id]?.x || point.y !== previous.positions[id]?.y))
+      const removed = Object.keys(previous.positions).filter(id => !Object.hasOwn(view.positions, id))
+      if (Object.keys(positions).length) patch.positions = positions
+      if (removed.length) patch.deletedPositions = removed
+    }
+    if (view.sizes !== previous.sizes) {
+      const sizes = Object.fromEntries(Object.entries(view.sizes).filter(([id, size]) => size.width !== previous.sizes[id]?.width || size.height !== previous.sizes[id]?.height))
+      const removed = Object.keys(previous.sizes).filter(id => !Object.hasOwn(view.sizes, id))
+      if (Object.keys(sizes).length) patch.sizes = sizes
+      if (removed.length) patch.deletedSizes = removed
+    }
+    if (view.viewport?.zoom !== previous.viewport?.zoom || view.viewport?.pan.x !== previous.viewport?.pan.x || view.viewport?.pan.y !== previous.viewport?.pan.y) {
+      if (view.viewport) patch.viewport = view.viewport
+      else patch.clearViewport = true
+    }
+    if (view.expandedGroups.length !== previous.expandedGroups.length || view.expandedGroups.some((id, index) => id !== previous.expandedGroups[index])) patch.expandedGroups = view.expandedGroups
+    if (Object.keys(patch).length) viewPatches[key] = patch
+  }
+  return { views, viewPatches,
     deletedViews: Object.keys(before.views).filter(key => !(key in after.views)),
     ...(before.navigation !== after.navigation ? { navigation: after.navigation } : {}),
     ...(before.locked !== after.locked ? { locked: after.locked } : {}),

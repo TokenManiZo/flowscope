@@ -1,0 +1,98 @@
+[
+  {
+    "width": 1280,
+    "theme": "light",
+    "variant": "a",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1280,
+    "theme": "light",
+    "variant": "b",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1280,
+    "theme": "light",
+    "variant": "c",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1280,
+    "theme": "dark",
+    "variant": "a",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1280,
+    "theme": "dark",
+    "variant": "b",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1280,
+    "theme": "dark",
+    "variant": "c",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1920,
+    "theme": "light",
+    "variant": "a",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1920,
+    "theme": "light",
+    "variant": "b",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1920,
+    "theme": "light",
+    "variant": "c",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1920,
+    "theme": "dark",
+    "variant": "a",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1920,
+    "theme": "dark",
+    "variant": "b",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  },
+  {
+    "width": 1920,
+    "theme": "dark",
+    "variant": "c",
+    "horizontalOverflow": false,
+    "metricColumns": 3,
+    "modelFits": true
+  }
+]

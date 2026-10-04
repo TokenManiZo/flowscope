@@ -117,6 +117,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
   window.location.hash = ""
+  localStorage.removeItem("flowscope.sidebar")
 })
 
 describe("dashboard shell", () => {
@@ -137,6 +138,7 @@ describe("dashboard shell", () => {
 
   it("exposes the grouped sidebar route set and normalizes unsafe hashes to home", async () => {
     const user = userEvent.setup()
+    localStorage.setItem("flowscope.sidebar", "open")
     renderDashboard()
 
     await screen.findByRole("heading", { name: "보안 점검 대시보드" })

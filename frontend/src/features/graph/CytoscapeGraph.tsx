@@ -188,7 +188,17 @@ function nodeModelHeight(node: cytoscape.NodeSingular) {
 
 export function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneCount: number, onlyLane: number | null = null) {
   const usableHeight = Math.max(height, 620)
-  laneColumns(core, laneCount).forEach((nodes, index) => {
+  const columns = laneColumns(core, laneCount)
+  // Folded/limited cards still own their saved space. Missing base sizes reserve the allowed maximum.
+  let reservedBottom = Number.NEGATIVE_INFINITY
+  if (savedPositions && columns.some(nodes => nodes.some(node => !savedPositions[node.id()]))) {
+    const heights = new Map(columns.flat().map(node => [node.id(), nodeModelHeight(node)] as const))
+    for (const [id, point] of Object.entries(savedPositions)) {
+      const nodeHeight = heights.get(id) ?? NODE_SIZE_LIMIT.maxHeight
+      reservedBottom = Math.max(reservedBottom, point.y + nodeHeight / 2)
+    }
+  }
+  columns.forEach((nodes, index) => {
     if (onlyLane !== null && onlyLane !== index) return
     // 캔버스 높이를 노드 수로 나누면 노드가 많을 때 간격이 노드보다 작아져 겹친다. 실제 노드 높이를 쌓고, 짧은 레인만 세로 가운데에 둔다.
     const heights = nodes.map(nodeModelHeight)
@@ -196,6 +206,7 @@ export function positionInLanes(core: Core, height: number, savedPositions: Grap
     let cursor = Math.max(LANE_TOP, (usableHeight - total) / 2)
     const restored = nodes.filter(node => savedPositions?.[node.id()])
     if (restored.length) cursor = Math.max(...restored.map(node => savedPositions![node.id()].y + nodeModelHeight(node) / 2)) + LANE_NODE_GAP
+    cursor = Math.max(cursor, reservedBottom + LANE_NODE_GAP)
     const x = restored.length ? restored.reduce((sum, node) => sum + savedPositions![node.id()].x, 0) / restored.length : laneAnchor(index)
     nodes.forEach((node, order) => {
       const saved = savedPositions?.[node.id()]

@@ -37,5 +37,36 @@ it("keeps geometry references on pan-only updates and transmits only the changed
   expect(next.sizes).toBe(view.sizes)
   expect(mergeGraphLayout(next, { positions: next.positions, sizes: next.sizes, viewport: next.viewport })).toBe(next)
   const before = { ...emptyGraphWorkspace, views: { a: view, b: view } }, after = { ...before, views: { a: next, b: view } }
-  expect(graphWorkspaceChanges(before, after)).toEqual({ views: { a: next }, deletedViews: [] })
+  expect(graphWorkspaceChanges(before, after)).toEqual({ views: {}, viewPatches: { a: { viewport: next.viewport } }, deletedViews: [] })
+})
+
+it("transmits one changed position in a large view and keeps hidden geometry out of the patch", () => {
+  const positions = Object.fromEntries(Array.from({ length: 500 }, (_, index) => [`operation:GET /${"orders/".repeat(20)}${index}`, { x: 500, y: index * 100 }]))
+  const view = { ...emptyGraphView, positions }
+  const id = Object.keys(positions)[0]
+  const next = mergeGraphLayout(view, { positions: { [id]: { x: 650, y: 250 } }, sizes: {}, viewport: null })
+  const changes = graphWorkspaceChanges({ ...emptyGraphWorkspace, views: { site: view } }, { ...emptyGraphWorkspace, views: { site: next } })
+  expect(changes.views).toEqual({})
+  expect(changes.viewPatches).toEqual({ site: { positions: { [id]: { x: 650, y: 250 } } } })
+  const body = new URLSearchParams({ changes: JSON.stringify(changes) })
+  expect(new TextEncoder().encode(body.toString()).byteLength).toBeLessThan(32 * 1024)
+  expect(Object.keys(next.positions)).toHaveLength(500)
+})
+
+it("represents clearing viewport, sizes, positions and expanded groups without losing another view", () => {
+  const original = { ...emptyGraphView, positions: { a: { x: 1, y: 2 } }, sizes: { a: { width: 300, height: 100 } },
+    viewport: { zoom: 1, pan: { x: 20, y: 30 } }, expandedGroups: ["object-group:orders"] }
+  const before = { ...emptyGraphWorkspace, views: { a: original, other: original } }
+  const after = { ...before, views: { a: emptyGraphView } }
+  expect(graphWorkspaceChanges(before, after)).toEqual({ views: {}, deletedViews: ["other"], viewPatches: {
+    a: { deletedPositions: ["a"], deletedSizes: ["a"], clearViewport: true, expandedGroups: [] },
+  } })
+})
+
+it("keeps distinct long paths in view and geometry identifiers", () => {
+  const prefix = `https://api.test:443 GET /${"segment/".repeat(300)}`
+  const first = graphViewKey({ ...initialGraphNavigation, level: "operation", groupId: "orders", operation: `${prefix}a` })
+  const second = graphViewKey({ ...initialGraphNavigation, level: "operation", groupId: "orders", operation: `${prefix}b` })
+  expect(first.length).toBeGreaterThan(2048)
+  expect(first).not.toBe(second)
 })

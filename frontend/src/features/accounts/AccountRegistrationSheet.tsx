@@ -51,7 +51,7 @@ export function AccountRegistrationSheet({ open, defaultTarget = "", pending, sa
         {saveError && <Alert variant="destructive" aria-label={saveError}><AlertDescription>계정을 등록하지 못했습니다. {saveError}</AlertDescription></Alert>}
         <button type="submit" hidden />
       </form>
-      <footer className="flex items-center justify-end gap-2 border-t border-border bg-muted/40 px-5 py-3"><Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>취소</Button><Button onClick={() => void submit()} disabled={!label.trim() || !target.trim() || Boolean(targetError) || pending}>{pending ? "등록 중" : "등록"}</Button></footer>
+      <footer className="flex items-center justify-end gap-2 border-t border-border bg-muted/40 px-5 py-2"><Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>취소</Button><Button onClick={() => void submit()} disabled={!label.trim() || !target.trim() || Boolean(targetError) || pending}>{pending ? "등록 중" : "등록"}</Button></footer>
     </DialogContent>
   </Dialog>
 }

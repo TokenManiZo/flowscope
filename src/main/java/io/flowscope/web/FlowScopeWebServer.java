@@ -704,8 +704,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (request.method().equals("GET")) return json(200, json.valueToTree(state.graphWorkspace()));
             Map<String, String> form = postForm(request);
             if (form == null) return invalidForm(request);
-            String encoded = required(form, "changes");
-            if (encoded.length() > 2 * 1024 * 1024) return error(413, "그래프 작업 상태가 너무 큽니다.");
+            String encoded = requiredRaw(form, "changes");
+            if (encoded.getBytes(StandardCharsets.UTF_8).length > 2 * 1024 * 1024) return error(413, "그래프 작업 상태가 너무 큽니다.");
             GraphWorkspace.Change change;
             try { change = json.readValue(encoded, GraphWorkspace.Change.class); }
             catch (IOException | IllegalArgumentException error) { return error(400, "잘못된 그래프 작업 상태입니다."); }

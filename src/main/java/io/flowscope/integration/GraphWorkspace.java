@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
 import io.flowscope.core.Masking;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -13,8 +14,12 @@ import java.util.Set;
 public record GraphWorkspace(int version, Navigation navigation, Map<String, View> views,
                              boolean locked, String inputMode) {
     public record State(long datasetRevision, long revision, GraphWorkspace workspace) {}
-    /** Only changed views/settings travel over the loopback API. */
-    public record Change(Navigation navigation, Map<String, View> views, List<String> deletedViews, Boolean locked, String inputMode) {
+    /** Existing views use geometry patches; whole views remain supported for older clients and new views. */
+    public record Change(Navigation navigation, Map<String, View> views, List<String> deletedViews, Boolean locked, String inputMode,
+                         Map<String, ViewPatch> viewPatches) {
+        public Change(Navigation navigation, Map<String, View> views, List<String> deletedViews, Boolean locked, String inputMode) {
+            this(navigation, views, deletedViews, locked, inputMode, Map.of());
+        }
         public Change {
             if (views == null || views.size() > 200) throw new IllegalArgumentException("invalid graph changes");
             views.keySet().forEach(GraphWorkspace::text);
@@ -22,13 +27,54 @@ public record GraphWorkspace(int version, Navigation navigation, Map<String, Vie
             deletedViews = deletedViews == null ? List.of() : List.copyOf(deletedViews);
             if (deletedViews.size() > 200) throw new IllegalArgumentException("invalid graph changes");
             deletedViews.forEach(GraphWorkspace::text);
+            viewPatches = viewPatches == null ? Map.of() : Map.copyOf(viewPatches);
+            if (viewPatches.size() > 200) throw new IllegalArgumentException("invalid graph patches");
+            for (String key : viewPatches.keySet()) {
+                text(key);
+                if (views.containsKey(key) || deletedViews.contains(key)) throw new IllegalArgumentException("conflicting graph changes");
+            }
         }
         public GraphWorkspace apply(GraphWorkspace current) {
             Map<String, View> merged = new HashMap<>(current.views());
             deletedViews.forEach(merged::remove);
             merged.putAll(views);
+            viewPatches.forEach((key, patch) -> merged.put(key, patch.apply(merged.getOrDefault(key,
+                    new View(Map.of(), Map.of(), null, List.of())))));
             return new GraphWorkspace(1, navigation == null ? current.navigation() : navigation, merged,
                     locked == null ? current.locked() : locked, inputMode == null ? current.inputMode() : inputMode);
+        }
+    }
+
+    public record ViewPatch(Map<String, Point> positions, List<String> deletedPositions,
+                            Map<String, Size> sizes, List<String> deletedSizes,
+                            Viewport viewport, boolean clearViewport, List<String> expandedGroups) {
+        public ViewPatch {
+            positions = positions == null ? Map.of() : Map.copyOf(positions);
+            sizes = sizes == null ? Map.of() : Map.copyOf(sizes);
+            deletedPositions = deletedPositions == null ? List.of() : List.copyOf(deletedPositions);
+            deletedSizes = deletedSizes == null ? List.of() : List.copyOf(deletedSizes);
+            expandedGroups = expandedGroups == null ? null : List.copyOf(expandedGroups);
+            if (positions.size() > 20_000 || sizes.size() > 20_000 || deletedPositions.size() > 20_000
+                    || deletedSizes.size() > 20_000 || (expandedGroups != null && expandedGroups.size() > 20_000)
+                    || (clearViewport && viewport != null)) throw new IllegalArgumentException("invalid graph view patch");
+            positions.keySet().forEach(GraphWorkspace::text);
+            sizes.keySet().forEach(GraphWorkspace::text);
+            deletedPositions.forEach(GraphWorkspace::text);
+            deletedSizes.forEach(GraphWorkspace::text);
+            if (expandedGroups != null) expandedGroups.forEach(GraphWorkspace::text);
+            if (deletedPositions.stream().anyMatch(positions::containsKey) || deletedSizes.stream().anyMatch(sizes::containsKey)) {
+                throw new IllegalArgumentException("conflicting graph geometry");
+            }
+        }
+        public View apply(View current) {
+            Map<String, Point> nextPositions = new HashMap<>(current.positions());
+            Map<String, Size> nextSizes = new HashMap<>(current.sizes());
+            deletedPositions.forEach(nextPositions::remove);
+            deletedSizes.forEach(nextSizes::remove);
+            nextPositions.putAll(positions);
+            nextSizes.putAll(sizes);
+            return new View(nextPositions, nextSizes, clearViewport ? null : viewport == null ? current.viewport() : viewport,
+                    expandedGroups == null ? current.expandedGroups() : expandedGroups);
         }
     }
     public GraphWorkspace {
@@ -107,7 +153,7 @@ public record GraphWorkspace(int version, Navigation navigation, Map<String, Vie
     }
 
     private static void text(String value) {
-        if (value == null || value.length() > 2048 || Set.of("__proto__", "constructor", "prototype").contains(value)
+        if (value == null || value.getBytes(StandardCharsets.UTF_8).length > 64 * 1024 || Set.of("__proto__", "constructor", "prototype").contains(value)
                 || !Masking.maskSecrets(value).equals(value)) {
             throw new IllegalArgumentException("invalid graph key");
         }
