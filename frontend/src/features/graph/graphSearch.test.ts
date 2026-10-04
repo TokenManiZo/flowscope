@@ -133,6 +133,9 @@ describe("search viewport", () => {
 it("distinguishes same host and port with different schemes without affecting result ranking", () => {
   const index = buildGraphSearchIndex([cell({ op: "http://same.test:8900 GET /api/orders/101" }), cell({ op: "https://same.test:8900 GET /api/orders/101" })])
   const matches = searchGraph(index, "GET /api/orders/101", initial)
-  expect(matches.entries).toHaveLength(2)
-  expect([...matches.hosts!.values()]).toEqual(["http://same.test:8900", "https://same.test:8900"])
+  const operations = matches.entries.filter(entry => entry.kind === "operation")
+  expect(operations).toHaveLength(2)
+  expect(matches.entries.slice(0, 2)).toEqual(operations)
+  expect(matches.entries.some(entry => entry.kind === "resource")).toBe(true)
+  expect(operations.map(entry => matches.hosts?.get(entry.key))).toEqual(["http://same.test:8900", "https://same.test:8900"])
 })
