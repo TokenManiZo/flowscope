@@ -322,10 +322,9 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   useEffect(() => {
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       if (persistence.current?.status.pending) { event.preventDefault(); event.returnValue = "" }
-      else clearOnUnload()
     }
-    const clearOnUnload = () => { persistence.current?.dispose(); invalidateSend(); raw.current.clear(); if (nameRef.current) nameRef.current.value = "" }
-    const clearOnReplacement = () => { release(); onOpenChange(false) }
+    const clearOnUnload = () => { release(); onOpenChange(false) }
+    const clearOnReplacement = clearOnUnload
     const flushBeforeReplacement = (event: Event) => {
       ;(event as CustomEvent<{ waitUntil(promise: Promise<unknown>): void }>).detail.waitUntil(persistence.current?.flush() ?? Promise.resolve())
     }
@@ -348,6 +347,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
       invalidateSend()
       setSending(false)
       setApplyingCredentials(false)
+      setOpeningRepeater(false)
       setClosing(true)
       try { await persistence.current.flush() }
       catch { return }

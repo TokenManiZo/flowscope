@@ -581,7 +581,7 @@ describe("RequestLabDialog", () => {
     expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")).toHaveLength(0)
   })
 
-  it("does not persist, log, serialize, or retain raw values after close or beforeunload", async () => {
+  it("does not persist, log, serialize, or retain raw values after close or pagehide", async () => {
     const fetch = installTransport()
     const storage = vi.spyOn(Storage.prototype, "setItem")
     const indexedDb = vi.fn()
@@ -596,7 +596,7 @@ describe("RequestLabDialog", () => {
     expect(indexedDb).not.toHaveBeenCalled()
     expect(log).not.toHaveBeenCalled()
     await user.click(screen.getByRole("button", { name: "닫기" }))
-    window.dispatchEvent(new Event("beforeunload"))
+    window.dispatchEvent(new Event("pagehide"))
     expect(document.body.textContent).not.toContain(secret)
     expect(Object.values(localStorage)).not.toContain(secret)
     expect(Object.values(sessionStorage)).not.toContain(secret)
@@ -816,12 +816,12 @@ describe("RequestLabDialog", () => {
     expect(owner.requests).toHaveLength(0)
   })
 
-  it("does not restore a pending raw draft after beforeunload", async () => {
+  it("does not restore a pending raw draft after pagehide", async () => {
     const pending = deferredResponse()
     const owner = createMemoryOnlyRawState()
     vi.stubGlobal("fetch", vi.fn(() => pending.promise))
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    act(() => window.dispatchEvent(new Event("beforeunload")))
+    act(() => window.dispatchEvent(new Event("pagehide")))
     await act(async () => { pending.resolve(json(requestLabDraft("event-7", "LATE-RAW-DRAFT"))); await pending.promise })
     expect(owner.request).toBe("")
     expect(owner.response).toBe("")
@@ -1064,6 +1064,50 @@ describe("RequestLabDialog", () => {
     expect(changes.some(change => change.result?.response === "latest-response")).toBe(true)
     expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain("latest-response")
     expect(owner.requests).toHaveLength(0)
+  })
+
+  it("keeps live text when a page departure is cancelled and scrubs it on actual pagehide", async () => {
+    installTransport()
+    const owner = createMemoryOnlyRawState(), user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[]} rawState={owner} />)
+    await openDraft()
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    await waitFor(() => expect(owner.response).toBe("sent-response"))
+    const cancelDeparture = (event: Event) => event.preventDefault()
+    window.addEventListener("beforeunload", cancelDeparture)
+    try {
+      act(() => window.dispatchEvent(new Event("beforeunload", { cancelable: true })))
+      expect(owner.request).toBe(secret)
+      expect(owner.response).toBe("sent-response")
+      act(() => window.dispatchEvent(new Event("pagehide")))
+      expect(owner.request).toBe("")
+      expect(owner.response).toBe("")
+      expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument()
+    } finally { window.removeEventListener("beforeunload", cancelDeparture) }
+  })
+
+  it("unlocks editing after close-save failure during a Repeater handoff and ignores its late result", async () => {
+    const handoff = deferredResponse(), owner = createMemoryOnlyRawState(), user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (String(input) === "/api/replay") return handoff.promise
+      if (String(input) === "/api/request-lab/workspace") return Promise.resolve(json({ success: false, message: "disk full" }, 409))
+      return Promise.resolve(json({ ...requestLabDraft(), workspace: { datasetRevision: 7, revision: 1, persisted: true,
+        tab: { nextId: 2, selectedId: 1, entries: { "1": { name: "saved", request: "editable", credentialMode: "ANONYMOUS", result: null, dirty: false } } } } }))
+    }))
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={onOpenChange} event={event} sessions={[]} rawState={owner} datasetRevision={7} />)
+    const request = await screen.findByLabelText("Request Lab 요청 원문")
+    await waitFor(() => expect(request).toHaveValue("editable"))
+    await user.type(request, "-edited")
+    await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
+    await user.click(screen.getByRole("button", { name: "닫기" }))
+    expect(await screen.findByText("disk full")).toBeVisible()
+    await act(async () => { handoff.resolve(json({ success: true, openedDraft: true, message: "late handoff" })); await handoff.promise })
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "다시 저장" })).toBeEnabled()
+    expect(request).not.toHaveAttribute("readonly")
+    expect(owner.request).toContain("-edited")
+    expect(screen.queryByText(/Burp Repeater에 현재 요청 초안을/)).not.toBeInTheDocument()
   })
 
   it("keeps a request visible until delete commits, and preserves it after DB failure", async () => {
