@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, Send, X } from "lucide-react"
+import { Maximize2, Minimize2, Plus, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { getRequestLabDraft, openReplay, sendRequestLab } from "@/lib/api/endpoints"
+import { getRequestLabDraft, openReplay, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
 import type { EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, REQUEST_LAB_MAX_REQUESTS, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
@@ -13,6 +13,7 @@ import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
 import { formatHttpJson } from "./jsonDisplay"
 import { JsonTextPanel, RawTextPanel } from "./RawTextPanel"
 import type { RequestLabCredentialMode } from "./RequestLabMetadata"
+import { applyRequestLabCredentials } from "./requestLabCredentials"
 
 interface Props {
   open: boolean
@@ -51,16 +52,22 @@ export function activeAccounts(sessions: readonly ManagedSession[], service: str
 export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetRevision = 0, snapshotRevision, suspended = false, rawState }: Props) {
   const queryClient = useQueryClient()
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
-  const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null }>({ generation: 0, sendController: null, submission: null })
+  const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null; preview: { mode: RequestLabCredentialMode; accountId: string } | null }>({ generation: 0, sendController: null, submission: null, preview: null })
   const [, setVersion] = useState(0)
   const [draft, setDraft] = useState<Omit<RequestLabDraft, "request" | "response"> | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [openingRepeater, setOpeningRepeater] = useState(false)
+  const [applyingCredentials, setApplyingCredentials] = useState(false)
   const [error, setError] = useState("")
   const [replayMessage, setReplayMessage] = useState("")
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [maximized, setMaximized] = useState(false)
+  const [dialogSize, setDialogSize] = useState<{ width: number; height: number } | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const resizeDrag = useRef<{ x: number; y: number; width: number; height: number; side: number; corner: boolean } | null>(null)
+  const pendingSize = useRef<typeof dialogSize>(null)
+  const resizeFrame = useRef<number | null>(null)
   const [view, setView] = useState<"original" | number>("original")
   const requestRef = useRef<HTMLTextAreaElement>(null)
   const responseRef = useRef<HTMLTextAreaElement>(null)
@@ -82,9 +89,61 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   const displayedRequest = raw.current.request
   const displayedResponse = raw.current.response
   const editable = !!entry && !!draft?.requestEditable
-  const busy = sending || openingRepeater
+  const busy = sending || openingRepeater || applyingCredentials
   const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
   const controlClass = "h-7 rounded-md border border-input bg-background px-2 text-[0.8rem] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
+  const settingClass = "h-[36px] rounded-md border border-input bg-background px-2.5 text-[14px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
+
+  function boundSize(width: number, height: number) {
+    return { width: Math.min(window.innerWidth - 32, Math.max(960, width)), height: Math.min(window.innerHeight - 32, Math.max(460, height)) }
+  }
+  function applySize() {
+    resizeFrame.current = null
+    if (!pendingSize.current || !dialogRef.current) return
+    dialogRef.current.style.setProperty("--request-lab-width", `${pendingSize.current.width}px`)
+    dialogRef.current.style.setProperty("--request-lab-height", `${pendingSize.current.height}px`)
+  }
+  function finishResize() {
+    if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current)
+    applySize()
+    if (pendingSize.current) setDialogSize(pendingSize.current)
+    resizeDrag.current = null
+  }
+  function startResize(event: ReactPointerEvent<HTMLElement>, side: number, corner: boolean) {
+    if (event.button !== 0 || maximized || !dialogRef.current) return
+    const box = dialogRef.current.getBoundingClientRect()
+    resizeDrag.current = { x: event.clientX, y: event.clientY, width: box.width, height: box.height, side, corner }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+  function moveResize(event: ReactPointerEvent<HTMLElement>) {
+    const drag = resizeDrag.current
+    if (!drag || !event.currentTarget.hasPointerCapture(event.pointerId)) return
+    pendingSize.current = boundSize(drag.width + 2 * drag.side * (event.clientX - drag.x), drag.height + (drag.corner ? 2 * (event.clientY - drag.y) : 0))
+    if (resizeFrame.current === null) resizeFrame.current = requestAnimationFrame(applySize)
+  }
+  function resetSize() {
+    finishResize()
+    pendingSize.current = null
+    setDialogSize(null)
+    dialogRef.current?.style.removeProperty("--request-lab-width")
+    dialogRef.current?.style.removeProperty("--request-lab-height")
+  }
+  useEffect(() => {
+    if (!open) return
+    const onResize = () => {
+      if (!pendingSize.current) return
+      pendingSize.current = boundSize(pendingSize.current.width, pendingSize.current.height)
+      finishResize()
+    }
+    window.addEventListener("resize", onResize)
+    return () => {
+      window.removeEventListener("resize", onResize)
+      if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current)
+      resizeFrame.current = null
+      resizeDrag.current = null
+    }
+  }, [open])
 
   function savePosition() {
     const input = requestRef.current
@@ -137,6 +196,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     context.current.generation += 1
     context.current.sendController?.abort()
     context.current.sendController = null
+    context.current.preview = null
     if (context.current.submission) context.current.submission.request = ""
     context.current.submission = null
   }
@@ -152,6 +212,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     setJsonView({ request: false, response: false })
     setSending(false)
     setOpeningRepeater(false)
+    setApplyingCredentials(false)
     setVersion((value) => value + 1)
   }
 
@@ -195,8 +256,17 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
 
   // 세션이 사라지면 진행 중 전송을 끊고 전송을 잠근다. 다른 방식으로 조용히 바꾸지 않는다.
   useEffect(() => {
-    if (mode === "ACCOUNT" && draft && !selectedAccountValid) { invalidateSend(); setSending(false); setOpeningRepeater(false) }
+    if (mode === "ACCOUNT" && draft && !selectedAccountValid) { invalidateSend(); setSending(false); setOpeningRepeater(false); setApplyingCredentials(false) }
   }, [draft, mode, selectedAccountValid])
+
+  useEffect(() => {
+    const preview = context.current.preview
+    if (preview && (suspended || (preview.mode === "ACCOUNT" && preview.accountId !== accountId))) {
+      invalidateSend()
+      setApplyingCredentials(false)
+      setError("현재 세션이 바뀌었습니다. 인증을 다시 선택해 주세요.")
+    }
+  }, [accountId, suspended])
 
   useEffect(() => {
     const clearOnUnload = () => { invalidateSend(); raw.current.clear() }
@@ -209,6 +279,45 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   function close() {
     release()
     onOpenChange(false)
+  }
+
+  async function changeCredentials(nextMode: RequestLabCredentialMode) {
+    if (!draft || !entry || !editable || editRejected || busy || suspended || context.current.preview || nextMode === mode) return
+    if (nextMode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
+    if (!raw.current.canSend(entry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
+    const controller = new AbortController()
+    const generation = ++context.current.generation
+    context.current.sendController = controller
+    context.current.preview = { mode: nextMode, accountId }
+    const submitted = { request: entry.request }
+    context.current.submission = submitted
+    setApplyingCredentials(true)
+    setError("")
+    try {
+      const preview = await previewRequestLabCredentials({ eventId: event.eventId, request: submitted.request, credentialMode: nextMode, accountId: nextMode === "ACCOUNT" ? accountId : "", datasetRevision }, controller.signal)
+      try {
+        if (controller.signal.aborted || context.current.generation !== generation || !raw.current.requests.includes(entry) || entry.request !== submitted.request) return
+        const next = applyRequestLabCredentials(submitted.request, preview.headers)
+        if (!raw.current.canSend(next) || !raw.current.editRequest(entry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
+        entry.credentialMode = nextMode
+        setJsonView(current => ({ ...current, request: false }))
+        setVersion(value => value + 1)
+      } finally {
+        // Scrub references held by this async operation, including ignored late responses.
+        for (const header of preview.headers) header.value = ""
+        preview.headers.length = 0
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted && context.current.generation === generation) setError(reason instanceof Error ? reason.message : "인증을 적용하지 못했습니다. 다시 선택해 주세요.")
+    } finally {
+      submitted.request = ""
+      if (context.current.submission === submitted) context.current.submission = null
+      if (context.current.generation === generation) {
+        context.current.sendController = null
+        context.current.preview = null
+        setApplyingCredentials(false)
+      }
+    }
   }
 
   async function send() {
@@ -316,9 +425,9 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     const body = boundary ? text.slice(boundary.index + boundary[0].length) : text
     const canFormat = body.length <= 262_144 && (/^\s*[\[{]/.test(body) || (boundary && /^content-type:\s*[^\r\n]*(?:application\/json|\+json)\b/im.test(text.slice(0, boundary.index)))) && !formatted?.message
     return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border bg-muted/20" aria-label={request ? "Request 원문 패널" : "Response 원문 패널"} hidden={panelFocus !== "both" && panelFocus !== pane}>
-      <header className="flex shrink-0 items-center gap-2 border-b bg-background px-3 py-2"><label htmlFor={`request-lab-${pane}`} className="text-sm font-medium">{title}</label><span className="text-xs text-muted-foreground">{request && editable && !showJson ? "편집 가능" : "읽기 전용"}</span>
+      <header className="flex min-h-[46px] shrink-0 items-center gap-2 border-b bg-background px-3 py-2"><label htmlFor={`request-lab-${pane}`} className="text-[15px] font-medium">{title}</label><span className="text-xs text-muted-foreground">{request && editable && !showJson ? "편집 가능" : "읽기 전용"}</span>
         {!request && <span className="truncate text-xs text-muted-foreground">{view === "original" ? "관측 원문" : selected ? `${selected.status ? `HTTP ${selected.status}` : "응답 없음"} · ${selected.durationMs}ms${entry?.dirty ? " · 이전 응답" : ""}` : "미전송"}</span>}
-        <div role="group" aria-label={`${title} 보기`} className="ml-auto flex shrink-0 gap-1"><Button type="button" variant="outline" size="sm" className={selectedButtonClass} aria-pressed={!showJson} onClick={() => setJsonView(current => ({ ...current, [pane]: false }))}>Raw</Button><Button type="button" variant="outline" size="sm" className={selectedButtonClass} aria-pressed={!!showJson} disabled={!canFormat} title={formatted?.message || undefined} onClick={() => chooseJson(pane)}>JSON 정돈</Button></div></header>
+        <div role="group" aria-label={`${title} 보기`} className="ml-auto flex shrink-0 gap-1"><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!showJson} onClick={() => setJsonView(current => ({ ...current, [pane]: false }))}>Raw</Button><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!!showJson} disabled={!canFormat} title={formatted?.message || undefined} onClick={() => chooseJson(pane)}>JSON 정돈</Button></div></header>
       {!request && selected?.failure && <p role="alert" className="shrink-0 border-b px-3 py-2 text-xs text-destructive">{selected.failure}{!selected.status && " · 대상 처리 여부 미확인"}</p>}
       <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} /></div>
       <JsonTextPanel text={showJson ? formatted?.text ?? "" : ""} label={`Request Lab ${title} JSON 정돈`} hidden={!showJson} fontSize={fontSize} />
@@ -326,17 +435,17 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   }
 
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
-    <DialogContent className={`flex h-[calc(100svh-5rem)] max-h-[calc(100svh-1.5rem)] flex-col gap-0 overflow-hidden p-0 ${maximized ? "h-[calc(100svh-1.5rem)] max-w-[calc(100%-1.5rem)] sm:max-w-[calc(100%-1.5rem)]" : "sm:max-w-[72rem]"}`} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => { if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) } }}>
-      <DialogHeader className="shrink-0 border-b px-4 py-3">
-        <div className="flex items-center justify-between gap-4"><div className="shrink-0"><DialogTitle>Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-xs">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
-          <div className="flex flex-wrap items-center justify-end gap-2 text-[0.8rem]">
-            <label className="flex items-center gap-1.5">전송 인증<select aria-label="전송 인증" className={`${controlClass} max-w-[14rem]`} value={mode} disabled={!editable || suspended || busy} onChange={event => { if (entry) { entry.credentialMode = event.target.value as RequestLabCredentialMode; entry.dirty = true; setVersion(value => value + 1) }; setError("") }}><option value="ORIGINAL">원문 · {draft?.observedIdentity ?? "—"}</option><option value="ANONYMOUS">비로그인</option><option value="ACCOUNT" disabled={!currentSession}>현재 세션 · {currentSession?.accountLabel || "없음"}</option></select></label>
-            <label className="flex items-center gap-1.5">글자 크기<select aria-label="글자 크기" className={controlClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
-            <Button type="button" variant="outline" size="sm" onClick={() => setMaximized(current => !current)}>{maximized ? "원래 크기" : "최대화"}</Button>
-            <Button type="button" size="sm" className="h-7 min-w-32 items-center justify-center gap-1.5" disabled={suspended || !draft || !editable || editRejected || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-3.5" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
+    <DialogContent ref={dialogRef} className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" style={{ width: maximized ? "calc(100vw - 24px)" : "min(var(--request-lab-width,min(1680px,90vw)),calc(100vw - 32px))", height: maximized ? "calc(100svh - 24px)" : "min(var(--request-lab-height,min(820px,90svh)),calc(100svh - 32px))", ...(dialogSize ? { "--request-lab-width": `${dialogSize.width}px`, "--request-lab-height": `${dialogSize.height}px` } : {}) } as CSSProperties} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => { if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) } }}>
+      <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
+        <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
+            <label className="flex items-center gap-2">전송 인증<select aria-label="전송 인증" className={`${settingClass} min-w-[180px] max-w-[224px]`} value={mode} disabled={!editable || editRejected || suspended || busy} onChange={event => void changeCredentials(event.target.value as RequestLabCredentialMode)}><option value="ORIGINAL">원문 · {draft?.observedIdentity ?? "—"}</option><option value="ANONYMOUS">비로그인</option><option value="ACCOUNT" disabled={!currentSession}>현재 세션 · {currentSession?.accountLabel || "없음"}</option></select></label>
+            <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
+            <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
+            <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
           </div>
         </div>
-        <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="mt-3.5 flex items-center justify-between gap-3">
           <div role="group" aria-label="요청 선택" className="flex items-center gap-1.5">
             <Button type="button" variant="outline" size="sm" className={`h-7 w-[104px] text-xs ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy} onClick={() => changeView("original")}>Original</Button>
             {!!raw.current.requests.length && <>
@@ -348,12 +457,13 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
             </>}
             <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label="새 요청 추가" disabled={!draft?.requestEditable || editRejected || suspended || busy} onClick={addRequest}><Plus aria-hidden="true" className="size-3.5" /></Button>
           </div>
-          <div className="flex items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={() => { setMaximized(false); setPanelFocus("both"); resizeSplit(50); setSplit(50) }}>기본 크기</Button><div role="group" aria-label="패널 확대" className="flex gap-1">{(["both", "request", "response"] as const).map(focus => <Button key={focus} type="button" variant="outline" size="sm" className={selectedButtonClass} aria-pressed={panelFocus === focus} onClick={() => setPanelFocus(focus)}>{focus === "both" ? "함께 보기" : focus === "request" ? "요청 확대" : "응답 확대"}</Button>)}</div></div>
+          <div className="flex items-center gap-2 [&_button]:h-[32px] [&_button]:text-[13px]"><Button type="button" variant="outline" size="sm" onClick={() => { resetSize(); setMaximized(false); setPanelFocus("both"); resizeSplit(50); setSplit(50) }}>기본 크기</Button><div role="group" aria-label="패널 확대" className="flex gap-1">{(["both", "request", "response"] as const).map(focus => <Button key={focus} type="button" variant="outline" size="sm" className={selectedButtonClass} aria-pressed={panelFocus === focus} onClick={() => setPanelFocus(focus)}>{focus === "both" ? "함께 보기" : focus === "request" ? "요청 확대" : "응답 확대"}</Button>)}</div></div>
         </div>
       </DialogHeader>
       <section aria-label="Request Lab 원문 작업면" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="max-h-[20svh] shrink-0 overflow-auto empty:hidden">
           {suspended && <Alert aria-label="Request Lab 일시 중지"><AlertTitle>서버 상태 확인 중</AlertTitle><AlertDescription>편집 초안을 보존했습니다. 갱신에 성공할 때까지 전송과 인증정보 변경을 잠급니다.</AlertDescription></Alert>}
+          {applyingCredentials && <p role="status" className="px-3 py-2 text-xs">인증 적용 중…</p>}
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {replayMessage && <p role="status" className="rounded-md border p-2 text-sm">{replayMessage}</p>}
@@ -367,7 +477,17 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
           </div>
         </>}
       </section>
-      <DialogFooter className="sticky bottom-0 mx-0 mb-0 shrink-0 rounded-b-xl"><DialogClose asChild><Button type="button" variant="outline" size="sm" onClick={close}>닫기</Button></DialogClose><Button type="button" variant="outline" size="sm" disabled={suspended || !draft || !editable || editRejected || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void openInRepeater()}>{openingRepeater ? "Repeater 준비 중" : "Repeater로 보내기"}</Button></DialogFooter>
+      <DialogFooter className="sticky bottom-0 mx-0 mb-0 min-h-[64px] shrink-0 rounded-b-xl px-7 py-3.5 [&_button]:text-[13px]"><DialogClose asChild><Button type="button" variant="outline" size="sm" onClick={close}>닫기</Button></DialogClose><Button type="button" variant="outline" size="sm" disabled={suspended || !draft || !editable || editRejected || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void openInRepeater()}>{openingRepeater ? "Repeater 준비 중" : "Repeater로 보내기"}</Button></DialogFooter>
+      {!maximized && ([-1, 1] as const).map(side => <div key={side}>
+        <div aria-hidden="true" className={`absolute bottom-7 top-[140px] z-10 w-[10px] cursor-ew-resize touch-none hover:bg-primary/10 ${side < 0 ? "left-0" : "right-0"}`} onPointerDown={event => startResize(event, side, false)} onPointerMove={moveResize} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishResize() }} onPointerCancel={finishResize} />
+        <button type="button" aria-label={`${side < 0 ? "왼쪽" : "오른쪽"} 모서리 크기 조절`} title="드래그 또는 방향키로 크기 조절" className={`absolute bottom-0 z-20 flex size-[24px] touch-none items-center justify-center text-muted-foreground hover:text-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${side < 0 ? "left-0 cursor-nesw-resize" : "right-0 cursor-nwse-resize"}`} onPointerDown={event => startResize(event, side, true)} onPointerMove={moveResize} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishResize() }} onPointerCancel={finishResize} onKeyDown={event => {
+          if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) || !dialogRef.current) return
+          event.preventDefault()
+          const box = dialogRef.current.getBoundingClientRect()
+          pendingSize.current = boundSize(box.width + (event.key === "ArrowRight" ? 32 * side : event.key === "ArrowLeft" ? -32 * side : 0), box.height + (event.key === "ArrowDown" ? 16 : event.key === "ArrowUp" ? -16 : 0))
+          finishResize()
+        }}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={side < 0 ? "-scale-x-100" : ""}><path d="M6 15 15 6M10 15l5-5M14 15l1-1" /></svg></button>
+      </div>)}
     </DialogContent>
   </Dialog>
 }

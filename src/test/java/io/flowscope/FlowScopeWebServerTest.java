@@ -1169,6 +1169,41 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void previewsLiveRequestLabCredentialsWithoutSendingOrCachingAndKeepsTheLocalBoundary() throws Exception {
+        start();
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+        String form = "datasetRevision=" + state.datasetRevision() + "&eventId=" + encode(evidenceId) + "&credentialMode=ACCOUNT&accountId=user-a&request="
+                + encode("GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\n\r\n");
+        assertEquals(403, post("/api/request-lab/credentials", form, "wrong-token").statusCode());
+        assertEquals(405, get("/api/request-lab/credentials", token, origin()).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", form.replace("accountId=user-a", "accountId="), token).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", form.replace("credentialMode=ACCOUNT", "credentialMode=OTHER"), token).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", "datasetRevision=" + state.datasetRevision() + "&eventId=" + encode(evidenceId)
+                + "&credentialMode=ANONYMOUS&request=" + encode("x".repeat(1_048_577)), token).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", form.replace("datasetRevision=" + state.datasetRevision(), "datasetRevision=-1"), token).statusCode());
+        assertEquals(0, state.credentialPreviewCount);
+        HttpResponse<String> preview = post("/api/request-lab/credentials", form, token);
+        assertEquals(200, preview.statusCode(), preview.body());
+        assertEquals("no-store", preview.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals("live-preview-secret", json(preview).path("headers").get(0).path("value").asText());
+        assertEquals(1, state.credentialPreviewCount);
+        assertEquals(0, state.manualRequestCount.get());
+        assertFalse(state.opened.get());
+        assertFalse(get("/api/snapshot", token, origin()).body().contains("live-preview-secret"));
+        assertFalse(get("/api/manual-attempts", token, origin()).body().contains("live-preview-secret"));
+        state.rejectCredentialPreview = true;
+        HttpResponse<String> rejected = post("/api/request-lab/credentials", form, token);
+        assertEquals(400, rejected.statusCode());
+        assertFalse(rejected.body().contains("live-preview-secret"));
+        assertTrue(rejected.body().contains("scope"));
+        state.rejectCredentialPreview = false;
+        state.changeDatasetDuringPreview = true;
+        HttpResponse<String> replaced = post("/api/request-lab/credentials", form, token);
+        assertEquals(400, replaced.statusCode());
+        assertFalse(replaced.body().contains("live-preview-secret"));
+    }
+
+    @Test
     void opensAndSendsAnExplicitRawRequestLabDraftWithoutPuttingItInSnapshot() throws Exception {
         start();
         String evidenceId = state.snapshot().records.getFirst().evidenceId;
@@ -1447,6 +1482,9 @@ final class FlowScopeWebServerTest {
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
+        private volatile int credentialPreviewCount;
+        private volatile boolean rejectCredentialPreview;
+        private volatile boolean changeDatasetDuringPreview;
         private volatile String repeaterRequest = "";
         private volatile FlowScopeWebServer.CredentialMode repeaterCredentialMode;
         private volatile String repeaterAccountId = "";
@@ -1643,6 +1681,13 @@ final class FlowScopeWebServerTest {
                     "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
                     "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
                     "UTF-8", "UTF-8", "USER A", "없음", "", "메모리 원문");
+        }
+        @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
+                String evidenceId, String request, FlowScopeWebServer.CredentialMode mode, String accountId) {
+            credentialPreviewCount++;
+            if (rejectCredentialPreview) throw new IllegalStateException("live-preview-secret");
+            if (changeDatasetDuringPreview) revision.incrementAndGet();
+            return List.of(new FlowScopeWebServer.RequestLabCredentialHeader("Cookie", "live-preview-secret"));
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(String evidenceId, String request,
                                                                             FlowScopeWebServer.CredentialMode mode,

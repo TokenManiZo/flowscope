@@ -86,6 +86,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default RequestLabDraft requestLabDraft(String evidenceId) {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
+        default List<RequestLabCredentialHeader> requestLabCredentials(String evidenceId, String request,
+                                                                       CredentialMode mode, String accountId) {
+            throw new UnsupportedOperationException("request lab credentials are unavailable");
+        }
         default RequestLabResult sendRequestLab(String evidenceId, String request,
                                                 CredentialMode credentialMode, String accountId) {
             throw new UnsupportedOperationException("request lab is unavailable");
@@ -230,6 +234,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public record RequestLabResult(String eventId, int status, String response, long durationMs,
                                    int requestBytes, int responseBytes) {}
 
+    /** Live header values for the current editor only; never stored or snapshotted. */
+    public record RequestLabCredentialHeader(String name, String value) {}
+
     private static final int FORM_LIMIT = 4 * 1024 * 1024;
     private static final int REQUEST_LAB_REQUEST_LIMIT = 1024 * 1024;
     private static final int WEB_BODY_LIMIT = 25 * 1024 * 1024;
@@ -293,6 +300,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/cluster-evidence" -> clusterEvidence(request, target);
             case "/api/replay" -> replay(request);
             case "/api/request-lab" -> requestLab(request, target);
+            case "/api/request-lab/credentials" -> requestLabCredentials(request);
             case "/api/authorization-replay" -> authorizationReplay(request);
             case "/api/clear" -> clear(request);
             case "/api/projects" -> projects(request);
@@ -514,6 +522,32 @@ public final class FlowScopeWebServer implements AutoCloseable {
             return json(200, body);
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
             return error(400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response requestLabCredentials(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> values = postForm(request);
+        if (values == null) return invalidForm(request);
+        try {
+            long dataset = Long.parseLong(required(values, "datasetRevision"));
+            if (dataset != state.datasetRevision()) throw new IllegalStateException("dataset changed");
+            String rawRequest = requiredRaw(values, "request");
+            if (rawRequest.getBytes(StandardCharsets.UTF_8).length > REQUEST_LAB_REQUEST_LIMIT) {
+                throw new IllegalArgumentException("편집 요청은 1MB 이하만 허용됩니다.");
+            }
+            CredentialMode mode = CredentialMode.valueOf(required(values, "credentialMode").toUpperCase(Locale.ROOT));
+            String accountId = values.getOrDefault("accountId", "").trim();
+            if (mode == CredentialMode.ACCOUNT && accountId.isBlank()) {
+                throw new IllegalArgumentException("등록 계정 모드에는 계정 선택이 필요합니다.");
+            }
+            ObjectNode body = json.createObjectNode();
+            List<RequestLabCredentialHeader> headers = state.requestLabCredentials(required(values, "eventId"), rawRequest, mode, accountId);
+            if (dataset != state.datasetRevision()) throw new IllegalStateException("dataset changed");
+            body.set("headers", json.valueToTree(headers));
+            return json(200, body);
+        } catch (RuntimeException error) {
+            // Never reflect an implementation exception that might contain a live header value.
+            return error(400, "인증을 적용하지 못했습니다. 요청 경로·scope·현재 세션을 확인해 주세요.");
         }
     }
 

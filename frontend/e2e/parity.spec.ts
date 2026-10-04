@@ -481,6 +481,25 @@ test("opens Request Lab as a two-column disabled standalone draft", async ({ pag
   expect(requestBox!.x + requestBox!.width).toBeLessThanOrEqual(responseBox!.x + 2)
   await expect(dialog.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
   await expect(dialog).toContainText(/초안|사용할 수 없|unavailable/i)
+  const originalRequest = await request.inputValue(), originalResponse = await response.inputValue()
+  let beforeWidth = (await dialog.boundingBox())!.width
+  for (const [label, direction] of [["왼쪽 모서리 크기 조절", -1], ["오른쪽 모서리 크기 조절", 1]] as const) {
+    const handle = (await dialog.getByRole("button", { name: label }).boundingBox())!
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x + handle.width / 2 + direction * 20, handle.y + handle.height / 2, { steps: 5 })
+    await page.mouse.up()
+    await expect.poll(async () => (await dialog.boundingBox())!.width).toBeGreaterThan(beforeWidth + 30)
+    beforeWidth = (await dialog.boundingBox())!.width
+  }
+  await dialog.getByRole("button", { name: "전체화면" }).click()
+  await expect.poll(async () => (await dialog.boundingBox())!.width).toBe(1416)
+  await page.keyboard.press("Escape")
+  await expect.poll(async () => (await dialog.boundingBox())!.width).toBe(beforeWidth)
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await expect.poll(async () => (await dialog.boundingBox())!.width).toBeLessThanOrEqual(1248)
+  await expect(request).toHaveValue(originalRequest)
+  await expect(response).toHaveValue(originalResponse)
   await dialog.getByRole("button", { name: "닫기" }).click(); await closeSheet(page)
 })
 

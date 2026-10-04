@@ -674,6 +674,12 @@ export interface RequestLabResult extends ApiSuccess {
   responseBytes: number
 }
 
+/** Live credentials: mounted Request Lab memory only, never query cache or project state. */
+export interface RequestLabCredentialHeader {
+  name: string
+  value: string
+}
+
 export interface HumanRun {
   active: boolean
   completed: boolean

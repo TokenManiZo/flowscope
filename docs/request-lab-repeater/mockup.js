@@ -168,7 +168,22 @@ function simulateSend() {
 }
 $('request').addEventListener('input', event => { if (selectedId !== null || sending) return; draft = event.target.value; edited = true; $('request-highlight').innerHTML = highlight(draft); showView('request', draft); renderChrome(); toast('') })
 $('request').addEventListener('scroll', event => { $('request-highlight').scrollTop = event.target.scrollTop; $('request-highlight').scrollLeft = event.target.scrollLeft })
-$('credential').addEventListener('change', event => { draftMode = event.target.value; edited = true; renderChrome(); toast('') })
+// Synthetic credential projection only; never retrieves real credentials.
+function applyDemoCredential(mode) {
+  const boundary = /\r?\n\r?\n/.exec(draft)
+  if (!boundary) { toast('요청의 헤더와 본문 구분을 확인해 주세요. 인증을 바꾸지 않았습니다.'); renderChrome(); return }
+  const head = draft.slice(0, boundary.index), body = draft.slice(boundary.index)
+  const newline = head.includes('\r\n') ? '\r\n' : '\n'
+  const managed = /^(authorization|cookie|proxy-authorization|x-csrf-token|x-xsrf-token|x-csrftoken):/i
+  const lines = head.split(/\r?\n/).filter((line, index) => index === 0 || !managed.test(line))
+  const headers = mode === 'ANONYMOUS' ? [] : mode === 'ACCOUNT'
+    ? ['Authorization: Bearer CURRENT_SESSION_DEMO_USER_1', 'Cookie: session=CURRENT_SESSION_DEMO_USER_1']
+    : original.request.split(/\r?\n\r?\n/)[0].split(/\r?\n/).filter(line => managed.test(line))
+  lines.splice(2, 0, ...headers)
+  draft = lines.join(newline) + body
+  draftMode = mode; edited = true; views.request = 'raw'; saveWorkspace(); render(); toast('')
+}
+$('credential').addEventListener('change', event => { if (!sending && selectedId === null) applyDemoCredential(event.target.value) })
 $('send').onclick = simulateSend
 $('original').onclick = () => browse(0)
 $('request-select').onchange = () => selectRequest(Number($('request-select').value))
@@ -176,11 +191,12 @@ $('add-request').onclick = addRequest
 $('remove-request').onclick = removeRequest
 document.querySelectorAll('[data-pane]').forEach(button => { button.onclick = () => { views[button.dataset.pane] = button.dataset.view; renderRequest(); renderResponse() } })
 document.querySelectorAll('[data-focus]').forEach(button => { button.onclick = () => { focus = button.dataset.focus; $('editors').dataset.focus = focus; document.querySelectorAll('[data-focus]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.focus === focus))) } })
-$('basic').onclick = () => { $('stage').classList.remove('maximized'); $('maximize').querySelector('span').textContent = '최대화'; focus = 'both'; $('editors').dataset.focus = focus; document.querySelectorAll('[data-focus]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.focus === focus))); setSplit(50) }
+$('basic').onclick = () => { $('stage').style.removeProperty('--dialog-width'); $('stage').style.removeProperty('--dialog-height'); setMaximized(false); focus = 'both'; $('editors').dataset.focus = focus; document.querySelectorAll('[data-focus]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.focus === focus))); setSplit(50) }
 $('font').onchange = () => $('stage').style.setProperty('--font', $('font').value)
 $('theme').onchange = () => document.documentElement.dataset.theme = $('theme').value
 $('width').onchange = () => document.documentElement.style.setProperty('--review-width', `${$('width').value}px`)
-$('maximize').onclick = () => { const maximized = $('stage').classList.toggle('maximized'); $('maximize').querySelector('span').textContent = maximized ? '원래 크기' : '최대화' }
+function setMaximized(value) { $('stage').classList.toggle('maximized', value); $('maximize').querySelector('span').textContent = value ? '원래 크기' : '전체화면'; $('maximize').setAttribute('aria-pressed', String(value)) }
+$('maximize').onclick = () => setMaximized(!$('stage').classList.contains('maximized'))
 $('empty').onclick = () => { if (sending) return; if (!activeRequestId) addRequest(); lastResult = null; selectedId = null; render(); toast('') }
 $('reset').onclick = seed
 $('burp').onclick = () => toast('목업입니다. 실제 Burp Repeater 연결은 실행하지 않습니다.')
@@ -191,5 +207,31 @@ $('splitter').onpointerdown = event => { $('splitter').setPointerCapture(event.p
 $('splitter').onpointermove = event => { if (!$('splitter').hasPointerCapture(event.pointerId)) return; const bounds = $('editors').getBoundingClientRect(); setSplit((event.clientX - bounds.left) / bounds.width * 100) }
 $('splitter').onpointerup = event => { if ($('splitter').hasPointerCapture(event.pointerId)) $('splitter').releasePointerCapture(event.pointerId) }
 $('splitter').onkeydown = event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); setSplit(event.key === 'Home' ? 25 : event.key === 'End' ? 75 : split + (event.key === 'ArrowLeft' ? -5 : 5)) }
-window.addEventListener('keydown', event => { if (event.key === 'Escape' && $('stage').classList.contains('maximized')) { $('stage').classList.remove('maximized'); $('maximize').querySelector('span').textContent = '최대화' } })
+window.addEventListener('keydown', event => { if (event.key === 'Escape' && $('stage').classList.contains('maximized')) setMaximized(false) })
+function resizeDialog(width, height) {
+  $('stage').style.setProperty('--dialog-width', `${Math.min(window.innerWidth - 32, Math.max(960, width))}px`)
+  $('stage').style.setProperty('--dialog-height', `${Math.min(window.innerHeight - 220, Math.max(460, height))}px`)
+}
+for (const handle of document.querySelectorAll('[data-resize]')) {
+  let drag = null
+  handle.onpointerdown = event => {
+    if (event.button !== 0 || $('stage').classList.contains('maximized')) return
+    const box = $('stage').getBoundingClientRect()
+    drag = { x: event.clientX, y: event.clientY, width: box.width, height: box.height }
+    handle.setPointerCapture(event.pointerId); event.preventDefault()
+  }
+  handle.onpointermove = event => {
+    if (!drag || !handle.hasPointerCapture(event.pointerId)) return
+    const direction = handle.dataset.resize.startsWith('left') ? -1 : 1
+    resizeDialog(drag.width + 2 * direction * (event.clientX - drag.x), drag.height + (handle.dataset.resize.endsWith('corner') ? event.clientY - drag.y : 0))
+  }
+  handle.onpointerup = event => { if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); drag = null }
+  handle.onpointercancel = () => { drag = null }
+  handle.onkeydown = event => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+    event.preventDefault()
+    const box = $('stage').getBoundingClientRect(), direction = handle.dataset.resize.startsWith('left') ? -1 : 1
+    resizeDialog(box.width + (event.key === 'ArrowRight' ? 32 * direction : event.key === 'ArrowLeft' ? -32 * direction : 0), box.height + (event.key === 'ArrowDown' ? 16 : event.key === 'ArrowUp' ? -16 : 0))
+  }
+}
 seed()

@@ -2096,6 +2096,28 @@ public final class FlowScopeExtension implements BurpExtension {
                     String accountId) {
                 return executeHumanRequestLab(evidenceId, request, credentialMode, accountId);
             }
+            @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
+                    String evidenceId, String requestText, FlowScopeWebServer.CredentialMode mode, String accountId) {
+                RequestRecord seed = evidenceRecord(evidenceId);
+                TransientExchangeVault.Exchange original = rawExchanges.get(seed).orElseThrow(() ->
+                        new IllegalStateException("편집 가능한 원문이 없습니다."));
+                if (!original.requestRetained() || !decodeRequest(original, seed.requestContentType).editable()) {
+                    throw new IllegalStateException("편집 가능한 원문이 없습니다.");
+                }
+                // Same URL/scope/session rules as send, without sending or recording an attempt.
+                HttpRequest prepared = prepareHumanRequest(seed, requestText, mode, accountId);
+                if (mode == FlowScopeWebServer.CredentialMode.ORIGINAL) {
+                    prepared = prepareHumanRequest(seed, decodeRequest(original, seed.requestContentType).text(), mode, null);
+                }
+                if (prepared.toByteArray().length() > RAW_REQUEST_LIMIT_BYTES) {
+                    throw new IllegalArgumentException("인증 적용 요청이 너무 큽니다.");
+                }
+                return prepared.headers().stream()
+                        .filter(header -> SessionBroker.managedHeaderNames().stream()
+                                .anyMatch(name -> name.equalsIgnoreCase(header.name())))
+                        .map(header -> new FlowScopeWebServer.RequestLabCredentialHeader(header.name(), header.value()))
+                        .toList();
+            }
             @Override public CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(
                     String itemId, boolean armed) {
                 return runCrossIdentityReplay(List.of(authorizationReplayRecommendation(itemId)), armed);
