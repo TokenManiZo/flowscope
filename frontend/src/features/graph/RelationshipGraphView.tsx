@@ -11,7 +11,7 @@ import { useSnapshotQuery } from "@/lib/query/hooks"
 import { SourceIcon } from "@/features/evidence/SourceIcon"
 
 import { CytoscapeGraph } from "./CytoscapeGraph"
-import { GraphSearch } from "./GraphSearch"
+import { GraphSearchInput } from "./GraphSearchInput"
 import { buildGraphSearchIndex, sameSearchCells, searchDestination, searchGraph, searchHighlights, type GraphSearchEntry, type GraphSearchIndex, type SearchDestination } from "./graphSearch"
 import { GRAPH_MAX_ZOOM, LANE_SPACING, laneAnchor, type LaneBounds } from "./graphLanes"
 import { GraphInspectorPanel, GraphViewOverview } from "./GraphInspectorPanel"
@@ -357,7 +357,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
 
   const toolbar = <div role="toolbar" aria-label="그래프 상단 제어" className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-[var(--flowscope-pane)] px-4 py-2.5">
     <div className="flex items-center gap-1.5"><Button size="icon" variant="outline" className="size-9" aria-label="뒤로" disabled={!history.past.length} onClick={goBack}><ChevronLeft className="size-5" /></Button><Button size="icon" variant="outline" className="size-9" aria-label="앞으로" disabled={!history.future.length} onClick={goForward}><ChevronRight className="size-5" /></Button>{!compact && <div role="group" aria-label="보기 전환" className="ml-2 flex rounded-md border border-border p-0.5">{([["그래프", false], ["목록", true]] as const).map(([label, list]) => <Button key={label} size="sm" variant={listMode === list ? "secondary" : "ghost"} className="h-8 px-3 text-sm" aria-pressed={listMode === list} onClick={() => setListMode(list)}>{label}</Button>)}</div>}</div>
-    <GraphSearch query={searchQuery} results={results} disabled={snapshot.isError || !workspaceState.workspace} searching={searchQuery !== searchTerm && !!searchQuery.trim()} canvas={canvasShellRef} onQuery={query => { setSearchQuery(query); setSearchLimit(30) }} onMore={() => setSearchLimit(current => current + 30)} onChoose={chooseSearch} />
+    <GraphSearchInput query={searchQuery} results={results} disabled={snapshot.isError || !workspaceState.workspace} searching={searchQuery !== searchTerm && !!searchQuery.trim()} canvas={canvasShellRef} onQuery={query => { setSearchQuery(query); setSearchLimit(30) }} onMore={() => setSearchLimit(current => current + 30)} onChoose={chooseSearch} />
     <div className="flex flex-wrap items-center gap-1.5"><Button size="sm" variant="outline" className="h-8 px-2.5 text-xs xl:hidden" aria-label="그래프 필터" onClick={() => setFilterOpen(true)}><Filter className="mr-1.5 size-3.5" />필터</Button><Button size="icon-sm" variant="ghost" aria-label="축소" disabled={zoom <= 0.4} onClick={() => adjustZoom(-0.1)}><Minus className="size-3.5" /></Button><span className="w-11 text-center text-xs tabular-nums">{Math.round(zoom * 100)}%</span><Button size="icon-sm" variant="ghost" aria-label="확대" disabled={zoom >= GRAPH_MAX_ZOOM - 0.001} onClick={() => adjustZoom(0.1)}><Plus className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="그래프 맞추기" onClick={() => setFitVersion((current) => current + 1)}><Crosshair className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="전체 화면" onClick={() => { void canvasShellRef.current?.requestFullscreen?.() }}><Maximize2 className="size-3.5" /></Button></div>
   </div>
 

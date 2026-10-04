@@ -118,7 +118,7 @@ REVIEW/EXCLUDE 보조 트래픽, 현재 전체 관계 보기에 포함되지 않
 ## 구현 구성
 
 1. **논리 노드 목록과 검색 함수** — `graphSearch.ts`에서 범위·중복 제거·서비스 문맥·리터럴 매치·정렬·top N을 구현. 제한/접힘/다른 서비스가 포함된 순수 회귀 테스트 작성.
-2. **검색 입력과 현재 화면 강조** — `GraphSearch.tsx`, `RelationshipGraphView`, `CytoscapeGraph`에 input/listbox와 독립 검색 상태 추가. 입력만으로 계층/좌표/저장 요청이 바뀌지 않는 테스트 작성.
+2. **검색 입력과 현재 화면 강조** — `GraphSearchInput.tsx`, `RelationshipGraphView`, `CytoscapeGraph`에 input/listbox와 독립 검색 상태 추가. 입력만으로 계층/좌표/저장 요청이 바뀌지 않는 테스트 작성.
 3. **결과 이동과 제한 예외** — `graphHierarchy`에 소수 reveal 대상 옵션, `RelationshipGraphView`에 취소 가능한 pending 이동 추가. 기존 요약 패널의 동일 reveal 경로를 함께 사용. 기존 IDs·geometry 복원·Evidence 선택을 유지.
 4. **수명/오류/데스크톱 목록·접근성** — 데이터 교체·snapshot 소멸·IME·Esc·fullscreen portal·위치 잠금·viewport 노출·렌더러 fallback 처리. 필요한 README와 단계 기록을 함께 묶고 코드 변경 후 `graphify update .` 실행.
 

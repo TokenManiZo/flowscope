@@ -17,7 +17,7 @@ interface Props {
 }
 
 /** 검색 입력에만 키보드 동작을 연결한다. 그래프·Request Lab 단축키는 가로채지 않는다. */
-export function GraphSearch({ query, results, disabled, searching, canvas, onQuery, onMore, onChoose }: Props) {
+export function GraphSearchInput({ query, results, disabled, searching, canvas, onQuery, onMore, onChoose }: Props) {
   const id = useId(), input = useRef<HTMLInputElement>(null), root = useRef<HTMLDivElement>(null)
   const popup = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false), [activeKey, setActiveKey] = useState<string | null>(null)

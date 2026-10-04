@@ -20,9 +20,10 @@
 사용자 요청에 따라 Maven 빌드, TypeScript 검사, Vitest, Playwright, 실제 화면·Burp 실행은 수행하지 않았다. 아래 검사는 작성했으며 실행 결과가 없다.
 
 - `graphSearch.test.ts`: 전체 색인·서비스 분리·검색 순위·표시 제한·접힘·문맥·소멸·viewport.
-- `GraphSearch.test.tsx`: portal·키보드·IME·조회 실패·검색 해제·결과 없음.
+- `GraphSearchInput.test.tsx`: portal·키보드·IME·조회 실패·검색 해제·결과 없음.
 - `RelationshipGraphSearch.test.tsx`: 입력 중 projection/저장 유지, 제한 밖 이동, 검색 해제 후 선택 유지, 데이터 교체.
 - `CytoscapeGraph.test.tsx` 추가 사례: 요소 재생성 없이 강조, 위치 잠금 상태의 viewport 이동과 모델 좌표 보존.
+- `ApiListTable.test.tsx` 추가 사례: 검색 대상이 묶음의 기본 5개 미리보기 밖에 있어도 표시·선택하며 더 보기와 원본 목록을 유지한다.
 - `frontend/e2e/graph-search.spec.ts`: 합성 응답과 실제 캔버스에서 드래그·검색·좌표·저장 요청을 라이트/다크 1280/1920px으로 확인. 실제 Burp와 Mac/Windows 입력 검증을 대체하지 않는다.
 
 ## 사용자가 확인할 항목
@@ -34,3 +35,7 @@
 5. 대형 실제 데이터의 색인/검색 지연·메모리를 측정한다. 불필요한 재색인과 입력 중 그래프 재생성은 줄였으나 실제 성능 수치는 아직 없다.
 
 모바일 대응, 새 저장 API, 저장 형식 변경, 후속 단계 색 표시·다중 선택·이동 묶음·삭제는 이번 커밋 범위에 포함하지 않는다.
+
+## 사용자 빌드 실패에 따른 보완
+
+직전 사용자 빌드의 `target/tsbuildinfo/react-web.tsbuildinfo`에서 TS2339·TS2305·TS7006 진단을 확인했다. 읽기 전용 목록의 `push`를 새 배열 생성으로 바꾸고, macOS에서 `GraphSearch.tsx`와 `graphSearch.ts`가 같은 이름으로 해석되는 충돌을 피하도록 입력 컴포넌트와 테스트를 `GraphSearchInput`으로 변경했다. 저장·검색 동작 명세는 유지한다. 보완 후 빌드·테스트는 실행하지 않았으며 사용자의 재검증이 필요하다.

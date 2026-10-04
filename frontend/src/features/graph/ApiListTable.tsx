@@ -97,9 +97,9 @@ export function ApiListTable({ operations, snapshot, selectedId, revealNodeId, s
           const shown = needle && !shapeHit ? group.items.filter(node => hit(pathOf(node)) || node.id === revealNodeId) : group.items
           if (!shown.length) return null
           const expanded = open.includes(group.key) || shown.some(node => node.id === revealNodeId)
-          const visible = showAll.includes(group.key) ? shown : shown.slice(0, GROUP_PREVIEW)
+          const preview = showAll.includes(group.key) ? shown : shown.slice(0, GROUP_PREVIEW)
           const target = shown.find(node => node.id === revealNodeId)
-          if (target && !visible.includes(target)) visible.push(target)
+          const visible = target && !preview.includes(target) ? [...preview, target] : preview
           const nodeId = `operation-group:${operationShapeKey(group.items[0].label)}`
           return <Fragment key={group.key}>
             <tr data-graph-node-id={nodeId} tabIndex={0} aria-expanded={expanded} aria-label={`${group.method} ${group.path} 묶음`} className={cn("h-12 cursor-pointer border-b border-border/70 bg-muted/30 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none", searchMatches?.has(nodeId) && "outline-2 outline-dashed -outline-offset-2 outline-emerald-600 dark:outline-emerald-300")} onClick={() => toggle(group.key)} onKeyDown={activate(() => toggle(group.key))}>
