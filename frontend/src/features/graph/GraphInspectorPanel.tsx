@@ -11,6 +11,7 @@ import { GraphScopeSummary } from "./GraphScopeSummary"
 
 /** 사이트·그룹 요약 패널에서 그래프로 이어지는 동작. RelationshipGraphView가 이동·선택을 맡는다. */
 export interface ScopeActions {
+  onOpenRequestLab?(): void
   onRevealOperation?(groupId: string, operation: string): void
   onSelectGroup?(groupId: string): void
   onOpenGroup?(groupId: string): void
@@ -53,7 +54,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {/* 대상·API 그룹은 후보·확인 필요·신원별 접근으로 정리한 요약을 보여 준다. */}
       {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
         : summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} />}
-      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
+      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
     </InspectorPanel>
   </div>
 }

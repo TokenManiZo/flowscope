@@ -7,6 +7,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JavascriptAnalysisProcessTest {
@@ -69,15 +70,20 @@ class JavascriptAnalysisProcessTest {
         JavascriptCallSiteAnalyzer.clearCache();
         JavascriptAnalysisProcess.setWorkerClassForTest(StallingJavascriptAnalysisWorker.class.getName());
         System.setProperty("flowscope.javascript.workerTimeoutSeconds", "1");
+        int starts = JavascriptAnalysisProcess.processStarts();
 
         JavascriptAnalysis timedOut = JavascriptCallSiteAnalyzer.analyze("fetch('/api/timeout')");
         assertEquals(JavascriptAnalysis.Status.LIMIT_EXCEEDED, timedOut.status());
         assertTrue(timedOut.detail().contains("exceeded"));
+        assertFalse(JavascriptAnalysisProcess.workerAliveForTest());
 
+        // Recovery starts a fresh JVM/parser; the intentional one-second timeout only applies to the stalled worker.
+        System.clearProperty("flowscope.javascript.workerTimeoutSeconds");
         JavascriptAnalysisProcess.setWorkerClassForTest(null);
         JavascriptAnalysis next = JavascriptCallSiteAnalyzer.analyze("fetch('/api/after-timeout')");
-        assertEquals(JavascriptAnalysis.Status.PARSED, next.status());
+        assertEquals(JavascriptAnalysis.Status.PARSED, next.status(), next::detail);
         assertTrue(next.callSites().stream().anyMatch(call -> call.reference().equals("/api/after-timeout")));
+        assertEquals(starts + 2, JavascriptAnalysisProcess.processStarts());
     }
 
     @Test

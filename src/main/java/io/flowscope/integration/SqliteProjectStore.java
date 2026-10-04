@@ -30,7 +30,7 @@ import java.util.Set;
 
 /** Local relational FlowScope project store. Raw broker credentials are never part of this schema. */
 public final class SqliteProjectStore {
-    private static final int STORAGE_SCHEMA_VERSION = 3;
+    private static final int STORAGE_SCHEMA_VERSION = 4;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
 
     private final ProjectStore codec;
@@ -87,9 +87,19 @@ public final class SqliteProjectStore {
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
                      ProjectStore.ProjectContext context, GraphWorkspace graphWorkspace) throws IOException {
+        save(target, records, config, assessments, validations, completedRuns, routeCandidates,
+                runAttempts, context, graphWorkspace, RequestLabWorkspace.empty());
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
+                     ProjectStore.ProjectContext context, GraphWorkspace graphWorkspace,
+                     RequestLabWorkspace requestLabWorkspace) throws IOException {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = codec.toDocument(records, config, assessments, validations,
-                runs.keySet(), runs, routeCandidates, runAttempts, context, graphWorkspace);
+                runs.keySet(), runs, routeCandidates, runAttempts, context, graphWorkspace, requestLabWorkspace);
         saveDocument(target, root);
     }
 
@@ -146,7 +156,11 @@ public final class SqliteProjectStore {
         if (!Files.isRegularFile(absolute)) throw new IOException("project database is missing");
         try (Connection connection = connect(absolute)) {
             int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
-            if (version < 1 || version > STORAGE_SCHEMA_VERSION) throw new IllegalArgumentException("unsupported project database schema");
+            if (version < 1 || version > STORAGE_SCHEMA_VERSION) {
+                throw new IllegalArgumentException("지원하지 않는 DB 구조입니다(파일 버전: " + version
+                        + ", 현재 지원: 1~" + STORAGE_SCHEMA_VERSION
+                        + "). 이 형식을 지원하는 JAR로 다시 열어 주세요. 버전 번호를 직접 바꾸면 데이터가 누락될 수 있습니다.");
+            }
             connection.setAutoCommit(false);
             try (PreparedStatement metadata = connection.prepareStatement(
                     "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)")) {
@@ -166,6 +180,132 @@ public final class SqliteProjectStore {
                 throw error;
             }
         } catch (SQLException error) { throw new IOException("FlowScope graph workspace save failed", error); }
+    }
+
+    private static void createRequestLabTables(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE IF NOT EXISTS request_lab_tabs (evidence_id TEXT PRIMARY KEY, next_id INTEGER NOT NULL, selected_id INTEGER NOT NULL)");
+            statement.execute("CREATE TABLE IF NOT EXISTS request_lab_requests (evidence_id TEXT NOT NULL, request_id INTEGER NOT NULL, name TEXT NOT NULL, request TEXT NOT NULL, credential_mode TEXT NOT NULL, result TEXT, dirty INTEGER NOT NULL, PRIMARY KEY(evidence_id, request_id))");
+        }
+    }
+
+    /** Caller serializes this with full checkpoints. Commit succeeds before publishing the new state. */
+    public void saveRequestLabWorkspace(Path target, String evidenceId, RequestLabWorkspace previous,
+                                        RequestLabWorkspace next) throws IOException {
+        Path absolute = target.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(absolute)) throw new IOException("프로젝트 DB가 없습니다. 먼저 프로젝트를 저장해 주세요.");
+        try (Connection connection = connect(absolute)) {
+            int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
+            if (version < 1 || version > STORAGE_SCHEMA_VERSION) throw new IllegalArgumentException("지원하지 않는 DB 구조입니다.");
+            try (Statement statement = connection.createStatement()) { statement.execute("PRAGMA secure_delete=ON"); }
+            connection.setAutoCommit(false);
+            try {
+                String savedRevision = readOptionalMetadata(connection, "request_lab_revision");
+                if ((savedRevision == null ? 0 : Long.parseLong(savedRevision)) != previous.revision()) {
+                    throw new IllegalStateException("다른 창에서 Request Lab을 변경했습니다. 다시 열어 주세요.");
+                }
+                createRequestLabTables(connection);
+                if (version < 4) {
+                    // Fill structures absent from versions 1/2 before advertising the new schema.
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute("CREATE TABLE IF NOT EXISTS completed_runs (source TEXT PRIMARY KEY, run_id TEXT NOT NULL, document TEXT NOT NULL)");
+                        statement.execute("CREATE TABLE IF NOT EXISTS run_attempts (seq INTEGER PRIMARY KEY, source TEXT NOT NULL, run_id TEXT NOT NULL, outcome TEXT NOT NULL, document TEXT NOT NULL)");
+                        statement.execute("CREATE INDEX IF NOT EXISTS run_attempts_run_idx ON run_attempts(source, run_id)");
+                        if (Integer.parseInt(readMetadata(connection, "project_schema_version")) < 3) {
+                            // Pre-v3 completion hints cannot become trusted exact runs during migration.
+                            statement.executeUpdate("DELETE FROM completed_lanes");
+                            statement.executeUpdate("DELETE FROM completed_runs");
+                        }
+                    }
+                }
+                writeRequestLabTab(connection, evidenceId, next.tab(evidenceId), previous.tab(evidenceId));
+                try (PreparedStatement metadata = connection.prepareStatement("INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)")) {
+                    if (readOptionalMetadata(connection, "project_context") == null) {
+                        ObjectNode context = json.createObjectNode();
+                        context.put("name", ""); context.putArray("scope"); context.put("created_at", java.time.Instant.EPOCH.toString());
+                        putMetadata(metadata, "project_context", json.writeValueAsString(context));
+                    }
+                    putMetadata(metadata, "request_lab_revision", Long.toString(next.revision()));
+                    putMetadata(metadata, "storage_schema_version", Integer.toString(STORAGE_SCHEMA_VERSION));
+                    putMetadata(metadata, "project_schema_version", "8");
+                    putMetadata(metadata, "saved_at", java.time.Instant.now().toString());
+                }
+                try (PreparedStatement migration = connection.prepareStatement("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)")) {
+                    migration.setInt(1, STORAGE_SCHEMA_VERSION);
+                    migration.setString(2, java.time.Instant.now().toString());
+                    migration.executeUpdate();
+                }
+                try (Statement statement = connection.createStatement(); ResultSet size = statement.executeQuery("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")) {
+                    if (size.next() && size.getLong(1) > MAX_FILE_BYTES) throw new IllegalArgumentException("project database exceeds 100 MiB");
+                }
+                connection.commit();
+            } catch (SQLException | IOException | RuntimeException error) {
+                connection.rollback();
+                throw error;
+            }
+        } catch (SQLException error) { throw new IOException("Request Lab DB 저장에 실패했습니다.", error); }
+    }
+
+    private void writeRequestLabTab(Connection connection, String evidenceId, RequestLabWorkspace.Tab tab,
+                                    RequestLabWorkspace.Tab previous) throws SQLException, IOException {
+        try (PreparedStatement metadata = connection.prepareStatement("INSERT OR REPLACE INTO request_lab_tabs(evidence_id, next_id, selected_id) VALUES(?, ?, ?)");
+             PreparedStatement remove = connection.prepareStatement("DELETE FROM request_lab_requests WHERE evidence_id=? AND request_id=?");
+             PreparedStatement entry = connection.prepareStatement("INSERT INTO request_lab_requests(evidence_id, request_id, name, request, credential_mode, result, dirty) VALUES(?, ?, ?, ?, ?, ?, ?)")) {
+            metadata.setString(1, evidenceId); metadata.setInt(2, tab.nextId()); metadata.setInt(3, tab.selectedId()); metadata.executeUpdate();
+            if (previous != null) for (int id : previous.entries().keySet()) if (!tab.entries().containsKey(id)) {
+                remove.setString(1, evidenceId); remove.setInt(2, id); remove.executeUpdate();
+            }
+            for (var value : tab.entries().entrySet()) {
+                var next = value.getValue();
+                var old = previous == null ? null : previous.entries().get(value.getKey());
+                if (old == null) {
+                    entry.setString(1, evidenceId); entry.setInt(2, value.getKey()); entry.setString(3, next.name());
+                    entry.setString(4, next.request()); entry.setString(5, next.credentialMode());
+                    entry.setString(6, next.result() == null ? null : json.writeValueAsString(next.result()));
+                    entry.setInt(7, next.dirty() ? 1 : 0); entry.executeUpdate();
+                } else {
+                    // A name change never serializes/transmits the stored large HTTP columns.
+                    if (!old.name().equals(next.name())) updateRequestLabColumn(connection, evidenceId, value.getKey(), "name", next.name());
+                    if (!old.request().equals(next.request())) updateRequestLabColumn(connection, evidenceId, value.getKey(), "request", next.request());
+                    if (!old.credentialMode().equals(next.credentialMode())) updateRequestLabColumn(connection, evidenceId, value.getKey(), "credential_mode", next.credentialMode());
+                    if (!java.util.Objects.equals(old.result(), next.result())) updateRequestLabColumn(connection, evidenceId, value.getKey(), "result", next.result() == null ? null : json.writeValueAsString(next.result()));
+                    if (old.dirty() != next.dirty()) updateRequestLabColumn(connection, evidenceId, value.getKey(), "dirty", next.dirty() ? "1" : "0");
+                }
+            }
+        }
+    }
+
+    private static void updateRequestLabColumn(Connection connection, String evidenceId, int id,
+                                               String column, String value) throws SQLException {
+        // column comes only from the fixed internal calls above, never request input.
+        try (PreparedStatement update = connection.prepareStatement("UPDATE request_lab_requests SET " + column + "=? WHERE evidence_id=? AND request_id=?")) {
+            update.setString(1, value); update.setString(2, evidenceId); update.setInt(3, id);
+            if (update.executeUpdate() != 1) throw new SQLException("Request Lab request is missing");
+        }
+    }
+
+    private RequestLabWorkspace readRequestLabWorkspace(Connection connection) throws SQLException, IOException {
+        var tabs = new java.util.LinkedHashMap<String, RequestLabWorkspace.Tab>();
+        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT evidence_id,next_id,selected_id FROM request_lab_tabs")) {
+            while (rows.next()) {
+                var entries = new java.util.LinkedHashMap<Integer, RequestLabWorkspace.Entry>();
+                try (PreparedStatement query = connection.prepareStatement("SELECT request_id,name,request,credential_mode,result,dirty FROM request_lab_requests WHERE evidence_id=? ORDER BY request_id")) {
+                    query.setString(1, rows.getString(1));
+                    try (ResultSet values = query.executeQuery()) {
+                        while (values.next()) {
+                            if (entries.size() >= 32) throw new IllegalArgumentException("Request Lab request limit exceeded");
+                            String result = values.getString(5);
+                            entries.put(values.getInt(1), new RequestLabWorkspace.Entry(values.getString(2), values.getString(3),
+                                    values.getString(4), result == null ? null : json.readValue(result, RequestLabWorkspace.Result.class), values.getInt(6) != 0));
+                        }
+                    }
+                }
+                tabs.put(rows.getString(1), new RequestLabWorkspace.Tab(rows.getInt(2), rows.getInt(3), entries));
+                if (tabs.size() > 20_000) throw new IllegalArgumentException("Request Lab Evidence limit exceeded");
+            }
+        }
+        String revision = readOptionalMetadata(connection, "request_lab_revision");
+        return new RequestLabWorkspace(revision == null ? 0 : Long.parseLong(revision), tabs);
     }
 
     /** Reads only non-secret project metadata for the workspace picker. */
@@ -202,6 +342,8 @@ public final class SqliteProjectStore {
             statement.execute("PRAGMA journal_mode=DELETE");
             statement.execute("PRAGMA synchronous=FULL");
             statement.execute("PRAGMA trusted_schema=OFF");
+            statement.execute("PRAGMA secure_delete=ON");
+            createRequestLabTables(connection);
             statement.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
             statement.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
             statement.execute("CREATE TABLE records (seq INTEGER PRIMARY KEY, evidence_id TEXT, service TEXT NOT NULL, source TEXT NOT NULL, phase TEXT NOT NULL, run_id TEXT NOT NULL, method TEXT NOT NULL, path TEXT NOT NULL, status INTEGER NOT NULL, observed_at INTEGER NOT NULL, fingerprint TEXT NOT NULL, document TEXT NOT NULL)");
@@ -262,6 +404,9 @@ public final class SqliteProjectStore {
             putMetadata(metadata, "project_context", json.writeValueAsString(root.path("project")));
             putMetadata(metadata, "graph_workspace", json.writeValueAsString(root.path("graphWorkspace")));
 
+            RequestLabWorkspace workspace = json.convertValue(root.path("requestLabWorkspace"), RequestLabWorkspace.class);
+            putMetadata(metadata, "request_lab_revision", Long.toString(workspace.revision()));
+            for (var tab : workspace.tabs().entrySet()) writeRequestLabTab(connection, tab.getKey(), tab.getValue(), null);
             int index = 0;
             for (JsonNode value : root.path("records")) {
                 record.setInt(1, index++);
@@ -362,8 +507,10 @@ public final class SqliteProjectStore {
 
     private ObjectNode read(Connection connection) throws SQLException, IOException {
         int version = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
-        if (version != STORAGE_SCHEMA_VERSION && version != 1 && version != 2) {
-            throw new IllegalArgumentException("unsupported FlowScope SQLite schema version: " + version);
+        if (version < 1 || version > STORAGE_SCHEMA_VERSION) {
+            throw new IllegalArgumentException("지원하지 않는 DB 구조입니다(파일 버전: " + version
+                    + ", 현재 지원: 1~" + STORAGE_SCHEMA_VERSION
+                    + "). 이 형식을 지원하는 JAR로 다시 열어 주세요. 버전 번호를 직접 바꾸면 데이터가 누락될 수 있습니다.");
         }
         try (Statement statement = connection.createStatement();
              ResultSet migrations = statement.executeQuery("SELECT MAX(version) FROM schema_migrations")) {
@@ -379,6 +526,7 @@ public final class SqliteProjectStore {
         if (projectContext != null) root.set("project", json.readTree(projectContext));
         String graphWorkspace = readOptionalMetadata(connection, "graph_workspace");
         if (graphWorkspace != null) root.set("graphWorkspace", json.readTree(graphWorkspace));
+        if (version >= 4) root.set("requestLabWorkspace", json.valueToTree(readRequestLabWorkspace(connection)));
         ArrayNode records = root.putArray("records");
         readDocuments(connection, "SELECT document FROM records ORDER BY seq", records);
         ObjectNode payloads = root.putObject("payloads");

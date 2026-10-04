@@ -28,6 +28,7 @@ import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.integration.GraphWorkspace;
+import io.flowscope.integration.RequestLabWorkspace;
 import io.flowscope.web.FlowScopeWebServer;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
@@ -63,6 +64,33 @@ final class FlowScopeWebServerTest {
         if (server != null) server.close();
         state.sessions.close();
         state.zapAccounts.close();
+    }
+
+    @Test void requestLabWorkspacePersistsMaskedStateChecksRevisionsAndNeverSendsTraffic() throws Exception {
+        start();
+        long dataset = state.datasetRevision();
+        String evidence = state.record.evidenceId;
+        var change = new RequestLabWorkspace.Change("create", 1, "saved", "GET / HTTP/1.1\r\nCookie: TOP-SECRET\r\n\r\n",
+                "ORIGINAL", null, false, false, 1);
+        String body = "eventId=" + encode(evidence) + "&datasetRevision=" + dataset + "&revision=0&change=" + encode(JSON.writeValueAsString(change));
+        assertEquals(403, post("/api/request-lab/workspace", body, "wrong-token").statusCode());
+        HttpResponse<String> saved = post("/api/request-lab/workspace", body, token);
+        assertEquals(200, saved.statusCode());
+        assertEquals(1, json(saved).path("revision").asLong());
+        assertFalse(json(saved).has("tab"));
+        assertEquals(0, state.manualRequestCount.get());
+        JsonNode draft = json(get("/api/request-lab?eventId=" + encode(evidence), token, null));
+        assertFalse(draft.path("workspace").toString().contains("TOP-SECRET"));
+        assertEquals("saved", draft.at("/workspace/tab/entries/1/name").asText());
+        assertFalse(json(get("/api/request-lab?eventId=" + encode(evidence) + "&workspace=exclude", token, null)).has("workspace"));
+        assertEquals(409, post("/api/request-lab/workspace", body, token).statusCode());
+        assertEquals(409, post("/api/request-lab/workspace", body.replace("datasetRevision=" + dataset, "datasetRevision=" + (dataset + 1)), token).statusCode());
+        String deletion = "eventId=" + encode(evidence) + "&datasetRevision=" + dataset + "&revision=1&change="
+                + encode(JSON.writeValueAsString(new RequestLabWorkspace.Change("delete", 1, null, null, null, null, false, null, 0)));
+        assertEquals(200, post("/api/request-lab/workspace", deletion, token).statusCode());
+        assertTrue(state.requestLabWorkspace.tab(evidence).entries().isEmpty());
+        assertEquals(2, state.requestLabWorkspace.tab(evidence).nextId());
+        assertFalse(json(get("/api/snapshot", token, null)).toString().contains("requestLabWorkspace"));
     }
 
     @Test void graphWorkspaceApiChecksRevisionsAndAcknowledgesWithoutResendingAllViews() throws Exception {
@@ -1169,6 +1197,41 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void previewsLiveRequestLabCredentialsWithoutSendingOrCachingAndKeepsTheLocalBoundary() throws Exception {
+        start();
+        String evidenceId = state.snapshot().records.getFirst().evidenceId;
+        String form = "datasetRevision=" + state.datasetRevision() + "&eventId=" + encode(evidenceId) + "&credentialMode=ACCOUNT&accountId=user-a&request="
+                + encode("GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\n\r\n");
+        assertEquals(403, post("/api/request-lab/credentials", form, "wrong-token").statusCode());
+        assertEquals(405, get("/api/request-lab/credentials", token, origin()).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", form.replace("accountId=user-a", "accountId="), token).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", form.replace("credentialMode=ACCOUNT", "credentialMode=OTHER"), token).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", "datasetRevision=" + state.datasetRevision() + "&eventId=" + encode(evidenceId)
+                + "&credentialMode=ANONYMOUS&request=" + encode("x".repeat(1_048_577)), token).statusCode());
+        assertEquals(400, post("/api/request-lab/credentials", form.replace("datasetRevision=" + state.datasetRevision(), "datasetRevision=-1"), token).statusCode());
+        assertEquals(0, state.credentialPreviewCount);
+        HttpResponse<String> preview = post("/api/request-lab/credentials", form, token);
+        assertEquals(200, preview.statusCode(), preview.body());
+        assertEquals("no-store", preview.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals("live-preview-secret", json(preview).path("headers").get(0).path("value").asText());
+        assertEquals(1, state.credentialPreviewCount);
+        assertEquals(0, state.manualRequestCount.get());
+        assertFalse(state.opened.get());
+        assertFalse(get("/api/snapshot", token, origin()).body().contains("live-preview-secret"));
+        assertFalse(get("/api/manual-attempts", token, origin()).body().contains("live-preview-secret"));
+        state.rejectCredentialPreview = true;
+        HttpResponse<String> rejected = post("/api/request-lab/credentials", form, token);
+        assertEquals(400, rejected.statusCode());
+        assertFalse(rejected.body().contains("live-preview-secret"));
+        assertTrue(rejected.body().contains("scope"));
+        state.rejectCredentialPreview = false;
+        state.changeDatasetDuringPreview = true;
+        HttpResponse<String> replaced = post("/api/request-lab/credentials", form, token);
+        assertEquals(400, replaced.statusCode());
+        assertFalse(replaced.body().contains("live-preview-secret"));
+    }
+
+    @Test
     void opensAndSendsAnExplicitRawRequestLabDraftWithoutPuttingItInSnapshot() throws Exception {
         start();
         String evidenceId = state.snapshot().records.getFirst().evidenceId;
@@ -1447,6 +1510,9 @@ final class FlowScopeWebServerTest {
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
+        private volatile int credentialPreviewCount;
+        private volatile boolean rejectCredentialPreview;
+        private volatile boolean changeDatasetDuringPreview;
         private volatile String repeaterRequest = "";
         private volatile FlowScopeWebServer.CredentialMode repeaterCredentialMode;
         private volatile String repeaterAccountId = "";
@@ -1472,6 +1538,7 @@ final class FlowScopeWebServerTest {
         private volatile ProjectWorkspace.Status projectStatus = new ProjectWorkspace.Status("/tmp/projects",
                 null, List.of());
         private GraphWorkspace graphWorkspace = GraphWorkspace.empty();
+        private RequestLabWorkspace requestLabWorkspace = RequestLabWorkspace.empty();
         private long graphRevision;
         private final List<RouteCandidate> routeCandidates = List.of(new RouteCandidate(
                 "https://api.example.test:443", "UNKNOWN", "/v1/admin", false,
@@ -1504,6 +1571,14 @@ final class FlowScopeWebServerTest {
             graphWorkspace = change.apply(graphWorkspace);
             graphRevision++;
             return graphWorkspace();
+        }
+        @Override public RequestLabWorkspace.State requestLabWorkspace(String evidenceId) {
+            return new RequestLabWorkspace.State(datasetRevision(), requestLabWorkspace.revision(), true, requestLabWorkspace.tab(evidenceId));
+        }
+        @Override public RequestLabWorkspace.State updateRequestLabWorkspace(String evidenceId, long dataset, long expectedRevision, RequestLabWorkspace.Change change) {
+            if (dataset != datasetRevision() || expectedRevision != requestLabWorkspace.revision()) throw new IllegalStateException("stale Request Lab workspace");
+            requestLabWorkspace = change.apply(requestLabWorkspace, evidenceId);
+            return requestLabWorkspace(evidenceId);
         }
         @Override public AnalysisConfig config() { return config; }
         private List<LegacyAssessment> archivedAssessments = List.of();
@@ -1643,6 +1718,13 @@ final class FlowScopeWebServerTest {
                     "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
                     "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
                     "UTF-8", "UTF-8", "USER A", "없음", "", "메모리 원문");
+        }
+        @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
+                String evidenceId, String request, FlowScopeWebServer.CredentialMode mode, String accountId) {
+            credentialPreviewCount++;
+            if (rejectCredentialPreview) throw new IllegalStateException("live-preview-secret");
+            if (changeDatasetDuringPreview) revision.incrementAndGet();
+            return List.of(new FlowScopeWebServer.RequestLabCredentialHeader("Cookie", "live-preview-secret"));
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(String evidenceId, String request,
                                                                             FlowScopeWebServer.CredentialMode mode,
