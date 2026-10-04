@@ -109,3 +109,19 @@ it("shows the HUMAN pass recording account while a pass runs", () => {
   render(<SidebarLiveStatus />)
   expect(screen.getByRole("status", { name: "HUMAN 기록 계정" })).toHaveTextContent("기록 중 USER A")
 })
+
+
+it("does not claim a paused account is recording and reports pause when every browser is paused", async () => {
+  queryState.human = { data: { active: true, completed: false, accountId: "user-a", runs: [{ accountId: "user-a", paused: true }] }, isPending: false, isError: false }
+  render(<SidebarLiveStatus />)
+  expect(screen.queryByRole("status", { name: "HUMAN 기록 계정" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "실시간 상태" }))
+  expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("일시 정지")
+})
+
+it("continues to show the other account recording while one browser is paused", () => {
+  queryState.snapshot = { data: { trafficStats: { captured: 7 }, accounts: [{ id: "user-b", label: "USER B" }] }, isPending: false, isError: false }
+  queryState.human = { data: { active: true, accountId: "user-a", runs: [{ accountId: "user-a", paused: true }, { accountId: "user-b", paused: false }] }, isPending: false, isError: false }
+  render(<SidebarLiveStatus />)
+  expect(screen.getByRole("status", { name: "HUMAN 기록 계정" })).toHaveTextContent("기록 중 USER B")
+})

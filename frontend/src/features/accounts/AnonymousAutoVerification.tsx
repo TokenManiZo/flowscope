@@ -37,26 +37,24 @@ export function AnonymousAutoVerification() {
   return <section aria-label="비로그인 자동 검증" className="space-y-3 rounded-xl border border-border p-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h2 className="font-semibold">비로그인 자동 검증</h2>
-        <p className="mt-1 text-xs text-muted-foreground">계정에서 방문한 GET API를 비로그인으로 확인하고, 응답을 그래프에 기록합니다.</p>
+        <div className="flex items-center gap-1"><h2 className="font-semibold">비로그인 자동 검증</h2><InfoHint label="비로그인 자동 검증">계정에서 방문한 GET API를 로그인 없이 다시 확인해요. 같은 URL과 쿼리는 한 번만 확인하고, 켠 뒤 새로 수집한 요청부터 적용돼요.</InfoHint></div>
       </div>
       <Button
         type="button"
         role="switch"
         aria-label="비로그인 자동 검증"
         aria-checked={enabled}
-        variant="ghost"
-        className="h-auto gap-2 px-0 py-1 hover:bg-transparent"
+        variant="outline"
+        className="h-10 gap-3 px-3"
         disabled={status.isLoading || change.isPending || anotherRun}
         onClick={() => change.mutate(!enabled)}
       >
         <span className="text-sm font-normal">{change.isPending ? "적용 중…" : enabled ? "켜짐" : "꺼짐"}</span>
-        <span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${enabled ? "border-primary bg-primary" : "border-input bg-muted"}`}>
-          <span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-background shadow-sm transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
+        <span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${enabled ? "border-brand bg-brand" : "border-input bg-muted"}`}>
+          <span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-white shadow-sm transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
         </span>
       </Button>
     </div>
-    <p className="text-xs text-muted-foreground">A·B가 같은 URL과 쿼리를 방문하면 실행 중 한 번만 검증합니다. 켠 뒤에 발생한 요청부터 적용됩니다.</p>
     {anotherRun && <Alert><AlertDescription>다른 라이브 권한 검증이 실행 중입니다. 해당 실행을 중지한 뒤 사용할 수 있습니다.</AlertDescription></Alert>}
     {error && <Alert variant="destructive"><AlertDescription>{error instanceof Error ? error.message : "자동 검증 상태를 변경하지 못했습니다."}</AlertDescription></Alert>}
     {enabled && live && <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs tabular-nums">

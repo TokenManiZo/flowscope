@@ -25,7 +25,7 @@ function snapshot() { return { ...snapshotFixture,
   managedSessions: [{ handle: "active", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }],
 } }
 function postBodies(fetchStub: ReturnType<typeof vi.fn>, path: string) { return fetchStub.mock.calls.filter(([called, init]) => called === path && (init as RequestInit).method === "POST").map(([, init]) => ((init as RequestInit).body as URLSearchParams).toString()) }
-function renderAccounts(errors: Partial<Record<string, string>> = {}, data = snapshot(), activeRuns: { runId: string; accountId: string; proxy: string }[] = []) {
+function renderAccounts(errors: Partial<Record<string, string>> = {}, data = snapshot(), activeRuns: { runId: string; accountId: string; proxy: string; paused?: boolean }[] = []) {
   const meta = document.createElement("meta"); meta.name = "flowscope-capability"; meta.content = rawSecret; document.head.append(meta)
   const fetchStub = vi.fn((path: string, init?: RequestInit) => {
     if (path === "/api/human-run" && !init?.method) return Promise.resolve(response({ active: activeRuns.length > 0, runs: activeRuns, completed: false, runId: "", accountId: "", proxy: "" }))
@@ -33,6 +33,17 @@ function renderAccounts(errors: Partial<Record<string, string>> = {}, data = sna
     if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "NOT_STARTED" }, accounts: [], scope: ["http://127.0.0.1:9000/"] }))
     if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, managedRuntime: true, state: "READY", message: "ready" }))
     if (path.startsWith("/api/account-settings?")) { const id = new URL(path, "http://local").searchParams.get("account") ?? ""; return Promise.resolve(response(settings(id, id === "account-a" ? "계정 A" : "다른 서비스", id === "account-a" ? service : otherService))) }
+    if (path === "/api/human-run" && init?.method === "POST" && !errors[path]) {
+      const form = init.body as URLSearchParams
+      const action = form.get("action")
+      if (action === "begin") activeRuns.push({ runId: "created-run", accountId: form.get("account") ?? "", proxy: "" })
+      else {
+        const index = activeRuns.findIndex((run) => run.runId === form.get("runId"))
+        if (action === "end") activeRuns.splice(index, 1)
+        else activeRuns[index].paused = action === "pause"
+      }
+      return Promise.resolve(response({ active: activeRuns.length > 0, runs: activeRuns, completed: false, runId: "", accountId: "", proxy: "" }))
+    }
     if (init?.method === "POST") { const message = errors[path]; return Promise.resolve(message ? response({ success: false, message }, 400) : response({ success: true, message: "완료", id: "saved-account", rebound: 0 })) }
     return Promise.reject(new Error(`unexpected endpoint: ${path}`))
   })
@@ -60,7 +71,7 @@ describe("account and session management", () => {
     expect(await screen.findByRole("heading", { name: "계정·세션" })).toBeVisible()
     expect(screen.queryByText("관측된 세션")).not.toBeInTheDocument()
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
-    await waitFor(() => expect(lanes).toHaveTextContent(/HUMAN\s*인증값 있음\s*0건/))
+    await waitFor(() => expect(lanes).toHaveTextContent(/Human\s*수집 대기\s*0건/))
     expect(lanes).toHaveTextContent(/LLM\s*사용 안 함/)
     expect(screen.queryByLabelText("등록 계정 표시 이름")).not.toBeInTheDocument()
     expect(screen.queryByText("고급 세션 진단")).not.toBeInTheDocument()
@@ -80,32 +91,79 @@ describe("account and session management", () => {
     renderAccounts({}, data)
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
     await waitFor(() => expect(lanes).toHaveTextContent(/LLM\s*사용 안 함\s*1건/))
-    expect(lanes).toHaveTextContent(/HUMAN\s*인증값 있음\s*1건/)
+    expect(lanes).toHaveTextContent(/Human\s*수집 대기\s*1건/)
     expect(lanes).toHaveTextContent(/ZAP[\s\S]*1건/)
   })
 
   it("opens the account browser and capture directly, without arming anonymous replay", async () => {
     const user = userEvent.setup(); const fetchStub = renderAccounts()
     const card = await screen.findByRole("article", { name: "계정 A 계정" })
-    const login = within(card).getByRole("button", { name: "이 계정으로 로그인" })
+    const login = within(card).getByRole("button", { name: "계정 A 수집 시작" })
     await waitFor(() => expect(login).toBeEnabled())
     await user.click(login)
     await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=begin&account=account-a"]))
-    expect(sessionStorage.getItem("flowscope.humanAccount")).toBeNull()
+    expect(sessionStorage.getItem("flowscope.inspectionRecords")).toBeNull()
     expect(window.location.hash).toBe("")
     expect(postBodies(fetchStub, "/api/authorization-replay")).toEqual([])
     expect(postBodies(fetchStub, "/api/request-lab")).toEqual([])
   })
 
+  it("moves collection help into a popover and stops only the chosen account run", async () => {
+    const user = userEvent.setup()
+    const fetchStub = renderAccounts({}, snapshot(), [{ runId: "a-run", accountId: "account-a", proxy: "" }, { runId: "anon-run", accountId: "", proxy: "" }])
+    await screen.findByRole("heading", { name: "계정·세션" })
+    expect(screen.queryByText(/현재 프로젝트의 저장 HTTP 응답 관측/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/시작을 누르면 별도 브라우저/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "트래픽 수집 설명" }))
+    expect(screen.getByText(/시작을 누르면 별도 브라우저가 열려요/)).toBeVisible()
+    await user.keyboard("{Escape}")
+    await user.click(screen.getByRole("button", { name: "계정 A 수집 종료" }))
+    await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=end&runId=a-run"]))
+    await user.click(screen.getByRole("button", { name: "비로그인 수집 종료" }))
+    await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=end&runId=a-run", "action=end&runId=anon-run"]))
+  })
+
+  it("keeps pause separate and resets to start after ending without losing records or stopping another account", async () => {
+    const user = userEvent.setup()
+    const data = snapshot()
+    data.events = [{ ...snapshotFixture.events[0], idn: "account-a", source: "human", status: 200 }]
+    const fetchStub = renderAccounts({}, data, [{ runId: "a-run", accountId: "account-a", proxy: "" }, { runId: "b-run", accountId: "other", proxy: "" }])
+    const card = await screen.findByRole("article", { name: "계정 A 계정" })
+    const controls = within(card)
+    await user.click(controls.getByRole("button", { name: "계정 A 일시 정지" }))
+    expect(await controls.findByText("수집 일시 정지")).toBeVisible()
+    expect(controls.getByRole("button", { name: "계정 A 일시 정지" })).toBeDisabled()
+    await user.click(controls.getByRole("button", { name: "계정 A 수집 시작" }))
+    await waitFor(() => expect(controls.getByRole("button", { name: "계정 A 일시 정지" })).toBeEnabled())
+    await user.click(controls.getByRole("button", { name: "계정 A 수집 종료" }))
+    expect(await controls.findByText("수집 대기")).toBeVisible()
+    expect(controls.getByRole("button", { name: "계정 A 일시 정지" })).toBeDisabled()
+    expect(controls.getByRole("button", { name: "계정 A 수집 시작" })).toBeEnabled()
+    expect(controls.getByText("1건")).toBeVisible()
+    expect(screen.getByRole("button", { name: "다른 서비스 수집 종료" })).toBeEnabled()
+    await user.click(controls.getByRole("button", { name: "계정 A 수집 시작" }))
+    await controls.findByRole("button", { name: "계정 A 수집 종료" })
+    expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=pause&runId=a-run", "action=resume&runId=a-run", "action=end&runId=a-run", "action=begin&account=account-a"])
+  })
+
+  it("does not show a false paused state when the server rejects the pause", async () => {
+    const user = userEvent.setup()
+    renderAccounts({ "/api/human-run": "수집 변경 실패" }, snapshot(), [{ runId: "a-run", accountId: "account-a", proxy: "" }])
+    await user.click(await screen.findByRole("button", { name: "계정 A 일시 정지" }))
+    expect(await screen.findByText("수집 변경 실패")).toBeVisible()
+    expect(screen.getByRole("button", { name: "계정 A 수집 종료" })).toBeVisible()
+    expect(screen.queryByText("수집 일시 정지")).not.toBeInTheDocument()
+  })
+
   it("keeps the user on the account page when the browser fails to open", async () => {
     const user = userEvent.setup(); renderAccounts({ "/api/human-run": "Chromium을 찾지 못했습니다." })
     const card = await screen.findByRole("article", { name: "계정 A 계정" })
-    const login = within(card).getByRole("button", { name: "이 계정으로 로그인" })
+    const login = within(card).getByRole("button", { name: "계정 A 수집 시작" })
     await waitFor(() => expect(login).toBeEnabled())
     await user.click(login)
     expect(await screen.findByText("Chromium을 찾지 못했습니다.")).toBeVisible()
     expect(window.location.hash).toBe("")
-    expect(sessionStorage.getItem("flowscope.humanAccount")).toBeNull()
+    expect(sessionStorage.getItem("flowscope.inspectionRecords")).toBeNull()
   })
 
   it("shows an already open account capture without opening another browser", async () => {

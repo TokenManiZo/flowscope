@@ -2,7 +2,7 @@ import { useRef, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { RecordResizeHandle, useRecordView, type RecordView } from "./RecordView"
+import { useRecordView, type RecordView } from "./RecordView"
 
 export interface SourceStatusTile {
   label: string
@@ -13,6 +13,7 @@ export interface SourceStatusTile {
 export interface SourceFeedItem {
   id: string
   badge: string
+  sourceLabel?: string
   ordinal?: string
   title: string
   status: string
@@ -56,7 +57,6 @@ export function SourcePassLayout({
 }: SourcePassLayoutProps) {
   const root = useRef<HTMLElement>(null)
   const view = useRecordView(root, onRecordFocusChange)
-  const resizable = typeof feedContent === "function"
   return (
     <section ref={root} onKeyDown={view.onKeyDown} className={view.focused ? "flex h-full min-h-0 flex-col gap-3" : "grid gap-2"} aria-label={`${label} 실행 영역`}>
       {notices}
@@ -79,7 +79,6 @@ export function SourcePassLayout({
         {aside}
       </div>
 
-      {resizable && !view.focused && <RecordResizeHandle label={feedTitle} height={view.height} onHeightChange={view.setHeight} />}
       {(typeof feedContent === "function" ? feedContent(view) : feedContent) ?? <Card className="flex min-h-[20rem] flex-col overflow-hidden">
         <CardHeader className="border-b">
           <div className="flex flex-wrap items-center justify-between gap-3">

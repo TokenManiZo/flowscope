@@ -11,7 +11,7 @@ import java.util.Map;
 final class InFlightRequestTracker {
     record Observation(RunContextRegistry.Context context, String humanCaptureAccountId,
                        boolean humanCaptureSuppressed, long datasetEpoch, long startedAt,
-                       Source source, SourceDetail detail, int listenerPort) {
+                       Source source, SourceDetail detail, int listenerPort, long humanCaptureGeneration) {
         boolean belongsTo(long currentDatasetEpoch) {
             return datasetEpoch == currentDatasetEpoch;
         }
@@ -37,12 +37,19 @@ final class InFlightRequestTracker {
     synchronized boolean remember(int messageId, RunContextRegistry.Context context, String humanCaptureAccountId,
                                   boolean humanCaptureSuppressed, long datasetEpoch, long now,
                                   Source source, SourceDetail detail, int listenerPort) {
+        return remember(messageId, context, humanCaptureAccountId, humanCaptureSuppressed,
+                datasetEpoch, now, source, detail, listenerPort, -1);
+    }
+
+    synchronized boolean remember(int messageId, RunContextRegistry.Context context, String humanCaptureAccountId,
+                                  boolean humanCaptureSuppressed, long datasetEpoch, long now,
+                                  Source source, SourceDetail detail, int listenerPort, long humanCaptureGeneration) {
         if (observations.size() >= capacity) {
             observations.entrySet().removeIf(entry -> now - entry.getValue().startedAt() > ttlMillis);
         }
         if (observations.size() >= capacity) return false;
         observations.put(messageId, new Observation(context, humanCaptureAccountId,
-                humanCaptureSuppressed, datasetEpoch, now, source, detail, listenerPort));
+                humanCaptureSuppressed, datasetEpoch, now, source, detail, listenerPort, humanCaptureGeneration));
         return true;
     }
 

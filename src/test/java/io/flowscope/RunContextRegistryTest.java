@@ -77,6 +77,42 @@ final class RunContextRegistryTest {
         assertTrue(contexts.completedExplorations().isEmpty());
     }
 
+    @Test
+    void pauseAndResumeInvalidateLateResponsesWithoutEndingOtherAccounts() {
+        RunContextRegistry contexts = new RunContextRegistry();
+        var a = new RunContextRegistry.Context(SourceDetail.BROWSER, Orchestrator.HUMAN,
+                ToolKind.BROWSER, RunPhase.EXPLORATION, "a", "A");
+        var b = new RunContextRegistry.Context(SourceDetail.BROWSER, Orchestrator.HUMAN,
+                ToolKind.BROWSER, RunPhase.EXPLORATION, "b", "B");
+        contexts.activateHuman(a);
+        contexts.activateHuman(b);
+        long first = contexts.humanCaptureGeneration("a");
+        long other = contexts.humanCaptureGeneration("b");
+        assertTrue(contexts.acceptsHumanCapture("a", first));
+        contexts.pauseHuman("a", true);
+        assertTrue(contexts.humanPaused("a"));
+        assertEquals(-1, contexts.humanCaptureGeneration("a"));
+        assertFalse(contexts.acceptsHumanCapture("a", first));
+        assertTrue(contexts.acceptsHumanCapture("b", other));
+        assertEquals(a, contexts.current(Source.HUMAN, "a"));
+        contexts.pauseHuman("a", false);
+        long resumed = contexts.humanCaptureGeneration("a");
+        assertTrue(contexts.acceptsHumanCapture("a", resumed));
+        assertFalse(contexts.acceptsHumanCapture("a", first));
+        contexts.abort(Source.HUMAN, "a");
+        assertFalse(contexts.acceptsHumanCapture("a", resumed));
+        assertFalse(contexts.humanPaused("a"));
+        assertThrows(IllegalArgumentException.class, () -> contexts.pauseHuman("a", false));
+        contexts.activateHuman(a);
+        assertFalse(contexts.acceptsHumanCapture("a", resumed), "Reusing a run ID must not revive late responses");
+        contexts.clear(Source.HUMAN);
+        assertFalse(contexts.acceptsHumanCapture("b", other));
+        contexts.activateHuman(a);
+        long restarted = contexts.humanCaptureGeneration("a");
+        contexts.reset();
+        assertFalse(contexts.acceptsHumanCapture("a", restarted));
+    }
+
     private static void complete(RunContextRegistry contexts, Source source, SourceDetail detail, String runId) {
         RequestRecord record = new RequestRecord(source, "https://api.example.test:443",
                 "GET", "/health", 200, "test");

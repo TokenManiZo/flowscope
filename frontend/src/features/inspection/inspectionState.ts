@@ -17,8 +17,8 @@ export function isCompletedScannerRun(status: string | undefined): boolean {
   return status === "COMPLETED" || status === "COMPLETED_WITH_WARNINGS"
 }
 
-/** sessionStorage key: the accounts page hands the account to preselect for the next HUMAN pass. */
-export const HUMAN_ACCOUNT_HANDOFF = "flowscope.humanAccount"
+/** Account-page record links open the read-only collection tab on the next visit. */
+export const INSPECTION_RECORD_HANDOFF = "flowscope.inspectionRecords"
 
 /** Local wall-clock HH:MM:SS for a server instant. */
 export function clockTime(iso: string): string {

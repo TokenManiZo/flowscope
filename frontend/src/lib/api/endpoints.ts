@@ -76,7 +76,7 @@ export const resetProjectTraffic = () =>
 export const deleteProject = (id: string) =>
   postForm<ProjectStatus>("/api/projects", { action: "delete", id })
 export const getHumanRun = (signal?: AbortSignal) => apiFetch<HumanRun>("/api/human-run", formSignal(signal))
-export const setHumanRun = (values: { action: "begin"; account: string } | { action: "end"; runId: string }) =>
+export const setHumanRun = (values: { action: "begin"; account: string } | { action: "pause" | "resume" | "end"; runId: string }) =>
   postForm<HumanRun>("/api/human-run", values)
 export const loadSample = () => confirmedDatasetReplacement(() => postForm<ApiSuccess>("/api/sample", {}))
 export const saveRole = (identity: string, role: string) => postForm<ApiSuccess>("/api/role", { identity, role })

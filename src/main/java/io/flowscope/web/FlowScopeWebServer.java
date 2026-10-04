@@ -892,6 +892,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     state.humanRunStopped(runId);
                     throw failure;
                 }
+            } else if (action.equals("pause") || action.equals("resume")) {
+                String runId = validatedRunId(required(form, "runId"));
+                state.contexts().pauseHuman(runId, action.equals("pause"));
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
                 RunContextRegistry.Context active = state.contexts().current(Source.HUMAN, runId);
@@ -907,7 +910,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 try { state.humanRunStopped(runId); }
                 finally { if (handle != null) state.sessions().endCapture(handle); }
             } else {
-                throw new IllegalArgumentException("action은 begin 또는 end여야 합니다.");
+                throw new IllegalArgumentException("action은 begin, pause, resume 또는 end여야 합니다.");
             }
             return humanRunState();
         } catch (RuntimeException error) {
@@ -937,6 +940,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         ObjectNode body = json.createObjectNode();
         body.put("runId", context == null ? "" : context.runId());
         body.put("accountId", context == null || context.accountId() == null ? "" : context.accountId());
+        body.put("paused", context != null && state.contexts().humanPaused(context.runId()));
         int port = context == null ? -1 : state.humanListenerPort(context.runId());
         body.put("proxy", port > 0 ? "http://127.0.0.1:" + port : "실제 리스너 감지 대기");
         body.put("listenerPort", port);

@@ -30,6 +30,9 @@ public final class RunContextRegistry {
 
     private final Map<Source, Context> contexts = new EnumMap<>(Source.class);
     private final Map<String, Context> humanRuns = new LinkedHashMap<>();
+    private record HumanCapture(boolean paused, long generation) {}
+    private final Map<String, HumanCapture> humanCaptures = new java.util.concurrent.ConcurrentHashMap<>();
+    private long humanCaptureSequence;
     private final Map<Source, CompletedRun> completedExplorations = new EnumMap<>(Source.class);
 
     public synchronized void activate(Source source, Context context) {
@@ -44,7 +47,10 @@ public final class RunContextRegistry {
                 && (source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM)) {
             completedExplorations.remove(source);
         }
-        if (source == Source.HUMAN) humanRuns.put(context.runId(), context);
+        if (source == Source.HUMAN) {
+            humanRuns.put(context.runId(), context);
+            humanCaptures.put(context.runId(), new HumanCapture(false, ++humanCaptureSequence));
+        }
         else contexts.put(source, context);
     }
 
@@ -59,6 +65,30 @@ public final class RunContextRegistry {
         }
         completedExplorations.remove(Source.HUMAN);
         humanRuns.put(context.runId(), context);
+        humanCaptures.put(context.runId(), new HumanCapture(false, ++humanCaptureSequence));
+    }
+
+    public synchronized void pauseHuman(String runId, boolean paused) {
+        HumanCapture capture = humanCaptures.get(runId);
+        if (capture == null) throw new IllegalArgumentException("활성 수집 실행을 찾지 못했습니다.");
+        if (capture.paused() != paused) {
+            humanCaptures.put(runId, new HumanCapture(paused, ++humanCaptureSequence));
+        }
+    }
+
+    public boolean humanPaused(String runId) {
+        HumanCapture capture = humanCaptures.get(runId);
+        return capture != null && capture.paused();
+    }
+
+    /** A paused request or a response from before pause/end cannot re-enter collection after resume. */
+    public long humanCaptureGeneration(String runId) {
+        HumanCapture capture = humanCaptures.get(runId);
+        return capture == null || capture.paused() ? -1 : capture.generation();
+    }
+
+    public boolean acceptsHumanCapture(String runId, long generation) {
+        return generation >= 0 && humanCaptureGeneration(runId) == generation;
     }
 
     public synchronized List<Context> activeHumanRuns() { return List.copyOf(humanRuns.values()); }
@@ -115,10 +145,10 @@ public final class RunContextRegistry {
     /** 확장 종료·전체 초기화 전용. 정상 도구 종료에는 LaneCompletionPolicy를 사용한다. */
     public synchronized void clear(Source source) {
         contexts.remove(source);
-        if (source == Source.HUMAN) humanRuns.clear();
+        if (source == Source.HUMAN) { humanRuns.clear(); humanCaptures.clear(); }
     }
     private void remove(Source source, String runId) {
-        if (source == Source.HUMAN) humanRuns.remove(runId);
+        if (source == Source.HUMAN) { humanRuns.remove(runId); humanCaptures.remove(runId); }
         else contexts.remove(source);
     }
     /** Multiple HUMAN browsers have no implicit current account; callers must use the listener's run ID. */
@@ -162,6 +192,7 @@ public final class RunContextRegistry {
     public synchronized void reset() {
         contexts.clear();
         humanRuns.clear();
+        humanCaptures.clear();
         completedExplorations.clear();
     }
 }

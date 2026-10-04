@@ -5,7 +5,8 @@ import { useHumanRunQuery, useProjectsQuery, useScannerRunQuery, useSnapshotQuer
 import { runStatusLabel } from "@/lib/display/runStatus"
 import { cn } from "@/lib/utils"
 
-function humanState(active: boolean | undefined, completed: boolean | undefined) {
+function humanState(active: boolean | undefined, completed: boolean | undefined, paused: boolean) {
+  if (active && paused) return "일시 정지"
   return runStatusLabel(active ? "RUNNING" : completed ? "COMPLETED" : "NOT_STARTED")
 }
 
@@ -29,9 +30,10 @@ export function SidebarLiveStatus({ collapsed = false }: { collapsed?: boolean }
   const scope = scopeData !== undefined ? scopeData[0] ?? "미설정" : scopePending ? "불러오는 중" : "확인 불가"
   const scopeReady = scopeData !== undefined ? scopeData.length > 0 ? "준비됨" : "미준비" : scopePending ? "불러오는 중" : "확인 불가"
   const liveCapture = queryValue(snapshot, (data) => String(data.trafficStats.captured))
-  const humanRun = queryValue(human, (data) => humanState(data.active, data.completed))
-  const recordingAccount = human.data?.active && human.data.accountId
-    ? snapshot.data?.accounts.find((account) => account.id === human.data?.accountId)?.label ?? human.data.accountId : null
+  const humanRun = queryValue(human, (data) => humanState(data.active, data.completed, data.runs?.length ? data.runs.every((run) => run.paused) : !!data.paused))
+  const recordingRun = (human.data?.runs ?? (human.data?.active ? [human.data] : [])).find((run) => !run.paused)
+  const recordingAccount = recordingRun?.accountId
+    ? snapshot.data?.accounts.find((account) => account.id === recordingRun.accountId)?.label ?? recordingRun.accountId : null
   const zapState = queryValue(zap, (data) => runStatusLabel(data.state ?? (data.connected ? "READY" : "UNAVAILABLE")))
   const scannerState = queryValue(scanner, (data) => runStatusLabel(data.run.status))
 

@@ -66,6 +66,10 @@ it("shows pending requests and click help without detailed exclusion counters", 
   expect((await screen.findByText("비로그인 응답")).parentElement).toHaveTextContent("247건")
   expect(screen.getByText("대기").parentElement).toHaveTextContent("2건")
   expect(screen.getByText("실패").parentElement).toHaveTextContent("1건")
+  expect(screen.queryByText(/계정에서 방문한 GET API를 로그인 없이 다시 확인해요/)).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "비로그인 자동 검증 설명" }))
+  expect(screen.getByText(/계정에서 방문한 GET API를 로그인 없이 다시 확인해요/)).toBeVisible()
+  await user.keyboard("{Escape}")
   expect(screen.queryByText(/전송 예약|최근 제외|검증 상세/)).not.toBeInTheDocument()
   for (const [label, description] of [
     ["비로그인 응답", "로그인 없이 보낸 요청에서 받은 응답 수예요."],

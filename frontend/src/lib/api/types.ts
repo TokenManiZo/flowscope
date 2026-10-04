@@ -724,6 +724,7 @@ export interface LiveAuthorizationReplayEnvelope extends ApiSuccess {
 }
 
 export interface HumanBrowserRun {
+  paused?: boolean
   runId: string
   accountId: string
   proxy: string
@@ -733,6 +734,7 @@ export interface HumanBrowserRun {
 }
 
 export interface HumanRun {
+  paused?: boolean
   active: boolean
   completed: boolean
   runs?: HumanBrowserRun[]

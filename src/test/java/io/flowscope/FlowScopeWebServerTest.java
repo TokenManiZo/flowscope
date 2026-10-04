@@ -842,6 +842,50 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void pausesResumesAndEndsOnlyTheSelectedHumanRunThenRestartsCleanly() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("user-b", "B", state.record.service, AccessRole.USER));
+        start();
+        json(post("/api/human-run", "action=begin&runId=a&account=user-a", token));
+        json(post("/api/human-run", "action=begin&runId=b&account=user-b", token));
+        String handle = state.sessions.handleForAccount("user-a");
+        state.addHumanEvidence("a", "user-a");
+        int savedRecords = state.records.size();
+        JsonNode paused = json(post("/api/human-run", "action=pause&runId=a", token));
+        assertTrue(paused.path("runs").get(0).path("paused").asBoolean());
+        assertFalse(paused.path("runs").get(1).path("paused").asBoolean());
+        assertTrue(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
+        assertEquals(handle, state.sessions.handleForAccount("user-a"));
+        assertEquals(List.of("a", "b"), state.startedHumanBrowsers);
+        assertTrue(state.stoppedHumanBrowsers.isEmpty());
+        assertEquals(400, post("/api/human-run", "action=resume&runId=wrong", token).statusCode());
+        assertTrue(json(get("/api/human-run", token, origin())).path("paused").asBoolean());
+        JsonNode resumed = json(post("/api/human-run", "action=resume&runId=a", token));
+        assertFalse(resumed.path("runs").get(0).path("paused").asBoolean());
+        assertEquals(List.of("a", "b"), state.startedHumanBrowsers);
+        JsonNode ended = json(post("/api/human-run", "action=end&runId=a", token));
+        assertEquals(1, ended.path("runs").size());
+        assertEquals("b", ended.path("runId").asText());
+        assertEquals(List.of("a"), state.stoppedHumanBrowsers);
+        assertFalse(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
+        assertTrue(state.sessions.viewForAccount("user-b").orElseThrow().capturing());
+        assertEquals(savedRecords, state.records.size());
+        JsonNode restarted = json(post("/api/human-run", "action=begin&runId=a-new&account=user-a", token));
+        assertEquals("a-new", restarted.path("runs").get(1).path("runId").asText());
+        assertFalse(restarted.path("runs").get(1).path("paused").asBoolean());
+        assertNotEquals(handle, state.sessions.handleForAccount("user-a"));
+        json(post("/api/human-run", "action=pause&runId=a-new", token));
+        json(post("/api/human-run", "action=end&runId=a-new", token));
+        JsonNode idle = json(post("/api/human-run", "action=end&runId=b", token));
+        assertFalse(idle.path("active").asBoolean());
+        assertFalse(idle.path("paused").asBoolean());
+        assertEquals("", idle.path("runId").asText());
+        assertEquals(-1, idle.path("listenerPort").asInt());
+        assertEquals(0, idle.path("runs").size());
+        assertEquals(savedRecords, state.records.size());
+    }
+
+    @Test
     void humanBrowserStartFailureRollsBackTheRunAndCredentials() throws Exception {
         state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
         state.failHumanBrowser = true;
@@ -1563,6 +1607,8 @@ final class FlowScopeWebServerTest {
         private volatile int observedHumanPort = -1;
         private boolean failHumanBrowser;
         private String closedHumanBrowser = "";
+        private final List<String> startedHumanBrowsers = new ArrayList<>();
+        private final List<String> stoppedHumanBrowsers = new ArrayList<>();
         private volatile int otherHumanPort = -1;
         private volatile long otherHumanRequests;
         private volatile boolean scannerCancelled;
@@ -1654,7 +1700,9 @@ final class FlowScopeWebServerTest {
         @Override public RunContextRegistry contexts() { return contexts; }
         @Override public void humanRunStarted(String runId) {
             if (failHumanBrowser) throw new IllegalStateException("browser failed");
+            startedHumanBrowsers.add(runId);
         }
+        @Override public void humanRunStopped(String runId) { stoppedHumanBrowsers.add(runId); }
         @Override public boolean humanBrowserAlive(String runId) { return !runId.equals(closedHumanBrowser); }
         @Override public int humanListenerPort(String runId) { return observedHumanPort; }
         @Override public int otherHumanListenerPort(String runId) { return otherHumanPort; }
