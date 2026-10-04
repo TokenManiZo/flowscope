@@ -39,3 +39,5 @@
 ## 사용자 빌드 실패에 따른 보완
 
 직전 사용자 빌드의 `target/tsbuildinfo/react-web.tsbuildinfo`에서 TS2339·TS2305·TS7006 진단을 확인했다. 읽기 전용 목록의 `push`를 새 배열 생성으로 바꾸고, macOS에서 `GraphSearch.tsx`와 `graphSearch.ts`가 같은 이름으로 해석되는 충돌을 피하도록 입력 컴포넌트와 테스트를 `GraphSearchInput`으로 변경했다. 저장·검색 동작 명세는 유지한다. 보완 후 빌드·테스트는 실행하지 않았으며 사용자의 재검증이 필요하다.
+
+다음 사용자 빌드의 npm 로그에서는 TypeScript 검사 성공을 확인했고, Vitest 캐시에서는 84개 파일 중 `RelationshipGraphSearch.test.tsx`만 실패했다. 사용자 제공 오류는 결과 항목의 접근성 이름 조회 실패다. 종류와 이름이 별도 inline span에 있어 CSS에 따라 접근성 이름의 공백이 달라지므로 두 조회 정규식에서 해당 구분 공백을 선택적으로 허용했다. 종류·API 경로·객체 ID와 이후 선택·배치·데이터 교체 검증은 유지하며 제품 코드는 변경하지 않았다. 수정 후 빌드·테스트는 실행하지 않았다.

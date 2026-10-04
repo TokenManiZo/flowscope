@@ -40,7 +40,7 @@ it("typing does not rebuild the graph or save workspace; selecting an off-page A
   render(<RelationshipGraphView />)
   const projections = state.projections.mock.calls.length
   await userEvent.type(screen.getByRole("combobox"), "/orders/24")
-  const option = await screen.findByRole("option", { name: /^API GET \/api\/orders\/24/ })
+  const option = await screen.findByRole("option", { name: /^API\s*GET \/api\/orders\/24/ })
   await waitFor(() => expect(option).toHaveAttribute("aria-disabled", "false"))
   expect(state.projections).toHaveBeenCalledTimes(projections)
   expect(state.changes).not.toHaveBeenCalled()
@@ -58,7 +58,7 @@ it("typing does not rebuild the graph or save workspace; selecting an off-page A
 it("replaces disappeared results with an empty state and resets search on dataset replacement", async () => {
   const { rerender } = render(<RelationshipGraphView />)
   await userEvent.type(screen.getByRole("combobox"), "orders:24")
-  await screen.findByRole("option", { name: /^객체 orders:24/ })
+  await screen.findByRole("option", { name: /^객체\s*orders:24/ })
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells: cells.slice(0, 24) })
   rerender(<RelationshipGraphView />)
   await screen.findByText("검색 결과가 없습니다. 검색어를 바꿔 보세요.")
