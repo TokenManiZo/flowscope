@@ -30,11 +30,13 @@ FlowScope는 응답 코드(200, 403 같은 숫자) 하나만 보고 취약하다
 | 쓰려는 기능 | 필요한 것 |
 |---|---|
 | 사람이 직접 점검 | [Burp Suite Community](https://portswigger.net/burp/communitydownload) 또는 Professional 최신 버전 |
-| ZAP 스캔까지 | Docker. Windows와 macOS는 Docker Desktop, Linux는 Docker Engine과 Compose v2가 필요합니다. Windows는 PowerShell 7도 필요합니다. ZAP은 따로 설치하지 않습니다 |
+| ZAP 스캔까지 | Docker. Windows와 macOS는 Docker Desktop, Linux는 Docker Engine과 Compose v2가 필요합니다. ZAP은 따로 설치하지 않습니다 |
 | LLM 탐색까지 | OpenAI의 공식 Codex CLI와 ChatGPT 유료 계정(Plus, Pro, Business, Edu, Enterprise) |
 | 소스에서 직접 빌드 | JDK 21과 Maven 3.9. [소스 빌드와 데모](docs/guide/build-from-source.md)를 보세요 |
 
-팀에서 확인한 버전은 Burp Community `2026.7.3`, ZAP `2.17.0`, JDK `21`입니다. 다른 버전에서도 동작할 수 있지만 보장하지는 않습니다.
+Windows에서는 스크립트를 [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/install-powershell-on-windows)에서 실행합니다. Windows에 기본으로 있는 Windows PowerShell 5.1에서는 환경 점검 스크립트가 Codex 확인 단계에서 오류로 멈춥니다.
+
+팀에서 확인한 버전은 Burp Community `2026.2.3`과 `2026.7.3`, ZAP `2.17.0`, JDK `21`입니다. 다른 버전에서도 동작할 수 있지만 보장하지는 않습니다.
 
 ## 설치
 
@@ -42,11 +44,27 @@ FlowScope는 응답 코드(200, 403 같은 숫자) 하나만 보고 취약하다
 
 [Releases](https://github.com/TokenManiZo/flowscope/releases)에서 최신 버전을 받습니다. 저장소가 비공개라서 권한이 있는 GitHub 계정으로 로그인해야 보입니다. 로그인하지 않으면 404 페이지가 나옵니다.
 
-처음이라면 `flowscope-<버전>-bundle.zip`을 받으세요. JAR 파일과 ZAP 실행 파일, 환경 점검 스크립트가 모두 들어 있습니다. `flowscope-<버전>.jar`는 JAR만 바꿔 끼우는 업그레이드나 ZAP 없이 쓸 때 받으면 됩니다. 함께 올라온 `SHA256SUMS.txt`로 받은 파일이 손상되지 않았는지 확인할 수 있습니다.
+처음이라면 `flowscope-<버전>-bundle.zip`을 받으세요. JAR 파일과 ZAP 실행 파일, 환경 점검 스크립트가 모두 들어 있습니다. `flowscope-<버전>.jar`는 JAR만 바꿔 끼우는 업그레이드나 ZAP 없이 쓸 때 받으면 됩니다. 함께 올라온 `SHA256SUMS.txt`로 받은 파일이 손상되지 않았는지 확인할 수 있습니다. 아래 명령으로 나온 값이 `SHA256SUMS.txt`에서 같은 파일 이름 줄의 값과 같으면 됩니다(대소문자는 무시합니다).
+
+```bash
+shasum -a 256 flowscope-<버전>-bundle.zip
+```
+
+```powershell
+Get-FileHash .\flowscope-<버전>-bundle.zip
+```
 
 소스를 직접 빌드할 필요는 없습니다. 같은 소스로 빌드하면 항상 같은 JAR이 나오기 때문에, 의심스러우면 [소스 빌드](docs/guide/build-from-source.md)로 직접 만들어서 SHA-256 값을 비교해 보면 됩니다.
 
-Windows는 인터넷에서 받은 PowerShell 스크립트를 기본으로 막습니다. zip을 푼 폴더에서 PowerShell을 열고 아래 명령을 한 번 실행하세요.
+zip을 풀면 `flowscope-<버전>` 폴더가 생깁니다. 이 문서에 나오는 `scripts` 명령은 모두 이 폴더 안에서 실행합니다.
+
+Windows라면 PowerShell 7이 있는지 먼저 확인합니다. 없으면 아래 명령으로 설치하고, 시작 메뉴의 **PowerShell 7**(명령어로는 `pwsh`)을 엽니다.
+
+```powershell
+winget install --id Microsoft.PowerShell --source winget
+```
+
+Windows는 인터넷에서 받은 PowerShell 스크립트를 기본으로 막습니다. PowerShell 7에서 `flowscope-<버전>` 폴더로 이동한 뒤 아래 명령을 한 번 실행하세요.
 
 ```powershell
 Get-ChildItem -Recurse | Unblock-File
@@ -54,11 +72,11 @@ Get-ChildItem -Recurse | Unblock-File
 
 ### 2. Burp에 FlowScope 추가하기
 
-Burp에서 **Extensions → Installed → Add**를 누르고, Extension type은 **Java**로 둔 채 JAR 파일을 고릅니다. 예전 버전의 FlowScope가 있으면 먼저 지웁니다.
+Burp에서 **Extensions → Installed → Add**를 누릅니다. 열린 창에서 Extension type은 **Java**로 두고, **Select file**로 JAR 파일을 고른 뒤 **Next**를 누릅니다.
 
 ![Burp의 Extensions 설치 목록. 왼쪽 Add 버튼과 Loaded가 선택된 FlowScope 항목이 보인다.](docs/images/burp-installed.png)
 
-위는 추가한 뒤의 설치 목록입니다. FlowScope 항목이 여러 개 남아 있다면 예전 항목은 지우고 하나만 사용하세요.
+위 그림처럼 예전 FlowScope가 목록에 남아 있으면 **Remove**로 지우고, **Loaded**에 체크된 FlowScope 하나만 남기세요.
 
 잘 추가되면 Burp 위쪽에 **FlowScope** 탭이 생깁니다.
 
@@ -84,7 +102,7 @@ FlowScope는 ZAP을 Docker 컨테이너로 띄웁니다. Docker가 없으면 먼
 
 ### 5. ZAP 켜기 (ZAP을 쓸 때만)
 
-ZAP은 따로 내려받지 않습니다. zip을 푼 폴더에서 아래 명령 하나만 실행하면 나머지는 알아서 처리합니다.
+ZAP은 따로 내려받지 않습니다. `flowscope-<버전>` 폴더에서 아래 명령 하나만 실행하면 나머지는 알아서 처리합니다.
 
 ```bash
 ./scripts/zap-up.sh
@@ -125,7 +143,7 @@ npm(`npm install -g @openai/codex`)이나 Homebrew(`brew install --cask codex`)�
 
 ### 7. 환경 점검하기
 
-설치가 제대로 됐는지 스크립트로 확인합니다. `human`, `zap`, `explorer`, `full` 중에서 쓰려는 기능에 맞춰 고르면 됩니다. `explorer`는 Codex 설치와 로그인을 확인합니다.
+설치가 제대로 됐는지 `flowscope-<버전>` 폴더에서 스크립트로 확인합니다. `human`, `zap`, `explorer`, `full` 중에서 쓰려는 기능에 맞춰 고르면 됩니다. `explorer`는 Codex 설치와 로그인을 확인합니다. Windows에서는 PowerShell 7에서 실행하세요.
 
 ```bash
 ./scripts/doctor.sh --mode full
@@ -139,17 +157,25 @@ npm(`npm install -g @openai/codex`)이나 Homebrew(`brew install --cask codex`)�
 
 ### 업그레이드
 
-먼저 지금까지 한 점검을 저장합니다. Burp **FlowScope** 탭의 **로컬 DB 저장·연결**이나 **JSON 내보내기**를 쓰면 됩니다. 그다음 예전 FlowScope를 지우고 새 JAR 하나만 추가합니다. 버전마다 바뀐 점과 주의할 점은 [변경 기록](docs/releases/README.md)에 있습니다.
+먼저 지금까지 한 점검을 저장합니다. Burp **FlowScope** 탭에서 접혀 있는 **프로젝트 도구**를 펼친 뒤 **로컬 DB 저장·연결**이나 **JSON 내보내기**를 쓰면 됩니다. 그다음 예전 FlowScope를 지우고 새 JAR 하나만 추가합니다. 버전마다 바뀐 점과 주의할 점은 [변경 기록](docs/releases/README.md)에 있습니다.
+
+### 지우기
+
+1. Burp **Extensions → Installed**에서 FlowScope를 고르고 **Remove**를 누릅니다.
+2. ZAP을 썼다면 `flowscope-<버전>` 폴더에서 `zap-down`을 실행해 컨테이너를 내립니다. 이미지까지 지우려면 `docker image rm flowscope-zap-zap`을 실행합니다. 약 4.3GB를 차지합니다.
+3. 프로젝트 기록과 ZAP API key는 `~/.flowscope` 폴더에 있습니다. 더 쓰지 않는다면 이 폴더를 지웁니다.
 
 ## 첫 점검
 
-화면부터 구경하고 싶다면 Burp **FlowScope** 탭의 **샘플 프로젝트**를 누르세요. 실제 서버에 요청을 보내지 않는 연습용 데이터가 열립니다.
+화면부터 구경하고 싶다면 Burp **FlowScope** 탭에서 **프로젝트 도구**를 펼치고 **샘플 프로젝트**를 누르세요. 실제 서버에 요청을 보내지 않는 연습용 데이터가 열립니다.
+
+점검해 볼 대상이 아직 없다면, 일부러 취약하게 만든 연습용 앱을 내 PC에 띄워서 써 보세요. [OWASP crAPI](https://github.com/OWASP/crAPI)나 [OWASP Juice Shop](https://github.com/juice-shop/juice-shop)이 대표적입니다.
 
 ### 1. 웹 화면 열기
 
-Burp **FlowScope** 탭 오른쪽 위의 **FlowScope Web UI 열기**를 누릅니다. 브라우저 주소창에 `http://127.0.0.1:17777/`을 직접 입력해도 됩니다.
+Burp **FlowScope** 탭 맨 위의 **FlowScope Web UI 열기**를 누릅니다. 버튼 옆에 웹 화면 주소와 **주소 복사**가 있습니다. 브라우저가 열리지 않으면 주소를 복사해 브라우저 주소창에 붙여 넣으세요. 주소창에 `http://127.0.0.1:17777/`을 직접 입력해도 됩니다.
 
-![Burp FlowScope 탭 오른쪽 위에 있는 FlowScope Web UI 열기 버튼.](docs/images/burp-flowscope-tab.png)
+![Burp FlowScope 탭. 맨 위에 FlowScope Web UI 열기 버튼과 주소, 주소 복사가 있고 아래에 펼친 프로젝트 도구가 보인다.](docs/images/burp-flowscope-tab.png)
 
 ### 2. 점검 범위 정하기
 
@@ -163,7 +189,7 @@ Burp **FlowScope** 탭 오른쪽 위의 **FlowScope Web UI 열기**를 누릅니
 
 로그인한 사용자끼리 권한을 비교하고 싶을 때만 하면 됩니다. **계정·세션 → 계정 등록**에서 테스트 계정을 등록합니다. 여기에는 이름과 역할만 적고 비밀번호는 넣지 않습니다. 내 계정으로 다른 사람의 데이터가 보이는지 확인하려면 계정이 2개 이상 필요합니다.
 
-![계정·세션 목록. 오른쪽 위 계정 등록 버튼과 빨간 테두리로 표시한 계정 추가 영역이 보인다.](docs/images/accounts-overview.png)
+![계정·세션 목록. 오른쪽 위의 계정 등록 버튼을 빨간 테두리로 표시했다.](docs/images/accounts-overview.png)
 
 로그인하지 않은 상태로만 둘러볼 거라면 건너뛰세요. 다음 단계에서 계정 대신 **비로그인**을 고르면 됩니다.
 
@@ -184,7 +210,7 @@ Burp **FlowScope** 탭 오른쪽 위의 **FlowScope Web UI 열기**를 누릅니
 **3 · LLM 탐색**
 계정마다 **브라우저 로그인**을 누르면 새 브라우저 창이 뜹니다. 그 창에서 직접 로그인하고 **로그인 완료**를 누른 뒤 **탐색 시작**을 누릅니다. 비로그인으로만 탐색해도 됩니다.
 
-**Codex 모델**에서 이번 탐색에 쓸 모델을 고를 수 있습니다. PC 전체의 Codex 설정은 바뀌지 않습니다. 실행 중에는 바꿀 수 없고, 완료 후 다음 탐색의 모델을 다시 고를 수 있습니다.
+LLM 탐색 제목 옆의 **탐색 모델**에서 이번 탐색에 쓸 모델을 고를 수 있습니다. 기본값인 **Codex 기본 설정**은 PC의 Codex 설정을 그대로 씁니다. 여기서 고른 모델은 이번 탐색에만 쓰이고 PC 전체의 Codex 설정은 바뀌지 않습니다. 실행 중에는 바꿀 수 없고, 한 번 실행한 뒤에는 **다음 탐색 모델**에서 다음 실행의 모델을 고릅니다.
 
 **4 · 결과 비교**
 사람, ZAP, AI가 각각 찾은 API를 나란히 비교합니다.
