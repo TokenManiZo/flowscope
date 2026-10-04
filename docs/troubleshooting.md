@@ -93,7 +93,7 @@ FlowScope는 계정 전환을 자동으로 감지하지 않습니다. 다른 계
 
 ### 수집이 멈췄다
 
-실시간 수집은 Burp를 보호하기 위해 20,000건에서 멈추고, 넘친 건수를 화면에 표시합니다. 범위를 좁히거나 Burp 탭의 **새 트래픽 진단 시작**으로 새 진단을 여세요.
+실시간 수집은 Burp를 보호하기 위해 20,000건에서 멈추고, 넘친 건수를 화면에 표시합니다. 범위를 좁히거나, 웹 화면의 **프로젝트 관리 → 새 프로젝트**로 새 프로젝트를 만드세요. 지금 프로젝트는 저장된 채로 남습니다.
 
 ## 설치와 실행
 
@@ -104,6 +104,10 @@ Windows 기본 실행 정책(RemoteSigned)은 인터넷에서 받은 서명 없�
 ```powershell
 Get-ChildItem -Recurse | Unblock-File
 ```
+
+### Windows에서 `doctor.ps1`이 `node.exe : Logged in using ChatGPT`와 `NativeCommandError`를 내고 멈춘다
+
+Windows에 기본으로 있는 Windows PowerShell 5.1에서 실행했을 때 나옵니다. Codex는 로그인 결과를 오류 출력 쪽으로 내보내는데, 5.1은 이것을 오류로 보고 스크립트를 멈춥니다. Codex 로그인에는 문제가 없습니다. 시작 메뉴의 **PowerShell 7**(`pwsh`)을 열고 다시 실행하세요. PowerShell 7 설치 방법은 [README의 내려받기](../README.md#1-내려받기)에 있습니다.
 
 ### 확장이 로드되지 않는다
 
