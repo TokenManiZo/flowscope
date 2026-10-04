@@ -637,7 +637,7 @@ describe("RequestLabDialog", () => {
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
     await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/manual-attempts").length).toBeGreaterThan(before))
   })
-  it("formats a read-only JSON view without changing or transmitting Raw, and scrubs derived views", async () => {
+  it("keeps exact Raw when switching JSON views and manually sending, and scrubs derived views", async () => {
     const owner = createMemoryOnlyRawState()
     const original = 'POST /orders HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"id":9007199254740993,"amount":1.2300}'
     const fetch = installReusableTransport(original)
@@ -654,7 +654,16 @@ describe("RequestLabDialog", () => {
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
     await user.click(within(pane).getByRole("button", { name: "Raw" }))
     expect(screen.getByLabelText("Request Lab 요청 원문")).toBe(request)
-    expect(request).toHaveValue(original)
+    // textarea.value normalizes CRLF to LF; the memory owner and send payload must retain CRLF.
+    expect(request).toHaveValue(original.replace(/\r\n/g, "\n"))
+    expect(owner.request).toBe(original)
+    expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
+    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ORIGINAL")
+    await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
+    const sent = fetch.mock.calls.find(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
+    expect(new URLSearchParams(String(sent?.[1]?.body)).get("request")).toBe(original)
+    expect(owner.request).toBe(original)
     await user.click(screen.getByRole("button", { name: "닫기" }))
     expect(formatted.text).toBe("")
     expect(owner.jsonViews.request).toBeNull()
