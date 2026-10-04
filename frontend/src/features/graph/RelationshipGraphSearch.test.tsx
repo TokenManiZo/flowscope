@@ -7,6 +7,7 @@ import type { Snapshot } from "@/lib/api/types"
 import { RelationshipGraphView } from "./RelationshipGraphView"
 import { emptyGraphWorkspace, graphViewKey, type GraphWorkspace } from "./graphWorkspace"
 import { operationGroup, type HierarchyProjection } from "./graphHierarchy"
+import type { GraphSelection } from "./graphProjection"
 
 const state = vi.hoisted(() => ({ snapshot: null as Snapshot | null, workspace: null as GraphWorkspace | null, changes: vi.fn(), projections: vi.fn() }))
 vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: state.snapshot, isError: false, isLoading: false }) }))
@@ -19,11 +20,15 @@ vi.mock("./useGraphWorkspace", () => ({ useGraphWorkspace: () => {
     return next
   }) }
 } }))
-vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ projection, selectedElementId }: { projection: HierarchyProjection; selectedElementId: string | null }) => {
+vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ projection, selectedElementId, openObjectGroupId, onToggleObjectGroup, onSelect, onClearSelection }: { projection: HierarchyProjection; selectedElementId: string | null; openObjectGroupId?: string | null; onToggleObjectGroup(id: string): void; onSelect(selection: GraphSelection, id: string): void; onClearSelection(): void }) => {
   useEffect(() => { state.projections(projection) }, [projection])
-  return <div data-testid="search-canvas" data-selected={selectedElementId ?? ""} data-nodes={projection.nodes.filter(node => !node.hiddenInGraph).map(node => node.id).join("\n")} />
+  return <div data-testid="search-canvas" data-selected={selectedElementId ?? ""} data-open-object={openObjectGroupId ?? ""} data-nodes={projection.nodes.filter(node => !node.hiddenInGraph).map(node => node.id).join("\n")}>
+    {projection.nodes.filter(node => node.kind === "object-group").map(node => <button key={node.id} onClick={() => onToggleObjectGroup(node.id)}>toggle {node.id}</button>)}
+    {projection.nodes.filter(node => node.kind === "resource" || node.kind === "operation").map(node => <button key={node.id} onClick={() => onSelect(node.selection, node.id)}>select {node.id}</button>)}
+    <button onClick={onClearSelection}>clear canvas</button>
+  </div>
 } }))
-vi.mock("./GraphInspectorPanel", () => ({ GraphViewOverview: () => null, GraphInspectorPanel: ({ selection }: { selection: { operation: string | null; resource: string | null } }) => <p data-testid="search-detail">{selection.operation} {selection.resource}</p> }))
+vi.mock("./GraphInspectorPanel", () => ({ GraphViewOverview: () => null, GraphInspectorPanel: ({ selection, actions }: { selection: { operation: string | null; resource: string | null }; actions: { onOpenRequestLab(): void } }) => <><p data-testid="search-detail">{selection.operation} {selection.resource}</p><button onClick={actions.onOpenRequestLab}>open lab</button></> }))
 
 const service = "https://search.test:443"
 const cells = Array.from({ length: 25 }, (_, index) => ({ idn: "USER A", op: `${service} GET /api/orders/${String(index).padStart(2, "0")}`, resource: `orders:${index}`, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: [`ev-${index}`] }))
@@ -66,4 +71,31 @@ it("replaces disappeared results with an empty state and resets search on datase
   state.snapshot = targetSnapshot({ datasetRevision: 6, cells })
   rerender(<RelationshipGraphView />)
   expect(screen.getByRole("combobox")).toHaveValue("")
+})
+
+it("keeps object expansion transient and folds it on background, outside selection, Lab and remount", async () => {
+  const navigation = { ...emptyGraphWorkspace.navigation, level: "group" as const, groupId: operationGroup(cells[0].op).id }
+  state.workspace = { ...emptyGraphWorkspace, navigation, views: { [graphViewKey(navigation)]: { positions: {}, sizes: {}, viewport: null, expandedGroups: ["object-group:|orders"] } } }
+  let view = render(<RelationshipGraphView />)
+  const canvas = () => screen.getByTestId("search-canvas")
+  expect(canvas()).toHaveAttribute("data-open-object", "")
+  expect(canvas().dataset.nodes).not.toContain("resource:orders:0")
+  const open = () => userEvent.click(screen.getByRole("button", { name: "toggle object-group:|orders" }))
+  await open()
+  expect(canvas()).toHaveAttribute("data-open-object", "object-group:|orders")
+  await userEvent.click(screen.getByRole("button", { name: "select resource:orders:0" }))
+  expect(canvas()).toHaveAttribute("data-open-object", "object-group:|orders")
+  await userEvent.click(screen.getByRole("button", { name: "clear canvas" }))
+  expect(canvas()).toHaveAttribute("data-open-object", "")
+  await open()
+  await userEvent.click(screen.getByRole("button", { name: "select " + `operation:${cells[0].op}`, exact: true }))
+  expect(canvas()).toHaveAttribute("data-open-object", "")
+  await open()
+  await userEvent.click(screen.getByRole("button", { name: "open lab" }))
+  expect(canvas()).toHaveAttribute("data-open-object", "")
+  await open()
+  view.unmount()
+  view = render(<RelationshipGraphView />)
+  expect(canvas()).toHaveAttribute("data-open-object", "")
+  expect(state.changes).not.toHaveBeenCalled()
 })

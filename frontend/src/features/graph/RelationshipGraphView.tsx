@@ -80,7 +80,9 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const navigation = workspace.navigation
   const viewKey = graphViewKey(navigation)
   const view = graphView(workspace, navigation)
-  const expandedGroups = view.expandedGroups
+  const [openObjectGroup, setOpenObjectGroup] = useState<{ view: string; id: string } | null>(null)
+  const openObjectGroupId = openObjectGroup?.view === viewKey ? openObjectGroup.id : null
+  const expandedGroups = useMemo(() => [...view.expandedGroups.filter(id => !id.startsWith("object-group:")), ...(openObjectGroupId ? [openObjectGroupId] : [])], [view.expandedGroups, openObjectGroupId])
   const preferences: GraphPreferences = { version: 7, positions: view.positions, sizes: view.sizes, viewport: view.viewport, locked: workspace.locked, inputMode: workspace.inputMode }
   const compact = useCompactGraph()
   const canvasShellRef = useRef<HTMLDivElement | null>(null)
@@ -123,7 +125,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const anchor = searchAnchor && (!searchAnchor.key || searchIndex.byKey.has(searchAnchor.key)) && graphViewKey(searchAnchor.destination.navigation) === viewKey ? searchAnchor : null
   const setExpandedGroups = (change: Change<readonly string[]>) => workspaceState.update(current => {
     const saved = current.views[viewKey] ?? emptyGraphView
-    return { ...current, views: { ...current.views, [viewKey]: { ...saved, expandedGroups: changed(change, saved.expandedGroups) } } }
+    return { ...current, views: { ...current.views, [viewKey]: { ...saved, expandedGroups: changed(change, saved.expandedGroups.filter(id => !id.startsWith("object-group:"))) } } }
   })
   const setPreferences = (change: Change<GraphPreferences>) => workspaceState.update(current => {
     const saved = current.views[viewKey] ?? emptyGraphView
@@ -133,7 +135,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   })
   const setNavigation = (next: GraphNavigation) => {
     if (JSON.stringify(next) === JSON.stringify(navigation)) return
-    if (graphViewKey(next) !== viewKey) { setFitVersion(0); setLayoutVersion(0); setLaneLayout({ lane: 0, version: 0 }) }
+    if (graphViewKey(next) !== viewKey) { setOpenObjectGroup(null); setFitVersion(0); setLayoutVersion(0); setLaneLayout({ lane: 0, version: 0 }) }
     workspaceState.update(current => ({ ...current, navigation: next }))
   }
   const graph = useMemo(() => snapshot.data && workspaceState.workspace ? projectHierarchy(snapshot.data, { ...filters, expandedObjectGroups: expandedGroups }, navigation, anchor?.destination.reveal) : null, [expandedGroups, filters, snapshot.data, navigation, workspaceState.workspace !== null, anchor])
@@ -194,13 +196,22 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const statusesByNode = useMemo(() => graph && snapshot.data ? nodeStatusCodes(graph.nodes, snapshot.data.events) : undefined, [graph, snapshot.data])
   const statusColors = useMemo(() => statusHighlightColors(highlight), [highlight])
   const splitSources = useMemo(() => highlight.sources.length > 1 ? allSources.filter((source) => highlight.sources.includes(source)) : [], [highlight.sources])
-  // 펼침은 배치를 다시 정렬하지 않는다. 처음 보이는 멤버만 빈 영역에 추가한다.
+  // 객체 집중 펼침은 화면 메모리에서만 관리한다. API 묶음은 기존 프로젝트 저장을 유지한다.
   const toggleObjectGroup = (id: string) => {
     cancelSearchMove()
-    setExpandedGroups((current) => toggle(current, id))
+    if (!id.startsWith("object-group:")) { setExpandedGroups(current => toggle(current, id)); return }
+    if (openObjectGroupId === id) { clearGraphSelection(); return }
+    const node = graph?.nodes.find(node => node.id === id)
+    if (!node) return
+    selectGraph(node.selection, id)
+    setOpenObjectGroup({ view: viewKey, id })
   }
+  useEffect(() => {
+    if (openObjectGroupId && (!selection || !graph?.nodes.some(node => node.id === openObjectGroupId))) setOpenObjectGroup(null)
+  }, [openObjectGroupId, graph, selection])
   // 초기화: 고른 필터·펼친 묶음·저장된 배치(위치·확대 비율·잠금)를 모두 처음 상태로 되돌린다.
   const resetGraph = () => {
+    setOpenObjectGroup(null)
     setSearchAnchor(null); setPendingSearch(null); setRevealRequest(null)
     setHighlight(EMPTY_HIGHLIGHT)
     setExpandedStatus([])
@@ -225,12 +236,16 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const selectGraph = (nextSelection: GraphSelection, elementId: string | null) => {
     if (snapshot.isError) return
     setPendingSearch(null); setRevealRequest(null)
+    if (openObjectGroupId) {
+      const group = graph?.nodes.find(node => node.id === openObjectGroupId)
+      if (elementId !== openObjectGroupId && !group?.objectGroup?.members.some(member => elementId === `resource:${member}`)) setOpenObjectGroup(null)
+    }
     setSelection(nextSelection)
     setSelectedElementId(elementId)
     setInspectorOpen(true)
   }
   const cancelSearchMove = () => { setPendingSearch(null); setRevealRequest(null) }
-  const clearGraphSelection = () => { cancelSearchMove(); setSelection(null); setSelectedElementId(null); setInspectorOpen(false) }
+  const clearGraphSelection = () => { setOpenObjectGroup(null); cancelSearchMove(); setSelection(null); setSelectedElementId(null); setInspectorOpen(false) }
   const changeNavigation = (next: GraphNavigation) => {
     setSearchAnchor(null)
     setHistory((current) => ({ past: [...current.past, resolvedNavigation].slice(-50), future: [] }))
@@ -264,7 +279,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     setPendingSearch({ key, destination, requestId: ++searchRequestId.current })
     workspaceState.update(current => {
       const key = graphViewKey(destination.navigation), saved = current.views[key] ?? emptyGraphView
-      const expanded = [...new Set([...saved.expandedGroups, ...destination.expand])]
+      const expanded = [...new Set([...saved.expandedGroups.filter(id => !id.startsWith("object-group:")), ...destination.expand])]
       const moved = JSON.stringify(current.navigation) !== JSON.stringify(destination.navigation)
       const unfolded = expanded.length !== saved.expandedGroups.length
       if (!moved && !unfolded) return current
@@ -296,6 +311,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     setRevealRequest({ nodeId: target.id, requestId: pendingSearch.requestId })
   }, [graph, pendingSearch, searchIndex, snapshot.isError])
   const scopeActions = {
+    onOpenRequestLab: () => setOpenObjectGroup(null),
     onRevealOperation: (groupId: string, operation: string) => {
       moveToSearch({ navigation: navigateHierarchy(resolvedNavigation, "group", groupId), nodeId: `operation:${operation}`, reveal: { operations: [operation] }, expand: [`operation-group:${operationShapeKey(operation)}`] })
     },
@@ -356,7 +372,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   </div>
 
   const toolbar = <div role="toolbar" aria-label="그래프 상단 제어" className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-[var(--flowscope-pane)] px-4 py-2.5">
-    <div className="flex items-center gap-1.5"><Button size="icon" variant="outline" className="size-9" aria-label="뒤로" disabled={!history.past.length} onClick={goBack}><ChevronLeft className="size-5" /></Button><Button size="icon" variant="outline" className="size-9" aria-label="앞으로" disabled={!history.future.length} onClick={goForward}><ChevronRight className="size-5" /></Button>{!compact && <div role="group" aria-label="보기 전환" className="ml-2 flex rounded-md border border-border p-0.5">{([["그래프", false], ["목록", true]] as const).map(([label, list]) => <Button key={label} size="sm" variant={listMode === list ? "secondary" : "ghost"} className="h-8 px-3 text-sm" aria-pressed={listMode === list} onClick={() => setListMode(list)}>{label}</Button>)}</div>}</div>
+    <div className="flex items-center gap-1.5"><Button size="icon" variant="outline" className="size-9" aria-label="뒤로" disabled={!history.past.length} onClick={goBack}><ChevronLeft className="size-5" /></Button><Button size="icon" variant="outline" className="size-9" aria-label="앞으로" disabled={!history.future.length} onClick={goForward}><ChevronRight className="size-5" /></Button>{!compact && <div role="group" aria-label="보기 전환" className="ml-2 flex rounded-md border border-border p-0.5">{([["그래프", false], ["목록", true]] as const).map(([label, list]) => <Button key={label} size="sm" variant={listMode === list ? "secondary" : "ghost"} className="h-8 px-3 text-sm" aria-pressed={listMode === list} onClick={() => { setOpenObjectGroup(null); setListMode(list) }}>{label}</Button>)}</div>}</div>
     <GraphSearchInput query={searchQuery} results={results} disabled={snapshot.isError || !workspaceState.workspace} searching={searchQuery !== searchTerm && !!searchQuery.trim()} canvas={canvasShellRef} onQuery={query => { setSearchQuery(query); setSearchLimit(30) }} onMore={() => setSearchLimit(current => current + 30)} onChoose={chooseSearch} />
     <div className="flex flex-wrap items-center gap-1.5"><Button size="sm" variant="outline" className="h-8 px-2.5 text-xs xl:hidden" aria-label="그래프 필터" onClick={() => setFilterOpen(true)}><Filter className="mr-1.5 size-3.5" />필터</Button><Button size="icon-sm" variant="ghost" aria-label="축소" disabled={zoom <= 0.4} onClick={() => adjustZoom(-0.1)}><Minus className="size-3.5" /></Button><span className="w-11 text-center text-xs tabular-nums">{Math.round(zoom * 100)}%</span><Button size="icon-sm" variant="ghost" aria-label="확대" disabled={zoom >= GRAPH_MAX_ZOOM - 0.001} onClick={() => adjustZoom(0.1)}><Plus className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="그래프 맞추기" onClick={() => setFitVersion((current) => current + 1)}><Crosshair className="size-3.5" /></Button><Button size="icon-sm" variant="ghost" aria-label="전체 화면" onClick={() => { void canvasShellRef.current?.requestFullscreen?.() }}><Maximize2 className="size-3.5" /></Button></div>
   </div>
@@ -366,13 +382,13 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     {workspaceState.error && <Alert variant="destructive" className="m-4"><AlertTitle>그래프 배치를 저장하거나 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{workspaceState.error}</p><p>화면의 변경은 아직 프로젝트에 반영되지 않았을 수 있습니다. 다시 불러오면 미저장 변경을 버리고 저장된 배치로 돌아갑니다.</p><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => void workspaceState.retry().catch(() => {})}>다시 저장</Button><Button variant="outline" size="sm" onClick={() => void workspaceState.reload()}>저장된 배치 다시 불러오기</Button></div></AlertDescription></Alert>}
     {!workspaceState.workspace && !workspaceState.error && <p className="m-4 text-sm text-muted-foreground">프로젝트 배치를 불러오는 중입니다.</p>}
     {snapshot.isError && <Alert variant="destructive" className="m-4"><AlertTitle>그래프를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
-    <ReferenceAnalysisWorkspace context={filterRail} contextTitle={false} contextBadge={highlight.sources.length + highlight.identities.length + highlight.statuses.length} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && snapshot.data ? <GraphInspectorPanel selection={selection} event={selectedEvent} snapshot={snapshot.data} suspended={snapshot.isError} node={graph?.nodes.find(node => node.id === selectedElementId) ?? null} projection={graph} actions={scopeActions} /> : graph && "navigation" in graph ? <GraphViewOverview projection={graph} owners={snapshot.data?.owners} actions={scopeActions} /> : <p className="p-4 text-sm text-muted-foreground">노드를 누르면 정보가 여기에 나옵니다.</p>} inspectorOpen={inspectorOpen} inspectorPersistent onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) { setSelection(null); setSelectedElementId(null) } }} ariaLabel="접근 그래프 작업면">
+    <ReferenceAnalysisWorkspace context={filterRail} contextTitle={false} contextBadge={highlight.sources.length + highlight.identities.length + highlight.statuses.length} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && snapshot.data ? <GraphInspectorPanel selection={selection} event={selectedEvent} snapshot={snapshot.data} suspended={snapshot.isError} node={graph?.nodes.find(node => node.id === selectedElementId) ?? null} projection={graph} actions={scopeActions} /> : graph && "navigation" in graph ? <GraphViewOverview projection={graph} owners={snapshot.data?.owners} actions={scopeActions} /> : <p className="p-4 text-sm text-muted-foreground">노드를 누르면 정보가 여기에 나옵니다.</p>} inspectorOpen={inspectorOpen} inspectorPersistent onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) clearGraphSelection() }} ariaLabel="접근 그래프 작업면">
       <nav aria-label="그래프 계층" className="flex min-w-0 items-center gap-2 border-b border-border/70 px-4 py-2 text-xs"><ol className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"><li className="shrink-0">{resolvedNavigation.level === "site" ? <span aria-current="page" className="font-semibold">Site Overview</span> : <Button size="sm" variant="link" className="h-auto p-0 text-xs text-sky-700 dark:text-sky-300" onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "site"))}>Site Overview</Button>}</li>{resolvedNavigation.level !== "site" && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className={resolvedNavigation.level === "group" ? "min-w-0" : "shrink-0"}>{resolvedNavigation.level === "group" ? <span aria-current="page" className="block truncate font-semibold" title={groupLabel}>{groupLabel}</span> : <Button size="sm" variant="link" className="h-auto max-w-48 justify-start truncate p-0 text-xs text-sky-700 dark:text-sky-300" title={groupLabel} onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "group", resolvedNavigation.groupId))}>{groupLabel}</Button>}</li></>}{operationLabel && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className="min-w-0"><span aria-current="page" className="block truncate font-semibold" title={`${operationLabel.method} ${operationLabel.path}`}>{operationLabel.method} {operationLabel.path}</span></li></>}</ol>{(graph?.revealedNodeCount ?? 0) > 0 && <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">검색으로 {graph?.revealedNodeCount}개 추가 표시<Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => clearSearchAnchor()}>해제</Button></span>}{hiddenCount > 0 && <Button size="sm" variant="outline" className="shrink-0" onClick={expand}>{resolvedNavigation.level === "operation" ? "객체" : "노드"} 18개 더 보기 ({hiddenCount}개 남음)</Button>}</nav>
       {snapshot.isLoading && <p className="m-4 rounded-md border border-border/70 p-6 text-sm text-muted-foreground">공격면을 불러오는 중입니다.</p>}
       {graph && (compact || listMode ? <div ref={listShellRef} className="p-4" onClick={(event) => { if (!(event.target as HTMLElement).closest("table, input, button, a")) clearGraphSelection() }}><ResponsiveGraphList projection={graph} snapshot={snapshot.data} revealNodeId={revealRequest?.nodeId} searchMatches={searchMatches} onRevealDismiss={cancelSearchMove} selectedId={selectedElementId} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
         const { left, right } = laneHeader(index)
         return right <= left ? null : <button key={lane} type="button" aria-label={`${lane} 레인 기준 정렬`} className="absolute top-0 flex h-10 items-center justify-center truncate px-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" style={{ left, width: right - left }} onClick={() => setLaneLayout((current) => ({ lane: index, version: current.version + 1 }))}><span className="truncate">{lane}</span></button>
-      })}</div><CytoscapeGraph key={viewKey} projection={graph} statusesByNode={statusesByNode} highlight={edgeHighlight} statusColors={statusColors} splitSources={splitSources} onToggleObjectGroup={toggleObjectGroup} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={preferences} searchMatches={searchMatches} revealRequest={revealRequest} onInteraction={cancelSearchMove} onRevealed={requestId => setRevealRequest(current => current?.requestId === requestId ? null : current)} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onStepBack={() => changeNavigation(stepBack(resolvedNavigation))} onClearSelection={clearGraphSelection} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 text-blue-600 dark:text-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><ScanLine aria-hidden="true" className="size-3.5 text-red-600 dark:text-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><Bot aria-hidden="true" className="size-3.5 text-yellow-600 dark:text-yellow-400" />LLM</span></div></div>)}
+      })}</div><CytoscapeGraph key={viewKey} projection={graph} statusesByNode={statusesByNode} highlight={edgeHighlight} statusColors={statusColors} splitSources={splitSources} onToggleObjectGroup={toggleObjectGroup} openObjectGroupId={openObjectGroupId} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={preferences} searchMatches={searchMatches} revealRequest={revealRequest} onInteraction={cancelSearchMove} onRevealed={requestId => setRevealRequest(current => current?.requestId === requestId ? null : current)} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={navigateNode} onStepBack={() => changeNavigation(stepBack(resolvedNavigation))} onClearSelection={clearGraphSelection} onSelect={selectGraph} onPreferencesChange={updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 text-blue-600 dark:text-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><ScanLine aria-hidden="true" className="size-3.5 text-red-600 dark:text-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><Bot aria-hidden="true" className="size-3.5 text-yellow-600 dark:text-yellow-400" />LLM</span></div></div>)}
     </ReferenceAnalysisWorkspace>
   </section>
 }

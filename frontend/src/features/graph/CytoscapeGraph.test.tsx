@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphFocusStates, graphWheelIntent, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
@@ -865,4 +865,17 @@ it("wraps each expanded object group and its members in one screen-space band fo
   expect(readGroupBands(core as unknown as Parameters<typeof readGroupBands>[0])).toEqual([
     { id: "object-group:svc|summary", label: "summary", count: 2, x1: 100, y1: 50, x2: 320, y2: 270 },
   ])
+})
+
+it("keeps the real ID → API → OBJ paths visible while an object group is open", () => {
+  const cell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["a"] }
+  const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell, { ...cell, idn: "USER B", resource: "orders:202", evidenceIds: ["b"] }, { ...cell, idn: "USER C", op: "GET /api/orders/profile", resource: "user-profile:1", evidenceIds: ["c"] }] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:|orders"] }, { level: "group", groupId: '["Target","orders"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const group = hierarchy.nodes.find(node => node.kind === "object-group" && node.objectGroup?.key === "orders")!
+  const focus = graphFocusStates(hierarchy, "resource:orders:101", group.id)
+  expect(focus.node("resource:orders:101")).toBe("yes")
+  expect(focus.node("resource:orders:202")).toBe("yes")
+  for (const identity of hierarchy.identities) expect(focus.node(identity.id)).toBe(identity.selection.identity === "USER C" ? "no" : "yes")
+  for (const edge of hierarchy.edges) expect(focus.edge(edge.id)).toBe(edge.selection.identity === "USER C" ? "no" : "yes")
+  expect(hierarchy.edges.some(edge => edge.relation === "identity-operation")).toBe(true)
+  expect(hierarchy.edges.some(edge => edge.relation === "operation-resource")).toBe(true)
 })

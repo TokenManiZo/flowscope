@@ -27,6 +27,7 @@ interface Props {
   splitSources?: readonly string[]
   /** 객체 묶음 노드를 더블클릭하거나 Enter로 펼치고 접는다. */
   onToggleObjectGroup?(id: string): void
+  openObjectGroupId?: string | null
   /** 한 레인만 다시 세운다. version이 바뀔 때만 실행한다. */
   laneLayout?: { lane: number; version: number }
   preferences?: GraphPreferences | null
@@ -76,14 +77,14 @@ function edgeEndpoints(edge: GraphEdgeLike) {
 }
 
 /** 선택에 따른 강조 상태. 요소를 다시 만들지 않고 이 값만 갱신해 클릭마다 그래프가 깜빡이지 않게 한다. */
-function graphFocusStates(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null) {
+export function graphFocusStates(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, openObjectGroupId: string | null = null) {
   const hierarchy = "kind" in projection ? projection : null
   const focus = deriveGraphFocus(hierarchy, selectedElementId)
   const edges = projection.edges.map(edge => ({ id: edge.id, ...edgeEndpoints(edge), focused: focus.edgeState(edge.id) as FocusState }))
   // 신원·엣지 강조가 없을 때 노드를 고르면 그 노드에 닿은 엣지와, 같은 서버 셀(신원·API·객체)을 가진 엣지를 강조한다.
   // 그래서 객체를 누르면 API↔객체 선뿐 아니라 그 객체에 접근한 신원→API 선까지 이어져 보인다.
-  const selectedNode = hierarchy && selectedElementId ? hierarchy.nodes.find(node => node.id === selectedElementId) : undefined
-  if (hierarchy && selectedNode && edges.every(edge => edge.focused === "none")) {
+  const selectedNode = hierarchy && (openObjectGroupId || selectedElementId) ? hierarchy.nodes.find(node => node.id === (openObjectGroupId || selectedElementId)) : undefined
+  if (hierarchy && selectedNode && (openObjectGroupId || edges.every(edge => edge.focused === "none"))) {
     const keys = new Set(selectedNode.selection.cellKeys)
     const edgeKeys = new Map(hierarchy.edges.map(edge => [edge.id, edge.selection.cellKeys]))
     for (const edge of edges) {
@@ -98,13 +99,13 @@ function graphFocusStates(projection: GraphProjection | HierarchyProjection, sel
   const anyFocus = edges.some(edge => edge.focused !== "none")
   return {
     edge: (id: string): FocusState => edgeState.get(id) ?? "none",
-    node: (id: string): FocusState => anyFocus ? focusedNodeIds.has(id) || id === selectedElementId ? "yes" : "no" : "none",
+    node: (id: string): FocusState => anyFocus ? focusedNodeIds.has(id) || id === openObjectGroupId || id === selectedElementId ? "yes" : "no" : "none",
   }
 }
 
-function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark", statusesByNode: ReadonlyMap<string, readonly number[]> = noStatuses): ElementDefinition[] {
+function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark", statusesByNode: ReadonlyMap<string, readonly number[]> = noStatuses, openObjectGroupId: string | null = null): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
-  const focus = graphFocusStates(projection, selectedElementId)
+  const focus = graphFocusStates(projection, selectedElementId, openObjectGroupId)
   const edges = projection.edges.map((edge) => {
     const { source, target } = edgeEndpoints(edge)
     // 관측 엣지는 평소 주체 구분 없이 한 가지 회색 선으로 그리고, 접근 주체는 양 끝 노드 카드 아이콘으로만 표시한다.
@@ -113,6 +114,7 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edge(edge.id), src: edge.source ?? "" }, origin: edge.source }
   })
   const nodeFocus = focus.node
+  const objectMembers = new Set(hierarchy?.nodes.filter(node => node.kind === "object-group" && node.objectGroup?.expanded).flatMap(node => node.objectGroup!.members.map(member => `resource:${member}`)))
   const nodeSources = new Map<string, Set<CardSource>>()
   for (const { data, origin } of edges) {
     if (origin !== "human" && origin !== "scanner" && origin !== "llm") continue
@@ -130,7 +132,7 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     cards?.set(node.id, card)
     const size = sizes[node.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
-    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...("objectGroup" in node && node.objectGroup ? { groupState: node.objectGroup.expanded ? "open" : "closed", groupKey: node.objectGroup.key } : {}), ...(memberOf.has(node.id) ? { memberOf: memberOf.get(node.id) } : {}), ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...("objectGroup" in node && node.objectGroup ? { groupState: node.objectGroup.expanded ? "open" : "closed", groupKey: node.objectGroup.key } : {}), ...(memberOf.has(node.id) ? { memberOf: memberOf.get(node.id) } : {}), ...(objectMembers.has(node.id) ? { temporaryObjectPosition: "yes" } : {}), ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
     const card = relationshipRouteCandidateCard(candidate)
@@ -142,11 +144,11 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
   return [...nodes, ...candidates, ...edges.map(({ data }) => ({ data }))]
 }
 
-function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "viewport" | "sizes"> {
+export function readPreferences(core: Core): Pick<GraphPreferences, "positions" | "viewport" | "sizes"> {
   const positions: GraphPreferences["positions"] = {}
   const sizes: Record<string, NodeSize> = {}
   core.nodes().forEach((node) => {
-    const position = node.position(); positions[node.id()] = { x: position.x, y: position.y }
+    const position = node.position(); if (node.data("temporaryObjectPosition") !== "yes") positions[node.id()] = { x: position.x, y: position.y }
     const width = node.data("customWidth"), height = node.data("customHeight")
     if (typeof width === "number" && typeof height === "number") sizes[node.id()] = { width, height }
   })
@@ -195,12 +197,15 @@ function nodeModelHeight(node: cytoscape.NodeSingular) {
 
 export function positionInLanes(core: Core, height: number, savedPositions: GraphPreferences["positions"] | null, laneCount: number, onlyLane: number | null = null) {
   const usableHeight = Math.max(height, 620)
-  const columns = laneColumns(core, laneCount)
+  const columns = laneColumns(core, laneCount).map(nodes => nodes.filter(node => node.data("temporaryObjectPosition") !== "yes"))
+  const temporaryIds = new Set<string>()
+  core.nodes().forEach(node => { if (node.data("temporaryObjectPosition") === "yes") temporaryIds.add(node.id()) })
   // Folded/limited cards still own their saved space. Missing base sizes reserve the allowed maximum.
   let reservedBottom = Number.NEGATIVE_INFINITY
   if (savedPositions && columns.some(nodes => nodes.some(node => !savedPositions[node.id()]))) {
     const heights = new Map(columns.flat().map(node => [node.id(), nodeModelHeight(node)] as const))
     for (const [id, point] of Object.entries(savedPositions)) {
+      if (temporaryIds.has(id)) continue
       const nodeHeight = heights.get(id) ?? NODE_SIZE_LIMIT.maxHeight
       reservedBottom = Math.max(reservedBottom, point.y + nodeHeight / 2)
     }
@@ -221,6 +226,34 @@ export function positionInLanes(core: Core, height: number, savedPositions: Grap
       if (!saved) cursor += heights[order] + LANE_NODE_GAP
     })
   })
+  positionObjectMembers(core, height, onlyLane)
+}
+
+/** 펼친 객체는 다른 저장 노드 공간과 겹쳐도 묶음 가까이에 놓는다. */
+function positionObjectMembers(core: Core, viewportHeight: number, onlyLane: number | null = null) {
+  if (onlyLane !== null && onlyLane !== 2) return
+  const groups = new Map<string, cytoscape.NodeSingular[]>()
+  core.nodes().forEach(node => {
+    if (node.data("kind") !== "resource" || !node.data("memberOf")) return
+    const id = String(node.data("memberOf")), members = groups.get(id) ?? []
+    members.push(node); groups.set(id, members)
+  })
+  for (const [id, members] of groups) {
+    const group = core.getElementById(id)
+    if (group.empty() || group.data("kind") !== "object-group") continue
+    const anchor = group.position()
+    let cursor = anchor.y + nodeModelHeight(group) / 2 + LANE_NODE_GAP
+    const zoom = core.zoom() || 1, panY = core.pan().y
+    if (viewportHeight > 0 && cursor + nodeModelHeight(members[0]) > (viewportHeight - panY) / zoom) {
+      const total = members.reduce((sum, node) => sum + nodeModelHeight(node), 0) + LANE_NODE_GAP * (members.length - 1)
+      cursor = Math.max((LANE_TOP - panY) / zoom, anchor.y - nodeModelHeight(group) / 2 - LANE_NODE_GAP - total)
+    }
+    for (const node of members) {
+      const height = nodeModelHeight(node)
+      if (node.data("temporaryObjectPosition") === "yes") node.position({ x: anchor.x, y: cursor + height / 2 })
+      cursor += height + LANE_NODE_GAP
+    }
+  }
 }
 
 function syncSelection(core: Core, selectedElementId: string | null | undefined) {
@@ -396,10 +429,11 @@ function applyEdgeRoutes(core: Core, laneCount: number) {
 const noStatusColors: ReadonlyMap<number, string> = new Map()
 const noSplitSources: readonly string[] = []
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, openObjectGroupId = null, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
+  const focusAfterFoldRef = useRef<string | null>(null)
   const imageSwapRef = useRef(0)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
   const tooltipNodeRef = useRef<string | null>(null)
@@ -427,6 +461,9 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     setSearchRings(previous => previous.length === rings.length && previous.every((ring, index) => Object.entries(ring).every(([key, value]) => value === rings[index][key as keyof SearchRing])) ? previous : rings)
   }, [])
+  const openObjectGroupRef = useRef(openObjectGroupId)
+  openObjectGroupRef.current = openObjectGroupId
+  const objectEditsRef = useRef(new Set<string>())
   const projectionRef = useRef(projection)
   const selectRef = useRef(onSelect)
   const navigateRef = useRef(onNavigate)
@@ -529,6 +566,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const core = coreRef.current, card = cardsRef.current.get(nodeId), base = baseSize(nodeId)
     const node = core?.getElementById(nodeId)
     if (!core || !node || node.empty() || !card || !base) return
+    if (node.data("temporaryObjectPosition") === "yes") { node.data("temporaryObjectPosition", "no"); objectEditsRef.current.add(nodeId) }
     const bounds = sizeBounds(base)
     const count = laneCountRef.current, index = laneIndexForKind(String(node.data("kind")), count)
     const rightNeighbour = laneBounds(core, count, node).slice(index + 1).reduce((limit, lane) => lane ? Math.min(limit, lane.left - LANE_GAP) : limit, Number.POSITIVE_INFINITY)
@@ -576,6 +614,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: 'edge[hl = "no"]', style: { opacity: 0.12 } },
           { selector: 'node[hl = "no"]', style: { opacity: 0.3 } },
           { selector: 'node[searchMatch = "yes"]', style: { opacity: 1 } },
+          { selector: 'node[objectFocus = "no"]', style: { opacity: 0.12, "z-index-compare": "manual", "z-index": 0 } },
+          { selector: 'edge[objectFocus = "no"]', style: { opacity: 0.08, "z-index-compare": "manual", "z-index": 0 } },
+          { selector: 'node[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 20 } },
+          { selector: 'edge[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 10 } },
         ] as unknown as cytoscape.StylesheetJson,
       })
     } catch {
@@ -648,7 +690,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     const backgroundListener = (event: cytoscape.EventObject) => { if (event.target === core) clearSelectionRef.current?.() }
     // 마우스로 고른 뒤에는 포커스가 body에 남아 캔버스의 keydown이 오지 않는다. 이때의 Esc도 선택을 푼다.
-    const escapeListener = (event: KeyboardEvent) => { if (event.key === "Escape" && event.target === document.body) clearSelectionRef.current?.() }
+    const escapeListener = (event: KeyboardEvent) => { if (event.key === "Escape" && event.target === document.body) { focusAfterFoldRef.current = openObjectGroupRef.current; clearSelectionRef.current?.() } }
     // ponytail: 드래그 중이 아니라 놓을 때만 가둔다. 커서를 따라가던 노드를 실시간으로 밀면 조작감이 나빠진다.
     const clampToNeighbourLanes = (node: cytoscape.NodeSingular) => {
       const count = laneCountRef.current
@@ -661,6 +703,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (locked) node.lock()
     }
     const dragListener = (event: cytoscape.EventObject) => {
+      if (event.target.data("temporaryObjectPosition") === "yes") { event.target.data("temporaryObjectPosition", "no"); objectEditsRef.current.add(event.target.id()) }
       clampToNeighbourLanes(event.target)
       publishLayout()
     }
@@ -758,7 +801,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     cardsRef.current = new Map()
     // 정렬은 위치만 바꾼다. 크기·viewport는 명시적 초기화 때만 비운다.
     // 선택은 여기서 다시 만들지 않는다(아래 effect가 강조 값만 바꾼다). 클릭마다 전체를 지우고 다시 그리면 깜빡인다.
-    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? saved?.sizes ?? {} : { ...saved?.sizes, ...live.sizes }, cardsRef.current, theme, statusesByNode))
+    const members = new Set("kind" in projection ? projection.nodes.filter(node => node.kind === "object-group" && node.objectGroup?.expanded).flatMap(node => node.objectGroup!.members.map(member => `resource:${member}`)) : [])
+    for (const id of objectEditsRef.current) if (!members.has(id)) objectEditsRef.current.delete(id)
+    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? saved?.sizes ?? {} : { ...saved?.sizes, ...live.sizes }, cardsRef.current, theme, statusesByNode, openObjectGroupRef.current))
+    core.nodes().forEach(node => { if (objectEditsRef.current.has(node.id())) node.data("temporaryObjectPosition", "no") })
     applyHighlight(core, projection, highlightRef.current, cardsRef.current, theme, statusColorsRef.current, splitSourcesRef.current)
     setCornerCursor(null)
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : { ...saved?.positions, ...live.positions }, laneCount)
@@ -772,6 +818,11 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     syncSelection(core, selectedElementIdRef.current)
     scheduleLaneCorrectionRef.current?.()
+    if (focusAfterFoldRef.current && !openObjectGroupRef.current) {
+      keyboardNodeRef.current = focusAfterFoldRef.current
+      focusAfterFoldRef.current = null
+      containerRef.current?.focus()
+    }
   }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, statusesByNode, theme])
 
   // 강조 필터가 바뀌면 요소를 다시 만들지 않고 강조 상태와 API 카드 뱃지 색만 바꾼다.
@@ -831,16 +882,18 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   useEffect(() => {
     const core = coreRef.current
     if (!core) return
-    const focus = graphFocusStates(projectionRef.current, selectedElementId)
+    const focus = graphFocusStates(projectionRef.current, selectedElementId, openObjectGroupId)
     const apply = () => core.elements().forEach((element: cytoscape.SingularElementReturnValue) => {
       const id = element.id()
       const next = element.isEdge() ? focus.edge(id) : focus.node(id)
       if (element.data("focused") !== next) element.data("focused", next)
+      const objectFocus = openObjectGroupId ? next === "yes" ? "yes" : "no" : "none"
+      if (element.data("objectFocus") !== objectFocus) element.data("objectFocus", objectFocus)
     })
     if (typeof core.batch === "function") core.batch(apply); else apply()
     syncSelection(core, selectedElementId)
     if (containerRef.current) publishGeometry(containerRef.current, core)
-  }, [selectedElementId])
+  }, [selectedElementId, openObjectGroupId, projection])
 
   // ponytail: 툴바 확대/축소 등 바깥에서 온 viewport만 적용한다. 캔버스가 방금 보고한 값이면 무시해야 팬 중에 되감기지 않는다.
   useEffect(() => {
@@ -874,7 +927,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
 
   return rendererUnavailable
     ? <p className="rounded-md border p-4 text-sm text-muted-foreground" role="status">그래프 캔버스를 초기화하지 못했습니다. 화면 크기를 조정하거나 API 목록을 사용하세요.</p>
-    : <div className="relative h-full min-h-[28rem] w-full bg-[var(--flowscope-canvas)]">
+    : <div className="relative h-full min-h-[28rem] w-full bg-[var(--flowscope-canvas)]" style={openObjectGroupId ? { backgroundColor: "#020617" } : undefined}>
       <div className="absolute inset-0 h-full min-h-[28rem] w-full focus-visible:outline-2 focus-visible:outline-ring" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px)", backgroundSize: "24px 24px" }} ref={containerRef} tabIndex={0} aria-label="공격면 Cytoscape 그래프" aria-describedby={cardTooltip ? tooltipId : undefined}
         onPointerMove={event => {
           if (resizeDragRef.current) return
@@ -940,7 +993,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
             const openable = event.key === "Enter" && node && hierarchy && graphOpenAction(node.kind, hierarchy.kind)
             coreRef.current?.getElementById(id).emit(openable ? "dbltap" : "tap")
           }
-          else if (event.key === "Escape") { coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip(); clearSelectionRef.current?.() }
+          else if (event.key === "Escape") { focusAfterFoldRef.current = openObjectGroupRef.current; coreRef.current?.nodes(".keyboard-focus").emit("blur"); dismissCardTooltip(); clearSelectionRef.current?.() }
         }} />
       {searchRings.map(ring => <div key={ring.id} aria-hidden="true" className="pointer-events-none absolute rounded-lg border-2 border-dashed border-emerald-600 dark:border-emerald-300" style={{ left: ring.left, top: ring.top, width: ring.width, height: ring.height }}>{ring.member && <span className="absolute bottom-full left-0 mb-1 whitespace-nowrap rounded bg-[var(--flowscope-pane)] px-1 text-[10px] text-emerald-700 dark:text-emerald-300">멤버 일치</span>}</div>)}
       {/* 펼친 묶음: 대표 카드와 멤버 왼쪽의 파란 선과, 오른쪽 위·아래의 접기 버튼. 선 영역은 클릭을 가로채지 않는다. */}

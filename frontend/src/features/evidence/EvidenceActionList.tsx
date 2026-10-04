@@ -38,6 +38,7 @@ interface Props {
   events: readonly EventRecord[]
   snapshot: Snapshot
   disabled?: boolean
+  onOpenRequestLab?(): void
   /** 신원별 서버 판정(선택한 API의 셀 중 가장 급한 판정). 있으면 카드 제목 옆에 보여 준다. */
   identityVerdicts?: ReadonlyMap<string, Verdict>
 }
@@ -47,7 +48,7 @@ interface Props {
  * Repeater는 그 출처의 가장 최근 요청을 대상으로 하고, 요청이 여럿이면 펼쳐서 요청마다 같은 작업을 할 수 있다.
  * 현재 세션은 관측 신원의 재사용 가능한 ACTIVE 세션이며, 원문은 요청 동안만 지역 변수로 다루고 캐시에 두지 않는다.
  */
-export function EvidenceActionList({ events, snapshot, disabled = false, identityVerdicts }: Props) {
+export function EvidenceActionList({ events, snapshot, disabled = false, onOpenRequestLab, identityVerdicts }: Props) {
   const [labContext, setLabContext] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Readonly<Record<string, string>>>({})
@@ -104,7 +105,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, identit
                 ? <button type="button" aria-expanded={open} aria-label={`요청 ${row.events.length}건 ${open ? "접기" : "펼치기"}`} onClick={() => toggle(row.key)} className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 text-[13px] text-muted-foreground hover:bg-muted">{row.events.length}건{open ? <ChevronDown className="size-4" aria-hidden="true" /> : <ChevronRight className="size-4" aria-hidden="true" />}</button>
                 : <span className="shrink-0 px-1 text-[13px] text-muted-foreground">1건</span>}
               <span className="ms-auto flex shrink-0 gap-1">
-                <Button type="button" size="icon-sm" variant="outline" aria-label="원문 보기" title="원문 보기" disabled={disabled} onClick={() => setLabContext(contextOf(latest))}><FileText className="size-4" /></Button>
+                <Button type="button" size="icon-sm" variant="outline" aria-label="원문 보기" title="원문 보기" disabled={disabled} onClick={() => { onOpenRequestLab?.(); setLabContext(contextOf(latest)) }}><FileText className="size-4" /></Button>
                 <Button type="button" size="icon-sm" variant="outline" aria-label="현재 세션으로 Repeater" title="현재 세션으로 Repeater" disabled={disabled || pendingId !== null} onClick={() => void sendToRepeater(latest)}>{pendingId === latest.eventId ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
               </span>
             </div>
@@ -113,7 +114,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, identit
               <StatusBadge code={event.status} />
               <span className="truncate font-mono text-xs text-muted-foreground" title={`${event.method} ${pathOf(event)}`}>{pathOf(event)}</span>
               <span className="flex gap-0.5">
-                <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} 원문 보기`} title="원문 보기" disabled={disabled} onClick={() => setLabContext(contextOf(event))}><FileText className="size-4" /></Button>
+                <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} 원문 보기`} title="원문 보기" disabled={disabled} onClick={() => { onOpenRequestLab?.(); setLabContext(contextOf(event)) }}><FileText className="size-4" /></Button>
                 <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} 현재 세션으로 Repeater`} title="현재 세션으로 Repeater" disabled={disabled || pendingId !== null} onClick={() => void sendToRepeater(event)}><Send className="size-4" /></Button>
               </span>
             </li>)}</ul>}
