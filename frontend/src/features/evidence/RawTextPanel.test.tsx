@@ -35,3 +35,14 @@ it("keeps fill-mode typography and both scroll axes aligned without replacing th
   expect(textarea.selectionEnd).toBe(11)
   expect(highlight).toHaveStyle({ fontSize: "18px", lineHeight: "1.65" })
 })
+
+
+it("preserves large Raw content while avoiding an unbounded syntax-token DOM", () => {
+  const value = "Header: value\n".repeat(20_000)
+  render(<RawTextPanel id="large-raw" label="큰 원문" value={value} readOnly fill />)
+  const textarea = screen.getByRole("textbox", { name: "큰 원문" })
+  const highlight = textarea.previousElementSibling as HTMLElement
+  expect(textarea).toHaveValue(value)
+  expect(highlight.textContent).toBe(value)
+  expect(highlight.querySelectorAll("span")).toHaveLength(0)
+})

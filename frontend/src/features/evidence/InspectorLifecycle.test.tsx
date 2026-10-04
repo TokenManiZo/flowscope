@@ -115,26 +115,25 @@ it.each(["coordinate", "replacement"] as const)("scrubs a surviving 기록 번�
   expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument()
 })
 
-it.each(["evidence", "graph"] as const)("preserves %s Request Lab edits/history on traffic revisions but closes on invalidation", async kind => {
+it.each(["evidence", "graph"] as const)("preserves %s Request Lab requests/latest responses on traffic revisions but closes on invalidation", async kind => {
   vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => Promise.resolve(json(init?.method === "POST" ? { response: "sent response", status: 200, durationMs: 1 } : draft))))
   const view = mount(kind)
   await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
-  await userEvent.clear(await screen.findByLabelText("Request Lab 요청 원문"))
+  const request = await screen.findByLabelText("Request Lab 요청 원문")
+  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
+  await userEvent.clear(request)
   await userEvent.type(screen.getByLabelText("Request Lab 요청 원문"), "edited request")
-  await userEvent.click(screen.getByRole("button", { name: "Request Lab 전송" }))
-  const history = await screen.findByText("현재 탭 전송 결과 1건 (최대 10건)")
-  expect(history).not.toBeVisible()
-  await userEvent.click(screen.getByText("전송 이력", { selector: "summary" }))
-  expect(history).toBeVisible()
+  await userEvent.click(screen.getByRole("button", { name: "요청 재전송" }))
+  await waitFor(() => expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("sent response"))
   view.change(event, { ...snapshot, revision: 2, events: [...snapshot.events, { ...event, eventId: "ordinary-traffic" }] })
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("edited request")
-  expect(screen.getByText("현재 탭 전송 결과 1건 (최대 10건)")).toBeVisible()
+  expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("sent response")
   view.change(null, { ...snapshot, revision: 3, events: [] })
   expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument()
   view.change(event)
   await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
   expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(draft.request)
-  expect(screen.queryByText("현재 탭 전송 결과 1건 (최대 10건)")).not.toBeInTheDocument()
+  expect(screen.queryByRole("combobox", { name: "편집 요청 선택" })).not.toBeInTheDocument()
 })
 
 it.each([loadSample, () => openProject("demo"), resetProjectTraffic])("scrubs an open editor on an explicit client dataset replacement", async replace => {
@@ -155,6 +154,7 @@ it.each([loadSample, () => openProject("missing"), resetProjectTraffic, () => st
   mount("evidence")
   await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))
   const editor = await screen.findByLabelText("Request Lab 요청 원문")
+  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
   await userEvent.clear(editor)
   await userEvent.type(editor, "unsaved operator edit")
 

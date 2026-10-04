@@ -1,48 +1,109 @@
 export const REQUEST_LAB_MAX_BYTES = 1_048_576
+export const REQUEST_LAB_WORKSPACE_BYTES = 40 * 1_048_576
+export const REQUEST_LAB_MAX_REQUESTS = 32
 
-export interface RequestLabHistoryResult {
+export interface RequestLabResult {
+  requestBytes?: number
+  responseBytes?: number
   response: string
   status: number
   durationMs: number
+  failure?: string
+}
+
+export interface RequestLabEntry {
+  id: number
+  request: string
+  credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+  result: RequestLabResult | null
+  dirty: boolean
+  editRejected: boolean
+  position: { start: number; end: number; top: number; left: number; responseTop: number; responseLeft: number }
 }
 
 export interface MemoryOnlyRawState {
-  request: string
-  response: string
+  originalRequest: string
+  originalResponse: string
+  selectedId: number | null
+  readonly request: string
+  readonly response: string
   jsonViews: { request: { text: string; message: string } | null; response: { text: string; message: string } | null }
-  history: RequestLabHistoryResult[]
-  addResult(result: RequestLabHistoryResult): void
+  requests: RequestLabEntry[]
+  addRequest(request: string, credentialMode: RequestLabEntry["credentialMode"]): RequestLabEntry | null
+  editRequest(entry: RequestLabEntry, request: string): boolean
+  replaceResult(entry: RequestLabEntry, result: RequestLabResult | null): boolean
+  removeRequest(entry: RequestLabEntry): void
+  clearJson(pane?: "request" | "response"): void
   canSend(request: string): boolean
   clear(): void
 }
 
-/**
- * Owns sensitive Request Lab text for one mounted dialog only. It deliberately
- * has no browser storage or query-cache dependency; callers must clear it when
- * the dialog's Evidence context changes.
- */
-export function createMemoryOnlyRawState(initial: Partial<Pick<MemoryOnlyRawState, "request" | "response">> = {}): MemoryOnlyRawState {
+/** Sensitive text belongs only to the mounted dialog, never storage or query cache. */
+export function createMemoryOnlyRawState(initial: { request?: string; response?: string } = {}): MemoryOnlyRawState {
+  let sequence = 0
+  const scrubResult = (result: RequestLabResult | null) => { if (result) { result.response = ""; result.failure = "" } }
+  const scrubEntry = (entry: RequestLabEntry) => { entry.request = ""; scrubResult(entry.result); entry.result = null }
+  // Reserve formatter outputs and one in-flight submitted request conservatively as UTF-16.
+  const bytes = () => 6 * REQUEST_LAB_MAX_BYTES + 2 * (state.originalRequest.length + state.originalResponse.length
+    + state.requests.reduce((size, entry) => size + entry.request.length + (entry.result?.response.length ?? 0) + (entry.result?.failure?.length ?? 0), 0))
   const state: MemoryOnlyRawState = {
-    request: initial.request ?? "",
-    response: initial.response ?? "",
+    originalRequest: initial.request ?? "",
+    originalResponse: initial.response ?? "",
+    selectedId: null,
+    get request() { return state.selectedId === null ? state.originalRequest : state.requests.find(entry => entry.id === state.selectedId)?.request ?? "" },
+    get response() { return state.selectedId === null ? state.originalResponse : state.requests.find(entry => entry.id === state.selectedId)?.result?.response ?? "" },
     jsonViews: { request: null, response: null },
-    history: [],
-    addResult(result) {
-      state.history.unshift({ response: result.response, status: result.status, durationMs: result.durationMs })
-      if (state.history.length > 10) {
-        const discarded = state.history.pop()
-        if (discarded) discarded.response = ""
+    requests: [],
+    addRequest(request, credentialMode) {
+      if (state.requests.length >= REQUEST_LAB_MAX_REQUESTS || request.length > REQUEST_LAB_MAX_BYTES || bytes() + 2 * request.length > REQUEST_LAB_WORKSPACE_BYTES) return null
+      const entry: RequestLabEntry = { id: ++sequence, request, credentialMode, result: null, dirty: false, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }
+      state.requests.push(entry)
+      return entry
+    },
+    editRequest(entry, request) {
+      if (!state.requests.includes(entry) || request.length > REQUEST_LAB_MAX_BYTES || bytes() + 2 * (request.length - entry.request.length) > REQUEST_LAB_WORKSPACE_BYTES) return false
+      entry.request = request
+      entry.dirty = true
+      state.clearJson("request")
+      return true
+    },
+    replaceResult(entry, result) {
+      if (!state.requests.includes(entry)) { scrubResult(result); return false }
+      scrubResult(entry.result)
+      entry.result = null
+      state.clearJson("response")
+      if (result && bytes() + 2 * (result.response.length + (result.failure?.length ?? 0)) > REQUEST_LAB_WORKSPACE_BYTES) {
+        scrubResult(result)
+        return false
+      }
+      entry.result = result
+      entry.dirty = false
+      return true
+    },
+    removeRequest(entry) {
+      const index = state.requests.indexOf(entry)
+      if (index < 0) return
+      scrubEntry(entry)
+      state.requests.splice(index, 1)
+      if (state.selectedId === entry.id) state.selectedId = null
+      state.clearJson()
+    },
+    clearJson(pane) {
+      for (const key of pane ? [pane] : ["request", "response"] as const) {
+        const view = state.jsonViews[key]
+        if (view) { view.text = ""; view.message = "" }
+        state.jsonViews[key] = null
       }
     },
     canSend(request) { return new TextEncoder().encode(request).byteLength <= REQUEST_LAB_MAX_BYTES },
     clear() {
-      for (const view of Object.values(state.jsonViews)) if (view) { view.text = ""; view.message = "" }
-      state.jsonViews.request = null
-      state.jsonViews.response = null
-      state.request = ""
-      state.response = ""
-      for (const result of state.history) result.response = ""
-      state.history.splice(0, state.history.length)
+      state.clearJson()
+      state.originalRequest = ""
+      state.originalResponse = ""
+      state.selectedId = null
+      for (const entry of state.requests) scrubEntry(entry)
+      state.requests.splice(0, state.requests.length)
+      sequence = 0
     },
   }
   return state
