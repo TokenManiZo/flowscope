@@ -84,6 +84,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   })
   const [manualStep, setManualStep] = useState<InspectionStep | null>(entryAccount ? "human" : null)
   const [target, setTarget] = useState("")
+  const [recordFocused, setRecordFocused] = useState(false)
   const [humanAccount, setHumanAccount] = useState(entryAccount ?? ANONYMOUS_HUMAN_ACCOUNT)
   const [anonymous, setAnonymous] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<readonly string[]>([])
@@ -206,8 +207,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       : human.data.completed ? "완료" : "대기 중"
 
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="점검 시작 작업 영역" context={null} inspector={null}><section className="space-y-4 p-3" aria-labelledby="inspection-title">
-      <div>
+    <ReferenceAnalysisWorkspace ariaLabel="점검 시작 작업 영역" context={null} inspector={null} contentOverflow={recordFocused ? "hidden" : "auto"}><section className={recordFocused ? "flex h-full min-h-0 flex-col p-3" : "space-y-4 p-3"} aria-label={recordFocused ? "점검 기록 크게 보기" : undefined} aria-labelledby={recordFocused ? undefined : "inspection-title"}>
+      <div hidden={recordFocused}>
         <h1 id="inspection-title" className="text-2xl font-semibold">점검 시작</h1>
         <p role="group" className="mt-1 text-sm text-muted-foreground" aria-label="점검 범위">대상 <span className="font-mono text-foreground">{scope.length ? scope.map(displayOrigin).join(" · ") : "없음 · 프로젝트에서 새 진단을 만들 때 정합니다"}</span></p>
       </div>
@@ -222,14 +223,15 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
       {scannerMutation.isError && <Alert variant="destructive" aria-label={errorMessage(scannerMutation.error)}><AlertDescription>{errorMessage(scannerMutation.error)}</AlertDescription></Alert>}
       {scannerCancel.isError && <Alert variant="destructive" aria-label={errorMessage(scannerCancel.error)}><AlertDescription>{errorMessage(scannerCancel.error)}</AlertDescription></Alert>}
 
-      <Tabs value={selectedStep} onValueChange={(value) => setManualStep(value as InspectionStep)}>
-        <TabsList aria-label="점검 진행 단계" className="h-auto flex-wrap">
+      <Tabs className={recordFocused ? "h-full min-h-0 flex-1" : undefined} value={selectedStep} onValueChange={(value) => { setRecordFocused(false); setManualStep(value as InspectionStep) }}>
+        <TabsList hidden={recordFocused} aria-label="점검 진행 단계" className={recordFocused ? "hidden" : "h-auto flex-wrap"}>
           {inspectionSteps.map(({ step, label }) => <TabsTrigger key={step} value={step}>{label}</TabsTrigger>)}
         </TabsList>
 
-        <TabsContent value="human" className="mt-2">
+        <TabsContent value="human" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
           <SourcePassLayout
             label="HUMAN"
+            onRecordFocusChange={setRecordFocused}
             title="직접 둘러보기"
             description={`계정을 고르고 시작한 뒤, ${humanProxyLabel} 브라우저로 서비스를 사용하세요.`}
             notices={human.data?.otherListenerRequests ? <Alert><AlertDescription>
@@ -265,13 +267,14 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             feedItems={humanFeed}
             feedTitle="기록된 요청"
             emptyHint="시작하면 기록된 요청이 여기에 표시됩니다."
-            feedContent={<HumanRequestFeed items={humanFeed} emptyHint="시작하면 기록된 요청이 여기에 표시됩니다." />}
+            feedContent={(view) => <HumanRequestFeed view={view} context={`직접 둘러보기 · ${scope.map(displayOrigin).join(" · ")}`} items={humanFeed} emptyHint="시작하면 기록된 요청이 여기에 표시됩니다." />}
           />
         </TabsContent>
 
-        <TabsContent value="scanner" className="mt-2">
+        <TabsContent value="scanner" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
           <SourcePassLayout
             label="ZAP"
+            onRecordFocusChange={setRecordFocused}
             title="ZAP 스캔"
             description="사람이 놓친 API를 스캐너로 찾습니다. 선택한 계정마다 따로 스캔합니다."
             statusTiles={scannerStarted ? [
@@ -311,12 +314,12 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
                   <SelectTrigger id="scanner-target" aria-label="ZAP 대상" className="w-72"><SelectValue /></SelectTrigger>
                   <SelectContent>{scope.map((value) => <SelectItem key={value} value={value}>{displayOrigin(value)}</SelectItem>)}</SelectContent>
                 </Select></div>}
-              <section className="grid gap-1.5">
-                <div className="flex items-center justify-between gap-3 text-xs"><span className="text-muted-foreground">스캔할 계정{!zapAccountsOpen && <span className="ml-2">{[...(anonymous ? ["비로그인"] : []), ...selectedAccounts.map((id) => targetAccounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span>}</span><button type="button" aria-label={`ZAP 계정 ${zapAccountsOpen ? "접기" : "펼치기"}`} aria-expanded={zapAccountsOpen} onClick={() => setZapAccountsOpen((value) => !value)} className="flex items-center gap-1 rounded px-2 py-1 font-medium hover:bg-muted">{zapAccountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${zapAccountsOpen ? "rotate-180" : ""}`} /></button></div>
-                {zapAccountsOpen && <AccountLaneTable lane="ZAP" rows={targetAccounts.map((account) => ({ id: account.id, label: account.label, configured: scannerAccountIds.includes(account.id) }))}
+              <section className="rounded-md border">
+                <button type="button" aria-label={`ZAP 계정 ${zapAccountsOpen ? "접기" : "펼치기"}`} aria-expanded={zapAccountsOpen} onClick={() => setZapAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">스캔할 계정 <span className="ml-2 font-normal text-muted-foreground">{[...(anonymous ? ["비로그인"] : []), ...selectedAccounts.map((id) => targetAccounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span></span><span className="flex items-center gap-1 font-medium">{zapAccountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${zapAccountsOpen ? "rotate-180" : ""}`} /></span></button>
+                {zapAccountsOpen && <div className="grid gap-2 border-t p-3"><AccountLaneTable lane="ZAP" rows={targetAccounts.map((account) => ({ id: account.id, label: account.label, configured: scannerAccountIds.includes(account.id) }))}
                   anonymous={anonymous} onAnonymousChange={setAnonymous} selected={selectedAccounts}
                   onToggle={(id, value) => setSelectedAccounts((current) => value ? [...current, id] : current.filter((item) => item !== id))}
-                  onSettings={(id) => setSettings({ id, tab: "zap" })} disabled={!zapConnected || scannerRunning} />}
+                  onSettings={(id) => setSettings({ id, tab: "zap" })} disabled={!zapConnected || scannerRunning} /></div>}
               </section>
               <details className="rounded-lg border border-border px-3 py-2.5 text-sm">
                 <summary className="cursor-pointer">명세로 API 추가 <span className="text-xs text-muted-foreground">OpenAPI · GraphQL · 선택</span></summary>
@@ -333,12 +336,12 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             feedTitle="기록된 요청"
             feedDescription={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined}
             emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다."
-            feedContent={<HumanRequestFeed items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined} emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다." />}
+            feedContent={(view) => <HumanRequestFeed view={view} context={`ZAP 스캔 · ${displayOrigin(target)}`} items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined} emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다." />}
           />
         </TabsContent>
 
-        <TabsContent value="llm" className="mt-2">
-          <LlmPass datasetRevision={snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0} target={target} accounts={targetAccounts} />
+        <TabsContent value="llm" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
+          <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0} target={target} accounts={targetAccounts} />
         </TabsContent>
 
         <TabsContent value="review" className="mt-2">

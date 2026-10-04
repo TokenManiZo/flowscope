@@ -46,8 +46,12 @@ it("stays an icon rail on hover and expands only through the toggle button, push
   expect(rail).not.toHaveClass("absolute")
   expect(within(graph).getByText("점검 Gap 그래프")).toHaveClass("sr-only")
   expect(graph).toHaveAttribute("title", "점검 Gap 그래프")
-  // 현재 화면이 부가 기능이면 접힌 막대에서도 링크와 현재 위치는 남기되 시각적으로만 숨긴다.
-  expect(within(nav).getByRole("link", { name: "API·입력 차이" }).parentElement).toHaveClass("sr-only")
+  for (const name of ["API·입력 차이", "교차 신원 검증", "관측 기록"]) {
+    const link = within(nav).getByRole("link", { name })
+    expect(link.parentElement).not.toHaveClass("sr-only")
+    expect(link).toHaveAttribute("title", name)
+    expect(within(link).getByText(name)).toHaveClass("sr-only")
+  }
 
   await user.hover(rail)
   expect(rail).toHaveAttribute("data-expanded", "false")
@@ -80,6 +84,7 @@ it("remembers the expanded sidebar and toggles it with Cmd/Ctrl+B outside text f
 })
 
 it("keeps core screens as direct links and groups the rest under 부가 기능", async () => {
+  localStorage.setItem("flowscope.sidebar", "open")
   const user = userEvent.setup()
   render(<ReferenceAppShell route="inspection"><p>content</p></ReferenceAppShell>)
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
@@ -91,4 +96,13 @@ it("keeps core screens as direct links and groups the rest under 부가 기능",
   await user.click(extras)
   expect(extras).toHaveAttribute("aria-expanded", "true")
   expect(within(nav).getAllByRole("link").slice(4).map((link) => link.getAttribute("href"))).toEqual(["#surface", "#verification", "#evidence"])
+  localStorage.clear()
+})
+
+it("exposes all extra routes in the collapsed rail even on a core screen", () => {
+  localStorage.clear()
+  render(<ReferenceAppShell route="inspection"><p>content</p></ReferenceAppShell>)
+  const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
+  expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#matrix", "#surface", "#verification", "#evidence"])
+  expect(within(nav).queryByRole("button", { name: "부가 기능" })).not.toBeInTheDocument()
 })

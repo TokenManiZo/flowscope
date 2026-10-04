@@ -99,6 +99,7 @@ export function SurfacePage() {
   const snapshot = useSnapshotQuery()
   const [filter, setFilter] = useState<DeltaFilter>("ALL")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [inspectorRevealKey, setInspectorRevealKey] = useState(0)
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null)
   const [requestLabContext, setRequestLabContext] = useState<string | null>(null)
   const [enabledSources, setEnabledSources] = useState<ReadonlySet<SurfaceSource>>(() => new Set(["HUMAN", "SCANNER", "LLM"]))
@@ -190,7 +191,7 @@ export function SurfacePage() {
   ) : <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">항목을 선택하면 실제 응답과 산출물 근거를 분리해 표시합니다.</p></section>
 
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={420} inspectorOpen={selected !== null} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
+    <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={420} inspectorOpen={selected !== null} inspectorRevealKey={inspectorRevealKey} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
       <section className="grid gap-4 p-3" aria-labelledby="surface-title">
         <h1 id="surface-title" className="text-2xl font-semibold">API·입력 차이</h1>
         {!snapshot.isError && surface.endpoints.length === 0 && runGapCount(snapshot.data) > 0 && <RunGapHint count={runGapCount(snapshot.data)} />}
@@ -202,7 +203,7 @@ export function SurfacePage() {
             <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined}>
               <TableCell className="text-center"><MethodBadge method={endpoint.key.method} /></TableCell><TableCell className="max-w-[32rem] whitespace-normal"><p className="break-all font-mono text-xs">{endpoint.key.pathTemplate}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{deltaLabels[endpoint.deltaState]}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={endpoint.key.service}>{endpoint.key.service} · {endpointKinds(endpoint)}</p></TableCell>
               <TableCell><span title={deltaLabels[endpoint.deltaState]}><SourceMarks sources={endpoint.observedSources} /></span></TableCell><TableCell><div className="flex flex-wrap gap-1">{[...new Set(endpoint.observations.map((item) => item.status))].sort((a, b) => a - b).map((status) => <HttpStatusBadge status={status} key={status} />)}{endpoint.observations.length === 0 && <span className="text-muted-foreground">—</span>}</div></TableCell>
-              <TableCell className="tabular-nums">{endpoint.observations.length}</TableCell><TableCell className="tabular-nums">{endpoint.declarations.length}</TableCell><TableCell className="tabular-nums">{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null) }}>상세 보기</Button></TableCell>
+              <TableCell className="tabular-nums">{endpoint.observations.length}</TableCell><TableCell className="tabular-nums">{endpoint.declarations.length}</TableCell><TableCell className="tabular-nums">{endpoint.parameters.length}</TableCell><TableCell><Button size="sm" variant="outline" onClick={() => { setSelectedId(endpointId(endpoint)); setSelectedEvidenceId(null); setInspectorRevealKey((key) => key + 1) }}>상세 보기</Button></TableCell>
             </TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">현재 필터에 맞는 API·입력 근거가 없습니다.</TableCell></TableRow>}</TableBody></Table>
           </div>
         </section>

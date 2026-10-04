@@ -50,6 +50,8 @@ export interface ReferenceAnalysisWorkspaceProps {
   children: ReactNode
   inspector: ReactNode
   inspectorOpen?: boolean
+  /** 상세 보기 클릭마다 갱신해, 같은 선택의 접힌 패널도 다시 연다. */
+  inspectorRevealKey?: number
   /** 데스크톱에서 선택과 무관하게 상세 패널을 계속 열어 둔다. 캔버스 폭이 바뀌면 다시 그려지며 깜빡이는 그래프 화면용. */
   inspectorPersistent?: boolean
   inspectorModal?: boolean
@@ -65,7 +67,7 @@ export interface ReferenceAnalysisWorkspaceProps {
   onContextOpenChange?(open: boolean): void
 }
 
-export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorPersistent = false, inspectorModal = true, inspectorDefaultWidth = INSPECTOR_DEFAULT_WIDTH, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, contextTitle = true, contextBadge = 0, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
+export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorRevealKey, inspectorPersistent = false, inspectorModal = true, inspectorDefaultWidth = INSPECTOR_DEFAULT_WIDTH, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, contextTitle = true, contextBadge = 0, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
   const compact = useCompactWorkspace()
   const [isContextOpen, setContextOpen] = useOpenState(contextOpen, onContextOpenChange)
   const [isInspectorOpen, setInspectorOpen] = useOpenState(inspectorOpen, onInspectorOpenChange)
@@ -82,7 +84,7 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
   const inspectorMax = () => Math.max(INSPECTOR_MIN_WIDTH, workspaceWidth() - (hasContext && !contextCollapsed ? contextWidth + HANDLE_WIDTH : 0) - CENTER_MIN_WIDTH - HANDLE_WIDTH)
   useEffect(() => {
     if (inspectorOpen !== undefined && !inspectorPersistent) setInspectorCollapsed(!inspectorOpen)
-  }, [inspectorOpen, inspectorPersistent])
+  }, [inspectorOpen, inspectorPersistent, inspectorRevealKey])
   useEffect(() => {
     if (compact || typeof ResizeObserver === "undefined") return
     const observer = new ResizeObserver(() => {

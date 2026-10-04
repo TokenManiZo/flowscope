@@ -1,5 +1,5 @@
 import { apiFetch, postForm } from "./client"
-import { notifyDatasetReplacing } from "@/lib/security/datasetBoundary"
+import { notifyDatasetReplacing, prepareDatasetReplacement } from "@/lib/security/datasetBoundary"
 import type {
   AccountSaveResult,
   ApiSuccess,
@@ -44,26 +44,27 @@ export const sendRequestLab = (values: { eventId: string; request: string; crede
 export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly ManualAttempt[]>("/api/manual-attempts", formSignal(signal))
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
-const confirmedDatasetReplacement = async <T>(request: Promise<T>): Promise<T> => {
-  const result = await request
+const confirmedDatasetReplacement = async <T>(request: () => Promise<T>): Promise<T> => {
+  await prepareDatasetReplacement()
+  const result = await request()
   notifyDatasetReplacing()
   return result
 }
 export const startProject = (values: { name: string; scope: string }) =>
-  confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
+  confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
 export const openProject = (id: string) =>
-  confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "open", id }))
+  confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "open", id }))
 /** 현재 프로젝트의 이름·점검 범위 수정. 이미 모은 기록은 그대로 두고 이후 수집만 새 범위를 따른다. */
 export const updateProject = (values: { name: string; scope: string }) =>
   postForm<ProjectStatus>("/api/projects", { action: "update", ...values })
 export const resetProjectTraffic = () =>
-  confirmedDatasetReplacement(postForm<ProjectStatus>("/api/projects", { action: "reset" }))
+  confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "reset" }))
 export const deleteProject = (id: string) =>
   postForm<ProjectStatus>("/api/projects", { action: "delete", id })
 export const getHumanRun = (signal?: AbortSignal) => apiFetch<HumanRun>("/api/human-run", formSignal(signal))
 export const setHumanRun = (values: { action: "begin"; account: string } | { action: "end"; runId: string }) =>
   postForm<HumanRun>("/api/human-run", values)
-export const loadSample = () => confirmedDatasetReplacement(postForm<ApiSuccess>("/api/sample", {}))
+export const loadSample = () => confirmedDatasetReplacement(() => postForm<ApiSuccess>("/api/sample", {}))
 export const saveRole = (identity: string, role: string) => postForm<ApiSuccess>("/api/role", { identity, role })
 export const saveRequirement = (operation: string, role: string) => postForm<ApiSuccess>("/api/requirement", { operation, role })
 export const saveResourcePolicy = (target: string, policy: string) => postForm<ApiSuccess>("/api/resource-policy", { target, policy })

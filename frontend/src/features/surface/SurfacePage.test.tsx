@@ -27,6 +27,35 @@ const surfaceEvent: EventRecord = {
   objects: [{ resource: "products:1", evidence: "BODY_ID" }], verdict: "untested",
 }
 
+it("opens API details on every click, including the same row after collapsing the desktop pane", async () => {
+  const originalMatchMedia = window.matchMedia
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true }))
+  try {
+    ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [surfaceEvent], surface: {
+      extractions: [], probes: [], endpoints: ["/api/order/search", "/api/orders"].map((pathTemplate) => ({
+        key: { service: "https://api.example.test:443", method: "POST", pathTemplate }, observedSources: ["HUMAN"],
+        observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }],
+        declarations: [], parameters: [], deltaState: "ONE_SOURCE_OBSERVED",
+      })),
+    } }
+    const user = userEvent.setup()
+    render(<AppProviders><SurfacePage /></AppProviders>)
+    const details = screen.getAllByRole("button", { name: "상세 보기" })
+    expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+    await user.click(details[0])
+    expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("/api/order/search")
+    await user.click(screen.getByRole("button", { name: "선택 상세 패널 접기" }))
+    expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+    await user.click(details[0])
+    expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("/api/order/search")
+    await user.click(screen.getByRole("button", { name: "선택 상세 패널 접기" }))
+    await user.click(details[1])
+    expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("/api/orders")
+  } finally {
+    window.matchMedia = originalMatchMedia
+  }
+})
+
 it("shows server-provided endpoint and parameter deltas without inventing coverage percentages", async () => {
   ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [surfaceEvent], surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" }, observedSources: ["HUMAN"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }], declarations: [{ evidenceId: "ev-js", source: "HUMAN", runId: "human-1", type: "JAVASCRIPT", adapter: "fetch", reason: "static call" }], deltaState: "ONE_SOURCE_OBSERVED", parameters: [{ location: "JSON_BODY", fieldPath: "/product_id", displayName: "product_id", requirement: "UNKNOWN", observedShapes: ["INTEGER"], observedSources: ["HUMAN"], observationEvidenceIds: ["ev-human"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200, shape: "INTEGER", valueType: "INTEGER", presence: "PRESENT", byteLength: 3, masked: false }], declarations: [], deltaState: "ONE_SOURCE_OBSERVED", canonicalPath: "/product_id", observedValueTypes: ["INTEGER"], distinctValueCount: 1, coordinateResolved: true, distinctValueTruncated: false }] }] } }
 
