@@ -41,6 +41,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const merged = node?.kind === "operation" && !selection.routeCandidate && !!summary
   const identityVerdicts = merged ? new Map(summary.list.map(([identity, verdict]) => [identity, verdict as Verdict])) : undefined
   const ids = new Set(selection.evidenceIds)
+  const manual = (snapshot.manualVerifications ?? []).filter(item => ids.has(item.originEvidenceId))
   const listed = snapshot.events.filter(item => ids.has(item.eventId))
   // 그래프가 정확히 해석한 선택 Evidence는 목록에 반드시 포함한다.
   const events = event && !listed.some(item => item.eventId === event.eventId) ? [event, ...listed] : listed
@@ -53,6 +54,12 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {/* 대상·API 그룹은 후보·확인 필요·신원별 접근으로 정리한 요약을 보여 준다. */}
       {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
         : summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} />}
+      {node?.kind === "observed-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했습니다. 이 노드는 API 존재나 접근 허용·취약점 판정이 아닙니다.</p>}
+      {manual.length > 0 && <section aria-label="Request Lab 재현" className="mb-4 border-b pb-4 text-sm">
+        <h3 className="font-medium">Request Lab 재현 · {manual.length}건</h3>
+        <p className="text-xs text-muted-foreground">원본 요청에 연결된 응답입니다. 상태 코드만으로 취약점을 판정하지 않습니다.</p>
+        <ul className="mt-2 grid gap-1">{manual.map(item => <li key={item.eventId} className="font-mono text-xs">{snapshot.evidenceOrdinals?.[item.eventId] ? `#${snapshot.evidenceOrdinals[item.eventId]} · ` : ""}HTTP {item.status}</li>)}</ul>
+      </section>}
       {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
     </InspectorPanel>
   </div>

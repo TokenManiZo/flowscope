@@ -25,6 +25,10 @@ export function ResponsiveGraphList({ projection, snapshot, selectedId = null, o
   return <section className="grid gap-2" aria-label="공격면 API 목록">
     {/* 그룹 화면의 API는 표로 보여준다(경로 형식 묶음). 줄을 누르면 화면을 옮기지 않고 선택만 한다. 요청 기록이 없으면 카드로 둔다. */}
     {hierarchy?.kind === "group" && snapshot && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation")} snapshot={snapshot} selectedId={selectedId} onSelectApi={node => onSelect(node.selection, node.id)} onSelectObject={(resource, cells) => { if (cells.length) onSelect(graphCellSelection(cells), `resource:${resource}`) }} />}
+    {hierarchy?.kind === "group" && snapshot && (items as HierarchyNode[]).filter(item => item.kind === "observed-operation").map(item => {
+      const card = relationshipNodeCard(item, projection)
+      return <Button key={item.id} aria-label={card.accessibleLabel} variant="outline" className="h-auto justify-start whitespace-normal border-border/80 bg-card/80 p-3 text-left" onClick={() => onSelect(item.selection, item.id)}><CompactNodeCard badge={card.badge} title={card.title} detail={card.detail} footer={card.footer} /></Button>
+    })}
     {!(hierarchy?.kind === "group" && snapshot) && items.map((item) => {
       if (hierarchy && item.kind === "api-group") {
         const group = hierarchy.groups.find(group => group.id === (item as HierarchyNode).groupId)

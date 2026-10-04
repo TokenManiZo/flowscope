@@ -32,8 +32,8 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     const group = projection.groups.find(item => item.id === node.groupId)
     if (!group) return null
     return {
-      stats: [["API", group.endpointCount], ["Gap", group.gapCount], ["경로 후보", group.routeCandidateCount]],
-      sources: group.sourceCounts,
+      stats: [["API", group.endpointCount], ...(group.observedCount ? [["관측 기능", group.observedCount] as [string, number]] : []), ["Gap", group.gapCount], ["경로 후보", group.routeCandidateCount]],
+      sources: group.endpointCount ? group.sourceCounts : undefined,
       listTitle: "포함된 API",
       list: group.operations.slice(0, 8).map(operation => [plain(operation), mostUrgent(group.cells.filter(cell => cell.op === operation))]),
     }

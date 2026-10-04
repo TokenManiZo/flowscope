@@ -77,6 +77,16 @@ it("locks 관측 기록 actions while the snapshot is suspended", () => {
   expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
 })
 
+it("links Request Lab POST replay status to its original node without adding a verdict", () => {
+  const original = { ...event, eventId: "post-original", method: "POST", path: "/update", op: "POST /update", resource: null, verdict: "untested" as const }
+  const replay = { ...original, eventId: "post-replay", phase: "VALIDATION", trafficDisposition: "EXCLUDE" as const, coverageEligible: false, status: 200 }
+  renderWithQueryClient(<GraphInspectorPanel selection={{ operation: original.op, resource: null, identity: "alice", source: "human", evidenceIds: [original.eventId] }} event={original}
+    snapshot={{ ...snapshot, events: [original, replay], manualVerifications: [{ eventId: replay.eventId, originEvidenceId: original.eventId, operation: original.op, resource: null, identity: "alice", identityId: "alice", timestamp: 2, status: 200, durationMs: 10 }] }} />)
+  const panel = screen.getByRole("complementary", { name: "선택 작업" })
+  expect(within(panel).getByRole("region", { name: "Request Lab 재현" })).toHaveTextContent("HTTP 200")
+  expect(panel).not.toHaveTextContent("취약점 확정")
+})
+
 it("groups 관측 기록 into one card per identity with a row per source, acting on each row's latest request", async () => {
   const fetch = stubFetch()
   const events = [
