@@ -36,7 +36,7 @@ import java.util.function.Supplier;
 /** 계정 준비 → loopback HTTP gateway → Codex turn → Evidence 완료 gate를 소유한다. */
 public final class ExplorerCoordinator implements AutoCloseable {
     public enum Status {
-        IDLE, AUTHENTICATING, RUNNING, COMPLETED, COMPLETED_WITH_LIMITATIONS,
+        IDLE, AUTHENTICATING, RUNNING, WAITING_INPUT, FINISHING, COMPLETED, COMPLETED_WITH_LIMITATIONS,
         FAILED, CANCELLED, FAILED_CLEANUP
     }
 
@@ -102,6 +102,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     /** Fresh, uncredentialed window for this run only; never shared with a registered account or later run. */
     private volatile LoginBrowser.Session anonymousWindow;
     private volatile Consumer<BrowserExchange> browserSink = exchange -> { };
+    private volatile Supplier<List<RouteCandidate>> candidateSource = List::of;
     /** Distinct method+url the window produced this run, shown as the operator's endpoint counter. */
     private final Set<String> browserEndpoints = ConcurrentHashMap.newKeySet();
     private final AtomicInteger browserActions = new AtomicInteger();
@@ -206,6 +207,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
         this.browserSink = sink == null ? exchange -> { } : sink;
     }
 
+    public void candidateSource(Supplier<List<RouteCandidate>> source) {
+        this.candidateSource = source == null ? List::of : source;
+    }
+
     /**
      * What the operator sees while the window is driven. {@code minutes} is a ceiling, not a duration: a run that
      * finishes exploring stops well before it, and closing the window stops it at once.
@@ -220,9 +225,9 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 browserEndpoints.size(), elapsed, browserMinutes());
     }
 
-    private static int maxBrowserActions() { return Integer.getInteger("flowscope.explorer.browserActions", 300); }
+    private static int maxBrowserActions() { return Integer.getInteger("flowscope.explorer.browserActions", 600); }
 
-    private static long browserMinutes() { return Long.getLong("flowscope.explorer.browserMinutes", 15); }
+    private static long browserMinutes() { return Long.getLong("flowscope.explorer.browserMinutes", 30); }
 
     /** The endpoint counter is display state; past this many distinct URLs the number stops being informative. */
     private static final int MAX_BROWSER_ENDPOINTS = 2_000;
@@ -281,7 +286,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         String runId = current.runId();
         // The window outlives the run and keeps its runId, so without the status check everything the operator
         // does in it afterwards would be filed as this run's LLM Evidence.
-        if (!active(current.status()) || runId == null || runId.isBlank()
+        if (current.status() != Status.RUNNING || runId == null || runId.isBlank()
                 || !runId.equals(exchange.runId())) return;
         if (!exactScope.test(exchange.url())) return;
         if (browserExchanges.incrementAndGet() > maxBrowserExchanges()) return;
@@ -289,8 +294,13 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 exchange.requestHeaders(), exchange.requestBody(), exchange.status(),
                 exchange.responseHeaders(), exchange.responseBody()));
         ExplorerHttpGateway activeGateway = gateway;
-        if (activeGateway != null) activeGateway.browserObserved(runId, accountId, exchange.method(),
-                exchange.url(), exchange.status());
+        if (activeGateway != null) {
+            String contentType = exchange.responseHeaders().entrySet().stream()
+                    .filter(header -> header.getKey().equalsIgnoreCase("Content-Type"))
+                    .map(Map.Entry::getValue).findFirst().orElse("");
+            activeGateway.browserObserved(runId, accountId, exchange.method(), exchange.url(),
+                    exchange.status(), contentType, exchange.responseBody());
+        }
         if (browserEndpoints.size() < MAX_BROWSER_ENDPOINTS) {
             browserEndpoints.add(exchange.method() + " " + exchange.url());
         }
@@ -299,7 +309,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     /** What the Explorer may do to the window, with the run's scope and budget enforced here. */
     public LoginBrowser.Page browserAction(String accountId, String action, String url, String ref, String text)
             throws IOException {
-        if (!active(snapshot.status())) throw new IllegalStateException("진행 중인 Explorer가 없습니다.");
+        if (snapshot.status() != Status.RUNNING) throw new IllegalStateException("탐색 중인 Explorer가 없습니다.");
         LoginBrowser.Session window = accountId.isBlank() && snapshot.anonymous()
                 ? anonymousWindow : loginWindows.get(accountId);
         if (window == null) throw new IllegalArgumentException("이 신원에 탐색 브라우저가 준비되지 않았습니다.");
@@ -319,6 +329,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 yield window.navigate(url);
             }
             case "click" -> window.click(ref);
+            case "scroll" -> window.scroll(ref, text);
             case "type" -> window.type(ref, text);
             case "back" -> window.back();
             case "snapshot" -> window.snapshot();
@@ -360,10 +371,51 @@ public final class ExplorerCoordinator implements AutoCloseable {
     }
 
     public synchronized Snapshot steer(String message) {
-        if (snapshot.status() != Status.RUNNING || providerHandle == null) {
-            throw new IllegalStateException("진행 중인 Explorer가 없습니다.");
+        if (providerHandle == null || (snapshot.status() != Status.RUNNING
+                && snapshot.status() != Status.WAITING_INPUT))
+            throw new IllegalStateException("추가 지시를 받을 Explorer 대화가 없습니다.");
+        boolean resuming = snapshot.status() == Status.WAITING_INPUT;
+        Snapshot before = snapshot;
+        if (resuming) {
+            snapshot = update(Status.RUNNING, "추가 지시를 받아 같은 대화에서 탐색을 계속합니다.", List.of(), null);
         }
-        providerHandle.steer(message);
+        try {
+            if (resuming) resumeBrowserRecording();
+            providerHandle.steer(message);
+        }
+        catch (RuntimeException error) {
+            if (resuming) {
+                suspendBrowserRecording();
+                snapshot = before;
+            }
+            throw error;
+        }
+        return current();
+    }
+
+    public synchronized Snapshot complete() {
+        if (snapshot.status() != Status.WAITING_INPUT || providerHandle == null)
+            throw new IllegalStateException("추가 지시 대기 상태에서만 Explorer를 완료할 수 있습니다.");
+        LaneCompletionPolicy.Decision decision = LaneCompletionPolicy.evaluate(
+                Source.LLM, snapshot.runId(), completionSnapshot.get());
+        if (!decision.eligible()) throw new IllegalStateException(decision.reason());
+        ExplorerHttpGateway currentGateway = gateway;
+        if (currentGateway != null && currentGateway.pendingIssues().stream().anyMatch(issue ->
+                snapshot.unresolved().stream().noneMatch(value -> "DISCOVERY_BLOCKED".equals(value.kind())
+                        && issue.id().equals(value.target()) && !value.reason().isBlank())))
+            throw new IllegalStateException("발견 저장 거부 항목이 남았습니다. 추가 지시로 해결하거나 이유를 보고하세요.");
+        if (currentGateway != null && currentGateway.pendingReviewTasks().stream().anyMatch(task ->
+                "WORKLIST_UNREAD".equals(task.kind()) || snapshot.unresolved().stream().noneMatch(value ->
+                        "EXPLORATION_BLOCKED".equals(value.kind())
+                                && task.target().equals(value.target()) && !value.reason().isBlank())))
+            throw new IllegalStateException("미확인 수집 작업이 남았습니다. 추가 지시로 해결하거나 이유를 보고하세요.");
+        snapshot = update(Status.FINISHING, "Explorer 완료 조건을 확인하고 종료하는 중입니다.",
+                snapshot.unresolved(), null);
+        try { providerHandle.finish(); }
+        catch (RuntimeException error) {
+            snapshot = update(Status.WAITING_INPUT, "완료 요청을 보내지 못했습니다.", snapshot.unresolved(), null);
+            throw error;
+        }
         return current();
     }
 
@@ -402,6 +454,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                     vault, transport, exactScope, runId, this::gatewayEvent,
                     candidates -> acceptDiscoveries(runId, candidates));
             created.browserDriver(this::browserAction);
+            created.candidateSource(candidateSource);
             synchronized (this) {
                 if (!sameActiveRun(runId)) {
                     created.close();
@@ -510,17 +563,39 @@ public final class ExplorerCoordinator implements AutoCloseable {
 
     /** The run is over: the window stays open for the next run, but nothing it does now is this run's Evidence. */
     private void stopBrowserRecording() {
+        suspendBrowserRecording();
+        LoginBrowser.Session anonymous = anonymousWindow;
+        anonymousWindow = null;
+        if (anonymous != null) anonymous.close();
+    }
+
+    private void suspendBrowserRecording() {
         loginWindows.values().forEach(window -> {
             try { window.recording(null, null); }
             catch (Exception ignored) { /* a dead window records nothing anyway */ }
         });
         LoginBrowser.Session anonymous = anonymousWindow;
-        anonymousWindow = null;
         if (anonymous != null) {
             try { anonymous.recording(null, null); }
-            catch (Exception ignored) { /* closing the run-owned window still stops collection */ }
-            anonymous.close();
+            catch (Exception ignored) { /* a dead window records nothing anyway */ }
         }
+    }
+
+    private void resumeBrowserRecording() {
+        BrowserScopePolicy scope = new BrowserScopePolicy(exactScope);
+        try {
+            for (String accountId : snapshot.accountIds()) {
+                LoginBrowser.Session window = loginWindows.get(accountId);
+                if (window != null && vault.view(accountId).status() == ExplorerAccountVault.AuthStatus.READY)
+                    window.recording(snapshot.runId(), scope::allows);
+            }
+            LoginBrowser.Session anonymous = anonymousWindow;
+            if (anonymous != null) anonymous.recording(snapshot.runId(), scope::allows);
+        } catch (IOException error) {
+            suspendBrowserRecording();
+            throw new IllegalStateException("브라우저 기록을 다시 시작하지 못했습니다.", error);
+        }
+        browserDeadline = System.currentTimeMillis() + browserMinutes() * 60_000;
     }
 
     private void stopBrowserWatch() {
@@ -542,30 +617,45 @@ public final class ExplorerCoordinator implements AutoCloseable {
             @Override public String review(ExplorerProvider.Result result, int completedTurns) {
                 ExplorerHttpGateway currentGateway = gateway;
                 if (!sameActiveRun(runId) || currentGateway == null) return "";
+                completionSnapshot.get(); // publish the last browser responses and automatic route candidates once per turn
                 List<ExplorerHttpGateway.PendingIssue> pending = currentGateway.pendingIssues();
-                if (pending.isEmpty()) return "";
+                List<ExplorerHttpGateway.ReviewTask> tasks = currentGateway.pendingReviewTasks();
+                if (pending.isEmpty() && tasks.isEmpty()) return "";
                 boolean inspectedSinceReview = currentGateway.worklistReads() > worklistReadsAtReview;
                 worklistReadsAtReview = currentGateway.worklistReads();
-                if (completedTurns > 1 && inspectedSinceReview && pending.stream().allMatch(issue ->
+                boolean issuesReported = pending.stream().allMatch(issue ->
                         result.unresolved().stream().anyMatch(value -> "DISCOVERY_BLOCKED".equals(value.kind())
-                                && issue.id().equals(value.target()) && !value.reason().isBlank()))) {
+                                && issue.id().equals(value.target()) && !value.reason().isBlank()));
+                boolean tasksReported = tasks.stream().allMatch(task -> !"WORKLIST_UNREAD".equals(task.kind())
+                        && result.unresolved().stream().anyMatch(value -> "EXPLORATION_BLOCKED".equals(value.kind())
+                                && task.target().equals(value.target()) && !value.reason().isBlank()));
+                if (completedTurns > 1 && inspectedSinceReview && issuesReported && tasksReported) {
                     return "";
                 }
-                String first = pending.stream().limit(10)
+                String issues = pending.stream().limit(10)
                         .map(issue -> issue.id() + " " + issue.kind() + " " + issue.target() + " · " + issue.reason())
                         .collect(java.util.stream.Collectors.joining("\n"));
-                return "FlowScope 완료 검토에서 저장 거부 " + pending.size() + "건이 남았습니다. "
-                        + "flowscope_worklist({offset:0,limit:100})를 다시 읽고, 원본 Evidence를 확인한 뒤 "
-                        + "수정된 항목에 replaces_issue_id를 넣어 재전송하세요. 해결할 근거가 없으면 "
-                        + "각 issue ID를 final unresolved의 kind=DISCOVERY_BLOCKED, target=issue ID, "
-                        + "reason=구체적 차단 이유로 남기세요. 무시한 채 완료하면 실패합니다.\n"
-                        + first;
+                String work = tasks.stream().limit(10)
+                        .map(task -> task.kind() + " " + task.target() + " · " + task.reason())
+                        .collect(java.util.stream.Collectors.joining("\n"));
+                return "FlowScope 수집 검토에서 저장 거부 " + pending.size() + "건, 미확인 작업 "
+                        + tasks.size() + "건이 남았습니다. flowscope_worklist를 마지막 페이지까지 다시 읽고, "
+                        + "JS_ARTIFACT_UNINDEXED는 flowscope_artifact_index의 next_offset=-1까지 읽고, "
+                        + "BROWSER_SCRIPT_UNREAD는 해당 JS/source map의 실제 URL을 HTTP로 읽어 artifact를 분석하세요. "
+                        + "API 후보를 그래프에 올리기 위해 재요청하지 마세요. 근거가 없어 못 읽는 산출물은 "
+                        + "final unresolved에 kind=EXPLORATION_BLOCKED, target=artifact ID, 구체적 이유를 남기세요. "
+                        + "저장 거부는 고쳐 재전송하거나 kind=DISCOVERY_BLOCKED, target=issue ID로 보고하세요.\n"
+                        + issues + (issues.isEmpty() || work.isEmpty() ? "" : "\n") + work;
             }
 
             @Override public void completed(ExplorerProvider.Result result) {
                 List<ExplorerProvider.Unresolved> limitations = new ArrayList<>(initialLimitations);
                 limitations.addAll(result.unresolved());
                 finish(runId, result.summary(), limitations);
+            }
+
+            @Override public void paused(ExplorerProvider.Result result) {
+                pause(runId, result, initialLimitations);
             }
 
             @Override public void failed(String message) { fail(runId, message, initialLimitations); }
@@ -578,13 +668,20 @@ public final class ExplorerCoordinator implements AutoCloseable {
         stopBrowserWatch();
         stopBrowserRecording();
         try {
+            Pipeline.Result finalSnapshot = completionSnapshot.get();
             ExplorerHttpGateway currentGateway = gateway;
             if (currentGateway != null && currentGateway.pendingIssues().stream().anyMatch(issue ->
                     limitations.stream().noneMatch(value -> "DISCOVERY_BLOCKED".equals(value.kind())
                             && issue.id().equals(value.target()) && !value.reason().isBlank()))) {
                 throw new IllegalStateException("발견 저장 거부 항목이 해결되거나 이유와 함께 보고되지 않았습니다.");
             }
-            LaneCompletionPolicy.complete(contexts, Source.LLM, runId, completionSnapshot.get());
+            if (currentGateway != null && currentGateway.pendingReviewTasks().stream().anyMatch(task ->
+                    "WORKLIST_UNREAD".equals(task.kind()) || limitations.stream().noneMatch(value ->
+                            "EXPLORATION_BLOCKED".equals(value.kind())
+                                    && task.target().equals(value.target()) && !value.reason().isBlank()))) {
+                throw new IllegalStateException("자동 후보 또는 JavaScript 산출물이 검토되지 않았습니다.");
+            }
+            LaneCompletionPolicy.complete(contexts, Source.LLM, runId, finalSnapshot);
             closeGateway();
             Status status = limitations.isEmpty() ? Status.COMPLETED : Status.COMPLETED_WITH_LIMITATIONS;
             String summary = "Explorer 완료 · HTTP 시도 " + snapshot.attempts()
@@ -602,11 +699,31 @@ public final class ExplorerCoordinator implements AutoCloseable {
             ExplorerHttpGateway currentGateway = gateway;
             if (currentGateway != null) currentGateway.pendingIssues().forEach(issue ->
                     reported.add(new ExplorerProvider.Unresolved("DISCOVERY_REJECTED", issue.id(), issue.reason())));
+            if (currentGateway != null) currentGateway.pendingReviewTasks().forEach(task ->
+                    reported.add(new ExplorerProvider.Unresolved("EXPLORATION_PENDING", task.target(), task.reason())));
             closeGateway();
             snapshot = terminal(Status.FAILED,
                     "Explorer 완료 gate 실패: " + safe(error.getMessage()), reported);
             addActivity("ERROR", "완료 gate 실패", snapshot.message(), "FAILED", null);
         }
+    }
+
+    private synchronized void pause(String runId, ExplorerProvider.Result result,
+                                    List<ExplorerProvider.Unresolved> initialLimitations) {
+        if (!sameActiveRun(runId)) return;
+        suspendBrowserRecording();
+        List<ExplorerProvider.Unresolved> unresolved = new ArrayList<>(initialLimitations);
+        unresolved.addAll(result.unresolved());
+        ExplorerHttpGateway currentGateway = gateway;
+        if (currentGateway != null) {
+            currentGateway.pendingIssues().forEach(issue -> unresolved.add(
+                    new ExplorerProvider.Unresolved("DISCOVERY_PENDING", issue.id(), issue.reason())));
+            currentGateway.pendingReviewTasks().forEach(task -> unresolved.add(
+                    new ExplorerProvider.Unresolved(task.kind(), task.target(), task.reason())));
+        }
+        snapshot = update(Status.WAITING_INPUT,
+                "현재 탐색이 멈췄습니다. 미해결 항목을 보고 추가 지시를 보내거나 완료하세요.", unresolved, null);
+        addActivity("SYSTEM", "추가 지시 대기", result.summary(), "WAITING_INPUT", null);
     }
 
     private synchronized void fail(String runId, String message,
@@ -619,6 +736,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
         ExplorerHttpGateway currentGateway = gateway;
         if (currentGateway != null) currentGateway.pendingIssues().forEach(issue ->
                 reported.add(new ExplorerProvider.Unresolved("DISCOVERY_REJECTED", issue.id(), issue.reason())));
+        if (currentGateway != null) currentGateway.pendingReviewTasks().forEach(task ->
+                reported.add(new ExplorerProvider.Unresolved("EXPLORATION_PENDING", task.target(), task.reason())));
         closeGateway();
         snapshot = terminal(Status.FAILED, safe(message), reported);
         addActivity("ERROR", "Explorer 실패", snapshot.message(), "FAILED", null);
@@ -701,7 +820,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private boolean sameActiveRun(String runId) { return sameRun(runId) && active(snapshot.status()); }
 
     private static boolean active(Status status) {
-        return status == Status.AUTHENTICATING || status == Status.RUNNING;
+        return status == Status.AUTHENTICATING || status == Status.RUNNING
+                || status == Status.WAITING_INPUT || status == Status.FINISHING;
     }
 
     private void closeGateway() {

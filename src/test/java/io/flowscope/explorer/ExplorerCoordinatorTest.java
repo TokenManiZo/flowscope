@@ -68,6 +68,50 @@ final class ExplorerCoordinatorTest {
         }
     }
 
+    @Test
+    void unresolvedTurnKeepsTheSameRunAndBrowserForOperatorFollowUp() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        FakeWindow window = new FakeWindow();
+        AtomicReference<Pipeline.Result> published = new AtomicReference<>(Pipeline.run(List.of()));
+        List<ExplorerCoordinator.BrowserExchange> recorded = new java.util.ArrayList<>();
+        RunContextRegistry contexts = new RunContextRegistry();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no HTTP"); }, provider, contexts,
+                value -> value.startsWith("https://app.example.test/"), published::get, ignored -> {})) {
+            coordinator.loginBrowser(window);
+            coordinator.browserRecorder(recorded::add);
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true));
+            await(() -> provider.listener.get() != null);
+            String runId = coordinator.current().runId();
+            provider.listener.get().paused(new ExplorerProvider.Result("추가 화면 확인 필요",
+                    List.of(new ExplorerProvider.Unresolved("SCREEN", "/more", "아직 방문하지 않음")), "thread-1"));
+            assertEquals(ExplorerCoordinator.Status.WAITING_INPUT, coordinator.current().status());
+            assertEquals(runId, contexts.current(Source.LLM).runId());
+            assertFalse(window.recording, "operator activity during pause is not LLM Evidence");
+            assertThrows(IllegalStateException.class, coordinator::complete,
+                    "a paused run without trusted response must remain resumable");
+            assertEquals(ExplorerCoordinator.Status.WAITING_INPUT, coordinator.current().status());
+
+            coordinator.steer("/more 화면을 계속 살펴봐");
+            assertEquals(ExplorerCoordinator.Status.RUNNING, coordinator.current().status());
+            assertTrue(window.recording);
+            window.emit("https://app.example.test/api/more");
+            assertTrue(recorded.stream().anyMatch(item -> item.url().endsWith("/api/more")));
+            RequestRecord evidence = new RequestRecord(Source.LLM, "https://app.example.test:443",
+                    "GET", "/api/more", 200, "anon");
+            evidence.hasResponse = true;
+            evidence.phase = RunPhase.EXPLORATION;
+            evidence.runId = runId;
+            evidence.executionTrust = ExecutionTrust.CONTROLLED;
+            published.set(Pipeline.run(List.of(evidence)));
+            provider.listener.get().paused(new ExplorerProvider.Result("탐색 완료", List.of(), "thread-1"));
+            assertEquals(ExplorerCoordinator.Status.WAITING_INPUT, coordinator.current().status());
+            coordinator.complete();
+            assertEquals(ExplorerCoordinator.Status.COMPLETED, coordinator.current().status());
+            assertNull(contexts.current(Source.LLM));
+        }
+    }
+
     /** Fake login window holding whatever the "operator" put in it. */
     private static final class FakeWindow implements LoginBrowser {
         final List<java.net.HttpCookie> cookies = new java.util.ArrayList<>();
@@ -101,6 +145,9 @@ final class ExplorerCoordinatorTest {
                 @Override public Page navigate(java.lang.String url) { return page(url); }
                 @Override public Page snapshot() { return page("https://app.example.test/"); }
                 @Override public Page click(java.lang.String ref) { return page("https://app.example.test/" + ref); }
+                @Override public Page scroll(java.lang.String ref, java.lang.String direction) {
+                    return page("https://app.example.test/scroll");
+                }
                 @Override public Page type(java.lang.String ref, java.lang.String text) {
                     return page("https://app.example.test/" + ref);
                 }
@@ -426,6 +473,34 @@ final class ExplorerCoordinatorTest {
         }
     }
 
+    @Test
+    void completionReviewMakesTheModelReadAutomaticCandidatesWithoutReplayingThem() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        AtomicReference<List<io.flowscope.core.RouteCandidate>> candidates = new AtomicReference<>(List.of());
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("candidate review must not send HTTP"); }, provider,
+                new RunContextRegistry(), io.flowscope.core.ScopePolicy.parse("https://app.example.test/")::allows,
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.loginBrowser(new FakeWindow());
+            coordinator.candidateSource(candidates::get);
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true));
+            await(() -> provider.request.get() != null);
+            ExplorerProvider.Request run = provider.request.get();
+            candidates.set(List.of(new io.flowscope.core.RouteCandidate("https://app.example.test:443",
+                    "GET", "/api/declared", false,
+                    List.of(new io.flowscope.core.RouteCandidate.Provenance(
+                            io.flowscope.core.RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL,
+                            "ev-js", Source.LLM, run.runId(), "javascript-ast")),
+                    io.flowscope.core.RouteCandidate.Applicability.REVIEW, "call-site")));
+            ExplorerProvider.Result result = new ExplorerProvider.Result("done", List.of(), "t1");
+            assertTrue(provider.listener.get().review(result, 1).contains("worklist"));
+            String worklist = explorerPost(run.gatewayUrl().replace("/request", "/worklist"),
+                    run.gatewayToken(), "{}");
+            assertTrue(worklist.contains("/api/declared"));
+            assertEquals("", provider.listener.get().review(result, 2));
+        }
+    }
+
     private static String explorerPost(String url, String token, String body) throws Exception {
         java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
                 .header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
@@ -495,7 +570,7 @@ final class ExplorerCoordinatorTest {
         try (ExplorerCoordinator coordinator = running(window, new FakeProvider(), null)) {
             ExplorerCoordinator.BrowserBudget budget = coordinator.browserBudget();
             assertEquals(2, budget.maxActions());
-            assertEquals(15, budget.minutes());
+            assertEquals(30, budget.minutes());
             assertEquals(0, budget.snapshots());
             assertTrue(budget.elapsedMillis() >= 0 && budget.elapsedMillis() < 60_000, budget.toString());
 
@@ -543,7 +618,11 @@ final class ExplorerCoordinatorTest {
         @Override public Handle start(Request request, Listener listener) {
             this.request.set(request);
             this.listener.set(listener);
-            return new Handle() { @Override public void steer(String message) { } @Override public void cancel() { } };
+            return new Handle() {
+                @Override public void steer(String message) { }
+                @Override public void finish() { listener.completed(new Result("탐색 완료", List.of(), "thread-1")); }
+                @Override public void cancel() { }
+            };
         }
         @Override public void close() { }
     }

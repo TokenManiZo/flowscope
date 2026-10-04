@@ -80,7 +80,7 @@ it("filters LLM-only declarations and probes without turning them into observati
   render(<AppProviders><SurfacePage /></AppProviders>)
 
   expect(screen.getByText("/api/declared")).toBeVisible()
-  expect(screen.queryByText("산출물에서 발견 · 아직 요청 없음")).not.toBeInTheDocument()
+  expect(screen.getByText("산출물에서 발견 · 아직 요청 없음")).toBeVisible()
   expect(screen.getByText("/api/declared").closest("tr")).toHaveTextContent("—")
   await userEvent.click(screen.getByRole("button", { name: "집계" }))
   expect(screen.getByText("OPTIONS probe").parentElement).toHaveTextContent("1")

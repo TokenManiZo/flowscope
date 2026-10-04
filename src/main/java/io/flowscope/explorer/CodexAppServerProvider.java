@@ -31,6 +31,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -239,11 +241,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private final String executable;
         private final AtomicLong nextId = new AtomicLong(1);
         private final AtomicBoolean cancelled = new AtomicBoolean();
+        private final AtomicBoolean followUpPending = new AtomicBoolean();
         private final Object writeLock = new Object();
+        private final BlockingQueue<String> followUps = new LinkedBlockingQueue<>();
         private volatile Process process;
         private volatile BufferedWriter writer;
         private volatile String threadId = "";
         private volatile String turnId = "";
+        private volatile boolean paused;
         private volatile String finalMessage = "";
         private Path workspace;
 
@@ -271,28 +276,37 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     threadId = threadResponse.path("result").path("thread").path("id").asText("");
                     if (threadId.isBlank()) throw new IOException("Codex thread ID를 받지 못했습니다.");
                     String instruction = "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요.";
-                    for (int completedTurns = 1; completedTurns <= 3; completedTurns++) {
+                    int completedTurns = 0;
+                    while (!cancelled.get()) {
                         finalMessage = "";
                         turnId = "";
                         long turnRequest = send("turn/start", turnParams(instruction));
                         JsonNode turnResponse = waitForResponse(reader, turnRequest);
                         turnId = turnResponse.path("result").path("turn").path("id").asText("");
                         readTurn(reader);
+                        turnId = "";
                         if (cancelled.get()) return;
                         Result result = parseResult(finalMessage, threadId);
-                        String repair = listener.review(result, completedTurns);
-                        if (repair == null || repair.isBlank()) {
-                            deleteThread(reader);
+                        String repair = listener.review(result, ++completedTurns);
+                        if (repair != null && !repair.isBlank() && completedTurns < 3) {
+                            listener.activity(activity("WARNING", "탐색 보완 요청",
+                                    "미해결 수집 항목을 같은 Codex 대화에서 다시 확인합니다.", "RUNNING", null));
+                            instruction = repair;
+                            continue;
+                        }
+                        paused = true;
+                        listener.paused(result);
+                        String followUp = followUps.take();
+                        paused = false;
+                        followUpPending.set(false);
+                        if (cancelled.get()) return;
+                        if (followUp.isEmpty()) {
                             listener.completed(result);
+                            deleteThread(reader);
                             return;
                         }
-                        if (completedTurns == 3) {
-                            listener.failed("Explorer의 저장 거부 항목이 정정되거나 차단 이유로 보고되지 않아 완료할 수 없습니다.");
-                            return;
-                        }
-                        listener.activity(activity("WARNING", "탐색 보완 요청",
-                                "미해결 저장 거부 항목을 같은 Codex 대화에서 다시 확인합니다.", "RUNNING", null));
-                        instruction = repair;
+                        instruction = followUp;
+                        completedTurns = 0;
                     }
                 }
             } catch (Exception error) {
@@ -505,8 +519,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         @Override public void steer(String message) {
             String safe = Masking.truncate(Masking.maskSecrets(message == null ? "" : message.trim()), 4_000);
-            if (safe.isBlank() || threadId.isBlank() || turnId.isBlank() || cancelled.get()) {
-                throw new IllegalStateException("진행 중인 Explorer turn이 없습니다.");
+            if (safe.isBlank() || threadId.isBlank() || cancelled.get())
+                throw new IllegalStateException("진행 중인 Explorer 대화가 없습니다.");
+            if (turnId.isBlank()) {
+                if (!paused) throw new IllegalStateException("Explorer turn 전환 중입니다. 잠시 후 다시 보내세요.");
+                if (!followUpPending.compareAndSet(false, true))
+                    throw new IllegalStateException("이전 추가 지시를 전송 중입니다. 잠시 후 다시 보내세요.");
+                followUps.add(safe);
+                listener.activity(activity("OPERATOR", "사용자 추가 지시", safe, "SENT", null));
+                return;
             }
             ObjectNode params = JSON.createObjectNode();
             params.put("threadId", threadId);
@@ -516,8 +537,17 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             listener.activity(activity("OPERATOR", "사용자 메시지", safe, "SENT", null));
         }
 
+        @Override public void finish() {
+            if (threadId.isBlank() || !paused || cancelled.get())
+                throw new IllegalStateException("추가 지시 대기 상태에서만 완료할 수 있습니다.");
+            if (!followUpPending.compareAndSet(false, true))
+                throw new IllegalStateException("이전 추가 지시를 전송 중입니다.");
+            followUps.add("");
+        }
+
         @Override public void cancel() {
             cancelled.set(true);
+            followUps.offer("");
             try {
                 if (!threadId.isBlank() && !turnId.isBlank()) {
                     ObjectNode params = JSON.createObjectNode().put("threadId", threadId).put("turnId", turnId);
@@ -615,19 +645,19 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode browserTool() {
             ObjectNode tool = JSON.createObjectNode().put("type", "function")
                     .put("name", "flowscope_browser")
-                    .put("description", "Drive an isolated Explorer browser window (empty account for anonymous, or an operator-prepared login handle). JavaScript and SPA XHRs run in that window. Returns URL, title, clickable elements, and masked text; use flowscope_http_request for independent response comparison.");
+                    .put("description", "Drive an isolated Explorer browser window (empty account for anonymous, or an operator-prepared login handle). Follow screens, tabs, lists, details, and lazy content; JavaScript and SPA XHRs run in that window. Read flowscope_observations after actions. Declared routes do not require HTTP replay merely to count as collected.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object").put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
             properties.putObject("account").put("type", "string")
                     .put("description", "Empty string drives the run's anonymous window when enabled; a registered handle drives its prepared login window.");
             properties.putObject("action").put("type", "string").putArray("enum")
-                    .add("navigate").add("click").add("type").add("back").add("snapshot");
+                    .add("navigate").add("click").add("type").add("scroll").add("back").add("snapshot");
             properties.putObject("url").put("type", "string")
                     .put("description", "Exact-scope URL for navigate; empty otherwise.");
             properties.putObject("ref").put("type", "string")
                     .put("description", "Element ref from a previous page's elements, for click and type; empty otherwise.");
             properties.putObject("text").put("type", "string")
-                    .put("description", "Text to type. Never a password: the operator has already logged in.");
+                    .put("description", "Text to type; for scroll, use up or down. Never a password: the operator has already logged in.");
             schema.putArray("required").add("account").add("action").add("url").add("ref").add("text");
             return tool;
         }
@@ -646,7 +676,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private ObjectNode worklistTool() {
             ObjectNode tool = dynamicTool("flowscope_worklist",
-                    "Read this run's Evidence-linked endpoint declarations and pending rejected discoveries. States distinguish observed, unrequested, failed, and templates needing a concrete resource ID. There is no knowable global coverage denominator. Retry a corrected item with replaces_issue_id, or report its issue ID and specific blocker in final unresolved.");
+                    "Read this run's automatic and model-declared endpoint candidates separately from observed HTTP evidence, with provenance and pending rejected discoveries. This is a discovery inventory, not a requirement to replay every declaration. Retry a corrected issue with replaces_issue_id or report its blocker.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
                     .put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
@@ -693,7 +723,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private ObjectNode artifactIndexTool() {
             ObjectNode tool = dynamicTool("flowscope_artifact_index",
-                    "Return FlowScope's deterministic JavaScript AST call-site, parameter, chunk, and unresolved-construct index for one active-run JavaScript artifact. This index is evidence, not an LLM verdict.");
+                    "Return FlowScope's deterministic JavaScript AST call-site, parameter, chunk, client screen route, and unresolved-construct index for one active-run JavaScript artifact. Visit unexamined in-scope client_routes in the browser; this index is evidence, not a verdict.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
                     .put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");

@@ -20,6 +20,38 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Opt-in real Chromium gate; ordinary CI uses the deterministic CDP and policy tests. */
 final class ChromiumScopeRuntimeHarnessTest {
     @Test
+    void scrollingRevealsInScopeLazyApiWithoutGuessingItsUrl() throws Exception {
+        Assumptions.assumeTrue(Boolean.getBoolean("flowscope.harness"));
+        AtomicInteger lazyRequests = new AtomicInteger();
+        String html = "<div style='height:3000px'>scroll</div><script>let seen=false;"
+                + "addEventListener('scroll',()=>{if(!seen){seen=true;fetch('/api/lazy')}})</script>";
+        try (LoopbackHttpServer target = new LoopbackHttpServer(0, request -> {
+            if ("/api/lazy".equals(URI.create(request.path()).getPath())) {
+                lazyRequests.incrementAndGet();
+                return new LoopbackHttpServer.Response(200, Map.of("Content-Type", "application/json"),
+                        "{\"id\":481}".getBytes(StandardCharsets.UTF_8));
+            }
+            return new LoopbackHttpServer.Response(200, Map.of("Content-Type", "text/html"),
+                    html.getBytes(StandardCharsets.UTF_8));
+        })) {
+            target.start();
+            String start = "http://127.0.0.1:" + target.port() + "/";
+            BrowserScopePolicy policy = new BrowserScopePolicy(ScopePolicy.parse(start)::allows);
+            List<LoginBrowser.Exchange> recorded = new CopyOnWriteArrayList<>();
+            try (LoginBrowser.Session browser = new ChromiumLoginBrowser().open(
+                    URI.create("about:blank"), recorded::add)) {
+                browser.recording("run-scroll", policy::allows);
+                browser.navigate(start);
+                assertEquals(0, lazyRequests.get());
+                browser.scroll("", "down");
+                long deadline = System.currentTimeMillis() + 3_000;
+                while (lazyRequests.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(25);
+                assertEquals(1, lazyRequests.get());
+            }
+        }
+    }
+
+    @Test
     void coordinatorLoadsAnonymousStartPageBeforeStartingTheModel() throws Exception {
         Assumptions.assumeTrue(Boolean.getBoolean("flowscope.harness"));
         try (LoopbackHttpServer target = new LoopbackHttpServer(0, request ->

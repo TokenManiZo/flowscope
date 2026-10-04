@@ -197,6 +197,10 @@ final class CodexAppServerProtocolTest {
     private static ExplorerProvider.Listener listener(Capture capture) {
         return new ExplorerProvider.Listener() {
             @Override public void activity(ExplorerProvider.Activity activity) { }
+            @Override public void paused(ExplorerProvider.Result value) {
+                capture.result().set(value);
+                capture.done().countDown();
+            }
             @Override public void completed(ExplorerProvider.Result value) {
                 capture.result().set(value);
                 capture.done().countDown();
@@ -272,6 +276,7 @@ final class CodexAppServerProtocolTest {
         Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         ExplorerProvider.Listener listener = new ExplorerProvider.Listener() {
             @Override public void activity(ExplorerProvider.Activity value) { activities.add(value); }
+            @Override public void paused(ExplorerProvider.Result value) { capture.done().countDown(); }
             @Override public void completed(ExplorerProvider.Result value) { capture.done().countDown(); }
             @Override public void failed(String message) { capture.done().countDown(); }
         };
@@ -300,6 +305,7 @@ final class CodexAppServerProtocolTest {
         Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         ExplorerProvider.Listener listener = new ExplorerProvider.Listener() {
             @Override public void activity(ExplorerProvider.Activity value) { activities.add(value); }
+            @Override public void paused(ExplorerProvider.Result value) { capture.done().countDown(); }
             @Override public void completed(ExplorerProvider.Result value) { capture.done().countDown(); }
             @Override public void failed(String message) { capture.done().countDown(); }
         };
@@ -375,6 +381,10 @@ final class CodexAppServerProtocolTest {
             @Override public String review(ExplorerProvider.Result result, int completedTurns) {
                 return completedTurns == 1 ? "issue-1을 수정해서 다시 저장하세요." : "";
             }
+            @Override public void paused(ExplorerProvider.Result value) {
+                capture.result().set(value);
+                capture.done().countDown();
+            }
             @Override public void completed(ExplorerProvider.Result result) {
                 capture.result().set(result);
                 capture.done().countDown();
@@ -410,13 +420,61 @@ final class CodexAppServerProtocolTest {
     }
 
     @Test
-    void ignoredReviewStopsAfterThreeTurnsInsteadOfLoopingForever() throws Exception {
+    void operatorCanContinueAfterTurnCompletionInTheSameCodexThreadAndFinishExplicitly() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger turns = new java.util.concurrent.atomic.AtomicInteger();
+        CountDownLatch firstPause = new CountDownLatch(1);
+        CountDownLatch secondPause = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicReference<FakeCodex> codex = new AtomicReference<>();
+        try (CodexAppServerProvider provider = new CodexAppServerProvider((command, cwd, environment) -> {
+            FakeCodex fake = new FakeCodex((self, turn) -> {
+                int number = turns.incrementAndGet();
+                try {
+                    self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\","
+                            + "\"text\":\"{\\\"summary\\\":\\\"turn " + number
+                            + "\\\",\\\"unresolved\\\":[]}" + "\"}}}");
+                    self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                } catch (IOException ignored) { }
+            });
+            codex.set(fake);
+            return fake;
+        }, ignored -> { })) {
+            ExplorerProvider.Handle handle = provider.start(request(), new ExplorerProvider.Listener() {
+                @Override public void activity(ExplorerProvider.Activity value) { }
+                @Override public void paused(ExplorerProvider.Result value) {
+                    if (turns.get() == 1) firstPause.countDown();
+                    else secondPause.countDown();
+                }
+                @Override public void completed(ExplorerProvider.Result value) { completed.countDown(); }
+                @Override public void failed(String message) { fail(message); }
+            });
+            assertTrue(firstPause.await(10, TimeUnit.SECONDS));
+            assertTrue(codex.get().isAlive());
+            handle.steer("다음 화면을 더 살펴봐");
+            assertTrue(secondPause.await(10, TimeUnit.SECONDS));
+            assertEquals(2, turns.get());
+            JsonNode continued = codex.get().awaitWritten(value -> "turn/start".equals(value.path("method").asText())
+                    && value.path("params").path("input").toString().contains("다음 화면"));
+            assertEquals("t1", continued.path("params").path("threadId").asText());
+            assertEquals(1, completed.getCount(), "turn completion must not close the run");
+            handle.finish();
+            assertTrue(completed.await(10, TimeUnit.SECONDS));
+            codex.get().awaitWritten(value -> "thread/delete".equals(value.path("method").asText()));
+        }
+    }
+
+    @Test
+    void ignoredReviewWaitsForOperatorAfterThreeTurnsInsteadOfFailingOrLoopingForever() throws Exception {
         java.util.concurrent.atomic.AtomicInteger turns = new java.util.concurrent.atomic.AtomicInteger();
         Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         ExplorerProvider.Listener reviewing = new ExplorerProvider.Listener() {
             @Override public void activity(ExplorerProvider.Activity activity) { }
             @Override public String review(ExplorerProvider.Result result, int completedTurns) {
                 return "issue-1 remains unresolved";
+            }
+            @Override public void paused(ExplorerProvider.Result value) {
+                capture.result().set(value);
+                capture.done().countDown();
             }
             @Override public void completed(ExplorerProvider.Result result) {
                 capture.result().set(result);
@@ -437,8 +495,8 @@ final class CodexAppServerProtocolTest {
             assertTrue(capture.done().await(10, TimeUnit.SECONDS));
         }
         assertEquals(3, turns.get());
-        assertNull(capture.result().get());
-        assertTrue(capture.failure().get().contains("저장 거부"));
+        assertNotNull(capture.result().get());
+        assertNull(capture.failure().get());
     }
 
     /** turn/completed carries every item of the turn, so a long run can overflow after all its work is done. */

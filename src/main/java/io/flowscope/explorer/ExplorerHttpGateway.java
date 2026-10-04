@@ -38,14 +38,18 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                         int httpStatus, String evidenceId, long durationMillis, String message) {}
 
     private record Observation(long sequence, String accountId, String method, String url,
-                               int httpStatus, String evidenceId, String recordState) {}
+                               int httpStatus, String evidenceId, String recordState,
+                               String contentType, String bodyPreview) {}
 
     private record DiscoveryParameter(SurfaceAnalysis.ParameterLocation location, String fieldPath,
                                       String displayName, SurfaceAnalysis.Requirement requirement,
                                       String replacesIssueId) {}
     record PendingIssue(String id, String kind, String target, String reason,
                         String endpointKey, String sourceKey) {}
-    private record DeclaredTarget(String method, String url, List<String> evidenceIds) {}
+    record ReviewTask(String kind, String target, String reason) {}
+    private record DeclaredTarget(String method, String url, List<String> evidenceIds,
+                                  List<String> observationEvidenceIds,
+                                  List<RouteCandidate.Provenance> provenance) {}
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
@@ -85,6 +89,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
     private final Map<String, PendingIssue> pendingIssues = new LinkedHashMap<>();
     private final Map<String, DeclaredTarget> declaredTargets = new LinkedHashMap<>();
+    private final Set<String> reviewedTargetKeys = new LinkedHashSet<>();
+    private final Set<String> indexedJavascriptArtifacts = new LinkedHashSet<>();
+    private final Map<String, Integer> nextIndexOffsets = new LinkedHashMap<>();
     private long nextIssueId;
     private long worklistReads;
     private final List<Observation> observations = new ArrayList<>();
@@ -92,6 +99,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final ExplorerArtifactStore artifacts;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private volatile BrowserDriver browser;
+    private volatile java.util.function.Supplier<List<RouteCandidate>> candidateSource = List::of;
 
     /** Drives the window the operator logged in to. Scope, budget and the stop switch live on the coordinator. */
     public interface BrowserDriver {
@@ -106,12 +114,44 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     public String worklistUrl() { return "http://127.0.0.1:" + server.port() + "/worklist"; }
     public synchronized List<PendingIssue> pendingIssues() { return List.copyOf(pendingIssues.values()); }
     public synchronized long worklistReads() { return worklistReads; }
+    synchronized List<ReviewTask> pendingReviewTasks() {
+        List<ReviewTask> tasks = new ArrayList<>();
+        long unread = currentTargets().keySet().stream().filter(key -> !reviewedTargetKeys.contains(key)).count();
+        if (unread > 0) tasks.add(new ReviewTask("WORKLIST_UNREAD", runId,
+                "현재 run의 선언·관측 항목 " + unread + "건이 worklist에서 아직 읽히지 않았습니다."));
+        for (ExplorerArtifactStore.Metadata artifact : artifacts.list()) {
+            if (javascript(artifact.contentType(), artifact.url())
+                    && !indexedJavascriptArtifacts.contains(artifact.id())) {
+                tasks.add(new ReviewTask("JS_ARTIFACT_UNINDEXED", artifact.id(),
+                        "JavaScript 산출물의 AST call-site·화면 라우트를 아직 끝까지 읽지 않았습니다."));
+            }
+        }
+        Set<String> readableAssets = observations.stream()
+                .filter(item -> item.recordState().equals("EVIDENCE_STORED") && item.method().equals("GET"))
+                .map(Observation::url).collect(java.util.stream.Collectors.toSet());
+        observations.stream().filter(item -> item.recordState().equals("BROWSER_CAPTURED")
+                        && item.method().equals("GET") && item.httpStatus() >= 200 && item.httpStatus() < 300
+                        && (javascript(item.contentType(), item.url()) || item.url().matches("(?i).*\\.map(?:\\?.*)?")))
+                .map(Observation::url).distinct().filter(url -> !readableAssets.contains(url))
+                .forEach(url -> tasks.add(new ReviewTask("BROWSER_SCRIPT_UNREAD", url,
+                        "브라우저가 받은 JavaScript/source map의 전체 산출물을 아직 읽지 않았습니다.")));
+        return List.copyOf(tasks);
+    }
+    public void candidateSource(java.util.function.Supplier<List<RouteCandidate>> source) {
+        candidateSource = source == null ? List::of : source;
+    }
 
     /** CDP saw a response, but Evidence publication is asynchronous and must not be claimed here. */
     public synchronized void browserObserved(String observedRunId, String accountId, String method,
                                              String url, int status) {
-        if (!runId.equals(observedRunId)) return;
-        addObservation(accountId, method, url, status, "", "BROWSER_CAPTURED");
+        browserObserved(observedRunId, accountId, method, url, status, "", "");
+    }
+
+    public synchronized void browserObserved(String observedRunId, String accountId, String method,
+                                             String url, int status, String contentType, String responseBody) {
+        if (!runId.equals(observedRunId) || !exactScope.test(url)) return;
+        String preview = Masking.truncate(Masking.maskBody(responseBody, contentType), 4_096);
+        addObservation(accountId, method, url, status, "", "BROWSER_CAPTURED", contentType, preview);
     }
 
     public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
@@ -361,7 +401,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                         .put("account", observation.accountId()).put("method", observation.method())
                         .put("url", observation.url()).put("status", observation.httpStatus())
                         .put("evidence_id", observation.evidenceId())
-                        .put("record_state", observation.recordState());
+                        .put("record_state", observation.recordState())
+                        .put("content_type", observation.contentType())
+                        .put("body_preview", observation.bodyPreview());
                 cursor = observation.sequence();
             }
             result.put("next_sequence", cursor);
@@ -382,18 +424,22 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             int limit = body.path("limit").isMissingNode() ? 100 : body.path("limit").asInt(-1);
             if (offset < 0 || limit < 1 || limit > 100) return error(400, "offset은 0 이상, limit는 1~100이어야 합니다.");
             worklistReads++;
+            Map<String, DeclaredTarget> targets = currentTargets();
             ObjectNode result = JSON.createObjectNode().put("run_id", runId)
-                    .put("declared_total", declaredTargets.size()).put("pending_total", pendingIssues.size());
+                    .put("declared_total", targets.size()).put("pending_total", pendingIssues.size());
             ArrayNode declared = result.putArray("declared_endpoints");
             int index = 0;
-            for (DeclaredTarget target : declaredTargets.values()) {
+            for (Map.Entry<String, DeclaredTarget> entry : targets.entrySet()) {
                 if (index++ < offset) continue;
                 if (declared.size() == limit) break;
+                DeclaredTarget target = entry.getValue();
+                reviewedTargetKeys.add(entry.getKey());
                 boolean concrete = !target.url().contains("{");
                 List<Observation> attempts = concrete ? observations.stream()
                         .filter(item -> item.method().equals(target.method()) && item.url().equals(target.url()))
                         .toList() : List.of();
-                String state = !concrete ? "NEEDS_CONCRETE_URL" : attempts.stream()
+                String state = !target.observationEvidenceIds().isEmpty() ? "OBSERVED"
+                        : !concrete ? "NEEDS_CONCRETE_URL" : attempts.stream()
                         .anyMatch(item -> item.recordState().equals("EVIDENCE_STORED")) ? "OBSERVED"
                         : attempts.isEmpty() ? "UNREQUESTED" : "ATTEMPTED_NO_EVIDENCE";
                 ObjectNode item = declared.addObject().put("method", target.method())
@@ -401,11 +447,19 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                         .put("state", state);
                 ArrayNode evidence = item.putArray("declaration_evidence_ids");
                 target.evidenceIds().forEach(evidence::add);
+                ArrayNode observedEvidence = item.putArray("observation_evidence_ids");
+                target.observationEvidenceIds().forEach(observedEvidence::add);
+                ArrayNode origins = item.putArray("provenance");
+                for (RouteCandidate.Provenance origin : target.provenance()) {
+                    origins.addObject().put("type", origin.type().name())
+                            .put("evidence_id", origin.evidenceId()).put("adapter", origin.adapter())
+                            .put("reason", Masking.truncate(Masking.maskSecrets(origin.reason()), 500));
+                }
                 ArrayNode accounts = item.putArray("observed_accounts");
                 attempts.stream().filter(attempt -> attempt.recordState().equals("EVIDENCE_STORED"))
                         .map(Observation::accountId).distinct().forEach(accounts::add);
             }
-            result.put("next_offset", offset + declared.size() < declaredTargets.size()
+            result.put("next_offset", offset + declared.size() < targets.size()
                     ? offset + declared.size() : -1);
             ArrayNode issues = result.putArray("pending_issues");
             for (PendingIssue issue : pendingIssues.values()) {
@@ -416,6 +470,25 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         } catch (IllegalArgumentException error) {
             return error(400, error.getMessage());
         }
+    }
+
+    private Map<String, DeclaredTarget> currentTargets() {
+        Map<String, DeclaredTarget> targets = new LinkedHashMap<>(declaredTargets);
+        for (RouteCandidate candidate : candidateSource.get()) {
+            List<RouteCandidate.Provenance> current = candidate.provenance().stream()
+                    .filter(value -> value.source() == Source.LLM && runId.equals(value.runId())).toList();
+            if (current.isEmpty()) continue;
+            String url = candidate.service() + candidate.pathTemplate();
+            if (!exactScope.test(url.replaceAll("\\{[^/{}]+}", "1"))) continue;
+            String key = candidate.service() + "\0" + candidate.method() + "\0" + candidate.pathTemplate();
+            DeclaredTarget target = new DeclaredTarget(candidate.method(), url,
+                    current.stream().filter(value -> value.type() != RouteCandidate.ProvenanceType.OBSERVED_REQUEST)
+                            .map(RouteCandidate.Provenance::evidenceId).distinct().toList(),
+                    current.stream().filter(value -> value.type() == RouteCandidate.ProvenanceType.OBSERVED_REQUEST)
+                            .map(RouteCandidate.Provenance::evidenceId).distinct().toList(), current);
+            targets.merge(key, target, ExplorerHttpGateway::mergeTarget);
+        }
+        return targets;
     }
 
     private LoopbackHttpServer.Response handleArtifacts(String operation, JsonNode body) {
@@ -490,6 +563,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 .put("detail", analysis.detail()).put("offset", offset).put("max_items", maxItems)
                 .put("call_site_total", analysis.callSites().size())
                 .put("asset_total", analysis.assets().size()).put("issue_total", analysis.issues().size());
+        result.put("client_route_total", analysis.clientRoutes().size());
         var calls = result.putArray("call_sites");
         for (JavascriptAnalysis.CallSite call : slice(analysis.callSites(), offset, maxItems)) {
             ObjectNode value = calls.addObject().put("reference", call.reference()).put("method", call.method())
@@ -510,9 +584,24 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             issues.addObject().put("kind", issue.kind().name()).put("adapter", issue.adapter())
                     .put("detail", issue.detail()).put("line", issue.line()).put("column", issue.column());
         }
+        var routes = result.putArray("client_routes");
+        for (JavascriptAnalysis.ClientRoute route : slice(analysis.clientRoutes(), offset, maxItems)) {
+            routes.addObject().put("path", route.path()).put("line", route.line())
+                    .put("column", route.column());
+        }
         boolean more = analysis.callSites().size() > offset + maxItems
-                || analysis.assets().size() > offset + maxItems || analysis.issues().size() > offset + maxItems;
-        result.put("next_offset", more ? offset + maxItems : -1);
+                || analysis.assets().size() > offset + maxItems || analysis.issues().size() > offset + maxItems
+                || analysis.clientRoutes().size() > offset + maxItems;
+        int nextOffset = more ? offset + maxItems : -1;
+        result.put("next_offset", nextOffset);
+        synchronized (this) {
+            if (offset == nextIndexOffsets.getOrDefault(artifactId, 0)) {
+                if (nextOffset < 0) {
+                    indexedJavascriptArtifacts.add(artifactId);
+                    nextIndexOffsets.remove(artifactId);
+                } else nextIndexOffsets.put(artifactId, nextOffset);
+            }
+        }
         writeMetadata(result.putObject("metadata"), metadata);
         return json(200, result);
     }
@@ -695,7 +784,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     accepted.add(new RouteCandidate(service, method, pathTemplate, concretePaths, false, false,
                             provenance, RouteCandidate.Applicability.REVIEW, reason, parameters));
                     newTargets.merge(endpointKey, new DeclaredTarget(method,
-                            Masking.truncate(Masking.maskSecrets(target), 2_048), evidenceIds),
+                            Masking.truncate(Masking.maskSecrets(target), 2_048), evidenceIds,
+                            List.of(), List.of()),
                             ExplorerHttpGateway::mergeTarget);
                     if (!replacesIssueId.isBlank()) resolvedIssueIds.add(replacesIssueId);
                     validParameters.stream().map(DiscoveryParameter::replacesIssueId)
@@ -802,7 +892,12 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private static DeclaredTarget mergeTarget(DeclaredTarget first, DeclaredTarget second) {
         Set<String> evidence = new LinkedHashSet<>(first.evidenceIds());
         evidence.addAll(second.evidenceIds());
-        return new DeclaredTarget(first.method(), first.url(), List.copyOf(evidence));
+        Set<String> observed = new LinkedHashSet<>(first.observationEvidenceIds());
+        observed.addAll(second.observationEvidenceIds());
+        Set<RouteCandidate.Provenance> provenance = new LinkedHashSet<>(first.provenance());
+        provenance.addAll(second.provenance());
+        return new DeclaredTarget(first.method(), first.url(), List.copyOf(evidence),
+                List.copyOf(observed), List.copyOf(provenance));
     }
 
     private static URI absoluteHttpUri(String value) {
@@ -937,7 +1032,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         String storedId = evidenceId == null ? "" : evidenceId;
         synchronized (this) {
             addObservation(accountId, method, safeUrl, httpStatus, storedId,
-                    storedId.isBlank() ? "REQUEST_FAILED" : "EVIDENCE_STORED");
+                    storedId.isBlank() ? "REQUEST_FAILED" : "EVIDENCE_STORED", "", "");
         }
         events.accept(new Event(Instant.now(), status, accountId, method,
                 safeUrl, httpStatus, storedId, duration,
@@ -945,10 +1040,12 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     }
 
     private void addObservation(String accountId, String method, String url, int status,
-                                String evidenceId, String state) {
+                                String evidenceId, String state, String contentType, String bodyPreview) {
         if (observations.size() == 4_000) observations.removeFirst();
         observations.add(new Observation(++observationSequence, accountId == null ? "" : accountId,
-                method, Masking.truncate(Masking.maskSecrets(url), 2_048), status, evidenceId, state));
+                method, Masking.truncate(Masking.maskSecrets(url), 2_048), status, evidenceId, state,
+                contentType == null ? "" : contentType,
+                bodyPreview == null ? "" : bodyPreview));
     }
 
     private boolean authorized(String header) {
@@ -1003,6 +1100,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         declaredParameterProvenanceKeys.clear();
         pendingIssues.clear();
         declaredTargets.clear();
+        reviewedTargetKeys.clear();
+        indexedJavascriptArtifacts.clear();
+        nextIndexOffsets.clear();
         observations.clear();
         server.close();
     }

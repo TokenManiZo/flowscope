@@ -409,6 +409,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput);
         explorer.browserRecorder(this::recordBrowserExchange);
+        explorer.candidateSource(() -> routeCandidates);
         try {
             startWebUi();
         } catch (Exception e) {
@@ -2028,6 +2029,7 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public ExplorerCoordinator.Snapshot steerExplorer(String message) {
                 return explorer.steer(message);
             }
+            @Override public ExplorerCoordinator.Snapshot completeExplorer() { return explorer.complete(); }
             @Override public ExplorerCoordinator.Snapshot cancelExplorer() { return explorer.cancel(); }
             @Override public ExplorerCoordinator.Snapshot clearExplorer() { return explorer.clear(); }
             @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {

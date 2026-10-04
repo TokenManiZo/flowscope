@@ -791,7 +791,7 @@ export interface ExplorerActivity {
 export interface ExplorerUnresolved { kind: string; target: string; reason: string }
 
 export interface ExplorerRun {
-  status: "IDLE" | "AUTHENTICATING" | "RUNNING" | "COMPLETED" | "COMPLETED_WITH_LIMITATIONS" | "FAILED" | "CANCELLED" | "FAILED_CLEANUP"
+  status: "IDLE" | "AUTHENTICATING" | "RUNNING" | "WAITING_INPUT" | "FINISHING" | "COMPLETED" | "COMPLETED_WITH_LIMITATIONS" | "FAILED" | "CANCELLED" | "FAILED_CLEANUP"
   runId: string
   target: string
   startedAt: string | null

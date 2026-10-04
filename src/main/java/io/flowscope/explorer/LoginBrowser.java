@@ -46,6 +46,8 @@ interface LoginBrowser {
 
         Page click(String ref) throws IOException;
 
+        Page scroll(String ref, String direction) throws IOException;
+
         Page type(String ref, String text) throws IOException;
 
         Page back() throws IOException;

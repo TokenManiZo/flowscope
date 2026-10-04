@@ -394,3 +394,27 @@ it("keeps work messages and reports transmission success and retryable failure",
   expect(screen.queryByText("현재 프로젝트 상세에서 항목을 읽습니다.")).not.toBeInTheDocument()
   expect(screen.getByText("프로젝트 상세 탐색 중")).toBeVisible()
 })
+
+it("keeps the same Explorer run available for follow-up until the operator completes it", async () => {
+  const user = userEvent.setup()
+  const waiting = { ...idle, run: { ...idle.run, status: "WAITING_INPUT", runId: "same-run",
+    message: "추가 지시 대기", unresolved: [{ kind: "SCREEN", target: "/more", reason: "화면 미방문" }] } }
+  const posts: string[] = []
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      posts.push(String(init.body))
+      return new Response(JSON.stringify({ run: waiting.run }), { headers: { "Content-Type": "application/json" } })
+    }
+    return new Response(JSON.stringify(waiting), { headers: { "Content-Type": "application/json" } })
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  expect((await screen.findAllByText("추가 지시 대기")).length).toBeGreaterThan(0)
+  expect(screen.getByRole("button", { name: "탐색 완료" })).toBeEnabled()
+  expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeDisabled()
+  expect(screen.getByRole("link", { name: "API·입력 차이" })).toHaveAttribute("href", "#surface")
+  await user.type(screen.getByLabelText("Explorer에게 추가 지시"), "남은 화면 확인")
+  await user.click(screen.getByRole("button", { name: "메시지 전송" }))
+  await waitFor(() => expect(posts[0]).toContain("action=steer"))
+  await user.click(screen.getByRole("button", { name: "탐색 완료" }))
+  await waitFor(() => expect(posts[1]).toContain("action=complete"))
+})

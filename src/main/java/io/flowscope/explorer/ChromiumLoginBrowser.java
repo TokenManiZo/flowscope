@@ -238,6 +238,18 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             return settle();
         }
 
+        @Override public Page scroll(String ref, String direction) throws IOException {
+            int sign = "down".equals(direction) ? 1 : "up".equals(direction) ? -1 : 0;
+            if (sign == 0) throw new IllegalArgumentException("scroll 방향은 up 또는 down이어야 합니다.");
+            require(evaluate("""
+                    (() => { const ref = %s;
+                      const el = ref ? document.querySelector('[data-flowscope-ref=' + JSON.stringify(ref) + ']') : window;
+                      if (!el) return 'missing';
+                      el.scrollBy(0, %d * Math.max(300, Math.floor(window.innerHeight * .8)));
+                      return 'ok'; })()""".formatted(quote(ref), sign)), ref);
+            return settle();
+        }
+
         @Override public Page type(String ref, String text) throws IOException {
             require(evaluate("""
                     (() => { const el = document.querySelector('[data-flowscope-ref=%s]');

@@ -22,7 +22,7 @@ import {
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
 import { AccountLaneTable } from "./AccountLaneTable"
 
-const activeStates = new Set(["AUTHENTICATING", "RUNNING"])
+const activeStates = new Set(["AUTHENTICATING", "RUNNING", "WAITING_INPUT", "FINISHING"])
 
 function formatElapsed(value: number): string {
   const seconds = Math.max(0, Math.floor(value / 1_000))
@@ -180,6 +180,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
     {browserCard}
     <div className="flex flex-wrap items-center justify-start gap-2 border-t pt-3">
       <Button size="sm" disabled={!providerReady || active || start.isPending || modelLoading || modelUnavailable || !target || (!nextAnonymous && nextSelected.length === 0)} onClick={() => start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous, model: nextModel })}><Play className="size-4" />탐색 시작</Button>
+      {run?.status === "WAITING_INPUT" && <Button variant="outline" disabled={control.isPending} onClick={() => control.mutate("complete")}>탐색 완료</Button>}
       {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />중단</Button>
         : run && run.status !== "IDLE" ? <Button variant="outline" onClick={() => control.mutate("clear")}>실행 표시 지우기</Button> : null}
       <span className="text-xs text-muted-foreground">{(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>
@@ -191,14 +192,15 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0 }: {
       <summary className="cursor-pointer font-medium text-amber-800 dark:text-amber-300">확인하지 못한 항목 {run.unresolved.length}건 · 펼치기</summary>
       <div className="mt-2 grid gap-3">{run.unresolved.map((item, index) => <div key={`${item.kind}-${index}`}><p className="break-words">{item.reason}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{item.kind} · {item.target}</p></div>)}</div>
     </details> : null}
+    <p className="border-t px-3 py-2 text-xs text-muted-foreground">선언된 경로와 실제 응답은 <a className="underline underline-offset-2" href="#surface">API·입력 차이</a>에서 근거·상태를 구분해 확인할 수 있습니다.</p>
     <form className="grid gap-1.5 border-t p-3" onSubmit={(event) => {
       event.preventDefault()
       if (!operatorMessage.trim() || steer.isPending) return
       setSteerState(null)
       steer.mutate(operatorMessage, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     }}>
-      <div className="flex gap-2"><Input aria-label="Explorer에게 추가 지시" value={operatorMessage} onChange={(event) => setOperatorMessage(event.target.value)} placeholder="실행 중 추가할 사실 기반 지시" disabled={run?.status !== "RUNNING" || steer.isPending} />
-      <Button type="submit" size="icon" aria-label="메시지 전송" disabled={run?.status !== "RUNNING" || !operatorMessage.trim() || steer.isPending}><Send className="size-4" /></Button></div>
+      <div className="flex gap-2"><Input aria-label="Explorer에게 추가 지시" value={operatorMessage} onChange={(event) => setOperatorMessage(event.target.value)} placeholder="미해결 항목도 같은 대화에서 계속 탐색할 수 있습니다" disabled={(run?.status !== "RUNNING" && run?.status !== "WAITING_INPUT") || steer.isPending} />
+      <Button type="submit" size="icon" aria-label="메시지 전송" disabled={(run?.status !== "RUNNING" && run?.status !== "WAITING_INPUT") || !operatorMessage.trim() || steer.isPending}><Send className="size-4" /></Button></div>
       <p role="status" className="text-xs text-muted-foreground">{steer.isPending ? "추가 지시 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : ""}</p>
     </form>
   </>

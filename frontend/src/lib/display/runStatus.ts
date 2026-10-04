@@ -1,7 +1,7 @@
 /** 실행 상태(HUMAN·ZAP·LLM·lane)의 서버 값을 화면용 한국어로 바꾼다. 원래 값은 호출부가 title로 남긴다. */
 const labels: Record<string, string> = {
   NOT_STARTED: "대기", IDLE: "대기", PENDING: "대기", QUEUED: "대기열",
-  STARTING: "시작 중", AUTHENTICATING: "로그인 중", RUNNING: "진행 중",
+  STARTING: "시작 중", AUTHENTICATING: "로그인 중", RUNNING: "진행 중", WAITING_INPUT: "추가 지시 대기", FINISHING: "완료 처리 중",
   COMPLETED: "완료", DONE: "완료", COMPLETED_WITH_LIMITATIONS: "완료 (제한 있음)",
   FAILED: "실패", FAILED_CLEANUP: "정리 실패", ERROR: "오류", CANCELLED: "취소됨",
   UNAVAILABLE: "연결 안 됨", READY: "준비됨", CONNECTED: "연결됨",
@@ -10,7 +10,7 @@ const labels: Record<string, string> = {
 export type RunStatusTone = "idle" | "active" | "done" | "fail"
 
 const tones: Record<string, RunStatusTone> = {
-  STARTING: "active", AUTHENTICATING: "active", RUNNING: "active",
+  STARTING: "active", AUTHENTICATING: "active", RUNNING: "active", WAITING_INPUT: "active", FINISHING: "active",
   COMPLETED: "done", DONE: "done", COMPLETED_WITH_LIMITATIONS: "done", READY: "done", CONNECTED: "done",
   FAILED: "fail", FAILED_CLEANUP: "fail", ERROR: "fail",
 }

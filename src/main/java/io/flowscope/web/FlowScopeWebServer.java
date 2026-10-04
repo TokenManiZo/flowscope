@@ -197,6 +197,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default ExplorerCoordinator.Snapshot steerExplorer(String message) {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
+        default ExplorerCoordinator.Snapshot completeExplorer() {
+            throw new UnsupportedOperationException("Explorer workflow is unavailable");
+        }
         default ExplorerCoordinator.Snapshot cancelExplorer() {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
@@ -1328,6 +1331,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     status = 202;
                 }
                 case "steer" -> snapshot = state.steerExplorer(required(form, "message"));
+                case "complete" -> snapshot = state.completeExplorer();
                 case "cancel" -> snapshot = state.cancelExplorer();
                 case "clear" -> snapshot = state.clearExplorer();
                 case "recheck" -> snapshot = state.recheckExplorerProvider();

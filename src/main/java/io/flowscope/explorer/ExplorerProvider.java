@@ -36,12 +36,15 @@ public interface ExplorerProvider extends AutoCloseable {
         void activity(Activity activity);
         /** Empty accepts the turn; otherwise start one bounded repair turn in the same provider thread. */
         default String review(Result result, int completedTurns) { return ""; }
+        /** The turn is over, but its browser, gateway and provider thread remain available for operator follow-up. */
+        default void paused(Result result) {}
         void completed(Result result);
         void failed(String message);
     }
 
     interface Handle {
         void steer(String message);
+        default void finish() { throw new UnsupportedOperationException("Explorer 완료를 지원하지 않습니다."); }
         void cancel();
     }
 

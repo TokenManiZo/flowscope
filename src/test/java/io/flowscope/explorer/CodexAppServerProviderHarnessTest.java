@@ -62,6 +62,10 @@ final class CodexAppServerProviderHarnessTest {
                             selectedModel),
                     new ExplorerProvider.Listener() {
                         @Override public void activity(ExplorerProvider.Activity activity) { activities.add(activity); }
+                        @Override public void paused(ExplorerProvider.Result value) {
+                            result.set(value);
+                            completed.countDown();
+                        }
                         @Override public void completed(ExplorerProvider.Result value) {
                             result.set(value);
                             completed.countDown();
@@ -80,6 +84,40 @@ final class CodexAppServerProviderHarnessTest {
             assertEquals("https://provider-harness.invalid/", requestSeen.get().url());
             assertEquals("/api/check", discoveries.get().getFirst().pathTemplate(),
                     "model did not persist the Evidence-bound discovery; activities=" + activities);
+        }
+    }
+
+    @Test
+    void loggedInCodexAcceptsAFollowUpInTheSameThreadBeforeExplicitFinish() throws Exception {
+        try (CodexAppServerProvider provider = new CodexAppServerProvider()) {
+            assertEquals("READY", provider.readiness());
+            CountDownLatch first = new CountDownLatch(1);
+            CountDownLatch second = new CountDownLatch(1);
+            CountDownLatch finished = new CountDownLatch(1);
+            List<ExplorerProvider.Result> turns = new CopyOnWriteArrayList<>();
+            AtomicReference<String> failure = new AtomicReference<>();
+            ExplorerProvider.Handle handle = provider.start(new ExplorerProvider.Request("run-follow-up",
+                    "https://provider-harness.invalid/", List.of("https://provider-harness.invalid/"),
+                    List.of(), "http://127.0.0.1:1/request", "http://127.0.0.1:1/discoveries", "token",
+                    "Do not call tools or access any target. Return a short JSON result, then wait for a follow-up."),
+                    new ExplorerProvider.Listener() {
+                        @Override public void activity(ExplorerProvider.Activity value) { }
+                        @Override public void paused(ExplorerProvider.Result value) {
+                            turns.add(value);
+                            if (turns.size() == 1) first.countDown();
+                            else second.countDown();
+                        }
+                        @Override public void completed(ExplorerProvider.Result value) { finished.countDown(); }
+                        @Override public void failed(String message) { failure.set(message); finished.countDown(); }
+                    });
+            assertTrue(first.await(3, TimeUnit.MINUTES), "first Codex turn did not pause");
+            assertEquals(1, finished.getCount(), "a completed turn must not end the run");
+            handle.steer("Return a second short JSON result in the same conversation; do not call tools.");
+            assertTrue(second.await(3, TimeUnit.MINUTES), "follow-up Codex turn did not pause");
+            assertEquals(turns.get(0).threadId(), turns.get(1).threadId());
+            handle.finish();
+            assertTrue(finished.await(10, TimeUnit.SECONDS));
+            assertNull(failure.get(), failure.get());
         }
     }
 }

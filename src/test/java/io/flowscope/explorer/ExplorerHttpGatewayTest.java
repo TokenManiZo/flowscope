@@ -48,6 +48,42 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
+    void browserObservationProvidesMaskedResponsePreviewForFollowingConcreteIds() throws Exception {
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no HTTP transport"); },
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-browser-body", ignored -> {})) {
+            gateway.browserObserved("run-browser-body", "", "GET", "https://app.example.test/api/orders",
+                    200, "application/json", "{\"orders\":[{\"id\":481,\"ownerId\":\"a\"}],\"token\":\"secret-value\"}");
+            JsonNode observation = JSON.readTree(post(gateway, gateway.observationsUrl(),
+                    "{\"after_sequence\":0,\"limit\":100}").body()).path("observations").get(0);
+            assertEquals("BROWSER_CAPTURED", observation.path("record_state").asText());
+            assertEquals("", observation.path("evidence_id").asText());
+            assertTrue(observation.path("body_preview").asText().contains("481"));
+            assertTrue(observation.path("body_preview").asText().contains("ownerId"));
+            assertFalse(observation.path("body_preview").asText().contains("secret-value"));
+        }
+    }
+
+    @Test
+    void browserLoadedJavascriptRemainsOnWorklistUntilItsFullResponseIsReadable() throws Exception {
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), "fetch('/api/from-chunk')", false,
+                "ev-full-script", 1, Instant.now());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-chunk", ignored -> {})) {
+            gateway.browserObserved("run-chunk", "", "GET", "https://app.example.test/static/chunk.js",
+                    200, "application/javascript", "fetch('/api/from-chunk')");
+            assertTrue(gateway.pendingReviewTasks().stream().anyMatch(task ->
+                    task.kind().equals("BROWSER_SCRIPT_UNREAD")));
+            post(gateway, """
+                    {"account":"","method":"GET","url":"https://app.example.test/static/chunk.js","headers":{},"body":""}
+                    """);
+            assertTrue(gateway.pendingReviewTasks().stream().noneMatch(task ->
+                    task.kind().equals("BROWSER_SCRIPT_UNREAD")));
+        }
+    }
+
+    @Test
     void worklistChangesConcreteDeclarationOnlyAfterStoredResponse() throws Exception {
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
                 "application/javascript", Map.of(), "fetch('/api/search')", false,
@@ -73,6 +109,36 @@ final class ExplorerHttpGatewayTest {
             assertEquals("OBSERVED", after.path("declared_endpoints").get(0).path("state").asText());
             assertEquals("", after.path("declared_endpoints").get(0)
                     .path("observed_accounts").get(0).asText());
+        }
+    }
+
+    @Test
+    void worklistIncludesAutomaticCurrentRunCandidatesWithoutInventingObservations() throws Exception {
+        RouteCandidate declared = new RouteCandidate("https://app.example.test:443", "GET", "/api/items/{id}",
+                false, List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL,
+                        "ev-js", Source.LLM, "run-auto", "javascript-ast")),
+                RouteCandidate.Applicability.REVIEW, "call-site");
+        RouteCandidate observed = new RouteCandidate("https://app.example.test:443", "GET", "/api/items",
+                true, List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.OBSERVED_REQUEST,
+                        "ev-browser", Source.LLM, "run-auto", "observed-request")),
+                RouteCandidate.Applicability.APPLICABLE, "response");
+        RouteCandidate foreign = new RouteCandidate("https://app.example.test:443", "GET", "/api/foreign",
+                false, List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.JAVASCRIPT_LITERAL,
+                        "ev-human", Source.HUMAN, "human-run", "javascript-ast")),
+                RouteCandidate.Applicability.REVIEW, "foreign");
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no HTTP transport"); },
+                ScopePolicy.parse("https://app.example.test/")::allows, "run-auto", ignored -> {})) {
+            gateway.candidateSource(() -> List.of(declared, observed, foreign));
+            JsonNode items = JSON.readTree(post(gateway, gateway.worklistUrl(), "{}").body())
+                    .path("declared_endpoints");
+            assertEquals(2, items.size());
+            assertEquals("NEEDS_CONCRETE_URL", items.get(0).path("state").asText());
+            assertEquals("ev-js", items.get(0).path("declaration_evidence_ids").get(0).asText());
+            assertEquals("OBSERVED", items.get(1).path("state").asText());
+            assertEquals("ev-browser", items.get(1).path("observation_evidence_ids").get(0).asText());
+            assertTrue(gateway.pendingReviewTasks().isEmpty(),
+                    "reading the complete candidate list closes the worklist review task");
         }
     }
 
@@ -227,17 +293,23 @@ final class ExplorerHttpGatewayTest {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
                 "application/javascript", Map.of(), " ".repeat(70_000) +
-                "fetch('/api/search?keyword=', {method:'POST', body: JSON.stringify({product_id: 1})});",
+                "const routes=[{path:'/reports',element:Home},{path:'/reports/:id',element:Detail}];"
+                        + "fetch('/api/search?keyword=', {method:'POST', body: JSON.stringify({product_id: 1})});",
                 false, "ev-index", 2, Instant.now());
         try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
                 value -> true, "run-index", ignored -> {})) {
             JsonNode response = JSON.readTree(post(gateway, JSON.createObjectNode().put("method", "GET")
                     .put("url", "https://app.example.test/app.js").toString()).body());
+            assertTrue(gateway.pendingReviewTasks().stream()
+                    .anyMatch(task -> task.kind().equals("JS_ARTIFACT_UNINDEXED")));
             String request = JSON.createObjectNode().put("artifact_id", response.path("artifact_id").asText())
                     .toString();
             JsonNode index = JSON.readTree(post(gateway, gateway.artifactsUrl() + "/index", request).body());
             assertEquals("PARSED", index.path("status").asText());
             assertEquals("/api/search?keyword=", index.path("call_sites").get(0).path("reference").asText());
+            assertEquals(2, index.path("client_routes").size());
+            assertEquals("/reports/:id", index.path("client_routes").get(1).path("path").asText());
+            assertTrue(gateway.pendingReviewTasks().isEmpty());
             assertFalse(index.toString().contains(" ".repeat(70_000)));
         }
     }
