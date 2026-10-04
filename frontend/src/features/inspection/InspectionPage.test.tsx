@@ -152,7 +152,8 @@ describe("unified inspection hub", () => {
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }, { ...humanEvent, eventId: "event-human-3", method: "GET", path: "/api/me", status: 200, idn: "active-account" }] })
     // 등록 계정은 표시 이름으로, 연결되지 않은 서버 임시 신원은 "미등록 로그인 N"으로 보인다.
     expect(await screen.findByRole("button", { name: /GET \/api\/me 활성 계정 HTTP 200 원문 보기/ })).toBeVisible()
-    await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ })
+    const originalRow = await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ })
+    expect(within(originalRow).getByText("H")).toHaveAttribute("title", "Human")
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
     await user.type(screen.getByLabelText("HUMAN 작업 피드 검색"), "profile")
     expect(screen.getByRole("button", { name: /GET \/api\/profile 미등록 로그인 2 HTTP 403 원문 보기/ })).toBeVisible()

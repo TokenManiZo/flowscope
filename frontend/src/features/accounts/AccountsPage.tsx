@@ -60,7 +60,7 @@ export function AccountsPage() {
   }
 
   return <ReferenceAnalysisWorkspace ariaLabel="계정·세션 작업 영역" context={null} inspector={null}><section className="space-y-5 p-3" aria-labelledby="accounts-title">
-    <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 id="accounts-title" className="text-2xl font-semibold">계정·세션</h1><p className="mt-1 text-sm text-muted-foreground">권한 비교에 쓸 테스트 계정입니다. 2개 이상 등록하세요.</p></div><Button className="bg-brand text-brand-foreground hover:bg-brand/90" onClick={() => setRegistrationOpen(true)}><Plus aria-hidden="true" />계정 등록</Button></div>
+    <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 id="accounts-title" className="text-2xl font-semibold">계정·세션</h1><p className="mt-1 text-sm text-muted-foreground">테스트 계정을 등록하세요.</p></div><Button className="bg-brand text-brand-foreground hover:bg-brand/90" onClick={() => setRegistrationOpen(true)}><Plus aria-hidden="true" />계정 등록</Button></div>
     <p className="text-sm text-muted-foreground">이 계정으로 로그인을 누르고, 열린 브라우저에서 직접 로그인한 뒤 서비스를 사용하세요. 다른 계정도 여기서 별도 창으로 열 수 있습니다.</p>
     <AnonymousAutoVerification />
     <p className="text-xs text-muted-foreground">현재 프로젝트의 저장 HTTP 응답 관측 · 반복 요청 포함 · 연결 상태와 별도로 집계</p>

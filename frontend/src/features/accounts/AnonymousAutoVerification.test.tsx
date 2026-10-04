@@ -44,24 +44,39 @@ it("starts explicitly armed anonymous GET verification from the account session 
   const post = fetch.mock.calls.find(([, init]) => init?.method === "POST")
   expect(post?.[0]).toBe("/api/authorization-replay")
   expect(String(post?.[1]?.body)).toBe("action=start-anonymous-get&armed=true")
-  expect(screen.getByText(/전송 예약 0건.*비로그인 응답 0건.*제외 0건.*실패 0건/)).toBeVisible()
+  expect(screen.getByText("비로그인 응답").parentElement).toHaveTextContent("0건")
+  expect(screen.getByText("대기").parentElement).toHaveTextContent("0건")
 
   await user.click(toggle)
   await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"))
   expect(fetch.mock.calls.some(([, init]) => String(init?.body) === "action=stop-live")).toBe(true)
 })
 
-it("keeps polling and separates exclusions from execution failures", async () => {
+it("shows pending requests and click help without detailed exclusion counters", async () => {
   const running = {
     ...active,
-    live: { ...active.live, queued: 250, sent: 249,
-      skipped: 3, failed: 1, lastReason: "HTTP_SEND_FAILED" },
+    live: { ...active.live, observed: 396, eligible: 250, queued: 250, sent: 247,
+      skipped: 147, failed: 1, lastReason: "HTTP_SEND_FAILED" },
   }
-  const fetch = vi.fn(() => Promise.resolve(json(running)))
+  const fetch = vi.fn((_path: string, _init?: RequestInit) => Promise.resolve(json(running)))
   vi.stubGlobal("fetch", fetch)
+  const user = userEvent.setup()
   renderWithQueryClient(<AnonymousAutoVerification />)
 
-  expect(await screen.findByText(/전송 예약 250건.*비로그인 응답 249건.*제외 2건.*실패 1건/)).toBeVisible()
-  expect(screen.getByText("최근 제외/실패 사유: 대상 연결 또는 HTTP 전송 실패")).toBeVisible()
+  expect((await screen.findByText("비로그인 응답")).parentElement).toHaveTextContent("247건")
+  expect(screen.getByText("대기").parentElement).toHaveTextContent("2건")
+  expect(screen.getByText("실패").parentElement).toHaveTextContent("1건")
+  expect(screen.queryByText(/전송 예약|최근 제외|검증 상세/)).not.toBeInTheDocument()
+  for (const [label, description] of [
+    ["비로그인 응답", "로그인 없이 보낸 요청에서 받은 응답 수예요."],
+    ["대기", "아직 보내지 않고 기다리는 요청 수예요."],
+    ["실패", "요청을 보내지 못했거나 응답을 받지 못한 수예요."],
+  ]) {
+    await user.click(screen.getByRole("button", { name: `${label} 설명` }))
+    expect(screen.getByText(description)).toBeVisible()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByText(description)).not.toBeInTheDocument())
+  }
+  expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method !== "POST")).toBe(true)
   await waitFor(() => expect(fetch.mock.calls.length).toBeGreaterThan(1), { timeout: 2_500 })
 })

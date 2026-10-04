@@ -346,7 +346,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             feedTitle="기록된 요청"
             feedDescription={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined}
             emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다."
-            feedContent={(view) => <HumanRequestFeed view={view} context={`ZAP 스캔 · ${displayOrigin(target)}`} items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined} emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다." />}
+            feedContent={(view) => <HumanRequestFeed view={view} context={`ZAP 스캔 · ${displayOrigin(target)}`} items={scannerFeedItems} source="S" searchLabel="ZAP 작업 피드 검색" description={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined} emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다." />}
           />
         </TabsContent>
 

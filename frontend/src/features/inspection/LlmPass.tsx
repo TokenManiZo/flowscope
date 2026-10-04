@@ -224,9 +224,10 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
         {feedItems.length ? feedItems.slice().reverse().map((item) => {
           const http = item.badge === "HTTP" ? item.detail?.match(/\bHTTP (\d{3})/)?.[1] : undefined
           const method = item.title.split(" ")[0]
-          return <article key={item.id} className="grid grid-cols-[60px_minmax(0,1fr)_6rem] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
+          return <article key={item.id} className="grid grid-cols-[60px_minmax(0,1fr)_1.5rem_6rem] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
             {item.badge === "HTTP" && /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(method) ? <MethodBadge method={method} /> : <Badge variant="outline" className="h-[22px] w-[60px] justify-center text-[11px]">{item.badge}</Badge>}
             <div className="min-w-0"><p className="break-words text-sm font-medium">{item.title}</p>{item.detail && <p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p>}</div>
+            <span className="text-xs" title={item.badge === "HTTP" ? "LLM" : undefined}>{item.badge === "HTTP" ? "L" : ""}</span>
             <span className="text-right font-mono text-[11px] text-muted-foreground">{http ? <HttpStatusBadge status={http} /> : item.status}</span>
           </article>
         }) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">실행하면 인증 준비·HTTP 요청·기록 번호가 여기에 순서대로 표시됩니다.</p>}

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
+import java.net.BindException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -20,6 +21,7 @@ final class HumanProxyListeners implements AutoCloseable {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String PATH = "proxy.request_listeners";
     private boolean wrappedProjectOptions;
+    private int nextPort = 18080;
     private final BurpSuite burp;
     private final Set<Integer> reserved;
     private final Map<Integer, JsonNode> owned = new HashMap<>();
@@ -32,11 +34,7 @@ final class HumanProxyListeners implements AutoCloseable {
     synchronized int open() throws IOException {
         for (int attempt = 0; attempt < 8; attempt++) {
             ArrayNode listeners = listeners();
-            int port;
-            try (var candidate = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
-                port = candidate.getLocalPort();
-            }
-            if (reserved.contains(port) || contains(listeners, port)) continue;
+            int port = availablePort(listeners);
             ObjectNode entry = JSON.createObjectNode().put("listen_mode", "loopback_only")
                     .put("listener_port", port).put("running", true).put("certificate_mode", "per_host")
                     .put("enable_http2", true);
@@ -55,6 +53,19 @@ final class HumanProxyListeners implements AutoCloseable {
             remove(port);
         }
         throw new IOException("수집용 프록시 포트를 열지 못했습니다. Burp 리스너 상태를 확인하세요.");
+    }
+
+    private int availablePort(ArrayNode listeners) throws IOException {
+        while (nextPort <= 65535) {
+            int port = nextPort++;
+            if (reserved.contains(port) || contains(listeners, port)) continue;
+            try (var candidate = new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"))) {
+                return candidate.getLocalPort();
+            } catch (BindException occupied) {
+                // Another process owns this port; continue through the sequence.
+            }
+        }
+        throw new IOException("18080 이상에서 사용할 수 있는 수집 프록시 포트가 없습니다.");
     }
 
     synchronized void remove(int port) throws IOException {

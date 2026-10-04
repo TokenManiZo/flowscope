@@ -90,10 +90,10 @@ function HumanRawDialog({ eventId, open, onOpenChange }: { eventId: string | nul
   </Dialog>
 }
 
-const FEED_COLUMNS = "grid grid-cols-[3.5rem_4.5rem_minmax(0,1fr)_7rem_3.5rem_5rem] items-center gap-3"
+const FEED_COLUMNS = "grid grid-cols-[3.5rem_4.5rem_minmax(0,1fr)_3rem_7rem_3.5rem_5rem] items-center gap-3"
 
 /** 기록된 요청을 열이 고정된 표로 보여 준다(메서드·경로·계정·상태·시각). 행을 누르면 마스킹 원문을 연다. */
-export function HumanRequestFeed({ items, description, emptyHint, title = "기록된 요청", searchLabel = "HUMAN 작업 피드 검색", view, context }: { items: readonly SourceFeedItem[]; description?: string; emptyHint: string; title?: string; searchLabel?: string; view?: RecordView; context?: string }) {
+export function HumanRequestFeed({ items, description, emptyHint, title = "기록된 요청", searchLabel = "HUMAN 작업 피드 검색", view, context, source = "H" }: { items: readonly SourceFeedItem[]; description?: string; emptyHint: string; title?: string; searchLabel?: string; view?: RecordView; context?: string; source?: "H" | "S" | "L" }) {
   const [query, setQuery] = useState("")
   const [expanded, setExpanded] = useState(true)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
@@ -116,7 +116,7 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
         </div>
       </CardHeader>
       {expanded && <CardContent className={view?.focused ? "flex min-h-0 flex-1 flex-col p-0" : "p-0"}>
-        <div className={`${FEED_COLUMNS} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span><span>계정</span><span>상태</span><span className="text-right">시각</span></div>
+        <div className={`${FEED_COLUMNS} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span><span>출처</span><span>계정</span><span>상태</span><span className="text-right">시각</span></div>
         <div data-record-list aria-label="기록된 요청 목록" className={view?.focused ? "min-h-0 flex-1 overflow-y-auto" : "max-h-96 overflow-y-auto"}
           style={!view?.focused && view?.height ? { height: view.height, maxHeight: view.height } : undefined}>
           {filtered.length ? filtered.map((item) => <button key={item.id} type="button" onClick={() => setSelectedEventId(item.id)} aria-label={`${item.badge} ${item.title} ${item.detail ?? ""} HTTP ${item.status} 원문 보기`}
@@ -124,6 +124,7 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
             <span className="truncate font-mono text-xs text-muted-foreground" title={item.id}>{item.ordinal ?? "—"}</span>
             <MethodBadge method={item.badge} />
             <span className="truncate font-mono text-xs" title={item.title}>{item.title}</span>
+            <span className="text-xs" title={source === "H" ? "Human" : source === "S" ? "ZAP" : "LLM"}>{source}</span>
             <span className={`truncate ${item.mutedDetail ? "text-muted-foreground" : ""}`} title={item.detail}>{item.detail}</span>
             <HttpStatusBadge status={item.status} />
             <span className="text-right font-mono text-xs tabular-nums text-muted-foreground">{item.time ?? ""}</span>

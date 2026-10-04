@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.lang.reflect.Proxy;
+import java.net.BindException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -41,6 +42,7 @@ class HumanBrowserSessionsTest {
                 sessions.start(context("anon", null), target);
                 int a = sessions.port("a"), b = sessions.port("b"), anon = sessions.port("anon");
                 assertEquals(3, Set.of(a, b, anon).size());
+                assertTrue(a >= 18080 && b > a && anon > b);
                 assertEquals("A", sessions.context(a).accountId());
                 assertEquals("B", sessions.context(b).accountId());
                 assertNull(sessions.context(anon).accountId());
@@ -100,6 +102,40 @@ class HumanBrowserSessionsTest {
             assertEquals(2, burp.entries().size());
             assertEquals("all_interfaces", burp.entries().get(1).path("listen_mode").asText());
         }
+    }
+
+    @Test void allocatesIncreasingPortsFrom18080SkippingReservedOccupiedAndConfiguredPorts() throws Exception {
+        try (var burp = new FakeBurp(); var occupied = firstAvailableSocket(18081)) {
+            int configuredPort;
+            try (var available = firstAvailableSocket(occupied.getLocalPort() + 1)) {
+                configuredPort = available.getLocalPort();
+            }
+            ((com.fasterxml.jackson.databind.node.ArrayNode) burp.entries()).addObject()
+                    .put("listener_port", configuredPort).put("running", false).put("listen_mode", "loopback_only");
+            int expected;
+            try (var available = firstAvailableSocket(configuredPort + 1)) { expected = available.getLocalPort(); }
+            try (var listeners = new HumanProxyListeners(burp.api, Set.of(18080))) {
+                int first = listeners.open();
+                assertEquals(expected, first);
+                int next;
+                try (var available = firstAvailableSocket(first + 1)) { next = available.getLocalPort(); }
+                int second = listeners.open();
+                assertEquals(next, second);
+                listeners.remove(first);
+                int third = listeners.open();
+                assertTrue(third > second, "Retired ports must not receive another account's late requests");
+                assertFalse(occupied.isClosed());
+                assertEquals(2, burp.entries().size() - burp.sockets.size());
+            }
+        }
+    }
+
+    private static ServerSocket firstAvailableSocket(int start) throws IOException {
+        for (int port = start; port <= 65535; port++) {
+            try { return new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1")); }
+            catch (BindException occupied) { /* Try the next port. */ }
+        }
+        throw new IOException("No available test port");
     }
 
     private static final class FakeWindow implements HumanChromiumBrowser.Window {
