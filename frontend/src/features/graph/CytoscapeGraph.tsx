@@ -106,12 +106,14 @@ export function graphFocusStates(projection: GraphProjection | HierarchyProjecti
 function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark", statusesByNode: ReadonlyMap<string, readonly number[]> = noStatuses, openObjectGroupId: string | null = null): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
   const focus = graphFocusStates(projection, selectedElementId, openObjectGroupId)
+  // 테마·카드 크기 갱신으로 요소를 다시 만들 때도 펼침 집중 상태를 함께 복원한다.
+  const objectFocus = (state: FocusState): FocusState => openObjectGroupId ? state === "yes" ? "yes" : "no" : "none"
   const edges = projection.edges.map((edge) => {
     const { source, target } = edgeEndpoints(edge)
     // 관측 엣지는 평소 주체 구분 없이 한 가지 회색 선으로 그리고, 접근 주체는 양 끝 노드 카드 아이콘으로만 표시한다.
     // 색은 강조 필터를 골랐을 때만 들어간다(applyHighlight). 주체가 없는 구조·경로 후보 엣지는 '미관측' 표시(회색 점선)를 그대로 둔다.
     const observed = edge.source !== null
-    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edge(edge.id), src: edge.source ?? "" }, origin: edge.source }
+    return { data: { id: edge.id, source, target, label: "", sourceText: edge.sourceText, line: observed ? "solid" : edge.line, color: observed ? EDGE_COLOR[theme] : edge.color, countLabel: edge.countLabel, focused: focus.edge(edge.id), objectFocus: objectFocus(focus.edge(edge.id)), src: edge.source ?? "" }, origin: edge.source }
   })
   const nodeFocus = focus.node
   const objectMembers = new Set(hierarchy?.nodes.filter(node => node.kind === "object-group" && node.objectGroup?.expanded).flatMap(node => node.objectGroup!.members.map(member => `resource:${member}`)))
@@ -132,14 +134,14 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     cards?.set(node.id, card)
     const size = sizes[node.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
-    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...("objectGroup" in node && node.objectGroup ? { groupState: node.objectGroup.expanded ? "open" : "closed", groupKey: node.objectGroup.key } : {}), ...(memberOf.has(node.id) ? { memberOf: memberOf.get(node.id) } : {}), ...(objectMembers.has(node.id) ? { temporaryObjectPosition: "yes" } : {}), ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), objectFocus: objectFocus(nodeFocus(node.id)), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...("objectGroup" in node && node.objectGroup ? { groupState: node.objectGroup.expanded ? "open" : "closed", groupKey: node.objectGroup.key } : {}), ...(memberOf.has(node.id) ? { memberOf: memberOf.get(node.id) } : {}), ...(objectMembers.has(node.id) ? { temporaryObjectPosition: "yes" } : {}), ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
     const card = relationshipRouteCandidateCard(candidate)
     cards?.set(candidate.id, card)
     const size = sizes[candidate.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
-    return { data: { id: candidate.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(candidate.id), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
+    return { data: { id: candidate.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(candidate.id), objectFocus: objectFocus(nodeFocus(candidate.id)), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: candidate.applicability, kind: "route-candidate", confirmed: "no", ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   return [...nodes, ...candidates, ...edges.map(({ data }) => ({ data }))]
 }
@@ -597,6 +599,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
         container: containerRef.current,
         elements: [],
         userZoomingEnabled: false,
+        minZoom: GRAPH_MIN_ZOOM,
+        maxZoom: GRAPH_MAX_ZOOM,
         style: [
           { selector: "node", style: { "background-color": "data(cardColor)", "background-image": "data(cardImage)", "background-fit": "contain", "background-clip": "none", label: "data(label)", color: "#e5e7eb", width: "data(width)", height: "data(height)", padding: 0, shape: "round-rectangle", "border-width": 1, "border-color": "#64748b", "border-opacity": 0.85 } },
           { selector: 'node[confirmed = "yes"]', style: { "border-width": 2, "border-color": "#ef4444" } },
@@ -613,11 +617,12 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: 'node[focused = "no"]', style: { opacity: 0.35 } },
           { selector: 'edge[hl = "no"]', style: { opacity: 0.12 } },
           { selector: 'node[hl = "no"]', style: { opacity: 0.3 } },
-          { selector: 'node[searchMatch = "yes"]', style: { opacity: 1 } },
-          { selector: 'node[objectFocus = "no"]', style: { opacity: 0.12, "z-index-compare": "manual", "z-index": 0 } },
-          { selector: 'edge[objectFocus = "no"]', style: { opacity: 0.08, "z-index-compare": "manual", "z-index": 0 } },
+          { selector: 'node[objectFocus = "no"]', style: { opacity: 0.45, "z-index-compare": "manual", "z-index": 0 } },
+          { selector: 'edge[objectFocus = "no"]', style: { opacity: 0.22, "z-index-compare": "manual", "z-index": 0 } },
           { selector: 'node[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 20 } },
           { selector: 'edge[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 10 } },
+          // 검색 결과는 펼침 밖에서도 읽을 수 있게 한다. 관련 카드의 앞뒤 순서는 유지한다.
+          { selector: 'node[searchMatch = "yes"]', style: { opacity: 1 } },
         ] as unknown as cytoscape.StylesheetJson,
       })
     } catch {
@@ -927,8 +932,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
 
   return rendererUnavailable
     ? <p className="rounded-md border p-4 text-sm text-muted-foreground" role="status">그래프 캔버스를 초기화하지 못했습니다. 화면 크기를 조정하거나 API 목록을 사용하세요.</p>
-    : <div className="relative h-full min-h-[28rem] w-full bg-[var(--flowscope-canvas)]" style={openObjectGroupId ? { backgroundColor: "#020617" } : undefined}>
-      <div className="absolute inset-0 h-full min-h-[28rem] w-full focus-visible:outline-2 focus-visible:outline-ring" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px)", backgroundSize: "24px 24px" }} ref={containerRef} tabIndex={0} aria-label="공격면 Cytoscape 그래프" aria-describedby={cardTooltip ? tooltipId : undefined}
+    : <div className="relative h-full min-h-[28rem] w-full bg-[var(--flowscope-canvas)]">
+      <div className="absolute inset-0 h-full min-h-[28rem] w-full focus-visible:outline-2 focus-visible:outline-ring" style={{ backgroundImage: "linear-gradient(var(--flowscope-grid) 1px, transparent 1px), linear-gradient(90deg, var(--flowscope-grid) 1px, transparent 1px)", backgroundSize: "24px 24px" }} ref={containerRef} tabIndex={0} aria-label="공격면 Cytoscape 그래프" aria-describedby={cardTooltip ? tooltipId : undefined}
         onPointerMove={event => {
           if (resizeDragRef.current) return
           const nodeId = cornerNodeAt(event.clientX, event.clientY)

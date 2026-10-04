@@ -519,6 +519,8 @@ it("keeps the full zoom range because lanes scale with the viewport", () => {
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   runScheduledFrame()
 
+  // preset/fit도 저장 API와 같은 범위를 사용해야 범위 밖 viewport가 게시되지 않는다.
+  expect(vi.mocked(cytoscape)).toHaveBeenLastCalledWith(expect.objectContaining({ minZoom: 0.4, maxZoom: 2 }))
   viewport = { ...viewport, zoom: 2 }
   listeners.get("viewport:core")?.({ target: node })
   runScheduledFrame()
@@ -867,7 +869,7 @@ it("wraps each expanded object group and its members in one screen-space band fo
   ])
 })
 
-it("keeps the real ID → API → OBJ paths visible while an object group is open", () => {
+it("keeps the expanded ID → API → OBJ focus, theme canvas, and layout through theme switches", async () => {
   const cell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["a"] }
   const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell, { ...cell, idn: "USER B", resource: "orders:202", evidenceIds: ["b"] }, { ...cell, idn: "USER C", op: "GET /api/orders/profile", resource: "user-profile:1", evidenceIds: ["c"] }] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:|orders"] }, { level: "group", groupId: '["Target","orders"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
   const group = hierarchy.nodes.find(node => node.kind === "object-group" && node.objectGroup?.key === "orders")!
@@ -878,4 +880,34 @@ it("keeps the real ID → API → OBJ paths visible while an object group is ope
   for (const edge of hierarchy.edges) expect(focus.edge(edge.id)).toBe(edge.selection.identity === "USER C" ? "no" : "yes")
   expect(hierarchy.edges.some(edge => edge.relation === "identity-operation")).toBe(true)
   expect(hierarchy.edges.some(edge => edge.relation === "operation-resource")).toBe(true)
+
+  const pan = { x: 81, y: -40 }
+  currentZoom = 0.7
+  vi.mocked(core.pan).mockReturnValue(pan)
+  const props = { projection: hierarchy, selectedElementId: "resource:orders:101", openObjectGroupId: group.id, locked: false, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn() }
+  const { rerender } = render(<CytoscapeGraph {...props} />)
+  modelPosition = { x: 1400, y: 500 }
+  const expectThemeFocus = (cardColor: string) => {
+    const canvas = screen.getByLabelText("공격면 Cytoscape 그래프")
+    expect(canvas.parentElement).toHaveClass("bg-[var(--flowscope-canvas)]")
+    expect(canvas.parentElement?.style.backgroundColor).toBe("")
+    const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; objectFocus: string; cardColor?: string } }>
+    for (const node of hierarchy.nodes.filter(node => !node.hiddenInGraph && node.kind !== "route-candidate")) {
+      expect(added.find(element => element.data.id === node.id)?.data).toEqual(expect.objectContaining({ objectFocus: focus.node(node.id), cardColor }))
+    }
+    for (const edge of hierarchy.edges) expect(added.find(element => element.data.id === edge.id)?.data.objectFocus).toBe(focus.edge(edge.id))
+    expect(modelPosition).toEqual({ x: 1400, y: 500 })
+    expect(currentZoom).toBe(0.7)
+  }
+  expectThemeFocus("#111418")
+  for (const theme of ["light", "dark"] as const) {
+    await act(async () => { document.documentElement.classList.toggle("dark", theme === "dark") })
+    expectThemeFocus(theme === "light" ? "#ffffff" : "#111418")
+    expect(core.viewport).toHaveBeenLastCalledWith({ zoom: 0.7, pan })
+  }
+  expect(core.fit).not.toHaveBeenCalled()
+  remove.mockClear(); vi.mocked(core.add).mockClear()
+  rerender(<CytoscapeGraph {...props} selectedElementId="resource:orders:202" />)
+  expect(remove).not.toHaveBeenCalled()
+  expect(core.add).not.toHaveBeenCalled()
 })
