@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FlowScope · 화면 개선 목업</title>
+  <link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="#records"><span class="brand-icon" data-icon="scope"></span>FlowScope</a>
+    <nav aria-label="목업 화면"><button data-page="records" aria-pressed="true">관측 기록</button><button data-page="apis" aria-pressed="false">API·입력 차이</button><button data-page="graph" aria-pressed="false">그래프</button></nav>
+    <div class="prototype">인터랙티브 목업 <span>합성 데이터</span></div>
+    <a class="doc-link" href="README.md" target="_blank">기능 설명 <span data-icon="external"></span></a>
+  </header>
+  <main id="app"></main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <form method="dialog"><div class="dialog-top"><span class="danger-icon" data-icon="trash"></span><button class="icon" aria-label="삭제 확인 닫기" value="cancel"><span data-icon="close"></span></button></div>
+    <h2 id="delete-title">API와 관측 기록을 삭제할까요?</h2>
+    <div id="delete-target" class="delete-target"></div>
+    <p id="delete-description"></p><p class="muted small">삭제한 기록은 되돌릴 수 없습니다. 이 목업에서는 합성 데이터만 변경됩니다.</p>
+    <footer><button value="cancel">취소</button><button class="danger" id="confirm-delete" value="delete">API와 기록 삭제</button></footer></form>
+  </dialog>
+  <script src="mockup.js"></script>
+</body>
+</html>
