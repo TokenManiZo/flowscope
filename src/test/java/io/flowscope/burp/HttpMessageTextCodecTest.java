@@ -68,8 +68,27 @@ final class HttpMessageTextCodecTest {
 
         byte[] encoded = HttpMessageTextCodec.encodeEditedRequest(edited);
         int offset = indexAfterHeader(encoded);
+        assertEquals(edited.substring(0, edited.indexOf('{')),
+                new String(encoded, 0, offset, StandardCharsets.ISO_8859_1));
         assertEquals("{\"title\":\"한글 🧪\"}", new String(encoded, offset, encoded.length - offset,
                 StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void editedTextareaRequestUsesCrLfHeadersWithoutChangingBodyNewlines() {
+        String body = "note=first\nsecond";
+        String edited = "POST /items?id=test HTTP/1.1\nHost: example.test\n"
+                + "Content-Type: application/x-www-form-urlencoded\n"
+                + "Content-Length: " + body.getBytes(StandardCharsets.UTF_8).length + "\n\n" + body;
+
+        byte[] encoded = HttpMessageTextCodec.encodeEditedRequest(edited);
+        int offset = indexAfterHeader(encoded);
+        String headers = new String(encoded, 0, offset, StandardCharsets.ISO_8859_1);
+        assertEquals("POST /items?id=test HTTP/1.1\r\nHost: example.test\r\n"
+                + "Content-Type: application/x-www-form-urlencoded\r\n"
+                + "Content-Length: 17\r\n\r\n", headers);
+        assertArrayEquals(body.getBytes(StandardCharsets.UTF_8),
+                java.util.Arrays.copyOfRange(encoded, offset, encoded.length));
     }
 
     private static int indexAfterHeader(byte[] bytes) {
