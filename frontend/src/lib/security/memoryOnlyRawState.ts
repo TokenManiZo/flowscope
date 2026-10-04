@@ -9,6 +9,7 @@ export interface RequestLabHistoryResult {
 export interface MemoryOnlyRawState {
   request: string
   response: string
+  jsonViews: { request: { text: string; message: string } | null; response: { text: string; message: string } | null }
   history: RequestLabHistoryResult[]
   addResult(result: RequestLabHistoryResult): void
   canSend(request: string): boolean
@@ -24,6 +25,7 @@ export function createMemoryOnlyRawState(initial: Partial<Pick<MemoryOnlyRawStat
   const state: MemoryOnlyRawState = {
     request: initial.request ?? "",
     response: initial.response ?? "",
+    jsonViews: { request: null, response: null },
     history: [],
     addResult(result) {
       state.history.unshift({ response: result.response, status: result.status, durationMs: result.durationMs })
@@ -34,6 +36,9 @@ export function createMemoryOnlyRawState(initial: Partial<Pick<MemoryOnlyRawStat
     },
     canSend(request) { return new TextEncoder().encode(request).byteLength <= REQUEST_LAB_MAX_BYTES },
     clear() {
+      for (const view of Object.values(state.jsonViews)) if (view) { view.text = ""; view.message = "" }
+      state.jsonViews.request = null
+      state.jsonViews.response = null
       state.request = ""
       state.response = ""
       for (const result of state.history) result.response = ""

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { expect, it } from "vitest"
 
 import { RawTextPanel } from "./RawTextPanel"
@@ -15,4 +15,23 @@ it("keeps the editable text and its highlight layer on the same typography", () 
   expect(textarea).not.toHaveClass("md:text-sm", "px-2.5")
   // 굵기는 글꼴에 따라 글자 폭을 바꿀 수 있어 강조는 색만 쓴다.
   expect(highlight.querySelector(".font-semibold")).toBeNull()
+})
+
+it("keeps fill-mode typography and both scroll axes aligned without replacing the editor", () => {
+  const props = { id: "raw-fill", label: "고정 원문", value: "GET /orders HTTP/1.1\n\n{}", fill: true }
+  const view = render(<RawTextPanel {...props} fontSize={14} />)
+  const textarea = screen.getByRole("textbox", { name: "고정 원문" }) as HTMLTextAreaElement
+  const highlight = textarea.previousElementSibling as HTMLElement
+  expect(textarea).toHaveStyle({ fontSize: "14px", lineHeight: "1.65" })
+  expect(highlight).toHaveStyle({ fontSize: "14px", lineHeight: "1.65" })
+  textarea.scrollTop = 80; textarea.scrollLeft = 20
+  fireEvent.scroll(textarea)
+  expect(highlight.scrollTop).toBe(80)
+  expect(highlight.scrollLeft).toBe(20)
+  textarea.setSelectionRange(4, 11)
+  view.rerender(<RawTextPanel {...props} fontSize={18} />)
+  expect(screen.getByRole("textbox", { name: "고정 원문" })).toBe(textarea)
+  expect(textarea.selectionStart).toBe(4)
+  expect(textarea.selectionEnd).toBe(11)
+  expect(highlight).toHaveStyle({ fontSize: "18px", lineHeight: "1.65" })
 })

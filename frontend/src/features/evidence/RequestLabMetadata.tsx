@@ -48,12 +48,13 @@ interface Props {
   currentSession: { label: string; credential: string | null } | null
   credentialMode: RequestLabCredentialMode
   disabled?: boolean
+  hideCredentialControl?: boolean
   onCredentialModeChange(mode: RequestLabCredentialMode): void
 }
 
-export function RequestLabMetadata({ service, identity, observedCredential, requestRetained, responseRetained, currentSession, credentialMode, disabled = false, onCredentialModeChange }: Props) {
+export function RequestLabMetadata({ service, identity, observedCredential, requestRetained, responseRetained, currentSession, credentialMode, disabled = false, hideCredentialControl = false, onCredentialModeChange }: Props) {
   const selected = MODES.find((item) => item.mode === credentialMode) ?? MODES[0]
-  return <section aria-label="Request Lab 메타데이터" className="grid content-start gap-4 border-b bg-muted/20 p-4 lg:border-r lg:border-b-0">
+  return <section aria-label="Request Lab 메타데이터" className="grid content-start gap-4 bg-muted/20 p-4 lg:grid-cols-3">
     <dl className="grid gap-1 text-sm">
       <dt className="text-xs text-muted-foreground">서비스</dt><dd className="break-all">서비스: {service}</dd>
       {(!requestRetained || !responseRetained) && <dd className="text-xs text-muted-foreground">요청 {requestRetained ? "보존" : "미보존"} · 응답 {responseRetained ? "보존" : "미보존"}</dd>}
@@ -64,7 +65,7 @@ export function RequestLabMetadata({ service, identity, observedCredential, requ
         name={currentSession?.label ?? "없음"}
         detail={currentSession ? currentSession.credential ?? "확인 중" : "아직 저장된 최신 인증값이 없어요."} />
     </div>
-    <div className="grid gap-2">
+    {!hideCredentialControl && <div className="grid gap-2">
       <p id="request-lab-mode-label" className="text-sm font-medium">어떤 인증값으로 보낼까요?</p>
       <div role="radiogroup" aria-labelledby="request-lab-mode-label" className="grid grid-cols-3 overflow-hidden rounded-lg border border-border">
         {MODES.map(({ mode, label }) => <button key={mode} type="button" role="radio" aria-checked={credentialMode === mode}
@@ -72,6 +73,6 @@ export function RequestLabMetadata({ service, identity, observedCredential, requ
           className={cn("border-r border-border px-2 py-1.5 text-sm last:border-r-0 disabled:cursor-not-allowed disabled:opacity-50", credentialMode === mode ? "bg-primary font-medium text-primary-foreground" : "hover:bg-muted")}>{label}</button>)}
       </div>
       <p className="text-xs text-muted-foreground">{selected.description}</p>
-    </div>
+    </div>}
   </section>
 }

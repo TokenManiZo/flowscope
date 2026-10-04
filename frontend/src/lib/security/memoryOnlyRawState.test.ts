@@ -17,7 +17,11 @@ describe("memoryOnlyRawState", () => {
     expect(raw.history[0]?.response).toBe("response-11")
     expect(storage).not.toHaveBeenCalled()
     expect(log).not.toHaveBeenCalled()
+    const json = { text: '{"derived":"RAW-SECRET-REQUEST"}', message: "" }
+    raw.jsonViews.request = json
     raw.clear()
+    expect(json.text).toBe("")
+    expect(raw.jsonViews.request).toBeNull()
 
     expect(raw.request).toBe("")
     expect(raw.response).toBe("")

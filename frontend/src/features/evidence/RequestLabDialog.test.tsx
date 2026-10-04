@@ -63,31 +63,33 @@ afterEach(() => { attempts = [] })
 
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear() })
 
+async function openMetadata() {
+  await screen.findByLabelText("Request Lab 요청 원문")
+  await userEvent.click(screen.getByRole("button", { name: "인증 상세 펼치기" }))
+  return screen.getByRole("region", { name: "Request Lab 메타데이터" })
+}
+
 describe("RequestLabDialog", () => {
-  it("shows Request and Response simultaneously in a responsive split workspace with sticky actions", async () => {
-    vi.stubGlobal("innerWidth", 1280)
-    window.dispatchEvent(new Event("resize"))
+  it("keeps the editors and draft when changing window, panel and font settings", async () => {
     installTransport()
+    const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
-
-    const metadata = await screen.findByRole("region", { name: "Request Lab 메타데이터" })
-    const workbench = screen.getByRole("region", { name: "Request Lab 원문 작업면" })
-    const layout = metadata.parentElement
-    const dialog = screen.getByRole("dialog", { name: "Request Lab" })
-
-    expect(window.innerWidth).toBe(1280)
-    expect(dialog).toHaveClass("sm:max-w-[70rem]")
-    expect(dialog).not.toHaveClass("sm:max-w-sm")
-    expect(layout).toHaveClass("grid", "lg:grid-cols-[19rem_minmax(0,1fr)]")
-    expect(workbench).toBe(layout?.lastElementChild)
-    const rawWorkspace = screen.getByRole("group", { name: "Request Lab 요청 및 응답" })
-    expect(rawWorkspace).toHaveClass("grid", "lg:grid-cols-2")
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toBeVisible()
-    expect(screen.getByLabelText("Request Lab 응답 원문")).toBeVisible()
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveClass("font-mono")
-    expect(screen.queryByRole("tab", { name: "Request" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("tab", { name: "Response" })).not.toBeInTheDocument()
-    expect(dialog.querySelector('[data-slot="dialog-footer"]')).toHaveClass("sticky", "bottom-0")
+    const request = await screen.findByLabelText("Request Lab 요청 원문")
+    const response = screen.getByLabelText("Request Lab 응답 원문")
+    fireEvent.change(request, { target: { value: "EDITED-DRAFT" } })
+    await user.click(screen.getByRole("button", { name: "최대화" }))
+    await user.click(screen.getByRole("button", { name: "응답 확대" }))
+    expect(request).not.toBeVisible()
+    expect(response).toBeVisible()
+    await user.selectOptions(screen.getByRole("combobox", { name: "글자 크기" }), "18")
+    await user.click(screen.getByRole("button", { name: "함께 보기" }))
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toBe(request)
+    expect(request).toHaveValue("EDITED-DRAFT")
+    expect(request).toHaveStyle({ fontSize: "18px" })
+    expect(response).toHaveStyle({ fontSize: "18px" })
+    await user.keyboard("{Escape}")
+    expect(screen.getByRole("button", { name: "최대화" })).toBeVisible()
+    expect(request).toHaveValue("EDITED-DRAFT")
   })
 
   it("shows unavailable raw data as a compact status banner instead of a content card", async () => {
@@ -144,7 +146,7 @@ describe("RequestLabDialog", () => {
 
     await screen.findByLabelText("Request Lab 요청 원문")
     // Active cross-identity replay rejects this LEGACY_RESPONSE session; the Request Lab still offers it.
-    expect(screen.getByRole("radio", { name: "현재 세션" })).toHaveAttribute("aria-checked", "true")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ACCOUNT")
     expect(screen.queryByLabelText("계정")).not.toBeInTheDocument()
   })
 
@@ -152,7 +154,7 @@ describe("RequestLabDialog", () => {
     installReusableTransport("GET /orders/7 HTTP/1.1\r\nAuthorization: Bearer observed-original-token\r\n\r\n")
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
 
-    const metadata = await screen.findByRole("region", { name: "Request Lab 메타데이터" })
+    const metadata = await openMetadata()
     await waitFor(() => expect(metadata).toHaveTextContent("Authorization: Bearer eyJk••••"))
     expect(metadata).toHaveTextContent("Authorization: Bearer obse••••")
     expect(metadata).toHaveTextContent("관리자")
@@ -165,9 +167,10 @@ describe("RequestLabDialog", () => {
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession, { ...activeSession, accountId: "inactive", accountLabel: "비활성", status: "EXPIRED" }, { ...activeSession, accountId: "other", service: "https://other.example.test" }]} />)
 
     expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
+    await openMetadata()
     expect(screen.getByText("서비스: https://api.example.test")).toBeVisible()
     expect(screen.queryByText("비활성")).not.toBeInTheDocument()
-    await user.click(screen.getByRole("radio", { name: "원문" }))
+    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ORIGINAL")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
     const call = fetch.mock.calls.find(([input]) => String(input) === "/api/request-lab")
@@ -176,9 +179,9 @@ describe("RequestLabDialog", () => {
     expect(sent.get("operationId")).toMatch(/^[A-Za-z0-9_-]{16,120}$/)
     sent.delete("operationId")
     expect(sent).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ORIGINAL", accountId: "", request: secret }))
-    await user.click(screen.getByRole("radio", { name: "비로그인" }))
+    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ANONYMOUS")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
-    await user.click(screen.getByRole("radio", { name: "현재 세션" }))
+    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ACCOUNT")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     const sends = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")
     expect(new URLSearchParams(String(sends[1]?.[1]?.body)).get("credentialMode")).toBe("ANONYMOUS")
@@ -233,8 +236,8 @@ describe("RequestLabDialog", () => {
     installTransport()
     const { unmount } = renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[]} />)
     await screen.findByLabelText("Request Lab 요청 원문")
-    expect(screen.getByRole("radio", { name: "현재 세션" })).toBeDisabled()
-    expect(screen.getByRole("radio", { name: "원문" })).toHaveAttribute("aria-checked", "true")
+    expect(within(screen.getByRole("combobox", { name: "전송 인증" })).getByRole("option", { name: /현재 세션/ })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ORIGINAL")
     unmount()
 
     installReusableTransport()
@@ -244,7 +247,7 @@ describe("RequestLabDialog", () => {
     rerender(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[]} />)
     await waitFor(() => expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeDisabled())
     expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
-    expect(screen.getByRole("radio", { name: "현재 세션" })).toHaveAttribute("aria-checked", "true")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ACCOUNT")
   })
 
   it("shows a retry after a draft server error and renders bounded recent results newest first", async () => {
@@ -265,6 +268,7 @@ describe("RequestLabDialog", () => {
     await screen.findByLabelText("Request Lab 요청 원문")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
+    await user.click(screen.getByText("전송 이력", { selector: "summary" }))
     expect(await screen.findByRole("heading", { name: "최근 전송 결과" })).toBeVisible()
     expect(screen.getAllByTestId("request-lab-history-result")[0]).toHaveTextContent("result-3")
   })
@@ -286,7 +290,7 @@ describe("RequestLabDialog", () => {
     resolveReplay(json({ success: true, message: "draft", openedDraft: true, status: 200, replayId: "r" }))
     expect(await screen.findByText("Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다.")).toBeVisible()
     for (const [label, mode] of [["비로그인", "ANONYMOUS"], ["원문", "ORIGINAL"]] as const) {
-      await user.click(screen.getByRole("radio", { name: label }))
+      await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), mode)
       await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
       await waitFor(() => expect(new URLSearchParams(String(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay").at(-1)?.[1]?.body)).get("credentialMode")).toBe(mode))
       const call = fetch.mock.calls.filter(([input]) => String(input) === "/api/replay").at(-1)
@@ -330,6 +334,7 @@ describe("RequestLabDialog", () => {
     await user.click(send)
     expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")).toHaveLength(1)
     resolveSend(json({ success: true, message: "sent", eventId: "event-7", status: 200, response: "ok", durationMs: 1, requestBytes: 2, responseBytes: 2 }))
+    await user.click(screen.getByText("전송 이력", { selector: "summary" }))
     expect(await screen.findByText("최근 전송 결과")).toBeVisible()
   })
 
@@ -341,7 +346,7 @@ describe("RequestLabDialog", () => {
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[older, collecting, notReady]} />)
 
-    const metadata = await screen.findByRole("region", { name: "Request Lab 메타데이터" })
+    const metadata = await openMetadata()
     expect(metadata).toHaveTextContent("USER B")
     expect(metadata).not.toHaveTextContent("USER C")
     await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
@@ -600,6 +605,8 @@ describe("RequestLabDialog", () => {
     ]
     renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} verifications={verifications} />)
 
+    await screen.findByLabelText("Request Lab 요청 원문")
+    await userEvent.click(screen.getByText("전송 이력", { selector: "summary" }))
     const history = await screen.findByRole("region", { name: "검증 이력" })
     await waitFor(() => expect(history).toHaveTextContent("시간 초과"))
     expect(history).toHaveTextContent("HTTP 200")
@@ -623,11 +630,34 @@ describe("RequestLabDialog", () => {
     await screen.findByLabelText("Request Lab 요청 원문")
     await user.click(screen.getByRole("button", { name: "Request Lab 전송" }))
 
-    expect(screen.getByRole("radio", { name: "비로그인" })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeDisabled()
     const before = fetch.mock.calls.filter(([input]) => String(input) === "/api/manual-attempts").length
     await act(async () => { send.resolve(json({ success: true, message: "sent", eventId: "ev-new", status: 200, response: "ok", durationMs: 3, requestBytes: 1, responseBytes: 2 })) })
 
-    await waitFor(() => expect(screen.getByRole("radio", { name: "비로그인" })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
     await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/manual-attempts").length).toBeGreaterThan(before))
   })
+  it("formats a read-only JSON view without changing or transmitting Raw, and scrubs derived views", async () => {
+    const owner = createMemoryOnlyRawState()
+    const original = 'POST /orders HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"id":9007199254740993,"amount":1.2300}'
+    const fetch = installReusableTransport(original)
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
+    const request = await screen.findByLabelText("Request Lab 요청 원문")
+    const pane = screen.getByRole("region", { name: "Request 원문 패널" })
+    await user.click(within(pane).getByRole("button", { name: "JSON 정돈" }))
+    const formatted = owner.jsonViews.request!
+    expect(formatted.text).toContain('"id": 9007199254740993')
+    expect(formatted.text).toContain('"amount": 1.2300')
+    expect(request).not.toBeVisible()
+    expect(owner.request).toBe(original)
+    expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
+    await user.click(within(pane).getByRole("button", { name: "Raw", exact: true }))
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toBe(request)
+    expect(request).toHaveValue(original)
+    await user.click(screen.getByRole("button", { name: "닫기" }))
+    expect(formatted.text).toBe("")
+    expect(owner.jsonViews.request).toBeNull()
+  })
+
 })
