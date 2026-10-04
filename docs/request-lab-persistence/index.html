@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Request Lab 저장·복원 목업</title><link rel="stylesheet" href="../request-lab-repeater/mockup.css"><link rel="stylesheet" href="mockup.css"></head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0"><defs>
+<symbol id="pencil" viewBox="0 0 24 24"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="cross" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+</defs></svg>
+<header class="review"><h1>Request Lab · 프로젝트 저장</h1><p>승인용 목업입니다. 합성 요청·응답만 사용하며 실제 전송·DB 저장은 하지 않습니다. 저장·복원은 페이지 메모리에서 모의합니다.</p>
+<nav><label>테마<select id="theme"><option value="dark">다크</option><option value="light">라이트</option></select></label><label>저장 상태<select id="scenario"><option value="success">정상</option><option value="failure">저장 실패</option></select></label><button id="restart">프로젝트 다시 열기 시연</button><a href="DESIGN.md">설계 읽기</a></nav></header>
+<main class="preview">
+<section id="stage" class="stage" aria-label="Request Lab 저장 목업">
+<header class="lab-header"><div class="header-first"><div class="heading"><h2>Request Lab</h2><p>요청을 수정하고, 전송 결과를 다시 확인합니다.</p></div>
+<div class="settings"><label>전송 인증<select id="credential"><option value="ORIGINAL">원문 · USER 1</option><option value="ACCOUNT">현재 세션 · USER 1</option><option value="ANONYMOUS">비로그인</option></select></label><label>글자 크기<select id="font"><option>12px</option><option selected>14px</option><option>16px</option><option>18px</option></select></label><button id="maximize">전체화면</button><button id="send" class="primary">요청 재전송</button></div></div>
+<div class="header-second"><div class="navigation"><button id="original">Original</button><select id="requests" aria-label="편집 요청 선택"></select><input id="name" aria-label="요청 이름" maxlength="80" hidden><button id="rename" class="icon-button" aria-label="요청 이름 변경" title="요청 이름 변경"><svg><use href="#pencil"/></svg></button><button id="remove" class="icon-button" aria-label="선택 요청 삭제"><svg><use href="#cross"/></svg></button><button id="add" class="icon-button" aria-label="새 요청 추가"><svg><use href="#plus"/></svg></button></div>
+<div class="save-status"><span>PLAN</span><span id="saved" role="status" aria-live="polite">저장 대기</span><button id="retry" hidden>다시 저장</button></div></div></header>
+<div id="notice" class="notice" hidden><span id="notice-text"></span><button id="discard" hidden>변경 버리고 닫기</button></div>
+<div class="editors" data-focus="both"><section class="pane request"><header><h3>요청</h3><span id="edit-state">편집 가능</span><div class="tabs"><button aria-pressed="true">Raw</button></div></header><div class="raw-editor"><pre id="highlight" aria-hidden="true"></pre><textarea id="request" aria-label="목업 요청 원문" spellcheck="false"></textarea></div></section><div class="splitter" aria-hidden="true"></div><section class="pane response"><header><h3>응답</h3><span>읽기 전용</span><strong id="http-status" class="http-status"></strong><span id="response-state"></span><div class="tabs"><button aria-pressed="true">Raw</button></div></header><pre id="response" class="raw-response" aria-label="목업 응답 원문"></pre></section></div>
+<footer><button id="close">닫기</button></footer></section>
+<section id="closed" class="closed" hidden><h2>Request Lab을 닫았습니다.</h2><p>저장한 이름·편집 요청·마지막 응답은 프로젝트에 남습니다. 실시간 인증값은 비웠습니다.</p><button id="reopen">저장한 요청 다시 열기</button></section>
+<p class="caption">이름이나 REQ를 바꾸고 닫았다 다시 열어 보세요. 복원 후에도 REQ는 편집 가능하며, 인증값은 마스킹되어 필요한 인증을 다시 선택합니다. 실제 제품에는 목업 상단의 시연 도구가 들어가지 않습니다.</p>
+</main><script src="mockup.js"></script></body></html>
