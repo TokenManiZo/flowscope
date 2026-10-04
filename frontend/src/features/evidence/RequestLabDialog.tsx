@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Maximize2, Minimize2, Plus, Send, X } from "lucide-react"
+import { Maximize2, Minimize2, Pencil, Plus, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -69,6 +69,8 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   const pendingSize = useRef<typeof dialogSize>(null)
   const resizeFrame = useRef<number | null>(null)
   const [view, setView] = useState<"original" | number>("original")
+  const [renaming, setRenaming] = useState<number | null>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
   const requestRef = useRef<HTMLTextAreaElement>(null)
   const responseRef = useRef<HTMLTextAreaElement>(null)
   const originalPosition = useRef({ start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 })
@@ -160,6 +162,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     setJsonView({ request: false, response: false })
     setError("")
     setReplayMessage("")
+    setRenaming(null)
     setView(next)
   }
   useLayoutEffect(() => {
@@ -192,6 +195,14 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     raw.current.removeRequest(entry)
     setVersion(value => value + 1)
   }
+  function renameRequest(value: string) {
+    const name = value.trim().slice(0, 80)
+    if (entry && entry.id === renaming && raw.current.requests.includes(entry) && !busy && !suspended && name) {
+      entry.name = name
+      setVersion(current => current + 1)
+    }
+    setRenaming(null)
+  }
   const invalidateSend = () => {
     context.current.generation += 1
     context.current.sendController?.abort()
@@ -207,6 +218,8 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     setDraft(null)
     setError("")
     setReplayMessage("")
+    if (nameRef.current) nameRef.current.value = ""
+    setRenaming(null)
     setView("original")
     originalPosition.current = { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 }
     setJsonView({ request: false, response: false })
@@ -269,7 +282,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   }, [accountId, suspended])
 
   useEffect(() => {
-    const clearOnUnload = () => { invalidateSend(); raw.current.clear() }
+    const clearOnUnload = () => { invalidateSend(); raw.current.clear(); if (nameRef.current) nameRef.current.value = ""; setRenaming(null) }
     const clearOnReplacement = () => close()
     window.addEventListener("beforeunload", clearOnUnload)
     window.addEventListener(DATASET_REPLACING, clearOnReplacement)
@@ -435,7 +448,15 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   }
 
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
-    <DialogContent ref={dialogRef} className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" style={{ width: maximized ? "calc(100vw - 24px)" : "min(var(--request-lab-width,min(1680px,90vw)),calc(100vw - 32px))", height: maximized ? "calc(100svh - 24px)" : "min(var(--request-lab-height,min(820px,90svh)),calc(100svh - 32px))", ...(dialogSize ? { "--request-lab-width": `${dialogSize.width}px`, "--request-lab-height": `${dialogSize.height}px` } : {}) } as CSSProperties} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => { if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) } }}>
+    <DialogContent ref={dialogRef} className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" style={{ width: maximized ? "calc(100vw - 24px)" : "min(var(--request-lab-width,min(1680px,90vw)),calc(100vw - 32px))", height: maximized ? "calc(100svh - 24px)" : "min(var(--request-lab-height,min(820px,90svh)),calc(100svh - 32px))", ...(dialogSize ? { "--request-lab-width": `${dialogSize.width}px`, "--request-lab-height": `${dialogSize.height}px` } : {}) } as CSSProperties} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => {
+      if (renaming !== null) {
+        event.preventDefault()
+        if (event.isComposing) return
+        if (nameRef.current) nameRef.current.value = entry?.name ?? ""
+        setRenaming(null)
+        requestRef.current?.focus()
+      } else if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) }
+    }}>
       <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
         <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
@@ -449,11 +470,21 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
           <div role="group" aria-label="요청 선택" className="flex items-center gap-1.5">
             <Button type="button" variant="outline" size="sm" className={`h-7 w-[104px] text-xs ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy} onClick={() => changeView("original")}>Original</Button>
             {!!raw.current.requests.length && <>
-              <select aria-label="편집 요청 선택" className={`${controlClass} w-[104px] ${entry ? "border-primary/50 bg-primary/10 text-primary" : ""}`} value={entry?.id ?? ""} disabled={!draft || suspended || busy} onChange={event => changeView(Number(event.target.value))}>
+              {entry && renaming === entry.id ? <input ref={nameRef} aria-label="요청 이름" className={`${controlClass} w-[104px]`} defaultValue={entry.name} maxLength={80} autoFocus disabled={suspended || busy} title="Enter로 저장 · Esc로 취소" onFocus={event => event.currentTarget.select()} onBlur={event => renameRequest(event.currentTarget.value)} onKeyDown={event => {
+                if (event.nativeEvent.isComposing || event.defaultPrevented) return
+                if (event.key === "Enter" || event.key === "Escape") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (event.key === "Escape") event.currentTarget.value = entry.name
+                  event.currentTarget.blur()
+                  requestRef.current?.focus()
+                }
+              }} /> : <select aria-label="편집 요청 선택" title={entry?.name} className={`${controlClass} w-[104px] ${entry ? "border-primary/50 bg-primary/10 text-primary" : ""}`} value={entry?.id ?? ""} disabled={!draft || suspended || busy} onChange={event => changeView(Number(event.target.value))}>
                 <option value="" disabled>요청 선택</option>
-                {raw.current.requests.map(item => <option key={item.id} value={item.id}>요청 {item.id}</option>)}
-              </select>
-              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label={entry ? `요청 ${entry.id} 삭제` : "편집 요청 삭제"} disabled={!entry || suspended || busy} onClick={removeRequest}><X aria-hidden="true" className="size-3.5" /></Button>
+                {raw.current.requests.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>}
+              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label="요청 이름 변경" title="요청 이름 변경" disabled={!entry || renaming !== null || suspended || busy} onClick={() => { if (entry) setRenaming(entry.id) }}><Pencil aria-hidden="true" className="size-3.5" /></Button>
+              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label={entry ? `${entry.name} 삭제` : "편집 요청 삭제"} disabled={!entry || suspended || busy} onClick={removeRequest}><X aria-hidden="true" className="size-3.5" /></Button>
             </>}
             <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label="새 요청 추가" disabled={!draft?.requestEditable || editRejected || suspended || busy} onClick={addRequest}><Plus aria-hidden="true" className="size-3.5" /></Button>
           </div>

@@ -13,6 +13,7 @@ export interface RequestLabResult {
 
 export interface RequestLabEntry {
   id: number
+  name: string
   request: string
   credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
   result: RequestLabResult | null
@@ -42,7 +43,7 @@ export interface MemoryOnlyRawState {
 export function createMemoryOnlyRawState(initial: { request?: string; response?: string } = {}): MemoryOnlyRawState {
   let sequence = 0
   const scrubResult = (result: RequestLabResult | null) => { if (result) { result.response = ""; result.failure = "" } }
-  const scrubEntry = (entry: RequestLabEntry) => { entry.request = ""; scrubResult(entry.result); entry.result = null }
+  const scrubEntry = (entry: RequestLabEntry) => { entry.name = ""; entry.request = ""; scrubResult(entry.result); entry.result = null }
   // Reserve formatter outputs and one in-flight submitted request conservatively as UTF-16.
   const bytes = () => 6 * REQUEST_LAB_MAX_BYTES + 2 * (state.originalRequest.length + state.originalResponse.length
     + state.requests.reduce((size, entry) => size + entry.request.length + (entry.result?.response.length ?? 0) + (entry.result?.failure?.length ?? 0), 0))
@@ -56,7 +57,8 @@ export function createMemoryOnlyRawState(initial: { request?: string; response?:
     requests: [],
     addRequest(request, credentialMode) {
       if (state.requests.length >= REQUEST_LAB_MAX_REQUESTS || request.length > REQUEST_LAB_MAX_BYTES || bytes() + 2 * request.length > REQUEST_LAB_WORKSPACE_BYTES) return null
-      const entry: RequestLabEntry = { id: ++sequence, request, credentialMode, result: null, dirty: false, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }
+      const id = ++sequence
+      const entry: RequestLabEntry = { id, name: `요청 ${id}`, request, credentialMode, result: null, dirty: false, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }
       state.requests.push(entry)
       return entry
     },

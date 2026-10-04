@@ -13,6 +13,9 @@ describe("memoryOnlyRawState", () => {
     const raw = createMemoryOnlyRawState({ request: secret, response: "RAW-SECRET-RESPONSE" })
     const first = raw.addRequest(raw.originalRequest, "ORIGINAL")!
     const second = raw.addRequest(first.request, "ANONYMOUS")!
+    expect(first.name).toBe("요청 1")
+    expect(second.name).toBe("요청 2")
+    first.name = "custom request name"
     raw.selectedId = first.id
     raw.editRequest(first, "edited first")
     raw.replaceResult(first, { response: "first response", status: 200, durationMs: 1 })
@@ -32,6 +35,8 @@ describe("memoryOnlyRawState", () => {
     expect(raw.originalResponse).toBe("")
     expect(first.request).toBe("")
     expect(second.request).toBe("")
+    expect(first.name).toBe("")
+    expect(second.name).toBe("")
     expect(result.response).toBe("")
     expect(raw.request).toBe("")
     expect(raw.response).toBe("")
