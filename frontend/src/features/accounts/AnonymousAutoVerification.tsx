@@ -55,30 +55,31 @@ export function AnonymousAutoVerification() {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 className="font-semibold">비로그인 자동 검증</h2>
-        <p className="mt-1 text-xs text-muted-foreground">계정 브라우저에서 새로 관측한 GET API를 Cookie·Authorization 등 관리 인증 헤더 없이 한 번 더 요청하고, 응답을 그래프에 기록합니다.</p>
+        <p className="mt-1 text-xs text-muted-foreground">계정에서 방문한 GET API를 비로그인으로도 확인하고 그래프에 기록합니다.</p>
       </div>
       <Button
         type="button"
         role="switch"
         aria-label="비로그인 자동 검증"
         aria-checked={enabled}
-        variant="ghost"
-        className="h-auto gap-2 px-0 py-1 hover:bg-transparent"
+        variant="outline"
+        className="gap-2"
         disabled={status.isLoading || change.isPending || anotherRun}
         onClick={() => change.mutate(!enabled)}
       >
         <span className="text-sm font-normal">{change.isPending ? "적용 중…" : enabled ? "켜짐" : "꺼짐"}</span>
-        <span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${enabled ? "border-primary bg-primary" : "border-input bg-muted"}`}>
-          <span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-background shadow-sm transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
+        <span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${enabled ? "border-brand bg-brand" : "border-input bg-muted"}`}>
+          <span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-white shadow-sm transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
         </span>
       </Button>
     </div>
-    <p className="text-xs text-muted-foreground">A·B가 같은 URL과 쿼리를 방문하면 실행 중 한 번만 검증합니다. 켠 뒤에 발생한 요청부터 적용됩니다.</p>
+
     {anotherRun && <Alert><AlertDescription>다른 라이브 권한 검증이 실행 중입니다. 해당 실행을 중지한 뒤 사용할 수 있습니다.</AlertDescription></Alert>}
     {error && <Alert variant="destructive"><AlertDescription>{error instanceof Error ? error.message : "자동 검증 상태를 변경하지 못했습니다."}</AlertDescription></Alert>}
-    {enabled && live && <div className="space-y-1 text-xs tabular-nums text-muted-foreground">
-      <p>관측 {live.observed}건 · 대상 {live.eligible}건 · 전송 예약 {live.queued}건 · 비로그인 응답 {live.sent}건 · 제외 {Math.max(0, live.skipped - live.failed)}건 · 실패 {live.failed}건</p>
-      {live.skipped > 0 && REASON_LABELS[live.lastReason] && <p>최근 제외/실패 사유: {REASON_LABELS[live.lastReason]}</p>}
+    {enabled && live && <div className="space-y-3">
+      <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm" aria-label="자동 검증 요약">{[["응답", live.sent], ["대기", Math.max(0, live.queued - live.sent - live.failed)], ["실패", live.failed]].map(([label, count]) => <div key={label} className="flex items-center gap-2"><dt className="text-muted-foreground">{label}</dt><dd className="font-medium tabular-nums">{count}건</dd></div>)}</dl>
+      <details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-1 hover:text-foreground">검증 상세</summary><div className="space-y-2 pt-2"><p>관측 {live.observed}건 · 대상 {live.eligible}건 · 전송 예약 {live.queued}건 · 비로그인 응답 {live.sent}건 · 제외 {Math.max(0, live.skipped - live.failed)}건 · 실패 {live.failed}건</p>{live.skipped > 0 && REASON_LABELS[live.lastReason] && <p>최근 제외/실패 사유: {REASON_LABELS[live.lastReason]}</p>}<p>켜진 뒤의 요청부터 적용됩니다. 같은 URL과 쿼리는 한 번만 확인합니다.</p></div></details>
     </div>}
+
   </section>
 }

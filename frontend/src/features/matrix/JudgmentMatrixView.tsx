@@ -83,7 +83,7 @@ function PolicyAssignment({ item, requiredRole: currentRequiredRole, identityKin
 function HumanRunGuidance({ disabled }: { disabled: boolean }) {
   const humanRun = useHumanRunQuery()
   if (humanRun.data?.active !== false) return null
-  return <p role="status" aria-label="확인 재전송 조건" className="flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-300">HUMAN 탐색이 꺼져 있어 결과가 이 셀에 반영되지 않습니다.<Button type="button" size="sm" variant="outline" className="h-7" disabled={disabled} onClick={() => { window.location.hash = "#inspection" }}>탐색 시작</Button></p>
+  return <p role="status" aria-label="확인 재전송 조건" className="flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-300">브라우저 수집이 꺼져 있어 결과가 이 셀에 반영되지 않습니다.<Button type="button" size="sm" variant="outline" className="h-7" disabled={disabled} onClick={() => { window.location.hash = "#accounts" }}>브라우저 열기</Button></p>
 }
 
 function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: JudgmentItem; requiredRole: string | undefined; identity: { kind: string; role: string } | undefined; disabled: boolean }) {
