@@ -48,6 +48,35 @@ final class RunContextRegistryTest {
         assertFalse(contexts.completedExplorations().contains(Source.LLM));
     }
 
+    @Test
+    void independentHumanRunsRequireExactIdsAndDoNotCompleteWhileAnotherWindowIsActive() {
+        RunContextRegistry contexts = new RunContextRegistry();
+        var a = new RunContextRegistry.Context(SourceDetail.BROWSER, Orchestrator.HUMAN,
+                ToolKind.BROWSER, RunPhase.EXPLORATION, "human-a", "A");
+        var b = new RunContextRegistry.Context(SourceDetail.BROWSER, Orchestrator.HUMAN,
+                ToolKind.BROWSER, RunPhase.EXPLORATION, "human-b", "B");
+        contexts.activateHuman(a);
+        contexts.activateHuman(b);
+        contexts.activateHuman(new RunContextRegistry.Context(SourceDetail.BROWSER, Orchestrator.HUMAN,
+                ToolKind.BROWSER, RunPhase.EXPLORATION, "human-anon", null));
+        assertNull(contexts.current(Source.HUMAN));
+        assertEquals(a, contexts.current(Source.HUMAN, "human-a"));
+        assertTrue(contexts.hasActiveRuns());
+        assertThrows(IllegalStateException.class, () -> contexts.activateHuman(a));
+        assertThrows(IllegalStateException.class, () -> contexts.activateHuman(new RunContextRegistry.Context(
+                SourceDetail.BROWSER, Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "a-again", "A")));
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "human-a");
+        assertEquals(b, contexts.current(Source.HUMAN, "human-b"));
+        assertFalse(contexts.completedExplorations().contains(Source.HUMAN));
+        assertTrue(contexts.abort(Source.HUMAN, "human-b"));
+        assertTrue(contexts.abort(Source.HUMAN, "human-anon"));
+        assertTrue(contexts.completedExplorations().contains(Source.HUMAN));
+        assertFalse(contexts.hasActiveRuns());
+        contexts.reset();
+        assertTrue(contexts.activeHumanRuns().isEmpty());
+        assertTrue(contexts.completedExplorations().isEmpty());
+    }
+
     private static void complete(RunContextRegistry contexts, Source source, SourceDetail detail, String runId) {
         RequestRecord record = new RequestRecord(source, "https://api.example.test:443",
                 "GET", "/health", 200, "test");

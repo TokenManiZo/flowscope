@@ -45,7 +45,7 @@ public final class LaneCompletionPolicy {
     public static RunContextRegistry.CompletedRun complete(RunContextRegistry registry, Source source,
                                                             String runId, Pipeline.Result snapshot) {
         if (registry == null) throw new IllegalArgumentException("run registry가 필요합니다.");
-        RunContextRegistry.Context active = registry.current(source);
+        RunContextRegistry.Context active = registry.current(source, runId);
         if (active == null || !runId.equals(active.runId()) || active.phase() != RunPhase.EXPLORATION) {
             throw new IllegalArgumentException("run_id가 활성 exploration run과 일치하지 않습니다.");
         }

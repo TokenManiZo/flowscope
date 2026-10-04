@@ -37,7 +37,12 @@ public final class CrossIdentityReplayOrchestrator {
     private static final Set<String> DRAFT_ONLY_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
     public record Recommendation(String operation, String targetIdentity, String basisIdentity,
-                                 String basisEvidenceId, URI target) {
+                                 String basisEvidenceId, URI target, long basisRuntimeId) {
+        public Recommendation(String operation, String targetIdentity, String basisIdentity,
+                              String basisEvidenceId, URI target) {
+            this(operation, targetIdentity, basisIdentity, basisEvidenceId, target, -1);
+        }
+
         public Recommendation {
             operation = required(operation, "operation");
             targetIdentity = required(targetIdentity, "targetIdentity");
@@ -119,6 +124,21 @@ public final class CrossIdentityReplayOrchestrator {
 
     public record RunResult(String runId, boolean armed, int sent, int drafted, int skipped, List<Item> items) {
         public RunResult { items = List.copyOf(items); }
+    }
+
+    /** Safe transport failure code for the UI; the cause stays in process and is never returned. */
+    public static final class TransportFailure extends RuntimeException {
+        private final String reason;
+
+        public TransportFailure(String reason, Throwable cause) {
+            super(reason, cause);
+            if (reason == null || !reason.matches("[A-Z0-9_]+")) {
+                throw new IllegalArgumentException("safe transport failure reason is required");
+            }
+            this.reason = reason;
+        }
+
+        public String reason() { return reason; }
     }
 
     private final SessionBroker sessions;
@@ -211,7 +231,9 @@ public final class CrossIdentityReplayOrchestrator {
                     items.add(item(recommendation, Outcome.SENT, exchange.result(), reason));
                     sent++;
                 } catch (Exception error) {
-                    items.add(item(recommendation, Outcome.EXECUTION_FAILED, null, "CONTROLLED_SEND_FAILED"));
+                    String reason = error instanceof TransportFailure failure
+                            ? failure.reason() : "CONTROLLED_SEND_FAILED";
+                    items.add(item(recommendation, Outcome.EXECUTION_FAILED, null, reason));
                     skipped++;
                 }
                 continue;
@@ -267,8 +289,10 @@ public final class CrossIdentityReplayOrchestrator {
     }
 
     private static String method(String operation) {
-        int separator = operation.indexOf(' ');
-        return (separator < 0 ? operation : operation.substring(0, separator)).trim().toUpperCase(Locale.ROOT);
+        String[] parts = operation.trim().split("\\s+", 3);
+        String first = parts[0].toUpperCase(Locale.ROOT);
+        if (SAFE_METHODS.contains(first) || DRAFT_ONLY_METHODS.contains(first)) return first;
+        return parts.length > 1 ? parts[1].toUpperCase(Locale.ROOT) : first;
     }
 
     private static String required(String value, String name) {

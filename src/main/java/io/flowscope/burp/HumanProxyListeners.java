@@ -1,0 +1,117 @@
+package io.flowscope.burp;
+
+import burp.api.montoya.burpsuite.BurpSuite;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
+/** Edits only the listener list, preserving existing entries and removing only unmodified owned entries. */
+final class HumanProxyListeners implements AutoCloseable {
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final String PATH = "proxy.request_listeners";
+    private boolean wrappedProjectOptions;
+    private final BurpSuite burp;
+    private final Set<Integer> reserved;
+    private final Map<Integer, JsonNode> owned = new HashMap<>();
+
+    HumanProxyListeners(BurpSuite burp, Set<Integer> reserved) {
+        this.burp = burp;
+        this.reserved = Set.copyOf(reserved);
+    }
+
+    synchronized int open() throws IOException {
+        for (int attempt = 0; attempt < 8; attempt++) {
+            ArrayNode listeners = listeners();
+            int port;
+            try (var candidate = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+                port = candidate.getLocalPort();
+            }
+            if (reserved.contains(port) || contains(listeners, port)) continue;
+            ObjectNode entry = JSON.createObjectNode().put("listen_mode", "loopback_only")
+                    .put("listener_port", port).put("running", true).put("certificate_mode", "per_host")
+                    .put("enable_http2", true);
+            listeners.add(entry);
+            owned.put(port, entry);
+            try {
+                apply(listeners);
+                JsonNode actual = find(listeners(), port);
+                if (actual != null) owned.put(port, actual.deepCopy());
+                if (actual != null && actual.path("running").asBoolean() && reachable(port)) return port;
+            } catch (IOException | RuntimeException failure) {
+                try { remove(port); }
+                catch (IOException | RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+                throw new IOException("Burp 수집용 프록시 설정을 적용하지 못했습니다.", failure);
+            }
+            remove(port);
+        }
+        throw new IOException("수집용 프록시 포트를 열지 못했습니다. Burp 리스너 상태를 확인하세요.");
+    }
+
+    synchronized void remove(int port) throws IOException {
+        JsonNode entry = owned.get(port);
+        if (entry == null) return;
+        ArrayNode listeners = listeners();
+        ArrayNode remaining = JSON.createArrayNode();
+        for (JsonNode current : listeners) {
+            if (!entry.equals(current)) remaining.add(current);
+        }
+        apply(remaining);
+        owned.remove(port);
+    }
+
+    private ArrayNode listeners() throws IOException {
+        JsonNode config = JSON.readTree(burp.exportProjectOptionsAsJson(PATH));
+        JsonNode value = config.path("proxy").path("request_listeners");
+        wrappedProjectOptions = false;
+        if (!value.isArray()) {
+            config = JSON.readTree(burp.exportProjectOptionsAsJson("project_options." + PATH));
+            value = config.path("project_options").path("proxy").path("request_listeners");
+            wrappedProjectOptions = true;
+        }
+        if (!value.isArray()) throw new IOException("Burp 프록시 리스너 설정 형식을 읽지 못했습니다.");
+        return ((ArrayNode) value).deepCopy();
+    }
+
+    private void apply(ArrayNode listeners) {
+        ObjectNode config = JSON.createObjectNode();
+        (wrappedProjectOptions ? config.putObject("project_options") : config)
+                .putObject("proxy").set("request_listeners", listeners);
+        burp.importProjectOptionsFromJson(config.toString());
+    }
+
+    private static boolean contains(ArrayNode listeners, int port) { return find(listeners, port) != null; }
+    private static JsonNode find(ArrayNode listeners, int port) {
+        for (JsonNode value : listeners) if (value.path("listener_port").asInt() == port) return value;
+        return null;
+    }
+
+    private static boolean reachable(int port) {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            try (var socket = new Socket()) {
+                socket.connect(new InetSocketAddress("127.0.0.1", port), 100);
+                return true;
+            } catch (IOException ignored) {
+                try { Thread.sleep(100); }
+                catch (InterruptedException error) { Thread.currentThread().interrupt(); return false; }
+            }
+        }
+        return false;
+    }
+
+    @Override public synchronized void close() {
+        for (int port : Set.copyOf(owned.keySet())) {
+            try { remove(port); }
+            catch (IOException | RuntimeException ignored) { /* Keep ownership so a later cleanup can retry. */ }
+        }
+    }
+}

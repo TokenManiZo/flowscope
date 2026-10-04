@@ -818,6 +818,58 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void independentHumanAccountsAndAnonymousCanCollectTogetherAndEndByExactRun() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("user-b", "B", state.record.service, AccessRole.USER));
+        state.rebuild();
+        start();
+        assertEquals(200, post("/api/human-run", "action=begin&runId=a&account=user-a", token).statusCode());
+        assertEquals(200, post("/api/human-run", "action=begin&runId=b&account=user-b", token).statusCode());
+        JsonNode all = json(post("/api/human-run", "action=begin&runId=anon", token));
+        assertEquals(3, all.path("runs").size());
+        assertNull(state.contexts.current(Source.HUMAN));
+        assertEquals(400, post("/api/human-run", "action=begin&runId=a2&account=user-a", token).statusCode());
+        assertEquals(400, post("/api/human-run", "action=begin&runId=b&account=user-a", token).statusCode());
+        assertEquals(400, post("/api/human-run", "action=end&runId=wrong", token).statusCode());
+        state.addHumanEvidence("a", "user-a");
+        JsonNode ended = json(post("/api/human-run", "action=end&runId=a", token));
+        assertEquals(2, ended.path("runs").size());
+        assertFalse(ended.path("completed").asBoolean());
+        assertFalse(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
+        assertTrue(state.sessions.viewForAccount("user-b").orElseThrow().capturing());
+        assertEquals(200, post("/api/human-run", "action=end&runId=b", token).statusCode());
+        assertTrue(json(post("/api/human-run", "action=end&runId=anon", token)).path("completed").asBoolean());
+    }
+
+    @Test
+    void humanBrowserStartFailureRollsBackTheRunAndCredentials() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
+        state.failHumanBrowser = true;
+        start();
+        assertEquals(400, post("/api/human-run", "action=begin&runId=failed&account=user-a", token).statusCode());
+        assertTrue(state.contexts.activeHumanRuns().isEmpty());
+        assertTrue(state.sessions.viewForAccount("user-a").isEmpty());
+        state.failHumanBrowser = false;
+        assertEquals(200, post("/api/human-run", "action=begin&runId=retry&account=user-a", token).statusCode());
+    }
+
+    @Test
+    void closingTheBrowserAbortsAndEndsOnlyItsOwnCapture() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("user-b", "B", state.record.service, AccessRole.USER));
+        start();
+        assertEquals(200, post("/api/human-run", "action=begin&runId=a&account=user-a", token).statusCode());
+        assertEquals(200, post("/api/human-run", "action=begin&runId=b&account=user-b", token).statusCode());
+        state.closedHumanBrowser = "a";
+        JsonNode body = json(get("/api/human-run", token, origin()));
+        assertEquals(1, body.path("runs").size());
+        assertEquals("b", body.path("runs").get(0).path("runId").asText());
+        assertFalse(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
+        assertTrue(state.sessions.viewForAccount("user-b").orElseThrow().capturing());
+        assertFalse(body.path("completed").asBoolean());
+    }
+
+    @Test
     void capturesManagedSessionWithoutReturningRawCredentials() throws Exception {
         state.config.upsertAccount(new AccountProfile("user-a", "USER A", state.record.service, AccessRole.USER));
         state.rebuild();
@@ -1194,6 +1246,18 @@ final class FlowScopeWebServerTest {
         JsonNode stopped = json(post("/api/authorization-replay", "action=stop-live", token));
         assertEquals("STOPPED", stopped.path("live").path("state").asText());
         assertTrue(state.liveAuthorizationReplayStopped);
+
+        assertEquals(400, post("/api/authorization-replay",
+                "action=start-anonymous-get&armed=false", token).statusCode());
+        JsonNode automatic = json(post("/api/authorization-replay",
+                "action=start-anonymous-get&armed=true", token));
+        assertEquals("ACTIVE", automatic.path("live").path("state").asText());
+        assertTrue(automatic.path("live").path("automaticAnonymousGet").asBoolean());
+        assertTrue(automatic.path("live").path("includeAnonymous").asBoolean());
+        assertTrue(automatic.path("live").path("targetAccountIds").isEmpty());
+        assertEquals(List.of("HUMAN"), JSON.convertValue(
+                automatic.path("live").path("basisSources"),
+                JSON.getTypeFactory().constructCollectionType(List.class, String.class)));
     }
 
     @Test
@@ -1497,6 +1561,8 @@ final class FlowScopeWebServerTest {
         private volatile List<String> scannerAccounts = List.of();
         private volatile boolean scannerAnonymous;
         private volatile int observedHumanPort = -1;
+        private boolean failHumanBrowser;
+        private String closedHumanBrowser = "";
         private volatile int otherHumanPort = -1;
         private volatile long otherHumanRequests;
         private volatile boolean scannerCancelled;
@@ -1586,6 +1652,10 @@ final class FlowScopeWebServerTest {
         @Override public List<LegacyAssessment> assessments() { return archivedAssessments; }
         @Override public List<ValidationDecision> validations() { return archivedValidations; }
         @Override public RunContextRegistry contexts() { return contexts; }
+        @Override public void humanRunStarted(String runId) {
+            if (failHumanBrowser) throw new IllegalStateException("browser failed");
+        }
+        @Override public boolean humanBrowserAlive(String runId) { return !runId.equals(closedHumanBrowser); }
         @Override public int humanListenerPort(String runId) { return observedHumanPort; }
         @Override public int otherHumanListenerPort(String runId) { return otherHumanPort; }
         @Override public long otherHumanListenerRequests(String runId) { return otherHumanRequests; }
@@ -1774,6 +1844,13 @@ final class FlowScopeWebServerTest {
             liveAuthorizationReplay = new LiveCrossIdentityReplayCoordinator.Snapshot(
                     "live-test", LiveCrossIdentityReplayCoordinator.State.ACTIVE, true,
                     accountIds, anonymous, 0, 0, 0, 0, 0, 0, "ARMED", basisSources);
+            return liveAuthorizationReplay;
+        }
+        @Override public LiveCrossIdentityReplayCoordinator.Snapshot startAutomaticAnonymousGet(boolean armed) {
+            if (!armed) throw new IllegalArgumentException("approval required");
+            liveAuthorizationReplay = new LiveCrossIdentityReplayCoordinator.Snapshot(
+                    "live-anonymous-test", LiveCrossIdentityReplayCoordinator.State.ACTIVE, true,
+                    List.of(), true, true, 0, 0, 0, 0, 0, 0, "ARMED", List.of(Source.HUMAN));
             return liveAuthorizationReplay;
         }
         @Override public LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {

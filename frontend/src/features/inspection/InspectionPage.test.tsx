@@ -283,6 +283,23 @@ describe("unified inspection hub", () => {
     expect(screen.queryByText(/실제 리스너 감지 대기 브라우저로/)).not.toBeInTheDocument()
   })
 
+  it("lets another account start while A is collecting and ends only the selected account run", async () => {
+    const user = userEvent.setup()
+    const { fetchStub } = renderInspection({ human: { active: true, completed: false,
+      runId: "human-a", accountId: "active-account", proxy: "http://127.0.0.1:18080",
+      runs: [{ runId: "human-a", accountId: "active-account", proxy: "http://127.0.0.1:18080" },
+        { runId: "human-anon", accountId: "", proxy: "http://127.0.0.1:18081" }] } })
+    expect(await screen.findByText("2개 창 기록 중")).toBeVisible()
+    expect(screen.getByRole("combobox", { name: "HUMAN pass 계정" })).toBeEnabled()
+    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
+    await user.click(screen.getByRole("option", { name: "활성 계정" }))
+    expect(screen.getByRole("button", { name: "HUMAN pass 시작" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "HUMAN pass 종료" }))
+    await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/human-run"
+      && (init as RequestInit).body?.toString() === "action=end&runId=human-a")).toBe(true))
+    expect(screen.getByRole("button", { name: "비로그인 수집 종료" })).toBeEnabled()
+  })
+
   it("sends only the action and anonymous account for a HUMAN begin", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection()

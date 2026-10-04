@@ -25,9 +25,10 @@ function snapshot() { return { ...snapshotFixture,
   managedSessions: [{ handle: "active", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }],
 } }
 function postBodies(fetchStub: ReturnType<typeof vi.fn>, path: string) { return fetchStub.mock.calls.filter(([called, init]) => called === path && (init as RequestInit).method === "POST").map(([, init]) => ((init as RequestInit).body as URLSearchParams).toString()) }
-function renderAccounts(errors: Partial<Record<string, string>> = {}, data = snapshot()) {
+function renderAccounts(errors: Partial<Record<string, string>> = {}, data = snapshot(), activeRuns: { runId: string; accountId: string; proxy: string }[] = []) {
   const meta = document.createElement("meta"); meta.name = "flowscope-capability"; meta.content = rawSecret; document.head.append(meta)
   const fetchStub = vi.fn((path: string, init?: RequestInit) => {
+    if (path === "/api/human-run" && !init?.method) return Promise.resolve(response({ active: activeRuns.length > 0, runs: activeRuns, completed: false, runId: "", accountId: "", proxy: "" }))
     if (path === "/api/snapshot") return Promise.resolve(response(data))
     if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "NOT_STARTED" }, accounts: [], scope: ["http://127.0.0.1:9000/"] }))
     if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, managedRuntime: true, state: "READY", message: "ready" }))
@@ -51,7 +52,7 @@ afterAll(() => {
   else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
 
-afterEach(() => { document.head.querySelector('meta[name="flowscope-capability"]')?.remove(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear() })
+afterEach(() => { window.location.hash = ""; document.head.querySelector('meta[name="flowscope-capability"]')?.remove(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear() })
 
 describe("account and session management", () => {
   it("shows a compact account overview and removes diagnostics and the permanent form", async () => {
@@ -83,13 +84,36 @@ describe("account and session management", () => {
     expect(lanes).toHaveTextContent(/ZAP[\s\S]*1건/)
   })
 
-  it("hands the account to the inspection page when collecting as that account", async () => {
-    const user = userEvent.setup(); renderAccounts()
+  it("opens the account browser and capture directly, without arming anonymous replay", async () => {
+    const user = userEvent.setup(); const fetchStub = renderAccounts()
     const card = await screen.findByRole("article", { name: "계정 A 계정" })
-    await user.click(within(card).getByRole("button", { name: "이 계정으로 수집" }))
-    expect(sessionStorage.getItem("flowscope.humanAccount")).toBe("account-a")
+    const login = within(card).getByRole("button", { name: "이 계정으로 로그인" })
+    await waitFor(() => expect(login).toBeEnabled())
+    await user.click(login)
+    await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=begin&account=account-a"]))
+    expect(sessionStorage.getItem("flowscope.humanAccount")).toBeNull()
+    expect(window.location.hash).toBe("")
+    expect(postBodies(fetchStub, "/api/authorization-replay")).toEqual([])
+    expect(postBodies(fetchStub, "/api/request-lab")).toEqual([])
+  })
+
+  it("keeps the user on the account page when the browser fails to open", async () => {
+    const user = userEvent.setup(); renderAccounts({ "/api/human-run": "Chromium을 찾지 못했습니다." })
+    const card = await screen.findByRole("article", { name: "계정 A 계정" })
+    const login = within(card).getByRole("button", { name: "이 계정으로 로그인" })
+    await waitFor(() => expect(login).toBeEnabled())
+    await user.click(login)
+    expect(await screen.findByText("Chromium을 찾지 못했습니다.")).toBeVisible()
+    expect(window.location.hash).toBe("")
+    expect(sessionStorage.getItem("flowscope.humanAccount")).toBeNull()
+  })
+
+  it("shows an already open account capture without opening another browser", async () => {
+    const user = userEvent.setup(); const fetchStub = renderAccounts({}, snapshot(), [{ runId: "run-a", accountId: "account-a", proxy: "http://127.0.0.1:9911" }])
+    const card = await screen.findByRole("article", { name: "계정 A 계정" })
+    await user.click(await within(card).findByRole("button", { name: "수집 보기" }))
+    expect(postBodies(fetchStub, "/api/human-run")).toEqual([])
     expect(window.location.hash).toBe("#inspection")
-    window.location.hash = ""
   })
 
   it("registers an account from three fields in a centered dialog prefilled from the scope", async () => {

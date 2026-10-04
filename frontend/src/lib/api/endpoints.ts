@@ -5,6 +5,7 @@ import type {
   ApiSuccess,
   EvidencePage,
   HumanRun,
+  LiveAuthorizationReplayEnvelope,
   ImportXmlResult,
   ManualAttempt,
   ReplayResult,
@@ -34,6 +35,12 @@ export const openReplay = (values: { eventId: string; request: string; credentia
   postForm<ReplayResult>("/api/replay", values)
 export const runAuthorizationReplay = (itemId: string, armed: boolean) =>
   postForm<AuthorizationReplayResult>("/api/authorization-replay", { action: "run", itemId, armed: String(armed) })
+export const getLiveAuthorizationReplay = (signal?: AbortSignal) =>
+  apiFetch<LiveAuthorizationReplayEnvelope>("/api/authorization-replay", formSignal(signal))
+export const startAutomaticAnonymousGet = () =>
+  postForm<LiveAuthorizationReplayEnvelope>("/api/authorization-replay", { action: "start-anonymous-get", armed: "true" })
+export const stopLiveAuthorizationReplay = () =>
+  postForm<LiveAuthorizationReplayEnvelope>("/api/authorization-replay", { action: "stop-live" })
 /** 추천 여부와 무관하게 이 셀의 교차 요청을 대상 신원 자격으로 Burp Repeater 초안으로 연다(자동 전송 없음). */
 export const draftAuthorizationReplay = (itemId: string) =>
   postForm<ApiSuccess>("/api/authorization-replay", { action: "draft", itemId })

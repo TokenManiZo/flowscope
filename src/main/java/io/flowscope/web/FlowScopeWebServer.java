@@ -82,6 +82,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         List<ValidationDecision> validations();
         RunContextRegistry contexts();
         default void humanRunStarted(String runId) {}
+        default void humanRunStopped(String runId) {}
+        default boolean humanBrowserAlive(String runId) { return true; }
         default int humanListenerPort(String runId) { return -1; }
         default int otherHumanListenerPort(String runId) { return -1; }
         default long otherHumanListenerRequests(String runId) { return 0; }
@@ -118,6 +120,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default LiveCrossIdentityReplayCoordinator.Snapshot startLiveAuthorizationReplay(
                 List<String> accountIds, boolean anonymous, List<Source> basisSources, boolean armed) {
             return startLiveAuthorizationReplay(accountIds, anonymous, armed);
+        }
+        default LiveCrossIdentityReplayCoordinator.Snapshot startAutomaticAnonymousGet(boolean armed) {
+            throw new UnsupportedOperationException("automatic anonymous verification is unavailable");
         }
         default LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
             return new LiveCrossIdentityReplayCoordinator.Snapshot("",
@@ -600,6 +605,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         Boolean.parseBoolean(form.getOrDefault("armed", "false"))),
                         "라이브 교차 재전송을 시작했습니다.");
             }
+            if (action.equals("start-anonymous-get")) {
+                return liveAuthorizationReplay(state.startAutomaticAnonymousGet(
+                                Boolean.parseBoolean(form.getOrDefault("armed", "false"))),
+                        "비로그인 자동 검증을 시작했습니다.");
+            }
             if (action.equals("stop-live")) {
                 return liveAuthorizationReplay(state.stopLiveAuthorizationReplay(),
                         "라이브 교차 재전송을 중지했습니다.");
@@ -656,6 +666,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         var targets = live.putArray("targetAccountIds");
         status.targetAccountIds().forEach(targets::add);
         live.put("includeAnonymous", status.includeAnonymous());
+        live.put("automaticAnonymousGet", status.automaticAnonymousGet());
         var basisSources = live.putArray("basisSources");
         status.basisSources().forEach(source -> basisSources.add(source.name()));
         live.put("observed", status.observed());
@@ -664,6 +675,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         live.put("sent", status.sent());
         live.put("drafted", status.drafted());
         live.put("skipped", status.skipped());
+        live.put("failed", status.failed());
         live.put("lastReason", status.lastReason());
         return json(200, body);
     }
@@ -839,16 +851,24 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private LoopbackHttpServer.Response humanRun(LoopbackHttpServer.Request request) throws IOException {
+        synchronized (state.contexts()) { return humanRunLocked(request); }
+    }
+
+    private LoopbackHttpServer.Response humanRunLocked(LoopbackHttpServer.Request request) throws IOException {
         if (request.method().equals("GET")) return humanRunState();
         Map<String, String> form = postForm(request);
         if (form == null) return invalidForm(request);
         try {
             String action = required(form, "action").toLowerCase(Locale.ROOT);
             if (action.equals("begin")) {
-                String runId = validatedRunId(form.getOrDefault("runId", "human-" + System.currentTimeMillis()));
+                String runId = validatedRunId(form.getOrDefault("runId", "human-" + java.util.UUID.randomUUID()));
                 String accountId = form.getOrDefault("account", "").trim();
-                if (state.contexts().current(Source.HUMAN) != null) {
-                    throw new IllegalStateException("HUMAN run이 이미 진행 중입니다.");
+                if (state.contexts().activeHumanRuns().stream().anyMatch(active ->
+                        java.util.Objects.equals(active.accountId(), accountId.isBlank() ? null : accountId))) {
+                    throw new IllegalStateException("이 계정은 이미 HUMAN 수집 중입니다.");
+                }
+                if (state.contexts().current(Source.HUMAN, runId) != null) {
+                    throw new IllegalArgumentException("이미 사용 중인 HUMAN runId입니다.");
                 }
                 if (!accountId.isBlank()) {
                     AccountProfile account = state.config().account(accountId)
@@ -857,15 +877,24 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     if (broker == null) throw new IllegalStateException("세션 브로커를 사용할 수 없습니다.");
                     // The pass itself is the account's capture: credentialed traffic from here on is this
                     // account's, and its latest credentials become the reusable session. No prior login capture.
-                    broker.beginCapture(account, java.time.Instant.now());
+                    broker.beginIsolatedCapture(account, java.time.Instant.now());
                 }
-                state.contexts().activate(Source.HUMAN, new RunContextRegistry.Context(SourceDetail.BROWSER,
+                state.contexts().activateHuman(new RunContextRegistry.Context(SourceDetail.BROWSER,
                         Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, runId,
                         accountId.isBlank() ? null : accountId));
-                state.humanRunStarted(runId);
+                try {
+                    state.humanRunStarted(runId);
+                } catch (RuntimeException failure) {
+                    RunContextRegistry.Context failed = state.contexts().current(Source.HUMAN, runId);
+                    state.contexts().abort(Source.HUMAN, runId);
+                    String handle = humanCaptureHandle(failed);
+                    if (handle != null) state.sessions().revoke(handle);
+                    state.humanRunStopped(runId);
+                    throw failure;
+                }
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
-                RunContextRegistry.Context active = state.contexts().current(Source.HUMAN);
+                RunContextRegistry.Context active = state.contexts().current(Source.HUMAN, runId);
                 Pipeline.Result snapshot = state.completionSnapshot();
                 // A pass ended before any trusted response Evidence is aborted (not completed) instead of
                 // staying stuck on an error; completion still requires Evidence.
@@ -875,7 +904,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     throw new IllegalArgumentException("run_id가 활성 exploration run과 일치하지 않습니다.");
                 }
                 String handle = humanCaptureHandle(active);
-                if (handle != null) state.sessions().endCapture(handle);
+                try { state.humanRunStopped(runId); }
+                finally { if (handle != null) state.sessions().endCapture(handle); }
             } else {
                 throw new IllegalArgumentException("action은 begin 또는 end여야 합니다.");
             }
@@ -886,11 +916,25 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private LoopbackHttpServer.Response humanRunState() throws IOException {
-        RunContextRegistry.Context context = state.contexts().current(Source.HUMAN);
-        SessionBroker.SessionView capture = humanCapture(context).orElse(null);
-        ObjectNode body = json.createObjectNode();
-        body.put("active", context != null);
+        for (RunContextRegistry.Context active : state.contexts().activeHumanRuns()) {
+            if (!state.humanBrowserAlive(active.runId())) {
+                state.contexts().abort(Source.HUMAN, active.runId());
+                String handle = humanCaptureHandle(active);
+                try { state.humanRunStopped(active.runId()); }
+                finally { if (handle != null) state.sessions().endCapture(handle); }
+            }
+        }
+        List<RunContextRegistry.Context> runs = state.contexts().activeHumanRuns();
+        ObjectNode body = humanRunJson(runs.isEmpty() ? null : runs.getFirst());
+        body.put("active", !runs.isEmpty());
         body.put("completed", state.contexts().completedExplorations().contains(Source.HUMAN));
+        var list = body.putArray("runs");
+        runs.forEach(context -> list.add(humanRunJson(context)));
+        return json(200, body);
+    }
+
+    private ObjectNode humanRunJson(RunContextRegistry.Context context) {
+        ObjectNode body = json.createObjectNode();
         body.put("runId", context == null ? "" : context.runId());
         body.put("accountId", context == null || context.accountId() == null ? "" : context.accountId());
         int port = context == null ? -1 : state.humanListenerPort(context.runId());
@@ -898,7 +942,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("listenerPort", port);
         body.put("otherListenerPort", context == null ? -1 : state.otherHumanListenerPort(context.runId()));
         body.put("otherListenerRequests", context == null ? 0 : state.otherHumanListenerRequests(context.runId()));
-        return json(200, body);
+        return body;
     }
 
     /** The account capture that belongs to the running HUMAN pass, if it is still capturing. */
@@ -1175,6 +1219,14 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String id = required(form, "id");
             // removeAccount also drops this account's session bindings; records fall back to unresolved identities.
             if (state.config().account(id).isEmpty()) throw new IllegalArgumentException("존재하지 않는 계정입니다.");
+            synchronized (state.contexts()) {
+                for (var active : state.contexts().activeHumanRuns()) {
+                    if (id.equals(active.accountId())) {
+                        state.contexts().abort(Source.HUMAN, active.runId());
+                        state.humanRunStopped(active.runId());
+                    }
+                }
+            }
             if (state.sessions() != null) state.sessions().viewForAccount(id)
                     .ifPresent(view -> state.sessions().revoke(view.handle()));
             if (state.zapAccounts().stream().anyMatch(account -> account.id().equals(id))) {

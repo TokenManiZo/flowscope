@@ -117,7 +117,11 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const events = snapshot.data?.events ?? []
   const humanAccounts = useMemo(() => humanPassAccounts(scope, snapshot.data?.accounts ?? []), [snapshot.data?.accounts, scope])
   const humanAccountIds = humanAccounts.map((account) => account.id)
-  const humanAccountLabel = humanAccounts.find((account) => account.id === human.data?.accountId)?.label ?? human.data?.accountId ?? ""
+  const humanRuns = human.data?.runs ?? (human.data?.active ? [human.data] : [])
+  const selectedHumanAccount = !human.data?.runs && human.data?.active
+    ? human.data.accountId || ANONYMOUS_HUMAN_ACCOUNT : humanAccount
+  const selectedHumanRun = humanRuns.find((run) => (run.accountId || ANONYMOUS_HUMAN_ACCOUNT) === selectedHumanAccount)
+  const humanAccountLabel = humanAccounts.find((account) => account.id === selectedHumanRun?.accountId)?.label ?? selectedHumanRun?.accountId ?? ""
   const targetAccounts = useMemo(() => (snapshot.data?.accounts ?? []).filter((account) =>
     normalizedOrigin(account.target) === normalizedOrigin(target)), [snapshot.data?.accounts, target])
   const scannerAccountIds = (scanner.data?.accounts ?? []).filter((account) =>
@@ -128,8 +132,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   const scannerCleaning = scannerRunning && scanner.data?.run.stage === "CLEANUP"
   const scannerStarted = scanner.data !== undefined && scanner.data.run.status !== "NOT_STARTED"
   const zapCanStart = zapConnected && targetInScope && (anonymous || selectedAccounts.length > 0) && !scannerRunning && !scannerMutation.isPending
-  const humanCanStart = human.data !== undefined && !human.data.active && !humanMutation.isPending
-  const humanCanEnd = human.data?.active === true && human.data.runId.trim() !== "" && !humanMutation.isPending
+  const humanCanStart = human.data !== undefined && !selectedHumanRun && !humanMutation.isPending
+  const humanCanEnd = selectedHumanRun !== undefined && selectedHumanRun.runId.trim() !== "" && !humanMutation.isPending
   const scannerHint = !zapConnected ? "ZAP을 켜면 시작할 수 있습니다."
     : !targetInScope ? "scope에 포함된 대상이 없습니다."
       : !anonymous && selectedAccounts.length === 0 ? "비로그인 또는 계정을 하나 이상 고르세요."
@@ -203,7 +207,7 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
   // 서버는 실제 Burp 리스너를 찾기 전에는 주소 대신 안내 문구를 보낸다(#25). 그때는 주소를 지어내지 않는다.
   const humanProxyLabel = /^https?:\/\//.test(human.data?.proxy ?? "") ? `프록시 ${human.data!.proxy.replace(/^https?:\/\//, "")}` : "Burp 프록시"
   const humanStatus = !human.data ? human.isPending ? "불러오는 중" : "상태 확인 필요"
-    : human.data.active ? `${humanAccountLabel || "비로그인"} 기록 중`
+    : human.data.active ? humanRuns.length > 1 ? `${humanRuns.length}개 창 기록 중` : `${humanAccountLabel || "비로그인"} 기록 중`
       : human.data.completed ? "완료" : "대기 중"
 
   return (
@@ -233,7 +237,8 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
             label="HUMAN"
             onRecordFocusChange={setRecordFocused}
             title="직접 둘러보기"
-            description={`계정을 고르고 시작한 뒤, ${humanProxyLabel} 브라우저로 서비스를 사용하세요.`}
+            description={human.data?.runs ? "계정을 고르고 시작하면 수집 브라우저가 열립니다. 각 창에서 해당 계정으로 로그인하고 서비스를 사용하세요."
+              : `계정을 고르고 시작한 뒤, ${humanProxyLabel} 브라우저로 서비스를 사용하세요.`}
             notices={human.data?.otherListenerRequests ? <Alert><AlertDescription>
               다른 포트 {human.data.otherListenerPort}에서 범위 안 요청 {human.data.otherListenerRequests}건이 들어왔어요. 이 요청은 이번 수집에 넣지 않았어요.
             </AlertDescription></Alert> : undefined}
@@ -241,27 +246,32 @@ export function InspectionPage({ humanFeedItems }: { humanFeedItems?: readonly S
               <div className="grid gap-1.5">
                 <span className="text-xs text-muted-foreground" id="human-account-label">수집할 계정</span>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Select value={human.data?.active ? human.data.accountId || ANONYMOUS_HUMAN_ACCOUNT : humanAccount} onValueChange={setHumanAccount} disabled={!humanCanStart}>
+                  <Select value={selectedHumanAccount} onValueChange={setHumanAccount} disabled={humanMutation.isPending || !human.data}>
                     <SelectTrigger id="human-account" aria-label="HUMAN pass 계정" className="w-56"><SelectValue placeholder="비로그인" /></SelectTrigger>
                     <SelectContent><SelectItem value={ANONYMOUS_HUMAN_ACCOUNT}>비로그인</SelectItem>{humanAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.label}</SelectItem>)}</SelectContent>
                   </Select>
                   <Button disabled={!humanCanStart} onClick={() => humanMutation.mutate({
                     action: "begin",
-                    account: humanAccount === ANONYMOUS_HUMAN_ACCOUNT ? "" : humanAccount,
+                    account: selectedHumanAccount === ANONYMOUS_HUMAN_ACCOUNT ? "" : selectedHumanAccount,
                   })} aria-label="HUMAN pass 시작">시작</Button>
                   <Button variant="outline" disabled={!humanCanEnd} onClick={() => {
-                    if (human.data?.runId.trim()) humanMutation.mutate({ action: "end", runId: human.data.runId })
+                    if (selectedHumanRun?.runId.trim()) humanMutation.mutate({ action: "end", runId: selectedHumanRun.runId })
                   }} aria-label="HUMAN pass 종료">종료</Button>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">계정 선택 → 시작 → 서비스 탐색 → 종료. 계정을 바꾸기 전에 종료하세요.</p>
-              <p className="flex items-center gap-2 text-sm" aria-label="HUMAN 상태"><span aria-hidden="true" className={cn("size-1.5 rounded-full", human.data?.active ? "bg-emerald-500" : "bg-muted-foreground/40")} /><span className="font-medium">{humanStatus}</span><span className="text-muted-foreground">· 다른 계정은 종료 후 다시 시작</span></p>
+              <p className="text-xs text-muted-foreground">계정 선택 → 시작 → 열린 창에서 로그인·탐색 → 종료. 다른 계정도 별도 창에서 함께 수집할 수 있습니다.</p>
+              <p className="flex items-center gap-2 text-sm" aria-label="HUMAN 상태"><span aria-hidden="true" className={cn("size-1.5 rounded-full", human.data?.active ? "bg-emerald-500" : "bg-muted-foreground/40")} /><span className="font-medium">{humanStatus}</span><span className="text-muted-foreground">· 계정마다 로그인과 쿠키가 분리됩니다</span></p>
             </div>}
             aside={<section className="rounded-xl bg-card p-5 ring-1 ring-foreground/10" aria-label="계정별 수집">
               <h3 className="mb-2 text-sm font-semibold">계정별 수집</h3>
               <table className="w-full text-sm">
-                <thead><tr className="text-xs text-muted-foreground"><th className="py-1.5 text-left font-normal">계정</th><th className="py-1.5 text-right font-normal">요청</th><th className="py-1.5 text-right font-normal">마지막</th></tr></thead>
-                <tbody>{humanProgress.map((row) => <tr key={row.id} className="border-t border-border"><td className={cn("py-2", row.id === "anon" && "text-muted-foreground")}>{row.label}</td><td className="py-2 text-right tabular-nums">{row.count}</td><td className="py-2 text-right font-mono tabular-nums text-muted-foreground">{row.last}</td></tr>)}</tbody>
+                <thead><tr className="text-xs text-muted-foreground"><th className="py-1.5 text-left font-normal">계정</th><th className="py-1.5 text-right font-normal">요청</th><th className="py-1.5 text-right font-normal">마지막</th><th className="py-1.5 text-right font-normal">수집</th></tr></thead>
+                <tbody>{humanProgress.map((row) => {
+                  const run = humanRuns.find((active) => (active.accountId || "anon") === row.id)
+                  return <tr key={row.id} className="border-t border-border"><td className={cn("py-2", row.id === "anon" && "text-muted-foreground")}>{row.label}</td><td className="py-2 text-right tabular-nums">{row.count}</td><td className="py-2 text-right font-mono tabular-nums text-muted-foreground">{row.last}</td><td className="py-2 text-right">{run
+                    ? <Button size="sm" variant="outline" disabled={humanMutation.isPending} aria-label={`${row.label} 수집 종료`} onClick={() => humanMutation.mutate({ action: "end", runId: run.runId })}>종료</Button>
+                    : <span className="text-xs text-muted-foreground">대기</span>}</td></tr>
+                })}</tbody>
               </table>
             </section>}
             feedItems={humanFeed}

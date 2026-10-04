@@ -94,6 +94,7 @@ public final class SessionBroker implements AutoCloseable {
         boolean credentialConflict;
         Status status = Status.CAPTURING;
         boolean capturing = true;
+        boolean isolatedCapture;
         VerificationSource verificationSource = VerificationSource.NONE;
         VerificationSource pendingVerificationSource = VerificationSource.NONE;
         /** "METHOD /path" of the last request attributed to this capture (no query, no credentials). */
@@ -160,10 +161,19 @@ public final class SessionBroker implements AutoCloseable {
     }
 
     public synchronized String beginCapture(AccountProfile account, Instant now) {
+        return beginCapture(account, now, false);
+    }
+
+    /** Listener-bound browser capture: account identity never comes from a service-wide selection. */
+    public synchronized String beginIsolatedCapture(AccountProfile account, Instant now) {
+        return beginCapture(account, now, true);
+    }
+
+    private String beginCapture(AccountProfile account, Instant now, boolean isolated) {
         if (account == null) throw new IllegalArgumentException("account is required");
         Instant time = now == null ? Instant.now() : now;
-        byHandle.values().stream()
-                .filter(session -> session.capturing
+        if (!isolated) byHandle.values().stream()
+                .filter(session -> session.capturing && !session.isolatedCapture
                         && session.account.service().equals(account.service())
                         && !session.account.id().equals(account.id()))
                 .findFirst()
@@ -175,6 +185,7 @@ public final class SessionBroker implements AutoCloseable {
         if (existing != null) revoke(existing);
         String handle = "session-" + UUID.randomUUID();
         ManagedSession session = new ManagedSession(handle, account, time);
+        session.isolatedCapture = isolated;
         byHandle.put(handle, session);
         handleByAccount.put(account.id(), handle);
         return handle;
@@ -200,7 +211,7 @@ public final class SessionBroker implements AutoCloseable {
 
     public synchronized Optional<String> activeCaptureForService(String service) {
         return byHandle.values().stream()
-                .filter(session -> session.capturing && session.account.service().equals(service))
+                .filter(session -> session.capturing && !session.isolatedCapture && session.account.service().equals(service))
                 .map(session -> session.handle).findFirst();
     }
 

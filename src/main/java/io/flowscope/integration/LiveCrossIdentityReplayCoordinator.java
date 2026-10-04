@@ -1,6 +1,7 @@
 package io.flowscope.integration;
 
 import io.flowscope.core.ExecutionTrust;
+import io.flowscope.core.Fingerprints;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
@@ -20,7 +21,6 @@ import java.util.concurrent.Executor;
  * transport and authorization interpretation to the existing safe replay and analyzer paths.
  */
 public final class LiveCrossIdentityReplayCoordinator {
-    public static final int MAX_RECOMMENDATIONS_PER_RUN = 200;
     private static final Set<String> SUPPORTED_METHODS =
             Set.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE");
 
@@ -28,8 +28,9 @@ public final class LiveCrossIdentityReplayCoordinator {
 
     public record Snapshot(String runId, State state, boolean armed,
                            List<String> targetAccountIds, boolean includeAnonymous,
+                           boolean automaticAnonymousGet,
                            int observed, int eligible, int queued,
-                           int sent, int drafted, int skipped, String lastReason,
+                           int sent, int drafted, int skipped, int failed, String lastReason,
                            List<Source> basisSources) {
         public Snapshot {
             targetAccountIds = List.copyOf(targetAccountIds);
@@ -38,10 +39,29 @@ public final class LiveCrossIdentityReplayCoordinator {
 
         public Snapshot(String runId, State state, boolean armed,
                         List<String> targetAccountIds, boolean includeAnonymous,
+                        boolean automaticAnonymousGet,
+                        int observed, int eligible, int queued,
+                        int sent, int drafted, int skipped, String lastReason,
+                        List<Source> basisSources) {
+            this(runId, state, armed, targetAccountIds, includeAnonymous, automaticAnonymousGet,
+                    observed, eligible, queued, sent, drafted, skipped, 0, lastReason, basisSources);
+        }
+
+        public Snapshot(String runId, State state, boolean armed,
+                        List<String> targetAccountIds, boolean includeAnonymous,
+                        int observed, int eligible, int queued,
+                        int sent, int drafted, int skipped, String lastReason,
+                        List<Source> basisSources) {
+            this(runId, state, armed, targetAccountIds, includeAnonymous, false,
+                    observed, eligible, queued, sent, drafted, skipped, 0, lastReason, basisSources);
+        }
+
+        public Snapshot(String runId, State state, boolean armed,
+                        List<String> targetAccountIds, boolean includeAnonymous,
                         int observed, int eligible, int queued,
                         int sent, int drafted, int skipped, String lastReason) {
-            this(runId, state, armed, targetAccountIds, includeAnonymous,
-                    observed, eligible, queued, sent, drafted, skipped, lastReason,
+            this(runId, state, armed, targetAccountIds, includeAnonymous, false,
+                    observed, eligible, queued, sent, drafted, skipped, 0, lastReason,
                     List.of(Source.HUMAN));
         }
     }
@@ -63,12 +83,14 @@ public final class LiveCrossIdentityReplayCoordinator {
     private State state = State.STOPPED;
     private boolean armed;
     private boolean includeAnonymous;
+    private boolean automaticAnonymousGet;
     private int observed;
     private int eligible;
     private int queued;
     private int sent;
     private int drafted;
     private int skipped;
+    private int failed;
     private String lastReason = "NOT_STARTED";
 
     public LiveCrossIdentityReplayCoordinator(Dispatcher dispatcher, Runnable beginRun,
@@ -85,6 +107,16 @@ public final class LiveCrossIdentityReplayCoordinator {
 
     public synchronized Snapshot start(List<String> accountIds, boolean anonymous,
                                        List<Source> sources, boolean approved) {
+        return start(accountIds, anonymous, sources, approved, false);
+    }
+
+    public synchronized Snapshot startAutomaticAnonymousGet(boolean approved) {
+        return start(List.of(), true, List.of(Source.HUMAN), approved, true);
+    }
+
+    private Snapshot start(List<String> accountIds, boolean anonymous,
+                           List<Source> sources, boolean approved,
+                           boolean automaticAnonymousGet) {
         if (!approved) throw new IllegalArgumentException("안전 자동 재전송 허용 승인이 필요합니다.");
         if (state != State.STOPPED) throw new IllegalStateException("현재 라이브 재전송을 먼저 중지하세요.");
         LinkedHashSet<String> selected = new LinkedHashSet<>();
@@ -111,12 +143,13 @@ public final class LiveCrossIdentityReplayCoordinator {
         state = State.ACTIVE;
         armed = true;
         includeAnonymous = anonymous;
+        this.automaticAnonymousGet = automaticAnonymousGet;
         targetAccountIds.clear();
         targetAccountIds.addAll(selected);
         basisSources.clear();
         basisSources.addAll(selectedSources);
         deduplicated.clear();
-        observed = eligible = queued = sent = drafted = skipped = 0;
+        observed = eligible = queued = sent = drafted = skipped = failed = 0;
         lastReason = "ARMED";
         return snapshot();
     }
@@ -126,6 +159,7 @@ public final class LiveCrossIdentityReplayCoordinator {
             if (state == State.STOPPED) return;
             state = State.STOPPED;
             armed = false;
+            automaticAnonymousGet = false;
             lastReason = "STOPPED_BY_OPERATOR";
         }
         killRun.run();
@@ -135,11 +169,12 @@ public final class LiveCrossIdentityReplayCoordinator {
         state = State.STOPPED;
         armed = false;
         includeAnonymous = false;
+        automaticAnonymousGet = false;
         targetAccountIds.clear();
         basisSources.clear();
         deduplicated.clear();
         runId = "";
-        observed = eligible = queued = sent = drafted = skipped = 0;
+        observed = eligible = queued = sent = drafted = skipped = failed = 0;
         lastReason = "NOT_STARTED";
         killRun.run();
     }
@@ -156,26 +191,30 @@ public final class LiveCrossIdentityReplayCoordinator {
 
     /** Offers one newly captured, analyzed HUMAN exchange. Imported or evicted raw exchanges are rejected. */
     public boolean offer(RequestRecord record, URI target, boolean rawRequestRetained) {
+        return offer(record, target, rawRequestRetained, null);
+    }
+
+    public boolean offer(RequestRecord record, URI target, boolean rawRequestRetained,
+                         String anonymousRequestKey) {
         List<CrossIdentityReplayOrchestrator.Recommendation> recommendations;
         String offeredRunId;
         synchronized (this) {
             if (!acceptingCaptures()) return false;
             observed++;
-            String rejection = rejection(record, target, rawRequestRetained);
+            String rejection = rejection(record, target, rawRequestRetained, anonymousRequestKey);
             if (rejection != null) {
                 skipped++;
-                lastReason = rejection;
+                if (queued == 0) lastReason = rejection;
                 return false;
             }
-            recommendations = recommendations(record, target);
+            recommendations = recommendations(record, target, anonymousRequestKey);
             if (recommendations.isEmpty()) {
                 skipped++;
-                lastReason = "NO_OTHER_SELECTED_IDENTITY";
+                if (queued == 0) lastReason = "NO_OTHER_SELECTED_IDENTITY";
                 return false;
             }
             eligible++;
             queued += recommendations.size();
-            if (queued >= MAX_RECOMMENDATIONS_PER_RUN) state = State.LIMIT_REACHED;
             lastReason = "QUEUED";
             offeredRunId = runId;
         }
@@ -185,22 +224,24 @@ public final class LiveCrossIdentityReplayCoordinator {
 
     public synchronized Snapshot snapshot() {
         return new Snapshot(runId, state, armed, new ArrayList<>(targetAccountIds), includeAnonymous,
-                observed, eligible, queued, sent, drafted, skipped, lastReason,
+                automaticAnonymousGet,
+                observed, eligible, queued, sent, drafted, skipped, failed, lastReason,
                 new ArrayList<>(basisSources));
     }
 
     private synchronized List<CrossIdentityReplayOrchestrator.Recommendation> recommendations(
-            RequestRecord record, URI target) {
+            RequestRecord record, URI target, String anonymousRequestKey) {
         LinkedHashSet<String> identities = new LinkedHashSet<>(targetAccountIds);
         if (includeAnonymous) identities.add(CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY);
         identities.remove(record.laneAccountId);
         List<CrossIdentityReplayOrchestrator.Recommendation> values = new ArrayList<>();
         for (String identity : identities) {
-            if (queued + values.size() >= MAX_RECOMMENDATIONS_PER_RUN) break;
-            String key = record.evidenceId + "\0" + identity;
+            String key = automaticAnonymousGet
+                    ? anonymousRequestKey + "\0" + identity
+                    : record.evidenceId + "\0" + identity;
             if (!deduplicated.add(key)) continue;
             values.add(new CrossIdentityReplayOrchestrator.Recommendation(record.op, identity,
-                    record.laneAccountId, record.evidenceId, target));
+                    record.laneAccountId, record.evidenceId, target, record.runtimeId()));
         }
         return values;
     }
@@ -221,18 +262,26 @@ public final class LiveCrossIdentityReplayCoordinator {
                 sent += result.sent();
                 drafted += result.drafted();
                 skipped += result.skipped();
-                lastReason = "BATCH_COMPLETED";
+                failed += (int) result.items().stream().filter(item ->
+                        item.outcome() == CrossIdentityReplayOrchestrator.Outcome.EXECUTION_FAILED
+                                || item.outcome() == CrossIdentityReplayOrchestrator.Outcome.DRAFT_FAILED).count();
+                lastReason = result.sent() > 0 || result.drafted() > 0
+                        ? "BATCH_COMPLETED"
+                        : result.items().isEmpty() ? "BATCH_COMPLETED"
+                        : result.items().getLast().reason();
             }
         } catch (RuntimeException error) {
             synchronized (this) {
                 if (!runId.equals(offeredRunId)) return;
                 skipped += recommendations.size();
+                failed += recommendations.size();
                 lastReason = "BATCH_FAILED";
             }
         }
     }
 
-    private String rejection(RequestRecord record, URI target, boolean rawRequestRetained) {
+    private String rejection(RequestRecord record, URI target, boolean rawRequestRetained,
+                             String anonymousRequestKey) {
         if (record == null || target == null || !target.isAbsolute()) return "INVALID_EVIDENCE_TARGET";
         if (!basisSourceEligible(record)) {
             return "SOURCE_NOT_ELIGIBLE";
@@ -251,6 +300,15 @@ public final class LiveCrossIdentityReplayCoordinator {
         }
         if (!SUPPORTED_METHODS.contains(record.method.toUpperCase(Locale.ROOT))) {
             return "METHOD_NOT_SUPPORTED";
+        }
+        if (automaticAnonymousGet && !record.method.equalsIgnoreCase("GET")) {
+            return "AUTOMATIC_ANONYMOUS_GET_ONLY";
+        }
+        if (automaticAnonymousGet && Fingerprints.ANONYMOUS.equals(record.fp)) {
+            return "ALREADY_ANONYMOUS_BASIS";
+        }
+        if (automaticAnonymousGet && (anonymousRequestKey == null || anonymousRequestKey.isBlank())) {
+            return "ANONYMOUS_REQUEST_KEY_UNAVAILABLE";
         }
         return null;
     }
