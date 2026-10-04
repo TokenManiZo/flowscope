@@ -6,6 +6,7 @@ import type { ManagedSession, Snapshot } from "@/lib/api/types"
 import { renderWithQueryClient } from "@/test/render"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
+import type { HierarchyNode } from "./graphHierarchy"
 import type { GraphSelection } from "./graphProjection"
 
 const event: Snapshot["events"][number] = {
@@ -41,6 +42,12 @@ it("shows only the selected operation and its 관측 기록 rows, without verdic
   expect(panel).not.toHaveTextContent("ev-1")
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()
   expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
+})
+
+it("explains that an observed-only function is not a verdict", () => {
+  const node = { id: "support-operation:GET /help.php", kind: "support-operation", label: "GET /help.php", selection: { operation: "GET /help.php", evidenceIds: [] } } as unknown as HierarchyNode
+  renderWithQueryClient(<GraphInspectorPanel selection={{ operation: "GET /help.php", resource: null, identity: null, source: null, evidenceIds: [] }} event={null} snapshot={snapshot} node={node} />)
+  expect(screen.getByRole("complementary", { name: "선택 작업" })).toHaveTextContent("판정 대상이 아닙니다")
 })
 
 it("opens the raw request in Request Lab without sending anything", async () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Cell, EventRecord, RouteCandidate, Snapshot } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
-import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphOpenAction, objectGroupKey, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
+import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphOpenAction, isObservedTraffic, objectGroupKey, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
 
 const service = "https://demo.test:443"
@@ -10,6 +10,8 @@ const get = `${service} GET /api/orders/{id}`
 const patch = `${service} PATCH /api/orders/{id}`
 const groupId = '["https://demo.test:443","orders"]'
 const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+// 신호 없는 기능 접기를 펼친 필터. 접기와 무관한 페이징·엣지·기록 수를 확인하는 테스트에 쓴다.
+const unfold = (base: GraphFilters = filters, id = groupId): GraphFilters => ({ ...base, expandedObjectGroups: [...(base.expandedObjectGroups ?? []), `quiet-group:${id}`] })
 const initial: GraphNavigation = { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
 const cell = (overrides: Partial<Cell> = {}): Cell => ({ idn: "USER A", op: get, resource: "orders:101", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["h-101"], ...overrides })
 const data = (): Snapshot => targetSnapshot({
@@ -121,9 +123,9 @@ describe("API hierarchy", () => {
 
   it("pages 18 APIs/Objects and keeps all access 관측 기록 when Object nodes are hidden", () => {
     const operations = targetSnapshot({ cells: Array.from({ length: 19 }, (_, index) => cell({ op: `${service} GET /api/orders/${index}`, evidenceIds: [`ev-${index}`] })) })
-    expect(projectHierarchy(operations, filters, groupNav()).operations).toHaveLength(18)
-    expect(projectHierarchy(operations, filters, groupNav()).hiddenOperationCount).toBe(1)
-    expect(projectHierarchy(operations, filters, { ...groupNav(), operationLimit: 18 + GRAPH_PAGE_SIZE }).operations).toHaveLength(19)
+    expect(projectHierarchy(operations, unfold(), groupNav()).operations).toHaveLength(18)
+    expect(projectHierarchy(operations, unfold(), groupNav()).hiddenOperationCount).toBe(1)
+    expect(projectHierarchy(operations, unfold(), { ...groupNav(), operationLimit: 18 + GRAPH_PAGE_SIZE }).operations).toHaveLength(19)
     const objects = targetSnapshot({ cells: Array.from({ length: 19 }, (_, index) => cell({ resource: `orders:${index}`, evidenceIds: [`ev-${index}`] })) })
     const collapsed = projectHierarchy(objects, filters, operationNav())
     expect(collapsed.resources).toHaveLength(18)
@@ -175,9 +177,10 @@ describe("API hierarchy", () => {
   it("applies the existing source and identity route-candidate filters to the hierarchy", () => {
     const route: RouteCandidate = { service: "https://other.test:443", method: "GET", pathTemplate: "/api/declared", observed: false, applicability: "REVIEW", provenanceTypes: ["JAVASCRIPT"], provenanceEvidenceIds: ["js-1"], provenance: [{ type: "JAVASCRIPT", evidenceId: "js-1", source: "SCANNER", runId: "scan-1", adapter: "fetch", applicability: "REVIEW", reason: "declared" }], reviewReason: "not requested", priorityReasons: [] }
     const snapshot = { ...data(), routeCandidates: [route] }
-    expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, source: ["scanner"] }, initial).groups.map(group => group.id)).toContain('["https://other.test:443","declared"]')
-    expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, source: ["human"] }, initial).groups.map(group => group.id)).not.toContain('["https://other.test:443","declared"]')
-    expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, identity: ["USER A"] }, initial).groups.map(group => group.id)).not.toContain('["https://other.test:443","declared"]')
+    // /api/declared는 그 서비스에서 혼자뿐인 한 칸짜리 주소라 ROOT 묶음에 들어간다.
+    expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, source: ["scanner"] }, initial).groups.map(group => group.id)).toContain('["https://other.test:443","root"]')
+    expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, source: ["human"] }, initial).groups.map(group => group.id)).not.toContain('["https://other.test:443","root"]')
+    expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, identity: ["USER A"] }, initial).groups.map(group => group.id)).not.toContain('["https://other.test:443","root"]')
   })
 
   it("uses server UNCROSSED gaps for focused unobserved paths without inventing 관측 기록 or verdicts", () => {
@@ -193,7 +196,7 @@ describe("API hierarchy", () => {
 
   it("retains observed UNTESTED cells when the server has no owner oracle", () => {
     const snapshot = targetSnapshot({ cells: [cell({ perSource: { human: "untested" }, overall: "untested" })] })
-    const group = projectHierarchy(snapshot, filters, groupNav())
+    const group = projectHierarchy(snapshot, unfold(), groupNav())
     expect(group.operations).toHaveLength(1)
     expect(group.edges[0]).toMatchObject({ source: "human", count: 1 })
     expect(group.operations[0].verdict).toBe("untested")
@@ -220,7 +223,7 @@ describe("API hierarchy", () => {
 
   it("counts 관측 기록 by server event source without merging H/S/L or inflating by repeat metadata", () => {
     const snapshot = targetSnapshot({ cells: [cell({ perSource: { human: "allow", scanner: "allow" }, evidenceIds: ["h-1", "h-2", "s-1"] })], events: [event({ eventId: "h-1", op: get, clusterEvidenceIds: ["h-1", "h-2"], repeatCount: 99 }), event({ eventId: "s-1", op: get, source: "scanner", clusterEvidenceIds: ["s-1"] })] })
-    const group = projectHierarchy(snapshot, { ...filters, source: ["human"] }, groupNav())
+    const group = projectHierarchy(snapshot, unfold({ ...filters, source: ["human"] }), groupNav())
     expect(group.groups[0].sourceCounts).toEqual({ human: 2, scanner: 1, llm: 0 })
     const accessEdges = group.edges.filter((edge) => edge.relation === "identity-operation")
     expect(accessEdges).toHaveLength(1)
@@ -238,14 +241,130 @@ describe("API hierarchy", () => {
     expect(projectHierarchy(snapshot, filters, initial).groups[0].gapCount).toBe(1)
   })
 
-  it("shows only explicitly enabled support flows for the selected group, not coverage or route evidence", () => {
-    const snapshot = { ...data(), events: [event(), event({ eventId: "review-api", trafficClass: "API", trafficDisposition: "REVIEW" }), event({ eventId: "elsewhere", op: `${service} GET /api/users/poll` }), event({ eventId: "included", op: `${service} GET /api/orders/include`, trafficDisposition: "INCLUDE" })] }
+  it("shows observed non-static traffic without a judgment cell only in the broad view, never as coverage", () => {
+    const snapshot = { ...data(), events: [
+      event(), event({ eventId: "review-api", clusterEvidenceIds: ["review-api"], trafficClass: "API", trafficDisposition: "REVIEW" }),
+      event({ eventId: "elsewhere", clusterEvidenceIds: ["elsewhere"], op: `${service} GET /api/users/poll` }),
+      event({ eventId: "unverified", clusterEvidenceIds: ["unverified"], op: `${service} GET /api/orders/include`, trafficDisposition: "INCLUDE", source: "llm" }),
+      event({ eventId: "judged", clusterEvidenceIds: ["judged"], op: get, trafficClass: "NAVIGATION" }),
+      event({ eventId: "style", clusterEvidenceIds: ["style"], op: `${service} GET /api/orders/app.css`, path: "/api/orders/app.css?v=2", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW" }),
+      event({ eventId: "preflight", clusterEvidenceIds: ["preflight"], op: `${service} OPTIONS /api/orders/preflight`, trafficClass: "PREFLIGHT" }),
+    ] }
     expect(projectHierarchy(snapshot, filters, groupNav()).nodes.some(node => node.kind === "support-operation")).toBe(false)
-    const group = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
-    expect(group.nodes.filter(node => node.kind === "support-operation").map(node => node.selection.operation)).toEqual([`${service} GET /api/orders/poll`])
-    expect(group.edges.filter(edge => edge.relation === "support")).toEqual([expect.objectContaining({ source: "human", selection: expect.objectContaining({ evidenceIds: ["support-1"], cellKeys: [] }) })])
-    expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 } })
+    const group = projectHierarchy(snapshot, unfold({ ...filters, includeSupportTraffic: true }), groupNav())
+    expect(group.nodes.filter(node => node.kind === "support-operation").map(node => node.selection.operation).sort()).toEqual([`${service} GET /api/orders/include`, `${service} GET /api/orders/poll`])
+    expect(group.edges.filter(edge => edge.relation === "support").map(edge => [edge.source, edge.selection.evidenceIds, edge.selection.cellKeys])).toEqual([["human", ["review-api", "support-1"], []], ["llm", ["unverified"], []]])
+    // 판정 셀·출처 집계는 그대로다. 관측 전체는 표시만 더한다.
+    expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 }, observedOperationCount: 2 })
     expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"], includeSupportTraffic: true }, groupNav()).nodes.some(node => node.kind === "support-operation")).toBe(false)
+  })
+
+  it("lists groups that only have observed server-rendered pages at site level in the broad view", () => {
+    const php = (eventId: string, path: string, source: EventRecord["source"] = "human") => event({ eventId, path, source, op: `${service} GET ${path.split("?")[0]}`, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", clusterEvidenceIds: [eventId] })
+    const snapshot = { ...data(), events: [php("p1", "/board/list.php"), php("p2", "/board/view.php?no=3"), php("p3", "/board/list.php", "scanner"), php("p4", "/board/list.php")] }
+    expect(projectHierarchy(snapshot, filters, initial).groups.map(group => group.key)).toEqual(["orders"])
+    const site = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, initial)
+    expect(site.groups.find(group => group.key === "board")).toMatchObject({ endpointCount: 0, observedOperationCount: 2, gapCount: 0 })
+    const board = projectHierarchy(snapshot, unfold({ ...filters, includeSupportTraffic: true }, JSON.stringify([service, "board"])), navigateHierarchy(initial, "group", JSON.stringify([service, "board"])))
+    expect(board.kind).toBe("group")
+    // 같은 신원·기능·출처의 반복 관측은 엣지 하나로 합치고 관측 기록은 모두 남긴다.
+    expect(board.edges.filter(edge => edge.relation === "support").map(edge => [edge.selection.identity, edge.selection.operation, edge.source, edge.count, edge.selection.evidenceIds])).toEqual([
+      ["USER A", `${service} GET /board/list.php`, "human", 2, ["p1", "p4"]],
+      ["USER A", `${service} GET /board/view.php`, "human", 1, ["p2"]],
+      ["USER A", `${service} GET /board/list.php`, "scanner", 1, ["p3"]],
+    ])
+  })
+
+  it("draws only normally collected traffic in the broad view, never replays, request-only attempts or explicit exclusions", () => {
+    // Request Lab처럼 값을 바꿔 다시 보낸 요청과 FlowScope가 재전송한 요청은 그래프를 어지럽히고 출처를 흐린다(D-008).
+    const page = (eventId: string, path: string, extra: Partial<EventRecord> = {}) => event({ eventId, clusterEvidenceIds: [eventId], path, op: `${service} GET ${path}`, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", ...extra })
+    const snapshot = { ...data(), events: [
+      page("normal", "/board/list.php"),
+      page("lab", "/board/lab.php", { phase: "VALIDATION", executionTrust: "CONTROLLED" }),
+      page("replay", "/board/replay.php", { source: "scanner", phase: "AUTHORIZATION_REPLAY", executionTrust: "CONTROLLED" }),
+      page("probe", "/board/probe.php", { source: "llm", phase: "COACH_PROBE" }),
+      page("login-check", "/board/login.php", { source: "scanner", phase: "SESSION_SETUP" }),
+      page("no-response", "/board/timeout.php", { status: 0, classificationReasons: ["NO_RESPONSE"] }),
+      page("excluded", "/board/hidden.php", { classificationOverride: true }),
+      page("unverified", "/board/runtime.php", { source: "scanner", executionTrust: "UNVERIFIED_RUNTIME" }),
+    ] }
+    expect(snapshot.events.filter(isObservedTraffic).map(item => item.eventId)).toEqual(["normal"])
+    const boardId = JSON.stringify([service, "board"])
+    const board = projectHierarchy(snapshot, unfold({ ...filters, includeSupportTraffic: true }, boardId), navigateHierarchy(initial, "group", boardId))
+    expect(board.nodes.filter(node => node.kind === "support-operation").map(node => node.selection.operation)).toEqual([`${service} GET /board/list.php`])
+    expect(board.groups.find(group => group.id === boardId)).toMatchObject({ observedOperationCount: 1 })
+  })
+
+  it("gathers lone single-segment pages into each service's ROOT group and keeps shared or deeper paths in place", () => {
+    const php = "http://php.test:80", flask = "http://flask.test:5000"
+    const page = (eventId: string, op: string) => event({ eventId, clusterEvidenceIds: [eventId], op, path: op.split(" ").pop()!, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE" })
+    const snapshot = { ...data(), events: [
+      page("p1", `${php} GET /board_list.php`), page("p2", `${php} GET /login.php`), page("p3", `${php} POST /login.php`), page("p4", `${php} GET /admin/user_list.php`),
+      page("f1", `${flask} GET /dashboard`), page("f2", `${flask} GET /orders`), page("f3", `${flask} GET /orders/{id}`), page("f4", `${flask} GET /theme.css`),
+    ] }
+    const observed = Object.fromEntries(projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, initial).groups.map(group => [group.id, group.observedOperationCount]))
+    // 서버마다 ROOT가 따로 생기고, 같은 파일의 GET·POST는 함께 ROOT에 들어간다. 정적 파일은 묶음 판단에도 쓰지 않는다.
+    expect(observed).toEqual({
+      [groupId]: 0,
+      [JSON.stringify([php, "root"])]: 3, [JSON.stringify([php, "admin"])]: 1,
+      [JSON.stringify([flask, "root"])]: 1, [JSON.stringify([flask, "orders"])]: 2,
+    })
+  })
+
+  it("decides ROOT membership from all observed paths so groups do not move when the view scope changes", () => {
+    const flask = "http://flask.test:5000"
+    const snapshot = targetSnapshot({ activeSources: ["human"], cells: [cell({ op: `${flask} GET /orders`, resource: null, evidenceIds: ["c1"] })],
+      events: [event({ eventId: "deep", clusterEvidenceIds: ["deep"], op: `${flask} GET /orders/{id}`, path: "/orders/7", trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE" })] })
+    const orders = JSON.stringify([flask, "orders"])
+    expect(projectHierarchy(snapshot, filters, initial).groups.map(group => group.id)).toEqual([orders])
+    expect(projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, initial).groups.map(group => group.id)).toEqual([orders])
+  })
+
+  it("draws only functions worth checking and folds the rest into one expandable card that list view still reaches", () => {
+    const op = (method: string, path: string) => `${service} ${method} ${path}`
+    const snapshot = targetSnapshot({ activeSources: ["human"], cells: [
+      cell({ op: op("GET", "/api/orders/quiet"), resource: null, evidenceIds: ["q"] }),
+      cell({ op: op("GET", "/api/orders/suspicious"), resource: null, overall: "suspicious", evidenceIds: ["s"] }),
+      cell({ op: op("GET", "/api/orders/undecided"), resource: null, overall: "undecided", evidenceIds: ["u"] }),
+      cell({ op: op("GET", "/api/orders/conflict"), resource: null, conflict: true, evidenceIds: ["c"] }),
+      cell({ op: op("POST", "/api/orders/write"), resource: null, evidenceIds: ["w"] }),
+    ] })
+    const folded = projectHierarchy(snapshot, filters, groupNav())
+    const drawn = folded.nodes.filter(node => node.kind === "operation" && !node.hiddenInGraph).map(node => node.label).sort()
+    expect(drawn).toEqual([op("GET", "/api/orders/conflict"), op("GET", "/api/orders/suspicious"), op("GET", "/api/orders/undecided"), op("POST", "/api/orders/write")])
+    const quiet = folded.nodes.find(node => node.kind === "quiet-group")!
+    expect(quiet).toMatchObject({ id: `quiet-group:${groupId}`, label: "신호 없는 기능 1개", objectGroup: { members: [op("GET", "/api/orders/quiet")], expanded: false } })
+    expect(graphOpenAction("quiet-group", "group")).toBe("toggle")
+    // 접힌 기능은 목록 보기에 남고, 그 기능의 엣지는 그래프에 그리지 않는다.
+    expect(folded.listItems.map(node => node.label)).toContain(op("GET", "/api/orders/quiet"))
+    expect(folded.edges.some(edge => edge.targetId === `operation:${op("GET", "/api/orders/quiet")}`)).toBe(false)
+    const open = projectHierarchy(snapshot, unfold(), groupNav())
+    expect(open.nodes.filter(node => node.kind === "operation" && !node.hiddenInGraph)).toHaveLength(5)
+    expect(open.nodes.find(node => node.kind === "quiet-group")).toMatchObject({ objectGroup: { expanded: true } })
+  })
+
+  it("keeps signalled functions on the first page when the folded card is opened", () => {
+    const op = (method: string, path: string) => `${service} ${method} ${path}`
+    // 접힌 기능은 기록이 많아 점수가 더 높다. 펼쳐도 쓰기 기능이 18개 밖으로 밀려나면 안 된다.
+    const quiet = Array.from({ length: GRAPH_PAGE_SIZE }, (_, index) => cell({ op: op("GET", `/api/orders/quiet-${index}`), resource: null, evidenceIds: [`q${index}-1`, `q${index}-2`, `q${index}-3`] }))
+    const write = op("POST", "/api/orders/write")
+    const snapshot = targetSnapshot({ activeSources: ["human"], cells: [...quiet, cell({ op: write, resource: null, evidenceIds: ["w"] })] })
+    const drawn = (base: GraphFilters) => projectHierarchy(snapshot, base, groupNav()).nodes.filter(node => node.kind === "operation" && !node.hiddenInGraph).map(node => node.label)
+    expect(drawn(filters)).toEqual([write])
+    expect(drawn(unfold())).toHaveLength(GRAPH_PAGE_SIZE)
+    expect(drawn(unfold())).toContain(write)
+  })
+
+  it("adds APIs found in JavaScript but never requested to the broad view, skipping asset-shaped and non-JS routes", () => {
+    const route = (pathTemplate: string, extra: Partial<RouteCandidate> = {}): RouteCandidate => ({ service, method: "POST", pathTemplate, observed: false, applicability: "REVIEW", provenanceTypes: ["JAVASCRIPT_LITERAL"], provenanceEvidenceIds: ["js-1"], provenance: [{ type: "JAVASCRIPT_LITERAL", evidenceId: "js-1", source: "human", runId: "run-1", adapter: "js", applicability: "REVIEW", reason: "literal" }], reviewReason: "", priorityReasons: [], ...extra })
+    const snapshot = { ...data(), routeCandidates: [
+      route("/api/orders/secret"), route("/{id}/{id}/styles.json", { method: "GET" }), route("/api/orders/app.css", { method: "GET" }),
+      route("/api/orders/seen", { observed: true }), route("/api/orders/form", { provenanceTypes: ["HTML_FORM"] }), route("/manifest.json", { method: "UNKNOWN" }),
+    ] }
+    expect(projectHierarchy(snapshot, filters, groupNav()).routeCandidates).toEqual([])
+    const broad = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
+    expect(broad.routeCandidates.map(candidate => candidate.pathTemplate)).toEqual(["/api/orders/secret"])
+    expect(projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, initial).groups.find(group => group.id === groupId)?.routeCandidateCount).toBe(1)
   })
 
   it("never mutates the input snapshot, filters, or navigation", () => {
@@ -255,18 +374,10 @@ describe("API hierarchy", () => {
     expect(JSON.stringify({ snapshot, filters, initial })).toBe(before)
   })
 
-  it("keeps repeated support edges independently selectable by their original 관측 기록", () => {
-    const snapshot = { ...data(), events: [event(), event({ eventId: "support-2", clusterEvidenceIds: ["support-2"] })] }
-    const edges = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav()).edges.filter(edge => edge.relation === "support")
-    expect(edges).toHaveLength(2)
-    expect(new Set(edges.map(edge => edge.id)).size).toBe(2)
-    expect(edges.map(edge => edge.selection.evidenceIds)).toEqual([["support-1"], ["support-2"]])
-  })
-
   it("folds same-shape APIs into one API group node, hides members in the graph and merges their edges into it", () => {
     const one = `${service} GET /api/orders/101`, two = `${service} GET /api/orders/202`
     const snapshot = targetSnapshot({ activeSources: ["human"], cells: [cell({ op: one, resource: null, evidenceIds: ["e1"] }), cell({ op: two, resource: null, evidenceIds: ["e2"] }), cell({ idn: "USER B", op: two, resource: null, evidenceIds: ["e3"] })] })
-    const group = projectHierarchy(snapshot, filters, groupNav())
+    const group = projectHierarchy(snapshot, unfold(), groupNav())
     const shape = `${service} GET /api/orders/{id}`
     const folded = group.nodes.find(node => node.id === `operation-group:${shape}`)!
     expect(folded).toMatchObject({ kind: "operation-group", objectGroup: { expanded: false } })
@@ -280,7 +391,7 @@ describe("API hierarchy", () => {
     expect(toGroup.find(edge => edge.selection.identity === "USER A")?.selection.cells).toHaveLength(2)
     expect(group.edges.some(edge => edge.targetId === `operation:${one}` || edge.targetId === `operation:${two}`)).toBe(false)
 
-    const open = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [folded.id] }, groupNav())
+    const open = projectHierarchy(snapshot, unfold({ ...filters, expandedObjectGroups: [folded.id] }), groupNav())
     const order = open.nodes.filter(node => node.kind === "operation" || node.kind === "operation-group").map(node => node.id)
     expect(order[0]).toBe(folded.id)
     expect(open.nodes.some(node => node.hiddenInGraph)).toBe(false)

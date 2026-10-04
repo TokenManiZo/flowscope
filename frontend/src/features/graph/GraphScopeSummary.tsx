@@ -129,7 +129,8 @@ export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperatio
       <h3 className="mb-1 text-sm font-semibold text-muted-foreground">API 그룹 <span className="text-xs font-normal">후보가 많은 순</span></h3>
       <ul aria-label="API 그룹 목록">{(allGroups ? groupRows : groupRows.slice(0, GROUP_PREVIEW)).map(({ group, candidates: hot, undecided: warn }) => <li key={group.id}><button type="button" onClick={() => onSelectGroup?.(group.id)} className="flex w-full items-center gap-2 border-t border-border/70 py-2 text-left text-[13px] hover:bg-muted/40">
         <span className="min-w-0 truncate">{group.label}</span><span className="text-xs text-muted-foreground">· {group.endpointCount}</span>
-        <span className={`ms-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${hot ? "bg-red-500/15 text-red-700 dark:text-red-300" : warn ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}`}>{hot ? `후보 ${hot}` : warn ? `확인 필요 ${warn}` : "문제 없음"}</span>
+        {/* 판정하지 않은 관측 기능이 있으면 "문제 없음"이라고 하지 않는다. */}
+        <span className={`ms-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${hot ? "bg-red-500/15 text-red-700 dark:text-red-300" : warn ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" : group.observedOperationCount ? "bg-muted text-muted-foreground" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}`}>{hot ? `후보 ${hot}` : warn ? `확인 필요 ${warn}` : group.observedOperationCount ? "판정 없음" : "문제 없음"}</span>
       </button></li>)}</ul>
       <More hidden={groupRows.length - GROUP_PREVIEW} open={allGroups} onToggle={() => setAllGroups(value => !value)} noun="그룹" />
     </div>}

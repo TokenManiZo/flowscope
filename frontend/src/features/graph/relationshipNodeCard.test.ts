@@ -16,7 +16,7 @@ const node = (kind: HierarchyNode["kind"], label: string, extra: Partial<Hierarc
 const projection = (nodes: readonly HierarchyNode[]): HierarchyProjection => ({
   kind: "operation", view: "source",
   navigation: { level: "operation", groupId: "orders", operation, operationLimit: 18, objectLimit: 18, focusCandidateKey: "" },
-  groups: [{ id: "orders", service, key: "orders", label: "ORDERS APIs", cells: [], operations: [operation], routeCandidates: [], endpointCount: 4, sourceCounts: { human: 7, scanner: 3, llm: 2 }, gapCount: 2, routeCandidateCount: 1 }],
+  groups: [{ id: "orders", service, key: "orders", label: "ORDERS APIs", cells: [], operations: [operation], routeCandidates: [], endpointCount: 4, sourceCounts: { human: 7, scanner: 3, llm: 2 }, gapCount: 2, routeCandidateCount: 1, observedOperationCount: 0 }],
   nodes, edges: [], identities: nodes.filter(item => item.kind === "identity"), operations: nodes.filter(item => item.kind === "operation"), resources: nodes.filter(item => item.kind === "resource"), routeCandidates: [], listItems: nodes, hiddenOperationCount: 0, hiddenObjectCount: 0,
 })
 
@@ -31,11 +31,14 @@ describe("relationship graph node cards", () => {
     const graph = projection([target, group, identity, api, resource, support])
 
     expect(relationshipNodeCard(target, graph)).toMatchObject({ badge: "TARGET", title: service, detail: "", footer: "1 API group", icon: "globe" })
-    expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs", footer: "", icon: "network" })
+    // 그룹에 미요청 경로 후보(routeCandidateCount 1)가 있으면 API 수 옆에 함께 표시한다.
+    expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs · 미요청 1", footer: "", icon: "network" })
+    const quiet = node("quiet-group", "신호 없는 기능 3개", { objectGroup: { key: "orders", members: ["a", "b", "c"], owners: {}, expanded: false } })
+    expect(relationshipNodeCard(quiet, graph)).toMatchObject({ badge: "FOLDED", title: "▸ 신호 없는 기능 3개", footer: "의심·충돌·확인 필요·쓰기 아님" })
     expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "", footer: "", icon: "user" })
     expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "", footer: "", icon: "none" })
     expect(relationshipNodeCard(resource, graph)).toMatchObject({ badge: "RESOURCE", title: "orders:101", detail: "", footer: "owner: USER B", icon: "box" })
-    expect(relationshipNodeCard(support, graph)).toMatchObject({ badge: "SUPPORT", title: "GET /api/session/poll", detail: "보조 흐름", footer: "", icon: "none" })
+    expect(relationshipNodeCard(support, graph)).toMatchObject({ badge: "OBSERVED", title: "GET /api/session/poll", detail: "관측만 · 판정 제외", footer: "", icon: "none" })
   })
 
   it("parses a service-prefixed canonical operation and retains its complete coordinate for accessibility", () => {
@@ -81,5 +84,11 @@ describe("relationship graph node cards", () => {
       kind: "operation", badge: "CANDIDATE", title: "POST /api/orders/search", detail: "미관측 후보 · REVIEW", footer: "정적 참조",
       icon: "none", accessibleLabel: `Route candidate ${service} POST /api/orders/search; 미관측 후보; applicability REVIEW; 정적 참조`,
     })
+  })
+
+  it("labels APIs found in JavaScript code but never requested", () => {
+    const base = { id: "route-candidate:otp", service, method: "POST", pathTemplate: "/identity/api/auth/v3/check-otp", observed: false, applicability: "REVIEW", provenance: [], provenanceTypes: ["JAVASCRIPT_LITERAL"], provenanceEvidenceIds: ["js-1"], priorityReasons: [], reviewReason: "", label: `${service} POST /identity/api/auth/v3/check-otp`, observedText: "미관측 후보" as const, selection: { operation: null, resource: null, identity: null, source: null, evidenceIds: [] } }
+    expect(relationshipRouteCandidateCard(base)).toMatchObject({ badge: "CANDIDATE", detail: "미요청 · JS에서 발견" })
+    expect(relationshipRouteCandidateCard({ ...base, observed: true, observedText: "관측됨" })).toMatchObject({ detail: "관측됨 · REVIEW" })
   })
 })

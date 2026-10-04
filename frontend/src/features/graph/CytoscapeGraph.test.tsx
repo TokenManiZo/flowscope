@@ -2,7 +2,8 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphWheelIntent, moveGroupMembers, positionInLanes, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
+import type { EventRecord } from "@/lib/api/types"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
@@ -145,9 +146,9 @@ function createStatefulNode(id: string, kind: string, initial: { x: number; y: n
 it("owns one Cytoscape instance and unregisters listeners before destroy on unmount", () => {
   const { rerender, unmount } = render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   rerender(<CytoscapeGraph projection={projection} locked fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  expect(core.on).toHaveBeenCalledTimes(8)
+  expect(core.on).toHaveBeenCalledTimes(10)
   unmount()
-  expect(core.off).toHaveBeenCalledTimes(8)
+  expect(core.off).toHaveBeenCalledTimes(10)
   expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(1)
   expect(disconnectResizeObserver).toHaveBeenCalledTimes(1)
   expect(Math.max(...core.off.mock.invocationCallOrder)).toBeLessThan(core.destroy.mock.invocationCallOrder[0])
@@ -221,6 +222,8 @@ it("renders a graph-first canvas with dark compact node styling", () => {
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
 
   expect(screen.getByLabelText("공격면 Cytoscape 그래프")).toHaveClass("h-full", "min-h-[28rem]")
+  // 그래프 맞추기도 서버가 저장을 받는 확대 범위(0.4~2) 안에 머문다.
+  expect(vi.mocked(cytoscape)).toHaveBeenCalledWith(expect.objectContaining({ minZoom: 0.4, maxZoom: 2 }))
   expect(vi.mocked(cytoscape)).toHaveBeenCalledWith(expect.objectContaining({
     style: expect.arrayContaining([
       expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-color": "data(cardColor)", color: "#e5e7eb" }) }),
@@ -815,13 +818,29 @@ it("opens and closes an object group from a double click or Enter instead of nav
   const snapshot = targetSnapshot({ cells: [{ idn: "alice", op: "https://api.example.test GET /orders/{id}", resource: "orders:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
   const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
   const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
-  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  // 허용만 있는 기능은 "신호 없는 기능" 카드로 접히므로, 객체 묶음을 보려고 접기를 펼친다.
+  const group = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [`quiet-group:${site.groups[0].id}`] }, { ...site.navigation, level: "group", groupId: site.groups[0].id })
   const groupNode = group.nodes.find(node => node.kind === "object-group")!
   const onToggleObjectGroup = vi.fn(), onNavigate = vi.fn()
   render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onNavigate={onNavigate} onToggleObjectGroup={onToggleObjectGroup} onPreferencesChange={vi.fn()} />)
   act(() => listeners.get("dbltap:node")?.({ target: { ...node, id: vi.fn(() => groupNode.id) } }))
   expect(onToggleObjectGroup).toHaveBeenCalledWith(groupNode.id)
   expect(onNavigate).not.toHaveBeenCalled()
+})
+
+it("marks judged and observed-only members of an opened quiet card so its band covers both", () => {
+  const service = "https://api.example.test"
+  const page = { eventId: "p-1", clusterEvidenceIds: ["p-1"], method: "GET", path: "/orders/help.php", status: 200, op: `${service} GET /orders/help.php`, idn: "alice", source: "human", resource: null, phase: "EXPLORATION", executionTrust: "OBSERVED", trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", classificationOverride: false, classificationReasons: [] } as unknown as EventRecord
+  const snapshot = targetSnapshot({ events: [page], cells: [{ idn: "alice", op: `${service} GET /orders/list`, resource: null, perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: true, expanded: false }
+  const groupId = JSON.stringify([service, "orders"]), quietId = `quiet-group:${groupId}`
+  const group = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [quietId] }, { level: "group", groupId, operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; memberOf?: string; groupKey?: string } }>
+  // 접기 버튼 이름은 내부 묶음 ID(JSON) 대신 읽을 수 있는 이름을 쓴다.
+  expect(added.find(item => item.data.id === quietId)?.data.groupKey).toBe("신호 없는 기능")
+  expect(added.find(item => item.data.id === `operation:${service} GET /orders/list`)?.data.memberOf).toBe(quietId)
+  expect(added.find(item => item.data.id === `support-operation:${service} GET /orders/help.php`)?.data.memberOf).toBe(quietId)
 })
 
 
@@ -838,4 +857,44 @@ it("wraps each expanded object group and its members in one screen-space band fo
   expect(readGroupBands(core as unknown as Parameters<typeof readGroupBands>[0])).toEqual([
     { id: "object-group:svc|summary", label: "summary", count: 2, x1: 100, y1: 50, x2: 320, y2: 270 },
   ])
+})
+
+/** 레인 노드 사이 세로 간격(CytoscapeGraph의 LANE_NODE_GAP)과 테스트 카드 높이. */
+const GAP = 20, CARD = 40
+
+function movableCore(specs: Array<{ id: string; kind: string; memberOf?: string; groupState?: string }>) {
+  const nodes = specs.map((spec) => {
+    let point = { x: 0, y: 0 }
+    const data: Record<string, unknown> = { kind: spec.kind, height: CARD, memberOf: spec.memberOf, groupState: spec.groupState }
+    return { id: () => spec.id, data: (key: string) => data[key], position: (next?: { x: number; y: number }) => { if (next) point = { ...next }; return point }, locked: () => false }
+  })
+  const core = { nodes: () => ({ forEach: (visit: (node: typeof nodes[number]) => void) => nodes.forEach(visit) }) }
+  return { core: core as unknown as Parameters<typeof positionInLanes>[0], at: (id: string) => nodes.find(node => node.id() === id)!.position() }
+}
+
+it("stacks newly opened group members right under their group node and pushes the rest of the lane down", () => {
+  const { core, at } = movableCore([
+    { id: "object-group:a", kind: "object-group", groupState: "open" },
+    { id: "resource:other", kind: "resource" },
+    { id: "resource:a:1", kind: "resource", memberOf: "object-group:a" },
+    { id: "resource:a:2", kind: "resource", memberOf: "object-group:a" },
+  ])
+  // 묶음을 펼치기 전에 저장된 위치: 묶음 노드 아래에 다른 객체가 있다. 새 멤버는 저장 위치가 없다.
+  positionInLanes(core, 620, { "object-group:a": { x: 900, y: 100 }, "resource:other": { x: 900, y: 160 } }, 3)
+
+  expect(at("resource:a:1")).toEqual({ x: 900, y: 100 + CARD + GAP })
+  expect(at("resource:a:2")).toEqual({ x: 900, y: 100 + 2 * (CARD + GAP) })
+  expect(at("resource:other")).toEqual({ x: 900, y: 160 + 2 * (CARD + GAP) })
+})
+
+it("moves open group members by the same distance as their dragged group node", () => {
+  const { core, at } = movableCore([
+    { id: "object-group:a", kind: "object-group", groupState: "open" },
+    { id: "resource:a:1", kind: "resource", memberOf: "object-group:a" },
+    { id: "resource:other", kind: "resource" },
+  ])
+  positionInLanes(core, 620, { "object-group:a": { x: 900, y: 100 }, "resource:a:1": { x: 900, y: 160 }, "resource:other": { x: 900, y: 220 } }, 3)
+  moveGroupMembers(core, "object-group:a", 30, -20)
+  expect(at("resource:a:1")).toEqual({ x: 930, y: 140 })
+  expect(at("resource:other")).toEqual({ x: 900, y: 220 })
 })
