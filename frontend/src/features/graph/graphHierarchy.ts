@@ -127,14 +127,16 @@ function observedFunction(event: EventRecord): boolean {
     && !nonDiscoveryPhases.has(event.phase)
 }
 
+const eventEvidenceIds = (event: EventRecord) => [...new Set([event.eventId, ...(event.clusterEvidenceIds ?? [])])].sort(compareText)
+
 export interface GraphReveal { operations?: readonly string[]; resource?: string }
 
 export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
   const cells = snapshot.cells.filter(cell => identityMatches(cell.idn) && observedSources(cell).some(source => filters.source.includes(source)) && (!filters.reviewStates || filters.reviewStates.includes(cell.overall)))
-  const cellOperations = new Set(snapshot.cells.map(cell => cell.op))
+  const judgedEvidence = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
   const observedEvents = snapshot.events.filter(event => observedFunction(event)
-    && !cellOperations.has(event.op) && filters.source.includes(event.source) && identityMatches(event.idn))
+    && !eventEvidenceIds(event).some(id => judgedEvidence.has(id)) && filters.source.includes(event.source) && identityMatches(event.idn))
   const observedByGroup = new Map<string, EventRecord[]>()
   for (const event of observedEvents) {
     const id = operationGroup(event.op).id
@@ -181,7 +183,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   for (const group of groupsById.values()) {
     group.operations = [...new Set(group.cells.map(cell => cell.op))]
     group.endpointCount = group.operations.length
-    group.observedCount = new Set((observedByGroup.get(group.id) ?? []).map(event => event.op)).size
+    group.observedCount = new Set((observedByGroup.get(group.id) ?? []).map(event => event.op).filter(op => !group.operations.includes(op))).size
     group.routeCandidateCount = group.routeCandidates.length
     for (const source of ["human", "scanner", "llm"] as const) group.sourceCounts[source] = group.cells.reduce((sum, cell) => sum + sourceCount(cell, source), 0)
     const gapKeys = new Set(group.cells.filter(cell => cell.conflict || isPartial(cell)).map(graphCellKey))
@@ -229,6 +231,22 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const [key, bucket] of buckets) {
       const [identity, operation, source] = JSON.parse(key) as [string, string, Source]
       addEdge("identity-operation", `identity:${identity}`, `operation:${operation}`, selectionFor(bucket, source), bucket.reduce((sum, cell) => sum + sourceCount(cell, source), 0))
+    }
+  }
+
+  const addObserved = (observed: readonly EventRecord[], node: HierarchyNode) => {
+    node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...observed.flatMap(eventEvidenceIds)])].sort(compareText) }
+    const buckets = new Map<string, EventRecord[]>()
+    for (const event of observed) {
+      const key = JSON.stringify([event.idn, event.source])
+      buckets.set(key, [...(buckets.get(key) ?? []), event])
+    }
+    for (const [key, events] of buckets) {
+      const [identity, source] = JSON.parse(key) as [string, Source]
+      const evidenceIds = [...new Set(events.flatMap(eventEvidenceIds))].sort(compareText)
+      const identityNode = addNode("identity", identity, { ...emptySelection(), identity })
+      identityNode.selection = { ...identityNode.selection, evidenceIds: [...new Set([...identityNode.selection.evidenceIds, ...evidenceIds])].sort(compareText) }
+      addEdge("observed", identityNode.id, node.id, { ...emptySelection(), identity, operation: node.selection.operation, source, evidenceIds }, events.length)
     }
   }
 
@@ -285,7 +303,9 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const [shape, ops] of shapes) {
       if (ops.length < 2) continue
       const id = `operation-group:${shape}`, open = expandedGroups.has(id)
-      const groupNode = addNode("operation-group", shape, selectionFor(related.filter(cell => ops.includes(cell.op))), { label: shape, wrappedLabel: wrapOperationLabel(shape), objectGroup: { key: shape, members: ops, owners: {}, expanded: open } })
+      const groupSelection = selectionFor(related.filter(cell => ops.includes(cell.op)))
+      groupSelection.evidenceIds = [...new Set(nodes.filter(node => node.kind === "operation" && ops.includes(node.selection.operation ?? "")).flatMap(node => node.selection.evidenceIds))].sort(compareText)
+      const groupNode = addNode("operation-group", shape, groupSelection, { label: shape, wrappedLabel: wrapOperationLabel(shape), objectGroup: { key: shape, members: ops, owners: {}, expanded: open } })
       const members = ops.map(op => nodes.find(node => node.id === `operation:${op}`)).filter((node): node is HierarchyNode => !!node)
       const at = Math.min(...members.map(member => nodes.indexOf(member)))
       for (const node of [groupNode, ...members]) nodes.splice(nodes.indexOf(node), 1)
@@ -303,7 +323,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
     for (const parts of merged.values()) {
       const cells = [...new Set(parts.flatMap(edge => edge.selection.cells))]
-      addEdge(parts[0].relation, parts[0].sourceId, parts[0].targetId, selectionFor(cells, parts[0].source), parts.reduce((sum, edge) => sum + edge.count, 0))
+      const selection = { ...selectionFor(cells, parts[0].source), identity: parts[0].selection.identity, operation: cells.length ? selectionFor(cells).operation : parts[0].selection.operation, evidenceIds: [...new Set(parts.flatMap(edge => edge.selection.evidenceIds))].sort(compareText) }
+      addEdge(parts[0].relation, parts[0].sourceId, parts[0].targetId, selection, parts.reduce((sum, edge) => sum + edge.count, 0))
     }
   }
 
@@ -331,26 +352,15 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       if (grouped) grouped.push(event)
       else observedByOperation.set(event.op, [event])
     }
-    const observedOps = [...observedByOperation.keys()].sort(compareText)
+    const observedOps = [...observedByOperation.keys()].filter(op => !group.operations.includes(op)).sort(compareText)
     const visibleObserved = observedOps.slice(0, Math.max(0, resolved.operationLimit - visible.length))
-    for (const op of visibleObserved) {
+    for (const op of [...visible, ...visibleObserved]) {
       const relatedEvents = observedByOperation.get(op) ?? []
-      const evidenceIds = [...new Set(relatedEvents.map(event => event.eventId))].sort(compareText)
-      const node = addNode("observed-operation", op, { ...emptySelection(), operation: op, evidenceIds })
-      listItems.push(node)
-      const buckets = new Map<string, EventRecord[]>()
-      for (const event of relatedEvents) {
-        const key = JSON.stringify([event.idn, event.source])
-        const grouped = buckets.get(key)
-        if (grouped) grouped.push(event)
-        else buckets.set(key, [event])
-      }
-      for (const [key, events] of buckets) {
-        const [identity, source] = JSON.parse(key) as [string, Source]
-        addNode("identity", identity, { ...emptySelection(), identity })
-        addEdge("observed", `identity:${identity}`, node.id,
-          { ...emptySelection(), identity, operation: op, source, evidenceIds: events.map(event => event.eventId) }, events.length)
-      }
+      if (!relatedEvents.length) continue
+      const existing = nodes.find(node => node.id === `operation:${op}`)
+      const node = existing ?? addNode("observed-operation", op, { ...emptySelection(), operation: op })
+      if (!existing) listItems.push(node)
+      addObserved(relatedEvents, node)
     }
     // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 신원 → API → 객체를 한 화면에서 보되,
     // 객체가 많으면 objectLimit로 접고 "더 보기"로 펼친다(오퍼레이션 레벨과 같은 접기/펼치기).
@@ -387,11 +397,12 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const cell of related) if (cell.resource) scores.set(cell.resource, (scores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
     const focusedResource = candidates.find(gap => graphCellKey(gap) === resolved.focusCandidateKey)?.resource
     const resources = [...new Set([...related.map(cell => cell.resource), ...candidates.map(gap => gap.resource)].filter((resource): resource is string => !!resource))].sort((left, right) => Number(right === focusedResource) - Number(left === focusedResource) || (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
-    addNode("operation", operation, selectionFor(related))
+    const operationNode = addNode("operation", operation, selectionFor(related))
     const objects = addObjects(resources, related, resource => ({ ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }), resource => ({ owner: snapshot.owners[resource] ?? null, publicRead: isPublicRead(snapshot, operation, resource) }), false)
     const visible = objects.drawn
     for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addAccess(related)
+    addObserved((observedByGroup.get(group.id) ?? []).filter(event => event.op === operation), operationNode)
     for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${operation}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     const visibleCandidates = candidates.filter(gap => gap.resource && visible.includes(gap.resource))
       .sort((left, right) => Number(graphCellKey(right) === resolved.focusCandidateKey) - Number(graphCellKey(left) === resolved.focusCandidateKey))

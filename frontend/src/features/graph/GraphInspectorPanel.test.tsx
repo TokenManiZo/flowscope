@@ -6,6 +6,7 @@ import type { ManagedSession, Snapshot } from "@/lib/api/types"
 import { renderWithQueryClient } from "@/test/render"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
+import { navigateHierarchy, projectHierarchy } from "./graphHierarchy"
 import type { GraphSelection } from "./graphProjection"
 
 const event: Snapshot["events"][number] = {
@@ -118,4 +119,20 @@ it("groups 관측 기록 into one card per identity with a row per source, actin
   // 줄의 원문 보기는 그 출처의 가장 최근 요청(ev-2)을 연다.
   await userEvent.click(within(human).getByRole("button", { name: "원문 보기" }))
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
+})
+
+it("shows unjudged account evidence without borrowing another account's verdict", () => {
+  const bob = { ...event, eventId: "bob-unjudged", clusterEvidenceIds: ["bob-unjudged"], idn: "bob", resource: null, trafficDisposition: "REVIEW", verdict: "untested" as const }
+  const data = { ...snapshot, events: [event, bob] }
+  const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: false, includeRouteCandidates: false, expanded: false }
+  const navigation = { level: "site" as const, groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
+  const site = projectHierarchy(data, filters, navigation)
+  const graph = projectHierarchy(data, filters, navigateHierarchy(navigation, "group", site.groups[0].id))
+  const node = graph.nodes.find(node => node.kind === "operation")!
+  renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
+  const alice = screen.getByRole("listitem", { name: "alice 관측 기록 1건" })
+  const bobCard = screen.getByRole("listitem", { name: "bob 관측 기록 1건" })
+  expect(alice).toHaveTextContent("ALLOW")
+  expect(bobCard).not.toHaveTextContent("ALLOW")
+  expect(screen.getByText("인가 판정에 포함되지 않은 관측 기록 1건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.")).toBeVisible()
 })
