@@ -2,7 +2,9 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 import { ChevronUp } from "lucide-react"
 
-import { cardSurface, renderParameterNodeCardSvg, type CardSource, type CardTheme, type ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
+import { apiColors, apiOperation } from "@/features/api-management/apiAppearance"
+import type { Snapshot } from "@/lib/api/types"
+import { cardSurface, renderParameterNodeCardSvg as renderBaseCard, type CardSource, type CardTheme, type ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
 import { useDocumentTheme } from "@/hooks/useTheme"
 import { NODE_SIZE_LIMIT, type GraphPreferences, type NodeSize } from "./graphPreferences"
 import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
@@ -31,6 +33,7 @@ interface Props {
   /** 한 레인만 다시 세운다. version이 바뀔 때만 실행한다. */
   laneLayout?: { lane: number; version: number }
   preferences?: GraphPreferences | null
+  apiMarks?: Snapshot["apiMarks"]
   confirmedNodeIds?: ReadonlySet<string>
   selectedElementId?: string | null
   searchMatches?: ReadonlyMap<string, "direct" | "member">
@@ -47,6 +50,17 @@ interface Props {
   onLaneBoundsChange?(bounds: ReadonlyArray<LaneBounds | null>): void
   onPreferencesChange(preferences: Pick<GraphPreferences, "positions" | "viewport" | "sizes">): void
   onRendererUnavailable?(): void
+}
+
+type ApiCard = ParameterNodeCardView & { apiColor?: string; apiConfirmed?: boolean }
+function renderParameterNodeCardSvg(...args: Parameters<typeof renderBaseCard>): ReturnType<typeof renderBaseCard> {
+  const image = renderBaseCard(...args), card = args[0] as ApiCard
+  const color = apiColors.find(value => value.id === card.apiColor), theme = args[3] ?? "dark"
+  if (!color && !card.apiConfirmed) return image
+  let svg = decodeURIComponent(image.uri.split(",")[1])
+  if (color) svg = svg.replace(/(<rect width="[^"]+" height="[^"]+" rx="10" )fill="[^"]+" stroke="[^"]+"/, `$1fill="${color[theme]}" stroke="${color.swatch}"`)
+  if (card.apiConfirmed) svg = svg.replace("</svg>", `<rect x="${image.width - 70}" y="9" width="58" height="22" rx="5" fill="${theme === "dark" ? "#450a0a" : "#fee2e2"}"/><text x="${image.width - 41}" y="24" text-anchor="middle" fill="${theme === "dark" ? "#fca5a5" : "#b91c1c"}" font-family="sans-serif" font-size="11" font-weight="600">취약점</text></svg>`)
+  return { ...image, uri: `data:image/svg+xml,${encodeURIComponent(svg)}` }
 }
 
 const noConfirmedNodes = new Set<string>()
@@ -103,7 +117,7 @@ export function graphFocusStates(projection: GraphProjection | HierarchyProjecti
   }
 }
 
-function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark", statusesByNode: ReadonlyMap<string, readonly number[]> = noStatuses, openObjectGroupId: string | null = null): ElementDefinition[] {
+function elementsFor(projection: GraphProjection | HierarchyProjection, selectedElementId: string | null, confirmedNodeIds: ReadonlySet<string>, sizes: Readonly<Record<string, NodeSize>> = {}, cards?: Map<string, ParameterNodeCardView>, theme: CardTheme = "dark", statusesByNode: ReadonlyMap<string, readonly number[]> = noStatuses, openObjectGroupId: string | null = null, apiMarks?: Snapshot["apiMarks"]): ElementDefinition[] {
   const hierarchy = "kind" in projection ? projection : null
   const focus = graphFocusStates(projection, selectedElementId, openObjectGroupId)
   // 테마·카드 크기 갱신으로 요소를 다시 만들 때도 펼침 집중 상태를 함께 복원한다.
@@ -132,14 +146,15 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
     // 접근 주체 아이콘은 오른쪽 API·Object 노드에만 둔다.
     const sources = node.kind === "operation" || node.kind === "observed-operation" || node.kind === "resource" ? [...(nodeSources.get(node.id) ?? [])] : []
     const base = relationshipNodeCard(node, projection, statusesByNode.get(node.id))
-    const card = sources.length ? { ...base, sources, accessibleLabel: `${base.accessibleLabel}; 접근 주체 ${sources.map(source => source.toUpperCase()).join(", ")}` } : base
+    const styledBase = ["operation", "observed-operation"].includes(node.kind) ? { ...base, apiColor: apiMarks?.[apiOperation(node.selection.operation ?? "")]?.color, apiConfirmed: confirmedNodeIds.has(node.id) || apiMarks?.[apiOperation(node.selection.operation ?? "")]?.registered } : base
+    const card = sources.length ? { ...styledBase, sources, accessibleLabel: `${base.accessibleLabel}; 접근 주체 ${sources.map(source => source.toUpperCase()).join(", ")}` } : styledBase
     cards?.set(node.id, card)
     const size = sizes[node.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
     return { data: { id: node.id, label: "", cardImage: image.uri, cardColor: cardSurface(theme), focused: nodeFocus(node.id), objectFocus: objectFocus(nodeFocus(node.id)), accessibleLabel: card.accessibleLabel, width: image.width, height: image.height, verdictText: node.verdictText, kind: node.kind, confirmed: confirmedNodeIds.has(node.id) ? "yes" : "no", ...("objectGroup" in node && node.objectGroup ? { groupState: node.objectGroup.expanded ? "open" : "closed", groupKey: node.objectGroup.key } : {}), ...(memberOf.has(node.id) ? { memberOf: memberOf.get(node.id) } : {}), ...(objectMembers.has(node.id) ? { temporaryObjectPosition: "yes" } : {}), ...(size ? { customWidth: image.width, customHeight: image.height } : {}) } }
   })
   const candidates = projection.routeCandidates.map((candidate) => {
-    const card = relationshipRouteCandidateCard(candidate)
+    const card: ApiCard = { ...relationshipRouteCandidateCard(candidate), apiColor: apiMarks?.[`${candidate.service} ${candidate.method} ${candidate.pathTemplate}`]?.color }
     cards?.set(candidate.id, card)
     const size = sizes[candidate.id]
     const image = renderParameterNodeCardSvg(card, true, size, theme)
@@ -475,7 +490,7 @@ function applyEdgeRoutes(core: Core, laneCount: number) {
 const noStatusColors: ReadonlyMap<number, string> = new Map()
 const noSplitSources: readonly string[] = []
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, openObjectGroupId = null, laneLayout = noLaneLayout, preferences = null, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, openObjectGroupId = null, laneLayout = noLaneLayout, preferences = null, apiMarks, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -872,7 +887,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     // 선택은 여기서 다시 만들지 않는다(아래 effect가 강조 값만 바꾼다). 클릭마다 전체를 지우고 다시 그리면 깜빡인다.
     const members = new Set("kind" in projection ? projection.nodes.filter(node => node.kind === "object-group" && node.objectGroup?.expanded).flatMap(node => node.objectGroup!.members.map(member => `resource:${member}`)) : [])
     for (const id of objectEditsRef.current) if (!members.has(id)) objectEditsRef.current.delete(id)
-    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? saved?.sizes ?? {} : { ...saved?.sizes, ...live.sizes }, cardsRef.current, theme, statusesByNode, openObjectGroupRef.current))
+    core.add(elementsFor(projection, selectedElementIdRef.current, confirmedNodeIds, relayout ? saved?.sizes ?? {} : { ...saved?.sizes, ...live.sizes }, cardsRef.current, theme, statusesByNode, openObjectGroupRef.current, apiMarks))
     core.nodes().forEach(node => { if (objectEditsRef.current.has(node.id())) node.data("temporaryObjectPosition", "no") })
     applyHighlight(core, projection, highlightRef.current, cardsRef.current, theme, statusColorsRef.current, splitSourcesRef.current)
     setCornerCursor(null)
@@ -892,7 +907,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       focusAfterFoldRef.current = null
       containerRef.current?.focus()
     }
-  }, [confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, statusesByNode, theme])
+  }, [apiMarks, confirmedNodeIds, dismissCardTooltip, laneCount, layoutVersion, locked, projection, statusesByNode, theme])
 
   // 강조 필터가 바뀌면 요소를 다시 만들지 않고 강조 상태와 API 카드 뱃지 색만 바꾼다.
   useEffect(() => {

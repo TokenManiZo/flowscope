@@ -94,6 +94,8 @@ public final class SnapshotJsonWriter {
         root.put("sampleMode", !result.records.isEmpty() && result.records.stream().allMatch(record ->
                 "https://demo.flowscope.test:443".equals(record.service)
                         && record.runId != null && record.runId.startsWith("demo-")));
+        var apiMarks = io.flowscope.core.ApiManagement.marks(result, config, routeCandidates);
+        if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
         root.set("events", events(result));
         root.set("evidenceOrdinals", evidenceOrdinals(result));
         root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()

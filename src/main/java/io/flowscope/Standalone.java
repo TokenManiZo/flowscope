@@ -112,6 +112,40 @@ public final class Standalone {
             graphWorkspaceRevision++;
             return graphWorkspace();
         }
+        @Override public synchronized io.flowscope.core.ApiManagement.Preview manageApi(io.flowscope.core.ApiManagement.Request request) {
+            if (request.datasetRevision() != datasetRevision.get() || request.revision() != revision.get()) throw new IllegalStateException("프로젝트 데이터가 변경되었습니다. 다시 확인해 주세요.");
+            var change = io.flowscope.core.ApiManagement.prepare(request, result, new ArrayList<>(records), config, routeCandidates, requestLabWorkspace);
+            if (request.action().equals("preview-delete")) return change.preview();
+            if (request.marksOnly()) {
+                try {
+                    if (activeProjectDatabase != null && !sqliteProjectStore.saveApiMarks(activeProjectDatabase, change.config(), request.operations().getFirst()))
+                        sqliteProjectStore.save(activeProjectDatabase, records, change.config(), archivedAssessments, archivedValidations,
+                                contexts.completedRuns(), routeCandidates, executionLedger.attempts(), activeProjectContext, graphWorkspace, requestLabWorkspace);
+                } catch (Exception error) { throw projectFailure("API 변경 저장에 실패했습니다.", error); }
+                config.replaceWith(change.config()); revision.incrementAndGet();
+                if (activeProjectDatabase != null) markSaved();
+                return change.preview().withMarks(revision.get(), datasetRevision.get(), io.flowscope.core.ApiManagement.marks(result, config, routeCandidates));
+            }
+
+            var ids = new java.util.HashSet<>(change.preview().evidenceIds());
+            var assessments = archivedAssessments.stream().filter(a -> a.evidenceIds().stream().noneMatch(ids::contains)).toList();
+            var validations = archivedValidations.stream().filter(v -> java.util.stream.Stream.of(v.originalEvidenceIds(), v.validationEvidenceIds(), v.controlEvidenceIds()).flatMap(List::stream).noneMatch(ids::contains)).toList();
+            var attempts = executionLedger.attempts().stream().filter(a -> !ids.contains(a.evidenceId()) && !ids.contains(a.originEvidenceId())).toList();
+            var completed = io.flowscope.core.ApiManagement.retainedRuns(contexts.completedRuns(), change.records(), ids);
+            try {
+                if (activeProjectDatabase != null && !sqliteProjectStore.saveAfterDeletion(activeProjectDatabase,
+                        records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet()), ids, change.config(), assessments, validations,
+                        completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab()))
+                    sqliteProjectStore.save(activeProjectDatabase, change.records(), change.config(), assessments, validations,
+                            completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab());
+            } catch (Exception error) { throw projectFailure("API 변경 저장에 실패했습니다.", error); }
+            records.clear(); records.addAll(change.records()); config.replaceWith(change.config());
+            archivedAssessments = assessments; archivedValidations = validations; executionLedger.replace(attempts);
+            requestLabWorkspace = change.requestLab(); contexts.restoreCompletedRuns(completed);
+            rebuild(); routeCandidates = io.flowscope.core.ApiManagement.filterRoutes(change.routes(), config);
+            if (activeProjectDatabase != null) markSaved();
+            return change.preview();
+        }
         @Override public synchronized RequestLabWorkspace.State requestLabWorkspace(String evidenceId) {
             return new RequestLabWorkspace.State(datasetRevision.get(), requestLabWorkspace.revision(),
                     activeProjectDatabase != null, requestLabWorkspace.tab(evidenceId));
@@ -152,6 +186,7 @@ public final class Standalone {
                     .distinct().collect(java.util.stream.Collectors.joining("\n"));
             routeCandidates = services.isBlank() ? List.of() : RouteCandidateExtractor.extract(
                     result.records, ScopePolicy.parse(services), List.of());
+            routeCandidates = io.flowscope.core.ApiManagement.filterRoutes(routeCandidates, config);
             revision.incrementAndGet();
         }
         @Override public synchronized void loadSample() {
@@ -240,7 +275,7 @@ public final class Standalone {
                 replaceGraphWorkspace(loaded.graphWorkspace());
                 requestLabWorkspace = loaded.requestLabWorkspace();
                 result = Pipeline.runIsolated(new ArrayList<>(records), config);
-                routeCandidates = List.copyOf(loaded.routeCandidates());
+                routeCandidates = io.flowscope.core.ApiManagement.filterRoutes(loaded.routeCandidates(), config);
                 datasetRevision.incrementAndGet();
                 revision.incrementAndGet();
                 markSaved();

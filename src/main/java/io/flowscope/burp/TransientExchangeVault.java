@@ -110,6 +110,13 @@ final class TransientExchangeVault {
         return entry == null ? Optional.empty() : Optional.of(entry.view());
     }
 
+    synchronized void discard(java.util.Set<Long> runtimeIds) {
+        for (long id : runtimeIds) {
+            Entry entry = entries.remove(id);
+            if (entry != null) { retainedBytes -= entry.retainedBytes(); entry.destroy(); }
+        }
+    }
+
     synchronized void clear() {
         entries.values().forEach(Entry::destroy);
         entries.clear();

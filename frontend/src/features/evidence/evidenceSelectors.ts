@@ -69,3 +69,14 @@ export function dispositionCounts(events: readonly EventRecord[]): Record<Eviden
   for (const event of events) if (event.trafficDisposition === "INCLUDE" || event.trafficDisposition === "REVIEW" || event.trafficDisposition === "EXCLUDE") counts[event.trafficDisposition] += 1
   return counts
 }
+
+/** Index the already-filtered records once; each row must not rescan the dataset. */
+export function repeatEvidenceIds(events: readonly EventRecord[]): ReadonlyMap<string, readonly string[]> {
+  const groups = new Map<string, string[]>()
+  for (const event of events) {
+    const ids = groups.get(event.clusterId)
+    if (ids) ids.push(event.eventId)
+    else groups.set(event.clusterId, [event.eventId])
+  }
+  return groups
+}
