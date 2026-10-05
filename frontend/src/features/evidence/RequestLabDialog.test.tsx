@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 
 import { RequestLabDialog } from "./RequestLabDialog"
 import { OperationDetail } from "./OperationDetail"
@@ -32,7 +32,7 @@ const registeredAccounts: Account[] = [
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }) }
 
 function requestLabDraft(eventId = "event-7", request = secret) {
-  return { eventId, service: "https://api.example.test", request, response: "observed-response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", message: "draft" }
+  return { headers: [], eventId, service: "https://api.example.test", request, response: "observed-response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", message: "draft" }
 }
 
 function deferredResponse() {
@@ -73,17 +73,68 @@ afterEach(() => { attempts = [] })
 
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear() })
 
-async function openDraft(currentSession = false) {
+const previousHasPointerCapture = Object.getOwnPropertyDescriptor(Element.prototype, "hasPointerCapture")
+const previousScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView")
+if (!previousHasPointerCapture) Object.defineProperty(Element.prototype, "hasPointerCapture", { configurable: true, value: () => false })
+if (!previousScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => undefined })
+afterAll(() => {
+  if (previousHasPointerCapture) Object.defineProperty(Element.prototype, "hasPointerCapture", previousHasPointerCapture)
+  else delete (Element.prototype as { hasPointerCapture?: unknown }).hasPointerCapture
+  if (previousScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", previousScrollIntoView)
+  else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
+
+function authenticationLabel(value: string) {
+  if (value === "ANONYMOUS") return "비로그인"
+  if (value === "ORIGINAL" || value === "") return /인증 (다시 )?선택/
+  return registeredAccounts.find(account => value === `ACCOUNT:${account.id}`)!.label
+}
+
+async function chooseAuthentication(user: ReturnType<typeof userEvent.setup>, value: string) {
+  if (!screen.queryByRole("listbox")) await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
+  await user.click(await screen.findByRole("option", { name: authenticationLabel(value) }))
+}
+
+async function openDraft(currentSession: boolean | null = false) {
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
-  // Session-specific tests opt into the asynchronous credential preview.
-  const authentication = screen.getByRole("combobox", { name: "전송 인증" })
-  const account = within(authentication).getAllByRole("option").find(option => (option as HTMLOptionElement).value === "ACCOUNT:acct-1") as HTMLOptionElement | undefined
-  if (currentSession && account && !account.disabled) { await userEvent.selectOptions(authentication, account.value); await waitFor(() => expect(authentication).toHaveValue(account.value)); await waitFor(() => expect(authentication).toBeEnabled()) }
+  if (currentSession !== null) {
+    const value = currentSession ? "ACCOUNT:acct-1" : "ANONYMOUS"
+    await chooseAuthentication(userEvent.setup(), value)
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel(value)))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+  }
   return request
 }
 
 describe("RequestLabDialog", () => {
+  it("offers an account dropdown without original identity and requires a choice before sending", async () => {
+    const fetch = installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await openDraft(null)
+    const authentication = screen.getByRole("combobox", { name: "전송 인증" })
+    expect(authentication).toHaveTextContent("인증 선택")
+    for (const name of ["요청 재전송", "Repeater로 보내기"]) {
+      const action = screen.getByRole("button", { name })
+      expect(action).toBeDisabled()
+      action.removeAttribute("disabled")
+      fireEvent.click(action)
+    }
+    expect(fetch.mock.calls.some(([input]) => ["/api/request-lab", "/api/replay"].includes(String(input)))).toBe(false)
+    await user.click(authentication)
+    const options = await screen.findByRole("listbox")
+    expect(within(options).queryByRole("option", { name: /원문|anon|인증.*선택/ })).not.toBeInTheDocument()
+    expect(within(options).getByRole("option", { name: "비로그인" })).toBeVisible()
+    expect(within(options).getByRole("option", { name: "관리자" })).toBeVisible()
+    expect(within(options).getByRole("option", { name: "USER C · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument()
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(authentication).toHaveTextContent("비로그인"))
+    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
+  })
+
   it("keeps an explicit account across traffic updates and tabs, and uses it for preview, send and Repeater", async () => {
     const owner = createMemoryOnlyRawState()
     const original = "POST /orders HTTP/1.1\nHost: api.example.test\nCookie: original-demo\nAuthorization: Bearer original-demo\n\nbody-kept"
@@ -103,11 +154,11 @@ describe("RequestLabDialog", () => {
     vi.stubGlobal("fetch", fetch)
     const user = userEvent.setup()
     const view = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, second]} rawState={owner} />)
-    await openDraft()
+    await openDraft(null)
     const authentication = screen.getByRole("combobox", { name: "전송 인증" })
     for (const id of ["acct-1", "acct-2"]) {
-      await user.selectOptions(authentication, `ACCOUNT:${id}`)
-      await waitFor(() => expect(authentication).toHaveValue(`ACCOUNT:${id}`))
+      await chooseAuthentication(user, `ACCOUNT:${id}`)
+      await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel(`ACCOUNT:${id}`)))
       await waitFor(() => expect(authentication).toBeEnabled())
       expect(owner.request).toContain(`Cookie: session=${id}`)
       expect(owner.request).toContain(`Authorization: Bearer ${id}`)
@@ -125,11 +176,11 @@ describe("RequestLabDialog", () => {
       }
     }
     view.rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[{ ...activeSession, lastRecordedAt: "2099-01-01T00:00:00Z" }, second]} rawState={owner} />)
-    expect(authentication).toHaveValue("ACCOUNT:acct-2")
+    expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2"))
     await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    expect(authentication).toHaveValue("ACCOUNT:acct-2")
-    await user.selectOptions(authentication, "ANONYMOUS")
-    await waitFor(() => expect(authentication).toHaveValue("ANONYMOUS"))
+    expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2"))
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ANONYMOUS")))
     expect(owner.request).not.toMatch(/Cookie:|Authorization:/)
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
@@ -137,10 +188,10 @@ describe("RequestLabDialog", () => {
     expect(anonymous.get("accountId")).toBe("")
     expect(anonymous.get("credentialMode")).toBe("ANONYMOUS")
     await user.selectOptions(screen.getByRole("combobox", { name: "편집 요청 선택" }), "1")
-    expect(authentication).toHaveValue("ACCOUNT:acct-2")
+    expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2"))
     expect(owner.request).toContain("Cookie: session=acct-2")
     view.rerender(<RequestLabDialog accounts={registeredAccounts.filter(account => account.id !== "acct-2")} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, second]} rawState={owner} />)
-    expect(authentication).toHaveValue("")
+    expect(authentication).toHaveTextContent(authenticationLabel(""))
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeDisabled()
   })
@@ -157,9 +208,9 @@ describe("RequestLabDialog", () => {
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, second]} rawState={owner} />)
     await openDraft(true)
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ACCOUNT:acct-2")
+    await chooseAuthentication(user, "ACCOUNT:acct-2")
     expect(await screen.findByRole("alert")).toHaveTextContent("B 세션 만료")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ACCOUNT:acct-1")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
     expect(owner.requests[0]?.accountId).toBe("acct-1")
     expect(owner.request).toContain("Cookie: session=A")
   })
@@ -184,8 +235,8 @@ describe("RequestLabDialog", () => {
     await user.click(within(pane).getByRole("button", { name: "JSON 정돈" }))
     const derived = owner.jsonViews.request!
     const authentication = screen.getByRole("combobox", { name: "전송 인증" })
-    await user.selectOptions(authentication, "ACCOUNT:acct-1")
-    await waitFor(() => expect(authentication).toHaveValue("ACCOUNT:acct-1"))
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
+    await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
     await waitFor(() => expect(authentication).toBeEnabled())
     expect(request).toBeVisible()
     expect(owner.request).toContain("Bearer ACCOUNT_DEMO")
@@ -195,15 +246,15 @@ describe("RequestLabDialog", () => {
     expect(derived.text).toBe("")
     const projected = owner.request
     await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    await user.selectOptions(authentication, "ANONYMOUS")
-    await waitFor(() => expect(authentication).toHaveValue("ANONYMOUS"))
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ANONYMOUS")))
     await waitFor(() => expect(authentication).toBeEnabled())
     expect(owner.request).not.toContain("Authorization:")
     expect(owner.request).not.toContain("Cookie:")
     expect(owner.requests[0]?.request).toBe(projected)
-    await user.selectOptions(authentication, "ORIGINAL")
-    await waitFor(() => expect(authentication).toHaveValue("ORIGINAL"))
-    expect(owner.request).toContain("Cookie: ORIGINAL_DEMO")
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
+    await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
+    expect(owner.request).toContain("Cookie: ACCOUNT_DEMO")
     expect(owner.request).toContain("POST /edited HTTP/1.1")
     expect(owner.originalRequest).toBe(original)
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
@@ -218,12 +269,12 @@ describe("RequestLabDialog", () => {
       ? json({ success: false, message: "세션을 확인해 주세요." }, 400) : json(requestLabDraft()))))
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    await openDraft()
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ACCOUNT:acct-1")
+    await openDraft(null)
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
     expect(await screen.findByRole("alert")).toHaveTextContent("세션을 확인해 주세요.")
     expect(owner.request).toBe(secret)
     expect(owner.requests[0]?.credentialMode).toBe("ORIGINAL")
-    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
   })
 
   it.each(["close", "dataset", "unmount", "session"] as const)("locks actions during preview and ignores a late credential response after %s", async action => {
@@ -236,8 +287,8 @@ describe("RequestLabDialog", () => {
     }))
     const user = userEvent.setup()
     const view = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={1} rawState={owner} />)
-    const request = await openDraft()
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ACCOUNT:acct-1")
+    const request = await openDraft(null)
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
     expect(request).toBeDisabled()
     expect(screen.getByRole("button", { name: "Original" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "새 요청 추가" })).toBeDisabled()
@@ -302,15 +353,17 @@ describe("RequestLabDialog", () => {
     expect(request).not.toHaveAttribute("readonly")
     expect(request).toHaveFocus()
     expect(response).toHaveValue("")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ORIGINAL")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ORIGINAL"))
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
+    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
     fireEvent.change(request, { target: { value: "submitted draft" } })
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(response).toHaveValue("sent-response"))
     expect(request).not.toHaveAttribute("readonly")
     fireEvent.change(request, { target: { value: "GET /edited HTTP/1.1\nHost: api.example.test\n\nunsent draft" } })
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ANONYMOUS")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ANONYMOUS"))
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
     expect(screen.getByText(/이전 응답/)).toBeInTheDocument()
     request.setSelectionRange(2, 5)
@@ -321,7 +374,7 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
     expect(request).toHaveValue("GET /edited HTTP/1.1\nHost: api.example.test\n\nunsent draft")
     expect(response).toHaveValue("")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ANONYMOUS")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS"))
     fireEvent.change(request, { target: { value: "second request" } })
     await user.click(screen.getByRole("button", { name: "Original" }))
     expect(request).toHaveValue(secret)
@@ -363,7 +416,7 @@ describe("RequestLabDialog", () => {
     expect(screen.getByRole("option", { name: "주문 확인" })).toHaveValue("1")
     expect(first.name).toBe("주문 확인")
     expect(first.request).toBe("edited request")
-    expect(first.credentialMode).toBe("ORIGINAL")
+    expect(first.credentialMode).toBe("ANONYMOUS")
     expect(first.dirty).toBe(false)
     expect(first.result).toBe(result)
     expect(fetch.mock.calls).toHaveLength(calls)
@@ -599,7 +652,7 @@ describe("RequestLabDialog", () => {
 
     await openDraft(true)
     // Active cross-identity replay rejects this LEGACY_RESPONSE session; the Request Lab still offers it.
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ACCOUNT:acct-1")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
     expect(screen.queryByLabelText("계정")).not.toBeInTheDocument()
   })
 
@@ -608,8 +661,8 @@ describe("RequestLabDialog", () => {
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
     await openDraft(true)
     const authentication = screen.getByRole("combobox", { name: "전송 인증" })
-    expect(authentication).toHaveValue("ACCOUNT:acct-1")
-    expect(within(authentication).getByRole("option", { name: "관리자" })).toBeInTheDocument()
+    expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
+    expect(authentication).toHaveTextContent("관리자")
     expect(screen.queryByRole("region", { name: "Request Lab 메타데이터" })).not.toBeInTheDocument()
     expect(fetch.mock.calls.some(([input]) => String(input).startsWith("/api/account-settings"))).toBe(false)
   })
@@ -620,11 +673,11 @@ describe("RequestLabDialog", () => {
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, { ...activeSession, accountId: "inactive", accountLabel: "비활성", status: "EXPIRED" }, { ...activeSession, accountId: "other", service: "https://other.example.test" }]} />)
 
     expect(await openDraft(true)).toHaveValue(secret)
+    await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
     for (const label of ["USER B", "USER C", "비활성", "다른 서비스"]) {
-      expect(screen.getByRole("option", { name: `${label} · 사용 가능한 인증 없음` })).toBeDisabled()
+      expect(screen.getByRole("option", { name: `${label} · 사용 가능한 인증 없음` })).toHaveAttribute("aria-disabled", "true")
     }
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ORIGINAL")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ORIGINAL"))
+    await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
@@ -633,13 +686,13 @@ describe("RequestLabDialog", () => {
     // 서버는 operationId가 없으면 400으로 거부한다. 누를 때마다 새 값이다.
     expect(sent.get("operationId")).toMatch(/^[A-Za-z0-9_-]{16,120}$/)
     sent.delete("operationId")
-    expect(sent).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ORIGINAL", accountId: "", request: secret }))
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ANONYMOUS")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ANONYMOUS"))
+    expect(sent).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ACCOUNT", accountId: "acct-1", request: secret }))
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ACCOUNT:acct-1")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ACCOUNT:acct-1"))
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     const sends = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")
@@ -696,9 +749,11 @@ describe("RequestLabDialog", () => {
   it("disables the current session without a reusable session and locks sending if it disappears", async () => {
     installTransport()
     const { unmount } = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
-    await openDraft()
-    expect(within(screen.getByRole("combobox", { name: "전송 인증" })).getByRole("option", { name: "관리자 · 사용 가능한 인증 없음" })).toBeDisabled()
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ORIGINAL")
+    await openDraft(null)
+    await userEvent.click(screen.getByRole("combobox", { name: "전송 인증" }))
+    expect(screen.getByRole("option", { name: "관리자 · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    await userEvent.keyboard("{Escape}")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ORIGINAL"))
     unmount()
 
     installReusableTransport()
@@ -708,12 +763,13 @@ describe("RequestLabDialog", () => {
     rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
     await waitFor(() => expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeDisabled())
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel(""))
   })
 
   it("retries a draft load and replaces the latest result without adding result choices", async () => {
     let attempts = 0
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
+      if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
       if (String(input) === "/api/request-lab?eventId=event-7") {
         attempts += 1
         return Promise.resolve(attempts === 1 ? json({ success: false, message: "초안 서버 오류" }, 503) : json({ eventId: "event-7", service: "https://api.example.test", request: secret, response: "observed-response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", message: "draft" }))
@@ -752,9 +808,9 @@ describe("RequestLabDialog", () => {
     expect(new URLSearchParams(String(replayCall?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: "ACCOUNT", accountId: "acct-1" }))
     resolveReplay(json({ success: true, message: "draft", openedDraft: true, status: 200, replayId: "r" }))
     expect(await screen.findByText("Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다.")).toBeVisible()
-    for (const [label, mode] of [["비로그인", "ANONYMOUS"], ["원문", "ORIGINAL"]] as const) {
-      await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), mode)
-      await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue(mode))
+    for (const mode of ["ANONYMOUS"] as const) {
+      await chooseAuthentication(user, mode)
+      await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel(mode)))
       await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
       await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
       await waitFor(() => expect(new URLSearchParams(String(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay").at(-1)?.[1]?.body)).get("credentialMode")).toBe(mode))
@@ -781,6 +837,7 @@ describe("RequestLabDialog", () => {
     let resolveSend!: (response: Response) => void
     const pendingSend = new Promise<Response>((resolve) => { resolveSend = resolve })
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
+      if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
       if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json({ eventId: "event-7", service: "https://api.example.test", request: secret, response: "", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", message: "draft" }))
       return init?.method === "POST" ? pendingSend : Promise.resolve(json({ success: true }))
     })
@@ -810,13 +867,14 @@ describe("RequestLabDialog", () => {
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[older, collecting, notReady]} />)
 
-    await openDraft()
+    await openDraft(null)
     const authentication = screen.getByRole("combobox", { name: "전송 인증" })
-    expect(authentication).toHaveValue("ORIGINAL")
-    expect(within(authentication).getByRole("option", { name: "USER B" })).toBeEnabled()
-    expect(within(authentication).getByRole("option", { name: "USER C · 사용 가능한 인증 없음" })).toBeDisabled()
-    await user.selectOptions(authentication, "ACCOUNT:acct-2")
-    await waitFor(() => expect(authentication).toHaveValue("ACCOUNT:acct-2"))
+    expect(authentication).toHaveTextContent(authenticationLabel("ORIGINAL"))
+    await user.click(authentication)
+    expect(screen.getByRole("option", { name: "USER B" })).not.toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("option", { name: "USER C · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    await chooseAuthentication(user, "ACCOUNT:acct-2")
+    await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2")))
     await waitFor(() => expect(authentication).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
     await waitFor(() => expect(fetch.mock.calls.some(([input]) => String(input) === "/api/replay")).toBe(true))
@@ -826,9 +884,11 @@ describe("RequestLabDialog", () => {
 
   it("scrubs every independent request and result on dataset revision", async () => {
     const owner = createMemoryOnlyRawState()
+    const original = "GET /revision HTTP/1.1\nHost: api.example.test\n\nREVISION-REQUEST"
     let revision = 1
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
-      if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json({ eventId: "event-7", service: "https://api.example.test", request: revision === 1 ? "REVISION-REQUEST" : "", response: revision === 1 ? "REVISION-RESPONSE" : "", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", message: "draft" }))
+      if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
+      if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json({ eventId: "event-7", service: "https://api.example.test", request: revision === 1 ? original : "", response: revision === 1 ? "REVISION-RESPONSE" : "", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", message: "draft" }))
       return init?.method === "POST" ? Promise.resolve(json({ success: true, message: "sent", eventId: "event-7", status: 200, response: "REVISION-HISTORY", durationMs: 1, requestBytes: 1, responseBytes: 1 })) : Promise.resolve(json({ success: true }))
     })
     vi.stubGlobal("fetch", fetch)
@@ -837,7 +897,7 @@ describe("RequestLabDialog", () => {
     await openDraft()
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await screen.findAllByText("REVISION-HISTORY")
-    expect(owner.request).toBe("REVISION-REQUEST")
+    expect(owner.request).toBe(original)
     expect(owner.response).toBe("REVISION-HISTORY")
     expect(owner.requests[0]?.result?.response).toBe("REVISION-HISTORY")
     revision = 2
@@ -979,7 +1039,7 @@ describe("RequestLabDialog", () => {
   it("isolates a late send completion when the dataset revision changes", async () => {
     const pending = deferredResponse()
     const owner = createMemoryOnlyRawState()
-    let draftRequest = "REVISION-ONE"
+    let draftRequest = "GET /revision HTTP/1.1\nHost: api.example.test\n\nREVISION-ONE"
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/request-lab" && init?.method === "POST") return pending.promise
       return Promise.resolve(json(requestLabDraft("event-7", draftRequest)))
@@ -1071,6 +1131,7 @@ describe("RequestLabDialog", () => {
   it("locks request controls while sending and re-enables editing when the latest response arrives", async () => {
     const send = deferredResponse()
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
+      if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
       if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json(requestLabDraft()))
       if (String(input) === "/api/request-lab" && init?.method === "POST") return send.promise
       if (String(input) === "/api/manual-attempts") return Promise.resolve(json([]))
@@ -1116,8 +1177,8 @@ describe("RequestLabDialog", () => {
     expect(request).toHaveValue(original.replace(/\r\n/g, "\n"))
     expect(owner.request).toBe(original)
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ORIGINAL")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveValue("ORIGINAL"))
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
@@ -1149,7 +1210,7 @@ describe("RequestLabDialog", () => {
     expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly")
     expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("last-response")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
-    await user.selectOptions(screen.getByRole("combobox", { name: "전송 인증" }), "ANONYMOUS")
+    await chooseAuthentication(user, "ANONYMOUS")
     await waitFor(() => expect(owner.request).not.toContain("Cookie:"))
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(owner.response).toBe("latest-response"))

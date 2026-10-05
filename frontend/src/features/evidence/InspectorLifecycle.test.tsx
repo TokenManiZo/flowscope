@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import userEvent from "@testing-library/user-event"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterAll, afterEach, expect, it, vi } from "vitest"
 import { EvidenceInspectorBody } from "@/components/layout/EvidenceSheet"
 import { GraphInspectorPanel } from "@/features/graph/GraphInspectorPanel"
 import { targetSnapshot } from "@/test/fixtures"
@@ -17,6 +17,17 @@ const snapshot = targetSnapshot({ events: [event, second], accounts: [account("a
 const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } })
 const draft = { eventId: "first", service: "https://api.example.test", request: "GET /original HTTP/1.1", response: "original response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "NONE", message: "draft" }
 afterEach(() => vi.unstubAllGlobals())
+
+const previousHasPointerCapture = Object.getOwnPropertyDescriptor(Element.prototype, "hasPointerCapture")
+const previousScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView")
+if (!previousHasPointerCapture) Object.defineProperty(Element.prototype, "hasPointerCapture", { configurable: true, value: () => false })
+if (!previousScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => undefined })
+afterAll(() => {
+  if (previousHasPointerCapture) Object.defineProperty(Element.prototype, "hasPointerCapture", previousHasPointerCapture)
+  else delete (Element.prototype as { hasPointerCapture?: unknown }).hasPointerCapture
+  if (previousScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", previousScrollIntoView)
+  else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
 
 function mount(kind: "evidence" | "graph") {
   const client = createTestQueryClient()
@@ -116,17 +127,21 @@ it.each(["coordinate", "replacement"] as const)("scrubs a surviving 기록 번�
 })
 
 it.each(["evidence", "graph"] as const)("preserves %s Request Lab requests/latest responses on traffic revisions but closes on invalidation", async kind => {
-  vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => Promise.resolve(json(init?.method === "POST" ? { response: "sent response", status: 200, durationMs: 1 } : draft))))
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => Promise.resolve(json(String(input) === "/api/request-lab/credentials" ? { headers: [] } : init?.method === "POST" ? { response: "sent response", status: 200, durationMs: 1 } : draft))))
   const view = mount(kind)
   await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
   await userEvent.clear(request)
-  await userEvent.type(screen.getByLabelText("Request Lab 요청 원문"), "edited request")
+  const edited = "GET /edited HTTP/1.1\nHost: api.example.test\n\n"
+  await userEvent.type(screen.getByLabelText("Request Lab 요청 원문"), edited)
+  await userEvent.click(screen.getByRole("combobox", { name: "전송 인증" }))
+  await userEvent.click(await screen.findByRole("option", { name: "비로그인" }))
+  await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
   await userEvent.click(screen.getByRole("button", { name: "요청 재전송" }))
   await waitFor(() => expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("sent response"))
   view.change(event, { ...snapshot, revision: 2, events: [...snapshot.events, { ...event, eventId: "ordinary-traffic" }] })
-  expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("edited request")
+  expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(edited)
   expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("sent response")
   view.change(null, { ...snapshot, revision: 3, events: [] })
   expect(screen.queryByLabelText("Request Lab 요청 원문")).not.toBeInTheDocument()

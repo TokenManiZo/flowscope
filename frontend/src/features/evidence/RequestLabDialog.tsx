@@ -5,6 +5,7 @@ import { Maximize2, Minimize2, Pencil, Plus, Send, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getRequestLabDraft, openReplay, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
 import type { Account, EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
@@ -91,7 +92,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const displayedRequest = raw.current.request
   const displayedResponse = raw.current.response
   const editable = !!entry
-  const credentialsRequired = !!entry && ((entry.restored && mode !== "ANONYMOUS") || (mode === "ACCOUNT" && !selectedAccountValid) || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
+  const credentialsRequired = !!entry && (mode === "ORIGINAL" || (entry.restored && mode !== "ANONYMOUS") || (mode === "ACCOUNT" && !selectedAccountValid) || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
   const busy = sending || openingRepeater || applyingCredentials || deleting || closing
   const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
   const controlClass = "h-7 rounded-md border border-input bg-background px-2 text-[0.8rem] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
@@ -525,10 +526,16 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
       <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
         <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
-            <label className="flex items-center gap-2">전송 인증<select aria-label="전송 인증" className={`${settingClass} min-w-[180px] max-w-[224px]`} value={credentialsRequired ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!editable || editRejected || suspended || busy} onChange={event => {
-              const value = event.target.value
-              void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8)) : changeCredentials(value as RequestLabCredentialMode))
-            }}>{credentialsRequired && <option value="" disabled>인증 다시 선택</option>}<option value="ORIGINAL" disabled={!draft?.requestEditable}>원문 · {draft?.observedIdentity ?? "—"}</option><option value="ANONYMOUS">비로그인</option>{accountOptions.map(({ account, ready }) => <option key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 사용 가능한 인증 없음" : ""}</option>)}{accountOptions.length === 0 && <option disabled>등록된 계정 없음</option>}</select></label>
+            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!editable || editRejected || suspended || busy} onValueChange={value => {
+              void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8)) : changeCredentials("ANONYMOUS"))
+            }}>
+              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={entry?.restored || (mode === "ACCOUNT" && !selectedAccountValid) ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
+              <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
+                <SelectItem value="ANONYMOUS">비로그인</SelectItem>
+                {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 사용 가능한 인증 없음" : ""}</SelectItem>)}
+                {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
+              </SelectContent>
+            </Select></div>
             <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
             <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
             <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
@@ -570,7 +577,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
-          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 인증을 사용할 수 없습니다. 계정 또는 인증 방식을 다시 선택해 주세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
+          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 인증을 사용할 수 없습니다. 계정 또는 인증 방식을 다시 선택해 주세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
           {replayMessage && <p role="status" className="rounded-md border p-2 text-sm">{replayMessage}</p>}
           {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
         </div>
